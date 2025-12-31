@@ -1,0 +1,9 @@
+java_test(
+    name = "PositionTest",
+    srcs = ["PositionTest.java"],
+    test_class = "com.gridgame.common.model.PositionTest",
+    deps = [
+        "//src/main/java/com/gridgame/common:common",
+        "@maven//:junit_junit",
+    ],
+)

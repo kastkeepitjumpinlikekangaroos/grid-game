@@ -1,0 +1,8 @@
+java_binary(
+    name = "server",
+    main_class = "com.gridgame.server.ServerMain",
+    srcs = glob(["**/*.java"]),
+    deps = [
+        "//src/main/java/com/gridgame/common",
+    ],
+)

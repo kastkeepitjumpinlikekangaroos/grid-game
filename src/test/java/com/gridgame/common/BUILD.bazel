@@ -1,0 +1,9 @@
+java_test(
+    name = "ConstantsTest",
+    srcs = ["ConstantsTest.java"],
+    test_class = "com.gridgame.common.ConstantsTest",
+    deps = [
+        "//src/main/java/com/gridgame/common:common",
+        "@maven//:junit_junit",
+    ],
+)

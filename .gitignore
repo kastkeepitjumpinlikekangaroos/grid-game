@@ -1,0 +1,12 @@
+# Bazel build outputs
+bazel-*
+
+# Bazel lock file (can be committed, but often ignored)
+MODULE.bazel.lock
+
+# Bazel convenience symlinks
+/bazel-bin
+/bazel-out
+/bazel-testlogs
+/bazel-java-game
+.claude/
