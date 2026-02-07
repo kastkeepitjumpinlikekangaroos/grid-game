@@ -2,6 +2,7 @@ module(name = "java-game")
 
 bazel_dep(name = "rules_java", version = "7.11.1")
 bazel_dep(name = "rules_jvm_external", version = "6.6")
+bazel_dep(name = "rules_scala", version = "7.0.0")
 
 maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
 maven.install(
@@ -21,3 +22,23 @@ maven.install(
     fetch_sources = True,
 )
 use_repo(maven, "maven")
+
+# Scala toolchain configuration
+scala_config = use_extension(
+    "@rules_scala//scala/extensions:config.bzl",
+    "scala_config",
+)
+scala_config.settings(scala_version = "2.13.16")
+
+scala_deps = use_extension(
+    "@rules_scala//scala/extensions:deps.bzl",
+    "scala_deps",
+)
+scala_deps.scala()
+scala_deps.junit()
+
+scala_toolchains = use_extension(
+    "@rules_scala//scala/extensions:toolchains.bzl",
+    "scala_toolchains",
+)
+scala_toolchains.testing()

@@ -1,0 +1,10 @@
+load("@rules_scala//scala:scala.bzl", "scala_binary")
+
+scala_binary(
+    name = "server",
+    main_class = "com.gridgame.server.ServerMain",
+    srcs = glob(["**/*.scala"]),
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+    ],
+)

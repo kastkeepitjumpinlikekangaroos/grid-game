@@ -1,0 +1,11 @@
+load("@rules_scala//scala:scala.bzl", "scala_junit_test")
+
+scala_junit_test(
+    name = "position_test",
+    srcs = ["PositionTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+)

@@ -1,0 +1,18 @@
+package com.gridgame.common
+
+object Constants {
+  // Grid configuration
+  val GRID_SIZE: Int = 1000
+  val CELL_SIZE_PX: Int = 20
+  val VIEWPORT_CELLS: Int = 50
+  val VIEWPORT_SIZE_PX: Int = VIEWPORT_CELLS * CELL_SIZE_PX // 500px
+
+  // Network configuration
+  val PACKET_SIZE: Int = 64
+  val SERVER_PORT: Int = 25565
+  val HEARTBEAT_INTERVAL_MS: Int = 3000 // 3 seconds
+  val CLIENT_TIMEOUT_MS: Int = 10000 // 10 seconds
+
+  // Input configuration
+  val MOVE_RATE_LIMIT_MS: Int = 100 // Max 10 moves per second
+}
