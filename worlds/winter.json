@@ -1,0 +1,110 @@
+{
+  "name": "Winter Wonderland",
+  "width": 200,
+  "height": 200,
+  "layers": [
+    {
+      "type": "fill",
+      "tile": "snow"
+    },
+    {
+      "type": "border",
+      "tile": "mountain",
+      "thickness": 5
+    },
+    {
+      "type": "circle",
+      "tile": "ice",
+      "cx": 100,
+      "cy": 100,
+      "radius": 25
+    },
+    {
+      "type": "circle",
+      "tile": "water",
+      "cx": 100,
+      "cy": 100,
+      "radius": 20
+    },
+    {
+      "type": "line",
+      "tile": "path",
+      "x1": 100,
+      "y1": 5,
+      "x2": 100,
+      "y2": 75,
+      "thickness": 3
+    },
+    {
+      "type": "line",
+      "tile": "path",
+      "x1": 100,
+      "y1": 125,
+      "x2": 100,
+      "y2": 195,
+      "thickness": 3
+    },
+    {
+      "type": "line",
+      "tile": "path",
+      "x1": 5,
+      "y1": 100,
+      "x2": 75,
+      "y2": 100,
+      "thickness": 3
+    },
+    {
+      "type": "line",
+      "tile": "path",
+      "x1": 125,
+      "y1": 100,
+      "x2": 195,
+      "y2": 100,
+      "thickness": 3
+    },
+    {
+      "type": "scatter",
+      "tile": "tree",
+      "density": 0.04,
+      "avoid": ["water", "ice", "path", "mountain", "tree"]
+    },
+    {
+      "type": "rect",
+      "tile": "stone",
+      "x": 30,
+      "y": 30,
+      "width": 20,
+      "height": 15
+    },
+    {
+      "type": "rect",
+      "tile": "stone",
+      "x": 150,
+      "y": 30,
+      "width": 20,
+      "height": 15
+    },
+    {
+      "type": "rect",
+      "tile": "stone",
+      "x": 30,
+      "y": 155,
+      "width": 20,
+      "height": 15
+    },
+    {
+      "type": "rect",
+      "tile": "stone",
+      "x": 150,
+      "y": 155,
+      "width": 20,
+      "height": 15
+    }
+  ],
+  "spawnPoints": [
+    {"x": 100, "y": 50},
+    {"x": 100, "y": 150},
+    {"x": 50, "y": 100},
+    {"x": 150, "y": 100}
+  ]
+}

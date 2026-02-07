@@ -12,16 +12,23 @@ class PlayerUpdatePacket(
     playerId: UUID,
     timestamp: Int,
     val position: Position,
-    val colorRGB: Int
+    val colorRGB: Int,
+    val health: Int = 100
 ) extends Packet(PacketType.PLAYER_UPDATE, sequenceNumber, playerId, timestamp) {
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int) = {
-    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB)
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, 100)
+  }
+
+  def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int, health: Int) = {
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, health)
   }
 
   def getPosition: Position = position
 
   def getColorRGB: Int = colorRGB
+
+  def getHealth: Int = health
 
   override def serialize(): Array[Byte] = {
     val buffer = ByteBuffer.allocate(Constants.PACKET_SIZE)
@@ -49,13 +56,16 @@ class PlayerUpdatePacket(
     // [33-36] Timestamp
     buffer.putInt(timestamp)
 
-    // [37-63] Payload/Reserved (27 bytes) - fill with zeros
-    buffer.put(new Array[Byte](27))
+    // [37-40] Health
+    buffer.putInt(health)
+
+    // [41-63] Reserved (23 bytes) - fill with zeros
+    buffer.put(new Array[Byte](23))
 
     buffer.array()
   }
 
   override def toString: String = {
-    s"PlayerUpdatePacket{seq=$sequenceNumber, playerId=${playerId.toString.substring(0, 8)}, position=$position, color=0x${colorRGB.toHexString.toUpperCase}}"
+    s"PlayerUpdatePacket{seq=$sequenceNumber, playerId=${playerId.toString.substring(0, 8)}, position=$position, color=0x${colorRGB.toHexString.toUpperCase}, health=$health}"
   }
 }

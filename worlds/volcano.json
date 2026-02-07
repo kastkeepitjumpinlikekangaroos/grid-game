@@ -1,0 +1,116 @@
+{
+  "name": "Volcanic Island",
+  "width": 160,
+  "height": 160,
+  "layers": [
+    {
+      "type": "fill",
+      "tile": "water"
+    },
+    {
+      "type": "circle",
+      "tile": "sand",
+      "cx": 80,
+      "cy": 80,
+      "radius": 65
+    },
+    {
+      "type": "circle",
+      "tile": "stone",
+      "cx": 80,
+      "cy": 80,
+      "radius": 55
+    },
+    {
+      "type": "circle",
+      "tile": "mountain",
+      "cx": 80,
+      "cy": 80,
+      "radius": 25
+    },
+    {
+      "type": "circle",
+      "tile": "lava",
+      "cx": 80,
+      "cy": 80,
+      "radius": 12
+    },
+    {
+      "type": "line",
+      "tile": "lava",
+      "x1": 80,
+      "y1": 80,
+      "x2": 80,
+      "y2": 20,
+      "thickness": 3
+    },
+    {
+      "type": "line",
+      "tile": "lava",
+      "x1": 80,
+      "y1": 80,
+      "x2": 140,
+      "y2": 80,
+      "thickness": 3
+    },
+    {
+      "type": "line",
+      "tile": "lava",
+      "x1": 80,
+      "y1": 80,
+      "x2": 40,
+      "y2": 130,
+      "thickness": 2
+    },
+    {
+      "type": "line",
+      "tile": "path",
+      "x1": 80,
+      "y1": 135,
+      "x2": 80,
+      "y2": 105,
+      "thickness": 3
+    },
+    {
+      "type": "line",
+      "tile": "path",
+      "x1": 25,
+      "y1": 80,
+      "x2": 55,
+      "y2": 80,
+      "thickness": 3
+    },
+    {
+      "type": "rect",
+      "tile": "stone",
+      "x": 25,
+      "y": 115,
+      "width": 15,
+      "height": 15
+    },
+    {
+      "type": "rect",
+      "tile": "stone",
+      "x": 115,
+      "y": 115,
+      "width": 15,
+      "height": 15
+    },
+    {
+      "type": "scatter",
+      "tile": "tree",
+      "density": 0.02,
+      "minX": 20,
+      "minY": 20,
+      "maxX": 140,
+      "maxY": 140,
+      "avoid": ["water", "lava", "mountain", "path", "tree", "sand"]
+    }
+  ],
+  "spawnPoints": [
+    {"x": 80, "y": 130},
+    {"x": 30, "y": 80},
+    {"x": 30, "y": 120},
+    {"x": 120, "y": 120}
+  ]
+}

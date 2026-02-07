@@ -1,0 +1,143 @@
+{
+  "name": "Castle Grounds",
+  "width": 180,
+  "height": 180,
+  "layers": [
+    {
+      "type": "fill",
+      "tile": "grass"
+    },
+    {
+      "type": "border",
+      "tile": "wall",
+      "thickness": 2
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 60,
+      "y": 60,
+      "width": 60,
+      "height": 60
+    },
+    {
+      "type": "rect",
+      "tile": "stone",
+      "x": 65,
+      "y": 65,
+      "width": 50,
+      "height": 50
+    },
+    {
+      "type": "rect",
+      "tile": "path",
+      "x": 85,
+      "y": 115,
+      "width": 10,
+      "height": 10
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 55,
+      "y": 55,
+      "width": 10,
+      "height": 10
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 115,
+      "y": 55,
+      "width": 10,
+      "height": 10
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 55,
+      "y": 115,
+      "width": 10,
+      "height": 10
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 115,
+      "y": 115,
+      "width": 10,
+      "height": 10
+    },
+    {
+      "type": "line",
+      "tile": "path",
+      "x1": 90,
+      "y1": 120,
+      "x2": 90,
+      "y2": 178,
+      "thickness": 4
+    },
+    {
+      "type": "line",
+      "tile": "path",
+      "x1": 2,
+      "y1": 90,
+      "x2": 60,
+      "y2": 90,
+      "thickness": 3
+    },
+    {
+      "type": "line",
+      "tile": "path",
+      "x1": 120,
+      "y1": 90,
+      "x2": 177,
+      "y2": 90,
+      "thickness": 3
+    },
+    {
+      "type": "rect",
+      "tile": "water",
+      "x": 10,
+      "y": 10,
+      "width": 30,
+      "height": 30
+    },
+    {
+      "type": "rect",
+      "tile": "water",
+      "x": 140,
+      "y": 10,
+      "width": 30,
+      "height": 30
+    },
+    {
+      "type": "rect",
+      "tile": "water",
+      "x": 10,
+      "y": 140,
+      "width": 30,
+      "height": 30
+    },
+    {
+      "type": "rect",
+      "tile": "water",
+      "x": 140,
+      "y": 140,
+      "width": 30,
+      "height": 30
+    },
+    {
+      "type": "scatter",
+      "tile": "tree",
+      "density": 0.02,
+      "avoid": ["water", "path", "stone", "wall", "tree"]
+    }
+  ],
+  "spawnPoints": [
+    {"x": 90, "y": 90},
+    {"x": 90, "y": 170},
+    {"x": 30, "y": 90},
+    {"x": 150, "y": 90}
+  ]
+}

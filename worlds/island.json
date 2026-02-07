@@ -1,0 +1,95 @@
+{
+  "name": "Tropical Island",
+  "width": 150,
+  "height": 150,
+  "layers": [
+    {
+      "type": "fill",
+      "tile": "deep_water"
+    },
+    {
+      "type": "circle",
+      "tile": "water",
+      "cx": 75,
+      "cy": 75,
+      "radius": 60
+    },
+    {
+      "type": "circle",
+      "tile": "sand",
+      "cx": 75,
+      "cy": 75,
+      "radius": 50
+    },
+    {
+      "type": "circle",
+      "tile": "grass",
+      "cx": 75,
+      "cy": 75,
+      "radius": 40
+    },
+    {
+      "type": "circle",
+      "tile": "tree",
+      "cx": 75,
+      "cy": 75,
+      "radius": 8
+    },
+    {
+      "type": "circle",
+      "tile": "grass",
+      "cx": 75,
+      "cy": 75,
+      "radius": 5
+    },
+    {
+      "type": "scatter",
+      "tile": "tree",
+      "density": 0.05,
+      "minX": 35,
+      "minY": 35,
+      "maxX": 115,
+      "maxY": 115,
+      "avoid": ["water", "deep_water", "sand", "tree"]
+    },
+    {
+      "type": "line",
+      "tile": "path",
+      "x1": 75,
+      "y1": 75,
+      "x2": 75,
+      "y2": 125,
+      "thickness": 2
+    },
+    {
+      "type": "line",
+      "tile": "path",
+      "x1": 75,
+      "y1": 75,
+      "x2": 25,
+      "y2": 75,
+      "thickness": 2
+    },
+    {
+      "type": "rect",
+      "tile": "stone",
+      "x": 70,
+      "y": 70,
+      "width": 10,
+      "height": 10
+    },
+    {
+      "type": "circle",
+      "tile": "water",
+      "cx": 60,
+      "cy": 55,
+      "radius": 5
+    }
+  ],
+  "spawnPoints": [
+    {"x": 75, "y": 75},
+    {"x": 75, "y": 90},
+    {"x": 60, "y": 75},
+    {"x": 90, "y": 75}
+  ]
+}

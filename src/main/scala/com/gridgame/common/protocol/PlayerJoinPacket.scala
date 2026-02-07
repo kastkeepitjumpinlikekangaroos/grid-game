@@ -14,13 +14,18 @@ class PlayerJoinPacket(
     timestamp: Int,
     val position: Position,
     val colorRGB: Int,
-    val playerName: String
+    val playerName: String,
+    val health: Int = 100
 ) extends Packet(PacketType.PLAYER_JOIN, sequenceNumber, playerId, timestamp) {
 
   private val _playerName: String = if (playerName != null) playerName else "Player"
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int, playerName: String) = {
-    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, playerName)
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, playerName, 100)
+  }
+
+  def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int, playerName: String, health: Int) = {
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, playerName, health)
   }
 
   def getPosition: Position = position
@@ -28,6 +33,8 @@ class PlayerJoinPacket(
   def getColorRGB: Int = colorRGB
 
   def getPlayerName: String = _playerName
+
+  def getHealth: Int = health
 
   override def serialize(): Array[Byte] = {
     val buffer = ByteBuffer.allocate(Constants.PACKET_SIZE)
@@ -55,17 +62,20 @@ class PlayerJoinPacket(
     // [33-36] Timestamp
     buffer.putInt(timestamp)
 
-    // [37-63] Player name (max 27 bytes)
+    // [37-59] Player name (max 23 bytes)
     val nameBytes = _playerName.getBytes(StandardCharsets.UTF_8)
-    val nameLength = Math.min(nameBytes.length, 27)
+    val nameLength = Math.min(nameBytes.length, 23)
     buffer.put(nameBytes, 0, nameLength)
-    // Fill remaining bytes with zeros
-    buffer.put(new Array[Byte](27 - nameLength))
+    // Fill remaining name bytes with zeros
+    buffer.put(new Array[Byte](23 - nameLength))
+
+    // [60-63] Health
+    buffer.putInt(health)
 
     buffer.array()
   }
 
   override def toString: String = {
-    s"PlayerJoinPacket{seq=$sequenceNumber, playerId=${playerId.toString.substring(0, 8)}, name='${_playerName}', position=$position, color=0x${colorRGB.toHexString.toUpperCase}}"
+    s"PlayerJoinPacket{seq=$sequenceNumber, playerId=${playerId.toString.substring(0, 8)}, name='${_playerName}', position=$position, color=0x${colorRGB.toHexString.toUpperCase}, health=$health}"
   }
 }

@@ -51,24 +51,35 @@ object PacketSerializer {
     // Deserialize based on packet type
     packetType match {
       case PacketType.PLAYER_JOIN =>
-        val playerName = extractString(payload)
+        // Name is in payload bytes 0-22 (23 bytes), health in bytes 23-26
+        val nameBytes = payload.take(23)
+        val playerName = extractString(nameBytes)
+        val healthBuffer = ByteBuffer.wrap(payload, 23, 4).order(ByteOrder.BIG_ENDIAN)
+        val health = healthBuffer.getInt
         val joinPosition = try {
           new Position(x, y)
         } catch {
           case _: IllegalArgumentException => new Position(0, 0)
         }
-        new PlayerJoinPacket(sequenceNumber, playerId, timestamp, joinPosition, colorRGB, playerName)
+        new PlayerJoinPacket(sequenceNumber, playerId, timestamp, joinPosition, colorRGB, playerName, health)
 
       case PacketType.PLAYER_UPDATE =>
+        // Health is in payload bytes 0-3
+        val healthBuffer = ByteBuffer.wrap(payload, 0, 4).order(ByteOrder.BIG_ENDIAN)
+        val health = healthBuffer.getInt
         val updatePosition = try {
           new Position(x, y)
         } catch {
           case _: IllegalArgumentException => new Position(0, 0)
         }
-        new PlayerUpdatePacket(sequenceNumber, playerId, timestamp, updatePosition, colorRGB)
+        new PlayerUpdatePacket(sequenceNumber, playerId, timestamp, updatePosition, colorRGB, health)
 
       case PacketType.PLAYER_LEAVE =>
         new PlayerLeavePacket(sequenceNumber, playerId, timestamp)
+
+      case PacketType.WORLD_INFO =>
+        val worldFile = extractString(payload)
+        new WorldInfoPacket(sequenceNumber, timestamp, worldFile)
 
       case PacketType.HEARTBEAT =>
         new PlayerLeavePacket(sequenceNumber, playerId, timestamp)

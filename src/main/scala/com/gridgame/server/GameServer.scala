@@ -4,7 +4,10 @@ import com.gridgame.common.Constants
 import com.gridgame.common.model.Player
 import com.gridgame.common.protocol.Packet
 import com.gridgame.common.protocol.PacketSerializer
+import com.gridgame.common.protocol.PacketType
 import com.gridgame.common.protocol.PlayerLeavePacket
+import com.gridgame.common.protocol.PlayerUpdatePacket
+import com.gridgame.common.protocol.WorldInfoPacket
 
 import java.io.IOException
 import java.net.DatagramPacket
@@ -19,10 +22,10 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import scala.jdk.CollectionConverters._
 
-class GameServer(port: Int) {
+class GameServer(port: Int, val worldFile: String = "") {
   private var socket: DatagramSocket = _
   private val registry = new ClientRegistry()
-  private val handler = new ClientHandler(registry)
+  private val handler = new ClientHandler(registry, this)
   private val broadcastExecutor: ExecutorService = Executors.newFixedThreadPool(4)
   private val cleanupExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
   private val sequenceNumber = new AtomicInteger(0)
@@ -33,6 +36,7 @@ class GameServer(port: Int) {
     running = true
 
     println(s"Game server started on port $port")
+    println(s"World file configured: '${worldFile}' (empty=${worldFile.isEmpty})")
 
     cleanupExecutor.scheduleAtFixedRate(
       new Runnable { def run(): Unit = cleanup() },
@@ -70,7 +74,26 @@ class GameServer(port: Int) {
       val shouldBroadcast = handler.processPacket(packet, address, port)
 
       if (shouldBroadcast) {
-        broadcast(packet, packet.getPlayerId)
+        // For PLAYER_UPDATE, inject the server's authoritative health
+        val packetToBroadcast = packet.getType match {
+          case PacketType.PLAYER_UPDATE =>
+            val updatePacket = packet.asInstanceOf[PlayerUpdatePacket]
+            val player = registry.get(updatePacket.getPlayerId)
+            if (player != null) {
+              new PlayerUpdatePacket(
+                updatePacket.getSequenceNumber,
+                updatePacket.getPlayerId,
+                updatePacket.getTimestamp,
+                updatePacket.getPosition,
+                updatePacket.getColorRGB,
+                player.getHealth
+              )
+            } else {
+              packet
+            }
+          case _ => packet
+        }
+        broadcast(packetToBroadcast, packet.getPlayerId)
       }
     } catch {
       case e: IllegalArgumentException =>
@@ -102,6 +125,12 @@ class GameServer(port: Int) {
         System.err.println(s"Error sending to ${address.getHostAddress}:$port - ${e.getMessage}")
     }
   }
+
+  def sendPacketTo(packet: Packet, address: InetAddress, port: Int): Unit = {
+    sendTo(packet.serialize(), address, port)
+  }
+
+  def getNextSequenceNumber: Int = sequenceNumber.getAndIncrement()
 
   private def cleanup(): Unit = {
     val timedOut = registry.getTimedOutClients

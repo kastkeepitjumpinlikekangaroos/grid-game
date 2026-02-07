@@ -2,25 +2,43 @@ package com.gridgame.server
 
 import com.gridgame.common.Constants
 
+import java.io.File
 import java.net.SocketException
 
 object ServerMain {
 
   def main(args: Array[String]): Unit = {
     var port = Constants.SERVER_PORT
+    var worldFile = ""
 
-    if (args.length > 0) {
-      try {
-        port = args(0).toInt
-      } catch {
-        case _: NumberFormatException =>
-          System.err.println(s"Invalid port number: ${args(0)}")
-          System.err.println("Usage: ServerMain [port]")
-          System.exit(1)
+    // Parse arguments: [port] [--world=<file>]
+    println(s"Arguments received: ${args.mkString(", ")}")
+    for (arg <- args) {
+      println(s"Processing arg: '$arg'")
+      if (arg.startsWith("--world=")) {
+        val rawPath = arg.substring(8)
+        println(s"Raw world path: '$rawPath'")
+        worldFile = resolveWorldPath(rawPath)
+        println(s"Resolved world file: '$worldFile'")
+      } else {
+        try {
+          port = arg.toInt
+        } catch {
+          case _: NumberFormatException =>
+            System.err.println(s"Invalid argument: $arg")
+            System.err.println("Usage: ServerMain [port] [--world=<file>]")
+            System.exit(1)
+        }
       }
     }
 
-    val server = new GameServer(port)
+    if (worldFile.nonEmpty) {
+      println(s"Using world: $worldFile")
+    } else {
+      println("No world file specified, clients will use default world")
+    }
+
+    val server = new GameServer(port, worldFile)
 
     Runtime.getRuntime.addShutdownHook(new Thread(new Runnable {
       def run(): Unit = {
@@ -36,5 +54,31 @@ object ServerMain {
         System.err.println(s"Failed to start server: ${e.getMessage}")
         System.exit(1)
     }
+  }
+
+  private def resolveWorldPath(worldFile: String): String = {
+    // Always extract just the filename to send to clients
+    val fileName = new File(worldFile).getName
+
+    // Check if file exists for validation/logging
+    val direct = new File(worldFile)
+    if (direct.exists()) {
+      println(s"Found world file: ${direct.getAbsolutePath}")
+      return fileName
+    }
+
+    // Try relative to BUILD_WORKING_DIRECTORY (set by Bazel)
+    val buildWorkDir = System.getenv("BUILD_WORKING_DIRECTORY")
+    if (buildWorkDir != null) {
+      val fromWorkDir = new File(buildWorkDir, worldFile)
+      if (fromWorkDir.exists()) {
+        println(s"Found world file: ${fromWorkDir.getAbsolutePath}")
+        return fileName
+      }
+    }
+
+    // File not found, but still return just the filename
+    println(s"Warning: World file not found locally: $worldFile (clients will try to find it)")
+    fileName
   }
 }

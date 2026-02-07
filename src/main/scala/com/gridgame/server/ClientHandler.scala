@@ -1,5 +1,6 @@
 package com.gridgame.server
 
+import com.gridgame.common.Constants
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
 import com.gridgame.common.protocol._
@@ -7,7 +8,7 @@ import com.gridgame.common.protocol._
 import java.net.InetAddress
 import java.util.UUID
 
-class ClientHandler(registry: ClientRegistry) {
+class ClientHandler(registry: ClientRegistry, server: GameServer) {
 
   def processPacket(packet: Packet, address: InetAddress, port: Int): Boolean = {
     val playerId = packet.getPlayerId
@@ -34,6 +35,15 @@ class ClientHandler(registry: ClientRegistry) {
   private def handlePlayerJoin(packet: PlayerJoinPacket, address: InetAddress, port: Int): Boolean = {
     val playerId = packet.getPlayerId
 
+    // Send world info to the joining player
+    if (server.worldFile.nonEmpty) {
+      val worldInfoPacket = new WorldInfoPacket(server.getNextSequenceNumber, server.worldFile)
+      println(s"Sending world info to client: ${server.worldFile}")
+      server.sendPacketTo(worldInfoPacket, address, port)
+    } else {
+      println("No world file configured on server")
+    }
+
     if (registry.contains(playerId)) {
       println(s"Player already joined: $playerId")
       val existing = registry.get(playerId)
@@ -45,13 +55,13 @@ class ClientHandler(registry: ClientRegistry) {
       existing.updateHeartbeat()
       true
     } else {
-      val player = new Player(playerId, packet.getPlayerName, packet.getPosition, packet.getColorRGB)
+      val player = new Player(playerId, packet.getPlayerName, packet.getPosition, packet.getColorRGB, Constants.MAX_HEALTH)
       player.setAddress(address)
       player.setPort(port)
 
       registry.add(player)
 
-      println(s"Player joined: ${playerId.toString.substring(0, 8)} ('${packet.getPlayerName}') at ${packet.getPosition} from ${address.getHostAddress}:$port")
+      println(s"Player joined: ${playerId.toString.substring(0, 8)} ('${packet.getPlayerName}') at ${packet.getPosition} from ${address.getHostAddress}:$port with health ${player.getHealth}")
 
       true
     }

@@ -8,7 +8,8 @@ class Player(
     private val id: UUID,
     private var name: String,
     private var position: Position,
-    private var colorRGB: Int
+    private var colorRGB: Int,
+    private var health: Int = 100
 ) {
   Objects.requireNonNull(id, "Player ID cannot be null")
   Objects.requireNonNull(position, "Position cannot be null")
@@ -16,6 +17,7 @@ class Player(
   private var lastUpdateTime: Long = System.currentTimeMillis()
   private var address: InetAddress = _
   private var port: Int = 0
+  private var direction: Direction = Direction.Down
 
   def getId: UUID = id
 
@@ -55,6 +57,20 @@ class Player(
   def setPort(port: Int): Unit = {
     this.port = port
   }
+
+  def getDirection: Direction = direction
+
+  def setDirection(direction: Direction): Unit = {
+    this.direction = direction
+  }
+
+  def getHealth: Int = health
+
+  def setHealth(h: Int): Unit = {
+    this.health = Math.max(0, Math.min(100, h))
+  }
+
+  def isDead: Boolean = health <= 0
 
   override def equals(obj: Any): Boolean = {
     obj match {

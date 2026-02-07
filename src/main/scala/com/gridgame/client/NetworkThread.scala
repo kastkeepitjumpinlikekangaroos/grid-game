@@ -12,18 +12,25 @@ import java.net.SocketException
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.CountDownLatch
 
 class NetworkThread(client: GameClient, serverAddress: InetAddress, serverPort: Int) extends Thread("NetworkThread") {
   private var socket: DatagramSocket = _
   private val heartbeatExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
+  private val socketReady = new CountDownLatch(1)
   @volatile private var running = false
 
   setDaemon(true)
+
+  def waitForReady(): Unit = {
+    socketReady.await()
+  }
 
   override def run(): Unit = {
     try {
       socket = new DatagramSocket()
       running = true
+      socketReady.countDown()
 
       println(s"NetworkThread: Connected to server ${serverAddress.getHostAddress}:$serverPort")
 

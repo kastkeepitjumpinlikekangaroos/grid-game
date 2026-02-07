@@ -15,4 +15,10 @@ object Constants {
 
   // Input configuration
   val MOVE_RATE_LIMIT_MS: Int = 100 // Max 10 moves per second
+
+  // Health configuration
+  val MAX_HEALTH: Int = 100
+  val HEALTH_BAR_WIDTH_PX: Int = 16
+  val HEALTH_BAR_HEIGHT_PX: Int = 3
+  val HEALTH_BAR_OFFSET_Y: Int = 4
 }
