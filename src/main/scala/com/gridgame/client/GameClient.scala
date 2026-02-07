@@ -4,6 +4,7 @@ import com.gridgame.common.Constants
 import com.gridgame.common.model.Direction
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
+import com.gridgame.common.model.Projectile
 import com.gridgame.common.model.WorldData
 import com.gridgame.common.protocol._
 
@@ -28,6 +29,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   private val localDirection: AtomicReference[Direction] = new AtomicReference(Direction.Down)
   private val localHealth: AtomicInteger = new AtomicInteger(Constants.MAX_HEALTH)
   private val players: ConcurrentHashMap[UUID, Player] = new ConcurrentHashMap()
+  private val projectiles: ConcurrentHashMap[Int, Projectile] = new ConcurrentHashMap()
   private val lastSequence: ConcurrentHashMap[UUID, Integer] = new ConcurrentHashMap()
   private val incomingPackets: BlockingQueue[Packet] = new LinkedBlockingQueue()
   private val sequenceNumber: AtomicInteger = new AtomicInteger(0)
@@ -72,6 +74,28 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
     sendPositionUpdate(localPosition.get())
   }
 
+  def rejoin(): Unit = {
+    if (!isDead) return
+
+    // Reset local state
+    isDead = false
+    localHealth.set(Constants.MAX_HEALTH)
+
+    // Get a new spawn point
+    val world = currentWorld.get()
+    val newSpawn = world.getValidSpawnPoint()
+    localPosition.set(newSpawn)
+    localDirection.set(Direction.Down)
+
+    // Clear local projectiles
+    projectiles.clear()
+
+    // Send join packet to server
+    sendJoinPacket()
+
+    println(s"GameClient: Rejoined at $newSpawn")
+  }
+
   def movePlayer(dx: Int, dy: Int): Unit = {
     val world = currentWorld.get()
     val current = localPosition.get()
@@ -101,6 +125,24 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
       position,
       localColorRGB,
       localHealth.get()
+    )
+    networkThread.send(packet)
+  }
+
+  def shoot(): Unit = {
+    if (isDead) return
+
+    val pos = localPosition.get()
+    val direction = localDirection.get()
+    val packet = new ProjectilePacket(
+      sequenceNumber.getAndIncrement(),
+      localPlayerId,
+      pos.getX,
+      pos.getY,
+      localColorRGB,
+      0, // Server assigns real ID
+      direction,
+      ProjectileAction.SPAWN
     )
     networkThread.send(packet)
   }
@@ -137,6 +179,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
       return
     }
 
+    // Handle projectile updates for all players (including local player's own projectiles)
+    if (packet.getType == PacketType.PROJECTILE_UPDATE) {
+      handleProjectileUpdate(packet.asInstanceOf[ProjectilePacket])
+      return
+    }
+
     val playerId = packet.getPlayerId
 
     // Handle updates for local player (health from server)
@@ -152,6 +200,13 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
           }
         case _ =>
       }
+      return
+    }
+
+    // PLAYER_JOIN always processed (handles rejoins where seq resets)
+    if (packet.getType == PacketType.PLAYER_JOIN) {
+      lastSequence.put(playerId, packet.getSequenceNumber)
+      handlePlayerJoin(packet.asInstanceOf[PlayerJoinPacket])
       return
     }
 
@@ -173,6 +228,63 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
 
       case _ =>
       // Ignore other packet types
+    }
+  }
+
+  private def handleProjectileUpdate(packet: ProjectilePacket): Unit = {
+    val projectileId = packet.getProjectileId
+
+    packet.getAction match {
+      case ProjectileAction.SPAWN =>
+        val projectile = new Projectile(
+          projectileId,
+          packet.getPlayerId,
+          packet.getX,
+          packet.getY,
+          packet.getDirection,
+          packet.getColorRGB
+        )
+        projectiles.put(projectileId, projectile)
+
+      case ProjectileAction.MOVE =>
+        val projectile = projectiles.get(projectileId)
+        if (projectile == null) {
+          // Create projectile if we missed the spawn
+          val newProjectile = new Projectile(
+            projectileId,
+            packet.getPlayerId,
+            packet.getX,
+            packet.getY,
+            packet.getDirection,
+            packet.getColorRGB
+          )
+          projectiles.put(projectileId, newProjectile)
+        }
+        // Note: Server already moved it, we get updated position in packet
+        // For now just ensure it exists for rendering at the new position
+        val existingProjectile = projectiles.get(projectileId)
+        if (existingProjectile != null) {
+          // Update position by replacing with new projectile at packet position
+          val updatedProjectile = new Projectile(
+            projectileId,
+            packet.getPlayerId,
+            packet.getX,
+            packet.getY,
+            packet.getDirection,
+            packet.getColorRGB
+          )
+          projectiles.put(projectileId, updatedProjectile)
+        }
+
+      case ProjectileAction.HIT =>
+        projectiles.remove(projectileId)
+        // Hit effect could be added here
+
+      case ProjectileAction.DESPAWN =>
+        projectiles.remove(projectileId)
+
+      case _ =>
+        // Unknown action
     }
   }
 
@@ -233,6 +345,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   def getLocalPlayerId: UUID = localPlayerId
 
   def getPlayers: ConcurrentHashMap[UUID, Player] = players
+
+  def getProjectiles: ConcurrentHashMap[Int, Projectile] = projectiles
 
   def getLocalColorRGB: Int = localColorRGB
 

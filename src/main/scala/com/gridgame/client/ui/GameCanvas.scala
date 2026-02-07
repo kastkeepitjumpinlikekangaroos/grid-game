@@ -5,6 +5,7 @@ import com.gridgame.common.Constants
 import com.gridgame.common.model.Direction
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
+import com.gridgame.common.model.Projectile
 import com.gridgame.common.model.WorldData
 
 import javafx.scene.canvas.Canvas
@@ -37,11 +38,14 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
 
     drawTerrain(viewportX, viewportY, currentWorld)
     drawGrid(viewportX, viewportY)
+    drawProjectiles(viewportX, viewportY)
 
     client.getPlayers.values().asScala.foreach { player =>
-      val pos = player.getPosition
-      if (isInViewport(pos, viewportX, viewportY)) {
-        drawPlayer(player, viewportX, viewportY, isLocal = false)
+      if (!player.isDead) {
+        val pos = player.getPosition
+        if (isInViewport(pos, viewportX, viewportY)) {
+          drawPlayer(player, viewportX, viewportY)
+        }
       }
     }
 
@@ -97,7 +101,32 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
     }
   }
 
-  private def drawPlayer(player: Player, viewportX: Int, viewportY: Int, isLocal: Boolean): Unit = {
+  private def drawProjectiles(viewportX: Int, viewportY: Int): Unit = {
+    client.getProjectiles.values().asScala.foreach { projectile =>
+      val projX = projectile.getX
+      val projY = projectile.getY
+
+      // Check if projectile is in viewport
+      if (projX >= viewportX && projX < viewportX + Constants.VIEWPORT_CELLS &&
+          projY >= viewportY && projY < viewportY + Constants.VIEWPORT_CELLS) {
+
+        val screenX = (projX - viewportX) * Constants.CELL_SIZE_PX + Constants.CELL_SIZE_PX / 2
+        val screenY = (projY - viewportY) * Constants.CELL_SIZE_PX + Constants.CELL_SIZE_PX / 2
+        val radius = Constants.PROJECTILE_SIZE_PX / 2.0
+
+        // Draw projectile as a filled circle with the owner's color
+        gc.setFill(intToColor(projectile.colorRGB))
+        gc.fillOval(screenX - radius, screenY - radius, Constants.PROJECTILE_SIZE_PX, Constants.PROJECTILE_SIZE_PX)
+
+        // Add a dark outline for visibility
+        gc.setStroke(Color.BLACK)
+        gc.setLineWidth(1)
+        gc.strokeOval(screenX - radius, screenY - radius, Constants.PROJECTILE_SIZE_PX, Constants.PROJECTILE_SIZE_PX)
+      }
+    }
+  }
+
+  private def drawPlayer(player: Player, viewportX: Int, viewportY: Int): Unit = {
     val pos = player.getPosition
 
     val screenX = (pos.getX - viewportX) * Constants.CELL_SIZE_PX
@@ -108,12 +137,6 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
 
     // Draw health bar above player
     drawHealthBar(screenX, screenY, player.getHealth)
-
-    if (isLocal) {
-      gc.setStroke(Color.YELLOW)
-      gc.setLineWidth(2)
-      gc.strokeRect(screenX, screenY, Constants.CELL_SIZE_PX, Constants.CELL_SIZE_PX)
-    }
   }
 
   private def drawLocalPlayer(pos: Position, viewportX: Int, viewportY: Int): Unit = {
@@ -125,10 +148,6 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
 
     // Draw health bar above local player
     drawHealthBar(screenX, screenY, client.getLocalHealth)
-
-    gc.setStroke(Color.YELLOW)
-    gc.setLineWidth(2)
-    gc.strokeRect(screenX, screenY, Constants.CELL_SIZE_PX, Constants.CELL_SIZE_PX)
   }
 
   private def drawHealthBar(screenX: Double, screenY: Double, health: Int): Unit = {
@@ -164,6 +183,13 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
     val text = "GAME OVER"
     val textWidth = 220 // Approximate width
     gc.fillText(text, (getWidth - textWidth) / 2, getHeight / 2)
+
+    // Press Enter to reload text
+    gc.setFill(Color.WHITE)
+    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.NORMAL, 20))
+    val reloadText = "Press Enter to reload"
+    val reloadTextWidth = 160 // Approximate width
+    gc.fillText(reloadText, (getWidth - reloadTextWidth) / 2, getHeight / 2 + 40)
   }
 
   private def drawCoordinates(viewportX: Int, viewportY: Int, world: WorldData): Unit = {

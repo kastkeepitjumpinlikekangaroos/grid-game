@@ -8,7 +8,7 @@ import com.gridgame.common.protocol._
 import java.net.InetAddress
 import java.util.UUID
 
-class ClientHandler(registry: ClientRegistry, server: GameServer) {
+class ClientHandler(registry: ClientRegistry, server: GameServer, projectileManager: ProjectileManager) {
 
   def processPacket(packet: Packet, address: InetAddress, port: Int): Boolean = {
     val playerId = packet.getPlayerId
@@ -26,10 +26,42 @@ class ClientHandler(registry: ClientRegistry, server: GameServer) {
       case PacketType.HEARTBEAT =>
         handleHeartbeat(playerId, address, port)
 
+      case PacketType.PROJECTILE_UPDATE =>
+        handleProjectileUpdate(packet.asInstanceOf[ProjectilePacket], address, port)
+
       case _ =>
         System.err.println(s"Unknown packet type: ${packet.getType}")
         false
     }
+  }
+
+  private def handleProjectileUpdate(packet: ProjectilePacket, address: InetAddress, port: Int): Boolean = {
+    // Only handle spawn requests from clients
+    if (packet.getAction != ProjectileAction.SPAWN) {
+      return false // Ignore non-spawn packets from clients
+    }
+
+    val playerId = packet.getPlayerId
+    val player = registry.get(playerId)
+
+    if (player == null) {
+      System.err.println(s"Received projectile spawn from unknown player: $playerId")
+      return false
+    }
+
+    // Spawn projectile at player's position in their facing direction
+    val projectile = projectileManager.spawnProjectile(
+      playerId,
+      packet.getX,
+      packet.getY,
+      packet.getDirection,
+      packet.getColorRGB
+    )
+
+    // Broadcast spawn to all clients
+    server.broadcastProjectileSpawn(projectile)
+
+    false // Don't auto-broadcast; we handled it
   }
 
   private def handlePlayerJoin(packet: PlayerJoinPacket, address: InetAddress, port: Int): Boolean = {
@@ -45,11 +77,12 @@ class ClientHandler(registry: ClientRegistry, server: GameServer) {
     }
 
     if (registry.contains(playerId)) {
-      println(s"Player already joined: $playerId")
+      println(s"Player rejoining: $playerId")
       val existing = registry.get(playerId)
       existing.setPosition(packet.getPosition)
       existing.setColorRGB(packet.getColorRGB)
       existing.setName(packet.getPlayerName)
+      existing.setHealth(Constants.MAX_HEALTH)
       existing.setAddress(address)
       existing.setPort(port)
       existing.updateHeartbeat()

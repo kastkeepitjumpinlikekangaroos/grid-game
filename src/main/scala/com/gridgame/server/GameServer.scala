@@ -1,13 +1,12 @@
 package com.gridgame.server
 
 import com.gridgame.common.Constants
+import com.gridgame.common.model.Direction
 import com.gridgame.common.model.Player
-import com.gridgame.common.protocol.Packet
-import com.gridgame.common.protocol.PacketSerializer
-import com.gridgame.common.protocol.PacketType
-import com.gridgame.common.protocol.PlayerLeavePacket
-import com.gridgame.common.protocol.PlayerUpdatePacket
-import com.gridgame.common.protocol.WorldInfoPacket
+import com.gridgame.common.model.Projectile
+import com.gridgame.common.model.WorldData
+import com.gridgame.common.protocol._
+import com.gridgame.common.world.WorldLoader
 
 import java.io.IOException
 import java.net.DatagramPacket
@@ -25,11 +24,14 @@ import scala.jdk.CollectionConverters._
 class GameServer(port: Int, val worldFile: String = "") {
   private var socket: DatagramSocket = _
   private val registry = new ClientRegistry()
-  private val handler = new ClientHandler(registry, this)
+  private val projectileManager = new ProjectileManager(registry)
+  private val handler = new ClientHandler(registry, this, projectileManager)
   private val broadcastExecutor: ExecutorService = Executors.newFixedThreadPool(4)
   private val cleanupExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
+  private val projectileExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
   private val sequenceNumber = new AtomicInteger(0)
   @volatile private var running = false
+  private var world: WorldData = _
 
   def start(): Unit = {
     socket = new DatagramSocket(port)
@@ -38,9 +40,31 @@ class GameServer(port: Int, val worldFile: String = "") {
     println(s"Game server started on port $port")
     println(s"World file configured: '${worldFile}' (empty=${worldFile.isEmpty})")
 
+    // Load world for collision detection
+    if (worldFile.nonEmpty) {
+      try {
+        world = WorldLoader.loadFromFile(worldFile)
+        println(s"Loaded world '${world.name}' (${world.width}x${world.height})")
+      } catch {
+        case e: Exception =>
+          println(s"Warning: Could not load world file: ${e.getMessage}")
+          world = WorldData.createEmpty(200, 200)
+      }
+    } else {
+      world = WorldData.createEmpty(200, 200)
+    }
+
     cleanupExecutor.scheduleAtFixedRate(
       new Runnable { def run(): Unit = cleanup() },
       5, 5, TimeUnit.SECONDS
+    )
+
+    // Schedule projectile tick
+    projectileExecutor.scheduleAtFixedRate(
+      new Runnable { def run(): Unit = tickProjectiles() },
+      Constants.PROJECTILE_SPEED_MS.toLong,
+      Constants.PROJECTILE_SPEED_MS.toLong,
+      TimeUnit.MILLISECONDS
     )
 
     receiveLoop()
@@ -74,7 +98,7 @@ class GameServer(port: Int, val worldFile: String = "") {
       val shouldBroadcast = handler.processPacket(packet, address, port)
 
       if (shouldBroadcast) {
-        // For PLAYER_UPDATE, inject the server's authoritative health
+        // Inject the server's authoritative health for player packets
         val packetToBroadcast = packet.getType match {
           case PacketType.PLAYER_UPDATE =>
             val updatePacket = packet.asInstanceOf[PlayerUpdatePacket]
@@ -86,6 +110,22 @@ class GameServer(port: Int, val worldFile: String = "") {
                 updatePacket.getTimestamp,
                 updatePacket.getPosition,
                 updatePacket.getColorRGB,
+                player.getHealth
+              )
+            } else {
+              packet
+            }
+          case PacketType.PLAYER_JOIN =>
+            val joinPacket = packet.asInstanceOf[PlayerJoinPacket]
+            val player = registry.get(joinPacket.getPlayerId)
+            if (player != null) {
+              new PlayerJoinPacket(
+                joinPacket.getSequenceNumber,
+                joinPacket.getPlayerId,
+                joinPacket.getTimestamp,
+                joinPacket.getPosition,
+                joinPacket.getColorRGB,
+                joinPacket.getPlayerName,
                 player.getHealth
               )
             } else {
@@ -132,6 +172,90 @@ class GameServer(port: Int, val worldFile: String = "") {
 
   def getNextSequenceNumber: Int = sequenceNumber.getAndIncrement()
 
+  private def tickProjectiles(): Unit = {
+    if (!running || world == null) return
+
+    val events = projectileManager.tick(world)
+    events.foreach {
+      case ProjectileMoved(projectile) =>
+        val packet = new ProjectilePacket(
+          sequenceNumber.getAndIncrement(),
+          projectile.ownerId,
+          projectile.getX, projectile.getY,
+          projectile.colorRGB,
+          projectile.id,
+          projectile.direction,
+          ProjectileAction.MOVE
+        )
+        broadcastToAll(packet)
+
+      case ProjectileHit(projectile, targetId) =>
+        // Send projectile hit packet
+        val hitPacket = new ProjectilePacket(
+          sequenceNumber.getAndIncrement(),
+          projectile.ownerId,
+          projectile.getX, projectile.getY,
+          projectile.colorRGB,
+          projectile.id,
+          projectile.direction,
+          ProjectileAction.HIT,
+          targetId
+        )
+        broadcastToAll(hitPacket)
+
+        // Send player update with new health
+        val target = registry.get(targetId)
+        if (target != null) {
+          val updatePacket = new PlayerUpdatePacket(
+            sequenceNumber.getAndIncrement(),
+            targetId,
+            target.getPosition,
+            target.getColorRGB,
+            target.getHealth
+          )
+          broadcastToAll(updatePacket)
+        }
+
+      case ProjectileDespawned(projectile) =>
+        val packet = new ProjectilePacket(
+          sequenceNumber.getAndIncrement(),
+          projectile.ownerId,
+          projectile.getX, projectile.getY,
+          projectile.colorRGB,
+          projectile.id,
+          projectile.direction,
+          ProjectileAction.DESPAWN
+        )
+        broadcastToAll(packet)
+    }
+  }
+
+  private def broadcastToAll(packet: Packet): Unit = {
+    val data = packet.serialize()
+    val players = registry.getAll
+
+    broadcastExecutor.submit(new Runnable {
+      def run(): Unit = {
+        players.asScala.foreach { player =>
+          sendTo(data, player.getAddress, player.getPort)
+        }
+      }
+    })
+  }
+
+  def broadcastProjectileSpawn(projectile: Projectile): Unit = {
+    val packet = new ProjectilePacket(
+      sequenceNumber.getAndIncrement(),
+      projectile.ownerId,
+      projectile.getX, projectile.getY,
+      projectile.colorRGB,
+      projectile.id,
+      projectile.direction,
+      ProjectileAction.SPAWN
+    )
+    broadcastToAll(packet)
+  }
+
   private def cleanup(): Unit = {
     val timedOut = registry.getTimedOutClients
 
@@ -157,6 +281,7 @@ class GameServer(port: Int, val worldFile: String = "") {
 
     broadcastExecutor.shutdown()
     cleanupExecutor.shutdown()
+    projectileExecutor.shutdown()
 
     try {
       if (!broadcastExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
@@ -165,10 +290,14 @@ class GameServer(port: Int, val worldFile: String = "") {
       if (!cleanupExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
         cleanupExecutor.shutdownNow()
       }
+      if (!projectileExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+        projectileExecutor.shutdownNow()
+      }
     } catch {
       case _: InterruptedException =>
         broadcastExecutor.shutdownNow()
         cleanupExecutor.shutdownNow()
+        projectileExecutor.shutdownNow()
         Thread.currentThread().interrupt()
     }
 

@@ -43,16 +43,6 @@
       "radius": 5
     },
     {
-      "type": "scatter",
-      "tile": "tree",
-      "density": 0.05,
-      "minX": 35,
-      "minY": 35,
-      "maxX": 115,
-      "maxY": 115,
-      "avoid": ["water", "deep_water", "sand", "tree"]
-    },
-    {
       "type": "line",
       "tile": "path",
       "x1": 75,

@@ -1,6 +1,7 @@
 package com.gridgame.common.protocol
 
 import com.gridgame.common.Constants
+import com.gridgame.common.model.Direction
 import com.gridgame.common.model.Position
 
 import java.nio.ByteBuffer
@@ -83,6 +84,25 @@ object PacketSerializer {
 
       case PacketType.HEARTBEAT =>
         new PlayerLeavePacket(sequenceNumber, playerId, timestamp)
+
+      case PacketType.PROJECTILE_UPDATE =>
+        // Payload: [0-3] projectile ID, [4] direction, [5] action, [6-21] target UUID
+        val payloadBuffer = ByteBuffer.wrap(payload).order(ByteOrder.BIG_ENDIAN)
+        val projectileId = payloadBuffer.getInt
+        val directionId = payloadBuffer.get()
+        val action = payloadBuffer.get()
+        val targetMostSig = payloadBuffer.getLong
+        val targetLeastSig = payloadBuffer.getLong
+        val targetId = if (targetMostSig != 0L || targetLeastSig != 0L) {
+          new UUID(targetMostSig, targetLeastSig)
+        } else {
+          null
+        }
+        val direction = Direction.fromId(directionId)
+        new ProjectilePacket(
+          sequenceNumber, playerId, timestamp, x, y, colorRGB,
+          projectileId, direction, action, targetId
+        )
     }
   }
 

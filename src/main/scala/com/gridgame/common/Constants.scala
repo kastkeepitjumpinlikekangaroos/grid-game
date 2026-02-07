@@ -21,4 +21,10 @@ object Constants {
   val HEALTH_BAR_WIDTH_PX: Int = 16
   val HEALTH_BAR_HEIGHT_PX: Int = 3
   val HEALTH_BAR_OFFSET_Y: Int = 4
+
+  // Projectile configuration
+  val PROJECTILE_SPEED_MS: Int = 50       // Move every 50ms (20 cells/second)
+  val SHOOT_COOLDOWN_MS: Int = 5        // 2 shots per second max
+  val PROJECTILE_DAMAGE: Int = 1          // Damage per hit
+  val PROJECTILE_SIZE_PX: Int = 6         // Render size in pixels
 }
