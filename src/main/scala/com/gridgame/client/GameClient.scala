@@ -11,8 +11,6 @@ import com.gridgame.common.model.Tile
 import com.gridgame.common.model.WorldData
 import com.gridgame.common.protocol._
 
-import java.net.InetAddress
-import java.net.UnknownHostException
 import java.util.UUID
 import java.util.concurrent.BlockingQueue
 import java.util.concurrent.ConcurrentHashMap
@@ -50,12 +48,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
 
   def connect(): Unit = {
     try {
-      val serverAddress = InetAddress.getByName(serverHost)
-      networkThread = new NetworkThread(this, serverAddress, serverPort)
+      networkThread = new NetworkThread(this, serverHost, serverPort)
       running = true
 
       networkThread.start()
-      networkThread.waitForReady() // Wait for socket to be created
+      networkThread.waitForReady() // Wait for TCP + UDP channels to be ready
 
       startPacketProcessor()
 
@@ -63,8 +60,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
 
       println(s"GameClient: Connected to $serverHost:$serverPort as player ${localPlayerId.toString.substring(0, 8)}")
     } catch {
-      case e: UnknownHostException =>
-        System.err.println(s"GameClient: Unknown host - ${e.getMessage}")
+      case e: Exception =>
+        System.err.println(s"GameClient: Connection error - ${e.getMessage}")
     }
   }
 
@@ -81,7 +78,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   }
 
   def sendHeartbeat(): Unit = {
-    sendPositionUpdate(localPosition.get())
+    val packet = new HeartbeatPacket(
+      sequenceNumber.getAndIncrement(),
+      localPlayerId
+    )
+    networkThread.send(packet)
   }
 
   def rejoin(): Unit = {

@@ -3,37 +3,72 @@ package com.gridgame.client
 import com.gridgame.common.Constants
 import com.gridgame.common.protocol.Packet
 import com.gridgame.common.protocol.PacketSerializer
+import io.netty.bootstrap.Bootstrap
+import io.netty.buffer.Unpooled
+import io.netty.channel._
+import io.netty.channel.nio.NioEventLoopGroup
+import io.netty.channel.socket.DatagramPacket
+import io.netty.channel.socket.SocketChannel
+import io.netty.channel.socket.nio.NioDatagramChannel
+import io.netty.channel.socket.nio.NioSocketChannel
+import io.netty.handler.codec.LengthFieldBasedFrameDecoder
+import io.netty.handler.codec.LengthFieldPrepender
 
-import java.io.IOException
-import java.net.DatagramPacket
-import java.net.DatagramSocket
-import java.net.InetAddress
-import java.net.SocketException
-import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
+import java.net.InetSocketAddress
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 
-class NetworkThread(client: GameClient, serverAddress: InetAddress, serverPort: Int) extends Thread("NetworkThread") {
-  private var socket: DatagramSocket = _
+class NetworkThread(client: GameClient, serverHost: String, serverPort: Int) extends Thread("NetworkThread") {
   private val heartbeatExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
-  private val socketReady = new CountDownLatch(1)
+  private val ready = new CountDownLatch(1)
   @volatile private var running = false
+
+  private var eventLoopGroup: NioEventLoopGroup = _
+  private var tcpChannel: Channel = _
+  private var udpChannel: Channel = _
+  private val serverAddress = new InetSocketAddress(serverHost, serverPort)
 
   setDaemon(true)
 
   def waitForReady(): Unit = {
-    socketReady.await()
+    ready.await()
   }
 
   override def run(): Unit = {
     try {
-      socket = new DatagramSocket()
+      eventLoopGroup = new NioEventLoopGroup()
       running = true
-      socketReady.countDown()
 
-      println(s"NetworkThread: Connected to server ${serverAddress.getHostAddress}:$serverPort")
+      // TCP connection
+      val tcpBootstrap = new Bootstrap()
+      tcpBootstrap.group(eventLoopGroup)
+        .channel(classOf[NioSocketChannel])
+        .handler(new ChannelInitializer[SocketChannel] {
+          override def initChannel(ch: SocketChannel): Unit = {
+            ch.pipeline()
+              .addLast(new LengthFieldBasedFrameDecoder(66, 0, 2, 0, 2))
+              .addLast(new LengthFieldPrepender(2))
+              .addLast(new ClientTcpHandler(client))
+          }
+        })
 
+      tcpChannel = tcpBootstrap.connect(serverAddress).sync().channel()
+      println(s"NetworkThread: TCP connected to $serverHost:$serverPort")
+
+      // UDP channel (connected mode to server)
+      val udpBootstrap = new Bootstrap()
+      udpBootstrap.group(eventLoopGroup)
+        .channel(classOf[NioDatagramChannel])
+        .handler(new ClientUdpHandler(client))
+
+      udpChannel = udpBootstrap.bind(0).sync().channel()
+      println(s"NetworkThread: UDP bound on local port")
+
+      ready.countDown()
+
+      // Start heartbeat scheduler
       heartbeatExecutor.scheduleAtFixedRate(
         new Runnable { def run(): Unit = sendHeartbeat() },
         Constants.HEARTBEAT_INTERVAL_MS,
@@ -41,49 +76,37 @@ class NetworkThread(client: GameClient, serverAddress: InetAddress, serverPort: 
         TimeUnit.MILLISECONDS
       )
 
-      receiveLoop()
+      // Block until TCP channel closes
+      tcpChannel.closeFuture().sync()
     } catch {
-      case e: SocketException =>
-        System.err.println(s"NetworkThread: Failed to create socket - ${e.getMessage}")
+      case e: Exception =>
+        System.err.println(s"NetworkThread: Connection error - ${e.getMessage}")
     } finally {
       shutdown()
     }
   }
 
-  private def receiveLoop(): Unit = {
-    val buffer = new Array[Byte](Constants.PACKET_SIZE)
-
-    while (running && !isInterrupted) {
-      try {
-        val dgram = new DatagramPacket(buffer, buffer.length)
-        socket.receive(dgram)
-
-        val packet = PacketSerializer.deserialize(dgram.getData)
-        client.enqueuePacket(packet)
-      } catch {
-        case e: IOException =>
-          if (running) {
-            System.err.println(s"NetworkThread: Error receiving packet - ${e.getMessage}")
-          }
-        case e: IllegalArgumentException =>
-          System.err.println(s"NetworkThread: Invalid packet received - ${e.getMessage}")
-      }
-    }
-  }
-
   def send(packet: Packet): Unit = {
-    if (socket == null || socket.isClosed) {
-      System.err.println("NetworkThread: Cannot send packet, socket is closed")
+    if (!running) {
+      System.err.println("NetworkThread: Cannot send packet, not running")
       return
     }
 
-    try {
-      val data = packet.serialize()
-      val dgram = new DatagramPacket(data, data.length, serverAddress, serverPort)
-      socket.send(dgram)
-    } catch {
-      case e: IOException =>
-        System.err.println(s"NetworkThread: Error sending packet - ${e.getMessage}")
+    val data = packet.serialize()
+
+    if (packet.getType.tcp) {
+      if (tcpChannel != null && tcpChannel.isActive) {
+        tcpChannel.writeAndFlush(Unpooled.wrappedBuffer(data))
+      } else {
+        System.err.println("NetworkThread: TCP channel not active, cannot send")
+      }
+    } else {
+      if (udpChannel != null && udpChannel.isActive) {
+        val dgram = new DatagramPacket(Unpooled.wrappedBuffer(data), serverAddress)
+        udpChannel.writeAndFlush(dgram)
+      } else {
+        System.err.println("NetworkThread: UDP channel not active, cannot send")
+      }
     }
   }
 
@@ -105,10 +128,63 @@ class NetworkThread(client: GameClient, serverAddress: InetAddress, serverPort: 
         Thread.currentThread().interrupt()
     }
 
-    if (socket != null && !socket.isClosed) {
-      socket.close()
-    }
+    if (tcpChannel != null && tcpChannel.isOpen) tcpChannel.close()
+    if (udpChannel != null && udpChannel.isOpen) udpChannel.close()
+    if (eventLoopGroup != null) eventLoopGroup.shutdownGracefully()
 
     println("NetworkThread: Shutdown complete")
+  }
+}
+
+/** Handles TCP packets from the server. */
+class ClientTcpHandler(client: GameClient) extends SimpleChannelInboundHandler[io.netty.buffer.ByteBuf] {
+
+  override def channelRead0(ctx: ChannelHandlerContext, msg: io.netty.buffer.ByteBuf): Unit = {
+    if (msg.readableBytes() < Constants.PACKET_SIZE) return
+
+    val data = new Array[Byte](Constants.PACKET_SIZE)
+    msg.readBytes(data)
+
+    try {
+      val packet = PacketSerializer.deserialize(data)
+      client.enqueuePacket(packet)
+    } catch {
+      case e: IllegalArgumentException =>
+        System.err.println(s"ClientTcpHandler: Invalid packet - ${e.getMessage}")
+    }
+  }
+
+  override def channelInactive(ctx: ChannelHandlerContext): Unit = {
+    println("ClientTcpHandler: Server connection lost")
+    super.channelInactive(ctx)
+  }
+
+  override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
+    System.err.println(s"ClientTcpHandler: Error - ${cause.getMessage}")
+    ctx.close()
+  }
+}
+
+/** Handles UDP packets from the server. */
+class ClientUdpHandler(client: GameClient) extends SimpleChannelInboundHandler[DatagramPacket] {
+
+  override def channelRead0(ctx: ChannelHandlerContext, msg: DatagramPacket): Unit = {
+    val buf = msg.content()
+    if (buf.readableBytes() < Constants.PACKET_SIZE) return
+
+    val data = new Array[Byte](Constants.PACKET_SIZE)
+    buf.readBytes(data)
+
+    try {
+      val packet = PacketSerializer.deserialize(data)
+      client.enqueuePacket(packet)
+    } catch {
+      case e: IllegalArgumentException =>
+        System.err.println(s"ClientUdpHandler: Invalid packet - ${e.getMessage}")
+    }
+  }
+
+  override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
+    System.err.println(s"ClientUdpHandler: Error - ${cause.getMessage}")
   }
 }

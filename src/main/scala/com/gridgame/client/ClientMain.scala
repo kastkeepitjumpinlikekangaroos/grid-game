@@ -35,14 +35,11 @@ class ClientMain extends Application {
     client = new GameClient(serverHost, serverPort, initialWorld)
 
     // Set up listener for world file changes from server
+    // Runs synchronously on the packet processor thread so that subsequent
+    // TILE_UPDATE packets are applied after the world is loaded from file
     client.setWorldFileListener(worldFileName => {
       println(s"ClientMain: World file listener triggered with: '$worldFileName'")
-      Platform.runLater(new Runnable {
-        def run(): Unit = {
-          println(s"ClientMain: Platform.runLater executing for world: '$worldFileName'")
-          handleWorldFileFromServer(worldFileName)
-        }
-      })
+      handleWorldFileFromServer(worldFileName)
     })
 
     canvas = new GameCanvas(client)

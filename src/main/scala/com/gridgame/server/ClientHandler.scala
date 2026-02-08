@@ -7,31 +7,39 @@ import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
 import com.gridgame.common.model.Tile
 import com.gridgame.common.protocol._
+import io.netty.channel.Channel
 
 import java.io.File
-import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.util.UUID
 
 class ClientHandler(registry: ClientRegistry, server: GameServer, projectileManager: ProjectileManager, itemManager: ItemManager) {
 
-  def processPacket(packet: Packet, address: InetAddress, port: Int): Boolean = {
+  /**
+   * Process a packet received from a client.
+   * @param packet the decoded packet
+   * @param tcpChannel non-null if this packet arrived over TCP
+   * @param udpSender non-null if this packet arrived over UDP (the sender's UDP address)
+   * @return true if the packet should be broadcast to other players
+   */
+  def processPacket(packet: Packet, tcpChannel: Channel, udpSender: InetSocketAddress): Boolean = {
     val playerId = packet.getPlayerId
 
     packet.getType match {
       case PacketType.PLAYER_JOIN =>
-        handlePlayerJoin(packet.asInstanceOf[PlayerJoinPacket], address, port)
+        handlePlayerJoin(packet.asInstanceOf[PlayerJoinPacket], tcpChannel)
 
       case PacketType.PLAYER_UPDATE =>
-        handlePlayerUpdate(packet.asInstanceOf[PlayerUpdatePacket], address, port)
+        handlePlayerUpdate(packet.asInstanceOf[PlayerUpdatePacket], udpSender)
 
       case PacketType.PLAYER_LEAVE =>
         handlePlayerLeave(packet.asInstanceOf[PlayerLeavePacket])
 
       case PacketType.HEARTBEAT =>
-        handleHeartbeat(playerId, address, port)
+        handleHeartbeat(playerId, udpSender)
 
       case PacketType.PROJECTILE_UPDATE =>
-        handleProjectileUpdate(packet.asInstanceOf[ProjectilePacket], address, port)
+        handleProjectileUpdate(packet.asInstanceOf[ProjectilePacket])
 
       case PacketType.ITEM_UPDATE =>
         handleItemUpdate(packet.asInstanceOf[ItemPacket])
@@ -42,7 +50,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     }
   }
 
-  private def handleProjectileUpdate(packet: ProjectilePacket, address: InetAddress, port: Int): Boolean = {
+  private def handleProjectileUpdate(packet: ProjectilePacket): Boolean = {
     // Only handle spawn requests from clients
     if (packet.getAction != ProjectileAction.SPAWN) {
       return false // Ignore non-spawn packets from clients
@@ -72,15 +80,15 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     false // Don't auto-broadcast; we handled it
   }
 
-  private def handlePlayerJoin(packet: PlayerJoinPacket, address: InetAddress, port: Int): Boolean = {
+  private def handlePlayerJoin(packet: PlayerJoinPacket, tcpChannel: Channel): Boolean = {
     val playerId = packet.getPlayerId
 
-    // Send world info to the joining player (send just the filename, not the full path)
+    // Send world info to the joining player via TCP
     if (server.worldFile.nonEmpty) {
       val worldFileName = new File(server.worldFile).getName
       val worldInfoPacket = new WorldInfoPacket(server.getNextSequenceNumber, worldFileName)
       println(s"Sending world info to client: $worldFileName")
-      server.sendPacketTo(worldInfoPacket, address, port)
+      server.sendPacketViaChannel(worldInfoPacket, tcpChannel)
     } else {
       println("No world file configured on server")
     }
@@ -92,41 +100,44 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       existing.setColorRGB(packet.getColorRGB)
       existing.setName(packet.getPlayerName)
       existing.setHealth(Constants.MAX_HEALTH)
-      existing.setAddress(address)
-      existing.setPort(port)
+      existing.setTcpChannel(tcpChannel)
       existing.updateHeartbeat()
 
-      // Send existing items to rejoining player
-      sendExistingItems(address, port)
-      sendInventoryContents(playerId, address, port)
+      // Send existing players, items, and tile modifications to rejoining player
+      sendExistingPlayers(playerId, existing)
+      sendExistingItems(existing)
+      sendInventoryContents(playerId, existing)
+      server.sendModifiedTiles(existing)
 
       true
     } else {
       val player = new Player(playerId, packet.getPlayerName, packet.getPosition, packet.getColorRGB, Constants.MAX_HEALTH)
-      player.setAddress(address)
-      player.setPort(port)
+      player.setTcpChannel(tcpChannel)
 
       registry.add(player)
 
-      println(s"Player joined: ${playerId.toString.substring(0, 8)} ('${packet.getPlayerName}') at ${packet.getPosition} from ${address.getHostAddress}:$port with health ${player.getHealth}")
+      println(s"Player joined: ${playerId.toString.substring(0, 8)} ('${packet.getPlayerName}') at ${packet.getPosition} with health ${player.getHealth}")
 
-      // Send existing items to new player
-      sendExistingItems(address, port)
-      sendInventoryContents(playerId, address, port)
+      // Send existing players, items, and tile modifications to new player
+      sendExistingPlayers(playerId, player)
+      sendExistingItems(player)
+      sendInventoryContents(playerId, player)
+      server.sendModifiedTiles(player)
 
       true
     }
   }
 
-  private def handlePlayerUpdate(packet: PlayerUpdatePacket, address: InetAddress, port: Int): Boolean = {
+  private def handlePlayerUpdate(packet: PlayerUpdatePacket, udpSender: InetSocketAddress): Boolean = {
     val playerId = packet.getPlayerId
     var player = registry.get(playerId)
 
     if (player == null) {
       System.err.println(s"Received update for unknown player: $playerId")
       player = new Player(playerId, "Player", packet.getPosition, packet.getColorRGB)
-      player.setAddress(address)
-      player.setPort(port)
+      if (udpSender != null) {
+        player.setUdpAddress(udpSender)
+      }
       registry.add(player)
     } else {
       val oldPos = player.getPosition
@@ -138,8 +149,9 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       }
       player.setPosition(newPos)
       player.setColorRGB(packet.getColorRGB)
-      player.setAddress(address)
-      player.setPort(port)
+      if (udpSender != null) {
+        player.setUdpAddress(udpSender)
+      }
     }
 
     // Check for item pickup
@@ -164,13 +176,14 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     true
   }
 
-  private def handleHeartbeat(playerId: UUID, address: InetAddress, port: Int): Boolean = {
+  private def handleHeartbeat(playerId: UUID, udpSender: InetSocketAddress): Boolean = {
     val player = registry.get(playerId)
 
     if (player != null) {
       player.updateHeartbeat()
-      player.setAddress(address)
-      player.setPort(port)
+      if (udpSender != null) {
+        player.setUdpAddress(udpSender)
+      }
     } else {
       System.err.println(s"Received heartbeat from unknown player: $playerId")
     }
@@ -249,7 +262,24 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     println(s"ClientHandler: Player ${player.getId.toString.substring(0, 8)} placed fence at ($frontX, $frontY) facing ${player.getDirection}")
   }
 
-  private def sendExistingItems(address: InetAddress, port: Int): Unit = {
+  private def sendExistingPlayers(joiningPlayerId: UUID, joiningPlayer: Player): Unit = {
+    import scala.jdk.CollectionConverters._
+    registry.getAll.asScala.foreach { existing =>
+      if (!existing.getId.equals(joiningPlayerId)) {
+        val packet = new PlayerJoinPacket(
+          server.getNextSequenceNumber,
+          existing.getId,
+          existing.getPosition,
+          existing.getColorRGB,
+          existing.getName,
+          existing.getHealth
+        )
+        server.sendPacketToPlayer(packet, joiningPlayer)
+      }
+    }
+  }
+
+  private def sendExistingItems(player: Player): Unit = {
     val zeroUUID = new UUID(0L, 0L)
     itemManager.getAll.foreach { item =>
       val packet = new ItemPacket(
@@ -260,11 +290,11 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
         item.id,
         ItemAction.SPAWN
       )
-      server.sendPacketTo(packet, address, port)
+      server.sendPacketToPlayer(packet, player)
     }
   }
 
-  private def sendInventoryContents(playerId: UUID, address: InetAddress, port: Int): Unit = {
+  private def sendInventoryContents(playerId: UUID, player: Player): Unit = {
     itemManager.getInventory(playerId).foreach { item =>
       val packet = new ItemPacket(
         server.getNextSequenceNumber,
@@ -274,7 +304,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
         item.id,
         ItemAction.INVENTORY
       )
-      server.sendPacketTo(packet, address, port)
+      server.sendPacketToPlayer(packet, player)
     }
   }
 
@@ -287,6 +317,20 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       new PlayerLeavePacket(sequenceNumber, playerId)
     } else {
       null
+    }
+  }
+
+  def handleDisconnect(channel: Channel): Unit = {
+    val player = registry.getByChannel(channel)
+    if (player != null) {
+      val playerId = player.getId
+      registry.remove(playerId)
+      itemManager.clearInventory(playerId)
+      println(s"Player disconnected (TCP): ${playerId.toString.substring(0, 8)} ('${player.getName}')")
+
+      // Broadcast leave to remaining players
+      val leavePacket = new PlayerLeavePacket(server.getNextSequenceNumber, playerId)
+      server.broadcastToAllPlayers(leavePacket)
     }
   }
 }

@@ -7,39 +7,50 @@ import com.gridgame.common.model.Projectile
 import com.gridgame.common.model.WorldData
 import com.gridgame.common.protocol._
 import com.gridgame.common.world.WorldLoader
+import io.netty.bootstrap.Bootstrap
+import io.netty.bootstrap.ServerBootstrap
+import io.netty.buffer.Unpooled
+import io.netty.channel._
+import io.netty.channel.nio.NioEventLoopGroup
+import io.netty.channel.socket.DatagramPacket
+import io.netty.channel.socket.SocketChannel
+import io.netty.channel.socket.nio.NioDatagramChannel
+import io.netty.channel.socket.nio.NioServerSocketChannel
+import io.netty.handler.codec.LengthFieldBasedFrameDecoder
+import io.netty.handler.codec.LengthFieldPrepender
 
-import java.io.IOException
-import java.net.DatagramPacket
-import java.net.DatagramSocket
-import java.net.InetAddress
-import java.net.SocketException
+import java.net.InetSocketAddress
 import java.util.UUID
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import scala.jdk.CollectionConverters._
 
 class GameServer(port: Int, val worldFile: String = "") {
-  private var socket: DatagramSocket = _
   private val registry = new ClientRegistry()
   private val projectileManager = new ProjectileManager(registry)
   private val itemManager = new ItemManager()
   private val handler = new ClientHandler(registry, this, projectileManager, itemManager)
-  private val broadcastExecutor: ExecutorService = Executors.newFixedThreadPool(4)
   private val cleanupExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
   private val projectileExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
   private val itemSpawnExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
   private val sequenceNumber = new AtomicInteger(0)
   @volatile private var running = false
   private var world: WorldData = _
+  // Track tile modifications so reconnecting players get the current state
+  private val modifiedTiles = new java.util.concurrent.ConcurrentHashMap[(Int, Int), Int]()
+
+  // Netty components
+  private var bossGroup: NioEventLoopGroup = _
+  private var workerGroup: NioEventLoopGroup = _
+  private var tcpServerChannel: Channel = _
+  private var udpChannel: Channel = _
 
   def start(): Unit = {
-    socket = new DatagramSocket(port)
     running = true
 
-    println(s"Game server started on port $port")
+    println(s"Game server starting on port $port")
     println(s"World file configured: '${worldFile}' (empty=${worldFile.isEmpty})")
 
     // Load world for collision detection
@@ -56,6 +67,40 @@ class GameServer(port: Int, val worldFile: String = "") {
       world = WorldData.createEmpty(200, 200)
     }
 
+    // Start Netty
+    bossGroup = new NioEventLoopGroup(1)
+    workerGroup = new NioEventLoopGroup()
+
+    val server = this
+
+    // TCP Server
+    val tcpBootstrap = new ServerBootstrap()
+    tcpBootstrap.group(bossGroup, workerGroup)
+      .channel(classOf[NioServerSocketChannel])
+      .childHandler(new ChannelInitializer[SocketChannel] {
+        override def initChannel(ch: SocketChannel): Unit = {
+          ch.pipeline()
+            .addLast(new LengthFieldBasedFrameDecoder(66, 0, 2, 0, 2))
+            .addLast(new LengthFieldPrepender(2))
+            .addLast(new GameServerTcpHandler(server, handler))
+        }
+      })
+      .option[java.lang.Integer](ChannelOption.SO_BACKLOG, 128)
+      .childOption[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
+
+    tcpServerChannel = tcpBootstrap.bind(port).sync().channel()
+    println(s"TCP server listening on port $port")
+
+    // UDP Server
+    val udpBootstrap = new Bootstrap()
+    udpBootstrap.group(workerGroup)
+      .channel(classOf[NioDatagramChannel])
+      .handler(new GameServerUdpHandler(server))
+
+    udpChannel = udpBootstrap.bind(port).sync().channel()
+    println(s"UDP server listening on port $port")
+
+    // Schedule cleanup
     cleanupExecutor.scheduleAtFixedRate(
       new Runnable { def run(): Unit = cleanup() },
       5, 5, TimeUnit.SECONDS
@@ -85,35 +130,218 @@ class GameServer(port: Int, val worldFile: String = "") {
       TimeUnit.MILLISECONDS
     )
 
-    receiveLoop()
+    println(s"Game server started on port $port")
+
+    // Block until TCP server channel closes
+    tcpServerChannel.closeFuture().sync()
   }
 
-  private def receiveLoop(): Unit = {
-    val buffer = new Array[Byte](Constants.PACKET_SIZE)
-
-    while (running) {
-      try {
-        val dgram = new DatagramPacket(buffer, buffer.length)
-        socket.receive(dgram)
-        handlePacket(dgram)
-      } catch {
-        case e: IOException =>
-          if (running) {
-            System.err.println(s"Error receiving packet: ${e.getMessage}")
-          }
+  /** Send a packet to a specific player, using the correct transport based on packet type. */
+  def sendPacketToPlayer(packet: Packet, player: Player): Unit = {
+    if (packet.getType.tcp) {
+      val raw = player.getTcpChannel
+      if (raw != null) {
+        val ch = raw.asInstanceOf[Channel]
+        if (ch.isActive) {
+          val data = packet.serialize()
+          ch.writeAndFlush(Unpooled.wrappedBuffer(data))
+        }
+      }
+    } else {
+      val addr = player.getUdpAddress
+      if (addr != null && udpChannel != null) {
+        val data = packet.serialize()
+        val dgram = new DatagramPacket(Unpooled.wrappedBuffer(data), addr)
+        udpChannel.writeAndFlush(dgram)
       }
     }
   }
 
-  private def handlePacket(dgram: DatagramPacket): Unit = {
+  /** Send a packet directly over a specific TCP channel (used for initial join responses). */
+  def sendPacketViaChannel(packet: Packet, channel: Channel): Unit = {
+    if (channel != null && channel.isActive) {
+      val data = packet.serialize()
+      channel.writeAndFlush(Unpooled.wrappedBuffer(data))
+    }
+  }
+
+  /** Broadcast a packet to all players except the one with excludePlayerId. */
+  private def broadcast(packet: Packet, excludePlayerId: UUID): Unit = {
+    val data = packet.serialize()
+    val players = registry.getAll
+
+    players.asScala.foreach { player =>
+      if (!player.getId.equals(excludePlayerId)) {
+        sendRawToPlayer(data, packet.getType.tcp, player)
+      }
+    }
+  }
+
+  /** Broadcast a packet to all players (no exclusion). */
+  def broadcastToAllPlayers(packet: Packet): Unit = {
+    val data = packet.serialize()
+    val players = registry.getAll
+
+    players.asScala.foreach { player =>
+      sendRawToPlayer(data, packet.getType.tcp, player)
+    }
+  }
+
+  private def sendRawToPlayer(data: Array[Byte], isTcp: Boolean, player: Player): Unit = {
+    if (isTcp) {
+      val raw = player.getTcpChannel
+      if (raw != null) {
+        val ch = raw.asInstanceOf[Channel]
+        if (ch.isActive) {
+          ch.writeAndFlush(Unpooled.wrappedBuffer(data.clone()))
+        }
+      }
+    } else {
+      val addr = player.getUdpAddress
+      if (addr != null && udpChannel != null) {
+        val dgram = new DatagramPacket(Unpooled.wrappedBuffer(data.clone()), addr)
+        udpChannel.writeAndFlush(dgram)
+      }
+    }
+  }
+
+  def getNextSequenceNumber: Int = sequenceNumber.getAndIncrement()
+
+  private def tickProjectiles(): Unit = {
+    if (!running || world == null) return
+
+    val events = projectileManager.tick(world)
+    events.foreach {
+      case ProjectileMoved(projectile) =>
+        val packet = new ProjectilePacket(
+          sequenceNumber.getAndIncrement(),
+          projectile.ownerId,
+          projectile.getX, projectile.getY,
+          projectile.colorRGB,
+          projectile.id,
+          projectile.dx, projectile.dy,
+          ProjectileAction.MOVE
+        )
+        broadcastToAllPlayers(packet)
+
+      case ProjectileHit(projectile, targetId) =>
+        val hitPacket = new ProjectilePacket(
+          sequenceNumber.getAndIncrement(),
+          projectile.ownerId,
+          projectile.getX, projectile.getY,
+          projectile.colorRGB,
+          projectile.id,
+          projectile.dx, projectile.dy,
+          ProjectileAction.HIT,
+          targetId
+        )
+        broadcastToAllPlayers(hitPacket)
+
+        val target = registry.get(targetId)
+        if (target != null) {
+          val updatePacket = new PlayerUpdatePacket(
+            sequenceNumber.getAndIncrement(),
+            targetId,
+            target.getPosition,
+            target.getColorRGB,
+            target.getHealth
+          )
+          broadcastToAllPlayers(updatePacket)
+        }
+
+      case ProjectileDespawned(projectile) =>
+        val packet = new ProjectilePacket(
+          sequenceNumber.getAndIncrement(),
+          projectile.ownerId,
+          projectile.getX, projectile.getY,
+          projectile.colorRGB,
+          projectile.id,
+          projectile.dx, projectile.dy,
+          ProjectileAction.DESPAWN
+        )
+        broadcastToAllPlayers(packet)
+    }
+  }
+
+  def broadcastPlayerUpdate(packet: PlayerUpdatePacket): Unit = {
+    broadcastToAllPlayers(packet)
+  }
+
+  def getWorld: WorldData = world
+
+  def broadcastTileUpdate(playerId: UUID, x: Int, y: Int, tileId: Int): Unit = {
+    modifiedTiles.put((x, y), tileId)
+    val packet = new TileUpdatePacket(
+      sequenceNumber.getAndIncrement(),
+      playerId,
+      x, y,
+      tileId
+    )
+    broadcastToAllPlayers(packet)
+  }
+
+  def sendModifiedTiles(player: Player): Unit = {
+    val zeroUUID = new UUID(0L, 0L)
+    modifiedTiles.forEach { (pos, tileId) =>
+      val packet = new TileUpdatePacket(
+        sequenceNumber.getAndIncrement(),
+        zeroUUID,
+        pos._1, pos._2,
+        tileId
+      )
+      sendPacketToPlayer(packet, player)
+    }
+  }
+
+  def broadcastProjectileSpawn(projectile: Projectile): Unit = {
+    val packet = new ProjectilePacket(
+      sequenceNumber.getAndIncrement(),
+      projectile.ownerId,
+      projectile.getX, projectile.getY,
+      projectile.colorRGB,
+      projectile.id,
+      projectile.dx, projectile.dy,
+      ProjectileAction.SPAWN
+    )
+    broadcastToAllPlayers(packet)
+  }
+
+  private def spawnItem(): Unit = {
+    if (!running || world == null) return
+    itemManager.spawnRandomItem(world).foreach { event =>
+      broadcastItemSpawn(event.item)
+    }
+  }
+
+  def broadcastItemSpawn(item: Item): Unit = {
+    val zeroUUID = new UUID(0L, 0L)
+    val packet = new ItemPacket(
+      sequenceNumber.getAndIncrement(),
+      zeroUUID,
+      item.x, item.y,
+      item.itemType.id,
+      item.id,
+      ItemAction.SPAWN
+    )
+    broadcastToAllPlayers(packet)
+  }
+
+  def broadcastItemPickup(item: Item, playerId: UUID): Unit = {
+    val packet = new ItemPacket(
+      sequenceNumber.getAndIncrement(),
+      playerId,
+      item.x, item.y,
+      item.itemType.id,
+      item.id,
+      ItemAction.PICKUP
+    )
+    broadcastToAllPlayers(packet)
+  }
+
+  /** Handle an incoming packet from a TCP or UDP handler. */
+  def handleIncomingPacket(packet: Packet, tcpCh: Channel, udpSender: InetSocketAddress): Unit = {
     try {
-      val data = dgram.getData
-      val packet = PacketSerializer.deserialize(data)
-
-      val address = dgram.getAddress
-      val port = dgram.getPort
-
-      val shouldBroadcast = handler.processPacket(packet, address, port)
+      val shouldBroadcast = handler.processPacket(packet, tcpCh, udpSender)
 
       if (shouldBroadcast) {
         // Inject the server's authoritative health for player packets
@@ -159,169 +387,6 @@ class GameServer(port: Int, val worldFile: String = "") {
     }
   }
 
-  private def broadcast(packet: Packet, excludePlayerId: UUID): Unit = {
-    val data = packet.serialize()
-    val players = registry.getAll
-
-    broadcastExecutor.submit(new Runnable {
-      def run(): Unit = {
-        players.asScala.foreach { player =>
-          if (!player.getId.equals(excludePlayerId)) {
-            sendTo(data, player.getAddress, player.getPort)
-          }
-        }
-      }
-    })
-  }
-
-  private def sendTo(data: Array[Byte], address: InetAddress, port: Int): Unit = {
-    try {
-      val dgram = new DatagramPacket(data, data.length, address, port)
-      socket.send(dgram)
-    } catch {
-      case e: IOException =>
-        System.err.println(s"Error sending to ${address.getHostAddress}:$port - ${e.getMessage}")
-    }
-  }
-
-  def sendPacketTo(packet: Packet, address: InetAddress, port: Int): Unit = {
-    sendTo(packet.serialize(), address, port)
-  }
-
-  def getNextSequenceNumber: Int = sequenceNumber.getAndIncrement()
-
-  private def tickProjectiles(): Unit = {
-    if (!running || world == null) return
-
-    val events = projectileManager.tick(world)
-    events.foreach {
-      case ProjectileMoved(projectile) =>
-        val packet = new ProjectilePacket(
-          sequenceNumber.getAndIncrement(),
-          projectile.ownerId,
-          projectile.getX, projectile.getY,
-          projectile.colorRGB,
-          projectile.id,
-          projectile.dx, projectile.dy,
-          ProjectileAction.MOVE
-        )
-        broadcastToAll(packet)
-
-      case ProjectileHit(projectile, targetId) =>
-        // Send projectile hit packet
-        val hitPacket = new ProjectilePacket(
-          sequenceNumber.getAndIncrement(),
-          projectile.ownerId,
-          projectile.getX, projectile.getY,
-          projectile.colorRGB,
-          projectile.id,
-          projectile.dx, projectile.dy,
-          ProjectileAction.HIT,
-          targetId
-        )
-        broadcastToAll(hitPacket)
-
-        // Send player update with new health
-        val target = registry.get(targetId)
-        if (target != null) {
-          val updatePacket = new PlayerUpdatePacket(
-            sequenceNumber.getAndIncrement(),
-            targetId,
-            target.getPosition,
-            target.getColorRGB,
-            target.getHealth
-          )
-          broadcastToAll(updatePacket)
-        }
-
-      case ProjectileDespawned(projectile) =>
-        val packet = new ProjectilePacket(
-          sequenceNumber.getAndIncrement(),
-          projectile.ownerId,
-          projectile.getX, projectile.getY,
-          projectile.colorRGB,
-          projectile.id,
-          projectile.dx, projectile.dy,
-          ProjectileAction.DESPAWN
-        )
-        broadcastToAll(packet)
-    }
-  }
-
-  private def broadcastToAll(packet: Packet): Unit = {
-    val data = packet.serialize()
-    val players = registry.getAll
-
-    broadcastExecutor.submit(new Runnable {
-      def run(): Unit = {
-        players.asScala.foreach { player =>
-          sendTo(data, player.getAddress, player.getPort)
-        }
-      }
-    })
-  }
-
-  def broadcastPlayerUpdate(packet: PlayerUpdatePacket): Unit = {
-    broadcastToAll(packet)
-  }
-
-  def getWorld: WorldData = world
-
-  def broadcastTileUpdate(playerId: UUID, x: Int, y: Int, tileId: Int): Unit = {
-    val packet = new TileUpdatePacket(
-      sequenceNumber.getAndIncrement(),
-      playerId,
-      x, y,
-      tileId
-    )
-    broadcastToAll(packet)
-  }
-
-  def broadcastProjectileSpawn(projectile: Projectile): Unit = {
-    val packet = new ProjectilePacket(
-      sequenceNumber.getAndIncrement(),
-      projectile.ownerId,
-      projectile.getX, projectile.getY,
-      projectile.colorRGB,
-      projectile.id,
-      projectile.dx, projectile.dy,
-      ProjectileAction.SPAWN
-    )
-    broadcastToAll(packet)
-  }
-
-  private def spawnItem(): Unit = {
-    if (!running || world == null) return
-    itemManager.spawnRandomItem(world).foreach { event =>
-      broadcastItemSpawn(event.item)
-    }
-  }
-
-  def broadcastItemSpawn(item: Item): Unit = {
-    val zeroUUID = new UUID(0L, 0L)
-    val packet = new ItemPacket(
-      sequenceNumber.getAndIncrement(),
-      zeroUUID,
-      item.x, item.y,
-      item.itemType.id,
-      item.id,
-      ItemAction.SPAWN
-    )
-    broadcastToAll(packet)
-  }
-
-  def broadcastItemPickup(item: Item, playerId: UUID): Unit = {
-    val packet = new ItemPacket(
-      sequenceNumber.getAndIncrement(),
-      playerId,
-      item.x, item.y,
-      item.itemType.id,
-      item.id,
-      ItemAction.PICKUP
-    )
-    broadcastToAll(packet)
-  }
-
   private def cleanup(): Unit = {
     val timedOut = registry.getTimedOutClients
 
@@ -341,19 +406,11 @@ class GameServer(port: Int, val worldFile: String = "") {
     println("Stopping server...")
     running = false
 
-    if (socket != null && !socket.isClosed) {
-      socket.close()
-    }
-
-    broadcastExecutor.shutdown()
     cleanupExecutor.shutdown()
     projectileExecutor.shutdown()
     itemSpawnExecutor.shutdown()
 
     try {
-      if (!broadcastExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-        broadcastExecutor.shutdownNow()
-      }
       if (!cleanupExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
         cleanupExecutor.shutdownNow()
       }
@@ -365,15 +422,72 @@ class GameServer(port: Int, val worldFile: String = "") {
       }
     } catch {
       case _: InterruptedException =>
-        broadcastExecutor.shutdownNow()
         cleanupExecutor.shutdownNow()
         projectileExecutor.shutdownNow()
         itemSpawnExecutor.shutdownNow()
         Thread.currentThread().interrupt()
     }
 
+    if (tcpServerChannel != null) tcpServerChannel.close().sync()
+    if (udpChannel != null) udpChannel.close().sync()
+    if (bossGroup != null) bossGroup.shutdownGracefully()
+    if (workerGroup != null) workerGroup.shutdownGracefully()
+
     println("Server stopped.")
   }
 
   def getPlayerCount: Int = registry.size
+}
+
+/** Netty handler for incoming TCP connections. */
+class GameServerTcpHandler(server: GameServer, clientHandler: ClientHandler) extends SimpleChannelInboundHandler[io.netty.buffer.ByteBuf] {
+
+  override def channelRead0(ctx: ChannelHandlerContext, msg: io.netty.buffer.ByteBuf): Unit = {
+    if (msg.readableBytes() < Constants.PACKET_SIZE) return
+
+    val data = new Array[Byte](Constants.PACKET_SIZE)
+    msg.readBytes(data)
+
+    try {
+      val packet = PacketSerializer.deserialize(data)
+      server.handleIncomingPacket(packet, ctx.channel(), null)
+    } catch {
+      case e: IllegalArgumentException =>
+        System.err.println(s"TCP: Invalid packet received: ${e.getMessage}")
+    }
+  }
+
+  override def channelInactive(ctx: ChannelHandlerContext): Unit = {
+    clientHandler.handleDisconnect(ctx.channel())
+    super.channelInactive(ctx)
+  }
+
+  override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
+    System.err.println(s"TCP handler error: ${cause.getMessage}")
+    ctx.close()
+  }
+}
+
+/** Netty handler for incoming UDP packets. */
+class GameServerUdpHandler(server: GameServer) extends SimpleChannelInboundHandler[DatagramPacket] {
+
+  override def channelRead0(ctx: ChannelHandlerContext, msg: DatagramPacket): Unit = {
+    val buf = msg.content()
+    if (buf.readableBytes() < Constants.PACKET_SIZE) return
+
+    val data = new Array[Byte](Constants.PACKET_SIZE)
+    buf.readBytes(data)
+
+    try {
+      val packet = PacketSerializer.deserialize(data)
+      server.handleIncomingPacket(packet, null, msg.sender())
+    } catch {
+      case e: IllegalArgumentException =>
+        System.err.println(s"UDP: Invalid packet received: ${e.getMessage}")
+    }
+  }
+
+  override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
+    System.err.println(s"UDP handler error: ${cause.getMessage}")
+  }
 }

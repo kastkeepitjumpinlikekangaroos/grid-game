@@ -3,7 +3,6 @@ package com.gridgame.server
 import com.gridgame.common.Constants
 
 import java.io.File
-import java.net.SocketException
 
 object ServerMain {
 
@@ -50,7 +49,7 @@ object ServerMain {
     try {
       server.start()
     } catch {
-      case e: SocketException =>
+      case e: Exception =>
         System.err.println(s"Failed to start server: ${e.getMessage}")
         System.exit(1)
     }

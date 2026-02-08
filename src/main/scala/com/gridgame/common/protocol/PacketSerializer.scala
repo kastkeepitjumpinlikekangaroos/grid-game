@@ -114,7 +114,7 @@ object PacketSerializer {
             new WorldInfoPacket(sequenceNumber, timestamp, worldFile)
 
           case PacketType.HEARTBEAT =>
-            new PlayerLeavePacket(sequenceNumber, playerId, timestamp)
+            new HeartbeatPacket(sequenceNumber, playerId, timestamp)
 
           case PacketType.ITEM_UPDATE =>
             val payloadBuffer = ByteBuffer.wrap(payload).order(ByteOrder.BIG_ENDIAN)

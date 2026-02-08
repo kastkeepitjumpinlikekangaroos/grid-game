@@ -1,6 +1,6 @@
 package com.gridgame.common.model
 
-import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.util.Objects
 import java.util.UUID
 
@@ -15,8 +15,9 @@ class Player(
   Objects.requireNonNull(position, "Position cannot be null")
 
   private var lastUpdateTime: Long = System.currentTimeMillis()
-  private var address: InetAddress = _
-  private var port: Int = 0
+  // Stored as AnyRef to avoid Netty dependency in common module; cast to Channel in server code
+  private var tcpChannel: AnyRef = _
+  private var udpAddress: InetSocketAddress = _
   private var direction: Direction = Direction.Down
   private var shieldUntil: Long = 0
   private var gemBoostUntil: Long = 0
@@ -48,16 +49,16 @@ class Player(
     this.lastUpdateTime = System.currentTimeMillis()
   }
 
-  def getAddress: InetAddress = address
+  def getTcpChannel: AnyRef = tcpChannel
 
-  def setAddress(address: InetAddress): Unit = {
-    this.address = address
+  def setTcpChannel(channel: AnyRef): Unit = {
+    this.tcpChannel = channel
   }
 
-  def getPort: Int = port
+  def getUdpAddress: InetSocketAddress = udpAddress
 
-  def setPort(port: Int): Unit = {
-    this.port = port
+  def setUdpAddress(address: InetSocketAddress): Unit = {
+    this.udpAddress = address
   }
 
   def getDirection: Direction = direction

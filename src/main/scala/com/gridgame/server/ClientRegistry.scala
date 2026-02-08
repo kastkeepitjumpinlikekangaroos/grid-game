@@ -2,10 +2,10 @@ package com.gridgame.server
 
 import com.gridgame.common.Constants
 import com.gridgame.common.model.Player
+import io.netty.channel.Channel
 
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-import scala.collection.mutable.ArrayBuffer
 import scala.jdk.CollectionConverters._
 
 class ClientRegistry {
@@ -36,6 +36,13 @@ class ClientRegistry {
     if (player != null) {
       player.updateHeartbeat()
     }
+  }
+
+  def getByChannel(channel: Channel): Player = {
+    players.values().asScala.find { player =>
+      val ch = player.getTcpChannel
+      ch != null && ch == channel
+    }.orNull
   }
 
   def getTimedOutClients: java.util.List[UUID] = {
