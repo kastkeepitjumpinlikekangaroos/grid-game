@@ -2,6 +2,7 @@ package com.gridgame.client
 
 import com.gridgame.common.Constants
 import com.gridgame.common.model.Direction
+import com.gridgame.common.model.Item
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
 import com.gridgame.common.model.Projectile
@@ -13,6 +14,7 @@ import java.net.UnknownHostException
 import java.util.UUID
 import java.util.concurrent.BlockingQueue
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -31,6 +33,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   private val localHealth: AtomicInteger = new AtomicInteger(Constants.MAX_HEALTH)
   private val players: ConcurrentHashMap[UUID, Player] = new ConcurrentHashMap()
   private val projectiles: ConcurrentHashMap[Int, Projectile] = new ConcurrentHashMap()
+  private val items: ConcurrentHashMap[Int, Item] = new ConcurrentHashMap()
+  private val inventory: CopyOnWriteArrayList[Item] = new CopyOnWriteArrayList()
   private val incomingPackets: BlockingQueue[Packet] = new LinkedBlockingQueue()
   private val sequenceNumber: AtomicInteger = new AtomicInteger(0)
   private val movementBlockedUntil: AtomicLong = new AtomicLong(0)
@@ -88,8 +92,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
     localPosition.set(newSpawn)
     localDirection.set(Direction.Down)
 
-    // Clear local projectiles
+    // Clear local projectiles and inventory
     projectiles.clear()
+    inventory.clear()
 
     // Send join packet to server
     sendJoinPacket()
@@ -238,6 +243,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
       return
     }
 
+    // Handle item updates
+    if (packet.getType == PacketType.ITEM_UPDATE) {
+      handleItemUpdate(packet.asInstanceOf[ItemPacket])
+      return
+    }
+
     val playerId = packet.getPlayerId
 
     // Handle updates for local player (health from server)
@@ -331,6 +342,30 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
     }
   }
 
+  private def handleItemUpdate(packet: ItemPacket): Unit = {
+    packet.getAction match {
+      case ItemAction.SPAWN =>
+        val item = new Item(packet.getItemId, packet.getX, packet.getY, packet.getItemType)
+        items.put(packet.getItemId, item)
+
+      case ItemAction.PICKUP =>
+        items.remove(packet.getItemId)
+        if (packet.getPlayerId.equals(localPlayerId)) {
+          val item = new Item(packet.getItemId, packet.getX, packet.getY, packet.getItemType)
+          inventory.add(item)
+        }
+
+      case ItemAction.INVENTORY =>
+        if (packet.getPlayerId.equals(localPlayerId)) {
+          val item = new Item(packet.getItemId, packet.getX, packet.getY, packet.getItemType)
+          inventory.add(item)
+        }
+
+      case _ =>
+        // Unknown action
+    }
+  }
+
   private def handleWorldInfo(packet: WorldInfoPacket): Unit = {
     val worldFile = packet.getWorldFile
     println(s"GameClient: Received world info from server: $worldFile")
@@ -390,6 +425,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   def getPlayers: ConcurrentHashMap[UUID, Player] = players
 
   def getProjectiles: ConcurrentHashMap[Int, Projectile] = projectiles
+
+  def getItems: ConcurrentHashMap[Int, Item] = items
+
+  def getInventory: CopyOnWriteArrayList[Item] = inventory
 
   def getLocalColorRGB: Int = localColorRGB
 

@@ -20,11 +20,17 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
       if (client.getIsDead) {
         processRejoin()
       } else {
-        processMovement()
         processBurstShot(event)
       }
     } else if (event.getEventType == KeyEvent.KEY_RELEASED) {
       pressedKeys.remove(event.getCode)
+    }
+  }
+
+  /** Called from the game loop each frame to poll movement from held keys. */
+  def update(): Unit = {
+    if (!client.getIsDead) {
+      processMovement()
     }
   }
 

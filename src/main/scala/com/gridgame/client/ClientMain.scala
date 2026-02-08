@@ -66,6 +66,7 @@ class ClientMain extends Application {
 
     val renderLoop = new AnimationTimer() {
       override def handle(now: Long): Unit = {
+        keyHandler.update()
         canvas.render()
       }
     }

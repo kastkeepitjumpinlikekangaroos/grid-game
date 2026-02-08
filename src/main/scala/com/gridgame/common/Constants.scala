@@ -14,7 +14,7 @@ object Constants {
   val CLIENT_TIMEOUT_MS: Int = 10000 // 10 seconds
 
   // Input configuration
-  val MOVE_RATE_LIMIT_MS: Int = 10 // Max 10 moves per second
+  val MOVE_RATE_LIMIT_MS: Int = 60 // Max 10 moves per second
 
   // Health configuration
   val MAX_HEALTH: Int = 100
@@ -25,10 +25,15 @@ object Constants {
   // Projectile configuration
   val PROJECTILE_SPEED_MS: Int = 50       // Move every 50ms (20 cells/second)
   val SHOOT_COOLDOWN_MS: Int = 5        // 2 shots per second max
-  val PROJECTILE_DAMAGE: Int = 1          // Damage per hit
+  val PROJECTILE_DAMAGE: Int = 5          // Damage per hit
   val PROJECTILE_SIZE_PX: Int = 10         // Render size in pixels
 
   // Burst shot configuration (Shift+Space)
   val BURST_SHOT_MOVEMENT_BLOCK_MS: Int = 500  // Immobilized for 500ms after burst
   val BURST_SHOT_COOLDOWN_MS: Int = 1000       // Can burst once per second
+
+  // Item configuration
+  val ITEM_SPAWN_INTERVAL_MS: Int = 60000     // 1 minute
+  val ITEM_SIZE_PX: Int = 12
+  val MAX_INVENTORY_SIZE: Int = 3
 }

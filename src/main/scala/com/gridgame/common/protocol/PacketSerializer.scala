@@ -35,10 +35,7 @@ object PacketSerializer {
 
     // For PROJECTILE_UPDATE, x/y are floats; for other packets, they're ints
     // We need to handle this differently based on packet type
-    val packetTypeForXY = packetType
-
-    // Deserialize based on packet type
-    packetTypeForXY match {
+    packetType match {
       case PacketType.PROJECTILE_UPDATE =>
         // [21-24] X Position (as float)
         val x = buffer.getFloat()
@@ -118,6 +115,13 @@ object PacketSerializer {
 
           case PacketType.HEARTBEAT =>
             new PlayerLeavePacket(sequenceNumber, playerId, timestamp)
+
+          case PacketType.ITEM_UPDATE =>
+            val payloadBuffer = ByteBuffer.wrap(payload).order(ByteOrder.BIG_ENDIAN)
+            val itemId = payloadBuffer.getInt
+            val action = payloadBuffer.get()
+            val itemTypeId = payloadBuffer.get()
+            new ItemPacket(sequenceNumber, playerId, timestamp, x, y, itemTypeId, itemId, action)
 
           case _ =>
             throw new IllegalArgumentException(s"Unknown packet type: $packetType")

@@ -5,10 +5,11 @@ import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
 import com.gridgame.common.protocol._
 
+import java.io.File
 import java.net.InetAddress
 import java.util.UUID
 
-class ClientHandler(registry: ClientRegistry, server: GameServer, projectileManager: ProjectileManager) {
+class ClientHandler(registry: ClientRegistry, server: GameServer, projectileManager: ProjectileManager, itemManager: ItemManager) {
 
   def processPacket(packet: Packet, address: InetAddress, port: Int): Boolean = {
     val playerId = packet.getPlayerId
@@ -68,10 +69,11 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
   private def handlePlayerJoin(packet: PlayerJoinPacket, address: InetAddress, port: Int): Boolean = {
     val playerId = packet.getPlayerId
 
-    // Send world info to the joining player
+    // Send world info to the joining player (send just the filename, not the full path)
     if (server.worldFile.nonEmpty) {
-      val worldInfoPacket = new WorldInfoPacket(server.getNextSequenceNumber, server.worldFile)
-      println(s"Sending world info to client: ${server.worldFile}")
+      val worldFileName = new File(server.worldFile).getName
+      val worldInfoPacket = new WorldInfoPacket(server.getNextSequenceNumber, worldFileName)
+      println(s"Sending world info to client: $worldFileName")
       server.sendPacketTo(worldInfoPacket, address, port)
     } else {
       println("No world file configured on server")
@@ -87,6 +89,11 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       existing.setAddress(address)
       existing.setPort(port)
       existing.updateHeartbeat()
+
+      // Send existing items to rejoining player
+      sendExistingItems(address, port)
+      sendInventoryContents(playerId, address, port)
+
       true
     } else {
       val player = new Player(playerId, packet.getPlayerName, packet.getPosition, packet.getColorRGB, Constants.MAX_HEALTH)
@@ -96,6 +103,10 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       registry.add(player)
 
       println(s"Player joined: ${playerId.toString.substring(0, 8)} ('${packet.getPlayerName}') at ${packet.getPosition} from ${address.getHostAddress}:$port with health ${player.getHealth}")
+
+      // Send existing items to new player
+      sendExistingItems(address, port)
+      sendInventoryContents(playerId, address, port)
 
       true
     }
@@ -118,6 +129,12 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       player.setPort(port)
     }
 
+    // Check for item pickup
+    val pos = packet.getPosition
+    itemManager.checkPickup(playerId, pos.getX, pos.getY).foreach { event =>
+      server.broadcastItemPickup(event.item, event.playerId)
+    }
+
     true
   }
 
@@ -127,6 +144,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
 
     if (player != null) {
       registry.remove(playerId)
+      itemManager.clearInventory(playerId)
       println(s"Player left: ${playerId.toString.substring(0, 8)} ('${player.getName}')")
     }
 
@@ -147,10 +165,40 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     false
   }
 
+  private def sendExistingItems(address: InetAddress, port: Int): Unit = {
+    val zeroUUID = new UUID(0L, 0L)
+    itemManager.getAll.foreach { item =>
+      val packet = new ItemPacket(
+        server.getNextSequenceNumber,
+        zeroUUID,
+        item.x, item.y,
+        item.itemType.id,
+        item.id,
+        ItemAction.SPAWN
+      )
+      server.sendPacketTo(packet, address, port)
+    }
+  }
+
+  private def sendInventoryContents(playerId: UUID, address: InetAddress, port: Int): Unit = {
+    itemManager.getInventory(playerId).foreach { item =>
+      val packet = new ItemPacket(
+        server.getNextSequenceNumber,
+        playerId,
+        item.x, item.y,
+        item.itemType.id,
+        item.id,
+        ItemAction.INVENTORY
+      )
+      server.sendPacketTo(packet, address, port)
+    }
+  }
+
   def handleTimeout(playerId: UUID, sequenceNumber: Int): PlayerLeavePacket = {
     val player = registry.get(playerId)
     if (player != null) {
       registry.remove(playerId)
+      itemManager.clearInventory(playerId)
       println(s"Player timed out: ${playerId.toString.substring(0, 8)} ('${player.getName}')")
       new PlayerLeavePacket(sequenceNumber, playerId)
     } else {

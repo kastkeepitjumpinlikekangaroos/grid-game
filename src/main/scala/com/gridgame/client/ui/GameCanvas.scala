@@ -3,6 +3,8 @@ package com.gridgame.client.ui
 import com.gridgame.client.GameClient
 import com.gridgame.common.Constants
 import com.gridgame.common.model.Direction
+import com.gridgame.common.model.Item
+import com.gridgame.common.model.ItemType
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
 import com.gridgame.common.model.Projectile
@@ -38,6 +40,7 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
 
     drawTerrain(viewportX, viewportY, currentWorld)
     drawGrid(viewportX, viewportY)
+    drawItems(viewportX, viewportY)
     drawProjectiles(viewportX, viewportY)
 
     client.getPlayers.values().asScala.foreach { player =>
@@ -52,6 +55,7 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
     drawLocalPlayer(localPos, viewportX, viewportY)
 
     drawCoordinates(viewportX, viewportY, currentWorld)
+    drawInventory()
   }
 
   private def calculateViewportOffsetX(playerCoord: Int, world: WorldData): Int = {
@@ -98,6 +102,75 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
     for (i <- 0 to Constants.VIEWPORT_CELLS) {
       val y = i * Constants.CELL_SIZE_PX
       gc.strokeLine(0, y, Constants.VIEWPORT_SIZE_PX, y)
+    }
+  }
+
+  private def drawItems(viewportX: Int, viewportY: Int): Unit = {
+    client.getItems.values().asScala.foreach { item =>
+      val ix = item.getCellX
+      val iy = item.getCellY
+
+      if (ix >= viewportX && ix < viewportX + Constants.VIEWPORT_CELLS &&
+          iy >= viewportY && iy < viewportY + Constants.VIEWPORT_CELLS) {
+
+        val centerX = (ix - viewportX) * Constants.CELL_SIZE_PX + Constants.CELL_SIZE_PX / 2.0
+        val centerY = (iy - viewportY) * Constants.CELL_SIZE_PX + Constants.CELL_SIZE_PX / 2.0
+        val halfSize = Constants.ITEM_SIZE_PX / 2.0
+
+        gc.setFill(intToColor(item.colorRGB))
+        gc.setStroke(Color.BLACK)
+        gc.setLineWidth(1)
+
+        drawItemShape(item.itemType, centerX, centerY, halfSize)
+      }
+    }
+  }
+
+  private def drawItemShape(itemType: ItemType, centerX: Double, centerY: Double, halfSize: Double): Unit = {
+    itemType match {
+      case ItemType.Coin =>
+        gc.fillOval(centerX - halfSize, centerY - halfSize, halfSize * 2, halfSize * 2)
+        gc.strokeOval(centerX - halfSize, centerY - halfSize, halfSize * 2, halfSize * 2)
+
+      case ItemType.Gem =>
+        val xPoints = Array(centerX, centerX + halfSize, centerX, centerX - halfSize)
+        val yPoints = Array(centerY - halfSize, centerY, centerY + halfSize, centerY)
+        gc.fillPolygon(xPoints, yPoints, 4)
+        gc.strokePolygon(xPoints, yPoints, 4)
+
+      case ItemType.Heart =>
+        val r = halfSize * 0.5
+        gc.fillOval(centerX - halfSize * 0.5 - r, centerY - halfSize * 0.5 - r, r * 2, r * 2)
+        gc.fillOval(centerX + halfSize * 0.5 - r, centerY - halfSize * 0.5 - r, r * 2, r * 2)
+        val txPoints = Array(centerX - halfSize, centerX, centerX + halfSize)
+        val tyPoints = Array(centerY - halfSize * 0.1, centerY + halfSize, centerY - halfSize * 0.1)
+        gc.fillPolygon(txPoints, tyPoints, 3)
+
+      case ItemType.Star =>
+        val outerR = halfSize
+        val innerR = halfSize * 0.4
+        val xPoints = new Array[Double](10)
+        val yPoints = new Array[Double](10)
+        for (i <- 0 until 10) {
+          val angle = Math.PI / 2 + i * Math.PI / 5
+          val r = if (i % 2 == 0) outerR else innerR
+          xPoints(i) = centerX + r * Math.cos(angle)
+          yPoints(i) = centerY - r * Math.sin(angle)
+        }
+        gc.fillPolygon(xPoints, yPoints, 10)
+        gc.strokePolygon(xPoints, yPoints, 10)
+
+      case ItemType.Shield =>
+        val xPoints = Array(centerX - halfSize, centerX + halfSize, centerX + halfSize, centerX, centerX - halfSize)
+        val yPoints = Array(centerY - halfSize, centerY - halfSize, centerY + halfSize * 0.3, centerY + halfSize, centerY + halfSize * 0.3)
+        gc.fillPolygon(xPoints, yPoints, 5)
+        gc.strokePolygon(xPoints, yPoints, 5)
+
+      case _ =>
+        val xPoints = Array(centerX, centerX + halfSize, centerX, centerX - halfSize)
+        val yPoints = Array(centerY - halfSize, centerY, centerY + halfSize, centerY)
+        gc.fillPolygon(xPoints, yPoints, 4)
+        gc.strokePolygon(xPoints, yPoints, 4)
     }
   }
 
@@ -207,12 +280,50 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
     val viewportText = s"Viewport: [$viewportX-${viewportX + Constants.VIEWPORT_CELLS - 1}, $viewportY-${viewportY + Constants.VIEWPORT_CELLS - 1}]"
     val playersText = s"Players: ${playerCount + 1}"
     val healthText = s"Health: $health/${Constants.MAX_HEALTH}"
+    val inventoryText = s"Inventory: ${client.getInventory.size()}/${Constants.MAX_INVENTORY_SIZE}"
 
     drawOutlinedText(worldText, 10, 20)
     drawOutlinedText(coordText, 10, 40)
     drawOutlinedText(viewportText, 10, 60)
     drawOutlinedText(playersText, 10, 80)
     drawOutlinedText(healthText, 10, 100)
+    drawOutlinedText(inventoryText, 10, 120)
+  }
+
+  private def drawInventory(): Unit = {
+    val slotSize = 32.0
+    val slotGap = 6.0
+    val totalWidth = Constants.MAX_INVENTORY_SIZE * slotSize + (Constants.MAX_INVENTORY_SIZE - 1) * slotGap
+    val startX = (getWidth - totalWidth) / 2.0
+    val startY = getHeight - slotSize - 10.0
+
+    val inv = client.getInventory
+
+    for (i <- 0 until Constants.MAX_INVENTORY_SIZE) {
+      val slotX = startX + i * (slotSize + slotGap)
+
+      // Semi-transparent background
+      gc.setFill(Color.rgb(0, 0, 0, 0.5))
+      gc.fillRect(slotX, startY, slotSize, slotSize)
+
+      // Border
+      gc.setStroke(Color.rgb(200, 200, 200, 0.8))
+      gc.setLineWidth(2)
+      gc.strokeRect(slotX, startY, slotSize, slotSize)
+
+      // Draw item if slot is filled
+      if (i < inv.size()) {
+        val item = inv.get(i)
+        val centerX = slotX + slotSize / 2.0
+        val centerY = startY + slotSize / 2.0
+        val halfSize = 10.0
+
+        gc.setFill(intToColor(item.colorRGB))
+        gc.setStroke(Color.BLACK)
+        gc.setLineWidth(1)
+        drawItemShape(item.itemType, centerX, centerY, halfSize)
+      }
+    }
   }
 
   private def drawOutlinedText(text: String, x: Double, y: Double): Unit = {

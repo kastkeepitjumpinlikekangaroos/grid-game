@@ -57,14 +57,11 @@ object ServerMain {
   }
 
   private def resolveWorldPath(worldFile: String): String = {
-    // Always extract just the filename to send to clients
-    val fileName = new File(worldFile).getName
-
-    // Check if file exists for validation/logging
+    // Check if file exists directly
     val direct = new File(worldFile)
     if (direct.exists()) {
       println(s"Found world file: ${direct.getAbsolutePath}")
-      return fileName
+      return direct.getAbsolutePath
     }
 
     // Try relative to BUILD_WORKING_DIRECTORY (set by Bazel)
@@ -73,12 +70,12 @@ object ServerMain {
       val fromWorkDir = new File(buildWorkDir, worldFile)
       if (fromWorkDir.exists()) {
         println(s"Found world file: ${fromWorkDir.getAbsolutePath}")
-        return fileName
+        return fromWorkDir.getAbsolutePath
       }
     }
 
-    // File not found, but still return just the filename
-    println(s"Warning: World file not found locally: $worldFile (clients will try to find it)")
-    fileName
+    // File not found, return as-is and let GameServer handle the error
+    println(s"Warning: World file not found locally: $worldFile")
+    worldFile
   }
 }

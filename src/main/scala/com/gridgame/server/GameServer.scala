@@ -1,6 +1,7 @@
 package com.gridgame.server
 
 import com.gridgame.common.Constants
+import com.gridgame.common.model.Item
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Projectile
 import com.gridgame.common.model.WorldData
@@ -24,10 +25,12 @@ class GameServer(port: Int, val worldFile: String = "") {
   private var socket: DatagramSocket = _
   private val registry = new ClientRegistry()
   private val projectileManager = new ProjectileManager(registry)
-  private val handler = new ClientHandler(registry, this, projectileManager)
+  private val itemManager = new ItemManager()
+  private val handler = new ClientHandler(registry, this, projectileManager, itemManager)
   private val broadcastExecutor: ExecutorService = Executors.newFixedThreadPool(4)
   private val cleanupExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
   private val projectileExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
+  private val itemSpawnExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
   private val sequenceNumber = new AtomicInteger(0)
   @volatile private var running = false
   private var world: WorldData = _
@@ -63,6 +66,22 @@ class GameServer(port: Int, val worldFile: String = "") {
       new Runnable { def run(): Unit = tickProjectiles() },
       Constants.PROJECTILE_SPEED_MS.toLong,
       Constants.PROJECTILE_SPEED_MS.toLong,
+      TimeUnit.MILLISECONDS
+    )
+
+    val spawnItems = () => {
+      for (i <- 1 to 15) {
+        spawnItem()
+      }
+    }
+
+    spawnItems()
+
+    // Schedule item spawning
+    itemSpawnExecutor.scheduleAtFixedRate(
+      new Runnable { def run(): Unit = spawnItems() },
+      Constants.ITEM_SPAWN_INTERVAL_MS.toLong,
+      Constants.ITEM_SPAWN_INTERVAL_MS.toLong,
       TimeUnit.MILLISECONDS
     )
 
@@ -255,6 +274,38 @@ class GameServer(port: Int, val worldFile: String = "") {
     broadcastToAll(packet)
   }
 
+  private def spawnItem(): Unit = {
+    if (!running || world == null) return
+    itemManager.spawnRandomItem(world).foreach { event =>
+      broadcastItemSpawn(event.item)
+    }
+  }
+
+  def broadcastItemSpawn(item: Item): Unit = {
+    val zeroUUID = new UUID(0L, 0L)
+    val packet = new ItemPacket(
+      sequenceNumber.getAndIncrement(),
+      zeroUUID,
+      item.x, item.y,
+      item.itemType.id,
+      item.id,
+      ItemAction.SPAWN
+    )
+    broadcastToAll(packet)
+  }
+
+  def broadcastItemPickup(item: Item, playerId: UUID): Unit = {
+    val packet = new ItemPacket(
+      sequenceNumber.getAndIncrement(),
+      playerId,
+      item.x, item.y,
+      item.itemType.id,
+      item.id,
+      ItemAction.PICKUP
+    )
+    broadcastToAll(packet)
+  }
+
   private def cleanup(): Unit = {
     val timedOut = registry.getTimedOutClients
 
@@ -281,6 +332,7 @@ class GameServer(port: Int, val worldFile: String = "") {
     broadcastExecutor.shutdown()
     cleanupExecutor.shutdown()
     projectileExecutor.shutdown()
+    itemSpawnExecutor.shutdown()
 
     try {
       if (!broadcastExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
@@ -292,11 +344,15 @@ class GameServer(port: Int, val worldFile: String = "") {
       if (!projectileExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
         projectileExecutor.shutdownNow()
       }
+      if (!itemSpawnExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+        itemSpawnExecutor.shutdownNow()
+      }
     } catch {
       case _: InterruptedException =>
         broadcastExecutor.shutdownNow()
         cleanupExecutor.shutdownNow()
         projectileExecutor.shutdownNow()
+        itemSpawnExecutor.shutdownNow()
         Thread.currentThread().interrupt()
     }
 
