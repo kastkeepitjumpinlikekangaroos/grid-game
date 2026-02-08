@@ -24,6 +24,15 @@ class WorldData(
     isWalkable(pos.getX, pos.getY)
   }
 
+  def setTile(x: Int, y: Int, tile: Tile): Boolean = {
+    if (x >= 0 && x < width && y >= 0 && y < height) {
+      tiles(y)(x) = tile
+      true
+    } else {
+      false
+    }
+  }
+
   def getRandomSpawnPoint(): Position = {
     if (spawnPoints.nonEmpty) {
       val idx = (Math.random() * spawnPoints.length).toInt

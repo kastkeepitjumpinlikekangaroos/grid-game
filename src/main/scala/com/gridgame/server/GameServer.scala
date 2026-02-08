@@ -70,7 +70,7 @@ class GameServer(port: Int, val worldFile: String = "") {
     )
 
     val spawnItems = () => {
-      for (i <- 1 to 15) {
+      for (i <- 1 to 50) {
         spawnItem()
       }
     }
@@ -259,6 +259,22 @@ class GameServer(port: Int, val worldFile: String = "") {
         }
       }
     })
+  }
+
+  def broadcastPlayerUpdate(packet: PlayerUpdatePacket): Unit = {
+    broadcastToAll(packet)
+  }
+
+  def getWorld: WorldData = world
+
+  def broadcastTileUpdate(playerId: UUID, x: Int, y: Int, tileId: Int): Unit = {
+    val packet = new TileUpdatePacket(
+      sequenceNumber.getAndIncrement(),
+      playerId,
+      x, y,
+      tileId
+    )
+    broadcastToAll(packet)
   }
 
   def broadcastProjectileSpawn(projectile: Projectile): Unit = {

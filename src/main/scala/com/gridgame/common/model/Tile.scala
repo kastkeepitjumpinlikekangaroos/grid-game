@@ -92,8 +92,65 @@ object Tile {
     val color = 0xFF757575 // Dark gray
   }
 
+  case object Fence extends Tile {
+    val id = 12
+    val name = "fence"
+    val walkable = false
+    val color = 0xFFA1887F // Light brown
+  }
+
+  case object Metal extends Tile {
+    val id = 13
+    val name = "metal"
+    val walkable = true
+    val color = 0xFF78909C // Blue-gray steel
+  }
+
+  case object Glass extends Tile {
+    val id = 14
+    val name = "glass"
+    val walkable = true
+    val color = 0xFF80DEEA // Translucent cyan
+  }
+
+  case object EnergyField extends Tile {
+    val id = 15
+    val name = "energy_field"
+    val walkable = false
+    val color = 0xFFAB47BC // Purple force field
+  }
+
+  case object Circuit extends Tile {
+    val id = 16
+    val name = "circuit"
+    val walkable = true
+    val color = 0xFF004D40 // Dark teal
+  }
+
+  case object Void extends Tile {
+    val id = 17
+    val name = "void"
+    val walkable = false
+    val color = 0xFF0A0A12 // Near-black space
+  }
+
+  case object Toxic extends Tile {
+    val id = 18
+    val name = "toxic"
+    val walkable = false
+    val color = 0xFF76FF03 // Bright acid green
+  }
+
+  case object Plasma extends Tile {
+    val id = 19
+    val name = "plasma"
+    val walkable = false
+    val color = 0xFFFF4081 // Hot pink
+  }
+
   val all: Seq[Tile] = Seq(
-    Grass, Water, Sand, Stone, Wall, Tree, Path, DeepWater, Snow, Ice, Lava, Mountain
+    Grass, Water, Sand, Stone, Wall, Tree, Path, DeepWater, Snow, Ice, Lava, Mountain, Fence,
+    Metal, Glass, EnergyField, Circuit, Void, Toxic, Plasma
   )
 
   def fromId(id: Int): Tile = all.find(_.id == id).getOrElse(Grass)

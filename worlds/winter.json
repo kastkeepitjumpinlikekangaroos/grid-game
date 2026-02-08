@@ -63,12 +63,6 @@
       "thickness": 3
     },
     {
-      "type": "scatter",
-      "tile": "tree",
-      "density": 0.04,
-      "avoid": ["water", "ice", "path", "mountain", "tree"]
-    },
-    {
       "type": "rect",
       "tile": "stone",
       "x": 30,

@@ -126,12 +126,6 @@
       "y": 140,
       "width": 30,
       "height": 30
-    },
-    {
-      "type": "scatter",
-      "tile": "tree",
-      "density": 0.02,
-      "avoid": ["water", "path", "stone", "wall", "tree"]
     }
   ],
   "spawnPoints": [

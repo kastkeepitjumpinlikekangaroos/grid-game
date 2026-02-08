@@ -7,12 +7,6 @@ sealed trait ItemType {
 }
 
 object ItemType {
-  case object Coin extends ItemType {
-    val id: Byte = 0
-    val name = "Coin"
-    val colorRGB = 0xFFFFD700 // Gold
-  }
-
   case object Gem extends ItemType {
     val id: Byte = 1
     val name = "Gem"
@@ -37,7 +31,13 @@ object ItemType {
     val colorRGB = 0xFF9C27B0 // Purple
   }
 
-  val all: Seq[ItemType] = Seq(Coin, Gem, Heart, Star, Shield)
+  case object Fence extends ItemType {
+    val id: Byte = 5
+    val name = "Fence"
+    val colorRGB = 0xFFA1887F // Light brown
+  }
 
-  def fromId(id: Byte): ItemType = all.find(_.id == id).getOrElse(Coin)
+  val all: Seq[ItemType] = Seq(Gem, Heart, Star, Shield, Fence)
+
+  def fromId(id: Byte): ItemType = all.find(_.id == id).getOrElse(Heart)
 }

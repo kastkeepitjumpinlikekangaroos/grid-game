@@ -20,6 +20,7 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
       if (client.getIsDead) {
         processRejoin()
       } else {
+        processUseItem(event)
         processBurstShot(event)
       }
     } else if (event.getEventType == KeyEvent.KEY_RELEASED) {
@@ -55,10 +56,23 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
     true
   }
 
+  private def processUseItem(event: KeyEvent): Unit = {
+    val slot = event.getCode match {
+      case KeyCode.DIGIT1 => 0
+      case KeyCode.DIGIT2 => 1
+      case KeyCode.DIGIT3 => 2
+      case _ => -1
+    }
+    if (slot >= 0) {
+      client.useItem(slot)
+    }
+  }
+
   private def processMovement(): Unit = {
     val now = System.currentTimeMillis()
+    val moveRate = if (client.hasSpeedBoost) Constants.SPEED_BOOST_MOVE_RATE_MS else Constants.MOVE_RATE_LIMIT_MS
 
-    if (now - lastMoveTime < Constants.MOVE_RATE_LIMIT_MS) {
+    if (now - lastMoveTime < moveRate) {
       return
     }
 

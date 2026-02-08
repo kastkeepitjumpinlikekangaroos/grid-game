@@ -18,6 +18,8 @@ class Player(
   private var address: InetAddress = _
   private var port: Int = 0
   private var direction: Direction = Direction.Down
+  private var shieldUntil: Long = 0
+  private var gemBoostUntil: Long = 0
 
   def getId: UUID = id
 
@@ -69,6 +71,22 @@ class Player(
   def setHealth(h: Int): Unit = {
     this.health = Math.max(0, Math.min(100, h))
   }
+
+  def getShieldUntil: Long = shieldUntil
+
+  def setShieldUntil(until: Long): Unit = {
+    this.shieldUntil = until
+  }
+
+  def hasShield: Boolean = System.currentTimeMillis() < shieldUntil
+
+  def getGemBoostUntil: Long = gemBoostUntil
+
+  def setGemBoostUntil(until: Long): Unit = {
+    this.gemBoostUntil = until
+  }
+
+  def hasGemBoost: Boolean = System.currentTimeMillis() < gemBoostUntil
 
   def isDead: Boolean = health <= 0
 

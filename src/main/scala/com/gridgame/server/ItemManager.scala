@@ -62,6 +62,21 @@ class ItemManager {
     None
   }
 
+  def removeFromInventory(playerId: UUID, itemId: Int): Boolean = {
+    val inv = inventories.get(playerId)
+    if (inv == null) return false
+    val iter = inv.iterator()
+    while (iter.hasNext) {
+      val item = iter.next()
+      if (item.id == itemId) {
+        inv.remove(item)
+        println(s"ItemManager: Player ${playerId.toString.substring(0, 8)} used item $itemId (inventory: ${inv.size()}/${Constants.MAX_INVENTORY_SIZE})")
+        return true
+      }
+    }
+    false
+  }
+
   def getInventory(playerId: UUID): Seq[Item] = {
     val inv = inventories.get(playerId)
     if (inv != null) inv.asScala.toSeq else Seq.empty

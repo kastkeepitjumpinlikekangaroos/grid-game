@@ -1,0 +1,194 @@
+{
+  "name": "Lava Bridges",
+  "width": 140,
+  "height": 140,
+  "layers": [
+    {
+      "type": "fill",
+      "tile": "lava"
+    },
+    {
+      "type": "border",
+      "tile": "mountain",
+      "thickness": 2
+    },
+    {
+      "type": "circle",
+      "tile": "stone",
+      "cx": 70,
+      "cy": 70,
+      "radius": 16
+    },
+    {
+      "type": "circle",
+      "tile": "sand",
+      "cx": 70,
+      "cy": 70,
+      "radius": 10
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 67,
+      "y": 67,
+      "width": 6,
+      "height": 6
+    },
+    {
+      "type": "rect",
+      "tile": "stone",
+      "x": 10,
+      "y": 10,
+      "width": 28,
+      "height": 28
+    },
+    {
+      "type": "rect",
+      "tile": "sand",
+      "x": 14,
+      "y": 14,
+      "width": 20,
+      "height": 20
+    },
+    {
+      "type": "rect",
+      "tile": "stone",
+      "x": 102,
+      "y": 10,
+      "width": 28,
+      "height": 28
+    },
+    {
+      "type": "rect",
+      "tile": "sand",
+      "x": 106,
+      "y": 14,
+      "width": 20,
+      "height": 20
+    },
+    {
+      "type": "rect",
+      "tile": "stone",
+      "x": 10,
+      "y": 102,
+      "width": 28,
+      "height": 28
+    },
+    {
+      "type": "rect",
+      "tile": "sand",
+      "x": 14,
+      "y": 106,
+      "width": 20,
+      "height": 20
+    },
+    {
+      "type": "rect",
+      "tile": "stone",
+      "x": 102,
+      "y": 102,
+      "width": 28,
+      "height": 28
+    },
+    {
+      "type": "rect",
+      "tile": "sand",
+      "x": 106,
+      "y": 106,
+      "width": 20,
+      "height": 20
+    },
+    {
+      "type": "line",
+      "tile": "stone",
+      "x1": 38,
+      "y1": 24,
+      "x2": 54,
+      "y2": 60,
+      "thickness": 3
+    },
+    {
+      "type": "line",
+      "tile": "stone",
+      "x1": 86,
+      "y1": 60,
+      "x2": 102,
+      "y2": 24,
+      "thickness": 3
+    },
+    {
+      "type": "line",
+      "tile": "stone",
+      "x1": 38,
+      "y1": 116,
+      "x2": 54,
+      "y2": 80,
+      "thickness": 3
+    },
+    {
+      "type": "line",
+      "tile": "stone",
+      "x1": 86,
+      "y1": 80,
+      "x2": 102,
+      "y2": 116,
+      "thickness": 3
+    },
+    {
+      "type": "line",
+      "tile": "stone",
+      "x1": 24,
+      "y1": 38,
+      "x2": 24,
+      "y2": 102,
+      "thickness": 3
+    },
+    {
+      "type": "line",
+      "tile": "stone",
+      "x1": 116,
+      "y1": 38,
+      "x2": 116,
+      "y2": 102,
+      "thickness": 3
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 20,
+      "y": 18,
+      "width": 3,
+      "height": 6
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 117,
+      "y": 18,
+      "width": 3,
+      "height": 6
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 20,
+      "y": 118,
+      "width": 3,
+      "height": 6
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 117,
+      "y": 118,
+      "width": 3,
+      "height": 6
+    }
+  ],
+  "spawnPoints": [
+    {"x": 24, "y": 24},
+    {"x": 116, "y": 24},
+    {"x": 24, "y": 116},
+    {"x": 116, "y": 116}
+  ]
+}

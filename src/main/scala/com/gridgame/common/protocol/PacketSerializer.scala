@@ -123,6 +123,11 @@ object PacketSerializer {
             val itemTypeId = payloadBuffer.get()
             new ItemPacket(sequenceNumber, playerId, timestamp, x, y, itemTypeId, itemId, action)
 
+          case PacketType.TILE_UPDATE =>
+            val payloadBuffer = ByteBuffer.wrap(payload).order(ByteOrder.BIG_ENDIAN)
+            val tileId = payloadBuffer.getInt
+            new TileUpdatePacket(sequenceNumber, playerId, timestamp, x, y, tileId)
+
           case _ =>
             throw new IllegalArgumentException(s"Unknown packet type: $packetType")
         }

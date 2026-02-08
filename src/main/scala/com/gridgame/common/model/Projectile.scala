@@ -12,6 +12,8 @@ class Projectile(
     val colorRGB: Int
 ) {
 
+  private var distanceTraveled: Float = 0f
+
   def getX: Float = x
 
   def getY: Float = y
@@ -20,9 +22,12 @@ class Projectile(
 
   def getCellY: Int = y.toInt
 
+  def getDistanceTraveled: Float = distanceTraveled
+
   def move(): Unit = {
     x += dx
     y += dy
+    distanceTraveled += math.sqrt(dx * dx + dy * dy).toFloat
   }
 
   def isOutOfBounds(world: WorldData): Boolean = {

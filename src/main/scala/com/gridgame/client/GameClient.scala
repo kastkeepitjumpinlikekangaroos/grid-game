@@ -3,9 +3,11 @@ package com.gridgame.client
 import com.gridgame.common.Constants
 import com.gridgame.common.model.Direction
 import com.gridgame.common.model.Item
+import com.gridgame.common.model.ItemType
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
 import com.gridgame.common.model.Projectile
+import com.gridgame.common.model.Tile
 import com.gridgame.common.model.WorldData
 import com.gridgame.common.protocol._
 
@@ -14,11 +16,11 @@ import java.net.UnknownHostException
 import java.util.UUID
 import java.util.concurrent.BlockingQueue
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicReferenceArray
 
 class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   private var networkThread: NetworkThread = _
@@ -34,10 +36,13 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   private val players: ConcurrentHashMap[UUID, Player] = new ConcurrentHashMap()
   private val projectiles: ConcurrentHashMap[Int, Projectile] = new ConcurrentHashMap()
   private val items: ConcurrentHashMap[Int, Item] = new ConcurrentHashMap()
-  private val inventory: CopyOnWriteArrayList[Item] = new CopyOnWriteArrayList()
+  private val inventory: AtomicReferenceArray[Item] = new AtomicReferenceArray[Item](Constants.MAX_INVENTORY_SIZE)
   private val incomingPackets: BlockingQueue[Packet] = new LinkedBlockingQueue()
   private val sequenceNumber: AtomicInteger = new AtomicInteger(0)
   private val movementBlockedUntil: AtomicLong = new AtomicLong(0)
+  private val speedBoostUntil: AtomicLong = new AtomicLong(0)
+  private val fastProjectilesUntil: AtomicLong = new AtomicLong(0)
+  private val shieldUntil: AtomicLong = new AtomicLong(0)
 
   @volatile private var running = false
   @volatile private var isDead = false
@@ -94,7 +99,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
 
     // Clear local projectiles and inventory
     projectiles.clear()
-    inventory.clear()
+    for (i <- 0 until Constants.MAX_INVENTORY_SIZE) {
+      inventory.set(i, null)
+    }
+
+    // Reset effect timers
+    speedBoostUntil.set(0)
+    fastProjectilesUntil.set(0)
+    shieldUntil.set(0)
 
     // Send join packet to server
     sendJoinPacket()
@@ -158,17 +170,41 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
     if (isDead) return
 
     val pos = localPosition.get()
-    val packet = new ProjectilePacket(
-      sequenceNumber.getAndIncrement(),
-      localPlayerId,
-      pos.getX.toFloat,
-      pos.getY.toFloat,
-      localColorRGB,
-      0, // Server assigns real ID
-      dx, dy,
-      ProjectileAction.SPAWN
-    )
-    networkThread.send(packet)
+
+    if (hasGemBoost) {
+      // Shoot 3 projectiles in a narrow cone (center ± 15 degrees)
+      val angle = Math.PI / 12.0 // 15 degrees
+      val offsets = Seq(0.0, -angle, angle)
+      offsets.foreach { theta =>
+        val cos = Math.cos(theta).toFloat
+        val sin = Math.sin(theta).toFloat
+        val rdx = dx * cos - dy * sin
+        val rdy = dx * sin + dy * cos
+        val packet = new ProjectilePacket(
+          sequenceNumber.getAndIncrement(),
+          localPlayerId,
+          pos.getX.toFloat,
+          pos.getY.toFloat,
+          localColorRGB,
+          0,
+          rdx, rdy,
+          ProjectileAction.SPAWN
+        )
+        networkThread.send(packet)
+      }
+    } else {
+      val packet = new ProjectilePacket(
+        sequenceNumber.getAndIncrement(),
+        localPlayerId,
+        pos.getX.toFloat,
+        pos.getY.toFloat,
+        localColorRGB,
+        0,
+        dx, dy,
+        ProjectileAction.SPAWN
+      )
+      networkThread.send(packet)
+    }
   }
 
   def shootAllDirections(): Unit = {
@@ -246,6 +282,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
     // Handle item updates
     if (packet.getType == PacketType.ITEM_UPDATE) {
       handleItemUpdate(packet.asInstanceOf[ItemPacket])
+      return
+    }
+
+    // Handle tile updates
+    if (packet.getType == PacketType.TILE_UPDATE) {
+      handleTileUpdate(packet.asInstanceOf[TileUpdatePacket])
       return
     }
 
@@ -352,18 +394,35 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
         items.remove(packet.getItemId)
         if (packet.getPlayerId.equals(localPlayerId)) {
           val item = new Item(packet.getItemId, packet.getX, packet.getY, packet.getItemType)
-          inventory.add(item)
+          addToInventory(item)
         }
 
       case ItemAction.INVENTORY =>
         if (packet.getPlayerId.equals(localPlayerId)) {
           val item = new Item(packet.getItemId, packet.getX, packet.getY, packet.getItemType)
-          inventory.add(item)
+          addToInventory(item)
         }
 
       case _ =>
         // Unknown action
     }
+  }
+
+  private def addToInventory(item: Item): Boolean = {
+    for (i <- 0 until Constants.MAX_INVENTORY_SIZE) {
+      if (inventory.get(i) == null) {
+        inventory.set(i, item)
+        return true
+      }
+    }
+    false
+  }
+
+  private def handleTileUpdate(packet: TileUpdatePacket): Unit = {
+    val world = currentWorld.get()
+    val tile = Tile.fromId(packet.getTileId)
+    world.setTile(packet.getTileX, packet.getTileY, tile)
+    println(s"GameClient: Tile updated at (${packet.getTileX}, ${packet.getTileY}) to ${tile.name}")
   }
 
   private def handleWorldInfo(packet: WorldInfoPacket): Unit = {
@@ -418,6 +477,49 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
     }
   }
 
+  def useItem(slotIndex: Int): Unit = {
+    if (slotIndex < 0 || slotIndex >= Constants.MAX_INVENTORY_SIZE) {
+      return
+    }
+
+    val item = inventory.getAndSet(slotIndex, null)
+    if (item == null) {
+      println(s"GameClient: No item in slot ${slotIndex + 1}")
+      return
+    }
+
+    // Notify server that item was used
+    val packet = new ItemPacket(
+      sequenceNumber.getAndIncrement(),
+      localPlayerId,
+      item.getCellX, item.getCellY,
+      item.itemType.id,
+      item.id,
+      ItemAction.USE
+    )
+    networkThread.send(packet)
+
+    println(s"GameClient: Used item '${item.itemType.name}' from slot ${slotIndex + 1}")
+
+    val now = System.currentTimeMillis()
+    item.itemType match {
+      case ItemType.Star =>
+        speedBoostUntil.set(now + Constants.STAR_DURATION_MS)
+        println("GameClient: Speed boost activated!")
+      case ItemType.Gem =>
+        fastProjectilesUntil.set(now + Constants.GEM_DURATION_MS)
+        println("GameClient: Fast projectiles activated!")
+      case ItemType.Shield =>
+        shieldUntil.set(now + Constants.SHIELD_DURATION_MS)
+        println("GameClient: Shield activated!")
+      case ItemType.Heart =>
+        println("GameClient: Heart used (server heals)")
+      case ItemType.Fence =>
+        println("GameClient: Fence placed (server handles)")
+      case _ =>
+    }
+  }
+
   def getLocalPosition: Position = localPosition.get()
 
   def getLocalPlayerId: UUID = localPlayerId
@@ -428,7 +530,15 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
 
   def getItems: ConcurrentHashMap[Int, Item] = items
 
-  def getInventory: CopyOnWriteArrayList[Item] = inventory
+  def getInventoryItem(slot: Int): Item = inventory.get(slot)
+
+  def getInventoryCount: Int = {
+    var count = 0
+    for (i <- 0 until Constants.MAX_INVENTORY_SIZE) {
+      if (inventory.get(i) != null) count += 1
+    }
+    count
+  }
 
   def getLocalColorRGB: Int = localColorRGB
 
@@ -448,6 +558,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
     sendPositionUpdate(newSpawn)
     println(s"GameClient: World changed to '${world.name}', respawned at $newSpawn")
   }
+
+  def hasSpeedBoost: Boolean = System.currentTimeMillis() < speedBoostUntil.get()
+
+  def hasGemBoost: Boolean = System.currentTimeMillis() < fastProjectilesUntil.get()
+
+  def hasShield: Boolean = System.currentTimeMillis() < shieldUntil.get()
 
   def setWorldFileListener(listener: String => Unit): Unit = {
     worldFileListener = listener

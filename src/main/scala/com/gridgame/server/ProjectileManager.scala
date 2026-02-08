@@ -38,39 +38,50 @@ class ProjectileManager(registry: ClientRegistry) {
     val toRemove = ArrayBuffer[Int]()
 
     projectiles.values().asScala.foreach { projectile =>
-      // Move the projectile
-      projectile.move()
+      val owner = registry.get(projectile.ownerId)
+      val steps = if (owner != null && owner.hasGemBoost) 2 else 1
+      var resolved = false
 
-      // Check if out of bounds
-      if (projectile.isOutOfBounds(world)) {
-        toRemove += projectile.id
-        events += ProjectileDespawned(projectile)
-      }
-      // Check if hit non-walkable tile
-      else if (projectile.hitsNonWalkable(world)) {
-        toRemove += projectile.id
-        events += ProjectileDespawned(projectile)
-      }
-      else {
-        // Check for player hits
-        var hitPlayer: Player = null
-        registry.getAll.asScala.foreach { player =>
-          if (projectile.hitsPlayer(player) && !player.isDead) {
-            hitPlayer = player
+      var step = 0
+      while (step < steps && !resolved) {
+        projectile.move()
+
+        if (projectile.getDistanceTraveled >= Constants.PROJECTILE_MAX_RANGE) {
+          toRemove += projectile.id
+          events += ProjectileDespawned(projectile)
+          resolved = true
+        } else if (projectile.isOutOfBounds(world)) {
+          toRemove += projectile.id
+          events += ProjectileDespawned(projectile)
+          resolved = true
+        } else if (projectile.hitsNonWalkable(world)) {
+          toRemove += projectile.id
+          events += ProjectileDespawned(projectile)
+          resolved = true
+        } else {
+          var hitPlayer: Player = null
+          registry.getAll.asScala.foreach { player =>
+            if (projectile.hitsPlayer(player) && !player.isDead && !player.hasShield) {
+              hitPlayer = player
+            }
+          }
+
+          if (hitPlayer != null) {
+            val newHealth = hitPlayer.getHealth - Constants.PROJECTILE_DAMAGE
+            hitPlayer.setHealth(newHealth)
+            println(s"ProjectileManager: ${projectile} hit player ${hitPlayer.getId.toString.substring(0, 8)}, health now $newHealth")
+
+            toRemove += projectile.id
+            events += ProjectileHit(projectile, hitPlayer.getId)
+            resolved = true
           }
         }
 
-        if (hitPlayer != null) {
-          // Apply damage
-          val newHealth = hitPlayer.getHealth - Constants.PROJECTILE_DAMAGE
-          hitPlayer.setHealth(newHealth)
-          println(s"ProjectileManager: ${projectile} hit player ${hitPlayer.getId.toString.substring(0, 8)}, health now $newHealth")
+        step += 1
+      }
 
-          toRemove += projectile.id
-          events += ProjectileHit(projectile, hitPlayer.getId)
-        } else {
-          events += ProjectileMoved(projectile)
-        }
+      if (!resolved) {
+        events += ProjectileMoved(projectile)
       }
     }
 

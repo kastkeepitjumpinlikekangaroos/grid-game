@@ -1,8 +1,11 @@
 package com.gridgame.server
 
 import com.gridgame.common.Constants
+import com.gridgame.common.model.Direction
+import com.gridgame.common.model.ItemType
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
+import com.gridgame.common.model.Tile
 import com.gridgame.common.protocol._
 
 import java.io.File
@@ -29,6 +32,9 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
 
       case PacketType.PROJECTILE_UPDATE =>
         handleProjectileUpdate(packet.asInstanceOf[ProjectilePacket], address, port)
+
+      case PacketType.ITEM_UPDATE =>
+        handleItemUpdate(packet.asInstanceOf[ItemPacket])
 
       case _ =>
         System.err.println(s"Unknown packet type: ${packet.getType}")
@@ -123,7 +129,14 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       player.setPort(port)
       registry.add(player)
     } else {
-      player.setPosition(packet.getPosition)
+      val oldPos = player.getPosition
+      val newPos = packet.getPosition
+      val dx = newPos.getX - oldPos.getX
+      val dy = newPos.getY - oldPos.getY
+      if (dx != 0 || dy != 0) {
+        player.setDirection(Direction.fromMovement(dx, dy))
+      }
+      player.setPosition(newPos)
       player.setColorRGB(packet.getColorRGB)
       player.setAddress(address)
       player.setPort(port)
@@ -163,6 +176,77 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     }
 
     false
+  }
+
+  private def handleItemUpdate(packet: ItemPacket): Boolean = {
+    if (packet.getAction == ItemAction.USE) {
+      itemManager.removeFromInventory(packet.getPlayerId, packet.getItemId)
+
+      val playerId = packet.getPlayerId
+      val player = registry.get(playerId)
+      if (player != null) {
+        packet.getItemType match {
+          case ItemType.Heart =>
+            player.setHealth(Constants.MAX_HEALTH)
+            val updatePacket = new PlayerUpdatePacket(
+              server.getNextSequenceNumber,
+              playerId,
+              player.getPosition,
+              player.getColorRGB,
+              player.getHealth
+            )
+            server.broadcastPlayerUpdate(updatePacket)
+            println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} healed to full")
+
+          case ItemType.Shield =>
+            player.setShieldUntil(System.currentTimeMillis() + Constants.SHIELD_DURATION_MS)
+            println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} shield activated")
+
+          case ItemType.Gem =>
+            player.setGemBoostUntil(System.currentTimeMillis() + Constants.GEM_DURATION_MS)
+            println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} gem boost activated")
+
+          case ItemType.Fence =>
+            placeFence(player)
+
+          case _ => // Star is client-side only
+        }
+      }
+    }
+    false
+  }
+
+  private def placeFence(player: Player): Unit = {
+    val pos = player.getPosition
+    val px = pos.getX
+    val py = pos.getY
+
+    // Determine the cell directly in front and the perpendicular offsets
+    val (frontDx, frontDy, perpDx, perpDy) = player.getDirection match {
+      case Direction.Up    => (0, -1, 1, 0)
+      case Direction.Down  => (0, 1, 1, 0)
+      case Direction.Left  => (-1, 0, 0, 1)
+      case Direction.Right => (1, 0, 0, 1)
+    }
+
+    val frontX = px + frontDx
+    val frontY = py + frontDy
+
+    // Place 3 tiles: center and ±1 perpendicular
+    val positions = Seq(
+      (frontX - perpDx, frontY - perpDy),
+      (frontX, frontY),
+      (frontX + perpDx, frontY + perpDy)
+    )
+
+    val world = server.getWorld
+    positions.foreach { case (tx, ty) =>
+      if (world.setTile(tx, ty, Tile.Fence)) {
+        server.broadcastTileUpdate(player.getId, tx, ty, Tile.Fence.id)
+      }
+    }
+
+    println(s"ClientHandler: Player ${player.getId.toString.substring(0, 8)} placed fence at ($frontX, $frontY) facing ${player.getDirection}")
   }
 
   private def sendExistingItems(address: InetAddress, port: Int): Unit = {

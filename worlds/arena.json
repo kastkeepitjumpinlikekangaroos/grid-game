@@ -1,0 +1,180 @@
+{
+  "name": "The Arena",
+  "width": 120,
+  "height": 120,
+  "layers": [
+    {
+      "type": "fill",
+      "tile": "sand"
+    },
+    {
+      "type": "border",
+      "tile": "wall",
+      "thickness": 3
+    },
+    {
+      "type": "circle",
+      "tile": "stone",
+      "cx": 60,
+      "cy": 60,
+      "radius": 12
+    },
+    {
+      "type": "circle",
+      "tile": "lava",
+      "cx": 60,
+      "cy": 60,
+      "radius": 5
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 30,
+      "y": 30,
+      "width": 3,
+      "height": 15
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 87,
+      "y": 30,
+      "width": 3,
+      "height": 15
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 30,
+      "y": 75,
+      "width": 3,
+      "height": 15
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 87,
+      "y": 75,
+      "width": 3,
+      "height": 15
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 45,
+      "y": 20,
+      "width": 10,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 65,
+      "y": 20,
+      "width": 10,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 45,
+      "y": 97,
+      "width": 10,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 65,
+      "y": 97,
+      "width": 10,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 20,
+      "y": 50,
+      "width": 3,
+      "height": 20
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 97,
+      "y": 50,
+      "width": 3,
+      "height": 20
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 55,
+      "y": 38,
+      "width": 10,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 55,
+      "y": 79,
+      "width": 10,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 38,
+      "y": 55,
+      "width": 3,
+      "height": 10
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 79,
+      "y": 55,
+      "width": 3,
+      "height": 10
+    },
+    {
+      "type": "rect",
+      "tile": "stone",
+      "x": 10,
+      "y": 10,
+      "width": 8,
+      "height": 8
+    },
+    {
+      "type": "rect",
+      "tile": "stone",
+      "x": 102,
+      "y": 10,
+      "width": 8,
+      "height": 8
+    },
+    {
+      "type": "rect",
+      "tile": "stone",
+      "x": 10,
+      "y": 102,
+      "width": 8,
+      "height": 8
+    },
+    {
+      "type": "rect",
+      "tile": "stone",
+      "x": 102,
+      "y": 102,
+      "width": 8,
+      "height": 8
+    }
+  ],
+  "spawnPoints": [
+    {"x": 14, "y": 14},
+    {"x": 106, "y": 14},
+    {"x": 14, "y": 106},
+    {"x": 106, "y": 106}
+  ]
+}

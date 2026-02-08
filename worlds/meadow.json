@@ -39,12 +39,6 @@
       "height": 7
     },
     {
-      "type": "scatter",
-      "tile": "tree",
-      "density": 0.03,
-      "avoid": ["water", "path", "stone", "tree"]
-    },
-    {
       "type": "circle",
       "tile": "sand",
       "cx": 50,

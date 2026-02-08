@@ -11,6 +11,7 @@ object ItemAction {
   val SPAWN: Byte = 0
   val PICKUP: Byte = 1
   val INVENTORY: Byte = 2
+  val USE: Byte = 3
 }
 
 class ItemPacket(

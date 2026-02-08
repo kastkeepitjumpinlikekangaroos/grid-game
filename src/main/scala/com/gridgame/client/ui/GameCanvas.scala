@@ -128,10 +128,6 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
 
   private def drawItemShape(itemType: ItemType, centerX: Double, centerY: Double, halfSize: Double): Unit = {
     itemType match {
-      case ItemType.Coin =>
-        gc.fillOval(centerX - halfSize, centerY - halfSize, halfSize * 2, halfSize * 2)
-        gc.strokeOval(centerX - halfSize, centerY - halfSize, halfSize * 2, halfSize * 2)
-
       case ItemType.Gem =>
         val xPoints = Array(centerX, centerX + halfSize, centerX, centerX - halfSize)
         val yPoints = Array(centerY - halfSize, centerY, centerY + halfSize, centerY)
@@ -166,6 +162,16 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
         gc.fillPolygon(xPoints, yPoints, 5)
         gc.strokePolygon(xPoints, yPoints, 5)
 
+      case ItemType.Fence =>
+        // Three vertical bars representing a fence
+        val barW = halfSize * 0.35
+        gc.fillRect(centerX - halfSize, centerY - halfSize, barW, halfSize * 2)
+        gc.strokeRect(centerX - halfSize, centerY - halfSize, barW, halfSize * 2)
+        gc.fillRect(centerX - barW / 2, centerY - halfSize, barW, halfSize * 2)
+        gc.strokeRect(centerX - barW / 2, centerY - halfSize, barW, halfSize * 2)
+        gc.fillRect(centerX + halfSize - barW, centerY - halfSize, barW, halfSize * 2)
+        gc.strokeRect(centerX + halfSize - barW, centerY - halfSize, barW, halfSize * 2)
+
       case _ =>
         val xPoints = Array(centerX, centerX + halfSize, centerX, centerX - halfSize)
         val yPoints = Array(centerY - halfSize, centerY, centerY + halfSize, centerY)
@@ -179,23 +185,42 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
       val projX = projectile.getX
       val projY = projectile.getY
 
-      // Check if projectile is in viewport (using float bounds)
-      if (projX >= viewportX - 1 && projX < viewportX + Constants.VIEWPORT_CELLS + 1 &&
-          projY >= viewportY - 1 && projY < viewportY + Constants.VIEWPORT_CELLS + 1) {
+      // Check if projectile is in viewport (with margin for beam trail)
+      if (projX >= viewportX - 4 && projX < viewportX + Constants.VIEWPORT_CELLS + 4 &&
+          projY >= viewportY - 4 && projY < viewportY + Constants.VIEWPORT_CELLS + 4) {
 
-        // Use float coordinates for sub-cell rendering
-        val screenX = (projX - viewportX) * Constants.CELL_SIZE_PX + Constants.CELL_SIZE_PX / 2
-        val screenY = (projY - viewportY) * Constants.CELL_SIZE_PX + Constants.CELL_SIZE_PX / 2
-        val radius = Constants.PROJECTILE_SIZE_PX / 2.0
+        val beamLength = 3.0 // Beam length in tiles
 
-        // Draw projectile as a filled circle with the owner's color
-        gc.setFill(intToColor(projectile.colorRGB))
-        gc.fillOval(screenX - radius, screenY - radius, Constants.PROJECTILE_SIZE_PX, Constants.PROJECTILE_SIZE_PX)
+        // Tail of the beam (current position)
+        val tailX = (projX - viewportX) * Constants.CELL_SIZE_PX + Constants.CELL_SIZE_PX / 2.0
+        val tailY = (projY - viewportY) * Constants.CELL_SIZE_PX + Constants.CELL_SIZE_PX / 2.0
 
-        // Add a dark outline for visibility
-        gc.setStroke(Color.BLACK)
-        gc.setLineWidth(1)
-        gc.strokeOval(screenX - radius, screenY - radius, Constants.PROJECTILE_SIZE_PX, Constants.PROJECTILE_SIZE_PX)
+        // Tip of the beam (ahead of the projectile in travel direction)
+        val tipX = tailX + projectile.dx * beamLength * Constants.CELL_SIZE_PX
+        val tipY = tailY + projectile.dy * beamLength * Constants.CELL_SIZE_PX
+
+        val color = intToColor(projectile.colorRGB)
+
+        // Outer glow
+        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.25))
+        gc.setLineWidth(8)
+        gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+        gc.strokeLine(tailX, tailY, tipX, tipY)
+
+        // Mid glow
+        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.5))
+        gc.setLineWidth(4)
+        gc.strokeLine(tailX, tailY, tipX, tipY)
+
+        // Bright core
+        gc.setStroke(Color.color(
+          Math.min(1.0, color.getRed * 0.5 + 0.5),
+          Math.min(1.0, color.getGreen * 0.5 + 0.5),
+          Math.min(1.0, color.getBlue * 0.5 + 0.5),
+          1.0
+        ))
+        gc.setLineWidth(2)
+        gc.strokeLine(tailX, tailY, tipX, tipY)
       }
     }
   }
@@ -217,11 +242,42 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
     val screenX = (pos.getX - viewportX) * Constants.CELL_SIZE_PX
     val screenY = (pos.getY - viewportY) * Constants.CELL_SIZE_PX
 
+    // Draw effect auras behind the player
+    drawEffectAuras(screenX, screenY)
+
     val sprite = SpriteGenerator.getSprite(client.getLocalColorRGB, client.getLocalDirection)
     gc.drawImage(sprite, screenX, screenY)
 
     // Draw health bar above local player
     drawHealthBar(screenX, screenY, client.getLocalHealth)
+  }
+
+  private def drawEffectAuras(screenX: Double, screenY: Double): Unit = {
+    val centerX = screenX + Constants.CELL_SIZE_PX / 2.0
+    val centerY = screenY + Constants.CELL_SIZE_PX / 2.0
+    val radius = Constants.CELL_SIZE_PX * 0.7
+
+    if (client.hasShield) {
+      gc.setStroke(Color.rgb(156, 39, 176, 0.7)) // Purple
+      gc.setLineWidth(2)
+      gc.strokeOval(centerX - radius, centerY - radius, radius * 2, radius * 2)
+      gc.setFill(Color.rgb(156, 39, 176, 0.15))
+      gc.fillOval(centerX - radius, centerY - radius, radius * 2, radius * 2)
+    }
+
+    if (client.hasSpeedBoost) {
+      gc.setStroke(Color.rgb(255, 235, 59, 0.7)) // Yellow
+      gc.setLineWidth(2)
+      val r = radius + 2
+      gc.strokeOval(centerX - r, centerY - r, r * 2, r * 2)
+    }
+
+    if (client.hasGemBoost) {
+      gc.setStroke(Color.rgb(0, 188, 212, 0.7)) // Cyan
+      gc.setLineWidth(2)
+      val r = radius + 4
+      gc.strokeOval(centerX - r, centerY - r, r * 2, r * 2)
+    }
   }
 
   private def drawHealthBar(screenX: Double, screenY: Double, health: Int): Unit = {
@@ -280,7 +336,7 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
     val viewportText = s"Viewport: [$viewportX-${viewportX + Constants.VIEWPORT_CELLS - 1}, $viewportY-${viewportY + Constants.VIEWPORT_CELLS - 1}]"
     val playersText = s"Players: ${playerCount + 1}"
     val healthText = s"Health: $health/${Constants.MAX_HEALTH}"
-    val inventoryText = s"Inventory: ${client.getInventory.size()}/${Constants.MAX_INVENTORY_SIZE}"
+    val inventoryText = s"Inventory: ${client.getInventoryCount}/${Constants.MAX_INVENTORY_SIZE}"
 
     drawOutlinedText(worldText, 10, 20)
     drawOutlinedText(coordText, 10, 40)
@@ -288,6 +344,16 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
     drawOutlinedText(playersText, 10, 80)
     drawOutlinedText(healthText, 10, 100)
     drawOutlinedText(inventoryText, 10, 120)
+
+    // Show active effects
+    val effects = Seq(
+      if (client.hasSpeedBoost) Some("Speed") else None,
+      if (client.hasShield) Some("Shield") else None,
+      if (client.hasGemBoost) Some("FastShot") else None
+    ).flatten
+    if (effects.nonEmpty) {
+      drawOutlinedText(s"Effects: ${effects.mkString(" ")}", 10, 140)
+    }
   }
 
   private def drawInventory(): Unit = {
@@ -296,8 +362,6 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
     val totalWidth = Constants.MAX_INVENTORY_SIZE * slotSize + (Constants.MAX_INVENTORY_SIZE - 1) * slotGap
     val startX = (getWidth - totalWidth) / 2.0
     val startY = getHeight - slotSize - 10.0
-
-    val inv = client.getInventory
 
     for (i <- 0 until Constants.MAX_INVENTORY_SIZE) {
       val slotX = startX + i * (slotSize + slotGap)
@@ -312,8 +376,8 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
       gc.strokeRect(slotX, startY, slotSize, slotSize)
 
       // Draw item if slot is filled
-      if (i < inv.size()) {
-        val item = inv.get(i)
+      val item = client.getInventoryItem(i)
+      if (item != null) {
         val centerX = slotX + slotSize / 2.0
         val centerY = startY + slotSize / 2.0
         val halfSize = 10.0
@@ -323,6 +387,12 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
         gc.setLineWidth(1)
         drawItemShape(item.itemType, centerX, centerY, halfSize)
       }
+
+      // Draw slot number label in bottom-right corner
+      val label = (i + 1).toString
+      gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 10))
+      gc.setFill(Color.WHITE)
+      gc.fillText(label, slotX + slotSize - 10, startY + slotSize - 4)
     }
   }
 
