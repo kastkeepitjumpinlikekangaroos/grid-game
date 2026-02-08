@@ -12,7 +12,7 @@ import scala.collection.mutable
 class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
   private val pressedKeys: mutable.Set[KeyCode] = mutable.Set.empty
   private var lastMoveTime: Long = 0
-  private var lastShootTime: Long = 0
+  private var lastBurstTime: Long = 0
 
   override def handle(event: KeyEvent): Unit = {
     if (event.getEventType == KeyEvent.KEY_PRESSED) {
@@ -21,7 +21,7 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
         processRejoin()
       } else {
         processMovement()
-        processShoot()
+        processBurstShot(event)
       }
     } else if (event.getEventType == KeyEvent.KEY_RELEASED) {
       pressedKeys.remove(event.getCode)
@@ -34,18 +34,19 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
     }
   }
 
-  private def processShoot(): Unit = {
-    if (!pressedKeys.contains(KeyCode.SPACE)) {
-      return
+  private def processBurstShot(event: KeyEvent): Boolean = {
+    if (!pressedKeys.contains(KeyCode.SPACE) || !event.isShiftDown) {
+      return false
     }
 
     val now = System.currentTimeMillis()
-    if (now - lastShootTime < Constants.SHOOT_COOLDOWN_MS) {
-      return
+    if (now - lastBurstTime < Constants.BURST_SHOT_COOLDOWN_MS) {
+      return true // Still consumed the input, just on cooldown
     }
 
-    client.shoot()
-    lastShootTime = now
+    client.shootAllDirections()
+    lastBurstTime = now
+    true
   }
 
   private def processMovement(): Unit = {

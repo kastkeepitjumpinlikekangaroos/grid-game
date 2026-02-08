@@ -1,7 +1,6 @@
 package com.gridgame.server
 
 import com.gridgame.common.Constants
-import com.gridgame.common.model.Direction
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Projectile
 import com.gridgame.common.model.WorldData
@@ -184,7 +183,7 @@ class GameServer(port: Int, val worldFile: String = "") {
           projectile.getX, projectile.getY,
           projectile.colorRGB,
           projectile.id,
-          projectile.direction,
+          projectile.dx, projectile.dy,
           ProjectileAction.MOVE
         )
         broadcastToAll(packet)
@@ -197,7 +196,7 @@ class GameServer(port: Int, val worldFile: String = "") {
           projectile.getX, projectile.getY,
           projectile.colorRGB,
           projectile.id,
-          projectile.direction,
+          projectile.dx, projectile.dy,
           ProjectileAction.HIT,
           targetId
         )
@@ -223,7 +222,7 @@ class GameServer(port: Int, val worldFile: String = "") {
           projectile.getX, projectile.getY,
           projectile.colorRGB,
           projectile.id,
-          projectile.direction,
+          projectile.dx, projectile.dy,
           ProjectileAction.DESPAWN
         )
         broadcastToAll(packet)
@@ -250,7 +249,7 @@ class GameServer(port: Int, val worldFile: String = "") {
       projectile.getX, projectile.getY,
       projectile.colorRGB,
       projectile.id,
-      projectile.direction,
+      projectile.dx, projectile.dy,
       ProjectileAction.SPAWN
     )
     broadcastToAll(packet)

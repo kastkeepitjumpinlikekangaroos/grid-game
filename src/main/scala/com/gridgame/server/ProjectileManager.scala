@@ -1,7 +1,6 @@
 package com.gridgame.server
 
 import com.gridgame.common.Constants
-import com.gridgame.common.model.Direction
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Projectile
 import com.gridgame.common.model.WorldData
@@ -23,16 +22,12 @@ class ProjectileManager(registry: ClientRegistry) {
   private val projectiles = new ConcurrentHashMap[Int, Projectile]()
   private val nextId = new AtomicInteger(1)
 
-  def spawnProjectile(ownerId: UUID, x: Int, y: Int, direction: Direction, colorRGB: Int): Projectile = {
+  def spawnProjectile(ownerId: UUID, x: Int, y: Int, dx: Float, dy: Float, colorRGB: Int): Projectile = {
     val id = nextId.getAndIncrement()
-    // Spawn the projectile one cell ahead in the direction the player is facing
-    val (spawnX, spawnY) = direction match {
-      case Direction.Up    => (x, y - 1)
-      case Direction.Down  => (x, y + 1)
-      case Direction.Left  => (x - 1, y)
-      case Direction.Right => (x + 1, y)
-    }
-    val projectile = new Projectile(id, ownerId, spawnX, spawnY, direction, colorRGB)
+    // Spawn the projectile one cell ahead in the velocity direction
+    val spawnX = x.toFloat + dx
+    val spawnY = y.toFloat + dy
+    val projectile = new Projectile(id, ownerId, spawnX, spawnY, dx, dy, colorRGB)
     projectiles.put(id, projectile)
     println(s"ProjectileManager: Spawned $projectile")
     projectile

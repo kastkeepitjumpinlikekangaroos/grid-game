@@ -106,10 +106,11 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
       val projX = projectile.getX
       val projY = projectile.getY
 
-      // Check if projectile is in viewport
-      if (projX >= viewportX && projX < viewportX + Constants.VIEWPORT_CELLS &&
-          projY >= viewportY && projY < viewportY + Constants.VIEWPORT_CELLS) {
+      // Check if projectile is in viewport (using float bounds)
+      if (projX >= viewportX - 1 && projX < viewportX + Constants.VIEWPORT_CELLS + 1 &&
+          projY >= viewportY - 1 && projY < viewportY + Constants.VIEWPORT_CELLS + 1) {
 
+        // Use float coordinates for sub-cell rendering
         val screenX = (projX - viewportX) * Constants.CELL_SIZE_PX + Constants.CELL_SIZE_PX / 2
         val screenY = (projY - viewportY) * Constants.CELL_SIZE_PX + Constants.CELL_SIZE_PX / 2
         val radius = Constants.PROJECTILE_SIZE_PX / 2.0

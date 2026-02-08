@@ -49,12 +49,13 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       return false
     }
 
-    // Spawn projectile at player's position in their facing direction
+    // Spawn projectile at player's position with velocity from packet
     val projectile = projectileManager.spawnProjectile(
       playerId,
-      packet.getX,
-      packet.getY,
-      packet.getDirection,
+      packet.getX.toInt,
+      packet.getY.toInt,
+      packet.getDx,
+      packet.getDy,
       packet.getColorRGB
     )
 

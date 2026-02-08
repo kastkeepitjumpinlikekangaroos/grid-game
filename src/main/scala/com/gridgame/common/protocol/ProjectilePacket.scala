@@ -1,7 +1,6 @@
 package com.gridgame.common.protocol
 
 import com.gridgame.common.Constants
-import com.gridgame.common.model.Direction
 
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -18,38 +17,41 @@ class ProjectilePacket(
     sequenceNumber: Int,
     ownerId: UUID,
     timestamp: Int,
-    val x: Int,
-    val y: Int,
+    val x: Float,
+    val y: Float,
     val colorRGB: Int,
     val projectileId: Int,
-    val direction: Direction,
+    val dx: Float,
+    val dy: Float,
     val action: Byte,
     val targetId: UUID = null
 ) extends Packet(PacketType.PROJECTILE_UPDATE, sequenceNumber, ownerId, timestamp) {
 
-  def this(sequenceNumber: Int, ownerId: UUID, x: Int, y: Int, colorRGB: Int,
-           projectileId: Int, direction: Direction, action: Byte) = {
+  def this(sequenceNumber: Int, ownerId: UUID, x: Float, y: Float, colorRGB: Int,
+           projectileId: Int, dx: Float, dy: Float, action: Byte) = {
     this(sequenceNumber, ownerId, Packet.getCurrentTimestamp, x, y, colorRGB,
-         projectileId, direction, action, null)
+         projectileId, dx, dy, action, null)
   }
 
-  def this(sequenceNumber: Int, ownerId: UUID, x: Int, y: Int, colorRGB: Int,
-           projectileId: Int, direction: Direction, action: Byte, targetId: UUID) = {
+  def this(sequenceNumber: Int, ownerId: UUID, x: Float, y: Float, colorRGB: Int,
+           projectileId: Int, dx: Float, dy: Float, action: Byte, targetId: UUID) = {
     this(sequenceNumber, ownerId, Packet.getCurrentTimestamp, x, y, colorRGB,
-         projectileId, direction, action, targetId)
+         projectileId, dx, dy, action, targetId)
   }
 
   def getProjectileId: Int = projectileId
 
-  def getDirection: Direction = direction
+  def getDx: Float = dx
+
+  def getDy: Float = dy
 
   def getAction: Byte = action
 
   def getTargetId: UUID = targetId
 
-  def getX: Int = x
+  def getX: Float = x
 
-  def getY: Int = y
+  def getY: Float = y
 
   def getColorRGB: Int = colorRGB
 
@@ -67,11 +69,11 @@ class ProjectilePacket(
     buffer.putLong(ownerId.getMostSignificantBits)
     buffer.putLong(ownerId.getLeastSignificantBits)
 
-    // [21-24] X Position
-    buffer.putInt(x)
+    // [21-24] X Position (as float bits)
+    buffer.putFloat(x)
 
-    // [25-28] Y Position
-    buffer.putInt(y)
+    // [25-28] Y Position (as float bits)
+    buffer.putFloat(y)
 
     // [29-32] Color RGB
     buffer.putInt(colorRGB)
@@ -83,13 +85,16 @@ class ProjectilePacket(
     // [37-40] Projectile ID
     buffer.putInt(projectileId)
 
-    // [41] Direction ID
-    buffer.put(direction.id.toByte)
+    // [41-42] DX (scaled short: dx * 32767)
+    buffer.putShort((dx * 32767).toShort)
 
-    // [42] Action
+    // [43-44] DY (scaled short: dy * 32767)
+    buffer.putShort((dy * 32767).toShort)
+
+    // [45] Action
     buffer.put(action)
 
-    // [43-58] Target UUID (for hit action)
+    // [46-61] Target UUID (for hit action)
     if (targetId != null) {
       buffer.putLong(targetId.getMostSignificantBits)
       buffer.putLong(targetId.getLeastSignificantBits)
@@ -98,8 +103,8 @@ class ProjectilePacket(
       buffer.putLong(0L)
     }
 
-    // [59-63] Reserved (5 bytes)
-    buffer.put(new Array[Byte](5))
+    // [62-63] Reserved (2 bytes)
+    buffer.put(new Array[Byte](2))
 
     buffer.array()
   }
@@ -112,6 +117,6 @@ class ProjectilePacket(
       case ProjectileAction.DESPAWN => "DESPAWN"
       case _ => "UNKNOWN"
     }
-    s"ProjectilePacket{seq=$sequenceNumber, owner=${playerId.toString.substring(0, 8)}, pos=($x, $y), projId=$projectileId, dir=$direction, action=$actionStr}"
+    s"ProjectilePacket{seq=$sequenceNumber, owner=${playerId.toString.substring(0, 8)}, pos=($x, $y), projId=$projectileId, vel=($dx, $dy), action=$actionStr}"
   }
 }

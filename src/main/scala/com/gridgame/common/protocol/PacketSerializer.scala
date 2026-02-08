@@ -33,63 +33,31 @@ object PacketSerializer {
     val leastSigBits = buffer.getLong()
     val playerId = new UUID(mostSigBits, leastSigBits)
 
-    // [21-24] X Position
-    val x = buffer.getInt()
-
-    // [25-28] Y Position
-    val y = buffer.getInt()
-
-    // [29-32] Color RGB
-    val colorRGB = buffer.getInt()
-
-    // [33-36] Timestamp
-    val timestamp = buffer.getInt()
-
-    // [37-63] Payload (27 bytes)
-    val payload = new Array[Byte](27)
-    buffer.get(payload)
+    // For PROJECTILE_UPDATE, x/y are floats; for other packets, they're ints
+    // We need to handle this differently based on packet type
+    val packetTypeForXY = packetType
 
     // Deserialize based on packet type
-    packetType match {
-      case PacketType.PLAYER_JOIN =>
-        // Name is in payload bytes 0-22 (23 bytes), health in bytes 23-26
-        val nameBytes = payload.take(23)
-        val playerName = extractString(nameBytes)
-        val healthBuffer = ByteBuffer.wrap(payload, 23, 4).order(ByteOrder.BIG_ENDIAN)
-        val health = healthBuffer.getInt
-        val joinPosition = try {
-          new Position(x, y)
-        } catch {
-          case _: IllegalArgumentException => new Position(0, 0)
-        }
-        new PlayerJoinPacket(sequenceNumber, playerId, timestamp, joinPosition, colorRGB, playerName, health)
-
-      case PacketType.PLAYER_UPDATE =>
-        // Health is in payload bytes 0-3
-        val healthBuffer = ByteBuffer.wrap(payload, 0, 4).order(ByteOrder.BIG_ENDIAN)
-        val health = healthBuffer.getInt
-        val updatePosition = try {
-          new Position(x, y)
-        } catch {
-          case _: IllegalArgumentException => new Position(0, 0)
-        }
-        new PlayerUpdatePacket(sequenceNumber, playerId, timestamp, updatePosition, colorRGB, health)
-
-      case PacketType.PLAYER_LEAVE =>
-        new PlayerLeavePacket(sequenceNumber, playerId, timestamp)
-
-      case PacketType.WORLD_INFO =>
-        val worldFile = extractString(payload)
-        new WorldInfoPacket(sequenceNumber, timestamp, worldFile)
-
-      case PacketType.HEARTBEAT =>
-        new PlayerLeavePacket(sequenceNumber, playerId, timestamp)
-
+    packetTypeForXY match {
       case PacketType.PROJECTILE_UPDATE =>
-        // Payload: [0-3] projectile ID, [4] direction, [5] action, [6-21] target UUID
+        // [21-24] X Position (as float)
+        val x = buffer.getFloat()
+        // [25-28] Y Position (as float)
+        val y = buffer.getFloat()
+        // [29-32] Color RGB
+        val colorRGB = buffer.getInt()
+        // [33-36] Timestamp
+        val timestamp = buffer.getInt()
+        // [37-63] Payload (27 bytes)
+        val payload = new Array[Byte](27)
+        buffer.get(payload)
+        // Payload: [0-3] projectile ID, [4-5] dx, [6-7] dy, [8] action, [9-24] target UUID
         val payloadBuffer = ByteBuffer.wrap(payload).order(ByteOrder.BIG_ENDIAN)
         val projectileId = payloadBuffer.getInt
-        val directionId = payloadBuffer.get()
+        val dxShort = payloadBuffer.getShort()
+        val dyShort = payloadBuffer.getShort()
+        val dx = dxShort / 32767.0f
+        val dy = dyShort / 32767.0f
         val action = payloadBuffer.get()
         val targetMostSig = payloadBuffer.getLong
         val targetLeastSig = payloadBuffer.getLong
@@ -98,11 +66,62 @@ object PacketSerializer {
         } else {
           null
         }
-        val direction = Direction.fromId(directionId)
         new ProjectilePacket(
           sequenceNumber, playerId, timestamp, x, y, colorRGB,
-          projectileId, direction, action, targetId
+          projectileId, dx, dy, action, targetId
         )
+
+      case _ =>
+        // [21-24] X Position (as int)
+        val x = buffer.getInt()
+        // [25-28] Y Position (as int)
+        val y = buffer.getInt()
+        // [29-32] Color RGB
+        val colorRGB = buffer.getInt()
+        // [33-36] Timestamp
+        val timestamp = buffer.getInt()
+        // [37-63] Payload (27 bytes)
+        val payload = new Array[Byte](27)
+        buffer.get(payload)
+
+        packetType match {
+          case PacketType.PLAYER_JOIN =>
+            // Name is in payload bytes 0-22 (23 bytes), health in bytes 23-26
+            val nameBytes = payload.take(23)
+            val playerName = extractString(nameBytes)
+            val healthBuffer = ByteBuffer.wrap(payload, 23, 4).order(ByteOrder.BIG_ENDIAN)
+            val health = healthBuffer.getInt
+            val joinPosition = try {
+              new Position(x, y)
+            } catch {
+              case _: IllegalArgumentException => new Position(0, 0)
+            }
+            new PlayerJoinPacket(sequenceNumber, playerId, timestamp, joinPosition, colorRGB, playerName, health)
+
+          case PacketType.PLAYER_UPDATE =>
+            // Health is in payload bytes 0-3
+            val healthBuffer = ByteBuffer.wrap(payload, 0, 4).order(ByteOrder.BIG_ENDIAN)
+            val health = healthBuffer.getInt
+            val updatePosition = try {
+              new Position(x, y)
+            } catch {
+              case _: IllegalArgumentException => new Position(0, 0)
+            }
+            new PlayerUpdatePacket(sequenceNumber, playerId, timestamp, updatePosition, colorRGB, health)
+
+          case PacketType.PLAYER_LEAVE =>
+            new PlayerLeavePacket(sequenceNumber, playerId, timestamp)
+
+          case PacketType.WORLD_INFO =>
+            val worldFile = extractString(payload)
+            new WorldInfoPacket(sequenceNumber, timestamp, worldFile)
+
+          case PacketType.HEARTBEAT =>
+            new PlayerLeavePacket(sequenceNumber, playerId, timestamp)
+
+          case _ =>
+            throw new IllegalArgumentException(s"Unknown packet type: $packetType")
+        }
     }
   }
 

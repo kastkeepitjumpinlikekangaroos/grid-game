@@ -15,6 +15,7 @@ import java.util.concurrent.BlockingQueue
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
@@ -30,9 +31,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   private val localHealth: AtomicInteger = new AtomicInteger(Constants.MAX_HEALTH)
   private val players: ConcurrentHashMap[UUID, Player] = new ConcurrentHashMap()
   private val projectiles: ConcurrentHashMap[Int, Projectile] = new ConcurrentHashMap()
-  private val lastSequence: ConcurrentHashMap[UUID, Integer] = new ConcurrentHashMap()
   private val incomingPackets: BlockingQueue[Packet] = new LinkedBlockingQueue()
   private val sequenceNumber: AtomicInteger = new AtomicInteger(0)
+  private val movementBlockedUntil: AtomicLong = new AtomicLong(0)
 
   @volatile private var running = false
   @volatile private var isDead = false
@@ -97,6 +98,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   }
 
   def movePlayer(dx: Int, dy: Int): Unit = {
+    // Check if movement is blocked from burst shot
+    if (System.currentTimeMillis() < movementBlockedUntil.get()) {
+      return
+    }
+
     val world = currentWorld.get()
     val current = localPosition.get()
     val newX = Math.max(0, Math.min(world.width - 1, current.getX + dx))
@@ -132,19 +138,66 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   def shoot(): Unit = {
     if (isDead) return
 
-    val pos = localPosition.get()
+    // Shoot in the direction the player is facing
     val direction = localDirection.get()
+    val (dx, dy) = direction match {
+      case Direction.Up    => (0.0f, -1.0f)
+      case Direction.Down  => (0.0f, 1.0f)
+      case Direction.Left  => (-1.0f, 0.0f)
+      case Direction.Right => (1.0f, 0.0f)
+    }
+    shootToward(dx, dy)
+  }
+
+  def shootToward(dx: Float, dy: Float): Unit = {
+    if (isDead) return
+
+    val pos = localPosition.get()
     val packet = new ProjectilePacket(
       sequenceNumber.getAndIncrement(),
       localPlayerId,
-      pos.getX,
-      pos.getY,
+      pos.getX.toFloat,
+      pos.getY.toFloat,
       localColorRGB,
       0, // Server assigns real ID
-      direction,
+      dx, dy,
       ProjectileAction.SPAWN
     )
     networkThread.send(packet)
+  }
+
+  def shootAllDirections(): Unit = {
+    if (isDead) return
+
+    val pos = localPosition.get()
+
+    // Block movement for 500ms
+    movementBlockedUntil.set(System.currentTimeMillis() + Constants.BURST_SHOT_MOVEMENT_BLOCK_MS)
+
+    // Shoot in all 4 cardinal directions using dx/dy
+    val velocities = Seq(
+      (0.0f, -1.0f),  // Up
+      (0.0f, 1.0f),   // Down
+      (-1.0f, 0.0f),  // Left
+      (1.0f, 0.0f)    // Right
+    )
+    velocities.foreach { case (dx, dy) =>
+      val packet = new ProjectilePacket(
+        sequenceNumber.getAndIncrement(),
+        localPlayerId,
+        pos.getX.toFloat,
+        pos.getY.toFloat,
+        localColorRGB,
+        0, // Server assigns real ID
+        dx, dy,
+        ProjectileAction.SPAWN
+      )
+      networkThread.send(packet)
+    }
+  }
+
+  def isMovementBlocked: Boolean = {
+    System.currentTimeMillis() < movementBlockedUntil.get()
   }
 
   def enqueuePacket(packet: Packet): Unit = {
@@ -203,19 +256,6 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
       return
     }
 
-    // PLAYER_JOIN always processed (handles rejoins where seq resets)
-    if (packet.getType == PacketType.PLAYER_JOIN) {
-      lastSequence.put(playerId, packet.getSequenceNumber)
-      handlePlayerJoin(packet.asInstanceOf[PlayerJoinPacket])
-      return
-    }
-
-    val lastSeq = lastSequence.getOrDefault(playerId, -1)
-    if (packet.getSequenceNumber <= lastSeq) {
-      return
-    }
-    lastSequence.put(playerId, packet.getSequenceNumber)
-
     packet.getType match {
       case PacketType.PLAYER_JOIN =>
         handlePlayerJoin(packet.asInstanceOf[PlayerJoinPacket])
@@ -241,7 +281,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
           packet.getPlayerId,
           packet.getX,
           packet.getY,
-          packet.getDirection,
+          packet.getDx,
+          packet.getDy,
           packet.getColorRGB
         )
         projectiles.put(projectileId, projectile)
@@ -255,7 +296,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
             packet.getPlayerId,
             packet.getX,
             packet.getY,
-            packet.getDirection,
+            packet.getDx,
+            packet.getDy,
             packet.getColorRGB
           )
           projectiles.put(projectileId, newProjectile)
@@ -270,7 +312,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
             packet.getPlayerId,
             packet.getX,
             packet.getY,
-            packet.getDirection,
+            packet.getDx,
+            packet.getDy,
             packet.getColorRGB
           )
           projectiles.put(projectileId, updatedProjectile)

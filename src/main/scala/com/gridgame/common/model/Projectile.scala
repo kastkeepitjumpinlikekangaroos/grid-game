@@ -5,39 +5,42 @@ import java.util.UUID
 class Projectile(
     val id: Int,
     val ownerId: UUID,
-    private var x: Int,
-    private var y: Int,
-    val direction: Direction,
+    private var x: Float,
+    private var y: Float,
+    val dx: Float,
+    val dy: Float,
     val colorRGB: Int
 ) {
 
-  def getX: Int = x
+  def getX: Float = x
 
-  def getY: Int = y
+  def getY: Float = y
+
+  def getCellX: Int = x.toInt
+
+  def getCellY: Int = y.toInt
 
   def move(): Unit = {
-    direction match {
-      case Direction.Up    => y -= 1
-      case Direction.Down  => y += 1
-      case Direction.Left  => x -= 1
-      case Direction.Right => x += 1
-    }
+    x += dx
+    y += dy
   }
 
   def isOutOfBounds(world: WorldData): Boolean = {
-    x < 0 || x >= world.width || y < 0 || y >= world.height
+    val cellX = getCellX
+    val cellY = getCellY
+    cellX < 0 || cellX >= world.width || cellY < 0 || cellY >= world.height
   }
 
   def hitsNonWalkable(world: WorldData): Boolean = {
-    !world.isWalkable(x, y)
+    !world.isWalkable(getCellX, getCellY)
   }
 
   def hitsPlayer(player: Player): Boolean = {
     val pos = player.getPosition
-    pos.getX == x && pos.getY == y && !player.getId.equals(ownerId)
+    pos.getX == getCellX && pos.getY == getCellY && !player.getId.equals(ownerId)
   }
 
   override def toString: String = {
-    s"Projectile{id=$id, owner=${ownerId.toString.substring(0, 8)}, pos=($x, $y), dir=$direction}"
+    s"Projectile{id=$id, owner=${ownerId.toString.substring(0, 8)}, pos=($x, $y), vel=($dx, $dy)}"
   }
 }

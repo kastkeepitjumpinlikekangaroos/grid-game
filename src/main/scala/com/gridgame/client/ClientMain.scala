@@ -1,6 +1,7 @@
 package com.gridgame.client
 
 import com.gridgame.client.input.KeyboardHandler
+import com.gridgame.client.input.MouseHandler
 import com.gridgame.client.ui.GameCanvas
 import com.gridgame.common.Constants
 import com.gridgame.common.model.WorldData
@@ -52,6 +53,9 @@ class ClientMain extends Application {
     val keyHandler = new KeyboardHandler(client)
     scene.setOnKeyPressed(keyHandler)
     scene.setOnKeyReleased(keyHandler)
+
+    val mouseHandler = new MouseHandler(client)
+    scene.setOnMousePressed(mouseHandler)
 
     primaryStage.setTitle("Grid Game - Multiplayer 2D")
     primaryStage.setScene(scene)
