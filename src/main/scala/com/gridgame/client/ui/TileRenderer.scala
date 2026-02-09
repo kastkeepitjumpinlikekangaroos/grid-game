@@ -11,7 +11,9 @@ object TileRenderer {
   private val cellH = Constants.TILE_CELL_HEIGHT  // 56
   private val numTiles = 20
 
-  private var tiles: Array[Image] = _
+  // tiles(tileId)(frame) = Image
+  private var tiles: Array[Array[Image]] = _
+  private var numFrames: Int = 1
 
   private def ensureLoaded(): Unit = {
     if (tiles != null) return
@@ -20,14 +22,18 @@ object TileRenderer {
     val file = new File(path)
     if (!file.exists()) {
       System.err.println(s"Tileset not found: ${file.getAbsolutePath}")
-      tiles = Array.fill(numTiles)(new WritableImage(cellW, cellH))
+      numFrames = 1
+      tiles = Array.fill(numTiles)(Array.fill(1)(new WritableImage(cellW, cellH)))
       return
     }
 
     val sheet = new Image(new FileInputStream(file))
     val reader = sheet.getPixelReader
+    numFrames = (sheet.getHeight.toInt / cellH).max(1)
     tiles = Array.tabulate(numTiles) { id =>
-      new WritableImage(reader, id * cellW, 0, cellW, cellH)
+      Array.tabulate(numFrames) { frame =>
+        new WritableImage(reader, id * cellW, frame * cellH, cellW, cellH)
+      }
     }
   }
 
@@ -44,9 +50,17 @@ object TileRenderer {
     relativePath
   }
 
-  def getTileImage(tileId: Int): Image = {
+  def getNumFrames: Int = {
     ensureLoaded()
-    if (tileId >= 0 && tileId < numTiles) tiles(tileId)
-    else tiles(0) // fallback to grass
+    numFrames
   }
+
+  def getTileImage(tileId: Int, frame: Int): Image = {
+    ensureLoaded()
+    val id = if (tileId >= 0 && tileId < numTiles) tileId else 0
+    val f = frame % numFrames
+    tiles(id)(f)
+  }
+
+  def getTileImage(tileId: Int): Image = getTileImage(tileId, 0)
 }

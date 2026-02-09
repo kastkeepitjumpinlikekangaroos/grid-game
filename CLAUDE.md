@@ -58,7 +58,24 @@ src/main/scala/com/gridgame/
 └── client/
 
 worlds/                         # World definition files (JSON)
+sprites/                        # Generated sprite assets (tiles.png, character.png)
+scripts/                        # Asset generation scripts
 ```
+
+## Asset Generation
+
+Tile sprites are pre-rendered images loaded at runtime. Regenerate after changing tile colors, adding tiles, or adjusting elevations.
+
+```bash
+# Requires Pillow: pip install Pillow
+python3 scripts/generate_tiles.py
+```
+
+- **Input**: Tile definitions hardcoded in the script (colors from `Tile.scala`, elevations per tile)
+- **Output**: `sprites/tiles.png` (800x56 PNG, 20 columns x 1 row, 40x56px per cell)
+- Flat (walkable) tiles: diamond at bottom 20px, upper area transparent
+- Elevated (non-walkable) tiles: top diamond + left/right side faces, bottom-aligned
+- If you add a new tile type to `Tile.scala`, also add its entry to the `TILES` list in this script and regenerate
 
 ## Network Protocol
 
@@ -93,7 +110,9 @@ Characters are procedurally generated based on:
 ### Adding a New Tile Type
 1. Add case object to `Tile.scala` with id, name, walkable, color
 2. Add to `Tile.all` sequence
-3. Use in world JSON files
+3. Add entry to `TILES` list in `scripts/generate_tiles.py` (with color and elevation)
+4. Run `python3 scripts/generate_tiles.py` to regenerate `sprites/tiles.png`
+5. Use in world JSON files
 
 ### Adding a New Packet Type
 1. Add to `PacketType.scala` (new case object with unique ID)

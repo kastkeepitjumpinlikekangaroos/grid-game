@@ -24,6 +24,7 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
   gc.setImageSmoothing(false)
   private var animationTick: Int = 0
   private val FRAMES_PER_STEP = 5
+  private val TILE_ANIM_SPEED = 15
   private val lastRemotePositions: mutable.Map[UUID, Position] = mutable.Map.empty
   private val remoteMovingUntil: mutable.Map[UUID, Long] = mutable.Map.empty
 
@@ -119,13 +120,15 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
     val startY = Math.max(0, minWY)
     val endY = Math.min(world.height - 1, maxWY)
 
+    val tileFrame = (animationTick / TILE_ANIM_SPEED) % TileRenderer.getNumFrames
+
     for (wy <- startY to endY) {
       for (wx <- startX to endX) {
         val tile = world.getTile(wx, wy)
         val sx = worldToScreenX(wx, wy, camOffX)
         val sy = worldToScreenY(wx, wy, camOffY)
 
-        val img = TileRenderer.getTileImage(tile.id)
+        val img = TileRenderer.getTileImage(tile.id, tileFrame)
         // Align: diamond center in image is at (HW, cellH - HH)
         // Screen diamond center is at (sx, sy)
         gc.drawImage(img, sx - HW, sy - (cellH - HH))
