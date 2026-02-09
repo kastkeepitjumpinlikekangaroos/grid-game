@@ -38,6 +38,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   private val incomingPackets: BlockingQueue[Packet] = new LinkedBlockingQueue()
   private val sequenceNumber: AtomicInteger = new AtomicInteger(0)
   private val movementBlockedUntil: AtomicLong = new AtomicLong(0)
+  private val lastMoveTime: AtomicLong = new AtomicLong(0)
   private val speedBoostUntil: AtomicLong = new AtomicLong(0)
   private val fastProjectilesUntil: AtomicLong = new AtomicLong(0)
   private val shieldUntil: AtomicLong = new AtomicLong(0)
@@ -138,6 +139,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
 
     if (!newPos.equals(current)) {
       localPosition.set(newPos)
+      lastMoveTime.set(System.currentTimeMillis())
       sendPositionUpdate(newPos)
     }
   }
@@ -546,6 +548,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   def getLocalDirection: Direction = localDirection.get()
 
   def getLocalHealth: Int = localHealth.get()
+
+  def getIsMoving: Boolean = System.currentTimeMillis() - lastMoveTime.get() < 200
 
   def getIsDead: Boolean = isDead
 

@@ -16,15 +16,46 @@ import javafx.scene.image.Image
 import javafx.scene.paint.Color
 
 import java.util.UUID
+import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 
 class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, Constants.VIEWPORT_SIZE_PX) {
   private val gc: GraphicsContext = getGraphicsContext2D
+  gc.setImageSmoothing(false)
+  private var animationTick: Int = 0
+  private val FRAMES_PER_STEP = 5
+  private val lastRemotePositions: mutable.Map[UUID, Position] = mutable.Map.empty
+  private val remoteMovingUntil: mutable.Map[UUID, Long] = mutable.Map.empty
+
+  private val HW = Constants.ISO_HALF_W  // 20
+  private val HH = Constants.ISO_HALF_H  // 10
 
   private def world: WorldData = client.getWorld
 
+  // --- Isometric coordinate transforms ---
+
+  /** Convert world tile coordinates to screen pixel coordinates (center of tile diamond). */
+  private def worldToScreenX(wx: Double, wy: Double, camOffX: Double): Double =
+    (wx - wy) * HW + camOffX
+
+  private def worldToScreenY(wx: Double, wy: Double, camOffY: Double): Double =
+    (wx + wy) * HH + camOffY
+
+  /** Inverse: screen pixel coordinates to world tile coordinates. */
+  private def screenToWorldX(sx: Double, sy: Double, camOffX: Double, camOffY: Double): Double = {
+    val rx = sx - camOffX
+    val ry = sy - camOffY
+    (rx / HW + ry / HH) / 2.0
+  }
+
+  private def screenToWorldY(sx: Double, sy: Double, camOffX: Double, camOffY: Double): Double = {
+    val rx = sx - camOffX
+    val ry = sy - camOffY
+    (ry / HH - rx / HW) / 2.0
+  }
+
   def render(): Unit = {
-    gc.clearRect(0, 0, getWidth, getHeight)
+    animationTick += 1
 
     // Check if player is dead
     if (client.getIsDead) {
@@ -34,88 +65,86 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
 
     val localPos = client.getLocalPosition
     val currentWorld = world
+    val canvasW = getWidth
+    val canvasH = getHeight
 
-    val viewportX = calculateViewportOffsetX(localPos.getX, currentWorld)
-    val viewportY = calculateViewportOffsetY(localPos.getY, currentWorld)
+    // Camera offset: center the local player's iso position on screen
+    val playerSx = (localPos.getX.toDouble - localPos.getY.toDouble) * HW
+    val playerSy = (localPos.getX.toDouble + localPos.getY.toDouble) * HH
+    val camOffX = canvasW / 2.0 - playerSx
+    val camOffY = canvasH / 2.0 - playerSy
 
-    drawTerrain(viewportX, viewportY, currentWorld)
-    drawGrid(viewportX, viewportY)
-    drawItems(viewportX, viewportY)
-    drawProjectiles(viewportX, viewportY)
+    // Fill background
+    gc.setFill(Color.rgb(30, 30, 40))
+    gc.fillRect(0, 0, canvasW, canvasH)
 
-    client.getPlayers.values().asScala.foreach { player =>
-      if (!player.isDead) {
-        val pos = player.getPosition
-        if (isInViewport(pos, viewportX, viewportY)) {
-          drawPlayer(player, viewportX, viewportY)
-        }
-      }
+    drawTerrain(camOffX, camOffY, currentWorld)
+    drawItems(camOffX, camOffY)
+    drawProjectiles(camOffX, camOffY)
+
+    // Draw remote players (sorted by worldY for depth)
+    val remotePlayers = client.getPlayers.values().asScala.filter(!_.isDead).toSeq.sortBy(_.getPosition.getY)
+    remotePlayers.foreach { player =>
+      drawPlayer(player, camOffX, camOffY)
     }
 
-    drawLocalPlayer(localPos, viewportX, viewportY)
+    drawLocalPlayer(localPos, camOffX, camOffY)
 
-    drawCoordinates(viewportX, viewportY, currentWorld)
+    drawCoordinates(currentWorld)
     drawInventory()
   }
 
-  private def calculateViewportOffsetX(playerCoord: Int, world: WorldData): Int = {
-    val offset = playerCoord - (Constants.VIEWPORT_CELLS / 2)
-    Math.max(0, Math.min(world.width - Constants.VIEWPORT_CELLS, offset))
-  }
+  private def drawTerrain(camOffX: Double, camOffY: Double, world: WorldData): Unit = {
+    val canvasW = getWidth
+    val canvasH = getHeight
+    val cellH = Constants.TILE_CELL_HEIGHT
 
-  private def calculateViewportOffsetY(playerCoord: Int, world: WorldData): Int = {
-    val offset = playerCoord - (Constants.VIEWPORT_CELLS / 2)
-    Math.max(0, Math.min(world.height - Constants.VIEWPORT_CELLS, offset))
-  }
+    // Determine visible world tile range using inverse transform of viewport corners
+    val corners = Seq(
+      (screenToWorldX(0, 0, camOffX, camOffY), screenToWorldY(0, 0, camOffX, camOffY)),
+      (screenToWorldX(canvasW, 0, camOffX, camOffY), screenToWorldY(canvasW, 0, camOffX, camOffY)),
+      (screenToWorldX(0, canvasH, camOffX, camOffY), screenToWorldY(0, canvasH, camOffX, camOffY)),
+      (screenToWorldX(canvasW, canvasH, camOffX, camOffY), screenToWorldY(canvasW, canvasH, camOffX, camOffY))
+    )
 
-  private def isInViewport(pos: Position, viewportX: Int, viewportY: Int): Boolean = {
-    pos.getX >= viewportX &&
-    pos.getX < viewportX + Constants.VIEWPORT_CELLS &&
-    pos.getY >= viewportY &&
-    pos.getY < viewportY + Constants.VIEWPORT_CELLS
-  }
+    // Margin of 6 to account for tall tiles extending above their grid position
+    val minWX = corners.map(_._1).min.floor.toInt - 6
+    val maxWX = corners.map(_._1).max.ceil.toInt + 6
+    val minWY = corners.map(_._2).min.floor.toInt - 6
+    val maxWY = corners.map(_._2).max.ceil.toInt + 6
 
-  private def drawTerrain(viewportX: Int, viewportY: Int, world: WorldData): Unit = {
-    for (dy <- 0 until Constants.VIEWPORT_CELLS) {
-      for (dx <- 0 until Constants.VIEWPORT_CELLS) {
-        val worldX = viewportX + dx
-        val worldY = viewportY + dy
-        val tile = world.getTile(worldX, worldY)
-        val screenX = dx * Constants.CELL_SIZE_PX
-        val screenY = dy * Constants.CELL_SIZE_PX
+    // Clamp to world bounds
+    val startX = Math.max(0, minWX)
+    val endX = Math.min(world.width - 1, maxWX)
+    val startY = Math.max(0, minWY)
+    val endY = Math.min(world.height - 1, maxWY)
 
-        gc.setFill(intToColor(tile.color))
-        gc.fillRect(screenX, screenY, Constants.CELL_SIZE_PX, Constants.CELL_SIZE_PX)
+    for (wy <- startY to endY) {
+      for (wx <- startX to endX) {
+        val tile = world.getTile(wx, wy)
+        val sx = worldToScreenX(wx, wy, camOffX)
+        val sy = worldToScreenY(wx, wy, camOffY)
+
+        val img = TileRenderer.getTileImage(tile.id)
+        // Align: diamond center in image is at (HW, cellH - HH)
+        // Screen diamond center is at (sx, sy)
+        gc.drawImage(img, sx - HW, sy - (cellH - HH))
       }
     }
   }
 
-  private def drawGrid(viewportX: Int, viewportY: Int): Unit = {
-    gc.setStroke(Color.rgb(0, 0, 0, 0.15))
-    gc.setLineWidth(0.5)
-
-    for (i <- 0 to Constants.VIEWPORT_CELLS) {
-      val x = i * Constants.CELL_SIZE_PX
-      gc.strokeLine(x, 0, x, Constants.VIEWPORT_SIZE_PX)
-    }
-
-    for (i <- 0 to Constants.VIEWPORT_CELLS) {
-      val y = i * Constants.CELL_SIZE_PX
-      gc.strokeLine(0, y, Constants.VIEWPORT_SIZE_PX, y)
-    }
-  }
-
-  private def drawItems(viewportX: Int, viewportY: Int): Unit = {
+  private def drawItems(camOffX: Double, camOffY: Double): Unit = {
     client.getItems.values().asScala.foreach { item =>
       val ix = item.getCellX
       val iy = item.getCellY
 
-      if (ix >= viewportX && ix < viewportX + Constants.VIEWPORT_CELLS &&
-          iy >= viewportY && iy < viewportY + Constants.VIEWPORT_CELLS) {
+      val centerX = worldToScreenX(ix, iy, camOffX)
+      val centerY = worldToScreenY(ix, iy, camOffY)
+      val halfSize = Constants.ITEM_SIZE_PX / 2.0
 
-        val centerX = (ix - viewportX) * Constants.CELL_SIZE_PX + Constants.CELL_SIZE_PX / 2.0
-        val centerY = (iy - viewportY) * Constants.CELL_SIZE_PX + Constants.CELL_SIZE_PX / 2.0
-        val halfSize = Constants.ITEM_SIZE_PX / 2.0
+      // Skip if off-screen
+      if (centerX > -halfSize && centerX < getWidth + halfSize &&
+          centerY > -halfSize && centerY < getHeight + halfSize) {
 
         gc.setFill(intToColor(item.colorRGB))
         gc.setStroke(Color.BLACK)
@@ -163,7 +192,6 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
         gc.strokePolygon(xPoints, yPoints, 5)
 
       case ItemType.Fence =>
-        // Three vertical bars representing a fence
         val barW = halfSize * 0.35
         gc.fillRect(centerX - halfSize, centerY - halfSize, barW, halfSize * 2)
         gc.strokeRect(centerX - halfSize, centerY - halfSize, barW, halfSize * 2)
@@ -180,82 +208,118 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
     }
   }
 
-  private def drawProjectiles(viewportX: Int, viewportY: Int): Unit = {
+  private def drawProjectiles(camOffX: Double, camOffY: Double): Unit = {
     client.getProjectiles.values().asScala.foreach { projectile =>
-      val projX = projectile.getX
-      val projY = projectile.getY
+      val projX = projectile.getX.toDouble
+      val projY = projectile.getY.toDouble
 
-      // Check if projectile is in viewport (with margin for beam trail)
-      if (projX >= viewportX - 4 && projX < viewportX + Constants.VIEWPORT_CELLS + 4 &&
-          projY >= viewportY - 4 && projY < viewportY + Constants.VIEWPORT_CELLS + 4) {
+      val beamLength = 3.0
 
-        val beamLength = 3.0 // Beam length in tiles
+      val tailX = worldToScreenX(projX, projY, camOffX)
+      val tailY = worldToScreenY(projX, projY, camOffY)
 
-        // Tail of the beam (current position)
-        val tailX = (projX - viewportX) * Constants.CELL_SIZE_PX + Constants.CELL_SIZE_PX / 2.0
-        val tailY = (projY - viewportY) * Constants.CELL_SIZE_PX + Constants.CELL_SIZE_PX / 2.0
+      val tipWX = projX + projectile.dx * beamLength
+      val tipWY = projY + projectile.dy * beamLength
+      val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+      val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-        // Tip of the beam (ahead of the projectile in travel direction)
-        val tipX = tailX + projectile.dx * beamLength * Constants.CELL_SIZE_PX
-        val tipY = tailY + projectile.dy * beamLength * Constants.CELL_SIZE_PX
+      val margin = 100.0
+      if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+          Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
         val color = intToColor(projectile.colorRGB)
-
-        // Outer glow
-        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.25))
-        gc.setLineWidth(8)
         gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+
+        // 3-layer glow bloom
+        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.15))
+        gc.setLineWidth(10)
         gc.strokeLine(tailX, tailY, tipX, tipY)
 
-        // Mid glow
-        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.5))
-        gc.setLineWidth(4)
+        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.4))
+        gc.setLineWidth(5)
         gc.strokeLine(tailX, tailY, tipX, tipY)
 
-        // Bright core
-        gc.setStroke(Color.color(
-          Math.min(1.0, color.getRed * 0.5 + 0.5),
-          Math.min(1.0, color.getGreen * 0.5 + 0.5),
-          Math.min(1.0, color.getBlue * 0.5 + 0.5),
-          1.0
-        ))
-        gc.setLineWidth(2)
+        // White-hot core
+        val coreR = Math.min(1.0, color.getRed * 0.35 + 0.65)
+        val coreG = Math.min(1.0, color.getGreen * 0.35 + 0.65)
+        val coreB = Math.min(1.0, color.getBlue * 0.35 + 0.65)
+        gc.setStroke(Color.color(coreR, coreG, coreB, 0.9))
+        gc.setLineWidth(1.5)
         gc.strokeLine(tailX, tailY, tipX, tipY)
+
+        // Bright orb at the tip
+        val orbR = 4.5
+        gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.3))
+        gc.fillOval(tipX - orbR * 1.5, tipY - orbR * 1.5, orbR * 3, orbR * 3)
+        gc.setFill(Color.color(coreR, coreG, coreB, 0.7))
+        gc.fillOval(tipX - orbR * 0.6, tipY - orbR * 0.6, orbR * 1.2, orbR * 1.2)
       }
     }
   }
 
-  private def drawPlayer(player: Player, viewportX: Int, viewportY: Int): Unit = {
+  private def drawShadow(screenX: Double, screenY: Double): Unit = {
+    gc.setFill(Color.rgb(0, 0, 0, 0.3))
+    gc.fillOval(screenX - 12, screenY - 5, 24, 10)
+  }
+
+  private def drawPlayer(player: Player, camOffX: Double, camOffY: Double): Unit = {
     val pos = player.getPosition
+    val playerId = player.getId
 
-    val screenX = (pos.getX - viewportX) * Constants.CELL_SIZE_PX
-    val screenY = (pos.getY - viewportY) * Constants.CELL_SIZE_PX
+    val screenX = worldToScreenX(pos.getX, pos.getY, camOffX)
+    val screenY = worldToScreenY(pos.getX, pos.getY, camOffY)
 
-    val sprite = SpriteGenerator.getSprite(player.getColorRGB, player.getDirection)
-    gc.drawImage(sprite, screenX, screenY)
+    val spriteSz = Constants.SPRITE_SIZE_PX
+
+    // Skip if off-screen
+    if (screenX < -spriteSz || screenX > getWidth + spriteSz ||
+        screenY < -spriteSz || screenY > getHeight + spriteSz) return
+
+    // Detect remote player movement
+    val now = System.currentTimeMillis()
+    val lastPos = lastRemotePositions.get(playerId)
+    if (lastPos.isEmpty || lastPos.get.getX != pos.getX || lastPos.get.getY != pos.getY) {
+      remoteMovingUntil.put(playerId, now + 200)
+    }
+    lastRemotePositions.put(playerId, pos)
+
+    val isMoving = now < remoteMovingUntil.getOrElse(playerId, 0L)
+    val frame = if (isMoving) (animationTick / FRAMES_PER_STEP) % 4 else 0
+
+    drawShadow(screenX, screenY)
+
+    val sprite = SpriteGenerator.getSprite(player.getColorRGB, player.getDirection, frame)
+    val spriteX = screenX - spriteSz / 2.0
+    val spriteY = screenY - spriteSz.toDouble
+    gc.drawImage(sprite, spriteX, spriteY)
 
     // Draw health bar above player
-    drawHealthBar(screenX, screenY, player.getHealth)
+    drawHealthBar(screenX, spriteY, player.getHealth)
   }
 
-  private def drawLocalPlayer(pos: Position, viewportX: Int, viewportY: Int): Unit = {
-    val screenX = (pos.getX - viewportX) * Constants.CELL_SIZE_PX
-    val screenY = (pos.getY - viewportY) * Constants.CELL_SIZE_PX
+  private def drawLocalPlayer(pos: Position, camOffX: Double, camOffY: Double): Unit = {
+    val screenX = worldToScreenX(pos.getX, pos.getY, camOffX)
+    val screenY = worldToScreenY(pos.getX, pos.getY, camOffY)
+
+    val spriteSz = Constants.SPRITE_SIZE_PX
+    val spriteX = screenX - spriteSz / 2.0
+    val spriteY = screenY - spriteSz.toDouble
 
     // Draw effect auras behind the player
-    drawEffectAuras(screenX, screenY)
+    drawEffectAuras(screenX, screenY - spriteSz / 2.0)
 
-    val sprite = SpriteGenerator.getSprite(client.getLocalColorRGB, client.getLocalDirection)
-    gc.drawImage(sprite, screenX, screenY)
+    drawShadow(screenX, screenY)
+
+    val frame = if (client.getIsMoving) (animationTick / FRAMES_PER_STEP) % 4 else 0
+    val sprite = SpriteGenerator.getSprite(client.getLocalColorRGB, client.getLocalDirection, frame)
+    gc.drawImage(sprite, spriteX, spriteY)
 
     // Draw health bar above local player
-    drawHealthBar(screenX, screenY, client.getLocalHealth)
+    drawHealthBar(screenX, spriteY, client.getLocalHealth)
   }
 
-  private def drawEffectAuras(screenX: Double, screenY: Double): Unit = {
-    val centerX = screenX + Constants.CELL_SIZE_PX / 2.0
-    val centerY = screenY + Constants.CELL_SIZE_PX / 2.0
-    val radius = Constants.CELL_SIZE_PX * 0.7
+  private def drawEffectAuras(centerX: Double, centerY: Double): Unit = {
+    val radius = Constants.SPRITE_SIZE_PX * 0.5
 
     if (client.hasShield) {
       gc.setStroke(Color.rgb(156, 39, 176, 0.7)) // Purple
@@ -280,11 +344,11 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
     }
   }
 
-  private def drawHealthBar(screenX: Double, screenY: Double, health: Int): Unit = {
+  private def drawHealthBar(screenCenterX: Double, spriteTopY: Double, health: Int): Unit = {
     val barWidth = Constants.HEALTH_BAR_WIDTH_PX
     val barHeight = Constants.HEALTH_BAR_HEIGHT_PX
-    val barX = screenX + (Constants.CELL_SIZE_PX - barWidth) / 2.0
-    val barY = screenY - Constants.HEALTH_BAR_OFFSET_Y - barHeight
+    val barX = screenCenterX - barWidth / 2.0
+    val barY = spriteTopY - Constants.HEALTH_BAR_OFFSET_Y - barHeight
 
     // Dark red background (empty health)
     gc.setFill(Color.DARKRED)
@@ -322,7 +386,7 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
     gc.fillText(reloadText, (getWidth - reloadTextWidth) / 2, getHeight / 2 + 40)
   }
 
-  private def drawCoordinates(viewportX: Int, viewportY: Int, world: WorldData): Unit = {
+  private def drawCoordinates(world: WorldData): Unit = {
     val localPos = client.getLocalPosition
     val playerCount = client.getPlayers.size()
     val health = client.getLocalHealth
@@ -333,17 +397,15 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
 
     val worldText = s"World: ${world.name}"
     val coordText = s"Position: (${localPos.getX}, ${localPos.getY})"
-    val viewportText = s"Viewport: [$viewportX-${viewportX + Constants.VIEWPORT_CELLS - 1}, $viewportY-${viewportY + Constants.VIEWPORT_CELLS - 1}]"
     val playersText = s"Players: ${playerCount + 1}"
     val healthText = s"Health: $health/${Constants.MAX_HEALTH}"
     val inventoryText = s"Inventory: ${client.getInventoryCount}/${Constants.MAX_INVENTORY_SIZE}"
 
     drawOutlinedText(worldText, 10, 20)
     drawOutlinedText(coordText, 10, 40)
-    drawOutlinedText(viewportText, 10, 60)
-    drawOutlinedText(playersText, 10, 80)
-    drawOutlinedText(healthText, 10, 100)
-    drawOutlinedText(inventoryText, 10, 120)
+    drawOutlinedText(playersText, 10, 60)
+    drawOutlinedText(healthText, 10, 80)
+    drawOutlinedText(inventoryText, 10, 100)
 
     // Show active effects
     val effects = Seq(
@@ -352,7 +414,7 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
       if (client.hasGemBoost) Some("FastShot") else None
     ).flatten
     if (effects.nonEmpty) {
-      drawOutlinedText(s"Effects: ${effects.mkString(" ")}", 10, 140)
+      drawOutlinedText(s"Effects: ${effects.mkString(" ")}", 10, 120)
     }
   }
 
@@ -411,5 +473,21 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
     val green = (argb >> 8) & 0xFF
     val blue = argb & 0xFF
     Color.rgb(red, green, blue, alpha / 255.0)
+  }
+
+  /** Get the camera offsets for the current local player position. Used by MouseHandler. */
+  def getCameraOffsets: (Double, Double) = {
+    val localPos = client.getLocalPosition
+    val playerSx = (localPos.getX.toDouble - localPos.getY.toDouble) * HW
+    val playerSy = (localPos.getX.toDouble + localPos.getY.toDouble) * HH
+    val camOffX = getWidth / 2.0 - playerSx
+    val camOffY = getHeight / 2.0 - playerSy
+    (camOffX, camOffY)
+  }
+
+  /** Convert screen coordinates to world coordinates. Used by MouseHandler. */
+  def screenToWorld(sx: Double, sy: Double): (Double, Double) = {
+    val (camOffX, camOffY) = getCameraOffsets
+    (screenToWorldX(sx, sy, camOffX, camOffY), screenToWorldY(sx, sy, camOffX, camOffY))
   }
 }

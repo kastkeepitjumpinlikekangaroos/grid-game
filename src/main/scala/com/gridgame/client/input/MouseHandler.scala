@@ -1,12 +1,13 @@
 package com.gridgame.client.input
 
 import com.gridgame.client.GameClient
+import com.gridgame.client.ui.GameCanvas
 import com.gridgame.common.Constants
 
 import javafx.event.EventHandler
 import javafx.scene.input.MouseEvent
 
-class MouseHandler(client: GameClient) extends EventHandler[MouseEvent] {
+class MouseHandler(client: GameClient, canvas: GameCanvas) extends EventHandler[MouseEvent] {
   private var lastShootTime: Long = 0
 
   override def handle(event: MouseEvent): Unit = {
@@ -21,15 +22,9 @@ class MouseHandler(client: GameClient) extends EventHandler[MouseEvent] {
 
       // Get the player's position in the world
       val playerPos = client.getLocalPosition
-      val world = client.getWorld
 
-      // Calculate the viewport offset (same logic as GameCanvas)
-      val viewportX = calculateViewportOffset(playerPos.getX, world.width)
-      val viewportY = calculateViewportOffset(playerPos.getY, world.height)
-
-      // Convert screen coordinates to world coordinates
-      val worldX = viewportX + (event.getX / Constants.CELL_SIZE_PX)
-      val worldY = viewportY + (event.getY / Constants.CELL_SIZE_PX)
+      // Convert screen coordinates to world coordinates using isometric inverse
+      val (worldX, worldY) = canvas.screenToWorld(event.getX, event.getY)
 
       // Calculate direction from player to clicked position
       val deltaX = worldX - playerPos.getX
@@ -47,10 +42,5 @@ class MouseHandler(client: GameClient) extends EventHandler[MouseEvent] {
 
       client.shootToward(dx, dy)
     }
-  }
-
-  private def calculateViewportOffset(playerCoord: Int, worldSize: Int): Int = {
-    val offset = playerCoord - (Constants.VIEWPORT_CELLS / 2)
-    Math.max(0, Math.min(worldSize - Constants.VIEWPORT_CELLS, offset))
   }
 }

@@ -51,7 +51,7 @@ class ClientMain extends Application {
     scene.setOnKeyPressed(keyHandler)
     scene.setOnKeyReleased(keyHandler)
 
-    val mouseHandler = new MouseHandler(client)
+    val mouseHandler = new MouseHandler(client, canvas)
     scene.setOnMousePressed(mouseHandler)
 
     primaryStage.setTitle("Grid Game - Multiplayer 2D")

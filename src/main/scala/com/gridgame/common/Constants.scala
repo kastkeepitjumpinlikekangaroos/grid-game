@@ -7,6 +7,19 @@ object Constants {
   val VIEWPORT_CELLS: Int = 50
   val VIEWPORT_SIZE_PX: Int = VIEWPORT_CELLS * CELL_SIZE_PX // 500px
 
+  // Sprite size for isometric view
+  val SPRITE_SIZE_PX: Int = 32
+
+  // Isometric tile dimensions (2:1 ratio)
+  val ISO_TILE_WIDTH: Int = 40
+  val ISO_TILE_HEIGHT: Int = 20
+  val ISO_HALF_W: Int = ISO_TILE_WIDTH / 2
+  val ISO_HALF_H: Int = ISO_TILE_HEIGHT / 2
+
+  // Tile sprite cell dimensions (for tileset image)
+  val TILE_CELL_WIDTH: Int = ISO_TILE_WIDTH   // 40
+  val TILE_CELL_HEIGHT: Int = 56
+
   // Network configuration
   val PACKET_SIZE: Int = 64
   val SERVER_PORT: Int = 25565
@@ -23,11 +36,10 @@ object Constants {
   val HEALTH_BAR_OFFSET_Y: Int = 4
 
   // Projectile configuration
-  val PROJECTILE_SPEED_MS: Int = 50       // Move every 50ms (20 cells/second)
-  val SHOOT_COOLDOWN_MS: Int = 5        // 2 shots per second max
-  val PROJECTILE_DAMAGE: Int = 5          // Damage per hit
-  val PROJECTILE_SIZE_PX: Int = 10         // Render size in pixels
-  val PROJECTILE_MAX_RANGE: Int = 10        // Max travel distance in tiles
+  val PROJECTILE_SPEED_MS: Int = 30       // Move every 50ms (20 cells/second)
+  val SHOOT_COOLDOWN_MS: Int = 500        // 2 shots per second max
+  val PROJECTILE_DAMAGE: Int = 15          // Damage per hit
+  val PROJECTILE_MAX_RANGE: Int = 20        // Max travel distance in tiles
 
   // Burst shot configuration (Shift+Space)
   val BURST_SHOT_MOVEMENT_BLOCK_MS: Int = 500  // Immobilized for 500ms after burst
