@@ -19,7 +19,7 @@ import java.util.UUID
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 
-class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, Constants.VIEWPORT_SIZE_PX) {
+class GameCanvas(client: GameClient) extends Canvas() {
   private val gc: GraphicsContext = getGraphicsContext2D
   gc.setImageSmoothing(false)
   private var animationTick: Int = 0
@@ -216,7 +216,7 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
       val projX = projectile.getX.toDouble
       val projY = projectile.getY.toDouble
 
-      val beamLength = 3.0
+      val beamLength = 5.0
 
       val tailX = worldToScreenX(projX, projY, camOffX)
       val tailY = worldToScreenY(projX, projY, camOffY)
@@ -233,29 +233,66 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
         val color = intToColor(projectile.colorRGB)
         gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
 
-        // 3-layer glow bloom
-        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.15))
-        gc.setLineWidth(10)
+        // Animated pulse based on tick + projectile id for variation
+        val phase = (animationTick + projectile.id * 37) * 0.3
+        val pulse = 0.85 + 0.15 * Math.sin(phase)
+        val fastFlicker = 0.9 + 0.1 * Math.sin(phase * 4.7)
+
+        // Layer 1: Ultra-wide soft outer glow
+        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.07 * pulse))
+        gc.setLineWidth(44 * pulse)
         gc.strokeLine(tailX, tailY, tipX, tipY)
 
-        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.4))
-        gc.setLineWidth(5)
+        // Layer 2: Wide outer glow
+        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.12 * pulse))
+        gc.setLineWidth(30 * pulse)
         gc.strokeLine(tailX, tailY, tipX, tipY)
 
-        // White-hot core
-        val coreR = Math.min(1.0, color.getRed * 0.35 + 0.65)
-        val coreG = Math.min(1.0, color.getGreen * 0.35 + 0.65)
-        val coreB = Math.min(1.0, color.getBlue * 0.35 + 0.65)
-        gc.setStroke(Color.color(coreR, coreG, coreB, 0.9))
-        gc.setLineWidth(1.5)
+        // Layer 3: Mid glow
+        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.25 * pulse))
+        gc.setLineWidth(18 * pulse)
         gc.strokeLine(tailX, tailY, tipX, tipY)
 
-        // Bright orb at the tip
-        val orbR = 4.5
-        gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.3))
-        gc.fillOval(tipX - orbR * 1.5, tipY - orbR * 1.5, orbR * 3, orbR * 3)
-        gc.setFill(Color.color(coreR, coreG, coreB, 0.7))
-        gc.fillOval(tipX - orbR * 0.6, tipY - orbR * 0.6, orbR * 1.2, orbR * 1.2)
+        // Layer 4: Bright beam
+        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.6 * fastFlicker))
+        gc.setLineWidth(10 * fastFlicker)
+        gc.strokeLine(tailX, tailY, tipX, tipY)
+
+        // Layer 5: White-hot core with flicker
+        val coreR = Math.min(1.0, color.getRed * 0.3 + 0.7)
+        val coreG = Math.min(1.0, color.getGreen * 0.3 + 0.7)
+        val coreB = Math.min(1.0, color.getBlue * 0.3 + 0.7)
+        gc.setStroke(Color.color(coreR, coreG, coreB, 0.95 * fastFlicker))
+        gc.setLineWidth(4.5)
+        gc.strokeLine(tailX, tailY, tipX, tipY)
+
+        // Animated energy particles along the beam
+        val dx = tipX - tailX
+        val dy = tipY - tailY
+        val len = Math.sqrt(dx * dx + dy * dy)
+        if (len > 1) {
+          val nx = dx / len
+          val ny = dy / len
+          val particleCount = 6
+          for (i <- 0 until particleCount) {
+            val t = ((animationTick * 0.08 + i.toDouble / particleCount + projectile.id * 0.13) % 1.0)
+            val px = tailX + dx * t + ny * Math.sin(phase + i * 2.1) * 6.0
+            val py = tailY + dy * t - nx * Math.sin(phase + i * 2.1) * 6.0
+            val pAlpha = Math.max(0.0, Math.min(1.0, 0.7 * (1.0 - Math.abs(t - 0.5) * 2.0)))
+            val pSize = 3.0 + Math.sin(phase + i) * 1.2
+            gc.setFill(Color.color(coreR, coreG, coreB, pAlpha))
+            gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+          }
+        }
+
+        // Bright orb at the tip with pulse
+        val orbR = 9.0 * pulse
+        gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.2 * pulse))
+        gc.fillOval(tipX - orbR * 2, tipY - orbR * 2, orbR * 4, orbR * 4)
+        gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.4 * pulse))
+        gc.fillOval(tipX - orbR, tipY - orbR, orbR * 2, orbR * 2)
+        gc.setFill(Color.color(coreR, coreG, coreB, 0.85 * fastFlicker))
+        gc.fillOval(tipX - orbR * 0.5, tipY - orbR * 0.5, orbR, orbR)
       }
     }
   }
@@ -332,13 +369,6 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
       gc.fillOval(centerX - radius, centerY - radius, radius * 2, radius * 2)
     }
 
-    if (client.hasSpeedBoost) {
-      gc.setStroke(Color.rgb(255, 235, 59, 0.7)) // Yellow
-      gc.setLineWidth(2)
-      val r = radius + 2
-      gc.strokeOval(centerX - r, centerY - r, r * 2, r * 2)
-    }
-
     if (client.hasGemBoost) {
       gc.setStroke(Color.rgb(0, 188, 212, 0.7)) // Cyan
       gc.setLineWidth(2)
@@ -412,7 +442,6 @@ class GameCanvas(client: GameClient) extends Canvas(Constants.VIEWPORT_SIZE_PX, 
 
     // Show active effects
     val effects = Seq(
-      if (client.hasSpeedBoost) Some("Speed") else None,
       if (client.hasShield) Some("Shield") else None,
       if (client.hasGemBoost) Some("FastShot") else None
     ).flatten

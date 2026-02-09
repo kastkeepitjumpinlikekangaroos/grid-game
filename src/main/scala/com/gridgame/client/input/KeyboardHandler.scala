@@ -70,7 +70,7 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
 
   private def processMovement(): Unit = {
     val now = System.currentTimeMillis()
-    val moveRate = if (client.hasSpeedBoost) Constants.SPEED_BOOST_MOVE_RATE_MS else Constants.MOVE_RATE_LIMIT_MS
+    val moveRate = Constants.MOVE_RATE_LIMIT_MS
 
     if (now - lastMoveTime < moveRate) {
       return

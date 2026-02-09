@@ -41,8 +41,12 @@ class Projectile(
   }
 
   def hitsPlayer(player: Player): Boolean = {
+    if (player.getId.equals(ownerId)) return false
     val pos = player.getPosition
-    pos.getX == getCellX && pos.getY == getCellY && !player.getId.equals(ownerId)
+    val dx = x - (pos.getX + 0.5f)
+    val dy = y - (pos.getY + 0.5f)
+    val radius = com.gridgame.common.Constants.PROJECTILE_HIT_RADIUS
+    dx * dx + dy * dy <= radius * radius
   }
 
   override def toString: String = {

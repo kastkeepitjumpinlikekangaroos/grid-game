@@ -49,10 +49,13 @@ class ItemManager {
       return None
     }
 
+    val radius = Constants.ITEM_PICKUP_RADIUS
     val iter = items.values().iterator()
     while (iter.hasNext) {
       val item = iter.next()
-      if (item.getCellX == x && item.getCellY == y) {
+      val dx = item.getCellX - x
+      val dy = item.getCellY - y
+      if (dx * dx + dy * dy <= radius * radius) {
         items.remove(item.id)
         playerInv.add(item)
         println(s"ItemManager: Player ${playerId.toString.substring(0, 8)} picked up $item (inventory: ${playerInv.size()}/${Constants.MAX_INVENTORY_SIZE})")

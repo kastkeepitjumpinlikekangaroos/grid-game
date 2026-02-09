@@ -27,7 +27,7 @@ object Constants {
   val CLIENT_TIMEOUT_MS: Int = 10000 // 10 seconds
 
   // Input configuration
-  val MOVE_RATE_LIMIT_MS: Int = 30 // Max 10 moves per second
+  val MOVE_RATE_LIMIT_MS: Int = 10 // Max 10 moves per second
 
   // Health configuration
   val MAX_HEALTH: Int = 100
@@ -45,15 +45,17 @@ object Constants {
   val BURST_SHOT_MOVEMENT_BLOCK_MS: Int = 500  // Immobilized for 500ms after burst
   val BURST_SHOT_COOLDOWN_MS: Int = 1000       // Can burst once per second
 
+  // Collision configuration
+  val ITEM_PICKUP_RADIUS: Int = 2              // Pick up items within 2 cells
+  val PROJECTILE_HIT_RADIUS: Float = 1.5f      // Projectile hits within 1.5 cells (float distance)
+
   // Item configuration
   val ITEM_SPAWN_INTERVAL_MS: Int = 60000     // 1 minute
-  val ITEM_SIZE_PX: Int = 12
+  val ITEM_SIZE_PX: Int = 20
   val MAX_INVENTORY_SIZE: Int = 3
 
   // Item effect configuration
-  val STAR_DURATION_MS: Int = 20000            // Speed boost lasts 20s
   val SHIELD_DURATION_MS: Int = 5000           // Shield lasts 5s
   val GEM_DURATION_MS: Int = 5000             // Fast projectiles last 20s
-  val SPEED_BOOST_MOVE_RATE_MS: Int = 15       // Half of normal 60ms
   val GEM_PROJECTILE_SPEED_MULTIPLIER: Float = 2.0f
 }

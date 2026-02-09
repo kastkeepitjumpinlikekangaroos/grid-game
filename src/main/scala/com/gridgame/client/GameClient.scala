@@ -39,9 +39,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   private val sequenceNumber: AtomicInteger = new AtomicInteger(0)
   private val movementBlockedUntil: AtomicLong = new AtomicLong(0)
   private val lastMoveTime: AtomicLong = new AtomicLong(0)
-  private val speedBoostUntil: AtomicLong = new AtomicLong(0)
   private val fastProjectilesUntil: AtomicLong = new AtomicLong(0)
   private val shieldUntil: AtomicLong = new AtomicLong(0)
+  @volatile private var mouseWorldX: Double = 0.0
+  @volatile private var mouseWorldY: Double = 0.0
 
   @volatile private var running = false
   @volatile private var isDead = false
@@ -106,7 +107,6 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
     }
 
     // Reset effect timers
-    speedBoostUntil.set(0)
     fastProjectilesUntil.set(0)
     shieldUntil.set(0)
 
@@ -507,8 +507,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
     val now = System.currentTimeMillis()
     item.itemType match {
       case ItemType.Star =>
-        speedBoostUntil.set(now + Constants.STAR_DURATION_MS)
-        println("GameClient: Speed boost activated!")
+        teleportToMouse()
       case ItemType.Gem =>
         fastProjectilesUntil.set(now + Constants.GEM_DURATION_MS)
         println("GameClient: Fast projectiles activated!")
@@ -564,7 +563,31 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
     println(s"GameClient: World changed to '${world.name}', respawned at $newSpawn")
   }
 
-  def hasSpeedBoost: Boolean = System.currentTimeMillis() < speedBoostUntil.get()
+  def setMouseWorldPosition(x: Double, y: Double): Unit = {
+    mouseWorldX = x
+    mouseWorldY = y
+  }
+
+  private def teleportToMouse(): Unit = {
+    val world = currentWorld.get()
+    val targetX = Math.round(mouseWorldX).toInt
+    val targetY = Math.round(mouseWorldY).toInt
+
+    // Clamp to world bounds
+    val clampedX = Math.max(0, Math.min(world.width - 1, targetX))
+    val clampedY = Math.max(0, Math.min(world.height - 1, targetY))
+
+    if (!world.isWalkable(clampedX, clampedY)) {
+      println("GameClient: Can't teleport to non-walkable tile!")
+      return
+    }
+
+    val newPos = new Position(clampedX, clampedY)
+    localPosition.set(newPos)
+    lastMoveTime.set(System.currentTimeMillis())
+    sendPositionUpdate(newPos)
+    println(s"GameClient: Teleported to ($clampedX, $clampedY)")
+  }
 
   def hasGemBoost: Boolean = System.currentTimeMillis() < fastProjectilesUntil.get()
 

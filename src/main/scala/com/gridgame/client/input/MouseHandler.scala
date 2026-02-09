@@ -11,6 +11,12 @@ class MouseHandler(client: GameClient, canvas: GameCanvas) extends EventHandler[
   private var lastShootTime: Long = 0
 
   override def handle(event: MouseEvent): Unit = {
+    // Track mouse position for teleport targeting
+    if (event.getEventType == MouseEvent.MOUSE_MOVED || event.getEventType == MouseEvent.MOUSE_PRESSED) {
+      val (worldX, worldY) = canvas.screenToWorld(event.getX, event.getY)
+      client.setMouseWorldPosition(worldX, worldY)
+    }
+
     if (event.getEventType == MouseEvent.MOUSE_PRESSED) {
       if (client.getIsDead) return
 

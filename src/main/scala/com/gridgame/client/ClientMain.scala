@@ -10,7 +10,10 @@ import com.gridgame.common.world.WorldLoader
 import javafx.animation.AnimationTimer
 import javafx.application.Application
 import javafx.application.Platform
+import javafx.event.EventHandler
 import javafx.scene.Scene
+import javafx.scene.input.KeyCode
+import javafx.scene.input.KeyEvent
 import javafx.scene.layout.StackPane
 import javafx.stage.Stage
 
@@ -47,24 +50,44 @@ class ClientMain extends Application {
     val root = new StackPane(canvas)
     val scene = new Scene(root, Constants.VIEWPORT_SIZE_PX, Constants.VIEWPORT_SIZE_PX)
 
+    // Bind canvas size to scene so it resizes with the window / fullscreen
+    canvas.widthProperty().bind(scene.widthProperty())
+    canvas.heightProperty().bind(scene.heightProperty())
+
     val keyHandler = new KeyboardHandler(client)
     scene.setOnKeyPressed(keyHandler)
     scene.setOnKeyReleased(keyHandler)
 
     val mouseHandler = new MouseHandler(client, canvas)
     scene.setOnMousePressed(mouseHandler)
+    scene.setOnMouseMoved(mouseHandler)
+
+    // F11 toggles fullscreen
+    scene.addEventFilter(KeyEvent.KEY_PRESSED, new EventHandler[KeyEvent] {
+      override def handle(event: KeyEvent): Unit = {
+        if (event.getCode == KeyCode.F11) {
+          primaryStage.setFullScreen(!primaryStage.isFullScreen)
+        }
+      }
+    })
 
     primaryStage.setTitle("Grid Game - Multiplayer 2D")
     primaryStage.setScene(scene)
-    primaryStage.setResizable(false)
+    primaryStage.setResizable(true)
     primaryStage.show()
 
     client.connect()
 
+    // Fixed 60 FPS render loop
+    val frameIntervalNs = 1_000_000_000L / 60
+    var lastFrameTime = 0L
     val renderLoop = new AnimationTimer() {
       override def handle(now: Long): Unit = {
-        keyHandler.update()
-        canvas.render()
+        if (now - lastFrameTime >= frameIntervalNs) {
+          lastFrameTime = now
+          keyHandler.update()
+          canvas.render()
+        }
       }
     }
     renderLoop.start()
