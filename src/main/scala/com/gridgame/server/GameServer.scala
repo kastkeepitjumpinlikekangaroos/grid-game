@@ -56,7 +56,7 @@ class GameServer(port: Int, val worldFile: String = "") {
     // Load world for collision detection
     if (worldFile.nonEmpty) {
       try {
-        world = WorldLoader.loadFromFile(worldFile)
+        world = WorldLoader.load(worldFile)
         println(s"Loaded world '${world.name}' (${world.width}x${world.height})")
       } catch {
         case e: Exception =>

@@ -10,6 +10,22 @@ import scala.collection.mutable.ArrayBuffer
 
 object WorldLoader {
 
+  def load(path: String): WorldData = {
+    // Try filesystem first
+    val file = new File(path)
+    if (file.exists()) return loadFromFile(file.getAbsolutePath)
+
+    // Try relative to BUILD_WORKING_DIRECTORY (set by Bazel)
+    val buildWorkDir = System.getenv("BUILD_WORKING_DIRECTORY")
+    if (buildWorkDir != null) {
+      val fromWorkDir = new File(buildWorkDir, path)
+      if (fromWorkDir.exists()) return loadFromFile(fromWorkDir.getAbsolutePath)
+    }
+
+    // Try classpath (bundled in JAR)
+    loadFromResource(path)
+  }
+
   def loadFromFile(filePath: String): WorldData = {
     val file = new File(filePath)
     if (!file.exists()) {

@@ -4,7 +4,7 @@ import com.gridgame.common.Constants
 
 import javafx.scene.image.{Image, WritableImage}
 
-import java.io.{File, FileInputStream}
+import java.io.{File, FileInputStream, InputStream}
 
 object TileRenderer {
   private val cellW = Constants.TILE_CELL_WIDTH   // 40
@@ -18,16 +18,15 @@ object TileRenderer {
   private def ensureLoaded(): Unit = {
     if (tiles != null) return
 
-    val path = resolveSpritePath("sprites/tiles.png")
-    val file = new File(path)
-    if (!file.exists()) {
-      System.err.println(s"Tileset not found: ${file.getAbsolutePath}")
+    val stream = resolveResourceStream("sprites/tiles.png")
+    if (stream == null) {
+      System.err.println("Tileset not found: sprites/tiles.png")
       numFrames = 1
       tiles = Array.fill(numTiles)(Array.fill(1)(new WritableImage(cellW, cellH)))
       return
     }
 
-    val sheet = new Image(new FileInputStream(file))
+    val sheet = new Image(stream)
     val reader = sheet.getPixelReader
     numFrames = (sheet.getHeight.toInt / cellH).max(1)
     tiles = Array.tabulate(numTiles) { id =>
@@ -37,17 +36,18 @@ object TileRenderer {
     }
   }
 
-  private def resolveSpritePath(relativePath: String): String = {
+  private def resolveResourceStream(relativePath: String): InputStream = {
     val direct = new File(relativePath)
-    if (direct.exists()) return direct.getAbsolutePath
+    if (direct.exists()) return new FileInputStream(direct)
 
     val buildWorkDir = System.getenv("BUILD_WORKING_DIRECTORY")
     if (buildWorkDir != null) {
       val fromWorkDir = new File(buildWorkDir, relativePath)
-      if (fromWorkDir.exists()) return fromWorkDir.getAbsolutePath
+      if (fromWorkDir.exists()) return new FileInputStream(fromWorkDir)
     }
 
-    relativePath
+    // Try classpath (bundled in JAR)
+    getClass.getClassLoader.getResourceAsStream(relativePath)
   }
 
   def getNumFrames: Int = {

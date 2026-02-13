@@ -5,8 +5,7 @@ import com.gridgame.common.model.Direction
 
 import javafx.scene.image.{Image, PixelReader, WritableImage}
 
-import java.io.{File, FileInputStream}
-import scala.collection.mutable
+import java.io.{File, FileInputStream, InputStream}
 
 object SpriteGenerator {
   private val frameSize = Constants.SPRITE_SIZE_PX // 32
@@ -25,15 +24,14 @@ object SpriteGenerator {
   private def ensureLoaded(): Unit = {
     if (frames != null) return
 
-    val path = resolveSpritePath("sprites/character.png")
-    val file = new File(path)
-    if (!file.exists()) {
-      System.err.println(s"Spritesheet not found: ${file.getAbsolutePath}")
+    val stream = resolveResourceStream("sprites/character.png")
+    if (stream == null) {
+      System.err.println("Spritesheet not found: sprites/character.png")
       frames = Map.empty
       return
     }
 
-    val sheet = new Image(new FileInputStream(file))
+    val sheet = new Image(stream)
     val reader = sheet.getPixelReader
     val builder = Map.newBuilder[(Direction, Int), Image]
 
@@ -47,17 +45,18 @@ object SpriteGenerator {
     frames = builder.result()
   }
 
-  private def resolveSpritePath(relativePath: String): String = {
+  private def resolveResourceStream(relativePath: String): InputStream = {
     val direct = new File(relativePath)
-    if (direct.exists()) return direct.getAbsolutePath
+    if (direct.exists()) return new FileInputStream(direct)
 
     val buildWorkDir = System.getenv("BUILD_WORKING_DIRECTORY")
     if (buildWorkDir != null) {
       val fromWorkDir = new File(buildWorkDir, relativePath)
-      if (fromWorkDir.exists()) return fromWorkDir.getAbsolutePath
+      if (fromWorkDir.exists()) return new FileInputStream(fromWorkDir)
     }
 
-    relativePath
+    // Try classpath (bundled in JAR)
+    getClass.getClassLoader.getResourceAsStream(relativePath)
   }
 
   def getSprite(colorRGB: Int, direction: Direction): Image = {

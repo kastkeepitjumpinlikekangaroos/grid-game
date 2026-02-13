@@ -4,6 +4,7 @@ scala_binary(
     name = "client",
     main_class = "com.gridgame.client.Main",
     srcs = glob(["**/*.scala"]),
+    resources = ["//worlds:world_files", "//sprites:sprite_files"],
     deps = [
         "//src/main/scala/com/gridgame/common",
         "@maven//:io_netty_netty_buffer",
@@ -25,6 +26,7 @@ scala_binary(
     name = "client_windows",
     main_class = "com.gridgame.client.Main",
     srcs = glob(["**/*.scala"]),
+    resources = ["//worlds:world_files", "//sprites:sprite_files"],
     deps = [
         "//src/main/scala/com/gridgame/common",
         "@maven//:io_netty_netty_buffer",

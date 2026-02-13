@@ -27,8 +27,6 @@ import javafx.scene.text.Font
 import javafx.scene.text.FontWeight
 import javafx.stage.Stage
 
-import java.io.File
-
 class ClientMain extends Application {
 
   private var client: GameClient = _
@@ -198,60 +196,21 @@ class ClientMain extends Application {
   }
 
   private def handleWorldFileFromServer(worldFileName: String): Unit = {
-    println(s"handleWorldFileFromServer called with: '$worldFileName'")
     if (worldFileName.isEmpty) {
       println("Server did not specify a world, using default")
       return
     }
     println(s"Server requested world: $worldFileName")
     val worldPath = "worlds/" + worldFileName
-    println(s"Attempting to load world from: $worldPath")
-    val world = loadWorld(worldPath)
-    println(s"loadWorld returned: ${world.name}")
-    client.setWorld(world)
-    println(s"Loaded world: ${world.name} (${world.width}x${world.height})")
-  }
-
-  private def loadWorld(worldFile: String): WorldData = {
-    if (worldFile.nonEmpty) {
-      val resolvedPath = resolveWorldPath(worldFile)
-      if (resolvedPath.nonEmpty) {
-        println(s"Loading world from: $resolvedPath")
-        WorldLoader.loadFromFile(resolvedPath)
-      } else {
-        println(s"World file not found: $worldFile, using default world")
-        WorldData.createEmpty(Constants.GRID_SIZE, Constants.GRID_SIZE)
-      }
-    } else {
-      println("No world file specified, using default world")
-      WorldData.createEmpty(Constants.GRID_SIZE, Constants.GRID_SIZE)
+    try {
+      val world = WorldLoader.load(worldPath)
+      client.setWorld(world)
+      println(s"Loaded world: ${world.name} (${world.width}x${world.height})")
+    } catch {
+      case e: Exception =>
+        println(s"Failed to load world $worldPath: ${e.getMessage}, using default")
+        client.setWorld(WorldData.createEmpty(Constants.GRID_SIZE, Constants.GRID_SIZE))
     }
-  }
-
-  private def resolveWorldPath(worldFile: String): String = {
-    println(s"resolveWorldPath called with: '$worldFile'")
-
-    // Try the path as-is first (absolute or relative to current dir)
-    val direct = new File(worldFile)
-    println(s"Checking direct path: ${direct.getAbsolutePath} exists=${direct.exists()}")
-    if (direct.exists()) {
-      return direct.getAbsolutePath
-    }
-
-    // Try relative to BUILD_WORKING_DIRECTORY (set by Bazel)
-    val buildWorkDir = System.getenv("BUILD_WORKING_DIRECTORY")
-    println(s"BUILD_WORKING_DIRECTORY: $buildWorkDir")
-    if (buildWorkDir != null) {
-      val fromWorkDir = new File(buildWorkDir, worldFile)
-      println(s"Checking BUILD_WORKING_DIRECTORY path: ${fromWorkDir.getAbsolutePath} exists=${fromWorkDir.exists()}")
-      if (fromWorkDir.exists()) {
-        return fromWorkDir.getAbsolutePath
-      }
-    }
-
-    // Not found
-    println(s"World file not found: $worldFile")
-    ""
   }
 
   override def stop(): Unit = {

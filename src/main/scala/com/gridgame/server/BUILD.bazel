@@ -4,6 +4,7 @@ scala_binary(
     name = "server",
     main_class = "com.gridgame.server.ServerMain",
     srcs = glob(["**/*.scala"]),
+    resources = ["//worlds:world_files"],
     deps = [
         "//src/main/scala/com/gridgame/common",
         "@maven//:io_netty_netty_buffer",
