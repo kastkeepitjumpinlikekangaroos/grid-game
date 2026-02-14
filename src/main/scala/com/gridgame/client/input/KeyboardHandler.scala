@@ -1,5 +1,6 @@
 package com.gridgame.client.input
 
+import com.gridgame.client.ClientState
 import com.gridgame.client.GameClient
 import com.gridgame.common.Constants
 import com.gridgame.common.model.ItemType
@@ -19,7 +20,10 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
     if (event.getEventType == KeyEvent.KEY_PRESSED) {
       pressedKeys.add(event.getCode)
       if (client.getIsDead) {
-        processRejoin()
+        // In lobby mode, auto-respawn handles it; only allow manual rejoin in non-lobby mode
+        if (client.clientState != ClientState.PLAYING) {
+          processRejoin()
+        }
       } else {
         processUseItem(event)
         processBurstShot(event)

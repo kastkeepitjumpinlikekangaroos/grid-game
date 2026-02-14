@@ -4,10 +4,12 @@ import com.gridgame.common.Constants
 import com.gridgame.common.model.Direction
 import com.gridgame.common.model.Item
 import com.gridgame.common.model.ItemType
+import com.gridgame.common.model.LobbyInfo
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
 import com.gridgame.common.model.Projectile
 import com.gridgame.common.model.ProjectileType
+import com.gridgame.common.model.ScoreEntry
 import com.gridgame.common.model.Tile
 import com.gridgame.common.model.WorldData
 import com.gridgame.common.protocol._
@@ -16,12 +18,21 @@ import java.util.UUID
 import java.util.concurrent.BlockingQueue
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedDeque
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
-class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
+object ClientState {
+  val CONNECTING = 0
+  val LOBBY_BROWSER = 1
+  val IN_LOBBY = 2
+  val PLAYING = 3
+  val SCOREBOARD = 4
+}
+
+class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, val playerName: String = "Player") {
   private var networkThread: NetworkThread = _
 
   private val localPlayerId: UUID = UUID.randomUUID()
@@ -71,6 +82,42 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   @volatile private var worldFileListener: String => Unit = _
   @volatile private var rejoinListener: () => Unit = _
 
+  // Lobby state
+  @volatile var clientState: Int = ClientState.CONNECTING
+  @volatile var currentLobbyId: Short = 0
+  @volatile var currentLobbyName: String = ""
+  @volatile var currentLobbyMapIndex: Int = 0
+  @volatile var currentLobbyDuration: Int = Constants.DEFAULT_GAME_DURATION_MIN
+  @volatile var currentLobbyPlayerCount: Int = 0
+  @volatile var currentLobbyMaxPlayers: Int = Constants.MAX_LOBBY_PLAYERS
+  @volatile var isLobbyHost: Boolean = false
+  val lobbyList: CopyOnWriteArrayList[LobbyInfo] = new CopyOnWriteArrayList[LobbyInfo]()
+
+  // Game stats
+  @volatile var killCount: Int = 0
+  @volatile var deathCount: Int = 0
+  private var gameTimeSyncRemaining: Int = 0
+  private var gameTimeSyncTimestamp: Long = 0L
+  val scoreboard: CopyOnWriteArrayList[ScoreEntry] = new CopyOnWriteArrayList[ScoreEntry]()
+  @volatile var isRespawning: Boolean = false
+
+  def gameTimeRemaining: Int = {
+    if (gameTimeSyncTimestamp == 0L) return 0
+    val elapsed = ((System.currentTimeMillis() - gameTimeSyncTimestamp) / 1000).toInt
+    Math.max(0, gameTimeSyncRemaining - elapsed)
+  }
+
+  // Kill feed: (timestamp, killerName, victimName)
+  val killFeed: CopyOnWriteArrayList[Array[AnyRef]] = new CopyOnWriteArrayList[Array[AnyRef]]()
+
+  // Listeners
+  @volatile var lobbyListListener: () => Unit = _
+  @volatile var lobbyJoinedListener: () => Unit = _
+  @volatile var lobbyUpdatedListener: () => Unit = _
+  @volatile var gameStartingListener: () => Unit = _
+  @volatile var gameOverListener: () => Unit = _
+  @volatile var lobbyClosedListener: () => Unit = _
+
   def connect(): Unit = {
     try {
       networkThread = new NetworkThread(this, serverHost, serverPort)
@@ -82,6 +129,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
       startPacketProcessor()
 
       sendJoinPacket()
+
+      clientState = ClientState.LOBBY_BROWSER
 
       println(s"GameClient: Connected to $serverHost:$serverPort as player ${localPlayerId.toString.substring(0, 8)}")
     } catch {
@@ -97,7 +146,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
       localPlayerId,
       pos,
       localColorRGB,
-      "Player"
+      playerName
     )
     networkThread.send(packet)
   }
@@ -454,7 +503,17 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   }
 
   private def processPacket(packet: Packet): Unit = {
-    println(s"GameClient: Processing packet type: ${packet.getType}")
+    // Handle lobby actions
+    if (packet.getType == PacketType.LOBBY_ACTION) {
+      handleLobbyAction(packet.asInstanceOf[LobbyActionPacket])
+      return
+    }
+
+    // Handle game events
+    if (packet.getType == PacketType.GAME_EVENT) {
+      handleGameEvent(packet.asInstanceOf[GameEventPacket])
+      return
+    }
 
     // Handle world info separately (doesn't have a real player ID)
     if (packet.getType == PacketType.WORLD_INFO) {
@@ -506,8 +565,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
 
           if (serverHealth <= 0 && !isDead) {
             isDead = true
+            isRespawning = true
             localDeathTime.set(System.currentTimeMillis())
-            println("GameClient: You have died!")
+            println("GameClient: You have died! Auto-respawning in 3s...")
           }
         case _ =>
       }
@@ -527,6 +587,198 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
       case _ =>
       // Ignore other packet types
     }
+  }
+
+  private def handleLobbyAction(packet: LobbyActionPacket): Unit = {
+    packet.getAction match {
+      case LobbyAction.LIST_ENTRY =>
+        val info = new LobbyInfo(
+          packet.getLobbyId, packet.getLobbyName, packet.getMapIndex & 0xFF,
+          packet.getDurationMinutes & 0xFF, packet.getPlayerCount & 0xFF,
+          packet.getMaxPlayers & 0xFF, packet.getLobbyStatus & 0xFF
+        )
+        lobbyList.add(info)
+
+      case LobbyAction.LIST_END =>
+        if (lobbyListListener != null) lobbyListListener()
+
+      case LobbyAction.JOINED =>
+        currentLobbyId = packet.getLobbyId
+        currentLobbyName = packet.getLobbyName
+        currentLobbyMapIndex = packet.getMapIndex & 0xFF
+        currentLobbyDuration = packet.getDurationMinutes & 0xFF
+        currentLobbyPlayerCount = packet.getPlayerCount & 0xFF
+        currentLobbyMaxPlayers = packet.getMaxPlayers & 0xFF
+        clientState = ClientState.IN_LOBBY
+        if (lobbyJoinedListener != null) lobbyJoinedListener()
+
+      case LobbyAction.PLAYER_JOINED | LobbyAction.PLAYER_LEFT =>
+        currentLobbyPlayerCount = packet.getPlayerCount & 0xFF
+        if (lobbyUpdatedListener != null) lobbyUpdatedListener()
+
+      case LobbyAction.CONFIG_UPDATE =>
+        currentLobbyMapIndex = packet.getMapIndex & 0xFF
+        currentLobbyDuration = packet.getDurationMinutes & 0xFF
+        if (lobbyUpdatedListener != null) lobbyUpdatedListener()
+
+      case LobbyAction.GAME_STARTING =>
+        clientState = ClientState.PLAYING
+        killCount = 0
+        deathCount = 0
+        gameTimeSyncRemaining = currentLobbyDuration * 60
+        gameTimeSyncTimestamp = System.currentTimeMillis()
+        scoreboard.clear()
+        killFeed.clear()
+        isDead = false
+        isRespawning = false
+        localHealth.set(Constants.MAX_HEALTH)
+        players.clear()
+        projectiles.clear()
+        items.clear()
+        inventory.clear()
+        if (gameStartingListener != null) gameStartingListener()
+
+      case LobbyAction.LOBBY_CLOSED =>
+        clientState = ClientState.LOBBY_BROWSER
+        currentLobbyId = 0
+        if (lobbyClosedListener != null) lobbyClosedListener()
+
+      case _ =>
+        println(s"GameClient: Unknown lobby action ${packet.getAction}")
+    }
+  }
+
+  private def handleGameEvent(packet: GameEventPacket): Unit = {
+    packet.getEventType match {
+      case GameEvent.KILL =>
+        val killerId = packet.getPlayerId
+        val victimId = packet.getTargetId
+
+        if (killerId.equals(localPlayerId)) {
+          killCount = packet.getKills.toInt
+          deathCount = packet.getDeaths.toInt
+        }
+        if (victimId != null && victimId.equals(localPlayerId)) {
+          deathCount += 1
+        }
+
+        // Add to kill feed
+        val killerName = if (killerId.equals(localPlayerId)) "You" else {
+          val p = players.get(killerId)
+          if (p != null) p.getName else killerId.toString.substring(0, 8)
+        }
+        val victimName = if (victimId != null && victimId.equals(localPlayerId)) "You" else {
+          if (victimId != null) {
+            val p = players.get(victimId)
+            if (p != null) p.getName else victimId.toString.substring(0, 8)
+          } else "?"
+        }
+        killFeed.add(Array(System.currentTimeMillis().asInstanceOf[AnyRef], killerName.asInstanceOf[AnyRef], victimName.asInstanceOf[AnyRef]))
+        // Keep only last 5
+        while (killFeed.size() > 5) killFeed.remove(0)
+
+      case GameEvent.TIME_SYNC =>
+        gameTimeSyncRemaining = packet.getRemainingSeconds
+        gameTimeSyncTimestamp = System.currentTimeMillis()
+
+      case GameEvent.GAME_OVER =>
+        scoreboard.clear()
+
+      case GameEvent.SCORE_ENTRY =>
+        val entry = new ScoreEntry(packet.getPlayerId, packet.getKills.toInt, packet.getDeaths.toInt, packet.getRank.toInt)
+        scoreboard.add(entry)
+
+      case GameEvent.SCORE_END =>
+        clientState = ClientState.SCOREBOARD
+        if (gameOverListener != null) gameOverListener()
+
+      case GameEvent.RESPAWN =>
+        if (packet.getPlayerId.equals(localPlayerId)) {
+          isDead = false
+          isRespawning = false
+          localHealth.set(Constants.MAX_HEALTH)
+          val spawnX = packet.getSpawnX.toInt
+          val spawnY = packet.getSpawnY.toInt
+          localPosition.set(new Position(spawnX, spawnY))
+          localDeathTime.set(0)
+          fastProjectilesUntil.set(0)
+          shieldUntil.set(0)
+          if (rejoinListener != null) rejoinListener()
+          println(s"GameClient: Auto-respawned at ($spawnX, $spawnY)")
+        }
+
+      case _ =>
+        println(s"GameClient: Unknown game event ${packet.getEventType}")
+    }
+  }
+
+  // Lobby actions
+  def requestLobbyList(): Unit = {
+    lobbyList.clear()
+    val packet = new LobbyActionPacket(
+      sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.LIST_REQUEST
+    )
+    networkThread.send(packet)
+  }
+
+  def createLobby(name: String, mapIndex: Int, durationMinutes: Int): Unit = {
+    isLobbyHost = true
+    val packet = new LobbyActionPacket(
+      sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.CREATE, 0.toShort,
+      mapIndex.toByte, durationMinutes.toByte, 0.toByte, Constants.MAX_LOBBY_PLAYERS.toByte,
+      0.toByte, name
+    )
+    networkThread.send(packet)
+  }
+
+  def joinLobby(lobbyId: Short): Unit = {
+    isLobbyHost = false
+    val packet = new LobbyActionPacket(
+      sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.JOIN, lobbyId
+    )
+    networkThread.send(packet)
+  }
+
+  def leaveLobby(): Unit = {
+    val packet = new LobbyActionPacket(
+      sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.LEAVE
+    )
+    networkThread.send(packet)
+    clientState = ClientState.LOBBY_BROWSER
+    currentLobbyId = 0
+    isLobbyHost = false
+  }
+
+  def startGame(): Unit = {
+    val packet = new LobbyActionPacket(
+      sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.START
+    )
+    networkThread.send(packet)
+  }
+
+  def updateLobbyConfig(mapIndex: Int, durationMinutes: Int): Unit = {
+    val packet = new LobbyActionPacket(
+      sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.CONFIG_UPDATE, currentLobbyId,
+      mapIndex.toByte, durationMinutes.toByte, 0.toByte, 0.toByte, 0.toByte, ""
+    )
+    networkThread.send(packet)
+  }
+
+  def returnToLobbyBrowser(): Unit = {
+    clientState = ClientState.LOBBY_BROWSER
+    currentLobbyId = 0
+    isLobbyHost = false
+    killCount = 0
+    deathCount = 0
+    gameTimeSyncRemaining = 0
+    gameTimeSyncTimestamp = 0L
+    scoreboard.clear()
+    killFeed.clear()
+    players.clear()
+    projectiles.clear()
+    items.clear()
+    isDead = false
+    isRespawning = false
   }
 
   private def handleProjectileUpdate(packet: ProjectilePacket): Unit = {
@@ -564,11 +816,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
           )
           projectiles.put(projectileId, newProjectile)
         }
-        // Note: Server already moved it, we get updated position in packet
-        // For now just ensure it exists for rendering at the new position
         val existingProjectile = projectiles.get(projectileId)
         if (existingProjectile != null) {
-          // Update position by replacing with new projectile at packet position
           val updatedProjectile = new Projectile(
             projectileId,
             packet.getPlayerId,
@@ -632,7 +881,6 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
     val world = currentWorld.get()
     val tile = Tile.fromId(packet.getTileId)
     world.setTile(packet.getTileX, packet.getTileY, tile)
-    println(s"GameClient: Tile updated at (${packet.getTileX}, ${packet.getTileY}) to ${tile.name}")
   }
 
   private def handleWorldInfo(packet: WorldInfoPacket): Unit = {

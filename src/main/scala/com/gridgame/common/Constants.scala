@@ -80,4 +80,11 @@ object Constants {
   val ICE_BEAM_MAX_RANGE: Int = 20
   val ICE_BEAM_FREEZE_DURATION_MS: Int = 1000
   val ICE_BEAM_DAMAGE: Int = 5
+
+  // Lobby configuration
+  val RESPAWN_DELAY_MS: Int = 3000
+  val DEFAULT_GAME_DURATION_MIN: Int = 5
+  val MAX_LOBBY_NAME_LEN: Int = 24
+  val TIME_SYNC_INTERVAL_S: Int = 10
+  val MAX_LOBBY_PLAYERS: Int = 8
 }

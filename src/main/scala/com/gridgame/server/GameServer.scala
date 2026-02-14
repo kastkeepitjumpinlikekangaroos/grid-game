@@ -3,12 +3,9 @@ package com.gridgame.server
 import com.gridgame.common.Constants
 import com.gridgame.common.model.Item
 import com.gridgame.common.model.Player
-import com.gridgame.common.model.Position
 import com.gridgame.common.model.Projectile
-import com.gridgame.common.model.ProjectileType
 import com.gridgame.common.model.WorldData
 import com.gridgame.common.protocol._
-import com.gridgame.common.world.WorldLoader
 import io.netty.bootstrap.Bootstrap
 import io.netty.bootstrap.ServerBootstrap
 import io.netty.buffer.Unpooled
@@ -26,22 +23,23 @@ import java.util.UUID
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import scala.jdk.CollectionConverters._
 
 class GameServer(port: Int, val worldFile: String = "") {
-  private val registry = new ClientRegistry()
-  private val projectileManager = new ProjectileManager(registry)
-  private val itemManager = new ItemManager()
-  private val handler = new ClientHandler(registry, this, projectileManager, itemManager)
+  // Global state: all connected players regardless of lobby/game
+  private val connectedPlayers = new ConcurrentHashMap[UUID, Player]()
+  // Channel -> UUID mapping for disconnect handling
+  private val channelToPlayer = new ConcurrentHashMap[Channel, UUID]()
+
+  val lobbyManager = new LobbyManager()
+  val lobbyHandler = new LobbyHandler(this, lobbyManager)
+  private val gameInstances = new ConcurrentHashMap[Short, GameInstance]()
+
   private val cleanupExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
-  private val projectileExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
-  private val itemSpawnExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
   private val sequenceNumber = new AtomicInteger(0)
   @volatile private var running = false
-  private var world: WorldData = _
-  // Track tile modifications so reconnecting players get the current state
-  private val modifiedTiles = new java.util.concurrent.ConcurrentHashMap[(Int, Int), Int]()
 
   // Netty components
   private var bossGroup: NioEventLoopGroup = _
@@ -52,22 +50,7 @@ class GameServer(port: Int, val worldFile: String = "") {
   def start(): Unit = {
     running = true
 
-    println(s"Game server starting on port $port")
-    println(s"World file configured: '${worldFile}' (empty=${worldFile.isEmpty})")
-
-    // Load world for collision detection
-    if (worldFile.nonEmpty) {
-      try {
-        world = WorldLoader.load(worldFile)
-        println(s"Loaded world '${world.name}' (${world.width}x${world.height})")
-      } catch {
-        case e: Exception =>
-          println(s"Warning: Could not load world file: ${e.getMessage}")
-          world = WorldData.createEmpty(200, 200)
-      }
-    } else {
-      world = WorldData.createEmpty(200, 200)
-    }
+    println(s"Game server starting on port $port (lobby mode)")
 
     // Start Netty
     bossGroup = new NioEventLoopGroup(1)
@@ -84,7 +67,7 @@ class GameServer(port: Int, val worldFile: String = "") {
           ch.pipeline()
             .addLast(new LengthFieldBasedFrameDecoder(66, 0, 2, 0, 2))
             .addLast(new LengthFieldPrepender(2))
-            .addLast(new GameServerTcpHandler(server, handler))
+            .addLast(new GameServerTcpHandler(server))
         }
       })
       .option[java.lang.Integer](ChannelOption.SO_BACKLOG, 128)
@@ -106,30 +89,6 @@ class GameServer(port: Int, val worldFile: String = "") {
     cleanupExecutor.scheduleAtFixedRate(
       new Runnable { def run(): Unit = cleanup() },
       5, 5, TimeUnit.SECONDS
-    )
-
-    // Schedule projectile tick
-    projectileExecutor.scheduleAtFixedRate(
-      new Runnable { def run(): Unit = tickProjectiles() },
-      Constants.PROJECTILE_SPEED_MS.toLong,
-      Constants.PROJECTILE_SPEED_MS.toLong,
-      TimeUnit.MILLISECONDS
-    )
-
-    val spawnItems = () => {
-      for (i <- 1 to 50) {
-        spawnItem()
-      }
-    }
-
-    spawnItems()
-
-    // Schedule item spawning
-    itemSpawnExecutor.scheduleAtFixedRate(
-      new Runnable { def run(): Unit = spawnItems() },
-      Constants.ITEM_SPAWN_INTERVAL_MS.toLong,
-      Constants.ITEM_SPAWN_INTERVAL_MS.toLong,
-      TimeUnit.MILLISECONDS
     )
 
     println(s"Game server started on port $port")
@@ -167,24 +126,10 @@ class GameServer(port: Int, val worldFile: String = "") {
     }
   }
 
-  /** Broadcast a packet to all players except the one with excludePlayerId. */
-  private def broadcast(packet: Packet, excludePlayerId: UUID): Unit = {
-    val data = packet.serialize()
-    val players = registry.getAll
-
-    players.asScala.foreach { player =>
-      if (!player.getId.equals(excludePlayerId)) {
-        sendRawToPlayer(data, packet.getType.tcp, player)
-      }
-    }
-  }
-
-  /** Broadcast a packet to all players (no exclusion). */
+  /** Broadcast a packet to all connected players (lobby-wide). */
   def broadcastToAllPlayers(packet: Packet): Unit = {
     val data = packet.serialize()
-    val players = registry.getAll
-
-    players.asScala.foreach { player =>
+    connectedPlayers.values().asScala.foreach { player =>
       sendRawToPlayer(data, packet.getType.tcp, player)
     }
   }
@@ -209,237 +154,111 @@ class GameServer(port: Int, val worldFile: String = "") {
 
   def getNextSequenceNumber: Int = sequenceNumber.getAndIncrement()
 
-  private def tickProjectiles(): Unit = {
-    if (!running || world == null) return
+  def getConnectedPlayer(playerId: UUID): Player = connectedPlayers.get(playerId)
 
-    val events = projectileManager.tick(world)
-    events.foreach {
-      case ProjectileMoved(projectile) =>
-        val packet = new ProjectilePacket(
-          sequenceNumber.getAndIncrement(),
-          projectile.ownerId,
-          projectile.getX, projectile.getY,
-          projectile.colorRGB,
-          projectile.id,
-          projectile.dx, projectile.dy,
-          ProjectileAction.MOVE,
-          null,
-          projectile.chargeLevel.toByte,
-          projectile.projectileType
-        )
-        broadcastToAllPlayers(packet)
-
-      case ProjectileHit(projectile, targetId) =>
-        val hitPacket = new ProjectilePacket(
-          sequenceNumber.getAndIncrement(),
-          projectile.ownerId,
-          projectile.getX, projectile.getY,
-          projectile.colorRGB,
-          projectile.id,
-          projectile.dx, projectile.dy,
-          ProjectileAction.HIT,
-          targetId,
-          projectile.chargeLevel.toByte,
-          projectile.projectileType
-        )
-        broadcastToAllPlayers(hitPacket)
-
-        val target = registry.get(targetId)
-        if (target != null) {
-          // Apply type-specific effects
-          projectile.projectileType match {
-            case ProjectileType.TENTACLE =>
-              // Pull target toward shooter
-              val owner = registry.get(projectile.ownerId)
-              if (owner != null) {
-                val ownerPos = owner.getPosition
-                val targetPos = target.getPosition
-                val ddx = ownerPos.getX - targetPos.getX
-                val ddy = ownerPos.getY - targetPos.getY
-                val dist = Math.sqrt(ddx.toDouble * ddx + ddy.toDouble * ddy).toFloat
-                if (dist > 0.1f) {
-                  val pullDist = Math.min(Constants.TENTACLE_PULL_DISTANCE, dist - 1.0f)
-                  if (pullDist > 0) {
-                    val nx = ddx / dist
-                    val ny = ddy / dist
-                    var newX = targetPos.getX + Math.round(nx * pullDist)
-                    var newY = targetPos.getY + Math.round(ny * pullDist)
-                    // Clamp to world bounds
-                    newX = Math.max(0, Math.min(world.width - 1, newX))
-                    newY = Math.max(0, Math.min(world.height - 1, newY))
-                    // Validate walkability
-                    if (world.isWalkable(newX, newY)) {
-                      target.setPosition(new Position(newX, newY))
-                    }
-                  }
-                }
-              }
-
-            case ProjectileType.ICE_BEAM =>
-              target.setFrozenUntil(System.currentTimeMillis() + Constants.ICE_BEAM_FREEZE_DURATION_MS)
-
-            case _ => // Normal projectile, no special effect
-          }
-
-          val flags = (if (target.hasShield) 0x01 else 0) |
-                      (if (target.hasGemBoost) 0x02 else 0) |
-                      (if (target.isFrozen) 0x04 else 0)
-          val updatePacket = new PlayerUpdatePacket(
-            sequenceNumber.getAndIncrement(),
-            targetId,
-            target.getPosition,
-            target.getColorRGB,
-            target.getHealth,
-            0,
-            flags
-          )
-          broadcastToAllPlayers(updatePacket)
-        }
-
-      case ProjectileDespawned(projectile) =>
-        val packet = new ProjectilePacket(
-          sequenceNumber.getAndIncrement(),
-          projectile.ownerId,
-          projectile.getX, projectile.getY,
-          projectile.colorRGB,
-          projectile.id,
-          projectile.dx, projectile.dy,
-          ProjectileAction.DESPAWN,
-          null,
-          projectile.chargeLevel.toByte,
-          projectile.projectileType
-        )
-        broadcastToAllPlayers(packet)
-    }
+  def registerGameInstance(lobbyId: Short, instance: GameInstance): Unit = {
+    gameInstances.put(lobbyId, instance)
   }
+
+  /** Unused in lobby mode but kept for backwards-compat with ClientHandler */
+  def getWorld: WorldData = null
 
   def broadcastPlayerUpdate(packet: PlayerUpdatePacket): Unit = {
-    broadcastToAllPlayers(packet)
+    // This should not be called in lobby mode; instance handles it
   }
 
-  def getWorld: WorldData = world
-
   def broadcastTileUpdate(playerId: UUID, x: Int, y: Int, tileId: Int): Unit = {
-    modifiedTiles.put((x, y), tileId)
-    val packet = new TileUpdatePacket(
-      sequenceNumber.getAndIncrement(),
-      playerId,
-      x, y,
-      tileId
-    )
-    broadcastToAllPlayers(packet)
+    // This should not be called in lobby mode; instance handles it
   }
 
   def sendModifiedTiles(player: Player): Unit = {
-    val zeroUUID = new UUID(0L, 0L)
-    modifiedTiles.forEach { (pos, tileId) =>
-      val packet = new TileUpdatePacket(
-        sequenceNumber.getAndIncrement(),
-        zeroUUID,
-        pos._1, pos._2,
-        tileId
-      )
-      sendPacketToPlayer(packet, player)
-    }
+    // No-op in lobby mode; instance handles it
   }
 
   def broadcastProjectileSpawn(projectile: Projectile): Unit = {
-    val packet = new ProjectilePacket(
-      sequenceNumber.getAndIncrement(),
-      projectile.ownerId,
-      projectile.getX, projectile.getY,
-      projectile.colorRGB,
-      projectile.id,
-      projectile.dx, projectile.dy,
-      ProjectileAction.SPAWN,
-      null,
-      projectile.chargeLevel.toByte,
-      projectile.projectileType
-    )
-    broadcastToAllPlayers(packet)
-  }
-
-  private def spawnItem(): Unit = {
-    if (!running || world == null) return
-    itemManager.spawnRandomItem(world).foreach { event =>
-      broadcastItemSpawn(event.item)
-    }
-  }
-
-  def broadcastItemSpawn(item: Item): Unit = {
-    val zeroUUID = new UUID(0L, 0L)
-    val packet = new ItemPacket(
-      sequenceNumber.getAndIncrement(),
-      zeroUUID,
-      item.x, item.y,
-      item.itemType.id,
-      item.id,
-      ItemAction.SPAWN
-    )
-    broadcastToAllPlayers(packet)
+    // No-op in lobby mode; instance handles it
   }
 
   def broadcastItemPickup(item: Item, playerId: UUID): Unit = {
-    val packet = new ItemPacket(
-      sequenceNumber.getAndIncrement(),
-      playerId,
-      item.x, item.y,
-      item.itemType.id,
-      item.id,
-      ItemAction.PICKUP
-    )
-    broadcastToAllPlayers(packet)
+    // No-op in lobby mode; instance handles it
   }
 
   /** Handle an incoming packet from a TCP or UDP handler. */
   def handleIncomingPacket(packet: Packet, tcpCh: Channel, udpSender: InetSocketAddress): Unit = {
     try {
-      val shouldBroadcast = handler.processPacket(packet, tcpCh, udpSender)
+      packet.getType match {
+        case PacketType.LOBBY_ACTION =>
+          val lobbyPacket = packet.asInstanceOf[LobbyActionPacket]
+          val player = connectedPlayers.get(lobbyPacket.getPlayerId)
+          if (player != null) {
+            lobbyHandler.processLobbyAction(lobbyPacket, player)
+          }
 
-      if (shouldBroadcast) {
-        // Inject the server's authoritative health for player packets
-        val packetToBroadcast = packet.getType match {
-          case PacketType.PLAYER_UPDATE =>
-            val updatePacket = packet.asInstanceOf[PlayerUpdatePacket]
-            val player = registry.get(updatePacket.getPlayerId)
-            if (player != null) {
-              // Reject position updates from frozen players
-              val pos = if (player.isFrozen) player.getPosition else updatePacket.getPosition
-              val flags = (if (player.hasShield) 0x01 else 0) |
-                          (if (player.hasGemBoost) 0x02 else 0) |
-                          (if (player.isFrozen) 0x04 else 0)
-              new PlayerUpdatePacket(
-                updatePacket.getSequenceNumber,
-                updatePacket.getPlayerId,
-                updatePacket.getTimestamp,
-                pos,
-                updatePacket.getColorRGB,
-                player.getHealth,
-                updatePacket.getChargeLevel,
-                flags
-              )
-            } else {
-              packet
+        case PacketType.PLAYER_JOIN =>
+          handleGlobalConnect(packet.asInstanceOf[PlayerJoinPacket], tcpCh)
+
+        case PacketType.HEARTBEAT =>
+          handleGlobalHeartbeat(packet, udpSender)
+
+        case _ =>
+          // Route game packets to the player's active GameInstance
+          val playerId = packet.getPlayerId
+          val lobby = lobbyManager.getPlayerLobby(playerId)
+          if (lobby != null && lobby.gameInstance != null && lobby.status == LobbyStatus.IN_GAME) {
+            val instance = lobby.gameInstance
+            val shouldBroadcast = instance.handler.processPacket(packet, tcpCh, udpSender)
+
+            if (shouldBroadcast) {
+              val packetToBroadcast = packet.getType match {
+                case PacketType.PLAYER_UPDATE =>
+                  val updatePacket = packet.asInstanceOf[PlayerUpdatePacket]
+                  val player = instance.registry.get(updatePacket.getPlayerId)
+                  if (player != null) {
+                    // Reject position updates from frozen players
+                    val pos = if (player.isFrozen) player.getPosition else updatePacket.getPosition
+                    val flags = (if (player.hasShield) 0x01 else 0) |
+                                (if (player.hasGemBoost) 0x02 else 0) |
+                                (if (player.isFrozen) 0x04 else 0)
+                    new PlayerUpdatePacket(
+                      updatePacket.getSequenceNumber,
+                      updatePacket.getPlayerId,
+                      updatePacket.getTimestamp,
+                      pos,
+                      updatePacket.getColorRGB,
+                      player.getHealth,
+                      updatePacket.getChargeLevel,
+                      flags
+                    )
+                  } else {
+                    packet
+                  }
+                case PacketType.PLAYER_JOIN =>
+                  val joinPacket = packet.asInstanceOf[PlayerJoinPacket]
+                  val player = instance.registry.get(joinPacket.getPlayerId)
+                  if (player != null) {
+                    new PlayerJoinPacket(
+                      joinPacket.getSequenceNumber,
+                      joinPacket.getPlayerId,
+                      joinPacket.getTimestamp,
+                      joinPacket.getPosition,
+                      joinPacket.getColorRGB,
+                      joinPacket.getPlayerName,
+                      player.getHealth
+                    )
+                  } else {
+                    packet
+                  }
+                case _ => packet
+              }
+              // Broadcast to instance players only, excluding sender
+              val data = packetToBroadcast.serialize()
+              instance.registry.getAll.asScala.foreach { p =>
+                if (!p.getId.equals(packet.getPlayerId)) {
+                  sendRawToPlayer(data, packetToBroadcast.getType.tcp, p)
+                }
+              }
             }
-          case PacketType.PLAYER_JOIN =>
-            val joinPacket = packet.asInstanceOf[PlayerJoinPacket]
-            val player = registry.get(joinPacket.getPlayerId)
-            if (player != null) {
-              new PlayerJoinPacket(
-                joinPacket.getSequenceNumber,
-                joinPacket.getPlayerId,
-                joinPacket.getTimestamp,
-                joinPacket.getPosition,
-                joinPacket.getColorRGB,
-                joinPacket.getPlayerName,
-                player.getHealth
-              )
-            } else {
-              packet
-            }
-          case _ => packet
-        }
-        broadcast(packetToBroadcast, packet.getPlayerId)
+          }
       }
     } catch {
       case e: IllegalArgumentException =>
@@ -447,18 +266,150 @@ class GameServer(port: Int, val worldFile: String = "") {
     }
   }
 
-  private def cleanup(): Unit = {
-    val timedOut = registry.getTimedOutClients
+  private def handleGlobalConnect(packet: PlayerJoinPacket, tcpCh: Channel): Unit = {
+    val playerId = packet.getPlayerId
+    val existingPlayer = connectedPlayers.get(playerId)
 
-    timedOut.asScala.foreach { playerId =>
-      val leavePacket = handler.handleTimeout(playerId, sequenceNumber.getAndIncrement())
-      if (leavePacket != null) {
-        broadcast(leavePacket, playerId)
+    if (existingPlayer != null) {
+      existingPlayer.setTcpChannel(tcpCh)
+      existingPlayer.setName(packet.getPlayerName)
+      existingPlayer.setColorRGB(packet.getColorRGB)
+      existingPlayer.updateHeartbeat()
+    } else {
+      val player = new Player(playerId, packet.getPlayerName, packet.getPosition, packet.getColorRGB, Constants.MAX_HEALTH)
+      player.setTcpChannel(tcpCh)
+      connectedPlayers.put(playerId, player)
+    }
+
+    if (tcpCh != null) {
+      channelToPlayer.put(tcpCh, playerId)
+    }
+
+    println(s"Global connect: ${playerId.toString.substring(0, 8)} ('${packet.getPlayerName}')")
+
+    // Check if player is in a lobby that's in-game; if so, register in instance
+    val lobby = lobbyManager.getPlayerLobby(playerId)
+    if (lobby != null && lobby.gameInstance != null && lobby.status == LobbyStatus.IN_GAME) {
+      val instance = lobby.gameInstance
+      val player = connectedPlayers.get(playerId)
+      instance.handler.processPacket(packet, tcpCh, null)
+    }
+  }
+
+  private def handleGlobalHeartbeat(packet: Packet, udpSender: InetSocketAddress): Unit = {
+    val playerId = packet.getPlayerId
+    val player = connectedPlayers.get(playerId)
+    if (player != null) {
+      player.updateHeartbeat()
+      if (udpSender != null) {
+        player.setUdpAddress(udpSender)
+      }
+      // Also update in the game instance if they're in one
+      val lobby = lobbyManager.getPlayerLobby(playerId)
+      if (lobby != null && lobby.gameInstance != null) {
+        val instancePlayer = lobby.gameInstance.registry.get(playerId)
+        if (instancePlayer != null) {
+          instancePlayer.updateHeartbeat()
+          if (udpSender != null) {
+            instancePlayer.setUdpAddress(udpSender)
+          }
+        }
+      }
+    }
+  }
+
+  def handleDisconnect(channel: Channel): Unit = {
+    val playerId = channelToPlayer.remove(channel)
+    if (playerId != null) {
+      val player = connectedPlayers.remove(playerId)
+      if (player != null) {
+        println(s"Global disconnect: ${playerId.toString.substring(0, 8)} ('${player.getName}')")
+
+        // Remove from lobby
+        val lobby = lobbyManager.getPlayerLobby(playerId)
+        if (lobby != null) {
+          if (lobby.gameInstance != null) {
+            lobby.gameInstance.handler.handleDisconnect(channel)
+          }
+          lobbyHandler.processLobbyAction(
+            new LobbyActionPacket(getNextSequenceNumber, playerId, LobbyAction.LEAVE),
+            player
+          )
+        }
+      }
+    }
+  }
+
+  def endGame(lobbyId: Short): Unit = {
+    val lobby = lobbyManager.getLobby(lobbyId)
+    if (lobby == null) return
+
+    val instance = lobby.gameInstance
+    if (instance == null) return
+
+    lobby.status = LobbyStatus.FINISHED
+
+    // Stop the instance
+    instance.stop()
+
+    // Broadcast GAME_OVER
+    val zeroUUID = new UUID(0L, 0L)
+    val gameOverPacket = new GameEventPacket(
+      getNextSequenceNumber, zeroUUID, GameEvent.GAME_OVER, lobbyId,
+      0, 0.toShort, 0.toShort, null, 0.toByte, 0.toShort, 0.toShort
+    )
+    instance.broadcastToInstance(gameOverPacket)
+
+    // Send SCORE_ENTRY for each player
+    val scoreboard = instance.killTracker.getScoreboard
+    var rank: Byte = 1
+    scoreboard.foreach { case (pid, kills, deaths) =>
+      val scorePacket = new GameEventPacket(
+        getNextSequenceNumber, pid, GameEvent.SCORE_ENTRY, lobbyId,
+        0, kills.toShort, deaths.toShort, null, rank, 0.toShort, 0.toShort
+      )
+      instance.broadcastToInstance(scorePacket)
+      rank = (rank + 1).toByte
+    }
+
+    // Send SCORE_END
+    val scoreEndPacket = new GameEventPacket(
+      getNextSequenceNumber, zeroUUID, GameEvent.SCORE_END, lobbyId,
+      0, 0.toShort, 0.toShort, null, 0.toByte, 0.toShort, 0.toShort
+    )
+    instance.broadcastToInstance(scoreEndPacket)
+
+    // Clean up
+    gameInstances.remove(lobbyId)
+    lobbyManager.removeLobby(lobbyId)
+
+    println(s"Game ended for lobby $lobbyId")
+  }
+
+  private def cleanup(): Unit = {
+    val now = System.currentTimeMillis()
+    val timeout = Constants.CLIENT_TIMEOUT_MS
+
+    connectedPlayers.values().asScala.foreach { player =>
+      if (now - player.getLastUpdateTime > timeout) {
+        val playerId = player.getId
+        connectedPlayers.remove(playerId)
+
+        // Remove from lobby
+        val lobby = lobbyManager.getPlayerLobby(playerId)
+        if (lobby != null) {
+          if (lobby.gameInstance != null) {
+            lobby.gameInstance.registry.remove(playerId)
+          }
+          lobbyManager.leaveLobby(playerId)
+        }
+
+        println(s"Player timed out: ${playerId.toString.substring(0, 8)}")
       }
     }
 
-    if (!timedOut.isEmpty || registry.size > 0) {
-      println(s"Server stats: ${registry.size} players connected")
+    if (connectedPlayers.size() > 0) {
+      println(s"Server stats: ${connectedPlayers.size()} players connected, ${lobbyManager.getActiveLobbies.size} active lobbies")
     }
   }
 
@@ -467,24 +418,17 @@ class GameServer(port: Int, val worldFile: String = "") {
     running = false
 
     cleanupExecutor.shutdown()
-    projectileExecutor.shutdown()
-    itemSpawnExecutor.shutdown()
+
+    // Stop all game instances
+    gameInstances.values().asScala.foreach(_.stop())
 
     try {
       if (!cleanupExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
         cleanupExecutor.shutdownNow()
       }
-      if (!projectileExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-        projectileExecutor.shutdownNow()
-      }
-      if (!itemSpawnExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-        itemSpawnExecutor.shutdownNow()
-      }
     } catch {
       case _: InterruptedException =>
         cleanupExecutor.shutdownNow()
-        projectileExecutor.shutdownNow()
-        itemSpawnExecutor.shutdownNow()
         Thread.currentThread().interrupt()
     }
 
@@ -496,11 +440,11 @@ class GameServer(port: Int, val worldFile: String = "") {
     println("Server stopped.")
   }
 
-  def getPlayerCount: Int = registry.size
+  def getPlayerCount: Int = connectedPlayers.size()
 }
 
 /** Netty handler for incoming TCP connections. */
-class GameServerTcpHandler(server: GameServer, clientHandler: ClientHandler) extends SimpleChannelInboundHandler[io.netty.buffer.ByteBuf] {
+class GameServerTcpHandler(server: GameServer) extends SimpleChannelInboundHandler[io.netty.buffer.ByteBuf] {
 
   override def channelRead0(ctx: ChannelHandlerContext, msg: io.netty.buffer.ByteBuf): Unit = {
     if (msg.readableBytes() < Constants.PACKET_SIZE) return
@@ -518,7 +462,7 @@ class GameServerTcpHandler(server: GameServer, clientHandler: ClientHandler) ext
   }
 
   override def channelInactive(ctx: ChannelHandlerContext): Unit = {
-    clientHandler.handleDisconnect(ctx.channel())
+    server.handleDisconnect(ctx.channel())
     super.channelInactive(ctx)
   }
 

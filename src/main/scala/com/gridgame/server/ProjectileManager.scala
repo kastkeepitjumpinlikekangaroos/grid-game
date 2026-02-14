@@ -17,6 +17,7 @@ import scala.jdk.CollectionConverters._
 sealed trait ProjectileEvent
 case class ProjectileMoved(projectile: Projectile) extends ProjectileEvent
 case class ProjectileHit(projectile: Projectile, targetId: UUID) extends ProjectileEvent
+case class ProjectileKill(projectile: Projectile, targetId: UUID) extends ProjectileEvent
 case class ProjectileDespawned(projectile: Projectile) extends ProjectileEvent
 
 class ProjectileManager(registry: ClientRegistry) {
@@ -91,7 +92,11 @@ class ProjectileManager(registry: ClientRegistry) {
               println(s"ProjectileManager: ${projectile} hit player ${hitPlayer.getId.toString.substring(0, 8)}, damage=$damage (charge=${projectile.chargeLevel}%), health now $newHealth")
 
               toRemove += projectile.id
-              events += ProjectileHit(projectile, hitPlayer.getId)
+              if (newHealth <= 0) {
+                events += ProjectileKill(projectile, hitPlayer.getId)
+              } else {
+                events += ProjectileHit(projectile, hitPlayer.getId)
+              }
               resolved = true
             }
           }

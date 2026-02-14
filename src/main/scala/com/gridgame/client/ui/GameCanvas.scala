@@ -1,5 +1,6 @@
 package com.gridgame.client.ui
 
+import com.gridgame.client.ClientState
 import com.gridgame.client.GameClient
 import com.gridgame.common.Constants
 import com.gridgame.common.model.Direction
@@ -71,8 +72,9 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val localDeathAnimActive = client.getIsDead && localDeathTime > 0 &&
       (System.currentTimeMillis() - localDeathTime) < DEATH_ANIMATION_MS
 
-    // Show game over screen only after death animation completes
-    if (client.getIsDead && !localDeathAnimActive) {
+    // In non-lobby mode, show full game over screen when dead (after death anim)
+    // In lobby mode (respawning), keep rendering the world with a countdown overlay
+    if (client.getIsDead && !localDeathAnimActive && !client.isRespawning) {
       drawGameOverScreen()
       return
     }
@@ -171,7 +173,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
         client.getLocalColorRGB,
         localDeathTime
       ))
-    } else {
+    } else if (!client.getIsDead) {
       addEntity(localPos.getX, localPos.getY, () => drawLocalPlayer(localVX, localVY, camOffX, camOffY))
     }
 
@@ -216,6 +218,12 @@ class GameCanvas(client: GameClient) extends Canvas() {
     drawAbilityHUD()
     drawInventory()
     drawChargeBar()
+    drawLobbyHUD()
+
+    // Respawn countdown overlay (drawn on top of world)
+    if (client.getIsDead && client.isRespawning && !localDeathAnimActive) {
+      drawRespawnCountdown()
+    }
   }
 
   private def drawSingleItem(item: Item, camOffX: Double, camOffY: Double): Unit = {
@@ -1088,19 +1096,48 @@ class GameCanvas(client: GameClient) extends Canvas() {
     gc.setFill(Color.rgb(0, 0, 0, 0.7))
     gc.fillRect(0, 0, getWidth, getHeight)
 
-    // Game Over text
     gc.setFill(Color.RED)
     gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 48))
     val text = "GAME OVER"
-    val textWidth = 220 // Approximate width
+    val textWidth = 220
     gc.fillText(text, (getWidth - textWidth) / 2, getHeight / 2)
 
-    // Press Enter to reload text
     gc.setFill(Color.WHITE)
     gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.NORMAL, 20))
     val reloadText = "Press Enter to reload"
-    val reloadTextWidth = 160 // Approximate width
+    val reloadTextWidth = 160
     gc.fillText(reloadText, (getWidth - reloadTextWidth) / 2, getHeight / 2 + 40)
+  }
+
+  private def drawRespawnCountdown(): Unit = {
+    val deathTime = client.getLocalDeathTime
+    val elapsed = System.currentTimeMillis() - deathTime
+    val remaining = Math.max(0, Constants.RESPAWN_DELAY_MS - elapsed)
+    val secondsLeft = Math.ceil(remaining / 1000.0).toInt
+
+    val centerX = getWidth / 2.0
+    val centerY = getHeight / 2.0
+
+    // Subtle dark vignette behind the text
+    gc.setFill(Color.rgb(0, 0, 0, 0.4))
+    gc.fillRoundRect(centerX - 110, centerY - 45, 220, 75, 16, 16)
+
+    // "YOU DIED" text
+    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 28))
+    gc.setFill(Color.rgb(220, 40, 40))
+    gc.setStroke(Color.rgb(0, 0, 0, 0.8))
+    gc.setLineWidth(3)
+    gc.strokeText("YOU DIED", centerX - 68, centerY - 12)
+    gc.fillText("YOU DIED", centerX - 68, centerY - 12)
+
+    // Countdown text
+    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.NORMAL, 16))
+    gc.setFill(Color.rgb(220, 220, 220))
+    gc.setStroke(Color.rgb(0, 0, 0, 0.8))
+    gc.setLineWidth(2)
+    val countdownText = if (secondsLeft > 0) s"Respawning in ${secondsLeft}s..." else "Respawning..."
+    gc.strokeText(countdownText, centerX - 72, centerY + 18)
+    gc.fillText(countdownText, centerX - 72, centerY + 18)
   }
 
   private def drawCoordinates(world: WorldData): Unit = {
@@ -1312,6 +1349,42 @@ class GameCanvas(client: GameClient) extends Canvas() {
     gc.setFill(Color.WHITE)
     val text = s"$chargeLevel%"
     gc.fillText(text, barX + barWidth / 2 - 10, barY - 4)
+  }
+
+  private def drawLobbyHUD(): Unit = {
+    if (client.clientState != ClientState.PLAYING) return
+
+    // Timer: top-center
+    val remaining = client.gameTimeRemaining
+    val minutes = remaining / 60
+    val seconds = remaining % 60
+    val timerText = f"$minutes%d:$seconds%02d"
+    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 22))
+    drawOutlinedText(timerText, getWidth / 2 - 25, 28)
+
+    // Kill/Death counter: below coordinates
+    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.NORMAL, 12))
+    drawOutlinedText(s"K: ${client.killCount}  D: ${client.deathCount}", 10, 140)
+
+    // Kill feed: top-right corner, last 5 entries
+    val now = System.currentTimeMillis()
+    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.NORMAL, 11))
+    import scala.jdk.CollectionConverters._
+    var feedY = 20.0
+    client.killFeed.asScala.foreach { entry =>
+      val timestamp = entry(0).asInstanceOf[java.lang.Long].longValue()
+      val elapsed = now - timestamp
+      if (elapsed < 5000) {
+        val alpha = Math.max(0.0, 1.0 - elapsed / 5000.0)
+        val killer = entry(1).asInstanceOf[String]
+        val victim = entry(2).asInstanceOf[String]
+        val feedText = s"$killer killed $victim"
+        gc.setGlobalAlpha(alpha)
+        drawOutlinedText(feedText, getWidth - 200, feedY)
+        gc.setGlobalAlpha(1.0)
+        feedY += 16
+      }
+    }
   }
 
   private def drawOutlinedText(text: String, x: Double, y: Double): Unit = {

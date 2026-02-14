@@ -36,6 +36,42 @@ object PacketSerializer {
     // For PROJECTILE_UPDATE, x/y are floats; for other packets, they're ints
     // We need to handle this differently based on packet type
     packetType match {
+      case PacketType.LOBBY_ACTION =>
+        // Custom layout from byte 21 onward (no standard x/y/color/timestamp)
+        val action = buffer.get()
+        val lobbyId = buffer.getShort()
+        val mapIndex = buffer.get()
+        val durationMinutes = buffer.get()
+        val playerCount = buffer.get()
+        val maxPlayers = buffer.get()
+        val lobbyStatus = buffer.get()
+        val nameBytes = new Array[Byte](Constants.MAX_LOBBY_NAME_LEN)
+        buffer.get(nameBytes)
+        val lobbyName = extractString(nameBytes)
+        new LobbyActionPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, action, lobbyId,
+          mapIndex, durationMinutes, playerCount, maxPlayers, lobbyStatus, lobbyName)
+
+      case PacketType.GAME_EVENT =>
+        // Custom layout from byte 21 onward (no standard x/y/color/timestamp)
+        val eventType = buffer.get()
+        val gameId = buffer.getShort()
+        val remainingSeconds = buffer.getInt()
+        val kills = buffer.getShort()
+        val deaths = buffer.getShort()
+        val targetMost = buffer.getLong()
+        val targetLeast = buffer.getLong()
+        val targetId = if (targetMost != 0L || targetLeast != 0L) {
+          new UUID(targetMost, targetLeast)
+        } else {
+          null
+        }
+        buffer.get(new Array[Byte](5)) // reserved
+        val rank = buffer.get()
+        val spawnX = buffer.getShort()
+        val spawnY = buffer.getShort()
+        new GameEventPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, eventType, gameId,
+          remainingSeconds, kills, deaths, targetId, rank, spawnX, spawnY)
+
       case PacketType.PROJECTILE_UPDATE =>
         // [21-24] X Position (as float)
         val x = buffer.getFloat()

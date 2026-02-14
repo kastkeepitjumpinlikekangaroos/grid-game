@@ -13,7 +13,7 @@ import java.io.File
 import java.net.InetSocketAddress
 import java.util.UUID
 
-class ClientHandler(registry: ClientRegistry, server: GameServer, projectileManager: ProjectileManager, itemManager: ItemManager) {
+class ClientHandler(registry: ClientRegistry, server: GameServer, projectileManager: ProjectileManager, itemManager: ItemManager, instance: GameInstance = null) {
 
   /**
    * Process a packet received from a client.
@@ -76,8 +76,12 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       packet.getProjectileType
     )
 
-    // Broadcast spawn to all clients
-    server.broadcastProjectileSpawn(projectile)
+    // Broadcast spawn to instance or all clients
+    if (instance != null) {
+      instance.broadcastProjectileSpawn(projectile)
+    } else {
+      server.broadcastProjectileSpawn(projectile)
+    }
 
     false // Don't auto-broadcast; we handled it
   }
@@ -86,8 +90,9 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     val playerId = packet.getPlayerId
 
     // Send world info to the joining player via TCP
-    if (server.worldFile.nonEmpty) {
-      val worldFileName = new File(server.worldFile).getName
+    val wf = if (instance != null) instance.worldFile else server.worldFile
+    if (wf.nonEmpty) {
+      val worldFileName = new File(wf).getName
       val worldInfoPacket = new WorldInfoPacket(server.getNextSequenceNumber, worldFileName)
       println(s"Sending world info to client: $worldFileName")
       server.sendPacketViaChannel(worldInfoPacket, tcpChannel)
@@ -109,7 +114,8 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       sendExistingPlayers(playerId, existing)
       sendExistingItems(existing)
       sendInventoryContents(playerId, existing)
-      server.sendModifiedTiles(existing)
+      if (instance != null) instance.sendModifiedTiles(existing)
+      else server.sendModifiedTiles(existing)
 
       true
     } else {
@@ -124,7 +130,8 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       sendExistingPlayers(playerId, player)
       sendExistingItems(player)
       sendInventoryContents(playerId, player)
-      server.sendModifiedTiles(player)
+      if (instance != null) instance.sendModifiedTiles(player)
+      else server.sendModifiedTiles(player)
 
       true
     }
@@ -159,7 +166,11 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     // Check for item pickup
     val pos = packet.getPosition
     itemManager.checkPickup(playerId, pos.getX, pos.getY).foreach { event =>
-      server.broadcastItemPickup(event.item, event.playerId)
+      if (instance != null) {
+        instance.broadcastItemPickup(event.item, event.playerId)
+      } else {
+        server.broadcastItemPickup(event.item, event.playerId)
+      }
     }
 
     true
@@ -215,7 +226,8 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
               0,
               flags
             )
-            server.broadcastPlayerUpdate(updatePacket)
+            if (instance != null) instance.broadcastPlayerUpdate(updatePacket)
+            else server.broadcastPlayerUpdate(updatePacket)
             println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} healed to full")
 
           case ItemType.Shield =>
@@ -259,10 +271,11 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       (frontX + perpDx, frontY + perpDy)
     )
 
-    val world = server.getWorld
+    val w = if (instance != null) instance.world else server.getWorld
     positions.foreach { case (tx, ty) =>
-      if (world.setTile(tx, ty, Tile.Fence)) {
-        server.broadcastTileUpdate(player.getId, tx, ty, Tile.Fence.id)
+      if (w.setTile(tx, ty, Tile.Fence)) {
+        if (instance != null) instance.broadcastTileUpdate(player.getId, tx, ty, Tile.Fence.id)
+        else server.broadcastTileUpdate(player.getId, tx, ty, Tile.Fence.id)
       }
     }
 
@@ -337,7 +350,11 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
 
       // Broadcast leave to remaining players
       val leavePacket = new PlayerLeavePacket(server.getNextSequenceNumber, playerId)
-      server.broadcastToAllPlayers(leavePacket)
+      if (instance != null) {
+        instance.broadcastToInstance(leavePacket)
+      } else {
+        server.broadcastToAllPlayers(leavePacket)
+      }
     }
   }
 }
