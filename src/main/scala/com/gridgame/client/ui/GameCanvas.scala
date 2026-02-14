@@ -827,46 +827,88 @@ class GameCanvas(client: GameClient) extends Canvas() {
       val nx = dx / len
       val ny = dy / len
 
-      // Spinning arc sweep - wide
-      val sweepOffset = Math.sin(spinAngle) * 18.0
+      // Spinning sweep for the whole axe
+      val sweepOffset = Math.sin(spinAngle) * 14.0
       val perpX = -ny * sweepOffset
       val perpY = nx * sweepOffset
 
-      // Layer 1: Ultra-wide soft glow
-      gc.setStroke(Color.color(0.75, 0.75, 0.78, 0.08 * pulse))
-      gc.setLineWidth(56 * pulse)
-      gc.strokeLine(tailX + perpX * 0.3, tailY + perpY * 0.3, tipX + perpX, tipY + perpY)
+      // The handle runs from tail to ~70% of the way to tip
+      // The axe blade occupies the last ~30%
+      val handleEndT = 0.65
+      val handleEndX = tailX + dx * handleEndT + perpX * handleEndT
+      val handleEndY = tailY + dy * handleEndT + perpY * handleEndT
+      val bladeX = tipX + perpX
+      val bladeY = tipY + perpY
 
-      // Layer 2: Outer glow - metallic gray
-      gc.setStroke(Color.color(0.75, 0.75, 0.78, 0.14 * pulse))
-      gc.setLineWidth(42 * pulse)
-      gc.strokeLine(tailX + perpX * 0.3, tailY + perpY * 0.3, tipX + perpX, tipY + perpY)
+      // --- Handle: thin brown/dark stick ---
+      // Handle glow
+      gc.setStroke(Color.color(0.45, 0.3, 0.15, 0.12 * pulse))
+      gc.setLineWidth(12 * pulse)
+      gc.strokeLine(tailX + perpX * 0.2, tailY + perpY * 0.2, handleEndX, handleEndY)
+      // Handle core
+      gc.setStroke(Color.color(0.55, 0.35, 0.18, 0.7 * pulse))
+      gc.setLineWidth(5 * pulse)
+      gc.strokeLine(tailX + perpX * 0.2, tailY + perpY * 0.2, handleEndX, handleEndY)
+      // Handle bright center
+      gc.setStroke(Color.color(0.7, 0.5, 0.25, 0.85 * pulse))
+      gc.setLineWidth(2.0)
+      gc.strokeLine(tailX + perpX * 0.2, tailY + perpY * 0.2, handleEndX, handleEndY)
 
-      // Layer 3: Mid glow
-      gc.setStroke(Color.color(0.7, 0.7, 0.75, 0.28 * pulse))
-      gc.setLineWidth(28 * pulse)
-      gc.strokeLine(tailX + perpX * 0.3, tailY + perpY * 0.3, tipX + perpX, tipY + perpY)
+      // --- Axe blade: wide crescent from handle-end to tip ---
+      // Perpendicular to travel direction for the wide blade spread
+      val bladeSpread = 22.0 * pulse
+      val bladeNx = -ny  // perpendicular
+      val bladeNy = nx
 
-      // Layer 4: Bright metallic beam
-      gc.setStroke(Color.color(0.8, 0.8, 0.85, 0.6 * pulse))
-      gc.setLineWidth(16 * pulse)
-      gc.strokeLine(tailX + perpX * 0.3, tailY + perpY * 0.3, tipX + perpX, tipY + perpY)
+      // Blade glow (wide)
+      gc.setFill(Color.color(0.75, 0.75, 0.8, 0.08 * pulse))
+      val glowR = bladeSpread * 2.0
+      val bladeMidX = (handleEndX + bladeX) * 0.5
+      val bladeMidY = (handleEndY + bladeY) * 0.5
+      gc.fillOval(bladeMidX - glowR, bladeMidY - glowR, glowR * 2, glowR * 2)
 
-      // Layer 5: White-hot core
-      gc.setStroke(Color.color(0.95, 0.95, 1.0, 0.9 * pulse))
-      gc.setLineWidth(6.0)
-      gc.strokeLine(tailX + perpX * 0.3, tailY + perpY * 0.3, tipX + perpX, tipY + perpY)
+      // Blade polygon: crescent shape
+      // 5 points: handle-end narrow, blade-mid wide, tip narrow
+      val bx = Array(
+        handleEndX + bladeNx * 4.0,    // handle-end top
+        bladeMidX + bladeNx * bladeSpread, // mid top (widest)
+        bladeX + bladeNx * 8.0,         // tip top
+        bladeX - bladeNx * 8.0,         // tip bottom
+        bladeMidX - bladeNx * bladeSpread, // mid bottom (widest)
+        handleEndX - bladeNx * 4.0     // handle-end bottom
+      )
+      val by = Array(
+        handleEndY + bladeNy * 4.0,
+        bladeMidY + bladeNy * bladeSpread,
+        bladeY + bladeNy * 8.0,
+        bladeY - bladeNy * 8.0,
+        bladeMidY - bladeNy * bladeSpread,
+        handleEndY - bladeNy * 4.0
+      )
 
-      // Silver orb at tip - large
-      val orbR = 12.0 * pulse
-      val orbX = tipX + perpX
-      val orbY = tipY + perpY
-      gc.setFill(Color.color(0.7, 0.7, 0.75, 0.25 * pulse))
-      gc.fillOval(orbX - orbR * 2.5, orbY - orbR * 2.5, orbR * 5, orbR * 5)
-      gc.setFill(Color.color(0.85, 0.85, 0.9, 0.45 * pulse))
-      gc.fillOval(orbX - orbR * 1.3, orbY - orbR * 1.3, orbR * 2.6, orbR * 2.6)
-      gc.setFill(Color.color(0.95, 0.95, 1.0, 0.85))
-      gc.fillOval(orbX - orbR * 0.5, orbY - orbR * 0.5, orbR, orbR)
+      // Outer blade glow
+      gc.setFill(Color.color(0.7, 0.7, 0.75, 0.2 * pulse))
+      gc.fillPolygon(bx, by, 6)
+      // Main blade fill - metallic silver
+      // Slightly inset version for the solid blade
+      val inset = 0.75
+      val ibx = bx.zipWithIndex.map { case (x, i) =>
+        bladeMidX + (x - bladeMidX) * inset
+      }
+      val iby = by.zipWithIndex.map { case (y, i) =>
+        bladeMidY + (y - bladeMidY) * inset
+      }
+      gc.setFill(Color.color(0.8, 0.8, 0.85, 0.6 * pulse))
+      gc.fillPolygon(ibx, iby, 6)
+      // Blade edge highlight
+      gc.setStroke(Color.color(0.95, 0.95, 1.0, 0.7 * pulse))
+      gc.setLineWidth(2.0)
+      gc.strokePolygon(ibx, iby, 6)
+
+      // Bright core line along the blade center
+      gc.setStroke(Color.color(0.95, 0.95, 1.0, 0.5 * pulse))
+      gc.setLineWidth(3.0)
+      gc.strokeLine(handleEndX, handleEndY, bladeX, bladeY)
     }
   }
 
