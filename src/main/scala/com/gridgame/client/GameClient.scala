@@ -63,6 +63,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   @volatile private var isDead = false
   @volatile private var movementInputActive = false
   @volatile private var worldFileListener: String => Unit = _
+  @volatile private var rejoinListener: () => Unit = _
 
   def connect(): Unit = {
     try {
@@ -129,6 +130,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
 
     // Send join packet to server
     sendJoinPacket()
+
+    if (rejoinListener != null) rejoinListener()
 
     println(s"GameClient: Rejoined at $newSpawn")
   }
@@ -741,6 +744,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
 
   def setWorldFileListener(listener: String => Unit): Unit = {
     worldFileListener = listener
+  }
+
+  def setRejoinListener(listener: () => Unit): Unit = {
+    rejoinListener = listener
   }
 
   def disconnect(): Unit = {

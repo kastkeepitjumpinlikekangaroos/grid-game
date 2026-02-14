@@ -28,7 +28,7 @@ object Constants {
   val CLIENT_TIMEOUT_MS: Int = 10000 // 10 seconds
 
   // Input configuration
-  val MOVE_RATE_LIMIT_MS: Int = 10 // Max 10 moves per second
+  val MOVE_RATE_LIMIT_MS: Int = 50 // Max 10 moves per second
 
   // Health configuration
   val MAX_HEALTH: Int = 100

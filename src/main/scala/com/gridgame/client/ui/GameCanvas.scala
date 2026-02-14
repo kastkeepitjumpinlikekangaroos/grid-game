@@ -28,6 +28,11 @@ class GameCanvas(client: GameClient) extends Canvas() {
   private val lastRemotePositions: mutable.Map[UUID, Position] = mutable.Map.empty
   private val remoteMovingUntil: mutable.Map[UUID, Long] = mutable.Map.empty
 
+  // Visual interpolation for smooth movement
+  private var visualX: Double = Double.NaN
+  private var visualY: Double = Double.NaN
+  private val remoteVisualPositions: mutable.Map[UUID, (Double, Double)] = mutable.Map.empty
+
   private val HW = Constants.ISO_HALF_W  // 20
   private val HH = Constants.ISO_HALF_H  // 10
   private val HIT_ANIMATION_MS = 500
@@ -76,9 +81,23 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val canvasW = getWidth
     val canvasH = getHeight
 
-    // Camera offset: center the local player's iso position on screen
-    val playerSx = (localPos.getX.toDouble - localPos.getY.toDouble) * HW
-    val playerSy = (localPos.getX.toDouble + localPos.getY.toDouble) * HH
+    // Lerp visual position toward actual grid position for smooth movement
+    val targetX = localPos.getX.toDouble
+    val targetY = localPos.getY.toDouble
+    if (visualX.isNaN) {
+      visualX = targetX
+      visualY = targetY
+    } else {
+      val lerpFactor = 0.3
+      visualX += (targetX - visualX) * lerpFactor
+      visualY += (targetY - visualY) * lerpFactor
+      if (Math.abs(visualX - targetX) < 0.01) visualX = targetX
+      if (Math.abs(visualY - targetY) < 0.01) visualY = targetY
+    }
+
+    // Camera offset: center the interpolated player position on screen
+    val playerSx = (visualX - visualY) * HW
+    val playerSy = (visualX + visualY) * HH
     val camOffX = canvasW / 2.0 - playerSx
     val camOffY = canvasH / 2.0 - playerSy
 
@@ -119,22 +138,40 @@ class GameCanvas(client: GameClient) extends Canvas() {
       addEntity(cx, cy, () => drawSingleProjectile(proj, camOffX, camOffY))
     }
 
-    // Remote players
+    // Remote players (with visual interpolation)
     client.getPlayers.values().asScala.filter(!_.isDead).foreach { player =>
       val pos = player.getPosition
-      addEntity(pos.getX, pos.getY, () => drawPlayer(player, camOffX, camOffY))
+      val pid = player.getId
+      val (rvx, rvy) = remoteVisualPositions.get(pid) match {
+        case Some((prevX, prevY)) =>
+          val lerpFactor = 0.3
+          val nx = prevX + (pos.getX - prevX) * lerpFactor
+          val ny = prevY + (pos.getY - prevY) * lerpFactor
+          val sx = if (Math.abs(nx - pos.getX) < 0.01) pos.getX.toDouble else nx
+          val sy = if (Math.abs(ny - pos.getY) < 0.01) pos.getY.toDouble else ny
+          (sx, sy)
+        case None =>
+          (pos.getX.toDouble, pos.getY.toDouble)
+      }
+      remoteVisualPositions.put(pid, (rvx, rvy))
+      addEntity(pos.getX, pos.getY, () => drawPlayerInterp(player, rvx, rvy, camOffX, camOffY))
     }
 
-    // Local player
+    // Clean up visual positions for disconnected players
+    remoteVisualPositions.keys.filterNot(id => client.getPlayers.containsKey(id)).toSeq.foreach(remoteVisualPositions.remove)
+
+    // Local player (use visual position for smooth rendering, grid cell for depth sorting)
+    val localVX = visualX
+    val localVY = visualY
     if (localDeathAnimActive) {
       addEntity(localPos.getX, localPos.getY, () => drawDeathEffect(
-        worldToScreenX(localPos.getX, localPos.getY, camOffX),
-        worldToScreenY(localPos.getX, localPos.getY, camOffY),
+        worldToScreenX(localVX, localVY, camOffX),
+        worldToScreenY(localVX, localVY, camOffY),
         client.getLocalColorRGB,
         localDeathTime
       ))
     } else {
-      addEntity(localPos.getX, localPos.getY, () => drawLocalPlayer(localPos, camOffX, camOffY))
+      addEntity(localPos.getX, localPos.getY, () => drawLocalPlayer(localVX, localVY, camOffX, camOffY))
     }
 
     // Phase 1: Draw ground tiles (flat/walkable) — these never occlude entities
@@ -340,12 +377,12 @@ class GameCanvas(client: GameClient) extends Canvas() {
     gc.fillOval(screenX - 16, screenY - 6, 32, 12)
   }
 
-  private def drawPlayer(player: Player, camOffX: Double, camOffY: Double): Unit = {
+  private def drawPlayerInterp(player: Player, wx: Double, wy: Double, camOffX: Double, camOffY: Double): Unit = {
     val pos = player.getPosition
     val playerId = player.getId
 
-    val screenX = worldToScreenX(pos.getX, pos.getY, camOffX)
-    val screenY = worldToScreenY(pos.getX, pos.getY, camOffY)
+    val screenX = worldToScreenX(wx, wy, camOffX)
+    val screenY = worldToScreenY(wx, wy, camOffY)
 
     val displaySz = Constants.PLAYER_DISPLAY_SIZE_PX
 
@@ -362,7 +399,11 @@ class GameCanvas(client: GameClient) extends Canvas() {
     lastRemotePositions.put(playerId, pos)
 
     val isMoving = now < remoteMovingUntil.getOrElse(playerId, 0L)
-    val frame = if (isMoving) (animationTick / FRAMES_PER_STEP) % 4 else 0
+    val remoteAnimSpeed = if (player.getChargeLevel > 0) {
+      val chargePct = player.getChargeLevel / 100.0
+      (FRAMES_PER_STEP * (1.0 + chargePct * 4.0)).toInt
+    } else FRAMES_PER_STEP
+    val frame = if (isMoving) (animationTick / remoteAnimSpeed) % 4 else 0
 
     val spriteCenter = screenY - displaySz / 2.0
 
@@ -385,9 +426,9 @@ class GameCanvas(client: GameClient) extends Canvas() {
     drawHealthBar(screenX, spriteY, player.getHealth)
   }
 
-  private def drawLocalPlayer(pos: Position, camOffX: Double, camOffY: Double): Unit = {
-    val screenX = worldToScreenX(pos.getX, pos.getY, camOffX)
-    val screenY = worldToScreenY(pos.getX, pos.getY, camOffY)
+  private def drawLocalPlayer(wx: Double, wy: Double, camOffX: Double, camOffY: Double): Unit = {
+    val screenX = worldToScreenX(wx, wy, camOffX)
+    val screenY = worldToScreenY(wx, wy, camOffY)
 
     val displaySz = Constants.PLAYER_DISPLAY_SIZE_PX
     val spriteX = screenX - displaySz / 2.0
@@ -933,11 +974,19 @@ class GameCanvas(client: GameClient) extends Canvas() {
     Color.rgb(red, green, blue, alpha / 255.0)
   }
 
+  /** Reset visual interpolation (e.g. on respawn or world change). */
+  def resetVisualPosition(): Unit = {
+    visualX = Double.NaN
+    visualY = Double.NaN
+    remoteVisualPositions.clear()
+  }
+
   /** Get the camera offsets for the current local player position. Used by MouseHandler. */
   def getCameraOffsets: (Double, Double) = {
-    val localPos = client.getLocalPosition
-    val playerSx = (localPos.getX.toDouble - localPos.getY.toDouble) * HW
-    val playerSy = (localPos.getX.toDouble + localPos.getY.toDouble) * HH
+    val vx = if (visualX.isNaN) client.getLocalPosition.getX.toDouble else visualX
+    val vy = if (visualY.isNaN) client.getLocalPosition.getY.toDouble else visualY
+    val playerSx = (vx - vy) * HW
+    val playerSy = (vx + vy) * HH
     val camOffX = getWidth / 2.0 - playerSx
     val camOffY = getHeight / 2.0 - playerSy
     (camOffX, camOffY)

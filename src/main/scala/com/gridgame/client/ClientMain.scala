@@ -146,6 +146,7 @@ class ClientMain extends Application {
 
   private def showGameScene(stage: Stage): Unit = {
     canvas = new GameCanvas(client)
+    client.setRejoinListener(() => canvas.resetVisualPosition())
 
     val root = new StackPane(canvas)
     val scene = new Scene(root, Constants.VIEWPORT_SIZE_PX, Constants.VIEWPORT_SIZE_PX)
@@ -207,11 +208,13 @@ class ClientMain extends Application {
     try {
       val world = WorldLoader.load(worldPath)
       client.setWorld(world)
+      if (canvas != null) canvas.resetVisualPosition()
       println(s"Loaded world: ${world.name} (${world.width}x${world.height})")
     } catch {
       case e: Exception =>
         println(s"Failed to load world $worldPath: ${e.getMessage}, using default")
         client.setWorld(WorldData.createEmpty(Constants.GRID_SIZE, Constants.GRID_SIZE))
+        if (canvas != null) canvas.resetVisualPosition()
     }
   }
 
