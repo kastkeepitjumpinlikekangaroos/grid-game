@@ -46,9 +46,13 @@ class Projectile(
     case ProjectileType.SPEAR => 0.7f
     case ProjectileType.SOUL_BOLT => 0.65f
     case ProjectileType.HAUNT => 0.5f
-    case ProjectileType.ARCANE_BOLT => 0.85f
+    case ProjectileType.ARCANE_BOLT =>
+      if (chargeLevel > 0) Constants.ARCANE_BOLT_CHARGE_MIN_SPEED + (chargeLevel / 100.0f) * (Constants.ARCANE_BOLT_CHARGE_MAX_SPEED - Constants.ARCANE_BOLT_CHARGE_MIN_SPEED)
+      else 0.85f
     case ProjectileType.FIREBALL => 0.4f
-    case ProjectileType.SPLASH => 0.65f
+    case ProjectileType.SPLASH =>
+      if (chargeLevel > 0) Constants.SPLASH_CHARGE_MIN_SPEED + (chargeLevel / 100.0f) * (Constants.SPLASH_CHARGE_MAX_SPEED - Constants.SPLASH_CHARGE_MIN_SPEED)
+      else 0.65f
     case ProjectileType.TIDAL_WAVE => 0.5f
     case ProjectileType.GEYSER => 0.6f
     case ProjectileType.BULLET => 1.0f

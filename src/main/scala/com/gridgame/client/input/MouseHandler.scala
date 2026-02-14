@@ -11,8 +11,10 @@ import javafx.scene.input.MouseEvent
 class MouseHandler(client: GameClient, canvas: GameCanvas) extends EventHandler[MouseEvent] {
   private var lastShootTime: Long = 0
 
-  private def canCharge: Boolean =
-    client.getSelectedCharacterDef.primaryProjectileType == ProjectileType.NORMAL
+  private def canCharge: Boolean = {
+    val pt = client.getSelectedCharacterDef.primaryProjectileType
+    pt == ProjectileType.NORMAL || pt == ProjectileType.ARCANE_BOLT || pt == ProjectileType.SPLASH
+  }
 
   override def handle(event: MouseEvent): Unit = {
     // Track mouse position for aiming (works during move and drag)

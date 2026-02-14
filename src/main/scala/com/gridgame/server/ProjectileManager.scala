@@ -70,9 +70,13 @@ class ProjectileManager(registry: ClientRegistry) {
             case ProjectileType.SPEAR => Constants.SPEAR_MAX_RANGE.toDouble
             case ProjectileType.SOUL_BOLT => Constants.SOUL_BOLT_MAX_RANGE.toDouble
             case ProjectileType.HAUNT => Constants.HAUNT_MAX_RANGE.toDouble
-            case ProjectileType.ARCANE_BOLT => Constants.ARCANE_BOLT_MAX_RANGE.toDouble
+            case ProjectileType.ARCANE_BOLT =>
+              if (projectile.chargeLevel > 0) Constants.ARCANE_BOLT_CHARGE_MIN_RANGE + (projectile.chargeLevel / 100.0 * (Constants.ARCANE_BOLT_CHARGE_MAX_RANGE - Constants.ARCANE_BOLT_CHARGE_MIN_RANGE))
+              else Constants.ARCANE_BOLT_MAX_RANGE.toDouble
             case ProjectileType.FIREBALL => Constants.FIREBALL_MAX_RANGE.toDouble
-            case ProjectileType.SPLASH => Constants.SPLASH_MAX_RANGE.toDouble
+            case ProjectileType.SPLASH =>
+              if (projectile.chargeLevel > 0) Constants.SPLASH_CHARGE_MIN_RANGE + (projectile.chargeLevel / 100.0 * (Constants.SPLASH_CHARGE_MAX_RANGE - Constants.SPLASH_CHARGE_MIN_RANGE))
+              else Constants.SPLASH_MAX_RANGE.toDouble
             case ProjectileType.TIDAL_WAVE => Constants.TIDAL_WAVE_MAX_RANGE.toDouble
             case ProjectileType.GEYSER => Constants.GEYSER_MAX_RANGE.toDouble
             case ProjectileType.BULLET => Constants.BULLET_MAX_RANGE.toDouble
@@ -138,9 +142,13 @@ class ProjectileManager(registry: ClientRegistry) {
                     (Constants.SPEAR_BASE_DAMAGE + (distanceFraction * (Constants.SPEAR_MAX_DAMAGE - Constants.SPEAR_BASE_DAMAGE))).toInt
                   case ProjectileType.SOUL_BOLT => Constants.SOUL_BOLT_DAMAGE
                   case ProjectileType.HAUNT => Constants.HAUNT_DAMAGE
-                  case ProjectileType.ARCANE_BOLT => Constants.ARCANE_BOLT_DAMAGE
+                  case ProjectileType.ARCANE_BOLT =>
+                    if (projectile.chargeLevel > 0) (Constants.ARCANE_BOLT_CHARGE_MIN_DAMAGE + (projectile.chargeLevel / 100.0 * (Constants.ARCANE_BOLT_CHARGE_MAX_DAMAGE - Constants.ARCANE_BOLT_CHARGE_MIN_DAMAGE))).toInt
+                    else Constants.ARCANE_BOLT_DAMAGE
                   case ProjectileType.FIREBALL => Constants.FIREBALL_DAMAGE
-                  case ProjectileType.SPLASH => Constants.SPLASH_DAMAGE
+                  case ProjectileType.SPLASH =>
+                    if (projectile.chargeLevel > 0) (Constants.SPLASH_CHARGE_MIN_DAMAGE + (projectile.chargeLevel / 100.0 * (Constants.SPLASH_CHARGE_MAX_DAMAGE - Constants.SPLASH_CHARGE_MIN_DAMAGE))).toInt
+                    else Constants.SPLASH_DAMAGE
                   case ProjectileType.TIDAL_WAVE => Constants.TIDAL_WAVE_DAMAGE
                   case ProjectileType.GEYSER => Constants.GEYSER_DAMAGE
                   case ProjectileType.BULLET => Constants.BULLET_DAMAGE

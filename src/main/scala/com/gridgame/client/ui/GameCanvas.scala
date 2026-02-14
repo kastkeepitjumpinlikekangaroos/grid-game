@@ -234,7 +234,8 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
   private def drawAimArrow(camOffX: Double, camOffY: Double): Unit = {
     if (!client.isCharging || client.getIsDead) return
-    if (client.getSelectedCharacterDef.primaryProjectileType != ProjectileType.NORMAL) return
+    val pt = client.getSelectedCharacterDef.primaryProjectileType
+    if (pt != ProjectileType.NORMAL && pt != ProjectileType.ARCANE_BOLT && pt != ProjectileType.SPLASH) return
 
     val pos = client.getLocalPosition
     // Use grid position for direction (matches actual shot trajectory in MouseHandler)
@@ -257,8 +258,12 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val chargeLevel = client.getChargeLevel
     val chargePct = chargeLevel / 100.0
     // +1 for spawn offset (projectile spawns 1 tile ahead of player)
-    val cylLength = 1.0 + Constants.CHARGE_MIN_RANGE +
-      chargePct * (Constants.CHARGE_MAX_RANGE - Constants.CHARGE_MIN_RANGE)
+    val (minRange, maxRange) = pt match {
+      case ProjectileType.ARCANE_BOLT => (Constants.ARCANE_BOLT_CHARGE_MIN_RANGE, Constants.ARCANE_BOLT_CHARGE_MAX_RANGE)
+      case ProjectileType.SPLASH => (Constants.SPLASH_CHARGE_MIN_RANGE, Constants.SPLASH_CHARGE_MAX_RANGE)
+      case _ => (Constants.CHARGE_MIN_RANGE, Constants.CHARGE_MAX_RANGE)
+    }
+    val cylLength = 1.0 + minRange + chargePct * (maxRange - minRange)
 
     val color = intToColor(client.getLocalColorRGB)
     val phase = animationTick * 0.12
@@ -3729,7 +3734,8 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
   private def drawChargeBar(): Unit = {
     if (!client.isCharging) return
-    if (client.getSelectedCharacterDef.primaryProjectileType != ProjectileType.NORMAL) return
+    val cpt = client.getSelectedCharacterDef.primaryProjectileType
+    if (cpt != ProjectileType.NORMAL && cpt != ProjectileType.ARCANE_BOLT && cpt != ProjectileType.SPLASH) return
 
     val chargeLevel = client.getChargeLevel
     val barWidth = 100.0
