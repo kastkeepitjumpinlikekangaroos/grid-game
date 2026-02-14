@@ -81,6 +81,22 @@ object Constants {
   val ICE_BEAM_FREEZE_DURATION_MS: Int = 3000
   val ICE_BEAM_DAMAGE: Int = 5
 
+  // Axe ability (Gladiator primary)
+  val AXE_DAMAGE: Int = 33
+  val AXE_MAX_RANGE: Int = 5
+  val AXE_HIT_RADIUS: Float = 2.5f
+
+  // Rope ability (Gladiator E)
+  val ROPE_COOLDOWN_MS: Int = 20000
+  val ROPE_MAX_RANGE: Int = 25
+  val ROPE_DAMAGE: Int = 5
+
+  // Spear ability (Gladiator Q)
+  val SPEAR_COOLDOWN_MS: Int = 8000
+  val SPEAR_MAX_RANGE: Int = 20
+  val SPEAR_BASE_DAMAGE: Int = 10
+  val SPEAR_MAX_DAMAGE: Int = 60
+
   // Lobby configuration
   val RESPAWN_DELAY_MS: Int = 3000
   val DEFAULT_GAME_DURATION_MIN: Int = 5

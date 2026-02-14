@@ -7,6 +7,9 @@ object ProjectileType {
   val NORMAL: Byte = 0
   val TENTACLE: Byte = 1
   val ICE_BEAM: Byte = 2
+  val AXE: Byte = 3
+  val ROPE: Byte = 4
+  val SPEAR: Byte = 5
 }
 
 class Projectile(
@@ -26,6 +29,9 @@ class Projectile(
   val speedMultiplier: Float = projectileType match {
     case ProjectileType.ICE_BEAM => 0.3f
     case ProjectileType.TENTACLE => 0.9f
+    case ProjectileType.AXE => 0.6f
+    case ProjectileType.ROPE => 0.85f
+    case ProjectileType.SPEAR => 0.7f
     case _ =>
       val c = Constants
       c.CHARGE_MIN_SPEED + (chargeLevel / 100.0f) * (c.CHARGE_MAX_SPEED - c.CHARGE_MIN_SPEED)
@@ -69,7 +75,10 @@ class Projectile(
     val pos = player.getPosition
     val dx = x - (pos.getX + 0.5f)
     val dy = y - (pos.getY + 0.5f)
-    val radius = com.gridgame.common.Constants.PROJECTILE_HIT_RADIUS
+    val radius = projectileType match {
+      case ProjectileType.AXE => Constants.AXE_HIT_RADIUS
+      case _ => Constants.PROJECTILE_HIT_RADIUS
+    }
     dx * dx + dy * dy <= radius * radius
   }
 

@@ -232,6 +232,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
   private def drawAimArrow(camOffX: Double, camOffY: Double): Unit = {
     if (!client.isCharging || client.getIsDead) return
+    if (client.getSelectedCharacterDef.primaryProjectileType != ProjectileType.NORMAL) return
 
     val pos = client.getLocalPosition
     // Use grid position for direction (matches actual shot trajectory in MouseHandler)
@@ -564,6 +565,9 @@ class GameCanvas(client: GameClient) extends Canvas() {
     projectile.projectileType match {
       case ProjectileType.TENTACLE => drawTentacleProjectile(projectile, camOffX, camOffY)
       case ProjectileType.ICE_BEAM => drawIceBeamProjectile(projectile, camOffX, camOffY)
+      case ProjectileType.AXE => drawAxeProjectile(projectile, camOffX, camOffY)
+      case ProjectileType.ROPE => drawRopeProjectile(projectile, camOffX, camOffY)
+      case ProjectileType.SPEAR => drawSpearProjectile(projectile, camOffX, camOffY)
       case _ => drawNormalProjectile(projectile, camOffX, camOffY)
     }
   }
@@ -792,6 +796,231 @@ class GameCanvas(client: GameClient) extends Canvas() {
       gc.fillOval(tipX - orbR, tipY - orbR, orbR * 2, orbR * 2)
       gc.setFill(Color.color(0.9, 0.95, 1.0, 0.85 * fastFlicker))
       gc.fillOval(tipX - orbR * 0.5, tipY - orbR * 0.5, orbR, orbR)
+    }
+  }
+
+  private def drawAxeProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 4.0
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 17) * 0.5
+      val pulse = 0.85 + 0.15 * Math.sin(phase)
+      val spinAngle = animationTick * 0.4 + projectile.id * 1.3
+
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len < 1) return
+      val nx = dx / len
+      val ny = dy / len
+
+      // Spinning arc sweep - wide
+      val sweepOffset = Math.sin(spinAngle) * 18.0
+      val perpX = -ny * sweepOffset
+      val perpY = nx * sweepOffset
+
+      // Layer 1: Ultra-wide soft glow
+      gc.setStroke(Color.color(0.75, 0.75, 0.78, 0.08 * pulse))
+      gc.setLineWidth(56 * pulse)
+      gc.strokeLine(tailX + perpX * 0.3, tailY + perpY * 0.3, tipX + perpX, tipY + perpY)
+
+      // Layer 2: Outer glow - metallic gray
+      gc.setStroke(Color.color(0.75, 0.75, 0.78, 0.14 * pulse))
+      gc.setLineWidth(42 * pulse)
+      gc.strokeLine(tailX + perpX * 0.3, tailY + perpY * 0.3, tipX + perpX, tipY + perpY)
+
+      // Layer 3: Mid glow
+      gc.setStroke(Color.color(0.7, 0.7, 0.75, 0.28 * pulse))
+      gc.setLineWidth(28 * pulse)
+      gc.strokeLine(tailX + perpX * 0.3, tailY + perpY * 0.3, tipX + perpX, tipY + perpY)
+
+      // Layer 4: Bright metallic beam
+      gc.setStroke(Color.color(0.8, 0.8, 0.85, 0.6 * pulse))
+      gc.setLineWidth(16 * pulse)
+      gc.strokeLine(tailX + perpX * 0.3, tailY + perpY * 0.3, tipX + perpX, tipY + perpY)
+
+      // Layer 5: White-hot core
+      gc.setStroke(Color.color(0.95, 0.95, 1.0, 0.9 * pulse))
+      gc.setLineWidth(6.0)
+      gc.strokeLine(tailX + perpX * 0.3, tailY + perpY * 0.3, tipX + perpX, tipY + perpY)
+
+      // Silver orb at tip - large
+      val orbR = 12.0 * pulse
+      val orbX = tipX + perpX
+      val orbY = tipY + perpY
+      gc.setFill(Color.color(0.7, 0.7, 0.75, 0.25 * pulse))
+      gc.fillOval(orbX - orbR * 2.5, orbY - orbR * 2.5, orbR * 5, orbR * 5)
+      gc.setFill(Color.color(0.85, 0.85, 0.9, 0.45 * pulse))
+      gc.fillOval(orbX - orbR * 1.3, orbY - orbR * 1.3, orbR * 2.6, orbR * 2.6)
+      gc.setFill(Color.color(0.95, 0.95, 1.0, 0.85))
+      gc.fillOval(orbX - orbR * 0.5, orbY - orbR * 0.5, orbR, orbR)
+    }
+  }
+
+  private def drawRopeProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 4.0
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 29) * 0.3
+      val pulse = 0.85 + 0.15 * Math.sin(phase)
+
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len < 1) return
+      val nx = dx / len
+      val ny = dy / len
+
+      // Single wavy strand (less wavy than tentacle)
+      val segments = 10
+      val points = (0 to segments).map { seg =>
+        val t = seg.toDouble / segments
+        val wave = Math.sin(phase * 1.5 + t * Math.PI * 2) * 4.0 * (1.0 - t * 0.3)
+        val bx = tailX + dx * t + (-ny) * wave
+        val by = tailY + dy * t + nx * wave
+        (bx, by)
+      }
+
+      // Outer glow - brown/tan
+      gc.setStroke(Color.color(0.6, 0.4, 0.2, 0.15 * pulse))
+      gc.setLineWidth(10.0 * pulse)
+      for (i <- 0 until points.length - 1) {
+        gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
+      }
+
+      // Main rope strand
+      gc.setStroke(Color.color(0.7, 0.5, 0.3, 0.7 * pulse))
+      gc.setLineWidth(5.0 * pulse)
+      for (i <- 0 until points.length - 1) {
+        gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
+      }
+
+      // Bright core
+      gc.setStroke(Color.color(0.85, 0.7, 0.5, 0.8 * pulse))
+      gc.setLineWidth(2.0)
+      for (i <- 0 until points.length - 1) {
+        gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
+      }
+
+      // Brown orb at tip
+      val orbR = 6.0 * pulse
+      gc.setFill(Color.color(0.6, 0.4, 0.2, 0.3 * pulse))
+      gc.fillOval(tipX - orbR * 2, tipY - orbR * 2, orbR * 4, orbR * 4)
+      gc.setFill(Color.color(0.7, 0.5, 0.3, 0.5 * pulse))
+      gc.fillOval(tipX - orbR, tipY - orbR, orbR * 2, orbR * 2)
+      gc.setFill(Color.color(0.85, 0.7, 0.5, 0.85))
+      gc.fillOval(tipX - orbR * 0.4, tipY - orbR * 0.4, orbR * 0.8, orbR * 0.8)
+    }
+  }
+
+  private def drawSpearProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 7.0
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 41) * 0.2
+      val pulse = 0.9 + 0.1 * Math.sin(phase)
+      val fastFlicker = 0.9 + 0.1 * Math.sin(phase * 3.1)
+
+      // Bronze/gold color scheme - straight line beam
+      // Layer 1: Ultra-wide outer glow
+      gc.setStroke(Color.color(0.8, 0.6, 0.2, 0.06 * pulse))
+      gc.setLineWidth(48 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Layer 2: Outer glow
+      gc.setStroke(Color.color(0.8, 0.6, 0.2, 0.10 * pulse))
+      gc.setLineWidth(34 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Layer 3: Mid glow
+      gc.setStroke(Color.color(0.85, 0.65, 0.25, 0.22 * pulse))
+      gc.setLineWidth(22 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Layer 4: Bronze beam
+      gc.setStroke(Color.color(0.9, 0.7, 0.3, 0.55 * fastFlicker))
+      gc.setLineWidth(12 * fastFlicker)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Layer 5: Bright gold core
+      gc.setStroke(Color.color(1.0, 0.9, 0.6, 0.9 * fastFlicker))
+      gc.setLineWidth(5.0)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Pointed arrowhead at tip - bigger
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len > 1) {
+        val nx = dx / len
+        val ny = dy / len
+        val arrowSize = 16.0
+        val arrowX = Array(
+          tipX + nx * arrowSize,
+          tipX - nx * arrowSize * 0.5 + (-ny) * arrowSize * 0.6,
+          tipX - nx * arrowSize * 0.5 + ny * arrowSize * 0.6
+        )
+        val arrowY = Array(
+          tipY + ny * arrowSize,
+          tipY - ny * arrowSize * 0.5 + nx * arrowSize * 0.6,
+          tipY - ny * arrowSize * 0.5 + (-nx) * arrowSize * 0.6
+        )
+        gc.setFill(Color.color(0.9, 0.75, 0.35, 0.85 * pulse))
+        gc.fillPolygon(arrowX, arrowY, 3)
+        gc.setStroke(Color.color(1.0, 0.9, 0.6, 0.6 * pulse))
+        gc.setLineWidth(1.5)
+        gc.strokePolygon(arrowX, arrowY, 3)
+
+        // Trail particles
+        for (i <- 0 until 6) {
+          val t = ((animationTick * 0.07 + i.toDouble / 6 + projectile.id * 0.11) % 1.0)
+          val px = tailX + dx * t + (-ny) * Math.sin(phase + i * 1.5) * 4.0
+          val py = tailY + dy * t + nx * Math.sin(phase + i * 1.5) * 4.0
+          val pAlpha = Math.max(0.0, Math.min(1.0, 0.5 * (1.0 - t)))
+          val pSize = 3.0 + Math.sin(phase + i) * 1.0
+          gc.setFill(Color.color(1.0, 0.85, 0.4, pAlpha))
+          gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+        }
+      }
     }
   }
 
@@ -1514,6 +1743,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
   private def drawChargeBar(): Unit = {
     if (!client.isCharging) return
+    if (client.getSelectedCharacterDef.primaryProjectileType != ProjectileType.NORMAL) return
 
     val chargeLevel = client.getChargeLevel
     val barWidth = 100.0

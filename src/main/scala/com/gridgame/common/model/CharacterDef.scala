@@ -49,11 +49,38 @@ object CharacterDef {
     primaryProjectileType = ProjectileType.NORMAL
   )
 
-  private val byId: Map[Byte, CharacterDef] = Map(
-    CharacterId.Spaceman.id -> Spaceman
+  val Gladiator: CharacterDef = CharacterDef(
+    id = CharacterId.Gladiator,
+    displayName = "Gladiator",
+    description = "A Roman warrior with axe, rope pull, and distance-scaling spear.",
+    spriteSheet = "sprites/gladiator.png",
+    qAbility = AbilityDef(
+      name = "Spear Throw",
+      description = "Hurls a spear that deals more damage the farther it travels.",
+      cooldownMs = Constants.SPEAR_COOLDOWN_MS,
+      maxRange = Constants.SPEAR_MAX_RANGE,
+      damage = Constants.SPEAR_BASE_DAMAGE,
+      projectileType = ProjectileType.SPEAR,
+      keybind = "Q"
+    ),
+    eAbility = AbilityDef(
+      name = "Rope",
+      description = "Throws a rope that pulls enemies to you.",
+      cooldownMs = Constants.ROPE_COOLDOWN_MS,
+      maxRange = Constants.ROPE_MAX_RANGE,
+      damage = Constants.ROPE_DAMAGE,
+      projectileType = ProjectileType.ROPE,
+      keybind = "E"
+    ),
+    primaryProjectileType = ProjectileType.AXE
   )
 
-  val all: Seq[CharacterDef] = Seq(Spaceman)
+  private val byId: Map[Byte, CharacterDef] = Map(
+    CharacterId.Spaceman.id -> Spaceman,
+    CharacterId.Gladiator.id -> Gladiator
+  )
+
+  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator)
 
   def get(id: CharacterId): CharacterDef = byId.getOrElse(id.id, Spaceman)
 

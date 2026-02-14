@@ -59,6 +59,9 @@ class ProjectileManager(registry: ClientRegistry) {
           val maxRange = projectile.projectileType match {
             case ProjectileType.TENTACLE => Constants.TENTACLE_MAX_RANGE.toDouble
             case ProjectileType.ICE_BEAM => Constants.ICE_BEAM_MAX_RANGE.toDouble
+            case ProjectileType.AXE => Constants.AXE_MAX_RANGE.toDouble
+            case ProjectileType.ROPE => Constants.ROPE_MAX_RANGE.toDouble
+            case ProjectileType.SPEAR => Constants.SPEAR_MAX_RANGE.toDouble
             case _ => Constants.CHARGE_MIN_RANGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_RANGE - Constants.CHARGE_MIN_RANGE))
           }
           if (projectile.getDistanceTraveled >= maxRange) {
@@ -85,6 +88,11 @@ class ProjectileManager(registry: ClientRegistry) {
               val damage = projectile.projectileType match {
                 case ProjectileType.TENTACLE => Constants.TENTACLE_DAMAGE
                 case ProjectileType.ICE_BEAM => Constants.ICE_BEAM_DAMAGE
+                case ProjectileType.AXE => Constants.AXE_DAMAGE
+                case ProjectileType.ROPE => Constants.ROPE_DAMAGE
+                case ProjectileType.SPEAR =>
+                  val distanceFraction = Math.min(1.0f, projectile.getDistanceTraveled / Constants.SPEAR_MAX_RANGE.toFloat)
+                  (Constants.SPEAR_BASE_DAMAGE + (distanceFraction * (Constants.SPEAR_MAX_DAMAGE - Constants.SPEAR_BASE_DAMAGE))).toInt
                 case _ => (Constants.CHARGE_MIN_DAMAGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_DAMAGE - Constants.CHARGE_MIN_DAMAGE))).toInt
               }
               val newHealth = hitPlayer.getHealth - damage

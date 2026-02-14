@@ -3,12 +3,16 @@ package com.gridgame.client.input
 import com.gridgame.client.GameClient
 import com.gridgame.client.ui.GameCanvas
 import com.gridgame.common.Constants
+import com.gridgame.common.model.ProjectileType
 
 import javafx.event.EventHandler
 import javafx.scene.input.MouseEvent
 
 class MouseHandler(client: GameClient, canvas: GameCanvas) extends EventHandler[MouseEvent] {
   private var lastShootTime: Long = 0
+
+  private def canCharge: Boolean =
+    client.getSelectedCharacterDef.primaryProjectileType == ProjectileType.NORMAL
 
   override def handle(event: MouseEvent): Unit = {
     // Track mouse position for aiming (works during move and drag)
@@ -27,8 +31,22 @@ class MouseHandler(client: GameClient, canvas: GameCanvas) extends EventHandler[
         return
       }
 
-      // Start charging
-      client.startCharging()
+      if (canCharge) {
+        // Start charging (Spaceman-style)
+        client.startCharging()
+      } else {
+        // Instant fire (Gladiator-style)
+        lastShootTime = now
+        val playerPos = client.getLocalPosition
+        val (worldX, worldY) = canvas.screenToWorld(event.getX, event.getY)
+        val deltaX = worldX - playerPos.getX
+        val deltaY = worldY - playerPos.getY
+        val magnitude = Math.sqrt(deltaX * deltaX + deltaY * deltaY)
+        if (magnitude < 0.001) return
+        val dx = (deltaX / magnitude).toFloat
+        val dy = (deltaY / magnitude).toFloat
+        client.shootToward(dx, dy, 0)
+      }
     }
 
     if (event.getEventType == MouseEvent.MOUSE_RELEASED) {

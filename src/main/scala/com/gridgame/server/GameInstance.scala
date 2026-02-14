@@ -195,7 +195,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         if (target != null) {
           // Apply type-specific effects
           projectile.projectileType match {
-            case ProjectileType.TENTACLE =>
+            case ProjectileType.TENTACLE | ProjectileType.ROPE =>
               // Pull target directly in front of the shooter
               val owner = registry.get(projectile.ownerId)
               if (owner != null) {
@@ -218,7 +218,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
             case ProjectileType.ICE_BEAM =>
               target.setFrozenUntil(System.currentTimeMillis() + Constants.ICE_BEAM_FREEZE_DURATION_MS)
 
-            case _ => // Normal projectile, no special effect
+            case _ => // No special effect (AXE, SPEAR, NORMAL)
           }
 
           val flags = (if (target.hasShield) 0x01 else 0) |

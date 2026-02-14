@@ -349,6 +349,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     val pos = localPosition.get()
     val chargeByte = Math.min(100, Math.max(0, chargeLevel)).toByte
 
+    val primaryType = getSelectedCharacterDef.primaryProjectileType
+
     if (hasGemBoost) {
       // Shoot 3 projectiles in a narrow cone (center ± 15 degrees)
       val angle = Math.PI / 36.0 // 5 degrees
@@ -368,7 +370,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           rdx, rdy,
           ProjectileAction.SPAWN,
           null,
-          chargeByte
+          chargeByte,
+          primaryType
         )
         networkThread.send(packet)
       }
@@ -383,7 +386,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         dx, dy,
         ProjectileAction.SPAWN,
         null,
-        chargeByte
+        chargeByte,
+        primaryType
       )
       networkThread.send(packet)
     }
