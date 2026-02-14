@@ -695,48 +695,102 @@ class GameCanvas(client: GameClient) extends Canvas() {
       val nx = dx / len
       val ny = dy / len
 
-      // Draw 3 wavy tendril strands
-      for (strand <- 0 until 3) {
-        val strandOffset = (strand - 1) * 5.0
-        val segments = 12
+      // Eldritch outer aura — wide pulsing purple-green mist
+      gc.setFill(Color.color(0.3, 0.15, 0.5, 0.06 * pulse))
+      val auraR = len * 0.6
+      val midX = (tailX + tipX) / 2
+      val midY = (tailY + tipY) / 2
+      gc.fillOval(midX - auraR, midY - auraR * 0.5, auraR * 2, auraR)
+
+      // Draw 4 wavy tendril strands with varying thickness
+      for (strand <- 0 until 4) {
+        val strandOffset = (strand - 1.5) * 4.5
+        val segments = 16
+        val thickness = if (strand == 1 || strand == 2) 1.2 else 0.8
         val points = (0 to segments).map { seg =>
           val t = seg.toDouble / segments
-          val wave = Math.sin(phase * 2.0 + t * Math.PI * 3 + strand * 2.1) * (6.0 + strand * 2.0) * (1.0 - t * 0.5)
-          val bx = tailX + dx * t + (-ny * strandOffset + ny * wave) * 0.3 + (-ny) * wave
-          val by = tailY + dy * t + (nx * strandOffset - nx * wave) * 0.3 + nx * wave
+          val waveFreq = 3.5 + strand * 0.7
+          val waveAmp = (5.0 + strand * 2.5) * (1.0 - t * 0.3)
+          val wave = Math.sin(phase * 2.0 + t * Math.PI * waveFreq + strand * 1.6) * waveAmp
+          val secondaryWave = Math.sin(phase * 3.5 + t * Math.PI * 5 + strand * 0.9) * 2.0 * t
+          val bx = tailX + dx * t + (-ny) * (strandOffset * 0.3 + wave + secondaryWave)
+          val by = tailY + dy * t + nx * (strandOffset * 0.3 + wave + secondaryWave)
           (bx, by)
         }
 
-        // Outer glow
-        gc.setStroke(Color.color(0.1, 0.7, 0.2, 0.15 * pulse))
-        gc.setLineWidth(8.0 * pulse)
+        // Slimy outer glow — purple
+        gc.setStroke(Color.color(0.4, 0.1, 0.6, 0.12 * pulse))
+        gc.setLineWidth(10.0 * pulse * thickness)
         for (i <- 0 until points.length - 1) {
           gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
         }
 
-        // Main tendril
-        gc.setStroke(Color.color(0.2, 0.8, 0.3, 0.6 * pulse))
-        gc.setLineWidth(4.0 * pulse)
+        // Main tendril — toxic green
+        gc.setStroke(Color.color(0.15, 0.75, 0.25, 0.6 * pulse))
+        gc.setLineWidth(5.0 * pulse * thickness)
         for (i <- 0 until points.length - 1) {
           gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
         }
 
-        // Bright core
-        gc.setStroke(Color.color(0.5, 1.0, 0.6, 0.8 * pulse))
-        gc.setLineWidth(1.5)
+        // Bright slimy core
+        gc.setStroke(Color.color(0.4, 1.0, 0.5, 0.75 * pulse))
+        gc.setLineWidth(2.0 * thickness)
         for (i <- 0 until points.length - 1) {
           gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
+        }
+
+        // Glowing suckers along each tendril
+        val suckerCount = 3
+        for (s <- 0 until suckerCount) {
+          val t = 0.2 + s * 0.25
+          val segIdx = (t * segments).toInt
+          if (segIdx < points.length) {
+            val sp = points(segIdx)
+            val suckerPulse = 0.6 + 0.4 * Math.sin(phase * 3.0 + strand * 2.0 + s * 1.7)
+            val suckerR = 3.0 * suckerPulse * thickness
+            gc.setFill(Color.color(0.6, 0.2, 0.8, 0.5 * suckerPulse))
+            gc.fillOval(sp._1 - suckerR, sp._2 - suckerR, suckerR * 2, suckerR * 2)
+            gc.setFill(Color.color(0.3, 1.0, 0.5, 0.7 * suckerPulse))
+            gc.fillOval(sp._1 - suckerR * 0.5, sp._2 - suckerR * 0.5, suckerR, suckerR)
+          }
         }
       }
 
-      // Purple/green glow orb at tip
-      val orbR = 7.0 * pulse
-      gc.setFill(Color.color(0.5, 0.2, 0.8, 0.2 * pulse))
-      gc.fillOval(tipX - orbR * 2, tipY - orbR * 2, orbR * 4, orbR * 4)
-      gc.setFill(Color.color(0.3, 0.9, 0.4, 0.5 * pulse))
-      gc.fillOval(tipX - orbR, tipY - orbR, orbR * 2, orbR * 2)
-      gc.setFill(Color.color(0.7, 1.0, 0.8, 0.85))
-      gc.fillOval(tipX - orbR * 0.4, tipY - orbR * 0.4, orbR * 0.8, orbR * 0.8)
+      // Dripping slime particles falling from tendrils
+      for (i <- 0 until 6) {
+        val t = ((animationTick * 0.04 + i.toDouble / 6 + projectile.id * 0.11) % 1.0)
+        val dripX = tailX + dx * (0.2 + i * 0.12) + (-ny) * Math.sin(phase + i * 2.3) * 6.0
+        val dripY = tailY + dy * (0.2 + i * 0.12) + nx * Math.sin(phase + i * 2.3) * 6.0 + t * 12.0
+        val dripAlpha = Math.max(0.0, 0.5 * (1.0 - t))
+        val dripSize = 2.0 + (1.0 - t) * 1.5
+        gc.setFill(Color.color(0.2, 0.9, 0.3, dripAlpha))
+        gc.fillOval(dripX - dripSize, dripY - dripSize, dripSize * 2, dripSize * 2)
+      }
+
+      // Suction vortex at tip — spinning particles pulling inward
+      val vortexR = 12.0 * pulse
+      gc.setFill(Color.color(0.4, 0.1, 0.6, 0.15 * pulse))
+      gc.fillOval(tipX - vortexR * 1.5, tipY - vortexR * 1.5, vortexR * 3, vortexR * 3)
+
+      for (v <- 0 until 6) {
+        val angle = -phase * 2.5 + v * (Math.PI * 2 / 6)
+        val dist = vortexR * (0.5 + 0.4 * Math.sin(phase * 2 + v))
+        val vx = tipX + dist * Math.cos(angle)
+        val vy = tipY + dist * Math.sin(angle) * 0.6
+        val vAlpha = 0.4 + 0.3 * Math.sin(phase * 3 + v * 1.1)
+        gc.setFill(Color.color(0.5, 1.0, 0.6, vAlpha))
+        gc.fillOval(vx - 2, vy - 2, 4, 4)
+      }
+
+      // Central grasping orb at tip
+      gc.setFill(Color.color(0.5, 0.2, 0.8, 0.3 * pulse))
+      gc.fillOval(tipX - vortexR, tipY - vortexR, vortexR * 2, vortexR * 2)
+      gc.setFill(Color.color(0.3, 0.9, 0.4, 0.55 * pulse))
+      val innerR = vortexR * 0.6
+      gc.fillOval(tipX - innerR, tipY - innerR, innerR * 2, innerR * 2)
+      gc.setFill(Color.color(0.7, 1.0, 0.8, 0.9))
+      val coreR = vortexR * 0.25
+      gc.fillOval(tipX - coreR, tipY - coreR, coreR * 2, coreR * 2)
     }
   }
 
@@ -761,53 +815,94 @@ class GameCanvas(client: GameClient) extends Canvas() {
       val pulse = 0.85 + 0.15 * Math.sin(phase)
       val fastFlicker = 0.9 + 0.1 * Math.sin(phase * 3.3)
 
-      // Layer 1: Wide icy outer glow
-      gc.setStroke(Color.color(0.3, 0.6, 1.0, 0.08 * pulse))
-      gc.setLineWidth(40 * pulse)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Layer 2: Mid glow
-      gc.setStroke(Color.color(0.4, 0.7, 1.0, 0.15 * pulse))
-      gc.setLineWidth(24 * pulse)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Layer 3: Bright blue beam
-      gc.setStroke(Color.color(0.5, 0.8, 1.0, 0.5 * fastFlicker))
-      gc.setLineWidth(12 * fastFlicker)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Layer 4: White-blue core
-      gc.setStroke(Color.color(0.8, 0.9, 1.0, 0.9 * fastFlicker))
-      gc.setLineWidth(4.0)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Crystal particles along beam
       val dx = tipX - tailX
       val dy = tipY - tailY
       val len = Math.sqrt(dx * dx + dy * dy)
-      if (len > 1) {
-        val nx = dx / len
-        val ny = dy / len
-        for (i <- 0 until 8) {
-          val t = ((animationTick * 0.06 + i.toDouble / 8 + projectile.id * 0.17) % 1.0)
-          val sparkle = Math.sin(phase * 3 + i * 1.7)
-          val px = tailX + dx * t + (-ny) * sparkle * 8.0
-          val py = tailY + dy * t + nx * sparkle * 8.0
-          val pAlpha = Math.max(0.0, Math.min(1.0, 0.6 * (1.0 - Math.abs(t - 0.5) * 2.0)))
-          val pSize = 2.5 + Math.sin(phase + i * 0.8) * 1.0
-          gc.setFill(Color.color(0.8, 0.95, 1.0, pAlpha))
-          gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
-        }
+      if (len < 1) return
+      val nx = dx / len
+      val ny = dy / len
+
+      // Layer 1: Wide frosty mist aura
+      gc.setStroke(Color.color(0.5, 0.8, 1.0, 0.06 * pulse))
+      gc.setLineWidth(50 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Layer 2: Icy outer glow
+      gc.setStroke(Color.color(0.3, 0.6, 1.0, 0.1 * pulse))
+      gc.setLineWidth(32 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Layer 3: Bright crystalline beam
+      gc.setStroke(Color.color(0.4, 0.75, 1.0, 0.4 * fastFlicker))
+      gc.setLineWidth(14 * fastFlicker)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Layer 4: White-blue freezing core
+      gc.setStroke(Color.color(0.85, 0.93, 1.0, 0.9 * fastFlicker))
+      gc.setLineWidth(5.0)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Diamond-shaped ice crystals along the beam
+      for (i <- 0 until 10) {
+        val t = ((animationTick * 0.05 + i.toDouble / 10 + projectile.id * 0.13) % 1.0)
+        val sparkle = Math.sin(phase * 2.5 + i * 1.4)
+        val cx = tailX + dx * t + (-ny) * sparkle * 10.0
+        val cy = tailY + dy * t + nx * sparkle * 10.0
+        val cAlpha = Math.max(0.0, Math.min(1.0, 0.7 * (1.0 - Math.abs(t - 0.5) * 2.0)))
+        val cSize = 3.0 + Math.sin(phase + i * 0.9) * 1.5
+        val rot = phase * 2.0 + i * 1.1
+
+        // Draw diamond/rhombus shape
+        val dxArr = Array(cx, cx + cSize * Math.cos(rot), cx, cx - cSize * Math.cos(rot))
+        val dyArr = Array(cy - cSize * Math.sin(rot + 0.5), cy, cy + cSize * Math.sin(rot + 0.5), cy)
+        gc.setFill(Color.color(0.7, 0.9, 1.0, cAlpha))
+        gc.fillPolygon(dxArr, dyArr, 4)
+        gc.setStroke(Color.color(0.9, 0.97, 1.0, cAlpha * 0.8))
+        gc.setLineWidth(1.0)
+        gc.strokePolygon(dxArr, dyArr, 4)
       }
 
-      // Icy orb at the tip
-      val orbR = 8.0 * pulse
-      gc.setFill(Color.color(0.3, 0.6, 1.0, 0.2 * pulse))
+      // Frost trail particles drifting downward
+      for (i <- 0 until 6) {
+        val t = ((animationTick * 0.03 + i.toDouble / 6 + projectile.id * 0.19) % 1.0)
+        val fx = tailX + dx * (0.1 + i * 0.15) + (-ny) * Math.sin(phase * 1.5 + i) * 7.0
+        val fy = tailY + dy * (0.1 + i * 0.15) + nx * Math.sin(phase * 1.5 + i) * 7.0 + t * 8.0
+        val fAlpha = Math.max(0.0, 0.4 * (1.0 - t))
+        val fSize = 1.5 + (1.0 - t) * 2.0
+        gc.setFill(Color.color(0.6, 0.85, 1.0, fAlpha))
+        gc.fillOval(fx - fSize, fy - fSize, fSize * 2, fSize * 2)
+      }
+
+      // Crystalline snowflake burst at tip — 6-pointed star
+      val starR = 10.0 * pulse
+      gc.setStroke(Color.color(0.7, 0.9, 1.0, 0.6 * pulse))
+      gc.setLineWidth(2.0)
+      for (arm <- 0 until 6) {
+        val angle = phase * 0.5 + arm * (Math.PI / 3)
+        val sx = tipX + starR * Math.cos(angle)
+        val sy = tipY + starR * Math.sin(angle) * 0.6
+        gc.strokeLine(tipX, tipY, sx, sy)
+        // Side branches on each arm
+        val branchLen = starR * 0.4
+        val branchT = 0.6
+        val bx = tipX + starR * branchT * Math.cos(angle)
+        val by = tipY + starR * branchT * Math.sin(angle) * 0.6
+        val b1x = bx + branchLen * Math.cos(angle + 0.7)
+        val b1y = by + branchLen * Math.sin(angle + 0.7) * 0.6
+        val b2x = bx + branchLen * Math.cos(angle - 0.7)
+        val b2y = by + branchLen * Math.sin(angle - 0.7) * 0.6
+        gc.strokeLine(bx, by, b1x, b1y)
+        gc.strokeLine(bx, by, b2x, b2y)
+      }
+
+      // Icy core at tip
+      val orbR = 7.0 * pulse
+      gc.setFill(Color.color(0.3, 0.6, 1.0, 0.25 * pulse))
       gc.fillOval(tipX - orbR * 2, tipY - orbR * 2, orbR * 4, orbR * 4)
-      gc.setFill(Color.color(0.5, 0.8, 1.0, 0.4 * pulse))
+      gc.setFill(Color.color(0.5, 0.8, 1.0, 0.45 * pulse))
       gc.fillOval(tipX - orbR, tipY - orbR, orbR * 2, orbR * 2)
-      gc.setFill(Color.color(0.9, 0.95, 1.0, 0.85 * fastFlicker))
-      gc.fillOval(tipX - orbR * 0.5, tipY - orbR * 0.5, orbR, orbR)
+      gc.setFill(Color.color(0.92, 0.97, 1.0, 0.9 * fastFlicker))
+      gc.fillOval(tipX - orbR * 0.4, tipY - orbR * 0.4, orbR * 0.8, orbR * 0.8)
     }
   }
 
@@ -844,50 +939,63 @@ class GameCanvas(client: GameClient) extends Canvas() {
       val perpX = -ny * sweepOffset
       val perpY = nx * sweepOffset
 
-      // The handle runs from tail to ~70% of the way to tip
-      // The axe blade occupies the last ~30%
+      // Ghost afterimage trail — 3 fading previous positions
+      for (ghost <- 1 to 3) {
+        val ghostPhase = spinAngle - ghost * 0.6
+        val ghostAlpha = 0.15 * (1.0 - ghost * 0.3)
+        val ghostSweep = Math.sin(ghostPhase) * 14.0
+        val gPerpX = -ny * ghostSweep
+        val gPerpY = nx * ghostSweep
+        val ghostDist = ghost * 8.0
+
+        val gTailX = tailX - nx * ghostDist + gPerpX * 0.2
+        val gTailY = tailY - ny * ghostDist + gPerpY * 0.2
+        val gTipX = tipX - nx * ghostDist + gPerpX
+        val gTipY = tipY - ny * ghostDist + gPerpY
+
+        // Ghost blade arc
+        gc.setStroke(Color.color(0.8, 0.8, 0.85, ghostAlpha))
+        gc.setLineWidth(18.0 * (1.0 - ghost * 0.2))
+        gc.strokeLine(gTailX + (gTipX - gTailX) * 0.65, gTailY + (gTipY - gTailY) * 0.65, gTipX, gTipY)
+      }
+
       val handleEndT = 0.65
       val handleEndX = tailX + dx * handleEndT + perpX * handleEndT
       val handleEndY = tailY + dy * handleEndT + perpY * handleEndT
       val bladeX = tipX + perpX
       val bladeY = tipY + perpY
 
-      // --- Handle: thin brown/dark stick ---
-      // Handle glow
+      // --- Handle ---
       gc.setStroke(Color.color(0.45, 0.3, 0.15, 0.12 * pulse))
       gc.setLineWidth(12 * pulse)
       gc.strokeLine(tailX + perpX * 0.2, tailY + perpY * 0.2, handleEndX, handleEndY)
-      // Handle core
       gc.setStroke(Color.color(0.55, 0.35, 0.18, 0.7 * pulse))
       gc.setLineWidth(5 * pulse)
       gc.strokeLine(tailX + perpX * 0.2, tailY + perpY * 0.2, handleEndX, handleEndY)
-      // Handle bright center
       gc.setStroke(Color.color(0.7, 0.5, 0.25, 0.85 * pulse))
       gc.setLineWidth(2.0)
       gc.strokeLine(tailX + perpX * 0.2, tailY + perpY * 0.2, handleEndX, handleEndY)
 
-      // --- Axe blade: wide crescent from handle-end to tip ---
-      // Perpendicular to travel direction for the wide blade spread
+      // --- Axe blade ---
       val bladeSpread = 22.0 * pulse
-      val bladeNx = -ny  // perpendicular
+      val bladeNx = -ny
       val bladeNy = nx
 
-      // Blade glow (wide)
-      gc.setFill(Color.color(0.75, 0.75, 0.8, 0.08 * pulse))
-      val glowR = bladeSpread * 2.0
       val bladeMidX = (handleEndX + bladeX) * 0.5
       val bladeMidY = (handleEndY + bladeY) * 0.5
+
+      // Blade glow (wide)
+      gc.setFill(Color.color(0.75, 0.75, 0.8, 0.1 * pulse))
+      val glowR = bladeSpread * 2.0
       gc.fillOval(bladeMidX - glowR, bladeMidY - glowR, glowR * 2, glowR * 2)
 
-      // Blade polygon: crescent shape
-      // 5 points: handle-end narrow, blade-mid wide, tip narrow
       val bx = Array(
-        handleEndX + bladeNx * 4.0,    // handle-end top
-        bladeMidX + bladeNx * bladeSpread, // mid top (widest)
-        bladeX + bladeNx * 8.0,         // tip top
-        bladeX - bladeNx * 8.0,         // tip bottom
-        bladeMidX - bladeNx * bladeSpread, // mid bottom (widest)
-        handleEndX - bladeNx * 4.0     // handle-end bottom
+        handleEndX + bladeNx * 4.0,
+        bladeMidX + bladeNx * bladeSpread,
+        bladeX + bladeNx * 8.0,
+        bladeX - bladeNx * 8.0,
+        bladeMidX - bladeNx * bladeSpread,
+        handleEndX - bladeNx * 4.0
       )
       val by = Array(
         handleEndY + bladeNy * 4.0,
@@ -901,26 +1009,44 @@ class GameCanvas(client: GameClient) extends Canvas() {
       // Outer blade glow
       gc.setFill(Color.color(0.7, 0.7, 0.75, 0.2 * pulse))
       gc.fillPolygon(bx, by, 6)
-      // Main blade fill - metallic silver
-      // Slightly inset version for the solid blade
+
       val inset = 0.75
-      val ibx = bx.zipWithIndex.map { case (x, i) =>
-        bladeMidX + (x - bladeMidX) * inset
-      }
-      val iby = by.zipWithIndex.map { case (y, i) =>
-        bladeMidY + (y - bladeMidY) * inset
-      }
-      gc.setFill(Color.color(0.8, 0.8, 0.85, 0.6 * pulse))
+      val ibx = bx.map(x => bladeMidX + (x - bladeMidX) * inset)
+      val iby = by.map(y => bladeMidY + (y - bladeMidY) * inset)
+      gc.setFill(Color.color(0.8, 0.8, 0.85, 0.65 * pulse))
       gc.fillPolygon(ibx, iby, 6)
+
       // Blade edge highlight
       gc.setStroke(Color.color(0.95, 0.95, 1.0, 0.7 * pulse))
       gc.setLineWidth(2.0)
       gc.strokePolygon(ibx, iby, 6)
 
+      // Metallic gleam sweep — bright flash moving across the blade
+      val gleamT = (animationTick * 0.06 + projectile.id * 0.3) % 1.0
+      val gleamX = handleEndX + (bladeX - handleEndX) * gleamT
+      val gleamY = handleEndY + (bladeY - handleEndY) * gleamT
+      val gleamR = 6.0 + 3.0 * Math.sin(phase * 2)
+      gc.setFill(Color.color(1.0, 1.0, 1.0, 0.6 * pulse))
+      gc.fillOval(gleamX - gleamR, gleamY - gleamR, gleamR * 2, gleamR * 2)
+      gc.setFill(Color.color(1.0, 1.0, 0.95, 0.3 * pulse))
+      gc.fillOval(gleamX - gleamR * 2, gleamY - gleamR * 2, gleamR * 4, gleamR * 4)
+
       // Bright core line along the blade center
       gc.setStroke(Color.color(0.95, 0.95, 1.0, 0.5 * pulse))
       gc.setLineWidth(3.0)
       gc.strokeLine(handleEndX, handleEndY, bladeX, bladeY)
+
+      // Spinning arc sparks — tiny bright sparks at blade edges
+      for (spark <- 0 until 4) {
+        val sparkT = ((animationTick * 0.12 + spark * 0.25) % 1.0)
+        val sparkAngle = spinAngle + spark * Math.PI / 2
+        val sparkDist = bladeSpread * 0.8
+        val sx = bladeMidX + bladeNx * sparkDist * Math.sin(sparkAngle)
+        val sy = bladeMidY + bladeNy * sparkDist * Math.sin(sparkAngle)
+        val sparkAlpha = Math.max(0.0, 0.7 * (1.0 - sparkT))
+        gc.setFill(Color.color(1.0, 0.95, 0.8, sparkAlpha))
+        gc.fillOval(sx - 2, sy - 2, 4, 4)
+      }
     }
   }
 
@@ -951,45 +1077,95 @@ class GameCanvas(client: GameClient) extends Canvas() {
       val nx = dx / len
       val ny = dy / len
 
-      // Single wavy strand (less wavy than tentacle)
-      val segments = 10
-      val points = (0 to segments).map { seg =>
-        val t = seg.toDouble / segments
-        val wave = Math.sin(phase * 1.5 + t * Math.PI * 2) * 4.0 * (1.0 - t * 0.3)
-        val bx = tailX + dx * t + (-ny) * wave
-        val by = tailY + dy * t + nx * wave
-        (bx, by)
+      // Braided rope — 2 interweaving strands creating cross-hatch pattern
+      val segments = 14
+      for (strand <- 0 until 2) {
+        val strandPhase = if (strand == 0) 0.0 else Math.PI
+        val points = (0 to segments).map { seg =>
+          val t = seg.toDouble / segments
+          val wave = Math.sin(strandPhase + phase * 1.2 + t * Math.PI * 4) * 4.0
+          val bx = tailX + dx * t + (-ny) * wave
+          val by = tailY + dy * t + nx * wave
+          (bx, by)
+        }
+
+        // Outer shadow
+        gc.setStroke(Color.color(0.35, 0.22, 0.1, 0.2 * pulse))
+        gc.setLineWidth(7.0 * pulse)
+        for (i <- 0 until points.length - 1) {
+          gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
+        }
+
+        // Main strand — alternating tan/dark brown for braid texture
+        val strandColor = if (strand == 0) Color.color(0.75, 0.55, 0.3, 0.75 * pulse)
+                          else Color.color(0.6, 0.4, 0.2, 0.75 * pulse)
+        gc.setStroke(strandColor)
+        gc.setLineWidth(4.0 * pulse)
+        for (i <- 0 until points.length - 1) {
+          gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
+        }
+
+        // Highlight
+        val highlightColor = if (strand == 0) Color.color(0.9, 0.75, 0.55, 0.6 * pulse)
+                             else Color.color(0.8, 0.6, 0.4, 0.5 * pulse)
+        gc.setStroke(highlightColor)
+        gc.setLineWidth(1.5)
+        for (i <- 0 until points.length - 1) {
+          gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
+        }
       }
 
-      // Outer glow - brown/tan
-      gc.setStroke(Color.color(0.6, 0.4, 0.2, 0.15 * pulse))
-      gc.setLineWidth(10.0 * pulse)
-      for (i <- 0 until points.length - 1) {
-        gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
+      // Knot bumps along the rope
+      for (k <- 0 until 3) {
+        val t = 0.2 + k * 0.25
+        val kx = tailX + dx * t
+        val ky = tailY + dy * t
+        val kSize = 3.5 * pulse
+        gc.setFill(Color.color(0.55, 0.38, 0.2, 0.5 * pulse))
+        gc.fillOval(kx - kSize, ky - kSize, kSize * 2, kSize * 2)
+        gc.setFill(Color.color(0.75, 0.6, 0.4, 0.4 * pulse))
+        gc.fillOval(kx - kSize * 0.5, ky - kSize * 0.6, kSize, kSize * 0.8)
       }
 
-      // Main rope strand
-      gc.setStroke(Color.color(0.7, 0.5, 0.3, 0.7 * pulse))
-      gc.setLineWidth(5.0 * pulse)
-      for (i <- 0 until points.length - 1) {
-        gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
+      // Dust puff particles trailing behind
+      for (i <- 0 until 4) {
+        val t = ((animationTick * 0.05 + i * 0.25 + projectile.id * 0.13) % 1.0)
+        val dustX = tailX - dx * 0.1 * t + (-ny) * Math.sin(phase + i * 1.5) * 3.0
+        val dustY = tailY - dy * 0.1 * t + nx * Math.sin(phase + i * 1.5) * 3.0 + t * 4.0
+        val dustAlpha = Math.max(0.0, 0.25 * (1.0 - t))
+        val dustSize = 2.0 + t * 3.0
+        gc.setFill(Color.color(0.7, 0.6, 0.5, dustAlpha))
+        gc.fillOval(dustX - dustSize, dustY - dustSize, dustSize * 2, dustSize * 2)
       }
 
-      // Bright core
-      gc.setStroke(Color.color(0.85, 0.7, 0.5, 0.8 * pulse))
+      // Metal grappling hook at tip — 3 prongs
+      val hookLen = 10.0
+      val prongSpread = 0.5
+      gc.setStroke(Color.color(0.6, 0.6, 0.65, 0.85 * pulse))
+      gc.setLineWidth(3.0)
+      // Center prong
+      gc.strokeLine(tipX, tipY, tipX + nx * hookLen, tipY + ny * hookLen)
+      // Left prong
+      val lAngle = Math.atan2(ny, nx) - prongSpread
+      gc.strokeLine(tipX, tipY, tipX + Math.cos(lAngle) * hookLen * 0.8, tipY + Math.sin(lAngle) * hookLen * 0.8)
+      // Right prong
+      val rAngle = Math.atan2(ny, nx) + prongSpread
+      gc.strokeLine(tipX, tipY, tipX + Math.cos(rAngle) * hookLen * 0.8, tipY + Math.sin(rAngle) * hookLen * 0.8)
+
+      // Hook tips — curved barbs
+      gc.setStroke(Color.color(0.8, 0.8, 0.85, 0.7 * pulse))
       gc.setLineWidth(2.0)
-      for (i <- 0 until points.length - 1) {
-        gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
-      }
+      val barbLen = 5.0
+      val lTipX = tipX + Math.cos(lAngle) * hookLen * 0.8
+      val lTipY = tipY + Math.sin(lAngle) * hookLen * 0.8
+      gc.strokeLine(lTipX, lTipY, lTipX + Math.cos(lAngle + 1.2) * barbLen, lTipY + Math.sin(lAngle + 1.2) * barbLen)
+      val rTipX = tipX + Math.cos(rAngle) * hookLen * 0.8
+      val rTipY = tipY + Math.sin(rAngle) * hookLen * 0.8
+      gc.strokeLine(rTipX, rTipY, rTipX + Math.cos(rAngle - 1.2) * barbLen, rTipY + Math.sin(rAngle - 1.2) * barbLen)
 
-      // Brown orb at tip
-      val orbR = 6.0 * pulse
-      gc.setFill(Color.color(0.6, 0.4, 0.2, 0.3 * pulse))
-      gc.fillOval(tipX - orbR * 2, tipY - orbR * 2, orbR * 4, orbR * 4)
-      gc.setFill(Color.color(0.7, 0.5, 0.3, 0.5 * pulse))
-      gc.fillOval(tipX - orbR, tipY - orbR, orbR * 2, orbR * 2)
-      gc.setFill(Color.color(0.85, 0.7, 0.5, 0.85))
-      gc.fillOval(tipX - orbR * 0.4, tipY - orbR * 0.4, orbR * 0.8, orbR * 0.8)
+      // Metallic gleam on hook
+      gc.setFill(Color.color(0.9, 0.9, 0.95, 0.5 * pulse))
+      gc.fillOval(tipX - 3, tipY - 3, 6, 6)
     }
   }
 
@@ -1014,66 +1190,99 @@ class GameCanvas(client: GameClient) extends Canvas() {
       val pulse = 0.9 + 0.1 * Math.sin(phase)
       val fastFlicker = 0.9 + 0.1 * Math.sin(phase * 3.1)
 
-      // Bronze/gold color scheme - straight line beam
-      // Layer 1: Ultra-wide outer glow
-      gc.setStroke(Color.color(0.8, 0.6, 0.2, 0.06 * pulse))
-      gc.setLineWidth(48 * pulse)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
+      // Distance-based power intensity — spear deals more damage at range
+      val distTraveled = Math.min(1.0, projectile.getDistanceTraveled / 20.0)
+      val powerGlow = 0.3 + distTraveled * 0.7
 
-      // Layer 2: Outer glow
-      gc.setStroke(Color.color(0.8, 0.6, 0.2, 0.10 * pulse))
-      gc.setLineWidth(34 * pulse)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Layer 3: Mid glow
-      gc.setStroke(Color.color(0.85, 0.65, 0.25, 0.22 * pulse))
-      gc.setLineWidth(22 * pulse)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Layer 4: Bronze beam
-      gc.setStroke(Color.color(0.9, 0.7, 0.3, 0.55 * fastFlicker))
-      gc.setLineWidth(12 * fastFlicker)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Layer 5: Bright gold core
-      gc.setStroke(Color.color(1.0, 0.9, 0.6, 0.9 * fastFlicker))
-      gc.setLineWidth(5.0)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Pointed arrowhead at tip - bigger
       val dx = tipX - tailX
       val dy = tipY - tailY
       val len = Math.sqrt(dx * dx + dy * dy)
-      if (len > 1) {
-        val nx = dx / len
-        val ny = dy / len
-        val arrowSize = 16.0
-        val arrowX = Array(
-          tipX + nx * arrowSize,
-          tipX - nx * arrowSize * 0.5 + (-ny) * arrowSize * 0.6,
-          tipX - nx * arrowSize * 0.5 + ny * arrowSize * 0.6
-        )
-        val arrowY = Array(
-          tipY + ny * arrowSize,
-          tipY - ny * arrowSize * 0.5 + nx * arrowSize * 0.6,
-          tipY - ny * arrowSize * 0.5 + (-nx) * arrowSize * 0.6
-        )
-        gc.setFill(Color.color(0.9, 0.75, 0.35, 0.85 * pulse))
-        gc.fillPolygon(arrowX, arrowY, 3)
-        gc.setStroke(Color.color(1.0, 0.9, 0.6, 0.6 * pulse))
-        gc.setLineWidth(1.5)
-        gc.strokePolygon(arrowX, arrowY, 3)
+      if (len < 1) return
+      val nx = dx / len
+      val ny = dy / len
 
-        // Trail particles
-        for (i <- 0 until 6) {
-          val t = ((animationTick * 0.07 + i.toDouble / 6 + projectile.id * 0.11) % 1.0)
-          val px = tailX + dx * t + (-ny) * Math.sin(phase + i * 1.5) * 4.0
-          val py = tailY + dy * t + nx * Math.sin(phase + i * 1.5) * 4.0
-          val pAlpha = Math.max(0.0, Math.min(1.0, 0.5 * (1.0 - t)))
-          val pSize = 3.0 + Math.sin(phase + i) * 1.0
-          gc.setFill(Color.color(1.0, 0.85, 0.4, pAlpha))
-          gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
-        }
+      // Layer 1: Power aura — grows with distance
+      gc.setStroke(Color.color(0.9, 0.5, 0.1, 0.08 * pulse * powerGlow))
+      gc.setLineWidth((40 + distTraveled * 20) * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Layer 2: Outer glow — intensifies with power
+      gc.setStroke(Color.color(0.85, 0.55 + distTraveled * 0.15, 0.2, 0.12 * pulse * powerGlow))
+      gc.setLineWidth(32 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Layer 3: Mid glow
+      gc.setStroke(Color.color(0.9, 0.65, 0.25, 0.25 * pulse * powerGlow))
+      gc.setLineWidth(18 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Layer 4: Bronze shaft
+      gc.setStroke(Color.color(0.9, 0.7, 0.3, 0.6 * fastFlicker))
+      gc.setLineWidth(10 * fastFlicker)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Layer 5: Bright gold core — white-hot when fully powered
+      val coreR = Math.min(1.0, 0.85 + distTraveled * 0.15)
+      val coreG = Math.min(1.0, 0.8 + distTraveled * 0.15)
+      gc.setStroke(Color.color(coreR, coreG, 0.5 + distTraveled * 0.3, 0.9 * fastFlicker))
+      gc.setLineWidth(4.5)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Air-cutting lines perpendicular to travel — speed slashes
+      for (cut <- 0 until 3) {
+        val cutT = 0.15 + cut * 0.25
+        val cutX = tailX + dx * cutT
+        val cutY = tailY + dy * cutT
+        val cutLen = 10.0 + distTraveled * 6.0
+        val cutAlpha = 0.3 * pulse * (1.0 - cutT * 0.5)
+        gc.setStroke(Color.color(1.0, 0.9, 0.5, cutAlpha))
+        gc.setLineWidth(1.5)
+        gc.strokeLine(cutX + (-ny) * cutLen, cutY + nx * cutLen,
+                      cutX - (-ny) * cutLen, cutY - nx * cutLen)
+      }
+
+      // Detailed arrowhead — diamond spearhead with ridgeline
+      val arrowSize = 18.0 + distTraveled * 4.0
+      val arrowX = Array(
+        tipX + nx * arrowSize,
+        tipX - nx * arrowSize * 0.3 + (-ny) * arrowSize * 0.5,
+        tipX - nx * arrowSize * 0.6,
+        tipX - nx * arrowSize * 0.3 + ny * arrowSize * 0.5
+      )
+      val arrowY = Array(
+        tipY + ny * arrowSize,
+        tipY - ny * arrowSize * 0.3 + nx * arrowSize * 0.5,
+        tipY - ny * arrowSize * 0.6,
+        tipY - ny * arrowSize * 0.3 + (-nx) * arrowSize * 0.5
+      )
+
+      // Spearhead glow
+      gc.setFill(Color.color(1.0, 0.7, 0.2, 0.15 * pulse * powerGlow))
+      val headGlow = arrowSize * 1.5
+      gc.fillOval(tipX - headGlow * 0.5, tipY - headGlow * 0.5, headGlow, headGlow)
+
+      gc.setFill(Color.color(0.9, 0.75, 0.35, 0.85 * pulse))
+      gc.fillPolygon(arrowX, arrowY, 4)
+      gc.setStroke(Color.color(1.0, 0.9, 0.6, 0.7 * pulse))
+      gc.setLineWidth(1.5)
+      gc.strokePolygon(arrowX, arrowY, 4)
+
+      // Center ridge line on spearhead
+      gc.setStroke(Color.color(1.0, 0.95, 0.7, 0.6 * pulse))
+      gc.setLineWidth(1.5)
+      gc.strokeLine(tipX - nx * arrowSize * 0.6, tipY - ny * arrowSize * 0.6,
+                    tipX + nx * arrowSize, tipY + ny * arrowSize)
+
+      // Power trail particles — more intense at higher distance
+      val particleCount = 4 + (distTraveled * 4).toInt
+      for (i <- 0 until particleCount) {
+        val t = ((animationTick * 0.08 + i.toDouble / particleCount + projectile.id * 0.11) % 1.0)
+        val px = tailX + dx * t + (-ny) * Math.sin(phase + i * 1.5) * (3.0 + distTraveled * 3.0)
+        val py = tailY + dy * t + nx * Math.sin(phase + i * 1.5) * (3.0 + distTraveled * 3.0)
+        val pAlpha = Math.max(0.0, Math.min(1.0, 0.5 * powerGlow * (1.0 - t)))
+        val pSize = 2.5 + Math.sin(phase + i) * 1.0 + distTraveled * 1.5
+        gc.setFill(Color.color(1.0, 0.85, 0.4, pAlpha))
+        gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
       }
     }
   }
@@ -1097,52 +1306,105 @@ class GameCanvas(client: GameClient) extends Canvas() {
       gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
       val phase = (animationTick + projectile.id * 19) * 0.35
       val pulse = 0.85 + 0.15 * Math.sin(phase)
-      val fastFlicker = 0.9 + 0.1 * Math.sin(phase * 3.7)
+      val fastFlicker = 0.8 + 0.2 * Math.sin(phase * 3.7)
+      val phaseShift = 0.7 + 0.3 * Math.sin(phase * 1.3)
 
-      // Ghostly green/teal glow layers
-      gc.setStroke(Color.color(0.1, 0.8, 0.6, 0.07 * pulse))
-      gc.setLineWidth(36 * pulse)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      gc.setStroke(Color.color(0.1, 0.85, 0.65, 0.14 * pulse))
-      gc.setLineWidth(22 * pulse)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      gc.setStroke(Color.color(0.2, 0.9, 0.7, 0.45 * fastFlicker))
-      gc.setLineWidth(10 * fastFlicker)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      gc.setStroke(Color.color(0.6, 1.0, 0.85, 0.9 * fastFlicker))
-      gc.setLineWidth(3.5)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Wispy particles
       val dx = tipX - tailX
       val dy = tipY - tailY
       val len = Math.sqrt(dx * dx + dy * dy)
-      if (len > 1) {
-        val nx = dx / len
-        val ny = dy / len
-        for (i <- 0 until 5) {
-          val t = ((animationTick * 0.09 + i.toDouble / 5 + projectile.id * 0.15) % 1.0)
-          val wave = Math.sin(phase * 2.5 + i * 1.9) * 7.0
-          val px = tailX + dx * t + (-ny) * wave
-          val py = tailY + dy * t + nx * wave
-          val pAlpha = Math.max(0.0, Math.min(1.0, 0.6 * (1.0 - Math.abs(t - 0.5) * 2.0)))
-          val pSize = 2.5 + Math.sin(phase + i) * 1.0
-          gc.setFill(Color.color(0.5, 1.0, 0.8, pAlpha))
-          gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+      if (len < 1) return
+      val nx = dx / len
+      val ny = dy / len
+
+      // Ethereal outer mist — wide ghostly aura
+      gc.setStroke(Color.color(0.1, 0.7, 0.5, 0.05 * pulse * phaseShift))
+      gc.setLineWidth(45 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Ghostly green/teal glow layers — with phasing flicker
+      gc.setStroke(Color.color(0.1, 0.8, 0.6, 0.1 * pulse * phaseShift))
+      gc.setLineWidth(30 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(0.15, 0.85, 0.65, 0.35 * fastFlicker * phaseShift))
+      gc.setLineWidth(14 * fastFlicker)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(0.5, 1.0, 0.8, 0.85 * fastFlicker))
+      gc.setLineWidth(4.0)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Curling smoke wisps trailing away from beam
+      for (wisp <- 0 until 4) {
+        val wispT = 0.2 + wisp * 0.2
+        val wispBaseX = tailX + dx * wispT
+        val wispBaseY = tailY + dy * wispT
+        val segments = 6
+        gc.setStroke(Color.color(0.2, 0.7, 0.5, 0.2 * pulse))
+        gc.setLineWidth(2.0)
+        var prevX = wispBaseX
+        var prevY = wispBaseY
+        for (s <- 1 to segments) {
+          val st = s.toDouble / segments
+          val curl = Math.sin(phase * 2.0 + wisp * 1.7 + st * Math.PI) * 8.0 * st
+          val drift = st * 10.0
+          val wx = wispBaseX + (-ny) * curl - nx * drift
+          val wy = wispBaseY + nx * curl - ny * drift - st * 5.0
+          val wAlpha = Math.max(0.0, 0.25 * (1.0 - st))
+          gc.setStroke(Color.color(0.2, 0.8, 0.5, wAlpha))
+          gc.setLineWidth(2.5 * (1.0 - st * 0.5))
+          gc.strokeLine(prevX, prevY, wx, wy)
+          prevX = wx
+          prevY = wy
         }
       }
 
-      // Ghostly orb at tip
-      val orbR = 7.0 * pulse
-      gc.setFill(Color.color(0.1, 0.8, 0.6, 0.2 * pulse))
-      gc.fillOval(tipX - orbR * 2, tipY - orbR * 2, orbR * 4, orbR * 4)
-      gc.setFill(Color.color(0.2, 0.9, 0.7, 0.45 * pulse))
-      gc.fillOval(tipX - orbR, tipY - orbR, orbR * 2, orbR * 2)
-      gc.setFill(Color.color(0.6, 1.0, 0.85, 0.85 * fastFlicker))
-      gc.fillOval(tipX - orbR * 0.4, tipY - orbR * 0.4, orbR * 0.8, orbR * 0.8)
+      // Ghostly face shapes that briefly form — hollow circles with eye dots
+      for (face <- 0 until 2) {
+        val facePhase = (phase * 0.5 + face * 3.14) % (2 * Math.PI)
+        val faceAlpha = Math.max(0.0, Math.sin(facePhase) * 0.4)
+        if (faceAlpha > 0.05) {
+          val ft = 0.3 + face * 0.35
+          val fx = tailX + dx * ft + (-ny) * Math.sin(phase + face) * 10.0
+          val fy = tailY + dy * ft + nx * Math.sin(phase + face) * 10.0
+          val fSize = 5.0 + Math.sin(phase + face * 2) * 2.0
+          // Face outline
+          gc.setStroke(Color.color(0.4, 1.0, 0.7, faceAlpha))
+          gc.setLineWidth(1.0)
+          gc.strokeOval(fx - fSize, fy - fSize, fSize * 2, fSize * 2)
+          // Eyes — two small dots
+          gc.setFill(Color.color(0.6, 1.0, 0.8, faceAlpha * 1.5))
+          gc.fillOval(fx - fSize * 0.4 - 1, fy - fSize * 0.2 - 1, 2, 2)
+          gc.fillOval(fx + fSize * 0.4 - 1, fy - fSize * 0.2 - 1, 2, 2)
+          // Mouth — small open circle
+          gc.strokeOval(fx - 1.5, fy + fSize * 0.3 - 1, 3, 2)
+        }
+      }
+
+      // Spectral wisp particles with longer trails
+      for (i <- 0 until 7) {
+        val t = ((animationTick * 0.08 + i.toDouble / 7 + projectile.id * 0.15) % 1.0)
+        val wave = Math.sin(phase * 2.5 + i * 1.9) * 9.0
+        val px = tailX + dx * t + (-ny) * wave
+        val py = tailY + dy * t + nx * wave
+        val pAlpha = Math.max(0.0, Math.min(1.0, 0.55 * (1.0 - Math.abs(t - 0.5) * 2.0) * phaseShift))
+        val pSize = 2.0 + Math.sin(phase + i) * 1.5
+        gc.setFill(Color.color(0.4, 1.0, 0.75, pAlpha))
+        gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+        // Particle trail
+        val trailAlpha = pAlpha * 0.4
+        gc.setFill(Color.color(0.3, 0.8, 0.6, trailAlpha))
+        gc.fillOval(px - nx * 4 - pSize * 0.7, py - ny * 4 - pSize * 0.7, pSize * 1.4, pSize * 1.4)
+      }
+
+      // Ghostly orb at tip — pulsing with inner glow
+      val orbR = 8.0 * pulse
+      gc.setFill(Color.color(0.1, 0.7, 0.5, 0.15 * pulse))
+      gc.fillOval(tipX - orbR * 2.5, tipY - orbR * 2.5, orbR * 5, orbR * 5)
+      gc.setFill(Color.color(0.15, 0.85, 0.65, 0.35 * pulse))
+      gc.fillOval(tipX - orbR * 1.3, tipY - orbR * 1.3, orbR * 2.6, orbR * 2.6)
+      gc.setFill(Color.color(0.5, 1.0, 0.8, 0.8 * fastFlicker))
+      gc.fillOval(tipX - orbR * 0.5, tipY - orbR * 0.5, orbR, orbR)
     }
   }
 
@@ -1167,53 +1429,97 @@ class GameCanvas(client: GameClient) extends Canvas() {
       val pulse = 0.8 + 0.2 * Math.sin(phase)
       val fastFlicker = 0.85 + 0.15 * Math.sin(phase * 2.9)
 
-      // Dark spectral glow — purple/dark teal
-      gc.setStroke(Color.color(0.3, 0.1, 0.5, 0.1 * pulse))
-      gc.setLineWidth(42 * pulse)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      gc.setStroke(Color.color(0.35, 0.15, 0.55, 0.18 * pulse))
-      gc.setLineWidth(28 * pulse)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      gc.setStroke(Color.color(0.4, 0.2, 0.65, 0.4 * fastFlicker))
-      gc.setLineWidth(14 * fastFlicker)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      gc.setStroke(Color.color(0.7, 0.5, 0.9, 0.85 * fastFlicker))
-      gc.setLineWidth(4.0)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Shadowy tendrils along the beam
       val dx = tipX - tailX
       val dy = tipY - tailY
       val len = Math.sqrt(dx * dx + dy * dy)
-      if (len > 1) {
-        val nx = dx / len
-        val ny = dy / len
-        for (strand <- 0 until 2) {
-          val strandOff = (strand - 0.5) * 6.0
-          for (i <- 0 until 6) {
-            val t = ((animationTick * 0.07 + i.toDouble / 6 + strand * 0.3) % 1.0)
-            val wave = Math.sin(phase * 1.8 + i * 2.0 + strand * 3.14) * 5.0
-            val px = tailX + dx * t + (-ny) * (wave + strandOff)
-            val py = tailY + dy * t + nx * (wave + strandOff)
-            val pAlpha = Math.max(0.0, Math.min(1.0, 0.5 * (1.0 - Math.abs(t - 0.5) * 2.0)))
-            val pSize = 2.0 + Math.sin(phase + i + strand) * 0.8
-            gc.setFill(Color.color(0.5, 0.2, 0.7, pAlpha))
-            gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
-          }
+      if (len < 1) return
+      val nx = dx / len
+      val ny = dy / len
+
+      // Spectral purple glow — saturated purple, NOT dark
+      gc.setStroke(Color.color(0.5, 0.2, 0.8, 0.07 * pulse))
+      gc.setLineWidth(40 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(0.55, 0.25, 0.85, 0.15 * pulse))
+      gc.setLineWidth(24 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(0.6, 0.3, 0.9, 0.4 * fastFlicker))
+      gc.setLineWidth(12 * fastFlicker)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Bright violet core
+      gc.setStroke(Color.color(0.75, 0.5, 0.95, 0.85 * fastFlicker))
+      gc.setLineWidth(4.0)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Shadow wisp particles trailing behind
+      for (trail <- 0 until 5) {
+        val trailT = ((animationTick * 0.05 + trail * 0.2 + projectile.id * 0.07) % 1.0)
+        val tpx = tailX - dx * 0.12 * trailT + (-ny) * Math.sin(phase * 1.5 + trail * 1.3) * 5.0
+        val tpy = tailY - dy * 0.12 * trailT + nx * Math.sin(phase * 1.5 + trail * 1.3) * 5.0 - trailT * 5.0
+        val trailAlpha = Math.max(0.0, 0.35 * (1.0 - trailT))
+        val trailSize = 2.5 + trailT * 3.0
+        gc.setFill(Color.color(0.45, 0.15, 0.65, trailAlpha))
+        gc.fillOval(tpx - trailSize, tpy - trailSize, trailSize * 2, trailSize * 2)
+      }
+
+      // Shadowy tendrils along the beam
+      for (strand <- 0 until 3) {
+        val strandOff = (strand - 1) * 5.0
+        for (i <- 0 until 8) {
+          val t = ((animationTick * 0.06 + i.toDouble / 8 + strand * 0.25) % 1.0)
+          val wave = Math.sin(phase * 1.8 + i * 1.7 + strand * 2.1) * 7.0
+          val px = tailX + dx * t + (-ny) * (wave + strandOff)
+          val py = tailY + dy * t + nx * (wave + strandOff)
+          val pAlpha = Math.max(0.0, Math.min(1.0, 0.4 * (1.0 - Math.abs(t - 0.5) * 2.0)))
+          val pSize = 2.5 + Math.sin(phase + i + strand) * 1.0
+          gc.setFill(Color.color(0.55, 0.2, 0.8, pAlpha))
+          gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
         }
       }
 
-      // Dark orb at tip
-      val orbR = 9.0 * pulse
-      gc.setFill(Color.color(0.3, 0.1, 0.5, 0.25 * pulse))
-      gc.fillOval(tipX - orbR * 2.5, tipY - orbR * 2.5, orbR * 5, orbR * 5)
-      gc.setFill(Color.color(0.4, 0.2, 0.65, 0.5 * pulse))
-      gc.fillOval(tipX - orbR * 1.3, tipY - orbR * 1.3, orbR * 2.6, orbR * 2.6)
-      gc.setFill(Color.color(0.7, 0.5, 0.9, 0.85 * fastFlicker))
-      gc.fillOval(tipX - orbR * 0.5, tipY - orbR * 0.5, orbR, orbR)
+      // Soul-draining particles — converging toward the orb from surroundings
+      for (s <- 0 until 6) {
+        val sAngle = phase * 1.5 + s * (Math.PI * 2 / 6)
+        val sDist = 18.0 * (1.0 - ((animationTick * 0.04 + s * 0.17) % 1.0))
+        val sx = tipX + sDist * Math.cos(sAngle)
+        val sy = tipY + sDist * Math.sin(sAngle) * 0.6
+        val sAlpha = Math.max(0.0, 0.4 * (sDist / 18.0))
+        val sSize = 1.5 + (1.0 - sDist / 18.0) * 2.0
+        gc.setFill(Color.color(0.65, 0.35, 0.95, sAlpha))
+        gc.fillOval(sx - sSize, sy - sSize, sSize * 2, sSize * 2)
+      }
+
+      // Skull shape at tip
+      val skullR = 10.0 * pulse
+
+      // Skull glow — purple, not dark
+      gc.setFill(Color.color(0.5, 0.2, 0.75, 0.2 * pulse))
+      gc.fillOval(tipX - skullR * 1.8, tipY - skullR * 1.8, skullR * 3.6, skullR * 3.6)
+
+      // Cranium
+      gc.setFill(Color.color(0.55, 0.3, 0.8, 0.5 * pulse))
+      gc.fillOval(tipX - skullR, tipY - skullR * 1.1, skullR * 2, skullR * 2)
+
+      // Jaw
+      gc.setFill(Color.color(0.5, 0.25, 0.75, 0.45 * pulse))
+      gc.fillOval(tipX - skullR * 0.7, tipY + skullR * 0.1, skullR * 1.4, skullR * 0.9)
+
+      // Glowing eye sockets — bright magenta
+      val eyeGlow = 0.6 + 0.4 * Math.sin(phase * 4)
+      gc.setFill(Color.color(0.9, 0.4, 1.0, eyeGlow))
+      gc.fillOval(tipX - skullR * 0.5 - 2.5, tipY - skullR * 0.2 - 2.5, 5, 5)
+      gc.fillOval(tipX + skullR * 0.5 - 2.5, tipY - skullR * 0.2 - 2.5, 5, 5)
+      // Eye glow halos
+      gc.setFill(Color.color(0.95, 0.6, 1.0, eyeGlow * 0.3))
+      gc.fillOval(tipX - skullR * 0.5 - 4, tipY - skullR * 0.2 - 4, 8, 8)
+      gc.fillOval(tipX + skullR * 0.5 - 4, tipY - skullR * 0.2 - 4, 8, 8)
+
+      // Bright core
+      gc.setFill(Color.color(0.75, 0.45, 0.95, 0.85 * fastFlicker))
+      gc.fillOval(tipX - skullR * 0.3, tipY - skullR * 0.3, skullR * 0.6, skullR * 0.6)
     }
   }
 
@@ -1237,25 +1543,65 @@ class GameCanvas(client: GameClient) extends Canvas() {
       val phase = (animationTick + projectile.id * 31) * 0.5
       val flicker = 0.9 + 0.1 * Math.sin(phase * 5.0)
 
-      // Outer glow — yellow/orange
-      gc.setStroke(Color.color(1.0, 0.85, 0.2, 0.12 * flicker))
-      gc.setLineWidth(20 * flicker)
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len < 1) return
+      val nx = dx / len
+      val ny = dy / len
+
+      // Muzzle flash glow at the tail
+      val muzzleFlash = Math.max(0.0, 0.4 * Math.sin(phase * 8.0))
+      if (muzzleFlash > 0.05) {
+        gc.setFill(Color.color(1.0, 0.9, 0.4, muzzleFlash * 0.3))
+        gc.fillOval(tailX - 8, tailY - 8, 16, 16)
+      }
+
+      // Tracer outer glow — hot yellow
+      gc.setStroke(Color.color(1.0, 0.85, 0.2, 0.1 * flicker))
+      gc.setLineWidth(18 * flicker)
       gc.strokeLine(tailX, tailY, tipX, tipY)
 
-      // Mid glow
+      // Tracer mid
       gc.setStroke(Color.color(1.0, 0.75, 0.1, 0.3 * flicker))
-      gc.setLineWidth(10 * flicker)
+      gc.setLineWidth(8 * flicker)
       gc.strokeLine(tailX, tailY, tipX, tipY)
 
-      // Bright core — white-hot
-      gc.setStroke(Color.color(1.0, 0.95, 0.7, 0.9 * flicker))
-      gc.setLineWidth(3.0)
+      // White-hot tracer core — thin and sharp
+      gc.setStroke(Color.color(1.0, 0.97, 0.8, 0.95 * flicker))
+      gc.setLineWidth(2.5)
       gc.strokeLine(tailX, tailY, tipX, tipY)
 
-      // Tip spark
-      val orbR = 4.0 * flicker
-      gc.setFill(Color.color(1.0, 0.9, 0.3, 0.7 * flicker))
-      gc.fillOval(tipX - orbR, tipY - orbR, orbR * 2, orbR * 2)
+      // Speed lines — parallel streaks flanking the bullet
+      for (streak <- 0 until 2) {
+        val streakOff = (streak * 2 - 1) * 5.0
+        val streakAlpha = 0.15 * flicker
+        gc.setStroke(Color.color(1.0, 0.9, 0.5, streakAlpha))
+        gc.setLineWidth(1.0)
+        val s1x = tailX + (-ny) * streakOff
+        val s1y = tailY + nx * streakOff
+        val s2x = tailX + dx * 0.6 + (-ny) * streakOff
+        val s2y = tailY + dy * 0.6 + nx * streakOff
+        gc.strokeLine(s1x, s1y, s2x, s2y)
+      }
+
+      // Bullet tip — bright pointed spark
+      val orbR = 4.5 * flicker
+      gc.setFill(Color.color(1.0, 0.95, 0.5, 0.3 * flicker))
+      gc.fillOval(tipX - orbR * 1.5, tipY - orbR * 1.5, orbR * 3, orbR * 3)
+      gc.setFill(Color.color(1.0, 0.97, 0.7, 0.8 * flicker))
+      gc.fillOval(tipX - orbR * 0.6, tipY - orbR * 0.6, orbR * 1.2, orbR * 1.2)
+
+      // Shell casing sparks trailing behind
+      for (i <- 0 until 3) {
+        val t = ((animationTick * 0.15 + i * 0.33 + projectile.id * 0.11) % 1.0)
+        val sparkX = tailX - dx * t * 0.15 + (-ny) * Math.sin(phase * 3 + i * 2.0) * 3.0
+        val sparkY = tailY - dy * t * 0.15 + nx * Math.sin(phase * 3 + i * 2.0) * 3.0 + t * 3.0
+        val sparkAlpha = Math.max(0.0, 0.5 * (1.0 - t))
+        val sparkSize = 1.5 * (1.0 - t * 0.5)
+        gc.setFill(Color.color(1.0, 0.8, 0.3, sparkAlpha))
+        gc.fillOval(sparkX - sparkSize, sparkY - sparkSize, sparkSize * 2, sparkSize * 2)
+      }
     }
   }
 
@@ -1269,31 +1615,75 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val margin = 100.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 17) * 0.4
-      val bounce = Math.abs(Math.sin(phase * 2.0)) * 4.0 // bobbing arc
+      val bounce = Math.abs(Math.sin(phase * 2.0)) * 4.0
+      val spinAngle = animationTick * 0.3 + projectile.id * 1.7
 
-      // Dark green orb
-      val orbR = 6.0
-      gc.setFill(Color.color(0.15, 0.35, 0.1, 0.3))
-      gc.fillOval(sx - orbR * 2, sy - bounce - orbR * 2, orbR * 4, orbR * 4)
-      gc.setFill(Color.color(0.2, 0.45, 0.15, 0.8))
-      gc.fillOval(sx - orbR, sy - bounce - orbR, orbR * 2, orbR * 2)
-      gc.setStroke(Color.color(0.1, 0.25, 0.05, 0.9))
+      val grenY = sy - bounce
+      val orbR = 7.0
+
+      // Danger glow — pulsing red/orange warning aura
+      val dangerPulse = 0.5 + 0.5 * Math.sin(phase * 3.0)
+      gc.setFill(Color.color(1.0, 0.3, 0.0, 0.06 * dangerPulse))
+      gc.fillOval(sx - orbR * 3, grenY - orbR * 3, orbR * 6, orbR * 6)
+      gc.setFill(Color.color(1.0, 0.5, 0.1, 0.08 * dangerPulse))
+      gc.fillOval(sx - orbR * 2, grenY - orbR * 2, orbR * 4, orbR * 4)
+
+      // Dark olive body
+      gc.setFill(Color.color(0.2, 0.4, 0.15, 0.85))
+      gc.fillOval(sx - orbR, grenY - orbR, orbR * 2, orbR * 2)
+
+      // Metal band around the middle (spinning)
+      val bandAngle = spinAngle
+      gc.setStroke(Color.color(0.5, 0.5, 0.45, 0.7))
+      gc.setLineWidth(2.0)
+      val bandW = orbR * 0.8
+      gc.strokeLine(
+        sx - bandW * Math.cos(bandAngle), grenY - bandW * Math.sin(bandAngle) * 0.5,
+        sx + bandW * Math.cos(bandAngle), grenY + bandW * Math.sin(bandAngle) * 0.5
+      )
+
+      // Outline
+      gc.setStroke(Color.color(0.12, 0.25, 0.08, 0.9))
       gc.setLineWidth(1.5)
-      gc.strokeOval(sx - orbR, sy - bounce - orbR, orbR * 2, orbR * 2)
+      gc.strokeOval(sx - orbR, grenY - orbR, orbR * 2, orbR * 2)
 
-      // Highlight
-      gc.setFill(Color.color(0.4, 0.7, 0.3, 0.5))
-      gc.fillOval(sx - 2, sy - bounce - orbR + 1, 4, 3)
+      // Highlight sheen
+      gc.setFill(Color.color(0.5, 0.7, 0.4, 0.4))
+      gc.fillOval(sx - 3, grenY - orbR + 2, 5, 3)
 
-      // Trailing sparks
+      // Spoon/lever — small line on top
+      gc.setStroke(Color.color(0.6, 0.6, 0.55, 0.75))
+      gc.setLineWidth(1.5)
+      gc.strokeLine(sx, grenY - orbR, sx + 4 * Math.cos(spinAngle * 0.5), grenY - orbR - 5)
+
+      // Fuse sparks — bright orange sparks at the top
+      for (i <- 0 until 5) {
+        val t = ((animationTick * 0.15 + i * 0.2 + projectile.id * 0.1) % 1.0)
+        val sparkAngle = phase * 4.0 + i * 1.3
+        val sparkDist = t * 8.0
+        val sparkX = sx + Math.cos(sparkAngle) * sparkDist * 0.5
+        val sparkY = grenY - orbR - 3 - sparkDist + Math.sin(sparkAngle) * 2.0
+        val sparkAlpha = Math.max(0.0, 0.8 * (1.0 - t))
+        val sparkSize = 1.5 * (1.0 - t * 0.5)
+
+        // Alternate hot orange and bright yellow
+        if (i % 2 == 0) {
+          gc.setFill(Color.color(1.0, 0.6, 0.1, sparkAlpha))
+        } else {
+          gc.setFill(Color.color(1.0, 0.9, 0.3, sparkAlpha))
+        }
+        gc.fillOval(sparkX - sparkSize, sparkY - sparkSize, sparkSize * 2, sparkSize * 2)
+      }
+
+      // Smoke trail behind grenade
       for (i <- 0 until 4) {
-        val t = ((animationTick * 0.12 + i * 0.25 + projectile.id * 0.1) % 1.0)
-        val sparkX = sx - projectile.dx * t * 15.0
-        val sparkY = sy - projectile.dy * t * 15.0 + t * 3.0
-        val pAlpha = Math.max(0.0, 0.6 * (1.0 - t))
-        val pSize = 2.0 * (1.0 - t)
-        gc.setFill(Color.color(1.0, 0.7, 0.2, pAlpha))
-        gc.fillOval(sparkX - pSize, sparkY - pSize, pSize * 2, pSize * 2)
+        val t = ((animationTick * 0.06 + i * 0.25 + projectile.id * 0.07) % 1.0)
+        val smokeX = sx - projectile.dx * t * 18.0 + Math.sin(phase + i * 1.5) * 2.0
+        val smokeY = sy - projectile.dy * t * 18.0 + t * 4.0
+        val smokeAlpha = Math.max(0.0, 0.2 * (1.0 - t))
+        val smokeSize = 2.5 + t * 4.0
+        gc.setFill(Color.color(0.5, 0.5, 0.45, smokeAlpha))
+        gc.fillOval(smokeX - smokeSize, smokeY - smokeSize, smokeSize * 2, smokeSize * 2)
       }
     }
   }
@@ -1318,7 +1708,6 @@ class GameCanvas(client: GameClient) extends Canvas() {
       val phase = (animationTick + projectile.id * 31) * 0.4
       val pulse = 0.85 + 0.15 * Math.sin(phase)
 
-      // Golden slash arc — short wide sweep
       val midX = (tailX + tipX) / 2
       val midY = (tailY + tipY) / 2
       val dx = tipX - tailX
@@ -1328,36 +1717,88 @@ class GameCanvas(client: GameClient) extends Canvas() {
         val nx = -dy / len
         val ny = dx / len
 
-        // Wide outer glow
-        gc.setStroke(Color.color(0.85, 0.65, 0.1, 0.12 * pulse))
-        gc.setLineWidth(36 * pulse)
-        gc.strokeLine(tailX, tailY, tipX, tipY)
+        // Golden flash burst — wide impact glow
+        gc.setFill(Color.color(1.0, 0.8, 0.2, 0.08 * pulse))
+        val flashR = len * 0.8
+        gc.fillOval(midX - flashR, midY - flashR * 0.5, flashR * 2, flashR)
 
-        // Golden arc stroke
-        gc.setStroke(Color.color(0.9, 0.7, 0.15, 0.35 * pulse))
-        gc.setLineWidth(18 * pulse)
-        gc.strokeLine(tailX, tailY, tipX, tipY)
+        // Three parallel curved claw slash arcs
+        for (claw <- 0 until 3) {
+          val clawOffset = (claw - 1) * 8.0
+          val clawSegments = 8
+          val clawPoints = (0 to clawSegments).map { seg =>
+            val t = seg.toDouble / clawSegments
+            // Curved arc — bows outward in the middle
+            val arcBow = Math.sin(t * Math.PI) * (12.0 + claw * 3.0)
+            val cx = tailX + dx * t + nx * (clawOffset + arcBow)
+            val cy = tailY + dy * t + ny * (clawOffset + arcBow)
+            (cx, cy)
+          }
 
-        // Bright inner
-        gc.setStroke(Color.color(1.0, 0.85, 0.3, 0.8 * pulse))
-        gc.setLineWidth(6.0)
-        gc.strokeLine(tailX, tailY, tipX, tipY)
+          // Outer claw glow
+          gc.setStroke(Color.color(0.85, 0.65, 0.1, 0.15 * pulse))
+          gc.setLineWidth(10.0 * pulse)
+          for (i <- 0 until clawPoints.length - 1) {
+            gc.strokeLine(clawPoints(i)._1, clawPoints(i)._2, clawPoints(i + 1)._1, clawPoints(i + 1)._2)
+          }
 
-        // White-hot core
-        gc.setStroke(Color.color(1.0, 0.95, 0.7, 0.95))
-        gc.setLineWidth(2.0)
-        gc.strokeLine(tailX, tailY, tipX, tipY)
+          // Golden claw mark
+          gc.setStroke(Color.color(1.0, 0.8, 0.25, 0.7 * pulse))
+          gc.setLineWidth(4.0 * pulse)
+          for (i <- 0 until clawPoints.length - 1) {
+            gc.strokeLine(clawPoints(i)._1, clawPoints(i)._2, clawPoints(i + 1)._1, clawPoints(i + 1)._2)
+          }
 
-        // Claw slash particles along the arc
-        for (i <- 0 until 4) {
-          val t = ((animationTick * 0.1 + i.toDouble / 4) % 1.0)
-          val spread = Math.sin(phase * 2.0 + i * 1.5) * 8.0
-          val px = tailX + dx * t + nx * spread
-          val py = tailY + dy * t + ny * spread
-          val pAlpha = Math.max(0.0, Math.min(1.0, 0.7 * (1.0 - Math.abs(t - 0.5) * 2.0)))
-          val pSize = 2.5 + Math.sin(phase + i) * 1.0
-          gc.setFill(Color.color(1.0, 0.85, 0.3, pAlpha))
-          gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+          // White-hot cutting edge
+          gc.setStroke(Color.color(1.0, 0.95, 0.7, 0.9 * pulse))
+          gc.setLineWidth(1.5)
+          for (i <- 0 until clawPoints.length - 1) {
+            gc.strokeLine(clawPoints(i)._1, clawPoints(i)._2, clawPoints(i + 1)._1, clawPoints(i + 1)._2)
+          }
+
+          // Sharp talon point at the end of each claw
+          val lastPt = clawPoints.last
+          val prevPt = clawPoints(clawPoints.length - 2)
+          val tipDx = lastPt._1 - prevPt._1
+          val tipDy = lastPt._2 - prevPt._2
+          val tipLen = Math.sqrt(tipDx * tipDx + tipDy * tipDy)
+          if (tipLen > 0.5) {
+            val tnx = tipDx / tipLen
+            val tny = tipDy / tipLen
+            gc.setStroke(Color.color(1.0, 0.9, 0.4, 0.85 * pulse))
+            gc.setLineWidth(3.0)
+            gc.strokeLine(lastPt._1, lastPt._2, lastPt._1 + tnx * 8, lastPt._2 + tny * 8)
+          }
+        }
+
+        // Feather particles fluttering off the slash
+        for (i <- 0 until 5) {
+          val t = ((animationTick * 0.05 + i.toDouble / 5 + projectile.id * 0.13) % 1.0)
+          val featherX = midX + nx * Math.sin(phase + i * 2.0) * 15.0 + dx * (t - 0.5) * 0.3
+          val featherY = midY + ny * Math.sin(phase + i * 2.0) * 15.0 + dy * (t - 0.5) * 0.3 + t * 8.0
+          val fAlpha = Math.max(0.0, 0.5 * (1.0 - t))
+          val fRot = phase * 2.0 + i * 1.3
+          val fLen = 5.0 * (1.0 - t * 0.5)
+          val fWid = 2.0 * (1.0 - t * 0.5)
+          // Draw feather as small rotated line
+          gc.setStroke(Color.color(0.85, 0.7, 0.3, fAlpha))
+          gc.setLineWidth(fWid)
+          gc.strokeLine(
+            featherX - Math.cos(fRot) * fLen, featherY - Math.sin(fRot) * fLen,
+            featherX + Math.cos(fRot) * fLen, featherY + Math.sin(fRot) * fLen
+          )
+        }
+
+        // Air slash speed lines — transparent streaks
+        for (s <- 0 until 3) {
+          val slashT = 0.2 + s * 0.3
+          val sx = tailX + dx * slashT
+          val sy = tailY + dy * slashT
+          val slashLen = 18.0
+          gc.setStroke(Color.color(1.0, 1.0, 0.9, 0.15 * pulse))
+          gc.setLineWidth(1.0)
+          gc.strokeLine(sx + nx * slashLen, sy + ny * slashLen,
+                        sx - nx * slashLen, sy - ny * slashLen)
         }
       }
     }
@@ -1382,45 +1823,106 @@ class GameCanvas(client: GameClient) extends Canvas() {
       gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
       val phase = (animationTick + projectile.id * 29) * 0.35
       val pulse = 0.8 + 0.2 * Math.sin(phase)
-      val fastFlicker = 0.9 + 0.1 * Math.sin(phase * 3.3)
 
-      // Amber wind cone — widens toward the tip
-      gc.setStroke(Color.color(0.85, 0.7, 0.3, 0.08 * pulse))
-      gc.setLineWidth(40 * pulse)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      gc.setStroke(Color.color(0.9, 0.75, 0.35, 0.2 * pulse))
-      gc.setLineWidth(24 * pulse)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      gc.setStroke(Color.color(0.95, 0.8, 0.4, 0.45 * fastFlicker))
-      gc.setLineWidth(12 * fastFlicker)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Bright core
-      gc.setStroke(Color.color(1.0, 0.9, 0.6, 0.8 * fastFlicker))
-      gc.setLineWidth(4.0)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Wind streaks — flowing lines alongside the main beam
       val dx = tipX - tailX
       val dy = tipY - tailY
       val len = Math.sqrt(dx * dx + dy * dy)
-      if (len > 1) {
-        val nx = -dy / len
-        val ny = dx / len
-        for (strand <- 0 until 3) {
-          val strandOff = (strand - 1) * 7.0
-          for (i <- 0 until 5) {
-            val t = ((animationTick * 0.08 + i.toDouble / 5 + strand * 0.2) % 1.0)
-            val wave = Math.sin(phase * 2.5 + i * 1.8 + strand * 2.1) * 4.0
-            val px = tailX + dx * t + nx * (wave + strandOff)
-            val py = tailY + dy * t + ny * (wave + strandOff)
-            val pAlpha = Math.max(0.0, Math.min(1.0, 0.5 * (1.0 - Math.abs(t - 0.5) * 2.0)))
-            val pSize = 1.5 + Math.sin(phase + i + strand) * 0.6
-            gc.setFill(Color.color(0.95, 0.85, 0.5, pAlpha))
-            gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+      if (len < 1) return
+      val nx = -dy / len
+      val ny = dx / len
+      val dirNx = dx / len
+      val dirNy = dy / len
+
+      // Expanding cone shape — narrow at tail, wide at tip
+      for (seg <- 0 until 8) {
+        val t = seg.toDouble / 8
+        val t2 = (seg + 1).toDouble / 8
+        val coneWidth = 4.0 + t * 32.0
+        val coneWidth2 = 4.0 + t2 * 32.0
+        val x1 = tailX + dx * t
+        val y1 = tailY + dy * t
+        val x2 = tailX + dx * t2
+        val y2 = tailY + dy * t2
+        val coneAlpha = 0.08 * pulse * (0.5 + t * 0.5)
+        gc.setStroke(Color.color(0.85, 0.75, 0.35, coneAlpha))
+        gc.setLineWidth((coneWidth + coneWidth2) / 2)
+        gc.strokeLine(x1, y1, x2, y2)
+      }
+
+      // Spiral vortex lines — curving wind streaks that spiral
+      for (spiral <- 0 until 4) {
+        val spiralSegments = 12
+        val spiralPhase = phase * 2.0 + spiral * (Math.PI / 2)
+        gc.setStroke(Color.color(0.9, 0.8, 0.4, 0.35 * pulse))
+        gc.setLineWidth(2.5)
+        var prevSx = 0.0
+        var prevSy = 0.0
+        for (s <- 0 to spiralSegments) {
+          val t = s.toDouble / spiralSegments
+          val spiralRadius = (3.0 + t * 20.0) * pulse
+          val angle = spiralPhase + t * Math.PI * 2.5
+          val sx = tailX + dx * t + nx * spiralRadius * Math.cos(angle)
+          val sy = tailY + dy * t + ny * spiralRadius * Math.cos(angle) * 0.5
+          if (s > 0) {
+            val segAlpha = 0.3 * pulse * (0.3 + t * 0.7)
+            gc.setStroke(Color.color(0.92, 0.82, 0.4, segAlpha))
+            gc.setLineWidth(2.0 * (1.0 - t * 0.3))
+            gc.strokeLine(prevSx, prevSy, sx, sy)
           }
+          prevSx = sx
+          prevSy = sy
+        }
+      }
+
+      // Inner wind core — brighter narrow beam
+      gc.setStroke(Color.color(1.0, 0.9, 0.55, 0.5 * pulse))
+      gc.setLineWidth(5.0)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(1.0, 0.95, 0.7, 0.75 * pulse))
+      gc.setLineWidth(2.5)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Concentric wind arcs expanding outward from beam
+      for (arc <- 0 until 3) {
+        val arcT = 0.3 + arc * 0.25
+        val arcX = tailX + dx * arcT
+        val arcY = tailY + dy * arcT
+        val arcSize = 10.0 + arc * 5.0 + 3.0 * Math.sin(phase + arc)
+        val arcAngle = Math.atan2(dy, dx) * 180 / Math.PI
+        gc.setStroke(Color.color(0.9, 0.8, 0.4, 0.25 * pulse))
+        gc.setLineWidth(1.5)
+        gc.strokeArc(arcX - arcSize, arcY - arcSize * 0.5, arcSize * 2, arcSize,
+          arcAngle + 70, 40, javafx.scene.shape.ArcType.OPEN)
+        gc.strokeArc(arcX - arcSize, arcY - arcSize * 0.5, arcSize * 2, arcSize,
+          arcAngle - 110, 40, javafx.scene.shape.ArcType.OPEN)
+      }
+
+      // Leaf/debris particles spinning in the vortex
+      for (leaf <- 0 until 6) {
+        val leafT = ((animationTick * 0.06 + leaf * 0.17 + projectile.id * 0.09) % 1.0)
+        val leafAngle = phase * 3.0 + leaf * 1.1
+        val leafDist = (3.0 + leafT * 18.0) * pulse
+        val lx = tailX + dx * leafT + nx * leafDist * Math.cos(leafAngle)
+        val ly = tailY + dy * leafT + ny * leafDist * Math.cos(leafAngle) * 0.5
+        val lAlpha = Math.max(0.0, 0.5 * (1.0 - Math.abs(leafT - 0.5) * 2.0))
+        val lRot = leafAngle * 2
+        val lLen = 3.5
+        // Draw as small spinning line (leaf shape)
+        gc.setStroke(Color.color(0.7, 0.55, 0.2, lAlpha))
+        gc.setLineWidth(2.0)
+        gc.strokeLine(
+          lx - Math.cos(lRot) * lLen, ly - Math.sin(lRot) * lLen * 0.5,
+          lx + Math.cos(lRot) * lLen, ly + Math.sin(lRot) * lLen * 0.5
+        )
+        // Green tint on some
+        if (leaf % 2 == 0) {
+          gc.setStroke(Color.color(0.4, 0.6, 0.2, lAlpha * 0.6))
+          gc.setLineWidth(1.5)
+          gc.strokeLine(
+            lx - Math.cos(lRot + 0.5) * lLen * 0.7, ly - Math.sin(lRot + 0.5) * lLen * 0.35,
+            lx + Math.cos(lRot + 0.5) * lLen * 0.7, ly + Math.sin(lRot + 0.5) * lLen * 0.35
+          )
         }
       }
     }
@@ -1447,48 +1949,100 @@ class GameCanvas(client: GameClient) extends Canvas() {
       val pulse = 0.85 + 0.15 * Math.sin(phase)
       val fastFlicker = 0.9 + 0.1 * Math.sin(phase * 3.3)
 
-      // Outer glow — deep blue
-      gc.setStroke(Color.color(0.1, 0.3, 0.9, 0.08 * pulse))
-      gc.setLineWidth(40 * pulse)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Mid glow — cyan
-      gc.setStroke(Color.color(0.2, 0.6, 1.0, 0.18 * pulse))
-      gc.setLineWidth(24 * pulse)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Bright beam — light blue
-      gc.setStroke(Color.color(0.3, 0.7, 1.0, 0.55 * fastFlicker))
-      gc.setLineWidth(12 * fastFlicker)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Core — white-cyan
-      gc.setStroke(Color.color(0.7, 0.95, 1.0, 0.9 * fastFlicker))
-      gc.setLineWidth(4.0)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Ripple ring at tip
       val dx = tipX - tailX
       val dy = tipY - tailY
       val len = Math.sqrt(dx * dx + dy * dy)
-      if (len > 1) {
-        val rippleSize = 8.0 + 4.0 * Math.sin(phase * 2.0)
-        gc.setStroke(Color.color(0.4, 0.8, 1.0, 0.5 * pulse))
-        gc.setLineWidth(2.0)
-        gc.strokeOval(tipX - rippleSize, tipY - rippleSize, rippleSize * 2, rippleSize * 2)
+      if (len < 1) return
+      val nx = dx / len
+      val ny = dy / len
 
-        // Droplet particles
-        val nx = dx / len
-        val ny = dy / len
-        for (i <- 0 until 4) {
-          val t = ((animationTick * 0.08 + i.toDouble / 4 + projectile.id * 0.13) % 1.0)
-          val px = tailX + dx * t + (-ny) * Math.sin(phase + i * 1.8) * 5.0
-          val py = tailY + dy * t + nx * Math.sin(phase + i * 1.8) * 5.0
-          val pAlpha = Math.max(0.0, Math.min(1.0, 0.6 * (1.0 - t)))
-          val pSize = 2.5 + Math.sin(phase + i) * 1.0
-          gc.setFill(Color.color(0.5, 0.85, 1.0, pAlpha))
-          gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
-        }
+      // Liquid shimmer beam — wavy water stream
+      gc.setStroke(Color.color(0.05, 0.25, 0.8, 0.06 * pulse))
+      gc.setLineWidth(42 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(0.15, 0.5, 1.0, 0.15 * pulse))
+      gc.setLineWidth(26 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Wavy water core — using segmented approach for liquid look
+      val segments = 10
+      val points = (0 to segments).map { seg =>
+        val t = seg.toDouble / segments
+        val wave = Math.sin(phase * 3.0 + t * Math.PI * 4) * 3.0 * t
+        (tailX + dx * t + (-ny) * wave, tailY + dy * t + nx * wave)
+      }
+      gc.setStroke(Color.color(0.3, 0.7, 1.0, 0.6 * fastFlicker))
+      gc.setLineWidth(10 * fastFlicker)
+      for (i <- 0 until points.length - 1) {
+        gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
+      }
+      gc.setStroke(Color.color(0.7, 0.95, 1.0, 0.9 * fastFlicker))
+      gc.setLineWidth(3.5)
+      for (i <- 0 until points.length - 1) {
+        gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
+      }
+
+      // Bubble particles floating alongside the stream
+      for (i <- 0 until 6) {
+        val t = ((animationTick * 0.06 + i.toDouble / 6 + projectile.id * 0.13) % 1.0)
+        val bubbleWave = Math.sin(phase * 2.5 + i * 2.1) * 8.0
+        val bx = tailX + dx * t + (-ny) * bubbleWave
+        val by = tailY + dy * t + nx * bubbleWave - t * 4.0
+        val bAlpha = Math.max(0.0, Math.min(1.0, 0.5 * (1.0 - Math.abs(t - 0.5) * 2.0)))
+        val bSize = 2.0 + Math.sin(phase + i * 1.3) * 1.5
+        // Bubble outline
+        gc.setStroke(Color.color(0.6, 0.9, 1.0, bAlpha * 0.8))
+        gc.setLineWidth(1.0)
+        gc.strokeOval(bx - bSize, by - bSize, bSize * 2, bSize * 2)
+        // Bubble highlight
+        gc.setFill(Color.color(0.9, 1.0, 1.0, bAlpha * 0.5))
+        gc.fillOval(bx - bSize * 0.3, by - bSize * 0.5, bSize * 0.6, bSize * 0.4)
+      }
+
+      // Trailing water drops that arc downward
+      for (d <- 0 until 5) {
+        val dt = ((animationTick * 0.04 + d * 0.2 + projectile.id * 0.09) % 1.0)
+        val dropX = tailX + dx * (0.1 + d * 0.15) + (-ny) * Math.sin(phase + d * 1.7) * 4.0
+        val dropY = tailY + dy * (0.1 + d * 0.15) + dt * dt * 15.0
+        val dropAlpha = Math.max(0.0, 0.45 * (1.0 - dt))
+        val dropSize = 1.5 + (1.0 - dt) * 1.5
+        gc.setFill(Color.color(0.4, 0.75, 1.0, dropAlpha))
+        gc.fillOval(dropX - dropSize, dropY - dropSize, dropSize * 2, dropSize * 2.5)
+      }
+
+      // Water droplet shape at tip — teardrop polygon
+      val dropLen = 12.0 * pulse
+      val dropWidth = 7.0 * pulse
+      // Teardrop: wide rounded bottom, pointed top toward travel direction
+      val tdx = Array(
+        tipX + nx * dropLen,
+        tipX + (-ny) * dropWidth,
+        tipX - nx * dropLen * 0.3,
+        tipX - (-ny) * dropWidth
+      )
+      val tdy = Array(
+        tipY + ny * dropLen,
+        tipY + nx * dropWidth,
+        tipY - ny * dropLen * 0.3,
+        tipY - nx * dropWidth
+      )
+      gc.setFill(Color.color(0.15, 0.5, 0.95, 0.5 * pulse))
+      gc.fillPolygon(tdx, tdy, 4)
+      gc.setFill(Color.color(0.4, 0.8, 1.0, 0.35 * pulse))
+      gc.fillOval(tipX - dropWidth, tipY - dropWidth, dropWidth * 2, dropWidth * 2)
+      // Bright core
+      gc.setFill(Color.color(0.8, 0.97, 1.0, 0.85 * fastFlicker))
+      gc.fillOval(tipX - 3, tipY - 3, 6, 6)
+
+      // Expanding ripple rings at tip
+      for (r <- 0 until 2) {
+        val ripplePhase = (phase * 2.0 + r * Math.PI) % (2 * Math.PI)
+        val rippleSize = 6.0 + 6.0 * ((ripplePhase / (2 * Math.PI)))
+        val rippleAlpha = Math.max(0.0, 0.4 * (1.0 - ripplePhase / (2 * Math.PI)))
+        gc.setStroke(Color.color(0.4, 0.8, 1.0, rippleAlpha))
+        gc.setLineWidth(1.5)
+        gc.strokeOval(tipX - rippleSize, tipY - rippleSize * 0.5, rippleSize * 2, rippleSize)
       }
     }
   }
@@ -1513,43 +2067,91 @@ class GameCanvas(client: GameClient) extends Canvas() {
       val phase = (animationTick + projectile.id * 43) * 0.3
       val pulse = 0.85 + 0.15 * Math.sin(phase)
 
-      // Outer glow — aqua
-      gc.setStroke(Color.color(0.0, 0.7, 0.7, 0.10 * pulse))
-      gc.setLineWidth(36 * pulse)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Mid glow — teal
-      gc.setStroke(Color.color(0.1, 0.8, 0.8, 0.20 * pulse))
-      gc.setLineWidth(22 * pulse)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Bright beam — light aqua
-      gc.setStroke(Color.color(0.3, 0.9, 0.9, 0.5 * pulse))
-      gc.setLineWidth(10 * pulse)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Core — white foam
-      gc.setStroke(Color.color(0.85, 1.0, 1.0, 0.85 * pulse))
-      gc.setLineWidth(3.5)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Wave crest shapes along beam
       val dx = tipX - tailX
       val dy = tipY - tailY
       val len = Math.sqrt(dx * dx + dy * dy)
-      if (len > 1) {
-        val nx = dx / len
-        val ny = dy / len
-        for (i <- 0 until 3) {
-          val t = 0.25 + 0.25 * i
-          val cx = tailX + dx * t
-          val cy = tailY + dy * t
-          val waveSize = 6.0 + 3.0 * Math.sin(phase + i * 2.1)
-          gc.setStroke(Color.color(0.6, 1.0, 1.0, 0.4 * pulse))
-          gc.setLineWidth(1.5)
-          gc.strokeArc(cx - waveSize, cy - waveSize, waveSize * 2, waveSize * 2,
-            0, 180, javafx.scene.shape.ArcType.OPEN)
-        }
+      if (len < 1) return
+      val nx = dx / len
+      val ny = dy / len
+
+      // Wide churning water aura
+      gc.setStroke(Color.color(0.0, 0.5, 0.6, 0.07 * pulse))
+      gc.setLineWidth(48 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Outer glow — deep teal
+      gc.setStroke(Color.color(0.0, 0.65, 0.7, 0.12 * pulse))
+      gc.setLineWidth(32 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Main water body — using wavy segments for rolling look
+      val segments = 12
+      val wavePoints = (0 to segments).map { seg =>
+        val t = seg.toDouble / segments
+        val roll = Math.sin(phase * 2.5 + t * Math.PI * 3) * 5.0 * (0.5 + t * 0.5)
+        (tailX + dx * t + (-ny) * roll, tailY + dy * t + nx * roll)
+      }
+
+      gc.setStroke(Color.color(0.1, 0.75, 0.8, 0.45 * pulse))
+      gc.setLineWidth(16 * pulse)
+      for (i <- 0 until wavePoints.length - 1) {
+        gc.strokeLine(wavePoints(i)._1, wavePoints(i)._2, wavePoints(i + 1)._1, wavePoints(i + 1)._2)
+      }
+
+      // Brighter inner flow
+      gc.setStroke(Color.color(0.3, 0.9, 0.9, 0.6 * pulse))
+      gc.setLineWidth(8 * pulse)
+      for (i <- 0 until wavePoints.length - 1) {
+        gc.strokeLine(wavePoints(i)._1, wavePoints(i)._2, wavePoints(i + 1)._1, wavePoints(i + 1)._2)
+      }
+
+      // White foam core
+      gc.setStroke(Color.color(0.85, 1.0, 1.0, 0.8 * pulse))
+      gc.setLineWidth(3.0)
+      for (i <- 0 until wavePoints.length - 1) {
+        gc.strokeLine(wavePoints(i)._1, wavePoints(i)._2, wavePoints(i + 1)._1, wavePoints(i + 1)._2)
+      }
+
+      // Curling wave crests along beam — more dramatic arcs
+      for (i <- 0 until 4) {
+        val t = 0.2 + 0.2 * i
+        val cx = tailX + dx * t
+        val cy = tailY + dy * t
+        val waveSize = 8.0 + 4.0 * Math.sin(phase + i * 1.8)
+        // Wave curl direction — perpendicular, arcing forward
+        val curlAngle = Math.atan2(dy, dx) * 180 / Math.PI
+        gc.setStroke(Color.color(0.5, 1.0, 1.0, 0.5 * pulse))
+        gc.setLineWidth(2.0)
+        gc.strokeArc(cx - waveSize, cy - waveSize, waveSize * 2, waveSize * 2,
+          curlAngle, 160, javafx.scene.shape.ArcType.OPEN)
+        // Foam highlight on crest
+        gc.setStroke(Color.color(0.9, 1.0, 1.0, 0.4 * pulse))
+        gc.setLineWidth(1.0)
+        gc.strokeArc(cx - waveSize * 0.8, cy - waveSize * 0.8, waveSize * 1.6, waveSize * 1.6,
+          curlAngle + 20, 100, javafx.scene.shape.ArcType.OPEN)
+      }
+
+      // Spray droplets arcing upward from the wave front
+      for (spray <- 0 until 6) {
+        val sprayT = ((animationTick * 0.07 + spray * 0.17 + projectile.id * 0.11) % 1.0)
+        val sprayAngle = phase + spray * 1.1
+        val sprayDist = sprayT * 14.0
+        val sx = tipX + (-ny) * Math.sin(sprayAngle) * sprayDist
+        val sy = tipY + nx * Math.sin(sprayAngle) * sprayDist - sprayT * sprayT * 12.0
+        val sprayAlpha = Math.max(0.0, 0.5 * (1.0 - sprayT))
+        val spraySize = 2.0 * (1.0 - sprayT * 0.5)
+        gc.setFill(Color.color(0.7, 1.0, 1.0, sprayAlpha))
+        gc.fillOval(sx - spraySize, sy - spraySize, spraySize * 2, spraySize * 2)
+      }
+
+      // White foam particles at the front
+      for (f <- 0 until 4) {
+        val foamPhase = phase + f * 1.5
+        val foamX = tipX + (-ny) * Math.sin(foamPhase) * 6.0
+        val foamY = tipY + nx * Math.sin(foamPhase) * 6.0
+        val foamAlpha = 0.4 + 0.3 * Math.sin(foamPhase * 2)
+        gc.setFill(Color.color(0.95, 1.0, 1.0, foamAlpha * pulse))
+        gc.fillOval(foamX - 2, foamY - 2, 4, 4)
       }
     }
   }
@@ -1575,47 +2177,96 @@ class GameCanvas(client: GameClient) extends Canvas() {
       val pulse = 0.8 + 0.2 * Math.sin(phase)
       val fastFlicker = 0.85 + 0.15 * Math.sin(phase * 4.0)
 
-      // Outer glow — bright cyan
-      gc.setStroke(Color.color(0.0, 0.9, 1.0, 0.10 * pulse))
-      gc.setLineWidth(50 * pulse)
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len < 1) return
+      val nx = dx / len
+      val ny = dy / len
+
+      // Massive pressure aura
+      gc.setStroke(Color.color(0.0, 0.8, 1.0, 0.08 * pulse))
+      gc.setLineWidth(60 * pulse)
       gc.strokeLine(tailX, tailY, tipX, tipY)
 
-      // Mid glow
-      gc.setStroke(Color.color(0.1, 0.85, 1.0, 0.22 * pulse))
-      gc.setLineWidth(30 * pulse)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
+      // Erupting column — wider than normal, tapers at ends
+      val segments = 10
+      for (seg <- 0 until segments) {
+        val t = seg.toDouble / segments
+        val t2 = (seg + 1).toDouble / segments
+        val width = 20.0 * Math.sin(t * Math.PI) * pulse // wide in middle, narrow at ends
+        val width2 = 20.0 * Math.sin(t2 * Math.PI) * pulse
+        val x1 = tailX + dx * t
+        val y1 = tailY + dy * t
+        val x2 = tailX + dx * t2
+        val y2 = tailY + dy * t2
 
-      // Bright column
-      gc.setStroke(Color.color(0.3, 0.95, 1.0, 0.6 * fastFlicker))
-      gc.setLineWidth(16 * fastFlicker)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Core — white hot
-      gc.setStroke(Color.color(0.9, 1.0, 1.0, 0.95 * fastFlicker))
-      gc.setLineWidth(6.0)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Pulsing rings around the projectile center
-      val centerX = (tailX + tipX) / 2
-      val centerY = (tailY + tipY) / 2
-      for (i <- 0 until 3) {
-        val ringPhase = phase + i * 2.0
-        val ringSize = 10.0 + 8.0 * Math.sin(ringPhase)
-        val ringAlpha = Math.max(0.0, 0.4 * (1.0 - Math.abs(Math.sin(ringPhase * 0.5))))
-        gc.setStroke(Color.color(0.2, 0.9, 1.0, ringAlpha))
-        gc.setLineWidth(2.0)
-        gc.strokeOval(centerX - ringSize, centerY - ringSize, ringSize * 2, ringSize * 2)
+        // Turbulent water column
+        val turb = Math.sin(phase * 3.0 + t * Math.PI * 4) * 3.0
+        gc.setStroke(Color.color(0.1, 0.85, 1.0, 0.3 * fastFlicker))
+        gc.setLineWidth(width * fastFlicker)
+        gc.strokeLine(x1 + (-ny) * turb, y1 + nx * turb, x2 + (-ny) * turb, y2 + nx * turb)
       }
 
-      // Steam particles rising upward
-      for (i <- 0 until 5) {
-        val t = ((animationTick * 0.06 + i.toDouble / 5 + projectile.id * 0.17) % 1.0)
-        val px = centerX + Math.sin(phase + i * 1.3) * 8.0
-        val py = centerY - t * 20.0 // rising
-        val pAlpha = Math.max(0.0, Math.min(1.0, 0.5 * (1.0 - t)))
-        val pSize = 2.0 + t * 3.0
-        gc.setFill(Color.color(0.7, 0.95, 1.0, pAlpha))
+      // Bright pressurized core
+      gc.setStroke(Color.color(0.5, 0.97, 1.0, 0.7 * fastFlicker))
+      gc.setLineWidth(8.0)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // White-hot center
+      gc.setStroke(Color.color(0.92, 1.0, 1.0, 0.95 * fastFlicker))
+      gc.setLineWidth(4.0)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Pressure distortion rings expanding outward from center
+      val centerX = (tailX + tipX) / 2
+      val centerY = (tailY + tipY) / 2
+      for (i <- 0 until 4) {
+        val ringT = ((animationTick * 0.04 + i * 0.25) % 1.0)
+        val ringSize = 6.0 + ringT * 20.0
+        val ringAlpha = Math.max(0.0, 0.5 * (1.0 - ringT))
+        gc.setStroke(Color.color(0.2, 0.9, 1.0, ringAlpha))
+        gc.setLineWidth(2.0 * (1.0 - ringT * 0.5))
+        gc.strokeOval(centerX - ringSize, centerY - ringSize * 0.5, ringSize * 2, ringSize)
+      }
+
+      // Rising bubbles along the column
+      for (i <- 0 until 8) {
+        val bubT = ((animationTick * 0.05 + i.toDouble / 8 + projectile.id * 0.11) % 1.0)
+        val bx = tailX + dx * bubT + (-ny) * Math.sin(phase * 2 + i * 1.7) * (8.0 + bubT * 5.0)
+        val by = tailY + dy * bubT + nx * Math.sin(phase * 2 + i * 1.7) * (8.0 + bubT * 5.0)
+        val bAlpha = Math.max(0.0, Math.min(1.0, 0.5 * (1.0 - Math.abs(bubT - 0.5) * 2.0)))
+        val bSize = 2.0 + Math.sin(phase + i) * 1.5
+        gc.setStroke(Color.color(0.6, 0.95, 1.0, bAlpha))
+        gc.setLineWidth(1.0)
+        gc.strokeOval(bx - bSize, by - bSize, bSize * 2, bSize * 2)
+        // Highlight
+        gc.setFill(Color.color(0.95, 1.0, 1.0, bAlpha * 0.4))
+        gc.fillOval(bx - bSize * 0.3, by - bSize * 0.5, bSize * 0.5, bSize * 0.4)
+      }
+
+      // Steam cloud puffs rising upward
+      for (i <- 0 until 6) {
+        val t = ((animationTick * 0.04 + i.toDouble / 6 + projectile.id * 0.17) % 1.0)
+        val px = centerX + Math.sin(phase + i * 1.3) * 10.0
+        val py = centerY - t * 25.0
+        val pAlpha = Math.max(0.0, Math.min(1.0, 0.35 * (1.0 - t)))
+        val pSize = 3.0 + t * 5.0
+        gc.setFill(Color.color(0.75, 0.95, 1.0, pAlpha))
         gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+        // Second layer for fluffy look
+        gc.setFill(Color.color(0.9, 1.0, 1.0, pAlpha * 0.5))
+        gc.fillOval(px - pSize * 0.5, py - pSize * 0.6, pSize, pSize * 0.8)
+      }
+
+      // Splash crown at tip — water droplets erupting outward
+      for (crown <- 0 until 5) {
+        val cAngle = phase + crown * (Math.PI * 2 / 5)
+        val cDist = 8.0 + 4.0 * Math.sin(phase * 2 + crown)
+        val cx = tipX + Math.cos(cAngle) * cDist
+        val cy = tipY + Math.sin(cAngle) * cDist * 0.5 - 4.0
+        gc.setFill(Color.color(0.5, 0.95, 1.0, 0.6 * pulse))
+        gc.fillOval(cx - 2.5, cy - 2.5, 5, 5)
       }
     }
   }
@@ -1640,55 +2291,102 @@ class GameCanvas(client: GameClient) extends Canvas() {
       val phase = (animationTick + projectile.id * 29) * 0.35
       val pulse = 0.85 + 0.15 * Math.sin(phase)
 
-      // Fire trail behind rocket
       val dx = tipX - tailX
       val dy = tipY - tailY
       val len = Math.sqrt(dx * dx + dy * dy)
-      if (len > 1) {
-        val nx = dx / len
-        val ny = dy / len
-        // Smoke trail
-        for (i <- 0 until 5) {
-          val t = ((animationTick * 0.08 + i * 0.2 + projectile.id * 0.07) % 1.0)
-          val smokeX = tailX - dx * t * 0.5 + (-ny) * Math.sin(phase + i * 1.7) * 3.0
-          val smokeY = tailY - dy * t * 0.5 + nx * Math.sin(phase + i * 1.7) * 3.0
-          val pAlpha = Math.max(0.0, 0.3 * (1.0 - t))
-          val pSize = 3.0 + t * 4.0
-          gc.setFill(Color.color(0.5, 0.5, 0.5, pAlpha))
-          gc.fillOval(smokeX - pSize, smokeY - pSize, pSize * 2, pSize * 2)
-        }
+      if (len < 1) return
+      val nx = dx / len
+      val ny = dy / len
+      val perpX = -ny
+      val perpY = nx
 
-        // Fire particles
-        for (i <- 0 until 4) {
-          val t = ((animationTick * 0.1 + i * 0.25 + projectile.id * 0.13) % 1.0)
-          val fireX = tailX - dx * t * 0.3
-          val fireY = tailY - dy * t * 0.3
-          val pAlpha = Math.max(0.0, 0.7 * (1.0 - t))
-          val pSize = 2.5 * (1.0 - t)
-          gc.setFill(Color.color(1.0, 0.5 + 0.3 * (1.0 - t), 0.1, pAlpha))
-          gc.fillOval(fireX - pSize, fireY - pSize, pSize * 2, pSize * 2)
+      // === Exhaust plume behind the rocket ===
+      // Wide expanding fire cone from tail
+      for (layer <- 0 until 3) {
+        val coneSegments = 6
+        for (seg <- 0 until coneSegments) {
+          val t = ((animationTick * 0.1 + seg.toDouble / coneSegments + layer * 0.1 + projectile.id * 0.07) % 1.0)
+          val coneWidth = (3.0 + t * 12.0 + layer * 2.0)
+          val flameX = tailX - dx * t * 0.6 + perpX * Math.sin(phase * 3 + seg * 1.5 + layer) * coneWidth * 0.3
+          val flameY = tailY - dy * t * 0.6 + perpY * Math.sin(phase * 3 + seg * 1.5 + layer) * coneWidth * 0.3
+          val flameAlpha = Math.max(0.0, (0.6 - layer * 0.15) * (1.0 - t))
+          val flameSize = (2.0 + t * 3.0) * (1.0 - layer * 0.2)
+
+          // Color gradient: white-hot (inner) -> yellow -> orange -> red (outer)
+          val flameR = 1.0
+          val flameG = Math.max(0.0, Math.min(1.0, 0.9 - t * 0.5 - layer * 0.15))
+          val flameB = Math.max(0.0, Math.min(1.0, 0.4 - t * 0.3 - layer * 0.1))
+          gc.setFill(Color.color(flameR, flameG, flameB, flameAlpha))
+          gc.fillOval(flameX - flameSize, flameY - flameSize, flameSize * 2, flameSize * 2)
         }
       }
 
-      // Rocket body — red/orange
-      gc.setStroke(Color.color(0.8, 0.2, 0.1, 0.15 * pulse))
-      gc.setLineWidth(24 * pulse)
+      // Thick smoke trail — larger puffs expanding and rising
+      for (i <- 0 until 7) {
+        val t = ((animationTick * 0.05 + i * 0.14 + projectile.id * 0.09) % 1.0)
+        val smokeX = tailX - dx * t * 0.7 + perpX * Math.sin(phase * 0.8 + i * 1.3) * (3.0 + t * 5.0)
+        val smokeY = tailY - dy * t * 0.7 + perpY * Math.sin(phase * 0.8 + i * 1.3) * (3.0 + t * 5.0) - t * 6.0
+        val smokeAlpha = Math.max(0.0, 0.25 * (1.0 - t))
+        val smokeSize = 3.0 + t * 6.0
+        val smokeGray = 0.45 + t * 0.15
+        gc.setFill(Color.color(smokeGray, smokeGray, smokeGray, smokeAlpha))
+        gc.fillOval(smokeX - smokeSize, smokeY - smokeSize, smokeSize * 2, smokeSize * 2)
+      }
+
+      // === Rocket body — olive/dark green military tube ===
+      // Body glow
+      gc.setStroke(Color.color(0.7, 0.3, 0.1, 0.1 * pulse))
+      gc.setLineWidth(20 * pulse)
       gc.strokeLine(tailX, tailY, tipX, tipY)
 
-      gc.setStroke(Color.color(0.9, 0.3, 0.1, 0.4 * pulse))
-      gc.setLineWidth(12 * pulse)
+      // Dark olive body
+      gc.setStroke(Color.color(0.3, 0.35, 0.2, 0.75 * pulse))
+      gc.setLineWidth(8 * pulse)
       gc.strokeLine(tailX, tailY, tipX, tipY)
 
-      gc.setStroke(Color.color(1.0, 0.6, 0.2, 0.8 * pulse))
-      gc.setLineWidth(5.0)
+      // Body highlight
+      gc.setStroke(Color.color(0.45, 0.5, 0.3, 0.5 * pulse))
+      gc.setLineWidth(3.0)
       gc.strokeLine(tailX, tailY, tipX, tipY)
 
-      // Bright tip
-      val orbR = 6.0 * pulse
-      gc.setFill(Color.color(1.0, 0.4, 0.1, 0.3 * pulse))
-      gc.fillOval(tipX - orbR * 2, tipY - orbR * 2, orbR * 4, orbR * 4)
-      gc.setFill(Color.color(1.0, 0.7, 0.2, 0.7 * pulse))
-      gc.fillOval(tipX - orbR, tipY - orbR, orbR * 2, orbR * 2)
+      // Stripe detail — red warning band
+      val midT = 0.45
+      val bandX = tailX + dx * midT
+      val bandY = tailY + dy * midT
+      gc.setStroke(Color.color(0.9, 0.2, 0.1, 0.7 * pulse))
+      gc.setLineWidth(9.0)
+      gc.strokeLine(bandX - dx * 0.03, bandY - dy * 0.03, bandX + dx * 0.03, bandY + dy * 0.03)
+
+      // Fins at the tail — 2 small triangles
+      val finLen = 10.0
+      val finWidth = 6.0
+      gc.setFill(Color.color(0.35, 0.4, 0.25, 0.7 * pulse))
+      // Top fin
+      val fin1x = Array(tailX, tailX - nx * finLen * 0.3 + perpX * finWidth, tailX - nx * finLen)
+      val fin1y = Array(tailY, tailY - ny * finLen * 0.3 + perpY * finWidth, tailY - ny * finLen)
+      gc.fillPolygon(fin1x, fin1y, 3)
+      // Bottom fin
+      val fin2x = Array(tailX, tailX - nx * finLen * 0.3 - perpX * finWidth, tailX - nx * finLen)
+      val fin2y = Array(tailY, tailY - ny * finLen * 0.3 - perpY * finWidth, tailY - ny * finLen)
+      gc.fillPolygon(fin2x, fin2y, 3)
+
+      // Nosecone — pointed triangle at tip
+      val noseLen = 12.0
+      val noseWidth = 5.0
+      val noseTipX = tipX + nx * noseLen
+      val noseTipY = tipY + ny * noseLen
+      val noseX = Array(noseTipX, tipX + perpX * noseWidth, tipX - perpX * noseWidth)
+      val noseY = Array(noseTipY, tipY + perpY * noseWidth, tipY - perpY * noseWidth)
+      gc.setFill(Color.color(0.6, 0.6, 0.55, 0.8 * pulse))
+      gc.fillPolygon(noseX, noseY, 3)
+      gc.setStroke(Color.color(0.7, 0.7, 0.65, 0.5 * pulse))
+      gc.setLineWidth(1.0)
+      gc.strokePolygon(noseX, noseY, 3)
+
+      // Danger glow at tip
+      val orbR = 5.0 * pulse
+      gc.setFill(Color.color(1.0, 0.4, 0.1, 0.2 * pulse))
+      gc.fillOval(noseTipX - orbR * 1.5, noseTipY - orbR * 1.5, orbR * 3, orbR * 3)
     }
   }
 
@@ -1724,53 +2422,92 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val blastRadius = if (projectileType == ProjectileType.GRENADE) 3.0 else 2.5
     val maxScreenRadius = blastRadius * HW * 1.5
 
-    // Phase 1: Bright white flash (0-20%)
-    if (progress < 0.2) {
-      val flashPct = progress / 0.2
-      val flashR = maxScreenRadius * 0.6 * flashPct
-      val flashAlpha = 0.7 * (1.0 - flashPct)
-      gc.setFill(Color.color(1.0, 1.0, 0.9, flashAlpha))
+    // Phase 1: Intense white-hot flash (0-15%)
+    if (progress < 0.15) {
+      val flashPct = progress / 0.15
+      val flashR = maxScreenRadius * 0.7 * flashPct
+      val flashAlpha = 0.8 * (1.0 - flashPct)
+      gc.setFill(Color.color(1.0, 1.0, 0.95, flashAlpha))
       gc.fillOval(screenX - flashR, screenY - flashR * 0.5, flashR * 2, flashR)
+      // Inner white core
+      gc.setFill(Color.color(1.0, 1.0, 1.0, flashAlpha * 0.6))
+      gc.fillOval(screenX - flashR * 0.4, screenY - flashR * 0.2, flashR * 0.8, flashR * 0.4)
     }
 
-    // Phase 2: Expanding fireball
+    // Phase 2: Expanding fireball — layered with color gradient
     val fireR = maxScreenRadius * Math.min(1.0, progress * 2.0)
 
-    // Outer glow — orange
-    gc.setFill(Color.color(1.0, 0.5, 0.1, 0.15 * fadeOut))
+    // Outer heat distortion glow
+    gc.setFill(Color.color(1.0, 0.4, 0.05, 0.08 * fadeOut))
+    gc.fillOval(screenX - fireR * 1.6, screenY - fireR * 0.8, fireR * 3.2, fireR * 1.6)
+
+    // Outer fireball — dark red/orange
+    gc.setFill(Color.color(0.9, 0.3, 0.05, 0.2 * fadeOut))
     gc.fillOval(screenX - fireR * 1.3, screenY - fireR * 0.65, fireR * 2.6, fireR * 1.3)
 
-    // Main fireball — orange/red
-    gc.setFill(Color.color(1.0, 0.4, 0.05, 0.35 * fadeOut))
+    // Main fireball — orange
+    gc.setFill(Color.color(1.0, 0.5, 0.1, 0.35 * fadeOut))
     gc.fillOval(screenX - fireR, screenY - fireR * 0.5, fireR * 2, fireR)
 
-    // Hot core — yellow
-    val coreR = fireR * 0.5 * fadeOut
-    gc.setFill(Color.color(1.0, 0.8, 0.2, 0.5 * fadeOut))
+    // Inner fireball — bright yellow
+    val innerR = fireR * 0.65 * fadeOut
+    gc.setFill(Color.color(1.0, 0.75, 0.15, 0.45 * fadeOut))
+    gc.fillOval(screenX - innerR, screenY - innerR * 0.5, innerR * 2, innerR)
+
+    // White-hot core
+    val coreR = fireR * 0.35 * fadeOut
+    gc.setFill(Color.color(1.0, 0.9, 0.5, 0.55 * fadeOut))
     gc.fillOval(screenX - coreR, screenY - coreR * 0.5, coreR * 2, coreR)
 
-    // Shockwave ring
-    val ringR = maxScreenRadius * progress * 1.2
-    gc.setStroke(Color.color(1.0, 0.6, 0.2, 0.4 * fadeOut))
-    gc.setLineWidth(2.5 * fadeOut)
+    // Double shockwave rings
+    val ringR = maxScreenRadius * progress * 1.3
+    gc.setStroke(Color.color(1.0, 0.6, 0.2, 0.45 * fadeOut))
+    gc.setLineWidth(3.0 * fadeOut)
     gc.strokeOval(screenX - ringR, screenY - ringR * 0.5, ringR * 2, ringR)
 
-    // Debris particles
-    val particleCount = 8
+    if (progress > 0.1) {
+      val ring2R = maxScreenRadius * (progress - 0.1) / 0.9 * 1.1
+      gc.setStroke(Color.color(1.0, 0.5, 0.15, 0.25 * fadeOut))
+      gc.setLineWidth(2.0 * fadeOut)
+      gc.strokeOval(screenX - ring2R, screenY - ring2R * 0.5, ring2R * 2, ring2R)
+    }
+
+    // Fire particles — embers and burning fragments
+    val particleCount = 12
     for (i <- 0 until particleCount) {
       val angle = i * (2 * Math.PI / particleCount) + i * 0.5
-      val dist = progress * maxScreenRadius * (0.7 + (i % 3) * 0.2)
-      val rise = progress * progress * 15.0
+      val speed = 0.6 + (i % 4) * 0.15
+      val dist = progress * maxScreenRadius * speed
+      val rise = progress * progress * 18.0 * (0.7 + (i % 3) * 0.2)
       val px = screenX + dist * Math.cos(angle)
       val py = screenY + dist * Math.sin(angle) * 0.5 - rise
-      val pSize = (3.0 + (i % 3)) * fadeOut
+      val pSize = (2.5 + (i % 3) * 1.2) * fadeOut
 
-      if (i % 2 == 0) {
-        gc.setFill(Color.color(1.0, 0.7, 0.2, 0.6 * fadeOut))
+      if (i % 3 == 0) {
+        // Hot ember — bright yellow/white
+        gc.setFill(Color.color(1.0, 0.9, 0.4, 0.7 * fadeOut))
+      } else if (i % 3 == 1) {
+        // Fire fragment — orange
+        gc.setFill(Color.color(1.0, 0.55, 0.1, 0.6 * fadeOut))
       } else {
-        gc.setFill(Color.color(0.5, 0.5, 0.5, 0.4 * fadeOut))
+        // Smoke/debris — dark gray
+        gc.setFill(Color.color(0.4, 0.4, 0.38, 0.4 * fadeOut))
       }
       gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+    }
+
+    // Rising smoke puffs (late phase)
+    if (progress > 0.3) {
+      val smokeProgress = (progress - 0.3) / 0.7
+      for (s <- 0 until 4) {
+        val smokeT = smokeProgress * (0.7 + s * 0.1)
+        val smokeX = screenX + Math.sin(s * 2.3) * maxScreenRadius * 0.3
+        val smokeY = screenY - smokeT * 25.0
+        val smokeAlpha = Math.max(0.0, 0.2 * (1.0 - smokeT))
+        val smokeSize = 4.0 + smokeT * 8.0
+        gc.setFill(Color.color(0.45, 0.45, 0.42, smokeAlpha))
+        gc.fillOval(smokeX - smokeSize, smokeY - smokeSize * 0.5, smokeSize * 2, smokeSize)
+      }
     }
   }
 
@@ -2013,52 +2750,146 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val displaySz = Constants.PLAYER_DISPLAY_SIZE_PX
     val radius = displaySz * 0.55
 
-    // Ghostly teal aura — drawn at full alpha before the sprite's reduced alpha
     val pulse = 0.8 + 0.2 * Math.sin(phase * 1.5)
-    gc.setFill(Color.color(0.1, 0.8, 0.6, 0.08 * pulse))
-    gc.fillOval(centerX - radius * 1.4, centerY - radius * 0.7, radius * 2.8, radius * 1.4)
 
-    gc.setStroke(Color.color(0.2, 0.9, 0.7, 0.35 * pulse))
+    // Dimensional rift aura — wide flickering field
+    gc.setFill(Color.color(0.05, 0.6, 0.45, 0.06 * pulse))
+    gc.fillOval(centerX - radius * 1.8, centerY - radius * 0.9, radius * 3.6, radius * 1.8)
+
+    // Ghostly teal aura
+    gc.setFill(Color.color(0.1, 0.8, 0.6, 0.1 * pulse))
+    gc.fillOval(centerX - radius * 1.3, centerY - radius * 0.65, radius * 2.6, radius * 1.3)
+
+    // Flickering outline — double ring that pulses
+    val wobble = 0.03 * Math.sin(phase * 3.0)
+    gc.setStroke(Color.color(0.2, 0.9, 0.7, 0.4 * pulse))
     gc.setLineWidth(1.5)
-    gc.strokeOval(centerX - radius, centerY - radius * 0.5, radius * 2, radius)
+    gc.strokeOval(centerX - radius * (1.0 + wobble), centerY - radius * 0.5 * (1.0 - wobble),
+      radius * 2 * (1.0 + wobble), radius * (1.0 - wobble))
+    gc.setStroke(Color.color(0.3, 1.0, 0.8, 0.2 * pulse))
+    gc.setLineWidth(1.0)
+    gc.strokeOval(centerX - radius * (1.05 - wobble), centerY - radius * 0.52 * (1.0 + wobble),
+      radius * 2 * (1.05 - wobble), radius * (1.04 + wobble))
 
-    // Floating wisp particles
-    for (i <- 0 until 5) {
-      val angle = phase * 0.6 + i * (2 * Math.PI / 5)
-      val dist = radius * (0.7 + 0.2 * Math.sin(phase + i))
+    // Dimensional rift particles — small vertical tears in space
+    for (i <- 0 until 4) {
+      val riftPhase = (phase * 0.7 + i * 1.6) % (Math.PI * 2)
+      val riftAlpha = Math.max(0.0, Math.sin(riftPhase) * 0.5)
+      if (riftAlpha > 0.05) {
+        val riftAngle = phase * 0.4 + i * (Math.PI / 2)
+        val riftDist = radius * (0.6 + 0.3 * Math.sin(phase + i))
+        val rx = centerX + riftDist * Math.cos(riftAngle)
+        val ry = centerY + riftDist * Math.sin(riftAngle) * 0.5
+        val riftLen = 6.0 + Math.sin(phase * 2 + i) * 3.0
+        // Vertical tear
+        gc.setStroke(Color.color(0.3, 1.0, 0.8, riftAlpha))
+        gc.setLineWidth(2.0)
+        gc.strokeLine(rx, ry - riftLen, rx, ry + riftLen)
+        // Glow around tear
+        gc.setFill(Color.color(0.2, 0.9, 0.7, riftAlpha * 0.3))
+        gc.fillOval(rx - 3, ry - riftLen - 1, 6, riftLen * 2 + 2)
+      }
+    }
+
+    // Floating spectral wisps — more particles with trailing motion
+    for (i <- 0 until 7) {
+      val angle = phase * 0.5 + i * (2 * Math.PI / 7)
+      val dist = radius * (0.6 + 0.3 * Math.sin(phase * 0.8 + i))
       val sx = centerX + dist * Math.cos(angle)
       val sy = centerY + dist * Math.sin(angle) * 0.5
-      val sparkleAlpha = 0.3 + 0.3 * Math.sin(phase * 2.5 + i * 1.5)
-      val sparkleSize = 2.0 + Math.sin(phase * 2 + i) * 1.0
+      val sparkleAlpha = Math.max(0.0, 0.25 + 0.35 * Math.sin(phase * 2.5 + i * 1.3))
+      val sparkleSize = 1.5 + Math.sin(phase * 2 + i) * 1.0
       gc.setFill(Color.color(0.4, 1.0, 0.8, sparkleAlpha))
       gc.fillOval(sx - sparkleSize, sy - sparkleSize, sparkleSize * 2, sparkleSize * 2)
+      // Trail behind each wisp
+      val trailX = sx - Math.cos(angle) * 4
+      val trailY = sy - Math.sin(angle) * 2
+      gc.setFill(Color.color(0.3, 0.8, 0.6, Math.max(0.0, sparkleAlpha * 0.4)))
+      gc.fillOval(trailX - sparkleSize * 0.7, trailY - sparkleSize * 0.7, sparkleSize * 1.4, sparkleSize * 1.4)
     }
   }
 
   private def drawFrozenEffect(centerX: Double, centerY: Double): Unit = {
     val phase = animationTick * 0.1
     val displaySz = Constants.PLAYER_DISPLAY_SIZE_PX
-
-    // Icy blue overlay
     val radius = displaySz * 0.5
-    gc.setFill(Color.color(0.4, 0.7, 1.0, 0.2 + 0.05 * Math.sin(phase * 2)))
+
+    // Frost creep animation — overlay slowly expands
+    val frozenPulse = 0.9 + 0.1 * Math.sin(phase * 1.5)
+
+    // Icy blue overlay with frosted center
+    gc.setFill(Color.color(0.35, 0.65, 1.0, 0.22 * frozenPulse))
     gc.fillOval(centerX - radius, centerY - radius, radius * 2, radius * 2)
+    gc.setFill(Color.color(0.5, 0.8, 1.0, 0.12 * frozenPulse))
+    gc.fillOval(centerX - radius * 1.2, centerY - radius * 0.6, radius * 2.4, radius * 1.2)
 
-    // Ice crystal border
-    gc.setStroke(Color.color(0.5, 0.85, 1.0, 0.6))
+    // Jagged ice crystal border — hexagonal frost pattern
+    gc.setStroke(Color.color(0.5, 0.85, 1.0, 0.65))
     gc.setLineWidth(2.0)
-    gc.strokeOval(centerX - radius, centerY - radius, radius * 2, radius * 2)
+    val hexPoints = 6
+    val hx = new Array[Double](hexPoints)
+    val hy = new Array[Double](hexPoints)
+    for (i <- 0 until hexPoints) {
+      val angle = i * (Math.PI * 2 / hexPoints) + phase * 0.2
+      val jagged = radius * (0.95 + 0.08 * Math.sin(phase * 2 + i * 1.5))
+      hx(i) = centerX + jagged * Math.cos(angle)
+      hy(i) = centerY + jagged * Math.sin(angle) * 0.6
+    }
+    gc.strokePolygon(hx, hy, hexPoints)
 
-    // Crystal sparkles
+    // Inner hex for layered frost look
+    gc.setStroke(Color.color(0.6, 0.9, 1.0, 0.35))
+    gc.setLineWidth(1.0)
+    val ihx = hx.map(x => centerX + (x - centerX) * 0.65)
+    val ihy = hy.map(y => centerY + (y - centerY) * 0.65)
+    gc.strokePolygon(ihx, ihy, hexPoints)
+
+    // Ice crystal arms — 6 frost branches radiating outward
+    gc.setStroke(Color.color(0.7, 0.92, 1.0, 0.5 * frozenPulse))
+    gc.setLineWidth(1.5)
     for (i <- 0 until 6) {
-      val angle = phase * 0.5 + i * (Math.PI / 3)
-      val dist = radius * 0.7
+      val angle = i * (Math.PI / 3) + phase * 0.15
+      val armLen = radius * 0.85
+      val sx = centerX
+      val sy = centerY
+      val ex = centerX + armLen * Math.cos(angle)
+      val ey = centerY + armLen * Math.sin(angle) * 0.6
+      gc.strokeLine(sx, sy, ex, ey)
+      // Side branches
+      val branchT = 0.5
+      val bx = sx + (ex - sx) * branchT
+      val by = sy + (ey - sy) * branchT
+      val branchLen = armLen * 0.35
+      gc.setStroke(Color.color(0.75, 0.93, 1.0, 0.4 * frozenPulse))
+      gc.setLineWidth(1.0)
+      gc.strokeLine(bx, by, bx + branchLen * Math.cos(angle + 0.8), by + branchLen * Math.sin(angle + 0.8) * 0.6)
+      gc.strokeLine(bx, by, bx + branchLen * Math.cos(angle - 0.8), by + branchLen * Math.sin(angle - 0.8) * 0.6)
+    }
+
+    // Diamond-shaped crystal sparkles instead of circles
+    for (i <- 0 until 8) {
+      val angle = phase * 0.4 + i * (Math.PI / 4)
+      val dist = radius * (0.5 + 0.25 * Math.sin(phase + i * 0.8))
       val sx = centerX + dist * Math.cos(angle)
       val sy = centerY + dist * Math.sin(angle) * 0.5
-      val sparkleAlpha = 0.5 + 0.4 * Math.sin(phase * 3 + i * 1.3)
-      val sparkleSize = 2.0 + Math.sin(phase * 2 + i) * 1.0
-      gc.setFill(Color.color(0.8, 0.95, 1.0, sparkleAlpha))
-      gc.fillOval(sx - sparkleSize, sy - sparkleSize, sparkleSize * 2, sparkleSize * 2)
+      val sparkleAlpha = Math.max(0.0, 0.4 + 0.4 * Math.sin(phase * 3 + i * 1.3))
+      val sparkleSize = 2.5 + Math.sin(phase * 2 + i) * 1.0
+      val rot = phase * 1.5 + i
+      // Diamond shape
+      val sdx = Array(sx, sx + sparkleSize * Math.cos(rot), sx, sx - sparkleSize * Math.cos(rot))
+      val sdy = Array(sy - sparkleSize * 0.7, sy, sy + sparkleSize * 0.7, sy)
+      gc.setFill(Color.color(0.85, 0.97, 1.0, sparkleAlpha))
+      gc.fillPolygon(sdx, sdy, 4)
+    }
+
+    // Frost particles drifting slowly
+    for (i <- 0 until 4) {
+      val t = ((animationTick * 0.02 + i * 0.25) % 1.0)
+      val fx = centerX + Math.sin(phase * 0.5 + i * 2) * radius * 0.6
+      val fy = centerY - radius * 0.5 + t * radius
+      val fAlpha = Math.max(0.0, 0.3 * (1.0 - Math.abs(t - 0.5) * 2.0))
+      gc.setFill(Color.color(0.9, 0.97, 1.0, fAlpha))
+      gc.fillOval(fx - 1.5, fy - 1.5, 3, 3)
     }
   }
 
@@ -2067,33 +2898,57 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val elapsed = System.currentTimeMillis() - hitTime
     if (elapsed < 0 || elapsed > HIT_ANIMATION_MS) return
 
-    val progress = elapsed.toDouble / HIT_ANIMATION_MS // 0.0 -> 1.0
+    val progress = elapsed.toDouble / HIT_ANIMATION_MS
     val fadeOut = 1.0 - progress
 
-    // Effect 1: Red flash (fades quickly in first half)
-    val flashAlpha = Math.max(0.0, 0.4 * (1.0 - progress * 2.0))
-    if (flashAlpha > 0) {
-      gc.setFill(Color.color(1.0, 0.0, 0.0, flashAlpha))
-      val flashR = 16.0
+    // Effect 1: Bright white-red flash (intense burst at start)
+    if (progress < 0.25) {
+      val flashPct = progress / 0.25
+      val flashAlpha = 0.5 * (1.0 - flashPct)
+      // White-hot center
+      val flashR = 12.0 + flashPct * 6.0
+      gc.setFill(Color.color(1.0, 1.0, 0.9, flashAlpha * 0.6))
+      gc.fillOval(centerX - flashR * 0.6, centerY - flashR * 0.6, flashR * 1.2, flashR * 1.2)
+      // Red outer flash
+      gc.setFill(Color.color(1.0, 0.1, 0.0, flashAlpha))
       gc.fillOval(centerX - flashR, centerY - flashR, flashR * 2, flashR * 2)
     }
 
-    // Effect 2: Expanding red shockwave ring
-    val ringRadius = 8.0 + progress * 28.0
-    gc.setStroke(Color.color(1.0, 0.2, 0.1, 0.7 * fadeOut))
-    gc.setLineWidth(3.0 * fadeOut)
+    // Effect 2: Double expanding shockwave rings
+    val ringRadius = 8.0 + progress * 32.0
+    gc.setStroke(Color.color(1.0, 0.2, 0.1, 0.75 * fadeOut))
+    gc.setLineWidth(3.5 * fadeOut)
     gc.strokeOval(centerX - ringRadius, centerY - ringRadius * 0.5, ringRadius * 2, ringRadius)
 
-    // Effect 3: Red particles flying outward
-    val particleCount = 6
+    if (progress > 0.1) {
+      val ring2Progress = (progress - 0.1) / 0.9
+      val ring2R = 6.0 + ring2Progress * 24.0
+      gc.setStroke(Color.color(1.0, 0.4, 0.15, 0.5 * (1.0 - ring2Progress)))
+      gc.setLineWidth(2.0 * (1.0 - ring2Progress))
+      gc.strokeOval(centerX - ring2R, centerY - ring2R * 0.5, ring2R * 2, ring2R)
+    }
+
+    // Effect 3: Red/orange particles flying outward with sparks
+    val particleCount = 8
     for (i <- 0 until particleCount) {
-      val angle = i * (2 * Math.PI / particleCount) + progress * 0.5
-      val dist = progress * 22.0
+      val angle = i * (2 * Math.PI / particleCount) + progress * 0.5 + i * 0.2
+      val dist = progress * 26.0 * (0.8 + (i % 3) * 0.15)
+      val rise = progress * progress * 6.0
       val px = centerX + dist * Math.cos(angle)
-      val py = centerY + dist * Math.sin(angle) * 0.5 // iso squash
-      val pSize = 2.5 * fadeOut
-      gc.setFill(Color.color(1.0, 0.3, 0.1, 0.6 * fadeOut))
+      val py = centerY + dist * Math.sin(angle) * 0.5 - rise
+      val pSize = (2.5 + (i % 2)) * fadeOut
+
+      if (i % 2 == 0) {
+        gc.setFill(Color.color(1.0, 0.3, 0.05, 0.7 * fadeOut))
+      } else {
+        gc.setFill(Color.color(1.0, 0.6, 0.1, 0.6 * fadeOut))
+      }
       gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+
+      // Trailing spark
+      val trailAlpha = fadeOut * 0.3
+      gc.setFill(Color.color(1.0, 0.8, 0.3, trailAlpha))
+      gc.fillOval(px - Math.cos(angle) * 3 - 1, py - Math.sin(angle) * 1.5 - 1, 2, 2)
     }
   }
 
@@ -2123,62 +2978,87 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val elapsed = System.currentTimeMillis() - deathTime
     if (elapsed < 0 || elapsed > DEATH_ANIMATION_MS) return
 
-    val progress = elapsed.toDouble / DEATH_ANIMATION_MS // 0.0 -> 1.0
+    val progress = elapsed.toDouble / DEATH_ANIMATION_MS
     val fadeOut = 1.0 - progress
     val color = intToColor(colorRGB)
     val displaySz = Constants.PLAYER_DISPLAY_SIZE_PX
     val centerY = screenY - displaySz / 2.0
 
-    // Phase 1 (0-30%): Bright flash at death location
-    if (progress < 0.3) {
-      val flashPct = progress / 0.3
-      val flashAlpha = 0.6 * (1.0 - flashPct)
-      val flashR = 20.0 + flashPct * 15.0
-      gc.setFill(Color.color(1.0, 1.0, 1.0, flashAlpha))
+    // Phase 1 (0-20%): Intense white-hot flash
+    if (progress < 0.2) {
+      val flashPct = progress / 0.2
+      val flashAlpha = 0.7 * (1.0 - flashPct)
+      val flashR = 15.0 + flashPct * 25.0
+      gc.setFill(Color.color(1.0, 1.0, 0.95, flashAlpha))
       gc.fillOval(screenX - flashR, centerY - flashR * 0.5, flashR * 2, flashR)
+      // Colored inner flash
+      gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, flashAlpha * 0.5))
+      gc.fillOval(screenX - flashR * 0.7, centerY - flashR * 0.35, flashR * 1.4, flashR * 0.7)
     }
 
-    // Expanding shockwave rings
-    val ring1R = progress * 50.0
-    gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.5 * fadeOut))
-    gc.setLineWidth(2.5 * fadeOut)
+    // Triple expanding shockwave rings
+    val ring1R = progress * 55.0
+    gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.55 * fadeOut))
+    gc.setLineWidth(3.0 * fadeOut)
     gc.strokeOval(screenX - ring1R, centerY - ring1R * 0.5, ring1R * 2, ring1R)
 
-    if (progress > 0.15) {
-      val ring2R = (progress - 0.15) / 0.85 * 40.0
-      gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.3 * fadeOut))
-      gc.setLineWidth(1.5 * fadeOut)
+    if (progress > 0.1) {
+      val ring2R = (progress - 0.1) / 0.9 * 45.0
+      gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.35 * fadeOut))
+      gc.setLineWidth(2.0 * fadeOut)
       gc.strokeOval(screenX - ring2R, centerY - ring2R * 0.5, ring2R * 2, ring2R)
     }
 
-    // Particles scattering outward and rising
-    val particleCount = 10
+    if (progress > 0.2) {
+      val ring3R = (progress - 0.2) / 0.8 * 35.0
+      gc.setStroke(Color.color(1.0, 1.0, 1.0, 0.2 * fadeOut))
+      gc.setLineWidth(1.5 * fadeOut)
+      gc.strokeOval(screenX - ring3R, centerY - ring3R * 0.5, ring3R * 2, ring3R)
+    }
+
+    // Energy dissolution particles — more particles, varied sizes
+    val particleCount = 14
     for (i <- 0 until particleCount) {
-      val angle = i * (2 * Math.PI / particleCount) + i * 0.3
-      val dist = progress * (25.0 + (i % 3) * 10.0)
-      val rise = progress * progress * 20.0 // accelerating upward drift
+      val angle = i * (2 * Math.PI / particleCount) + i * 0.4
+      val speed = 0.7 + (i % 4) * 0.15
+      val dist = progress * (25.0 + (i % 4) * 12.0) * speed
+      val rise = progress * progress * 25.0 * (0.8 + (i % 3) * 0.15)
       val px = screenX + dist * Math.cos(angle)
       val py = centerY + dist * Math.sin(angle) * 0.5 - rise
-      val pSize = (3.0 + (i % 3)) * fadeOut
+      val pSize = (2.5 + (i % 3) * 1.5) * fadeOut
 
-      // Alternate between player color and bright white
-      if (i % 2 == 0) {
+      if (i % 3 == 0) {
+        // White-hot particles
+        gc.setFill(Color.color(1.0, 1.0, 0.9, 0.7 * fadeOut))
+      } else if (i % 3 == 1) {
+        // Bright colored particles
         val cr = Math.min(1.0, color.getRed * 0.4 + 0.6)
         val cg = Math.min(1.0, color.getGreen * 0.4 + 0.6)
         val cb = Math.min(1.0, color.getBlue * 0.4 + 0.6)
-        gc.setFill(Color.color(cr, cg, cb, 0.7 * fadeOut))
+        gc.setFill(Color.color(cr, cg, cb, 0.65 * fadeOut))
       } else {
-        gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.6 * fadeOut))
+        // Player color particles
+        gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.55 * fadeOut))
       }
       gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+
+      // Particle trail
+      if (fadeOut > 0.3) {
+        val trailAlpha = fadeOut * 0.2
+        gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, trailAlpha))
+        val tx = px - Math.cos(angle) * 5
+        val ty = py + Math.sin(angle) * 2.5 + 3
+        gc.fillOval(tx - pSize * 0.5, ty - pSize * 0.5, pSize, pSize)
+      }
     }
 
-    // Fading ghost sprite rising upward
-    val ghostAlpha = Math.max(0.0, fadeOut * 0.6)
-    val ghostRise = progress * 30.0
+    // Fading ghost sprite rising upward with slight wobble
+    val ghostAlpha = Math.max(0.0, fadeOut * 0.55)
+    val ghostRise = progress * 35.0
+    val ghostWobble = Math.sin(progress * Math.PI * 3) * 3.0 * fadeOut
     gc.setGlobalAlpha(ghostAlpha)
     val sprite = SpriteGenerator.getSprite(colorRGB, Direction.Down, 0, characterId)
-    gc.drawImage(sprite, screenX - displaySz / 2.0, screenY - displaySz.toDouble - ghostRise, displaySz, displaySz)
+    gc.drawImage(sprite, screenX - displaySz / 2.0 + ghostWobble, screenY - displaySz.toDouble - ghostRise, displaySz, displaySz)
     gc.setGlobalAlpha(1.0)
   }
 
