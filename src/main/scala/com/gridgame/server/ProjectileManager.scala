@@ -18,6 +18,8 @@ sealed trait ProjectileEvent
 case class ProjectileMoved(projectile: Projectile) extends ProjectileEvent
 case class ProjectileHit(projectile: Projectile, targetId: UUID) extends ProjectileEvent
 case class ProjectileKill(projectile: Projectile, targetId: UUID) extends ProjectileEvent
+case class ProjectileAoEHit(projectile: Projectile, targetId: UUID) extends ProjectileEvent
+case class ProjectileAoEKill(projectile: Projectile, targetId: UUID) extends ProjectileEvent
 case class ProjectileDespawned(projectile: Projectile) extends ProjectileEvent
 
 class ProjectileManager(registry: ClientRegistry) {
@@ -64,12 +66,19 @@ class ProjectileManager(registry: ClientRegistry) {
             case ProjectileType.SPEAR => Constants.SPEAR_MAX_RANGE.toDouble
             case ProjectileType.SOUL_BOLT => Constants.SOUL_BOLT_MAX_RANGE.toDouble
             case ProjectileType.HAUNT => Constants.HAUNT_MAX_RANGE.toDouble
+            case ProjectileType.SPLASH => Constants.SPLASH_MAX_RANGE.toDouble
+            case ProjectileType.TIDAL_WAVE => Constants.TIDAL_WAVE_MAX_RANGE.toDouble
+            case ProjectileType.GEYSER => Constants.GEYSER_MAX_RANGE.toDouble
             case ProjectileType.TALON => Constants.TALON_MAX_RANGE.toDouble
             case ProjectileType.GUST => Constants.GUST_MAX_RANGE.toDouble
             case _ => Constants.CHARGE_MIN_RANGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_RANGE - Constants.CHARGE_MIN_RANGE))
           }
           if (projectile.getDistanceTraveled >= maxRange) {
             toRemove += projectile.id
+            // GEYSER explodes at max range even without a direct hit
+            if (projectile.projectileType == ProjectileType.GEYSER) {
+              events ++= applyAoEDamage(projectile, Constants.GEYSER_AOE_RADIUS, Constants.GEYSER_DAMAGE, null)
+            }
             events += ProjectileDespawned(projectile)
             resolved = true
           } else if (projectile.isOutOfBounds(world)) {
@@ -101,6 +110,9 @@ class ProjectileManager(registry: ClientRegistry) {
                   (Constants.SPEAR_BASE_DAMAGE + (distanceFraction * (Constants.SPEAR_MAX_DAMAGE - Constants.SPEAR_BASE_DAMAGE))).toInt
                 case ProjectileType.SOUL_BOLT => Constants.SOUL_BOLT_DAMAGE
                 case ProjectileType.HAUNT => Constants.HAUNT_DAMAGE
+                case ProjectileType.SPLASH => Constants.SPLASH_DAMAGE
+                case ProjectileType.TIDAL_WAVE => Constants.TIDAL_WAVE_DAMAGE
+                case ProjectileType.GEYSER => Constants.GEYSER_DAMAGE
                 case ProjectileType.TALON => Constants.TALON_DAMAGE
                 case ProjectileType.GUST => Constants.GUST_DAMAGE
                 case _ => (Constants.CHARGE_MIN_DAMAGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_DAMAGE - Constants.CHARGE_MIN_DAMAGE))).toInt
@@ -115,6 +127,16 @@ class ProjectileManager(registry: ClientRegistry) {
               } else {
                 events += ProjectileHit(projectile, hitPlayer.getId)
               }
+
+              // AoE splash damage to nearby players (excluding the direct hit target)
+              projectile.projectileType match {
+                case ProjectileType.SPLASH =>
+                  events ++= applyAoEDamage(projectile, Constants.SPLASH_AOE_RADIUS, Constants.SPLASH_AOE_DAMAGE, hitPlayer.getId)
+                case ProjectileType.GEYSER =>
+                  events ++= applyAoEDamage(projectile, Constants.GEYSER_AOE_RADIUS, Constants.GEYSER_DAMAGE, hitPlayer.getId)
+                case _ =>
+              }
+
               resolved = true
             }
           }
@@ -141,4 +163,31 @@ class ProjectileManager(registry: ClientRegistry) {
   def getAll: Seq[Projectile] = projectiles.values().asScala.toSeq
 
   def size: Int = projectiles.size()
+
+  /** Deal AoE damage to all players within radius of the projectile, excluding excludeId (the direct-hit target). */
+  private def applyAoEDamage(projectile: Projectile, radius: Float, damage: Int, excludeId: UUID): Seq[ProjectileEvent] = {
+    val events = ArrayBuffer[ProjectileEvent]()
+    val px = projectile.getX
+    val py = projectile.getY
+    registry.getAll.asScala.foreach { player =>
+      if (!player.getId.equals(projectile.ownerId) &&
+          (excludeId == null || !player.getId.equals(excludeId)) &&
+          !player.isDead && !player.hasShield) {
+        val pos = player.getPosition
+        val dx = px - (pos.getX + 0.5f)
+        val dy = py - (pos.getY + 0.5f)
+        if (dx * dx + dy * dy <= radius * radius) {
+          val newHealth = player.getHealth - damage
+          player.setHealth(newHealth)
+          println(s"ProjectileManager: AoE hit player ${player.getId.toString.substring(0, 8)}, damage=$damage, health now $newHealth")
+          if (newHealth <= 0) {
+            events += ProjectileAoEKill(projectile, player.getId)
+          } else {
+            events += ProjectileAoEHit(projectile, player.getId)
+          }
+        }
+      }
+    }
+    events.toSeq
+  }
 }

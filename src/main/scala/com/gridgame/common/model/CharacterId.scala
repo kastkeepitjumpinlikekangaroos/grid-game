@@ -6,9 +6,10 @@ object CharacterId {
   case object Spaceman extends CharacterId(0, "Spaceman")
   case object Gladiator extends CharacterId(1, "Gladiator")
   case object Wraith extends CharacterId(2, "Wraith")
-  case object Raptor extends CharacterId(3, "Raptor")
+  case object Tidecaller extends CharacterId(3, "Tidecaller")
+  case object Raptor extends CharacterId(4, "Raptor")
 
-  val all: Seq[CharacterId] = Seq(Spaceman, Gladiator, Wraith, Raptor)
+  val all: Seq[CharacterId] = Seq(Spaceman, Gladiator, Wraith, Tidecaller, Raptor)
 
   val DEFAULT: CharacterId = Spaceman
 
