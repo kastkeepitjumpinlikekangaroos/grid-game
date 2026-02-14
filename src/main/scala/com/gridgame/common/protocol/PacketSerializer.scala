@@ -84,13 +84,33 @@ object PacketSerializer {
             val totalDeaths = buffer.getInt()
             val matchesPlayed = buffer.getInt()
             val wins = buffer.getInt()
+            val elo = buffer.getShort()
             new MatchHistoryPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, action,
               totalKills = totalKills, totalDeaths = totalDeaths,
-              matchesPlayed = matchesPlayed, wins = wins)
+              matchesPlayed = matchesPlayed, wins = wins, elo = elo)
 
           case _ => // QUERY or END
             new MatchHistoryPacket(sequenceNumber, playerId, action)
         }
+
+      case PacketType.RANKED_QUEUE =>
+        val action = buffer.get()
+        val characterId = buffer.get()
+        val queueSize = buffer.get()
+        val elo = buffer.getShort()
+        val waitTimeSeconds = buffer.getInt()
+        val lobbyId = buffer.getShort()
+        val mapIndex = buffer.get()
+        val durationMinutes = buffer.get()
+        val playerCount = buffer.get()
+        val maxPlayers = buffer.get()
+        val nameBytes = new Array[Byte](Constants.MAX_LOBBY_NAME_LEN)
+        buffer.get(nameBytes)
+        val lobbyName = extractString(nameBytes)
+        buffer.get(new Array[Byte](4)) // reserved
+        new RankedQueuePacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, action,
+          characterId, queueSize, elo, waitTimeSeconds, lobbyId, mapIndex, durationMinutes,
+          playerCount, maxPlayers, lobbyName)
 
       case PacketType.LOBBY_ACTION =>
         // Custom layout from byte 21 onward (no standard x/y/color/timestamp)

@@ -32,7 +32,8 @@ object MatchHistoryAction {
  * STATS (server->client):
  * [22-25] totalKills (int), [26-29] totalDeaths (int),
  * [30-33] matchesPlayed (int), [34-37] wins (int),
- * [38-63] reserved
+ * [38-39] elo (short),
+ * [40-63] reserved
  */
 class MatchHistoryPacket(
     sequenceNumber: Int,
@@ -50,7 +51,8 @@ class MatchHistoryPacket(
     val totalKills: Int = 0,
     val totalDeaths: Int = 0,
     val matchesPlayed: Int = 0,
-    val wins: Int = 0
+    val wins: Int = 0,
+    val elo: Short = 1000
 ) extends Packet(PacketType.MATCH_HISTORY, sequenceNumber, playerId, timestamp) {
 
   def this(sequenceNumber: Int, playerId: UUID, action: Byte) = {
@@ -70,6 +72,7 @@ class MatchHistoryPacket(
   def getTotalDeaths: Int = totalDeaths
   def getMatchesPlayed: Int = matchesPlayed
   def getWins: Int = wins
+  def getElo: Short = elo
 
   override def serialize(): Array[Byte] = {
     val buffer = ByteBuffer.allocate(Constants.PACKET_SIZE)
@@ -105,7 +108,8 @@ class MatchHistoryPacket(
         buffer.putInt(totalDeaths)   // [26-29]
         buffer.putInt(matchesPlayed) // [30-33]
         buffer.putInt(wins)          // [34-37]
-        buffer.put(new Array[Byte](26)) // [38-63] reserved
+        buffer.putShort(elo)         // [38-39]
+        buffer.put(new Array[Byte](24)) // [40-63] reserved
 
       case _ => // QUERY or END
         buffer.put(new Array[Byte](42)) // [22-63] reserved

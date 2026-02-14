@@ -125,6 +125,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   @volatile var winsStat: Int = 0
 
   // Listeners
+  // Ranked queue state
+  @volatile var isInRankedQueue: Boolean = false
+  @volatile var rankedElo: Int = 1000
+  @volatile var rankedQueueSize: Int = 0
+  @volatile var rankedQueueWaitTime: Int = 0
+  @volatile var rankedQueueListener: () => Unit = _
+  @volatile var rankedMatchFoundListener: () => Unit = _
+
   @volatile var matchHistoryListener: () => Unit = _
   @volatile var lobbyListListener: () => Unit = _
   @volatile var lobbyJoinedListener: () => Unit = _
@@ -526,6 +534,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       return
     }
 
+    // Handle ranked queue
+    if (packet.getType == PacketType.RANKED_QUEUE) {
+      handleRankedQueue(packet.asInstanceOf[RankedQueuePacket])
+      return
+    }
+
     // Handle lobby actions
     if (packet.getType == PacketType.LOBBY_ACTION) {
       handleLobbyAction(packet.asInstanceOf[LobbyActionPacket])
@@ -760,6 +774,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         totalDeathsStat = packet.getTotalDeaths
         matchesPlayedStat = packet.getMatchesPlayed
         winsStat = packet.getWins
+        rankedElo = packet.getElo.toInt
 
       case MatchHistoryAction.ENTRY =>
         matchHistory.add(Array(
@@ -770,6 +785,29 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
       case MatchHistoryAction.END =>
         if (matchHistoryListener != null) matchHistoryListener()
+
+      case _ =>
+    }
+  }
+
+  private def handleRankedQueue(packet: RankedQueuePacket): Unit = {
+    packet.getAction match {
+      case RankedQueueAction.QUEUE_STATUS =>
+        rankedQueueSize = packet.getQueueSize & 0xFF
+        rankedElo = packet.getElo.toInt
+        rankedQueueWaitTime = packet.getWaitTimeSeconds
+        if (rankedQueueListener != null) rankedQueueListener()
+
+      case RankedQueueAction.MATCH_FOUND =>
+        isInRankedQueue = false
+        currentLobbyId = packet.getLobbyId
+        currentLobbyName = packet.getLobbyName
+        currentLobbyMapIndex = packet.getMapIndex & 0xFF
+        currentLobbyDuration = packet.getDurationMinutes & 0xFF
+        currentLobbyPlayerCount = packet.getPlayerCount & 0xFF
+        currentLobbyMaxPlayers = packet.getMaxPlayers & 0xFF
+        clientState = ClientState.IN_LOBBY
+        if (rankedMatchFoundListener != null) rankedMatchFoundListener()
 
       case _ =>
     }
@@ -850,6 +888,35 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     items.clear()
     isDead = false
     isRespawning = false
+  }
+
+  // Ranked queue actions
+  def queueRanked(): Unit = {
+    isInRankedQueue = true
+    val packet = new RankedQueuePacket(
+      sequenceNumber.getAndIncrement(), localPlayerId,
+      RankedQueueAction.QUEUE_JOIN, selectedCharacterId
+    )
+    networkThread.send(packet)
+  }
+
+  def leaveRankedQueue(): Unit = {
+    isInRankedQueue = false
+    val packet = new RankedQueuePacket(
+      sequenceNumber.getAndIncrement(), localPlayerId, RankedQueueAction.QUEUE_LEAVE
+    )
+    networkThread.send(packet)
+  }
+
+  def changeRankedCharacter(id: Byte): Unit = {
+    selectedCharacterId = id
+    if (isInRankedQueue) {
+      val packet = new RankedQueuePacket(
+        sequenceNumber.getAndIncrement(), localPlayerId,
+        RankedQueueAction.CHARACTER_CHANGE, id
+      )
+      networkThread.send(packet)
+    }
   }
 
   private def handleProjectileUpdate(packet: ProjectilePacket): Unit = {

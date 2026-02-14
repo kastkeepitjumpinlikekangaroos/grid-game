@@ -37,6 +37,7 @@ class GameServer(port: Int, val worldFile: String = "") {
   val authDatabase = new AuthDatabase()
   val lobbyManager = new LobbyManager()
   val lobbyHandler = new LobbyHandler(this, lobbyManager)
+  val rankedQueue = new RankedQueue(this)
   private val gameInstances = new ConcurrentHashMap[Short, GameInstance]()
 
   private val cleanupExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
@@ -92,6 +93,9 @@ class GameServer(port: Int, val worldFile: String = "") {
       new Runnable { def run(): Unit = cleanup() },
       5, 5, TimeUnit.SECONDS
     )
+
+    // Start ranked queue matchmaking
+    rankedQueue.start()
 
     println(s"Game server started on port $port")
 
@@ -194,6 +198,9 @@ class GameServer(port: Int, val worldFile: String = "") {
 
         case PacketType.MATCH_HISTORY =>
           handleMatchHistoryRequest(packet.asInstanceOf[MatchHistoryPacket], tcpCh)
+
+        case PacketType.RANKED_QUEUE =>
+          handleRankedQueue(packet.asInstanceOf[RankedQueuePacket])
 
         case PacketType.LOBBY_ACTION =>
           val lobbyPacket = packet.asInstanceOf[LobbyActionPacket]
@@ -344,11 +351,11 @@ class GameServer(port: Int, val worldFile: String = "") {
     if (player == null) return
 
     // Send stats
-    val (totalKills, totalDeaths, matchesPlayed, wins) = authDatabase.getPlayerStats(playerId)
+    val (totalKills, totalDeaths, matchesPlayed, wins, elo) = authDatabase.getPlayerStats(playerId)
     val statsPacket = new MatchHistoryPacket(
       getNextSequenceNumber, playerId, Packet.getCurrentTimestamp, MatchHistoryAction.STATS,
       totalKills = totalKills, totalDeaths = totalDeaths,
-      matchesPlayed = matchesPlayed, wins = wins
+      matchesPlayed = matchesPlayed, wins = wins, elo = elo.toShort
     )
     sendPacketViaChannel(statsPacket, tcpCh)
 
@@ -366,6 +373,34 @@ class GameServer(port: Int, val worldFile: String = "") {
     // Send end marker
     val endPacket = new MatchHistoryPacket(getNextSequenceNumber, playerId, MatchHistoryAction.END)
     sendPacketViaChannel(endPacket, tcpCh)
+  }
+
+  private def handleRankedQueue(packet: RankedQueuePacket): Unit = {
+    val playerId = packet.getPlayerId
+    val player = connectedPlayers.get(playerId)
+    if (player == null) return
+
+    packet.getAction match {
+      case RankedQueueAction.QUEUE_JOIN =>
+        val elo = getPlayerElo(playerId)
+        rankedQueue.addPlayer(playerId, packet.getCharacterId, elo)
+
+      case RankedQueueAction.QUEUE_LEAVE =>
+        rankedQueue.removePlayer(playerId)
+
+      case RankedQueueAction.CHARACTER_CHANGE =>
+        rankedQueue.updateCharacter(playerId, packet.getCharacterId)
+
+      case _ =>
+    }
+  }
+
+  def getPlayerElo(playerId: UUID): Int = {
+    authDatabase.getEloByUUID(playerId)
+  }
+
+  def getPlayerUsername(playerId: UUID): String = {
+    authDatabase.getUsernameByUUID(playerId)
   }
 
   private def handleGlobalHeartbeat(packet: Packet, udpSender: InetSocketAddress): Unit = {
@@ -396,6 +431,9 @@ class GameServer(port: Int, val worldFile: String = "") {
       val player = connectedPlayers.remove(playerId)
       if (player != null) {
         println(s"Global disconnect: ${playerId.toString.substring(0, 8)} ('${player.getName}')")
+
+        // Remove from ranked queue
+        rankedQueue.removePlayer(playerId)
 
         // Remove from lobby
         val lobby = lobbyManager.getPlayerLobby(playerId)
@@ -452,6 +490,11 @@ class GameServer(port: Int, val worldFile: String = "") {
     // Persist match results
     authDatabase.saveMatch(lobby.mapIndex, lobby.durationMinutes, matchResults.toSeq)
 
+    // Update ELO for ranked matches
+    if (lobby.isRanked && matchResults.size >= 2) {
+      updateRankedElo(matchResults.toSeq)
+    }
+
     // Send SCORE_END
     val scoreEndPacket = new GameEventPacket(
       getNextSequenceNumber, zeroUUID, GameEvent.SCORE_END, lobbyId,
@@ -466,6 +509,40 @@ class GameServer(port: Int, val worldFile: String = "") {
     println(s"Game ended for lobby $lobbyId")
   }
 
+  private def updateRankedElo(results: Seq[(UUID, Int, Int, Byte)]): Unit = {
+    val n = results.size
+    if (n < 2) return
+
+    val kAdjusted = 32.0 / (n - 1)
+
+    // Get current ELOs
+    val elos = results.map { case (uuid, _, _, _) =>
+      uuid -> authDatabase.getEloByUUID(uuid)
+    }.toMap
+
+    // Calculate new ELOs using FFA formula
+    results.foreach { case (uuid, _, _, rank) =>
+      val myElo = elos(uuid)
+      var delta = 0.0
+
+      results.foreach { case (opponentUuid, _, _, opponentRank) =>
+        if (!opponentUuid.equals(uuid)) {
+          val opponentElo = elos(opponentUuid)
+          val expected = 1.0 / (1.0 + Math.pow(10, (opponentElo - myElo) / 400.0))
+          val actual = if ((rank & 0xFF) < (opponentRank & 0xFF)) 1.0 else 0.0
+          delta += kAdjusted * (actual - expected)
+        }
+      }
+
+      val newElo = Math.max(0, (myElo + Math.round(delta)).toInt)
+      val username = authDatabase.getUsernameByUUID(uuid)
+      if (username != null) {
+        authDatabase.updateElo(username, newElo)
+        println(s"RankedELO: ${username} $myElo -> $newElo (delta=${Math.round(delta)})")
+      }
+    }
+  }
+
   private def cleanup(): Unit = {
     val now = System.currentTimeMillis()
     val timeout = Constants.CLIENT_TIMEOUT_MS
@@ -474,6 +551,9 @@ class GameServer(port: Int, val worldFile: String = "") {
       if (now - player.getLastUpdateTime > timeout) {
         val playerId = player.getId
         connectedPlayers.remove(playerId)
+
+        // Remove from ranked queue
+        rankedQueue.removePlayer(playerId)
 
         // Remove from lobby
         val lobby = lobbyManager.getPlayerLobby(playerId)
@@ -498,6 +578,7 @@ class GameServer(port: Int, val worldFile: String = "") {
     running = false
 
     cleanupExecutor.shutdown()
+    rankedQueue.stop()
 
     // Stop all game instances
     gameInstances.values().asScala.foreach(_.stop())

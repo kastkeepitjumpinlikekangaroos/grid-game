@@ -28,6 +28,13 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
         |  created_at INTEGER NOT NULL
         |)""".stripMargin
     )
+    // Add elo column if it doesn't exist (safe migration)
+    try {
+      stmt.executeUpdate("ALTER TABLE accounts ADD COLUMN elo INTEGER DEFAULT 1000")
+    } catch {
+      case _: Exception => // Column already exists
+    }
+
     stmt.executeUpdate(
       """CREATE TABLE IF NOT EXISTS matches(
         |  match_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -195,8 +202,8 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     results.toSeq
   }
 
-  /** Returns (totalKills, totalDeaths, matchesPlayed, wins) */
-  def getPlayerStats(playerUUID: UUID): (Int, Int, Int, Int) = {
+  /** Returns (totalKills, totalDeaths, matchesPlayed, wins, elo) */
+  def getPlayerStats(playerUUID: UUID): (Int, Int, Int, Int, Int) = {
     val stmt = connection.prepareStatement(
       """SELECT COALESCE(SUM(kills), 0) AS total_kills,
         |       COALESCE(SUM(deaths), 0) AS total_deaths,
@@ -216,7 +223,48 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     }
     rs.close()
     stmt.close()
-    result
+
+    val elo = getEloByUUID(playerUUID)
+    (result._1, result._2, result._3, result._4, elo)
+  }
+
+  def getElo(username: String): Int = {
+    val stmt = connection.prepareStatement("SELECT elo FROM accounts WHERE username = ?")
+    stmt.setString(1, username.toLowerCase)
+    val rs = stmt.executeQuery()
+    val elo = if (rs.next()) rs.getInt("elo") else 1000
+    rs.close()
+    stmt.close()
+    elo
+  }
+
+  def getEloByUUID(playerUUID: UUID): Int = {
+    val username = getUsernameByUUID(playerUUID)
+    if (username != null) getElo(username) else 1000
+  }
+
+  def updateElo(username: String, newElo: Int): Unit = {
+    val stmt = connection.prepareStatement("UPDATE accounts SET elo = ? WHERE username = ?")
+    stmt.setInt(1, newElo)
+    stmt.setString(2, username.toLowerCase)
+    stmt.executeUpdate()
+    stmt.close()
+  }
+
+  def getUsernameByUUID(uuid: UUID): String = {
+    val stmt = connection.prepareStatement("SELECT username FROM accounts")
+    val rs = stmt.executeQuery()
+    var found: String = null
+    while (rs.next() && found == null) {
+      val username = rs.getString("username")
+      val derivedUUID = getOrCreateUUID(username)
+      if (derivedUUID.equals(uuid)) {
+        found = username
+      }
+    }
+    rs.close()
+    stmt.close()
+    found
   }
 
   private def generateSalt(): String = {

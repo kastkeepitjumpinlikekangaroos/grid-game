@@ -285,7 +285,7 @@ class ClientMain extends Application {
 
     root.getChildren.addAll(titleBox, card, new Region() { setMinHeight(12) }, toggleLink)
 
-    val scene = new Scene(root, 420, 580)
+    val scene = new Scene(root, 520, 680)
     stage.setScene(scene)
     stage.show()
   }
@@ -352,9 +352,11 @@ class ClientMain extends Application {
     HBox.setHgrow(spacer, Priority.ALWAYS)
     val profileBtn = new Button("Profile")
     addHoverEffect(profileBtn, buttonStyle, buttonHoverStyle)
+    val rankedBtn = new Button("Queue Ranked")
+    addHoverEffect(rankedBtn, buttonGreenStyle, buttonGreenHoverStyle)
     val refreshBtn = new Button("Refresh")
     addHoverEffect(refreshBtn, buttonStyle, buttonHoverStyle)
-    titleBar.getChildren.addAll(title, spacer, profileBtn, refreshBtn)
+    titleBar.getChildren.addAll(title, spacer, profileBtn, rankedBtn, refreshBtn)
 
     // Lobby list with custom cell factory
     val lobbyListView = new ListView[String]()
@@ -462,6 +464,11 @@ class ClientMain extends Application {
     // Button actions
     profileBtn.setOnAction(_ => showAccountView(stage))
 
+    rankedBtn.setOnAction(_ => {
+      client.queueRanked()
+      showRankedQueue(stage)
+    })
+
     refreshBtn.setOnAction(_ => {
       client.requestLobbyList()
     })
@@ -500,7 +507,7 @@ class ClientMain extends Application {
 
     root.getChildren.addAll(titleBar, lobbyListView, joinBtn, sep, createCard, statusLabel)
 
-    val scene = new Scene(root, 560, 640)
+    val scene = new Scene(root, 680, 780)
     stage.setScene(scene)
 
     // Auto-refresh on show
@@ -726,7 +733,186 @@ class ClientMain extends Application {
       })
     }
 
-    val scene = new Scene(root, 460, 560)
+    val scene = new Scene(root, 580, 700)
+    stage.setScene(scene)
+  }
+
+  private def showRankedQueue(stage: Stage): Unit = {
+    val root = new VBox(0)
+    root.setAlignment(Pos.TOP_CENTER)
+    root.setStyle(darkBg)
+
+    // Header
+    val headerBox = new VBox(4)
+    headerBox.setAlignment(Pos.CENTER)
+    headerBox.setPadding(new Insets(28, 24, 16, 24))
+
+    val queueTitle = new Label("Ranked Queue")
+    queueTitle.setFont(Font.font("System", FontWeight.BOLD, 28))
+    queueTitle.setTextFill(Color.WHITE)
+
+    val eloLabel = new Label(s"ELO: ${client.rankedElo}")
+    eloLabel.setFont(Font.font("System", FontWeight.BOLD, 18))
+    eloLabel.setTextFill(Color.web("#ffd700"))
+
+    headerBox.getChildren.addAll(queueTitle, eloLabel)
+
+    // Queue status card
+    val statusCard = new VBox(12)
+    statusCard.setPadding(new Insets(20, 24, 20, 24))
+    statusCard.setMaxWidth(380)
+    statusCard.setStyle(cardBg)
+
+    val queueSizeLabel = new Label("Players in queue: 1")
+    queueSizeLabel.setFont(Font.font("System", 15))
+    queueSizeLabel.setTextFill(Color.web("#ccd"))
+
+    val waitTimeLabel = new Label("Wait time: 0s")
+    waitTimeLabel.setFont(Font.font("System", 15))
+    waitTimeLabel.setTextFill(Color.web("#ccd"))
+
+    val searchingLabel = new Label("Searching for match...")
+    searchingLabel.setFont(Font.font("System", 14))
+    searchingLabel.setTextFill(Color.web("#4a9eff"))
+
+    statusCard.getChildren.addAll(queueSizeLabel, waitTimeLabel, searchingLabel)
+
+    // Character selection section (reuse pattern from showLobbyRoom)
+    val charSectionLabel = new Label("Select Character")
+    charSectionLabel.setFont(Font.font("System", FontWeight.BOLD, 18))
+    charSectionLabel.setTextFill(Color.WHITE)
+
+    val charButtonBox = new HBox(10)
+    charButtonBox.setAlignment(Pos.CENTER)
+
+    val previewSize = 80.0
+    val previewCanvas = new Canvas(previewSize, previewSize)
+    val previewGc = previewCanvas.getGraphicsContext2D
+    var previewAnimTick = 0
+    var previewDirIndex = 0
+    val previewDirs = Array(Direction.Down, Direction.Left, Direction.Up, Direction.Right)
+
+    val charNameLabel = new Label("")
+    charNameLabel.setFont(Font.font("System", FontWeight.BOLD, 16))
+    charNameLabel.setTextFill(Color.web("#4a9eff"))
+
+    val charInfoLabel = new Label("")
+    charInfoLabel.setFont(Font.font("System", 13))
+    charInfoLabel.setTextFill(Color.web("#bbb"))
+    charInfoLabel.setWrapText(true)
+    charInfoLabel.setMaxWidth(380)
+
+    def drawPreview(): Unit = {
+      previewGc.clearRect(0, 0, previewSize, previewSize)
+      val charDef = CharacterDef.get(client.selectedCharacterId)
+      val dir = previewDirs(previewDirIndex)
+      val frame = (previewAnimTick / 10) % 4
+      val sprite = SpriteGenerator.getSprite(0, dir, frame, charDef.id.id)
+      previewGc.setFill(Color.web("#2a2a3e"))
+      previewGc.fillOval(4, 4, previewSize - 8, previewSize - 8)
+      val spriteDisplaySize = 64.0
+      val offset = (previewSize - spriteDisplaySize) / 2.0
+      previewGc.drawImage(sprite, offset, offset, spriteDisplaySize, spriteDisplaySize)
+    }
+
+    val previewTimer = new AnimationTimer {
+      override def handle(now: Long): Unit = {
+        previewAnimTick += 1
+        if (previewAnimTick % 40 == 0) {
+          previewDirIndex = (previewDirIndex + 1) % previewDirs.length
+        }
+        drawPreview()
+      }
+    }
+    previewTimer.start()
+
+    def updateCharacterInfo(): Unit = {
+      val charDef = CharacterDef.get(client.selectedCharacterId)
+      charNameLabel.setText(charDef.displayName)
+      charInfoLabel.setText(s"${charDef.description}\nQ: ${charDef.qAbility.name} - ${charDef.qAbility.description}\nE: ${charDef.eAbility.name} - ${charDef.eAbility.description}")
+      previewAnimTick = 0
+      previewDirIndex = 0
+      drawPreview()
+    }
+
+    def refreshCharButtons(): Unit = {
+      charButtonBox.getChildren.clear()
+      CharacterDef.all.foreach { charDef =>
+        val btn = new Button(charDef.displayName)
+        val isSelected = client.selectedCharacterId == charDef.id.id
+        if (isSelected) {
+          btn.setStyle("-fx-background-color: #4a9eff; -fx-text-fill: white; -fx-font-size: 14; -fx-font-weight: bold; -fx-padding: 8 20; -fx-background-radius: 6; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.4), 8, 0, 0, 2); -fx-border-color: white; -fx-border-width: 2; -fx-border-radius: 6;")
+        } else {
+          btn.setStyle("-fx-background-color: #2a2a3e; -fx-text-fill: #ccc; -fx-font-size: 14; -fx-padding: 8 20; -fx-background-radius: 6; -fx-cursor: hand;")
+        }
+        btn.setOnAction(_ => {
+          client.changeRankedCharacter(charDef.id.id)
+          refreshCharButtons()
+          updateCharacterInfo()
+        })
+        charButtonBox.getChildren.add(btn)
+      }
+    }
+
+    refreshCharButtons()
+    updateCharacterInfo()
+
+    val previewBox = new VBox(4, previewCanvas, charNameLabel)
+    previewBox.setAlignment(Pos.CENTER)
+
+    val charSection = new VBox(8, charSectionLabel, previewBox, charButtonBox, charInfoLabel)
+    charSection.setAlignment(Pos.CENTER)
+
+    // Leave queue button
+    val leaveBtn = new Button("Leave Queue")
+    addHoverEffect(leaveBtn, buttonRedStyle, buttonRedHoverStyle)
+    leaveBtn.setOnAction(_ => {
+      previewTimer.stop()
+      client.leaveRankedQueue()
+      client.requestLobbyList()
+      showLobbyBrowser(stage)
+    })
+
+    val buttonBox = new HBox(12)
+    buttonBox.setAlignment(Pos.CENTER)
+    buttonBox.setPadding(new Insets(8, 0, 0, 0))
+    buttonBox.getChildren.add(leaveBtn)
+
+    root.getChildren.addAll(headerBox, statusCard, new Region() { setMinHeight(12) }, charSection, new Region() { setMinHeight(12) }, buttonBox)
+
+    // Wire up queue status listener
+    client.rankedQueueListener = () => {
+      Platform.runLater(() => {
+        queueSizeLabel.setText(s"Players in queue: ${client.rankedQueueSize}")
+        waitTimeLabel.setText(s"Wait time: ${client.rankedQueueWaitTime}s")
+        eloLabel.setText(s"ELO: ${client.rankedElo}")
+      })
+    }
+
+    // Wire up match found listener - transition to game
+    client.rankedMatchFoundListener = () => {
+      Platform.runLater(() => {
+        // Match found - game starting packets will follow
+      })
+    }
+
+    // Wire up game starting listener to transition to game scene
+    client.gameStartingListener = () => {
+      Platform.runLater(() => {
+        previewTimer.stop()
+        showGameScene(stage)
+      })
+    }
+
+    client.lobbyClosedListener = () => {
+      Platform.runLater(() => {
+        previewTimer.stop()
+        client.requestLobbyList()
+        showLobbyBrowser(stage)
+      })
+    }
+
+    val scene = new Scene(root, 580, 700)
     stage.setScene(scene)
   }
 
@@ -766,7 +952,8 @@ class ClientMain extends Application {
     val deathsBox = createStatBox("Deaths", "0")
     val matchesBox = createStatBox("Matches", "0")
     val winsBox = createStatBox("Wins", "0")
-    statsRow.getChildren.addAll(killsBox, deathsBox, matchesBox, winsBox)
+    val eloBox = createStatBox("ELO", "1000")
+    statsRow.getChildren.addAll(killsBox, deathsBox, matchesBox, winsBox, eloBox)
 
     statsCard.getChildren.addAll(statsTitle, statsRow)
 
@@ -808,7 +995,7 @@ class ClientMain extends Application {
 
     root.getChildren.addAll(titleBar, statsCard, historyTitle, historyListView, loadingLabel)
 
-    val scene = new Scene(root, 560, 640)
+    val scene = new Scene(root, 680, 780)
     stage.setScene(scene)
 
     // Set up listener and request data
@@ -823,6 +1010,8 @@ class ClientMain extends Application {
         matchesLabel.setText(client.matchesPlayedStat.toString)
         val winsLabel = winsBox.getChildren.get(1).asInstanceOf[Label]
         winsLabel.setText(client.winsStat.toString)
+        val eloLabel = eloBox.getChildren.get(1).asInstanceOf[Label]
+        eloLabel.setText(client.rankedElo.toString)
 
         // Update match list
         val items = new java.util.ArrayList[String]()
@@ -1027,7 +1216,7 @@ class ClientMain extends Application {
 
     root.getChildren.addAll(titleBox, scoreCard, btnBox)
 
-    val scene = new Scene(root, 520, 520)
+    val scene = new Scene(root, 640, 640)
     stage.setScene(scene)
   }
 

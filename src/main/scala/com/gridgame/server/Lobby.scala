@@ -22,6 +22,7 @@ class Lobby(
   val characterSelections: ConcurrentHashMap[UUID, Byte] = new ConcurrentHashMap[UUID, Byte]()
   @volatile var status: Byte = LobbyStatus.WAITING
   @volatile var gameInstance: GameInstance = _
+  @volatile var isRanked: Boolean = false
 
   def addPlayer(playerId: UUID): Boolean = {
     if (players.size() >= maxPlayers) return false
