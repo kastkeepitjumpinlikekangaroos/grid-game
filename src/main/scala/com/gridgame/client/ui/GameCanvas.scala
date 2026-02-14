@@ -3,6 +3,7 @@ package com.gridgame.client.ui
 import com.gridgame.client.ClientState
 import com.gridgame.client.GameClient
 import com.gridgame.common.Constants
+import com.gridgame.common.model.CharacterDef
 import com.gridgame.common.model.Direction
 import com.gridgame.common.model.Item
 import com.gridgame.common.model.ItemType
@@ -836,7 +837,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
     drawShadow(screenX, screenY)
 
-    val sprite = SpriteGenerator.getSprite(player.getColorRGB, player.getDirection, frame)
+    val sprite = SpriteGenerator.getSprite(player.getColorRGB, player.getDirection, frame, player.getCharacterId)
     val spriteX = screenX - displaySz / 2.0
     val spriteY = screenY - displaySz.toDouble
     gc.drawImage(sprite, spriteX, spriteY, displaySz, displaySz)
@@ -872,7 +873,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
       (FRAMES_PER_STEP * (1.0 + chargePct * 4.0)).toInt
     } else FRAMES_PER_STEP
     val frame = if (client.getIsMoving) (animationTick / animSpeed) % 4 else 0
-    val sprite = SpriteGenerator.getSprite(client.getLocalColorRGB, client.getLocalDirection, frame)
+    val sprite = SpriteGenerator.getSprite(client.getLocalColorRGB, client.getLocalDirection, frame, client.selectedCharacterId)
     gc.drawImage(sprite, spriteX, spriteY, displaySz, displaySz)
 
     // Draw frozen effect
@@ -1381,9 +1382,10 @@ class GameCanvas(client: GameClient) extends Canvas() {
     // Position ability slots to the left of inventory
     val abilityGap = 12.0 // gap between abilities and inventory
 
+    val charDef = client.getSelectedCharacterDef
     val abilities = Seq(
-      ("Q", client.getTentacleCooldownFraction, client.getTentacleCooldownRemaining, Color.color(0.2, 0.8, 0.3), Color.color(0.1, 0.5, 0.15)),
-      ("E", client.getIceBeamCooldownFraction, client.getIceBeamCooldownRemaining, Color.color(0.4, 0.7, 1.0), Color.color(0.15, 0.35, 0.6))
+      (charDef.qAbility.keybind, client.getQCooldownFraction, client.getQCooldownRemaining, Color.color(0.2, 0.8, 0.3), Color.color(0.1, 0.5, 0.15)),
+      (charDef.eAbility.keybind, client.getECooldownFraction, client.getECooldownRemaining, Color.color(0.4, 0.7, 1.0), Color.color(0.15, 0.35, 0.6))
     )
 
     for (i <- abilities.indices) {

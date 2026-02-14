@@ -15,23 +15,28 @@ class PlayerUpdatePacket(
     val colorRGB: Int,
     val health: Int = 100,
     val chargeLevel: Int = 0,
-    val effectFlags: Int = 0
+    val effectFlags: Int = 0,
+    val characterId: Byte = 0
 ) extends Packet(PacketType.PLAYER_UPDATE, sequenceNumber, playerId, timestamp) {
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int) = {
-    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, 100, 0, 0)
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, 100, 0, 0, 0.toByte)
   }
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int, health: Int) = {
-    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, health, 0, 0)
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, health, 0, 0, 0.toByte)
   }
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int, health: Int, chargeLevel: Int) = {
-    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, health, chargeLevel, 0)
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, health, chargeLevel, 0, 0.toByte)
   }
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int, health: Int, chargeLevel: Int, effectFlags: Int) = {
-    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, health, chargeLevel, effectFlags)
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, health, chargeLevel, effectFlags, 0.toByte)
+  }
+
+  def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int, health: Int, chargeLevel: Int, effectFlags: Int, characterId: Byte) = {
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, health, chargeLevel, effectFlags, characterId)
   }
 
   def getPosition: Position = position
@@ -43,6 +48,8 @@ class PlayerUpdatePacket(
   def getChargeLevel: Int = chargeLevel
 
   def getEffectFlags: Int = effectFlags
+
+  def getCharacterId: Byte = characterId
 
   override def serialize(): Array[Byte] = {
     val buffer = ByteBuffer.allocate(Constants.PACKET_SIZE)
@@ -79,8 +86,11 @@ class PlayerUpdatePacket(
     // [42] Effect flags bitfield (bit 0: shield, bit 1: gem boost)
     buffer.put(effectFlags.toByte)
 
-    // [43-63] Reserved (21 bytes) - fill with zeros
-    buffer.put(new Array[Byte](21))
+    // [43] Character ID
+    buffer.put(characterId)
+
+    // [44-63] Reserved (20 bytes) - fill with zeros
+    buffer.put(new Array[Byte](20))
 
     buffer.array()
   }

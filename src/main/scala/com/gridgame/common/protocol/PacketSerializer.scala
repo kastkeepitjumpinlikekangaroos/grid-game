@@ -76,8 +76,9 @@ object PacketSerializer {
         val nameBytes = new Array[Byte](Constants.MAX_LOBBY_NAME_LEN)
         buffer.get(nameBytes)
         val lobbyName = extractString(nameBytes)
+        val characterId = buffer.get()
         new LobbyActionPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, action, lobbyId,
-          mapIndex, durationMinutes, playerCount, maxPlayers, lobbyStatus, lobbyName)
+          mapIndex, durationMinutes, playerCount, maxPlayers, lobbyStatus, lobbyName, characterId)
 
       case PacketType.GAME_EVENT =>
         // Custom layout from byte 21 onward (no standard x/y/color/timestamp)
@@ -151,9 +152,10 @@ object PacketSerializer {
 
         packetType match {
           case PacketType.PLAYER_JOIN =>
-            // Name is in payload bytes 0-22 (23 bytes), health in bytes 23-26
-            val nameBytes = payload.take(23)
+            // Name is in payload bytes 0-21 (22 bytes), characterId in byte 22, health in bytes 23-26
+            val nameBytes = payload.take(22)
             val playerName = extractString(nameBytes)
+            val characterId = payload(22)
             val healthBuffer = ByteBuffer.wrap(payload, 23, 4).order(ByteOrder.BIG_ENDIAN)
             val health = healthBuffer.getInt
             val joinPosition = try {
@@ -161,20 +163,21 @@ object PacketSerializer {
             } catch {
               case _: IllegalArgumentException => new Position(0, 0)
             }
-            new PlayerJoinPacket(sequenceNumber, playerId, timestamp, joinPosition, colorRGB, playerName, health)
+            new PlayerJoinPacket(sequenceNumber, playerId, timestamp, joinPosition, colorRGB, playerName, health, characterId)
 
           case PacketType.PLAYER_UPDATE =>
-            // Health is in payload bytes 0-3, chargeLevel is payload byte 4, effectFlags is payload byte 5
+            // Health is in payload bytes 0-3, chargeLevel is payload byte 4, effectFlags is payload byte 5, characterId is payload byte 6
             val healthBuffer = ByteBuffer.wrap(payload, 0, 4).order(ByteOrder.BIG_ENDIAN)
             val health = healthBuffer.getInt
             val chargeLevel = payload(4) & 0xFF
             val effectFlags = payload(5) & 0xFF
+            val characterId = payload(6)
             val updatePosition = try {
               new Position(x, y)
             } catch {
               case _: IllegalArgumentException => new Position(0, 0)
             }
-            new PlayerUpdatePacket(sequenceNumber, playerId, timestamp, updatePosition, colorRGB, health, chargeLevel, effectFlags)
+            new PlayerUpdatePacket(sequenceNumber, playerId, timestamp, updatePosition, colorRGB, health, chargeLevel, effectFlags, characterId)
 
           case PacketType.PLAYER_LEAVE =>
             new PlayerLeavePacket(sequenceNumber, playerId, timestamp)

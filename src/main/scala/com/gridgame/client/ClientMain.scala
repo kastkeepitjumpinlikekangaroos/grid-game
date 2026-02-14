@@ -5,6 +5,8 @@ import com.gridgame.client.input.MouseHandler
 import com.gridgame.client.ui.GameCanvas
 import com.gridgame.common.Constants
 import com.gridgame.common.WorldRegistry
+import com.gridgame.common.model.CharacterDef
+import com.gridgame.common.model.CharacterId
 import com.gridgame.common.model.WorldData
 import com.gridgame.common.world.WorldLoader
 
@@ -536,6 +538,50 @@ class ClientMain extends Application {
     waitingLabel.setFont(Font.font("System", 14))
     waitingLabel.setTextFill(Color.web("#667"))
 
+    // Character selection section
+    val charSectionLabel = new Label("Select Character")
+    charSectionLabel.setFont(Font.font("System", FontWeight.BOLD, 18))
+    charSectionLabel.setTextFill(Color.WHITE)
+
+    val charButtonBox = new HBox(10)
+    charButtonBox.setAlignment(Pos.CENTER)
+
+    val charInfoLabel = new Label("")
+    charInfoLabel.setFont(Font.font("System", 13))
+    charInfoLabel.setTextFill(Color.web("#bbb"))
+    charInfoLabel.setWrapText(true)
+    charInfoLabel.setMaxWidth(380)
+
+    def updateCharacterInfo(): Unit = {
+      val charDef = CharacterDef.get(client.selectedCharacterId)
+      charInfoLabel.setText(s"${charDef.description}\nQ: ${charDef.qAbility.name} - ${charDef.qAbility.description}\nE: ${charDef.eAbility.name} - ${charDef.eAbility.description}")
+    }
+
+    def refreshCharButtons(): Unit = {
+      charButtonBox.getChildren.clear()
+      CharacterDef.all.foreach { charDef =>
+        val btn = new Button(charDef.displayName)
+        val isSelected = client.selectedCharacterId == charDef.id.id
+        if (isSelected) {
+          btn.setStyle("-fx-background-color: #4a9eff; -fx-text-fill: white; -fx-font-size: 14; -fx-font-weight: bold; -fx-padding: 8 20; -fx-background-radius: 4; -fx-cursor: hand;")
+        } else {
+          btn.setStyle("-fx-background-color: #2a2a3e; -fx-text-fill: #ccc; -fx-font-size: 14; -fx-padding: 8 20; -fx-background-radius: 4; -fx-cursor: hand;")
+        }
+        btn.setOnAction(_ => {
+          client.selectCharacter(charDef.id.id)
+          refreshCharButtons()
+          updateCharacterInfo()
+        })
+        charButtonBox.getChildren.add(btn)
+      }
+    }
+
+    refreshCharButtons()
+    updateCharacterInfo()
+
+    val charSection = new VBox(8, charSectionLabel, charButtonBox, charInfoLabel)
+    charSection.setAlignment(Pos.CENTER)
+
     val buttonBox = new HBox(12)
     buttonBox.setAlignment(Pos.CENTER)
     buttonBox.setPadding(new Insets(8, 0, 0, 0))
@@ -601,7 +647,7 @@ class ClientMain extends Application {
       infoCard.getChildren.addAll(mapLabel, durationLabel, waitingLabel)
     }
 
-    root.getChildren.addAll(headerBox, infoCard, new Region() { setMinHeight(16) }, buttonBox)
+    root.getChildren.addAll(headerBox, infoCard, new Region() { setMinHeight(12) }, charSection, new Region() { setMinHeight(12) }, buttonBox)
 
     // Wire up listeners
     client.lobbyUpdatedListener = () => {
@@ -620,7 +666,7 @@ class ClientMain extends Application {
       Platform.runLater(() => showLobbyBrowser(stage))
     }
 
-    val scene = new Scene(root, 460, 420)
+    val scene = new Scene(root, 460, 560)
     stage.setScene(scene)
   }
 

@@ -21,6 +21,7 @@ object LobbyAction {
   val GAME_STARTING: Byte = 10
   val LOBBY_CLOSED: Byte = 11
   val CONFIG_UPDATE: Byte = 12
+  val CHARACTER_SELECT: Byte = 13
 }
 
 /**
@@ -42,7 +43,8 @@ class LobbyActionPacket(
     val playerCount: Byte = 0,
     val maxPlayers: Byte = Constants.MAX_LOBBY_PLAYERS.toByte,
     val lobbyStatus: Byte = 0,
-    val lobbyName: String = ""
+    val lobbyName: String = "",
+    val characterId: Byte = 0
 ) extends Packet(PacketType.LOBBY_ACTION, sequenceNumber, playerId, timestamp) {
 
   def this(sequenceNumber: Int, playerId: UUID, action: Byte) = {
@@ -68,6 +70,7 @@ class LobbyActionPacket(
   def getMaxPlayers: Byte = maxPlayers
   def getLobbyStatus: Byte = lobbyStatus
   def getLobbyName: String = lobbyName
+  def getCharacterId: Byte = characterId
 
   override def serialize(): Array[Byte] = {
     val buffer = ByteBuffer.allocate(Constants.PACKET_SIZE)
@@ -110,8 +113,11 @@ class LobbyActionPacket(
     buffer.put(nameBytes, 0, nameLen)
     buffer.put(new Array[Byte](Constants.MAX_LOBBY_NAME_LEN - nameLen))
 
-    // [53-63] Reserved (11 bytes)
-    buffer.put(new Array[Byte](11))
+    // [53] Character ID
+    buffer.put(characterId)
+
+    // [54-63] Reserved (10 bytes)
+    buffer.put(new Array[Byte](10))
 
     buffer.array()
   }

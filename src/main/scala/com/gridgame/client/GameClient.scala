@@ -1,6 +1,8 @@
 package com.gridgame.client
 
 import com.gridgame.common.Constants
+import com.gridgame.common.model.CharacterDef
+import com.gridgame.common.model.CharacterId
 import com.gridgame.common.model.Direction
 import com.gridgame.common.model.Item
 import com.gridgame.common.model.ItemType
@@ -56,9 +58,13 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   @volatile private var mouseWorldX: Double = 0.0
   @volatile private var mouseWorldY: Double = 0.0
 
+  // Character selection state
+  @volatile var selectedCharacterId: Byte = CharacterId.DEFAULT.id
+  val lobbyCharacterSelections: ConcurrentHashMap[UUID, Byte] = new ConcurrentHashMap[UUID, Byte]()
+
   // Ability cooldown state
-  private val lastTentacleTime: AtomicLong = new AtomicLong(0)
-  private val lastIceBeamTime: AtomicLong = new AtomicLong(0)
+  private val lastQAbilityTime: AtomicLong = new AtomicLong(0)
+  private val lastEAbilityTime: AtomicLong = new AtomicLong(0)
   private val frozenUntil: AtomicLong = new AtomicLong(0)
 
   // Charge shot state
@@ -201,8 +207,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     fastProjectilesUntil.set(0)
     shieldUntil.set(0)
     localDeathTime.set(0)
-    lastTentacleTime.set(0)
-    lastIceBeamTime.set(0)
+    lastQAbilityTime.set(0)
+    lastEAbilityTime.set(0)
     frozenUntil.set(0)
 
     // Send join packet to server
@@ -397,13 +403,20 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     }
   }
 
-  def shootTentacle(): Unit = {
+  def shootAbility(slot: Int): Unit = {
     if (isDead || isFrozen) return
 
-    val now = System.currentTimeMillis()
-    if (now - lastTentacleTime.get() < Constants.TENTACLE_COOLDOWN_MS) return
+    val charDef = getSelectedCharacterDef
+    val (abilityDef, lastAbilityTime) = slot match {
+      case 0 => (charDef.qAbility, lastQAbilityTime)
+      case 1 => (charDef.eAbility, lastEAbilityTime)
+      case _ => return
+    }
 
-    lastTentacleTime.set(now)
+    val now = System.currentTimeMillis()
+    if (now - lastAbilityTime.get() < abilityDef.cooldownMs) return
+
+    lastAbilityTime.set(now)
 
     val pos = localPosition.get()
     val dx = (mouseWorldX - pos.getX).toFloat
@@ -430,70 +443,36 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       ProjectileAction.SPAWN,
       null,
       0.toByte,
-      ProjectileType.TENTACLE
-    )
-    networkThread.send(packet)
-  }
-
-  def shootIceBeam(): Unit = {
-    if (isDead || isFrozen) return
-
-    val now = System.currentTimeMillis()
-    if (now - lastIceBeamTime.get() < Constants.ICE_BEAM_COOLDOWN_MS) return
-
-    lastIceBeamTime.set(now)
-
-    val pos = localPosition.get()
-    val dx = (mouseWorldX - pos.getX).toFloat
-    val dy = (mouseWorldY - pos.getY).toFloat
-    val len = Math.sqrt(dx * dx + dy * dy).toFloat
-    val (ndx, ndy) = if (len > 0.01f) (dx / len, dy / len) else {
-      val dir = localDirection.get()
-      dir match {
-        case Direction.Up    => (0.0f, -1.0f)
-        case Direction.Down  => (0.0f, 1.0f)
-        case Direction.Left  => (-1.0f, 0.0f)
-        case Direction.Right => (1.0f, 0.0f)
-      }
-    }
-
-    val packet = new ProjectilePacket(
-      sequenceNumber.getAndIncrement(),
-      localPlayerId,
-      pos.getX.toFloat,
-      pos.getY.toFloat,
-      localColorRGB,
-      0,
-      ndx, ndy,
-      ProjectileAction.SPAWN,
-      null,
-      0.toByte,
-      ProjectileType.ICE_BEAM
+      abilityDef.projectileType
     )
     networkThread.send(packet)
   }
 
   def isFrozen: Boolean = System.currentTimeMillis() < frozenUntil.get()
 
-  def getTentacleCooldownFraction: Float = {
-    val elapsed = System.currentTimeMillis() - lastTentacleTime.get()
-    if (elapsed >= Constants.TENTACLE_COOLDOWN_MS) 0.0f
-    else 1.0f - (elapsed.toFloat / Constants.TENTACLE_COOLDOWN_MS)
+  def getQCooldownFraction: Float = {
+    val cooldownMs = getSelectedCharacterDef.qAbility.cooldownMs
+    val elapsed = System.currentTimeMillis() - lastQAbilityTime.get()
+    if (elapsed >= cooldownMs) 0.0f
+    else 1.0f - (elapsed.toFloat / cooldownMs)
   }
 
-  def getIceBeamCooldownFraction: Float = {
-    val elapsed = System.currentTimeMillis() - lastIceBeamTime.get()
-    if (elapsed >= Constants.ICE_BEAM_COOLDOWN_MS) 0.0f
-    else 1.0f - (elapsed.toFloat / Constants.ICE_BEAM_COOLDOWN_MS)
+  def getECooldownFraction: Float = {
+    val cooldownMs = getSelectedCharacterDef.eAbility.cooldownMs
+    val elapsed = System.currentTimeMillis() - lastEAbilityTime.get()
+    if (elapsed >= cooldownMs) 0.0f
+    else 1.0f - (elapsed.toFloat / cooldownMs)
   }
 
-  def getTentacleCooldownRemaining: Float = {
-    val remaining = lastTentacleTime.get() + Constants.TENTACLE_COOLDOWN_MS - System.currentTimeMillis()
+  def getQCooldownRemaining: Float = {
+    val cooldownMs = getSelectedCharacterDef.qAbility.cooldownMs
+    val remaining = lastQAbilityTime.get() + cooldownMs - System.currentTimeMillis()
     if (remaining <= 0) 0.0f else remaining / 1000.0f
   }
 
-  def getIceBeamCooldownRemaining: Float = {
-    val remaining = lastIceBeamTime.get() + Constants.ICE_BEAM_COOLDOWN_MS - System.currentTimeMillis()
+  def getECooldownRemaining: Float = {
+    val cooldownMs = getSelectedCharacterDef.eAbility.cooldownMs
+    val remaining = lastEAbilityTime.get() + cooldownMs - System.currentTimeMillis()
     if (remaining <= 0) 0.0f else remaining / 1000.0f
   }
 
@@ -668,6 +647,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         inventory.clear()
         if (gameStartingListener != null) gameStartingListener()
 
+      case LobbyAction.CHARACTER_SELECT =>
+        lobbyCharacterSelections.put(packet.getPlayerId, packet.getCharacterId)
+        if (lobbyUpdatedListener != null) lobbyUpdatedListener()
+
       case LobbyAction.LOBBY_CLOSED =>
         clientState = ClientState.LOBBY_BROWSER
         currentLobbyId = 0
@@ -739,6 +722,20 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
       case _ =>
         println(s"GameClient: Unknown game event ${packet.getEventType}")
+    }
+  }
+
+  def getSelectedCharacterDef: CharacterDef = CharacterDef.get(selectedCharacterId)
+
+  def selectCharacter(id: Byte): Unit = {
+    selectedCharacterId = id
+    if (currentLobbyId != 0) {
+      val packet = new LobbyActionPacket(
+        sequenceNumber.getAndIncrement(), localPlayerId, Packet.getCurrentTimestamp,
+        LobbyAction.CHARACTER_SELECT, currentLobbyId,
+        0.toByte, 0.toByte, 0.toByte, 0.toByte, 0.toByte, "", id
+      )
+      networkThread.send(packet)
     }
   }
 
@@ -930,6 +927,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       packet.getColorRGB,
       packet.getHealth
     )
+    player.setCharacterId(packet.getCharacterId)
     players.put(player.getId, player)
 
     println(s"GameClient: Player joined - ${player.getId.toString.substring(0, 8)} ('${player.getName}') at ${player.getPosition} with health ${player.getHealth}")
@@ -963,6 +961,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       player.setColorRGB(packet.getColorRGB)
       player.setHealth(packet.getHealth)
       player.setChargeLevel(packet.getChargeLevel)
+      if (packet.getCharacterId != 0 || player.getCharacterId == 0) {
+        player.setCharacterId(packet.getCharacterId)
+      }
 
       // Apply effect flags from server
       val flags = packet.getEffectFlags
@@ -993,6 +994,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       }
     } else {
       player = new Player(playerId, "Player", packet.getPosition, packet.getColorRGB, packet.getHealth)
+      player.setCharacterId(packet.getCharacterId)
       player.setChargeLevel(packet.getChargeLevel)
       val flags = packet.getEffectFlags
       if ((flags & 0x01) != 0) player.setShieldUntil(System.currentTimeMillis() + 1000)

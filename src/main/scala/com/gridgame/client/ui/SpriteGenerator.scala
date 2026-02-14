@@ -1,6 +1,8 @@
 package com.gridgame.client.ui
 
 import com.gridgame.common.Constants
+import com.gridgame.common.model.CharacterDef
+import com.gridgame.common.model.CharacterId
 import com.gridgame.common.model.Direction
 
 import javafx.scene.image.{Image, PixelReader, WritableImage}
@@ -18,16 +20,17 @@ object SpriteGenerator {
   )
   private val framesPerDirection = 4
 
-  // Lazy-loaded sprite frames: (Direction, frame) -> Image
-  private var frames: Map[(Direction, Int), Image] = _
+  // Per-character sprite frames: characterId -> ((Direction, frame) -> Image)
+  private var characterFrames: Map[Byte, Map[(Direction, Int), Image]] = Map.empty
 
-  private def ensureLoaded(): Unit = {
-    if (frames != null) return
+  private def ensureLoaded(characterId: Byte): Unit = {
+    if (characterFrames.contains(characterId)) return
 
-    val stream = resolveResourceStream("sprites/character.png")
+    val charDef = CharacterDef.get(characterId)
+    val stream = resolveResourceStream(charDef.spriteSheet)
     if (stream == null) {
-      System.err.println("Spritesheet not found: sprites/character.png")
-      frames = Map.empty
+      System.err.println(s"Spritesheet not found: ${charDef.spriteSheet}")
+      characterFrames = characterFrames + (characterId -> Map.empty)
       return
     }
 
@@ -42,7 +45,7 @@ object SpriteGenerator {
       builder += (dir, col) -> frameImg
     }
 
-    frames = builder.result()
+    characterFrames = characterFrames + (characterId -> builder.result())
   }
 
   private def resolveResourceStream(relativePath: String): InputStream = {
@@ -60,12 +63,17 @@ object SpriteGenerator {
   }
 
   def getSprite(colorRGB: Int, direction: Direction): Image = {
-    getSprite(colorRGB, direction, 0)
+    getSprite(colorRGB, direction, 0, CharacterId.DEFAULT.id)
   }
 
   def getSprite(colorRGB: Int, direction: Direction, frame: Int): Image = {
-    ensureLoaded()
+    getSprite(colorRGB, direction, frame, CharacterId.DEFAULT.id)
+  }
+
+  def getSprite(colorRGB: Int, direction: Direction, frame: Int, characterId: Byte): Image = {
+    ensureLoaded(characterId)
     val clampedFrame = frame % framesPerDirection
+    val frames = characterFrames.getOrElse(characterId, Map.empty)
     frames.getOrElse((direction, clampedFrame), {
       // Fallback: return a transparent 32x32 image
       new WritableImage(frameSize, frameSize)
@@ -73,6 +81,6 @@ object SpriteGenerator {
   }
 
   def clearCache(): Unit = {
-    frames = null
+    characterFrames = Map.empty
   }
 }

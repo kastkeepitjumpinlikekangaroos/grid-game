@@ -120,6 +120,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       true
     } else {
       val player = new Player(playerId, packet.getPlayerName, packet.getPosition, packet.getColorRGB, Constants.MAX_HEALTH)
+      player.setCharacterId(packet.getCharacterId)
       player.setTcpChannel(tcpChannel)
 
       registry.add(player)
@@ -292,7 +293,8 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
           existing.getPosition,
           existing.getColorRGB,
           existing.getName,
-          existing.getHealth
+          existing.getHealth,
+          existing.getCharacterId
         )
         server.sendPacketToPlayer(packet, joiningPlayer)
       }

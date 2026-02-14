@@ -34,6 +34,9 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
       case LobbyAction.CONFIG_UPDATE =>
         handleConfigUpdate(playerId, packet)
 
+      case LobbyAction.CHARACTER_SELECT =>
+        handleCharacterSelect(playerId, packet)
+
       case _ =>
         println(s"LobbyHandler: Unknown action ${packet.getAction} from ${playerId.toString.substring(0, 8)}")
     }
@@ -134,6 +137,7 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
       if (p != null) {
         val spawnPoint = instance.world.getValidSpawnPoint()
         val instancePlayer = new Player(pid, p.getName, spawnPoint, p.getColorRGB, Constants.MAX_HEALTH)
+        instancePlayer.setCharacterId(lobby.getCharacter(pid))
         instancePlayer.setTcpChannel(p.getTcpChannel)
         if (p.getUdpAddress != null) {
           instancePlayer.setUdpAddress(p.getUdpAddress)
@@ -181,6 +185,22 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
       server.getNextSequenceNumber, player.getId, LobbyAction.LIST_END
     )
     server.sendPacketToPlayer(end, player)
+  }
+
+  private def handleCharacterSelect(playerId: UUID, packet: LobbyActionPacket): Unit = {
+    val lobby = lobbyManager.getPlayerLobby(playerId)
+    if (lobby == null) return
+    if (lobby.status != LobbyStatus.WAITING) return
+
+    lobby.setCharacter(playerId, packet.getCharacterId)
+
+    // Broadcast CHARACTER_SELECT to other lobby members
+    val broadcast = new LobbyActionPacket(
+      server.getNextSequenceNumber, playerId, Packet.getCurrentTimestamp,
+      LobbyAction.CHARACTER_SELECT, lobby.id,
+      0.toByte, 0.toByte, 0.toByte, 0.toByte, 0.toByte, "", packet.getCharacterId
+    )
+    broadcastToLobby(lobby, broadcast, playerId)
   }
 
   private def handleConfigUpdate(playerId: UUID, packet: LobbyActionPacket): Unit = {

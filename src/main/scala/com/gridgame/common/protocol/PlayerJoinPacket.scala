@@ -15,17 +15,22 @@ class PlayerJoinPacket(
     val position: Position,
     val colorRGB: Int,
     val playerName: String,
-    val health: Int = 100
+    val health: Int = 100,
+    val characterId: Byte = 0
 ) extends Packet(PacketType.PLAYER_JOIN, sequenceNumber, playerId, timestamp) {
 
   private val _playerName: String = if (playerName != null) playerName else "Player"
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int, playerName: String) = {
-    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, playerName, 100)
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, playerName, 100, 0.toByte)
   }
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int, playerName: String, health: Int) = {
-    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, playerName, health)
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, playerName, health, 0.toByte)
+  }
+
+  def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int, playerName: String, health: Int, characterId: Byte) = {
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, playerName, health, characterId)
   }
 
   def getPosition: Position = position
@@ -35,6 +40,8 @@ class PlayerJoinPacket(
   def getPlayerName: String = _playerName
 
   def getHealth: Int = health
+
+  def getCharacterId: Byte = characterId
 
   override def serialize(): Array[Byte] = {
     val buffer = ByteBuffer.allocate(Constants.PACKET_SIZE)
@@ -62,12 +69,15 @@ class PlayerJoinPacket(
     // [33-36] Timestamp
     buffer.putInt(timestamp)
 
-    // [37-59] Player name (max 23 bytes)
+    // [37-58] Player name (max 22 bytes)
     val nameBytes = _playerName.getBytes(StandardCharsets.UTF_8)
-    val nameLength = Math.min(nameBytes.length, 23)
+    val nameLength = Math.min(nameBytes.length, 22)
     buffer.put(nameBytes, 0, nameLength)
     // Fill remaining name bytes with zeros
-    buffer.put(new Array[Byte](23 - nameLength))
+    buffer.put(new Array[Byte](22 - nameLength))
+
+    // [59] Character ID
+    buffer.put(characterId)
 
     // [60-63] Health
     buffer.putInt(health)

@@ -80,8 +80,8 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
 
   private def processAbilities(event: KeyEvent): Unit = {
     event.getCode match {
-      case KeyCode.Q => client.shootTentacle()
-      case KeyCode.E => client.shootIceBeam()
+      case KeyCode.Q => client.shootAbility(0)
+      case KeyCode.E => client.shootAbility(1)
       case _ =>
     }
   }

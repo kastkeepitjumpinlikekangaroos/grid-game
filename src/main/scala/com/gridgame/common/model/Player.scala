@@ -23,6 +23,7 @@ class Player(
   private var gemBoostUntil: Long = 0
   private var _chargeLevel: Int = 0
   private var frozenUntil: Long = 0
+  private var characterId: Byte = CharacterId.DEFAULT.id
 
   def getId: UUID = id
 
@@ -104,6 +105,12 @@ class Player(
   }
 
   def isFrozen: Boolean = System.currentTimeMillis() < frozenUntil
+
+  def getCharacterId: Byte = characterId
+
+  def setCharacterId(id: Byte): Unit = {
+    this.characterId = id
+  }
 
   def isDead: Boolean = health <= 0
 

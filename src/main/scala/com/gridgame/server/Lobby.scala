@@ -1,6 +1,7 @@
 package com.gridgame.server
 
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
 object LobbyStatus {
@@ -18,6 +19,7 @@ class Lobby(
     var maxPlayers: Int
 ) {
   val players: CopyOnWriteArrayList[UUID] = new CopyOnWriteArrayList[UUID]()
+  val characterSelections: ConcurrentHashMap[UUID, Byte] = new ConcurrentHashMap[UUID, Byte]()
   @volatile var status: Byte = LobbyStatus.WAITING
   @volatile var gameInstance: GameInstance = _
 
@@ -33,6 +35,14 @@ class Lobby(
   }
 
   def isHost(playerId: UUID): Boolean = hostId.equals(playerId)
+
+  def setCharacter(playerId: UUID, charId: Byte): Unit = {
+    characterSelections.put(playerId, charId)
+  }
+
+  def getCharacter(playerId: UUID): Byte = {
+    characterSelections.getOrDefault(playerId, 0.toByte)
+  }
 
   def playerCount: Int = players.size()
 }
