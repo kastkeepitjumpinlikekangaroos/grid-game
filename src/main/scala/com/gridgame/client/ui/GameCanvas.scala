@@ -571,6 +571,11 @@ class GameCanvas(client: GameClient) extends Canvas() {
       case ProjectileType.SPEAR => drawSpearProjectile(projectile, camOffX, camOffY)
       case ProjectileType.SOUL_BOLT => drawSoulBoltProjectile(projectile, camOffX, camOffY)
       case ProjectileType.HAUNT => drawHauntProjectile(projectile, camOffX, camOffY)
+      case ProjectileType.SPLASH => drawSplashProjectile(projectile, camOffX, camOffY)
+      case ProjectileType.TIDAL_WAVE => drawTidalWaveProjectile(projectile, camOffX, camOffY)
+      case ProjectileType.GEYSER => drawGeyserProjectile(projectile, camOffX, camOffY)
+      case ProjectileType.TALON => drawTalonProjectile(projectile, camOffX, camOffY)
+      case ProjectileType.GUST => drawGustProjectile(projectile, camOffX, camOffY)
       case _ => drawNormalProjectile(projectile, camOffX, camOffY)
     }
   }
@@ -1205,6 +1210,328 @@ class GameCanvas(client: GameClient) extends Canvas() {
       gc.fillOval(tipX - orbR * 1.3, tipY - orbR * 1.3, orbR * 2.6, orbR * 2.6)
       gc.setFill(Color.color(0.7, 0.5, 0.9, 0.85 * fastFlicker))
       gc.fillOval(tipX - orbR * 0.5, tipY - orbR * 0.5, orbR, orbR)
+    }
+  }
+
+  private def drawTalonProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 2.5
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 31) * 0.4
+      val pulse = 0.85 + 0.15 * Math.sin(phase)
+
+      // Golden slash arc — short wide sweep
+      val midX = (tailX + tipX) / 2
+      val midY = (tailY + tipY) / 2
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len > 1) {
+        val nx = -dy / len
+        val ny = dx / len
+
+        // Wide outer glow
+        gc.setStroke(Color.color(0.85, 0.65, 0.1, 0.12 * pulse))
+        gc.setLineWidth(36 * pulse)
+        gc.strokeLine(tailX, tailY, tipX, tipY)
+
+        // Golden arc stroke
+        gc.setStroke(Color.color(0.9, 0.7, 0.15, 0.35 * pulse))
+        gc.setLineWidth(18 * pulse)
+        gc.strokeLine(tailX, tailY, tipX, tipY)
+
+        // Bright inner
+        gc.setStroke(Color.color(1.0, 0.85, 0.3, 0.8 * pulse))
+        gc.setLineWidth(6.0)
+        gc.strokeLine(tailX, tailY, tipX, tipY)
+
+        // White-hot core
+        gc.setStroke(Color.color(1.0, 0.95, 0.7, 0.95))
+        gc.setLineWidth(2.0)
+        gc.strokeLine(tailX, tailY, tipX, tipY)
+
+        // Claw slash particles along the arc
+        for (i <- 0 until 4) {
+          val t = ((animationTick * 0.1 + i.toDouble / 4) % 1.0)
+          val spread = Math.sin(phase * 2.0 + i * 1.5) * 8.0
+          val px = tailX + dx * t + nx * spread
+          val py = tailY + dy * t + ny * spread
+          val pAlpha = Math.max(0.0, Math.min(1.0, 0.7 * (1.0 - Math.abs(t - 0.5) * 2.0)))
+          val pSize = 2.5 + Math.sin(phase + i) * 1.0
+          gc.setFill(Color.color(1.0, 0.85, 0.3, pAlpha))
+          gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+        }
+      }
+    }
+  }
+
+  private def drawGustProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 4.0
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 29) * 0.35
+      val pulse = 0.8 + 0.2 * Math.sin(phase)
+      val fastFlicker = 0.9 + 0.1 * Math.sin(phase * 3.3)
+
+      // Amber wind cone — widens toward the tip
+      gc.setStroke(Color.color(0.85, 0.7, 0.3, 0.08 * pulse))
+      gc.setLineWidth(40 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(0.9, 0.75, 0.35, 0.2 * pulse))
+      gc.setLineWidth(24 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(0.95, 0.8, 0.4, 0.45 * fastFlicker))
+      gc.setLineWidth(12 * fastFlicker)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Bright core
+      gc.setStroke(Color.color(1.0, 0.9, 0.6, 0.8 * fastFlicker))
+      gc.setLineWidth(4.0)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Wind streaks — flowing lines alongside the main beam
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len > 1) {
+        val nx = -dy / len
+        val ny = dx / len
+        for (strand <- 0 until 3) {
+          val strandOff = (strand - 1) * 7.0
+          for (i <- 0 until 5) {
+            val t = ((animationTick * 0.08 + i.toDouble / 5 + strand * 0.2) % 1.0)
+            val wave = Math.sin(phase * 2.5 + i * 1.8 + strand * 2.1) * 4.0
+            val px = tailX + dx * t + nx * (wave + strandOff)
+            val py = tailY + dy * t + ny * (wave + strandOff)
+            val pAlpha = Math.max(0.0, Math.min(1.0, 0.5 * (1.0 - Math.abs(t - 0.5) * 2.0)))
+            val pSize = 1.5 + Math.sin(phase + i + strand) * 0.6
+            gc.setFill(Color.color(0.95, 0.85, 0.5, pAlpha))
+            gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+          }
+        }
+      }
+    }
+  }
+
+  private def drawSplashProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 4.0
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 31) * 0.25
+      val pulse = 0.85 + 0.15 * Math.sin(phase)
+      val fastFlicker = 0.9 + 0.1 * Math.sin(phase * 3.3)
+
+      // Outer glow — deep blue
+      gc.setStroke(Color.color(0.1, 0.3, 0.9, 0.08 * pulse))
+      gc.setLineWidth(40 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Mid glow — cyan
+      gc.setStroke(Color.color(0.2, 0.6, 1.0, 0.18 * pulse))
+      gc.setLineWidth(24 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Bright beam — light blue
+      gc.setStroke(Color.color(0.3, 0.7, 1.0, 0.55 * fastFlicker))
+      gc.setLineWidth(12 * fastFlicker)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Core — white-cyan
+      gc.setStroke(Color.color(0.7, 0.95, 1.0, 0.9 * fastFlicker))
+      gc.setLineWidth(4.0)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Ripple ring at tip
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len > 1) {
+        val rippleSize = 8.0 + 4.0 * Math.sin(phase * 2.0)
+        gc.setStroke(Color.color(0.4, 0.8, 1.0, 0.5 * pulse))
+        gc.setLineWidth(2.0)
+        gc.strokeOval(tipX - rippleSize, tipY - rippleSize, rippleSize * 2, rippleSize * 2)
+
+        // Droplet particles
+        val nx = dx / len
+        val ny = dy / len
+        for (i <- 0 until 4) {
+          val t = ((animationTick * 0.08 + i.toDouble / 4 + projectile.id * 0.13) % 1.0)
+          val px = tailX + dx * t + (-ny) * Math.sin(phase + i * 1.8) * 5.0
+          val py = tailY + dy * t + nx * Math.sin(phase + i * 1.8) * 5.0
+          val pAlpha = Math.max(0.0, Math.min(1.0, 0.6 * (1.0 - t)))
+          val pSize = 2.5 + Math.sin(phase + i) * 1.0
+          gc.setFill(Color.color(0.5, 0.85, 1.0, pAlpha))
+          gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+        }
+      }
+    }
+  }
+
+  private def drawTidalWaveProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 5.0
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 43) * 0.3
+      val pulse = 0.85 + 0.15 * Math.sin(phase)
+
+      // Outer glow — aqua
+      gc.setStroke(Color.color(0.0, 0.7, 0.7, 0.10 * pulse))
+      gc.setLineWidth(36 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Mid glow — teal
+      gc.setStroke(Color.color(0.1, 0.8, 0.8, 0.20 * pulse))
+      gc.setLineWidth(22 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Bright beam — light aqua
+      gc.setStroke(Color.color(0.3, 0.9, 0.9, 0.5 * pulse))
+      gc.setLineWidth(10 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Core — white foam
+      gc.setStroke(Color.color(0.85, 1.0, 1.0, 0.85 * pulse))
+      gc.setLineWidth(3.5)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Wave crest shapes along beam
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len > 1) {
+        val nx = dx / len
+        val ny = dy / len
+        for (i <- 0 until 3) {
+          val t = 0.25 + 0.25 * i
+          val cx = tailX + dx * t
+          val cy = tailY + dy * t
+          val waveSize = 6.0 + 3.0 * Math.sin(phase + i * 2.1)
+          gc.setStroke(Color.color(0.6, 1.0, 1.0, 0.4 * pulse))
+          gc.setLineWidth(1.5)
+          gc.strokeArc(cx - waveSize, cy - waveSize, waveSize * 2, waveSize * 2,
+            0, 180, javafx.scene.shape.ArcType.OPEN)
+        }
+      }
+    }
+  }
+
+  private def drawGeyserProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 3.0
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 29) * 0.35
+      val pulse = 0.8 + 0.2 * Math.sin(phase)
+      val fastFlicker = 0.85 + 0.15 * Math.sin(phase * 4.0)
+
+      // Outer glow — bright cyan
+      gc.setStroke(Color.color(0.0, 0.9, 1.0, 0.10 * pulse))
+      gc.setLineWidth(50 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Mid glow
+      gc.setStroke(Color.color(0.1, 0.85, 1.0, 0.22 * pulse))
+      gc.setLineWidth(30 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Bright column
+      gc.setStroke(Color.color(0.3, 0.95, 1.0, 0.6 * fastFlicker))
+      gc.setLineWidth(16 * fastFlicker)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Core — white hot
+      gc.setStroke(Color.color(0.9, 1.0, 1.0, 0.95 * fastFlicker))
+      gc.setLineWidth(6.0)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Pulsing rings around the projectile center
+      val centerX = (tailX + tipX) / 2
+      val centerY = (tailY + tipY) / 2
+      for (i <- 0 until 3) {
+        val ringPhase = phase + i * 2.0
+        val ringSize = 10.0 + 8.0 * Math.sin(ringPhase)
+        val ringAlpha = Math.max(0.0, 0.4 * (1.0 - Math.abs(Math.sin(ringPhase * 0.5))))
+        gc.setStroke(Color.color(0.2, 0.9, 1.0, ringAlpha))
+        gc.setLineWidth(2.0)
+        gc.strokeOval(centerX - ringSize, centerY - ringSize, ringSize * 2, ringSize * 2)
+      }
+
+      // Steam particles rising upward
+      for (i <- 0 until 5) {
+        val t = ((animationTick * 0.06 + i.toDouble / 5 + projectile.id * 0.17) % 1.0)
+        val px = centerX + Math.sin(phase + i * 1.3) * 8.0
+        val py = centerY - t * 20.0 // rising
+        val pAlpha = Math.max(0.0, Math.min(1.0, 0.5 * (1.0 - t)))
+        val pSize = 2.0 + t * 3.0
+        gc.setFill(Color.color(0.7, 0.95, 1.0, pAlpha))
+        gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+      }
     }
   }
 

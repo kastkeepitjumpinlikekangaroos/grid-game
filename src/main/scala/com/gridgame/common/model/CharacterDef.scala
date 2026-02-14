@@ -101,13 +101,67 @@ object CharacterDef {
     primaryProjectileType = ProjectileType.SOUL_BOLT
   )
 
+  val Tidecaller: CharacterDef = CharacterDef(
+    id = CharacterId.Tidecaller,
+    displayName = "Tidecaller",
+    description = "A water mage with devastating area-of-effect abilities.",
+    spriteSheet = "sprites/tidecaller.png",
+    qAbility = AbilityDef(
+      name = "Tidal Wave",
+      description = "Fires 5 projectiles in a fan that push enemies back.",
+      cooldownMs = Constants.TIDAL_WAVE_COOLDOWN_MS,
+      maxRange = Constants.TIDAL_WAVE_MAX_RANGE,
+      damage = Constants.TIDAL_WAVE_DAMAGE,
+      projectileType = ProjectileType.TIDAL_WAVE,
+      keybind = "Q"
+    ),
+    eAbility = AbilityDef(
+      name = "Geyser",
+      description = "Erupts on hit or at max range, damaging all nearby.",
+      cooldownMs = Constants.GEYSER_COOLDOWN_MS,
+      maxRange = Constants.GEYSER_MAX_RANGE,
+      damage = Constants.GEYSER_DAMAGE,
+      projectileType = ProjectileType.GEYSER,
+      keybind = "E"
+    ),
+    primaryProjectileType = ProjectileType.SPLASH
+  )
+
+  val Raptor: CharacterDef = CharacterDef(
+    id = CharacterId.Raptor,
+    displayName = "Raptor",
+    description = "A bird of prey that swoops in and blasts enemies away.",
+    spriteSheet = "sprites/raptor.png",
+    qAbility = AbilityDef(
+      name = "Swoop",
+      description = "Dash toward the cursor, phased and invulnerable during flight.",
+      cooldownMs = Constants.SWOOP_COOLDOWN_MS,
+      maxRange = 0,
+      damage = 0,
+      projectileType = -1,
+      keybind = "Q"
+    ),
+    eAbility = AbilityDef(
+      name = "Gust",
+      description = "Wind blast that pushes enemies away from you.",
+      cooldownMs = Constants.GUST_COOLDOWN_MS,
+      maxRange = Constants.GUST_MAX_RANGE,
+      damage = Constants.GUST_DAMAGE,
+      projectileType = ProjectileType.GUST,
+      keybind = "E"
+    ),
+    primaryProjectileType = ProjectileType.TALON
+  )
+
   private val byId: Map[Byte, CharacterDef] = Map(
     CharacterId.Spaceman.id -> Spaceman,
     CharacterId.Gladiator.id -> Gladiator,
-    CharacterId.Wraith.id -> Wraith
+    CharacterId.Wraith.id -> Wraith,
+    CharacterId.Tidecaller.id -> Tidecaller,
+    CharacterId.Raptor.id -> Raptor
   )
 
-  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith)
+  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith, Tidecaller, Raptor)
 
   def get(id: CharacterId): CharacterDef = byId.getOrElse(id.id, Spaceman)
 
