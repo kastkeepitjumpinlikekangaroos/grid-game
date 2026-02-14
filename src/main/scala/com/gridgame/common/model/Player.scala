@@ -24,6 +24,7 @@ class Player(
   private var _chargeLevel: Int = 0
   private var frozenUntil: Long = 0
   private var phasedUntil: Long = 0
+  private var serverTeleportedUntil: Long = 0
   private var characterId: Byte = CharacterId.DEFAULT.id
 
   def getId: UUID = id
@@ -114,6 +115,12 @@ class Player(
   }
 
   def isPhased: Boolean = System.currentTimeMillis() < phasedUntil
+
+  def setServerTeleportedUntil(until: Long): Unit = {
+    this.serverTeleportedUntil = until
+  }
+
+  def isServerTeleported: Boolean = System.currentTimeMillis() < serverTeleportedUntil
 
   def getCharacterId: Byte = characterId
 

@@ -1839,7 +1839,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     // Match inventory layout to position ability slots to its left
     val invSlotSize = 44.0
     val invSlotGap = 8.0
-    val invNumSlots = 4
+    val invNumSlots = 5
     val totalInventoryWidth = invNumSlots * invSlotSize + (invNumSlots - 1) * invSlotGap
     val inventoryStartX = (getWidth - totalInventoryWidth) / 2.0
     val startY = getHeight - slotSize - 14.0
@@ -1897,17 +1897,18 @@ class GameCanvas(client: GameClient) extends Canvas() {
   private def drawInventory(): Unit = {
     val slotSize = 44.0
     val slotGap = 8.0
-    val numSlots = 4
+    val numSlots = 5
     val totalWidth = numSlots * slotSize + (numSlots - 1) * slotGap
     val startX = (getWidth - totalWidth) / 2.0
     val startY = getHeight - slotSize - 14.0
 
-    // Item types in slot order: 1=Heart, 2=Star, 3=Gem, 4=Shield
+    // Item types in slot order: 1=Heart, 2=Star, 3=Gem, 4=Shield, 5=Fence
     val slotTypes = Seq(
       (ItemType.Heart, "1"),
       (ItemType.Star, "2"),
       (ItemType.Gem, "3"),
-      (ItemType.Shield, "4")
+      (ItemType.Shield, "4"),
+      (ItemType.Fence, "5")
     )
 
     for (i <- slotTypes.indices) {

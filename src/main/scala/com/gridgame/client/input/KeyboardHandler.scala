@@ -71,6 +71,7 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
       case KeyCode.DIGIT2 => ItemType.Star.id
       case KeyCode.DIGIT3 => ItemType.Gem.id
       case KeyCode.DIGIT4 => ItemType.Shield.id
+      case KeyCode.DIGIT5 => ItemType.Fence.id
       case _ => -1
     }
     if (itemTypeId >= 0) {

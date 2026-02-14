@@ -38,7 +38,7 @@ object ItemType {
   }
 
   val all: Seq[ItemType] = Seq(Gem, Heart, Star, Shield, Fence)
-  val spawnable: Seq[ItemType] = Seq(Heart, Star, Gem, Shield)
+  val spawnable: Seq[ItemType] = Seq(Heart, Star, Gem, Shield, Fence)
 
   def fromId(id: Byte): ItemType = all.find(_.id == id).getOrElse(Heart)
 }

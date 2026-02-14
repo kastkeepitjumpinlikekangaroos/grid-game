@@ -236,6 +236,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                 val destY = Math.max(0, Math.min(world.height - 1, targetPos.getY + bdy * Constants.HAUNT_TELEPORT_DISTANCE))
                 if (world.isWalkable(destX, destY)) {
                   owner.setPosition(new Position(destX, destY))
+                  // Protect against client position updates overwriting the teleport
+                  owner.setServerTeleportedUntil(System.currentTimeMillis() + 500)
                   // Broadcast position update for the Wraith
                   val ownerFlags = (if (owner.hasShield) 0x01 else 0) |
                                    (if (owner.hasGemBoost) 0x02 else 0) |
