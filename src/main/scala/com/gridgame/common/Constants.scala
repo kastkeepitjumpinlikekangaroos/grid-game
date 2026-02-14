@@ -68,4 +68,16 @@ object Constants {
   val CHARGE_MIN_SPEED: Float = 0.8f           // Projectile speed multiplier at 0%
   val CHARGE_MAX_SPEED: Float = 2.0f           // Projectile speed multiplier at 100%
   val CHARGE_MOVEMENT_SLOW: Int = 2            // Movement rate multiplier while charging
+
+  // Tentacle ability (Q)
+  val TENTACLE_COOLDOWN_MS: Int = 5000
+  val TENTACLE_MAX_RANGE: Int = 5
+  val TENTACLE_PULL_DISTANCE: Float = 3.0f
+  val TENTACLE_DAMAGE: Int = 5
+
+  // Ice Beam ability (E)
+  val ICE_BEAM_COOLDOWN_MS: Int = 5000
+  val ICE_BEAM_MAX_RANGE: Int = 20
+  val ICE_BEAM_FREEZE_DURATION_MS: Int = 1000
+  val ICE_BEAM_DAMAGE: Int = 5
 }

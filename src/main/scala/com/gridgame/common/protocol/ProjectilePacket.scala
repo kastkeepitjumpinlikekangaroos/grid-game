@@ -25,25 +25,32 @@ class ProjectilePacket(
     val dy: Float,
     val action: Byte,
     val targetId: UUID = null,
-    val chargeLevel: Byte = 0
+    val chargeLevel: Byte = 0,
+    val projectileType: Byte = 0
 ) extends Packet(PacketType.PROJECTILE_UPDATE, sequenceNumber, ownerId, timestamp) {
 
   def this(sequenceNumber: Int, ownerId: UUID, x: Float, y: Float, colorRGB: Int,
            projectileId: Int, dx: Float, dy: Float, action: Byte) = {
     this(sequenceNumber, ownerId, Packet.getCurrentTimestamp, x, y, colorRGB,
-         projectileId, dx, dy, action, null, 0.toByte)
+         projectileId, dx, dy, action, null, 0.toByte, 0.toByte)
   }
 
   def this(sequenceNumber: Int, ownerId: UUID, x: Float, y: Float, colorRGB: Int,
            projectileId: Int, dx: Float, dy: Float, action: Byte, targetId: UUID) = {
     this(sequenceNumber, ownerId, Packet.getCurrentTimestamp, x, y, colorRGB,
-         projectileId, dx, dy, action, targetId, 0.toByte)
+         projectileId, dx, dy, action, targetId, 0.toByte, 0.toByte)
   }
 
   def this(sequenceNumber: Int, ownerId: UUID, x: Float, y: Float, colorRGB: Int,
            projectileId: Int, dx: Float, dy: Float, action: Byte, targetId: UUID, chargeLevel: Byte) = {
     this(sequenceNumber, ownerId, Packet.getCurrentTimestamp, x, y, colorRGB,
-         projectileId, dx, dy, action, targetId, chargeLevel)
+         projectileId, dx, dy, action, targetId, chargeLevel, 0.toByte)
+  }
+
+  def this(sequenceNumber: Int, ownerId: UUID, x: Float, y: Float, colorRGB: Int,
+           projectileId: Int, dx: Float, dy: Float, action: Byte, targetId: UUID, chargeLevel: Byte, projectileType: Byte) = {
+    this(sequenceNumber, ownerId, Packet.getCurrentTimestamp, x, y, colorRGB,
+         projectileId, dx, dy, action, targetId, chargeLevel, projectileType)
   }
 
   def getProjectileId: Int = projectileId
@@ -63,6 +70,8 @@ class ProjectilePacket(
   def getColorRGB: Int = colorRGB
 
   def getChargeLevel: Int = chargeLevel.toInt & 0xFF
+
+  def getProjectileType: Byte = projectileType
 
   override def serialize(): Array[Byte] = {
     val buffer = ByteBuffer.allocate(Constants.PACKET_SIZE)
@@ -115,8 +124,8 @@ class ProjectilePacket(
     // [62] Charge level (0-100)
     buffer.put(chargeLevel)
 
-    // [63] Reserved (1 byte)
-    buffer.put(0.toByte)
+    // [63] Projectile type (0=normal, 1=tentacle, 2=ice)
+    buffer.put(projectileType)
 
     buffer.array()
   }

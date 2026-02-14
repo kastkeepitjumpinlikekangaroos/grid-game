@@ -72,7 +72,8 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       packet.getDx,
       packet.getDy,
       packet.getColorRGB,
-      packet.getChargeLevel
+      packet.getChargeLevel,
+      packet.getProjectileType
     )
 
     // Broadcast spawn to all clients
@@ -203,7 +204,8 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
           case ItemType.Heart =>
             player.setHealth(Constants.MAX_HEALTH)
             val flags = (if (player.hasShield) 0x01 else 0) |
-                        (if (player.hasGemBoost) 0x02 else 0)
+                        (if (player.hasGemBoost) 0x02 else 0) |
+                        (if (player.isFrozen) 0x04 else 0)
             val updatePacket = new PlayerUpdatePacket(
               server.getNextSequenceNumber,
               playerId,

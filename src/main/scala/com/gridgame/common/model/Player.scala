@@ -22,6 +22,7 @@ class Player(
   private var shieldUntil: Long = 0
   private var gemBoostUntil: Long = 0
   private var _chargeLevel: Int = 0
+  private var frozenUntil: Long = 0
 
   def getId: UUID = id
 
@@ -95,6 +96,14 @@ class Player(
   def setChargeLevel(level: Int): Unit = {
     this._chargeLevel = Math.max(0, Math.min(100, level))
   }
+
+  def getFrozenUntil: Long = frozenUntil
+
+  def setFrozenUntil(until: Long): Unit = {
+    this.frozenUntil = until
+  }
+
+  def isFrozen: Boolean = System.currentTimeMillis() < frozenUntil
 
   def isDead: Boolean = health <= 0
 

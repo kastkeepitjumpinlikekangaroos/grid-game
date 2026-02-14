@@ -7,6 +7,7 @@ import com.gridgame.common.model.ItemType
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
 import com.gridgame.common.model.Projectile
+import com.gridgame.common.model.ProjectileType
 import com.gridgame.common.model.Tile
 import com.gridgame.common.model.WorldData
 import com.gridgame.common.protocol._
@@ -43,6 +44,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   private val shieldUntil: AtomicLong = new AtomicLong(0)
   @volatile private var mouseWorldX: Double = 0.0
   @volatile private var mouseWorldY: Double = 0.0
+
+  // Ability cooldown state
+  private val lastTentacleTime: AtomicLong = new AtomicLong(0)
+  private val lastIceBeamTime: AtomicLong = new AtomicLong(0)
+  private val frozenUntil: AtomicLong = new AtomicLong(0)
 
   // Charge shot state
   @volatile var isCharging: Boolean = false
@@ -125,6 +131,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
     fastProjectilesUntil.set(0)
     shieldUntil.set(0)
     localDeathTime.set(0)
+    lastTentacleTime.set(0)
+    lastIceBeamTime.set(0)
+    frozenUntil.set(0)
 
     // Send join packet to server
     sendJoinPacket()
@@ -135,6 +144,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   }
 
   def movePlayer(dx: Int, dy: Int): Unit = {
+    // Check if frozen
+    if (isFrozen) return
+
     // Check if movement is blocked from burst shot
     if (System.currentTimeMillis() < movementBlockedUntil.get()) {
       return
@@ -174,7 +186,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   }
 
   private def getEffectFlags: Int = {
-    (if (hasShield) 0x01 else 0) | (if (hasGemBoost) 0x02 else 0)
+    (if (hasShield) 0x01 else 0) | (if (hasGemBoost) 0x02 else 0) | (if (isFrozen) 0x04 else 0)
   }
 
   private def sendPositionUpdate(position: Position): Unit = {
@@ -315,6 +327,106 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
     }
   }
 
+  def shootTentacle(): Unit = {
+    if (isDead || isFrozen) return
+
+    val now = System.currentTimeMillis()
+    if (now - lastTentacleTime.get() < Constants.TENTACLE_COOLDOWN_MS) return
+
+    lastTentacleTime.set(now)
+
+    val pos = localPosition.get()
+    val dx = (mouseWorldX - pos.getX).toFloat
+    val dy = (mouseWorldY - pos.getY).toFloat
+    val len = Math.sqrt(dx * dx + dy * dy).toFloat
+    val (ndx, ndy) = if (len > 0.01f) (dx / len, dy / len) else {
+      val dir = localDirection.get()
+      dir match {
+        case Direction.Up    => (0.0f, -1.0f)
+        case Direction.Down  => (0.0f, 1.0f)
+        case Direction.Left  => (-1.0f, 0.0f)
+        case Direction.Right => (1.0f, 0.0f)
+      }
+    }
+
+    val packet = new ProjectilePacket(
+      sequenceNumber.getAndIncrement(),
+      localPlayerId,
+      pos.getX.toFloat,
+      pos.getY.toFloat,
+      localColorRGB,
+      0,
+      ndx, ndy,
+      ProjectileAction.SPAWN,
+      null,
+      0.toByte,
+      ProjectileType.TENTACLE
+    )
+    networkThread.send(packet)
+  }
+
+  def shootIceBeam(): Unit = {
+    if (isDead || isFrozen) return
+
+    val now = System.currentTimeMillis()
+    if (now - lastIceBeamTime.get() < Constants.ICE_BEAM_COOLDOWN_MS) return
+
+    lastIceBeamTime.set(now)
+
+    val pos = localPosition.get()
+    val dx = (mouseWorldX - pos.getX).toFloat
+    val dy = (mouseWorldY - pos.getY).toFloat
+    val len = Math.sqrt(dx * dx + dy * dy).toFloat
+    val (ndx, ndy) = if (len > 0.01f) (dx / len, dy / len) else {
+      val dir = localDirection.get()
+      dir match {
+        case Direction.Up    => (0.0f, -1.0f)
+        case Direction.Down  => (0.0f, 1.0f)
+        case Direction.Left  => (-1.0f, 0.0f)
+        case Direction.Right => (1.0f, 0.0f)
+      }
+    }
+
+    val packet = new ProjectilePacket(
+      sequenceNumber.getAndIncrement(),
+      localPlayerId,
+      pos.getX.toFloat,
+      pos.getY.toFloat,
+      localColorRGB,
+      0,
+      ndx, ndy,
+      ProjectileAction.SPAWN,
+      null,
+      0.toByte,
+      ProjectileType.ICE_BEAM
+    )
+    networkThread.send(packet)
+  }
+
+  def isFrozen: Boolean = System.currentTimeMillis() < frozenUntil.get()
+
+  def getTentacleCooldownFraction: Float = {
+    val elapsed = System.currentTimeMillis() - lastTentacleTime.get()
+    if (elapsed >= Constants.TENTACLE_COOLDOWN_MS) 0.0f
+    else 1.0f - (elapsed.toFloat / Constants.TENTACLE_COOLDOWN_MS)
+  }
+
+  def getIceBeamCooldownFraction: Float = {
+    val elapsed = System.currentTimeMillis() - lastIceBeamTime.get()
+    if (elapsed >= Constants.ICE_BEAM_COOLDOWN_MS) 0.0f
+    else 1.0f - (elapsed.toFloat / Constants.ICE_BEAM_COOLDOWN_MS)
+  }
+
+  def getTentacleCooldownRemaining: Float = {
+    val remaining = lastTentacleTime.get() + Constants.TENTACLE_COOLDOWN_MS - System.currentTimeMillis()
+    if (remaining <= 0) 0.0f else remaining / 1000.0f
+  }
+
+  def getIceBeamCooldownRemaining: Float = {
+    val remaining = lastIceBeamTime.get() + Constants.ICE_BEAM_COOLDOWN_MS - System.currentTimeMillis()
+    if (remaining <= 0) 0.0f else remaining / 1000.0f
+  }
+
   def isMovementBlocked: Boolean = {
     System.currentTimeMillis() < movementBlockedUntil.get()
   }
@@ -378,6 +490,20 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
           val updatePacket = packet.asInstanceOf[PlayerUpdatePacket]
           val serverHealth = updatePacket.getHealth
           localHealth.set(serverHealth)
+
+          // Handle frozen flag (bit 2)
+          val flags = updatePacket.getEffectFlags
+          if ((flags & 0x04) != 0) {
+            frozenUntil.set(System.currentTimeMillis() + 1000)
+          }
+
+          // Handle position correction (e.g. tentacle pull)
+          val serverPos = updatePacket.getPosition
+          val localPos = localPosition.get()
+          if (serverPos.getX != localPos.getX || serverPos.getY != localPos.getY) {
+            localPosition.set(serverPos)
+          }
+
           if (serverHealth <= 0 && !isDead) {
             isDead = true
             localDeathTime.set(System.currentTimeMillis())
@@ -416,7 +542,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
           packet.getDx,
           packet.getDy,
           packet.getColorRGB,
-          packet.getChargeLevel
+          packet.getChargeLevel,
+          packet.getProjectileType
         )
         projectiles.put(projectileId, projectile)
 
@@ -432,7 +559,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
             packet.getDx,
             packet.getDy,
             packet.getColorRGB,
-            packet.getChargeLevel
+            packet.getChargeLevel,
+            packet.getProjectileType
           )
           projectiles.put(projectileId, newProjectile)
         }
@@ -449,7 +577,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
             packet.getDx,
             packet.getDy,
             packet.getColorRGB,
-            existingProjectile.chargeLevel
+            existingProjectile.chargeLevel,
+            existingProjectile.projectileType
           )
           projectiles.put(projectileId, updatedProjectile)
         }
@@ -569,6 +698,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
       } else {
         player.setGemBoostUntil(0)
       }
+      if ((flags & 0x04) != 0) {
+        player.setFrozenUntil(System.currentTimeMillis() + 1000)
+      } else {
+        player.setFrozenUntil(0)
+      }
 
       // Record death animation when player newly dies
       if (wasAlive && player.isDead) {
@@ -585,6 +719,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
       val flags = packet.getEffectFlags
       if ((flags & 0x01) != 0) player.setShieldUntil(System.currentTimeMillis() + 1000)
       if ((flags & 0x02) != 0) player.setGemBoostUntil(System.currentTimeMillis() + 1000)
+      if ((flags & 0x04) != 0) player.setFrozenUntil(System.currentTimeMillis() + 1000)
       players.put(playerId, player)
     }
   }

@@ -65,9 +65,11 @@ object PacketSerializer {
         }
         // [25] charge level (absolute byte [62])
         val chargeLevel = payloadBuffer.get()
+        // [26] projectile type (absolute byte [63])
+        val projectileType = payloadBuffer.get()
         new ProjectilePacket(
           sequenceNumber, playerId, timestamp, x, y, colorRGB,
-          projectileId, dx, dy, action, targetId, chargeLevel
+          projectileId, dx, dy, action, targetId, chargeLevel, projectileType
         )
 
       case _ =>

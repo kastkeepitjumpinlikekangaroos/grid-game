@@ -3,7 +3,9 @@ package com.gridgame.server
 import com.gridgame.common.Constants
 import com.gridgame.common.model.Item
 import com.gridgame.common.model.Player
+import com.gridgame.common.model.Position
 import com.gridgame.common.model.Projectile
+import com.gridgame.common.model.ProjectileType
 import com.gridgame.common.model.WorldData
 import com.gridgame.common.protocol._
 import com.gridgame.common.world.WorldLoader
@@ -220,7 +222,10 @@ class GameServer(port: Int, val worldFile: String = "") {
           projectile.colorRGB,
           projectile.id,
           projectile.dx, projectile.dy,
-          ProjectileAction.MOVE
+          ProjectileAction.MOVE,
+          null,
+          projectile.chargeLevel.toByte,
+          projectile.projectileType
         )
         broadcastToAllPlayers(packet)
 
@@ -233,14 +238,52 @@ class GameServer(port: Int, val worldFile: String = "") {
           projectile.id,
           projectile.dx, projectile.dy,
           ProjectileAction.HIT,
-          targetId
+          targetId,
+          projectile.chargeLevel.toByte,
+          projectile.projectileType
         )
         broadcastToAllPlayers(hitPacket)
 
         val target = registry.get(targetId)
         if (target != null) {
+          // Apply type-specific effects
+          projectile.projectileType match {
+            case ProjectileType.TENTACLE =>
+              // Pull target toward shooter
+              val owner = registry.get(projectile.ownerId)
+              if (owner != null) {
+                val ownerPos = owner.getPosition
+                val targetPos = target.getPosition
+                val ddx = ownerPos.getX - targetPos.getX
+                val ddy = ownerPos.getY - targetPos.getY
+                val dist = Math.sqrt(ddx.toDouble * ddx + ddy.toDouble * ddy).toFloat
+                if (dist > 0.1f) {
+                  val pullDist = Math.min(Constants.TENTACLE_PULL_DISTANCE, dist - 1.0f)
+                  if (pullDist > 0) {
+                    val nx = ddx / dist
+                    val ny = ddy / dist
+                    var newX = targetPos.getX + Math.round(nx * pullDist)
+                    var newY = targetPos.getY + Math.round(ny * pullDist)
+                    // Clamp to world bounds
+                    newX = Math.max(0, Math.min(world.width - 1, newX))
+                    newY = Math.max(0, Math.min(world.height - 1, newY))
+                    // Validate walkability
+                    if (world.isWalkable(newX, newY)) {
+                      target.setPosition(new Position(newX, newY))
+                    }
+                  }
+                }
+              }
+
+            case ProjectileType.ICE_BEAM =>
+              target.setFrozenUntil(System.currentTimeMillis() + Constants.ICE_BEAM_FREEZE_DURATION_MS)
+
+            case _ => // Normal projectile, no special effect
+          }
+
           val flags = (if (target.hasShield) 0x01 else 0) |
-                      (if (target.hasGemBoost) 0x02 else 0)
+                      (if (target.hasGemBoost) 0x02 else 0) |
+                      (if (target.isFrozen) 0x04 else 0)
           val updatePacket = new PlayerUpdatePacket(
             sequenceNumber.getAndIncrement(),
             targetId,
@@ -261,7 +304,10 @@ class GameServer(port: Int, val worldFile: String = "") {
           projectile.colorRGB,
           projectile.id,
           projectile.dx, projectile.dy,
-          ProjectileAction.DESPAWN
+          ProjectileAction.DESPAWN,
+          null,
+          projectile.chargeLevel.toByte,
+          projectile.projectileType
         )
         broadcastToAllPlayers(packet)
     }
@@ -307,7 +353,8 @@ class GameServer(port: Int, val worldFile: String = "") {
       projectile.dx, projectile.dy,
       ProjectileAction.SPAWN,
       null,
-      projectile.chargeLevel.toByte
+      projectile.chargeLevel.toByte,
+      projectile.projectileType
     )
     broadcastToAllPlayers(packet)
   }
@@ -356,13 +403,16 @@ class GameServer(port: Int, val worldFile: String = "") {
             val updatePacket = packet.asInstanceOf[PlayerUpdatePacket]
             val player = registry.get(updatePacket.getPlayerId)
             if (player != null) {
+              // Reject position updates from frozen players
+              val pos = if (player.isFrozen) player.getPosition else updatePacket.getPosition
               val flags = (if (player.hasShield) 0x01 else 0) |
-                          (if (player.hasGemBoost) 0x02 else 0)
+                          (if (player.hasGemBoost) 0x02 else 0) |
+                          (if (player.isFrozen) 0x04 else 0)
               new PlayerUpdatePacket(
                 updatePacket.getSequenceNumber,
                 updatePacket.getPlayerId,
                 updatePacket.getTimestamp,
-                updatePacket.getPosition,
+                pos,
                 updatePacket.getColorRGB,
                 player.getHealth,
                 updatePacket.getChargeLevel,

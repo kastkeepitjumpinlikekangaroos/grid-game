@@ -3,6 +3,7 @@ package com.gridgame.server
 import com.gridgame.common.Constants
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Projectile
+import com.gridgame.common.model.ProjectileType
 import com.gridgame.common.model.WorldData
 import com.gridgame.common.protocol.ProjectileAction
 import com.gridgame.common.protocol.ProjectilePacket
@@ -22,14 +23,14 @@ class ProjectileManager(registry: ClientRegistry) {
   private val projectiles = new ConcurrentHashMap[Int, Projectile]()
   private val nextId = new AtomicInteger(1)
 
-  def spawnProjectile(ownerId: UUID, x: Int, y: Int, dx: Float, dy: Float, colorRGB: Int, chargeLevel: Int = 0): Projectile = {
+  def spawnProjectile(ownerId: UUID, x: Int, y: Int, dx: Float, dy: Float, colorRGB: Int, chargeLevel: Int = 0, projectileType: Byte = ProjectileType.NORMAL): Projectile = {
     val id = nextId.getAndIncrement()
     // Spawn the projectile one cell ahead in the velocity direction
     val spawnX = x.toFloat + dx
     val spawnY = y.toFloat + dy
-    val projectile = new Projectile(id, ownerId, spawnX, spawnY, dx, dy, colorRGB, chargeLevel)
+    val projectile = new Projectile(id, ownerId, spawnX, spawnY, dx, dy, colorRGB, chargeLevel, projectileType)
     projectiles.put(id, projectile)
-    println(s"ProjectileManager: Spawned $projectile (charge=$chargeLevel%)")
+    println(s"ProjectileManager: Spawned $projectile (charge=$chargeLevel%, type=$projectileType)")
     projectile
   }
 
@@ -54,7 +55,11 @@ class ProjectileManager(registry: ClientRegistry) {
         while (sub < subSteps && !resolved) {
           projectile.moveStep(fraction)
 
-          val maxRange = Constants.CHARGE_MIN_RANGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_RANGE - Constants.CHARGE_MIN_RANGE))
+          val maxRange = projectile.projectileType match {
+            case ProjectileType.TENTACLE => Constants.TENTACLE_MAX_RANGE.toDouble
+            case ProjectileType.ICE_BEAM => Constants.ICE_BEAM_MAX_RANGE.toDouble
+            case _ => Constants.CHARGE_MIN_RANGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_RANGE - Constants.CHARGE_MIN_RANGE))
+          }
           if (projectile.getDistanceTraveled >= maxRange) {
             toRemove += projectile.id
             events += ProjectileDespawned(projectile)
@@ -76,7 +81,11 @@ class ProjectileManager(registry: ClientRegistry) {
             }
 
             if (hitPlayer != null) {
-              val damage = (Constants.CHARGE_MIN_DAMAGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_DAMAGE - Constants.CHARGE_MIN_DAMAGE))).toInt
+              val damage = projectile.projectileType match {
+                case ProjectileType.TENTACLE => Constants.TENTACLE_DAMAGE
+                case ProjectileType.ICE_BEAM => Constants.ICE_BEAM_DAMAGE
+                case _ => (Constants.CHARGE_MIN_DAMAGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_DAMAGE - Constants.CHARGE_MIN_DAMAGE))).toInt
+              }
               val newHealth = hitPlayer.getHealth - damage
               hitPlayer.setHealth(newHealth)
               println(s"ProjectileManager: ${projectile} hit player ${hitPlayer.getId.toString.substring(0, 8)}, damage=$damage (charge=${projectile.chargeLevel}%), health now $newHealth")

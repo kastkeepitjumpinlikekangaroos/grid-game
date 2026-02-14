@@ -8,6 +8,7 @@ import com.gridgame.common.model.ItemType
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
 import com.gridgame.common.model.Projectile
+import com.gridgame.common.model.ProjectileType
 import com.gridgame.common.model.WorldData
 
 import javafx.scene.canvas.Canvas
@@ -212,6 +213,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     drawTeleportAnimations(camOffX, camOffY)
 
     drawCoordinates(currentWorld)
+    drawAbilityHUD()
     drawInventory()
     drawChargeBar()
   }
@@ -357,6 +359,14 @@ class GameCanvas(client: GameClient) extends Canvas() {
   }
 
   private def drawSingleProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    projectile.projectileType match {
+      case ProjectileType.TENTACLE => drawTentacleProjectile(projectile, camOffX, camOffY)
+      case ProjectileType.ICE_BEAM => drawIceBeamProjectile(projectile, camOffX, camOffY)
+      case _ => drawNormalProjectile(projectile, camOffX, camOffY)
+    }
+  }
+
+  private def drawNormalProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
     val projX = projectile.getX.toDouble
     val projY = projectile.getY.toDouble
 
@@ -440,6 +450,149 @@ class GameCanvas(client: GameClient) extends Canvas() {
     }
   }
 
+  private def drawTentacleProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 3.0
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 23) * 0.4
+      val pulse = 0.85 + 0.15 * Math.sin(phase)
+
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len < 1) return
+      val nx = dx / len
+      val ny = dy / len
+
+      // Draw 3 wavy tendril strands
+      for (strand <- 0 until 3) {
+        val strandOffset = (strand - 1) * 5.0
+        val segments = 12
+        val points = (0 to segments).map { seg =>
+          val t = seg.toDouble / segments
+          val wave = Math.sin(phase * 2.0 + t * Math.PI * 3 + strand * 2.1) * (6.0 + strand * 2.0) * (1.0 - t * 0.5)
+          val bx = tailX + dx * t + (-ny * strandOffset + ny * wave) * 0.3 + (-ny) * wave
+          val by = tailY + dy * t + (nx * strandOffset - nx * wave) * 0.3 + nx * wave
+          (bx, by)
+        }
+
+        // Outer glow
+        gc.setStroke(Color.color(0.1, 0.7, 0.2, 0.15 * pulse))
+        gc.setLineWidth(8.0 * pulse)
+        for (i <- 0 until points.length - 1) {
+          gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
+        }
+
+        // Main tendril
+        gc.setStroke(Color.color(0.2, 0.8, 0.3, 0.6 * pulse))
+        gc.setLineWidth(4.0 * pulse)
+        for (i <- 0 until points.length - 1) {
+          gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
+        }
+
+        // Bright core
+        gc.setStroke(Color.color(0.5, 1.0, 0.6, 0.8 * pulse))
+        gc.setLineWidth(1.5)
+        for (i <- 0 until points.length - 1) {
+          gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
+        }
+      }
+
+      // Purple/green glow orb at tip
+      val orbR = 7.0 * pulse
+      gc.setFill(Color.color(0.5, 0.2, 0.8, 0.2 * pulse))
+      gc.fillOval(tipX - orbR * 2, tipY - orbR * 2, orbR * 4, orbR * 4)
+      gc.setFill(Color.color(0.3, 0.9, 0.4, 0.5 * pulse))
+      gc.fillOval(tipX - orbR, tipY - orbR, orbR * 2, orbR * 2)
+      gc.setFill(Color.color(0.7, 1.0, 0.8, 0.85))
+      gc.fillOval(tipX - orbR * 0.4, tipY - orbR * 0.4, orbR * 0.8, orbR * 0.8)
+    }
+  }
+
+  private def drawIceBeamProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 4.0
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 31) * 0.25
+      val pulse = 0.85 + 0.15 * Math.sin(phase)
+      val fastFlicker = 0.9 + 0.1 * Math.sin(phase * 3.3)
+
+      // Layer 1: Wide icy outer glow
+      gc.setStroke(Color.color(0.3, 0.6, 1.0, 0.08 * pulse))
+      gc.setLineWidth(40 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Layer 2: Mid glow
+      gc.setStroke(Color.color(0.4, 0.7, 1.0, 0.15 * pulse))
+      gc.setLineWidth(24 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Layer 3: Bright blue beam
+      gc.setStroke(Color.color(0.5, 0.8, 1.0, 0.5 * fastFlicker))
+      gc.setLineWidth(12 * fastFlicker)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Layer 4: White-blue core
+      gc.setStroke(Color.color(0.8, 0.9, 1.0, 0.9 * fastFlicker))
+      gc.setLineWidth(4.0)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Crystal particles along beam
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len > 1) {
+        val nx = dx / len
+        val ny = dy / len
+        for (i <- 0 until 8) {
+          val t = ((animationTick * 0.06 + i.toDouble / 8 + projectile.id * 0.17) % 1.0)
+          val sparkle = Math.sin(phase * 3 + i * 1.7)
+          val px = tailX + dx * t + (-ny) * sparkle * 8.0
+          val py = tailY + dy * t + nx * sparkle * 8.0
+          val pAlpha = Math.max(0.0, Math.min(1.0, 0.6 * (1.0 - Math.abs(t - 0.5) * 2.0)))
+          val pSize = 2.5 + Math.sin(phase + i * 0.8) * 1.0
+          gc.setFill(Color.color(0.8, 0.95, 1.0, pAlpha))
+          gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+        }
+      }
+
+      // Icy orb at the tip
+      val orbR = 8.0 * pulse
+      gc.setFill(Color.color(0.3, 0.6, 1.0, 0.2 * pulse))
+      gc.fillOval(tipX - orbR * 2, tipY - orbR * 2, orbR * 4, orbR * 4)
+      gc.setFill(Color.color(0.5, 0.8, 1.0, 0.4 * pulse))
+      gc.fillOval(tipX - orbR, tipY - orbR, orbR * 2, orbR * 2)
+      gc.setFill(Color.color(0.9, 0.95, 1.0, 0.85 * fastFlicker))
+      gc.fillOval(tipX - orbR * 0.5, tipY - orbR * 0.5, orbR, orbR)
+    }
+  }
+
   private def drawShadow(screenX: Double, screenY: Double): Unit = {
     gc.setFill(Color.rgb(0, 0, 0, 0.3))
     gc.fillOval(screenX - 16, screenY - 6, 32, 12)
@@ -487,6 +640,9 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val spriteY = screenY - displaySz.toDouble
     gc.drawImage(sprite, spriteX, spriteY, displaySz, displaySz)
 
+    // Draw frozen effect
+    if (player.isFrozen) drawFrozenEffect(screenX, spriteCenter)
+
     // Draw hit effect on top of sprite
     drawHitEffect(screenX, spriteCenter, client.getPlayerHitTime(playerId))
 
@@ -517,6 +673,9 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val frame = if (client.getIsMoving) (animationTick / animSpeed) % 4 else 0
     val sprite = SpriteGenerator.getSprite(client.getLocalColorRGB, client.getLocalDirection, frame)
     gc.drawImage(sprite, spriteX, spriteY, displaySz, displaySz)
+
+    // Draw frozen effect
+    if (client.isFrozen) drawFrozenEffect(screenX, spriteCenter)
 
     // Draw hit effect on top of sprite
     drawHitEffect(screenX, spriteCenter, client.getPlayerHitTime(client.getLocalPlayerId))
@@ -641,6 +800,33 @@ class GameCanvas(client: GameClient) extends Canvas() {
         0.6 * pct
       ))
       gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+    }
+  }
+
+  private def drawFrozenEffect(centerX: Double, centerY: Double): Unit = {
+    val phase = animationTick * 0.1
+    val displaySz = Constants.PLAYER_DISPLAY_SIZE_PX
+
+    // Icy blue overlay
+    val radius = displaySz * 0.5
+    gc.setFill(Color.color(0.4, 0.7, 1.0, 0.2 + 0.05 * Math.sin(phase * 2)))
+    gc.fillOval(centerX - radius, centerY - radius, radius * 2, radius * 2)
+
+    // Ice crystal border
+    gc.setStroke(Color.color(0.5, 0.85, 1.0, 0.6))
+    gc.setLineWidth(2.0)
+    gc.strokeOval(centerX - radius, centerY - radius, radius * 2, radius * 2)
+
+    // Crystal sparkles
+    for (i <- 0 until 6) {
+      val angle = phase * 0.5 + i * (Math.PI / 3)
+      val dist = radius * 0.7
+      val sx = centerX + dist * Math.cos(angle)
+      val sy = centerY + dist * Math.sin(angle) * 0.5
+      val sparkleAlpha = 0.5 + 0.4 * Math.sin(phase * 3 + i * 1.3)
+      val sparkleSize = 2.0 + Math.sin(phase * 2 + i) * 1.0
+      gc.setFill(Color.color(0.8, 0.95, 1.0, sparkleAlpha))
+      gc.fillOval(sx - sparkleSize, sy - sparkleSize, sparkleSize * 2, sparkleSize * 2)
     }
   }
 
@@ -945,6 +1131,66 @@ class GameCanvas(client: GameClient) extends Canvas() {
     ).flatten
     if (effects.nonEmpty) {
       drawOutlinedText(s"Effects: ${effects.mkString(" ")}", 10, 120)
+    }
+  }
+
+  private def drawAbilityHUD(): Unit = {
+    val slotSize = 32.0
+    val slotGap = 6.0
+    // Match inventory layout to position ability slots to its left
+    val invSlotSize = 44.0
+    val invSlotGap = 8.0
+    val invNumSlots = 4
+    val totalInventoryWidth = invNumSlots * invSlotSize + (invNumSlots - 1) * invSlotGap
+    val inventoryStartX = (getWidth - totalInventoryWidth) / 2.0
+    val startY = getHeight - slotSize - 14.0
+
+    // Position ability slots to the left of inventory
+    val abilityGap = 12.0 // gap between abilities and inventory
+
+    val abilities = Seq(
+      ("Q", client.getTentacleCooldownFraction, client.getTentacleCooldownRemaining, Color.color(0.2, 0.8, 0.3), Color.color(0.1, 0.5, 0.15)),
+      ("E", client.getIceBeamCooldownFraction, client.getIceBeamCooldownRemaining, Color.color(0.4, 0.7, 1.0), Color.color(0.15, 0.35, 0.6))
+    )
+
+    for (i <- abilities.indices) {
+      val (key, cooldownFrac, cooldownSec, readyColor, dimColor) = abilities(i)
+      val slotX = inventoryStartX - (abilities.length - i) * (slotSize + slotGap) - abilityGap
+
+      val onCooldown = cooldownFrac > 0.001f
+
+      // Background
+      gc.setFill(Color.rgb(0, 0, 0, 0.5))
+      gc.fillRect(slotX, startY, slotSize, slotSize)
+
+      // Ability icon (simple colored circle)
+      val iconColor = if (onCooldown) dimColor else readyColor
+      gc.setFill(iconColor)
+      gc.fillOval(slotX + 6, startY + 4, slotSize - 12, slotSize - 12)
+
+      // Cooldown sweep overlay
+      if (onCooldown) {
+        gc.setFill(Color.rgb(0, 0, 0, 0.6))
+        val sweepHeight = slotSize * cooldownFrac
+        gc.fillRect(slotX, startY, slotSize, sweepHeight)
+
+        // Cooldown seconds text
+        gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 12))
+        gc.setFill(Color.WHITE)
+        val cdText = f"${cooldownSec}%.1f"
+        gc.fillText(cdText, slotX + 4, startY + slotSize / 2.0 + 4)
+      }
+
+      // Border - bright when ready, dim when on cooldown
+      val borderColor = if (onCooldown) Color.rgb(100, 100, 100, 0.6) else readyColor
+      gc.setStroke(borderColor)
+      gc.setLineWidth(if (onCooldown) 1.5 else 2.5)
+      gc.strokeRect(slotX, startY, slotSize, slotSize)
+
+      // Key label
+      gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 10))
+      gc.setFill(Color.WHITE)
+      gc.fillText(key, slotX + slotSize - 10, startY + slotSize - 4)
     }
   }
 

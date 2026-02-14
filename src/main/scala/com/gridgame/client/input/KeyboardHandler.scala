@@ -23,6 +23,7 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
       } else {
         processUseItem(event)
         processBurstShot(event)
+        processAbilities(event)
       }
     } else if (event.getEventType == KeyEvent.KEY_RELEASED) {
       pressedKeys.remove(event.getCode)
@@ -70,6 +71,14 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
     }
     if (itemTypeId >= 0) {
       client.useItem(itemTypeId)
+    }
+  }
+
+  private def processAbilities(event: KeyEvent): Unit = {
+    event.getCode match {
+      case KeyCode.Q => client.shootTentacle()
+      case KeyCode.E => client.shootIceBeam()
+      case _ =>
     }
   }
 
