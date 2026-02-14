@@ -15,8 +15,8 @@ object SpriteGenerator {
   private val directionRow: Map[Direction, Int] = Map(
     Direction.Down  -> 0,
     Direction.Up    -> 1,
-    Direction.Left  -> 3,
-    Direction.Right -> 2
+    Direction.Left  -> 2,
+    Direction.Right -> 3
   )
   private val framesPerDirection = 4
 
