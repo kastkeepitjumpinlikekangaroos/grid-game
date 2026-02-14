@@ -1,6 +1,7 @@
 package com.gridgame.server
 
 import com.gridgame.common.Constants
+import com.gridgame.common.model.Direction
 import com.gridgame.common.model.Item
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
@@ -249,29 +250,23 @@ class GameServer(port: Int, val worldFile: String = "") {
           // Apply type-specific effects
           projectile.projectileType match {
             case ProjectileType.TENTACLE =>
-              // Pull target toward shooter
+              // Pull target directly in front of the shooter
               val owner = registry.get(projectile.ownerId)
               if (owner != null) {
                 val ownerPos = owner.getPosition
-                val targetPos = target.getPosition
-                val ddx = ownerPos.getX - targetPos.getX
-                val ddy = ownerPos.getY - targetPos.getY
-                val dist = Math.sqrt(ddx.toDouble * ddx + ddy.toDouble * ddy).toFloat
-                if (dist > 0.1f) {
-                  val pullDist = Math.min(Constants.TENTACLE_PULL_DISTANCE, dist - 1.0f)
-                  if (pullDist > 0) {
-                    val nx = ddx / dist
-                    val ny = ddy / dist
-                    var newX = targetPos.getX + Math.round(nx * pullDist)
-                    var newY = targetPos.getY + Math.round(ny * pullDist)
-                    // Clamp to world bounds
-                    newX = Math.max(0, Math.min(world.width - 1, newX))
-                    newY = Math.max(0, Math.min(world.height - 1, newY))
-                    // Validate walkability
-                    if (world.isWalkable(newX, newY)) {
-                      target.setPosition(new Position(newX, newY))
-                    }
-                  }
+                val (fdx, fdy) = owner.getDirection match {
+                  case Direction.Up    => (0, -1)
+                  case Direction.Down  => (0, 1)
+                  case Direction.Left  => (-1, 0)
+                  case Direction.Right => (1, 0)
+                }
+                val destX = ownerPos.getX + fdx
+                val destY = ownerPos.getY + fdy
+                // Clamp to world bounds
+                val clampedX = Math.max(0, Math.min(world.width - 1, destX))
+                val clampedY = Math.max(0, Math.min(world.height - 1, destY))
+                if (world.isWalkable(clampedX, clampedY)) {
+                  target.setPosition(new Position(clampedX, clampedY))
                 }
               }
 
