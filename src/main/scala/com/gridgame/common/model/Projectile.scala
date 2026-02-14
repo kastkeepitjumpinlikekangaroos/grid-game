@@ -12,9 +12,12 @@ object ProjectileType {
   val SPEAR: Byte = 5
   val SOUL_BOLT: Byte = 6
   val HAUNT: Byte = 7
-  val BULLET: Byte = 8
-  val GRENADE: Byte = 9
-  val ROCKET: Byte = 10
+  val SPLASH: Byte = 8
+  val TIDAL_WAVE: Byte = 9
+  val GEYSER: Byte = 10
+  val BULLET: Byte = 11
+  val GRENADE: Byte = 12
+  val ROCKET: Byte = 13
 }
 
 class Projectile(
@@ -39,6 +42,9 @@ class Projectile(
     case ProjectileType.SPEAR => 0.7f
     case ProjectileType.SOUL_BOLT => 0.65f
     case ProjectileType.HAUNT => 0.5f
+    case ProjectileType.SPLASH => 0.65f
+    case ProjectileType.TIDAL_WAVE => 0.5f
+    case ProjectileType.GEYSER => 0.6f
     case ProjectileType.BULLET => 1.0f
     case ProjectileType.GRENADE => 0.5f
     case ProjectileType.ROCKET => 0.55f
@@ -89,7 +95,7 @@ class Projectile(
     val dy = y - (pos.getY + 0.5f)
     val radius = projectileType match {
       case ProjectileType.AXE => Constants.AXE_HIT_RADIUS
-      case ProjectileType.HAUNT => Constants.PROJECTILE_HIT_RADIUS
+      case ProjectileType.GEYSER => Constants.GEYSER_AOE_RADIUS
       case _ => Constants.PROJECTILE_HIT_RADIUS
     }
     dx * dx + dy * dy <= radius * radius

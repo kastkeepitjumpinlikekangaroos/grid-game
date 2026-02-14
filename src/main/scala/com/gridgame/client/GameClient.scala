@@ -473,20 +473,48 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       }
     }
 
-    val packet = new ProjectilePacket(
-      sequenceNumber.getAndIncrement(),
-      localPlayerId,
-      pos.getX.toFloat,
-      pos.getY.toFloat,
-      localColorRGB,
-      0,
-      ndx, ndy,
-      ProjectileAction.SPAWN,
-      null,
-      0.toByte,
-      abilityDef.projectileType
-    )
-    networkThread.send(packet)
+    if (abilityDef.projectileType == ProjectileType.TIDAL_WAVE) {
+      // Fan pattern: 5 projectiles across a 60-degree arc
+      val fanCount = Constants.TIDAL_WAVE_FAN_COUNT
+      val totalAngle = Constants.TIDAL_WAVE_FAN_ANGLE
+      val halfAngle = totalAngle / 2.0
+      for (i <- 0 until fanCount) {
+        val theta = -halfAngle + (totalAngle * i / (fanCount - 1).toDouble)
+        val cos = Math.cos(theta).toFloat
+        val sin = Math.sin(theta).toFloat
+        val rdx = ndx * cos - ndy * sin
+        val rdy = ndx * sin + ndy * cos
+        val fanPacket = new ProjectilePacket(
+          sequenceNumber.getAndIncrement(),
+          localPlayerId,
+          pos.getX.toFloat,
+          pos.getY.toFloat,
+          localColorRGB,
+          0,
+          rdx, rdy,
+          ProjectileAction.SPAWN,
+          null,
+          0.toByte,
+          abilityDef.projectileType
+        )
+        networkThread.send(fanPacket)
+      }
+    } else {
+      val packet = new ProjectilePacket(
+        sequenceNumber.getAndIncrement(),
+        localPlayerId,
+        pos.getX.toFloat,
+        pos.getY.toFloat,
+        localColorRGB,
+        0,
+        ndx, ndy,
+        ProjectileAction.SPAWN,
+        null,
+        0.toByte,
+        abilityDef.projectileType
+      )
+      networkThread.send(packet)
+    }
   }
 
   def isFrozen: Boolean = System.currentTimeMillis() < frozenUntil.get()
