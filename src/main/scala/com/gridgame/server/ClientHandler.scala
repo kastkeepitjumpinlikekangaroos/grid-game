@@ -145,6 +145,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     if (player == null) {
       System.err.println(s"Received update for unknown player: $playerId")
       player = new Player(playerId, "Player", packet.getPosition, packet.getColorRGB)
+      player.setCharacterId(packet.getCharacterId)
       if (udpSender != null) {
         player.setUdpAddress(udpSender)
       }
@@ -159,6 +160,9 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       }
       player.setPosition(newPos)
       player.setColorRGB(packet.getColorRGB)
+      if (packet.getCharacterId != 0) {
+        player.setCharacterId(packet.getCharacterId)
+      }
       if (udpSender != null) {
         player.setUdpAddress(udpSender)
       }

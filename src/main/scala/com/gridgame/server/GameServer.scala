@@ -250,7 +250,8 @@ class GameServer(port: Int, val worldFile: String = "") {
                       updatePacket.getColorRGB,
                       player.getHealth,
                       updatePacket.getChargeLevel,
-                      flags
+                      flags,
+                      player.getCharacterId
                     )
                   } else {
                     packet
@@ -266,7 +267,8 @@ class GameServer(port: Int, val worldFile: String = "") {
                       joinPacket.getPosition,
                       joinPacket.getColorRGB,
                       joinPacket.getPlayerName,
-                      player.getHealth
+                      player.getHealth,
+                      player.getCharacterId
                     )
                   } else {
                     packet
