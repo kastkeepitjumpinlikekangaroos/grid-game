@@ -113,9 +113,15 @@ object Constants {
   val HAUNT_TELEPORT_DISTANCE: Int = 2
   val HAUNT_FREEZE_DURATION_MS: Int = 2000
 
-  // Wizard: Arcane Bolt (primary)
+  // Wizard: Arcane Bolt (primary, chargeable)
   val ARCANE_BOLT_DAMAGE: Int = 18
   val ARCANE_BOLT_MAX_RANGE: Int = 25
+  val ARCANE_BOLT_CHARGE_MIN_DAMAGE: Int = 8
+  val ARCANE_BOLT_CHARGE_MAX_DAMAGE: Int = 40
+  val ARCANE_BOLT_CHARGE_MIN_RANGE: Int = 15
+  val ARCANE_BOLT_CHARGE_MAX_RANGE: Int = 30
+  val ARCANE_BOLT_CHARGE_MIN_SPEED: Float = 0.6f
+  val ARCANE_BOLT_CHARGE_MAX_SPEED: Float = 1.2f
 
   // Wizard: Fireball (Q)
   val FIREBALL_COOLDOWN_MS: Int = 6000
@@ -126,11 +132,17 @@ object Constants {
   val BLINK_COOLDOWN_MS: Int = 8000
   val BLINK_DISTANCE: Int = 6
 
-  // Splash Shot (Tidecaller primary)
+  // Splash Shot (Tidecaller primary, chargeable)
   val SPLASH_DAMAGE: Int = 20
   val SPLASH_AOE_DAMAGE: Int = 10
   val SPLASH_MAX_RANGE: Int = 15
   val SPLASH_AOE_RADIUS: Float = 3.0f
+  val SPLASH_CHARGE_MIN_DAMAGE: Int = 10
+  val SPLASH_CHARGE_MAX_DAMAGE: Int = 35
+  val SPLASH_CHARGE_MIN_RANGE: Int = 10
+  val SPLASH_CHARGE_MAX_RANGE: Int = 20
+  val SPLASH_CHARGE_MIN_SPEED: Float = 0.5f
+  val SPLASH_CHARGE_MAX_SPEED: Float = 1.0f
 
   // Tidal Wave (Tidecaller Q)
   val TIDAL_WAVE_COOLDOWN_MS: Int = 8000
