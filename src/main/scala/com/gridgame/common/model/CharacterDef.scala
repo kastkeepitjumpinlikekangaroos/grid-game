@@ -129,14 +129,41 @@ object CharacterDef {
     maxHealth = 70
   )
 
+  val Tidecaller: CharacterDef = CharacterDef(
+    id = CharacterId.Tidecaller,
+    displayName = "Tidecaller",
+    description = "A water mage with devastating area-of-effect abilities.",
+    spriteSheet = "sprites/tidecaller.png",
+    qAbility = AbilityDef(
+      name = "Tidal Wave",
+      description = "Fires 5 projectiles in a fan that push enemies back.",
+      cooldownMs = Constants.TIDAL_WAVE_COOLDOWN_MS,
+      maxRange = Constants.TIDAL_WAVE_MAX_RANGE,
+      damage = Constants.TIDAL_WAVE_DAMAGE,
+      projectileType = ProjectileType.TIDAL_WAVE,
+      keybind = "Q"
+    ),
+    eAbility = AbilityDef(
+      name = "Geyser",
+      description = "Erupts on hit or at max range, damaging all nearby.",
+      cooldownMs = Constants.GEYSER_COOLDOWN_MS,
+      maxRange = Constants.GEYSER_MAX_RANGE,
+      damage = Constants.GEYSER_DAMAGE,
+      projectileType = ProjectileType.GEYSER,
+      keybind = "E"
+    ),
+    primaryProjectileType = ProjectileType.SPLASH
+  )
+
   private val byId: Map[Byte, CharacterDef] = Map(
     CharacterId.Spaceman.id -> Spaceman,
     CharacterId.Gladiator.id -> Gladiator,
     CharacterId.Wraith.id -> Wraith,
-    CharacterId.Wizard.id -> Wizard
+    CharacterId.Wizard.id -> Wizard,
+    CharacterId.Tidecaller.id -> Tidecaller
   )
 
-  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith, Wizard)
+  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith, Wizard, Tidecaller)
 
   def get(id: CharacterId): CharacterDef = byId.getOrElse(id.id, Spaceman)
 

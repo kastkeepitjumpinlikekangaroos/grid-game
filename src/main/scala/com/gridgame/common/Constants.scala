@@ -126,6 +126,26 @@ object Constants {
   val BLINK_COOLDOWN_MS: Int = 8000
   val BLINK_DISTANCE: Int = 6
 
+  // Splash Shot (Tidecaller primary)
+  val SPLASH_DAMAGE: Int = 20
+  val SPLASH_AOE_DAMAGE: Int = 10
+  val SPLASH_MAX_RANGE: Int = 15
+  val SPLASH_AOE_RADIUS: Float = 3.0f
+
+  // Tidal Wave (Tidecaller Q)
+  val TIDAL_WAVE_COOLDOWN_MS: Int = 8000
+  val TIDAL_WAVE_DAMAGE: Int = 10
+  val TIDAL_WAVE_MAX_RANGE: Int = 12
+  val TIDAL_WAVE_FAN_COUNT: Int = 5
+  val TIDAL_WAVE_FAN_ANGLE: Double = Math.toRadians(60)
+  val TIDAL_WAVE_PUSHBACK_DISTANCE: Float = 3.0f
+
+  // Geyser (Tidecaller E)
+  val GEYSER_COOLDOWN_MS: Int = 12000
+  val GEYSER_DAMAGE: Int = 25
+  val GEYSER_MAX_RANGE: Int = 18
+  val GEYSER_AOE_RADIUS: Float = 4.0f
+
   // Lobby configuration
   val RESPAWN_DELAY_MS: Int = 3000
   val DEFAULT_GAME_DURATION_MIN: Int = 5

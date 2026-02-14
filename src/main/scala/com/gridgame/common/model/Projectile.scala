@@ -14,6 +14,9 @@ object ProjectileType {
   val HAUNT: Byte = 7
   val ARCANE_BOLT: Byte = 8
   val FIREBALL: Byte = 9
+  val SPLASH: Byte = 10
+  val TIDAL_WAVE: Byte = 11
+  val GEYSER: Byte = 12
 }
 
 class Projectile(
@@ -40,6 +43,9 @@ class Projectile(
     case ProjectileType.HAUNT => 0.5f
     case ProjectileType.ARCANE_BOLT => 0.85f
     case ProjectileType.FIREBALL => 0.4f
+    case ProjectileType.SPLASH => 0.65f
+    case ProjectileType.TIDAL_WAVE => 0.5f
+    case ProjectileType.GEYSER => 0.6f
     case _ =>
       val c = Constants
       c.CHARGE_MIN_SPEED + (chargeLevel / 100.0f) * (c.CHARGE_MAX_SPEED - c.CHARGE_MIN_SPEED)
@@ -85,7 +91,7 @@ class Projectile(
     val dy = y - (pos.getY + 0.5f)
     val radius = projectileType match {
       case ProjectileType.AXE => Constants.AXE_HIT_RADIUS
-      case ProjectileType.HAUNT => Constants.PROJECTILE_HIT_RADIUS
+      case ProjectileType.GEYSER => Constants.GEYSER_AOE_RADIUS
       case _ => Constants.PROJECTILE_HIT_RADIUS
     }
     dx * dx + dy * dy <= radius * radius
