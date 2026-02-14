@@ -1093,20 +1093,25 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
   private def drawGameOverScreen(): Unit = {
     // Dark overlay
-    gc.setFill(Color.rgb(0, 0, 0, 0.7))
+    gc.setFill(Color.rgb(0, 0, 0, 0.75))
     gc.fillRect(0, 0, getWidth, getHeight)
 
-    gc.setFill(Color.RED)
-    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 48))
-    val text = "GAME OVER"
-    val textWidth = 220
-    gc.fillText(text, (getWidth - textWidth) / 2, getHeight / 2)
+    val cx = getWidth / 2.0
+    val cy = getHeight / 2.0
 
+    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 52))
+    gc.setStroke(Color.rgb(0, 0, 0, 0.9))
+    gc.setLineWidth(5)
+    gc.strokeText("GAME OVER", cx - 150, cy)
+    gc.setFill(Color.rgb(230, 50, 50))
+    gc.fillText("GAME OVER", cx - 150, cy)
+
+    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 22))
+    gc.setStroke(Color.rgb(0, 0, 0, 0.9))
+    gc.setLineWidth(3)
+    gc.strokeText("Press Enter to reload", cx - 115, cy + 45)
     gc.setFill(Color.WHITE)
-    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.NORMAL, 20))
-    val reloadText = "Press Enter to reload"
-    val reloadTextWidth = 160
-    gc.fillText(reloadText, (getWidth - reloadTextWidth) / 2, getHeight / 2 + 40)
+    gc.fillText("Press Enter to reload", cx - 115, cy + 45)
   }
 
   private def drawRespawnCountdown(): Unit = {
@@ -1118,26 +1123,26 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val centerX = getWidth / 2.0
     val centerY = getHeight / 2.0
 
-    // Subtle dark vignette behind the text
-    gc.setFill(Color.rgb(0, 0, 0, 0.4))
-    gc.fillRoundRect(centerX - 110, centerY - 45, 220, 75, 16, 16)
+    // Dark backdrop behind the text
+    gc.setFill(Color.rgb(0, 0, 0, 0.55))
+    gc.fillRoundRect(centerX - 120, centerY - 50, 240, 85, 16, 16)
 
     // "YOU DIED" text
-    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 28))
-    gc.setFill(Color.rgb(220, 40, 40))
-    gc.setStroke(Color.rgb(0, 0, 0, 0.8))
-    gc.setLineWidth(3)
-    gc.strokeText("YOU DIED", centerX - 68, centerY - 12)
-    gc.fillText("YOU DIED", centerX - 68, centerY - 12)
+    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 32))
+    gc.setStroke(Color.rgb(0, 0, 0, 0.9))
+    gc.setLineWidth(4)
+    gc.strokeText("YOU DIED", centerX - 78, centerY - 12)
+    gc.setFill(Color.rgb(230, 50, 50))
+    gc.fillText("YOU DIED", centerX - 78, centerY - 12)
 
     // Countdown text
-    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.NORMAL, 16))
-    gc.setFill(Color.rgb(220, 220, 220))
-    gc.setStroke(Color.rgb(0, 0, 0, 0.8))
-    gc.setLineWidth(2)
+    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 18))
     val countdownText = if (secondsLeft > 0) s"Respawning in ${secondsLeft}s..." else "Respawning..."
-    gc.strokeText(countdownText, centerX - 72, centerY + 18)
-    gc.fillText(countdownText, centerX - 72, centerY + 18)
+    gc.setStroke(Color.rgb(0, 0, 0, 0.9))
+    gc.setLineWidth(3)
+    gc.strokeText(countdownText, centerX - 82, centerY + 20)
+    gc.setFill(Color.rgb(230, 230, 230))
+    gc.fillText(countdownText, centerX - 82, centerY + 20)
   }
 
   private def drawCoordinates(world: WorldData): Unit = {
@@ -1145,9 +1150,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val playerCount = client.getPlayers.size()
     val health = client.getLocalHealth
 
-    gc.setFill(Color.BLACK)
-    gc.setStroke(Color.WHITE)
-    gc.setLineWidth(1)
+    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 13))
 
     val worldText = s"World: ${world.name}"
     val coordText = s"Position: (${localPos.getX}, ${localPos.getY})"
@@ -1155,11 +1158,11 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val healthText = s"Health: $health/${Constants.MAX_HEALTH}"
     val inventoryText = s"Items: ${client.getInventoryCount}"
 
-    drawOutlinedText(worldText, 10, 20)
+    drawOutlinedText(worldText, 10, 22)
     drawOutlinedText(coordText, 10, 40)
-    drawOutlinedText(playersText, 10, 60)
-    drawOutlinedText(healthText, 10, 80)
-    drawOutlinedText(inventoryText, 10, 100)
+    drawOutlinedText(playersText, 10, 58)
+    drawOutlinedText(healthText, 10, 76)
+    drawOutlinedText(inventoryText, 10, 94)
 
     // Show active effects
     val effects = Seq(
@@ -1167,7 +1170,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
       if (client.hasGemBoost) Some("FastShot") else None
     ).flatten
     if (effects.nonEmpty) {
-      drawOutlinedText(s"Effects: ${effects.mkString(" ")}", 10, 120)
+      drawOutlinedText(s"Effects: ${effects.mkString(" ")}", 10, 112)
     }
   }
 
@@ -1359,16 +1362,16 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val minutes = remaining / 60
     val seconds = remaining % 60
     val timerText = f"$minutes%d:$seconds%02d"
-    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 22))
-    drawOutlinedText(timerText, getWidth / 2 - 25, 28)
+    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 26))
+    drawOutlinedText(timerText, getWidth / 2 - 30, 30)
 
     // Kill/Death counter: below coordinates
-    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.NORMAL, 12))
-    drawOutlinedText(s"K: ${client.killCount}  D: ${client.deathCount}", 10, 140)
+    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 14))
+    drawOutlinedText(s"K: ${client.killCount}  D: ${client.deathCount}", 10, 134)
 
     // Kill feed: top-right corner, last 5 entries
     val now = System.currentTimeMillis()
-    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.NORMAL, 11))
+    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 13))
     import scala.jdk.CollectionConverters._
     var feedY = 20.0
     client.killFeed.asScala.foreach { entry =>
@@ -1388,11 +1391,11 @@ class GameCanvas(client: GameClient) extends Canvas() {
   }
 
   private def drawOutlinedText(text: String, x: Double, y: Double): Unit = {
-    gc.setStroke(Color.WHITE)
-    gc.setLineWidth(3)
+    gc.setStroke(Color.rgb(0, 0, 0, 0.9))
+    gc.setLineWidth(3.5)
     gc.strokeText(text, x, y)
 
-    gc.setFill(Color.BLACK)
+    gc.setFill(Color.WHITE)
     gc.fillText(text, x, y)
   }
 

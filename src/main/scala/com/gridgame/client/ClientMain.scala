@@ -19,8 +19,10 @@ import javafx.scene.Scene
 import javafx.scene.control.Button
 import javafx.scene.control.ComboBox
 import javafx.scene.control.Label
+import javafx.scene.control.ListCell
 import javafx.scene.control.ListView
 import javafx.scene.control.TextField
+import javafx.util.Callback
 import javafx.scene.input.KeyCode
 import javafx.scene.input.KeyEvent
 import javafx.scene.layout.HBox
@@ -40,11 +42,35 @@ class ClientMain extends Application {
   private var renderLoop: AnimationTimer = _
 
   private val darkBg = "-fx-background-color: #1e1e2e;"
-  private val fieldStyle = "-fx-background-color: #2a2a3e; -fx-text-fill: white; -fx-prompt-text-fill: #666; -fx-padding: 8; -fx-background-radius: 4;"
-  private val buttonStyle = "-fx-background-color: #4a9eff; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 8 24; -fx-background-radius: 4; -fx-cursor: hand;"
-  private val buttonRedStyle = "-fx-background-color: #ff4a4a; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 8 24; -fx-background-radius: 4; -fx-cursor: hand;"
-  private val buttonGreenStyle = "-fx-background-color: #4aff4a; -fx-text-fill: #222; -fx-font-size: 14; -fx-padding: 8 24; -fx-background-radius: 4; -fx-cursor: hand;"
-  private val listItemStyle = "-fx-background-color: #2a2a3e; -fx-text-fill: white; -fx-padding: 8; -fx-background-radius: 4;"
+  private val fieldStyle = "-fx-background-color: #2a2a3e; -fx-text-fill: white; -fx-font-size: 15; -fx-prompt-text-fill: #999; -fx-padding: 8; -fx-background-radius: 4;"
+  private val buttonStyle = "-fx-background-color: #4a9eff; -fx-text-fill: white; -fx-font-size: 15; -fx-font-weight: bold; -fx-padding: 10 28; -fx-background-radius: 4; -fx-cursor: hand;"
+  private val buttonRedStyle = "-fx-background-color: #ff4a4a; -fx-text-fill: white; -fx-font-size: 15; -fx-font-weight: bold; -fx-padding: 10 28; -fx-background-radius: 4; -fx-cursor: hand;"
+  private val buttonGreenStyle = "-fx-background-color: #4aff4a; -fx-text-fill: #111; -fx-font-size: 15; -fx-font-weight: bold; -fx-padding: 10 28; -fx-background-radius: 4; -fx-cursor: hand;"
+  private val labelStyle = "-fx-text-fill: #ddd; -fx-font-size: 15;"
+  private val comboStyle = "-fx-background-color: #2a2a3e; -fx-text-fill: white; -fx-font-size: 15; -fx-padding: 6; -fx-background-radius: 4;"
+  private val listViewCss = "-fx-background-color: #2a2a3e; -fx-control-inner-background: #2a2a3e; -fx-text-fill: white; -fx-font-size: 14;"
+
+  private def styleCombo(combo: ComboBox[String]): Unit = {
+    combo.setStyle(comboStyle)
+    val cellFactory = new Callback[ListView[String], ListCell[String]] {
+      override def call(param: ListView[String]): ListCell[String] = new ListCell[String] {
+        override def updateItem(item: String, empty: Boolean): Unit = {
+          super.updateItem(item, empty)
+          if (empty || item == null) {
+            setText(null)
+            setStyle("-fx-background-color: #2a2a3e;")
+          } else {
+            setText(item)
+            setStyle("-fx-background-color: #2a2a3e; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 6;")
+          }
+          // Highlight on hover/selection
+          if (isSelected) setStyle("-fx-background-color: #4a9eff; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 6;")
+        }
+      }
+    }
+    combo.setCellFactory(cellFactory)
+    combo.setButtonCell(cellFactory.call(null))
+  }
 
   override def start(primaryStage: Stage): Unit = {
     primaryStage.setTitle("Grid Game - Multiplayer 2D")
@@ -68,30 +94,30 @@ class ClientMain extends Application {
     subtitle.setTextFill(Color.web("#888"))
 
     val nameLabel = new Label("Name")
-    nameLabel.setTextFill(Color.web("#ccc"))
-    nameLabel.setFont(Font.font("System", 14))
+    nameLabel.setTextFill(Color.web("#ddd"))
+    nameLabel.setFont(Font.font("System", FontWeight.BOLD, 15))
 
     val nameField = new TextField()
     nameField.setPromptText("Enter your name")
-    nameField.setMaxWidth(260)
+    nameField.setMaxWidth(280)
     nameField.setStyle(fieldStyle)
 
     val hostLabel = new Label("Host")
-    hostLabel.setTextFill(Color.web("#ccc"))
-    hostLabel.setFont(Font.font("System", 14))
+    hostLabel.setTextFill(Color.web("#ddd"))
+    hostLabel.setFont(Font.font("System", FontWeight.BOLD, 15))
 
     val hostField = new TextField()
     hostField.setPromptText("localhost")
-    hostField.setMaxWidth(260)
+    hostField.setMaxWidth(280)
     hostField.setStyle(fieldStyle)
 
     val portLabel = new Label("Port")
-    portLabel.setTextFill(Color.web("#ccc"))
-    portLabel.setFont(Font.font("System", 14))
+    portLabel.setTextFill(Color.web("#ddd"))
+    portLabel.setFont(Font.font("System", FontWeight.BOLD, 15))
 
     val portField = new TextField()
     portField.setPromptText("25565")
-    portField.setMaxWidth(260)
+    portField.setMaxWidth(280)
     portField.setStyle(fieldStyle)
 
     val connectButton = new Button("Connect")
@@ -100,7 +126,7 @@ class ClientMain extends Application {
 
     val statusLabel = new Label("")
     statusLabel.setTextFill(Color.web("#ff6666"))
-    statusLabel.setFont(Font.font("System", 12))
+    statusLabel.setFont(Font.font("System", FontWeight.BOLD, 14))
 
     val doConnect = () => {
       val host = if (hostField.getText.trim.isEmpty) "localhost" else hostField.getText.trim
@@ -185,7 +211,7 @@ class ClientMain extends Application {
     titleBar.getChildren.addAll(title, spacer, refreshBtn)
 
     val lobbyListView = new ListView[String]()
-    lobbyListView.setStyle("-fx-background-color: #2a2a3e; -fx-control-inner-background: #2a2a3e; -fx-text-fill: white;")
+    lobbyListView.setStyle(listViewCss)
     lobbyListView.setPrefHeight(250)
     VBox.setVgrow(lobbyListView, Priority.ALWAYS)
 
@@ -199,7 +225,7 @@ class ClientMain extends Application {
 
     // Create lobby form
     val createLabel = new Label("Create New Lobby")
-    createLabel.setFont(Font.font("System", FontWeight.BOLD, 18))
+    createLabel.setFont(Font.font("System", FontWeight.BOLD, 20))
     createLabel.setTextFill(Color.WHITE)
 
     val nameField = new TextField()
@@ -209,13 +235,13 @@ class ClientMain extends Application {
 
     val mapCombo = new ComboBox[String](FXCollections.observableArrayList(WorldRegistry.displayNames: _*))
     mapCombo.getSelectionModel.select(0)
-    mapCombo.setStyle(fieldStyle)
     mapCombo.setMaxWidth(300)
+    styleCombo(mapCombo)
 
     val durationCombo = new ComboBox[String](FXCollections.observableArrayList("3 min", "5 min", "10 min", "15 min", "20 min"))
     durationCombo.getSelectionModel.select(1) // Default 5 min
-    durationCombo.setStyle(fieldStyle)
     durationCombo.setMaxWidth(300)
+    styleCombo(durationCombo)
 
     val createBtn = new Button("Create Lobby")
     createBtn.setStyle(buttonGreenStyle)
@@ -280,9 +306,9 @@ class ClientMain extends Application {
     })
 
     val createForm = new VBox(8, createLabel,
-      new HBox(8, new Label("Name:") { setTextFill(Color.web("#ccc")); setMinWidth(60) }, nameField),
-      new HBox(8, new Label("Map:") { setTextFill(Color.web("#ccc")); setMinWidth(60) }, mapCombo),
-      new HBox(8, new Label("Time:") { setTextFill(Color.web("#ccc")); setMinWidth(60) }, durationCombo),
+      new HBox(8, new Label("Name:") { setStyle(labelStyle); setMinWidth(60) }, nameField),
+      new HBox(8, new Label("Map:") { setStyle(labelStyle); setMinWidth(60) }, mapCombo),
+      new HBox(8, new Label("Time:") { setStyle(labelStyle); setMinWidth(60) }, durationCombo),
       createBtn
     )
     createForm.setPadding(new Insets(10, 0, 0, 0))
@@ -307,20 +333,20 @@ class ClientMain extends Application {
     lobbyTitle.setTextFill(Color.WHITE)
 
     val mapLabel = new Label(s"Map: ${WorldRegistry.getDisplayName(client.currentLobbyMapIndex)}")
-    mapLabel.setFont(Font.font("System", 16))
-    mapLabel.setTextFill(Color.web("#aaa"))
+    mapLabel.setFont(Font.font("System", 17))
+    mapLabel.setTextFill(Color.web("#ccc"))
 
     val durationLabel = new Label(s"Duration: ${client.currentLobbyDuration} min")
-    durationLabel.setFont(Font.font("System", 16))
-    durationLabel.setTextFill(Color.web("#aaa"))
+    durationLabel.setFont(Font.font("System", 17))
+    durationLabel.setTextFill(Color.web("#ccc"))
 
     val playersLabel = new Label(s"Players: ${client.currentLobbyPlayerCount}/${client.currentLobbyMaxPlayers}")
-    playersLabel.setFont(Font.font("System", 18))
+    playersLabel.setFont(Font.font("System", FontWeight.BOLD, 20))
     playersLabel.setTextFill(Color.WHITE)
 
     val waitingLabel = new Label("Waiting for host to start...")
-    waitingLabel.setFont(Font.font("System", 14))
-    waitingLabel.setTextFill(Color.web("#888"))
+    waitingLabel.setFont(Font.font("System", 16))
+    waitingLabel.setTextFill(Color.web("#aaa"))
 
     val buttonBox = new HBox(12)
     buttonBox.setAlignment(Pos.CENTER)
@@ -341,14 +367,14 @@ class ClientMain extends Application {
 
       val mapCombo = new ComboBox[String](FXCollections.observableArrayList(WorldRegistry.displayNames: _*))
       mapCombo.getSelectionModel.select(client.currentLobbyMapIndex)
-      mapCombo.setStyle(fieldStyle)
+      styleCombo(mapCombo)
 
       val durationCombo = new ComboBox[String](FXCollections.observableArrayList("3 min", "5 min", "10 min", "15 min", "20 min"))
       val durIdx = client.currentLobbyDuration match {
         case 3 => 0; case 5 => 1; case 10 => 2; case 15 => 3; case 20 => 4; case _ => 1
       }
       durationCombo.getSelectionModel.select(durIdx)
-      durationCombo.setStyle(fieldStyle)
+      styleCombo(durationCombo)
 
       mapCombo.setOnAction(_ => {
         val dur = durationCombo.getSelectionModel.getSelectedItem.split(" ")(0).toInt
@@ -367,8 +393,8 @@ class ClientMain extends Application {
       })
 
       val configBox = new VBox(8,
-        new HBox(8, new Label("Map:") { setTextFill(Color.web("#ccc")); setMinWidth(60) }, mapCombo),
-        new HBox(8, new Label("Time:") { setTextFill(Color.web("#ccc")); setMinWidth(60) }, durationCombo)
+        new HBox(8, new Label("Map:") { setStyle(labelStyle); setMinWidth(60) }, mapCombo),
+        new HBox(8, new Label("Time:") { setStyle(labelStyle); setMinWidth(60) }, durationCombo)
       )
 
       buttonBox.getChildren.add(startBtn)
@@ -469,21 +495,21 @@ class ClientMain extends Application {
     title.setTextFill(Color.WHITE)
 
     val subtitle = new Label("Final Scoreboard")
-    subtitle.setFont(Font.font("System", 16))
-    subtitle.setTextFill(Color.web("#888"))
+    subtitle.setFont(Font.font("System", 18))
+    subtitle.setTextFill(Color.web("#aaa"))
 
     // Header row
     val header = new HBox(20)
     header.setAlignment(Pos.CENTER)
     header.setPadding(new Insets(8))
     val hRank = new Label("Rank")
-    hRank.setMinWidth(50); hRank.setTextFill(Color.web("#aaa")); hRank.setFont(Font.font("System", FontWeight.BOLD, 14))
+    hRank.setMinWidth(50); hRank.setTextFill(Color.web("#ccc")); hRank.setFont(Font.font("System", FontWeight.BOLD, 15))
     val hPlayer = new Label("Player")
-    hPlayer.setMinWidth(120); hPlayer.setTextFill(Color.web("#aaa")); hPlayer.setFont(Font.font("System", FontWeight.BOLD, 14))
+    hPlayer.setMinWidth(120); hPlayer.setTextFill(Color.web("#ccc")); hPlayer.setFont(Font.font("System", FontWeight.BOLD, 15))
     val hKills = new Label("Kills")
-    hKills.setMinWidth(60); hKills.setTextFill(Color.web("#aaa")); hKills.setFont(Font.font("System", FontWeight.BOLD, 14))
+    hKills.setMinWidth(60); hKills.setTextFill(Color.web("#ccc")); hKills.setFont(Font.font("System", FontWeight.BOLD, 15))
     val hDeaths = new Label("Deaths")
-    hDeaths.setMinWidth(60); hDeaths.setTextFill(Color.web("#aaa")); hDeaths.setFont(Font.font("System", FontWeight.BOLD, 14))
+    hDeaths.setMinWidth(60); hDeaths.setTextFill(Color.web("#ccc")); hDeaths.setFont(Font.font("System", FontWeight.BOLD, 15))
     header.getChildren.addAll(hRank, hPlayer, hKills, hDeaths)
 
     val scoreRows = new VBox(4)
@@ -500,7 +526,7 @@ class ClientMain extends Application {
       val rankLabel = new Label(s"#${entry.rank}")
       rankLabel.setMinWidth(50)
       rankLabel.setTextFill(if (entry.rank == 1) Color.GOLD else Color.WHITE)
-      rankLabel.setFont(Font.font("System", FontWeight.BOLD, 16))
+      rankLabel.setFont(Font.font("System", FontWeight.BOLD, 18))
 
       val nameStr = if (isLocal) s"You (${client.playerName})" else {
         val p = client.getPlayers.get(entry.playerId)
@@ -508,18 +534,18 @@ class ClientMain extends Application {
       }
       val nameLabel = new Label(nameStr)
       nameLabel.setMinWidth(120)
-      nameLabel.setTextFill(if (isLocal) Color.web("#4a9eff") else Color.WHITE)
-      nameLabel.setFont(Font.font("System", 14))
+      nameLabel.setTextFill(if (isLocal) Color.web("#5ab0ff") else Color.WHITE)
+      nameLabel.setFont(Font.font("System", FontWeight.BOLD, 16))
 
       val killsLabel = new Label(entry.kills.toString)
       killsLabel.setMinWidth(60)
-      killsLabel.setTextFill(Color.web("#4aff4a"))
-      killsLabel.setFont(Font.font("System", FontWeight.BOLD, 14))
+      killsLabel.setTextFill(Color.web("#5aff5a"))
+      killsLabel.setFont(Font.font("System", FontWeight.BOLD, 16))
 
       val deathsLabel = new Label(entry.deaths.toString)
       deathsLabel.setMinWidth(60)
-      deathsLabel.setTextFill(Color.web("#ff4a4a"))
-      deathsLabel.setFont(Font.font("System", 14))
+      deathsLabel.setTextFill(Color.web("#ff5a5a"))
+      deathsLabel.setFont(Font.font("System", FontWeight.BOLD, 15))
 
       row.getChildren.addAll(rankLabel, nameLabel, killsLabel, deathsLabel)
       scoreRows.getChildren.add(row)
