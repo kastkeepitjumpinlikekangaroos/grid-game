@@ -14,11 +14,11 @@ import com.gridgame.common.protocol._
 import java.util.UUID
 import java.util.concurrent.BlockingQueue
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
-import java.util.concurrent.atomic.AtomicReferenceArray
 
 class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   private var networkThread: NetworkThread = _
@@ -34,7 +34,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   private val players: ConcurrentHashMap[UUID, Player] = new ConcurrentHashMap()
   private val projectiles: ConcurrentHashMap[Int, Projectile] = new ConcurrentHashMap()
   private val items: ConcurrentHashMap[Int, Item] = new ConcurrentHashMap()
-  private val inventory: AtomicReferenceArray[Item] = new AtomicReferenceArray[Item](Constants.MAX_INVENTORY_SIZE)
+  private val inventory: ConcurrentHashMap[Byte, ConcurrentLinkedDeque[Item]] = new ConcurrentHashMap()
   private val incomingPackets: BlockingQueue[Packet] = new LinkedBlockingQueue()
   private val sequenceNumber: AtomicInteger = new AtomicInteger(0)
   private val movementBlockedUntil: AtomicLong = new AtomicLong(0)
@@ -119,9 +119,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
 
     // Clear local projectiles and inventory
     projectiles.clear()
-    for (i <- 0 until Constants.MAX_INVENTORY_SIZE) {
-      inventory.set(i, null)
-    }
+    inventory.clear()
 
     // Reset effect timers
     fastProjectilesUntil.set(0)
@@ -155,18 +153,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
     val targetY = Math.max(0, Math.min(world.height - 1, current.getY + dy))
 
     if (world.isWalkable(targetX, targetY)) {
-      // Diagonal or straight move is clear
       finalX = targetX
       finalY = targetY
     } else if (dx != 0 && dy != 0) {
-      // Diagonal blocked — try sliding along each axis independently
-      val slideX = Math.max(0, Math.min(world.width - 1, current.getX + dx))
-      val slideY = Math.max(0, Math.min(world.height - 1, current.getY + dy))
-
-      if (world.isWalkable(slideX, current.getY)) {
-        finalX = slideX
-      } else if (world.isWalkable(current.getX, slideY)) {
-        finalY = slideY
+      // Diagonal blocked — try sliding along each axis
+      if (world.isWalkable(targetX, current.getY)) {
+        finalX = targetX
+      } else if (world.isWalkable(current.getX, targetY)) {
+        finalY = targetY
       }
     }
 
@@ -500,13 +494,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   }
 
   private def addToInventory(item: Item): Boolean = {
-    for (i <- 0 until Constants.MAX_INVENTORY_SIZE) {
-      if (inventory.get(i) == null) {
-        inventory.set(i, item)
-        return true
-      }
-    }
-    false
+    val deque = inventory.computeIfAbsent(item.itemType.id, _ => new ConcurrentLinkedDeque[Item]())
+    deque.add(item)
+    true
   }
 
   private def handleTileUpdate(packet: TileUpdatePacket): Unit = {
@@ -609,16 +599,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
     }
   }
 
-  def useItem(slotIndex: Int): Unit = {
-    if (slotIndex < 0 || slotIndex >= Constants.MAX_INVENTORY_SIZE) {
+  def useItem(itemTypeId: Byte): Unit = {
+    val deque = inventory.get(itemTypeId)
+    if (deque == null || deque.isEmpty) {
       return
     }
 
-    val item = inventory.getAndSet(slotIndex, null)
-    if (item == null) {
-      println(s"GameClient: No item in slot ${slotIndex + 1}")
-      return
-    }
+    val item = deque.poll()
+    if (item == null) return
 
     // Notify server that item was used
     val packet = new ItemPacket(
@@ -631,7 +619,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
     )
     networkThread.send(packet)
 
-    println(s"GameClient: Used item '${item.itemType.name}' from slot ${slotIndex + 1}")
+    println(s"GameClient: Used item '${item.itemType.name}' (${deque.size()} remaining)")
 
     val now = System.currentTimeMillis()
     item.itemType match {
@@ -639,14 +627,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
         teleportToMouse()
       case ItemType.Gem =>
         fastProjectilesUntil.set(now + Constants.GEM_DURATION_MS)
-        println("GameClient: Fast projectiles activated!")
       case ItemType.Shield =>
         shieldUntil.set(now + Constants.SHIELD_DURATION_MS)
-        println("GameClient: Shield activated!")
       case ItemType.Heart =>
-        println("GameClient: Heart used (server heals)")
+        // Server heals
       case ItemType.Fence =>
-        println("GameClient: Fence placed (server handles)")
+        // Server handles
       case _ =>
     }
   }
@@ -661,14 +647,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
 
   def getItems: ConcurrentHashMap[Int, Item] = items
 
-  def getInventoryItem(slot: Int): Item = inventory.get(slot)
+  def getItemCount(itemTypeId: Byte): Int = {
+    val deque = inventory.get(itemTypeId)
+    if (deque == null) 0 else deque.size()
+  }
 
   def getInventoryCount: Int = {
-    var count = 0
-    for (i <- 0 until Constants.MAX_INVENTORY_SIZE) {
-      if (inventory.get(i) != null) count += 1
-    }
-    count
+    import scala.jdk.CollectionConverters._
+    inventory.values().asScala.map(_.size()).sum
   }
 
   def getLocalColorRGB: Int = localColorRGB

@@ -53,7 +53,6 @@ object Constants {
   // Item configuration
   val ITEM_SPAWN_INTERVAL_MS: Int = 60000     // 1 minute
   val ITEM_SIZE_PX: Int = 30
-  val MAX_INVENTORY_SIZE: Int = 3
 
   // Item effect configuration
   val SHIELD_DURATION_MS: Int = 5000           // Shield lasts 5s

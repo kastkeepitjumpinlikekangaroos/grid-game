@@ -221,55 +221,123 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val iy = item.getCellY
 
     val centerX = worldToScreenX(ix, iy, camOffX)
-    val centerY = worldToScreenY(ix, iy, camOffY)
     val halfSize = Constants.ITEM_SIZE_PX / 2.0
 
-    if (centerX > -halfSize && centerX < getWidth + halfSize &&
-        centerY > -halfSize && centerY < getHeight + halfSize) {
+    // Bobbing animation - each item has a unique phase offset
+    val bobPhase = animationTick * 0.06 + item.id * 1.7
+    val bobOffset = Math.sin(bobPhase) * 4.0
+    val centerY = worldToScreenY(ix, iy, camOffY) + bobOffset
 
-      gc.setFill(intToColor(item.colorRGB))
-      gc.setStroke(Color.BLACK)
+    if (centerX > -halfSize * 2 && centerX < getWidth + halfSize * 2 &&
+        centerY > -halfSize * 2 && centerY < getHeight + halfSize * 2) {
+
+      val itemColor = intToColor(item.colorRGB)
+
+      // Soft glow underneath the item
+      val glowPulse = 0.8 + 0.2 * Math.sin(bobPhase * 1.3)
+      gc.setFill(Color.color(itemColor.getRed, itemColor.getGreen, itemColor.getBlue, 0.12 * glowPulse))
+      gc.fillOval(centerX - halfSize * 1.4, centerY + halfSize * 0.2, halfSize * 2.8, halfSize * 0.8)
+
+      // Outer colored aura
+      gc.setFill(Color.color(itemColor.getRed, itemColor.getGreen, itemColor.getBlue, 0.06 * glowPulse))
+      gc.fillOval(centerX - halfSize * 1.8, centerY - halfSize * 1.2, halfSize * 3.6, halfSize * 2.8)
+
+      // Main item shape
+      gc.setFill(itemColor)
+      gc.setStroke(Color.color(0, 0, 0, 0.6))
       gc.setLineWidth(1)
-
       drawItemShape(item.itemType, centerX, centerY, halfSize)
+
+      // Sparkle particles orbiting the item
+      for (i <- 0 until 3) {
+        val sparkAngle = bobPhase * 0.8 + i * (2 * Math.PI / 3)
+        val sparkDist = halfSize * 1.1
+        val sparkX = centerX + sparkDist * Math.cos(sparkAngle)
+        val sparkY = centerY + sparkDist * Math.sin(sparkAngle) * 0.6
+        val sparkAlpha = 0.3 + 0.4 * Math.sin(bobPhase * 2.5 + i * 2.1)
+        val sparkSize = 1.5 + Math.sin(bobPhase * 3.0 + i) * 0.7
+        gc.setFill(Color.color(1.0, 1.0, 1.0, Math.max(0, Math.min(1, sparkAlpha))))
+        gc.fillOval(sparkX - sparkSize, sparkY - sparkSize, sparkSize * 2, sparkSize * 2)
+      }
     }
   }
 
   private def drawItemShape(itemType: ItemType, centerX: Double, centerY: Double, halfSize: Double): Unit = {
+    // Save current fill/stroke for shape drawing
     itemType match {
-      case ItemType.Gem =>
-        val xPoints = Array(centerX, centerX + halfSize, centerX, centerX - halfSize)
-        val yPoints = Array(centerY - halfSize, centerY, centerY + halfSize, centerY)
-        gc.fillPolygon(xPoints, yPoints, 4)
-        gc.strokePolygon(xPoints, yPoints, 4)
-
       case ItemType.Heart =>
-        val r = halfSize * 0.5
-        gc.fillOval(centerX - halfSize * 0.5 - r, centerY - halfSize * 0.5 - r, r * 2, r * 2)
-        gc.fillOval(centerX + halfSize * 0.5 - r, centerY - halfSize * 0.5 - r, r * 2, r * 2)
-        val txPoints = Array(centerX - halfSize, centerX, centerX + halfSize)
+        // Improved heart with highlight
+        val r = halfSize * 0.55
+        gc.fillOval(centerX - halfSize * 0.5 - r, centerY - halfSize * 0.45 - r, r * 2, r * 2)
+        gc.fillOval(centerX + halfSize * 0.5 - r, centerY - halfSize * 0.45 - r, r * 2, r * 2)
+        val txPoints = Array(centerX - halfSize * 1.05, centerX, centerX + halfSize * 1.05)
         val tyPoints = Array(centerY - halfSize * 0.1, centerY + halfSize, centerY - halfSize * 0.1)
         gc.fillPolygon(txPoints, tyPoints, 3)
+        // Highlight
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.3))
+        val hr = r * 0.5
+        gc.fillOval(centerX - halfSize * 0.35 - hr, centerY - halfSize * 0.55 - hr, hr * 2, hr * 2)
 
       case ItemType.Star =>
+        // Star with subtle rotation and golden highlight
         val outerR = halfSize
         val innerR = halfSize * 0.4
+        val rotOffset = Math.sin(animationTick * 0.04) * 0.08
         val xPoints = new Array[Double](10)
         val yPoints = new Array[Double](10)
         for (i <- 0 until 10) {
-          val angle = Math.PI / 2 + i * Math.PI / 5
-          val r = if (i % 2 == 0) outerR else innerR
-          xPoints(i) = centerX + r * Math.cos(angle)
-          yPoints(i) = centerY - r * Math.sin(angle)
+          val angle = Math.PI / 2 + i * Math.PI / 5 + rotOffset
+          val rad = if (i % 2 == 0) outerR else innerR
+          xPoints(i) = centerX + rad * Math.cos(angle)
+          yPoints(i) = centerY - rad * Math.sin(angle)
         }
         gc.fillPolygon(xPoints, yPoints, 10)
         gc.strokePolygon(xPoints, yPoints, 10)
+        // Golden center highlight
+        gc.setFill(Color.color(1.0, 1.0, 0.7, 0.4))
+        gc.fillOval(centerX - halfSize * 0.3, centerY - halfSize * 0.3, halfSize * 0.6, halfSize * 0.6)
+
+      case ItemType.Gem =>
+        // Diamond with faceted look
+        val xp = Array(centerX, centerX + halfSize, centerX, centerX - halfSize)
+        val yp = Array(centerY - halfSize, centerY, centerY + halfSize, centerY)
+        gc.fillPolygon(xp, yp, 4)
+        gc.strokePolygon(xp, yp, 4)
+        // Inner facet lines
+        gc.setStroke(Color.color(0.0, 0.8, 0.9, 0.35))
+        gc.setLineWidth(0.5)
+        gc.strokeLine(centerX, centerY - halfSize, centerX + halfSize * 0.35, centerY)
+        gc.strokeLine(centerX, centerY - halfSize, centerX - halfSize * 0.35, centerY)
+        gc.strokeLine(centerX - halfSize * 0.35, centerY, centerX, centerY + halfSize)
+        gc.strokeLine(centerX + halfSize * 0.35, centerY, centerX, centerY + halfSize)
+        // Bright highlight on upper face
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.3))
+        gc.fillPolygon(
+          Array(centerX, centerX + halfSize * 0.35, centerX - halfSize * 0.35),
+          Array(centerY - halfSize, centerY - halfSize * 0.15, centerY - halfSize * 0.15),
+          3
+        )
 
       case ItemType.Shield =>
-        val xPoints = Array(centerX - halfSize, centerX + halfSize, centerX + halfSize, centerX, centerX - halfSize)
-        val yPoints = Array(centerY - halfSize, centerY - halfSize, centerY + halfSize * 0.3, centerY + halfSize, centerY + halfSize * 0.3)
-        gc.fillPolygon(xPoints, yPoints, 5)
-        gc.strokePolygon(xPoints, yPoints, 5)
+        // Rounded shield shape with emblem
+        val xPoints = Array(
+          centerX - halfSize * 0.85, centerX - halfSize * 0.5,
+          centerX + halfSize * 0.5, centerX + halfSize * 0.85,
+          centerX + halfSize * 0.7, centerX,
+          centerX - halfSize * 0.7
+        )
+        val yPoints = Array(
+          centerY - halfSize * 0.6, centerY - halfSize,
+          centerY - halfSize, centerY - halfSize * 0.6,
+          centerY + halfSize * 0.4, centerY + halfSize,
+          centerY + halfSize * 0.4
+        )
+        gc.fillPolygon(xPoints, yPoints, 7)
+        gc.strokePolygon(xPoints, yPoints, 7)
+        // Cross emblem
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.25))
+        gc.fillRect(centerX - halfSize * 0.08, centerY - halfSize * 0.5, halfSize * 0.16, halfSize * 0.8)
+        gc.fillRect(centerX - halfSize * 0.3, centerY - halfSize * 0.18, halfSize * 0.6, halfSize * 0.16)
 
       case ItemType.Fence =>
         val barW = halfSize * 0.35
@@ -862,7 +930,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val coordText = s"Position: (${localPos.getX}, ${localPos.getY})"
     val playersText = s"Players: ${playerCount + 1}"
     val healthText = s"Health: $health/${Constants.MAX_HEALTH}"
-    val inventoryText = s"Inventory: ${client.getInventoryCount}/${Constants.MAX_INVENTORY_SIZE}"
+    val inventoryText = s"Items: ${client.getInventoryCount}"
 
     drawOutlinedText(worldText, 10, 20)
     drawOutlinedText(coordText, 10, 40)
@@ -881,42 +949,85 @@ class GameCanvas(client: GameClient) extends Canvas() {
   }
 
   private def drawInventory(): Unit = {
-    val slotSize = 32.0
-    val slotGap = 6.0
-    val totalWidth = Constants.MAX_INVENTORY_SIZE * slotSize + (Constants.MAX_INVENTORY_SIZE - 1) * slotGap
+    val slotSize = 44.0
+    val slotGap = 8.0
+    val numSlots = 4
+    val totalWidth = numSlots * slotSize + (numSlots - 1) * slotGap
     val startX = (getWidth - totalWidth) / 2.0
-    val startY = getHeight - slotSize - 10.0
+    val startY = getHeight - slotSize - 14.0
 
-    for (i <- 0 until Constants.MAX_INVENTORY_SIZE) {
+    // Item types in slot order: 1=Heart, 2=Star, 3=Gem, 4=Shield
+    val slotTypes = Seq(
+      (ItemType.Heart, "1"),
+      (ItemType.Star, "2"),
+      (ItemType.Gem, "3"),
+      (ItemType.Shield, "4")
+    )
+
+    for (i <- slotTypes.indices) {
+      val (itemType, keyLabel) = slotTypes(i)
+      val count = client.getItemCount(itemType.id)
       val slotX = startX + i * (slotSize + slotGap)
+      val typeColor = intToColor(itemType.colorRGB)
 
-      // Semi-transparent background
-      gc.setFill(Color.rgb(0, 0, 0, 0.5))
-      gc.fillRect(slotX, startY, slotSize, slotSize)
-
-      // Border
-      gc.setStroke(Color.rgb(200, 200, 200, 0.8))
-      gc.setLineWidth(2)
-      gc.strokeRect(slotX, startY, slotSize, slotSize)
-
-      // Draw item if slot is filled
-      val item = client.getInventoryItem(i)
-      if (item != null) {
-        val centerX = slotX + slotSize / 2.0
-        val centerY = startY + slotSize / 2.0
-        val halfSize = 10.0
-
-        gc.setFill(intToColor(item.colorRGB))
-        gc.setStroke(Color.BLACK)
+      if (count > 0) {
+        // Active slot: colored border glow
+        val glowPulse = 0.6 + 0.15 * Math.sin(animationTick * 0.08 + i)
+        gc.setFill(Color.color(
+          Math.min(1.0, typeColor.getRed * 0.3),
+          Math.min(1.0, typeColor.getGreen * 0.3),
+          Math.min(1.0, typeColor.getBlue * 0.3),
+          0.5
+        ))
+        gc.fillRoundRect(slotX - 2, startY - 2, slotSize + 4, slotSize + 4, 8, 8)
+        gc.setFill(Color.rgb(15, 15, 25, 0.85))
+        gc.fillRoundRect(slotX, startY, slotSize, slotSize, 6, 6)
+        gc.setStroke(Color.color(typeColor.getRed, typeColor.getGreen, typeColor.getBlue, glowPulse))
+        gc.setLineWidth(2)
+        gc.strokeRoundRect(slotX, startY, slotSize, slotSize, 6, 6)
+      } else {
+        // Empty slot: dim
+        gc.setFill(Color.rgb(15, 15, 25, 0.5))
+        gc.fillRoundRect(slotX, startY, slotSize, slotSize, 6, 6)
+        gc.setStroke(Color.rgb(60, 60, 70, 0.5))
         gc.setLineWidth(1)
-        drawItemShape(item.itemType, centerX, centerY, halfSize)
+        gc.strokeRoundRect(slotX, startY, slotSize, slotSize, 6, 6)
       }
 
-      // Draw slot number label in bottom-right corner
-      val label = (i + 1).toString
+      // Draw item icon (always visible, dimmed if empty)
+      val iconCenterX = slotX + slotSize / 2.0
+      val iconCenterY = startY + slotSize / 2.0 - 1
+      val iconSize = 12.0
+
+      if (count > 0) {
+        gc.setFill(typeColor)
+        gc.setStroke(Color.color(0, 0, 0, 0.5))
+        gc.setLineWidth(0.8)
+      } else {
+        gc.setFill(Color.color(typeColor.getRed * 0.3, typeColor.getGreen * 0.3, typeColor.getBlue * 0.3, 0.35))
+        gc.setStroke(Color.rgb(40, 40, 40, 0.2))
+        gc.setLineWidth(0.5)
+      }
+      drawItemShape(itemType, iconCenterX, iconCenterY, iconSize)
+
+      // Count badge (top-right)
+      if (count > 0) {
+        val countStr = count.toString
+        val badgeW = Math.max(14.0, 7.0 + countStr.length * 6.0)
+        val badgeH = 14.0
+        val badgeX = slotX + slotSize - badgeW / 2 - 1
+        val badgeY = startY - badgeH / 2 + 2
+        gc.setFill(Color.rgb(200, 45, 45, 0.9))
+        gc.fillRoundRect(badgeX, badgeY, badgeW, badgeH, badgeH, badgeH)
+        gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 10))
+        gc.setFill(Color.WHITE)
+        gc.fillText(countStr, badgeX + badgeW / 2 - countStr.length * 3, badgeY + 11)
+      }
+
+      // Key number label (bottom-center)
       gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 10))
-      gc.setFill(Color.WHITE)
-      gc.fillText(label, slotX + slotSize - 10, startY + slotSize - 4)
+      gc.setFill(if (count > 0) Color.rgb(220, 220, 220) else Color.rgb(90, 90, 100))
+      gc.fillText(keyLabel, slotX + slotSize / 2 - 3, startY + slotSize - 3)
     }
   }
 
@@ -927,7 +1038,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val barWidth = 100.0
     val barHeight = 8.0
     val barX = (getWidth - barWidth) / 2.0
-    val barY = getHeight - 60.0 // Above inventory
+    val barY = getHeight - 80.0 // Above inventory
 
     // Dark background
     gc.setFill(Color.rgb(30, 30, 30, 0.8))

@@ -31,7 +31,7 @@ class ItemManager {
       val y = (Math.random() * world.height).toInt
       if (world.isWalkable(x, y)) {
         val id = nextId.getAndIncrement()
-        val itemType = ItemType.all(random.nextInt(ItemType.all.size))
+        val itemType = ItemType.spawnable(random.nextInt(ItemType.spawnable.size))
         val item = new Item(id, x, y, itemType)
         items.put(id, item)
         println(s"ItemManager: Spawned $item")
@@ -45,9 +45,6 @@ class ItemManager {
 
   def checkPickup(playerId: UUID, x: Int, y: Int): Option[ItemPickedUp] = {
     val playerInv = inventories.computeIfAbsent(playerId, _ => new CopyOnWriteArrayList[Item]())
-    if (playerInv.size() >= Constants.MAX_INVENTORY_SIZE) {
-      return None
-    }
 
     val radius = Constants.ITEM_PICKUP_RADIUS
     val iter = items.values().iterator()
@@ -58,7 +55,7 @@ class ItemManager {
       if (dx * dx + dy * dy <= radius * radius) {
         items.remove(item.id)
         playerInv.add(item)
-        println(s"ItemManager: Player ${playerId.toString.substring(0, 8)} picked up $item (inventory: ${playerInv.size()}/${Constants.MAX_INVENTORY_SIZE})")
+        println(s"ItemManager: Player ${playerId.toString.substring(0, 8)} picked up $item (inventory: ${playerInv.size()} items)")
         return Some(ItemPickedUp(item, playerId))
       }
     }
@@ -73,7 +70,7 @@ class ItemManager {
       val item = iter.next()
       if (item.id == itemId) {
         inv.remove(item)
-        println(s"ItemManager: Player ${playerId.toString.substring(0, 8)} used item $itemId (inventory: ${inv.size()}/${Constants.MAX_INVENTORY_SIZE})")
+        println(s"ItemManager: Player ${playerId.toString.substring(0, 8)} used item $itemId (inventory: ${inv.size()} items)")
         return true
       }
     }

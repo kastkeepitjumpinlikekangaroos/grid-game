@@ -2,6 +2,7 @@ package com.gridgame.client.input
 
 import com.gridgame.client.GameClient
 import com.gridgame.common.Constants
+import com.gridgame.common.model.ItemType
 
 import javafx.event.EventHandler
 import javafx.scene.input.KeyCode
@@ -60,14 +61,15 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
   }
 
   private def processUseItem(event: KeyEvent): Unit = {
-    val slot = event.getCode match {
-      case KeyCode.DIGIT1 => 0
-      case KeyCode.DIGIT2 => 1
-      case KeyCode.DIGIT3 => 2
+    val itemTypeId: Byte = event.getCode match {
+      case KeyCode.DIGIT1 => ItemType.Heart.id
+      case KeyCode.DIGIT2 => ItemType.Star.id
+      case KeyCode.DIGIT3 => ItemType.Gem.id
+      case KeyCode.DIGIT4 => ItemType.Shield.id
       case _ => -1
     }
-    if (slot >= 0) {
-      client.useItem(slot)
+    if (itemTypeId >= 0) {
+      client.useItem(itemTypeId)
     }
   }
 
@@ -85,21 +87,19 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
       return
     }
 
+    // Isometric WASD: each key maps to a screen direction
+    // W=screen up, S=screen down, A=screen left, D=screen right
     var dx = 0
     var dy = 0
 
-    if (pressedKeys.contains(KeyCode.W)) {
-      dy = -1
-    }
-    if (pressedKeys.contains(KeyCode.S)) {
-      dy = 1
-    }
-    if (pressedKeys.contains(KeyCode.A)) {
-      dx = -1
-    }
-    if (pressedKeys.contains(KeyCode.D)) {
-      dx = 1
-    }
+    if (pressedKeys.contains(KeyCode.W)) { dx -= 1; dy -= 1 }
+    if (pressedKeys.contains(KeyCode.S)) { dx += 1; dy += 1 }
+    if (pressedKeys.contains(KeyCode.A)) { dx -= 1; dy += 1 }
+    if (pressedKeys.contains(KeyCode.D)) { dx += 1; dy -= 1 }
+
+    // Clamp to unit movement
+    dx = Math.max(-1, Math.min(1, dx))
+    dy = Math.max(-1, Math.min(1, dy))
 
     client.setMovementInputActive(dx != 0 || dy != 0)
 
