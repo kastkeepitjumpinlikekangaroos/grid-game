@@ -297,7 +297,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         if (!running) return
         val player = registry.get(playerId)
         if (player != null) {
-          player.setHealth(Constants.MAX_HEALTH)
+          player.setHealth(player.getMaxHealth)
           val spawnPoint = world.getValidSpawnPoint()
           player.setPosition(spawnPoint)
 

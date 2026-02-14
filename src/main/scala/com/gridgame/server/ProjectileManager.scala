@@ -64,6 +64,8 @@ class ProjectileManager(registry: ClientRegistry) {
             case ProjectileType.SPEAR => Constants.SPEAR_MAX_RANGE.toDouble
             case ProjectileType.SOUL_BOLT => Constants.SOUL_BOLT_MAX_RANGE.toDouble
             case ProjectileType.HAUNT => Constants.HAUNT_MAX_RANGE.toDouble
+            case ProjectileType.ARCANE_BOLT => Constants.ARCANE_BOLT_MAX_RANGE.toDouble
+            case ProjectileType.FIREBALL => Constants.FIREBALL_MAX_RANGE.toDouble
             case _ => Constants.CHARGE_MIN_RANGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_RANGE - Constants.CHARGE_MIN_RANGE))
           }
           if (projectile.getDistanceTraveled >= maxRange) {
@@ -76,7 +78,8 @@ class ProjectileManager(registry: ClientRegistry) {
             resolved = true
           } else if (projectile.hitsNonWalkable(world) &&
                      projectile.projectileType != ProjectileType.SOUL_BOLT &&
-                     projectile.projectileType != ProjectileType.HAUNT) {
+                     projectile.projectileType != ProjectileType.HAUNT &&
+                     projectile.projectileType != ProjectileType.ARCANE_BOLT) {
             toRemove += projectile.id
             events += ProjectileDespawned(projectile)
             resolved = true
@@ -99,6 +102,8 @@ class ProjectileManager(registry: ClientRegistry) {
                   (Constants.SPEAR_BASE_DAMAGE + (distanceFraction * (Constants.SPEAR_MAX_DAMAGE - Constants.SPEAR_BASE_DAMAGE))).toInt
                 case ProjectileType.SOUL_BOLT => Constants.SOUL_BOLT_DAMAGE
                 case ProjectileType.HAUNT => Constants.HAUNT_DAMAGE
+                case ProjectileType.ARCANE_BOLT => Constants.ARCANE_BOLT_DAMAGE
+                case ProjectileType.FIREBALL => Constants.FIREBALL_DAMAGE
                 case _ => (Constants.CHARGE_MIN_DAMAGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_DAMAGE - Constants.CHARGE_MIN_DAMAGE))).toInt
               }
               val newHealth = hitPlayer.getHealth - damage

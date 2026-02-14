@@ -9,7 +9,8 @@ class Player(
     private var name: String,
     private var position: Position,
     private var colorRGB: Int,
-    private var health: Int = 100
+    private var health: Int = 100,
+    private var maxHealth: Int = 100
 ) {
   Objects.requireNonNull(id, "Player ID cannot be null")
   Objects.requireNonNull(position, "Position cannot be null")
@@ -73,8 +74,14 @@ class Player(
 
   def getHealth: Int = health
 
+  def getMaxHealth: Int = maxHealth
+
+  def setMaxHealth(mh: Int): Unit = {
+    this.maxHealth = mh
+  }
+
   def setHealth(h: Int): Unit = {
-    this.health = Math.max(0, Math.min(100, h))
+    this.health = Math.max(0, Math.min(maxHealth, h))
   }
 
   def getShieldUntil: Long = shieldUntil
@@ -119,6 +126,7 @@ class Player(
 
   def setCharacterId(id: Byte): Unit = {
     this.characterId = id
+    this.maxHealth = CharacterDef.get(id).maxHealth
   }
 
   def isDead: Boolean = health <= 0

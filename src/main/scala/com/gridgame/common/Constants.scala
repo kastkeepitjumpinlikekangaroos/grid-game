@@ -113,6 +113,19 @@ object Constants {
   val HAUNT_TELEPORT_DISTANCE: Int = 2
   val HAUNT_FREEZE_DURATION_MS: Int = 2000
 
+  // Wizard: Arcane Bolt (primary)
+  val ARCANE_BOLT_DAMAGE: Int = 18
+  val ARCANE_BOLT_MAX_RANGE: Int = 25
+
+  // Wizard: Fireball (Q)
+  val FIREBALL_COOLDOWN_MS: Int = 6000
+  val FIREBALL_MAX_RANGE: Int = 18
+  val FIREBALL_DAMAGE: Int = 45
+
+  // Wizard: Blink (E)
+  val BLINK_COOLDOWN_MS: Int = 8000
+  val BLINK_DISTANCE: Int = 6
+
   // Lobby configuration
   val RESPAWN_DELAY_MS: Int = 3000
   val DEFAULT_GAME_DURATION_MIN: Int = 5

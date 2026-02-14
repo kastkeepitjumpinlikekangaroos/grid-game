@@ -12,6 +12,8 @@ object ProjectileType {
   val SPEAR: Byte = 5
   val SOUL_BOLT: Byte = 6
   val HAUNT: Byte = 7
+  val ARCANE_BOLT: Byte = 8
+  val FIREBALL: Byte = 9
 }
 
 class Projectile(
@@ -36,6 +38,8 @@ class Projectile(
     case ProjectileType.SPEAR => 0.7f
     case ProjectileType.SOUL_BOLT => 0.65f
     case ProjectileType.HAUNT => 0.5f
+    case ProjectileType.ARCANE_BOLT => 0.85f
+    case ProjectileType.FIREBALL => 0.4f
     case _ =>
       val c = Constants
       c.CHARGE_MIN_SPEED + (chargeLevel / 100.0f) * (c.CHARGE_MAX_SPEED - c.CHARGE_MIN_SPEED)

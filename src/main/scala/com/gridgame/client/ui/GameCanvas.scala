@@ -571,6 +571,8 @@ class GameCanvas(client: GameClient) extends Canvas() {
       case ProjectileType.SPEAR => drawSpearProjectile(projectile, camOffX, camOffY)
       case ProjectileType.SOUL_BOLT => drawSoulBoltProjectile(projectile, camOffX, camOffY)
       case ProjectileType.HAUNT => drawHauntProjectile(projectile, camOffX, camOffY)
+      case ProjectileType.ARCANE_BOLT => drawArcaneBoltProjectile(projectile, camOffX, camOffY)
+      case ProjectileType.FIREBALL => drawFireballProjectile(projectile, camOffX, camOffY)
       case _ => drawNormalProjectile(projectile, camOffX, camOffY)
     }
   }
@@ -1208,6 +1210,144 @@ class GameCanvas(client: GameClient) extends Canvas() {
     }
   }
 
+  private def drawArcaneBoltProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 4.0
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 23) * 0.4
+      val pulse = 0.85 + 0.15 * Math.sin(phase)
+      val fastFlicker = 0.9 + 0.1 * Math.sin(phase * 3.2)
+
+      // Purple/blue arcane glow layers
+      gc.setStroke(Color.color(0.4, 0.1, 0.8, 0.08 * pulse))
+      gc.setLineWidth(32 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(0.45, 0.15, 0.85, 0.15 * pulse))
+      gc.setLineWidth(20 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(0.5, 0.3, 0.9, 0.45 * fastFlicker))
+      gc.setLineWidth(9 * fastFlicker)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(0.7, 0.5, 1.0, 0.9 * fastFlicker))
+      gc.setLineWidth(3.0)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Arcane sparkles along beam
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len > 1) {
+        val nx = dx / len
+        val ny = dy / len
+        for (i <- 0 until 5) {
+          val t = ((animationTick * 0.1 + i.toDouble / 5 + projectile.id * 0.13) % 1.0)
+          val wave = Math.sin(phase * 2.8 + i * 2.1) * 6.0
+          val px = tailX + dx * t + (-ny) * wave
+          val py = tailY + dy * t + nx * wave
+          val pAlpha = Math.max(0.0, Math.min(1.0, 0.55 * (1.0 - Math.abs(t - 0.5) * 2.0)))
+          val pSize = 2.2 + Math.sin(phase + i) * 0.8
+          gc.setFill(Color.color(0.6, 0.4, 1.0, pAlpha))
+          gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+        }
+      }
+
+      // Arcane orb at tip
+      val orbR = 6.0 * pulse
+      gc.setFill(Color.color(0.4, 0.1, 0.8, 0.2 * pulse))
+      gc.fillOval(tipX - orbR * 2, tipY - orbR * 2, orbR * 4, orbR * 4)
+      gc.setFill(Color.color(0.5, 0.3, 0.9, 0.5 * pulse))
+      gc.fillOval(tipX - orbR, tipY - orbR, orbR * 2, orbR * 2)
+      gc.setFill(Color.color(0.7, 0.5, 1.0, 0.85 * fastFlicker))
+      gc.fillOval(tipX - orbR * 0.4, tipY - orbR * 0.4, orbR * 0.8, orbR * 0.8)
+    }
+  }
+
+  private def drawFireballProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 3.0
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 31) * 0.3
+      val pulse = 0.8 + 0.2 * Math.sin(phase)
+      val fastFlicker = 0.85 + 0.15 * Math.sin(phase * 2.5)
+
+      // Orange/red fiery glow layers
+      gc.setStroke(Color.color(1.0, 0.3, 0.0, 0.1 * pulse))
+      gc.setLineWidth(44 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(1.0, 0.4, 0.05, 0.2 * pulse))
+      gc.setLineWidth(28 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(1.0, 0.6, 0.1, 0.45 * fastFlicker))
+      gc.setLineWidth(14 * fastFlicker)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(1.0, 0.9, 0.4, 0.85 * fastFlicker))
+      gc.setLineWidth(5.0)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Flame particles along trail
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len > 1) {
+        val nx = dx / len
+        val ny = dy / len
+        for (i <- 0 until 7) {
+          val t = ((animationTick * 0.08 + i.toDouble / 7 + projectile.id * 0.11) % 1.0)
+          val wave = Math.sin(phase * 2.0 + i * 1.7) * 8.0
+          val px = tailX + dx * t + (-ny) * wave
+          val py = tailY + dy * t + nx * wave
+          val pAlpha = Math.max(0.0, Math.min(1.0, 0.6 * (1.0 - Math.abs(t - 0.5) * 2.0)))
+          val pSize = 3.0 + Math.sin(phase + i * 0.9) * 1.2
+          val r = 1.0
+          val g = 0.4 + 0.4 * t
+          gc.setFill(Color.color(r, g, 0.1, pAlpha))
+          gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+        }
+      }
+
+      // Fireball orb at tip (large and fiery)
+      val orbR = 10.0 * pulse
+      gc.setFill(Color.color(1.0, 0.2, 0.0, 0.2 * pulse))
+      gc.fillOval(tipX - orbR * 2.5, tipY - orbR * 2.5, orbR * 5, orbR * 5)
+      gc.setFill(Color.color(1.0, 0.5, 0.0, 0.45 * pulse))
+      gc.fillOval(tipX - orbR * 1.3, tipY - orbR * 1.3, orbR * 2.6, orbR * 2.6)
+      gc.setFill(Color.color(1.0, 0.85, 0.3, 0.85 * fastFlicker))
+      gc.fillOval(tipX - orbR * 0.5, tipY - orbR * 0.5, orbR, orbR)
+    }
+  }
+
   private def drawShadow(screenX: Double, screenY: Double): Unit = {
     gc.setFill(Color.rgb(0, 0, 0, 0.3))
     gc.fillOval(screenX - 16, screenY - 6, 32, 12)
@@ -1274,7 +1414,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     drawHitEffect(screenX, spriteCenter, client.getPlayerHitTime(playerId))
 
     // Draw health bar above player
-    drawHealthBar(screenX, spriteY, player.getHealth)
+    drawHealthBar(screenX, spriteY, player.getHealth, player.getMaxHealth)
   }
 
   private def drawLocalPlayer(wx: Double, wy: Double, camOffX: Double, camOffY: Double): Unit = {
@@ -1320,7 +1460,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     drawHitEffect(screenX, spriteCenter, client.getPlayerHitTime(client.getLocalPlayerId))
 
     // Draw health bar above local player
-    drawHealthBar(screenX, spriteY, client.getLocalHealth)
+    drawHealthBar(screenX, spriteY, client.getLocalHealth, client.getSelectedCharacterMaxHealth)
   }
 
   private def drawShieldBubble(centerX: Double, centerY: Double): Unit = {
@@ -1728,7 +1868,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     }
   }
 
-  private def drawHealthBar(screenCenterX: Double, spriteTopY: Double, health: Int): Unit = {
+  private def drawHealthBar(screenCenterX: Double, spriteTopY: Double, health: Int, maxHealth: Int = Constants.MAX_HEALTH): Unit = {
     val barWidth = Constants.HEALTH_BAR_WIDTH_PX
     val barHeight = Constants.HEALTH_BAR_HEIGHT_PX
     val barX = screenCenterX - barWidth / 2.0
@@ -1739,7 +1879,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     gc.fillRect(barX, barY, barWidth, barHeight)
 
     // Green fill (current health)
-    val healthPercentage = health.toDouble / Constants.MAX_HEALTH
+    val healthPercentage = health.toDouble / maxHealth
     val fillWidth = barWidth * healthPercentage
     gc.setFill(Color.LIMEGREEN)
     gc.fillRect(barX, barY, fillWidth, barHeight)
@@ -1814,7 +1954,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val worldText = s"World: ${world.name}"
     val coordText = s"Position: (${localPos.getX}, ${localPos.getY})"
     val playersText = s"Players: ${playerCount + 1}"
-    val healthText = s"Health: $health/${Constants.MAX_HEALTH}"
+    val healthText = s"Health: $health/${client.getSelectedCharacterMaxHealth}"
     val inventoryText = s"Items: ${client.getInventoryCount}"
 
     drawOutlinedText(worldText, 10, 22)

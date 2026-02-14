@@ -19,7 +19,8 @@ case class CharacterDef(
     spriteSheet: String,
     qAbility: AbilityDef,
     eAbility: AbilityDef,
-    primaryProjectileType: Byte
+    primaryProjectileType: Byte,
+    maxHealth: Int = 100
 )
 
 object CharacterDef {
@@ -101,13 +102,41 @@ object CharacterDef {
     primaryProjectileType = ProjectileType.SOUL_BOLT
   )
 
+  val Wizard: CharacterDef = CharacterDef(
+    id = CharacterId.Wizard,
+    displayName = "Wizard",
+    description = "A fragile mage with wall-piercing bolts, devastating fireballs, and blink escape.",
+    spriteSheet = "sprites/wizard.png",
+    qAbility = AbilityDef(
+      name = "Fireball",
+      description = "Launches a slow but devastating fireball that deals massive damage.",
+      cooldownMs = Constants.FIREBALL_COOLDOWN_MS,
+      maxRange = Constants.FIREBALL_MAX_RANGE,
+      damage = Constants.FIREBALL_DAMAGE,
+      projectileType = ProjectileType.FIREBALL,
+      keybind = "Q"
+    ),
+    eAbility = AbilityDef(
+      name = "Blink",
+      description = "Instantly teleport up to 6 cells toward your cursor.",
+      cooldownMs = Constants.BLINK_COOLDOWN_MS,
+      maxRange = Constants.BLINK_DISTANCE,
+      damage = 0,
+      projectileType = -2,
+      keybind = "E"
+    ),
+    primaryProjectileType = ProjectileType.ARCANE_BOLT,
+    maxHealth = 70
+  )
+
   private val byId: Map[Byte, CharacterDef] = Map(
     CharacterId.Spaceman.id -> Spaceman,
     CharacterId.Gladiator.id -> Gladiator,
-    CharacterId.Wraith.id -> Wraith
+    CharacterId.Wraith.id -> Wraith,
+    CharacterId.Wizard.id -> Wizard
   )
 
-  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith)
+  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith, Wizard)
 
   def get(id: CharacterId): CharacterDef = byId.getOrElse(id.id, Spaceman)
 
