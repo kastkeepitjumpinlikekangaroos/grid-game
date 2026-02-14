@@ -190,6 +190,9 @@ class GameCanvas(client: GameClient) extends Canvas() {
       }
     }
 
+    // Aim arrow: drawn on the ground plane, beneath elevated tiles and entities
+    drawAimArrow(camOffX, camOffY)
+
     // Phase 2: Draw elevated tiles + entities interleaved by depth
     // Entities (players, items, projectiles) sit on top of ground but behind walls at higher depth.
     for (wy <- startY to endY) {
@@ -224,6 +227,196 @@ class GameCanvas(client: GameClient) extends Canvas() {
     if (client.getIsDead && client.isRespawning && !localDeathAnimActive) {
       drawRespawnCountdown()
     }
+  }
+
+  private def drawAimArrow(camOffX: Double, camOffY: Double): Unit = {
+    if (!client.isCharging || client.getIsDead) return
+
+    val pos = client.getLocalPosition
+    // Use grid position for direction (matches actual shot trajectory in MouseHandler)
+    val gridX = pos.getX.toDouble
+    val gridY = pos.getY.toDouble
+    // Use visual position for draw origin (matches where the player appears on screen)
+    val drawX = if (visualX.isNaN) gridX else visualX
+    val drawY = if (visualY.isNaN) gridY else visualY
+
+    val mouseWX = client.getMouseWorldX
+    val mouseWY = client.getMouseWorldY
+    val adx = mouseWX - gridX
+    val ady = mouseWY - gridY
+    val dist = Math.sqrt(adx * adx + ady * ady)
+    if (dist < 0.01) return
+
+    val ndx = adx / dist
+    val ndy = ady / dist
+
+    val chargeLevel = client.getChargeLevel
+    val chargePct = chargeLevel / 100.0
+    // +1 for spawn offset (projectile spawns 1 tile ahead of player)
+    val cylLength = 1.0 + Constants.CHARGE_MIN_RANGE +
+      chargePct * (Constants.CHARGE_MAX_RANGE - Constants.CHARGE_MIN_RANGE)
+
+    val color = intToColor(client.getLocalColorRGB)
+    val phase = animationTick * 0.12
+    val pulse = 0.85 + 0.15 * Math.sin(phase * 2.0)
+
+    // Perpendicular direction (cylinder width axis on ground plane)
+    val perpX = -ndy
+    val perpY = ndx
+    val cylRadius = 0.6 // half-width in tiles
+
+    // Helper: world point along cylinder at parameter t (0=player, 1=tip)
+    // with perpendicular offset `w` (-1 to 1 across cylinder width)
+    def cylScreenX(t: Double, w: Double): Double =
+      worldToScreenX(drawX + ndx * cylLength * t + perpX * cylRadius * w,
+                     drawY + ndy * cylLength * t + perpY * cylRadius * w, camOffX)
+    def cylScreenY(t: Double, w: Double): Double =
+      worldToScreenY(drawX + ndx * cylLength * t + perpX * cylRadius * w,
+                     drawY + ndy * cylLength * t + perpY * cylRadius * w, camOffY)
+
+    // Charge color: blend player color with charge heat (yellow -> orange -> red)
+    val heatR = Math.min(1.0, chargePct * 2.0)
+    val heatG = Math.min(1.0, Math.max(0.0, 1.0 - (chargePct - 0.5) * 2.0))
+    val blendR = Math.min(1.0, color.getRed * 0.4 + heatR * 0.6)
+    val blendG = Math.min(1.0, color.getGreen * 0.4 + heatG * 0.6)
+    val blendB = Math.min(1.0, color.getBlue * 0.3)
+    val brightR = Math.min(1.0, blendR * 0.3 + 0.7)
+    val brightG = Math.min(1.0, blendG * 0.3 + 0.7)
+    val brightB = Math.min(1.0, blendB * 0.3 + 0.7)
+
+    // --- Layer 1: Wide soft ground glow beneath cylinder ---
+    val glowN = 10
+    val glowPoly = glowN * 2 + 2
+    val glowX = new Array[Double](glowPoly)
+    val glowY = new Array[Double](glowPoly)
+    for (i <- 0 to glowN) {
+      val t = i.toDouble / glowN
+      val gw = 1.8 * pulse // wider than cylinder
+      val cwx = drawX + ndx * cylLength * t
+      val cwy = drawY + ndy * cylLength * t
+      glowX(i) = worldToScreenX(cwx + perpX * gw, cwy + perpY * gw, camOffX)
+      glowY(i) = worldToScreenY(cwx + perpX * gw, cwy + perpY * gw, camOffY)
+      glowX(glowPoly - 1 - i) = worldToScreenX(cwx - perpX * gw, cwy - perpY * gw, camOffX)
+      glowY(glowPoly - 1 - i) = worldToScreenY(cwx - perpX * gw, cwy - perpY * gw, camOffY)
+    }
+    gc.setFill(Color.color(blendR, blendG, blendB, 0.05 * pulse))
+    gc.fillPolygon(glowX, glowY, glowPoly)
+
+    // --- Layer 2: Cylinder body (constant-width tube with end caps) ---
+    // Build body polygon: left edge forward, half-ellipse cap at tip, right edge backward, half-ellipse cap at base
+    val bodyN = 20 // samples along each side
+    val capN = 8   // samples per end cap half-ellipse
+    val bodyTotal = bodyN * 2 + capN * 2 + 2
+    val bodyX = new Array[Double](bodyTotal)
+    val bodyY = new Array[Double](bodyTotal)
+    var idx = 0
+
+    // Left edge (base to tip)
+    for (i <- 0 to bodyN) {
+      val t = i.toDouble / bodyN
+      bodyX(idx) = cylScreenX(t, 1.0)
+      bodyY(idx) = cylScreenY(t, 1.0)
+      idx += 1
+    }
+    // Tip cap (half-ellipse from left to right at t=1.0)
+    for (i <- 1 to capN) {
+      val angle = Math.PI * 0.5 - Math.PI * i.toDouble / capN // pi/2 to -pi/2
+      val tw = Math.cos(angle) // perpendicular offset (-1 to 1)
+      val tf = 1.0 + Math.sin(angle) * (cylRadius / cylLength) // slight forward bulge
+      bodyX(idx) = cylScreenX(tf, tw)
+      bodyY(idx) = cylScreenY(tf, tw)
+      idx += 1
+    }
+    // Right edge (tip to base)
+    for (i <- bodyN to 0 by -1) {
+      val t = i.toDouble / bodyN
+      bodyX(idx) = cylScreenX(t, -1.0)
+      bodyY(idx) = cylScreenY(t, -1.0)
+      idx += 1
+    }
+    // Base cap (half-ellipse from right to left at t=0)
+    for (i <- 1 until capN) {
+      val angle = -Math.PI * 0.5 + Math.PI * i.toDouble / capN
+      val tw = -Math.cos(angle)
+      val tf = -Math.sin(angle) * (cylRadius / cylLength)
+      bodyX(idx) = cylScreenX(tf, tw)
+      bodyY(idx) = cylScreenY(tf, tw)
+      idx += 1
+    }
+    val actualCount = idx
+
+    // Dark bottom fill (cylinder shadow side)
+    gc.setFill(Color.color(blendR * 0.5, blendG * 0.5, blendB * 0.5, 0.10 + chargePct * 0.06))
+    gc.fillPolygon(bodyX.take(actualCount), bodyY.take(actualCount), actualCount)
+
+    // Cylinder outline
+    gc.setStroke(Color.color(blendR, blendG, blendB, 0.18 + chargePct * 0.12))
+    gc.setLineWidth(1.0)
+    gc.strokePolygon(bodyX.take(actualCount), bodyY.take(actualCount), actualCount)
+
+    // --- Layer 3: Top highlight strip (3D cylinder shading) ---
+    // A narrower filled strip along the upper edge of the cylinder
+    val stripN = 16
+    val stripTotal = (stripN + 1) * 2
+    val stripX = new Array[Double](stripTotal)
+    val stripY = new Array[Double](stripTotal)
+    for (i <- 0 to stripN) {
+      val t = i.toDouble / stripN
+      stripX(i) = cylScreenX(t, 0.9)
+      stripY(i) = cylScreenY(t, 0.9)
+      stripX(stripTotal - 1 - i) = cylScreenX(t, 0.3)
+      stripY(stripTotal - 1 - i) = cylScreenY(t, 0.3)
+    }
+    gc.setFill(Color.color(brightR, brightG, brightB, 0.08 + chargePct * 0.06))
+    gc.fillPolygon(stripX, stripY, stripTotal)
+
+    // --- Layer 4: Animated energy rings flowing along cylinder ---
+    gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+    val ringCount = 4 + (chargePct * 4).toInt
+    for (i <- 0 until ringCount) {
+      val t = ((animationTick * 0.035 + i.toDouble / ringCount) % 1.0)
+      val ringAlpha = (1.0 - Math.abs(t - 0.5) * 2.0) * (0.15 + chargePct * 0.2) * pulse
+
+      // Draw a small elliptical ring cross-section at this t
+      val ringSegs = 8
+      val rxs = new Array[Double](ringSegs + 1)
+      val rys = new Array[Double](ringSegs + 1)
+      for (j <- 0 to ringSegs) {
+        val angle = Math.PI * j.toDouble / ringSegs - Math.PI * 0.5
+        val w = Math.cos(angle)
+        val fwd = Math.sin(angle) * (cylRadius / cylLength) * 0.3
+        rxs(j) = cylScreenX(t + fwd, w)
+        rys(j) = cylScreenY(t + fwd, w)
+      }
+      gc.setStroke(Color.color(brightR, brightG, brightB, Math.max(0.0, Math.min(1.0, ringAlpha))))
+      gc.setLineWidth(1.5 + chargePct)
+      for (j <- 0 until ringSegs) {
+        gc.strokeLine(rxs(j), rys(j), rxs(j + 1), rys(j + 1))
+      }
+    }
+
+    // --- Layer 5: Energy spine (bright center line) ---
+    val spineSegs = 14
+    for (i <- 0 until spineSegs) {
+      val t0 = i.toDouble / spineSegs
+      val t1 = (i + 1).toDouble / spineSegs
+      val fadeAlpha = (1.0 - t0 * 0.7) * (0.08 + chargePct * 0.12) * pulse
+
+      gc.setStroke(Color.color(brightR, brightG, brightB, Math.max(0.0, Math.min(1.0, fadeAlpha))))
+      gc.setLineWidth((2.0 + chargePct * 1.5) * (1.0 - t0 * 0.5))
+      gc.strokeLine(cylScreenX(t0, 0.0), cylScreenY(t0, 0.0),
+                    cylScreenX(t1, 0.0), cylScreenY(t1, 0.0))
+    }
+
+    // --- Layer 6: Glowing tip cap ---
+    val tipSX = cylScreenX(1.0, 0.0)
+    val tipSY = cylScreenY(1.0, 0.0)
+    val orbR = (4.0 + chargePct * 5.0) * pulse
+
+    gc.setFill(Color.color(blendR, blendG, blendB, 0.10 * pulse))
+    gc.fillOval(tipSX - orbR * 2, tipSY - orbR, orbR * 4, orbR * 2)
+    gc.setFill(Color.color(brightR, brightG, brightB, 0.25 * pulse))
+    gc.fillOval(tipSX - orbR, tipSY - orbR * 0.5, orbR * 2, orbR)
   }
 
   private def drawSingleItem(item: Item, camOffX: Double, camOffY: Double): Unit = {
