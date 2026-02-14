@@ -153,15 +153,42 @@ object CharacterDef {
     primaryProjectileType = ProjectileType.BULLET
   )
 
+  val Raptor: CharacterDef = CharacterDef(
+    id = CharacterId.Raptor,
+    displayName = "Raptor",
+    description = "A bird of prey that swoops in and blasts enemies away.",
+    spriteSheet = "sprites/raptor.png",
+    qAbility = AbilityDef(
+      name = "Swoop",
+      description = "Dash toward the cursor, phased and invulnerable during flight.",
+      cooldownMs = Constants.SWOOP_COOLDOWN_MS,
+      maxRange = 0,
+      damage = 0,
+      projectileType = -1,
+      keybind = "Q"
+    ),
+    eAbility = AbilityDef(
+      name = "Gust",
+      description = "Wind blast that pushes enemies away from you.",
+      cooldownMs = Constants.GUST_COOLDOWN_MS,
+      maxRange = Constants.GUST_MAX_RANGE,
+      damage = Constants.GUST_DAMAGE,
+      projectileType = ProjectileType.GUST,
+      keybind = "E"
+    ),
+    primaryProjectileType = ProjectileType.TALON
+  )
+
   private val byId: Map[Byte, CharacterDef] = Map(
     CharacterId.Spaceman.id -> Spaceman,
     CharacterId.Gladiator.id -> Gladiator,
     CharacterId.Wraith.id -> Wraith,
     CharacterId.Tidecaller.id -> Tidecaller,
-    CharacterId.Soldier.id -> Soldier
+    CharacterId.Soldier.id -> Soldier,
+    CharacterId.Raptor.id -> Raptor
   )
 
-  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith, Tidecaller, Soldier)
+  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith, Tidecaller, Soldier, Raptor)
 
   def get(id: CharacterId): CharacterDef = byId.getOrElse(id.id, Spaceman)
 

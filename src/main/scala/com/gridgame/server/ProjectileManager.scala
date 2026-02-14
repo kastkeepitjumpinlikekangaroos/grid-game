@@ -76,6 +76,8 @@ class ProjectileManager(registry: ClientRegistry) {
             case ProjectileType.BULLET => Constants.BULLET_MAX_RANGE.toDouble
             case ProjectileType.GRENADE => Constants.GRENADE_MAX_RANGE.toDouble
             case ProjectileType.ROCKET => Constants.ROCKET_MAX_RANGE.toDouble
+            case ProjectileType.TALON => Constants.TALON_MAX_RANGE.toDouble
+            case ProjectileType.GUST => Constants.GUST_MAX_RANGE.toDouble
             case _ => Constants.CHARGE_MIN_RANGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_RANGE - Constants.CHARGE_MIN_RANGE))
           }
           if (projectile.getDistanceTraveled >= maxRange) {
@@ -137,6 +139,8 @@ class ProjectileManager(registry: ClientRegistry) {
                   case ProjectileType.TIDAL_WAVE => Constants.TIDAL_WAVE_DAMAGE
                   case ProjectileType.GEYSER => Constants.GEYSER_DAMAGE
                   case ProjectileType.BULLET => Constants.BULLET_DAMAGE
+                  case ProjectileType.TALON => Constants.TALON_DAMAGE
+                  case ProjectileType.GUST => Constants.GUST_DAMAGE
                   case _ => (Constants.CHARGE_MIN_DAMAGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_DAMAGE - Constants.CHARGE_MIN_DAMAGE))).toInt
                 }
                 val newHealth = hitPlayer.getHealth - damage

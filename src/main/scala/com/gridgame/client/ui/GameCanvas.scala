@@ -578,6 +578,8 @@ class GameCanvas(client: GameClient) extends Canvas() {
       case ProjectileType.BULLET => drawBulletProjectile(projectile, camOffX, camOffY)
       case ProjectileType.GRENADE => drawGrenadeProjectile(projectile, camOffX, camOffY)
       case ProjectileType.ROCKET => drawRocketProjectile(projectile, camOffX, camOffY)
+      case ProjectileType.TALON => drawTalonProjectile(projectile, camOffX, camOffY)
+      case ProjectileType.GUST => drawGustProjectile(projectile, camOffX, camOffY)
       case _ => drawNormalProjectile(projectile, camOffX, camOffY)
     }
   }
@@ -1292,6 +1294,134 @@ class GameCanvas(client: GameClient) extends Canvas() {
         val pSize = 2.0 * (1.0 - t)
         gc.setFill(Color.color(1.0, 0.7, 0.2, pAlpha))
         gc.fillOval(sparkX - pSize, sparkY - pSize, pSize * 2, pSize * 2)
+      }
+    }
+  }
+
+  private def drawTalonProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 2.5
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 31) * 0.4
+      val pulse = 0.85 + 0.15 * Math.sin(phase)
+
+      // Golden slash arc — short wide sweep
+      val midX = (tailX + tipX) / 2
+      val midY = (tailY + tipY) / 2
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len > 1) {
+        val nx = -dy / len
+        val ny = dx / len
+
+        // Wide outer glow
+        gc.setStroke(Color.color(0.85, 0.65, 0.1, 0.12 * pulse))
+        gc.setLineWidth(36 * pulse)
+        gc.strokeLine(tailX, tailY, tipX, tipY)
+
+        // Golden arc stroke
+        gc.setStroke(Color.color(0.9, 0.7, 0.15, 0.35 * pulse))
+        gc.setLineWidth(18 * pulse)
+        gc.strokeLine(tailX, tailY, tipX, tipY)
+
+        // Bright inner
+        gc.setStroke(Color.color(1.0, 0.85, 0.3, 0.8 * pulse))
+        gc.setLineWidth(6.0)
+        gc.strokeLine(tailX, tailY, tipX, tipY)
+
+        // White-hot core
+        gc.setStroke(Color.color(1.0, 0.95, 0.7, 0.95))
+        gc.setLineWidth(2.0)
+        gc.strokeLine(tailX, tailY, tipX, tipY)
+
+        // Claw slash particles along the arc
+        for (i <- 0 until 4) {
+          val t = ((animationTick * 0.1 + i.toDouble / 4) % 1.0)
+          val spread = Math.sin(phase * 2.0 + i * 1.5) * 8.0
+          val px = tailX + dx * t + nx * spread
+          val py = tailY + dy * t + ny * spread
+          val pAlpha = Math.max(0.0, Math.min(1.0, 0.7 * (1.0 - Math.abs(t - 0.5) * 2.0)))
+          val pSize = 2.5 + Math.sin(phase + i) * 1.0
+          gc.setFill(Color.color(1.0, 0.85, 0.3, pAlpha))
+          gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+        }
+      }
+    }
+  }
+
+  private def drawGustProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 4.0
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 29) * 0.35
+      val pulse = 0.8 + 0.2 * Math.sin(phase)
+      val fastFlicker = 0.9 + 0.1 * Math.sin(phase * 3.3)
+
+      // Amber wind cone — widens toward the tip
+      gc.setStroke(Color.color(0.85, 0.7, 0.3, 0.08 * pulse))
+      gc.setLineWidth(40 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(0.9, 0.75, 0.35, 0.2 * pulse))
+      gc.setLineWidth(24 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(0.95, 0.8, 0.4, 0.45 * fastFlicker))
+      gc.setLineWidth(12 * fastFlicker)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Bright core
+      gc.setStroke(Color.color(1.0, 0.9, 0.6, 0.8 * fastFlicker))
+      gc.setLineWidth(4.0)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Wind streaks — flowing lines alongside the main beam
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len > 1) {
+        val nx = -dy / len
+        val ny = dx / len
+        for (strand <- 0 until 3) {
+          val strandOff = (strand - 1) * 7.0
+          for (i <- 0 until 5) {
+            val t = ((animationTick * 0.08 + i.toDouble / 5 + strand * 0.2) % 1.0)
+            val wave = Math.sin(phase * 2.5 + i * 1.8 + strand * 2.1) * 4.0
+            val px = tailX + dx * t + nx * (wave + strandOff)
+            val py = tailY + dy * t + ny * (wave + strandOff)
+            val pAlpha = Math.max(0.0, Math.min(1.0, 0.5 * (1.0 - Math.abs(t - 0.5) * 2.0)))
+            val pSize = 1.5 + Math.sin(phase + i + strand) * 0.6
+            gc.setFill(Color.color(0.95, 0.85, 0.5, pAlpha))
+            gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+          }
+        }
       }
     }
   }
@@ -2275,7 +2405,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     // Match inventory layout to position ability slots to its left
     val invSlotSize = 44.0
     val invSlotGap = 8.0
-    val invNumSlots = 4
+    val invNumSlots = 5
     val totalInventoryWidth = invNumSlots * invSlotSize + (invNumSlots - 1) * invSlotGap
     val inventoryStartX = (getWidth - totalInventoryWidth) / 2.0
     val startY = getHeight - slotSize - 14.0
@@ -2333,17 +2463,18 @@ class GameCanvas(client: GameClient) extends Canvas() {
   private def drawInventory(): Unit = {
     val slotSize = 44.0
     val slotGap = 8.0
-    val numSlots = 4
+    val numSlots = 5
     val totalWidth = numSlots * slotSize + (numSlots - 1) * slotGap
     val startX = (getWidth - totalWidth) / 2.0
     val startY = getHeight - slotSize - 14.0
 
-    // Item types in slot order: 1=Heart, 2=Star, 3=Gem, 4=Shield
+    // Item types in slot order: 1=Heart, 2=Star, 3=Gem, 4=Shield, 5=Fence
     val slotTypes = Seq(
       (ItemType.Heart, "1"),
       (ItemType.Star, "2"),
       (ItemType.Gem, "3"),
-      (ItemType.Shield, "4")
+      (ItemType.Shield, "4"),
+      (ItemType.Fence, "5")
     )
 
     for (i <- slotTypes.indices) {

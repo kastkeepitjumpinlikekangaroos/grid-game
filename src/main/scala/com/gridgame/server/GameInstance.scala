@@ -236,6 +236,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                 val destY = Math.max(0, Math.min(world.height - 1, targetPos.getY + bdy * Constants.HAUNT_TELEPORT_DISTANCE))
                 if (world.isWalkable(destX, destY)) {
                   owner.setPosition(new Position(destX, destY))
+                  // Protect against client position updates overwriting the teleport
+                  owner.setServerTeleportedUntil(System.currentTimeMillis() + 500)
                   // Broadcast position update for the Wraith
                   val ownerFlags = (if (owner.hasShield) 0x01 else 0) |
                                    (if (owner.hasGemBoost) 0x02 else 0) |
@@ -275,7 +277,33 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                 }
               }
 
-            case _ => // No special effect (AXE, SPEAR, NORMAL, SOUL_BOLT, SPLASH, GEYSER, BULLET)
+            case ProjectileType.GUST =>
+              // Push target away from the shooter
+              val gustOwner = registry.get(projectile.ownerId)
+              if (gustOwner != null) {
+                val gustOwnerPos = gustOwner.getPosition
+                val gustTargetPos = target.getPosition
+                val pushDx = gustTargetPos.getX - gustOwnerPos.getX
+                val pushDy = gustTargetPos.getY - gustOwnerPos.getY
+                val pushLen = Math.sqrt(pushDx * pushDx + pushDy * pushDy)
+                if (pushLen > 0.01) {
+                  val ndx = pushDx / pushLen
+                  val ndy = pushDy / pushLen
+                  var destX = gustTargetPos.getX
+                  var destY = gustTargetPos.getY
+                  for (step <- 1 to Constants.GUST_PUSH_DISTANCE) {
+                    val nextX = Math.max(0, Math.min(world.width - 1, (gustTargetPos.getX + ndx * step).toInt))
+                    val nextY = Math.max(0, Math.min(world.height - 1, (gustTargetPos.getY + ndy * step).toInt))
+                    if (world.isWalkable(nextX, nextY)) {
+                      destX = nextX
+                      destY = nextY
+                    }
+                  }
+                  target.setPosition(new Position(destX, destY))
+                }
+              }
+
+            case _ => // No special effect (AXE, SPEAR, NORMAL, SOUL_BOLT, SPLASH, GEYSER, BULLET, TALON)
           }
 
           val flags = (if (target.hasShield) 0x01 else 0) |

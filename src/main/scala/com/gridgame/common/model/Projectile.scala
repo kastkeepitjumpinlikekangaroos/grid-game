@@ -18,6 +18,8 @@ object ProjectileType {
   val BULLET: Byte = 11
   val GRENADE: Byte = 12
   val ROCKET: Byte = 13
+  val TALON: Byte = 14
+  val GUST: Byte = 15
 }
 
 class Projectile(
@@ -48,6 +50,8 @@ class Projectile(
     case ProjectileType.BULLET => 1.0f
     case ProjectileType.GRENADE => 0.5f
     case ProjectileType.ROCKET => 0.55f
+    case ProjectileType.TALON => 0.7f
+    case ProjectileType.GUST => 0.8f
     case _ =>
       val c = Constants
       c.CHARGE_MIN_SPEED + (chargeLevel / 100.0f) * (c.CHARGE_MAX_SPEED - c.CHARGE_MIN_SPEED)
@@ -96,6 +100,7 @@ class Projectile(
     val radius = projectileType match {
       case ProjectileType.AXE => Constants.AXE_HIT_RADIUS
       case ProjectileType.GEYSER => Constants.GEYSER_AOE_RADIUS
+      case ProjectileType.TALON => Constants.TALON_HIT_RADIUS
       case _ => Constants.PROJECTILE_HIT_RADIUS
     }
     dx * dx + dy * dy <= radius * radius
