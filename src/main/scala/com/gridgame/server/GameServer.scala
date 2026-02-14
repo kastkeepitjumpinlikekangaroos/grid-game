@@ -192,6 +192,9 @@ class GameServer(port: Int, val worldFile: String = "") {
         case PacketType.AUTH_REQUEST =>
           handleAuthRequest(packet.asInstanceOf[AuthRequestPacket], tcpCh)
 
+        case PacketType.MATCH_HISTORY =>
+          handleMatchHistoryRequest(packet.asInstanceOf[MatchHistoryPacket], tcpCh)
+
         case PacketType.LOBBY_ACTION =>
           val lobbyPacket = packet.asInstanceOf[LobbyActionPacket]
           val player = connectedPlayers.get(lobbyPacket.getPlayerId)
@@ -333,6 +336,38 @@ class GameServer(port: Int, val worldFile: String = "") {
     }
   }
 
+  private def handleMatchHistoryRequest(packet: MatchHistoryPacket, tcpCh: Channel): Unit = {
+    if (packet.getAction != MatchHistoryAction.QUERY) return
+
+    val playerId = packet.getPlayerId
+    val player = connectedPlayers.get(playerId)
+    if (player == null) return
+
+    // Send stats
+    val (totalKills, totalDeaths, matchesPlayed, wins) = authDatabase.getPlayerStats(playerId)
+    val statsPacket = new MatchHistoryPacket(
+      getNextSequenceNumber, playerId, Packet.getCurrentTimestamp, MatchHistoryAction.STATS,
+      totalKills = totalKills, totalDeaths = totalDeaths,
+      matchesPlayed = matchesPlayed, wins = wins
+    )
+    sendPacketViaChannel(statsPacket, tcpCh)
+
+    // Send history entries
+    val history = authDatabase.getMatchHistory(playerId)
+    history.foreach { case (matchId, mapIndex, durationMin, playedAt, kills, deaths, rank, playerCount) =>
+      val entryPacket = new MatchHistoryPacket(
+        getNextSequenceNumber, playerId, Packet.getCurrentTimestamp, MatchHistoryAction.ENTRY,
+        matchId.toInt, mapIndex.toByte, durationMin.toByte, (playedAt / 1000).toInt,
+        kills.toShort, deaths.toShort, rank.toByte, playerCount.toByte
+      )
+      sendPacketViaChannel(entryPacket, tcpCh)
+    }
+
+    // Send end marker
+    val endPacket = new MatchHistoryPacket(getNextSequenceNumber, playerId, MatchHistoryAction.END)
+    sendPacketViaChannel(endPacket, tcpCh)
+  }
+
   private def handleGlobalHeartbeat(packet: Packet, udpSender: InetSocketAddress): Unit = {
     val playerId = packet.getPlayerId
     val player = connectedPlayers.get(playerId)
@@ -386,8 +421,11 @@ class GameServer(port: Int, val worldFile: String = "") {
 
     lobby.status = LobbyStatus.FINISHED
 
-    // Stop the instance
+    // Stop the instance (shutdownNow() interrupts worker threads including the
+    // current thread when called from syncTimer). Clear the interrupt flag so
+    // subsequent JDBC operations in saveMatch aren't disrupted.
     instance.stop()
+    Thread.interrupted()
 
     // Broadcast GAME_OVER
     val zeroUUID = new UUID(0L, 0L)
@@ -397,17 +435,22 @@ class GameServer(port: Int, val worldFile: String = "") {
     )
     instance.broadcastToInstance(gameOverPacket)
 
-    // Send SCORE_ENTRY for each player
+    // Send SCORE_ENTRY for each player and collect results for persistence
     val scoreboard = instance.killTracker.getScoreboard
     var rank: Byte = 1
+    val matchResults = scala.collection.mutable.ArrayBuffer[(UUID, Int, Int, Byte)]()
     scoreboard.foreach { case (pid, kills, deaths) =>
       val scorePacket = new GameEventPacket(
         getNextSequenceNumber, pid, GameEvent.SCORE_ENTRY, lobbyId,
         0, kills.toShort, deaths.toShort, null, rank, 0.toShort, 0.toShort
       )
       instance.broadcastToInstance(scorePacket)
+      matchResults += ((pid, kills, deaths, rank))
       rank = (rank + 1).toByte
     }
+
+    // Persist match results
+    authDatabase.saveMatch(lobby.mapIndex, lobby.durationMinutes, matchResults.toSeq)
 
     // Send SCORE_END
     val scoreEndPacket = new GameEventPacket(

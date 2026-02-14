@@ -28,6 +28,26 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
         |  created_at INTEGER NOT NULL
         |)""".stripMargin
     )
+    stmt.executeUpdate(
+      """CREATE TABLE IF NOT EXISTS matches(
+        |  match_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        |  map_index INTEGER NOT NULL,
+        |  duration_minutes INTEGER NOT NULL,
+        |  played_at INTEGER NOT NULL,
+        |  player_count INTEGER NOT NULL
+        |)""".stripMargin
+    )
+    stmt.executeUpdate(
+      """CREATE TABLE IF NOT EXISTS match_results(
+        |  id INTEGER PRIMARY KEY AUTOINCREMENT,
+        |  match_id INTEGER NOT NULL,
+        |  player_uuid TEXT NOT NULL,
+        |  kills INTEGER NOT NULL,
+        |  deaths INTEGER NOT NULL,
+        |  rank INTEGER NOT NULL,
+        |  FOREIGN KEY(match_id) REFERENCES matches(match_id)
+        |)""".stripMargin
+    )
     stmt.close()
     println(s"AuthDatabase: Initialized ($dbPath)")
   }
@@ -93,6 +113,110 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     val msb = bytesToLong(bytes, 0)
     val lsb = bytesToLong(bytes, 8)
     new UUID(msb, lsb)
+  }
+
+  def saveMatch(mapIndex: Int, durationMinutes: Int, results: Seq[(UUID, Int, Int, Byte)]): Unit = {
+    try {
+      connection.setAutoCommit(false)
+
+      val matchStmt = connection.prepareStatement(
+        "INSERT INTO matches(map_index, duration_minutes, played_at, player_count) VALUES(?, ?, ?, ?)"
+      )
+      matchStmt.setInt(1, mapIndex)
+      matchStmt.setInt(2, durationMinutes)
+      matchStmt.setLong(3, System.currentTimeMillis())
+      matchStmt.setInt(4, results.size)
+      matchStmt.executeUpdate()
+      matchStmt.close()
+
+      val idStmt = connection.createStatement()
+      val idRs = idStmt.executeQuery("SELECT last_insert_rowid()")
+      val matchId = if (idRs.next()) idRs.getLong(1) else -1L
+      idRs.close()
+      idStmt.close()
+
+      if (matchId > 0) {
+        val resultStmt = connection.prepareStatement(
+          "INSERT INTO match_results(match_id, player_uuid, kills, deaths, rank) VALUES(?, ?, ?, ?, ?)"
+        )
+        results.foreach { case (uuid, kills, deaths, rank) =>
+          resultStmt.setLong(1, matchId)
+          resultStmt.setString(2, uuid.toString)
+          resultStmt.setInt(3, kills)
+          resultStmt.setInt(4, deaths)
+          resultStmt.setInt(5, rank & 0xFF)
+          resultStmt.addBatch()
+        }
+        resultStmt.executeBatch()
+        resultStmt.close()
+      }
+
+      connection.commit()
+      println(s"AuthDatabase: Saved match $matchId with ${results.size} players")
+    } catch {
+      case e: Exception =>
+        try { connection.rollback() } catch { case _: Exception => }
+        System.err.println(s"AuthDatabase: Failed to save match: ${e.getMessage}")
+    } finally {
+      connection.setAutoCommit(true)
+    }
+  }
+
+  /** Returns (matchId, mapIndex, durationMinutes, playedAt, kills, deaths, rank, playerCount) */
+  def getMatchHistory(playerUUID: UUID, limit: Int = 20): Seq[(Long, Int, Int, Long, Int, Int, Int, Int)] = {
+    val stmt = connection.prepareStatement(
+      """SELECT m.match_id, m.map_index, m.duration_minutes, m.played_at,
+        |       mr.kills, mr.deaths, mr.rank, m.player_count
+        |FROM match_results mr
+        |JOIN matches m ON mr.match_id = m.match_id
+        |WHERE mr.player_uuid = ?
+        |ORDER BY m.played_at DESC
+        |LIMIT ?""".stripMargin
+    )
+    stmt.setString(1, playerUUID.toString)
+    stmt.setInt(2, limit)
+    val rs = stmt.executeQuery()
+
+    val results = scala.collection.mutable.ArrayBuffer[(Long, Int, Int, Long, Int, Int, Int, Int)]()
+    while (rs.next()) {
+      results += ((
+        rs.getLong("match_id"),
+        rs.getInt("map_index"),
+        rs.getInt("duration_minutes"),
+        rs.getLong("played_at"),
+        rs.getInt("kills"),
+        rs.getInt("deaths"),
+        rs.getInt("rank"),
+        rs.getInt("player_count")
+      ))
+    }
+    rs.close()
+    stmt.close()
+    results.toSeq
+  }
+
+  /** Returns (totalKills, totalDeaths, matchesPlayed, wins) */
+  def getPlayerStats(playerUUID: UUID): (Int, Int, Int, Int) = {
+    val stmt = connection.prepareStatement(
+      """SELECT COALESCE(SUM(kills), 0) AS total_kills,
+        |       COALESCE(SUM(deaths), 0) AS total_deaths,
+        |       COUNT(*) AS matches_played,
+        |       COALESCE(SUM(CASE WHEN rank = 1 THEN 1 ELSE 0 END), 0) AS wins
+        |FROM match_results
+        |WHERE player_uuid = ?""".stripMargin
+    )
+    stmt.setString(1, playerUUID.toString)
+    val rs = stmt.executeQuery()
+
+    val result = if (rs.next()) {
+      (rs.getInt("total_kills"), rs.getInt("total_deaths"),
+       rs.getInt("matches_played"), rs.getInt("wins"))
+    } else {
+      (0, 0, 0, 0)
+    }
+    rs.close()
+    stmt.close()
+    result
   }
 
   private def generateSalt(): String = {
