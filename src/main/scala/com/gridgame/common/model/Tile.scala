@@ -148,9 +148,66 @@ object Tile {
     val color = 0xFFFF4081 // Hot pink
   }
 
+  case object Flowers extends Tile {
+    val id = 20
+    val name = "flowers"
+    val walkable = true
+    val color = 0xFF66BB6A // Meadow green
+  }
+
+  case object Dirt extends Tile {
+    val id = 21
+    val name = "dirt"
+    val walkable = true
+    val color = 0xFF8D6E63 // Brown earth
+  }
+
+  case object Cobblestone extends Tile {
+    val id = 22
+    val name = "cobblestone"
+    val walkable = true
+    val color = 0xFF90A4AE // Blue-gray stone
+  }
+
+  case object Marsh extends Tile {
+    val id = 23
+    val name = "marsh"
+    val walkable = true
+    val color = 0xFF5D7A3E // Murky olive green
+  }
+
+  case object Crystal extends Tile {
+    val id = 24
+    val name = "crystal"
+    val walkable = false
+    val color = 0xFF7E57C2 // Amethyst purple
+  }
+
+  case object Coral extends Tile {
+    val id = 25
+    val name = "coral"
+    val walkable = false
+    val color = 0xFFFF7043 // Warm coral orange
+  }
+
+  case object Ruins extends Tile {
+    val id = 26
+    val name = "ruins"
+    val walkable = false
+    val color = 0xFF7E7360 // Weathered stone
+  }
+
+  case object Moss extends Tile {
+    val id = 27
+    val name = "moss"
+    val walkable = true
+    val color = 0xFF689F38 // Mossy green
+  }
+
   val all: Seq[Tile] = Seq(
     Grass, Water, Sand, Stone, Wall, Tree, Path, DeepWater, Snow, Ice, Lava, Mountain, Fence,
-    Metal, Glass, EnergyField, Circuit, Void, Toxic, Plasma
+    Metal, Glass, EnergyField, Circuit, Void, Toxic, Plasma,
+    Flowers, Dirt, Cobblestone, Marsh, Crystal, Coral, Ruins, Moss
   )
 
   def fromId(id: Int): Tile = all.find(_.id == id).getOrElse(Grass)

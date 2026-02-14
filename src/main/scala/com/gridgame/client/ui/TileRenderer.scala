@@ -9,7 +9,7 @@ import java.io.{File, FileInputStream, InputStream}
 object TileRenderer {
   private val cellW = Constants.TILE_CELL_WIDTH   // 40
   private val cellH = Constants.TILE_CELL_HEIGHT  // 56
-  private val numTiles = 20
+  private val numTiles = 28
 
   // tiles(tileId)(frame) = Image
   private var tiles: Array[Array[Image]] = _

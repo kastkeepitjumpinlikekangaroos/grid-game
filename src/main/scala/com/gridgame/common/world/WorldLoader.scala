@@ -156,26 +156,6 @@ object WorldLoader {
         val thickness = if (layer.has("thickness")) layer.get("thickness").getAsInt else 1
         drawLine(tiles, x1, y1, x2, y2, thickness, tileType, width, height)
 
-      case "scatter" =>
-        // Randomly scatter tiles
-        val density = layer.get("density").getAsDouble
-        val minX = if (layer.has("minX")) layer.get("minX").getAsInt else 0
-        val minY = if (layer.has("minY")) layer.get("minY").getAsInt else 0
-        val maxX = if (layer.has("maxX")) layer.get("maxX").getAsInt else width
-        val maxY = if (layer.has("maxY")) layer.get("maxY").getAsInt else height
-        val avoidTiles = if (layer.has("avoid")) {
-          val avoidArr = layer.getAsJsonArray("avoid")
-          (0 until avoidArr.size()).map(i => Tile.fromName(avoidArr.get(i).getAsString)).toSet
-        } else {
-          Set.empty[Tile]
-        }
-
-        for (y <- minY until Math.min(maxY, height); x <- minX until Math.min(maxX, width)) {
-          if (x >= 0 && y >= 0 && !avoidTiles.contains(tiles(y)(x)) && Math.random() < density) {
-            tiles(y)(x) = tileType
-          }
-        }
-
       case "points" =>
         // Place tiles at specific points
         val points = layer.getAsJsonArray("points")
