@@ -1546,50 +1546,141 @@ class GameCanvas(client: GameClient) extends Canvas() {
       val pulse = 0.85 + 0.15 * Math.sin(phase)
       val fastFlicker = 0.9 + 0.1 * Math.sin(phase * 3.2)
 
-      // Purple/blue arcane glow layers
-      gc.setStroke(Color.color(0.4, 0.1, 0.8, 0.08 * pulse))
-      gc.setLineWidth(32 * pulse)
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      val nx = if (len > 1) dx / len else 0.0
+      val ny = if (len > 1) dy / len else 0.0
+
+      // Dimensional rift outer glow — bolt pierces through walls
+      gc.setStroke(Color.color(0.3, 0.0, 0.6, 0.06 * pulse))
+      gc.setLineWidth(36 * pulse)
       gc.strokeLine(tailX, tailY, tipX, tipY)
 
-      gc.setStroke(Color.color(0.45, 0.15, 0.85, 0.15 * pulse))
-      gc.setLineWidth(20 * pulse)
+      gc.setStroke(Color.color(0.4, 0.1, 0.8, 0.12 * pulse))
+      gc.setLineWidth(22 * pulse)
       gc.strokeLine(tailX, tailY, tipX, tipY)
 
-      gc.setStroke(Color.color(0.5, 0.3, 0.9, 0.45 * fastFlicker))
-      gc.setLineWidth(9 * fastFlicker)
+      // Crackling energy tendrils branching off the bolt
+      if (len > 1) {
+        for (i <- 0 until 4) {
+          val branchT = ((animationTick * 0.15 + i * 0.25 + projectile.id * 0.07) % 1.0)
+          val branchX = tailX + dx * branchT
+          val branchY = tailY + dy * branchT
+          val side = if (i % 2 == 0) 1.0 else -1.0
+          val branchLen = 8.0 + 6.0 * Math.sin(phase * 3.1 + i * 1.9)
+          val branchAngle = Math.sin(phase * 2.3 + i * 2.7) * 0.6
+          val bx = branchX + (-ny * side) * branchLen * Math.cos(branchAngle) + nx * branchLen * Math.sin(branchAngle) * 0.3
+          val by = branchY + (nx * side) * branchLen * Math.cos(branchAngle) + ny * branchLen * Math.sin(branchAngle) * 0.3
+          val midX = (branchX + bx) * 0.5 + (-ny * side) * 3.0 * Math.sin(phase * 4.0 + i)
+          val midY = (branchY + by) * 0.5 + (nx * side) * 3.0 * Math.sin(phase * 4.0 + i)
+          val bAlpha = Math.max(0.0, 0.5 * (1.0 - Math.abs(branchT - 0.5) * 2.0))
+          gc.setStroke(Color.color(0.6, 0.3, 1.0, bAlpha * 0.7))
+          gc.setLineWidth(1.5)
+          gc.strokeLine(branchX, branchY, midX, midY)
+          gc.strokeLine(midX, midY, bx, by)
+        }
+      }
+
+      // Core beam — bright arcane energy
+      gc.setStroke(Color.color(0.5, 0.3, 0.9, 0.5 * fastFlicker))
+      gc.setLineWidth(8 * fastFlicker)
       gc.strokeLine(tailX, tailY, tipX, tipY)
 
       gc.setStroke(Color.color(0.7, 0.5, 1.0, 0.9 * fastFlicker))
       gc.setLineWidth(3.0)
       gc.strokeLine(tailX, tailY, tipX, tipY)
 
-      // Arcane sparkles along beam
-      val dx = tipX - tailX
-      val dy = tipY - tailY
-      val len = Math.sqrt(dx * dx + dy * dy)
+      // White-hot piercing core
+      gc.setStroke(Color.color(0.9, 0.8, 1.0, 0.95 * fastFlicker))
+      gc.setLineWidth(1.2)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Spiraling arcane runes orbiting the bolt path
       if (len > 1) {
-        val nx = dx / len
-        val ny = dy / len
-        for (i <- 0 until 5) {
-          val t = ((animationTick * 0.1 + i.toDouble / 5 + projectile.id * 0.13) % 1.0)
-          val wave = Math.sin(phase * 2.8 + i * 2.1) * 6.0
+        for (i <- 0 until 3) {
+          val runePhase = phase * 1.8 + i * (Math.PI * 2.0 / 3.0)
+          val runeT = ((animationTick * 0.06 + i.toDouble / 3.0 + projectile.id * 0.11) % 1.0)
+          val orbitR = 10.0 + 3.0 * Math.sin(phase * 2.0 + i)
+          val runeX = tailX + dx * runeT + (-ny) * Math.cos(runePhase) * orbitR + nx * Math.sin(runePhase) * orbitR * 0.3
+          val runeY = tailY + dy * runeT + nx * Math.cos(runePhase) * orbitR + ny * Math.sin(runePhase) * orbitR * 0.3
+          val rAlpha = Math.max(0.0, Math.min(1.0, 0.7 * (1.0 - Math.abs(runeT - 0.5) * 2.0)))
+
+          // Draw rune as a small diamond with inner cross
+          val rSize = 3.5
+          gc.setStroke(Color.color(0.7, 0.4, 1.0, rAlpha))
+          gc.setLineWidth(1.2)
+          gc.strokePolygon(
+            Array(runeX, runeX + rSize, runeX, runeX - rSize),
+            Array(runeY - rSize, runeY, runeY + rSize, runeY), 4)
+          gc.setStroke(Color.color(0.9, 0.7, 1.0, rAlpha * 0.6))
+          gc.setLineWidth(0.8)
+          gc.strokeLine(runeX - rSize * 0.5, runeY, runeX + rSize * 0.5, runeY)
+          gc.strokeLine(runeX, runeY - rSize * 0.5, runeX, runeY + rSize * 0.5)
+        }
+      }
+
+      // Shimmering sparkle particles with phase-shift effect
+      if (len > 1) {
+        for (i <- 0 until 6) {
+          val t = ((animationTick * 0.1 + i.toDouble / 6 + projectile.id * 0.13) % 1.0)
+          val wave = Math.sin(phase * 2.8 + i * 2.1) * 7.0
           val px = tailX + dx * t + (-ny) * wave
           val py = tailY + dy * t + nx * wave
-          val pAlpha = Math.max(0.0, Math.min(1.0, 0.55 * (1.0 - Math.abs(t - 0.5) * 2.0)))
-          val pSize = 2.2 + Math.sin(phase + i) * 0.8
-          gc.setFill(Color.color(0.6, 0.4, 1.0, pAlpha))
+          val phaseShift = Math.sin(phase * 4.0 + i * 1.5)
+          val pAlpha = Math.max(0.0, Math.min(1.0, 0.6 * (1.0 - Math.abs(t - 0.5) * 2.0) * (0.5 + 0.5 * phaseShift)))
+          val pSize = 2.0 + Math.sin(phase + i) * 0.8
+          // Alternate between purple and cyan sparkles
+          if (i % 2 == 0) {
+            gc.setFill(Color.color(0.6, 0.3, 1.0, pAlpha))
+          } else {
+            gc.setFill(Color.color(0.3, 0.6, 1.0, pAlpha))
+          }
           gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
         }
       }
 
-      // Arcane orb at tip
-      val orbR = 6.0 * pulse
-      gc.setFill(Color.color(0.4, 0.1, 0.8, 0.2 * pulse))
-      gc.fillOval(tipX - orbR * 2, tipY - orbR * 2, orbR * 4, orbR * 4)
-      gc.setFill(Color.color(0.5, 0.3, 0.9, 0.5 * pulse))
-      gc.fillOval(tipX - orbR, tipY - orbR, orbR * 2, orbR * 2)
-      gc.setFill(Color.color(0.7, 0.5, 1.0, 0.85 * fastFlicker))
-      gc.fillOval(tipX - orbR * 0.4, tipY - orbR * 0.4, orbR * 0.8, orbR * 0.8)
+      // Arcane sigil at tip — glowing eye shape
+      val orbR = 7.0 * pulse
+      gc.setFill(Color.color(0.3, 0.0, 0.6, 0.15 * pulse))
+      gc.fillOval(tipX - orbR * 2.5, tipY - orbR * 2.5, orbR * 5, orbR * 5)
+      gc.setFill(Color.color(0.5, 0.2, 0.9, 0.4 * pulse))
+      gc.fillOval(tipX - orbR * 1.2, tipY - orbR * 1.2, orbR * 2.4, orbR * 2.4)
+
+      // Arcane eye — two arcs forming an eye shape with bright pupil
+      gc.setStroke(Color.color(0.8, 0.6, 1.0, 0.8 * fastFlicker))
+      gc.setLineWidth(1.5)
+      val eyeW = orbR * 1.8
+      val eyeH = orbR * 0.8
+      gc.strokeOval(tipX - eyeW, tipY - eyeH, eyeW * 2, eyeH * 2)
+      // Bright pupil
+      val pupilR = orbR * 0.4
+      gc.setFill(Color.color(0.9, 0.8, 1.0, 0.95 * fastFlicker))
+      gc.fillOval(tipX - pupilR, tipY - pupilR, pupilR * 2, pupilR * 2)
+      // Pupil glow ring
+      gc.setStroke(Color.color(0.7, 0.5, 1.0, 0.6 * fastFlicker))
+      gc.setLineWidth(1.0)
+      gc.strokeOval(tipX - pupilR * 1.8, tipY - pupilR * 1.8, pupilR * 3.6, pupilR * 3.6)
+
+      // Trailing crystalline shatter particles behind bolt
+      if (len > 1) {
+        for (i <- 0 until 4) {
+          val trailT = ((animationTick * 0.12 + i * 0.22 + projectile.id * 0.17) % 1.0)
+          if (trailT < 0.4) {
+            val fadeT = trailT / 0.4
+            val tAlpha = Math.max(0.0, 0.4 * (1.0 - fadeT))
+            val drift = (1.0 - fadeT) * 5.0
+            val side = if (i % 2 == 0) 1.0 else -1.0
+            val shardX = tailX + (-ny * side) * drift + dx * fadeT * 0.1
+            val shardY = tailY + (nx * side) * drift + dy * fadeT * 0.1
+            val sSize = 2.5 * (1.0 - fadeT)
+            gc.setFill(Color.color(0.6, 0.4, 1.0, tAlpha))
+            gc.fillPolygon(
+              Array(shardX, shardX + sSize, shardX, shardX - sSize),
+              Array(shardY - sSize * 1.5, shardY, shardY + sSize * 1.5, shardY), 4)
+          }
+        }
+      }
     }
   }
 
@@ -1605,7 +1696,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 120.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -1614,52 +1705,124 @@ class GameCanvas(client: GameClient) extends Canvas() {
       val pulse = 0.8 + 0.2 * Math.sin(phase)
       val fastFlicker = 0.85 + 0.15 * Math.sin(phase * 2.5)
 
-      // Orange/red fiery glow layers
-      gc.setStroke(Color.color(1.0, 0.3, 0.0, 0.1 * pulse))
-      gc.setLineWidth(44 * pulse)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      gc.setStroke(Color.color(1.0, 0.4, 0.05, 0.2 * pulse))
-      gc.setLineWidth(28 * pulse)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      gc.setStroke(Color.color(1.0, 0.6, 0.1, 0.45 * fastFlicker))
-      gc.setLineWidth(14 * fastFlicker)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      gc.setStroke(Color.color(1.0, 0.9, 0.4, 0.85 * fastFlicker))
-      gc.setLineWidth(5.0)
-      gc.strokeLine(tailX, tailY, tipX, tipY)
-
-      // Flame particles along trail
       val dx = tipX - tailX
       val dy = tipY - tailY
       val len = Math.sqrt(dx * dx + dy * dy)
+      val nx = if (len > 1) dx / len else 0.0
+      val ny = if (len > 1) dy / len else 0.0
+
+      // Center of the fireball (at tip)
+      val cx = tipX
+      val cy = tipY
+
+      // Heat distortion outer ring
+      val distortR = 22.0 * pulse
+      gc.setStroke(Color.color(1.0, 0.3, 0.0, 0.06 * pulse))
+      gc.setLineWidth(3.0)
+      gc.strokeOval(cx - distortR, cy - distortR, distortR * 2, distortR * 2)
+
+      // Smoke trail behind the fireball — dark billowing puffs
       if (len > 1) {
-        val nx = dx / len
-        val ny = dy / len
-        for (i <- 0 until 7) {
-          val t = ((animationTick * 0.08 + i.toDouble / 7 + projectile.id * 0.11) % 1.0)
-          val wave = Math.sin(phase * 2.0 + i * 1.7) * 8.0
-          val px = tailX + dx * t + (-ny) * wave
-          val py = tailY + dy * t + nx * wave
-          val pAlpha = Math.max(0.0, Math.min(1.0, 0.6 * (1.0 - Math.abs(t - 0.5) * 2.0)))
-          val pSize = 3.0 + Math.sin(phase + i * 0.9) * 1.2
-          val r = 1.0
-          val g = 0.4 + 0.4 * t
-          gc.setFill(Color.color(r, g, 0.1, pAlpha))
-          gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+        for (i <- 0 until 6) {
+          val smokeT = ((animationTick * 0.06 + i * 0.15 + projectile.id * 0.09) % 1.0)
+          val age = smokeT
+          val smokeX = cx - nx * (15.0 + age * 40.0) + (-ny) * Math.sin(phase * 1.5 + i * 1.3) * (3.0 + age * 6.0)
+          val smokeY = cy - ny * (15.0 + age * 40.0) + nx * Math.sin(phase * 1.5 + i * 1.3) * (3.0 + age * 6.0) - age * 8.0
+          val smokeR = 3.0 + age * 7.0
+          val smokeAlpha = Math.max(0.0, 0.25 * (1.0 - age))
+          gc.setFill(Color.color(0.3, 0.2, 0.15, smokeAlpha))
+          gc.fillOval(smokeX - smokeR, smokeY - smokeR, smokeR * 2, smokeR * 2)
         }
       }
 
-      // Fireball orb at tip (large and fiery)
-      val orbR = 10.0 * pulse
-      gc.setFill(Color.color(1.0, 0.2, 0.0, 0.2 * pulse))
-      gc.fillOval(tipX - orbR * 2.5, tipY - orbR * 2.5, orbR * 5, orbR * 5)
-      gc.setFill(Color.color(1.0, 0.5, 0.0, 0.45 * pulse))
-      gc.fillOval(tipX - orbR * 1.3, tipY - orbR * 1.3, orbR * 2.6, orbR * 2.6)
-      gc.setFill(Color.color(1.0, 0.85, 0.3, 0.85 * fastFlicker))
-      gc.fillOval(tipX - orbR * 0.5, tipY - orbR * 0.5, orbR, orbR)
+      // Fiery trailing tail — wide flame wake
+      gc.setStroke(Color.color(1.0, 0.2, 0.0, 0.08 * pulse))
+      gc.setLineWidth(30 * pulse)
+      gc.strokeLine(tailX, tailY, cx, cy)
+
+      gc.setStroke(Color.color(1.0, 0.4, 0.0, 0.15 * pulse))
+      gc.setLineWidth(18 * pulse)
+      gc.strokeLine(tailX, tailY, cx, cy)
+
+      gc.setStroke(Color.color(1.0, 0.6, 0.1, 0.35 * fastFlicker))
+      gc.setLineWidth(8 * fastFlicker)
+      gc.strokeLine(tailX, tailY, cx, cy)
+
+      // Swirling fire tongues licking outward from the fireball surface
+      for (i <- 0 until 6) {
+        val tongueAngle = phase * 2.0 + i * (Math.PI / 3.0)
+        val tongueLen = 8.0 + 5.0 * Math.sin(phase * 3.0 + i * 2.1)
+        val innerR = 8.0 * pulse
+        val tongueStartX = cx + Math.cos(tongueAngle) * innerR
+        val tongueStartY = cy + Math.sin(tongueAngle) * innerR
+        val tongueEndX = cx + Math.cos(tongueAngle) * (innerR + tongueLen)
+        val tongueEndY = cy + Math.sin(tongueAngle) * (innerR + tongueLen)
+        val tongueAlpha = Math.max(0.0, 0.5 + 0.3 * Math.sin(phase * 4.0 + i * 1.7))
+        val tG = 0.3 + 0.3 * Math.sin(phase * 2.5 + i)
+        gc.setStroke(Color.color(1.0, tG, 0.0, tongueAlpha * 0.6))
+        gc.setLineWidth(3.0 + Math.sin(phase * 3.0 + i) * 1.0)
+        gc.strokeLine(tongueStartX, tongueStartY, tongueEndX, tongueEndY)
+      }
+
+      // Fireball body — layered sphere from outer inferno to molten core
+      val orbR = 12.0 * pulse
+      // Dark red outer
+      gc.setFill(Color.color(0.8, 0.1, 0.0, 0.2 * pulse))
+      gc.fillOval(cx - orbR * 1.8, cy - orbR * 1.8, orbR * 3.6, orbR * 3.6)
+      // Bright orange
+      gc.setFill(Color.color(1.0, 0.4, 0.0, 0.4 * pulse))
+      gc.fillOval(cx - orbR * 1.2, cy - orbR * 1.2, orbR * 2.4, orbR * 2.4)
+      // Yellow-orange fire
+      gc.setFill(Color.color(1.0, 0.65, 0.1, 0.6 * fastFlicker))
+      gc.fillOval(cx - orbR * 0.8, cy - orbR * 0.8, orbR * 1.6, orbR * 1.6)
+      // White-hot molten core
+      gc.setFill(Color.color(1.0, 0.95, 0.6, 0.85 * fastFlicker))
+      gc.fillOval(cx - orbR * 0.35, cy - orbR * 0.35, orbR * 0.7, orbR * 0.7)
+
+      // Swirling molten surface pattern — arcs across the fireball face
+      gc.setStroke(Color.color(1.0, 0.8, 0.2, 0.5 * fastFlicker))
+      gc.setLineWidth(1.5)
+      for (i <- 0 until 3) {
+        val arcAngle = phase * 1.5 + i * (Math.PI * 2.0 / 3.0)
+        val arcR = orbR * 0.7
+        val ax1 = cx + Math.cos(arcAngle) * arcR
+        val ay1 = cy + Math.sin(arcAngle) * arcR
+        val ax2 = cx + Math.cos(arcAngle + 1.2) * arcR
+        val ay2 = cy + Math.sin(arcAngle + 1.2) * arcR
+        gc.strokeLine(ax1, ay1, ax2, ay2)
+      }
+
+      // Ember and spark particles rising off the fireball
+      if (len > 1) {
+        for (i <- 0 until 8) {
+          val embT = ((animationTick * 0.09 + i * 0.12 + projectile.id * 0.07) % 1.0)
+          val angle = phase * 1.3 + i * (Math.PI * 2.0 / 8.0)
+          val scatter = 12.0 + embT * 15.0
+          val embX = cx + Math.cos(angle) * scatter + Math.sin(phase * 2.0 + i) * 3.0
+          val embY = cy + Math.sin(angle) * scatter - embT * 12.0
+          val embAlpha = Math.max(0.0, 0.7 * (1.0 - embT))
+          val embSize = 1.5 + (1.0 - embT) * 1.5
+          if (i % 3 == 0) {
+            gc.setFill(Color.color(1.0, 0.9, 0.3, embAlpha))
+          } else if (i % 3 == 1) {
+            gc.setFill(Color.color(1.0, 0.5, 0.0, embAlpha))
+          } else {
+            gc.setFill(Color.color(1.0, 0.2, 0.0, embAlpha))
+          }
+          gc.fillOval(embX - embSize, embY - embSize, embSize * 2, embSize * 2)
+        }
+      }
+
+      // Dripping lava particles falling from the fireball
+      for (i <- 0 until 3) {
+        val dripT = ((animationTick * 0.07 + i * 0.33 + projectile.id * 0.19) % 1.0)
+        val dripX = cx + Math.sin(phase + i * 2.5) * 6.0
+        val dripY = cy + dripT * 18.0
+        val dAlpha = Math.max(0.0, 0.5 * (1.0 - dripT))
+        val dSize = 1.8 * (1.0 - dripT * 0.5)
+        gc.setFill(Color.color(1.0, 0.3, 0.0, dAlpha))
+        gc.fillOval(dripX - dSize, dripY - dSize, dSize * 2, dSize * 2)
+      }
     }
   }
 
