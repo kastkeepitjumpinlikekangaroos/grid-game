@@ -218,7 +218,28 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
             case ProjectileType.ICE_BEAM =>
               target.setFrozenUntil(System.currentTimeMillis() + Constants.ICE_BEAM_FREEZE_DURATION_MS)
 
-            case _ => // No special effect (AXE, SPEAR, NORMAL)
+            case ProjectileType.TIDAL_WAVE =>
+              // Push target away from shooter
+              val owner = registry.get(projectile.ownerId)
+              if (owner != null) {
+                val ownerPos = owner.getPosition
+                val targetPos = target.getPosition
+                val pdx = targetPos.getX - ownerPos.getX
+                val pdy = targetPos.getY - ownerPos.getY
+                val dist = Math.sqrt(pdx * pdx + pdy * pdy).toFloat
+                if (dist > 0.01f) {
+                  val pushDist = Constants.TIDAL_WAVE_PUSHBACK_DISTANCE
+                  val destX = targetPos.getX + Math.round(pdx / dist * pushDist)
+                  val destY = targetPos.getY + Math.round(pdy / dist * pushDist)
+                  val clampedX = Math.max(0, Math.min(world.width - 1, destX))
+                  val clampedY = Math.max(0, Math.min(world.height - 1, destY))
+                  if (world.isWalkable(clampedX, clampedY)) {
+                    target.setPosition(new Position(clampedX, clampedY))
+                  }
+                }
+              }
+
+            case _ => // No special effect (AXE, SPEAR, NORMAL, SPLASH, GEYSER)
           }
 
           val flags = (if (target.hasShield) 0x01 else 0) |
@@ -235,6 +256,87 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
           )
           broadcastToInstance(updatePacket)
         }
+
+      case ProjectileAoEHit(projectile, targetId) =>
+        val hitPacket = new ProjectilePacket(
+          server.getNextSequenceNumber,
+          projectile.ownerId,
+          projectile.getX, projectile.getY,
+          projectile.colorRGB,
+          projectile.id,
+          projectile.dx, projectile.dy,
+          ProjectileAction.HIT,
+          targetId,
+          projectile.chargeLevel.toByte,
+          projectile.projectileType
+        )
+        broadcastToInstance(hitPacket)
+
+        val aoeTarget = registry.get(targetId)
+        if (aoeTarget != null) {
+          val flags = (if (aoeTarget.hasShield) 0x01 else 0) |
+                      (if (aoeTarget.hasGemBoost) 0x02 else 0) |
+                      (if (aoeTarget.isFrozen) 0x04 else 0)
+          val updatePacket = new PlayerUpdatePacket(
+            server.getNextSequenceNumber,
+            targetId,
+            aoeTarget.getPosition,
+            aoeTarget.getColorRGB,
+            aoeTarget.getHealth,
+            0,
+            flags
+          )
+          broadcastToInstance(updatePacket)
+        }
+
+      case ProjectileAoEKill(projectile, targetId) =>
+        val hitPacket = new ProjectilePacket(
+          server.getNextSequenceNumber,
+          projectile.ownerId,
+          projectile.getX, projectile.getY,
+          projectile.colorRGB,
+          projectile.id,
+          projectile.dx, projectile.dy,
+          ProjectileAction.HIT,
+          targetId,
+          projectile.chargeLevel.toByte,
+          projectile.projectileType
+        )
+        broadcastToInstance(hitPacket)
+
+        val aoeKillTarget = registry.get(targetId)
+        if (aoeKillTarget != null) {
+          val flags = (if (aoeKillTarget.hasShield) 0x01 else 0) |
+                      (if (aoeKillTarget.hasGemBoost) 0x02 else 0) |
+                      (if (aoeKillTarget.isFrozen) 0x04 else 0)
+          val updatePacket = new PlayerUpdatePacket(
+            server.getNextSequenceNumber,
+            targetId,
+            aoeKillTarget.getPosition,
+            aoeKillTarget.getColorRGB,
+            aoeKillTarget.getHealth,
+            0,
+            flags
+          )
+          broadcastToInstance(updatePacket)
+        }
+
+        killTracker.recordKill(projectile.ownerId, targetId)
+
+        val aoeKillPacket = new GameEventPacket(
+          server.getNextSequenceNumber,
+          projectile.ownerId,
+          GameEvent.KILL,
+          gameId,
+          getRemainingSeconds,
+          killTracker.getKills(projectile.ownerId).toShort,
+          killTracker.getDeaths(projectile.ownerId).toShort,
+          targetId,
+          0.toByte, 0.toShort, 0.toShort
+        )
+        broadcastToInstance(aoeKillPacket)
+
+        scheduleRespawn(targetId)
 
       case ProjectileDespawned(projectile) =>
         val packet = new ProjectilePacket(
