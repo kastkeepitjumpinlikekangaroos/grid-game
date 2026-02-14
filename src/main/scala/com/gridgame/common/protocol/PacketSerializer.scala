@@ -93,6 +93,24 @@ object PacketSerializer {
             new MatchHistoryPacket(sequenceNumber, playerId, action)
         }
 
+      case PacketType.LEADERBOARD =>
+        val action = buffer.get()
+        action match {
+          case LeaderboardAction.ENTRY =>
+            val rank = buffer.get()
+            val elo = buffer.getShort()
+            val wins = buffer.getInt()
+            val matchesPlayed = buffer.getInt()
+            val nameBytes = new Array[Byte](20)
+            buffer.get(nameBytes)
+            val username = extractString(nameBytes)
+            new LeaderboardPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, action,
+              rank, elo, wins, matchesPlayed, username)
+
+          case _ => // QUERY or END
+            new LeaderboardPacket(sequenceNumber, playerId, action)
+        }
+
       case PacketType.RANKED_QUEUE =>
         val action = buffer.get()
         val characterId = buffer.get()

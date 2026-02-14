@@ -44,7 +44,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     initialWorld.getValidSpawnPoint()
   )
   private val localDirection: AtomicReference[Direction] = new AtomicReference(Direction.Down)
-  private val localHealth: AtomicInteger = new AtomicInteger(Constants.MAX_HEALTH)
+  private val localHealth: AtomicInteger = new AtomicInteger(100)
   private val players: ConcurrentHashMap[UUID, Player] = new ConcurrentHashMap()
   private val projectiles: ConcurrentHashMap[Int, Projectile] = new ConcurrentHashMap()
   private val items: ConcurrentHashMap[Int, Item] = new ConcurrentHashMap()
@@ -145,6 +145,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   @volatile var rankedQueueListener: () => Unit = _
   @volatile var rankedMatchFoundListener: () => Unit = _
 
+  // Leaderboard state: (rank, username, elo, wins, matchesPlayed)
+  val leaderboard: CopyOnWriteArrayList[Array[AnyRef]] = new CopyOnWriteArrayList[Array[AnyRef]]()
+  @volatile var leaderboardListener: () => Unit = _
+
   @volatile var matchHistoryListener: () => Unit = _
   @volatile var lobbyListListener: () => Unit = _
   @volatile var lobbyJoinedListener: () => Unit = _
@@ -202,7 +206,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       pos,
       localColorRGB,
       playerName,
-      Constants.MAX_HEALTH,
+      getSelectedCharacterMaxHealth,
       selectedCharacterId
     )
     networkThread.send(packet)
@@ -221,7 +225,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
     // Reset local state
     isDead = false
-    localHealth.set(Constants.MAX_HEALTH)
+    localHealth.set(getSelectedCharacterMaxHealth)
 
     // Get a new spawn point
     val world = currentWorld.get()
@@ -533,6 +537,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       return
     }
 
+    // Blink (Wizard E) is a teleport, not a projectile
+    if (abilityDef.projectileType == -2) {
+      performBlink()
+      return
+    }
+
     val pos = localPosition.get()
     val dx = (mouseWorldX - pos.getX).toFloat
     val dy = (mouseWorldY - pos.getY).toFloat
@@ -652,6 +662,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       if (authResponseListener != null) {
         authResponseListener(authPacket.getSuccess, authPacket.getAssignedUUID, authPacket.getMessage)
       }
+      return
+    }
+
+    // Handle leaderboard
+    if (packet.getType == PacketType.LEADERBOARD) {
+      handleLeaderboard(packet.asInstanceOf[LeaderboardPacket])
       return
     }
 
@@ -799,7 +815,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         killFeed.clear()
         isDead = false
         isRespawning = false
-        localHealth.set(Constants.MAX_HEALTH)
+        localHealth.set(getSelectedCharacterMaxHealth)
         players.clear()
         projectiles.clear()
         items.clear()
@@ -868,7 +884,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         if (packet.getPlayerId.equals(localPlayerId)) {
           isDead = false
           isRespawning = false
-          localHealth.set(Constants.MAX_HEALTH)
+          localHealth.set(getSelectedCharacterMaxHealth)
           val spawnX = packet.getSpawnX.toInt
           val spawnY = packet.getSpawnY.toInt
           localPosition.set(new Position(spawnX, spawnY))
@@ -886,6 +902,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   def getSelectedCharacterDef: CharacterDef = CharacterDef.get(selectedCharacterId)
 
+  def getSelectedCharacterMaxHealth: Int = getSelectedCharacterDef.maxHealth
+
   def selectCharacter(id: Byte): Unit = {
     selectedCharacterId = id
     if (currentLobbyId != 0) {
@@ -895,6 +913,24 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         0.toByte, 0.toByte, 0.toByte, 0.toByte, 0.toByte, "", id
       )
       networkThread.send(packet)
+    }
+  }
+
+  private def handleLeaderboard(packet: LeaderboardPacket): Unit = {
+    packet.getAction match {
+      case LeaderboardAction.ENTRY =>
+        leaderboard.add(Array(
+          (packet.getRank & 0xFF).asInstanceOf[AnyRef],
+          packet.getUsername.asInstanceOf[AnyRef],
+          packet.getElo.toInt.asInstanceOf[AnyRef],
+          packet.getWins.asInstanceOf[AnyRef],
+          packet.getMatchesPlayed.asInstanceOf[AnyRef]
+        ))
+
+      case LeaderboardAction.END =>
+        if (leaderboardListener != null) leaderboardListener()
+
+      case _ =>
     }
   }
 
@@ -984,6 +1020,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   def startGame(): Unit = {
     val packet = new LobbyActionPacket(
       sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.START
+    )
+    networkThread.send(packet)
+  }
+
+  def requestLeaderboard(): Unit = {
+    leaderboard.clear()
+    val packet = new LeaderboardPacket(
+      sequenceNumber.getAndIncrement(), localPlayerId, LeaderboardAction.QUERY
     )
     networkThread.send(packet)
   }
@@ -1406,6 +1450,60 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     ))
 
     println(s"GameClient: Teleported to ($clampedX, $clampedY)")
+  }
+
+  private def performBlink(): Unit = {
+    val world = currentWorld.get()
+    val oldPos = localPosition.get()
+    val dx = (mouseWorldX - oldPos.getX).toFloat
+    val dy = (mouseWorldY - oldPos.getY).toFloat
+    val len = Math.sqrt(dx * dx + dy * dy).toFloat
+    val (ndx, ndy) = if (len > 0.01f) (dx / len, dy / len) else {
+      val dir = localDirection.get()
+      dir match {
+        case Direction.Up    => (0.0f, -1.0f)
+        case Direction.Down  => (0.0f, 1.0f)
+        case Direction.Left  => (-1.0f, 0.0f)
+        case Direction.Right => (1.0f, 0.0f)
+      }
+    }
+
+    // Walk cell-by-cell up to BLINK_DISTANCE, find farthest walkable position
+    var bestX = oldPos.getX
+    var bestY = oldPos.getY
+    for (step <- 1 to Constants.BLINK_DISTANCE) {
+      val cx = Math.round(oldPos.getX + ndx * step).toInt
+      val cy = Math.round(oldPos.getY + ndy * step).toInt
+      val clampedX = Math.max(0, Math.min(world.width - 1, cx))
+      val clampedY = Math.max(0, Math.min(world.height - 1, cy))
+      if (world.isWalkable(clampedX, clampedY)) {
+        bestX = clampedX
+        bestY = clampedY
+      } else {
+        // Stop at first non-walkable cell
+        return blinkTo(oldPos, bestX, bestY)
+      }
+    }
+    blinkTo(oldPos, bestX, bestY)
+  }
+
+  private def blinkTo(oldPos: Position, x: Int, y: Int): Unit = {
+    if (x == oldPos.getX && y == oldPos.getY) return
+
+    val newPos = new Position(x, y)
+    localPosition.set(newPos)
+    lastMoveTime.set(System.currentTimeMillis())
+    sendPositionUpdate(newPos)
+
+    // Record teleport animation
+    teleportAnimations.put(localPlayerId, Array(
+      System.currentTimeMillis(),
+      oldPos.getX.toLong, oldPos.getY.toLong,
+      x.toLong, y.toLong,
+      localColorRGB.toLong
+    ))
+
+    println(s"GameClient: Blinked to ($x, $y)")
   }
 
   def hasGemBoost: Boolean = System.currentTimeMillis() < fastProjectilesUntil.get()
