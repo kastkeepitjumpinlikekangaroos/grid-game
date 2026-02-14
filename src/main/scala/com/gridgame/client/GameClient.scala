@@ -1076,6 +1076,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     mouseWorldY = y
   }
 
+  def getMouseWorldX: Double = mouseWorldX
+  def getMouseWorldY: Double = mouseWorldY
+
   private def teleportToMouse(): Unit = {
     val world = currentWorld.get()
     val oldPos = localPosition.get()
