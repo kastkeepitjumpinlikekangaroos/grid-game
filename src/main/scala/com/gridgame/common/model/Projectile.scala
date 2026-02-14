@@ -17,8 +17,11 @@ object ProjectileType {
   val SPLASH: Byte = 10
   val TIDAL_WAVE: Byte = 11
   val GEYSER: Byte = 12
-  val TALON: Byte = 13
-  val GUST: Byte = 14
+  val BULLET: Byte = 13
+  val GRENADE: Byte = 14
+  val ROCKET: Byte = 15
+  val TALON: Byte = 16
+  val GUST: Byte = 17
 }
 
 class Projectile(
@@ -48,6 +51,9 @@ class Projectile(
     case ProjectileType.SPLASH => 0.65f
     case ProjectileType.TIDAL_WAVE => 0.5f
     case ProjectileType.GEYSER => 0.6f
+    case ProjectileType.BULLET => 1.0f
+    case ProjectileType.GRENADE => 0.5f
+    case ProjectileType.ROCKET => 0.55f
     case ProjectileType.TALON => 0.7f
     case ProjectileType.GUST => 0.8f
     case _ =>
@@ -90,6 +96,8 @@ class Projectile(
 
   def hitsPlayer(player: Player): Boolean = {
     if (player.getId.equals(ownerId)) return false
+    // Grenades pass through players entirely
+    if (projectileType == ProjectileType.GRENADE) return false
     val pos = player.getPosition
     val dx = x - (pos.getX + 0.5f)
     val dy = y - (pos.getY + 0.5f)

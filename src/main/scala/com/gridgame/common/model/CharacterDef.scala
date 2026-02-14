@@ -155,6 +155,32 @@ object CharacterDef {
     primaryProjectileType = ProjectileType.SPLASH
   )
 
+  val Soldier: CharacterDef = CharacterDef(
+    id = CharacterId.Soldier,
+    displayName = "Soldier",
+    description = "A military specialist with rifle, grenade, and rocket launcher.",
+    spriteSheet = "sprites/soldier.png",
+    qAbility = AbilityDef(
+      name = "Grenade",
+      description = "Thrown explosive that passes through players and detonates at range.",
+      cooldownMs = Constants.GRENADE_COOLDOWN_MS,
+      maxRange = Constants.GRENADE_MAX_RANGE,
+      damage = Constants.GRENADE_CENTER_DAMAGE,
+      projectileType = ProjectileType.GRENADE,
+      keybind = "Q"
+    ),
+    eAbility = AbilityDef(
+      name = "Rocket",
+      description = "Fired explosive that detonates on impact with splash damage.",
+      cooldownMs = Constants.ROCKET_COOLDOWN_MS,
+      maxRange = Constants.ROCKET_MAX_RANGE,
+      damage = Constants.ROCKET_CENTER_DAMAGE,
+      projectileType = ProjectileType.ROCKET,
+      keybind = "E"
+    ),
+    primaryProjectileType = ProjectileType.BULLET
+  )
+
   val Raptor: CharacterDef = CharacterDef(
     id = CharacterId.Raptor,
     displayName = "Raptor",
@@ -187,10 +213,11 @@ object CharacterDef {
     CharacterId.Wraith.id -> Wraith,
     CharacterId.Wizard.id -> Wizard,
     CharacterId.Tidecaller.id -> Tidecaller,
+    CharacterId.Soldier.id -> Soldier,
     CharacterId.Raptor.id -> Raptor
   )
 
-  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith, Wizard, Tidecaller, Raptor)
+  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith, Wizard, Tidecaller, Soldier, Raptor)
 
   def get(id: CharacterId): CharacterDef = byId.getOrElse(id.id, Spaceman)
 

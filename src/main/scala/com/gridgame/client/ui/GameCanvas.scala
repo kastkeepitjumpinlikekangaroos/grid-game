@@ -215,9 +215,10 @@ class GameCanvas(client: GameClient) extends Canvas() {
     // Draw any entities outside visible tile range
     entitiesByCell.values.foreach(_.foreach(_()))
 
-    // Death/teleport animations drawn as overlays
+    // Death/teleport/explosion animations drawn as overlays
     drawDeathAnimations(camOffX, camOffY)
     drawTeleportAnimations(camOffX, camOffY)
+    drawExplosionAnimations(camOffX, camOffY)
 
     drawCoordinates(currentWorld)
     drawAbilityHUD()
@@ -576,6 +577,9 @@ class GameCanvas(client: GameClient) extends Canvas() {
       case ProjectileType.SPLASH => drawSplashProjectile(projectile, camOffX, camOffY)
       case ProjectileType.TIDAL_WAVE => drawTidalWaveProjectile(projectile, camOffX, camOffY)
       case ProjectileType.GEYSER => drawGeyserProjectile(projectile, camOffX, camOffY)
+      case ProjectileType.BULLET => drawBulletProjectile(projectile, camOffX, camOffY)
+      case ProjectileType.GRENADE => drawGrenadeProjectile(projectile, camOffX, camOffY)
+      case ProjectileType.ROCKET => drawRocketProjectile(projectile, camOffX, camOffY)
       case ProjectileType.TALON => drawTalonProjectile(projectile, camOffX, camOffY)
       case ProjectileType.GUST => drawGustProjectile(projectile, camOffX, camOffY)
       case _ => drawNormalProjectile(projectile, camOffX, camOffY)
@@ -1353,6 +1357,87 @@ class GameCanvas(client: GameClient) extends Canvas() {
     }
   }
 
+  private def drawBulletProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 6.0
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 31) * 0.5
+      val flicker = 0.9 + 0.1 * Math.sin(phase * 5.0)
+
+      // Outer glow — yellow/orange
+      gc.setStroke(Color.color(1.0, 0.85, 0.2, 0.12 * flicker))
+      gc.setLineWidth(20 * flicker)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Mid glow
+      gc.setStroke(Color.color(1.0, 0.75, 0.1, 0.3 * flicker))
+      gc.setLineWidth(10 * flicker)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Bright core — white-hot
+      gc.setStroke(Color.color(1.0, 0.95, 0.7, 0.9 * flicker))
+      gc.setLineWidth(3.0)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Tip spark
+      val orbR = 4.0 * flicker
+      gc.setFill(Color.color(1.0, 0.9, 0.3, 0.7 * flicker))
+      gc.fillOval(tipX - orbR, tipY - orbR, orbR * 2, orbR * 2)
+    }
+  }
+
+  private def drawGrenadeProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+
+    val sx = worldToScreenX(projX, projY, camOffX)
+    val sy = worldToScreenY(projX, projY, camOffY)
+
+    val margin = 100.0
+    if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
+      val phase = (animationTick + projectile.id * 17) * 0.4
+      val bounce = Math.abs(Math.sin(phase * 2.0)) * 4.0 // bobbing arc
+
+      // Dark green orb
+      val orbR = 6.0
+      gc.setFill(Color.color(0.15, 0.35, 0.1, 0.3))
+      gc.fillOval(sx - orbR * 2, sy - bounce - orbR * 2, orbR * 4, orbR * 4)
+      gc.setFill(Color.color(0.2, 0.45, 0.15, 0.8))
+      gc.fillOval(sx - orbR, sy - bounce - orbR, orbR * 2, orbR * 2)
+      gc.setStroke(Color.color(0.1, 0.25, 0.05, 0.9))
+      gc.setLineWidth(1.5)
+      gc.strokeOval(sx - orbR, sy - bounce - orbR, orbR * 2, orbR * 2)
+
+      // Highlight
+      gc.setFill(Color.color(0.4, 0.7, 0.3, 0.5))
+      gc.fillOval(sx - 2, sy - bounce - orbR + 1, 4, 3)
+
+      // Trailing sparks
+      for (i <- 0 until 4) {
+        val t = ((animationTick * 0.12 + i * 0.25 + projectile.id * 0.1) % 1.0)
+        val sparkX = sx - projectile.dx * t * 15.0
+        val sparkY = sy - projectile.dy * t * 15.0 + t * 3.0
+        val pAlpha = Math.max(0.0, 0.6 * (1.0 - t))
+        val pSize = 2.0 * (1.0 - t)
+        gc.setFill(Color.color(1.0, 0.7, 0.2, pAlpha))
+        gc.fillOval(sparkX - pSize, sparkY - pSize, pSize * 2, pSize * 2)
+      }
+    }
+  }
+
   private def drawTalonProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
     val projX = projectile.getX.toDouble
     val projY = projectile.getY.toDouble
@@ -1672,6 +1757,160 @@ class GameCanvas(client: GameClient) extends Canvas() {
         gc.setFill(Color.color(0.7, 0.95, 1.0, pAlpha))
         gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
       }
+    }
+  }
+
+  private def drawRocketProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 3.0
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 29) * 0.35
+      val pulse = 0.85 + 0.15 * Math.sin(phase)
+
+      // Fire trail behind rocket
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len > 1) {
+        val nx = dx / len
+        val ny = dy / len
+        // Smoke trail
+        for (i <- 0 until 5) {
+          val t = ((animationTick * 0.08 + i * 0.2 + projectile.id * 0.07) % 1.0)
+          val smokeX = tailX - dx * t * 0.5 + (-ny) * Math.sin(phase + i * 1.7) * 3.0
+          val smokeY = tailY - dy * t * 0.5 + nx * Math.sin(phase + i * 1.7) * 3.0
+          val pAlpha = Math.max(0.0, 0.3 * (1.0 - t))
+          val pSize = 3.0 + t * 4.0
+          gc.setFill(Color.color(0.5, 0.5, 0.5, pAlpha))
+          gc.fillOval(smokeX - pSize, smokeY - pSize, pSize * 2, pSize * 2)
+        }
+
+        // Fire particles
+        for (i <- 0 until 4) {
+          val t = ((animationTick * 0.1 + i * 0.25 + projectile.id * 0.13) % 1.0)
+          val fireX = tailX - dx * t * 0.3
+          val fireY = tailY - dy * t * 0.3
+          val pAlpha = Math.max(0.0, 0.7 * (1.0 - t))
+          val pSize = 2.5 * (1.0 - t)
+          gc.setFill(Color.color(1.0, 0.5 + 0.3 * (1.0 - t), 0.1, pAlpha))
+          gc.fillOval(fireX - pSize, fireY - pSize, pSize * 2, pSize * 2)
+        }
+      }
+
+      // Rocket body — red/orange
+      gc.setStroke(Color.color(0.8, 0.2, 0.1, 0.15 * pulse))
+      gc.setLineWidth(24 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(0.9, 0.3, 0.1, 0.4 * pulse))
+      gc.setLineWidth(12 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(1.0, 0.6, 0.2, 0.8 * pulse))
+      gc.setLineWidth(5.0)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Bright tip
+      val orbR = 6.0 * pulse
+      gc.setFill(Color.color(1.0, 0.4, 0.1, 0.3 * pulse))
+      gc.fillOval(tipX - orbR * 2, tipY - orbR * 2, orbR * 4, orbR * 4)
+      gc.setFill(Color.color(1.0, 0.7, 0.2, 0.7 * pulse))
+      gc.fillOval(tipX - orbR, tipY - orbR, orbR * 2, orbR * 2)
+    }
+  }
+
+  private val EXPLOSION_ANIMATION_MS = 800
+
+  private def drawExplosionAnimations(camOffX: Double, camOffY: Double): Unit = {
+    val now = System.currentTimeMillis()
+    val iter = client.getExplosionAnimations.entrySet().iterator()
+    while (iter.hasNext) {
+      val entry = iter.next()
+      val data = entry.getValue
+      val startTime = data(0)
+      if (now - startTime > EXPLOSION_ANIMATION_MS) {
+        iter.remove()
+      } else {
+        val wx = data(1).toDouble / 1000.0
+        val wy = data(2).toDouble / 1000.0
+        val pType = data(3).toByte
+        val sx = worldToScreenX(wx, wy, camOffX)
+        val sy = worldToScreenY(wx, wy, camOffY)
+        drawExplosionEffect(sx, sy, startTime, pType)
+      }
+    }
+  }
+
+  private def drawExplosionEffect(screenX: Double, screenY: Double, startTime: Long, projectileType: Byte): Unit = {
+    val elapsed = System.currentTimeMillis() - startTime
+    if (elapsed < 0 || elapsed > EXPLOSION_ANIMATION_MS) return
+
+    val progress = elapsed.toDouble / EXPLOSION_ANIMATION_MS
+    val fadeOut = 1.0 - progress
+
+    val blastRadius = if (projectileType == ProjectileType.GRENADE) 3.0 else 2.5
+    val maxScreenRadius = blastRadius * HW * 1.5
+
+    // Phase 1: Bright white flash (0-20%)
+    if (progress < 0.2) {
+      val flashPct = progress / 0.2
+      val flashR = maxScreenRadius * 0.6 * flashPct
+      val flashAlpha = 0.7 * (1.0 - flashPct)
+      gc.setFill(Color.color(1.0, 1.0, 0.9, flashAlpha))
+      gc.fillOval(screenX - flashR, screenY - flashR * 0.5, flashR * 2, flashR)
+    }
+
+    // Phase 2: Expanding fireball
+    val fireR = maxScreenRadius * Math.min(1.0, progress * 2.0)
+
+    // Outer glow — orange
+    gc.setFill(Color.color(1.0, 0.5, 0.1, 0.15 * fadeOut))
+    gc.fillOval(screenX - fireR * 1.3, screenY - fireR * 0.65, fireR * 2.6, fireR * 1.3)
+
+    // Main fireball — orange/red
+    gc.setFill(Color.color(1.0, 0.4, 0.05, 0.35 * fadeOut))
+    gc.fillOval(screenX - fireR, screenY - fireR * 0.5, fireR * 2, fireR)
+
+    // Hot core — yellow
+    val coreR = fireR * 0.5 * fadeOut
+    gc.setFill(Color.color(1.0, 0.8, 0.2, 0.5 * fadeOut))
+    gc.fillOval(screenX - coreR, screenY - coreR * 0.5, coreR * 2, coreR)
+
+    // Shockwave ring
+    val ringR = maxScreenRadius * progress * 1.2
+    gc.setStroke(Color.color(1.0, 0.6, 0.2, 0.4 * fadeOut))
+    gc.setLineWidth(2.5 * fadeOut)
+    gc.strokeOval(screenX - ringR, screenY - ringR * 0.5, ringR * 2, ringR)
+
+    // Debris particles
+    val particleCount = 8
+    for (i <- 0 until particleCount) {
+      val angle = i * (2 * Math.PI / particleCount) + i * 0.5
+      val dist = progress * maxScreenRadius * (0.7 + (i % 3) * 0.2)
+      val rise = progress * progress * 15.0
+      val px = screenX + dist * Math.cos(angle)
+      val py = screenY + dist * Math.sin(angle) * 0.5 - rise
+      val pSize = (3.0 + (i % 3)) * fadeOut
+
+      if (i % 2 == 0) {
+        gc.setFill(Color.color(1.0, 0.7, 0.2, 0.6 * fadeOut))
+      } else {
+        gc.setFill(Color.color(0.5, 0.5, 0.5, 0.4 * fadeOut))
+      }
+      gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
     }
   }
 

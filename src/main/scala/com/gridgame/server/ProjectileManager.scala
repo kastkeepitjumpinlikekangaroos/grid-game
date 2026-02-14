@@ -21,6 +21,7 @@ case class ProjectileKill(projectile: Projectile, targetId: UUID) extends Projec
 case class ProjectileAoEHit(projectile: Projectile, targetId: UUID) extends ProjectileEvent
 case class ProjectileAoEKill(projectile: Projectile, targetId: UUID) extends ProjectileEvent
 case class ProjectileDespawned(projectile: Projectile) extends ProjectileEvent
+case class ProjectileAoE(projectile: Projectile) extends ProjectileEvent
 
 class ProjectileManager(registry: ClientRegistry) {
   private val projectiles = new ConcurrentHashMap[Int, Projectile]()
@@ -36,6 +37,9 @@ class ProjectileManager(registry: ClientRegistry) {
     println(s"ProjectileManager: Spawned $projectile (charge=$chargeLevel%, type=$projectileType)")
     projectile
   }
+
+  private def isAoEExplosiveType(pType: Byte): Boolean =
+    pType == ProjectileType.GRENADE || pType == ProjectileType.ROCKET
 
   def tick(world: WorldData): Seq[ProjectileEvent] = {
     val events = ArrayBuffer[ProjectileEvent]()
@@ -71,6 +75,9 @@ class ProjectileManager(registry: ClientRegistry) {
             case ProjectileType.SPLASH => Constants.SPLASH_MAX_RANGE.toDouble
             case ProjectileType.TIDAL_WAVE => Constants.TIDAL_WAVE_MAX_RANGE.toDouble
             case ProjectileType.GEYSER => Constants.GEYSER_MAX_RANGE.toDouble
+            case ProjectileType.BULLET => Constants.BULLET_MAX_RANGE.toDouble
+            case ProjectileType.GRENADE => Constants.GRENADE_MAX_RANGE.toDouble
+            case ProjectileType.ROCKET => Constants.ROCKET_MAX_RANGE.toDouble
             case ProjectileType.TALON => Constants.TALON_MAX_RANGE.toDouble
             case ProjectileType.GUST => Constants.GUST_MAX_RANGE.toDouble
             case _ => Constants.CHARGE_MIN_RANGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_RANGE - Constants.CHARGE_MIN_RANGE))
@@ -81,18 +88,30 @@ class ProjectileManager(registry: ClientRegistry) {
             if (projectile.projectileType == ProjectileType.GEYSER) {
               events ++= applyAoEDamage(projectile, Constants.GEYSER_AOE_RADIUS, Constants.GEYSER_DAMAGE, null)
             }
-            events += ProjectileDespawned(projectile)
+            if (isAoEExplosiveType(projectile.projectileType)) {
+              events += ProjectileAoE(projectile)
+            } else {
+              events += ProjectileDespawned(projectile)
+            }
             resolved = true
           } else if (projectile.isOutOfBounds(world)) {
             toRemove += projectile.id
-            events += ProjectileDespawned(projectile)
+            if (isAoEExplosiveType(projectile.projectileType)) {
+              events += ProjectileAoE(projectile)
+            } else {
+              events += ProjectileDespawned(projectile)
+            }
             resolved = true
           } else if (projectile.hitsNonWalkable(world) &&
                      projectile.projectileType != ProjectileType.SOUL_BOLT &&
                      projectile.projectileType != ProjectileType.HAUNT &&
                      projectile.projectileType != ProjectileType.ARCANE_BOLT) {
             toRemove += projectile.id
-            events += ProjectileDespawned(projectile)
+            if (isAoEExplosiveType(projectile.projectileType)) {
+              events += ProjectileAoE(projectile)
+            } else {
+              events += ProjectileDespawned(projectile)
+            }
             resolved = true
           } else {
             var hitPlayer: Player = null
@@ -103,46 +122,54 @@ class ProjectileManager(registry: ClientRegistry) {
             }
 
             if (hitPlayer != null) {
-              val damage = projectile.projectileType match {
-                case ProjectileType.TENTACLE => Constants.TENTACLE_DAMAGE
-                case ProjectileType.ICE_BEAM => Constants.ICE_BEAM_DAMAGE
-                case ProjectileType.AXE => Constants.AXE_DAMAGE
-                case ProjectileType.ROPE => Constants.ROPE_DAMAGE
-                case ProjectileType.SPEAR =>
-                  val distanceFraction = Math.min(1.0f, projectile.getDistanceTraveled / Constants.SPEAR_MAX_RANGE.toFloat)
-                  (Constants.SPEAR_BASE_DAMAGE + (distanceFraction * (Constants.SPEAR_MAX_DAMAGE - Constants.SPEAR_BASE_DAMAGE))).toInt
-                case ProjectileType.SOUL_BOLT => Constants.SOUL_BOLT_DAMAGE
-                case ProjectileType.HAUNT => Constants.HAUNT_DAMAGE
-                case ProjectileType.ARCANE_BOLT => Constants.ARCANE_BOLT_DAMAGE
-                case ProjectileType.FIREBALL => Constants.FIREBALL_DAMAGE
-                case ProjectileType.SPLASH => Constants.SPLASH_DAMAGE
-                case ProjectileType.TIDAL_WAVE => Constants.TIDAL_WAVE_DAMAGE
-                case ProjectileType.GEYSER => Constants.GEYSER_DAMAGE
-                case ProjectileType.TALON => Constants.TALON_DAMAGE
-                case ProjectileType.GUST => Constants.GUST_DAMAGE
-                case _ => (Constants.CHARGE_MIN_DAMAGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_DAMAGE - Constants.CHARGE_MIN_DAMAGE))).toInt
-              }
-              val newHealth = hitPlayer.getHealth - damage
-              hitPlayer.setHealth(newHealth)
-              println(s"ProjectileManager: ${projectile} hit player ${hitPlayer.getId.toString.substring(0, 8)}, damage=$damage (charge=${projectile.chargeLevel}%), health now $newHealth")
-
-              toRemove += projectile.id
-              if (newHealth <= 0) {
-                events += ProjectileKill(projectile, hitPlayer.getId)
+              // Rocket explodes on player hit — AoE handles all damage
+              if (projectile.projectileType == ProjectileType.ROCKET) {
+                toRemove += projectile.id
+                events += ProjectileAoE(projectile)
+                resolved = true
               } else {
-                events += ProjectileHit(projectile, hitPlayer.getId)
-              }
+                val damage = projectile.projectileType match {
+                  case ProjectileType.TENTACLE => Constants.TENTACLE_DAMAGE
+                  case ProjectileType.ICE_BEAM => Constants.ICE_BEAM_DAMAGE
+                  case ProjectileType.AXE => Constants.AXE_DAMAGE
+                  case ProjectileType.ROPE => Constants.ROPE_DAMAGE
+                  case ProjectileType.SPEAR =>
+                    val distanceFraction = Math.min(1.0f, projectile.getDistanceTraveled / Constants.SPEAR_MAX_RANGE.toFloat)
+                    (Constants.SPEAR_BASE_DAMAGE + (distanceFraction * (Constants.SPEAR_MAX_DAMAGE - Constants.SPEAR_BASE_DAMAGE))).toInt
+                  case ProjectileType.SOUL_BOLT => Constants.SOUL_BOLT_DAMAGE
+                  case ProjectileType.HAUNT => Constants.HAUNT_DAMAGE
+                  case ProjectileType.ARCANE_BOLT => Constants.ARCANE_BOLT_DAMAGE
+                  case ProjectileType.FIREBALL => Constants.FIREBALL_DAMAGE
+                  case ProjectileType.SPLASH => Constants.SPLASH_DAMAGE
+                  case ProjectileType.TIDAL_WAVE => Constants.TIDAL_WAVE_DAMAGE
+                  case ProjectileType.GEYSER => Constants.GEYSER_DAMAGE
+                  case ProjectileType.BULLET => Constants.BULLET_DAMAGE
+                  case ProjectileType.TALON => Constants.TALON_DAMAGE
+                  case ProjectileType.GUST => Constants.GUST_DAMAGE
+                  case _ => (Constants.CHARGE_MIN_DAMAGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_DAMAGE - Constants.CHARGE_MIN_DAMAGE))).toInt
+                }
+                val newHealth = hitPlayer.getHealth - damage
+                hitPlayer.setHealth(newHealth)
+                println(s"ProjectileManager: ${projectile} hit player ${hitPlayer.getId.toString.substring(0, 8)}, damage=$damage (charge=${projectile.chargeLevel}%), health now $newHealth")
 
-              // AoE splash damage to nearby players (excluding the direct hit target)
-              projectile.projectileType match {
-                case ProjectileType.SPLASH =>
-                  events ++= applyAoEDamage(projectile, Constants.SPLASH_AOE_RADIUS, Constants.SPLASH_AOE_DAMAGE, hitPlayer.getId)
-                case ProjectileType.GEYSER =>
-                  events ++= applyAoEDamage(projectile, Constants.GEYSER_AOE_RADIUS, Constants.GEYSER_DAMAGE, hitPlayer.getId)
-                case _ =>
-              }
+                toRemove += projectile.id
+                if (newHealth <= 0) {
+                  events += ProjectileKill(projectile, hitPlayer.getId)
+                } else {
+                  events += ProjectileHit(projectile, hitPlayer.getId)
+                }
 
-              resolved = true
+                // AoE splash damage to nearby players (excluding the direct hit target)
+                projectile.projectileType match {
+                  case ProjectileType.SPLASH =>
+                    events ++= applyAoEDamage(projectile, Constants.SPLASH_AOE_RADIUS, Constants.SPLASH_AOE_DAMAGE, hitPlayer.getId)
+                  case ProjectileType.GEYSER =>
+                    events ++= applyAoEDamage(projectile, Constants.GEYSER_AOE_RADIUS, Constants.GEYSER_DAMAGE, hitPlayer.getId)
+                  case _ =>
+                }
+
+                resolved = true
+              }
             }
           }
           sub += 1

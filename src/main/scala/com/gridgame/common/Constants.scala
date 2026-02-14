@@ -146,6 +146,24 @@ object Constants {
   val GEYSER_MAX_RANGE: Int = 18
   val GEYSER_AOE_RADIUS: Float = 4.0f
 
+  // Soldier: Bullet (primary)
+  val BULLET_DAMAGE: Int = 20
+  val BULLET_MAX_RANGE: Int = 18
+
+  // Soldier: Grenade (Q)
+  val GRENADE_COOLDOWN_MS: Int = 10000
+  val GRENADE_MAX_RANGE: Int = 12
+  val GRENADE_CENTER_DAMAGE: Int = 40
+  val GRENADE_EDGE_DAMAGE: Int = 10
+  val GRENADE_BLAST_RADIUS: Float = 3.0f
+
+  // Soldier: Rocket (E)
+  val ROCKET_COOLDOWN_MS: Int = 12000
+  val ROCKET_MAX_RANGE: Int = 20
+  val ROCKET_CENTER_DAMAGE: Int = 35
+  val ROCKET_EDGE_DAMAGE: Int = 10
+  val ROCKET_BLAST_RADIUS: Float = 2.5f
+
   // Raptor: Talon Strike (primary)
   val TALON_DAMAGE: Int = 28
   val TALON_MAX_RANGE: Int = 4
