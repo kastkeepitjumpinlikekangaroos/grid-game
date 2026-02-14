@@ -1,5 +1,6 @@
 package com.gridgame.server
 
+import java.io.File
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -7,7 +8,7 @@ import java.sql.Connection
 import java.sql.DriverManager
 import java.util.UUID
 
-class AuthDatabase(dbPath: String = "game_accounts.db") {
+class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
   private val connection: Connection = {
     Class.forName("org.sqlite.JDBC")
     val conn = DriverManager.getConnection(s"jdbc:sqlite:$dbPath")
@@ -124,6 +125,18 @@ class AuthDatabase(dbPath: String = "game_accounts.db") {
   def close(): Unit = {
     if (connection != null && !connection.isClosed) {
       connection.close()
+    }
+  }
+}
+
+object AuthDatabase {
+  def resolveDbPath(): String = {
+    val fileName = "game_accounts.db"
+    val buildWorkDir = System.getenv("BUILD_WORKING_DIRECTORY")
+    if (buildWorkDir != null) {
+      new File(buildWorkDir, fileName).getAbsolutePath
+    } else {
+      fileName
     }
   }
 }

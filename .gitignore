@@ -10,3 +10,6 @@ MODULE.bazel.lock
 /bazel-testlogs
 /bazel-java-game
 .claude/
+
+# Auth database
+game_accounts.db
