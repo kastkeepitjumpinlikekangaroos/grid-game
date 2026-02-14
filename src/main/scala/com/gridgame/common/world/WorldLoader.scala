@@ -96,8 +96,8 @@ object WorldLoader {
   }
 
   private def parseLayer(layer: JsonObject, tiles: Array[Array[Tile]], width: Int, height: Int): Unit = {
-    val tileType = Tile.fromName(layer.get("tile").getAsString)
     val layerType = layer.get("type").getAsString
+    lazy val tileType = Tile.fromName(layer.get("tile").getAsString)
 
     layerType match {
       case "fill" =>
@@ -185,6 +185,17 @@ object WorldLoader {
           val y = point.get("y").getAsInt
           if (x >= 0 && x < width && y >= 0 && y < height) {
             tiles(y)(x) = tileType
+          }
+        }
+
+      case "grid" =>
+        // Full grid of space-separated tile IDs per row
+        val data = layer.getAsJsonArray("data")
+        for (y <- 0 until Math.min(data.size(), height)) {
+          val row = data.get(y).getAsString
+          val ids = row.split("\\s+")
+          for (x <- 0 until Math.min(ids.length, width)) {
+            tiles(y)(x) = Tile.fromId(ids(x).toInt)
           }
         }
 
