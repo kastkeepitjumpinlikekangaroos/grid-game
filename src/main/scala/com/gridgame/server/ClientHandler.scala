@@ -106,7 +106,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       existing.setPosition(packet.getPosition)
       existing.setColorRGB(packet.getColorRGB)
       existing.setName(packet.getPlayerName)
-      existing.setHealth(Constants.MAX_HEALTH)
+      existing.setHealth(existing.getMaxHealth)
       existing.setTcpChannel(tcpChannel)
       existing.updateHeartbeat()
 
@@ -119,7 +119,8 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
 
       true
     } else {
-      val player = new Player(playerId, packet.getPlayerName, packet.getPosition, packet.getColorRGB, Constants.MAX_HEALTH)
+      val charDef = com.gridgame.common.model.CharacterDef.get(packet.getCharacterId)
+      val player = new Player(playerId, packet.getPlayerName, packet.getPosition, packet.getColorRGB, charDef.maxHealth, charDef.maxHealth)
       player.setCharacterId(packet.getCharacterId)
       player.setTcpChannel(tcpChannel)
 
@@ -221,7 +222,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       if (player != null) {
         packet.getItemType match {
           case ItemType.Heart =>
-            player.setHealth(Constants.MAX_HEALTH)
+            player.setHealth(player.getMaxHealth)
             val flags = (if (player.hasShield) 0x01 else 0) |
                         (if (player.hasGemBoost) 0x02 else 0) |
                         (if (player.isFrozen) 0x04 else 0)

@@ -136,8 +136,10 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
       val p = server.getConnectedPlayer(pid)
       if (p != null) {
         val spawnPoint = instance.world.getValidSpawnPoint()
-        val instancePlayer = new Player(pid, p.getName, spawnPoint, p.getColorRGB, Constants.MAX_HEALTH)
-        instancePlayer.setCharacterId(lobby.getCharacter(pid))
+        val charId = lobby.getCharacter(pid)
+        val charDef = com.gridgame.common.model.CharacterDef.get(charId)
+        val instancePlayer = new Player(pid, p.getName, spawnPoint, p.getColorRGB, charDef.maxHealth, charDef.maxHealth)
+        instancePlayer.setCharacterId(charId)
         instancePlayer.setTcpChannel(p.getTcpChannel)
         if (p.getUdpAddress != null) {
           instancePlayer.setUdpAddress(p.getUdpAddress)

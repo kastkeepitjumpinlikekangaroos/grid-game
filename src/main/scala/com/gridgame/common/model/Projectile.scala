@@ -12,14 +12,16 @@ object ProjectileType {
   val SPEAR: Byte = 5
   val SOUL_BOLT: Byte = 6
   val HAUNT: Byte = 7
-  val SPLASH: Byte = 8
-  val TIDAL_WAVE: Byte = 9
-  val GEYSER: Byte = 10
-  val BULLET: Byte = 11
-  val GRENADE: Byte = 12
-  val ROCKET: Byte = 13
-  val TALON: Byte = 14
-  val GUST: Byte = 15
+  val ARCANE_BOLT: Byte = 8
+  val FIREBALL: Byte = 9
+  val SPLASH: Byte = 10
+  val TIDAL_WAVE: Byte = 11
+  val GEYSER: Byte = 12
+  val BULLET: Byte = 13
+  val GRENADE: Byte = 14
+  val ROCKET: Byte = 15
+  val TALON: Byte = 16
+  val GUST: Byte = 17
 }
 
 class Projectile(
@@ -44,6 +46,8 @@ class Projectile(
     case ProjectileType.SPEAR => 0.7f
     case ProjectileType.SOUL_BOLT => 0.65f
     case ProjectileType.HAUNT => 0.5f
+    case ProjectileType.ARCANE_BOLT => 0.85f
+    case ProjectileType.FIREBALL => 0.4f
     case ProjectileType.SPLASH => 0.65f
     case ProjectileType.TIDAL_WAVE => 0.5f
     case ProjectileType.GEYSER => 0.6f

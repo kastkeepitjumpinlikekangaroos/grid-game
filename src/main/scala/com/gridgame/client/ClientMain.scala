@@ -47,20 +47,24 @@ class ClientMain extends Application {
   private var canvas: GameCanvas = _
   private var renderLoop: AnimationTimer = _
 
-  private val darkBg = "-fx-background-color: #1a1a2e;"
-  private val cardBg = "-fx-background-color: #242440; -fx-background-radius: 12; -fx-border-color: #3a3a5e; -fx-border-radius: 12; -fx-border-width: 1;"
-  private val fieldStyle = "-fx-background-color: #2e2e4a; -fx-text-fill: white; -fx-font-size: 15; -fx-prompt-text-fill: #777; -fx-padding: 10 12; -fx-background-radius: 6; -fx-border-color: #3a3a5e; -fx-border-radius: 6; -fx-border-width: 1;"
-  private val fieldFocusStyle = "-fx-background-color: #2e2e4a; -fx-text-fill: white; -fx-font-size: 15; -fx-prompt-text-fill: #777; -fx-padding: 10 12; -fx-background-radius: 6; -fx-border-color: #4a9eff; -fx-border-radius: 6; -fx-border-width: 1.5;"
-  private val buttonStyle = "-fx-background-color: #4a9eff; -fx-text-fill: white; -fx-font-size: 15; -fx-font-weight: bold; -fx-padding: 10 32; -fx-background-radius: 6; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.3), 8, 0, 0, 2);"
-  private val buttonHoverStyle = "-fx-background-color: #5aadff; -fx-text-fill: white; -fx-font-size: 15; -fx-font-weight: bold; -fx-padding: 10 32; -fx-background-radius: 6; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.5), 12, 0, 0, 3);"
-  private val buttonRedStyle = "-fx-background-color: #e84057; -fx-text-fill: white; -fx-font-size: 15; -fx-font-weight: bold; -fx-padding: 10 32; -fx-background-radius: 6; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(232, 64, 87, 0.3), 8, 0, 0, 2);"
-  private val buttonRedHoverStyle = "-fx-background-color: #f05068; -fx-text-fill: white; -fx-font-size: 15; -fx-font-weight: bold; -fx-padding: 10 32; -fx-background-radius: 6; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(232, 64, 87, 0.5), 12, 0, 0, 3);"
-  private val buttonGreenStyle = "-fx-background-color: #2ecc71; -fx-text-fill: white; -fx-font-size: 15; -fx-font-weight: bold; -fx-padding: 10 32; -fx-background-radius: 6; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(46, 204, 113, 0.3), 8, 0, 0, 2);"
-  private val buttonGreenHoverStyle = "-fx-background-color: #3ddb80; -fx-text-fill: white; -fx-font-size: 15; -fx-font-weight: bold; -fx-padding: 10 32; -fx-background-radius: 6; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(46, 204, 113, 0.5), 12, 0, 0, 3);"
-  private val labelStyle = "-fx-text-fill: #ccd; -fx-font-size: 15;"
-  private val comboStyle = "-fx-background-color: #2e2e4a; -fx-text-fill: white; -fx-font-size: 15; -fx-padding: 6; -fx-background-radius: 6; -fx-border-color: #3a3a5e; -fx-border-radius: 6; -fx-border-width: 1;"
-  private val listViewCss = "-fx-background-color: #242440; -fx-control-inner-background: #242440; -fx-text-fill: white; -fx-font-size: 14; -fx-background-radius: 8;"
-  private val sectionHeaderStyle = "-fx-text-fill: #8899bb; -fx-font-size: 11; -fx-font-weight: bold;"
+  // -- Enhanced color palette & styles --
+  private val darkBg = "-fx-background-color: linear-gradient(to bottom, #1a1a2e 0%, #151528 50%, #111124 100%);"
+  private val cardBg = "-fx-background-color: #20203a; -fx-background-radius: 16; -fx-border-color: rgba(255,255,255,0.07); -fx-border-radius: 16; -fx-border-width: 1; -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.5), 24, 0, 0, 8);"
+  private val cardBgSubtle = "-fx-background-color: #1c1c34; -fx-background-radius: 12; -fx-border-color: rgba(255,255,255,0.05); -fx-border-radius: 12; -fx-border-width: 1; -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.3), 12, 0, 0, 4);"
+  private val fieldStyle = "-fx-background-color: #181830; -fx-text-fill: #eef; -fx-font-size: 14; -fx-prompt-text-fill: #556; -fx-padding: 12 14; -fx-background-radius: 8; -fx-border-color: rgba(255,255,255,0.08); -fx-border-radius: 8; -fx-border-width: 1;"
+  private val fieldFocusStyle = "-fx-background-color: #181830; -fx-text-fill: #eef; -fx-font-size: 14; -fx-prompt-text-fill: #556; -fx-padding: 12 14; -fx-background-radius: 8; -fx-border-color: #4a9eff; -fx-border-radius: 8; -fx-border-width: 2; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.3), 16, 0, 0, 0);"
+  private val buttonStyle = "-fx-background-color: linear-gradient(to bottom, #5aadff, #3a8eef); -fx-text-fill: white; -fx-font-size: 14; -fx-font-weight: bold; -fx-padding: 11 28; -fx-background-radius: 8; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.35), 12, 0, 0, 3);"
+  private val buttonHoverStyle = "-fx-background-color: linear-gradient(to bottom, #6db8ff, #4a9eff); -fx-text-fill: white; -fx-font-size: 14; -fx-font-weight: bold; -fx-padding: 11 28; -fx-background-radius: 8; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.55), 18, 0, 0, 4);"
+  private val buttonRedStyle = "-fx-background-color: linear-gradient(to bottom, #f05068, #d83850); -fx-text-fill: white; -fx-font-size: 14; -fx-font-weight: bold; -fx-padding: 11 28; -fx-background-radius: 8; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(232, 64, 87, 0.35), 12, 0, 0, 3);"
+  private val buttonRedHoverStyle = "-fx-background-color: linear-gradient(to bottom, #ff6078, #e84860); -fx-text-fill: white; -fx-font-size: 14; -fx-font-weight: bold; -fx-padding: 11 28; -fx-background-radius: 8; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(232, 64, 87, 0.55), 18, 0, 0, 4);"
+  private val buttonGreenStyle = "-fx-background-color: linear-gradient(to bottom, #3ddb80, #28b865); -fx-text-fill: white; -fx-font-size: 14; -fx-font-weight: bold; -fx-padding: 11 28; -fx-background-radius: 8; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(46, 204, 113, 0.35), 12, 0, 0, 3);"
+  private val buttonGreenHoverStyle = "-fx-background-color: linear-gradient(to bottom, #4deb90, #38c875); -fx-text-fill: white; -fx-font-size: 14; -fx-font-weight: bold; -fx-padding: 11 28; -fx-background-radius: 8; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(46, 204, 113, 0.55), 18, 0, 0, 4);"
+  private val buttonGhostStyle = "-fx-background-color: rgba(255,255,255,0.06); -fx-text-fill: #99aabb; -fx-font-size: 13; -fx-font-weight: bold; -fx-padding: 9 20; -fx-background-radius: 8; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.1); -fx-border-radius: 8; -fx-border-width: 1;"
+  private val buttonGhostHoverStyle = "-fx-background-color: rgba(255,255,255,0.12); -fx-text-fill: #ccdde8; -fx-font-size: 13; -fx-font-weight: bold; -fx-padding: 9 20; -fx-background-radius: 8; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.2); -fx-border-radius: 8; -fx-border-width: 1;"
+  private val labelStyle = "-fx-text-fill: #bbc; -fx-font-size: 14;"
+  private val comboStyle = "-fx-background-color: #181830; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 8; -fx-background-radius: 8; -fx-border-color: rgba(255,255,255,0.08); -fx-border-radius: 8; -fx-border-width: 1;"
+  private val listViewCss = "-fx-background-color: #1a1a32; -fx-control-inner-background: #1a1a32; -fx-text-fill: white; -fx-font-size: 14; -fx-background-radius: 12; -fx-border-color: rgba(255,255,255,0.05); -fx-border-radius: 12; -fx-border-width: 1;"
+  private val sectionHeaderStyle = "-fx-text-fill: #7788aa; -fx-font-size: 11; -fx-font-weight: bold;"
 
   private def addHoverEffect(btn: Button, normalStyle: String, hoverStyle: String): Unit = {
     btn.setStyle(normalStyle)
@@ -83,17 +87,34 @@ class ClientMain extends Application {
           super.updateItem(item, empty)
           if (empty || item == null) {
             setText(null)
-            setStyle("-fx-background-color: #2e2e4a;")
+            setStyle("-fx-background-color: #181830;")
           } else {
             setText(item)
-            setStyle("-fx-background-color: #2e2e4a; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 8 10;")
+            setStyle("-fx-background-color: #181830; -fx-text-fill: #dde; -fx-font-size: 13; -fx-padding: 8 12;")
           }
-          if (isSelected) setStyle("-fx-background-color: #4a9eff; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 8 10; -fx-background-radius: 4;")
+          if (isSelected) setStyle("-fx-background-color: #3a6eaf; -fx-text-fill: white; -fx-font-size: 13; -fx-padding: 8 12; -fx-background-radius: 6;")
         }
       }
     }
     combo.setCellFactory(cellFactory)
     combo.setButtonCell(cellFactory.call(null))
+  }
+
+  private def createAccentLine(): Region = {
+    val line = new Region()
+    line.setMinHeight(2)
+    line.setMaxHeight(2)
+    line.setMaxWidth(60)
+    line.setStyle("-fx-background-color: linear-gradient(to right, transparent, #4a9eff, transparent); -fx-background-radius: 1;")
+    line
+  }
+
+  private def createSeparator(): Region = {
+    val sep = new Region()
+    sep.setMinHeight(1)
+    sep.setMaxHeight(1)
+    sep.setStyle("-fx-background-color: linear-gradient(to right, transparent, rgba(255,255,255,0.08), transparent);")
+    sep
   }
 
   override def start(primaryStage: Stage): Unit = {
@@ -108,31 +129,33 @@ class ClientMain extends Application {
     root.setAlignment(Pos.CENTER)
     root.setStyle(darkBg)
 
-    // Title section
-    val titleBox = new VBox(4)
+    // Title section with glow
+    val titleBox = new VBox(6)
     titleBox.setAlignment(Pos.CENTER)
-    titleBox.setPadding(new Insets(36, 0, 20, 0))
+    titleBox.setPadding(new Insets(48, 0, 28, 0))
 
     val title = new Label("Grid Game")
-    title.setFont(Font.font("System", FontWeight.BOLD, 44))
+    title.setFont(Font.font("System", FontWeight.BOLD, 48))
     title.setTextFill(Color.WHITE)
-    title.setStyle("-fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.4), 16, 0, 0, 0);")
+    title.setStyle("-fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.5), 24, 0, 0, 0);")
 
-    val subtitle = new Label("Multiplayer 2D")
-    subtitle.setFont(Font.font("System", FontWeight.NORMAL, 15))
-    subtitle.setTextFill(Color.web("#667"))
+    val accentLine = createAccentLine()
 
-    titleBox.getChildren.addAll(title, subtitle)
+    val subtitle = new Label("Multiplayer Arena")
+    subtitle.setFont(Font.font("System", FontWeight.NORMAL, 14))
+    subtitle.setTextFill(Color.web("#556677"))
+
+    titleBox.getChildren.addAll(title, accentLine, subtitle)
 
     // Card container for the form
-    val card = new VBox(14)
+    val card = new VBox(16)
     card.setAlignment(Pos.CENTER)
-    card.setPadding(new Insets(24, 32, 24, 32))
-    card.setMaxWidth(340)
+    card.setPadding(new Insets(28, 36, 28, 36))
+    card.setMaxWidth(360)
     card.setStyle(cardBg)
 
     val modeLabel = new Label("Login")
-    modeLabel.setFont(Font.font("System", FontWeight.BOLD, 18))
+    modeLabel.setFont(Font.font("System", FontWeight.BOLD, 20))
     modeLabel.setTextFill(Color.web("#4a9eff"))
 
     val usernameLabel = new Label("USERNAME")
@@ -140,7 +163,7 @@ class ClientMain extends Application {
 
     val usernameField = new TextField()
     usernameField.setPromptText("Enter username")
-    usernameField.setMaxWidth(280)
+    usernameField.setMaxWidth(290)
     addFieldFocusEffect(usernameField)
 
     val passwordLabel = new Label("PASSWORD")
@@ -148,7 +171,7 @@ class ClientMain extends Application {
 
     val passwordField = new PasswordField()
     passwordField.setPromptText("Enter password")
-    passwordField.setMaxWidth(280)
+    passwordField.setMaxWidth(290)
     passwordField.setStyle(fieldStyle)
     passwordField.focusedProperty().addListener((_, _, focused) => {
       passwordField.setStyle(if (focused) fieldFocusStyle else fieldStyle)
@@ -159,7 +182,7 @@ class ClientMain extends Application {
 
     val confirmField = new PasswordField()
     confirmField.setPromptText("Confirm password")
-    confirmField.setMaxWidth(280)
+    confirmField.setMaxWidth(290)
     confirmField.setStyle(fieldStyle)
     confirmField.focusedProperty().addListener((_, _, focused) => {
       confirmField.setStyle(if (focused) fieldFocusStyle else fieldStyle)
@@ -169,27 +192,24 @@ class ClientMain extends Application {
     confirmBox.setVisible(false)
     confirmBox.setManaged(false)
 
-    // Server section with separator
-    val serverSep = new Region()
-    serverSep.setMinHeight(1)
-    serverSep.setMaxHeight(1)
-    serverSep.setStyle("-fx-background-color: #3a3a5e;")
+    // Server section with gradient separator
+    val serverSep = createSeparator()
 
     val serverLabel = new Label("SERVER")
     serverLabel.setStyle(sectionHeaderStyle)
 
     val hostField = new TextField()
     hostField.setPromptText("localhost")
-    hostField.setMaxWidth(280)
+    hostField.setMaxWidth(290)
     addFieldFocusEffect(hostField)
 
     val portField = new TextField()
     portField.setPromptText("25565")
-    portField.setMaxWidth(280)
+    portField.setMaxWidth(290)
     addFieldFocusEffect(portField)
 
     val serverRow = new HBox(8)
-    serverRow.setMaxWidth(280)
+    serverRow.setMaxWidth(290)
     HBox.setHgrow(hostField, Priority.ALWAYS)
     portField.setMaxWidth(90)
     portField.setPrefWidth(90)
@@ -198,12 +218,12 @@ class ClientMain extends Application {
     val actionButton = new Button("Login")
     addHoverEffect(actionButton, buttonStyle, buttonHoverStyle)
     actionButton.setDefaultButton(true)
-    actionButton.setMaxWidth(280)
+    actionButton.setMaxWidth(290)
 
     val toggleLink = new Button("Don't have an account? Sign Up")
-    toggleLink.setStyle("-fx-background-color: transparent; -fx-text-fill: #6688bb; -fx-cursor: hand; -fx-font-size: 12; -fx-padding: 0;")
-    toggleLink.setOnMouseEntered(_ => toggleLink.setStyle("-fx-background-color: transparent; -fx-text-fill: #4a9eff; -fx-cursor: hand; -fx-font-size: 12; -fx-padding: 0;"))
-    toggleLink.setOnMouseExited(_ => toggleLink.setStyle("-fx-background-color: transparent; -fx-text-fill: #6688bb; -fx-cursor: hand; -fx-font-size: 12; -fx-padding: 0;"))
+    toggleLink.setStyle("-fx-background-color: transparent; -fx-text-fill: #556688; -fx-cursor: hand; -fx-font-size: 12; -fx-padding: 4 0 0 0;")
+    toggleLink.setOnMouseEntered(_ => toggleLink.setStyle("-fx-background-color: transparent; -fx-text-fill: #4a9eff; -fx-cursor: hand; -fx-font-size: 12; -fx-padding: 4 0 0 0;"))
+    toggleLink.setOnMouseExited(_ => toggleLink.setStyle("-fx-background-color: transparent; -fx-text-fill: #556688; -fx-cursor: hand; -fx-font-size: 12; -fx-padding: 4 0 0 0;"))
 
     var isSignupMode = false
 
@@ -228,7 +248,7 @@ class ClientMain extends Application {
     statusLabel.setTextFill(Color.web("#e84057"))
     statusLabel.setFont(Font.font("System", FontWeight.BOLD, 13))
     statusLabel.setWrapText(true)
-    statusLabel.setMaxWidth(280)
+    statusLabel.setMaxWidth(290)
 
     val doAction = () => {
       val username = usernameField.getText.trim
@@ -283,9 +303,9 @@ class ClientMain extends Application {
       serverSep, serverLabel, serverRow,
       actionButton, statusLabel)
 
-    root.getChildren.addAll(titleBox, card, new Region() { setMinHeight(12) }, toggleLink)
+    root.getChildren.addAll(titleBox, card, new Region() { setMinHeight(16) }, toggleLink)
 
-    val scene = new Scene(root, 520, 680)
+    val scene = new Scene(root, 520, 720)
     stage.setScene(scene)
     stage.show()
   }
@@ -339,31 +359,50 @@ class ClientMain extends Application {
   }
 
   private def showLobbyBrowser(stage: Stage): Unit = {
-    val root = new VBox(16)
-    root.setPadding(new Insets(24))
+    val root = new VBox(0)
     root.setStyle(darkBg)
 
-    val titleBar = new HBox(12)
+    // Header area
+    val headerArea = new VBox(12)
+    headerArea.setPadding(new Insets(28, 28, 20, 28))
+
+    val titleBar = new HBox(10)
     titleBar.setAlignment(Pos.CENTER_LEFT)
     val title = new Label("Lobby Browser")
-    title.setFont(Font.font("System", FontWeight.BOLD, 28))
+    title.setFont(Font.font("System", FontWeight.BOLD, 30))
     title.setTextFill(Color.WHITE)
+    title.setStyle("-fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.3), 12, 0, 0, 0);")
     val spacer = new Region()
     HBox.setHgrow(spacer, Priority.ALWAYS)
     val profileBtn = new Button("Profile")
-    addHoverEffect(profileBtn, buttonStyle, buttonHoverStyle)
+    addHoverEffect(profileBtn, buttonGhostStyle, buttonGhostHoverStyle)
     val leaderboardBtn = new Button("Leaderboard")
-    addHoverEffect(leaderboardBtn, buttonStyle, buttonHoverStyle)
-    val rankedBtn = new Button("Queue Ranked")
+    addHoverEffect(leaderboardBtn, buttonGhostStyle, buttonGhostHoverStyle)
+    val rankedBtn = new Button("Ranked")
     addHoverEffect(rankedBtn, buttonGreenStyle, buttonGreenHoverStyle)
     val refreshBtn = new Button("Refresh")
-    addHoverEffect(refreshBtn, buttonStyle, buttonHoverStyle)
+    addHoverEffect(refreshBtn, buttonGhostStyle, buttonGhostHoverStyle)
     titleBar.getChildren.addAll(title, spacer, profileBtn, leaderboardBtn, rankedBtn, refreshBtn)
+
+    val headerSep = createAccentLine()
+    headerSep.setMaxWidth(Double.MaxValue)
+    headerSep.setStyle("-fx-background-color: linear-gradient(to right, #4a9eff, rgba(74, 158, 255, 0.1)); -fx-background-radius: 1;")
+
+    headerArea.getChildren.addAll(titleBar, headerSep)
+
+    // Content area
+    val contentArea = new VBox(16)
+    contentArea.setPadding(new Insets(0, 28, 24, 28))
+    VBox.setVgrow(contentArea, Priority.ALWAYS)
+
+    // Lobby section label
+    val lobbyHeader = new Label("AVAILABLE LOBBIES")
+    lobbyHeader.setStyle(sectionHeaderStyle)
 
     // Lobby list with custom cell factory
     val lobbyListView = new ListView[String]()
     lobbyListView.setStyle(listViewCss)
-    lobbyListView.setPrefHeight(250)
+    lobbyListView.setPrefHeight(220)
     VBox.setVgrow(lobbyListView, Priority.ALWAYS)
 
     val lobbyCellFactory = new Callback[ListView[String], ListCell[String]] {
@@ -372,16 +411,16 @@ class ClientMain extends Application {
           super.updateItem(item, empty)
           if (empty || item == null) {
             setText(null)
-            setStyle("-fx-background-color: #242440;")
+            setStyle("-fx-background-color: transparent;")
           } else {
             setText(item)
-            val base = "-fx-text-fill: #dde; -fx-font-size: 14; -fx-padding: 10 12;"
+            val base = "-fx-text-fill: #ccdde8; -fx-font-size: 13; -fx-padding: 12 16; -fx-background-radius: 8;"
             if (isSelected) {
-              setStyle(s"-fx-background-color: #3a3a6e; $base -fx-border-color: #4a9eff; -fx-border-width: 0 0 0 3;")
+              setStyle(s"-fx-background-color: rgba(74, 158, 255, 0.15); $base -fx-border-color: #4a9eff; -fx-border-width: 0 0 0 3; -fx-border-radius: 8; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.15), 8, 0, 0, 0);")
             } else if (getIndex % 2 == 0) {
-              setStyle(s"-fx-background-color: #242440; $base")
+              setStyle(s"-fx-background-color: rgba(255,255,255,0.02); $base")
             } else {
-              setStyle(s"-fx-background-color: #2a2a48; $base")
+              setStyle(s"-fx-background-color: transparent; $base")
             }
           }
         }
@@ -392,20 +431,15 @@ class ClientMain extends Application {
     val joinBtn = new Button("Join Selected")
     addHoverEffect(joinBtn, buttonStyle, buttonHoverStyle)
     joinBtn.setDisable(true)
+    joinBtn.setMaxWidth(Double.MaxValue)
 
     lobbyListView.getSelectionModel.selectedIndexProperty().addListener((_, _, newVal) => {
       joinBtn.setDisable(newVal.intValue() < 0)
     })
 
-    // Separator
-    val sep = new Region()
-    sep.setMinHeight(1)
-    sep.setMaxHeight(1)
-    sep.setStyle("-fx-background-color: #3a3a5e;")
-
     // Create lobby form in a card
-    val createCard = new VBox(12)
-    createCard.setPadding(new Insets(16, 20, 16, 20))
+    val createCard = new VBox(14)
+    createCard.setPadding(new Insets(20, 24, 20, 24))
     createCard.setStyle(cardBg)
 
     val createLabel = new Label("CREATE NEW LOBBY")
@@ -427,10 +461,11 @@ class ClientMain extends Application {
 
     val createBtn = new Button("Create Lobby")
     addHoverEffect(createBtn, buttonGreenStyle, buttonGreenHoverStyle)
+    createBtn.setMaxWidth(Double.MaxValue)
 
     val statusLabel = new Label("")
     statusLabel.setTextFill(Color.web("#8899bb"))
-    statusLabel.setFont(Font.font("System", 13))
+    statusLabel.setFont(Font.font("System", 12))
 
     // Wire up lobby list listener
     val updateList = () => {
@@ -497,21 +532,23 @@ class ClientMain extends Application {
       client.createLobby(name, mapIdx, duration)
     })
 
-    val formRow1 = new HBox(8, new Label("Name") { setStyle(sectionHeaderStyle); setMinWidth(50) }, nameField)
+    val formRow1 = new HBox(10, new Label("Name") { setStyle(sectionHeaderStyle); setMinWidth(44) }, nameField)
     formRow1.setAlignment(Pos.CENTER_LEFT)
     HBox.setHgrow(nameField, Priority.ALWAYS)
-    val formRow2 = new HBox(8, new Label("Map") { setStyle(sectionHeaderStyle); setMinWidth(50) }, mapCombo)
+    val formRow2 = new HBox(10, new Label("Map") { setStyle(sectionHeaderStyle); setMinWidth(44) }, mapCombo)
     formRow2.setAlignment(Pos.CENTER_LEFT)
     HBox.setHgrow(mapCombo, Priority.ALWAYS)
-    val formRow3 = new HBox(8, new Label("Time") { setStyle(sectionHeaderStyle); setMinWidth(50) }, durationCombo)
+    val formRow3 = new HBox(10, new Label("Time") { setStyle(sectionHeaderStyle); setMinWidth(44) }, durationCombo)
     formRow3.setAlignment(Pos.CENTER_LEFT)
     HBox.setHgrow(durationCombo, Priority.ALWAYS)
 
     createCard.getChildren.addAll(createLabel, formRow1, formRow2, formRow3, createBtn)
 
-    root.getChildren.addAll(titleBar, lobbyListView, joinBtn, sep, createCard, statusLabel)
+    contentArea.getChildren.addAll(lobbyHeader, lobbyListView, joinBtn, createSeparator(), createCard, statusLabel)
 
-    val scene = new Scene(root, 680, 780)
+    root.getChildren.addAll(headerArea, contentArea)
+
+    val scene = new Scene(root, 700, 800)
     stage.setScene(scene)
 
     // Auto-refresh on show
@@ -523,49 +560,51 @@ class ClientMain extends Application {
     root.setAlignment(Pos.TOP_CENTER)
     root.setStyle(darkBg)
 
-    // Header
-    val headerBox = new VBox(4)
+    // Header with glow
+    val headerBox = new VBox(6)
     headerBox.setAlignment(Pos.CENTER)
-    headerBox.setPadding(new Insets(28, 24, 16, 24))
+    headerBox.setPadding(new Insets(32, 24, 20, 24))
 
     val lobbyTitle = new Label(client.currentLobbyName)
-    lobbyTitle.setFont(Font.font("System", FontWeight.BOLD, 28))
+    lobbyTitle.setFont(Font.font("System", FontWeight.BOLD, 30))
     lobbyTitle.setTextFill(Color.WHITE)
+    lobbyTitle.setStyle("-fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.3), 12, 0, 0, 0);")
 
     val playersLabel = new Label(s"Players: ${client.currentLobbyPlayerCount}/${client.currentLobbyMaxPlayers}")
-    playersLabel.setFont(Font.font("System", FontWeight.BOLD, 18))
+    playersLabel.setFont(Font.font("System", FontWeight.BOLD, 16))
     playersLabel.setTextFill(Color.web("#4a9eff"))
 
-    headerBox.getChildren.addAll(lobbyTitle, playersLabel)
+    val headerLine = createAccentLine()
+
+    headerBox.getChildren.addAll(lobbyTitle, playersLabel, headerLine)
 
     // Info card
-    val infoCard = new VBox(12)
-    infoCard.setPadding(new Insets(20, 24, 20, 24))
-    infoCard.setMaxWidth(380)
+    val infoCard = new VBox(14)
+    infoCard.setPadding(new Insets(20, 28, 20, 28))
+    infoCard.setMaxWidth(420)
     infoCard.setStyle(cardBg)
 
     val mapLabel = new Label(s"Map: ${WorldRegistry.getDisplayName(client.currentLobbyMapIndex)}")
-    mapLabel.setFont(Font.font("System", 15))
-    mapLabel.setTextFill(Color.web("#ccd"))
+    mapLabel.setFont(Font.font("System", 14))
+    mapLabel.setTextFill(Color.web("#aabbcc"))
 
     val durationLabel = new Label(s"Duration: ${client.currentLobbyDuration} min")
-    durationLabel.setFont(Font.font("System", 15))
-    durationLabel.setTextFill(Color.web("#ccd"))
+    durationLabel.setFont(Font.font("System", 14))
+    durationLabel.setTextFill(Color.web("#aabbcc"))
 
     val waitingLabel = new Label("Waiting for host to start...")
-    waitingLabel.setFont(Font.font("System", 14))
-    waitingLabel.setTextFill(Color.web("#667"))
+    waitingLabel.setFont(Font.font("System", 13))
+    waitingLabel.setTextFill(Color.web("#556677"))
 
     // Character selection section
-    val charSectionLabel = new Label("Select Character")
-    charSectionLabel.setFont(Font.font("System", FontWeight.BOLD, 18))
-    charSectionLabel.setTextFill(Color.WHITE)
+    val charSectionLabel = new Label("SELECT CHARACTER")
+    charSectionLabel.setStyle(sectionHeaderStyle)
 
-    val charButtonBox = new HBox(10)
+    val charButtonBox = new HBox(8)
     charButtonBox.setAlignment(Pos.CENTER)
 
-    // Character sprite preview
-    val previewSize = 80.0
+    // Character sprite preview - larger with ring
+    val previewSize = 96.0
     val previewCanvas = new Canvas(previewSize, previewSize)
     val previewGc = previewCanvas.getGraphicsContext2D
     var previewAnimTick = 0
@@ -573,14 +612,15 @@ class ClientMain extends Application {
     val previewDirs = Array(Direction.Down, Direction.Left, Direction.Up, Direction.Right)
 
     val charNameLabel = new Label("")
-    charNameLabel.setFont(Font.font("System", FontWeight.BOLD, 16))
+    charNameLabel.setFont(Font.font("System", FontWeight.BOLD, 17))
     charNameLabel.setTextFill(Color.web("#4a9eff"))
 
     val charInfoLabel = new Label("")
-    charInfoLabel.setFont(Font.font("System", 13))
-    charInfoLabel.setTextFill(Color.web("#bbb"))
+    charInfoLabel.setFont(Font.font("System", 12))
+    charInfoLabel.setTextFill(Color.web("#8899aa"))
     charInfoLabel.setWrapText(true)
-    charInfoLabel.setMaxWidth(380)
+    charInfoLabel.setMaxWidth(400)
+    charInfoLabel.setStyle("-fx-line-spacing: 2;")
 
     def drawPreview(): Unit = {
       previewGc.clearRect(0, 0, previewSize, previewSize)
@@ -588,11 +628,14 @@ class ClientMain extends Application {
       val dir = previewDirs(previewDirIndex)
       val frame = (previewAnimTick / 10) % 4
       val sprite = SpriteGenerator.getSprite(0, dir, frame, charDef.id.id)
-      // Draw a subtle circular background
-      previewGc.setFill(Color.web("#2a2a3e"))
-      previewGc.fillOval(4, 4, previewSize - 8, previewSize - 8)
+      // Draw ring background
+      previewGc.setStroke(Color.web("#3a3a5e"))
+      previewGc.setLineWidth(2)
+      previewGc.strokeOval(4, 4, previewSize - 8, previewSize - 8)
+      previewGc.setFill(Color.web("#1a1a30"))
+      previewGc.fillOval(6, 6, previewSize - 12, previewSize - 12)
       // Draw sprite centered, scaled up
-      val spriteDisplaySize = 64.0
+      val spriteDisplaySize = 68.0
       val offset = (previewSize - spriteDisplaySize) / 2.0
       previewGc.drawImage(sprite, offset, offset, spriteDisplaySize, spriteDisplaySize)
     }
@@ -618,15 +661,21 @@ class ClientMain extends Application {
       drawPreview()
     }
 
+    val charSelectedStyle = "-fx-background-color: linear-gradient(to bottom, #4a9eff, #3a8eef); -fx-text-fill: white; -fx-font-size: 13; -fx-font-weight: bold; -fx-padding: 10 18; -fx-background-radius: 10; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.4), 10, 0, 0, 2); -fx-border-color: rgba(255,255,255,0.3); -fx-border-width: 1.5; -fx-border-radius: 10;"
+    val charUnselectedStyle = "-fx-background-color: rgba(255,255,255,0.04); -fx-text-fill: #8899aa; -fx-font-size: 13; -fx-padding: 10 18; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.06); -fx-border-width: 1; -fx-border-radius: 10;"
+    val charHoverStyle = "-fx-background-color: rgba(255,255,255,0.08); -fx-text-fill: #bbccdd; -fx-font-size: 13; -fx-padding: 10 18; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.12); -fx-border-width: 1; -fx-border-radius: 10;"
+
     def refreshCharButtons(): Unit = {
       charButtonBox.getChildren.clear()
       CharacterDef.all.foreach { charDef =>
         val btn = new Button(charDef.displayName)
         val isSelected = client.selectedCharacterId == charDef.id.id
         if (isSelected) {
-          btn.setStyle("-fx-background-color: #4a9eff; -fx-text-fill: white; -fx-font-size: 14; -fx-font-weight: bold; -fx-padding: 8 20; -fx-background-radius: 6; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.4), 8, 0, 0, 2); -fx-border-color: white; -fx-border-width: 2; -fx-border-radius: 6;")
+          btn.setStyle(charSelectedStyle)
         } else {
-          btn.setStyle("-fx-background-color: #2a2a3e; -fx-text-fill: #ccc; -fx-font-size: 14; -fx-padding: 8 20; -fx-background-radius: 6; -fx-cursor: hand;")
+          btn.setStyle(charUnselectedStyle)
+          btn.setOnMouseEntered(_ => if (client.selectedCharacterId != charDef.id.id) btn.setStyle(charHoverStyle))
+          btn.setOnMouseExited(_ => if (client.selectedCharacterId != charDef.id.id) btn.setStyle(charUnselectedStyle))
         }
         btn.setOnAction(_ => {
           client.selectCharacter(charDef.id.id)
@@ -640,15 +689,22 @@ class ClientMain extends Application {
     refreshCharButtons()
     updateCharacterInfo()
 
-    val previewBox = new VBox(4, previewCanvas, charNameLabel)
+    val previewBox = new VBox(6, previewCanvas, charNameLabel)
     previewBox.setAlignment(Pos.CENTER)
 
-    val charSection = new VBox(8, charSectionLabel, previewBox, charButtonBox, charInfoLabel)
+    // Character info in a subtle card
+    val charInfoCard = new VBox(8, charInfoLabel)
+    charInfoCard.setPadding(new Insets(12, 16, 12, 16))
+    charInfoCard.setMaxWidth(420)
+    charInfoCard.setStyle(cardBgSubtle)
+
+    val charSection = new VBox(12, charSectionLabel, previewBox, charButtonBox, charInfoCard)
     charSection.setAlignment(Pos.CENTER)
+    charSection.setPadding(new Insets(0, 24, 0, 24))
 
     val buttonBox = new HBox(12)
     buttonBox.setAlignment(Pos.CENTER)
-    buttonBox.setPadding(new Insets(8, 0, 0, 0))
+    buttonBox.setPadding(new Insets(12, 0, 24, 0))
 
     val leaveBtn = new Button("Leave")
     addHoverEffect(leaveBtn, buttonRedStyle, buttonRedHoverStyle)
@@ -665,6 +721,7 @@ class ClientMain extends Application {
     if (client.isLobbyHost) {
       waitingLabel.setText("You are the host")
       waitingLabel.setTextFill(Color.web("#2ecc71"))
+      waitingLabel.setFont(Font.font("System", FontWeight.BOLD, 13))
 
       val configLabel = new Label("GAME SETTINGS")
       configLabel.setStyle(sectionHeaderStyle)
@@ -699,20 +756,20 @@ class ClientMain extends Application {
         client.startGame()
       })
 
-      val row1 = new HBox(8, new Label("Map") { setStyle(sectionHeaderStyle); setMinWidth(50) }, mapCombo)
+      val row1 = new HBox(10, new Label("Map") { setStyle(sectionHeaderStyle); setMinWidth(44) }, mapCombo)
       row1.setAlignment(Pos.CENTER_LEFT)
       HBox.setHgrow(mapCombo, Priority.ALWAYS)
-      val row2 = new HBox(8, new Label("Time") { setStyle(sectionHeaderStyle); setMinWidth(50) }, durationCombo)
+      val row2 = new HBox(10, new Label("Time") { setStyle(sectionHeaderStyle); setMinWidth(44) }, durationCombo)
       row2.setAlignment(Pos.CENTER_LEFT)
       HBox.setHgrow(durationCombo, Priority.ALWAYS)
 
-      infoCard.getChildren.addAll(waitingLabel, configLabel, row1, row2, startBtn)
+      infoCard.getChildren.addAll(waitingLabel, createSeparator(), configLabel, row1, row2, startBtn)
       buttonBox.getChildren.add(new Region()) // spacing
     } else {
-      infoCard.getChildren.addAll(mapLabel, durationLabel, waitingLabel)
+      infoCard.getChildren.addAll(mapLabel, durationLabel, createSeparator(), waitingLabel)
     }
 
-    root.getChildren.addAll(headerBox, infoCard, new Region() { setMinHeight(12) }, charSection, new Region() { setMinHeight(12) }, buttonBox)
+    root.getChildren.addAll(headerBox, infoCard, new Region() { setMinHeight(16) }, charSection, new Region() { setMinHeight(4) }, buttonBox)
 
     // Wire up listeners
     client.lobbyUpdatedListener = () => {
@@ -737,7 +794,7 @@ class ClientMain extends Application {
       })
     }
 
-    val scene = new Scene(root, 580, 700)
+    val scene = new Scene(root, 600, 740)
     stage.setScene(scene)
   }
 
@@ -746,50 +803,74 @@ class ClientMain extends Application {
     root.setAlignment(Pos.TOP_CENTER)
     root.setStyle(darkBg)
 
-    // Header
-    val headerBox = new VBox(4)
+    // Header with glow
+    val headerBox = new VBox(8)
     headerBox.setAlignment(Pos.CENTER)
-    headerBox.setPadding(new Insets(28, 24, 16, 24))
+    headerBox.setPadding(new Insets(32, 24, 20, 24))
 
     val queueTitle = new Label("Ranked Queue")
-    queueTitle.setFont(Font.font("System", FontWeight.BOLD, 28))
+    queueTitle.setFont(Font.font("System", FontWeight.BOLD, 30))
     queueTitle.setTextFill(Color.WHITE)
+    queueTitle.setStyle("-fx-effect: dropshadow(gaussian, rgba(255, 215, 0, 0.3), 12, 0, 0, 0);")
 
+    // ELO badge
     val eloLabel = new Label(s"ELO: ${client.rankedElo}")
     eloLabel.setFont(Font.font("System", FontWeight.BOLD, 18))
     eloLabel.setTextFill(Color.web("#ffd700"))
+    eloLabel.setStyle("-fx-background-color: rgba(255, 215, 0, 0.08); -fx-padding: 6 20; -fx-background-radius: 20; -fx-border-color: rgba(255, 215, 0, 0.2); -fx-border-radius: 20; -fx-border-width: 1;")
 
-    headerBox.getChildren.addAll(queueTitle, eloLabel)
+    val headerLine = new Region()
+    headerLine.setMinHeight(2)
+    headerLine.setMaxHeight(2)
+    headerLine.setMaxWidth(60)
+    headerLine.setStyle("-fx-background-color: linear-gradient(to right, transparent, #ffd700, transparent); -fx-background-radius: 1;")
+
+    headerBox.getChildren.addAll(queueTitle, eloLabel, headerLine)
 
     // Queue status card
-    val statusCard = new VBox(12)
-    statusCard.setPadding(new Insets(20, 24, 20, 24))
-    statusCard.setMaxWidth(380)
+    val statusCard = new VBox(14)
+    statusCard.setPadding(new Insets(20, 28, 20, 28))
+    statusCard.setMaxWidth(420)
     statusCard.setStyle(cardBg)
+    statusCard.setAlignment(Pos.CENTER)
 
     val queueSizeLabel = new Label("Players in queue: 1")
-    queueSizeLabel.setFont(Font.font("System", 15))
-    queueSizeLabel.setTextFill(Color.web("#ccd"))
+    queueSizeLabel.setFont(Font.font("System", 14))
+    queueSizeLabel.setTextFill(Color.web("#aabbcc"))
 
     val waitTimeLabel = new Label("Wait time: 0s")
-    waitTimeLabel.setFont(Font.font("System", 15))
-    waitTimeLabel.setTextFill(Color.web("#ccd"))
+    waitTimeLabel.setFont(Font.font("System", 14))
+    waitTimeLabel.setTextFill(Color.web("#aabbcc"))
 
     val searchingLabel = new Label("Searching for match...")
-    searchingLabel.setFont(Font.font("System", 14))
+    searchingLabel.setFont(Font.font("System", FontWeight.BOLD, 14))
     searchingLabel.setTextFill(Color.web("#4a9eff"))
 
-    statusCard.getChildren.addAll(queueSizeLabel, waitTimeLabel, searchingLabel)
+    // Animated dots for searching
+    var dotTick = 0
+    val dotTimer = new AnimationTimer {
+      private var lastUpdate = 0L
+      override def handle(now: Long): Unit = {
+        if (now - lastUpdate > 500_000_000L) {
+          lastUpdate = now
+          dotTick = (dotTick + 1) % 4
+          val dots = "." * dotTick
+          searchingLabel.setText(s"Searching for match$dots")
+        }
+      }
+    }
+    dotTimer.start()
+
+    statusCard.getChildren.addAll(searchingLabel, createSeparator(), queueSizeLabel, waitTimeLabel)
 
     // Character selection section (reuse pattern from showLobbyRoom)
-    val charSectionLabel = new Label("Select Character")
-    charSectionLabel.setFont(Font.font("System", FontWeight.BOLD, 18))
-    charSectionLabel.setTextFill(Color.WHITE)
+    val charSectionLabel = new Label("SELECT CHARACTER")
+    charSectionLabel.setStyle(sectionHeaderStyle)
 
-    val charButtonBox = new HBox(10)
+    val charButtonBox = new HBox(8)
     charButtonBox.setAlignment(Pos.CENTER)
 
-    val previewSize = 80.0
+    val previewSize = 96.0
     val previewCanvas = new Canvas(previewSize, previewSize)
     val previewGc = previewCanvas.getGraphicsContext2D
     var previewAnimTick = 0
@@ -797,14 +878,15 @@ class ClientMain extends Application {
     val previewDirs = Array(Direction.Down, Direction.Left, Direction.Up, Direction.Right)
 
     val charNameLabel = new Label("")
-    charNameLabel.setFont(Font.font("System", FontWeight.BOLD, 16))
+    charNameLabel.setFont(Font.font("System", FontWeight.BOLD, 17))
     charNameLabel.setTextFill(Color.web("#4a9eff"))
 
     val charInfoLabel = new Label("")
-    charInfoLabel.setFont(Font.font("System", 13))
-    charInfoLabel.setTextFill(Color.web("#bbb"))
+    charInfoLabel.setFont(Font.font("System", 12))
+    charInfoLabel.setTextFill(Color.web("#8899aa"))
     charInfoLabel.setWrapText(true)
-    charInfoLabel.setMaxWidth(380)
+    charInfoLabel.setMaxWidth(400)
+    charInfoLabel.setStyle("-fx-line-spacing: 2;")
 
     def drawPreview(): Unit = {
       previewGc.clearRect(0, 0, previewSize, previewSize)
@@ -812,9 +894,12 @@ class ClientMain extends Application {
       val dir = previewDirs(previewDirIndex)
       val frame = (previewAnimTick / 10) % 4
       val sprite = SpriteGenerator.getSprite(0, dir, frame, charDef.id.id)
-      previewGc.setFill(Color.web("#2a2a3e"))
-      previewGc.fillOval(4, 4, previewSize - 8, previewSize - 8)
-      val spriteDisplaySize = 64.0
+      previewGc.setStroke(Color.web("#3a3a5e"))
+      previewGc.setLineWidth(2)
+      previewGc.strokeOval(4, 4, previewSize - 8, previewSize - 8)
+      previewGc.setFill(Color.web("#1a1a30"))
+      previewGc.fillOval(6, 6, previewSize - 12, previewSize - 12)
+      val spriteDisplaySize = 68.0
       val offset = (previewSize - spriteDisplaySize) / 2.0
       previewGc.drawImage(sprite, offset, offset, spriteDisplaySize, spriteDisplaySize)
     }
@@ -839,15 +924,21 @@ class ClientMain extends Application {
       drawPreview()
     }
 
+    val charSelectedStyle = "-fx-background-color: linear-gradient(to bottom, #4a9eff, #3a8eef); -fx-text-fill: white; -fx-font-size: 13; -fx-font-weight: bold; -fx-padding: 10 18; -fx-background-radius: 10; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.4), 10, 0, 0, 2); -fx-border-color: rgba(255,255,255,0.3); -fx-border-width: 1.5; -fx-border-radius: 10;"
+    val charUnselectedStyle = "-fx-background-color: rgba(255,255,255,0.04); -fx-text-fill: #8899aa; -fx-font-size: 13; -fx-padding: 10 18; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.06); -fx-border-width: 1; -fx-border-radius: 10;"
+    val charHoverStyle = "-fx-background-color: rgba(255,255,255,0.08); -fx-text-fill: #bbccdd; -fx-font-size: 13; -fx-padding: 10 18; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.12); -fx-border-width: 1; -fx-border-radius: 10;"
+
     def refreshCharButtons(): Unit = {
       charButtonBox.getChildren.clear()
       CharacterDef.all.foreach { charDef =>
         val btn = new Button(charDef.displayName)
         val isSelected = client.selectedCharacterId == charDef.id.id
         if (isSelected) {
-          btn.setStyle("-fx-background-color: #4a9eff; -fx-text-fill: white; -fx-font-size: 14; -fx-font-weight: bold; -fx-padding: 8 20; -fx-background-radius: 6; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.4), 8, 0, 0, 2); -fx-border-color: white; -fx-border-width: 2; -fx-border-radius: 6;")
+          btn.setStyle(charSelectedStyle)
         } else {
-          btn.setStyle("-fx-background-color: #2a2a3e; -fx-text-fill: #ccc; -fx-font-size: 14; -fx-padding: 8 20; -fx-background-radius: 6; -fx-cursor: hand;")
+          btn.setStyle(charUnselectedStyle)
+          btn.setOnMouseEntered(_ => if (client.selectedCharacterId != charDef.id.id) btn.setStyle(charHoverStyle))
+          btn.setOnMouseExited(_ => if (client.selectedCharacterId != charDef.id.id) btn.setStyle(charUnselectedStyle))
         }
         btn.setOnAction(_ => {
           client.changeRankedCharacter(charDef.id.id)
@@ -861,17 +952,24 @@ class ClientMain extends Application {
     refreshCharButtons()
     updateCharacterInfo()
 
-    val previewBox = new VBox(4, previewCanvas, charNameLabel)
+    val previewBox = new VBox(6, previewCanvas, charNameLabel)
     previewBox.setAlignment(Pos.CENTER)
 
-    val charSection = new VBox(8, charSectionLabel, previewBox, charButtonBox, charInfoLabel)
+    val charInfoCard = new VBox(8, charInfoLabel)
+    charInfoCard.setPadding(new Insets(12, 16, 12, 16))
+    charInfoCard.setMaxWidth(420)
+    charInfoCard.setStyle(cardBgSubtle)
+
+    val charSection = new VBox(12, charSectionLabel, previewBox, charButtonBox, charInfoCard)
     charSection.setAlignment(Pos.CENTER)
+    charSection.setPadding(new Insets(0, 24, 0, 24))
 
     // Leave queue button
     val leaveBtn = new Button("Leave Queue")
     addHoverEffect(leaveBtn, buttonRedStyle, buttonRedHoverStyle)
     leaveBtn.setOnAction(_ => {
       previewTimer.stop()
+      dotTimer.stop()
       client.leaveRankedQueue()
       client.requestLobbyList()
       showLobbyBrowser(stage)
@@ -879,10 +977,10 @@ class ClientMain extends Application {
 
     val buttonBox = new HBox(12)
     buttonBox.setAlignment(Pos.CENTER)
-    buttonBox.setPadding(new Insets(8, 0, 0, 0))
+    buttonBox.setPadding(new Insets(12, 0, 24, 0))
     buttonBox.getChildren.add(leaveBtn)
 
-    root.getChildren.addAll(headerBox, statusCard, new Region() { setMinHeight(12) }, charSection, new Region() { setMinHeight(12) }, buttonBox)
+    root.getChildren.addAll(headerBox, statusCard, new Region() { setMinHeight(16) }, charSection, new Region() { setMinHeight(4) }, buttonBox)
 
     // Wire up queue status listener
     client.rankedQueueListener = () => {
@@ -904,6 +1002,7 @@ class ClientMain extends Application {
     client.gameStartingListener = () => {
       Platform.runLater(() => {
         previewTimer.stop()
+        dotTimer.stop()
         showGameScene(stage)
       })
     }
@@ -911,12 +1010,13 @@ class ClientMain extends Application {
     client.lobbyClosedListener = () => {
       Platform.runLater(() => {
         previewTimer.stop()
+        dotTimer.stop()
         client.requestLobbyList()
         showLobbyBrowser(stage)
       })
     }
 
-    val scene = new Scene(root, 580, 700)
+    val scene = new Scene(root, 600, 740)
     stage.setScene(scene)
   }
 
@@ -1010,42 +1110,68 @@ class ClientMain extends Application {
   }
 
   private def showAccountView(stage: Stage): Unit = {
-    val root = new VBox(16)
-    root.setPadding(new Insets(24))
+    val root = new VBox(0)
     root.setStyle(darkBg)
+
+    // Header
+    val headerArea = new VBox(12)
+    headerArea.setPadding(new Insets(28, 28, 20, 28))
 
     val titleBar = new HBox(12)
     titleBar.setAlignment(Pos.CENTER_LEFT)
     val title = new Label("Profile")
-    title.setFont(Font.font("System", FontWeight.BOLD, 28))
+    title.setFont(Font.font("System", FontWeight.BOLD, 30))
     title.setTextFill(Color.WHITE)
+    title.setStyle("-fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.3), 12, 0, 0, 0);")
+
+    val playerTag = new Label(client.playerName)
+    playerTag.setFont(Font.font("System", FontWeight.BOLD, 14))
+    playerTag.setTextFill(Color.web("#4a9eff"))
+    playerTag.setStyle("-fx-background-color: rgba(74, 158, 255, 0.1); -fx-padding: 4 12; -fx-background-radius: 12; -fx-border-color: rgba(74, 158, 255, 0.2); -fx-border-radius: 12; -fx-border-width: 1;")
+
     val spacer = new Region()
     HBox.setHgrow(spacer, Priority.ALWAYS)
     val backBtn = new Button("Back")
-    addHoverEffect(backBtn, buttonStyle, buttonHoverStyle)
+    addHoverEffect(backBtn, buttonGhostStyle, buttonGhostHoverStyle)
     backBtn.setOnAction(_ => {
       client.requestLobbyList()
       showLobbyBrowser(stage)
     })
-    titleBar.getChildren.addAll(title, spacer, backBtn)
+    titleBar.getChildren.addAll(title, playerTag, spacer, backBtn)
+
+    val headerSep = createAccentLine()
+    headerSep.setMaxWidth(Double.MaxValue)
+    headerSep.setStyle("-fx-background-color: linear-gradient(to right, #4a9eff, rgba(74, 158, 255, 0.1)); -fx-background-radius: 1;")
+
+    headerArea.getChildren.addAll(titleBar, headerSep)
+
+    // Content
+    val contentArea = new VBox(16)
+    contentArea.setPadding(new Insets(0, 28, 24, 28))
+    VBox.setVgrow(contentArea, Priority.ALWAYS)
 
     // Stats card
-    val statsCard = new VBox(8)
-    statsCard.setPadding(new Insets(16, 20, 16, 20))
+    val statsCard = new VBox(12)
+    statsCard.setPadding(new Insets(20, 24, 20, 24))
     statsCard.setStyle(cardBg)
 
     val statsTitle = new Label("ALL-TIME STATS")
     statsTitle.setStyle(sectionHeaderStyle)
 
-    val statsRow = new HBox(24)
+    val statsRow = new HBox(12)
     statsRow.setAlignment(Pos.CENTER)
     statsRow.setPadding(new Insets(8, 0, 4, 0))
 
-    val killsBox = createStatBox("Kills", "0")
-    val deathsBox = createStatBox("Deaths", "0")
-    val matchesBox = createStatBox("Matches", "0")
-    val winsBox = createStatBox("Wins", "0")
-    val eloBox = createStatBox("ELO", "1000")
+    val killsBox = createStatBox("Kills", "0", "#2ecc71")
+    val deathsBox = createStatBox("Deaths", "0", "#e84057")
+    val matchesBox = createStatBox("Matches", "0", "#4a9eff")
+    val winsBox = createStatBox("Wins", "0", "#ffd700")
+    val eloBox = createStatBox("ELO", "1000", "#e88d3f")
+    HBox.setHgrow(killsBox, Priority.ALWAYS)
+    HBox.setHgrow(deathsBox, Priority.ALWAYS)
+    HBox.setHgrow(matchesBox, Priority.ALWAYS)
+    HBox.setHgrow(winsBox, Priority.ALWAYS)
+    HBox.setHgrow(eloBox, Priority.ALWAYS)
     statsRow.getChildren.addAll(killsBox, deathsBox, matchesBox, winsBox, eloBox)
 
     statsCard.getChildren.addAll(statsTitle, statsRow)
@@ -1053,12 +1179,12 @@ class ClientMain extends Application {
     // Match history label
     val historyTitle = new Label("RECENT MATCHES")
     historyTitle.setStyle(sectionHeaderStyle)
-    historyTitle.setPadding(new Insets(8, 0, 0, 0))
+    historyTitle.setPadding(new Insets(4, 0, 0, 0))
 
     // Match history list
     val historyListView = new ListView[String]()
     historyListView.setStyle(listViewCss)
-    historyListView.setPrefHeight(300)
+    historyListView.setPrefHeight(280)
     VBox.setVgrow(historyListView, Priority.ALWAYS)
 
     val historyCellFactory = new Callback[ListView[String], ListCell[String]] {
@@ -1067,14 +1193,18 @@ class ClientMain extends Application {
           super.updateItem(item, empty)
           if (empty || item == null) {
             setText(null)
-            setStyle("-fx-background-color: #242440;")
+            setStyle("-fx-background-color: transparent;")
           } else {
             setText(item)
-            val base = "-fx-text-fill: #dde; -fx-font-size: 14; -fx-padding: 10 12;"
-            if (getIndex % 2 == 0) {
-              setStyle(s"-fx-background-color: #242440; $base")
+            val base = "-fx-text-fill: #ccdde8; -fx-font-size: 13; -fx-padding: 12 16; -fx-background-radius: 6;"
+            // Color-code by rank
+            val isWin = item.startsWith("#1/")
+            if (isWin) {
+              setStyle(s"-fx-background-color: rgba(255, 215, 0, 0.06); $base -fx-border-color: rgba(255, 215, 0, 0.15); -fx-border-width: 0 0 0 3; -fx-border-radius: 6;")
+            } else if (getIndex % 2 == 0) {
+              setStyle(s"-fx-background-color: rgba(255,255,255,0.02); $base")
             } else {
-              setStyle(s"-fx-background-color: #2a2a48; $base")
+              setStyle(s"-fx-background-color: transparent; $base")
             }
           }
         }
@@ -1083,27 +1213,29 @@ class ClientMain extends Application {
     historyListView.setCellFactory(historyCellFactory)
 
     val loadingLabel = new Label("Loading...")
-    loadingLabel.setTextFill(Color.web("#8899bb"))
-    loadingLabel.setFont(Font.font("System", 13))
+    loadingLabel.setTextFill(Color.web("#556677"))
+    loadingLabel.setFont(Font.font("System", 12))
 
-    root.getChildren.addAll(titleBar, statsCard, historyTitle, historyListView, loadingLabel)
+    contentArea.getChildren.addAll(statsCard, historyTitle, historyListView, loadingLabel)
 
-    val scene = new Scene(root, 680, 780)
+    root.getChildren.addAll(headerArea, contentArea)
+
+    val scene = new Scene(root, 700, 800)
     stage.setScene(scene)
 
     // Set up listener and request data
     client.matchHistoryListener = () => {
       Platform.runLater(() => {
         // Update stats
-        val killsLabel = killsBox.getChildren.get(1).asInstanceOf[Label]
+        val killsLabel = killsBox.getChildren.get(0).asInstanceOf[VBox].getChildren.get(1).asInstanceOf[Label]
         killsLabel.setText(client.totalKillsStat.toString)
-        val deathsLabel = deathsBox.getChildren.get(1).asInstanceOf[Label]
+        val deathsLabel = deathsBox.getChildren.get(0).asInstanceOf[VBox].getChildren.get(1).asInstanceOf[Label]
         deathsLabel.setText(client.totalDeathsStat.toString)
-        val matchesLabel = matchesBox.getChildren.get(1).asInstanceOf[Label]
+        val matchesLabel = matchesBox.getChildren.get(0).asInstanceOf[VBox].getChildren.get(1).asInstanceOf[Label]
         matchesLabel.setText(client.matchesPlayedStat.toString)
-        val winsLabel = winsBox.getChildren.get(1).asInstanceOf[Label]
+        val winsLabel = winsBox.getChildren.get(0).asInstanceOf[VBox].getChildren.get(1).asInstanceOf[Label]
         winsLabel.setText(client.winsStat.toString)
-        val eloLabel = eloBox.getChildren.get(1).asInstanceOf[Label]
+        val eloLabel = eloBox.getChildren.get(0).asInstanceOf[VBox].getChildren.get(1).asInstanceOf[Label]
         eloLabel.setText(client.rankedElo.toString)
 
         // Update match list
@@ -1127,16 +1259,23 @@ class ClientMain extends Application {
     client.requestMatchHistory()
   }
 
-  private def createStatBox(label: String, value: String): VBox = {
-    val box = new VBox(2)
-    box.setAlignment(Pos.CENTER)
+  private def createStatBox(label: String, value: String, accentColor: String): StackPane = {
+    val container = new StackPane()
+    container.setStyle(s"-fx-background-color: rgba(255,255,255,0.03); -fx-background-radius: 12; -fx-border-color: rgba(255,255,255,0.05); -fx-border-radius: 12; -fx-border-width: 1;")
+    container.setPadding(new Insets(12, 8, 12, 8))
+    container.setMinWidth(80)
+
+    val inner = new VBox(4)
+    inner.setAlignment(Pos.CENTER)
     val nameLabel = new Label(label)
     nameLabel.setStyle(sectionHeaderStyle)
     val valueLabel = new Label(value)
     valueLabel.setFont(Font.font("System", FontWeight.BOLD, 22))
-    valueLabel.setTextFill(Color.WHITE)
-    box.getChildren.addAll(nameLabel, valueLabel)
-    box
+    valueLabel.setTextFill(Color.web(accentColor))
+    inner.getChildren.addAll(nameLabel, valueLabel)
+
+    container.getChildren.add(inner)
+    container
   }
 
   private def showGameScene(stage: Stage): Unit = {
@@ -1204,40 +1343,42 @@ class ClientMain extends Application {
     root.setAlignment(Pos.TOP_CENTER)
     root.setStyle(darkBg)
 
-    // Title section
-    val titleBox = new VBox(4)
+    // Title section with glow
+    val titleBox = new VBox(6)
     titleBox.setAlignment(Pos.CENTER)
-    titleBox.setPadding(new Insets(32, 0, 20, 0))
+    titleBox.setPadding(new Insets(36, 0, 24, 0))
 
     val title = new Label("Game Over")
-    title.setFont(Font.font("System", FontWeight.BOLD, 36))
+    title.setFont(Font.font("System", FontWeight.BOLD, 40))
     title.setTextFill(Color.WHITE)
-    title.setStyle("-fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.3), 12, 0, 0, 0);")
+    title.setStyle("-fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.4), 20, 0, 0, 0);")
 
     val subtitle = new Label("Final Scoreboard")
-    subtitle.setFont(Font.font("System", 15))
-    subtitle.setTextFill(Color.web("#667"))
+    subtitle.setFont(Font.font("System", 14))
+    subtitle.setTextFill(Color.web("#556677"))
 
-    titleBox.getChildren.addAll(title, subtitle)
+    val accentLine = createAccentLine()
+
+    titleBox.getChildren.addAll(title, subtitle, accentLine)
 
     // Scoreboard card
     val scoreCard = new VBox(0)
-    scoreCard.setMaxWidth(440)
+    scoreCard.setMaxWidth(500)
     scoreCard.setStyle(cardBg)
 
     // Header row
     val header = new HBox(0)
     header.setAlignment(Pos.CENTER_LEFT)
-    header.setPadding(new Insets(10, 16, 10, 16))
-    header.setStyle("-fx-border-color: transparent transparent #3a3a5e transparent; -fx-border-width: 0 0 1 0;")
+    header.setPadding(new Insets(14, 20, 14, 20))
+    header.setStyle("-fx-background-color: rgba(255,255,255,0.03); -fx-background-radius: 16 16 0 0; -fx-border-color: transparent transparent rgba(255,255,255,0.06) transparent; -fx-border-width: 0 0 1 0;")
     val hRank = new Label("RANK")
-    hRank.setMinWidth(50); hRank.setStyle(sectionHeaderStyle)
+    hRank.setMinWidth(60); hRank.setStyle(sectionHeaderStyle)
     val hPlayer = new Label("PLAYER")
-    hPlayer.setMinWidth(140); hPlayer.setStyle(sectionHeaderStyle)
+    hPlayer.setMinWidth(160); hPlayer.setStyle(sectionHeaderStyle)
     val hKills = new Label("KILLS")
-    hKills.setMinWidth(60); hKills.setStyle(sectionHeaderStyle)
+    hKills.setMinWidth(70); hKills.setStyle(sectionHeaderStyle)
     val hDeaths = new Label("DEATHS")
-    hDeaths.setMinWidth(60); hDeaths.setStyle(sectionHeaderStyle)
+    hDeaths.setMinWidth(70); hDeaths.setStyle(sectionHeaderStyle)
     header.getChildren.addAll(hRank, hPlayer, hKills, hDeaths)
     scoreCard.getChildren.add(header)
 
@@ -1246,45 +1387,58 @@ class ClientMain extends Application {
     client.scoreboard.asScala.foreach { entry =>
       val row = new HBox(0)
       row.setAlignment(Pos.CENTER_LEFT)
-      row.setPadding(new Insets(10, 16, 10, 16))
+      row.setPadding(new Insets(12, 20, 12, 20))
 
       val isLocal = entry.playerId.equals(client.getLocalPlayerId)
+      val isLast = rowIndex == client.scoreboard.size() - 1
+      val bottomRadius = if (isLast) "-fx-background-radius: 0 0 16 16;" else ""
+
       val rowBg = if (isLocal) {
-        "-fx-background-color: rgba(74, 158, 255, 0.12); -fx-border-color: transparent transparent #3a3a5e transparent; -fx-border-width: 0 0 1 0;"
+        s"-fx-background-color: rgba(74, 158, 255, 0.1); -fx-border-color: transparent transparent rgba(255,255,255,0.04) transparent; -fx-border-width: 0 0 1 0; $bottomRadius"
       } else if (rowIndex % 2 == 0) {
-        "-fx-background-color: transparent; -fx-border-color: transparent transparent #2a2a45 transparent; -fx-border-width: 0 0 1 0;"
+        s"-fx-background-color: transparent; -fx-border-color: transparent transparent rgba(255,255,255,0.03) transparent; -fx-border-width: 0 0 1 0; $bottomRadius"
       } else {
-        "-fx-background-color: rgba(255,255,255,0.02); -fx-border-color: transparent transparent #2a2a45 transparent; -fx-border-width: 0 0 1 0;"
+        s"-fx-background-color: rgba(255,255,255,0.02); -fx-border-color: transparent transparent rgba(255,255,255,0.03) transparent; -fx-border-width: 0 0 1 0; $bottomRadius"
       }
       row.setStyle(rowBg)
 
-      val rankText = if (entry.rank == 1) "#1" else s"#${entry.rank}"
+      // Medal styling for top 3
+      val rankText = entry.rank match {
+        case 1 => "#1"
+        case 2 => "#2"
+        case 3 => "#3"
+        case n => s"#$n"
+      }
       val rankLabel = new Label(rankText)
-      rankLabel.setMinWidth(50)
-      rankLabel.setTextFill(entry.rank match {
+      rankLabel.setMinWidth(60)
+      val rankColor = entry.rank match {
         case 1 => Color.web("#ffd700")
         case 2 => Color.web("#c0c0c0")
         case 3 => Color.web("#cd7f32")
-        case _ => Color.web("#889")
-      })
-      rankLabel.setFont(Font.font("System", FontWeight.BOLD, 18))
+        case _ => Color.web("#556677")
+      }
+      rankLabel.setTextFill(rankColor)
+      rankLabel.setFont(Font.font("System", FontWeight.BOLD, if (entry.rank <= 3) 20 else 16))
+      if (entry.rank <= 3) {
+        rankLabel.setStyle(s"-fx-effect: dropshadow(gaussian, ${if (entry.rank == 1) "rgba(255,215,0,0.4)" else if (entry.rank == 2) "rgba(192,192,192,0.3)" else "rgba(205,127,50,0.3)"}, 8, 0, 0, 0);")
+      }
 
       val nameStr = if (isLocal) s"${client.playerName} (you)" else {
         val p = client.getPlayers.get(entry.playerId)
         if (p != null) p.getName else entry.playerId.toString.substring(0, 8)
       }
       val nameLabel = new Label(nameStr)
-      nameLabel.setMinWidth(140)
-      nameLabel.setTextFill(if (isLocal) Color.web("#4a9eff") else Color.web("#dde"))
+      nameLabel.setMinWidth(160)
+      nameLabel.setTextFill(if (isLocal) Color.web("#4a9eff") else Color.web("#ccdde8"))
       nameLabel.setFont(Font.font("System", FontWeight.BOLD, 15))
 
       val killsLabel = new Label(entry.kills.toString)
-      killsLabel.setMinWidth(60)
+      killsLabel.setMinWidth(70)
       killsLabel.setTextFill(Color.web("#2ecc71"))
       killsLabel.setFont(Font.font("System", FontWeight.BOLD, 16))
 
       val deathsLabel = new Label(entry.deaths.toString)
-      deathsLabel.setMinWidth(60)
+      deathsLabel.setMinWidth(70)
       deathsLabel.setTextFill(Color.web("#e84057"))
       deathsLabel.setFont(Font.font("System", FontWeight.BOLD, 15))
 
@@ -1304,12 +1458,12 @@ class ClientMain extends Application {
 
     val btnBox = new VBox(0)
     btnBox.setAlignment(Pos.CENTER)
-    btnBox.setPadding(new Insets(20, 0, 0, 0))
+    btnBox.setPadding(new Insets(24, 0, 0, 0))
     btnBox.getChildren.add(returnBtn)
 
     root.getChildren.addAll(titleBox, scoreCard, btnBox)
 
-    val scene = new Scene(root, 640, 640)
+    val scene = new Scene(root, 660, 660)
     stage.setScene(scene)
   }
 

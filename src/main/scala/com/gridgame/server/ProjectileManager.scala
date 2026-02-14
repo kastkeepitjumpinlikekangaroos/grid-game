@@ -70,6 +70,8 @@ class ProjectileManager(registry: ClientRegistry) {
             case ProjectileType.SPEAR => Constants.SPEAR_MAX_RANGE.toDouble
             case ProjectileType.SOUL_BOLT => Constants.SOUL_BOLT_MAX_RANGE.toDouble
             case ProjectileType.HAUNT => Constants.HAUNT_MAX_RANGE.toDouble
+            case ProjectileType.ARCANE_BOLT => Constants.ARCANE_BOLT_MAX_RANGE.toDouble
+            case ProjectileType.FIREBALL => Constants.FIREBALL_MAX_RANGE.toDouble
             case ProjectileType.SPLASH => Constants.SPLASH_MAX_RANGE.toDouble
             case ProjectileType.TIDAL_WAVE => Constants.TIDAL_WAVE_MAX_RANGE.toDouble
             case ProjectileType.GEYSER => Constants.GEYSER_MAX_RANGE.toDouble
@@ -102,7 +104,8 @@ class ProjectileManager(registry: ClientRegistry) {
             resolved = true
           } else if (projectile.hitsNonWalkable(world) &&
                      projectile.projectileType != ProjectileType.SOUL_BOLT &&
-                     projectile.projectileType != ProjectileType.HAUNT) {
+                     projectile.projectileType != ProjectileType.HAUNT &&
+                     projectile.projectileType != ProjectileType.ARCANE_BOLT) {
             toRemove += projectile.id
             if (isAoEExplosiveType(projectile.projectileType)) {
               events += ProjectileAoE(projectile)
@@ -135,6 +138,8 @@ class ProjectileManager(registry: ClientRegistry) {
                     (Constants.SPEAR_BASE_DAMAGE + (distanceFraction * (Constants.SPEAR_MAX_DAMAGE - Constants.SPEAR_BASE_DAMAGE))).toInt
                   case ProjectileType.SOUL_BOLT => Constants.SOUL_BOLT_DAMAGE
                   case ProjectileType.HAUNT => Constants.HAUNT_DAMAGE
+                  case ProjectileType.ARCANE_BOLT => Constants.ARCANE_BOLT_DAMAGE
+                  case ProjectileType.FIREBALL => Constants.FIREBALL_DAMAGE
                   case ProjectileType.SPLASH => Constants.SPLASH_DAMAGE
                   case ProjectileType.TIDAL_WAVE => Constants.TIDAL_WAVE_DAMAGE
                   case ProjectileType.GEYSER => Constants.GEYSER_DAMAGE

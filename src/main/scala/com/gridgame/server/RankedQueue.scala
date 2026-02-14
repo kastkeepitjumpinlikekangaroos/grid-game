@@ -185,7 +185,8 @@ class RankedQueue(server: GameServer) {
       val p = server.getConnectedPlayer(entry.playerId)
       if (p != null) {
         val spawnPoint = instance.world.getValidSpawnPoint()
-        val instancePlayer = new Player(entry.playerId, p.getName, spawnPoint, p.getColorRGB, Constants.MAX_HEALTH)
+        val charDef = com.gridgame.common.model.CharacterDef.get(entry.characterId)
+        val instancePlayer = new Player(entry.playerId, p.getName, spawnPoint, p.getColorRGB, charDef.maxHealth, charDef.maxHealth)
         instancePlayer.setCharacterId(entry.characterId)
         instancePlayer.setTcpChannel(p.getTcpChannel)
         if (p.getUdpAddress != null) {
