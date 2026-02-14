@@ -172,7 +172,8 @@ class GameCanvas(client: GameClient) extends Canvas() {
         worldToScreenX(localVX, localVY, camOffX),
         worldToScreenY(localVX, localVY, camOffY),
         client.getLocalColorRGB,
-        localDeathTime
+        localDeathTime,
+        client.selectedCharacterId
       ))
     } else if (!client.getIsDead) {
       addEntity(localPos.getX, localPos.getY, () => drawLocalPlayer(localVX, localVY, camOffX, camOffY))
@@ -1351,14 +1352,15 @@ class GameCanvas(client: GameClient) extends Canvas() {
         val wx = data(1).toDouble
         val wy = data(2).toDouble
         val colorRGB = data(3).toInt
+        val charId = if (data.length > 4) data(4).toByte else 0.toByte
         val sx = worldToScreenX(wx, wy, camOffX)
         val sy = worldToScreenY(wx, wy, camOffY)
-        drawDeathEffect(sx, sy, colorRGB, deathTime)
+        drawDeathEffect(sx, sy, colorRGB, deathTime, charId)
       }
     }
   }
 
-  private def drawDeathEffect(screenX: Double, screenY: Double, colorRGB: Int, deathTime: Long): Unit = {
+  private def drawDeathEffect(screenX: Double, screenY: Double, colorRGB: Int, deathTime: Long, characterId: Byte = 0): Unit = {
     if (deathTime <= 0) return
     val elapsed = System.currentTimeMillis() - deathTime
     if (elapsed < 0 || elapsed > DEATH_ANIMATION_MS) return
@@ -1417,7 +1419,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val ghostAlpha = Math.max(0.0, fadeOut * 0.6)
     val ghostRise = progress * 30.0
     gc.setGlobalAlpha(ghostAlpha)
-    val sprite = SpriteGenerator.getSprite(colorRGB, Direction.Down, 0)
+    val sprite = SpriteGenerator.getSprite(colorRGB, Direction.Down, 0, characterId)
     gc.drawImage(sprite, screenX - displaySz / 2.0, screenY - displaySz.toDouble - ghostRise, displaySz, displaySz)
     gc.setGlobalAlpha(1.0)
   }

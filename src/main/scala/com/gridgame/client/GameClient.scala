@@ -189,7 +189,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       localPlayerId,
       pos,
       localColorRGB,
-      playerName
+      playerName,
+      Constants.MAX_HEALTH,
+      selectedCharacterId
     )
     networkThread.send(packet)
   }
@@ -289,7 +291,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       localColorRGB,
       localHealth.get(),
       getChargeLevel,
-      getEffectFlags
+      getEffectFlags,
+      selectedCharacterId
     )
     networkThread.send(packet)
   }
@@ -307,7 +310,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       localColorRGB,
       localHealth.get(),
       getChargeLevel,
-      getEffectFlags
+      getEffectFlags,
+      selectedCharacterId
     )
     networkThread.send(packet)
   }
@@ -1106,7 +1110,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           System.currentTimeMillis(),
           newPos.getX.toLong,
           newPos.getY.toLong,
-          packet.getColorRGB.toLong
+          packet.getColorRGB.toLong,
+          player.getCharacterId.toLong
         ))
       }
     } else {
