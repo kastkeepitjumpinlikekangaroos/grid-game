@@ -591,6 +591,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           val flags = updatePacket.getEffectFlags
           if ((flags & 0x04) != 0) {
             frozenUntil.set(System.currentTimeMillis() + 1000)
+          } else {
+            frozenUntil.set(0)
           }
 
           // Handle position correction (e.g. tentacle pull)
