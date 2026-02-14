@@ -21,6 +21,7 @@ import javafx.scene.control.ComboBox
 import javafx.scene.control.Label
 import javafx.scene.control.ListCell
 import javafx.scene.control.ListView
+import javafx.scene.control.PasswordField
 import javafx.scene.control.TextField
 import javafx.util.Callback
 import javafx.scene.input.KeyCode
@@ -93,14 +94,40 @@ class ClientMain extends Application {
     subtitle.setFont(Font.font("System", FontWeight.NORMAL, 16))
     subtitle.setTextFill(Color.web("#888"))
 
-    val nameLabel = new Label("Name")
-    nameLabel.setTextFill(Color.web("#ddd"))
-    nameLabel.setFont(Font.font("System", FontWeight.BOLD, 15))
+    val modeLabel = new Label("Login")
+    modeLabel.setFont(Font.font("System", FontWeight.BOLD, 18))
+    modeLabel.setTextFill(Color.web("#4a9eff"))
 
-    val nameField = new TextField()
-    nameField.setPromptText("Enter your name")
-    nameField.setMaxWidth(280)
-    nameField.setStyle(fieldStyle)
+    val usernameLabel = new Label("Username")
+    usernameLabel.setTextFill(Color.web("#ddd"))
+    usernameLabel.setFont(Font.font("System", FontWeight.BOLD, 15))
+
+    val usernameField = new TextField()
+    usernameField.setPromptText("Enter username")
+    usernameField.setMaxWidth(280)
+    usernameField.setStyle(fieldStyle)
+
+    val passwordLabel = new Label("Password")
+    passwordLabel.setTextFill(Color.web("#ddd"))
+    passwordLabel.setFont(Font.font("System", FontWeight.BOLD, 15))
+
+    val passwordField = new PasswordField()
+    passwordField.setPromptText("Enter password")
+    passwordField.setMaxWidth(280)
+    passwordField.setStyle(fieldStyle)
+
+    val confirmLabel = new Label("Confirm Password")
+    confirmLabel.setTextFill(Color.web("#ddd"))
+    confirmLabel.setFont(Font.font("System", FontWeight.BOLD, 15))
+
+    val confirmField = new PasswordField()
+    confirmField.setPromptText("Confirm password")
+    confirmField.setMaxWidth(280)
+    confirmField.setStyle(fieldStyle)
+
+    val confirmBox = new VBox(4, confirmLabel, confirmField)
+    confirmBox.setVisible(false)
+    confirmBox.setManaged(false)
 
     val hostLabel = new Label("Host")
     hostLabel.setTextFill(Color.web("#ddd"))
@@ -120,75 +147,140 @@ class ClientMain extends Application {
     portField.setMaxWidth(280)
     portField.setStyle(fieldStyle)
 
-    val connectButton = new Button("Connect")
-    connectButton.setStyle(buttonStyle)
-    connectButton.setDefaultButton(true)
+    val actionButton = new Button("Login")
+    actionButton.setStyle(buttonStyle)
+    actionButton.setDefaultButton(true)
+
+    val toggleLink = new Button("Don't have an account? Sign Up")
+    toggleLink.setStyle("-fx-background-color: transparent; -fx-text-fill: #4a9eff; -fx-cursor: hand; -fx-underline: true; -fx-padding: 0;")
+
+    var isSignupMode = false
+
+    toggleLink.setOnAction(_ => {
+      isSignupMode = !isSignupMode
+      if (isSignupMode) {
+        modeLabel.setText("Sign Up")
+        actionButton.setText("Create Account")
+        toggleLink.setText("Already have an account? Login")
+        confirmBox.setVisible(true)
+        confirmBox.setManaged(true)
+      } else {
+        modeLabel.setText("Login")
+        actionButton.setText("Login")
+        toggleLink.setText("Don't have an account? Sign Up")
+        confirmBox.setVisible(false)
+        confirmBox.setManaged(false)
+      }
+    })
 
     val statusLabel = new Label("")
     statusLabel.setTextFill(Color.web("#ff6666"))
     statusLabel.setFont(Font.font("System", FontWeight.BOLD, 14))
+    statusLabel.setWrapText(true)
+    statusLabel.setMaxWidth(280)
 
-    val doConnect = () => {
-      val host = if (hostField.getText.trim.isEmpty) "localhost" else hostField.getText.trim
-      val portText = portField.getText.trim
-      val port = if (portText.isEmpty) {
-        Constants.SERVER_PORT
+    val doAction = () => {
+      val username = usernameField.getText.trim
+      val password = passwordField.getText
+
+      if (username.isEmpty) {
+        statusLabel.setTextFill(Color.web("#ff6666"))
+        statusLabel.setText("Username is required")
+      } else if (password.isEmpty) {
+        statusLabel.setTextFill(Color.web("#ff6666"))
+        statusLabel.setText("Password is required")
+      } else if (isSignupMode && password != confirmField.getText) {
+        statusLabel.setTextFill(Color.web("#ff6666"))
+        statusLabel.setText("Passwords do not match")
+      } else if (username.length > 20) {
+        statusLabel.setTextFill(Color.web("#ff6666"))
+        statusLabel.setText("Username max 20 characters")
+      } else if (password.length > 20) {
+        statusLabel.setTextFill(Color.web("#ff6666"))
+        statusLabel.setText("Password max 20 characters")
       } else {
-        try {
-          Integer.parseInt(portText)
-        } catch {
-          case _: NumberFormatException =>
-            statusLabel.setText("Invalid port number")
-            -1
+        val host = if (hostField.getText.trim.isEmpty) "localhost" else hostField.getText.trim
+        val portText = portField.getText.trim
+        val port = if (portText.isEmpty) {
+          Constants.SERVER_PORT
+        } else {
+          try {
+            Integer.parseInt(portText)
+          } catch {
+            case _: NumberFormatException =>
+              statusLabel.setTextFill(Color.web("#ff6666"))
+              statusLabel.setText("Invalid port number")
+              -1
+          }
         }
-      }
-      if (port > 0) {
-        val name = if (nameField.getText.trim.isEmpty) "Player" else nameField.getText.trim
-        connectButton.setDisable(true)
-        statusLabel.setTextFill(Color.web("#aaa"))
-        statusLabel.setText(s"Connecting to $host:$port...")
-        startConnection(stage, host, port, name, statusLabel, connectButton)
+        if (port > 0) {
+          actionButton.setDisable(true)
+          statusLabel.setTextFill(Color.web("#aaa"))
+          statusLabel.setText(s"Connecting to $host:$port...")
+          startConnection(stage, host, port, username, password, isSignupMode, statusLabel, actionButton)
+        }
       }
     }
 
-    connectButton.setOnAction(_ => doConnect())
-    portField.setOnAction(_ => doConnect())
+    actionButton.setOnAction(_ => doAction())
+    passwordField.setOnAction(_ => doAction())
 
-    root.getChildren.addAll(title, subtitle,
-      new VBox(4, nameLabel, nameField),
+    root.getChildren.addAll(title, subtitle, modeLabel,
+      new VBox(4, usernameLabel, usernameField),
+      new VBox(4, passwordLabel, passwordField),
+      confirmBox,
       new VBox(4, hostLabel, hostField),
       new VBox(4, portLabel, portField),
-      connectButton, statusLabel)
+      actionButton, toggleLink, statusLabel)
 
-    val scene = new Scene(root, 400, 450)
+    val scene = new Scene(root, 400, 550)
     stage.setScene(scene)
     stage.show()
   }
 
   private def startConnection(stage: Stage, serverHost: String, serverPort: Int,
-                              playerName: String, statusLabel: Label, connectButton: Button): Unit = {
+                              username: String, password: String, isSignup: Boolean,
+                              statusLabel: Label, actionButton: Button): Unit = {
     val initialWorld = WorldData.createEmpty(Constants.GRID_SIZE, Constants.GRID_SIZE)
 
-    client = new GameClient(serverHost, serverPort, initialWorld, playerName)
+    client = new GameClient(serverHost, serverPort, initialWorld, username)
 
     client.setWorldFileListener(worldFileName => {
       println(s"ClientMain: World file listener triggered with: '$worldFileName'")
       handleWorldFileFromServer(worldFileName)
     })
 
+    // Set up auth response listener
+    client.authResponseListener = (success: Boolean, assignedUUID: java.util.UUID, message: String) => {
+      Platform.runLater(() => {
+        if (success) {
+          client.completeAuthAndJoin(assignedUUID, username)
+          client.requestLobbyList()
+          showLobbyBrowser(stage)
+        } else {
+          statusLabel.setTextFill(Color.web("#ff6666"))
+          statusLabel.setText(message)
+          actionButton.setDisable(false)
+        }
+      })
+    }
+
     // Connect on a background thread so the UI stays responsive
     new Thread(() => {
       try {
         client.connect()
-        // Request lobby list immediately
-        client.requestLobbyList()
-        Platform.runLater(() => showLobbyBrowser(stage))
+        // Send auth request after connection is established
+        client.sendAuthRequest(username, password, isSignup)
+        Platform.runLater(() => {
+          statusLabel.setTextFill(Color.web("#aaa"))
+          statusLabel.setText(if (isSignup) "Creating account..." else "Logging in...")
+        })
       } catch {
         case e: Exception =>
           Platform.runLater(() => {
             statusLabel.setTextFill(Color.web("#ff6666"))
             statusLabel.setText(s"Connection failed: ${e.getMessage}")
-            connectButton.setDisable(false)
+            actionButton.setDisable(false)
           })
       }
     }).start()

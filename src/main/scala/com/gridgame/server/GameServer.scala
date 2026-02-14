@@ -34,6 +34,7 @@ class GameServer(port: Int, val worldFile: String = "") {
   // Channel -> UUID mapping for disconnect handling
   private val channelToPlayer = new ConcurrentHashMap[Channel, UUID]()
 
+  val authDatabase = new AuthDatabase()
   val lobbyManager = new LobbyManager()
   val lobbyHandler = new LobbyHandler(this, lobbyManager)
   private val gameInstances = new ConcurrentHashMap[Short, GameInstance]()
@@ -188,6 +189,9 @@ class GameServer(port: Int, val worldFile: String = "") {
   def handleIncomingPacket(packet: Packet, tcpCh: Channel, udpSender: InetSocketAddress): Unit = {
     try {
       packet.getType match {
+        case PacketType.AUTH_REQUEST =>
+          handleAuthRequest(packet.asInstanceOf[AuthRequestPacket], tcpCh)
+
         case PacketType.LOBBY_ACTION =>
           val lobbyPacket = packet.asInstanceOf[LobbyActionPacket]
           val player = connectedPlayers.get(lobbyPacket.getPlayerId)
@@ -294,6 +298,38 @@ class GameServer(port: Int, val worldFile: String = "") {
       val instance = lobby.gameInstance
       val player = connectedPlayers.get(playerId)
       instance.handler.processPacket(packet, tcpCh, null)
+    }
+  }
+
+  private def handleAuthRequest(packet: AuthRequestPacket, tcpCh: Channel): Unit = {
+    val username = packet.getUsername
+    val password = packet.getPassword
+    val isSignup = packet.getAction == AuthAction.SIGNUP
+
+    if (isSignup) {
+      val registered = authDatabase.register(username, password)
+      if (registered) {
+        val uuid = authDatabase.getOrCreateUUID(username)
+        println(s"Auth: New account registered - '$username' (${uuid.toString.substring(0, 8)})")
+        val response = new AuthResponsePacket(getNextSequenceNumber, true, uuid, "Account created")
+        sendPacketViaChannel(response, tcpCh)
+      } else {
+        println(s"Auth: Signup failed - '$username' (already exists)")
+        val response = new AuthResponsePacket(getNextSequenceNumber, false, null, "Username taken")
+        sendPacketViaChannel(response, tcpCh)
+      }
+    } else {
+      val authenticated = authDatabase.authenticate(username, password)
+      if (authenticated) {
+        val uuid = authDatabase.getOrCreateUUID(username)
+        println(s"Auth: Login successful - '$username' (${uuid.toString.substring(0, 8)})")
+        val response = new AuthResponsePacket(getNextSequenceNumber, true, uuid, "Login successful")
+        sendPacketViaChannel(response, tcpCh)
+      } else {
+        println(s"Auth: Login failed - '$username' (invalid credentials)")
+        val response = new AuthResponsePacket(getNextSequenceNumber, false, null, "Invalid credentials")
+        sendPacketViaChannel(response, tcpCh)
+      }
     }
   }
 
@@ -432,6 +468,8 @@ class GameServer(port: Int, val worldFile: String = "") {
         cleanupExecutor.shutdownNow()
         Thread.currentThread().interrupt()
     }
+
+    authDatabase.close()
 
     if (tcpServerChannel != null) tcpServerChannel.close().sync()
     if (udpChannel != null) udpChannel.close().sync()

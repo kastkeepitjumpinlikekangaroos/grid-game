@@ -32,11 +32,11 @@ object ClientState {
   val SCOREBOARD = 4
 }
 
-class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, val playerName: String = "Player") {
+class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, var playerName: String = "Player") {
   private var networkThread: NetworkThread = _
 
-  private val localPlayerId: UUID = UUID.randomUUID()
-  private val localColorRGB: Int = Player.generateColorFromUUID(localPlayerId)
+  private var localPlayerId: UUID = UUID.randomUUID()
+  private var localColorRGB: Int = Player.generateColorFromUUID(localPlayerId)
   private val currentWorld: AtomicReference[WorldData] = new AtomicReference(initialWorld)
   private val localPosition: AtomicReference[Position] = new AtomicReference(
     initialWorld.getValidSpawnPoint()
@@ -81,6 +81,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   @volatile private var movementInputActive = false
   @volatile private var worldFileListener: String => Unit = _
   @volatile private var rejoinListener: () => Unit = _
+  @volatile var authResponseListener: (Boolean, UUID, String) => Unit = _
 
   // Lobby state
   @volatile var clientState: Int = ClientState.CONNECTING
@@ -128,15 +129,35 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
       startPacketProcessor()
 
-      sendJoinPacket()
-
-      clientState = ClientState.LOBBY_BROWSER
-
-      println(s"GameClient: Connected to $serverHost:$serverPort as player ${localPlayerId.toString.substring(0, 8)}")
+      println(s"GameClient: Connected to $serverHost:$serverPort (awaiting auth)")
     } catch {
       case e: Exception =>
         System.err.println(s"GameClient: Connection error - ${e.getMessage}")
+        throw e
     }
+  }
+
+  def sendAuthRequest(username: String, password: String, isSignup: Boolean): Unit = {
+    val action = if (isSignup) AuthAction.SIGNUP else AuthAction.LOGIN
+    val packet = new AuthRequestPacket(
+      sequenceNumber.getAndIncrement(),
+      action,
+      username,
+      password
+    )
+    networkThread.send(packet)
+  }
+
+  def completeAuthAndJoin(assignedUUID: UUID, username: String): Unit = {
+    localPlayerId = assignedUUID
+    localColorRGB = Player.generateColorFromUUID(assignedUUID)
+    playerName = username
+
+    sendJoinPacket()
+
+    clientState = ClientState.LOBBY_BROWSER
+
+    println(s"GameClient: Authenticated as '$username' (${assignedUUID.toString.substring(0, 8)})")
   }
 
   private def sendJoinPacket(): Unit = {
@@ -503,6 +524,15 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   }
 
   private def processPacket(packet: Packet): Unit = {
+    // Handle auth response
+    if (packet.getType == PacketType.AUTH_RESPONSE) {
+      val authPacket = packet.asInstanceOf[AuthResponsePacket]
+      if (authResponseListener != null) {
+        authResponseListener(authPacket.getSuccess, authPacket.getAssignedUUID, authPacket.getMessage)
+      }
+      return
+    }
+
     // Handle lobby actions
     if (packet.getType == PacketType.LOBBY_ACTION) {
       handleLobbyAction(packet.asInstanceOf[LobbyActionPacket])

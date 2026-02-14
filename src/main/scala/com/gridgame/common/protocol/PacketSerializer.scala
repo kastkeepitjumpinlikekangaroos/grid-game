@@ -36,6 +36,34 @@ object PacketSerializer {
     // For PROJECTILE_UPDATE, x/y are floats; for other packets, they're ints
     // We need to handle this differently based on packet type
     packetType match {
+      case PacketType.AUTH_REQUEST =>
+        // Buffer is at byte 21 (after standard header: type + seq + UUID)
+        // [21] Action
+        val action = buffer.get()
+        // [22-41] Username (20 bytes)
+        val usernameBytes = new Array[Byte](20)
+        buffer.get(usernameBytes)
+        val username = extractString(usernameBytes)
+        // [42-61] Password (20 bytes)
+        val passwordBytes = new Array[Byte](20)
+        buffer.get(passwordBytes)
+        val password = extractString(passwordBytes)
+        new AuthRequestPacket(sequenceNumber, Packet.getCurrentTimestamp, action, username, password)
+
+      case PacketType.AUTH_RESPONSE =>
+        // Buffer is at byte 21 (after standard header: type + seq + UUID)
+        // [21] Success
+        val success = buffer.get() != 0
+        // [22-37] Assigned UUID (16 bytes)
+        val uuidMost = buffer.getLong()
+        val uuidLeast = buffer.getLong()
+        val assignedUUID = new UUID(uuidMost, uuidLeast)
+        // [38-60] Message (23 bytes)
+        val msgBytes = new Array[Byte](23)
+        buffer.get(msgBytes)
+        val message = extractString(msgBytes)
+        new AuthResponsePacket(sequenceNumber, Packet.getCurrentTimestamp, success, assignedUUID, message)
+
       case PacketType.LOBBY_ACTION =>
         // Custom layout from byte 21 onward (no standard x/y/color/timestamp)
         val action = buffer.get()
