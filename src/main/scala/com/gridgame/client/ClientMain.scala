@@ -3,10 +3,12 @@ package com.gridgame.client
 import com.gridgame.client.input.KeyboardHandler
 import com.gridgame.client.input.MouseHandler
 import com.gridgame.client.ui.GameCanvas
+import com.gridgame.client.ui.SpriteGenerator
 import com.gridgame.common.Constants
 import com.gridgame.common.WorldRegistry
 import com.gridgame.common.model.CharacterDef
 import com.gridgame.common.model.CharacterId
+import com.gridgame.common.model.Direction
 import com.gridgame.common.model.WorldData
 import com.gridgame.common.world.WorldLoader
 
@@ -18,6 +20,7 @@ import javafx.event.EventHandler
 import javafx.geometry.Insets
 import javafx.geometry.Pos
 import javafx.scene.Scene
+import javafx.scene.canvas.Canvas
 import javafx.scene.control.Button
 import javafx.scene.control.ComboBox
 import javafx.scene.control.Label
@@ -550,15 +553,58 @@ class ClientMain extends Application {
     val charButtonBox = new HBox(10)
     charButtonBox.setAlignment(Pos.CENTER)
 
+    // Character sprite preview
+    val previewSize = 80.0
+    val previewCanvas = new Canvas(previewSize, previewSize)
+    val previewGc = previewCanvas.getGraphicsContext2D
+    var previewAnimTick = 0
+    var previewDirIndex = 0
+    val previewDirs = Array(Direction.Down, Direction.Left, Direction.Up, Direction.Right)
+
+    val charNameLabel = new Label("")
+    charNameLabel.setFont(Font.font("System", FontWeight.BOLD, 16))
+    charNameLabel.setTextFill(Color.web("#4a9eff"))
+
     val charInfoLabel = new Label("")
     charInfoLabel.setFont(Font.font("System", 13))
     charInfoLabel.setTextFill(Color.web("#bbb"))
     charInfoLabel.setWrapText(true)
     charInfoLabel.setMaxWidth(380)
 
+    def drawPreview(): Unit = {
+      previewGc.clearRect(0, 0, previewSize, previewSize)
+      val charDef = CharacterDef.get(client.selectedCharacterId)
+      val dir = previewDirs(previewDirIndex)
+      val frame = (previewAnimTick / 10) % 4
+      val sprite = SpriteGenerator.getSprite(0, dir, frame, charDef.id.id)
+      // Draw a subtle circular background
+      previewGc.setFill(Color.web("#2a2a3e"))
+      previewGc.fillOval(4, 4, previewSize - 8, previewSize - 8)
+      // Draw sprite centered, scaled up
+      val spriteDisplaySize = 64.0
+      val offset = (previewSize - spriteDisplaySize) / 2.0
+      previewGc.drawImage(sprite, offset, offset, spriteDisplaySize, spriteDisplaySize)
+    }
+
+    val previewTimer = new AnimationTimer {
+      override def handle(now: Long): Unit = {
+        previewAnimTick += 1
+        // Rotate direction every 40 frames
+        if (previewAnimTick % 40 == 0) {
+          previewDirIndex = (previewDirIndex + 1) % previewDirs.length
+        }
+        drawPreview()
+      }
+    }
+    previewTimer.start()
+
     def updateCharacterInfo(): Unit = {
       val charDef = CharacterDef.get(client.selectedCharacterId)
+      charNameLabel.setText(charDef.displayName)
       charInfoLabel.setText(s"${charDef.description}\nQ: ${charDef.qAbility.name} - ${charDef.qAbility.description}\nE: ${charDef.eAbility.name} - ${charDef.eAbility.description}")
+      previewAnimTick = 0
+      previewDirIndex = 0
+      drawPreview()
     }
 
     def refreshCharButtons(): Unit = {
@@ -567,9 +613,9 @@ class ClientMain extends Application {
         val btn = new Button(charDef.displayName)
         val isSelected = client.selectedCharacterId == charDef.id.id
         if (isSelected) {
-          btn.setStyle("-fx-background-color: #4a9eff; -fx-text-fill: white; -fx-font-size: 14; -fx-font-weight: bold; -fx-padding: 8 20; -fx-background-radius: 4; -fx-cursor: hand;")
+          btn.setStyle("-fx-background-color: #4a9eff; -fx-text-fill: white; -fx-font-size: 14; -fx-font-weight: bold; -fx-padding: 8 20; -fx-background-radius: 6; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.4), 8, 0, 0, 2); -fx-border-color: white; -fx-border-width: 2; -fx-border-radius: 6;")
         } else {
-          btn.setStyle("-fx-background-color: #2a2a3e; -fx-text-fill: #ccc; -fx-font-size: 14; -fx-padding: 8 20; -fx-background-radius: 4; -fx-cursor: hand;")
+          btn.setStyle("-fx-background-color: #2a2a3e; -fx-text-fill: #ccc; -fx-font-size: 14; -fx-padding: 8 20; -fx-background-radius: 6; -fx-cursor: hand;")
         }
         btn.setOnAction(_ => {
           client.selectCharacter(charDef.id.id)
@@ -583,7 +629,10 @@ class ClientMain extends Application {
     refreshCharButtons()
     updateCharacterInfo()
 
-    val charSection = new VBox(8, charSectionLabel, charButtonBox, charInfoLabel)
+    val previewBox = new VBox(4, previewCanvas, charNameLabel)
+    previewBox.setAlignment(Pos.CENTER)
+
+    val charSection = new VBox(8, charSectionLabel, previewBox, charButtonBox, charInfoLabel)
     charSection.setAlignment(Pos.CENTER)
 
     val buttonBox = new HBox(12)
@@ -594,6 +643,7 @@ class ClientMain extends Application {
     addHoverEffect(leaveBtn, buttonRedStyle, buttonRedHoverStyle)
 
     leaveBtn.setOnAction(_ => {
+      previewTimer.stop()
       client.leaveLobby()
       showLobbyBrowser(stage)
     })
@@ -663,11 +713,17 @@ class ClientMain extends Application {
     }
 
     client.gameStartingListener = () => {
-      Platform.runLater(() => showGameScene(stage))
+      Platform.runLater(() => {
+        previewTimer.stop()
+        showGameScene(stage)
+      })
     }
 
     client.lobbyClosedListener = () => {
-      Platform.runLater(() => showLobbyBrowser(stage))
+      Platform.runLater(() => {
+        previewTimer.stop()
+        showLobbyBrowser(stage)
+      })
     }
 
     val scene = new Scene(root, 460, 560)
