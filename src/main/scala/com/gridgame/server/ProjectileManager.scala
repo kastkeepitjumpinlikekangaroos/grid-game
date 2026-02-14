@@ -19,6 +19,7 @@ case class ProjectileMoved(projectile: Projectile) extends ProjectileEvent
 case class ProjectileHit(projectile: Projectile, targetId: UUID) extends ProjectileEvent
 case class ProjectileKill(projectile: Projectile, targetId: UUID) extends ProjectileEvent
 case class ProjectileDespawned(projectile: Projectile) extends ProjectileEvent
+case class ProjectileAoE(projectile: Projectile) extends ProjectileEvent
 
 class ProjectileManager(registry: ClientRegistry) {
   private val projectiles = new ConcurrentHashMap[Int, Projectile]()
@@ -64,21 +65,36 @@ class ProjectileManager(registry: ClientRegistry) {
             case ProjectileType.SPEAR => Constants.SPEAR_MAX_RANGE.toDouble
             case ProjectileType.SOUL_BOLT => Constants.SOUL_BOLT_MAX_RANGE.toDouble
             case ProjectileType.HAUNT => Constants.HAUNT_MAX_RANGE.toDouble
+            case ProjectileType.BULLET => Constants.BULLET_MAX_RANGE.toDouble
+            case ProjectileType.GRENADE => Constants.GRENADE_MAX_RANGE.toDouble
+            case ProjectileType.ROCKET => Constants.ROCKET_MAX_RANGE.toDouble
             case _ => Constants.CHARGE_MIN_RANGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_RANGE - Constants.CHARGE_MIN_RANGE))
           }
           if (projectile.getDistanceTraveled >= maxRange) {
             toRemove += projectile.id
-            events += ProjectileDespawned(projectile)
+            if (projectile.projectileType == ProjectileType.GRENADE || projectile.projectileType == ProjectileType.ROCKET) {
+              events += ProjectileAoE(projectile)
+            } else {
+              events += ProjectileDespawned(projectile)
+            }
             resolved = true
           } else if (projectile.isOutOfBounds(world)) {
             toRemove += projectile.id
-            events += ProjectileDespawned(projectile)
+            if (projectile.projectileType == ProjectileType.GRENADE || projectile.projectileType == ProjectileType.ROCKET) {
+              events += ProjectileAoE(projectile)
+            } else {
+              events += ProjectileDespawned(projectile)
+            }
             resolved = true
           } else if (projectile.hitsNonWalkable(world) &&
                      projectile.projectileType != ProjectileType.SOUL_BOLT &&
                      projectile.projectileType != ProjectileType.HAUNT) {
             toRemove += projectile.id
-            events += ProjectileDespawned(projectile)
+            if (projectile.projectileType == ProjectileType.GRENADE || projectile.projectileType == ProjectileType.ROCKET) {
+              events += ProjectileAoE(projectile)
+            } else {
+              events += ProjectileDespawned(projectile)
+            }
             resolved = true
           } else {
             var hitPlayer: Player = null
@@ -89,29 +105,37 @@ class ProjectileManager(registry: ClientRegistry) {
             }
 
             if (hitPlayer != null) {
-              val damage = projectile.projectileType match {
-                case ProjectileType.TENTACLE => Constants.TENTACLE_DAMAGE
-                case ProjectileType.ICE_BEAM => Constants.ICE_BEAM_DAMAGE
-                case ProjectileType.AXE => Constants.AXE_DAMAGE
-                case ProjectileType.ROPE => Constants.ROPE_DAMAGE
-                case ProjectileType.SPEAR =>
-                  val distanceFraction = Math.min(1.0f, projectile.getDistanceTraveled / Constants.SPEAR_MAX_RANGE.toFloat)
-                  (Constants.SPEAR_BASE_DAMAGE + (distanceFraction * (Constants.SPEAR_MAX_DAMAGE - Constants.SPEAR_BASE_DAMAGE))).toInt
-                case ProjectileType.SOUL_BOLT => Constants.SOUL_BOLT_DAMAGE
-                case ProjectileType.HAUNT => Constants.HAUNT_DAMAGE
-                case _ => (Constants.CHARGE_MIN_DAMAGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_DAMAGE - Constants.CHARGE_MIN_DAMAGE))).toInt
-              }
-              val newHealth = hitPlayer.getHealth - damage
-              hitPlayer.setHealth(newHealth)
-              println(s"ProjectileManager: ${projectile} hit player ${hitPlayer.getId.toString.substring(0, 8)}, damage=$damage (charge=${projectile.chargeLevel}%), health now $newHealth")
-
-              toRemove += projectile.id
-              if (newHealth <= 0) {
-                events += ProjectileKill(projectile, hitPlayer.getId)
+              // Rocket explodes on player hit — AoE handles all damage
+              if (projectile.projectileType == ProjectileType.ROCKET) {
+                toRemove += projectile.id
+                events += ProjectileAoE(projectile)
+                resolved = true
               } else {
-                events += ProjectileHit(projectile, hitPlayer.getId)
+                val damage = projectile.projectileType match {
+                  case ProjectileType.TENTACLE => Constants.TENTACLE_DAMAGE
+                  case ProjectileType.ICE_BEAM => Constants.ICE_BEAM_DAMAGE
+                  case ProjectileType.AXE => Constants.AXE_DAMAGE
+                  case ProjectileType.ROPE => Constants.ROPE_DAMAGE
+                  case ProjectileType.SPEAR =>
+                    val distanceFraction = Math.min(1.0f, projectile.getDistanceTraveled / Constants.SPEAR_MAX_RANGE.toFloat)
+                    (Constants.SPEAR_BASE_DAMAGE + (distanceFraction * (Constants.SPEAR_MAX_DAMAGE - Constants.SPEAR_BASE_DAMAGE))).toInt
+                  case ProjectileType.SOUL_BOLT => Constants.SOUL_BOLT_DAMAGE
+                  case ProjectileType.HAUNT => Constants.HAUNT_DAMAGE
+                  case ProjectileType.BULLET => Constants.BULLET_DAMAGE
+                  case _ => (Constants.CHARGE_MIN_DAMAGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_DAMAGE - Constants.CHARGE_MIN_DAMAGE))).toInt
+                }
+                val newHealth = hitPlayer.getHealth - damage
+                hitPlayer.setHealth(newHealth)
+                println(s"ProjectileManager: ${projectile} hit player ${hitPlayer.getId.toString.substring(0, 8)}, damage=$damage (charge=${projectile.chargeLevel}%), health now $newHealth")
+
+                toRemove += projectile.id
+                if (newHealth <= 0) {
+                  events += ProjectileKill(projectile, hitPlayer.getId)
+                } else {
+                  events += ProjectileHit(projectile, hitPlayer.getId)
+                }
+                resolved = true
               }
-              resolved = true
             }
           }
           sub += 1

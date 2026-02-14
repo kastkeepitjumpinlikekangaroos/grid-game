@@ -273,6 +273,99 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
           broadcastToInstance(updatePacket)
         }
 
+      case ProjectileAoE(projectile) =>
+        // Broadcast despawn (client renders explosion for GRENADE/ROCKET)
+        val despawnPacket = new ProjectilePacket(
+          server.getNextSequenceNumber,
+          projectile.ownerId,
+          projectile.getX, projectile.getY,
+          projectile.colorRGB,
+          projectile.id,
+          projectile.dx, projectile.dy,
+          ProjectileAction.DESPAWN,
+          null,
+          projectile.chargeLevel.toByte,
+          projectile.projectileType
+        )
+        broadcastToInstance(despawnPacket)
+
+        // Determine blast parameters
+        val (centerDmg, edgeDmg, blastRadius) = projectile.projectileType match {
+          case ProjectileType.GRENADE =>
+            (Constants.GRENADE_CENTER_DAMAGE, Constants.GRENADE_EDGE_DAMAGE, Constants.GRENADE_BLAST_RADIUS)
+          case ProjectileType.ROCKET =>
+            (Constants.ROCKET_CENTER_DAMAGE, Constants.ROCKET_EDGE_DAMAGE, Constants.ROCKET_BLAST_RADIUS)
+          case _ =>
+            (Constants.GRENADE_CENTER_DAMAGE, Constants.GRENADE_EDGE_DAMAGE, Constants.GRENADE_BLAST_RADIUS)
+        }
+
+        // Find all players in blast radius
+        val explosionX = projectile.getX
+        val explosionY = projectile.getY
+        registry.getAll.asScala.foreach { player =>
+          if (!player.isDead && !player.hasShield && !player.isPhased && !player.getId.equals(projectile.ownerId)) {
+            val pos = player.getPosition
+            val pdx = explosionX - (pos.getX + 0.5f)
+            val pdy = explosionY - (pos.getY + 0.5f)
+            val distance = math.sqrt(pdx * pdx + pdy * pdy).toFloat
+            if (distance <= blastRadius) {
+              val damage = (centerDmg - (distance / blastRadius) * (centerDmg - edgeDmg)).toInt
+              val newHealth = player.getHealth - damage
+              player.setHealth(newHealth)
+              println(s"GameInstance[$gameId]: AoE hit ${player.getId.toString.substring(0, 8)}, dist=${"%.1f".format(distance)}, dmg=$damage, hp=$newHealth")
+
+              if (newHealth <= 0) {
+                // Kill
+                killTracker.recordKill(projectile.ownerId, player.getId)
+                val killPacket = new GameEventPacket(
+                  server.getNextSequenceNumber,
+                  projectile.ownerId,
+                  GameEvent.KILL,
+                  gameId,
+                  getRemainingSeconds,
+                  killTracker.getKills(projectile.ownerId).toShort,
+                  killTracker.getDeaths(projectile.ownerId).toShort,
+                  player.getId,
+                  0.toByte, 0.toShort, 0.toShort
+                )
+                broadcastToInstance(killPacket)
+                scheduleRespawn(player.getId)
+              } else {
+                // Hit packet
+                val hitPacket = new ProjectilePacket(
+                  server.getNextSequenceNumber,
+                  projectile.ownerId,
+                  projectile.getX, projectile.getY,
+                  projectile.colorRGB,
+                  projectile.id,
+                  projectile.dx, projectile.dy,
+                  ProjectileAction.HIT,
+                  player.getId,
+                  projectile.chargeLevel.toByte,
+                  projectile.projectileType
+                )
+                broadcastToInstance(hitPacket)
+              }
+
+              // Broadcast player health update
+              val flags = (if (player.hasShield) 0x01 else 0) |
+                          (if (player.hasGemBoost) 0x02 else 0) |
+                          (if (player.isFrozen) 0x04 else 0) |
+                          (if (player.isPhased) 0x08 else 0)
+              val updatePacket = new PlayerUpdatePacket(
+                server.getNextSequenceNumber,
+                player.getId,
+                player.getPosition,
+                player.getColorRGB,
+                player.getHealth,
+                0,
+                flags
+              )
+              broadcastToInstance(updatePacket)
+            }
+          }
+        }
+
       case ProjectileDespawned(projectile) =>
         val packet = new ProjectilePacket(
           server.getNextSequenceNumber,

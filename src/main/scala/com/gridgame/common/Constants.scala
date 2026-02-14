@@ -113,6 +113,24 @@ object Constants {
   val HAUNT_TELEPORT_DISTANCE: Int = 2
   val HAUNT_FREEZE_DURATION_MS: Int = 2000
 
+  // Soldier: Bullet (primary)
+  val BULLET_DAMAGE: Int = 20
+  val BULLET_MAX_RANGE: Int = 18
+
+  // Soldier: Grenade (Q)
+  val GRENADE_COOLDOWN_MS: Int = 10000
+  val GRENADE_MAX_RANGE: Int = 12
+  val GRENADE_CENTER_DAMAGE: Int = 40
+  val GRENADE_EDGE_DAMAGE: Int = 10
+  val GRENADE_BLAST_RADIUS: Float = 3.0f
+
+  // Soldier: Rocket (E)
+  val ROCKET_COOLDOWN_MS: Int = 12000
+  val ROCKET_MAX_RANGE: Int = 20
+  val ROCKET_CENTER_DAMAGE: Int = 35
+  val ROCKET_EDGE_DAMAGE: Int = 10
+  val ROCKET_BLAST_RADIUS: Float = 2.5f
+
   // Lobby configuration
   val RESPAWN_DELAY_MS: Int = 3000
   val DEFAULT_GAME_DURATION_MIN: Int = 5

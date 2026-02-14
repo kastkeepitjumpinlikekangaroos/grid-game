@@ -12,6 +12,9 @@ object ProjectileType {
   val SPEAR: Byte = 5
   val SOUL_BOLT: Byte = 6
   val HAUNT: Byte = 7
+  val BULLET: Byte = 8
+  val GRENADE: Byte = 9
+  val ROCKET: Byte = 10
 }
 
 class Projectile(
@@ -36,6 +39,9 @@ class Projectile(
     case ProjectileType.SPEAR => 0.7f
     case ProjectileType.SOUL_BOLT => 0.65f
     case ProjectileType.HAUNT => 0.5f
+    case ProjectileType.BULLET => 1.0f
+    case ProjectileType.GRENADE => 0.5f
+    case ProjectileType.ROCKET => 0.55f
     case _ =>
       val c = Constants
       c.CHARGE_MIN_SPEED + (chargeLevel / 100.0f) * (c.CHARGE_MAX_SPEED - c.CHARGE_MIN_SPEED)
@@ -76,6 +82,8 @@ class Projectile(
 
   def hitsPlayer(player: Player): Boolean = {
     if (player.getId.equals(ownerId)) return false
+    // Grenades pass through players entirely
+    if (projectileType == ProjectileType.GRENADE) return false
     val pos = player.getPosition
     val dx = x - (pos.getX + 0.5f)
     val dy = y - (pos.getY + 0.5f)

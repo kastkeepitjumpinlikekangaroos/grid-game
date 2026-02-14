@@ -83,6 +83,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   // Teleport animation tracking: (timestamp, oldX, oldY, newX, newY, colorRGB)
   private val teleportAnimations: ConcurrentHashMap[UUID, Array[Long]] = new ConcurrentHashMap()
 
+  // Explosion animation tracking: projectileId -> (timestamp, worldX*1000, worldY*1000, projectileType)
+  private val explosionAnimations: ConcurrentHashMap[Int, Array[Long]] = new ConcurrentHashMap()
+
   @volatile private var running = false
   @volatile private var isDead = false
   @volatile private var movementInputActive = false
@@ -1004,7 +1007,16 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         }
 
       case ProjectileAction.DESPAWN =>
-        projectiles.remove(projectileId)
+        val despawned = projectiles.remove(projectileId)
+        val pType = if (despawned != null) despawned.projectileType else packet.getProjectileType
+        if (pType == ProjectileType.GRENADE || pType == ProjectileType.ROCKET) {
+          explosionAnimations.put(projectileId, Array(
+            System.currentTimeMillis(),
+            (packet.getX * 1000).toLong,
+            (packet.getY * 1000).toLong,
+            pType.toLong
+          ))
+        }
 
       case _ =>
         // Unknown action
@@ -1235,6 +1247,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   def getDeathAnimations: ConcurrentHashMap[UUID, Array[Long]] = deathAnimations
 
   def getTeleportAnimations: ConcurrentHashMap[UUID, Array[Long]] = teleportAnimations
+
+  def getExplosionAnimations: ConcurrentHashMap[Int, Array[Long]] = explosionAnimations
 
   def getWorld: WorldData = currentWorld.get()
 
