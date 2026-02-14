@@ -259,7 +259,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
 
     if (hasGemBoost) {
       // Shoot 3 projectiles in a narrow cone (center ± 15 degrees)
-      val angle = Math.PI / 12.0 // 15 degrees
+      val angle = Math.PI / 36.0 // 5 degrees
       val offsets = Seq(0.0, -angle, angle)
       offsets.foreach { theta =>
         val cos = Math.cos(theta).toFloat
