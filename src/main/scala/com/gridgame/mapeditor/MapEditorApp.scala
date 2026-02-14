@@ -24,7 +24,7 @@ class MapEditorApp extends Application {
     // Left side: tools + tile palette
     val leftPanel = new VBox()
     leftPanel.getChildren.addAll(toolBar, tilePalette)
-    leftPanel.setStyle("-fx-background-color: #2a2a3e;")
+    leftPanel.setStyle("-fx-background-color: #1e1e32;")
     VBox.setVgrow(tilePalette, javafx.scene.layout.Priority.ALWAYS)
 
     val root = new BorderPane()

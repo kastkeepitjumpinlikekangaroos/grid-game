@@ -1,29 +1,43 @@
 package com.gridgame.mapeditor
 
-import javafx.geometry.Insets
+import javafx.geometry.{Insets, Pos}
 import javafx.scene.control.Label
 import javafx.scene.layout.HBox
 
-class StatusBar(state: EditorState) extends HBox(20) {
-  setPadding(new Insets(4, 10, 4, 10))
-  setStyle("-fx-background-color: #222233;")
+class StatusBar(state: EditorState) extends HBox(0) {
+  setPadding(new Insets(0))
+  setStyle("-fx-background-color: #16162a; -fx-border-color: #2a2a45; -fx-border-width: 1 0 0 0;")
+  setAlignment(Pos.CENTER_LEFT)
+
+  private val itemStyle = "-fx-text-fill: #99a; -fx-font-size: 11; -fx-padding: 5 12;"
+  private val sepStyle = "-fx-background-color: #2a2a45; -fx-min-width: 1; -fx-max-width: 1;"
 
   private val cursorLabel = new Label("Cursor: (-, -)")
-  cursorLabel.setStyle("-fx-text-fill: #ccc; -fx-font-size: 11;")
+  cursorLabel.setStyle(itemStyle)
 
   private val tileLabel = new Label("Tile: -")
-  tileLabel.setStyle("-fx-text-fill: #ccc; -fx-font-size: 11;")
+  tileLabel.setStyle(itemStyle)
 
   private val mapSizeLabel = new Label("Map: -")
-  mapSizeLabel.setStyle("-fx-text-fill: #ccc; -fx-font-size: 11;")
+  mapSizeLabel.setStyle(itemStyle)
 
   private val toolLabel = new Label("Tool: Pencil")
-  toolLabel.setStyle("-fx-text-fill: #ccc; -fx-font-size: 11;")
+  toolLabel.setStyle(itemStyle + "-fx-text-fill: #4a9eff;")
+
+  private val spacer = new javafx.scene.layout.Region()
+  HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS)
 
   private val zoomLabel = new Label("Zoom: 100%")
-  zoomLabel.setStyle("-fx-text-fill: #ccc; -fx-font-size: 11;")
+  zoomLabel.setStyle(itemStyle)
 
-  getChildren.addAll(cursorLabel, tileLabel, mapSizeLabel, toolLabel, zoomLabel)
+  private def sep(): javafx.scene.layout.Region = {
+    val s = new javafx.scene.layout.Region()
+    s.setStyle(sepStyle)
+    s.setMinHeight(20)
+    s
+  }
+
+  getChildren.addAll(cursorLabel, sep(), tileLabel, sep(), mapSizeLabel, sep(), toolLabel, spacer, zoomLabel)
 
   def update(): Unit = {
     val wx = state.cursorWorldX
@@ -46,6 +60,6 @@ class StatusBar(state: EditorState) extends HBox(20) {
       case Tool.Spawn => "Spawn"
     }
     toolLabel.setText(s"Tool: $toolName")
-    zoomLabel.setText(f"Zoom: ${state.zoom * 100}%.0f%%")
+    zoomLabel.setText(f"${state.zoom * 100}%.0f%%")
   }
 }
