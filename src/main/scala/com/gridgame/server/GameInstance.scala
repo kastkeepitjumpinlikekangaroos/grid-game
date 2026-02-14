@@ -254,7 +254,34 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                 }
               }
 
-            case _ => // No special effect (AXE, SPEAR, NORMAL, SOUL_BOLT)
+            case ProjectileType.GUST =>
+              // Push target away from the shooter
+              val owner = registry.get(projectile.ownerId)
+              if (owner != null) {
+                val ownerPos = owner.getPosition
+                val targetPos = target.getPosition
+                val pushDx = targetPos.getX - ownerPos.getX
+                val pushDy = targetPos.getY - ownerPos.getY
+                val pushLen = Math.sqrt(pushDx * pushDx + pushDy * pushDy)
+                if (pushLen > 0.01) {
+                  val ndx = pushDx / pushLen
+                  val ndy = pushDy / pushLen
+                  // Push target 5 tiles away, stopping at first non-walkable
+                  var destX = targetPos.getX
+                  var destY = targetPos.getY
+                  for (step <- 1 to Constants.GUST_PUSH_DISTANCE) {
+                    val nextX = Math.max(0, Math.min(world.width - 1, (targetPos.getX + ndx * step).toInt))
+                    val nextY = Math.max(0, Math.min(world.height - 1, (targetPos.getY + ndy * step).toInt))
+                    if (world.isWalkable(nextX, nextY)) {
+                      destX = nextX
+                      destY = nextY
+                    }
+                  }
+                  target.setPosition(new Position(destX, destY))
+                }
+              }
+
+            case _ => // No special effect (AXE, SPEAR, NORMAL, SOUL_BOLT, TALON)
           }
 
           val flags = (if (target.hasShield) 0x01 else 0) |

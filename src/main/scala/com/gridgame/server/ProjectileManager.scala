@@ -64,6 +64,8 @@ class ProjectileManager(registry: ClientRegistry) {
             case ProjectileType.SPEAR => Constants.SPEAR_MAX_RANGE.toDouble
             case ProjectileType.SOUL_BOLT => Constants.SOUL_BOLT_MAX_RANGE.toDouble
             case ProjectileType.HAUNT => Constants.HAUNT_MAX_RANGE.toDouble
+            case ProjectileType.TALON => Constants.TALON_MAX_RANGE.toDouble
+            case ProjectileType.GUST => Constants.GUST_MAX_RANGE.toDouble
             case _ => Constants.CHARGE_MIN_RANGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_RANGE - Constants.CHARGE_MIN_RANGE))
           }
           if (projectile.getDistanceTraveled >= maxRange) {
@@ -99,6 +101,8 @@ class ProjectileManager(registry: ClientRegistry) {
                   (Constants.SPEAR_BASE_DAMAGE + (distanceFraction * (Constants.SPEAR_MAX_DAMAGE - Constants.SPEAR_BASE_DAMAGE))).toInt
                 case ProjectileType.SOUL_BOLT => Constants.SOUL_BOLT_DAMAGE
                 case ProjectileType.HAUNT => Constants.HAUNT_DAMAGE
+                case ProjectileType.TALON => Constants.TALON_DAMAGE
+                case ProjectileType.GUST => Constants.GUST_DAMAGE
                 case _ => (Constants.CHARGE_MIN_DAMAGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_DAMAGE - Constants.CHARGE_MIN_DAMAGE))).toInt
               }
               val newHealth = hitPlayer.getHealth - damage

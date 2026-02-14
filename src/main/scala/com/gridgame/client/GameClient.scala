@@ -68,6 +68,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   private val frozenUntil: AtomicLong = new AtomicLong(0)
   private val phasedUntil: AtomicLong = new AtomicLong(0)
 
+  // Swoop state (Raptor Q)
+  private val swoopingUntil: AtomicLong = new AtomicLong(0)
+  @volatile private var swoopTargetX: Float = 0f
+  @volatile private var swoopTargetY: Float = 0f
+  @volatile private var swoopStartX: Float = 0f
+  @volatile private var swoopStartY: Float = 0f
+  private val swoopStartTime: AtomicLong = new AtomicLong(0)
+
   // Charge shot state
   @volatile var isCharging: Boolean = false
   private val chargingStartTime: AtomicLong = new AtomicLong(0)
@@ -283,6 +291,37 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   def isPhased: Boolean = System.currentTimeMillis() < phasedUntil.get()
 
+  def isSwooping: Boolean = System.currentTimeMillis() < swoopingUntil.get()
+
+  def tickSwoop(): Unit = {
+    val now = System.currentTimeMillis()
+    val swoopEnd = swoopingUntil.get()
+    if (now >= swoopEnd || swoopEnd == 0) return
+
+    val elapsed = now - swoopStartTime.get()
+    val duration = Constants.SWOOP_DURATION_MS.toFloat
+    val t = Math.min(1.0f, elapsed / duration)
+
+    val newX = swoopStartX + (swoopTargetX - swoopStartX) * t
+    val newY = swoopStartY + (swoopTargetY - swoopStartY) * t
+
+    val posX = Math.round(newX).toInt
+    val posY = Math.round(newY).toInt
+    val newPos = new Position(posX, posY)
+    localPosition.set(newPos)
+    sendPositionUpdate(newPos)
+
+    // Update direction based on swoop direction
+    val dx = (swoopTargetX - swoopStartX).toInt
+    val dy = (swoopTargetY - swoopStartY).toInt
+    if (dx != 0 || dy != 0) {
+      localDirection.set(Direction.fromMovement(
+        Math.max(-1, Math.min(1, dx)),
+        Math.max(-1, Math.min(1, dy))
+      ))
+    }
+  }
+
   private def getEffectFlags: Int = {
     (if (hasShield) 0x01 else 0) | (if (hasGemBoost) 0x02 else 0) | (if (isFrozen) 0x04 else 0) | (if (isPhased) 0x08 else 0)
   }
@@ -449,10 +488,45 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
     lastAbilityTime.set(now)
 
-    // Phase Shift (Wraith Q) is a self-buff, not a projectile
+    // Self-buff abilities (no projectile)
     if (abilityDef.projectileType == -1) {
-      phasedUntil.set(now + Constants.PHASE_SHIFT_DURATION_MS)
-      sendPositionUpdate(localPosition.get())
+      val charDef = getSelectedCharacterDef
+      if (charDef.id == CharacterId.Raptor) {
+        // Swoop: dash toward cursor, phased during dash
+        val pos = localPosition.get()
+        val dx = (mouseWorldX - pos.getX).toFloat
+        val dy = (mouseWorldY - pos.getY).toFloat
+        val dist = Math.sqrt(dx * dx + dy * dy).toFloat
+        val clampedDist = Math.min(dist, Constants.SWOOP_MAX_DISTANCE.toFloat)
+        if (clampedDist > 0.5f) {
+          val ndx = dx / dist
+          val ndy = dy / dist
+          swoopStartX = pos.getX.toFloat
+          swoopStartY = pos.getY.toFloat
+          // Find farthest walkable endpoint
+          val world = currentWorld.get()
+          var bestX = swoopStartX
+          var bestY = swoopStartY
+          for (step <- 1 to clampedDist.toInt) {
+            val testX = Math.max(0, Math.min(world.width - 1, (swoopStartX + ndx * step).toInt))
+            val testY = Math.max(0, Math.min(world.height - 1, (swoopStartY + ndy * step).toInt))
+            if (world.isWalkable(testX, testY)) {
+              bestX = testX.toFloat
+              bestY = testY.toFloat
+            }
+          }
+          swoopTargetX = bestX
+          swoopTargetY = bestY
+          swoopStartTime.set(now)
+          swoopingUntil.set(now + Constants.SWOOP_DURATION_MS)
+          phasedUntil.set(now + Constants.SWOOP_DURATION_MS)
+          sendPositionUpdate(localPosition.get())
+        }
+      } else {
+        // Phase Shift (Wraith Q)
+        phasedUntil.set(now + Constants.PHASE_SHIFT_DURATION_MS)
+        sendPositionUpdate(localPosition.get())
+      }
       return
     }
 
