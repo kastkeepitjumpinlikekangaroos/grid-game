@@ -1,6 +1,7 @@
 package com.gridgame.server
 
 import com.gridgame.common.Constants
+import com.gridgame.common.model.Direction
 import com.gridgame.common.model.Item
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Projectile

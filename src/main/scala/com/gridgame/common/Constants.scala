@@ -71,14 +71,14 @@ object Constants {
 
   // Tentacle ability (Q)
   val TENTACLE_COOLDOWN_MS: Int = 5000
-  val TENTACLE_MAX_RANGE: Int = 5
+  val TENTACLE_MAX_RANGE: Int = 15
   val TENTACLE_PULL_DISTANCE: Float = 3.0f
   val TENTACLE_DAMAGE: Int = 5
 
   // Ice Beam ability (E)
   val ICE_BEAM_COOLDOWN_MS: Int = 5000
   val ICE_BEAM_MAX_RANGE: Int = 20
-  val ICE_BEAM_FREEZE_DURATION_MS: Int = 1000
+  val ICE_BEAM_FREEZE_DURATION_MS: Int = 3000
   val ICE_BEAM_DAMAGE: Int = 5
 
   // Lobby configuration

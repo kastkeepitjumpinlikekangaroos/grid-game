@@ -25,7 +25,7 @@ class Projectile(
 
   val speedMultiplier: Float = projectileType match {
     case ProjectileType.ICE_BEAM => 0.3f
-    case ProjectileType.TENTACLE => 1.5f
+    case ProjectileType.TENTACLE => 0.9f
     case _ =>
       val c = Constants
       c.CHARGE_MIN_SPEED + (chargeLevel / 100.0f) * (c.CHARGE_MAX_SPEED - c.CHARGE_MIN_SPEED)
