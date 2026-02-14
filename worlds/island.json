@@ -1,5 +1,6 @@
 {
   "name": "Tropical Island",
+  "background": "sky",
   "width": 150,
   "height": 150,
   "layers": [

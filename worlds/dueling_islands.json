@@ -1,5 +1,6 @@
 {
   "name": "Dueling Islands",
+  "background": "sky",
   "width": 180,
   "height": 100,
   "layers": [

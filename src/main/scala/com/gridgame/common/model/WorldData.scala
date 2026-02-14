@@ -5,7 +5,8 @@ class WorldData(
   val width: Int,
   val height: Int,
   val tiles: Array[Array[Tile]],
-  val spawnPoints: Seq[Position]
+  val spawnPoints: Seq[Position],
+  val background: String = "sky"
 ) {
 
   def getTile(x: Int, y: Int): Tile = {

@@ -1,0 +1,73 @@
+{
+  "name": "The Badlands",
+  "background": "desert",
+  "width": 180,
+  "height": 130,
+  "layers": [
+    {"type": "fill", "tile": "sand"},
+    {"type": "border", "tile": "mountain", "thickness": 3},
+
+    {"type": "line", "tile": "mountain", "x1": 60, "y1": 3, "x2": 60, "y2": 45, "thickness": 4},
+    {"type": "line", "tile": "mountain", "x1": 120, "y1": 127, "x2": 120, "y2": 85, "thickness": 4},
+    {"type": "line", "tile": "mountain", "x1": 60, "y1": 85, "x2": 60, "y2": 127, "thickness": 4},
+    {"type": "line", "tile": "mountain", "x1": 120, "y1": 3, "x2": 120, "y2": 45, "thickness": 4},
+
+    {"type": "line", "tile": "mountain", "x1": 60, "y1": 45, "x2": 90, "y2": 55, "thickness": 3},
+    {"type": "line", "tile": "mountain", "x1": 120, "y1": 85, "x2": 90, "y2": 75, "thickness": 3},
+
+    {"type": "rect", "tile": "sand", "x": 58, "y": 55, "width": 5, "height": 30},
+    {"type": "rect", "tile": "sand", "x": 118, "y": 45, "width": 5, "height": 30},
+
+    {"type": "circle", "tile": "water", "cx": 90, "cy": 65, "radius": 10},
+    {"type": "circle", "tile": "grass", "cx": 90, "cy": 65, "radius": 16},
+    {"type": "circle", "tile": "water", "cx": 90, "cy": 65, "radius": 8},
+    {"type": "circle", "tile": "sand", "cx": 90, "cy": 65, "radius": 4},
+
+    {"type": "points", "tile": "tree", "points": [{"x":78,"y":53},{"x":82,"y":56},{"x":76,"y":60},{"x":85,"y":62},{"x":96,"y":54},{"x":100,"y":58},{"x":98,"y":64},{"x":80,"y":72},{"x":84,"y":76},{"x":96,"y":70},{"x":102,"y":74},{"x":88,"y":68}]},
+
+    {"type": "rect", "tile": "stone", "x": 15, "y": 55, "width": 20, "height": 20},
+    {"type": "rect", "tile": "path", "x": 18, "y": 58, "width": 14, "height": 14},
+    {"type": "rect", "tile": "wall", "x": 22, "y": 62, "width": 6, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 20, "y": 67, "width": 3, "height": 5},
+
+    {"type": "rect", "tile": "stone", "x": 145, "y": 55, "width": 20, "height": 20},
+    {"type": "rect", "tile": "path", "x": 148, "y": 58, "width": 14, "height": 14},
+    {"type": "rect", "tile": "wall", "x": 152, "y": 62, "width": 6, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 157, "y": 67, "width": 3, "height": 5},
+
+    {"type": "line", "tile": "path", "x1": 35, "y1": 65, "x2": 58, "y2": 65, "thickness": 2},
+    {"type": "line", "tile": "path", "x1": 122, "y1": 65, "x2": 145, "y2": 65, "thickness": 2},
+
+    {"type": "circle", "tile": "lava", "cx": 30, "cy": 20, "radius": 8},
+    {"type": "circle", "tile": "stone", "cx": 30, "cy": 20, "radius": 12},
+    {"type": "circle", "tile": "lava", "cx": 30, "cy": 20, "radius": 6},
+
+    {"type": "circle", "tile": "lava", "cx": 150, "cy": 110, "radius": 8},
+    {"type": "circle", "tile": "stone", "cx": 150, "cy": 110, "radius": 12},
+    {"type": "circle", "tile": "lava", "cx": 150, "cy": 110, "radius": 6},
+
+    {"type": "points", "tile": "wall", "points": [{"x":15,"y":12},{"x":25,"y":8},{"x":10,"y":35},{"x":35,"y":15},{"x":48,"y":22},{"x":20,"y":42},{"x":45,"y":38},{"x":12,"y":28}]},
+    {"type": "points", "tile": "wall", "points": [{"x":135,"y":88},{"x":145,"y":95},{"x":160,"y":85},{"x":130,"y":105},{"x":155,"y":100},{"x":170,"y":92},{"x":140,"y":118},{"x":165,"y":115}]},
+
+    {"type": "rect", "tile": "wall", "x": 30, "y": 95, "width": 12, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 30, "y": 100, "width": 3, "height": 10},
+    {"type": "rect", "tile": "wall", "x": 140, "y": 30, "width": 12, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 149, "y": 30, "width": 3, "height": 10},
+
+    {"type": "rect", "tile": "stone", "x": 85, "y": 10, "width": 10, "height": 10},
+    {"type": "rect", "tile": "stone", "x": 85, "y": 110, "width": 10, "height": 10},
+
+    {"type": "line", "tile": "path", "x1": 90, "y1": 20, "x2": 90, "y2": 49, "thickness": 2},
+    {"type": "line", "tile": "path", "x1": 90, "y1": 81, "x2": 90, "y2": 110, "thickness": 2}
+  ],
+  "spawnPoints": [
+    {"x": 25, "y": 65},
+    {"x": 155, "y": 65},
+    {"x": 30, "y": 25},
+    {"x": 150, "y": 105},
+    {"x": 90, "y": 15},
+    {"x": 90, "y": 115},
+    {"x": 25, "y": 110},
+    {"x": 155, "y": 20}
+  ]
+}

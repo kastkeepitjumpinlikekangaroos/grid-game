@@ -1,5 +1,6 @@
 {
   "name": "The Arena",
+  "background": "cityscape",
   "width": 120,
   "height": 120,
   "layers": [

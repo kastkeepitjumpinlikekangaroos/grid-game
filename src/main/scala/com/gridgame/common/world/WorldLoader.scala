@@ -59,6 +59,7 @@ object WorldLoader {
     val name = root.get("name").getAsString
     val width = root.get("width").getAsInt
     val height = root.get("height").getAsInt
+    val background = if (root.has("background")) root.get("background").getAsString else "sky"
 
     // Initialize tiles with default (grass)
     val tiles: Array[Array[Tile]] = Array.fill(height, width)(Tile.Grass)
@@ -91,7 +92,7 @@ object WorldLoader {
       spawnPoints += new Position(width / 2, height / 2)
     }
 
-    new WorldData(name, width, height, tiles, spawnPoints.toSeq)
+    new WorldData(name, width, height, tiles, spawnPoints.toSeq, background)
   }
 
   private def parseLayer(layer: JsonObject, tiles: Array[Array[Tile]], width: Int, height: Int): Unit = {

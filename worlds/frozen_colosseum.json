@@ -1,0 +1,77 @@
+{
+  "name": "Frozen Colosseum",
+  "background": "ocean",
+  "width": 150,
+  "height": 150,
+  "layers": [
+    {"type": "fill", "tile": "deep_water"},
+    {"type": "circle", "tile": "water", "cx": 75, "cy": 75, "radius": 70},
+    {"type": "circle", "tile": "ice", "cx": 75, "cy": 75, "radius": 62},
+    {"type": "circle", "tile": "snow", "cx": 75, "cy": 75, "radius": 55},
+
+    {"type": "circle", "tile": "mountain", "cx": 75, "cy": 75, "radius": 52},
+    {"type": "circle", "tile": "snow", "cx": 75, "cy": 75, "radius": 48},
+
+    {"type": "circle", "tile": "ice", "cx": 75, "cy": 75, "radius": 20},
+    {"type": "circle", "tile": "water", "cx": 75, "cy": 75, "radius": 10},
+    {"type": "circle", "tile": "ice", "cx": 75, "cy": 75, "radius": 5},
+
+    {"type": "line", "tile": "ice", "x1": 75, "y1": 23, "x2": 75, "y2": 55, "thickness": 4},
+    {"type": "line", "tile": "ice", "x1": 75, "y1": 95, "x2": 75, "y2": 127, "thickness": 4},
+    {"type": "line", "tile": "ice", "x1": 23, "y1": 75, "x2": 55, "y2": 75, "thickness": 4},
+    {"type": "line", "tile": "ice", "x1": 95, "y1": 75, "x2": 127, "y2": 75, "thickness": 4},
+
+    {"type": "rect", "tile": "snow", "x": 30, "y": 30, "width": 16, "height": 16},
+    {"type": "rect", "tile": "wall", "x": 34, "y": 34, "width": 8, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 34, "y": 40, "width": 3, "height": 4},
+    {"type": "rect", "tile": "fence", "x": 30, "y": 30, "width": 16, "height": 2},
+    {"type": "rect", "tile": "fence", "x": 30, "y": 30, "width": 2, "height": 16},
+
+    {"type": "rect", "tile": "snow", "x": 104, "y": 30, "width": 16, "height": 16},
+    {"type": "rect", "tile": "wall", "x": 108, "y": 34, "width": 8, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 113, "y": 40, "width": 3, "height": 4},
+    {"type": "rect", "tile": "fence", "x": 104, "y": 30, "width": 16, "height": 2},
+    {"type": "rect", "tile": "fence", "x": 118, "y": 30, "width": 2, "height": 16},
+
+    {"type": "rect", "tile": "snow", "x": 30, "y": 104, "width": 16, "height": 16},
+    {"type": "rect", "tile": "wall", "x": 34, "y": 112, "width": 8, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 34, "y": 106, "width": 3, "height": 4},
+    {"type": "rect", "tile": "fence", "x": 30, "y": 118, "width": 16, "height": 2},
+    {"type": "rect", "tile": "fence", "x": 30, "y": 104, "width": 2, "height": 16},
+
+    {"type": "rect", "tile": "snow", "x": 104, "y": 104, "width": 16, "height": 16},
+    {"type": "rect", "tile": "wall", "x": 108, "y": 112, "width": 8, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 113, "y": 106, "width": 3, "height": 4},
+    {"type": "rect", "tile": "fence", "x": 104, "y": 118, "width": 16, "height": 2},
+    {"type": "rect", "tile": "fence", "x": 118, "y": 104, "width": 2, "height": 16},
+
+    {"type": "rect", "tile": "stone", "x": 67, "y": 25, "width": 16, "height": 8},
+    {"type": "rect", "tile": "wall", "x": 70, "y": 27, "width": 10, "height": 3},
+
+    {"type": "rect", "tile": "stone", "x": 67, "y": 117, "width": 16, "height": 8},
+    {"type": "rect", "tile": "wall", "x": 70, "y": 120, "width": 10, "height": 3},
+
+    {"type": "rect", "tile": "stone", "x": 25, "y": 67, "width": 8, "height": 16},
+    {"type": "rect", "tile": "wall", "x": 27, "y": 70, "width": 3, "height": 10},
+
+    {"type": "rect", "tile": "stone", "x": 117, "y": 67, "width": 8, "height": 16},
+    {"type": "rect", "tile": "wall", "x": 120, "y": 70, "width": 3, "height": 10},
+
+    {"type": "points", "tile": "tree", "points": [{"x":50,"y":35},{"x":60,"y":45},{"x":45,"y":55},{"x":55,"y":68},{"x":95,"y":42},{"x":105,"y":55},{"x":92,"y":68},{"x":45,"y":95},{"x":55,"y":105},{"x":60,"y":115},{"x":95,"y":92},{"x":105,"y":105},{"x":92,"y":118},{"x":70,"y":50},{"x":80,"y":110}]},
+
+    {"type": "line", "tile": "path", "x1": 40, "y1": 40, "x2": 55, "y2": 55, "thickness": 2},
+    {"type": "line", "tile": "path", "x1": 110, "y1": 40, "x2": 95, "y2": 55, "thickness": 2},
+    {"type": "line", "tile": "path", "x1": 40, "y1": 110, "x2": 55, "y2": 95, "thickness": 2},
+    {"type": "line", "tile": "path", "x1": 110, "y1": 110, "x2": 95, "y2": 95, "thickness": 2}
+  ],
+  "spawnPoints": [
+    {"x": 38, "y": 38},
+    {"x": 112, "y": 38},
+    {"x": 38, "y": 112},
+    {"x": 112, "y": 112},
+    {"x": 75, "y": 28},
+    {"x": 75, "y": 122},
+    {"x": 28, "y": 75},
+    {"x": 122, "y": 75}
+  ]
+}

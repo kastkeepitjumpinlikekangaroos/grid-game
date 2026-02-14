@@ -159,6 +159,8 @@ class ClientMain extends Application {
 
     val mouseHandler = new MouseHandler(client, canvas)
     scene.setOnMousePressed(mouseHandler)
+    scene.setOnMouseReleased(mouseHandler)
+    scene.setOnMouseDragged(mouseHandler)
     scene.setOnMouseMoved(mouseHandler)
 
     scene.addEventFilter(KeyEvent.KEY_PRESSED, new EventHandler[KeyEvent] {

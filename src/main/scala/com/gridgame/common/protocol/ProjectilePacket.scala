@@ -24,19 +24,26 @@ class ProjectilePacket(
     val dx: Float,
     val dy: Float,
     val action: Byte,
-    val targetId: UUID = null
+    val targetId: UUID = null,
+    val chargeLevel: Byte = 0
 ) extends Packet(PacketType.PROJECTILE_UPDATE, sequenceNumber, ownerId, timestamp) {
 
   def this(sequenceNumber: Int, ownerId: UUID, x: Float, y: Float, colorRGB: Int,
            projectileId: Int, dx: Float, dy: Float, action: Byte) = {
     this(sequenceNumber, ownerId, Packet.getCurrentTimestamp, x, y, colorRGB,
-         projectileId, dx, dy, action, null)
+         projectileId, dx, dy, action, null, 0.toByte)
   }
 
   def this(sequenceNumber: Int, ownerId: UUID, x: Float, y: Float, colorRGB: Int,
            projectileId: Int, dx: Float, dy: Float, action: Byte, targetId: UUID) = {
     this(sequenceNumber, ownerId, Packet.getCurrentTimestamp, x, y, colorRGB,
-         projectileId, dx, dy, action, targetId)
+         projectileId, dx, dy, action, targetId, 0.toByte)
+  }
+
+  def this(sequenceNumber: Int, ownerId: UUID, x: Float, y: Float, colorRGB: Int,
+           projectileId: Int, dx: Float, dy: Float, action: Byte, targetId: UUID, chargeLevel: Byte) = {
+    this(sequenceNumber, ownerId, Packet.getCurrentTimestamp, x, y, colorRGB,
+         projectileId, dx, dy, action, targetId, chargeLevel)
   }
 
   def getProjectileId: Int = projectileId
@@ -54,6 +61,8 @@ class ProjectilePacket(
   def getY: Float = y
 
   def getColorRGB: Int = colorRGB
+
+  def getChargeLevel: Int = chargeLevel.toInt & 0xFF
 
   override def serialize(): Array[Byte] = {
     val buffer = ByteBuffer.allocate(Constants.PACKET_SIZE)
@@ -103,8 +112,11 @@ class ProjectilePacket(
       buffer.putLong(0L)
     }
 
-    // [62-63] Reserved (2 bytes)
-    buffer.put(new Array[Byte](2))
+    // [62] Charge level (0-100)
+    buffer.put(chargeLevel)
+
+    // [63] Reserved (1 byte)
+    buffer.put(0.toByte)
 
     buffer.array()
   }

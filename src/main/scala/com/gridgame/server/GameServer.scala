@@ -239,12 +239,16 @@ class GameServer(port: Int, val worldFile: String = "") {
 
         val target = registry.get(targetId)
         if (target != null) {
+          val flags = (if (target.hasShield) 0x01 else 0) |
+                      (if (target.hasGemBoost) 0x02 else 0)
           val updatePacket = new PlayerUpdatePacket(
             sequenceNumber.getAndIncrement(),
             targetId,
             target.getPosition,
             target.getColorRGB,
-            target.getHealth
+            target.getHealth,
+            0,
+            flags
           )
           broadcastToAllPlayers(updatePacket)
         }
@@ -301,7 +305,9 @@ class GameServer(port: Int, val worldFile: String = "") {
       projectile.colorRGB,
       projectile.id,
       projectile.dx, projectile.dy,
-      ProjectileAction.SPAWN
+      ProjectileAction.SPAWN,
+      null,
+      projectile.chargeLevel.toByte
     )
     broadcastToAllPlayers(packet)
   }
@@ -350,13 +356,17 @@ class GameServer(port: Int, val worldFile: String = "") {
             val updatePacket = packet.asInstanceOf[PlayerUpdatePacket]
             val player = registry.get(updatePacket.getPlayerId)
             if (player != null) {
+              val flags = (if (player.hasShield) 0x01 else 0) |
+                          (if (player.hasGemBoost) 0x02 else 0)
               new PlayerUpdatePacket(
                 updatePacket.getSequenceNumber,
                 updatePacket.getPlayerId,
                 updatePacket.getTimestamp,
                 updatePacket.getPosition,
                 updatePacket.getColorRGB,
-                player.getHealth
+                player.getHealth,
+                updatePacket.getChargeLevel,
+                flags
               )
             } else {
               packet

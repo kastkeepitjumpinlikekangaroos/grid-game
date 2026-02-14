@@ -1,0 +1,100 @@
+{
+  "name": "Neon Grid",
+  "background": "cityscape",
+  "width": 150,
+  "height": 150,
+  "layers": [
+    {"type": "fill", "tile": "void"},
+    {"type": "border", "tile": "energy_field", "thickness": 2},
+
+    {"type": "rect", "tile": "circuit", "x": 10, "y": 10, "width": 130, "height": 130},
+
+    {"type": "line", "tile": "plasma", "x1": 10, "y1": 50, "x2": 140, "y2": 50, "thickness": 1},
+    {"type": "line", "tile": "plasma", "x1": 10, "y1": 100, "x2": 140, "y2": 100, "thickness": 1},
+    {"type": "line", "tile": "plasma", "x1": 50, "y1": 10, "x2": 50, "y2": 140, "thickness": 1},
+    {"type": "line", "tile": "plasma", "x1": 100, "y1": 10, "x2": 100, "y2": 140, "thickness": 1},
+
+    {"type": "rect", "tile": "metal", "x": 10, "y": 48, "width": 15, "height": 4},
+    {"type": "rect", "tile": "metal", "x": 30, "y": 48, "width": 8, "height": 4},
+    {"type": "rect", "tile": "metal", "x": 62, "y": 48, "width": 14, "height": 4},
+    {"type": "rect", "tile": "metal", "x": 112, "y": 48, "width": 8, "height": 4},
+    {"type": "rect", "tile": "metal", "x": 125, "y": 48, "width": 15, "height": 4},
+
+    {"type": "rect", "tile": "metal", "x": 10, "y": 98, "width": 15, "height": 4},
+    {"type": "rect", "tile": "metal", "x": 30, "y": 98, "width": 8, "height": 4},
+    {"type": "rect", "tile": "metal", "x": 74, "y": 98, "width": 14, "height": 4},
+    {"type": "rect", "tile": "metal", "x": 112, "y": 98, "width": 8, "height": 4},
+    {"type": "rect", "tile": "metal", "x": 125, "y": 98, "width": 15, "height": 4},
+
+    {"type": "rect", "tile": "metal", "x": 48, "y": 10, "width": 4, "height": 15},
+    {"type": "rect", "tile": "metal", "x": 48, "y": 30, "width": 4, "height": 8},
+    {"type": "rect", "tile": "metal", "x": 48, "y": 62, "width": 4, "height": 14},
+    {"type": "rect", "tile": "metal", "x": 48, "y": 112, "width": 4, "height": 8},
+    {"type": "rect", "tile": "metal", "x": 48, "y": 125, "width": 4, "height": 15},
+
+    {"type": "rect", "tile": "metal", "x": 98, "y": 10, "width": 4, "height": 15},
+    {"type": "rect", "tile": "metal", "x": 98, "y": 30, "width": 4, "height": 8},
+    {"type": "rect", "tile": "metal", "x": 98, "y": 74, "width": 4, "height": 14},
+    {"type": "rect", "tile": "metal", "x": 98, "y": 112, "width": 4, "height": 8},
+    {"type": "rect", "tile": "metal", "x": 98, "y": 125, "width": 4, "height": 15},
+
+    {"type": "rect", "tile": "metal", "x": 15, "y": 15, "width": 28, "height": 28},
+    {"type": "rect", "tile": "glass", "x": 20, "y": 20, "width": 18, "height": 18},
+    {"type": "rect", "tile": "wall", "x": 25, "y": 25, "width": 8, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 22, "y": 30, "width": 3, "height": 6},
+
+    {"type": "rect", "tile": "metal", "x": 107, "y": 15, "width": 28, "height": 28},
+    {"type": "rect", "tile": "glass", "x": 112, "y": 20, "width": 18, "height": 18},
+    {"type": "rect", "tile": "wall", "x": 117, "y": 25, "width": 8, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 125, "y": 30, "width": 3, "height": 6},
+
+    {"type": "rect", "tile": "metal", "x": 15, "y": 107, "width": 28, "height": 28},
+    {"type": "rect", "tile": "glass", "x": 20, "y": 112, "width": 18, "height": 18},
+    {"type": "rect", "tile": "wall", "x": 25, "y": 122, "width": 8, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 22, "y": 114, "width": 3, "height": 6},
+
+    {"type": "rect", "tile": "metal", "x": 107, "y": 107, "width": 28, "height": 28},
+    {"type": "rect", "tile": "glass", "x": 112, "y": 112, "width": 18, "height": 18},
+    {"type": "rect", "tile": "wall", "x": 117, "y": 122, "width": 8, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 125, "y": 114, "width": 3, "height": 6},
+
+    {"type": "circle", "tile": "metal", "cx": 75, "cy": 75, "radius": 14},
+    {"type": "circle", "tile": "glass", "cx": 75, "cy": 75, "radius": 10},
+    {"type": "circle", "tile": "plasma", "cx": 75, "cy": 75, "radius": 4},
+
+    {"type": "rect", "tile": "metal", "x": 55, "y": 55, "width": 6, "height": 6},
+    {"type": "rect", "tile": "metal", "x": 89, "y": 55, "width": 6, "height": 6},
+    {"type": "rect", "tile": "metal", "x": 55, "y": 89, "width": 6, "height": 6},
+    {"type": "rect", "tile": "metal", "x": 89, "y": 89, "width": 6, "height": 6},
+
+    {"type": "rect", "tile": "wall", "x": 56, "y": 56, "width": 4, "height": 4},
+    {"type": "rect", "tile": "wall", "x": 90, "y": 56, "width": 4, "height": 4},
+    {"type": "rect", "tile": "wall", "x": 56, "y": 90, "width": 4, "height": 4},
+    {"type": "rect", "tile": "wall", "x": 90, "y": 90, "width": 4, "height": 4},
+
+    {"type": "rect", "tile": "energy_field", "x": 42, "y": 73, "width": 6, "height": 4},
+    {"type": "rect", "tile": "energy_field", "x": 102, "y": 73, "width": 6, "height": 4},
+    {"type": "rect", "tile": "energy_field", "x": 73, "y": 42, "width": 4, "height": 6},
+    {"type": "rect", "tile": "energy_field", "x": 73, "y": 102, "width": 4, "height": 6},
+
+    {"type": "rect", "tile": "metal", "x": 56, "y": 73, "width": 5, "height": 4},
+    {"type": "rect", "tile": "metal", "x": 89, "y": 73, "width": 5, "height": 4},
+    {"type": "rect", "tile": "metal", "x": 73, "y": 56, "width": 4, "height": 5},
+    {"type": "rect", "tile": "metal", "x": 73, "y": 89, "width": 4, "height": 5},
+
+    {"type": "circle", "tile": "toxic", "cx": 30, "cy": 75, "radius": 5},
+    {"type": "circle", "tile": "toxic", "cx": 120, "cy": 75, "radius": 5},
+    {"type": "circle", "tile": "toxic", "cx": 75, "cy": 30, "radius": 5},
+    {"type": "circle", "tile": "toxic", "cx": 75, "cy": 120, "radius": 5}
+  ],
+  "spawnPoints": [
+    {"x": 29, "y": 29},
+    {"x": 121, "y": 29},
+    {"x": 29, "y": 121},
+    {"x": 121, "y": 121},
+    {"x": 75, "y": 15},
+    {"x": 75, "y": 135},
+    {"x": 15, "y": 75},
+    {"x": 135, "y": 75}
+  ]
+}

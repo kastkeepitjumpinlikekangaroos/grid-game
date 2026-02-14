@@ -1,5 +1,6 @@
 {
   "name": "The Maze",
+  "background": "desert",
   "width": 140,
   "height": 140,
   "layers": [

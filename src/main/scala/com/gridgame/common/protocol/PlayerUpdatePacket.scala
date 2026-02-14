@@ -13,15 +13,25 @@ class PlayerUpdatePacket(
     timestamp: Int,
     val position: Position,
     val colorRGB: Int,
-    val health: Int = 100
+    val health: Int = 100,
+    val chargeLevel: Int = 0,
+    val effectFlags: Int = 0
 ) extends Packet(PacketType.PLAYER_UPDATE, sequenceNumber, playerId, timestamp) {
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int) = {
-    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, 100)
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, 100, 0, 0)
   }
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int, health: Int) = {
-    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, health)
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, health, 0, 0)
+  }
+
+  def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int, health: Int, chargeLevel: Int) = {
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, health, chargeLevel, 0)
+  }
+
+  def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int, health: Int, chargeLevel: Int, effectFlags: Int) = {
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, health, chargeLevel, effectFlags)
   }
 
   def getPosition: Position = position
@@ -29,6 +39,10 @@ class PlayerUpdatePacket(
   def getColorRGB: Int = colorRGB
 
   def getHealth: Int = health
+
+  def getChargeLevel: Int = chargeLevel
+
+  def getEffectFlags: Int = effectFlags
 
   override def serialize(): Array[Byte] = {
     val buffer = ByteBuffer.allocate(Constants.PACKET_SIZE)
@@ -59,13 +73,19 @@ class PlayerUpdatePacket(
     // [37-40] Health
     buffer.putInt(health)
 
-    // [41-63] Reserved (23 bytes) - fill with zeros
-    buffer.put(new Array[Byte](23))
+    // [41] Charge level (0-100)
+    buffer.put(chargeLevel.toByte)
+
+    // [42] Effect flags bitfield (bit 0: shield, bit 1: gem boost)
+    buffer.put(effectFlags.toByte)
+
+    // [43-63] Reserved (21 bytes) - fill with zeros
+    buffer.put(new Array[Byte](21))
 
     buffer.array()
   }
 
   override def toString: String = {
-    s"PlayerUpdatePacket{seq=$sequenceNumber, playerId=${playerId.toString.substring(0, 8)}, position=$position, color=0x${colorRGB.toHexString.toUpperCase}, health=$health}"
+    s"PlayerUpdatePacket{seq=$sequenceNumber, playerId=${playerId.toString.substring(0, 8)}, position=$position, color=0x${colorRGB.toHexString.toUpperCase}, health=$health, charge=$chargeLevel, effects=$effectFlags}"
   }
 }

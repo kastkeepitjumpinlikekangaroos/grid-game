@@ -1,5 +1,6 @@
 {
   "name": "Castle Grounds",
+  "background": "sky",
   "width": 180,
   "height": 180,
   "layers": [

@@ -1,5 +1,6 @@
 {
   "name": "Fortress Wars",
+  "background": "cityscape",
   "width": 200,
   "height": 120,
   "layers": [

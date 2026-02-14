@@ -1,0 +1,74 @@
+{
+  "name": "Shipwreck Bay",
+  "background": "sky",
+  "width": 160,
+  "height": 160,
+  "layers": [
+    {"type": "fill", "tile": "deep_water"},
+    {"type": "circle", "tile": "water", "cx": 80, "cy": 80, "radius": 72},
+
+    {"type": "circle", "tile": "sand", "cx": 30, "cy": 30, "radius": 18},
+    {"type": "circle", "tile": "grass", "cx": 30, "cy": 30, "radius": 12},
+    {"type": "points", "tile": "tree", "points": [{"x":25,"y":24},{"x":32,"y":22},{"x":22,"y":30},{"x":35,"y":28},{"x":28,"y":35},{"x":34,"y":34},{"x":24,"y":36}]},
+
+    {"type": "circle", "tile": "sand", "cx": 130, "cy": 30, "radius": 18},
+    {"type": "circle", "tile": "grass", "cx": 130, "cy": 30, "radius": 12},
+    {"type": "points", "tile": "tree", "points": [{"x":125,"y":24},{"x":132,"y":22},{"x":122,"y":30},{"x":135,"y":28},{"x":128,"y":35},{"x":134,"y":34},{"x":124,"y":36}]},
+
+    {"type": "circle", "tile": "sand", "cx": 30, "cy": 130, "radius": 18},
+    {"type": "circle", "tile": "grass", "cx": 30, "cy": 130, "radius": 12},
+    {"type": "points", "tile": "tree", "points": [{"x":25,"y":124},{"x":32,"y":122},{"x":22,"y":130},{"x":35,"y":128},{"x":28,"y":135},{"x":34,"y":134},{"x":24,"y":136}]},
+
+    {"type": "circle", "tile": "sand", "cx": 130, "cy": 130, "radius": 18},
+    {"type": "circle", "tile": "grass", "cx": 130, "cy": 130, "radius": 12},
+    {"type": "points", "tile": "tree", "points": [{"x":125,"y":124},{"x":132,"y":122},{"x":122,"y":130},{"x":135,"y":128},{"x":128,"y":135},{"x":134,"y":134},{"x":124,"y":136}]},
+
+    {"type": "circle", "tile": "sand", "cx": 80, "cy": 80, "radius": 22},
+    {"type": "circle", "tile": "grass", "cx": 80, "cy": 80, "radius": 16},
+    {"type": "rect", "tile": "stone", "x": 75, "y": 75, "width": 10, "height": 10},
+    {"type": "rect", "tile": "wall", "x": 78, "y": 78, "width": 4, "height": 4},
+
+    {"type": "circle", "tile": "sand", "cx": 80, "cy": 30, "radius": 10},
+    {"type": "circle", "tile": "sand", "cx": 80, "cy": 130, "radius": 10},
+    {"type": "circle", "tile": "sand", "cx": 30, "cy": 80, "radius": 10},
+    {"type": "circle", "tile": "sand", "cx": 130, "cy": 80, "radius": 10},
+
+    {"type": "line", "tile": "sand", "x1": 48, "y1": 30, "x2": 70, "y2": 30, "thickness": 2},
+    {"type": "line", "tile": "sand", "x1": 90, "y1": 30, "x2": 112, "y2": 30, "thickness": 2},
+    {"type": "line", "tile": "sand", "x1": 48, "y1": 130, "x2": 70, "y2": 130, "thickness": 2},
+    {"type": "line", "tile": "sand", "x1": 90, "y1": 130, "x2": 112, "y2": 130, "thickness": 2},
+    {"type": "line", "tile": "sand", "x1": 30, "y1": 48, "x2": 30, "y2": 70, "thickness": 2},
+    {"type": "line", "tile": "sand", "x1": 30, "y1": 90, "x2": 30, "y2": 112, "thickness": 2},
+    {"type": "line", "tile": "sand", "x1": 130, "y1": 48, "x2": 130, "y2": 70, "thickness": 2},
+    {"type": "line", "tile": "sand", "x1": 130, "y1": 90, "x2": 130, "y2": 112, "thickness": 2},
+
+    {"type": "line", "tile": "sand", "x1": 42, "y1": 42, "x2": 64, "y2": 64, "thickness": 2},
+    {"type": "line", "tile": "sand", "x1": 118, "y1": 42, "x2": 96, "y2": 64, "thickness": 2},
+    {"type": "line", "tile": "sand", "x1": 42, "y1": 118, "x2": 64, "y2": 96, "thickness": 2},
+    {"type": "line", "tile": "sand", "x1": 118, "y1": 118, "x2": 96, "y2": 96, "thickness": 2},
+
+    {"type": "line", "tile": "sand", "x1": 80, "y1": 40, "x2": 80, "y2": 58, "thickness": 2},
+    {"type": "line", "tile": "sand", "x1": 80, "y1": 102, "x2": 80, "y2": 120, "thickness": 2},
+    {"type": "line", "tile": "sand", "x1": 40, "y1": 80, "x2": 58, "y2": 80, "thickness": 2},
+    {"type": "line", "tile": "sand", "x1": 102, "y1": 80, "x2": 120, "y2": 80, "thickness": 2},
+
+    {"type": "rect", "tile": "wall", "x": 55, "y": 28, "width": 8, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 97, "y": 28, "width": 8, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 55, "y": 129, "width": 8, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 97, "y": 129, "width": 8, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 28, "y": 55, "width": 3, "height": 8},
+    {"type": "rect", "tile": "wall", "x": 28, "y": 97, "width": 3, "height": 8},
+    {"type": "rect", "tile": "wall", "x": 129, "y": 55, "width": 3, "height": 8},
+    {"type": "rect", "tile": "wall", "x": 129, "y": 97, "width": 3, "height": 8}
+  ],
+  "spawnPoints": [
+    {"x": 30, "y": 30},
+    {"x": 130, "y": 30},
+    {"x": 30, "y": 130},
+    {"x": 130, "y": 130},
+    {"x": 80, "y": 30},
+    {"x": 80, "y": 130},
+    {"x": 30, "y": 80},
+    {"x": 130, "y": 80}
+  ]
+}

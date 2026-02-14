@@ -1,5 +1,6 @@
 package com.gridgame.common.model
 
+import com.gridgame.common.Constants
 import java.util.UUID
 
 class Projectile(
@@ -9,10 +10,16 @@ class Projectile(
     private var y: Float,
     val dx: Float,
     val dy: Float,
-    val colorRGB: Int
+    val colorRGB: Int,
+    val chargeLevel: Int = 0
 ) {
 
   private var distanceTraveled: Float = 0f
+
+  val speedMultiplier: Float = {
+    val c = Constants
+    c.CHARGE_MIN_SPEED + (chargeLevel / 100.0f) * (c.CHARGE_MAX_SPEED - c.CHARGE_MIN_SPEED)
+  }
 
   def getX: Float = x
 
@@ -24,10 +31,17 @@ class Projectile(
 
   def getDistanceTraveled: Float = distanceTraveled
 
+  /** Move one sub-step (fractional tick). */
+  def moveStep(fraction: Float): Unit = {
+    x += dx * speedMultiplier * fraction
+    y += dy * speedMultiplier * fraction
+    distanceTraveled += math.sqrt(dx * dx + dy * dy).toFloat * speedMultiplier * fraction
+  }
+
   def move(): Unit = {
-    x += dx
-    y += dy
-    distanceTraveled += math.sqrt(dx * dx + dy * dy).toFloat
+    x += dx * speedMultiplier
+    y += dy * speedMultiplier
+    distanceTraveled += math.sqrt(dx * dx + dy * dy).toFloat * speedMultiplier
   }
 
   def isOutOfBounds(world: WorldData): Boolean = {

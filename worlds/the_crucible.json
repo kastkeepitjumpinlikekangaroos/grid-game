@@ -1,0 +1,72 @@
+{
+  "name": "The Crucible",
+  "background": "space",
+  "width": 140,
+  "height": 140,
+  "layers": [
+    {"type": "fill", "tile": "lava"},
+    {"type": "border", "tile": "mountain", "thickness": 3},
+
+    {"type": "circle", "tile": "stone", "cx": 70, "cy": 70, "radius": 14},
+    {"type": "circle", "tile": "sand", "cx": 70, "cy": 70, "radius": 8},
+
+    {"type": "rect", "tile": "stone", "x": 10, "y": 10, "width": 30, "height": 30},
+    {"type": "rect", "tile": "sand", "x": 14, "y": 14, "width": 22, "height": 22},
+    {"type": "rect", "tile": "wall", "x": 20, "y": 20, "width": 10, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 18, "y": 26, "width": 3, "height": 8},
+
+    {"type": "rect", "tile": "stone", "x": 100, "y": 10, "width": 30, "height": 30},
+    {"type": "rect", "tile": "sand", "x": 104, "y": 14, "width": 22, "height": 22},
+    {"type": "rect", "tile": "wall", "x": 110, "y": 20, "width": 10, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 119, "y": 26, "width": 3, "height": 8},
+
+    {"type": "rect", "tile": "stone", "x": 10, "y": 100, "width": 30, "height": 30},
+    {"type": "rect", "tile": "sand", "x": 14, "y": 104, "width": 22, "height": 22},
+    {"type": "rect", "tile": "wall", "x": 20, "y": 114, "width": 10, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 18, "y": 106, "width": 3, "height": 8},
+
+    {"type": "rect", "tile": "stone", "x": 100, "y": 100, "width": 30, "height": 30},
+    {"type": "rect", "tile": "sand", "x": 104, "y": 104, "width": 22, "height": 22},
+    {"type": "rect", "tile": "wall", "x": 110, "y": 114, "width": 10, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 119, "y": 106, "width": 3, "height": 8},
+
+    {"type": "line", "tile": "stone", "x1": 40, "y1": 25, "x2": 56, "y2": 62, "thickness": 3},
+    {"type": "line", "tile": "stone", "x1": 100, "y1": 25, "x2": 84, "y2": 62, "thickness": 3},
+    {"type": "line", "tile": "stone", "x1": 40, "y1": 115, "x2": 56, "y2": 78, "thickness": 3},
+    {"type": "line", "tile": "stone", "x1": 100, "y1": 115, "x2": 84, "y2": 78, "thickness": 3},
+
+    {"type": "line", "tile": "stone", "x1": 25, "y1": 40, "x2": 62, "y2": 56, "thickness": 3},
+    {"type": "line", "tile": "stone", "x1": 25, "y1": 100, "x2": 62, "y2": 84, "thickness": 3},
+    {"type": "line", "tile": "stone", "x1": 115, "y1": 40, "x2": 78, "y2": 56, "thickness": 3},
+    {"type": "line", "tile": "stone", "x1": 115, "y1": 100, "x2": 78, "y2": 84, "thickness": 3},
+
+    {"type": "circle", "tile": "stone", "cx": 50, "cy": 50, "radius": 6},
+    {"type": "circle", "tile": "stone", "cx": 90, "cy": 50, "radius": 6},
+    {"type": "circle", "tile": "stone", "cx": 50, "cy": 90, "radius": 6},
+    {"type": "circle", "tile": "stone", "cx": 90, "cy": 90, "radius": 6},
+    {"type": "rect", "tile": "wall", "x": 48, "y": 48, "width": 4, "height": 4},
+    {"type": "rect", "tile": "wall", "x": 88, "y": 48, "width": 4, "height": 4},
+    {"type": "rect", "tile": "wall", "x": 48, "y": 88, "width": 4, "height": 4},
+    {"type": "rect", "tile": "wall", "x": 88, "y": 88, "width": 4, "height": 4},
+
+    {"type": "line", "tile": "stone", "x1": 25, "y1": 68, "x2": 10, "y2": 68, "thickness": 3},
+    {"type": "line", "tile": "stone", "x1": 25, "y1": 72, "x2": 10, "y2": 72, "thickness": 3},
+    {"type": "line", "tile": "stone", "x1": 115, "y1": 68, "x2": 130, "y2": 68, "thickness": 3},
+    {"type": "line", "tile": "stone", "x1": 115, "y1": 72, "x2": 130, "y2": 72, "thickness": 3},
+    {"type": "line", "tile": "stone", "x1": 68, "y1": 25, "x2": 68, "y2": 10, "thickness": 3},
+    {"type": "line", "tile": "stone", "x1": 72, "y1": 25, "x2": 72, "y2": 10, "thickness": 3},
+    {"type": "line", "tile": "stone", "x1": 68, "y1": 115, "x2": 68, "y2": 130, "thickness": 3},
+    {"type": "line", "tile": "stone", "x1": 72, "y1": 115, "x2": 72, "y2": 130, "thickness": 3},
+
+    {"type": "rect", "tile": "stone", "x": 6, "y": 65, "width": 5, "height": 10},
+    {"type": "rect", "tile": "stone", "x": 129, "y": 65, "width": 5, "height": 10},
+    {"type": "rect", "tile": "stone", "x": 65, "y": 6, "width": 10, "height": 5},
+    {"type": "rect", "tile": "stone", "x": 65, "y": 129, "width": 10, "height": 5}
+  ],
+  "spawnPoints": [
+    {"x": 25, "y": 25},
+    {"x": 115, "y": 25},
+    {"x": 25, "y": 115},
+    {"x": 115, "y": 115}
+  ]
+}

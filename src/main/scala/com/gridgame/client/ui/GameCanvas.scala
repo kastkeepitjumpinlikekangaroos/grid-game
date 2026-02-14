@@ -30,6 +30,9 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
   private val HW = Constants.ISO_HALF_W  // 20
   private val HH = Constants.ISO_HALF_H  // 10
+  private val HIT_ANIMATION_MS = 500
+  private val DEATH_ANIMATION_MS = 1200
+  private val TELEPORT_ANIMATION_MS = 800
 
   private def world: WorldData = client.getWorld
 
@@ -58,8 +61,12 @@ class GameCanvas(client: GameClient) extends Canvas() {
   def render(): Unit = {
     animationTick += 1
 
-    // Check if player is dead
-    if (client.getIsDead) {
+    val localDeathTime = client.getLocalDeathTime
+    val localDeathAnimActive = client.getIsDead && localDeathTime > 0 &&
+      (System.currentTimeMillis() - localDeathTime) < DEATH_ANIMATION_MS
+
+    // Show game over screen only after death animation completes
+    if (client.getIsDead && !localDeathAnimActive) {
       drawGameOverScreen()
       return
     }
@@ -75,86 +82,119 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val camOffX = canvasW / 2.0 - playerSx
     val camOffY = canvasH / 2.0 - playerSy
 
-    // Fill background
-    gc.setFill(Color.rgb(30, 30, 40))
-    gc.fillRect(0, 0, canvasW, canvasH)
+    // Draw themed animated background
+    BackgroundRenderer.render(gc, canvasW, canvasH, currentWorld.background, animationTick, camOffX, camOffY)
 
-    drawTerrain(camOffX, camOffY, currentWorld)
-    drawItems(camOffX, camOffY)
-    drawProjectiles(camOffX, camOffY)
-
-    // Draw remote players (sorted by worldY for depth)
-    val remotePlayers = client.getPlayers.values().asScala.filter(!_.isDead).toSeq.sortBy(_.getPosition.getY)
-    remotePlayers.foreach { player =>
-      drawPlayer(player, camOffX, camOffY)
-    }
-
-    drawLocalPlayer(localPos, camOffX, camOffY)
-
-    drawCoordinates(currentWorld)
-    drawInventory()
-  }
-
-  private def drawTerrain(camOffX: Double, camOffY: Double, world: WorldData): Unit = {
-    val canvasW = getWidth
-    val canvasH = getHeight
-    val cellH = Constants.TILE_CELL_HEIGHT
-
-    // Determine visible world tile range using inverse transform of viewport corners
+    // Calculate visible tile bounds
     val corners = Seq(
       (screenToWorldX(0, 0, camOffX, camOffY), screenToWorldY(0, 0, camOffX, camOffY)),
       (screenToWorldX(canvasW, 0, camOffX, camOffY), screenToWorldY(canvasW, 0, camOffX, camOffY)),
       (screenToWorldX(0, canvasH, camOffX, camOffY), screenToWorldY(0, canvasH, camOffX, camOffY)),
       (screenToWorldX(canvasW, canvasH, camOffX, camOffY), screenToWorldY(canvasW, canvasH, camOffX, camOffY))
     )
-
-    // Margin of 6 to account for tall tiles extending above their grid position
-    val minWX = corners.map(_._1).min.floor.toInt - 6
-    val maxWX = corners.map(_._1).max.ceil.toInt + 6
-    val minWY = corners.map(_._2).min.floor.toInt - 6
-    val maxWY = corners.map(_._2).max.ceil.toInt + 6
-
-    // Clamp to world bounds
-    val startX = Math.max(0, minWX)
-    val endX = Math.min(world.width - 1, maxWX)
-    val startY = Math.max(0, minWY)
-    val endY = Math.min(world.height - 1, maxWY)
+    val startX = Math.max(0, corners.map(_._1).min.floor.toInt - 6)
+    val endX = Math.min(currentWorld.width - 1, corners.map(_._1).max.ceil.toInt + 6)
+    val startY = Math.max(0, corners.map(_._2).min.floor.toInt - 6)
+    val endY = Math.min(currentWorld.height - 1, corners.map(_._2).max.ceil.toInt + 6)
 
     val tileFrame = (animationTick / TILE_ANIM_SPEED) % TileRenderer.getNumFrames
+    val cellH = Constants.TILE_CELL_HEIGHT
 
+    // Collect entities by cell for depth-interleaved rendering
+    val entitiesByCell = mutable.Map.empty[(Int, Int), mutable.ArrayBuffer[() => Unit]]
+
+    def addEntity(cx: Int, cy: Int, drawFn: () => Unit): Unit = {
+      entitiesByCell.getOrElseUpdate((cx, cy), mutable.ArrayBuffer.empty) += drawFn
+    }
+
+    // Items
+    client.getItems.values().asScala.foreach { item =>
+      addEntity(item.getCellX, item.getCellY, () => drawSingleItem(item, camOffX, camOffY))
+    }
+
+    // Projectiles
+    client.getProjectiles.values().asScala.foreach { proj =>
+      val cx = Math.round(proj.getX).toInt
+      val cy = Math.round(proj.getY).toInt
+      addEntity(cx, cy, () => drawSingleProjectile(proj, camOffX, camOffY))
+    }
+
+    // Remote players
+    client.getPlayers.values().asScala.filter(!_.isDead).foreach { player =>
+      val pos = player.getPosition
+      addEntity(pos.getX, pos.getY, () => drawPlayer(player, camOffX, camOffY))
+    }
+
+    // Local player
+    if (localDeathAnimActive) {
+      addEntity(localPos.getX, localPos.getY, () => drawDeathEffect(
+        worldToScreenX(localPos.getX, localPos.getY, camOffX),
+        worldToScreenY(localPos.getX, localPos.getY, camOffY),
+        client.getLocalColorRGB,
+        localDeathTime
+      ))
+    } else {
+      addEntity(localPos.getX, localPos.getY, () => drawLocalPlayer(localPos, camOffX, camOffY))
+    }
+
+    // Phase 1: Draw ground tiles (flat/walkable) — these never occlude entities
     for (wy <- startY to endY) {
       for (wx <- startX to endX) {
-        val tile = world.getTile(wx, wy)
-        val sx = worldToScreenX(wx, wy, camOffX)
-        val sy = worldToScreenY(wx, wy, camOffY)
-
-        val img = TileRenderer.getTileImage(tile.id, tileFrame)
-        // Align: diamond center in image is at (HW, cellH - HH)
-        // Screen diamond center is at (sx, sy)
-        gc.drawImage(img, sx - HW, sy - (cellH - HH))
+        val tile = currentWorld.getTile(wx, wy)
+        if (tile.walkable) {
+          val sx = worldToScreenX(wx, wy, camOffX)
+          val sy = worldToScreenY(wx, wy, camOffY)
+          val img = TileRenderer.getTileImage(tile.id, tileFrame)
+          gc.drawImage(img, sx - HW, sy - (cellH - HH))
+        }
       }
     }
+
+    // Phase 2: Draw elevated tiles + entities interleaved by depth
+    // Entities (players, items, projectiles) sit on top of ground but behind walls at higher depth.
+    for (wy <- startY to endY) {
+      for (wx <- startX to endX) {
+        val tile = currentWorld.getTile(wx, wy)
+        if (!tile.walkable) {
+          val sx = worldToScreenX(wx, wy, camOffX)
+          val sy = worldToScreenY(wx, wy, camOffY)
+          val img = TileRenderer.getTileImage(tile.id, tileFrame)
+          gc.drawImage(img, sx - HW, sy - (cellH - HH))
+        }
+
+        // Draw entities at this cell (on top of ground, behind later elevated tiles)
+        entitiesByCell.remove((wx, wy)).foreach(_.foreach(_()))
+      }
+    }
+
+    // Draw any entities outside visible tile range
+    entitiesByCell.values.foreach(_.foreach(_()))
+
+    // Death/teleport animations drawn as overlays
+    drawDeathAnimations(camOffX, camOffY)
+    drawTeleportAnimations(camOffX, camOffY)
+
+    drawCoordinates(currentWorld)
+    drawInventory()
+    drawChargeBar()
   }
 
-  private def drawItems(camOffX: Double, camOffY: Double): Unit = {
-    client.getItems.values().asScala.foreach { item =>
-      val ix = item.getCellX
-      val iy = item.getCellY
+  private def drawSingleItem(item: Item, camOffX: Double, camOffY: Double): Unit = {
+    val ix = item.getCellX
+    val iy = item.getCellY
 
-      val centerX = worldToScreenX(ix, iy, camOffX)
-      val centerY = worldToScreenY(ix, iy, camOffY)
-      val halfSize = Constants.ITEM_SIZE_PX / 2.0
+    val centerX = worldToScreenX(ix, iy, camOffX)
+    val centerY = worldToScreenY(ix, iy, camOffY)
+    val halfSize = Constants.ITEM_SIZE_PX / 2.0
 
-      // Skip if off-screen
-      if (centerX > -halfSize && centerX < getWidth + halfSize &&
-          centerY > -halfSize && centerY < getHeight + halfSize) {
+    if (centerX > -halfSize && centerX < getWidth + halfSize &&
+        centerY > -halfSize && centerY < getHeight + halfSize) {
 
-        gc.setFill(intToColor(item.colorRGB))
-        gc.setStroke(Color.BLACK)
-        gc.setLineWidth(1)
+      gc.setFill(intToColor(item.colorRGB))
+      gc.setStroke(Color.BLACK)
+      gc.setLineWidth(1)
 
-        drawItemShape(item.itemType, centerX, centerY, halfSize)
-      }
+      drawItemShape(item.itemType, centerX, centerY, halfSize)
     }
   }
 
@@ -211,95 +251,93 @@ class GameCanvas(client: GameClient) extends Canvas() {
     }
   }
 
-  private def drawProjectiles(camOffX: Double, camOffY: Double): Unit = {
-    client.getProjectiles.values().asScala.foreach { projectile =>
-      val projX = projectile.getX.toDouble
-      val projY = projectile.getY.toDouble
+  private def drawSingleProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
 
-      val beamLength = 5.0
+    val beamLength = 5.0
 
-      val tailX = worldToScreenX(projX, projY, camOffX)
-      val tailY = worldToScreenY(projX, projY, camOffY)
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
 
-      val tipWX = projX + projectile.dx * beamLength
-      val tipWY = projY + projectile.dy * beamLength
-      val tipX = worldToScreenX(tipWX, tipWY, camOffX)
-      val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-      val margin = 100.0
-      if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
-          Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
-        val color = intToColor(projectile.colorRGB)
-        gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val color = intToColor(projectile.colorRGB)
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
 
-        // Animated pulse based on tick + projectile id for variation
-        val phase = (animationTick + projectile.id * 37) * 0.3
-        val pulse = 0.85 + 0.15 * Math.sin(phase)
-        val fastFlicker = 0.9 + 0.1 * Math.sin(phase * 4.7)
+      // Animated pulse based on tick + projectile id for variation
+      val phase = (animationTick + projectile.id * 37) * 0.3
+      val pulse = 0.85 + 0.15 * Math.sin(phase)
+      val fastFlicker = 0.9 + 0.1 * Math.sin(phase * 4.7)
 
-        // Layer 1: Ultra-wide soft outer glow
-        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.07 * pulse))
-        gc.setLineWidth(44 * pulse)
-        gc.strokeLine(tailX, tailY, tipX, tipY)
+      // Layer 1: Ultra-wide soft outer glow
+      gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.07 * pulse))
+      gc.setLineWidth(44 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
 
-        // Layer 2: Wide outer glow
-        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.12 * pulse))
-        gc.setLineWidth(30 * pulse)
-        gc.strokeLine(tailX, tailY, tipX, tipY)
+      // Layer 2: Wide outer glow
+      gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.12 * pulse))
+      gc.setLineWidth(30 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
 
-        // Layer 3: Mid glow
-        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.25 * pulse))
-        gc.setLineWidth(18 * pulse)
-        gc.strokeLine(tailX, tailY, tipX, tipY)
+      // Layer 3: Mid glow
+      gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.25 * pulse))
+      gc.setLineWidth(18 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
 
-        // Layer 4: Bright beam
-        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.6 * fastFlicker))
-        gc.setLineWidth(10 * fastFlicker)
-        gc.strokeLine(tailX, tailY, tipX, tipY)
+      // Layer 4: Bright beam
+      gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.6 * fastFlicker))
+      gc.setLineWidth(10 * fastFlicker)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
 
-        // Layer 5: White-hot core with flicker
-        val coreR = Math.min(1.0, color.getRed * 0.3 + 0.7)
-        val coreG = Math.min(1.0, color.getGreen * 0.3 + 0.7)
-        val coreB = Math.min(1.0, color.getBlue * 0.3 + 0.7)
-        gc.setStroke(Color.color(coreR, coreG, coreB, 0.95 * fastFlicker))
-        gc.setLineWidth(4.5)
-        gc.strokeLine(tailX, tailY, tipX, tipY)
+      // Layer 5: White-hot core with flicker
+      val coreR = Math.min(1.0, color.getRed * 0.3 + 0.7)
+      val coreG = Math.min(1.0, color.getGreen * 0.3 + 0.7)
+      val coreB = Math.min(1.0, color.getBlue * 0.3 + 0.7)
+      gc.setStroke(Color.color(coreR, coreG, coreB, 0.95 * fastFlicker))
+      gc.setLineWidth(4.5)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
 
-        // Animated energy particles along the beam
-        val dx = tipX - tailX
-        val dy = tipY - tailY
-        val len = Math.sqrt(dx * dx + dy * dy)
-        if (len > 1) {
-          val nx = dx / len
-          val ny = dy / len
-          val particleCount = 6
-          for (i <- 0 until particleCount) {
-            val t = ((animationTick * 0.08 + i.toDouble / particleCount + projectile.id * 0.13) % 1.0)
-            val px = tailX + dx * t + ny * Math.sin(phase + i * 2.1) * 6.0
-            val py = tailY + dy * t - nx * Math.sin(phase + i * 2.1) * 6.0
-            val pAlpha = Math.max(0.0, Math.min(1.0, 0.7 * (1.0 - Math.abs(t - 0.5) * 2.0)))
-            val pSize = 3.0 + Math.sin(phase + i) * 1.2
-            gc.setFill(Color.color(coreR, coreG, coreB, pAlpha))
-            gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
-          }
+      // Animated energy particles along the beam
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len > 1) {
+        val nx = dx / len
+        val ny = dy / len
+        val particleCount = 6
+        for (i <- 0 until particleCount) {
+          val t = ((animationTick * 0.08 + i.toDouble / particleCount + projectile.id * 0.13) % 1.0)
+          val px = tailX + dx * t + ny * Math.sin(phase + i * 2.1) * 6.0
+          val py = tailY + dy * t - nx * Math.sin(phase + i * 2.1) * 6.0
+          val pAlpha = Math.max(0.0, Math.min(1.0, 0.7 * (1.0 - Math.abs(t - 0.5) * 2.0)))
+          val pSize = 3.0 + Math.sin(phase + i) * 1.2
+          gc.setFill(Color.color(coreR, coreG, coreB, pAlpha))
+          gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
         }
-
-        // Bright orb at the tip with pulse
-        val orbR = 9.0 * pulse
-        gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.2 * pulse))
-        gc.fillOval(tipX - orbR * 2, tipY - orbR * 2, orbR * 4, orbR * 4)
-        gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.4 * pulse))
-        gc.fillOval(tipX - orbR, tipY - orbR, orbR * 2, orbR * 2)
-        gc.setFill(Color.color(coreR, coreG, coreB, 0.85 * fastFlicker))
-        gc.fillOval(tipX - orbR * 0.5, tipY - orbR * 0.5, orbR, orbR)
       }
+
+      // Bright orb at the tip with pulse
+      val orbR = 9.0 * pulse
+      gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.2 * pulse))
+      gc.fillOval(tipX - orbR * 2, tipY - orbR * 2, orbR * 4, orbR * 4)
+      gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.4 * pulse))
+      gc.fillOval(tipX - orbR, tipY - orbR, orbR * 2, orbR * 2)
+      gc.setFill(Color.color(coreR, coreG, coreB, 0.85 * fastFlicker))
+      gc.fillOval(tipX - orbR * 0.5, tipY - orbR * 0.5, orbR, orbR)
     }
   }
 
   private def drawShadow(screenX: Double, screenY: Double): Unit = {
     gc.setFill(Color.rgb(0, 0, 0, 0.3))
-    gc.fillOval(screenX - 12, screenY - 5, 24, 10)
+    gc.fillOval(screenX - 16, screenY - 6, 32, 12)
   }
 
   private def drawPlayer(player: Player, camOffX: Double, camOffY: Double): Unit = {
@@ -309,11 +347,11 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val screenX = worldToScreenX(pos.getX, pos.getY, camOffX)
     val screenY = worldToScreenY(pos.getX, pos.getY, camOffY)
 
-    val spriteSz = Constants.SPRITE_SIZE_PX
+    val displaySz = Constants.PLAYER_DISPLAY_SIZE_PX
 
     // Skip if off-screen
-    if (screenX < -spriteSz || screenX > getWidth + spriteSz ||
-        screenY < -spriteSz || screenY > getHeight + spriteSz) return
+    if (screenX < -displaySz || screenX > getWidth + displaySz ||
+        screenY < -displaySz || screenY > getHeight + displaySz) return
 
     // Detect remote player movement
     val now = System.currentTimeMillis()
@@ -326,12 +364,22 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val isMoving = now < remoteMovingUntil.getOrElse(playerId, 0L)
     val frame = if (isMoving) (animationTick / FRAMES_PER_STEP) % 4 else 0
 
+    val spriteCenter = screenY - displaySz / 2.0
+
+    // Draw effects behind the player
+    if (player.hasShield) drawShieldBubble(screenX, spriteCenter)
+    if (player.hasGemBoost) drawGemGlow(screenX, spriteCenter)
+    drawChargingEffect(screenX, spriteCenter, player.getChargeLevel)
+
     drawShadow(screenX, screenY)
 
     val sprite = SpriteGenerator.getSprite(player.getColorRGB, player.getDirection, frame)
-    val spriteX = screenX - spriteSz / 2.0
-    val spriteY = screenY - spriteSz.toDouble
-    gc.drawImage(sprite, spriteX, spriteY)
+    val spriteX = screenX - displaySz / 2.0
+    val spriteY = screenY - displaySz.toDouble
+    gc.drawImage(sprite, spriteX, spriteY, displaySz, displaySz)
+
+    // Draw hit effect on top of sprite
+    drawHitEffect(screenX, spriteCenter, client.getPlayerHitTime(playerId))
 
     // Draw health bar above player
     drawHealthBar(screenX, spriteY, player.getHealth)
@@ -341,39 +389,380 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val screenX = worldToScreenX(pos.getX, pos.getY, camOffX)
     val screenY = worldToScreenY(pos.getX, pos.getY, camOffY)
 
-    val spriteSz = Constants.SPRITE_SIZE_PX
-    val spriteX = screenX - spriteSz / 2.0
-    val spriteY = screenY - spriteSz.toDouble
+    val displaySz = Constants.PLAYER_DISPLAY_SIZE_PX
+    val spriteX = screenX - displaySz / 2.0
+    val spriteY = screenY - displaySz.toDouble
+    val spriteCenter = screenY - displaySz / 2.0
 
-    // Draw effect auras behind the player
-    drawEffectAuras(screenX, screenY - spriteSz / 2.0)
+    // Draw effects behind the player
+    if (client.hasShield) drawShieldBubble(screenX, spriteCenter)
+    if (client.hasGemBoost) drawGemGlow(screenX, spriteCenter)
+    drawChargingEffect(screenX, spriteCenter, client.getChargeLevel)
 
     drawShadow(screenX, screenY)
 
-    val frame = if (client.getIsMoving) (animationTick / FRAMES_PER_STEP) % 4 else 0
+    val animSpeed = if (client.isCharging) {
+      val chargePct = client.getChargeLevel / 100.0
+      (FRAMES_PER_STEP * (1.0 + chargePct * 4.0)).toInt
+    } else FRAMES_PER_STEP
+    val frame = if (client.getIsMoving) (animationTick / animSpeed) % 4 else 0
     val sprite = SpriteGenerator.getSprite(client.getLocalColorRGB, client.getLocalDirection, frame)
-    gc.drawImage(sprite, spriteX, spriteY)
+    gc.drawImage(sprite, spriteX, spriteY, displaySz, displaySz)
+
+    // Draw hit effect on top of sprite
+    drawHitEffect(screenX, spriteCenter, client.getPlayerHitTime(client.getLocalPlayerId))
 
     // Draw health bar above local player
     drawHealthBar(screenX, spriteY, client.getLocalHealth)
   }
 
-  private def drawEffectAuras(centerX: Double, centerY: Double): Unit = {
-    val radius = Constants.SPRITE_SIZE_PX * 0.5
+  private def drawShieldBubble(centerX: Double, centerY: Double): Unit = {
+    val phase = animationTick * 0.08
+    val baseRadius = Constants.PLAYER_DISPLAY_SIZE_PX * 0.55
+    val pulse = 1.0 + 0.06 * Math.sin(phase * 1.5)
+    val radius = baseRadius * pulse
 
-    if (client.hasShield) {
-      gc.setStroke(Color.rgb(156, 39, 176, 0.7)) // Purple
-      gc.setLineWidth(2)
-      gc.strokeOval(centerX - radius, centerY - radius, radius * 2, radius * 2)
-      gc.setFill(Color.rgb(156, 39, 176, 0.15))
-      gc.fillOval(centerX - radius, centerY - radius, radius * 2, radius * 2)
+    // Layer 1: Outer soft glow
+    gc.setFill(Color.rgb(156, 39, 176, 0.08 + 0.04 * Math.sin(phase)))
+    gc.fillOval(centerX - radius * 1.3, centerY - radius * 1.3 * 0.5, radius * 2.6, radius * 1.3)
+
+    // Layer 2: Main bubble fill
+    gc.setFill(Color.rgb(156, 39, 176, 0.12))
+    gc.fillOval(centerX - radius, centerY - radius * 0.5, radius * 2, radius)
+
+    // Layer 3: Wobbling outline
+    val wobble1 = 0.02 * Math.sin(phase * 2.3)
+    val wobble2 = 0.02 * Math.cos(phase * 1.7)
+    gc.setStroke(Color.rgb(180, 80, 220, 0.6))
+    gc.setLineWidth(1.5)
+    gc.strokeOval(
+      centerX - radius * (1.0 + wobble1),
+      centerY - radius * 0.5 * (1.0 + wobble2),
+      radius * 2 * (1.0 + wobble1),
+      radius * (1.0 + wobble2)
+    )
+
+    // Layer 4: Rotating sheen highlight
+    val sheenAngle = phase * 0.7
+    val sheenX = centerX + radius * 0.6 * Math.cos(sheenAngle)
+    val sheenY = centerY + radius * 0.3 * Math.sin(sheenAngle) * 0.5
+    val sheenSize = radius * 0.3
+    gc.setFill(Color.rgb(220, 180, 255, 0.3))
+    gc.fillOval(sheenX - sheenSize, sheenY - sheenSize * 0.5, sheenSize * 2, sheenSize)
+
+    // Layer 5: Sparkles on the bubble surface
+    for (i <- 0 until 4) {
+      val angle = phase * 0.5 + i * Math.PI / 2
+      val sx = centerX + radius * 0.85 * Math.cos(angle)
+      val sy = centerY + radius * 0.42 * Math.sin(angle)
+      val sparkleAlpha = 0.4 + 0.3 * Math.sin(phase * 3 + i * 1.5)
+      gc.setFill(Color.rgb(220, 180, 255, sparkleAlpha))
+      gc.fillOval(sx - 2, sy - 2, 4, 4)
+    }
+  }
+
+  private def drawGemGlow(centerX: Double, centerY: Double): Unit = {
+    val phase = animationTick * 0.1
+    val baseRadius = Constants.PLAYER_DISPLAY_SIZE_PX * 0.6
+    val pulse = 0.85 + 0.15 * Math.sin(phase * 1.8)
+    val radius = baseRadius * pulse
+
+    // Layer 1: Wide soft glow
+    gc.setFill(Color.rgb(0, 188, 212, 0.06 * pulse))
+    gc.fillOval(centerX - radius * 1.5, centerY - radius * 0.75, radius * 3, radius * 1.5)
+
+    // Layer 2: Inner bright glow
+    gc.setFill(Color.rgb(0, 230, 255, 0.15 * pulse))
+    gc.fillOval(centerX - radius * 0.8, centerY - radius * 0.4, radius * 1.6, radius * 0.8)
+
+    // Layer 3: Cyan outline ring
+    gc.setStroke(Color.rgb(0, 220, 240, 0.5 * pulse))
+    gc.setLineWidth(2.0)
+    gc.strokeOval(centerX - radius, centerY - radius * 0.5, radius * 2, radius)
+
+    // Layer 4: Orbiting sparkle particles
+    val particleCount = 5
+    val orbitRadius = radius * 0.9
+    for (i <- 0 until particleCount) {
+      val angle = phase * 0.6 + i * (2 * Math.PI / particleCount)
+      val px = centerX + orbitRadius * Math.cos(angle)
+      val py = centerY + orbitRadius * Math.sin(angle) * 0.5
+      val pSize = 2.0 + 1.0 * Math.sin(phase * 2 + i * 1.2)
+      val pAlpha = 0.5 + 0.3 * Math.sin(phase * 3 + i)
+      gc.setFill(Color.rgb(150, 255, 255, pAlpha))
+      gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+    }
+  }
+
+  private def drawChargingEffect(centerX: Double, centerY: Double, chargeLevel: Int): Unit = {
+    if (chargeLevel <= 0) return
+
+    val pct = chargeLevel / 100.0
+    val phase = animationTick * 0.15
+
+    // Color shifts from yellow (0%) -> orange (50%) -> red (100%)
+    val r = Math.min(1.0, pct * 2.0)
+    val g = Math.min(1.0, Math.max(0.0, 1.0 - (pct - 0.5) * 2.0))
+    val b = 0.0
+
+    // Layer 1: Outer pulsing glow - grows with charge
+    val outerRadius = 12.0 + pct * 20.0
+    val pulse = 0.8 + 0.2 * Math.sin(phase * 2.0)
+    gc.setFill(Color.color(r, g, b, 0.12 * pulse * pct))
+    gc.fillOval(centerX - outerRadius, centerY - outerRadius, outerRadius * 2, outerRadius * 2)
+
+    // Layer 2: Inner bright ring
+    val innerRadius = 8.0 + pct * 12.0
+    gc.setStroke(Color.color(r, g, b, 0.5 * pct))
+    gc.setLineWidth(2.0 + pct * 2.0)
+    gc.strokeOval(centerX - innerRadius, centerY - innerRadius, innerRadius * 2, innerRadius * 2)
+
+    // Layer 3: Rotating energy particles (3-6 based on charge)
+    val particleCount = 3 + (pct * 3).toInt
+    val orbitRadius = 10.0 + pct * 14.0
+    for (i <- 0 until particleCount) {
+      val angle = phase + i * (2 * Math.PI / particleCount)
+      val px = centerX + orbitRadius * Math.cos(angle)
+      val py = centerY + orbitRadius * Math.sin(angle) * 0.5 // squash Y for iso perspective
+      val pSize = 2.0 + pct * 2.5
+      gc.setFill(Color.color(
+        Math.min(1.0, r * 0.3 + 0.7),
+        Math.min(1.0, g * 0.3 + 0.7),
+        0.7,
+        0.6 * pct
+      ))
+      gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+    }
+  }
+
+  private def drawHitEffect(centerX: Double, centerY: Double, hitTime: Long): Unit = {
+    if (hitTime <= 0) return
+    val elapsed = System.currentTimeMillis() - hitTime
+    if (elapsed < 0 || elapsed > HIT_ANIMATION_MS) return
+
+    val progress = elapsed.toDouble / HIT_ANIMATION_MS // 0.0 -> 1.0
+    val fadeOut = 1.0 - progress
+
+    // Effect 1: Red flash (fades quickly in first half)
+    val flashAlpha = Math.max(0.0, 0.4 * (1.0 - progress * 2.0))
+    if (flashAlpha > 0) {
+      gc.setFill(Color.color(1.0, 0.0, 0.0, flashAlpha))
+      val flashR = 16.0
+      gc.fillOval(centerX - flashR, centerY - flashR, flashR * 2, flashR * 2)
     }
 
-    if (client.hasGemBoost) {
-      gc.setStroke(Color.rgb(0, 188, 212, 0.7)) // Cyan
-      gc.setLineWidth(2)
-      val r = radius + 4
-      gc.strokeOval(centerX - r, centerY - r, r * 2, r * 2)
+    // Effect 2: Expanding red shockwave ring
+    val ringRadius = 8.0 + progress * 28.0
+    gc.setStroke(Color.color(1.0, 0.2, 0.1, 0.7 * fadeOut))
+    gc.setLineWidth(3.0 * fadeOut)
+    gc.strokeOval(centerX - ringRadius, centerY - ringRadius * 0.5, ringRadius * 2, ringRadius)
+
+    // Effect 3: Red particles flying outward
+    val particleCount = 6
+    for (i <- 0 until particleCount) {
+      val angle = i * (2 * Math.PI / particleCount) + progress * 0.5
+      val dist = progress * 22.0
+      val px = centerX + dist * Math.cos(angle)
+      val py = centerY + dist * Math.sin(angle) * 0.5 // iso squash
+      val pSize = 2.5 * fadeOut
+      gc.setFill(Color.color(1.0, 0.3, 0.1, 0.6 * fadeOut))
+      gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+    }
+  }
+
+  private def drawDeathAnimations(camOffX: Double, camOffY: Double): Unit = {
+    val now = System.currentTimeMillis()
+    val iter = client.getDeathAnimations.entrySet().iterator()
+    while (iter.hasNext) {
+      val entry = iter.next()
+      val data = entry.getValue
+      val deathTime = data(0)
+      if (now - deathTime > DEATH_ANIMATION_MS) {
+        iter.remove()
+      } else {
+        val wx = data(1).toDouble
+        val wy = data(2).toDouble
+        val colorRGB = data(3).toInt
+        val sx = worldToScreenX(wx, wy, camOffX)
+        val sy = worldToScreenY(wx, wy, camOffY)
+        drawDeathEffect(sx, sy, colorRGB, deathTime)
+      }
+    }
+  }
+
+  private def drawDeathEffect(screenX: Double, screenY: Double, colorRGB: Int, deathTime: Long): Unit = {
+    if (deathTime <= 0) return
+    val elapsed = System.currentTimeMillis() - deathTime
+    if (elapsed < 0 || elapsed > DEATH_ANIMATION_MS) return
+
+    val progress = elapsed.toDouble / DEATH_ANIMATION_MS // 0.0 -> 1.0
+    val fadeOut = 1.0 - progress
+    val color = intToColor(colorRGB)
+    val displaySz = Constants.PLAYER_DISPLAY_SIZE_PX
+    val centerY = screenY - displaySz / 2.0
+
+    // Phase 1 (0-30%): Bright flash at death location
+    if (progress < 0.3) {
+      val flashPct = progress / 0.3
+      val flashAlpha = 0.6 * (1.0 - flashPct)
+      val flashR = 20.0 + flashPct * 15.0
+      gc.setFill(Color.color(1.0, 1.0, 1.0, flashAlpha))
+      gc.fillOval(screenX - flashR, centerY - flashR * 0.5, flashR * 2, flashR)
+    }
+
+    // Expanding shockwave rings
+    val ring1R = progress * 50.0
+    gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.5 * fadeOut))
+    gc.setLineWidth(2.5 * fadeOut)
+    gc.strokeOval(screenX - ring1R, centerY - ring1R * 0.5, ring1R * 2, ring1R)
+
+    if (progress > 0.15) {
+      val ring2R = (progress - 0.15) / 0.85 * 40.0
+      gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.3 * fadeOut))
+      gc.setLineWidth(1.5 * fadeOut)
+      gc.strokeOval(screenX - ring2R, centerY - ring2R * 0.5, ring2R * 2, ring2R)
+    }
+
+    // Particles scattering outward and rising
+    val particleCount = 10
+    for (i <- 0 until particleCount) {
+      val angle = i * (2 * Math.PI / particleCount) + i * 0.3
+      val dist = progress * (25.0 + (i % 3) * 10.0)
+      val rise = progress * progress * 20.0 // accelerating upward drift
+      val px = screenX + dist * Math.cos(angle)
+      val py = centerY + dist * Math.sin(angle) * 0.5 - rise
+      val pSize = (3.0 + (i % 3)) * fadeOut
+
+      // Alternate between player color and bright white
+      if (i % 2 == 0) {
+        val cr = Math.min(1.0, color.getRed * 0.4 + 0.6)
+        val cg = Math.min(1.0, color.getGreen * 0.4 + 0.6)
+        val cb = Math.min(1.0, color.getBlue * 0.4 + 0.6)
+        gc.setFill(Color.color(cr, cg, cb, 0.7 * fadeOut))
+      } else {
+        gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.6 * fadeOut))
+      }
+      gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+    }
+
+    // Fading ghost sprite rising upward
+    val ghostAlpha = Math.max(0.0, fadeOut * 0.6)
+    val ghostRise = progress * 30.0
+    gc.setGlobalAlpha(ghostAlpha)
+    val sprite = SpriteGenerator.getSprite(colorRGB, Direction.Down, 0)
+    gc.drawImage(sprite, screenX - displaySz / 2.0, screenY - displaySz.toDouble - ghostRise, displaySz, displaySz)
+    gc.setGlobalAlpha(1.0)
+  }
+
+  private def drawTeleportAnimations(camOffX: Double, camOffY: Double): Unit = {
+    val now = System.currentTimeMillis()
+    val iter = client.getTeleportAnimations.entrySet().iterator()
+    while (iter.hasNext) {
+      val entry = iter.next()
+      val data = entry.getValue
+      val timestamp = data(0)
+      if (now - timestamp > TELEPORT_ANIMATION_MS) {
+        iter.remove()
+      } else {
+        val oldX = data(1).toDouble
+        val oldY = data(2).toDouble
+        val newX = data(3).toDouble
+        val newY = data(4).toDouble
+        val colorRGB = data(5).toInt
+        drawTeleportDeparture(
+          worldToScreenX(oldX, oldY, camOffX),
+          worldToScreenY(oldX, oldY, camOffY),
+          colorRGB, timestamp
+        )
+        drawTeleportArrival(
+          worldToScreenX(newX, newY, camOffX),
+          worldToScreenY(newX, newY, camOffY),
+          colorRGB, timestamp
+        )
+      }
+    }
+  }
+
+  private def drawTeleportDeparture(screenX: Double, screenY: Double, colorRGB: Int, startTime: Long): Unit = {
+    val elapsed = System.currentTimeMillis() - startTime
+    if (elapsed < 0 || elapsed > TELEPORT_ANIMATION_MS) return
+
+    val progress = elapsed.toDouble / TELEPORT_ANIMATION_MS
+    val fadeOut = Math.max(0.0, 1.0 - progress * 1.5) // Fades fully by ~67%
+
+    // Particles collapse inward
+    val particleCount = 8
+    for (i <- 0 until particleCount) {
+      val angle = i * (2 * Math.PI / particleCount) + progress * 2.0
+      val dist = 25.0 * (1.0 - progress)
+      val px = screenX + dist * Math.cos(angle)
+      val py = screenY + dist * Math.sin(angle) * 0.5
+      val pSize = 3.0 * fadeOut
+      gc.setFill(Color.color(1.0, 0.92, 0.3, 0.7 * fadeOut))
+      gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+    }
+
+    // Contracting ring
+    val ringRadius = 20.0 * (1.0 - progress)
+    if (ringRadius > 0.5) {
+      gc.setStroke(Color.color(1.0, 0.9, 0.3, 0.5 * fadeOut))
+      gc.setLineWidth(2.0 * fadeOut)
+      gc.strokeOval(screenX - ringRadius, screenY - ringRadius * 0.5, ringRadius * 2, ringRadius)
+    }
+
+    // White flash at start
+    if (progress < 0.2) {
+      val flashAlpha = 0.5 * (1.0 - progress / 0.2)
+      val flashR = 15.0 * (1.0 - progress / 0.2)
+      gc.setFill(Color.color(1.0, 1.0, 0.8, flashAlpha))
+      gc.fillOval(screenX - flashR, screenY - flashR * 0.5, flashR * 2, flashR)
+    }
+  }
+
+  private def drawTeleportArrival(screenX: Double, screenY: Double, colorRGB: Int, startTime: Long): Unit = {
+    val elapsed = System.currentTimeMillis() - startTime
+    val delay = 200
+    if (elapsed < delay || elapsed > TELEPORT_ANIMATION_MS) return
+
+    val adjustedElapsed = elapsed - delay
+    val duration = TELEPORT_ANIMATION_MS - delay
+    val progress = adjustedElapsed.toDouble / duration
+    val fadeOut = 1.0 - progress
+
+    // Bright flash at arrival
+    if (progress < 0.3) {
+      val flashPct = progress / 0.3
+      val flashAlpha = 0.6 * (1.0 - flashPct)
+      val flashR = 10.0 + flashPct * 20.0
+      gc.setFill(Color.color(1.0, 1.0, 0.8, flashAlpha))
+      gc.fillOval(screenX - flashR, screenY - flashR * 0.5, flashR * 2, flashR)
+    }
+
+    // Expanding ring
+    val ringRadius = progress * 35.0
+    gc.setStroke(Color.color(1.0, 0.9, 0.3, 0.6 * fadeOut))
+    gc.setLineWidth(2.5 * fadeOut)
+    gc.strokeOval(screenX - ringRadius, screenY - ringRadius * 0.5, ringRadius * 2, ringRadius)
+
+    // Particles expanding outward
+    val particleCount = 8
+    for (i <- 0 until particleCount) {
+      val angle = i * (2 * Math.PI / particleCount) + progress * 1.5
+      val dist = progress * 30.0
+      val px = screenX + dist * Math.cos(angle)
+      val py = screenY + dist * Math.sin(angle) * 0.5
+      val pSize = 2.5 * fadeOut
+      gc.setFill(Color.color(1.0, 0.92, 0.3, 0.6 * fadeOut))
+      gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+    }
+
+    // Rising star sparkles
+    for (i <- 0 until 4) {
+      val sparkX = screenX + (i - 1.5) * 8.0
+      val rise = progress * 20.0
+      val sparkAlpha = Math.max(0.0, 0.5 * fadeOut)
+      gc.setFill(Color.color(1.0, 1.0, 0.6, sparkAlpha))
+      gc.fillOval(sparkX - 1.5, screenY - rise - 1.5, 3, 3)
     }
   }
 
@@ -488,6 +877,43 @@ class GameCanvas(client: GameClient) extends Canvas() {
       gc.setFill(Color.WHITE)
       gc.fillText(label, slotX + slotSize - 10, startY + slotSize - 4)
     }
+  }
+
+  private def drawChargeBar(): Unit = {
+    if (!client.isCharging) return
+
+    val chargeLevel = client.getChargeLevel
+    val barWidth = 100.0
+    val barHeight = 8.0
+    val barX = (getWidth - barWidth) / 2.0
+    val barY = getHeight - 60.0 // Above inventory
+
+    // Dark background
+    gc.setFill(Color.rgb(30, 30, 30, 0.8))
+    gc.fillRect(barX - 2, barY - 2, barWidth + 4, barHeight + 4)
+
+    // Empty bar background
+    gc.setFill(Color.rgb(60, 60, 60))
+    gc.fillRect(barX, barY, barWidth, barHeight)
+
+    // Charge fill — yellow to orange to red
+    val pct = chargeLevel / 100.0
+    val fillWidth = barWidth * pct
+    val r = Math.min(1.0, pct * 2.0)
+    val g = Math.min(1.0, Math.max(0.0, 1.0 - (pct - 0.5) * 2.0))
+    gc.setFill(Color.color(r, g, 0.0))
+    gc.fillRect(barX, barY, fillWidth, barHeight)
+
+    // Border
+    gc.setStroke(Color.rgb(200, 200, 200, 0.8))
+    gc.setLineWidth(1)
+    gc.strokeRect(barX, barY, barWidth, barHeight)
+
+    // Charge percentage text
+    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 10))
+    gc.setFill(Color.WHITE)
+    val text = s"$chargeLevel%"
+    gc.fillText(text, barX + barWidth / 2 - 10, barY - 4)
   }
 
   private def drawOutlinedText(text: String, x: Double, y: Double): Unit = {

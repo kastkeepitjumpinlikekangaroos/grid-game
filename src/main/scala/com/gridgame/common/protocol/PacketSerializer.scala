@@ -63,9 +63,11 @@ object PacketSerializer {
         } else {
           null
         }
+        // [25] charge level (absolute byte [62])
+        val chargeLevel = payloadBuffer.get()
         new ProjectilePacket(
           sequenceNumber, playerId, timestamp, x, y, colorRGB,
-          projectileId, dx, dy, action, targetId
+          projectileId, dx, dy, action, targetId, chargeLevel
         )
 
       case _ =>
@@ -96,15 +98,17 @@ object PacketSerializer {
             new PlayerJoinPacket(sequenceNumber, playerId, timestamp, joinPosition, colorRGB, playerName, health)
 
           case PacketType.PLAYER_UPDATE =>
-            // Health is in payload bytes 0-3
+            // Health is in payload bytes 0-3, chargeLevel is payload byte 4, effectFlags is payload byte 5
             val healthBuffer = ByteBuffer.wrap(payload, 0, 4).order(ByteOrder.BIG_ENDIAN)
             val health = healthBuffer.getInt
+            val chargeLevel = payload(4) & 0xFF
+            val effectFlags = payload(5) & 0xFF
             val updatePosition = try {
               new Position(x, y)
             } catch {
               case _: IllegalArgumentException => new Position(0, 0)
             }
-            new PlayerUpdatePacket(sequenceNumber, playerId, timestamp, updatePosition, colorRGB, health)
+            new PlayerUpdatePacket(sequenceNumber, playerId, timestamp, updatePosition, colorRGB, health, chargeLevel, effectFlags)
 
           case PacketType.PLAYER_LEAVE =>
             new PlayerLeavePacket(sequenceNumber, playerId, timestamp)

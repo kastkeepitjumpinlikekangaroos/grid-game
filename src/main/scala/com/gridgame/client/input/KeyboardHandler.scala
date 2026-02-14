@@ -32,6 +32,9 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
   def update(): Unit = {
     if (!client.getIsDead) {
       processMovement()
+      if (client.isCharging || client.hasShield || client.hasGemBoost) {
+        client.sendChargingUpdate()
+      }
     }
   }
 
@@ -70,7 +73,13 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
 
   private def processMovement(): Unit = {
     val now = System.currentTimeMillis()
-    val moveRate = Constants.MOVE_RATE_LIMIT_MS
+    val moveRate = if (client.isCharging) {
+      // Slowdown proportional to charge: 1x at 0% → 10x at 100%
+      val chargePct = client.getChargeLevel / 100.0
+      (Constants.MOVE_RATE_LIMIT_MS * (1.0 + chargePct * 9.0)).toInt
+    } else {
+      Constants.MOVE_RATE_LIMIT_MS
+    }
 
     if (now - lastMoveTime < moveRate) {
       return
@@ -91,6 +100,8 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
     if (pressedKeys.contains(KeyCode.D)) {
       dx = 1
     }
+
+    client.setMovementInputActive(dx != 0 || dy != 0)
 
     if (dx != 0 || dy != 0) {
       client.movePlayer(dx, dy)

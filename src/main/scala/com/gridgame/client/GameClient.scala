@@ -44,8 +44,24 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   @volatile private var mouseWorldX: Double = 0.0
   @volatile private var mouseWorldY: Double = 0.0
 
+  // Charge shot state
+  @volatile var isCharging: Boolean = false
+  private val chargingStartTime: AtomicLong = new AtomicLong(0)
+  private val lastChargingUpdateTime: AtomicLong = new AtomicLong(0)
+
+  // Hit animation tracking
+  private val playerHitTimes: ConcurrentHashMap[UUID, Long] = new ConcurrentHashMap()
+
+  // Death animation tracking: (timestamp, worldX, worldY, colorRGB)
+  private val deathAnimations: ConcurrentHashMap[UUID, Array[Long]] = new ConcurrentHashMap()
+  private val localDeathTime: AtomicLong = new AtomicLong(0)
+
+  // Teleport animation tracking: (timestamp, oldX, oldY, newX, newY, colorRGB)
+  private val teleportAnimations: ConcurrentHashMap[UUID, Array[Long]] = new ConcurrentHashMap()
+
   @volatile private var running = false
   @volatile private var isDead = false
+  @volatile private var movementInputActive = false
   @volatile private var worldFileListener: String => Unit = _
 
   def connect(): Unit = {
@@ -109,6 +125,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
     // Reset effect timers
     fastProjectilesUntil.set(0)
     shieldUntil.set(0)
+    localDeathTime.set(0)
 
     // Send join packet to server
     sendJoinPacket()
@@ -124,18 +141,33 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
 
     val world = currentWorld.get()
     val current = localPosition.get()
-    val newX = Math.max(0, Math.min(world.width - 1, current.getX + dx))
-    val newY = Math.max(0, Math.min(world.height - 1, current.getY + dy))
 
     // Update direction based on movement attempt (even if blocked)
     localDirection.set(Direction.fromMovement(dx, dy))
 
-    // Check if destination is walkable
-    if (!world.isWalkable(newX, newY)) {
-      return
+    var finalX = current.getX
+    var finalY = current.getY
+
+    val targetX = Math.max(0, Math.min(world.width - 1, current.getX + dx))
+    val targetY = Math.max(0, Math.min(world.height - 1, current.getY + dy))
+
+    if (world.isWalkable(targetX, targetY)) {
+      // Diagonal or straight move is clear
+      finalX = targetX
+      finalY = targetY
+    } else if (dx != 0 && dy != 0) {
+      // Diagonal blocked — try sliding along each axis independently
+      val slideX = Math.max(0, Math.min(world.width - 1, current.getX + dx))
+      val slideY = Math.max(0, Math.min(world.height - 1, current.getY + dy))
+
+      if (world.isWalkable(slideX, current.getY)) {
+        finalX = slideX
+      } else if (world.isWalkable(current.getX, slideY)) {
+        finalY = slideY
+      }
     }
 
-    val newPos = new Position(newX, newY)
+    val newPos = new Position(finalX, finalY)
 
     if (!newPos.equals(current)) {
       localPosition.set(newPos)
@@ -144,15 +176,56 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
     }
   }
 
+  private def getEffectFlags: Int = {
+    (if (hasShield) 0x01 else 0) | (if (hasGemBoost) 0x02 else 0)
+  }
+
   private def sendPositionUpdate(position: Position): Unit = {
     val packet = new PlayerUpdatePacket(
       sequenceNumber.getAndIncrement(),
       localPlayerId,
       position,
       localColorRGB,
-      localHealth.get()
+      localHealth.get(),
+      getChargeLevel,
+      getEffectFlags
     )
     networkThread.send(packet)
+  }
+
+  def sendChargingUpdate(): Unit = {
+    val now = System.currentTimeMillis()
+    if (now - lastChargingUpdateTime.get() < 100) return // Rate limit to every 100ms
+    lastChargingUpdateTime.set(now)
+
+    val pos = localPosition.get()
+    val packet = new PlayerUpdatePacket(
+      sequenceNumber.getAndIncrement(),
+      localPlayerId,
+      pos,
+      localColorRGB,
+      localHealth.get(),
+      getChargeLevel,
+      getEffectFlags
+    )
+    networkThread.send(packet)
+  }
+
+  def startCharging(): Unit = {
+    isCharging = true
+    chargingStartTime.set(System.currentTimeMillis())
+  }
+
+  def cancelCharging(): Unit = {
+    isCharging = false
+    // Send update so remote clients see charge drop to 0
+    sendPositionUpdate(localPosition.get())
+  }
+
+  def getChargeLevel: Int = {
+    if (!isCharging) return 0
+    val elapsed = System.currentTimeMillis() - chargingStartTime.get()
+    Math.min(100, (elapsed * 100 / Constants.CHARGE_MAX_MS).toInt)
   }
 
   def shoot(): Unit = {
@@ -166,13 +239,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
       case Direction.Left  => (-1.0f, 0.0f)
       case Direction.Right => (1.0f, 0.0f)
     }
-    shootToward(dx, dy)
+    shootToward(dx, dy, 0)
   }
 
-  def shootToward(dx: Float, dy: Float): Unit = {
+  def shootToward(dx: Float, dy: Float, chargeLevel: Int = 0): Unit = {
     if (isDead) return
 
     val pos = localPosition.get()
+    val chargeByte = Math.min(100, Math.max(0, chargeLevel)).toByte
 
     if (hasGemBoost) {
       // Shoot 3 projectiles in a narrow cone (center ± 15 degrees)
@@ -191,7 +265,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
           localColorRGB,
           0,
           rdx, rdy,
-          ProjectileAction.SPAWN
+          ProjectileAction.SPAWN,
+          null,
+          chargeByte
         )
         networkThread.send(packet)
       }
@@ -204,7 +280,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
         localColorRGB,
         0,
         dx, dy,
-        ProjectileAction.SPAWN
+        ProjectileAction.SPAWN,
+        null,
+        chargeByte
       )
       networkThread.send(packet)
     }
@@ -305,6 +383,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
           localHealth.set(serverHealth)
           if (serverHealth <= 0 && !isDead) {
             isDead = true
+            localDeathTime.set(System.currentTimeMillis())
             println("GameClient: You have died!")
           }
         case _ =>
@@ -339,7 +418,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
           packet.getY,
           packet.getDx,
           packet.getDy,
-          packet.getColorRGB
+          packet.getColorRGB,
+          packet.getChargeLevel
         )
         projectiles.put(projectileId, projectile)
 
@@ -354,7 +434,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
             packet.getY,
             packet.getDx,
             packet.getDy,
-            packet.getColorRGB
+            packet.getColorRGB,
+            packet.getChargeLevel
           )
           projectiles.put(projectileId, newProjectile)
         }
@@ -370,14 +451,18 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
             packet.getY,
             packet.getDx,
             packet.getDy,
-            packet.getColorRGB
+            packet.getColorRGB,
+            existingProjectile.chargeLevel
           )
           projectiles.put(projectileId, updatedProjectile)
         }
 
       case ProjectileAction.HIT =>
         projectiles.remove(projectileId)
-        // Hit effect could be added here
+        val targetId = packet.getTargetId
+        if (targetId != null) {
+          playerHitTimes.put(targetId, System.currentTimeMillis())
+        }
 
       case ProjectileAction.DESPAWN =>
         projectiles.remove(projectileId)
@@ -455,18 +540,58 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
     var player = players.get(playerId)
 
     if (player != null) {
+      val wasAlive = !player.isDead
       val oldPos = player.getPosition
       val newPos = packet.getPosition
       val dx = newPos.getX - oldPos.getX
       val dy = newPos.getY - oldPos.getY
+
+      // Detect teleport: large position jump (Manhattan distance > 3)
+      if (Math.abs(dx) + Math.abs(dy) > 3) {
+        teleportAnimations.put(playerId, Array(
+          System.currentTimeMillis(),
+          oldPos.getX.toLong, oldPos.getY.toLong,
+          newPos.getX.toLong, newPos.getY.toLong,
+          packet.getColorRGB.toLong
+        ))
+      }
+
       if (dx != 0 || dy != 0) {
         player.setDirection(Direction.fromMovement(dx, dy))
       }
       player.setPosition(newPos)
       player.setColorRGB(packet.getColorRGB)
       player.setHealth(packet.getHealth)
+      player.setChargeLevel(packet.getChargeLevel)
+
+      // Apply effect flags from server
+      val flags = packet.getEffectFlags
+      if ((flags & 0x01) != 0) {
+        player.setShieldUntil(System.currentTimeMillis() + 1000)
+      } else {
+        player.setShieldUntil(0)
+      }
+      if ((flags & 0x02) != 0) {
+        player.setGemBoostUntil(System.currentTimeMillis() + 1000)
+      } else {
+        player.setGemBoostUntil(0)
+      }
+
+      // Record death animation when player newly dies
+      if (wasAlive && player.isDead) {
+        deathAnimations.put(playerId, Array(
+          System.currentTimeMillis(),
+          newPos.getX.toLong,
+          newPos.getY.toLong,
+          packet.getColorRGB.toLong
+        ))
+      }
     } else {
       player = new Player(playerId, "Player", packet.getPosition, packet.getColorRGB, packet.getHealth)
+      player.setChargeLevel(packet.getChargeLevel)
+      val flags = packet.getEffectFlags
+      if ((flags & 0x01) != 0) player.setShieldUntil(System.currentTimeMillis() + 1000)
+      if ((flags & 0x02) != 0) player.setGemBoostUntil(System.currentTimeMillis() + 1000)
       players.put(playerId, player)
     }
   }
@@ -474,6 +599,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
   private def handlePlayerLeave(packet: PlayerLeavePacket): Unit = {
     val playerId = packet.getPlayerId
     val player = players.remove(playerId)
+    playerHitTimes.remove(playerId)
 
     if (player != null) {
       println(s"GameClient: Player left - ${playerId.toString.substring(0, 8)} ('${player.getName}')")
@@ -548,9 +674,19 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
 
   def getLocalHealth: Int = localHealth.get()
 
-  def getIsMoving: Boolean = System.currentTimeMillis() - lastMoveTime.get() < 200
+  def setMovementInputActive(active: Boolean): Unit = { movementInputActive = active }
+
+  def getIsMoving: Boolean = movementInputActive || System.currentTimeMillis() - lastMoveTime.get() < 200
 
   def getIsDead: Boolean = isDead
+
+  def getPlayerHitTime(playerId: UUID): Long = playerHitTimes.getOrDefault(playerId, 0L)
+
+  def getLocalDeathTime: Long = localDeathTime.get()
+
+  def getDeathAnimations: ConcurrentHashMap[UUID, Array[Long]] = deathAnimations
+
+  def getTeleportAnimations: ConcurrentHashMap[UUID, Array[Long]] = teleportAnimations
 
   def getWorld: WorldData = currentWorld.get()
 
@@ -570,6 +706,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
 
   private def teleportToMouse(): Unit = {
     val world = currentWorld.get()
+    val oldPos = localPosition.get()
     val targetX = Math.round(mouseWorldX).toInt
     val targetY = Math.round(mouseWorldY).toInt
 
@@ -586,6 +723,15 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData) {
     localPosition.set(newPos)
     lastMoveTime.set(System.currentTimeMillis())
     sendPositionUpdate(newPos)
+
+    // Record teleport animation
+    teleportAnimations.put(localPlayerId, Array(
+      System.currentTimeMillis(),
+      oldPos.getX.toLong, oldPos.getY.toLong,
+      clampedX.toLong, clampedY.toLong,
+      localColorRGB.toLong
+    ))
+
     println(s"GameClient: Teleported to ($clampedX, $clampedY)")
   }
 

@@ -8,7 +8,8 @@ object Constants {
   val VIEWPORT_SIZE_PX: Int = VIEWPORT_CELLS * CELL_SIZE_PX // 500px
 
   // Sprite size for isometric view
-  val SPRITE_SIZE_PX: Int = 32
+  val SPRITE_SIZE_PX: Int = 32         // Source frame size in spritesheet
+  val PLAYER_DISPLAY_SIZE_PX: Int = 48 // Rendered display size (scaled up)
 
   // Isometric tile dimensions (2:1 ratio)
   val ISO_TILE_WIDTH: Int = 40
@@ -31,9 +32,9 @@ object Constants {
 
   // Health configuration
   val MAX_HEALTH: Int = 100
-  val HEALTH_BAR_WIDTH_PX: Int = 16
-  val HEALTH_BAR_HEIGHT_PX: Int = 3
-  val HEALTH_BAR_OFFSET_Y: Int = 4
+  val HEALTH_BAR_WIDTH_PX: Int = 24
+  val HEALTH_BAR_HEIGHT_PX: Int = 4
+  val HEALTH_BAR_OFFSET_Y: Int = 5
 
   // Projectile configuration
   val PROJECTILE_SPEED_MS: Int = 30       // Move every 50ms (20 cells/second)
@@ -51,11 +52,21 @@ object Constants {
 
   // Item configuration
   val ITEM_SPAWN_INTERVAL_MS: Int = 60000     // 1 minute
-  val ITEM_SIZE_PX: Int = 20
+  val ITEM_SIZE_PX: Int = 30
   val MAX_INVENTORY_SIZE: Int = 3
 
   // Item effect configuration
   val SHIELD_DURATION_MS: Int = 5000           // Shield lasts 5s
   val GEM_DURATION_MS: Int = 5000             // Fast projectiles last 20s
   val GEM_PROJECTILE_SPEED_MULTIPLIER: Float = 2.0f
+
+  // Charge shot configuration
+  val CHARGE_MAX_MS: Int = 4000                // Time to reach full charge
+  val CHARGE_MIN_DAMAGE: Int = 10              // Damage at 0% charge
+  val CHARGE_MAX_DAMAGE: Int = 100             // Damage at 100% charge (instant kill)
+  val CHARGE_MIN_RANGE: Int = 15               // Range at 0% charge
+  val CHARGE_MAX_RANGE: Int = 30               // Range at 100% charge
+  val CHARGE_MIN_SPEED: Float = 0.8f           // Projectile speed multiplier at 0%
+  val CHARGE_MAX_SPEED: Float = 2.0f           // Projectile speed multiplier at 100%
+  val CHARGE_MOVEMENT_SLOW: Int = 2            // Movement rate multiplier while charging
 }

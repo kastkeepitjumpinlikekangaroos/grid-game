@@ -1,5 +1,6 @@
 {
   "name": "Volcanic Island",
+  "background": "space",
   "width": 160,
   "height": 160,
   "layers": [

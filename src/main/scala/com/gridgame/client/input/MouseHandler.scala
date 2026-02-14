@@ -11,8 +11,10 @@ class MouseHandler(client: GameClient, canvas: GameCanvas) extends EventHandler[
   private var lastShootTime: Long = 0
 
   override def handle(event: MouseEvent): Unit = {
-    // Track mouse position for teleport targeting
-    if (event.getEventType == MouseEvent.MOUSE_MOVED || event.getEventType == MouseEvent.MOUSE_PRESSED) {
+    // Track mouse position for aiming (works during move and drag)
+    if (event.getEventType == MouseEvent.MOUSE_MOVED ||
+        event.getEventType == MouseEvent.MOUSE_PRESSED ||
+        event.getEventType == MouseEvent.MOUSE_DRAGGED) {
       val (worldX, worldY) = canvas.screenToWorld(event.getX, event.getY)
       client.setMouseWorldPosition(worldX, worldY)
     }
@@ -24,7 +26,22 @@ class MouseHandler(client: GameClient, canvas: GameCanvas) extends EventHandler[
       if (now - lastShootTime < Constants.SHOOT_COOLDOWN_MS) {
         return
       }
-      lastShootTime = now
+
+      // Start charging
+      client.startCharging()
+    }
+
+    if (event.getEventType == MouseEvent.MOUSE_RELEASED) {
+      if (!client.isCharging) return
+      if (client.getIsDead) {
+        client.cancelCharging()
+        return
+      }
+
+      val chargeLevel = client.getChargeLevel
+      client.cancelCharging()
+
+      lastShootTime = System.currentTimeMillis()
 
       // Get the player's position in the world
       val playerPos = client.getLocalPosition
@@ -46,7 +63,7 @@ class MouseHandler(client: GameClient, canvas: GameCanvas) extends EventHandler[
       val dx = (deltaX / magnitude).toFloat
       val dy = (deltaY / magnitude).toFloat
 
-      client.shootToward(dx, dy)
+      client.shootToward(dx, dy, chargeLevel)
     }
   }
 }

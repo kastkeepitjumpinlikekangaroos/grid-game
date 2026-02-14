@@ -21,6 +21,7 @@ class Player(
   private var direction: Direction = Direction.Down
   private var shieldUntil: Long = 0
   private var gemBoostUntil: Long = 0
+  private var _chargeLevel: Int = 0
 
   def getId: UUID = id
 
@@ -88,6 +89,12 @@ class Player(
   }
 
   def hasGemBoost: Boolean = System.currentTimeMillis() < gemBoostUntil
+
+  def getChargeLevel: Int = _chargeLevel
+
+  def setChargeLevel(level: Int): Unit = {
+    this._chargeLevel = Math.max(0, Math.min(100, level))
+  }
 
   def isDead: Boolean = health <= 0
 
