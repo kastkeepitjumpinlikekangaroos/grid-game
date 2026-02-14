@@ -228,6 +228,25 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     (result._1, result._2, result._3, result._4, elo)
   }
 
+  /** Returns (username, elo, wins, matchesPlayed) sorted by ELO descending */
+  def getLeaderboard(limit: Int = 50): Seq[(String, Int, Int, Int)] = {
+    val stmt = connection.prepareStatement("SELECT username, elo FROM accounts ORDER BY elo DESC LIMIT ?")
+    stmt.setInt(1, limit)
+    val rs = stmt.executeQuery()
+
+    val results = scala.collection.mutable.ArrayBuffer[(String, Int, Int, Int)]()
+    while (rs.next()) {
+      val uname = rs.getString("username")
+      val elo = rs.getInt("elo")
+      val uuid = getOrCreateUUID(uname)
+      val (_, _, matchesPlayed, wins, _) = getPlayerStats(uuid)
+      results += ((uname, elo, wins, matchesPlayed))
+    }
+    rs.close()
+    stmt.close()
+    results.toSeq
+  }
+
   def getElo(username: String): Int = {
     val stmt = connection.prepareStatement("SELECT elo FROM accounts WHERE username = ?")
     stmt.setString(1, username.toLowerCase)

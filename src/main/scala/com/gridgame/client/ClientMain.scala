@@ -352,11 +352,13 @@ class ClientMain extends Application {
     HBox.setHgrow(spacer, Priority.ALWAYS)
     val profileBtn = new Button("Profile")
     addHoverEffect(profileBtn, buttonStyle, buttonHoverStyle)
+    val leaderboardBtn = new Button("Leaderboard")
+    addHoverEffect(leaderboardBtn, buttonStyle, buttonHoverStyle)
     val rankedBtn = new Button("Queue Ranked")
     addHoverEffect(rankedBtn, buttonGreenStyle, buttonGreenHoverStyle)
     val refreshBtn = new Button("Refresh")
     addHoverEffect(refreshBtn, buttonStyle, buttonHoverStyle)
-    titleBar.getChildren.addAll(title, spacer, profileBtn, rankedBtn, refreshBtn)
+    titleBar.getChildren.addAll(title, spacer, profileBtn, leaderboardBtn, rankedBtn, refreshBtn)
 
     // Lobby list with custom cell factory
     val lobbyListView = new ListView[String]()
@@ -463,6 +465,8 @@ class ClientMain extends Application {
 
     // Button actions
     profileBtn.setOnAction(_ => showAccountView(stage))
+
+    leaderboardBtn.setOnAction(_ => showLeaderboard(stage))
 
     rankedBtn.setOnAction(_ => {
       client.queueRanked()
@@ -914,6 +918,95 @@ class ClientMain extends Application {
 
     val scene = new Scene(root, 580, 700)
     stage.setScene(scene)
+  }
+
+  private def showLeaderboard(stage: Stage): Unit = {
+    val root = new VBox(16)
+    root.setPadding(new Insets(24))
+    root.setStyle(darkBg)
+
+    val titleBar = new HBox(12)
+    titleBar.setAlignment(Pos.CENTER_LEFT)
+    val title = new Label("Leaderboard")
+    title.setFont(Font.font("System", FontWeight.BOLD, 28))
+    title.setTextFill(Color.WHITE)
+    val spacer = new Region()
+    HBox.setHgrow(spacer, Priority.ALWAYS)
+    val backBtn = new Button("Back")
+    addHoverEffect(backBtn, buttonStyle, buttonHoverStyle)
+    backBtn.setOnAction(_ => {
+      client.requestLobbyList()
+      showLobbyBrowser(stage)
+    })
+    titleBar.getChildren.addAll(title, spacer, backBtn)
+
+    val leaderboardListView = new ListView[String]()
+    leaderboardListView.setStyle(listViewCss)
+    leaderboardListView.setPrefHeight(500)
+    VBox.setVgrow(leaderboardListView, Priority.ALWAYS)
+
+    val leaderboardCellFactory = new Callback[ListView[String], ListCell[String]] {
+      override def call(param: ListView[String]): ListCell[String] = new ListCell[String] {
+        override def updateItem(item: String, empty: Boolean): Unit = {
+          super.updateItem(item, empty)
+          if (empty || item == null) {
+            setText(null)
+            setStyle("-fx-background-color: #242440;")
+          } else {
+            setText(item)
+            val base = "-fx-font-size: 15; -fx-padding: 10 12; -fx-font-weight: bold;"
+            val idx = getIndex
+            // Check if this row is the local player
+            val isLocal = idx >= 0 && idx < client.leaderboard.size() && {
+              val entry = client.leaderboard.get(idx)
+              entry(1).asInstanceOf[String].equalsIgnoreCase(client.playerName)
+            }
+            if (isLocal) {
+              setStyle(s"-fx-background-color: rgba(74, 158, 255, 0.15); -fx-text-fill: #4a9eff; $base")
+            } else if (idx == 0) {
+              setStyle(s"-fx-background-color: #242440; -fx-text-fill: #ffd700; $base")
+            } else if (idx == 1) {
+              setStyle(s"-fx-background-color: #2a2a48; -fx-text-fill: #c0c0c0; $base")
+            } else if (idx == 2) {
+              setStyle(s"-fx-background-color: #242440; -fx-text-fill: #cd7f32; $base")
+            } else if (idx % 2 == 0) {
+              setStyle(s"-fx-background-color: #242440; -fx-text-fill: #dde; $base")
+            } else {
+              setStyle(s"-fx-background-color: #2a2a48; -fx-text-fill: #dde; $base")
+            }
+          }
+        }
+      }
+    }
+    leaderboardListView.setCellFactory(leaderboardCellFactory)
+
+    val loadingLabel = new Label("Loading...")
+    loadingLabel.setTextFill(Color.web("#8899bb"))
+    loadingLabel.setFont(Font.font("System", 13))
+
+    root.getChildren.addAll(titleBar, leaderboardListView, loadingLabel)
+
+    val scene = new Scene(root, 680, 780)
+    stage.setScene(scene)
+
+    // Set up listener and request data
+    client.leaderboardListener = () => {
+      Platform.runLater(() => {
+        val items = new java.util.ArrayList[String]()
+        import scala.jdk.CollectionConverters._
+        client.leaderboard.asScala.foreach { entry =>
+          val rank = entry(0).asInstanceOf[Int]
+          val username = entry(1).asInstanceOf[String]
+          val elo = entry(2).asInstanceOf[Int]
+          val wins = entry(3).asInstanceOf[Int]
+          val matches = entry(4).asInstanceOf[Int]
+          items.add(s"#$rank  |  $username  |  ELO: $elo  |  ${wins}W  |  $matches Matches")
+        }
+        leaderboardListView.setItems(FXCollections.observableArrayList(items))
+        loadingLabel.setText(if (items.isEmpty) "No players found" else "")
+      })
+    }
+    client.requestLeaderboard()
   }
 
   private def showAccountView(stage: Stage): Unit = {

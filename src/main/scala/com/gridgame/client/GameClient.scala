@@ -145,6 +145,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   @volatile var rankedQueueListener: () => Unit = _
   @volatile var rankedMatchFoundListener: () => Unit = _
 
+  // Leaderboard state: (rank, username, elo, wins, matchesPlayed)
+  val leaderboard: CopyOnWriteArrayList[Array[AnyRef]] = new CopyOnWriteArrayList[Array[AnyRef]]()
+  @volatile var leaderboardListener: () => Unit = _
+
   @volatile var matchHistoryListener: () => Unit = _
   @volatile var lobbyListListener: () => Unit = _
   @volatile var lobbyJoinedListener: () => Unit = _
@@ -655,6 +659,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       return
     }
 
+    // Handle leaderboard
+    if (packet.getType == PacketType.LEADERBOARD) {
+      handleLeaderboard(packet.asInstanceOf[LeaderboardPacket])
+      return
+    }
+
     // Handle match history
     if (packet.getType == PacketType.MATCH_HISTORY) {
       handleMatchHistory(packet.asInstanceOf[MatchHistoryPacket])
@@ -898,6 +908,24 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     }
   }
 
+  private def handleLeaderboard(packet: LeaderboardPacket): Unit = {
+    packet.getAction match {
+      case LeaderboardAction.ENTRY =>
+        leaderboard.add(Array(
+          (packet.getRank & 0xFF).asInstanceOf[AnyRef],
+          packet.getUsername.asInstanceOf[AnyRef],
+          packet.getElo.toInt.asInstanceOf[AnyRef],
+          packet.getWins.asInstanceOf[AnyRef],
+          packet.getMatchesPlayed.asInstanceOf[AnyRef]
+        ))
+
+      case LeaderboardAction.END =>
+        if (leaderboardListener != null) leaderboardListener()
+
+      case _ =>
+    }
+  }
+
   private def handleMatchHistory(packet: MatchHistoryPacket): Unit = {
     packet.getAction match {
       case MatchHistoryAction.STATS =>
@@ -984,6 +1012,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   def startGame(): Unit = {
     val packet = new LobbyActionPacket(
       sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.START
+    )
+    networkThread.send(packet)
+  }
+
+  def requestLeaderboard(): Unit = {
+    leaderboard.clear()
+    val packet = new LeaderboardPacket(
+      sequenceNumber.getAndIncrement(), localPlayerId, LeaderboardAction.QUERY
     )
     networkThread.send(packet)
   }

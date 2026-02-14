@@ -199,6 +199,9 @@ class GameServer(port: Int, val worldFile: String = "") {
         case PacketType.MATCH_HISTORY =>
           handleMatchHistoryRequest(packet.asInstanceOf[MatchHistoryPacket], tcpCh)
 
+        case PacketType.LEADERBOARD =>
+          handleLeaderboardRequest(packet.asInstanceOf[LeaderboardPacket], tcpCh)
+
         case PacketType.RANKED_QUEUE =>
           handleRankedQueue(packet.asInstanceOf[RankedQueuePacket])
 
@@ -382,6 +385,28 @@ class GameServer(port: Int, val worldFile: String = "") {
 
     // Send end marker
     val endPacket = new MatchHistoryPacket(getNextSequenceNumber, playerId, MatchHistoryAction.END)
+    sendPacketViaChannel(endPacket, tcpCh)
+  }
+
+  private def handleLeaderboardRequest(packet: LeaderboardPacket, tcpCh: Channel): Unit = {
+    if (packet.getAction != LeaderboardAction.QUERY) return
+
+    val playerId = packet.getPlayerId
+    val player = connectedPlayers.get(playerId)
+    if (player == null) return
+
+    val leaderboard = authDatabase.getLeaderboard()
+    var rank: Byte = 1
+    leaderboard.foreach { case (username, elo, wins, matchesPlayed) =>
+      val entryPacket = new LeaderboardPacket(
+        getNextSequenceNumber, playerId, Packet.getCurrentTimestamp, LeaderboardAction.ENTRY,
+        rank, elo.toShort, wins, matchesPlayed, username
+      )
+      sendPacketViaChannel(entryPacket, tcpCh)
+      rank = (rank + 1).toByte
+    }
+
+    val endPacket = new LeaderboardPacket(getNextSequenceNumber, playerId, LeaderboardAction.END)
     sendPacketViaChannel(endPacket, tcpCh)
   }
 
