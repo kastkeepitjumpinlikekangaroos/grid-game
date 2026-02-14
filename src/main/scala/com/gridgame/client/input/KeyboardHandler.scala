@@ -92,6 +92,8 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
       // Slowdown proportional to charge: 1x at 0% → 10x at 100%
       val chargePct = client.getChargeLevel / 100.0
       (Constants.MOVE_RATE_LIMIT_MS * (1.0 + chargePct * 9.0)).toInt
+    } else if (client.isPhased) {
+      Constants.PHASE_SHIFT_MOVE_RATE_MS
     } else {
       Constants.MOVE_RATE_LIMIT_MS
     }

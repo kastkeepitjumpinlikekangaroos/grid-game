@@ -143,7 +143,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         if (target != null) {
           val flags = (if (target.hasShield) 0x01 else 0) |
                       (if (target.hasGemBoost) 0x02 else 0) |
-                      (if (target.isFrozen) 0x04 else 0)
+                      (if (target.isFrozen) 0x04 else 0) |
+                      (if (target.isPhased) 0x08 else 0)
           val updatePacket = new PlayerUpdatePacket(
             server.getNextSequenceNumber,
             targetId,
@@ -218,19 +219,54 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
             case ProjectileType.ICE_BEAM =>
               target.setFrozenUntil(System.currentTimeMillis() + Constants.ICE_BEAM_FREEZE_DURATION_MS)
 
-            case ProjectileType.TIDAL_WAVE =>
-              // Push target away from shooter
+            case ProjectileType.HAUNT =>
+              // Freeze the target for 2 seconds
+              target.setFrozenUntil(System.currentTimeMillis() + Constants.HAUNT_FREEZE_DURATION_MS)
+              // Teleport the projectile owner behind the target
               val owner = registry.get(projectile.ownerId)
               if (owner != null) {
-                val ownerPos = owner.getPosition
                 val targetPos = target.getPosition
-                val pdx = targetPos.getX - ownerPos.getX
-                val pdy = targetPos.getY - ownerPos.getY
+                val (bdx, bdy) = target.getDirection match {
+                  case Direction.Up    => (0, 1)   // behind Up-facing = below
+                  case Direction.Down  => (0, -1)  // behind Down-facing = above
+                  case Direction.Left  => (1, 0)   // behind Left-facing = right
+                  case Direction.Right => (-1, 0)  // behind Right-facing = left
+                }
+                val destX = Math.max(0, Math.min(world.width - 1, targetPos.getX + bdx * Constants.HAUNT_TELEPORT_DISTANCE))
+                val destY = Math.max(0, Math.min(world.height - 1, targetPos.getY + bdy * Constants.HAUNT_TELEPORT_DISTANCE))
+                if (world.isWalkable(destX, destY)) {
+                  owner.setPosition(new Position(destX, destY))
+                  // Broadcast position update for the Wraith
+                  val ownerFlags = (if (owner.hasShield) 0x01 else 0) |
+                                   (if (owner.hasGemBoost) 0x02 else 0) |
+                                   (if (owner.isFrozen) 0x04 else 0) |
+                                   (if (owner.isPhased) 0x08 else 0)
+                  val ownerUpdate = new PlayerUpdatePacket(
+                    server.getNextSequenceNumber,
+                    projectile.ownerId,
+                    owner.getPosition,
+                    owner.getColorRGB,
+                    owner.getHealth,
+                    0,
+                    ownerFlags
+                  )
+                  broadcastToInstance(ownerUpdate)
+                }
+              }
+
+            case ProjectileType.TIDAL_WAVE =>
+              // Push target away from shooter
+              val twOwner = registry.get(projectile.ownerId)
+              if (twOwner != null) {
+                val twOwnerPos = twOwner.getPosition
+                val twTargetPos = target.getPosition
+                val pdx = twTargetPos.getX - twOwnerPos.getX
+                val pdy = twTargetPos.getY - twOwnerPos.getY
                 val dist = Math.sqrt(pdx * pdx + pdy * pdy).toFloat
                 if (dist > 0.01f) {
                   val pushDist = Constants.TIDAL_WAVE_PUSHBACK_DISTANCE
-                  val destX = targetPos.getX + Math.round(pdx / dist * pushDist)
-                  val destY = targetPos.getY + Math.round(pdy / dist * pushDist)
+                  val destX = twTargetPos.getX + Math.round(pdx / dist * pushDist)
+                  val destY = twTargetPos.getY + Math.round(pdy / dist * pushDist)
                   val clampedX = Math.max(0, Math.min(world.width - 1, destX))
                   val clampedY = Math.max(0, Math.min(world.height - 1, destY))
                   if (world.isWalkable(clampedX, clampedY)) {
@@ -239,12 +275,13 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                 }
               }
 
-            case _ => // No special effect (AXE, SPEAR, NORMAL, SPLASH, GEYSER)
+            case _ => // No special effect (AXE, SPEAR, NORMAL, SOUL_BOLT, SPLASH, GEYSER)
           }
 
           val flags = (if (target.hasShield) 0x01 else 0) |
                       (if (target.hasGemBoost) 0x02 else 0) |
-                      (if (target.isFrozen) 0x04 else 0)
+                      (if (target.isFrozen) 0x04 else 0) |
+                      (if (target.isPhased) 0x08 else 0)
           val updatePacket = new PlayerUpdatePacket(
             server.getNextSequenceNumber,
             targetId,
@@ -276,7 +313,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         if (aoeTarget != null) {
           val flags = (if (aoeTarget.hasShield) 0x01 else 0) |
                       (if (aoeTarget.hasGemBoost) 0x02 else 0) |
-                      (if (aoeTarget.isFrozen) 0x04 else 0)
+                      (if (aoeTarget.isFrozen) 0x04 else 0) |
+                      (if (aoeTarget.isPhased) 0x08 else 0)
           val updatePacket = new PlayerUpdatePacket(
             server.getNextSequenceNumber,
             targetId,
@@ -308,7 +346,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         if (aoeKillTarget != null) {
           val flags = (if (aoeKillTarget.hasShield) 0x01 else 0) |
                       (if (aoeKillTarget.hasGemBoost) 0x02 else 0) |
-                      (if (aoeKillTarget.isFrozen) 0x04 else 0)
+                      (if (aoeKillTarget.isFrozen) 0x04 else 0) |
+                      (if (aoeKillTarget.isPhased) 0x08 else 0)
           val updatePacket = new PlayerUpdatePacket(
             server.getNextSequenceNumber,
             targetId,

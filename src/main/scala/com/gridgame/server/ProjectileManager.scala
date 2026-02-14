@@ -64,6 +64,8 @@ class ProjectileManager(registry: ClientRegistry) {
             case ProjectileType.AXE => Constants.AXE_MAX_RANGE.toDouble
             case ProjectileType.ROPE => Constants.ROPE_MAX_RANGE.toDouble
             case ProjectileType.SPEAR => Constants.SPEAR_MAX_RANGE.toDouble
+            case ProjectileType.SOUL_BOLT => Constants.SOUL_BOLT_MAX_RANGE.toDouble
+            case ProjectileType.HAUNT => Constants.HAUNT_MAX_RANGE.toDouble
             case ProjectileType.SPLASH => Constants.SPLASH_MAX_RANGE.toDouble
             case ProjectileType.TIDAL_WAVE => Constants.TIDAL_WAVE_MAX_RANGE.toDouble
             case ProjectileType.GEYSER => Constants.GEYSER_MAX_RANGE.toDouble
@@ -81,14 +83,16 @@ class ProjectileManager(registry: ClientRegistry) {
             toRemove += projectile.id
             events += ProjectileDespawned(projectile)
             resolved = true
-          } else if (projectile.hitsNonWalkable(world)) {
+          } else if (projectile.hitsNonWalkable(world) &&
+                     projectile.projectileType != ProjectileType.SOUL_BOLT &&
+                     projectile.projectileType != ProjectileType.HAUNT) {
             toRemove += projectile.id
             events += ProjectileDespawned(projectile)
             resolved = true
           } else {
             var hitPlayer: Player = null
             registry.getAll.asScala.foreach { player =>
-              if (projectile.hitsPlayer(player) && !player.isDead && !player.hasShield) {
+              if (projectile.hitsPlayer(player) && !player.isDead && !player.hasShield && !player.isPhased) {
                 hitPlayer = player
               }
             }
@@ -102,6 +106,8 @@ class ProjectileManager(registry: ClientRegistry) {
                 case ProjectileType.SPEAR =>
                   val distanceFraction = Math.min(1.0f, projectile.getDistanceTraveled / Constants.SPEAR_MAX_RANGE.toFloat)
                   (Constants.SPEAR_BASE_DAMAGE + (distanceFraction * (Constants.SPEAR_MAX_DAMAGE - Constants.SPEAR_BASE_DAMAGE))).toInt
+                case ProjectileType.SOUL_BOLT => Constants.SOUL_BOLT_DAMAGE
+                case ProjectileType.HAUNT => Constants.HAUNT_DAMAGE
                 case ProjectileType.SPLASH => Constants.SPLASH_DAMAGE
                 case ProjectileType.TIDAL_WAVE => Constants.TIDAL_WAVE_DAMAGE
                 case ProjectileType.GEYSER => Constants.GEYSER_DAMAGE

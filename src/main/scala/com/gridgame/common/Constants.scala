@@ -97,6 +97,22 @@ object Constants {
   val SPEAR_BASE_DAMAGE: Int = 10
   val SPEAR_MAX_DAMAGE: Int = 60
 
+  // Wraith: Soul Bolt (primary)
+  val SOUL_BOLT_DAMAGE: Int = 15
+  val SOUL_BOLT_MAX_RANGE: Int = 15
+
+  // Wraith: Phase Shift (Q)
+  val PHASE_SHIFT_COOLDOWN_MS: Int = 12000
+  val PHASE_SHIFT_DURATION_MS: Int = 5000
+  val PHASE_SHIFT_MOVE_RATE_MS: Int = 25       // 2x move speed while phased
+
+  // Wraith: Haunt (E)
+  val HAUNT_COOLDOWN_MS: Int = 15000
+  val HAUNT_MAX_RANGE: Int = 15
+  val HAUNT_DAMAGE: Int = 30
+  val HAUNT_TELEPORT_DISTANCE: Int = 2
+  val HAUNT_FREEZE_DURATION_MS: Int = 2000
+
   // Splash Shot (Tidecaller primary)
   val SPLASH_DAMAGE: Int = 20
   val SPLASH_AOE_DAMAGE: Int = 10

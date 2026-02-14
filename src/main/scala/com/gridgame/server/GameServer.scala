@@ -231,9 +231,17 @@ class GameServer(port: Int, val worldFile: String = "") {
                   if (player != null) {
                     // Reject position updates from frozen players
                     val pos = if (player.isFrozen) player.getPosition else updatePacket.getPosition
+
+                    // Handle phased flag from client
+                    val clientFlags = updatePacket.getEffectFlags
+                    if ((clientFlags & 0x08) != 0 && !player.isPhased) {
+                      player.setPhasedUntil(System.currentTimeMillis() + Constants.PHASE_SHIFT_DURATION_MS)
+                    }
+
                     val flags = (if (player.hasShield) 0x01 else 0) |
                                 (if (player.hasGemBoost) 0x02 else 0) |
-                                (if (player.isFrozen) 0x04 else 0)
+                                (if (player.isFrozen) 0x04 else 0) |
+                                (if (player.isPhased) 0x08 else 0)
                     new PlayerUpdatePacket(
                       updatePacket.getSequenceNumber,
                       updatePacket.getPlayerId,
