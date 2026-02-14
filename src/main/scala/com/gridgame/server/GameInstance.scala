@@ -32,8 +32,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   private var startTime: Long = 0L
   @volatile private var running = false
 
-  def start(): Unit = {
-    // Load world
+  def loadWorld(): Unit = {
     if (worldFile.nonEmpty) {
       try {
         world = WorldLoader.load(worldFile)
@@ -46,6 +45,10 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     } else {
       world = WorldData.createEmpty(200, 200)
     }
+  }
+
+  def start(): Unit = {
+    if (world == null) loadWorld()
 
     startTime = System.currentTimeMillis()
     running = true

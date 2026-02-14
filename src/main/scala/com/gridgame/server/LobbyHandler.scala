@@ -124,14 +124,14 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     val worldFileName = WorldRegistry.getFilename(lobby.mapIndex)
     val worldPath = resolveWorldPath("worlds/" + worldFileName)
 
-    // Create GameInstance
+    // Create GameInstance and load world (needed for spawn points)
     val instance = new GameInstance(lobby.id, worldPath, lobby.durationMinutes, server)
+    instance.loadWorld()
     lobby.gameInstance = instance
     server.registerGameInstance(lobby.id, instance)
 
-    instance.start()
-
     // Register all lobby players in the instance's registry and kill tracker
+    // (must happen before instance.start() so initial item spawns reach players)
     lobby.players.asScala.foreach { pid =>
       val p = server.getConnectedPlayer(pid)
       if (p != null) {
@@ -164,6 +164,10 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
         server.sendPacketToPlayer(worldInfoPacket, p)
       }
     }
+
+    // Start the instance (spawns initial items, begins projectile/timer ticks)
+    // Done after players are registered and notified so item spawns reach everyone
+    instance.start()
 
     println(s"LobbyHandler: Game started for lobby ${lobby.id} on map $worldFileName ($worldPath)")
   }
