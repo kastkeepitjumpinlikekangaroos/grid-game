@@ -117,7 +117,15 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   // Kill feed: (timestamp, killerName, victimName)
   val killFeed: CopyOnWriteArrayList[Array[AnyRef]] = new CopyOnWriteArrayList[Array[AnyRef]]()
 
+  // Match history state: (matchId, mapIndex, durationMin, playedAt, kills, deaths, rank, totalPlayers)
+  val matchHistory: CopyOnWriteArrayList[Array[Int]] = new CopyOnWriteArrayList[Array[Int]]()
+  @volatile var totalKillsStat: Int = 0
+  @volatile var totalDeathsStat: Int = 0
+  @volatile var matchesPlayedStat: Int = 0
+  @volatile var winsStat: Int = 0
+
   // Listeners
+  @volatile var matchHistoryListener: () => Unit = _
   @volatile var lobbyListListener: () => Unit = _
   @volatile var lobbyJoinedListener: () => Unit = _
   @volatile var lobbyUpdatedListener: () => Unit = _
@@ -512,6 +520,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       return
     }
 
+    // Handle match history
+    if (packet.getType == PacketType.MATCH_HISTORY) {
+      handleMatchHistory(packet.asInstanceOf[MatchHistoryPacket])
+      return
+    }
+
     // Handle lobby actions
     if (packet.getType == PacketType.LOBBY_ACTION) {
       handleLobbyAction(packet.asInstanceOf[LobbyActionPacket])
@@ -739,6 +753,28 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     }
   }
 
+  private def handleMatchHistory(packet: MatchHistoryPacket): Unit = {
+    packet.getAction match {
+      case MatchHistoryAction.STATS =>
+        totalKillsStat = packet.getTotalKills
+        totalDeathsStat = packet.getTotalDeaths
+        matchesPlayedStat = packet.getMatchesPlayed
+        winsStat = packet.getWins
+
+      case MatchHistoryAction.ENTRY =>
+        matchHistory.add(Array(
+          packet.getMatchId, packet.getMapIndex & 0xFF, packet.getDuration & 0xFF,
+          packet.getPlayedAt, packet.getKills.toInt, packet.getDeaths.toInt,
+          packet.getRank & 0xFF, packet.getTotalPlayers & 0xFF
+        ))
+
+      case MatchHistoryAction.END =>
+        if (matchHistoryListener != null) matchHistoryListener()
+
+      case _ =>
+    }
+  }
+
   // Lobby actions
   def requestLobbyList(): Unit = {
     lobbyList.clear()
@@ -779,6 +815,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   def startGame(): Unit = {
     val packet = new LobbyActionPacket(
       sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.START
+    )
+    networkThread.send(packet)
+  }
+
+  def requestMatchHistory(): Unit = {
+    matchHistory.clear()
+    val packet = new MatchHistoryPacket(
+      sequenceNumber.getAndIncrement(), localPlayerId, MatchHistoryAction.QUERY
     )
     networkThread.send(packet)
   }

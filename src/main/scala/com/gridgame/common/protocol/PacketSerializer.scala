@@ -64,6 +64,34 @@ object PacketSerializer {
         val message = extractString(msgBytes)
         new AuthResponsePacket(sequenceNumber, Packet.getCurrentTimestamp, success, assignedUUID, message)
 
+      case PacketType.MATCH_HISTORY =>
+        val action = buffer.get()
+        action match {
+          case MatchHistoryAction.ENTRY =>
+            val matchId = buffer.getInt()
+            val mapIndex = buffer.get()
+            val duration = buffer.get()
+            val playedAt = buffer.getInt()
+            val kills = buffer.getShort()
+            val deaths = buffer.getShort()
+            val rank = buffer.get()
+            val totalPlayers = buffer.get()
+            new MatchHistoryPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, action,
+              matchId, mapIndex, duration, playedAt, kills, deaths, rank, totalPlayers)
+
+          case MatchHistoryAction.STATS =>
+            val totalKills = buffer.getInt()
+            val totalDeaths = buffer.getInt()
+            val matchesPlayed = buffer.getInt()
+            val wins = buffer.getInt()
+            new MatchHistoryPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, action,
+              totalKills = totalKills, totalDeaths = totalDeaths,
+              matchesPlayed = matchesPlayed, wins = wins)
+
+          case _ => // QUERY or END
+            new MatchHistoryPacket(sequenceNumber, playerId, action)
+        }
+
       case PacketType.LOBBY_ACTION =>
         // Custom layout from byte 21 onward (no standard x/y/color/timestamp)
         val action = buffer.get()

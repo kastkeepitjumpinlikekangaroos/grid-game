@@ -347,9 +347,11 @@ class ClientMain extends Application {
     title.setTextFill(Color.WHITE)
     val spacer = new Region()
     HBox.setHgrow(spacer, Priority.ALWAYS)
+    val profileBtn = new Button("Profile")
+    addHoverEffect(profileBtn, buttonStyle, buttonHoverStyle)
     val refreshBtn = new Button("Refresh")
     addHoverEffect(refreshBtn, buttonStyle, buttonHoverStyle)
-    titleBar.getChildren.addAll(title, spacer, refreshBtn)
+    titleBar.getChildren.addAll(title, spacer, profileBtn, refreshBtn)
 
     // Lobby list with custom cell factory
     val lobbyListView = new ListView[String]()
@@ -455,6 +457,8 @@ class ClientMain extends Application {
     }
 
     // Button actions
+    profileBtn.setOnAction(_ => showAccountView(stage))
+
     refreshBtn.setOnAction(_ => {
       client.requestLobbyList()
     })
@@ -668,6 +672,133 @@ class ClientMain extends Application {
 
     val scene = new Scene(root, 460, 560)
     stage.setScene(scene)
+  }
+
+  private def showAccountView(stage: Stage): Unit = {
+    val root = new VBox(16)
+    root.setPadding(new Insets(24))
+    root.setStyle(darkBg)
+
+    val titleBar = new HBox(12)
+    titleBar.setAlignment(Pos.CENTER_LEFT)
+    val title = new Label("Profile")
+    title.setFont(Font.font("System", FontWeight.BOLD, 28))
+    title.setTextFill(Color.WHITE)
+    val spacer = new Region()
+    HBox.setHgrow(spacer, Priority.ALWAYS)
+    val backBtn = new Button("Back")
+    addHoverEffect(backBtn, buttonStyle, buttonHoverStyle)
+    backBtn.setOnAction(_ => {
+      client.requestLobbyList()
+      showLobbyBrowser(stage)
+    })
+    titleBar.getChildren.addAll(title, spacer, backBtn)
+
+    // Stats card
+    val statsCard = new VBox(8)
+    statsCard.setPadding(new Insets(16, 20, 16, 20))
+    statsCard.setStyle(cardBg)
+
+    val statsTitle = new Label("ALL-TIME STATS")
+    statsTitle.setStyle(sectionHeaderStyle)
+
+    val statsRow = new HBox(24)
+    statsRow.setAlignment(Pos.CENTER)
+    statsRow.setPadding(new Insets(8, 0, 4, 0))
+
+    val killsBox = createStatBox("Kills", "0")
+    val deathsBox = createStatBox("Deaths", "0")
+    val matchesBox = createStatBox("Matches", "0")
+    val winsBox = createStatBox("Wins", "0")
+    statsRow.getChildren.addAll(killsBox, deathsBox, matchesBox, winsBox)
+
+    statsCard.getChildren.addAll(statsTitle, statsRow)
+
+    // Match history label
+    val historyTitle = new Label("RECENT MATCHES")
+    historyTitle.setStyle(sectionHeaderStyle)
+    historyTitle.setPadding(new Insets(8, 0, 0, 0))
+
+    // Match history list
+    val historyListView = new ListView[String]()
+    historyListView.setStyle(listViewCss)
+    historyListView.setPrefHeight(300)
+    VBox.setVgrow(historyListView, Priority.ALWAYS)
+
+    val historyCellFactory = new Callback[ListView[String], ListCell[String]] {
+      override def call(param: ListView[String]): ListCell[String] = new ListCell[String] {
+        override def updateItem(item: String, empty: Boolean): Unit = {
+          super.updateItem(item, empty)
+          if (empty || item == null) {
+            setText(null)
+            setStyle("-fx-background-color: #242440;")
+          } else {
+            setText(item)
+            val base = "-fx-text-fill: #dde; -fx-font-size: 14; -fx-padding: 10 12;"
+            if (getIndex % 2 == 0) {
+              setStyle(s"-fx-background-color: #242440; $base")
+            } else {
+              setStyle(s"-fx-background-color: #2a2a48; $base")
+            }
+          }
+        }
+      }
+    }
+    historyListView.setCellFactory(historyCellFactory)
+
+    val loadingLabel = new Label("Loading...")
+    loadingLabel.setTextFill(Color.web("#8899bb"))
+    loadingLabel.setFont(Font.font("System", 13))
+
+    root.getChildren.addAll(titleBar, statsCard, historyTitle, historyListView, loadingLabel)
+
+    val scene = new Scene(root, 560, 640)
+    stage.setScene(scene)
+
+    // Set up listener and request data
+    client.matchHistoryListener = () => {
+      Platform.runLater(() => {
+        // Update stats
+        val killsLabel = killsBox.getChildren.get(1).asInstanceOf[Label]
+        killsLabel.setText(client.totalKillsStat.toString)
+        val deathsLabel = deathsBox.getChildren.get(1).asInstanceOf[Label]
+        deathsLabel.setText(client.totalDeathsStat.toString)
+        val matchesLabel = matchesBox.getChildren.get(1).asInstanceOf[Label]
+        matchesLabel.setText(client.matchesPlayedStat.toString)
+        val winsLabel = winsBox.getChildren.get(1).asInstanceOf[Label]
+        winsLabel.setText(client.winsStat.toString)
+
+        // Update match list
+        val items = new java.util.ArrayList[String]()
+        import scala.jdk.CollectionConverters._
+        client.matchHistory.asScala.foreach { entry =>
+          val mapName = WorldRegistry.getDisplayName(entry(1))
+          val playedAt = entry(3).toLong * 1000L
+          val date = new java.text.SimpleDateFormat("MMM d, HH:mm").format(new java.util.Date(playedAt))
+          val kills = entry(4)
+          val deaths = entry(5)
+          val rank = entry(6)
+          val totalPlayers = entry(7)
+          val duration = entry(2)
+          items.add(s"#${rank}/${totalPlayers}  |  $mapName  |  ${kills}K/${deaths}D  |  ${duration}min  |  $date")
+        }
+        historyListView.setItems(FXCollections.observableArrayList(items))
+        loadingLabel.setText(if (items.isEmpty) "No matches played yet" else "")
+      })
+    }
+    client.requestMatchHistory()
+  }
+
+  private def createStatBox(label: String, value: String): VBox = {
+    val box = new VBox(2)
+    box.setAlignment(Pos.CENTER)
+    val nameLabel = new Label(label)
+    nameLabel.setStyle(sectionHeaderStyle)
+    val valueLabel = new Label(value)
+    valueLabel.setFont(Font.font("System", FontWeight.BOLD, 22))
+    valueLabel.setTextFill(Color.WHITE)
+    box.getChildren.addAll(nameLabel, valueLabel)
+    box
   }
 
   private def showGameScene(stage: Stage): Unit = {
