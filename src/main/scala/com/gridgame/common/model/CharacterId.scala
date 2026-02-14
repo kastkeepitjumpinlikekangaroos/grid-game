@@ -5,8 +5,9 @@ sealed abstract class CharacterId(val id: Byte, val name: String)
 object CharacterId {
   case object Spaceman extends CharacterId(0, "Spaceman")
   case object Gladiator extends CharacterId(1, "Gladiator")
+  case object Wraith extends CharacterId(2, "Wraith")
 
-  val all: Seq[CharacterId] = Seq(Spaceman, Gladiator)
+  val all: Seq[CharacterId] = Seq(Spaceman, Gladiator, Wraith)
 
   val DEFAULT: CharacterId = Spaceman
 

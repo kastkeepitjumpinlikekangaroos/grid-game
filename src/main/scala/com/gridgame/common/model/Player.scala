@@ -23,6 +23,7 @@ class Player(
   private var gemBoostUntil: Long = 0
   private var _chargeLevel: Int = 0
   private var frozenUntil: Long = 0
+  private var phasedUntil: Long = 0
   private var characterId: Byte = CharacterId.DEFAULT.id
 
   def getId: UUID = id
@@ -105,6 +106,14 @@ class Player(
   }
 
   def isFrozen: Boolean = System.currentTimeMillis() < frozenUntil
+
+  def getPhasedUntil: Long = phasedUntil
+
+  def setPhasedUntil(until: Long): Unit = {
+    this.phasedUntil = until
+  }
+
+  def isPhased: Boolean = System.currentTimeMillis() < phasedUntil
 
   def getCharacterId: Byte = characterId
 

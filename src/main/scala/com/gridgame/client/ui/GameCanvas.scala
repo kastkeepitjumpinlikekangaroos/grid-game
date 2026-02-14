@@ -568,6 +568,8 @@ class GameCanvas(client: GameClient) extends Canvas() {
       case ProjectileType.AXE => drawAxeProjectile(projectile, camOffX, camOffY)
       case ProjectileType.ROPE => drawRopeProjectile(projectile, camOffX, camOffY)
       case ProjectileType.SPEAR => drawSpearProjectile(projectile, camOffX, camOffY)
+      case ProjectileType.SOUL_BOLT => drawSoulBoltProjectile(projectile, camOffX, camOffY)
+      case ProjectileType.HAUNT => drawHauntProjectile(projectile, camOffX, camOffY)
       case _ => drawNormalProjectile(projectile, camOffX, camOffY)
     }
   }
@@ -1066,6 +1068,145 @@ class GameCanvas(client: GameClient) extends Canvas() {
     }
   }
 
+  private def drawSoulBoltProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 4.0
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 19) * 0.35
+      val pulse = 0.85 + 0.15 * Math.sin(phase)
+      val fastFlicker = 0.9 + 0.1 * Math.sin(phase * 3.7)
+
+      // Ghostly green/teal glow layers
+      gc.setStroke(Color.color(0.1, 0.8, 0.6, 0.07 * pulse))
+      gc.setLineWidth(36 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(0.1, 0.85, 0.65, 0.14 * pulse))
+      gc.setLineWidth(22 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(0.2, 0.9, 0.7, 0.45 * fastFlicker))
+      gc.setLineWidth(10 * fastFlicker)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(0.6, 1.0, 0.85, 0.9 * fastFlicker))
+      gc.setLineWidth(3.5)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Wispy particles
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len > 1) {
+        val nx = dx / len
+        val ny = dy / len
+        for (i <- 0 until 5) {
+          val t = ((animationTick * 0.09 + i.toDouble / 5 + projectile.id * 0.15) % 1.0)
+          val wave = Math.sin(phase * 2.5 + i * 1.9) * 7.0
+          val px = tailX + dx * t + (-ny) * wave
+          val py = tailY + dy * t + nx * wave
+          val pAlpha = Math.max(0.0, Math.min(1.0, 0.6 * (1.0 - Math.abs(t - 0.5) * 2.0)))
+          val pSize = 2.5 + Math.sin(phase + i) * 1.0
+          gc.setFill(Color.color(0.5, 1.0, 0.8, pAlpha))
+          gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+        }
+      }
+
+      // Ghostly orb at tip
+      val orbR = 7.0 * pulse
+      gc.setFill(Color.color(0.1, 0.8, 0.6, 0.2 * pulse))
+      gc.fillOval(tipX - orbR * 2, tipY - orbR * 2, orbR * 4, orbR * 4)
+      gc.setFill(Color.color(0.2, 0.9, 0.7, 0.45 * pulse))
+      gc.fillOval(tipX - orbR, tipY - orbR, orbR * 2, orbR * 2)
+      gc.setFill(Color.color(0.6, 1.0, 0.85, 0.85 * fastFlicker))
+      gc.fillOval(tipX - orbR * 0.4, tipY - orbR * 0.4, orbR * 0.8, orbR * 0.8)
+    }
+  }
+
+  private def drawHauntProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 3.0
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 43) * 0.25
+      val pulse = 0.8 + 0.2 * Math.sin(phase)
+      val fastFlicker = 0.85 + 0.15 * Math.sin(phase * 2.9)
+
+      // Dark spectral glow — purple/dark teal
+      gc.setStroke(Color.color(0.3, 0.1, 0.5, 0.1 * pulse))
+      gc.setLineWidth(42 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(0.35, 0.15, 0.55, 0.18 * pulse))
+      gc.setLineWidth(28 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(0.4, 0.2, 0.65, 0.4 * fastFlicker))
+      gc.setLineWidth(14 * fastFlicker)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(0.7, 0.5, 0.9, 0.85 * fastFlicker))
+      gc.setLineWidth(4.0)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Shadowy tendrils along the beam
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len > 1) {
+        val nx = dx / len
+        val ny = dy / len
+        for (strand <- 0 until 2) {
+          val strandOff = (strand - 0.5) * 6.0
+          for (i <- 0 until 6) {
+            val t = ((animationTick * 0.07 + i.toDouble / 6 + strand * 0.3) % 1.0)
+            val wave = Math.sin(phase * 1.8 + i * 2.0 + strand * 3.14) * 5.0
+            val px = tailX + dx * t + (-ny) * (wave + strandOff)
+            val py = tailY + dy * t + nx * (wave + strandOff)
+            val pAlpha = Math.max(0.0, Math.min(1.0, 0.5 * (1.0 - Math.abs(t - 0.5) * 2.0)))
+            val pSize = 2.0 + Math.sin(phase + i + strand) * 0.8
+            gc.setFill(Color.color(0.5, 0.2, 0.7, pAlpha))
+            gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+          }
+        }
+      }
+
+      // Dark orb at tip
+      val orbR = 9.0 * pulse
+      gc.setFill(Color.color(0.3, 0.1, 0.5, 0.25 * pulse))
+      gc.fillOval(tipX - orbR * 2.5, tipY - orbR * 2.5, orbR * 5, orbR * 5)
+      gc.setFill(Color.color(0.4, 0.2, 0.65, 0.5 * pulse))
+      gc.fillOval(tipX - orbR * 1.3, tipY - orbR * 1.3, orbR * 2.6, orbR * 2.6)
+      gc.setFill(Color.color(0.7, 0.5, 0.9, 0.85 * fastFlicker))
+      gc.fillOval(tipX - orbR * 0.5, tipY - orbR * 0.5, orbR, orbR)
+    }
+  }
+
   private def drawShadow(screenX: Double, screenY: Double): Unit = {
     gc.setFill(Color.rgb(0, 0, 0, 0.3))
     gc.fillOval(screenX - 16, screenY - 6, 32, 12)
@@ -1101,10 +1242,20 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
     val spriteCenter = screenY - displaySz / 2.0
 
+    val playerIsPhased = player.isPhased
+
     // Draw effects behind the player
-    if (player.hasShield) drawShieldBubble(screenX, spriteCenter)
-    if (player.hasGemBoost) drawGemGlow(screenX, spriteCenter)
-    drawChargingEffect(screenX, spriteCenter, player.getChargeLevel)
+    if (!playerIsPhased) {
+      if (player.hasShield) drawShieldBubble(screenX, spriteCenter)
+      if (player.hasGemBoost) drawGemGlow(screenX, spriteCenter)
+      drawChargingEffect(screenX, spriteCenter, player.getChargeLevel)
+    }
+
+    // Phased players render at 40% opacity with ghostly shimmer
+    if (playerIsPhased) {
+      drawPhasedEffect(screenX, spriteCenter)
+      gc.setGlobalAlpha(0.4)
+    }
 
     drawShadow(screenX, screenY)
 
@@ -1112,6 +1263,8 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val spriteX = screenX - displaySz / 2.0
     val spriteY = screenY - displaySz.toDouble
     gc.drawImage(sprite, spriteX, spriteY, displaySz, displaySz)
+
+    if (playerIsPhased) gc.setGlobalAlpha(1.0)
 
     // Draw frozen effect
     if (player.isFrozen) drawFrozenEffect(screenX, spriteCenter)
@@ -1132,10 +1285,20 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val spriteY = screenY - displaySz.toDouble
     val spriteCenter = screenY - displaySz / 2.0
 
+    val localIsPhased = client.isPhased
+
     // Draw effects behind the player
-    if (client.hasShield) drawShieldBubble(screenX, spriteCenter)
-    if (client.hasGemBoost) drawGemGlow(screenX, spriteCenter)
-    drawChargingEffect(screenX, spriteCenter, client.getChargeLevel)
+    if (!localIsPhased) {
+      if (client.hasShield) drawShieldBubble(screenX, spriteCenter)
+      if (client.hasGemBoost) drawGemGlow(screenX, spriteCenter)
+      drawChargingEffect(screenX, spriteCenter, client.getChargeLevel)
+    }
+
+    // Phased players render at 40% opacity with ghostly shimmer
+    if (localIsPhased) {
+      drawPhasedEffect(screenX, spriteCenter)
+      gc.setGlobalAlpha(0.4)
+    }
 
     drawShadow(screenX, screenY)
 
@@ -1146,6 +1309,8 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val frame = if (client.getIsMoving) (animationTick / animSpeed) % 4 else 0
     val sprite = SpriteGenerator.getSprite(client.getLocalColorRGB, client.getLocalDirection, frame, client.selectedCharacterId)
     gc.drawImage(sprite, spriteX, spriteY, displaySz, displaySz)
+
+    if (localIsPhased) gc.setGlobalAlpha(1.0)
 
     // Draw frozen effect
     if (client.isFrozen) drawFrozenEffect(screenX, spriteCenter)
@@ -1273,6 +1438,33 @@ class GameCanvas(client: GameClient) extends Canvas() {
         0.6 * pct
       ))
       gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+    }
+  }
+
+  private def drawPhasedEffect(centerX: Double, centerY: Double): Unit = {
+    val phase = animationTick * 0.12
+    val displaySz = Constants.PLAYER_DISPLAY_SIZE_PX
+    val radius = displaySz * 0.55
+
+    // Ghostly teal aura — drawn at full alpha before the sprite's reduced alpha
+    val pulse = 0.8 + 0.2 * Math.sin(phase * 1.5)
+    gc.setFill(Color.color(0.1, 0.8, 0.6, 0.08 * pulse))
+    gc.fillOval(centerX - radius * 1.4, centerY - radius * 0.7, radius * 2.8, radius * 1.4)
+
+    gc.setStroke(Color.color(0.2, 0.9, 0.7, 0.35 * pulse))
+    gc.setLineWidth(1.5)
+    gc.strokeOval(centerX - radius, centerY - radius * 0.5, radius * 2, radius)
+
+    // Floating wisp particles
+    for (i <- 0 until 5) {
+      val angle = phase * 0.6 + i * (2 * Math.PI / 5)
+      val dist = radius * (0.7 + 0.2 * Math.sin(phase + i))
+      val sx = centerX + dist * Math.cos(angle)
+      val sy = centerY + dist * Math.sin(angle) * 0.5
+      val sparkleAlpha = 0.3 + 0.3 * Math.sin(phase * 2.5 + i * 1.5)
+      val sparkleSize = 2.0 + Math.sin(phase * 2 + i) * 1.0
+      gc.setFill(Color.color(0.4, 1.0, 0.8, sparkleAlpha))
+      gc.fillOval(sx - sparkleSize, sy - sparkleSize, sparkleSize * 2, sparkleSize * 2)
     }
   }
 

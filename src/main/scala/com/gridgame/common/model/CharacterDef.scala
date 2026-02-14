@@ -75,12 +75,39 @@ object CharacterDef {
     primaryProjectileType = ProjectileType.AXE
   )
 
-  private val byId: Map[Byte, CharacterDef] = Map(
-    CharacterId.Spaceman.id -> Spaceman,
-    CharacterId.Gladiator.id -> Gladiator
+  val Wraith: CharacterDef = CharacterDef(
+    id = CharacterId.Wraith,
+    displayName = "Wraith",
+    description = "A spectral assassin that phases between planes and haunts targets.",
+    spriteSheet = "sprites/wraith.png",
+    qAbility = AbilityDef(
+      name = "Phase Shift",
+      description = "Become ethereal: walk through walls, immune to damage, can't attack.",
+      cooldownMs = Constants.PHASE_SHIFT_COOLDOWN_MS,
+      maxRange = 0,
+      damage = 0,
+      projectileType = -1,
+      keybind = "Q"
+    ),
+    eAbility = AbilityDef(
+      name = "Haunt",
+      description = "Slow spectral bolt that teleports you behind the target on hit.",
+      cooldownMs = Constants.HAUNT_COOLDOWN_MS,
+      maxRange = Constants.HAUNT_MAX_RANGE,
+      damage = Constants.HAUNT_DAMAGE,
+      projectileType = ProjectileType.HAUNT,
+      keybind = "E"
+    ),
+    primaryProjectileType = ProjectileType.SOUL_BOLT
   )
 
-  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator)
+  private val byId: Map[Byte, CharacterDef] = Map(
+    CharacterId.Spaceman.id -> Spaceman,
+    CharacterId.Gladiator.id -> Gladiator,
+    CharacterId.Wraith.id -> Wraith
+  )
+
+  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith)
 
   def get(id: CharacterId): CharacterDef = byId.getOrElse(id.id, Spaceman)
 

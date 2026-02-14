@@ -66,6 +66,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   private val lastQAbilityTime: AtomicLong = new AtomicLong(0)
   private val lastEAbilityTime: AtomicLong = new AtomicLong(0)
   private val frozenUntil: AtomicLong = new AtomicLong(0)
+  private val phasedUntil: AtomicLong = new AtomicLong(0)
 
   // Charge shot state
   @volatile var isCharging: Boolean = false
@@ -226,6 +227,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     lastQAbilityTime.set(0)
     lastEAbilityTime.set(0)
     frozenUntil.set(0)
+    phasedUntil.set(0)
 
     // Send join packet to server
     sendJoinPacket()
@@ -256,7 +258,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     val targetX = Math.max(0, Math.min(world.width - 1, current.getX + dx))
     val targetY = Math.max(0, Math.min(world.height - 1, current.getY + dy))
 
-    if (world.isWalkable(targetX, targetY)) {
+    if (isPhased || world.isWalkable(targetX, targetY)) {
       finalX = targetX
       finalY = targetY
     } else if (dx != 0 && dy != 0) {
@@ -277,8 +279,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     }
   }
 
+  def isPhased: Boolean = System.currentTimeMillis() < phasedUntil.get()
+
   private def getEffectFlags: Int = {
-    (if (hasShield) 0x01 else 0) | (if (hasGemBoost) 0x02 else 0) | (if (isFrozen) 0x04 else 0)
+    (if (hasShield) 0x01 else 0) | (if (hasGemBoost) 0x02 else 0) | (if (isFrozen) 0x04 else 0) | (if (isPhased) 0x08 else 0)
   }
 
   private def sendPositionUpdate(position: Position): Unit = {
@@ -330,7 +334,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   }
 
   def shoot(): Unit = {
-    if (isDead) return
+    if (isDead || isPhased) return
 
     // Shoot in the direction the player is facing
     val direction = localDirection.get()
@@ -344,7 +348,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   }
 
   def shootToward(dx: Float, dy: Float, chargeLevel: Int = 0): Unit = {
-    if (isDead) return
+    if (isDead || isPhased) return
 
     val pos = localPosition.get()
     val chargeByte = Math.min(100, Math.max(0, chargeLevel)).toByte
@@ -433,10 +437,20 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       case _ => return
     }
 
+    // Can't use abilities while phased (except Phase Shift itself is already activated)
+    if (isPhased) return
+
     val now = System.currentTimeMillis()
     if (now - lastAbilityTime.get() < abilityDef.cooldownMs) return
 
     lastAbilityTime.set(now)
+
+    // Phase Shift (Wraith Q) is a self-buff, not a projectile
+    if (abilityDef.projectileType == -1) {
+      phasedUntil.set(now + Constants.PHASE_SHIFT_DURATION_MS)
+      sendPositionUpdate(localPosition.get())
+      return
+    }
 
     val pos = localPosition.get()
     val dx = (mouseWorldX - pos.getX).toFloat
@@ -598,6 +612,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           } else {
             frozenUntil.set(0)
           }
+          // Don't overwrite local phased state from server echo — local timer is authoritative
+          // Server echoes phased flag to confirm it, but we don't reset the timer
 
           // Handle position correction (e.g. tentacle pull)
           val serverPos = updatePacket.getPosition
@@ -1099,6 +1115,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       } else {
         player.setFrozenUntil(0)
       }
+      if ((flags & 0x08) != 0) {
+        player.setPhasedUntil(System.currentTimeMillis() + 1000)
+      } else {
+        player.setPhasedUntil(0)
+      }
 
       // Record death animation when player newly dies
       if (wasAlive && player.isDead) {
@@ -1117,6 +1138,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       if ((flags & 0x01) != 0) player.setShieldUntil(System.currentTimeMillis() + 1000)
       if ((flags & 0x02) != 0) player.setGemBoostUntil(System.currentTimeMillis() + 1000)
       if ((flags & 0x04) != 0) player.setFrozenUntil(System.currentTimeMillis() + 1000)
+      if ((flags & 0x08) != 0) player.setPhasedUntil(System.currentTimeMillis() + 1000)
       players.put(playerId, player)
     }
   }
