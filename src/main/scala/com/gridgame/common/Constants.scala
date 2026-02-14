@@ -146,6 +146,23 @@ object Constants {
   val GEYSER_MAX_RANGE: Int = 18
   val GEYSER_AOE_RADIUS: Float = 4.0f
 
+  // Raptor: Talon Strike (primary)
+  val TALON_DAMAGE: Int = 28
+  val TALON_MAX_RANGE: Int = 4
+  val TALON_HIT_RADIUS: Float = 2.0f
+
+  // Raptor: Swoop (Q)
+  val SWOOP_COOLDOWN_MS: Int = 10000
+  val SWOOP_MAX_DISTANCE: Int = 12
+  val SWOOP_DURATION_MS: Int = 400
+  val SWOOP_MOVE_RATE_MS: Int = 20
+
+  // Raptor: Gust (E)
+  val GUST_COOLDOWN_MS: Int = 8000
+  val GUST_MAX_RANGE: Int = 6
+  val GUST_DAMAGE: Int = 10
+  val GUST_PUSH_DISTANCE: Int = 5
+
   // Lobby configuration
   val RESPAWN_DELAY_MS: Int = 3000
   val DEFAULT_GAME_DURATION_MIN: Int = 5

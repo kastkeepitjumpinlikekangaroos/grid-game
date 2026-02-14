@@ -159,7 +159,10 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       if (dx != 0 || dy != 0) {
         player.setDirection(Direction.fromMovement(dx, dy))
       }
-      player.setPosition(newPos)
+      // Don't overwrite position if player was recently teleported by server (e.g. haunt)
+      if (!player.isServerTeleported) {
+        player.setPosition(newPos)
+      }
       player.setColorRGB(packet.getColorRGB)
       if (packet.getCharacterId != 0) {
         player.setCharacterId(packet.getCharacterId)
@@ -245,7 +248,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
             println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} gem boost activated")
 
           case ItemType.Fence =>
-            placeFence(player)
+            placeFence(player, packet.getX, packet.getY)
 
           case _ => // Star is client-side only
         }
@@ -254,27 +257,18 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     false
   }
 
-  private def placeFence(player: Player): Unit = {
-    val pos = player.getPosition
-    val px = pos.getX
-    val py = pos.getY
-
-    // Determine the cell directly in front and the perpendicular offsets
-    val (frontDx, frontDy, perpDx, perpDy) = player.getDirection match {
-      case Direction.Up    => (0, -1, 1, 0)
-      case Direction.Down  => (0, 1, 1, 0)
-      case Direction.Left  => (-1, 0, 0, 1)
-      case Direction.Right => (1, 0, 0, 1)
+  private def placeFence(player: Player, targetX: Int, targetY: Int): Unit = {
+    // Determine the perpendicular offsets based on player facing direction
+    val (perpDx, perpDy) = player.getDirection match {
+      case Direction.Up | Direction.Down    => (1, 0)
+      case Direction.Left | Direction.Right => (0, 1)
     }
 
-    val frontX = px + frontDx
-    val frontY = py + frontDy
-
-    // Place 3 tiles: center and ±1 perpendicular
+    // Place 3 tiles centered on the target position: center and ±1 perpendicular
     val positions = Seq(
-      (frontX - perpDx, frontY - perpDy),
-      (frontX, frontY),
-      (frontX + perpDx, frontY + perpDy)
+      (targetX - perpDx, targetY - perpDy),
+      (targetX, targetY),
+      (targetX + perpDx, targetY + perpDy)
     )
 
     val w = if (instance != null) instance.world else server.getWorld
@@ -285,7 +279,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       }
     }
 
-    println(s"ClientHandler: Player ${player.getId.toString.substring(0, 8)} placed fence at ($frontX, $frontY) facing ${player.getDirection}")
+    println(s"ClientHandler: Player ${player.getId.toString.substring(0, 8)} placed fence at ($targetX, $targetY)")
   }
 
   private def sendExistingPlayers(joiningPlayerId: UUID, joiningPlayer: Player): Unit = {

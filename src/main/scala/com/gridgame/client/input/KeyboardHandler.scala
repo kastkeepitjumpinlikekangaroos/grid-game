@@ -37,7 +37,11 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
   /** Called from the game loop each frame to poll movement from held keys. */
   def update(): Unit = {
     if (!client.getIsDead) {
-      processMovement()
+      if (client.isSwooping) {
+        client.tickSwoop()
+      } else {
+        processMovement()
+      }
       if (client.isCharging || client.hasShield || client.hasGemBoost) {
         client.sendChargingUpdate()
       }
@@ -71,6 +75,7 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
       case KeyCode.DIGIT2 => ItemType.Star.id
       case KeyCode.DIGIT3 => ItemType.Gem.id
       case KeyCode.DIGIT4 => ItemType.Shield.id
+      case KeyCode.DIGIT5 => ItemType.Fence.id
       case _ => -1
     }
     if (itemTypeId >= 0) {
@@ -88,6 +93,7 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
 
   private def processMovement(): Unit = {
     val now = System.currentTimeMillis()
+    if (client.isSwooping) return // Block WASD during swoop
     val moveRate = if (client.isCharging) {
       // Slowdown proportional to charge: 1x at 0% → 10x at 100%
       val chargePct = client.getChargeLevel / 100.0
