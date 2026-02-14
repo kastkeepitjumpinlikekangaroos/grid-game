@@ -409,8 +409,8 @@ class ClientMain extends Application {
     mapCombo.setMaxWidth(Double.MaxValue)
     styleCombo(mapCombo)
 
-    val durationCombo = new ComboBox[String](FXCollections.observableArrayList("3 min", "5 min", "10 min", "15 min", "20 min"))
-    durationCombo.getSelectionModel.select(1)
+    val durationCombo = new ComboBox[String](FXCollections.observableArrayList("1 min", "3 min", "5 min", "10 min", "15 min", "20 min"))
+    durationCombo.getSelectionModel.select(2) // Default 5 min
     durationCombo.setMaxWidth(Double.MaxValue)
     styleCombo(durationCombo)
 
@@ -563,9 +563,9 @@ class ClientMain extends Application {
       mapCombo.setMaxWidth(Double.MaxValue)
       styleCombo(mapCombo)
 
-      val durationCombo = new ComboBox[String](FXCollections.observableArrayList("3 min", "5 min", "10 min", "15 min", "20 min"))
+      val durationCombo = new ComboBox[String](FXCollections.observableArrayList("1 min", "3 min", "5 min", "10 min", "15 min", "20 min"))
       val durIdx = client.currentLobbyDuration match {
-        case 3 => 0; case 5 => 1; case 10 => 2; case 15 => 3; case 20 => 4; case _ => 1
+        case 1 => 0; case 3 => 1; case 5 => 2; case 10 => 3; case 15 => 4; case 20 => 5; case _ => 2
       }
       durationCombo.getSelectionModel.select(durIdx)
       durationCombo.setMaxWidth(Double.MaxValue)
