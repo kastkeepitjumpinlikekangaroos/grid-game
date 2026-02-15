@@ -3,7 +3,7 @@ package com.gridgame.client.input
 import com.gridgame.client.GameClient
 import com.gridgame.client.ui.GameCanvas
 import com.gridgame.common.Constants
-import com.gridgame.common.model.ProjectileType
+import com.gridgame.common.model.ProjectileDef
 
 import javafx.event.EventHandler
 import javafx.scene.input.MouseEvent
@@ -13,7 +13,7 @@ class MouseHandler(client: GameClient, canvas: GameCanvas) extends EventHandler[
 
   private def canCharge: Boolean = {
     val pt = client.getSelectedCharacterDef.primaryProjectileType
-    pt == ProjectileType.NORMAL || pt == ProjectileType.ARCANE_BOLT || pt == ProjectileType.SPLASH
+    ProjectileDef.get(pt).chargeSpeedScaling.isDefined
   }
 
   override def handle(event: MouseEvent): Unit = {

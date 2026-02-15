@@ -1,9 +1,8 @@
 package com.gridgame.server
 
-import com.gridgame.common.Constants
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Projectile
-import com.gridgame.common.model.ProjectileType
+import com.gridgame.common.model.ProjectileDef
 import com.gridgame.common.model.WorldData
 import com.gridgame.common.protocol.ProjectileAction
 import com.gridgame.common.protocol.ProjectilePacket
@@ -27,7 +26,7 @@ class ProjectileManager(registry: ClientRegistry) {
   private val projectiles = new ConcurrentHashMap[Int, Projectile]()
   private val nextId = new AtomicInteger(1)
 
-  def spawnProjectile(ownerId: UUID, x: Int, y: Int, dx: Float, dy: Float, colorRGB: Int, chargeLevel: Int = 0, projectileType: Byte = ProjectileType.NORMAL): Projectile = {
+  def spawnProjectile(ownerId: UUID, x: Int, y: Int, dx: Float, dy: Float, colorRGB: Int, chargeLevel: Int = 0, projectileType: Byte = com.gridgame.common.model.ProjectileType.NORMAL): Projectile = {
     val id = nextId.getAndIncrement()
     // Spawn the projectile one cell ahead in the velocity direction
     val spawnX = x.toFloat + dx
@@ -38,9 +37,6 @@ class ProjectileManager(registry: ClientRegistry) {
     projectile
   }
 
-  private def isAoEExplosiveType(pType: Byte): Boolean =
-    pType == ProjectileType.GRENADE || pType == ProjectileType.ROCKET
-
   def tick(world: WorldData): Seq[ProjectileEvent] = {
     val events = ArrayBuffer[ProjectileEvent]()
     val toRemove = ArrayBuffer[Int]()
@@ -49,9 +45,9 @@ class ProjectileManager(registry: ClientRegistry) {
       val owner = registry.get(projectile.ownerId)
       val steps = if (owner != null && owner.hasGemBoost) 2 else 1
       var resolved = false
+      val pDef = ProjectileDef.get(projectile.projectileType)
 
       // Sub-step movement so projectiles can't skip over non-walkable tiles.
-      // Each sub-step moves at most ~0.5 cells, then we check collisions.
       val movePerTick = math.sqrt(projectile.dx * projectile.dx + projectile.dy * projectile.dy).toFloat * projectile.speedMultiplier
       val subSteps = math.ceil(movePerTick / 0.5f).toInt.max(1)
       val fraction = 1.0f / subSteps
@@ -62,37 +58,14 @@ class ProjectileManager(registry: ClientRegistry) {
         while (sub < subSteps && !resolved) {
           projectile.moveStep(fraction)
 
-          val maxRange = projectile.projectileType match {
-            case ProjectileType.TENTACLE => Constants.TENTACLE_MAX_RANGE.toDouble
-            case ProjectileType.ICE_BEAM => Constants.ICE_BEAM_MAX_RANGE.toDouble
-            case ProjectileType.AXE => Constants.AXE_MAX_RANGE.toDouble
-            case ProjectileType.ROPE => Constants.ROPE_MAX_RANGE.toDouble
-            case ProjectileType.SPEAR => Constants.SPEAR_MAX_RANGE.toDouble
-            case ProjectileType.SOUL_BOLT => Constants.SOUL_BOLT_MAX_RANGE.toDouble
-            case ProjectileType.HAUNT => Constants.HAUNT_MAX_RANGE.toDouble
-            case ProjectileType.ARCANE_BOLT =>
-              if (projectile.chargeLevel > 0) Constants.ARCANE_BOLT_CHARGE_MIN_RANGE + (projectile.chargeLevel / 100.0 * (Constants.ARCANE_BOLT_CHARGE_MAX_RANGE - Constants.ARCANE_BOLT_CHARGE_MIN_RANGE))
-              else Constants.ARCANE_BOLT_MAX_RANGE.toDouble
-            case ProjectileType.FIREBALL => Constants.FIREBALL_MAX_RANGE.toDouble
-            case ProjectileType.SPLASH =>
-              if (projectile.chargeLevel > 0) Constants.SPLASH_CHARGE_MIN_RANGE + (projectile.chargeLevel / 100.0 * (Constants.SPLASH_CHARGE_MAX_RANGE - Constants.SPLASH_CHARGE_MIN_RANGE))
-              else Constants.SPLASH_MAX_RANGE.toDouble
-            case ProjectileType.TIDAL_WAVE => Constants.TIDAL_WAVE_MAX_RANGE.toDouble
-            case ProjectileType.GEYSER => Constants.GEYSER_MAX_RANGE.toDouble
-            case ProjectileType.BULLET => Constants.BULLET_MAX_RANGE.toDouble
-            case ProjectileType.GRENADE => Constants.GRENADE_MAX_RANGE.toDouble
-            case ProjectileType.ROCKET => Constants.ROCKET_MAX_RANGE.toDouble
-            case ProjectileType.TALON => Constants.TALON_MAX_RANGE.toDouble
-            case ProjectileType.GUST => Constants.GUST_MAX_RANGE.toDouble
-            case _ => Constants.CHARGE_MIN_RANGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_RANGE - Constants.CHARGE_MIN_RANGE))
-          }
+          val maxRange = pDef.effectiveMaxRange(projectile.chargeLevel)
           if (projectile.getDistanceTraveled >= maxRange) {
             toRemove += projectile.id
-            // GEYSER explodes at max range even without a direct hit
-            if (projectile.projectileType == ProjectileType.GEYSER) {
-              events ++= applyAoEDamage(projectile, Constants.GEYSER_AOE_RADIUS, Constants.GEYSER_DAMAGE, null)
+            // AoE on max range (e.g. geyser)
+            pDef.aoeOnMaxRange.foreach { aoe =>
+              events ++= applyAoEDamage(projectile, aoe.radius, aoe.damage, null)
             }
-            if (isAoEExplosiveType(projectile.projectileType)) {
+            if (pDef.isExplosive) {
               events += ProjectileAoE(projectile)
             } else {
               events += ProjectileDespawned(projectile)
@@ -100,18 +73,15 @@ class ProjectileManager(registry: ClientRegistry) {
             resolved = true
           } else if (projectile.isOutOfBounds(world)) {
             toRemove += projectile.id
-            if (isAoEExplosiveType(projectile.projectileType)) {
+            if (pDef.isExplosive) {
               events += ProjectileAoE(projectile)
             } else {
               events += ProjectileDespawned(projectile)
             }
             resolved = true
-          } else if (projectile.hitsNonWalkable(world) &&
-                     projectile.projectileType != ProjectileType.SOUL_BOLT &&
-                     projectile.projectileType != ProjectileType.HAUNT &&
-                     projectile.projectileType != ProjectileType.ARCANE_BOLT) {
+          } else if (projectile.hitsNonWalkable(world) && !pDef.passesThroughWalls) {
             toRemove += projectile.id
-            if (isAoEExplosiveType(projectile.projectileType)) {
+            if (pDef.isExplosive) {
               events += ProjectileAoE(projectile)
             } else {
               events += ProjectileDespawned(projectile)
@@ -126,36 +96,13 @@ class ProjectileManager(registry: ClientRegistry) {
             }
 
             if (hitPlayer != null) {
-              // Rocket explodes on player hit — AoE handles all damage
-              if (projectile.projectileType == ProjectileType.ROCKET) {
+              // Explosive projectiles that explode on player hit (e.g. rocket)
+              if (pDef.explodesOnPlayerHit) {
                 toRemove += projectile.id
                 events += ProjectileAoE(projectile)
                 resolved = true
               } else {
-                val damage = projectile.projectileType match {
-                  case ProjectileType.TENTACLE => Constants.TENTACLE_DAMAGE
-                  case ProjectileType.ICE_BEAM => Constants.ICE_BEAM_DAMAGE
-                  case ProjectileType.AXE => Constants.AXE_DAMAGE
-                  case ProjectileType.ROPE => Constants.ROPE_DAMAGE
-                  case ProjectileType.SPEAR =>
-                    val distanceFraction = Math.min(1.0f, projectile.getDistanceTraveled / Constants.SPEAR_MAX_RANGE.toFloat)
-                    (Constants.SPEAR_BASE_DAMAGE + (distanceFraction * (Constants.SPEAR_MAX_DAMAGE - Constants.SPEAR_BASE_DAMAGE))).toInt
-                  case ProjectileType.SOUL_BOLT => Constants.SOUL_BOLT_DAMAGE
-                  case ProjectileType.HAUNT => Constants.HAUNT_DAMAGE
-                  case ProjectileType.ARCANE_BOLT =>
-                    if (projectile.chargeLevel > 0) (Constants.ARCANE_BOLT_CHARGE_MIN_DAMAGE + (projectile.chargeLevel / 100.0 * (Constants.ARCANE_BOLT_CHARGE_MAX_DAMAGE - Constants.ARCANE_BOLT_CHARGE_MIN_DAMAGE))).toInt
-                    else Constants.ARCANE_BOLT_DAMAGE
-                  case ProjectileType.FIREBALL => Constants.FIREBALL_DAMAGE
-                  case ProjectileType.SPLASH =>
-                    if (projectile.chargeLevel > 0) (Constants.SPLASH_CHARGE_MIN_DAMAGE + (projectile.chargeLevel / 100.0 * (Constants.SPLASH_CHARGE_MAX_DAMAGE - Constants.SPLASH_CHARGE_MIN_DAMAGE))).toInt
-                    else Constants.SPLASH_DAMAGE
-                  case ProjectileType.TIDAL_WAVE => Constants.TIDAL_WAVE_DAMAGE
-                  case ProjectileType.GEYSER => Constants.GEYSER_DAMAGE
-                  case ProjectileType.BULLET => Constants.BULLET_DAMAGE
-                  case ProjectileType.TALON => Constants.TALON_DAMAGE
-                  case ProjectileType.GUST => Constants.GUST_DAMAGE
-                  case _ => (Constants.CHARGE_MIN_DAMAGE + (projectile.chargeLevel / 100.0 * (Constants.CHARGE_MAX_DAMAGE - Constants.CHARGE_MIN_DAMAGE))).toInt
-                }
+                val damage = pDef.effectiveDamage(projectile.chargeLevel, projectile.getDistanceTraveled)
                 val newHealth = hitPlayer.getHealth - damage
                 hitPlayer.setHealth(newHealth)
                 println(s"ProjectileManager: ${projectile} hit player ${hitPlayer.getId.toString.substring(0, 8)}, damage=$damage (charge=${projectile.chargeLevel}%), health now $newHealth")
@@ -168,12 +115,8 @@ class ProjectileManager(registry: ClientRegistry) {
                 }
 
                 // AoE splash damage to nearby players (excluding the direct hit target)
-                projectile.projectileType match {
-                  case ProjectileType.SPLASH =>
-                    events ++= applyAoEDamage(projectile, Constants.SPLASH_AOE_RADIUS, Constants.SPLASH_AOE_DAMAGE, hitPlayer.getId)
-                  case ProjectileType.GEYSER =>
-                    events ++= applyAoEDamage(projectile, Constants.GEYSER_AOE_RADIUS, Constants.GEYSER_DAMAGE, hitPlayer.getId)
-                  case _ =>
+                pDef.aoeOnHit.foreach { aoe =>
+                  events ++= applyAoEDamage(projectile, aoe.radius, aoe.damage, hitPlayer.getId)
                 }
 
                 resolved = true

@@ -1,19 +1,7 @@
 package com.gridgame.client
 
 import com.gridgame.common.Constants
-import com.gridgame.common.model.CharacterDef
-import com.gridgame.common.model.CharacterId
-import com.gridgame.common.model.Direction
-import com.gridgame.common.model.Item
-import com.gridgame.common.model.ItemType
-import com.gridgame.common.model.LobbyInfo
-import com.gridgame.common.model.Player
-import com.gridgame.common.model.Position
-import com.gridgame.common.model.Projectile
-import com.gridgame.common.model.ProjectileType
-import com.gridgame.common.model.ScoreEntry
-import com.gridgame.common.model.Tile
-import com.gridgame.common.model.WorldData
+import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 
 import java.util.UUID
@@ -306,7 +294,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     if (now >= swoopEnd || swoopEnd == 0) return
 
     val elapsed = now - swoopStartTime.get()
-    val duration = Constants.SWOOP_DURATION_MS.toFloat
+    val duration = (swoopEnd - swoopStartTime.get()).toFloat
     val t = Math.min(1.0f, elapsed / duration)
 
     val newX = swoopStartX + (swoopTargetX - swoopStartX) * t
@@ -495,22 +483,19 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
     lastAbilityTime.set(now)
 
-    // Self-buff abilities (no projectile)
-    if (abilityDef.projectileType == -1) {
-      val charDef = getSelectedCharacterDef
-      if (charDef.id == CharacterId.Raptor) {
-        // Swoop: dash toward cursor, phased during dash
+    abilityDef.castBehavior match {
+      case DashBuff(maxDistance, durationMs, _) =>
+        // Dash toward cursor, phased during dash (e.g. Raptor Swoop)
         val pos = localPosition.get()
         val dx = (mouseWorldX - pos.getX).toFloat
         val dy = (mouseWorldY - pos.getY).toFloat
         val dist = Math.sqrt(dx * dx + dy * dy).toFloat
-        val clampedDist = Math.min(dist, Constants.SWOOP_MAX_DISTANCE.toFloat)
+        val clampedDist = Math.min(dist, maxDistance.toFloat)
         if (clampedDist > 0.5f) {
           val ndx = dx / dist
           val ndy = dy / dist
           swoopStartX = pos.getX.toFloat
           swoopStartY = pos.getY.toFloat
-          // Find farthest walkable endpoint
           val world = currentWorld.get()
           var bestX = swoopStartX
           var bestY = swoopStartY
@@ -525,29 +510,60 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           swoopTargetX = bestX
           swoopTargetY = bestY
           swoopStartTime.set(now)
-          swoopingUntil.set(now + Constants.SWOOP_DURATION_MS)
-          phasedUntil.set(now + Constants.SWOOP_DURATION_MS)
+          swoopingUntil.set(now + durationMs)
+          phasedUntil.set(now + durationMs)
           sendPositionUpdate(localPosition.get())
         }
-      } else {
-        // Phase Shift (Wraith Q)
-        phasedUntil.set(now + Constants.PHASE_SHIFT_DURATION_MS)
+
+      case PhaseShiftBuff(durationMs) =>
+        phasedUntil.set(now + durationMs)
         sendPositionUpdate(localPosition.get())
-      }
-      return
-    }
 
-    // Blink (Wizard E) is a teleport, not a projectile
-    if (abilityDef.projectileType == -2) {
-      performBlink()
-      return
-    }
+      case TeleportCast(_) =>
+        performBlink()
 
+      case FanProjectile(count, fanAngle) =>
+        val pos = localPosition.get()
+        val (ndx, ndy) = getAimDirection
+        val halfAngle = fanAngle / 2.0
+        for (i <- 0 until count) {
+          val theta = -halfAngle + (fanAngle * i / (count - 1).toDouble)
+          val cos = Math.cos(theta).toFloat
+          val sin = Math.sin(theta).toFloat
+          val rdx = ndx * cos - ndy * sin
+          val rdy = ndx * sin + ndy * cos
+          val fanPacket = new ProjectilePacket(
+            sequenceNumber.getAndIncrement(),
+            localPlayerId,
+            pos.getX.toFloat, pos.getY.toFloat,
+            localColorRGB, 0, rdx, rdy,
+            ProjectileAction.SPAWN, null, 0.toByte,
+            abilityDef.projectileType
+          )
+          networkThread.send(fanPacket)
+        }
+
+      case StandardProjectile =>
+        val pos = localPosition.get()
+        val (ndx, ndy) = getAimDirection
+        val packet = new ProjectilePacket(
+          sequenceNumber.getAndIncrement(),
+          localPlayerId,
+          pos.getX.toFloat, pos.getY.toFloat,
+          localColorRGB, 0, ndx, ndy,
+          ProjectileAction.SPAWN, null, 0.toByte,
+          abilityDef.projectileType
+        )
+        networkThread.send(packet)
+    }
+  }
+
+  private def getAimDirection: (Float, Float) = {
     val pos = localPosition.get()
     val dx = (mouseWorldX - pos.getX).toFloat
     val dy = (mouseWorldY - pos.getY).toFloat
     val len = Math.sqrt(dx * dx + dy * dy).toFloat
-    val (ndx, ndy) = if (len > 0.01f) (dx / len, dy / len) else {
+    if (len > 0.01f) (dx / len, dy / len) else {
       val dir = localDirection.get()
       dir match {
         case Direction.Up    => (0.0f, -1.0f)
@@ -555,49 +571,6 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         case Direction.Left  => (-1.0f, 0.0f)
         case Direction.Right => (1.0f, 0.0f)
       }
-    }
-
-    if (abilityDef.projectileType == ProjectileType.TIDAL_WAVE) {
-      // Fan pattern: 5 projectiles across a 60-degree arc
-      val fanCount = Constants.TIDAL_WAVE_FAN_COUNT
-      val totalAngle = Constants.TIDAL_WAVE_FAN_ANGLE
-      val halfAngle = totalAngle / 2.0
-      for (i <- 0 until fanCount) {
-        val theta = -halfAngle + (totalAngle * i / (fanCount - 1).toDouble)
-        val cos = Math.cos(theta).toFloat
-        val sin = Math.sin(theta).toFloat
-        val rdx = ndx * cos - ndy * sin
-        val rdy = ndx * sin + ndy * cos
-        val fanPacket = new ProjectilePacket(
-          sequenceNumber.getAndIncrement(),
-          localPlayerId,
-          pos.getX.toFloat,
-          pos.getY.toFloat,
-          localColorRGB,
-          0,
-          rdx, rdy,
-          ProjectileAction.SPAWN,
-          null,
-          0.toByte,
-          abilityDef.projectileType
-        )
-        networkThread.send(fanPacket)
-      }
-    } else {
-      val packet = new ProjectilePacket(
-        sequenceNumber.getAndIncrement(),
-        localPlayerId,
-        pos.getX.toFloat,
-        pos.getY.toFloat,
-        localColorRGB,
-        0,
-        ndx, ndy,
-        ProjectileAction.SPAWN,
-        null,
-        0.toByte,
-        abilityDef.projectileType
-      )
-      networkThread.send(packet)
     }
   }
 
@@ -1160,7 +1133,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       case ProjectileAction.DESPAWN =>
         val despawned = projectiles.remove(projectileId)
         val pType = if (despawned != null) despawned.projectileType else packet.getProjectileType
-        if (pType == ProjectileType.GRENADE || pType == ProjectileType.ROCKET) {
+        if (ProjectileDef.get(pType).isExplosive) {
           explosionAnimations.put(projectileId, Array(
             System.currentTimeMillis(),
             (packet.getX * 1000).toLong,
@@ -1488,10 +1461,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       }
     }
 
-    // Walk cell-by-cell up to BLINK_DISTANCE, find farthest walkable position
+    // Walk cell-by-cell up to maxRange, find farthest walkable position
+    val blinkDist = getSelectedCharacterDef.eAbility.maxRange
     var bestX = oldPos.getX
     var bestY = oldPos.getY
-    for (step <- 1 to Constants.BLINK_DISTANCE) {
+    for (step <- 1 to blinkDist) {
       val cx = Math.round(oldPos.getX + ndx * step).toInt
       val cy = Math.round(oldPos.getY + ndy * step).toInt
       val clampedX = Math.max(0, Math.min(world.width - 1, cx))

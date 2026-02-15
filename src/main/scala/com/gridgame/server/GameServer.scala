@@ -238,7 +238,14 @@ class GameServer(port: Int, val worldFile: String = "") {
                     // Handle phased flag from client
                     val clientFlags = updatePacket.getEffectFlags
                     if ((clientFlags & 0x08) != 0 && !player.isPhased) {
-                      player.setPhasedUntil(System.currentTimeMillis() + Constants.PHASE_SHIFT_DURATION_MS)
+                      // Determine phase duration from character's ability CastBehavior
+                      val charDef = com.gridgame.common.model.CharacterDef.get(player.getCharacterId)
+                      val phaseDuration = charDef.qAbility.castBehavior match {
+                        case com.gridgame.common.model.PhaseShiftBuff(d) => d
+                        case com.gridgame.common.model.DashBuff(_, d, _) => d
+                        case _ => 5000
+                      }
+                      player.setPhasedUntil(System.currentTimeMillis() + phaseDuration)
                     }
 
                     val flags = (if (player.hasShield) 0x01 else 0) |
