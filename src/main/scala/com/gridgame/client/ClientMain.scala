@@ -117,6 +117,48 @@ class ClientMain extends Application {
     sep
   }
 
+  private def renderMapPreview(canvas: Canvas, mapIndex: Int): Unit = {
+    val gc = canvas.getGraphicsContext2D
+    val canvasW = canvas.getWidth
+    val canvasH = canvas.getHeight
+    gc.setFill(Color.web("#111124"))
+    gc.fillRect(0, 0, canvasW, canvasH)
+    try {
+      val filename = WorldRegistry.getFilename(mapIndex)
+      val world = WorldLoader.load("worlds/" + filename)
+      val scale = Math.min(canvasW / world.width, canvasH / world.height)
+      val offsetX = (canvasW - world.width * scale) / 2
+      val offsetY = (canvasH - world.height * scale) / 2
+      for (y <- 0 until world.height) {
+        for (x <- 0 until world.width) {
+          val tile = world.getTile(x, y)
+          val argb = tile.color
+          val r = ((argb >> 16) & 0xFF) / 255.0
+          val g = ((argb >> 8) & 0xFF) / 255.0
+          val b = (argb & 0xFF) / 255.0
+          gc.setFill(Color.color(r, g, b))
+          gc.fillRect(offsetX + x * scale, offsetY + y * scale, Math.ceil(scale), Math.ceil(scale))
+        }
+      }
+      // Draw spawn points as small white markers
+      gc.setFill(Color.color(1, 1, 1, 0.6))
+      for (spawn <- world.spawnPoints) {
+        val sx = offsetX + spawn.getX * scale
+        val sy = offsetY + spawn.getY * scale
+        gc.fillOval(sx - 2, sy - 2, 4, 4)
+      }
+      // Draw map name and size
+      gc.setFill(Color.color(1, 1, 1, 0.4))
+      gc.setFont(Font.font("System", 10))
+      gc.fillText(s"${world.width}x${world.height}", 4, canvasH - 4)
+    } catch {
+      case _: Exception =>
+        gc.setFill(Color.web("#556677"))
+        gc.setFont(Font.font("System", 12))
+        gc.fillText("Preview unavailable", canvasW / 2 - 50, canvasH / 2)
+    }
+  }
+
   override def start(primaryStage: Stage): Unit = {
     primaryStage.setTitle("Grid Game - Multiplayer 2D")
     primaryStage.setResizable(true)
@@ -538,17 +580,29 @@ class ClientMain extends Application {
     val formRow2 = new HBox(10, new Label("Map") { setStyle(sectionHeaderStyle); setMinWidth(44) }, mapCombo)
     formRow2.setAlignment(Pos.CENTER_LEFT)
     HBox.setHgrow(mapCombo, Priority.ALWAYS)
+
+    val mapPreviewCanvas = new Canvas(200, 200)
+    val mapPreviewWrapper = new StackPane(mapPreviewCanvas)
+    mapPreviewWrapper.setMaxWidth(208)
+    mapPreviewWrapper.setMaxHeight(208)
+    mapPreviewWrapper.setPadding(new Insets(4))
+    mapPreviewWrapper.setStyle("-fx-background-color: #111124; -fx-background-radius: 8; -fx-border-color: rgba(255,255,255,0.08); -fx-border-radius: 8; -fx-border-width: 1;")
+    val mapPreviewBox = new VBox(0, mapPreviewWrapper)
+    mapPreviewBox.setAlignment(Pos.CENTER)
+    renderMapPreview(mapPreviewCanvas, mapCombo.getSelectionModel.getSelectedIndex)
+    mapCombo.setOnAction(_ => renderMapPreview(mapPreviewCanvas, mapCombo.getSelectionModel.getSelectedIndex))
+
     val formRow3 = new HBox(10, new Label("Time") { setStyle(sectionHeaderStyle); setMinWidth(44) }, durationCombo)
     formRow3.setAlignment(Pos.CENTER_LEFT)
     HBox.setHgrow(durationCombo, Priority.ALWAYS)
 
-    createCard.getChildren.addAll(createLabel, formRow1, formRow2, formRow3, createBtn)
+    createCard.getChildren.addAll(createLabel, formRow1, formRow2, mapPreviewBox, formRow3, createBtn)
 
     contentArea.getChildren.addAll(lobbyHeader, lobbyListView, joinBtn, createSeparator(), createCard, statusLabel)
 
     root.getChildren.addAll(headerArea, contentArea)
 
-    val scene = new Scene(root, 700, 800)
+    val scene = new Scene(root, 700, 1020)
     stage.setScene(scene)
 
     // Auto-refresh on show
@@ -717,6 +771,17 @@ class ClientMain extends Application {
 
     buttonBox.getChildren.add(leaveBtn)
 
+    // Map preview
+    val lobbyMapPreviewCanvas = new Canvas(180, 180)
+    val lobbyMapPreviewWrapper = new StackPane(lobbyMapPreviewCanvas)
+    lobbyMapPreviewWrapper.setMaxWidth(188)
+    lobbyMapPreviewWrapper.setMaxHeight(188)
+    lobbyMapPreviewWrapper.setPadding(new Insets(4))
+    lobbyMapPreviewWrapper.setStyle("-fx-background-color: #111124; -fx-background-radius: 8; -fx-border-color: rgba(255,255,255,0.08); -fx-border-radius: 8; -fx-border-width: 1;")
+    val lobbyMapPreviewBox = new VBox(0, lobbyMapPreviewWrapper)
+    lobbyMapPreviewBox.setAlignment(Pos.CENTER)
+    renderMapPreview(lobbyMapPreviewCanvas, client.currentLobbyMapIndex)
+
     // Host-only controls
     if (client.isLobbyHost) {
       waitingLabel.setText("You are the host")
@@ -742,6 +807,7 @@ class ClientMain extends Application {
       mapCombo.setOnAction(_ => {
         val dur = durationCombo.getSelectionModel.getSelectedItem.split(" ")(0).toInt
         client.updateLobbyConfig(mapCombo.getSelectionModel.getSelectedIndex, dur)
+        renderMapPreview(lobbyMapPreviewCanvas, mapCombo.getSelectionModel.getSelectedIndex)
       })
       durationCombo.setOnAction(_ => {
         val dur = durationCombo.getSelectionModel.getSelectedItem.split(" ")(0).toInt
@@ -763,10 +829,10 @@ class ClientMain extends Application {
       row2.setAlignment(Pos.CENTER_LEFT)
       HBox.setHgrow(durationCombo, Priority.ALWAYS)
 
-      infoCard.getChildren.addAll(waitingLabel, createSeparator(), configLabel, row1, row2, startBtn)
+      infoCard.getChildren.addAll(waitingLabel, createSeparator(), configLabel, row1, lobbyMapPreviewBox, row2, startBtn)
       buttonBox.getChildren.add(new Region()) // spacing
     } else {
-      infoCard.getChildren.addAll(mapLabel, durationLabel, createSeparator(), waitingLabel)
+      infoCard.getChildren.addAll(mapLabel, durationLabel, lobbyMapPreviewBox, createSeparator(), waitingLabel)
     }
 
     root.getChildren.addAll(headerBox, infoCard, new Region() { setMinHeight(16) }, charSection, new Region() { setMinHeight(4) }, buttonBox)
@@ -777,6 +843,7 @@ class ClientMain extends Application {
         playersLabel.setText(s"Players: ${client.currentLobbyPlayerCount}/${client.currentLobbyMaxPlayers}")
         mapLabel.setText(s"Map: ${WorldRegistry.getDisplayName(client.currentLobbyMapIndex)}")
         durationLabel.setText(s"Duration: ${client.currentLobbyDuration} min")
+        renderMapPreview(lobbyMapPreviewCanvas, client.currentLobbyMapIndex)
       })
     }
 
@@ -794,7 +861,7 @@ class ClientMain extends Application {
       })
     }
 
-    val scene = new Scene(root, 600, 740)
+    val scene = new Scene(root, 600, 940)
     stage.setScene(scene)
   }
 
