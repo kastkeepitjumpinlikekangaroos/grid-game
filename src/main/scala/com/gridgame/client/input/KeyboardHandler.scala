@@ -34,6 +34,12 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
     }
   }
 
+  /** Clears all pressed keys. Called when window loses focus to prevent stuck keys. */
+  def clearAllKeys(): Unit = {
+    pressedKeys.clear()
+    client.setMovementInputActive(false)
+  }
+
   /** Called from the game loop each frame to poll movement from held keys. */
   def update(): Unit = {
     if (!client.getIsDead) {

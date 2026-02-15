@@ -1406,6 +1406,13 @@ class ClientMain extends Application {
 
     stage.setScene(scene)
 
+    // Clear all pressed keys when the window loses focus to prevent stuck keys
+    stage.focusedProperty().addListener((_: javafx.beans.value.ObservableValue[_ <: java.lang.Boolean], _: java.lang.Boolean, focused: java.lang.Boolean) => {
+      if (!focused) {
+        keyHandler.clearAllKeys()
+      }
+    })
+
     val frameIntervalNs = 1_000_000_000L / 60
     var lastFrameTime = 0L
     renderLoop = new AnimationTimer() {
