@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grid Game - Multiplayer 2D Isometric Arena</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Nav -->
+  <nav id="nav">
+    <div class="nav-inner">
+      <a href="#hero" class="nav-logo">Grid Game</a>
+      <div class="nav-links">
+        <a href="#characters">Characters</a>
+        <a href="#controls">Controls</a>
+        <a href="#download">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section id="hero">
+    <div class="hero-content">
+      <h1>Grid Game</h1>
+      <p class="tagline">Multiplayer 2D Isometric Arena</p>
+      <p class="subtitle">Choose from 12 unique characters. Battle across 16+ maps. Climb the ranked ladder.</p>
+      <div class="cta-group">
+        <a href="https://github.com/kastkeepitjumpinlikekangaroos/grid-game/releases/latest" class="btn btn-primary">
+          <span class="btn-icon">&#63743;</span> Download for macOS
+        </a>
+        <a href="https://github.com/kastkeepitjumpinlikekangaroos/grid-game/releases/latest" class="btn btn-secondary">
+          <span class="btn-icon">&#8862;</span> Download for Windows
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section id="features">
+    <div class="container">
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">&#9876;</div>
+          <h3>12 Characters</h3>
+          <p>From the life-stealing Vampire to the wall-phasing Wraith, every character plays differently.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#9635;</div>
+          <h3>16+ Maps</h3>
+          <p>Battle across arenas with lava pits, ice fields, toxic swamps, and destructible terrain.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#9733;</div>
+          <h3>Ranked Play</h3>
+          <p>Compete in ranked matchmaking with ELO-based ratings and a global leaderboard.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#9998;</div>
+          <h3>Map Editor</h3>
+          <p>Build your own arenas with the built-in map editor and share them with friends.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Characters -->
+  <section id="characters">
+    <div class="container">
+      <h2>Characters</h2>
+      <div class="characters-grid">
+
+        <div class="char-card">
+          <div class="char-header">
+            <h3>Spaceman</h3>
+            <span class="char-hp">100 HP</span>
+          </div>
+          <p class="char-desc">A versatile space explorer with tentacle grab and ice beam.</p>
+          <div class="char-abilities">
+            <div class="ability"><span class="ability-key">LMB</span> Blaster</div>
+            <div class="ability"><span class="ability-key">Q</span> Tentacle &mdash; pulls enemies</div>
+            <div class="ability"><span class="ability-key">E</span> Ice Beam &mdash; freezes targets</div>
+          </div>
+        </div>
+
+        <div class="char-card">
+          <div class="char-header">
+            <h3>Gladiator</h3>
+            <span class="char-hp">100 HP</span>
+          </div>
+          <p class="char-desc">A Roman warrior with axe, rope pull, and distance-scaling spear.</p>
+          <div class="char-abilities">
+            <div class="ability"><span class="ability-key">LMB</span> Axe &mdash; 33 dmg</div>
+            <div class="ability"><span class="ability-key">Q</span> Spear Throw &mdash; scales with distance</div>
+            <div class="ability"><span class="ability-key">E</span> Rope &mdash; pulls enemies</div>
+          </div>
+        </div>
+
+        <div class="char-card">
+          <div class="char-header">
+            <h3>Wraith</h3>
+            <span class="char-hp">100 HP</span>
+          </div>
+          <p class="char-desc">A spectral assassin that phases between planes and haunts targets.</p>
+          <div class="char-abilities">
+            <div class="ability"><span class="ability-key">LMB</span> Soul Bolt &mdash; 15 dmg</div>
+            <div class="ability"><span class="ability-key">Q</span> Phase Shift &mdash; walk through walls</div>
+            <div class="ability"><span class="ability-key">E</span> Haunt &mdash; teleport behind target</div>
+          </div>
+        </div>
+
+        <div class="char-card">
+          <div class="char-header">
+            <h3>Wizard</h3>
+            <span class="char-hp">70 HP</span>
+          </div>
+          <p class="char-desc">A fragile mage with wall-piercing bolts, fireballs, and blink escape.</p>
+          <div class="char-abilities">
+            <div class="ability"><span class="ability-key">LMB</span> Arcane Bolt &mdash; pierces walls</div>
+            <div class="ability"><span class="ability-key">Q</span> Fireball &mdash; 45 dmg</div>
+            <div class="ability"><span class="ability-key">E</span> Blink &mdash; teleport 6 cells</div>
+          </div>
+        </div>
+
+        <div class="char-card">
+          <div class="char-header">
+            <h3>Tidecaller</h3>
+            <span class="char-hp">100 HP</span>
+          </div>
+          <p class="char-desc">A water mage with devastating area-of-effect abilities.</p>
+          <div class="char-abilities">
+            <div class="ability"><span class="ability-key">LMB</span> Splash &mdash; charge-scaling AoE</div>
+            <div class="ability"><span class="ability-key">Q</span> Tidal Wave &mdash; fan of 5, pushes</div>
+            <div class="ability"><span class="ability-key">E</span> Geyser &mdash; 25 dmg AoE eruption</div>
+          </div>
+        </div>
+
+        <div class="char-card">
+          <div class="char-header">
+            <h3>Soldier</h3>
+            <span class="char-hp">100 HP</span>
+          </div>
+          <p class="char-desc">A military specialist with rifle, grenade, and rocket launcher.</p>
+          <div class="char-abilities">
+            <div class="ability"><span class="ability-key">LMB</span> Rifle &mdash; 20 dmg</div>
+            <div class="ability"><span class="ability-key">Q</span> Grenade &mdash; 40 dmg, explodes</div>
+            <div class="ability"><span class="ability-key">E</span> Rocket &mdash; 35 dmg, explodes on impact</div>
+          </div>
+        </div>
+
+        <div class="char-card">
+          <div class="char-header">
+            <h3>Raptor</h3>
+            <span class="char-hp">100 HP</span>
+          </div>
+          <p class="char-desc">A bird of prey that swoops in and blasts enemies away.</p>
+          <div class="char-abilities">
+            <div class="ability"><span class="ability-key">LMB</span> Talon &mdash; 28 dmg</div>
+            <div class="ability"><span class="ability-key">Q</span> Swoop &mdash; dash 12 cells, invulnerable</div>
+            <div class="ability"><span class="ability-key">E</span> Gust &mdash; pushes enemies away</div>
+          </div>
+        </div>
+
+        <div class="char-card">
+          <div class="char-header">
+            <h3>Assassin</h3>
+            <span class="char-hp">85 HP</span>
+          </div>
+          <p class="char-desc">A deadly shadow operative with shurikens, poison darts, and a swift dash.</p>
+          <div class="char-abilities">
+            <div class="ability"><span class="ability-key">LMB</span> Shuriken &mdash; 22 dmg</div>
+            <div class="ability"><span class="ability-key">Q</span> Poison Dart &mdash; poisons &amp; freezes</div>
+            <div class="ability"><span class="ability-key">E</span> Shadow Step &mdash; dash 8 cells</div>
+          </div>
+        </div>
+
+        <div class="char-card">
+          <div class="char-header">
+            <h3>Warden</h3>
+            <span class="char-hp">110 HP</span>
+          </div>
+          <p class="char-desc">A jailer who locks down foes with chains, lockdown fans, and snare mines.</p>
+          <div class="char-abilities">
+            <div class="ability"><span class="ability-key">LMB</span> Chain Bolt &mdash; 12 dmg, freezes</div>
+            <div class="ability"><span class="ability-key">Q</span> Lockdown &mdash; 3-chain fan, freezes</div>
+            <div class="ability"><span class="ability-key">E</span> Snare Mine &mdash; AoE freeze trap</div>
+          </div>
+        </div>
+
+        <div class="char-card">
+          <div class="char-header">
+            <h3>Samurai</h3>
+            <span class="char-hp">110 HP</span>
+          </div>
+          <p class="char-desc">A precise swordsman who dashes through foes and cuts down anyone in reach.</p>
+          <div class="char-abilities">
+            <div class="ability"><span class="ability-key">LMB</span> Katana &mdash; 30 dmg</div>
+            <div class="ability"><span class="ability-key">Q</span> Iaijutsu &mdash; dash 8 cells</div>
+            <div class="ability"><span class="ability-key">E</span> Whirlwind &mdash; 360&deg; sword wave</div>
+          </div>
+        </div>
+
+        <div class="char-card">
+          <div class="char-header">
+            <h3>Plague Doctor</h3>
+            <span class="char-hp">100 HP</span>
+          </div>
+          <p class="char-desc">A pestilence-spreading alchemist who thrives in group fights with toxic AoE.</p>
+          <div class="char-abilities">
+            <div class="ability"><span class="ability-key">LMB</span> Plague Bolt &mdash; 15 dmg AoE</div>
+            <div class="ability"><span class="ability-key">Q</span> Miasma &mdash; toxic explosion</div>
+            <div class="ability"><span class="ability-key">E</span> Blight Bomb &mdash; 25 dmg toxic blast</div>
+          </div>
+        </div>
+
+        <div class="char-card">
+          <div class="char-header">
+            <h3>Vampire</h3>
+            <span class="char-hp">90 HP</span>
+          </div>
+          <p class="char-desc">A gothic life-stealer who heals from every attack. Low HP forces aggressive play.</p>
+          <div class="char-abilities">
+            <div class="ability"><span class="ability-key">LMB</span> Blood Fang &mdash; 25 dmg, life steal</div>
+            <div class="ability"><span class="ability-key">Q</span> Blood Siphon &mdash; heals 40% damage</div>
+            <div class="ability"><span class="ability-key">E</span> Bat Swarm &mdash; 8-projectile fan, heals</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Controls -->
+  <section id="controls">
+    <div class="container">
+      <h2>Controls</h2>
+      <div class="controls-grid">
+        <div class="control-item">
+          <div class="control-keys">
+            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
+          </div>
+          <p>Move your character</p>
+        </div>
+        <div class="control-item">
+          <div class="control-keys">
+            <span class="mouse-icon">&#9906;</span>
+          </div>
+          <p>Aim toward cursor</p>
+        </div>
+        <div class="control-item">
+          <div class="control-keys">
+            <kbd>LMB</kbd> / <kbd>Space</kbd>
+          </div>
+          <p>Primary attack</p>
+        </div>
+        <div class="control-item">
+          <div class="control-keys">
+            <kbd>Q</kbd>
+          </div>
+          <p>Ability 1</p>
+        </div>
+        <div class="control-item">
+          <div class="control-keys">
+            <kbd>E</kbd>
+          </div>
+          <p>Ability 2</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Download -->
+  <section id="download">
+    <div class="container">
+      <h2>Download</h2>
+      <p class="download-subtitle">Grab the latest release and jump into the arena.</p>
+      <div class="download-grid">
+        <a href="https://github.com/kastkeepitjumpinlikekangaroos/grid-game/releases/latest" class="download-card">
+          <div class="download-icon">&#63743;</div>
+          <h3>macOS</h3>
+          <p>Requires Java 21+</p>
+          <span class="btn btn-primary">Download JAR</span>
+        </a>
+        <a href="https://github.com/kastkeepitjumpinlikekangaroos/grid-game/releases/latest" class="download-card">
+          <div class="download-icon">&#8862;</div>
+          <h3>Windows</h3>
+          <p>Requires Java 21+</p>
+          <span class="btn btn-secondary">Download JAR</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container footer-inner">
+      <p>
+        <a href="https://github.com/kastkeepitjumpinlikekangaroos/grid-game">GitHub</a>
+      </p>
+      <p class="footer-tech">Built with Scala, JavaFX, Netty, and Bazel</p>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

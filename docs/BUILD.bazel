@@ -1,0 +1,8 @@
+filegroup(
+    name = "website",
+    srcs = glob(
+        ["**/*.html", "**/*.css", "**/*.js", "**/*.png"],
+        allow_empty = True,
+    ),
+    visibility = ["//visibility:public"],
+)

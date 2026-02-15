@@ -205,3 +205,31 @@ Each of the 11 characters has a pre-rendered sprite sheet with 4 directions and 
   - `//src/main/scala/com/gridgame/client:client_windows`
   - `//src/main/scala/com/gridgame/common:common`
   - `//src/main/scala/com/gridgame/mapeditor`
+  - `//docs:website`
+
+## Website (GitHub Pages)
+
+Static landing page served from the `docs/` directory on `main` via GitHub Pages.
+
+### Files
+- `docs/index.html` — Single-page site (hero, features, characters, controls, download)
+- `docs/style.css` — Dark theme stylesheet
+- `docs/script.js` — Smooth scroll for nav anchors
+- `docs/BUILD.bazel` — Bazel filegroup target
+
+### Deployment
+GitHub Pages is configured to deploy from `main` branch, `/docs` directory. Any push to `main` that modifies `docs/` will auto-deploy.
+
+### Creating Releases (Deploy JARs)
+Bazel's `scala_binary` auto-supports `_deploy.jar` suffix targets, producing fat JARs with all dependencies bundled. No BUILD file changes needed.
+
+```bash
+# Build fat JARs
+bazel build //src/main/scala/com/gridgame/client:client_deploy.jar
+bazel build //src/main/scala/com/gridgame/client:client_windows_deploy.jar
+
+# Create a GitHub release with both JARs
+gh release create v1.0.0 \
+  bazel-bin/src/main/scala/com/gridgame/client/client_deploy.jar#"Grid Game (macOS)" \
+  bazel-bin/src/main/scala/com/gridgame/client/client_windows_deploy.jar#"Grid Game (Windows)"
+```
