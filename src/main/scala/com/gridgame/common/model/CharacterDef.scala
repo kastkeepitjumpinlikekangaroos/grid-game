@@ -144,12 +144,25 @@ object CharacterDef {
     onHitEffect = Some(Push(5.0f))
   )
 
+  private val ShurikenDef = ProjectileDef(
+    id = ProjectileType.SHURIKEN, name = "Shuriken",
+    speedMultiplier = 0.95f, damage = 22, maxRange = 6,
+    hitRadius = 2.0f
+  )
+
+  private val PoisonDartDef = ProjectileDef(
+    id = ProjectileType.POISON_DART, name = "Poison Dart",
+    speedMultiplier = 0.75f, damage = 15, maxRange = 16,
+    onHitEffect = Some(Freeze(2500))
+  )
+
   // Register all projectile defs
   ProjectileDef.register(
     TentacleDef, IceBeamDef, AxeDef, RopeDef, SpearDef,
     SoulBoltDef, HauntDef, ArcaneBoltDef, FireballDef,
     SplashDef, TidalWaveDef, GeyserDef,
-    BulletDef, GrenadeDef, RocketDef, TalonDef, GustDef
+    BulletDef, GrenadeDef, RocketDef, TalonDef, GustDef,
+    ShurikenDef, PoisonDartDef
   )
 
   // === Character definitions ===
@@ -299,6 +312,28 @@ object CharacterDef {
     primaryProjectileType = ProjectileType.TALON
   )
 
+  val Assassin: CharacterDef = CharacterDef(
+    id = CharacterId.Assassin,
+    displayName = "Assassin",
+    description = "A deadly shadow operative with shurikens, poison darts, and a swift shadow dash.",
+    spriteSheet = "sprites/assassin.png",
+    qAbility = AbilityDef(
+      name = "Poison Dart",
+      description = "Fires a venomous dart that poisons and slows the target.",
+      cooldownMs = 7000, maxRange = 16, damage = 15,
+      projectileType = ProjectileType.POISON_DART, keybind = "Q"
+    ),
+    eAbility = AbilityDef(
+      name = "Shadow Step",
+      description = "Dash through shadows, phased and invulnerable during the leap.",
+      cooldownMs = 9000, maxRange = 0, damage = 0,
+      projectileType = -1, keybind = "E",
+      castBehavior = DashBuff(8, 300, 15)
+    ),
+    primaryProjectileType = ProjectileType.SHURIKEN,
+    maxHealth = 85
+  )
+
   private val byId: Map[Byte, CharacterDef] = Map(
     CharacterId.Spaceman.id -> Spaceman,
     CharacterId.Gladiator.id -> Gladiator,
@@ -306,10 +341,11 @@ object CharacterDef {
     CharacterId.Wizard.id -> Wizard,
     CharacterId.Tidecaller.id -> Tidecaller,
     CharacterId.Soldier.id -> Soldier,
-    CharacterId.Raptor.id -> Raptor
+    CharacterId.Raptor.id -> Raptor,
+    CharacterId.Assassin.id -> Assassin
   )
 
-  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith, Wizard, Tidecaller, Soldier, Raptor)
+  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith, Wizard, Tidecaller, Soldier, Raptor, Assassin)
 
   def get(id: CharacterId): CharacterDef = byId.getOrElse(id.id, Spaceman)
 
