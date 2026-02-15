@@ -46,7 +46,12 @@
     {"type": "rect", "tile": "fence", "x": 90, "y": 88, "width": 8, "height": 3},
 
     {"type": "rect", "tile": "path", "x": 48, "y": 78, "width": 8, "height": 8},
-    {"type": "rect", "tile": "path", "x": 85, "y": 50, "width": 8, "height": 8}
+    {"type": "rect", "tile": "path", "x": 85, "y": 50, "width": 8, "height": 8},
+
+    {"type": "rect", "tile": "stone", "x": 34, "y": 18, "width": 5, "height": 8},
+    {"type": "rect", "tile": "stone", "x": 104, "y": 18, "width": 5, "height": 8},
+    {"type": "rect", "tile": "stone", "x": 34, "y": 50, "width": 5, "height": 8},
+    {"type": "rect", "tile": "stone", "x": 104, "y": 50, "width": 5, "height": 8}
   ],
   "spawnPoints": [
     {"x": 15, "y": 15},

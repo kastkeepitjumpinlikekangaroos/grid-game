@@ -4759,7 +4759,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val playerCount = client.getPlayers.size()
     val health = client.getLocalHealth
 
-    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 13))
+    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 15))
 
     val worldText = s"World: ${world.name}"
     val coordText = s"Position: (${localPos.getX}, ${localPos.getY})"
@@ -4767,11 +4767,11 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val healthText = s"Health: $health/${client.getSelectedCharacterMaxHealth}"
     val inventoryText = s"Items: ${client.getInventoryCount}"
 
-    drawOutlinedText(worldText, 10, 22)
-    drawOutlinedText(coordText, 10, 40)
-    drawOutlinedText(playersText, 10, 58)
-    drawOutlinedText(healthText, 10, 76)
-    drawOutlinedText(inventoryText, 10, 94)
+    drawOutlinedText(worldText, 10, 24)
+    drawOutlinedText(coordText, 10, 44)
+    drawOutlinedText(playersText, 10, 64)
+    drawOutlinedText(healthText, 10, 84)
+    drawOutlinedText(inventoryText, 10, 104)
 
     // Show active effects
     val effects = Seq(
@@ -4779,7 +4779,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
       if (client.hasGemBoost) Some("FastShot") else None
     ).flatten
     if (effects.nonEmpty) {
-      drawOutlinedText(s"Effects: ${effects.mkString(" ")}", 10, 112)
+      drawOutlinedText(s"Effects: ${effects.mkString(" ")}", 10, 124)
     }
   }
 
@@ -4837,9 +4837,9 @@ class GameCanvas(client: GameClient) extends Canvas() {
       gc.strokeRect(slotX, startY, slotSize, slotSize)
 
       // Key label
-      gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 10))
+      gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 11))
       gc.setFill(Color.WHITE)
-      gc.fillText(key, slotX + slotSize - 10, startY + slotSize - 4)
+      gc.fillText(key, slotX + slotSize - 11, startY + slotSize - 4)
     }
   }
 
@@ -4915,14 +4915,14 @@ class GameCanvas(client: GameClient) extends Canvas() {
         val badgeY = startY - badgeH / 2 + 2
         gc.setFill(Color.rgb(200, 45, 45, 0.9))
         gc.fillRoundRect(badgeX, badgeY, badgeW, badgeH, badgeH, badgeH)
-        gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 10))
+        gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 11))
         gc.setFill(Color.WHITE)
         gc.fillText(countStr, badgeX + badgeW / 2 - countStr.length * 3, badgeY + 11)
       }
 
       // Key number label (bottom-center)
-      gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 10))
-      gc.setFill(if (count > 0) Color.rgb(220, 220, 220) else Color.rgb(90, 90, 100))
+      gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 11))
+      gc.setFill(if (count > 0) Color.rgb(230, 230, 230) else Color.rgb(110, 110, 120))
       gc.fillText(keyLabel, slotX + slotSize / 2 - 3, startY + slotSize - 3)
     }
   }
@@ -4960,10 +4960,10 @@ class GameCanvas(client: GameClient) extends Canvas() {
     gc.strokeRect(barX, barY, barWidth, barHeight)
 
     // Charge percentage text
-    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 10))
+    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 12))
     gc.setFill(Color.WHITE)
     val text = s"$chargeLevel%"
-    gc.fillText(text, barX + barWidth / 2 - 10, barY - 4)
+    gc.fillText(text, barX + barWidth / 2 - 12, barY - 4)
   }
 
   private def drawLobbyHUD(): Unit = {
@@ -4974,37 +4974,37 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val minutes = remaining / 60
     val seconds = remaining % 60
     val timerText = f"$minutes%d:$seconds%02d"
-    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 26))
-    drawOutlinedText(timerText, getWidth / 2 - 30, 30)
+    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 30))
+    drawOutlinedText(timerText, getWidth / 2 - 36, 34)
 
     // Kill/Death counter: below coordinates
-    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 14))
-    drawOutlinedText(s"K: ${client.killCount}  D: ${client.deathCount}", 10, 134)
+    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 16))
+    drawOutlinedText(s"K: ${client.killCount}  D: ${client.deathCount}", 10, 148)
 
     // Kill feed: top-right corner, last 5 entries
     val now = System.currentTimeMillis()
-    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 13))
+    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 14))
     import scala.jdk.CollectionConverters._
-    var feedY = 20.0
+    var feedY = 24.0
     client.killFeed.asScala.foreach { entry =>
       val timestamp = entry(0).asInstanceOf[java.lang.Long].longValue()
       val elapsed = now - timestamp
-      if (elapsed < 5000) {
-        val alpha = Math.max(0.0, 1.0 - elapsed / 5000.0)
+      if (elapsed < 6000) {
+        val alpha = Math.max(0.15, 1.0 - elapsed / 6000.0)
         val killer = entry(1).asInstanceOf[String]
         val victim = entry(2).asInstanceOf[String]
         val feedText = s"$killer killed $victim"
         gc.setGlobalAlpha(alpha)
-        drawOutlinedText(feedText, getWidth - 200, feedY)
+        drawOutlinedText(feedText, getWidth - 220, feedY)
         gc.setGlobalAlpha(1.0)
-        feedY += 16
+        feedY += 20
       }
     }
   }
 
   private def drawOutlinedText(text: String, x: Double, y: Double): Unit = {
     gc.setStroke(Color.rgb(0, 0, 0, 0.9))
-    gc.setLineWidth(3.5)
+    gc.setLineWidth(4)
     gc.strokeText(text, x, y)
 
     gc.setFill(Color.WHITE)
