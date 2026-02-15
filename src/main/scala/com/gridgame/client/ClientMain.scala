@@ -55,8 +55,8 @@ class ClientMain extends Application {
   private val darkBg = "-fx-background-color: linear-gradient(to bottom, #1a1a2e 0%, #151528 50%, #111124 100%);"
   private val cardBg = "-fx-background-color: #20203a; -fx-background-radius: 16; -fx-border-color: rgba(255,255,255,0.07); -fx-border-radius: 16; -fx-border-width: 1; -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.5), 24, 0, 0, 8);"
   private val cardBgSubtle = "-fx-background-color: #1c1c34; -fx-background-radius: 12; -fx-border-color: rgba(255,255,255,0.05); -fx-border-radius: 12; -fx-border-width: 1; -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.3), 12, 0, 0, 4);"
-  private val fieldStyle = "-fx-background-color: #181830; -fx-text-fill: #eef; -fx-font-size: 14; -fx-prompt-text-fill: #556; -fx-padding: 12 14; -fx-background-radius: 8; -fx-border-color: rgba(255,255,255,0.08); -fx-border-radius: 8; -fx-border-width: 1;"
-  private val fieldFocusStyle = "-fx-background-color: #181830; -fx-text-fill: #eef; -fx-font-size: 14; -fx-prompt-text-fill: #556; -fx-padding: 12 14; -fx-background-radius: 8; -fx-border-color: #4a9eff; -fx-border-radius: 8; -fx-border-width: 2; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.3), 16, 0, 0, 0);"
+  private val fieldStyle = "-fx-background-color: #181830; -fx-text-fill: #eef; -fx-font-size: 14; -fx-prompt-text-fill: #778; -fx-padding: 12 14; -fx-background-radius: 8; -fx-border-color: rgba(255,255,255,0.08); -fx-border-radius: 8; -fx-border-width: 1;"
+  private val fieldFocusStyle = "-fx-background-color: #181830; -fx-text-fill: #eef; -fx-font-size: 14; -fx-prompt-text-fill: #778; -fx-padding: 12 14; -fx-background-radius: 8; -fx-border-color: #4a9eff; -fx-border-radius: 8; -fx-border-width: 2; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.3), 16, 0, 0, 0);"
   private val buttonStyle = "-fx-background-color: linear-gradient(to bottom, #5aadff, #3a8eef); -fx-text-fill: white; -fx-font-size: 14; -fx-font-weight: bold; -fx-padding: 11 28; -fx-background-radius: 8; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.35), 12, 0, 0, 3);"
   private val buttonHoverStyle = "-fx-background-color: linear-gradient(to bottom, #6db8ff, #4a9eff); -fx-text-fill: white; -fx-font-size: 14; -fx-font-weight: bold; -fx-padding: 11 28; -fx-background-radius: 8; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.55), 18, 0, 0, 4);"
   private val buttonRedStyle = "-fx-background-color: linear-gradient(to bottom, #f05068, #d83850); -fx-text-fill: white; -fx-font-size: 14; -fx-font-weight: bold; -fx-padding: 11 28; -fx-background-radius: 8; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(232, 64, 87, 0.35), 12, 0, 0, 3);"
@@ -68,7 +68,7 @@ class ClientMain extends Application {
   private val labelStyle = "-fx-text-fill: #bbc; -fx-font-size: 14;"
   private val comboStyle = "-fx-background-color: #181830; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 8; -fx-background-radius: 8; -fx-border-color: rgba(255,255,255,0.08); -fx-border-radius: 8; -fx-border-width: 1;"
   private val listViewCss = "-fx-background-color: #1a1a32; -fx-control-inner-background: #1a1a32; -fx-text-fill: white; -fx-font-size: 14; -fx-background-radius: 12; -fx-border-color: rgba(255,255,255,0.05); -fx-border-radius: 12; -fx-border-width: 1;"
-  private val sectionHeaderStyle = "-fx-text-fill: #7788aa; -fx-font-size: 11; -fx-font-weight: bold;"
+  private val sectionHeaderStyle = "-fx-text-fill: #99aabb; -fx-font-size: 13; -fx-font-weight: bold;"
 
   private def addHoverEffect(btn: Button, normalStyle: String, hoverStyle: String): Unit = {
     btn.setStyle(normalStyle)
@@ -94,9 +94,9 @@ class ClientMain extends Application {
             setStyle("-fx-background-color: #181830;")
           } else {
             setText(item)
-            setStyle("-fx-background-color: #181830; -fx-text-fill: #dde; -fx-font-size: 13; -fx-padding: 8 12;")
+            setStyle("-fx-background-color: #181830; -fx-text-fill: #dde; -fx-font-size: 14; -fx-padding: 8 12;")
           }
-          if (isSelected) setStyle("-fx-background-color: #3a6eaf; -fx-text-fill: white; -fx-font-size: 13; -fx-padding: 8 12; -fx-background-radius: 6;")
+          if (isSelected) setStyle("-fx-background-color: #3a6eaf; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 8 12; -fx-background-radius: 6;")
         }
       }
     }
@@ -193,8 +193,8 @@ class ClientMain extends Application {
     val accentLine = createAccentLine()
 
     val subtitle = new Label("Multiplayer Arena")
-    subtitle.setFont(Font.font("System", FontWeight.NORMAL, 14))
-    subtitle.setTextFill(Color.web("#556677"))
+    subtitle.setFont(Font.font("System", FontWeight.NORMAL, 15))
+    subtitle.setTextFill(Color.web("#778899"))
 
     titleBox.getChildren.addAll(title, accentLine, subtitle)
 
@@ -272,9 +272,9 @@ class ClientMain extends Application {
     actionButton.setMaxWidth(290)
 
     val toggleLink = new Button("Don't have an account? Sign Up")
-    toggleLink.setStyle("-fx-background-color: transparent; -fx-text-fill: #556688; -fx-cursor: hand; -fx-font-size: 12; -fx-padding: 4 0 0 0;")
-    toggleLink.setOnMouseEntered(_ => toggleLink.setStyle("-fx-background-color: transparent; -fx-text-fill: #4a9eff; -fx-cursor: hand; -fx-font-size: 12; -fx-padding: 4 0 0 0;"))
-    toggleLink.setOnMouseExited(_ => toggleLink.setStyle("-fx-background-color: transparent; -fx-text-fill: #556688; -fx-cursor: hand; -fx-font-size: 12; -fx-padding: 4 0 0 0;"))
+    toggleLink.setStyle("-fx-background-color: transparent; -fx-text-fill: #7788aa; -fx-cursor: hand; -fx-font-size: 13; -fx-padding: 4 0 0 0;")
+    toggleLink.setOnMouseEntered(_ => toggleLink.setStyle("-fx-background-color: transparent; -fx-text-fill: #4a9eff; -fx-cursor: hand; -fx-font-size: 13; -fx-padding: 4 0 0 0;"))
+    toggleLink.setOnMouseExited(_ => toggleLink.setStyle("-fx-background-color: transparent; -fx-text-fill: #7788aa; -fx-cursor: hand; -fx-font-size: 13; -fx-padding: 4 0 0 0;"))
 
     var isSignupMode = false
 
@@ -465,7 +465,7 @@ class ClientMain extends Application {
             setStyle("-fx-background-color: transparent;")
           } else {
             setText(item)
-            val base = "-fx-text-fill: #ccdde8; -fx-font-size: 13; -fx-padding: 12 16; -fx-background-radius: 8;"
+            val base = "-fx-text-fill: #ccdde8; -fx-font-size: 14; -fx-padding: 12 16; -fx-background-radius: 8;"
             if (isSelected) {
               setStyle(s"-fx-background-color: rgba(74, 158, 255, 0.15); $base -fx-border-color: #4a9eff; -fx-border-width: 0 0 0 3; -fx-border-radius: 8; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.15), 8, 0, 0, 0);")
             } else if (getIndex % 2 == 0) {
@@ -656,8 +656,8 @@ class ClientMain extends Application {
     durationLabel.setTextFill(Color.web("#aabbcc"))
 
     val waitingLabel = new Label("Waiting for host to start...")
-    waitingLabel.setFont(Font.font("System", 13))
-    waitingLabel.setTextFill(Color.web("#556677"))
+    waitingLabel.setFont(Font.font("System", 14))
+    waitingLabel.setTextFill(Color.web("#8899aa"))
 
     // Character selection section
     val charSectionLabel = new Label("SELECT CHARACTER")
@@ -676,8 +676,8 @@ class ClientMain extends Application {
     charNameLabel.setTextFill(Color.web("#4a9eff"))
 
     val charInfoLabel = new Label("")
-    charInfoLabel.setFont(Font.font("System", 12))
-    charInfoLabel.setTextFill(Color.web("#8899aa"))
+    charInfoLabel.setFont(Font.font("System", 13))
+    charInfoLabel.setTextFill(Color.web("#aabbcc"))
     charInfoLabel.setWrapText(true)
     charInfoLabel.setMaxWidth(400)
     charInfoLabel.setStyle("-fx-line-spacing: 2;")
@@ -723,8 +723,8 @@ class ClientMain extends Application {
 
     // Character carousel with left/right arrows
     val charCountLabel = new Label("")
-    charCountLabel.setFont(Font.font("System", 11))
-    charCountLabel.setTextFill(Color.web("#556677"))
+    charCountLabel.setFont(Font.font("System", 13))
+    charCountLabel.setTextFill(Color.web("#8899aa"))
 
     val arrowButtonStyle = "-fx-background-color: rgba(255,255,255,0.06); -fx-text-fill: #8899aa; -fx-font-size: 18; -fx-font-weight: bold; -fx-padding: 8 16; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.08); -fx-border-width: 1; -fx-border-radius: 10;"
     val arrowButtonHoverStyle = "-fx-background-color: rgba(74, 158, 255, 0.15); -fx-text-fill: #4a9eff; -fx-font-size: 18; -fx-font-weight: bold; -fx-padding: 8 16; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(74, 158, 255, 0.3); -fx-border-width: 1; -fx-border-radius: 10;"
@@ -819,11 +819,11 @@ class ClientMain extends Application {
       val members = client.lobbyMembers.asScala.toSeq
 
       val team1Header = new Label("Team 1 (Blue)")
-      team1Header.setFont(Font.font("System", FontWeight.BOLD, 13))
+      team1Header.setFont(Font.font("System", FontWeight.BOLD, 14))
       team1Header.setTextFill(Color.web("#4a82ff"))
 
       val team2Header = new Label("Team 2 (Red)")
-      team2Header.setFont(Font.font("System", FontWeight.BOLD, 13))
+      team2Header.setFont(Font.font("System", FontWeight.BOLD, 14))
       team2Header.setTextFill(Color.web("#e84057"))
 
       val team1List = new VBox(3)
@@ -834,7 +834,7 @@ class ClientMain extends Application {
         val isLocal = arr(0).asInstanceOf[java.util.UUID].equals(client.getLocalPlayerId)
         val displayName = if (isLocal) s"$name (You)" else name
         val lbl = new Label(s"  $displayName")
-        lbl.setFont(Font.font("System", 12))
+        lbl.setFont(Font.font("System", 13))
         if (idx % 2 == 0) {
           lbl.setTextFill(Color.web("#8899cc"))
           team1List.getChildren.add(lbl)
@@ -1165,8 +1165,8 @@ class ClientMain extends Application {
     charNameLabel.setTextFill(Color.web("#4a9eff"))
 
     val charInfoLabel = new Label("")
-    charInfoLabel.setFont(Font.font("System", 12))
-    charInfoLabel.setTextFill(Color.web("#8899aa"))
+    charInfoLabel.setFont(Font.font("System", 13))
+    charInfoLabel.setTextFill(Color.web("#aabbcc"))
     charInfoLabel.setWrapText(true)
     charInfoLabel.setMaxWidth(400)
     charInfoLabel.setStyle("-fx-line-spacing: 2;")
@@ -1208,8 +1208,8 @@ class ClientMain extends Application {
     }
 
     val charCountLabel = new Label("")
-    charCountLabel.setFont(Font.font("System", 11))
-    charCountLabel.setTextFill(Color.web("#556677"))
+    charCountLabel.setFont(Font.font("System", 13))
+    charCountLabel.setTextFill(Color.web("#8899aa"))
 
     val arrowButtonStyle = "-fx-background-color: rgba(255,255,255,0.06); -fx-text-fill: #8899aa; -fx-font-size: 18; -fx-font-weight: bold; -fx-padding: 8 16; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.08); -fx-border-width: 1; -fx-border-radius: 10;"
     val arrowButtonHoverStyle = "-fx-background-color: rgba(74, 158, 255, 0.15); -fx-text-fill: #4a9eff; -fx-font-size: 18; -fx-font-weight: bold; -fx-padding: 8 16; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(74, 158, 255, 0.3); -fx-border-width: 1; -fx-border-radius: 10;"
@@ -1516,7 +1516,7 @@ class ClientMain extends Application {
             setStyle("-fx-background-color: transparent;")
           } else {
             setText(item)
-            val base = "-fx-text-fill: #ccdde8; -fx-font-size: 13; -fx-padding: 12 16; -fx-background-radius: 6;"
+            val base = "-fx-text-fill: #ccdde8; -fx-font-size: 14; -fx-padding: 12 16; -fx-background-radius: 6;"
             // Color-code by rank
             val isWin = item.startsWith("#1/")
             if (isWin) {
@@ -1533,8 +1533,8 @@ class ClientMain extends Application {
     historyListView.setCellFactory(historyCellFactory)
 
     val loadingLabel = new Label("Loading...")
-    loadingLabel.setTextFill(Color.web("#556677"))
-    loadingLabel.setFont(Font.font("System", 12))
+    loadingLabel.setTextFill(Color.web("#8899aa"))
+    loadingLabel.setFont(Font.font("System", 13))
 
     contentArea.getChildren.addAll(statsCard, historyTitle, historyListView, loadingLabel)
 
@@ -1686,8 +1686,8 @@ class ClientMain extends Application {
     title.setStyle("-fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.4), 20, 0, 0, 0);")
 
     val subtitle = new Label("Final Scoreboard")
-    subtitle.setFont(Font.font("System", 14))
-    subtitle.setTextFill(Color.web("#556677"))
+    subtitle.setFont(Font.font("System", 15))
+    subtitle.setTextFill(Color.web("#8899aa"))
 
     val accentLine = createAccentLine()
 
@@ -1733,7 +1733,7 @@ class ClientMain extends Application {
       if (client.currentLobbyGameMode == 1 && entry.teamId != lastTeamId) {
         lastTeamId = entry.teamId
         val teamLabel = new Label(s"Team $lastTeamId")
-        teamLabel.setFont(Font.font("System", FontWeight.BOLD, 13))
+        teamLabel.setFont(Font.font("System", FontWeight.BOLD, 14))
         val teamColor = lastTeamId match {
           case 1 => Color.web("#4a82ff")
           case 2 => Color.web("#e84057")
