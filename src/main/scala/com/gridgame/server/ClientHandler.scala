@@ -160,7 +160,8 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
         player.setDirection(Direction.fromMovement(dx, dy))
       }
       // Don't overwrite position if player was recently teleported by server (e.g. haunt)
-      if (!player.isServerTeleported) {
+      // Don't allow movement if player is frozen
+      if (!player.isServerTeleported && !player.isFrozen) {
         player.setPosition(newPos)
       }
       player.setColorRGB(packet.getColorRGB)

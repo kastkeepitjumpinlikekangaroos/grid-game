@@ -21,9 +21,16 @@ object ProjectileType {
   val ROCKET: Byte = 15
   val TALON: Byte = 16
   val GUST: Byte = 17
-  val PLAGUE_BOLT: Byte = 18
-  val MIASMA: Byte = 19
-  val BLIGHT_BOMB: Byte = 20
+  val SHURIKEN: Byte = 18
+  val POISON_DART: Byte = 19
+  val CHAIN_BOLT: Byte = 20
+  val LOCKDOWN_CHAIN: Byte = 21
+  val SNARE_MINE: Byte = 22
+  val KATANA: Byte = 23
+  val SWORD_WAVE: Byte = 24
+  val PLAGUE_BOLT: Byte = 25
+  val MIASMA: Byte = 26
+  val BLIGHT_BOMB: Byte = 27
 }
 
 class Projectile(
@@ -73,6 +80,10 @@ class Projectile(
 
   def hitsNonWalkable(world: WorldData): Boolean = {
     !world.isWalkable(getCellX, getCellY)
+  }
+
+  def hitsFence(world: WorldData): Boolean = {
+    world.getTile(getCellX, getCellY) == Tile.Fence
   }
 
   def hitsPlayer(player: Player): Boolean = {
