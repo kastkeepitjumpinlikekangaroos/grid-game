@@ -64,7 +64,9 @@ class GameCanvas(client: GameClient) extends Canvas() {
     ProjectileType.GRENADE    -> ((p, cx, cy) => drawGrenadeProjectile(p, cx, cy)),
     ProjectileType.ROCKET     -> ((p, cx, cy) => drawRocketProjectile(p, cx, cy)),
     ProjectileType.TALON      -> ((p, cx, cy) => drawTalonProjectile(p, cx, cy)),
-    ProjectileType.GUST       -> ((p, cx, cy) => drawGustProjectile(p, cx, cy))
+    ProjectileType.GUST       -> ((p, cx, cy) => drawGustProjectile(p, cx, cy)),
+    ProjectileType.KATANA     -> ((p, cx, cy) => drawKatanaProjectile(p, cx, cy)),
+    ProjectileType.SWORD_WAVE -> ((p, cx, cy) => drawSwordWaveProjectile(p, cx, cy))
   )
 
   // --- Isometric coordinate transforms ---
@@ -3852,5 +3854,203 @@ class GameCanvas(client: GameClient) extends Canvas() {
   def screenToWorld(sx: Double, sy: Double): (Double, Double) = {
     val (camOffX, camOffY) = getCameraOffsets
     (screenToWorldX(sx, sy, camOffX, camOffY), screenToWorldY(sx, sy, camOffX, camOffY))
+  }
+
+  private def drawKatanaProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 2.0
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 37) * 0.5
+      val pulse = 0.85 + 0.15 * Math.sin(phase)
+
+      val midX = (tailX + tipX) / 2
+      val midY = (tailY + tipY) / 2
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len > 1) {
+        val nx = -dy / len
+        val ny = dx / len
+
+        // Steel flash — wide impact glow
+        gc.setFill(Color.color(0.7, 0.75, 0.85, 0.1 * pulse))
+        val flashR = len * 0.7
+        gc.fillOval(midX - flashR, midY - flashR * 0.5, flashR * 2, flashR)
+
+        // Curved katana slash arc — single sweeping blade
+        val arcSegments = 10
+        val arcPoints = (0 to arcSegments).map { seg =>
+          val t = seg.toDouble / arcSegments
+          val arcBow = Math.sin(t * Math.PI) * 18.0
+          val cx = tailX + dx * t + nx * arcBow
+          val cy = tailY + dy * t + ny * arcBow
+          (cx, cy)
+        }
+
+        // Outer steel glow
+        gc.setStroke(Color.color(0.6, 0.65, 0.8, 0.15 * pulse))
+        gc.setLineWidth(12.0 * pulse)
+        for (i <- 0 until arcPoints.length - 1) {
+          gc.strokeLine(arcPoints(i)._1, arcPoints(i)._2, arcPoints(i + 1)._1, arcPoints(i + 1)._2)
+        }
+
+        // Steel blade edge
+        gc.setStroke(Color.color(0.8, 0.85, 0.95, 0.7 * pulse))
+        gc.setLineWidth(4.0 * pulse)
+        for (i <- 0 until arcPoints.length - 1) {
+          gc.strokeLine(arcPoints(i)._1, arcPoints(i)._2, arcPoints(i + 1)._1, arcPoints(i + 1)._2)
+        }
+
+        // White-hot cutting edge
+        gc.setStroke(Color.color(1.0, 1.0, 1.0, 0.9 * pulse))
+        gc.setLineWidth(1.5)
+        for (i <- 0 until arcPoints.length - 1) {
+          gc.strokeLine(arcPoints(i)._1, arcPoints(i)._2, arcPoints(i + 1)._1, arcPoints(i + 1)._2)
+        }
+
+        // Katana tip point
+        val lastPt = arcPoints.last
+        val prevPt = arcPoints(arcPoints.length - 2)
+        val tipDx = lastPt._1 - prevPt._1
+        val tipDy = lastPt._2 - prevPt._2
+        val tipLen = Math.sqrt(tipDx * tipDx + tipDy * tipDy)
+        if (tipLen > 0.5) {
+          val tnx = tipDx / tipLen
+          val tny = tipDy / tipLen
+          gc.setStroke(Color.color(1.0, 1.0, 1.0, 0.85 * pulse))
+          gc.setLineWidth(2.5)
+          gc.strokeLine(lastPt._1, lastPt._2, lastPt._1 + tnx * 6, lastPt._2 + tny * 6)
+        }
+
+        // Spark particles along the slash
+        for (i <- 0 until 4) {
+          val t = ((animationTick * 0.07 + i.toDouble / 4 + projectile.id * 0.11) % 1.0)
+          val sparkX = midX + nx * Math.sin(phase + i * 1.8) * 12.0 + dx * (t - 0.5) * 0.3
+          val sparkY = midY + ny * Math.sin(phase + i * 1.8) * 12.0 + dy * (t - 0.5) * 0.3
+          val sAlpha = Math.max(0.0, 0.6 * (1.0 - t))
+          gc.setFill(Color.color(0.9, 0.92, 1.0, sAlpha))
+          val sparkR = 2.0 * (1.0 - t)
+          gc.fillOval(sparkX - sparkR, sparkY - sparkR, sparkR * 2, sparkR * 2)
+        }
+
+        // Speed lines — steel streaks
+        for (s <- 0 until 2) {
+          val slashT = 0.3 + s * 0.4
+          val sx = tailX + dx * slashT
+          val sy = tailY + dy * slashT
+          val slashLen = 14.0
+          gc.setStroke(Color.color(0.85, 0.88, 1.0, 0.12 * pulse))
+          gc.setLineWidth(1.0)
+          gc.strokeLine(sx + nx * slashLen, sy + ny * slashLen,
+                        sx - nx * slashLen, sy - ny * slashLen)
+        }
+      }
+    }
+  }
+
+  private def drawSwordWaveProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 1.8
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 23) * 0.45
+      val pulse = 0.8 + 0.2 * Math.sin(phase)
+
+      val midX = (tailX + tipX) / 2
+      val midY = (tailY + tipY) / 2
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len > 1) {
+        val nx = -dy / len
+        val ny = dx / len
+
+        // Indigo energy glow behind the crescent
+        gc.setFill(Color.color(0.3, 0.2, 0.6, 0.08 * pulse))
+        val glowR = len * 0.9
+        gc.fillOval(midX - glowR, midY - glowR * 0.5, glowR * 2, glowR)
+
+        // Crescent wave — curved blade shape bowing outward
+        val crescentSegments = 10
+        val crescentPoints = (0 to crescentSegments).map { seg =>
+          val t = seg.toDouble / crescentSegments
+          val bow = Math.sin(t * Math.PI) * 14.0
+          val cx = tailX + dx * t + nx * bow
+          val cy = tailY + dy * t + ny * bow
+          (cx, cy)
+        }
+
+        // Outer indigo glow
+        gc.setStroke(Color.color(0.4, 0.3, 0.7, 0.2 * pulse))
+        gc.setLineWidth(10.0 * pulse)
+        for (i <- 0 until crescentPoints.length - 1) {
+          gc.strokeLine(crescentPoints(i)._1, crescentPoints(i)._2, crescentPoints(i + 1)._1, crescentPoints(i + 1)._2)
+        }
+
+        // Bright crescent edge
+        gc.setStroke(Color.color(0.6, 0.5, 0.9, 0.65 * pulse))
+        gc.setLineWidth(4.0 * pulse)
+        for (i <- 0 until crescentPoints.length - 1) {
+          gc.strokeLine(crescentPoints(i)._1, crescentPoints(i)._2, crescentPoints(i + 1)._1, crescentPoints(i + 1)._2)
+        }
+
+        // White core edge
+        gc.setStroke(Color.color(0.9, 0.85, 1.0, 0.85 * pulse))
+        gc.setLineWidth(1.5)
+        for (i <- 0 until crescentPoints.length - 1) {
+          gc.strokeLine(crescentPoints(i)._1, crescentPoints(i)._2, crescentPoints(i + 1)._1, crescentPoints(i + 1)._2)
+        }
+
+        // Inner crescent (thinner, opposite bow for crescent shape)
+        val innerPoints = (0 to crescentSegments).map { seg =>
+          val t = seg.toDouble / crescentSegments
+          val bow = Math.sin(t * Math.PI) * 6.0
+          val cx = tailX + dx * t + nx * bow
+          val cy = tailY + dy * t + ny * bow
+          (cx, cy)
+        }
+        gc.setStroke(Color.color(0.5, 0.4, 0.8, 0.3 * pulse))
+        gc.setLineWidth(2.0)
+        for (i <- 0 until innerPoints.length - 1) {
+          gc.strokeLine(innerPoints(i)._1, innerPoints(i)._2, innerPoints(i + 1)._1, innerPoints(i + 1)._2)
+        }
+
+        // Energy particles trailing the wave
+        for (i <- 0 until 5) {
+          val t = ((animationTick * 0.06 + i.toDouble / 5 + projectile.id * 0.15) % 1.0)
+          val pX = midX + nx * Math.sin(phase + i * 1.5) * 10.0 + dx * (t - 0.5) * 0.4
+          val pY = midY + ny * Math.sin(phase + i * 1.5) * 10.0 + dy * (t - 0.5) * 0.4 + t * 5.0
+          val pAlpha = Math.max(0.0, 0.5 * (1.0 - t))
+          gc.setFill(Color.color(0.5, 0.4, 0.9, pAlpha))
+          val pR = 2.5 * (1.0 - t * 0.5)
+          gc.fillOval(pX - pR, pY - pR, pR * 2, pR * 2)
+        }
+      }
+    }
   }
 }

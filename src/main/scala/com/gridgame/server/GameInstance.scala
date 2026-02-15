@@ -60,9 +60,9 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
 
     // Spawn initial items and start item spawning
     itemSpawnExecutor = Executors.newSingleThreadScheduledExecutor()
-    for (_ <- 1 to 50) spawnItem()
+    for (_ <- 1 to 10) spawnItem()
     itemSpawnExecutor.scheduleAtFixedRate(
-      new Runnable { def run(): Unit = for (_ <- 1 to 50) spawnItem() },
+      new Runnable { def run(): Unit = for (_ <- 1 to 5) spawnItem() },
       Constants.ITEM_SPAWN_INTERVAL_MS.toLong,
       Constants.ITEM_SPAWN_INTERVAL_MS.toLong,
       TimeUnit.MILLISECONDS

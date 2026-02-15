@@ -21,6 +21,8 @@ object ProjectileType {
   val ROCKET: Byte = 15
   val TALON: Byte = 16
   val GUST: Byte = 17
+  val KATANA: Byte = 18
+  val SWORD_WAVE: Byte = 19
 }
 
 class Projectile(

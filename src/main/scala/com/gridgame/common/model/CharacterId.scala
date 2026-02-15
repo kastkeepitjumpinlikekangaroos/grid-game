@@ -10,6 +10,7 @@ object CharacterId {
   val Tidecaller: CharacterId = CharacterId(4, "Tidecaller")
   val Soldier: CharacterId = CharacterId(5, "Soldier")
   val Raptor: CharacterId = CharacterId(6, "Raptor")
+  val Samurai: CharacterId = CharacterId(7, "Samurai")
 
   val DEFAULT: CharacterId = Spaceman
 
