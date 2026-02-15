@@ -1,12 +1,7 @@
 package com.gridgame.server
 
 import com.gridgame.common.Constants
-import com.gridgame.common.model.CharacterDef
-import com.gridgame.common.model.Direction
-import com.gridgame.common.model.ItemType
-import com.gridgame.common.model.Player
-import com.gridgame.common.model.Position
-import com.gridgame.common.model.ProjectileDef
+import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 
 import java.util.UUID
@@ -19,6 +14,8 @@ import scala.jdk.CollectionConverters._
 class BotController(instance: GameInstance) {
   private val botIds = new java.util.concurrent.CopyOnWriteArrayList[UUID]()
   private val lastShotTime = new ConcurrentHashMap[UUID, Long]()
+  private val lastQAbilityTime = new ConcurrentHashMap[UUID, Long]()
+  private val lastEAbilityTime = new ConcurrentHashMap[UUID, Long]()
   private var executor: ScheduledExecutorService = _
 
   private val TICK_INTERVAL_MS = 200L
@@ -27,6 +24,8 @@ class BotController(instance: GameInstance) {
   def addBotId(id: UUID): Unit = {
     botIds.add(id)
     lastShotTime.put(id, 0L)
+    lastQAbilityTime.put(id, 0L)
+    lastEAbilityTime.put(id, 0L)
   }
 
   def start(): Unit = {
@@ -79,6 +78,7 @@ class BotController(instance: GameInstance) {
     if (target == null) return
 
     moveSmart(bot, target)
+    tryUseAbilities(bot, target)
     tryShoot(bot, target)
   }
 
@@ -349,9 +349,123 @@ class BotController(instance: GameInstance) {
       world.isWalkable(x, y) && !isTileOccupied(x, y, botId)
   }
 
+  // --- Abilities ---
+
+  private def tryUseAbilities(bot: Player, target: Player): Unit = {
+    if (bot.isPhased) return
+
+    val charDef = CharacterDef.get(bot.getCharacterId)
+    val dist = distanceBetween(bot.getPosition, target.getPosition)
+    val now = System.currentTimeMillis()
+
+    // Try Q ability
+    val lastQ = lastQAbilityTime.getOrDefault(bot.getId, 0L)
+    if (now - lastQ >= charDef.qAbility.cooldownMs) {
+      if (tryFireAbility(bot, target, charDef.qAbility, dist)) {
+        lastQAbilityTime.put(bot.getId, now)
+      }
+    }
+
+    // Try E ability
+    val lastE = lastEAbilityTime.getOrDefault(bot.getId, 0L)
+    if (now - lastE >= charDef.eAbility.cooldownMs) {
+      if (tryFireAbility(bot, target, charDef.eAbility, dist)) {
+        lastEAbilityTime.put(bot.getId, now)
+      }
+    }
+  }
+
+  /** Attempt to fire an ability. Returns true if used. */
+  private def tryFireAbility(bot: Player, target: Player, ability: AbilityDef, dist: Float): Boolean = {
+    val botPos = bot.getPosition
+    val targetPos = target.getPosition
+    val dx = (targetPos.getX - botPos.getX).toFloat
+    val dy = (targetPos.getY - botPos.getY).toFloat
+    val len = Math.sqrt(dx * dx + dy * dy).toFloat
+    if (len < 0.01f) return false
+    val ndx = dx / len
+    val ndy = dy / len
+
+    ability.castBehavior match {
+      case StandardProjectile =>
+        if (dist > ability.maxRange) return false
+        val projectile = instance.projectileManager.spawnProjectile(
+          bot.getId, botPos.getX, botPos.getY,
+          ndx, ndy, bot.getColorRGB, 0, ability.projectileType
+        )
+        instance.broadcastProjectileSpawn(projectile)
+        true
+
+      case FanProjectile(count, fanAngle) =>
+        if (dist > ability.maxRange) return false
+        val halfAngle = fanAngle / 2.0
+        for (i <- 0 until count) {
+          val theta = -halfAngle + (fanAngle * i / (count - 1).toDouble)
+          val cos = Math.cos(theta).toFloat
+          val sin = Math.sin(theta).toFloat
+          val rdx = ndx * cos - ndy * sin
+          val rdy = ndx * sin + ndy * cos
+          val projectile = instance.projectileManager.spawnProjectile(
+            bot.getId, botPos.getX, botPos.getY,
+            rdx, rdy, bot.getColorRGB, 0, ability.projectileType
+          )
+          instance.broadcastProjectileSpawn(projectile)
+        }
+        true
+
+      case PhaseShiftBuff(durationMs) =>
+        // Use phase shift when enemy is close (defensive)
+        if (dist > 5) return false
+        bot.setPhasedUntil(System.currentTimeMillis() + durationMs)
+        broadcastBotPosition(bot)
+        true
+
+      case DashBuff(maxDistance, durationMs, _) =>
+        // Dash toward target
+        if (dist < 3 || dist > maxDistance + 5) return false
+        val clampedDist = Math.min(dist, maxDistance.toFloat)
+        val world = instance.world
+        var bestX = botPos.getX
+        var bestY = botPos.getY
+        for (step <- 1 to clampedDist.toInt) {
+          val testX = Math.max(0, Math.min(world.width - 1, (botPos.getX + ndx * step).toInt))
+          val testY = Math.max(0, Math.min(world.height - 1, (botPos.getY + ndy * step).toInt))
+          if (world.isWalkable(testX, testY)) {
+            bestX = testX
+            bestY = testY
+          }
+        }
+        bot.setPosition(new Position(bestX, bestY))
+        bot.setPhasedUntil(System.currentTimeMillis() + durationMs)
+        broadcastBotPosition(bot)
+        true
+
+      case TeleportCast(maxDistance) =>
+        // Blink toward target when at mid range
+        if (dist < 4 || dist > maxDistance + 8) return false
+        val clampedDist = Math.min(dist, maxDistance.toFloat).toInt
+        val world = instance.world
+        var bestX = botPos.getX
+        var bestY = botPos.getY
+        for (step <- 1 to clampedDist) {
+          val testX = Math.max(0, Math.min(world.width - 1, (botPos.getX + ndx * step).toInt))
+          val testY = Math.max(0, Math.min(world.height - 1, (botPos.getY + ndy * step).toInt))
+          if (world.isWalkable(testX, testY)) {
+            bestX = testX
+            bestY = testY
+          }
+        }
+        bot.setPosition(new Position(bestX, bestY))
+        bot.setServerTeleportedUntil(System.currentTimeMillis() + 500)
+        broadcastBotPosition(bot)
+        true
+    }
+  }
+
   // --- Shooting ---
 
   private def tryShoot(bot: Player, target: Player): Unit = {
+    if (bot.isPhased) return
     val dist = distanceBetween(bot.getPosition, target.getPosition)
     val maxRange = getMaxRange(bot.getCharacterId)
     if (dist > maxRange) return
