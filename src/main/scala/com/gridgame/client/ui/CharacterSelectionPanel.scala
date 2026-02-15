@@ -5,11 +5,13 @@ import javafx.animation.AnimationTimer
 import javafx.geometry.Insets
 import javafx.geometry.Pos
 import javafx.scene.canvas.Canvas
-import javafx.scene.control.Button
 import javafx.scene.control.Label
+import javafx.scene.effect.DropShadow
+import javafx.scene.layout.GridPane
 import javafx.scene.layout.HBox
 import javafx.scene.layout.Priority
 import javafx.scene.layout.Region
+import javafx.scene.layout.StackPane
 import javafx.scene.layout.VBox
 import javafx.scene.paint.Color
 import javafx.scene.text.Font
@@ -17,7 +19,7 @@ import javafx.scene.text.FontWeight
 
 /**
  * Shared character selection panel used in both lobby and ranked queue screens.
- * Shows sprite preview, carousel navigation, ability previews with animations, and description.
+ * Shows a 4x3 grid of all characters with a detail panel for the selected character.
  */
 class CharacterSelectionPanel(
     getSelectedId: () => Byte,
@@ -28,11 +30,15 @@ class CharacterSelectionPanel(
   private var dirIndex = 0
   private val dirs = Array(Direction.Down, Direction.Left, Direction.Up, Direction.Right)
 
-  // UI elements that need updating
-  private var charNameLabel: Label = _
-  private var charDescLabel: Label = _
-  private var charCountLabel: Label = _
-  private var previewCanvas: Canvas = _
+  // Grid cell tracking
+  private var selectedIdx = 0
+  private val cellCanvases = new Array[Canvas](CharacterDef.all.size)
+  private val cellPanes = new Array[StackPane](CharacterDef.all.size)
+
+  // Detail panel elements
+  private var detailPreviewCanvas: Canvas = _
+  private var detailNameLabel: Label = _
+  private var detailDescLabel: Label = _
 
   // Ability row elements
   private case class AbilityRow(
@@ -49,47 +55,79 @@ class CharacterSelectionPanel(
 
   private val sectionHeaderStyle = "-fx-text-fill: #99aabb; -fx-font-size: 13; -fx-font-weight: bold;"
   private val cardBgSubtle = "-fx-background-color: #1c1c34; -fx-background-radius: 12; -fx-border-color: rgba(255,255,255,0.05); -fx-border-radius: 12; -fx-border-width: 1; -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.3), 12, 0, 0, 4);"
-  private val arrowBtnStyle = "-fx-background-color: rgba(255,255,255,0.06); -fx-text-fill: #8899aa; -fx-font-size: 18; -fx-font-weight: bold; -fx-padding: 8 16; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.08); -fx-border-width: 1; -fx-border-radius: 10;"
-  private val arrowBtnHoverStyle = "-fx-background-color: rgba(74, 158, 255, 0.15); -fx-text-fill: #4a9eff; -fx-font-size: 18; -fx-font-weight: bold; -fx-padding: 8 16; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(74, 158, 255, 0.3); -fx-border-width: 1; -fx-border-radius: 10;"
+
+  private val cellBaseStyle = "-fx-background-color: #1c1c34; -fx-background-radius: 10; -fx-border-color: rgba(255,255,255,0.08); -fx-border-radius: 10; -fx-border-width: 1; -fx-cursor: hand;"
+  private val cellHoverStyle = "-fx-background-color: #1c1c34; -fx-background-radius: 10; -fx-border-color: rgba(74, 158, 255, 0.3); -fx-border-radius: 10; -fx-border-width: 1; -fx-cursor: hand;"
+  private val cellSelectedStyle = "-fx-background-color: #1c1c34; -fx-background-radius: 10; -fx-border-color: #4a9eff; -fx-border-radius: 10; -fx-border-width: 2; -fx-cursor: hand;"
 
   def createPanel(): VBox = {
     val charSectionLabel = new Label("SELECT CHARACTER")
     charSectionLabel.setStyle(sectionHeaderStyle)
 
-    // Sprite preview
-    val previewSize = 96.0
-    previewCanvas = new Canvas(previewSize, previewSize)
+    // Sync selectedIdx to current selection
+    selectedIdx = {
+      val idx = CharacterDef.all.indexWhere(_.id.id == getSelectedId())
+      if (idx < 0) 0 else idx
+    }
 
-    charNameLabel = new Label("")
-    charNameLabel.setFont(Font.font("System", FontWeight.BOLD, 17))
-    charNameLabel.setTextFill(Color.web("#4a9eff"))
+    // Build grid (4 cols x 3 rows)
+    val grid = new GridPane()
+    grid.setHgap(8)
+    grid.setVgap(8)
 
-    charDescLabel = new Label("")
-    charDescLabel.setFont(Font.font("System", 13))
-    charDescLabel.setTextFill(Color.web("#aabbcc"))
-    charDescLabel.setWrapText(true)
-    charDescLabel.setMaxWidth(400)
-    charDescLabel.setStyle("-fx-line-spacing: 2;")
+    for (i <- CharacterDef.all.indices) {
+      val charDef = CharacterDef.all(i)
+      val cellCanvas = new Canvas(56, 56)
+      cellCanvases(i) = cellCanvas
 
-    // Carousel
-    charCountLabel = new Label("")
-    charCountLabel.setFont(Font.font("System", 13))
-    charCountLabel.setTextFill(Color.web("#8899aa"))
+      val nameLabel = new Label(charDef.displayName)
+      nameLabel.setFont(Font.font("System", FontWeight.BOLD, 10))
+      nameLabel.setTextFill(Color.web("#aabbcc"))
+      nameLabel.setMaxWidth(72)
+      nameLabel.setAlignment(Pos.CENTER)
 
-    val prevBtn = new Button("\u25C0")
-    prevBtn.setStyle(arrowBtnStyle)
-    prevBtn.setOnMouseEntered(_ => prevBtn.setStyle(arrowBtnHoverStyle))
-    prevBtn.setOnMouseExited(_ => prevBtn.setStyle(arrowBtnStyle))
-    prevBtn.setOnAction(_ => selectByIndex(currentCharIndex - 1))
+      val cellContent = new VBox(2, cellCanvas, nameLabel)
+      cellContent.setAlignment(Pos.CENTER)
+      cellContent.setPadding(new Insets(6, 4, 4, 4))
 
-    val nextBtn = new Button("\u25B6")
-    nextBtn.setStyle(arrowBtnStyle)
-    nextBtn.setOnMouseEntered(_ => nextBtn.setStyle(arrowBtnHoverStyle))
-    nextBtn.setOnMouseExited(_ => nextBtn.setStyle(arrowBtnStyle))
-    nextBtn.setOnAction(_ => selectByIndex(currentCharIndex + 1))
+      val cellPane = new StackPane(cellContent)
+      cellPane.setMinWidth(76)
+      cellPane.setMinHeight(82)
+      cellPanes(i) = cellPane
 
-    val carouselBox = new HBox(16, prevBtn, charCountLabel, nextBtn)
-    carouselBox.setAlignment(Pos.CENTER)
+      val idx = i
+      cellPane.setOnMouseClicked(_ => {
+        selectedIdx = idx
+        onSelect(charDef.id.id)
+        updateCellStyles()
+        updateDetailPanel()
+      })
+      cellPane.setOnMouseEntered(_ => {
+        if (idx != selectedIdx) cellPane.setStyle(cellHoverStyle)
+      })
+      cellPane.setOnMouseExited(_ => {
+        if (idx != selectedIdx) cellPane.setStyle(cellBaseStyle)
+      })
+
+      val col = i % 4
+      val row = i / 4
+      grid.add(cellPane, col, row)
+    }
+    updateCellStyles()
+
+    // Detail panel (right side)
+    detailPreviewCanvas = new Canvas(96, 96)
+
+    detailNameLabel = new Label("")
+    detailNameLabel.setFont(Font.font("System", FontWeight.BOLD, 17))
+    detailNameLabel.setTextFill(Color.web("#4a9eff"))
+
+    detailDescLabel = new Label("")
+    detailDescLabel.setFont(Font.font("System", 13))
+    detailDescLabel.setTextFill(Color.web("#aabbcc"))
+    detailDescLabel.setWrapText(true)
+    detailDescLabel.setMaxWidth(280)
+    detailDescLabel.setStyle("-fx-line-spacing: 2;")
 
     // Ability preview rows
     primaryRow = createAbilityRow()
@@ -102,21 +140,22 @@ class CharacterSelectionPanel(
 
     val abilitiesCard = new VBox(8, primarySection, createThinSeparator(), qSection, createThinSeparator(), eSection)
     abilitiesCard.setPadding(new Insets(10, 14, 10, 14))
-    abilitiesCard.setMaxWidth(420)
     abilitiesCard.setStyle(cardBgSubtle)
 
-    // Description card
-    val descCard = new VBox(8, charDescLabel)
+    val descCard = new VBox(8, detailDescLabel)
     descCard.setPadding(new Insets(10, 14, 10, 14))
-    descCard.setMaxWidth(420)
     descCard.setStyle(cardBgSubtle)
 
-    val previewBox = new VBox(6, previewCanvas, charNameLabel)
+    val previewBox = new VBox(6, detailPreviewCanvas, detailNameLabel)
     previewBox.setAlignment(Pos.CENTER)
 
-    // Initialize
-    updateCharacterInfo()
-    charCountLabel.setText(s"${currentCharIndex + 1} / ${CharacterDef.all.size}")
+    val detailsPanel = new VBox(12, previewBox, descCard, abilitiesCard)
+    detailsPanel.setAlignment(Pos.TOP_CENTER)
+    detailsPanel.setMinWidth(300)
+    detailsPanel.setPrefWidth(300)
+
+    // Initialize detail panel
+    updateDetailPanel()
 
     // Animation timer
     timer = new AnimationTimer {
@@ -125,13 +164,24 @@ class CharacterSelectionPanel(
         if (animTick % 40 == 0) {
           dirIndex = (dirIndex + 1) % dirs.length
         }
-        drawPreview()
+        drawDetailPreview()
+        // Draw grid cell sprites (throttled for performance)
+        if (animTick % 12 == 0) {
+          drawAllGridCells()
+        }
         renderAbilityCanvases()
       }
     }
     timer.start()
 
-    val charSection = new VBox(12, charSectionLabel, previewBox, carouselBox, abilitiesCard, descCard)
+    // Draw initial grid cells
+    drawAllGridCells()
+
+    // Main row: grid on left, details on right
+    val mainRow = new HBox(20, grid, detailsPanel)
+    mainRow.setAlignment(Pos.TOP_CENTER)
+
+    val charSection = new VBox(12, charSectionLabel, mainRow)
     charSection.setAlignment(Pos.CENTER)
     charSection.setPadding(new Insets(0, 24, 0, 24))
     charSection
@@ -141,22 +191,47 @@ class CharacterSelectionPanel(
     if (timer != null) timer.stop()
   }
 
-  private def currentCharIndex: Int = {
-    val idx = CharacterDef.all.indexWhere(_.id.id == getSelectedId())
-    if (idx < 0) 0 else idx
+  private def updateCellStyles(): Unit = {
+    val glow = new DropShadow()
+    glow.setColor(Color.web("#4a9eff"))
+    glow.setRadius(12)
+    glow.setSpread(0.15)
+
+    for (i <- cellPanes.indices) {
+      if (cellPanes(i) != null) {
+        if (i == selectedIdx) {
+          cellPanes(i).setStyle(cellSelectedStyle)
+          cellPanes(i).setEffect(glow)
+        } else {
+          cellPanes(i).setStyle(cellBaseStyle)
+          cellPanes(i).setEffect(null)
+        }
+      }
+    }
   }
 
-  private def selectByIndex(idx: Int): Unit = {
-    val wrapped = ((idx % CharacterDef.all.size) + CharacterDef.all.size) % CharacterDef.all.size
-    val charDef = CharacterDef.all(wrapped)
-    onSelect(charDef.id.id)
-    updateCharacterInfo()
-    charCountLabel.setText(s"${wrapped + 1} / ${CharacterDef.all.size}")
+  private def drawAllGridCells(): Unit = {
+    val frame = (animTick / 10) % 4
+    val dir = dirs(dirIndex)
+    for (i <- cellCanvases.indices) {
+      if (cellCanvases(i) != null) {
+        val gc = cellCanvases(i).getGraphicsContext2D
+        val s = cellCanvases(i).getWidth
+        gc.clearRect(0, 0, s, s)
+        val charDef = CharacterDef.all(i)
+        val sprite = SpriteGenerator.getSprite(0, dir, frame, charDef.id.id)
+        gc.setFill(Color.web("#1a1a30"))
+        gc.fillOval(4, 4, s - 8, s - 8)
+        val spriteSize = 44.0
+        val offset = (s - spriteSize) / 2.0
+        gc.drawImage(sprite, offset, offset, spriteSize, spriteSize)
+      }
+    }
   }
 
-  private def drawPreview(): Unit = {
-    val gc = previewCanvas.getGraphicsContext2D
-    val s = previewCanvas.getWidth
+  private def drawDetailPreview(): Unit = {
+    val gc = detailPreviewCanvas.getGraphicsContext2D
+    val s = detailPreviewCanvas.getWidth
     gc.clearRect(0, 0, s, s)
     val charDef = CharacterDef.get(getSelectedId())
     val dir = dirs(dirIndex)
@@ -172,13 +247,13 @@ class CharacterSelectionPanel(
     gc.drawImage(sprite, offset, offset, spriteDisplaySize, spriteDisplaySize)
   }
 
-  private def updateCharacterInfo(): Unit = {
+  private def updateDetailPanel(): Unit = {
     val charDef = CharacterDef.get(getSelectedId())
-    charNameLabel.setText(charDef.displayName)
-    charDescLabel.setText(charDef.description)
+    detailNameLabel.setText(charDef.displayName)
+    detailDescLabel.setText(charDef.description)
     animTick = 0
     dirIndex = 0
-    drawPreview()
+    drawDetailPreview()
 
     // Update ability rows
     updateAbilityRow(primaryRow, "LMB", "Primary Attack", charDef.primaryProjectileType, 0, charDef)

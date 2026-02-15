@@ -439,19 +439,22 @@ class ClientMain extends Application {
 
     headerArea.getChildren.addAll(titleBar, headerSep)
 
-    // Content area
-    val contentArea = new VBox(16)
+    // Two-column content area
+    val contentArea = new HBox(20)
     contentArea.setPadding(new Insets(0, 28, 24, 28))
     VBox.setVgrow(contentArea, Priority.ALWAYS)
 
-    // Lobby section label
+    // Left column: lobby list + join button (60%)
+    val leftColumn = new VBox(12)
+    HBox.setHgrow(leftColumn, Priority.ALWAYS)
+
     val lobbyHeader = new Label("AVAILABLE LOBBIES")
     lobbyHeader.setStyle(sectionHeaderStyle)
 
-    // Lobby list with custom cell factory
+    // Lobby list with card-based cell factory
     val lobbyListView = new ListView[String]()
     lobbyListView.setStyle(listViewCss)
-    lobbyListView.setPrefHeight(220)
+    lobbyListView.setPrefHeight(400)
     VBox.setVgrow(lobbyListView, Priority.ALWAYS)
 
     val lobbyCellFactory = new Callback[ListView[String], ListCell[String]] {
@@ -460,16 +463,82 @@ class ClientMain extends Application {
           super.updateItem(item, empty)
           if (empty || item == null) {
             setText(null)
-            setStyle("-fx-background-color: transparent;")
+            setGraphic(null)
+            setStyle("-fx-background-color: transparent; -fx-padding: 0;")
           } else {
-            setText(item)
-            val base = "-fx-text-fill: #ccdde8; -fx-font-size: 14; -fx-padding: 12 16; -fx-background-radius: 8;"
-            if (isSelected) {
-              setStyle(s"-fx-background-color: rgba(74, 158, 255, 0.15); $base -fx-border-color: #4a9eff; -fx-border-width: 0 0 0 3; -fx-border-radius: 8; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.15), 8, 0, 0, 0);")
-            } else if (getIndex % 2 == 0) {
-              setStyle(s"-fx-background-color: rgba(255,255,255,0.02); $base")
+            setText(null)
+            val idx = getIndex
+            if (idx >= 0 && idx < client.lobbyList.size()) {
+              val info = client.lobbyList.get(idx)
+              val mapName = WorldRegistry.getDisplayName(info.mapIndex)
+              val statusStr = if (info.status == 0) "Waiting" else "In Game"
+              val statusColor = if (info.status == 0) "#2ecc71" else "#e84057"
+              val modeStr = if (info.gameMode == 1) s"Teams ${info.teamSize}v${info.teamSize}" else "FFA"
+
+              // Lobby name + status
+              val nameLabel = new Label(info.name)
+              nameLabel.setFont(Font.font("System", FontWeight.BOLD, 15))
+              nameLabel.setTextFill(Color.web("#ccdde8"))
+              val statusDot = new Label("\u25CF")
+              statusDot.setTextFill(Color.web(statusColor))
+              statusDot.setFont(Font.font("System", 8))
+              val statusText = new Label(s"$statusStr  \u2022  ${info.durationMinutes}min")
+              statusText.setFont(Font.font("System", 12))
+              statusText.setTextFill(Color.web("#778899"))
+              val nameRow = new HBox(6, statusDot, nameLabel)
+              nameRow.setAlignment(Pos.CENTER_LEFT)
+              val nameCol = new VBox(2, nameRow, statusText)
+
+              val cardSpacer = new Region()
+              HBox.setHgrow(cardSpacer, Priority.ALWAYS)
+
+              // Mode badge
+              val modeBadge = new Label(modeStr)
+              modeBadge.setFont(Font.font("System", FontWeight.BOLD, 11))
+              if (info.gameMode == 1) {
+                modeBadge.setTextFill(Color.web("#e84057"))
+                modeBadge.setStyle("-fx-background-color: rgba(232, 64, 87, 0.15); -fx-padding: 3 10; -fx-background-radius: 12;")
+              } else {
+                modeBadge.setTextFill(Color.web("#4a9eff"))
+                modeBadge.setStyle("-fx-background-color: rgba(74, 158, 255, 0.15); -fx-padding: 3 10; -fx-background-radius: 12;")
+              }
+
+              // Player count badge
+              val countBadge = new Label(s"${info.playerCount}/${info.maxPlayers}")
+              countBadge.setFont(Font.font("System", FontWeight.BOLD, 11))
+              countBadge.setTextFill(Color.web("#2ecc71"))
+              countBadge.setStyle("-fx-background-color: rgba(46, 204, 113, 0.15); -fx-padding: 3 10; -fx-background-radius: 12;")
+
+              // Mini map preview
+              val miniCanvas = new Canvas(48, 48)
+              renderMapPreview(miniCanvas, info.mapIndex)
+              val mapNameLabel = new Label(mapName)
+              mapNameLabel.setFont(Font.font("System", 10))
+              mapNameLabel.setTextFill(Color.web("#778899"))
+              mapNameLabel.setAlignment(Pos.CENTER)
+              mapNameLabel.setMaxWidth(56)
+              val mapCol = new VBox(2, miniCanvas, mapNameLabel)
+              mapCol.setAlignment(Pos.CENTER)
+
+              val badgeCol = new VBox(4, modeBadge, countBadge)
+              badgeCol.setAlignment(Pos.CENTER_RIGHT)
+
+              val card = new HBox(12, nameCol, cardSpacer, badgeCol, mapCol)
+              card.setAlignment(Pos.CENTER_LEFT)
+              card.setPadding(new Insets(10, 14, 10, 14))
+
+              setGraphic(card)
+              val base = "-fx-padding: 2 4; -fx-background-radius: 10;"
+              if (isSelected) {
+                setStyle(s"-fx-background-color: rgba(74, 158, 255, 0.12); $base -fx-border-color: #4a9eff; -fx-border-width: 0 0 0 3; -fx-border-radius: 10; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.15), 8, 0, 0, 0);")
+              } else if (getIndex % 2 == 0) {
+                setStyle(s"-fx-background-color: rgba(255,255,255,0.02); $base")
+              } else {
+                setStyle(s"-fx-background-color: transparent; $base")
+              }
             } else {
-              setStyle(s"-fx-background-color: transparent; $base")
+              setGraphic(null)
+              setStyle("-fx-background-color: transparent; -fx-padding: 0;")
             }
           }
         }
@@ -486,7 +555,13 @@ class ClientMain extends Application {
       joinBtn.setDisable(newVal.intValue() < 0)
     })
 
-    // Create lobby form in a card
+    leftColumn.getChildren.addAll(lobbyHeader, lobbyListView, joinBtn)
+
+    // Right column: create lobby form (40%)
+    val rightColumn = new VBox(14)
+    rightColumn.setMinWidth(320)
+    rightColumn.setPrefWidth(380)
+
     val createCard = new VBox(14)
     createCard.setPadding(new Insets(20, 24, 20, 24))
     createCard.setStyle(cardBg)
@@ -522,14 +597,8 @@ class ClientMain extends Application {
         val items = new java.util.ArrayList[String]()
         import scala.jdk.CollectionConverters._
         client.lobbyList.asScala.foreach { info =>
-          val mapName = WorldRegistry.getDisplayName(info.mapIndex)
-          val statusStr = info.status match {
-            case 0 => "Waiting"
-            case 1 => "In Game"
-            case _ => "?"
-          }
-          val modeStr = if (info.gameMode == 1) s"Teams(${info.teamSize}v${info.teamSize})" else "FFA"
-          items.add(s"${info.name}  |  $mapName  |  ${info.playerCount}/${info.maxPlayers}  |  $statusStr  |  ${info.durationMinutes}min  |  $modeStr")
+          // Items are just index markers; the cell factory reads from client.lobbyList directly
+          items.add(info.name)
         }
         lobbyListView.setItems(FXCollections.observableArrayList(items))
       })
@@ -605,7 +674,9 @@ class ClientMain extends Application {
 
     createCard.getChildren.addAll(createLabel, formRow1, formRow2, mapPreviewBox, formRow3, createBtn)
 
-    contentArea.getChildren.addAll(lobbyHeader, lobbyListView, joinBtn, createSeparator(), createCard, statusLabel)
+    rightColumn.getChildren.addAll(createCard, statusLabel)
+
+    contentArea.getChildren.addAll(leftColumn, rightColumn)
 
     root.getChildren.addAll(headerArea, contentArea)
 
@@ -621,13 +692,13 @@ class ClientMain extends Application {
     root.setAlignment(Pos.TOP_CENTER)
     root.setStyle(darkBg)
 
-    // Header with glow
+    // Header
     val headerBox = new VBox(6)
     headerBox.setAlignment(Pos.CENTER)
-    headerBox.setPadding(new Insets(32, 24, 20, 24))
+    headerBox.setPadding(new Insets(28, 24, 16, 24))
 
     val lobbyTitle = new Label(client.currentLobbyName)
-    lobbyTitle.setFont(Font.font("System", FontWeight.BOLD, 30))
+    lobbyTitle.setFont(Font.font("System", FontWeight.BOLD, 28))
     lobbyTitle.setTextFill(Color.WHITE)
     lobbyTitle.setStyle("-fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.3), 12, 0, 0, 0);")
 
@@ -639,10 +710,18 @@ class ClientMain extends Application {
 
     headerBox.getChildren.addAll(lobbyTitle, playersLabel, headerLine)
 
-    // Info card
+    // Two-panel content
+    val mainContent = new HBox(24)
+    mainContent.setPadding(new Insets(0, 28, 24, 28))
+    VBox.setVgrow(mainContent, Priority.ALWAYS)
+
+    // Left panel (~40%): info card, map preview, host settings, leave button
+    val leftPanel = new VBox(14)
+    leftPanel.setMinWidth(340)
+    leftPanel.setPrefWidth(380)
+
     val infoCard = new VBox(14)
     infoCard.setPadding(new Insets(20, 28, 20, 28))
-    infoCard.setMaxWidth(420)
     infoCard.setStyle(cardBg)
 
     val mapLabel = new Label(s"Map: ${WorldRegistry.getDisplayName(client.currentLobbyMapIndex)}")
@@ -657,40 +736,18 @@ class ClientMain extends Application {
     waitingLabel.setFont(Font.font("System", 14))
     waitingLabel.setTextFill(Color.web("#8899aa"))
 
-    // Character selection panel (shared component)
-    val charPanel = new CharacterSelectionPanel(
-      () => client.selectedCharacterId,
-      id => client.selectCharacter(id)
-    )
-    val charSection = charPanel.createPanel()
-
-    val buttonBox = new HBox(12)
-    buttonBox.setAlignment(Pos.CENTER)
-    buttonBox.setPadding(new Insets(12, 0, 24, 0))
-
-    val leaveBtn = new Button("Leave")
-    addHoverEffect(leaveBtn, buttonRedStyle, buttonRedHoverStyle)
-
-    leaveBtn.setOnAction(_ => {
-      charPanel.stop()
-      client.leaveLobby()
-      showLobbyBrowser(stage)
-    })
-
-    buttonBox.getChildren.add(leaveBtn)
-
-    // Map preview
-    val lobbyMapPreviewCanvas = new Canvas(180, 180)
+    // Map preview (enlarged)
+    val lobbyMapPreviewCanvas = new Canvas(240, 240)
     val lobbyMapPreviewWrapper = new StackPane(lobbyMapPreviewCanvas)
-    lobbyMapPreviewWrapper.setMaxWidth(188)
-    lobbyMapPreviewWrapper.setMaxHeight(188)
+    lobbyMapPreviewWrapper.setMaxWidth(248)
+    lobbyMapPreviewWrapper.setMaxHeight(248)
     lobbyMapPreviewWrapper.setPadding(new Insets(4))
     lobbyMapPreviewWrapper.setStyle("-fx-background-color: #111124; -fx-background-radius: 8; -fx-border-color: rgba(255,255,255,0.08); -fx-border-radius: 8; -fx-border-width: 1;")
     val lobbyMapPreviewBox = new VBox(0, lobbyMapPreviewWrapper)
     lobbyMapPreviewBox.setAlignment(Pos.CENTER)
     renderMapPreview(lobbyMapPreviewCanvas, client.currentLobbyMapIndex)
 
-    // Team roster helper (builds/rebuilds team roster content in place)
+    // Team roster
     val teamRosterBox = new VBox(8)
     teamRosterBox.setId("teamRosterBox")
     teamRosterBox.setPadding(new Insets(8, 12, 8, 12))
@@ -746,6 +803,10 @@ class ClientMain extends Application {
       teamRosterBox.getChildren.add(rosterRow)
     }
     rebuildTeamRoster()
+
+    val leaveBtn = new Button("Leave")
+    addHoverEffect(leaveBtn, buttonRedStyle, buttonRedHoverStyle)
+    leaveBtn.setMaxWidth(Double.MaxValue)
 
     // Host-only controls
     if (client.isLobbyHost) {
@@ -845,7 +906,6 @@ class ClientMain extends Application {
       HBox.setHgrow(teamSizeCombo, Priority.ALWAYS)
 
       infoCard.getChildren.addAll(waitingLabel, createSeparator(), configLabel, row1, lobbyMapPreviewBox, row2, row3, row4, botRow, teamRosterBox, startBtn)
-      buttonBox.getChildren.add(new Region()) // spacing
     } else {
       val gameModeStr = if (client.currentLobbyGameMode == 1) s"Teams (${client.currentLobbyTeamSize}v${client.currentLobbyTeamSize})" else "Free-For-All"
       val nonHostGameModeLabel = new Label(s"Mode: $gameModeStr")
@@ -855,7 +915,28 @@ class ClientMain extends Application {
       infoCard.getChildren.addAll(mapLabel, durationLabel, nonHostGameModeLabel, teamRosterBox, lobbyMapPreviewBox, createSeparator(), waitingLabel)
     }
 
-    root.getChildren.addAll(headerBox, infoCard, new Region() { setMinHeight(16) }, charSection, new Region() { setMinHeight(4) }, buttonBox)
+    leftPanel.getChildren.addAll(infoCard, leaveBtn)
+
+    // Right panel (~60%): character selection grid
+    val rightPanel = new VBox(0)
+    HBox.setHgrow(rightPanel, Priority.ALWAYS)
+
+    val charPanel = new CharacterSelectionPanel(
+      () => client.selectedCharacterId,
+      id => client.selectCharacter(id)
+    )
+    val charSection = charPanel.createPanel()
+    rightPanel.getChildren.add(charSection)
+
+    leaveBtn.setOnAction(_ => {
+      charPanel.stop()
+      client.leaveLobby()
+      showLobbyBrowser(stage)
+    })
+
+    mainContent.getChildren.addAll(leftPanel, rightPanel)
+
+    root.getChildren.addAll(headerBox, mainContent)
 
     val scrollPane = new ScrollPane(root)
     scrollPane.setFitToWidth(true)
@@ -903,13 +984,16 @@ class ClientMain extends Application {
     root.setAlignment(Pos.TOP_CENTER)
     root.setStyle(darkBg)
 
-    // Header with glow
+    // Header
     val headerBox = new VBox(8)
     headerBox.setAlignment(Pos.CENTER)
-    headerBox.setPadding(new Insets(32, 24, 20, 24))
+    headerBox.setPadding(new Insets(28, 24, 16, 24))
+
+    val titleRow = new HBox(16)
+    titleRow.setAlignment(Pos.CENTER)
 
     val queueTitle = new Label("Ranked Queue")
-    queueTitle.setFont(Font.font("System", FontWeight.BOLD, 30))
+    queueTitle.setFont(Font.font("System", FontWeight.BOLD, 28))
     queueTitle.setTextFill(Color.WHITE)
     queueTitle.setStyle("-fx-effect: dropshadow(gaussian, rgba(255, 215, 0, 0.3), 12, 0, 0, 0);")
 
@@ -919,18 +1003,28 @@ class ClientMain extends Application {
     eloLabel.setTextFill(Color.web("#ffd700"))
     eloLabel.setStyle("-fx-background-color: rgba(255, 215, 0, 0.08); -fx-padding: 6 20; -fx-background-radius: 20; -fx-border-color: rgba(255, 215, 0, 0.2); -fx-border-radius: 20; -fx-border-width: 1;")
 
+    titleRow.getChildren.addAll(queueTitle, eloLabel)
+
     val headerLine = new Region()
     headerLine.setMinHeight(2)
     headerLine.setMaxHeight(2)
     headerLine.setMaxWidth(60)
     headerLine.setStyle("-fx-background-color: linear-gradient(to right, transparent, #ffd700, transparent); -fx-background-radius: 1;")
 
-    headerBox.getChildren.addAll(queueTitle, eloLabel, headerLine)
+    headerBox.getChildren.addAll(titleRow, headerLine)
 
-    // Mode selection card
+    // Two-panel content
+    val mainContent = new HBox(24)
+    mainContent.setPadding(new Insets(0, 28, 24, 28))
+    VBox.setVgrow(mainContent, Priority.ALWAYS)
+
+    // Left panel (~40%): mode selection, find match, queue status, back button
+    val leftPanel = new VBox(14)
+    leftPanel.setMinWidth(340)
+    leftPanel.setPrefWidth(380)
+
     val modeCard = new VBox(14)
     modeCard.setPadding(new Insets(20, 28, 20, 28))
-    modeCard.setMaxWidth(420)
     modeCard.setStyle(cardBg)
     modeCard.setAlignment(Pos.CENTER)
 
@@ -946,17 +1040,14 @@ class ClientMain extends Application {
     val ffaBtn = new Button("FFA (8 Players)")
     ffaBtn.setStyle(modeButtonActiveStyle)
     ffaBtn.setMaxWidth(Double.MaxValue)
-    HBox.setHgrow(ffaBtn, Priority.ALWAYS)
 
     val duelBtn = new Button("1v1 Duel")
     duelBtn.setStyle(modeButtonInactiveStyle)
     duelBtn.setMaxWidth(Double.MaxValue)
-    HBox.setHgrow(duelBtn, Priority.ALWAYS)
 
     val teamsBtn = new Button("Teams (3v3)")
     teamsBtn.setStyle(modeButtonInactiveStyle)
     teamsBtn.setMaxWidth(Double.MaxValue)
-    HBox.setHgrow(teamsBtn, Priority.ALWAYS)
 
     val allModeButtons = Seq(ffaBtn, duelBtn, teamsBtn)
 
@@ -992,8 +1083,8 @@ class ClientMain extends Application {
       updateModeButtons()
     })
 
-    val modeRow = new HBox(12, ffaBtn, duelBtn, teamsBtn)
-    modeRow.setAlignment(Pos.CENTER)
+    // Stack mode buttons vertically for left panel
+    val modeButtonsCol = new VBox(10, ffaBtn, duelBtn, teamsBtn)
 
     // Queue status elements (initially hidden)
     val queueSizeLabel = new Label("Players in queue: 1")
@@ -1043,9 +1134,9 @@ class ClientMain extends Application {
     findMatchBtn.setFont(Font.font("System", FontWeight.BOLD, 15))
     findMatchBtn.setMaxWidth(Double.MaxValue)
 
-    modeCard.getChildren.addAll(modeLabel, modeRow, findMatchBtn, searchingLabel, searchSeparator, queueSizeLabel, waitTimeLabel)
+    modeCard.getChildren.addAll(modeLabel, modeButtonsCol, findMatchBtn, searchingLabel, searchSeparator, queueSizeLabel, waitTimeLabel)
 
-    // Character selection panel (shared component)
+    // Character selection panel (declared before leaveBtn so it can reference it)
     val charPanel = new CharacterSelectionPanel(
       () => client.selectedCharacterId,
       id => client.changeRankedCharacter(id)
@@ -1055,6 +1146,7 @@ class ClientMain extends Application {
     // Back / Leave queue button
     val leaveBtn = new Button("Back")
     addHoverEffect(leaveBtn, buttonRedStyle, buttonRedHoverStyle)
+    leaveBtn.setMaxWidth(Double.MaxValue)
     leaveBtn.setOnAction(_ => {
       charPanel.stop()
       dotTimer.stop()
@@ -1090,12 +1182,16 @@ class ClientMain extends Application {
       leaveBtn.setText("Leave Queue")
     })
 
-    val buttonBox = new HBox(12)
-    buttonBox.setAlignment(Pos.CENTER)
-    buttonBox.setPadding(new Insets(12, 0, 24, 0))
-    buttonBox.getChildren.add(leaveBtn)
+    leftPanel.getChildren.addAll(modeCard, leaveBtn)
 
-    root.getChildren.addAll(headerBox, modeCard, new Region() { setMinHeight(16) }, charSection, new Region() { setMinHeight(4) }, buttonBox)
+    // Right panel (~60%): character selection grid
+    val rightPanel = new VBox(0)
+    HBox.setHgrow(rightPanel, Priority.ALWAYS)
+    rightPanel.getChildren.add(charSection)
+
+    mainContent.getChildren.addAll(leftPanel, rightPanel)
+
+    root.getChildren.addAll(headerBox, mainContent)
 
     val scrollPane = new ScrollPane(root)
     scrollPane.setFitToWidth(true)
