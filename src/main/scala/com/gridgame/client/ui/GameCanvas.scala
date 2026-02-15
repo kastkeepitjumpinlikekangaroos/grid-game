@@ -10,6 +10,7 @@ import com.gridgame.common.model.ItemType
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
 import com.gridgame.common.model.Projectile
+import com.gridgame.common.model.ProjectileDef
 import com.gridgame.common.model.ProjectileType
 import com.gridgame.common.model.WorldData
 
@@ -43,6 +44,28 @@ class GameCanvas(client: GameClient) extends Canvas() {
   private val TELEPORT_ANIMATION_MS = 800
 
   private def world: WorldData = client.getWorld
+
+  // Projectile renderer registry — new characters just add entries here
+  private type ProjectileRenderer = (Projectile, Double, Double) => Unit
+  private val projectileRenderers: Map[Byte, ProjectileRenderer] = Map(
+    ProjectileType.TENTACLE   -> ((p, cx, cy) => drawTentacleProjectile(p, cx, cy)),
+    ProjectileType.ICE_BEAM   -> ((p, cx, cy) => drawIceBeamProjectile(p, cx, cy)),
+    ProjectileType.AXE        -> ((p, cx, cy) => drawAxeProjectile(p, cx, cy)),
+    ProjectileType.ROPE       -> ((p, cx, cy) => drawRopeProjectile(p, cx, cy)),
+    ProjectileType.SPEAR      -> ((p, cx, cy) => drawSpearProjectile(p, cx, cy)),
+    ProjectileType.SOUL_BOLT  -> ((p, cx, cy) => drawSoulBoltProjectile(p, cx, cy)),
+    ProjectileType.HAUNT      -> ((p, cx, cy) => drawHauntProjectile(p, cx, cy)),
+    ProjectileType.ARCANE_BOLT -> ((p, cx, cy) => drawArcaneBoltProjectile(p, cx, cy)),
+    ProjectileType.FIREBALL   -> ((p, cx, cy) => drawFireballProjectile(p, cx, cy)),
+    ProjectileType.SPLASH     -> ((p, cx, cy) => drawSplashProjectile(p, cx, cy)),
+    ProjectileType.TIDAL_WAVE -> ((p, cx, cy) => drawTidalWaveProjectile(p, cx, cy)),
+    ProjectileType.GEYSER     -> ((p, cx, cy) => drawGeyserProjectile(p, cx, cy)),
+    ProjectileType.BULLET     -> ((p, cx, cy) => drawBulletProjectile(p, cx, cy)),
+    ProjectileType.GRENADE    -> ((p, cx, cy) => drawGrenadeProjectile(p, cx, cy)),
+    ProjectileType.ROCKET     -> ((p, cx, cy) => drawRocketProjectile(p, cx, cy)),
+    ProjectileType.TALON      -> ((p, cx, cy) => drawTalonProjectile(p, cx, cy)),
+    ProjectileType.GUST       -> ((p, cx, cy) => drawGustProjectile(p, cx, cy))
+  )
 
   // --- Isometric coordinate transforms ---
 
@@ -235,7 +258,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
   private def drawAimArrow(camOffX: Double, camOffY: Double): Unit = {
     if (!client.isCharging || client.getIsDead) return
     val pt = client.getSelectedCharacterDef.primaryProjectileType
-    if (pt != ProjectileType.NORMAL && pt != ProjectileType.ARCANE_BOLT && pt != ProjectileType.SPLASH) return
+    if (!ProjectileDef.get(pt).chargeSpeedScaling.isDefined) return
 
     val pos = client.getLocalPosition
     // Use grid position for direction (matches actual shot trajectory in MouseHandler)
@@ -258,10 +281,10 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val chargeLevel = client.getChargeLevel
     val chargePct = chargeLevel / 100.0
     // +1 for spawn offset (projectile spawns 1 tile ahead of player)
-    val (minRange, maxRange) = pt match {
-      case ProjectileType.ARCANE_BOLT => (Constants.ARCANE_BOLT_CHARGE_MIN_RANGE, Constants.ARCANE_BOLT_CHARGE_MAX_RANGE)
-      case ProjectileType.SPLASH => (Constants.SPLASH_CHARGE_MIN_RANGE, Constants.SPLASH_CHARGE_MAX_RANGE)
-      case _ => (Constants.CHARGE_MIN_RANGE, Constants.CHARGE_MAX_RANGE)
+    val pDef = ProjectileDef.get(pt)
+    val (minRange, maxRange) = pDef.chargeRangeScaling match {
+      case Some(scaling) => (scaling.min.toInt, scaling.max.toInt)
+      case None => (pDef.maxRange, pDef.maxRange)
     }
     val cylLength = 1.0 + minRange + chargePct * (maxRange - minRange)
 
@@ -569,26 +592,9 @@ class GameCanvas(client: GameClient) extends Canvas() {
   }
 
   private def drawSingleProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
-    projectile.projectileType match {
-      case ProjectileType.TENTACLE => drawTentacleProjectile(projectile, camOffX, camOffY)
-      case ProjectileType.ICE_BEAM => drawIceBeamProjectile(projectile, camOffX, camOffY)
-      case ProjectileType.AXE => drawAxeProjectile(projectile, camOffX, camOffY)
-      case ProjectileType.ROPE => drawRopeProjectile(projectile, camOffX, camOffY)
-      case ProjectileType.SPEAR => drawSpearProjectile(projectile, camOffX, camOffY)
-      case ProjectileType.SOUL_BOLT => drawSoulBoltProjectile(projectile, camOffX, camOffY)
-      case ProjectileType.HAUNT => drawHauntProjectile(projectile, camOffX, camOffY)
-      case ProjectileType.ARCANE_BOLT => drawArcaneBoltProjectile(projectile, camOffX, camOffY)
-      case ProjectileType.FIREBALL => drawFireballProjectile(projectile, camOffX, camOffY)
-      case ProjectileType.SPLASH => drawSplashProjectile(projectile, camOffX, camOffY)
-      case ProjectileType.TIDAL_WAVE => drawTidalWaveProjectile(projectile, camOffX, camOffY)
-      case ProjectileType.GEYSER => drawGeyserProjectile(projectile, camOffX, camOffY)
-      case ProjectileType.BULLET => drawBulletProjectile(projectile, camOffX, camOffY)
-      case ProjectileType.GRENADE => drawGrenadeProjectile(projectile, camOffX, camOffY)
-      case ProjectileType.ROCKET => drawRocketProjectile(projectile, camOffX, camOffY)
-      case ProjectileType.TALON => drawTalonProjectile(projectile, camOffX, camOffY)
-      case ProjectileType.GUST => drawGustProjectile(projectile, camOffX, camOffY)
-      case _ => drawNormalProjectile(projectile, camOffX, camOffY)
-    }
+    projectileRenderers.getOrElse(projectile.projectileType,
+      (p: Projectile, cx: Double, cy: Double) => drawNormalProjectile(p, cx, cy)
+    )(projectile, camOffX, camOffY)
   }
 
   private def drawNormalProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
@@ -2727,7 +2733,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val progress = elapsed.toDouble / EXPLOSION_ANIMATION_MS
     val fadeOut = 1.0 - progress
 
-    val blastRadius = if (projectileType == ProjectileType.GRENADE) 3.0 else 2.5
+    val blastRadius = ProjectileDef.get(projectileType).explosionConfig.map(_.blastRadius.toDouble).getOrElse(3.0)
     val maxScreenRadius = blastRadius * HW * 1.5
 
     // Phase 1: Intense white-hot flash (0-15%)
@@ -3735,7 +3741,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
   private def drawChargeBar(): Unit = {
     if (!client.isCharging) return
     val cpt = client.getSelectedCharacterDef.primaryProjectileType
-    if (cpt != ProjectileType.NORMAL && cpt != ProjectileType.ARCANE_BOLT && cpt != ProjectileType.SPLASH) return
+    if (!ProjectileDef.get(cpt).chargeSpeedScaling.isDefined) return
 
     val chargeLevel = client.getChargeLevel
     val barWidth = 100.0

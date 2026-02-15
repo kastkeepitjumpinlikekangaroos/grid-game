@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate sprites/tiles.png — 28-column × 4-row isometric tileset.
+"""Generate sprites/tiles.png — 34-column × 4-row isometric tileset.
 
 Per-pixel renderer with strong directional lighting, bold textures,
 and high contrast between tile faces for clear 3D depth.
@@ -11,7 +11,7 @@ from PIL import Image
 CELL_W, CELL_H = 40, 56
 HW, HH = 20, 10
 CX, BASE_Y = 20, 46
-NUM_TILES, ANIM_FRAMES = 28, 4
+NUM_TILES, ANIM_FRAMES = 34, 4
 
 TILES = [
     (0,  "Grass",       0xFF4CAF50,  0),
@@ -42,6 +42,12 @@ TILES = [
     (25, "Coral",       0xFFFF7043, 10),
     (26, "Ruins",       0xFF7E7360, 18),
     (27, "Moss",        0xFF689F38,  0),
+    (28, "Obsidian",    0xFF1A1A2E, 22),
+    (29, "Cliff",       0xFF5C5040, 44),
+    (30, "Ash",         0xFF6B6B6B,  0),
+    (31, "Thorns",      0xFF3B2F18, 18),
+    (32, "Basalt",      0xFF2D2D3D, 34),
+    (33, "Gravel",      0xFFB0A899,  0),
 ]
 
 # ── Color ────────────────────────────────────────────────────────────
@@ -584,13 +590,207 @@ def _moss(c, base, f, u, v, e, px, py, h, fr):
         mc = lerp(mc, (108, 98, 82), (0.28 - cl_n) * 0.45)
     return scale(mc, face_bright(f, u, v, e, h))
 
+def _obsidian(c, base, f, u, v, e, px, py, h, fr):
+    """Glossy dark volcanic glass — imposing, reflective, sharp."""
+    dark = (18, 18, 38)
+    mid = (35, 30, 55)
+    gloss = (90, 80, 130)
+    if f == "top":
+        n = _sn(px * 0.15, py * 0.15, 2800)
+        oc = lerp(dark, mid, n * 0.6)
+        # Sharp glassy reflections
+        refl = math.sin(px * 0.6 + py * 0.3) * math.cos(px * 0.2 - py * 0.5)
+        if refl > 0.4:
+            oc = lerp(oc, gloss, (refl - 0.4) * 1.2)
+        # Bright specular highlight — upper left
+        if u < 0.3 and v < 0.3:
+            sp = (1 - u/0.3) * (1 - v/0.3)
+            oc = lighten(oc, sp * 0.35)
+        # Fracture lines
+        crack = _sn(px * 0.22, py * 0.22, 2810)
+        if abs(crack * 4 - round(crack * 4)) < 0.04:
+            oc = lighten(oc, 0.25)
+        return scale(oc, face_bright(f, u, v, e, h))
+    # Side faces: deep dark with purple sheen
+    oc = lerp((10, 10, 22), (25, 20, 45), 1.0 - v)
+    sheen = math.sin(py * 0.4 + px * 0.2) * 0.5 + 0.5
+    if sheen > 0.7:
+        oc = lighten(oc, (sheen - 0.7) * 0.4)
+    # Vertical fracture glints
+    if _h(px, py // 3, 2820) > 0.92:
+        oc = lighten(oc, 0.3)
+    return scale(oc, face_bright(f, u, v, e, h))
+
+def _cliff(c, base, f, u, v, e, px, py, h, fr):
+    """Towering cliff face — the tallest, most imposing terrain."""
+    if f == "top":
+        # Rough rocky top with sparse vegetation
+        rock = lerp((105, 92, 72), (125, 110, 88), _sn(px * 0.1, py * 0.1, 2900))
+        if _h(px//3, py//3, 2910) > 0.82:
+            rock = lerp(rock, (58, 80, 42), 0.4)  # sparse moss
+        crack = _sn(px * 0.18, py * 0.18, 2920)
+        if abs(crack * 3 - round(crack * 3)) < 0.06:
+            rock = darken(rock, 0.25)
+        return scale(rock, face_bright(f, u, v, e, h))
+    # Side: layered stratified rock — most detail since it's so tall
+    stratum = py // 4
+    sn = _h(stratum, 0, 2930)
+    warm = lerp((82, 72, 55), (115, 100, 78), sn)
+    cool = lerp((72, 68, 62), (98, 92, 82), sn)
+    rock = lerp(warm, cool, _sn(px * 0.08, stratum * 0.5, 2935))
+    # Horizontal strata lines
+    if py % 4 == 0:
+        rock = darken(rock, 0.22)
+    # Vertical cracks
+    cx_v = _sn(px * 0.2, py * 0.02, 2940)
+    if abs(cx_v * 3 - round(cx_v * 3)) < 0.035:
+        rock = darken(rock, 0.3)
+    # Overhangs / shadows at top
+    if v < 0.08:
+        rock = lighten(rock, (0.08 - v) / 0.08 * 0.15)
+    # Darkening toward base (imposing shadow)
+    rock = darken(rock, v * 0.2)
+    d = (_h(px, py, 2945) - 0.5) * 10
+    rock = rgb(rock[0]+d, rock[1]+d, rock[2]+d)
+    return scale(rock, face_bright(f, u, v, e, h))
+
+def _ash(c, base, f, u, v, e, px, py, h, fr):
+    """Volcanic ash — desolate flat ground, gray and bleak."""
+    dark = (85, 82, 78)
+    light = (118, 115, 108)
+    n = _sn(px * 0.08, py * 0.08, 3000)
+    ac = lerp(dark, light, n)
+    # Ashy texture — fine grit
+    grit = _h(px * 3, py * 3, 3010)
+    if grit > 0.85:
+        ac = lighten(ac, 0.1)
+    elif grit < 0.1:
+        ac = darken(ac, 0.08)
+    # Scattered embers
+    ember = _h(px, py, 3020)
+    if ember > 0.96:
+        pulse = math.sin(fr * 2.0 + px * 0.5) * 0.5 + 0.5
+        ac = lerp(ac, (200, 80, 20), 0.3 + pulse * 0.2)
+    return scale(ac, face_bright(f, u, v, e, h))
+
+def _thorns(c, base, f, u, v, e, px, py, h, fr):
+    """Dense thorny brambles — dark, tangled, dangerous."""
+    bark = (48, 38, 18)
+    thorn = (72, 55, 22)
+    leaf_dark = (28, 52, 15)
+    leaf = (38, 68, 22)
+    if f == "top":
+        # Tangled canopy
+        n = _sn(px * 0.2, py * 0.2, 3100)
+        tc = lerp(leaf_dark, leaf, n)
+        # Thorn points poking through
+        tp = _h(px // 2, py // 2, 3110)
+        if tp > 0.72:
+            tc = lerp(tc, thorn, (tp - 0.72) * 2.5)
+            if tp > 0.9:
+                tc = lighten(tc, 0.15)  # thorn tip glint
+        # Dark tangled shadows
+        shadow = _sn(px * 0.15, py * 0.15, 3115)
+        if shadow < 0.3:
+            tc = darken(tc, (0.3 - shadow) * 0.4)
+        return scale(tc, face_bright(f, u, v, e, h))
+    # Side faces: twisted branches and thorns
+    branch_v = _sn(px * 0.25, py * 0.08, 3120)
+    is_branch = abs(branch_v * 5 - round(branch_v * 5)) < 0.12
+    if is_branch:
+        tc = lerp(bark, thorn, _h(px, py, 3125))
+        # Thorn spikes on branches
+        if _h(px * 2, py * 2, 3130) > 0.8:
+            tc = lighten(tc, 0.2)
+    else:
+        tc = lerp(leaf_dark, darken(leaf, 0.15), _sn(px * 0.18, py * 0.18, 3135))
+    # Darker at base
+    tc = darken(tc, v * 0.15)
+    return scale(tc, face_bright(f, u, v, e, h))
+
+def _basalt(c, base, f, u, v, e, px, py, h, fr):
+    """Dark columnar basalt — tall hexagonal pillars, geological & imposing."""
+    dark = (32, 32, 48)
+    mid = (52, 50, 65)
+    light = (72, 68, 82)
+    if f == "top":
+        # Hexagonal column tops
+        # Simple hex grid approximation
+        hx = px / 6.0
+        hy = py / 6.0
+        # Offset rows
+        row = int(hy)
+        col_off = 0.5 if row % 2 else 0.0
+        col = int(hx + col_off)
+        # Distance to hex center
+        cx_h = (col - col_off) * 6.0 + 3
+        cy_h = row * 6.0 + 3
+        dx = abs(px - cx_h) / 3.0
+        dy = abs(py - cy_h) / 3.0
+        hex_edge = dx + dy * 0.5
+        if hex_edge > 0.85:
+            # Column gap / mortar
+            bc = darken(dark, 0.3)
+        else:
+            sn = _h(col, row, 3200)
+            bc = lerp(dark, mid, sn)
+            # Center highlight
+            if hex_edge < 0.4:
+                bc = lighten(bc, (0.4 - hex_edge) * 0.2)
+        return scale(bc, face_bright(f, u, v, e, h))
+    # Side: vertical columns with subtle variation
+    col_id = px // 4
+    col_n = _h(col_id, 0, 3210)
+    bc = lerp(dark, mid, col_n * 0.7)
+    # Column edges
+    if px % 4 == 0:
+        bc = darken(bc, 0.25)
+    # Vertical cracks within columns
+    if _h(px, py // 5, 3220) > 0.88:
+        bc = darken(bc, 0.15)
+    # Slight horizontal banding
+    if py % 7 == 0:
+        bc = darken(bc, 0.1)
+    # Darken toward bottom
+    bc = darken(bc, v * 0.15)
+    return scale(bc, face_bright(f, u, v, e, h))
+
+def _gravel(c, base, f, u, v, e, px, py, h, fr):
+    """Loose rocky ground — rough, uneven pebble texture."""
+    light = (185, 175, 158)
+    mid = (155, 148, 135)
+    dark = (125, 118, 108)
+    # Pebble grid
+    cx_p = px // 3
+    cy_p = py // 3
+    pn = _h(cx_p, cy_p, 3300)
+    if pn > 0.6:
+        gc = lerp(mid, light, (pn - 0.6) * 2.5)
+    elif pn < 0.3:
+        gc = lerp(dark, mid, pn / 0.3)
+    else:
+        gc = mid
+    # Rounded pebble shading
+    lx = (px % 3 - 1.0) / 1.5
+    ly = (py % 3 - 1.0) / 1.5
+    dist = lx * lx + ly * ly
+    if dist < 0.5:
+        gc = lighten(gc, (0.5 - dist) * 0.12)
+    elif dist > 1.2:
+        gc = darken(gc, 0.1)  # gap shadow
+    # Occasional darker stones
+    if _h(cx_p * 3, cy_p * 7, 3310) > 0.88:
+        gc = darken(gc, 0.18)
+    return scale(gc, face_bright(f, u, v, e, h))
+
 RENDERERS = {
     0: _grass, 1: _water, 2: _sand, 3: _stone, 4: _wall, 5: _tree,
     6: _path, 7: _deep_water, 8: _snow, 9: _ice, 10: _lava, 11: _mountain,
     12: _fence, 13: _metal, 14: _glass, 15: _energy, 16: _circuit,
     17: _void, 18: _toxic, 19: _plasma, 20: _flowers, 21: _dirt,
     22: _cobblestone, 23: _marsh, 24: _crystal, 25: _coral, 26: _ruins,
-    27: _moss,
+    27: _moss, 28: _obsidian, 29: _cliff, 30: _ash, 31: _thorns,
+    32: _basalt, 33: _gravel,
 }
 
 # ── Render ───────────────────────────────────────────────────────────

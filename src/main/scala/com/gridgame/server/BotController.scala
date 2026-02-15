@@ -6,7 +6,7 @@ import com.gridgame.common.model.Direction
 import com.gridgame.common.model.ItemType
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
-import com.gridgame.common.model.ProjectileType
+import com.gridgame.common.model.ProjectileDef
 import com.gridgame.common.protocol._
 
 import java.util.UUID
@@ -84,15 +84,7 @@ class BotController(instance: GameInstance) {
 
   private def getMaxRange(charId: Byte): Int = {
     val charDef = CharacterDef.get(charId)
-    charDef.primaryProjectileType match {
-      case ProjectileType.AXE         => Constants.AXE_MAX_RANGE
-      case ProjectileType.TALON       => Constants.TALON_MAX_RANGE
-      case ProjectileType.SOUL_BOLT   => Constants.SOUL_BOLT_MAX_RANGE
-      case ProjectileType.SPLASH      => Constants.SPLASH_MAX_RANGE
-      case ProjectileType.BULLET      => Constants.BULLET_MAX_RANGE
-      case ProjectileType.ARCANE_BOLT => Constants.ARCANE_BOLT_MAX_RANGE
-      case _                          => Constants.CHARGE_MIN_RANGE // NORMAL default
-    }
+    ProjectileDef.get(charDef.primaryProjectileType).maxRange
   }
 
   private def isRanged(charId: Byte): Boolean = {

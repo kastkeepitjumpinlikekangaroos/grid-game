@@ -4,99 +4,35 @@
   "width": 160,
   "height": 160,
   "layers": [
-    {
-      "type": "fill",
-      "tile": "water"
-    },
-    {
-      "type": "circle",
-      "tile": "sand",
-      "cx": 80,
-      "cy": 80,
-      "radius": 65
-    },
-    {
-      "type": "circle",
-      "tile": "stone",
-      "cx": 80,
-      "cy": 80,
-      "radius": 55
-    },
-    {
-      "type": "circle",
-      "tile": "mountain",
-      "cx": 80,
-      "cy": 80,
-      "radius": 25
-    },
-    {
-      "type": "circle",
-      "tile": "lava",
-      "cx": 80,
-      "cy": 80,
-      "radius": 12
-    },
-    {
-      "type": "line",
-      "tile": "lava",
-      "x1": 80,
-      "y1": 80,
-      "x2": 80,
-      "y2": 20,
-      "thickness": 3
-    },
-    {
-      "type": "line",
-      "tile": "lava",
-      "x1": 80,
-      "y1": 80,
-      "x2": 140,
-      "y2": 80,
-      "thickness": 3
-    },
-    {
-      "type": "line",
-      "tile": "lava",
-      "x1": 80,
-      "y1": 80,
-      "x2": 40,
-      "y2": 130,
-      "thickness": 2
-    },
-    {
-      "type": "line",
-      "tile": "path",
-      "x1": 80,
-      "y1": 135,
-      "x2": 80,
-      "y2": 105,
-      "thickness": 3
-    },
-    {
-      "type": "line",
-      "tile": "path",
-      "x1": 25,
-      "y1": 80,
-      "x2": 55,
-      "y2": 80,
-      "thickness": 3
-    },
-    {
-      "type": "rect",
-      "tile": "stone",
-      "x": 25,
-      "y": 115,
-      "width": 15,
-      "height": 15
-    },
-    {
-      "type": "rect",
-      "tile": "stone",
-      "x": 115,
-      "y": 115,
-      "width": 15,
-      "height": 15
-    }
+    {"type": "fill", "tile": "water"},
+    {"type": "circle", "tile": "sand", "cx": 80, "cy": 80, "radius": 65},
+    {"type": "circle", "tile": "ash", "cx": 80, "cy": 80, "radius": 58},
+    {"type": "circle", "tile": "gravel", "cx": 80, "cy": 80, "radius": 50},
+    {"type": "circle", "tile": "stone", "cx": 80, "cy": 80, "radius": 42},
+    {"type": "circle", "tile": "obsidian", "cx": 80, "cy": 80, "radius": 32},
+    {"type": "circle", "tile": "mountain", "cx": 80, "cy": 80, "radius": 25},
+    {"type": "circle", "tile": "lava", "cx": 80, "cy": 80, "radius": 12},
+
+    {"type": "line", "tile": "lava", "x1": 80, "y1": 80, "x2": 80, "y2": 20, "thickness": 3},
+    {"type": "line", "tile": "lava", "x1": 80, "y1": 80, "x2": 140, "y2": 80, "thickness": 3},
+    {"type": "line", "tile": "lava", "x1": 80, "y1": 80, "x2": 40, "y2": 130, "thickness": 2},
+
+    {"type": "circle", "tile": "basalt", "cx": 55, "cy": 50, "radius": 6},
+    {"type": "circle", "tile": "basalt", "cx": 110, "cy": 55, "radius": 5},
+    {"type": "circle", "tile": "basalt", "cx": 50, "cy": 105, "radius": 7},
+    {"type": "circle", "tile": "basalt", "cx": 115, "cy": 100, "radius": 5},
+
+    {"type": "circle", "tile": "cliff", "cx": 80, "cy": 80, "radius": 28},
+    {"type": "circle", "tile": "mountain", "cx": 80, "cy": 80, "radius": 25},
+    {"type": "circle", "tile": "lava", "cx": 80, "cy": 80, "radius": 12},
+
+    {"type": "line", "tile": "gravel", "x1": 80, "y1": 135, "x2": 80, "y2": 105, "thickness": 3},
+    {"type": "line", "tile": "gravel", "x1": 25, "y1": 80, "x2": 55, "y2": 80, "thickness": 3},
+
+    {"type": "rect", "tile": "obsidian", "x": 25, "y": 115, "width": 15, "height": 15},
+    {"type": "rect", "tile": "ash", "x": 27, "y": 117, "width": 11, "height": 11},
+    {"type": "rect", "tile": "obsidian", "x": 115, "y": 115, "width": 15, "height": 15},
+    {"type": "rect", "tile": "ash", "x": 117, "y": 117, "width": 11, "height": 11}
   ],
   "spawnPoints": [
     {"x": 80, "y": 130},

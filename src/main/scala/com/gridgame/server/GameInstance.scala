@@ -1,13 +1,7 @@
 package com.gridgame.server
 
 import com.gridgame.common.Constants
-import com.gridgame.common.model.Direction
-import com.gridgame.common.model.Item
-import com.gridgame.common.model.Player
-import com.gridgame.common.model.Position
-import com.gridgame.common.model.Projectile
-import com.gridgame.common.model.ProjectileType
-import com.gridgame.common.model.WorldData
+import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 import com.gridgame.common.world.WorldLoader
 
@@ -197,10 +191,9 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
 
         val target = registry.get(targetId)
         if (target != null) {
-          // Apply type-specific effects
-          projectile.projectileType match {
-            case ProjectileType.TENTACLE | ProjectileType.ROPE =>
-              // Pull target directly in front of the shooter
+          // Apply type-specific on-hit effects from ProjectileDef
+          ProjectileDef.get(projectile.projectileType).onHitEffect.foreach {
+            case PullToOwner =>
               val owner = registry.get(projectile.ownerId)
               if (owner != null) {
                 val ownerPos = owner.getPosition
@@ -219,29 +212,25 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                 }
               }
 
-            case ProjectileType.ICE_BEAM =>
-              target.setFrozenUntil(System.currentTimeMillis() + Constants.ICE_BEAM_FREEZE_DURATION_MS)
+            case Freeze(durationMs) =>
+              target.setFrozenUntil(System.currentTimeMillis() + durationMs)
 
-            case ProjectileType.HAUNT =>
-              // Freeze the target for 2 seconds
-              target.setFrozenUntil(System.currentTimeMillis() + Constants.HAUNT_FREEZE_DURATION_MS)
-              // Teleport the projectile owner behind the target
+            case TeleportOwnerBehind(distance, freezeDurationMs) =>
+              target.setFrozenUntil(System.currentTimeMillis() + freezeDurationMs)
               val owner = registry.get(projectile.ownerId)
               if (owner != null) {
                 val targetPos = target.getPosition
                 val (bdx, bdy) = target.getDirection match {
-                  case Direction.Up    => (0, 1)   // behind Up-facing = below
-                  case Direction.Down  => (0, -1)  // behind Down-facing = above
-                  case Direction.Left  => (1, 0)   // behind Left-facing = right
-                  case Direction.Right => (-1, 0)  // behind Right-facing = left
+                  case Direction.Up    => (0, 1)
+                  case Direction.Down  => (0, -1)
+                  case Direction.Left  => (1, 0)
+                  case Direction.Right => (-1, 0)
                 }
-                val destX = Math.max(0, Math.min(world.width - 1, targetPos.getX + bdx * Constants.HAUNT_TELEPORT_DISTANCE))
-                val destY = Math.max(0, Math.min(world.height - 1, targetPos.getY + bdy * Constants.HAUNT_TELEPORT_DISTANCE))
+                val destX = Math.max(0, Math.min(world.width - 1, targetPos.getX + bdx * distance))
+                val destY = Math.max(0, Math.min(world.height - 1, targetPos.getY + bdy * distance))
                 if (world.isWalkable(destX, destY)) {
                   owner.setPosition(new Position(destX, destY))
-                  // Protect against client position updates overwriting the teleport
                   owner.setServerTeleportedUntil(System.currentTimeMillis() + 500)
-                  // Broadcast position update for the Wraith
                   val ownerFlags = (if (owner.hasShield) 0x01 else 0) |
                                    (if (owner.hasGemBoost) 0x02 else 0) |
                                    (if (owner.isFrozen) 0x04 else 0) |
@@ -259,44 +248,22 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                 }
               }
 
-            case ProjectileType.TIDAL_WAVE =>
-              // Push target away from shooter
-              val twOwner = registry.get(projectile.ownerId)
-              if (twOwner != null) {
-                val twOwnerPos = twOwner.getPosition
-                val twTargetPos = target.getPosition
-                val pdx = twTargetPos.getX - twOwnerPos.getX
-                val pdy = twTargetPos.getY - twOwnerPos.getY
-                val dist = Math.sqrt(pdx * pdx + pdy * pdy).toFloat
-                if (dist > 0.01f) {
-                  val pushDist = Constants.TIDAL_WAVE_PUSHBACK_DISTANCE
-                  val destX = twTargetPos.getX + Math.round(pdx / dist * pushDist)
-                  val destY = twTargetPos.getY + Math.round(pdy / dist * pushDist)
-                  val clampedX = Math.max(0, Math.min(world.width - 1, destX))
-                  val clampedY = Math.max(0, Math.min(world.height - 1, destY))
-                  if (world.isWalkable(clampedX, clampedY)) {
-                    target.setPosition(new Position(clampedX, clampedY))
-                  }
-                }
-              }
-
-            case ProjectileType.GUST =>
-              // Push target away from the shooter
-              val gustOwner = registry.get(projectile.ownerId)
-              if (gustOwner != null) {
-                val gustOwnerPos = gustOwner.getPosition
-                val gustTargetPos = target.getPosition
-                val pushDx = gustTargetPos.getX - gustOwnerPos.getX
-                val pushDy = gustTargetPos.getY - gustOwnerPos.getY
-                val pushLen = Math.sqrt(pushDx * pushDx + pushDy * pushDy)
-                if (pushLen > 0.01) {
-                  val ndx = pushDx / pushLen
-                  val ndy = pushDy / pushLen
-                  var destX = gustTargetPos.getX
-                  var destY = gustTargetPos.getY
-                  for (step <- 1 to Constants.GUST_PUSH_DISTANCE) {
-                    val nextX = Math.max(0, Math.min(world.width - 1, (gustTargetPos.getX + ndx * step).toInt))
-                    val nextY = Math.max(0, Math.min(world.height - 1, (gustTargetPos.getY + ndy * step).toInt))
+            case Push(pushDistance) =>
+              val pushOwner = registry.get(projectile.ownerId)
+              if (pushOwner != null) {
+                val pushOwnerPos = pushOwner.getPosition
+                val pushTargetPos = target.getPosition
+                val pdx = pushTargetPos.getX - pushOwnerPos.getX
+                val pdy = pushTargetPos.getY - pushOwnerPos.getY
+                val dist = Math.sqrt(pdx * pdx + pdy * pdy)
+                if (dist > 0.01) {
+                  val ndx = pdx / dist
+                  val ndy = pdy / dist
+                  var destX = pushTargetPos.getX
+                  var destY = pushTargetPos.getY
+                  for (s <- 1 to pushDistance.toInt) {
+                    val nextX = Math.max(0, Math.min(world.width - 1, (pushTargetPos.getX + ndx * s).toInt))
+                    val nextY = Math.max(0, Math.min(world.height - 1, (pushTargetPos.getY + ndy * s).toInt))
                     if (world.isWalkable(nextX, nextY)) {
                       destX = nextX
                       destY = nextY
@@ -305,8 +272,6 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                   target.setPosition(new Position(destX, destY))
                 }
               }
-
-            case _ => // No special effect (AXE, SPEAR, NORMAL, SOUL_BOLT, SPLASH, GEYSER, BULLET, TALON)
           }
 
           val flags = (if (target.hasShield) 0x01 else 0) |
@@ -341,15 +306,10 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         )
         broadcastToInstance(despawnPacket)
 
-        // Determine blast parameters
-        val (centerDmg, edgeDmg, blastRadius) = projectile.projectileType match {
-          case ProjectileType.GRENADE =>
-            (Constants.GRENADE_CENTER_DAMAGE, Constants.GRENADE_EDGE_DAMAGE, Constants.GRENADE_BLAST_RADIUS)
-          case ProjectileType.ROCKET =>
-            (Constants.ROCKET_CENTER_DAMAGE, Constants.ROCKET_EDGE_DAMAGE, Constants.ROCKET_BLAST_RADIUS)
-          case _ =>
-            (Constants.GRENADE_CENTER_DAMAGE, Constants.GRENADE_EDGE_DAMAGE, Constants.GRENADE_BLAST_RADIUS)
-        }
+        // Determine blast parameters from ProjectileDef
+        val pDef = ProjectileDef.get(projectile.projectileType)
+        val explosion = pDef.explosionConfig.getOrElse(ExplosionConfig(40, 10, 3.0f))
+        val (centerDmg, edgeDmg, blastRadius) = (explosion.centerDamage, explosion.edgeDamage, explosion.blastRadius)
 
         // Find all players in blast radius
         val explosionX = projectile.getX

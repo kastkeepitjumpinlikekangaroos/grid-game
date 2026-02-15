@@ -5,28 +5,29 @@
   "height": 140,
   "layers": [
     {"type": "fill", "tile": "lava"},
-    {"type": "border", "tile": "mountain", "thickness": 3},
+    {"type": "border", "tile": "obsidian", "thickness": 3},
 
-    {"type": "circle", "tile": "stone", "cx": 70, "cy": 70, "radius": 14},
-    {"type": "circle", "tile": "sand", "cx": 70, "cy": 70, "radius": 8},
+    {"type": "circle", "tile": "obsidian", "cx": 70, "cy": 70, "radius": 18},
+    {"type": "circle", "tile": "ash", "cx": 70, "cy": 70, "radius": 14},
+    {"type": "circle", "tile": "gravel", "cx": 70, "cy": 70, "radius": 8},
 
-    {"type": "rect", "tile": "stone", "x": 10, "y": 10, "width": 30, "height": 30},
-    {"type": "rect", "tile": "sand", "x": 14, "y": 14, "width": 22, "height": 22},
+    {"type": "rect", "tile": "obsidian", "x": 10, "y": 10, "width": 30, "height": 30},
+    {"type": "rect", "tile": "ash", "x": 14, "y": 14, "width": 22, "height": 22},
     {"type": "rect", "tile": "wall", "x": 20, "y": 20, "width": 10, "height": 3},
     {"type": "rect", "tile": "wall", "x": 18, "y": 26, "width": 3, "height": 8},
 
-    {"type": "rect", "tile": "stone", "x": 100, "y": 10, "width": 30, "height": 30},
-    {"type": "rect", "tile": "sand", "x": 104, "y": 14, "width": 22, "height": 22},
+    {"type": "rect", "tile": "obsidian", "x": 100, "y": 10, "width": 30, "height": 30},
+    {"type": "rect", "tile": "ash", "x": 104, "y": 14, "width": 22, "height": 22},
     {"type": "rect", "tile": "wall", "x": 110, "y": 20, "width": 10, "height": 3},
     {"type": "rect", "tile": "wall", "x": 119, "y": 26, "width": 3, "height": 8},
 
-    {"type": "rect", "tile": "stone", "x": 10, "y": 100, "width": 30, "height": 30},
-    {"type": "rect", "tile": "sand", "x": 14, "y": 104, "width": 22, "height": 22},
+    {"type": "rect", "tile": "obsidian", "x": 10, "y": 100, "width": 30, "height": 30},
+    {"type": "rect", "tile": "ash", "x": 14, "y": 104, "width": 22, "height": 22},
     {"type": "rect", "tile": "wall", "x": 20, "y": 114, "width": 10, "height": 3},
     {"type": "rect", "tile": "wall", "x": 18, "y": 106, "width": 3, "height": 8},
 
-    {"type": "rect", "tile": "stone", "x": 100, "y": 100, "width": 30, "height": 30},
-    {"type": "rect", "tile": "sand", "x": 104, "y": 104, "width": 22, "height": 22},
+    {"type": "rect", "tile": "obsidian", "x": 100, "y": 100, "width": 30, "height": 30},
+    {"type": "rect", "tile": "ash", "x": 104, "y": 104, "width": 22, "height": 22},
     {"type": "rect", "tile": "wall", "x": 110, "y": 114, "width": 10, "height": 3},
     {"type": "rect", "tile": "wall", "x": 119, "y": 106, "width": 3, "height": 8},
 

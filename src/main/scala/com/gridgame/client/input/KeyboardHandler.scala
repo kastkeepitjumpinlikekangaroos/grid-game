@@ -99,7 +99,7 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
       val chargePct = client.getChargeLevel / 100.0
       (Constants.MOVE_RATE_LIMIT_MS * (1.0 + chargePct * 9.0)).toInt
     } else if (client.isPhased) {
-      Constants.PHASE_SHIFT_MOVE_RATE_MS
+      25 // 2x move speed while phased
     } else {
       Constants.MOVE_RATE_LIMIT_MS
     }

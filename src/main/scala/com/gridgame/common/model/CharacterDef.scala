@@ -1,6 +1,12 @@
 package com.gridgame.common.model
 
-import com.gridgame.common.Constants
+// Cast behavior sealed trait — describes HOW an ability is cast
+sealed trait CastBehavior
+case object StandardProjectile extends CastBehavior
+case class PhaseShiftBuff(durationMs: Int) extends CastBehavior
+case class DashBuff(maxDistance: Int, durationMs: Int, moveRateMs: Int) extends CastBehavior
+case class TeleportCast(maxDistance: Int) extends CastBehavior
+case class FanProjectile(count: Int, fanAngle: Double) extends CastBehavior
 
 case class AbilityDef(
     name: String,
@@ -9,7 +15,8 @@ case class AbilityDef(
     maxRange: Int,
     damage: Int,
     projectileType: Byte,
-    keybind: String
+    keybind: String,
+    castBehavior: CastBehavior = StandardProjectile
 )
 
 case class CharacterDef(
@@ -24,6 +31,129 @@ case class CharacterDef(
 )
 
 object CharacterDef {
+  // === Projectile definitions (registered at init) ===
+
+  private val TentacleDef = ProjectileDef(
+    id = ProjectileType.TENTACLE, name = "Tentacle",
+    speedMultiplier = 0.9f, damage = 5, maxRange = 15,
+    onHitEffect = Some(PullToOwner)
+  )
+
+  private val IceBeamDef = ProjectileDef(
+    id = ProjectileType.ICE_BEAM, name = "Ice Beam",
+    speedMultiplier = 0.3f, damage = 5, maxRange = 20,
+    onHitEffect = Some(Freeze(3000))
+  )
+
+  private val AxeDef = ProjectileDef(
+    id = ProjectileType.AXE, name = "Axe",
+    speedMultiplier = 0.6f, damage = 33, maxRange = 5,
+    hitRadius = 2.5f
+  )
+
+  private val RopeDef = ProjectileDef(
+    id = ProjectileType.ROPE, name = "Rope",
+    speedMultiplier = 0.85f, damage = 5, maxRange = 25,
+    onHitEffect = Some(PullToOwner)
+  )
+
+  private val SpearDef = ProjectileDef(
+    id = ProjectileType.SPEAR, name = "Spear",
+    speedMultiplier = 0.7f, damage = 10, maxRange = 20,
+    distanceDamageScaling = Some(DistanceDamageScaling(10, 60, 20))
+  )
+
+  private val SoulBoltDef = ProjectileDef(
+    id = ProjectileType.SOUL_BOLT, name = "Soul Bolt",
+    speedMultiplier = 0.65f, damage = 15, maxRange = 15,
+    passesThroughWalls = true
+  )
+
+  private val HauntDef = ProjectileDef(
+    id = ProjectileType.HAUNT, name = "Haunt",
+    speedMultiplier = 0.5f, damage = 30, maxRange = 15,
+    passesThroughWalls = true,
+    onHitEffect = Some(TeleportOwnerBehind(2, 2000))
+  )
+
+  private val ArcaneBoltDef = ProjectileDef(
+    id = ProjectileType.ARCANE_BOLT, name = "Arcane Bolt",
+    speedMultiplier = 0.85f, damage = 18, maxRange = 25,
+    passesThroughWalls = true,
+    chargeSpeedScaling = Some(ChargeScaling(0.6f, 1.2f)),
+    chargeDamageScaling = Some(ChargeScaling(8f, 40f)),
+    chargeRangeScaling = Some(ChargeScaling(15f, 30f))
+  )
+
+  private val FireballDef = ProjectileDef(
+    id = ProjectileType.FIREBALL, name = "Fireball",
+    speedMultiplier = 0.4f, damage = 45, maxRange = 18
+  )
+
+  private val SplashDef = ProjectileDef(
+    id = ProjectileType.SPLASH, name = "Splash",
+    speedMultiplier = 0.65f, damage = 20, maxRange = 15,
+    chargeSpeedScaling = Some(ChargeScaling(0.5f, 1.0f)),
+    chargeDamageScaling = Some(ChargeScaling(10f, 35f)),
+    chargeRangeScaling = Some(ChargeScaling(10f, 20f)),
+    aoeOnHit = Some(AoESplashConfig(3.0f, 10))
+  )
+
+  private val TidalWaveDef = ProjectileDef(
+    id = ProjectileType.TIDAL_WAVE, name = "Tidal Wave",
+    speedMultiplier = 0.5f, damage = 10, maxRange = 12,
+    onHitEffect = Some(Push(3.0f))
+  )
+
+  private val GeyserDef = ProjectileDef(
+    id = ProjectileType.GEYSER, name = "Geyser",
+    speedMultiplier = 0.6f, damage = 25, maxRange = 18,
+    hitRadius = 4.0f,
+    aoeOnHit = Some(AoESplashConfig(4.0f, 25)),
+    aoeOnMaxRange = Some(AoESplashConfig(4.0f, 25))
+  )
+
+  private val BulletDef = ProjectileDef(
+    id = ProjectileType.BULLET, name = "Bullet",
+    speedMultiplier = 1.0f, damage = 20, maxRange = 18
+  )
+
+  private val GrenadeDef = ProjectileDef(
+    id = ProjectileType.GRENADE, name = "Grenade",
+    speedMultiplier = 0.5f, damage = 40, maxRange = 12,
+    passesThroughPlayers = true,
+    explosionConfig = Some(ExplosionConfig(40, 10, 3.0f))
+  )
+
+  private val RocketDef = ProjectileDef(
+    id = ProjectileType.ROCKET, name = "Rocket",
+    speedMultiplier = 0.55f, damage = 35, maxRange = 20,
+    explodesOnPlayerHit = true,
+    explosionConfig = Some(ExplosionConfig(35, 10, 2.5f))
+  )
+
+  private val TalonDef = ProjectileDef(
+    id = ProjectileType.TALON, name = "Talon",
+    speedMultiplier = 0.7f, damage = 28, maxRange = 4,
+    hitRadius = 2.0f
+  )
+
+  private val GustDef = ProjectileDef(
+    id = ProjectileType.GUST, name = "Gust",
+    speedMultiplier = 0.8f, damage = 10, maxRange = 6,
+    onHitEffect = Some(Push(5.0f))
+  )
+
+  // Register all projectile defs
+  ProjectileDef.register(
+    TentacleDef, IceBeamDef, AxeDef, RopeDef, SpearDef,
+    SoulBoltDef, HauntDef, ArcaneBoltDef, FireballDef,
+    SplashDef, TidalWaveDef, GeyserDef,
+    BulletDef, GrenadeDef, RocketDef, TalonDef, GustDef
+  )
+
+  // === Character definitions ===
+
   val Spaceman: CharacterDef = CharacterDef(
     id = CharacterId.Spaceman,
     displayName = "Spaceman",
@@ -32,20 +162,14 @@ object CharacterDef {
     qAbility = AbilityDef(
       name = "Tentacle",
       description = "Shoots a tentacle that pulls enemies closer.",
-      cooldownMs = Constants.TENTACLE_COOLDOWN_MS,
-      maxRange = Constants.TENTACLE_MAX_RANGE,
-      damage = Constants.TENTACLE_DAMAGE,
-      projectileType = ProjectileType.TENTACLE,
-      keybind = "Q"
+      cooldownMs = 5000, maxRange = 15, damage = 5,
+      projectileType = ProjectileType.TENTACLE, keybind = "Q"
     ),
     eAbility = AbilityDef(
       name = "Ice Beam",
       description = "Fires a freezing beam that immobilizes enemies.",
-      cooldownMs = Constants.ICE_BEAM_COOLDOWN_MS,
-      maxRange = Constants.ICE_BEAM_MAX_RANGE,
-      damage = Constants.ICE_BEAM_DAMAGE,
-      projectileType = ProjectileType.ICE_BEAM,
-      keybind = "E"
+      cooldownMs = 5000, maxRange = 20, damage = 5,
+      projectileType = ProjectileType.ICE_BEAM, keybind = "E"
     ),
     primaryProjectileType = ProjectileType.NORMAL
   )
@@ -58,20 +182,14 @@ object CharacterDef {
     qAbility = AbilityDef(
       name = "Spear Throw",
       description = "Hurls a spear that deals more damage the farther it travels.",
-      cooldownMs = Constants.SPEAR_COOLDOWN_MS,
-      maxRange = Constants.SPEAR_MAX_RANGE,
-      damage = Constants.SPEAR_BASE_DAMAGE,
-      projectileType = ProjectileType.SPEAR,
-      keybind = "Q"
+      cooldownMs = 8000, maxRange = 20, damage = 10,
+      projectileType = ProjectileType.SPEAR, keybind = "Q"
     ),
     eAbility = AbilityDef(
       name = "Rope",
       description = "Throws a rope that pulls enemies to you.",
-      cooldownMs = Constants.ROPE_COOLDOWN_MS,
-      maxRange = Constants.ROPE_MAX_RANGE,
-      damage = Constants.ROPE_DAMAGE,
-      projectileType = ProjectileType.ROPE,
-      keybind = "E"
+      cooldownMs = 20000, maxRange = 25, damage = 5,
+      projectileType = ProjectileType.ROPE, keybind = "E"
     ),
     primaryProjectileType = ProjectileType.AXE
   )
@@ -84,20 +202,15 @@ object CharacterDef {
     qAbility = AbilityDef(
       name = "Phase Shift",
       description = "Become ethereal: walk through walls, immune to damage, can't attack.",
-      cooldownMs = Constants.PHASE_SHIFT_COOLDOWN_MS,
-      maxRange = 0,
-      damage = 0,
-      projectileType = -1,
-      keybind = "Q"
+      cooldownMs = 12000, maxRange = 0, damage = 0,
+      projectileType = -1, keybind = "Q",
+      castBehavior = PhaseShiftBuff(5000)
     ),
     eAbility = AbilityDef(
       name = "Haunt",
       description = "Slow spectral bolt that teleports you behind the target on hit.",
-      cooldownMs = Constants.HAUNT_COOLDOWN_MS,
-      maxRange = Constants.HAUNT_MAX_RANGE,
-      damage = Constants.HAUNT_DAMAGE,
-      projectileType = ProjectileType.HAUNT,
-      keybind = "E"
+      cooldownMs = 15000, maxRange = 15, damage = 30,
+      projectileType = ProjectileType.HAUNT, keybind = "E"
     ),
     primaryProjectileType = ProjectileType.SOUL_BOLT
   )
@@ -110,20 +223,15 @@ object CharacterDef {
     qAbility = AbilityDef(
       name = "Fireball",
       description = "Launches a slow but devastating fireball that deals massive damage.",
-      cooldownMs = Constants.FIREBALL_COOLDOWN_MS,
-      maxRange = Constants.FIREBALL_MAX_RANGE,
-      damage = Constants.FIREBALL_DAMAGE,
-      projectileType = ProjectileType.FIREBALL,
-      keybind = "Q"
+      cooldownMs = 6000, maxRange = 18, damage = 45,
+      projectileType = ProjectileType.FIREBALL, keybind = "Q"
     ),
     eAbility = AbilityDef(
       name = "Blink",
       description = "Instantly teleport up to 6 cells toward your cursor.",
-      cooldownMs = Constants.BLINK_COOLDOWN_MS,
-      maxRange = Constants.BLINK_DISTANCE,
-      damage = 0,
-      projectileType = -2,
-      keybind = "E"
+      cooldownMs = 8000, maxRange = 6, damage = 0,
+      projectileType = -2, keybind = "E",
+      castBehavior = TeleportCast(6)
     ),
     primaryProjectileType = ProjectileType.ARCANE_BOLT,
     maxHealth = 70
@@ -137,20 +245,15 @@ object CharacterDef {
     qAbility = AbilityDef(
       name = "Tidal Wave",
       description = "Fires 5 projectiles in a fan that push enemies back.",
-      cooldownMs = Constants.TIDAL_WAVE_COOLDOWN_MS,
-      maxRange = Constants.TIDAL_WAVE_MAX_RANGE,
-      damage = Constants.TIDAL_WAVE_DAMAGE,
-      projectileType = ProjectileType.TIDAL_WAVE,
-      keybind = "Q"
+      cooldownMs = 8000, maxRange = 12, damage = 10,
+      projectileType = ProjectileType.TIDAL_WAVE, keybind = "Q",
+      castBehavior = FanProjectile(5, Math.toRadians(60))
     ),
     eAbility = AbilityDef(
       name = "Geyser",
       description = "Erupts on hit or at max range, damaging all nearby.",
-      cooldownMs = Constants.GEYSER_COOLDOWN_MS,
-      maxRange = Constants.GEYSER_MAX_RANGE,
-      damage = Constants.GEYSER_DAMAGE,
-      projectileType = ProjectileType.GEYSER,
-      keybind = "E"
+      cooldownMs = 12000, maxRange = 18, damage = 25,
+      projectileType = ProjectileType.GEYSER, keybind = "E"
     ),
     primaryProjectileType = ProjectileType.SPLASH
   )
@@ -163,20 +266,14 @@ object CharacterDef {
     qAbility = AbilityDef(
       name = "Grenade",
       description = "Thrown explosive that passes through players and detonates at range.",
-      cooldownMs = Constants.GRENADE_COOLDOWN_MS,
-      maxRange = Constants.GRENADE_MAX_RANGE,
-      damage = Constants.GRENADE_CENTER_DAMAGE,
-      projectileType = ProjectileType.GRENADE,
-      keybind = "Q"
+      cooldownMs = 10000, maxRange = 12, damage = 40,
+      projectileType = ProjectileType.GRENADE, keybind = "Q"
     ),
     eAbility = AbilityDef(
       name = "Rocket",
       description = "Fired explosive that detonates on impact with splash damage.",
-      cooldownMs = Constants.ROCKET_COOLDOWN_MS,
-      maxRange = Constants.ROCKET_MAX_RANGE,
-      damage = Constants.ROCKET_CENTER_DAMAGE,
-      projectileType = ProjectileType.ROCKET,
-      keybind = "E"
+      cooldownMs = 12000, maxRange = 20, damage = 35,
+      projectileType = ProjectileType.ROCKET, keybind = "E"
     ),
     primaryProjectileType = ProjectileType.BULLET
   )
@@ -189,20 +286,15 @@ object CharacterDef {
     qAbility = AbilityDef(
       name = "Swoop",
       description = "Dash toward the cursor, phased and invulnerable during flight.",
-      cooldownMs = Constants.SWOOP_COOLDOWN_MS,
-      maxRange = 0,
-      damage = 0,
-      projectileType = -1,
-      keybind = "Q"
+      cooldownMs = 10000, maxRange = 0, damage = 0,
+      projectileType = -1, keybind = "Q",
+      castBehavior = DashBuff(12, 400, 20)
     ),
     eAbility = AbilityDef(
       name = "Gust",
       description = "Wind blast that pushes enemies away from you.",
-      cooldownMs = Constants.GUST_COOLDOWN_MS,
-      maxRange = Constants.GUST_MAX_RANGE,
-      damage = Constants.GUST_DAMAGE,
-      projectileType = ProjectileType.GUST,
-      keybind = "E"
+      cooldownMs = 8000, maxRange = 6, damage = 10,
+      projectileType = ProjectileType.GUST, keybind = "E"
     ),
     primaryProjectileType = ProjectileType.TALON
   )

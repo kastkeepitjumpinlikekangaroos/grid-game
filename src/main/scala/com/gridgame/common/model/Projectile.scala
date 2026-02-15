@@ -1,6 +1,5 @@
 package com.gridgame.common.model
 
-import com.gridgame.common.Constants
 import java.util.UUID
 
 object ProjectileType {
@@ -38,32 +37,7 @@ class Projectile(
 
   private var distanceTraveled: Float = 0f
 
-  val speedMultiplier: Float = projectileType match {
-    case ProjectileType.ICE_BEAM => 0.3f
-    case ProjectileType.TENTACLE => 0.9f
-    case ProjectileType.AXE => 0.6f
-    case ProjectileType.ROPE => 0.85f
-    case ProjectileType.SPEAR => 0.7f
-    case ProjectileType.SOUL_BOLT => 0.65f
-    case ProjectileType.HAUNT => 0.5f
-    case ProjectileType.ARCANE_BOLT =>
-      if (chargeLevel > 0) Constants.ARCANE_BOLT_CHARGE_MIN_SPEED + (chargeLevel / 100.0f) * (Constants.ARCANE_BOLT_CHARGE_MAX_SPEED - Constants.ARCANE_BOLT_CHARGE_MIN_SPEED)
-      else 0.85f
-    case ProjectileType.FIREBALL => 0.4f
-    case ProjectileType.SPLASH =>
-      if (chargeLevel > 0) Constants.SPLASH_CHARGE_MIN_SPEED + (chargeLevel / 100.0f) * (Constants.SPLASH_CHARGE_MAX_SPEED - Constants.SPLASH_CHARGE_MIN_SPEED)
-      else 0.65f
-    case ProjectileType.TIDAL_WAVE => 0.5f
-    case ProjectileType.GEYSER => 0.6f
-    case ProjectileType.BULLET => 1.0f
-    case ProjectileType.GRENADE => 0.5f
-    case ProjectileType.ROCKET => 0.55f
-    case ProjectileType.TALON => 0.7f
-    case ProjectileType.GUST => 0.8f
-    case _ =>
-      val c = Constants
-      c.CHARGE_MIN_SPEED + (chargeLevel / 100.0f) * (c.CHARGE_MAX_SPEED - c.CHARGE_MIN_SPEED)
-  }
+  val speedMultiplier: Float = ProjectileDef.get(projectileType).effectiveSpeed(chargeLevel)
 
   def getX: Float = x
 
@@ -100,18 +74,12 @@ class Projectile(
 
   def hitsPlayer(player: Player): Boolean = {
     if (player.getId.equals(ownerId)) return false
-    // Grenades pass through players entirely
-    if (projectileType == ProjectileType.GRENADE) return false
+    val pDef = ProjectileDef.get(projectileType)
+    if (pDef.passesThroughPlayers) return false
     val pos = player.getPosition
     val dx = x - (pos.getX + 0.5f)
     val dy = y - (pos.getY + 0.5f)
-    val radius = projectileType match {
-      case ProjectileType.AXE => Constants.AXE_HIT_RADIUS
-      case ProjectileType.GEYSER => Constants.GEYSER_AOE_RADIUS
-      case ProjectileType.TALON => Constants.TALON_HIT_RADIUS
-      case _ => Constants.PROJECTILE_HIT_RADIUS
-    }
-    dx * dx + dy * dy <= radius * radius
+    dx * dx + dy * dy <= pDef.hitRadius * pDef.hitRadius
   }
 
   override def toString: String = {

@@ -1,21 +1,18 @@
 package com.gridgame.common.model
 
-sealed abstract class CharacterId(val id: Byte, val name: String)
+case class CharacterId(id: Byte, name: String)
 
 object CharacterId {
-  case object Spaceman extends CharacterId(0, "Spaceman")
-  case object Gladiator extends CharacterId(1, "Gladiator")
-  case object Wraith extends CharacterId(2, "Wraith")
-  case object Wizard extends CharacterId(3, "Wizard")
-  case object Tidecaller extends CharacterId(4, "Tidecaller")
-  case object Soldier extends CharacterId(5, "Soldier")
-  case object Raptor extends CharacterId(6, "Raptor")
-
-  val all: Seq[CharacterId] = Seq(Spaceman, Gladiator, Wraith, Wizard, Tidecaller, Soldier, Raptor)
+  val Spaceman: CharacterId = CharacterId(0, "Spaceman")
+  val Gladiator: CharacterId = CharacterId(1, "Gladiator")
+  val Wraith: CharacterId = CharacterId(2, "Wraith")
+  val Wizard: CharacterId = CharacterId(3, "Wizard")
+  val Tidecaller: CharacterId = CharacterId(4, "Tidecaller")
+  val Soldier: CharacterId = CharacterId(5, "Soldier")
+  val Raptor: CharacterId = CharacterId(6, "Raptor")
 
   val DEFAULT: CharacterId = Spaceman
 
-  def fromId(id: Byte): CharacterId = {
-    all.find(_.id == id).getOrElse(DEFAULT)
-  }
+  def fromId(id: Byte): CharacterId =
+    CharacterDef.all.map(_.id).find(_.id == id).getOrElse(DEFAULT)
 }
