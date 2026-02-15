@@ -112,8 +112,13 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
     val localPos = client.getLocalPosition
     val currentWorld = world
-    val canvasW = getWidth
-    val canvasH = getHeight
+    val zoom = Constants.CAMERA_ZOOM
+
+    // Apply zoom transform — virtual canvas is smaller, making tiles appear larger
+    gc.save()
+    gc.scale(zoom, zoom)
+    val canvasW = getWidth / zoom
+    val canvasH = getHeight / zoom
 
     // Lerp visual position toward actual grid position for smooth movement
     val targetX = localPos.getX.toDouble
@@ -249,6 +254,9 @@ class GameCanvas(client: GameClient) extends Canvas() {
     drawDeathAnimations(camOffX, camOffY)
     drawTeleportAnimations(camOffX, camOffY)
     drawExplosionAnimations(camOffX, camOffY)
+
+    // Restore transform before drawing HUD at screen-pixel scale
+    gc.restore()
 
     drawCoordinates(currentWorld)
     drawAbilityHUD()
@@ -4201,19 +4209,24 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
   /** Get the camera offsets for the current local player position. Used by MouseHandler. */
   def getCameraOffsets: (Double, Double) = {
+    val zoom = Constants.CAMERA_ZOOM
     val vx = if (visualX.isNaN) client.getLocalPosition.getX.toDouble else visualX
     val vy = if (visualY.isNaN) client.getLocalPosition.getY.toDouble else visualY
     val playerSx = (vx - vy) * HW
     val playerSy = (vx + vy) * HH
-    val camOffX = getWidth / 2.0 - playerSx
-    val camOffY = getHeight / 2.0 - playerSy
+    val camOffX = (getWidth / zoom) / 2.0 - playerSx
+    val camOffY = (getHeight / zoom) / 2.0 - playerSy
     (camOffX, camOffY)
   }
 
   /** Convert screen coordinates to world coordinates. Used by MouseHandler. */
   def screenToWorld(sx: Double, sy: Double): (Double, Double) = {
+    val zoom = Constants.CAMERA_ZOOM
     val (camOffX, camOffY) = getCameraOffsets
-    (screenToWorldX(sx, sy, camOffX, camOffY), screenToWorldY(sx, sy, camOffX, camOffY))
+    // Convert screen pixels to virtual (zoomed) coordinates
+    val vsx = sx / zoom
+    val vsy = sy / zoom
+    (screenToWorldX(vsx, vsy, camOffX, camOffY), screenToWorldY(vsx, vsy, camOffX, camOffY))
   }
 
   private def drawKatanaProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {

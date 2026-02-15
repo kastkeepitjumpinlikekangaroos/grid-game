@@ -11,6 +11,9 @@ object Constants {
   val SPRITE_SIZE_PX: Int = 32         // Source frame size in spritesheet
   val PLAYER_DISPLAY_SIZE_PX: Int = 48 // Rendered display size (scaled up)
 
+  // Camera zoom level (1.0 = default, 2.0 = 2x zoom)
+  val CAMERA_ZOOM: Double = 1.3
+
   // Isometric tile dimensions (2:1 ratio)
   val ISO_TILE_WIDTH: Int = 40
   val ISO_TILE_HEIGHT: Int = 20
