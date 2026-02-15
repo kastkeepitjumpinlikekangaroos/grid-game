@@ -177,6 +177,18 @@ object CharacterDef {
     explosionConfig = Some(ExplosionConfig(0, 0, 3.5f))
   )
 
+  private val KatanaDef = ProjectileDef(
+    id = ProjectileType.KATANA, name = "Katana",
+    speedMultiplier = 0.7f, damage = 30, maxRange = 4,
+    hitRadius = 2.0f
+  )
+
+  private val SwordWaveDef = ProjectileDef(
+    id = ProjectileType.SWORD_WAVE, name = "Sword Wave",
+    speedMultiplier = 0.6f, damage = 20, maxRange = 5,
+    hitRadius = 1.8f
+  )
+
   // Register all projectile defs
   ProjectileDef.register(
     TentacleDef, IceBeamDef, AxeDef, RopeDef, SpearDef,
@@ -184,7 +196,8 @@ object CharacterDef {
     SplashDef, TidalWaveDef, GeyserDef,
     BulletDef, GrenadeDef, RocketDef, TalonDef, GustDef,
     ShurikenDef, PoisonDartDef,
-    ChainBoltDef, LockdownChainDef, SnareMineDef
+    ChainBoltDef, LockdownChainDef, SnareMineDef,
+    KatanaDef, SwordWaveDef
   )
 
   // === Character definitions ===
@@ -378,6 +391,29 @@ object CharacterDef {
     maxHealth = 110
   )
 
+  val Samurai: CharacterDef = CharacterDef(
+    id = CharacterId.Samurai,
+    displayName = "Samurai",
+    description = "A precise swordsman who dashes through foes and cuts down anyone in reach.",
+    spriteSheet = "sprites/samurai.png",
+    qAbility = AbilityDef(
+      name = "Iaijutsu",
+      description = "Dash toward the cursor, phased and invulnerable during flight.",
+      cooldownMs = 10000, maxRange = 0, damage = 0,
+      projectileType = -1, keybind = "Q",
+      castBehavior = DashBuff(8, 300, 20)
+    ),
+    eAbility = AbilityDef(
+      name = "Whirlwind",
+      description = "Unleash 8 sword waves in a full circle around you.",
+      cooldownMs = 12000, maxRange = 5, damage = 20,
+      projectileType = ProjectileType.SWORD_WAVE, keybind = "E",
+      castBehavior = FanProjectile(8, 2 * Math.PI)
+    ),
+    primaryProjectileType = ProjectileType.KATANA,
+    maxHealth = 110
+  )
+
   private val byId: Map[Byte, CharacterDef] = Map(
     CharacterId.Spaceman.id -> Spaceman,
     CharacterId.Gladiator.id -> Gladiator,
@@ -387,10 +423,11 @@ object CharacterDef {
     CharacterId.Soldier.id -> Soldier,
     CharacterId.Raptor.id -> Raptor,
     CharacterId.Assassin.id -> Assassin,
-    CharacterId.Warden.id -> Warden
+    CharacterId.Warden.id -> Warden,
+    CharacterId.Samurai.id -> Samurai
   )
 
-  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith, Wizard, Tidecaller, Soldier, Raptor, Assassin, Warden)
+  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith, Wizard, Tidecaller, Soldier, Raptor, Assassin, Warden, Samurai)
 
   def get(id: CharacterId): CharacterDef = byId.getOrElse(id.id, Spaceman)
 
