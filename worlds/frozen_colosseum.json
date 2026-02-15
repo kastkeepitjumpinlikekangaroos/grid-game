@@ -9,12 +9,18 @@
     {"type": "circle", "tile": "ice", "cx": 75, "cy": 75, "radius": 62},
     {"type": "circle", "tile": "snow", "cx": 75, "cy": 75, "radius": 55},
 
-    {"type": "circle", "tile": "mountain", "cx": 75, "cy": 75, "radius": 52},
+    {"type": "circle", "tile": "cliff", "cx": 75, "cy": 75, "radius": 52},
     {"type": "circle", "tile": "snow", "cx": 75, "cy": 75, "radius": 48},
 
+    {"type": "circle", "tile": "obsidian", "cx": 75, "cy": 75, "radius": 22},
     {"type": "circle", "tile": "ice", "cx": 75, "cy": 75, "radius": 20},
     {"type": "circle", "tile": "water", "cx": 75, "cy": 75, "radius": 10},
     {"type": "circle", "tile": "ice", "cx": 75, "cy": 75, "radius": 5},
+
+    {"type": "circle", "tile": "basalt", "cx": 50, "cy": 62, "radius": 3},
+    {"type": "circle", "tile": "basalt", "cx": 100, "cy": 62, "radius": 3},
+    {"type": "circle", "tile": "basalt", "cx": 50, "cy": 88, "radius": 3},
+    {"type": "circle", "tile": "basalt", "cx": 100, "cy": 88, "radius": 3},
 
     {"type": "line", "tile": "ice", "x1": 75, "y1": 23, "x2": 75, "y2": 55, "thickness": 4},
     {"type": "line", "tile": "ice", "x1": 75, "y1": 95, "x2": 75, "y2": 127, "thickness": 4},

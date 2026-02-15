@@ -5,6 +5,7 @@
   "height": 150,
   "layers": [
     {"type": "fill", "tile": "void"},
+    {"type": "border", "tile": "obsidian", "thickness": 3},
     {"type": "border", "tile": "energy_field", "thickness": 2},
 
     {"type": "rect", "tile": "circuit", "x": 10, "y": 10, "width": 130, "height": 130},

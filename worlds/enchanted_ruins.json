@@ -214,8 +214,13 @@
     },
     {
       "type": "border",
-      "tile": "mountain",
-      "thickness": 3
+      "tile": "cliff",
+      "thickness": 4
+    },
+    {
+      "type": "border",
+      "tile": "thorns",
+      "thickness": 2
     }
   ],
   "spawnPoints": [

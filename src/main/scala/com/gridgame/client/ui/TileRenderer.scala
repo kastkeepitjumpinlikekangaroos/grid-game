@@ -9,10 +9,10 @@ import java.io.{File, FileInputStream, InputStream}
 object TileRenderer {
   private val cellW = Constants.TILE_CELL_WIDTH   // 40
   private val cellH = Constants.TILE_CELL_HEIGHT  // 56
-  private val numTiles = 28
 
   // tiles(tileId)(frame) = Image
   private var tiles: Array[Array[Image]] = _
+  private var numTiles: Int = 0
   private var numFrames: Int = 1
 
   private def ensureLoaded(): Unit = {
@@ -21,13 +21,15 @@ object TileRenderer {
     val stream = resolveResourceStream("sprites/tiles.png")
     if (stream == null) {
       System.err.println("Tileset not found: sprites/tiles.png")
+      numTiles = 0
       numFrames = 1
-      tiles = Array.fill(numTiles)(Array.fill(1)(new WritableImage(cellW, cellH)))
+      tiles = Array.empty
       return
     }
 
     val sheet = new Image(stream)
     val reader = sheet.getPixelReader
+    numTiles = (sheet.getWidth.toInt / cellW).max(1)
     numFrames = (sheet.getHeight.toInt / cellH).max(1)
     tiles = Array.tabulate(numTiles) { id =>
       Array.tabulate(numFrames) { frame =>
