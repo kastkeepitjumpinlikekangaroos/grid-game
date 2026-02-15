@@ -184,7 +184,11 @@
       "y": 118,
       "width": 3,
       "height": 6
-    }
+    },
+    {"type": "line", "tile": "stone", "x1": 54, "y1": 60, "x2": 58, "y2": 64, "thickness": 4},
+    {"type": "line", "tile": "stone", "x1": 82, "y1": 64, "x2": 86, "y2": 60, "thickness": 4},
+    {"type": "line", "tile": "stone", "x1": 54, "y1": 80, "x2": 58, "y2": 76, "thickness": 4},
+    {"type": "line", "tile": "stone", "x1": 82, "y1": 76, "x2": 86, "y2": 80, "thickness": 4}
   ],
   "spawnPoints": [
     {"x": 24, "y": 24},

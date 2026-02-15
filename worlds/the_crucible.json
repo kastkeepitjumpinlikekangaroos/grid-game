@@ -62,12 +62,17 @@
     {"type": "rect", "tile": "stone", "x": 6, "y": 65, "width": 5, "height": 10},
     {"type": "rect", "tile": "stone", "x": 129, "y": 65, "width": 5, "height": 10},
     {"type": "rect", "tile": "stone", "x": 65, "y": 6, "width": 10, "height": 5},
-    {"type": "rect", "tile": "stone", "x": 65, "y": 129, "width": 10, "height": 5}
+    {"type": "rect", "tile": "stone", "x": 65, "y": 129, "width": 10, "height": 5},
+
+    {"type": "line", "tile": "stone", "x1": 30, "y1": 25, "x2": 58, "y2": 64, "thickness": 4},
+    {"type": "line", "tile": "stone", "x1": 110, "y1": 25, "x2": 82, "y2": 64, "thickness": 4},
+    {"type": "line", "tile": "stone", "x1": 30, "y1": 115, "x2": 58, "y2": 76, "thickness": 4},
+    {"type": "line", "tile": "stone", "x1": 110, "y1": 115, "x2": 82, "y2": 76, "thickness": 4}
   ],
   "spawnPoints": [
     {"x": 25, "y": 25},
     {"x": 115, "y": 25},
-    {"x": 25, "y": 115},
-    {"x": 115, "y": 115}
+    {"x": 25, "y": 110},
+    {"x": 115, "y": 110}
   ]
 }

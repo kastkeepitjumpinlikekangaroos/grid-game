@@ -307,7 +307,10 @@
     {"type": "rect", "tile": "energy_field", "x": 42, "y": 192, "width": 3, "height": 3},
     {"type": "rect", "tile": "energy_field", "x": 42, "y": 312, "width": 3, "height": 3},
     {"type": "rect", "tile": "energy_field", "x": 455, "y": 192, "width": 3, "height": 3},
-    {"type": "rect", "tile": "energy_field", "x": 455, "y": 312, "width": 3, "height": 3}
+    {"type": "rect", "tile": "energy_field", "x": 455, "y": 312, "width": 3, "height": 3},
+
+    {"type": "rect", "tile": "metal", "x": 226, "y": 60, "width": 9, "height": 6},
+    {"type": "rect", "tile": "metal", "x": 266, "y": 60, "width": 9, "height": 6}
   ],
   "spawnPoints": [
     {"x": 58, "y": 58},
@@ -316,7 +319,7 @@
     {"x": 178, "y": 178},
     {"x": 345, "y": 75},
     {"x": 430, "y": 75},
-    {"x": 380, "y": 170},
+    {"x": 383, "y": 170},
     {"x": 75, "y": 258},
     {"x": 155, "y": 258},
     {"x": 383, "y": 240},
@@ -325,7 +328,7 @@
     {"x": 170, "y": 350},
     {"x": 340, "y": 390},
     {"x": 435, "y": 350},
-    {"x": 250, "y": 253},
+    {"x": 250, "y": 240},
     {"x": 215, "y": 65},
     {"x": 280, "y": 65},
     {"x": 218, "y": 370},
