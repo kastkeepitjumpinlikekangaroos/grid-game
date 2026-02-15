@@ -3,13 +3,10 @@ package com.gridgame.client
 import com.gridgame.client.input.ControllerHandler
 import com.gridgame.client.input.KeyboardHandler
 import com.gridgame.client.input.MouseHandler
+import com.gridgame.client.ui.CharacterSelectionPanel
 import com.gridgame.client.ui.GameCanvas
-import com.gridgame.client.ui.SpriteGenerator
 import com.gridgame.common.Constants
 import com.gridgame.common.WorldRegistry
-import com.gridgame.common.model.CharacterDef
-import com.gridgame.common.model.CharacterId
-import com.gridgame.common.model.Direction
 import com.gridgame.common.model.WorldData
 import com.gridgame.common.protocol.RankedQueueMode
 import com.gridgame.common.world.WorldLoader
@@ -25,6 +22,7 @@ import javafx.scene.Scene
 import javafx.scene.canvas.Canvas
 import javafx.scene.control.Button
 import javafx.scene.control.ComboBox
+import javafx.scene.control.ScrollPane
 import javafx.scene.control.Label
 import javafx.scene.control.ListCell
 import javafx.scene.control.ListView
@@ -659,119 +657,12 @@ class ClientMain extends Application {
     waitingLabel.setFont(Font.font("System", 14))
     waitingLabel.setTextFill(Color.web("#8899aa"))
 
-    // Character selection section
-    val charSectionLabel = new Label("SELECT CHARACTER")
-    charSectionLabel.setStyle(sectionHeaderStyle)
-
-    // Character sprite preview - larger with ring
-    val previewSize = 96.0
-    val previewCanvas = new Canvas(previewSize, previewSize)
-    val previewGc = previewCanvas.getGraphicsContext2D
-    var previewAnimTick = 0
-    var previewDirIndex = 0
-    val previewDirs = Array(Direction.Down, Direction.Left, Direction.Up, Direction.Right)
-
-    val charNameLabel = new Label("")
-    charNameLabel.setFont(Font.font("System", FontWeight.BOLD, 17))
-    charNameLabel.setTextFill(Color.web("#4a9eff"))
-
-    val charInfoLabel = new Label("")
-    charInfoLabel.setFont(Font.font("System", 13))
-    charInfoLabel.setTextFill(Color.web("#aabbcc"))
-    charInfoLabel.setWrapText(true)
-    charInfoLabel.setMaxWidth(400)
-    charInfoLabel.setStyle("-fx-line-spacing: 2;")
-
-    def drawPreview(): Unit = {
-      previewGc.clearRect(0, 0, previewSize, previewSize)
-      val charDef = CharacterDef.get(client.selectedCharacterId)
-      val dir = previewDirs(previewDirIndex)
-      val frame = (previewAnimTick / 10) % 4
-      val sprite = SpriteGenerator.getSprite(0, dir, frame, charDef.id.id)
-      // Draw ring background
-      previewGc.setStroke(Color.web("#3a3a5e"))
-      previewGc.setLineWidth(2)
-      previewGc.strokeOval(4, 4, previewSize - 8, previewSize - 8)
-      previewGc.setFill(Color.web("#1a1a30"))
-      previewGc.fillOval(6, 6, previewSize - 12, previewSize - 12)
-      // Draw sprite centered, scaled up
-      val spriteDisplaySize = 68.0
-      val offset = (previewSize - spriteDisplaySize) / 2.0
-      previewGc.drawImage(sprite, offset, offset, spriteDisplaySize, spriteDisplaySize)
-    }
-
-    val previewTimer = new AnimationTimer {
-      override def handle(now: Long): Unit = {
-        previewAnimTick += 1
-        // Rotate direction every 40 frames
-        if (previewAnimTick % 40 == 0) {
-          previewDirIndex = (previewDirIndex + 1) % previewDirs.length
-        }
-        drawPreview()
-      }
-    }
-    previewTimer.start()
-
-    def updateCharacterInfo(): Unit = {
-      val charDef = CharacterDef.get(client.selectedCharacterId)
-      charNameLabel.setText(charDef.displayName)
-      charInfoLabel.setText(s"${charDef.description}\nQ: ${charDef.qAbility.name} - ${charDef.qAbility.description}\nE: ${charDef.eAbility.name} - ${charDef.eAbility.description}")
-      previewAnimTick = 0
-      previewDirIndex = 0
-      drawPreview()
-    }
-
-    // Character carousel with left/right arrows
-    val charCountLabel = new Label("")
-    charCountLabel.setFont(Font.font("System", 13))
-    charCountLabel.setTextFill(Color.web("#8899aa"))
-
-    val arrowButtonStyle = "-fx-background-color: rgba(255,255,255,0.06); -fx-text-fill: #8899aa; -fx-font-size: 18; -fx-font-weight: bold; -fx-padding: 8 16; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.08); -fx-border-width: 1; -fx-border-radius: 10;"
-    val arrowButtonHoverStyle = "-fx-background-color: rgba(74, 158, 255, 0.15); -fx-text-fill: #4a9eff; -fx-font-size: 18; -fx-font-weight: bold; -fx-padding: 8 16; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(74, 158, 255, 0.3); -fx-border-width: 1; -fx-border-radius: 10;"
-
-    def currentCharIndex: Int = {
-      val idx = CharacterDef.all.indexWhere(_.id.id == client.selectedCharacterId)
-      if (idx < 0) 0 else idx
-    }
-
-    def selectByIndex(idx: Int): Unit = {
-      val wrapped = ((idx % CharacterDef.all.size) + CharacterDef.all.size) % CharacterDef.all.size
-      val charDef = CharacterDef.all(wrapped)
-      client.selectCharacter(charDef.id.id)
-      updateCharacterInfo()
-      charCountLabel.setText(s"${wrapped + 1} / ${CharacterDef.all.size}")
-    }
-
-    val prevBtn = new Button("\u25C0")
-    prevBtn.setStyle(arrowButtonStyle)
-    prevBtn.setOnMouseEntered(_ => prevBtn.setStyle(arrowButtonHoverStyle))
-    prevBtn.setOnMouseExited(_ => prevBtn.setStyle(arrowButtonStyle))
-    prevBtn.setOnAction(_ => selectByIndex(currentCharIndex - 1))
-
-    val nextBtn = new Button("\u25B6")
-    nextBtn.setStyle(arrowButtonStyle)
-    nextBtn.setOnMouseEntered(_ => nextBtn.setStyle(arrowButtonHoverStyle))
-    nextBtn.setOnMouseExited(_ => nextBtn.setStyle(arrowButtonStyle))
-    nextBtn.setOnAction(_ => selectByIndex(currentCharIndex + 1))
-
-    val carouselBox = new HBox(16, prevBtn, charCountLabel, nextBtn)
-    carouselBox.setAlignment(Pos.CENTER)
-
-    updateCharacterInfo()
-    charCountLabel.setText(s"${currentCharIndex + 1} / ${CharacterDef.all.size}")
-
-    val previewBox = new VBox(6, previewCanvas, charNameLabel)
-    previewBox.setAlignment(Pos.CENTER)
-
-    // Character info in a subtle card
-    val charInfoCard = new VBox(8, charInfoLabel)
-    charInfoCard.setPadding(new Insets(12, 16, 12, 16))
-    charInfoCard.setMaxWidth(420)
-    charInfoCard.setStyle(cardBgSubtle)
-
-    val charSection = new VBox(12, charSectionLabel, previewBox, carouselBox, charInfoCard)
-    charSection.setAlignment(Pos.CENTER)
-    charSection.setPadding(new Insets(0, 24, 0, 24))
+    // Character selection panel (shared component)
+    val charPanel = new CharacterSelectionPanel(
+      () => client.selectedCharacterId,
+      id => client.selectCharacter(id)
+    )
+    val charSection = charPanel.createPanel()
 
     val buttonBox = new HBox(12)
     buttonBox.setAlignment(Pos.CENTER)
@@ -781,7 +672,7 @@ class ClientMain extends Application {
     addHoverEffect(leaveBtn, buttonRedStyle, buttonRedHoverStyle)
 
     leaveBtn.setOnAction(_ => {
-      previewTimer.stop()
+      charPanel.stop()
       client.leaveLobby()
       showLobbyBrowser(stage)
     })
@@ -966,6 +857,11 @@ class ClientMain extends Application {
 
     root.getChildren.addAll(headerBox, infoCard, new Region() { setMinHeight(16) }, charSection, new Region() { setMinHeight(4) }, buttonBox)
 
+    val scrollPane = new ScrollPane(root)
+    scrollPane.setFitToWidth(true)
+    scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER)
+    scrollPane.setStyle("-fx-background: #1a1a2e; -fx-background-color: #1a1a2e; -fx-border-color: transparent;")
+
     // Wire up listeners
     client.lobbyUpdatedListener = () => {
       Platform.runLater(() => {
@@ -986,19 +882,19 @@ class ClientMain extends Application {
 
     client.gameStartingListener = () => {
       Platform.runLater(() => {
-        previewTimer.stop()
+        charPanel.stop()
         showGameScene(stage)
       })
     }
 
     client.lobbyClosedListener = () => {
       Platform.runLater(() => {
-        previewTimer.stop()
+        charPanel.stop()
         showLobbyBrowser(stage)
       })
     }
 
-    val scene = new Scene(root)
+    val scene = new Scene(scrollPane)
     stage.setScene(scene)
   }
 
@@ -1149,119 +1045,18 @@ class ClientMain extends Application {
 
     modeCard.getChildren.addAll(modeLabel, modeRow, findMatchBtn, searchingLabel, searchSeparator, queueSizeLabel, waitTimeLabel)
 
-    // Character selection section
-    val charSectionLabel = new Label("SELECT CHARACTER")
-    charSectionLabel.setStyle(sectionHeaderStyle)
-
-    val previewSize = 96.0
-    val previewCanvas = new Canvas(previewSize, previewSize)
-    val previewGc = previewCanvas.getGraphicsContext2D
-    var previewAnimTick = 0
-    var previewDirIndex = 0
-    val previewDirs = Array(Direction.Down, Direction.Left, Direction.Up, Direction.Right)
-
-    val charNameLabel = new Label("")
-    charNameLabel.setFont(Font.font("System", FontWeight.BOLD, 17))
-    charNameLabel.setTextFill(Color.web("#4a9eff"))
-
-    val charInfoLabel = new Label("")
-    charInfoLabel.setFont(Font.font("System", 13))
-    charInfoLabel.setTextFill(Color.web("#aabbcc"))
-    charInfoLabel.setWrapText(true)
-    charInfoLabel.setMaxWidth(400)
-    charInfoLabel.setStyle("-fx-line-spacing: 2;")
-
-    def drawPreview(): Unit = {
-      previewGc.clearRect(0, 0, previewSize, previewSize)
-      val charDef = CharacterDef.get(client.selectedCharacterId)
-      val dir = previewDirs(previewDirIndex)
-      val frame = (previewAnimTick / 10) % 4
-      val sprite = SpriteGenerator.getSprite(0, dir, frame, charDef.id.id)
-      previewGc.setStroke(Color.web("#3a3a5e"))
-      previewGc.setLineWidth(2)
-      previewGc.strokeOval(4, 4, previewSize - 8, previewSize - 8)
-      previewGc.setFill(Color.web("#1a1a30"))
-      previewGc.fillOval(6, 6, previewSize - 12, previewSize - 12)
-      val spriteDisplaySize = 68.0
-      val offset = (previewSize - spriteDisplaySize) / 2.0
-      previewGc.drawImage(sprite, offset, offset, spriteDisplaySize, spriteDisplaySize)
-    }
-
-    val previewTimer = new AnimationTimer {
-      override def handle(now: Long): Unit = {
-        previewAnimTick += 1
-        if (previewAnimTick % 40 == 0) {
-          previewDirIndex = (previewDirIndex + 1) % previewDirs.length
-        }
-        drawPreview()
-      }
-    }
-    previewTimer.start()
-
-    def updateCharacterInfo(): Unit = {
-      val charDef = CharacterDef.get(client.selectedCharacterId)
-      charNameLabel.setText(charDef.displayName)
-      charInfoLabel.setText(s"${charDef.description}\nQ: ${charDef.qAbility.name} - ${charDef.qAbility.description}\nE: ${charDef.eAbility.name} - ${charDef.eAbility.description}")
-      previewAnimTick = 0
-      previewDirIndex = 0
-      drawPreview()
-    }
-
-    val charCountLabel = new Label("")
-    charCountLabel.setFont(Font.font("System", 13))
-    charCountLabel.setTextFill(Color.web("#8899aa"))
-
-    val arrowButtonStyle = "-fx-background-color: rgba(255,255,255,0.06); -fx-text-fill: #8899aa; -fx-font-size: 18; -fx-font-weight: bold; -fx-padding: 8 16; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.08); -fx-border-width: 1; -fx-border-radius: 10;"
-    val arrowButtonHoverStyle = "-fx-background-color: rgba(74, 158, 255, 0.15); -fx-text-fill: #4a9eff; -fx-font-size: 18; -fx-font-weight: bold; -fx-padding: 8 16; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(74, 158, 255, 0.3); -fx-border-width: 1; -fx-border-radius: 10;"
-
-    def currentCharIndex: Int = {
-      val idx = CharacterDef.all.indexWhere(_.id.id == client.selectedCharacterId)
-      if (idx < 0) 0 else idx
-    }
-
-    def selectByIndex(idx: Int): Unit = {
-      val wrapped = ((idx % CharacterDef.all.size) + CharacterDef.all.size) % CharacterDef.all.size
-      val charDef = CharacterDef.all(wrapped)
-      client.changeRankedCharacter(charDef.id.id)
-      updateCharacterInfo()
-      charCountLabel.setText(s"${wrapped + 1} / ${CharacterDef.all.size}")
-    }
-
-    val prevBtn = new Button("\u25C0")
-    prevBtn.setStyle(arrowButtonStyle)
-    prevBtn.setOnMouseEntered(_ => prevBtn.setStyle(arrowButtonHoverStyle))
-    prevBtn.setOnMouseExited(_ => prevBtn.setStyle(arrowButtonStyle))
-    prevBtn.setOnAction(_ => selectByIndex(currentCharIndex - 1))
-
-    val nextBtn = new Button("\u25B6")
-    nextBtn.setStyle(arrowButtonStyle)
-    nextBtn.setOnMouseEntered(_ => nextBtn.setStyle(arrowButtonHoverStyle))
-    nextBtn.setOnMouseExited(_ => nextBtn.setStyle(arrowButtonStyle))
-    nextBtn.setOnAction(_ => selectByIndex(currentCharIndex + 1))
-
-    val carouselBox = new HBox(16, prevBtn, charCountLabel, nextBtn)
-    carouselBox.setAlignment(Pos.CENTER)
-
-    updateCharacterInfo()
-    charCountLabel.setText(s"${currentCharIndex + 1} / ${CharacterDef.all.size}")
-
-    val previewBox = new VBox(6, previewCanvas, charNameLabel)
-    previewBox.setAlignment(Pos.CENTER)
-
-    val charInfoCard = new VBox(8, charInfoLabel)
-    charInfoCard.setPadding(new Insets(12, 16, 12, 16))
-    charInfoCard.setMaxWidth(420)
-    charInfoCard.setStyle(cardBgSubtle)
-
-    val charSection = new VBox(12, charSectionLabel, previewBox, carouselBox, charInfoCard)
-    charSection.setAlignment(Pos.CENTER)
-    charSection.setPadding(new Insets(0, 24, 0, 24))
+    // Character selection panel (shared component)
+    val charPanel = new CharacterSelectionPanel(
+      () => client.selectedCharacterId,
+      id => client.changeRankedCharacter(id)
+    )
+    val charSection = charPanel.createPanel()
 
     // Back / Leave queue button
     val leaveBtn = new Button("Back")
     addHoverEffect(leaveBtn, buttonRedStyle, buttonRedHoverStyle)
     leaveBtn.setOnAction(_ => {
-      previewTimer.stop()
+      charPanel.stop()
       dotTimer.stop()
       if (isSearching) {
         client.leaveRankedQueue()
@@ -1302,6 +1097,11 @@ class ClientMain extends Application {
 
     root.getChildren.addAll(headerBox, modeCard, new Region() { setMinHeight(16) }, charSection, new Region() { setMinHeight(4) }, buttonBox)
 
+    val scrollPane = new ScrollPane(root)
+    scrollPane.setFitToWidth(true)
+    scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER)
+    scrollPane.setStyle("-fx-background: #1a1a2e; -fx-background-color: #1a1a2e; -fx-border-color: transparent;")
+
     // Wire up queue status listener
     client.rankedQueueListener = () => {
       Platform.runLater(() => {
@@ -1321,7 +1121,7 @@ class ClientMain extends Application {
     // Wire up game starting listener to transition to game scene
     client.gameStartingListener = () => {
       Platform.runLater(() => {
-        previewTimer.stop()
+        charPanel.stop()
         dotTimer.stop()
         showGameScene(stage)
       })
@@ -1329,14 +1129,14 @@ class ClientMain extends Application {
 
     client.lobbyClosedListener = () => {
       Platform.runLater(() => {
-        previewTimer.stop()
+        charPanel.stop()
         dotTimer.stop()
         client.requestLobbyList()
         showLobbyBrowser(stage)
       })
     }
 
-    val scene = new Scene(root)
+    val scene = new Scene(scrollPane)
     stage.setScene(scene)
   }
 
