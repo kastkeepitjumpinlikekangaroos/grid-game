@@ -56,6 +56,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   private val frozenUntil: AtomicLong = new AtomicLong(0)
   private val phasedUntil: AtomicLong = new AtomicLong(0)
 
+  // Ability cast flash state
+  private val lastCastTime: AtomicLong = new AtomicLong(0)
+  @volatile private var lastCastDirX: Float = 0f
+  @volatile private var lastCastDirY: Float = 0f
+
   // Swoop state (Raptor Q)
   private val swoopingUntil: AtomicLong = new AtomicLong(0)
   @volatile private var swoopTargetX: Float = 0f
@@ -292,6 +297,23 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   def isSwooping: Boolean = System.currentTimeMillis() < swoopingUntil.get()
 
+  def getSwoopProgress: Double = {
+    val now = System.currentTimeMillis()
+    val start = swoopStartTime.get()
+    val end = swoopingUntil.get()
+    if (now >= end || end <= start) return 1.0
+    (now - start).toDouble / (end - start).toDouble
+  }
+
+  def getSwoopStartX: Float = swoopStartX
+  def getSwoopStartY: Float = swoopStartY
+  def getSwoopTargetX: Float = swoopTargetX
+  def getSwoopTargetY: Float = swoopTargetY
+
+  def getLastCastTime: Long = lastCastTime.get()
+  def getLastCastDirX: Float = lastCastDirX
+  def getLastCastDirY: Float = lastCastDirY
+
   def tickSwoop(): Unit = {
     val now = System.currentTimeMillis()
     val swoopEnd = swoopingUntil.get()
@@ -486,6 +508,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     if (now - lastAbilityTime.get() < abilityDef.cooldownMs) return
 
     lastAbilityTime.set(now)
+
+    // Track cast flash direction
+    val (castDx, castDy) = getAimDirection
+    lastCastDirX = castDx
+    lastCastDirY = castDy
+    lastCastTime.set(now)
 
     abilityDef.castBehavior match {
       case DashBuff(maxDistance, durationMs, _) =>

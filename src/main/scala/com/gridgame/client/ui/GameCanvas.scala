@@ -43,6 +43,38 @@ class GameCanvas(client: GameClient) extends Canvas() {
   private val DEATH_ANIMATION_MS = 1200
   private val TELEPORT_ANIMATION_MS = 800
 
+  // Screen shake state
+  private var shakeIntensity: Double = 0.0
+  private var shakeDecayUntil: Long = 0L
+  private var shakeStartTime: Long = 0L
+
+  private def triggerShake(intensity: Double, durationMs: Long): Unit = {
+    // Only override if new shake is stronger than remaining shake
+    val now = System.currentTimeMillis()
+    val remaining = if (now < shakeDecayUntil) {
+      val progress = (now - shakeStartTime).toDouble / (shakeDecayUntil - shakeStartTime)
+      shakeIntensity * (1.0 - progress)
+    } else 0.0
+    if (intensity > remaining) {
+      shakeIntensity = intensity
+      shakeStartTime = now
+      shakeDecayUntil = now + durationMs
+    }
+  }
+
+  private def getShakeOffset: (Double, Double) = {
+    val now = System.currentTimeMillis()
+    if (now >= shakeDecayUntil || shakeIntensity <= 0) return (0.0, 0.0)
+    val elapsed = (now - shakeStartTime).toDouble
+    val duration = (shakeDecayUntil - shakeStartTime).toDouble
+    val progress = elapsed / duration
+    val decay = 1.0 - progress
+    val freq = 35.0
+    val ox = Math.sin(elapsed * freq * 0.001) * shakeIntensity * decay
+    val oy = Math.sin(elapsed * freq * 0.0013 + 1.7) * shakeIntensity * decay * 0.7
+    (ox, oy)
+  }
+
   private def world: WorldData = client.getWorld
 
   // Projectile renderer registry — new characters just add entries here
@@ -140,8 +172,9 @@ class GameCanvas(client: GameClient) extends Canvas() {
     // Camera offset: center the interpolated player position on screen
     val playerSx = (visualX - visualY) * HW
     val playerSy = (visualX + visualY) * HH
-    val camOffX = canvasW / 2.0 - playerSx
-    val camOffY = canvasH / 2.0 - playerSy
+    val (shakeOx, shakeOy) = getShakeOffset
+    val camOffX = canvasW / 2.0 - playerSx + shakeOx
+    val camOffY = canvasH / 2.0 - playerSy + shakeOy
 
     // Draw themed animated background
     BackgroundRenderer.render(gc, canvasW, canvasH, currentWorld.background, animationTick, camOffX, camOffY)
@@ -3319,6 +3352,8 @@ class GameCanvas(client: GameClient) extends Canvas() {
         val pType = data(3).toByte
         val sx = worldToScreenX(wx, wy, camOffX)
         val sy = worldToScreenY(wx, wy, camOffY)
+        // Trigger screen shake on first frame of explosion
+        if (now - startTime < 50) triggerShake(4.0, 400)
         drawExplosionEffect(sx, sy, startTime, pType)
       }
     }
@@ -3618,6 +3653,59 @@ class GameCanvas(client: GameClient) extends Canvas() {
       gc.setGlobalAlpha(0.4)
     }
 
+    // Dash afterimage trail when swooping
+    if (client.isSwooping) {
+      val swoopProg = client.getSwoopProgress
+      val sx0 = client.getSwoopStartX.toDouble
+      val sy0 = client.getSwoopStartY.toDouble
+      val sx1 = client.getSwoopTargetX.toDouble
+      val sy1 = client.getSwoopTargetY.toDouble
+      val ghostSprite = SpriteGenerator.getSprite(client.getLocalColorRGB, client.getLocalDirection, (animationTick / FRAMES_PER_STEP) % 4, client.selectedCharacterId)
+      val ghostCount = 5
+      for (i <- 0 until ghostCount) {
+        val ghostT = swoopProg - (i + 1) * 0.12
+        if (ghostT > 0 && ghostT < 1.0) {
+          val gx = sx0 + (sx1 - sx0) * ghostT
+          val gy = sy0 + (sy1 - sy0) * ghostT
+          val gsx = worldToScreenX(gx, gy, camOffX)
+          val gsy = worldToScreenY(gx, gy, camOffY)
+          val alpha = 0.25 - i * 0.04
+          val scale = 1.0 - i * 0.04
+          val gSize = displaySz * scale
+          gc.setGlobalAlpha(Math.max(0.03, alpha))
+          gc.drawImage(ghostSprite, gsx - gSize / 2.0, gsy - gSize, gSize, gSize)
+        }
+      }
+      gc.setGlobalAlpha(if (localIsPhased) 0.4 else 1.0)
+
+      // Speed lines radiating in movement direction
+      val dx = sx1 - sx0
+      val dy = sy1 - sy0
+      val dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist > 0.1) {
+        val ndx = dx / dist
+        val ndy = dy / dist
+        // Convert direction to screen-space
+        val sdx = (ndx - ndy) * HW
+        val sdy = (ndx + ndy) * HH
+        val sdist = Math.sqrt(sdx * sdx + sdy * sdy)
+        if (sdist > 0.1) {
+          val snx = sdx / sdist
+          val sny = sdy / sdist
+          val perpX = -sny
+          val perpY = snx
+          gc.setStroke(Color.color(1.0, 1.0, 1.0, 0.3))
+          gc.setLineWidth(1.2)
+          for (i <- 0 until 6) {
+            val spread = (i - 2.5) * 4.0
+            val lx = screenX - snx * 12 + perpX * spread
+            val ly = spriteCenter - sny * 12 + perpY * spread
+            gc.strokeLine(lx, ly, lx - snx * (8 + (i % 3) * 4), ly - sny * (8 + (i % 3) * 4))
+          }
+        }
+      }
+    }
+
     drawShadow(screenX, screenY)
 
     val animSpeed = if (client.isCharging) {
@@ -3630,14 +3718,101 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
     if (localIsPhased) gc.setGlobalAlpha(1.0)
 
+    // Ability cast flash effect
+    drawCastFlash(screenX, spriteCenter)
+
     // Draw frozen effect
     if (client.isFrozen) drawFrozenEffect(screenX, spriteCenter)
 
-    // Draw hit effect on top of sprite
-    drawHitEffect(screenX, spriteCenter, client.getPlayerHitTime(client.getLocalPlayerId))
+    // Draw hit effect on top of sprite — trigger light screen shake for local player hits
+    val localHitTime = client.getPlayerHitTime(client.getLocalPlayerId)
+    if (localHitTime > 0 && System.currentTimeMillis() - localHitTime < 50) {
+      triggerShake(2.5, 250)
+    }
+    drawHitEffect(screenX, spriteCenter, localHitTime)
 
     // Draw health bar above local player
     drawHealthBar(screenX, spriteY, client.getLocalHealth, client.getSelectedCharacterMaxHealth)
+  }
+
+  private val CAST_FLASH_MS = 200
+
+  private def drawCastFlash(centerX: Double, centerY: Double): Unit = {
+    val castTime = client.getLastCastTime
+    if (castTime <= 0) return
+    val elapsed = System.currentTimeMillis() - castTime
+    if (elapsed < 0 || elapsed > CAST_FLASH_MS) return
+
+    val progress = elapsed.toDouble / CAST_FLASH_MS
+    val fadeOut = 1.0 - progress
+
+    // Get screen-space direction from world aim direction
+    val wdx = client.getLastCastDirX.toDouble
+    val wdy = client.getLastCastDirY.toDouble
+    val sdx = (wdx - wdy) * HW
+    val sdy = (wdx + wdy) * HH
+    val sdist = Math.sqrt(sdx * sdx + sdy * sdy)
+    if (sdist < 0.01) return
+    val snx = sdx / sdist
+    val sny = sdy / sdist
+    val perpX = -sny
+    val perpY = snx
+
+    // Player color for tinting
+    val rgb = client.getLocalColorRGB
+    val pr = ((rgb >> 16) & 0xFF) / 255.0
+    val pg = ((rgb >> 8) & 0xFF) / 255.0
+    val pb = (rgb & 0xFF) / 255.0
+
+    // Directional cone flash — bright white fading to player color
+    val coneLen = 16.0 + progress * 8.0
+    val coneWidth = 10.0 * fadeOut
+    val coneAlpha = 0.5 * fadeOut
+    val cx = centerX + snx * 8
+    val cy = centerY + sny * 8
+    val tipX = cx + snx * coneLen
+    val tipY = cy + sny * coneLen
+    val leftX = cx + perpX * coneWidth
+    val leftY = cy + perpY * coneWidth
+    val rightX = cx - perpX * coneWidth
+    val rightY = cy - perpY * coneWidth
+    gc.setGlobalAlpha(coneAlpha)
+    gc.setFill(Color.color(
+      Math.min(1.0, 0.7 + pr * 0.3),
+      Math.min(1.0, 0.7 + pg * 0.3),
+      Math.min(1.0, 0.7 + pb * 0.3)
+    ))
+    gc.fillPolygon(Array(tipX, leftX, rightX), Array(tipY, leftY, rightY), 3)
+    gc.setGlobalAlpha(1.0)
+
+    // Energy sparks radiating outward from player in cast direction
+    val sparkCount = 7
+    for (i <- 0 until sparkCount) {
+      val angle = (i.toDouble / sparkCount - 0.5) * 1.2
+      val cos = Math.cos(angle)
+      val sin = Math.sin(angle)
+      val sparkDx = snx * cos - sny * sin
+      val sparkDy = snx * sin + sny * cos
+      val sparkDist = (6.0 + progress * 22.0) * (0.7 + (i % 3) * 0.2)
+      val sx = centerX + sparkDx * sparkDist
+      val sy = centerY + sparkDy * sparkDist
+      val sparkSize = 2.0 * fadeOut
+      val sparkAlpha = 0.6 * fadeOut * (0.5 + 0.5 * ((i + 1) % 2))
+      gc.setFill(Color.color(
+        Math.min(1.0, 0.8 + pr * 0.2),
+        Math.min(1.0, 0.8 + pg * 0.2),
+        Math.min(1.0, 0.5 + pb * 0.5),
+        sparkAlpha
+      ))
+      gc.fillOval(sx - sparkSize, sy - sparkSize, sparkSize * 2, sparkSize * 2)
+    }
+
+    // Expanding ring at player feet
+    val ringRadius = 4.0 + progress * 14.0
+    val ringAlpha = 0.4 * fadeOut
+    gc.setStroke(Color.color(pr, pg, pb, ringAlpha))
+    gc.setLineWidth(1.5 * fadeOut)
+    gc.strokeOval(centerX - ringRadius, centerY - ringRadius * 0.5, ringRadius * 2, ringRadius)
   }
 
   private def drawShieldBubble(centerX: Double, centerY: Double): Unit = {
@@ -3982,6 +4157,8 @@ class GameCanvas(client: GameClient) extends Canvas() {
         val charId = if (data.length > 4) data(4).toByte else 0.toByte
         val sx = worldToScreenX(wx, wy, camOffX)
         val sy = worldToScreenY(wx, wy, camOffY)
+        // Trigger screen shake on first frame of death
+        if (now - deathTime < 50) triggerShake(6.0, 500)
         drawDeathEffect(sx, sy, colorRGB, deathTime, charId)
       }
     }
