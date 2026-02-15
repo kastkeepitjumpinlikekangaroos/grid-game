@@ -163,6 +163,7 @@ class ClientMain extends Application {
   override def start(primaryStage: Stage): Unit = {
     primaryStage.setTitle("Grid Game - Multiplayer 2D")
     primaryStage.setResizable(true)
+    primaryStage.setMaximized(true)
 
     showWelcomeScreen(primaryStage)
   }
