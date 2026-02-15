@@ -125,10 +125,11 @@ object PacketSerializer {
         val nameBytes = new Array[Byte](Constants.MAX_LOBBY_NAME_LEN)
         buffer.get(nameBytes)
         val lobbyName = extractString(nameBytes)
-        buffer.get(new Array[Byte](4)) // reserved
+        val mode = buffer.get() // [60] mode
+        buffer.get(new Array[Byte](3)) // reserved
         new RankedQueuePacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, action,
           characterId, queueSize, elo, waitTimeSeconds, lobbyId, mapIndex, durationMinutes,
-          playerCount, maxPlayers, lobbyName)
+          playerCount, maxPlayers, lobbyName, mode)
 
       case PacketType.LOBBY_ACTION =>
         // Custom layout from byte 21 onward (no standard x/y/color/timestamp)

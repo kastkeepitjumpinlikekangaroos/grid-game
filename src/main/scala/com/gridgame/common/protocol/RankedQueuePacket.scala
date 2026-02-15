@@ -15,6 +15,11 @@ object RankedQueueAction {
   val CHARACTER_CHANGE: Byte = 4
 }
 
+object RankedQueueMode {
+  val FFA: Byte = 0
+  val DUEL: Byte = 1
+}
+
 /**
  * 64-byte ranked queue packet.
  * Layout:
@@ -30,7 +35,8 @@ object RankedQueueAction {
  * [34] playerCount               -- MATCH_FOUND
  * [35] maxPlayers                -- MATCH_FOUND
  * [36-59] lobbyName (24 bytes)   -- MATCH_FOUND
- * [60-63] reserved
+ * [60] mode (0=FFA, 1=DUEL)
+ * [61-63] reserved
  */
 class RankedQueuePacket(
     sequenceNumber: Int,
@@ -46,7 +52,8 @@ class RankedQueuePacket(
     val durationMinutes: Byte = 0,
     val playerCount: Byte = 0,
     val maxPlayers: Byte = 0,
-    val lobbyName: String = ""
+    val lobbyName: String = "",
+    val mode: Byte = RankedQueueMode.FFA
 ) extends Packet(PacketType.RANKED_QUEUE, sequenceNumber, playerId, timestamp) {
 
   def this(sequenceNumber: Int, playerId: UUID, action: Byte) = {
@@ -55,6 +62,10 @@ class RankedQueuePacket(
 
   def this(sequenceNumber: Int, playerId: UUID, action: Byte, characterId: Byte) = {
     this(sequenceNumber, playerId, Packet.getCurrentTimestamp, action, characterId)
+  }
+
+  def this(sequenceNumber: Int, playerId: UUID, action: Byte, characterId: Byte, mode: Byte) = {
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, action, characterId, mode = mode)
   }
 
   def getAction: Byte = action
@@ -68,6 +79,7 @@ class RankedQueuePacket(
   def getPlayerCount: Byte = playerCount
   def getMaxPlayers: Byte = maxPlayers
   def getLobbyName: String = lobbyName
+  def getMode: Byte = mode
 
   override def serialize(): Array[Byte] = {
     val buffer = ByteBuffer.allocate(Constants.PACKET_SIZE)
@@ -119,8 +131,11 @@ class RankedQueuePacket(
     buffer.put(nameBytes, 0, nameLen)
     buffer.put(new Array[Byte](Constants.MAX_LOBBY_NAME_LEN - nameLen))
 
-    // [60-63] Reserved
-    buffer.put(new Array[Byte](4))
+    // [60] Mode
+    buffer.put(mode)
+
+    // [61-63] Reserved
+    buffer.put(new Array[Byte](3))
 
     buffer.array()
   }
