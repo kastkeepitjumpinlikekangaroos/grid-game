@@ -383,11 +383,12 @@ class GameServer(port: Int, val worldFile: String = "") {
 
     // Send history entries
     val history = authDatabase.getMatchHistory(playerId)
-    history.foreach { case (matchId, mapIndex, durationMin, playedAt, kills, deaths, rank, playerCount) =>
+    history.foreach { case (matchId, mapIndex, durationMin, playedAt, kills, deaths, rank, playerCount, matchType) =>
       val entryPacket = new MatchHistoryPacket(
         getNextSequenceNumber, playerId, Packet.getCurrentTimestamp, MatchHistoryAction.ENTRY,
         matchId.toInt, mapIndex.toByte, durationMin.toByte, (playedAt / 1000).toInt,
-        kills.toShort, deaths.toShort, rank.toByte, playerCount.toByte
+        kills.toShort, deaths.toShort, rank.toByte, playerCount.toByte,
+        matchType = matchType.toByte
       )
       sendPacketViaChannel(entryPacket, tcpCh)
     }
@@ -560,7 +561,7 @@ class GameServer(port: Int, val worldFile: String = "") {
 
     // Persist match results (exclude bots)
     val humanResults = matchResults.filter { case (pid, _, _, _) => !BotManager.isBotUUID(pid) }.toSeq
-    authDatabase.saveMatch(lobby.mapIndex, lobby.durationMinutes, humanResults)
+    authDatabase.saveMatch(lobby.mapIndex, lobby.durationMinutes, humanResults, lobby.matchType)
 
     // Update ELO for ranked matches (exclude bots)
     if (lobby.isRanked && humanResults.size >= 2) {

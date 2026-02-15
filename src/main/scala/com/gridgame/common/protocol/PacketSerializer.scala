@@ -76,8 +76,10 @@ object PacketSerializer {
             val deaths = buffer.getShort()
             val rank = buffer.get()
             val totalPlayers = buffer.get()
+            val matchType = buffer.get()
             new MatchHistoryPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, action,
-              matchId, mapIndex, duration, playedAt, kills, deaths, rank, totalPlayers)
+              matchId, mapIndex, duration, playedAt, kills, deaths, rank, totalPlayers,
+              matchType = matchType)
 
           case MatchHistoryAction.STATS =>
             val totalKills = buffer.getInt()

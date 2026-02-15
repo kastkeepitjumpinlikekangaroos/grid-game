@@ -25,7 +25,7 @@ object MatchHistoryAction {
  * [22-25] matchId (int), [26] mapIndex (byte), [27] duration (byte),
  * [28-31] playedAt (int, epoch seconds), [32-33] kills (short),
  * [34-35] deaths (short), [36] rank (byte), [37] totalPlayers (byte),
- * [38-63] reserved
+ * [38] matchType (byte), [39-63] reserved
  *
  * END (server->client): no additional data
  *
@@ -52,7 +52,8 @@ class MatchHistoryPacket(
     val totalDeaths: Int = 0,
     val matchesPlayed: Int = 0,
     val wins: Int = 0,
-    val elo: Short = 1000
+    val elo: Short = 1000,
+    val matchType: Byte = 0
 ) extends Packet(PacketType.MATCH_HISTORY, sequenceNumber, playerId, timestamp) {
 
   def this(sequenceNumber: Int, playerId: UUID, action: Byte) = {
@@ -68,6 +69,7 @@ class MatchHistoryPacket(
   def getDeaths: Short = deaths
   def getRank: Byte = rank
   def getTotalPlayers: Byte = totalPlayers
+  def getMatchType: Byte = matchType
   def getTotalKills: Int = totalKills
   def getTotalDeaths: Int = totalDeaths
   def getMatchesPlayed: Int = matchesPlayed
@@ -101,7 +103,8 @@ class MatchHistoryPacket(
         buffer.putShort(deaths)      // [34-35]
         buffer.put(rank)             // [36]
         buffer.put(totalPlayers)     // [37]
-        buffer.put(new Array[Byte](26)) // [38-63] reserved
+        buffer.put(matchType)        // [38]
+        buffer.put(new Array[Byte](25)) // [39-63] reserved
 
       case MatchHistoryAction.STATS =>
         buffer.putInt(totalKills)    // [22-25]

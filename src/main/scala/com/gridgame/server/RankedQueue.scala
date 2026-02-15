@@ -285,6 +285,7 @@ class RankedQueue(server: GameServer) {
     lobby.isRanked = true
     lobby.gameMode = 1 // Teams mode
     lobby.teamSize = Constants.TEAMS_TEAM_SIZE
+    lobby.matchType = 4 // Ranked Teams
 
     // Add remaining players to lobby
     entries.tail.foreach { entry =>
@@ -448,6 +449,7 @@ class RankedQueue(server: GameServer) {
     val lobbyName = "Ranked Match"
     val lobby = server.lobbyManager.createLobby(hostId, lobbyName, mapIndex, Constants.DEFAULT_GAME_DURATION_MIN, Constants.MAX_LOBBY_PLAYERS)
     lobby.isRanked = true
+    lobby.matchType = 2 // Ranked FFA
 
     // Add remaining players to lobby
     entries.tail.foreach { entry =>
@@ -593,6 +595,7 @@ class RankedQueue(server: GameServer) {
     val lobbyName = "Ranked Duel"
     val lobby = server.lobbyManager.createLobby(hostId, lobbyName, mapIndex, Constants.DUEL_GAME_DURATION_MIN, Constants.DUEL_MAX_PLAYERS)
     lobby.isRanked = true
+    lobby.matchType = 3 // Ranked Duel
 
     // Add remaining players to lobby
     entries.tail.foreach { entry =>

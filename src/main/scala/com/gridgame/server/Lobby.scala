@@ -26,6 +26,7 @@ class Lobby(
   @volatile var isRanked: Boolean = false
   @volatile var gameMode: Byte = 0  // 0=FFA, 1=Teams
   @volatile var teamSize: Int = 2   // 2, 3, or 4
+  @volatile var matchType: Byte = 0 // 0=Casual FFA, 1=Casual Teams, 2=Ranked FFA, 3=Ranked Duel, 4=Ranked Teams
 
   def addPlayer(playerId: UUID): Boolean = {
     if (players.size() >= maxPlayers) return false

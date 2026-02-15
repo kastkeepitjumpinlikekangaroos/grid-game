@@ -1570,7 +1570,14 @@ class ClientMain extends Application {
           val rank = entry(6)
           val totalPlayers = entry(7)
           val duration = entry(2)
-          items.add(s"#${rank}/${totalPlayers}  |  $mapName  |  ${kills}K/${deaths}D  |  ${duration}min  |  $date")
+          val matchTypeLabel = if (entry.length > 8) entry(8) match {
+            case 1 => "Casual Teams"
+            case 2 => "Ranked FFA"
+            case 3 => "Ranked Duel"
+            case 4 => "Ranked Teams"
+            case _ => "Casual FFA"
+          } else "Casual FFA"
+          items.add(s"$matchTypeLabel  |  #${rank}/${totalPlayers}  |  $mapName  |  ${kills}K/${deaths}D  |  ${duration}min  |  $date")
         }
         historyListView.setItems(FXCollections.observableArrayList(items))
         loadingLabel.setText(if (items.isEmpty) "No matches played yet" else "")

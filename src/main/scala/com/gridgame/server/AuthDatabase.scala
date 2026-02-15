@@ -44,6 +44,12 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
         |  player_count INTEGER NOT NULL
         |)""".stripMargin
     )
+    // Add match_type column if it doesn't exist (safe migration)
+    try {
+      stmt.executeUpdate("ALTER TABLE matches ADD COLUMN match_type INTEGER DEFAULT 0")
+    } catch {
+      case _: Exception => // Column already exists
+    }
     stmt.executeUpdate(
       """CREATE TABLE IF NOT EXISTS match_results(
         |  id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,17 +128,18 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     new UUID(msb, lsb)
   }
 
-  def saveMatch(mapIndex: Int, durationMinutes: Int, results: Seq[(UUID, Int, Int, Byte)]): Unit = {
+  def saveMatch(mapIndex: Int, durationMinutes: Int, results: Seq[(UUID, Int, Int, Byte)], matchType: Byte = 0): Unit = {
     try {
       connection.setAutoCommit(false)
 
       val matchStmt = connection.prepareStatement(
-        "INSERT INTO matches(map_index, duration_minutes, played_at, player_count) VALUES(?, ?, ?, ?)"
+        "INSERT INTO matches(map_index, duration_minutes, played_at, player_count, match_type) VALUES(?, ?, ?, ?, ?)"
       )
       matchStmt.setInt(1, mapIndex)
       matchStmt.setInt(2, durationMinutes)
       matchStmt.setLong(3, System.currentTimeMillis())
       matchStmt.setInt(4, results.size)
+      matchStmt.setInt(5, matchType & 0xFF)
       matchStmt.executeUpdate()
       matchStmt.close()
 
@@ -169,11 +176,11 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     }
   }
 
-  /** Returns (matchId, mapIndex, durationMinutes, playedAt, kills, deaths, rank, playerCount) */
-  def getMatchHistory(playerUUID: UUID, limit: Int = 20): Seq[(Long, Int, Int, Long, Int, Int, Int, Int)] = {
+  /** Returns (matchId, mapIndex, durationMinutes, playedAt, kills, deaths, rank, playerCount, matchType) */
+  def getMatchHistory(playerUUID: UUID, limit: Int = 20): Seq[(Long, Int, Int, Long, Int, Int, Int, Int, Int)] = {
     val stmt = connection.prepareStatement(
       """SELECT m.match_id, m.map_index, m.duration_minutes, m.played_at,
-        |       mr.kills, mr.deaths, mr.rank, m.player_count
+        |       mr.kills, mr.deaths, mr.rank, m.player_count, m.match_type
         |FROM match_results mr
         |JOIN matches m ON mr.match_id = m.match_id
         |WHERE mr.player_uuid = ?
@@ -184,7 +191,7 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     stmt.setInt(2, limit)
     val rs = stmt.executeQuery()
 
-    val results = scala.collection.mutable.ArrayBuffer[(Long, Int, Int, Long, Int, Int, Int, Int)]()
+    val results = scala.collection.mutable.ArrayBuffer[(Long, Int, Int, Long, Int, Int, Int, Int, Int)]()
     while (rs.next()) {
       results += ((
         rs.getLong("match_id"),
@@ -194,7 +201,8 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
         rs.getInt("kills"),
         rs.getInt("deaths"),
         rs.getInt("rank"),
-        rs.getInt("player_count")
+        rs.getInt("player_count"),
+        rs.getInt("match_type")
       ))
     }
     rs.close()
