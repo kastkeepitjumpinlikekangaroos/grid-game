@@ -27,6 +27,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   private var timerSyncExecutor: ScheduledExecutorService = _
   private var startTime: Long = 0L
   @volatile private var running = false
+  private val spawnLock = new Object()
 
   def loadWorld(): Unit = {
     if (worldFile.nonEmpty) {
@@ -488,13 +489,16 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         if (!running) return
         val player = registry.get(playerId)
         if (player != null) {
-          player.setHealth(player.getMaxHealth)
-          val occupied = registry.getAll.asScala
-            .filter(p => !p.isDead && !p.getId.equals(playerId))
-            .map(p => (p.getPosition.getX, p.getPosition.getY))
-            .toSet
-          val spawnPoint = world.getValidSpawnPoint(occupied)
-          player.setPosition(spawnPoint)
+          val spawnPoint = spawnLock.synchronized {
+            player.setHealth(player.getMaxHealth)
+            val occupied = registry.getAll.asScala
+              .filter(p => !p.isDead && !p.getId.equals(playerId))
+              .map(p => (p.getPosition.getX, p.getPosition.getY))
+              .toSet
+            val sp = world.getValidSpawnPoint(occupied)
+            player.setPosition(sp)
+            sp
+          }
 
           // Send respawn event
           val respawnPacket = new GameEventPacket(
