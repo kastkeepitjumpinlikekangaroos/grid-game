@@ -126,7 +126,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   // Kill feed: (timestamp, killerName, victimName)
   val killFeed: CopyOnWriteArrayList[Array[AnyRef]] = new CopyOnWriteArrayList[Array[AnyRef]]()
 
-  // Match history state: (matchId, mapIndex, durationMin, playedAt, kills, deaths, rank, totalPlayers)
+  // Match history state: (matchId, mapIndex, durationMin, playedAt, kills, deaths, rank, totalPlayers, matchType)
   val matchHistory: CopyOnWriteArrayList[Array[Int]] = new CopyOnWriteArrayList[Array[Int]]()
   @volatile var totalKillsStat: Int = 0
   @volatile var totalDeathsStat: Int = 0
@@ -976,7 +976,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         matchHistory.add(Array(
           packet.getMatchId, packet.getMapIndex & 0xFF, packet.getDuration & 0xFF,
           packet.getPlayedAt, packet.getKills.toInt, packet.getDeaths.toInt,
-          packet.getRank & 0xFF, packet.getTotalPlayers & 0xFF
+          packet.getRank & 0xFF, packet.getTotalPlayers & 0xFF,
+          packet.getMatchType & 0xFF
         ))
 
       case MatchHistoryAction.END =>
