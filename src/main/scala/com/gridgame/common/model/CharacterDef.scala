@@ -189,6 +189,27 @@ object CharacterDef {
     hitRadius = 1.8f
   )
 
+  private val PlagueBoltDef = ProjectileDef(
+    id = ProjectileType.PLAGUE_BOLT, name = "Plague Bolt",
+    speedMultiplier = 0.55f, damage = 15, maxRange = 16,
+    aoeOnHit = Some(AoESplashConfig(2.5f, 8))
+  )
+
+  private val MiasmaDef = ProjectileDef(
+    id = ProjectileType.MIASMA, name = "Miasma",
+    speedMultiplier = 0.45f, damage = 12, maxRange = 14,
+    hitRadius = 3.0f,
+    explodesOnPlayerHit = true,
+    explosionConfig = Some(ExplosionConfig(25, 8, 5.0f))
+  )
+
+  private val BlightBombDef = ProjectileDef(
+    id = ProjectileType.BLIGHT_BOMB, name = "Blight Bomb",
+    speedMultiplier = 0.5f, damage = 25, maxRange = 15,
+    explodesOnPlayerHit = true,
+    explosionConfig = Some(ExplosionConfig(30, 12, 4.0f))
+  )
+
   // Register all projectile defs
   ProjectileDef.register(
     TentacleDef, IceBeamDef, AxeDef, RopeDef, SpearDef,
@@ -197,7 +218,8 @@ object CharacterDef {
     BulletDef, GrenadeDef, RocketDef, TalonDef, GustDef,
     ShurikenDef, PoisonDartDef,
     ChainBoltDef, LockdownChainDef, SnareMineDef,
-    KatanaDef, SwordWaveDef
+    KatanaDef, SwordWaveDef,
+    PlagueBoltDef, MiasmaDef, BlightBombDef
   )
 
   // === Character definitions ===
@@ -414,6 +436,26 @@ object CharacterDef {
     maxHealth = 110
   )
 
+  val PlagueDoctor: CharacterDef = CharacterDef(
+    id = CharacterId.PlagueDoctor,
+    displayName = "Plague Doctor",
+    description = "A pestilence-spreading alchemist who thrives in group fights with toxic AoE.",
+    spriteSheet = "sprites/plaguedoctor.png",
+    qAbility = AbilityDef(
+      name = "Miasma",
+      description = "Toxic cloud that explodes on contact or at max range in a massive toxic blast.",
+      cooldownMs = 8000, maxRange = 14, damage = 12,
+      projectileType = ProjectileType.MIASMA, keybind = "Q"
+    ),
+    eAbility = AbilityDef(
+      name = "Blight Bomb",
+      description = "Volatile vial that explodes on contact or at max range in a massive toxic blast.",
+      cooldownMs = 14000, maxRange = 15, damage = 25,
+      projectileType = ProjectileType.BLIGHT_BOMB, keybind = "E"
+    ),
+    primaryProjectileType = ProjectileType.PLAGUE_BOLT
+  )
+
   private val byId: Map[Byte, CharacterDef] = Map(
     CharacterId.Spaceman.id -> Spaceman,
     CharacterId.Gladiator.id -> Gladiator,
@@ -424,10 +466,11 @@ object CharacterDef {
     CharacterId.Raptor.id -> Raptor,
     CharacterId.Assassin.id -> Assassin,
     CharacterId.Warden.id -> Warden,
-    CharacterId.Samurai.id -> Samurai
+    CharacterId.Samurai.id -> Samurai,
+    CharacterId.PlagueDoctor.id -> PlagueDoctor
   )
 
-  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith, Wizard, Tidecaller, Soldier, Raptor, Assassin, Warden, Samurai)
+  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith, Wizard, Tidecaller, Soldier, Raptor, Assassin, Warden, Samurai, PlagueDoctor)
 
   def get(id: CharacterId): CharacterDef = byId.getOrElse(id.id, Spaceman)
 

@@ -654,9 +654,6 @@ class ClientMain extends Application {
     val charSectionLabel = new Label("SELECT CHARACTER")
     charSectionLabel.setStyle(sectionHeaderStyle)
 
-    val charButtonBox = new HBox(8)
-    charButtonBox.setAlignment(Pos.CENTER)
-
     // Character sprite preview - larger with ring
     val previewSize = 96.0
     val previewCanvas = new Canvas(previewSize, previewSize)
@@ -715,33 +712,44 @@ class ClientMain extends Application {
       drawPreview()
     }
 
-    val charSelectedStyle = "-fx-background-color: linear-gradient(to bottom, #4a9eff, #3a8eef); -fx-text-fill: white; -fx-font-size: 13; -fx-font-weight: bold; -fx-padding: 10 18; -fx-background-radius: 10; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.4), 10, 0, 0, 2); -fx-border-color: rgba(255,255,255,0.3); -fx-border-width: 1.5; -fx-border-radius: 10;"
-    val charUnselectedStyle = "-fx-background-color: rgba(255,255,255,0.04); -fx-text-fill: #8899aa; -fx-font-size: 13; -fx-padding: 10 18; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.06); -fx-border-width: 1; -fx-border-radius: 10;"
-    val charHoverStyle = "-fx-background-color: rgba(255,255,255,0.08); -fx-text-fill: #bbccdd; -fx-font-size: 13; -fx-padding: 10 18; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.12); -fx-border-width: 1; -fx-border-radius: 10;"
+    // Character carousel with left/right arrows
+    val charCountLabel = new Label("")
+    charCountLabel.setFont(Font.font("System", 11))
+    charCountLabel.setTextFill(Color.web("#556677"))
 
-    def refreshCharButtons(): Unit = {
-      charButtonBox.getChildren.clear()
-      CharacterDef.all.foreach { charDef =>
-        val btn = new Button(charDef.displayName)
-        val isSelected = client.selectedCharacterId == charDef.id.id
-        if (isSelected) {
-          btn.setStyle(charSelectedStyle)
-        } else {
-          btn.setStyle(charUnselectedStyle)
-          btn.setOnMouseEntered(_ => if (client.selectedCharacterId != charDef.id.id) btn.setStyle(charHoverStyle))
-          btn.setOnMouseExited(_ => if (client.selectedCharacterId != charDef.id.id) btn.setStyle(charUnselectedStyle))
-        }
-        btn.setOnAction(_ => {
-          client.selectCharacter(charDef.id.id)
-          refreshCharButtons()
-          updateCharacterInfo()
-        })
-        charButtonBox.getChildren.add(btn)
-      }
+    val arrowButtonStyle = "-fx-background-color: rgba(255,255,255,0.06); -fx-text-fill: #8899aa; -fx-font-size: 18; -fx-font-weight: bold; -fx-padding: 8 16; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.08); -fx-border-width: 1; -fx-border-radius: 10;"
+    val arrowButtonHoverStyle = "-fx-background-color: rgba(74, 158, 255, 0.15); -fx-text-fill: #4a9eff; -fx-font-size: 18; -fx-font-weight: bold; -fx-padding: 8 16; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(74, 158, 255, 0.3); -fx-border-width: 1; -fx-border-radius: 10;"
+
+    def currentCharIndex: Int = {
+      val idx = CharacterDef.all.indexWhere(_.id.id == client.selectedCharacterId)
+      if (idx < 0) 0 else idx
     }
 
-    refreshCharButtons()
+    def selectByIndex(idx: Int): Unit = {
+      val wrapped = ((idx % CharacterDef.all.size) + CharacterDef.all.size) % CharacterDef.all.size
+      val charDef = CharacterDef.all(wrapped)
+      client.selectCharacter(charDef.id.id)
+      updateCharacterInfo()
+      charCountLabel.setText(s"${wrapped + 1} / ${CharacterDef.all.size}")
+    }
+
+    val prevBtn = new Button("\u25C0")
+    prevBtn.setStyle(arrowButtonStyle)
+    prevBtn.setOnMouseEntered(_ => prevBtn.setStyle(arrowButtonHoverStyle))
+    prevBtn.setOnMouseExited(_ => prevBtn.setStyle(arrowButtonStyle))
+    prevBtn.setOnAction(_ => selectByIndex(currentCharIndex - 1))
+
+    val nextBtn = new Button("\u25B6")
+    nextBtn.setStyle(arrowButtonStyle)
+    nextBtn.setOnMouseEntered(_ => nextBtn.setStyle(arrowButtonHoverStyle))
+    nextBtn.setOnMouseExited(_ => nextBtn.setStyle(arrowButtonStyle))
+    nextBtn.setOnAction(_ => selectByIndex(currentCharIndex + 1))
+
+    val carouselBox = new HBox(16, prevBtn, charCountLabel, nextBtn)
+    carouselBox.setAlignment(Pos.CENTER)
+
     updateCharacterInfo()
+    charCountLabel.setText(s"${currentCharIndex + 1} / ${CharacterDef.all.size}")
 
     val previewBox = new VBox(6, previewCanvas, charNameLabel)
     previewBox.setAlignment(Pos.CENTER)
@@ -752,7 +760,7 @@ class ClientMain extends Application {
     charInfoCard.setMaxWidth(420)
     charInfoCard.setStyle(cardBgSubtle)
 
-    val charSection = new VBox(12, charSectionLabel, previewBox, charButtonBox, charInfoCard)
+    val charSection = new VBox(12, charSectionLabel, previewBox, carouselBox, charInfoCard)
     charSection.setAlignment(Pos.CENTER)
     charSection.setPadding(new Insets(0, 24, 0, 24))
 
@@ -949,9 +957,6 @@ class ClientMain extends Application {
     val charSectionLabel = new Label("SELECT CHARACTER")
     charSectionLabel.setStyle(sectionHeaderStyle)
 
-    val charButtonBox = new HBox(8)
-    charButtonBox.setAlignment(Pos.CENTER)
-
     val previewSize = 96.0
     val previewCanvas = new Canvas(previewSize, previewSize)
     val previewGc = previewCanvas.getGraphicsContext2D
@@ -1006,33 +1011,44 @@ class ClientMain extends Application {
       drawPreview()
     }
 
-    val charSelectedStyle = "-fx-background-color: linear-gradient(to bottom, #4a9eff, #3a8eef); -fx-text-fill: white; -fx-font-size: 13; -fx-font-weight: bold; -fx-padding: 10 18; -fx-background-radius: 10; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.4), 10, 0, 0, 2); -fx-border-color: rgba(255,255,255,0.3); -fx-border-width: 1.5; -fx-border-radius: 10;"
-    val charUnselectedStyle = "-fx-background-color: rgba(255,255,255,0.04); -fx-text-fill: #8899aa; -fx-font-size: 13; -fx-padding: 10 18; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.06); -fx-border-width: 1; -fx-border-radius: 10;"
-    val charHoverStyle = "-fx-background-color: rgba(255,255,255,0.08); -fx-text-fill: #bbccdd; -fx-font-size: 13; -fx-padding: 10 18; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.12); -fx-border-width: 1; -fx-border-radius: 10;"
+    // Character carousel with left/right arrows
+    val charCountLabel = new Label("")
+    charCountLabel.setFont(Font.font("System", 11))
+    charCountLabel.setTextFill(Color.web("#556677"))
 
-    def refreshCharButtons(): Unit = {
-      charButtonBox.getChildren.clear()
-      CharacterDef.all.foreach { charDef =>
-        val btn = new Button(charDef.displayName)
-        val isSelected = client.selectedCharacterId == charDef.id.id
-        if (isSelected) {
-          btn.setStyle(charSelectedStyle)
-        } else {
-          btn.setStyle(charUnselectedStyle)
-          btn.setOnMouseEntered(_ => if (client.selectedCharacterId != charDef.id.id) btn.setStyle(charHoverStyle))
-          btn.setOnMouseExited(_ => if (client.selectedCharacterId != charDef.id.id) btn.setStyle(charUnselectedStyle))
-        }
-        btn.setOnAction(_ => {
-          client.changeRankedCharacter(charDef.id.id)
-          refreshCharButtons()
-          updateCharacterInfo()
-        })
-        charButtonBox.getChildren.add(btn)
-      }
+    val arrowButtonStyle = "-fx-background-color: rgba(255,255,255,0.06); -fx-text-fill: #8899aa; -fx-font-size: 18; -fx-font-weight: bold; -fx-padding: 8 16; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.08); -fx-border-width: 1; -fx-border-radius: 10;"
+    val arrowButtonHoverStyle = "-fx-background-color: rgba(74, 158, 255, 0.15); -fx-text-fill: #4a9eff; -fx-font-size: 18; -fx-font-weight: bold; -fx-padding: 8 16; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(74, 158, 255, 0.3); -fx-border-width: 1; -fx-border-radius: 10;"
+
+    def currentCharIndex: Int = {
+      val idx = CharacterDef.all.indexWhere(_.id.id == client.selectedCharacterId)
+      if (idx < 0) 0 else idx
     }
 
-    refreshCharButtons()
+    def selectByIndex(idx: Int): Unit = {
+      val wrapped = ((idx % CharacterDef.all.size) + CharacterDef.all.size) % CharacterDef.all.size
+      val charDef = CharacterDef.all(wrapped)
+      client.changeRankedCharacter(charDef.id.id)
+      updateCharacterInfo()
+      charCountLabel.setText(s"${wrapped + 1} / ${CharacterDef.all.size}")
+    }
+
+    val prevBtn = new Button("\u25C0")
+    prevBtn.setStyle(arrowButtonStyle)
+    prevBtn.setOnMouseEntered(_ => prevBtn.setStyle(arrowButtonHoverStyle))
+    prevBtn.setOnMouseExited(_ => prevBtn.setStyle(arrowButtonStyle))
+    prevBtn.setOnAction(_ => selectByIndex(currentCharIndex - 1))
+
+    val nextBtn = new Button("\u25B6")
+    nextBtn.setStyle(arrowButtonStyle)
+    nextBtn.setOnMouseEntered(_ => nextBtn.setStyle(arrowButtonHoverStyle))
+    nextBtn.setOnMouseExited(_ => nextBtn.setStyle(arrowButtonStyle))
+    nextBtn.setOnAction(_ => selectByIndex(currentCharIndex + 1))
+
+    val carouselBox = new HBox(16, prevBtn, charCountLabel, nextBtn)
+    carouselBox.setAlignment(Pos.CENTER)
+
     updateCharacterInfo()
+    charCountLabel.setText(s"${currentCharIndex + 1} / ${CharacterDef.all.size}")
 
     val previewBox = new VBox(6, previewCanvas, charNameLabel)
     previewBox.setAlignment(Pos.CENTER)
@@ -1042,7 +1058,7 @@ class ClientMain extends Application {
     charInfoCard.setMaxWidth(420)
     charInfoCard.setStyle(cardBgSubtle)
 
-    val charSection = new VBox(12, charSectionLabel, previewBox, charButtonBox, charInfoCard)
+    val charSection = new VBox(12, charSectionLabel, previewBox, carouselBox, charInfoCard)
     charSection.setAlignment(Pos.CENTER)
     charSection.setPadding(new Insets(0, 24, 0, 24))
 

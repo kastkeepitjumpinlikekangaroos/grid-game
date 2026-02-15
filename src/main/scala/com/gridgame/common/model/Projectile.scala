@@ -28,6 +28,9 @@ object ProjectileType {
   val SNARE_MINE: Byte = 22
   val KATANA: Byte = 23
   val SWORD_WAVE: Byte = 24
+  val PLAGUE_BOLT: Byte = 25
+  val MIASMA: Byte = 26
+  val BLIGHT_BOMB: Byte = 27
 }
 
 class Projectile(
