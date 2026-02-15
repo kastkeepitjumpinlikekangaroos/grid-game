@@ -5,6 +5,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import scala.jdk.CollectionConverters._
 import com.gridgame.common.model.CharacterDef
+import scala.util.Random
 
 case class BotSlot(id: UUID, name: String, characterId: Byte)
 
@@ -16,7 +17,7 @@ class BotManager {
     val index = nextBotIndex.getAndIncrement()
     val botId = new UUID(0L, index.toLong)
     val name = s"Bot $index"
-    val charId = (index % CharacterDef.all.size).toByte // Cycle through all characters
+    val charId = Random.nextInt(CharacterDef.all.size).toByte
     val slot = BotSlot(botId, name, charId)
     botSlots.put(botId, slot)
     slot

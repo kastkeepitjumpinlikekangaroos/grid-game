@@ -159,20 +159,20 @@ object CharacterDef {
   private val ChainBoltDef = ProjectileDef(
     id = ProjectileType.CHAIN_BOLT, name = "Chain Bolt",
     speedMultiplier = 0.7f, damage = 12, maxRange = 14,
-    onHitEffect = Some(Freeze(350))
+    onHitEffect = Some(Freeze(200))
   )
 
   private val LockdownChainDef = ProjectileDef(
     id = ProjectileType.LOCKDOWN_CHAIN, name = "Lockdown Chain",
     speedMultiplier = 0.6f, damage = 8, maxRange = 12,
-    onHitEffect = Some(Freeze(1200))
+    onHitEffect = Some(Freeze(700))
   )
 
   private val SnareMineDef = ProjectileDef(
     id = ProjectileType.SNARE_MINE, name = "Snare Mine",
     speedMultiplier = 0.4f, damage = 15, maxRange = 16,
-    aoeOnHit = Some(AoESplashConfig(3.5f, 15, freezeDurationMs = 1800)),
-    aoeOnMaxRange = Some(AoESplashConfig(3.5f, 15, freezeDurationMs = 1800)),
+    aoeOnHit = Some(AoESplashConfig(3.5f, 15, freezeDurationMs = 1000)),
+    aoeOnMaxRange = Some(AoESplashConfig(3.5f, 15, freezeDurationMs = 1000)),
     explodesOnPlayerHit = true,
     explosionConfig = Some(ExplosionConfig(0, 0, 3.5f))
   )
@@ -418,14 +418,14 @@ object CharacterDef {
     spriteSheet = "sprites/warden.png",
     qAbility = AbilityDef(
       name = "Lockdown",
-      description = "Fires 3 chains in a fan that freeze enemies for 2s on hit.",
+      description = "Fires 3 chains in a fan that freeze enemies for 0.7s on hit.",
       cooldownMs = 8000, maxRange = 12, damage = 8,
       projectileType = ProjectileType.LOCKDOWN_CHAIN, keybind = "Q",
       castBehavior = FanProjectile(3, Math.toRadians(40))
     ),
     eAbility = AbilityDef(
       name = "Snare Mine",
-      description = "Lobs a mine that passes through players and detonates at max range, freezing all nearby for 2.5s.",
+      description = "Lobs a mine that passes through players and detonates at max range, freezing all nearby for 1s.",
       cooldownMs = 14000, maxRange = 16, damage = 15,
       projectileType = ProjectileType.SNARE_MINE, keybind = "E"
     ),
