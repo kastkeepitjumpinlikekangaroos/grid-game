@@ -61,9 +61,9 @@ class ProjectileManager(registry: ClientRegistry) {
           val maxRange = pDef.effectiveMaxRange(projectile.chargeLevel)
           if (projectile.getDistanceTraveled >= maxRange) {
             toRemove += projectile.id
-            // AoE on max range (e.g. geyser)
+            // AoE on max range (e.g. geyser, snare mine)
             pDef.aoeOnMaxRange.foreach { aoe =>
-              events ++= applyAoEDamage(projectile, aoe.radius, aoe.damage, null)
+              events ++= applyAoEDamage(projectile, aoe.radius, aoe.damage, null, aoe.freezeDurationMs)
             }
             if (pDef.isExplosive) {
               events += ProjectileAoE(projectile)
@@ -79,7 +79,7 @@ class ProjectileManager(registry: ClientRegistry) {
               events += ProjectileDespawned(projectile)
             }
             resolved = true
-          } else if (projectile.hitsNonWalkable(world) && !pDef.passesThroughWalls) {
+          } else if (projectile.hitsNonWalkable(world) && (!pDef.passesThroughWalls || projectile.hitsFence(world))) {
             toRemove += projectile.id
             if (pDef.isExplosive) {
               events += ProjectileAoE(projectile)
@@ -116,7 +116,7 @@ class ProjectileManager(registry: ClientRegistry) {
 
                 // AoE splash damage to nearby players (excluding the direct hit target)
                 pDef.aoeOnHit.foreach { aoe =>
-                  events ++= applyAoEDamage(projectile, aoe.radius, aoe.damage, hitPlayer.getId)
+                  events ++= applyAoEDamage(projectile, aoe.radius, aoe.damage, hitPlayer.getId, aoe.freezeDurationMs)
                 }
 
                 resolved = true
@@ -148,7 +148,7 @@ class ProjectileManager(registry: ClientRegistry) {
   def size: Int = projectiles.size()
 
   /** Deal AoE damage to all players within radius of the projectile, excluding excludeId (the direct-hit target). */
-  private def applyAoEDamage(projectile: Projectile, radius: Float, damage: Int, excludeId: UUID): Seq[ProjectileEvent] = {
+  private def applyAoEDamage(projectile: Projectile, radius: Float, damage: Int, excludeId: UUID, freezeDurationMs: Int = 0): Seq[ProjectileEvent] = {
     val events = ArrayBuffer[ProjectileEvent]()
     val px = projectile.getX
     val py = projectile.getY
@@ -162,7 +162,11 @@ class ProjectileManager(registry: ClientRegistry) {
         if (dx * dx + dy * dy <= radius * radius) {
           val newHealth = player.getHealth - damage
           player.setHealth(newHealth)
-          println(s"ProjectileManager: AoE hit player ${player.getId.toString.substring(0, 8)}, damage=$damage, health now $newHealth")
+          if (freezeDurationMs > 0 && !player.isPhased) {
+            player.setFrozenUntil(System.currentTimeMillis() + freezeDurationMs)
+          }
+          println(s"ProjectileManager: AoE hit player ${player.getId.toString.substring(0, 8)}, damage=$damage, health now $newHealth" +
+            (if (freezeDurationMs > 0) s", frozen ${freezeDurationMs}ms" else ""))
           if (newHealth <= 0) {
             events += ProjectileAoEKill(projectile, player.getId)
           } else {

@@ -144,6 +144,39 @@ object CharacterDef {
     onHitEffect = Some(Push(5.0f))
   )
 
+  private val ShurikenDef = ProjectileDef(
+    id = ProjectileType.SHURIKEN, name = "Shuriken",
+    speedMultiplier = 0.95f, damage = 22, maxRange = 6,
+    hitRadius = 2.0f
+  )
+
+  private val PoisonDartDef = ProjectileDef(
+    id = ProjectileType.POISON_DART, name = "Poison Dart",
+    speedMultiplier = 0.75f, damage = 15, maxRange = 16,
+    onHitEffect = Some(Freeze(2500))
+  )
+
+  private val ChainBoltDef = ProjectileDef(
+    id = ProjectileType.CHAIN_BOLT, name = "Chain Bolt",
+    speedMultiplier = 0.7f, damage = 12, maxRange = 14,
+    onHitEffect = Some(Freeze(350))
+  )
+
+  private val LockdownChainDef = ProjectileDef(
+    id = ProjectileType.LOCKDOWN_CHAIN, name = "Lockdown Chain",
+    speedMultiplier = 0.6f, damage = 8, maxRange = 12,
+    onHitEffect = Some(Freeze(1200))
+  )
+
+  private val SnareMineDef = ProjectileDef(
+    id = ProjectileType.SNARE_MINE, name = "Snare Mine",
+    speedMultiplier = 0.4f, damage = 15, maxRange = 16,
+    aoeOnHit = Some(AoESplashConfig(3.5f, 15, freezeDurationMs = 1800)),
+    aoeOnMaxRange = Some(AoESplashConfig(3.5f, 15, freezeDurationMs = 1800)),
+    explodesOnPlayerHit = true,
+    explosionConfig = Some(ExplosionConfig(0, 0, 3.5f))
+  )
+
   private val KatanaDef = ProjectileDef(
     id = ProjectileType.KATANA, name = "Katana",
     speedMultiplier = 0.7f, damage = 30, maxRange = 4,
@@ -162,6 +195,8 @@ object CharacterDef {
     SoulBoltDef, HauntDef, ArcaneBoltDef, FireballDef,
     SplashDef, TidalWaveDef, GeyserDef,
     BulletDef, GrenadeDef, RocketDef, TalonDef, GustDef,
+    ShurikenDef, PoisonDartDef,
+    ChainBoltDef, LockdownChainDef, SnareMineDef,
     KatanaDef, SwordWaveDef
   )
 
@@ -312,6 +347,50 @@ object CharacterDef {
     primaryProjectileType = ProjectileType.TALON
   )
 
+  val Assassin: CharacterDef = CharacterDef(
+    id = CharacterId.Assassin,
+    displayName = "Assassin",
+    description = "A deadly shadow operative with shurikens, poison darts, and a swift shadow dash.",
+    spriteSheet = "sprites/assassin.png",
+    qAbility = AbilityDef(
+      name = "Poison Dart",
+      description = "Fires a venomous dart that poisons and slows the target.",
+      cooldownMs = 7000, maxRange = 16, damage = 15,
+      projectileType = ProjectileType.POISON_DART, keybind = "Q"
+    ),
+    eAbility = AbilityDef(
+      name = "Shadow Step",
+      description = "Dash through shadows, phased and invulnerable during the leap.",
+      cooldownMs = 9000, maxRange = 0, damage = 0,
+      projectileType = -1, keybind = "E",
+      castBehavior = DashBuff(8, 300, 15)
+    ),
+    primaryProjectileType = ProjectileType.SHURIKEN,
+    maxHealth = 85
+  )
+
+  val Warden: CharacterDef = CharacterDef(
+    id = CharacterId.Warden,
+    displayName = "Warden",
+    description = "A jailer who locks down foes with chains, lockdown fans, and snare mines.",
+    spriteSheet = "sprites/warden.png",
+    qAbility = AbilityDef(
+      name = "Lockdown",
+      description = "Fires 3 chains in a fan that freeze enemies for 2s on hit.",
+      cooldownMs = 8000, maxRange = 12, damage = 8,
+      projectileType = ProjectileType.LOCKDOWN_CHAIN, keybind = "Q",
+      castBehavior = FanProjectile(3, Math.toRadians(40))
+    ),
+    eAbility = AbilityDef(
+      name = "Snare Mine",
+      description = "Lobs a mine that passes through players and detonates at max range, freezing all nearby for 2.5s.",
+      cooldownMs = 14000, maxRange = 16, damage = 15,
+      projectileType = ProjectileType.SNARE_MINE, keybind = "E"
+    ),
+    primaryProjectileType = ProjectileType.CHAIN_BOLT,
+    maxHealth = 110
+  )
+
   val Samurai: CharacterDef = CharacterDef(
     id = CharacterId.Samurai,
     displayName = "Samurai",
@@ -343,10 +422,12 @@ object CharacterDef {
     CharacterId.Tidecaller.id -> Tidecaller,
     CharacterId.Soldier.id -> Soldier,
     CharacterId.Raptor.id -> Raptor,
+    CharacterId.Assassin.id -> Assassin,
+    CharacterId.Warden.id -> Warden,
     CharacterId.Samurai.id -> Samurai
   )
 
-  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith, Wizard, Tidecaller, Soldier, Raptor, Samurai)
+  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith, Wizard, Tidecaller, Soldier, Raptor, Assassin, Warden, Samurai)
 
   def get(id: CharacterId): CharacterDef = byId.getOrElse(id.id, Spaceman)
 

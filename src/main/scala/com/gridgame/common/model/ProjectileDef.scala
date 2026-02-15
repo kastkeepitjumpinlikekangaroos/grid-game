@@ -10,8 +10,8 @@ case class TeleportOwnerBehind(distance: Int, freezeDurationMs: Int) extends OnH
 // Explosion config (center/edge damage + blast radius)
 case class ExplosionConfig(centerDamage: Int, edgeDamage: Int, blastRadius: Float)
 
-// AoE splash config (radius + damage)
-case class AoESplashConfig(radius: Float, damage: Int)
+// AoE splash config (radius + damage + optional freeze)
+case class AoESplashConfig(radius: Float, damage: Int, freezeDurationMs: Int = 0)
 
 // Charge scaling config
 case class ChargeScaling(min: Float, max: Float) {
