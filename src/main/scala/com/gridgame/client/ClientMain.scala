@@ -522,7 +522,8 @@ class ClientMain extends Application {
             case 1 => "In Game"
             case _ => "?"
           }
-          items.add(s"${info.name}  |  $mapName  |  ${info.playerCount}/${info.maxPlayers}  |  $statusStr  |  ${info.durationMinutes}min")
+          val modeStr = if (info.gameMode == 1) s"Teams(${info.teamSize}v${info.teamSize})" else "FFA"
+          items.add(s"${info.name}  |  $mapName  |  ${info.playerCount}/${info.maxPlayers}  |  $statusStr  |  ${info.durationMinutes}min  |  $modeStr")
         }
         lobbyListView.setItems(FXCollections.observableArrayList(items))
       })
@@ -790,6 +791,63 @@ class ClientMain extends Application {
     lobbyMapPreviewBox.setAlignment(Pos.CENTER)
     renderMapPreview(lobbyMapPreviewCanvas, client.currentLobbyMapIndex)
 
+    // Team roster helper (builds/rebuilds team roster content in place)
+    val teamRosterBox = new VBox(8)
+    teamRosterBox.setId("teamRosterBox")
+    teamRosterBox.setPadding(new Insets(8, 12, 8, 12))
+    teamRosterBox.setStyle(cardBgSubtle)
+
+    def rebuildTeamRoster(): Unit = {
+      teamRosterBox.getChildren.clear()
+      if (client.currentLobbyGameMode != 1) {
+        teamRosterBox.setVisible(false)
+        teamRosterBox.setManaged(false)
+        return
+      }
+      teamRosterBox.setVisible(true)
+      teamRosterBox.setManaged(true)
+
+      import scala.jdk.CollectionConverters._
+      val members = client.lobbyMembers.asScala.toSeq
+
+      val team1Header = new Label("Team 1 (Blue)")
+      team1Header.setFont(Font.font("System", FontWeight.BOLD, 13))
+      team1Header.setTextFill(Color.web("#4a82ff"))
+
+      val team2Header = new Label("Team 2 (Red)")
+      team2Header.setFont(Font.font("System", FontWeight.BOLD, 13))
+      team2Header.setTextFill(Color.web("#e84057"))
+
+      val team1List = new VBox(3)
+      val team2List = new VBox(3)
+
+      members.zipWithIndex.foreach { case (arr, idx) =>
+        val name = arr(1).asInstanceOf[String]
+        val isLocal = arr(0).asInstanceOf[java.util.UUID].equals(client.getLocalPlayerId)
+        val displayName = if (isLocal) s"$name (You)" else name
+        val lbl = new Label(s"  $displayName")
+        lbl.setFont(Font.font("System", 12))
+        if (idx % 2 == 0) {
+          lbl.setTextFill(Color.web("#8899cc"))
+          team1List.getChildren.add(lbl)
+        } else {
+          lbl.setTextFill(Color.web("#cc8899"))
+          team2List.getChildren.add(lbl)
+        }
+      }
+
+      val col1 = new VBox(4, team1Header, team1List)
+      HBox.setHgrow(col1, Priority.ALWAYS)
+      val col2 = new VBox(4, team2Header, team2List)
+      HBox.setHgrow(col2, Priority.ALWAYS)
+
+      val rosterRow = new HBox(16, col1, col2)
+      rosterRow.setAlignment(Pos.CENTER_LEFT)
+
+      teamRosterBox.getChildren.add(rosterRow)
+    }
+    rebuildTeamRoster()
+
     // Host-only controls
     if (client.isLobbyHost) {
       waitingLabel.setText("You are the host")
@@ -812,15 +870,42 @@ class ClientMain extends Application {
       durationCombo.setMaxWidth(Double.MaxValue)
       styleCombo(durationCombo)
 
-      mapCombo.setOnAction(_ => {
+      val gameModeCombo = new ComboBox[String](FXCollections.observableArrayList("Free-For-All", "Teams"))
+      gameModeCombo.getSelectionModel.select(client.currentLobbyGameMode.toInt)
+      gameModeCombo.setMaxWidth(Double.MaxValue)
+      styleCombo(gameModeCombo)
+
+      val teamSizeCombo = new ComboBox[String](FXCollections.observableArrayList("2v2", "3v3", "4v4"))
+      val tsIdx = client.currentLobbyTeamSize match {
+        case 3 => 1; case 4 => 2; case _ => 0
+      }
+      teamSizeCombo.getSelectionModel.select(tsIdx)
+      teamSizeCombo.setMaxWidth(Double.MaxValue)
+      styleCombo(teamSizeCombo)
+      teamSizeCombo.setVisible(client.currentLobbyGameMode == 1)
+      teamSizeCombo.setManaged(client.currentLobbyGameMode == 1)
+
+      val sendConfigUpdate = () => {
         val dur = durationCombo.getSelectionModel.getSelectedItem.split(" ")(0).toInt
-        client.updateLobbyConfig(mapCombo.getSelectionModel.getSelectedIndex, dur)
+        val gm: Byte = gameModeCombo.getSelectionModel.getSelectedIndex.toByte
+        val ts = teamSizeCombo.getSelectionModel.getSelectedIndex match {
+          case 1 => 3; case 2 => 4; case _ => 2
+        }
+        client.updateLobbyConfig(mapCombo.getSelectionModel.getSelectedIndex, dur, gm, ts)
+      }
+
+      mapCombo.setOnAction(_ => {
+        sendConfigUpdate()
         renderMapPreview(lobbyMapPreviewCanvas, mapCombo.getSelectionModel.getSelectedIndex)
       })
-      durationCombo.setOnAction(_ => {
-        val dur = durationCombo.getSelectionModel.getSelectedItem.split(" ")(0).toInt
-        client.updateLobbyConfig(mapCombo.getSelectionModel.getSelectedIndex, dur)
+      durationCombo.setOnAction(_ => sendConfigUpdate())
+      gameModeCombo.setOnAction(_ => {
+        val isTeams = gameModeCombo.getSelectionModel.getSelectedIndex == 1
+        teamSizeCombo.setVisible(isTeams)
+        teamSizeCombo.setManaged(isTeams)
+        sendConfigUpdate()
       })
+      teamSizeCombo.setOnAction(_ => sendConfigUpdate())
 
       val startBtn = new Button("Start Game")
       addHoverEffect(startBtn, buttonGreenStyle, buttonGreenHoverStyle)
@@ -852,10 +937,23 @@ class ClientMain extends Application {
       row2.setAlignment(Pos.CENTER_LEFT)
       HBox.setHgrow(durationCombo, Priority.ALWAYS)
 
-      infoCard.getChildren.addAll(waitingLabel, createSeparator(), configLabel, row1, lobbyMapPreviewBox, row2, botRow, startBtn)
+      val row3 = new HBox(10, new Label("Mode") { setStyle(sectionHeaderStyle); setMinWidth(44) }, gameModeCombo)
+      row3.setAlignment(Pos.CENTER_LEFT)
+      HBox.setHgrow(gameModeCombo, Priority.ALWAYS)
+
+      val row4 = new HBox(10, new Label("Size") { setStyle(sectionHeaderStyle); setMinWidth(44) }, teamSizeCombo)
+      row4.setAlignment(Pos.CENTER_LEFT)
+      HBox.setHgrow(teamSizeCombo, Priority.ALWAYS)
+
+      infoCard.getChildren.addAll(waitingLabel, createSeparator(), configLabel, row1, lobbyMapPreviewBox, row2, row3, row4, botRow, teamRosterBox, startBtn)
       buttonBox.getChildren.add(new Region()) // spacing
     } else {
-      infoCard.getChildren.addAll(mapLabel, durationLabel, lobbyMapPreviewBox, createSeparator(), waitingLabel)
+      val gameModeStr = if (client.currentLobbyGameMode == 1) s"Teams (${client.currentLobbyTeamSize}v${client.currentLobbyTeamSize})" else "Free-For-All"
+      val nonHostGameModeLabel = new Label(s"Mode: $gameModeStr")
+      nonHostGameModeLabel.setTextFill(Color.web("#ccdde8"))
+      nonHostGameModeLabel.setFont(Font.font("System", FontWeight.NORMAL, 14))
+      nonHostGameModeLabel.setId("gameModeLabel")
+      infoCard.getChildren.addAll(mapLabel, durationLabel, nonHostGameModeLabel, teamRosterBox, lobbyMapPreviewBox, createSeparator(), waitingLabel)
     }
 
     root.getChildren.addAll(headerBox, infoCard, new Region() { setMinHeight(16) }, charSection, new Region() { setMinHeight(4) }, buttonBox)
@@ -867,6 +965,14 @@ class ClientMain extends Application {
         mapLabel.setText(s"Map: ${WorldRegistry.getDisplayName(client.currentLobbyMapIndex)}")
         durationLabel.setText(s"Duration: ${client.currentLobbyDuration} min")
         renderMapPreview(lobbyMapPreviewCanvas, client.currentLobbyMapIndex)
+        // Update game mode label for non-hosts
+        val gml = infoCard.lookup("#gameModeLabel")
+        if (gml != null && gml.isInstanceOf[Label]) {
+          val gmStr = if (client.currentLobbyGameMode == 1) s"Teams (${client.currentLobbyTeamSize}v${client.currentLobbyTeamSize})" else "Free-For-All"
+          gml.asInstanceOf[Label].setText(s"Mode: $gmStr")
+        }
+        // Rebuild team roster
+        rebuildTeamRoster()
       })
     }
 
@@ -943,21 +1049,27 @@ class ClientMain extends Application {
     duelBtn.setMaxWidth(Double.MaxValue)
     HBox.setHgrow(duelBtn, Priority.ALWAYS)
 
+    val teamsBtn = new Button("Teams (3v3)")
+    teamsBtn.setStyle(modeButtonInactiveStyle)
+    teamsBtn.setMaxWidth(Double.MaxValue)
+    HBox.setHgrow(teamsBtn, Priority.ALWAYS)
+
+    val allModeButtons = Seq(ffaBtn, duelBtn, teamsBtn)
+
     def updateModeButtons(): Unit = {
-      if (selectedMode == RankedQueueMode.FFA) {
-        ffaBtn.setStyle(modeButtonActiveStyle)
-        duelBtn.setStyle(modeButtonInactiveStyle)
-        duelBtn.setOnMouseEntered(_ => duelBtn.setStyle(modeButtonInactiveHoverStyle))
-        duelBtn.setOnMouseExited(_ => duelBtn.setStyle(modeButtonInactiveStyle))
-        ffaBtn.setOnMouseEntered(null)
-        ffaBtn.setOnMouseExited(null)
-      } else {
-        duelBtn.setStyle(modeButtonActiveStyle)
-        ffaBtn.setStyle(modeButtonInactiveStyle)
-        ffaBtn.setOnMouseEntered(_ => ffaBtn.setStyle(modeButtonInactiveHoverStyle))
-        ffaBtn.setOnMouseExited(_ => ffaBtn.setStyle(modeButtonInactiveStyle))
-        duelBtn.setOnMouseEntered(null)
-        duelBtn.setOnMouseExited(null)
+      allModeButtons.foreach { btn =>
+        val isActive = (btn == ffaBtn && selectedMode == RankedQueueMode.FFA) ||
+          (btn == duelBtn && selectedMode == RankedQueueMode.DUEL) ||
+          (btn == teamsBtn && selectedMode == RankedQueueMode.TEAMS)
+        if (isActive) {
+          btn.setStyle(modeButtonActiveStyle)
+          btn.setOnMouseEntered(null)
+          btn.setOnMouseExited(null)
+        } else {
+          btn.setStyle(modeButtonInactiveStyle)
+          btn.setOnMouseEntered(_ => btn.setStyle(modeButtonInactiveHoverStyle))
+          btn.setOnMouseExited(_ => btn.setStyle(modeButtonInactiveStyle))
+        }
       }
     }
 
@@ -971,7 +1083,12 @@ class ClientMain extends Application {
       updateModeButtons()
     })
 
-    val modeRow = new HBox(12, ffaBtn, duelBtn)
+    teamsBtn.setOnAction(_ => {
+      selectedMode = RankedQueueMode.TEAMS
+      updateModeButtons()
+    })
+
+    val modeRow = new HBox(12, ffaBtn, duelBtn, teamsBtn)
     modeRow.setAlignment(Pos.CENTER)
 
     // Queue status elements (initially hidden)
@@ -1007,7 +1124,9 @@ class ClientMain extends Application {
           lastUpdate = now
           dotTick = (dotTick + 1) % 4
           val dots = "." * dotTick
-          val modeText = if (selectedMode == RankedQueueMode.DUEL) "Searching for opponent" else "Searching for match"
+          val modeText = if (selectedMode == RankedQueueMode.DUEL) "Searching for opponent"
+            else if (selectedMode == RankedQueueMode.TEAMS) "Searching for teammates"
+            else "Searching for match"
           searchingLabel.setText(s"$modeText$dots")
         }
       }
@@ -1151,6 +1270,7 @@ class ClientMain extends Application {
       // Disable mode buttons and Find Match
       ffaBtn.setDisable(true)
       duelBtn.setDisable(true)
+      teamsBtn.setDisable(true)
       findMatchBtn.setVisible(false)
       findMatchBtn.setManaged(false)
 
@@ -1582,18 +1702,55 @@ class ClientMain extends Application {
     scoreCard.getChildren.add(header)
 
     import scala.jdk.CollectionConverters._
+
+    // Team color map for team-colored rows
+    val teamColors = Map(1 -> "rgba(74, 130, 255, 0.12)", 2 -> "rgba(232, 64, 87, 0.12)", 3 -> "rgba(46, 204, 113, 0.12)", 4 -> "rgba(241, 196, 15, 0.12)")
+
+    // Sort by team then rank when in teams mode
+    val sortedEntries = if (client.currentLobbyGameMode == 1) {
+      client.scoreboard.asScala.toSeq.sortBy(e => (e.rank, e.teamId))
+    } else {
+      client.scoreboard.asScala.toSeq
+    }
+
     var rowIndex = 0
-    client.scoreboard.asScala.foreach { entry =>
+    var lastTeamId = -1
+    sortedEntries.foreach { entry =>
+      // Add team separator header in Teams mode
+      if (client.currentLobbyGameMode == 1 && entry.teamId != lastTeamId) {
+        lastTeamId = entry.teamId
+        val teamLabel = new Label(s"Team $lastTeamId")
+        teamLabel.setFont(Font.font("System", FontWeight.BOLD, 13))
+        val teamColor = lastTeamId match {
+          case 1 => Color.web("#4a82ff")
+          case 2 => Color.web("#e84057")
+          case 3 => Color.web("#2ecc71")
+          case 4 => Color.web("#f1c40f")
+          case _ => Color.web("#8899aa")
+        }
+        teamLabel.setTextFill(teamColor)
+        val teamHeaderBox = new HBox(teamLabel)
+        teamHeaderBox.setPadding(new Insets(10, 20, 4, 20))
+        teamHeaderBox.setStyle(s"-fx-background-color: ${teamColors.getOrElse(lastTeamId, "transparent")};")
+        scoreCard.getChildren.add(teamHeaderBox)
+      }
+
       val row = new HBox(0)
       row.setAlignment(Pos.CENTER_LEFT)
       row.setPadding(new Insets(12, 20, 12, 20))
 
       val isLocal = entry.playerId.equals(client.getLocalPlayerId)
-      val isLast = rowIndex == client.scoreboard.size() - 1
+      val isLast = rowIndex == sortedEntries.size - 1
       val bottomRadius = if (isLast) "-fx-background-radius: 0 0 16 16;" else ""
+
+      val teamBg = if (client.currentLobbyGameMode == 1) {
+        teamColors.getOrElse(entry.teamId, "transparent")
+      } else "transparent"
 
       val rowBg = if (isLocal) {
         s"-fx-background-color: rgba(74, 158, 255, 0.1); -fx-border-color: transparent transparent rgba(255,255,255,0.04) transparent; -fx-border-width: 0 0 1 0; $bottomRadius"
+      } else if (client.currentLobbyGameMode == 1) {
+        s"-fx-background-color: $teamBg; -fx-border-color: transparent transparent rgba(255,255,255,0.03) transparent; -fx-border-width: 0 0 1 0; $bottomRadius"
       } else if (rowIndex % 2 == 0) {
         s"-fx-background-color: transparent; -fx-border-color: transparent transparent rgba(255,255,255,0.03) transparent; -fx-border-width: 0 0 1 0; $bottomRadius"
       } else {

@@ -337,7 +337,7 @@ class BotController(instance: GameInstance) {
     var nearestDist = Float.MaxValue
 
     instance.registry.getAll.asScala.foreach { player =>
-      if (!player.isDead && !player.getId.equals(bot.getId)) {
+      if (!player.isDead && !player.getId.equals(bot.getId) && !instance.isTeammate(bot.getId, player.getId)) {
         val dist = distanceBetween(bot.getPosition, player.getPosition)
         if (dist < nearestDist) {
           nearestDist = dist

@@ -16,27 +16,28 @@ class PlayerUpdatePacket(
     val health: Int = 100,
     val chargeLevel: Int = 0,
     val effectFlags: Int = 0,
-    val characterId: Byte = 0
+    val characterId: Byte = 0,
+    val teamId: Byte = 0
 ) extends Packet(PacketType.PLAYER_UPDATE, sequenceNumber, playerId, timestamp) {
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int) = {
-    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, 100, 0, 0, 0.toByte)
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, 100, 0, 0, 0.toByte, 0.toByte)
   }
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int, health: Int) = {
-    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, health, 0, 0, 0.toByte)
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, health, 0, 0, 0.toByte, 0.toByte)
   }
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int, health: Int, chargeLevel: Int) = {
-    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, health, chargeLevel, 0, 0.toByte)
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, health, chargeLevel, 0, 0.toByte, 0.toByte)
   }
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int, health: Int, chargeLevel: Int, effectFlags: Int) = {
-    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, health, chargeLevel, effectFlags, 0.toByte)
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, health, chargeLevel, effectFlags, 0.toByte, 0.toByte)
   }
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int, health: Int, chargeLevel: Int, effectFlags: Int, characterId: Byte) = {
-    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, health, chargeLevel, effectFlags, characterId)
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, health, chargeLevel, effectFlags, characterId, 0.toByte)
   }
 
   def getPosition: Position = position
@@ -50,6 +51,8 @@ class PlayerUpdatePacket(
   def getEffectFlags: Int = effectFlags
 
   def getCharacterId: Byte = characterId
+
+  def getTeamId: Byte = teamId
 
   override def serialize(): Array[Byte] = {
     val buffer = ByteBuffer.allocate(Constants.PACKET_SIZE)
@@ -89,8 +92,11 @@ class PlayerUpdatePacket(
     // [43] Character ID
     buffer.put(characterId)
 
-    // [44-63] Reserved (20 bytes) - fill with zeros
-    buffer.put(new Array[Byte](20))
+    // [44] Team ID
+    buffer.put(teamId)
+
+    // [45-63] Reserved (19 bytes) - fill with zeros
+    buffer.put(new Array[Byte](19))
 
     buffer.array()
   }

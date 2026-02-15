@@ -58,10 +58,11 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
 
     // Send JOINED response to creator
     val response = new LobbyActionPacket(
-      server.getNextSequenceNumber, playerId, LobbyAction.JOINED, lobby.id,
+      server.getNextSequenceNumber, playerId, Packet.getCurrentTimestamp,
+      LobbyAction.JOINED, lobby.id,
       lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
       lobby.playerCount.toByte, lobby.maxPlayers.toByte,
-      lobby.status, lobby.name
+      lobby.status, lobby.name, 0.toByte, lobby.gameMode, lobby.teamSize.toByte
     )
     server.sendPacketToPlayer(response, player)
   }
@@ -75,21 +76,49 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
 
     // Send JOINED to the new player
     val response = new LobbyActionPacket(
-      server.getNextSequenceNumber, playerId, LobbyAction.JOINED, lobby.id,
+      server.getNextSequenceNumber, playerId, Packet.getCurrentTimestamp,
+      LobbyAction.JOINED, lobby.id,
       lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
       lobby.playerCount.toByte, lobby.maxPlayers.toByte,
-      lobby.status, lobby.name
+      lobby.status, lobby.name, 0.toByte, lobby.gameMode, lobby.teamSize.toByte
     )
     server.sendPacketToPlayer(response, player)
 
-    // Broadcast PLAYER_JOINED to others in lobby
+    // Broadcast PLAYER_JOINED to others in lobby (lobbyName field carries the member name)
+    val joinerName = player.getName
     val broadcast = new LobbyActionPacket(
       server.getNextSequenceNumber, playerId, LobbyAction.PLAYER_JOINED, lobby.id,
       lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
       lobby.playerCount.toByte, lobby.maxPlayers.toByte,
-      lobby.status, lobby.name
+      lobby.status, joinerName
     )
     broadcastToLobby(lobby, broadcast, playerId)
+
+    // Send existing players to the new joiner
+    lobby.players.asScala.foreach { existingPid =>
+      if (!existingPid.equals(playerId)) {
+        val ep = server.getConnectedPlayer(existingPid)
+        if (ep != null) {
+          val memberPacket = new LobbyActionPacket(
+            server.getNextSequenceNumber, existingPid, LobbyAction.PLAYER_JOINED, lobby.id,
+            lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
+            lobby.playerCount.toByte, lobby.maxPlayers.toByte,
+            lobby.status, ep.getName
+          )
+          server.sendPacketToPlayer(memberPacket, player)
+        }
+      }
+    }
+    // Send existing bots to the new joiner
+    lobby.botManager.getBots.foreach { botSlot =>
+      val botPacket = new LobbyActionPacket(
+        server.getNextSequenceNumber, botSlot.id, LobbyAction.PLAYER_JOINED, lobby.id,
+        lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
+        lobby.playerCount.toByte, lobby.maxPlayers.toByte,
+        lobby.status, botSlot.name
+      )
+      server.sendPacketToPlayer(botPacket, player)
+    }
   }
 
   private def handleLeave(playerId: UUID, player: Player): Unit = {
@@ -104,12 +133,14 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
       broadcastToLobby(lobby, closePacket, null)
       lobbyManager.removeLobby(lobby.id)
     } else {
-      // Notify remaining players
+      // Notify remaining players (lobbyName field carries the leaver's name)
+      val leaverPlayer = server.getConnectedPlayer(playerId)
+      val leaverName = if (leaverPlayer != null) leaverPlayer.getName else "Player"
       val leftPacket = new LobbyActionPacket(
         server.getNextSequenceNumber, playerId, LobbyAction.PLAYER_LEFT, lobby.id,
         lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
         lobby.playerCount.toByte, lobby.maxPlayers.toByte,
-        lobby.status, lobby.name
+        lobby.status, leaverName
       )
       broadcastToLobby(lobby, leftPacket, null)
     }
@@ -132,9 +163,19 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
 
     // Create GameInstance and load world (needed for spawn points)
     val instance = new GameInstance(lobby.id, worldPath, lobby.durationMinutes, server)
+    instance.gameMode = lobby.gameMode
     instance.loadWorld()
     lobby.gameInstance = instance
     server.registerGameInstance(lobby.id, instance)
+
+    // Assign teams if in Teams mode (deterministic order matches lobby roster preview)
+    if (lobby.gameMode == 1) {
+      val allPlayerIds = lobby.players.asScala.toSeq ++ lobby.botManager.getBots.map(_.id)
+      allPlayerIds.zipWithIndex.foreach { case (pid, index) =>
+        val teamId = (index % 2 + 1).toByte
+        instance.teamAssignments.put(pid, teamId)
+      }
+    }
 
     // Register all lobby players in the instance's registry and kill tracker
     // (must happen before instance.start() so initial item spawns reach players)
@@ -152,6 +193,8 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
         if (p.getUdpAddress != null) {
           instancePlayer.setUdpAddress(p.getUdpAddress)
         }
+        val playerTeamId = instance.teamAssignments.getOrDefault(pid, 0.toByte)
+        instancePlayer.setTeamId(playerTeamId)
         instance.registry.add(instancePlayer)
         instance.killTracker.registerPlayer(pid)
       }
@@ -166,6 +209,8 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
       val colorRGB = Player.generateColorFromUUID(botSlot.id)
       val botPlayer = new Player(botSlot.id, botSlot.name, spawnPoint, colorRGB, charDef.maxHealth, charDef.maxHealth)
       botPlayer.setCharacterId(botSlot.characterId)
+      val botTeamId = instance.teamAssignments.getOrDefault(botSlot.id, 0.toByte)
+      botPlayer.setTeamId(botTeamId)
       instance.registry.add(botPlayer)
       instance.killTracker.registerPlayer(botSlot.id)
       botController.addBotId(botSlot.id)
@@ -207,7 +252,8 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
             botPlayer.getColorRGB,
             botSlot.name,
             botPlayer.getHealth,
-            botSlot.characterId
+            botSlot.characterId,
+            botPlayer.getTeamId
           )
           instance.broadcastToInstance(joinPacket)
         }
@@ -223,10 +269,11 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
 
     lobbies.foreach { lobby =>
       val entry = new LobbyActionPacket(
-        server.getNextSequenceNumber, player.getId, LobbyAction.LIST_ENTRY, lobby.id,
+        server.getNextSequenceNumber, player.getId, Packet.getCurrentTimestamp,
+        LobbyAction.LIST_ENTRY, lobby.id,
         lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
         lobby.playerCount.toByte, lobby.maxPlayers.toByte,
-        lobby.status, lobby.name
+        lobby.status, lobby.name, 0.toByte, lobby.gameMode, lobby.teamSize.toByte
       )
       server.sendPacketToPlayer(entry, player)
     }
@@ -260,13 +307,27 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
 
     lobby.mapIndex = packet.getMapIndex.toInt & 0xFF
     lobby.durationMinutes = if (packet.getDurationMinutes <= 0) Constants.DEFAULT_GAME_DURATION_MIN else packet.getDurationMinutes.toInt
+    lobby.gameMode = packet.getGameMode
+    lobby.teamSize = Math.max(2, Math.min(4, packet.getTeamSize.toInt))
+
+    // Auto-adjust maxPlayers for Teams mode
+    if (lobby.gameMode == 1) {
+      lobby.maxPlayers = lobby.teamSize * 2
+      // Remove excess bots if needed
+      while (lobby.playerCount > lobby.maxPlayers && lobby.botManager.botCount > 0) {
+        lobby.botManager.removeLastBot()
+      }
+    } else {
+      lobby.maxPlayers = Constants.MAX_LOBBY_PLAYERS
+    }
 
     // Broadcast config update to all lobby members
     val update = new LobbyActionPacket(
-      server.getNextSequenceNumber, playerId, LobbyAction.CONFIG_UPDATE, lobby.id,
+      server.getNextSequenceNumber, playerId, Packet.getCurrentTimestamp,
+      LobbyAction.CONFIG_UPDATE, lobby.id,
       lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
       lobby.playerCount.toByte, lobby.maxPlayers.toByte,
-      lobby.status, lobby.name
+      lobby.status, lobby.name, 0.toByte, lobby.gameMode, lobby.teamSize.toByte
     )
     broadcastToLobby(lobby, update, null)
   }
@@ -281,12 +342,12 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     val botSlot = lobby.botManager.addBot()
     println(s"LobbyHandler: Bot '${botSlot.name}' added to lobby ${lobby.id}")
 
-    // Broadcast PLAYER_JOINED with updated player count (includes bots)
+    // Broadcast PLAYER_JOINED with updated player count (lobbyName carries bot name)
     val broadcast = new LobbyActionPacket(
       server.getNextSequenceNumber, botSlot.id, LobbyAction.PLAYER_JOINED, lobby.id,
       lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
       lobby.playerCount.toByte, lobby.maxPlayers.toByte,
-      lobby.status, lobby.name
+      lobby.status, botSlot.name
     )
     broadcastToLobby(lobby, broadcast, null)
   }
@@ -302,12 +363,12 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     val botSlot = removed.get
     println(s"LobbyHandler: Bot '${botSlot.name}' removed from lobby ${lobby.id}")
 
-    // Broadcast PLAYER_LEFT with updated player count
+    // Broadcast PLAYER_LEFT with updated player count (lobbyName carries bot name)
     val broadcast = new LobbyActionPacket(
       server.getNextSequenceNumber, botSlot.id, LobbyAction.PLAYER_LEFT, lobby.id,
       lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
       lobby.playerCount.toByte, lobby.maxPlayers.toByte,
-      lobby.status, lobby.name
+      lobby.status, botSlot.name
     )
     broadcastToLobby(lobby, broadcast, null)
   }
