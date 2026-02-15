@@ -381,6 +381,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   }
 
   def startCharging(): Unit = {
+    if (isFrozen) return
     isCharging = true
     chargingStartTime.set(System.currentTimeMillis())
   }
@@ -398,7 +399,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   }
 
   def shoot(): Unit = {
-    if (isDead || isPhased) return
+    if (isDead || isPhased || isFrozen) return
 
     // Shoot in the direction the player is facing
     val direction = localDirection.get()
@@ -412,7 +413,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   }
 
   def shootToward(dx: Float, dy: Float, chargeLevel: Int = 0): Unit = {
-    if (isDead || isPhased) return
+    if (isDead || isPhased || isFrozen) return
 
     val pos = localPosition.get()
     val chargeByte = Math.min(100, Math.max(0, chargeLevel)).toByte

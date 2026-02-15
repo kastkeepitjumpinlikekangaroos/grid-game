@@ -64,6 +64,10 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       return false
     }
 
+    if (player.isFrozen) {
+      return false
+    }
+
     // Spawn projectile at player's position with velocity from packet
     val projectile = projectileManager.spawnProjectile(
       playerId,
