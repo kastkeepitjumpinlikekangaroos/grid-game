@@ -642,6 +642,267 @@ class GameCanvas(client: GameClient) extends Canvas() {
     }
   }
 
+  private def drawAbilityIcon(abilityName: String, centerX: Double, centerY: Double, halfSize: Double, color: Color): Unit = {
+    val s = halfSize
+    gc.setFill(color)
+    gc.setStroke(color)
+    gc.setLineWidth(1.5)
+
+    abilityName match {
+      case "Tentacle" =>
+        // Wavy S-curve tendril with tip bulb
+        gc.setLineWidth(2.5)
+        gc.beginPath()
+        gc.moveTo(centerX, centerY - s * 0.9)
+        gc.bezierCurveTo(centerX + s, centerY - s * 0.3, centerX - s, centerY + s * 0.3, centerX, centerY + s * 0.9)
+        gc.stroke()
+        gc.fillOval(centerX - 2.5, centerY - s * 0.9 - 2, 5, 5)
+
+      case "Ice Beam" =>
+        // 6-pointed snowflake: 3 crossing lines + center dot
+        gc.setLineWidth(1.5)
+        for (i <- 0 until 3) {
+          val angle = i * Math.PI / 3
+          val dx = s * 0.85 * Math.cos(angle)
+          val dy = s * 0.85 * Math.sin(angle)
+          gc.strokeLine(centerX - dx, centerY - dy, centerX + dx, centerY + dy)
+        }
+        gc.fillOval(centerX - 2.5, centerY - 2.5, 5, 5)
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.3))
+        gc.fillOval(centerX - 1.5, centerY - 1.5, 3, 3)
+
+      case "Spear Throw" =>
+        // Diagonal spear with triangular head
+        gc.setLineWidth(2.0)
+        gc.strokeLine(centerX - s * 0.8, centerY + s * 0.8, centerX + s * 0.3, centerY - s * 0.3)
+        gc.fillPolygon(
+          Array(centerX + s * 0.85, centerX + s * 0.5, centerX + s * 0.1),
+          Array(centerY - s * 0.85, centerY - s * 0.1, centerY - s * 0.5),
+          3
+        )
+
+      case "Rope" =>
+        // Lasso loop with trailing line
+        gc.setLineWidth(2.0)
+        gc.strokeOval(centerX - s * 0.4, centerY - s * 0.75, s * 0.9, s * 0.85)
+        gc.beginPath()
+        gc.moveTo(centerX + s * 0.05, centerY + s * 0.1)
+        gc.bezierCurveTo(centerX - s * 0.3, centerY + s * 0.5, centerX + s * 0.2, centerY + s * 0.7, centerX + s * 0.3, centerY + s * 0.9)
+        gc.stroke()
+
+      case "Phase Shift" =>
+        // Ghost silhouette: dome + body + dark eyes
+        gc.fillOval(centerX - s * 0.5, centerY - s * 0.9, s, s * 0.9)
+        gc.fillRect(centerX - s * 0.5, centerY - s * 0.5, s, s * 1.0)
+        gc.setFill(Color.color(0, 0, 0, 0.5))
+        gc.fillOval(centerX - s * 0.3, centerY - s * 0.3, s * 0.22, s * 0.25)
+        gc.fillOval(centerX + s * 0.1, centerY - s * 0.3, s * 0.22, s * 0.25)
+
+      case "Haunt" =>
+        // Spectral eye: almond outline + filled pupil
+        gc.setLineWidth(2.0)
+        gc.beginPath()
+        gc.moveTo(centerX - s * 0.9, centerY)
+        gc.quadraticCurveTo(centerX, centerY - s * 0.8, centerX + s * 0.9, centerY)
+        gc.quadraticCurveTo(centerX, centerY + s * 0.8, centerX - s * 0.9, centerY)
+        gc.closePath()
+        gc.stroke()
+        gc.fillOval(centerX - s * 0.25, centerY - s * 0.25, s * 0.5, s * 0.5)
+
+      case "Fireball" =>
+        // Flame: large base + two upper licks + bright core
+        gc.fillOval(centerX - s * 0.5, centerY - s * 0.2, s, s)
+        gc.fillOval(centerX - s * 0.35, centerY - s * 0.7, s * 0.55, s * 0.65)
+        gc.fillOval(centerX + s * 0.0, centerY - s * 0.6, s * 0.45, s * 0.55)
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.3))
+        gc.fillOval(centerX - s * 0.2, centerY + s * 0.05, s * 0.4, s * 0.4)
+
+      case "Blink" =>
+        // Lightning bolt zigzag
+        gc.fillPolygon(
+          Array(centerX - s * 0.2, centerX + s * 0.5, centerX + s * 0.05, centerX + s * 0.2, centerX - s * 0.5, centerX - s * 0.05),
+          Array(centerY - s * 0.9, centerY - s * 0.15, centerY - s * 0.1, centerY + s * 0.9, centerY + s * 0.15, centerY + s * 0.1),
+          6
+        )
+
+      case "Tidal Wave" =>
+        // Three nested wave arcs
+        gc.setLineWidth(2.0)
+        for (i <- 0 until 3) {
+          val r = s * (0.35 + i * 0.25)
+          gc.strokeArc(centerX - r, centerY + s * 0.2 - r * 0.7, r * 2, r * 1.4, 30, 120, javafx.scene.shape.ArcType.OPEN)
+        }
+
+      case "Geyser" =>
+        // Erupting water column with spray
+        gc.setLineWidth(2.0)
+        gc.fillRect(centerX - s * 0.15, centerY - s * 0.3, s * 0.3, s * 0.9)
+        gc.strokeLine(centerX, centerY - s * 0.3, centerX, centerY - s * 0.9)
+        gc.strokeLine(centerX, centerY - s * 0.5, centerX - s * 0.4, centerY - s * 0.85)
+        gc.strokeLine(centerX, centerY - s * 0.5, centerX + s * 0.4, centerY - s * 0.85)
+        gc.fillOval(centerX - s * 0.5 - 1.5, centerY - s * 0.7 - 1.5, 3, 3)
+        gc.fillOval(centerX + s * 0.5 - 1.5, centerY - s * 0.75 - 1.5, 3, 3)
+
+      case "Grenade" =>
+        // Round grenade body + fuse + spark
+        gc.fillOval(centerX - s * 0.5, centerY - s * 0.3, s, s)
+        gc.setLineWidth(1.5)
+        gc.strokeLine(centerX + s * 0.1, centerY - s * 0.3, centerX + s * 0.3, centerY - s * 0.7)
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.4))
+        gc.fillOval(centerX + s * 0.2, centerY - s * 0.85, s * 0.3, s * 0.3)
+
+      case "Rocket" =>
+        // Missile: nose cone + body + fins
+        gc.fillRect(centerX - s * 0.2, centerY - s * 0.4, s * 0.4, s * 0.9)
+        gc.fillPolygon(
+          Array(centerX, centerX - s * 0.2, centerX + s * 0.2),
+          Array(centerY - s * 0.9, centerY - s * 0.4, centerY - s * 0.4),
+          3
+        )
+        gc.fillPolygon(
+          Array(centerX - s * 0.2, centerX - s * 0.5, centerX - s * 0.2),
+          Array(centerY + s * 0.2, centerY + s * 0.5, centerY + s * 0.5),
+          3
+        )
+        gc.fillPolygon(
+          Array(centerX + s * 0.2, centerX + s * 0.5, centerX + s * 0.2),
+          Array(centerY + s * 0.2, centerY + s * 0.5, centerY + s * 0.5),
+          3
+        )
+
+      case "Swoop" =>
+        // Downward chevron / wing shape
+        gc.setLineWidth(2.5)
+        gc.beginPath()
+        gc.moveTo(centerX - s * 0.8, centerY - s * 0.5)
+        gc.lineTo(centerX, centerY + s * 0.5)
+        gc.lineTo(centerX + s * 0.8, centerY - s * 0.5)
+        gc.stroke()
+        gc.strokeLine(centerX, centerY + s * 0.5, centerX, centerY + s * 0.8)
+
+      case "Gust" =>
+        // 3 curved wind lines
+        gc.setLineWidth(1.5)
+        for (i <- 0 until 3) {
+          val yOff = (i - 1) * s * 0.45
+          gc.beginPath()
+          gc.moveTo(centerX - s * 0.8, centerY + yOff)
+          gc.quadraticCurveTo(centerX, centerY + yOff - s * 0.3, centerX + s * 0.8, centerY + yOff)
+          gc.stroke()
+        }
+
+      case "Poison Dart" =>
+        // Dart body + tail fins + drip
+        gc.fillPolygon(
+          Array(centerX + s * 0.9, centerX - s * 0.7, centerX - s * 0.7),
+          Array(centerY, centerY - s * 0.15, centerY + s * 0.15),
+          3
+        )
+        gc.fillPolygon(
+          Array(centerX - s * 0.5, centerX - s * 0.9, centerX - s * 0.5),
+          Array(centerY - s * 0.15, centerY - s * 0.4, centerY - s * 0.35),
+          3
+        )
+        gc.fillPolygon(
+          Array(centerX - s * 0.5, centerX - s * 0.9, centerX - s * 0.5),
+          Array(centerY + s * 0.15, centerY + s * 0.4, centerY + s * 0.35),
+          3
+        )
+        gc.fillOval(centerX + s * 0.7, centerY + s * 0.35, s * 0.2, s * 0.3)
+
+      case "Shadow Step" =>
+        // Dash arrow with fading shadow trail
+        gc.setLineWidth(2.0)
+        gc.strokeLine(centerX - s * 0.3, centerY, centerX + s * 0.7, centerY)
+        gc.fillPolygon(
+          Array(centerX + s * 0.9, centerX + s * 0.5, centerX + s * 0.5),
+          Array(centerY, centerY - s * 0.35, centerY + s * 0.35),
+          3
+        )
+        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.4))
+        gc.setLineWidth(1.5)
+        gc.strokeLine(centerX - s * 0.9, centerY - s * 0.3, centerX - s * 0.5, centerY - s * 0.3)
+        gc.strokeLine(centerX - s * 0.7, centerY + s * 0.3, centerX - s * 0.3, centerY + s * 0.3)
+
+      case "Lockdown" =>
+        // Two interlocking chain link ovals
+        gc.setLineWidth(2.0)
+        gc.strokeOval(centerX - s * 0.7, centerY - s * 0.4, s * 0.8, s * 0.8)
+        gc.strokeOval(centerX - s * 0.1, centerY - s * 0.4, s * 0.8, s * 0.8)
+
+      case "Snare Mine" =>
+        // Spiked circle: filled center + 4 triangle spikes
+        gc.fillOval(centerX - s * 0.4, centerY - s * 0.4, s * 0.8, s * 0.8)
+        for (i <- 0 until 4) {
+          val angle = i * Math.PI / 2 + Math.PI / 4
+          val tipDist = s * 0.9
+          val baseDist = s * 0.35
+          val spread = s * 0.2
+          val tipX = centerX + tipDist * Math.cos(angle)
+          val tipY = centerY + tipDist * Math.sin(angle)
+          val perpX = Math.cos(angle + Math.PI / 2) * spread
+          val perpY = Math.sin(angle + Math.PI / 2) * spread
+          val baseX = centerX + baseDist * Math.cos(angle)
+          val baseY = centerY + baseDist * Math.sin(angle)
+          gc.fillPolygon(
+            Array(tipX, baseX + perpX, baseX - perpX),
+            Array(tipY, baseY + perpY, baseY - perpY),
+            3
+          )
+        }
+
+      case "Iaijutsu" =>
+        // Curved slash arc with sparkle at tip
+        gc.setLineWidth(3.0)
+        gc.beginPath()
+        gc.moveTo(centerX + s * 0.8, centerY - s * 0.6)
+        gc.quadraticCurveTo(centerX - s * 0.2, centerY, centerX + s * 0.4, centerY + s * 0.8)
+        gc.stroke()
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.4))
+        gc.fillOval(centerX + s * 0.7, centerY - s * 0.7, s * 0.3, s * 0.3)
+
+      case "Whirlwind" =>
+        // Pinwheel: 4 curved blade arcs
+        gc.setLineWidth(2.0)
+        for (i <- 0 until 4) {
+          val startAngle = i * Math.PI / 2
+          val x0 = centerX + s * 0.15 * Math.cos(startAngle)
+          val y0 = centerY + s * 0.15 * Math.sin(startAngle)
+          val cpAngle = startAngle + Math.PI / 4
+          val endAngle = startAngle + Math.PI / 2
+          gc.beginPath()
+          gc.moveTo(x0, y0)
+          gc.quadraticCurveTo(
+            centerX + s * 0.9 * Math.cos(cpAngle),
+            centerY + s * 0.9 * Math.sin(cpAngle),
+            centerX + s * 0.3 * Math.cos(endAngle),
+            centerY + s * 0.3 * Math.sin(endAngle)
+          )
+          gc.stroke()
+        }
+
+      case "Miasma" =>
+        // Toxic cloud: 3 overlapping circles + highlight
+        gc.fillOval(centerX - s * 0.65, centerY - s * 0.2, s * 0.7, s * 0.7)
+        gc.fillOval(centerX - s * 0.05, centerY - s * 0.2, s * 0.7, s * 0.7)
+        gc.fillOval(centerX - s * 0.35, centerY - s * 0.7, s * 0.7, s * 0.7)
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.2))
+        gc.fillOval(centerX - s * 0.2, centerY - s * 0.5, s * 0.35, s * 0.35)
+
+      case "Blight Bomb" =>
+        // Alchemical flask: round body + neck + stopper + highlight
+        gc.fillOval(centerX - s * 0.5, centerY - s * 0.1, s, s * 0.9)
+        gc.fillRect(centerX - s * 0.15, centerY - s * 0.55, s * 0.3, s * 0.5)
+        gc.fillRect(centerX - s * 0.2, centerY - s * 0.7, s * 0.4, s * 0.2)
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.2))
+        gc.fillOval(centerX - s * 0.3, centerY + s * 0.05, s * 0.3, s * 0.35)
+
+      case _ =>
+        // Default fallback: filled circle
+        gc.fillOval(centerX - s, centerY - s, s * 2, s * 2)
+    }
+  }
+
   private def drawSingleProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
     projectileRenderers.getOrElse(projectile.projectileType,
       (p: Projectile, cx: Double, cy: Double) => drawNormalProjectile(p, cx, cy)
@@ -4486,12 +4747,12 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
     val charDef = client.getSelectedCharacterDef
     val abilities = Seq(
-      (charDef.qAbility.keybind, client.getQCooldownFraction, client.getQCooldownRemaining, Color.color(0.2, 0.8, 0.3), Color.color(0.1, 0.5, 0.15)),
-      (charDef.eAbility.keybind, client.getECooldownFraction, client.getECooldownRemaining, Color.color(0.4, 0.7, 1.0), Color.color(0.15, 0.35, 0.6))
+      (charDef.qAbility.keybind, client.getQCooldownFraction, client.getQCooldownRemaining, Color.color(0.2, 0.8, 0.3), Color.color(0.1, 0.5, 0.15), charDef.qAbility.name),
+      (charDef.eAbility.keybind, client.getECooldownFraction, client.getECooldownRemaining, Color.color(0.4, 0.7, 1.0), Color.color(0.15, 0.35, 0.6), charDef.eAbility.name)
     )
 
     for (i <- abilities.indices) {
-      val (key, cooldownFrac, cooldownSec, readyColor, dimColor) = abilities(i)
+      val (key, cooldownFrac, cooldownSec, readyColor, dimColor, abilityName) = abilities(i)
       val slotX = inventoryStartX - (abilities.length - i) * (slotSize + slotGap) - abilityGap
 
       val onCooldown = cooldownFrac > 0.001f
@@ -4500,10 +4761,9 @@ class GameCanvas(client: GameClient) extends Canvas() {
       gc.setFill(Color.rgb(0, 0, 0, 0.5))
       gc.fillRect(slotX, startY, slotSize, slotSize)
 
-      // Ability icon (simple colored circle)
+      // Ability icon
       val iconColor = if (onCooldown) dimColor else readyColor
-      gc.setFill(iconColor)
-      gc.fillOval(slotX + 6, startY + 4, slotSize - 12, slotSize - 12)
+      drawAbilityIcon(abilityName, slotX + slotSize / 2.0, startY + slotSize / 2.0 - 2, (slotSize - 12) / 2.0, iconColor)
 
       // Cooldown sweep overlay
       if (onCooldown) {
