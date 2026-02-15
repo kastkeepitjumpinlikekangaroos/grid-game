@@ -45,6 +45,7 @@ class MapEditorApp extends Application {
     val scene = new Scene(root, 1200, 800)
 
     primaryStage.setScene(scene)
+    primaryStage.setMaximized(true)
     primaryStage.show()
 
     // Initial UI state

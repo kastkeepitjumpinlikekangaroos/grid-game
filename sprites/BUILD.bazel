@@ -1,5 +1,5 @@
 filegroup(
     name = "sprite_files",
-    srcs = glob(["*.png"]),
+    srcs = glob(["*.png"]) + ["gamecontrollerdb.txt"],
     visibility = ["//visibility:public"],
 )
