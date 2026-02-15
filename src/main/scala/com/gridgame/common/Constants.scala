@@ -72,4 +72,8 @@ object Constants {
   val MAX_LOBBY_NAME_LEN: Int = 24
   val TIME_SYNC_INTERVAL_S: Int = 10
   val MAX_LOBBY_PLAYERS: Int = 8
+
+  // Duel configuration
+  val DUEL_GAME_DURATION_MIN: Int = 3
+  val DUEL_MAX_PLAYERS: Int = 2
 }

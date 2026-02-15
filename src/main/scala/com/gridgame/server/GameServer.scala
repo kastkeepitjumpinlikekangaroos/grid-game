@@ -425,7 +425,7 @@ class GameServer(port: Int, val worldFile: String = "") {
     packet.getAction match {
       case RankedQueueAction.QUEUE_JOIN =>
         val elo = getPlayerElo(playerId)
-        rankedQueue.addPlayer(playerId, packet.getCharacterId, elo)
+        rankedQueue.addPlayer(playerId, packet.getCharacterId, elo, packet.getMode)
 
       case RankedQueueAction.QUEUE_LEAVE =>
         rankedQueue.removePlayer(playerId)

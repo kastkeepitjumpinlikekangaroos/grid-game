@@ -1086,11 +1086,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   }
 
   // Ranked queue actions
-  def queueRanked(): Unit = {
+  @volatile var rankedMode: Byte = RankedQueueMode.FFA
+
+  def queueRanked(mode: Byte = RankedQueueMode.FFA): Unit = {
     isInRankedQueue = true
+    rankedMode = mode
     val packet = new RankedQueuePacket(
       sequenceNumber.getAndIncrement(), localPlayerId,
-      RankedQueueAction.QUEUE_JOIN, selectedCharacterId
+      RankedQueueAction.QUEUE_JOIN, selectedCharacterId, mode
     )
     networkThread.send(packet)
   }

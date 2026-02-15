@@ -11,6 +11,7 @@ import com.gridgame.common.model.CharacterDef
 import com.gridgame.common.model.CharacterId
 import com.gridgame.common.model.Direction
 import com.gridgame.common.model.WorldData
+import com.gridgame.common.protocol.RankedQueueMode
 import com.gridgame.common.world.WorldLoader
 
 import javafx.animation.AnimationTimer
@@ -164,6 +165,7 @@ class ClientMain extends Application {
   override def start(primaryStage: Stage): Unit = {
     primaryStage.setTitle("Grid Game - Multiplayer 2D")
     primaryStage.setResizable(true)
+    primaryStage.setMaximized(true)
 
     showWelcomeScreen(primaryStage)
   }
@@ -548,7 +550,6 @@ class ClientMain extends Application {
     leaderboardBtn.setOnAction(_ => showLeaderboard(stage))
 
     rankedBtn.setOnAction(_ => {
-      client.queueRanked()
       showRankedQueue(stage)
     })
 
@@ -919,43 +920,112 @@ class ClientMain extends Application {
 
     headerBox.getChildren.addAll(queueTitle, eloLabel, headerLine)
 
-    // Queue status card
-    val statusCard = new VBox(14)
-    statusCard.setPadding(new Insets(20, 28, 20, 28))
-    statusCard.setMaxWidth(420)
-    statusCard.setStyle(cardBg)
-    statusCard.setAlignment(Pos.CENTER)
+    // Mode selection card
+    val modeCard = new VBox(14)
+    modeCard.setPadding(new Insets(20, 28, 20, 28))
+    modeCard.setMaxWidth(420)
+    modeCard.setStyle(cardBg)
+    modeCard.setAlignment(Pos.CENTER)
 
+    val modeLabel = new Label("SELECT MODE")
+    modeLabel.setStyle(sectionHeaderStyle)
+
+    var selectedMode: Byte = RankedQueueMode.FFA
+
+    val modeButtonActiveStyle = "-fx-background-color: linear-gradient(to bottom, #5aadff, #3a8eef); -fx-text-fill: white; -fx-font-size: 14; -fx-font-weight: bold; -fx-padding: 14 28; -fx-background-radius: 10; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.5), 16, 0, 0, 3); -fx-border-color: #6db8ff; -fx-border-radius: 10; -fx-border-width: 2;"
+    val modeButtonInactiveStyle = "-fx-background-color: rgba(255,255,255,0.06); -fx-text-fill: #8899aa; -fx-font-size: 14; -fx-font-weight: bold; -fx-padding: 14 28; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.1); -fx-border-radius: 10; -fx-border-width: 1;"
+    val modeButtonInactiveHoverStyle = "-fx-background-color: rgba(255,255,255,0.12); -fx-text-fill: #ccdde8; -fx-font-size: 14; -fx-font-weight: bold; -fx-padding: 14 28; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.2); -fx-border-radius: 10; -fx-border-width: 1;"
+
+    val ffaBtn = new Button("FFA (8 Players)")
+    ffaBtn.setStyle(modeButtonActiveStyle)
+    ffaBtn.setMaxWidth(Double.MaxValue)
+    HBox.setHgrow(ffaBtn, Priority.ALWAYS)
+
+    val duelBtn = new Button("1v1 Duel")
+    duelBtn.setStyle(modeButtonInactiveStyle)
+    duelBtn.setMaxWidth(Double.MaxValue)
+    HBox.setHgrow(duelBtn, Priority.ALWAYS)
+
+    def updateModeButtons(): Unit = {
+      if (selectedMode == RankedQueueMode.FFA) {
+        ffaBtn.setStyle(modeButtonActiveStyle)
+        duelBtn.setStyle(modeButtonInactiveStyle)
+        duelBtn.setOnMouseEntered(_ => duelBtn.setStyle(modeButtonInactiveHoverStyle))
+        duelBtn.setOnMouseExited(_ => duelBtn.setStyle(modeButtonInactiveStyle))
+        ffaBtn.setOnMouseEntered(null)
+        ffaBtn.setOnMouseExited(null)
+      } else {
+        duelBtn.setStyle(modeButtonActiveStyle)
+        ffaBtn.setStyle(modeButtonInactiveStyle)
+        ffaBtn.setOnMouseEntered(_ => ffaBtn.setStyle(modeButtonInactiveHoverStyle))
+        ffaBtn.setOnMouseExited(_ => ffaBtn.setStyle(modeButtonInactiveStyle))
+        duelBtn.setOnMouseEntered(null)
+        duelBtn.setOnMouseExited(null)
+      }
+    }
+
+    ffaBtn.setOnAction(_ => {
+      selectedMode = RankedQueueMode.FFA
+      updateModeButtons()
+    })
+
+    duelBtn.setOnAction(_ => {
+      selectedMode = RankedQueueMode.DUEL
+      updateModeButtons()
+    })
+
+    val modeRow = new HBox(12, ffaBtn, duelBtn)
+    modeRow.setAlignment(Pos.CENTER)
+
+    // Queue status elements (initially hidden)
     val queueSizeLabel = new Label("Players in queue: 1")
     queueSizeLabel.setFont(Font.font("System", 14))
     queueSizeLabel.setTextFill(Color.web("#aabbcc"))
+    queueSizeLabel.setVisible(false)
+    queueSizeLabel.setManaged(false)
 
     val waitTimeLabel = new Label("Wait time: 0s")
     waitTimeLabel.setFont(Font.font("System", 14))
     waitTimeLabel.setTextFill(Color.web("#aabbcc"))
+    waitTimeLabel.setVisible(false)
+    waitTimeLabel.setManaged(false)
 
-    val searchingLabel = new Label("Searching for match...")
+    val searchingLabel = new Label("")
     searchingLabel.setFont(Font.font("System", FontWeight.BOLD, 14))
     searchingLabel.setTextFill(Color.web("#4a9eff"))
+    searchingLabel.setVisible(false)
+    searchingLabel.setManaged(false)
+
+    val searchSeparator = createSeparator()
+    searchSeparator.setVisible(false)
+    searchSeparator.setManaged(false)
 
     // Animated dots for searching
     var dotTick = 0
+    var isSearching = false
     val dotTimer = new AnimationTimer {
       private var lastUpdate = 0L
       override def handle(now: Long): Unit = {
-        if (now - lastUpdate > 500_000_000L) {
+        if (isSearching && now - lastUpdate > 500_000_000L) {
           lastUpdate = now
           dotTick = (dotTick + 1) % 4
           val dots = "." * dotTick
-          searchingLabel.setText(s"Searching for match$dots")
+          val modeText = if (selectedMode == RankedQueueMode.DUEL) "Searching for opponent" else "Searching for match"
+          searchingLabel.setText(s"$modeText$dots")
         }
       }
     }
     dotTimer.start()
 
-    statusCard.getChildren.addAll(searchingLabel, createSeparator(), queueSizeLabel, waitTimeLabel)
+    // Find Match button
+    val findMatchBtn = new Button("Find Match")
+    addHoverEffect(findMatchBtn, buttonGreenStyle, buttonGreenHoverStyle)
+    findMatchBtn.setFont(Font.font("System", FontWeight.BOLD, 15))
+    findMatchBtn.setMaxWidth(Double.MaxValue)
 
-    // Character selection section (reuse pattern from showLobbyRoom)
+    modeCard.getChildren.addAll(modeLabel, modeRow, findMatchBtn, searchingLabel, searchSeparator, queueSizeLabel, waitTimeLabel)
+
+    // Character selection section
     val charSectionLabel = new Label("SELECT CHARACTER")
     charSectionLabel.setStyle(sectionHeaderStyle)
 
@@ -1013,7 +1083,6 @@ class ClientMain extends Application {
       drawPreview()
     }
 
-    // Character carousel with left/right arrows
     val charCountLabel = new Label("")
     charCountLabel.setFont(Font.font("System", 11))
     charCountLabel.setTextFill(Color.web("#556677"))
@@ -1064,15 +1133,41 @@ class ClientMain extends Application {
     charSection.setAlignment(Pos.CENTER)
     charSection.setPadding(new Insets(0, 24, 0, 24))
 
-    // Leave queue button
-    val leaveBtn = new Button("Leave Queue")
+    // Back / Leave queue button
+    val leaveBtn = new Button("Back")
     addHoverEffect(leaveBtn, buttonRedStyle, buttonRedHoverStyle)
     leaveBtn.setOnAction(_ => {
       previewTimer.stop()
       dotTimer.stop()
-      client.leaveRankedQueue()
+      if (isSearching) {
+        client.leaveRankedQueue()
+      }
       client.requestLobbyList()
       showLobbyBrowser(stage)
+    })
+
+    // Find Match button action
+    findMatchBtn.setOnAction(_ => {
+      isSearching = true
+      client.queueRanked(selectedMode)
+
+      // Disable mode buttons and Find Match
+      ffaBtn.setDisable(true)
+      duelBtn.setDisable(true)
+      findMatchBtn.setVisible(false)
+      findMatchBtn.setManaged(false)
+
+      // Show searching UI
+      searchingLabel.setVisible(true)
+      searchingLabel.setManaged(true)
+      searchSeparator.setVisible(true)
+      searchSeparator.setManaged(true)
+      queueSizeLabel.setVisible(true)
+      queueSizeLabel.setManaged(true)
+      waitTimeLabel.setVisible(true)
+      waitTimeLabel.setManaged(true)
+
+      leaveBtn.setText("Leave Queue")
     })
 
     val buttonBox = new HBox(12)
@@ -1080,7 +1175,7 @@ class ClientMain extends Application {
     buttonBox.setPadding(new Insets(12, 0, 24, 0))
     buttonBox.getChildren.add(leaveBtn)
 
-    root.getChildren.addAll(headerBox, statusCard, new Region() { setMinHeight(16) }, charSection, new Region() { setMinHeight(4) }, buttonBox)
+    root.getChildren.addAll(headerBox, modeCard, new Region() { setMinHeight(16) }, charSection, new Region() { setMinHeight(4) }, buttonBox)
 
     // Wire up queue status listener
     client.rankedQueueListener = () => {
@@ -1116,7 +1211,7 @@ class ClientMain extends Application {
       })
     }
 
-    val scene = new Scene(root, 600, 740)
+    val scene = new Scene(root, 600, 800)
     stage.setScene(scene)
   }
 
