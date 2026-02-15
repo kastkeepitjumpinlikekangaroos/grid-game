@@ -64,7 +64,10 @@ class GameCanvas(client: GameClient) extends Canvas() {
     ProjectileType.GRENADE    -> ((p, cx, cy) => drawGrenadeProjectile(p, cx, cy)),
     ProjectileType.ROCKET     -> ((p, cx, cy) => drawRocketProjectile(p, cx, cy)),
     ProjectileType.TALON      -> ((p, cx, cy) => drawTalonProjectile(p, cx, cy)),
-    ProjectileType.GUST       -> ((p, cx, cy) => drawGustProjectile(p, cx, cy))
+    ProjectileType.GUST       -> ((p, cx, cy) => drawGustProjectile(p, cx, cy)),
+    ProjectileType.PLAGUE_BOLT -> ((p, cx, cy) => drawPlagueBoltProjectile(p, cx, cy)),
+    ProjectileType.MIASMA     -> ((p, cx, cy) => drawMiasmaProjectile(p, cx, cy)),
+    ProjectileType.BLIGHT_BOMB -> ((p, cx, cy) => drawBlightBombProjectile(p, cx, cy))
   )
 
   // --- Isometric coordinate transforms ---
@@ -2242,6 +2245,231 @@ class GameCanvas(client: GameClient) extends Canvas() {
     }
   }
 
+  private def drawPlagueBoltProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 4.0
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 23) * 0.3
+      val pulse = 0.85 + 0.15 * Math.sin(phase)
+
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len < 1) return
+      val nx = -dy / len
+      val ny = dx / len
+
+      // Sickly green outer glow
+      gc.setStroke(Color.color(0.3, 0.7, 0.1, 0.08 * pulse))
+      gc.setLineWidth(22 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Mid glow — toxic green
+      gc.setStroke(Color.color(0.4, 0.8, 0.15, 0.25 * pulse))
+      gc.setLineWidth(10 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Bright green-yellow core
+      gc.setStroke(Color.color(0.6, 0.9, 0.2, 0.85 * pulse))
+      gc.setLineWidth(3.5)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Orb at tip — sickly green
+      val orbR = 6.0 * pulse
+      gc.setFill(Color.color(0.3, 0.75, 0.1, 0.15 * pulse))
+      gc.fillOval(tipX - orbR * 1.5, tipY - orbR * 1.5, orbR * 3, orbR * 3)
+      gc.setFill(Color.color(0.5, 0.85, 0.2, 0.5 * pulse))
+      gc.fillOval(tipX - orbR * 0.7, tipY - orbR * 0.7, orbR * 1.4, orbR * 1.4)
+
+      // Dark smoke wisps trailing behind
+      for (i <- 0 until 5) {
+        val t = ((animationTick * 0.07 + i * 0.2 + projectile.id * 0.09) % 1.0)
+        val wispAngle = phase * 2.0 + i * 1.4
+        val wispDist = 3.0 + t * 5.0
+        val smokeX = tailX - dx * t * 0.3 + nx * wispDist * Math.sin(wispAngle)
+        val smokeY = tailY - dy * t * 0.3 + ny * wispDist * Math.sin(wispAngle) - t * 3.0
+        val smokeAlpha = Math.max(0.0, 0.3 * (1.0 - t))
+        val smokeSize = 2.0 + t * 3.5
+        // Dark greenish-black smoke
+        gc.setFill(Color.color(0.15, 0.2, 0.05, smokeAlpha))
+        gc.fillOval(smokeX - smokeSize, smokeY - smokeSize, smokeSize * 2, smokeSize * 2)
+      }
+
+      // Tiny toxic drip particles
+      for (i <- 0 until 3) {
+        val t = ((animationTick * 0.1 + i * 0.33 + projectile.id * 0.13) % 1.0)
+        val dripX = tipX + nx * Math.sin(phase * 3 + i * 2.1) * 4.0
+        val dripY = tipY + t * 8.0
+        val dripAlpha = Math.max(0.0, 0.5 * (1.0 - t))
+        val dripSize = 1.5 * (1.0 - t * 0.5)
+        gc.setFill(Color.color(0.3, 0.8, 0.1, dripAlpha))
+        gc.fillOval(dripX - dripSize, dripY - dripSize, dripSize * 2, dripSize * 2)
+      }
+    }
+  }
+
+  private def drawMiasmaProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+
+    val sx = worldToScreenX(projX, projY, camOffX)
+    val sy = worldToScreenY(projX, projY, camOffY)
+
+    val margin = 100.0
+    if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
+      val phase = (animationTick + projectile.id * 19) * 0.25
+      val pulse = 0.8 + 0.2 * Math.sin(phase)
+
+      // Wide roiling gas cloud — large radius since this passes through players
+      val cloudR = 18.0 * pulse
+
+      // Outer green-purple haze
+      gc.setFill(Color.color(0.3, 0.5, 0.15, 0.06 * pulse))
+      gc.fillOval(sx - cloudR * 1.5, sy - cloudR * 1.5, cloudR * 3, cloudR * 3)
+      gc.setFill(Color.color(0.4, 0.3, 0.5, 0.05 * pulse))
+      gc.fillOval(sx - cloudR * 1.2, sy - cloudR * 1.2, cloudR * 2.4, cloudR * 2.4)
+
+      // Main gas body — sickly green
+      gc.setFill(Color.color(0.3, 0.6, 0.15, 0.2 * pulse))
+      gc.fillOval(sx - cloudR, sy - cloudR, cloudR * 2, cloudR * 2)
+
+      // Inner denser patches — rolling green-purple blobs
+      for (blob <- 0 until 5) {
+        val blobAngle = phase * 1.5 + blob * (Math.PI * 2 / 5)
+        val blobDist = cloudR * 0.4 * Math.sin(phase * 0.7 + blob * 0.9)
+        val bx = sx + Math.cos(blobAngle) * blobDist
+        val by = sy + Math.sin(blobAngle) * blobDist * 0.6
+        val blobSize = 5.0 + 3.0 * Math.sin(phase * 1.3 + blob * 1.7)
+        // Alternate between green and purple patches
+        if (blob % 2 == 0) {
+          gc.setFill(Color.color(0.35, 0.7, 0.15, 0.3 * pulse))
+        } else {
+          gc.setFill(Color.color(0.45, 0.25, 0.55, 0.25 * pulse))
+        }
+        gc.fillOval(bx - blobSize, by - blobSize, blobSize * 2, blobSize * 2)
+      }
+
+      // Bright green core
+      val coreR = 5.0 * pulse
+      gc.setFill(Color.color(0.5, 0.85, 0.2, 0.45 * pulse))
+      gc.fillOval(sx - coreR, sy - coreR, coreR * 2, coreR * 2)
+
+      // Gas tendrils reaching outward
+      for (tendril <- 0 until 6) {
+        val tAngle = phase * 0.8 + tendril * (Math.PI / 3)
+        val tLen = cloudR * (0.8 + 0.4 * Math.sin(phase * 1.5 + tendril * 1.1))
+        val tx = sx + Math.cos(tAngle) * tLen
+        val ty = sy + Math.sin(tAngle) * tLen * 0.6
+        gc.setStroke(Color.color(0.35, 0.6, 0.15, 0.2 * pulse))
+        gc.setLineWidth(3.0 + Math.sin(phase + tendril) * 1.5)
+        gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+        gc.strokeLine(sx, sy, tx, ty)
+        // Wisp at tendril tip
+        val wispSize = 3.0 + Math.sin(phase * 2 + tendril) * 1.5
+        gc.setFill(Color.color(0.4, 0.7, 0.2, 0.15 * pulse))
+        gc.fillOval(tx - wispSize, ty - wispSize, wispSize * 2, wispSize * 2)
+      }
+
+      // Floating poison particles
+      for (i <- 0 until 4) {
+        val t = ((animationTick * 0.08 + i * 0.25 + projectile.id * 0.11) % 1.0)
+        val pAngle = phase * 2.5 + i * 1.6
+        val pDist = cloudR * t
+        val px = sx + Math.cos(pAngle) * pDist
+        val py = sy + Math.sin(pAngle) * pDist * 0.6 - t * 5.0
+        val pAlpha = Math.max(0.0, 0.4 * (1.0 - t))
+        val pSize = 1.5 + t * 2.0
+        gc.setFill(Color.color(0.5, 0.9, 0.2, pAlpha))
+        gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+      }
+    }
+  }
+
+  private def drawBlightBombProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+
+    val sx = worldToScreenX(projX, projY, camOffX)
+    val sy = worldToScreenY(projX, projY, camOffY)
+
+    val margin = 100.0
+    if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
+      val phase = (animationTick + projectile.id * 13) * 0.4
+      val bounce = Math.abs(Math.sin(phase * 2.0)) * 3.0
+      val spinAngle = animationTick * 0.35 + projectile.id * 1.3
+
+      val bombY = sy - bounce
+      val vialR = 6.0
+
+      // Toxic danger glow — pulsing green aura
+      val dangerPulse = 0.5 + 0.5 * Math.sin(phase * 3.0)
+      gc.setFill(Color.color(0.3, 0.8, 0.1, 0.06 * dangerPulse))
+      gc.fillOval(sx - vialR * 3, bombY - vialR * 3, vialR * 6, vialR * 6)
+      gc.setFill(Color.color(0.4, 0.7, 0.15, 0.08 * dangerPulse))
+      gc.fillOval(sx - vialR * 2, bombY - vialR * 2, vialR * 4, vialR * 4)
+
+      // Dark glass vial body
+      gc.setFill(Color.color(0.15, 0.15, 0.2, 0.85))
+      gc.fillOval(sx - vialR, bombY - vialR, vialR * 2, vialR * 2)
+
+      // Green liquid inside — visible through glass, sloshing with spin
+      val liquidOff = Math.sin(spinAngle) * 2.0
+      gc.setFill(Color.color(0.3, 0.8, 0.15, 0.7))
+      gc.fillOval(sx - vialR * 0.6 + liquidOff, bombY - vialR * 0.3,
+                  vialR * 1.2, vialR * 1.0)
+
+      // Glass outline
+      gc.setStroke(Color.color(0.25, 0.25, 0.3, 0.9))
+      gc.setLineWidth(1.5)
+      gc.strokeOval(sx - vialR, bombY - vialR, vialR * 2, vialR * 2)
+
+      // Glass highlight
+      gc.setFill(Color.color(0.6, 0.7, 0.6, 0.35))
+      gc.fillOval(sx - 3, bombY - vialR + 2, 4, 3)
+
+      // Cork/stopper at top
+      gc.setFill(Color.color(0.55, 0.4, 0.25, 0.8))
+      gc.fillOval(sx - 2, bombY - vialR - 3, 4, 4)
+
+      // Toxic fumes leaking from cork
+      for (i <- 0 until 4) {
+        val t = ((animationTick * 0.12 + i * 0.25 + projectile.id * 0.08) % 1.0)
+        val fumeAngle = phase * 3.0 + i * 1.5
+        val fumeDist = t * 7.0
+        val fumeX = sx + Math.cos(fumeAngle) * fumeDist * 0.4
+        val fumeY = bombY - vialR - 3 - fumeDist
+        val fumeAlpha = Math.max(0.0, 0.5 * (1.0 - t))
+        val fumeSize = 1.5 + t * 2.5
+        gc.setFill(Color.color(0.35, 0.7, 0.15, fumeAlpha))
+        gc.fillOval(fumeX - fumeSize, fumeY - fumeSize, fumeSize * 2, fumeSize * 2)
+      }
+
+      // Green smoke trail behind
+      for (i <- 0 until 4) {
+        val t = ((animationTick * 0.06 + i * 0.25 + projectile.id * 0.07) % 1.0)
+        val smokeX = sx - projectile.dx * t * 16.0 + Math.sin(phase + i * 1.5) * 2.0
+        val smokeY = sy - projectile.dy * t * 16.0 + t * 3.0
+        val smokeAlpha = Math.max(0.0, 0.2 * (1.0 - t))
+        val smokeSize = 2.5 + t * 4.0
+        gc.setFill(Color.color(0.25, 0.4, 0.1, smokeAlpha))
+        gc.fillOval(smokeX - smokeSize, smokeY - smokeSize, smokeSize * 2, smokeSize * 2)
+      }
+    }
+  }
+
   private def drawSplashProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
     val projX = projectile.getX.toDouble
     val projY = projectile.getY.toDouble
@@ -2730,6 +2958,11 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val elapsed = System.currentTimeMillis() - startTime
     if (elapsed < 0 || elapsed > EXPLOSION_ANIMATION_MS) return
 
+    if (projectileType == ProjectileType.MIASMA || projectileType == ProjectileType.BLIGHT_BOMB) {
+      drawToxicExplosionEffect(screenX, screenY, elapsed)
+      return
+    }
+
     val progress = elapsed.toDouble / EXPLOSION_ANIMATION_MS
     val fadeOut = 1.0 - progress
 
@@ -2820,6 +3053,103 @@ class GameCanvas(client: GameClient) extends Canvas() {
         val smokeAlpha = Math.max(0.0, 0.2 * (1.0 - smokeT))
         val smokeSize = 4.0 + smokeT * 8.0
         gc.setFill(Color.color(0.45, 0.45, 0.42, smokeAlpha))
+        gc.fillOval(smokeX - smokeSize, smokeY - smokeSize * 0.5, smokeSize * 2, smokeSize)
+      }
+    }
+  }
+
+  private def drawToxicExplosionEffect(screenX: Double, screenY: Double, elapsed: Long): Unit = {
+    val progress = elapsed.toDouble / EXPLOSION_ANIMATION_MS
+    val fadeOut = 1.0 - progress
+    val maxScreenRadius = 5.0 * HW * 1.5
+
+    // Phase 1: Sickly green flash (0-15%)
+    if (progress < 0.15) {
+      val flashPct = progress / 0.15
+      val flashR = maxScreenRadius * 0.7 * flashPct
+      val flashAlpha = 0.7 * (1.0 - flashPct)
+      gc.setFill(Color.color(0.6, 1.0, 0.3, flashAlpha))
+      gc.fillOval(screenX - flashR, screenY - flashR * 0.5, flashR * 2, flashR)
+      gc.setFill(Color.color(0.8, 1.0, 0.5, flashAlpha * 0.5))
+      gc.fillOval(screenX - flashR * 0.4, screenY - flashR * 0.2, flashR * 0.8, flashR * 0.4)
+    }
+
+    // Phase 2: Expanding toxic cloud
+    val cloudR = maxScreenRadius * Math.min(1.0, progress * 2.0)
+
+    // Outer dark haze
+    gc.setFill(Color.color(0.15, 0.3, 0.05, 0.1 * fadeOut))
+    gc.fillOval(screenX - cloudR * 1.6, screenY - cloudR * 0.8, cloudR * 3.2, cloudR * 1.6)
+
+    // Outer cloud — dark green
+    gc.setFill(Color.color(0.2, 0.45, 0.08, 0.2 * fadeOut))
+    gc.fillOval(screenX - cloudR * 1.3, screenY - cloudR * 0.65, cloudR * 2.6, cloudR * 1.3)
+
+    // Main cloud — sickly green
+    gc.setFill(Color.color(0.3, 0.65, 0.12, 0.3 * fadeOut))
+    gc.fillOval(screenX - cloudR, screenY - cloudR * 0.5, cloudR * 2, cloudR)
+
+    // Inner cloud — bright toxic green
+    val innerR = cloudR * 0.65 * fadeOut
+    gc.setFill(Color.color(0.45, 0.8, 0.15, 0.4 * fadeOut))
+    gc.fillOval(screenX - innerR, screenY - innerR * 0.5, innerR * 2, innerR)
+
+    // Bright green-yellow core
+    val coreR = cloudR * 0.35 * fadeOut
+    gc.setFill(Color.color(0.6, 0.9, 0.25, 0.5 * fadeOut))
+    gc.fillOval(screenX - coreR, screenY - coreR * 0.5, coreR * 2, coreR)
+
+    // Purple-tinged shockwave rings
+    val ringR = maxScreenRadius * progress * 1.3
+    gc.setStroke(Color.color(0.4, 0.8, 0.2, 0.4 * fadeOut))
+    gc.setLineWidth(3.0 * fadeOut)
+    gc.strokeOval(screenX - ringR, screenY - ringR * 0.5, ringR * 2, ringR)
+
+    if (progress > 0.1) {
+      val ring2R = maxScreenRadius * (progress - 0.1) / 0.9 * 1.1
+      gc.setStroke(Color.color(0.5, 0.3, 0.6, 0.25 * fadeOut))
+      gc.setLineWidth(2.0 * fadeOut)
+      gc.strokeOval(screenX - ring2R, screenY - ring2R * 0.5, ring2R * 2, ring2R)
+    }
+
+    // Toxic particles — green droplets and purple wisps
+    val particleCount = 14
+    for (i <- 0 until particleCount) {
+      val angle = i * (2 * Math.PI / particleCount) + i * 0.5
+      val speed = 0.5 + (i % 4) * 0.15
+      val dist = progress * maxScreenRadius * speed
+      val rise = progress * progress * 12.0 * (0.7 + (i % 3) * 0.2)
+      val px = screenX + dist * Math.cos(angle)
+      val py = screenY + dist * Math.sin(angle) * 0.5 - rise
+      val pSize = (2.5 + (i % 3) * 1.5) * fadeOut
+
+      if (i % 3 == 0) {
+        // Bright toxic green droplet
+        gc.setFill(Color.color(0.4, 0.9, 0.2, 0.65 * fadeOut))
+      } else if (i % 3 == 1) {
+        // Dark green glob
+        gc.setFill(Color.color(0.2, 0.55, 0.1, 0.55 * fadeOut))
+      } else {
+        // Purple miasma wisp
+        gc.setFill(Color.color(0.45, 0.25, 0.55, 0.4 * fadeOut))
+      }
+      gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+    }
+
+    // Rising toxic smoke (late phase)
+    if (progress > 0.25) {
+      val smokeProgress = (progress - 0.25) / 0.75
+      for (s <- 0 until 5) {
+        val smokeT = smokeProgress * (0.6 + s * 0.1)
+        val smokeX = screenX + Math.sin(s * 2.1 + progress * 3) * maxScreenRadius * 0.35
+        val smokeY = screenY - smokeT * 30.0
+        val smokeAlpha = Math.max(0.0, 0.25 * (1.0 - smokeT))
+        val smokeSize = 5.0 + smokeT * 10.0
+        if (s % 2 == 0) {
+          gc.setFill(Color.color(0.2, 0.35, 0.1, smokeAlpha))
+        } else {
+          gc.setFill(Color.color(0.35, 0.2, 0.4, smokeAlpha * 0.7))
+        }
         gc.fillOval(smokeX - smokeSize, smokeY - smokeSize * 0.5, smokeSize * 2, smokeSize)
       }
     }
