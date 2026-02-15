@@ -77,6 +77,10 @@ class Projectile(
     !world.isWalkable(getCellX, getCellY)
   }
 
+  def hitsFence(world: WorldData): Boolean = {
+    world.getTile(getCellX, getCellY) == Tile.Fence
+  }
+
   def hitsPlayer(player: Player): Boolean = {
     if (player.getId.equals(ownerId)) return false
     val pDef = ProjectileDef.get(projectileType)

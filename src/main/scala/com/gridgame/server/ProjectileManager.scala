@@ -79,7 +79,7 @@ class ProjectileManager(registry: ClientRegistry) {
               events += ProjectileDespawned(projectile)
             }
             resolved = true
-          } else if (projectile.hitsNonWalkable(world) && !pDef.passesThroughWalls) {
+          } else if (projectile.hitsNonWalkable(world) && (!pDef.passesThroughWalls || projectile.hitsFence(world))) {
             toRemove += projectile.id
             if (pDef.isExplosive) {
               events += ProjectileAoE(projectile)
