@@ -900,6 +900,34 @@ class GameCanvas(client: GameClient) extends Canvas() {
         gc.setFill(Color.color(1.0, 1.0, 1.0, 0.2))
         gc.fillOval(centerX - s * 0.3, centerY + s * 0.05, s * 0.3, s * 0.35)
 
+      case "Blood Siphon" =>
+        // Blood droplet with inner highlight
+        gc.fillPolygon(
+          Array(centerX, centerX + s * 0.5, centerX + s * 0.45, centerX, centerX - s * 0.45, centerX - s * 0.5),
+          Array(centerY - s * 0.9, centerY + s * 0.15, centerY + s * 0.55, centerY + s * 0.85, centerY + s * 0.55, centerY + s * 0.15),
+          6
+        )
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.3))
+        gc.fillOval(centerX - s * 0.15, centerY - s * 0.1, s * 0.25, s * 0.35)
+
+      case "Bat Swarm" =>
+        // Bat silhouette: two wing arcs + small body
+        gc.fillOval(centerX - s * 0.12, centerY - s * 0.15, s * 0.24, s * 0.3)
+        // Left wing
+        gc.beginPath()
+        gc.moveTo(centerX - s * 0.1, centerY)
+        gc.quadraticCurveTo(centerX - s * 0.6, centerY - s * 0.9, centerX - s * 0.9, centerY - s * 0.3)
+        gc.quadraticCurveTo(centerX - s * 0.55, centerY - s * 0.1, centerX - s * 0.1, centerY + s * 0.15)
+        gc.closePath()
+        gc.fill()
+        // Right wing
+        gc.beginPath()
+        gc.moveTo(centerX + s * 0.1, centerY)
+        gc.quadraticCurveTo(centerX + s * 0.6, centerY - s * 0.9, centerX + s * 0.9, centerY - s * 0.3)
+        gc.quadraticCurveTo(centerX + s * 0.55, centerY - s * 0.1, centerX + s * 0.1, centerY + s * 0.15)
+        gc.closePath()
+        gc.fill()
+
       case _ =>
         // Default fallback: filled circle
         gc.fillOval(centerX - s, centerY - s, s * 2, s * 2)
