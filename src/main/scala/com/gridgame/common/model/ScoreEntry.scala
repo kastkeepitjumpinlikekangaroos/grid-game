@@ -6,5 +6,6 @@ class ScoreEntry(
     val playerId: UUID,
     val kills: Int,
     val deaths: Int,
-    val rank: Int
+    val rank: Int,
+    val teamId: Int = 0
 )

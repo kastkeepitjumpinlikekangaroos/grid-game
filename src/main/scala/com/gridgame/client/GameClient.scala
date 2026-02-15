@@ -103,7 +103,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   @volatile var currentLobbyPlayerCount: Int = 0
   @volatile var currentLobbyMaxPlayers: Int = Constants.MAX_LOBBY_PLAYERS
   @volatile var isLobbyHost: Boolean = false
+  @volatile var currentLobbyGameMode: Byte = 0  // 0=FFA, 1=Teams
+  @volatile var currentLobbyTeamSize: Int = 2
+  @volatile var localTeamId: Byte = 0
   val lobbyList: CopyOnWriteArrayList[LobbyInfo] = new CopyOnWriteArrayList[LobbyInfo]()
+  val lobbyMembers: CopyOnWriteArrayList[Array[AnyRef]] = new CopyOnWriteArrayList[Array[AnyRef]]() // Array(UUID, String)
 
   // Game stats
   @volatile var killCount: Int = 0
@@ -785,7 +789,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         val info = new LobbyInfo(
           packet.getLobbyId, packet.getLobbyName, packet.getMapIndex & 0xFF,
           packet.getDurationMinutes & 0xFF, packet.getPlayerCount & 0xFF,
-          packet.getMaxPlayers & 0xFF, packet.getLobbyStatus & 0xFF
+          packet.getMaxPlayers & 0xFF, packet.getLobbyStatus & 0xFF,
+          packet.getGameMode & 0xFF, packet.getTeamSize & 0xFF
         )
         lobbyList.add(info)
 
@@ -799,16 +804,34 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         currentLobbyDuration = packet.getDurationMinutes & 0xFF
         currentLobbyPlayerCount = packet.getPlayerCount & 0xFF
         currentLobbyMaxPlayers = packet.getMaxPlayers & 0xFF
+        currentLobbyGameMode = packet.getGameMode
+        currentLobbyTeamSize = packet.getTeamSize & 0xFF
         clientState = ClientState.IN_LOBBY
+        lobbyMembers.clear()
+        lobbyMembers.add(Array(localPlayerId.asInstanceOf[AnyRef], playerName.asInstanceOf[AnyRef]))
         if (lobbyJoinedListener != null) lobbyJoinedListener()
 
-      case LobbyAction.PLAYER_JOINED | LobbyAction.PLAYER_LEFT =>
+      case LobbyAction.PLAYER_JOINED =>
         currentLobbyPlayerCount = packet.getPlayerCount & 0xFF
+        currentLobbyMaxPlayers = packet.getMaxPlayers & 0xFF
+        val memberName = packet.getLobbyName
+        val memberId = packet.getPlayerId
+        lobbyMembers.add(Array(memberId.asInstanceOf[AnyRef], memberName.asInstanceOf[AnyRef]))
+        if (lobbyUpdatedListener != null) lobbyUpdatedListener()
+
+      case LobbyAction.PLAYER_LEFT =>
+        currentLobbyPlayerCount = packet.getPlayerCount & 0xFF
+        currentLobbyMaxPlayers = packet.getMaxPlayers & 0xFF
+        val leftId = packet.getPlayerId
+        import scala.jdk.CollectionConverters._
+        lobbyMembers.asScala.find(arr => arr(0).asInstanceOf[UUID].equals(leftId)).foreach(lobbyMembers.remove)
         if (lobbyUpdatedListener != null) lobbyUpdatedListener()
 
       case LobbyAction.CONFIG_UPDATE =>
         currentLobbyMapIndex = packet.getMapIndex & 0xFF
         currentLobbyDuration = packet.getDurationMinutes & 0xFF
+        currentLobbyGameMode = packet.getGameMode
+        currentLobbyTeamSize = packet.getTeamSize & 0xFF
         if (lobbyUpdatedListener != null) lobbyUpdatedListener()
 
       case LobbyAction.GAME_STARTING =>
@@ -879,7 +902,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         scoreboard.clear()
 
       case GameEvent.SCORE_ENTRY =>
-        val entry = new ScoreEntry(packet.getPlayerId, packet.getKills.toInt, packet.getDeaths.toInt, packet.getRank.toInt)
+        val entry = new ScoreEntry(packet.getPlayerId, packet.getKills.toInt, packet.getDeaths.toInt, packet.getRank.toInt, packet.getTeamId.toInt)
         scoreboard.add(entry)
 
       case GameEvent.SCORE_END =>
@@ -979,6 +1002,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         currentLobbyDuration = packet.getDurationMinutes & 0xFF
         currentLobbyPlayerCount = packet.getPlayerCount & 0xFF
         currentLobbyMaxPlayers = packet.getMaxPlayers & 0xFF
+        if (packet.getMode == RankedQueueMode.TEAMS) {
+          currentLobbyGameMode = 1
+          currentLobbyTeamSize = Constants.TEAMS_TEAM_SIZE
+        }
         clientState = ClientState.IN_LOBBY
         if (rankedMatchFoundListener != null) rankedMatchFoundListener()
 
@@ -1060,10 +1087,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     networkThread.send(packet)
   }
 
-  def updateLobbyConfig(mapIndex: Int, durationMinutes: Int): Unit = {
+  def updateLobbyConfig(mapIndex: Int, durationMinutes: Int, gameMode: Byte = -1, teamSize: Int = -1): Unit = {
+    val gm = if (gameMode >= 0) gameMode else currentLobbyGameMode
+    val ts = if (teamSize > 0) teamSize else currentLobbyTeamSize
     val packet = new LobbyActionPacket(
-      sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.CONFIG_UPDATE, currentLobbyId,
-      mapIndex.toByte, durationMinutes.toByte, 0.toByte, 0.toByte, 0.toByte, ""
+      sequenceNumber.getAndIncrement(), localPlayerId, Packet.getCurrentTimestamp,
+      LobbyAction.CONFIG_UPDATE, currentLobbyId,
+      mapIndex.toByte, durationMinutes.toByte, 0.toByte, 0.toByte, 0.toByte, "",
+      0.toByte, gm, ts.toByte
     )
     networkThread.send(packet)
   }
@@ -1083,6 +1114,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     items.clear()
     isDead = false
     isRespawning = false
+    localTeamId = 0
+    currentLobbyGameMode = 0
+    currentLobbyTeamSize = 2
+    lobbyMembers.clear()
   }
 
   // Ranked queue actions
@@ -1266,9 +1301,15 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       packet.getHealth
     )
     player.setCharacterId(packet.getCharacterId)
+    player.setTeamId(packet.getTeamId)
     players.put(player.getId, player)
 
-    println(s"GameClient: Player joined - ${player.getId.toString.substring(0, 8)} ('${player.getName}') at ${player.getPosition} with health ${player.getHealth}")
+    // If this is the local player's join echo, capture team assignment
+    if (packet.getPlayerId.equals(localPlayerId)) {
+      localTeamId = packet.getTeamId
+    }
+
+    println(s"GameClient: Player joined - ${player.getId.toString.substring(0, 8)} ('${player.getName}') at ${player.getPosition} with health ${player.getHealth} team=${packet.getTeamId}")
   }
 
   private def handlePlayerUpdate(packet: PlayerUpdatePacket): Unit = {
@@ -1301,6 +1342,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       player.setChargeLevel(packet.getChargeLevel)
       if (packet.getCharacterId != 0 || player.getCharacterId == 0) {
         player.setCharacterId(packet.getCharacterId)
+      }
+      if (packet.getTeamId != 0) {
+        player.setTeamId(packet.getTeamId)
       }
 
       // Apply effect flags from server

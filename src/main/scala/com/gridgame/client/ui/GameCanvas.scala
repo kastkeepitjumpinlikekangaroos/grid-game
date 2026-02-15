@@ -106,7 +106,10 @@ class GameCanvas(client: GameClient) extends Canvas() {
     ProjectileType.SWORD_WAVE -> ((p, cx, cy) => drawSwordWaveProjectile(p, cx, cy)),
     ProjectileType.PLAGUE_BOLT -> ((p, cx, cy) => drawPlagueBoltProjectile(p, cx, cy)),
     ProjectileType.MIASMA     -> ((p, cx, cy) => drawMiasmaProjectile(p, cx, cy)),
-    ProjectileType.BLIGHT_BOMB -> ((p, cx, cy) => drawBlightBombProjectile(p, cx, cy))
+    ProjectileType.BLIGHT_BOMB -> ((p, cx, cy) => drawBlightBombProjectile(p, cx, cy)),
+    ProjectileType.BLOOD_FANG  -> ((p, cx, cy) => drawBloodFangProjectile(p, cx, cy)),
+    ProjectileType.BLOOD_SIPHON -> ((p, cx, cy) => drawBloodSiphonProjectile(p, cx, cy)),
+    ProjectileType.BAT_SWARM   -> ((p, cx, cy) => drawBatSwarmProjectile(p, cx, cy))
   )
 
   // --- Isometric coordinate transforms ---
@@ -3887,7 +3890,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     drawHitEffect(screenX, spriteCenter, client.getPlayerHitTime(playerId))
 
     // Draw health bar above player
-    drawHealthBar(screenX, spriteY, player.getHealth, player.getMaxHealth)
+    drawHealthBar(screenX, spriteY, player.getHealth, player.getMaxHealth, player.getTeamId)
   }
 
   private def drawLocalPlayer(wx: Double, wy: Double, camOffX: Double, camOffY: Double): Unit = {
@@ -3993,7 +3996,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     drawHitEffect(screenX, spriteCenter, localHitTime)
 
     // Draw health bar above local player
-    drawHealthBar(screenX, spriteY, client.getLocalHealth, client.getSelectedCharacterMaxHealth)
+    drawHealthBar(screenX, spriteY, client.getLocalHealth, client.getSelectedCharacterMaxHealth, client.localTeamId)
   }
 
   private val CAST_FLASH_MS = 200
@@ -4626,7 +4629,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     }
   }
 
-  private def drawHealthBar(screenCenterX: Double, spriteTopY: Double, health: Int, maxHealth: Int = Constants.MAX_HEALTH): Unit = {
+  private def drawHealthBar(screenCenterX: Double, spriteTopY: Double, health: Int, maxHealth: Int = Constants.MAX_HEALTH, teamId: Byte = 0): Unit = {
     val barWidth = Constants.HEALTH_BAR_WIDTH_PX
     val barHeight = Constants.HEALTH_BAR_HEIGHT_PX
     val barX = screenCenterX - barWidth / 2.0
@@ -4636,16 +4639,37 @@ class GameCanvas(client: GameClient) extends Canvas() {
     gc.setFill(Color.DARKRED)
     gc.fillRect(barX, barY, barWidth, barHeight)
 
-    // Green fill (current health)
+    // Fill color based on team
+    val fillColor: Color = teamId match {
+      case 1 => Color.web("#4a82ff") // blue
+      case 2 => Color.web("#e84057") // red
+      case 3 => Color.LIMEGREEN     // green
+      case 4 => Color.web("#f1c40f") // yellow
+      case _ => Color.LIMEGREEN     // FFA default
+    }
+
+    // Health fill
     val healthPercentage = health.toDouble / maxHealth
     val fillWidth = barWidth * healthPercentage
-    gc.setFill(Color.LIMEGREEN)
+    gc.setFill(fillColor)
     gc.fillRect(barX, barY, fillWidth, barHeight)
 
     // Black border
     gc.setStroke(Color.BLACK)
     gc.setLineWidth(1)
     gc.strokeRect(barX, barY, barWidth, barHeight)
+
+    // Team indicator diamond below health bar
+    if (teamId != 0) {
+      val indicatorSize = 4.0
+      val indicatorY = barY + barHeight + 2.0
+      gc.setFill(fillColor)
+      gc.fillPolygon(
+        Array(screenCenterX, screenCenterX + indicatorSize, screenCenterX, screenCenterX - indicatorSize),
+        Array(indicatorY, indicatorY + indicatorSize, indicatorY + indicatorSize * 2, indicatorY + indicatorSize),
+        4
+      )
+    }
   }
 
   private def drawGameOverScreen(): Unit = {
@@ -5190,6 +5214,246 @@ class GameCanvas(client: GameClient) extends Canvas() {
           val pR = 2.5 * (1.0 - t * 0.5)
           gc.fillOval(pX - pR, pY - pR, pR * 2, pR * 2)
         }
+      }
+    }
+  }
+
+  // === Vampire projectile renderers ===
+
+  private def drawBloodFangProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    // Very short-range bite/drain — blood swirling inward toward the projectile tip
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+
+    val sx = worldToScreenX(projX, projY, camOffX)
+    val sy = worldToScreenY(projX, projY, camOffY)
+
+    val margin = 100.0
+    if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
+      val phase = (animationTick + projectile.id * 29) * 0.45
+      val pulse = 0.8 + 0.2 * Math.sin(phase)
+      val fastFlicker = 0.85 + 0.15 * Math.sin(phase * 3.1)
+
+      // Dark crimson aura — the drain field
+      gc.setFill(Color.color(0.6, 0.0, 0.05, 0.08 * pulse))
+      gc.fillOval(sx - 28, sy - 28, 56, 56)
+      gc.setFill(Color.color(0.7, 0.0, 0.08, 0.12 * pulse))
+      gc.fillOval(sx - 18, sy - 18, 36, 36)
+
+      // Blood particles spiraling inward — the draining effect
+      for (i <- 0 until 10) {
+        val t = ((animationTick * 0.08 + i.toDouble / 10 + projectile.id * 0.11) % 1.0)
+        val spiralAngle = phase * 2.5 + i * (Math.PI * 2 / 10) + t * Math.PI * 3
+        val spiralDist = (1.0 - t) * 22.0
+        val px = sx + spiralDist * Math.cos(spiralAngle)
+        val py = sy + spiralDist * Math.sin(spiralAngle) * 0.6 // isometric squash
+        val pAlpha = Math.max(0.0, Math.min(1.0, 0.7 * t * fastFlicker))
+        val pSize = 1.5 + t * 2.5
+        gc.setFill(Color.color(0.8, 0.05, 0.1, pAlpha))
+        gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+
+        // Blood droplet trail behind each particle
+        val trailDist = spiralDist + 5.0
+        val trailX = sx + trailDist * Math.cos(spiralAngle - 0.3)
+        val trailY = sy + trailDist * Math.sin(spiralAngle - 0.3) * 0.6
+        val trailAlpha = pAlpha * 0.4
+        gc.setFill(Color.color(0.5, 0.0, 0.05, trailAlpha))
+        gc.fillOval(trailX - pSize * 0.6, trailY - pSize * 0.6, pSize * 1.2, pSize * 1.2)
+      }
+
+      // Converging blood streams — tendrils pulling inward
+      for (strand <- 0 until 4) {
+        val angle = phase * 0.8 + strand * (Math.PI / 2)
+        val segments = 6
+        gc.setLineWidth(2.0)
+        gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+        var prevX = sx + 20.0 * Math.cos(angle)
+        var prevY = sy + 20.0 * Math.sin(angle) * 0.6
+        for (seg <- 1 to segments) {
+          val st = seg.toDouble / segments
+          val dist = 20.0 * (1.0 - st)
+          val wobble = Math.sin(phase * 3.0 + strand * 2.0 + st * Math.PI) * 4.0 * (1.0 - st)
+          val perpAngle = angle + Math.PI / 2
+          val cx = sx + dist * Math.cos(angle) + wobble * Math.cos(perpAngle)
+          val cy = sy + dist * Math.sin(angle) * 0.6 + wobble * Math.sin(perpAngle) * 0.6
+          val sAlpha = Math.max(0.0, 0.5 * st * pulse)
+          gc.setStroke(Color.color(0.75, 0.05, 0.1, sAlpha))
+          gc.strokeLine(prevX, prevY, cx, cy)
+          prevX = cx
+          prevY = cy
+        }
+      }
+
+      // Central blood orb — pulsing bright crimson core
+      val orbR = 6.0 * pulse
+      gc.setFill(Color.color(0.7, 0.0, 0.08, 0.4 * pulse))
+      gc.fillOval(sx - orbR * 1.5, sy - orbR * 1.5, orbR * 3, orbR * 3)
+      gc.setFill(Color.color(0.85, 0.1, 0.15, 0.7 * fastFlicker))
+      gc.fillOval(sx - orbR, sy - orbR, orbR * 2, orbR * 2)
+      gc.setFill(Color.color(1.0, 0.3, 0.25, 0.9 * fastFlicker))
+      gc.fillOval(sx - orbR * 0.4, sy - orbR * 0.4, orbR * 0.8, orbR * 0.8)
+    }
+  }
+
+  private def drawBloodSiphonProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    // Medium-range blood beam with trailing droplets
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 3.0
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 37) * 0.35
+      val pulse = 0.85 + 0.15 * Math.sin(phase)
+      val fastFlicker = 0.8 + 0.2 * Math.sin(phase * 2.7)
+
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len < 1) return
+      val nx = dx / len
+      val ny = dy / len
+
+      // Dark crimson outer mist
+      gc.setStroke(Color.color(0.5, 0.0, 0.05, 0.06 * pulse))
+      gc.setLineWidth(35 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Blood red glow layers
+      gc.setStroke(Color.color(0.6, 0.0, 0.08, 0.15 * pulse))
+      gc.setLineWidth(20 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      gc.setStroke(Color.color(0.75, 0.05, 0.12, 0.4 * fastFlicker))
+      gc.setLineWidth(10 * fastFlicker)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Bright crimson core
+      gc.setStroke(Color.color(0.9, 0.2, 0.2, 0.85 * fastFlicker))
+      gc.setLineWidth(3.5)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Blood droplet particles along the beam
+      for (i <- 0 until 8) {
+        val t = ((animationTick * 0.07 + i.toDouble / 8 + projectile.id * 0.13) % 1.0)
+        val wave = Math.sin(phase * 2.0 + i * 1.5) * 6.0
+        val px = tailX + dx * t + (-ny) * wave
+        val py = tailY + dy * t + nx * wave
+        val pAlpha = Math.max(0.0, Math.min(1.0, 0.6 * (1.0 - Math.abs(t - 0.5) * 2.0) * pulse))
+        val pSize = 2.0 + Math.sin(phase + i) * 1.0
+        // Dark blood droplet
+        gc.setFill(Color.color(0.7, 0.02, 0.08, pAlpha))
+        gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
+        // Bright highlight
+        gc.setFill(Color.color(0.95, 0.2, 0.2, pAlpha * 0.5))
+        gc.fillOval(px - pSize * 0.4, py - pSize * 0.4, pSize * 0.8, pSize * 0.8)
+      }
+
+      // Dripping blood trailing behind
+      for (i <- 0 until 4) {
+        val t = ((animationTick * 0.05 + i * 0.25 + projectile.id * 0.09) % 1.0)
+        val dropX = tailX - dx * 0.1 * t + Math.sin(phase + i * 1.8) * 2.0
+        val dropY = tailY - dy * 0.1 * t + t * 6.0  // drip downward
+        val dropAlpha = Math.max(0.0, 0.35 * (1.0 - t))
+        val dropSize = 1.5 + t * 1.5
+        gc.setFill(Color.color(0.5, 0.0, 0.05, dropAlpha))
+        gc.fillOval(dropX - dropSize, dropY - dropSize, dropSize * 2, dropSize * 2)
+      }
+
+      // Tip orb — pulsing blood orb
+      val orbR = 7.0 * pulse
+      gc.setFill(Color.color(0.5, 0.0, 0.05, 0.15 * pulse))
+      gc.fillOval(tipX - orbR * 2, tipY - orbR * 2, orbR * 4, orbR * 4)
+      gc.setFill(Color.color(0.7, 0.05, 0.1, 0.4 * pulse))
+      gc.fillOval(tipX - orbR, tipY - orbR, orbR * 2, orbR * 2)
+      gc.setFill(Color.color(0.95, 0.2, 0.2, 0.8 * fastFlicker))
+      gc.fillOval(tipX - orbR * 0.4, tipY - orbR * 0.4, orbR * 0.8, orbR * 0.8)
+    }
+  }
+
+  private def drawBatSwarmProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    // Dark bat-like projectile with flapping wing silhouettes
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+
+    val sx = worldToScreenX(projX, projY, camOffX)
+    val sy = worldToScreenY(projX, projY, camOffY)
+
+    val margin = 100.0
+    if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
+      val phase = (animationTick + projectile.id * 23) * 0.5
+      val pulse = 0.8 + 0.2 * Math.sin(phase)
+      val flapAngle = Math.sin(phase * 4.0) * 0.5  // wing flap
+
+      // Dark crimson aura
+      gc.setFill(Color.color(0.4, 0.0, 0.05, 0.08 * pulse))
+      gc.fillOval(sx - 20, sy - 20, 40, 40)
+
+      // Calculate projectile direction for orienting the bat
+      val pdx = projectile.dx.toDouble
+      val pdy = projectile.dy.toDouble
+      val pLen = Math.sqrt(pdx * pdx + pdy * pdy)
+      val dirX = if (pLen > 0.01) pdx / pLen else 1.0
+      val dirY = if (pLen > 0.01) pdy / pLen else 0.0
+
+      // Bat body — small dark ellipse
+      gc.setFill(Color.color(0.15, 0.05, 0.1, 0.85 * pulse))
+      gc.fillOval(sx - 3, sy - 2, 6, 4)
+
+      // Bat wings — two triangular shapes that flap
+      val wingSpan = 8.0
+      val wingLift = flapAngle * 6.0
+      val perpX = -dirY  // perpendicular to flight direction
+      val perpY = dirX
+
+      // Left wing
+      val lwTipX = sx + perpX * wingSpan
+      val lwTipY = sy + perpY * wingSpan * 0.6 - wingLift
+      val lwMidX = sx + perpX * wingSpan * 0.5 - dirX * 3
+      val lwMidY = sy + perpY * wingSpan * 0.3 * 0.6 - wingLift * 0.5 - dirY * 3 * 0.6
+      gc.setFill(Color.color(0.2, 0.05, 0.1, 0.75 * pulse))
+      gc.fillPolygon(
+        Array(sx - 1, lwMidX, lwTipX, sx - 1),
+        Array(sy, lwMidY, lwTipY, sy + 1),
+        4
+      )
+
+      // Right wing
+      val rwTipX = sx - perpX * wingSpan
+      val rwTipY = sy - perpY * wingSpan * 0.6 - wingLift
+      val rwMidX = sx - perpX * wingSpan * 0.5 - dirX * 3
+      val rwMidY = sy - perpY * wingSpan * 0.3 * 0.6 - wingLift * 0.5 - dirY * 3 * 0.6
+      gc.setFill(Color.color(0.2, 0.05, 0.1, 0.75 * pulse))
+      gc.fillPolygon(
+        Array(sx + 1, rwMidX, rwTipX, sx + 1),
+        Array(sy, rwMidY, rwTipY, sy + 1),
+        4
+      )
+
+      // Red glowing eyes on the bat
+      gc.setFill(Color.color(1.0, 0.15, 0.1, 0.9))
+      gc.fillOval(sx + perpX * 1.5 + dirX * 2 - 1, sy + perpY * 1.5 * 0.6 + dirY * 2 * 0.6 - 1, 2, 2)
+      gc.fillOval(sx - perpX * 1.5 + dirX * 2 - 1, sy - perpY * 1.5 * 0.6 + dirY * 2 * 0.6 - 1, 2, 2)
+
+      // Blood mist trail behind
+      for (i <- 0 until 5) {
+        val t = ((animationTick * 0.09 + i * 0.2 + projectile.id * 0.11) % 1.0)
+        val trailX = sx - dirX * t * 18.0 + Math.sin(phase * 2.0 + i * 1.7) * 3.0
+        val trailY = sy - dirY * t * 18.0 * 0.6 + t * 4.0
+        val trailAlpha = Math.max(0.0, 0.3 * (1.0 - t) * pulse)
+        val trailSize = 2.0 + t * 3.0
+        gc.setFill(Color.color(0.5, 0.0, 0.08, trailAlpha))
+        gc.fillOval(trailX - trailSize, trailY - trailSize, trailSize * 2, trailSize * 2)
       }
     }
   }

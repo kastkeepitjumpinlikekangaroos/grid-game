@@ -261,7 +261,8 @@ class GameServer(port: Int, val worldFile: String = "") {
                       player.getHealth,
                       updatePacket.getChargeLevel,
                       flags,
-                      player.getCharacterId
+                      player.getCharacterId,
+                      player.getTeamId
                     )
                   } else {
                     packet
@@ -278,7 +279,8 @@ class GameServer(port: Int, val worldFile: String = "") {
                       joinPacket.getColorRGB,
                       joinPacket.getPlayerName,
                       player.getHealth,
-                      player.getCharacterId
+                      player.getCharacterId,
+                      player.getTeamId
                     )
                   } else {
                     packet
@@ -517,16 +519,43 @@ class GameServer(port: Int, val worldFile: String = "") {
 
     // Send SCORE_ENTRY for each player and collect results for persistence
     val scoreboard = instance.killTracker.getScoreboard
-    var rank: Byte = 1
     val matchResults = scala.collection.mutable.ArrayBuffer[(UUID, Int, Int, Byte)]()
-    scoreboard.foreach { case (pid, kills, deaths) =>
-      val scorePacket = new GameEventPacket(
-        getNextSequenceNumber, pid, GameEvent.SCORE_ENTRY, lobbyId,
-        0, kills.toShort, deaths.toShort, null, rank, 0.toShort, 0.toShort
-      )
-      instance.broadcastToInstance(scorePacket)
-      matchResults += ((pid, kills, deaths, rank))
-      rank = (rank + 1).toByte
+
+    if (instance.gameMode == 1) {
+      // Teams mode: group by team, rank teams by total kills, assign same rank to team members
+      val playerScores = scoreboard.map { case (pid, kills, deaths) =>
+        val teamId = instance.teamAssignments.getOrDefault(pid, 0.toByte)
+        (pid, kills, deaths, teamId)
+      }
+      val teamTotals = playerScores.groupBy(_._4).toSeq.map { case (teamId, members) =>
+        (teamId, members.map(_._2).sum)
+      }.sortBy(-_._2)
+
+      val teamRanks = teamTotals.zipWithIndex.map { case ((teamId, _), idx) =>
+        teamId -> (idx + 1).toByte
+      }.toMap
+
+      playerScores.foreach { case (pid, kills, deaths, teamId) =>
+        val rank = teamRanks.getOrElse(teamId, 1.toByte)
+        val scorePacket = new GameEventPacket(
+          getNextSequenceNumber, pid, GameEvent.SCORE_ENTRY, lobbyId,
+          0, kills.toShort, deaths.toShort, null, rank, 0.toShort, 0.toShort, teamId
+        )
+        instance.broadcastToInstance(scorePacket)
+        matchResults += ((pid, kills, deaths, rank))
+      }
+    } else {
+      // FFA mode: rank individually
+      var rank: Byte = 1
+      scoreboard.foreach { case (pid, kills, deaths) =>
+        val scorePacket = new GameEventPacket(
+          getNextSequenceNumber, pid, GameEvent.SCORE_ENTRY, lobbyId,
+          0, kills.toShort, deaths.toShort, null, rank, 0.toShort, 0.toShort
+        )
+        instance.broadcastToInstance(scorePacket)
+        matchResults += ((pid, kills, deaths, rank))
+        rank = (rank + 1).toByte
+      }
     }
 
     // Persist match results (exclude bots)

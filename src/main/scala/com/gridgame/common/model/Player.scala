@@ -27,6 +27,7 @@ class Player(
   private var phasedUntil: Long = 0
   private var serverTeleportedUntil: Long = 0
   private var characterId: Byte = CharacterId.DEFAULT.id
+  private var teamId: Byte = 0
 
   def getId: UUID = id
 
@@ -134,6 +135,12 @@ class Player(
   def setCharacterId(id: Byte): Unit = {
     this.characterId = id
     this.maxHealth = CharacterDef.get(id).maxHealth
+  }
+
+  def getTeamId: Byte = teamId
+
+  def setTeamId(id: Byte): Unit = {
+    this.teamId = id
   }
 
   def isDead: Boolean = health <= 0

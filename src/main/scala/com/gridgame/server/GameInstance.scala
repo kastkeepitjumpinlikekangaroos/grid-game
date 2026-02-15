@@ -13,12 +13,21 @@ import scala.jdk.CollectionConverters._
 
 class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes: Int, val server: GameServer) {
   val registry = new ClientRegistry()
-  val projectileManager = new ProjectileManager(registry)
+  val teamAssignments = new java.util.concurrent.ConcurrentHashMap[UUID, Byte]()
+  var gameMode: Byte = 0 // 0=FFA, 1=Teams
+  val projectileManager = new ProjectileManager(registry, isTeammate)
   val itemManager = new ItemManager()
   val killTracker = new KillTracker()
   val handler = new ClientHandler(registry, server, projectileManager, itemManager, this)
   var world: WorldData = _
   val modifiedTiles = new java.util.concurrent.ConcurrentHashMap[(Int, Int), Int]()
+
+  def isTeammate(id1: UUID, id2: UUID): Boolean = {
+    if (gameMode == 0) return false
+    val team1: java.lang.Byte = teamAssignments.get(id1)
+    val team2: java.lang.Byte = teamAssignments.get(id2)
+    team1 != null && team2 != null && team1.byteValue() != 0 && team1.byteValue() == team2.byteValue()
+  }
 
   var botController: BotController = _
 
@@ -157,6 +166,34 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
           broadcastToInstance(updatePacket)
         }
 
+        // Life-steal on killing blow
+        ProjectileDef.get(projectile.projectileType).onHitEffect.foreach {
+          case LifeSteal(healPercent) =>
+            val lsOwner = registry.get(projectile.ownerId)
+            if (lsOwner != null && !lsOwner.isDead) {
+              val pDef = ProjectileDef.get(projectile.projectileType)
+              val dmg = pDef.effectiveDamage(projectile.chargeLevel, projectile.getDistanceTraveled)
+              val healAmount = dmg * healPercent / 100
+              val newHealth = Math.min(lsOwner.getMaxHealth, lsOwner.getHealth + healAmount)
+              lsOwner.setHealth(newHealth)
+              val ownerFlags = (if (lsOwner.hasShield) 0x01 else 0) |
+                               (if (lsOwner.hasGemBoost) 0x02 else 0) |
+                               (if (lsOwner.isFrozen) 0x04 else 0) |
+                               (if (lsOwner.isPhased) 0x08 else 0)
+              val ownerUpdate = new PlayerUpdatePacket(
+                server.getNextSequenceNumber,
+                projectile.ownerId,
+                lsOwner.getPosition,
+                lsOwner.getColorRGB,
+                lsOwner.getHealth,
+                0,
+                ownerFlags
+              )
+              broadcastToInstance(ownerUpdate)
+            }
+          case _ => // no life-steal
+        }
+
         // Record kill
         killTracker.recordKill(projectile.ownerId, targetId)
 
@@ -275,6 +312,34 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                   target.setPosition(new Position(destX, destY))
                 }
               }
+
+            case LifeSteal(healPercent) =>
+              val lsOwner = registry.get(projectile.ownerId)
+              if (lsOwner != null && !lsOwner.isDead) {
+                val pDef = ProjectileDef.get(projectile.projectileType)
+                val dmg = pDef.effectiveDamage(projectile.chargeLevel, projectile.getDistanceTraveled)
+                val healAmount = dmg * healPercent / 100
+                val newHealth = Math.min(lsOwner.getMaxHealth, lsOwner.getHealth + healAmount)
+                lsOwner.setHealth(newHealth)
+                val ownerFlags = (if (lsOwner.hasShield) 0x01 else 0) |
+                                 (if (lsOwner.hasGemBoost) 0x02 else 0) |
+                                 (if (lsOwner.isFrozen) 0x04 else 0) |
+                                 (if (lsOwner.isPhased) 0x08 else 0)
+                val ownerUpdate = new PlayerUpdatePacket(
+                  server.getNextSequenceNumber,
+                  projectile.ownerId,
+                  lsOwner.getPosition,
+                  lsOwner.getColorRGB,
+                  lsOwner.getHealth,
+                  0,
+                  ownerFlags
+                )
+                broadcastToInstance(ownerUpdate)
+              }
+              // Bat Swarm also applies a brief freeze
+              if (projectile.projectileType == ProjectileType.BAT_SWARM) {
+                target.setFrozenUntil(System.currentTimeMillis() + 600)
+              }
           }
 
           val flags = (if (target.hasShield) 0x01 else 0) |
@@ -319,7 +384,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         val explosionY = projectile.getY
         if (centerDmg > 0 || edgeDmg > 0)
         registry.getAll.asScala.foreach { player =>
-          if (!player.isDead && !player.hasShield && !player.isPhased && !player.getId.equals(projectile.ownerId)) {
+          if (!player.isDead && !player.hasShield && !player.isPhased && !player.getId.equals(projectile.ownerId) && !isTeammate(projectile.ownerId, player.getId)) {
             val pos = player.getPosition
             val pdx = explosionX - (pos.getX + 0.5f)
             val pdy = explosionY - (pos.getY + 0.5f)

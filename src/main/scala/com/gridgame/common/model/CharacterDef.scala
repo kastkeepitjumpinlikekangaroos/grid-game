@@ -210,6 +210,25 @@ object CharacterDef {
     explosionConfig = Some(ExplosionConfig(30, 12, 4.0f))
   )
 
+  private val BloodFangDef = ProjectileDef(
+    id = ProjectileType.BLOOD_FANG, name = "Blood Fang",
+    speedMultiplier = 0.7f, damage = 25, maxRange = 3,
+    hitRadius = 2.0f,
+    onHitEffect = Some(LifeSteal(50))
+  )
+
+  private val BloodSiphonDef = ProjectileDef(
+    id = ProjectileType.BLOOD_SIPHON, name = "Blood Siphon",
+    speedMultiplier = 0.65f, damage = 18, maxRange = 14,
+    onHitEffect = Some(LifeSteal(40))
+  )
+
+  private val BatSwarmDef = ProjectileDef(
+    id = ProjectileType.BAT_SWARM, name = "Bat Swarm",
+    speedMultiplier = 0.5f, damage = 15, maxRange = 7,
+    onHitEffect = Some(LifeSteal(60))
+  )
+
   // Register all projectile defs
   ProjectileDef.register(
     TentacleDef, IceBeamDef, AxeDef, RopeDef, SpearDef,
@@ -219,7 +238,8 @@ object CharacterDef {
     ShurikenDef, PoisonDartDef,
     ChainBoltDef, LockdownChainDef, SnareMineDef,
     KatanaDef, SwordWaveDef,
-    PlagueBoltDef, MiasmaDef, BlightBombDef
+    PlagueBoltDef, MiasmaDef, BlightBombDef,
+    BloodFangDef, BloodSiphonDef, BatSwarmDef
   )
 
   // === Character definitions ===
@@ -456,6 +476,28 @@ object CharacterDef {
     primaryProjectileType = ProjectileType.PLAGUE_BOLT
   )
 
+  val Vampire: CharacterDef = CharacterDef(
+    id = CharacterId.Vampire,
+    displayName = "Vampire",
+    description = "A gothic life-stealer who heals from every attack. Low HP forces aggressive play.",
+    spriteSheet = "sprites/vampire.png",
+    qAbility = AbilityDef(
+      name = "Blood Siphon",
+      description = "Medium-range blood projectile that heals you for 40% of damage dealt.",
+      cooldownMs = 7000, maxRange = 14, damage = 18,
+      projectileType = ProjectileType.BLOOD_SIPHON, keybind = "Q"
+    ),
+    eAbility = AbilityDef(
+      name = "Bat Swarm",
+      description = "Fan of 3 draining projectiles that heal and briefly freeze enemies.",
+      cooldownMs = 14000, maxRange = 7, damage = 15,
+      projectileType = ProjectileType.BAT_SWARM, keybind = "E",
+      castBehavior = FanProjectile(8, 2 * Math.PI)
+    ),
+    primaryProjectileType = ProjectileType.BLOOD_FANG,
+    maxHealth = 90
+  )
+
   private val byId: Map[Byte, CharacterDef] = Map(
     CharacterId.Spaceman.id -> Spaceman,
     CharacterId.Gladiator.id -> Gladiator,
@@ -467,10 +509,11 @@ object CharacterDef {
     CharacterId.Assassin.id -> Assassin,
     CharacterId.Warden.id -> Warden,
     CharacterId.Samurai.id -> Samurai,
-    CharacterId.PlagueDoctor.id -> PlagueDoctor
+    CharacterId.PlagueDoctor.id -> PlagueDoctor,
+    CharacterId.Vampire.id -> Vampire
   )
 
-  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith, Wizard, Tidecaller, Soldier, Raptor, Assassin, Warden, Samurai, PlagueDoctor)
+  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith, Wizard, Tidecaller, Soldier, Raptor, Assassin, Warden, Samurai, PlagueDoctor, Vampire)
 
   def get(id: CharacterId): CharacterDef = byId.getOrElse(id.id, Spaceman)
 

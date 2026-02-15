@@ -31,6 +31,9 @@ object ProjectileType {
   val PLAGUE_BOLT: Byte = 25
   val MIASMA: Byte = 26
   val BLIGHT_BOMB: Byte = 27
+  val BLOOD_FANG: Byte = 28
+  val BLOOD_SIPHON: Byte = 29
+  val BAT_SWARM: Byte = 30
 }
 
 class Projectile(

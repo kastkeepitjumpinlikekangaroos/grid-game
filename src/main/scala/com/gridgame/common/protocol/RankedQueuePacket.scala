@@ -18,6 +18,7 @@ object RankedQueueAction {
 object RankedQueueMode {
   val FFA: Byte = 0
   val DUEL: Byte = 1
+  val TEAMS: Byte = 2
 }
 
 /**

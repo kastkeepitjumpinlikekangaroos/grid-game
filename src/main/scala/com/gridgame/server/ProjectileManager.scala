@@ -22,7 +22,7 @@ case class ProjectileAoEKill(projectile: Projectile, targetId: UUID) extends Pro
 case class ProjectileDespawned(projectile: Projectile) extends ProjectileEvent
 case class ProjectileAoE(projectile: Projectile) extends ProjectileEvent
 
-class ProjectileManager(registry: ClientRegistry) {
+class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Boolean = (_, _) => false) {
   private val projectiles = new ConcurrentHashMap[Int, Projectile]()
   private val nextId = new AtomicInteger(1)
 
@@ -90,7 +90,7 @@ class ProjectileManager(registry: ClientRegistry) {
           } else {
             var hitPlayer: Player = null
             registry.getAll.asScala.foreach { player =>
-              if (projectile.hitsPlayer(player) && !player.isDead && !player.hasShield && !player.isPhased) {
+              if (projectile.hitsPlayer(player) && !player.isDead && !player.hasShield && !player.isPhased && !isTeammate(projectile.ownerId, player.getId)) {
                 hitPlayer = player
               }
             }
@@ -155,7 +155,8 @@ class ProjectileManager(registry: ClientRegistry) {
     registry.getAll.asScala.foreach { player =>
       if (!player.getId.equals(projectile.ownerId) &&
           (excludeId == null || !player.getId.equals(excludeId)) &&
-          !player.isDead && !player.hasShield) {
+          !player.isDead && !player.hasShield &&
+          !isTeammate(projectile.ownerId, player.getId)) {
         val pos = player.getPosition
         val dx = px - (pos.getX + 0.5f)
         val dy = py - (pos.getY + 0.5f)

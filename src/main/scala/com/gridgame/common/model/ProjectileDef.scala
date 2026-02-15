@@ -6,6 +6,7 @@ case object PullToOwner extends OnHitEffect
 case class Freeze(durationMs: Int) extends OnHitEffect
 case class Push(distance: Float) extends OnHitEffect
 case class TeleportOwnerBehind(distance: Int, freezeDurationMs: Int) extends OnHitEffect
+case class LifeSteal(healPercent: Int) extends OnHitEffect
 
 // Explosion config (center/edge damage + blast radius)
 case class ExplosionConfig(centerDamage: Int, edgeDamage: Int, blastRadius: Float)

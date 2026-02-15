@@ -24,6 +24,8 @@ class Lobby(
   @volatile var status: Byte = LobbyStatus.WAITING
   @volatile var gameInstance: GameInstance = _
   @volatile var isRanked: Boolean = false
+  @volatile var gameMode: Byte = 0  // 0=FFA, 1=Teams
+  @volatile var teamSize: Int = 2   // 2, 3, or 4
 
   def addPlayer(playerId: UUID): Boolean = {
     if (players.size() >= maxPlayers) return false
