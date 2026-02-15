@@ -1,5 +1,6 @@
 package com.gridgame.client
 
+import com.gridgame.client.input.ControllerHandler
 import com.gridgame.client.input.KeyboardHandler
 import com.gridgame.client.input.MouseHandler
 import com.gridgame.client.ui.GameCanvas
@@ -46,6 +47,7 @@ class ClientMain extends Application {
   private var client: GameClient = _
   private var canvas: GameCanvas = _
   private var renderLoop: AnimationTimer = _
+  private var controllerHandler: ControllerHandler = _
 
   // -- Enhanced color palette & styles --
   private val darkBg = "-fx-background-color: linear-gradient(to bottom, #1a1a2e 0%, #151528 50%, #111124 100%);"
@@ -1390,6 +1392,9 @@ class ClientMain extends Application {
     scene.setOnKeyPressed(keyHandler)
     scene.setOnKeyReleased(keyHandler)
 
+    controllerHandler = new ControllerHandler(client)
+    controllerHandler.init()
+
     val mouseHandler = new MouseHandler(client, canvas)
     scene.setOnMousePressed(mouseHandler)
     scene.setOnMouseReleased(mouseHandler)
@@ -1420,6 +1425,7 @@ class ClientMain extends Application {
         if (now - lastFrameTime >= frameIntervalNs) {
           lastFrameTime = now
           keyHandler.update()
+          controllerHandler.update()
           canvas.render()
         }
       }
@@ -1438,6 +1444,7 @@ class ClientMain extends Application {
       println("Closing application...")
       client.disconnect()
       renderLoop.stop()
+      if (controllerHandler != null) controllerHandler.cleanup()
     })
 
     println("Game started!")
@@ -1593,6 +1600,7 @@ class ClientMain extends Application {
   }
 
   override def stop(): Unit = {
+    if (controllerHandler != null) controllerHandler.cleanup()
     if (client != null) {
       client.disconnect()
     }
