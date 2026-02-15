@@ -93,20 +93,22 @@ class RankedQueue(server: GameServer) {
   private def checkQueue(): Unit = {
     try {
       val now = System.currentTimeMillis()
-      val queueSize = queue.size()
+      // Take a single consistent snapshot to avoid TOCTOU races between
+      // the matchmaking thread and the TCP handler thread adding/removing players
+      val snapshot = queue.asScala.toSeq
+      val queueSize = snapshot.size
 
       if (queueSize >= Constants.MAX_LOBBY_PLAYERS) {
         // Full match: sort by ELO, take closest 8
-        val sorted = queue.asScala.toSeq.sortBy(_.elo)
+        val sorted = snapshot.sortBy(_.elo)
         val matchEntries = sorted.take(Constants.MAX_LOBBY_PLAYERS)
         startRankedMatch(matchEntries)
       } else if (queueSize >= 2) {
         // Check if oldest entry has waited > 60 seconds
-        val oldest = queue.asScala.minBy(_.joinTime)
+        val oldest = snapshot.minBy(_.joinTime)
         val waitTime = now - oldest.joinTime
         if (waitTime > 60000) {
-          val matchEntries = queue.asScala.toSeq
-          startRankedMatch(matchEntries)
+          startRankedMatch(snapshot)
         }
       }
 
