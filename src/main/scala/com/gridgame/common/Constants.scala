@@ -76,4 +76,9 @@ object Constants {
   // Duel configuration
   val DUEL_GAME_DURATION_MIN: Int = 3
   val DUEL_MAX_PLAYERS: Int = 2
+
+  // Ranked Teams configuration
+  val TEAMS_GAME_DURATION_MIN: Int = 5
+  val TEAMS_TEAM_SIZE: Int = 3  // 3v3
+  val TEAMS_MAX_PLAYERS: Int = TEAMS_TEAM_SIZE * 2 // 6
 }

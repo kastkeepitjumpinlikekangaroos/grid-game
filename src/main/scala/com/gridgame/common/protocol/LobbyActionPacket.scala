@@ -46,7 +46,9 @@ class LobbyActionPacket(
     val maxPlayers: Byte = Constants.MAX_LOBBY_PLAYERS.toByte,
     val lobbyStatus: Byte = 0,
     val lobbyName: String = "",
-    val characterId: Byte = 0
+    val characterId: Byte = 0,
+    val gameMode: Byte = 0,
+    val teamSize: Byte = 2
 ) extends Packet(PacketType.LOBBY_ACTION, sequenceNumber, playerId, timestamp) {
 
   def this(sequenceNumber: Int, playerId: UUID, action: Byte) = {
@@ -73,6 +75,8 @@ class LobbyActionPacket(
   def getLobbyStatus: Byte = lobbyStatus
   def getLobbyName: String = lobbyName
   def getCharacterId: Byte = characterId
+  def getGameMode: Byte = gameMode
+  def getTeamSize: Byte = teamSize
 
   override def serialize(): Array[Byte] = {
     val buffer = ByteBuffer.allocate(Constants.PACKET_SIZE)
@@ -118,8 +122,14 @@ class LobbyActionPacket(
     // [53] Character ID
     buffer.put(characterId)
 
-    // [54-63] Reserved (10 bytes)
-    buffer.put(new Array[Byte](10))
+    // [54] Game Mode
+    buffer.put(gameMode)
+
+    // [55] Team Size
+    buffer.put(teamSize)
+
+    // [56-63] Reserved (8 bytes)
+    buffer.put(new Array[Byte](8))
 
     buffer.array()
   }

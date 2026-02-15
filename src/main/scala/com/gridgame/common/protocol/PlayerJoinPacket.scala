@@ -16,21 +16,26 @@ class PlayerJoinPacket(
     val colorRGB: Int,
     val playerName: String,
     val health: Int = 100,
-    val characterId: Byte = 0
+    val characterId: Byte = 0,
+    val teamId: Byte = 0
 ) extends Packet(PacketType.PLAYER_JOIN, sequenceNumber, playerId, timestamp) {
 
   private val _playerName: String = if (playerName != null) playerName else "Player"
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int, playerName: String) = {
-    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, playerName, 100, 0.toByte)
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, playerName, 100, 0.toByte, 0.toByte)
   }
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int, playerName: String, health: Int) = {
-    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, playerName, health, 0.toByte)
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, playerName, health, 0.toByte, 0.toByte)
   }
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int, playerName: String, health: Int, characterId: Byte) = {
-    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, playerName, health, characterId)
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, playerName, health, characterId, 0.toByte)
+  }
+
+  def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int, playerName: String, health: Int, characterId: Byte, teamId: Byte) = {
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, position, colorRGB, playerName, health, characterId, teamId)
   }
 
   def getPosition: Position = position
@@ -42,6 +47,8 @@ class PlayerJoinPacket(
   def getHealth: Int = health
 
   def getCharacterId: Byte = characterId
+
+  def getTeamId: Byte = teamId
 
   override def serialize(): Array[Byte] = {
     val buffer = ByteBuffer.allocate(Constants.PACKET_SIZE)
@@ -69,12 +76,15 @@ class PlayerJoinPacket(
     // [33-36] Timestamp
     buffer.putInt(timestamp)
 
-    // [37-58] Player name (max 22 bytes)
+    // [37-57] Player name (max 21 bytes)
     val nameBytes = _playerName.getBytes(StandardCharsets.UTF_8)
-    val nameLength = Math.min(nameBytes.length, 22)
+    val nameLength = Math.min(nameBytes.length, 21)
     buffer.put(nameBytes, 0, nameLength)
     // Fill remaining name bytes with zeros
-    buffer.put(new Array[Byte](22 - nameLength))
+    buffer.put(new Array[Byte](21 - nameLength))
+
+    // [58] Team ID
+    buffer.put(teamId)
 
     // [59] Character ID
     buffer.put(characterId)

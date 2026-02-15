@@ -19,6 +19,10 @@ scala_binary(
         "@maven//:org_openjfx_javafx_base_mac_aarch64",
         "@maven//:org_openjfx_javafx_controls_mac_aarch64",
         "@maven//:org_openjfx_javafx_graphics_mac_aarch64",
+        "@maven//:org_lwjgl_lwjgl",
+        "@maven//:org_lwjgl_lwjgl_glfw",
+        "@maven//:org_lwjgl_lwjgl_natives_macos_arm64",
+        "@maven//:org_lwjgl_lwjgl_glfw_natives_macos_arm64",
     ],
 )
 
@@ -41,5 +45,9 @@ scala_binary(
         "@maven//:org_openjfx_javafx_base_win",
         "@maven//:org_openjfx_javafx_controls_win",
         "@maven//:org_openjfx_javafx_graphics_win",
+        "@maven//:org_lwjgl_lwjgl",
+        "@maven//:org_lwjgl_lwjgl_glfw",
+        "@maven//:org_lwjgl_lwjgl_natives_windows",
+        "@maven//:org_lwjgl_lwjgl_glfw_natives_windows",
     ],
 )

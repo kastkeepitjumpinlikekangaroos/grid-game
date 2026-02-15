@@ -3629,7 +3629,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     drawHitEffect(screenX, spriteCenter, client.getPlayerHitTime(playerId))
 
     // Draw health bar above player
-    drawHealthBar(screenX, spriteY, player.getHealth, player.getMaxHealth)
+    drawHealthBar(screenX, spriteY, player.getHealth, player.getMaxHealth, player.getTeamId)
   }
 
   private def drawLocalPlayer(wx: Double, wy: Double, camOffX: Double, camOffY: Double): Unit = {
@@ -3735,7 +3735,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     drawHitEffect(screenX, spriteCenter, localHitTime)
 
     // Draw health bar above local player
-    drawHealthBar(screenX, spriteY, client.getLocalHealth, client.getSelectedCharacterMaxHealth)
+    drawHealthBar(screenX, spriteY, client.getLocalHealth, client.getSelectedCharacterMaxHealth, client.localTeamId)
   }
 
   private val CAST_FLASH_MS = 200
@@ -4368,7 +4368,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     }
   }
 
-  private def drawHealthBar(screenCenterX: Double, spriteTopY: Double, health: Int, maxHealth: Int = Constants.MAX_HEALTH): Unit = {
+  private def drawHealthBar(screenCenterX: Double, spriteTopY: Double, health: Int, maxHealth: Int = Constants.MAX_HEALTH, teamId: Byte = 0): Unit = {
     val barWidth = Constants.HEALTH_BAR_WIDTH_PX
     val barHeight = Constants.HEALTH_BAR_HEIGHT_PX
     val barX = screenCenterX - barWidth / 2.0
@@ -4378,16 +4378,37 @@ class GameCanvas(client: GameClient) extends Canvas() {
     gc.setFill(Color.DARKRED)
     gc.fillRect(barX, barY, barWidth, barHeight)
 
-    // Green fill (current health)
+    // Fill color based on team
+    val fillColor: Color = teamId match {
+      case 1 => Color.web("#4a82ff") // blue
+      case 2 => Color.web("#e84057") // red
+      case 3 => Color.LIMEGREEN     // green
+      case 4 => Color.web("#f1c40f") // yellow
+      case _ => Color.LIMEGREEN     // FFA default
+    }
+
+    // Health fill
     val healthPercentage = health.toDouble / maxHealth
     val fillWidth = barWidth * healthPercentage
-    gc.setFill(Color.LIMEGREEN)
+    gc.setFill(fillColor)
     gc.fillRect(barX, barY, fillWidth, barHeight)
 
     // Black border
     gc.setStroke(Color.BLACK)
     gc.setLineWidth(1)
     gc.strokeRect(barX, barY, barWidth, barHeight)
+
+    // Team indicator diamond below health bar
+    if (teamId != 0) {
+      val indicatorSize = 4.0
+      val indicatorY = barY + barHeight + 2.0
+      gc.setFill(fillColor)
+      gc.fillPolygon(
+        Array(screenCenterX, screenCenterX + indicatorSize, screenCenterX, screenCenterX - indicatorSize),
+        Array(indicatorY, indicatorY + indicatorSize, indicatorY + indicatorSize * 2, indicatorY + indicatorSize),
+        4
+      )
+    }
   }
 
   private def drawGameOverScreen(): Unit = {

@@ -36,7 +36,8 @@ class GameEventPacket(
     val targetId: UUID = null,
     val rank: Byte = 0,
     val spawnX: Short = 0,
-    val spawnY: Short = 0
+    val spawnY: Short = 0,
+    val teamId: Byte = 0
 ) extends Packet(PacketType.GAME_EVENT, sequenceNumber, playerId, timestamp) {
 
 
@@ -44,7 +45,14 @@ class GameEventPacket(
            remainingSeconds: Int, kills: Short, deaths: Short, targetId: UUID,
            rank: Byte, spawnX: Short, spawnY: Short) = {
     this(sequenceNumber, playerId, Packet.getCurrentTimestamp, eventType, gameId,
-         remainingSeconds, kills, deaths, targetId, rank, spawnX, spawnY)
+         remainingSeconds, kills, deaths, targetId, rank, spawnX, spawnY, 0.toByte)
+  }
+
+  def this(sequenceNumber: Int, playerId: UUID, eventType: Byte, gameId: Short,
+           remainingSeconds: Int, kills: Short, deaths: Short, targetId: UUID,
+           rank: Byte, spawnX: Short, spawnY: Short, teamId: Byte) = {
+    this(sequenceNumber, playerId, Packet.getCurrentTimestamp, eventType, gameId,
+         remainingSeconds, kills, deaths, targetId, rank, spawnX, spawnY, teamId)
   }
 
   def getEventType: Byte = eventType
@@ -56,6 +64,7 @@ class GameEventPacket(
   def getRank: Byte = rank
   def getSpawnX: Short = spawnX
   def getSpawnY: Short = spawnY
+  def getTeamId: Byte = teamId
 
   override def serialize(): Array[Byte] = {
     val buffer = ByteBuffer.allocate(Constants.PACKET_SIZE)
@@ -107,8 +116,11 @@ class GameEventPacket(
     // [56-57] Spawn Y
     buffer.putShort(spawnY)
 
-    // [58-63] Reserved (6 bytes)
-    buffer.put(new Array[Byte](6))
+    // [58] Team ID
+    buffer.put(teamId)
+
+    // [59-63] Reserved (5 bytes)
+    buffer.put(new Array[Byte](5))
 
     buffer.array()
   }

@@ -7,5 +7,7 @@ class LobbyInfo(
     var durationMinutes: Int,
     var playerCount: Int,
     var maxPlayers: Int,
-    var status: Int
+    var status: Int,
+    var gameMode: Int = 0,
+    var teamSize: Int = 2
 )
