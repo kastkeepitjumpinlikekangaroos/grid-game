@@ -4,189 +4,56 @@
   "width": 140,
   "height": 140,
   "layers": [
-    {
-      "type": "fill",
-      "tile": "stone"
-    },
-    {
-      "type": "border",
-      "tile": "wall",
-      "thickness": 2
-    },
-    {
-      "type": "line",
-      "tile": "wall",
-      "x1": 30,
-      "y1": 2,
-      "x2": 30,
-      "y2": 100,
-      "thickness": 3
-    },
-    {
-      "type": "line",
-      "tile": "wall",
-      "x1": 60,
-      "y1": 40,
-      "x2": 60,
-      "y2": 138,
-      "thickness": 3
-    },
-    {
-      "type": "line",
-      "tile": "wall",
-      "x1": 90,
-      "y1": 2,
-      "x2": 90,
-      "y2": 100,
-      "thickness": 3
-    },
-    {
-      "type": "line",
-      "tile": "wall",
-      "x1": 120,
-      "y1": 40,
-      "x2": 120,
-      "y2": 138,
-      "thickness": 3
-    },
-    {
-      "type": "line",
-      "tile": "wall",
-      "x1": 2,
-      "y1": 35,
-      "x2": 50,
-      "y2": 35,
-      "thickness": 3
-    },
-    {
-      "type": "line",
-      "tile": "wall",
-      "x1": 70,
-      "y1": 35,
-      "x2": 138,
-      "y2": 35,
-      "thickness": 3
-    },
-    {
-      "type": "line",
-      "tile": "wall",
-      "x1": 2,
-      "y1": 70,
-      "x2": 80,
-      "y2": 70,
-      "thickness": 3
-    },
-    {
-      "type": "line",
-      "tile": "wall",
-      "x1": 100,
-      "y1": 70,
-      "x2": 138,
-      "y2": 70,
-      "thickness": 3
-    },
-    {
-      "type": "line",
-      "tile": "wall",
-      "x1": 2,
-      "y1": 105,
-      "x2": 50,
-      "y2": 105,
-      "thickness": 3
-    },
-    {
-      "type": "line",
-      "tile": "wall",
-      "x1": 70,
-      "y1": 105,
-      "x2": 138,
-      "y2": 105,
-      "thickness": 3
-    },
-    {
-      "type": "rect",
-      "tile": "path",
-      "x": 12,
-      "y": 12,
-      "width": 8,
-      "height": 8
-    },
-    {
-      "type": "rect",
-      "tile": "path",
-      "x": 120,
-      "y": 12,
-      "width": 8,
-      "height": 8
-    },
-    {
-      "type": "rect",
-      "tile": "path",
-      "x": 12,
-      "y": 120,
-      "width": 8,
-      "height": 8
-    },
-    {
-      "type": "rect",
-      "tile": "path",
-      "x": 120,
-      "y": 120,
-      "width": 8,
-      "height": 8
-    },
-    {
-      "type": "circle",
-      "tile": "path",
-      "cx": 70,
-      "cy": 70,
-      "radius": 6
-    },
-    {
-      "type": "rect",
-      "tile": "lava",
-      "x": 68,
-      "y": 68,
-      "width": 4,
-      "height": 4
-    },
-    {
-      "type": "rect",
-      "tile": "fence",
-      "x": 42,
-      "y": 48,
-      "width": 8,
-      "height": 3
-    },
-    {
-      "type": "rect",
-      "tile": "fence",
-      "x": 100,
-      "y": 48,
-      "width": 8,
-      "height": 3
-    },
-    {
-      "type": "rect",
-      "tile": "fence",
-      "x": 42,
-      "y": 88,
-      "width": 8,
-      "height": 3
-    },
-    {
-      "type": "rect",
-      "tile": "fence",
-      "x": 100,
-      "y": 88,
-      "width": 8,
-      "height": 3
-    }
+    {"type": "fill", "tile": "stone"},
+    {"type": "border", "tile": "wall", "thickness": 2},
+
+    {"type": "line", "tile": "wall", "x1": 35, "y1": 2, "x2": 35, "y2": 95, "thickness": 3},
+    {"type": "line", "tile": "wall", "x1": 70, "y1": 45, "x2": 70, "y2": 138, "thickness": 3},
+    {"type": "line", "tile": "wall", "x1": 105, "y1": 2, "x2": 105, "y2": 95, "thickness": 3},
+
+    {"type": "line", "tile": "wall", "x1": 2, "y1": 35, "x2": 55, "y2": 35, "thickness": 3},
+    {"type": "rect", "tile": "stone", "x": 55, "y": 34, "width": 8, "height": 5},
+    {"type": "line", "tile": "wall", "x1": 80, "y1": 35, "x2": 138, "y2": 35, "thickness": 3},
+
+    {"type": "line", "tile": "wall", "x1": 2, "y1": 70, "x2": 55, "y2": 70, "thickness": 3},
+    {"type": "rect", "tile": "stone", "x": 80, "y": 69, "width": 8, "height": 5},
+    {"type": "line", "tile": "wall", "x1": 80, "y1": 70, "x2": 138, "y2": 70, "thickness": 3},
+
+    {"type": "line", "tile": "wall", "x1": 2, "y1": 105, "x2": 55, "y2": 105, "thickness": 3},
+    {"type": "rect", "tile": "stone", "x": 55, "y": 104, "width": 8, "height": 5},
+    {"type": "line", "tile": "wall", "x1": 80, "y1": 105, "x2": 138, "y2": 105, "thickness": 3},
+
+    {"type": "rect", "tile": "path", "x": 8, "y": 8, "width": 14, "height": 14},
+    {"type": "rect", "tile": "wall", "x": 12, "y": 12, "width": 6, "height": 3},
+
+    {"type": "rect", "tile": "sand", "x": 116, "y": 8, "width": 14, "height": 14},
+    {"type": "rect", "tile": "fence", "x": 120, "y": 12, "width": 3, "height": 6},
+
+    {"type": "rect", "tile": "path", "x": 8, "y": 116, "width": 14, "height": 14},
+    {"type": "rect", "tile": "fence", "x": 12, "y": 120, "width": 6, "height": 3},
+
+    {"type": "rect", "tile": "sand", "x": 116, "y": 116, "width": 14, "height": 14},
+    {"type": "rect", "tile": "wall", "x": 120, "y": 120, "width": 3, "height": 6},
+
+    {"type": "circle", "tile": "path", "cx": 70, "cy": 70, "radius": 8},
+    {"type": "circle", "tile": "lava", "cx": 70, "cy": 70, "radius": 3},
+    {"type": "rect", "tile": "wall", "x": 63, "y": 69, "width": 3, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 75, "y": 69, "width": 3, "height": 3},
+
+    {"type": "rect", "tile": "fence", "x": 45, "y": 48, "width": 8, "height": 3},
+    {"type": "rect", "tile": "fence", "x": 90, "y": 48, "width": 8, "height": 3},
+    {"type": "rect", "tile": "fence", "x": 45, "y": 88, "width": 8, "height": 3},
+    {"type": "rect", "tile": "fence", "x": 90, "y": 88, "width": 8, "height": 3},
+
+    {"type": "rect", "tile": "path", "x": 48, "y": 78, "width": 8, "height": 8},
+    {"type": "rect", "tile": "path", "x": 85, "y": 50, "width": 8, "height": 8}
   ],
   "spawnPoints": [
-    {"x": 16, "y": 16},
-    {"x": 124, "y": 16},
-    {"x": 16, "y": 124},
-    {"x": 124, "y": 124}
+    {"x": 15, "y": 15},
+    {"x": 123, "y": 15},
+    {"x": 15, "y": 123},
+    {"x": 123, "y": 123},
+    {"x": 52, "y": 82},
+    {"x": 89, "y": 54}
   ]
 }
