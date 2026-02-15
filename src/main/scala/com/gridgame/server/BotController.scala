@@ -114,7 +114,10 @@ class BotController(instance: GameInstance) {
     val dx = targetPos.getX - botPos.getX
     val dy = targetPos.getY - botPos.getY
 
-    if (ranged && dist < preferredRange * 0.6f && dist > 0) {
+    if (dist < 0.01f) {
+      // On top of another entity - move to a random adjacent cell
+      moveRandom(bot)
+    } else if (ranged && dist < preferredRange * 0.6f) {
       // Too close for a ranged character - kite away
       moveAway(bot, target)
     } else if (dist > preferredRange + 2) {
@@ -122,6 +125,18 @@ class BotController(instance: GameInstance) {
       moveToward(bot, target)
     }
     // else: at preferred range, stay put
+  }
+
+  private def moveRandom(bot: Player): Unit = {
+    val botPos = bot.getPosition
+    val directions = scala.util.Random.shuffle(Seq((1, 0), (-1, 0), (0, 1), (0, -1)))
+    directions.find { case (ddx, ddy) =>
+      canMoveTo(botPos.getX + ddx, botPos.getY + ddy, bot.getId)
+    }.foreach { case (ddx, ddy) =>
+      bot.setPosition(new Position(botPos.getX + ddx, botPos.getY + ddy))
+      bot.setDirection(Direction.fromMovement(ddx, ddy))
+      broadcastBotPosition(bot)
+    }
   }
 
   private def moveAway(bot: Player, target: Player): Unit = {
@@ -382,9 +397,14 @@ class BotController(instance: GameInstance) {
     val dx = (targetPos.getX - botPos.getX).toFloat
     val dy = (targetPos.getY - botPos.getY).toFloat
     val len = Math.sqrt(dx * dx + dy * dy).toFloat
-    if (len < 0.01f) return false
-    val ndx = dx / len
-    val ndy = dy / len
+
+    val (ndx, ndy) = if (len < 0.01f) {
+      // Overlapping - pick a random direction
+      val angle = scala.util.Random.nextFloat() * 2f * Math.PI.toFloat
+      (Math.cos(angle).toFloat, Math.sin(angle).toFloat)
+    } else {
+      (dx / len, dy / len)
+    }
 
     ability.castBehavior match {
       case StandardProjectile =>
@@ -481,10 +501,14 @@ class BotController(instance: GameInstance) {
     val dx = (targetPos.getX - botPos.getX).toFloat
     val dy = (targetPos.getY - botPos.getY).toFloat
     val len = Math.sqrt(dx * dx + dy * dy).toFloat
-    if (len < 0.01f) return
 
-    val ndx = dx / len
-    val ndy = dy / len
+    val (ndx, ndy) = if (len < 0.01f) {
+      // Overlapping - pick a random direction
+      val angle = scala.util.Random.nextFloat() * 2f * Math.PI.toFloat
+      (Math.cos(angle).toFloat, Math.sin(angle).toFloat)
+    } else {
+      (dx / len, dy / len)
+    }
 
     val charDef = CharacterDef.get(bot.getCharacterId)
     val projectile = instance.projectileManager.spawnProjectile(
