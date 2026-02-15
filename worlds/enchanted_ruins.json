@@ -4,233 +4,63 @@
   "width": 150,
   "height": 150,
   "layers": [
-    {
-      "type": "fill",
-      "tile": "grass"
-    },
-    {
-      "type": "circle",
-      "tile": "moss",
-      "cx": 75,
-      "cy": 75,
-      "radius": 55
-    },
-    {
-      "type": "circle",
-      "tile": "grass",
-      "cx": 75,
-      "cy": 75,
-      "radius": 45
-    },
-    {
-      "type": "circle",
-      "tile": "marsh",
-      "cx": 40,
-      "cy": 110,
-      "radius": 12
-    },
-    {
-      "type": "circle",
-      "tile": "water",
-      "cx": 40,
-      "cy": 110,
-      "radius": 6
-    },
-    {
-      "type": "circle",
-      "tile": "marsh",
-      "cx": 115,
-      "cy": 35,
-      "radius": 10
-    },
-    {
-      "type": "circle",
-      "tile": "water",
-      "cx": 115,
-      "cy": 35,
-      "radius": 4
-    },
-    {
-      "type": "line",
-      "tile": "cobblestone",
-      "x1": 30,
-      "y1": 75,
-      "x2": 120,
-      "y2": 75,
-      "thickness": 2
-    },
-    {
-      "type": "line",
-      "tile": "cobblestone",
-      "x1": 75,
-      "y1": 30,
-      "x2": 75,
-      "y2": 120,
-      "thickness": 2
-    },
-    {
-      "type": "circle",
-      "tile": "cobblestone",
-      "cx": 75,
-      "cy": 75,
-      "radius": 12
-    },
-    {
-      "type": "circle",
-      "tile": "dirt",
-      "cx": 75,
-      "cy": 75,
-      "radius": 9
-    },
-    {
-      "type": "rect",
-      "tile": "ruins",
-      "x": 70,
-      "y": 68,
-      "width": 10,
-      "height": 3
-    },
-    {
-      "type": "rect",
-      "tile": "ruins",
-      "x": 70,
-      "y": 79,
-      "width": 10,
-      "height": 3
-    },
-    {
-      "type": "rect",
-      "tile": "ruins",
-      "x": 68,
-      "y": 70,
-      "width": 3,
-      "height": 10
-    },
-    {
-      "type": "rect",
-      "tile": "ruins",
-      "x": 79,
-      "y": 70,
-      "width": 3,
-      "height": 10
-    },
-    {
-      "type": "rect",
-      "tile": "dirt",
-      "x": 71,
-      "y": 71,
-      "width": 8,
-      "height": 8
-    },
-    {
-      "type": "points",
-      "tile": "crystal",
-      "points": [
-        {"x": 75, "y": 75},
-        {"x": 73, "y": 73},
-        {"x": 77, "y": 73},
-        {"x": 73, "y": 77},
-        {"x": 77, "y": 77}
-      ]
-    },
-    {
-      "type": "circle",
-      "tile": "sand",
-      "cx": 120,
-      "cy": 110,
-      "radius": 15
-    },
-    {
-      "type": "circle",
-      "tile": "coral",
-      "cx": 125,
-      "cy": 112,
-      "radius": 3
-    },
-    {
-      "type": "circle",
-      "tile": "coral",
-      "cx": 117,
-      "cy": 107,
-      "radius": 2
-    },
-    {
-      "type": "circle",
-      "tile": "water",
-      "cx": 120,
-      "cy": 110,
-      "radius": 8
-    },
-    {
-      "type": "circle",
-      "tile": "deep_water",
-      "cx": 120,
-      "cy": 110,
-      "radius": 4
-    },
-    {
-      "type": "line",
-      "tile": "dirt",
-      "x1": 30,
-      "y1": 30,
-      "x2": 65,
-      "y2": 68,
-      "thickness": 2
-    },
-    {
-      "type": "line",
-      "tile": "dirt",
-      "x1": 85,
-      "y1": 82,
-      "x2": 115,
-      "y2": 110,
-      "thickness": 2
-    },
-    {
-      "type": "circle",
-      "tile": "stone",
-      "cx": 30,
-      "cy": 30,
-      "radius": 6
-    },
-    {
-      "type": "points",
-      "tile": "ruins",
-      "points": [
-        {"x": 28, "y": 28},
-        {"x": 32, "y": 28},
-        {"x": 28, "y": 32},
-        {"x": 32, "y": 32},
-        {"x": 30, "y": 26},
-        {"x": 30, "y": 34}
-      ]
-    },
-    {
-      "type": "points",
-      "tile": "crystal",
-      "points": [
-        {"x": 30, "y": 30}
-      ]
-    },
-    {
-      "type": "border",
-      "tile": "cliff",
-      "thickness": 4
-    },
-    {
-      "type": "border",
-      "tile": "thorns",
-      "thickness": 2
-    }
+    {"type": "fill", "tile": "grass"},
+    {"type": "border", "tile": "cliff", "thickness": 4},
+    {"type": "border", "tile": "thorns", "thickness": 2},
+
+    {"type": "circle", "tile": "moss", "cx": 75, "cy": 75, "radius": 55},
+    {"type": "circle", "tile": "grass", "cx": 75, "cy": 75, "radius": 45},
+
+    {"type": "line", "tile": "cobblestone", "x1": 25, "y1": 75, "x2": 125, "y2": 75, "thickness": 2},
+    {"type": "line", "tile": "cobblestone", "x1": 75, "y1": 25, "x2": 75, "y2": 125, "thickness": 2},
+
+    {"type": "line", "tile": "cobblestone", "x1": 35, "y1": 35, "x2": 65, "y2": 65, "thickness": 2},
+    {"type": "line", "tile": "cobblestone", "x1": 115, "y1": 35, "x2": 85, "y2": 65, "thickness": 2},
+    {"type": "line", "tile": "cobblestone", "x1": 35, "y1": 115, "x2": 65, "y2": 85, "thickness": 2},
+    {"type": "line", "tile": "cobblestone", "x1": 115, "y1": 115, "x2": 85, "y2": 85, "thickness": 2},
+
+    {"type": "circle", "tile": "cobblestone", "cx": 75, "cy": 75, "radius": 12},
+    {"type": "circle", "tile": "dirt", "cx": 75, "cy": 75, "radius": 9},
+    {"type": "rect", "tile": "ruins", "x": 70, "y": 68, "width": 10, "height": 3},
+    {"type": "rect", "tile": "ruins", "x": 70, "y": 79, "width": 10, "height": 3},
+    {"type": "rect", "tile": "ruins", "x": 68, "y": 70, "width": 3, "height": 10},
+    {"type": "rect", "tile": "ruins", "x": 79, "y": 70, "width": 3, "height": 10},
+    {"type": "rect", "tile": "dirt", "x": 71, "y": 71, "width": 8, "height": 8},
+
+    {"type": "rect", "tile": "stone", "x": 30, "y": 30, "width": 12, "height": 12},
+    {"type": "rect", "tile": "cobblestone", "x": 33, "y": 33, "width": 6, "height": 6},
+    {"type": "rect", "tile": "wall", "x": 34, "y": 34, "width": 3, "height": 3},
+
+    {"type": "rect", "tile": "stone", "x": 108, "y": 30, "width": 12, "height": 12},
+    {"type": "rect", "tile": "cobblestone", "x": 111, "y": 33, "width": 6, "height": 6},
+    {"type": "rect", "tile": "wall", "x": 113, "y": 34, "width": 3, "height": 3},
+
+    {"type": "rect", "tile": "stone", "x": 30, "y": 108, "width": 12, "height": 12},
+    {"type": "rect", "tile": "cobblestone", "x": 33, "y": 111, "width": 6, "height": 6},
+    {"type": "rect", "tile": "wall", "x": 34, "y": 113, "width": 3, "height": 3},
+
+    {"type": "rect", "tile": "stone", "x": 108, "y": 108, "width": 12, "height": 12},
+    {"type": "rect", "tile": "cobblestone", "x": 111, "y": 111, "width": 6, "height": 6},
+    {"type": "rect", "tile": "wall", "x": 113, "y": 113, "width": 3, "height": 3},
+
+    {"type": "circle", "tile": "marsh", "cx": 40, "cy": 100, "radius": 8},
+    {"type": "circle", "tile": "water", "cx": 40, "cy": 100, "radius": 4},
+    {"type": "circle", "tile": "marsh", "cx": 110, "cy": 50, "radius": 7},
+    {"type": "circle", "tile": "water", "cx": 110, "cy": 50, "radius": 3},
+
+    {"type": "points", "tile": "tree", "points": [
+      {"x":50,"y":50},{"x":100,"y":50},{"x":50,"y":100},{"x":100,"y":100},
+      {"x":45,"y":75},{"x":105,"y":75},{"x":75,"y":45},{"x":75,"y":105}
+    ]}
   ],
   "spawnPoints": [
-    {"x": 75, "y": 85},
-    {"x": 65, "y": 75},
-    {"x": 85, "y": 75},
-    {"x": 75, "y": 65},
-    {"x": 50, "y": 50},
-    {"x": 100, "y": 100},
-    {"x": 50, "y": 100},
-    {"x": 100, "y": 50}
+    {"x": 36, "y": 36},
+    {"x": 114, "y": 36},
+    {"x": 36, "y": 114},
+    {"x": 114, "y": 114},
+    {"x": 75, "y": 30},
+    {"x": 75, "y": 120},
+    {"x": 30, "y": 75},
+    {"x": 120, "y": 75}
   ]
 }
