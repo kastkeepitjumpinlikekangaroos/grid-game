@@ -311,9 +311,10 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         val explosion = pDef.explosionConfig.getOrElse(ExplosionConfig(40, 10, 3.0f))
         val (centerDmg, edgeDmg, blastRadius) = (explosion.centerDamage, explosion.edgeDamage, explosion.blastRadius)
 
-        // Find all players in blast radius
+        // Find all players in blast radius (skip if explosion deals no damage, e.g. visual-only snare mine)
         val explosionX = projectile.getX
         val explosionY = projectile.getY
+        if (centerDmg > 0 || edgeDmg > 0)
         registry.getAll.asScala.foreach { player =>
           if (!player.isDead && !player.hasShield && !player.isPhased && !player.getId.equals(projectile.ownerId)) {
             val pos = player.getPosition

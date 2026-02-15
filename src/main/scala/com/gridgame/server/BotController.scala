@@ -56,7 +56,9 @@ class BotController(instance: GameInstance) {
         val bot = instance.registry.get(botId)
         if (bot != null && !bot.isDead) {
           bot.updateHeartbeat()
-          tickBot(bot)
+          if (!bot.isFrozen) {
+            tickBot(bot)
+          }
         }
       }
     } catch {

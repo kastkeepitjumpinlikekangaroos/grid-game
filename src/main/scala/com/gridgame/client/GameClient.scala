@@ -243,8 +243,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   }
 
   def movePlayer(dx: Int, dy: Int): Unit = {
-    // Check if frozen
-    if (isFrozen) return
+    // Check if frozen — still send position so server echoes frozen state back
+    if (isFrozen) {
+      localDirection.set(Direction.fromMovement(dx, dy))
+      sendPositionUpdate(localPosition.get())
+      return
+    }
 
     // Check if movement is blocked from burst shot
     if (System.currentTimeMillis() < movementBlockedUntil.get()) {
@@ -703,10 +707,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           val serverHealth = updatePacket.getHealth
           localHealth.set(serverHealth)
 
-          // Handle frozen flag (bit 2)
+          // Handle frozen flag (bit 2) — use generous timeout; server clears via else branch
           val flags = updatePacket.getEffectFlags
           if ((flags & 0x04) != 0) {
-            frozenUntil.set(System.currentTimeMillis() + 1000)
+            frozenUntil.set(System.currentTimeMillis() + 5000)
           } else {
             frozenUntil.set(0)
           }
@@ -1280,7 +1284,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         player.setGemBoostUntil(0)
       }
       if ((flags & 0x04) != 0) {
-        player.setFrozenUntil(System.currentTimeMillis() + 1000)
+        player.setFrozenUntil(System.currentTimeMillis() + 5000)
       } else {
         player.setFrozenUntil(0)
       }
@@ -1307,7 +1311,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       val flags = packet.getEffectFlags
       if ((flags & 0x01) != 0) player.setShieldUntil(System.currentTimeMillis() + 1000)
       if ((flags & 0x02) != 0) player.setGemBoostUntil(System.currentTimeMillis() + 1000)
-      if ((flags & 0x04) != 0) player.setFrozenUntil(System.currentTimeMillis() + 1000)
+      if ((flags & 0x04) != 0) player.setFrozenUntil(System.currentTimeMillis() + 5000)
       if ((flags & 0x08) != 0) player.setPhasedUntil(System.currentTimeMillis() + 1000)
       players.put(playerId, player)
     }
