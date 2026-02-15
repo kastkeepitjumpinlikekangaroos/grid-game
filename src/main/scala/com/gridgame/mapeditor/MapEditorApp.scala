@@ -4,7 +4,7 @@ import javafx.animation.AnimationTimer
 import javafx.application.Application
 import javafx.scene.Scene
 import javafx.scene.layout.{BorderPane, VBox}
-import javafx.stage.Stage
+import javafx.stage.{Screen, Stage}
 
 class MapEditorApp extends Application {
 
@@ -42,10 +42,14 @@ class MapEditorApp extends Application {
       .subtract(statusBar.heightProperty())
       .subtract(30)) // approx menu bar height
 
-    val scene = new Scene(root, 1200, 800)
+    val scene = new Scene(root)
 
     primaryStage.setScene(scene)
-    primaryStage.setMaximized(true)
+    val bounds = Screen.getPrimary.getVisualBounds
+    primaryStage.setX(bounds.getMinX)
+    primaryStage.setY(bounds.getMinY)
+    primaryStage.setWidth(bounds.getWidth)
+    primaryStage.setHeight(bounds.getHeight)
     primaryStage.show()
 
     // Initial UI state

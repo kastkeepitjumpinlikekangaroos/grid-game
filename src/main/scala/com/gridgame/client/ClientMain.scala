@@ -41,6 +41,7 @@ import javafx.scene.layout.VBox
 import javafx.scene.paint.Color
 import javafx.scene.text.Font
 import javafx.scene.text.FontWeight
+import javafx.stage.Screen
 import javafx.stage.Stage
 
 class ClientMain extends Application {
@@ -165,7 +166,11 @@ class ClientMain extends Application {
   override def start(primaryStage: Stage): Unit = {
     primaryStage.setTitle("Grid Game - Multiplayer 2D")
     primaryStage.setResizable(true)
-    primaryStage.setMaximized(true)
+    val bounds = Screen.getPrimary.getVisualBounds
+    primaryStage.setX(bounds.getMinX)
+    primaryStage.setY(bounds.getMinY)
+    primaryStage.setWidth(bounds.getWidth)
+    primaryStage.setHeight(bounds.getHeight)
 
     showWelcomeScreen(primaryStage)
   }
@@ -351,7 +356,7 @@ class ClientMain extends Application {
 
     root.getChildren.addAll(titleBox, card, new Region() { setMinHeight(16) }, toggleLink)
 
-    val scene = new Scene(root, 520, 720)
+    val scene = new Scene(root)
     stage.setScene(scene)
     stage.show()
   }
@@ -606,7 +611,7 @@ class ClientMain extends Application {
 
     root.getChildren.addAll(headerArea, contentArea)
 
-    val scene = new Scene(root, 700, 1020)
+    val scene = new Scene(root)
     stage.setScene(scene)
 
     // Auto-refresh on show
@@ -993,7 +998,7 @@ class ClientMain extends Application {
       })
     }
 
-    val scene = new Scene(root, 600, 940)
+    val scene = new Scene(root)
     stage.setScene(scene)
   }
 
@@ -1331,7 +1336,7 @@ class ClientMain extends Application {
       })
     }
 
-    val scene = new Scene(root, 600, 800)
+    val scene = new Scene(root)
     stage.setScene(scene)
   }
 
@@ -1401,7 +1406,7 @@ class ClientMain extends Application {
 
     root.getChildren.addAll(titleBar, leaderboardListView, loadingLabel)
 
-    val scene = new Scene(root, 680, 780)
+    val scene = new Scene(root)
     stage.setScene(scene)
 
     // Set up listener and request data
@@ -1535,7 +1540,7 @@ class ClientMain extends Application {
 
     root.getChildren.addAll(headerArea, contentArea)
 
-    val scene = new Scene(root, 700, 800)
+    val scene = new Scene(root)
     stage.setScene(scene)
 
     // Set up listener and request data
@@ -1598,7 +1603,7 @@ class ClientMain extends Application {
     client.setRejoinListener(() => canvas.resetVisualPosition())
 
     val root = new StackPane(canvas)
-    val scene = new Scene(root, Constants.VIEWPORT_SIZE_PX, Constants.VIEWPORT_SIZE_PX)
+    val scene = new Scene(root)
 
     canvas.widthProperty().bind(scene.widthProperty())
     canvas.heightProperty().bind(scene.heightProperty())
@@ -1827,7 +1832,7 @@ class ClientMain extends Application {
 
     root.getChildren.addAll(titleBox, scoreCard, btnBox)
 
-    val scene = new Scene(root, 660, 660)
+    val scene = new Scene(root)
     stage.setScene(scene)
   }
 
