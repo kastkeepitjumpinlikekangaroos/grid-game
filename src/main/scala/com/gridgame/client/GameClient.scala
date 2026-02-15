@@ -1150,6 +1150,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         val targetId = packet.getTargetId
         if (targetId != null) {
           playerHitTimes.put(targetId, System.currentTimeMillis())
+
+          // If our projectile hit another player, reduce ability cooldown by 50%
+          if (packet.getPlayerId.equals(localPlayerId)) {
+            reduceAbilityCooldownOnHit(packet.getProjectileType)
+          }
         }
 
       case ProjectileAction.DESPAWN =>
@@ -1166,6 +1171,21 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
       case _ =>
         // Unknown action
+    }
+  }
+
+  private def reduceAbilityCooldownOnHit(projectileType: Byte): Unit = {
+    val charDef = getSelectedCharacterDef
+    val now = System.currentTimeMillis()
+
+    val (abilityDef, lastAbilityTime) =
+      if (charDef.qAbility.projectileType == projectileType) (charDef.qAbility, lastQAbilityTime)
+      else if (charDef.eAbility.projectileType == projectileType) (charDef.eAbility, lastEAbilityTime)
+      else return
+
+    val remaining = lastAbilityTime.get() + abilityDef.cooldownMs - now
+    if (remaining > 0) {
+      lastAbilityTime.addAndGet(-remaining / 2)
     }
   }
 
