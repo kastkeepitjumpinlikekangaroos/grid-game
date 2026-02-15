@@ -1,9 +1,20 @@
 package com.gridgame.client.ui
 
-import javafx.scene.canvas.GraphicsContext
+import javafx.scene.canvas.{Canvas, GraphicsContext}
+import javafx.scene.image.WritableImage
 import javafx.scene.paint.Color
 
 object BackgroundRenderer {
+
+  // Off-screen background cache — avoids redrawing 100+ shapes every frame
+  private var bgCanvas: Canvas = _
+  private var bgGC: GraphicsContext = _
+  private var bgImage: WritableImage = _
+  private var cachedW: Int = 0
+  private var cachedH: Int = 0
+  private var cachedTick: Int = Int.MinValue
+  private var cachedBackground: String = ""
+  private val BG_REDRAW_INTERVAL = 2
 
   // Pseudo-random seeded by index for deterministic star/building positions
   private def hash(seed: Int): Double = {
@@ -13,14 +24,38 @@ object BackgroundRenderer {
 
   def render(gc: GraphicsContext, w: Double, h: Double, background: String,
              tick: Int, camOffX: Double, camOffY: Double): Unit = {
-    background match {
-      case "sky"       => drawSky(gc, w, h, tick, camOffX, camOffY)
-      case "cityscape" => drawCityscape(gc, w, h, tick, camOffX, camOffY)
-      case "space"     => drawSpace(gc, w, h, tick, camOffX, camOffY)
-      case "desert"    => drawDesert(gc, w, h, tick, camOffX, camOffY)
-      case "ocean"     => drawOcean(gc, w, h, tick, camOffX, camOffY)
-      case _           => drawSky(gc, w, h, tick, camOffX, camOffY)
+    val wi = Math.max(1, w.toInt)
+    val hi = Math.max(1, h.toInt)
+
+    val sizeChanged = wi != cachedW || hi != cachedH
+    val bgChanged = background != cachedBackground
+    val stale = (tick - cachedTick) >= BG_REDRAW_INTERVAL
+
+    if (bgImage == null || sizeChanged || bgChanged || stale) {
+      if (bgImage == null || sizeChanged) {
+        bgCanvas = new Canvas(wi, hi)
+        bgGC = bgCanvas.getGraphicsContext2D
+        bgImage = new WritableImage(wi, hi)
+      }
+
+      val g = bgGC
+      background match {
+        case "sky"       => drawSky(g, wi, hi, tick, camOffX, camOffY)
+        case "cityscape" => drawCityscape(g, wi, hi, tick, camOffX, camOffY)
+        case "space"     => drawSpace(g, wi, hi, tick, camOffX, camOffY)
+        case "desert"    => drawDesert(g, wi, hi, tick, camOffX, camOffY)
+        case "ocean"     => drawOcean(g, wi, hi, tick, camOffX, camOffY)
+        case _           => drawSky(g, wi, hi, tick, camOffX, camOffY)
+      }
+
+      bgCanvas.snapshot(null, bgImage)
+      cachedW = wi
+      cachedH = hi
+      cachedTick = tick
+      cachedBackground = background
     }
+
+    gc.drawImage(bgImage, 0, 0)
   }
 
   // ── Sky: blue gradient + drifting clouds ──
