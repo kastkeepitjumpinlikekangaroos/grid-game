@@ -144,12 +144,32 @@ object CharacterDef {
     onHitEffect = Some(Push(5.0f))
   )
 
+  private val ChainBoltDef = ProjectileDef(
+    id = ProjectileType.CHAIN_BOLT, name = "Chain Bolt",
+    speedMultiplier = 0.7f, damage = 12, maxRange = 14,
+    onHitEffect = Some(Freeze(1500))
+  )
+
+  private val LockdownChainDef = ProjectileDef(
+    id = ProjectileType.LOCKDOWN_CHAIN, name = "Lockdown Chain",
+    speedMultiplier = 0.6f, damage = 8, maxRange = 12,
+    onHitEffect = Some(Freeze(2000))
+  )
+
+  private val SnareMineDef = ProjectileDef(
+    id = ProjectileType.SNARE_MINE, name = "Snare Mine",
+    speedMultiplier = 0.4f, damage = 15, maxRange = 16,
+    passesThroughPlayers = true,
+    aoeOnMaxRange = Some(AoESplashConfig(3.5f, 15, freezeDurationMs = 2500))
+  )
+
   // Register all projectile defs
   ProjectileDef.register(
     TentacleDef, IceBeamDef, AxeDef, RopeDef, SpearDef,
     SoulBoltDef, HauntDef, ArcaneBoltDef, FireballDef,
     SplashDef, TidalWaveDef, GeyserDef,
-    BulletDef, GrenadeDef, RocketDef, TalonDef, GustDef
+    BulletDef, GrenadeDef, RocketDef, TalonDef, GustDef,
+    ChainBoltDef, LockdownChainDef, SnareMineDef
   )
 
   // === Character definitions ===
@@ -299,6 +319,28 @@ object CharacterDef {
     primaryProjectileType = ProjectileType.TALON
   )
 
+  val Warden: CharacterDef = CharacterDef(
+    id = CharacterId.Warden,
+    displayName = "Warden",
+    description = "A jailer who locks down foes with chains, lockdown fans, and snare mines.",
+    spriteSheet = "sprites/warden.png",
+    qAbility = AbilityDef(
+      name = "Lockdown",
+      description = "Fires 3 chains in a fan that freeze enemies for 2s on hit.",
+      cooldownMs = 8000, maxRange = 12, damage = 8,
+      projectileType = ProjectileType.LOCKDOWN_CHAIN, keybind = "Q",
+      castBehavior = FanProjectile(3, Math.toRadians(40))
+    ),
+    eAbility = AbilityDef(
+      name = "Snare Mine",
+      description = "Lobs a mine that passes through players and detonates at max range, freezing all nearby for 2.5s.",
+      cooldownMs = 14000, maxRange = 16, damage = 15,
+      projectileType = ProjectileType.SNARE_MINE, keybind = "E"
+    ),
+    primaryProjectileType = ProjectileType.CHAIN_BOLT,
+    maxHealth = 110
+  )
+
   private val byId: Map[Byte, CharacterDef] = Map(
     CharacterId.Spaceman.id -> Spaceman,
     CharacterId.Gladiator.id -> Gladiator,
@@ -306,10 +348,11 @@ object CharacterDef {
     CharacterId.Wizard.id -> Wizard,
     CharacterId.Tidecaller.id -> Tidecaller,
     CharacterId.Soldier.id -> Soldier,
-    CharacterId.Raptor.id -> Raptor
+    CharacterId.Raptor.id -> Raptor,
+    CharacterId.Warden.id -> Warden
   )
 
-  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith, Wizard, Tidecaller, Soldier, Raptor)
+  val all: Seq[CharacterDef] = Seq(Spaceman, Gladiator, Wraith, Wizard, Tidecaller, Soldier, Raptor, Warden)
 
   def get(id: CharacterId): CharacterDef = byId.getOrElse(id.id, Spaceman)
 

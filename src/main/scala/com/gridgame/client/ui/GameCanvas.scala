@@ -64,7 +64,10 @@ class GameCanvas(client: GameClient) extends Canvas() {
     ProjectileType.GRENADE    -> ((p, cx, cy) => drawGrenadeProjectile(p, cx, cy)),
     ProjectileType.ROCKET     -> ((p, cx, cy) => drawRocketProjectile(p, cx, cy)),
     ProjectileType.TALON      -> ((p, cx, cy) => drawTalonProjectile(p, cx, cy)),
-    ProjectileType.GUST       -> ((p, cx, cy) => drawGustProjectile(p, cx, cy))
+    ProjectileType.GUST       -> ((p, cx, cy) => drawGustProjectile(p, cx, cy)),
+    ProjectileType.CHAIN_BOLT -> ((p, cx, cy) => drawChainBoltProjectile(p, cx, cy)),
+    ProjectileType.LOCKDOWN_CHAIN -> ((p, cx, cy) => drawLockdownChainProjectile(p, cx, cy)),
+    ProjectileType.SNARE_MINE -> ((p, cx, cy) => drawSnareMineProjectile(p, cx, cy))
   )
 
   // --- Isometric coordinate transforms ---
@@ -2701,6 +2704,216 @@ class GameCanvas(client: GameClient) extends Canvas() {
       val orbR = 5.0 * pulse
       gc.setFill(Color.color(1.0, 0.4, 0.1, 0.2 * pulse))
       gc.fillOval(noseTipX - orbR * 1.5, noseTipY - orbR * 1.5, orbR * 3, orbR * 3)
+    }
+  }
+
+  private def drawChainBoltProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 3.5
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 23) * 0.3
+      val pulse = 0.85 + 0.15 * Math.sin(phase)
+
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len < 1) return
+      val nx = -dy / len
+      val ny = dx / len
+
+      // Iron chain links — zigzag pattern
+      val segments = 10
+      val points = (0 to segments).map { seg =>
+        val t = seg.toDouble / segments
+        val zigzag = (if (seg % 2 == 0) 1.0 else -1.0) * 4.0 * pulse
+        val bx = tailX + dx * t + nx * zigzag
+        val by = tailY + dy * t + ny * zigzag
+        (bx, by)
+      }
+
+      // Shadow
+      gc.setStroke(Color.color(0.15, 0.15, 0.15, 0.3 * pulse))
+      gc.setLineWidth(6.0)
+      for (i <- 0 until points.length - 1) {
+        gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
+      }
+
+      // Main chain — dark iron
+      gc.setStroke(Color.color(0.45, 0.45, 0.5, 0.85 * pulse))
+      gc.setLineWidth(3.5)
+      for (i <- 0 until points.length - 1) {
+        gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
+      }
+
+      // Highlight links
+      gc.setStroke(Color.color(0.7, 0.7, 0.75, 0.5 * pulse))
+      gc.setLineWidth(1.5)
+      for (i <- 0 until points.length - 1 by 2) {
+        gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
+      }
+
+      // Frost shimmer at tip — chain freezes on contact
+      val frostPulse = 0.5 + 0.5 * Math.sin(phase * 2.5)
+      gc.setFill(Color.color(0.5, 0.8, 1.0, 0.15 * frostPulse))
+      gc.fillOval(tipX - 8, tipY - 8, 16, 16)
+      gc.setFill(Color.color(0.7, 0.9, 1.0, 0.3 * frostPulse))
+      gc.fillOval(tipX - 4, tipY - 4, 8, 8)
+    }
+  }
+
+  private def drawLockdownChainProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+    val beamLength = 4.0
+
+    val tailX = worldToScreenX(projX, projY, camOffX)
+    val tailY = worldToScreenY(projX, projY, camOffY)
+    val tipWX = projX + projectile.dx * beamLength
+    val tipWY = projY + projectile.dy * beamLength
+    val tipX = worldToScreenX(tipWX, tipWY, camOffX)
+    val tipY = worldToScreenY(tipWX, tipWY, camOffY)
+
+    val margin = 100.0
+    if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
+        Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
+
+      gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
+      val phase = (animationTick + projectile.id * 19) * 0.35
+      val pulse = 0.85 + 0.15 * Math.sin(phase)
+
+      val dx = tipX - tailX
+      val dy = tipY - tailY
+      val len = Math.sqrt(dx * dx + dy * dy)
+      if (len < 1) return
+      val nx = -dy / len
+      val ny = dx / len
+
+      // Heavy chains — thicker zigzag with more aggressive pattern
+      val segments = 12
+      val points = (0 to segments).map { seg =>
+        val t = seg.toDouble / segments
+        val zigzag = (if (seg % 2 == 0) 1.0 else -1.0) * 6.0 * pulse
+        val bx = tailX + dx * t + nx * zigzag
+        val by = tailY + dy * t + ny * zigzag
+        (bx, by)
+      }
+
+      // Red warning glow
+      gc.setStroke(Color.color(0.9, 0.2, 0.1, 0.08 * pulse))
+      gc.setLineWidth(20.0 * pulse)
+      gc.strokeLine(tailX, tailY, tipX, tipY)
+
+      // Shadow
+      gc.setStroke(Color.color(0.1, 0.1, 0.1, 0.4 * pulse))
+      gc.setLineWidth(7.0)
+      for (i <- 0 until points.length - 1) {
+        gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
+      }
+
+      // Main chain — heavier, darker
+      gc.setStroke(Color.color(0.35, 0.35, 0.4, 0.9 * pulse))
+      gc.setLineWidth(4.5)
+      for (i <- 0 until points.length - 1) {
+        gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
+      }
+
+      // Metallic highlights
+      gc.setStroke(Color.color(0.65, 0.65, 0.7, 0.5 * pulse))
+      gc.setLineWidth(2.0)
+      for (i <- 0 until points.length - 1 by 2) {
+        gc.strokeLine(points(i)._1, points(i)._2, points(i + 1)._1, points(i + 1)._2)
+      }
+
+      // Frost crystals at tip
+      val frostPulse = 0.5 + 0.5 * Math.sin(phase * 3.0)
+      gc.setFill(Color.color(0.4, 0.7, 1.0, 0.2 * frostPulse))
+      gc.fillOval(tipX - 10, tipY - 10, 20, 20)
+      gc.setFill(Color.color(0.6, 0.85, 1.0, 0.4 * frostPulse))
+      gc.fillOval(tipX - 5, tipY - 5, 10, 10)
+
+      // Lock icon shimmer at the tip
+      gc.setStroke(Color.color(0.8, 0.85, 1.0, 0.6 * frostPulse))
+      gc.setLineWidth(2.0)
+      gc.strokeOval(tipX - 3, tipY - 4, 6, 5)
+      gc.strokeLine(tipX - 2, tipY + 1, tipX - 2, tipY + 4)
+      gc.strokeLine(tipX + 2, tipY + 1, tipX + 2, tipY + 4)
+      gc.strokeLine(tipX - 2, tipY + 4, tipX + 2, tipY + 4)
+    }
+  }
+
+  private def drawSnareMineProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val projX = projectile.getX.toDouble
+    val projY = projectile.getY.toDouble
+
+    val sx = worldToScreenX(projX, projY, camOffX)
+    val sy = worldToScreenY(projX, projY, camOffY)
+
+    val margin = 100.0
+    if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
+      val phase = (animationTick + projectile.id * 13) * 0.3
+      val bounce = Math.abs(Math.sin(phase * 1.5)) * 3.0
+      val spinAngle = animationTick * 0.2 + projectile.id * 1.3
+      val pulse = 0.85 + 0.15 * Math.sin(phase)
+
+      val mineY = sy - bounce
+      val orbR = 8.0
+
+      // Frost danger aura — pulsing icy blue
+      val dangerPulse = 0.5 + 0.5 * Math.sin(phase * 2.5)
+      gc.setFill(Color.color(0.3, 0.6, 1.0, 0.06 * dangerPulse))
+      gc.fillOval(sx - orbR * 3, mineY - orbR * 3, orbR * 6, orbR * 6)
+      gc.setFill(Color.color(0.4, 0.7, 1.0, 0.1 * dangerPulse))
+      gc.fillOval(sx - orbR * 2, mineY - orbR * 2, orbR * 4, orbR * 4)
+
+      // Dark iron mine body
+      gc.setFill(Color.color(0.25, 0.25, 0.3, 0.9))
+      gc.fillOval(sx - orbR, mineY - orbR, orbR * 2, orbR * 2)
+
+      // Icy vein lines on the mine surface
+      for (v <- 0 until 4) {
+        val vAngle = spinAngle + v * Math.PI / 2
+        val vx = sx + Math.cos(vAngle) * orbR * 0.7
+        val vy = mineY + Math.sin(vAngle) * orbR * 0.7
+        gc.setStroke(Color.color(0.5, 0.8, 1.0, 0.6 * pulse))
+        gc.setLineWidth(1.5)
+        gc.strokeLine(sx, mineY, vx, vy)
+      }
+
+      // Outline
+      gc.setStroke(Color.color(0.15, 0.15, 0.2, 0.9))
+      gc.setLineWidth(1.5)
+      gc.strokeOval(sx - orbR, mineY - orbR, orbR * 2, orbR * 2)
+
+      // Frost crystal highlight on top
+      gc.setFill(Color.color(0.7, 0.9, 1.0, 0.5 * pulse))
+      gc.fillOval(sx - 3, mineY - orbR + 2, 6, 4)
+
+      // Spinning frost spikes protruding outward
+      for (spike <- 0 until 6) {
+        val spikeAngle = spinAngle * 1.5 + spike * Math.PI / 3
+        val innerR = orbR * 0.9
+        val outerR = orbR * 1.5
+        val ix = sx + Math.cos(spikeAngle) * innerR
+        val iy = mineY + Math.sin(spikeAngle) * innerR * 0.6
+        val ox = sx + Math.cos(spikeAngle) * outerR
+        val oy = mineY + Math.sin(spikeAngle) * outerR * 0.6
+        gc.setStroke(Color.color(0.5, 0.8, 1.0, 0.7 * pulse))
+        gc.setLineWidth(2.0)
+        gc.strokeLine(ix, iy, ox, oy)
+      }
     }
   }
 
