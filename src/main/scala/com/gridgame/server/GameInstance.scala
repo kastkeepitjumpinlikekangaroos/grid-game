@@ -58,11 +58,13 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
       TimeUnit.MILLISECONDS
     )
 
-    // Spawn initial items and start item spawning
+    // Spawn items relative to map size (1 item per 500 tiles, min 3, max 50)
+    val mapArea = world.width * world.height
+    val itemCount = Math.max(3, Math.min(50, mapArea / 500))
     itemSpawnExecutor = Executors.newSingleThreadScheduledExecutor()
-    for (_ <- 1 to 50) spawnItem()
+    for (_ <- 1 to itemCount) spawnItem()
     itemSpawnExecutor.scheduleAtFixedRate(
-      new Runnable { def run(): Unit = for (_ <- 1 to 50) spawnItem() },
+      new Runnable { def run(): Unit = for (_ <- 1 to itemCount) spawnItem() },
       Constants.ITEM_SPAWN_INTERVAL_MS.toLong,
       Constants.ITEM_SPAWN_INTERVAL_MS.toLong,
       TimeUnit.MILLISECONDS
