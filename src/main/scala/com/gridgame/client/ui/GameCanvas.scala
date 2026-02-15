@@ -43,15 +43,6 @@ class GameCanvas(client: GameClient) extends Canvas() {
   private val DEATH_ANIMATION_MS = 1200
   private val TELEPORT_ANIMATION_MS = 800
 
-  // Per-frame cached timestamp — avoids repeated System.currentTimeMillis() calls
-  private var frameTimeMs: Long = 0L
-
-  // Reusable entity-by-cell map — avoids HashMap allocation every frame
-  private val entitiesByCell = mutable.HashMap.empty[(Int, Int), mutable.ArrayBuffer[() => Unit]]
-
-  // Color cache — avoids recreating Color objects for the same ARGB values
-  private val colorCache = mutable.HashMap.empty[Int, Color]
-
   private def world: WorldData = client.getWorld
 
   // Projectile renderer registry — new characters just add entries here
@@ -100,11 +91,10 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
   def render(): Unit = {
     animationTick += 1
-    frameTimeMs = System.currentTimeMillis()
 
     val localDeathTime = client.getLocalDeathTime
     val localDeathAnimActive = client.getIsDead && localDeathTime > 0 &&
-      (frameTimeMs - localDeathTime) < DEATH_ANIMATION_MS
+      (System.currentTimeMillis() - localDeathTime) < DEATH_ANIMATION_MS
 
     // In non-lobby mode, show full game over screen when dead (after death anim)
     // In lobby mode (respawning), keep rendering the world with a countdown overlay
@@ -141,31 +131,23 @@ class GameCanvas(client: GameClient) extends Canvas() {
     // Draw themed animated background
     BackgroundRenderer.render(gc, canvasW, canvasH, currentWorld.background, animationTick, camOffX, camOffY)
 
-    // Calculate visible tile bounds (inlined to avoid Seq/tuple allocations)
-    val wx0 = screenToWorldX(0, 0, camOffX, camOffY)
-    val wy0 = screenToWorldY(0, 0, camOffX, camOffY)
-    val wx1 = screenToWorldX(canvasW, 0, camOffX, camOffY)
-    val wy1 = screenToWorldY(canvasW, 0, camOffX, camOffY)
-    val wx2 = screenToWorldX(0, canvasH, camOffX, camOffY)
-    val wy2 = screenToWorldY(0, canvasH, camOffX, camOffY)
-    val wx3 = screenToWorldX(canvasW, canvasH, camOffX, camOffY)
-    val wy3 = screenToWorldY(canvasW, canvasH, camOffX, camOffY)
-
-    val minWX = Math.min(Math.min(wx0, wx1), Math.min(wx2, wx3))
-    val maxWX = Math.max(Math.max(wx0, wx1), Math.max(wx2, wx3))
-    val minWY = Math.min(Math.min(wy0, wy1), Math.min(wy2, wy3))
-    val maxWY = Math.max(Math.max(wy0, wy1), Math.max(wy2, wy3))
-
-    val startX = Math.max(0, minWX.floor.toInt - 6)
-    val endX = Math.min(currentWorld.width - 1, maxWX.ceil.toInt + 6)
-    val startY = Math.max(0, minWY.floor.toInt - 6)
-    val endY = Math.min(currentWorld.height - 1, maxWY.ceil.toInt + 6)
+    // Calculate visible tile bounds
+    val corners = Seq(
+      (screenToWorldX(0, 0, camOffX, camOffY), screenToWorldY(0, 0, camOffX, camOffY)),
+      (screenToWorldX(canvasW, 0, camOffX, camOffY), screenToWorldY(canvasW, 0, camOffX, camOffY)),
+      (screenToWorldX(0, canvasH, camOffX, camOffY), screenToWorldY(0, canvasH, camOffX, camOffY)),
+      (screenToWorldX(canvasW, canvasH, camOffX, camOffY), screenToWorldY(canvasW, canvasH, camOffX, camOffY))
+    )
+    val startX = Math.max(0, corners.map(_._1).min.floor.toInt - 6)
+    val endX = Math.min(currentWorld.width - 1, corners.map(_._1).max.ceil.toInt + 6)
+    val startY = Math.max(0, corners.map(_._2).min.floor.toInt - 6)
+    val endY = Math.min(currentWorld.height - 1, corners.map(_._2).max.ceil.toInt + 6)
 
     val tileFrame = (animationTick / TILE_ANIM_SPEED) % TileRenderer.getNumFrames
     val cellH = Constants.TILE_CELL_HEIGHT
 
-    // Collect entities by cell for depth-interleaved rendering (reuse map, clear per frame)
-    entitiesByCell.clear()
+    // Collect entities by cell for depth-interleaved rendering
+    val entitiesByCell = mutable.Map.empty[(Int, Int), mutable.ArrayBuffer[() => Unit]]
 
     def addEntity(cx: Int, cy: Int, drawFn: () => Unit): Unit = {
       entitiesByCell.getOrElseUpdate((cx, cy), mutable.ArrayBuffer.empty) += drawFn
@@ -2725,7 +2707,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
   private val EXPLOSION_ANIMATION_MS = 800
 
   private def drawExplosionAnimations(camOffX: Double, camOffY: Double): Unit = {
-    val now = frameTimeMs
+    val now = System.currentTimeMillis()
     val iter = client.getExplosionAnimations.entrySet().iterator()
     while (iter.hasNext) {
       val entry = iter.next()
@@ -2745,7 +2727,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
   }
 
   private def drawExplosionEffect(screenX: Double, screenY: Double, startTime: Long, projectileType: Byte): Unit = {
-    val elapsed = frameTimeMs - startTime
+    val elapsed = System.currentTimeMillis() - startTime
     if (elapsed < 0 || elapsed > EXPLOSION_ANIMATION_MS) return
 
     val progress = elapsed.toDouble / EXPLOSION_ANIMATION_MS
@@ -2862,7 +2844,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
         screenY < -displaySz || screenY > getHeight + displaySz) return
 
     // Detect remote player movement
-    val now = frameTimeMs
+    val now = System.currentTimeMillis()
     val lastPos = lastRemotePositions.get(playerId)
     if (lastPos.isEmpty || lastPos.get.getX != pos.getX || lastPos.get.getY != pos.getY) {
       remoteMovingUntil.put(playerId, now + 200)
@@ -3227,7 +3209,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
   private def drawHitEffect(centerX: Double, centerY: Double, hitTime: Long): Unit = {
     if (hitTime <= 0) return
-    val elapsed = frameTimeMs - hitTime
+    val elapsed = System.currentTimeMillis() - hitTime
     if (elapsed < 0 || elapsed > HIT_ANIMATION_MS) return
 
     val progress = elapsed.toDouble / HIT_ANIMATION_MS
@@ -3285,7 +3267,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
   }
 
   private def drawDeathAnimations(camOffX: Double, camOffY: Double): Unit = {
-    val now = frameTimeMs
+    val now = System.currentTimeMillis()
     val iter = client.getDeathAnimations.entrySet().iterator()
     while (iter.hasNext) {
       val entry = iter.next()
@@ -3307,7 +3289,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
   private def drawDeathEffect(screenX: Double, screenY: Double, colorRGB: Int, deathTime: Long, characterId: Byte = 0): Unit = {
     if (deathTime <= 0) return
-    val elapsed = frameTimeMs - deathTime
+    val elapsed = System.currentTimeMillis() - deathTime
     if (elapsed < 0 || elapsed > DEATH_ANIMATION_MS) return
 
     val progress = elapsed.toDouble / DEATH_ANIMATION_MS
@@ -3395,7 +3377,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
   }
 
   private def drawTeleportAnimations(camOffX: Double, camOffY: Double): Unit = {
-    val now = frameTimeMs
+    val now = System.currentTimeMillis()
     val iter = client.getTeleportAnimations.entrySet().iterator()
     while (iter.hasNext) {
       val entry = iter.next()
@@ -3424,7 +3406,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
   }
 
   private def drawTeleportDeparture(screenX: Double, screenY: Double, colorRGB: Int, startTime: Long): Unit = {
-    val elapsed = frameTimeMs - startTime
+    val elapsed = System.currentTimeMillis() - startTime
     if (elapsed < 0 || elapsed > TELEPORT_ANIMATION_MS) return
 
     val progress = elapsed.toDouble / TELEPORT_ANIMATION_MS
@@ -3460,7 +3442,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
   }
 
   private def drawTeleportArrival(screenX: Double, screenY: Double, colorRGB: Int, startTime: Long): Unit = {
-    val elapsed = frameTimeMs - startTime
+    val elapsed = System.currentTimeMillis() - startTime
     val delay = 200
     if (elapsed < delay || elapsed > TELEPORT_ANIMATION_MS) return
 
@@ -3553,7 +3535,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
   private def drawRespawnCountdown(): Unit = {
     val deathTime = client.getLocalDeathTime
-    val elapsed = frameTimeMs - deathTime
+    val elapsed = System.currentTimeMillis() - deathTime
     val remaining = Math.max(0, Constants.RESPAWN_DELAY_MS - elapsed)
     val secondsLeft = Math.ceil(remaining / 1000.0).toInt
 
@@ -3811,7 +3793,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     drawOutlinedText(s"K: ${client.killCount}  D: ${client.deathCount}", 10, 134)
 
     // Kill feed: top-right corner, last 5 entries
-    val now = frameTimeMs
+    val now = System.currentTimeMillis()
     gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 13))
     import scala.jdk.CollectionConverters._
     var feedY = 20.0
@@ -3841,13 +3823,11 @@ class GameCanvas(client: GameClient) extends Canvas() {
   }
 
   private def intToColor(argb: Int): Color = {
-    colorCache.getOrElseUpdate(argb, {
-      val alpha = (argb >> 24) & 0xFF
-      val red = (argb >> 16) & 0xFF
-      val green = (argb >> 8) & 0xFF
-      val blue = argb & 0xFF
-      Color.rgb(red, green, blue, alpha / 255.0)
-    })
+    val alpha = (argb >> 24) & 0xFF
+    val red = (argb >> 16) & 0xFF
+    val green = (argb >> 8) & 0xFF
+    val blue = argb & 0xFF
+    Color.rgb(red, green, blue, alpha / 255.0)
   }
 
   /** Reset visual interpolation (e.g. on respawn or world change). */
