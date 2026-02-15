@@ -1040,6 +1040,20 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     networkThread.send(packet)
   }
 
+  def addBot(): Unit = {
+    val packet = new LobbyActionPacket(
+      sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.ADD_BOT
+    )
+    networkThread.send(packet)
+  }
+
+  def removeBot(): Unit = {
+    val packet = new LobbyActionPacket(
+      sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.REMOVE_BOT
+    )
+    networkThread.send(packet)
+  }
+
   def updateLobbyConfig(mapIndex: Int, durationMinutes: Int): Unit = {
     val packet = new LobbyActionPacket(
       sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.CONFIG_UPDATE, currentLobbyId,

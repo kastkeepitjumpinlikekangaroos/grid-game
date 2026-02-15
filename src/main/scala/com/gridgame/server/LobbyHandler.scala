@@ -37,6 +37,12 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
       case LobbyAction.CHARACTER_SELECT =>
         handleCharacterSelect(playerId, packet)
 
+      case LobbyAction.ADD_BOT =>
+        handleAddBot(playerId, player)
+
+      case LobbyAction.REMOVE_BOT =>
+        handleRemoveBot(playerId, player)
+
       case _ =>
         println(s"LobbyHandler: Unknown action ${packet.getAction} from ${playerId.toString.substring(0, 8)}")
     }
@@ -132,10 +138,12 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
 
     // Register all lobby players in the instance's registry and kill tracker
     // (must happen before instance.start() so initial item spawns reach players)
+    var occupiedSpawns = Set.empty[(Int, Int)]
     lobby.players.asScala.foreach { pid =>
       val p = server.getConnectedPlayer(pid)
       if (p != null) {
-        val spawnPoint = instance.world.getValidSpawnPoint()
+        val spawnPoint = instance.world.getValidSpawnPoint(occupiedSpawns)
+        occupiedSpawns += ((spawnPoint.getX, spawnPoint.getY))
         val charId = lobby.getCharacter(pid)
         val charDef = com.gridgame.common.model.CharacterDef.get(charId)
         val instancePlayer = new Player(pid, p.getName, spawnPoint, p.getColorRGB, charDef.maxHealth, charDef.maxHealth)
@@ -148,6 +156,21 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
         instance.killTracker.registerPlayer(pid)
       }
     }
+
+    // Register bots from the lobby's BotManager
+    val botController = new BotController(instance)
+    lobby.botManager.getBots.foreach { botSlot =>
+      val spawnPoint = instance.world.getValidSpawnPoint(occupiedSpawns)
+      occupiedSpawns += ((spawnPoint.getX, spawnPoint.getY))
+      val charDef = com.gridgame.common.model.CharacterDef.get(botSlot.characterId)
+      val colorRGB = Player.generateColorFromUUID(botSlot.id)
+      val botPlayer = new Player(botSlot.id, botSlot.name, spawnPoint, colorRGB, charDef.maxHealth, charDef.maxHealth)
+      botPlayer.setCharacterId(botSlot.characterId)
+      instance.registry.add(botPlayer)
+      instance.killTracker.registerPlayer(botSlot.id)
+      botController.addBotId(botSlot.id)
+    }
+    instance.botController = botController
 
     // Send GAME_STARTING to all lobby members
     val startingPacket = new LobbyActionPacket(
@@ -170,6 +193,27 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     // Start the instance (spawns initial items, begins projectile/timer ticks)
     // Done after players are registered and notified so item spawns reach everyone
     instance.start()
+
+    // Start bot controller if there are bots
+    if (lobby.botManager.botCount > 0) {
+      // Broadcast bot join packets to human players so they know about bots
+      lobby.botManager.getBots.foreach { botSlot =>
+        val botPlayer = instance.registry.get(botSlot.id)
+        if (botPlayer != null) {
+          val joinPacket = new PlayerJoinPacket(
+            server.getNextSequenceNumber,
+            botSlot.id,
+            botPlayer.getPosition,
+            botPlayer.getColorRGB,
+            botSlot.name,
+            botPlayer.getHealth,
+            botSlot.characterId
+          )
+          instance.broadcastToInstance(joinPacket)
+        }
+      }
+      botController.start()
+    }
 
     println(s"LobbyHandler: Game started for lobby ${lobby.id} on map $worldFileName ($worldPath)")
   }
@@ -225,6 +269,47 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
       lobby.status, lobby.name
     )
     broadcastToLobby(lobby, update, null)
+  }
+
+  private def handleAddBot(playerId: UUID, player: Player): Unit = {
+    val lobby = lobbyManager.getPlayerLobby(playerId)
+    if (lobby == null || !lobby.isHost(playerId)) return
+    if (lobby.status != LobbyStatus.WAITING) return
+
+    if (lobby.playerCount >= lobby.maxPlayers) return
+
+    val botSlot = lobby.botManager.addBot()
+    println(s"LobbyHandler: Bot '${botSlot.name}' added to lobby ${lobby.id}")
+
+    // Broadcast PLAYER_JOINED with updated player count (includes bots)
+    val broadcast = new LobbyActionPacket(
+      server.getNextSequenceNumber, botSlot.id, LobbyAction.PLAYER_JOINED, lobby.id,
+      lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
+      lobby.playerCount.toByte, lobby.maxPlayers.toByte,
+      lobby.status, lobby.name
+    )
+    broadcastToLobby(lobby, broadcast, null)
+  }
+
+  private def handleRemoveBot(playerId: UUID, player: Player): Unit = {
+    val lobby = lobbyManager.getPlayerLobby(playerId)
+    if (lobby == null || !lobby.isHost(playerId)) return
+    if (lobby.status != LobbyStatus.WAITING) return
+
+    val removed = lobby.botManager.removeLastBot()
+    if (removed.isEmpty) return
+
+    val botSlot = removed.get
+    println(s"LobbyHandler: Bot '${botSlot.name}' removed from lobby ${lobby.id}")
+
+    // Broadcast PLAYER_LEFT with updated player count
+    val broadcast = new LobbyActionPacket(
+      server.getNextSequenceNumber, botSlot.id, LobbyAction.PLAYER_LEFT, lobby.id,
+      lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
+      lobby.playerCount.toByte, lobby.maxPlayers.toByte,
+      lobby.status, lobby.name
+    )
+    broadcastToLobby(lobby, broadcast, null)
   }
 
   private def broadcastToLobby(lobby: Lobby, packet: Packet, excludePlayerId: UUID): Unit = {

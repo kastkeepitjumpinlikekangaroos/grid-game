@@ -522,12 +522,13 @@ class GameServer(port: Int, val worldFile: String = "") {
       rank = (rank + 1).toByte
     }
 
-    // Persist match results
-    authDatabase.saveMatch(lobby.mapIndex, lobby.durationMinutes, matchResults.toSeq)
+    // Persist match results (exclude bots)
+    val humanResults = matchResults.filter { case (pid, _, _, _) => !BotManager.isBotUUID(pid) }.toSeq
+    authDatabase.saveMatch(lobby.mapIndex, lobby.durationMinutes, humanResults)
 
-    // Update ELO for ranked matches
-    if (lobby.isRanked && matchResults.size >= 2) {
-      updateRankedElo(matchResults.toSeq)
+    // Update ELO for ranked matches (exclude bots)
+    if (lobby.isRanked && humanResults.size >= 2) {
+      updateRankedElo(humanResults)
     }
 
     // Send SCORE_END

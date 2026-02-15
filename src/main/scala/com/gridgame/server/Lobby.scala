@@ -20,6 +20,7 @@ class Lobby(
 ) {
   val players: CopyOnWriteArrayList[UUID] = new CopyOnWriteArrayList[UUID]()
   val characterSelections: ConcurrentHashMap[UUID, Byte] = new ConcurrentHashMap[UUID, Byte]()
+  val botManager: BotManager = new BotManager()
   @volatile var status: Byte = LobbyStatus.WAITING
   @volatile var gameInstance: GameInstance = _
   @volatile var isRanked: Boolean = false
@@ -45,5 +46,5 @@ class Lobby(
     characterSelections.getOrDefault(playerId, 0.toByte)
   }
 
-  def playerCount: Int = players.size()
+  def playerCount: Int = players.size() + botManager.botCount
 }

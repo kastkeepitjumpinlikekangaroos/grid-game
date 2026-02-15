@@ -756,6 +756,21 @@ class ClientMain extends Application {
         client.startGame()
       })
 
+      val addBotBtn = new Button("Add Bot")
+      addHoverEffect(addBotBtn, buttonStyle, buttonHoverStyle)
+      addBotBtn.setMaxWidth(Double.MaxValue)
+      addBotBtn.setOnAction(_ => client.addBot())
+
+      val removeBotBtn = new Button("Remove Bot")
+      addHoverEffect(removeBotBtn, buttonRedStyle, buttonRedHoverStyle)
+      removeBotBtn.setMaxWidth(Double.MaxValue)
+      removeBotBtn.setOnAction(_ => client.removeBot())
+
+      val botRow = new HBox(10, addBotBtn, removeBotBtn)
+      botRow.setAlignment(Pos.CENTER)
+      HBox.setHgrow(addBotBtn, Priority.ALWAYS)
+      HBox.setHgrow(removeBotBtn, Priority.ALWAYS)
+
       val row1 = new HBox(10, new Label("Map") { setStyle(sectionHeaderStyle); setMinWidth(44) }, mapCombo)
       row1.setAlignment(Pos.CENTER_LEFT)
       HBox.setHgrow(mapCombo, Priority.ALWAYS)
@@ -763,7 +778,7 @@ class ClientMain extends Application {
       row2.setAlignment(Pos.CENTER_LEFT)
       HBox.setHgrow(durationCombo, Priority.ALWAYS)
 
-      infoCard.getChildren.addAll(waitingLabel, createSeparator(), configLabel, row1, row2, startBtn)
+      infoCard.getChildren.addAll(waitingLabel, createSeparator(), configLabel, row1, row2, botRow, startBtn)
       buttonBox.getChildren.add(new Region()) // spacing
     } else {
       infoCard.getChildren.addAll(mapLabel, durationLabel, createSeparator(), waitingLabel)

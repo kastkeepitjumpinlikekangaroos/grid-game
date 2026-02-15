@@ -26,6 +26,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   var world: WorldData = _
   val modifiedTiles = new java.util.concurrent.ConcurrentHashMap[(Int, Int), Int]()
 
+  var botController: BotController = _
+
   private var projectileExecutor: ScheduledExecutorService = _
   private var itemSpawnExecutor: ScheduledExecutorService = _
   private var timerSyncExecutor: ScheduledExecutorService = _
@@ -86,6 +88,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
 
   def stop(): Unit = {
     running = false
+    if (botController != null) botController.stop()
     if (projectileExecutor != null) { projectileExecutor.shutdown(); projectileExecutor.shutdownNow() }
     if (itemSpawnExecutor != null) { itemSpawnExecutor.shutdown(); itemSpawnExecutor.shutdownNow() }
     if (timerSyncExecutor != null) { timerSyncExecutor.shutdown(); timerSyncExecutor.shutdownNow() }
@@ -523,7 +526,11 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         val player = registry.get(playerId)
         if (player != null) {
           player.setHealth(player.getMaxHealth)
-          val spawnPoint = world.getValidSpawnPoint()
+          val occupied = registry.getAll.asScala
+            .filter(p => !p.isDead && !p.getId.equals(playerId))
+            .map(p => (p.getPosition.getX, p.getPosition.getY))
+            .toSet
+          val spawnPoint = world.getValidSpawnPoint(occupied)
           player.setPosition(spawnPoint)
 
           // Send respawn event

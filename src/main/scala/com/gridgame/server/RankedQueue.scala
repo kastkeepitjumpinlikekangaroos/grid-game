@@ -183,10 +183,12 @@ class RankedQueue(server: GameServer) {
     server.registerGameInstance(lobby.id, instance)
 
     // Register all players in the instance
+    var occupiedSpawns = Set.empty[(Int, Int)]
     entries.foreach { entry =>
       val p = server.getConnectedPlayer(entry.playerId)
       if (p != null) {
-        val spawnPoint = instance.world.getValidSpawnPoint()
+        val spawnPoint = instance.world.getValidSpawnPoint(occupiedSpawns)
+        occupiedSpawns += ((spawnPoint.getX, spawnPoint.getY))
         val charDef = com.gridgame.common.model.CharacterDef.get(entry.characterId)
         val instancePlayer = new Player(entry.playerId, p.getName, spawnPoint, p.getColorRGB, charDef.maxHealth, charDef.maxHealth)
         instancePlayer.setCharacterId(entry.characterId)
@@ -199,11 +201,28 @@ class RankedQueue(server: GameServer) {
       }
     }
 
+    // Fill remaining slots with bots
+    val botController = new BotController(instance)
+    val botsNeeded = Constants.MAX_LOBBY_PLAYERS - entries.size
+    for (_ <- 1 to botsNeeded) {
+      val botSlot = lobby.botManager.addBot()
+      val spawnPoint = instance.world.getValidSpawnPoint(occupiedSpawns)
+      occupiedSpawns += ((spawnPoint.getX, spawnPoint.getY))
+      val charDef = com.gridgame.common.model.CharacterDef.get(botSlot.characterId)
+      val colorRGB = Player.generateColorFromUUID(botSlot.id)
+      val botPlayer = new Player(botSlot.id, botSlot.name, spawnPoint, colorRGB, charDef.maxHealth, charDef.maxHealth)
+      botPlayer.setCharacterId(botSlot.characterId)
+      instance.registry.add(botPlayer)
+      instance.killTracker.registerPlayer(botSlot.id)
+      botController.addBotId(botSlot.id)
+    }
+    instance.botController = botController
+
     // Send GAME_STARTING to all players
     val startingPacket = new LobbyActionPacket(
       server.getNextSequenceNumber, hostId, LobbyAction.GAME_STARTING, lobby.id,
       lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
-      entries.size.toByte, lobby.maxPlayers.toByte,
+      lobby.playerCount.toByte, lobby.maxPlayers.toByte,
       lobby.status, lobby.name
     )
     entries.foreach { entry =>
@@ -225,7 +244,27 @@ class RankedQueue(server: GameServer) {
     // Start the instance
     instance.start()
 
-    println(s"RankedQueue: Started ranked match (lobby ${lobby.id}) with ${entries.size} players on $worldFileName")
+    // Broadcast bot joins and start bot AI
+    if (lobby.botManager.botCount > 0) {
+      lobby.botManager.getBots.foreach { botSlot =>
+        val botPlayer = instance.registry.get(botSlot.id)
+        if (botPlayer != null) {
+          val joinPacket = new PlayerJoinPacket(
+            server.getNextSequenceNumber,
+            botSlot.id,
+            botPlayer.getPosition,
+            botPlayer.getColorRGB,
+            botSlot.name,
+            botPlayer.getHealth,
+            botSlot.characterId
+          )
+          instance.broadcastToInstance(joinPacket)
+        }
+      }
+      botController.start()
+    }
+
+    println(s"RankedQueue: Started ranked match (lobby ${lobby.id}) with ${entries.size} players + ${botsNeeded} bots on $worldFileName")
   }
 
   private def resolveWorldPath(worldFile: String): String = {

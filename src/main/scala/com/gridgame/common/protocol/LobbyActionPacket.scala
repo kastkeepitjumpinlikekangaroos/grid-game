@@ -22,6 +22,8 @@ object LobbyAction {
   val LOBBY_CLOSED: Byte = 11
   val CONFIG_UPDATE: Byte = 12
   val CHARACTER_SELECT: Byte = 13
+  val ADD_BOT: Byte = 14
+  val REMOVE_BOT: Byte = 15
 }
 
 /**
