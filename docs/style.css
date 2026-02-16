@@ -234,6 +234,16 @@ h2 {
   text-align: center;
 }
 
+.char-category-label {
+  grid-column: 1 / -1;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--accent);
+  padding: 20px 0 4px;
+  border-bottom: 1px solid var(--border);
+  margin-top: 12px;
+}
+
 /* ── Controls ─────────────────────────────────────────── */
 #controls {
   padding: 80px 0;
