@@ -24,6 +24,7 @@ class Player(
   private var gemBoostUntil: Long = 0
   private var _chargeLevel: Int = 0
   private var frozenUntil: Long = 0
+  private var ccImmuneUntil: Long = 0
   private var phasedUntil: Long = 0
   private var serverTeleportedUntil: Long = 0
   private var characterId: Byte = CharacterId.DEFAULT.id
@@ -125,6 +126,17 @@ class Player(
   }
 
   def isFrozen: Boolean = System.currentTimeMillis() < frozenUntil
+
+  def isCCImmune: Boolean = System.currentTimeMillis() < ccImmuneUntil
+
+  /** Try to freeze this player. Returns false if already frozen, CC immune, or phased. */
+  def tryFreeze(durationMs: Long): Boolean = {
+    if (isFrozen || isCCImmune || isPhased) return false
+    val now = System.currentTimeMillis()
+    frozenUntil = now + durationMs
+    ccImmuneUntil = frozenUntil + com.gridgame.common.Constants.CC_IMMUNITY_MS
+    true
+  }
 
   def getPhasedUntil: Long = phasedUntil
 

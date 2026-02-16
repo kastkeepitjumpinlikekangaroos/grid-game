@@ -185,8 +185,8 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
         if (dx * dx + dy * dy <= radius * radius) {
           val newHealth = player.getHealth - damage
           player.setHealth(newHealth)
-          if (freezeDurationMs > 0 && !player.isPhased) {
-            player.setFrozenUntil(System.currentTimeMillis() + freezeDurationMs)
+          if (freezeDurationMs > 0) {
+            player.tryFreeze(freezeDurationMs)
           }
           println(s"ProjectileManager: AoE hit player ${player.getId.toString.substring(0, 8)}, damage=$damage, health now $newHealth" +
             (if (freezeDurationMs > 0) s", frozen ${freezeDurationMs}ms" else ""))
