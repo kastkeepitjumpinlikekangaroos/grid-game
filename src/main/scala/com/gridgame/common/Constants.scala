@@ -71,7 +71,7 @@ object Constants {
   val DEFAULT_GAME_DURATION_MIN: Int = 5
   val MAX_LOBBY_NAME_LEN: Int = 24
   val TIME_SYNC_INTERVAL_S: Int = 10
-  val MAX_LOBBY_PLAYERS: Int = 8
+  val MAX_LOBBY_PLAYERS: Int = 32
 
   // CC immunity — guaranteed free window after a freeze expires
   val CC_IMMUNITY_MS: Int = 1500
