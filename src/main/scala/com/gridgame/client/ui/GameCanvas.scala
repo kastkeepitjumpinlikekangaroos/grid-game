@@ -5133,6 +5133,10 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
     // Draw health bar above player
     drawHealthBar(screenX, spriteY, player.getHealth, player.getMaxHealth, player.getTeamId)
+
+    // Draw character name above health bar
+    val charName = CharacterDef.get(player.getCharacterId).displayName
+    drawCharacterName(charName, screenX, spriteY)
   }
 
   private def drawLocalPlayer(wx: Double, wy: Double, camOffX: Double, camOffY: Double): Unit = {
@@ -5243,6 +5247,10 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
     // Draw health bar above local player
     drawHealthBar(screenX, spriteY, client.getLocalHealth, client.getSelectedCharacterMaxHealth, client.localTeamId)
+
+    // Draw character name above health bar
+    val charName = client.getSelectedCharacterDef.displayName
+    drawCharacterName(charName, screenX, spriteY)
   }
 
   private val CAST_FLASH_MS = 200
@@ -6044,6 +6052,19 @@ class GameCanvas(client: GameClient) extends Canvas() {
     }
   }
 
+  private def drawCharacterName(name: String, screenCenterX: Double, spriteTopY: Double): Unit = {
+    val barHeight = Constants.HEALTH_BAR_HEIGHT_PX
+    val nameY = spriteTopY - Constants.HEALTH_BAR_OFFSET_Y - barHeight - 4.0
+    gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 10))
+    val textWidth = name.length * 5.5
+    val textX = screenCenterX - textWidth / 2.0
+    gc.setStroke(Color.rgb(0, 0, 0, 0.8))
+    gc.setLineWidth(2.5)
+    gc.strokeText(name, textX, nameY)
+    gc.setFill(Color.WHITE)
+    gc.fillText(name, textX, nameY)
+  }
+
   private def drawGameOverScreen(): Unit = {
     // Dark overlay
     gc.setFill(Color.rgb(0, 0, 0, 0.75))
@@ -6076,9 +6097,13 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val centerX = getWidth / 2.0
     val centerY = getHeight / 2.0
 
+    val killerName = client.lastKillerCharacterName
+    val hasKiller = killerName != null && killerName.nonEmpty
+    val boxHeight = if (hasKiller) 105 else 85
+
     // Dark backdrop behind the text
     gc.setFill(Color.rgb(0, 0, 0, 0.55))
-    gc.fillRoundRect(centerX - 120, centerY - 50, 240, 85, 16, 16)
+    gc.fillRoundRect(centerX - 120, centerY - 50, 240, boxHeight, 16, 16)
 
     // "YOU DIED" text
     gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 32))
@@ -6088,14 +6113,27 @@ class GameCanvas(client: GameClient) extends Canvas() {
     gc.setFill(Color.rgb(230, 50, 50))
     gc.fillText("YOU DIED", centerX - 78, centerY - 12)
 
+    // "Killed by [character name]" text
+    if (hasKiller) {
+      gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 16))
+      val killedByText = s"Killed by $killerName"
+      val textWidth = killedByText.length * 8.0
+      gc.setStroke(Color.rgb(0, 0, 0, 0.9))
+      gc.setLineWidth(3)
+      gc.strokeText(killedByText, centerX - textWidth / 2.0, centerY + 14)
+      gc.setFill(Color.rgb(255, 200, 100))
+      gc.fillText(killedByText, centerX - textWidth / 2.0, centerY + 14)
+    }
+
     // Countdown text
     gc.setFont(javafx.scene.text.Font.font("Arial", javafx.scene.text.FontWeight.BOLD, 18))
     val countdownText = if (secondsLeft > 0) s"Respawning in ${secondsLeft}s..." else "Respawning..."
+    val countdownY = if (hasKiller) centerY + 40 else centerY + 20
     gc.setStroke(Color.rgb(0, 0, 0, 0.9))
     gc.setLineWidth(3)
-    gc.strokeText(countdownText, centerX - 82, centerY + 20)
+    gc.strokeText(countdownText, centerX - 82, countdownY)
     gc.setFill(Color.rgb(230, 230, 230))
-    gc.fillText(countdownText, centerX - 82, centerY + 20)
+    gc.fillText(countdownText, centerX - 82, countdownY)
   }
 
   private def drawCoordinates(world: WorldData): Unit = {
