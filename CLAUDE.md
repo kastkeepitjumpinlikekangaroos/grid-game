@@ -35,11 +35,16 @@ bazel run //src/main/scala/com/gridgame/mapeditor
 │  │ GameCanvas  │  │ KeyboardHandler│ │ MouseHandler           │  │
 │  │ (Isometric) │  │ (WASD+QE)    │  │ (Aim/Click)            │  │
 │  └─────────────┘  └──────────────┘  └────────────────────────┘  │
+│         │                                ┌────────────────────┐  │
+│  ┌─────────────┐  ┌──────────────┐       │ ControllerHandler │  │
+│  │TileRenderer │  │ Background   │       │ (LWJGL/GLFW)      │  │
+│  │ (Tiles)     │  │ Renderer     │       └────────────────────┘  │
+│  └─────────────┘  └──────────────┘                               │
 │         │                                                        │
-│  ┌─────────────┐  ┌──────────────┐                              │
-│  │TileRenderer │  │ Background   │                              │
-│  │ (Tiles)     │  │ Renderer     │                              │
-│  └─────────────┘  └──────────────┘                              │
+│  ┌──────────────────────┐  ┌──────────────────────────────────┐  │
+│  │CharacterSelectionPanel│  │AbilityPreviewRenderer           │  │
+│  │(Categorized grid)    │  │(Animated ability previews)       │  │
+│  └──────────────────────┘  └──────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────┘
                            │ TCP + UDP
                            ▼
@@ -74,18 +79,21 @@ bazel run //src/main/scala/com/gridgame/mapeditor
 src/main/scala/com/gridgame/
 ├── common/                     # Shared code between client and server
 │   ├── model/                  # Data models (Player, Tile, CharacterDef, Item, Projectile, etc.)
+│   │                           # 112 characters, 34 tiles, cast behaviors, projectile defs
 │   ├── protocol/               # Network packets (15 packet types)
 │   └── world/                  # WorldLoader (JSON map parsing)
 ├── server/                     # Server (GameServer, Lobby, Auth, Bots, Projectiles, Items)
 ├── client/                     # Client (GameClient, UI, Input handlers)
-│   ├── ui/                     # GameCanvas, TileRenderer, BackgroundRenderer, SpriteGenerator
-│   └── input/                  # KeyboardHandler, MouseHandler
+│   ├── ui/                     # GameCanvas, TileRenderer, BackgroundRenderer, SpriteGenerator,
+│   │                           # CharacterSelectionPanel, AbilityPreviewRenderer
+│   └── input/                  # KeyboardHandler, MouseHandler, ControllerHandler
 └── mapeditor/                  # Standalone map editor tool
 
 src/test/scala/com/gridgame/   # Tests
-worlds/                         # World definition files (19 JSON maps)
-sprites/                        # Sprite assets (tiles.png + 11 character PNGs)
+worlds/                         # World definition files (16 JSON maps)
+sprites/                        # Sprite assets (tiles.png + 112 character PNGs)
 scripts/                        # Asset generation scripts (tiles + character generators)
+docs/                           # GitHub Pages landing site
 ```
 
 ## Asset Generation
@@ -105,13 +113,42 @@ python3 scripts/generate_tiles.py
 - If you add a new tile type to `Tile.scala`, also add its entry to the `TILES` list in this script and regenerate
 
 ### Character Sprites
-Each character has a dedicated generator script (`scripts/generate_<name>.py`) that produces a sprite sheet with 4 directions x 4 animation frames.
+The original 11 characters each have a dedicated generator script (`scripts/generate_<name>.py`). The remaining 100 characters are generated in batch using shared utilities.
 
 ```bash
+# Individual character (original 11)
 python3 scripts/generate_gladiator.py   # -> sprites/gladiator.png
 python3 scripts/generate_wizard.py      # -> sprites/wizard.png
 # etc.
+
+# Batch generate newer characters (uses sprite_base.py utilities)
+python3 scripts/generate_all_new_characters.py
 ```
+
+Each sprite sheet contains 4 directions x 4 animation frames.
+
+## Characters (112 total)
+
+Characters are defined across 8 categories in `CharacterId.scala` and `CharacterDef.scala`:
+
+| Category | IDs | Count | Characters |
+|----------|-----|-------|------------|
+| Original | 0-11 | 12 | Spaceman, Gladiator, Wraith, Wizard, Tidecaller, Soldier, Raptor, Assassin, Warden, Samurai, PlagueDoctor, Vampire |
+| Elemental | 12-26 | 15 | Pyromancer, Cryomancer, Stormcaller, Earthshaker, Windwalker, MagmaKnight, Frostbite, Sandstorm, Thornweaver, Cloudrunner, Inferno, Glacier, Mudslinger, Ember, Avalanche |
+| Undead/Dark | 27-41 | 15 | Necromancer, SkeletonKing, Banshee, Lich, Ghoul, Reaper, Shade, Revenant, Gravedigger, Dullahan, Phantom, Mummy, Deathknight, Shadowfiend, Poltergeist |
+| Medieval/Fantasy | 42-56 | 15 | Paladin, Ranger, Berserker, Crusader, Druid, Bard, Monk, Cleric, Rogue, Barbarian, Enchantress, Jester, Valkyrie, Warlock, Inquisitor |
+| Sci-Fi/Tech | 57-71 | 15 | Cyborg, Hacker, MechPilot, Android, Chronomancer, Graviton, Tesla, Nanoswarm, Voidwalker, Photon, Railgunner, Bombardier, Sentinel, Pilot, Glitcher |
+| Nature/Beast | 72-86 | 15 | Wolf, Serpent, Spider, Bear, Scorpion, Hawk, Shark, Beetle, Treant, Phoenix, Hydra, Mantis, Jellyfish, Gorilla, Chameleon |
+| Mythological | 87-101 | 15 | Minotaur, Medusa, Cerberus, Centaur, Kraken, Sphinx, Cyclops, Harpy, Griffin, Anubis, Yokai, Golem, Djinn, Fenrir, Chimera |
+| Specialist | 102-111 | 10 | Alchemist, Puppeteer, Gambler, Blacksmith, Pirate, Chef, Musician, Astronomer, Runesmith, Shapeshifter |
+
+### Cast Behaviors
+Each ability uses one of these cast behaviors (defined in `CharacterDef.scala`):
+- `StandardProjectile` — fires a projectile toward the cursor
+- `PhaseShiftBuff(durationMs)` — grants a temporary buff (e.g., ethereal form)
+- `DashBuff(maxDistance, durationMs, moveRateMs)` — dash movement ability
+- `TeleportCast(maxDistance)` — instant teleport to cursor position
+- `FanProjectile(count, fanAngle)` — fires multiple projectiles in a fan pattern
 
 ## Network Protocol
 
@@ -162,9 +199,6 @@ Client                              Server
    │                                   │
 ```
 
-### Character Sprites
-Each of the 11 characters has a pre-rendered sprite sheet with 4 directions and 4 animation frames per direction. Sprites are loaded from `sprites/<name>.png` at runtime.
-
 ## Common Modifications
 
 ### Adding a New Tile Type
@@ -182,12 +216,14 @@ Each of the 11 characters has a pre-rendered sprite sheet with 4 directions and 
 5. Handle in `GameClient.processPacket()` or `ClientHandler.processPacket()`
 
 ### Adding a New Character
-1. Add `CharacterId` entry in `CharacterId.scala`
+1. Add `CharacterId` entry in `CharacterId.scala` (next available ID byte)
 2. Define `ProjectileDef` entries for the character's projectiles in `CharacterDef.scala`
 3. Register projectile defs in `ProjectileDef.register()`
 4. Create `CharacterDef` val with abilities, stats, and sprite sheet path
 5. Add to `byId` map and `all` sequence in `CharacterDef`
-6. Create sprite generator script: `scripts/generate_<name>.py`
+6. Generate sprite sheet — either:
+   - Create dedicated script: `scripts/generate_<name>.py` (uses `sprite_base.py`)
+   - Or add to `scripts/generate_all_new_characters.py` batch generator
 7. Run the script to produce `sprites/<name>.png`
 
 ### Adding New World Layer Type
@@ -198,13 +234,14 @@ Each of the 11 characters has a pre-rendered sprite sheet with 4 directions and 
 ## Bazel Build Notes
 
 - Uses `rules_scala` with Scala 2.13.16
-- Dependencies: JavaFX 21.0.1, Netty 4.1.104, Gson 2.10.1, SQLite JDBC 3.44.0, Guava 32.1.3
+- Dependencies: JavaFX 21.0.1, Netty 4.1.104, Gson 2.10.1, SQLite JDBC 3.44.0, Guava 32.1.3, LWJGL 3.3.4
 - Build targets:
   - `//src/main/scala/com/gridgame/server:server`
   - `//src/main/scala/com/gridgame/client:client`
   - `//src/main/scala/com/gridgame/client:client_windows`
   - `//src/main/scala/com/gridgame/common:common`
   - `//src/main/scala/com/gridgame/mapeditor`
+  - `//src/main/scala/com/gridgame/mapeditor:mapeditor_windows`
   - `//docs:website`
 
 ## Website (GitHub Pages)

@@ -2,7 +2,7 @@
 
 A multiplayer 2D isometric arena game built with Scala and JavaFX.
 
-Players connect to a server, join or create lobbies, pick from 11 unique characters, and battle in timed free-for-all matches across 19 maps. Features include ranked matchmaking with ELO, account-based authentication, bot players, and a built-in map editor.
+Players connect to a server, join or create lobbies, pick from 112 unique characters across 8 themed categories, and battle in timed free-for-all matches across 16 maps. Features include ranked matchmaking with ELO, account-based authentication, bot players, gamepad support, and a built-in map editor.
 
 ## Quick Start
 
@@ -19,12 +19,14 @@ bazel run //src/main/scala/com/gridgame/client:client
 
 ## Features
 
-- **11 Characters** - Each with unique primary attack, Q ability, and E ability (dashes, teleports, AoE, crowd control, etc.)
-- **19 Maps** - From small arenas to large battlegrounds with varied terrain
+- **112 Characters** - Across 8 categories (Original, Elemental, Undead/Dark, Medieval/Fantasy, Sci-Fi/Tech, Nature/Beast, Mythological, Specialist), each with unique primary attack, Q ability, and E ability
+- **16 Maps** - From small arenas to large battlegrounds with varied terrain (34 tile types)
 - **Lobby System** - Create/join lobbies, configure map and game duration, add bots
 - **Ranked Queue** - ELO-based matchmaking
 - **Accounts** - Login/register with persistent stats, match history, and leaderboards
 - **Isometric Rendering** - 2.5D tile-based world with parallax backgrounds
+- **Gamepad Support** - Controller input via LWJGL/GLFW
+- **Character Selection** - Filterable, categorized grid with ability previews and animated sprite previews
 - **Map Editor** - Standalone tool for creating and editing world files
 
 ## Controls
@@ -42,19 +44,20 @@ bazel run //src/main/scala/com/gridgame/client:client
 
 ## Characters
 
-| Character | HP | Primary | Q Ability | E Ability |
-|-----------|-----|---------|-----------|-----------|
-| Spaceman | 100 | Normal | Tentacle (pull) | Ice Beam (freeze) |
-| Gladiator | 100 | Axe | Spear Throw (scaling dmg) | Rope (pull) |
-| Wraith | 100 | Soul Bolt (pierces walls) | Phase Shift (ethereal) | Haunt (teleport behind) |
-| Wizard | 70 | Arcane Bolt (chargeable, pierces walls) | Fireball (high dmg) | Blink (teleport) |
-| Tidecaller | 100 | Splash (chargeable AoE) | Tidal Wave (fan + push) | Geyser (AoE explosion) |
-| Soldier | 100 | Bullet | Grenade (thrown explosive) | Rocket (impact explosive) |
-| Raptor | 100 | Talon (melee) | Swoop (dash) | Gust (push) |
-| Assassin | 85 | Shuriken (melee) | Poison Dart (slow) | Shadow Step (dash) |
-| Warden | 110 | Chain Bolt (micro-freeze) | Lockdown (fan freeze) | Snare Mine (AoE freeze) |
-| Samurai | 110 | Katana (melee) | Iaijutsu (dash) | Whirlwind (360 swords) |
-| Plague Doctor | 100 | Plague Bolt (AoE) | Miasma (explosion) | Blight Bomb (explosion) |
+112 characters organized into 8 categories:
+
+| Category | Count | Examples |
+|----------|-------|----------|
+| Original | 12 | Spaceman, Gladiator, Wraith, Wizard, Tidecaller, Soldier, Raptor, Assassin, Warden, Samurai, Plague Doctor, Vampire |
+| Elemental | 15 | Pyromancer, Cryomancer, Stormcaller, Earthshaker, Inferno, Glacier, Avalanche |
+| Undead/Dark | 15 | Necromancer, Skeleton King, Banshee, Lich, Reaper, Deathknight, Shadowfiend |
+| Medieval/Fantasy | 15 | Paladin, Ranger, Berserker, Druid, Bard, Monk, Valkyrie, Warlock |
+| Sci-Fi/Tech | 15 | Cyborg, Hacker, MechPilot, Android, Chronomancer, Graviton, Railgunner |
+| Nature/Beast | 15 | Wolf, Serpent, Bear, Hawk, Phoenix, Hydra, Gorilla, Chameleon |
+| Mythological | 15 | Minotaur, Medusa, Cerberus, Kraken, Sphinx, Griffin, Fenrir, Chimera |
+| Specialist | 10 | Alchemist, Puppeteer, Gambler, Pirate, Chef, Musician, Shapeshifter |
+
+Each character has unique abilities using cast behaviors: StandardProjectile, PhaseShiftBuff, DashBuff, TeleportCast, and FanProjectile.
 
 ## Tech Stack
 
@@ -63,6 +66,7 @@ bazel run //src/main/scala/com/gridgame/client:client
 - **Networking**: Netty (TCP + UDP, 64-byte fixed packets)
 - **Database**: SQLite (accounts, match history, ELO)
 - **Build**: Bazel with rules_scala
+- **Input**: LWJGL 3.3.4 (gamepad support via GLFW)
 - **Assets**: Python (Pillow) sprite generators
 
 ## Project Structure
@@ -71,9 +75,10 @@ bazel run //src/main/scala/com/gridgame/client:client
 src/main/scala/com/gridgame/
   common/          # Shared models, protocol (15 packet types), world loader
   server/          # Game server, lobbies, auth, bots, projectiles, items, ranked queue
-  client/          # JavaFX client, rendering, input handlers
+  client/          # JavaFX client, rendering, input handlers (keyboard, mouse, controller)
   mapeditor/       # Standalone map editor
-worlds/            # 19 JSON map definitions
-sprites/           # Tile sheet + 11 character sprite sheets
+worlds/            # 16 JSON map definitions
+sprites/           # Tile sheet + 112 character sprite sheets
 scripts/           # Python sprite generators
+docs/              # GitHub Pages landing site
 ```
