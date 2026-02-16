@@ -5,22 +5,19 @@ object WorldRegistry {
     "arena.json",
     "badlands.json",
     "battlegrounds.json",
-    "castle.json",
     "dueling_islands.json",
+    "enchanted_ruins.json",
     "fortress.json",
     "frozen_colosseum.json",
-    "island.json",
     "kings_canyon.json",
     "lava_bridges.json",
     "maze.json",
-    "meadow.json",
     "neon_grid.json",
     "shipwreck_bay.json",
     "station_nexus.json",
     "the_crucible.json",
     "toxic_spire.json",
-    "volcano.json",
-    "winter.json"
+    "volcano.json"
   )
 
   def getFilename(index: Int): String = {
