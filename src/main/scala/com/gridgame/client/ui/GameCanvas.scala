@@ -5119,6 +5119,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     // Draw frozen effect
     if (player.isFrozen) drawFrozenEffect(screenX, spriteCenter)
     if (player.isRooted) drawRootedEffect(screenX, spriteCenter)
+    if (player.isSlowed) drawSlowedEffect(screenX, spriteCenter)
     if (player.isBurning) drawBurnEffect(screenX, spriteCenter)
     if (player.hasSpeedBoost) drawSpeedBoostEffect(screenX, spriteCenter)
 
@@ -5224,6 +5225,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     // Draw frozen effect
     if (client.isFrozen) drawFrozenEffect(screenX, spriteCenter)
     if (client.isRooted) drawRootedEffect(screenX, spriteCenter)
+    if (client.isSlowed) drawSlowedEffect(screenX, spriteCenter)
     if (client.isBurning) drawBurnEffect(screenX, spriteCenter)
     if (client.hasSpeedBoost) drawSpeedBoostEffect(screenX, spriteCenter)
 
@@ -5685,6 +5687,29 @@ class GameCanvas(client: GameClient) extends Canvas() {
       val ny = centerY + radius * 0.1
       gc.setFill(Color.color(0.5, 0.35, 0.1, 0.5 * pulse))
       gc.fillOval(nx - 2, ny - 2, 4, 4)
+    }
+  }
+
+  private def drawSlowedEffect(centerX: Double, centerY: Double): Unit = {
+    val phase = animationTick * 0.12
+    val displaySz = Constants.PLAYER_DISPLAY_SIZE_PX
+    val radius = displaySz * 0.45
+
+    // Amber/yellow aura pulsing at the player's feet
+    val pulse = 0.6 + 0.4 * Math.sin(phase * 2.0)
+    gc.setFill(Color.color(0.85, 0.65, 0.1, 0.12 * pulse))
+    gc.fillOval(centerX - radius * 1.1, centerY - radius * 0.3, radius * 2.2, radius * 0.9)
+
+    // Swirling amber particles
+    for (i <- 0 until 6) {
+      val angle = phase * 0.8 + i * (2.0 * Math.PI / 6.0)
+      val t = ((animationTick * 0.025 + i * 0.17) % 1.0)
+      val orbitRadius = radius * (0.3 + t * 0.4)
+      val px = centerX + Math.cos(angle) * orbitRadius
+      val py = centerY - radius * 0.1 + Math.sin(angle * 0.5) * radius * 0.2
+      val pAlpha = Math.max(0.0, 0.5 * (1.0 - t) * pulse)
+      gc.setFill(Color.color(0.9, 0.7, 0.15, pAlpha))
+      gc.fillOval(px - 1.5, py - 1.5, 3, 3)
     }
   }
 

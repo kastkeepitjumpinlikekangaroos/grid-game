@@ -274,6 +274,8 @@ class ControllerHandler(client: GameClient) {
       25
     } else if (client.hasSpeedBoost) {
       30
+    } else if (client.isSlowed) {
+      (Constants.MOVE_RATE_LIMIT_MS * 2)
     } else {
       Constants.MOVE_RATE_LIMIT_MS
     }

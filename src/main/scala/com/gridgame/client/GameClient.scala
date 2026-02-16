@@ -58,6 +58,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   private val burningUntil: AtomicLong = new AtomicLong(0)
   private val speedBoostUntil: AtomicLong = new AtomicLong(0)
   private val rootedUntil: AtomicLong = new AtomicLong(0)
+  private val slowedUntil: AtomicLong = new AtomicLong(0)
 
   // Ability cast flash state
   private val lastCastTime: AtomicLong = new AtomicLong(0)
@@ -248,6 +249,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     burningUntil.set(0)
     speedBoostUntil.set(0)
     rootedUntil.set(0)
+    slowedUntil.set(0)
 
     // Send join packet to server
     sendJoinPacket()
@@ -354,7 +356,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   }
 
   private def getEffectFlags: Int = {
-    (if (hasShield) 0x01 else 0) | (if (hasGemBoost) 0x02 else 0) | (if (isFrozen) 0x04 else 0) | (if (isPhased) 0x08 else 0) | (if (isBurning) 0x10 else 0) | (if (hasSpeedBoost) 0x20 else 0) | (if (isRooted) 0x40 else 0)
+    (if (hasShield) 0x01 else 0) | (if (hasGemBoost) 0x02 else 0) | (if (isFrozen) 0x04 else 0) | (if (isPhased) 0x08 else 0) | (if (isBurning) 0x10 else 0) | (if (hasSpeedBoost) 0x20 else 0) | (if (isRooted) 0x40 else 0) | (if (isSlowed) 0x80 else 0)
   }
 
   private def sendPositionUpdate(position: Position): Unit = {
@@ -637,6 +639,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   def isRooted: Boolean = System.currentTimeMillis() < rootedUntil.get()
 
+  def isSlowed: Boolean = System.currentTimeMillis() < slowedUntil.get()
+
   def getQCooldownFraction: Float = {
     val cooldownMs = getSelectedCharacterDef.qAbility.cooldownMs
     val elapsed = System.currentTimeMillis() - lastQAbilityTime.get()
@@ -785,6 +789,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
             rootedUntil.set(System.currentTimeMillis() + 3000)
           } else {
             rootedUntil.set(0)
+          }
+          if ((flags & 0x80) != 0) {
+            slowedUntil.set(System.currentTimeMillis() + 3000)
+          } else {
+            slowedUntil.set(0)
           }
           // Don't overwrite local phased state from server echo — local timer is authoritative
           // Server echoes phased flag to confirm it, but we don't reset the timer
@@ -1424,6 +1433,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       } else {
         player.setRootedUntil(0)
       }
+      if ((flags & 0x80) != 0) {
+        player.setSlowedUntil(System.currentTimeMillis() + 3000)
+      } else {
+        player.setSlowedUntil(0)
+      }
 
       // Record death animation when player newly dies
       if (wasAlive && player.isDead) {
@@ -1447,6 +1461,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       if ((flags & 0x10) != 0) player.applyBurn(0, 1000, 1000, null)
       if ((flags & 0x20) != 0) player.setSpeedBoostUntil(System.currentTimeMillis() + 1000)
       if ((flags & 0x40) != 0) player.setRootedUntil(System.currentTimeMillis() + 3000)
+      if ((flags & 0x80) != 0) player.setSlowedUntil(System.currentTimeMillis() + 3000)
       players.put(playerId, player)
     }
   }
