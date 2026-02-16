@@ -79,20 +79,29 @@ bazel run //src/main/scala/com/gridgame/mapeditor
 src/main/scala/com/gridgame/
 ├── common/                     # Shared code between client and server
 │   ├── model/                  # Data models (Player, Tile, CharacterDef, Item, Projectile, etc.)
-│   │                           # 112 characters, 34 tiles, cast behaviors, projectile defs
+│   │                           # 112 characters, 34 tiles, 6 cast behaviors, projectile defs
+│   │                           # ProjectileDef (pierce, boomerang, ricochet, AoE, explosions)
+│   │                           # 10 on-hit effects, charge/distance damage scaling
+│   │                           # 5 item types (Gem, Heart, Star, Shield, Fence)
 │   ├── protocol/               # Network packets (15 packet types)
-│   └── world/                  # WorldLoader (JSON map parsing)
-├── server/                     # Server (GameServer, Lobby, Auth, Bots, Projectiles, Items)
-├── client/                     # Client (GameClient, UI, Input handlers)
+│   └── world/                  # WorldLoader (JSON map parsing, 7 layer types)
+├── server/                     # GameServer, GameInstance, Lobby, LobbyManager, LobbyHandler
+│   │                           # AuthDatabase, BotManager, BotController, ProjectileManager
+│   │                           # ItemManager, RankedQueue, KillTracker, ClientHandler, ClientRegistry
+├── client/                     # Client (GameClient, ClientMain, NetworkThread)
 │   ├── ui/                     # GameCanvas, TileRenderer, BackgroundRenderer, SpriteGenerator,
 │   │                           # CharacterSelectionPanel, AbilityPreviewRenderer
 │   └── input/                  # KeyboardHandler, MouseHandler, ControllerHandler
-└── mapeditor/                  # Standalone map editor tool
+└── mapeditor/                  # Standalone map editor (12 source files)
+    │                           # MapEditorApp, EditorCanvas, EditorState, TilePalette,
+    │                           # DrawingTools, ToolBar, PropertiesPanel, MenuBarBuilder,
+    │                           # UndoManager, WorldSaver, NewMapDialog, StatusBar,
+    │                           # EditorTileRenderer
 
-src/test/scala/com/gridgame/   # Tests
+src/test/scala/com/gridgame/   # Tests (ConstantsTest, PositionTest)
 worlds/                         # World definition files (16 JSON maps)
 sprites/                        # Sprite assets (tiles.png + 112 character PNGs)
-scripts/                        # Asset generation scripts (tiles + character generators)
+scripts/                        # Asset generation scripts (14 Python scripts)
 docs/                           # GitHub Pages landing site
 ```
 
@@ -149,6 +158,28 @@ Each ability uses one of these cast behaviors (defined in `CharacterDef.scala`):
 - `DashBuff(maxDistance, durationMs, moveRateMs)` — dash movement ability
 - `TeleportCast(maxDistance)` — instant teleport to cursor position
 - `FanProjectile(count, fanAngle)` — fires multiple projectiles in a fan pattern
+- `GroundSlam(radius)` — AoE ground slam around the caster
+
+### Projectile System
+Projectiles are defined in `ProjectileDef.scala` with extensive customization:
+- **Charge scaling** — speed, damage, and range scale with charge level
+- **Distance damage scaling** — damage increases over distance (e.g., spears)
+- **Pierce** — passes through multiple players (`pierceCount`)
+- **Boomerang** — returns to owner after max range
+- **Ricochet** — bounces off walls (`ricochetCount`)
+- **AoE splash** — area damage on hit or at max range, with optional freeze/root
+- **Explosions** — center/edge damage with blast radius
+- **Pass-through** — can ignore players or walls
+
+### On-Hit Effects
+10 effect types applied when projectiles hit players:
+- `Freeze(durationMs)`, `Root(durationMs)`, `Slow(durationMs, multiplier)`
+- `Burn(totalDamage, durationMs, tickMs)`, `Push(distance)`, `PullToOwner`
+- `VortexPull(radius, pullStrength)`, `LifeSteal(healPercent)`
+- `SpeedBoost(durationMs)`, `TeleportOwnerBehind(distance, freezeDurationMs)`
+
+### Item Types
+5 item types (defined in `ItemType.scala`): Gem, Heart, Star, Shield, Fence
 
 ## Network Protocol
 
@@ -229,7 +260,7 @@ Client                              Server
 ### Adding New World Layer Type
 1. Add case in `WorldLoader.parseLayer()` match statement
 2. Implement tile placement logic
-3. Supported layer types: `fill`, `rect`, `border`, `circle`, `line`
+3. Supported layer types: `fill`, `rect`, `border`, `circle`, `line`, `points`, `grid`
 
 ## Bazel Build Notes
 
