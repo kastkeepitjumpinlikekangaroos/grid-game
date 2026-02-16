@@ -1733,7 +1733,12 @@ class ClientMain extends Application {
     btnBox.setPadding(new Insets(24, 0, 0, 0))
     btnBox.getChildren.add(returnBtn)
 
-    root.getChildren.addAll(titleBox, scoreCard, btnBox)
+    val scrollPane = new ScrollPane(scoreCard)
+    scrollPane.setFitToWidth(true)
+    scrollPane.setStyle("-fx-background: transparent; -fx-background-color: transparent; -fx-border-color: transparent;")
+    VBox.setVgrow(scrollPane, Priority.ALWAYS)
+
+    root.getChildren.addAll(titleBox, scrollPane, btnBox)
 
     val scene = new Scene(root)
     stage.setScene(scene)

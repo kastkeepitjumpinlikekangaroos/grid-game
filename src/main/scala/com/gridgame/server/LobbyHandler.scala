@@ -316,9 +316,18 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     // Auto-adjust maxPlayers for Teams mode
     if (lobby.gameMode == 1) {
       lobby.maxPlayers = lobby.teamSize * 2
-      // Remove excess bots if needed
+      // Remove excess bots and notify clients
       while (lobby.playerCount > lobby.maxPlayers && lobby.botManager.botCount > 0) {
-        lobby.botManager.removeLastBot()
+        val removed = lobby.botManager.removeLastBot()
+        removed.foreach { botSlot =>
+          val leftPacket = new LobbyActionPacket(
+            server.getNextSequenceNumber, botSlot.id, LobbyAction.PLAYER_LEFT, lobby.id,
+            lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
+            lobby.playerCount.toByte, lobby.maxPlayers.toByte,
+            lobby.status, botSlot.name
+          )
+          broadcastToLobby(lobby, leftPacket, null)
+        }
       }
     } else {
       lobby.maxPlayers = Constants.MAX_LOBBY_PLAYERS
