@@ -48,7 +48,7 @@ object CharacterDef {
   private val AxeDef = ProjectileDef(
     id = ProjectileType.AXE, name = "Axe",
     speedMultiplier = 0.6f, damage = 33, maxRange = 5,
-    hitRadius = 2.5f
+    hitRadius = 3.5f
   )
 
   private val RopeDef = ProjectileDef(
@@ -108,7 +108,7 @@ object CharacterDef {
   private val GeyserDef = ProjectileDef(
     id = ProjectileType.GEYSER, name = "Geyser",
     speedMultiplier = 0.6f, damage = 25, maxRange = 18,
-    hitRadius = 4.0f,
+    hitRadius = 5.0f,
     aoeOnHit = Some(AoESplashConfig(4.0f, 25)),
     aoeOnMaxRange = Some(AoESplashConfig(4.0f, 25))
   )
@@ -135,7 +135,7 @@ object CharacterDef {
   private val TalonDef = ProjectileDef(
     id = ProjectileType.TALON, name = "Talon",
     speedMultiplier = 0.7f, damage = 28, maxRange = 4,
-    hitRadius = 2.0f
+    hitRadius = 3.0f
   )
 
   private val GustDef = ProjectileDef(
@@ -147,7 +147,7 @@ object CharacterDef {
   private val ShurikenDef = ProjectileDef(
     id = ProjectileType.SHURIKEN, name = "Shuriken",
     speedMultiplier = 0.95f, damage = 22, maxRange = 6,
-    hitRadius = 2.0f
+    hitRadius = 3.0f
   )
 
   private val PoisonDartDef = ProjectileDef(
@@ -180,13 +180,13 @@ object CharacterDef {
   private val KatanaDef = ProjectileDef(
     id = ProjectileType.KATANA, name = "Katana",
     speedMultiplier = 0.7f, damage = 30, maxRange = 4,
-    hitRadius = 2.0f
+    hitRadius = 3.0f
   )
 
   private val SwordWaveDef = ProjectileDef(
     id = ProjectileType.SWORD_WAVE, name = "Sword Wave",
     speedMultiplier = 0.6f, damage = 20, maxRange = 5,
-    hitRadius = 1.8f
+    hitRadius = 2.5f
   )
 
   private val PlagueBoltDef = ProjectileDef(
@@ -198,7 +198,7 @@ object CharacterDef {
   private val MiasmaDef = ProjectileDef(
     id = ProjectileType.MIASMA, name = "Miasma",
     speedMultiplier = 0.45f, damage = 12, maxRange = 14,
-    hitRadius = 3.0f,
+    hitRadius = 4.0f,
     explodesOnPlayerHit = true,
     explosionConfig = Some(ExplosionConfig(25, 8, 5.0f))
   )
@@ -213,7 +213,7 @@ object CharacterDef {
   private val BloodFangDef = ProjectileDef(
     id = ProjectileType.BLOOD_FANG, name = "Blood Fang",
     speedMultiplier = 0.7f, damage = 25, maxRange = 3,
-    hitRadius = 2.0f,
+    hitRadius = 3.0f,
     onHitEffect = Some(LifeSteal(50))
   )
 
@@ -235,8 +235,8 @@ object CharacterDef {
   private val LightningDef = ProjectileDef(id = ProjectileType.LIGHTNING, name = "Lightning", speedMultiplier = 1.0f, damage = 14, maxRange = 20, passesThroughWalls = true, pierceCount = 2)
   private val ChainLightningDef = ProjectileDef(id = ProjectileType.CHAIN_LIGHTNING, name = "Chain Lightning", speedMultiplier = 0.7f, damage = 20, maxRange = 14, aoeOnHit = Some(AoESplashConfig(3.0f, 12)))
   private val ThunderStrikeDef = ProjectileDef(id = ProjectileType.THUNDER_STRIKE, name = "Thunder Strike", speedMultiplier = 0.4f, damage = 30, maxRange = 16, aoeOnHit = Some(AoESplashConfig(4.0f, 20)), aoeOnMaxRange = Some(AoESplashConfig(4.0f, 20)))
-  private val BoulderDef = ProjectileDef(id = ProjectileType.BOULDER, name = "Boulder", speedMultiplier = 0.4f, damage = 35, maxRange = 8, hitRadius = 2.5f)
-  private val SeismicSlamDef = ProjectileDef(id = ProjectileType.SEISMIC_SLAM, name = "Seismic Slam", speedMultiplier = 0.5f, damage = 25, maxRange = 12, hitRadius = 3.0f, aoeOnHit = Some(AoESplashConfig(3.5f, 15)), aoeOnMaxRange = Some(AoESplashConfig(3.5f, 15)))
+  private val BoulderDef = ProjectileDef(id = ProjectileType.BOULDER, name = "Boulder", speedMultiplier = 0.4f, damage = 35, maxRange = 8, hitRadius = 3.5f)
+  private val SeismicSlamDef = ProjectileDef(id = ProjectileType.SEISMIC_SLAM, name = "Seismic Slam", speedMultiplier = 0.5f, damage = 25, maxRange = 12, hitRadius = 4.0f, aoeOnHit = Some(AoESplashConfig(3.5f, 15)), aoeOnMaxRange = Some(AoESplashConfig(3.5f, 15)))
   private val WindBladeDef = ProjectileDef(id = ProjectileType.WIND_BLADE, name = "Wind Blade", speedMultiplier = 0.9f, damage = 15, maxRange = 14)
   private val MagmaBallDef = ProjectileDef(id = ProjectileType.MAGMA_BALL, name = "Magma Ball", speedMultiplier = 0.45f, damage = 22, maxRange = 14, aoeOnHit = Some(AoESplashConfig(2.5f, 10)), onHitEffect = Some(Burn(15, 4000, 800)))
   private val EruptionDef = ProjectileDef(id = ProjectileType.ERUPTION, name = "Eruption", speedMultiplier = 0.5f, damage = 30, maxRange = 16, passesThroughPlayers = true, explosionConfig = Some(ExplosionConfig(30, 10, 3.5f)))
@@ -251,35 +251,35 @@ object CharacterDef {
   private val MudGlobDef = ProjectileDef(id = ProjectileType.MUD_GLOB, name = "Mud Glob", speedMultiplier = 0.55f, damage = 14, maxRange = 12, onHitEffect = Some(Freeze(1000)))
   private val MudBombDef = ProjectileDef(id = ProjectileType.MUD_BOMB, name = "Mud Bomb", speedMultiplier = 0.4f, damage = 20, maxRange = 14, passesThroughPlayers = true, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(20, 8, 3.0f)))
   private val EmberShotDef = ProjectileDef(id = ProjectileType.EMBER_SHOT, name = "Ember Shot", speedMultiplier = 0.9f, damage = 10, maxRange = 10, onHitEffect = Some(Burn(8, 2000, 500)))
-  private val AvalancheCrushDef = ProjectileDef(id = ProjectileType.AVALANCHE_CRUSH, name = "Avalanche Crush", speedMultiplier = 0.35f, damage = 35, maxRange = 12, hitRadius = 4.0f, aoeOnHit = Some(AoESplashConfig(4.0f, 20)), aoeOnMaxRange = Some(AoESplashConfig(4.0f, 20)))
+  private val AvalancheCrushDef = ProjectileDef(id = ProjectileType.AVALANCHE_CRUSH, name = "Avalanche Crush", speedMultiplier = 0.35f, damage = 35, maxRange = 12, hitRadius = 5.0f, aoeOnHit = Some(AoESplashConfig(4.0f, 20)), aoeOnMaxRange = Some(AoESplashConfig(4.0f, 20)))
 
   // --- Batch 2: Undead/Dark projectile defs ---
   private val DeathBoltDef = ProjectileDef(id = ProjectileType.DEATH_BOLT, name = "Death Bolt", speedMultiplier = 0.7f, damage = 16, maxRange = 16, passesThroughWalls = true)
   private val RaiseDeadDef = ProjectileDef(id = ProjectileType.RAISE_DEAD, name = "Raise Dead", speedMultiplier = 0.5f, damage = 20, maxRange = 14, aoeOnHit = Some(AoESplashConfig(3.0f, 12)))
-  private val BoneAxeDef = ProjectileDef(id = ProjectileType.BONE_AXE, name = "Bone Axe", speedMultiplier = 0.6f, damage = 30, maxRange = 5, hitRadius = 2.5f)
+  private val BoneAxeDef = ProjectileDef(id = ProjectileType.BONE_AXE, name = "Bone Axe", speedMultiplier = 0.6f, damage = 30, maxRange = 5, hitRadius = 3.5f)
   private val BoneThrowDef = ProjectileDef(id = ProjectileType.BONE_THROW, name = "Bone Throw", speedMultiplier = 0.8f, damage = 20, maxRange = 16, boomerang = true)
   private val WailDef = ProjectileDef(id = ProjectileType.WAIL, name = "Wail", speedMultiplier = 0.5f, damage = 15, maxRange = 10, passesThroughWalls = true, aoeOnHit = Some(AoESplashConfig(3.0f, 10, freezeDurationMs = 800)))
   private val SoulDrainDef = ProjectileDef(id = ProjectileType.SOUL_DRAIN, name = "Soul Drain", speedMultiplier = 0.6f, damage = 25, maxRange = 14, onHitEffect = Some(LifeSteal(40)))
-  private val ClawSwipeDef = ProjectileDef(id = ProjectileType.CLAW_SWIPE, name = "Claw Swipe", speedMultiplier = 0.7f, damage = 25, maxRange = 4, hitRadius = 2.0f, onHitEffect = Some(SpeedBoost(2000)))
+  private val ClawSwipeDef = ProjectileDef(id = ProjectileType.CLAW_SWIPE, name = "Claw Swipe", speedMultiplier = 0.7f, damage = 25, maxRange = 4, hitRadius = 3.0f, onHitEffect = Some(SpeedBoost(2000)))
   private val DevourDef = ProjectileDef(id = ProjectileType.DEVOUR, name = "Devour", speedMultiplier = 0.5f, damage = 30, maxRange = 6, onHitEffect = Some(LifeSteal(50)))
-  private val ScytheDef = ProjectileDef(id = ProjectileType.SCYTHE, name = "Scythe", speedMultiplier = 0.65f, damage = 28, maxRange = 5, hitRadius = 2.5f)
-  private val ReapDef = ProjectileDef(id = ProjectileType.REAP, name = "Reap", speedMultiplier = 0.5f, damage = 35, maxRange = 8, passesThroughWalls = true, hitRadius = 3.0f)
+  private val ScytheDef = ProjectileDef(id = ProjectileType.SCYTHE, name = "Scythe", speedMultiplier = 0.65f, damage = 28, maxRange = 5, hitRadius = 3.5f)
+  private val ReapDef = ProjectileDef(id = ProjectileType.REAP, name = "Reap", speedMultiplier = 0.5f, damage = 35, maxRange = 8, passesThroughWalls = true, hitRadius = 4.0f)
   private val ShadowBoltDef = ProjectileDef(id = ProjectileType.SHADOW_BOLT, name = "Shadow Bolt", speedMultiplier = 0.8f, damage = 15, maxRange = 16, passesThroughWalls = true)
-  private val CursedBladeDef = ProjectileDef(id = ProjectileType.CURSED_BLADE, name = "Cursed Blade", speedMultiplier = 0.7f, damage = 24, maxRange = 5, hitRadius = 2.0f)
+  private val CursedBladeDef = ProjectileDef(id = ProjectileType.CURSED_BLADE, name = "Cursed Blade", speedMultiplier = 0.7f, damage = 24, maxRange = 5, hitRadius = 3.0f)
   private val LifeDrainDef = ProjectileDef(id = ProjectileType.LIFE_DRAIN, name = "Life Drain", speedMultiplier = 0.6f, damage = 20, maxRange = 14, onHitEffect = Some(LifeSteal(35)))
-  private val ShovelDef = ProjectileDef(id = ProjectileType.SHOVEL, name = "Shovel", speedMultiplier = 0.6f, damage = 28, maxRange = 4, hitRadius = 2.0f)
+  private val ShovelDef = ProjectileDef(id = ProjectileType.SHOVEL, name = "Shovel", speedMultiplier = 0.6f, damage = 28, maxRange = 4, hitRadius = 3.0f)
   private val HeadThrowDef = ProjectileDef(id = ProjectileType.HEAD_THROW, name = "Head Throw", speedMultiplier = 0.7f, damage = 25, maxRange = 16, onHitEffect = Some(Freeze(1000)))
   private val BandageWhipDef = ProjectileDef(id = ProjectileType.BANDAGE_WHIP, name = "Bandage Whip", speedMultiplier = 0.75f, damage = 10, maxRange = 16, onHitEffect = Some(PullToOwner))
   private val CurseDef = ProjectileDef(id = ProjectileType.CURSE, name = "Curse", speedMultiplier = 0.5f, damage = 20, maxRange = 12, onHitEffect = Some(Freeze(2000)))
 
   // --- Batch 3: Medieval/Fantasy projectile defs ---
-  private val HolyBladeDef = ProjectileDef(id = ProjectileType.HOLY_BLADE, name = "Holy Blade", speedMultiplier = 0.7f, damage = 26, maxRange = 5, hitRadius = 2.0f)
+  private val HolyBladeDef = ProjectileDef(id = ProjectileType.HOLY_BLADE, name = "Holy Blade", speedMultiplier = 0.7f, damage = 26, maxRange = 5, hitRadius = 3.0f)
   private val HolyBoltDef = ProjectileDef(id = ProjectileType.HOLY_BOLT, name = "Holy Bolt", speedMultiplier = 0.8f, damage = 20, maxRange = 16)
   private val ArrowDef = ProjectileDef(id = ProjectileType.ARROW, name = "Arrow", speedMultiplier = 0.95f, damage = 18, maxRange = 22, pierceCount = 1)
   private val PoisonArrowDef = ProjectileDef(id = ProjectileType.POISON_ARROW, name = "Poison Arrow", speedMultiplier = 0.85f, damage = 12, maxRange = 20, onHitEffect = Some(Freeze(1500)))
   private val SonicWaveDef = ProjectileDef(id = ProjectileType.SONIC_WAVE, name = "Sonic Wave", speedMultiplier = 0.7f, damage = 14, maxRange = 14, passesThroughWalls = true)
   private val SonicBoomDef = ProjectileDef(id = ProjectileType.SONIC_BOOM, name = "Sonic Boom", speedMultiplier = 0.5f, damage = 10, maxRange = 8, onHitEffect = Some(Push(4.0f)), aoeOnHit = Some(AoESplashConfig(3.0f, 8)))
-  private val FistDef = ProjectileDef(id = ProjectileType.FIST, name = "Fist", speedMultiplier = 0.8f, damage = 22, maxRange = 4, hitRadius = 2.0f, boomerang = true)
+  private val FistDef = ProjectileDef(id = ProjectileType.FIST, name = "Fist", speedMultiplier = 0.8f, damage = 22, maxRange = 4, hitRadius = 3.0f, boomerang = true)
   private val SmiteDef = ProjectileDef(id = ProjectileType.SMITE, name = "Smite", speedMultiplier = 0.6f, damage = 30, maxRange = 14, aoeOnHit = Some(AoESplashConfig(3.0f, 15)))
   private val CharmDef = ProjectileDef(id = ProjectileType.CHARM, name = "Charm", speedMultiplier = 0.6f, damage = 15, maxRange = 14, onHitEffect = Some(Freeze(2000)))
   private val CardDef = ProjectileDef(id = ProjectileType.CARD, name = "Card", speedMultiplier = 0.85f, damage = 16, maxRange = 14, ricochetCount = 2)
