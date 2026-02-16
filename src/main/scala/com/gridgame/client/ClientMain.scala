@@ -7,6 +7,7 @@ import com.gridgame.client.ui.CharacterSelectionPanel
 import com.gridgame.client.ui.GameCanvas
 import com.gridgame.common.Constants
 import com.gridgame.common.WorldRegistry
+import com.gridgame.common.model.CharacterDef
 import com.gridgame.common.model.WorldData
 import com.gridgame.common.protocol.RankedQueueMode
 import com.gridgame.common.world.WorldLoader
@@ -1608,7 +1609,7 @@ class ClientMain extends Application {
     header.setStyle("-fx-background-color: rgba(255,255,255,0.03); -fx-background-radius: 16 16 0 0; -fx-border-color: transparent transparent rgba(255,255,255,0.06) transparent; -fx-border-width: 0 0 1 0;")
     val hRank = new Label("RANK")
     hRank.setMinWidth(60); hRank.setStyle(sectionHeaderStyle)
-    val hPlayer = new Label("PLAYER")
+    val hPlayer = new Label("CHARACTER")
     hPlayer.setMinWidth(160); hPlayer.setStyle(sectionHeaderStyle)
     val hKills = new Label("KILLS")
     hKills.setMinWidth(70); hKills.setStyle(sectionHeaderStyle)
@@ -1695,9 +1696,9 @@ class ClientMain extends Application {
         rankLabel.setStyle(s"-fx-effect: dropshadow(gaussian, ${if (entry.rank == 1) "rgba(255,215,0,0.4)" else if (entry.rank == 2) "rgba(192,192,192,0.3)" else "rgba(205,127,50,0.3)"}, 8, 0, 0, 0);")
       }
 
-      val nameStr = if (isLocal) s"${client.playerName} (you)" else {
+      val nameStr = if (isLocal) s"${client.getSelectedCharacterDef.displayName} (you)" else {
         val p = client.getPlayers.get(entry.playerId)
-        if (p != null) p.getName else entry.playerId.toString.substring(0, 8)
+        if (p != null) CharacterDef.get(p.getCharacterId).displayName else entry.playerId.toString.substring(0, 8)
       }
       val nameLabel = new Label(nameStr)
       nameLabel.setMinWidth(160)
