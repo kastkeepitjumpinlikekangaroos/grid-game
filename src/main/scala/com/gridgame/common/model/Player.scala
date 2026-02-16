@@ -29,6 +29,16 @@ class Player(
   private var characterId: Byte = CharacterId.DEFAULT.id
   private var teamId: Byte = 0
 
+  // Burn (DoT) state
+  private var burnUntil: Long = 0
+  private var burnDamagePerTick: Int = 0
+  private var burnTickMs: Int = 0
+  private var lastBurnTick: Long = 0
+  private var burnOwnerId: UUID = _
+
+  // Speed boost state
+  private var speedBoostUntil: Long = 0
+
   def getId: UUID = id
 
   def getName: String = name
@@ -142,6 +152,43 @@ class Player(
   def setTeamId(id: Byte): Unit = {
     this.teamId = id
   }
+
+  // Burn accessors
+  def isBurning: Boolean = System.currentTimeMillis() < burnUntil
+
+  def getBurnUntil: Long = burnUntil
+
+  def getBurnDamagePerTick: Int = burnDamagePerTick
+
+  def getBurnTickMs: Int = burnTickMs
+
+  def getLastBurnTick: Long = lastBurnTick
+
+  def setLastBurnTick(t: Long): Unit = { lastBurnTick = t }
+
+  def getBurnOwnerId: UUID = burnOwnerId
+
+  def applyBurn(totalDamage: Int, durationMs: Int, tickMs: Int, ownerId: UUID): Unit = {
+    val now = System.currentTimeMillis()
+    this.burnUntil = now + durationMs
+    this.burnTickMs = tickMs
+    val numTicks = durationMs / tickMs
+    this.burnDamagePerTick = if (numTicks > 0) totalDamage / numTicks else totalDamage
+    this.lastBurnTick = now
+    this.burnOwnerId = ownerId
+  }
+
+  def clearBurn(): Unit = {
+    this.burnUntil = 0
+    this.burnDamagePerTick = 0
+  }
+
+  // Speed boost accessors
+  def hasSpeedBoost: Boolean = System.currentTimeMillis() < speedBoostUntil
+
+  def getSpeedBoostUntil: Long = speedBoostUntil
+
+  def setSpeedBoostUntil(until: Long): Unit = { this.speedBoostUntil = until }
 
   def isDead: Boolean = health <= 0
 

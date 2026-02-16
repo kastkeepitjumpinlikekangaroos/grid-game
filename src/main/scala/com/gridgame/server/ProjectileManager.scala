@@ -60,17 +60,25 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
 
           val maxRange = pDef.effectiveMaxRange(projectile.chargeLevel)
           if (projectile.getDistanceTraveled >= maxRange) {
-            toRemove += projectile.id
-            // AoE on max range (e.g. geyser, snare mine)
-            pDef.aoeOnMaxRange.foreach { aoe =>
-              events ++= applyAoEDamage(projectile, aoe.radius, aoe.damage, null, aoe.freezeDurationMs)
-            }
-            if (pDef.isExplosive) {
-              events += ProjectileAoE(projectile)
+            // Boomerang: reverse direction at max range instead of despawning
+            if (pDef.boomerang && !projectile.isReturning) {
+              projectile.reverseDirection()
+              projectile.setReturning(true)
+              projectile.resetDistanceTraveled()
+              projectile.hitPlayers.clear() // can hit players again on return
             } else {
-              events += ProjectileDespawned(projectile)
+              toRemove += projectile.id
+              // AoE on max range (e.g. geyser, snare mine)
+              pDef.aoeOnMaxRange.foreach { aoe =>
+                events ++= applyAoEDamage(projectile, aoe.radius, aoe.damage, null, aoe.freezeDurationMs)
+              }
+              if (pDef.isExplosive) {
+                events += ProjectileAoE(projectile)
+              } else {
+                events += ProjectileDespawned(projectile)
+              }
+              resolved = true
             }
-            resolved = true
           } else if (projectile.isOutOfBounds(world)) {
             toRemove += projectile.id
             if (pDef.isExplosive) {
@@ -80,13 +88,19 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
             }
             resolved = true
           } else if (projectile.hitsNonWalkable(world) && (!pDef.passesThroughWalls || projectile.hitsFence(world))) {
-            toRemove += projectile.id
-            if (pDef.isExplosive) {
-              events += ProjectileAoE(projectile)
+            // Ricochet: bounce off walls instead of despawning
+            if (projectile.remainingBounces > 0 && !projectile.hitsFence(world)) {
+              projectile.ricochet(world)
+              // Don't resolve — projectile continues
             } else {
-              events += ProjectileDespawned(projectile)
+              toRemove += projectile.id
+              if (pDef.isExplosive) {
+                events += ProjectileAoE(projectile)
+              } else {
+                events += ProjectileDespawned(projectile)
+              }
+              resolved = true
             }
-            resolved = true
           } else {
             var hitPlayer: Player = null
             registry.getAll.asScala.foreach { player =>
@@ -107,7 +121,13 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
                 hitPlayer.setHealth(newHealth)
                 println(s"ProjectileManager: ${projectile} hit player ${hitPlayer.getId.toString.substring(0, 8)}, damage=$damage (charge=${projectile.chargeLevel}%), health now $newHealth")
 
-                toRemove += projectile.id
+                // Pierce: track hit player and continue if pierce count not exhausted
+                projectile.hitPlayers += hitPlayer.getId
+                val canPierce = pDef.pierceCount > 0 && projectile.hitPlayers.size < pDef.pierceCount
+
+                if (!canPierce) {
+                  toRemove += projectile.id
+                }
                 if (newHealth <= 0) {
                   events += ProjectileKill(projectile, hitPlayer.getId)
                 } else {
@@ -119,7 +139,9 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
                   events ++= applyAoEDamage(projectile, aoe.radius, aoe.damage, hitPlayer.getId, aoe.freezeDurationMs)
                 }
 
-                resolved = true
+                if (!canPierce) {
+                  resolved = true
+                }
               }
             }
           }

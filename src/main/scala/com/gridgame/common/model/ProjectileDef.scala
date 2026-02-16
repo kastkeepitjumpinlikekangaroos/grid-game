@@ -7,6 +7,9 @@ case class Freeze(durationMs: Int) extends OnHitEffect
 case class Push(distance: Float) extends OnHitEffect
 case class TeleportOwnerBehind(distance: Int, freezeDurationMs: Int) extends OnHitEffect
 case class LifeSteal(healPercent: Int) extends OnHitEffect
+case class Burn(totalDamage: Int, durationMs: Int, tickMs: Int) extends OnHitEffect
+case class VortexPull(radius: Float, pullStrength: Float) extends OnHitEffect
+case class SpeedBoost(durationMs: Int) extends OnHitEffect
 
 // Explosion config (center/edge damage + blast radius)
 case class ExplosionConfig(centerDamage: Int, edgeDamage: Int, blastRadius: Float)
@@ -40,7 +43,10 @@ case class ProjectileDef(
     aoeOnHit: Option[AoESplashConfig] = None,
     aoeOnMaxRange: Option[AoESplashConfig] = None,
     explosionConfig: Option[ExplosionConfig] = None,
-    explodesOnPlayerHit: Boolean = false
+    explodesOnPlayerHit: Boolean = false,
+    boomerang: Boolean = false,
+    pierceCount: Int = 0,
+    ricochetCount: Int = 0
 ) {
   def effectiveSpeed(chargeLevel: Int): Float =
     chargeSpeedScaling match {

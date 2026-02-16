@@ -106,6 +106,8 @@ class KeyboardHandler(client: GameClient) extends EventHandler[KeyEvent] {
       (Constants.MOVE_RATE_LIMIT_MS * (1.0 + chargePct * 9.0)).toInt
     } else if (client.isPhased) {
       25 // 2x move speed while phased
+    } else if (client.hasSpeedBoost) {
+      30 // ~1.7x move speed with speed boost
     } else {
       Constants.MOVE_RATE_LIMIT_MS
     }

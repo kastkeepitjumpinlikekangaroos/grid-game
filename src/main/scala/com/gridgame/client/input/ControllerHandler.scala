@@ -272,6 +272,8 @@ class ControllerHandler(client: GameClient) {
       (Constants.MOVE_RATE_LIMIT_MS * (1.0 + chargePct * 9.0)).toInt
     } else if (client.isPhased) {
       25
+    } else if (client.hasSpeedBoost) {
+      30
     } else {
       Constants.MOVE_RATE_LIMIT_MS
     }

@@ -34,6 +34,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   private var projectileExecutor: ScheduledExecutorService = _
   private var itemSpawnExecutor: ScheduledExecutorService = _
   private var timerSyncExecutor: ScheduledExecutorService = _
+  private var playerTickExecutor: ScheduledExecutorService = _
   private var startTime: Long = 0L
   @volatile private var running = false
   private val spawnLock = new Object()
@@ -80,6 +81,13 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
       TimeUnit.MILLISECONDS
     )
 
+    // Start player state tick (burn DoT processing)
+    playerTickExecutor = Executors.newSingleThreadScheduledExecutor()
+    playerTickExecutor.scheduleAtFixedRate(
+      new Runnable { def run(): Unit = tickPlayers() },
+      200L, 200L, TimeUnit.MILLISECONDS
+    )
+
     // Start timer sync
     timerSyncExecutor = Executors.newSingleThreadScheduledExecutor()
     timerSyncExecutor.scheduleAtFixedRate(
@@ -96,6 +104,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     running = false
     if (botController != null) botController.stop()
     if (projectileExecutor != null) { projectileExecutor.shutdown(); projectileExecutor.shutdownNow() }
+    if (playerTickExecutor != null) { playerTickExecutor.shutdown(); playerTickExecutor.shutdownNow() }
     if (itemSpawnExecutor != null) { itemSpawnExecutor.shutdown(); itemSpawnExecutor.shutdownNow() }
     if (timerSyncExecutor != null) { timerSyncExecutor.shutdown(); timerSyncExecutor.shutdownNow() }
     println(s"GameInstance[$gameId]: Stopped")
@@ -150,10 +159,6 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         // Send player update with 0 health
         val target = registry.get(targetId)
         if (target != null) {
-          val flags = (if (target.hasShield) 0x01 else 0) |
-                      (if (target.hasGemBoost) 0x02 else 0) |
-                      (if (target.isFrozen) 0x04 else 0) |
-                      (if (target.isPhased) 0x08 else 0)
           val updatePacket = new PlayerUpdatePacket(
             server.getNextSequenceNumber,
             targetId,
@@ -161,7 +166,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
             target.getColorRGB,
             target.getHealth,
             0,
-            flags
+            playerFlags(target)
           )
           broadcastToInstance(updatePacket)
         }
@@ -176,10 +181,6 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
               val healAmount = dmg * healPercent / 100
               val newHealth = Math.min(lsOwner.getMaxHealth, lsOwner.getHealth + healAmount)
               lsOwner.setHealth(newHealth)
-              val ownerFlags = (if (lsOwner.hasShield) 0x01 else 0) |
-                               (if (lsOwner.hasGemBoost) 0x02 else 0) |
-                               (if (lsOwner.isFrozen) 0x04 else 0) |
-                               (if (lsOwner.isPhased) 0x08 else 0)
               val ownerUpdate = new PlayerUpdatePacket(
                 server.getNextSequenceNumber,
                 projectile.ownerId,
@@ -187,7 +188,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                 lsOwner.getColorRGB,
                 lsOwner.getHealth,
                 0,
-                ownerFlags
+                playerFlags(lsOwner)
               )
               broadcastToInstance(ownerUpdate)
             }
@@ -271,18 +272,14 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                 if (world.isWalkable(destX, destY)) {
                   owner.setPosition(new Position(destX, destY))
                   owner.setServerTeleportedUntil(System.currentTimeMillis() + 500)
-                  val ownerFlags = (if (owner.hasShield) 0x01 else 0) |
-                                   (if (owner.hasGemBoost) 0x02 else 0) |
-                                   (if (owner.isFrozen) 0x04 else 0) |
-                                   (if (owner.isPhased) 0x08 else 0)
-                  val ownerUpdate = new PlayerUpdatePacket(
+                    val ownerUpdate = new PlayerUpdatePacket(
                     server.getNextSequenceNumber,
                     projectile.ownerId,
                     owner.getPosition,
                     owner.getColorRGB,
                     owner.getHealth,
                     0,
-                    ownerFlags
+                    playerFlags(owner)
                   )
                   broadcastToInstance(ownerUpdate)
                 }
@@ -321,10 +318,6 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                 val healAmount = dmg * healPercent / 100
                 val newHealth = Math.min(lsOwner.getMaxHealth, lsOwner.getHealth + healAmount)
                 lsOwner.setHealth(newHealth)
-                val ownerFlags = (if (lsOwner.hasShield) 0x01 else 0) |
-                                 (if (lsOwner.hasGemBoost) 0x02 else 0) |
-                                 (if (lsOwner.isFrozen) 0x04 else 0) |
-                                 (if (lsOwner.isPhased) 0x08 else 0)
                 val ownerUpdate = new PlayerUpdatePacket(
                   server.getNextSequenceNumber,
                   projectile.ownerId,
@@ -332,7 +325,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                   lsOwner.getColorRGB,
                   lsOwner.getHealth,
                   0,
-                  ownerFlags
+                  playerFlags(lsOwner)
                 )
                 broadcastToInstance(ownerUpdate)
               }
@@ -340,12 +333,57 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
               if (projectile.projectileType == ProjectileType.BAT_SWARM) {
                 target.setFrozenUntil(System.currentTimeMillis() + 600)
               }
+
+            case Burn(totalDamage, durationMs, tickMs) =>
+              target.applyBurn(totalDamage, durationMs, tickMs, projectile.ownerId)
+
+            case VortexPull(radius, pullStrength) =>
+              // Pull all nearby enemies toward the hit location
+              val vx = projectile.getX
+              val vy = projectile.getY
+              registry.getAll.asScala.foreach { nearby =>
+                if (!nearby.isDead && !nearby.isPhased && !nearby.getId.equals(projectile.ownerId) && !isTeammate(projectile.ownerId, nearby.getId)) {
+                  val pos = nearby.getPosition
+                  val ndx = vx - (pos.getX + 0.5f)
+                  val ndy = vy - (pos.getY + 0.5f)
+                  val dist = math.sqrt(ndx * ndx + ndy * ndy).toFloat
+                  if (dist > 0.1f && dist <= radius) {
+                    val normX = ndx / dist
+                    val normY = ndy / dist
+                    val pull = Math.min(pullStrength, dist).toInt
+                    var destX = pos.getX
+                    var destY = pos.getY
+                    for (s <- 1 to pull) {
+                      val nextX = Math.max(0, Math.min(world.width - 1, (pos.getX + normX * s).toInt))
+                      val nextY = Math.max(0, Math.min(world.height - 1, (pos.getY + normY * s).toInt))
+                      if (world.isWalkable(nextX, nextY)) {
+                        destX = nextX
+                        destY = nextY
+                      }
+                    }
+                    nearby.setPosition(new Position(destX, destY))
+                  }
+                }
+              }
+
+            case SpeedBoost(durationMs) =>
+              val boostOwner = registry.get(projectile.ownerId)
+              if (boostOwner != null && !boostOwner.isDead) {
+                boostOwner.setSpeedBoostUntil(System.currentTimeMillis() + durationMs)
+                val ownerUpdate = new PlayerUpdatePacket(
+                  server.getNextSequenceNumber,
+                  projectile.ownerId,
+                  boostOwner.getPosition,
+                  boostOwner.getColorRGB,
+                  boostOwner.getHealth,
+                  0,
+                  playerFlags(boostOwner)
+                )
+                broadcastToInstance(ownerUpdate)
+              }
           }
 
-          val flags = (if (target.hasShield) 0x01 else 0) |
-                      (if (target.hasGemBoost) 0x02 else 0) |
-                      (if (target.isFrozen) 0x04 else 0) |
-                      (if (target.isPhased) 0x08 else 0)
+          val flags = playerFlags(target)
           val updatePacket = new PlayerUpdatePacket(
             server.getNextSequenceNumber,
             targetId,
@@ -429,10 +467,6 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
               }
 
               // Broadcast player health update
-              val flags = (if (player.hasShield) 0x01 else 0) |
-                          (if (player.hasGemBoost) 0x02 else 0) |
-                          (if (player.isFrozen) 0x04 else 0) |
-                          (if (player.isPhased) 0x08 else 0)
               val updatePacket = new PlayerUpdatePacket(
                 server.getNextSequenceNumber,
                 player.getId,
@@ -440,7 +474,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                 player.getColorRGB,
                 player.getHealth,
                 0,
-                flags
+                playerFlags(player)
               )
               broadcastToInstance(updatePacket)
             }
@@ -464,10 +498,6 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
 
         val aoeTarget = registry.get(targetId)
         if (aoeTarget != null) {
-          val flags = (if (aoeTarget.hasShield) 0x01 else 0) |
-                      (if (aoeTarget.hasGemBoost) 0x02 else 0) |
-                      (if (aoeTarget.isFrozen) 0x04 else 0) |
-                      (if (aoeTarget.isPhased) 0x08 else 0)
           val updatePacket = new PlayerUpdatePacket(
             server.getNextSequenceNumber,
             targetId,
@@ -475,7 +505,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
             aoeTarget.getColorRGB,
             aoeTarget.getHealth,
             0,
-            flags
+            playerFlags(aoeTarget)
           )
           broadcastToInstance(updatePacket)
         }
@@ -497,10 +527,6 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
 
         val aoeKillTarget = registry.get(targetId)
         if (aoeKillTarget != null) {
-          val flags = (if (aoeKillTarget.hasShield) 0x01 else 0) |
-                      (if (aoeKillTarget.hasGemBoost) 0x02 else 0) |
-                      (if (aoeKillTarget.isFrozen) 0x04 else 0) |
-                      (if (aoeKillTarget.isPhased) 0x08 else 0)
           val updatePacket = new PlayerUpdatePacket(
             server.getNextSequenceNumber,
             targetId,
@@ -508,7 +534,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
             aoeKillTarget.getColorRGB,
             aoeKillTarget.getHealth,
             0,
-            flags
+            playerFlags(aoeKillTarget)
           )
           broadcastToInstance(updatePacket)
         }
@@ -544,6 +570,62 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
           projectile.projectileType
         )
         broadcastToInstance(packet)
+    }
+  }
+
+  private def playerFlags(p: Player): Int =
+    (if (p.hasShield) 0x01 else 0) |
+    (if (p.hasGemBoost) 0x02 else 0) |
+    (if (p.isFrozen) 0x04 else 0) |
+    (if (p.isPhased) 0x08 else 0) |
+    (if (p.isBurning) 0x10 else 0) |
+    (if (p.hasSpeedBoost) 0x20 else 0)
+
+  /** Tick player state (burn DoT). Runs every 200ms. */
+  private def tickPlayers(): Unit = {
+    if (!running) return
+    val now = System.currentTimeMillis()
+    registry.getAll.asScala.foreach { player =>
+      if (!player.isDead && player.isBurning) {
+        if (now >= player.getLastBurnTick + player.getBurnTickMs) {
+          player.setLastBurnTick(now)
+          val newHealth = player.getHealth - player.getBurnDamagePerTick
+          player.setHealth(newHealth)
+
+          if (newHealth <= 0) {
+            // Burn killed the player — attribute to burn owner
+            val burnOwner = player.getBurnOwnerId
+            if (burnOwner != null) {
+              killTracker.recordKill(burnOwner, player.getId)
+              val killPacket = new GameEventPacket(
+                server.getNextSequenceNumber,
+                burnOwner,
+                GameEvent.KILL,
+                gameId,
+                getRemainingSeconds,
+                killTracker.getKills(burnOwner).toShort,
+                killTracker.getDeaths(burnOwner).toShort,
+                player.getId,
+                0.toByte, 0.toShort, 0.toShort
+              )
+              broadcastToInstance(killPacket)
+              scheduleRespawn(player.getId)
+            }
+          }
+
+          // Broadcast updated health
+          val updatePacket = new PlayerUpdatePacket(
+            server.getNextSequenceNumber,
+            player.getId,
+            player.getPosition,
+            player.getColorRGB,
+            player.getHealth,
+            0,
+            playerFlags(player)
+          )
+          broadcastToInstance(updatePacket)
+        }
+      }
     }
   }
 
