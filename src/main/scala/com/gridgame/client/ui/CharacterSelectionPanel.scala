@@ -6,7 +6,10 @@ import javafx.geometry.Insets
 import javafx.geometry.Pos
 import javafx.scene.canvas.Canvas
 import javafx.scene.control.Label
+import javafx.scene.control.ScrollPane
+import javafx.scene.control.TextField
 import javafx.scene.effect.DropShadow
+import javafx.scene.layout.FlowPane
 import javafx.scene.layout.GridPane
 import javafx.scene.layout.HBox
 import javafx.scene.layout.Priority
@@ -19,7 +22,7 @@ import javafx.scene.text.FontWeight
 
 /**
  * Shared character selection panel used in both lobby and ranked queue screens.
- * Shows a 4x3 grid of all characters with a detail panel for the selected character.
+ * Shows a filterable, categorized grid of all characters with a detail panel for the selected character.
  */
 class CharacterSelectionPanel(
     getSelectedId: () => Byte,
@@ -30,10 +33,15 @@ class CharacterSelectionPanel(
   private var dirIndex = 0
   private val dirs = Array(Direction.Down, Direction.Left, Direction.Up, Direction.Right)
 
-  // Grid cell tracking
-  private var selectedIdx = 0
-  private val cellCanvases = new Array[Canvas](CharacterDef.all.size)
-  private val cellPanes = new Array[StackPane](CharacterDef.all.size)
+  // Current filtered characters
+  private var filteredChars: Seq[CharacterDef] = CharacterDef.all
+  private var selectedCategory: String = "All"
+  private var searchQuery: String = ""
+
+  // Grid cell tracking (only for currently displayed chars)
+  private var cellCanvases = Map.empty[Byte, Canvas]     // charId -> canvas
+  private var cellPanes = Map.empty[Byte, StackPane]     // charId -> pane
+  private var gridContainer: GridPane = _
 
   // Detail panel elements
   private var detailPreviewCanvas: Canvas = _
@@ -53,67 +61,105 @@ class CharacterSelectionPanel(
 
   private var timer: AnimationTimer = _
 
+  // Category definitions
+  private val categories: Seq[(String, Int, Int)] = Seq(
+    ("All", 0, 255),
+    ("Original", 0, 11),
+    ("Elemental", 12, 26),
+    ("Undead", 27, 41),
+    ("Medieval", 42, 56),
+    ("Sci-Fi", 57, 71),
+    ("Nature", 72, 86),
+    ("Mythological", 87, 101),
+    ("Specialist", 102, 111)
+  )
+
+  // Category tab buttons
+  private var categoryButtons = Map.empty[String, Label]
+
   private val sectionHeaderStyle = "-fx-text-fill: #99aabb; -fx-font-size: 13; -fx-font-weight: bold;"
   private val cardBgSubtle = "-fx-background-color: #1c1c34; -fx-background-radius: 12; -fx-border-color: rgba(255,255,255,0.05); -fx-border-radius: 12; -fx-border-width: 1; -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.3), 12, 0, 0, 4);"
 
-  private val cellBaseStyle = "-fx-background-color: #1c1c34; -fx-background-radius: 10; -fx-border-color: rgba(255,255,255,0.08); -fx-border-radius: 10; -fx-border-width: 1; -fx-cursor: hand;"
-  private val cellHoverStyle = "-fx-background-color: #1c1c34; -fx-background-radius: 10; -fx-border-color: rgba(74, 158, 255, 0.3); -fx-border-radius: 10; -fx-border-width: 1; -fx-cursor: hand;"
-  private val cellSelectedStyle = "-fx-background-color: #1c1c34; -fx-background-radius: 10; -fx-border-color: #4a9eff; -fx-border-radius: 10; -fx-border-width: 2; -fx-cursor: hand;"
+  private val cellBaseStyle = "-fx-background-color: #1c1c34; -fx-background-radius: 8; -fx-border-color: rgba(255,255,255,0.08); -fx-border-radius: 8; -fx-border-width: 1; -fx-cursor: hand;"
+  private val cellHoverStyle = "-fx-background-color: #1c1c34; -fx-background-radius: 8; -fx-border-color: rgba(74, 158, 255, 0.3); -fx-border-radius: 8; -fx-border-width: 1; -fx-cursor: hand;"
+  private val cellSelectedStyle = "-fx-background-color: #1c1c34; -fx-background-radius: 8; -fx-border-color: #4a9eff; -fx-border-radius: 8; -fx-border-width: 2; -fx-cursor: hand;"
+
+  private val tabBaseStyle = "-fx-background-color: rgba(255,255,255,0.06); -fx-background-radius: 14; -fx-text-fill: #8899aa; -fx-font-size: 11; -fx-padding: 4 10 4 10; -fx-cursor: hand;"
+  private val tabActiveStyle = "-fx-background-color: #4a9eff; -fx-background-radius: 14; -fx-text-fill: white; -fx-font-size: 11; -fx-font-weight: bold; -fx-padding: 4 10 4 10; -fx-cursor: hand;"
+
+  private val GridCols = 6
 
   def createPanel(): VBox = {
     val charSectionLabel = new Label("SELECT CHARACTER")
     charSectionLabel.setStyle(sectionHeaderStyle)
 
-    // Sync selectedIdx to current selection
-    selectedIdx = {
-      val idx = CharacterDef.all.indexWhere(_.id.id == getSelectedId())
-      if (idx < 0) 0 else idx
+    // Category filter tabs
+    val tabsRow = new FlowPane(6, 6)
+    tabsRow.setAlignment(Pos.CENTER_LEFT)
+    for ((catName, _, _) <- categories) {
+      val tab = new Label(catName)
+      tab.setStyle(if (catName == "All") tabActiveStyle else tabBaseStyle)
+      tab.setOnMouseClicked(_ => selectCategory(catName))
+      tab.setOnMouseEntered(_ => {
+        if (catName != selectedCategory) tab.setStyle(tabBaseStyle.replace("rgba(255,255,255,0.06)", "rgba(255,255,255,0.12)"))
+      })
+      tab.setOnMouseExited(_ => {
+        if (catName != selectedCategory) tab.setStyle(tabBaseStyle)
+      })
+      categoryButtons += (catName -> tab)
+      tabsRow.getChildren.add(tab)
     }
 
-    // Build grid (4 cols x 3 rows)
-    val grid = new GridPane()
-    grid.setHgap(8)
-    grid.setVgap(8)
+    // Search field
+    val searchField = new TextField()
+    searchField.setPromptText("Search characters...")
+    searchField.setStyle(
+      "-fx-background-color: #1c1c34; -fx-text-fill: #ccdde8; -fx-prompt-text-fill: #556677; " +
+      "-fx-background-radius: 8; -fx-border-color: rgba(255,255,255,0.1); -fx-border-radius: 8; " +
+      "-fx-border-width: 1; -fx-padding: 6 10 6 10; -fx-font-size: 12;"
+    )
+    searchField.setMaxWidth(Double.MaxValue)
+    searchField.textProperty().addListener((_, _, newVal) => {
+      searchQuery = newVal.trim.toLowerCase
+      rebuildGrid()
+    })
+    searchField.focusedProperty().addListener((_, _, focused) => {
+      val borderColor = if (focused) "rgba(74, 158, 255, 0.4)" else "rgba(255,255,255,0.1)"
+      searchField.setStyle(
+        s"-fx-background-color: #1c1c34; -fx-text-fill: #ccdde8; -fx-prompt-text-fill: #556677; " +
+        s"-fx-background-radius: 8; -fx-border-color: $borderColor; -fx-border-radius: 8; " +
+        s"-fx-border-width: 1; -fx-padding: 6 10 6 10; -fx-font-size: 12;"
+      )
+    })
 
-    for (i <- CharacterDef.all.indices) {
-      val charDef = CharacterDef.all(i)
-      val cellCanvas = new Canvas(56, 56)
-      cellCanvases(i) = cellCanvas
+    // Character count label
+    val countLabel = new Label(s"${CharacterDef.all.size} characters")
+    countLabel.setStyle("-fx-text-fill: #556677; -fx-font-size: 11;")
 
-      val nameLabel = new Label(charDef.displayName)
-      nameLabel.setFont(Font.font("System", FontWeight.BOLD, 10))
-      nameLabel.setTextFill(Color.web("#aabbcc"))
-      nameLabel.setMaxWidth(72)
-      nameLabel.setAlignment(Pos.CENTER)
+    val searchRow = new HBox(8, searchField, countLabel)
+    searchRow.setAlignment(Pos.CENTER_LEFT)
+    HBox.setHgrow(searchField, Priority.ALWAYS)
 
-      val cellContent = new VBox(2, cellCanvas, nameLabel)
-      cellContent.setAlignment(Pos.CENTER)
-      cellContent.setPadding(new Insets(6, 4, 4, 4))
+    // Build grid
+    gridContainer = new GridPane()
+    gridContainer.setHgap(6)
+    gridContainer.setVgap(6)
+    buildGrid()
 
-      val cellPane = new StackPane(cellContent)
-      cellPane.setMinWidth(76)
-      cellPane.setMinHeight(82)
-      cellPanes(i) = cellPane
+    // Scrollable grid area
+    val scrollPane = new ScrollPane(gridContainer)
+    scrollPane.setFitToWidth(true)
+    scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER)
+    scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED)
+    scrollPane.setStyle(
+      "-fx-background: transparent; -fx-background-color: transparent; " +
+      "-fx-border-color: transparent; -fx-padding: 0;"
+    )
+    scrollPane.setPrefHeight(400)
+    scrollPane.setMaxHeight(400)
+    VBox.setVgrow(scrollPane, Priority.ALWAYS)
 
-      val idx = i
-      cellPane.setOnMouseClicked(_ => {
-        selectedIdx = idx
-        onSelect(charDef.id.id)
-        updateCellStyles()
-        updateDetailPanel()
-      })
-      cellPane.setOnMouseEntered(_ => {
-        if (idx != selectedIdx) cellPane.setStyle(cellHoverStyle)
-      })
-      cellPane.setOnMouseExited(_ => {
-        if (idx != selectedIdx) cellPane.setStyle(cellBaseStyle)
-      })
-
-      val col = i % 4
-      val row = i / 4
-      grid.add(cellPane, col, row)
-    }
-    updateCellStyles()
+    val gridSection = new VBox(8, tabsRow, searchRow, scrollPane)
 
     // Detail panel (right side)
     detailPreviewCanvas = new Canvas(96, 96)
@@ -167,7 +213,7 @@ class CharacterSelectionPanel(
         drawDetailPreview()
         // Draw grid cell sprites (throttled for performance)
         if (animTick % 12 == 0) {
-          drawAllGridCells()
+          drawVisibleGridCells()
         }
         renderAbilityCanvases()
       }
@@ -175,11 +221,12 @@ class CharacterSelectionPanel(
     timer.start()
 
     // Draw initial grid cells
-    drawAllGridCells()
+    drawVisibleGridCells()
 
     // Main row: grid on left, details on right
-    val mainRow = new HBox(20, grid, detailsPanel)
+    val mainRow = new HBox(20, gridSection, detailsPanel)
     mainRow.setAlignment(Pos.TOP_CENTER)
+    HBox.setHgrow(gridSection, Priority.ALWAYS)
 
     val charSection = new VBox(12, charSectionLabel, mainRow)
     charSection.setAlignment(Pos.CENTER)
@@ -191,41 +238,124 @@ class CharacterSelectionPanel(
     if (timer != null) timer.stop()
   }
 
-  private def updateCellStyles(): Unit = {
+  private def selectCategory(catName: String): Unit = {
+    selectedCategory = catName
+    categoryButtons.foreach { case (name, label) =>
+      if (name == catName) {
+        label.setStyle(tabActiveStyle)
+      } else {
+        label.setStyle(tabBaseStyle)
+      }
+    }
+    rebuildGrid()
+  }
+
+  private def rebuildGrid(): Unit = {
+    cellCanvases = Map.empty
+    cellPanes = Map.empty
+    gridContainer.getChildren.clear()
+    buildGrid()
+    drawVisibleGridCells()
+  }
+
+  private def buildGrid(): Unit = {
+    val selectedId = getSelectedId()
+
+    // Filter by category
+    val catFiltered = if (selectedCategory == "All") {
+      CharacterDef.all
+    } else {
+      val (_, lo, hi) = categories.find(_._1 == selectedCategory).get
+      CharacterDef.all.filter(c => c.id.id >= lo && c.id.id <= hi)
+    }
+
+    // Filter by search
+    filteredChars = if (searchQuery.isEmpty) {
+      catFiltered
+    } else {
+      catFiltered.filter(_.displayName.toLowerCase.contains(searchQuery))
+    }
+
     val glow = new DropShadow()
     glow.setColor(Color.web("#4a9eff"))
-    glow.setRadius(12)
+    glow.setRadius(10)
     glow.setSpread(0.15)
 
-    for (i <- cellPanes.indices) {
-      if (cellPanes(i) != null) {
-        if (i == selectedIdx) {
-          cellPanes(i).setStyle(cellSelectedStyle)
-          cellPanes(i).setEffect(glow)
-        } else {
-          cellPanes(i).setStyle(cellBaseStyle)
-          cellPanes(i).setEffect(null)
-        }
+    for (i <- filteredChars.indices) {
+      val charDef = filteredChars(i)
+      val charId = charDef.id.id
+      val cellCanvas = new Canvas(44, 44)
+      cellCanvases += (charId -> cellCanvas)
+
+      val nameLabel = new Label(charDef.displayName)
+      nameLabel.setFont(Font.font("System", FontWeight.BOLD, 9))
+      nameLabel.setTextFill(Color.web("#aabbcc"))
+      nameLabel.setMaxWidth(60)
+      nameLabel.setAlignment(Pos.CENTER)
+
+      val cellContent = new VBox(1, cellCanvas, nameLabel)
+      cellContent.setAlignment(Pos.CENTER)
+      cellContent.setPadding(new Insets(4, 2, 3, 2))
+
+      val cellPane = new StackPane(cellContent)
+      cellPane.setMinWidth(64)
+      cellPane.setPrefWidth(64)
+      cellPane.setMinHeight(66)
+      cellPanes += (charId -> cellPane)
+
+      val isSelected = charId == selectedId
+      cellPane.setStyle(if (isSelected) cellSelectedStyle else cellBaseStyle)
+      if (isSelected) cellPane.setEffect(glow)
+
+      cellPane.setOnMouseClicked(_ => {
+        onSelect(charId)
+        updateCellStyles()
+        updateDetailPanel()
+      })
+      cellPane.setOnMouseEntered(_ => {
+        if (charId != getSelectedId()) cellPane.setStyle(cellHoverStyle)
+      })
+      cellPane.setOnMouseExited(_ => {
+        if (charId != getSelectedId()) cellPane.setStyle(cellBaseStyle)
+      })
+
+      val col = i % GridCols
+      val row = i / GridCols
+      gridContainer.add(cellPane, col, row)
+    }
+  }
+
+  private def updateCellStyles(): Unit = {
+    val selectedId = getSelectedId()
+    val glow = new DropShadow()
+    glow.setColor(Color.web("#4a9eff"))
+    glow.setRadius(10)
+    glow.setSpread(0.15)
+
+    cellPanes.foreach { case (charId, pane) =>
+      if (charId == selectedId) {
+        pane.setStyle(cellSelectedStyle)
+        pane.setEffect(glow)
+      } else {
+        pane.setStyle(cellBaseStyle)
+        pane.setEffect(null)
       }
     }
   }
 
-  private def drawAllGridCells(): Unit = {
+  private def drawVisibleGridCells(): Unit = {
     val frame = (animTick / 10) % 4
     val dir = dirs(dirIndex)
-    for (i <- cellCanvases.indices) {
-      if (cellCanvases(i) != null) {
-        val gc = cellCanvases(i).getGraphicsContext2D
-        val s = cellCanvases(i).getWidth
-        gc.clearRect(0, 0, s, s)
-        val charDef = CharacterDef.all(i)
-        val sprite = SpriteGenerator.getSprite(0, dir, frame, charDef.id.id)
-        gc.setFill(Color.web("#1a1a30"))
-        gc.fillOval(4, 4, s - 8, s - 8)
-        val spriteSize = 44.0
-        val offset = (s - spriteSize) / 2.0
-        gc.drawImage(sprite, offset, offset, spriteSize, spriteSize)
-      }
+    cellCanvases.foreach { case (charId, canvas) =>
+      val gc = canvas.getGraphicsContext2D
+      val s = canvas.getWidth
+      gc.clearRect(0, 0, s, s)
+      gc.setFill(Color.web("#1a1a30"))
+      gc.fillOval(2, 2, s - 4, s - 4)
+      val sprite = SpriteGenerator.getSprite(0, dir, frame, charId)
+      val spriteSize = 34.0
+      val offset = (s - spriteSize) / 2.0
+      gc.drawImage(sprite, offset, offset, spriteSize, spriteSize)
     }
   }
 
@@ -379,6 +509,9 @@ class CharacterSelectionPanel(
       case Push(dist) => stats.append(s"  Push")
       case TeleportOwnerBehind(_, _) => stats.append("  Teleport")
       case LifeSteal(pct) => stats.append(s"  LifeSteal ${pct}%")
+      case Burn(_, _, _) => stats.append("  Burn")
+      case SpeedBoost(_) => stats.append("  Speed")
+      case VortexPull(_, _) => stats.append("  Vortex")
     }
 
     if (pDef.aoeOnHit.isDefined || pDef.aoeOnMaxRange.isDefined) stats.append("  AoE")
