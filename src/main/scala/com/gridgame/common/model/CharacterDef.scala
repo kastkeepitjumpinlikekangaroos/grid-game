@@ -848,10 +848,10 @@ object CharacterDef {
 
   val Shadowfiend: CharacterDef = CharacterDef(
     id = CharacterId.Shadowfiend, displayName = "Shadowfiend",
-    description = "A shadow demon that fires dark bolts in fans and drains souls.",
+    description = "A shadow demon that fans dark bolts and slips into shadow form.",
     spriteSheet = "sprites/shadowfiend.png",
     qAbility = AbilityDef(name = "Shadow Fan", description = "Fires 5 shadow bolts in a fan.", cooldownMs = 8000, maxRange = 16, damage = 15, projectileType = ProjectileType.SHADOW_BOLT, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(60))),
-    eAbility = AbilityDef(name = "Soul Drain", description = "Drains a soul for health.", cooldownMs = 10000, maxRange = 14, damage = 25, projectileType = ProjectileType.SOUL_DRAIN, keybind = "E"),
+    eAbility = AbilityDef(name = "Shadow Form", description = "Dissolve into shadow: phased and immune.", cooldownMs = 14000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = PhaseShiftBuff(4000)),
     primaryProjectileType = ProjectileType.SHADOW_BOLT
   )
 
@@ -940,10 +940,10 @@ object CharacterDef {
 
   val RogueChar: CharacterDef = CharacterDef(
     id = CharacterId.Rogue, displayName = "Rogue",
-    description = "A stealthy fighter with poison darts and a quick dash.",
+    description = "A stealthy fighter who fans shurikens and vanishes into the shadows.",
     spriteSheet = "sprites/rogue.png",
-    qAbility = AbilityDef(name = "Poison Dart", description = "Venomous dart that slows.", cooldownMs = 7000, maxRange = 16, damage = 15, projectileType = ProjectileType.POISON_DART, keybind = "Q"),
-    eAbility = AbilityDef(name = "Quick Step", description = "Swift evasive dash.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = DashBuff(8, 250, 12)),
+    qAbility = AbilityDef(name = "Knife Spray", description = "Throws 3 shurikens in a fan.", cooldownMs = 7000, maxRange = 6, damage = 22, projectileType = ProjectileType.SHURIKEN, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(30))),
+    eAbility = AbilityDef(name = "Vanish", description = "Disappear into shadows: phased and immune.", cooldownMs = 14000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = PhaseShiftBuff(3000)),
     primaryProjectileType = ProjectileType.SHURIKEN, maxHealth = 80
   )
 
@@ -985,10 +985,10 @@ object CharacterDef {
 
   val WarlockChar: CharacterDef = CharacterDef(
     id = CharacterId.Warlock, displayName = "Warlock",
-    description = "A dark caster with death bolts, fireballs, and soul drain.",
+    description = "A dark caster with death bolts, fireballs, and death fans.",
     spriteSheet = "sprites/warlock.png",
     qAbility = AbilityDef(name = "Demon Fire", description = "Launches a demonic fireball.", cooldownMs = 6000, maxRange = 18, damage = 45, projectileType = ProjectileType.FIREBALL, keybind = "Q"),
-    eAbility = AbilityDef(name = "Soul Drain", description = "Drains a soul for health.", cooldownMs = 10000, maxRange = 14, damage = 25, projectileType = ProjectileType.SOUL_DRAIN, keybind = "E"),
+    eAbility = AbilityDef(name = "Death Fan", description = "Fires 3 death bolts in a fan through walls.", cooldownMs = 10000, maxRange = 16, damage = 16, projectileType = ProjectileType.DEATH_BOLT, keybind = "E", castBehavior = FanProjectile(3, Math.toRadians(30))),
     primaryProjectileType = ProjectileType.DEATH_BOLT
   )
 
@@ -1023,10 +1023,10 @@ object CharacterDef {
 
   val MechPilotChar: CharacterDef = CharacterDef(
     id = CharacterId.MechPilot, displayName = "Mech Pilot",
-    description = "A heavy mech with minigun, rockets, and grenades.",
+    description = "A heavy mech with minigun, suppression chains, and ground slam.",
     spriteSheet = "sprites/mechpilot.png",
-    qAbility = AbilityDef(name = "Mech Rocket", description = "Fires a mech-mounted rocket.", cooldownMs = 12000, maxRange = 20, damage = 35, projectileType = ProjectileType.ROCKET, keybind = "Q"),
-    eAbility = AbilityDef(name = "Mech Grenade", description = "Lobs a mech grenade.", cooldownMs = 10000, maxRange = 12, damage = 40, projectileType = ProjectileType.GRENADE, keybind = "E"),
+    qAbility = AbilityDef(name = "Suppress Fire", description = "Fires 3 lockdown chains in a fan.", cooldownMs = 8000, maxRange = 12, damage = 8, projectileType = ProjectileType.LOCKDOWN_CHAIN, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(40))),
+    eAbility = AbilityDef(name = "Mech Slam", description = "Slams mech fist into the ground with devastating AoE.", cooldownMs = 12000, maxRange = 12, damage = 25, projectileType = ProjectileType.SEISMIC_SLAM, keybind = "E"),
     primaryProjectileType = ProjectileType.BULLET, maxHealth = 120
   )
 
@@ -1041,11 +1041,11 @@ object CharacterDef {
 
   val ChronomancerChar: CharacterDef = CharacterDef(
     id = CharacterId.Chronomancer, displayName = "Chronomancer",
-    description = "A time mage who freezes time and warps through it.",
+    description = "A time mage with lightning-fast attacks, gravity wells, and time warps.",
     spriteSheet = "sprites/chronomancer.png",
-    qAbility = AbilityDef(name = "Time Freeze", description = "Freezes an enemy in time.", cooldownMs = 5000, maxRange = 20, damage = 5, projectileType = ProjectileType.ICE_BEAM, keybind = "Q"),
+    qAbility = AbilityDef(name = "Temporal Rift", description = "Opens a gravity well that traps enemies.", cooldownMs = 14000, maxRange = 12, damage = 25, projectileType = ProjectileType.GRAVITY_WELL, keybind = "Q"),
     eAbility = AbilityDef(name = "Time Warp", description = "Teleports through time.", cooldownMs = 12000, maxRange = 10, damage = 0, projectileType = -2, keybind = "E", castBehavior = TeleportCast(10)),
-    primaryProjectileType = ProjectileType.DATA_BOLT
+    primaryProjectileType = ProjectileType.LIGHTNING
   )
 
   val GravitonChar: CharacterDef = CharacterDef(
@@ -1077,9 +1077,9 @@ object CharacterDef {
 
   val VoidwalkerChar: CharacterDef = CharacterDef(
     id = CharacterId.Voidwalker, displayName = "Voidwalker",
-    description = "A void entity that phases through reality and teleports at will.",
+    description = "A void entity that pulls enemies with gravity fans and teleports at will.",
     spriteSheet = "sprites/voidwalker.png",
-    qAbility = AbilityDef(name = "Void Phase", description = "Phase through the void.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = PhaseShiftBuff(5000)),
+    qAbility = AbilityDef(name = "Void Pull", description = "Fires 5 void gravity balls that pull enemies.", cooldownMs = 10000, maxRange = 14, damage = 18, projectileType = ProjectileType.GRAVITY_BALL, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(60))),
     eAbility = AbilityDef(name = "Void Step", description = "Teleport through the void.", cooldownMs = 12000, maxRange = 10, damage = 0, projectileType = -2, keybind = "E", castBehavior = TeleportCast(10)),
     primaryProjectileType = ProjectileType.VOID_BOLT, maxHealth = 80
   )
@@ -1122,10 +1122,10 @@ object CharacterDef {
 
   val PilotChar: CharacterDef = CharacterDef(
     id = CharacterId.Pilot, displayName = "Pilot",
-    description = "An ace pilot with sidearm, rockets, and jet boost.",
+    description = "An ace pilot with sidearm, grenades, and emergency eject teleport.",
     spriteSheet = "sprites/pilot.png",
-    qAbility = AbilityDef(name = "Aerial Strike", description = "Fires a rocket.", cooldownMs = 12000, maxRange = 20, damage = 35, projectileType = ProjectileType.ROCKET, keybind = "Q"),
-    eAbility = AbilityDef(name = "Jet Boost", description = "Jet-powered dash.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = DashBuff(12, 400, 15)),
+    qAbility = AbilityDef(name = "Airdrop Grenade", description = "Drops an explosive grenade.", cooldownMs = 10000, maxRange = 12, damage = 40, projectileType = ProjectileType.GRENADE, keybind = "Q"),
+    eAbility = AbilityDef(name = "Eject", description = "Emergency eject: teleports to cursor.", cooldownMs = 12000, maxRange = 8, damage = 0, projectileType = -2, keybind = "E", castBehavior = TeleportCast(8)),
     primaryProjectileType = ProjectileType.BULLET
   )
 
@@ -1196,10 +1196,10 @@ object CharacterDef {
 
   val SharkChar: CharacterDef = CharacterDef(
     id = CharacterId.Shark, displayName = "Shark",
-    description = "A ferocious predator that lunges and slashes in a frenzy.",
+    description = "A ferocious ocean predator that drags prey close and dives through terrain.",
     spriteSheet = "sprites/shark.png",
-    qAbility = AbilityDef(name = "Lunge", description = "Lunges at prey.", cooldownMs = 10000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = DashBuff(10, 400, 22)),
-    eAbility = AbilityDef(name = "Frenzy", description = "Slashes 3 times in a fan.", cooldownMs = 8000, maxRange = 4, damage = 25, projectileType = ProjectileType.CLAW_SWIPE, keybind = "E", castBehavior = FanProjectile(3, Math.toRadians(30))),
+    qAbility = AbilityDef(name = "Jaw Drag", description = "Bites and pulls an enemy toward you.", cooldownMs = 8000, maxRange = 18, damage = 10, projectileType = ProjectileType.ROPE, keybind = "Q"),
+    eAbility = AbilityDef(name = "Deep Dive", description = "Submerges and swims through terrain, immune.", cooldownMs = 14000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = PhaseShiftBuff(3000)),
     primaryProjectileType = ProjectileType.CLAW_SWIPE, maxHealth = 110
   )
 
@@ -1259,10 +1259,10 @@ object CharacterDef {
 
   val GorillaChar: CharacterDef = CharacterDef(
     id = CharacterId.Gorilla, displayName = "Gorilla",
-    description = "A mighty primate that charges and pounds the ground.",
+    description = "A mighty primate that grabs enemies and slams the ground.",
     spriteSheet = "sprites/gorilla.png",
-    qAbility = AbilityDef(name = "Gorilla Charge", description = "Charges forward.", cooldownMs = 10000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = DashBuff(8, 400, 25)),
-    eAbility = AbilityDef(name = "Ground Pound", description = "Pounds boulders in all directions.", cooldownMs = 12000, maxRange = 8, damage = 35, projectileType = ProjectileType.BOULDER, keybind = "E", castBehavior = FanProjectile(8, 2 * Math.PI)),
+    qAbility = AbilityDef(name = "Primate Grab", description = "Long-range grab that pulls enemies to you.", cooldownMs = 8000, maxRange = 18, damage = 8, projectileType = ProjectileType.VINE_WHIP, keybind = "Q"),
+    eAbility = AbilityDef(name = "Ground Pound", description = "Slams the ground with devastating AoE.", cooldownMs = 12000, maxRange = 12, damage = 25, projectileType = ProjectileType.SEISMIC_SLAM, keybind = "E"),
     primaryProjectileType = ProjectileType.BOULDER, maxHealth = 120
   )
 
@@ -1279,10 +1279,10 @@ object CharacterDef {
 
   val MinotaurChar: CharacterDef = CharacterDef(
     id = CharacterId.Minotaur, displayName = "Minotaur",
-    description = "A bull-headed warrior that charges and whirlwinds axes.",
+    description = "A bull-headed brute with a devastating long charge and stunning horn toss.",
     spriteSheet = "sprites/minotaur.png",
-    qAbility = AbilityDef(name = "Bull Charge", description = "Charges forward.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = DashBuff(12, 450, 25)),
-    eAbility = AbilityDef(name = "Axe Whirlwind", description = "Spins axes in all directions.", cooldownMs = 12000, maxRange = 5, damage = 33, projectileType = ProjectileType.AXE, keybind = "E", castBehavior = FanProjectile(8, 2 * Math.PI)),
+    qAbility = AbilityDef(name = "Bull Charge", description = "Massive charge forward with horns lowered.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = DashBuff(14, 500, 25)),
+    eAbility = AbilityDef(name = "Horn Toss", description = "Flings a cursed horn that freezes on hit.", cooldownMs = 10000, maxRange = 16, damage = 25, projectileType = ProjectileType.HEAD_THROW, keybind = "E"),
     primaryProjectileType = ProjectileType.AXE, maxHealth = 120
   )
 
@@ -1369,27 +1369,27 @@ object CharacterDef {
 
   val YokaiChar: CharacterDef = CharacterDef(
     id = CharacterId.Yokai, displayName = "Yokai",
-    description = "A Japanese spirit that phases and haunts from the shadows.",
+    description = "A trickster spirit that fires soul fans and curses enemies in place.",
     spriteSheet = "sprites/yokai.png",
-    qAbility = AbilityDef(name = "Spirit Form", description = "Becomes a spirit: phased.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = PhaseShiftBuff(5000)),
-    eAbility = AbilityDef(name = "Possess", description = "Teleports behind the target.", cooldownMs = 15000, maxRange = 15, damage = 30, projectileType = ProjectileType.HAUNT, keybind = "E"),
+    qAbility = AbilityDef(name = "Soul Fan", description = "Fires 3 soul bolts in a fan through walls.", cooldownMs = 8000, maxRange = 15, damage = 15, projectileType = ProjectileType.SOUL_BOLT, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(30))),
+    eAbility = AbilityDef(name = "Yokai Curse", description = "Ancient curse that freezes for 2 seconds.", cooldownMs = 12000, maxRange = 12, damage = 20, projectileType = ProjectileType.CURSE, keybind = "E"),
     primaryProjectileType = ProjectileType.SOUL_BOLT
   )
 
   val GolemChar: CharacterDef = CharacterDef(
     id = CharacterId.Golem, displayName = "Golem",
-    description = "A stone construct that slams and charges slowly.",
+    description = "A stone construct that hurls boulder fans and grabs enemies with stone grip.",
     spriteSheet = "sprites/golem.png",
-    qAbility = AbilityDef(name = "Slam", description = "Slams the ground with AoE.", cooldownMs = 10000, maxRange = 12, damage = 25, projectileType = ProjectileType.SEISMIC_SLAM, keybind = "Q"),
-    eAbility = AbilityDef(name = "Slow Charge", description = "Charges forward slowly.", cooldownMs = 14000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = DashBuff(6, 400, 30)),
+    qAbility = AbilityDef(name = "Boulder Fan", description = "Hurls 5 boulders in a fan.", cooldownMs = 10000, maxRange = 8, damage = 35, projectileType = ProjectileType.BOULDER, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(60))),
+    eAbility = AbilityDef(name = "Stone Grip", description = "Extends a stone arm to pull enemies.", cooldownMs = 10000, maxRange = 18, damage = 8, projectileType = ProjectileType.VINE_WHIP, keybind = "E"),
     primaryProjectileType = ProjectileType.BOULDER, maxHealth = 120
   )
 
   val DjinnChar: CharacterDef = CharacterDef(
     id = CharacterId.Djinn, displayName = "Djinn",
-    description = "A wish-granting spirit with fire sprays and teleportation.",
+    description = "A wish-granting spirit who mesmerizes foes and teleports at will.",
     spriteSheet = "sprites/djinn.png",
-    qAbility = AbilityDef(name = "Fire Spray", description = "Fires 5 flame bolts in a fan.", cooldownMs = 8000, maxRange = 16, damage = 18, projectileType = ProjectileType.FLAME_BOLT, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(60))),
+    qAbility = AbilityDef(name = "Mesmerize", description = "Hypnotic charm that freezes for 2 seconds.", cooldownMs = 10000, maxRange = 14, damage = 15, projectileType = ProjectileType.CHARM, keybind = "Q"),
     eAbility = AbilityDef(name = "Wish", description = "Teleports with a wish.", cooldownMs = 12000, maxRange = 10, damage = 0, projectileType = -2, keybind = "E", castBehavior = TeleportCast(10)),
     primaryProjectileType = ProjectileType.FLAME_BOLT
   )
@@ -1443,10 +1443,10 @@ object CharacterDef {
 
   val BlacksmithChar: CharacterDef = CharacterDef(
     id = CharacterId.Blacksmith, displayName = "Blacksmith",
-    description = "A forge master who hammers and spins his craft.",
+    description = "A forge master who throws axes in fans and lays traps from the anvil.",
     spriteSheet = "sprites/blacksmith.png",
-    qAbility = AbilityDef(name = "Forge Charge", description = "Charges with hammer.", cooldownMs = 10000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = DashBuff(6, 350, 22)),
-    eAbility = AbilityDef(name = "Hammer Spin", description = "Spins hammer in all directions.", cooldownMs = 12000, maxRange = 5, damage = 33, projectileType = ProjectileType.AXE, keybind = "E", castBehavior = FanProjectile(8, 2 * Math.PI)),
+    qAbility = AbilityDef(name = "Triple Hammer", description = "Hurls 3 hammers in a fan.", cooldownMs = 8000, maxRange = 5, damage = 33, projectileType = ProjectileType.AXE, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(40))),
+    eAbility = AbilityDef(name = "Anvil Trap", description = "Deploys a snare trap that freezes all nearby.", cooldownMs = 14000, maxRange = 16, damage = 15, projectileType = ProjectileType.SNARE_MINE, keybind = "E"),
     primaryProjectileType = ProjectileType.AXE, maxHealth = 120
   )
 
@@ -1470,10 +1470,10 @@ object CharacterDef {
 
   val MusicianChar: CharacterDef = CharacterDef(
     id = CharacterId.Musician, displayName = "Musician",
-    description = "A sonic warrior with sound waves and bass pushes.",
+    description = "A hypnotic performer who mesmerizes foes and dashes with rhythm.",
     spriteSheet = "sprites/musician.png",
-    qAbility = AbilityDef(name = "Sound Fan", description = "Fires 5 sonic waves in a fan.", cooldownMs = 8000, maxRange = 14, damage = 14, projectileType = ProjectileType.SONIC_WAVE, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(90))),
-    eAbility = AbilityDef(name = "Bass Push", description = "Pushes enemies with bass.", cooldownMs = 8000, maxRange = 6, damage = 10, projectileType = ProjectileType.GUST, keybind = "E"),
+    qAbility = AbilityDef(name = "Hypnotic Melody", description = "Mesmerizing song that freezes for 2 seconds.", cooldownMs = 10000, maxRange = 14, damage = 15, projectileType = ProjectileType.CHARM, keybind = "Q"),
+    eAbility = AbilityDef(name = "Rhythmic Dash", description = "Dashes forward on a wave of sound.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = DashBuff(8, 300, 15)),
     primaryProjectileType = ProjectileType.SONIC_WAVE
   )
 
