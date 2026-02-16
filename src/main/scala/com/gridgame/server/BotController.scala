@@ -460,6 +460,15 @@ class BotController(instance: GameInstance) {
         broadcastBotPosition(bot)
         true
 
+      case GroundSlam(radius) =>
+        if (dist > radius) return false
+        val projectile = instance.projectileManager.spawnProjectile(
+          bot.getId, botPos.getX, botPos.getY,
+          0.0f, 0.0f, bot.getColorRGB, 0, ability.projectileType
+        )
+        instance.broadcastProjectileSpawn(projectile)
+        true
+
       case TeleportCast(maxDistance) =>
         // Blink toward target when at mid range
         if (dist < 4 || dist > maxDistance + 8) return false

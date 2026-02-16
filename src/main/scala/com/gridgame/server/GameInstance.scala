@@ -366,6 +366,11 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                 }
               }
 
+            case Root(durationMs) =>
+              if (!target.isPhased) {
+                target.setRootedUntil(System.currentTimeMillis() + durationMs)
+              }
+
             case SpeedBoost(durationMs) =>
               val boostOwner = registry.get(projectile.ownerId)
               if (boostOwner != null && !boostOwner.isDead) {
@@ -579,7 +584,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     (if (p.isFrozen) 0x04 else 0) |
     (if (p.isPhased) 0x08 else 0) |
     (if (p.isBurning) 0x10 else 0) |
-    (if (p.hasSpeedBoost) 0x20 else 0)
+    (if (p.hasSpeedBoost) 0x20 else 0) |
+    (if (p.isRooted) 0x40 else 0)
 
   /** Tick player state (burn DoT). Runs every 200ms. */
   private def tickPlayers(): Unit = {

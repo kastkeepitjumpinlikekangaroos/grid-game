@@ -57,6 +57,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   private val phasedUntil: AtomicLong = new AtomicLong(0)
   private val burningUntil: AtomicLong = new AtomicLong(0)
   private val speedBoostUntil: AtomicLong = new AtomicLong(0)
+  private val rootedUntil: AtomicLong = new AtomicLong(0)
 
   // Ability cast flash state
   private val lastCastTime: AtomicLong = new AtomicLong(0)
@@ -246,6 +247,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     phasedUntil.set(0)
     burningUntil.set(0)
     speedBoostUntil.set(0)
+    rootedUntil.set(0)
 
     // Send join packet to server
     sendJoinPacket()
@@ -257,7 +259,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   def movePlayer(dx: Int, dy: Int): Unit = {
     // Check if frozen — still send position so server echoes frozen state back
-    if (isFrozen) {
+    if (isFrozen || isRooted) {
       localDirection.set(Direction.fromMovement(dx, dy))
       sendPositionUpdate(localPosition.get())
       return
@@ -352,7 +354,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   }
 
   private def getEffectFlags: Int = {
-    (if (hasShield) 0x01 else 0) | (if (hasGemBoost) 0x02 else 0) | (if (isFrozen) 0x04 else 0) | (if (isPhased) 0x08 else 0) | (if (isBurning) 0x10 else 0) | (if (hasSpeedBoost) 0x20 else 0)
+    (if (hasShield) 0x01 else 0) | (if (hasGemBoost) 0x02 else 0) | (if (isFrozen) 0x04 else 0) | (if (isPhased) 0x08 else 0) | (if (isBurning) 0x10 else 0) | (if (hasSpeedBoost) 0x20 else 0) | (if (isRooted) 0x40 else 0)
   }
 
   private def sendPositionUpdate(position: Position): Unit = {
@@ -584,6 +586,18 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           networkThread.send(fanPacket)
         }
 
+      case GroundSlam(_) =>
+        val pos = localPosition.get()
+        val packet = new ProjectilePacket(
+          sequenceNumber.getAndIncrement(),
+          localPlayerId,
+          pos.getX.toFloat, pos.getY.toFloat,
+          localColorRGB, 0, 0.0f, 0.0f,
+          ProjectileAction.SPAWN, null, 0.toByte,
+          abilityDef.projectileType
+        )
+        networkThread.send(packet)
+
       case StandardProjectile =>
         val pos = localPosition.get()
         val (ndx, ndy) = getAimDirection
@@ -620,6 +634,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   def isBurning: Boolean = System.currentTimeMillis() < burningUntil.get()
 
   def hasSpeedBoost: Boolean = System.currentTimeMillis() < speedBoostUntil.get()
+
+  def isRooted: Boolean = System.currentTimeMillis() < rootedUntil.get()
 
   def getQCooldownFraction: Float = {
     val cooldownMs = getSelectedCharacterDef.qAbility.cooldownMs
@@ -764,6 +780,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
             speedBoostUntil.set(System.currentTimeMillis() + 1000)
           } else {
             speedBoostUntil.set(0)
+          }
+          if ((flags & 0x40) != 0) {
+            rootedUntil.set(System.currentTimeMillis() + 3000)
+          } else {
+            rootedUntil.set(0)
           }
           // Don't overwrite local phased state from server echo — local timer is authoritative
           // Server echoes phased flag to confirm it, but we don't reset the timer
@@ -1398,6 +1419,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       } else {
         player.setSpeedBoostUntil(0)
       }
+      if ((flags & 0x40) != 0) {
+        player.setRootedUntil(System.currentTimeMillis() + 3000)
+      } else {
+        player.setRootedUntil(0)
+      }
 
       // Record death animation when player newly dies
       if (wasAlive && player.isDead) {
@@ -1420,6 +1446,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       if ((flags & 0x08) != 0) player.setPhasedUntil(System.currentTimeMillis() + 1000)
       if ((flags & 0x10) != 0) player.applyBurn(0, 1000, 1000, null)
       if ((flags & 0x20) != 0) player.setSpeedBoostUntil(System.currentTimeMillis() + 1000)
+      if ((flags & 0x40) != 0) player.setRootedUntil(System.currentTimeMillis() + 3000)
       players.put(playerId, player)
     }
   }

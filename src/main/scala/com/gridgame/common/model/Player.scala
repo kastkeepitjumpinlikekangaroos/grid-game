@@ -39,6 +39,9 @@ class Player(
   // Speed boost state
   private var speedBoostUntil: Long = 0
 
+  // Root state (can't move but CAN attack)
+  private var rootedUntil: Long = 0
+
   def getId: UUID = id
 
   def getName: String = name
@@ -189,6 +192,13 @@ class Player(
   def getSpeedBoostUntil: Long = speedBoostUntil
 
   def setSpeedBoostUntil(until: Long): Unit = { this.speedBoostUntil = until }
+
+  // Root accessors
+  def isRooted: Boolean = System.currentTimeMillis() < rootedUntil
+
+  def getRootedUntil: Long = rootedUntil
+
+  def setRootedUntil(until: Long): Unit = { this.rootedUntil = until }
 
   def isDead: Boolean = health <= 0
 

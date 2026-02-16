@@ -70,7 +70,7 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
               toRemove += projectile.id
               // AoE on max range (e.g. geyser, snare mine)
               pDef.aoeOnMaxRange.foreach { aoe =>
-                events ++= applyAoEDamage(projectile, aoe.radius, aoe.damage, null, aoe.freezeDurationMs)
+                events ++= applyAoEDamage(projectile, aoe.radius, aoe.damage, null, aoe.freezeDurationMs, aoe.rootDurationMs)
               }
               if (pDef.isExplosive) {
                 events += ProjectileAoE(projectile)
@@ -136,7 +136,7 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
 
                 // AoE splash damage to nearby players (excluding the direct hit target)
                 pDef.aoeOnHit.foreach { aoe =>
-                  events ++= applyAoEDamage(projectile, aoe.radius, aoe.damage, hitPlayer.getId, aoe.freezeDurationMs)
+                  events ++= applyAoEDamage(projectile, aoe.radius, aoe.damage, hitPlayer.getId, aoe.freezeDurationMs, aoe.rootDurationMs)
                 }
 
                 if (!canPierce) {
@@ -170,7 +170,7 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
   def size: Int = projectiles.size()
 
   /** Deal AoE damage to all players within radius of the projectile, excluding excludeId (the direct-hit target). */
-  private def applyAoEDamage(projectile: Projectile, radius: Float, damage: Int, excludeId: UUID, freezeDurationMs: Int = 0): Seq[ProjectileEvent] = {
+  private def applyAoEDamage(projectile: Projectile, radius: Float, damage: Int, excludeId: UUID, freezeDurationMs: Int = 0, rootDurationMs: Int = 0): Seq[ProjectileEvent] = {
     val events = ArrayBuffer[ProjectileEvent]()
     val px = projectile.getX
     val py = projectile.getY
@@ -188,8 +188,12 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
           if (freezeDurationMs > 0 && !player.isPhased) {
             player.setFrozenUntil(System.currentTimeMillis() + freezeDurationMs)
           }
+          if (rootDurationMs > 0 && !player.isPhased) {
+            player.setRootedUntil(System.currentTimeMillis() + rootDurationMs)
+          }
           println(s"ProjectileManager: AoE hit player ${player.getId.toString.substring(0, 8)}, damage=$damage, health now $newHealth" +
-            (if (freezeDurationMs > 0) s", frozen ${freezeDurationMs}ms" else ""))
+            (if (freezeDurationMs > 0) s", frozen ${freezeDurationMs}ms" else "") +
+            (if (rootDurationMs > 0) s", rooted ${rootDurationMs}ms" else ""))
           if (newHealth <= 0) {
             events += ProjectileAoEKill(projectile, player.getId)
           } else {

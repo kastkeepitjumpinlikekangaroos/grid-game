@@ -4043,6 +4043,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
     // Draw frozen effect
     if (player.isFrozen) drawFrozenEffect(screenX, spriteCenter)
+    if (player.isRooted) drawRootedEffect(screenX, spriteCenter)
     if (player.isBurning) drawBurnEffect(screenX, spriteCenter)
     if (player.hasSpeedBoost) drawSpeedBoostEffect(screenX, spriteCenter)
 
@@ -4147,6 +4148,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
     // Draw frozen effect
     if (client.isFrozen) drawFrozenEffect(screenX, spriteCenter)
+    if (client.isRooted) drawRootedEffect(screenX, spriteCenter)
     if (client.isBurning) drawBurnEffect(screenX, spriteCenter)
     if (client.hasSpeedBoost) drawSpeedBoostEffect(screenX, spriteCenter)
 
@@ -4576,6 +4578,39 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val sy = centerY + radius * 0.35 * Math.sin(sparkAngle)
     gc.setFill(Color.color(0.4, 1.0, 0.6, 0.7 * pulse))
     gc.fillOval(sx - 2, sy - 2, 4, 4)
+  }
+
+  private def drawRootedEffect(centerX: Double, centerY: Double): Unit = {
+    val phase = animationTick * 0.15
+    val displaySz = Constants.PLAYER_DISPLAY_SIZE_PX
+    val radius = displaySz * 0.45
+
+    // Earthy brown-green aura pulsing at the player's feet
+    val pulse = 0.7 + 0.3 * Math.sin(phase * 2.5)
+    gc.setFill(Color.color(0.4, 0.3, 0.1, 0.15 * pulse))
+    gc.fillOval(centerX - radius * 1.1, centerY - radius * 0.3, radius * 2.2, radius * 0.9)
+
+    // Vine tendrils wrapping upward
+    for (i <- 0 until 5) {
+      val angle = phase + i * (2.0 * Math.PI / 5.0)
+      val t = ((animationTick * 0.03 + i * 0.2) % 1.0)
+      val vx = centerX + Math.cos(angle) * radius * 0.6
+      val vy = centerY + radius * 0.2 - t * radius * 0.7
+      val vAlpha = Math.max(0.0, 0.6 * (1.0 - t) * pulse)
+      gc.setStroke(Color.color(0.3, 0.5, 0.15, vAlpha))
+      gc.setLineWidth(2.0)
+      val curl = Math.sin(angle * 2.0 + phase) * 3.0
+      gc.strokeLine(vx, vy, vx + curl, vy - 4)
+    }
+
+    // Small root nodes at the base
+    for (i <- 0 until 3) {
+      val nodeAngle = phase * 0.5 + i * (2.0 * Math.PI / 3.0)
+      val nx = centerX + Math.cos(nodeAngle) * radius * 0.5
+      val ny = centerY + radius * 0.1
+      gc.setFill(Color.color(0.5, 0.35, 0.1, 0.5 * pulse))
+      gc.fillOval(nx - 2, ny - 2, 4, 4)
+    }
   }
 
   private def drawHitEffect(centerX: Double, centerY: Double, hitTime: Long): Unit = {

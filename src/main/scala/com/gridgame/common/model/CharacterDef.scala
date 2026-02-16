@@ -7,6 +7,7 @@ case class PhaseShiftBuff(durationMs: Int) extends CastBehavior
 case class DashBuff(maxDistance: Int, durationMs: Int, moveRateMs: Int) extends CastBehavior
 case class TeleportCast(maxDistance: Int) extends CastBehavior
 case class FanProjectile(count: Int, fanAngle: Double) extends CastBehavior
+case class GroundSlam(radius: Float) extends CastBehavior
 
 case class AbilityDef(
     name: String,
@@ -302,6 +303,16 @@ object CharacterDef {
   private val StingerDef = ProjectileDef(id = ProjectileType.STINGER, name = "Stinger", speedMultiplier = 0.7f, damage = 22, maxRange = 6, onHitEffect = Some(Freeze(1000)))
   private val AcidBombDef = ProjectileDef(id = ProjectileType.ACID_BOMB, name = "Acid Bomb", speedMultiplier = 0.5f, damage = 25, maxRange = 14, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(25, 10, 3.0f)))
 
+  // --- AoE Root projectile defs ---
+  private val SeismicRootDef = ProjectileDef(id = ProjectileType.SEISMIC_ROOT, name = "Seismic Root", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(4.0f, 20, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 4.0f)))
+  private val RootGrowthDef = ProjectileDef(id = ProjectileType.ROOT_GROWTH, name = "Root Growth", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(5.0f, 10, rootDurationMs = 2500)), explosionConfig = Some(ExplosionConfig(0, 0, 5.0f)))
+  private val WebTrapDef = ProjectileDef(id = ProjectileType.WEB_TRAP, name = "Web Trap", speedMultiplier = 0.5f, damage = 0, maxRange = 14, passesThroughPlayers = true, aoeOnMaxRange = Some(AoESplashConfig(3.5f, 8, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 3.5f)))
+  private val TremorSlamDef = ProjectileDef(id = ProjectileType.TREMOR_SLAM, name = "Tremor Slam", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(3.5f, 30, rootDurationMs = 1500)), explosionConfig = Some(ExplosionConfig(0, 0, 3.5f)))
+  private val EntangleDef = ProjectileDef(id = ProjectileType.ENTANGLE, name = "Entangle", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(4.5f, 15, rootDurationMs = 2500)), explosionConfig = Some(ExplosionConfig(0, 0, 4.5f)))
+  private val StoneGazeDef = ProjectileDef(id = ProjectileType.STONE_GAZE, name = "Stone Gaze", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(3.5f, 15, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 3.5f)))
+  private val InkSnareDef = ProjectileDef(id = ProjectileType.INK_SNARE, name = "Ink Snare", speedMultiplier = 0.5f, damage = 0, maxRange = 14, passesThroughPlayers = true, aoeOnMaxRange = Some(AoESplashConfig(3.5f, 10, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 3.5f)))
+  private val GravityLockDef = ProjectileDef(id = ProjectileType.GRAVITY_LOCK, name = "Gravity Lock", speedMultiplier = 0.4f, damage = 0, maxRange = 12, passesThroughPlayers = true, aoeOnMaxRange = Some(AoESplashConfig(4.0f, 15, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 4.0f)))
+
   // Register all projectile defs
   ProjectileDef.register(
     TentacleDef, IceBeamDef, AxeDef, RopeDef, SpearDef,
@@ -331,7 +342,10 @@ object CharacterDef {
     DataBoltDef, VirusDef, LaserDef, GravityBallDef, GravityWellDef,
     TeslaCoilDef, NanoBoltDef, VoidBoltDef, RailgunDef, ClusterBombDef,
     // Batch 5: Nature/Beast
-    VenomBoltDef, WebShotDef, StingerDef, AcidBombDef
+    VenomBoltDef, WebShotDef, StingerDef, AcidBombDef,
+    // AoE Root
+    SeismicRootDef, RootGrowthDef, WebTrapDef, TremorSlamDef,
+    EntangleDef, StoneGazeDef, InkSnareDef, GravityLockDef
   )
 
   // === Character definitions ===
@@ -623,7 +637,7 @@ object CharacterDef {
     id = CharacterId.Earthshaker, displayName = "Earthshaker",
     description = "A hulking earth warrior who hurls boulders and shakes the ground.",
     spriteSheet = "sprites/earthshaker.png",
-    qAbility = AbilityDef(name = "Seismic Slam", description = "Slams the ground, creating a shockwave.", cooldownMs = 10000, maxRange = 12, damage = 25, projectileType = ProjectileType.SEISMIC_SLAM, keybind = "Q"),
+    qAbility = AbilityDef(name = "Seismic Root", description = "Slams the ground, rooting nearby enemies.", cooldownMs = 12000, maxRange = 0, damage = 20, projectileType = ProjectileType.SEISMIC_ROOT, keybind = "Q", castBehavior = GroundSlam(4.0f)),
     eAbility = AbilityDef(name = "Ground Charge", description = "Charges forward with unstoppable force.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = DashBuff(10, 400, 25)),
     primaryProjectileType = ProjectileType.BOULDER, maxHealth = 120
   )
@@ -669,7 +683,7 @@ object CharacterDef {
     description = "A nature mage who entangles enemies with vines and pierces with thorns.",
     spriteSheet = "sprites/thornweaver.png",
     qAbility = AbilityDef(name = "Vine Whip", description = "A vine that pulls enemies toward you.", cooldownMs = 8000, maxRange = 18, damage = 8, projectileType = ProjectileType.VINE_WHIP, keybind = "Q"),
-    eAbility = AbilityDef(name = "Thorn Fan", description = "Fires 5 thorns in a fan pattern.", cooldownMs = 10000, maxRange = 15, damage = 18, projectileType = ProjectileType.THORN, keybind = "E", castBehavior = FanProjectile(5, Math.toRadians(60))),
+    eAbility = AbilityDef(name = "Entangle", description = "Vines erupt from the ground, rooting nearby enemies.", cooldownMs = 12000, maxRange = 0, damage = 15, projectileType = ProjectileType.ENTANGLE, keybind = "E", castBehavior = GroundSlam(4.5f)),
     primaryProjectileType = ProjectileType.THORN
   )
 
@@ -1053,7 +1067,7 @@ object CharacterDef {
     description = "A gravity manipulator who pulls enemies and creates gravity wells.",
     spriteSheet = "sprites/graviton.png",
     qAbility = AbilityDef(name = "Gravity Fan", description = "Fires 5 gravity balls in a fan.", cooldownMs = 10000, maxRange = 14, damage = 18, projectileType = ProjectileType.GRAVITY_BALL, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(60))),
-    eAbility = AbilityDef(name = "Gravity Well", description = "Creates a gravity well that traps enemies.", cooldownMs = 14000, maxRange = 12, damage = 25, projectileType = ProjectileType.GRAVITY_WELL, keybind = "E"),
+    eAbility = AbilityDef(name = "Gravity Lock", description = "Launches a gravity field that roots enemies on landing.", cooldownMs = 14000, maxRange = 12, damage = 15, projectileType = ProjectileType.GRAVITY_LOCK, keybind = "E"),
     primaryProjectileType = ProjectileType.GRAVITY_BALL
   )
 
@@ -1163,7 +1177,7 @@ object CharacterDef {
     description = "A web-spinning arachnid that traps and burrows.",
     spriteSheet = "sprites/spider.png",
     qAbility = AbilityDef(name = "Web Spray", description = "Fires 5 webs in a fan.", cooldownMs = 10000, maxRange = 14, damage = 12, projectileType = ProjectileType.WEB_SHOT, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(45))),
-    eAbility = AbilityDef(name = "Burrow", description = "Burrows underground: phased.", cooldownMs = 14000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = PhaseShiftBuff(3000)),
+    eAbility = AbilityDef(name = "Web Trap", description = "Launches a web that roots enemies on landing.", cooldownMs = 12000, maxRange = 14, damage = 8, projectileType = ProjectileType.WEB_TRAP, keybind = "E"),
     primaryProjectileType = ProjectileType.WEB_SHOT
   )
 
@@ -1217,7 +1231,7 @@ object CharacterDef {
     description = "A living tree with root pulls and thorn bursts.",
     spriteSheet = "sprites/treant.png",
     qAbility = AbilityDef(name = "Root Pull", description = "Roots that pull an enemy.", cooldownMs = 8000, maxRange = 18, damage = 8, projectileType = ProjectileType.VINE_WHIP, keybind = "Q"),
-    eAbility = AbilityDef(name = "Thorn Burst", description = "Thorns in all directions.", cooldownMs = 10000, maxRange = 15, damage = 18, projectileType = ProjectileType.THORN, keybind = "E", castBehavior = FanProjectile(8, 2 * Math.PI)),
+    eAbility = AbilityDef(name = "Root Growth", description = "Roots erupt from the ground, entangling nearby enemies.", cooldownMs = 14000, maxRange = 0, damage = 10, projectileType = ProjectileType.ROOT_GROWTH, keybind = "E", castBehavior = GroundSlam(5.0f)),
     primaryProjectileType = ProjectileType.THORN, maxHealth = 120
   )
 
@@ -1291,7 +1305,7 @@ object CharacterDef {
     description = "A gorgon who petrifies with her gaze and fires soul bolts.",
     spriteSheet = "sprites/medusa.png",
     qAbility = AbilityDef(name = "Petrify", description = "Petrifying gaze that freezes.", cooldownMs = 5000, maxRange = 20, damage = 5, projectileType = ProjectileType.ICE_BEAM, keybind = "Q"),
-    eAbility = AbilityDef(name = "Gaze Burst", description = "Soul bolts in all directions.", cooldownMs = 10000, maxRange = 15, damage = 15, projectileType = ProjectileType.SOUL_BOLT, keybind = "E", castBehavior = FanProjectile(8, 2 * Math.PI)),
+    eAbility = AbilityDef(name = "Stone Gaze", description = "Petrifying gaze roots all nearby enemies.", cooldownMs = 12000, maxRange = 0, damage = 15, projectileType = ProjectileType.STONE_GAZE, keybind = "E", castBehavior = GroundSlam(3.5f)),
     primaryProjectileType = ProjectileType.SOUL_BOLT
   )
 
@@ -1318,7 +1332,7 @@ object CharacterDef {
     description = "A sea monster with tentacle pulls and tidal pushes.",
     spriteSheet = "sprites/kraken.png",
     qAbility = AbilityDef(name = "Tentacle Storm", description = "Fires 5 tentacles in a fan.", cooldownMs = 10000, maxRange = 15, damage = 5, projectileType = ProjectileType.TENTACLE, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(60))),
-    eAbility = AbilityDef(name = "Tidal Push", description = "Massive wave that pushes.", cooldownMs = 10000, maxRange = 12, damage = 10, projectileType = ProjectileType.TIDAL_WAVE, keybind = "E"),
+    eAbility = AbilityDef(name = "Ink Snare", description = "Launches ink that roots enemies on landing.", cooldownMs = 12000, maxRange = 14, damage = 10, projectileType = ProjectileType.INK_SNARE, keybind = "E"),
     primaryProjectileType = ProjectileType.TENTACLE, maxHealth = 120
   )
 
@@ -1381,7 +1395,7 @@ object CharacterDef {
     description = "A stone construct that hurls boulder fans and grabs enemies with stone grip.",
     spriteSheet = "sprites/golem.png",
     qAbility = AbilityDef(name = "Boulder Fan", description = "Hurls 5 boulders in a fan.", cooldownMs = 10000, maxRange = 8, damage = 35, projectileType = ProjectileType.BOULDER, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(60))),
-    eAbility = AbilityDef(name = "Stone Grip", description = "Extends a stone arm to pull enemies.", cooldownMs = 10000, maxRange = 18, damage = 8, projectileType = ProjectileType.VINE_WHIP, keybind = "E"),
+    eAbility = AbilityDef(name = "Tremor Slam", description = "Slams the ground, rooting nearby enemies.", cooldownMs = 14000, maxRange = 0, damage = 30, projectileType = ProjectileType.TREMOR_SLAM, keybind = "E", castBehavior = GroundSlam(3.5f)),
     primaryProjectileType = ProjectileType.BOULDER, maxHealth = 120
   )
 

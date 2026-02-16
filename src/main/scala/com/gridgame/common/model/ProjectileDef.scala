@@ -10,12 +10,13 @@ case class LifeSteal(healPercent: Int) extends OnHitEffect
 case class Burn(totalDamage: Int, durationMs: Int, tickMs: Int) extends OnHitEffect
 case class VortexPull(radius: Float, pullStrength: Float) extends OnHitEffect
 case class SpeedBoost(durationMs: Int) extends OnHitEffect
+case class Root(durationMs: Int) extends OnHitEffect
 
 // Explosion config (center/edge damage + blast radius)
 case class ExplosionConfig(centerDamage: Int, edgeDamage: Int, blastRadius: Float)
 
 // AoE splash config (radius + damage + optional freeze)
-case class AoESplashConfig(radius: Float, damage: Int, freezeDurationMs: Int = 0)
+case class AoESplashConfig(radius: Float, damage: Int, freezeDurationMs: Int = 0, rootDurationMs: Int = 0)
 
 // Charge scaling config
 case class ChargeScaling(min: Float, max: Float) {

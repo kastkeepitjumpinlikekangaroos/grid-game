@@ -107,6 +107,16 @@ object ProjectileType {
   val WEB_SHOT: Byte = 91
   val STINGER: Byte = 92
   val ACID_BOMB: Byte = 93
+
+  // AoE Root projectiles
+  val SEISMIC_ROOT: Byte = 94
+  val ROOT_GROWTH: Byte = 95
+  val WEB_TRAP: Byte = 96
+  val TREMOR_SLAM: Byte = 97
+  val ENTANGLE: Byte = 98
+  val STONE_GAZE: Byte = 99
+  val INK_SNARE: Byte = 100
+  val GRAVITY_LOCK: Byte = 101
 }
 
 class Projectile(

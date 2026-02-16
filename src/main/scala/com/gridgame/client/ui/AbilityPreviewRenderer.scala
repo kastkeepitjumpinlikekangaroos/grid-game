@@ -110,7 +110,16 @@ object AbilityPreviewRenderer {
     ProjectileType.VENOM_BOLT   -> (Color.web("#447733"), Color.web("#669944"), Color.web("#88bb66")),
     ProjectileType.WEB_SHOT     -> (Color.web("#888888"), Color.web("#aaaaaa"), Color.web("#cccccc")),
     ProjectileType.STINGER      -> (Color.web("#aa8822"), Color.web("#ccaa33"), Color.web("#eecc55")),
-    ProjectileType.ACID_BOMB    -> (Color.web("#559922"), Color.web("#77bb33"), Color.web("#99dd55"))
+    ProjectileType.ACID_BOMB    -> (Color.web("#559922"), Color.web("#77bb33"), Color.web("#99dd55")),
+    // AoE Root
+    ProjectileType.SEISMIC_ROOT -> (Color.web("#8B6914"), Color.web("#A0822B"), Color.web("#C4A04E")),
+    ProjectileType.ROOT_GROWTH  -> (Color.web("#3A6B35"), Color.web("#5B8A4E"), Color.web("#7DAA6B")),
+    ProjectileType.WEB_TRAP     -> (Color.web("#999999"), Color.web("#BBBBBB"), Color.web("#DDDDDD")),
+    ProjectileType.TREMOR_SLAM  -> (Color.web("#7A5C3A"), Color.web("#9B7D5B"), Color.web("#BDA07E")),
+    ProjectileType.ENTANGLE     -> (Color.web("#2D5A1E"), Color.web("#4A7A3A"), Color.web("#6B9B5B")),
+    ProjectileType.STONE_GAZE   -> (Color.web("#666655"), Color.web("#888877"), Color.web("#AAAA99")),
+    ProjectileType.INK_SNARE    -> (Color.web("#222244"), Color.web("#444466"), Color.web("#666688")),
+    ProjectileType.GRAVITY_LOCK -> (Color.web("#553399"), Color.web("#7755BB"), Color.web("#9977DD"))
   )
 
   private def getColors(projType: Byte): (Color, Color, Color) =
@@ -226,7 +235,16 @@ object AbilityPreviewRenderer {
     ProjectileType.VENOM_BOLT   -> Dart,
     ProjectileType.WEB_SHOT     -> Tendril,
     ProjectileType.STINGER      -> Dart,
-    ProjectileType.ACID_BOMB    -> Mine
+    ProjectileType.ACID_BOMB    -> Mine,
+    // AoE Root
+    ProjectileType.SEISMIC_ROOT -> Cloud,
+    ProjectileType.ROOT_GROWTH  -> Cloud,
+    ProjectileType.WEB_TRAP     -> Tendril,
+    ProjectileType.TREMOR_SLAM  -> Cloud,
+    ProjectileType.ENTANGLE     -> Tendril,
+    ProjectileType.STONE_GAZE   -> Cloud,
+    ProjectileType.INK_SNARE    -> Cloud,
+    ProjectileType.GRAVITY_LOCK -> Orb
   )
 
   private def getShape(projType: Byte): ShapeCategory =
@@ -257,6 +275,8 @@ object AbilityPreviewRenderer {
         renderTeleport(gc, animTick, canvasWidth, canvasHeight)
       case FanProjectile(count, fanAngle) =>
         renderFan(gc, projectileType, count, fanAngle, animTick, canvasWidth, canvasHeight)
+      case GroundSlam(_) =>
+        renderProjectile(gc, projectileType, animTick, canvasWidth, canvasHeight)
       case StandardProjectile =>
         renderProjectile(gc, projectileType, animTick, canvasWidth, canvasHeight)
     }
