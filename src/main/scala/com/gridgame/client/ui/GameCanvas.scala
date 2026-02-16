@@ -222,7 +222,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     (ry / HH - rx / HW) / 2.0
   }
 
-  def render(): Unit = {
+  def render(deltaSec: Double = 1.0 / 60.0): Unit = {
     animationTick += 1
 
     val localDeathTime = client.getLocalDeathTime
@@ -247,13 +247,14 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val canvasH = getHeight / zoom
 
     // Lerp visual position toward actual grid position for smooth movement
+    // Time-based exponential smoothing: lerpFactor = 1 - e^(-speed * dt)
     val targetX = localPos.getX.toDouble
     val targetY = localPos.getY.toDouble
     if (visualX.isNaN) {
       visualX = targetX
       visualY = targetY
     } else {
-      val lerpFactor = 0.3
+      val lerpFactor = 1.0 - Math.exp(-18.0 * deltaSec) // ~0.26 at 60fps, smooth across frame rates
       visualX += (targetX - visualX) * lerpFactor
       visualY += (targetY - visualY) * lerpFactor
       if (Math.abs(visualX - targetX) < 0.01) visualX = targetX
@@ -305,14 +306,14 @@ class GameCanvas(client: GameClient) extends Canvas() {
     }
 
     // Remote players (with visual interpolation)
+    val remoteLerp = 1.0 - Math.exp(-18.0 * deltaSec)
     client.getPlayers.values().asScala.filter(!_.isDead).foreach { player =>
       val pos = player.getPosition
       val pid = player.getId
       val (rvx, rvy) = remoteVisualPositions.get(pid) match {
         case Some((prevX, prevY)) =>
-          val lerpFactor = 0.3
-          val nx = prevX + (pos.getX - prevX) * lerpFactor
-          val ny = prevY + (pos.getY - prevY) * lerpFactor
+          val nx = prevX + (pos.getX - prevX) * remoteLerp
+          val ny = prevY + (pos.getY - prevY) * remoteLerp
           val sx = if (Math.abs(nx - pos.getX) < 0.01) pos.getX.toDouble else nx
           val sy = if (Math.abs(ny - pos.getY) < 0.01) pos.getY.toDouble else ny
           (sx, sy)

@@ -1542,16 +1542,15 @@ class ClientMain extends Application {
       }
     })
 
-    val frameIntervalNs = 1_000_000_000L / 60
     var lastFrameTime = 0L
     renderLoop = new AnimationTimer() {
       override def handle(now: Long): Unit = {
-        if (now - lastFrameTime >= frameIntervalNs) {
-          lastFrameTime = now
-          keyHandler.update()
-          controllerHandler.update()
-          canvas.render()
-        }
+        val deltaNs = if (lastFrameTime == 0L) 16_666_667L else now - lastFrameTime
+        lastFrameTime = now
+        val deltaSec = Math.min(deltaNs / 1_000_000_000.0, 0.05) // cap at 50ms to avoid huge jumps
+        keyHandler.update()
+        controllerHandler.update()
+        canvas.render(deltaSec)
       }
     }
     renderLoop.start()
