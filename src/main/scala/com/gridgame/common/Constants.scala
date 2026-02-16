@@ -73,6 +73,9 @@ object Constants {
   val TIME_SYNC_INTERVAL_S: Int = 10
   val MAX_LOBBY_PLAYERS: Int = 8
 
+  // CC immunity — guaranteed free window after a freeze expires
+  val CC_IMMUNITY_MS: Int = 1500
+
   // Duel configuration
   val DUEL_GAME_DURATION_MIN: Int = 3
   val DUEL_MAX_PLAYERS: Int = 2

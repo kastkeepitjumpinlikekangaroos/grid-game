@@ -254,10 +254,10 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
               }
 
             case Freeze(durationMs) =>
-              target.setFrozenUntil(System.currentTimeMillis() + durationMs)
+              target.tryFreeze(durationMs)
 
             case TeleportOwnerBehind(distance, freezeDurationMs) =>
-              target.setFrozenUntil(System.currentTimeMillis() + freezeDurationMs)
+              target.tryFreeze(freezeDurationMs)
               val owner = registry.get(projectile.ownerId)
               if (owner != null) {
                 val targetPos = target.getPosition
@@ -331,7 +331,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
               }
               // Bat Swarm also applies a brief freeze
               if (projectile.projectileType == ProjectileType.BAT_SWARM) {
-                target.setFrozenUntil(System.currentTimeMillis() + 600)
+                target.tryFreeze(600)
               }
 
             case Burn(totalDamage, durationMs, tickMs) =>

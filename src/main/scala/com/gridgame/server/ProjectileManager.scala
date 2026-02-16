@@ -185,8 +185,8 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
         if (dx * dx + dy * dy <= radius * radius) {
           val newHealth = player.getHealth - damage
           player.setHealth(newHealth)
-          if (freezeDurationMs > 0 && !player.isPhased) {
-            player.setFrozenUntil(System.currentTimeMillis() + freezeDurationMs)
+          if (freezeDurationMs > 0) {
+            player.tryFreeze(freezeDurationMs)
           }
           if (rootDurationMs > 0 && !player.isPhased) {
             player.setRootedUntil(System.currentTimeMillis() + rootDurationMs)
