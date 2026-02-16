@@ -43,6 +43,13 @@ class Player(
   // Root state (can't move but CAN attack)
   private var rootedUntil: Long = 0
 
+  // Slow state (reduced movement speed)
+  private var slowedUntil: Long = 0
+  private var slowMultiplier: Float = 1.0f
+
+  // Health regen accumulator
+  private var _regenAccumulator: Double = 0.0
+
   def getId: UUID = id
 
   def getName: String = name
@@ -220,6 +227,37 @@ class Player(
     ccImmuneUntil = rootedUntil + com.gridgame.common.Constants.CC_IMMUNITY_MS
     true
   }
+
+  // Slow accessors
+  def isSlowed: Boolean = System.currentTimeMillis() < slowedUntil
+
+  def getSlowedUntil: Long = slowedUntil
+
+  def getSlowMultiplier: Float = slowMultiplier
+
+  def setSlowedUntil(until: Long): Unit = { this.slowedUntil = until }
+
+  def setSlowMultiplier(m: Float): Unit = { this.slowMultiplier = m }
+
+  /** Try to slow this player. Returns false if CC immune or phased. */
+  def trySlow(durationMs: Long, multiplier: Float): Boolean = {
+    if (isCCImmune || isPhased) return false
+    val now = System.currentTimeMillis()
+    slowedUntil = now + durationMs
+    slowMultiplier = multiplier
+    true
+  }
+
+  def clearSlow(): Unit = {
+    this.slowedUntil = 0
+    this.slowMultiplier = 1.0f
+  }
+
+  // Health regen accessors
+  def getRegenAccumulator: Double = _regenAccumulator
+  def addRegenAccumulator(amount: Double): Unit = { _regenAccumulator += amount }
+  def subtractRegenAccumulator(amount: Double): Unit = { _regenAccumulator -= amount }
+  def resetRegenAccumulator(): Unit = { _regenAccumulator = 0.0 }
 
   def isDead: Boolean = health <= 0
 

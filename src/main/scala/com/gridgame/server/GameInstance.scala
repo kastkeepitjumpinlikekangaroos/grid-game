@@ -369,6 +369,9 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
             case Root(durationMs) =>
               target.tryRoot(durationMs)
 
+            case Slow(durationMs, multiplier) =>
+              target.trySlow(durationMs, multiplier)
+
             case SpeedBoost(durationMs) =>
               val boostOwner = registry.get(projectile.ownerId)
               if (boostOwner != null && !boostOwner.isDead) {
@@ -432,8 +435,11 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
             val distance = math.sqrt(pdx * pdx + pdy * pdy).toFloat
             if (distance <= blastRadius) {
               val damage = (centerDmg - (distance / blastRadius) * (centerDmg - edgeDmg)).toInt
-              val newHealth = player.getHealth - damage
-              player.setHealth(newHealth)
+              val newHealth = player.synchronized {
+                val h = player.getHealth - damage
+                player.setHealth(h)
+                h
+              }
               println(s"GameInstance[$gameId]: AoE hit ${player.getId.toString.substring(0, 8)}, dist=${"%.1f".format(distance)}, dmg=$damage, hp=$newHealth")
 
               if (newHealth <= 0) {
@@ -583,51 +589,89 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     (if (p.isPhased) 0x08 else 0) |
     (if (p.isBurning) 0x10 else 0) |
     (if (p.hasSpeedBoost) 0x20 else 0) |
-    (if (p.isRooted) 0x40 else 0)
+    (if (p.isRooted) 0x40 else 0) |
+    (if (p.isSlowed) 0x80 else 0)
 
-  /** Tick player state (burn DoT). Runs every 200ms. */
+  /** Tick player state (burn DoT + health regen). Runs every 200ms. */
   private def tickPlayers(): Unit = {
     if (!running) return
     val now = System.currentTimeMillis()
     registry.getAll.asScala.foreach { player =>
-      if (!player.isDead && player.isBurning) {
-        if (now >= player.getLastBurnTick + player.getBurnTickMs) {
-          player.setLastBurnTick(now)
-          val newHealth = player.getHealth - player.getBurnDamagePerTick
-          player.setHealth(newHealth)
+      if (!player.isDead) {
+        // --- Burn DoT ---
+        if (player.isBurning) {
+          if (now >= player.getLastBurnTick + player.getBurnTickMs) {
+            val newHealth = player.synchronized {
+              player.setLastBurnTick(now)
+              val h = player.getHealth - player.getBurnDamagePerTick
+              player.setHealth(h)
+              h
+            }
 
-          if (newHealth <= 0) {
-            // Burn killed the player — attribute to burn owner
-            val burnOwner = player.getBurnOwnerId
-            if (burnOwner != null) {
-              killTracker.recordKill(burnOwner, player.getId)
-              val killPacket = new GameEventPacket(
+            if (newHealth <= 0) {
+              // Burn killed the player — attribute to burn owner
+              val burnOwner = player.getBurnOwnerId
+              if (burnOwner != null) {
+                killTracker.recordKill(burnOwner, player.getId)
+                val killPacket = new GameEventPacket(
+                  server.getNextSequenceNumber,
+                  burnOwner,
+                  GameEvent.KILL,
+                  gameId,
+                  getRemainingSeconds,
+                  killTracker.getKills(burnOwner).toShort,
+                  killTracker.getDeaths(burnOwner).toShort,
+                  player.getId,
+                  0.toByte, 0.toShort, 0.toShort
+                )
+                broadcastToInstance(killPacket)
+                scheduleRespawn(player.getId)
+              }
+            }
+
+            // Broadcast updated health
+            val updatePacket = new PlayerUpdatePacket(
+              server.getNextSequenceNumber,
+              player.getId,
+              player.getPosition,
+              player.getColorRGB,
+              player.getHealth,
+              0,
+              playerFlags(player)
+            )
+            broadcastToInstance(updatePacket)
+          }
+        } else if (player.getHealth < player.getMaxHealth) {
+          // --- Health Regen (only when not burning and not at full health) ---
+          val maxHp = player.getMaxHealth
+          val regenPerSec = 3.0 - (maxHp - 70) * (2.0 / 50.0)
+          player.addRegenAccumulator(regenPerSec * 0.2) // 200ms tick
+          val accum = player.getRegenAccumulator
+          if (accum >= 1.0) {
+            val healAmount = accum.toInt
+            val healed = player.synchronized {
+              val oldHealth = player.getHealth
+              val newHealth = Math.min(maxHp, oldHealth + healAmount)
+              player.setHealth(newHealth)
+              newHealth != oldHealth
+            }
+            player.subtractRegenAccumulator(healAmount.toDouble)
+            if (healed) {
+              val updatePacket = new PlayerUpdatePacket(
                 server.getNextSequenceNumber,
-                burnOwner,
-                GameEvent.KILL,
-                gameId,
-                getRemainingSeconds,
-                killTracker.getKills(burnOwner).toShort,
-                killTracker.getDeaths(burnOwner).toShort,
                 player.getId,
-                0.toByte, 0.toShort, 0.toShort
+                player.getPosition,
+                player.getColorRGB,
+                player.getHealth,
+                0,
+                playerFlags(player)
               )
-              broadcastToInstance(killPacket)
-              scheduleRespawn(player.getId)
+              broadcastToInstance(updatePacket)
             }
           }
-
-          // Broadcast updated health
-          val updatePacket = new PlayerUpdatePacket(
-            server.getNextSequenceNumber,
-            player.getId,
-            player.getPosition,
-            player.getColorRGB,
-            player.getHealth,
-            0,
-            playerFlags(player)
-          )
-          broadcastToInstance(updatePacket)
+        } else {
+          // At full health, reset accumulator
+          player.resetRegenAccumulator()
         }
       }
     }
@@ -642,6 +686,13 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         if (player != null) {
           val spawnPoint = spawnLock.synchronized {
             player.setHealth(player.getMaxHealth)
+            player.setDirection(Direction.Down)
+            player.clearBurn()
+            player.clearSlow()
+            player.setRootedUntil(0)
+            player.setFrozenUntil(0)
+            player.setSpeedBoostUntil(0)
+            player.resetRegenAccumulator()
             val occupied = registry.getAll.asScala
               .filter(p => !p.isDead && !p.getId.equals(playerId))
               .map(p => (p.getPosition.getX, p.getPosition.getY))

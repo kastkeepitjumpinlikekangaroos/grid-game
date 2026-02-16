@@ -117,8 +117,11 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
                 resolved = true
               } else {
                 val damage = pDef.effectiveDamage(projectile.chargeLevel, projectile.getDistanceTraveled)
-                val newHealth = hitPlayer.getHealth - damage
-                hitPlayer.setHealth(newHealth)
+                val newHealth = hitPlayer.synchronized {
+                  val h = hitPlayer.getHealth - damage
+                  hitPlayer.setHealth(h)
+                  h
+                }
                 println(s"ProjectileManager: ${projectile} hit player ${hitPlayer.getId.toString.substring(0, 8)}, damage=$damage (charge=${projectile.chargeLevel}%), health now $newHealth")
 
                 // Pierce: track hit player and continue if pierce count not exhausted
@@ -183,8 +186,11 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
         val dx = px - (pos.getX + 0.5f)
         val dy = py - (pos.getY + 0.5f)
         if (dx * dx + dy * dy <= radius * radius) {
-          val newHealth = player.getHealth - damage
-          player.setHealth(newHealth)
+          val newHealth = player.synchronized {
+            val h = player.getHealth - damage
+            player.setHealth(h)
+            h
+          }
           if (freezeDurationMs > 0) {
             player.tryFreeze(freezeDurationMs)
           }

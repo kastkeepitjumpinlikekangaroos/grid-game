@@ -77,7 +77,13 @@ class BotController(instance: GameInstance) {
 
     if (target == null) return
 
-    moveSmart(bot, target)
+    // Rooted bots can't move but can still shoot/use abilities
+    if (!bot.isRooted) {
+      // Slowed bots move every other tick
+      if (!bot.isSlowed || (System.currentTimeMillis() / TICK_INTERVAL_MS) % 2 == 0) {
+        moveSmart(bot, target)
+      }
+    }
     tryUseAbilities(bot, target)
     tryShoot(bot, target)
   }
@@ -537,7 +543,11 @@ class BotController(instance: GameInstance) {
     val flags = (if (bot.hasShield) 0x01 else 0) |
                 (if (bot.hasGemBoost) 0x02 else 0) |
                 (if (bot.isFrozen) 0x04 else 0) |
-                (if (bot.isPhased) 0x08 else 0)
+                (if (bot.isPhased) 0x08 else 0) |
+                (if (bot.isBurning) 0x10 else 0) |
+                (if (bot.hasSpeedBoost) 0x20 else 0) |
+                (if (bot.isRooted) 0x40 else 0) |
+                (if (bot.isSlowed) 0x80 else 0)
     val packet = new PlayerUpdatePacket(
       instance.server.getNextSequenceNumber,
       bot.getId,

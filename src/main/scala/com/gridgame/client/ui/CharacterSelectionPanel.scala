@@ -511,6 +511,7 @@ class CharacterSelectionPanel(
       case SpeedBoost(_) => stats.append("  Speed")
       case VortexPull(_, _) => stats.append("  Vortex")
       case Root(dur) => stats.append(s"  Root ${dur / 1000}s")
+      case Slow(dur, _) => stats.append(s"  Slow ${dur / 1000}s")
     }
 
     if (pDef.aoeOnHit.isDefined || pDef.aoeOnMaxRange.isDefined) stats.append("  AoE")

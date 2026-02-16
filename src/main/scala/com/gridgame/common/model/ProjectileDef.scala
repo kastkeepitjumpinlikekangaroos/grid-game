@@ -11,6 +11,7 @@ case class Burn(totalDamage: Int, durationMs: Int, tickMs: Int) extends OnHitEff
 case class VortexPull(radius: Float, pullStrength: Float) extends OnHitEffect
 case class SpeedBoost(durationMs: Int) extends OnHitEffect
 case class Root(durationMs: Int) extends OnHitEffect
+case class Slow(durationMs: Int, multiplier: Float) extends OnHitEffect
 
 // Explosion config (center/edge damage + blast radius)
 case class ExplosionConfig(centerDamage: Int, edgeDamage: Int, blastRadius: Float)
