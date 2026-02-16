@@ -117,6 +117,18 @@ object ProjectileType {
   val STONE_GAZE: Byte = 99
   val INK_SNARE: Byte = 100
   val GRAVITY_LOCK: Byte = 101
+
+  // Character-specific
+  val KNIFE: Byte = 102
+  val STING: Byte = 103
+  val HAMMER: Byte = 104
+  val HORN: Byte = 105
+  val MYSTIC_BOLT: Byte = 106
+  val PETRIFY: Byte = 107
+  val GRAB: Byte = 108
+  val JAW: Byte = 109
+  val TONGUE: Byte = 110
+  val ACID_FLASK: Byte = 111
 }
 
 class Projectile(

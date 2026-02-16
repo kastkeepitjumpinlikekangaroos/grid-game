@@ -584,18 +584,21 @@ def generate_character(name, draw_func=None, **kwargs):
 
     If draw_func is provided, it's called as draw_func(draw, ox, oy, direction, frame).
     Otherwise, draw_generic_character is used with kwargs.
+
+    Each frame is drawn on its own 32x32 canvas to prevent pixel bleeding
+    between adjacent cells when elements extend beyond frame boundaries.
     """
     img = Image.new("RGBA", (IMG_W, IMG_H), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
 
     for direction in range(ROWS):
         for frame_idx in range(COLS):
-            ox = frame_idx * FRAME_SIZE
-            oy = direction * FRAME_SIZE
+            frame_img = Image.new("RGBA", (FRAME_SIZE, FRAME_SIZE), (0, 0, 0, 0))
+            frame_draw = ImageDraw.Draw(frame_img)
             if draw_func:
-                draw_func(draw, ox, oy, direction, frame_idx)
+                draw_func(frame_draw, 0, 0, direction, frame_idx)
             else:
-                draw_generic_character(draw, ox, oy, direction, frame_idx, **kwargs)
+                draw_generic_character(frame_draw, 0, 0, direction, frame_idx, **kwargs)
+            img.paste(frame_img, (frame_idx * FRAME_SIZE, direction * FRAME_SIZE))
 
     path = f"sprites/{name}.png"
     img.save(path)

@@ -119,7 +119,18 @@ object AbilityPreviewRenderer {
     ProjectileType.ENTANGLE     -> (Color.web("#2D5A1E"), Color.web("#4A7A3A"), Color.web("#6B9B5B")),
     ProjectileType.STONE_GAZE   -> (Color.web("#666655"), Color.web("#888877"), Color.web("#AAAA99")),
     ProjectileType.INK_SNARE    -> (Color.web("#222244"), Color.web("#444466"), Color.web("#666688")),
-    ProjectileType.GRAVITY_LOCK -> (Color.web("#553399"), Color.web("#7755BB"), Color.web("#9977DD"))
+    ProjectileType.GRAVITY_LOCK -> (Color.web("#553399"), Color.web("#7755BB"), Color.web("#9977DD")),
+    // Character-specific
+    ProjectileType.KNIFE       -> (Color.web("#889099"), Color.web("#aab0bb"), Color.web("#ccd0dd")),
+    ProjectileType.STING       -> (Color.web("#2277cc"), Color.web("#44aaee"), Color.web("#77ccff")),
+    ProjectileType.HAMMER      -> (Color.web("#665544"), Color.web("#887766"), Color.web("#aa9988")),
+    ProjectileType.HORN        -> (Color.web("#aa9966"), Color.web("#ccbb88"), Color.web("#eeddaa")),
+    ProjectileType.MYSTIC_BOLT -> (Color.web("#6633aa"), Color.web("#9955dd"), Color.web("#cc88ff")),
+    ProjectileType.PETRIFY     -> (Color.web("#776655"), Color.web("#998877"), Color.web("#bbaa99")),
+    ProjectileType.GRAB        -> (Color.web("#554422"), Color.web("#776644"), Color.web("#998866")),
+    ProjectileType.JAW         -> (Color.web("#556677"), Color.web("#778899"), Color.web("#99aabb")),
+    ProjectileType.TONGUE      -> (Color.web("#cc3344"), Color.web("#ee5566"), Color.web("#ff8899")),
+    ProjectileType.ACID_FLASK  -> (Color.web("#228833"), Color.web("#44aa55"), Color.web("#66cc77"))
   )
 
   private def getColors(projType: Byte): (Color, Color, Color) =
@@ -244,7 +255,18 @@ object AbilityPreviewRenderer {
     ProjectileType.ENTANGLE     -> Tendril,
     ProjectileType.STONE_GAZE   -> Cloud,
     ProjectileType.INK_SNARE    -> Cloud,
-    ProjectileType.GRAVITY_LOCK -> Orb
+    ProjectileType.GRAVITY_LOCK -> Orb,
+    // Character-specific
+    ProjectileType.KNIFE       -> Dart,
+    ProjectileType.STING       -> Chain,
+    ProjectileType.HAMMER      -> Spinner,
+    ProjectileType.HORN        -> Dart,
+    ProjectileType.MYSTIC_BOLT -> Orb,
+    ProjectileType.PETRIFY     -> Beam,
+    ProjectileType.GRAB        -> Tendril,
+    ProjectileType.JAW         -> Tendril,
+    ProjectileType.TONGUE      -> Tendril,
+    ProjectileType.ACID_FLASK  -> Mine
   )
 
   private def getShape(projType: Byte): ShapeCategory =

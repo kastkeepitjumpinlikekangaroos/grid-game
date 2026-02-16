@@ -313,6 +313,18 @@ object CharacterDef {
   private val InkSnareDef = ProjectileDef(id = ProjectileType.INK_SNARE, name = "Ink Snare", speedMultiplier = 0.5f, damage = 0, maxRange = 14, passesThroughPlayers = true, aoeOnMaxRange = Some(AoESplashConfig(5.0f, 10, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 5.0f)))
   private val GravityLockDef = ProjectileDef(id = ProjectileType.GRAVITY_LOCK, name = "Gravity Lock", speedMultiplier = 0.4f, damage = 0, maxRange = 12, passesThroughPlayers = true, aoeOnMaxRange = Some(AoESplashConfig(6.0f, 15, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 6.0f)))
 
+  // --- Character-specific projectile defs ---
+  private val KnifeDef = ProjectileDef(id = ProjectileType.KNIFE, name = "Knife", speedMultiplier = 0.95f, damage = 22, maxRange = 6, hitRadius = 2.2f)
+  private val StingDef = ProjectileDef(id = ProjectileType.STING, name = "Sting", speedMultiplier = 0.7f, damage = 12, maxRange = 14, onHitEffect = Some(Freeze(1500)))
+  private val HammerDef = ProjectileDef(id = ProjectileType.HAMMER, name = "Hammer", speedMultiplier = 0.6f, damage = 33, maxRange = 5, hitRadius = 2.5f)
+  private val HornDef = ProjectileDef(id = ProjectileType.HORN, name = "Horn", speedMultiplier = 0.6f, damage = 33, maxRange = 5, hitRadius = 2.5f)
+  private val MysticBoltDef = ProjectileDef(id = ProjectileType.MYSTIC_BOLT, name = "Mystic Bolt", speedMultiplier = 0.75f, damage = 18, maxRange = 16, onHitEffect = Some(Burn(12, 3000, 750)))
+  private val PetrifyDef = ProjectileDef(id = ProjectileType.PETRIFY, name = "Petrify", speedMultiplier = 0.3f, damage = 5, maxRange = 20, onHitEffect = Some(Freeze(3000)))
+  private val GrabDef = ProjectileDef(id = ProjectileType.GRAB, name = "Grab", speedMultiplier = 0.8f, damage = 8, maxRange = 18, onHitEffect = Some(PullToOwner))
+  private val JawDef = ProjectileDef(id = ProjectileType.JAW, name = "Jaw", speedMultiplier = 0.85f, damage = 5, maxRange = 25, onHitEffect = Some(PullToOwner))
+  private val TongueDef = ProjectileDef(id = ProjectileType.TONGUE, name = "Tongue", speedMultiplier = 0.8f, damage = 8, maxRange = 18, onHitEffect = Some(PullToOwner))
+  private val AcidFlaskDef = ProjectileDef(id = ProjectileType.ACID_FLASK, name = "Acid Flask", speedMultiplier = 0.4f, damage = 20, maxRange = 14, passesThroughPlayers = true, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(20, 8, 3.0f)))
+
   // Register all projectile defs
   ProjectileDef.register(
     TentacleDef, IceBeamDef, AxeDef, RopeDef, SpearDef,
@@ -345,7 +357,10 @@ object CharacterDef {
     VenomBoltDef, WebShotDef, StingerDef, AcidBombDef,
     // AoE Root
     SeismicRootDef, RootGrowthDef, WebTrapDef, TremorSlamDef,
-    EntangleDef, StoneGazeDef, InkSnareDef, GravityLockDef
+    EntangleDef, StoneGazeDef, InkSnareDef, GravityLockDef,
+    // Character-specific
+    KnifeDef, StingDef, HammerDef, HornDef, MysticBoltDef, PetrifyDef,
+    GrabDef, JawDef, TongueDef, AcidFlaskDef
   )
 
   // === Character definitions ===
@@ -1212,7 +1227,7 @@ object CharacterDef {
     id = CharacterId.Shark, displayName = "Shark",
     description = "A ferocious ocean predator that drags prey close and dives through terrain.",
     spriteSheet = "sprites/shark.png",
-    qAbility = AbilityDef(name = "Jaw Drag", description = "Bites and pulls an enemy toward you.", cooldownMs = 8000, maxRange = 18, damage = 10, projectileType = ProjectileType.ROPE, keybind = "Q"),
+    qAbility = AbilityDef(name = "Jaw Drag", description = "Bites and pulls an enemy toward you.", cooldownMs = 8000, maxRange = 18, damage = 10, projectileType = ProjectileType.JAW, keybind = "Q"),
     eAbility = AbilityDef(name = "Deep Dive", description = "Submerges and swims through terrain, immune.", cooldownMs = 14000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = PhaseShiftBuff(3000)),
     primaryProjectileType = ProjectileType.CLAW_SWIPE, maxHealth = 110
   )
@@ -1266,16 +1281,16 @@ object CharacterDef {
     id = CharacterId.Jellyfish, displayName = "Jellyfish",
     description = "A floating jellyfish with electric bursts and transparent form.",
     spriteSheet = "sprites/jellyfish.png",
-    qAbility = AbilityDef(name = "Electric Burst", description = "Fires stinging tentacles in all directions.", cooldownMs = 10000, maxRange = 14, damage = 12, projectileType = ProjectileType.WEB_SHOT, keybind = "Q", castBehavior = FanProjectile(8, 2 * Math.PI)),
+    qAbility = AbilityDef(name = "Electric Burst", description = "Fires stinging tentacles in all directions.", cooldownMs = 10000, maxRange = 14, damage = 12, projectileType = ProjectileType.STING, keybind = "Q", castBehavior = FanProjectile(8, 2 * Math.PI)),
     eAbility = AbilityDef(name = "Transparent", description = "Becomes transparent: phased.", cooldownMs = 14000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = PhaseShiftBuff(4000)),
-    primaryProjectileType = ProjectileType.WEB_SHOT
+    primaryProjectileType = ProjectileType.STING
   )
 
   val GorillaChar: CharacterDef = CharacterDef(
     id = CharacterId.Gorilla, displayName = "Gorilla",
     description = "A mighty primate that grabs enemies and slams the ground.",
     spriteSheet = "sprites/gorilla.png",
-    qAbility = AbilityDef(name = "Primate Grab", description = "Long-range grab that pulls enemies to you.", cooldownMs = 8000, maxRange = 18, damage = 8, projectileType = ProjectileType.VINE_WHIP, keybind = "Q"),
+    qAbility = AbilityDef(name = "Primate Grab", description = "Long-range grab that pulls enemies to you.", cooldownMs = 8000, maxRange = 18, damage = 8, projectileType = ProjectileType.GRAB, keybind = "Q"),
     eAbility = AbilityDef(name = "Ground Pound", description = "Slams the ground with devastating AoE.", cooldownMs = 12000, maxRange = 12, damage = 25, projectileType = ProjectileType.SEISMIC_SLAM, keybind = "E"),
     primaryProjectileType = ProjectileType.BOULDER, maxHealth = 120
   )
@@ -1285,7 +1300,7 @@ object CharacterDef {
     description = "A stealthy lizard that camouflages and snares prey with its tongue.",
     spriteSheet = "sprites/chameleon.png",
     qAbility = AbilityDef(name = "Camouflage", description = "Becomes invisible: phased.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = PhaseShiftBuff(5000)),
-    eAbility = AbilityDef(name = "Tongue Lash", description = "Snaps out a long tongue that pulls enemies toward you.", cooldownMs = 10000, maxRange = 18, damage = 8, projectileType = ProjectileType.VINE_WHIP, keybind = "E"),
+    eAbility = AbilityDef(name = "Tongue Lash", description = "Snaps out a long tongue that pulls enemies toward you.", cooldownMs = 10000, maxRange = 18, damage = 8, projectileType = ProjectileType.TONGUE, keybind = "E"),
     primaryProjectileType = ProjectileType.POISON_DART
   )
 
@@ -1297,14 +1312,14 @@ object CharacterDef {
     spriteSheet = "sprites/minotaur.png",
     qAbility = AbilityDef(name = "Bull Charge", description = "Massive charge forward with horns lowered.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = DashBuff(14, 500, 25)),
     eAbility = AbilityDef(name = "Horn Toss", description = "Flings a cursed horn that freezes on hit.", cooldownMs = 10000, maxRange = 16, damage = 25, projectileType = ProjectileType.HEAD_THROW, keybind = "E"),
-    primaryProjectileType = ProjectileType.AXE, maxHealth = 120
+    primaryProjectileType = ProjectileType.HORN, maxHealth = 120
   )
 
   val MedusaChar: CharacterDef = CharacterDef(
     id = CharacterId.Medusa, displayName = "Medusa",
     description = "A gorgon who petrifies with her gaze and fires soul bolts.",
     spriteSheet = "sprites/medusa.png",
-    qAbility = AbilityDef(name = "Petrify", description = "Petrifying gaze that freezes.", cooldownMs = 5000, maxRange = 20, damage = 5, projectileType = ProjectileType.ICE_BEAM, keybind = "Q"),
+    qAbility = AbilityDef(name = "Petrify", description = "Petrifying gaze that freezes.", cooldownMs = 5000, maxRange = 20, damage = 5, projectileType = ProjectileType.PETRIFY, keybind = "Q"),
     eAbility = AbilityDef(name = "Stone Gaze", description = "Petrifying gaze roots all nearby enemies.", cooldownMs = 12000, maxRange = 0, damage = 15, projectileType = ProjectileType.STONE_GAZE, keybind = "E", castBehavior = GroundSlam(6.0f)),
     primaryProjectileType = ProjectileType.SOUL_BOLT
   )
@@ -1405,7 +1420,7 @@ object CharacterDef {
     spriteSheet = "sprites/djinn.png",
     qAbility = AbilityDef(name = "Mesmerize", description = "Hypnotic charm that freezes for 2 seconds.", cooldownMs = 10000, maxRange = 14, damage = 15, projectileType = ProjectileType.CHARM, keybind = "Q"),
     eAbility = AbilityDef(name = "Mirage", description = "Dissolves into a shimmering mirage, phased and immune.", cooldownMs = 14000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = PhaseShiftBuff(4000)),
-    primaryProjectileType = ProjectileType.FLAME_BOLT
+    primaryProjectileType = ProjectileType.MYSTIC_BOLT
   )
 
   val FenrirChar: CharacterDef = CharacterDef(
@@ -1433,7 +1448,7 @@ object CharacterDef {
     description = "A potion-brewing expert with explosive and corrosive concoctions.",
     spriteSheet = "sprites/alchemist.png",
     qAbility = AbilityDef(name = "Explosive Potion", description = "Hurls an explosive potion.", cooldownMs = 6000, maxRange = 18, damage = 45, projectileType = ProjectileType.FIREBALL, keybind = "Q"),
-    eAbility = AbilityDef(name = "Acid Flask", description = "Throws acid that explodes and slows.", cooldownMs = 10000, maxRange = 14, damage = 20, projectileType = ProjectileType.MUD_BOMB, keybind = "E"),
+    eAbility = AbilityDef(name = "Acid Flask", description = "Throws acid that explodes and slows.", cooldownMs = 10000, maxRange = 14, damage = 20, projectileType = ProjectileType.ACID_FLASK, keybind = "E"),
     primaryProjectileType = ProjectileType.PLAGUE_BOLT
   )
 
@@ -1457,11 +1472,11 @@ object CharacterDef {
 
   val BlacksmithChar: CharacterDef = CharacterDef(
     id = CharacterId.Blacksmith, displayName = "Blacksmith",
-    description = "A forge master who throws axes in fans and lays traps from the anvil.",
+    description = "A forge master who hurls hammers and lays traps from the anvil.",
     spriteSheet = "sprites/blacksmith.png",
-    qAbility = AbilityDef(name = "Triple Hammer", description = "Hurls 3 hammers in a fan.", cooldownMs = 8000, maxRange = 5, damage = 33, projectileType = ProjectileType.AXE, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(40))),
+    qAbility = AbilityDef(name = "Triple Hammer", description = "Hurls 3 hammers in a fan.", cooldownMs = 8000, maxRange = 5, damage = 33, projectileType = ProjectileType.HAMMER, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(40))),
     eAbility = AbilityDef(name = "Anvil Trap", description = "Deploys a snare trap that freezes all nearby.", cooldownMs = 14000, maxRange = 16, damage = 15, projectileType = ProjectileType.SNARE_MINE, keybind = "E"),
-    primaryProjectileType = ProjectileType.AXE, maxHealth = 120
+    primaryProjectileType = ProjectileType.HAMMER, maxHealth = 120
   )
 
   val PirateChar: CharacterDef = CharacterDef(
@@ -1477,9 +1492,9 @@ object CharacterDef {
     id = CharacterId.Chef, displayName = "Chef",
     description = "A culinary warrior who throws knives and flambes.",
     spriteSheet = "sprites/chef.png",
-    qAbility = AbilityDef(name = "Knife Fan", description = "Throws 5 knives in a fan.", cooldownMs = 7000, maxRange = 6, damage = 22, projectileType = ProjectileType.SHURIKEN, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(45))),
+    qAbility = AbilityDef(name = "Knife Fan", description = "Throws 5 knives in a fan.", cooldownMs = 7000, maxRange = 6, damage = 22, projectileType = ProjectileType.KNIFE, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(45))),
     eAbility = AbilityDef(name = "Flambe", description = "Explosive fire attack.", cooldownMs = 8000, maxRange = 18, damage = 45, projectileType = ProjectileType.FIREBALL, keybind = "E"),
-    primaryProjectileType = ProjectileType.SHURIKEN
+    primaryProjectileType = ProjectileType.KNIFE
   )
 
   val MusicianChar: CharacterDef = CharacterDef(

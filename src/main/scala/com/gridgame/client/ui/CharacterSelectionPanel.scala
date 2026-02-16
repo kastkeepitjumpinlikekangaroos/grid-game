@@ -61,17 +61,15 @@ class CharacterSelectionPanel(
 
   private var timer: AnimationTimer = _
 
-  // Category definitions
-  private val categories: Seq[(String, Int, Int)] = Seq(
-    ("All", 0, 255),
-    ("Original", 0, 11),
-    ("Elemental", 12, 26),
-    ("Undead", 27, 41),
-    ("Medieval", 42, 56),
-    ("Sci-Fi", 57, 71),
-    ("Nature", 72, 86),
-    ("Mythological", 87, 101),
-    ("Specialist", 102, 111)
+  // Combat style category definitions (character IDs grouped by playstyle)
+  private val categories: Seq[(String, Set[Int])] = Seq(
+    ("All", Set.empty[Int]),
+    ("Melee", Set(1, 6, 9, 11, 28, 31, 34, 35, 36, 45, 48, 72, 76, 77, 78, 95, 100, 107)),
+    ("Ranged", Set(3, 30, 43, 53, 54, 57, 60, 67, 70, 73, 90, 104, 106, 109)),
+    ("Assassin", Set(2, 7, 19, 21, 25, 29, 32, 33, 37, 40, 41, 50, 58, 64, 65, 71, 83, 86, 94, 111)),
+    ("Tank", Set(15, 23, 26, 39, 42, 44, 51, 59, 75, 79, 85, 87, 93, 98, 105)),
+    ("Blaster", Set(4, 5, 10, 12, 13, 14, 16, 17, 22, 27, 47, 49, 55, 63, 66, 68, 81, 82, 89, 101, 102, 110)),
+    ("Controller", Set(0, 8, 18, 20, 24, 38, 46, 52, 56, 61, 62, 69, 74, 80, 84, 88, 91, 92, 96, 97, 99, 103, 108))
   )
 
   // Category tab buttons
@@ -96,7 +94,7 @@ class CharacterSelectionPanel(
     // Category filter tabs
     val tabsRow = new FlowPane(6, 6)
     tabsRow.setAlignment(Pos.CENTER_LEFT)
-    for ((catName, _, _) <- categories) {
+    for ((catName, _) <- categories) {
       val tab = new Label(catName)
       tab.setStyle(if (catName == "All") tabActiveStyle else tabBaseStyle)
       tab.setOnMouseClicked(_ => selectCategory(catName))
@@ -265,8 +263,8 @@ class CharacterSelectionPanel(
     val catFiltered = if (selectedCategory == "All") {
       CharacterDef.all
     } else {
-      val (_, lo, hi) = categories.find(_._1 == selectedCategory).get
-      CharacterDef.all.filter(c => c.id.id >= lo && c.id.id <= hi)
+      val idSet = categories.find(_._1 == selectedCategory).get._2
+      CharacterDef.all.filter(c => idSet.contains(c.id.id.toInt))
     }
 
     // Filter by search

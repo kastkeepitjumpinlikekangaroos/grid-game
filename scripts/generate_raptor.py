@@ -650,13 +650,13 @@ def draw_raptor(draw, ox, oy, direction, frame):
 
 def main():
     img = Image.new("RGBA", (IMG_W, IMG_H), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
 
     for direction in range(ROWS):
         for frame in range(COLS):
-            ox = frame * FRAME_SIZE
-            oy = direction * FRAME_SIZE
-            draw_raptor(draw, ox, oy, direction, frame)
+            frame_img = Image.new("RGBA", (FRAME_SIZE, FRAME_SIZE), (0, 0, 0, 0))
+            frame_draw = ImageDraw.Draw(frame_img)
+            draw_raptor(frame_draw, 0, 0, direction, frame)
+            img.paste(frame_img, (frame * FRAME_SIZE, direction * FRAME_SIZE))
 
     img.save("sprites/raptor.png")
     print(f"Generated sprites/raptor.png ({IMG_W}x{IMG_H})")
