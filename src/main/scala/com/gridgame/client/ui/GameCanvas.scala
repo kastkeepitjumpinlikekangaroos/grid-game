@@ -1011,9 +1011,1069 @@ class GameCanvas(client: GameClient) extends Canvas() {
         gc.closePath()
         gc.fill()
 
+      // ─── Weapons & Projectiles ───
+
+      case "Arrow" | "Poison Arrow" =>
+        // Arrow with arrowhead and fletching
+        gc.setLineWidth(2.0)
+        gc.strokeLine(centerX - s * 0.8, centerY + s * 0.4, centerX + s * 0.5, centerY - s * 0.3)
+        gc.fillPolygon(
+          Array(centerX + s * 0.85, centerX + s * 0.4, centerX + s * 0.55),
+          Array(centerY - s * 0.55, centerY - s * 0.2, centerY - s * 0.6),
+          3
+        )
+        gc.strokeLine(centerX - s * 0.8, centerY + s * 0.4, centerX - s * 0.6, centerY + s * 0.7)
+        gc.strokeLine(centerX - s * 0.8, centerY + s * 0.4, centerX - s * 0.95, centerY + s * 0.55)
+
+      case "Axe" | "Bone Axe" | "Triple Axe" =>
+        // Axe head with handle
+        gc.setLineWidth(2.0)
+        gc.strokeLine(centerX, centerY - s * 0.8, centerX, centerY + s * 0.8)
+        gc.beginPath()
+        gc.moveTo(centerX, centerY - s * 0.5)
+        gc.quadraticCurveTo(centerX + s * 0.8, centerY - s * 0.3, centerX + s * 0.7, centerY + s * 0.2)
+        gc.lineTo(centerX, centerY + s * 0.1)
+        gc.closePath()
+        gc.fill()
+
+      case "Axe Spin" | "Shell Spin" =>
+        // Spinning circular motion
+        gc.setLineWidth(2.0)
+        gc.strokeOval(centerX - s * 0.5, centerY - s * 0.5, s, s)
+        for (i <- 0 until 4) {
+          val angle = i * Math.PI / 2
+          val dx = s * 0.5 * Math.cos(angle)
+          val dy = s * 0.5 * Math.sin(angle)
+          gc.fillOval(centerX + dx - 3, centerY + dy - 3, 6, 6)
+        }
+
+      case "Bullet" =>
+        // Bullet with speed lines
+        gc.fillOval(centerX + s * 0.2, centerY - s * 0.15, s * 0.5, s * 0.3)
+        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.4))
+        gc.setLineWidth(1.5)
+        gc.strokeLine(centerX - s * 0.8, centerY, centerX + s * 0.2, centerY)
+        gc.strokeLine(centerX - s * 0.6, centerY - s * 0.2, centerX, centerY - s * 0.2)
+
+      case "Cannonball" =>
+        // Large round projectile
+        gc.fillOval(centerX - s * 0.45, centerY - s * 0.45, s * 0.9, s * 0.9)
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.3))
+        gc.fillOval(centerX - s * 0.25, centerY - s * 0.35, s * 0.3, s * 0.25)
+
+      case "Katana" | "Holy Blade" | "Cursed Blade" | "Wind Blade" =>
+        // Sword blade with guard
+        gc.setLineWidth(2.5)
+        gc.strokeLine(centerX - s * 0.2, centerY + s * 0.9, centerX + s * 0.2, centerY - s * 0.5)
+        gc.fillPolygon(
+          Array(centerX + s * 0.2, centerX + s * 0.35, centerX + s * 0.15),
+          Array(centerY - s * 0.5, centerY - s * 0.85, centerY - s * 0.85),
+          3
+        )
+        gc.setLineWidth(2.0)
+        gc.strokeLine(centerX - s * 0.35, centerY + s * 0.3, centerX + s * 0.35, centerY + s * 0.15)
+
+      case "Scythe" | "Reap" =>
+        // Curved scythe blade
+        gc.setLineWidth(2.0)
+        gc.strokeLine(centerX + s * 0.1, centerY + s * 0.9, centerX - s * 0.1, centerY - s * 0.4)
+        gc.beginPath()
+        gc.moveTo(centerX - s * 0.1, centerY - s * 0.4)
+        gc.quadraticCurveTo(centerX + s * 0.8, centerY - s * 0.9, centerX + s * 0.7, centerY - s * 0.1)
+        gc.setLineWidth(2.5)
+        gc.stroke()
+
+      case "Shuriken" =>
+        // 4-pointed throwing star
+        gc.fillPolygon(
+          Array(centerX, centerX + s * 0.3, centerX, centerX - s * 0.3),
+          Array(centerY - s * 0.85, centerY, centerY + s * 0.85, centerY),
+          4
+        )
+        gc.fillPolygon(
+          Array(centerX - s * 0.85, centerX, centerX + s * 0.85, centerX),
+          Array(centerY, centerY - s * 0.3, centerY, centerY + s * 0.3),
+          4
+        )
+        gc.setFill(Color.color(0, 0, 0, 0.3))
+        gc.fillOval(centerX - s * 0.15, centerY - s * 0.15, s * 0.3, s * 0.3)
+
+      case "Lance" =>
+        // Long pointed lance
+        gc.setLineWidth(2.5)
+        gc.strokeLine(centerX - s * 0.6, centerY + s * 0.8, centerX + s * 0.2, centerY - s * 0.4)
+        gc.fillPolygon(
+          Array(centerX + s * 0.5, centerX + s * 0.15, centerX + s * 0.3),
+          Array(centerY - s * 0.9, centerY - s * 0.35, centerY - s * 0.6),
+          3
+        )
+
+      case "Laser" | "Railgun" =>
+        // Beam with glow
+        gc.setLineWidth(3.0)
+        gc.strokeLine(centerX - s * 0.9, centerY, centerX + s * 0.9, centerY)
+        gc.setStroke(Color.color(1.0, 1.0, 1.0, 0.4))
+        gc.setLineWidth(1.5)
+        gc.strokeLine(centerX - s * 0.9, centerY, centerX + s * 0.9, centerY)
+        gc.setFill(color)
+        gc.fillOval(centerX + s * 0.6, centerY - s * 0.2, s * 0.4, s * 0.4)
+
+      case "Card" =>
+        // Playing card with diamond
+        gc.setLineWidth(1.5)
+        gc.strokeRect(centerX - s * 0.4, centerY - s * 0.7, s * 0.8, s * 1.4)
+        gc.fillPolygon(
+          Array(centerX, centerX + s * 0.2, centerX, centerX - s * 0.2),
+          Array(centerY - s * 0.35, centerY, centerY + s * 0.35, centerY),
+          4
+        )
+
+      // ─── Magic & Elements ───
+
+      case "Lightning" | "Chain Lightning" =>
+        // Lightning bolt
+        gc.fillPolygon(
+          Array(centerX - s * 0.15, centerX + s * 0.45, centerX + s * 0.05, centerX + s * 0.15, centerX - s * 0.45, centerX - s * 0.05),
+          Array(centerY - s * 0.85, centerY - s * 0.1, centerY - s * 0.05, centerY + s * 0.85, centerY + s * 0.1, centerY + s * 0.05),
+          6
+        )
+
+      case "Tesla Coil" =>
+        // Coil with sparks
+        gc.setLineWidth(2.0)
+        gc.strokeLine(centerX, centerY + s * 0.9, centerX, centerY + s * 0.3)
+        gc.strokeOval(centerX - s * 0.3, centerY - s * 0.1, s * 0.6, s * 0.4)
+        gc.strokeOval(centerX - s * 0.25, centerY - s * 0.4, s * 0.5, s * 0.35)
+        gc.setLineWidth(1.5)
+        gc.strokeLine(centerX + s * 0.25, centerY - s * 0.3, centerX + s * 0.6, centerY - s * 0.6)
+        gc.strokeLine(centerX - s * 0.2, centerY - s * 0.4, centerX - s * 0.5, centerY - s * 0.7)
+
+      case "Meteor" | "Eruption" =>
+        // Falling rock with fire trail
+        gc.fillOval(centerX - s * 0.35, centerY - s * 0.1, s * 0.7, s * 0.7)
+        gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.5))
+        gc.fillOval(centerX - s * 0.2, centerY - s * 0.6, s * 0.35, s * 0.5)
+        gc.fillOval(centerX + s * 0.05, centerY - s * 0.8, s * 0.25, s * 0.45)
+
+      case "Boulder" | "Mud Glob" =>
+        // Irregular rock shape
+        gc.fillPolygon(
+          Array(centerX - s * 0.2, centerX + s * 0.4, centerX + s * 0.6, centerX + s * 0.3, centerX - s * 0.5, centerX - s * 0.6),
+          Array(centerY - s * 0.6, centerY - s * 0.5, centerY, centerY + s * 0.5, centerY + s * 0.4, centerY - s * 0.1),
+          6
+        )
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.2))
+        gc.fillOval(centerX - s * 0.15, centerY - s * 0.35, s * 0.3, s * 0.25)
+
+      case "Cyclone" | "Dust Devil" =>
+        // Tornado spiral layers
+        gc.setLineWidth(2.0)
+        gc.strokeArc(centerX - s * 0.15, centerY + s * 0.3, s * 0.3, s * 0.4, 0, 180, javafx.scene.shape.ArcType.OPEN)
+        gc.strokeArc(centerX - s * 0.3, centerY, s * 0.6, s * 0.5, 0, 180, javafx.scene.shape.ArcType.OPEN)
+        gc.strokeArc(centerX - s * 0.5, centerY - s * 0.4, s * 0.8, s * 0.5, 0, 180, javafx.scene.shape.ArcType.OPEN)
+        gc.strokeArc(centerX - s * 0.3, centerY - s * 0.75, s * 0.5, s * 0.4, 0, 180, javafx.scene.shape.ArcType.OPEN)
+
+      case "Splash" =>
+        // Water splash droplets
+        gc.fillOval(centerX - s * 0.15, centerY + s * 0.2, s * 0.3, s * 0.4)
+        gc.fillOval(centerX - s * 0.5, centerY - s * 0.3, s * 0.2, s * 0.3)
+        gc.fillOval(centerX + s * 0.3, centerY - s * 0.4, s * 0.2, s * 0.3)
+        gc.fillOval(centerX - s * 0.1, centerY - s * 0.7, s * 0.15, s * 0.25)
+        gc.setLineWidth(1.5)
+        gc.strokeArc(centerX - s * 0.6, centerY + s * 0.1, s * 1.2, s * 0.6, 20, 140, javafx.scene.shape.ArcType.OPEN)
+
+      case "Magma Ball" =>
+        // Lava orb with drips
+        gc.fillOval(centerX - s * 0.45, centerY - s * 0.45, s * 0.9, s * 0.9)
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.25))
+        gc.fillOval(centerX - s * 0.2, centerY - s * 0.3, s * 0.25, s * 0.2)
+        gc.setFill(color)
+        gc.fillOval(centerX - s * 0.15, centerY + s * 0.4, s * 0.12, s * 0.3)
+        gc.fillOval(centerX + s * 0.2, centerY + s * 0.35, s * 0.1, s * 0.25)
+
+      case "Glacier Spike" | "Avalanche Crush" =>
+        // Ice crystal spikes
+        gc.fillPolygon(
+          Array(centerX, centerX + s * 0.2, centerX - s * 0.2),
+          Array(centerY - s * 0.9, centerY + s * 0.4, centerY + s * 0.4),
+          3
+        )
+        gc.fillPolygon(
+          Array(centerX + s * 0.35, centerX + s * 0.55, centerX + s * 0.15),
+          Array(centerY - s * 0.5, centerY + s * 0.4, centerY + s * 0.4),
+          3
+        )
+        gc.fillPolygon(
+          Array(centerX - s * 0.35, centerX - s * 0.15, centerX - s * 0.55),
+          Array(centerY - s * 0.45, centerY + s * 0.4, centerY + s * 0.4),
+          3
+        )
+
+      case "Demon Fire" | "Flambe" | "Inferno Blast" =>
+        // Fire variant
+        gc.fillOval(centerX - s * 0.4, centerY - s * 0.1, s * 0.8, s * 0.8)
+        gc.fillOval(centerX - s * 0.3, centerY - s * 0.6, s * 0.45, s * 0.55)
+        gc.fillOval(centerX + s * 0.05, centerY - s * 0.5, s * 0.35, s * 0.45)
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.3))
+        gc.fillOval(centerX - s * 0.15, centerY + s * 0.1, s * 0.3, s * 0.3)
+
+      case "Acid Flask" | "Explosive Potion" =>
+        // Flask shape
+        gc.fillOval(centerX - s * 0.45, centerY - s * 0.05, s * 0.9, s * 0.85)
+        gc.fillRect(centerX - s * 0.12, centerY - s * 0.5, s * 0.24, s * 0.5)
+        gc.fillRect(centerX - s * 0.18, centerY - s * 0.65, s * 0.36, s * 0.18)
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.2))
+        gc.fillOval(centerX - s * 0.25, centerY + s * 0.05, s * 0.25, s * 0.3)
+
+      // ─── Physical / Melee ───
+
+      case "Fist" | "Palm Strike" | "Ground Pound" =>
+        // Fist shape
+        gc.fillOval(centerX - s * 0.5, centerY - s * 0.4, s * 0.85, s * 0.85)
+        gc.fillRect(centerX - s * 0.5, centerY - s * 0.1, s * 0.85, s * 0.5)
+        gc.fillOval(centerX - s * 0.55, centerY + s * 0.15, s * 0.3, s * 0.4)
+
+      case "Claw Swipe" | "Talon" =>
+        // Three claw marks
+        gc.setLineWidth(2.5)
+        for (i <- 0 until 3) {
+          val xOff = (i - 1) * s * 0.35
+          gc.beginPath()
+          gc.moveTo(centerX + xOff - s * 0.1, centerY - s * 0.7)
+          gc.quadraticCurveTo(centerX + xOff + s * 0.15, centerY, centerX + xOff, centerY + s * 0.7)
+          gc.stroke()
+        }
+
+      case "Flurry" | "Triple Slash" =>
+        // Three slash marks
+        gc.setLineWidth(2.0)
+        for (i <- 0 until 3) {
+          val xOff = (i - 1) * s * 0.3
+          gc.strokeLine(centerX + xOff + s * 0.2, centerY - s * 0.7, centerX + xOff - s * 0.2, centerY + s * 0.7)
+        }
+
+      case "Stinger" | "Thorn" =>
+        // Pointed spike
+        gc.fillPolygon(
+          Array(centerX, centerX + s * 0.3, centerX + s * 0.15, centerX - s * 0.15, centerX - s * 0.3),
+          Array(centerY - s * 0.9, centerY + s * 0.3, centerY + s * 0.8, centerY + s * 0.8, centerY + s * 0.3),
+          5
+        )
+
+      case "Maul" | "Devour" =>
+        // Open jaws
+        gc.setLineWidth(2.0)
+        gc.beginPath()
+        gc.moveTo(centerX - s * 0.7, centerY - s * 0.1)
+        gc.quadraticCurveTo(centerX, centerY - s * 0.9, centerX + s * 0.7, centerY - s * 0.1)
+        gc.stroke()
+        gc.beginPath()
+        gc.moveTo(centerX - s * 0.7, centerY + s * 0.1)
+        gc.quadraticCurveTo(centerX, centerY + s * 0.9, centerX + s * 0.7, centerY + s * 0.1)
+        gc.stroke()
+        for (i <- 0 until 3) {
+          val tx = centerX + (i - 1) * s * 0.35
+          gc.fillPolygon(Array(tx - s * 0.08, tx + s * 0.08, tx), Array(centerY - s * 0.15, centerY - s * 0.15, centerY + s * 0.1), 3)
+        }
+
+      case "Blood Fang" =>
+        // Fang teeth
+        gc.fillPolygon(
+          Array(centerX - s * 0.5, centerX - s * 0.3, centerX - s * 0.1),
+          Array(centerY - s * 0.5, centerY + s * 0.7, centerY - s * 0.5),
+          3
+        )
+        gc.fillPolygon(
+          Array(centerX + s * 0.1, centerX + s * 0.3, centerX + s * 0.5),
+          Array(centerY - s * 0.5, centerY + s * 0.7, centerY - s * 0.5),
+          3
+        )
+
+      case "Triple Bite" | "Triple Hammer" =>
+        // Three impact marks
+        gc.setLineWidth(2.0)
+        for (i <- 0 until 3) {
+          val yOff = (i - 1) * s * 0.45
+          gc.strokeLine(centerX - s * 0.5, centerY + yOff, centerX + s * 0.5, centerY + yOff)
+          gc.fillOval(centerX + s * 0.35, centerY + yOff - 2.5, 5, 5)
+        }
+
+      // ─── Creature & Nature ───
+
+      case "Screech" | "Wail" | "Sonic Boom" =>
+        // Sound waves emanating
+        gc.setLineWidth(2.0)
+        for (i <- 1 to 3) {
+          val r = s * 0.25 * i
+          gc.strokeArc(centerX - s * 0.3 - r, centerY - r * 0.7, r * 2, r * 1.4, -50, 100, javafx.scene.shape.ArcType.OPEN)
+        }
+
+      case "Entangle" | "Root Growth" | "Root Pull" | "Seismic Root" =>
+        // Roots growing
+        gc.setLineWidth(2.0)
+        gc.beginPath()
+        gc.moveTo(centerX, centerY + s * 0.9)
+        gc.bezierCurveTo(centerX - s * 0.5, centerY + s * 0.2, centerX + s * 0.3, centerY - s * 0.2, centerX - s * 0.3, centerY - s * 0.8)
+        gc.stroke()
+        gc.beginPath()
+        gc.moveTo(centerX, centerY + s * 0.9)
+        gc.bezierCurveTo(centerX + s * 0.5, centerY + s * 0.3, centerX - s * 0.2, centerY - s * 0.1, centerX + s * 0.4, centerY - s * 0.7)
+        gc.stroke()
+
+      case "Slither" | "Gallop" =>
+        // S-curve motion with speed lines
+        gc.setLineWidth(2.5)
+        gc.beginPath()
+        gc.moveTo(centerX - s * 0.8, centerY)
+        gc.bezierCurveTo(centerX - s * 0.3, centerY - s * 0.5, centerX + s * 0.3, centerY + s * 0.5, centerX + s * 0.8, centerY)
+        gc.stroke()
+        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.4))
+        gc.setLineWidth(1.5)
+        gc.strokeLine(centerX - s * 0.6, centerY + s * 0.4, centerX - s * 0.2, centerY + s * 0.4)
+        gc.strokeLine(centerX - s * 0.4, centerY - s * 0.4, centerX, centerY - s * 0.4)
+
+      case "Tailwind" | "Wing Gust" | "Wing Beat" =>
+        // Wing shape
+        gc.beginPath()
+        gc.moveTo(centerX, centerY + s * 0.3)
+        gc.quadraticCurveTo(centerX - s * 0.9, centerY - s * 0.5, centerX - s * 0.3, centerY - s * 0.8)
+        gc.quadraticCurveTo(centerX - s * 0.1, centerY - s * 0.2, centerX, centerY + s * 0.3)
+        gc.closePath()
+        gc.fill()
+        gc.beginPath()
+        gc.moveTo(centerX, centerY + s * 0.3)
+        gc.quadraticCurveTo(centerX + s * 0.9, centerY - s * 0.5, centerX + s * 0.3, centerY - s * 0.8)
+        gc.quadraticCurveTo(centerX + s * 0.1, centerY - s * 0.2, centerX, centerY + s * 0.3)
+        gc.closePath()
+        gc.fill()
+
+      // ─── Dark / Undead ───
+
+      case "Raise Dead" =>
+        // Skeletal hand rising from ground
+        gc.setLineWidth(1.5)
+        gc.strokeLine(centerX, centerY + s * 0.9, centerX, centerY)
+        gc.strokeLine(centerX, centerY, centerX - s * 0.3, centerY - s * 0.5)
+        gc.strokeLine(centerX, centerY, centerX - s * 0.1, centerY - s * 0.6)
+        gc.strokeLine(centerX, centerY, centerX + s * 0.1, centerY - s * 0.65)
+        gc.strokeLine(centerX, centerY, centerX + s * 0.3, centerY - s * 0.5)
+        gc.strokeLine(centerX, centerY, centerX + s * 0.45, centerY - s * 0.3)
+        gc.strokeLine(centerX - s * 0.7, centerY + s * 0.9, centerX + s * 0.7, centerY + s * 0.9)
+
+      case "Dissolve" =>
+        // Dissolving particles
+        gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.7))
+        gc.fillOval(centerX - s * 0.4, centerY - s * 0.1, s * 0.25, s * 0.25)
+        gc.fillOval(centerX + s * 0.1, centerY - s * 0.3, s * 0.2, s * 0.2)
+        gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.4))
+        gc.fillOval(centerX - s * 0.15, centerY - s * 0.7, s * 0.15, s * 0.15)
+        gc.fillOval(centerX + s * 0.3, centerY - s * 0.6, s * 0.12, s * 0.12)
+        gc.fillOval(centerX - s * 0.5, centerY - s * 0.5, s * 0.1, s * 0.1)
+        gc.setFill(color)
+        gc.fillOval(centerX - s * 0.3, centerY + s * 0.3, s * 0.3, s * 0.3)
+        gc.fillOval(centerX + s * 0.15, centerY + s * 0.2, s * 0.25, s * 0.25)
+
+      // ─── Support / Holy ───
+
+      case "Blessing" | "Smite" | "Judgment" | "Holy Nova" =>
+        // Radiant cross/sunburst
+        gc.setLineWidth(2.0)
+        gc.strokeLine(centerX, centerY - s * 0.8, centerX, centerY + s * 0.8)
+        gc.strokeLine(centerX - s * 0.8, centerY, centerX + s * 0.8, centerY)
+        gc.setLineWidth(1.0)
+        for (i <- 0 until 4) {
+          val angle = Math.PI / 4 + i * Math.PI / 2
+          val dx = s * 0.55 * Math.cos(angle)
+          val dy = s * 0.55 * Math.sin(angle)
+          gc.strokeLine(centerX, centerY, centerX + dx, centerY + dy)
+        }
+
+      case "Charm" | "Mesmerize" | "Hypnotic Melody" =>
+        // Hypnotic spiral
+        gc.setLineWidth(1.5)
+        for (i <- 0 until 12) {
+          val angle = i * Math.PI / 6
+          val r1 = s * (i + 1).toDouble / 12.0 * 0.75
+          val r2 = s * (i + 2).toDouble / 12.0 * 0.75
+          gc.strokeLine(
+            centerX + r1 * Math.cos(angle), centerY + r1 * Math.sin(angle),
+            centerX + r2 * Math.cos(angle + Math.PI / 6), centerY + r2 * Math.sin(angle + Math.PI / 6)
+          )
+        }
+
+      case "Petrify" =>
+        // Eye with stone cracks
+        gc.setLineWidth(2.0)
+        gc.beginPath()
+        gc.moveTo(centerX - s * 0.8, centerY)
+        gc.quadraticCurveTo(centerX, centerY - s * 0.7, centerX + s * 0.8, centerY)
+        gc.quadraticCurveTo(centerX, centerY + s * 0.7, centerX - s * 0.8, centerY)
+        gc.closePath()
+        gc.stroke()
+        gc.fillOval(centerX - s * 0.2, centerY - s * 0.2, s * 0.4, s * 0.4)
+        gc.setLineWidth(1.0)
+        gc.strokeLine(centerX + s * 0.1, centerY - s * 0.3, centerX + s * 0.3, centerY - s * 0.5)
+        gc.strokeLine(centerX - s * 0.2, centerY + s * 0.3, centerX - s * 0.35, centerY + s * 0.5)
+
+      case "Rebirth" =>
+        // Rising flame
+        gc.beginPath()
+        gc.moveTo(centerX, centerY + s * 0.8)
+        gc.bezierCurveTo(centerX - s * 0.8, centerY, centerX - s * 0.5, centerY - s * 0.8, centerX, centerY - s * 0.4)
+        gc.bezierCurveTo(centerX + s * 0.5, centerY - s * 0.8, centerX + s * 0.8, centerY, centerX, centerY + s * 0.8)
+        gc.closePath()
+        gc.fill()
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.3))
+        gc.fillOval(centerX - s * 0.15, centerY - s * 0.1, s * 0.3, s * 0.3)
+
+      // ─── Tech / Sci-Fi ───
+
+      case "Virus" =>
+        // Virus cell with spikes
+        gc.fillOval(centerX - s * 0.35, centerY - s * 0.35, s * 0.7, s * 0.7)
+        gc.setLineWidth(1.5)
+        for (i <- 0 until 6) {
+          val angle = i * Math.PI / 3
+          val dx = s * 0.35 * Math.cos(angle)
+          val dy = s * 0.35 * Math.sin(angle)
+          val edx = s * 0.7 * Math.cos(angle)
+          val edy = s * 0.7 * Math.sin(angle)
+          gc.strokeLine(centerX + dx, centerY + dy, centerX + edx, centerY + edy)
+          gc.fillOval(centerX + edx - 2, centerY + edy - 2, 4, 4)
+        }
+
+      case "Gravity Ball" | "Gravity Well" | "Gravity Lock" =>
+        // Black hole vortex
+        gc.setLineWidth(1.5)
+        gc.strokeOval(centerX - s * 0.3, centerY - s * 0.3, s * 0.6, s * 0.6)
+        gc.strokeOval(centerX - s * 0.6, centerY - s * 0.6, s * 1.2, s * 1.2)
+        gc.fillOval(centerX - s * 0.15, centerY - s * 0.15, s * 0.3, s * 0.3)
+
+      case "Temporal Rift" | "Time Stop" | "Astral Project" =>
+        // Hourglass
+        gc.setLineWidth(1.5)
+        gc.strokeLine(centerX - s * 0.5, centerY - s * 0.8, centerX + s * 0.5, centerY - s * 0.8)
+        gc.strokeLine(centerX - s * 0.5, centerY + s * 0.8, centerX + s * 0.5, centerY + s * 0.8)
+        gc.strokeLine(centerX - s * 0.5, centerY - s * 0.8, centerX, centerY)
+        gc.strokeLine(centerX + s * 0.5, centerY - s * 0.8, centerX, centerY)
+        gc.strokeLine(centerX - s * 0.5, centerY + s * 0.8, centerX, centerY)
+        gc.strokeLine(centerX + s * 0.5, centerY + s * 0.8, centerX, centerY)
+        gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.3))
+        gc.fillPolygon(
+          Array(centerX - s * 0.2, centerX + s * 0.2, centerX),
+          Array(centerY + s * 0.3, centerY + s * 0.3, centerY + s * 0.7),
+          3
+        )
+
+      case "Puppet String" | "Grapple" | "Lockdown Chain" =>
+        // Hook with line
+        gc.setLineWidth(2.0)
+        gc.strokeLine(centerX, centerY - s * 0.8, centerX, centerY + s * 0.1)
+        gc.strokeArc(centerX - s * 0.3, centerY + s * 0.1, s * 0.6, s * 0.6, 0, 180, javafx.scene.shape.ArcType.OPEN)
+        gc.fillOval(centerX + s * 0.3 - 2, centerY + s * 0.4 - 2, 4, 4)
+
+      // ─── Stealth / Movement ───
+
+      case "Smoke Screen" | "Mirage" | "Leaf Cloak" =>
+        // Dissipating cloud
+        gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.5))
+        gc.fillOval(centerX - s * 0.6, centerY - s * 0.1, s * 0.6, s * 0.5)
+        gc.fillOval(centerX, centerY - s * 0.2, s * 0.6, s * 0.55)
+        gc.fillOval(centerX - s * 0.3, centerY - s * 0.5, s * 0.55, s * 0.5)
+        gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.25))
+        gc.fillOval(centerX - s * 0.7, centerY - s * 0.4, s * 0.5, s * 0.4)
+        gc.fillOval(centerX + s * 0.2, centerY - s * 0.6, s * 0.5, s * 0.4)
+
+      case "System Hop" | "Glitch Blink" | "Lucky Escape" =>
+        // Glitch teleport
+        gc.setLineWidth(2.0)
+        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.4))
+        gc.strokeOval(centerX - s * 0.5, centerY - s * 0.5, s, s)
+        gc.setStroke(color)
+        gc.strokeLine(centerX - s * 0.3, centerY + s * 0.3, centerX, centerY)
+        gc.strokeLine(centerX, centerY, centerX + s * 0.3, centerY + s * 0.2)
+        gc.strokeLine(centerX + s * 0.3, centerY + s * 0.2, centerX + s * 0.6, centerY - s * 0.4)
+        gc.fillOval(centerX + s * 0.5, centerY - s * 0.5, s * 0.2, s * 0.2)
+
+      case "Deep Dive" | "Sky Dive" =>
+        // Downward diving figure
+        gc.setLineWidth(2.5)
+        gc.strokeLine(centerX, centerY - s * 0.5, centerX, centerY + s * 0.5)
+        gc.fillPolygon(
+          Array(centerX, centerX - s * 0.3, centerX + s * 0.3),
+          Array(centerY + s * 0.9, centerY + s * 0.4, centerY + s * 0.4),
+          3
+        )
+        gc.strokeLine(centerX, centerY - s * 0.2, centerX - s * 0.5, centerY - s * 0.5)
+        gc.strokeLine(centerX, centerY - s * 0.2, centerX + s * 0.5, centerY - s * 0.5)
+
+      case "Sky Dance" =>
+        // Dancing figure with motion
+        gc.setLineWidth(1.5)
+        gc.fillOval(centerX - s * 0.15, centerY - s * 0.8, s * 0.3, s * 0.3)
+        gc.strokeLine(centerX, centerY - s * 0.5, centerX, centerY + s * 0.1)
+        gc.strokeLine(centerX, centerY + s * 0.1, centerX - s * 0.3, centerY + s * 0.6)
+        gc.strokeLine(centerX, centerY + s * 0.1, centerX + s * 0.3, centerY + s * 0.6)
+        gc.strokeLine(centerX, centerY - s * 0.3, centerX - s * 0.4, centerY - s * 0.6)
+        gc.strokeLine(centerX, centerY - s * 0.3, centerX + s * 0.4, centerY)
+
+      case "Strafing Run" | "Jet Boost" =>
+        // Jet with trail
+        gc.fillPolygon(
+          Array(centerX + s * 0.8, centerX - s * 0.3, centerX - s * 0.3),
+          Array(centerY, centerY - s * 0.3, centerY + s * 0.3),
+          3
+        )
+        gc.fillPolygon(
+          Array(centerX - s * 0.3, centerX - s * 0.7, centerX - s * 0.3),
+          Array(centerY - s * 0.3, centerY - s * 0.6, centerY - s * 0.5),
+          3
+        )
+        gc.fillPolygon(
+          Array(centerX - s * 0.3, centerX - s * 0.7, centerX - s * 0.3),
+          Array(centerY + s * 0.3, centerY + s * 0.6, centerY + s * 0.5),
+          3
+        )
+
+      case "Primate Grab" | "Jaw Drag" =>
+        // Grabbing claw
+        gc.setLineWidth(2.0)
+        gc.strokeArc(centerX - s * 0.3, centerY - s * 0.3, s * 0.6, s * 0.8, 30, 300, javafx.scene.shape.ArcType.OPEN)
+        gc.strokeLine(centerX + s * 0.1, centerY - s * 0.3, centerX + s * 0.4, centerY - s * 0.6)
+        gc.strokeLine(centerX - s * 0.1, centerY - s * 0.3, centerX - s * 0.15, centerY - s * 0.7)
+        gc.strokeLine(centerX + s * 0.3, centerY - s * 0.1, centerX + s * 0.55, centerY - s * 0.4)
+
+      case "Suppress" | "Suppress Fire" =>
+        // Crosshair
+        gc.setLineWidth(1.5)
+        gc.strokeOval(centerX - s * 0.5, centerY - s * 0.5, s, s)
+        gc.strokeLine(centerX, centerY - s * 0.8, centerX, centerY + s * 0.8)
+        gc.strokeLine(centerX - s * 0.8, centerY, centerX + s * 0.8, centerY)
+
+      case "Shovel" | "Grave Dirt" =>
+        // Shovel shape
+        gc.setLineWidth(2.0)
+        gc.strokeLine(centerX, centerY - s * 0.8, centerX, centerY + s * 0.3)
+        gc.fillOval(centerX - s * 0.3, centerY + s * 0.1, s * 0.6, s * 0.7)
+
+      case "Trick" =>
+        // Magic hat
+        gc.fillRect(centerX - s * 0.35, centerY - s * 0.5, s * 0.7, s * 0.7)
+        gc.setLineWidth(1.5)
+        gc.strokeLine(centerX - s * 0.65, centerY + s * 0.2, centerX + s * 0.65, centerY + s * 0.2)
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.3))
+        gc.fillOval(centerX - s * 0.15, centerY - s * 0.4, s * 0.3, s * 0.25)
+
+      case "Arcane Bolt" =>
+        // Arcane orb with rune marks
+        gc.fillOval(centerX - s * 0.4, centerY - s * 0.4, s * 0.8, s * 0.8)
+        gc.setStroke(Color.color(1.0, 1.0, 1.0, 0.4))
+        gc.setLineWidth(1.0)
+        gc.strokeOval(centerX - s * 0.55, centerY - s * 0.55, s * 1.1, s * 1.1)
+        gc.strokeLine(centerX - s * 0.15, centerY - s * 0.15, centerX + s * 0.15, centerY + s * 0.15)
+        gc.strokeLine(centerX + s * 0.15, centerY - s * 0.15, centerX - s * 0.15, centerY + s * 0.15)
+
+      // ─── PATTERN-BASED ICONS ───
+
+      case name if name.endsWith(" Fan") || name == "Card Fan" =>
+        // Fan spread: 3 lines radiating outward with dots
+        gc.setLineWidth(2.0)
+        for (i <- -1 to 1) {
+          val angle = -Math.PI / 2 + i * Math.PI / 6
+          gc.strokeLine(centerX, centerY + s * 0.3,
+            centerX + s * 0.85 * Math.cos(angle), centerY + s * 0.3 + s * 0.85 * Math.sin(angle))
+          gc.fillOval(
+            centerX + s * 0.75 * Math.cos(angle) - 2.5,
+            centerY + s * 0.3 + s * 0.75 * Math.sin(angle) - 2.5, 5, 5)
+        }
+
+      case name if name.endsWith(" Bolt") =>
+        // Energy bolt with trail
+        gc.fillPolygon(
+          Array(centerX + s * 0.7, centerX + s * 0.3, centerX - s * 0.1, centerX + s * 0.3),
+          Array(centerY, centerY - s * 0.3, centerY, centerY + s * 0.3),
+          4
+        )
+        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.4))
+        gc.setLineWidth(1.5)
+        gc.strokeLine(centerX - s * 0.8, centerY, centerX - s * 0.1, centerY)
+
+      case name if name.endsWith(" Charge") =>
+        // Charging arrow with speed lines
+        gc.setLineWidth(2.0)
+        gc.strokeLine(centerX - s * 0.5, centerY, centerX + s * 0.5, centerY)
+        gc.fillPolygon(
+          Array(centerX + s * 0.9, centerX + s * 0.4, centerX + s * 0.4),
+          Array(centerY, centerY - s * 0.4, centerY + s * 0.4),
+          3
+        )
+        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.4))
+        gc.setLineWidth(1.5)
+        gc.strokeLine(centerX - s * 0.9, centerY - s * 0.3, centerX - s * 0.4, centerY - s * 0.3)
+        gc.strokeLine(centerX - s * 0.7, centerY + s * 0.3, centerX - s * 0.3, centerY + s * 0.3)
+
+      case name if name.endsWith(" Burst") || name.endsWith(" Nova") =>
+        // Radial starburst
+        gc.setLineWidth(2.0)
+        for (i <- 0 until 8) {
+          val angle = i * Math.PI / 4
+          val dx = s * 0.8 * Math.cos(angle)
+          val dy = s * 0.8 * Math.sin(angle)
+          gc.strokeLine(centerX + dx * 0.2, centerY + dy * 0.2, centerX + dx, centerY + dy)
+        }
+        gc.fillOval(centerX - s * 0.2, centerY - s * 0.2, s * 0.4, s * 0.4)
+
+      case name if name.endsWith(" Blast") =>
+        // Explosion
+        gc.setLineWidth(2.0)
+        gc.fillOval(centerX - s * 0.35, centerY - s * 0.35, s * 0.7, s * 0.7)
+        for (i <- 0 until 6) {
+          val angle = i * Math.PI / 3
+          val dx = s * 0.85 * Math.cos(angle)
+          val dy = s * 0.85 * Math.sin(angle)
+          gc.strokeLine(centerX + dx * 0.4, centerY + dy * 0.4, centerX + dx, centerY + dy)
+        }
+
+      case name if name.endsWith(" Slam") || name.endsWith(" Crush") =>
+        // Downward impact
+        gc.setLineWidth(2.5)
+        gc.fillPolygon(
+          Array(centerX, centerX - s * 0.35, centerX + s * 0.35),
+          Array(centerY + s * 0.3, centerY - s * 0.6, centerY - s * 0.6),
+          3
+        )
+        gc.setLineWidth(1.5)
+        gc.strokeLine(centerX - s * 0.7, centerY + s * 0.5, centerX - s * 0.2, centerY + s * 0.5)
+        gc.strokeLine(centerX + s * 0.2, centerY + s * 0.5, centerX + s * 0.7, centerY + s * 0.5)
+        gc.strokeArc(centerX - s * 0.5, centerY + s * 0.3, s, s * 0.4, 20, 140, javafx.scene.shape.ArcType.OPEN)
+
+      case name if name.endsWith(" Form") =>
+        // Transformation silhouette
+        gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.3))
+        gc.fillOval(centerX - s * 0.6, centerY - s * 0.7, s * 0.7, s * 1.4)
+        gc.setFill(color)
+        gc.fillOval(centerX - s * 0.1, centerY - s * 0.7, s * 0.7, s * 1.4)
+
+      case name if name.endsWith(" Trap") || name.endsWith(" Mine") || name.endsWith(" Snare") =>
+        // Bear trap jaws
+        gc.setLineWidth(2.0)
+        gc.beginPath()
+        gc.moveTo(centerX - s * 0.7, centerY)
+        gc.lineTo(centerX - s * 0.3, centerY - s * 0.5)
+        gc.lineTo(centerX, centerY)
+        gc.lineTo(centerX + s * 0.3, centerY - s * 0.5)
+        gc.lineTo(centerX + s * 0.7, centerY)
+        gc.stroke()
+        gc.beginPath()
+        gc.moveTo(centerX - s * 0.7, centerY)
+        gc.lineTo(centerX - s * 0.3, centerY + s * 0.5)
+        gc.lineTo(centerX, centerY)
+        gc.lineTo(centerX + s * 0.3, centerY + s * 0.5)
+        gc.lineTo(centerX + s * 0.7, centerY)
+        gc.stroke()
+        gc.strokeLine(centerX - s * 0.7, centerY + s * 0.7, centerX + s * 0.7, centerY + s * 0.7)
+
+      case name if name.endsWith(" Bomb") || name.endsWith(" Grenade") || name.endsWith(" Potion") =>
+        // Round bomb with fuse
+        gc.fillOval(centerX - s * 0.5, centerY - s * 0.3, s, s)
+        gc.setLineWidth(1.5)
+        gc.strokeLine(centerX + s * 0.1, centerY - s * 0.3, centerX + s * 0.3, centerY - s * 0.7)
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.4))
+        gc.fillOval(centerX + s * 0.2, centerY - s * 0.85, s * 0.3, s * 0.3)
+
+      case name if name.endsWith(" Dash") =>
+        // Dash motion arrow
+        gc.setLineWidth(2.0)
+        gc.strokeLine(centerX - s * 0.3, centerY, centerX + s * 0.5, centerY)
+        gc.fillPolygon(
+          Array(centerX + s * 0.8, centerX + s * 0.4, centerX + s * 0.4),
+          Array(centerY, centerY - s * 0.3, centerY + s * 0.3),
+          3
+        )
+        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.3))
+        gc.setLineWidth(1.5)
+        gc.strokeLine(centerX - s * 0.9, centerY - s * 0.15, centerX - s * 0.5, centerY - s * 0.15)
+        gc.strokeLine(centerX - s * 0.8, centerY + s * 0.15, centerX - s * 0.4, centerY + s * 0.15)
+
+      case name if name.endsWith(" Shot") =>
+        // Projectile with motion line
+        gc.fillOval(centerX + s * 0.3, centerY - s * 0.2, s * 0.4, s * 0.4)
+        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.4))
+        gc.setLineWidth(1.5)
+        gc.strokeLine(centerX - s * 0.8, centerY, centerX + s * 0.3, centerY)
+
+      case name if name.endsWith(" Spray") || name.endsWith(" Spit") =>
+        // Spray of droplets
+        gc.setLineWidth(1.5)
+        gc.fillOval(centerX + s * 0.3, centerY - s * 0.5, s * 0.2, s * 0.2)
+        gc.fillOval(centerX + s * 0.5, centerY - s * 0.1, s * 0.25, s * 0.25)
+        gc.fillOval(centerX + s * 0.25, centerY + s * 0.3, s * 0.2, s * 0.2)
+        gc.beginPath()
+        gc.moveTo(centerX - s * 0.5, centerY)
+        gc.lineTo(centerX + s * 0.1, centerY - s * 0.3)
+        gc.lineTo(centerX + s * 0.1, centerY + s * 0.3)
+        gc.closePath()
+        gc.fill()
+
+      case name if name.endsWith(" Storm") =>
+        // Swirling motion
+        gc.setLineWidth(2.0)
+        for (i <- 0 until 3) {
+          val startAngle = i * 120
+          gc.strokeArc(centerX - s * 0.5, centerY - s * 0.5, s, s, startAngle, 90, javafx.scene.shape.ArcType.OPEN)
+        }
+        gc.fillOval(centerX - s * 0.15, centerY - s * 0.15, s * 0.3, s * 0.3)
+
+      case name if name.endsWith(" Wave") =>
+        // Wave arcs
+        gc.setLineWidth(2.0)
+        for (i <- 0 until 3) {
+          val r = s * (0.35 + i * 0.25)
+          gc.strokeArc(centerX - r, centerY - r * 0.5, r * 2, r, 30, 120, javafx.scene.shape.ArcType.OPEN)
+        }
+
+      case name if name.endsWith(" Drain") =>
+        // Downward spiral drain
+        gc.setLineWidth(2.0)
+        gc.strokeArc(centerX - s * 0.5, centerY - s * 0.5, s, s, 0, 270, javafx.scene.shape.ArcType.OPEN)
+        gc.fillPolygon(
+          Array(centerX - s * 0.05, centerX - s * 0.05, centerX + s * 0.25),
+          Array(centerY - s * 0.6, centerY - s * 0.3, centerY - s * 0.45),
+          3
+        )
+        gc.fillOval(centerX - s * 0.1, centerY - s * 0.1, s * 0.2, s * 0.2)
+
+      case name if name.endsWith(" Wall") =>
+        // Vertical wall bars
+        gc.setLineWidth(1.5)
+        for (i <- -1 to 1) {
+          val x = centerX + i * s * 0.35
+          gc.fillRect(x - s * 0.12, centerY - s * 0.7, s * 0.24, s * 1.4)
+        }
+        gc.strokeLine(centerX - s * 0.6, centerY - s * 0.7, centerX + s * 0.6, centerY - s * 0.7)
+        gc.strokeLine(centerX - s * 0.6, centerY + s * 0.7, centerX + s * 0.6, centerY + s * 0.7)
+
+      case name if name.endsWith(" Whip") || name.endsWith(" Lash") =>
+        // Whip crack
+        gc.setLineWidth(2.5)
+        gc.beginPath()
+        gc.moveTo(centerX - s * 0.7, centerY + s * 0.7)
+        gc.bezierCurveTo(centerX - s * 0.2, centerY + s * 0.2, centerX + s * 0.5, centerY - s * 0.3, centerX + s * 0.3, centerY - s * 0.8)
+        gc.stroke()
+        gc.fillOval(centerX + s * 0.2, centerY - s * 0.9, s * 0.15, s * 0.15)
+
+      case name if name.endsWith(" Strike") =>
+        // Downward strike slash
+        gc.setLineWidth(3.0)
+        gc.beginPath()
+        gc.moveTo(centerX + s * 0.6, centerY - s * 0.8)
+        gc.quadraticCurveTo(centerX - s * 0.3, centerY, centerX + s * 0.2, centerY + s * 0.8)
+        gc.stroke()
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.3))
+        gc.fillOval(centerX + s * 0.5, centerY - s * 0.9, s * 0.2, s * 0.2)
+
+      case name if name.endsWith(" Gaze") =>
+        // Stone gaze eye
+        gc.setLineWidth(2.0)
+        gc.beginPath()
+        gc.moveTo(centerX - s * 0.9, centerY)
+        gc.quadraticCurveTo(centerX, centerY - s * 0.8, centerX + s * 0.9, centerY)
+        gc.quadraticCurveTo(centerX, centerY + s * 0.8, centerX - s * 0.9, centerY)
+        gc.closePath()
+        gc.stroke()
+        gc.fillOval(centerX - s * 0.25, centerY - s * 0.25, s * 0.5, s * 0.5)
+
+      case name if name.endsWith(" Circle") =>
+        // Expanding ring
+        gc.setLineWidth(2.0)
+        gc.strokeOval(centerX - s * 0.4, centerY - s * 0.4, s * 0.8, s * 0.8)
+        gc.strokeOval(centerX - s * 0.7, centerY - s * 0.7, s * 1.4, s * 1.4)
+        gc.fillOval(centerX - s * 0.12, centerY - s * 0.12, s * 0.24, s * 0.24)
+
+      case name if name.contains("Throw") || name.contains("Toss") =>
+        // Arcing trajectory
+        gc.setLineWidth(2.0)
+        gc.beginPath()
+        gc.moveTo(centerX - s * 0.7, centerY + s * 0.5)
+        gc.quadraticCurveTo(centerX, centerY - s * 0.8, centerX + s * 0.7, centerY + s * 0.5)
+        gc.stroke()
+        gc.fillOval(centerX + s * 0.55, centerY + s * 0.3, s * 0.3, s * 0.3)
+
+      case name if name.contains("Curse") =>
+        // Dark eye / skull
+        gc.fillOval(centerX - s * 0.4, centerY - s * 0.5, s * 0.8, s * 0.7)
+        gc.setFill(Color.color(0, 0, 0, 0.6))
+        gc.fillOval(centerX - s * 0.25, centerY - s * 0.3, s * 0.2, s * 0.25)
+        gc.fillOval(centerX + s * 0.05, centerY - s * 0.3, s * 0.2, s * 0.25)
+        gc.fillOval(centerX - s * 0.1, centerY + s * 0.0, s * 0.2, s * 0.15)
+
+      case name if name.contains("Pounce") || name == "Lunge" =>
+        // Leaping motion arc
+        gc.setLineWidth(2.5)
+        gc.beginPath()
+        gc.moveTo(centerX - s * 0.7, centerY + s * 0.5)
+        gc.quadraticCurveTo(centerX, centerY - s * 0.7, centerX + s * 0.7, centerY + s * 0.2)
+        gc.stroke()
+        gc.fillPolygon(
+          Array(centerX + s * 0.9, centerX + s * 0.5, centerX + s * 0.6),
+          Array(centerY + s * 0.3, centerY + s * 0.0, centerY + s * 0.5),
+          3
+        )
+
+      case name if name.contains("Phase") || name == "Vanish" || name == "Camouflage" | name == "Transparent" | name == "Long Phase" =>
+        // Fading figure outline
+        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.6))
+        gc.setLineWidth(1.5)
+        gc.strokeOval(centerX - s * 0.25, centerY - s * 0.8, s * 0.5, s * 0.5)
+        gc.strokeLine(centerX, centerY - s * 0.3, centerX, centerY + s * 0.3)
+        gc.strokeLine(centerX, centerY + s * 0.3, centerX - s * 0.3, centerY + s * 0.8)
+        gc.strokeLine(centerX, centerY + s * 0.3, centerX + s * 0.3, centerY + s * 0.8)
+        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.25))
+        gc.strokeOval(centerX - s * 0.35, centerY - s * 0.85, s * 0.6, s * 0.55)
+
+      case name if name.contains("Web") || name == "String Web" =>
+        // Web pattern
+        gc.setLineWidth(1.0)
+        for (i <- 0 until 6) {
+          val angle = i * Math.PI / 3
+          val dx = s * 0.8 * Math.cos(angle)
+          val dy = s * 0.8 * Math.sin(angle)
+          gc.strokeLine(centerX, centerY, centerX + dx, centerY + dy)
+        }
+        gc.setLineWidth(1.0)
+        gc.strokeOval(centerX - s * 0.25, centerY - s * 0.25, s * 0.5, s * 0.5)
+        gc.strokeOval(centerX - s * 0.55, centerY - s * 0.55, s * 1.1, s * 1.1)
+
+      case name if name.startsWith("Triple") =>
+        // Three parallel lines
+        gc.setLineWidth(2.5)
+        for (i <- 0 until 3) {
+          val xOff = (i - 1) * s * 0.35
+          gc.strokeLine(centerX + xOff, centerY - s * 0.6, centerX + xOff, centerY + s * 0.6)
+        }
+
+      case name if name.contains("Sonic") =>
+        // Sound wave rings
+        gc.setLineWidth(2.0)
+        for (i <- 1 to 3) {
+          val r = s * 0.25 * i
+          gc.strokeArc(centerX - r, centerY - r * 0.7, r * 2, r * 1.4, -50, 100, javafx.scene.shape.ArcType.OPEN)
+        }
+
+      case name if name.endsWith(" Spin") =>
+        // Circular spin motion
+        gc.setLineWidth(2.0)
+        gc.strokeOval(centerX - s * 0.5, centerY - s * 0.5, s, s)
+        for (i <- 0 until 4) {
+          val angle = i * Math.PI / 2
+          gc.fillOval(centerX + s * 0.5 * Math.cos(angle) - 3, centerY + s * 0.5 * Math.sin(angle) - 3, 6, 6)
+        }
+
+      case name if name.contains("Smoke") =>
+        // Smoke cloud
+        gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.5))
+        gc.fillOval(centerX - s * 0.5, centerY - s * 0.1, s * 0.5, s * 0.45)
+        gc.fillOval(centerX, centerY - s * 0.15, s * 0.5, s * 0.5)
+        gc.fillOval(centerX - s * 0.25, centerY - s * 0.5, s * 0.5, s * 0.45)
+
+      case name if name.contains("Void") =>
+        // Void portal
+        gc.setLineWidth(1.5)
+        gc.strokeOval(centerX - s * 0.5, centerY - s * 0.5, s, s)
+        gc.fillOval(centerX - s * 0.25, centerY - s * 0.25, s * 0.5, s * 0.5)
+        gc.setFill(Color.color(0, 0, 0, 0.4))
+        gc.fillOval(centerX - s * 0.15, centerY - s * 0.15, s * 0.3, s * 0.3)
+
+      case name if name.contains("Gravity") =>
+        // Gravity vortex
+        gc.setLineWidth(1.5)
+        gc.strokeOval(centerX - s * 0.3, centerY - s * 0.3, s * 0.6, s * 0.6)
+        gc.strokeOval(centerX - s * 0.6, centerY - s * 0.6, s * 1.2, s * 1.2)
+        gc.fillOval(centerX - s * 0.12, centerY - s * 0.12, s * 0.24, s * 0.24)
+
+      case name if name.contains("Multi") =>
+        // Multiple dots pattern
+        gc.fillOval(centerX - s * 0.1, centerY - s * 0.5, s * 0.2, s * 0.2)
+        gc.fillOval(centerX - s * 0.5, centerY + s * 0.1, s * 0.2, s * 0.2)
+        gc.fillOval(centerX + s * 0.3, centerY + s * 0.1, s * 0.2, s * 0.2)
+        gc.fillOval(centerX - s * 0.1, centerY + s * 0.3, s * 0.2, s * 0.2)
+        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, 0.4))
+        gc.setLineWidth(1.0)
+        gc.strokeLine(centerX - s * 0.5, centerY, centerX + s * 0.6, centerY)
+
+      case name if name.contains("Ember") || name.contains("Sand") =>
+        // Small particles scattering
+        for (i <- 0 until 5) {
+          val angle = i * Math.PI * 2.0 / 5.0
+          val r = s * 0.5
+          gc.fillOval(centerX + r * Math.cos(angle) - 3, centerY + r * Math.sin(angle) - 3, 6, 6)
+        }
+        gc.fillOval(centerX - s * 0.12, centerY - s * 0.12, s * 0.24, s * 0.24)
+
+      case name if name.contains("Mud") =>
+        // Mud splat
+        gc.fillOval(centerX - s * 0.4, centerY - s * 0.3, s * 0.8, s * 0.7)
+        gc.fillOval(centerX - s * 0.15, centerY + s * 0.2, s * 0.3, s * 0.3)
+        gc.fillOval(centerX + s * 0.3, centerY - s * 0.5, s * 0.2, s * 0.2)
+        gc.fillOval(centerX - s * 0.5, centerY - s * 0.1, s * 0.2, s * 0.2)
+
+      case name if name.contains("Arm") || name.contains("Mech") =>
+        // Mechanical arm
+        gc.setLineWidth(2.5)
+        gc.strokeLine(centerX - s * 0.5, centerY + s * 0.5, centerX, centerY)
+        gc.strokeLine(centerX, centerY, centerX + s * 0.5, centerY - s * 0.5)
+        gc.fillOval(centerX - s * 0.12, centerY - s * 0.12, s * 0.24, s * 0.24)
+        gc.fillOval(centerX + s * 0.35, centerY - s * 0.65, s * 0.3, s * 0.3)
+
+      case name if name.contains("Shield") =>
+        // Shield shape
+        gc.beginPath()
+        gc.moveTo(centerX, centerY - s * 0.8)
+        gc.lineTo(centerX + s * 0.6, centerY - s * 0.4)
+        gc.lineTo(centerX + s * 0.5, centerY + s * 0.3)
+        gc.lineTo(centerX, centerY + s * 0.8)
+        gc.lineTo(centerX - s * 0.5, centerY + s * 0.3)
+        gc.lineTo(centerX - s * 0.6, centerY - s * 0.4)
+        gc.closePath()
+        gc.fill()
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.2))
+        gc.fillOval(centerX - s * 0.2, centerY - s * 0.3, s * 0.35, s * 0.35)
+
+      case name if name.contains("Airdrop") || name.contains("Deploy") =>
+        // Dropping item from above
+        gc.setLineWidth(1.5)
+        gc.strokeLine(centerX, centerY - s * 0.8, centerX, centerY)
+        gc.fillRect(centerX - s * 0.3, centerY, s * 0.6, s * 0.5)
+        gc.strokeLine(centerX - s * 0.5, centerY + s * 0.5, centerX - s * 0.3, centerY)
+        gc.strokeLine(centerX + s * 0.5, centerY + s * 0.5, centerX + s * 0.3, centerY)
+
+      case name if name.contains("Ice") || name.contains("Frost") || name.contains("Glacier") =>
+        // Ice crystal
+        gc.setLineWidth(1.5)
+        for (i <- 0 until 3) {
+          val angle = i * Math.PI / 3
+          val dx = s * 0.7 * Math.cos(angle)
+          val dy = s * 0.7 * Math.sin(angle)
+          gc.strokeLine(centerX - dx, centerY - dy, centerX + dx, centerY + dy)
+        }
+        gc.fillOval(centerX - 2.5, centerY - 2.5, 5, 5)
+
+      case name if name.contains("Fire") || name.contains("Flame") || name.contains("Inferno") =>
+        // Flame shape
+        gc.fillOval(centerX - s * 0.4, centerY - s * 0.1, s * 0.8, s * 0.8)
+        gc.fillOval(centerX - s * 0.25, centerY - s * 0.6, s * 0.4, s * 0.5)
+        gc.fillOval(centerX + s * 0.05, centerY - s * 0.5, s * 0.3, s * 0.4)
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.25))
+        gc.fillOval(centerX - s * 0.15, centerY + s * 0.05, s * 0.3, s * 0.3)
+
+      case name if name.contains("Bone") =>
+        // Bone shape
+        gc.setLineWidth(2.0)
+        gc.strokeLine(centerX - s * 0.5, centerY - s * 0.5, centerX + s * 0.5, centerY + s * 0.5)
+        gc.fillOval(centerX - s * 0.65, centerY - s * 0.65, s * 0.3, s * 0.3)
+        gc.fillOval(centerX + s * 0.35, centerY + s * 0.35, s * 0.3, s * 0.3)
+
+      case name if name.contains("Plague") || name.contains("Acid") || name.contains("Venom") || name.contains("Poison") =>
+        // Toxic droplet
+        gc.fillPolygon(
+          Array(centerX, centerX + s * 0.4, centerX, centerX - s * 0.4),
+          Array(centerY - s * 0.8, centerY + s * 0.2, centerY + s * 0.7, centerY + s * 0.2),
+          4
+        )
+        gc.setFill(Color.color(1.0, 1.0, 1.0, 0.3))
+        gc.fillOval(centerX - s * 0.1, centerY - s * 0.1, s * 0.15, s * 0.2)
+
+      case name if name.contains("Shadow") || name.contains("Dark") || name.contains("Death") =>
+        // Dark wisp
+        gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.6))
+        gc.fillOval(centerX - s * 0.5, centerY - s * 0.3, s, s * 0.8)
+        gc.setFill(color)
+        gc.fillOval(centerX - s * 0.3, centerY - s * 0.6, s * 0.6, s * 0.5)
+        gc.fillOval(centerX - s * 0.15, centerY - s * 0.8, s * 0.3, s * 0.4)
+
+      case name if name.contains("Holy") || name.contains("Light") || name.contains("Prismatic") =>
+        // Radiant glow
+        gc.setLineWidth(1.5)
+        for (i <- 0 until 8) {
+          val angle = i * Math.PI / 4
+          val inner = s * 0.25
+          val outer = s * 0.75
+          gc.strokeLine(centerX + inner * Math.cos(angle), centerY + inner * Math.sin(angle),
+            centerX + outer * Math.cos(angle), centerY + outer * Math.sin(angle))
+        }
+        gc.fillOval(centerX - s * 0.25, centerY - s * 0.25, s * 0.5, s * 0.5)
+
+      case name if name.contains("Rune") =>
+        // Rune symbol
+        gc.setLineWidth(2.0)
+        gc.strokeLine(centerX, centerY - s * 0.8, centerX, centerY + s * 0.8)
+        gc.strokeLine(centerX - s * 0.4, centerY - s * 0.3, centerX + s * 0.4, centerY + s * 0.3)
+        gc.strokeLine(centerX + s * 0.4, centerY - s * 0.3, centerX - s * 0.4, centerY + s * 0.3)
+        gc.fillOval(centerX - s * 0.1, centerY - s * 0.1, s * 0.2, s * 0.2)
+
+      case name if name.contains("Snake") || name.contains("Serpent") || name.contains("Tail") =>
+        // Snake S-curve
+        gc.setLineWidth(2.5)
+        gc.beginPath()
+        gc.moveTo(centerX, centerY - s * 0.8)
+        gc.bezierCurveTo(centerX + s * 0.7, centerY - s * 0.3, centerX - s * 0.7, centerY + s * 0.3, centerX, centerY + s * 0.8)
+        gc.stroke()
+        gc.fillOval(centerX - 3, centerY - s * 0.8 - 2, 6, 5)
+
+      case name if name.contains("Vine") || name.contains("Thorn") =>
+        // Thorny vine
+        gc.setLineWidth(2.0)
+        gc.beginPath()
+        gc.moveTo(centerX, centerY + s * 0.8)
+        gc.bezierCurveTo(centerX - s * 0.4, centerY + s * 0.2, centerX + s * 0.4, centerY - s * 0.2, centerX, centerY - s * 0.8)
+        gc.stroke()
+        gc.fillPolygon(
+          Array(centerX - s * 0.15, centerX - s * 0.4, centerX - s * 0.05),
+          Array(centerY + s * 0.1, centerY - s * 0.1, centerY - s * 0.15),
+          3
+        )
+        gc.fillPolygon(
+          Array(centerX + s * 0.15, centerX + s * 0.4, centerX + s * 0.05),
+          Array(centerY - s * 0.1, centerY - s * 0.3, centerY - s * 0.35),
+          3
+        )
+
+      case name if name.contains("Electr") || name.contains("Spark") || name.contains("Thunder") =>
+        // Electric spark
+        gc.fillPolygon(
+          Array(centerX - s * 0.1, centerX + s * 0.35, centerX + s * 0.05, centerX + s * 0.1, centerX - s * 0.35, centerX - s * 0.05),
+          Array(centerY - s * 0.7, centerY - s * 0.05, centerY - s * 0.02, centerY + s * 0.7, centerY + s * 0.05, centerY + s * 0.02),
+          6
+        )
+
+      case name if name.contains("Heal") || name.contains("Bandage") =>
+        // Medical cross
+        gc.fillRect(centerX - s * 0.15, centerY - s * 0.6, s * 0.3, s * 1.2)
+        gc.fillRect(centerX - s * 0.6, centerY - s * 0.15, s * 1.2, s * 0.3)
+
+      case name if name.contains("Chain") =>
+        // Chain links
+        gc.setLineWidth(2.0)
+        gc.strokeOval(centerX - s * 0.6, centerY - s * 0.35, s * 0.6, s * 0.7)
+        gc.strokeOval(centerX, centerY - s * 0.35, s * 0.6, s * 0.7)
+
+      case name if name.contains("Ink") || name.contains("Splat") =>
+        // Ink splatter
+        gc.fillOval(centerX - s * 0.35, centerY - s * 0.35, s * 0.7, s * 0.7)
+        gc.fillOval(centerX + s * 0.2, centerY - s * 0.5, s * 0.25, s * 0.25)
+        gc.fillOval(centerX - s * 0.5, centerY + s * 0.2, s * 0.2, s * 0.2)
+        gc.fillOval(centerX + s * 0.35, centerY + s * 0.25, s * 0.2, s * 0.2)
+
+      case name if name.contains("Riddle") || name.contains("Puzzle") =>
+        // Question mark
+        gc.setLineWidth(2.0)
+        gc.strokeArc(centerX - s * 0.3, centerY - s * 0.8, s * 0.6, s * 0.6, -30, 240, javafx.scene.shape.ArcType.OPEN)
+        gc.strokeLine(centerX, centerY - s * 0.2, centerX, centerY + s * 0.2)
+        gc.fillOval(centerX - s * 0.08, centerY + s * 0.4, s * 0.16, s * 0.16)
+
       case _ =>
         // Default fallback: filled circle
-        gc.fillOval(centerX - s, centerY - s, s * 2, s * 2)
+        gc.fillOval(centerX - s * 0.5, centerY - s * 0.5, s, s)
     }
   }
 
