@@ -188,23 +188,46 @@ class Projectile(
     if (_remainingBounces <= 0) return false
     _remainingBounces -= 1
 
-    val nextXonly = (x + _dx * speedMultiplier).toInt
-    val nextYonly = (y + _dy * speedMultiplier).toInt
     val curX = getCellX
     val curY = getCellY
 
-    val hitX = nextXonly != curX && !world.isWalkable(nextXonly, curY)
-    val hitY = nextYonly != curY && !world.isWalkable(curX, nextYonly)
+    // Determine which wall was hit by checking which adjacent cell
+    // (behind us on each axis) is walkable
+    val fromX = if (_dx > 0) curX - 1 else if (_dx < 0) curX + 1 else curX
+    val fromY = if (_dy > 0) curY - 1 else if (_dy < 0) curY + 1 else curY
+    val hitX = fromX != curX && world.isWalkable(fromX, curY)
+    val hitY = fromY != curY && world.isWalkable(curX, fromY)
 
     if (hitX && hitY) {
+      // Corner: reverse both
       _dx = -_dx
       _dy = -_dy
     } else if (hitX) {
-      _dx = -_dx
+      // Snap back to walkable side of the vertical wall
+      if (_dx > 0) x = curX.toFloat - 0.01f
+      else x = (curX + 1).toFloat + 0.01f
+      // 90° turn away from vertical wall
+      val oldDx = _dx
+      val oldDy = _dy
+      if ((oldDx > 0) == (oldDy > 0)) {
+        _dx = -oldDy; _dy = oldDx
+      } else {
+        _dx = oldDy; _dy = -oldDx
+      }
     } else if (hitY) {
-      _dy = -_dy
+      // Snap back to walkable side of the horizontal wall
+      if (_dy > 0) y = curY.toFloat - 0.01f
+      else y = (curY + 1).toFloat + 0.01f
+      // 90° turn away from horizontal wall
+      val oldDx = _dx
+      val oldDy = _dy
+      if ((oldDx > 0) == (oldDy > 0)) {
+        _dx = oldDy; _dy = -oldDx
+      } else {
+        _dx = -oldDy; _dy = oldDx
+      }
     } else {
-      // Both axes hit at once — just reverse both
+      // Fallback: reverse both
       _dx = -_dx
       _dy = -_dy
     }
