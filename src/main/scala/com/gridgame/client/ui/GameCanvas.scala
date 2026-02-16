@@ -6099,28 +6099,52 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 80.0
+    val margin = 100.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 37) * 0.5
       val pulse = 0.85 + 0.15 * Math.sin(phase)
+      val spin = animationTick * 0.15 + projectile.id * 1.3
       val pdx = projectile.dx.toDouble; val pdy = projectile.dy.toDouble
       val pLen = Math.sqrt(pdx * pdx + pdy * pdy)
       val dirX = if (pLen > 0.01) pdx / pLen else 1.0
       val dirY = if (pLen > 0.01) pdy / pLen else 0.0
-      // Tan pellet
-      gc.setFill(Color.color(0.8, 0.7, 0.4, 0.8 * pulse))
-      gc.fillOval(sx - 3, sy - 2, 6, 4)
-      gc.setFill(Color.color(0.9, 0.82, 0.55, 0.9))
+      val perpX = -dirY; val perpY = dirX
+      // Layer 1: Wide sandstorm aura
+      gc.setFill(Color.color(0.85, 0.72, 0.4, 0.06 * pulse))
+      gc.fillOval(sx - 22, sy - 16, 44, 32)
+      // Layer 2: Mid sandy glow
+      gc.setFill(Color.color(0.9, 0.78, 0.45, 0.12 * pulse))
+      gc.fillOval(sx - 14, sy - 10, 28, 20)
+      // Swirling sand ring (6 orbiting grains)
+      for (i <- 0 until 6) {
+        val angle = spin * 2.5 + i * Math.PI / 3
+        val dist = 8.0 + Math.sin(phase + i * 1.5) * 2.0
+        val px = sx + Math.cos(angle) * dist
+        val py = sy + Math.sin(angle) * dist * 0.6
+        val s = 2.5 + Math.sin(phase * 2 + i) * 0.8
+        gc.setFill(Color.color(0.85, 0.72, 0.4, 0.5 * pulse))
+        gc.fillOval(px - s, py - s * 0.7, s * 2, s * 1.4)
+      }
+      // Core sand cluster - elongated in direction of travel
+      val tipX = sx + dirX * 6; val tipY = sy + dirY * 3.5
+      val backX = sx - dirX * 5; val backY = sy - dirY * 3
+      gc.setFill(Color.color(0.82, 0.7, 0.38, 0.85 * pulse))
+      gc.fillOval(sx - 6, sy - 4, 12, 8)
+      gc.setFill(Color.color(0.95, 0.88, 0.6, 0.9))
+      gc.fillOval(sx - 4, sy - 3, 8, 6)
+      // Bright hot center
+      gc.setFill(Color.color(1.0, 0.95, 0.75, 0.7 * pulse))
       gc.fillOval(sx - 2, sy - 1.5, 4, 3)
-      // Sand dust trail
-      for (i <- 0 until 4) {
-        val t = ((animationTick * 0.12 + i * 0.25 + projectile.id * 0.13) % 1.0)
-        val tX = sx - dirX * t * 14.0 + Math.sin(phase + i * 2.0) * 3.0
-        val tY = sy - dirY * t * 8.0 + t * 3.0
-        val a = Math.max(0.0, 0.3 * (1.0 - t))
-        val s = 1.5 + t * 2.5
-        gc.setFill(Color.color(0.75, 0.65, 0.4, a))
-        gc.fillOval(tX - s, tY - s, s * 2, s * 2)
+      // Sand dust trail (8 particles, larger)
+      for (i <- 0 until 8) {
+        val t = ((animationTick * 0.1 + i * 0.125 + projectile.id * 0.13) % 1.0)
+        val spread = Math.sin(phase + i * 1.8) * 6.0
+        val tX = sx - dirX * t * 22.0 + perpX * spread
+        val tY = sy - dirY * t * 13.0 + perpY * spread * 0.6 + t * 4.0
+        val a = Math.max(0.0, 0.4 * (1.0 - t) * pulse)
+        val s = 2.0 + t * 3.5
+        gc.setFill(Color.color(0.78, 0.68, 0.4, a))
+        gc.fillOval(tX - s, tY - s * 0.7, s * 2, s * 1.4)
       }
     }
   }
@@ -6159,33 +6183,73 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 80.0
+    val margin = 100.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 29) * 0.35
       val pulse = 0.85 + 0.15 * Math.sin(phase)
+      val spin = animationTick * 0.12 + projectile.id * 1.7
       val pdx = projectile.dx.toDouble; val pdy = projectile.dy.toDouble
       val pLen = Math.sqrt(pdx * pdx + pdy * pdy)
       val dirX = if (pLen > 0.01) pdx / pLen else 1.0
       val dirY = if (pLen > 0.01) pdy / pLen else 0.0
       val perpX = -dirY; val perpY = dirX
-      // Green spike shape (pointed dart)
-      val tipX = sx + dirX * 10; val tipY = sy + dirY * 6
-      val backX = sx - dirX * 5; val backY = sy - dirY * 3
-      val w1X = sx + perpX * 3; val w1Y = sy + perpY * 2
-      val w2X = sx - perpX * 3; val w2Y = sy - perpY * 2
-      gc.setFill(Color.color(0.2, 0.6, 0.15, 0.85 * pulse))
+      // Layer 1: Wide nature energy aura
+      gc.setFill(Color.color(0.15, 0.7, 0.1, 0.06 * pulse))
+      gc.fillOval(sx - 20, sy - 15, 40, 30)
+      // Layer 2: Green glow
+      gc.setFill(Color.color(0.2, 0.8, 0.15, 0.12 * pulse))
+      gc.fillOval(sx - 12, sy - 9, 24, 18)
+      // Thorny vine trail - small barbs along path
+      for (i <- 0 until 4) {
+        val t = 0.15 + i * 0.2
+        val bx = sx - dirX * t * 20 + perpX * Math.sin(phase + i * 2.0) * 3
+        val by = sy - dirY * t * 12 + perpY * Math.sin(phase + i * 2.0) * 2
+        val barbTipX = bx + perpX * 3.5 * (if (i % 2 == 0) 1 else -1)
+        val barbTipY = by + perpY * 2.5 * (if (i % 2 == 0) 1 else -1)
+        gc.setFill(Color.color(0.2, 0.55, 0.12, 0.5 * pulse * (1.0 - t)))
+        gc.fillPolygon(Array(bx, barbTipX, bx - dirX * 3), Array(by, barbTipY, by - dirY * 2), 3)
+      }
+      // Main thorn spike - BIGGER (elongated diamond shape)
+      val tipX = sx + dirX * 14; val tipY = sy + dirY * 8.5
+      val backX = sx - dirX * 8; val backY = sy - dirY * 5
+      val w1X = sx + perpX * 5; val w1Y = sy + perpY * 3
+      val w2X = sx - perpX * 5; val w2Y = sy - perpY * 3
+      // Dark green base
+      gc.setFill(Color.color(0.15, 0.5, 0.1, 0.9 * pulse))
       gc.fillPolygon(Array(tipX, w1X, backX, w2X), Array(tipY, w1Y, backY, w2Y), 4)
-      gc.setStroke(Color.color(0.1, 0.4, 0.1, 0.7))
-      gc.setLineWidth(1)
+      // Bright green highlight
+      val hTipX = sx + dirX * 12; val hTipY = sy + dirY * 7
+      val hBackX = sx - dirX * 3; val hBackY = sy - dirY * 2
+      gc.setFill(Color.color(0.3, 0.75, 0.2, 0.6 * pulse))
+      gc.fillPolygon(Array(hTipX, sx + perpX * 2.5, hBackX, sx - perpX * 2.5),
+                     Array(hTipY, sy + perpY * 1.5, hBackY, sy - perpY * 1.5), 4)
+      // Outline
+      gc.setStroke(Color.color(0.08, 0.35, 0.05, 0.75))
+      gc.setLineWidth(1.2)
       gc.strokePolygon(Array(tipX, w1X, backX, w2X), Array(tipY, w1Y, backY, w2Y), 4)
-      // Leaf particles
-      for (i <- 0 until 3) {
-        val t = ((animationTick * 0.08 + i * 0.33 + projectile.id * 0.19) % 1.0)
-        val lX = sx - dirX * t * 12 + Math.sin(phase + i * 2.5) * 4
-        val lY = sy - dirY * t * 7 + Math.cos(phase + i * 2.5) * 2
-        val a = Math.max(0.0, 0.4 * (1.0 - t))
-        gc.setFill(Color.color(0.3, 0.7, 0.2, a))
-        gc.fillOval(lX - 2, lY - 1, 4, 2)
+      // Bright tip point
+      gc.setFill(Color.color(0.5, 1.0, 0.3, 0.8 * pulse))
+      gc.fillOval(tipX - 2, tipY - 1.5, 4, 3)
+      // Orbiting leaf particles (5 leaves)
+      for (i <- 0 until 5) {
+        val angle = spin * 2.0 + i * Math.PI * 2 / 5.0
+        val dist = 10.0 + Math.sin(phase + i * 1.3) * 2.0
+        val lx = sx + Math.cos(angle) * dist
+        val ly = sy + Math.sin(angle) * dist * 0.55
+        val a = 0.4 + 0.2 * Math.sin(phase * 2 + i)
+        gc.setFill(Color.color(0.3, 0.75, 0.2, Math.max(0, Math.min(1, a * pulse))))
+        gc.fillOval(lx - 2.5, ly - 1.5, 5, 3)
+      }
+      // Leaf trail (6 particles)
+      for (i <- 0 until 6) {
+        val t = ((animationTick * 0.08 + i * 0.167 + projectile.id * 0.19) % 1.0)
+        val spread = Math.sin(phase + i * 2.5) * 5
+        val lX = sx - dirX * t * 20 + perpX * spread
+        val lY = sy - dirY * t * 12 + perpY * spread * 0.6 + Math.cos(phase + i * 1.7) * 3
+        val a = Math.max(0.0, 0.45 * (1.0 - t) * pulse)
+        val s = 2.5 + (1.0 - t) * 1.5
+        gc.setFill(Color.color(0.25, 0.7, 0.2, a))
+        gc.fillOval(lX - s, lY - s * 0.6, s * 2, s * 1.2)
       }
     }
   }
@@ -6347,25 +6411,46 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 80.0
+    val margin = 100.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 19) * 0.35
-      val wobble = Math.sin(phase * 3) * 2.0
-      val r = 7.0
-      // Mud blob
-      gc.setFill(Color.color(0.35, 0.25, 0.12, 0.8))
+      val pulse = 0.85 + 0.15 * Math.sin(phase * 2)
+      val wobble = Math.sin(phase * 3) * 2.5
+      val r = 10.0
+      // Layer 1: Wide murky aura
+      gc.setFill(Color.color(0.35, 0.25, 0.1, 0.06 * pulse))
+      gc.fillOval(sx - r * 2.5, sy - r * 2, r * 5, r * 4)
+      // Layer 2: Brown splash ring
+      gc.setFill(Color.color(0.4, 0.3, 0.12, 0.1 * pulse))
+      gc.fillOval(sx - r * 1.5, sy - r * 1.2, r * 3, r * 2.4)
+      // Splatter blobs orbiting the main glob
+      for (i <- 0 until 5) {
+        val angle = phase * 1.5 + i * Math.PI * 2 / 5.0
+        val dist = r + Math.sin(phase * 2 + i * 1.9) * 3.0
+        val bx = sx + Math.cos(angle) * dist + wobble * 0.3
+        val by = sy + Math.sin(angle) * dist * 0.6
+        val bs = 2.5 + Math.sin(phase * 3 + i * 2.1) * 1.0
+        gc.setFill(Color.color(0.38, 0.28, 0.12, 0.55 * pulse))
+        gc.fillOval(bx - bs, by - bs * 0.7, bs * 2, bs * 1.4)
+      }
+      // Main mud body - bigger, wobbling
+      gc.setFill(Color.color(0.35, 0.25, 0.12, 0.85))
       gc.fillOval(sx - r + wobble, sy - r * 0.7, r * 2, r * 1.4)
-      // Lighter mud highlight
-      gc.setFill(Color.color(0.5, 0.38, 0.2, 0.5))
-      gc.fillOval(sx - r * 0.4 + wobble, sy - r * 0.5, r * 0.8, r * 0.6)
-      // Dripping mud
-      for (i <- 0 until 3) {
-        val t = ((animationTick * 0.08 + i * 0.33 + projectile.id * 0.15) % 1.0)
-        val dx = Math.sin(phase + i * 2.3) * 4.0
-        val dripY = sy + t * 12.0
-        val a = Math.max(0.0, 0.5 * (1.0 - t))
-        gc.setFill(Color.color(0.3, 0.22, 0.1, a))
-        gc.fillOval(sx + dx - 1.5, dripY - 1, 3, 2)
+      // Wet shine highlight
+      gc.setFill(Color.color(0.55, 0.42, 0.22, 0.5))
+      gc.fillOval(sx - r * 0.5 + wobble, sy - r * 0.5, r, r * 0.7)
+      // Lighter mud rim
+      gc.setFill(Color.color(0.5, 0.38, 0.18, 0.35))
+      gc.fillOval(sx - r * 0.3 + wobble + 1, sy - r * 0.35, r * 0.5, r * 0.35)
+      // Dripping mud trail (6 drips, bigger)
+      for (i <- 0 until 6) {
+        val t = ((animationTick * 0.07 + i * 0.167 + projectile.id * 0.15) % 1.0)
+        val dx = Math.sin(phase + i * 1.7) * 6.0
+        val dripY = sy + t * 16.0
+        val a = Math.max(0.0, 0.55 * (1.0 - t) * pulse)
+        val ds = 2.0 + (1.0 - t) * 2.5
+        gc.setFill(Color.color(0.32, 0.22, 0.1, a))
+        gc.fillOval(sx + dx - ds, dripY - ds * 0.5, ds * 2, ds)
       }
     }
   }
@@ -6400,27 +6485,53 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 80.0
+    val margin = 100.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 47) * 0.5
       val flicker = 0.7 + 0.3 * Math.sin(phase * 6)
-      // Orange glow
+      val fastFlicker = 0.8 + 0.2 * Math.sin(phase * 9)
+      val pdx = projectile.dx.toDouble; val pdy = projectile.dy.toDouble
+      val pLen = Math.sqrt(pdx * pdx + pdy * pdy)
+      val dirX = if (pLen > 0.01) pdx / pLen else 1.0
+      val dirY = if (pLen > 0.01) pdy / pLen else 0.0
+      val perpX = -dirY; val perpY = dirX
+      // Layer 1: Wide heat shimmer
+      gc.setFill(Color.color(1.0, 0.4, 0.0, 0.05 * flicker))
+      gc.fillOval(sx - 24, sy - 18, 48, 36)
+      // Layer 2: Orange fire glow
       gc.setFill(Color.color(1.0, 0.5, 0.0, 0.1 * flicker))
-      gc.fillOval(sx - 8, sy - 8, 16, 16)
-      // Tiny bright spark
-      gc.setFill(Color.color(1.0, 0.7, 0.1, 0.9 * flicker))
-      gc.fillOval(sx - 2.5, sy - 2, 5, 4)
-      gc.setFill(Color.color(1.0, 1.0, 0.6, 0.8))
+      gc.fillOval(sx - 16, sy - 12, 32, 24)
+      // Layer 3: Inner fire glow
+      gc.setFill(Color.color(1.0, 0.6, 0.1, 0.2 * flicker))
+      gc.fillOval(sx - 10, sy - 7, 20, 14)
+      // Flickering flame tongues (5 surrounding flames)
+      for (i <- 0 until 5) {
+        val angle = phase * 3.0 + i * Math.PI * 2.0 / 5.0
+        val dist = 5.0 + Math.sin(phase * 4 + i * 2.3) * 2.0
+        val fx = sx + Math.cos(angle) * dist
+        val fy = sy + Math.sin(angle) * dist * 0.6 - Math.abs(Math.sin(phase * 5 + i)) * 3.0
+        val fSize = 3.0 + Math.sin(phase * 6 + i * 1.7) * 1.5
+        gc.setFill(Color.color(1.0, 0.55 + 0.2 * Math.sin(phase + i), 0.0, 0.5 * flicker))
+        gc.fillOval(fx - fSize, fy - fSize * 0.8, fSize * 2, fSize * 1.6)
+      }
+      // Core ember - bright orange/yellow
+      gc.setFill(Color.color(1.0, 0.7, 0.15, 0.9 * flicker))
+      gc.fillOval(sx - 5, sy - 3.5, 10, 7)
+      // White-hot center
+      gc.setFill(Color.color(1.0, 0.95, 0.6, 0.85 * fastFlicker))
+      gc.fillOval(sx - 3, sy - 2, 6, 4)
+      gc.setFill(Color.color(1.0, 1.0, 0.85, 0.7))
       gc.fillOval(sx - 1.5, sy - 1, 3, 2)
-      // Spark trail
-      for (i <- 0 until 3) {
-        val t = ((animationTick * 0.12 + i * 0.33 + projectile.id * 0.17) % 1.0)
-        val pdx = projectile.dx.toDouble; val pdy = projectile.dy.toDouble
-        val tX = sx - pdx * t * 10 + Math.sin(phase + i * 2.3) * 3
-        val tY = sy - pdy * t * 6 + t * 4
-        val a = Math.max(0.0, 0.5 * (1.0 - t) * flicker)
+      // Fire spark trail (6 ascending embers)
+      for (i <- 0 until 6) {
+        val t = ((animationTick * 0.1 + i * 0.167 + projectile.id * 0.17) % 1.0)
+        val spread = Math.sin(phase + i * 2.3) * 5
+        val tX = sx - dirX * t * 18 + perpX * spread
+        val tY = sy - dirY * t * 11 + perpY * spread * 0.6 - t * 5.0
+        val a = Math.max(0.0, 0.6 * (1.0 - t) * flicker)
+        val s = 2.5 + (1.0 - t) * 2.0
         gc.setFill(Color.color(1.0, 0.5 * (1.0 - t), 0.0, a))
-        gc.fillOval(tX - 1, tY - 1, 2, 2)
+        gc.fillOval(tX - s, tY - s * 0.7, s * 2, s * 1.4)
       }
     }
   }
@@ -6580,24 +6691,49 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 80.0
+    val margin = 100.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
+      val phase = (animationTick + projectile.id * 23) * 0.35
       val spin = animationTick * 0.3 + projectile.id * 1.9
       val pulse = 0.85 + 0.15 * Math.sin(spin * 2)
-      // Spinning bone (elongated shape)
-      val boneLen = 8.0
+      val pdx = projectile.dx.toDouble; val pdy = projectile.dy.toDouble
+      val pLen = Math.sqrt(pdx * pdx + pdy * pdy)
+      val dirX = if (pLen > 0.01) pdx / pLen else 1.0
+      val dirY = if (pLen > 0.01) pdy / pLen else 0.0
+      // Ghostly bone aura
+      gc.setFill(Color.color(0.9, 0.88, 0.78, 0.06 * pulse))
+      gc.fillOval(sx - 18, sy - 13, 36, 26)
+      gc.setFill(Color.color(0.92, 0.9, 0.8, 0.1 * pulse))
+      gc.fillOval(sx - 12, sy - 9, 24, 18)
+      // Spinning bone (bigger)
+      val boneLen = 11.0
       val c = Math.cos(spin); val s2 = Math.sin(spin)
       val x1 = sx + c * boneLen; val y1 = sy + s2 * boneLen * 0.5
       val x2 = sx - c * boneLen; val y2 = sy - s2 * boneLen * 0.5
       // Bone shaft
       gc.setStroke(Color.color(0.9, 0.87, 0.78, 0.85 * pulse))
-      gc.setLineWidth(3)
+      gc.setLineWidth(3.5)
       gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
       gc.strokeLine(x1, y1, x2, y2)
-      // Bone knobs at ends
+      // Bone knobs at ends (bigger)
       gc.setFill(Color.color(0.92, 0.9, 0.82, 0.9))
-      gc.fillOval(x1 - 2.5, y1 - 2, 5, 4)
-      gc.fillOval(x2 - 2.5, y2 - 2, 5, 4)
+      gc.fillOval(x1 - 3.5, y1 - 2.5, 7, 5)
+      gc.fillOval(x2 - 3.5, y2 - 2.5, 7, 5)
+      // Bright highlights on knobs
+      gc.setFill(Color.color(1.0, 0.98, 0.92, 0.6))
+      gc.fillOval(x1 - 1.5, y1 - 1.5, 3, 3)
+      gc.fillOval(x2 - 1.5, y2 - 1.5, 3, 3)
+      // Bone dust trail
+      for (i <- 0 until 5) {
+        val t = ((animationTick * 0.09 + i * 0.2 + projectile.id * 0.15) % 1.0)
+        val spread = Math.sin(phase + i * 2.1) * 5
+        val tX = sx - dirX * t * 18 + spread
+        val tY = sy - dirY * t * 11 + t * 4
+        val a = Math.max(0.0, 0.35 * (1.0 - t) * pulse)
+        val s = 2.0 + t * 2.5
+        gc.setFill(Color.color(0.88, 0.85, 0.75, a))
+        gc.fillOval(tX - s, tY - s * 0.7, s * 2, s * 1.4)
+      }
     }
   }
 
@@ -6934,25 +7070,53 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 80.0
+    val margin = 100.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
+      val phase = (animationTick + projectile.id * 21) * 0.35
       val spin = animationTick * 0.3 + projectile.id * 1.7
+      val pulse = 0.85 + 0.15 * Math.sin(phase)
       val c = Math.cos(spin); val s2 = Math.sin(spin)
-      // Shovel handle
-      val handleLen = 10.0
-      gc.setStroke(Color.color(0.5, 0.35, 0.2, 0.8))
-      gc.setLineWidth(2)
+      val pdx = projectile.dx.toDouble; val pdy = projectile.dy.toDouble
+      val pLen = Math.sqrt(pdx * pdx + pdy * pdy)
+      val dirX = if (pLen > 0.01) pdx / pLen else 1.0
+      val dirY = if (pLen > 0.01) pdy / pLen else 0.0
+      // Metal gleam aura
+      gc.setFill(Color.color(0.7, 0.7, 0.65, 0.06 * pulse))
+      gc.fillOval(sx - 18, sy - 13, 36, 26)
+      gc.setFill(Color.color(0.75, 0.75, 0.7, 0.1 * pulse))
+      gc.fillOval(sx - 11, sy - 8, 22, 16)
+      // Shovel handle (bigger)
+      val handleLen = 12.0
+      gc.setStroke(Color.color(0.5, 0.35, 0.2, 0.85))
+      gc.setLineWidth(2.5)
       gc.strokeLine(sx, sy, sx + c * handleLen, sy + s2 * handleLen * 0.6)
-      // Shovel head (grey metal trapezoid)
-      val headX = sx - c * 5; val headY = sy - s2 * 3
+      // Shovel head (bigger grey metal trapezoid)
+      val headX = sx - c * 6; val headY = sy - s2 * 3.5
       val perpX = -s2; val perpY = c
-      gc.setFill(Color.color(0.55, 0.55, 0.5, 0.85))
+      gc.setFill(Color.color(0.55, 0.55, 0.5, 0.9))
       gc.fillPolygon(
-        Array(headX + perpX * 4, headX - perpX * 4, headX - c * 4 - perpX * 3, headX - c * 4 + perpX * 3),
-        Array(headY + perpY * 2.5, headY - perpY * 2.5, headY - s2 * 2.5 - perpY * 2, headY - s2 * 2.5 + perpY * 2), 4)
-      // Metal shine
-      gc.setFill(Color.color(0.75, 0.75, 0.7, 0.4))
-      gc.fillOval(headX - 2, headY - 1.5, 4, 3)
+        Array(headX + perpX * 5, headX - perpX * 5, headX - c * 5 - perpX * 4, headX - c * 5 + perpX * 4),
+        Array(headY + perpY * 3, headY - perpY * 3, headY - s2 * 3 - perpY * 2.5, headY - s2 * 3 + perpY * 2.5), 4)
+      // Metal outline
+      gc.setStroke(Color.color(0.4, 0.4, 0.38, 0.6))
+      gc.setLineWidth(1)
+      gc.strokePolygon(
+        Array(headX + perpX * 5, headX - perpX * 5, headX - c * 5 - perpX * 4, headX - c * 5 + perpX * 4),
+        Array(headY + perpY * 3, headY - perpY * 3, headY - s2 * 3 - perpY * 2.5, headY - s2 * 3 + perpY * 2.5), 4)
+      // Metal shine highlight
+      gc.setFill(Color.color(0.85, 0.85, 0.82, 0.5))
+      gc.fillOval(headX - 3, headY - 2, 6, 4)
+      // Dirt trail (5 particles)
+      for (i <- 0 until 5) {
+        val t = ((animationTick * 0.09 + i * 0.2 + projectile.id * 0.17) % 1.0)
+        val spread = Math.sin(phase + i * 2.3) * 4
+        val tX = sx - dirX * t * 16 + spread
+        val tY = sy - dirY * t * 10 + t * 5
+        val a = Math.max(0.0, 0.35 * (1.0 - t) * pulse)
+        val ds = 2.0 + t * 2.5
+        gc.setFill(Color.color(0.5, 0.4, 0.25, a))
+        gc.fillOval(tX - ds, tY - ds * 0.6, ds * 2, ds * 1.2)
+      }
     }
   }
 
@@ -6960,30 +7124,54 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 80.0
+    val margin = 100.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 29) * 0.3
       val spin = animationTick * 0.2 + projectile.id * 1.3
-      val bounce = Math.abs(Math.sin(phase * 1.5)) * 3.0
-      val r = 7.0
-      // Shadow
-      gc.setFill(Color.color(0.0, 0.0, 0.0, 0.1))
-      gc.fillOval(sx - r * 0.8, sy + 4, r * 1.6, r * 0.4)
-      // Pale sphere (head)
-      gc.setFill(Color.color(0.75, 0.7, 0.6, 0.85))
+      val pulse = 0.8 + 0.2 * Math.sin(phase * 2)
+      val bounce = Math.abs(Math.sin(phase * 1.5)) * 4.0
+      val r = 8.0
+      val pdx = projectile.dx.toDouble; val pdy = projectile.dy.toDouble
+      val pLen = Math.sqrt(pdx * pdx + pdy * pdy)
+      val dirX = if (pLen > 0.01) pdx / pLen else 1.0
+      val dirY = if (pLen > 0.01) pdy / pLen else 0.0
+      // Eerie ghostly aura
+      gc.setFill(Color.color(0.4, 0.6, 0.4, 0.06 * pulse))
+      gc.fillOval(sx - 22, sy - bounce - 16, 44, 32)
+      gc.setFill(Color.color(0.5, 0.7, 0.5, 0.1 * pulse))
+      gc.fillOval(sx - 14, sy - bounce - 10, 28, 20)
+      // Shadow on ground
+      gc.setFill(Color.color(0.0, 0.0, 0.0, 0.15))
+      gc.fillOval(sx - r, sy + 4, r * 2, r * 0.5)
+      // Pale sphere (head) - bigger
+      gc.setFill(Color.color(0.72, 0.68, 0.58, 0.9))
       gc.fillOval(sx - r, sy - bounce - r, r * 2, r * 2)
-      // Face features (simple)
+      // Highlight on head
+      gc.setFill(Color.color(0.85, 0.82, 0.72, 0.4))
+      gc.fillOval(sx - r * 0.4, sy - bounce - r * 0.8, r * 0.8, r * 0.6)
+      // Face features
       val faceR = spin % (Math.PI * 2)
       val faceVisible = Math.cos(faceR) > 0
       if (faceVisible) {
-        // Eyes
-        gc.setFill(Color.color(0.1, 0.1, 0.1, 0.7))
-        gc.fillOval(sx - 3, sy - bounce - 3, 2, 2)
-        gc.fillOval(sx + 1, sy - bounce - 3, 2, 2)
+        // Glowing green eyes
+        gc.setFill(Color.color(0.2, 0.8, 0.2, 0.8 * pulse))
+        gc.fillOval(sx - 3.5, sy - bounce - 3.5, 2.5, 2.5)
+        gc.fillOval(sx + 1, sy - bounce - 3.5, 2.5, 2.5)
         // Mouth
-        gc.setStroke(Color.color(0.1, 0.1, 0.1, 0.5))
+        gc.setStroke(Color.color(0.1, 0.1, 0.1, 0.6))
         gc.setLineWidth(1)
-        gc.strokeLine(sx - 2, sy - bounce + 1, sx + 2, sy - bounce + 1)
+        gc.strokeLine(sx - 2.5, sy - bounce + 1.5, sx + 2.5, sy - bounce + 1.5)
+      }
+      // Ghostly wisps trailing behind (5 wisps)
+      for (i <- 0 until 5) {
+        val t = ((animationTick * 0.08 + i * 0.2 + projectile.id * 0.17) % 1.0)
+        val spread = Math.sin(phase + i * 2.1) * 5
+        val tX = sx - dirX * t * 20 + spread
+        val tY = sy - dirY * t * 12 - bounce * (1.0 - t) - t * 3
+        val a = Math.max(0.0, 0.3 * (1.0 - t) * pulse)
+        val s = 2.5 + t * 3.0
+        gc.setFill(Color.color(0.5, 0.7, 0.5, a))
+        gc.fillOval(tX - s, tY - s * 0.7, s * 2, s * 1.4)
       }
     }
   }
@@ -7355,26 +7543,56 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 80.0
+    val margin = 100.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
+      val phase = (animationTick + projectile.id * 33) * 0.4
       val spin = animationTick * 0.35 + projectile.id * 2.1
       val pulse = 0.85 + 0.15 * Math.sin(spin * 2)
-      // Spinning card (white rectangle)
-      val cardW = 5.0 * Math.abs(Math.cos(spin)) + 1 // perspective flip
-      val cardH = 8.0
-      gc.setFill(Color.color(1.0, 1.0, 0.95, 0.85 * pulse))
+      val pdx = projectile.dx.toDouble; val pdy = projectile.dy.toDouble
+      val pLen = Math.sqrt(pdx * pdx + pdy * pdy)
+      val dirX = if (pLen > 0.01) pdx / pLen else 1.0
+      val dirY = if (pLen > 0.01) pdy / pLen else 0.0
+      val suitID = projectile.id % 4
+      val isRed = suitID < 2
+      val glowR = if (isRed) 1.0 else 0.5
+      val glowG = if (isRed) 0.3 else 0.5
+      val glowB = if (isRed) 0.3 else 0.8
+      // Magical card aura
+      gc.setFill(Color.color(glowR, glowG, glowB, 0.06 * pulse))
+      gc.fillOval(sx - 20, sy - 15, 40, 30)
+      gc.setFill(Color.color(glowR, glowG, glowB, 0.12 * pulse))
+      gc.fillOval(sx - 12, sy - 9, 24, 18)
+      // Spinning card (bigger, white rectangle with perspective)
+      val cardW = 6.0 * Math.abs(Math.cos(spin)) + 1.5
+      val cardH = 10.0
+      gc.setFill(Color.color(1.0, 1.0, 0.97, 0.9 * pulse))
       gc.fillRect(sx - cardW, sy - cardH * 0.5, cardW * 2, cardH)
-      gc.setStroke(Color.color(0.3, 0.3, 0.3, 0.6))
-      gc.setLineWidth(1)
+      // Card border
+      gc.setStroke(Color.color(0.6, 0.5, 0.2, 0.7))
+      gc.setLineWidth(1.2)
       gc.strokeRect(sx - cardW, sy - cardH * 0.5, cardW * 2, cardH)
-      // Suit symbol (red diamond in center)
-      if (cardW > 2) {
-        val suitID = (projectile.id % 4)
-        val suitColor = if (suitID < 2) Color.color(0.85, 0.1, 0.1, 0.8)
-                         else Color.color(0.1, 0.1, 0.1, 0.8)
+      // Golden edge shimmer
+      gc.setStroke(Color.color(1.0, 0.85, 0.3, 0.4 * pulse))
+      gc.setLineWidth(0.8)
+      gc.strokeRect(sx - cardW + 1, sy - cardH * 0.5 + 1, (cardW - 1) * 2, cardH - 2)
+      // Suit symbol
+      if (cardW > 2.5) {
+        val suitColor = if (isRed) Color.color(0.85, 0.1, 0.1, 0.85)
+                         else Color.color(0.1, 0.1, 0.1, 0.85)
         gc.setFill(suitColor)
-        val sr = 2.0
+        val sr = 2.5
         gc.fillPolygon(Array(sx, sx + sr, sx, sx - sr), Array(sy - sr, sy, sy + sr, sy), 4)
+      }
+      // Sparkle trail (5 glittering particles)
+      for (i <- 0 until 5) {
+        val t = ((animationTick * 0.1 + i * 0.2 + projectile.id * 0.15) % 1.0)
+        val spread = Math.sin(phase + i * 2.3) * 5
+        val tX = sx - dirX * t * 18 + spread
+        val tY = sy - dirY * t * 11 + Math.sin(phase * 3 + i) * 3
+        val a = Math.max(0.0, 0.5 * (1.0 - t) * pulse)
+        val s = 1.5 + (1.0 - t) * 1.5
+        gc.setFill(Color.color(1.0, 0.9, 0.5, a))
+        gc.fillOval(tX - s, tY - s, s * 2, s * 2)
       }
     }
   }
@@ -7428,27 +7646,61 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 80.0
+    val margin = 100.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 37) * 0.4
       val pulse = 0.8 + 0.2 * Math.sin(phase * 3)
-      val glitch = Math.sin(phase * 7) * 3.0
-      // Green digital glitch effect
+      val glitch = Math.sin(phase * 7) * 4.0
+      val fastGlitch = Math.sin(phase * 11) * 2.0
+      val pdx = projectile.dx.toDouble; val pdy = projectile.dy.toDouble
+      val pLen = Math.sqrt(pdx * pdx + pdy * pdy)
+      val dirX = if (pLen > 0.01) pdx / pLen else 1.0
+      val dirY = if (pLen > 0.01) pdy / pLen else 0.0
+      val perpX = -dirY; val perpY = dirX
+      // Layer 1: Wide digital aura
       gc.setFill(Color.color(0.0, 1.0, 0.2, 0.06 * pulse))
-      gc.fillOval(sx - 14, sy - 10, 28, 20)
-      // Glitchy rectangles (displaced)
-      for (i <- 0 until 4) {
-        val gx = sx + Math.sin(phase * 4 + i * 1.7) * 5 + glitch * (if (i % 2 == 0) 1 else -1)
-        val gy = sy + Math.cos(phase * 3 + i * 2.1) * 3
-        val gw = 3.0 + Math.sin(phase * 5 + i) * 2
-        val gh = 2.0 + Math.cos(phase * 4 + i) * 1
-        val a = 0.3 + 0.4 * Math.sin(phase * 6 + i * 2)
+      gc.fillOval(sx - 24, sy - 18, 48, 36)
+      // Layer 2: Bright green glow
+      gc.setFill(Color.color(0.0, 0.9, 0.25, 0.1 * pulse))
+      gc.fillOval(sx - 16, sy - 12, 32, 24)
+      // Glitchy data cascade - matrix-style falling segments
+      for (i <- 0 until 8) {
+        val gx = sx + Math.sin(phase * 4 + i * 1.3) * 10 + glitch * (if (i % 2 == 0) 1 else -1)
+        val gy = sy + Math.cos(phase * 3 + i * 1.7) * 7 + fastGlitch * (if (i % 3 == 0) 1 else -1)
+        val gw = 3.5 + Math.sin(phase * 5 + i * 0.9) * 2.5
+        val gh = 2.5 + Math.cos(phase * 4 + i * 1.1) * 1.5
+        val a = 0.25 + 0.35 * Math.sin(phase * 6 + i * 2)
         gc.setFill(Color.color(0.0, 1.0, 0.3, Math.max(0, Math.min(1, a * pulse))))
         gc.fillRect(gx - gw / 2, gy - gh / 2, gw, gh)
       }
-      // Core skull/danger symbol
-      gc.setFill(Color.color(0.0, 0.9, 0.2, 0.7 * pulse))
-      gc.fillOval(sx - 3, sy - 2, 6, 4)
+      // Scan line effects (horizontal glitch bands)
+      for (i <- 0 until 3) {
+        val bandY = sy + (i - 1) * 6 + Math.sin(phase * 8 + i) * 2
+        val bandW = 14 + Math.sin(phase * 5 + i * 3) * 6
+        gc.setFill(Color.color(0.0, 1.0, 0.2, 0.15 * pulse))
+        gc.fillRect(sx - bandW / 2 + glitch * 0.5, bandY - 0.8, bandW, 1.6)
+      }
+      // Core virus sphere - bigger with green pulse
+      gc.setFill(Color.color(0.0, 0.85, 0.2, 0.75 * pulse))
+      gc.fillOval(sx - 6 + fastGlitch * 0.3, sy - 4, 12, 8)
+      // Bright center
+      gc.setFill(Color.color(0.2, 1.0, 0.4, 0.85 * pulse))
+      gc.fillOval(sx - 3.5 + fastGlitch * 0.3, sy - 2.5, 7, 5)
+      // White-hot center point
+      gc.setFill(Color.color(0.6, 1.0, 0.7, 0.7))
+      gc.fillOval(sx - 1.5, sy - 1, 3, 2)
+      // Data particle trail (6 digital fragments)
+      for (i <- 0 until 6) {
+        val t = ((animationTick * 0.1 + i * 0.167 + projectile.id * 0.13) % 1.0)
+        val spread = Math.sin(phase * 3 + i * 2.3) * 6
+        val tX = sx - dirX * t * 20 + perpX * spread + Math.sin(phase * 7 + i) * 2
+        val tY = sy - dirY * t * 12 + perpY * spread * 0.6
+        val a = Math.max(0.0, 0.5 * (1.0 - t) * pulse)
+        val tw = 3.0 + (1.0 - t) * 2.0
+        val th = 1.5 + (1.0 - t) * 1.0
+        gc.setFill(Color.color(0.0, 1.0, 0.3, a))
+        gc.fillRect(tX - tw / 2, tY - th / 2, tw, th)
+      }
     }
   }
 
@@ -7809,40 +8061,69 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 80.0
+    val margin = 100.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 29) * 0.3
       val spin = animationTick * 0.15 + projectile.id * 1.1
       val pulse = 0.8 + 0.2 * Math.sin(phase)
-      // White translucent web aura
-      gc.setFill(Color.color(1.0, 1.0, 1.0, 0.05 * pulse))
+      val pdx = projectile.dx.toDouble; val pdy = projectile.dy.toDouble
+      val pLen = Math.sqrt(pdx * pdx + pdy * pdy)
+      val dirX = if (pLen > 0.01) pdx / pLen else 1.0
+      val dirY = if (pLen > 0.01) pdy / pLen else 0.0
+      // Sticky web aura
+      gc.setFill(Color.color(1.0, 1.0, 0.95, 0.06 * pulse))
+      gc.fillOval(sx - 22, sy - 16, 44, 32)
+      gc.setFill(Color.color(0.95, 0.95, 0.9, 0.1 * pulse))
       gc.fillOval(sx - 14, sy - 10, 28, 20)
-      // Radial web strands
-      val webR = 9.0
-      for (i <- 0 until 6) {
-        val angle = spin + i * Math.PI / 3
-        val ex = sx + Math.cos(angle) * webR
-        val ey = sy + Math.sin(angle) * webR * 0.6
-        gc.setStroke(Color.color(0.95, 0.95, 0.9, 0.5 * pulse))
-        gc.setLineWidth(1)
+      // Radial web strands (bigger, 8 strands)
+      val webR = 13.0
+      for (i <- 0 until 8) {
+        val angle = spin + i * Math.PI / 4
+        val wobble = Math.sin(phase * 2 + i * 1.7) * 1.5
+        val ex = sx + Math.cos(angle) * (webR + wobble)
+        val ey = sy + Math.sin(angle) * (webR + wobble) * 0.6
+        gc.setStroke(Color.color(0.95, 0.95, 0.9, 0.55 * pulse))
+        gc.setLineWidth(1.2)
         gc.strokeLine(sx, sy, ex, ey)
       }
-      // Concentric web rings
-      for (ring <- 1 to 2) {
-        val rr = webR * ring / 3.0
-        val ringPts = 6
+      // Concentric web rings (3 rings, bigger)
+      for (ring <- 1 to 3) {
+        val rr = webR * ring / 4.0
+        val ringPts = 8
         for (i <- 0 until ringPts) {
           val a1 = spin + i * Math.PI * 2 / ringPts
           val a2 = spin + (i + 1) * Math.PI * 2 / ringPts
-          gc.setStroke(Color.color(0.9, 0.9, 0.85, 0.35 * pulse))
-          gc.setLineWidth(0.8)
-          gc.strokeLine(sx + Math.cos(a1) * rr, sy + Math.sin(a1) * rr * 0.6,
-                        sx + Math.cos(a2) * rr, sy + Math.sin(a2) * rr * 0.6)
+          val sag = Math.sin(phase + ring + i * 0.5) * 1.5
+          gc.setStroke(Color.color(0.92, 0.92, 0.88, 0.4 * pulse))
+          gc.setLineWidth(1.0)
+          gc.strokeLine(sx + Math.cos(a1) * rr, sy + Math.sin(a1) * rr * 0.6 + sag,
+                        sx + Math.cos(a2) * rr, sy + Math.sin(a2) * rr * 0.6 + sag)
         }
       }
-      // Center blob
-      gc.setFill(Color.color(0.95, 0.95, 0.9, 0.6))
-      gc.fillOval(sx - 2.5, sy - 2, 5, 4)
+      // Sticky blobs at strand tips
+      for (i <- 0 until 8) {
+        val angle = spin + i * Math.PI / 4
+        val ex = sx + Math.cos(angle) * webR
+        val ey = sy + Math.sin(angle) * webR * 0.6
+        gc.setFill(Color.color(0.95, 0.95, 0.9, 0.35 * pulse))
+        gc.fillOval(ex - 1.5, ey - 1, 3, 2)
+      }
+      // Center web mass (bigger)
+      gc.setFill(Color.color(0.92, 0.92, 0.88, 0.7))
+      gc.fillOval(sx - 5, sy - 3.5, 10, 7)
+      gc.setFill(Color.color(0.97, 0.97, 0.94, 0.5))
+      gc.fillOval(sx - 3, sy - 2, 6, 4)
+      // Web strand trail (4 trailing threads)
+      for (i <- 0 until 4) {
+        val t = ((animationTick * 0.08 + i * 0.25 + projectile.id * 0.15) % 1.0)
+        val spread = Math.sin(phase + i * 2.3) * 6
+        val tX = sx - dirX * t * 18 + spread
+        val tY = sy - dirY * t * 11 + Math.sin(phase + i * 1.7) * 3
+        val a = Math.max(0.0, 0.3 * (1.0 - t) * pulse)
+        gc.setStroke(Color.color(0.9, 0.9, 0.85, a))
+        gc.setLineWidth(0.8)
+        gc.strokeLine(sx - dirX * (t - 0.1) * 18, sy - dirY * (t - 0.1) * 11, tX, tY)
+      }
     }
   }
 
@@ -7850,8 +8131,9 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 80.0
+    val margin = 100.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
+      val phase = (animationTick + projectile.id * 31) * 0.4
       val spin = animationTick * 0.3 + projectile.id * 2.1
       val pulse = 0.85 + 0.15 * Math.sin(spin * 2)
       val pdx = projectile.dx.toDouble; val pdy = projectile.dy.toDouble
@@ -7859,22 +8141,58 @@ class GameCanvas(client: GameClient) extends Canvas() {
       val dirX = if (pLen > 0.01) pdx / pLen else 1.0
       val dirY = if (pLen > 0.01) pdy / pLen else 0.0
       val perpX = -dirY; val perpY = dirX
-      // Yellow-black spike shape
-      val tipPx = sx + dirX * 10; val tipPy = sy + dirY * 6
-      val backPx = sx - dirX * 6; val backPy = sy - dirY * 3.5
-      val w1x = sx + perpX * 3; val w1y = sy + perpY * 2
-      val w2x = sx - perpX * 3; val w2y = sy - perpY * 2
-      // Black base
-      gc.setFill(Color.color(0.15, 0.12, 0.05, 0.8 * pulse))
-      gc.fillPolygon(Array(sx, w1x, backPx, w2x), Array(sy + dirY, w1y, backPy, w2y), 4)
-      // Yellow tip
-      gc.setFill(Color.color(0.95, 0.85, 0.1, 0.85 * pulse))
-      gc.fillPolygon(Array(tipPx, w1x * 0.5 + sx * 0.5, w2x * 0.5 + sx * 0.5),
-                     Array(tipPy, w1y * 0.5 + sy * 0.5 + dirY * 0.5, w2y * 0.5 + sy * 0.5 + dirY * 0.5), 3)
+      // Layer 1: Wide venom aura
+      gc.setFill(Color.color(0.85, 0.8, 0.0, 0.05 * pulse))
+      gc.fillOval(sx - 22, sy - 16, 44, 32)
+      // Layer 2: Yellow-green venom glow
+      gc.setFill(Color.color(0.9, 0.85, 0.1, 0.1 * pulse))
+      gc.fillOval(sx - 14, sy - 10, 28, 20)
+      // Buzzing energy particles (wing-like shimmer)
+      for (i <- 0 until 4) {
+        val angle = phase * 4.0 + i * Math.PI / 2
+        val dist = 6.0 + Math.sin(phase * 6 + i * 2.3) * 3.0
+        val bx = sx + Math.cos(angle) * dist * 0.7
+        val by = sy + Math.sin(angle) * dist * 0.4
+        val bs = 2.0 + Math.sin(phase * 8 + i) * 1.0
+        gc.setFill(Color.color(0.9, 0.85, 0.3, 0.35 * pulse))
+        gc.fillOval(bx - bs, by - bs * 0.6, bs * 2, bs * 1.2)
+      }
+      // Yellow-black stinger spike - BIGGER
+      val tipPx = sx + dirX * 14; val tipPy = sy + dirY * 8.5
+      val backPx = sx - dirX * 8; val backPy = sy - dirY * 5
+      val w1x = sx + perpX * 4.5; val w1y = sy + perpY * 3
+      val w2x = sx - perpX * 4.5; val w2y = sy - perpY * 3
+      // Dark base with stripes
+      gc.setFill(Color.color(0.12, 0.1, 0.03, 0.85 * pulse))
+      gc.fillPolygon(Array(sx + dirX * 2, w1x, backPx, w2x),
+                     Array(sy + dirY * 1.5, w1y, backPy, w2y), 4)
+      // Middle stripe (yellow)
+      val midX = sx - dirX * 1; val midY = sy - dirY * 0.5
+      gc.setFill(Color.color(0.9, 0.8, 0.05, 0.7 * pulse))
+      gc.fillPolygon(Array(midX + dirX * 3, midX + perpX * 3.5, midX - dirX * 3, midX - perpX * 3.5),
+                     Array(midY + dirY * 2, midY + perpY * 2.3, midY - dirY * 2, midY - perpY * 2.3), 4)
+      // Bright yellow-white tip
+      gc.setFill(Color.color(0.98, 0.92, 0.2, 0.9 * pulse))
+      gc.fillPolygon(Array(tipPx, sx + perpX * 3 + dirX * 3, sx - perpX * 3 + dirX * 3),
+                     Array(tipPy, sy + perpY * 2 + dirY * 2, sy - perpY * 2 + dirY * 2), 3)
+      // Hot tip glow
+      gc.setFill(Color.color(1.0, 1.0, 0.6, 0.7 * pulse))
+      gc.fillOval(tipPx - 2.5, tipPy - 2, 5, 4)
       // Outline
-      gc.setStroke(Color.color(0.1, 0.08, 0.0, 0.6))
-      gc.setLineWidth(1)
+      gc.setStroke(Color.color(0.1, 0.08, 0.0, 0.65))
+      gc.setLineWidth(1.2)
       gc.strokePolygon(Array(tipPx, w1x, backPx, w2x), Array(tipPy, w1y, backPy, w2y), 4)
+      // Venom drip trail (5 drops)
+      for (i <- 0 until 5) {
+        val t = ((animationTick * 0.09 + i * 0.2 + projectile.id * 0.17) % 1.0)
+        val spread = Math.sin(phase + i * 2.1) * 4
+        val tX = sx - dirX * t * 18 + perpX * spread
+        val tY = sy - dirY * t * 11 + perpY * spread * 0.6 + t * 5.0
+        val a = Math.max(0.0, 0.5 * (1.0 - t) * pulse)
+        val ds = 2.0 + (1.0 - t) * 1.5
+        gc.setFill(Color.color(0.7, 0.8, 0.0, a))
+        gc.fillOval(tX - ds, tY - ds * 0.6, ds * 2, ds * 1.2)
+      }
     }
   }
 
