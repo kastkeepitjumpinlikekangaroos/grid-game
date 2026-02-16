@@ -119,6 +119,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   private var gameTimeSyncTimestamp: Long = 0L
   val scoreboard: CopyOnWriteArrayList[ScoreEntry] = new CopyOnWriteArrayList[ScoreEntry]()
   @volatile var isRespawning: Boolean = false
+  @volatile var lastKillerCharacterName: String = ""
 
   def gameTimeRemaining: Int = {
     if (gameTimeSyncTimestamp == 0L) return 0
@@ -918,16 +919,22 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           deathCount += 1
         }
 
-        // Add to kill feed
+        // Add to kill feed (using character names)
         val killerName = if (killerId.equals(localPlayerId)) "You" else {
           val p = players.get(killerId)
-          if (p != null) p.getName else killerId.toString.substring(0, 8)
+          if (p != null) CharacterDef.get(p.getCharacterId).displayName else killerId.toString.substring(0, 8)
         }
         val victimName = if (victimId != null && victimId.equals(localPlayerId)) "You" else {
           if (victimId != null) {
             val p = players.get(victimId)
-            if (p != null) p.getName else victimId.toString.substring(0, 8)
+            if (p != null) CharacterDef.get(p.getCharacterId).displayName else victimId.toString.substring(0, 8)
           } else "?"
+        }
+
+        // Track who killed the local player (for death screen)
+        if (victimId != null && victimId.equals(localPlayerId)) {
+          val killerP = players.get(killerId)
+          lastKillerCharacterName = if (killerP != null) CharacterDef.get(killerP.getCharacterId).displayName else "?"
         }
         killFeed.add(Array(System.currentTimeMillis().asInstanceOf[AnyRef], killerName.asInstanceOf[AnyRef], victimName.asInstanceOf[AnyRef]))
         // Keep only last 5
