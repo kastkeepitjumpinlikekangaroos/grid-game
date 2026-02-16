@@ -1,6 +1,6 @@
 # Grid Game - Multiplayer 2D Arena Game
 
-A multiplayer 2D isometric arena game built with Scala and JavaFX, using TCP+UDP networking via Netty.
+A multiplayer 2D isometric arena game built with Scala, using LWJGL/OpenGL for GPU-accelerated game rendering and JavaFX for UI screens. Networking via TCP+UDP with Netty.
 
 ## Build & Run
 
@@ -31,20 +31,29 @@ bazel run //src/main/scala/com/gridgame/mapeditor
 │  │ (JavaFX App)│──│ (State)     │──│ (TCP+UDP via Netty)    │   │
 │  └─────────────┘  └─────────────┘  └────────────────────────┘   │
 │         │                │                                       │
-│  ┌─────────────┐  ┌──────────────┐  ┌────────────────────────┐  │
-│  │ GameCanvas  │  │ KeyboardHandler│ │ MouseHandler           │  │
-│  │ (Isometric) │  │ (WASD+QE)    │  │ (Aim/Click)            │  │
-│  └─────────────┘  └──────────────┘  └────────────────────────┘  │
-│         │                                ┌────────────────────┐  │
-│  ┌─────────────┐  ┌──────────────┐       │ ControllerHandler │  │
-│  │TileRenderer │  │ Background   │       │ (LWJGL/GLFW)      │  │
-│  │ (Tiles)     │  │ Renderer     │       └────────────────────┘  │
-│  └─────────────┘  └──────────────┘                               │
-│         │                                                        │
-│  ┌──────────────────────┐  ┌──────────────────────────────────┐  │
-│  │CharacterSelectionPanel│  │AbilityPreviewRenderer           │  │
-│  │(Categorized grid)    │  │(Animated ability previews)       │  │
-│  └──────────────────────┘  └──────────────────────────────────┘  │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                 OpenGL Renderer (GLFW Window)               │ │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │ │
+│  │  │GLGameRenderer│  │ ShapeBatch   │  │ SpriteBatch      │  │ │
+│  │  │(All game     │  │ (2D prims)   │  │ (Textured quads) │  │ │
+│  │  │ rendering)   │  │              │  │                  │  │ │
+│  │  └──────────────┘  └──────────────┘  └──────────────────┘  │ │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │ │
+│  │  │GLProjectile  │  │PostProcessor │  │ GLFontRenderer   │  │ │
+│  │  │Renderers(112)│  │(Bloom+Vign.) │  │ (AWT→GL atlas)   │  │ │
+│  │  └──────────────┘  └──────────────┘  └──────────────────┘  │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐  │
+│  │GLKeyboard    │  │GLMouse       │  │ ControllerHandler      │  │
+│  │Handler(GLFW) │  │Handler(GLFW) │  │ (GLFW gamepad)         │  │
+│  └──────────────┘  └──────────────┘  └────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────┐ │
+│  │              JavaFX UI (Login, Lobby, Scoreboard)            │ │
+│  │  ┌──────────────────────┐  ┌──────────────────────────────┐ │ │
+│  │  │CharacterSelectionPanel│  │AbilityPreviewRenderer       │ │ │
+│  │  │(Categorized grid)    │  │(Animated ability previews)   │ │ │
+│  │  └──────────────────────┘  └──────────────────────────────┘ │ │
+│  └──────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
                            │ TCP + UDP
                            ▼
@@ -89,9 +98,14 @@ src/main/scala/com/gridgame/
 │   │                           # AuthDatabase, BotManager, BotController, ProjectileManager
 │   │                           # ItemManager, RankedQueue, KillTracker, ClientHandler, ClientRegistry
 ├── client/                     # Client (GameClient, ClientMain, NetworkThread)
-│   ├── ui/                     # GameCanvas, TileRenderer, BackgroundRenderer, SpriteGenerator,
-│   │                           # CharacterSelectionPanel, AbilityPreviewRenderer
-│   └── input/                  # KeyboardHandler, MouseHandler, ControllerHandler
+│   ├── gl/                     # OpenGL renderer (GLGameRenderer, GLProjectileRenderers,
+│   │                           # ShapeBatch, SpriteBatch, ShaderProgram, PostProcessor,
+│   │                           # GLTexture, GLFontRenderer, GLWindow, GLFWManager,
+│   │                           # GLTileRenderer, GLSpriteGenerator, Matrix4, TextureRegion)
+│   ├── render/                 # Shared render utilities (GameCamera, IsometricTransform, EntityCollector)
+│   ├── ui/                     # JavaFX UI screens (TileRenderer, BackgroundRenderer, SpriteGenerator,
+│   │                           # CharacterSelectionPanel, AbilityPreviewRenderer)
+│   └── input/                  # GLKeyboardHandler, GLMouseHandler, ControllerHandler
 └── mapeditor/                  # Standalone map editor (12 source files)
     │                           # MapEditorApp, EditorCanvas, EditorState, TilePalette,
     │                           # DrawingTools, ToolBar, PropertiesPanel, MenuBarBuilder,
@@ -104,6 +118,84 @@ sprites/                        # Sprite assets (tiles.png + 112 character PNGs)
 scripts/                        # Asset generation scripts (14 Python scripts)
 docs/                           # GitHub Pages landing site
 ```
+
+## Rendering Architecture
+
+The client uses a dual-window approach: JavaFX for UI screens (login, lobby, character selection, scoreboard) and a GLFW window with OpenGL 3.3 core profile for in-game rendering.
+
+### Window Lifecycle
+When a match starts, `ClientMain.showGameScene()` hides the JavaFX Stage and creates a GLFW window with an OpenGL context. The game loop runs via JavaFX's `AnimationTimer` (fires on the main thread, required for both GLFW and OpenGL on macOS). On game over, the GLFW window is destroyed and the JavaFX Stage is shown again.
+
+### OpenGL Renderer (`client/gl/`)
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| `GLGameRenderer.scala` | ~1530 | Main renderer: tiles, players, projectiles, items, status effects, HUD, aim arrow, backgrounds, death/teleport/explosion animations |
+| `GLProjectileRenderers.scala` | ~1150 | All 112 projectile type renderers (8 pattern factories + 19 specialized renderers) |
+| `ShapeBatch.scala` | ~300 | Batched colored 2D primitives: fillRect, fillOval, fillOvalSoft, fillPolygon, strokeLine, strokeLineSoft, strokeOval, strokePolygon. Supports additive blend mode toggle. |
+| `SpriteBatch.scala` | ~200 | Batched textured quads with per-vertex tint/alpha. Flushes on texture change. |
+| `ShaderProgram.scala` | ~190 | GLSL shader compilation + embedded shader source: ColorShader (pos+color), TextureShader (pos+texcoord+color), BloomExtract, GaussianBlur, Composite (bloom+vignette+overlay) |
+| `PostProcessor.scala` | ~150 | Post-processing FBO pipeline: Scene FBO → Bloom extract (half-res) → Blur H → Blur V → Composite |
+| `GLTexture.scala` | ~120 | PNG loading via STB image → GL texture. FBO creation for render-to-texture. |
+| `GLFontRenderer.scala` | ~160 | AWT-based font rasterization → GL texture atlas. Supports outlined text with drop shadows. Three sizes (16/24/48px). |
+| `GLWindow.scala` | ~100 | GLFW window create/show/destroy/resize |
+| `GLFWManager.scala` | ~25 | Singleton `ensureInitialized()` shared by ControllerHandler and GLWindow |
+| `GLTileRenderer.scala` | ~50 | Loads `sprites/tiles.png` as GL texture, returns TextureRegion per tile ID + frame |
+| `GLSpriteGenerator.scala` | ~70 | Loads character sprite sheets as GL textures |
+| `Matrix4.scala` | ~30 | Orthographic projection matrix |
+| `TextureRegion.scala` | ~10 | Case class for (texture, u, v, u2, v2) sub-regions |
+
+### Shared Render Utilities (`client/render/`)
+
+| File | Purpose |
+|------|---------|
+| `GameCamera.scala` | Holds visualX/Y, smooth lerp, screen shake, zoom. Provides camera offsets. |
+| `IsometricTransform.scala` | `worldToScreen(wx,wy,cam)`, `screenToWorld(sx,sy,cam,zoom)` |
+| `EntityCollector.scala` | Collects items/projectiles/players by grid cell for depth-sorted rendering |
+
+### Rendering Pipeline
+```
+PostProcessor.beginScene()        -- bind scene FBO
+GLGameRenderer.render()           -- all game drawing into scene FBO
+  Background → Tiles → Items → Players → Projectiles →
+  Status Effects → Aim Arrow → Animations → HUD
+PostProcessor.endScene()          -- bloom extract → blur H → blur V →
+                                     composite (scene + bloom + vignette + overlay)
+```
+
+### Batch Management
+`GLGameRenderer` uses `beginShapes()` / `beginSprites()` / `endAll()` helpers to minimize state transitions. Only one batch (shape or sprite) is active at a time; calling `beginShapes()` while the sprite batch is active will end the sprite batch first, and vice versa.
+
+### Projectile Rendering System
+All 112 projectile types are registered in `GLProjectileRenderers.registry` (`Map[Byte, Renderer]`). Projectiles use **standard alpha blending** for solid, visible shapes — the bloom post-processor provides natural glow on bright elements.
+
+**8 pattern factories** (configurable color + size):
+- `energyBolt` — round glowing orb with orbiting sparkles and trail
+- `beamProj` — thick directional beam with bright core
+- `spinner` — rotating multi-armed star (axes, shurikens, katanas)
+- `physProj` — arrow/dart with prominent head and fletching
+- `lobbed` — arcing sphere with ground shadow
+- `aoeRing` — expanding concentric rings with pulsing glow
+- `chainProj` — zigzag lightning bolt segments
+- `wave` — wide crescent sweep
+
+**19 specialized renderers** for unique projectiles: fireball (spiral fire arms), lightning (forking bolts), tidal wave (cresting water), boulder (tumbling rock), shark jaw (animated chomping teeth), bat swarm, shadow bolt (void tendrils with purple eyes), inferno blast (fire vortex), and more.
+
+Type alias: `type Renderer = (Projectile, Float, Float, ShapeBatch, Int) => Unit`
+
+To add a new projectile renderer:
+1. Add an entry to the `registry` map in `GLProjectileRenderers`
+2. Either use a pattern factory (`energyBolt(r, g, b, size)`) or write a specialized `draw*` method
+3. The renderer receives screen-space coordinates (sx, sy) already transformed from world space
+
+### Post-Processing
+Settings in `PostProcessor`: `bloomThreshold=0.88`, `bloomStrength=0.12`, `vignetteStrength=0.08`. Bloom FBOs run at half resolution. Composite shader uses screen blending for bloom and smoothstep vignette.
+
+### Key Design Decisions
+- **Standard alpha blending for projectiles** — additive blending (`GL_SRC_ALPHA, GL_ONE`) makes projectiles invisible on bright terrain and removes all visual distinction. Standard blending with high alpha (0.7-0.95) produces solid, visible, distinct shapes. Bloom post-processor handles glow naturally.
+- **GLFW window swap** — hiding JavaFX Stage and creating a GLFW window avoids FBO→WritableImage pixel-copy overhead. Both use Cocoa NSWindows on macOS and coexist safely.
+- **AnimationTimer game loop** — fires on the FX Application Thread (main thread on macOS), which is required for both GLFW and OpenGL calls. No threading complexity.
+- **JavaFX UI retained** — Login, lobby, character selection, and scoreboard remain in JavaFX. Only in-game rendering uses OpenGL.
 
 ## Asset Generation
 
@@ -265,7 +357,7 @@ Client                              Server
 ## Bazel Build Notes
 
 - Uses `rules_scala` with Scala 2.13.16
-- Dependencies: JavaFX 21.0.1, Netty 4.1.104, Gson 2.10.1, SQLite JDBC 3.44.0, Guava 32.1.3, LWJGL 3.3.4
+- Dependencies: JavaFX 21.0.1, Netty 4.1.104, Gson 2.10.1, SQLite JDBC 3.44.0, Guava 32.1.3, LWJGL 3.3.4 (glfw, opengl, stb + macOS ARM64 and Windows natives)
 - Build targets:
   - `//src/main/scala/com/gridgame/server:server`
   - `//src/main/scala/com/gridgame/client:client`
