@@ -212,6 +212,15 @@ class Player(
 
   def setRootedUntil(until: Long): Unit = { this.rootedUntil = until }
 
+  /** Try to root this player. Returns false if CC immune or phased. */
+  def tryRoot(durationMs: Long): Boolean = {
+    if (isCCImmune || isPhased) return false
+    val now = System.currentTimeMillis()
+    rootedUntil = now + durationMs
+    ccImmuneUntil = rootedUntil + com.gridgame.common.Constants.CC_IMMUNITY_MS
+    true
+  }
+
   def isDead: Boolean = health <= 0
 
   override def equals(obj: Any): Boolean = {

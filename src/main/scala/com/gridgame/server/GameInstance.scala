@@ -367,9 +367,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
               }
 
             case Root(durationMs) =>
-              if (!target.isPhased) {
-                target.setRootedUntil(System.currentTimeMillis() + durationMs)
-              }
+              target.tryRoot(durationMs)
 
             case SpeedBoost(durationMs) =>
               val boostOwner = registry.get(projectile.ownerId)

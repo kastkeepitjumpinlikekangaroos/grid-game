@@ -304,14 +304,14 @@ object CharacterDef {
   private val AcidBombDef = ProjectileDef(id = ProjectileType.ACID_BOMB, name = "Acid Bomb", speedMultiplier = 0.5f, damage = 25, maxRange = 14, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(25, 10, 3.0f)))
 
   // --- AoE Root projectile defs ---
-  private val SeismicRootDef = ProjectileDef(id = ProjectileType.SEISMIC_ROOT, name = "Seismic Root", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(4.0f, 20, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 4.0f)))
-  private val RootGrowthDef = ProjectileDef(id = ProjectileType.ROOT_GROWTH, name = "Root Growth", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(5.0f, 10, rootDurationMs = 2500)), explosionConfig = Some(ExplosionConfig(0, 0, 5.0f)))
-  private val WebTrapDef = ProjectileDef(id = ProjectileType.WEB_TRAP, name = "Web Trap", speedMultiplier = 0.5f, damage = 0, maxRange = 14, passesThroughPlayers = true, aoeOnMaxRange = Some(AoESplashConfig(3.5f, 8, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 3.5f)))
-  private val TremorSlamDef = ProjectileDef(id = ProjectileType.TREMOR_SLAM, name = "Tremor Slam", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(3.5f, 30, rootDurationMs = 1500)), explosionConfig = Some(ExplosionConfig(0, 0, 3.5f)))
-  private val EntangleDef = ProjectileDef(id = ProjectileType.ENTANGLE, name = "Entangle", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(4.5f, 15, rootDurationMs = 2500)), explosionConfig = Some(ExplosionConfig(0, 0, 4.5f)))
-  private val StoneGazeDef = ProjectileDef(id = ProjectileType.STONE_GAZE, name = "Stone Gaze", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(3.5f, 15, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 3.5f)))
-  private val InkSnareDef = ProjectileDef(id = ProjectileType.INK_SNARE, name = "Ink Snare", speedMultiplier = 0.5f, damage = 0, maxRange = 14, passesThroughPlayers = true, aoeOnMaxRange = Some(AoESplashConfig(3.5f, 10, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 3.5f)))
-  private val GravityLockDef = ProjectileDef(id = ProjectileType.GRAVITY_LOCK, name = "Gravity Lock", speedMultiplier = 0.4f, damage = 0, maxRange = 12, passesThroughPlayers = true, aoeOnMaxRange = Some(AoESplashConfig(4.0f, 15, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 4.0f)))
+  private val SeismicRootDef = ProjectileDef(id = ProjectileType.SEISMIC_ROOT, name = "Seismic Root", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(7.0f, 20, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 7.0f)))
+  private val RootGrowthDef = ProjectileDef(id = ProjectileType.ROOT_GROWTH, name = "Root Growth", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(8.0f, 10, rootDurationMs = 2500)), explosionConfig = Some(ExplosionConfig(0, 0, 8.0f)))
+  private val WebTrapDef = ProjectileDef(id = ProjectileType.WEB_TRAP, name = "Web Trap", speedMultiplier = 0.5f, damage = 0, maxRange = 14, passesThroughPlayers = true, aoeOnMaxRange = Some(AoESplashConfig(5.0f, 8, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 5.0f)))
+  private val TremorSlamDef = ProjectileDef(id = ProjectileType.TREMOR_SLAM, name = "Tremor Slam", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(6.0f, 30, rootDurationMs = 1500)), explosionConfig = Some(ExplosionConfig(0, 0, 6.0f)))
+  private val EntangleDef = ProjectileDef(id = ProjectileType.ENTANGLE, name = "Entangle", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(7.0f, 15, rootDurationMs = 2500)), explosionConfig = Some(ExplosionConfig(0, 0, 7.0f)))
+  private val StoneGazeDef = ProjectileDef(id = ProjectileType.STONE_GAZE, name = "Stone Gaze", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(6.0f, 15, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 6.0f)))
+  private val InkSnareDef = ProjectileDef(id = ProjectileType.INK_SNARE, name = "Ink Snare", speedMultiplier = 0.5f, damage = 0, maxRange = 14, passesThroughPlayers = true, aoeOnMaxRange = Some(AoESplashConfig(5.0f, 10, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 5.0f)))
+  private val GravityLockDef = ProjectileDef(id = ProjectileType.GRAVITY_LOCK, name = "Gravity Lock", speedMultiplier = 0.4f, damage = 0, maxRange = 12, passesThroughPlayers = true, aoeOnMaxRange = Some(AoESplashConfig(6.0f, 15, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 6.0f)))
 
   // Register all projectile defs
   ProjectileDef.register(
@@ -637,7 +637,7 @@ object CharacterDef {
     id = CharacterId.Earthshaker, displayName = "Earthshaker",
     description = "A hulking earth warrior who hurls boulders and shakes the ground.",
     spriteSheet = "sprites/earthshaker.png",
-    qAbility = AbilityDef(name = "Seismic Root", description = "Slams the ground, rooting nearby enemies.", cooldownMs = 12000, maxRange = 0, damage = 20, projectileType = ProjectileType.SEISMIC_ROOT, keybind = "Q", castBehavior = GroundSlam(4.0f)),
+    qAbility = AbilityDef(name = "Seismic Root", description = "Slams the ground, rooting nearby enemies.", cooldownMs = 12000, maxRange = 0, damage = 20, projectileType = ProjectileType.SEISMIC_ROOT, keybind = "Q", castBehavior = GroundSlam(7.0f)),
     eAbility = AbilityDef(name = "Ground Charge", description = "Charges forward with unstoppable force.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = DashBuff(10, 400, 25)),
     primaryProjectileType = ProjectileType.BOULDER, maxHealth = 120
   )
@@ -683,7 +683,7 @@ object CharacterDef {
     description = "A nature mage who entangles enemies with vines and pierces with thorns.",
     spriteSheet = "sprites/thornweaver.png",
     qAbility = AbilityDef(name = "Vine Whip", description = "A vine that pulls enemies toward you.", cooldownMs = 8000, maxRange = 18, damage = 8, projectileType = ProjectileType.VINE_WHIP, keybind = "Q"),
-    eAbility = AbilityDef(name = "Entangle", description = "Vines erupt from the ground, rooting nearby enemies.", cooldownMs = 12000, maxRange = 0, damage = 15, projectileType = ProjectileType.ENTANGLE, keybind = "E", castBehavior = GroundSlam(4.5f)),
+    eAbility = AbilityDef(name = "Entangle", description = "Vines erupt from the ground, rooting nearby enemies.", cooldownMs = 12000, maxRange = 0, damage = 15, projectileType = ProjectileType.ENTANGLE, keybind = "E", castBehavior = GroundSlam(7.0f)),
     primaryProjectileType = ProjectileType.THORN
   )
 
@@ -1231,7 +1231,7 @@ object CharacterDef {
     description = "A living tree with root pulls and thorn bursts.",
     spriteSheet = "sprites/treant.png",
     qAbility = AbilityDef(name = "Root Pull", description = "Roots that pull an enemy.", cooldownMs = 8000, maxRange = 18, damage = 8, projectileType = ProjectileType.VINE_WHIP, keybind = "Q"),
-    eAbility = AbilityDef(name = "Root Growth", description = "Roots erupt from the ground, entangling nearby enemies.", cooldownMs = 14000, maxRange = 0, damage = 10, projectileType = ProjectileType.ROOT_GROWTH, keybind = "E", castBehavior = GroundSlam(5.0f)),
+    eAbility = AbilityDef(name = "Root Growth", description = "Roots erupt from the ground, entangling nearby enemies.", cooldownMs = 14000, maxRange = 0, damage = 10, projectileType = ProjectileType.ROOT_GROWTH, keybind = "E", castBehavior = GroundSlam(8.0f)),
     primaryProjectileType = ProjectileType.THORN, maxHealth = 120
   )
 
@@ -1305,7 +1305,7 @@ object CharacterDef {
     description = "A gorgon who petrifies with her gaze and fires soul bolts.",
     spriteSheet = "sprites/medusa.png",
     qAbility = AbilityDef(name = "Petrify", description = "Petrifying gaze that freezes.", cooldownMs = 5000, maxRange = 20, damage = 5, projectileType = ProjectileType.ICE_BEAM, keybind = "Q"),
-    eAbility = AbilityDef(name = "Stone Gaze", description = "Petrifying gaze roots all nearby enemies.", cooldownMs = 12000, maxRange = 0, damage = 15, projectileType = ProjectileType.STONE_GAZE, keybind = "E", castBehavior = GroundSlam(3.5f)),
+    eAbility = AbilityDef(name = "Stone Gaze", description = "Petrifying gaze roots all nearby enemies.", cooldownMs = 12000, maxRange = 0, damage = 15, projectileType = ProjectileType.STONE_GAZE, keybind = "E", castBehavior = GroundSlam(6.0f)),
     primaryProjectileType = ProjectileType.SOUL_BOLT
   )
 
@@ -1395,7 +1395,7 @@ object CharacterDef {
     description = "A stone construct that hurls boulder fans and grabs enemies with stone grip.",
     spriteSheet = "sprites/golem.png",
     qAbility = AbilityDef(name = "Boulder Fan", description = "Hurls 5 boulders in a fan.", cooldownMs = 10000, maxRange = 8, damage = 35, projectileType = ProjectileType.BOULDER, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(60))),
-    eAbility = AbilityDef(name = "Tremor Slam", description = "Slams the ground, rooting nearby enemies.", cooldownMs = 14000, maxRange = 0, damage = 30, projectileType = ProjectileType.TREMOR_SLAM, keybind = "E", castBehavior = GroundSlam(3.5f)),
+    eAbility = AbilityDef(name = "Tremor Slam", description = "Slams the ground, rooting nearby enemies.", cooldownMs = 14000, maxRange = 0, damage = 30, projectileType = ProjectileType.TREMOR_SLAM, keybind = "E", castBehavior = GroundSlam(6.0f)),
     primaryProjectileType = ProjectileType.BOULDER, maxHealth = 120
   )
 

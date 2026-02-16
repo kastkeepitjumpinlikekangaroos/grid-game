@@ -188,8 +188,8 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
           if (freezeDurationMs > 0) {
             player.tryFreeze(freezeDurationMs)
           }
-          if (rootDurationMs > 0 && !player.isPhased) {
-            player.setRootedUntil(System.currentTimeMillis() + rootDurationMs)
+          if (rootDurationMs > 0) {
+            player.tryRoot(rootDurationMs)
           }
           println(s"ProjectileManager: AoE hit player ${player.getId.toString.substring(0, 8)}, damage=$damage, health now $newHealth" +
             (if (freezeDurationMs > 0) s", frozen ${freezeDurationMs}ms" else "") +

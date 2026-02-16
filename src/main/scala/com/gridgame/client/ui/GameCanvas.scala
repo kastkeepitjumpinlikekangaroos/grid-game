@@ -177,7 +177,11 @@ class GameCanvas(client: GameClient) extends Canvas() {
     ProjectileType.VENOM_BOLT  -> ((p, cx, cy) => drawVenomBoltProjectile(p, cx, cy)),
     ProjectileType.WEB_SHOT    -> ((p, cx, cy) => drawWebShotProjectile(p, cx, cy)),
     ProjectileType.STINGER     -> ((p, cx, cy) => drawStingerProjectile(p, cx, cy)),
-    ProjectileType.ACID_BOMB   -> ((p, cx, cy) => drawAcidBombProjectile(p, cx, cy))
+    ProjectileType.ACID_BOMB   -> ((p, cx, cy) => drawAcidBombProjectile(p, cx, cy)),
+    // AoE Root (ranged types only — instant types despawn immediately)
+    ProjectileType.WEB_TRAP    -> ((p, cx, cy) => drawWebShotProjectile(p, cx, cy)),
+    ProjectileType.INK_SNARE   -> ((p, cx, cy) => drawSnareMineProjectile(p, cx, cy)),
+    ProjectileType.GRAVITY_LOCK -> ((p, cx, cy) => drawGravityWellProjectile(p, cx, cy))
   )
 
   // --- Isometric coordinate transforms ---
