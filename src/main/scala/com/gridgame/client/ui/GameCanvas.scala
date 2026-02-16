@@ -1003,7 +1003,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
   }
 
   private def drawSingleProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
-    val scale = 1.8
+    val scale = 1.3
     val pcx = worldToScreenX(projectile.getX.toDouble, projectile.getY.toDouble, camOffX)
     val pcy = worldToScreenY(projectile.getX.toDouble, projectile.getY.toDouble, camOffY)
     gc.save()

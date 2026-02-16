@@ -36,7 +36,7 @@ case class ProjectileDef(
     distanceDamageScaling: Option[DistanceDamageScaling] = None,
     maxRange: Int,
     chargeRangeScaling: Option[ChargeScaling] = None,
-    hitRadius: Float = 2.5f,
+    hitRadius: Float = 1.8f,
     passesThroughPlayers: Boolean = false,
     passesThroughWalls: Boolean = false,
     onHitEffect: Option[OnHitEffect] = None,
