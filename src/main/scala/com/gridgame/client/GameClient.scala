@@ -1258,18 +1258,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
             projectiles.put(projectileId, newProjectile)
           }
         } else {
-          val updatedProjectile = new Projectile(
-            projectileId,
-            packet.getPlayerId,
-            packet.getX,
-            packet.getY,
-            packet.getDx,
-            packet.getDy,
-            packet.getColorRGB,
-            projectile.chargeLevel,
-            projectile.projectileType
-          )
-          projectiles.put(projectileId, updatedProjectile)
+          // Update in-place to avoid allocation
+          projectile.updatePosition(packet.getX, packet.getY, packet.getDx, packet.getDy)
         }
 
       case ProjectileAction.HIT =>

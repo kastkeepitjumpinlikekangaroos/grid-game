@@ -26,6 +26,72 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
   private val projectiles = new ConcurrentHashMap[Int, Projectile]()
   private val nextId = new AtomicInteger(1)
 
+  /** Pre-filtered snapshot of alive, hittable players rebuilt once per tick. */
+  private var hittablePlayers: Array[Player] = Array.empty
+  /** Spatial grid for efficient nearby-player lookups during collision detection.
+   *  Uses a pre-allocated HashMap that is cleared each tick instead of reallocated. */
+  private val gridCellSize = 4
+  private val gridCells = new java.util.HashMap[Long, ArrayBuffer[Player]]()
+  private val activeKeys = new ArrayBuffer[Long]()
+
+  private def gridKey(cx: Int, cy: Int): Long = (cx.toLong << 32) | (cy.toLong & 0xFFFFFFFFL)
+
+  private def rebuildGrid(allPlayers: java.util.Collection[Player]): Unit = {
+    // Clear previous tick's data without reallocating the HashMap
+    var i = 0
+    while (i < activeKeys.length) {
+      val buf = gridCells.get(activeKeys(i))
+      if (buf != null) buf.clear()
+      i += 1
+    }
+    activeKeys.clear()
+
+    // Also build the flat hittable array
+    val buf = ArrayBuffer[Player]()
+    val iter = allPlayers.iterator()
+    while (iter.hasNext) {
+      val player = iter.next()
+      if (!player.isDead && !player.hasShield && !player.isPhased) {
+        buf += player
+        val pos = player.getPosition
+        val cx = pos.getX / gridCellSize
+        val cy = pos.getY / gridCellSize
+        val k = gridKey(cx, cy)
+        var cell = gridCells.get(k)
+        if (cell == null) {
+          cell = new ArrayBuffer[Player](4)
+          gridCells.put(k, cell)
+        }
+        if (cell.isEmpty) activeKeys += k
+        cell += player
+      }
+    }
+    hittablePlayers = buf.toArray
+  }
+
+  /** Iterate players in the 3x3 neighborhood of the given world position.
+   *  Calls `fn` for each nearby player. No allocation per call. */
+  @inline private def forEachNearby(x: Float, y: Float)(fn: Player => Unit): Unit = {
+    val cx = (x / gridCellSize).toInt
+    val cy = (y / gridCellSize).toInt
+    var dy = -1
+    while (dy <= 1) {
+      var dx = -1
+      while (dx <= 1) {
+        val cell = gridCells.get(gridKey(cx + dx, cy + dy))
+        if (cell != null) {
+          var i = 0
+          while (i < cell.length) {
+            fn(cell(i))
+            i += 1
+          }
+        }
+        dx += 1
+      }
+      dy += 1
+    }
+  }
+
   def spawnProjectile(ownerId: UUID, x: Int, y: Int, dx: Float, dy: Float, colorRGB: Int, chargeLevel: Int = 0, projectileType: Byte = com.gridgame.common.model.ProjectileType.NORMAL): Projectile = {
     val id = nextId.getAndIncrement()
     // Spawn the projectile one cell ahead in the velocity direction
@@ -40,6 +106,8 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
   def tick(world: WorldData): Seq[ProjectileEvent] = {
     val events = ArrayBuffer[ProjectileEvent]()
     val toRemove = ArrayBuffer[Int]()
+
+    rebuildGrid(registry.getAll)
 
     projectiles.values().asScala.foreach { projectile =>
       val owner = registry.get(projectile.ownerId)
@@ -103,8 +171,8 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
             }
           } else {
             var hitPlayer: Player = null
-            registry.getAll.asScala.foreach { player =>
-              if (projectile.hitsPlayer(player) && !player.isDead && !player.hasShield && !player.isPhased && !isTeammate(projectile.ownerId, player.getId)) {
+            forEachNearby(projectile.getX, projectile.getY) { player =>
+              if (projectile.hitsPlayer(player) && !isTeammate(projectile.ownerId, player.getId)) {
                 hitPlayer = player
               }
             }
@@ -177,10 +245,14 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
     val events = ArrayBuffer[ProjectileEvent]()
     val px = projectile.getX
     val py = projectile.getY
-    registry.getAll.asScala.foreach { player =>
+    // Use pre-filtered hittable array (already excludes dead/shielded/phased)
+    val players = hittablePlayers
+    var i = 0
+    while (i < players.length) {
+      val player = players(i)
+      i += 1
       if (!player.getId.equals(projectile.ownerId) &&
           (excludeId == null || !player.getId.equals(excludeId)) &&
-          !player.isDead && !player.hasShield &&
           !isTeammate(projectile.ownerId, player.getId)) {
         val pos = player.getPosition
         val dx = px - (pos.getX + 0.5f)

@@ -178,7 +178,8 @@ class GLGameRenderer(val client: GameClient) {
         worldToScreenX(localVX, localVY), worldToScreenY(localVX, localVY),
         client.getLocalColorRGB, client.getLocalDeathTime, client.selectedCharacterId
       ),
-      localVX, localVY, localDeathAnimActive
+      localVX, localVY, localDeathAnimActive,
+      startX, endX, startY, endY
     )
 
     // === Phase 1: Ground tiles ===

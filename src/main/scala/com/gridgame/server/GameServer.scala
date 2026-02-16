@@ -140,7 +140,8 @@ class GameServer(port: Int, val worldFile: String = "") {
     }
   }
 
-  private def sendRawToPlayer(data: Array[Byte], isTcp: Boolean, player: Player): Unit = {
+  /** Send pre-serialized packet bytes to a player. Serialization is done once by the caller. */
+  def sendRawToPlayer(data: Array[Byte], isTcp: Boolean, player: Player): Unit = {
     if (isTcp) {
       val raw = player.getTcpChannel
       if (raw != null) {

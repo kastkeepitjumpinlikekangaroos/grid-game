@@ -272,6 +272,14 @@ class Projectile(
     ddx * ddx + ddy * ddy <= pDef.hitRadius * pDef.hitRadius
   }
 
+  /** Update position and velocity in-place (used by client for MOVE packets to avoid allocation). */
+  def updatePosition(newX: Float, newY: Float, newDx: Float, newDy: Float): Unit = {
+    x = newX
+    y = newY
+    _dx = newDx
+    _dy = newDy
+  }
+
   override def toString: String = {
     s"Projectile{id=$id, owner=${ownerId.toString.substring(0, 8)}, pos=($x, $y), vel=(${_dx}, ${_dy})}"
   }

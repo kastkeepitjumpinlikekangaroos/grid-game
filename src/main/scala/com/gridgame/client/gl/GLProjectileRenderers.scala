@@ -69,18 +69,16 @@ object GLProjectileRenderers {
       val phase = (tick + proj.id * 37) * 0.35
       val p = (0.9 + 0.1 * Math.sin(phase)).toFloat
 
-      // Soft halo (large, visible)
+      // Soft halo — bloom handles extra glow
       sb.fillOvalSoft(sx, sy, size * 2.5f, size * 2f, r, g, b, 0.35f * p, 0f, 16)
-      // Mid glow
-      sb.fillOvalSoft(sx, sy, size * 1.4f, size * 1.1f, r, g, b, 0.55f * p, 0.1f, 14)
       // Solid core
       sb.fillOval(sx, sy, size * 0.8f, size * 0.6f, r, g, b, 0.9f * p, 12)
       // Hot center
       sb.fillOval(sx, sy, size * 0.3f, size * 0.22f, bright(r), bright(g), bright(b), 0.95f, 8)
 
-      // Orbiting sparkles
-      for (s <- 0 until 3) {
-        val sa = phase * 2.2 + s * Math.PI * 2 / 3
+      // Orbiting sparkles (reduced from 3 to 2)
+      for (s <- 0 until 2) {
+        val sa = phase * 2.2 + s * Math.PI
         val sd = size * 0.85f
         val spx = sx + Math.cos(sa).toFloat * sd
         val spy = sy + Math.sin(sa).toFloat * sd * 0.65f
@@ -88,10 +86,10 @@ object GLProjectileRenderers {
           (0.5 + 0.3 * Math.sin(phase * 4 + s * 2.1)).toFloat * p, 6)
       }
 
-      // Trail
+      // Trail (reduced from 5 to 3)
       val (ndx, ndy, _) = screenDir(proj)
-      for (i <- 0 until 5) {
-        val t = ((tick * 0.06 + i * 0.2 + proj.id * 0.13) % 1.0).toFloat
+      for (i <- 0 until 3) {
+        val t = ((tick * 0.06 + i * 0.3 + proj.id * 0.13) % 1.0).toFloat
         val s = size * 0.5f * (1f - t * 0.5f)
         sb.fillOval(sx - ndx * t * size * 2.5f, sy - ndy * t * size * 2.5f,
           s, s * 0.7f, r, g, b, 0.4f * (1f - t) * p, 8)
@@ -250,17 +248,17 @@ object GLProjectileRenderers {
       // Ground fill
       sb.fillOvalSoft(sx, sy, maxR * 0.6f, maxR * 0.28f, r, g, b, 0.2f * p, 0f, 16)
 
-      // 4 expanding rings (thick, visible)
-      for (ring <- 0 until 4) {
-        val rp = ((phase * 0.35 + ring * 0.25) % 1.0).toFloat
+      // 2 expanding rings (reduced from 4)
+      for (ring <- 0 until 2) {
+        val rp = ((phase * 0.35 + ring * 0.5) % 1.0).toFloat
         val ringR = 6f + rp * maxR
         val a = Math.max(0f, 0.7f * (1f - rp) * p)
-        sb.strokeOval(sx, sy, ringR, ringR * 0.45f, 4f * (1f - rp * 0.3f), r, g, b, a, 18)
+        sb.strokeOval(sx, sy, ringR, ringR * 0.45f, 4f * (1f - rp * 0.3f), r, g, b, a, 12)
       }
 
-      // Radial spark lines (thick)
-      for (spark <- 0 until 8) {
-        val sa = phase * 0.6 + spark * Math.PI / 4
+      // Radial spark lines (reduced from 8 to 4)
+      for (spark <- 0 until 4) {
+        val sa = phase * 0.6 + spark * Math.PI / 2
         val sl = maxR * 0.35f * p
         sb.strokeLine(sx, sy, sx + Math.cos(sa).toFloat * sl, sy + Math.sin(sa).toFloat * sl * 0.45f,
           2f, r, g, b, 0.25f * p)
@@ -282,10 +280,7 @@ object GLProjectileRenderers {
       if (len >= 1) {
         val nx = -dy / len; val ny = dx / len
         val zigW = 8f * p
-        val segs = 10
-
-        // Soft glow underneath
-        sb.strokeLineSoft(sx, sy, tipX, tipY, 20f, r, g, b, 0.15f * p)
+        val segs = 8
 
         for (i <- 0 until segs) {
           val t0 = i.toFloat / segs; val t1 = (i + 1).toFloat / segs
@@ -300,8 +295,8 @@ object GLProjectileRenderers {
           if (i % 2 == 0) sb.strokeLine(x0, y0, x1, y1, 2f, bright(r), bright(g), bright(b), 0.7f * p)
         }
 
-        // Bright nodes at joints
-        for (i <- 0 to segs by 2) {
+        // Bright nodes at joints (reduced)
+        for (i <- 0 to segs by 4) {
           val t = i.toFloat / segs
           val z = if (i % 2 == 0) zigW else -zigW
           val jx = sx + dx * t + nx * z; val jy = sy + dy * t + ny * z
@@ -331,18 +326,18 @@ object GLProjectileRenderers {
       sb.strokePolygon(Array(tipX, w1x, sx - ndx * 4, w2x), Array(tipY, w1y, sy - ndy * 3, w2y),
         3f, bright(r), bright(g), bright(b), 0.8f * p)
 
-      // Internal energy lines
-      for (i <- 0 until 5) {
-        val off = (i - 2) * spread * 0.18f
+      // Internal energy lines (reduced from 5 to 3)
+      for (i <- 0 until 3) {
+        val off = (i - 1) * spread * 0.28f
         sb.strokeLine(sx + perpX * off - ndx * 3, sy + perpY * off * 0.6f - ndy * 2,
           sx + perpX * off + ndx * spread * 0.5f, sy + perpY * off * 0.6f + ndy * spread * 0.3f,
           1.5f, r, g, b, 0.2f * p)
       }
 
-      // Scatter particles at edge
-      for (i <- 0 until 5) {
-        val t = ((tick * 0.08 + i * 0.2 + proj.id * 0.11) % 1.0).toFloat
-        val pOff = (i.toFloat / 4 - 0.5f) * 2f
+      // Scatter particles at edge (reduced from 5 to 3)
+      for (i <- 0 until 3) {
+        val t = ((tick * 0.08 + i * 0.3 + proj.id * 0.11) % 1.0).toFloat
+        val pOff = (i.toFloat / 2 - 0.5f) * 2f
         val bx = tipX * (1f - Math.abs(pOff)) + (if (pOff < 0) w2x else w1x) * Math.abs(pOff)
         val by = tipY * (1f - Math.abs(pOff)) + (if (pOff < 0) w2y else w1y) * Math.abs(pOff)
         sb.fillOval(bx + ndx * t * 8, by + ndy * t * 5, 4f, 3f, bright(r), bright(g), bright(b),
@@ -658,7 +653,7 @@ object GLProjectileRenderers {
       Array(noseY, tipY + perpY * 7f, tipY - perpY * 7f), 0.65f, 0.65f, 0.6f, 0.9f * p)
   }
 
-  /** Lightning - thick jagged bolt with many branches */
+  /** Lightning - thick jagged bolt with branches */
   private def drawLightning(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
     val (tipX, tipY) = beamTip(sx, sy, proj, 6f)
     val phase = (tick + proj.id * 41) * 0.5
@@ -668,8 +663,8 @@ object GLProjectileRenderers {
     if (len < 1) return
     val nx = -dy / len; val ny = dx / len
 
-    // Bolt path
-    val segs = 10
+    // Bolt path (reduced from 10 to 6 segments)
+    val segs = 6
     val bxs = new Array[Float](segs + 1); val bys = new Array[Float](segs + 1)
     bxs(0) = sx; bys(0) = sy; bxs(segs) = tipX; bys(segs) = tipY
     for (i <- 1 until segs) {
@@ -679,15 +674,13 @@ object GLProjectileRenderers {
       bys(i) = sy + dy * t + ny * jitter
     }
 
-    // Soft glow
-    for (i <- 0 until segs) sb.strokeLineSoft(bxs(i), bys(i), bxs(i + 1), bys(i + 1), 22f, 0.4f, 0.3f, 0.9f, 0.15f * flicker)
-    // Main bolt (solid, thick)
+    // Main bolt (solid, thick) — bloom handles glow
     for (i <- 0 until segs) sb.strokeLine(bxs(i), bys(i), bxs(i + 1), bys(i + 1), 6f, 0.5f, 0.4f, 1f, 0.85f * flicker)
     // White-hot core
     for (i <- 0 until segs) sb.strokeLine(bxs(i), bys(i), bxs(i + 1), bys(i + 1), 2.5f, 0.9f, 0.88f, 1f, 0.95f * flicker)
 
-    // Branches
-    for (b <- 0 until 3) {
+    // Branches (reduced from 3 to 2)
+    for (b <- 0 until 2) {
       val bSeg = 2 + b * 2
       if (bSeg < segs) {
         val bAngle = Math.PI * 0.35 * (if (b % 2 == 0) 1 else -1) + Math.sin(phase * 2 + b).toFloat * 0.3
@@ -700,7 +693,6 @@ object GLProjectileRenderers {
     }
 
     // Tip flash
-    sb.fillOvalSoft(tipX, tipY, 14f, 10f, 0.6f, 0.5f, 1f, 0.3f * flicker, 0f, 12)
     sb.fillOval(tipX, tipY, 7f, 5f, 0.85f, 0.8f, 1f, 0.6f * flicker, 8)
   }
 

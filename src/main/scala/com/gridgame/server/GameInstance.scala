@@ -773,8 +773,10 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   }
 
   def broadcastToInstance(packet: Packet): Unit = {
+    val data = packet.serialize()
+    val isTcp = packet.getType.tcp
     registry.getAll.asScala.foreach { player =>
-      server.sendPacketToPlayer(packet, player)
+      server.sendRawToPlayer(data, isTcp, player)
     }
   }
 

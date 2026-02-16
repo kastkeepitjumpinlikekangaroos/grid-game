@@ -42,7 +42,11 @@ class EntityCollector {
     drawLocalDeath: () => Unit,
     localVisualX: Double,
     localVisualY: Double,
-    localDeathAnimActive: Boolean
+    localDeathAnimActive: Boolean,
+    minVisX: Int = -1000000,
+    maxVisX: Int = 1000000,
+    minVisY: Int = -1000000,
+    maxVisY: Int = 1000000
   ): mutable.Map[(Int, Int), mutable.ArrayBuffer[() => Unit]] = {
     val entitiesByCell = mutable.Map.empty[(Int, Int), mutable.ArrayBuffer[() => Unit]]
 
@@ -50,16 +54,24 @@ class EntityCollector {
       entitiesByCell.getOrElseUpdate((cx, cy), mutable.ArrayBuffer.empty) += drawFn
     }
 
+    // Bounds for off-screen culling (pre-expanded by 2 cells for margin)
+    val cullingMinX = minVisX - 2
+    val cullingMaxX = maxVisX + 2
+    val cullingMinY = minVisY - 2
+    val cullingMaxY = maxVisY + 2
+
     // Items
     client.getItems.values().asScala.foreach { item =>
       addEntity(item.getCellX, item.getCellY, () => drawItem(item))
     }
 
-    // Projectiles
+    // Projectiles (skip off-screen ones)
     client.getProjectiles.values().asScala.foreach { proj =>
       val cx = Math.round(proj.getX).toInt
       val cy = Math.round(proj.getY).toInt
-      addEntity(cx, cy, () => drawProjectile(proj))
+      if (cx >= cullingMinX && cx <= cullingMaxX && cy >= cullingMinY && cy <= cullingMaxY) {
+        addEntity(cx, cy, () => drawProjectile(proj))
+      }
     }
 
     // Remote players (with visual interpolation)
