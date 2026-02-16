@@ -21,8 +21,12 @@ scala_binary(
         "@maven//:org_openjfx_javafx_graphics_mac_aarch64",
         "@maven//:org_lwjgl_lwjgl",
         "@maven//:org_lwjgl_lwjgl_glfw",
+        "@maven//:org_lwjgl_lwjgl_opengl",
+        "@maven//:org_lwjgl_lwjgl_stb",
         "@maven//:org_lwjgl_lwjgl_natives_macos_arm64",
         "@maven//:org_lwjgl_lwjgl_glfw_natives_macos_arm64",
+        "@maven//:org_lwjgl_lwjgl_opengl_natives_macos_arm64",
+        "@maven//:org_lwjgl_lwjgl_stb_natives_macos_arm64",
     ],
 )
 
@@ -47,7 +51,11 @@ scala_binary(
         "@maven//:org_openjfx_javafx_graphics_win",
         "@maven//:org_lwjgl_lwjgl",
         "@maven//:org_lwjgl_lwjgl_glfw",
+        "@maven//:org_lwjgl_lwjgl_opengl",
+        "@maven//:org_lwjgl_lwjgl_stb",
         "@maven//:org_lwjgl_lwjgl_natives_windows",
         "@maven//:org_lwjgl_lwjgl_glfw_natives_windows",
+        "@maven//:org_lwjgl_lwjgl_opengl_natives_windows",
+        "@maven//:org_lwjgl_lwjgl_stb_natives_windows",
     ],
 )

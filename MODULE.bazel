@@ -31,9 +31,15 @@ maven.install(
         "org.lwjgl:lwjgl-glfw:3.3.4",
         "org.lwjgl:lwjgl:jar:natives-macos-arm64:3.3.4",
         "org.lwjgl:lwjgl-glfw:jar:natives-macos-arm64:3.3.4",
+        "org.lwjgl:lwjgl-opengl:3.3.4",
+        "org.lwjgl:lwjgl-opengl:jar:natives-macos-arm64:3.3.4",
+        "org.lwjgl:lwjgl-stb:3.3.4",
+        "org.lwjgl:lwjgl-stb:jar:natives-macos-arm64:3.3.4",
         # Windows LWJGL native libraries
         "org.lwjgl:lwjgl:jar:natives-windows:3.3.4",
         "org.lwjgl:lwjgl-glfw:jar:natives-windows:3.3.4",
+        "org.lwjgl:lwjgl-opengl:jar:natives-windows:3.3.4",
+        "org.lwjgl:lwjgl-stb:jar:natives-windows:3.3.4",
     ],
     repositories = [
         "https://repo1.maven.org/maven2",

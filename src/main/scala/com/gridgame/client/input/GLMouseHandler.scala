@@ -1,46 +1,55 @@
 package com.gridgame.client.input
 
 import com.gridgame.client.GameClient
-import com.gridgame.client.ui.GameCanvas
+import com.gridgame.client.render.GameCamera
 import com.gridgame.common.Constants
 import com.gridgame.common.model.ProjectileDef
 
-import javafx.event.EventHandler
-import javafx.scene.input.MouseEvent
+import org.lwjgl.glfw.GLFW._
 
-class MouseHandler(client: GameClient, canvas: GameCanvas) extends EventHandler[MouseEvent] {
+/**
+ * GLFW mouse handler. Mirrors MouseHandler logic but uses GLFW callbacks.
+ * Tracks cursor position and mouse button state for aiming and shooting.
+ */
+class GLMouseHandler(client: GameClient, camera: GameCamera) {
   private var lastShootTime: Long = 0
+  private var _cursorX: Double = 0
+  private var _cursorY: Double = 0
+
+  def cursorX: Double = _cursorX
+  def cursorY: Double = _cursorY
 
   private def canCharge: Boolean = {
     val pt = client.getSelectedCharacterDef.primaryProjectileType
     ProjectileDef.get(pt).chargeSpeedScaling.isDefined
   }
 
-  override def handle(event: MouseEvent): Unit = {
-    // Track mouse position for aiming (works during move and drag)
-    if (event.getEventType == MouseEvent.MOUSE_MOVED ||
-        event.getEventType == MouseEvent.MOUSE_PRESSED ||
-        event.getEventType == MouseEvent.MOUSE_DRAGGED) {
-      val (worldX, worldY) = canvas.screenToWorld(event.getX, event.getY)
+  /** Called from GLFW cursor position callback. */
+  def onCursorPos(x: Double, y: Double): Unit = {
+    _cursorX = x
+    _cursorY = y
+    val (worldX, worldY) = camera.screenToWorld(x, y)
+    client.setMouseWorldPosition(worldX, worldY)
+  }
+
+  /** Called from GLFW mouse button callback. */
+  def onMouseButton(button: Int, action: Int, mods: Int): Unit = {
+    if (button != GLFW_MOUSE_BUTTON_LEFT) return
+
+    if (action == GLFW_PRESS) {
+      // Update aim position
+      val (worldX, worldY) = camera.screenToWorld(_cursorX, _cursorY)
       client.setMouseWorldPosition(worldX, worldY)
-    }
 
-    if (event.getEventType == MouseEvent.MOUSE_PRESSED) {
       if (client.getIsDead) return
-
       val now = System.currentTimeMillis()
-      if (now - lastShootTime < Constants.SHOOT_COOLDOWN_MS) {
-        return
-      }
+      if (now - lastShootTime < Constants.SHOOT_COOLDOWN_MS) return
 
       if (canCharge) {
-        // Start charging (Spaceman-style)
         client.startCharging()
       } else {
-        // Instant fire (Gladiator-style)
         lastShootTime = now
         val playerPos = client.getLocalPosition
-        val (worldX, worldY) = canvas.screenToWorld(event.getX, event.getY)
         val deltaX = worldX - playerPos.getX
         val deltaY = worldY - playerPos.getY
         val magnitude = Math.sqrt(deltaX * deltaX + deltaY * deltaY)
@@ -49,9 +58,7 @@ class MouseHandler(client: GameClient, canvas: GameCanvas) extends EventHandler[
         val dy = (deltaY / magnitude).toFloat
         client.shootToward(dx, dy, 0)
       }
-    }
-
-    if (event.getEventType == MouseEvent.MOUSE_RELEASED) {
+    } else if (action == GLFW_RELEASE) {
       if (!client.isCharging) return
       if (client.getIsDead) {
         client.cancelCharging()
@@ -60,29 +67,16 @@ class MouseHandler(client: GameClient, canvas: GameCanvas) extends EventHandler[
 
       val chargeLevel = client.getChargeLevel
       client.cancelCharging()
-
       lastShootTime = System.currentTimeMillis()
 
-      // Get the player's position in the world
       val playerPos = client.getLocalPosition
-
-      // Convert screen coordinates to world coordinates using isometric inverse
-      val (worldX, worldY) = canvas.screenToWorld(event.getX, event.getY)
-
-      // Calculate direction from player to clicked position
+      val (worldX, worldY) = camera.screenToWorld(_cursorX, _cursorY)
       val deltaX = worldX - playerPos.getX
       val deltaY = worldY - playerPos.getY
-
-      // Calculate magnitude and normalize
       val magnitude = Math.sqrt(deltaX * deltaX + deltaY * deltaY)
-      if (magnitude < 0.001) {
-        // Clicked on self, don't shoot
-        return
-      }
-
+      if (magnitude < 0.001) return
       val dx = (deltaX / magnitude).toFloat
       val dy = (deltaY / magnitude).toFloat
-
       client.shootToward(dx, dy, chargeLevel)
     }
   }

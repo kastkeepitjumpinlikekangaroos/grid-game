@@ -1,10 +1,8 @@
 package com.gridgame.client
 
-import com.gridgame.client.input.ControllerHandler
-import com.gridgame.client.input.KeyboardHandler
-import com.gridgame.client.input.MouseHandler
+import com.gridgame.client.gl.{GLFWManager, GLGameRenderer, GLWindow}
+import com.gridgame.client.input.{ControllerHandler, GLKeyboardHandler, GLMouseHandler}
 import com.gridgame.client.ui.CharacterSelectionPanel
-import com.gridgame.client.ui.GameCanvas
 import com.gridgame.common.Constants
 import com.gridgame.common.WorldRegistry
 import com.gridgame.common.model.CharacterDef
@@ -46,9 +44,11 @@ import javafx.stage.Stage
 class ClientMain extends Application {
 
   private var client: GameClient = _
-  private var canvas: GameCanvas = _
   private var renderLoop: AnimationTimer = _
   private var controllerHandler: ControllerHandler = _
+  private var glWindow: GLWindow = _
+  private var glRenderer: GLGameRenderer = _
+  private var primaryStageRef: Stage = _
 
   // -- Enhanced color palette & styles --
   private val darkBg = "-fx-background-color: linear-gradient(to bottom, #1a1a2e 0%, #151528 50%, #111124 100%);"
@@ -1503,54 +1503,90 @@ class ClientMain extends Application {
   }
 
   private def showGameScene(stage: Stage): Unit = {
-    canvas = new GameCanvas(client)
-    client.setRejoinListener(() => canvas.resetVisualPosition())
+    primaryStageRef = stage
 
-    val root = new StackPane(canvas)
-    val scene = new Scene(root)
+    // Create GL renderer
+    glRenderer = new GLGameRenderer(client)
+    client.setRejoinListener(() => glRenderer.resetVisualPosition())
 
-    canvas.widthProperty().bind(scene.widthProperty())
-    canvas.heightProperty().bind(scene.heightProperty())
+    // Prevent JavaFX from shutting down when we hide the last stage
+    Platform.setImplicitExit(false)
 
-    val keyHandler = new KeyboardHandler(client)
-    scene.setOnKeyPressed(keyHandler)
-    scene.setOnKeyReleased(keyHandler)
+    // Hide JavaFX stage — GLFW window takes over rendering
+    stage.hide()
+
+    // Create GLFW window
+    val bounds = Screen.getPrimary.getVisualBounds
+    glWindow = new GLWindow("Grid Game", bounds.getWidth.toInt, bounds.getHeight.toInt)
+    glWindow.create()
+
+    // Set up GLFW input handlers
+    val glKeyHandler = new GLKeyboardHandler(client)
+    val glMouseHandler = new GLMouseHandler(client, glRenderer.camera)
+
+    org.lwjgl.glfw.GLFW.glfwSetKeyCallback(glWindow.handle, glKeyHandler)
+    org.lwjgl.glfw.GLFW.glfwSetCursorPosCallback(glWindow.handle, (_, x, y) => glMouseHandler.onCursorPos(x, y))
+    org.lwjgl.glfw.GLFW.glfwSetMouseButtonCallback(glWindow.handle, (_, button, action, mods) => glMouseHandler.onMouseButton(button, action, mods))
+
+    // Focus callback: clear keys when window loses focus
+    org.lwjgl.glfw.GLFW.glfwSetWindowFocusCallback(glWindow.handle, (_, focused) => {
+      if (!focused) glKeyHandler.clearAllKeys()
+    })
 
     controllerHandler = new ControllerHandler(client)
     controllerHandler.init()
 
-    val mouseHandler = new MouseHandler(client, canvas)
-    scene.setOnMousePressed(mouseHandler)
-    scene.setOnMouseReleased(mouseHandler)
-    scene.setOnMouseDragged(mouseHandler)
-    scene.setOnMouseMoved(mouseHandler)
+    glWindow.show()
 
-    scene.addEventFilter(KeyEvent.KEY_PRESSED, new EventHandler[KeyEvent] {
-      override def handle(event: KeyEvent): Unit = {
-        if (event.getCode == KeyCode.F11) {
-          stage.setFullScreen(!stage.isFullScreen)
-        }
-      }
-    })
-
-    stage.setScene(scene)
-
-    // Clear all pressed keys when the window loses focus to prevent stuck keys
-    stage.focusedProperty().addListener((_: javafx.beans.value.ObservableValue[_ <: java.lang.Boolean], _: java.lang.Boolean, focused: java.lang.Boolean) => {
-      if (!focused) {
-        keyHandler.clearAllKeys()
-      }
-    })
-
+    // Game loop via AnimationTimer (fires on FX/main thread — required for GLFW on macOS)
     var lastFrameTime = 0L
+    var fullscreen = false
     renderLoop = new AnimationTimer() {
       override def handle(now: Long): Unit = {
-        val deltaNs = if (lastFrameTime == 0L) 16_666_667L else now - lastFrameTime
-        lastFrameTime = now
-        val deltaSec = Math.min(deltaNs / 1_000_000_000.0, 0.05) // cap at 50ms to avoid huge jumps
-        keyHandler.update()
-        controllerHandler.update()
-        canvas.render(deltaSec)
+        try {
+          if (!glWindow.isValid) return
+          val deltaNs = if (lastFrameTime == 0L) 16_666_667L else now - lastFrameTime
+          lastFrameTime = now
+          val deltaSec = Math.min(deltaNs / 1_000_000_000.0, 0.05)
+
+          org.lwjgl.glfw.GLFW.glfwPollEvents()
+          glKeyHandler.update()
+          controllerHandler.update()
+
+          // F11 fullscreen toggle
+          if (glKeyHandler.isF11Pressed) {
+            fullscreen = !fullscreen
+            glWindow.setFullscreen(fullscreen)
+          }
+
+          // Check if GLFW window was closed
+          if (glWindow.shouldClose) {
+            renderLoop.stop()
+            glRenderer.dispose()
+            glWindow.destroy()
+            Platform.runLater(() => {
+              Platform.setImplicitExit(true)
+              client.disconnect()
+              Platform.exit()
+            })
+            return
+          }
+
+          glRenderer.render(deltaSec, glWindow.fbWidth, glWindow.fbHeight, glWindow.width, glWindow.height)
+          glWindow.swapBuffers()
+        } catch {
+          case e: Exception =>
+            System.err.println("=== RENDER LOOP EXCEPTION ===")
+            e.printStackTrace()
+            renderLoop.stop()
+            glRenderer.dispose()
+            glWindow.destroy()
+            Platform.runLater(() => {
+              Platform.setImplicitExit(true)
+              client.disconnect()
+              Platform.exit()
+            })
+        }
       }
     }
     renderLoop.start()
@@ -1559,16 +1595,13 @@ class ClientMain extends Application {
     client.gameOverListener = () => {
       Platform.runLater(() => {
         renderLoop.stop()
+        glRenderer.dispose()
+        glWindow.destroy()
+        Platform.setImplicitExit(true)
+        stage.show()
         showScoreboard(stage)
       })
     }
-
-    stage.setOnCloseRequest(_ => {
-      println("Closing application...")
-      client.disconnect()
-      renderLoop.stop()
-      if (controllerHandler != null) controllerHandler.cleanup()
-    })
 
     println("Game started!")
   }
@@ -1754,21 +1787,23 @@ class ClientMain extends Application {
     try {
       val world = WorldLoader.load(worldPath)
       client.setWorld(world)
-      if (canvas != null) canvas.resetVisualPosition()
+      if (glRenderer != null) glRenderer.resetVisualPosition()
       println(s"Loaded world: ${world.name} (${world.width}x${world.height})")
     } catch {
       case e: Exception =>
         println(s"Failed to load world $worldPath: ${e.getMessage}, using default")
         client.setWorld(WorldData.createEmpty(Constants.GRID_SIZE, Constants.GRID_SIZE))
-        if (canvas != null) canvas.resetVisualPosition()
+        if (glRenderer != null) glRenderer.resetVisualPosition()
     }
   }
 
   override def stop(): Unit = {
+    if (renderLoop != null) renderLoop.stop()
+    if (glRenderer != null) glRenderer.dispose()
+    if (glWindow != null) glWindow.destroy()
     if (controllerHandler != null) controllerHandler.cleanup()
-    if (client != null) {
-      client.disconnect()
-    }
+    if (client != null) client.disconnect()
+    GLFWManager.terminate()
   }
 }
 

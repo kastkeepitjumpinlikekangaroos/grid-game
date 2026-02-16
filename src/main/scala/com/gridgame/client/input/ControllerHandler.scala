@@ -1,6 +1,7 @@
 package com.gridgame.client.input
 
 import com.gridgame.client.GameClient
+import com.gridgame.client.gl.GLFWManager
 import com.gridgame.common.Constants
 import com.gridgame.common.model.ItemType
 import com.gridgame.common.model.ProjectileDef
@@ -48,11 +49,7 @@ class ControllerHandler(client: GameClient) {
 
   def init(): Unit = {
     try {
-      glfwInitHint(GLFW_COCOA_MENUBAR, GLFW_FALSE)
-      if (!glfwInit()) {
-        println("ControllerHandler: GLFW init failed, controller support disabled")
-        return
-      }
+      GLFWManager.ensureInitialized()
       state = GLFWGamepadState.create()
       loadGamepadMappings()
       initialized = true
@@ -185,8 +182,7 @@ class ControllerHandler(client: GameClient) {
   def update(): Unit = {
     if (!initialized) return
 
-    // Poll GLFW events - required for joystick/gamepad discovery and state updates
-    glfwPollEvents()
+    // Note: glfwPollEvents() is called by the game loop — not needed here
 
     // Scan for connected gamepad if we don't have one (throttled to once per second)
     if (gamepadId < 0) {
@@ -418,7 +414,7 @@ class ControllerHandler(client: GameClient) {
 
   def cleanup(): Unit = {
     if (initialized) {
-      glfwTerminate()
+      // Don't terminate GLFW here — GLFWManager owns the lifecycle
       initialized = false
     }
   }
