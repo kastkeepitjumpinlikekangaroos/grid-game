@@ -55,6 +55,10 @@ class GLGameRenderer(val client: GameClient) {
   private var canvasW: Double = 0
   private var canvasH: Double = 0
 
+  // Pre-allocated HUD data (avoids per-frame Seq allocations)
+  private val inventorySlotTypes = Array((ItemType.Heart, "1"), (ItemType.Star, "2"), (ItemType.Gem, "3"), (ItemType.Shield, "4"), (ItemType.Fence, "5"))
+  private val abilityColors = Array((0.2f, 0.8f, 0.3f), (0.4f, 0.7f, 1f))
+
   // Tile dimensions for draw calls
   private val tileW = (HW * 2).toFloat // 40
   private val tileCellH = Constants.TILE_CELL_HEIGHT.toFloat // 56
@@ -140,21 +144,23 @@ class GLGameRenderer(val client: GameClient) {
     beginShapes()
     renderBackground(world.background)
 
-    // === Calculate visible tile bounds ===
-    val corners = Seq(
-      (IsometricTransform.screenToWorldX(0, 0, camOffX, camOffY),
-       IsometricTransform.screenToWorldY(0, 0, camOffX, camOffY)),
-      (IsometricTransform.screenToWorldX(canvasW, 0, camOffX, camOffY),
-       IsometricTransform.screenToWorldY(canvasW, 0, camOffX, camOffY)),
-      (IsometricTransform.screenToWorldX(0, canvasH, camOffX, camOffY),
-       IsometricTransform.screenToWorldY(0, canvasH, camOffX, camOffY)),
-      (IsometricTransform.screenToWorldX(canvasW, canvasH, camOffX, camOffY),
-       IsometricTransform.screenToWorldY(canvasW, canvasH, camOffX, camOffY))
-    )
-    val startX = Math.max(0, corners.map(_._1).min.floor.toInt - 6)
-    val endX = Math.min(world.width - 1, corners.map(_._1).max.ceil.toInt + 6)
-    val startY = Math.max(0, corners.map(_._2).min.floor.toInt - 6)
-    val endY = Math.min(world.height - 1, corners.map(_._2).max.ceil.toInt + 6)
+    // === Calculate visible tile bounds (no allocations) ===
+    val cx0 = IsometricTransform.screenToWorldX(0, 0, camOffX, camOffY)
+    val cy0 = IsometricTransform.screenToWorldY(0, 0, camOffX, camOffY)
+    val cx1 = IsometricTransform.screenToWorldX(canvasW, 0, camOffX, camOffY)
+    val cy1 = IsometricTransform.screenToWorldY(canvasW, 0, camOffX, camOffY)
+    val cx2 = IsometricTransform.screenToWorldX(0, canvasH, camOffX, camOffY)
+    val cy2 = IsometricTransform.screenToWorldY(0, canvasH, camOffX, camOffY)
+    val cx3 = IsometricTransform.screenToWorldX(canvasW, canvasH, camOffX, camOffY)
+    val cy3 = IsometricTransform.screenToWorldY(canvasW, canvasH, camOffX, camOffY)
+    val minWX = Math.min(Math.min(cx0, cx1), Math.min(cx2, cx3))
+    val maxWX = Math.max(Math.max(cx0, cx1), Math.max(cx2, cx3))
+    val minWY = Math.min(Math.min(cy0, cy1), Math.min(cy2, cy3))
+    val maxWY = Math.max(Math.max(cy0, cy1), Math.max(cy2, cy3))
+    val startX = Math.max(0, minWX.floor.toInt - 6)
+    val endX = Math.min(world.width - 1, maxWX.ceil.toInt + 6)
+    val startY = Math.max(0, minWY.floor.toInt - 6)
+    val endY = Math.min(world.height - 1, maxWY.ceil.toInt + 6)
 
     val tileFrame = (animationTick / TILE_ANIM_SPEED) % GLTileRenderer.getNumFrames
     val cellH = Constants.TILE_CELL_HEIGHT
@@ -213,6 +219,7 @@ class GLGameRenderer(val client: GameClient) {
     drawDeathAnimations()
     drawTeleportAnimations()
     drawExplosionAnimations()
+    drawAoeSplashAnimations()
 
     // === End scene, apply post-processing ===
     // Set damage flash overlay
@@ -291,7 +298,7 @@ class GLGameRenderer(val client: GameClient) {
     // Clouds
     val px = (camOffX * 0.03).toFloat
     val py = (camOffY * 0.02).toFloat
-    val layers = Seq((0.10f, 0.15f, 1.6f, 0.18f, 6), (0.20f, 0.3f, 1.2f, 0.25f, 8), (0.05f, 0.5f, 1.0f, 0.35f, 7))
+    val layers = Array((0.10f, 0.15f, 1.6f, 0.18f, 6), (0.20f, 0.3f, 1.2f, 0.25f, 8), (0.05f, 0.5f, 1.0f, 0.35f, 7))
     for ((yFrac, speed, scale, alpha, count) <- layers) {
       for (i <- 0 until count) {
         val seed = yFrac.hashCode + i * 73
@@ -521,8 +528,9 @@ class GLGameRenderer(val client: GameClient) {
     val baseY = h * yFrac
     val points = 60
     val xStep = (w + 40) / points
-    val xs = new Array[Float](points + 4)
-    val ys = new Array[Float](points + 4)
+    val n = points + 3 // exact vertex count needed
+    val xs = new Array[Float](n)
+    val ys = new Array[Float](n)
     xs(0) = -20; ys(0) = h + 10
     for (i <- 0 to points) {
       xs(i + 1) = -20 + i * xStep + parallax * (0.3f + yFrac)
@@ -532,8 +540,7 @@ class GLGameRenderer(val client: GameClient) {
         Math.sin(i * 0.06 + seedOff * 0.7 + animationTick * speed * 0.7) * amplitude * 1.5).toFloat
     }
     xs(points + 2) = w + 20; ys(points + 2) = h + 10
-    xs(points + 3) = -20; ys(points + 3) = h + 10
-    shapeBatch.fillPolygon(xs.take(points + 3), ys.take(points + 3), r, g, b, alpha)
+    shapeBatch.fillPolygon(xs, ys, r, g, b, alpha)
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -1178,48 +1185,181 @@ class GLGameRenderer(val client: GameClient) {
 
   private def drawExplosionAnimations(): Unit = {
     val now = System.currentTimeMillis()
+    val EXPLOSION_DURATION = 1400L
     val iter = client.getExplosionAnimations.entrySet().iterator()
     while (iter.hasNext) {
       val entry = iter.next()
       val data = entry.getValue
       val timestamp = data(0)
-      if (now - timestamp > 1200) {
+      if (now - timestamp > EXPLOSION_DURATION) {
         iter.remove()
       } else {
-        val wx = data(1).toDouble; val wy = data(2).toDouble
+        val wx = data(1).toDouble / 1000.0; val wy = data(2).toDouble / 1000.0
         val colorRGB = data(3).toInt
-        val radius = if (data.length > 4) data(4).toFloat else 3f
+        val blastRadius = if (data.length > 4) data(4).toFloat / 1000f else 3f
         val sx = worldToScreenX(wx, wy).toFloat
         val sy = worldToScreenY(wx, wy).toFloat
-        val progress = ((now - timestamp) / 1200.0).toFloat
-        val fadeOut = 1f - progress
+        val elapsed = (now - timestamp).toFloat
+        val progress = elapsed / EXPLOSION_DURATION
         val (er, eg, eb) = intToRGB(colorRGB)
 
-        beginShapes()
-        shapeBatch.setAdditiveBlend(true)
-        // Expanding ring
-        val ringR = progress * radius * HW
-        val segs = 24; val step = (2 * Math.PI / segs).toFloat
-        var angle = 0f
-        for (_ <- 0 until segs) {
-          val x1 = sx + ringR * Math.cos(angle).toFloat
-          val y1 = sy + ringR * 0.5f * Math.sin(angle).toFloat
-          val x2 = sx + ringR * Math.cos(angle + step).toFloat
-          val y2 = sy + ringR * 0.5f * Math.sin(angle + step).toFloat
-          shapeBatch.strokeLine(x1, y1, x2, y2, 2.5f * fadeOut, er, eg, eb, 0.5f * fadeOut)
-          angle += step
-        }
-        // Center flash
-        if (progress < 0.2f) {
-          val flashAlpha = 0.6f * (1f - progress / 0.2f)
-          shapeBatch.fillOvalSoft(sx, sy, 20f, 12f, 1f, 1f, 0.9f, flashAlpha, 0f, 16)
-        }
-        shapeBatch.setAdditiveBlend(false)
+        // Screen-space blast radius (isometric: wider horizontally)
+        val blastW = blastRadius * HW
+        val blastH = blastRadius * HH
 
-        if (now - timestamp < 50) camera.triggerShake(4.0, 400)
+        beginShapes()
+
+        // Phase 1: Bright flash (0-15%)
+        if (progress < 0.15f) {
+          val flashP = progress / 0.15f
+          val flashScale = 0.3f + flashP * 0.7f
+          val flashAlpha = 0.9f * (1f - flashP)
+          // Bright white-hot center
+          shapeBatch.fillOval(sx, sy, blastW * flashScale * 0.6f, blastH * flashScale * 0.6f,
+            1f, 1f, 0.95f, flashAlpha, 16)
+          // Colored glow around center
+          shapeBatch.fillOvalSoft(sx, sy, blastW * flashScale, blastH * flashScale,
+            bright(er), bright(eg), bright(eb), flashAlpha * 0.7f, 0f, 20)
+        }
+
+        // Phase 2: Expanding fireball (0-50%)
+        if (progress < 0.5f) {
+          val fireP = progress / 0.5f
+          val fireAlpha = 0.85f * (1f - fireP * 0.7f)
+          val fireScale = 0.2f + fireP * 0.8f
+          // Outer fire glow
+          shapeBatch.fillOvalSoft(sx, sy, blastW * fireScale * 1.3f, blastH * fireScale * 1.3f,
+            er, eg * 0.5f, eb * 0.2f, fireAlpha * 0.4f, 0f, 18)
+          // Core fireball
+          shapeBatch.fillOval(sx, sy, blastW * fireScale * 0.7f, blastH * fireScale * 0.7f,
+            er, eg, eb, fireAlpha, 16)
+          // Hot center
+          shapeBatch.fillOval(sx, sy, blastW * fireScale * 0.35f, blastH * fireScale * 0.35f,
+            bright(er), bright(eg), bright(eb), fireAlpha * 0.9f, 12)
+        }
+
+        // Phase 3: Shockwave ring (10-80%)
+        if (progress > 0.1f && progress < 0.8f) {
+          val ringP = (progress - 0.1f) / 0.7f
+          val ringScale = 0.3f + ringP * 0.7f
+          val ringAlpha = 0.8f * (1f - ringP)
+          val ringW = blastW * ringScale * 1.1f
+          val ringH = blastH * ringScale * 1.1f
+          val thickness = 3f * (1f - ringP * 0.5f)
+          shapeBatch.strokeOval(sx, sy, ringW, ringH, thickness, er, eg, eb, ringAlpha, 28)
+          // Second thinner outer ring
+          if (ringP < 0.6f) {
+            shapeBatch.strokeOval(sx, sy, ringW * 1.15f, ringH * 1.15f, 1.5f,
+              bright(er), bright(eg), bright(eb), ringAlpha * 0.4f, 28)
+          }
+        }
+
+        // Phase 4: Debris particles (15-100%)
+        if (progress > 0.15f) {
+          val debrisP = (progress - 0.15f) / 0.85f
+          val numDebris = 12
+          for (i <- 0 until numDebris) {
+            val angle = i.toDouble * Math.PI * 2 / numDebris + entry.getKey * 0.7
+            val speed = 0.6f + (((i * 7 + entry.getKey * 3) % 10) / 10f) * 0.6f
+            val dist = debrisP * speed
+            val dx = sx + (Math.cos(angle) * dist * blastW * 1.2f).toFloat
+            val dy = sy + (Math.sin(angle) * dist * blastH * 1.2f).toFloat - debrisP * debrisP * 15f
+            val debrisAlpha = 0.7f * (1f - debrisP)
+            val sz = 3f * (1f - debrisP * 0.6f)
+            if (debrisAlpha > 0.05f) {
+              shapeBatch.fillOval(dx, dy, sz, sz * 0.7f, er, eg * 0.6f, eb * 0.3f, debrisAlpha, 6)
+            }
+          }
+        }
+
+        // Phase 5: Smoke (30-100%)
+        if (progress > 0.3f) {
+          val smokeP = (progress - 0.3f) / 0.7f
+          val smokeAlpha = 0.25f * (1f - smokeP)
+          val smokeScale = 0.5f + smokeP * 0.5f
+          shapeBatch.fillOvalSoft(sx, sy - smokeP * 12, blastW * smokeScale * 0.8f, blastH * smokeScale * 0.6f,
+            0.25f, 0.22f, 0.2f, smokeAlpha, 0f, 14)
+        }
+
+        // Camera shake on first frame
+        if (elapsed < 50) camera.triggerShake(3.0 + blastRadius.toDouble, 400)
       }
     }
   }
+
+  private def drawAoeSplashAnimations(): Unit = {
+    val now = System.currentTimeMillis()
+    val AOE_DURATION = 900L
+    val iter = client.getAoeSplashAnimations.entrySet().iterator()
+    while (iter.hasNext) {
+      val entry = iter.next()
+      val data = entry.getValue
+      val timestamp = data(0)
+      if (now - timestamp > AOE_DURATION) {
+        iter.remove()
+      } else {
+        val wx = data(1).toDouble / 1000.0; val wy = data(2).toDouble / 1000.0
+        val colorRGB = data(3).toInt
+        val aoeRadius = if (data.length > 4) data(4).toFloat / 1000f else 3f
+        val sx = worldToScreenX(wx, wy).toFloat
+        val sy = worldToScreenY(wx, wy).toFloat
+        val elapsed = (now - timestamp).toFloat
+        val progress = elapsed / AOE_DURATION
+        val (ar, ag, ab) = intToRGB(colorRGB)
+
+        val aoeW = aoeRadius * HW
+        val aoeH = aoeRadius * HH
+
+        beginShapes()
+
+        // Ground impact flash (0-20%)
+        if (progress < 0.2f) {
+          val flashP = progress / 0.2f
+          val flashAlpha = 0.6f * (1f - flashP)
+          shapeBatch.fillOval(sx, sy, aoeW * flashP * 0.5f, aoeH * flashP * 0.5f,
+            bright(ar), bright(ag), bright(ab), flashAlpha, 16)
+        }
+
+        // Expanding ring wave (multiple rings with stagger)
+        for (ring <- 0 until 3) {
+          val ringDelay = ring * 0.12f
+          val ringP = Math.max(0f, (progress - ringDelay) / (1f - ringDelay))
+          if (ringP > 0f && ringP < 1f) {
+            val ringScale = 0.1f + ringP * 0.9f
+            val ringAlpha = 0.7f * (1f - ringP) / (ring + 1)
+            val rw = aoeW * ringScale
+            val rh = aoeH * ringScale
+            val thickness = (2.5f - ring * 0.5f) * (1f - ringP * 0.4f)
+            shapeBatch.strokeOval(sx, sy, rw, rh, thickness, ar, ag, ab, ringAlpha, 24)
+          }
+        }
+
+        // Ground scorch mark (fades slowly)
+        if (progress > 0.15f) {
+          val scorchP = (progress - 0.15f) / 0.85f
+          val scorchAlpha = 0.3f * (1f - scorchP)
+          shapeBatch.fillOval(sx, sy, aoeW * 0.6f, aoeH * 0.6f,
+            ar * 0.3f, ag * 0.3f, ab * 0.3f, scorchAlpha, 14)
+        }
+
+        // Sparkle particles around perimeter
+        if (progress > 0.05f && progress < 0.7f) {
+          val sparkP = (progress - 0.05f) / 0.65f
+          val numSparks = 8
+          for (i <- 0 until numSparks) {
+            val angle = i.toDouble * Math.PI * 2 / numSparks + entry.getKey * 1.3
+            val dist = 0.5f + sparkP * 0.5f
+            val px = sx + (Math.cos(angle) * aoeW * dist).toFloat
+            val py = sy + (Math.sin(angle) * aoeH * dist).toFloat
+            val sparkAlpha = 0.6f * (1f - sparkP)
+            shapeBatch.fillOval(px, py, 2.5f, 2f, bright(ar), bright(ag), bright(ab), sparkAlpha, 6)
+          }
+        }
+      }
+    }
+  }
+
+  @inline private def bright(c: Float): Float = Math.min(1f, c * 0.4f + 0.6f)
 
   // ═══════════════════════════════════════════════════════════════════
   //  HEALTH BAR + NAME (5c continued)
@@ -1254,7 +1394,7 @@ class GLGameRenderer(val client: GameClient) {
 
   private def drawCharacterName(name: String, screenCenterX: Double, spriteTopY: Double): Unit = {
     val barH = Constants.HEALTH_BAR_HEIGHT_PX
-    val nameY = (spriteTopY - Constants.HEALTH_BAR_OFFSET_Y - barH - 4).toFloat
+    val nameY = (spriteTopY - Constants.HEALTH_BAR_OFFSET_Y - barH - fontSmall.charHeight - 2).toFloat
     val textW = fontSmall.measureWidth(name)
     val textX = (screenCenterX - textW / 2).toFloat
     beginSprites()
@@ -1278,12 +1418,13 @@ class GLGameRenderer(val client: GameClient) {
     fontSmall.drawTextOutlined(spriteBatch, s"Health: $health/${client.getSelectedCharacterMaxHealth}", 10, 64)
     fontSmall.drawTextOutlined(spriteBatch, s"Items: ${client.getInventoryCount}", 10, 82)
 
-    val effects = Seq(
-      if (client.hasShield) Some("Shield") else None,
-      if (client.hasGemBoost) Some("FastShot") else None
-    ).flatten
-    if (effects.nonEmpty) {
-      fontSmall.drawTextOutlined(spriteBatch, s"Effects: ${effects.mkString(" ")}", 10, 100)
+    val hasShield = client.hasShield
+    val hasGem = client.hasGemBoost
+    if (hasShield || hasGem) {
+      val effectStr = if (hasShield && hasGem) "Effects: Shield FastShot"
+        else if (hasShield) "Effects: Shield"
+        else "Effects: FastShot"
+      fontSmall.drawTextOutlined(spriteBatch, effectStr, 10, 100)
     }
 
     renderInventory(screenW, screenH)
@@ -1298,12 +1439,10 @@ class GLGameRenderer(val client: GameClient) {
     val startX = (screenW - totalW) / 2f
     val startY = screenH - slotSize - 14f
 
-    val slotTypes = Seq((ItemType.Heart, "1"), (ItemType.Star, "2"), (ItemType.Gem, "3"), (ItemType.Shield, "4"), (ItemType.Fence, "5"))
-
     // Draw all slot backgrounds + icons (shapes)
     beginShapes()
-    for (i <- slotTypes.indices) {
-      val (itemType, _) = slotTypes(i)
+    for (i <- inventorySlotTypes.indices) {
+      val (itemType, _) = inventorySlotTypes(i)
       val count = client.getItemCount(itemType.id)
       val slotX = startX + i * (slotSize + slotGap)
       val (tr, tg, tb) = intToRGB(itemType.colorRGB)
@@ -1331,8 +1470,8 @@ class GLGameRenderer(val client: GameClient) {
 
     // Draw all text labels (sprites) in one batch
     beginSprites()
-    for (i <- slotTypes.indices) {
-      val (itemType, keyLabel) = slotTypes(i)
+    for (i <- inventorySlotTypes.indices) {
+      val (itemType, keyLabel) = inventorySlotTypes(i)
       val count = client.getItemCount(itemType.id)
       val slotX = startX + i * (slotSize + slotGap)
 
@@ -1345,39 +1484,109 @@ class GLGameRenderer(val client: GameClient) {
   }
 
   private def renderAbilityHUD(screenW: Int, screenH: Int): Unit = {
-    val slotSize = 32f; val slotGap = 6f
+    val slotSize = 44f; val slotGap = 8f
     val invSlotSize = 44f; val invSlotGap = 8f; val invNumSlots = 5
     val totalInvW = invNumSlots * invSlotSize + (invNumSlots - 1) * invSlotGap
     val inventoryStartX = (screenW - totalInvW) / 2f
     val startY = screenH - slotSize - 14f
 
     val charDef = client.getSelectedCharacterDef
-    val abilities = Seq(
-      (charDef.qAbility.keybind, client.getQCooldownFraction, charDef.qAbility.name, 0.2f, 0.8f, 0.3f),
-      (charDef.eAbility.keybind, client.getECooldownFraction, charDef.eAbility.name, 0.4f, 0.7f, 1f)
-    )
+    val abilityDefs = Array(charDef.qAbility, charDef.eAbility)
+    val cooldowns = Array(client.getQCooldownFraction, client.getECooldownFraction)
 
     val abilityGap = 12f
     beginShapes()
-    for (i <- abilities.indices) {
-      val (_, cooldownFrac, _, ar, ag, ab) = abilities(i)
-      val slotX = inventoryStartX - (abilities.length - i) * (slotSize + slotGap) - abilityGap
+    for (i <- abilityDefs.indices) {
+      val aDef = abilityDefs(i)
+      val cooldownFrac = cooldowns(i)
+      val (ar, ag, ab) = abilityColors(i)
+      val slotX = inventoryStartX - (abilityDefs.length - i) * (slotSize + slotGap) - abilityGap
       val onCooldown = cooldownFrac > 0.001f
 
-      shapeBatch.fillRect(slotX, startY, slotSize, slotSize, 0f, 0f, 0f, 0.5f)
+      // Slot background
+      shapeBatch.fillRect(slotX, startY, slotSize, slotSize, 0.06f, 0.06f, 0.1f, 0.8f)
+
+      // Ability icon inside the slot
+      val cx = slotX + slotSize / 2; val cy = startY + slotSize / 2
+      val iconAlpha = if (onCooldown) 0.35f else 0.9f
+      drawAbilityIcon(aDef.castBehavior, cx, cy, 12f, ar, ag, ab, iconAlpha)
+
+      // Cooldown overlay (fills from bottom up)
       if (onCooldown) {
-        shapeBatch.fillRect(slotX, startY, slotSize, slotSize * cooldownFrac, 0f, 0f, 0f, 0.6f)
+        shapeBatch.fillRect(slotX, startY, slotSize, slotSize * cooldownFrac, 0f, 0f, 0f, 0.55f)
         shapeBatch.strokeRect(slotX, startY, slotSize, slotSize, 1.5f, 0.39f, 0.39f, 0.39f, 0.6f)
       } else {
-        shapeBatch.strokeRect(slotX, startY, slotSize, slotSize, 2.5f, ar, ag, ab, 1f)
+        shapeBatch.strokeRect(slotX, startY, slotSize, slotSize, 2f, ar, ag, ab, 0.9f)
       }
     }
 
+    // Key labels
     beginSprites()
-    for (i <- abilities.indices) {
-      val (key, _, _, _, _, _) = abilities(i)
-      val slotX = inventoryStartX - (abilities.length - i) * (slotSize + slotGap) - abilityGap
-      fontSmall.drawText(spriteBatch, key, slotX + slotSize - 11, startY + slotSize - 16)
+    for (i <- abilityDefs.indices) {
+      val slotX = inventoryStartX - (abilityDefs.length - i) * (slotSize + slotGap) - abilityGap
+      val (ar, ag, ab) = abilityColors(i)
+      val onCooldown = cooldowns(i) > 0.001f
+      val ka = if (onCooldown) 0.5f else 1f
+      fontSmall.drawTextOutlined(spriteBatch, abilityDefs(i).keybind,
+        slotX + slotSize - fontSmall.measureWidth(abilityDefs(i).keybind) - 3, startY + slotSize - fontSmall.charHeight - 1,
+        ar * ka, ag * ka, ab * ka, ka)
+    }
+  }
+
+  /** Draw a simple icon representing the cast behavior type. */
+  private def drawAbilityIcon(behavior: CastBehavior, cx: Float, cy: Float, sz: Float,
+                              r: Float, g: Float, b: Float, a: Float): Unit = {
+    behavior match {
+      case StandardProjectile =>
+        // Circle with a dot — basic projectile
+        shapeBatch.fillOval(cx, cy, sz, sz, r, g, b, a * 0.4f, 12)
+        shapeBatch.fillOval(cx, cy, sz * 0.45f, sz * 0.45f, r, g, b, a, 8)
+        shapeBatch.strokeOval(cx, cy, sz, sz, 1.5f, r, g, b, a * 0.8f, 12)
+
+      case FanProjectile(count, _) =>
+        // Multiple small dots in a fan
+        val spread = Math.min(count, 5)
+        for (i <- 0 until spread) {
+          val angle = -Math.PI / 2 + (i - (spread - 1) / 2.0) * Math.PI / 6
+          val dx = Math.cos(angle).toFloat * sz * 0.7f
+          val dy = Math.sin(angle).toFloat * sz * 0.7f
+          shapeBatch.fillOval(cx + dx, cy + dy, sz * 0.25f, sz * 0.25f, r, g, b, a, 6)
+        }
+        shapeBatch.strokeOval(cx, cy, sz * 0.3f, sz * 0.3f, 1.5f, r, g, b, a * 0.6f, 8)
+
+      case _: PhaseShiftBuff =>
+        // Ghost silhouette — hollow oval with dashes
+        shapeBatch.strokeOval(cx, cy, sz * 0.8f, sz, 2f, r, g, b, a * 0.5f, 12)
+        shapeBatch.strokeOval(cx, cy, sz * 0.5f, sz * 0.65f, 1.5f, r, g, b, a * 0.8f, 10)
+        // Eye dots
+        shapeBatch.fillOval(cx - sz * 0.2f, cy - sz * 0.15f, 2f, 2f, r, g, b, a, 6)
+        shapeBatch.fillOval(cx + sz * 0.2f, cy - sz * 0.15f, 2f, 2f, r, g, b, a, 6)
+
+      case _: DashBuff =>
+        // Arrow pointing right — motion lines
+        shapeBatch.fillPolygon(
+          Array(cx + sz * 0.6f, cx - sz * 0.3f, cx - sz * 0.3f),
+          Array(cy, cy - sz * 0.45f, cy + sz * 0.45f), r, g, b, a)
+        // Speed lines
+        for (i <- 0 until 3) {
+          val ly = cy + (i - 1) * sz * 0.35f
+          shapeBatch.strokeLine(cx - sz * 0.9f, ly, cx - sz * 0.4f, ly, 1.5f, r, g, b, a * 0.5f)
+        }
+
+      case _: TeleportCast =>
+        // Lightning bolt / flash
+        shapeBatch.fillPolygon(
+          Array(cx - sz * 0.15f, cx + sz * 0.35f, cx + sz * 0.05f, cx + sz * 0.45f, cx - sz * 0.1f, cx + sz * 0.1f),
+          Array(cy - sz * 0.7f, cy - sz * 0.1f, cy - sz * 0.1f, cy + sz * 0.7f, cy + sz * 0.1f, cy + sz * 0.1f),
+          r, g, b, a)
+
+      case _: GroundSlam =>
+        // Expanding rings
+        shapeBatch.strokeOval(cx, cy, sz * 0.4f, sz * 0.25f, 2f, r, g, b, a, 12)
+        shapeBatch.strokeOval(cx, cy, sz * 0.8f, sz * 0.5f, 1.5f, r, g, b, a * 0.7f, 12)
+        shapeBatch.strokeOval(cx, cy, sz * 1.1f, sz * 0.7f, 1f, r, g, b, a * 0.4f, 12)
+        // Center impact
+        shapeBatch.fillOval(cx, cy, sz * 0.2f, sz * 0.13f, r, g, b, a, 8)
     }
   }
 

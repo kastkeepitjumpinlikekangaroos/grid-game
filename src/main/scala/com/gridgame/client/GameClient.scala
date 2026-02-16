@@ -78,8 +78,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   private val chargingStartTime: AtomicLong = new AtomicLong(0)
   private val lastChargingUpdateTime: AtomicLong = new AtomicLong(0)
 
-  // Hit animation tracking
+  // Hit animation tracking (entries expire after HIT_EXPIRE_MS)
   private val playerHitTimes: ConcurrentHashMap[UUID, Long] = new ConcurrentHashMap()
+  private val HIT_EXPIRE_MS = 600L
+  private var lastHitCleanupTime: Long = 0L
 
   // Death animation tracking: (timestamp, worldX, worldY, colorRGB)
   private val deathAnimations: ConcurrentHashMap[UUID, Array[Long]] = new ConcurrentHashMap()
@@ -88,8 +90,15 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   // Teleport animation tracking: (timestamp, oldX, oldY, newX, newY, colorRGB)
   private val teleportAnimations: ConcurrentHashMap[UUID, Array[Long]] = new ConcurrentHashMap()
 
-  // Explosion animation tracking: projectileId -> (timestamp, worldX*1000, worldY*1000, projectileType)
+  // Explosion animation tracking: projectileId -> (timestamp, worldX*1000, worldY*1000, colorRGB, blastRadius*1000)
   private val explosionAnimations: ConcurrentHashMap[Int, Array[Long]] = new ConcurrentHashMap()
+
+  // AoE splash animation tracking: projectileId -> (timestamp, worldX*1000, worldY*1000, colorRGB, aoeRadius*1000)
+  private val aoeSplashAnimations: ConcurrentHashMap[Int, Array[Long]] = new ConcurrentHashMap()
+
+  // Track recently removed projectile IDs to prevent UDP MOVE packets from resurrecting them
+  private val recentlyRemovedProjectiles: java.util.Set[Int] =
+    java.util.Collections.newSetFromMap(new ConcurrentHashMap[Int, java.lang.Boolean]())
 
   @volatile private var running = false
   @volatile private var isDead = false
@@ -1213,6 +1222,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
     packet.getAction match {
       case ProjectileAction.SPAWN =>
+        recentlyRemovedProjectiles.remove(projectileId)
         val projectile = new Projectile(
           projectileId,
           packet.getPlayerId,
@@ -1225,26 +1235,29 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           packet.getProjectileType
         )
         projectiles.put(projectileId, projectile)
+        // Periodic cleanup: removed set shouldn't grow beyond a reasonable size
+        if (recentlyRemovedProjectiles.size() > 500) recentlyRemovedProjectiles.clear()
 
       case ProjectileAction.MOVE =>
         val projectile = projectiles.get(projectileId)
         if (projectile == null) {
-          // Create projectile if we missed the spawn
-          val newProjectile = new Projectile(
-            projectileId,
-            packet.getPlayerId,
-            packet.getX,
-            packet.getY,
-            packet.getDx,
-            packet.getDy,
-            packet.getColorRGB,
-            packet.getChargeLevel,
-            packet.getProjectileType
-          )
-          projectiles.put(projectileId, newProjectile)
-        }
-        val existingProjectile = projectiles.get(projectileId)
-        if (existingProjectile != null) {
+          // Only create if we haven't seen this projectile despawn/hit already
+          // (UDP MOVE packets can arrive after TCP HIT/DESPAWN)
+          if (!recentlyRemovedProjectiles.contains(projectileId)) {
+            val newProjectile = new Projectile(
+              projectileId,
+              packet.getPlayerId,
+              packet.getX,
+              packet.getY,
+              packet.getDx,
+              packet.getDy,
+              packet.getColorRGB,
+              packet.getChargeLevel,
+              packet.getProjectileType
+            )
+            projectiles.put(projectileId, newProjectile)
+          }
+        } else {
           val updatedProjectile = new Projectile(
             projectileId,
             packet.getPlayerId,
@@ -1253,14 +1266,16 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
             packet.getDx,
             packet.getDy,
             packet.getColorRGB,
-            existingProjectile.chargeLevel,
-            existingProjectile.projectileType
+            projectile.chargeLevel,
+            projectile.projectileType
           )
           projectiles.put(projectileId, updatedProjectile)
         }
 
       case ProjectileAction.HIT =>
         projectiles.remove(projectileId)
+        recentlyRemovedProjectiles.add(projectileId)
+        val hitPType = packet.getProjectileType
         val targetId = packet.getTargetId
         if (targetId != null) {
           playerHitTimes.put(targetId, System.currentTimeMillis())
@@ -1271,15 +1286,42 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           }
         }
 
+        // AoE splash visual on hit
+        val hitPDef = ProjectileDef.get(hitPType)
+        hitPDef.aoeOnHit.foreach { aoe =>
+          aoeSplashAnimations.put(projectileId, Array(
+            System.currentTimeMillis(),
+            (packet.getX * 1000).toLong,
+            (packet.getY * 1000).toLong,
+            packet.getColorRGB.toLong,
+            (aoe.radius * 1000).toLong
+          ))
+        }
+
       case ProjectileAction.DESPAWN =>
         val despawned = projectiles.remove(projectileId)
+        recentlyRemovedProjectiles.add(projectileId)
         val pType = if (despawned != null) despawned.projectileType else packet.getProjectileType
-        if (ProjectileDef.get(pType).isExplosive) {
+        val pDef = ProjectileDef.get(pType)
+        val colorRGB = if (despawned != null) despawned.colorRGB else packet.getColorRGB
+        if (pDef.isExplosive) {
+          val blastRadius = pDef.explosionConfig.map(_.blastRadius).getOrElse(3f)
           explosionAnimations.put(projectileId, Array(
             System.currentTimeMillis(),
             (packet.getX * 1000).toLong,
             (packet.getY * 1000).toLong,
-            pType.toLong
+            colorRGB.toLong,
+            (blastRadius * 1000).toLong
+          ))
+        }
+        // AoE splash visual on max range
+        pDef.aoeOnMaxRange.foreach { aoe =>
+          aoeSplashAnimations.put(projectileId + 1000000, Array(
+            System.currentTimeMillis(),
+            (packet.getX * 1000).toLong,
+            (packet.getY * 1000).toLong,
+            colorRGB.toLong,
+            (aoe.radius * 1000).toLong
           ))
         }
 
@@ -1559,7 +1601,18 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   def getIsDead: Boolean = isDead
 
-  def getPlayerHitTime(playerId: UUID): Long = playerHitTimes.getOrDefault(playerId, 0L)
+  def getPlayerHitTime(playerId: UUID): Long = {
+    // Periodic cleanup of expired hit entries to prevent unbounded growth
+    val now = System.currentTimeMillis()
+    if (now - lastHitCleanupTime > 2000) {
+      lastHitCleanupTime = now
+      val iter = playerHitTimes.entrySet().iterator()
+      while (iter.hasNext) {
+        if (now - iter.next().getValue > HIT_EXPIRE_MS) iter.remove()
+      }
+    }
+    playerHitTimes.getOrDefault(playerId, 0L)
+  }
 
   def getLocalDeathTime: Long = localDeathTime.get()
 
@@ -1568,6 +1621,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   def getTeleportAnimations: ConcurrentHashMap[UUID, Array[Long]] = teleportAnimations
 
   def getExplosionAnimations: ConcurrentHashMap[Int, Array[Long]] = explosionAnimations
+  def getAoeSplashAnimations: ConcurrentHashMap[Int, Array[Long]] = aoeSplashAnimations
 
   def getWorld: WorldData = currentWorld.get()
 
