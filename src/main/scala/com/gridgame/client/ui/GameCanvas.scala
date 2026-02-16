@@ -1003,9 +1003,17 @@ class GameCanvas(client: GameClient) extends Canvas() {
   }
 
   private def drawSingleProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
+    val scale = 1.8
+    val pcx = worldToScreenX(projectile.getX.toDouble, projectile.getY.toDouble, camOffX)
+    val pcy = worldToScreenY(projectile.getX.toDouble, projectile.getY.toDouble, camOffY)
+    gc.save()
+    gc.translate(pcx, pcy)
+    gc.scale(scale, scale)
+    gc.translate(-pcx, -pcy)
     projectileRenderers.getOrElse(projectile.projectileType,
       (p: Projectile, cx: Double, cy: Double) => drawNormalProjectile(p, cx, cy)
     )(projectile, camOffX, camOffY)
+    gc.restore()
   }
 
   private def drawNormalProjectile(projectile: Projectile, camOffX: Double, camOffY: Double): Unit = {
@@ -1022,7 +1030,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -1069,26 +1077,50 @@ class GameCanvas(client: GameClient) extends Canvas() {
       if (len > 1) {
         val nx = dx / len
         val ny = dy / len
-        val particleCount = 6
+        val particleCount = 12
         for (i <- 0 until particleCount) {
           val t = ((animationTick * 0.08 + i.toDouble / particleCount + projectile.id * 0.13) % 1.0)
-          val px = tailX + dx * t + ny * Math.sin(phase + i * 2.1) * 6.0
-          val py = tailY + dy * t - nx * Math.sin(phase + i * 2.1) * 6.0
-          val pAlpha = Math.max(0.0, Math.min(1.0, 0.7 * (1.0 - Math.abs(t - 0.5) * 2.0)))
-          val pSize = 3.0 + Math.sin(phase + i) * 1.2
+          val px = tailX + dx * t + ny * Math.sin(phase + i * 2.1) * 10.0
+          val py = tailY + dy * t - nx * Math.sin(phase + i * 2.1) * 10.0
+          val pAlpha = Math.max(0.0, Math.min(1.0, 0.8 * (1.0 - Math.abs(t - 0.5) * 2.0)))
+          val pSize = 5.0 + Math.sin(phase + i) * 2.5
           gc.setFill(Color.color(coreR, coreG, coreB, pAlpha))
           gc.fillOval(px - pSize, py - pSize, pSize * 2, pSize * 2)
         }
       }
 
       // Bright orb at the tip with pulse
-      val orbR = 9.0 * pulse
-      gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.2 * pulse))
+      val orbR = 12.0 * pulse
+      gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.12 * pulse))
+      gc.fillOval(tipX - orbR * 3, tipY - orbR * 3, orbR * 6, orbR * 6)
+      gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.22 * pulse))
       gc.fillOval(tipX - orbR * 2, tipY - orbR * 2, orbR * 4, orbR * 4)
-      gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.4 * pulse))
+      gc.setFill(Color.color(color.getRed, color.getGreen, color.getBlue, 0.45 * pulse))
       gc.fillOval(tipX - orbR, tipY - orbR, orbR * 2, orbR * 2)
-      gc.setFill(Color.color(coreR, coreG, coreB, 0.85 * fastFlicker))
+      gc.setFill(Color.color(coreR, coreG, coreB, 0.9 * fastFlicker))
       gc.fillOval(tipX - orbR * 0.5, tipY - orbR * 0.5, orbR, orbR)
+
+      // Expanding shockwave rings at tip
+      for (ring <- 0 until 3) {
+        val ringPhase = ((animationTick * 0.12 + ring * 0.33 + projectile.id * 0.17) % 1.0)
+        val ringR = 5.0 + ringPhase * 30.0
+        val ringAlpha = Math.max(0.0, 0.4 * (1.0 - ringPhase))
+        gc.setStroke(Color.color(color.getRed, color.getGreen, color.getBlue, ringAlpha))
+        gc.setLineWidth(2.5 * (1.0 - ringPhase * 0.5))
+        gc.strokeOval(tipX - ringR, tipY - ringR, ringR * 2, ringR * 2)
+      }
+
+      // Energy sparks radiating from tip
+      for (spark <- 0 until 8) {
+        val sparkAngle = phase * 1.5 + spark * (Math.PI * 2.0 / 8.0)
+        val sparkLen = 8.0 + 5.0 * Math.sin(phase * 3.0 + spark * 2.3)
+        val sparkX = tipX + Math.cos(sparkAngle) * sparkLen
+        val sparkY = tipY + Math.sin(sparkAngle) * sparkLen * 0.6
+        val sparkAlpha = 0.3 + 0.3 * Math.sin(phase * 4.0 + spark * 1.7)
+        gc.setStroke(Color.color(coreR, coreG, coreB, sparkAlpha))
+        gc.setLineWidth(1.5)
+        gc.strokeLine(tipX, tipY, sparkX, sparkY)
+      }
     }
   }
 
@@ -1104,7 +1136,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -1230,7 +1262,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -1267,13 +1299,13 @@ class GameCanvas(client: GameClient) extends Canvas() {
       gc.strokeLine(tailX, tailY, tipX, tipY)
 
       // Diamond-shaped ice crystals along the beam
-      for (i <- 0 until 10) {
-        val t = ((animationTick * 0.05 + i.toDouble / 10 + projectile.id * 0.13) % 1.0)
+      for (i <- 0 until 16) {
+        val t = ((animationTick * 0.05 + i.toDouble / 16 + projectile.id * 0.13) % 1.0)
         val sparkle = Math.sin(phase * 2.5 + i * 1.4)
-        val cx = tailX + dx * t + (-ny) * sparkle * 10.0
-        val cy = tailY + dy * t + nx * sparkle * 10.0
-        val cAlpha = Math.max(0.0, Math.min(1.0, 0.7 * (1.0 - Math.abs(t - 0.5) * 2.0)))
-        val cSize = 3.0 + Math.sin(phase + i * 0.9) * 1.5
+        val cx = tailX + dx * t + (-ny) * sparkle * 14.0
+        val cy = tailY + dy * t + nx * sparkle * 14.0
+        val cAlpha = Math.max(0.0, Math.min(1.0, 0.8 * (1.0 - Math.abs(t - 0.5) * 2.0)))
+        val cSize = 4.5 + Math.sin(phase + i * 0.9) * 2.5
         val rot = phase * 2.0 + i * 1.1
 
         // Draw diamond/rhombus shape
@@ -1298,7 +1330,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
       }
 
       // Crystalline snowflake burst at tip — 6-pointed star
-      val starR = 10.0 * pulse
+      val starR = 15.0 * pulse
       gc.setStroke(Color.color(0.7, 0.9, 1.0, 0.6 * pulse))
       gc.setLineWidth(2.0)
       for (arm <- 0 until 6) {
@@ -1320,13 +1352,25 @@ class GameCanvas(client: GameClient) extends Canvas() {
       }
 
       // Icy core at tip
-      val orbR = 7.0 * pulse
-      gc.setFill(Color.color(0.3, 0.6, 1.0, 0.25 * pulse))
+      val orbR = 10.0 * pulse
+      gc.setFill(Color.color(0.3, 0.6, 1.0, 0.15 * pulse))
+      gc.fillOval(tipX - orbR * 3, tipY - orbR * 3, orbR * 6, orbR * 6)
+      gc.setFill(Color.color(0.3, 0.6, 1.0, 0.3 * pulse))
       gc.fillOval(tipX - orbR * 2, tipY - orbR * 2, orbR * 4, orbR * 4)
-      gc.setFill(Color.color(0.5, 0.8, 1.0, 0.45 * pulse))
+      gc.setFill(Color.color(0.5, 0.8, 1.0, 0.5 * pulse))
       gc.fillOval(tipX - orbR, tipY - orbR, orbR * 2, orbR * 2)
       gc.setFill(Color.color(0.92, 0.97, 1.0, 0.9 * fastFlicker))
       gc.fillOval(tipX - orbR * 0.4, tipY - orbR * 0.4, orbR * 0.8, orbR * 0.8)
+
+      // Expanding frost rings
+      for (ring <- 0 until 3) {
+        val ringPhase = ((animationTick * 0.1 + ring * 0.33 + projectile.id * 0.15) % 1.0)
+        val ringR = 6.0 + ringPhase * 25.0
+        val ringAlpha = Math.max(0.0, 0.35 * (1.0 - ringPhase))
+        gc.setStroke(Color.color(0.5, 0.85, 1.0, ringAlpha))
+        gc.setLineWidth(2.0 * (1.0 - ringPhase * 0.5))
+        gc.strokeOval(tipX - ringR, tipY - ringR, ringR * 2, ringR * 2)
+      }
     }
   }
 
@@ -1342,7 +1386,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -1486,7 +1530,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -1605,7 +1649,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -1723,7 +1767,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -1844,7 +1888,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -1959,7 +2003,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -2118,7 +2162,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 120.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -2145,7 +2189,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
       // Smoke trail behind the fireball — dark billowing puffs
       if (len > 1) {
-        for (i <- 0 until 6) {
+        for (i <- 0 until 10) {
           val smokeT = ((animationTick * 0.06 + i * 0.15 + projectile.id * 0.09) % 1.0)
           val age = smokeT
           val smokeX = cx - nx * (15.0 + age * 40.0) + (-ny) * Math.sin(phase * 1.5 + i * 1.3) * (3.0 + age * 6.0)
@@ -2171,8 +2215,8 @@ class GameCanvas(client: GameClient) extends Canvas() {
       gc.strokeLine(tailX, tailY, cx, cy)
 
       // Swirling fire tongues licking outward from the fireball surface
-      for (i <- 0 until 6) {
-        val tongueAngle = phase * 2.0 + i * (Math.PI / 3.0)
+      for (i <- 0 until 10) {
+        val tongueAngle = phase * 2.0 + i * (Math.PI / 5.0)
         val tongueLen = 8.0 + 5.0 * Math.sin(phase * 3.0 + i * 2.1)
         val innerR = 8.0 * pulse
         val tongueStartX = cx + Math.cos(tongueAngle) * innerR
@@ -2187,7 +2231,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
       }
 
       // Fireball body — layered sphere from outer inferno to molten core
-      val orbR = 12.0 * pulse
+      val orbR = 16.0 * pulse
       // Dark red outer
       gc.setFill(Color.color(0.8, 0.1, 0.0, 0.2 * pulse))
       gc.fillOval(cx - orbR * 1.8, cy - orbR * 1.8, orbR * 3.6, orbR * 3.6)
@@ -2216,9 +2260,9 @@ class GameCanvas(client: GameClient) extends Canvas() {
 
       // Ember and spark particles rising off the fireball
       if (len > 1) {
-        for (i <- 0 until 8) {
-          val embT = ((animationTick * 0.09 + i * 0.12 + projectile.id * 0.07) % 1.0)
-          val angle = phase * 1.3 + i * (Math.PI * 2.0 / 8.0)
+        for (i <- 0 until 14) {
+          val embT = ((animationTick * 0.09 + i * 0.07 + projectile.id * 0.07) % 1.0)
+          val angle = phase * 1.3 + i * (Math.PI * 2.0 / 14.0)
           val scatter = 12.0 + embT * 15.0
           val embX = cx + Math.cos(angle) * scatter + Math.sin(phase * 2.0 + i) * 3.0
           val embY = cy + Math.sin(angle) * scatter - embT * 12.0
@@ -2236,14 +2280,32 @@ class GameCanvas(client: GameClient) extends Canvas() {
       }
 
       // Dripping lava particles falling from the fireball
-      for (i <- 0 until 3) {
-        val dripT = ((animationTick * 0.07 + i * 0.33 + projectile.id * 0.19) % 1.0)
-        val dripX = cx + Math.sin(phase + i * 2.5) * 6.0
-        val dripY = cy + dripT * 18.0
-        val dAlpha = Math.max(0.0, 0.5 * (1.0 - dripT))
-        val dSize = 1.8 * (1.0 - dripT * 0.5)
+      for (i <- 0 until 8) {
+        val dripT = ((animationTick * 0.07 + i * 0.12 + projectile.id * 0.19) % 1.0)
+        val dripX = cx + Math.sin(phase + i * 2.5) * 8.0
+        val dripY = cy + dripT * 22.0
+        val dAlpha = Math.max(0.0, 0.6 * (1.0 - dripT))
+        val dSize = 2.5 * (1.0 - dripT * 0.5)
         gc.setFill(Color.color(1.0, 0.3, 0.0, dAlpha))
         gc.fillOval(dripX - dSize, dripY - dSize, dSize * 2, dSize * 2)
+      }
+
+      // Expanding heat shockwave rings
+      for (ring <- 0 until 3) {
+        val ringPhase = ((animationTick * 0.1 + ring * 0.33 + projectile.id * 0.13) % 1.0)
+        val ringR = 12.0 + ringPhase * 40.0
+        val ringAlpha = Math.max(0.0, 0.3 * (1.0 - ringPhase))
+        gc.setStroke(Color.color(1.0, 0.4, 0.0, ringAlpha))
+        gc.setLineWidth(3.0 * (1.0 - ringPhase))
+        gc.strokeOval(cx - ringR, cy - ringR, ringR * 2, ringR * 2)
+      }
+
+      // Bright flash pulse at core
+      val flashPulse = Math.max(0.0, Math.sin(phase * 5.0))
+      if (flashPulse > 0.5) {
+        val flashR = orbR * 2.5 * flashPulse
+        gc.setFill(Color.color(1.0, 0.95, 0.7, 0.12 * flashPulse))
+        gc.fillOval(cx - flashR, cy - flashR, flashR * 2, flashR * 2)
       }
     }
   }
@@ -2260,7 +2322,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -2337,7 +2399,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 17) * 0.4
       val bounce = Math.abs(Math.sin(phase * 2.0)) * 4.0
@@ -2425,7 +2487,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -2541,7 +2603,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -2665,7 +2727,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -2736,7 +2798,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 19) * 0.25
       val pulse = 0.8 + 0.2 * Math.sin(phase)
@@ -2813,7 +2875,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 13) * 0.4
       val bounce = Math.abs(Math.sin(phase * 2.0)) * 3.0
@@ -2890,7 +2952,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -3009,7 +3071,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -3118,7 +3180,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -3233,7 +3295,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -3347,7 +3409,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val cx = worldToScreenX(projX, projY, camOffX)
     val cy = worldToScreenY(projX, projY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (cx > -margin && cx < getWidth + margin && cy > -margin && cy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 31) * 0.8
       val spin = phase * 4.0 // fast spin
@@ -3413,7 +3475,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -3497,7 +3559,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -3564,7 +3626,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -3639,7 +3701,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 13) * 0.3
       val bounce = Math.abs(Math.sin(phase * 1.5)) * 3.0
@@ -5202,7 +5264,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -5307,7 +5369,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -5398,7 +5460,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 29) * 0.45
       val pulse = 0.8 + 0.2 * Math.sin(phase)
@@ -5478,7 +5540,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
 
@@ -5559,7 +5621,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
 
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 23) * 0.5
       val pulse = 0.8 + 0.2 * Math.sin(phase)
@@ -5640,7 +5702,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipWY = projY + projectile.dy * beamLength
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
       gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
@@ -5685,7 +5747,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 41) * 0.3
       val spin = animationTick * 0.25 + projectile.id * 2.3
@@ -5735,7 +5797,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipWY = projY + projectile.dy * beamLength
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
       gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
@@ -5763,12 +5825,53 @@ class GameCanvas(client: GameClient) extends Canvas() {
       }
       // Outer glow
       gc.setStroke(Color.color(1.0, 1.0, 0.4, 0.3 * flicker))
-      gc.setLineWidth(6)
+      gc.setLineWidth(8)
+      for (i <- 0 until segs) gc.strokeLine(zigX(i), zigY(i), zigX(i + 1), zigY(i + 1))
+      // Mid glow
+      gc.setStroke(Color.color(1.0, 1.0, 0.6, 0.5 * flicker))
+      gc.setLineWidth(4)
       for (i <- 0 until segs) gc.strokeLine(zigX(i), zigY(i), zigX(i + 1), zigY(i + 1))
       // Core bolt
-      gc.setStroke(Color.color(1.0, 1.0, 0.85, 0.9 * flicker))
+      gc.setStroke(Color.color(1.0, 1.0, 0.85, 0.95 * flicker))
       gc.setLineWidth(2.5)
       for (i <- 0 until segs) gc.strokeLine(zigX(i), zigY(i), zigX(i + 1), zigY(i + 1))
+
+      // Branching side bolts
+      for (branch <- 0 until 4) {
+        val branchSeg = 1 + branch * 2
+        if (branchSeg < segs) {
+          val bx = zigX(branchSeg)
+          val by = zigY(branchSeg)
+          val bAngle = Math.atan2(ny, nx) + Math.PI / 2.0 + Math.sin(phase * 2.0 + branch * 3.7) * 0.8
+          val bLen = 18.0 + 12.0 * Math.sin(phase * 3.0 + branch * 2.1)
+          val bMidX = bx + Math.cos(bAngle) * bLen * 0.5 + Math.sin(phase * 5.0 + branch) * 5.0
+          val bMidY = by + Math.sin(bAngle) * bLen * 0.5 + Math.cos(phase * 5.0 + branch) * 5.0
+          val bEndX = bx + Math.cos(bAngle) * bLen
+          val bEndY = by + Math.sin(bAngle) * bLen
+          gc.setStroke(Color.color(1.0, 1.0, 0.5, 0.4 * flicker))
+          gc.setLineWidth(2.0)
+          gc.strokeLine(bx, by, bMidX, bMidY)
+          gc.strokeLine(bMidX, bMidY, bEndX, bEndY)
+        }
+      }
+
+      // Spark particles at zigzag joints
+      for (i <- 1 until segs) {
+        val sparkPulse = Math.sin(phase * 8.0 + i * 3.1)
+        if (sparkPulse > 0.2) {
+          val sparkR = 4.0 * sparkPulse
+          gc.setFill(Color.color(1.0, 1.0, 0.9, 0.7 * sparkPulse * flicker))
+          gc.fillOval(zigX(i) - sparkR, zigY(i) - sparkR, sparkR * 2, sparkR * 2)
+        }
+      }
+
+      // Bright flash at tip
+      val tipFlash = 0.5 + 0.5 * Math.sin(phase * 6.0)
+      val flashR = 10.0 * tipFlash * flicker
+      gc.setFill(Color.color(1.0, 1.0, 0.8, 0.25 * tipFlash))
+      gc.fillOval(tipX - flashR, tipY - flashR, flashR * 2, flashR * 2)
+      gc.setFill(Color.color(1.0, 1.0, 0.95, 0.6 * tipFlash * flicker))
+      gc.fillOval(tipX - flashR * 0.3, tipY - flashR * 0.3, flashR * 0.6, flashR * 0.6)
     }
   }
 
@@ -5782,7 +5885,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipWY = projY + projectile.dy * beamLength
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
       gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
@@ -5828,7 +5931,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 31) * 0.5
       val flicker = 0.7 + 0.3 * Math.sin(phase * 8.0)
@@ -5871,7 +5974,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 19) * 0.3
       val spin = animationTick * 0.15 + projectile.id * 1.3
@@ -5910,7 +6013,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 23) * 0.4
       val expand = 0.6 + 0.4 * Math.sin(phase * 2.0)
@@ -5943,7 +6046,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 47) * 0.4
       val pulse = 0.8 + 0.2 * Math.sin(phase)
@@ -5983,7 +6086,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 31) * 0.35
       val pulse = 0.85 + 0.15 * Math.sin(phase)
@@ -6022,7 +6125,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 29) * 0.4
       val expand = 0.5 + 0.5 * Math.sin(phase * 1.5)
@@ -6058,7 +6161,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 53) * 0.25
       val spin = animationTick * 0.2 + projectile.id * 1.1
@@ -6099,7 +6202,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 37) * 0.5
       val pulse = 0.85 + 0.15 * Math.sin(phase)
@@ -6153,7 +6256,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 41) * 0.35
       val pulse = 0.8 + 0.2 * Math.sin(phase)
@@ -6183,7 +6286,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 29) * 0.35
       val pulse = 0.85 + 0.15 * Math.sin(phase)
@@ -6263,7 +6366,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipWY = projY + projectile.dy * beamLength
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
       val phase = (animationTick + projectile.id * 31) * 0.4
@@ -6304,7 +6407,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 37) * 0.3
       val pulse = 0.8 + 0.2 * Math.sin(phase)
@@ -6334,7 +6437,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 23) * 0.4
       val pulse = 0.8 + 0.2 * Math.sin(phase)
@@ -6368,7 +6471,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 43) * 0.3
       val pulse = 0.85 + 0.15 * Math.sin(phase)
@@ -6411,7 +6514,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 19) * 0.35
       val pulse = 0.85 + 0.15 * Math.sin(phase * 2)
@@ -6459,7 +6562,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 23) * 0.35
       val pulse = 0.8 + 0.2 * Math.sin(phase * 2)
@@ -6485,7 +6588,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 47) * 0.5
       val flicker = 0.7 + 0.3 * Math.sin(phase * 6)
@@ -6540,7 +6643,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 17) * 0.3
       val spin = animationTick * 0.12 + projectile.id * 1.7
@@ -6585,7 +6688,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipWY = projY + projectile.dy * beamLength
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
       gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
@@ -6626,7 +6729,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 29) * 0.35
       val pulse = 0.8 + 0.2 * Math.sin(phase)
@@ -6691,7 +6794,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 23) * 0.35
       val spin = animationTick * 0.3 + projectile.id * 1.9
@@ -6741,7 +6844,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 41) * 0.4
       val pulse = 0.7 + 0.3 * Math.sin(phase * 3)
@@ -6775,7 +6878,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipWY = projY + projectile.dy * beamLength
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
       gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
@@ -6916,7 +7019,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 31) * 0.4
       val sweep = Math.sin(phase * 2) * 0.5
@@ -6963,7 +7066,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipWY = projY + projectile.dy * beamLength
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
       gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
@@ -7034,7 +7137,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipWY = projY + projectile.dy * beamLength
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
       gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
@@ -7070,7 +7173,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 21) * 0.35
       val spin = animationTick * 0.3 + projectile.id * 1.7
@@ -7124,7 +7227,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 29) * 0.3
       val spin = animationTick * 0.2 + projectile.id * 1.3
@@ -7185,7 +7288,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipWY = projY + projectile.dy * beamLength
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
       val phase = (animationTick + projectile.id * 23) * 0.4
@@ -7291,7 +7394,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipWY = projY + projectile.dy * beamLength
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
       gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
@@ -7409,7 +7512,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 43) * 0.4
       val pulse = 0.8 + 0.2 * Math.sin(phase * 2)
@@ -7432,7 +7535,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 29) * 0.45
       val expand = 0.5 + 0.5 * Math.sin(phase * 2)
@@ -7488,7 +7591,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 31) * 0.4
       val flash = 0.6 + 0.4 * Math.sin(phase * 5)
@@ -7543,7 +7646,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 33) * 0.4
       val spin = animationTick * 0.35 + projectile.id * 2.1
@@ -7608,7 +7711,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipWY = projY + projectile.dy * beamLength
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
       gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
@@ -7646,7 +7749,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 37) * 0.4
       val pulse = 0.8 + 0.2 * Math.sin(phase * 3)
@@ -7713,7 +7816,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipWY = projY + projectile.dy * beamLength
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
       gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
@@ -7741,7 +7844,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 29) * 0.35
       val pulse = 0.8 + 0.2 * Math.sin(phase)
@@ -7775,7 +7878,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 37) * 0.3
       val pulse = 0.8 + 0.2 * Math.sin(phase)
@@ -7807,7 +7910,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 43) * 0.5
       val flicker = 0.6 + 0.4 * Math.sin(phase * 6)
@@ -7847,7 +7950,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipWY = projY + projectile.dy * beamLength
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
       gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
@@ -7890,7 +7993,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipWY = projY + projectile.dy * beamLength
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
       gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
@@ -7936,7 +8039,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipWY = projY + projectile.dy * beamLength
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
-    val margin = 120.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
       gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
@@ -7979,7 +8082,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 23) * 0.35
       val spin = animationTick * 0.2 + projectile.id * 1.5
@@ -8019,7 +8122,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val tipWY = projY + projectile.dy * beamLength
     val tipX = worldToScreenX(tipWX, tipWY, camOffX)
     val tipY = worldToScreenY(tipWX, tipWY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (Math.max(tailX, tipX) > -margin && Math.min(tailX, tipX) < getWidth + margin &&
         Math.max(tailY, tipY) > -margin && Math.min(tailY, tipY) < getHeight + margin) {
       gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND)
@@ -8061,7 +8164,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 29) * 0.3
       val spin = animationTick * 0.15 + projectile.id * 1.1
@@ -8131,7 +8234,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 31) * 0.4
       val spin = animationTick * 0.3 + projectile.id * 2.1
@@ -8200,7 +8303,7 @@ class GameCanvas(client: GameClient) extends Canvas() {
     val projX = projectile.getX.toDouble; val projY = projectile.getY.toDouble
     val sx = worldToScreenX(projX, projY, camOffX)
     val sy = worldToScreenY(projX, projY, camOffY)
-    val margin = 100.0
+    val margin = 250.0
     if (sx > -margin && sx < getWidth + margin && sy > -margin && sy < getHeight + margin) {
       val phase = (animationTick + projectile.id * 23) * 0.35
       val pulse = 0.8 + 0.2 * Math.sin(phase * 2)
