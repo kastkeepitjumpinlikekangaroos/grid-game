@@ -211,8 +211,8 @@ class GLGameRenderer(val client: GameClient) {
         val variantFrame = ((wx * 7 + wy * 13) & 0x7FFFFFFF) % numTileFrames
         val region = GLTileRenderer.getTileRegion(tile.id, variantFrame)
         if (region != null) {
-          val sx = worldToScreenX(wx, wy).toFloat
-          val sy = worldToScreenY(wx, wy).toFloat
+          val sx = Math.floor(worldToScreenX(wx, wy)).toFloat
+          val sy = Math.floor(worldToScreenY(wx, wy)).toFloat
           spriteBatch.draw(region, sx - HW, sy - (cellH - HH), tileW, tileCellH)
         }
       }
@@ -229,8 +229,8 @@ class GLGameRenderer(val client: GameClient) {
         val region = GLTileRenderer.getTileRegion(tile.id, variantFrame)
         if (region != null) {
           beginSprites()
-          val sx = worldToScreenX(wx, wy).toFloat
-          val sy = worldToScreenY(wx, wy).toFloat
+          val sx = Math.floor(worldToScreenX(wx, wy)).toFloat
+          val sy = Math.floor(worldToScreenY(wx, wy)).toFloat
           spriteBatch.draw(region, sx - HW, sy - (cellH - HH), tileW, tileCellH)
         }
       }
@@ -246,7 +246,7 @@ class GLGameRenderer(val client: GameClient) {
       world.width, world.height,
       startX, endX, startY, endY)
     beginShapes()
-    particleSystem.render(shapeBatch)
+    particleSystem.render(shapeBatch, camOffX, camOffY)
 
     // === Overlay animations ===
     drawDeathAnimations()
