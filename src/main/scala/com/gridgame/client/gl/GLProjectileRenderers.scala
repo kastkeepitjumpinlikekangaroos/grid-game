@@ -11,7 +11,8 @@ object GLProjectileRenderers {
 
   type Renderer = (Projectile, Float, Float, ShapeBatch, Int) => Unit
 
-  def get(pType: Byte): Option[Renderer] = registry.get(pType)
+  /** Look up renderer by projectile type. Returns null if none registered. No Option allocation. */
+  def getRenderer(pType: Byte): Renderer = _rendererLUT(pType & 0xFF)
 
   // ═══════════════════════════════════════════════════════════════
   //  PRE-ALLOCATED ARRAY POOLS (avoid per-frame GC pressure)
@@ -537,6 +538,18 @@ object GLProjectileRenderers {
     ProjectileType.TONGUE       -> beamProj(0.9f, 0.35f, 0.4f, 8f, 8f),
     ProjectileType.ACID_FLASK   -> lobbed(0.2f, 0.75f, 0.3f, 18f)
   )
+
+  // Flat lookup table for O(1) renderer access without Option allocation.
+  // Populated from registry at init time. Null entries = no renderer (use drawGeneric).
+  private val _rendererLUT: Array[Renderer] = {
+    val lut = new Array[Renderer](256)
+    val iter = registry.iterator
+    while (iter.hasNext) {
+      val (pType, renderer) = iter.next()
+      lut(pType & 0xFF) = renderer
+    }
+    lut
+  }
 
   // ═══════════════════════════════════════════════════════════════
   //  SPECIALIZED RENDERERS

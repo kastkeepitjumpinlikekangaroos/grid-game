@@ -40,6 +40,10 @@ class SpriteBatch(val shader: ShaderProgram) {
   glEnableVertexAttribArray(2)
   glBindVertexArray(0)
 
+  // Set texture sampler uniform once (it never changes)
+  shader.use()
+  shader.setUniform1i("uTexture", 0)
+
   def begin(projection: FloatBuffer): Unit = {
     if (drawing) throw new IllegalStateException("Already drawing")
     drawing = true
@@ -48,7 +52,6 @@ class SpriteBatch(val shader: ShaderProgram) {
     currentTexture = null
     shader.use()
     shader.setUniformMat4("uProjection", projection)
-    shader.setUniform1i("uTexture", 0)
     glEnable(GL_BLEND)
     setAdditiveBlend(false)
   }

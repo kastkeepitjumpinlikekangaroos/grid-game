@@ -15,24 +15,44 @@ import java.nio.FloatBuffer
  */
 object ShapeBatch {
   // Pre-computed sin/cos lookup tables for common segment counts used in oval rendering.
-  // Eliminates Math.cos/Math.sin calls in tight loops (40+ trig calls per oval × 50-100 ovals/frame).
-  private val segmentCounts = Array(6, 8, 10, 12, 14, 16, 20, 24, 32)
-  private val cosTable: Map[Int, Array[Float]] = segmentCounts.map { n =>
-    val step = 2.0 * Math.PI / n
-    n -> Array.tabulate(n + 1)(i => Math.cos(i * step).toFloat)
-  }.toMap
-  private val sinTable: Map[Int, Array[Float]] = segmentCounts.map { n =>
-    val step = 2.0 * Math.PI / n
-    n -> Array.tabulate(n + 1)(i => Math.sin(i * step).toFloat)
-  }.toMap
-
-  def getCos(segments: Int, index: Int): Float = cosTable.get(segments) match {
-    case Some(arr) => arr(index)
-    case None => Math.cos(index.toDouble * 2.0 * Math.PI / segments).toFloat
+  // Uses direct array indexing (max segment count 32) to avoid Map.get Option allocation.
+  private val MAX_SEGMENTS = 32
+  // cosLUT(n) and sinLUT(n) are non-null for supported segment counts; null otherwise
+  private val cosLUT = new Array[Array[Float]](MAX_SEGMENTS + 1)
+  private val sinLUT = new Array[Array[Float]](MAX_SEGMENTS + 1)
+  locally {
+    val segmentCounts = Array(4, 6, 8, 10, 12, 14, 16, 20, 24, 32)
+    var si = 0
+    while (si < segmentCounts.length) {
+      val n = segmentCounts(si)
+      val step = 2.0 * Math.PI / n
+      val cos = new Array[Float](n + 1)
+      val sin = new Array[Float](n + 1)
+      var i = 0
+      while (i <= n) {
+        cos(i) = Math.cos(i * step).toFloat
+        sin(i) = Math.sin(i * step).toFloat
+        i += 1
+      }
+      cosLUT(n) = cos
+      sinLUT(n) = sin
+      si += 1
+    }
   }
-  def getSin(segments: Int, index: Int): Float = sinTable.get(segments) match {
-    case Some(arr) => arr(index)
-    case None => Math.sin(index.toDouble * 2.0 * Math.PI / segments).toFloat
+
+  @inline def getCos(segments: Int, index: Int): Float = {
+    if (segments <= MAX_SEGMENTS) {
+      val arr = cosLUT(segments)
+      if (arr != null) return arr(index)
+    }
+    Math.cos(index.toDouble * 2.0 * Math.PI / segments).toFloat
+  }
+  @inline def getSin(segments: Int, index: Int): Float = {
+    if (segments <= MAX_SEGMENTS) {
+      val arr = sinLUT(segments)
+      if (arr != null) return arr(index)
+    }
+    Math.sin(index.toDouble * 2.0 * Math.PI / segments).toFloat
   }
 }
 

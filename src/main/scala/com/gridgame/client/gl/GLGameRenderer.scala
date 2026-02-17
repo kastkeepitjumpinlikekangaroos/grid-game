@@ -92,7 +92,11 @@ class GLGameRenderer(val client: GameClient) {
 
   // Pre-allocated HUD data (avoids per-frame Seq allocations)
   private val inventorySlotTypes = Array((ItemType.Heart, "1"), (ItemType.Star, "2"), (ItemType.Gem, "3"), (ItemType.Shield, "4"), (ItemType.Fence, "5"))
-  private val abilityColors = Array((0.2f, 0.8f, 0.3f), (0.4f, 0.7f, 1f))
+  // Ability colors unpacked into parallel arrays (see _abilityR/G/B below)
+
+  // Frame-level cached values (set once per render() call, used everywhere)
+  private var _frameTimeMs: Long = 0L   // _frameTimeMs cached once per frame
+  private var _animTickF: Float = 0f    // animationTick as Float (avoids Int→Float per use)
 
   // Cached HUD strings — only re-allocated when values change
   private var _cachedPosX = Int.MinValue; private var _cachedPosY = Int.MinValue
@@ -103,6 +107,9 @@ class GLGameRenderer(val client: GameClient) {
   private var _cachedKills = -1; private var _cachedDeaths = -1; private var _cachedKDStr = ""
   // Reusable StringBuilder for kill feed text (avoids per-entry string interpolation)
   private val _feedTextBuilder = new java.lang.StringBuilder(64)
+  // Cached closures for damage number rendering (avoids per-frame lambda allocation)
+  private val _worldToScreenXFn: (Double, Double) => Double = (wx, wy) => worldToScreenX(wx, wy)
+  private val _worldToScreenYFn: (Double, Double) => Double = (wx, wy) => worldToScreenY(wx, wy)
 
   // Tile dimensions for draw calls
   private val tileW = (HW * 2).toFloat // 40
@@ -119,7 +126,28 @@ class GLGameRenderer(val client: GameClient) {
   private val _aimBodyYs = new Array[Float](42)
 
   // Track death IDs that have already spawned a particle burst
-  private val deathBurstSpawned = new mutable.HashSet[Any]()
+  private val deathBurstSpawned = new java.util.HashSet[Any]()
+
+  // Pre-allocated arrays for inline fillPolygon calls (avoids per-call Array allocation)
+  private val _heartTriXs = new Array[Float](3)
+  private val _heartTriYs = new Array[Float](3)
+  private val _indicatorXs = new Array[Float](4)
+  private val _indicatorYs = new Array[Float](4)
+  private val _shadowXs = new Array[Float](4)
+  private val _shadowYs = new Array[Float](4)
+  private val _dashArrowXs = new Array[Float](3)
+  private val _dashArrowYs = new Array[Float](3)
+  private val _teleportBoltXs = new Array[Float](6)
+  private val _teleportBoltYs = new Array[Float](6)
+
+  // Pre-unpacked ability colors (avoids Tuple3 allocation on each access)
+  private val _abilityR = Array(0.2f, 0.4f)
+  private val _abilityG = Array(0.8f, 0.7f)
+  private val _abilityB = Array(0.3f, 1f)
+
+  // Cached timer text (avoids per-frame format string allocation)
+  private var _cachedTimerRemaining = -1
+  private var _cachedTimerStr = ""
 
   // Pre-allocated arrays for item shapes
   private val _starXs = new Array[Float](10)
@@ -232,6 +260,8 @@ class GLGameRenderer(val client: GameClient) {
   def render(deltaSec: Double, fbWidth: Int, fbHeight: Int, windowWidth: Int, windowHeight: Int): Unit = {
     ensureInitialized(fbWidth, fbHeight)
     animationTick += 1
+    _frameTimeMs = System.currentTimeMillis()
+    _animTickF = animationTick.toFloat
     val dt = deltaSec.toFloat
 
     // Update particle systems
@@ -244,7 +274,7 @@ class GLGameRenderer(val client: GameClient) {
 
     val localDeathTime = client.getLocalDeathTime
     val localDeathAnimActive = client.getIsDead && localDeathTime > 0 &&
-      (System.currentTimeMillis() - localDeathTime) < DEATH_ANIMATION_MS
+      (_frameTimeMs - localDeathTime) < DEATH_ANIMATION_MS
 
     // In non-lobby mode, show full game over screen when dead (after death anim)
     if (client.getIsDead && !localDeathAnimActive && !client.isRespawning) {
@@ -293,15 +323,22 @@ class GLGameRenderer(val client: GameClient) {
     spawnWeatherParticles(world.background, dt)
     weatherParticles.render(shapeBatch)
 
-    // === Calculate visible tile bounds (no allocations) ===
-    val cx0 = IsometricTransform.screenToWorldX(0, 0, camOffX, camOffY)
-    val cy0 = IsometricTransform.screenToWorldY(0, 0, camOffX, camOffY)
-    val cx1 = IsometricTransform.screenToWorldX(canvasW, 0, camOffX, camOffY)
-    val cy1 = IsometricTransform.screenToWorldY(canvasW, 0, camOffX, camOffY)
-    val cx2 = IsometricTransform.screenToWorldX(0, canvasH, camOffX, camOffY)
-    val cy2 = IsometricTransform.screenToWorldY(0, canvasH, camOffX, camOffY)
-    val cx3 = IsometricTransform.screenToWorldX(canvasW, canvasH, camOffX, camOffY)
-    val cy3 = IsometricTransform.screenToWorldY(canvasW, canvasH, camOffX, camOffY)
+    // === Calculate visible tile bounds (optimized: share rx/ry intermediates) ===
+    val invHW = 1.0 / HW; val invHH = 1.0 / HH
+    // Corner 0: (0, 0)
+    val rx0 = -camOffX; val ry0 = -camOffY
+    val h0 = rx0 * invHW; val v0 = ry0 * invHH
+    val cx0 = (h0 + v0) * 0.5; val cy0 = (v0 - h0) * 0.5
+    // Corner 1: (canvasW, 0)
+    val rx1 = canvasW - camOffX
+    val h1 = rx1 * invHW
+    val cx1 = (h1 + v0) * 0.5; val cy1 = (v0 - h1) * 0.5
+    // Corner 2: (0, canvasH)
+    val ry2 = canvasH - camOffY
+    val v2 = ry2 * invHH
+    val cx2 = (h0 + v2) * 0.5; val cy2 = (v2 - h0) * 0.5
+    // Corner 3: (canvasW, canvasH)
+    val cx3 = (h1 + v2) * 0.5; val cy3 = (v2 - h1) * 0.5
     val minWX = Math.min(Math.min(cx0, cx1), Math.min(cx2, cx3))
     val maxWX = Math.max(Math.max(cx0, cx1), Math.max(cx2, cx3))
     val minWY = Math.min(Math.min(cy0, cy1), Math.min(cy2, cy3))
@@ -336,15 +373,15 @@ class GLGameRenderer(val client: GameClient) {
       while (wx <= endX) {
         val tile = world.getTile(wx, wy)
         if (tile.walkable) {
+          val tid = tile.id
+          val sx = worldToScreenX(wx, wy).toFloat
+          val sy = worldToScreenY(wx, wy).toFloat
           val variantFrame = ((wx * 7 + wy * 13) & 0x7FFFFFFF) % numTileFrames
-          val region = GLTileRenderer.getTileRegion(tile.id, variantFrame)
+          val region = GLTileRenderer.getTileRegion(tid, variantFrame)
           if (region != null) {
-            val sx = worldToScreenX(wx, wy).toFloat
-            val sy = worldToScreenY(wx, wy).toFloat
             spriteBatch.draw(region, sx - HW, sy - (cellH - HH), tileW, tileCellH)
           }
           // Collect special tiles for overlay pass
-          val tid = tile.id
           if (tid == 1 || tid == 7 || tid == 9 || tid == 10 || tid == 15 || tid == 18 || tid == 24) {
             if (_specialTileCount < MAX_SPECIAL_TILES) {
               _specialTileWX(_specialTileCount) = wx
@@ -353,16 +390,12 @@ class GLGameRenderer(val client: GameClient) {
               _specialTileCount += 1
             }
           }
-          // Lava and energy field tiles emit light
+          // Lava and energy field tiles emit light (reuse sx/sy computed above)
           if (tid == 10) { // Lava
-            val lsx = worldToScreenX(wx, wy).toFloat
-            val lsy = worldToScreenY(wx, wy).toFloat
             val lavaPulse = (0.8 + 0.2 * Math.sin(animationTick * 0.06 + wx * 1.3 + wy * 0.7)).toFloat
-            lightSystem.addLight(lsx, lsy, 40f, 1f, 0.5f, 0.1f, 0.12f * lavaPulse)
+            lightSystem.addLight(sx, sy, 40f, 1f, 0.5f, 0.1f, 0.12f * lavaPulse)
           } else if (tid == 15) { // EnergyField
-            val esx = worldToScreenX(wx, wy).toFloat
-            val esy = worldToScreenY(wx, wy).toFloat
-            lightSystem.addLight(esx, esy, 35f, 0.5f, 0.2f, 0.8f, 0.08f)
+            lightSystem.addLight(sx, sy, 35f, 0.5f, 0.2f, 0.8f, 0.08f)
           }
         }
         wx += 1
@@ -412,8 +445,12 @@ class GLGameRenderer(val client: GameClient) {
             spriteBatch.draw(region, sx - HW, sy - (cellH - HH), tileW, tileCellH)
           }
         }
-        val cellEntries = entitiesByCell.remove(entityCollector.cellKey(wx, wy))
-        if (cellEntries.isDefined) dispatchEntries(cellEntries.get, localVX, localVY)
+        val cellKey = entityCollector.cellKey(wx, wy)
+        val cellEntries = entitiesByCell.getOrElse(cellKey, null)
+        if (cellEntries != null) {
+          entitiesByCell -= cellKey  // -= avoids Option allocation from .remove()
+          dispatchEntries(cellEntries, localVX, localVY)
+        }
         wx += 1
       }
       wy += 1
@@ -446,8 +483,7 @@ class GLGameRenderer(val client: GameClient) {
     if (damageNumbers.hasActive) {
       beginSprites()
       damageNumbers.render(fontMedium, spriteBatch, camOffX, camOffY,
-        (wx: Double, wy: Double) => worldToScreenX(wx, wy),
-        (wx: Double, wy: Double) => worldToScreenY(wx, wy))
+        _worldToScreenXFn, _worldToScreenYFn)
     }
 
     // === Populate lights from entities ===
@@ -460,7 +496,7 @@ class GLGameRenderer(val client: GameClient) {
     postProcessor.damageVignette = 0f
     postProcessor.chromaticAberration = 0f
     if (localHitTime > 0) {
-      val elapsed = System.currentTimeMillis() - localHitTime
+      val elapsed = _frameTimeMs - localHitTime
       if (elapsed < HIT_ANIMATION_MS) {
         val progress = elapsed.toDouble / HIT_ANIMATION_MS
         val intensity = 1f - progress.toFloat
@@ -479,7 +515,7 @@ class GLGameRenderer(val client: GameClient) {
     postProcessor.lightMapTexture = lightSystem.getLightMapTexture
     postProcessor.useLightMap = true
 
-    postProcessor.animationTime = animationTick.toFloat
+    postProcessor.animationTime = _animTickF
     postProcessor.endScene(fbWidth, fbHeight)
 
     // === HUD (rendered at screen-pixel scale, not zoomed) ===
@@ -540,19 +576,23 @@ class GLGameRenderer(val client: GameClient) {
     // Clouds
     val px = (camOffX * 0.03).toFloat
     val py = (camOffY * 0.02).toFloat
-    val layers = Array((0.10f, 0.15f, 1.6f, 0.18f, 6), (0.20f, 0.3f, 1.2f, 0.25f, 8), (0.05f, 0.5f, 1.0f, 0.35f, 7))
-    for ((yFrac, speed, scale, alpha, count) <- layers) {
-      var i = 0
-      while (i < count) {
-        val seed = yFrac.hashCode + i * 73
-        val baseX = hash(seed).toFloat * w * 1.5f - w * 0.25f
-        val baseY = h * yFrac + hash(seed + 1).toFloat * h * 0.25f
-        val drift = ((animationTick * speed + px * (1f + yFrac)) % (w + 300)) - 150
-        val cx = ((baseX + drift) % (w + 300)) - 150
-        val cy = baseY + py * (0.5f + yFrac) + Math.sin(animationTick * 0.01 + i).toFloat * 3
-        drawCloud(cx, cy, scale, alpha)
-        i += 1
-      }
+    drawCloudLayer(w, px, py, 0.10f, 0.15f, 1.6f, 0.18f, 6)
+    drawCloudLayer(w, px, py, 0.20f, 0.3f, 1.2f, 0.25f, 8)
+    drawCloudLayer(w, px, py, 0.05f, 0.5f, 1.0f, 0.35f, 7)
+  }
+
+  private def drawCloudLayer(w: Float, px: Float, py: Float, yFrac: Float, speed: Float, scale: Float, alpha: Float, count: Int): Unit = {
+    val h = canvasH.toFloat
+    var i = 0
+    while (i < count) {
+      val seed = java.lang.Float.floatToIntBits(yFrac) + i * 73
+      val baseX = hash(seed).toFloat * w * 1.5f - w * 0.25f
+      val baseY = h * yFrac + hash(seed + 1).toFloat * h * 0.25f
+      val drift = ((animationTick * speed + px * (1f + yFrac)) % (w + 300)) - 150
+      val cx = ((baseX + drift) % (w + 300)) - 150
+      val cy = baseY + py * (0.5f + yFrac) + Math.sin(animationTick * 0.01 + i).toFloat * 3
+      drawCloud(cx, cy, scale, alpha)
+      i += 1
     }
   }
 
@@ -599,10 +639,11 @@ class GLGameRenderer(val client: GameClient) {
               (0.6 + 0.4 * Math.sin(animationTick * 0.05 + hash(windowSeed + 300) * 20)).toFloat
             else 1f
             val warmth = hash(windowSeed + 100)
-            val (wr, wg, wb) = if (warmth < 0.6) (1f, 0.85f, 0.3f)
-              else if (warmth < 0.85) (0.8f, 0.85f, 1f)
-              else if (hash(windowSeed + 200) < 0.5) (0f, 0.9f, 1f)
-              else (1f, 0.2f, 0.8f)
+            var wr = 0f; var wg = 0f; var wb = 0f
+            if (warmth < 0.6) { wr = 1f; wg = 0.85f; wb = 0.3f }
+            else if (warmth < 0.85) { wr = 0.8f; wg = 0.85f; wb = 1f }
+            else if (hash(windowSeed + 200) < 0.5) { wr = 0f; wg = 0.9f; wb = 1f }
+            else { wr = 1f; wg = 0.2f; wb = 0.8f }
             shapeBatch.fillRect(wx, wy, 3f, 4f, wr, wg, wb, 0.7f * flicker)
           }
           wx += 7
@@ -652,8 +693,10 @@ class GLGameRenderer(val client: GameClient) {
       val twinkle = (0.5 + 0.5 * Math.sin(animationTick * twinkleSpeed + twinklePhase)).toFloat
       val brightness = baseBrightness * (0.4f + 0.6f * twinkle)
       val colorSeed = hash(i * 3 + 7)
-      val (sr, sg, sb) = if (colorSeed < 0.6) (1f, 1f, 1f)
-        else if (colorSeed < 0.8) (0.7f, 0.8f, 1f) else (1f, 0.95f, 0.7f)
+      var sr = 0f; var sg = 0f; var sb = 0f
+      if (colorSeed < 0.6) { sr = 1f; sg = 1f; sb = 1f }
+      else if (colorSeed < 0.8) { sr = 0.7f; sg = 0.8f; sb = 1f }
+      else { sr = 1f; sg = 0.95f; sb = 0.7f }
       val size = 1f + hash(i * 3 + 8).toFloat * 2f
       // Star core
       shapeBatch.fillOval(sx, sy, size, size, sr, sg, sb, brightness)
@@ -847,7 +890,7 @@ class GLGameRenderer(val client: GameClient) {
     val spriteCenter = screenY - displaySz / 2.0
 
     // Movement detection
-    val now = System.currentTimeMillis()
+    val now = _frameTimeMs
     val playerId = player.getId
     val pos = player.getPosition
     val lastPos = lastRemotePositions.get(playerId)
@@ -881,7 +924,7 @@ class GLGameRenderer(val client: GameClient) {
     // Sprite — flash red/white on hit
     val hitTime = client.getPlayerHitTime(playerId)
     val hitFlash = if (hitTime > 0) {
-      val el = System.currentTimeMillis() - hitTime
+      val el = _frameTimeMs - hitTime
       if (el < HIT_ANIMATION_MS) (1.0 - el.toDouble / HIT_ANIMATION_MS).toFloat else 0f
     } else 0f
     val region = GLSpriteGenerator.getSpriteRegion(player.getDirection, frame, player.getCharacterId)
@@ -935,7 +978,7 @@ class GLGameRenderer(val client: GameClient) {
     // Sprite — flash red/white on hit
     val localHitTime = client.getPlayerHitTime(client.getLocalPlayerId)
     val localHitFlash = if (localHitTime > 0) {
-      val el = System.currentTimeMillis() - localHitTime
+      val el = _frameTimeMs - localHitTime
       if (el < HIT_ANIMATION_MS) (1.0 - el.toDouble / HIT_ANIMATION_MS).toFloat else 0f
     } else 0f
     val region = GLSpriteGenerator.getSpriteRegion(client.getLocalDirection, frame, client.selectedCharacterId)
@@ -1105,7 +1148,7 @@ class GLGameRenderer(val client: GameClient) {
 
   private def drawHitEffect(cx: Double, cy: Double, hitTime: Long): Unit = {
     if (hitTime <= 0) return
-    val elapsed = System.currentTimeMillis() - hitTime
+    val elapsed = _frameTimeMs - hitTime
     if (elapsed > HIT_ANIMATION_MS) return
     val progress = elapsed.toDouble / HIT_ANIMATION_MS
     val fadeOut = (1.0 - progress).toFloat
@@ -1133,7 +1176,7 @@ class GLGameRenderer(val client: GameClient) {
   private def drawCastFlash(cx: Double, cy: Double): Unit = {
     val castTime = client.getLastCastTime
     if (castTime <= 0) return
-    val elapsed = System.currentTimeMillis() - castTime
+    val elapsed = _frameTimeMs - castTime
     if (elapsed > 200) return
     val fadeOut = (1.0 - elapsed / 200.0).toFloat
     beginShapes()
@@ -1147,7 +1190,7 @@ class GLGameRenderer(val client: GameClient) {
   // ═══════════════════════════════════════════════════════════════════
 
   private def drawSingleItem(item: Item): Unit = {
-    val now = System.currentTimeMillis()
+    val now = _frameTimeMs
     val ix = item.getCellX; val iy = item.getCellY
     val centerX = worldToScreenX(ix, iy).toFloat
     val halfSize = Constants.ITEM_SIZE_PX / 2f
@@ -1225,9 +1268,9 @@ class GLGameRenderer(val client: GameClient) {
         // Main shape
         shapeBatch.fillOval(cx - hs * 0.5f, cy - hs * 0.45f, rr, rr, r, g, b, 1f, 12)
         shapeBatch.fillOval(cx + hs * 0.5f, cy - hs * 0.45f, rr, rr, r, g, b, 1f, 12)
-        shapeBatch.fillPolygon(
-          Array(cx - hs * 1.05f, cx, cx + hs * 1.05f),
-          Array(cy - hs * 0.1f, cy + hs, cy - hs * 0.1f), r, g, b, 1f)
+        _heartTriXs(0) = cx - hs * 1.05f; _heartTriXs(1) = cx; _heartTriXs(2) = cx + hs * 1.05f
+        _heartTriYs(0) = cy - hs * 0.1f; _heartTriYs(1) = cy + hs; _heartTriYs(2) = cy - hs * 0.1f
+        shapeBatch.fillPolygon(_heartTriXs, _heartTriYs, 3, r, g, b, 1f)
         // Inner highlight (upper-left lobe)
         shapeBatch.fillOval(cx - hs * 0.55f, cy - hs * 0.55f, rr * 0.45f, rr * 0.4f, hr, hg, hb, 0.4f, 8)
         // Outline
@@ -1335,12 +1378,13 @@ class GLGameRenderer(val client: GameClient) {
     lightSystem.addLight(sx, sy, 55f, plr, plg, plb, 0.15f)
 
     beginShapes()
-    GLProjectileRenderers.get(proj.projectileType) match {
-      case Some(renderer) => renderer(proj, sx, sy, shapeBatch, animationTick)
-      case None =>
-        intToRGB(proj.colorRGB)
-        val r = _rgb_r; val g = _rgb_g; val b = _rgb_b
-        GLProjectileRenderers.drawGeneric(proj, sx, sy, shapeBatch, animationTick, r, g, b)
+    val renderer = GLProjectileRenderers.getRenderer(proj.projectileType)
+    if (renderer != null) {
+      renderer(proj, sx, sy, shapeBatch, animationTick)
+    } else {
+      intToRGB(proj.colorRGB)
+      val r = _rgb_r; val g = _rgb_g; val b = _rgb_b
+      GLProjectileRenderers.drawGeneric(proj, sx, sy, shapeBatch, animationTick, r, g, b)
     }
   }
 
@@ -1367,10 +1411,9 @@ class GLGameRenderer(val client: GameClient) {
     val chargeLevel = client.getChargeLevel
     val chargePct = chargeLevel / 100f
     val pDef = ProjectileDef.get(pt)
-    val (minRange, maxRange) = pDef.chargeRangeScaling match {
-      case Some(s) => (s.min.toInt, s.max.toInt)
-      case None => (pDef.maxRange, pDef.maxRange)
-    }
+    val crs = pDef.chargeRangeScaling
+    val minRange = if (crs.isDefined) crs.get.min.toInt else pDef.maxRange
+    val maxRange = if (crs.isDefined) crs.get.max.toInt else pDef.maxRange
     val cylLength = 1.0 + minRange + chargePct * (maxRange - minRange)
     intToRGB(client.getLocalColorRGB)
     val cr = _rgb_r; val cg = _rgb_g; val cb = _rgb_b
@@ -1473,10 +1516,13 @@ class GLGameRenderer(val client: GameClient) {
   // ═══════════════════════════════════════════════════════════════════
 
   private def drawDeathAnimations(): Unit = {
-    val now = System.currentTimeMillis()
+    val now = _frameTimeMs
     val iter = client.getDeathAnimations.entrySet().iterator()
-    // Clean up old death burst tracking
-    deathBurstSpawned.filterInPlace(k => client.getDeathAnimations.containsKey(k))
+    // Clean up old death burst tracking — use Java iterator to avoid lambda allocation
+    val burstIter = deathBurstSpawned.iterator()
+    while (burstIter.hasNext) {
+      if (!client.getDeathAnimations.containsKey(burstIter.next())) burstIter.remove()
+    }
     while (iter.hasNext) {
       val entry = iter.next()
       val key = entry.getKey
@@ -1501,7 +1547,7 @@ class GLGameRenderer(val client: GameClient) {
 
   private def drawDeathEffect(screenX: Double, screenY: Double, colorRGB: Int, deathTime: Long, characterId: Byte = 0): Unit = {
     if (deathTime <= 0) return
-    val elapsed = System.currentTimeMillis() - deathTime
+    val elapsed = _frameTimeMs - deathTime
     if (elapsed < 0 || elapsed > DEATH_ANIMATION_MS) return
 
     val progress = elapsed.toDouble / DEATH_ANIMATION_MS
@@ -1547,9 +1593,11 @@ class GLGameRenderer(val client: GameClient) {
       val px = cx + dist * Math.cos(pAngle).toFloat
       val py = cy + dist * Math.sin(pAngle).toFloat * 0.5f - rise
       val pSize = ((2.5 + (i % 3) * 1.5) * fadeOut).toFloat
-      val (pr, pg, pb) = if (i % 3 == 0) (1f, 1f, 0.9f)
-        else if (i % 3 == 1) (clamp(cr * 0.4f + 0.6f), clamp(cg * 0.4f + 0.6f), clamp(cb * 0.4f + 0.6f))
-        else (cr, cg, cb)
+      var pr = 0f; var pg = 0f; var pb = 0f
+      val im3 = i % 3
+      if (im3 == 0) { pr = 1f; pg = 1f; pb = 0.9f }
+      else if (im3 == 1) { pr = clamp(cr * 0.4f + 0.6f); pg = clamp(cg * 0.4f + 0.6f); pb = clamp(cb * 0.4f + 0.6f) }
+      else { pr = cr; pg = cg; pb = cb }
       val pAlpha = (if (i % 3 == 0) 0.7 else if (i % 3 == 1) 0.65 else 0.55).toFloat * fadeOut
       shapeBatch.fillOval(px, py, pSize, pSize, pr, pg, pb, pAlpha, 8)
       i += 1
@@ -1571,7 +1619,7 @@ class GLGameRenderer(val client: GameClient) {
   }
 
   private def drawTeleportAnimations(): Unit = {
-    val now = System.currentTimeMillis()
+    val now = _frameTimeMs
     val iter = client.getTeleportAnimations.entrySet().iterator()
     while (iter.hasNext) {
       val entry = iter.next()
@@ -1590,7 +1638,7 @@ class GLGameRenderer(val client: GameClient) {
   }
 
   private def drawTeleportDeparture(sx: Float, sy: Float, startTime: Long): Unit = {
-    val elapsed = System.currentTimeMillis() - startTime
+    val elapsed = _frameTimeMs - startTime
     if (elapsed > TELEPORT_ANIMATION_MS) return
     val progress = elapsed.toDouble / TELEPORT_ANIMATION_MS
     val fadeOut = Math.max(0, 1.0 - progress * 1.5).toFloat
@@ -1615,7 +1663,7 @@ class GLGameRenderer(val client: GameClient) {
   }
 
   private def drawTeleportArrival(sx: Float, sy: Float, startTime: Long): Unit = {
-    val elapsed = System.currentTimeMillis() - startTime
+    val elapsed = _frameTimeMs - startTime
     if (elapsed < 200 || elapsed > TELEPORT_ANIMATION_MS) return
     val progress = (elapsed - 200).toDouble / (TELEPORT_ANIMATION_MS - 200)
     val fadeOut = (1.0 - progress).toFloat
@@ -1640,7 +1688,7 @@ class GLGameRenderer(val client: GameClient) {
   }
 
   private def drawExplosionAnimations(): Unit = {
-    val now = System.currentTimeMillis()
+    val now = _frameTimeMs
     val EXPLOSION_DURATION = 1400L
     val iter = client.getExplosionAnimations.entrySet().iterator()
     while (iter.hasNext) {
@@ -1746,7 +1794,7 @@ class GLGameRenderer(val client: GameClient) {
   }
 
   private def drawAoeSplashAnimations(): Unit = {
-    val now = System.currentTimeMillis()
+    val now = _frameTimeMs
     val AOE_DURATION = 900L
     val iter = client.getAoeSplashAnimations.entrySet().iterator()
     while (iter.hasNext) {
@@ -1839,12 +1887,13 @@ class GLGameRenderer(val client: GameClient) {
     shapeBatch.fillRect(barX, barY, barW, barH, 0.15f, 0.05f, 0.05f, 0.85f)
 
     val pct = health.toFloat / maxHealth
-    val (fr, fg, fb) = teamId match {
-      case 1 => (0.29f, 0.51f, 1f)
-      case 2 => (0.91f, 0.25f, 0.34f)
-      case 3 => (0.2f, 0.8f, 0.2f)
-      case 4 => (0.95f, 0.77f, 0.06f)
-      case _ => (0.2f, 0.8f, 0.2f)
+    var fr = 0f; var fg = 0f; var fb = 0f
+    teamId match {
+      case 1 => fr = 0.29f; fg = 0.51f; fb = 1f
+      case 2 => fr = 0.91f; fg = 0.25f; fb = 0.34f
+      case 3 => fr = 0.2f; fg = 0.8f; fb = 0.2f
+      case 4 => fr = 0.95f; fg = 0.77f; fb = 0.06f
+      case _ => fr = 0.2f; fg = 0.8f; fb = 0.2f
     }
 
     // Smooth drain bar (white ghost segment that shrinks behind the real bar)
@@ -1878,9 +1927,10 @@ class GLGameRenderer(val client: GameClient) {
     if (teamId != 0) {
       val indY = barY + barH + 2
       val indS = 4f
-      shapeBatch.fillPolygon(
-        Array(screenCenterX.toFloat, screenCenterX.toFloat + indS, screenCenterX.toFloat, screenCenterX.toFloat - indS),
-        Array(indY, indY + indS, indY + indS * 2, indY + indS), fr, fg, fb, 1f)
+      val scx = screenCenterX.toFloat
+      _indicatorXs(0) = scx; _indicatorXs(1) = scx + indS; _indicatorXs(2) = scx; _indicatorXs(3) = scx - indS
+      _indicatorYs(0) = indY; _indicatorYs(1) = indY + indS; _indicatorYs(2) = indY + indS * 2; _indicatorYs(3) = indY + indS
+      shapeBatch.fillPolygon(_indicatorXs, _indicatorYs, 4, fr, fg, fb, 1f)
     }
   }
 
@@ -1953,8 +2003,10 @@ class GLGameRenderer(val client: GameClient) {
 
     // Draw all slot backgrounds + icons (shapes)
     beginShapes()
-    for (i <- inventorySlotTypes.indices) {
-      val (itemType, _) = inventorySlotTypes(i)
+    var i = 0
+    while (i < inventorySlotTypes.length) {
+      val pair = inventorySlotTypes(i)
+      val itemType = pair._1
       val count = client.getItemCount(itemType.id)
       val slotX = startX + i * (slotSize + slotGap)
       intToRGB(itemType.colorRGB)
@@ -1979,12 +2031,15 @@ class GLGameRenderer(val client: GameClient) {
         val badgeY = startY - 5
         shapeBatch.fillRect(badgeX, badgeY, badgeW, 14f, 0.78f, 0.18f, 0.18f, 0.9f)
       }
+      i += 1
     }
 
     // Draw all text labels (sprites) in one batch
     beginSprites()
-    for (i <- inventorySlotTypes.indices) {
-      val (itemType, keyLabel) = inventorySlotTypes(i)
+    i = 0
+    while (i < inventorySlotTypes.length) {
+      val pair = inventorySlotTypes(i)
+      val itemType = pair._1; val keyLabel = pair._2
       val count = client.getItemCount(itemType.id)
       val slotX = startX + i * (slotSize + slotGap)
 
@@ -1993,6 +2048,7 @@ class GLGameRenderer(val client: GameClient) {
       }
       fontSmall.drawText(spriteBatch, keyLabel, slotX + slotSize / 2 - 4, startY + slotSize - 16,
         if (count > 0) 0.9f else 0.43f, if (count > 0) 0.9f else 0.43f, if (count > 0) 0.9f else 0.47f, 1f)
+      i += 1
     }
   }
 
@@ -2004,17 +2060,19 @@ class GLGameRenderer(val client: GameClient) {
     val startY = screenH - slotSize - 14f
 
     val charDef = client.getSelectedCharacterDef
-    val abilityDefs = Array(charDef.qAbility, charDef.eAbility)
-    val cooldowns = Array(client.getQCooldownFraction, client.getECooldownFraction)
+    val qAbility = charDef.qAbility; val eAbility = charDef.eAbility
+    val qCooldown = client.getQCooldownFraction; val eCooldown = client.getECooldownFraction
+    val numAbilities = 2
 
-    val now = System.currentTimeMillis()
+    val now = _frameTimeMs
     val abilityGap = 12f
     beginShapes()
-    for (i <- abilityDefs.indices) {
-      val aDef = abilityDefs(i)
-      val cooldownFrac = cooldowns(i)
-      val (ar, ag, ab) = abilityColors(i)
-      val slotX = inventoryStartX - (abilityDefs.length - i) * (slotSize + slotGap) - abilityGap
+    var i = 0
+    while (i < numAbilities) {
+      val aDef = if (i == 0) qAbility else eAbility
+      val cooldownFrac = if (i == 0) qCooldown else eCooldown
+      val ar = _abilityR(i); val ag = _abilityG(i); val ab = _abilityB(i)
+      val slotX = inventoryStartX - (numAbilities - i) * (slotSize + slotGap) - abilityGap
       val onCooldown = cooldownFrac > 0.001f
 
       // Detect cooldown-to-ready transition for flash
@@ -2059,18 +2117,22 @@ class GLGameRenderer(val client: GameClient) {
           shapeBatch.setAdditiveBlend(false)
         }
       }
+      i += 1
     }
 
     // Key labels
     beginSprites()
-    for (i <- abilityDefs.indices) {
-      val slotX = inventoryStartX - (abilityDefs.length - i) * (slotSize + slotGap) - abilityGap
-      val (ar, ag, ab) = abilityColors(i)
-      val onCooldown = cooldowns(i) > 0.001f
+    i = 0
+    while (i < numAbilities) {
+      val aDef = if (i == 0) qAbility else eAbility
+      val slotX = inventoryStartX - (numAbilities - i) * (slotSize + slotGap) - abilityGap
+      val ar = _abilityR(i); val ag = _abilityG(i); val ab = _abilityB(i)
+      val onCooldown = (if (i == 0) qCooldown else eCooldown) > 0.001f
       val ka = if (onCooldown) 0.5f else 1f
-      fontSmall.drawTextOutlined(spriteBatch, abilityDefs(i).keybind,
-        slotX + slotSize - fontSmall.measureWidth(abilityDefs(i).keybind) - 3, startY + slotSize - fontSmall.charHeight - 1,
+      fontSmall.drawTextOutlined(spriteBatch, aDef.keybind,
+        slotX + slotSize - fontSmall.measureWidth(aDef.keybind) - 3, startY + slotSize - fontSmall.charHeight - 1,
         ar * ka, ag * ka, ab * ka, ka)
+      i += 1
     }
   }
 
@@ -2107,9 +2169,9 @@ class GLGameRenderer(val client: GameClient) {
 
       case _: DashBuff =>
         // Arrow pointing right — motion lines
-        shapeBatch.fillPolygon(
-          Array(cx + sz * 0.6f, cx - sz * 0.3f, cx - sz * 0.3f),
-          Array(cy, cy - sz * 0.45f, cy + sz * 0.45f), r, g, b, a)
+        _dashArrowXs(0) = cx + sz * 0.6f; _dashArrowXs(1) = cx - sz * 0.3f; _dashArrowXs(2) = cx - sz * 0.3f
+        _dashArrowYs(0) = cy; _dashArrowYs(1) = cy - sz * 0.45f; _dashArrowYs(2) = cy + sz * 0.45f
+        shapeBatch.fillPolygon(_dashArrowXs, _dashArrowYs, 3, r, g, b, a)
         // Speed lines
         var i = 0
         while (i < 3) {
@@ -2120,10 +2182,11 @@ class GLGameRenderer(val client: GameClient) {
 
       case _: TeleportCast =>
         // Lightning bolt / flash
-        shapeBatch.fillPolygon(
-          Array(cx - sz * 0.15f, cx + sz * 0.35f, cx + sz * 0.05f, cx + sz * 0.45f, cx - sz * 0.1f, cx + sz * 0.1f),
-          Array(cy - sz * 0.7f, cy - sz * 0.1f, cy - sz * 0.1f, cy + sz * 0.7f, cy + sz * 0.1f, cy + sz * 0.1f),
-          r, g, b, a)
+        _teleportBoltXs(0) = cx - sz * 0.15f; _teleportBoltXs(1) = cx + sz * 0.35f; _teleportBoltXs(2) = cx + sz * 0.05f
+        _teleportBoltXs(3) = cx + sz * 0.45f; _teleportBoltXs(4) = cx - sz * 0.1f; _teleportBoltXs(5) = cx + sz * 0.1f
+        _teleportBoltYs(0) = cy - sz * 0.7f; _teleportBoltYs(1) = cy - sz * 0.1f; _teleportBoltYs(2) = cy - sz * 0.1f
+        _teleportBoltYs(3) = cy + sz * 0.7f; _teleportBoltYs(4) = cy + sz * 0.1f; _teleportBoltYs(5) = cy + sz * 0.1f
+        shapeBatch.fillPolygon(_teleportBoltXs, _teleportBoltYs, 6, r, g, b, a)
 
       case _: GroundSlam =>
         // Expanding rings
@@ -2165,8 +2228,12 @@ class GLGameRenderer(val client: GameClient) {
     if (client.clientState != ClientState.PLAYING) return
 
     val remaining = client.gameTimeRemaining
-    val minutes = remaining / 60; val seconds = remaining % 60
-    val timerText = f"$minutes%d:$seconds%02d"
+    if (remaining != _cachedTimerRemaining) {
+      _cachedTimerRemaining = remaining
+      val minutes = remaining / 60; val seconds = remaining % 60
+      _cachedTimerStr = f"$minutes%d:$seconds%02d"
+    }
+    val timerText = _cachedTimerStr
 
     // Timer panel at top center
     val timerW = fontMedium.measureWidth(timerText) + 20
@@ -2186,7 +2253,7 @@ class GLGameRenderer(val client: GameClient) {
     fontSmall.drawTextOutlined(spriteBatch, _cachedKDStr, 12, 108)
 
     // Kill feed with slide-in animation and background strips — use Java iterator directly
-    val now = System.currentTimeMillis()
+    val now = _frameTimeMs
     var feedY = 10f
     val localName = client.getSelectedCharacterDef.displayName
     val feedIter = client.killFeed.iterator()
@@ -2250,7 +2317,7 @@ class GLGameRenderer(val client: GameClient) {
 
   private def renderRespawnCountdown(screenW: Int, screenH: Int): Unit = {
     val deathTime = client.getLocalDeathTime
-    val elapsed = System.currentTimeMillis() - deathTime
+    val elapsed = _frameTimeMs - deathTime
     val remaining = Math.max(0, Constants.RESPAWN_DELAY_MS - elapsed)
     val secondsLeft = Math.ceil(remaining / 1000.0).toInt
 
@@ -2277,7 +2344,7 @@ class GLGameRenderer(val client: GameClient) {
   private def drawTileOverlays(): Unit = {
     beginShapes()
     shapeBatch.setAdditiveBlend(true)
-    val time = animationTick.toFloat
+    val time = _animTickF
     var i = 0
     while (i < _specialTileCount) {
       val wx = _specialTileWX(i); val wy = _specialTileWY(i); val tid = _specialTileTid(i)
@@ -2402,7 +2469,7 @@ class GLGameRenderer(val client: GameClient) {
     }
 
     // Explosion lights
-    val now = System.currentTimeMillis()
+    val now = _frameTimeMs
     val expIter = client.getExplosionAnimations.values().iterator()
     while (expIter.hasNext) {
       val data = expIter.next()
@@ -2464,7 +2531,7 @@ class GLGameRenderer(val client: GameClient) {
   // ═══════════════════════════════════════════════════════════════════
 
   private def updateExplosionDistortion(): Unit = {
-    val now = System.currentTimeMillis()
+    val now = _frameTimeMs
     var bestStrength = 0f
     var bestCX = 0.5f
     var bestCY = 0.5f
@@ -2611,7 +2678,7 @@ class GLGameRenderer(val client: GameClient) {
   }
 
   private def spawnFootstepDust(dt: Float): Unit = {
-    val (lvx, lvy) = (camera.visualX, camera.visualY)
+    val lvx = camera.visualX; val lvy = camera.visualY
     if (prevLocalVX.isNaN) {
       prevLocalVX = lvx; prevLocalVY = lvy
       return
@@ -2722,7 +2789,7 @@ class GLGameRenderer(val client: GameClient) {
 
   private def drawWaterReflections(): Unit = {
     val world = client.getWorld
-    val (lvx, lvy) = (camera.visualX, camera.visualY)
+    val lvx = camera.visualX; val lvy = camera.visualY
     val localPX = Math.round(lvx).toInt
     val localPY = Math.round(lvy).toInt
 
@@ -2846,32 +2913,27 @@ class GLGameRenderer(val client: GameClient) {
 
     // Check south neighbor (wx, wy+1) — shadow falls on bottom-right edge
     if (wy + 1 < world.height && world.getTile(wx, wy + 1).walkable) {
-      // Bottom-right edge of the diamond
-      shapeBatch.fillPolygon(
-        Array(sx, sx + hw, sx + hw, sx),
-        Array(sy + hh, sy, sy + shadowDist, sy + hh + shadowDist),
-        0.0f, 0.0f, 0.05f, shadowAlpha)
+      _shadowXs(0) = sx; _shadowXs(1) = sx + hw; _shadowXs(2) = sx + hw; _shadowXs(3) = sx
+      _shadowYs(0) = sy + hh; _shadowYs(1) = sy; _shadowYs(2) = sy + shadowDist; _shadowYs(3) = sy + hh + shadowDist
+      shapeBatch.fillPolygon(_shadowXs, _shadowYs, 4, 0.0f, 0.0f, 0.05f, shadowAlpha)
     }
     // Check east neighbor (wx+1, wy) — shadow falls on bottom-left edge
     if (wx + 1 < world.width && world.getTile(wx + 1, wy).walkable) {
-      shapeBatch.fillPolygon(
-        Array(sx, sx - hw, sx - hw, sx),
-        Array(sy + hh, sy, sy + shadowDist, sy + hh + shadowDist),
-        0.0f, 0.0f, 0.05f, shadowAlpha)
+      _shadowXs(0) = sx; _shadowXs(1) = sx - hw; _shadowXs(2) = sx - hw; _shadowXs(3) = sx
+      _shadowYs(0) = sy + hh; _shadowYs(1) = sy; _shadowYs(2) = sy + shadowDist; _shadowYs(3) = sy + hh + shadowDist
+      shapeBatch.fillPolygon(_shadowXs, _shadowYs, 4, 0.0f, 0.0f, 0.05f, shadowAlpha)
     }
     // Check north neighbor (wx, wy-1) — shadow falls on top-left edge (subtle)
     if (wy - 1 >= 0 && world.getTile(wx, wy - 1).walkable) {
-      shapeBatch.fillPolygon(
-        Array(sx, sx - hw, sx - hw, sx),
-        Array(sy - hh, sy, sy - shadowDist, sy - hh - shadowDist),
-        0.0f, 0.0f, 0.05f, shadowAlpha * 0.4f)
+      _shadowXs(0) = sx; _shadowXs(1) = sx - hw; _shadowXs(2) = sx - hw; _shadowXs(3) = sx
+      _shadowYs(0) = sy - hh; _shadowYs(1) = sy; _shadowYs(2) = sy - shadowDist; _shadowYs(3) = sy - hh - shadowDist
+      shapeBatch.fillPolygon(_shadowXs, _shadowYs, 4, 0.0f, 0.0f, 0.05f, shadowAlpha * 0.4f)
     }
     // Check west neighbor (wx-1, wy) — shadow falls on top-right edge (subtle)
     if (wx - 1 >= 0 && world.getTile(wx - 1, wy).walkable) {
-      shapeBatch.fillPolygon(
-        Array(sx, sx + hw, sx + hw, sx),
-        Array(sy - hh, sy, sy - shadowDist, sy - hh - shadowDist),
-        0.0f, 0.0f, 0.05f, shadowAlpha * 0.4f)
+      _shadowXs(0) = sx; _shadowXs(1) = sx + hw; _shadowXs(2) = sx + hw; _shadowXs(3) = sx
+      _shadowYs(0) = sy - hh; _shadowYs(1) = sy; _shadowYs(2) = sy - shadowDist; _shadowYs(3) = sy - hh - shadowDist
+      shapeBatch.fillPolygon(_shadowXs, _shadowYs, 4, 0.0f, 0.0f, 0.05f, shadowAlpha * 0.4f)
     }
   }
 
