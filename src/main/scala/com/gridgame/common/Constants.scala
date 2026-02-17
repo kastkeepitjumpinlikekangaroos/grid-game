@@ -8,7 +8,7 @@ object Constants {
   val VIEWPORT_SIZE_PX: Int = VIEWPORT_CELLS * CELL_SIZE_PX // 500px
 
   // Sprite size for isometric view
-  val SPRITE_SIZE_PX: Int = 32         // Source frame size in spritesheet
+  val SPRITE_SIZE_PX: Int = 64         // Source frame size in spritesheet (2x atlas)
   val PLAYER_DISPLAY_SIZE_PX: Int = 48 // Rendered display size (scaled up)
 
   // Camera zoom level (1.0 = default, 2.0 = 2x zoom)
@@ -20,9 +20,13 @@ object Constants {
   val ISO_HALF_W: Int = ISO_TILE_WIDTH / 2
   val ISO_HALF_H: Int = ISO_TILE_HEIGHT / 2
 
-  // Tile sprite cell dimensions (for tileset image)
+  // Tile sprite cell dimensions (display size)
   val TILE_CELL_WIDTH: Int = ISO_TILE_WIDTH   // 40
   val TILE_CELL_HEIGHT: Int = 56
+
+  // Tile atlas cell dimensions (2x resolution source)
+  val TILE_ATLAS_CELL_W: Int = 80
+  val TILE_ATLAS_CELL_H: Int = 112
 
   // Network configuration
   val PACKET_SIZE: Int = 64

@@ -30,6 +30,7 @@ class GLGameRenderer(val client: GameClient) {
   private var fontMedium: GLFontRenderer = _
   private var fontLarge: GLFontRenderer = _
   private var postProcessor: PostProcessor = _
+  private val particleSystem = new ParticleSystem()
 
   // Projection matrix
   private var projection: FloatBuffer = _
@@ -183,11 +184,14 @@ class GLGameRenderer(val client: GameClient) {
     )
 
     // === Phase 1: Ground tiles ===
+    // Use fixed position-based variant (no tileFrame) so ground doesn't animate
+    val numTileFrames = GLTileRenderer.getNumFrames
     beginSprites()
     for (wy <- startY to endY; wx <- startX to endX) {
       val tile = world.getTile(wx, wy)
       if (tile.walkable) {
-        val region = GLTileRenderer.getTileRegion(tile.id, tileFrame)
+        val variantFrame = ((wx * 7 + wy * 13) & 0x7FFFFFFF) % numTileFrames
+        val region = GLTileRenderer.getTileRegion(tile.id, variantFrame)
         if (region != null) {
           val sx = worldToScreenX(wx, wy).toFloat
           val sy = worldToScreenY(wx, wy).toFloat
@@ -196,6 +200,11 @@ class GLGameRenderer(val client: GameClient) {
       }
     }
 
+    // === Tile transitions ===
+    endAll()
+    TileTransitionRenderer.render(world, startX, endX, startY, endY,
+      tileFrame, camOffX, camOffY, projection)
+
     // === Aim arrow ===
     drawAimArrow()
 
@@ -203,7 +212,8 @@ class GLGameRenderer(val client: GameClient) {
     for (wy <- startY to endY; wx <- startX to endX) {
       val tile = world.getTile(wx, wy)
       if (!tile.walkable) {
-        val region = GLTileRenderer.getTileRegion(tile.id, tileFrame)
+        val variantFrame = (tileFrame + wx * 7 + wy * 13) % numTileFrames
+        val region = GLTileRenderer.getTileRegion(tile.id, variantFrame)
         if (region != null) {
           beginSprites()
           val sx = worldToScreenX(wx, wy).toFloat
@@ -215,6 +225,15 @@ class GLGameRenderer(val client: GameClient) {
     }
     // Any entities outside visible range
     entitiesByCell.values.foreach(_.foreach(_()))
+
+    // === Ambient particles ===
+    particleSystem.update(deltaSec, world.background,
+      canvasW, canvasH, camOffX, camOffY,
+      (x, y) => world.getTile(x, y),
+      world.width, world.height,
+      startX, endX, startY, endY)
+    beginShapes()
+    particleSystem.render(shapeBatch)
 
     // === Overlay animations ===
     drawDeathAnimations()
@@ -1047,7 +1066,6 @@ class GLGameRenderer(val client: GameClient) {
         val wx = data(1).toDouble; val wy = data(2).toDouble
         val colorRGB = data(3).toInt
         val charId = if (data.length > 4) data(4).toByte else 0.toByte
-        if (now - deathTime < 50) camera.triggerShake(6.0, 500)
         drawDeathEffect(worldToScreenX(wx, wy), worldToScreenY(wx, wy), colorRGB, deathTime, charId)
       }
     }

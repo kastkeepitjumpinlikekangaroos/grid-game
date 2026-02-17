@@ -7,8 +7,8 @@ import javafx.scene.image.{Image, WritableImage}
 import java.io.{File, FileInputStream, InputStream}
 
 object TileRenderer {
-  private val cellW = Constants.TILE_CELL_WIDTH   // 40
-  private val cellH = Constants.TILE_CELL_HEIGHT  // 56
+  private val cellW = Constants.TILE_ATLAS_CELL_W   // 80
+  private val cellH = Constants.TILE_ATLAS_CELL_H  // 112
 
   // tiles(tileId)(frame) = Image
   private var tiles: Array[Array[Image]] = _

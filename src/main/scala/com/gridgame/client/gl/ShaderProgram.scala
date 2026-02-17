@@ -179,6 +179,34 @@ object ShaderProgram {
       |  FragColor = vec4(color, 1.0);
       |}""".stripMargin
 
+  // ── Tile transition shader: blends neighbor tile via alpha mask ──
+  val TRANSITION_VERT: String =
+    """#version 330 core
+      |layout(location = 0) in vec2 aPos;
+      |layout(location = 1) in vec2 aTileUV;
+      |layout(location = 2) in vec2 aMaskUV;
+      |uniform mat4 uProjection;
+      |out vec2 vTileUV;
+      |out vec2 vMaskUV;
+      |void main() {
+      |  gl_Position = uProjection * vec4(aPos, 0.0, 1.0);
+      |  vTileUV = aTileUV;
+      |  vMaskUV = aMaskUV;
+      |}""".stripMargin
+
+  val TRANSITION_FRAG: String =
+    """#version 330 core
+      |in vec2 vTileUV;
+      |in vec2 vMaskUV;
+      |uniform sampler2D uTileAtlas;
+      |uniform sampler2D uMaskAtlas;
+      |out vec4 FragColor;
+      |void main() {
+      |  vec4 tileColor = texture(uTileAtlas, vTileUV);
+      |  float maskAlpha = texture(uMaskAtlas, vMaskUV).a;
+      |  FragColor = vec4(tileColor.rgb, tileColor.a * maskAlpha);
+      |}""".stripMargin
+
   // Fullscreen quad vertex shader (shared by post-processing passes)
   val FULLSCREEN_VERT: String =
     """#version 330 core

@@ -29,9 +29,9 @@ class PostProcessor(var width: Int, var height: Int) {
   setupQuad()
 
   // Post-process parameters (tuned for subtle enhancement, not high contrast)
-  var bloomThreshold: Float = 0.88f
-  var bloomStrength: Float = 0.12f
-  var vignetteStrength: Float = 0.08f
+  var bloomThreshold: Float = 0.82f
+  var bloomStrength: Float = 0.18f
+  var vignetteStrength: Float = 0.12f
   var overlayR: Float = 0f
   var overlayG: Float = 0f
   var overlayB: Float = 0f

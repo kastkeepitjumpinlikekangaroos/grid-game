@@ -29,7 +29,7 @@ object GLSpriteGenerator {
 
     val charDef = CharacterDef.get(characterId)
     try {
-      val tex = GLTexture.load(charDef.spriteSheet, nearest = true)
+      val tex = GLTexture.load(charDef.spriteSheet, nearest = false)
       characterTextures = characterTextures + (characterId -> tex)
 
       val builder = Map.newBuilder[(Direction, Int), TextureRegion]

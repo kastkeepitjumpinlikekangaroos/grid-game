@@ -8,8 +8,8 @@ import com.gridgame.common.Constants
  * Mirrors the functionality of ui/TileRenderer.scala for the GL pipeline.
  */
 object GLTileRenderer {
-  private val cellW = Constants.TILE_CELL_WIDTH  // 40
-  private val cellH = Constants.TILE_CELL_HEIGHT // 56
+  private val cellW = Constants.TILE_ATLAS_CELL_W  // 80
+  private val cellH = Constants.TILE_ATLAS_CELL_H  // 112
 
   private var texture: GLTexture = _
   private var numTiles: Int = 0
@@ -20,7 +20,7 @@ object GLTileRenderer {
   private def ensureLoaded(): Unit = {
     if (texture != null) return
     try {
-      texture = GLTexture.load("sprites/tiles.png", nearest = true)
+      texture = GLTexture.load("sprites/tiles.png", nearest = false)
       numTiles = (texture.width / cellW).max(1)
       numFrames = (texture.height / cellH).max(1)
       regions = Array.tabulate(numTiles) { id =>

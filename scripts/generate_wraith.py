@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
 """Generate sprites/wraith.png — 4-column x 4-row character spritesheet.
 
-128x128 PNG, 32x32 per frame.
+256x256 PNG, 64x64 per frame.
 Row layout: Down=0, Up=1, Left=2, Right=3
 4 walking animation frames per direction.
 
 Style matches Spaceman/Gladiator: big round head, round body, small limbs.
 Theme: Spectral wraith — hooded figure, floating (no visible legs), trailing wisps.
-Color palette: dark teal/ghostly green with black outlines.
+Enhanced 64x64: tattered robe edges, ghostly particle trail, hollow eye sockets
+with inner glow rings, wispy tendrils extending from body.
 """
 
 from PIL import Image, ImageDraw
 
-FRAME_SIZE = 32
+FRAME_SIZE = 64
 COLS = 4
 ROWS = 4
-IMG_W = FRAME_SIZE * COLS   # 128
-IMG_H = FRAME_SIZE * ROWS   # 128
+IMG_W = FRAME_SIZE * COLS   # 256
+IMG_H = FRAME_SIZE * ROWS   # 256
 
 # Colors
 OUTLINE = (30, 40, 35)
@@ -29,16 +30,19 @@ FACE_GLOW = (120, 220, 180)
 FACE_DARK = (60, 140, 110)
 EYE_GLOW = (150, 255, 200)
 EYE_CORE = (200, 255, 230)
+EYE_RING = (100, 200, 160)
 WISP = (80, 180, 140, 160)
 WISP_BRIGHT = (120, 220, 180, 200)
 BLACK = (20, 25, 22)
 TEAL_GLOW = (60, 160, 130)
-# Extra glow colors for enhanced effects
 WISP_FAINT = (60, 150, 120, 90)
 WISP_DIM = (50, 130, 100, 70)
 FACE_BRIGHT = (160, 255, 210)
 NOSE_GLOW = (100, 200, 160)
 SHOULDER_GLOW = (70, 170, 135, 140)
+TENDRIL = (50, 140, 110, 120)
+TENDRIL_TIP = (70, 170, 135, 80)
+GHOST_PARTICLE = (90, 190, 150, 100)
 
 DOWN, UP, LEFT, RIGHT = 0, 1, 2, 3
 
@@ -50,130 +54,117 @@ def ellipse(draw, cx, cy, rx, ry, fill, outline=OUTLINE):
 
 def draw_wispy_trail_down(draw, body_cx, body_cy, frame, wisp_sway):
     """Draw dramatic wispy trails below the body for DOWN direction."""
-    # 5 wispy strands with varying lengths, wider polygon shapes
-    strand_offsets = [-6, -3, 0, 3, 6]
-    strand_lengths = [7, 9, 11, 8, 6]
-    strand_widths = [2, 3, 3, 3, 2]
-    # Each frame shifts strands slightly differently for organic motion
+    strand_offsets = [-12, -6, 0, 6, 12]
+    strand_lengths = [14, 18, 22, 16, 12]
+    strand_widths = [4, 6, 6, 6, 4]
     frame_shifts = [
-        [0, 1, -1, 0, 1],
-        [1, -1, 0, 1, -1],
-        [-1, 0, 1, -1, 0],
-        [0, -1, 1, 0, -1],
+        [0, 2, -2, 0, 2],
+        [2, -2, 0, 2, -2],
+        [-2, 0, 2, -2, 0],
+        [0, -2, 2, 0, -2],
     ]
     shifts = frame_shifts[frame]
 
     for i, (sx, slen, sw) in enumerate(zip(strand_offsets, strand_lengths, strand_widths)):
         tx = body_cx + sx + wisp_sway + shifts[i]
-        ty = body_cy + 6
-        # Draw as a tapered polygon for width
+        ty = body_cy + 12
         alpha = 130 - i * 15
         col = (50 + i * 8, 130 + i * 10, 100 + i * 8, alpha)
         draw.polygon([
             (tx - sw // 2, ty),
-            (tx + sw // 2 + 1, ty),
+            (tx + sw // 2 + 2, ty),
             (tx + wisp_sway + shifts[i], ty + slen),
-            (tx + wisp_sway + shifts[i] - 1, ty + slen),
+            (tx + wisp_sway + shifts[i] - 2, ty + slen),
         ], fill=col)
-        # Bright wisp tip
-        draw.point((tx + wisp_sway + shifts[i], ty + slen - 1), fill=WISP)
+        draw.point((tx + wisp_sway + shifts[i], ty + slen - 2), fill=WISP)
+        draw.point((tx + wisp_sway + shifts[i] - 1, ty + slen - 1), fill=WISP)
 
 
 def draw_wispy_trail_up(draw, body_cx, body_cy, frame, wisp_sway):
     """Draw dramatic wispy trails below the body for UP direction."""
-    strand_offsets = [-5, -2, 1, 4, 7]
-    strand_lengths = [6, 9, 10, 8, 7]
-    strand_widths = [2, 3, 3, 2, 2]
+    strand_offsets = [-10, -4, 2, 8, 14]
+    strand_lengths = [12, 18, 20, 16, 14]
+    strand_widths = [4, 6, 6, 4, 4]
     frame_shifts = [
-        [1, 0, -1, 1, 0],
-        [-1, 1, 0, -1, 1],
-        [0, -1, 1, 0, -1],
-        [1, 0, -1, 1, -1],
+        [2, 0, -2, 2, 0],
+        [-2, 2, 0, -2, 2],
+        [0, -2, 2, 0, -2],
+        [2, 0, -2, 2, -2],
     ]
     shifts = frame_shifts[frame]
 
     for i, (sx, slen, sw) in enumerate(zip(strand_offsets, strand_lengths, strand_widths)):
         tx = body_cx + sx + wisp_sway + shifts[i]
-        ty = body_cy + 6
+        ty = body_cy + 12
         alpha = 120 - i * 12
         col = (45 + i * 7, 120 + i * 10, 95 + i * 7, alpha)
         draw.polygon([
             (tx - sw // 2, ty),
-            (tx + sw // 2 + 1, ty),
+            (tx + sw // 2 + 2, ty),
             (tx + wisp_sway + shifts[i], ty + slen),
-            (tx + wisp_sway + shifts[i] - 1, ty + slen),
+            (tx + wisp_sway + shifts[i] - 2, ty + slen),
         ], fill=col)
-        draw.point((tx + wisp_sway + shifts[i], ty + slen - 1), fill=WISP_FAINT)
+        draw.point((tx + wisp_sway + shifts[i], ty + slen - 2), fill=WISP_FAINT)
 
 
 def draw_wispy_trail_side(draw, body_cx, body_cy, frame, wisp_sway, facing_left):
     """Draw dramatic wispy trails for LEFT/RIGHT directions."""
-    # Trails flow opposite to facing direction
     drift = 1 if facing_left else -1
-    strand_offsets = [-3, 0, 3, 5]
-    strand_lengths = [5, 8, 9, 6]
-    strand_widths = [2, 3, 3, 2]
+    strand_offsets = [-6, 0, 6, 10]
+    strand_lengths = [10, 16, 18, 12]
+    strand_widths = [4, 6, 6, 4]
     frame_shifts = [
-        [0, 1, -1, 0],
-        [1, -1, 0, 1],
-        [-1, 0, 1, -1],
-        [0, -1, 1, 0],
+        [0, 2, -2, 0],
+        [2, -2, 0, 2],
+        [-2, 0, 2, -2],
+        [0, -2, 2, 0],
     ]
     shifts = frame_shifts[frame]
 
     for i, (sx, slen, sw) in enumerate(zip(strand_offsets, strand_lengths, strand_widths)):
         tx = body_cx + sx * drift + wisp_sway + shifts[i]
-        ty = body_cy + 5
+        ty = body_cy + 10
         alpha = 120 - i * 15
         col = (50 + i * 8, 130 + i * 10, 100 + i * 8, alpha)
-        end_drift = drift * (2 + i) + wisp_sway
+        end_drift = drift * (4 + i * 2) + wisp_sway
         draw.polygon([
             (tx - sw // 2, ty),
-            (tx + sw // 2 + 1, ty),
-            (tx + end_drift + 1, ty + slen),
+            (tx + sw // 2 + 2, ty),
+            (tx + end_drift + 2, ty + slen),
             (tx + end_drift, ty + slen),
         ], fill=col)
-        draw.point((tx + end_drift, ty + slen - 1), fill=WISP_FAINT)
+        draw.point((tx + end_drift, ty + slen - 2), fill=WISP_FAINT)
 
 
 def draw_shimmer_glow(draw, body_cx, body_cy, head_cy, frame, direction):
     """Draw scattered glow pixels around the body outline that shift per frame."""
-    # Positions shift based on frame for shimmer effect
-    # These are offsets from body center
     glow_sets = [
-        # frame 0
-        [(-9, -2), (9, 0), (-7, 4), (7, 5), (-3, -8), (4, -7), (0, 7)],
-        # frame 1
-        [(-10, 0), (8, -1), (-6, 5), (8, 3), (-4, -9), (3, -6), (1, 6)],
-        # frame 2
-        [(-8, -1), (10, 1), (-8, 3), (6, 6), (-2, -7), (5, -8), (-1, 7)],
-        # frame 3
-        [(-9, 1), (9, -2), (-7, 6), (7, 4), (-5, -8), (2, -7), (0, 8)],
+        [(-18, -4), (18, 0), (-14, 8), (14, 10), (-6, -16), (8, -14), (0, 14)],
+        [(-20, 0), (16, -2), (-12, 10), (16, 6), (-8, -18), (6, -12), (2, 12)],
+        [(-16, -2), (20, 2), (-16, 6), (12, 12), (-4, -14), (10, -16), (-2, 14)],
+        [(-18, 2), (18, -4), (-14, 12), (14, 8), (-10, -16), (4, -14), (0, 16)],
     ]
     for gx, gy in glow_sets[frame]:
         px = body_cx + gx
         py = body_cy + gy
         draw.point((px, py), fill=WISP)
+        draw.point((px + 1, py), fill=WISP_DIM)
 
 
 def draw_shoulder_vapors(draw, body_cx, body_cy, frame, direction):
     """Draw wispy shoulder glow pixels near shoulder areas."""
     vapor_sets = [
-        # frame 0
-        [(-10, -3), (-11, -2), (10, -3), (11, -2)],
-        # frame 1
-        [(-11, -4), (-10, -2), (11, -4), (10, -2)],
-        # frame 2
-        [(-10, -4), (-11, -3), (10, -4), (11, -3)],
-        # frame 3
-        [(-11, -3), (-10, -4), (11, -3), (10, -4)],
+        [(-20, -6), (-22, -4), (20, -6), (22, -4)],
+        [(-22, -8), (-20, -4), (22, -8), (20, -4)],
+        [(-20, -8), (-22, -6), (20, -8), (22, -6)],
+        [(-22, -6), (-20, -8), (22, -6), (20, -8)],
     ]
     if direction == LEFT:
-        vapors = [v for v in vapor_sets[frame] if v[0] > 0]  # trailing side
-        vapors += [(v[0] - 2, v[1]) for v in vapor_sets[frame] if v[0] < 0]
+        vapors = [v for v in vapor_sets[frame] if v[0] > 0]
+        vapors += [(v[0] - 4, v[1]) for v in vapor_sets[frame] if v[0] < 0]
     elif direction == RIGHT:
-        vapors = [v for v in vapor_sets[frame] if v[0] < 0]  # trailing side
-        vapors += [(v[0] + 2, v[1]) for v in vapor_sets[frame] if v[0] > 0]
+        vapors = [v for v in vapor_sets[frame] if v[0] < 0]
+        vapors += [(v[0] + 4, v[1]) for v in vapor_sets[frame] if v[0] > 0]
     else:
         vapors = vapor_sets[frame]
 
@@ -181,231 +172,247 @@ def draw_shoulder_vapors(draw, body_cx, body_cy, frame, direction):
         px = body_cx + vx
         py = body_cy + vy
         draw.point((px, py), fill=SHOULDER_GLOW)
+        draw.point((px + 1, py), fill=SHOULDER_GLOW)
+
+
+def draw_tendrils(draw, body_cx, body_cy, frame, direction):
+    """Draw wispy tendrils extending from body sides."""
+    tendril_sway = [-2, 0, 2, 0][frame]
+    if direction in (DOWN, UP):
+        # Left tendril
+        draw.line([(body_cx - 16, body_cy), (body_cx - 22 + tendril_sway, body_cy + 8)],
+                  fill=TENDRIL, width=2)
+        draw.point((body_cx - 22 + tendril_sway, body_cy + 8), fill=TENDRIL_TIP)
+        # Right tendril
+        draw.line([(body_cx + 16, body_cy), (body_cx + 22 - tendril_sway, body_cy + 8)],
+                  fill=TENDRIL, width=2)
+        draw.point((body_cx + 22 - tendril_sway, body_cy + 8), fill=TENDRIL_TIP)
+    elif direction == LEFT:
+        draw.line([(body_cx + 10, body_cy), (body_cx + 18 + tendril_sway, body_cy + 6)],
+                  fill=TENDRIL, width=2)
+        draw.point((body_cx + 18 + tendril_sway, body_cy + 6), fill=TENDRIL_TIP)
+    elif direction == RIGHT:
+        draw.line([(body_cx - 10, body_cy), (body_cx - 18 - tendril_sway, body_cy + 6)],
+                  fill=TENDRIL, width=2)
+        draw.point((body_cx - 18 - tendril_sway, body_cy + 6), fill=TENDRIL_TIP)
+
+
+def draw_ghost_particles(draw, body_cx, body_cy, frame):
+    """Draw translucent ghostly particle dots trailing behind."""
+    particle_sets = [
+        [(-4, 16), (6, 18), (-8, 14), (10, 16), (0, 20)],
+        [(-6, 18), (4, 16), (-10, 16), (8, 18), (2, 22)],
+        [(-2, 14), (8, 20), (-6, 18), (12, 14), (-4, 22)],
+        [(-8, 16), (2, 14), (-4, 20), (6, 16), (10, 20)],
+    ]
+    for px, py in particle_sets[frame]:
+        draw.point((body_cx + px, body_cy + py), fill=GHOST_PARTICLE)
 
 
 def draw_wraith(draw, ox, oy, direction, frame):
-    """Draw a single wraith frame at offset (ox, oy).
+    """Draw a single wraith frame at offset (ox, oy)."""
+    bob = [0, -4, -2, -4][frame]
+    wisp_sway = [-2, 2, -2, 0][frame]
 
-    Proportions match Spaceman: big round head ~11px, body ~8px tall.
-    Wraith floats — bottom of frame has wispy trail instead of legs.
-    """
-    # More pronounced floating bob animation
-    bob = [0, -2, -1, -2][frame]
-    wisp_sway = [-1, 1, -1, 0][frame]
-
-    # Anchor: character floats slightly above ground
-    base_y = oy + 27 + bob
-    body_cx = ox + 16
-    body_cy = base_y - 10
-    head_cy = body_cy - 10
+    base_y = oy + 54 + bob
+    body_cx = ox + 32
+    body_cy = base_y - 20
+    head_cy = body_cy - 20
 
     if direction == DOWN:
-        # --- Dramatic wispy trail ---
         draw_wispy_trail_down(draw, body_cx, body_cy, frame, wisp_sway)
+        draw_ghost_particles(draw, body_cx, body_cy, frame)
 
-        # --- Body (flowing cloak shape, wider at base with ragged edge) ---
-        # Main cloak body — wider taper at bottom, ragged bottom edge
-        ragged = [(-1, 0), (1, -1), (0, 1), (-1, 0), (1, -1)][frame % 5]
+        # --- Body (flowing cloak shape, ragged tattered edges) ---
+        ragged = [(-2, 0), (2, -2), (0, 2), (-2, 0), (2, -2)][frame % 5]
         draw.polygon([
-            (body_cx - 8, body_cy - 4),
-            (body_cx + 8, body_cy - 4),
-            (body_cx + 11, body_cy + 5),
-            (body_cx + 12 + ragged[0], body_cy + 7 + ragged[1]),
-            (body_cx + 6, body_cy + 6),
-            (body_cx + 2, body_cy + 8),
-            (body_cx - 2, body_cy + 7),
-            (body_cx - 6, body_cy + 8),
-            (body_cx - 12 - ragged[0], body_cy + 7 - ragged[1]),
-            (body_cx - 11, body_cy + 5),
+            (body_cx - 16, body_cy - 8),
+            (body_cx + 16, body_cy - 8),
+            (body_cx + 22, body_cy + 10),
+            (body_cx + 24 + ragged[0], body_cy + 14 + ragged[1]),
+            (body_cx + 16, body_cy + 12),
+            (body_cx + 10, body_cy + 16),
+            (body_cx + 4, body_cy + 14),
+            (body_cx - 4, body_cy + 16),
+            (body_cx - 10, body_cy + 14),
+            (body_cx - 16, body_cy + 16),
+            (body_cx - 24 - ragged[0], body_cy + 14 - ragged[1]),
+            (body_cx - 22, body_cy + 10),
         ], fill=CLOAK, outline=OUTLINE)
-        # Cloak highlight
         draw.polygon([
-            (body_cx - 5, body_cy - 3),
-            (body_cx + 5, body_cy - 3),
-            (body_cx + 6, body_cy + 4),
-            (body_cx - 6, body_cy + 4),
+            (body_cx - 10, body_cy - 6),
+            (body_cx + 10, body_cy - 6),
+            (body_cx + 12, body_cy + 8),
+            (body_cx - 12, body_cy + 8),
         ], fill=CLOAK_LIGHT, outline=None)
 
-        # --- Hood (big, rounded, covering head, TALLER peak) ---
-        ellipse(draw, body_cx, head_cy, 9, 8, HOOD)
-        # Hood inner shadow
-        ellipse(draw, body_cx, head_cy + 1, 7, 6, HOOD_DARK)
+        draw_tendrils(draw, body_cx, body_cy, frame, direction)
 
-        # --- Face (brighter glowing from within the hood) ---
-        ellipse(draw, body_cx, head_cy + 2, 4, 3, FACE_GLOW)  # brighter inner face
-        ellipse(draw, body_cx, head_cy + 2, 3, 2, FACE_BRIGHT)  # even brighter core
-        # Glowing eyes
-        draw.rectangle([body_cx - 4, head_cy + 1, body_cx - 1, head_cy + 3], fill=EYE_GLOW)
-        draw.rectangle([body_cx + 1, head_cy + 1, body_cx + 4, head_cy + 3], fill=EYE_GLOW)
-        # Eye cores (bright center)
-        draw.point((body_cx - 2, head_cy + 2), fill=EYE_CORE)
-        draw.point((body_cx + 2, head_cy + 2), fill=EYE_CORE)
-        # Nose/mouth glow dot below eyes
-        draw.point((body_cx, head_cy + 4), fill=NOSE_GLOW)
-        draw.point((body_cx, head_cy + 5), fill=FACE_DARK)
+        # --- Hood ---
+        ellipse(draw, body_cx, head_cy, 18, 16, HOOD)
+        ellipse(draw, body_cx, head_cy + 2, 14, 12, HOOD_DARK)
 
-        # --- Hood peak (TALLER and sharper) ---
+        # --- Face ---
+        ellipse(draw, body_cx, head_cy + 4, 8, 6, FACE_GLOW)
+        ellipse(draw, body_cx, head_cy + 4, 6, 4, FACE_BRIGHT)
+        # Hollow eye sockets with glow rings
+        draw.rectangle([body_cx - 8, head_cy + 2, body_cx - 2, head_cy + 6], fill=EYE_GLOW)
+        draw.rectangle([body_cx + 2, head_cy + 2, body_cx + 8, head_cy + 6], fill=EYE_GLOW)
+        # Inner dark hollow
+        draw.rectangle([body_cx - 6, head_cy + 3, body_cx - 4, head_cy + 5], fill=BLACK)
+        draw.rectangle([body_cx + 4, head_cy + 3, body_cx + 6, head_cy + 5], fill=BLACK)
+        # Eye ring glow
+        draw.arc([body_cx - 9, head_cy + 1, body_cx - 1, head_cy + 7], start=0, end=360, fill=EYE_RING)
+        draw.arc([body_cx + 1, head_cy + 1, body_cx + 9, head_cy + 7], start=0, end=360, fill=EYE_RING)
+        draw.point((body_cx - 4, head_cy + 4), fill=EYE_CORE)
+        draw.point((body_cx + 4, head_cy + 4), fill=EYE_CORE)
+        draw.point((body_cx, head_cy + 8), fill=NOSE_GLOW)
+        draw.point((body_cx, head_cy + 10), fill=FACE_DARK)
+
+        # --- Hood peak ---
         draw.polygon([
-            (body_cx, head_cy - 12),
-            (body_cx + 3, head_cy - 7),
-            (body_cx + 2, head_cy - 5),
-            (body_cx - 2, head_cy - 5),
-            (body_cx - 3, head_cy - 7),
+            (body_cx, head_cy - 24),
+            (body_cx + 6, head_cy - 14),
+            (body_cx + 4, head_cy - 10),
+            (body_cx - 4, head_cy - 10),
+            (body_cx - 6, head_cy - 14),
         ], fill=HOOD, outline=OUTLINE)
 
-        # --- Shoulder vapors ---
         draw_shoulder_vapors(draw, body_cx, body_cy, frame, direction)
-
-        # --- Shimmer glow around body ---
         draw_shimmer_glow(draw, body_cx, body_cy, head_cy, frame, direction)
 
     elif direction == UP:
-        # --- Dramatic wispy trail ---
         draw_wispy_trail_up(draw, body_cx, body_cy, frame, wisp_sway)
+        draw_ghost_particles(draw, body_cx, body_cy, frame)
 
-        # --- Body (wider base, ragged edge) ---
-        ragged = [(0, 1), (1, 0), (-1, 1), (0, -1), (1, 0)][frame % 5]
+        ragged = [(0, 2), (2, 0), (-2, 2), (0, -2), (2, 0)][frame % 5]
         draw.polygon([
-            (body_cx - 8, body_cy - 4),
-            (body_cx + 8, body_cy - 4),
-            (body_cx + 11, body_cy + 5),
-            (body_cx + 12 + ragged[0], body_cy + 7 + ragged[1]),
-            (body_cx + 5, body_cy + 6),
-            (body_cx + 1, body_cy + 8),
-            (body_cx - 3, body_cy + 7),
-            (body_cx - 7, body_cy + 8),
-            (body_cx - 12 - ragged[0], body_cy + 7 - ragged[1]),
-            (body_cx - 11, body_cy + 5),
+            (body_cx - 16, body_cy - 8),
+            (body_cx + 16, body_cy - 8),
+            (body_cx + 22, body_cy + 10),
+            (body_cx + 24 + ragged[0], body_cy + 14 + ragged[1]),
+            (body_cx + 10, body_cy + 12),
+            (body_cx + 2, body_cy + 16),
+            (body_cx - 6, body_cy + 14),
+            (body_cx - 14, body_cy + 16),
+            (body_cx - 24 - ragged[0], body_cy + 14 - ragged[1]),
+            (body_cx - 22, body_cy + 10),
         ], fill=CLOAK, outline=OUTLINE)
-        # Back of cloak (darker)
         draw.polygon([
-            (body_cx - 6, body_cy - 3),
-            (body_cx + 6, body_cy - 3),
-            (body_cx + 7, body_cy + 5),
-            (body_cx - 7, body_cy + 5),
+            (body_cx - 12, body_cy - 6),
+            (body_cx + 12, body_cy - 6),
+            (body_cx + 14, body_cy + 10),
+            (body_cx - 14, body_cy + 10),
         ], fill=CLOAK_DARK, outline=None)
 
-        # --- Hood (back view) ---
-        ellipse(draw, body_cx, head_cy, 9, 8, HOOD)
-        ellipse(draw, body_cx, head_cy, 7, 6, HOOD_DARK)
+        draw_tendrils(draw, body_cx, body_cy, frame, direction)
 
-        # --- Hood peak (TALLER and sharper) ---
+        ellipse(draw, body_cx, head_cy, 18, 16, HOOD)
+        ellipse(draw, body_cx, head_cy, 14, 12, HOOD_DARK)
+
         draw.polygon([
-            (body_cx, head_cy - 12),
-            (body_cx + 3, head_cy - 7),
-            (body_cx + 2, head_cy - 5),
-            (body_cx - 2, head_cy - 5),
-            (body_cx - 3, head_cy - 7),
+            (body_cx, head_cy - 24),
+            (body_cx + 6, head_cy - 14),
+            (body_cx + 4, head_cy - 10),
+            (body_cx - 4, head_cy - 10),
+            (body_cx - 6, head_cy - 14),
         ], fill=HOOD, outline=OUTLINE)
 
-        # --- Shoulder vapors ---
         draw_shoulder_vapors(draw, body_cx, body_cy, frame, direction)
-
-        # --- Shimmer glow ---
         draw_shimmer_glow(draw, body_cx, body_cy, head_cy, frame, direction)
 
     elif direction == LEFT:
-        # --- Dramatic wispy trail (flowing right/behind) ---
         draw_wispy_trail_side(draw, body_cx, body_cy, frame, wisp_sway, facing_left=True)
+        draw_ghost_particles(draw, body_cx, body_cy, frame)
 
-        # --- Body (wider base, ragged bottom) ---
-        ragged = [(1, 0), (0, 1), (-1, 0), (1, -1), (0, 1)][frame % 5]
+        ragged = [(2, 0), (0, 2), (-2, 0), (2, -2), (0, 2)][frame % 5]
         draw.polygon([
-            (body_cx - 6, body_cy - 4),
-            (body_cx + 6, body_cy - 4),
-            (body_cx + 9, body_cy + 5),
-            (body_cx + 10 + ragged[0], body_cy + 7 + ragged[1]),
-            (body_cx + 4, body_cy + 6),
-            (body_cx, body_cy + 8),
-            (body_cx - 5, body_cy + 7),
-            (body_cx - 10 - ragged[0], body_cy + 7 - ragged[1]),
-            (body_cx - 9, body_cy + 5),
+            (body_cx - 12, body_cy - 8),
+            (body_cx + 12, body_cy - 8),
+            (body_cx + 18, body_cy + 10),
+            (body_cx + 20 + ragged[0], body_cy + 14 + ragged[1]),
+            (body_cx + 8, body_cy + 12),
+            (body_cx, body_cy + 16),
+            (body_cx - 10, body_cy + 14),
+            (body_cx - 20 - ragged[0], body_cy + 14 - ragged[1]),
+            (body_cx - 18, body_cy + 10),
         ], fill=CLOAK, outline=OUTLINE)
         draw.polygon([
-            (body_cx - 4, body_cy - 3),
-            (body_cx + 4, body_cy - 3),
-            (body_cx + 5, body_cy + 4),
-            (body_cx - 5, body_cy + 4),
+            (body_cx - 8, body_cy - 6),
+            (body_cx + 8, body_cy - 6),
+            (body_cx + 10, body_cy + 8),
+            (body_cx - 10, body_cy + 8),
         ], fill=CLOAK_LIGHT, outline=None)
 
-        # --- Hood (side view facing left) ---
-        ellipse(draw, body_cx - 1, head_cy, 8, 8, HOOD)
-        ellipse(draw, body_cx - 1, head_cy + 1, 6, 6, HOOD_DARK)
+        draw_tendrils(draw, body_cx, body_cy, frame, direction)
 
-        # Face (partial, facing left) - brighter
-        ellipse(draw, body_cx - 3, head_cy + 2, 3, 3, FACE_GLOW)
-        ellipse(draw, body_cx - 3, head_cy + 2, 2, 2, FACE_BRIGHT)
-        # One visible eye
-        draw.rectangle([body_cx - 5, head_cy + 1, body_cx - 2, head_cy + 3], fill=EYE_GLOW)
-        draw.point((body_cx - 3, head_cy + 2), fill=EYE_CORE)
-        # Nose/mouth glow
-        draw.point((body_cx - 4, head_cy + 4), fill=NOSE_GLOW)
+        ellipse(draw, body_cx - 2, head_cy, 16, 16, HOOD)
+        ellipse(draw, body_cx - 2, head_cy + 2, 12, 12, HOOD_DARK)
 
-        # Hood peak (taller, sharper)
+        ellipse(draw, body_cx - 6, head_cy + 4, 6, 6, FACE_GLOW)
+        ellipse(draw, body_cx - 6, head_cy + 4, 4, 4, FACE_BRIGHT)
+        draw.rectangle([body_cx - 10, head_cy + 2, body_cx - 4, head_cy + 6], fill=EYE_GLOW)
+        draw.rectangle([body_cx - 8, head_cy + 3, body_cx - 6, head_cy + 5], fill=BLACK)
+        draw.arc([body_cx - 11, head_cy + 1, body_cx - 3, head_cy + 7], start=0, end=360, fill=EYE_RING)
+        draw.point((body_cx - 6, head_cy + 4), fill=EYE_CORE)
+        draw.point((body_cx - 8, head_cy + 8), fill=NOSE_GLOW)
+
         draw.polygon([
-            (body_cx - 1, head_cy - 12),
-            (body_cx + 2, head_cy - 7),
-            (body_cx + 1, head_cy - 5),
-            (body_cx - 2, head_cy - 5),
-            (body_cx - 3, head_cy - 7),
+            (body_cx - 2, head_cy - 24),
+            (body_cx + 4, head_cy - 14),
+            (body_cx + 2, head_cy - 10),
+            (body_cx - 4, head_cy - 10),
+            (body_cx - 6, head_cy - 14),
         ], fill=HOOD, outline=OUTLINE)
 
-        # --- Shoulder vapors ---
         draw_shoulder_vapors(draw, body_cx, body_cy, frame, direction)
-
-        # --- Shimmer glow ---
         draw_shimmer_glow(draw, body_cx, body_cy, head_cy, frame, direction)
 
     elif direction == RIGHT:
-        # --- Dramatic wispy trail (flowing left/behind) ---
         draw_wispy_trail_side(draw, body_cx, body_cy, frame, wisp_sway, facing_left=False)
+        draw_ghost_particles(draw, body_cx, body_cy, frame)
 
-        # --- Body (wider base, ragged bottom) ---
-        ragged = [(0, 1), (1, 0), (0, -1), (-1, 1), (1, 0)][frame % 5]
+        ragged = [(0, 2), (2, 0), (0, -2), (-2, 2), (2, 0)][frame % 5]
         draw.polygon([
-            (body_cx - 6, body_cy - 4),
-            (body_cx + 6, body_cy - 4),
-            (body_cx + 9, body_cy + 5),
-            (body_cx + 10 + ragged[0], body_cy + 7 + ragged[1]),
-            (body_cx + 5, body_cy + 7),
-            (body_cx, body_cy + 8),
-            (body_cx - 4, body_cy + 6),
-            (body_cx - 10 - ragged[0], body_cy + 7 - ragged[1]),
-            (body_cx - 9, body_cy + 5),
+            (body_cx - 12, body_cy - 8),
+            (body_cx + 12, body_cy - 8),
+            (body_cx + 18, body_cy + 10),
+            (body_cx + 20 + ragged[0], body_cy + 14 + ragged[1]),
+            (body_cx + 10, body_cy + 14),
+            (body_cx, body_cy + 16),
+            (body_cx - 8, body_cy + 12),
+            (body_cx - 20 - ragged[0], body_cy + 14 - ragged[1]),
+            (body_cx - 18, body_cy + 10),
         ], fill=CLOAK, outline=OUTLINE)
         draw.polygon([
-            (body_cx - 4, body_cy - 3),
-            (body_cx + 4, body_cy - 3),
-            (body_cx + 5, body_cy + 4),
-            (body_cx - 5, body_cy + 4),
+            (body_cx - 8, body_cy - 6),
+            (body_cx + 8, body_cy - 6),
+            (body_cx + 10, body_cy + 8),
+            (body_cx - 10, body_cy + 8),
         ], fill=CLOAK_LIGHT, outline=None)
 
-        # --- Hood (side view facing right) ---
-        ellipse(draw, body_cx + 1, head_cy, 8, 8, HOOD)
-        ellipse(draw, body_cx + 1, head_cy + 1, 6, 6, HOOD_DARK)
+        draw_tendrils(draw, body_cx, body_cy, frame, direction)
 
-        # Face (partial, facing right) - brighter
-        ellipse(draw, body_cx + 3, head_cy + 2, 3, 3, FACE_GLOW)
-        ellipse(draw, body_cx + 3, head_cy + 2, 2, 2, FACE_BRIGHT)
-        # One visible eye
-        draw.rectangle([body_cx + 2, head_cy + 1, body_cx + 5, head_cy + 3], fill=EYE_GLOW)
-        draw.point((body_cx + 3, head_cy + 2), fill=EYE_CORE)
-        # Nose/mouth glow
-        draw.point((body_cx + 4, head_cy + 4), fill=NOSE_GLOW)
+        ellipse(draw, body_cx + 2, head_cy, 16, 16, HOOD)
+        ellipse(draw, body_cx + 2, head_cy + 2, 12, 12, HOOD_DARK)
 
-        # Hood peak (taller, sharper)
+        ellipse(draw, body_cx + 6, head_cy + 4, 6, 6, FACE_GLOW)
+        ellipse(draw, body_cx + 6, head_cy + 4, 4, 4, FACE_BRIGHT)
+        draw.rectangle([body_cx + 4, head_cy + 2, body_cx + 10, head_cy + 6], fill=EYE_GLOW)
+        draw.rectangle([body_cx + 6, head_cy + 3, body_cx + 8, head_cy + 5], fill=BLACK)
+        draw.arc([body_cx + 3, head_cy + 1, body_cx + 11, head_cy + 7], start=0, end=360, fill=EYE_RING)
+        draw.point((body_cx + 6, head_cy + 4), fill=EYE_CORE)
+        draw.point((body_cx + 8, head_cy + 8), fill=NOSE_GLOW)
+
         draw.polygon([
-            (body_cx + 1, head_cy - 12),
-            (body_cx + 3, head_cy - 7),
-            (body_cx + 2, head_cy - 5),
-            (body_cx - 1, head_cy - 5),
-            (body_cx - 2, head_cy - 7),
+            (body_cx + 2, head_cy - 24),
+            (body_cx + 6, head_cy - 14),
+            (body_cx + 4, head_cy - 10),
+            (body_cx - 2, head_cy - 10),
+            (body_cx - 4, head_cy - 14),
         ], fill=HOOD, outline=OUTLINE)
 
-        # --- Shoulder vapors ---
         draw_shoulder_vapors(draw, body_cx, body_cy, frame, direction)
-
-        # --- Shimmer glow ---
         draw_shimmer_glow(draw, body_cx, body_cy, head_cy, frame, direction)
 
 
