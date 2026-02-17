@@ -148,6 +148,25 @@ class GLGameRenderer(val client: GameClient) {
   // Cached timer text (avoids per-frame format string allocation)
   private var _cachedTimerRemaining = -1
   private var _cachedTimerStr = ""
+  // Cached background name (avoids per-frame string match in setAmbientForBackground)
+  private var _cachedBackground: String = _
+  // Cached flipped TextureRegion for water reflections (avoids per-frame case class allocation)
+  private var _reflectionRegion: TextureRegion = _
+  private var _reflectionSourceRegion: TextureRegion = _
+  // Cached background type ID (avoids per-frame string matching in 3 places)
+  private var _bgType: Byte = 0 // 0=sky, 1=cityscape, 2=space, 3=desert, 4=ocean
+
+  // Deferred kill feed entries (batch backgrounds in shapes, then text in sprites)
+  private val MAX_FEED_ENTRIES = 10
+  private val _feedX = new Array[Float](MAX_FEED_ENTRIES)
+  private val _feedY = new Array[Float](MAX_FEED_ENTRIES)
+  private val _feedW = new Array[Float](MAX_FEED_ENTRIES)
+  private val _feedA = new Array[Float](MAX_FEED_ENTRIES)
+  private val _feedText = new Array[String](MAX_FEED_ENTRIES)
+  private val _feedR = new Array[Float](MAX_FEED_ENTRIES)
+  private val _feedG = new Array[Float](MAX_FEED_ENTRIES)
+  private val _feedB = new Array[Float](MAX_FEED_ENTRIES)
+  private var _feedCount = 0
 
   // Pre-allocated arrays for item shapes
   private val _starXs = new Array[Float](10)
@@ -254,6 +273,7 @@ class GLGameRenderer(val client: GameClient) {
     fontLarge = new GLFontRenderer(44)
     postProcessor = new PostProcessor(width, height)
     lightSystem = new LightSystem(width, height)
+    damageNumbers.setFont(fontMedium)
     initialized = true
   }
 
@@ -303,9 +323,16 @@ class GLGameRenderer(val client: GameClient) {
       lastFbHeight = fbHeight
     }
 
-    // Dynamic lighting: clear lights and set ambient for current background
+    // Dynamic lighting: clear lights and set ambient for current background (only recompute on change)
     lightSystem.clear()
-    lightSystem.setAmbientForBackground(world.background)
+    val bg = world.background
+    if (bg ne _cachedBackground) {
+      _cachedBackground = bg
+      _bgType = bg match {
+        case "sky" => 0; case "cityscape" => 1; case "space" => 2; case "desert" => 3; case "ocean" => 4; case _ => 0
+      }
+      lightSystem.setAmbientForBackground(bg)
+    }
 
     // Update damage numbers
     damageNumbers.update(deltaSec.toFloat)
@@ -414,14 +441,13 @@ class GLGameRenderer(val client: GameClient) {
     // === Aim arrow ===
     drawAimArrow()
 
-    // === Elevated tile edge shadows ===
+    // === Elevated tile edge shadows (batched in one shapes pass — more efficient than per-tile) ===
     beginShapes()
     wy = startY
     while (wy <= endY) {
       var wx = startX
       while (wx <= endX) {
-        val tile = world.getTile(wx, wy)
-        if (!tile.walkable) {
+        if (!world.getTile(wx, wy).walkable) {
           drawElevatedTileShadow(wx, wy, world)
         }
         wx += 1
@@ -549,13 +575,13 @@ class GLGameRenderer(val client: GameClient) {
   }
 
   private def renderBackground(background: String): Unit = {
-    background match {
-      case "sky"       => drawSkyBg()
-      case "cityscape" => drawCityscapeBg()
-      case "space"     => drawSpaceBg()
-      case "desert"    => drawDesertBg()
-      case "ocean"     => drawOceanBg()
-      case _           => drawSkyBg()
+    (_bgType: @scala.annotation.switch) match {
+      case 0 => drawSkyBg()
+      case 1 => drawCityscapeBg()
+      case 2 => drawSpaceBg()
+      case 3 => drawDesertBg()
+      case 4 => drawOceanBg()
+      case _ => drawSkyBg()
     }
   }
 
@@ -1044,19 +1070,8 @@ class GLGameRenderer(val client: GameClient) {
     beginShapes()
     val pulse = (0.7 + 0.3 * Math.sin(animationTick * 0.1)).toFloat
     shapeBatch.fillOvalSoft(cx.toFloat, cy.toFloat, 22f, 18f, 0.3f, 0.6f, 1f, 0.05f * pulse, 0.15f * pulse, 24)
-    val segs = 24
-    val step = (2.0 * Math.PI / segs).toFloat
-    var angle = 0f
-    var _seg = 0
-    while (_seg < segs) {
-      val x1 = cx.toFloat + 22 * Math.cos(angle).toFloat
-      val y1 = cy.toFloat + 18 * Math.sin(angle).toFloat
-      val x2 = cx.toFloat + 22 * Math.cos(angle + step).toFloat
-      val y2 = cy.toFloat + 18 * Math.sin(angle + step).toFloat
-      shapeBatch.strokeLine(x1, y1, x2, y2, 1.5f, 0.4f, 0.7f, 1f, 0.25f * pulse)
-      angle += step
-      _seg += 1
-    }
+    // Use strokeOval which leverages pre-computed sin/cos LUTs (avoids 48 Math.sin/cos calls)
+    shapeBatch.strokeOval(cx.toFloat, cy.toFloat, 22f, 18f, 1.5f, 0.4f, 0.7f, 1f, 0.25f * pulse, 24)
   }
 
   private def drawGemGlow(cx: Double, cy: Double): Unit = {
@@ -1382,9 +1397,8 @@ class GLGameRenderer(val client: GameClient) {
     if (renderer != null) {
       renderer(proj, sx, sy, shapeBatch, animationTick)
     } else {
-      intToRGB(proj.colorRGB)
-      val r = _rgb_r; val g = _rgb_g; val b = _rgb_b
-      GLProjectileRenderers.drawGeneric(proj, sx, sy, shapeBatch, animationTick, r, g, b)
+      // Reuse plr/plg/plb from intToRGB call above (same proj.colorRGB)
+      GLProjectileRenderers.drawGeneric(proj, sx, sy, shapeBatch, animationTick, plr, plg, plb)
     }
   }
 
@@ -1567,21 +1581,9 @@ class GLGameRenderer(val client: GameClient) {
       shapeBatch.fillOvalSoft(cx, cy, flashR, flashR * 0.5f, 1f, 1f, 0.95f, flashAlpha, 0f, 16)
     }
 
-    // Shockwave rings
+    // Shockwave rings — use strokeOval which leverages pre-computed sin/cos LUTs
     val ring1R = (progress * 55).toFloat
-    val segs = 24
-    val step = (2 * Math.PI / segs).toFloat
-    var angle = 0f
-    var _seg = 0
-    while (_seg < segs) {
-      val x1 = cx + ring1R * Math.cos(angle).toFloat
-      val y1 = cy + ring1R * 0.5f * Math.sin(angle).toFloat
-      val x2 = cx + ring1R * Math.cos(angle + step).toFloat
-      val y2 = cy + ring1R * 0.5f * Math.sin(angle + step).toFloat
-      shapeBatch.strokeLine(x1, y1, x2, y2, 3f * fadeOut, cr, cg, cb, 0.55f * fadeOut)
-      angle += step
-      _seg += 1
-    }
+    shapeBatch.strokeOval(cx, cy, ring1R, ring1R * 0.5f, 3f * fadeOut, cr, cg, cb, 0.55f * fadeOut, 24)
 
     // Particles
     var i = 0
@@ -2235,14 +2237,15 @@ class GLGameRenderer(val client: GameClient) {
     }
     val timerText = _cachedTimerStr
 
-    // Timer panel at top center
-    val timerW = fontMedium.measureWidth(timerText) + 20
+    // Timer panel at top center (cache measureWidth — called twice otherwise)
+    val timerTextW = fontMedium.measureWidth(timerText)
+    val timerW = timerTextW + 20
     beginShapes()
     shapeBatch.fillRect((screenW / 2 - timerW / 2).toFloat, 4f, timerW.toFloat, 30f, 0.04f, 0.04f, 0.08f, 0.5f)
     shapeBatch.strokeRect((screenW / 2 - timerW / 2).toFloat, 4f, timerW.toFloat, 30f, 1f, 0.3f, 0.3f, 0.4f, 0.3f)
 
     beginSprites()
-    fontMedium.drawTextOutlined(spriteBatch, timerText, (screenW / 2 - fontMedium.measureWidth(timerText) / 2).toFloat, 8)
+    fontMedium.drawTextOutlined(spriteBatch, timerText, (screenW / 2 - timerTextW / 2).toFloat, 8)
 
     // K/D display below status panel
     val kc = client.killCount; val dc = client.deathCount
@@ -2252,12 +2255,14 @@ class GLGameRenderer(val client: GameClient) {
     }
     fontSmall.drawTextOutlined(spriteBatch, _cachedKDStr, 12, 108)
 
-    // Kill feed with slide-in animation and background strips — use Java iterator directly
+    // Kill feed — collect entries, then batch all backgrounds (shapes) and all text (sprites)
+    // to avoid per-entry batch switches (was 2 flushes × N entries, now just 1 switch)
     val now = _frameTimeMs
     var feedY = 10f
     val localName = client.getSelectedCharacterDef.displayName
+    _feedCount = 0
     val feedIter = client.killFeed.iterator()
-    while (feedIter.hasNext) {
+    while (feedIter.hasNext && _feedCount < MAX_FEED_ENTRIES) {
       val entry = feedIter.next()
       val timestamp = entry(0).asInstanceOf[java.lang.Long].longValue()
       val elapsed = now - timestamp
@@ -2269,27 +2274,34 @@ class GLGameRenderer(val client: GameClient) {
         _feedTextBuilder.append(killer).append(" killed ").append(victim)
         val feedText = _feedTextBuilder.toString
         val textW = fontSmall.measureWidth(feedText)
-
-        // Slide-in from right edge (first 200ms)
         val slideOffset = if (elapsed < 200) ((1.0 - elapsed / 200.0) * 60).toFloat else 0f
-        val feedX = screenW - textW - 12f + slideOffset
-
-        // Semi-transparent background strip
-        beginShapes()
-        shapeBatch.fillRect(feedX - 4f, feedY - 2f, textW + 8f, 18f, 0.04f, 0.04f, 0.08f, 0.4f * alpha)
-
-        // Highlight local player's name in kill feed entries
-        beginSprites()
+        val fx = screenW - textW - 12f + slideOffset
+        val fi = _feedCount
+        _feedX(fi) = fx; _feedY(fi) = feedY; _feedW(fi) = textW; _feedA(fi) = alpha
+        _feedText(fi) = feedText
         val isLocalKiller = killer == localName
         val isLocalVictim = victim == localName
-        if (isLocalKiller) {
-          fontSmall.drawText(spriteBatch, feedText, feedX, feedY, 0.4f, 1f, 0.4f, alpha)
-        } else if (isLocalVictim) {
-          fontSmall.drawText(spriteBatch, feedText, feedX, feedY, 1f, 0.4f, 0.4f, alpha)
-        } else {
-          fontSmall.drawText(spriteBatch, feedText, feedX, feedY, 1f, 1f, 1f, alpha)
-        }
+        if (isLocalKiller) { _feedR(fi) = 0.4f; _feedG(fi) = 1f; _feedB(fi) = 0.4f }
+        else if (isLocalVictim) { _feedR(fi) = 1f; _feedG(fi) = 0.4f; _feedB(fi) = 0.4f }
+        else { _feedR(fi) = 1f; _feedG(fi) = 1f; _feedB(fi) = 1f }
+        _feedCount += 1
         feedY += 18
+      }
+    }
+    // Batch all background strips in one shapes pass
+    if (_feedCount > 0) {
+      beginShapes()
+      var fi = 0
+      while (fi < _feedCount) {
+        shapeBatch.fillRect(_feedX(fi) - 4f, _feedY(fi) - 2f, _feedW(fi) + 8f, 18f, 0.04f, 0.04f, 0.08f, 0.4f * _feedA(fi))
+        fi += 1
+      }
+      // Then all text in one sprites pass
+      beginSprites()
+      fi = 0
+      while (fi < _feedCount) {
+        fontSmall.drawText(spriteBatch, _feedText(fi), _feedX(fi), _feedY(fi), _feedR(fi), _feedG(fi), _feedB(fi), _feedA(fi))
+        fi += 1
       }
     }
   }
@@ -2578,24 +2590,24 @@ class GLGameRenderer(val client: GameClient) {
 
   private def spawnWeatherParticles(background: String, dt: Float): Unit = {
     val w = canvasW.toFloat; val h = canvasH.toFloat
-    val rate = background match {
-      case "sky"       => 12f  // gentle leaf/pollen drift
-      case "ocean"     => 20f  // spray mist
-      case "space"     => 4f   // drifting dust motes
-      case "desert"    => 15f  // sand particles
-      case "cityscape" => 8f   // dust/ash
-      case _           => 8f
+    val rate = (_bgType: @scala.annotation.switch) match {
+      case 0 => 12f  // sky: gentle leaf/pollen drift
+      case 4 => 20f  // ocean: spray mist
+      case 2 => 4f   // space: drifting dust motes
+      case 3 => 15f  // desert: sand particles
+      case 1 => 8f   // cityscape: dust/ash
+      case _ => 8f
     }
     weatherSpawnAccum += rate * dt
     while (weatherSpawnAccum >= 1f) {
       weatherSpawnAccum -= 1f
-      background match {
-        case "sky"       => spawnSkyParticle(w, h)
-        case "ocean"     => spawnOceanParticle(w, h)
-        case "space"     => spawnSpaceParticle(w, h)
-        case "desert"    => spawnDesertParticle(w, h)
-        case "cityscape" => spawnCityParticle(w, h)
-        case _           => spawnSkyParticle(w, h)
+      (_bgType: @scala.annotation.switch) match {
+        case 0 => spawnSkyParticle(w, h)
+        case 4 => spawnOceanParticle(w, h)
+        case 2 => spawnSpaceParticle(w, h)
+        case 3 => spawnDesertParticle(w, h)
+        case 1 => spawnCityParticle(w, h)
+        case _ => spawnSkyParticle(w, h)
       }
     }
   }
@@ -2815,8 +2827,12 @@ class GLGameRenderer(val client: GameClient) {
     val region = GLSpriteGenerator.getSpriteRegion(client.getLocalDirection, frame, client.selectedCharacterId)
     if (region == null) return
 
-    // Create flipped region (swap v and v2 for vertical flip)
-    val flippedRegion = TextureRegion(region.texture, region.u, region.v2, region.u2, region.v)
+    // Create flipped region (swap v and v2 for vertical flip) — cached to avoid per-frame allocation
+    if (region ne _reflectionSourceRegion) {
+      _reflectionSourceRegion = region
+      _reflectionRegion = TextureRegion(region.texture, region.u, region.v2, region.u2, region.v)
+    }
+    val flippedRegion = _reflectionRegion
     val displaySz = Constants.PLAYER_DISPLAY_SIZE_PX.toFloat
     val playerScreenX = worldToScreenX(lvx, lvy).toFloat
     val playerScreenY = worldToScreenY(lvx, lvy).toFloat

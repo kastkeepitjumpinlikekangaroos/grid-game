@@ -19,6 +19,12 @@ class DamageNumberSystem {
   private val active = new Array[Boolean](MAX_NUMBERS)
   private val offsetX = new Array[Float](MAX_NUMBERS) // random horizontal scatter
   private val cachedText = new Array[String](MAX_NUMBERS) // cached damage.toString
+  private val cachedTextW = new Array[Float](MAX_NUMBERS) // cached measureWidth result
+  private var _activeCount = 0
+
+  /** Set the font used for text width measurement (called once from renderer init). */
+  private var _font: GLFontRenderer = _
+  def setFont(font: GLFontRenderer): Unit = { _font = font }
 
   /** Spawn a new floating damage number at the given world position. */
   def spawn(wx: Float, wy: Float, dmg: Int, r: Float, g: Float, b: Float): Unit = {
@@ -38,6 +44,7 @@ class DamageNumberSystem {
       i += 1
     }
     val idx = bestIdx
+    if (!active(idx)) _activeCount += 1 // replacing inactive slot
     worldX(idx) = wx
     worldY(idx) = wy
     damage(idx) = dmg
@@ -46,7 +53,9 @@ class DamageNumberSystem {
     cb(idx) = b
     age(idx) = 0f
     active(idx) = true
-    cachedText(idx) = dmg.toString
+    val text = dmg.toString
+    cachedText(idx) = text
+    cachedTextW(idx) = if (_font != null) _font.measureWidth(text) else 0f
     // Slight random horizontal scatter based on damage value
     offsetX(idx) = ((dmg * 17 + wx.toInt * 7) % 21 - 10).toFloat
   }
@@ -59,6 +68,7 @@ class DamageNumberSystem {
         age(i) += deltaSec
         if (age(i) >= LIFETIME) {
           active(i) = false
+          _activeCount -= 1
         }
       }
       i += 1
@@ -80,7 +90,7 @@ class DamageNumberSystem {
         val sy = worldToScreenY(worldX(i).toDouble, worldY(i).toDouble).toFloat - rise - 20f
 
         val text = cachedText(i)
-        val textW = font.measureWidth(text)
+        val textW = cachedTextW(i)
 
         // Scale color toward white for high damage
         val brightFactor = Math.min(1f, damage(i) / 30f) * 0.3f
@@ -94,13 +104,6 @@ class DamageNumberSystem {
     }
   }
 
-  /** Check if any numbers are currently active. */
-  def hasActive: Boolean = {
-    var i = 0
-    while (i < MAX_NUMBERS) {
-      if (active(i)) return true
-      i += 1
-    }
-    false
-  }
+  /** Check if any numbers are currently active. O(1) via tracked count. */
+  def hasActive: Boolean = _activeCount > 0
 }

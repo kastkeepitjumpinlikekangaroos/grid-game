@@ -26,14 +26,11 @@ object TileTransitionRenderer {
   private val tileW = (HW * 2).toFloat
   private val tileCellH = Constants.TILE_CELL_HEIGHT.toFloat
 
-  // Cardinal directions: dx, dy, mask index
+  // Cardinal directions: dx, dy, mask index — stored as parallel arrays to avoid tuple boxing
   // N = (-1, 0), E = (0, -1), S = (1, 0), W = (0, 1) in iso world coords
-  private val DIRECTIONS = Array(
-    (-1, 0, 0), // North mask
-    (0, -1, 1), // East mask
-    (1, 0, 2),  // South mask
-    (0, 1, 3)   // West mask
-  )
+  private val DIR_DX = Array(-1, 0, 1, 0)
+  private val DIR_DY = Array(0, -1, 0, 1)
+  private val DIR_MASK = Array(0, 1, 2, 3)
 
   private var maskTexture: GLTexture = _
   private var shader: ShaderProgram = _
@@ -102,21 +99,29 @@ object TileTransitionRenderer {
     val maskCellW = maskTexture.width / 4.0f  // 4 masks side by side
     val maskCellH = maskTexture.height.toFloat
 
-    for (wy <- startY to endY; wx <- startX to endX) {
-      val tile = world.getTile(wx, wy)
-      if (tile.walkable) {
-        for ((dx, dy, maskIdx) <- DIRECTIONS) {
-          val nx = wx + dx
-          val ny = wy + dy
-          if (nx >= 0 && nx < world.width && ny >= 0 && ny < world.height) {
-            val neighbor = world.getTile(nx, ny)
-            if (neighbor.walkable && neighbor.id != tile.id) {
-              addTransitionQuad(wx, wy, neighbor, tileFrame, maskIdx,
-                tileAtlas, maskCellW, maskCellH, camOffX, camOffY)
+    var _wy = startY
+    while (_wy <= endY) {
+      var _wx = startX
+      while (_wx <= endX) {
+        val tile = world.getTile(_wx, _wy)
+        if (tile.walkable) {
+          var d = 0
+          while (d < 4) {
+            val nx = _wx + DIR_DX(d)
+            val ny = _wy + DIR_DY(d)
+            if (nx >= 0 && nx < world.width && ny >= 0 && ny < world.height) {
+              val neighbor = world.getTile(nx, ny)
+              if (neighbor.walkable && neighbor.id != tile.id) {
+                addTransitionQuad(_wx, _wy, neighbor, tileFrame, DIR_MASK(d),
+                  tileAtlas, maskCellW, maskCellH, camOffX, camOffY)
+              }
             }
+            d += 1
           }
         }
+        _wx += 1
       }
+      _wy += 1
     }
 
     if (quadCount == 0) return

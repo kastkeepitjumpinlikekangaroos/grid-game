@@ -23,6 +23,8 @@ class ParticleSystem(val maxParticles: Int = 2048) {
   private val flags = new Array[Byte](maxParticles)    // bit flags: 1=additive, 2=shrink, 4=soft
 
   private var count = 0 // number of active particles
+  // Buffer for deferred non-additive particle indices during single-pass rendering
+  private val _deferBuf = new Array[Int](maxParticles)
 
   def activeCount: Int = count
 
@@ -84,33 +86,51 @@ class ParticleSystem(val maxParticles: Int = 2048) {
     }
   }
 
-  /** Render all particles using the given ShapeBatch. Batch must already be begun. */
+  /** Render all particles using the given ShapeBatch. Batch must already be begun.
+   * Single-pass: renders non-additive first, switches to additive on first additive particle,
+   * defers any non-additive particles found after the switch to a small buffer. */
   def render(shapeBatch: ShapeBatch): Unit = {
     if (count == 0) return
 
-    // Separate additive and non-additive particles
-    // First pass: non-additive
-    var hasAdditive = false
+    // Single pass with deferred non-additive particles found after mode switch
+    var additiveMode = false
+    var deferCount = 0
     var i = 0
     while (i < count) {
-      if ((flags(i) & 1) == 0) {
-        renderParticle(shapeBatch, i)
+      val isAdditive = (flags(i) & 1) != 0
+      if (!additiveMode) {
+        if (!isAdditive) {
+          renderParticle(shapeBatch, i)
+        } else {
+          // Switch to additive mode
+          shapeBatch.setAdditiveBlend(true)
+          additiveMode = true
+          renderParticle(shapeBatch, i)
+        }
       } else {
-        hasAdditive = true
+        if (isAdditive) {
+          renderParticle(shapeBatch, i)
+        } else {
+          // Defer this non-additive particle — store index
+          if (deferCount < _deferBuf.length) {
+            _deferBuf(deferCount) = i
+            deferCount += 1
+          }
+        }
       }
       i += 1
     }
 
-    // Second pass: additive
-    if (hasAdditive) {
-      shapeBatch.setAdditiveBlend(true)
+    // Flush deferred non-additive particles (if any)
+    if (deferCount > 0) {
+      shapeBatch.setAdditiveBlend(false)
+      additiveMode = false
       i = 0
-      while (i < count) {
-        if ((flags(i) & 1) != 0) {
-          renderParticle(shapeBatch, i)
-        }
+      while (i < deferCount) {
+        renderParticle(shapeBatch, _deferBuf(i))
         i += 1
       }
+    } else if (additiveMode) {
       shapeBatch.setAdditiveBlend(false)
     }
   }

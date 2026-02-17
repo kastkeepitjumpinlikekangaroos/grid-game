@@ -152,15 +152,32 @@ class GLFontRenderer(val fontSize: Int) {
     drawText(batch, text, x, y, r, g, b, a)
   }
 
-  /** Draw outlined text (text with dark outline for strong readability). */
+  /** Draw outlined text (text with dark outline for strong readability).
+   * Single-pass: iterates string once, drawing 5 quads per character (4 outline + 1 foreground).
+   * This avoids 5x string iteration, 5x getRegion/getAdvance lookups per character. */
   def drawTextOutlined(batch: SpriteBatch, text: String, x: Float, y: Float,
                        r: Float = 1f, g: Float = 1f, b: Float = 1f, a: Float = 1f): Float = {
     val o = Math.max(1f, fontSize / 24f)
-    drawText(batch, text, x - o, y, 0f, 0f, 0f, a * 0.7f)
-    drawText(batch, text, x + o, y, 0f, 0f, 0f, a * 0.7f)
-    drawText(batch, text, x, y - o, 0f, 0f, 0f, a * 0.7f)
-    drawText(batch, text, x, y + o, 0f, 0f, 0f, a * 0.7f)
-    drawText(batch, text, x, y, r, g, b, a)
+    val oa = a * 0.7f
+    val ch = charHeight.toFloat
+    var cx = x
+    var i = 0
+    while (i < text.length) {
+      val c = text.charAt(i)
+      val region = getRegion(c)
+      val adv = getAdvance(c)
+      val advF = adv.toFloat
+      // Outline (4 offsets)
+      batch.draw(region, cx - o, y, advF, ch, 0f, 0f, 0f, oa)
+      batch.draw(region, cx + o, y, advF, ch, 0f, 0f, 0f, oa)
+      batch.draw(region, cx, y - o, advF, ch, 0f, 0f, 0f, oa)
+      batch.draw(region, cx, y + o, advF, ch, 0f, 0f, 0f, oa)
+      // Foreground
+      batch.draw(region, cx, y, advF, ch, r, g, b, a)
+      cx += adv
+      i += 1
+    }
+    cx - x
   }
 
   /** Measure the width of a string in pixels. */

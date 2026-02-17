@@ -96,9 +96,12 @@ class PostProcessor(var width: Int, var height: Int) {
   def endScene(screenWidth: Int, screenHeight: Int): Unit = {
     sceneFBO.unbindTarget()
 
+    // All bloom passes use half-resolution — set viewport once
+    val halfW = width / 2; val halfH = height / 2
+    glViewport(0, 0, halfW, halfH)
+
     // 1. Extract bright pixels
     bloomExtractFBO.bindAsTarget()
-    glViewport(0, 0, width / 2, height / 2)
     glClear(GL_COLOR_BUFFER_BIT)
     bloomExtractShader.use()
     bloomExtractShader.setUniform1f("uThreshold", bloomThreshold)
@@ -108,20 +111,18 @@ class PostProcessor(var width: Int, var height: Int) {
 
     // 2. Horizontal blur
     blurPingFBO.bindAsTarget()
-    glViewport(0, 0, width / 2, height / 2)
     glClear(GL_COLOR_BUFFER_BIT)
     blurShader.use()
-    blurShader.setUniform2f("uDirection", 1f / (width / 2), 0f)
+    blurShader.setUniform2f("uDirection", 1f / halfW, 0f)
     bloomExtractFBO.bind(0)
     drawQuad()
     blurPingFBO.unbindTarget()
 
     // 3. Vertical blur
     blurPongFBO.bindAsTarget()
-    glViewport(0, 0, width / 2, height / 2)
     glClear(GL_COLOR_BUFFER_BIT)
     // blurShader already in use from horizontal pass
-    blurShader.setUniform2f("uDirection", 0f, 1f / (height / 2))
+    blurShader.setUniform2f("uDirection", 0f, 1f / halfH)
     blurPingFBO.bind(0)
     drawQuad()
     blurPongFBO.unbindTarget()

@@ -3,7 +3,6 @@ package com.gridgame.client.gl
 import org.lwjgl.opengl.GL20._
 import org.lwjgl.opengl.GL11._
 import java.nio.FloatBuffer
-import scala.collection.mutable
 
 /** Compiles and links a vertex + fragment shader pair. Provides uniform setters. */
 class ShaderProgram(vertexSrc: String, fragmentSrc: String) {
@@ -26,11 +25,18 @@ class ShaderProgram(vertexSrc: String, fragmentSrc: String) {
   glDeleteShader(vertexId)
   glDeleteShader(fragmentId)
 
-  // Uniform location cache — avoids string-based glGetUniformLocation lookups every frame
-  private val uniformCache = mutable.Map.empty[String, Int]
+  // Uniform location cache — Java HashMap avoids Scala Option wrapping on getOrElseUpdate
+  private val uniformCache = new java.util.HashMap[String, java.lang.Integer]()
 
-  @inline private def getLocation(name: String): Int =
-    uniformCache.getOrElseUpdate(name, glGetUniformLocation(programId, name))
+  @inline private def getLocation(name: String): Int = {
+    val cached = uniformCache.get(name)
+    if (cached != null) cached.intValue()
+    else {
+      val loc = glGetUniformLocation(programId, name)
+      uniformCache.put(name, loc)
+      loc
+    }
+  }
 
   def use(): Unit = glUseProgram(programId)
 
