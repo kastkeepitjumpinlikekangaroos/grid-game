@@ -85,7 +85,9 @@ class CharacterSelectionPanel(
   private val tabBaseStyle = "-fx-background-color: rgba(255,255,255,0.06); -fx-background-radius: 14; -fx-text-fill: #8899aa; -fx-font-size: 11; -fx-padding: 4 10 4 10; -fx-cursor: hand;"
   private val tabActiveStyle = "-fx-background-color: #4a9eff; -fx-background-radius: 14; -fx-text-fill: white; -fx-font-size: 11; -fx-font-weight: bold; -fx-padding: 4 10 4 10; -fx-cursor: hand;"
 
-  private val GridCols = 6
+  private val CellWidth = 64
+  private val GridGap = 6
+  private var currentGridCols = 6
 
   def createPanel(): VBox = {
     val charSectionLabel = new Label("SELECT CHARACTER")
@@ -153,9 +155,20 @@ class CharacterSelectionPanel(
       "-fx-background: transparent; -fx-background-color: transparent; " +
       "-fx-border-color: transparent; -fx-padding: 0;"
     )
-    scrollPane.setPrefHeight(400)
-    scrollPane.setMaxHeight(400)
+    scrollPane.setPrefHeight(500)
+    scrollPane.setMaxHeight(Double.MaxValue)
     VBox.setVgrow(scrollPane, Priority.ALWAYS)
+
+    // Dynamically recompute grid columns when width changes
+    scrollPane.viewportBoundsProperty().addListener((_, _, bounds) => {
+      if (bounds != null) {
+        val newCols = Math.max(4, ((bounds.getWidth + GridGap) / (CellWidth + GridGap)).toInt)
+        if (newCols != currentGridCols) {
+          currentGridCols = newCols
+          rebuildGrid()
+        }
+      }
+    })
 
     val gridSection = new VBox(8, tabsRow, searchRow, scrollPane)
 
@@ -170,7 +183,7 @@ class CharacterSelectionPanel(
     detailDescLabel.setFont(Font.font("System", 13))
     detailDescLabel.setTextFill(Color.web("#aabbcc"))
     detailDescLabel.setWrapText(true)
-    detailDescLabel.setMaxWidth(280)
+    detailDescLabel.setMaxWidth(320)
     detailDescLabel.setStyle("-fx-line-spacing: 2;")
 
     // Ability preview rows
@@ -195,8 +208,8 @@ class CharacterSelectionPanel(
 
     val detailsPanel = new VBox(12, previewBox, descCard, abilitiesCard)
     detailsPanel.setAlignment(Pos.TOP_CENTER)
-    detailsPanel.setMinWidth(300)
-    detailsPanel.setPrefWidth(300)
+    detailsPanel.setMinWidth(320)
+    detailsPanel.setPrefWidth(340)
 
     // Initialize detail panel
     updateDetailPanel()
@@ -317,8 +330,8 @@ class CharacterSelectionPanel(
         if (charId != getSelectedId()) cellPane.setStyle(cellBaseStyle)
       })
 
-      val col = i % GridCols
-      val row = i / GridCols
+      val col = i % currentGridCols
+      val row = i / currentGridCols
       gridContainer.add(cellPane, col, row)
     }
   }
@@ -400,7 +413,7 @@ class CharacterSelectionPanel(
     cooldownLabel.setFont(Font.font("System", 11))
     cooldownLabel.setTextFill(Color.web("#8899aa"))
 
-    val canvas = new Canvas(200, 44)
+    val canvas = new Canvas(260, 44)
 
     val statsLabel = new Label("")
     statsLabel.setFont(Font.font("System", 11))

@@ -201,7 +201,7 @@ class ClientMain extends Application {
     val card = new VBox(16)
     card.setAlignment(Pos.CENTER)
     card.setPadding(new Insets(28, 36, 28, 36))
-    card.setMaxWidth(360)
+    card.setMaxWidth(440)
     card.setStyle(cardBg)
 
     val modeLabel = new Label("Login")
@@ -213,7 +213,7 @@ class ClientMain extends Application {
 
     val usernameField = new TextField()
     usernameField.setPromptText("Enter username")
-    usernameField.setMaxWidth(290)
+    usernameField.setMaxWidth(Double.MaxValue)
     addFieldFocusEffect(usernameField)
 
     val passwordLabel = new Label("PASSWORD")
@@ -221,7 +221,7 @@ class ClientMain extends Application {
 
     val passwordField = new PasswordField()
     passwordField.setPromptText("Enter password")
-    passwordField.setMaxWidth(290)
+    passwordField.setMaxWidth(Double.MaxValue)
     passwordField.setStyle(fieldStyle)
     passwordField.focusedProperty().addListener((_, _, focused) => {
       passwordField.setStyle(if (focused) fieldFocusStyle else fieldStyle)
@@ -232,7 +232,7 @@ class ClientMain extends Application {
 
     val confirmField = new PasswordField()
     confirmField.setPromptText("Confirm password")
-    confirmField.setMaxWidth(290)
+    confirmField.setMaxWidth(Double.MaxValue)
     confirmField.setStyle(fieldStyle)
     confirmField.focusedProperty().addListener((_, _, focused) => {
       confirmField.setStyle(if (focused) fieldFocusStyle else fieldStyle)
@@ -250,16 +250,16 @@ class ClientMain extends Application {
 
     val hostField = new TextField()
     hostField.setPromptText("localhost")
-    hostField.setMaxWidth(290)
+    hostField.setMaxWidth(Double.MaxValue)
     addFieldFocusEffect(hostField)
 
     val portField = new TextField()
     portField.setPromptText("25565")
-    portField.setMaxWidth(290)
+    portField.setMaxWidth(Double.MaxValue)
     addFieldFocusEffect(portField)
 
     val serverRow = new HBox(8)
-    serverRow.setMaxWidth(290)
+    serverRow.setMaxWidth(Double.MaxValue)
     HBox.setHgrow(hostField, Priority.ALWAYS)
     portField.setMaxWidth(90)
     portField.setPrefWidth(90)
@@ -268,7 +268,7 @@ class ClientMain extends Application {
     val actionButton = new Button("Login")
     addHoverEffect(actionButton, buttonStyle, buttonHoverStyle)
     actionButton.setDefaultButton(true)
-    actionButton.setMaxWidth(290)
+    actionButton.setMaxWidth(Double.MaxValue)
 
     val toggleLink = new Button("Don't have an account? Sign Up")
     toggleLink.setStyle("-fx-background-color: transparent; -fx-text-fill: #7788aa; -fx-cursor: hand; -fx-font-size: 13; -fx-padding: 4 0 0 0;")
@@ -298,7 +298,7 @@ class ClientMain extends Application {
     statusLabel.setTextFill(Color.web("#e84057"))
     statusLabel.setFont(Font.font("System", FontWeight.BOLD, 13))
     statusLabel.setWrapText(true)
-    statusLabel.setMaxWidth(290)
+    statusLabel.setMaxWidth(Double.MaxValue)
 
     val doAction = () => {
       val username = usernameField.getText.trim
@@ -560,8 +560,8 @@ class ClientMain extends Application {
 
     // Right column: create lobby form (40%)
     val rightColumn = new VBox(14)
-    rightColumn.setMinWidth(320)
-    rightColumn.setPrefWidth(380)
+    rightColumn.setMinWidth(360)
+    rightColumn.setPrefWidth(440)
 
     val createCard = new VBox(14)
     createCard.setPadding(new Insets(20, 24, 20, 24))
@@ -658,9 +658,9 @@ class ClientMain extends Application {
     formRow2.setAlignment(Pos.CENTER_LEFT)
     HBox.setHgrow(mapCombo, Priority.ALWAYS)
 
-    val mapPreviewCanvas = new Canvas(200, 200)
+    val mapPreviewCanvas = new Canvas(280, 200)
     val mapPreviewWrapper = new StackPane(mapPreviewCanvas)
-    mapPreviewWrapper.setMaxWidth(208)
+    mapPreviewWrapper.setMaxWidth(288)
     mapPreviewWrapper.setMaxHeight(208)
     mapPreviewWrapper.setPadding(new Insets(4))
     mapPreviewWrapper.setStyle("-fx-background-color: #111124; -fx-background-radius: 8; -fx-border-color: rgba(255,255,255,0.08); -fx-border-radius: 8; -fx-border-width: 1;")
@@ -718,8 +718,8 @@ class ClientMain extends Application {
 
     // Left panel (~40%): info card, map preview, host settings, leave button
     val leftPanel = new VBox(14)
-    leftPanel.setMinWidth(340)
-    leftPanel.setPrefWidth(380)
+    leftPanel.setMinWidth(360)
+    leftPanel.setPrefWidth(420)
 
     val infoCard = new VBox(14)
     infoCard.setPadding(new Insets(20, 28, 20, 28))
@@ -738,9 +738,9 @@ class ClientMain extends Application {
     waitingLabel.setTextFill(Color.web("#8899aa"))
 
     // Map preview (enlarged)
-    val lobbyMapPreviewCanvas = new Canvas(240, 240)
+    val lobbyMapPreviewCanvas = new Canvas(320, 240)
     val lobbyMapPreviewWrapper = new StackPane(lobbyMapPreviewCanvas)
-    lobbyMapPreviewWrapper.setMaxWidth(248)
+    lobbyMapPreviewWrapper.setMaxWidth(328)
     lobbyMapPreviewWrapper.setMaxHeight(248)
     lobbyMapPreviewWrapper.setPadding(new Insets(4))
     lobbyMapPreviewWrapper.setStyle("-fx-background-color: #111124; -fx-background-radius: 8; -fx-border-color: rgba(255,255,255,0.08); -fx-border-radius: 8; -fx-border-width: 1;")
@@ -1021,8 +1021,8 @@ class ClientMain extends Application {
 
     // Left panel (~40%): mode selection, find match, queue status, back button
     val leftPanel = new VBox(14)
-    leftPanel.setMinWidth(340)
-    leftPanel.setPrefWidth(380)
+    leftPanel.setMinWidth(360)
+    leftPanel.setPrefWidth(420)
 
     val modeCard = new VBox(14)
     modeCard.setPadding(new Insets(20, 28, 20, 28))
@@ -1259,7 +1259,6 @@ class ClientMain extends Application {
 
     val leaderboardListView = new ListView[String]()
     leaderboardListView.setStyle(listViewCss)
-    leaderboardListView.setPrefHeight(500)
     VBox.setVgrow(leaderboardListView, Priority.ALWAYS)
 
     val leaderboardCellFactory = new Callback[ListView[String], ListCell[String]] {
@@ -1401,7 +1400,6 @@ class ClientMain extends Application {
     // Match history list
     val historyListView = new ListView[String]()
     historyListView.setStyle(listViewCss)
-    historyListView.setPrefHeight(280)
     VBox.setVgrow(historyListView, Priority.ALWAYS)
 
     val historyCellFactory = new Callback[ListView[String], ListCell[String]] {
@@ -1631,7 +1629,7 @@ class ClientMain extends Application {
 
     // Scoreboard card
     val scoreCard = new VBox(0)
-    scoreCard.setMaxWidth(500)
+    scoreCard.setMaxWidth(700)
     scoreCard.setStyle(cardBg)
 
     // Header row
@@ -1640,13 +1638,14 @@ class ClientMain extends Application {
     header.setPadding(new Insets(14, 20, 14, 20))
     header.setStyle("-fx-background-color: rgba(255,255,255,0.03); -fx-background-radius: 16 16 0 0; -fx-border-color: transparent transparent rgba(255,255,255,0.06) transparent; -fx-border-width: 0 0 1 0;")
     val hRank = new Label("RANK")
-    hRank.setMinWidth(60); hRank.setStyle(sectionHeaderStyle)
+    hRank.setMinWidth(80); hRank.setStyle(sectionHeaderStyle)
     val hPlayer = new Label("CHARACTER")
-    hPlayer.setMinWidth(160); hPlayer.setStyle(sectionHeaderStyle)
+    hPlayer.setMinWidth(240); hPlayer.setStyle(sectionHeaderStyle)
+    HBox.setHgrow(hPlayer, Priority.ALWAYS)
     val hKills = new Label("KILLS")
-    hKills.setMinWidth(70); hKills.setStyle(sectionHeaderStyle)
+    hKills.setMinWidth(90); hKills.setStyle(sectionHeaderStyle)
     val hDeaths = new Label("DEATHS")
-    hDeaths.setMinWidth(70); hDeaths.setStyle(sectionHeaderStyle)
+    hDeaths.setMinWidth(90); hDeaths.setStyle(sectionHeaderStyle)
     header.getChildren.addAll(hRank, hPlayer, hKills, hDeaths)
     scoreCard.getChildren.add(header)
 
@@ -1715,7 +1714,7 @@ class ClientMain extends Application {
         case n => s"#$n"
       }
       val rankLabel = new Label(rankText)
-      rankLabel.setMinWidth(60)
+      rankLabel.setMinWidth(80)
       val rankColor = entry.rank match {
         case 1 => Color.web("#ffd700")
         case 2 => Color.web("#c0c0c0")
@@ -1733,17 +1732,18 @@ class ClientMain extends Application {
         if (p != null) CharacterDef.get(p.getCharacterId).displayName else entry.playerId.toString.substring(0, 8)
       }
       val nameLabel = new Label(nameStr)
-      nameLabel.setMinWidth(160)
+      nameLabel.setMinWidth(240)
+      HBox.setHgrow(nameLabel, Priority.ALWAYS)
       nameLabel.setTextFill(if (isLocal) Color.web("#4a9eff") else Color.web("#ccdde8"))
       nameLabel.setFont(Font.font("System", FontWeight.BOLD, 15))
 
       val killsLabel = new Label(entry.kills.toString)
-      killsLabel.setMinWidth(70)
+      killsLabel.setMinWidth(90)
       killsLabel.setTextFill(Color.web("#2ecc71"))
       killsLabel.setFont(Font.font("System", FontWeight.BOLD, 16))
 
       val deathsLabel = new Label(entry.deaths.toString)
-      deathsLabel.setMinWidth(70)
+      deathsLabel.setMinWidth(90)
       deathsLabel.setTextFill(Color.web("#e84057"))
       deathsLabel.setFont(Font.font("System", FontWeight.BOLD, 15))
 
