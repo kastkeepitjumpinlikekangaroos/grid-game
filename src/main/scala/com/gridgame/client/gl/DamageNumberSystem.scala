@@ -18,6 +18,7 @@ class DamageNumberSystem {
   private val age = new Array[Float](MAX_NUMBERS)
   private val active = new Array[Boolean](MAX_NUMBERS)
   private val offsetX = new Array[Float](MAX_NUMBERS) // random horizontal scatter
+  private val cachedText = new Array[String](MAX_NUMBERS) // cached damage.toString
 
   /** Spawn a new floating damage number at the given world position. */
   def spawn(wx: Float, wy: Float, dmg: Int, r: Float, g: Float, b: Float): Unit = {
@@ -45,6 +46,7 @@ class DamageNumberSystem {
     cb(idx) = b
     age(idx) = 0f
     active(idx) = true
+    cachedText(idx) = dmg.toString
     // Slight random horizontal scatter based on damage value
     offsetX(idx) = ((dmg * 17 + wx.toInt * 7) % 21 - 10).toFloat
   }
@@ -77,7 +79,7 @@ class DamageNumberSystem {
         val sx = worldToScreenX(worldX(i).toDouble, worldY(i).toDouble).toFloat + offsetX(i)
         val sy = worldToScreenY(worldX(i).toDouble, worldY(i).toDouble).toFloat - rise - 20f
 
-        val text = damage(i).toString
+        val text = cachedText(i)
         val textW = font.measureWidth(text)
 
         // Scale color toward white for high damage

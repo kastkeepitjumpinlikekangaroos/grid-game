@@ -21,8 +21,8 @@ class GameCamera {
   def camOffX: Double = _camOffX
   def camOffY: Double = _camOffY
 
-  /** Update camera position with smooth interpolation. Returns (camOffX, camOffY). */
-  def update(targetX: Double, targetY: Double, deltaSec: Double, canvasW: Double, canvasH: Double): (Double, Double) = {
+  /** Update camera position with smooth interpolation. Results available via camOffX/camOffY. */
+  def update(targetX: Double, targetY: Double, deltaSec: Double, canvasW: Double, canvasH: Double): Unit = {
     if (visualX.isNaN) {
       visualX = targetX
       visualY = targetY
@@ -38,7 +38,6 @@ class GameCamera {
     val playerSy = (visualX + visualY) * HH
     _camOffX = canvasW / 2.0 - playerSx
     _camOffY = canvasH / 2.0 - playerSy
-    (_camOffX, _camOffY)
   }
 
   /** Reset visual position (e.g., on rejoin). */

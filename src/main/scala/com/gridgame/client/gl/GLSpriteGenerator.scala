@@ -5,62 +5,116 @@ import com.gridgame.common.model.CharacterDef
 import com.gridgame.common.model.Direction
 
 /**
- * OpenGL character sprite loader. Loads character sprite sheets as GL textures
- * and provides TextureRegion per (characterId, direction, frame).
- * Mirrors the functionality of ui/SpriteGenerator.scala for the GL pipeline.
+ * OpenGL character sprite loader. Packs all character sprite sheets into a
+ * single texture atlas to eliminate per-character texture bind flushes in SpriteBatch.
+ *
+ * Atlas layout: 8 sprite sheets per row (each 256×256), up to 16 rows = 128 slots.
+ * Characters are uploaded lazily on first use via glTexSubImage2D.
  */
 object GLSpriteGenerator {
-  private val frameSize = Constants.SPRITE_SIZE_PX // 32
-  // Row order in spritesheet: Down=0, Up=1, Left=2, Right=3
-  private val directionRow: Map[Direction, Int] = Map(
-    Direction.Down  -> 0,
-    Direction.Up    -> 1,
-    Direction.Left  -> 2,
-    Direction.Right -> 3
-  )
+  private val frameSize = Constants.SPRITE_SIZE_PX // 64
   private val framesPerDirection = 4
+  private val sheetSize = frameSize * framesPerDirection // 256
 
-  // Per-character: characterId -> (texture, (Direction, frame) -> TextureRegion)
-  private var characterTextures: Map[Byte, GLTexture] = Map.empty
-  private var characterRegions: Map[Byte, Map[(Direction, Int), TextureRegion]] = Map.empty
+  // Atlas dimensions: 8 columns × 16 rows = 128 character slots
+  private val ATLAS_COLS = 8
+  private val ATLAS_ROWS = 16
+  private val ATLAS_W = ATLAS_COLS * sheetSize // 2048
+  private val ATLAS_H = ATLAS_ROWS * sheetSize // 4096
+
+  // Direction.id → row index within a spritesheet (identity mapping — Down=0, Up=1, Left=2, Right=3)
+  // Direction.id already matches spritesheet row order, so we use it directly
+
+  // Atlas texture (created lazily)
+  private var atlas: GLTexture = _
+
+  // Per-character: flat array of 16 TextureRegions (4 dirs × 4 frames), indexed by characterId
+  // Null entry means not yet loaded
+  private val MAX_CHARACTERS = 128
+  private val regionsByChar = new Array[Array[TextureRegion]](MAX_CHARACTERS)
+  private val loadAttempted = new Array[Boolean](MAX_CHARACTERS)
+
+  // Slot counter for atlas placement
+  private var nextSlot = 0
+
+  private def ensureAtlas(): Unit = {
+    if (atlas == null) {
+      atlas = GLTexture.createEmpty(ATLAS_W, ATLAS_H, nearest = false)
+    }
+  }
 
   private def ensureLoaded(characterId: Byte): Unit = {
-    if (characterRegions.contains(characterId)) return
+    val id = characterId & 0xFF
+    if (id >= MAX_CHARACTERS || loadAttempted(id)) return
+    loadAttempted(id) = true
 
+    ensureAtlas()
     val charDef = CharacterDef.get(characterId)
     try {
-      val tex = GLTexture.load(charDef.spriteSheet, nearest = false)
-      characterTextures = characterTextures + (characterId -> tex)
+      val slot = nextSlot
+      nextSlot += 1
+      val atlasX = (slot % ATLAS_COLS) * sheetSize
+      val atlasY = (slot / ATLAS_COLS) * sheetSize
 
-      val builder = Map.newBuilder[(Direction, Int), TextureRegion]
-      for ((dir, row) <- directionRow; col <- 0 until framesPerDirection) {
-        val srcX = col * frameSize
-        val srcY = row * frameSize
-        builder += (dir, col) -> tex.region(srcX, srcY, frameSize, frameSize)
+      if (!GLTexture.uploadSubImage(atlas, atlasX, atlasY, charDef.spriteSheet)) {
+        System.err.println(s"GLSpriteGenerator: Failed to load ${charDef.spriteSheet}")
+        return
       }
-      characterRegions = characterRegions + (characterId -> builder.result())
+
+      // Build 16 TextureRegions (4 directions × 4 frames)
+      val regions = new Array[TextureRegion](16)
+      val invW = 1f / ATLAS_W
+      val invH = 1f / ATLAS_H
+      var dir = 0
+      while (dir < 4) {
+        var frame = 0
+        while (frame < framesPerDirection) {
+          val px = atlasX + frame * frameSize
+          val py = atlasY + dir * frameSize
+          regions(dir * 4 + frame) = TextureRegion(
+            atlas,
+            px * invW,
+            py * invH,
+            (px + frameSize) * invW,
+            (py + frameSize) * invH
+          )
+          frame += 1
+        }
+        dir += 1
+      }
+      regionsByChar(id) = regions
     } catch {
       case e: Exception =>
         System.err.println(s"GLSpriteGenerator: Failed to load ${charDef.spriteSheet}: ${e.getMessage}")
-        characterRegions = characterRegions + (characterId -> Map.empty)
     }
   }
 
   def getSpriteRegion(direction: Direction, frame: Int, characterId: Byte): TextureRegion = {
     ensureLoaded(characterId)
-    val clampedFrame = frame % framesPerDirection
-    val regions = characterRegions.getOrElse(characterId, Map.empty)
-    regions.getOrElse((direction, clampedFrame), null)
+    val id = characterId & 0xFF
+    if (id >= MAX_CHARACTERS) return null
+    val regions = regionsByChar(id)
+    if (regions == null) return null
+    val dir = direction.id
+    regions(dir * 4 + (frame % framesPerDirection))
   }
 
   def getTexture(characterId: Byte): GLTexture = {
     ensureLoaded(characterId)
-    characterTextures.getOrElse(characterId, null)
+    atlas
   }
 
   def clearCache(): Unit = {
-    characterTextures.values.foreach(_.dispose())
-    characterTextures = Map.empty
-    characterRegions = Map.empty
+    if (atlas != null) {
+      atlas.dispose()
+      atlas = null
+    }
+    var i = 0
+    while (i < MAX_CHARACTERS) {
+      regionsByChar(i) = null
+      loadAttempted(i) = false
+      i += 1
+    }
+    nextSlot = 0
   }
 }

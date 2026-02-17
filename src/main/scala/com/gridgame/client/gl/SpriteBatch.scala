@@ -110,14 +110,10 @@ class SpriteBatch(val shader: ShaderProgram) {
     val hw = w * 0.5f
     val hh = h * 0.5f
 
-    def rot(lx: Float, ly: Float): (Float, Float) = {
-      (cx + lx * cos - ly * sin, cy + lx * sin + ly * cos)
-    }
-
-    val (x0, y0) = rot(-hw, -hh)
-    val (x1, y1) = rot(hw, -hh)
-    val (x2, y2) = rot(hw, hh)
-    val (x3, y3) = rot(-hw, hh)
+    val x0 = cx + (-hw) * cos - (-hh) * sin; val y0 = cy + (-hw) * sin + (-hh) * cos
+    val x1 = cx + hw * cos - (-hh) * sin;   val y1 = cy + hw * sin + (-hh) * cos
+    val x2 = cx + hw * cos - hh * sin;      val y2 = cy + hw * sin + hh * cos
+    val x3 = cx + (-hw) * cos - hh * sin;   val y3 = cy + (-hw) * sin + hh * cos
 
     val u = region.u; val v = region.v; val u2 = region.u2; val v2 = region.v2
 
@@ -137,11 +133,7 @@ class SpriteBatch(val shader: ShaderProgram) {
     glBindVertexArray(vao)
     glBindBuffer(GL_ARRAY_BUFFER, vbo)
 
-    if (vertexCount * VERTEX_SIZE > capacity * VERTEX_SIZE) {
-      glBufferData(GL_ARRAY_BUFFER, buffer, GL_DYNAMIC_DRAW)
-    } else {
-      glBufferSubData(GL_ARRAY_BUFFER, 0, buffer)
-    }
+    glBufferSubData(GL_ARRAY_BUFFER, 0, buffer)
 
     glDrawArrays(GL_TRIANGLES, 0, vertexCount)
     glBindVertexArray(0)

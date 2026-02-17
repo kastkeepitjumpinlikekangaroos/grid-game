@@ -1634,19 +1634,29 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   def getLocalPosition: Position = localPosition.get()
 
-  /** Smoothly interpolated position for rendering. Linearly moves between grid tiles. */
-  def getVisualPosition: (Double, Double) = {
+  /** Smoothly interpolated position for rendering. Results stored in visualPosX/visualPosY to avoid tuple allocation. */
+  private var _visualPosX: Double = 0.0
+  private var _visualPosY: Double = 0.0
+  def visualPosX: Double = _visualPosX
+  def visualPosY: Double = _visualPosY
+
+  /** Call once per frame to update visualPosX/visualPosY. */
+  def updateVisualPosition(): Unit = {
     val pos = localPosition.get()
-    if (moveInterpStartTime == 0L) return (pos.getX.toDouble, pos.getY.toDouble)
+    if (moveInterpStartTime == 0L) {
+      _visualPosX = pos.getX.toDouble
+      _visualPosY = pos.getY.toDouble
+      return
+    }
     val now = System.currentTimeMillis()
     val elapsed = now - moveInterpStartTime
     if (elapsed >= moveInterpDurationMs) {
-      (pos.getX.toDouble, pos.getY.toDouble)
+      _visualPosX = pos.getX.toDouble
+      _visualPosY = pos.getY.toDouble
     } else {
       val t = elapsed.toDouble / moveInterpDurationMs
-      val x = moveInterpFromX + (moveInterpToX - moveInterpFromX) * t
-      val y = moveInterpFromY + (moveInterpToY - moveInterpFromY) * t
-      (x, y)
+      _visualPosX = moveInterpFromX + (moveInterpToX - moveInterpFromX) * t
+      _visualPosY = moveInterpFromY + (moveInterpToY - moveInterpFromY) * t
     }
   }
 

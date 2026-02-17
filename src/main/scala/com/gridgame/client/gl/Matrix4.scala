@@ -5,11 +5,14 @@ import org.lwjgl.BufferUtils
 
 /** Minimal 4x4 matrix for 2D orthographic projection. Column-major layout for OpenGL. */
 object Matrix4 {
+  // Pre-allocated buffer reused across all orthographic() calls to avoid per-frame direct buffer allocation
+  private val buf: FloatBuffer = BufferUtils.createFloatBuffer(16)
+
   /** Create an orthographic projection matrix suitable for 2D rendering. */
   def orthographic(left: Float, right: Float, bottom: Float, top: Float): FloatBuffer = {
-    val buf = BufferUtils.createFloatBuffer(16)
     val w = right - left
     val h = top - bottom
+    buf.clear()
     // Column-major order
     buf.put(2f / w).put(0f).put(0f).put(0f)       // col 0
     buf.put(0f).put(2f / h).put(0f).put(0f)        // col 1

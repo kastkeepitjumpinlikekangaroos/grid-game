@@ -3,6 +3,7 @@ package com.gridgame.client.gl
 import org.lwjgl.opengl.GL20._
 import org.lwjgl.opengl.GL11._
 import java.nio.FloatBuffer
+import scala.collection.mutable
 
 /** Compiles and links a vertex + fragment shader pair. Provides uniform setters. */
 class ShaderProgram(vertexSrc: String, fragmentSrc: String) {
@@ -25,35 +26,41 @@ class ShaderProgram(vertexSrc: String, fragmentSrc: String) {
   glDeleteShader(vertexId)
   glDeleteShader(fragmentId)
 
+  // Uniform location cache — avoids string-based glGetUniformLocation lookups every frame
+  private val uniformCache = mutable.Map.empty[String, Int]
+
+  @inline private def getLocation(name: String): Int =
+    uniformCache.getOrElseUpdate(name, glGetUniformLocation(programId, name))
+
   def use(): Unit = glUseProgram(programId)
 
   def setUniformMat4(name: String, mat: FloatBuffer): Unit = {
-    val loc = glGetUniformLocation(programId, name)
+    val loc = getLocation(name)
     if (loc >= 0) glUniformMatrix4fv(loc, false, mat)
   }
 
   def setUniform1i(name: String, value: Int): Unit = {
-    val loc = glGetUniformLocation(programId, name)
+    val loc = getLocation(name)
     if (loc >= 0) glUniform1i(loc, value)
   }
 
   def setUniform1f(name: String, value: Float): Unit = {
-    val loc = glGetUniformLocation(programId, name)
+    val loc = getLocation(name)
     if (loc >= 0) glUniform1f(loc, value)
   }
 
   def setUniform2f(name: String, x: Float, y: Float): Unit = {
-    val loc = glGetUniformLocation(programId, name)
+    val loc = getLocation(name)
     if (loc >= 0) glUniform2f(loc, x, y)
   }
 
   def setUniform3f(name: String, x: Float, y: Float, z: Float): Unit = {
-    val loc = glGetUniformLocation(programId, name)
+    val loc = getLocation(name)
     if (loc >= 0) glUniform3f(loc, x, y, z)
   }
 
   def setUniform4f(name: String, x: Float, y: Float, z: Float, w: Float): Unit = {
-    val loc = glGetUniformLocation(programId, name)
+    val loc = getLocation(name)
     if (loc >= 0) glUniform4f(loc, x, y, z, w)
   }
 

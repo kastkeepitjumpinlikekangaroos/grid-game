@@ -13,6 +13,29 @@ import java.nio.FloatBuffer
  * Vertices are position (vec2) + color (vec4) = 6 floats per vertex.
  * Supports standard alpha blending and additive blending for glow effects.
  */
+object ShapeBatch {
+  // Pre-computed sin/cos lookup tables for common segment counts used in oval rendering.
+  // Eliminates Math.cos/Math.sin calls in tight loops (40+ trig calls per oval × 50-100 ovals/frame).
+  private val segmentCounts = Array(6, 8, 10, 12, 14, 16, 20, 24, 32)
+  private val cosTable: Map[Int, Array[Float]] = segmentCounts.map { n =>
+    val step = 2.0 * Math.PI / n
+    n -> Array.tabulate(n + 1)(i => Math.cos(i * step).toFloat)
+  }.toMap
+  private val sinTable: Map[Int, Array[Float]] = segmentCounts.map { n =>
+    val step = 2.0 * Math.PI / n
+    n -> Array.tabulate(n + 1)(i => Math.sin(i * step).toFloat)
+  }.toMap
+
+  def getCos(segments: Int, index: Int): Float = cosTable.get(segments) match {
+    case Some(arr) => arr(index)
+    case None => Math.cos(index.toDouble * 2.0 * Math.PI / segments).toFloat
+  }
+  def getSin(segments: Int, index: Int): Float = sinTable.get(segments) match {
+    case Some(arr) => arr(index)
+    case None => Math.sin(index.toDouble * 2.0 * Math.PI / segments).toFloat
+  }
+}
+
 class ShapeBatch(val shader: ShaderProgram) {
   private val VERTEX_SIZE = 6 // x, y, r, g, b, a
   private val INITIAL_CAPACITY = 4096 // vertices
@@ -98,16 +121,11 @@ class ShapeBatch(val shader: ShaderProgram) {
   /** Approximate an oval as a triangle fan. segments = 16 for small, 32 for large. */
   def fillOval(cx: Float, cy: Float, rx: Float, ry: Float, r: Float, g: Float, b: Float, a: Float, segments: Int = 20): Unit = {
     ensureCapacity(segments * 3)
-    val step = (2.0 * Math.PI / segments).toFloat
-    var angle = 0f
     var i = 0
     while (i < segments) {
-      val a1 = angle
-      val a2 = angle + step
       vertex(cx, cy, r, g, b, a)
-      vertex(cx + rx * Math.cos(a1).toFloat, cy + ry * Math.sin(a1).toFloat, r, g, b, a)
-      vertex(cx + rx * Math.cos(a2).toFloat, cy + ry * Math.sin(a2).toFloat, r, g, b, a)
-      angle += step
+      vertex(cx + rx * ShapeBatch.getCos(segments, i), cy + ry * ShapeBatch.getSin(segments, i), r, g, b, a)
+      vertex(cx + rx * ShapeBatch.getCos(segments, i + 1), cy + ry * ShapeBatch.getSin(segments, i + 1), r, g, b, a)
       i += 1
     }
   }
@@ -115,16 +133,11 @@ class ShapeBatch(val shader: ShaderProgram) {
   /** Fill an oval with edge alpha falloff for soft glow effect. */
   def fillOvalSoft(cx: Float, cy: Float, rx: Float, ry: Float, r: Float, g: Float, b: Float, centerA: Float, edgeA: Float, segments: Int = 20): Unit = {
     ensureCapacity(segments * 3)
-    val step = (2.0 * Math.PI / segments).toFloat
-    var angle = 0f
     var i = 0
     while (i < segments) {
-      val a1 = angle
-      val a2 = angle + step
       vertex(cx, cy, r, g, b, centerA)
-      vertex(cx + rx * Math.cos(a1).toFloat, cy + ry * Math.sin(a1).toFloat, r, g, b, edgeA)
-      vertex(cx + rx * Math.cos(a2).toFloat, cy + ry * Math.sin(a2).toFloat, r, g, b, edgeA)
-      angle += step
+      vertex(cx + rx * ShapeBatch.getCos(segments, i), cy + ry * ShapeBatch.getSin(segments, i), r, g, b, edgeA)
+      vertex(cx + rx * ShapeBatch.getCos(segments, i + 1), cy + ry * ShapeBatch.getSin(segments, i + 1), r, g, b, edgeA)
       i += 1
     }
   }
@@ -216,18 +229,13 @@ class ShapeBatch(val shader: ShaderProgram) {
   /** Stroke an oval outline as line segments. */
   def strokeOval(cx: Float, cy: Float, rx: Float, ry: Float, lineWidth: Float,
                  r: Float, g: Float, b: Float, a: Float, segments: Int = 20): Unit = {
-    val step = (2.0 * Math.PI / segments).toFloat
-    var angle = 0f
     var i = 0
     while (i < segments) {
-      val a1 = angle
-      val a2 = angle + step
-      val x1 = cx + rx * Math.cos(a1).toFloat
-      val y1 = cy + ry * Math.sin(a1).toFloat
-      val x2 = cx + rx * Math.cos(a2).toFloat
-      val y2 = cy + ry * Math.sin(a2).toFloat
+      val x1 = cx + rx * ShapeBatch.getCos(segments, i)
+      val y1 = cy + ry * ShapeBatch.getSin(segments, i)
+      val x2 = cx + rx * ShapeBatch.getCos(segments, i + 1)
+      val y2 = cy + ry * ShapeBatch.getSin(segments, i + 1)
       strokeLine(x1, y1, x2, y2, lineWidth, r, g, b, a)
-      angle += step
       i += 1
     }
   }
@@ -266,12 +274,7 @@ class ShapeBatch(val shader: ShaderProgram) {
     glBindVertexArray(vao)
     glBindBuffer(GL_ARRAY_BUFFER, vbo)
 
-    // Upload vertex data
-    if (vertexCount * VERTEX_SIZE > capacity * VERTEX_SIZE) {
-      glBufferData(GL_ARRAY_BUFFER, buffer, GL_DYNAMIC_DRAW)
-    } else {
-      glBufferSubData(GL_ARRAY_BUFFER, 0, buffer)
-    }
+    glBufferSubData(GL_ARRAY_BUFFER, 0, buffer)
 
     glDrawArrays(GL_TRIANGLES, 0, vertexCount)
     glBindVertexArray(0)

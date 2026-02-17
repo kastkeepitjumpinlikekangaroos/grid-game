@@ -93,6 +93,38 @@ object GLTexture {
     createFBO(width, height)
   }
 
+  /** Create an empty RGBA texture for use as a texture atlas. */
+  def createEmpty(width: Int, height: Int, nearest: Boolean = false): GLTexture = {
+    val texId = glGenTextures()
+    glBindTexture(GL_TEXTURE_2D, texId)
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0: Long)
+    val filter = if (nearest) GL_NEAREST else GL_LINEAR
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+    new GLTexture(texId, width, height, false)
+  }
+
+  /** Load image pixels from a file and upload as a sub-image into an existing texture. */
+  def uploadSubImage(target: GLTexture, destX: Int, destY: Int, relativePath: String): Boolean = {
+    val bytes = loadBytes(relativePath)
+    if (bytes == null) return false
+    val buf = BufferUtils.createByteBuffer(bytes.length)
+    buf.put(bytes)
+    buf.flip()
+    val w = BufferUtils.createIntBuffer(1)
+    val h = BufferUtils.createIntBuffer(1)
+    val channels = BufferUtils.createIntBuffer(1)
+    stbi_set_flip_vertically_on_load(false)
+    val pixels = stbi_load_from_memory(buf, w, h, channels, 4)
+    if (pixels == null) return false
+    glBindTexture(GL_TEXTURE_2D, target.id)
+    glTexSubImage2D(GL_TEXTURE_2D, 0, destX, destY, w.get(0), h.get(0), GL_RGBA, GL_UNSIGNED_BYTE, pixels)
+    stbi_image_free(pixels)
+    true
+  }
+
   private def fromBytes(data: Array[Byte], nearest: Boolean): GLTexture = {
     val buf = BufferUtils.createByteBuffer(data.length)
     buf.put(data)

@@ -28,6 +28,16 @@ class PostProcessor(var width: Int, var height: Int) {
   private val quadVbo = glGenBuffers()
   setupQuad()
 
+  // Set sampler uniforms once at creation (they never change)
+  bloomExtractShader.use()
+  bloomExtractShader.setUniform1i("uTexture", 0)
+  blurShader.use()
+  blurShader.setUniform1i("uTexture", 0)
+  compositeShader.use()
+  compositeShader.setUniform1i("uScene", 0)
+  compositeShader.setUniform1i("uBloom", 1)
+  compositeShader.setUniform1i("uLightMap", 2)
+
   // Post-process parameters (tuned for subtle enhancement, not high contrast)
   var bloomThreshold: Float = 0.82f
   var bloomStrength: Float = 0.18f
@@ -91,7 +101,6 @@ class PostProcessor(var width: Int, var height: Int) {
     glViewport(0, 0, width / 2, height / 2)
     glClear(GL_COLOR_BUFFER_BIT)
     bloomExtractShader.use()
-    bloomExtractShader.setUniform1i("uTexture", 0)
     bloomExtractShader.setUniform1f("uThreshold", bloomThreshold)
     sceneFBO.bind(0)
     drawQuad()
@@ -102,7 +111,6 @@ class PostProcessor(var width: Int, var height: Int) {
     glViewport(0, 0, width / 2, height / 2)
     glClear(GL_COLOR_BUFFER_BIT)
     blurShader.use()
-    blurShader.setUniform1i("uTexture", 0)
     blurShader.setUniform2f("uDirection", 1f / (width / 2), 0f)
     bloomExtractFBO.bind(0)
     drawQuad()
@@ -112,7 +120,7 @@ class PostProcessor(var width: Int, var height: Int) {
     blurPongFBO.bindAsTarget()
     glViewport(0, 0, width / 2, height / 2)
     glClear(GL_COLOR_BUFFER_BIT)
-    blurShader.use()
+    // blurShader already in use from horizontal pass
     blurShader.setUniform2f("uDirection", 0f, 1f / (height / 2))
     blurPingFBO.bind(0)
     drawQuad()
@@ -123,9 +131,6 @@ class PostProcessor(var width: Int, var height: Int) {
     glViewport(0, 0, screenWidth, screenHeight)
     glClear(GL_COLOR_BUFFER_BIT)
     compositeShader.use()
-    compositeShader.setUniform1i("uScene", 0)
-    compositeShader.setUniform1i("uBloom", 1)
-    compositeShader.setUniform1i("uLightMap", 2)
     compositeShader.setUniform1f("uBloomStrength", bloomStrength)
     compositeShader.setUniform1f("uVignetteStrength", vignetteStrength)
     compositeShader.setUniform4f("uOverlayColor", overlayR, overlayG, overlayB, overlayA)
