@@ -105,8 +105,6 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
       Constants.MOVE_RATE_LIMIT_MS
     }
 
-    if (now - lastMoveTime < moveRate) return
-
     // Isometric WASD
     var dx = 0
     var dy = 0
@@ -119,6 +117,12 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
     dy = Math.max(-1, Math.min(1, dy))
 
     client.setMovementInputActive(dx != 0 || dy != 0)
+
+    // Pure left/right (A or D alone) moves 2x the screen distance of up/down
+    // due to the 2:1 isometric tile ratio, so double the delay to equalize visual speed
+    val isHorizontal = dx != 0 && dy != 0 && dx != dy
+    val effectiveRate = if (isHorizontal) moveRate * 2 else moveRate
+    if (now - lastMoveTime < effectiveRate) return
 
     if (dx != 0 || dy != 0) {
       client.movePlayer(dx, dy)

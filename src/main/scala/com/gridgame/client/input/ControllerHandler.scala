@@ -276,8 +276,6 @@ class ControllerHandler(client: GameClient) {
       Constants.MOVE_RATE_LIMIT_MS
     }
 
-    if (now - lastMoveTime < moveRate) return
-
     // Left stick for movement
     val rawX = state.axes(GLFW_GAMEPAD_AXIS_LEFT_X)
     val rawY = if (autoMapped) -state.axes(GLFW_GAMEPAD_AXIS_LEFT_Y) else state.axes(GLFW_GAMEPAD_AXIS_LEFT_Y)
@@ -304,6 +302,12 @@ class ControllerHandler(client: GameClient) {
     var dy = -sx + sy
     dx = Math.max(-1, Math.min(1, dx))
     dy = Math.max(-1, Math.min(1, dy))
+
+    // Pure left/right (screen horizontal) moves 2x the screen distance of up/down
+    // due to the 2:1 isometric tile ratio, so double the delay to equalize visual speed
+    val isHorizontal = dx != 0 && dy != 0 && dx != dy
+    val effectiveRate = if (isHorizontal) moveRate * 2 else moveRate
+    if (now - lastMoveTime < effectiveRate) return
 
     client.setMovementInputActive(true)
     client.movePlayer(dx, dy)

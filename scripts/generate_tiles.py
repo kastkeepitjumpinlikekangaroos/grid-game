@@ -126,73 +126,89 @@ def face_bright(face, u, v, edge, h):
 # ══════════════════════════════════════════════════════════════════
 
 def _flat(c, base, f, u, v, e, px, py, h, fr):
-    """Generic flat walkable tile — subtle noise only."""
-    nv = _sn(px * 0.04, py * 0.04, fr * 10000)
-    return scale(base, 0.92 + nv * 0.16)
+    """Soft flat walkable tile — multi-octave noise, radial glow, color shift."""
+    # Multi-octave noise for organic feel
+    n1 = _sn(px * 0.025, py * 0.025, fr * 10000)
+    n2 = _sn(px * 0.06, py * 0.06, fr * 10000 + 500)
+    nv = n1 * 0.65 + n2 * 0.35
+    # Gentle radial brightness — brighter center, softer edges
+    radial = 0.96 + e * 0.08
+    # Subtle warm/cool color shift across the surface
+    warmth = _sn(px * 0.035 + 100, py * 0.035 + 100, fr * 10000 + 900)
+    r_adj = 1.0 + (warmth - 0.5) * 0.06
+    b_adj = 1.0 - (warmth - 0.5) * 0.04
+    bright = (0.92 + nv * 0.12) * radial
+    return rgb(base[0] * bright * r_adj, base[1] * bright, base[2] * bright * b_adj)
 
 def _grass(c, base, f, u, v, e, px, py, h, fr):
-    return _flat(c, (72, 165, 50), f, u, v, e, px, py, h, fr)
+    return _flat(c, (92, 155, 78), f, u, v, e, px, py, h, fr)
 
 def _sand(c, base, f, u, v, e, px, py, h, fr):
-    return _flat(c, (232, 210, 158), f, u, v, e, px, py, h, fr)
+    return _flat(c, (222, 205, 165), f, u, v, e, px, py, h, fr)
 
 def _stone(c, base, f, u, v, e, px, py, h, fr):
-    return _flat(c, (155, 150, 142), f, u, v, e, px, py, h, fr)
+    return _flat(c, (158, 154, 148), f, u, v, e, px, py, h, fr)
 
 def _path(c, base, f, u, v, e, px, py, h, fr):
-    return _flat(c, (202, 188, 172), f, u, v, e, px, py, h, fr)
+    return _flat(c, (198, 188, 176), f, u, v, e, px, py, h, fr)
 
 def _snow(c, base, f, u, v, e, px, py, h, fr):
-    return _flat(c, (242, 245, 252), f, u, v, e, px, py, h, fr)
+    return _flat(c, (236, 238, 244), f, u, v, e, px, py, h, fr)
 
 def _ice(c, base, f, u, v, e, px, py, h, fr):
-    return _flat(c, (162, 218, 248), f, u, v, e, px, py, h, fr)
+    return _flat(c, (178, 212, 232), f, u, v, e, px, py, h, fr)
 
 def _metal(c, base, f, u, v, e, px, py, h, fr):
-    return _flat(c, (128, 142, 158), f, u, v, e, px, py, h, fr)
+    return _flat(c, (140, 150, 160), f, u, v, e, px, py, h, fr)
 
 def _glass(c, base, f, u, v, e, px, py, h, fr):
-    return _flat(c, (135, 218, 235), f, u, v, e, px, py, h, fr)
+    return _flat(c, (155, 210, 222), f, u, v, e, px, py, h, fr)
 
 def _circuit(c, base, f, u, v, e, px, py, h, fr):
-    nv = _sn(px * 0.04, py * 0.04, fr * 10000)
-    cc = scale((8, 68, 55), 0.92 + nv * 0.16)
-    # Keep subtle trace grid for identity
+    n1 = _sn(px * 0.025, py * 0.025, fr * 10000)
+    n2 = _sn(px * 0.06, py * 0.06, fr * 10000 + 500)
+    nv = n1 * 0.65 + n2 * 0.35
+    radial = 0.96 + e * 0.08
+    cc = scale((18, 72, 60), (0.92 + nv * 0.12) * radial)
+    # Subtle trace grid for identity
     if py % 10 < 1 or px % 12 < 1:
-        cc = (18, 115, 88)
+        cc = lerp(cc, (28, 115, 92), 0.6)
     return cc
 
 def _flowers(c, base, f, u, v, e, px, py, h, fr):
-    nv = _sn(px * 0.04, py * 0.04, fr * 10000)
-    fc = scale((62, 158, 45), 0.92 + nv * 0.16)
+    n1 = _sn(px * 0.025, py * 0.025, fr * 10000)
+    n2 = _sn(px * 0.06, py * 0.06, fr * 10000 + 500)
+    nv = n1 * 0.65 + n2 * 0.35
+    radial = 0.96 + e * 0.08
+    fc = scale((82, 150, 62), (0.92 + nv * 0.12) * radial)
     # Sparse small flower dots for identity
     cx_f, cy_f = px // 12, py // 12
     if _h(cx_f, cy_f, fr * 10000 + 2010) > 0.6:
         lx, ly = px % 12, py % 12
         if 5 <= lx <= 6 and 5 <= ly <= 6:
             cs = _h(cx_f, cy_f, fr * 10000 + 2020)
-            if cs < 0.33:   fc = (225, 65, 55)
-            elif cs < 0.66: fc = (240, 220, 55)
-            else:           fc = (225, 80, 200)
+            if cs < 0.33:   fc = (218, 105, 95)
+            elif cs < 0.66: fc = (232, 215, 95)
+            else:           fc = (212, 115, 192)
     return fc
 
 def _dirt(c, base, f, u, v, e, px, py, h, fr):
-    return _flat(c, (135, 105, 72), f, u, v, e, px, py, h, fr)
+    return _flat(c, (145, 118, 88), f, u, v, e, px, py, h, fr)
 
 def _cobblestone(c, base, f, u, v, e, px, py, h, fr):
-    return _flat(c, (148, 152, 162), f, u, v, e, px, py, h, fr)
+    return _flat(c, (155, 155, 158), f, u, v, e, px, py, h, fr)
 
 def _marsh(c, base, f, u, v, e, px, py, h, fr):
-    return _flat(c, (62, 78, 38), f, u, v, e, px, py, h, fr)
+    return _flat(c, (72, 88, 52), f, u, v, e, px, py, h, fr)
 
 def _moss(c, base, f, u, v, e, px, py, h, fr):
-    return _flat(c, (75, 148, 42), f, u, v, e, px, py, h, fr)
+    return _flat(c, (88, 142, 58), f, u, v, e, px, py, h, fr)
 
 def _ash(c, base, f, u, v, e, px, py, h, fr):
-    return _flat(c, (95, 92, 85), f, u, v, e, px, py, h, fr)
+    return _flat(c, (108, 104, 98), f, u, v, e, px, py, h, fr)
 
 def _gravel(c, base, f, u, v, e, px, py, h, fr):
-    return _flat(c, (152, 145, 132), f, u, v, e, px, py, h, fr)
+    return _flat(c, (158, 152, 142), f, u, v, e, px, py, h, fr)
 
 
 # ══════════════════════════════════════════════════════════════════
