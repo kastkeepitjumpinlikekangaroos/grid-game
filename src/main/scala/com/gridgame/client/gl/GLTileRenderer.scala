@@ -20,7 +20,7 @@ object GLTileRenderer {
   private def ensureLoaded(): Unit = {
     if (texture != null) return
     try {
-      texture = GLTexture.load("sprites/tiles.png", nearest = false)
+      texture = GLTexture.load("sprites/tiles.png", nearest = true)
       numTiles = (texture.width / cellW).max(1)
       numFrames = (texture.height / cellH).max(1)
       regions = Array.tabulate(numTiles) { id =>
