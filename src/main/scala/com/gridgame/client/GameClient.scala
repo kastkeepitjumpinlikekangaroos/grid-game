@@ -60,6 +60,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   private val rootedUntil: AtomicLong = new AtomicLong(0)
   private val slowedUntil: AtomicLong = new AtomicLong(0)
 
+  // Client-authoritative movement: skip server position corrections during dashes/teleports
+  private val clientMoveAuthUntil: AtomicLong = new AtomicLong(0)
+
   // Ability cast flash state
   private val lastCastTime: AtomicLong = new AtomicLong(0)
   @volatile private var lastCastDirX: Float = 0f
@@ -373,6 +376,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     val posY = Math.round(newY).toInt
     val newPos = new Position(posX, posY)
     localPosition.set(newPos)
+    clientMoveAuthUntil.set(now + 200)
     sendPositionUpdate(newPos)
 
     // Update direction based on swoop direction
@@ -588,6 +592,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           swoopStartTime.set(now)
           swoopingUntil.set(now + durationMs)
           phasedUntil.set(now + durationMs)
+          clientMoveAuthUntil.set(now + durationMs + 200)
           sendPositionUpdate(localPosition.get())
         }
 
@@ -830,10 +835,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           // Server echoes phased flag to confirm it, but we don't reset the timer
 
           // Handle position correction (e.g. tentacle pull)
+          // Skip during client-authoritative movement (dash/teleport/blink) to prevent
+          // stale server echoes from rubber-banding the player back to old positions
           val serverPos = updatePacket.getPosition
           val localPos = localPosition.get()
-          if (serverPos.getX != localPos.getX || serverPos.getY != localPos.getY) {
-            localPosition.set(serverPos)
+          if (System.currentTimeMillis() >= clientMoveAuthUntil.get()) {
+            if (serverPos.getX != localPos.getX || serverPos.getY != localPos.getY) {
+              localPosition.set(serverPos)
+            }
           }
 
           if (serverHealth <= 0 && !isDead) {
@@ -1686,12 +1695,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
     val newPos = new Position(clampedX, clampedY)
     localPosition.set(newPos)
-    lastMoveTime.set(System.currentTimeMillis())
+    val now = System.currentTimeMillis()
+    lastMoveTime.set(now)
+    clientMoveAuthUntil.set(now + 500)
     sendPositionUpdate(newPos)
 
     // Record teleport animation
     teleportAnimations.put(localPlayerId, Array(
-      System.currentTimeMillis(),
+      now,
       oldPos.getX.toLong, oldPos.getY.toLong,
       clampedX.toLong, clampedY.toLong,
       localColorRGB.toLong
@@ -1741,12 +1752,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
     val newPos = new Position(x, y)
     localPosition.set(newPos)
-    lastMoveTime.set(System.currentTimeMillis())
+    val now = System.currentTimeMillis()
+    lastMoveTime.set(now)
+    clientMoveAuthUntil.set(now + 500)
     sendPositionUpdate(newPos)
 
     // Record teleport animation
     teleportAnimations.put(localPlayerId, Array(
-      System.currentTimeMillis(),
+      now,
       oldPos.getX.toLong, oldPos.getY.toLong,
       x.toLong, y.toLong,
       localColorRGB.toLong
