@@ -51,7 +51,7 @@ class GameServer(port: Int, val worldFile: String = "") {
   private val lastQueryTime = new ConcurrentHashMap[UUID, java.lang.Long]()
   // Per-channel malformed packet tracking (disconnect after too many)
   private[server] val malformedPacketCounts = new ConcurrentHashMap[Channel, AtomicInteger]()
-  private[server] val MAX_MALFORMED_PACKETS = 10
+  private[server] val MAX_MALFORMED_PACKETS = 3
 
   val packetValidator = new PacketValidator()
   val authDatabase = new AuthDatabase()
@@ -202,7 +202,7 @@ class GameServer(port: Int, val worldFile: String = "") {
     padded
   }
 
-  def getNextSequenceNumber: Int = sequenceNumber.getAndIncrement()
+  def getNextSequenceNumber: Int = sequenceNumber.getAndIncrement() & 0x7FFFFFFF
 
   def getConnectedPlayer(playerId: UUID): Player = connectedPlayers.get(playerId)
 

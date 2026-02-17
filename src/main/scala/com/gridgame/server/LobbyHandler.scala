@@ -54,8 +54,11 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
   }
 
   private def sanitizeName(raw: String): String = {
-    // Strip control characters and trim
-    raw.filter(c => !c.isControl).trim
+    // Strip control characters, zero-width chars, RTL marks, and non-BMP characters
+    raw.filter(c => !c.isControl && c >= 0x20 && c < 0xD800 &&
+      c != '\u200B' && c != '\u200C' && c != '\u200D' && c != '\uFEFF' && // zero-width
+      c != '\u200E' && c != '\u200F' && c != '\u202A' && c != '\u202B' && c != '\u202C' // RTL/LTR
+    ).trim
   }
 
   private def handleCreate(playerId: UUID, player: Player, packet: LobbyActionPacket): Unit = {
@@ -175,6 +178,13 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     val lobby = lobbyManager.getPlayerLobby(playerId)
     if (lobby == null || !lobby.isHost(playerId)) {
       println(s"LobbyHandler: Non-host ${playerId.toString.substring(0, 8)} tried to start game")
+      return
+    }
+
+    // Verify at least 1 connected human player before starting
+    val connectedCount = lobby.players.asScala.count(pid => server.getConnectedPlayer(pid) != null)
+    if (connectedCount == 0) {
+      println(s"LobbyHandler: Cannot start game with 0 connected players")
       return
     }
 

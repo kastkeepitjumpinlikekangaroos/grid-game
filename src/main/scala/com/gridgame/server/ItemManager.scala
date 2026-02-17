@@ -43,6 +43,9 @@ class ItemManager {
   def checkPickup(playerId: UUID, x: Int, y: Int): Option[ItemPickedUp] = {
     val playerInv = inventories.computeIfAbsent(playerId, _ => new ConcurrentHashMap[Int, Item]())
 
+    // Enforce inventory size limit
+    if (playerInv.size() >= Constants.MAX_INVENTORY_SIZE) return None
+
     val radius = Constants.ITEM_PICKUP_RADIUS
     val iter = items.values().iterator()
     while (iter.hasNext) {

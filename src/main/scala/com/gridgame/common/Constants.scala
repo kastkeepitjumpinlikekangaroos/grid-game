@@ -91,6 +91,9 @@ object Constants {
   val TEAMS_TEAM_SIZE: Int = 3  // 3v3
   val TEAMS_MAX_PLAYERS: Int = TEAMS_TEAM_SIZE * 2 // 6
 
+  // Item system
+  val MAX_INVENTORY_SIZE: Int = 10                      // Max items per player
+
   // Security configuration
   val SESSION_TOKEN_LIFETIME_MS: Long = 3600000L       // 1 hour
   val SEQUENCE_WINDOW_SIZE: Int = 256                   // UDP out-of-order tolerance

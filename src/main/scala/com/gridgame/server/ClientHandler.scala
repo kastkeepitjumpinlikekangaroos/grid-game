@@ -153,7 +153,18 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
         System.err.println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} invalid character ID: ${packet.getCharacterId}")
         return false
       }
-      val player = new Player(playerId, packet.getPlayerName, packet.getPosition, packet.getColorRGB, charDef.maxHealth, charDef.maxHealth)
+      // Validate new player join position against world bounds and walkability
+      val joinPos = packet.getPosition
+      val world = if (instance != null) instance.world else server.getWorld
+      val validPos = if (world != null && joinPos.getX >= 0 && joinPos.getX < world.width &&
+          joinPos.getY >= 0 && joinPos.getY < world.height && world.isWalkable(joinPos.getX, joinPos.getY)) {
+        joinPos
+      } else if (world != null) {
+        world.getRandomSpawnPoint
+      } else {
+        joinPos // No world loaded yet — accept client position
+      }
+      val player = new Player(playerId, packet.getPlayerName, validPos, packet.getColorRGB, charDef.maxHealth, charDef.maxHealth)
       player.setCharacterId(packet.getCharacterId)
       player.setTcpChannel(tcpChannel)
 
@@ -318,10 +329,14 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     )
 
     val w = if (instance != null) instance.world else server.getWorld
+    if (w == null) return
     positions.foreach { case (tx, ty) =>
-      if (w.setTile(tx, ty, Tile.Fence)) {
-        if (instance != null) instance.broadcastTileUpdate(player.getId, tx, ty, Tile.Fence.id)
-        else server.broadcastTileUpdate(player.getId, tx, ty, Tile.Fence.id)
+      // Only place fences on walkable tiles (prevents fences on walls, water, etc.)
+      if (tx >= 0 && tx < w.width && ty >= 0 && ty < w.height && w.isWalkable(tx, ty)) {
+        if (w.setTile(tx, ty, Tile.Fence)) {
+          if (instance != null) instance.broadcastTileUpdate(player.getId, tx, ty, Tile.Fence.id)
+          else server.broadcastTileUpdate(player.getId, tx, ty, Tile.Fence.id)
+        }
       }
     }
 
