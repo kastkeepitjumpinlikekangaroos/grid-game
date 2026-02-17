@@ -154,7 +154,7 @@ object ShaderProgram {
       |  FragColor = result;
       |}""".stripMargin
 
-  // ── Bloom composite + vignette ──
+  // ── Bloom composite + vignette + Diablo 3-style color grading ──
   val COMPOSITE_FRAG: String =
     """#version 330 core
       |in vec2 vTexCoord;
@@ -163,12 +163,23 @@ object ShaderProgram {
       |uniform float uBloomStrength;
       |uniform float uVignetteStrength;
       |uniform vec4 uOverlayColor;
+      |uniform float uTime;
       |out vec4 FragColor;
       |void main() {
       |  vec4 scene = texture(uScene, vTexCoord);
       |  vec4 bloom = texture(uBloom, vTexCoord);
       |  // Screen blend for bloom — brightens without blowing out whites
       |  vec3 color = scene.rgb + bloom.rgb * uBloomStrength * (1.0 - scene.rgb);
+      |  // Warm-cool color grading: shadows toward blue-purple, highlights toward warm amber
+      |  float luma = dot(color, vec3(0.299, 0.587, 0.114));
+      |  vec3 shadows = vec3(0.05, 0.03, 0.1);
+      |  vec3 highlights = vec3(1.05, 1.0, 0.92);
+      |  color = mix(color + shadows * (1.0 - luma), color * highlights, luma);
+      |  // Contrast S-curve: subtle contrast boost
+      |  color = color * color * (3.0 - 2.0 * color);
+      |  // Film grain: per-pixel noise
+      |  float grain = fract(sin(dot(vTexCoord * uTime, vec2(12.9898, 78.233))) * 43758.5453);
+      |  color += (grain - 0.5) * 0.015;
       |  // Soft vignette using smoothstep for gradual falloff
       |  vec2 uv = vTexCoord * 2.0 - 1.0;
       |  float dist = dot(uv, uv);

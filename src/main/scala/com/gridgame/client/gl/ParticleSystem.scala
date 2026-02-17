@@ -12,9 +12,11 @@ import scala.util.Random
  * ~50-100 active particles at any time for minimal performance impact.
  */
 class ParticleSystem {
-  private val MAX_PARTICLES = 120
+  private val MAX_PARTICLES = 180
   private val particles = new Array[Particle](MAX_PARTICLES)
   private var activeCount = 0
+  private var ambientActiveCount = 0  // category 0
+  private var tileActiveCount = 0     // category 1
   private val rng = new Random()
 
   // Particle pool
@@ -38,6 +40,9 @@ class ParticleSystem {
       p.y += p.vy * deltaSec.toFloat
       p.life += deltaSec.toFloat
       if (p.life >= p.maxLife) {
+        // Decrement category counter
+        if (p.category == 0) ambientActiveCount -= 1
+        else if (p.category == 1) tileActiveCount -= 1
         // Swap with last active
         activeCount -= 1
         val tmp = particles(i)
@@ -57,8 +62,7 @@ class ParticleSystem {
       case _           => 0 // space: stars already rendered
     }
 
-    val ambientCount = particles.count(p => p.life < p.maxLife && p.life >= 0 && p.category == 0)
-    if (ambientCount < targetAmbient && activeCount < MAX_PARTICLES) {
+    if (ambientActiveCount < targetAmbient && activeCount < MAX_PARTICLES) {
       background match {
         case "sky"       => spawnDustMote(canvasW, canvasH)
         case "desert"    => spawnSandGrain(canvasW, canvasH)
@@ -69,8 +73,7 @@ class ParticleSystem {
     }
 
     // Spawn tile-based particles (embers near lava, snowflakes near snow)
-    val tileParticleCount = particles.count(p => p.life < p.maxLife && p.life >= 0 && p.category == 1)
-    if (tileParticleCount < 30 && activeCount < MAX_PARTICLES) {
+    if (tileActiveCount < 30 && activeCount < MAX_PARTICLES) {
       // Sample a few random visible tiles for tile-based particles
       for (_ <- 0 until 3) {
         val wx = startX + rng.nextInt(math.max(1, endX - startX + 1))
@@ -84,6 +87,14 @@ class ParticleSystem {
               spawnSnowflake(wx, wy, camOffX, camOffY)
             case 18 => // Toxic — bubbles
               spawnToxicBubble(wx, wy, camOffX, camOffY)
+            case 1 | 7 => // Water / DeepWater — sparkle mist
+              spawnWaterSparkle(wx, wy, camOffX, camOffY)
+            case 24 => // Crystal — purple glint
+              spawnCrystalGlint(wx, wy, camOffX, camOffY)
+            case 15 => // EnergyField — electric arcs
+              spawnEnergyArc(wx, wy, camOffX, camOffY)
+            case 20 => // Flowers — drifting petals
+              spawnPetal(wx, wy, camOffX, camOffY)
             case _ =>
           }
         }
@@ -110,8 +121,9 @@ class ParticleSystem {
       }
 
       val size = p.size * (1f + lifeRatio * p.growthRate)
-      shapeBatch.fillOval(p.x - size * 0.5f, p.y - size * 0.5f,
-        size, size, p.r, p.g, p.b, a)
+      val sy = if (p.sizeY > 0f) p.sizeY * (1f + lifeRatio * p.growthRate) else size
+      shapeBatch.fillOval(p.x - size * 0.5f, p.y - sy * 0.5f,
+        size, sy, p.r, p.g, p.b, a)
 
       if (p.additive) {
         shapeBatch.setAdditiveBlend(false)
@@ -123,7 +135,7 @@ class ParticleSystem {
   // ── Ambient particle spawners ──
 
   private def spawnDustMote(cw: Double, ch: Double): Unit = {
-    val p = nextParticle()
+    val p = nextParticle(0)
     if (p == null) return
     p.x = rng.nextFloat() * cw.toFloat
     p.y = rng.nextFloat() * ch.toFloat
@@ -136,7 +148,7 @@ class ParticleSystem {
   }
 
   private def spawnSandGrain(cw: Double, ch: Double): Unit = {
-    val p = nextParticle()
+    val p = nextParticle(0)
     if (p == null) return
     p.x = -5f
     p.y = rng.nextFloat() * ch.toFloat
@@ -149,7 +161,7 @@ class ParticleSystem {
   }
 
   private def spawnBubble(cw: Double, ch: Double): Unit = {
-    val p = nextParticle()
+    val p = nextParticle(0)
     if (p == null) return
     p.x = rng.nextFloat() * cw.toFloat
     p.y = ch.toFloat + 5f
@@ -162,7 +174,7 @@ class ParticleSystem {
   }
 
   private def spawnCityLight(cw: Double, ch: Double): Unit = {
-    val p = nextParticle()
+    val p = nextParticle(0)
     if (p == null) return
     p.x = rng.nextFloat() * cw.toFloat
     p.y = rng.nextFloat() * ch.toFloat
@@ -179,7 +191,7 @@ class ParticleSystem {
   // ── Tile-based particle spawners ──
 
   private def spawnEmber(wx: Int, wy: Int, camOffX: Double, camOffY: Double): Unit = {
-    val p = nextParticle()
+    val p = nextParticle(1)
     if (p == null) return
     val sx = IsometricTransform.worldToScreenX(wx + rng.nextFloat(), wy + rng.nextFloat(), camOffX).toFloat
     val sy = IsometricTransform.worldToScreenY(wx + rng.nextFloat(), wy + rng.nextFloat(), camOffY).toFloat
@@ -193,7 +205,7 @@ class ParticleSystem {
   }
 
   private def spawnSnowflake(wx: Int, wy: Int, camOffX: Double, camOffY: Double): Unit = {
-    val p = nextParticle()
+    val p = nextParticle(1)
     if (p == null) return
     val sx = IsometricTransform.worldToScreenX(wx + rng.nextFloat(), wy + rng.nextFloat(), camOffX).toFloat
     val sy = IsometricTransform.worldToScreenY(wx + rng.nextFloat(), wy + rng.nextFloat(), camOffY).toFloat - 30f
@@ -207,7 +219,7 @@ class ParticleSystem {
   }
 
   private def spawnToxicBubble(wx: Int, wy: Int, camOffX: Double, camOffY: Double): Unit = {
-    val p = nextParticle()
+    val p = nextParticle(1)
     if (p == null) return
     val sx = IsometricTransform.worldToScreenX(wx + rng.nextFloat(), wy + rng.nextFloat(), camOffX).toFloat
     val sy = IsometricTransform.worldToScreenY(wx + rng.nextFloat(), wy + rng.nextFloat(), camOffY).toFloat
@@ -220,16 +232,80 @@ class ParticleSystem {
     p.category = 1; p.additive = true; p.growthRate = 0.5f
   }
 
-  private def nextParticle(): Particle = {
+  private def spawnWaterSparkle(wx: Int, wy: Int, camOffX: Double, camOffY: Double): Unit = {
+    val p = nextParticle(1)
+    if (p == null) return
+    val sx = IsometricTransform.worldToScreenX(wx + rng.nextFloat(), wy + rng.nextFloat(), camOffX).toFloat
+    val sy = IsometricTransform.worldToScreenY(wx + rng.nextFloat(), wy + rng.nextFloat(), camOffY).toFloat
+    p.x = sx; p.y = sy
+    p.vx = (rng.nextFloat() - 0.5f) * 4f
+    p.vy = -6f - rng.nextFloat() * 8f
+    p.size = 1f + rng.nextFloat() * 1.5f; p.sizeY = 0f
+    p.maxLife = 1.5f + rng.nextFloat() * 2f
+    p.r = 0.7f; p.g = 0.85f; p.b = 1f; p.alpha = 0.35f
+    p.category = 1; p.additive = true; p.growthRate = 0.2f
+  }
+
+  private def spawnCrystalGlint(wx: Int, wy: Int, camOffX: Double, camOffY: Double): Unit = {
+    val p = nextParticle(1)
+    if (p == null) return
+    val sx = IsometricTransform.worldToScreenX(wx + rng.nextFloat(), wy + rng.nextFloat(), camOffX).toFloat
+    val sy = IsometricTransform.worldToScreenY(wx + rng.nextFloat(), wy + rng.nextFloat(), camOffY).toFloat
+    p.x = sx; p.y = sy
+    p.vx = (rng.nextFloat() - 0.5f) * 6f
+    p.vy = -10f - rng.nextFloat() * 10f
+    p.size = 1.5f + rng.nextFloat() * 1.5f; p.sizeY = 0.5f + rng.nextFloat() * 0.5f
+    p.maxLife = 0.8f + rng.nextFloat() * 1.2f
+    p.r = 0.6f; p.g = 0.4f; p.b = 0.9f; p.alpha = 0.6f
+    p.category = 1; p.additive = true; p.growthRate = -0.2f
+  }
+
+  private def spawnEnergyArc(wx: Int, wy: Int, camOffX: Double, camOffY: Double): Unit = {
+    val p = nextParticle(1)
+    if (p == null) return
+    val sx = IsometricTransform.worldToScreenX(wx + rng.nextFloat(), wy + rng.nextFloat(), camOffX).toFloat
+    val sy = IsometricTransform.worldToScreenY(wx + rng.nextFloat(), wy + rng.nextFloat(), camOffY).toFloat
+    p.x = sx; p.y = sy
+    p.vx = (rng.nextFloat() - 0.5f) * 20f
+    p.vy = (rng.nextFloat() - 0.5f) * 15f
+    p.size = 2f + rng.nextFloat() * 2f; p.sizeY = 0.5f + rng.nextFloat() * 0.5f
+    p.maxLife = 0.3f + rng.nextFloat() * 0.5f
+    p.r = 0.7f; p.g = 0.4f; p.b = 0.95f; p.alpha = 0.7f
+    p.category = 1; p.additive = true; p.growthRate = -0.4f
+  }
+
+  private def spawnPetal(wx: Int, wy: Int, camOffX: Double, camOffY: Double): Unit = {
+    val p = nextParticle(1)
+    if (p == null) return
+    val sx = IsometricTransform.worldToScreenX(wx + rng.nextFloat(), wy + rng.nextFloat(), camOffX).toFloat
+    val sy = IsometricTransform.worldToScreenY(wx + rng.nextFloat(), wy + rng.nextFloat(), camOffY).toFloat - 15f
+    p.x = sx; p.y = sy
+    p.vx = 3f + rng.nextFloat() * 6f
+    p.vy = 4f + rng.nextFloat() * 8f
+    p.size = 2f + rng.nextFloat() * 1.5f; p.sizeY = 1f + rng.nextFloat() * 0.5f
+    p.maxLife = 2f + rng.nextFloat() * 3f
+    val colorRoll = rng.nextFloat()
+    if (colorRoll < 0.3f) { p.r = 1f; p.g = 0.6f; p.b = 0.7f }
+    else if (colorRoll < 0.6f) { p.r = 1f; p.g = 0.9f; p.b = 0.5f }
+    else { p.r = 0.9f; p.g = 0.5f; p.b = 0.9f }
+    p.alpha = 0.45f
+    p.category = 1; p.additive = false; p.growthRate = 0f
+  }
+
+  private def nextParticle(category: Int): Particle = {
     if (activeCount >= MAX_PARTICLES) return null
     val p = particles(activeCount)
     p.life = 0f
     activeCount += 1
+    if (category == 0) ambientActiveCount += 1
+    else if (category == 1) tileActiveCount += 1
     p
   }
 
   def dispose(): Unit = {
     activeCount = 0
+    ambientActiveCount = 0
+    tileActiveCount = 0
   }
 }
 
@@ -246,6 +322,7 @@ class Particle {
   var g: Float = 1f
   var b: Float = 1f
   var alpha: Float = 1f
+  var sizeY: Float = 0f // if > 0, use as vertical size (elongated particles)
   var category: Int = 0  // 0 = ambient, 1 = tile-based
   var additive: Boolean = false
   var growthRate: Float = 0f // size multiplier over lifetime

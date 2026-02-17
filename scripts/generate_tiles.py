@@ -125,102 +125,74 @@ def face_bright(face, u, v, edge, h):
 # WALKABLE GROUND — extremely plain, just flat color
 # ══════════════════════════════════════════════════════════════════
 
+def _flat(c, base, f, u, v, e, px, py, h, fr):
+    """Generic flat walkable tile — subtle noise only."""
+    nv = _sn(px * 0.04, py * 0.04, fr * 10000)
+    return scale(base, 0.92 + nv * 0.16)
+
 def _grass(c, base, f, u, v, e, px, py, h, fr):
-    return (72, 185, 52)
+    return _flat(c, (72, 165, 50), f, u, v, e, px, py, h, fr)
 
 def _sand(c, base, f, u, v, e, px, py, h, fr):
-    return (240, 218, 162)
+    return _flat(c, (232, 210, 158), f, u, v, e, px, py, h, fr)
 
 def _stone(c, base, f, u, v, e, px, py, h, fr):
-    return (162, 158, 152)
+    return _flat(c, (155, 150, 142), f, u, v, e, px, py, h, fr)
 
 def _path(c, base, f, u, v, e, px, py, h, fr):
-    return (212, 200, 188)
+    return _flat(c, (202, 188, 172), f, u, v, e, px, py, h, fr)
 
 def _snow(c, base, f, u, v, e, px, py, h, fr):
-    return (242, 246, 255)
+    return _flat(c, (242, 245, 252), f, u, v, e, px, py, h, fr)
 
 def _ice(c, base, f, u, v, e, px, py, h, fr):
-    # Flat blue with a couple bold crack lines
-    ic = (162, 218, 250)
-    S = fr * 10000
-    cn = _sn(px * 0.05, py * 0.05, S + 905)
-    crack = abs(cn * 3 - round(cn * 3))
-    if crack < 0.04:
-        ic = (225, 242, 255)
-    return ic
+    return _flat(c, (162, 218, 248), f, u, v, e, px, py, h, fr)
 
 def _metal(c, base, f, u, v, e, px, py, h, fr):
-    return (128, 142, 158)
+    return _flat(c, (128, 142, 158), f, u, v, e, px, py, h, fr)
 
 def _glass(c, base, f, u, v, e, px, py, h, fr):
-    return (135, 222, 242)
+    return _flat(c, (135, 218, 235), f, u, v, e, px, py, h, fr)
 
 def _circuit(c, base, f, u, v, e, px, py, h, fr):
-    cc = (8, 68, 55)
-    # Simple trace grid
-    if py % 10 < 2 or px % 12 < 2:
-        cc = (20, 135, 100)
-    if py % 10 < 2 and px % 12 < 2:
-        cc = (55, 242, 180)
+    nv = _sn(px * 0.04, py * 0.04, fr * 10000)
+    cc = scale((8, 68, 55), 0.92 + nv * 0.16)
+    # Keep subtle trace grid for identity
+    if py % 10 < 1 or px % 12 < 1:
+        cc = (18, 115, 88)
     return cc
 
 def _flowers(c, base, f, u, v, e, px, py, h, fr):
-    S = fr * 10000
-    fc = (65, 175, 48)
-    # Bold flower dots
-    cx_f, cy_f = px // 8, py // 8
-    if _h(cx_f, cy_f, S + 2010) > 0.45:
-        lx, ly = px % 8, py % 8
-        cs = _h(cx_f, cy_f, S + 2020)
-        is_center = (3 <= lx <= 4 and 3 <= ly <= 4)
-        is_petal = ((3 <= lx <= 4) or (3 <= ly <= 4)) and not is_center
-        if is_center:
-            if cs < 0.25:   fc = (245, 62, 52)
-            elif cs < 0.50: fc = (255, 235, 52)
-            elif cs < 0.75: fc = (78, 98, 242)
-            else:           fc = (242, 80, 220)
-        elif is_petal:
-            if cs < 0.25:   fc = (212, 52, 45)
-            elif cs < 0.50: fc = (238, 212, 45)
-            elif cs < 0.75: fc = (60, 78, 208)
-            else:           fc = (205, 65, 185)
+    nv = _sn(px * 0.04, py * 0.04, fr * 10000)
+    fc = scale((62, 158, 45), 0.92 + nv * 0.16)
+    # Sparse small flower dots for identity
+    cx_f, cy_f = px // 12, py // 12
+    if _h(cx_f, cy_f, fr * 10000 + 2010) > 0.6:
+        lx, ly = px % 12, py % 12
+        if 5 <= lx <= 6 and 5 <= ly <= 6:
+            cs = _h(cx_f, cy_f, fr * 10000 + 2020)
+            if cs < 0.33:   fc = (225, 65, 55)
+            elif cs < 0.66: fc = (240, 220, 55)
+            else:           fc = (225, 80, 200)
     return fc
 
 def _dirt(c, base, f, u, v, e, px, py, h, fr):
-    return (140, 110, 80)
+    return _flat(c, (135, 105, 72), f, u, v, e, px, py, h, fr)
 
 def _cobblestone(c, base, f, u, v, e, px, py, h, fr):
-    S = fr * 10000
-    row = py // 10
-    off = (row % 2) * 8
-    col = (px + off) // 14
-    lx = (px + off) % 14
-    ly = py % 10
-    if lx <= 1 or ly <= 1:
-        return (92, 90, 82)
-    sn = _h(col, row, S + 2210)
-    if sn > 0.5:
-        return (162, 165, 175)
-    return (142, 145, 155)
+    return _flat(c, (148, 152, 162), f, u, v, e, px, py, h, fr)
 
 def _marsh(c, base, f, u, v, e, px, py, h, fr):
-    return (58, 85, 38)
+    return _flat(c, (62, 78, 38), f, u, v, e, px, py, h, fr)
 
 def _moss(c, base, f, u, v, e, px, py, h, fr):
-    return (78, 148, 42)
+    return _flat(c, (75, 148, 42), f, u, v, e, px, py, h, fr)
 
 def _ash(c, base, f, u, v, e, px, py, h, fr):
-    return (100, 98, 90)
+    return _flat(c, (95, 92, 85), f, u, v, e, px, py, h, fr)
 
 def _gravel(c, base, f, u, v, e, px, py, h, fr):
-    S = fr * 10000
-    cx_p = px // 6
-    cy_p = py // 6
-    pn = _h(cx_p, cy_p, S + 3300)
-    if pn > 0.5:
-        return (175, 168, 152)
-    return (148, 142, 130)
+    return _flat(c, (152, 145, 132), f, u, v, e, px, py, h, fr)
 
 
 # ══════════════════════════════════════════════════════════════════

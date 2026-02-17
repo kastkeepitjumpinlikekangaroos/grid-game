@@ -64,6 +64,20 @@ class GLGameRenderer(val client: GameClient) {
   private val tileW = (HW * 2).toFloat // 40
   private val tileCellH = Constants.TILE_CELL_HEIGHT.toFloat // 56
 
+  // Cached framebuffer size to skip redundant PostProcessor.resize() calls
+  private var lastFbWidth = 0
+  private var lastFbHeight = 0
+
+  // Pre-allocated arrays for aim arrow (avoids per-frame allocations)
+  private val _aimGlowXs = new Array[Float](22)  // glowN=10 → 10*2+2=22
+  private val _aimGlowYs = new Array[Float](22)
+  private val _aimBodyXs = new Array[Float](42)   // bodyN=20 → 20*2+2=42
+  private val _aimBodyYs = new Array[Float](42)
+
+  // Pre-allocated arrays for item shapes
+  private val _starXs = new Array[Float](10)
+  private val _starYs = new Array[Float](10)
+
   // ── Batch management ──
   // Track active batch to avoid redundant begin/end pairs.
   // Individual drawing methods call beginShapes()/beginSprites() instead of begin/end.
@@ -134,8 +148,12 @@ class GLGameRenderer(val client: GameClient) {
     camOffX = cox
     camOffY = coy
 
-    // Post-processing: render to FBO
-    postProcessor.resize(fbWidth, fbHeight)
+    // Post-processing: render to FBO (only resize when dimensions actually change)
+    if (fbWidth != lastFbWidth || fbHeight != lastFbHeight) {
+      postProcessor.resize(fbWidth, fbHeight)
+      lastFbWidth = fbWidth
+      lastFbHeight = fbHeight
+    }
     postProcessor.beginScene()
 
     // Set up projection for zoomed world-space rendering
@@ -200,11 +218,6 @@ class GLGameRenderer(val client: GameClient) {
       }
     }
 
-    // === Tile transitions ===
-    endAll()
-    TileTransitionRenderer.render(world, startX, endX, startY, endY,
-      tileFrame, camOffX, camOffY, projection)
-
     // === Aim arrow ===
     drawAimArrow()
 
@@ -251,7 +264,7 @@ class GLGameRenderer(val client: GameClient) {
         postProcessor.overlayR = 0.8f
         postProcessor.overlayG = 0f
         postProcessor.overlayB = 0f
-        postProcessor.overlayA = (0.15f * (1f - progress.toFloat))
+        postProcessor.overlayA = (0.25f * (1f - progress.toFloat))
       } else {
         postProcessor.overlayA = 0f
       }
@@ -260,6 +273,7 @@ class GLGameRenderer(val client: GameClient) {
     }
 
     endAll()
+    postProcessor.animationTime = animationTick.toFloat
     postProcessor.endScene(fbWidth, fbHeight)
 
     // === HUD (rendered at screen-pixel scale, not zoomed) ===
@@ -569,7 +583,9 @@ class GLGameRenderer(val client: GameClient) {
 
   private def drawShadow(screenX: Double, screenY: Double): Unit = {
     beginShapes()
-    shapeBatch.fillOval(screenX.toFloat, screenY.toFloat, 16f, 6f, 0f, 0f, 0f, 0.3f)
+    // Soft directional shadow — offset toward light direction, blue-tinted for atmosphere
+    shapeBatch.fillOvalSoft(screenX.toFloat + 2f, screenY.toFloat + 1f,
+      20f, 8f, 0.02f, 0.01f, 0.05f, 0.35f, 0f, 14)
   }
 
   private def drawPlayerInterp(player: Player, wx: Double, wy: Double): Unit = {
@@ -609,14 +625,21 @@ class GLGameRenderer(val client: GameClient) {
 
     drawShadow(screenX, screenY)
 
-    // Sprite
+    // Sprite — flash red/white on hit
+    val hitTime = client.getPlayerHitTime(playerId)
+    val hitFlash = if (hitTime > 0) {
+      val el = System.currentTimeMillis() - hitTime
+      if (el < HIT_ANIMATION_MS) (1.0 - el.toDouble / HIT_ANIMATION_MS).toFloat else 0f
+    } else 0f
     val region = GLSpriteGenerator.getSpriteRegion(player.getDirection, frame, player.getCharacterId)
     if (region != null) {
       val alpha = if (playerIsPhased) 0.4f else 1f
+      val g = 1f - hitFlash * 0.7f
+      val b = 1f - hitFlash * 0.7f
       beginSprites()
       spriteBatch.draw(region,
         (screenX - displaySz / 2.0).toFloat, (screenY - displaySz).toFloat,
-        displaySz.toFloat, displaySz.toFloat, 1f, 1f, 1f, alpha)
+        displaySz.toFloat, displaySz.toFloat, 1f, g, b, alpha)
     }
 
     // Post-player effects
@@ -625,7 +648,7 @@ class GLGameRenderer(val client: GameClient) {
     if (player.isSlowed) drawSlowedEffect(screenX, spriteCenter)
     if (player.isBurning) drawBurnEffect(screenX, spriteCenter)
     if (player.hasSpeedBoost) drawSpeedBoostEffect(screenX, spriteCenter)
-    drawHitEffect(screenX, spriteCenter, client.getPlayerHitTime(playerId))
+    drawHitEffect(screenX, spriteCenter, hitTime)
 
     // Health bar + name
     drawHealthBar(screenX, screenY - displaySz, player.getHealth, player.getMaxHealth, player.getTeamId)
@@ -657,13 +680,21 @@ class GLGameRenderer(val client: GameClient) {
       (FRAMES_PER_STEP * (1.0 + client.getChargeLevel / 100.0 * 4.0)).toInt
     } else FRAMES_PER_STEP
     val frame = if (client.getIsMoving) (animationTick / animSpeed) % 4 else 0
+    // Sprite — flash red/white on hit
+    val localHitTime = client.getPlayerHitTime(client.getLocalPlayerId)
+    val localHitFlash = if (localHitTime > 0) {
+      val el = System.currentTimeMillis() - localHitTime
+      if (el < HIT_ANIMATION_MS) (1.0 - el.toDouble / HIT_ANIMATION_MS).toFloat else 0f
+    } else 0f
     val region = GLSpriteGenerator.getSpriteRegion(client.getLocalDirection, frame, client.selectedCharacterId)
     if (region != null) {
       val alpha = if (localIsPhased) 0.4f else 1f
+      val g = 1f - localHitFlash * 0.7f
+      val b = 1f - localHitFlash * 0.7f
       beginSprites()
       spriteBatch.draw(region,
         (screenX - displaySz / 2.0).toFloat, (screenY - displaySz).toFloat,
-        displaySz.toFloat, displaySz.toFloat, 1f, 1f, 1f, alpha)
+        displaySz.toFloat, displaySz.toFloat, 1f, g, b, alpha)
     }
 
     drawCastFlash(screenX, spriteCenter)
@@ -673,10 +704,6 @@ class GLGameRenderer(val client: GameClient) {
     if (client.isBurning) drawBurnEffect(screenX, spriteCenter)
     if (client.hasSpeedBoost) drawSpeedBoostEffect(screenX, spriteCenter)
 
-    val localHitTime = client.getPlayerHitTime(client.getLocalPlayerId)
-    if (localHitTime > 0 && System.currentTimeMillis() - localHitTime < 50) {
-      camera.triggerShake(2.5, 250)
-    }
     drawHitEffect(screenX, spriteCenter, localHitTime)
 
     drawHealthBar(screenX, screenY - displaySz, client.getLocalHealth, client.getSelectedCharacterMaxHealth, client.localTeamId)
@@ -818,9 +845,24 @@ class GLGameRenderer(val client: GameClient) {
     if (elapsed > HIT_ANIMATION_MS) return
     val progress = elapsed.toDouble / HIT_ANIMATION_MS
     val fadeOut = (1.0 - progress).toFloat
+    val x = cx.toFloat
+    val y = cy.toFloat
     beginShapes()
     shapeBatch.setAdditiveBlend(true)
-    shapeBatch.fillOval(cx.toFloat, cy.toFloat, 16f * fadeOut, 12f * fadeOut, 1f, 0.3f, 0.1f, 0.3f * fadeOut, 12)
+    // Larger central glow
+    shapeBatch.fillOval(x, y, 24f * fadeOut, 18f * fadeOut, 1f, 0.4f, 0.1f, 0.4f * fadeOut, 14)
+    shapeBatch.fillOval(x, y, 14f * fadeOut, 10f * fadeOut, 1f, 0.9f, 0.7f, 0.3f * fadeOut, 10)
+    // Radiating sparks
+    val sparkDist = 8f + 20f * progress.toFloat
+    val sparkSz = 3f * fadeOut
+    var i = 0
+    while (i < 6) {
+      val angle = i * 1.047f + hitTime * 0.001f // 60 degree spacing + offset per hit
+      val sx = x + math.cos(angle).toFloat * sparkDist
+      val sy = y + math.sin(angle).toFloat * sparkDist * 0.6f
+      shapeBatch.fillOval(sx, sy, sparkSz, sparkSz, 1f, 0.8f, 0.2f, 0.5f * fadeOut, 6)
+      i += 1
+    }
     shapeBatch.setAdditiveBlend(false)
   }
 
@@ -887,14 +929,13 @@ class GLGameRenderer(val client: GameClient) {
           Array(cy - hs * 0.1f, cy + hs, cy - hs * 0.1f), r, g, b, 1f)
       case ItemType.Star =>
         val outerR = hs; val innerR = hs * 0.4f
-        val xs = new Array[Float](10); val ys = new Array[Float](10)
         for (i <- 0 until 10) {
           val angle = Math.PI / 2 + i * Math.PI / 5
           val rad = if (i % 2 == 0) outerR else innerR
-          xs(i) = cx + (rad * Math.cos(angle)).toFloat
-          ys(i) = cy - (rad * Math.sin(angle)).toFloat
+          _starXs(i) = cx + (rad * Math.cos(angle)).toFloat
+          _starYs(i) = cy - (rad * Math.sin(angle)).toFloat
         }
-        shapeBatch.fillPolygon(xs, ys, r, g, b, 1f)
+        shapeBatch.fillPolygon(_starXs, _starYs, 10, r, g, b, 1f)
       case ItemType.Gem =>
         shapeBatch.fillPolygon(
           Array(cx, cx + hs, cx, cx - hs),
@@ -989,30 +1030,28 @@ class GLGameRenderer(val client: GameClient) {
 
     // Ground glow
     val glowN = 10
-    val glowXs = new Array[Float](glowN * 2 + 2); val glowYs = new Array[Float](glowN * 2 + 2)
     for (i <- 0 to glowN) {
       val t = i.toDouble / glowN
       val gw = 1.8 * pulse
       val cwx = drawX + ndx * cylLength * t
       val cwy = drawY + ndy * cylLength * t
-      glowXs(i) = worldToScreenX(cwx + perpX * gw, cwy + perpY * gw).toFloat
-      glowYs(i) = worldToScreenY(cwx + perpX * gw, cwy + perpY * gw).toFloat
-      glowXs(glowN * 2 + 1 - i) = worldToScreenX(cwx - perpX * gw, cwy - perpY * gw).toFloat
-      glowYs(glowN * 2 + 1 - i) = worldToScreenY(cwx - perpX * gw, cwy - perpY * gw).toFloat
+      _aimGlowXs(i) = worldToScreenX(cwx + perpX * gw, cwy + perpY * gw).toFloat
+      _aimGlowYs(i) = worldToScreenY(cwx + perpX * gw, cwy + perpY * gw).toFloat
+      _aimGlowXs(glowN * 2 + 1 - i) = worldToScreenX(cwx - perpX * gw, cwy - perpY * gw).toFloat
+      _aimGlowYs(glowN * 2 + 1 - i) = worldToScreenY(cwx - perpX * gw, cwy - perpY * gw).toFloat
     }
-    shapeBatch.fillPolygon(glowXs, glowYs, blendR, blendG, blendB, 0.05f * pulse)
+    shapeBatch.fillPolygon(_aimGlowXs, _aimGlowYs, glowN * 2 + 2, blendR, blendG, blendB, 0.05f * pulse)
 
     // Cylinder body
     val bodyN = 20
-    val bodyXs = new Array[Float](bodyN * 2 + 2); val bodyYs = new Array[Float](bodyN * 2 + 2)
     for (i <- 0 to bodyN) {
       val t = i.toDouble / bodyN
-      bodyXs(i) = cylSX(t, 1.0)
-      bodyYs(i) = cylSY(t, 1.0)
-      bodyXs(bodyN * 2 + 1 - i) = cylSX(t, -1.0)
-      bodyYs(bodyN * 2 + 1 - i) = cylSY(t, -1.0)
+      _aimBodyXs(i) = cylSX(t, 1.0)
+      _aimBodyYs(i) = cylSY(t, 1.0)
+      _aimBodyXs(bodyN * 2 + 1 - i) = cylSX(t, -1.0)
+      _aimBodyYs(bodyN * 2 + 1 - i) = cylSY(t, -1.0)
     }
-    shapeBatch.fillPolygon(bodyXs, bodyYs, blendR * 0.5f, blendG * 0.5f, blendB * 0.5f, 0.10f + chargePct * 0.06f)
+    shapeBatch.fillPolygon(_aimBodyXs, _aimBodyYs, bodyN * 2 + 2, blendR * 0.5f, blendG * 0.5f, blendB * 0.5f, 0.10f + chargePct * 0.06f)
 
     // Energy spine
     shapeBatch.setAdditiveBlend(true)
@@ -1300,8 +1339,7 @@ class GLGameRenderer(val client: GameClient) {
             0.25f, 0.22f, 0.2f, smokeAlpha, 0f, 14)
         }
 
-        // Camera shake on first frame
-        if (elapsed < 50) camera.triggerShake(3.0 + blastRadius.toDouble, 400)
+        // (camera shake removed)
       }
     }
   }

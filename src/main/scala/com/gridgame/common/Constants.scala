@@ -12,7 +12,7 @@ object Constants {
   val PLAYER_DISPLAY_SIZE_PX: Int = 48 // Rendered display size (scaled up)
 
   // Camera zoom level (1.0 = default, 2.0 = 2x zoom)
-  val CAMERA_ZOOM: Double = 1.3
+  val CAMERA_ZOOM: Double = 1.6
 
   // Isometric tile dimensions (2:1 ratio)
   val ISO_TILE_WIDTH: Int = 40

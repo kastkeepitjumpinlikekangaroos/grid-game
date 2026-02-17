@@ -31,7 +31,8 @@ class PostProcessor(var width: Int, var height: Int) {
   // Post-process parameters (tuned for subtle enhancement, not high contrast)
   var bloomThreshold: Float = 0.82f
   var bloomStrength: Float = 0.18f
-  var vignetteStrength: Float = 0.12f
+  var vignetteStrength: Float = 0.20f
+  var animationTime: Float = 0f
   var overlayR: Float = 0f
   var overlayG: Float = 0f
   var overlayB: Float = 0f
@@ -112,6 +113,7 @@ class PostProcessor(var width: Int, var height: Int) {
     compositeShader.setUniform1f("uBloomStrength", bloomStrength)
     compositeShader.setUniform1f("uVignetteStrength", vignetteStrength)
     compositeShader.setUniform4f("uOverlayColor", overlayR, overlayG, overlayB, overlayA)
+    compositeShader.setUniform1f("uTime", animationTime)
     sceneFBO.bind(0)
     blurPongFBO.bind(1)
     drawQuad()

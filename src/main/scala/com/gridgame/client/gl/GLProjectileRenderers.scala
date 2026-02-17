@@ -13,6 +13,40 @@ object GLProjectileRenderers {
 
   def get(pType: Byte): Option[Renderer] = registry.get(pType)
 
+  // ═══════════════════════════════════════════════════════════════
+  //  PRE-ALLOCATED ARRAY POOLS (avoid per-frame GC pressure)
+  // ═══════════════════════════════════════════════════════════════
+
+  // Spinner: max pts=4 → n=8 per array, 4 arrays (ghost xs/ys, main xs/ys)
+  private val _spinXs = new Array[Float](8)
+  private val _spinYs = new Array[Float](8)
+  private val _spinGhostXs = new Array[Float](8)
+  private val _spinGhostYs = new Array[Float](8)
+
+  // Lightning: segs=6 → 7 entries
+  private val _boltXs = new Array[Float](7)
+  private val _boltYs = new Array[Float](7)
+
+  // Thunder strike: 9 points
+  private val _thunderXs = new Array[Float](9)
+  private val _thunderYs = new Array[Float](9)
+
+  // Tidal wave: 10 points
+  private val _waveXs = new Array[Float](10)
+  private val _waveYs = new Array[Float](10)
+
+  // Sword wave: segs=12 → outer/inner (13 each), crescent (26)
+  private val _swOuterXs = new Array[Float](13)
+  private val _swOuterYs = new Array[Float](13)
+  private val _swInnerXs = new Array[Float](13)
+  private val _swInnerYs = new Array[Float](13)
+  private val _swCrescXs = new Array[Float](26)
+  private val _swCrescYs = new Array[Float](26)
+
+  // Scythe: segs=12 → arc (26)
+  private val _scyXs = new Array[Float](26)
+  private val _scyYs = new Array[Float](26)
+
   def drawGeneric(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int,
                   r: Float, g: Float, b: Float): Unit = {
     val phase = (tick + proj.id * 37) * 0.35
@@ -23,12 +57,15 @@ object GLProjectileRenderers {
     sb.fillOval(sx, sy, 18f, 14f, r, g, b, 0.85f * p, 12)
     // Bright center
     sb.fillOval(sx, sy, 8f, 6f, bright(r), bright(g), bright(b), 0.95f, 8)
-    // Trail
+    // Trail — 6 segments with taper and color fade
     val (ndx, ndy, _) = screenDir(proj)
-    for (i <- 0 until 4) {
-      val t = ((tick * 0.06 + i * 0.25 + proj.id * 0.13) % 1.0).toFloat
-      val s = 10f * (1f - t * 0.6f)
-      sb.fillOval(sx - ndx * t * 30, sy - ndy * t * 30, s, s * 0.75f, r, g, b, 0.4f * (1f - t) * p, 8)
+    for (i <- 0 until 6) {
+      val t = ((tick * 0.05 + i * 0.16 + proj.id * 0.13) % 1.0).toFloat
+      val taper = 1f - t * 0.7f
+      val s = 10f * taper
+      val colorFade = 1f - t * 0.35f
+      sb.fillOval(sx - ndx * t * 36, sy - ndy * t * 36, s, s * 0.7f,
+        r * colorFade, g * colorFade, b * colorFade, 0.4f * (1f - t) * p, 8)
     }
   }
 
@@ -86,13 +123,15 @@ object GLProjectileRenderers {
           (0.5 + 0.3 * Math.sin(phase * 4 + s * 2.1)).toFloat * p, 6)
       }
 
-      // Trail (reduced from 5 to 3)
+      // Trail — 6 segments with taper and color shift
       val (ndx, ndy, _) = screenDir(proj)
-      for (i <- 0 until 3) {
-        val t = ((tick * 0.06 + i * 0.3 + proj.id * 0.13) % 1.0).toFloat
-        val s = size * 0.5f * (1f - t * 0.5f)
-        sb.fillOval(sx - ndx * t * size * 2.5f, sy - ndy * t * size * 2.5f,
-          s, s * 0.7f, r, g, b, 0.4f * (1f - t) * p, 8)
+      for (i <- 0 until 6) {
+        val t = ((tick * 0.05 + i * 0.16 + proj.id * 0.13) % 1.0).toFloat
+        val taper = 1f - t * 0.7f
+        val s = size * 0.5f * taper
+        val colorFade = 1f - t * 0.4f
+        sb.fillOval(sx - ndx * t * size * 3f, sy - ndy * t * size * 3f,
+          s, s * 0.65f, r * colorFade, g * colorFade, b * colorFade, 0.4f * (1f - t) * p, 8)
       }
     }
 
@@ -114,12 +153,15 @@ object GLProjectileRenderers {
       sb.fillOvalSoft(tipX, tipY, width * 3f, width * 2.2f, r, g, b, 0.4f * p, 0f, 12)
       sb.fillOval(tipX, tipY, width * 1.2f, width * 0.9f, bright(r), bright(g), bright(b), 0.8f * p, 8)
 
-      // Energy nodes along beam
+      // Energy nodes along beam — 5 with taper toward tail
       val dx = tipX - sx; val dy = tipY - sy
-      for (i <- 0 until 3) {
-        val t = ((tick * 0.1 + i * 0.33 + proj.id * 0.11) % 1.0).toFloat
-        val ns = width * 0.6f * (0.6f + 0.4f * Math.sin(phase * 3 + i * 2.1).toFloat)
-        sb.fillOval(sx + dx * t, sy + dy * t, ns, ns * 0.7f, bright(r), bright(g), bright(b), 0.5f * p, 6)
+      for (i <- 0 until 5) {
+        val t = ((tick * 0.08 + i * 0.2 + proj.id * 0.11) % 1.0).toFloat
+        val taper = 1f - t * 0.4f
+        val ns = width * 0.6f * taper * (0.6f + 0.4f * Math.sin(phase * 3 + i * 2.1).toFloat)
+        val colorFade = 1f - t * 0.3f
+        sb.fillOval(sx + dx * t, sy + dy * t, ns, ns * 0.7f,
+          bright(r) * colorFade, bright(g) * colorFade, bright(b) * colorFade, 0.5f * (1f - t * 0.3f) * p, 6)
       }
     }
 
@@ -131,33 +173,33 @@ object GLProjectileRenderers {
       val (ndx, ndy, _) = screenDir(proj)
       val n = pts * 2
 
-      // Motion blur trail
-      for (ghost <- 1 to 2) {
-        val ga = 0.2f * (1f - ghost * 0.35f) * p
-        val gx = sx - ndx * ghost * 9f
-        val gy = sy - ndy * ghost * 9f
-        val gSpin = spin - ghost * 0.25
-        val gxs = new Array[Float](n); val gys = new Array[Float](n)
+      // Motion blur trail — 3 ghosts with taper and color fade
+      for (ghost <- 1 to 3) {
+        val taper = 1f - ghost * 0.2f
+        val colorFade = 1f - ghost * 0.15f
+        val ga = 0.22f * (1f - ghost * 0.25f) * p
+        val gx = sx - ndx * ghost * 10f
+        val gy = sy - ndy * ghost * 10f
+        val gSpin = spin - ghost * 0.3
         for (i <- 0 until n) {
           val angle = gSpin + i * Math.PI / pts
-          val rad = if (i % 2 == 0) size * 0.85f else size * 0.3f
-          gxs(i) = (gx + Math.cos(angle) * rad).toFloat
-          gys(i) = (gy + Math.sin(angle) * rad * 0.6f).toFloat
+          val rad = if (i % 2 == 0) size * 0.85f * taper else size * 0.3f * taper
+          _spinGhostXs(i) = (gx + Math.cos(angle) * rad).toFloat
+          _spinGhostYs(i) = (gy + Math.sin(angle) * rad * 0.6f).toFloat
         }
-        sb.fillPolygon(gxs, gys, r, g, b, ga)
+        sb.fillPolygon(_spinGhostXs, _spinGhostYs, n, r * colorFade, g * colorFade, b * colorFade, ga)
       }
 
       // Main shape
-      val xs = new Array[Float](n); val ys = new Array[Float](n)
       for (i <- 0 until n) {
         val angle = spin + i * Math.PI / pts
         val rad = if (i % 2 == 0) size else size * 0.3f
-        xs(i) = (sx + Math.cos(angle) * rad).toFloat
-        ys(i) = (sy + Math.sin(angle) * rad * 0.6f).toFloat
+        _spinXs(i) = (sx + Math.cos(angle) * rad).toFloat
+        _spinYs(i) = (sy + Math.sin(angle) * rad * 0.6f).toFloat
       }
-      sb.fillPolygon(xs, ys, r, g, b, 0.9f * p)
+      sb.fillPolygon(_spinXs, _spinYs, n, r, g, b, 0.9f * p)
       // Edge highlight
-      sb.strokePolygon(xs, ys, 2f, bright(r), bright(g), bright(b), 0.8f * p)
+      sb.strokePolygon(_spinXs, _spinYs, n, 2f, bright(r), bright(g), bright(b), 0.8f * p)
       // Center
       sb.fillOval(sx, sy, size * 0.18f, size * 0.12f, 1f, 1f, 1f, 0.6f * p, 6)
     }
@@ -193,11 +235,13 @@ object GLProjectileRenderers {
         sb.strokeLine(sx, sy, tx, ty, 2f, dark(r), dark(g), dark(b), 0.6f * p)
       }
 
-      // Trail
-      for (i <- 0 until 3) {
-        val t = ((tick * 0.06 + i * 0.33 + proj.id * 0.11) % 1.0).toFloat
-        sb.fillOval(sx - ndx * t * 22, sy - ndy * t * 22,
-          3f * (1f - t), 2.5f * (1f - t), r, g, b, 0.35f * (1f - t) * p, 6)
+      // Trail — 6 segments with taper
+      for (i <- 0 until 6) {
+        val t = ((tick * 0.05 + i * 0.16 + proj.id * 0.11) % 1.0).toFloat
+        val taper = 1f - t * 0.8f
+        val colorFade = 1f - t * 0.35f
+        sb.fillOval(sx - ndx * t * 30, sy - ndy * t * 30,
+          3.5f * taper, 2.5f * taper, r * colorFade, g * colorFade, b * colorFade, 0.35f * (1f - t) * p, 6)
       }
     }
 
@@ -665,19 +709,18 @@ object GLProjectileRenderers {
 
     // Bolt path (reduced from 10 to 6 segments)
     val segs = 6
-    val bxs = new Array[Float](segs + 1); val bys = new Array[Float](segs + 1)
-    bxs(0) = sx; bys(0) = sy; bxs(segs) = tipX; bys(segs) = tipY
+    _boltXs(0) = sx; _boltYs(0) = sy; _boltXs(segs) = tipX; _boltYs(segs) = tipY
     for (i <- 1 until segs) {
       val t = i.toFloat / segs
       val jitter = Math.sin(phase * 6 + i * 2.7).toFloat * 12f
-      bxs(i) = sx + dx * t + nx * jitter
-      bys(i) = sy + dy * t + ny * jitter
+      _boltXs(i) = sx + dx * t + nx * jitter
+      _boltYs(i) = sy + dy * t + ny * jitter
     }
 
     // Main bolt (solid, thick) — bloom handles glow
-    for (i <- 0 until segs) sb.strokeLine(bxs(i), bys(i), bxs(i + 1), bys(i + 1), 6f, 0.5f, 0.4f, 1f, 0.85f * flicker)
+    for (i <- 0 until segs) sb.strokeLine(_boltXs(i), _boltYs(i), _boltXs(i + 1), _boltYs(i + 1), 6f, 0.5f, 0.4f, 1f, 0.85f * flicker)
     // White-hot core
-    for (i <- 0 until segs) sb.strokeLine(bxs(i), bys(i), bxs(i + 1), bys(i + 1), 2.5f, 0.9f, 0.88f, 1f, 0.95f * flicker)
+    for (i <- 0 until segs) sb.strokeLine(_boltXs(i), _boltYs(i), _boltXs(i + 1), _boltYs(i + 1), 2.5f, 0.9f, 0.88f, 1f, 0.95f * flicker)
 
     // Branches (reduced from 3 to 2)
     for (b <- 0 until 2) {
@@ -685,10 +728,10 @@ object GLProjectileRenderers {
       if (bSeg < segs) {
         val bAngle = Math.PI * 0.35 * (if (b % 2 == 0) 1 else -1) + Math.sin(phase * 2 + b).toFloat * 0.3
         val bLen = 20f + Math.sin(phase * 3 + b * 2.1).toFloat * 8f
-        val bex = bxs(bSeg) + Math.cos(bAngle).toFloat * bLen
-        val bey = bys(bSeg) + Math.sin(bAngle).toFloat * bLen * 0.5f
-        sb.strokeLine(bxs(bSeg), bys(bSeg), bex, bey, 3.5f, 0.5f, 0.4f, 1f, 0.5f * flicker)
-        sb.strokeLine(bxs(bSeg), bys(bSeg), bex, bey, 1.5f, 0.85f, 0.8f, 1f, 0.7f * flicker)
+        val bex = _boltXs(bSeg) + Math.cos(bAngle).toFloat * bLen
+        val bey = _boltYs(bSeg) + Math.sin(bAngle).toFloat * bLen * 0.5f
+        sb.strokeLine(_boltXs(bSeg), _boltYs(bSeg), bex, bey, 3.5f, 0.5f, 0.4f, 1f, 0.5f * flicker)
+        sb.strokeLine(_boltXs(bSeg), _boltYs(bSeg), bex, bey, 1.5f, 0.85f, 0.8f, 1f, 0.7f * flicker)
       }
     }
 
@@ -706,23 +749,22 @@ object GLProjectileRenderers {
 
     // Zigzag bolt from above
     val pts = 9
-    val bx = new Array[Float](pts); val by = new Array[Float](pts)
-    bx(0) = sx - 5; by(0) = sy - 55
-    bx(1) = sx + 12; by(1) = sy - 35
-    bx(2) = sx + 1; by(2) = sy - 28
-    bx(3) = sx + 14; by(3) = sy - 8
-    bx(4) = sx + 5; by(4) = sy - 4
-    bx(5) = sx + 16; by(5) = sy + 18
-    bx(6) = sx + 7; by(6) = sy + 15
-    bx(7) = sx + 14; by(7) = sy + 32
-    bx(8) = sx + 4; by(8) = sy + 32
+    _thunderXs(0) = sx - 5; _thunderYs(0) = sy - 55
+    _thunderXs(1) = sx + 12; _thunderYs(1) = sy - 35
+    _thunderXs(2) = sx + 1; _thunderYs(2) = sy - 28
+    _thunderXs(3) = sx + 14; _thunderYs(3) = sy - 8
+    _thunderXs(4) = sx + 5; _thunderYs(4) = sy - 4
+    _thunderXs(5) = sx + 16; _thunderYs(5) = sy + 18
+    _thunderXs(6) = sx + 7; _thunderYs(6) = sy + 15
+    _thunderXs(7) = sx + 14; _thunderYs(7) = sy + 32
+    _thunderXs(8) = sx + 4; _thunderYs(8) = sy + 32
 
     // Soft glow
-    for (i <- 0 until pts - 1) sb.strokeLineSoft(bx(i), by(i), bx(i + 1), by(i + 1), 20f, 1f, 0.85f, 0.2f, 0.2f * flicker)
+    for (i <- 0 until pts - 1) sb.strokeLineSoft(_thunderXs(i), _thunderYs(i), _thunderXs(i + 1), _thunderYs(i + 1), 20f, 1f, 0.85f, 0.2f, 0.2f * flicker)
     // Main bolt
-    for (i <- 0 until pts - 1) sb.strokeLine(bx(i), by(i), bx(i + 1), by(i + 1), 8f, 1f, 0.9f, 0.35f, 0.7f * flicker)
+    for (i <- 0 until pts - 1) sb.strokeLine(_thunderXs(i), _thunderYs(i), _thunderXs(i + 1), _thunderYs(i + 1), 8f, 1f, 0.9f, 0.35f, 0.7f * flicker)
     // Core
-    for (i <- 0 until pts - 1) sb.strokeLine(bx(i), by(i), bx(i + 1), by(i + 1), 3f, 1f, 1f, 0.85f, 0.95f * flicker)
+    for (i <- 0 until pts - 1) sb.strokeLine(_thunderXs(i), _thunderYs(i), _thunderXs(i + 1), _thunderYs(i + 1), 3f, 1f, 1f, 0.85f, 0.95f * flicker)
 
     // Ground impact
     sb.fillOval(sx, sy + 32f, 18f, 6f, 1f, 0.9f, 0.3f, 0.5f * flicker, 14)
@@ -768,20 +810,19 @@ object GLProjectileRenderers {
     val perpX = -ndy; val perpY = ndx
 
     val crestW = 38f; val crestH = 24f
-    val xs = new Array[Float](10); val ys = new Array[Float](10)
     for (i <- 0 until 10) {
       val t = i.toFloat / 9
       val off = (t - 0.5f) * 2f
       val height = (1f - off * off) * crestH * p
-      xs(i) = sx + perpX * off * crestW + ndx * height * 0.3f
-      ys(i) = sy + perpY * off * crestW * 0.6f + ndy * height * 0.3f - height
+      _waveXs(i) = sx + perpX * off * crestW + ndx * height * 0.3f
+      _waveYs(i) = sy + perpY * off * crestW * 0.6f + ndy * height * 0.3f - height
     }
     // Thick wave body
-    for (i <- 0 until 8) sb.strokeLine(xs(i), ys(i), xs(i + 1), ys(i + 1), 10f, 0.15f, 0.35f, 0.65f, 0.55f * p)
-    for (i <- 0 until 8) sb.strokeLine(xs(i), ys(i), xs(i + 1), ys(i + 1), 6f, 0.25f, 0.5f, 0.85f, 0.7f * p)
-    for (i <- 0 until 8) sb.strokeLine(xs(i), ys(i), xs(i + 1), ys(i + 1), 2.5f, 0.45f, 0.75f, 1f, 0.8f * p)
+    for (i <- 0 until 8) sb.strokeLine(_waveXs(i), _waveYs(i), _waveXs(i + 1), _waveYs(i + 1), 10f, 0.15f, 0.35f, 0.65f, 0.55f * p)
+    for (i <- 0 until 8) sb.strokeLine(_waveXs(i), _waveYs(i), _waveXs(i + 1), _waveYs(i + 1), 6f, 0.25f, 0.5f, 0.85f, 0.7f * p)
+    for (i <- 0 until 8) sb.strokeLine(_waveXs(i), _waveYs(i), _waveXs(i + 1), _waveYs(i + 1), 2.5f, 0.45f, 0.75f, 1f, 0.8f * p)
     // Foam cap
-    for (i <- 2 until 7) sb.strokeLine(xs(i), ys(i), xs(i + 1), ys(i + 1), 3f, 0.85f, 0.95f, 1f, 0.5f * p)
+    for (i <- 2 until 7) sb.strokeLine(_waveXs(i), _waveYs(i), _waveXs(i + 1), _waveYs(i + 1), 3f, 0.85f, 0.95f, 1f, 0.5f * p)
 
     // Base splash
     sb.fillOvalSoft(sx, sy, 36f, 16f, 0.2f, 0.45f, 0.8f, 0.2f * p, 0f, 14)
@@ -789,8 +830,8 @@ object GLProjectileRenderers {
     // Spray
     for (i <- 0 until 6) {
       val t = ((tick * 0.06 + i * 0.167 + proj.id * 0.11) % 1.0).toFloat
-      val dropX = xs(1 + i) + ndx * t * 12 + Math.sin(phase + i * 2).toFloat * 5
-      val dropY = ys(1 + i) + ndy * t * 12 - t * 8
+      val dropX = _waveXs(1 + i) + ndx * t * 12 + Math.sin(phase + i * 2).toFloat * 5
+      val dropY = _waveYs(1 + i) + ndy * t * 12 - t * 8
       sb.fillOval(dropX, dropY, 4f, 3f, 0.7f, 0.9f, 1f, 0.5f * (1f - t) * p, 6)
     }
   }
@@ -831,25 +872,21 @@ object GLProjectileRenderers {
     val segs = 12
     val baseAngle = Math.atan2(ndy, ndx)
 
-    val outerXs = new Array[Float](segs + 1); val outerYs = new Array[Float](segs + 1)
-    val innerXs = new Array[Float](segs + 1); val innerYs = new Array[Float](segs + 1)
     for (i <- 0 to segs) {
       val a = baseAngle - Math.PI * 0.4 + Math.PI * 0.8 * i / segs
-      outerXs(i) = (sx + Math.cos(a).toFloat * arcR)
-      outerYs(i) = (sy + Math.sin(a).toFloat * arcR * 0.55f)
-      innerXs(i) = (sx + Math.cos(a).toFloat * arcR * 0.4f)
-      innerYs(i) = (sy + Math.sin(a).toFloat * arcR * 0.22f)
+      _swOuterXs(i) = (sx + Math.cos(a).toFloat * arcR)
+      _swOuterYs(i) = (sy + Math.sin(a).toFloat * arcR * 0.55f)
+      _swInnerXs(i) = (sx + Math.cos(a).toFloat * arcR * 0.4f)
+      _swInnerYs(i) = (sy + Math.sin(a).toFloat * arcR * 0.22f)
     }
 
-    val crescXs = new Array[Float]((segs + 1) * 2)
-    val crescYs = new Array[Float]((segs + 1) * 2)
-    for (i <- 0 to segs) { crescXs(i) = outerXs(i); crescYs(i) = outerYs(i) }
-    for (i <- 0 to segs) { crescXs(segs + 1 + i) = innerXs(segs - i); crescYs(segs + 1 + i) = innerYs(segs - i) }
+    for (i <- 0 to segs) { _swCrescXs(i) = _swOuterXs(i); _swCrescYs(i) = _swOuterYs(i) }
+    for (i <- 0 to segs) { _swCrescXs(segs + 1 + i) = _swInnerXs(segs - i); _swCrescYs(segs + 1 + i) = _swInnerYs(segs - i) }
 
     // Crescent fill (solid)
-    sb.fillPolygon(crescXs, crescYs, 0.65f, 0.65f, 0.85f, 0.6f * p)
+    sb.fillPolygon(_swCrescXs, _swCrescYs, (segs + 1) * 2, 0.65f, 0.65f, 0.85f, 0.6f * p)
     // Bright outer edge
-    for (i <- 0 until segs) sb.strokeLine(outerXs(i), outerYs(i), outerXs(i + 1), outerYs(i + 1),
+    for (i <- 0 until segs) sb.strokeLine(_swOuterXs(i), _swOuterYs(i), _swOuterXs(i + 1), _swOuterYs(i + 1),
       3f, 0.9f, 0.9f, 1f, 0.9f * p)
   }
 
@@ -965,20 +1002,18 @@ object GLProjectileRenderers {
     val arcLen = Math.PI * 0.75
     val segs = 12
 
-    val arcXs = new Array[Float](segs * 2 + 2)
-    val arcYs = new Array[Float](segs * 2 + 2)
     for (i <- 0 to segs) {
       val a = startAngle + arcLen * i / segs
-      arcXs(i) = (sx + Math.cos(a).toFloat * bladeR)
-      arcYs(i) = (sy + Math.sin(a).toFloat * bladeR * 0.6f)
+      _scyXs(i) = (sx + Math.cos(a).toFloat * bladeR)
+      _scyYs(i) = (sy + Math.sin(a).toFloat * bladeR * 0.6f)
     }
     for (i <- 0 to segs) {
       val a = startAngle + arcLen * (segs - i) / segs
-      arcXs(segs + 1 + i) = (sx + Math.cos(a).toFloat * bladeR * 0.4f)
-      arcYs(segs + 1 + i) = (sy + Math.sin(a).toFloat * bladeR * 0.24f)
+      _scyXs(segs + 1 + i) = (sx + Math.cos(a).toFloat * bladeR * 0.4f)
+      _scyYs(segs + 1 + i) = (sy + Math.sin(a).toFloat * bladeR * 0.24f)
     }
     // Solid blade
-    sb.fillPolygon(arcXs, arcYs, 0.7f, 0.72f, 0.78f, 0.8f * p)
+    sb.fillPolygon(_scyXs, _scyYs, segs * 2 + 2, 0.7f, 0.72f, 0.78f, 0.8f * p)
     // Bright outer edge
     for (i <- 0 until segs) {
       val a1 = startAngle + arcLen * i / segs; val a2 = startAngle + arcLen * (i + 1) / segs

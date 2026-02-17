@@ -1020,13 +1020,47 @@ def draw_generic_character(draw, ox, oy, direction, frame,
                 draw.line([(body_cx - 4, head_cy - 14), (body_cx - 2, head_cy - 10)],
                           fill=hat_dark, width=1)
 
-    # Draw order: legs, cape (behind), body, arms, head, hat
+    def draw_rim_light():
+        """Rim lighting — bright highlight arcs on top-left edges for directional light."""
+        rim = _brighten(head_highlight, 1.4)
+        body_rim = _brighten(body_highlight, 1.4)
+        if direction == DOWN:
+            # Head rim — top-left arc
+            draw.arc([body_cx - 16, head_cy - 14, body_cx + 16, head_cy + 14],
+                     start=200, end=310, fill=rim, width=1)
+            # Body rim — top-left arc
+            draw.arc([body_cx - 14, body_cy - 12, body_cx + 14, body_cy + 12],
+                     start=200, end=280, fill=body_rim, width=1)
+        elif direction == UP:
+            # Head rim — back top arc
+            draw.arc([body_cx - 16, head_cy - 14, body_cx + 16, head_cy + 14],
+                     start=200, end=310, fill=rim, width=1)
+            # Body rim
+            draw.arc([body_cx - 14, body_cy - 12, body_cx + 14, body_cy + 12],
+                     start=200, end=280, fill=body_rim, width=1)
+        elif direction == LEFT:
+            # Head rim — left side arc
+            draw.arc([body_cx - 16, head_cy - 14, body_cx + 12, head_cy + 14],
+                     start=180, end=300, fill=rim, width=1)
+            # Body rim
+            draw.arc([body_cx - 14, body_cy - 12, body_cx + 10, body_cy + 12],
+                     start=190, end=280, fill=body_rim, width=1)
+        else:  # RIGHT
+            # Head rim — top arc (light from top-left still)
+            draw.arc([body_cx - 12, head_cy - 14, body_cx + 16, head_cy + 14],
+                     start=220, end=320, fill=rim, width=1)
+            # Body rim
+            draw.arc([body_cx - 10, body_cy - 12, body_cx + 14, body_cy + 12],
+                     start=220, end=300, fill=body_rim, width=1)
+
+    # Draw order: legs, cape (behind), body, arms, head, hat, rim light
     draw_legs()
     draw_cape()
     draw_body()
     draw_arms()
     draw_head()
     draw_hat()
+    draw_rim_light()
 
 
 def _darken(color, factor=0.75):

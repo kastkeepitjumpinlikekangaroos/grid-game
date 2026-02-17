@@ -67,8 +67,8 @@ class GLWindow(title: String, initialWidth: Int, initialHeight: Int) {
     makeContextCurrent()
     GL.createCapabilities()
 
-    // No vsync — AnimationTimer handles pacing
-    glfwSwapInterval(0)
+    // VSync enabled — prevents screen tearing
+    glfwSwapInterval(1)
 
     // OpenGL defaults for 2D rendering
     glEnable(GL_BLEND)

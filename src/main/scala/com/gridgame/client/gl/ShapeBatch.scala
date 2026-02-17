@@ -131,7 +131,11 @@ class ShapeBatch(val shader: ShaderProgram) {
 
   /** Fill a convex polygon given arrays of x and y coordinates. */
   def fillPolygon(xs: Array[Float], ys: Array[Float], r: Float, g: Float, b: Float, a: Float): Unit = {
-    val n = Math.min(xs.length, ys.length)
+    fillPolygon(xs, ys, Math.min(xs.length, ys.length), r, g, b, a)
+  }
+
+  /** Fill a convex polygon using the first `n` elements of the given arrays. */
+  def fillPolygon(xs: Array[Float], ys: Array[Float], n: Int, r: Float, g: Float, b: Float, a: Float): Unit = {
     if (n < 3) return
     // Fan triangulation from first vertex (works for convex polygons)
     val numTris = n - 2
@@ -231,7 +235,12 @@ class ShapeBatch(val shader: ShaderProgram) {
   /** Stroke a polygon outline. */
   def strokePolygon(xs: Array[Float], ys: Array[Float], lineWidth: Float,
                     r: Float, g: Float, b: Float, a: Float): Unit = {
-    val n = Math.min(xs.length, ys.length)
+    strokePolygon(xs, ys, Math.min(xs.length, ys.length), lineWidth, r, g, b, a)
+  }
+
+  /** Stroke a polygon outline using the first `n` elements. */
+  def strokePolygon(xs: Array[Float], ys: Array[Float], n: Int, lineWidth: Float,
+                    r: Float, g: Float, b: Float, a: Float): Unit = {
     if (n < 2) return
     var i = 0
     while (i < n) {
