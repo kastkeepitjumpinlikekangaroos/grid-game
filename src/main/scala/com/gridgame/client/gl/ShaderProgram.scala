@@ -169,6 +169,7 @@ object ShaderProgram {
       |uniform float uChromaticAberration;
       |uniform vec2 uDistortionCenter;
       |uniform float uDistortionStrength;
+      |uniform float uDamageVignette;
       |out vec4 FragColor;
       |void main() {
       |  vec2 uv = vTexCoord;
@@ -215,8 +216,15 @@ object ShaderProgram {
       |  float dist = dot(vigUV, vigUV);
       |  float vignette = 1.0 - smoothstep(0.4, 1.8, dist) * uVignetteStrength;
       |  color *= vignette;
-      |  // Overlay (damage flash)
+      |  // Overlay (generic color overlay)
       |  color = mix(color, uOverlayColor.rgb, uOverlayColor.a);
+      |  // Damage vignette: red glow at screen edges only
+      |  if (uDamageVignette > 0.0) {
+      |    float edgeDist = length(vigUV * vec2(1.0, 0.8));
+      |    float edgeMask = smoothstep(0.5, 1.2, edgeDist);
+      |    vec3 dmgColor = vec3(0.8, 0.05, 0.02);
+      |    color = mix(color, dmgColor, edgeMask * uDamageVignette * 0.45);
+      |  }
       |  FragColor = vec4(color, 1.0);
       |}""".stripMargin
 

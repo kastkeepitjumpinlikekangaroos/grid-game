@@ -1,0 +1,59 @@
+{
+  "name": "Bone Pit",
+  "background": "desert",
+  "width": 110,
+  "height": 110,
+  "layers": [
+    {"type": "fill", "tile": "sand"},
+    {"type": "border", "tile": "cliff", "thickness": 3},
+
+    {"type": "circle", "tile": "ash", "cx": 55, "cy": 55, "radius": 40},
+
+    {"type": "circle", "tile": "dirt", "cx": 55, "cy": 55, "radius": 22},
+    {"type": "circle", "tile": "gravel", "cx": 55, "cy": 55, "radius": 14},
+    {"type": "circle", "tile": "obsidian", "cx": 55, "cy": 55, "radius": 6},
+    {"type": "circle", "tile": "lava", "cx": 55, "cy": 55, "radius": 3},
+
+    {"type": "rect", "tile": "thorns", "x": 30, "y": 30, "width": 3, "height": 12},
+    {"type": "rect", "tile": "thorns", "x": 77, "y": 30, "width": 3, "height": 12},
+    {"type": "rect", "tile": "thorns", "x": 30, "y": 68, "width": 3, "height": 12},
+    {"type": "rect", "tile": "thorns", "x": 77, "y": 68, "width": 3, "height": 12},
+
+    {"type": "rect", "tile": "thorns", "x": 35, "y": 25, "width": 12, "height": 3},
+    {"type": "rect", "tile": "thorns", "x": 63, "y": 25, "width": 12, "height": 3},
+    {"type": "rect", "tile": "thorns", "x": 35, "y": 82, "width": 12, "height": 3},
+    {"type": "rect", "tile": "thorns", "x": 63, "y": 82, "width": 12, "height": 3},
+
+    {"type": "line", "tile": "gravel", "x1": 7, "y1": 55, "x2": 33, "y2": 55, "thickness": 3},
+    {"type": "line", "tile": "gravel", "x1": 77, "y1": 55, "x2": 103, "y2": 55, "thickness": 3},
+    {"type": "line", "tile": "gravel", "x1": 55, "y1": 7, "x2": 55, "y2": 33, "thickness": 3},
+    {"type": "line", "tile": "gravel", "x1": 55, "y1": 77, "x2": 55, "y2": 103, "thickness": 3},
+
+    {"type": "rect", "tile": "cliff", "x": 8, "y": 8, "width": 12, "height": 12},
+    {"type": "rect", "tile": "sand", "x": 10, "y": 10, "width": 8, "height": 8},
+
+    {"type": "rect", "tile": "cliff", "x": 90, "y": 8, "width": 12, "height": 12},
+    {"type": "rect", "tile": "sand", "x": 92, "y": 10, "width": 8, "height": 8},
+
+    {"type": "rect", "tile": "cliff", "x": 8, "y": 90, "width": 12, "height": 12},
+    {"type": "rect", "tile": "sand", "x": 10, "y": 92, "width": 8, "height": 8},
+
+    {"type": "rect", "tile": "cliff", "x": 90, "y": 90, "width": 12, "height": 12},
+    {"type": "rect", "tile": "sand", "x": 92, "y": 92, "width": 8, "height": 8},
+
+    {"type": "rect", "tile": "wall", "x": 52, "y": 42, "width": 6, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 52, "y": 65, "width": 6, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 42, "y": 52, "width": 3, "height": 6},
+    {"type": "rect", "tile": "wall", "x": 65, "y": 52, "width": 3, "height": 6}
+  ],
+  "spawnPoints": [
+    {"x": 14, "y": 14},
+    {"x": 96, "y": 14},
+    {"x": 14, "y": 96},
+    {"x": 96, "y": 96},
+    {"x": 55, "y": 10},
+    {"x": 55, "y": 100},
+    {"x": 10, "y": 55},
+    {"x": 100, "y": 55}
+  ]
+}

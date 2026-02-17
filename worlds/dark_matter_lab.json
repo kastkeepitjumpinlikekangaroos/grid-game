@@ -1,0 +1,59 @@
+{
+  "name": "Dark Matter Lab",
+  "background": "space",
+  "width": 120,
+  "height": 120,
+  "layers": [
+    {"type": "fill", "tile": "void"},
+    {"type": "border", "tile": "basalt", "thickness": 3},
+
+    {"type": "rect", "tile": "metal", "x": 8, "y": 8, "width": 104, "height": 104},
+    {"type": "rect", "tile": "glass", "x": 12, "y": 12, "width": 96, "height": 96},
+
+    {"type": "rect", "tile": "wall", "x": 30, "y": 12, "width": 3, "height": 30},
+    {"type": "rect", "tile": "wall", "x": 87, "y": 12, "width": 3, "height": 30},
+    {"type": "rect", "tile": "wall", "x": 30, "y": 78, "width": 3, "height": 30},
+    {"type": "rect", "tile": "wall", "x": 87, "y": 78, "width": 3, "height": 30},
+
+    {"type": "rect", "tile": "wall", "x": 12, "y": 30, "width": 18, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 90, "y": 30, "width": 18, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 12, "y": 87, "width": 18, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 90, "y": 87, "width": 18, "height": 3},
+
+    {"type": "rect", "tile": "glass", "x": 30, "y": 20, "width": 3, "height": 8},
+    {"type": "rect", "tile": "glass", "x": 87, "y": 20, "width": 3, "height": 8},
+    {"type": "rect", "tile": "glass", "x": 30, "y": 92, "width": 3, "height": 8},
+    {"type": "rect", "tile": "glass", "x": 87, "y": 92, "width": 3, "height": 8},
+
+    {"type": "rect", "tile": "metal", "x": 38, "y": 38, "width": 44, "height": 44},
+    {"type": "rect", "tile": "glass", "x": 42, "y": 42, "width": 36, "height": 36},
+    {"type": "circle", "tile": "energy_field", "cx": 60, "cy": 60, "radius": 10},
+    {"type": "circle", "tile": "glass", "cx": 60, "cy": 60, "radius": 7},
+    {"type": "circle", "tile": "plasma", "cx": 60, "cy": 60, "radius": 3},
+
+    {"type": "rect", "tile": "metal", "x": 33, "y": 57, "width": 5, "height": 6},
+    {"type": "rect", "tile": "metal", "x": 82, "y": 57, "width": 5, "height": 6},
+    {"type": "rect", "tile": "metal", "x": 57, "y": 33, "width": 6, "height": 5},
+    {"type": "rect", "tile": "metal", "x": 57, "y": 82, "width": 6, "height": 5},
+
+    {"type": "rect", "tile": "wall", "x": 50, "y": 38, "width": 3, "height": 8},
+    {"type": "rect", "tile": "wall", "x": 67, "y": 38, "width": 3, "height": 8},
+    {"type": "rect", "tile": "wall", "x": 50, "y": 74, "width": 3, "height": 8},
+    {"type": "rect", "tile": "wall", "x": 67, "y": 74, "width": 3, "height": 8},
+
+    {"type": "rect", "tile": "circuit", "x": 14, "y": 14, "width": 12, "height": 12},
+    {"type": "rect", "tile": "circuit", "x": 94, "y": 14, "width": 12, "height": 12},
+    {"type": "rect", "tile": "circuit", "x": 14, "y": 94, "width": 12, "height": 12},
+    {"type": "rect", "tile": "circuit", "x": 94, "y": 94, "width": 12, "height": 12}
+  ],
+  "spawnPoints": [
+    {"x": 20, "y": 20},
+    {"x": 100, "y": 20},
+    {"x": 20, "y": 100},
+    {"x": 100, "y": 100},
+    {"x": 60, "y": 15},
+    {"x": 60, "y": 105},
+    {"x": 15, "y": 60},
+    {"x": 105, "y": 60}
+  ]
+}

@@ -45,6 +45,9 @@ class PostProcessor(var width: Int, var height: Int) {
   // Chromatic aberration (set on damage)
   var chromaticAberration: Float = 0f
 
+  // Damage vignette (red edge flash, 0=off, 1=max)
+  var damageVignette: Float = 0f
+
   // Screen distortion (set on nearby explosions)
   var distortionCenterX: Float = 0.5f
   var distortionCenterY: Float = 0.5f
@@ -139,6 +142,8 @@ class PostProcessor(var width: Int, var height: Int) {
     // Screen distortion
     compositeShader.setUniform2f("uDistortionCenter", distortionCenterX, distortionCenterY)
     compositeShader.setUniform1f("uDistortionStrength", distortionStrength)
+    // Damage vignette
+    compositeShader.setUniform1f("uDamageVignette", damageVignette)
     sceneFBO.bind(0)
     blurPongFBO.bind(1)
     drawQuad()

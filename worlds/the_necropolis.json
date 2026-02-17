@@ -1,0 +1,62 @@
+{
+  "name": "The Necropolis",
+  "background": "space",
+  "width": 120,
+  "height": 120,
+  "layers": [
+    {"type": "fill", "tile": "ash"},
+    {"type": "border", "tile": "obsidian", "thickness": 3},
+    {"type": "border", "tile": "thorns", "thickness": 1},
+
+    {"type": "line", "tile": "cobblestone", "x1": 60, "y1": 8, "x2": 60, "y2": 112, "thickness": 3},
+    {"type": "line", "tile": "cobblestone", "x1": 8, "y1": 60, "x2": 112, "y2": 60, "thickness": 3},
+
+    {"type": "line", "tile": "cobblestone", "x1": 20, "y1": 20, "x2": 100, "y2": 100, "thickness": 2},
+    {"type": "line", "tile": "cobblestone", "x1": 100, "y1": 20, "x2": 20, "y2": 100, "thickness": 2},
+
+    {"type": "circle", "tile": "dirt", "cx": 60, "cy": 60, "radius": 16},
+    {"type": "circle", "tile": "cobblestone", "cx": 60, "cy": 60, "radius": 10},
+    {"type": "circle", "tile": "obsidian", "cx": 60, "cy": 60, "radius": 5},
+    {"type": "circle", "tile": "crystal", "cx": 60, "cy": 60, "radius": 2},
+
+    {"type": "rect", "tile": "obsidian", "x": 14, "y": 14, "width": 16, "height": 16},
+    {"type": "rect", "tile": "gravel", "x": 17, "y": 17, "width": 10, "height": 10},
+    {"type": "rect", "tile": "thorns", "x": 20, "y": 20, "width": 4, "height": 4},
+
+    {"type": "rect", "tile": "obsidian", "x": 90, "y": 14, "width": 16, "height": 16},
+    {"type": "rect", "tile": "gravel", "x": 93, "y": 17, "width": 10, "height": 10},
+    {"type": "rect", "tile": "thorns", "x": 96, "y": 20, "width": 4, "height": 4},
+
+    {"type": "rect", "tile": "obsidian", "x": 14, "y": 90, "width": 16, "height": 16},
+    {"type": "rect", "tile": "gravel", "x": 17, "y": 93, "width": 10, "height": 10},
+    {"type": "rect", "tile": "thorns", "x": 20, "y": 96, "width": 4, "height": 4},
+
+    {"type": "rect", "tile": "obsidian", "x": 90, "y": 90, "width": 16, "height": 16},
+    {"type": "rect", "tile": "gravel", "x": 93, "y": 93, "width": 10, "height": 10},
+    {"type": "rect", "tile": "thorns", "x": 96, "y": 96, "width": 4, "height": 4},
+
+    {"type": "rect", "tile": "wall", "x": 40, "y": 35, "width": 3, "height": 10},
+    {"type": "rect", "tile": "wall", "x": 77, "y": 35, "width": 3, "height": 10},
+    {"type": "rect", "tile": "wall", "x": 40, "y": 75, "width": 3, "height": 10},
+    {"type": "rect", "tile": "wall", "x": 77, "y": 75, "width": 3, "height": 10},
+    {"type": "rect", "tile": "wall", "x": 35, "y": 40, "width": 10, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 75, "y": 40, "width": 10, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 35, "y": 77, "width": 10, "height": 3},
+    {"type": "rect", "tile": "wall", "x": 75, "y": 77, "width": 10, "height": 3},
+
+    {"type": "circle", "tile": "toxic", "cx": 35, "cy": 60, "radius": 4},
+    {"type": "circle", "tile": "toxic", "cx": 85, "cy": 60, "radius": 4},
+    {"type": "circle", "tile": "toxic", "cx": 60, "cy": 35, "radius": 4},
+    {"type": "circle", "tile": "toxic", "cx": 60, "cy": 85, "radius": 4}
+  ],
+  "spawnPoints": [
+    {"x": 22, "y": 22},
+    {"x": 98, "y": 22},
+    {"x": 22, "y": 98},
+    {"x": 98, "y": 98},
+    {"x": 60, "y": 10},
+    {"x": 60, "y": 110},
+    {"x": 10, "y": 60},
+    {"x": 110, "y": 60}
+  ]
+}

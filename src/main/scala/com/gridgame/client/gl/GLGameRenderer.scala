@@ -32,9 +32,13 @@ class GLGameRenderer(val client: GameClient) {
   private var postProcessor: PostProcessor = _
   private var lightSystem: LightSystem = _
   private val damageNumbers = new DamageNumberSystem()
+  private val weatherParticles = new ParticleSystem(1024)
+  private val combatParticles = new ParticleSystem(512)
 
   // Previous health tracking for damage number detection
   private val prevHealthMap: mutable.Map[UUID, Int] = mutable.Map.empty
+  // Smooth health drain animation tracking
+  private val smoothHealthMap: mutable.Map[UUID, Float] = mutable.Map.empty
 
   // Tile overlay collection (reused each frame)
   private val specialTiles = new mutable.ArrayBuffer[(Int, Int, Int)]() // (wx, wy, tileId)
@@ -56,6 +60,22 @@ class GLGameRenderer(val client: GameClient) {
 
   private val HW = Constants.ISO_HALF_W
   private val HH = Constants.ISO_HALF_H
+
+  // Particle tracking
+  private var weatherSpawnAccum: Float = 0f
+  private var prevLocalVX: Double = Double.NaN
+  private var prevLocalVY: Double = Double.NaN
+  private var footstepAccum: Float = 0f
+  private val rng = new java.util.Random()
+
+  // Item spawn/pickup animation tracking
+  private val itemSpawnTimes: mutable.Map[Int, Long] = mutable.Map.empty
+  private val itemLastWorldPos: mutable.Map[Int, (Int, Int, Int)] = mutable.Map.empty // id -> (cellX, cellY, colorRGB)
+  private val drawnItemIdsThisFrame: mutable.Set[Int] = mutable.Set.empty
+
+  // Cooldown ready flash tracking (Q=0, E=1)
+  private val prevCooldownReady = Array(true, true)
+  private val cooldownReadyFlashTime = Array(0L, 0L)
 
   // Current frame's camera offsets (set during render)
   private var camOffX: Double = 0
@@ -81,9 +101,18 @@ class GLGameRenderer(val client: GameClient) {
   private val _aimBodyXs = new Array[Float](42)   // bodyN=20 → 20*2+2=42
   private val _aimBodyYs = new Array[Float](42)
 
+  // Track death IDs that have already spawned a particle burst
+  private val deathBurstSpawned = new mutable.HashSet[Any]()
+
   // Pre-allocated arrays for item shapes
   private val _starXs = new Array[Float](10)
   private val _starYs = new Array[Float](10)
+  // Pre-allocated arrays for cooldown sweep polygon
+  private val _sweepXs = new Array[Float](34)
+  private val _sweepYs = new Array[Float](34)
+  // Pre-allocated arrays for item shape highlight
+  private val _hlXs = new Array[Float](10)
+  private val _hlYs = new Array[Float](10)
 
   // ── Batch management ──
   // Track active batch to avoid redundant begin/end pairs.
@@ -130,6 +159,11 @@ class GLGameRenderer(val client: GameClient) {
   def render(deltaSec: Double, fbWidth: Int, fbHeight: Int, windowWidth: Int, windowHeight: Int): Unit = {
     ensureInitialized(fbWidth, fbHeight)
     animationTick += 1
+    val dt = deltaSec.toFloat
+
+    // Update particle systems
+    weatherParticles.update(dt)
+    combatParticles.update(dt)
 
     val zoom = Constants.CAMERA_ZOOM
     canvasW = windowWidth / zoom
@@ -183,6 +217,10 @@ class GLGameRenderer(val client: GameClient) {
     beginShapes()
     renderBackground(world.background)
 
+    // === Weather particles ===
+    spawnWeatherParticles(world.background, dt)
+    weatherParticles.render(shapeBatch)
+
     // === Calculate visible tile bounds (no allocations) ===
     val cx0 = IsometricTransform.screenToWorldX(0, 0, camOffX, camOffY)
     val cy0 = IsometricTransform.screenToWorldY(0, 0, camOffX, camOffY)
@@ -205,6 +243,7 @@ class GLGameRenderer(val client: GameClient) {
     val cellH = Constants.TILE_CELL_HEIGHT
 
     // === Collect entities by cell ===
+    drawnItemIdsThisFrame.clear()
     val localVX = camera.visualX
     val localVY = camera.visualY
     val entitiesByCell = entityCollector.collect(
@@ -260,8 +299,20 @@ class GLGameRenderer(val client: GameClient) {
       drawTileOverlays()
     }
 
+    // === Water reflections ===
+    drawWaterReflections()
+
     // === Aim arrow ===
     drawAimArrow()
+
+    // === Elevated tile edge shadows ===
+    beginShapes()
+    for (wy <- startY to endY; wx <- startX to endX) {
+      val tile = world.getTile(wx, wy)
+      if (!tile.walkable) {
+        drawElevatedTileShadow(wx, wy, world)
+      }
+    }
 
     // === Phase 2: Elevated tiles + entities interleaved by depth ===
     for (wy <- startY to endY; wx <- startX to endX) {
@@ -281,11 +332,19 @@ class GLGameRenderer(val client: GameClient) {
     // Any entities outside visible range
     entitiesByCell.values.foreach(_.foreach(_()))
 
+    // === Item pickup detection ===
+    detectItemChanges()
+
     // === Overlay animations ===
     drawDeathAnimations()
     drawTeleportAnimations()
     drawExplosionAnimations()
     drawAoeSplashAnimations()
+
+    // === Gameplay particles (trails, footsteps, impacts) ===
+    spawnGameplayParticles(dt)
+    beginShapes()
+    combatParticles.render(shapeBatch)
 
     // === Damage number detection ===
     detectDamageNumbers()
@@ -302,25 +361,19 @@ class GLGameRenderer(val client: GameClient) {
     populateLights()
 
     // === End scene, render light map, apply post-processing ===
-    // Set damage flash overlay
+    // Damage perimeter vignette (replaces full-screen overlay)
     val localHitTime = client.getPlayerHitTime(client.getLocalPlayerId)
+    postProcessor.overlayA = 0f
+    postProcessor.damageVignette = 0f
+    postProcessor.chromaticAberration = 0f
     if (localHitTime > 0) {
       val elapsed = System.currentTimeMillis() - localHitTime
       if (elapsed < HIT_ANIMATION_MS) {
         val progress = elapsed.toDouble / HIT_ANIMATION_MS
-        postProcessor.overlayR = 0.8f
-        postProcessor.overlayG = 0f
-        postProcessor.overlayB = 0f
-        postProcessor.overlayA = (0.25f * (1f - progress.toFloat))
-        // Chromatic aberration on damage
-        postProcessor.chromaticAberration = 0.005f * (1f - progress.toFloat)
-      } else {
-        postProcessor.overlayA = 0f
-        postProcessor.chromaticAberration = 0f
+        val intensity = 1f - progress.toFloat
+        postProcessor.damageVignette = intensity
+        postProcessor.chromaticAberration = 0.004f * intensity
       }
-    } else {
-      postProcessor.overlayA = 0f
-      postProcessor.chromaticAberration = 0f
     }
 
     // Screen distortion from nearby explosions
@@ -711,7 +764,7 @@ class GLGameRenderer(val client: GameClient) {
     drawHitEffect(screenX, spriteCenter, hitTime)
 
     // Health bar + name
-    drawHealthBar(screenX, screenY - displaySz, player.getHealth, player.getMaxHealth, player.getTeamId)
+    drawHealthBar(screenX, screenY - displaySz, player.getHealth, player.getMaxHealth, player.getTeamId, player.getId)
     val charName = CharacterDef.get(player.getCharacterId).displayName
     drawCharacterName(charName, screenX, screenY - displaySz)
   }
@@ -766,7 +819,7 @@ class GLGameRenderer(val client: GameClient) {
 
     drawHitEffect(screenX, spriteCenter, localHitTime)
 
-    drawHealthBar(screenX, screenY - displaySz, client.getLocalHealth, client.getSelectedCharacterMaxHealth, client.localTeamId)
+    drawHealthBar(screenX, screenY - displaySz, client.getLocalHealth, client.getSelectedCharacterMaxHealth, client.localTeamId, client.getLocalPlayerId)
     val charName = client.getSelectedCharacterDef.displayName
     drawCharacterName(charName, screenX, screenY - displaySz)
   }
@@ -943,35 +996,53 @@ class GLGameRenderer(val client: GameClient) {
   // ═══════════════════════════════════════════════════════════════════
 
   private def drawSingleItem(item: Item): Unit = {
+    val now = System.currentTimeMillis()
     val ix = item.getCellX; val iy = item.getCellY
     val centerX = worldToScreenX(ix, iy).toFloat
     val halfSize = Constants.ITEM_SIZE_PX / 2f
+
+    // Track for pickup detection
+    drawnItemIdsThisFrame.add(item.id)
+    itemLastWorldPos.put(item.id, (ix, iy, item.colorRGB))
+
+    // Spawn pop animation (bounce ease over 400ms)
+    val spawnTime = itemSpawnTimes.getOrElseUpdate(item.id, now)
+    val spawnElapsed = (now - spawnTime).toFloat
+    val spawnScale = if (spawnElapsed < 400f) {
+      val t = spawnElapsed / 400f
+      if (t < 0.5f) 1f + 0.4f * Math.sin(t * Math.PI).toFloat
+      else 1f + 0.15f * Math.sin(t * Math.PI).toFloat * (1f - t)
+    } else 1f
+    val hs = halfSize * spawnScale
 
     val bobPhase = animationTick * 0.06f + item.id * 1.7f
     val bobOffset = Math.sin(bobPhase).toFloat * 4f
     val centerY = worldToScreenY(ix, iy).toFloat + bobOffset
 
+    // Rotation angle (slow spin)
+    val rotAngle = animationTick * 0.02f + item.id * 0.5f
+
     val (ir, ig, ib) = intToRGB(item.colorRGB)
-    val glowPulse = (0.8 + 0.2 * Math.sin(bobPhase * 1.3)).toFloat
+    val glowPulse = (0.6 + 0.4 * Math.sin(bobPhase * 1.3)).toFloat
 
     // Item emits colored light
-    lightSystem.addLight(centerX, centerY, 50f, ir, ig, ib, 0.10f * glowPulse)
+    lightSystem.addLight(centerX, centerY, 60f, ir, ig, ib, 0.14f * glowPulse)
 
     beginShapes()
-    // Ground glow (additive)
+    // Ground glow (additive) — larger and more visible
     shapeBatch.setAdditiveBlend(true)
-    shapeBatch.fillOvalSoft(centerX, centerY + halfSize * 0.3f, halfSize * 1.4f, halfSize * 0.4f, ir, ig, ib, 0.12f * glowPulse, 0f, 12)
-    shapeBatch.fillOvalSoft(centerX, centerY, halfSize * 1.8f, halfSize * 1.4f, ir, ig, ib, 0.06f * glowPulse, 0f, 12)
+    shapeBatch.fillOvalSoft(centerX, centerY + hs * 0.3f, hs * 2f, hs * 0.6f, ir, ig, ib, 0.18f * glowPulse, 0f, 14)
+    shapeBatch.fillOvalSoft(centerX, centerY, hs * 2.4f, hs * 1.8f, ir, ig, ib, 0.08f * glowPulse, 0f, 14)
     shapeBatch.setAdditiveBlend(false)
 
-    // Main item shape
-    drawItemShape(item.itemType, centerX, centerY, halfSize, ir, ig, ib)
+    // Main item shape with highlights and outline
+    drawItemShape(item.itemType, centerX, centerY, hs, ir, ig, ib, rotAngle)
 
     // Sparkle particles (additive)
     shapeBatch.setAdditiveBlend(true)
     for (i <- 0 until 3) {
       val sparkAngle = bobPhase * 0.8f + i * (2 * Math.PI / 3).toFloat
-      val sparkDist = halfSize * 1.1f
+      val sparkDist = hs * 1.1f
       val sx = centerX + sparkDist * Math.cos(sparkAngle).toFloat
       val sy = centerY + sparkDist * Math.sin(sparkAngle).toFloat * 0.6f
       val sparkAlpha = (0.3 + 0.4 * Math.sin(bobPhase * 2.5 + i * 2.1)).toFloat
@@ -981,41 +1052,97 @@ class GLGameRenderer(val client: GameClient) {
     shapeBatch.setAdditiveBlend(false)
   }
 
-  private def drawItemShape(itemType: ItemType, cx: Float, cy: Float, hs: Float, r: Float, g: Float, b: Float): Unit = {
+  private def drawItemShape(itemType: ItemType, cx: Float, cy: Float, hs: Float, r: Float, g: Float, b: Float, rotation: Float = 0f): Unit = {
+    val cos = Math.cos(rotation).toFloat
+    val sin = Math.sin(rotation).toFloat
+    // Highlight and shadow colors for 3D depth
+    val hr = clamp(r * 0.4f + 0.6f); val hg = clamp(g * 0.4f + 0.6f); val hb = clamp(b * 0.4f + 0.6f)
+    val dr = r * 0.6f; val dg = g * 0.6f; val db = b * 0.6f
+
     itemType match {
       case ItemType.Heart =>
         val rr = hs * 0.55f
+        // Main shape
         shapeBatch.fillOval(cx - hs * 0.5f, cy - hs * 0.45f, rr, rr, r, g, b, 1f, 12)
         shapeBatch.fillOval(cx + hs * 0.5f, cy - hs * 0.45f, rr, rr, r, g, b, 1f, 12)
         shapeBatch.fillPolygon(
           Array(cx - hs * 1.05f, cx, cx + hs * 1.05f),
           Array(cy - hs * 0.1f, cy + hs, cy - hs * 0.1f), r, g, b, 1f)
+        // Inner highlight (upper-left lobe)
+        shapeBatch.fillOval(cx - hs * 0.55f, cy - hs * 0.55f, rr * 0.45f, rr * 0.4f, hr, hg, hb, 0.4f, 8)
+        // Outline
+        shapeBatch.strokeOval(cx - hs * 0.5f, cy - hs * 0.45f, rr, rr, 1f, dr, dg, db, 0.6f, 12)
+        shapeBatch.strokeOval(cx + hs * 0.5f, cy - hs * 0.45f, rr, rr, 1f, dr, dg, db, 0.6f, 12)
+
       case ItemType.Star =>
         val outerR = hs; val innerR = hs * 0.4f
         for (i <- 0 until 10) {
-          val angle = Math.PI / 2 + i * Math.PI / 5
+          val angle = Math.PI / 2 + i * Math.PI / 5 + rotation
           val rad = if (i % 2 == 0) outerR else innerR
           _starXs(i) = cx + (rad * Math.cos(angle)).toFloat
           _starYs(i) = cy - (rad * Math.sin(angle)).toFloat
         }
         shapeBatch.fillPolygon(_starXs, _starYs, 10, r, g, b, 1f)
+        // Inner highlight (smaller, brighter, offset up-left)
+        for (i <- 0 until 10) {
+          val angle = Math.PI / 2 + i * Math.PI / 5 + rotation
+          val rad = if (i % 2 == 0) outerR * 0.55f else innerR * 0.55f
+          _hlXs(i) = cx - 1f + (rad * Math.cos(angle)).toFloat
+          _hlYs(i) = cy - 1f - (rad * Math.sin(angle)).toFloat
+        }
+        shapeBatch.fillPolygon(_hlXs, _hlYs, 10, hr, hg, hb, 0.35f)
+        // Outline
+        shapeBatch.strokePolygon(_starXs, _starYs, 10, 1f, dr, dg, db, 0.7f)
+
       case ItemType.Gem =>
+        // Apply rotation to gem vertices
+        val gxs = Array(
+          cx + 0f * cos - (-hs) * sin, cx + hs * cos - 0f * sin,
+          cx + 0f * cos - hs * sin, cx + (-hs) * cos - 0f * sin)
+        val gys = Array(
+          cy + 0f * sin + (-hs) * cos, cy + hs * sin + 0f * cos,
+          cy + 0f * sin + hs * cos, cy + (-hs) * sin + 0f * cos)
+        shapeBatch.fillPolygon(gxs, gys, r, g, b, 1f)
+        // Inner highlight (upper half diamond)
+        val hhs = hs * 0.5f
         shapeBatch.fillPolygon(
-          Array(cx, cx + hs, cx, cx - hs),
-          Array(cy - hs, cy, cy + hs, cy), r, g, b, 1f)
+          Array(gxs(0), cx + hhs * cos, cx, cx - hhs * cos),
+          Array(gys(0), cy + hhs * sin, cy, cy - hhs * sin), hr, hg, hb, 0.3f)
+        // Outline
+        shapeBatch.strokePolygon(gxs, gys, 1f, dr, dg, db, 0.7f)
+
       case ItemType.Shield =>
+        val sxs = Array(cx - hs * 0.85f, cx - hs * 0.5f, cx + hs * 0.5f, cx + hs * 0.85f, cx + hs * 0.7f, cx, cx - hs * 0.7f)
+        val sys = Array(cy - hs * 0.6f, cy - hs, cy - hs, cy - hs * 0.6f, cy + hs * 0.4f, cy + hs, cy + hs * 0.4f)
+        shapeBatch.fillPolygon(sxs, sys, r, g, b, 1f)
+        // Inner highlight (upper portion)
         shapeBatch.fillPolygon(
-          Array(cx - hs * 0.85f, cx - hs * 0.5f, cx + hs * 0.5f, cx + hs * 0.85f, cx + hs * 0.7f, cx, cx - hs * 0.7f),
-          Array(cy - hs * 0.6f, cy - hs, cy - hs, cy - hs * 0.6f, cy + hs * 0.4f, cy + hs, cy + hs * 0.4f), r, g, b, 1f)
+          Array(cx - hs * 0.4f, cx - hs * 0.25f, cx + hs * 0.25f, cx + hs * 0.4f),
+          Array(cy - hs * 0.5f, cy - hs * 0.8f, cy - hs * 0.8f, cy - hs * 0.5f), hr, hg, hb, 0.3f)
+        // Outline
+        shapeBatch.strokePolygon(sxs, sys, 1f, dr, dg, db, 0.7f)
+
       case ItemType.Fence =>
         val barW = hs * 0.35f
+        // Main bars
         shapeBatch.fillRect(cx - hs, cy - hs, barW, hs * 2, r, g, b, 1f)
         shapeBatch.fillRect(cx - barW / 2, cy - hs, barW, hs * 2, r, g, b, 1f)
         shapeBatch.fillRect(cx + hs - barW, cy - hs, barW, hs * 2, r, g, b, 1f)
+        // Inner highlight (left edge of each bar)
+        val hlW = barW * 0.35f
+        shapeBatch.fillRect(cx - hs, cy - hs, hlW, hs * 2, hr, hg, hb, 0.3f)
+        shapeBatch.fillRect(cx - barW / 2, cy - hs, hlW, hs * 2, hr, hg, hb, 0.3f)
+        shapeBatch.fillRect(cx + hs - barW, cy - hs, hlW, hs * 2, hr, hg, hb, 0.3f)
+        // Outline
+        shapeBatch.strokeRect(cx - hs, cy - hs, barW, hs * 2, 1f, dr, dg, db, 0.7f)
+        shapeBatch.strokeRect(cx - barW / 2, cy - hs, barW, hs * 2, 1f, dr, dg, db, 0.7f)
+        shapeBatch.strokeRect(cx + hs - barW, cy - hs, barW, hs * 2, 1f, dr, dg, db, 0.7f)
+
       case _ =>
-        shapeBatch.fillPolygon(
-          Array(cx, cx + hs, cx, cx - hs),
-          Array(cy - hs, cy, cy + hs, cy), r, g, b, 1f)
+        val dxs = Array(cx, cx + hs, cx, cx - hs)
+        val dys = Array(cy - hs, cy, cy + hs, cy)
+        shapeBatch.fillPolygon(dxs, dys, r, g, b, 1f)
+        shapeBatch.strokePolygon(dxs, dys, 1f, dr, dg, db, 0.7f)
     }
   }
 
@@ -1162,16 +1289,25 @@ class GLGameRenderer(val client: GameClient) {
   private def drawDeathAnimations(): Unit = {
     val now = System.currentTimeMillis()
     val iter = client.getDeathAnimations.entrySet().iterator()
+    // Clean up old death burst tracking
+    deathBurstSpawned.filterInPlace(k => client.getDeathAnimations.containsKey(k))
     while (iter.hasNext) {
       val entry = iter.next()
+      val key = entry.getKey
       val data = entry.getValue
       val deathTime = data(0)
       if (now - deathTime > DEATH_ANIMATION_MS) {
         iter.remove()
+        deathBurstSpawned.remove(key)
       } else {
         val wx = data(1).toDouble; val wy = data(2).toDouble
         val colorRGB = data(3).toInt
         val charId = if (data.length > 4) data(4).toByte else 0.toByte
+        // Spawn death burst particles on first frame
+        if (!deathBurstSpawned.contains(key)) {
+          deathBurstSpawned.add(key)
+          spawnDeathBurst(wx.toFloat, wy.toFloat, colorRGB)
+        }
         drawDeathEffect(worldToScreenX(wx, wy), worldToScreenY(wx, wy), colorRGB, deathTime, charId)
       }
     }
@@ -1489,14 +1625,16 @@ class GLGameRenderer(val client: GameClient) {
   //  HEALTH BAR + NAME (5c continued)
   // ═══════════════════════════════════════════════════════════════════
 
-  private def drawHealthBar(screenCenterX: Double, spriteTopY: Double, health: Int, maxHealth: Int, teamId: Byte): Unit = {
+  private def drawHealthBar(screenCenterX: Double, spriteTopY: Double, health: Int, maxHealth: Int, teamId: Byte, playerId: UUID): Unit = {
     val barW = Constants.HEALTH_BAR_WIDTH_PX.toFloat
     val barH = Constants.HEALTH_BAR_HEIGHT_PX.toFloat
     val barX = (screenCenterX - barW / 2).toFloat
     val barY = (spriteTopY - Constants.HEALTH_BAR_OFFSET_Y - barH).toFloat
 
     beginShapes()
-    shapeBatch.fillRect(barX, barY, barW, barH, 0.4f, 0f, 0f, 1f)
+    // Dark background
+    shapeBatch.fillRect(barX, barY, barW, barH, 0.15f, 0.05f, 0.05f, 0.85f)
+
     val pct = health.toFloat / maxHealth
     val (fr, fg, fb) = teamId match {
       case 1 => (0.29f, 0.51f, 1f)
@@ -1505,7 +1643,33 @@ class GLGameRenderer(val client: GameClient) {
       case 4 => (0.95f, 0.77f, 0.06f)
       case _ => (0.2f, 0.8f, 0.2f)
     }
-    shapeBatch.fillRect(barX, barY, barW * pct, barH, fr, fg, fb, 1f)
+
+    // Smooth drain bar (white ghost segment that shrinks behind the real bar)
+    val smoothPct = smoothHealthMap.getOrElseUpdate(playerId, pct)
+    val newSmooth = if (smoothPct > pct) Math.max(pct, smoothPct - 0.8f * (1f / 60f))
+                    else pct // snap to actual on heal
+    smoothHealthMap.put(playerId, newSmooth)
+    if (newSmooth > pct) {
+      shapeBatch.fillRect(barX + barW * pct, barY, barW * (newSmooth - pct), barH, 1f, 1f, 1f, 0.45f)
+    }
+
+    // Health bar with inner gradient (lighter top, darker bottom)
+    val fillW = barW * pct
+    if (fillW > 0) {
+      shapeBatch.fillRect(barX, barY + barH / 2, fillW, barH / 2, fr * 0.75f, fg * 0.75f, fb * 0.75f, 1f)
+      shapeBatch.fillRect(barX, barY, fillW, barH / 2, fr, fg, fb, 1f)
+      // Bright highlight line at very top
+      shapeBatch.fillRect(barX, barY, fillW, 1f, clamp(fr + 0.2f), clamp(fg + 0.2f), clamp(fb + 0.2f), 0.5f)
+    }
+
+    // Low health glow pulse (<25%)
+    if (pct < 0.25f && pct > 0f) {
+      val pulse = (0.5f + 0.5f * Math.sin(animationTick * 0.15f)).toFloat
+      shapeBatch.setAdditiveBlend(true)
+      shapeBatch.fillRect(barX, barY - 1, fillW, barH + 2, 1f, 0.2f, 0.1f, 0.15f * pulse)
+      shapeBatch.setAdditiveBlend(false)
+    }
+
     shapeBatch.strokeRect(barX, barY, barW, barH, 1f, 0f, 0f, 0f, 1f)
     if (teamId != 0) {
       val indY = barY + barH + 2
@@ -1533,22 +1697,27 @@ class GLGameRenderer(val client: GameClient) {
     val world = client.getWorld
     val localPos = client.getLocalPosition
     val playerCount = client.getPlayers.size()
-    val health = client.getLocalHealth
+
+    // Top-left status panel with semi-transparent background
+    beginShapes()
+    shapeBatch.fillRect(4f, 4f, 200f, 96f, 0.04f, 0.04f, 0.08f, 0.6f)
+    shapeBatch.strokeRect(4f, 4f, 200f, 96f, 1f, 0.3f, 0.3f, 0.4f, 0.4f)
+    // Accent line at top
+    shapeBatch.fillRect(4f, 4f, 200f, 2f, 0.4f, 0.7f, 1f, 0.5f)
 
     beginSprites()
-    fontSmall.drawTextOutlined(spriteBatch, s"World: ${world.name}", 10, 10)
-    fontSmall.drawTextOutlined(spriteBatch, s"Position: (${localPos.getX}, ${localPos.getY})", 10, 28)
-    fontSmall.drawTextOutlined(spriteBatch, s"Players: ${playerCount + 1}", 10, 46)
-    fontSmall.drawTextOutlined(spriteBatch, s"Health: $health/${client.getSelectedCharacterMaxHealth}", 10, 64)
-    fontSmall.drawTextOutlined(spriteBatch, s"Items: ${client.getInventoryCount}", 10, 82)
+    fontSmall.drawTextOutlined(spriteBatch, s"${world.name}", 12, 12)
+    fontSmall.drawTextOutlined(spriteBatch, s"Pos: (${localPos.getX}, ${localPos.getY})", 12, 30)
+    fontSmall.drawTextOutlined(spriteBatch, s"Players: ${playerCount + 1}", 12, 48)
+    fontSmall.drawTextOutlined(spriteBatch, s"Items: ${client.getInventoryCount}", 12, 66)
 
     val hasShield = client.hasShield
     val hasGem = client.hasGemBoost
     if (hasShield || hasGem) {
-      val effectStr = if (hasShield && hasGem) "Effects: Shield FastShot"
-        else if (hasShield) "Effects: Shield"
-        else "Effects: FastShot"
-      fontSmall.drawTextOutlined(spriteBatch, effectStr, 10, 100)
+      val effectStr = if (hasShield && hasGem) "Shield FastShot"
+        else if (hasShield) "Shield"
+        else "FastShot"
+      fontSmall.drawTextOutlined(spriteBatch, effectStr, 12, 84, 0.6f, 0.9f, 1f, 0.9f)
     }
 
     renderInventory(screenW, screenH)
@@ -1618,6 +1787,7 @@ class GLGameRenderer(val client: GameClient) {
     val abilityDefs = Array(charDef.qAbility, charDef.eAbility)
     val cooldowns = Array(client.getQCooldownFraction, client.getECooldownFraction)
 
+    val now = System.currentTimeMillis()
     val abilityGap = 12f
     beginShapes()
     for (i <- abilityDefs.indices) {
@@ -1627,6 +1797,13 @@ class GLGameRenderer(val client: GameClient) {
       val slotX = inventoryStartX - (abilityDefs.length - i) * (slotSize + slotGap) - abilityGap
       val onCooldown = cooldownFrac > 0.001f
 
+      // Detect cooldown-to-ready transition for flash
+      val isReady = !onCooldown
+      if (isReady && !prevCooldownReady(i)) {
+        cooldownReadyFlashTime(i) = now
+      }
+      prevCooldownReady(i) = isReady
+
       // Slot background
       shapeBatch.fillRect(slotX, startY, slotSize, slotSize, 0.06f, 0.06f, 0.1f, 0.8f)
 
@@ -1635,12 +1812,32 @@ class GLGameRenderer(val client: GameClient) {
       val iconAlpha = if (onCooldown) 0.35f else 0.9f
       drawAbilityIcon(aDef.castBehavior, cx, cy, 12f, ar, ag, ab, iconAlpha)
 
-      // Cooldown overlay (fills from bottom up)
+      // Cooldown overlay — radial sweep (clock-wipe from 12 o'clock)
       if (onCooldown) {
-        shapeBatch.fillRect(slotX, startY, slotSize, slotSize * cooldownFrac, 0f, 0f, 0f, 0.55f)
+        val sweepAngle = cooldownFrac * Math.PI.toFloat * 2f
+        val radius = slotSize * 0.72f
+        val startAngle = -Math.PI.toFloat / 2f
+        val steps = Math.max(4, (cooldownFrac * 24).toInt)
+        _sweepXs(0) = cx; _sweepYs(0) = cy
+        var s = 0
+        while (s <= steps) {
+          val angle = startAngle + (s.toFloat / steps) * sweepAngle
+          _sweepXs(s + 1) = cx + Math.cos(angle).toFloat * radius
+          _sweepYs(s + 1) = cy + Math.sin(angle).toFloat * radius
+          s += 1
+        }
+        shapeBatch.fillPolygon(_sweepXs, _sweepYs, steps + 2, 0f, 0f, 0f, 0.55f)
         shapeBatch.strokeRect(slotX, startY, slotSize, slotSize, 1.5f, 0.39f, 0.39f, 0.39f, 0.6f)
       } else {
         shapeBatch.strokeRect(slotX, startY, slotSize, slotSize, 2f, ar, ag, ab, 0.9f)
+        // Ready flash pulse (300ms glow when cooldown completes)
+        val flashElapsed = now - cooldownReadyFlashTime(i)
+        if (flashElapsed < 300 && cooldownReadyFlashTime(i) > 0) {
+          val flashAlpha = (1f - flashElapsed / 300f) * 0.4f
+          shapeBatch.setAdditiveBlend(true)
+          shapeBatch.fillRect(slotX, startY, slotSize, slotSize, ar, ag, ab, flashAlpha)
+          shapeBatch.setAdditiveBlend(false)
+        }
       }
     }
 
@@ -1746,13 +1943,22 @@ class GLGameRenderer(val client: GameClient) {
     val minutes = remaining / 60; val seconds = remaining % 60
     val timerText = f"$minutes%d:$seconds%02d"
 
-    beginSprites()
-    fontMedium.drawTextOutlined(spriteBatch, timerText, (screenW / 2 - fontMedium.measureWidth(timerText) / 2).toFloat, 10)
-    fontSmall.drawTextOutlined(spriteBatch, s"K: ${client.killCount}  D: ${client.deathCount}", 10, 128)
+    // Timer panel at top center
+    val timerW = fontMedium.measureWidth(timerText) + 20
+    beginShapes()
+    shapeBatch.fillRect((screenW / 2 - timerW / 2).toFloat, 4f, timerW.toFloat, 30f, 0.04f, 0.04f, 0.08f, 0.5f)
+    shapeBatch.strokeRect((screenW / 2 - timerW / 2).toFloat, 4f, timerW.toFloat, 30f, 1f, 0.3f, 0.3f, 0.4f, 0.3f)
 
-    // Kill feed
+    beginSprites()
+    fontMedium.drawTextOutlined(spriteBatch, timerText, (screenW / 2 - fontMedium.measureWidth(timerText) / 2).toFloat, 8)
+
+    // K/D display below status panel
+    fontSmall.drawTextOutlined(spriteBatch, s"K: ${client.killCount}  D: ${client.deathCount}", 12, 108)
+
+    // Kill feed with slide-in animation and background strips
     val now = System.currentTimeMillis()
     var feedY = 10f
+    val localName = client.getSelectedCharacterDef.displayName
     client.killFeed.asScala.foreach { entry =>
       val timestamp = entry(0).asInstanceOf[java.lang.Long].longValue()
       val elapsed = now - timestamp
@@ -1760,7 +1966,28 @@ class GLGameRenderer(val client: GameClient) {
         val alpha = Math.max(0.15f, (1.0 - elapsed / 6000.0).toFloat)
         val killer = entry(1).asInstanceOf[String]
         val victim = entry(2).asInstanceOf[String]
-        fontSmall.drawText(spriteBatch, s"$killer killed $victim", screenW - 220f, feedY, 1f, 1f, 1f, alpha)
+        val feedText = s"$killer killed $victim"
+        val textW = fontSmall.measureWidth(feedText)
+
+        // Slide-in from right edge (first 200ms)
+        val slideOffset = if (elapsed < 200) ((1.0 - elapsed / 200.0) * 60).toFloat else 0f
+        val feedX = screenW - textW - 12f + slideOffset
+
+        // Semi-transparent background strip
+        beginShapes()
+        shapeBatch.fillRect(feedX - 4f, feedY - 2f, textW + 8f, 18f, 0.04f, 0.04f, 0.08f, 0.4f * alpha)
+
+        // Highlight local player's name in kill feed entries
+        beginSprites()
+        val isLocalKiller = killer == localName
+        val isLocalVictim = victim == localName
+        if (isLocalKiller) {
+          fontSmall.drawText(spriteBatch, feedText, feedX, feedY, 0.4f, 1f, 0.4f, alpha)
+        } else if (isLocalVictim) {
+          fontSmall.drawText(spriteBatch, feedText, feedX, feedY, 1f, 0.4f, 0.4f, alpha)
+        } else {
+          fontSmall.drawText(spriteBatch, feedText, feedX, feedY, 1f, 1f, 1f, alpha)
+        }
         feedY += 18
       }
     }
@@ -1963,6 +2190,7 @@ class GLGameRenderer(val client: GameClient) {
         val dmg = prev - localHealth
         val (lvx, lvy) = client.getVisualPosition
         damageNumbers.spawn(lvx.toFloat, lvy.toFloat, dmg, 1f, 0.3f, 0.2f)
+        spawnImpactSparks(lvx.toFloat, lvy.toFloat, 1f, 0.3f, 0.2f)
       case _ =>
     }
     prevHealthMap.put(localId, localHealth)
@@ -1981,6 +2209,7 @@ class GLGameRenderer(val client: GameClient) {
           val (pvx, pvy) = entityCollector.remoteVisualPositions.getOrElse(
             playerId, (player.getPosition.getX.toDouble, player.getPosition.getY.toDouble))
           damageNumbers.spawn(pvx.toFloat, pvy.toFloat, dmg, 1f, 1f, 0.3f)
+          spawnImpactSparks(pvx.toFloat, pvy.toFloat, 1f, 1f, 0.3f)
         case _ =>
       }
       prevHealthMap.put(playerId, health)
@@ -2034,6 +2263,358 @@ class GLGameRenderer(val client: GameClient) {
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  //  WEATHER PARTICLES
+  // ═══════════════════════════════════════════════════════════════════
+
+  private def spawnWeatherParticles(background: String, dt: Float): Unit = {
+    val w = canvasW.toFloat; val h = canvasH.toFloat
+    val rate = background match {
+      case "sky"       => 12f  // gentle leaf/pollen drift
+      case "ocean"     => 20f  // spray mist
+      case "space"     => 4f   // drifting dust motes
+      case "desert"    => 15f  // sand particles
+      case "cityscape" => 8f   // dust/ash
+      case _           => 8f
+    }
+    weatherSpawnAccum += rate * dt
+    while (weatherSpawnAccum >= 1f) {
+      weatherSpawnAccum -= 1f
+      background match {
+        case "sky"       => spawnSkyParticle(w, h)
+        case "ocean"     => spawnOceanParticle(w, h)
+        case "space"     => spawnSpaceParticle(w, h)
+        case "desert"    => spawnDesertParticle(w, h)
+        case "cityscape" => spawnCityParticle(w, h)
+        case _           => spawnSkyParticle(w, h)
+      }
+    }
+  }
+
+  private def spawnSkyParticle(w: Float, h: Float): Unit = {
+    // Drifting pollen/leaf particles
+    val px = rng.nextFloat() * (w + 40) - 20
+    weatherParticles.emit(
+      px, -5f,
+      rng.nextFloat() * 15f - 5f, 12f + rng.nextFloat() * 8f,
+      plife = 4f + rng.nextFloat() * 3f,
+      pr = 0.95f, pg = 0.95f, pb = 0.85f, palpha = 0.15f + rng.nextFloat() * 0.1f,
+      psize = 1.5f + rng.nextFloat() * 1.5f,
+      soft = true
+    )
+  }
+
+  private def spawnOceanParticle(w: Float, h: Float): Unit = {
+    // Rising spray/mist
+    val px = rng.nextFloat() * w
+    val py = h * 0.6f + rng.nextFloat() * h * 0.4f
+    weatherParticles.emit(
+      px, py,
+      rng.nextFloat() * 6f - 3f, -(4f + rng.nextFloat() * 6f),
+      plife = 2f + rng.nextFloat() * 2f,
+      pr = 0.7f, pg = 0.85f, pb = 0.95f, palpha = 0.08f + rng.nextFloat() * 0.07f,
+      psize = 2f + rng.nextFloat() * 3f,
+      soft = true
+    )
+  }
+
+  private def spawnSpaceParticle(w: Float, h: Float): Unit = {
+    // Slow-drifting dust motes
+    val px = rng.nextFloat() * w
+    val py = rng.nextFloat() * h
+    weatherParticles.emit(
+      px, py,
+      rng.nextFloat() * 4f - 2f, rng.nextFloat() * 2f - 1f,
+      plife = 5f + rng.nextFloat() * 4f,
+      pr = 0.6f, pg = 0.5f, pb = 0.8f, palpha = 0.06f + rng.nextFloat() * 0.06f,
+      psize = 1f + rng.nextFloat() * 1.5f,
+      additive = true, soft = true
+    )
+  }
+
+  private def spawnDesertParticle(w: Float, h: Float): Unit = {
+    // Wind-blown sand
+    val px = -10f
+    val py = h * 0.3f + rng.nextFloat() * h * 0.6f
+    weatherParticles.emit(
+      px, py,
+      30f + rng.nextFloat() * 20f, rng.nextFloat() * 8f - 4f,
+      plife = 2.5f + rng.nextFloat() * 2f,
+      pr = 0.9f, pg = 0.8f, pb = 0.5f, palpha = 0.08f + rng.nextFloat() * 0.06f,
+      psize = 1f + rng.nextFloat() * 1.5f,
+      soft = true
+    )
+  }
+
+  private def spawnCityParticle(w: Float, h: Float): Unit = {
+    // Floating dust/ash
+    val px = rng.nextFloat() * w
+    weatherParticles.emit(
+      px, h + 5f,
+      rng.nextFloat() * 6f - 3f, -(5f + rng.nextFloat() * 4f),
+      plife = 4f + rng.nextFloat() * 3f,
+      pr = 0.5f, pg = 0.45f, pb = 0.55f, palpha = 0.07f + rng.nextFloat() * 0.06f,
+      psize = 1f + rng.nextFloat() * 1f,
+      soft = true
+    )
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  GAMEPLAY PARTICLES
+  // ═══════════════════════════════════════════════════════════════════
+
+  private def spawnGameplayParticles(dt: Float): Unit = {
+    spawnFootstepDust(dt)
+    spawnProjectileTrails(dt)
+  }
+
+  private def spawnFootstepDust(dt: Float): Unit = {
+    val (lvx, lvy) = (camera.visualX, camera.visualY)
+    if (prevLocalVX.isNaN) {
+      prevLocalVX = lvx; prevLocalVY = lvy
+      return
+    }
+    val dx = lvx - prevLocalVX; val dy = lvy - prevLocalVY
+    val moved = Math.sqrt(dx * dx + dy * dy)
+    prevLocalVX = lvx; prevLocalVY = lvy
+
+    if (moved > 0.01 && client.getIsMoving) {
+      footstepAccum += dt
+      if (footstepAccum >= 0.12f) {
+        footstepAccum = 0f
+        val sx = worldToScreenX(lvx, lvy).toFloat
+        val sy = worldToScreenY(lvx, lvy).toFloat
+        // Small dust puffs at feet
+        for (_ <- 0 until 3) {
+          combatParticles.emit(
+            sx + rng.nextFloat() * 6f - 3f, sy + rng.nextFloat() * 2f,
+            rng.nextFloat() * 8f - 4f, -(2f + rng.nextFloat() * 4f),
+            plife = 0.4f + rng.nextFloat() * 0.3f,
+            pr = 0.6f, pg = 0.55f, pb = 0.45f, palpha = 0.2f,
+            psize = 1.5f + rng.nextFloat() * 1.5f,
+            pgravity = 5f, soft = true
+          )
+        }
+      }
+    }
+  }
+
+  private def spawnProjectileTrails(dt: Float): Unit = {
+    val projs = client.getProjectiles
+    if (projs.isEmpty) return
+    val iter = projs.values().iterator()
+    // Spawn trail particles for ~30% of projectiles each frame to limit count
+    while (iter.hasNext) {
+      val proj = iter.next()
+      if (rng.nextFloat() < 0.3f) {
+        val sx = worldToScreenX(proj.getX, proj.getY).toFloat
+        val sy = worldToScreenY(proj.getX, proj.getY).toFloat
+        val (pr, pg, pb) = intToRGB(proj.colorRGB)
+        combatParticles.emit(
+          sx + rng.nextFloat() * 4f - 2f, sy + rng.nextFloat() * 2f - 1f,
+          rng.nextFloat() * 4f - 2f, rng.nextFloat() * 4f - 2f,
+          plife = 0.2f + rng.nextFloat() * 0.15f,
+          pr = clamp(pr * 0.7f + 0.3f), pg = clamp(pg * 0.7f + 0.3f), pb = clamp(pb * 0.7f + 0.3f),
+          palpha = 0.25f,
+          psize = 1.5f + rng.nextFloat() * 1f,
+          additive = true
+        )
+      }
+    }
+  }
+
+  /** Spawn impact sparks when a player takes damage (called from detectDamageNumbers). */
+  private def spawnImpactSparks(worldX: Float, worldY: Float, cr: Float, cg: Float, cb: Float): Unit = {
+    val sx = worldToScreenX(worldX, worldY).toFloat
+    val sy = worldToScreenY(worldX, worldY).toFloat - 12f
+    for (_ <- 0 until 8) {
+      val angle = rng.nextFloat() * Math.PI.toFloat * 2f
+      val speed = 25f + rng.nextFloat() * 35f
+      combatParticles.emit(
+        sx, sy,
+        Math.cos(angle).toFloat * speed, Math.sin(angle).toFloat * speed - 10f,
+        plife = 0.2f + rng.nextFloat() * 0.2f,
+        pr = clamp(cr * 0.5f + 0.5f), pg = clamp(cg * 0.5f + 0.5f), pb = clamp(cb * 0.5f + 0.5f),
+        palpha = 0.7f,
+        psize = 1.5f + rng.nextFloat() * 1.5f,
+        pgravity = 60f, additive = true
+      )
+    }
+  }
+
+  /** Spawn a burst of particles on player death. */
+  private def spawnDeathBurst(worldX: Float, worldY: Float, colorRGB: Int): Unit = {
+    val sx = worldToScreenX(worldX, worldY).toFloat
+    val sy = worldToScreenY(worldX, worldY).toFloat - 12f
+    val (cr, cg, cb) = intToRGB(colorRGB)
+    for (_ <- 0 until 20) {
+      val angle = rng.nextFloat() * Math.PI.toFloat * 2f
+      val speed = 15f + rng.nextFloat() * 45f
+      val bright = rng.nextFloat()
+      val pr = if (bright > 0.6f) 1f else cr
+      val pg = if (bright > 0.6f) 1f else cg
+      val pb = if (bright > 0.6f) 0.9f else cb
+      combatParticles.emit(
+        sx + rng.nextFloat() * 4f - 2f, sy + rng.nextFloat() * 4f - 2f,
+        Math.cos(angle).toFloat * speed, Math.sin(angle).toFloat * speed * 0.7f - 15f,
+        plife = 0.5f + rng.nextFloat() * 0.6f,
+        pr = pr, pg = pg, pb = pb,
+        palpha = 0.6f,
+        psize = 2f + rng.nextFloat() * 2.5f,
+        pgravity = 40f, additive = true
+      )
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  WATER REFLECTIONS
+  // ═══════════════════════════════════════════════════════════════════
+
+  private def drawWaterReflections(): Unit = {
+    val world = client.getWorld
+    val (lvx, lvy) = (camera.visualX, camera.visualY)
+    val localPX = Math.round(lvx).toInt
+    val localPY = Math.round(lvy).toInt
+
+    // Only check tiles within 2 cells of local player
+    val range = 2
+    var hasWater = false
+    var wy = localPY - range
+    while (wy <= localPY + range && !hasWater) {
+      var wx = localPX - range
+      while (wx <= localPX + range && !hasWater) {
+        if (wx >= 0 && wx < world.width && wy >= 0 && wy < world.height) {
+          val tid = world.getTile(wx, wy).id
+          if (tid == 1 || tid == 7) hasWater = true
+        }
+        wx += 1
+      }
+      wy += 1
+    }
+    if (!hasWater) return
+
+    // Get local player sprite for reflection
+    val frame = if (client.getIsMoving) (animationTick / FRAMES_PER_STEP) % 4 else 0
+    val region = GLSpriteGenerator.getSpriteRegion(client.getLocalDirection, frame, client.selectedCharacterId)
+    if (region == null) return
+
+    // Create flipped region (swap v and v2 for vertical flip)
+    val flippedRegion = TextureRegion(region.texture, region.u, region.v2, region.u2, region.v)
+    val displaySz = Constants.PLAYER_DISPLAY_SIZE_PX.toFloat
+    val playerScreenX = worldToScreenX(lvx, lvy).toFloat
+    val playerScreenY = worldToScreenY(lvx, lvy).toFloat
+
+    beginSprites()
+    wy = localPY - range
+    while (wy <= localPY + range) {
+      var wx = localPX - range
+      while (wx <= localPX + range) {
+        if (wx >= 0 && wx < world.width && wy >= 0 && wy < world.height) {
+          val tid = world.getTile(wx, wy).id
+          if (tid == 1 || tid == 7) {
+            val tileScreenX = worldToScreenX(wx, wy).toFloat
+            val tileScreenY = worldToScreenY(wx, wy).toFloat
+            val dx = tileScreenX - playerScreenX
+            val dy = tileScreenY - playerScreenY
+            if (Math.abs(dx) < 40 && Math.abs(dy) < 30) {
+              // Shimmer distortion offset
+              val shimmerOffset = Math.sin(animationTick * 0.08f + wx * 1.1f).toFloat * 2f
+              val reflX = playerScreenX - displaySz / 2f + shimmerOffset
+              val reflY = tileScreenY + 2f
+              val dist = Math.sqrt(dx * dx + dy * dy).toFloat
+              val reflAlpha = 0.15f * Math.max(0f, 1f - dist / 50f)
+              if (reflAlpha > 0.01f) {
+                spriteBatch.draw(flippedRegion, reflX, reflY, displaySz, displaySz * 0.6f,
+                  0.6f, 0.7f, 0.9f, reflAlpha)
+              }
+            }
+          }
+        }
+        wx += 1
+      }
+      wy += 1
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  ITEM PICKUP DETECTION
+  // ═══════════════════════════════════════════════════════════════════
+
+  private def detectItemChanges(): Unit = {
+    // Items tracked but not drawn this frame = picked up
+    val toRemove = new mutable.ArrayBuffer[Int]()
+    val iter = itemLastWorldPos.iterator
+    while (iter.hasNext) {
+      val (id, (wx, wy, colorRGB)) = iter.next()
+      if (!drawnItemIdsThisFrame.contains(id)) {
+        // Spawn pickup ring burst particles
+        val sx = worldToScreenX(wx, wy).toFloat
+        val sy = worldToScreenY(wx, wy).toFloat
+        val (cr, cg, cb) = intToRGB(colorRGB)
+        for (_ <- 0 until 12) {
+          val angle = rng.nextFloat() * Math.PI.toFloat * 2f
+          val speed = 25f + rng.nextFloat() * 35f
+          combatParticles.emit(sx, sy,
+            Math.cos(angle).toFloat * speed, Math.sin(angle).toFloat * speed,
+            plife = 0.3f + rng.nextFloat() * 0.25f,
+            pr = clamp(cr * 0.5f + 0.5f), pg = clamp(cg * 0.5f + 0.5f), pb = clamp(cb * 0.5f + 0.5f),
+            palpha = 0.6f,
+            psize = 2f + rng.nextFloat() * 2f,
+            pgravity = 15f, additive = true)
+        }
+        toRemove += id
+        itemSpawnTimes.remove(id)
+      }
+    }
+    toRemove.foreach(itemLastWorldPos.remove)
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  ELEVATED TILE EDGE SHADOWS
+  // ═══════════════════════════════════════════════════════════════════
+
+  private def drawElevatedTileShadow(wx: Int, wy: Int, world: com.gridgame.common.model.WorldData): Unit = {
+    val sx = worldToScreenX(wx, wy).toFloat
+    val sy = worldToScreenY(wx, wy).toFloat
+    val hw = HW.toFloat  // 20
+    val hh = HH.toFloat  // 10
+
+    // Check each adjacent tile — draw shadow on the walkable side
+    // Shadow extends outward from the elevated tile onto the ground
+    val shadowAlpha = 0.18f
+    val shadowDist = 6f
+
+    // Check south neighbor (wx, wy+1) — shadow falls on bottom-right edge
+    if (wy + 1 < world.height && world.getTile(wx, wy + 1).walkable) {
+      // Bottom-right edge of the diamond
+      shapeBatch.fillPolygon(
+        Array(sx, sx + hw, sx + hw, sx),
+        Array(sy + hh, sy, sy + shadowDist, sy + hh + shadowDist),
+        0.0f, 0.0f, 0.05f, shadowAlpha)
+    }
+    // Check east neighbor (wx+1, wy) — shadow falls on bottom-left edge
+    if (wx + 1 < world.width && world.getTile(wx + 1, wy).walkable) {
+      shapeBatch.fillPolygon(
+        Array(sx, sx - hw, sx - hw, sx),
+        Array(sy + hh, sy, sy + shadowDist, sy + hh + shadowDist),
+        0.0f, 0.0f, 0.05f, shadowAlpha)
+    }
+    // Check north neighbor (wx, wy-1) — shadow falls on top-left edge (subtle)
+    if (wy - 1 >= 0 && world.getTile(wx, wy - 1).walkable) {
+      shapeBatch.fillPolygon(
+        Array(sx, sx - hw, sx - hw, sx),
+        Array(sy - hh, sy, sy - shadowDist, sy - hh - shadowDist),
+        0.0f, 0.0f, 0.05f, shadowAlpha * 0.4f)
+    }
+    // Check west neighbor (wx-1, wy) — shadow falls on top-right edge (subtle)
+    if (wx - 1 >= 0 && world.getTile(wx - 1, wy).walkable) {
+      shapeBatch.fillPolygon(
+        Array(sx, sx + hw, sx + hw, sx),
+        Array(sy - hh, sy, sy - shadowDist, sy - hh - shadowDist),
+        0.0f, 0.0f, 0.05f, shadowAlpha * 0.4f)
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   //  UTILITIES
   // ═══════════════════════════════════════════════════════════════════
 
@@ -2052,6 +2633,17 @@ class GLGameRenderer(val client: GameClient) {
     lastRemotePositions.clear()
     remoteMovingUntil.clear()
     prevHealthMap.clear()
+    smoothHealthMap.clear()
+    itemSpawnTimes.clear()
+    itemLastWorldPos.clear()
+    drawnItemIdsThisFrame.clear()
+    prevCooldownReady(0) = true; prevCooldownReady(1) = true
+    cooldownReadyFlashTime(0) = 0L; cooldownReadyFlashTime(1) = 0L
+    weatherParticles.clear()
+    combatParticles.clear()
+    deathBurstSpawned.clear()
+    prevLocalVX = Double.NaN
+    prevLocalVY = Double.NaN
   }
 
   def dispose(): Unit = {

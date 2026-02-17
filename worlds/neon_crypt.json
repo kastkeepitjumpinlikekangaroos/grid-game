@@ -1,0 +1,73 @@
+{
+  "name": "Neon Crypt",
+  "background": "cityscape",
+  "width": 120,
+  "height": 120,
+  "layers": [
+    {"type": "fill", "tile": "void"},
+    {"type": "border", "tile": "obsidian", "thickness": 3},
+
+    {"type": "rect", "tile": "circuit", "x": 8, "y": 8, "width": 104, "height": 104},
+
+    {"type": "line", "tile": "plasma", "x1": 8, "y1": 40, "x2": 112, "y2": 40, "thickness": 1},
+    {"type": "line", "tile": "plasma", "x1": 8, "y1": 80, "x2": 112, "y2": 80, "thickness": 1},
+    {"type": "line", "tile": "plasma", "x1": 40, "y1": 8, "x2": 40, "y2": 112, "thickness": 1},
+    {"type": "line", "tile": "plasma", "x1": 80, "y1": 8, "x2": 80, "y2": 112, "thickness": 1},
+
+    {"type": "rect", "tile": "metal", "x": 8, "y": 38, "width": 10, "height": 4},
+    {"type": "rect", "tile": "metal", "x": 52, "y": 38, "width": 16, "height": 4},
+    {"type": "rect", "tile": "metal", "x": 102, "y": 38, "width": 10, "height": 4},
+
+    {"type": "rect", "tile": "metal", "x": 8, "y": 78, "width": 10, "height": 4},
+    {"type": "rect", "tile": "metal", "x": 52, "y": 78, "width": 16, "height": 4},
+    {"type": "rect", "tile": "metal", "x": 102, "y": 78, "width": 10, "height": 4},
+
+    {"type": "rect", "tile": "metal", "x": 38, "y": 8, "width": 4, "height": 10},
+    {"type": "rect", "tile": "metal", "x": 38, "y": 52, "width": 4, "height": 16},
+    {"type": "rect", "tile": "metal", "x": 38, "y": 102, "width": 4, "height": 10},
+
+    {"type": "rect", "tile": "metal", "x": 78, "y": 8, "width": 4, "height": 10},
+    {"type": "rect", "tile": "metal", "x": 78, "y": 52, "width": 4, "height": 16},
+    {"type": "rect", "tile": "metal", "x": 78, "y": 102, "width": 4, "height": 10},
+
+    {"type": "rect", "tile": "metal", "x": 14, "y": 14, "width": 20, "height": 20},
+    {"type": "rect", "tile": "glass", "x": 18, "y": 18, "width": 12, "height": 12},
+    {"type": "rect", "tile": "obsidian", "x": 22, "y": 22, "width": 4, "height": 4},
+
+    {"type": "rect", "tile": "metal", "x": 86, "y": 14, "width": 20, "height": 20},
+    {"type": "rect", "tile": "glass", "x": 90, "y": 18, "width": 12, "height": 12},
+    {"type": "rect", "tile": "obsidian", "x": 94, "y": 22, "width": 4, "height": 4},
+
+    {"type": "rect", "tile": "metal", "x": 14, "y": 86, "width": 20, "height": 20},
+    {"type": "rect", "tile": "glass", "x": 18, "y": 90, "width": 12, "height": 12},
+    {"type": "rect", "tile": "obsidian", "x": 22, "y": 94, "width": 4, "height": 4},
+
+    {"type": "rect", "tile": "metal", "x": 86, "y": 86, "width": 20, "height": 20},
+    {"type": "rect", "tile": "glass", "x": 90, "y": 90, "width": 12, "height": 12},
+    {"type": "rect", "tile": "obsidian", "x": 94, "y": 94, "width": 4, "height": 4},
+
+    {"type": "circle", "tile": "metal", "cx": 60, "cy": 60, "radius": 10},
+    {"type": "circle", "tile": "glass", "cx": 60, "cy": 60, "radius": 6},
+    {"type": "circle", "tile": "crystal", "cx": 60, "cy": 60, "radius": 3},
+
+    {"type": "rect", "tile": "energy_field", "x": 22, "y": 58, "width": 4, "height": 4},
+    {"type": "rect", "tile": "energy_field", "x": 94, "y": 58, "width": 4, "height": 4},
+    {"type": "rect", "tile": "energy_field", "x": 58, "y": 22, "width": 4, "height": 4},
+    {"type": "rect", "tile": "energy_field", "x": 58, "y": 94, "width": 4, "height": 4},
+
+    {"type": "circle", "tile": "toxic", "cx": 24, "cy": 60, "radius": 4},
+    {"type": "circle", "tile": "toxic", "cx": 96, "cy": 60, "radius": 4},
+    {"type": "circle", "tile": "toxic", "cx": 60, "cy": 24, "radius": 4},
+    {"type": "circle", "tile": "toxic", "cx": 60, "cy": 96, "radius": 4}
+  ],
+  "spawnPoints": [
+    {"x": 24, "y": 24},
+    {"x": 96, "y": 24},
+    {"x": 24, "y": 96},
+    {"x": 96, "y": 96},
+    {"x": 60, "y": 12},
+    {"x": 60, "y": 108},
+    {"x": 12, "y": 60},
+    {"x": 108, "y": 60}
+  ]
+}

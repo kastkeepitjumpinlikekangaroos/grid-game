@@ -49,12 +49,12 @@ class LightSystem(var width: Int, var height: Int) {
   /** Set ambient light based on background type. */
   def setAmbientForBackground(background: String): Unit = {
     ambientLevel = background match {
-      case "space"     => 0.18f
-      case "cityscape" => 0.28f
-      case "ocean"     => 0.38f
-      case "sky"       => 0.52f
-      case "desert"    => 0.52f
-      case _           => 0.38f
+      case "space"     => 0.38f
+      case "cityscape" => 0.45f
+      case "ocean"     => 0.50f
+      case "sky"       => 0.60f
+      case "desert"    => 0.58f
+      case _           => 0.48f
     }
   }
 
