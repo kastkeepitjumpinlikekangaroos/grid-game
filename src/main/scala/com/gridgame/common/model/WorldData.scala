@@ -44,52 +44,58 @@ class WorldData(
     }
   }
 
+  private val MIN_SPAWN_DISTANCE = 50
+
+  private def isFarEnough(x: Int, y: Int, occupied: Set[(Int, Int)]): Boolean = {
+    occupied.forall { case (ox, oy) =>
+      val dx = x - ox
+      val dy = y - oy
+      Math.sqrt(dx.toDouble * dx + dy.toDouble * dy) >= MIN_SPAWN_DISTANCE
+    }
+  }
+
   def getValidSpawnPoint(): Position = getValidSpawnPoint(Set.empty)
 
   def getValidSpawnPoint(occupied: Set[(Int, Int)]): Position = {
-    // Shuffle spawn points so each caller gets a random one
+    // Try spawn points with full minimum distance
     if (spawnPoints.nonEmpty) {
       val shuffled = scala.util.Random.shuffle(spawnPoints)
       for (spawn <- shuffled) {
-        if (isWalkable(spawn) && !occupied.contains((spawn.getX, spawn.getY))) {
+        if (isWalkable(spawn) && isFarEnough(spawn.getX, spawn.getY, occupied)) {
           return spawn
         }
       }
-      // All spawn points occupied — try nearby walkable tiles around each spawn
-      for (spawn <- shuffled) {
-        for (radius <- 1 to 5) {
-          val offsets = scala.util.Random.shuffle(
-            (for (dx <- -radius to radius; dy <- -radius to radius if Math.abs(dx) == radius || Math.abs(dy) == radius) yield (dx, dy)).toList
-          )
-          for ((dx, dy) <- offsets) {
-            val x = spawn.getX + dx
-            val y = spawn.getY + dy
-            if (x >= 0 && x < width && y >= 0 && y < height && isWalkable(x, y) && !occupied.contains((x, y))) {
-              return new Position(x, y)
-            }
-          }
-        }
+    }
+
+    // No predefined spawn point works — find a random walkable tile far from others
+    val candidates = scala.collection.mutable.ArrayBuffer[Position]()
+    for (y <- 0 until height; x <- 0 until width) {
+      if (isWalkable(x, y) && isFarEnough(x, y, occupied)) {
+        candidates += new Position(x, y)
       }
     }
-    // Fall back to finding a random walkable tile
-    val walkable = scala.collection.mutable.ArrayBuffer[Position]()
-    val centerX = width / 2
-    val centerY = height / 2
-    val searchRadius = Math.min(30, Math.max(width, height))
-    for (dx <- -searchRadius to searchRadius) {
-      for (dy <- -searchRadius to searchRadius) {
-        val x = centerX + dx
-        val y = centerY + dy
-        if (x >= 0 && x < width && y >= 0 && y < height && isWalkable(x, y) && !occupied.contains((x, y))) {
-          walkable += new Position(x, y)
+    if (candidates.nonEmpty) {
+      return candidates(scala.util.Random.nextInt(candidates.size))
+    }
+
+    // Map too small for full distance — relax to half, then quarter, then any
+    for (relaxed <- Seq(MIN_SPAWN_DISTANCE / 2, MIN_SPAWN_DISTANCE / 4, 5, 1)) {
+      val relaxedCandidates = scala.collection.mutable.ArrayBuffer[Position]()
+      for (y <- 0 until height; x <- 0 until width) {
+        if (isWalkable(x, y) && occupied.forall { case (ox, oy) =>
+          val dx = x - ox; val dy = y - oy
+          Math.sqrt(dx.toDouble * dx + dy.toDouble * dy) >= relaxed
+        }) {
+          relaxedCandidates += new Position(x, y)
         }
       }
+      if (relaxedCandidates.nonEmpty) {
+        return relaxedCandidates(scala.util.Random.nextInt(relaxedCandidates.size))
+      }
     }
-    if (walkable.nonEmpty) {
-      return walkable(scala.util.Random.nextInt(walkable.size))
-    }
+
     // Last resort
-    new Position(0, 0)
+    new Position(width / 2, height / 2)
   }
 }
 

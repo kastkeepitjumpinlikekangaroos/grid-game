@@ -408,24 +408,43 @@ class RankedQueue(server: GameServer) {
     // Start the instance
     instance.start()
 
-    // Broadcast bot joins and start bot AI
-    if (lobby.botManager.botCount > 0) {
-      lobby.botManager.getBots.foreach { botSlot =>
-        val botPlayer = instance.registry.get(botSlot.id)
-        if (botPlayer != null) {
-          val joinPacket = new PlayerJoinPacket(
-            server.getNextSequenceNumber,
-            botSlot.id,
-            botPlayer.getPosition,
-            botPlayer.getColorRGB,
-            botSlot.name,
-            botPlayer.getHealth,
-            botSlot.characterId,
-            botPlayer.getTeamId
-          )
-          instance.broadcastToInstance(joinPacket)
-        }
+    // Broadcast join packets for all players (human + bot) so each client
+    // knows every player's server-assigned spawn position
+    entries.foreach { entry =>
+      val instancePlayer = instance.registry.get(entry.playerId)
+      if (instancePlayer != null) {
+        val joinPacket = new PlayerJoinPacket(
+          server.getNextSequenceNumber,
+          entry.playerId,
+          instancePlayer.getPosition,
+          instancePlayer.getColorRGB,
+          instancePlayer.getName,
+          instancePlayer.getHealth,
+          instancePlayer.getCharacterId,
+          instancePlayer.getTeamId
+        )
+        instance.broadcastToInstance(joinPacket)
       }
+    }
+    lobby.botManager.getBots.foreach { botSlot =>
+      val botPlayer = instance.registry.get(botSlot.id)
+      if (botPlayer != null) {
+        val joinPacket = new PlayerJoinPacket(
+          server.getNextSequenceNumber,
+          botSlot.id,
+          botPlayer.getPosition,
+          botPlayer.getColorRGB,
+          botSlot.name,
+          botPlayer.getHealth,
+          botSlot.characterId,
+          botPlayer.getTeamId
+        )
+        instance.broadcastToInstance(joinPacket)
+      }
+    }
+
+    // Start bot AI
+    if (lobby.botManager.botCount > 0) {
       botController.start()
     }
 
@@ -555,23 +574,41 @@ class RankedQueue(server: GameServer) {
     // Start the instance
     instance.start()
 
-    // Broadcast bot joins and start bot AI
-    if (lobby.botManager.botCount > 0) {
-      lobby.botManager.getBots.foreach { botSlot =>
-        val botPlayer = instance.registry.get(botSlot.id)
-        if (botPlayer != null) {
-          val joinPacket = new PlayerJoinPacket(
-            server.getNextSequenceNumber,
-            botSlot.id,
-            botPlayer.getPosition,
-            botPlayer.getColorRGB,
-            botSlot.name,
-            botPlayer.getHealth,
-            botSlot.characterId
-          )
-          instance.broadcastToInstance(joinPacket)
-        }
+    // Broadcast join packets for all players (human + bot) so each client
+    // knows every player's server-assigned spawn position
+    entries.foreach { entry =>
+      val instancePlayer = instance.registry.get(entry.playerId)
+      if (instancePlayer != null) {
+        val joinPacket = new PlayerJoinPacket(
+          server.getNextSequenceNumber,
+          entry.playerId,
+          instancePlayer.getPosition,
+          instancePlayer.getColorRGB,
+          instancePlayer.getName,
+          instancePlayer.getHealth,
+          instancePlayer.getCharacterId
+        )
+        instance.broadcastToInstance(joinPacket)
       }
+    }
+    lobby.botManager.getBots.foreach { botSlot =>
+      val botPlayer = instance.registry.get(botSlot.id)
+      if (botPlayer != null) {
+        val joinPacket = new PlayerJoinPacket(
+          server.getNextSequenceNumber,
+          botSlot.id,
+          botPlayer.getPosition,
+          botPlayer.getColorRGB,
+          botSlot.name,
+          botPlayer.getHealth,
+          botSlot.characterId
+        )
+        instance.broadcastToInstance(joinPacket)
+      }
+    }
+
+    // Start bot AI
+    if (lobby.botManager.botCount > 0) {
       botController.start()
     }
 
@@ -684,6 +721,24 @@ class RankedQueue(server: GameServer) {
 
     // Start the instance
     instance.start()
+
+    // Broadcast join packets for all players so each client
+    // knows every player's server-assigned spawn position
+    entries.foreach { entry =>
+      val instancePlayer = instance.registry.get(entry.playerId)
+      if (instancePlayer != null) {
+        val joinPacket = new PlayerJoinPacket(
+          server.getNextSequenceNumber,
+          entry.playerId,
+          instancePlayer.getPosition,
+          instancePlayer.getColorRGB,
+          instancePlayer.getName,
+          instancePlayer.getHealth,
+          instancePlayer.getCharacterId
+        )
+        instance.broadcastToInstance(joinPacket)
+      }
+    }
 
     println(s"RankedQueue: Started ranked duel (lobby ${lobby.id}) with ${entries.size} players on $worldFileName")
   }

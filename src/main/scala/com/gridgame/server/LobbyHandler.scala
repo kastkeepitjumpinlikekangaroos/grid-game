@@ -242,25 +242,43 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     // Done after players are registered and notified so item spawns reach everyone
     instance.start()
 
+    // Broadcast join packets for all players (human + bot) so each client
+    // knows every player's server-assigned spawn position
+    lobby.players.asScala.foreach { pid =>
+      val instancePlayer = instance.registry.get(pid)
+      if (instancePlayer != null) {
+        val joinPacket = new PlayerJoinPacket(
+          server.getNextSequenceNumber,
+          pid,
+          instancePlayer.getPosition,
+          instancePlayer.getColorRGB,
+          instancePlayer.getName,
+          instancePlayer.getHealth,
+          instancePlayer.getCharacterId,
+          instancePlayer.getTeamId
+        )
+        instance.broadcastToInstance(joinPacket)
+      }
+    }
+    lobby.botManager.getBots.foreach { botSlot =>
+      val botPlayer = instance.registry.get(botSlot.id)
+      if (botPlayer != null) {
+        val joinPacket = new PlayerJoinPacket(
+          server.getNextSequenceNumber,
+          botSlot.id,
+          botPlayer.getPosition,
+          botPlayer.getColorRGB,
+          botSlot.name,
+          botPlayer.getHealth,
+          botSlot.characterId,
+          botPlayer.getTeamId
+        )
+        instance.broadcastToInstance(joinPacket)
+      }
+    }
+
     // Start bot controller if there are bots
     if (lobby.botManager.botCount > 0) {
-      // Broadcast bot join packets to human players so they know about bots
-      lobby.botManager.getBots.foreach { botSlot =>
-        val botPlayer = instance.registry.get(botSlot.id)
-        if (botPlayer != null) {
-          val joinPacket = new PlayerJoinPacket(
-            server.getNextSequenceNumber,
-            botSlot.id,
-            botPlayer.getPosition,
-            botPlayer.getColorRGB,
-            botSlot.name,
-            botPlayer.getHealth,
-            botSlot.characterId,
-            botPlayer.getTeamId
-          )
-          instance.broadcastToInstance(joinPacket)
-        }
-      }
       botController.start()
     }
 

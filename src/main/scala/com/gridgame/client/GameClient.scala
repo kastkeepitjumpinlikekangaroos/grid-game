@@ -1430,9 +1430,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     player.setTeamId(packet.getTeamId)
     players.put(player.getId, player)
 
-    // If this is the local player's join echo, capture team assignment
+    // If this is the local player's join echo, use server-assigned spawn position
     if (packet.getPlayerId.equals(localPlayerId)) {
       localTeamId = packet.getTeamId
+      localPosition.set(packet.getPosition)
+      localHealth.set(packet.getHealth)
     }
 
     println(s"GameClient: Player joined - ${player.getId.toString.substring(0, 8)} ('${player.getName}') at ${player.getPosition} with health ${player.getHealth} team=${packet.getTeamId}")
@@ -1671,11 +1673,13 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   def setWorld(world: WorldData): Unit = {
     currentWorld.set(world)
-    // Respawn at a valid position in the new world
-    val newSpawn = world.getValidSpawnPoint()
-    localPosition.set(newSpawn)
-    sendPositionUpdate(newSpawn)
-    println(s"GameClient: World changed to '${world.name}', respawned at $newSpawn")
+    // Pick a temporary spawn so the player isn't stranded in the old world.
+    // The server will override this with the authoritative position via
+    // PlayerJoinPacket shortly after.
+    val tempSpawn = world.getValidSpawnPoint()
+    localPosition.set(tempSpawn)
+    sendPositionUpdate(tempSpawn)
+    println(s"GameClient: World changed to '${world.name}', temp spawn at $tempSpawn")
   }
 
   def setMouseWorldPosition(x: Double, y: Double): Unit = {
