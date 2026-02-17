@@ -93,6 +93,15 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   // Explosion animation tracking: projectileId -> (timestamp, worldX*1000, worldY*1000, colorRGB, blastRadius*1000)
   private val explosionAnimations: ConcurrentHashMap[Int, Array[Long]] = new ConcurrentHashMap()
 
+  // Movement interpolation for smooth camera following
+  @volatile private var moveInterpFromX: Double = 0.0
+  @volatile private var moveInterpFromY: Double = 0.0
+  @volatile private var moveInterpToX: Double = 0.0
+  @volatile private var moveInterpToY: Double = 0.0
+  @volatile private var moveInterpStartTime: Long = 0L
+  @volatile private var moveInterpDurationMs: Long = Constants.MOVE_RATE_LIMIT_MS
+  @volatile private var prevMoveTimestamp: Long = 0L
+
   // AoE splash animation tracking: projectileId -> (timestamp, worldX*1000, worldY*1000, colorRGB, aoeRadius*1000)
   private val aoeSplashAnimations: ConcurrentHashMap[Int, Array[Long]] = new ConcurrentHashMap()
 
@@ -309,8 +318,20 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     val newPos = new Position(finalX, finalY)
 
     if (!newPos.equals(current)) {
+      // Set up movement interpolation for smooth rendering
+      val now = System.currentTimeMillis()
+      moveInterpFromX = current.getX.toDouble
+      moveInterpFromY = current.getY.toDouble
+      moveInterpToX = finalX.toDouble
+      moveInterpToY = finalY.toDouble
+      if (prevMoveTimestamp > 0) {
+        moveInterpDurationMs = Math.max(16, now - prevMoveTimestamp)
+      }
+      prevMoveTimestamp = now
+      moveInterpStartTime = now
+
       localPosition.set(newPos)
-      lastMoveTime.set(System.currentTimeMillis())
+      lastMoveTime.set(now)
       sendPositionUpdate(newPos)
     }
   }
@@ -1568,6 +1589,22 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   }
 
   def getLocalPosition: Position = localPosition.get()
+
+  /** Smoothly interpolated position for rendering. Linearly moves between grid tiles. */
+  def getVisualPosition: (Double, Double) = {
+    val pos = localPosition.get()
+    if (moveInterpStartTime == 0L) return (pos.getX.toDouble, pos.getY.toDouble)
+    val now = System.currentTimeMillis()
+    val elapsed = now - moveInterpStartTime
+    if (elapsed >= moveInterpDurationMs) {
+      (pos.getX.toDouble, pos.getY.toDouble)
+    } else {
+      val t = elapsed.toDouble / moveInterpDurationMs
+      val x = moveInterpFromX + (moveInterpToX - moveInterpFromX) * t
+      val y = moveInterpFromY + (moveInterpToY - moveInterpFromY) * t
+      (x, y)
+    }
+  }
 
   def getLocalPlayerId: UUID = localPlayerId
 
