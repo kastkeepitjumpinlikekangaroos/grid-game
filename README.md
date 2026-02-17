@@ -32,7 +32,7 @@ bazel run //src/main/scala/com/gridgame/mapeditor
 - **Lobby System** - Create/join lobbies, configure map and game duration, add bots
 - **Ranked Queue** - ELO-based matchmaking
 - **Accounts** - Login/register with persistent stats, match history, and leaderboards
-- **Network Security** - TLS 1.3 encrypted TCP, HMAC-signed packets, session tokens, rate limiting, and server-side anti-cheat validation
+- **Network Security** - TLS 1.3 encrypted TCP (explicit cipher suites), HMAC-signed packets, session tokens with expiration, rate limiting, per-channel auth failure tracking, UDP replay protection (sliding window), UDP source IP validation, projectile velocity validation, and server-side anti-cheat validation
 - **GPU-Accelerated Rendering** - OpenGL 3.3 via LWJGL with batched draw calls, post-processing (bloom, vignette), and 112 distinct projectile visual effects
 - **Isometric Rendering** - 2.5D tile-based world with parallax backgrounds
 - **Gamepad Support** - Controller input via LWJGL/GLFW
@@ -73,7 +73,7 @@ Each character has unique abilities using cast behaviors: StandardProjectile, Ph
 
 - **Language**: Scala 2.13
 - **Rendering**: LWJGL 3.3.4 / OpenGL 3.3 core profile (game), JavaFX 21 (UI screens)
-- **Networking**: Netty (TLS 1.3 TCP + HMAC-signed UDP, 80-byte packets with 64-byte payload + 16-byte HMAC)
+- **Networking**: Netty (TLS 1.3 TCP + HMAC-signed UDP, 80-byte packets with 64-byte payload + 16-byte HMAC, replay protection, UDP source validation, session expiration)
 - **Database**: SQLite (accounts, match history, ELO)
 - **Build**: Bazel with rules_scala
 - **Input**: GLFW (keyboard, mouse, gamepad)

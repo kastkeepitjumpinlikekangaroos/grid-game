@@ -285,13 +285,17 @@ Projectiles are defined in `ProjectileDef.scala` with extensive customization:
 
 ### Network Security
 
-5 layers of security protect the networking stack:
+9 layers of security protect the networking stack:
 
-1. **TLS 1.3 for TCP** — All TCP traffic encrypted via Netty `SslHandler`. Server generates a self-signed certificate at startup using `keytool`. Client trusts all certs (game server, not web).
-2. **HMAC Packet Signing** — After auth, server issues a 32-byte session token. All subsequent packets (TCP and UDP) carry a 16-byte truncated HMAC-SHA256. Packets with invalid HMAC are dropped silently.
-3. **Rate Limiting** — Per-client: 60 UDP/s, 20 TCP/s. Per-IP: 5 connections/min, 5 auth failures before 30s cooldown. Stale entries cleaned up every 5s.
-4. **Server-Side Validation** — Movement validated against world bounds, walkability, and speed limits (2x expected + 2 cells tolerance). Projectile spawn validated against player position (max 3 cells) and fire rate (80% of `SHOOT_COOLDOWN_MS`).
+1. **TLS 1.3 for TCP** — All TCP traffic encrypted via Netty `SslHandler`. Server generates a self-signed certificate at startup using `keytool` with a random password and restrictive temp directory permissions (`rwx------`). Explicit cipher suites: `TLS_AES_256_GCM_SHA384`, `TLS_CHACHA20_POLY1305_SHA256`. Client trusts all certs (game server, not web).
+2. **HMAC Packet Signing** — After auth, server issues a 32-byte session token. All subsequent packets (TCP and UDP) carry a 16-byte truncated HMAC-SHA256. Packets with invalid HMAC are dropped silently. UDP packets without a valid session token are dropped entirely (no unsigned UDP fallback).
+3. **Rate Limiting** — Per-client: 60 UDP/s, 20 TCP/s. Per-IP: 5 connections/min, 5 auth failures before 30s cooldown. Per-channel: connection closed after 5 auth failures (`MAX_AUTH_FAILURES_PER_CHANNEL`). Race-free auth tracking via `computeIfAbsent`. Stale entries cleaned up every 5s.
+4. **Server-Side Validation** — Movement validated against world bounds, walkability, and speed limits (2x expected + 2 cells tolerance, Long arithmetic to prevent overflow). Projectile spawn validated against player position (max 3 cells), fire rate (80% of `SHOOT_COOLDOWN_MS`), velocity (NaN/Inf rejection, magnitude <= sqrt(2)), and charge level (0-100). Health values validated against `MAX_HEALTH`.
 5. **Auth Hardening** — Constant-time hash comparison (`MessageDigest.isEqual`), dummy hash on username-not-found (prevents timing enumeration), password minimum 6 characters.
+6. **Replay Protection** — `PacketValidator` tracks sequence numbers per player with a sliding window bitmap (`SEQUENCE_WINDOW_SIZE = 256`) for UDP out-of-order tolerance. TCP enforces strictly increasing sequence numbers. Duplicate/replayed packets are rejected.
+7. **UDP Source Validation** — Server records each player's TCP connection IP (`playerTcpAddresses`). UDP packets are only accepted if the sender IP matches the player's TCP IP, preventing UDP source spoofing.
+8. **Session Token Expiration** — Tokens expire after `SESSION_TOKEN_LIFETIME_MS` (1 hour). The cleanup loop removes expired tokens and closes the player's TCP channel, forcing re-authentication.
+9. **Client Disconnect Recovery** — `NetworkThread` uses Netty `IdleStateHandler` for read timeout detection (`CLIENT_TIMEOUT_MS`). On disconnect, a callback notifies `GameClient` which clears game state and can transition the UI back to the login screen. Incoming packet queue is bounded (`INCOMING_QUEUE_CAPACITY = 2048`) to prevent memory exhaustion. Sequence numbers reset on reconnect.
 
 ### Packet Format
 
