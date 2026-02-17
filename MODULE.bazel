@@ -27,6 +27,7 @@ maven.install(
         "io.netty:netty-transport-native-unix-common:4.1.104.Final",
         "junit:junit:4.13.2",
         "org.xerial:sqlite-jdbc:3.44.0.0",
+        "org.mindrot:jbcrypt:0.4",
         "org.lwjgl:lwjgl:3.3.4",
         "org.lwjgl:lwjgl-glfw:3.3.4",
         "org.lwjgl:lwjgl:jar:natives-macos-arm64:3.3.4",

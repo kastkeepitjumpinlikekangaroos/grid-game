@@ -27,13 +27,13 @@ class PacketValidator {
     val lastSeq = lastSequenceNumber.computeIfAbsent(playerId, _ => new AtomicInteger(-1))
 
     if (!isUdp) {
-      // TCP is ordered: reject if seqNum <= lastSeen
-      val last = lastSeq.get()
-      if (seqNum <= last) {
-        return false
+      // TCP is ordered: reject if seqNum <= lastSeen (lock-free CAS loop)
+      var last = lastSeq.get()
+      while (seqNum > last) {
+        if (lastSeq.compareAndSet(last, seqNum)) return true
+        last = lastSeq.get()
       }
-      lastSeq.set(seqNum)
-      return true
+      return false
     }
 
     // UDP: use sliding window for out-of-order tolerance

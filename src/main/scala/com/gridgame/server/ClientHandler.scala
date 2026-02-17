@@ -141,6 +141,10 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       true
     } else {
       val charDef = com.gridgame.common.model.CharacterDef.get(packet.getCharacterId)
+      if (charDef == null) {
+        System.err.println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} invalid character ID: ${packet.getCharacterId}")
+        return false
+      }
       val player = new Player(playerId, packet.getPlayerName, packet.getPosition, packet.getColorRGB, charDef.maxHealth, charDef.maxHealth)
       player.setCharacterId(packet.getCharacterId)
       player.setTcpChannel(tcpChannel)
@@ -164,22 +168,20 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     val playerId = packet.getPlayerId
     var player = registry.get(playerId)
 
-    // Validate movement if player exists and there's a world to check against
+    // Validate movement if player exists
     if (player != null) {
       val world = if (instance != null) instance.world else server.getWorld
-      if (world != null && !validator.validateMovement(packet, player, world)) {
+      if (world != null) {
+        if (!validator.validateMovement(packet, player, world)) return false
+      } else if (instance != null) {
+        // World should be loaded for active game instances — reject if missing
         return false
       }
     }
 
     if (player == null) {
-      System.err.println(s"Received update for unknown player: $playerId")
-      player = new Player(playerId, "Player", packet.getPosition, packet.getColorRGB)
-      player.setCharacterId(packet.getCharacterId)
-      if (udpSender != null) {
-        player.setUdpAddress(udpSender)
-      }
-      registry.add(player)
+      // Reject updates from unknown players — they must join via PLAYER_JOIN first
+      return false
     } else {
       val oldPos = player.getPosition
       val newPos = packet.getPosition
@@ -194,9 +196,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
         player.setPosition(newPos)
       }
       player.setColorRGB(packet.getColorRGB)
-      if (packet.getCharacterId != 0) {
-        player.setCharacterId(packet.getCharacterId)
-      }
+      // Character ID is set on join only — ignore mid-game character changes
       if (udpSender != null) {
         player.setUdpAddress(udpSender)
       }
@@ -246,14 +246,15 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
 
   private def handleItemUpdate(packet: ItemPacket): Boolean = {
     if (packet.getAction == ItemAction.USE) {
-      itemManager.removeFromInventory(packet.getPlayerId, packet.getItemId)
-
       val playerId = packet.getPlayerId
+      val removedItem = itemManager.removeFromInventory(playerId, packet.getItemId)
+      if (removedItem == null) return false // Item not in inventory
+
       val player = registry.get(playerId)
       if (player != null) {
-        packet.getItemType match {
+        removedItem.itemType match {
           case ItemType.Heart =>
-            player.setHealth(player.getMaxHealth)
+            player.setHealth(Math.min(player.getMaxHealth, Constants.MAX_HEALTH))
             val flags = (if (player.hasShield) 0x01 else 0) |
                         (if (player.hasGemBoost) 0x02 else 0) |
                         (if (player.isFrozen) 0x04 else 0)

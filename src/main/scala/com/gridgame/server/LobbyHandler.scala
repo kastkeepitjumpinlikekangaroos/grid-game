@@ -48,8 +48,15 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     }
   }
 
+  private def sanitizeName(raw: String): String = {
+    // Strip control characters and trim
+    raw.filter(c => !c.isControl).trim
+  }
+
   private def handleCreate(playerId: UUID, player: Player, packet: LobbyActionPacket): Unit = {
-    val name = if (packet.getLobbyName.isEmpty) s"${player.getName}'s Game" else packet.getLobbyName
+    val rawName = if (packet.getLobbyName.isEmpty) s"${player.getName}'s Game" else packet.getLobbyName
+    val name = sanitizeName(rawName)
+    if (name.isEmpty) return
     val mapIndex = packet.getMapIndex.toInt & 0xFF
     val duration = if (packet.getDurationMinutes <= 0) Constants.DEFAULT_GAME_DURATION_MIN else packet.getDurationMinutes.toInt
     val maxPlayers = if (packet.getMaxPlayers <= 0) Constants.MAX_LOBBY_PLAYERS else packet.getMaxPlayers.toInt

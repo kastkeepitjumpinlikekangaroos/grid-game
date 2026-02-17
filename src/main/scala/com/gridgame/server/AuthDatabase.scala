@@ -8,6 +8,8 @@ import java.sql.Connection
 import java.sql.DriverManager
 import java.util.UUID
 
+import org.mindrot.jbcrypt.BCrypt
+
 class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
   private val connection: Connection = {
     Class.forName("org.sqlite.JDBC")
@@ -33,6 +35,53 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
       stmt.executeUpdate("ALTER TABLE accounts ADD COLUMN elo INTEGER DEFAULT 1000")
     } catch {
       case _: Exception => // Column already exists
+    }
+
+    // Add uuid column if it doesn't exist (safe migration for O(1) UUID lookups)
+    try {
+      stmt.executeUpdate("ALTER TABLE accounts ADD COLUMN uuid TEXT")
+    } catch {
+      case _: Exception => // Column already exists
+    }
+
+    // Backfill uuid column for existing accounts
+    val backfillRs = connection.prepareStatement("SELECT username FROM accounts WHERE uuid IS NULL").executeQuery()
+    val usernames = scala.collection.mutable.ArrayBuffer[String]()
+    while (backfillRs.next()) {
+      usernames += backfillRs.getString("username")
+    }
+    backfillRs.close()
+    if (usernames.nonEmpty) {
+      val updateStmt = connection.prepareStatement("UPDATE accounts SET uuid = ? WHERE username = ?")
+      usernames.foreach { uname =>
+        updateStmt.setString(1, deriveUUID(uname).toString)
+        updateStmt.setString(2, uname)
+        updateStmt.addBatch()
+      }
+      updateStmt.executeBatch()
+      updateStmt.close()
+      println(s"AuthDatabase: Backfilled UUID for ${usernames.size} accounts")
+    }
+
+    // Create index on uuid column (safe - IF NOT EXISTS)
+    try {
+      stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_accounts_uuid ON accounts(uuid)")
+    } catch {
+      case _: Exception =>
+    }
+
+    // Migrate legacy SHA-256 hashes to bcrypt (detect by hash length: SHA-256 hex = 64 chars)
+    val legacyRs = connection.prepareStatement(
+      "SELECT username, password_hash, salt FROM accounts WHERE length(password_hash) = 64"
+    ).executeQuery()
+    var legacyCount = 0
+    while (legacyRs.next()) {
+      // Cannot migrate without knowing plaintext - mark for re-hash on next login
+      legacyCount += 1
+    }
+    legacyRs.close()
+    if (legacyCount > 0) {
+      println(s"AuthDatabase: $legacyCount accounts have legacy SHA-256 hashes (will be upgraded on next login)")
     }
 
     stmt.executeUpdate(
@@ -81,17 +130,18 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
 
     if (exists) return false
 
-    // Generate salt and hash password
-    val salt = generateSalt()
-    val hash = hashPassword(password, salt)
+    // Hash password with bcrypt (cost factor 12)
+    val hash = BCrypt.hashpw(password, BCrypt.gensalt(12))
+    val uuid = deriveUUID(username.toLowerCase)
 
     val insertStmt = connection.prepareStatement(
-      "INSERT INTO accounts(username, password_hash, salt, created_at) VALUES(?, ?, ?, ?)"
+      "INSERT INTO accounts(username, password_hash, salt, created_at, uuid) VALUES(?, ?, ?, ?, ?)"
     )
     insertStmt.setString(1, username.toLowerCase)
     insertStmt.setString(2, hash)
-    insertStmt.setString(3, salt)
+    insertStmt.setString(3, "") // salt is embedded in bcrypt hash
     insertStmt.setLong(4, System.currentTimeMillis())
+    insertStmt.setString(5, uuid.toString)
     val inserted = insertStmt.executeUpdate() > 0
     insertStmt.close()
     inserted
@@ -109,14 +159,35 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     val result = if (rs.next()) {
       val storedHash = rs.getString("password_hash")
       val salt = rs.getString("salt")
-      val computedHash = hashPassword(password, salt)
-      MessageDigest.isEqual(
-        storedHash.getBytes(StandardCharsets.UTF_8),
-        computedHash.getBytes(StandardCharsets.UTF_8)
-      )
+
+      if (storedHash.length == 64) {
+        // Legacy SHA-256 hash: verify with old method, then upgrade to bcrypt
+        val computedHash = hashPasswordLegacy(password, salt)
+        val matches = MessageDigest.isEqual(
+          storedHash.getBytes(StandardCharsets.UTF_8),
+          computedHash.getBytes(StandardCharsets.UTF_8)
+        )
+        if (matches) {
+          // Upgrade to bcrypt on successful login
+          val bcryptHash = BCrypt.hashpw(password, BCrypt.gensalt(12))
+          val upgradeStmt = connection.prepareStatement(
+            "UPDATE accounts SET password_hash = ?, salt = '' WHERE username = ?"
+          )
+          upgradeStmt.setString(1, bcryptHash)
+          upgradeStmt.setString(2, username.toLowerCase)
+          upgradeStmt.executeUpdate()
+          upgradeStmt.close()
+          println(s"AuthDatabase: Upgraded password hash for '$username' from SHA-256 to bcrypt")
+        }
+        matches
+      } else {
+        // bcrypt hash: use BCrypt.checkpw (internally constant-time)
+        BCrypt.checkpw(password, storedHash)
+      }
     } else {
-      // Run dummy hash to prevent timing-based username enumeration
-      hashPassword(password, "0000000000000000000000000000000000000000")
+      // Run dummy bcrypt hash to prevent timing-based username enumeration
+      // BCrypt.checkpw takes ~200ms with cost 12, normalizing timing
+      BCrypt.hashpw(password, BCrypt.gensalt(12))
       false
     }
 
@@ -244,17 +315,27 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
 
   /** Returns (username, elo, wins, matchesPlayed) sorted by ELO descending */
   def getLeaderboard(limit: Int = 50): Seq[(String, Int, Int, Int)] = {
-    val stmt = connection.prepareStatement("SELECT username, elo FROM accounts ORDER BY elo DESC LIMIT ?")
+    val stmt = connection.prepareStatement(
+      """SELECT a.username, a.elo,
+        |       COALESCE(SUM(CASE WHEN mr.rank = 1 THEN 1 ELSE 0 END), 0) AS wins,
+        |       COUNT(mr.id) AS matches_played
+        |FROM accounts a
+        |LEFT JOIN match_results mr ON mr.player_uuid = a.uuid
+        |GROUP BY a.username, a.elo
+        |ORDER BY a.elo DESC
+        |LIMIT ?""".stripMargin
+    )
     stmt.setInt(1, limit)
     val rs = stmt.executeQuery()
 
     val results = scala.collection.mutable.ArrayBuffer[(String, Int, Int, Int)]()
     while (rs.next()) {
-      val uname = rs.getString("username")
-      val elo = rs.getInt("elo")
-      val uuid = getOrCreateUUID(uname)
-      val (_, _, matchesPlayed, wins, _) = getPlayerStats(uuid)
-      results += ((uname, elo, wins, matchesPlayed))
+      results += ((
+        rs.getString("username"),
+        rs.getInt("elo"),
+        rs.getInt("wins"),
+        rs.getInt("matches_played")
+      ))
     }
     rs.close()
     stmt.close()
@@ -285,32 +366,29 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
   }
 
   def getUsernameByUUID(uuid: UUID): String = {
-    val stmt = connection.prepareStatement("SELECT username FROM accounts")
+    val stmt = connection.prepareStatement("SELECT username FROM accounts WHERE uuid = ?")
+    stmt.setString(1, uuid.toString)
     val rs = stmt.executeQuery()
-    var found: String = null
-    while (rs.next() && found == null) {
-      val username = rs.getString("username")
-      val derivedUUID = getOrCreateUUID(username)
-      if (derivedUUID.equals(uuid)) {
-        found = username
-      }
-    }
+    val found = if (rs.next()) rs.getString("username") else null
     rs.close()
     stmt.close()
     found
   }
 
-  private def generateSalt(): String = {
-    val random = new SecureRandom()
-    val salt = new Array[Byte](16)
-    random.nextBytes(salt)
-    bytesToHex(salt)
-  }
-
-  private def hashPassword(password: String, salt: String): String = {
+  /** Legacy SHA-256 hash for migrating old accounts to bcrypt. */
+  private def hashPasswordLegacy(password: String, salt: String): String = {
     val digest = MessageDigest.getInstance("SHA-256")
     val salted = (salt + password).getBytes(StandardCharsets.UTF_8)
     bytesToHex(digest.digest(salted))
+  }
+
+  /** Derive a deterministic UUID from a username. */
+  private def deriveUUID(username: String): UUID = {
+    val bytes = MessageDigest.getInstance("SHA-256")
+      .digest(s"gridgame:$username".toLowerCase.getBytes(StandardCharsets.UTF_8))
+    val msb = bytesToLong(bytes, 0)
+    val lsb = bytesToLong(bytes, 8)
+    new UUID(msb, lsb)
   }
 
   private def bytesToHex(bytes: Array[Byte]): String = {

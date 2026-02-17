@@ -26,8 +26,10 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
   private val projectiles = new ConcurrentHashMap[Int, Projectile]()
   private val nextId = new AtomicInteger(1)
 
-  /** Pre-filtered snapshot of alive, hittable players rebuilt once per tick. */
-  private var hittablePlayers: Array[Player] = Array.empty
+  /** Pre-filtered snapshot of alive, hittable players rebuilt once per tick.
+   *  Uses a pre-allocated array to avoid per-tick allocation. */
+  private var hittablePlayers: Array[Player] = new Array[Player](64)
+  private var hittableCount: Int = 0
   /** Spatial grid for efficient nearby-player lookups during collision detection.
    *  Uses a pre-allocated HashMap that is cleared each tick instead of reallocated. */
   private val gridCellSize = 4
@@ -46,13 +48,20 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
     }
     activeKeys.clear()
 
-    // Also build the flat hittable array
-    val buf = ArrayBuffer[Player]()
+    // Also build the flat hittable array (reuse pre-allocated buffer)
+    var count = 0
     val iter = allPlayers.iterator()
     while (iter.hasNext) {
       val player = iter.next()
       if (!player.isDead && !player.hasShield && !player.isPhased) {
-        buf += player
+        // Grow array if needed
+        if (count >= hittablePlayers.length) {
+          val newArr = new Array[Player](hittablePlayers.length * 2)
+          System.arraycopy(hittablePlayers, 0, newArr, 0, count)
+          hittablePlayers = newArr
+        }
+        hittablePlayers(count) = player
+        count += 1
         val pos = player.getPosition
         val cx = pos.getX / gridCellSize
         val cy = pos.getY / gridCellSize
@@ -66,7 +75,7 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
         cell += player
       }
     }
-    hittablePlayers = buf.toArray
+    hittableCount = count
   }
 
   /** Iterate players in the 3x3 neighborhood of the given world position.
@@ -93,13 +102,12 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
   }
 
   def spawnProjectile(ownerId: UUID, x: Int, y: Int, dx: Float, dy: Float, colorRGB: Int, chargeLevel: Int = 0, projectileType: Byte = com.gridgame.common.model.ProjectileType.NORMAL): Projectile = {
-    val id = nextId.getAndIncrement()
+    val id = nextId.getAndIncrement() & 0x7FFFFFFF // Ensure positive IDs after overflow
     // Spawn the projectile one cell ahead in the velocity direction
     val spawnX = x.toFloat + dx
     val spawnY = y.toFloat + dy
     val projectile = new Projectile(id, ownerId, spawnX, spawnY, dx, dy, colorRGB, chargeLevel, projectileType)
     projectiles.put(id, projectile)
-    println(s"ProjectileManager: Spawned $projectile (charge=$chargeLevel%, type=$projectileType)")
     projectile
   }
 
@@ -190,8 +198,6 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
                   hitPlayer.setHealth(h)
                   h
                 }
-                println(s"ProjectileManager: ${projectile} hit player ${hitPlayer.getId.toString.substring(0, 8)}, damage=$damage (charge=${projectile.chargeLevel}%), health now $newHealth")
-
                 // Pierce: track hit player and continue if pierce count not exhausted
                 projectile.hitPlayers += hitPlayer.getId
                 val canPierce = pDef.pierceCount > 0 && projectile.hitPlayers.size < pDef.pierceCount
@@ -247,8 +253,9 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
     val py = projectile.getY
     // Use pre-filtered hittable array (already excludes dead/shielded/phased)
     val players = hittablePlayers
+    val len = hittableCount
     var i = 0
-    while (i < players.length) {
+    while (i < len) {
       val player = players(i)
       i += 1
       if (!player.getId.equals(projectile.ownerId) &&
@@ -269,9 +276,6 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
           if (rootDurationMs > 0) {
             player.tryRoot(rootDurationMs)
           }
-          println(s"ProjectileManager: AoE hit player ${player.getId.toString.substring(0, 8)}, damage=$damage, health now $newHealth" +
-            (if (freezeDurationMs > 0) s", frozen ${freezeDurationMs}ms" else "") +
-            (if (rootDurationMs > 0) s", rooted ${rootDurationMs}ms" else ""))
           if (newHealth <= 0) {
             events += ProjectileAoEKill(projectile, player.getId)
           } else {

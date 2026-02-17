@@ -34,7 +34,7 @@ class GameServer(port: Int, val worldFile: String = "") {
   // Global state: all connected players regardless of lobby/game
   private val connectedPlayers = new ConcurrentHashMap[UUID, Player]()
   // Channel -> UUID mapping for disconnect handling
-  private val channelToPlayer = new ConcurrentHashMap[Channel, UUID]()
+  private[server] val channelToPlayer = new ConcurrentHashMap[Channel, UUID]()
 
   val rateLimiter = new RateLimiter()
   val sessionTokens = new ConcurrentHashMap[UUID, Array[Byte]]()
@@ -47,7 +47,13 @@ class GameServer(port: Int, val worldFile: String = "") {
   val tokenCreationTime = new ConcurrentHashMap[UUID, java.lang.Long]()
   // Per-channel auth failure tracking
   val channelAuthFailures = new ConcurrentHashMap[Channel, AtomicInteger]()
+  // Per-player rate limiting for expensive queries (leaderboard, match history)
+  private val lastQueryTime = new ConcurrentHashMap[UUID, java.lang.Long]()
+  // Per-channel malformed packet tracking (disconnect after too many)
+  private[server] val malformedPacketCounts = new ConcurrentHashMap[Channel, AtomicInteger]()
+  private[server] val MAX_MALFORMED_PACKETS = 10
 
+  val packetValidator = new PacketValidator()
   val authDatabase = new AuthDatabase()
   val lobbyManager = new LobbyManager()
   val lobbyHandler = new LobbyHandler(this, lobbyManager)
@@ -433,6 +439,8 @@ class GameServer(port: Int, val worldFile: String = "") {
     val player = connectedPlayers.get(playerId)
     if (player == null) return
 
+    if (!allowExpensiveQuery(playerId)) return
+
     // Send stats
     val (totalKills, totalDeaths, matchesPlayed, wins, elo) = authDatabase.getPlayerStats(playerId)
     val statsPacket = new MatchHistoryPacket(
@@ -459,12 +467,22 @@ class GameServer(port: Int, val worldFile: String = "") {
     sendPacketViaChannel(endPacket, tcpCh)
   }
 
+  private val QUERY_RATE_LIMIT_MS = 10000L // 10 seconds between expensive queries
+
+  private def allowExpensiveQuery(playerId: UUID): Boolean = {
+    val now = System.currentTimeMillis()
+    val lastTime = lastQueryTime.put(playerId, now)
+    lastTime == null || (now - lastTime) >= QUERY_RATE_LIMIT_MS
+  }
+
   private def handleLeaderboardRequest(packet: LeaderboardPacket, tcpCh: Channel): Unit = {
     if (packet.getAction != LeaderboardAction.QUERY) return
 
     val playerId = packet.getPlayerId
     val player = connectedPlayers.get(playerId)
     if (player == null) return
+
+    if (!allowExpensiveQuery(playerId)) return
 
     val leaderboard = authDatabase.getLeaderboard()
     var rank: Byte = 1
@@ -555,11 +573,13 @@ class GameServer(port: Int, val worldFile: String = "") {
   def handleDisconnect(channel: Channel): Unit = {
     channelToToken.remove(channel)
     channelAuthFailures.remove(channel)
+    malformedPacketCounts.remove(channel)
     val playerId = channelToPlayer.remove(channel)
     if (playerId != null) {
       sessionTokens.remove(playerId)
       tokenCreationTime.remove(playerId)
       playerTcpAddresses.remove(playerId)
+      packetValidator.removePlayer(playerId)
       val player = connectedPlayers.remove(playerId)
       if (player != null) {
         println(s"Global disconnect: ${playerId.toString.substring(0, 8)} ('${player.getName}')")
@@ -836,6 +856,16 @@ class GameServerTcpHandler(server: GameServer) extends SimpleChannelInboundHandl
         // Look up session token via channel
         val token = server.channelToToken.get(ctx.channel())
         if (token != null) {
+          // Inline token expiry check for TCP
+          val chPlayerId = server.channelToPlayer.get(ctx.channel())
+          if (chPlayerId != null) {
+            val createdAt = server.tokenCreationTime.get(chPlayerId)
+            if (createdAt != null && System.currentTimeMillis() - createdAt > Constants.SESSION_TOKEN_LIFETIME_MS) {
+              System.err.println("TCP: Session token expired, closing channel")
+              ctx.close()
+              return
+            }
+          }
           val verified = PacketSigner.verify(data, token)
           if (verified == null) {
             System.err.println("TCP: HMAC verification failed, dropping packet")
@@ -853,14 +883,24 @@ class GameServerTcpHandler(server: GameServer) extends SimpleChannelInboundHandl
       // Rate limit per-client packets (skip AUTH_REQUEST which has no player ID yet)
       if (packetTypeId != PacketType.AUTH_REQUEST.id) {
         val pid = packet.getPlayerId
-        if (pid != null && !server.rateLimiter.allowPacket(pid, false)) {
-          return
+        if (pid != null) {
+          if (!server.rateLimiter.allowPacket(pid, false)) return
+          // Replay protection: reject duplicate/out-of-order TCP sequence numbers
+          if (!server.packetValidator.validateSequence(pid, packet.getSequenceNumber, isUdp = false)) return
         }
       }
       server.handleIncomingPacket(packet, ctx.channel(), null)
     } catch {
-      case e: IllegalArgumentException =>
-        System.err.println(s"TCP: Invalid packet received: ${e.getMessage}")
+      case e: Exception =>
+        val msg = if (e.getMessage != null) e.getMessage else e.getClass.getSimpleName
+        System.err.println(s"TCP: Invalid packet received: $msg")
+        // Track malformed packets per channel and disconnect on excessive errors
+        val ch = ctx.channel()
+        val counter = server.malformedPacketCounts.computeIfAbsent(ch, _ => new AtomicInteger(0))
+        if (counter.incrementAndGet() >= server.MAX_MALFORMED_PACKETS) {
+          System.err.println(s"TCP: Too many malformed packets, closing: ${ch.remoteAddress()}")
+          ch.close()
+        }
     }
   }
 
@@ -870,7 +910,8 @@ class GameServerTcpHandler(server: GameServer) extends SimpleChannelInboundHandl
   }
 
   override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
-    System.err.println(s"TCP handler error: ${cause.getMessage}")
+    val msg = if (cause.getMessage != null) cause.getMessage else cause.getClass.getSimpleName
+    System.err.println(s"TCP handler error: $msg")
     ctx.close()
   }
 }
@@ -898,6 +939,12 @@ class GameServerUdpHandler(server: GameServer) extends SimpleChannelInboundHandl
         return
       }
 
+      // Inline token expiry check (don't wait for cleanup loop)
+      val createdAt = server.tokenCreationTime.get(playerId)
+      if (createdAt != null && System.currentTimeMillis() - createdAt > Constants.SESSION_TOKEN_LIFETIME_MS) {
+        return
+      }
+
       val verified = PacketSigner.verify(data, token)
       if (verified == null) {
         System.err.println("UDP: HMAC verification failed, dropping packet")
@@ -907,12 +954,14 @@ class GameServerUdpHandler(server: GameServer) extends SimpleChannelInboundHandl
 
       // Validate UDP source IP matches TCP connection IP
       val expectedAddr = server.playerTcpAddresses.get(playerId)
-      if (expectedAddr != null) {
-        val senderAddr = msg.sender().getAddress
-        if (!senderAddr.equals(expectedAddr)) {
-          System.err.println(s"UDP: Source IP mismatch for ${playerId.toString.substring(0, 8)}, dropping")
-          return
-        }
+      if (expectedAddr == null) {
+        // No TCP address registered yet — reject UDP until TCP handshake completes
+        return
+      }
+      val senderAddr = msg.sender().getAddress
+      if (!senderAddr.equals(expectedAddr)) {
+        System.err.println(s"UDP: Source IP mismatch for ${playerId.toString.substring(0, 8)}, dropping")
+        return
       }
 
       // Rate limit per-client UDP packets
@@ -920,14 +969,20 @@ class GameServerUdpHandler(server: GameServer) extends SimpleChannelInboundHandl
         return
       }
       val packet = PacketSerializer.deserialize(payload)
+      // Replay protection: reject duplicate/out-of-order UDP sequence numbers
+      if (!server.packetValidator.validateSequence(playerId, packet.getSequenceNumber, isUdp = true)) {
+        return
+      }
       server.handleIncomingPacket(packet, null, msg.sender())
     } catch {
-      case e: IllegalArgumentException =>
-        System.err.println(s"UDP: Invalid packet received: ${e.getMessage}")
+      case e: Exception =>
+        val emsg = if (e.getMessage != null) e.getMessage else e.getClass.getSimpleName
+        System.err.println(s"UDP: Invalid packet received: $emsg")
     }
   }
 
   override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
-    System.err.println(s"UDP handler error: ${cause.getMessage}")
+    val msg = if (cause.getMessage != null) cause.getMessage else cause.getClass.getSimpleName
+    System.err.println(s"UDP handler error: $msg")
   }
 }

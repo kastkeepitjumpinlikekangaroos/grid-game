@@ -21,7 +21,8 @@ class RateLimiter {
   private val MAX_TCP_PER_SECOND = 20
   private val MAX_CONNECTIONS_PER_MINUTE = 5
   private val MAX_AUTH_FAILURES = 5
-  private val AUTH_COOLDOWN_MS = 30000L
+  private val BASE_COOLDOWN_MS = 30000L  // 30s base, doubles each batch of failures
+  private val MAX_COOLDOWN_MS = 3600000L // 1 hour cap
 
   def allowPacket(clientId: UUID, isUdp: Boolean): Boolean = {
     if (isUdp) {
@@ -41,11 +42,20 @@ class RateLimiter {
   def allowAuthAttempt(address: InetAddress): Boolean = {
     val tracker = authFailures.computeIfAbsent(address, _ => new AuthTracker())
     val now = System.currentTimeMillis()
-    if (now - tracker.lastFailureTime.get() > AUTH_COOLDOWN_MS) {
-      tracker.failures.set(0)
+    val failures = tracker.failures.get()
+    // Exponential backoff: 30s, 60s, 120s, 240s... capped at 1 hour
+    val cooldownBatch = failures / MAX_AUTH_FAILURES  // how many batches of failures
+    val cooldown = Math.min(BASE_COOLDOWN_MS << Math.min(cooldownBatch, 6), MAX_COOLDOWN_MS)
+    if (now - tracker.lastFailureTime.get() > cooldown) {
+      // Reset only the current batch, not all failures (progressive penalty)
+      if (cooldownBatch > 0) {
+        tracker.failures.set(cooldownBatch * MAX_AUTH_FAILURES)
+      } else {
+        tracker.failures.set(0)
+      }
       return true
     }
-    tracker.failures.get() < MAX_AUTH_FAILURES
+    (failures % MAX_AUTH_FAILURES) < MAX_AUTH_FAILURES - 1
   }
 
   def recordAuthFailure(address: InetAddress): Unit = {
@@ -73,7 +83,7 @@ class RateLimiter {
     val authIter = authFailures.entrySet().iterator()
     while (authIter.hasNext) {
       val entry = authIter.next()
-      if (now - entry.getValue.lastFailureTime.get() > AUTH_COOLDOWN_MS * 2) authIter.remove()
+      if (now - entry.getValue.lastFailureTime.get() > MAX_COOLDOWN_MS * 2) authIter.remove()
     }
   }
 

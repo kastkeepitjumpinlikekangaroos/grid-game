@@ -10,13 +10,20 @@ import scala.jdk.CollectionConverters._
 
 class ClientRegistry {
   private val players = new ConcurrentHashMap[UUID, Player]()
+  private val channelToPlayer = new ConcurrentHashMap[Channel, UUID]()
 
   def add(player: Player): Unit = {
     players.put(player.getId, player)
+    val ch = player.getTcpChannel
+    if (ch != null) channelToPlayer.put(ch.asInstanceOf[Channel], player.getId)
   }
 
   def remove(playerId: UUID): Unit = {
-    players.remove(playerId)
+    val player = players.remove(playerId)
+    if (player != null) {
+      val ch = player.getTcpChannel
+      if (ch != null) channelToPlayer.remove(ch.asInstanceOf[Channel])
+    }
   }
 
   def get(playerId: UUID): Player = {
@@ -39,10 +46,8 @@ class ClientRegistry {
   }
 
   def getByChannel(channel: Channel): Player = {
-    players.values().asScala.find { player =>
-      val ch = player.getTcpChannel
-      ch != null && ch == channel
-    }.orNull
+    val playerId = channelToPlayer.get(channel)
+    if (playerId != null) players.get(playerId) else null
   }
 
   def getTimedOutClients: java.util.List[UUID] = {

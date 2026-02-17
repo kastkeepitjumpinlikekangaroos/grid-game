@@ -13,5 +13,6 @@ scala_binary(
         "@maven//:io_netty_netty_handler",
         "@maven//:io_netty_netty_transport",
         "@maven//:org_xerial_sqlite_jdbc",
+        "@maven//:org_mindrot_jbcrypt",
     ],
 )
