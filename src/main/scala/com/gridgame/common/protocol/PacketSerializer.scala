@@ -12,9 +12,9 @@ import java.util.UUID
 object PacketSerializer {
 
   def deserialize(data: Array[Byte]): Packet = {
-    if (data == null || data.length != Constants.PACKET_SIZE) {
+    if (data == null || data.length != Constants.PACKET_PAYLOAD_SIZE) {
       throw new IllegalArgumentException(
-        s"Invalid packet size: expected ${Constants.PACKET_SIZE} bytes, got ${if (data != null) data.length else 0}"
+        s"Invalid packet size: expected ${Constants.PACKET_PAYLOAD_SIZE} bytes, got ${if (data != null) data.length else 0}"
       )
     }
 
@@ -112,6 +112,11 @@ object PacketSerializer {
           case _ => // QUERY or END
             new LeaderboardPacket(sequenceNumber, playerId, action)
         }
+
+      case PacketType.SESSION_TOKEN =>
+        val tokenBytes = new Array[Byte](32)
+        buffer.get(tokenBytes)
+        new SessionTokenPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, tokenBytes)
 
       case PacketType.RANKED_QUEUE =>
         val action = buffer.get()
@@ -302,6 +307,6 @@ object PacketSerializer {
   }
 
   def validate(data: Array[Byte]): Boolean = {
-    data != null && data.length == Constants.PACKET_SIZE
+    data != null && data.length == Constants.PACKET_PAYLOAD_SIZE
   }
 }

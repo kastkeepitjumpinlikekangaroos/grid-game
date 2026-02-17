@@ -29,7 +29,9 @@ object Constants {
   val TILE_ATLAS_CELL_H: Int = 112
 
   // Network configuration
-  val PACKET_SIZE: Int = 64
+  val PACKET_SIZE: Int = 80
+  val PACKET_PAYLOAD_SIZE: Int = 64
+  val HMAC_SIZE: Int = 16
   val SERVER_PORT: Int = 25565
   val HEARTBEAT_INTERVAL_MS: Int = 3000 // 3 seconds
   val CLIENT_TIMEOUT_MS: Int = 10000 // 10 seconds

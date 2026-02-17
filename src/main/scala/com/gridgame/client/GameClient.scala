@@ -704,6 +704,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   }
 
   private def processPacket(packet: Packet): Unit = {
+    // Handle session token
+    if (packet.getType == PacketType.SESSION_TOKEN) {
+      val tokenPacket = packet.asInstanceOf[SessionTokenPacket]
+      networkThread.sessionToken = tokenPacket.getSessionToken
+      println("GameClient: Session token received")
+      return
+    }
+
     // Handle auth response
     if (packet.getType == PacketType.AUTH_RESPONSE) {
       val authPacket = packet.asInstanceOf[AuthResponsePacket]

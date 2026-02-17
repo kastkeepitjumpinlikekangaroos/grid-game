@@ -69,6 +69,7 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     if (username == null || username.isEmpty || password == null || password.isEmpty) {
       return false
     }
+    if (password.length < 6) return false
 
     // Check if username already exists
     val checkStmt = connection.prepareStatement("SELECT 1 FROM accounts WHERE username = ?")
@@ -109,8 +110,13 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
       val storedHash = rs.getString("password_hash")
       val salt = rs.getString("salt")
       val computedHash = hashPassword(password, salt)
-      storedHash == computedHash
+      MessageDigest.isEqual(
+        storedHash.getBytes(StandardCharsets.UTF_8),
+        computedHash.getBytes(StandardCharsets.UTF_8)
+      )
     } else {
+      // Run dummy hash to prevent timing-based username enumeration
+      hashPassword(password, "0000000000000000000000000000000000000000")
       false
     }
 
