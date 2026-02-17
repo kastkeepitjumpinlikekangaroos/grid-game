@@ -58,7 +58,7 @@ class GameCamera {
       visualX = targetX
       visualY = targetY
     } else {
-      val lerpFactor = 1.0 - Math.exp(-18.0 * deltaSec)
+      val lerpFactor = 1.0 - Math.exp(-30.0 * deltaSec)
       visualX += (targetX - visualX) * lerpFactor
       visualY += (targetY - visualY) * lerpFactor
       if (Math.abs(visualX - targetX) < 0.01) visualX = targetX

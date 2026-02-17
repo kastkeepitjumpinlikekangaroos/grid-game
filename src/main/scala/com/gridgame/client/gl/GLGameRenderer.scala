@@ -30,7 +30,6 @@ class GLGameRenderer(val client: GameClient) {
   private var fontMedium: GLFontRenderer = _
   private var fontLarge: GLFontRenderer = _
   private var postProcessor: PostProcessor = _
-  private val particleSystem = new ParticleSystem()
 
   // Projection matrix
   private var projection: FloatBuffer = _
@@ -140,9 +139,12 @@ class GLGameRenderer(val client: GameClient) {
     val localPos = client.getLocalPosition
     val world = client.getWorld
 
+    // Use interpolated position for smooth camera tracking between grid tiles
+    val (visualPosX, visualPosY) = client.getVisualPosition
+
     // Update camera with smooth interpolation
     val (cox, coy) = camera.update(
-      localPos.getX.toDouble, localPos.getY.toDouble,
+      visualPosX, visualPosY,
       deltaSec, canvasW, canvasH
     )
     camOffX = cox
@@ -211,8 +213,8 @@ class GLGameRenderer(val client: GameClient) {
         val variantFrame = ((wx * 7 + wy * 13) & 0x7FFFFFFF) % numTileFrames
         val region = GLTileRenderer.getTileRegion(tile.id, variantFrame)
         if (region != null) {
-          val sx = Math.floor(worldToScreenX(wx, wy)).toFloat
-          val sy = Math.floor(worldToScreenY(wx, wy)).toFloat
+          val sx = worldToScreenX(wx, wy).toFloat
+          val sy = worldToScreenY(wx, wy).toFloat
           spriteBatch.draw(region, sx - HW, sy - (cellH - HH), tileW, tileCellH)
         }
       }
@@ -229,8 +231,8 @@ class GLGameRenderer(val client: GameClient) {
         val region = GLTileRenderer.getTileRegion(tile.id, variantFrame)
         if (region != null) {
           beginSprites()
-          val sx = Math.floor(worldToScreenX(wx, wy)).toFloat
-          val sy = Math.floor(worldToScreenY(wx, wy)).toFloat
+          val sx = worldToScreenX(wx, wy).toFloat
+          val sy = worldToScreenY(wx, wy).toFloat
           spriteBatch.draw(region, sx - HW, sy - (cellH - HH), tileW, tileCellH)
         }
       }
@@ -238,15 +240,6 @@ class GLGameRenderer(val client: GameClient) {
     }
     // Any entities outside visible range
     entitiesByCell.values.foreach(_.foreach(_()))
-
-    // === Ambient particles ===
-    particleSystem.update(deltaSec, world.background,
-      canvasW, canvasH, camOffX, camOffY,
-      (x, y) => world.getTile(x, y),
-      world.width, world.height,
-      startX, endX, startY, endY)
-    beginShapes()
-    particleSystem.render(shapeBatch, camOffX, camOffY)
 
     // === Overlay animations ===
     drawDeathAnimations()
