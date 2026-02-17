@@ -97,6 +97,8 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       packet.getProjectileType
     )
 
+    if (projectile == null) return false // Per-player projectile cap reached
+
     // Broadcast spawn to instance or all clients
     if (instance != null) {
       instance.broadcastProjectileSpawn(projectile)
@@ -124,7 +126,13 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     if (registry.contains(playerId)) {
       println(s"Player rejoining: $playerId")
       val existing = registry.get(playerId)
-      existing.setPosition(packet.getPosition)
+      // Validate rejoin position — only accept if in-bounds and walkable
+      val rejoinPos = packet.getPosition
+      val world = if (instance != null) instance.world else server.getWorld
+      if (world != null && rejoinPos.getX >= 0 && rejoinPos.getX < world.width &&
+          rejoinPos.getY >= 0 && rejoinPos.getY < world.height && world.isWalkable(rejoinPos.getX, rejoinPos.getY)) {
+        existing.setPosition(rejoinPos)
+      } // else keep server-side position (prevents teleport-on-rejoin)
       existing.setColorRGB(packet.getColorRGB)
       existing.setName(packet.getPlayerName)
       existing.setHealth(existing.getMaxHealth)
@@ -290,6 +298,12 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
   }
 
   private def placeFence(player: Player, targetX: Int, targetY: Int): Unit = {
+    // Validate fence placement is near the player (max 5 cells)
+    val pos = player.getPosition
+    val fdx = Math.abs(targetX - pos.getX)
+    val fdy = Math.abs(targetY - pos.getY)
+    if (fdx > 5 || fdy > 5) return
+
     // Determine the perpendicular offsets based on player facing direction
     val (perpDx, perpDy) = player.getDirection match {
       case Direction.Up | Direction.Down    => (1, 0)

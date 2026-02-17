@@ -17,6 +17,8 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     conn.setAutoCommit(true)
     conn
   }
+  // All SQLite operations must be synchronized — single connection shared across Netty threads
+  private val dbLock = new Object()
 
   init()
 
@@ -114,37 +116,43 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     println(s"AuthDatabase: Initialized ($dbPath)")
   }
 
+  private val VALID_USERNAME_PATTERN = "^[a-zA-Z0-9_-]{1,20}$".r
+
   def register(username: String, password: String): Boolean = {
     if (username == null || username.isEmpty || password == null || password.isEmpty) {
       return false
     }
     if (password.length < 6) return false
+    // Reject usernames with control chars, emoji, RTL marks, or other unsafe characters
+    if (VALID_USERNAME_PATTERN.findFirstIn(username).isEmpty) return false
 
-    // Check if username already exists
-    val checkStmt = connection.prepareStatement("SELECT 1 FROM accounts WHERE username = ?")
-    checkStmt.setString(1, username.toLowerCase)
-    val rs = checkStmt.executeQuery()
-    val exists = rs.next()
-    rs.close()
-    checkStmt.close()
-
-    if (exists) return false
-
-    // Hash password with bcrypt (cost factor 12)
+    // Compute bcrypt hash outside the lock (slow ~200ms)
     val hash = BCrypt.hashpw(password, BCrypt.gensalt(12))
     val uuid = deriveUUID(username.toLowerCase)
 
-    val insertStmt = connection.prepareStatement(
-      "INSERT INTO accounts(username, password_hash, salt, created_at, uuid) VALUES(?, ?, ?, ?, ?)"
-    )
-    insertStmt.setString(1, username.toLowerCase)
-    insertStmt.setString(2, hash)
-    insertStmt.setString(3, "") // salt is embedded in bcrypt hash
-    insertStmt.setLong(4, System.currentTimeMillis())
-    insertStmt.setString(5, uuid.toString)
-    val inserted = insertStmt.executeUpdate() > 0
-    insertStmt.close()
-    inserted
+    dbLock.synchronized {
+      // Check if username already exists
+      val checkStmt = connection.prepareStatement("SELECT 1 FROM accounts WHERE username = ?")
+      checkStmt.setString(1, username.toLowerCase)
+      val rs = checkStmt.executeQuery()
+      val exists = rs.next()
+      rs.close()
+      checkStmt.close()
+
+      if (exists) return false
+
+      val insertStmt = connection.prepareStatement(
+        "INSERT INTO accounts(username, password_hash, salt, created_at, uuid) VALUES(?, ?, ?, ?, ?)"
+      )
+      insertStmt.setString(1, username.toLowerCase)
+      insertStmt.setString(2, hash)
+      insertStmt.setString(3, "") // salt is embedded in bcrypt hash
+      insertStmt.setLong(4, System.currentTimeMillis())
+      insertStmt.setString(5, uuid.toString)
+      val inserted = insertStmt.executeUpdate() > 0
+      insertStmt.close()
+      inserted
+    }
   }
 
   def authenticate(username: String, password: String): Boolean = {
@@ -152,24 +160,38 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
       return false
     }
 
-    val stmt = connection.prepareStatement("SELECT password_hash, salt FROM accounts WHERE username = ?")
-    stmt.setString(1, username.toLowerCase)
-    val rs = stmt.executeQuery()
+    // Fetch hash from DB inside lock, then verify outside lock (bcrypt is slow)
+    val (storedHash, salt) = dbLock.synchronized {
+      val stmt = connection.prepareStatement("SELECT password_hash, salt FROM accounts WHERE username = ?")
+      stmt.setString(1, username.toLowerCase)
+      val rs = stmt.executeQuery()
+      val result = if (rs.next()) {
+        (rs.getString("password_hash"), rs.getString("salt"))
+      } else {
+        (null, null)
+      }
+      rs.close()
+      stmt.close()
+      result
+    }
 
-    val result = if (rs.next()) {
-      val storedHash = rs.getString("password_hash")
-      val salt = rs.getString("salt")
+    if (storedHash == null) {
+      // Run dummy bcrypt hash to prevent timing-based username enumeration
+      BCrypt.hashpw(password, BCrypt.gensalt(12))
+      return false
+    }
 
-      if (storedHash.length == 64) {
-        // Legacy SHA-256 hash: verify with old method, then upgrade to bcrypt
-        val computedHash = hashPasswordLegacy(password, salt)
-        val matches = MessageDigest.isEqual(
-          storedHash.getBytes(StandardCharsets.UTF_8),
-          computedHash.getBytes(StandardCharsets.UTF_8)
-        )
-        if (matches) {
-          // Upgrade to bcrypt on successful login
-          val bcryptHash = BCrypt.hashpw(password, BCrypt.gensalt(12))
+    if (storedHash.length == 64) {
+      // Legacy SHA-256 hash: verify with old method, then upgrade to bcrypt
+      val computedHash = hashPasswordLegacy(password, salt)
+      val matches = MessageDigest.isEqual(
+        storedHash.getBytes(StandardCharsets.UTF_8),
+        computedHash.getBytes(StandardCharsets.UTF_8)
+      )
+      if (matches) {
+        // Upgrade to bcrypt on successful login
+        val bcryptHash = BCrypt.hashpw(password, BCrypt.gensalt(12))
+        dbLock.synchronized {
           val upgradeStmt = connection.prepareStatement(
             "UPDATE accounts SET password_hash = ?, salt = '' WHERE username = ?"
           )
@@ -177,23 +199,14 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
           upgradeStmt.setString(2, username.toLowerCase)
           upgradeStmt.executeUpdate()
           upgradeStmt.close()
-          println(s"AuthDatabase: Upgraded password hash for '$username' from SHA-256 to bcrypt")
         }
-        matches
-      } else {
-        // bcrypt hash: use BCrypt.checkpw (internally constant-time)
-        BCrypt.checkpw(password, storedHash)
+        println(s"AuthDatabase: Upgraded password hash for '$username' from SHA-256 to bcrypt")
       }
+      matches
     } else {
-      // Run dummy bcrypt hash to prevent timing-based username enumeration
-      // BCrypt.checkpw takes ~200ms with cost 12, normalizing timing
-      BCrypt.hashpw(password, BCrypt.gensalt(12))
-      false
+      // bcrypt hash: use BCrypt.checkpw (internally constant-time)
+      BCrypt.checkpw(password, storedHash)
     }
-
-    rs.close()
-    stmt.close()
-    result
   }
 
   def getOrCreateUUID(username: String): UUID = {
@@ -205,7 +218,7 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     new UUID(msb, lsb)
   }
 
-  def saveMatch(mapIndex: Int, durationMinutes: Int, results: Seq[(UUID, Int, Int, Byte)], matchType: Byte = 0): Unit = {
+  def saveMatch(mapIndex: Int, durationMinutes: Int, results: Seq[(UUID, Int, Int, Byte)], matchType: Byte = 0): Unit = dbLock.synchronized {
     try {
       connection.setAutoCommit(false)
 
@@ -254,7 +267,7 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
   }
 
   /** Returns (matchId, mapIndex, durationMinutes, playedAt, kills, deaths, rank, playerCount, matchType) */
-  def getMatchHistory(playerUUID: UUID, limit: Int = 20): Seq[(Long, Int, Int, Long, Int, Int, Int, Int, Int)] = {
+  def getMatchHistory(playerUUID: UUID, limit: Int = 20): Seq[(Long, Int, Int, Long, Int, Int, Int, Int, Int)] = dbLock.synchronized {
     val stmt = connection.prepareStatement(
       """SELECT m.match_id, m.map_index, m.duration_minutes, m.played_at,
         |       mr.kills, mr.deaths, mr.rank, m.player_count, m.match_type
@@ -288,7 +301,7 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
   }
 
   /** Returns (totalKills, totalDeaths, matchesPlayed, wins, elo) */
-  def getPlayerStats(playerUUID: UUID): (Int, Int, Int, Int, Int) = {
+  def getPlayerStats(playerUUID: UUID): (Int, Int, Int, Int, Int) = dbLock.synchronized {
     val stmt = connection.prepareStatement(
       """SELECT COALESCE(SUM(kills), 0) AS total_kills,
         |       COALESCE(SUM(deaths), 0) AS total_deaths,
@@ -314,7 +327,7 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
   }
 
   /** Returns (username, elo, wins, matchesPlayed) sorted by ELO descending */
-  def getLeaderboard(limit: Int = 50): Seq[(String, Int, Int, Int)] = {
+  def getLeaderboard(limit: Int = 50): Seq[(String, Int, Int, Int)] = dbLock.synchronized {
     val stmt = connection.prepareStatement(
       """SELECT a.username, a.elo,
         |       COALESCE(SUM(CASE WHEN mr.rank = 1 THEN 1 ELSE 0 END), 0) AS wins,
@@ -342,7 +355,7 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     results.toSeq
   }
 
-  def getElo(username: String): Int = {
+  def getElo(username: String): Int = dbLock.synchronized {
     val stmt = connection.prepareStatement("SELECT elo FROM accounts WHERE username = ?")
     stmt.setString(1, username.toLowerCase)
     val rs = stmt.executeQuery()
@@ -357,7 +370,7 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     if (username != null) getElo(username) else 1000
   }
 
-  def updateElo(username: String, newElo: Int): Unit = {
+  def updateElo(username: String, newElo: Int): Unit = dbLock.synchronized {
     val stmt = connection.prepareStatement("UPDATE accounts SET elo = ? WHERE username = ?")
     stmt.setInt(1, newElo)
     stmt.setString(2, username.toLowerCase)
@@ -365,7 +378,7 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     stmt.close()
   }
 
-  def getUsernameByUUID(uuid: UUID): String = {
+  def getUsernameByUUID(uuid: UUID): String = dbLock.synchronized {
     val stmt = connection.prepareStatement("SELECT username FROM accounts WHERE uuid = ?")
     stmt.setString(1, uuid.toString)
     val rs = stmt.executeQuery()

@@ -11,7 +11,7 @@ class LobbyManager {
   private val nextId = new AtomicInteger(1)
 
   def createLobby(hostId: UUID, name: String, mapIndex: Int, durationMinutes: Int, maxPlayers: Int): Lobby = {
-    val id = nextId.getAndIncrement().toShort
+    val id = (nextId.getAndIncrement() & 0x7FFF).toShort // Prevent overflow/collision with negative IDs
     val lobby = new Lobby(id, hostId, name, mapIndex, durationMinutes, maxPlayers)
     lobby.addPlayer(hostId)
     lobbies.put(id, lobby)

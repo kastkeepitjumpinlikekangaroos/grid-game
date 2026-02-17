@@ -178,6 +178,17 @@ class PacketValidator {
       return false
     }
 
+    // Validate projectile type is valid for this character
+    val charDef = CharacterDef.get(player.getCharacterId)
+    if (charDef == null) return false
+    val pType = packet.getProjectileType
+    if (pType != charDef.primaryProjectileType &&
+        pType != charDef.qAbility.projectileType &&
+        pType != charDef.eAbility.projectileType) {
+      System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} spoofed projectile type $pType")
+      return false
+    }
+
     // Fire rate enforcement: 80% of SHOOT_COOLDOWN_MS as minimum gap
     val now = System.currentTimeMillis()
     val lastTime: java.lang.Long = lastProjectileTime.put(packet.getPlayerId, now)
@@ -186,8 +197,7 @@ class PacketValidator {
       val minGap = (Constants.SHOOT_COOLDOWN_MS * 0.8).toLong
       if (gap < minGap) {
         // Allow abilities which have their own cooldowns — only enforce for primary fire
-        val charDef = CharacterDef.get(player.getCharacterId)
-        if (packet.getProjectileType == charDef.primaryProjectileType) {
+        if (pType == charDef.primaryProjectileType) {
           System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} fire rate too fast (${gap}ms)")
           return false
         }

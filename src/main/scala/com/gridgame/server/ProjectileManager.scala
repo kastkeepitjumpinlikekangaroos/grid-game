@@ -101,7 +101,16 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
     }
   }
 
+  private val MAX_PROJECTILES_PER_PLAYER = 30
+
   def spawnProjectile(ownerId: UUID, x: Int, y: Int, dx: Float, dy: Float, colorRGB: Int, chargeLevel: Int = 0, projectileType: Byte = com.gridgame.common.model.ProjectileType.NORMAL): Projectile = {
+    // Enforce per-player active projectile cap to prevent memory exhaustion
+    var count = 0
+    projectiles.values().asScala.foreach { p =>
+      if (p.ownerId.equals(ownerId)) count += 1
+    }
+    if (count >= MAX_PROJECTILES_PER_PLAYER) return null
+
     val id = nextId.getAndIncrement() & 0x7FFFFFFF // Ensure positive IDs after overflow
     // Spawn the projectile one cell ahead in the velocity direction
     val spawnX = x.toFloat + dx

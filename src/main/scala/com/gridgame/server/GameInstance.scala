@@ -35,6 +35,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   private var itemSpawnExecutor: ScheduledExecutorService = _
   private var timerSyncExecutor: ScheduledExecutorService = _
   private var playerTickExecutor: ScheduledExecutorService = _
+  private var respawnExecutor: ScheduledExecutorService = _
   private var startTime: Long = 0L
   @volatile private var running = false
   private val spawnLock = new Object()
@@ -60,10 +61,18 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     startTime = System.currentTimeMillis()
     running = true
 
+    // Helper: wrap a Runnable in try-catch so ScheduledExecutorService doesn't silently die
+    def safeRunnable(name: String)(body: => Unit): Runnable = new Runnable {
+      def run(): Unit = try { body } catch {
+        case e: Exception =>
+          System.err.println(s"GameInstance[$gameId] $name error: ${e.getMessage}")
+      }
+    }
+
     // Start projectile tick
     projectileExecutor = Executors.newSingleThreadScheduledExecutor()
     projectileExecutor.scheduleAtFixedRate(
-      new Runnable { def run(): Unit = tickProjectiles() },
+      safeRunnable("tickProjectiles")(tickProjectiles()),
       Constants.PROJECTILE_SPEED_MS.toLong,
       Constants.PROJECTILE_SPEED_MS.toLong,
       TimeUnit.MILLISECONDS
@@ -75,7 +84,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     itemSpawnExecutor = Executors.newSingleThreadScheduledExecutor()
     for (_ <- 1 to itemCount) spawnItem()
     itemSpawnExecutor.scheduleAtFixedRate(
-      new Runnable { def run(): Unit = for (_ <- 1 to itemCount) spawnItem() },
+      safeRunnable("spawnItem")(for (_ <- 1 to itemCount) spawnItem()),
       Constants.ITEM_SPAWN_INTERVAL_MS.toLong,
       Constants.ITEM_SPAWN_INTERVAL_MS.toLong,
       TimeUnit.MILLISECONDS
@@ -84,14 +93,17 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     // Start player state tick (burn DoT processing)
     playerTickExecutor = Executors.newSingleThreadScheduledExecutor()
     playerTickExecutor.scheduleAtFixedRate(
-      new Runnable { def run(): Unit = tickPlayers() },
+      safeRunnable("tickPlayers")(tickPlayers()),
       200L, 200L, TimeUnit.MILLISECONDS
     )
+
+    // Shared executor for respawn scheduling
+    respawnExecutor = Executors.newSingleThreadScheduledExecutor()
 
     // Start timer sync
     timerSyncExecutor = Executors.newSingleThreadScheduledExecutor()
     timerSyncExecutor.scheduleAtFixedRate(
-      new Runnable { def run(): Unit = syncTimer() },
+      safeRunnable("syncTimer")(syncTimer()),
       Constants.TIME_SYNC_INTERVAL_S.toLong,
       Constants.TIME_SYNC_INTERVAL_S.toLong,
       TimeUnit.SECONDS
@@ -106,6 +118,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     if (projectileExecutor != null) { projectileExecutor.shutdown(); projectileExecutor.shutdownNow() }
     if (playerTickExecutor != null) { playerTickExecutor.shutdown(); playerTickExecutor.shutdownNow() }
     if (itemSpawnExecutor != null) { itemSpawnExecutor.shutdown(); itemSpawnExecutor.shutdownNow() }
+    if (respawnExecutor != null) { respawnExecutor.shutdown(); respawnExecutor.shutdownNow() }
     if (timerSyncExecutor != null) { timerSyncExecutor.shutdown(); timerSyncExecutor.shutdownNow() }
     println(s"GameInstance[$gameId]: Stopped")
   }
@@ -231,8 +244,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         broadcastToInstance(hitPacket)
 
         val target = registry.get(targetId)
-        if (target != null) {
-          // Apply type-specific on-hit effects from ProjectileDef
+        if (target != null && !target.isDead) {
+          // Apply type-specific on-hit effects from ProjectileDef (skip dead targets)
           ProjectileDef.get(projectile.projectileType).onHitEffect.foreach {
             case PullToOwner =>
               val owner = registry.get(projectile.ownerId)
@@ -440,8 +453,6 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                 player.setHealth(h)
                 h
               }
-              println(s"GameInstance[$gameId]: AoE hit ${player.getId.toString.substring(0, 8)}, dist=${"%.1f".format(distance)}, dmg=$damage, hp=$newHealth")
-
               if (newHealth <= 0) {
                 // Kill
                 killTracker.recordKill(projectile.ownerId, player.getId)
@@ -599,48 +610,50 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     registry.getAll.asScala.foreach { player =>
       if (!player.isDead) {
         // --- Burn DoT ---
-        if (player.isBurning) {
-          if (now >= player.getLastBurnTick + player.getBurnTickMs) {
-            val newHealth = player.synchronized {
-              player.setLastBurnTick(now)
-              val h = player.getHealth - player.getBurnDamagePerTick
-              player.setHealth(h)
-              h
-            }
+        // All burn state reads inside synchronized to prevent double-tick race
+        val burnResult = player.synchronized {
+          if (player.isBurning && now >= player.getLastBurnTick + player.getBurnTickMs) {
+            player.setLastBurnTick(now)
+            val h = player.getHealth - player.getBurnDamagePerTick
+            player.setHealth(h)
+            Some(h)
+          } else None
+        }
+        if (burnResult.isDefined) {
+          val newHealth = burnResult.get
 
-            if (newHealth <= 0) {
-              // Burn killed the player — attribute to burn owner
-              val burnOwner = player.getBurnOwnerId
-              if (burnOwner != null) {
-                killTracker.recordKill(burnOwner, player.getId)
-                val killPacket = new GameEventPacket(
-                  server.getNextSequenceNumber,
-                  burnOwner,
-                  GameEvent.KILL,
-                  gameId,
-                  getRemainingSeconds,
-                  killTracker.getKills(burnOwner).toShort,
-                  killTracker.getDeaths(burnOwner).toShort,
-                  player.getId,
-                  0.toByte, 0.toShort, 0.toShort
-                )
-                broadcastToInstance(killPacket)
-                scheduleRespawn(player.getId)
-              }
+          if (newHealth <= 0) {
+            // Burn killed the player — attribute to burn owner
+            val burnOwner = player.getBurnOwnerId
+            if (burnOwner != null) {
+              killTracker.recordKill(burnOwner, player.getId)
+              val killPacket = new GameEventPacket(
+                server.getNextSequenceNumber,
+                burnOwner,
+                GameEvent.KILL,
+                gameId,
+                getRemainingSeconds,
+                killTracker.getKills(burnOwner).toShort,
+                killTracker.getDeaths(burnOwner).toShort,
+                player.getId,
+                0.toByte, 0.toShort, 0.toShort
+              )
+              broadcastToInstance(killPacket)
+              scheduleRespawn(player.getId)
             }
-
-            // Broadcast updated health
-            val updatePacket = new PlayerUpdatePacket(
-              server.getNextSequenceNumber,
-              player.getId,
-              player.getPosition,
-              player.getColorRGB,
-              player.getHealth,
-              0,
-              playerFlags(player)
-            )
-            broadcastToInstance(updatePacket)
           }
+
+          // Broadcast updated health
+          val updatePacket = new PlayerUpdatePacket(
+            server.getNextSequenceNumber,
+            player.getId,
+            player.getPosition,
+            player.getColorRGB,
+            player.getHealth,
+            0,
+            playerFlags(player)
+          )
+          broadcastToInstance(updatePacket)
         } else if (player.getHealth < player.getMaxHealth) {
           // --- Health Regen (only when not burning and not at full health) ---
           val maxHp = player.getMaxHealth
@@ -678,8 +691,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   }
 
   private def scheduleRespawn(playerId: UUID): Unit = {
-    val executor = Executors.newSingleThreadScheduledExecutor()
-    executor.schedule(new Runnable {
+    if (respawnExecutor == null || respawnExecutor.isShutdown) return
+    respawnExecutor.schedule(new Runnable {
       def run(): Unit = {
         if (!running) return
         val player = registry.get(playerId)
@@ -693,6 +706,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
             player.setFrozenUntil(0)
             player.setSpeedBoostUntil(0)
             player.resetRegenAccumulator()
+            // Clear inventory on respawn
+            itemManager.clearInventory(playerId)
             val occupied = registry.getAll.asScala
               .filter(p => !p.isDead && !p.getId.equals(playerId))
               .map(p => (p.getPosition.getX, p.getPosition.getY))
@@ -728,10 +743,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
             0, 0
           )
           broadcastToInstance(updatePacket)
-
-          println(s"GameInstance[$gameId]: Player ${playerId.toString.substring(0, 8)} respawned at $spawnPoint")
         }
-        executor.shutdown()
       }
     }, Constants.RESPAWN_DELAY_MS.toLong, TimeUnit.MILLISECONDS)
   }
@@ -776,7 +788,11 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     val data = packet.serialize()
     val isTcp = packet.getType.tcp
     registry.getAll.asScala.foreach { player =>
-      server.sendRawToPlayer(data, isTcp, player)
+      try {
+        server.sendRawToPlayer(data, isTcp, player)
+      } catch {
+        case _: Exception => // Skip disconnected player; don't crash broadcast loop
+      }
     }
   }
 

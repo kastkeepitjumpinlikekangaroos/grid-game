@@ -257,7 +257,7 @@ class BotController(instance: GameInstance) {
           // Use heart when health below 50%
           if (healthPercent < 0.5f) {
             useItem(bot, item)
-            bot.setHealth(bot.getMaxHealth)
+            bot.synchronized { bot.setHealth(bot.getMaxHealth) }
             broadcastBotPosition(bot)
           }
 
@@ -265,7 +265,7 @@ class BotController(instance: GameInstance) {
           // Use shield immediately if not already shielded
           if (!bot.hasShield) {
             useItem(bot, item)
-            bot.setShieldUntil(System.currentTimeMillis() + Constants.SHIELD_DURATION_MS)
+            bot.synchronized { bot.setShieldUntil(System.currentTimeMillis() + Constants.SHIELD_DURATION_MS) }
             broadcastBotPosition(bot)
           }
 
@@ -273,7 +273,7 @@ class BotController(instance: GameInstance) {
           // Use gem immediately if not already boosted
           if (!bot.hasGemBoost) {
             useItem(bot, item)
-            bot.setGemBoostUntil(System.currentTimeMillis() + Constants.GEM_DURATION_MS)
+            bot.synchronized { bot.setGemBoostUntil(System.currentTimeMillis() + Constants.GEM_DURATION_MS) }
             broadcastBotPosition(bot)
           }
 
@@ -419,7 +419,7 @@ class BotController(instance: GameInstance) {
           bot.getId, botPos.getX, botPos.getY,
           ndx, ndy, bot.getColorRGB, 0, ability.projectileType
         )
-        instance.broadcastProjectileSpawn(projectile)
+        if (projectile != null) instance.broadcastProjectileSpawn(projectile)
         true
 
       case FanProjectile(count, fanAngle) =>
@@ -435,7 +435,7 @@ class BotController(instance: GameInstance) {
             bot.getId, botPos.getX, botPos.getY,
             rdx, rdy, bot.getColorRGB, 0, ability.projectileType
           )
-          instance.broadcastProjectileSpawn(projectile)
+          if (projectile != null) instance.broadcastProjectileSpawn(projectile)
         }
         true
 
@@ -472,7 +472,7 @@ class BotController(instance: GameInstance) {
           bot.getId, botPos.getX, botPos.getY,
           0.0f, 0.0f, bot.getColorRGB, 0, ability.projectileType
         )
-        instance.broadcastProjectileSpawn(projectile)
+        if (projectile != null) instance.broadcastProjectileSpawn(projectile)
         true
 
       case TeleportCast(maxDistance) =>
@@ -534,7 +534,7 @@ class BotController(instance: GameInstance) {
       0,
       charDef.primaryProjectileType
     )
-    instance.broadcastProjectileSpawn(projectile)
+    if (projectile != null) instance.broadcastProjectileSpawn(projectile)
   }
 
   // --- Broadcasting ---

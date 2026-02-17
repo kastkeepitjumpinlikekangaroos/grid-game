@@ -29,7 +29,7 @@ class ItemManager {
       val x = (Math.random() * world.width).toInt
       val y = (Math.random() * world.height).toInt
       if (world.isWalkable(x, y)) {
-        val id = nextId.getAndIncrement()
+        val id = nextId.getAndIncrement() & 0x7FFFFFFF
         val itemType = ItemType.spawnable(random.nextInt(ItemType.spawnable.size))
         val item = new Item(id, x, y, itemType)
         items.put(id, item)

@@ -113,7 +113,12 @@ class GameServer(port: Int, val worldFile: String = "") {
 
     // Schedule cleanup
     cleanupExecutor.scheduleAtFixedRate(
-      new Runnable { def run(): Unit = cleanup() },
+      new Runnable { def run(): Unit = {
+        try { cleanup() } catch {
+          case e: Exception =>
+            System.err.println(s"Cleanup loop error (will retry): ${e.getMessage}")
+        }
+      }},
       5, 5, TimeUnit.SECONDS
     )
 
@@ -231,6 +236,25 @@ class GameServer(port: Int, val worldFile: String = "") {
   /** Handle an incoming packet from a TCP or UDP handler. */
   def handleIncomingPacket(packet: Packet, tcpCh: Channel, udpSender: InetSocketAddress): Unit = {
     try {
+      // Block TCP-only packet types arriving via UDP
+      if (udpSender != null && packet.getType.tcp) {
+        return // TCP-only packets must not arrive over UDP
+      }
+
+      // For non-auth TCP packets, verify the packet's UUID matches the authenticated channel identity
+      if (packet.getType != PacketType.AUTH_REQUEST && tcpCh != null) {
+        val authenticatedId = channelToPlayer.get(tcpCh)
+        if (authenticatedId == null) {
+          // channelToPlayer is set during generateSessionToken — if missing, channel hasn't authenticated
+          System.err.println(s"TCP: Packet from unauthenticated channel (no channelToPlayer binding)")
+          return
+        }
+        if (packet.getPlayerId != null && !authenticatedId.equals(packet.getPlayerId)) {
+          System.err.println(s"TCP: UUID mismatch — channel authenticated as ${authenticatedId.toString.substring(0, 8)} but packet claims ${packet.getPlayerId.toString.substring(0, 8)}")
+          return
+        }
+      }
+
       packet.getType match {
         case PacketType.AUTH_REQUEST =>
           handleAuthRequest(packet.asInstanceOf[AuthRequestPacket], tcpCh)
@@ -274,17 +298,28 @@ class GameServer(port: Int, val worldFile: String = "") {
                     // Reject position updates from frozen players
                     val pos = if (player.isFrozen) player.getPosition else updatePacket.getPosition
 
-                    // Handle phased flag from client
+                    // Handle phased flag from client — enforce server-side cooldown
                     val clientFlags = updatePacket.getEffectFlags
                     if ((clientFlags & 0x08) != 0 && !player.isPhased) {
-                      // Determine phase duration from character's ability CastBehavior
                       val charDef = com.gridgame.common.model.CharacterDef.get(player.getCharacterId)
-                      val phaseDuration = charDef.qAbility.castBehavior match {
-                        case com.gridgame.common.model.PhaseShiftBuff(d) => d
-                        case com.gridgame.common.model.DashBuff(_, d, _) => d
-                        case _ => 5000
+                      val now = System.currentTimeMillis()
+                      // Check which ability grants phase/dash and enforce its cooldown
+                      val (phaseDuration, cooldownMs) = charDef.qAbility.castBehavior match {
+                        case com.gridgame.common.model.PhaseShiftBuff(d) => (d, charDef.qAbility.cooldownMs)
+                        case com.gridgame.common.model.DashBuff(_, d, _) => (d, charDef.qAbility.cooldownMs)
+                        case _ => charDef.eAbility.castBehavior match {
+                          case com.gridgame.common.model.PhaseShiftBuff(d) => (d, charDef.eAbility.cooldownMs)
+                          case com.gridgame.common.model.DashBuff(_, d, _) => (d, charDef.eAbility.cooldownMs)
+                          case _ => (0, 0)
+                        }
                       }
-                      player.setPhasedUntil(System.currentTimeMillis() + phaseDuration)
+                      if (phaseDuration > 0) {
+                        // Use 80% of cooldown as server tolerance (matches fire rate validation)
+                        val lastPhaseEnd = player.getPhasedUntil
+                        if (lastPhaseEnd == 0L || now >= lastPhaseEnd + (cooldownMs * 0.8).toLong) {
+                          player.setPhasedUntil(now + phaseDuration)
+                        }
+                      }
                     }
 
                     val flags = (if (player.hasShield) 0x01 else 0) |
@@ -506,6 +541,9 @@ class GameServer(port: Int, val worldFile: String = "") {
 
     packet.getAction match {
       case RankedQueueAction.QUEUE_JOIN =>
+        // Block queuing while in a casual lobby/game
+        val currentLobby = lobbyManager.getPlayerLobby(playerId)
+        if (currentLobby != null && currentLobby.status != LobbyStatus.FINISHED) return
         val elo = getPlayerElo(playerId)
         rankedQueue.addPlayer(playerId, packet.getCharacterId, elo, packet.getMode)
 
@@ -562,11 +600,36 @@ class GameServer(port: Int, val worldFile: String = "") {
   }
 
   private def generateSessionToken(playerId: UUID, tcpCh: Channel): Array[Byte] = {
+    // Invalidate any existing session for this player (prevents stale channel reuse)
+    val oldToken = sessionTokens.get(playerId)
+    if (oldToken != null) {
+      // Find and close the old channel that held the previous token
+      import scala.jdk.CollectionConverters._
+      channelToToken.entrySet().asScala.find { e =>
+        java.util.Arrays.equals(e.getValue, oldToken)
+      }.foreach { e =>
+        val oldChannel = e.getKey
+        if (oldChannel != tcpCh) {
+          channelToToken.remove(oldChannel)
+          channelToPlayer.remove(oldChannel)
+          channelAuthFailures.remove(oldChannel)
+          malformedPacketCounts.remove(oldChannel)
+          rateLimiter.removeChannel(oldChannel)
+          oldChannel.close()
+          System.err.println(s"Auth: Closed stale session for ${playerId.toString.substring(0, 8)} on old channel")
+        }
+      }
+    }
+
     val token = new Array[Byte](32)
     secureRandom.nextBytes(token)
     sessionTokens.put(playerId, token)
     tokenCreationTime.put(playerId, System.currentTimeMillis())
-    if (tcpCh != null) channelToToken.put(tcpCh, token)
+    if (tcpCh != null) {
+      channelToToken.put(tcpCh, token)
+      // Bind channel to player UUID immediately so identity check works from the first packet
+      channelToPlayer.put(tcpCh, playerId)
+    }
     token
   }
 
@@ -574,12 +637,15 @@ class GameServer(port: Int, val worldFile: String = "") {
     channelToToken.remove(channel)
     channelAuthFailures.remove(channel)
     malformedPacketCounts.remove(channel)
+    rateLimiter.removeChannel(channel)
     val playerId = channelToPlayer.remove(channel)
     if (playerId != null) {
       sessionTokens.remove(playerId)
       tokenCreationTime.remove(playerId)
       playerTcpAddresses.remove(playerId)
+      lastQueryTime.remove(playerId)
       packetValidator.removePlayer(playerId)
+      lobbyHandler.cleanupPlayer(playerId)
       val player = connectedPlayers.remove(playerId)
       if (player != null) {
         println(s"Global disconnect: ${playerId.toString.substring(0, 8)} ('${player.getName}')")
@@ -590,8 +656,9 @@ class GameServer(port: Int, val worldFile: String = "") {
         // Remove from lobby
         val lobby = lobbyManager.getPlayerLobby(playerId)
         if (lobby != null) {
-          if (lobby.gameInstance != null) {
-            lobby.gameInstance.handler.handleDisconnect(channel)
+          val gi = lobby.gameInstance // snapshot to avoid NPE from concurrent game start
+          if (gi != null) {
+            gi.handler.handleDisconnect(channel)
           }
           lobbyHandler.processLobbyAction(
             new LobbyActionPacket(getNextSequenceNumber, playerId, LobbyAction.LEAVE),
@@ -764,10 +831,12 @@ class GameServer(port: Int, val worldFile: String = "") {
     }
 
     // Expire stale session tokens
-    tokenCreationTime.entrySet().iterator().asScala.foreach { entry =>
+    val tokenIter = tokenCreationTime.entrySet().iterator()
+    while (tokenIter.hasNext) {
+      val entry = tokenIter.next()
       if (now - entry.getValue > Constants.SESSION_TOKEN_LIFETIME_MS) {
         val playerId = entry.getKey
-        tokenCreationTime.remove(playerId)
+        tokenIter.remove()
         sessionTokens.remove(playerId)
         playerTcpAddresses.remove(playerId)
 
@@ -873,15 +942,18 @@ class GameServerTcpHandler(server: GameServer) extends SimpleChannelInboundHandl
           }
           verified
         } else {
-          // No token yet (pre-auth) — extract first 64 bytes
-          val p = new Array[Byte](Constants.PACKET_PAYLOAD_SIZE)
-          System.arraycopy(data, 0, p, 0, Constants.PACKET_PAYLOAD_SIZE)
-          p
+          // No token yet (pre-auth) — ONLY allow AUTH_REQUEST
+          // All other packet types require authentication
+          System.err.println(s"TCP: Non-auth packet on pre-auth channel (type=$packetTypeId), dropping")
+          return
         }
       }
       val packet = PacketSerializer.deserialize(payload)
-      // Rate limit per-client packets (skip AUTH_REQUEST which has no player ID yet)
-      if (packetTypeId != PacketType.AUTH_REQUEST.id) {
+      // Rate limit packets
+      if (packetTypeId == PacketType.AUTH_REQUEST.id) {
+        // Pre-auth: rate limit by channel (no player ID available yet)
+        if (!server.rateLimiter.allowPreAuthPacket(ctx.channel())) return
+      } else {
         val pid = packet.getPlayerId
         if (pid != null) {
           if (!server.rateLimiter.allowPacket(pid, false)) return
@@ -939,20 +1011,19 @@ class GameServerUdpHandler(server: GameServer) extends SimpleChannelInboundHandl
         return
       }
 
+      // Rate limit per-client UDP packets BEFORE expensive HMAC verification
+      // Prevents CPU DoS from forged packets with valid player UUIDs
+      if (!server.rateLimiter.allowPacket(playerId, true)) {
+        return
+      }
+
       // Inline token expiry check (don't wait for cleanup loop)
       val createdAt = server.tokenCreationTime.get(playerId)
       if (createdAt != null && System.currentTimeMillis() - createdAt > Constants.SESSION_TOKEN_LIFETIME_MS) {
         return
       }
 
-      val verified = PacketSigner.verify(data, token)
-      if (verified == null) {
-        System.err.println("UDP: HMAC verification failed, dropping packet")
-        return
-      }
-      val payload = verified
-
-      // Validate UDP source IP matches TCP connection IP
+      // Validate UDP source IP matches TCP connection IP (cheap check before expensive HMAC)
       val expectedAddr = server.playerTcpAddresses.get(playerId)
       if (expectedAddr == null) {
         // No TCP address registered yet — reject UDP until TCP handshake completes
@@ -964,10 +1035,12 @@ class GameServerUdpHandler(server: GameServer) extends SimpleChannelInboundHandl
         return
       }
 
-      // Rate limit per-client UDP packets
-      if (!server.rateLimiter.allowPacket(playerId, true)) {
+      val verified = PacketSigner.verify(data, token)
+      if (verified == null) {
+        System.err.println("UDP: HMAC verification failed, dropping packet")
         return
       }
+      val payload = verified
       val packet = PacketSerializer.deserialize(payload)
       // Replay protection: reject duplicate/out-of-order UDP sequence numbers
       if (!server.packetValidator.validateSequence(playerId, packet.getSequenceNumber, isUdp = true)) {

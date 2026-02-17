@@ -8,9 +8,14 @@ import com.gridgame.common.protocol._
 
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import scala.jdk.CollectionConverters._
 
 class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
+  private val lastListRequestTime = new ConcurrentHashMap[UUID, java.lang.Long]()
+  private val LIST_REQUEST_COOLDOWN_MS = 2000L
+  private val lastCreateTime = new ConcurrentHashMap[UUID, java.lang.Long]()
+  private val CREATE_COOLDOWN_MS = 5000L
 
   def processLobbyAction(packet: LobbyActionPacket, player: Player): Unit = {
     val playerId = packet.getPlayerId
@@ -54,12 +59,22 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
   }
 
   private def handleCreate(playerId: UUID, player: Player, packet: LobbyActionPacket): Unit = {
+    // Prevent creating a lobby while already in one
+    if (lobbyManager.getPlayerLobby(playerId) != null) return
+
+    // Rate limit lobby creation (5s cooldown)
+    val now = System.currentTimeMillis()
+    val lastCreate = lastCreateTime.get(playerId)
+    if (lastCreate != null && now - lastCreate < CREATE_COOLDOWN_MS) return
+    lastCreateTime.put(playerId, now)
+
     val rawName = if (packet.getLobbyName.isEmpty) s"${player.getName}'s Game" else packet.getLobbyName
     val name = sanitizeName(rawName)
     if (name.isEmpty) return
-    val mapIndex = packet.getMapIndex.toInt & 0xFF
-    val duration = if (packet.getDurationMinutes <= 0) Constants.DEFAULT_GAME_DURATION_MIN else packet.getDurationMinutes.toInt
-    val maxPlayers = if (packet.getMaxPlayers <= 0) Constants.MAX_LOBBY_PLAYERS else packet.getMaxPlayers.toInt
+    val rawMapIndex = packet.getMapIndex.toInt & 0xFF
+    val mapIndex = if (rawMapIndex >= 0 && rawMapIndex < com.gridgame.common.WorldRegistry.size) rawMapIndex else 0
+    val duration = Math.max(1, Math.min(30, if (packet.getDurationMinutes <= 0) Constants.DEFAULT_GAME_DURATION_MIN else packet.getDurationMinutes.toInt))
+    val maxPlayers = Math.max(2, Math.min(Constants.MAX_LOBBY_PLAYERS, if (packet.getMaxPlayers <= 0) Constants.MAX_LOBBY_PLAYERS else packet.getMaxPlayers.toInt))
 
     val lobby = lobbyManager.createLobby(playerId, name, mapIndex, duration, maxPlayers)
 
@@ -75,6 +90,9 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
   }
 
   private def handleJoin(playerId: UUID, player: Player, packet: LobbyActionPacket): Unit = {
+    // Prevent joining if already in a lobby
+    if (lobbyManager.getPlayerLobby(playerId) != null) return
+
     val lobby = lobbyManager.joinLobby(playerId, packet.getLobbyId)
     if (lobby == null) {
       println(s"LobbyHandler: Player ${playerId.toString.substring(0, 8)} failed to join lobby ${packet.getLobbyId}")
@@ -160,9 +178,11 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
       return
     }
 
-    if (lobby.status != LobbyStatus.WAITING) return
-
-    lobby.status = LobbyStatus.IN_GAME
+    // Atomic check-and-set to prevent double start from rapid packets
+    lobby.synchronized {
+      if (lobby.status != LobbyStatus.WAITING) return
+      lobby.status = LobbyStatus.IN_GAME
+    }
 
     // Set match type for casual games: 0=Casual FFA, 1=Casual Teams
     lobby.matchType = lobby.gameMode
@@ -293,6 +313,11 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
   }
 
   private def handleListRequest(player: Player): Unit = {
+    val now = System.currentTimeMillis()
+    val last = lastListRequestTime.get(player.getId)
+    if (last != null && now - last < LIST_REQUEST_COOLDOWN_MS) return
+    lastListRequestTime.put(player.getId, now)
+
     val lobbies = lobbyManager.getActiveLobbies
 
     lobbies.foreach { lobby =>
@@ -317,7 +342,11 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     if (lobby == null) return
     if (lobby.status != LobbyStatus.WAITING) return
 
-    lobby.setCharacter(playerId, packet.getCharacterId)
+    // Validate character ID
+    val charId = packet.getCharacterId
+    if (com.gridgame.common.model.CharacterDef.get(charId) == null) return
+
+    lobby.setCharacter(playerId, charId)
 
     // Broadcast CHARACTER_SELECT to other lobby members
     val broadcast = new LobbyActionPacket(
@@ -333,9 +362,11 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     if (lobby == null || !lobby.isHost(playerId)) return
     if (lobby.status != LobbyStatus.WAITING) return
 
-    lobby.mapIndex = packet.getMapIndex.toInt & 0xFF
-    lobby.durationMinutes = if (packet.getDurationMinutes <= 0) Constants.DEFAULT_GAME_DURATION_MIN else packet.getDurationMinutes.toInt
-    lobby.gameMode = packet.getGameMode
+    val rawMapIndex = packet.getMapIndex.toInt & 0xFF
+    lobby.mapIndex = if (rawMapIndex >= 0 && rawMapIndex < com.gridgame.common.WorldRegistry.size) rawMapIndex else 0
+    lobby.durationMinutes = Math.max(1, Math.min(30, if (packet.getDurationMinutes <= 0) Constants.DEFAULT_GAME_DURATION_MIN else packet.getDurationMinutes.toInt))
+    val rawGameMode = packet.getGameMode
+    lobby.gameMode = if (rawGameMode == 0 || rawGameMode == 1) rawGameMode else 0
     lobby.teamSize = Math.max(2, Math.min(4, packet.getTeamSize.toInt))
 
     // Auto-adjust maxPlayers for Teams mode
@@ -408,6 +439,12 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
       lobby.status, botSlot.name
     )
     broadcastToLobby(lobby, broadcast, null)
+  }
+
+  /** Clean up per-player rate-limit state on disconnect. */
+  def cleanupPlayer(playerId: UUID): Unit = {
+    lastListRequestTime.remove(playerId)
+    lastCreateTime.remove(playerId)
   }
 
   private def broadcastToLobby(lobby: Lobby, packet: Packet, excludePlayerId: UUID): Unit = {

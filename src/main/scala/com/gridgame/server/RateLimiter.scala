@@ -1,5 +1,7 @@
 package com.gridgame.server
 
+import io.netty.channel.Channel
+
 import java.net.InetAddress
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -17,6 +19,10 @@ class RateLimiter {
   // Per-IP auth failure tracking
   private val authFailures = new ConcurrentHashMap[InetAddress, AuthTracker]()
 
+  // Per-channel rate limiting for pre-auth packets (before player ID is known)
+  private val channelCounts = new ConcurrentHashMap[Channel, WindowCounter]()
+  private val MAX_PRE_AUTH_PER_SECOND = 5
+
   private val MAX_UDP_PER_SECOND = 60
   private val MAX_TCP_PER_SECOND = 20
   private val MAX_CONNECTIONS_PER_MINUTE = 5
@@ -32,6 +38,16 @@ class RateLimiter {
       val counter = tcpCounts.computeIfAbsent(clientId, _ => new WindowCounter())
       counter.allowAndIncrement(MAX_TCP_PER_SECOND, 1000L)
     }
+  }
+
+  /** Rate limit packets on a channel before player ID is known (pre-auth). */
+  def allowPreAuthPacket(channel: Channel): Boolean = {
+    val counter = channelCounts.computeIfAbsent(channel, _ => new WindowCounter())
+    counter.allowAndIncrement(MAX_PRE_AUTH_PER_SECOND, 1000L)
+  }
+
+  def removeChannel(channel: Channel): Unit = {
+    channelCounts.remove(channel)
   }
 
   def allowConnection(address: InetAddress): Boolean = {
