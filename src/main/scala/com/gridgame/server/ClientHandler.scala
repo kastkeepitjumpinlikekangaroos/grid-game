@@ -13,7 +13,7 @@ import java.io.File
 import java.net.InetSocketAddress
 import java.util.UUID
 
-class ClientHandler(registry: ClientRegistry, server: GameServer, projectileManager: ProjectileManager, itemManager: ItemManager, instance: GameInstance = null) {
+class ClientHandler(registry: ClientRegistry, server: GameServer, projectileManager: ProjectileManager, itemManager: ItemManager, instance: GameInstance = null, validator: PacketValidator = new PacketValidator()) {
 
   /**
    * Process a packet received from a client.
@@ -65,6 +65,10 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     }
 
     if (player.isFrozen) {
+      return false
+    }
+
+    if (!validator.validateProjectileSpawn(packet, player)) {
       return false
     }
 
@@ -147,6 +151,14 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     val playerId = packet.getPlayerId
     var player = registry.get(playerId)
 
+    // Validate movement if player exists and there's a world to check against
+    if (player != null) {
+      val world = if (instance != null) instance.world else server.getWorld
+      if (world != null && !validator.validateMovement(packet, player, world)) {
+        return false
+      }
+    }
+
     if (player == null) {
       System.err.println(s"Received update for unknown player: $playerId")
       player = new Player(playerId, "Player", packet.getPosition, packet.getColorRGB)
@@ -197,6 +209,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     if (player != null) {
       registry.remove(playerId)
       itemManager.clearInventory(playerId)
+      validator.removePlayer(playerId)
       println(s"Player left: ${playerId.toString.substring(0, 8)} ('${player.getName}')")
     }
 
@@ -352,6 +365,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       val playerId = player.getId
       registry.remove(playerId)
       itemManager.clearInventory(playerId)
+      validator.removePlayer(playerId)
       println(s"Player disconnected (TCP): ${playerId.toString.substring(0, 8)} ('${player.getName}')")
 
       // Broadcast leave to remaining players

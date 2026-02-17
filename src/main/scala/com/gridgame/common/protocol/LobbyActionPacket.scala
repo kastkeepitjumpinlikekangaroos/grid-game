@@ -79,7 +79,7 @@ class LobbyActionPacket(
   def getTeamSize: Byte = teamSize
 
   override def serialize(): Array[Byte] = {
-    val buffer = ByteBuffer.allocate(Constants.PACKET_SIZE)
+    val buffer = ByteBuffer.allocate(Constants.PACKET_PAYLOAD_SIZE)
     buffer.order(ByteOrder.BIG_ENDIAN)
 
     // [0] Packet Type

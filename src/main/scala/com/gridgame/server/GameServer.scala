@@ -20,6 +20,7 @@ import io.netty.handler.codec.LengthFieldBasedFrameDecoder
 import io.netty.handler.codec.LengthFieldPrepender
 
 import java.net.InetSocketAddress
+import java.security.SecureRandom
 import java.util.UUID
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.Executors
@@ -34,6 +35,11 @@ class GameServer(port: Int, val worldFile: String = "") {
   // Channel -> UUID mapping for disconnect handling
   private val channelToPlayer = new ConcurrentHashMap[Channel, UUID]()
 
+  val rateLimiter = new RateLimiter()
+  val sessionTokens = new ConcurrentHashMap[UUID, Array[Byte]]()
+  val channelToToken = new ConcurrentHashMap[Channel, Array[Byte]]()
+  private val secureRandom = new SecureRandom()
+
   val authDatabase = new AuthDatabase()
   val lobbyManager = new LobbyManager()
   val lobbyHandler = new LobbyHandler(this, lobbyManager)
@@ -45,6 +51,8 @@ class GameServer(port: Int, val worldFile: String = "") {
   @volatile private var running = false
 
   // Netty components
+  private val sslCtx = TlsProvider.serverContext()
+
   private var bossGroup: NioEventLoopGroup = _
   private var workerGroup: NioEventLoopGroup = _
   private var tcpServerChannel: Channel = _
@@ -68,7 +76,8 @@ class GameServer(port: Int, val worldFile: String = "") {
       .childHandler(new ChannelInitializer[SocketChannel] {
         override def initChannel(ch: SocketChannel): Unit = {
           ch.pipeline()
-            .addLast(new LengthFieldBasedFrameDecoder(66, 0, 2, 0, 2))
+            .addLast(sslCtx.newHandler(ch.alloc()))
+            .addLast(new LengthFieldBasedFrameDecoder(82, 0, 2, 0, 2))
             .addLast(new LengthFieldPrepender(2))
             .addLast(new GameServerTcpHandler(server))
         }
@@ -105,19 +114,22 @@ class GameServer(port: Int, val worldFile: String = "") {
 
   /** Send a packet to a specific player, using the correct transport based on packet type. */
   def sendPacketToPlayer(packet: Packet, player: Player): Unit = {
+    val token = sessionTokens.get(player.getId)
     if (packet.getType.tcp) {
       val raw = player.getTcpChannel
       if (raw != null) {
         val ch = raw.asInstanceOf[Channel]
         if (ch.isActive) {
-          val data = packet.serialize()
+          val payload = packet.serialize()
+          val data = if (token != null) PacketSigner.sign(payload, token) else padToPacketSize(payload)
           ch.writeAndFlush(Unpooled.wrappedBuffer(data))
         }
       }
     } else {
       val addr = player.getUdpAddress
       if (addr != null && udpChannel != null) {
-        val data = packet.serialize()
+        val payload = packet.serialize()
+        val data = if (token != null) PacketSigner.sign(payload, token) else padToPacketSize(payload)
         val dgram = new DatagramPacket(Unpooled.wrappedBuffer(data), addr)
         udpChannel.writeAndFlush(dgram)
       }
@@ -127,7 +139,9 @@ class GameServer(port: Int, val worldFile: String = "") {
   /** Send a packet directly over a specific TCP channel (used for initial join responses). */
   def sendPacketViaChannel(packet: Packet, channel: Channel): Unit = {
     if (channel != null && channel.isActive) {
-      val data = packet.serialize()
+      val payload = packet.serialize()
+      val token = channelToToken.get(channel)
+      val data = if (token != null) PacketSigner.sign(payload, token) else padToPacketSize(payload)
       channel.writeAndFlush(Unpooled.wrappedBuffer(data))
     }
   }
@@ -142,21 +156,31 @@ class GameServer(port: Int, val worldFile: String = "") {
 
   /** Send pre-serialized packet bytes to a player. Serialization is done once by the caller. */
   def sendRawToPlayer(data: Array[Byte], isTcp: Boolean, player: Player): Unit = {
+    val token = sessionTokens.get(player.getId)
+    val signed = if (token != null) PacketSigner.sign(data, token) else padToPacketSize(data)
     if (isTcp) {
       val raw = player.getTcpChannel
       if (raw != null) {
         val ch = raw.asInstanceOf[Channel]
         if (ch.isActive) {
-          ch.writeAndFlush(Unpooled.wrappedBuffer(data.clone()))
+          ch.writeAndFlush(Unpooled.wrappedBuffer(signed))
         }
       }
     } else {
       val addr = player.getUdpAddress
       if (addr != null && udpChannel != null) {
-        val dgram = new DatagramPacket(Unpooled.wrappedBuffer(data.clone()), addr)
+        val dgram = new DatagramPacket(Unpooled.wrappedBuffer(signed), addr)
         udpChannel.writeAndFlush(dgram)
       }
     }
+  }
+
+  /** Pad a 64-byte payload to 80 bytes (for pre-auth packets without HMAC). */
+  private def padToPacketSize(payload: Array[Byte]): Array[Byte] = {
+    if (payload.length == Constants.PACKET_SIZE) return payload
+    val padded = new Array[Byte](Constants.PACKET_SIZE)
+    System.arraycopy(payload, 0, padded, 0, Math.min(payload.length, Constants.PACKET_PAYLOAD_SIZE))
+    padded
   }
 
   def getNextSequenceNumber: Int = sequenceNumber.getAndIncrement()
@@ -339,13 +363,31 @@ class GameServer(port: Int, val worldFile: String = "") {
     val password = packet.getPassword
     val isSignup = packet.getAction == AuthAction.SIGNUP
 
+    // Rate limit auth attempts
+    val remoteAddr = tcpCh.remoteAddress().asInstanceOf[InetSocketAddress].getAddress
+    if (!rateLimiter.allowAuthAttempt(remoteAddr)) {
+      println(s"Auth: Rate limited - $remoteAddr")
+      val response = new AuthResponsePacket(getNextSequenceNumber, false, null, "Too many attempts")
+      sendPacketViaChannel(response, tcpCh)
+      return
+    }
+
     if (isSignup) {
+      if (password.length < 6) {
+        println(s"Auth: Signup failed - '$username' (password too short)")
+        val response = new AuthResponsePacket(getNextSequenceNumber, false, null, "Password must be 6+ chars")
+        sendPacketViaChannel(response, tcpCh)
+        return
+      }
       val registered = authDatabase.register(username, password)
       if (registered) {
         val uuid = authDatabase.getOrCreateUUID(username)
         println(s"Auth: New account registered - '$username' (${uuid.toString.substring(0, 8)})")
+        val token = generateSessionToken(uuid, tcpCh)
         val response = new AuthResponsePacket(getNextSequenceNumber, true, uuid, "Account created")
         sendPacketViaChannel(response, tcpCh)
+        val tokenPacket = new SessionTokenPacket(getNextSequenceNumber, uuid, token)
+        sendPacketViaChannel(tokenPacket, tcpCh)
       } else {
         println(s"Auth: Signup failed - '$username' (already exists)")
         val response = new AuthResponsePacket(getNextSequenceNumber, false, null, "Username taken")
@@ -354,11 +396,16 @@ class GameServer(port: Int, val worldFile: String = "") {
     } else {
       val authenticated = authDatabase.authenticate(username, password)
       if (authenticated) {
+        rateLimiter.clearAuthFailures(remoteAddr)
         val uuid = authDatabase.getOrCreateUUID(username)
         println(s"Auth: Login successful - '$username' (${uuid.toString.substring(0, 8)})")
+        val token = generateSessionToken(uuid, tcpCh)
         val response = new AuthResponsePacket(getNextSequenceNumber, true, uuid, "Login successful")
         sendPacketViaChannel(response, tcpCh)
+        val tokenPacket = new SessionTokenPacket(getNextSequenceNumber, uuid, token)
+        sendPacketViaChannel(tokenPacket, tcpCh)
       } else {
+        rateLimiter.recordAuthFailure(remoteAddr)
         println(s"Auth: Login failed - '$username' (invalid credentials)")
         val response = new AuthResponsePacket(getNextSequenceNumber, false, null, "Invalid credentials")
         sendPacketViaChannel(response, tcpCh)
@@ -471,9 +518,19 @@ class GameServer(port: Int, val worldFile: String = "") {
     }
   }
 
+  private def generateSessionToken(playerId: UUID, tcpCh: Channel): Array[Byte] = {
+    val token = new Array[Byte](32)
+    secureRandom.nextBytes(token)
+    sessionTokens.put(playerId, token)
+    if (tcpCh != null) channelToToken.put(tcpCh, token)
+    token
+  }
+
   def handleDisconnect(channel: Channel): Unit = {
+    channelToToken.remove(channel)
     val playerId = channelToPlayer.remove(channel)
     if (playerId != null) {
+      sessionTokens.remove(playerId)
       val player = connectedPlayers.remove(playerId)
       if (player != null) {
         println(s"Global disconnect: ${playerId.toString.substring(0, 8)} ('${player.getName}')")
@@ -642,6 +699,8 @@ class GameServer(port: Int, val worldFile: String = "") {
       }
     }
 
+    rateLimiter.cleanup()
+
     if (connectedPlayers.size() > 0) {
       println(s"Server stats: ${connectedPlayers.size()} players connected, ${lobbyManager.getActiveLobbies.size} active lobbies")
     }
@@ -683,6 +742,16 @@ class GameServer(port: Int, val worldFile: String = "") {
 /** Netty handler for incoming TCP connections. */
 class GameServerTcpHandler(server: GameServer) extends SimpleChannelInboundHandler[io.netty.buffer.ByteBuf] {
 
+  override def channelActive(ctx: ChannelHandlerContext): Unit = {
+    val remoteAddr = ctx.channel().remoteAddress().asInstanceOf[InetSocketAddress].getAddress
+    if (!server.rateLimiter.allowConnection(remoteAddr)) {
+      System.err.println(s"TCP: Connection rate limit exceeded for $remoteAddr, closing")
+      ctx.close()
+      return
+    }
+    super.channelActive(ctx)
+  }
+
   override def channelRead0(ctx: ChannelHandlerContext, msg: io.netty.buffer.ByteBuf): Unit = {
     if (msg.readableBytes() < Constants.PACKET_SIZE) return
 
@@ -690,7 +759,38 @@ class GameServerTcpHandler(server: GameServer) extends SimpleChannelInboundHandl
     msg.readBytes(data)
 
     try {
-      val packet = PacketSerializer.deserialize(data)
+      // Peek at packet type byte
+      val packetTypeId = data(0)
+      val payload = if (packetTypeId == PacketType.AUTH_REQUEST.id) {
+        // AUTH_REQUEST has no session token yet — extract first 64 bytes
+        val p = new Array[Byte](Constants.PACKET_PAYLOAD_SIZE)
+        System.arraycopy(data, 0, p, 0, Constants.PACKET_PAYLOAD_SIZE)
+        p
+      } else {
+        // Look up session token via channel
+        val token = server.channelToToken.get(ctx.channel())
+        if (token != null) {
+          val verified = PacketSigner.verify(data, token)
+          if (verified == null) {
+            System.err.println("TCP: HMAC verification failed, dropping packet")
+            return
+          }
+          verified
+        } else {
+          // No token yet (pre-auth) — extract first 64 bytes
+          val p = new Array[Byte](Constants.PACKET_PAYLOAD_SIZE)
+          System.arraycopy(data, 0, p, 0, Constants.PACKET_PAYLOAD_SIZE)
+          p
+        }
+      }
+      val packet = PacketSerializer.deserialize(payload)
+      // Rate limit per-client packets (skip AUTH_REQUEST which has no player ID yet)
+      if (packetTypeId != PacketType.AUTH_REQUEST.id) {
+        val pid = packet.getPlayerId
+        if (pid != null && !server.rateLimiter.allowPacket(pid, false)) {
+          return
+        }
+      }
       server.handleIncomingPacket(packet, ctx.channel(), null)
     } catch {
       case e: IllegalArgumentException =>
@@ -720,7 +820,31 @@ class GameServerUdpHandler(server: GameServer) extends SimpleChannelInboundHandl
     buf.readBytes(data)
 
     try {
-      val packet = PacketSerializer.deserialize(data)
+      // Extract UUID from bytes [5-20] to look up session token
+      val uuidBuf = java.nio.ByteBuffer.wrap(data, 5, 16).order(java.nio.ByteOrder.BIG_ENDIAN)
+      val msb = uuidBuf.getLong()
+      val lsb = uuidBuf.getLong()
+      val playerId = new UUID(msb, lsb)
+      val token = server.sessionTokens.get(playerId)
+
+      val payload = if (token != null) {
+        val verified = PacketSigner.verify(data, token)
+        if (verified == null) {
+          System.err.println("UDP: HMAC verification failed, dropping packet")
+          return
+        }
+        verified
+      } else {
+        // No token — extract first 64 bytes
+        val p = new Array[Byte](Constants.PACKET_PAYLOAD_SIZE)
+        System.arraycopy(data, 0, p, 0, Constants.PACKET_PAYLOAD_SIZE)
+        p
+      }
+      // Rate limit per-client UDP packets
+      if (!server.rateLimiter.allowPacket(playerId, true)) {
+        return
+      }
+      val packet = PacketSerializer.deserialize(payload)
       server.handleIncomingPacket(packet, null, msg.sender())
     } catch {
       case e: IllegalArgumentException =>

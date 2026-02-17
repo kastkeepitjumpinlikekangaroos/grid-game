@@ -3,6 +3,8 @@ package com.gridgame.client
 import com.gridgame.common.Constants
 import com.gridgame.common.protocol.Packet
 import com.gridgame.common.protocol.PacketSerializer
+import com.gridgame.common.protocol.PacketSigner
+import com.gridgame.common.protocol.PacketType
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
 import io.netty.channel._
@@ -13,6 +15,8 @@ import io.netty.channel.socket.nio.NioDatagramChannel
 import io.netty.channel.socket.nio.NioSocketChannel
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder
 import io.netty.handler.codec.LengthFieldPrepender
+import io.netty.handler.ssl.SslContextBuilder
+import io.netty.handler.ssl.util.InsecureTrustManagerFactory
 
 import java.net.InetSocketAddress
 import java.util.concurrent.CountDownLatch
@@ -24,6 +28,7 @@ class NetworkThread(client: GameClient, serverHost: String, serverPort: Int) ext
   private val heartbeatExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
   private val ready = new CountDownLatch(1)
   @volatile private var running = false
+  @volatile var sessionToken: Array[Byte] = _
 
   private var eventLoopGroup: NioEventLoopGroup = _
   private var tcpChannel: Channel = _
@@ -47,10 +52,15 @@ class NetworkThread(client: GameClient, serverHost: String, serverPort: Int) ext
         .channel(classOf[NioSocketChannel])
         .handler(new ChannelInitializer[SocketChannel] {
           override def initChannel(ch: SocketChannel): Unit = {
+            val sslCtx = SslContextBuilder.forClient()
+              .trustManager(InsecureTrustManagerFactory.INSTANCE)
+              .protocols("TLSv1.3")
+              .build()
             ch.pipeline()
-              .addLast(new LengthFieldBasedFrameDecoder(66, 0, 2, 0, 2))
+              .addLast(sslCtx.newHandler(ch.alloc(), serverHost, serverPort))
+              .addLast(new LengthFieldBasedFrameDecoder(82, 0, 2, 0, 2))
               .addLast(new LengthFieldPrepender(2))
-              .addLast(new ClientTcpHandler(client))
+              .addLast(new ClientTcpHandler(client, NetworkThread.this))
           }
         })
 
@@ -61,7 +71,7 @@ class NetworkThread(client: GameClient, serverHost: String, serverPort: Int) ext
       val udpBootstrap = new Bootstrap()
       udpBootstrap.group(eventLoopGroup)
         .channel(classOf[NioDatagramChannel])
-        .handler(new ClientUdpHandler(client))
+        .handler(new ClientUdpHandler(client, this))
 
       udpChannel = udpBootstrap.bind(0).sync().channel()
       println(s"NetworkThread: UDP bound on local port")
@@ -92,7 +102,16 @@ class NetworkThread(client: GameClient, serverHost: String, serverPort: Int) ext
       return
     }
 
-    val data = packet.serialize()
+    val payload = packet.serialize()
+    val token = sessionToken
+    val data = if (token != null) {
+      PacketSigner.sign(payload, token)
+    } else {
+      // No session token yet (pre-auth) — pad to 80 bytes
+      val padded = new Array[Byte](Constants.PACKET_SIZE)
+      System.arraycopy(payload, 0, padded, 0, Constants.PACKET_PAYLOAD_SIZE)
+      padded
+    }
 
     if (packet.getType.tcp) {
       if (tcpChannel != null && tcpChannel.isActive) {
@@ -137,7 +156,7 @@ class NetworkThread(client: GameClient, serverHost: String, serverPort: Int) ext
 }
 
 /** Handles TCP packets from the server. */
-class ClientTcpHandler(client: GameClient) extends SimpleChannelInboundHandler[io.netty.buffer.ByteBuf] {
+class ClientTcpHandler(client: GameClient, networkThread: NetworkThread) extends SimpleChannelInboundHandler[io.netty.buffer.ByteBuf] {
 
   override def channelRead0(ctx: ChannelHandlerContext, msg: io.netty.buffer.ByteBuf): Unit = {
     if (msg.readableBytes() < Constants.PACKET_SIZE) return
@@ -146,7 +165,21 @@ class ClientTcpHandler(client: GameClient) extends SimpleChannelInboundHandler[i
     msg.readBytes(data)
 
     try {
-      val packet = PacketSerializer.deserialize(data)
+      val token = networkThread.sessionToken
+      val payload = if (token != null) {
+        val verified = PacketSigner.verify(data, token)
+        if (verified == null) {
+          // Pre-token packets (like AUTH_RESPONSE, SESSION_TOKEN) may not be signed yet
+          val p = new Array[Byte](Constants.PACKET_PAYLOAD_SIZE)
+          System.arraycopy(data, 0, p, 0, Constants.PACKET_PAYLOAD_SIZE)
+          p
+        } else verified
+      } else {
+        val p = new Array[Byte](Constants.PACKET_PAYLOAD_SIZE)
+        System.arraycopy(data, 0, p, 0, Constants.PACKET_PAYLOAD_SIZE)
+        p
+      }
+      val packet = PacketSerializer.deserialize(payload)
       client.enqueuePacket(packet)
     } catch {
       case e: IllegalArgumentException =>
@@ -166,7 +199,7 @@ class ClientTcpHandler(client: GameClient) extends SimpleChannelInboundHandler[i
 }
 
 /** Handles UDP packets from the server. */
-class ClientUdpHandler(client: GameClient) extends SimpleChannelInboundHandler[DatagramPacket] {
+class ClientUdpHandler(client: GameClient, networkThread: NetworkThread) extends SimpleChannelInboundHandler[DatagramPacket] {
 
   override def channelRead0(ctx: ChannelHandlerContext, msg: DatagramPacket): Unit = {
     val buf = msg.content()
@@ -176,7 +209,20 @@ class ClientUdpHandler(client: GameClient) extends SimpleChannelInboundHandler[D
     buf.readBytes(data)
 
     try {
-      val packet = PacketSerializer.deserialize(data)
+      val token = networkThread.sessionToken
+      val payload = if (token != null) {
+        val verified = PacketSigner.verify(data, token)
+        if (verified == null) {
+          System.err.println("ClientUdpHandler: HMAC verification failed, dropping packet")
+          return
+        }
+        verified
+      } else {
+        val p = new Array[Byte](Constants.PACKET_PAYLOAD_SIZE)
+        System.arraycopy(data, 0, p, 0, Constants.PACKET_PAYLOAD_SIZE)
+        p
+      }
+      val packet = PacketSerializer.deserialize(payload)
       client.enqueuePacket(packet)
     } catch {
       case e: IllegalArgumentException =>

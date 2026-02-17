@@ -154,22 +154,52 @@ object ShaderProgram {
       |  FragColor = result;
       |}""".stripMargin
 
-  // ── Bloom composite + vignette + Diablo 3-style color grading ──
+  // ── Bloom composite + vignette + lighting + chromatic aberration + distortion ──
   val COMPOSITE_FRAG: String =
     """#version 330 core
       |in vec2 vTexCoord;
       |uniform sampler2D uScene;
       |uniform sampler2D uBloom;
+      |uniform sampler2D uLightMap;
       |uniform float uBloomStrength;
       |uniform float uVignetteStrength;
       |uniform vec4 uOverlayColor;
       |uniform float uTime;
+      |uniform int uUseLightMap;
+      |uniform float uChromaticAberration;
+      |uniform vec2 uDistortionCenter;
+      |uniform float uDistortionStrength;
       |out vec4 FragColor;
       |void main() {
-      |  vec4 scene = texture(uScene, vTexCoord);
-      |  vec4 bloom = texture(uBloom, vTexCoord);
+      |  vec2 uv = vTexCoord;
+      |  // Screen distortion (radial sine warp for explosion shockwave)
+      |  if (uDistortionStrength > 0.0) {
+      |    vec2 toCenter = uv - uDistortionCenter;
+      |    float d = length(toCenter);
+      |    float warp = sin(d * 30.0 - uTime * 0.5) * uDistortionStrength * exp(-d * 5.0);
+      |    uv += normalize(toCenter + vec2(0.001)) * warp;
+      |  }
+      |  // Chromatic aberration (radial RGB offset on damage)
+      |  vec4 scene;
+      |  if (uChromaticAberration > 0.0) {
+      |    vec2 dir = uv - vec2(0.5);
+      |    float rOff = uChromaticAberration;
+      |    float bOff = -uChromaticAberration;
+      |    float sr = texture(uScene, uv + dir * rOff).r;
+      |    float sg = texture(uScene, uv).g;
+      |    float sb = texture(uScene, uv + dir * bOff).b;
+      |    scene = vec4(sr, sg, sb, 1.0);
+      |  } else {
+      |    scene = texture(uScene, uv);
+      |  }
+      |  vec4 bloom = texture(uBloom, uv);
       |  // Screen blend for bloom — brightens without blowing out whites
       |  vec3 color = scene.rgb + bloom.rgb * uBloomStrength * (1.0 - scene.rgb);
+      |  // Dynamic lighting: multiply scene by light map
+      |  if (uUseLightMap == 1) {
+      |    vec3 light = texture(uLightMap, vTexCoord).rgb;
+      |    color *= min(light * 1.6, vec3(1.2));
+      |  }
       |  // Warm-cool color grading: shadows toward blue-purple, highlights toward warm amber
       |  float luma = dot(color, vec3(0.299, 0.587, 0.114));
       |  vec3 shadows = vec3(0.05, 0.03, 0.1);
@@ -181,8 +211,8 @@ object ShaderProgram {
       |  float grain = fract(sin(dot(vTexCoord * uTime, vec2(12.9898, 78.233))) * 43758.5453);
       |  color += (grain - 0.5) * 0.015;
       |  // Soft vignette using smoothstep for gradual falloff
-      |  vec2 uv = vTexCoord * 2.0 - 1.0;
-      |  float dist = dot(uv, uv);
+      |  vec2 vigUV = vTexCoord * 2.0 - 1.0;
+      |  float dist = dot(vigUV, vigUV);
       |  float vignette = 1.0 - smoothstep(0.4, 1.8, dist) * uVignetteStrength;
       |  color *= vignette;
       |  // Overlay (damage flash)
