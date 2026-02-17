@@ -30,6 +30,14 @@ class GLGameRenderer(val client: GameClient) {
   private var fontMedium: GLFontRenderer = _
   private var fontLarge: GLFontRenderer = _
   private var postProcessor: PostProcessor = _
+  private var lightSystem: LightSystem = _
+  private val damageNumbers = new DamageNumberSystem()
+
+  // Previous health tracking for damage number detection
+  private val prevHealthMap: mutable.Map[UUID, Int] = mutable.Map.empty
+
+  // Tile overlay collection (reused each frame)
+  private val specialTiles = new mutable.ArrayBuffer[(Int, Int, Int)]() // (wx, wy, tileId)
 
   // Projection matrix
   private var projection: FloatBuffer = _
@@ -115,6 +123,7 @@ class GLGameRenderer(val client: GameClient) {
     fontMedium = new GLFontRenderer(22)
     fontLarge = new GLFontRenderer(44)
     postProcessor = new PostProcessor(width, height)
+    lightSystem = new LightSystem(width, height)
     initialized = true
   }
 
@@ -153,9 +162,18 @@ class GLGameRenderer(val client: GameClient) {
     // Post-processing: render to FBO (only resize when dimensions actually change)
     if (fbWidth != lastFbWidth || fbHeight != lastFbHeight) {
       postProcessor.resize(fbWidth, fbHeight)
+      lightSystem.resize(fbWidth, fbHeight)
       lastFbWidth = fbWidth
       lastFbHeight = fbHeight
     }
+
+    // Dynamic lighting: clear lights and set ambient for current background
+    lightSystem.clear()
+    lightSystem.setAmbientForBackground(world.background)
+
+    // Update damage numbers
+    damageNumbers.update(deltaSec.toFloat)
+
     postProcessor.beginScene()
 
     // Set up projection for zoomed world-space rendering
@@ -206,6 +224,7 @@ class GLGameRenderer(val client: GameClient) {
     // === Phase 1: Ground tiles ===
     // Use fixed position-based variant (no tileFrame) so ground doesn't animate
     val numTileFrames = GLTileRenderer.getNumFrames
+    specialTiles.clear()
     beginSprites()
     for (wy <- startY to endY; wx <- startX to endX) {
       val tile = world.getTile(wx, wy)
@@ -217,7 +236,28 @@ class GLGameRenderer(val client: GameClient) {
           val sy = worldToScreenY(wx, wy).toFloat
           spriteBatch.draw(region, sx - HW, sy - (cellH - HH), tileW, tileCellH)
         }
+        // Collect special tiles for overlay pass
+        val tid = tile.id
+        if (tid == 1 || tid == 7 || tid == 9 || tid == 10 || tid == 15 || tid == 18 || tid == 24) {
+          specialTiles += ((wx, wy, tid))
+        }
+        // Lava and energy field tiles emit light
+        if (tid == 10) { // Lava
+          val lsx = worldToScreenX(wx, wy).toFloat
+          val lsy = worldToScreenY(wx, wy).toFloat
+          val lavaPulse = (0.8 + 0.2 * Math.sin(animationTick * 0.06 + wx * 1.3 + wy * 0.7)).toFloat
+          lightSystem.addLight(lsx, lsy, 40f, 1f, 0.5f, 0.1f, 0.12f * lavaPulse)
+        } else if (tid == 15) { // EnergyField
+          val esx = worldToScreenX(wx, wy).toFloat
+          val esy = worldToScreenY(wx, wy).toFloat
+          lightSystem.addLight(esx, esy, 35f, 0.5f, 0.2f, 0.8f, 0.08f)
+        }
       }
+    }
+
+    // === Animated tile overlays ===
+    if (specialTiles.nonEmpty) {
+      drawTileOverlays()
     }
 
     // === Aim arrow ===
@@ -247,7 +287,21 @@ class GLGameRenderer(val client: GameClient) {
     drawExplosionAnimations()
     drawAoeSplashAnimations()
 
-    // === End scene, apply post-processing ===
+    // === Damage number detection ===
+    detectDamageNumbers()
+
+    // === Render damage numbers (in world space) ===
+    if (damageNumbers.hasActive) {
+      beginSprites()
+      damageNumbers.render(fontMedium, spriteBatch, camOffX, camOffY,
+        (wx: Double, wy: Double) => worldToScreenX(wx, wy),
+        (wx: Double, wy: Double) => worldToScreenY(wx, wy))
+    }
+
+    // === Populate lights from entities ===
+    populateLights()
+
+    // === End scene, render light map, apply post-processing ===
     // Set damage flash overlay
     val localHitTime = client.getPlayerHitTime(client.getLocalPlayerId)
     if (localHitTime > 0) {
@@ -258,14 +312,27 @@ class GLGameRenderer(val client: GameClient) {
         postProcessor.overlayG = 0f
         postProcessor.overlayB = 0f
         postProcessor.overlayA = (0.25f * (1f - progress.toFloat))
+        // Chromatic aberration on damage
+        postProcessor.chromaticAberration = 0.005f * (1f - progress.toFloat)
       } else {
         postProcessor.overlayA = 0f
+        postProcessor.chromaticAberration = 0f
       }
     } else {
       postProcessor.overlayA = 0f
+      postProcessor.chromaticAberration = 0f
     }
 
+    // Screen distortion from nearby explosions
+    updateExplosionDistortion()
+
     endAll()
+
+    // Render light map
+    lightSystem.renderLightMap(shapeBatch, canvasW.toFloat, canvasH.toFloat)
+    postProcessor.lightMapTexture = lightSystem.getLightMapTexture
+    postProcessor.useLightMap = true
+
     postProcessor.animationTime = animationTick.toFloat
     postProcessor.endScene(fbWidth, fbHeight)
 
@@ -887,6 +954,9 @@ class GLGameRenderer(val client: GameClient) {
     val (ir, ig, ib) = intToRGB(item.colorRGB)
     val glowPulse = (0.8 + 0.2 * Math.sin(bobPhase * 1.3)).toFloat
 
+    // Item emits colored light
+    lightSystem.addLight(centerX, centerY, 50f, ir, ig, ib, 0.10f * glowPulse)
+
     beginShapes()
     // Ground glow (additive)
     shapeBatch.setAdditiveBlend(true)
@@ -958,6 +1028,10 @@ class GLGameRenderer(val client: GameClient) {
     val py = proj.getY.toDouble
     val sx = worldToScreenX(px, py).toFloat
     val sy = worldToScreenY(px, py).toFloat
+
+    // Projectile emits colored light
+    val (plr, plg, plb) = intToRGB(proj.colorRGB)
+    lightSystem.addLight(sx, sy, 55f, plr, plg, plb, 0.15f)
 
     beginShapes()
     GLProjectileRenderers.get(proj.projectileType) match {
@@ -1734,6 +1808,232 @@ class GLGameRenderer(val client: GameClient) {
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  //  ANIMATED TILE OVERLAYS
+  // ═══════════════════════════════════════════════════════════════════
+
+  private def drawTileOverlays(): Unit = {
+    beginShapes()
+    shapeBatch.setAdditiveBlend(true)
+    val time = animationTick.toFloat
+    var i = 0
+    while (i < specialTiles.size) {
+      val (wx, wy, tid) = specialTiles(i)
+      val sx = worldToScreenX(wx, wy).toFloat
+      val sy = worldToScreenY(wx, wy).toFloat
+      tid match {
+        case 1 | 7 => // Water / DeepWater — shimmer lines + specular highlight
+          val phase = time * 0.04f + wx * 1.1f + wy * 0.7f
+          // Moving shimmer lines across diamond
+          for (j <- 0 until 3) {
+            val linePhase = phase + j * 2.1f
+            val t = (linePhase % 3.0f) / 3.0f
+            val lx1 = sx - HW * (1f - t) + HW * t
+            val ly1 = sy - HH * t + HH * (1f - t) * 0.3f
+            val lx2 = lx1 + HW * 0.4f
+            val ly2 = ly1 + HH * 0.2f
+            val shimmerA = (0.3f * Math.sin(linePhase * 1.5).toFloat).abs
+            shapeBatch.strokeLine(lx1, ly1, lx2, ly2, 1f, 0.6f, 0.8f, 1f, shimmerA)
+          }
+          // Specular highlight dot
+          val specPhase = time * 0.03f + wx * 2.3f + wy * 1.7f
+          val specA = (0.15f + 0.15f * Math.sin(specPhase * 2.0)).toFloat
+          shapeBatch.fillOval(sx + Math.sin(specPhase).toFloat * 5f, sy + Math.cos(specPhase * 0.7).toFloat * 2f,
+            2.5f, 1.5f, 0.8f, 0.95f, 1f, specA, 6)
+
+        case 10 => // Lava — pulsing orange glow + crack lines
+          val lavaPhase = time * 0.05f + wx * 0.9f + wy * 1.3f
+          val glowA = (0.10f + 0.06f * Math.sin(lavaPhase)).toFloat
+          shapeBatch.fillOvalSoft(sx, sy, HW.toFloat * 0.8f, HH.toFloat * 0.6f, 1f, 0.5f, 0.1f, glowA, 0f, 10)
+          // Bright crack lines
+          for (j <- 0 until 2) {
+            val crackPhase = lavaPhase + j * 1.5f
+            val ca = (0.2f + 0.1f * Math.sin(crackPhase * 2.0)).toFloat
+            val cx1 = sx - 6 + Math.sin(crackPhase + j).toFloat * 4
+            val cy1 = sy - 2 + Math.cos(crackPhase * 0.8).toFloat * 2
+            val cx2 = cx1 + 8 + Math.sin(crackPhase * 1.3).toFloat * 3
+            val cy2 = cy1 + 3
+            shapeBatch.strokeLine(cx1, cy1, cx2, cy2, 1.5f, 1f, 0.85f, 0.3f, ca)
+          }
+
+        case 9 => // Ice — flashing sparkle points
+          val icePhase = time * 0.08f + wx * 3.7f + wy * 2.3f
+          for (j <- 0 until 3) {
+            val sparkPhase = icePhase + j * 2.094f
+            val flash = Math.max(0f, Math.sin(sparkPhase * 1.5).toFloat)
+            if (flash > 0.3f) {
+              // Deterministic positions based on tile coords
+              val offX = ((wx * 13 + wy * 7 + j * 17) % 11 - 5).toFloat
+              val offY = ((wx * 7 + wy * 11 + j * 23) % 7 - 3).toFloat * 0.5f
+              shapeBatch.fillOval(sx + offX, sy + offY, 1.5f, 1.5f, 0.85f, 0.95f, 1f, flash * 0.5f, 4)
+            }
+          }
+
+        case 24 => // Crystal — prismatic hue cycling glow
+          val crystPhase = time * 0.03f + wx * 1.3f + wy * 0.9f
+          val cr = (0.5f + 0.5f * Math.sin(crystPhase)).toFloat
+          val cg = (0.5f + 0.5f * Math.sin(crystPhase + 2.094f)).toFloat
+          val cb = (0.5f + 0.5f * Math.sin(crystPhase + 4.189f)).toFloat
+          shapeBatch.fillOvalSoft(sx, sy, HW.toFloat * 0.6f, HH.toFloat * 0.5f, cr, cg, cb, 0.10f, 0f, 10)
+
+        case 18 => // Toxic — bubbling green glow pulse
+          val toxPhase = time * 0.06f + wx * 1.7f + wy * 2.1f
+          val bubbleA = (0.06f + 0.04f * Math.sin(toxPhase)).toFloat
+          shapeBatch.fillOvalSoft(sx, sy, HW.toFloat * 0.7f, HH.toFloat * 0.5f, 0.2f, 0.9f, 0.1f, bubbleA, 0f, 10)
+          // Rising bubble
+          val bubbleY = sy - ((time * 0.3f + wx * 5) % 8)
+          val bubbleSize = 1.5f + Math.sin(toxPhase * 2).toFloat
+          shapeBatch.fillOval(sx + Math.sin(toxPhase * 1.5).toFloat * 3, bubbleY,
+            bubbleSize, bubbleSize, 0.3f, 1f, 0.2f, 0.15f, 4)
+
+        case 15 => // EnergyField — electric arc flicker
+          val ePhase = time * 0.12f + wx * 2.1f + wy * 1.3f
+          val flicker = if (Math.sin(ePhase * 3.0) > 0.2) 1f else 0.3f
+          val arcA = 0.12f * flicker
+          // Small electric arc
+          val ax1 = sx - 5 + Math.sin(ePhase).toFloat * 3
+          val ay1 = sy - 2
+          val ax2 = sx + 5 + Math.cos(ePhase * 1.3).toFloat * 3
+          val ay2 = sy + 1
+          val amid = sx + Math.sin(ePhase * 5).toFloat * 4
+          shapeBatch.strokeLine(ax1, ay1, amid, (ay1 + ay2) / 2 + Math.sin(ePhase * 7).toFloat * 2,
+            1f, 0.6f, 0.3f, 1f, arcA)
+          shapeBatch.strokeLine(amid, (ay1 + ay2) / 2 + Math.sin(ePhase * 7).toFloat * 2, ax2, ay2,
+            1f, 0.6f, 0.3f, 1f, arcA)
+
+        case _ => // shouldn't happen
+      }
+      i += 1
+    }
+    shapeBatch.setAdditiveBlend(false)
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  DYNAMIC LIGHTING HELPERS
+  // ═══════════════════════════════════════════════════════════════════
+
+  /** Populate lights from players (warm glow) and local player. */
+  private def populateLights(): Unit = {
+    // Local player light
+    val (lvx, lvy) = client.getVisualPosition
+    val lpsx = worldToScreenX(lvx, lvy).toFloat
+    val lpsy = worldToScreenY(lvx, lvy).toFloat
+    lightSystem.addLight(lpsx, lpsy, 80f, 1f, 0.9f, 0.7f, 0.15f)
+
+    // Remote players
+    val players = client.getPlayers
+    val iter = players.values().iterator()
+    while (iter.hasNext) {
+      val player = iter.next()
+      val (pvx, pvy) = entityCollector.remoteVisualPositions.getOrElse(
+        player.getId, (player.getPosition.getX.toDouble, player.getPosition.getY.toDouble))
+      val psx = worldToScreenX(pvx, pvy).toFloat
+      val psy = worldToScreenY(pvx, pvy).toFloat
+      lightSystem.addLight(psx, psy, 65f, 1f, 0.85f, 0.65f, 0.10f)
+    }
+
+    // Explosion lights
+    val now = System.currentTimeMillis()
+    val expIter = client.getExplosionAnimations.values().iterator()
+    while (expIter.hasNext) {
+      val data = expIter.next()
+      val timestamp = data(0)
+      val elapsed = now - timestamp
+      if (elapsed < 1400) {
+        val wx = data(1).toDouble / 1000.0; val wy = data(2).toDouble / 1000.0
+        val colorRGB = data(3).toInt
+        val (er, eg, eb) = intToRGB(colorRGB)
+        val exsx = worldToScreenX(wx, wy).toFloat
+        val exsy = worldToScreenY(wx, wy).toFloat
+        val decay = Math.max(0f, 1f - elapsed.toFloat / 1400f)
+        lightSystem.addLight(exsx, exsy, 120f * decay, er, eg, eb, 0.4f * decay)
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  DAMAGE NUMBER DETECTION
+  // ═══════════════════════════════════════════════════════════════════
+
+  private def detectDamageNumbers(): Unit = {
+    // Check local player
+    val localId = client.getLocalPlayerId
+    val localHealth = client.getLocalHealth
+    prevHealthMap.get(localId) match {
+      case Some(prev) if prev > localHealth =>
+        val dmg = prev - localHealth
+        val (lvx, lvy) = client.getVisualPosition
+        damageNumbers.spawn(lvx.toFloat, lvy.toFloat, dmg, 1f, 0.3f, 0.2f)
+      case _ =>
+    }
+    prevHealthMap.put(localId, localHealth)
+
+    // Check remote players
+    val players = client.getPlayers
+    val iter = players.entrySet().iterator()
+    while (iter.hasNext) {
+      val entry = iter.next()
+      val playerId = entry.getKey
+      val player = entry.getValue
+      val health = player.getHealth
+      prevHealthMap.get(playerId) match {
+        case Some(prev) if prev > health =>
+          val dmg = prev - health
+          val (pvx, pvy) = entityCollector.remoteVisualPositions.getOrElse(
+            playerId, (player.getPosition.getX.toDouble, player.getPosition.getY.toDouble))
+          damageNumbers.spawn(pvx.toFloat, pvy.toFloat, dmg, 1f, 1f, 0.3f)
+        case _ =>
+      }
+      prevHealthMap.put(playerId, health)
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  POST-PROCESSING EFFECT HELPERS
+  // ═══════════════════════════════════════════════════════════════════
+
+  private def updateExplosionDistortion(): Unit = {
+    val now = System.currentTimeMillis()
+    var bestStrength = 0f
+    var bestCX = 0.5f
+    var bestCY = 0.5f
+
+    val expIter = client.getExplosionAnimations.values().iterator()
+    while (expIter.hasNext) {
+      val data = expIter.next()
+      val timestamp = data(0)
+      val elapsed = now - timestamp
+      if (elapsed < 600) { // distortion only in first 600ms
+        val wx = data(1).toDouble / 1000.0; val wy = data(2).toDouble / 1000.0
+        val exsx = worldToScreenX(wx, wy)
+        val exsy = worldToScreenY(wx, wy)
+
+        // Convert to UV space (0-1) for the shader
+        val uvX = (exsx / canvasW).toFloat
+        val uvY = (exsy / canvasH).toFloat
+
+        // Check proximity to local player
+        val (lvx, lvy) = client.getVisualPosition
+        val dx = wx - lvx; val dy = wy - lvy
+        val dist = Math.sqrt(dx * dx + dy * dy)
+        if (dist < 8) { // only distort if within 8 tiles
+          val proximity = Math.max(0, 1.0 - dist / 8.0).toFloat
+          val timeDecay = Math.max(0f, 1f - elapsed.toFloat / 600f)
+          val strength = 0.008f * proximity * timeDecay
+          if (strength > bestStrength) {
+            bestStrength = strength
+            bestCX = uvX
+            bestCY = uvY
+          }
+        }
+      }
+    }
+
+    postProcessor.distortionStrength = bestStrength
+    postProcessor.distortionCenterX = bestCX
+    postProcessor.distortionCenterY = bestCY
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   //  UTILITIES
   // ═══════════════════════════════════════════════════════════════════
 
@@ -1751,6 +2051,7 @@ class GLGameRenderer(val client: GameClient) {
     entityCollector.remoteVisualPositions.clear()
     lastRemotePositions.clear()
     remoteMovingUntil.clear()
+    prevHealthMap.clear()
   }
 
   def dispose(): Unit = {
@@ -1761,6 +2062,7 @@ class GLGameRenderer(val client: GameClient) {
       fontMedium.dispose()
       fontLarge.dispose()
       postProcessor.dispose()
+      lightSystem.dispose()
       GLTileRenderer.dispose()
       GLSpriteGenerator.clearCache()
       initialized = false

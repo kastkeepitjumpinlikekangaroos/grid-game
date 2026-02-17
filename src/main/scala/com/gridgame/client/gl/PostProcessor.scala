@@ -38,6 +38,18 @@ class PostProcessor(var width: Int, var height: Int) {
   var overlayB: Float = 0f
   var overlayA: Float = 0f
 
+  // Dynamic lighting
+  var lightMapTexture: GLTexture = _
+  var useLightMap: Boolean = false
+
+  // Chromatic aberration (set on damage)
+  var chromaticAberration: Float = 0f
+
+  // Screen distortion (set on nearby explosions)
+  var distortionCenterX: Float = 0.5f
+  var distortionCenterY: Float = 0.5f
+  var distortionStrength: Float = 0f
+
   private def setupQuad(): Unit = {
     // Fullscreen triangle strip: positions + texcoords
     val data = Array[Float](
@@ -103,17 +115,30 @@ class PostProcessor(var width: Int, var height: Int) {
     drawQuad()
     blurPongFBO.unbindTarget()
 
-    // 4. Composite: scene + bloom + vignette + overlay → default framebuffer
+    // 4. Composite: scene + bloom + vignette + lighting + effects → default framebuffer
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
     glViewport(0, 0, screenWidth, screenHeight)
     glClear(GL_COLOR_BUFFER_BIT)
     compositeShader.use()
     compositeShader.setUniform1i("uScene", 0)
     compositeShader.setUniform1i("uBloom", 1)
+    compositeShader.setUniform1i("uLightMap", 2)
     compositeShader.setUniform1f("uBloomStrength", bloomStrength)
     compositeShader.setUniform1f("uVignetteStrength", vignetteStrength)
     compositeShader.setUniform4f("uOverlayColor", overlayR, overlayG, overlayB, overlayA)
     compositeShader.setUniform1f("uTime", animationTime)
+    // Dynamic lighting
+    if (useLightMap && lightMapTexture != null) {
+      compositeShader.setUniform1i("uUseLightMap", 1)
+      lightMapTexture.bind(2)
+    } else {
+      compositeShader.setUniform1i("uUseLightMap", 0)
+    }
+    // Chromatic aberration
+    compositeShader.setUniform1f("uChromaticAberration", chromaticAberration)
+    // Screen distortion
+    compositeShader.setUniform2f("uDistortionCenter", distortionCenterX, distortionCenterY)
+    compositeShader.setUniform1f("uDistortionStrength", distortionStrength)
     sceneFBO.bind(0)
     blurPongFBO.bind(1)
     drawQuad()
