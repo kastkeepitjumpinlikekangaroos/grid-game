@@ -32,6 +32,7 @@ bazel run //src/main/scala/com/gridgame/mapeditor
 - **Lobby System** - Create/join lobbies, configure map and game duration, add bots
 - **Ranked Queue** - ELO-based matchmaking
 - **Accounts** - Login/register with persistent stats, match history, and leaderboards
+- **Network Security** - TLS 1.3 encrypted TCP, HMAC-signed packets, session tokens, rate limiting, and server-side anti-cheat validation
 - **GPU-Accelerated Rendering** - OpenGL 3.3 via LWJGL with batched draw calls, post-processing (bloom, vignette), and 112 distinct projectile visual effects
 - **Isometric Rendering** - 2.5D tile-based world with parallax backgrounds
 - **Gamepad Support** - Controller input via LWJGL/GLFW
@@ -72,7 +73,7 @@ Each character has unique abilities using cast behaviors: StandardProjectile, Ph
 
 - **Language**: Scala 2.13
 - **Rendering**: LWJGL 3.3.4 / OpenGL 3.3 core profile (game), JavaFX 21 (UI screens)
-- **Networking**: Netty (TCP + UDP, 64-byte fixed packets)
+- **Networking**: Netty (TLS 1.3 TCP + HMAC-signed UDP, 80-byte packets with 64-byte payload + 16-byte HMAC)
 - **Database**: SQLite (accounts, match history, ELO)
 - **Build**: Bazel with rules_scala
 - **Input**: GLFW (keyboard, mouse, gamepad)
@@ -82,11 +83,12 @@ Each character has unique abilities using cast behaviors: StandardProjectile, Ph
 
 ```
 src/main/scala/com/gridgame/
-  common/            # Shared models, protocol (15 packet types), world loader
+  common/            # Shared models, protocol (16 packet types), world loader
     model/           # Player, Tile (34), CharacterDef (112), ProjectileDef, Item, Projectile
-    protocol/        # 15 packet types, serialization
+    protocol/        # 16 packet types, serialization, HMAC signing (PacketSigner)
     world/           # WorldLoader (JSON map parsing, 7 layer types)
   server/            # Game server, lobbies, auth, bots, projectiles, items, ranked queue
+                     # TLS (TlsProvider), rate limiting (RateLimiter), validation (PacketValidator)
   client/            # Client entry point (ClientMain, GameClient, NetworkThread)
     gl/              # OpenGL renderer (see Rendering Architecture below)
     render/          # Shared render utilities (camera, isometric transform, entity collection)

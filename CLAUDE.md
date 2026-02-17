@@ -1,6 +1,6 @@
 # Grid Game - Multiplayer 2D Arena Game
 
-A multiplayer 2D isometric arena game built with Scala, using LWJGL/OpenGL for GPU-accelerated game rendering and JavaFX for UI screens. Networking via TCP+UDP with Netty.
+A multiplayer 2D isometric arena game built with Scala, using LWJGL/OpenGL for GPU-accelerated game rendering and JavaFX for UI screens. Networking via TLS-encrypted TCP + HMAC-signed UDP with Netty.
 
 ## Build & Run
 
@@ -28,7 +28,7 @@ bazel run //src/main/scala/com/gridgame/mapeditor
 │                            CLIENT                                │
 │  ┌─────────────┐  ┌─────────────┐  ┌────────────────────────┐   │
 │  │ ClientMain  │  │ GameClient  │  │ NetworkThread          │   │
-│  │ (JavaFX App)│──│ (State)     │──│ (TCP+UDP via Netty)    │   │
+│  │ (JavaFX App)│──│ (State)     │──│ (TLS+HMAC via Netty)   │   │
 │  └─────────────┘  └─────────────┘  └────────────────────────┘   │
 │         │                │                                       │
 │  ┌─────────────────────────────────────────────────────────────┐ │
@@ -55,7 +55,7 @@ bazel run //src/main/scala/com/gridgame/mapeditor
 │  │  └──────────────────────┘  └──────────────────────────────┘ │ │
 │  └──────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
-                           │ TCP + UDP
+                           │ TLS 1.3 (TCP) + HMAC-signed (UDP)
                            ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │                            SERVER                                │
@@ -79,6 +79,11 @@ bazel run //src/main/scala/com/gridgame/mapeditor
 │  │ RankedQueue  │  │ BotManager   │  │ KillTracker            │ │
 │  │ (Matchmaking)│  │ (AI Players) │  │ (Scoring)              │ │
 │  └──────────────┘  └──────────────┘  └────────────────────────┘ │
+│                                                                  │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐ │
+│  │ TlsProvider  │  │ RateLimiter  │  │ PacketValidator        │ │
+│  │ (TLS certs)  │  │ (Throttling) │  │ (Anti-cheat)           │ │
+│  └──────────────┘  └──────────────┘  └────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -92,11 +97,12 @@ src/main/scala/com/gridgame/
 │   │                           # ProjectileDef (pierce, boomerang, ricochet, AoE, explosions)
 │   │                           # 10 on-hit effects, charge/distance damage scaling
 │   │                           # 5 item types (Gem, Heart, Star, Shield, Fence)
-│   ├── protocol/               # Network packets (15 packet types)
+│   ├── protocol/               # Network packets (16 packet types), PacketSigner (HMAC-SHA256)
 │   └── world/                  # WorldLoader (JSON map parsing, 7 layer types)
 ├── server/                     # GameServer, GameInstance, Lobby, LobbyManager, LobbyHandler
 │   │                           # AuthDatabase, BotManager, BotController, ProjectileManager
 │   │                           # ItemManager, RankedQueue, KillTracker, ClientHandler, ClientRegistry
+│   │                           # TlsProvider, RateLimiter, PacketValidator
 ├── client/                     # Client (GameClient, ClientMain, NetworkThread)
 │   ├── gl/                     # OpenGL renderer (GLGameRenderer, GLProjectileRenderers,
 │   │                           # ShapeBatch, SpriteBatch, ShaderProgram, PostProcessor,
@@ -275,9 +281,35 @@ Projectiles are defined in `ProjectileDef.scala` with extensive customization:
 
 ## Network Protocol
 
-Fixed 64-byte packets over TCP (reliable) and UDP (fast updates), using Netty. Byte order: BIG_ENDIAN.
+80-byte packets (64-byte payload + 16-byte HMAC-SHA256) over TLS-encrypted TCP (reliable) and HMAC-signed UDP (fast updates), using Netty. Byte order: BIG_ENDIAN.
 
-### Packet Types (15 total)
+### Network Security
+
+5 layers of security protect the networking stack:
+
+1. **TLS 1.3 for TCP** — All TCP traffic encrypted via Netty `SslHandler`. Server generates a self-signed certificate at startup using `keytool`. Client trusts all certs (game server, not web).
+2. **HMAC Packet Signing** — After auth, server issues a 32-byte session token. All subsequent packets (TCP and UDP) carry a 16-byte truncated HMAC-SHA256. Packets with invalid HMAC are dropped silently.
+3. **Rate Limiting** — Per-client: 60 UDP/s, 20 TCP/s. Per-IP: 5 connections/min, 5 auth failures before 30s cooldown. Stale entries cleaned up every 5s.
+4. **Server-Side Validation** — Movement validated against world bounds, walkability, and speed limits (2x expected + 2 cells tolerance). Projectile spawn validated against player position (max 3 cells) and fire rate (80% of `SHOOT_COOLDOWN_MS`).
+5. **Auth Hardening** — Constant-time hash comparison (`MessageDigest.isEqual`), dummy hash on username-not-found (prevents timing enumeration), password minimum 6 characters.
+
+### Packet Format
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     80 bytes on wire                        │
+├──────────────────────────────────────────┬──────────────────┤
+│  64-byte payload (PACKET_PAYLOAD_SIZE)   │  16-byte HMAC    │
+│  [0]     Packet type ID                  │  Truncated       │
+│  [1-4]   Sequence number                 │  HMAC-SHA256     │
+│  [5-20]  Player UUID                     │  (or zeroed      │
+│  [21-63] Type-specific data              │   if pre-auth)   │
+└──────────────────────────────────────────┴──────────────────┘
+```
+
+Serialization uses `Constants.PACKET_PAYLOAD_SIZE` (64 bytes). Transport uses `Constants.PACKET_SIZE` (80 bytes). The HMAC is an outer layer — `PacketSigner.sign()` wraps a 64-byte payload into an 80-byte signed packet, and `PacketSigner.verify()` unwraps it back.
+
+### Packet Types (16 total)
 
 | ID   | Name              | Transport | Description                    |
 |------|-------------------|-----------|--------------------------------|
@@ -296,14 +328,20 @@ Fixed 64-byte packets over TCP (reliable) and UDP (fast updates), using Netty. B
 | 0x0D | MATCH_HISTORY     | TCP       | Game statistics                |
 | 0x0E | RANKED_QUEUE      | TCP       | Ranked matchmaking             |
 | 0x0F | LEADERBOARD       | TCP       | Rankings                       |
+| 0x10 | SESSION_TOKEN     | TCP       | Session token delivery (post-auth) |
 
 ### Connection Flow
 
 ```
 Client                              Server
    │                                   │
-   │──── AUTH_REQUEST ────────────────>│  (login/register)
+   │═══ TLS 1.3 Handshake ═══════════│  (encrypted TCP channel)
+   │                                   │
+   │──── AUTH_REQUEST ────────────────>│  (login/register, no HMAC yet)
    │<─── AUTH_RESPONSE ───────────────│
+   │<─── SESSION_TOKEN ───────────────│  (32-byte token for HMAC signing)
+   │                                   │
+   │  ── all packets HMAC-signed ──   │
    │                                   │
    │──── LOBBY_ACTION (list) ────────>│  (browse/create/join lobbies)
    │<─── LOBBY_ACTION (lobby data) ───│
@@ -312,13 +350,13 @@ Client                              Server
    │<─── WORLD_INFO (filename) ───────│
    │<─── PLAYER_JOIN (broadcast) ─────│
    │                                   │
-   │──── PLAYER_UPDATE ──────────────>│  (gameplay loop)
+   │──── PLAYER_UPDATE ──────────────>│  (gameplay loop, validated)
    │<─── PLAYER_UPDATE (broadcast) ───│
    │<─── PROJECTILE_UPDATE ───────────│
    │<─── ITEM_UPDATE ─────────────────│
    │<─── GAME_EVENT ──────────────────│
    │                                   │
-   │──── HEARTBEAT (every 3s) ───────>│
+   │──── HEARTBEAT (every 3s) ───────>│  (rate limited)
    │                                   │
 ```
 
@@ -334,7 +372,7 @@ Client                              Server
 ### Adding a New Packet Type
 1. Add to `PacketType.scala` (new case object with unique ID, specify `tcp = true/false`)
 2. Add to `PacketType.values` array
-3. Create packet class extending `Packet`
+3. Create packet class extending `Packet` (use `Constants.PACKET_PAYLOAD_SIZE` for `ByteBuffer.allocate` in `serialize()`)
 4. Add deserialization case in `PacketSerializer.deserialize()`
 5. Handle in `GameClient.processPacket()` or `ClientHandler.processPacket()`
 
