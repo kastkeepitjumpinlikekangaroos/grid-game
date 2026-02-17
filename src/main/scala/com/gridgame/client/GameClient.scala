@@ -37,7 +37,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   private val projectiles: ConcurrentHashMap[Int, Projectile] = new ConcurrentHashMap()
   private val items: ConcurrentHashMap[Int, Item] = new ConcurrentHashMap()
   private val inventory: ConcurrentHashMap[Byte, ConcurrentLinkedDeque[Item]] = new ConcurrentHashMap()
-  private val incomingPackets: BlockingQueue[Packet] = new LinkedBlockingQueue()
+  private val incomingPackets: BlockingQueue[Packet] = new LinkedBlockingQueue(Constants.INCOMING_QUEUE_CAPACITY)
   private val sequenceNumber: AtomicInteger = new AtomicInteger(0)
   private val movementBlockedUntil: AtomicLong = new AtomicLong(0)
   private val lastMoveTime: AtomicLong = new AtomicLong(0)
@@ -180,10 +180,19 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   @volatile var gameOverListener: () => Unit = _
   @volatile var lobbyClosedListener: () => Unit = _
 
+  // Disconnect listener (e.g. for UI to show reconnection message)
+  @volatile var disconnectListener: () => Unit = _
+
   def connect(): Unit = {
     try {
+      sequenceNumber.set(0)
       networkThread = new NetworkThread(this, serverHost, serverPort)
       running = true
+
+      // Wire disconnect callback from network thread
+      networkThread.disconnectCallback = new Runnable {
+        def run(): Unit = handleDisconnect()
+      }
 
       networkThread.start()
       networkThread.waitForReady() // Wait for TCP + UDP channels to be ready
@@ -195,6 +204,30 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       case e: Exception =>
         System.err.println(s"GameClient: Connection error - ${e.getMessage}")
         throw e
+    }
+  }
+
+  private def handleDisconnect(): Unit = {
+    running = false
+    clientState = ClientState.CONNECTING
+
+    // Clear game state
+    players.clear()
+    projectiles.clear()
+    items.clear()
+    inventory.clear()
+    killFeed.clear()
+    scoreboard.clear()
+    isDead = false
+    isRespawning = false
+
+    println("GameClient: Disconnected from server")
+
+    val listener = disconnectListener
+    if (listener != null) {
+      javafx.application.Platform.runLater(new Runnable {
+        def run(): Unit = listener()
+      })
     }
   }
 

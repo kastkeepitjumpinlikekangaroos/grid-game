@@ -10,12 +10,103 @@ import com.gridgame.common.protocol.ProjectilePacket
 
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 class PacketValidator {
   // Track last position update time per player for speed checking
   private val lastUpdateTime = new ConcurrentHashMap[UUID, java.lang.Long]()
   // Track last projectile spawn time per player for fire rate enforcement
   private val lastProjectileTime = new ConcurrentHashMap[UUID, java.lang.Long]()
+
+  // Replay protection: sequence number tracking per player
+  private val lastSequenceNumber = new ConcurrentHashMap[UUID, AtomicInteger]()
+  // Sliding window bitmap for UDP out-of-order tolerance
+  private val sequenceWindow = new ConcurrentHashMap[UUID, Array[Long]]()
+
+  def validateSequence(playerId: UUID, seqNum: Int, isUdp: Boolean): Boolean = {
+    val lastSeq = lastSequenceNumber.computeIfAbsent(playerId, _ => new AtomicInteger(-1))
+
+    if (!isUdp) {
+      // TCP is ordered: reject if seqNum <= lastSeen
+      val last = lastSeq.get()
+      if (seqNum <= last) {
+        return false
+      }
+      lastSeq.set(seqNum)
+      return true
+    }
+
+    // UDP: use sliding window for out-of-order tolerance
+    val windowSize = Constants.SEQUENCE_WINDOW_SIZE
+    // Window is stored as Array[Long] where index 0 = windowBase, rest = bitmap (4 longs = 256 bits)
+    val window = sequenceWindow.computeIfAbsent(playerId, _ => new Array[Long](5))
+
+    synchronized {
+      val windowBase = window(0).toInt
+
+      if (seqNum < windowBase) {
+        // Too old, behind the window
+        return false
+      }
+
+      if (seqNum >= windowBase + windowSize) {
+        // Ahead of window — advance window
+        val shift = seqNum - windowBase - windowSize + 1
+        if (shift >= windowSize) {
+          // Complete reset
+          window(1) = 0L; window(2) = 0L; window(3) = 0L; window(4) = 0L
+        } else {
+          // Shift the bitmap
+          shiftBitmap(window, shift)
+        }
+        window(0) = (seqNum - windowSize + 1).toLong
+      }
+
+      // Check and set bit for this seqNum
+      val offset = seqNum - window(0).toInt
+      val longIdx = 1 + (offset / 64)
+      val bitIdx = offset % 64
+
+      if ((window(longIdx) & (1L << bitIdx)) != 0) {
+        // Already seen this sequence number (replay)
+        return false
+      }
+
+      window(longIdx) |= (1L << bitIdx)
+      lastSeq.set(Math.max(lastSeq.get(), seqNum))
+    }
+
+    true
+  }
+
+  private def shiftBitmap(window: Array[Long], shift: Int): Unit = {
+    if (shift >= 256) {
+      window(1) = 0L; window(2) = 0L; window(3) = 0L; window(4) = 0L
+      return
+    }
+    val longShift = shift / 64
+    val bitShift = shift % 64
+    for (i <- 1 to 4) {
+      val srcIdx = i + longShift
+      if (srcIdx > 4) {
+        window(i) = 0L
+      } else if (bitShift == 0) {
+        window(i) = window(srcIdx)
+      } else {
+        val lo = window(srcIdx) >>> bitShift
+        val hi = if (srcIdx + 1 <= 4) window(srcIdx + 1) << (64 - bitShift) else 0L
+        window(i) = lo | hi
+      }
+    }
+  }
+
+  def validateHealth(health: Int): Boolean = {
+    health >= 0 && health <= Constants.MAX_HEALTH
+  }
+
+  def validateChargeLevel(chargeLevel: Int): Boolean = {
+    chargeLevel >= 0 && chargeLevel <= 100
+  }
 
   def validateMovement(packet: PlayerUpdatePacket, player: Player, world: WorldData): Boolean = {
     val pos = packet.getPosition
@@ -43,14 +134,14 @@ class PacketValidator {
         val oldPos = player.getPosition
         val dx = Math.abs(x - oldPos.getX)
         val dy = Math.abs(y - oldPos.getY)
-        val distance = dx + dy // Manhattan distance
+        val distance = dx.toLong + dy.toLong // Long arithmetic to prevent overflow
 
         // Skip speed check for phased/dashing players
         if (!player.isPhased) {
           // Max expected speed: 1 cell per MOVE_RATE_LIMIT_MS (50ms)
           // With tolerance: allow 2x expected max + 2 cells grace
           val expectedMaxCells = (deltaMs.toDouble / Constants.MOVE_RATE_LIMIT_MS) * 2 + 2
-          if (distance > expectedMaxCells) {
+          if (distance > expectedMaxCells.toLong) {
             // Allow teleport abilities: check if this player's character has TeleportCast
             // and the distance is within the ability's max range
             val charDef = CharacterDef.get(player.getCharacterId)
@@ -81,6 +172,12 @@ class PacketValidator {
       return false
     }
 
+    // Validate charge level
+    if (!validateChargeLevel(packet.getChargeLevel)) {
+      System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} invalid charge level ${packet.getChargeLevel}")
+      return false
+    }
+
     // Fire rate enforcement: 80% of SHOOT_COOLDOWN_MS as minimum gap
     val now = System.currentTimeMillis()
     val lastTime: java.lang.Long = lastProjectileTime.put(packet.getPlayerId, now)
@@ -103,5 +200,7 @@ class PacketValidator {
   def removePlayer(playerId: UUID): Unit = {
     lastUpdateTime.remove(playerId)
     lastProjectileTime.remove(playerId)
+    lastSequenceNumber.remove(playerId)
+    sequenceWindow.remove(playerId)
   }
 }

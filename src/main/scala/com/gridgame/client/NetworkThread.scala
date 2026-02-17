@@ -17,6 +17,8 @@ import io.netty.handler.codec.LengthFieldBasedFrameDecoder
 import io.netty.handler.codec.LengthFieldPrepender
 import io.netty.handler.ssl.SslContextBuilder
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory
+import io.netty.handler.timeout.IdleStateEvent
+import io.netty.handler.timeout.IdleStateHandler
 
 import java.net.InetSocketAddress
 import java.util.concurrent.CountDownLatch
@@ -29,6 +31,7 @@ class NetworkThread(client: GameClient, serverHost: String, serverPort: Int) ext
   private val ready = new CountDownLatch(1)
   @volatile private var running = false
   @volatile var sessionToken: Array[Byte] = _
+  @volatile var disconnectCallback: Runnable = _
 
   private var eventLoopGroup: NioEventLoopGroup = _
   private var tcpChannel: Channel = _
@@ -58,6 +61,7 @@ class NetworkThread(client: GameClient, serverHost: String, serverPort: Int) ext
               .build()
             ch.pipeline()
               .addLast(sslCtx.newHandler(ch.alloc(), serverHost, serverPort))
+              .addLast(new IdleStateHandler(Constants.CLIENT_TIMEOUT_MS, 0, 0, TimeUnit.MILLISECONDS))
               .addLast(new LengthFieldBasedFrameDecoder(82, 0, 2, 0, 2))
               .addLast(new LengthFieldPrepender(2))
               .addLast(new ClientTcpHandler(client, NetworkThread.this))
@@ -187,8 +191,20 @@ class ClientTcpHandler(client: GameClient, networkThread: NetworkThread) extends
     }
   }
 
+  override def userEventTriggered(ctx: ChannelHandlerContext, evt: AnyRef): Unit = {
+    evt match {
+      case _: IdleStateEvent =>
+        System.err.println("ClientTcpHandler: Read timeout, closing connection")
+        ctx.close()
+      case _ =>
+        super.userEventTriggered(ctx, evt)
+    }
+  }
+
   override def channelInactive(ctx: ChannelHandlerContext): Unit = {
     println("ClientTcpHandler: Server connection lost")
+    val cb = networkThread.disconnectCallback
+    if (cb != null) cb.run()
     super.channelInactive(ctx)
   }
 

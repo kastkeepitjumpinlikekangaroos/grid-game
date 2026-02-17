@@ -6,19 +6,35 @@ import io.netty.handler.ssl.util.InsecureTrustManagerFactory
 
 import java.io.FileInputStream
 import java.nio.file.Files
-import java.nio.file.Paths
+import java.nio.file.attribute.PosixFilePermissions
 import java.security.KeyStore
+import java.security.SecureRandom
 import javax.net.ssl.KeyManagerFactory
 
 object TlsProvider {
   def serverContext(): SslContext = {
-    val tmpDir = Files.createTempDirectory("gridgame-tls")
+    // Create temp dir with restrictive permissions (owner-only)
+    val tmpDir = try {
+      Files.createTempDirectory("gridgame-tls", PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")))
+    } catch {
+      case _: UnsupportedOperationException =>
+        // Fallback for non-POSIX systems (Windows)
+        Files.createTempDirectory("gridgame-tls")
+    }
     val keystorePath = tmpDir.resolve("keystore.p12")
-    val password = "gridgame-internal"
+
+    // Generate a random password instead of using a hardcoded one
+    val random = new SecureRandom()
+    val passwordChars = new Array[Char](16)
+    val charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+    for (i <- passwordChars.indices) {
+      passwordChars(i) = charset.charAt(random.nextInt(charset.length))
+    }
+    val password = new String(passwordChars)
 
     // Use keytool from the current JDK to generate a self-signed cert
     val javaHome = System.getProperty("java.home")
-    val keytool = Paths.get(javaHome, "bin", "keytool").toString
+    val keytool = java.nio.file.Paths.get(javaHome, "bin", "keytool").toString
 
     val process = new ProcessBuilder(
       keytool, "-genkeypair",
@@ -49,12 +65,13 @@ object TlsProvider {
     val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
     kmf.init(ks, password.toCharArray)
 
-    // Clean up temp files
+    // Clean up temp files immediately after loading
     Files.deleteIfExists(keystorePath)
     Files.deleteIfExists(tmpDir)
 
     SslContextBuilder.forServer(kmf)
       .protocols("TLSv1.3")
+      .ciphers(java.util.Arrays.asList("TLS_AES_256_GCM_SHA384", "TLS_CHACHA20_POLY1305_SHA256"))
       .build()
   }
 

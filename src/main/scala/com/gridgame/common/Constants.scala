@@ -90,4 +90,10 @@ object Constants {
   val TEAMS_GAME_DURATION_MIN: Int = 5
   val TEAMS_TEAM_SIZE: Int = 3  // 3v3
   val TEAMS_MAX_PLAYERS: Int = TEAMS_TEAM_SIZE * 2 // 6
+
+  // Security configuration
+  val SESSION_TOKEN_LIFETIME_MS: Long = 3600000L       // 1 hour
+  val SEQUENCE_WINDOW_SIZE: Int = 256                   // UDP out-of-order tolerance
+  val INCOMING_QUEUE_CAPACITY: Int = 2048               // Client packet queue bound
+  val MAX_AUTH_FAILURES_PER_CHANNEL: Int = 5            // Close connection after N failures
 }

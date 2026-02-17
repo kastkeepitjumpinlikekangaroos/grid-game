@@ -39,8 +39,7 @@ class RateLimiter {
   }
 
   def allowAuthAttempt(address: InetAddress): Boolean = {
-    val tracker = authFailures.get(address)
-    if (tracker == null) return true
+    val tracker = authFailures.computeIfAbsent(address, _ => new AuthTracker())
     val now = System.currentTimeMillis()
     if (now - tracker.lastFailureTime.get() > AUTH_COOLDOWN_MS) {
       tracker.failures.set(0)

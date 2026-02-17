@@ -68,6 +68,19 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       return false
     }
 
+    // Validate projectile velocity: reject NaN, Infinite, or excessive magnitude
+    val pdx = packet.getDx
+    val pdy = packet.getDy
+    if (java.lang.Float.isNaN(pdx) || java.lang.Float.isNaN(pdy) ||
+        java.lang.Float.isInfinite(pdx) || java.lang.Float.isInfinite(pdy)) {
+      System.err.println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} projectile velocity NaN/Inf")
+      return false
+    }
+    if (pdx * pdx + pdy * pdy > 2.0f) {
+      System.err.println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} projectile velocity too large")
+      return false
+    }
+
     if (!validator.validateProjectileSpawn(packet, player)) {
       return false
     }
