@@ -3,6 +3,7 @@ package com.gridgame.server
 import com.gridgame.common.Constants
 import com.gridgame.common.model.CharacterDef
 import com.gridgame.common.model.Player
+import com.gridgame.common.model.DashBuff
 import com.gridgame.common.model.TeleportCast
 import com.gridgame.common.model.WorldData
 import com.gridgame.common.protocol.PlayerUpdatePacket
@@ -17,6 +18,8 @@ class PacketValidator {
   private val lastUpdateTime = new ConcurrentHashMap[UUID, java.lang.Long]()
   // Track last projectile spawn time per player for fire rate enforcement
   private val lastProjectileTime = new ConcurrentHashMap[UUID, java.lang.Long]()
+  // Allow one large movement (e.g. Star item teleport) within a time window
+  private val itemTeleportAllowed = new ConcurrentHashMap[UUID, java.lang.Long]()
 
   // Replay protection: sequence number tracking per player
   private val lastSequenceNumber = new ConcurrentHashMap[UUID, AtomicInteger]()
@@ -142,16 +145,25 @@ class PacketValidator {
           // With tolerance: allow 2x expected max + 2 cells grace
           val expectedMaxCells = (deltaMs.toDouble / Constants.MOVE_RATE_LIMIT_MS) * 2 + 2
           if (distance > expectedMaxCells.toLong) {
-            // Allow teleport abilities: check if this player's character has TeleportCast
-            // and the distance is within the ability's max range
+            // Allow teleport/dash abilities: check if this player's character has TeleportCast or DashBuff
+            // on either Q or E ability, and the distance is within the ability's max range
             val charDef = CharacterDef.get(player.getCharacterId)
-            val isTeleport = charDef != null && (charDef.eAbility.castBehavior match {
-              case TeleportCast(maxDistance) => distance <= maxDistance + 2
-              case _ => false
-            })
-            if (!isTeleport) {
-              System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} speed hack detected: moved $distance cells in ${deltaMs}ms")
-              return false
+            val abilities = if (charDef != null) Seq(charDef.qAbility, charDef.eAbility) else Seq.empty
+            val isAbilityMovement = abilities.exists { ability =>
+              ability.castBehavior match {
+                case TeleportCast(maxDistance) => distance <= maxDistance + 2
+                case DashBuff(maxDistance, _, _) => distance <= maxDistance + 2
+                case _ => false
+              }
+            }
+            if (!isAbilityMovement) {
+              // Check for recent item teleport (Star item) — allow within 2s window
+              val allowedTime = itemTeleportAllowed.remove(packet.getPlayerId)
+              val isItemTeleport = allowedTime != null && (now - allowedTime) < 2000
+              if (!isItemTeleport) {
+                System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} speed hack detected: moved $distance cells in ${deltaMs}ms")
+                return false
+              }
             }
           }
         }
@@ -207,10 +219,16 @@ class PacketValidator {
     true
   }
 
+  /** Allow one large movement for this player (e.g. Star item teleport). */
+  def allowItemTeleport(playerId: UUID): Unit = {
+    itemTeleportAllowed.put(playerId, System.currentTimeMillis())
+  }
+
   def removePlayer(playerId: UUID): Unit = {
     lastUpdateTime.remove(playerId)
     lastProjectileTime.remove(playerId)
     lastSequenceNumber.remove(playerId)
     sequenceWindow.remove(playerId)
+    itemTeleportAllowed.remove(playerId)
   }
 }

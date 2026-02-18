@@ -1598,8 +1598,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     if (item == null) return
 
     // Notify server that item was used
-    // For fence, send mouse world position as target tile coordinates
-    val (packetX, packetY) = if (item.itemType == ItemType.Fence) {
+    // For fence and star, send mouse world position as target coordinates
+    val (packetX, packetY) = if (item.itemType == ItemType.Fence || item.itemType == ItemType.Star) {
       (mouseWorldX.toInt, mouseWorldY.toInt)
     } else {
       (item.getCellX, item.getCellY)

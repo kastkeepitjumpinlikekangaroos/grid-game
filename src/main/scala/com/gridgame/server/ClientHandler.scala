@@ -301,7 +301,18 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
           case ItemType.Fence =>
             placeFence(player, packet.getX, packet.getY)
 
-          case _ => // Star is client-side only
+          case ItemType.Star =>
+            // Star teleports the player to cursor — validate and apply position server-side
+            val targetX = packet.getX
+            val targetY = packet.getY
+            val w = if (instance != null) instance.world else server.getWorld
+            if (w != null && targetX >= 0 && targetX < w.width && targetY >= 0 && targetY < w.height && w.isWalkable(targetX, targetY)) {
+              player.setPosition(new Position(targetX, targetY))
+            }
+            // Also allow the next UDP position update through speed validation
+            // (handles race where UDP arrives before this TCP packet)
+            validator.allowItemTeleport(playerId)
+          case _ =>
         }
       }
     }
