@@ -374,7 +374,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   def isPhased: Boolean = System.currentTimeMillis() < phasedUntil.get()
 
-  def isSwooping: Boolean = System.currentTimeMillis() < swoopingUntil.get()
+  def isSwooping: Boolean = swoopingUntil.get() > 0
 
   def getSwoopProgress: Double = {
     val now = System.currentTimeMillis()
@@ -396,7 +396,21 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   def tickSwoop(): Unit = {
     val now = System.currentTimeMillis()
     val swoopEnd = swoopingUntil.get()
-    if (now >= swoopEnd || swoopEnd == 0) return
+    if (swoopEnd == 0) return
+
+    if (now >= swoopEnd) {
+      // Dash has ended — snap to exact target position and send final update
+      swoopingUntil.set(0)
+      val finalPos = new Position(Math.round(swoopTargetX).toInt, Math.round(swoopTargetY).toInt)
+      localPosition.set(finalPos)
+      // Extend auth window so server corrections from stale broadcasts don't snap us back
+      val newAuth = now + 500
+      if (newAuth > clientMoveAuthUntil.get()) {
+        clientMoveAuthUntil.set(newAuth)
+      }
+      sendPositionUpdate(finalPos)
+      return
+    }
 
     val elapsed = now - swoopStartTime.get()
     val duration = (swoopEnd - swoopStartTime.get()).toFloat

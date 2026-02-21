@@ -7,9 +7,9 @@ import java.util.UUID
 class Player(
     private val id: UUID,
     private var name: String,
-    private var position: Position,
+    @volatile private var position: Position,
     private var colorRGB: Int,
-    private var health: Int = 100,
+    @volatile private var health: Int = 100,
     private var maxHealth: Int = 100
 ) {
   Objects.requireNonNull(id, "Player ID cannot be null")
@@ -25,7 +25,7 @@ class Player(
   private var _chargeLevel: Int = 0
   private var frozenUntil: Long = 0
   private var ccImmuneUntil: Long = 0
-  private var phasedUntil: Long = 0
+  @volatile private var phasedUntil: Long = 0
   private var serverTeleportedUntil: Long = 0
   private var characterId: Byte = CharacterId.DEFAULT.id
   private var teamId: Byte = 0
