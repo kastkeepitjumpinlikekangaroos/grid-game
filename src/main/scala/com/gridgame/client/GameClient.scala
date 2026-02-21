@@ -409,7 +409,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     val posY = Math.round(newY).toInt
     val newPos = new Position(posX, posY)
     localPosition.set(newPos)
-    clientMoveAuthUntil.set(now + 200)
+    // Extend authority window if needed, but never shorten it — shootAbility already
+    // set it to cover the full dash duration + grace period
+    val newAuth = now + 200
+    if (newAuth > clientMoveAuthUntil.get()) {
+      clientMoveAuthUntil.set(newAuth)
+    }
     sendPositionUpdate(newPos)
 
     // Update direction based on swoop direction
