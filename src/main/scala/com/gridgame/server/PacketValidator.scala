@@ -21,16 +21,18 @@ class PacketValidator {
   // Allow one large movement (e.g. Star item teleport) within a time window
   private val itemTeleportAllowed = new ConcurrentHashMap[UUID, java.lang.Long]()
 
-  // Replay protection: sequence number tracking per player
-  private val lastSequenceNumber = new ConcurrentHashMap[UUID, AtomicInteger]()
+  // Replay protection: separate sequence tracking for TCP and UDP per player
+  // TCP and UDP share a single client-side counter but arrive via different transports,
+  // so UDP packets can race ahead of TCP — they must be validated independently.
+  private val lastTcpSequence = new ConcurrentHashMap[UUID, AtomicInteger]()
+  private val lastUdpSequence = new ConcurrentHashMap[UUID, AtomicInteger]()
   // Sliding window bitmap for UDP out-of-order tolerance
   private val sequenceWindow = new ConcurrentHashMap[UUID, Array[Long]]()
 
   def validateSequence(playerId: UUID, seqNum: Int, isUdp: Boolean): Boolean = {
-    val lastSeq = lastSequenceNumber.computeIfAbsent(playerId, _ => new AtomicInteger(-1))
-
     if (!isUdp) {
       // TCP is ordered: reject if seqNum <= lastSeen (lock-free CAS loop)
+      val lastSeq = lastTcpSequence.computeIfAbsent(playerId, _ => new AtomicInteger(-1))
       var last = lastSeq.get()
       while (seqNum > last) {
         if (lastSeq.compareAndSet(last, seqNum)) return true
@@ -40,6 +42,7 @@ class PacketValidator {
     }
 
     // UDP: use sliding window for out-of-order tolerance
+    val lastSeq = lastUdpSequence.computeIfAbsent(playerId, _ => new AtomicInteger(-1))
     val windowSize = Constants.SEQUENCE_WINDOW_SIZE
     // Window is stored as Array[Long] where index 0 = windowBase, rest = bitmap (4 longs = 256 bits)
     val window = sequenceWindow.computeIfAbsent(playerId, _ => new Array[Long](5))
@@ -228,7 +231,8 @@ class PacketValidator {
   def removePlayer(playerId: UUID): Unit = {
     lastUpdateTime.remove(playerId)
     lastProjectileTime.remove(playerId)
-    lastSequenceNumber.remove(playerId)
+    lastTcpSequence.remove(playerId)
+    lastUdpSequence.remove(playerId)
     sequenceWindow.remove(playerId)
     itemTeleportAllowed.remove(playerId)
   }

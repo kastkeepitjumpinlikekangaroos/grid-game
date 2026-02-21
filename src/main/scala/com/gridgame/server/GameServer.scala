@@ -577,6 +577,18 @@ class GameServer(port: Int, val worldFile: String = "") {
           player.setUdpAddress(udpSender)
         }
       }
+      // Echo heartbeat back over TCP to keep client's TCP read timeout alive
+      val tcpCh = player.getTcpChannel
+      if (tcpCh != null) {
+        val ch = tcpCh.asInstanceOf[Channel]
+        if (ch.isActive) {
+          val response = new HeartbeatPacket(getNextSequenceNumber, playerId)
+          val payload = response.serialize()
+          val token = sessionTokens.get(playerId)
+          val data = if (token != null) PacketSigner.sign(payload, token) else padToPacketSize(payload)
+          ch.writeAndFlush(Unpooled.wrappedBuffer(data))
+        }
+      }
       // Also update in the game instance if they're in one
       val lobby = lobbyManager.getPlayerLobby(playerId)
       if (lobby != null && lobby.gameInstance != null) {
