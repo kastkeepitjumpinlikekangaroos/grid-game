@@ -1268,48 +1268,15 @@ class GLGameRenderer(val client: GameClient) {
     // Sparkle particles (additive)
     shapeBatch.setAdditiveBlend(true)
     var i = 0
-    while (i < 5) {
-      val sparkAngle = bobPhase * 0.7f + i * (2 * Math.PI / 5).toFloat
-      val sparkDist = hs * (1.0f + 0.3f * Math.sin(bobPhase * 1.5 + i * 1.3).toFloat)
+    while (i < 3) {
+      val sparkAngle = bobPhase * 0.8f + i * (2 * Math.PI / 3).toFloat
+      val sparkDist = hs * 1.1f
       val sx = centerX + sparkDist * Math.cos(sparkAngle).toFloat
       val sy = centerY + sparkDist * Math.sin(sparkAngle).toFloat * 0.6f
-      val sparkAlpha = (0.2 + 0.5 * Math.sin(bobPhase * 2.5 + i * 2.1)).toFloat
-      val sparkSize = (1.2 + Math.sin(bobPhase * 3.0 + i) * 0.8).toFloat
+      val sparkAlpha = (0.3 + 0.4 * Math.sin(bobPhase * 2.5 + i * 2.1)).toFloat
+      val sparkSize = (1.5 + Math.sin(bobPhase * 3.0 + i) * 0.7).toFloat
       shapeBatch.fillOval(sx, sy, sparkSize, sparkSize, 1f, 1f, 1f, clamp(sparkAlpha))
-      shapeBatch.fillOvalSoft(sx, sy, sparkSize * 3f, sparkSize * 3f, ir, ig, ib, clamp(sparkAlpha * 0.3f), 0f, 8)
       i += 1
-    }
-
-    // Item-specific gleam effects
-    item.itemType match {
-      case ItemType.Star =>
-        // Rotating gleam cross
-        val gleamLen = hs * 1.4f
-        val gleamAlpha = (0.15f + 0.15f * Math.sin(bobPhase * 2.0)).toFloat
-        val ga = rotAngle
-        shapeBatch.strokeLineSoft(
-          centerX - gleamLen * Math.cos(ga).toFloat, centerY - gleamLen * Math.sin(ga).toFloat,
-          centerX + gleamLen * Math.cos(ga).toFloat, centerY + gleamLen * Math.sin(ga).toFloat,
-          1.5f, 1f, 1f, 0.9f, gleamAlpha)
-        shapeBatch.strokeLineSoft(
-          centerX - gleamLen * Math.cos(ga + Math.PI / 2).toFloat, centerY - gleamLen * Math.sin(ga + Math.PI / 2).toFloat,
-          centerX + gleamLen * Math.cos(ga + Math.PI / 2).toFloat, centerY + gleamLen * Math.sin(ga + Math.PI / 2).toFloat,
-          1.5f, 1f, 1f, 0.9f, gleamAlpha)
-      case ItemType.Gem =>
-        // Prismatic flash cycling around facets
-        val flashPhase = bobPhase * 1.2f
-        val flashAngle = flashPhase % (2 * Math.PI).toFloat
-        val flashX = centerX + hs * 0.4f * Math.cos(flashAngle).toFloat
-        val flashY = centerY + hs * 0.4f * Math.sin(flashAngle).toFloat
-        val flashAlpha = (0.15f + 0.2f * Math.sin(flashPhase * 3.0)).toFloat
-        shapeBatch.fillOvalSoft(flashX, flashY, hs * 0.6f, hs * 0.6f, 1f, 1f, 1f, flashAlpha, 0f, 8)
-      case ItemType.Shield =>
-        // Metallic sweep highlight
-        val sweepPhase = (bobPhase * 0.5f) % (2 * Math.PI).toFloat
-        val sweepX = centerX + hs * 0.6f * Math.sin(sweepPhase).toFloat
-        val sweepAlpha = 0.12f * Math.max(0f, Math.sin(sweepPhase).toFloat)
-        shapeBatch.fillOvalSoft(sweepX, centerY - hs * 0.2f, hs * 0.5f, hs * 1.2f, 1f, 1f, 1f, sweepAlpha, 0f, 10)
-      case _ =>
     }
     shapeBatch.setAdditiveBlend(false)
   }
