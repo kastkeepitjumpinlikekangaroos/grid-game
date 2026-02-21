@@ -178,8 +178,8 @@ class GLGameRenderer(val client: GameClient) {
   private val _hlXs = new Array[Float](10)
   private val _hlYs = new Array[Float](10)
   // Pre-allocated arrays for gem/shield/default item shapes (avoids per-item allocation)
-  private val _gemXs = new Array[Float](4)
-  private val _gemYs = new Array[Float](4)
+  private val _gemXs = new Array[Float](6)
+  private val _gemYs = new Array[Float](6)
   private val _gemHlXs = new Array[Float](4)
   private val _gemHlYs = new Array[Float](4)
   private val _shieldXs = new Array[Float](7)
@@ -1228,10 +1228,18 @@ class GLGameRenderer(val client: GameClient) {
       if (t < 0.5f) 1f + 0.4f * Math.sin(t * Math.PI).toFloat
       else 1f + 0.15f * Math.sin(t * Math.PI).toFloat * (1f - t)
     } else 1f
-    val hs = halfSize * spawnScale
 
     val bobPhase = animationTick * 0.06f + item.id * 1.7f
     val bobOffset = Math.sin(bobPhase).toFloat * 4f
+
+    // Item-specific scale pulses
+    val itemPulse = item.itemType match {
+      case ItemType.Heart => 1f + 0.06f * Math.max(0.0, Math.sin(bobPhase * 3.5)).toFloat
+      case ItemType.Star  => 1f + 0.03f * Math.sin(bobPhase * 2.0).toFloat
+      case _              => 1f
+    }
+    val hs = halfSize * spawnScale * itemPulse
+
     val centerY = worldToScreenY(ix, iy).toFloat + bobOffset
 
     // Rotation angle (slow spin)
@@ -1241,14 +1249,17 @@ class GLGameRenderer(val client: GameClient) {
     val ir = _rgb_r; val ig = _rgb_g; val ib = _rgb_b
     val glowPulse = (0.6 + 0.4 * Math.sin(bobPhase * 1.3)).toFloat
 
-    // Item emits colored light
-    lightSystem.addLight(centerX, centerY, 60f, ir, ig, ib, 0.14f * glowPulse)
+    // Item emits colored light — stronger radius
+    lightSystem.addLight(centerX, centerY, 80f, ir, ig, ib, 0.18f * glowPulse)
 
     beginShapes()
+    // Drop shadow on ground
+    shapeBatch.fillOvalSoft(centerX, centerY + hs * 0.85f, hs * 1.2f, hs * 0.3f, 0f, 0f, 0f, 0.2f, 0f, 12)
+
     // Ground glow (additive) — larger and more visible
     shapeBatch.setAdditiveBlend(true)
-    shapeBatch.fillOvalSoft(centerX, centerY + hs * 0.3f, hs * 2f, hs * 0.6f, ir, ig, ib, 0.18f * glowPulse, 0f, 14)
-    shapeBatch.fillOvalSoft(centerX, centerY, hs * 2.4f, hs * 1.8f, ir, ig, ib, 0.08f * glowPulse, 0f, 14)
+    shapeBatch.fillOvalSoft(centerX, centerY + hs * 0.3f, hs * 2.5f, hs * 0.7f, ir, ig, ib, 0.22f * glowPulse, 0f, 14)
+    shapeBatch.fillOvalSoft(centerX, centerY, hs * 2.8f, hs * 2f, ir, ig, ib, 0.1f * glowPulse, 0f, 14)
     shapeBatch.setAdditiveBlend(false)
 
     // Main item shape with highlights and outline
@@ -1257,15 +1268,48 @@ class GLGameRenderer(val client: GameClient) {
     // Sparkle particles (additive)
     shapeBatch.setAdditiveBlend(true)
     var i = 0
-    while (i < 3) {
-      val sparkAngle = bobPhase * 0.8f + i * (2 * Math.PI / 3).toFloat
-      val sparkDist = hs * 1.1f
+    while (i < 5) {
+      val sparkAngle = bobPhase * 0.7f + i * (2 * Math.PI / 5).toFloat
+      val sparkDist = hs * (1.0f + 0.3f * Math.sin(bobPhase * 1.5 + i * 1.3).toFloat)
       val sx = centerX + sparkDist * Math.cos(sparkAngle).toFloat
       val sy = centerY + sparkDist * Math.sin(sparkAngle).toFloat * 0.6f
-      val sparkAlpha = (0.3 + 0.4 * Math.sin(bobPhase * 2.5 + i * 2.1)).toFloat
-      val sparkSize = (1.5 + Math.sin(bobPhase * 3.0 + i) * 0.7).toFloat
+      val sparkAlpha = (0.2 + 0.5 * Math.sin(bobPhase * 2.5 + i * 2.1)).toFloat
+      val sparkSize = (1.2 + Math.sin(bobPhase * 3.0 + i) * 0.8).toFloat
       shapeBatch.fillOval(sx, sy, sparkSize, sparkSize, 1f, 1f, 1f, clamp(sparkAlpha))
+      shapeBatch.fillOvalSoft(sx, sy, sparkSize * 3f, sparkSize * 3f, ir, ig, ib, clamp(sparkAlpha * 0.3f), 0f, 8)
       i += 1
+    }
+
+    // Item-specific gleam effects
+    item.itemType match {
+      case ItemType.Star =>
+        // Rotating gleam cross
+        val gleamLen = hs * 1.4f
+        val gleamAlpha = (0.15f + 0.15f * Math.sin(bobPhase * 2.0)).toFloat
+        val ga = rotAngle
+        shapeBatch.strokeLineSoft(
+          centerX - gleamLen * Math.cos(ga).toFloat, centerY - gleamLen * Math.sin(ga).toFloat,
+          centerX + gleamLen * Math.cos(ga).toFloat, centerY + gleamLen * Math.sin(ga).toFloat,
+          1.5f, 1f, 1f, 0.9f, gleamAlpha)
+        shapeBatch.strokeLineSoft(
+          centerX - gleamLen * Math.cos(ga + Math.PI / 2).toFloat, centerY - gleamLen * Math.sin(ga + Math.PI / 2).toFloat,
+          centerX + gleamLen * Math.cos(ga + Math.PI / 2).toFloat, centerY + gleamLen * Math.sin(ga + Math.PI / 2).toFloat,
+          1.5f, 1f, 1f, 0.9f, gleamAlpha)
+      case ItemType.Gem =>
+        // Prismatic flash cycling around facets
+        val flashPhase = bobPhase * 1.2f
+        val flashAngle = flashPhase % (2 * Math.PI).toFloat
+        val flashX = centerX + hs * 0.4f * Math.cos(flashAngle).toFloat
+        val flashY = centerY + hs * 0.4f * Math.sin(flashAngle).toFloat
+        val flashAlpha = (0.15f + 0.2f * Math.sin(flashPhase * 3.0)).toFloat
+        shapeBatch.fillOvalSoft(flashX, flashY, hs * 0.6f, hs * 0.6f, 1f, 1f, 1f, flashAlpha, 0f, 8)
+      case ItemType.Shield =>
+        // Metallic sweep highlight
+        val sweepPhase = (bobPhase * 0.5f) % (2 * Math.PI).toFloat
+        val sweepX = centerX + hs * 0.6f * Math.sin(sweepPhase).toFloat
+        val sweepAlpha = 0.12f * Math.max(0f, Math.sin(sweepPhase).toFloat)
+        shapeBatch.fillOvalSoft(sweepX, centerY - hs * 0.2f, hs * 0.5f, hs * 1.2f, 1f, 1f, 1f, sweepAlpha, 0f, 10)
+      case _ =>
     }
     shapeBatch.setAdditiveBlend(false)
   }
@@ -1279,22 +1323,42 @@ class GLGameRenderer(val client: GameClient) {
 
     itemType match {
       case ItemType.Heart =>
-        val rr = hs * 0.55f
-        // Main shape
-        shapeBatch.fillOval(cx - hs * 0.5f, cy - hs * 0.45f, rr, rr, r, g, b, 1f, 12)
-        shapeBatch.fillOval(cx + hs * 0.5f, cy - hs * 0.45f, rr, rr, r, g, b, 1f, 12)
-        _heartTriXs(0) = cx - hs * 1.05f; _heartTriXs(1) = cx; _heartTriXs(2) = cx + hs * 1.05f
+        val rr = hs * 0.6f
+        // Dark outline layer (slightly larger)
+        val or = rr + 1.5f
+        shapeBatch.fillOval(cx - hs * 0.48f, cy - hs * 0.45f, or, or, dr * 0.7f, dg * 0.7f, db * 0.7f, 1f, 14)
+        shapeBatch.fillOval(cx + hs * 0.48f, cy - hs * 0.45f, or, or, dr * 0.7f, dg * 0.7f, db * 0.7f, 1f, 14)
+        _heartTriXs(0) = cx - hs * 1.08f; _heartTriXs(1) = cx; _heartTriXs(2) = cx + hs * 1.08f
+        _heartTriYs(0) = cy - hs * 0.08f; _heartTriYs(1) = cy + hs * 1.05f; _heartTriYs(2) = cy - hs * 0.08f
+        shapeBatch.fillPolygon(_heartTriXs, _heartTriYs, 3, dr * 0.7f, dg * 0.7f, db * 0.7f, 1f)
+        // Main fill
+        shapeBatch.fillOval(cx - hs * 0.48f, cy - hs * 0.45f, rr, rr, r, g, b, 1f, 14)
+        shapeBatch.fillOval(cx + hs * 0.48f, cy - hs * 0.45f, rr, rr, r, g, b, 1f, 14)
+        _heartTriXs(0) = cx - hs * 1.02f; _heartTriXs(1) = cx; _heartTriXs(2) = cx + hs * 1.02f
         _heartTriYs(0) = cy - hs * 0.1f; _heartTriYs(1) = cy + hs; _heartTriYs(2) = cy - hs * 0.1f
         shapeBatch.fillPolygon(_heartTriXs, _heartTriYs, 3, r, g, b, 1f)
-        // Inner highlight (upper-left lobe)
-        shapeBatch.fillOval(cx - hs * 0.55f, cy - hs * 0.55f, rr * 0.45f, rr * 0.4f, hr, hg, hb, 0.4f, 8)
-        // Outline
-        shapeBatch.strokeOval(cx - hs * 0.5f, cy - hs * 0.45f, rr, rr, 1f, dr, dg, db, 0.6f, 12)
-        shapeBatch.strokeOval(cx + hs * 0.5f, cy - hs * 0.45f, rr, rr, 1f, dr, dg, db, 0.6f, 12)
+        // Upper highlight band across both lobes
+        shapeBatch.fillOval(cx - hs * 0.48f, cy - hs * 0.52f, rr * 0.7f, rr * 0.5f, hr, hg, hb, 0.5f, 10)
+        shapeBatch.fillOval(cx + hs * 0.42f, cy - hs * 0.52f, rr * 0.5f, rr * 0.4f, hr, hg, hb, 0.35f, 10)
+        // Specular highlight (white dot on left lobe)
+        shapeBatch.fillOval(cx - hs * 0.5f, cy - hs * 0.58f, rr * 0.22f, rr * 0.18f, 1f, 1f, 1f, 0.6f, 8)
+        // Lower shadow for depth
+        shapeBatch.fillOvalSoft(cx, cy + hs * 0.5f, hs * 0.7f, hs * 0.3f, dr * 0.4f, dg * 0.4f, db * 0.4f, 0.3f, 0f, 8)
 
       case ItemType.Star =>
-        val outerR = hs; val innerR = hs * 0.4f
+        val outerR = hs; val innerR = hs * 0.35f
+        // Dark outline star (slightly larger)
         var i = 0
+        while (i < 10) {
+          val angle = Math.PI / 2 + i * Math.PI / 5 + rotation
+          val rad = if (i % 2 == 0) outerR + 1.5f else innerR + 0.5f
+          _hlXs(i) = cx + (rad * Math.cos(angle)).toFloat
+          _hlYs(i) = cy - (rad * Math.sin(angle)).toFloat
+          i += 1
+        }
+        shapeBatch.fillPolygon(_hlXs, _hlYs, 10, dr * 0.7f, dg * 0.7f, db * 0.7f, 1f)
+        // Main star
+        i = 0
         while (i < 10) {
           val angle = Math.PI / 2 + i * Math.PI / 5 + rotation
           val rad = if (i % 2 == 0) outerR else innerR
@@ -1303,37 +1367,63 @@ class GLGameRenderer(val client: GameClient) {
           i += 1
         }
         shapeBatch.fillPolygon(_starXs, _starYs, 10, r, g, b, 1f)
-        // Inner highlight (smaller, brighter, offset up-left)
+        // Inner bright star (50% size, lighter)
         i = 0
         while (i < 10) {
           val angle = Math.PI / 2 + i * Math.PI / 5 + rotation
-          val rad = if (i % 2 == 0) outerR * 0.55f else innerR * 0.55f
-          _hlXs(i) = cx - 1f + (rad * Math.cos(angle)).toFloat
-          _hlYs(i) = cy - 1f - (rad * Math.sin(angle)).toFloat
+          val rad = if (i % 2 == 0) outerR * 0.5f else innerR * 0.7f
+          _hlXs(i) = cx + (rad * Math.cos(angle)).toFloat
+          _hlYs(i) = cy - (rad * Math.sin(angle)).toFloat
           i += 1
         }
-        shapeBatch.fillPolygon(_hlXs, _hlYs, 10, hr, hg, hb, 0.35f)
-        // Outline
-        shapeBatch.strokePolygon(_starXs, _starYs, 10, 1f, dr, dg, db, 0.7f)
+        shapeBatch.fillPolygon(_hlXs, _hlYs, 10, hr, hg, hb, 0.45f)
+        // Bright center core
+        shapeBatch.fillOvalSoft(cx, cy, hs * 0.4f, hs * 0.4f, 1f, 1f, 0.9f, 0.45f, 0f, 10)
+        shapeBatch.fillOval(cx, cy, hs * 0.15f, hs * 0.15f, 1f, 1f, 1f, 0.65f, 8)
 
       case ItemType.Gem =>
-        // Apply rotation to gem vertices (pre-allocated arrays)
-        _gemXs(0) = cx + hs * sin;          _gemYs(0) = cy - hs * cos
-        _gemXs(1) = cx + hs * cos;          _gemYs(1) = cy + hs * sin
-        _gemXs(2) = cx - hs * sin;          _gemYs(2) = cy + hs * cos
-        _gemXs(3) = cx - hs * cos;          _gemYs(3) = cy - hs * sin
-        shapeBatch.fillPolygon(_gemXs, _gemYs, 4, r, g, b, 1f)
-        // Inner highlight (upper half diamond)
-        val hhs = hs * 0.5f
-        _gemHlXs(0) = _gemXs(0); _gemHlYs(0) = _gemYs(0)
-        _gemHlXs(1) = cx + hhs * cos; _gemHlYs(1) = cy + hhs * sin
-        _gemHlXs(2) = cx; _gemHlYs(2) = cy
-        _gemHlXs(3) = cx - hhs * cos; _gemHlYs(3) = cy - hhs * sin
-        shapeBatch.fillPolygon(_gemHlXs, _gemHlYs, 4, hr, hg, hb, 0.3f)
-        // Outline
-        shapeBatch.strokePolygon(_gemXs, _gemYs, 4, 1f, dr, dg, db, 0.7f)
+        // Hexagonal gem with 6 distinct facets
+        val n = 6
+        var i = 0
+        while (i < n) {
+          val angle = rotation + i * Math.PI / 3.0
+          _gemXs(i) = cx + (hs * Math.cos(angle)).toFloat
+          _gemYs(i) = cy + (hs * Math.sin(angle)).toFloat
+          i += 1
+        }
+        // Dark outline
+        shapeBatch.strokePolygon(_gemXs, _gemYs, n, 2f, dr * 0.5f, dg * 0.5f, db * 0.5f, 0.8f)
+        // Draw 6 triangular facets with alternating brightness
+        i = 0
+        while (i < n) {
+          val ni = (i + 1) % n
+          _gemHlXs(0) = cx;        _gemHlYs(0) = cy
+          _gemHlXs(1) = _gemXs(i); _gemHlYs(1) = _gemYs(i)
+          _gemHlXs(2) = _gemXs(ni); _gemHlYs(2) = _gemYs(ni)
+          val facetBright = if (i % 2 == 0) 1.0f else 0.72f
+          shapeBatch.fillPolygon(_gemHlXs, _gemHlYs, 3, clamp(r * facetBright), clamp(g * facetBright), clamp(b * facetBright), 1f)
+          // Facet edge line from vertex to center
+          shapeBatch.strokeLine(_gemXs(i), _gemYs(i), cx, cy, 0.5f, dr, dg, db, 0.25f)
+          i += 1
+        }
+        // Top-left highlight for glassy look
+        shapeBatch.fillOvalSoft(cx - hs * 0.2f, cy - hs * 0.3f, hs * 0.4f, hs * 0.35f, 1f, 1f, 1f, 0.3f, 0f, 8)
+        // Center bright point
+        shapeBatch.fillOval(cx, cy, hs * 0.12f, hs * 0.12f, 1f, 1f, 1f, 0.5f, 8)
+        // Final outline
+        shapeBatch.strokePolygon(_gemXs, _gemYs, n, 1f, dr, dg, db, 0.7f)
 
       case ItemType.Shield =>
+        // Dark outline (slightly larger shape)
+        _shieldXs(0) = cx - hs * 0.88f; _shieldYs(0) = cy - hs * 0.6f
+        _shieldXs(1) = cx - hs * 0.52f; _shieldYs(1) = cy - hs * 1.03f
+        _shieldXs(2) = cx + hs * 0.52f; _shieldYs(2) = cy - hs * 1.03f
+        _shieldXs(3) = cx + hs * 0.88f; _shieldYs(3) = cy - hs * 0.6f
+        _shieldXs(4) = cx + hs * 0.72f; _shieldYs(4) = cy + hs * 0.42f
+        _shieldXs(5) = cx;              _shieldYs(5) = cy + hs * 1.03f
+        _shieldXs(6) = cx - hs * 0.72f; _shieldYs(6) = cy + hs * 0.42f
+        shapeBatch.fillPolygon(_shieldXs, _shieldYs, 7, dr * 0.6f, dg * 0.6f, db * 0.6f, 1f)
+        // Main shield fill
         _shieldXs(0) = cx - hs * 0.85f; _shieldYs(0) = cy - hs * 0.6f
         _shieldXs(1) = cx - hs * 0.5f;  _shieldYs(1) = cy - hs
         _shieldXs(2) = cx + hs * 0.5f;  _shieldYs(2) = cy - hs
@@ -1342,30 +1432,66 @@ class GLGameRenderer(val client: GameClient) {
         _shieldXs(5) = cx;              _shieldYs(5) = cy + hs
         _shieldXs(6) = cx - hs * 0.7f;  _shieldYs(6) = cy + hs * 0.4f
         shapeBatch.fillPolygon(_shieldXs, _shieldYs, 7, r, g, b, 1f)
-        // Inner highlight (upper portion)
-        _shieldHlXs(0) = cx - hs * 0.4f;  _shieldHlYs(0) = cy - hs * 0.5f
-        _shieldHlXs(1) = cx - hs * 0.25f; _shieldHlYs(1) = cy - hs * 0.8f
-        _shieldHlXs(2) = cx + hs * 0.25f; _shieldHlYs(2) = cy - hs * 0.8f
-        _shieldHlXs(3) = cx + hs * 0.4f;  _shieldHlYs(3) = cy - hs * 0.5f
-        shapeBatch.fillPolygon(_shieldHlXs, _shieldHlYs, 4, hr, hg, hb, 0.3f)
+        // Upper gradient highlight
+        _shieldHlXs(0) = cx - hs * 0.45f; _shieldHlYs(0) = cy - hs * 0.55f
+        _shieldHlXs(1) = cx - hs * 0.35f; _shieldHlYs(1) = cy - hs * 0.85f
+        _shieldHlXs(2) = cx + hs * 0.35f; _shieldHlYs(2) = cy - hs * 0.85f
+        _shieldHlXs(3) = cx + hs * 0.45f; _shieldHlYs(3) = cy - hs * 0.55f
+        shapeBatch.fillPolygon(_shieldHlXs, _shieldHlYs, 4, hr, hg, hb, 0.35f)
+        // Cross emblem in center
+        val cw = hs * 0.12f; val ch = hs * 0.6f
+        shapeBatch.fillRect(cx - cw, cy - ch * 0.55f, cw * 2, ch, hr, hg, hb, 0.3f)
+        shapeBatch.fillRect(cx - ch * 0.35f, cy - cw * 0.8f, ch * 0.7f, cw * 1.6f, hr, hg, hb, 0.3f)
+        // Metallic top-edge highlight
+        shapeBatch.strokeLine(cx - hs * 0.48f, cy - hs * 0.98f, cx + hs * 0.48f, cy - hs * 0.98f, 1.5f, 1f, 1f, 1f, 0.2f)
+        // Rivets at shoulder and tip
+        shapeBatch.fillOval(cx - hs * 0.85f, cy - hs * 0.6f, 2f, 2f, hr, hg, hb, 0.5f, 6)
+        shapeBatch.fillOval(cx + hs * 0.85f, cy - hs * 0.6f, 2f, 2f, hr, hg, hb, 0.5f, 6)
+        shapeBatch.fillOval(cx, cy + hs * 0.95f, 2f, 2f, hr, hg, hb, 0.4f, 6)
         // Outline
         shapeBatch.strokePolygon(_shieldXs, _shieldYs, 7, 1f, dr, dg, db, 0.7f)
 
       case ItemType.Fence =>
-        val barW = hs * 0.35f
-        // Main bars
-        shapeBatch.fillRect(cx - hs, cy - hs, barW, hs * 2, r, g, b, 1f)
-        shapeBatch.fillRect(cx - barW / 2, cy - hs, barW, hs * 2, r, g, b, 1f)
-        shapeBatch.fillRect(cx + hs - barW, cy - hs, barW, hs * 2, r, g, b, 1f)
-        // Inner highlight (left edge of each bar)
-        val hlW = barW * 0.35f
-        shapeBatch.fillRect(cx - hs, cy - hs, hlW, hs * 2, hr, hg, hb, 0.3f)
-        shapeBatch.fillRect(cx - barW / 2, cy - hs, hlW, hs * 2, hr, hg, hb, 0.3f)
-        shapeBatch.fillRect(cx + hs - barW, cy - hs, hlW, hs * 2, hr, hg, hb, 0.3f)
-        // Outline
-        shapeBatch.strokeRect(cx - hs, cy - hs, barW, hs * 2, 1f, dr, dg, db, 0.7f)
-        shapeBatch.strokeRect(cx - barW / 2, cy - hs, barW, hs * 2, 1f, dr, dg, db, 0.7f)
-        shapeBatch.strokeRect(cx + hs - barW, cy - hs, barW, hs * 2, 1f, dr, dg, db, 0.7f)
+        val barW = hs * 0.28f
+        val tipH = barW * 0.8f
+        val p0x = cx - hs * 0.75f; val p1x = cx; val p2x = cx + hs * 0.75f
+        val postTop = cy - hs + tipH
+        val postBot = cy + hs
+        val postH = postBot - postTop
+        // Dark post shadows (offset right)
+        shapeBatch.fillRect(p0x + 1f, postTop, barW, postH, dr * 0.5f, dg * 0.5f, db * 0.5f, 0.6f)
+        shapeBatch.fillRect(p1x - barW / 2 + 1f, postTop, barW, postH, dr * 0.5f, dg * 0.5f, db * 0.5f, 0.6f)
+        shapeBatch.fillRect(p2x - barW + 1f, postTop, barW, postH, dr * 0.5f, dg * 0.5f, db * 0.5f, 0.6f)
+        // Main posts
+        shapeBatch.fillRect(p0x, postTop, barW, postH, r, g, b, 1f)
+        shapeBatch.fillRect(p1x - barW / 2, postTop, barW, postH, r, g, b, 1f)
+        shapeBatch.fillRect(p2x - barW, postTop, barW, postH, r, g, b, 1f)
+        // Pointed tops (triangles)
+        _heartTriXs(0) = p0x; _heartTriYs(0) = postTop
+        _heartTriXs(1) = p0x + barW / 2; _heartTriYs(1) = cy - hs
+        _heartTriXs(2) = p0x + barW; _heartTriYs(2) = postTop
+        shapeBatch.fillPolygon(_heartTriXs, _heartTriYs, 3, clamp(r * 1.1f), clamp(g * 1.1f), clamp(b * 1.1f), 1f)
+        _heartTriXs(0) = p1x - barW / 2; _heartTriYs(0) = postTop
+        _heartTriXs(1) = p1x; _heartTriYs(1) = cy - hs
+        _heartTriXs(2) = p1x + barW / 2; _heartTriYs(2) = postTop
+        shapeBatch.fillPolygon(_heartTriXs, _heartTriYs, 3, clamp(r * 1.1f), clamp(g * 1.1f), clamp(b * 1.1f), 1f)
+        _heartTriXs(0) = p2x - barW; _heartTriYs(0) = postTop
+        _heartTriXs(1) = p2x - barW / 2; _heartTriYs(1) = cy - hs
+        _heartTriXs(2) = p2x; _heartTriYs(2) = postTop
+        shapeBatch.fillPolygon(_heartTriXs, _heartTriYs, 3, clamp(r * 1.1f), clamp(g * 1.1f), clamp(b * 1.1f), 1f)
+        // Horizontal cross rails
+        val railH = barW * 0.65f
+        val rail1Y = cy - hs * 0.3f; val rail2Y = cy + hs * 0.3f
+        shapeBatch.fillRect(p0x, rail1Y, p2x - p0x, railH, r * 0.9f, g * 0.9f, b * 0.9f, 1f)
+        shapeBatch.fillRect(p0x, rail2Y, p2x - p0x, railH, r * 0.9f, g * 0.9f, b * 0.9f, 1f)
+        // Rail top-edge highlight
+        shapeBatch.fillRect(p0x, rail1Y, p2x - p0x, railH * 0.3f, hr, hg, hb, 0.25f)
+        shapeBatch.fillRect(p0x, rail2Y, p2x - p0x, railH * 0.3f, hr, hg, hb, 0.25f)
+        // Post left-edge highlights
+        val hlW = barW * 0.3f
+        shapeBatch.fillRect(p0x, postTop, hlW, postH, hr, hg, hb, 0.3f)
+        shapeBatch.fillRect(p1x - barW / 2, postTop, hlW, postH, hr, hg, hb, 0.3f)
+        shapeBatch.fillRect(p2x - barW, postTop, hlW, postH, hr, hg, hb, 0.3f)
 
       case _ =>
         _defItemXs(0) = cx;      _defItemYs(0) = cy - hs
