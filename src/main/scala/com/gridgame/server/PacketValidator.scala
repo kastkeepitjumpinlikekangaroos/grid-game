@@ -202,13 +202,12 @@ class PacketValidator {
     }
 
     // Fire rate enforcement: 80% of SHOOT_COOLDOWN_MS as minimum gap
+    // Gem boost fires 3 projectiles in a single burst (same frame) — skip fire rate for gem boost
     val now = System.currentTimeMillis()
     val lastTime: java.lang.Long = lastProjectileTime.put(packet.getPlayerId, now)
-    if (lastTime != null) {
+    if (lastTime != null && !player.hasGemBoost) {
       val gap = now - lastTime.longValue()
-      // Gem boost sends 3 projectiles per shot in a burst — allow 3x fire rate
-      val rateMultiplier = if (player.hasGemBoost) 3 else 1
-      val minGap = (Constants.SHOOT_COOLDOWN_MS * 0.8 / rateMultiplier).toLong
+      val minGap = (Constants.SHOOT_COOLDOWN_MS * 0.8).toLong
       if (gap < minGap) {
         // Allow abilities which have their own cooldowns — only enforce for primary fire
         if (pType == charDef.primaryProjectileType) {

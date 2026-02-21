@@ -785,13 +785,19 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   }
 
   def broadcastToInstance(packet: Packet): Unit = {
+    broadcastToInstanceExcluding(packet, null)
+  }
+
+  def broadcastToInstanceExcluding(packet: Packet, excludePlayerId: UUID): Unit = {
     val data = packet.serialize()
     val isTcp = packet.getType.tcp
     registry.getAll.asScala.foreach { player =>
-      try {
-        server.sendRawToPlayer(data, isTcp, player)
-      } catch {
-        case _: Exception => // Skip disconnected player; don't crash broadcast loop
+      if (excludePlayerId == null || !player.getId.equals(excludePlayerId)) {
+        try {
+          server.sendRawToPlayer(data, isTcp, player)
+        } catch {
+          case _: Exception => // Skip disconnected player; don't crash broadcast loop
+        }
       }
     }
   }

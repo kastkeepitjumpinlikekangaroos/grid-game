@@ -404,10 +404,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       val finalPos = new Position(Math.round(swoopTargetX).toInt, Math.round(swoopTargetY).toInt)
       localPosition.set(finalPos)
       // Extend auth window so server corrections from stale broadcasts don't snap us back
-      val newAuth = now + 500
+      val newAuth = now + 1000
       if (newAuth > clientMoveAuthUntil.get()) {
         clientMoveAuthUntil.set(newAuth)
       }
+      // Send twice for UDP redundancy (dash end position is critical)
+      sendPositionUpdate(finalPos)
       sendPositionUpdate(finalPos)
       return
     }
@@ -1619,7 +1621,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     // Notify server that item was used
     // For fence and star, send mouse world position as target coordinates
     val (packetX, packetY) = if (item.itemType == ItemType.Fence || item.itemType == ItemType.Star) {
-      (mouseWorldX.toInt, mouseWorldY.toInt)
+      (Math.round(mouseWorldX).toInt, Math.round(mouseWorldY).toInt)
     } else {
       (item.getCellX, item.getCellY)
     }
@@ -1771,7 +1773,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     localPosition.set(newPos)
     val now = System.currentTimeMillis()
     lastMoveTime.set(now)
-    clientMoveAuthUntil.set(now + 500)
+    clientMoveAuthUntil.set(now + 1000)
+    // Send twice for UDP redundancy (star teleport is a single critical event)
+    sendPositionUpdate(newPos)
     sendPositionUpdate(newPos)
 
     // Record teleport animation
@@ -1828,7 +1832,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     localPosition.set(newPos)
     val now = System.currentTimeMillis()
     lastMoveTime.set(now)
-    clientMoveAuthUntil.set(now + 500)
+    clientMoveAuthUntil.set(now + 1000)
+    // Send twice for UDP redundancy (blink is a single critical event)
+    sendPositionUpdate(newPos)
     sendPositionUpdate(newPos)
 
     // Record teleport animation
