@@ -32,6 +32,14 @@ class GLMouseHandler(client: GameClient, camera: GameCamera) {
     client.setMouseWorldPosition(worldX, worldY)
   }
 
+  /** Recompute mouse world position from current cursor and camera state.
+    * Call each frame after camera.update() so the world position stays accurate
+    * even when the mouse is stationary but the camera is moving. */
+  def refreshWorldPosition(): Unit = {
+    val (worldX, worldY) = camera.screenToWorld(_cursorX, _cursorY)
+    client.setMouseWorldPosition(worldX, worldY)
+  }
+
   /** Called from GLFW mouse button callback. */
   def onMouseButton(button: Int, action: Int, mods: Int): Unit = {
     if (button != GLFW_MOUSE_BUTTON_LEFT) return

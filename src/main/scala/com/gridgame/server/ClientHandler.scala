@@ -267,7 +267,10 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     if (packet.getAction == ItemAction.USE) {
       val playerId = packet.getPlayerId
       val removedItem = itemManager.removeFromInventory(playerId, packet.getItemId)
-      if (removedItem == null) return false // Item not in inventory
+      if (removedItem == null) {
+        System.err.println(s"ClientHandler: Item USE failed — item ${packet.getItemId} not in server inventory for ${playerId.toString.substring(0, 8)}")
+        return false
+      }
 
       val player = registry.get(playerId)
       if (player != null) {
@@ -299,7 +302,22 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
             println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} gem boost activated")
 
           case ItemType.Fence =>
-            placeFence(player, packet.getX, packet.getY)
+            if (!placeFence(player, packet.getX, packet.getY)) {
+              // Placement failed — restore item to inventory so player can retry
+              itemManager.addToInventory(playerId, removedItem)
+              // Notify client to re-add item to their local inventory
+              val restorePacket = new ItemPacket(
+                server.getNextSequenceNumber,
+                playerId,
+                removedItem.x, removedItem.y,
+                removedItem.itemType.id,
+                removedItem.id,
+                ItemAction.INVENTORY
+              )
+              try {
+                server.sendRawToPlayer(restorePacket.serialize(), true, player)
+              } catch { case _: Exception => }
+            }
 
           case ItemType.Star =>
             // Star teleports the player to cursor — validate and apply position server-side
@@ -319,12 +337,22 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     false
   }
 
-  private def placeFence(player: Player, targetX: Int, targetY: Int): Unit = {
-    // Validate fence placement is near the player (max 5 cells)
-    val pos = player.getPosition
-    val fdx = Math.abs(targetX - pos.getX)
-    val fdy = Math.abs(targetY - pos.getY)
-    if (fdx > 5 || fdy > 5) return
+  /** Try to place a fence. Returns true if at least one tile was placed. */
+  private def placeFence(player: Player, targetX: Int, targetY: Int): Boolean = {
+    val w = if (instance != null) instance.world else server.getWorld
+    if (w == null) return false
+
+    // Bounds check
+    if (targetX < 0 || targetX >= w.width || targetY < 0 || targetY >= w.height) {
+      System.err.println(s"ClientHandler: Fence out of bounds ($targetX,$targetY)")
+      return false
+    }
+
+    // Center tile must be walkable
+    if (!w.isWalkable(targetX, targetY)) {
+      System.err.println(s"ClientHandler: Fence center tile not walkable ($targetX,$targetY)")
+      return false
+    }
 
     // Determine the perpendicular offsets based on player facing direction
     val (perpDx, perpDy) = player.getDirection match {
@@ -339,19 +367,23 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       (targetX + perpDx, targetY + perpDy)
     )
 
-    val w = if (instance != null) instance.world else server.getWorld
-    if (w == null) return
+    var placed = 0
     positions.foreach { case (tx, ty) =>
-      // Only place fences on walkable tiles (prevents fences on walls, water, etc.)
       if (tx >= 0 && tx < w.width && ty >= 0 && ty < w.height && w.isWalkable(tx, ty)) {
         if (w.setTile(tx, ty, Tile.Fence)) {
           if (instance != null) instance.broadcastTileUpdate(player.getId, tx, ty, Tile.Fence.id)
           else server.broadcastTileUpdate(player.getId, tx, ty, Tile.Fence.id)
+          placed += 1
         }
       }
     }
 
-    println(s"ClientHandler: Player ${player.getId.toString.substring(0, 8)} placed fence at ($targetX, $targetY)")
+    if (placed > 0) {
+      println(s"ClientHandler: Player ${player.getId.toString.substring(0, 8)} placed $placed fence tiles at ($targetX, $targetY)")
+    } else {
+      System.err.println(s"ClientHandler: Fence placement failed at ($targetX,$targetY) — no walkable tiles")
+    }
+    placed > 0
   }
 
   private def sendExistingPlayers(joiningPlayerId: UUID, joiningPlayer: Player): Unit = {

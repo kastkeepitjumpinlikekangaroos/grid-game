@@ -18,6 +18,9 @@ class PacketValidator {
   private val lastUpdateTime = new ConcurrentHashMap[UUID, java.lang.Long]()
   // Track last projectile spawn time per player for fire rate enforcement
   private val lastProjectileTime = new ConcurrentHashMap[UUID, java.lang.Long]()
+  // Track burst start time and count per player (gem boost fires 3 in same frame)
+  private val burstStartTime = new ConcurrentHashMap[UUID, java.lang.Long]()
+  private val burstCount = new ConcurrentHashMap[UUID, AtomicInteger]()
   // Allow one large movement (e.g. Star item teleport) within a time window
   private val itemTeleportAllowed = new ConcurrentHashMap[UUID, java.lang.Long]()
 
@@ -212,21 +215,39 @@ class PacketValidator {
       return false
     }
 
-    // Fire rate enforcement: 80% of SHOOT_COOLDOWN_MS as minimum gap
+    // Fire rate enforcement: 80% of SHOOT_COOLDOWN_MS as minimum gap between shots.
+    // Gem boost fires 3 projectiles in a single burst (same frame). Due to TCP/UDP race,
+    // player.hasGemBoost may be false when the burst arrives, so we allow bursts of up to 3
+    // rapid primary projectiles and enforce cooldown from the burst start time.
     val now = System.currentTimeMillis()
     val lastTime: java.lang.Long = lastProjectileTime.put(packet.getPlayerId, now)
     if (lastTime != null) {
       val gap = now - lastTime.longValue()
-      // Gem boost sends 3 projectiles per shot in a burst — allow 3x fire rate
-      val rateMultiplier = if (player.hasGemBoost) 3 else 1
-      val minGap = (Constants.SHOOT_COOLDOWN_MS * 0.8 / rateMultiplier).toLong
-      if (gap < minGap) {
-        // Allow abilities which have their own cooldowns — only enforce for primary fire
-        if (pType == charDef.primaryProjectileType) {
-          System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} fire rate too fast (${gap}ms)")
-          return false
+      if (pType == charDef.primaryProjectileType) {
+        val burst = burstCount.computeIfAbsent(packet.getPlayerId, _ => new AtomicInteger(0))
+        if (gap <= 100) {
+          // Rapid fire — part of a burst (gem boost). Allow up to 3 per burst.
+          if (burst.incrementAndGet() > 3) {
+            System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} burst too large")
+            return false
+          }
+        } else {
+          // New shot — check cooldown from burst start time (not last projectile)
+          val burstStart = burstStartTime.getOrDefault(packet.getPlayerId, lastTime)
+          val gapFromBurst = now - burstStart.longValue()
+          val minGap = (Constants.SHOOT_COOLDOWN_MS * 0.8).toLong
+          if (gapFromBurst < minGap) {
+            System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} fire rate too fast (${gapFromBurst}ms)")
+            return false
+          }
+          burst.set(1)
+          burstStartTime.put(packet.getPlayerId, now)
         }
       }
+    } else {
+      // First projectile ever — initialize burst tracking
+      burstCount.computeIfAbsent(packet.getPlayerId, _ => new AtomicInteger(1))
+      burstStartTime.put(packet.getPlayerId, now)
     }
 
     true
@@ -240,6 +261,8 @@ class PacketValidator {
   def removePlayer(playerId: UUID): Unit = {
     lastUpdateTime.remove(playerId)
     lastProjectileTime.remove(playerId)
+    burstStartTime.remove(playerId)
+    burstCount.remove(playerId)
     lastTcpSequence.remove(playerId)
     lastUdpSequence.remove(playerId)
     sequenceWindow.remove(playerId)
