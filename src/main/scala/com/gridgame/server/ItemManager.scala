@@ -70,6 +70,12 @@ class ItemManager {
     inv.remove(itemId)
   }
 
+  /** Add an item back to a player's inventory (e.g. when fence placement fails). */
+  def addToInventory(playerId: UUID, item: Item): Unit = {
+    val inv = inventories.computeIfAbsent(playerId, _ => new ConcurrentHashMap[Int, Item]())
+    inv.put(item.id, item)
+  }
+
   def getInventory(playerId: UUID): Seq[Item] = {
     val inv = inventories.get(playerId)
     if (inv != null) inv.values().asScala.toSeq else Seq.empty

@@ -1571,6 +1571,9 @@ class ClientMain extends Application {
           }
 
           glRenderer.render(deltaSec, glWindow.fbWidth, glWindow.fbHeight, glWindow.width, glWindow.height)
+          // Refresh mouse world position after camera update so next frame's
+          // input callbacks use accurate coordinates even if the mouse is stationary
+          glMouseHandler.refreshWorldPosition()
           glWindow.swapBuffers()
         } catch {
           case e: Exception =>
