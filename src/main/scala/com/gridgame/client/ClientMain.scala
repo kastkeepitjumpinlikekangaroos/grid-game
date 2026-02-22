@@ -1785,6 +1785,13 @@ class ClientMain extends Application {
       println("Server did not specify a world, using default")
       return
     }
+    // Sanitize: reject path traversal attempts
+    if (worldFileName.contains("..") || worldFileName.contains("/") || worldFileName.contains("\\")) {
+      System.err.println(s"Rejected suspicious world filename from server: $worldFileName")
+      client.setWorld(WorldData.createEmpty(Constants.GRID_SIZE, Constants.GRID_SIZE))
+      if (glRenderer != null) glRenderer.resetVisualPosition()
+      return
+    }
     println(s"Server requested world: $worldFileName")
     val worldPath = "worlds/" + worldFileName
     try {

@@ -23,8 +23,8 @@ class RateLimiter {
   private val channelCounts = new ConcurrentHashMap[Channel, WindowCounter]()
   private val MAX_PRE_AUTH_PER_SECOND = 5
 
-  private val MAX_UDP_PER_SECOND = 60
-  private val MAX_TCP_PER_SECOND = 20
+  private val MAX_UDP_PER_SECOND = 120
+  private val MAX_TCP_PER_SECOND = 40
   private val MAX_CONNECTIONS_PER_MINUTE = 5
   private val MAX_AUTH_FAILURES = 5
   private val BASE_COOLDOWN_MS = 30000L  // 30s base, doubles each batch of failures
@@ -57,27 +57,33 @@ class RateLimiter {
 
   def allowAuthAttempt(address: InetAddress): Boolean = {
     val tracker = authFailures.computeIfAbsent(address, _ => new AuthTracker())
-    val now = System.currentTimeMillis()
-    val failures = tracker.failures.get()
-    // Exponential backoff: 30s, 60s, 120s, 240s... capped at 1 hour
-    val cooldownBatch = failures / MAX_AUTH_FAILURES  // how many batches of failures
-    val cooldown = Math.min(BASE_COOLDOWN_MS << Math.min(cooldownBatch, 6), MAX_COOLDOWN_MS)
-    if (now - tracker.lastFailureTime.get() > cooldown) {
-      // Reset only the current batch, not all failures (progressive penalty)
-      if (cooldownBatch > 0) {
-        tracker.failures.set(cooldownBatch * MAX_AUTH_FAILURES)
+    tracker.synchronized {
+      val now = System.currentTimeMillis()
+      val failures = tracker.failures.get()
+      if (failures >= MAX_AUTH_FAILURES) {
+        // Exponential backoff: 30s, 60s, 120s, 240s... capped at 1 hour
+        val cooldownBatch = (failures / MAX_AUTH_FAILURES) - 1
+        val cooldown = Math.min(BASE_COOLDOWN_MS << Math.min(cooldownBatch, 6), MAX_COOLDOWN_MS)
+        if (now - tracker.lastFailureTime.get() > cooldown) {
+          // Cooldown expired — allow one more batch but keep progressive penalty
+          true
+        } else {
+          // Still in cooldown — block entirely
+          false
+        }
       } else {
-        tracker.failures.set(0)
+        // Under the failure threshold — allow
+        true
       }
-      return true
     }
-    false
   }
 
   def recordAuthFailure(address: InetAddress): Unit = {
     val tracker = authFailures.computeIfAbsent(address, _ => new AuthTracker())
-    tracker.failures.incrementAndGet()
-    tracker.lastFailureTime.set(System.currentTimeMillis())
+    tracker.synchronized {
+      tracker.failures.incrementAndGet()
+      tracker.lastFailureTime.set(System.currentTimeMillis())
+    }
   }
 
   def clearAuthFailures(address: InetAddress): Unit = {
@@ -115,7 +121,7 @@ private class WindowCounter {
   val windowStart = new AtomicLong(System.currentTimeMillis())
   val count = new AtomicInteger(0)
 
-  def allowAndIncrement(maxCount: Int, windowMs: Long): Boolean = {
+  def allowAndIncrement(maxCount: Int, windowMs: Long): Boolean = synchronized {
     val now = System.currentTimeMillis()
     if (now - windowStart.get() > windowMs) {
       windowStart.set(now)

@@ -180,6 +180,7 @@ class ClientTcpHandler(client: GameClient, networkThread: NetworkThread) extends
         }
         verified
       } else {
+        // Pre-auth: no session token yet, accept unsigned
         val p = new Array[Byte](Constants.PACKET_PAYLOAD_SIZE)
         System.arraycopy(data, 0, p, 0, Constants.PACKET_PAYLOAD_SIZE)
         p
@@ -235,9 +236,8 @@ class ClientUdpHandler(client: GameClient, networkThread: NetworkThread) extends
         }
         verified
       } else {
-        val p = new Array[Byte](Constants.PACKET_PAYLOAD_SIZE)
-        System.arraycopy(data, 0, p, 0, Constants.PACKET_PAYLOAD_SIZE)
-        p
+        // No session token yet — drop all UDP packets until authenticated
+        return
       }
       val packet = PacketSerializer.deserialize(payload)
       client.enqueuePacket(packet)
