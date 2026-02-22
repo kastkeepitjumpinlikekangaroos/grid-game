@@ -11,6 +11,7 @@ import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
@@ -114,6 +115,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   @volatile private var running = false
   @volatile private var isDead = false
+  private val disconnected = new AtomicBoolean(false)
+  private var packetProcessor: Thread = _
   @volatile private var movementInputActive = false
   @volatile private var worldFileListener: String => Unit = _
   @volatile private var rejoinListener: () => Unit = _
@@ -186,6 +189,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   def connect(): Unit = {
     try {
       sequenceNumber.set(0)
+      disconnected.set(false)
       networkThread = new NetworkThread(this, serverHost, serverPort)
       running = true
 
@@ -208,6 +212,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   }
 
   private def handleDisconnect(): Unit = {
+    if (!disconnected.compareAndSet(false, true)) return
+
     running = false
     clientState = ClientState.CONNECTING
 
@@ -218,6 +224,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     inventory.clear()
     killFeed.clear()
     scoreboard.clear()
+    deathAnimations.clear()
+    teleportAnimations.clear()
+    explosionAnimations.clear()
+    aoeSplashAnimations.clear()
+    playerHitTimes.clear()
+    recentlyRemovedProjectiles.clear()
     isDead = false
     isRespawning = false
 
@@ -760,7 +772,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   }
 
   def enqueuePacket(packet: Packet): Unit = {
-    incomingPackets.offer(packet)
+    if (!incomingPackets.offer(packet)) {
+      System.err.println(s"GameClient: Packet queue full, dropping ${packet.getType}")
+    }
   }
 
   private def startPacketProcessor(): Unit = {
@@ -778,6 +792,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       }
     }, "PacketProcessor")
     processor.setDaemon(true)
+    packetProcessor = processor
     processor.start()
   }
 
@@ -997,6 +1012,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         projectiles.clear()
         items.clear()
         inventory.clear()
+        deathAnimations.clear()
+        teleportAnimations.clear()
+        explosionAnimations.clear()
+        aoeSplashAnimations.clear()
+        playerHitTimes.clear()
+        recentlyRemovedProjectiles.clear()
         if (gameStartingListener != null) gameStartingListener()
 
       case LobbyAction.CHARACTER_SELECT =>
@@ -1273,6 +1294,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     currentLobbyGameMode = 0
     currentLobbyTeamSize = 2
     lobbyMembers.clear()
+    deathAnimations.clear()
+    teleportAnimations.clear()
+    explosionAnimations.clear()
+    aoeSplashAnimations.clear()
+    playerHitTimes.clear()
+    recentlyRemovedProjectiles.clear()
   }
 
   // Ranked queue actions
@@ -1325,8 +1352,17 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           packet.getProjectileType
         )
         projectiles.put(projectileId, projectile)
-        // Periodic cleanup: removed set shouldn't grow beyond a reasonable size
-        if (recentlyRemovedProjectiles.size() > 500) recentlyRemovedProjectiles.clear()
+        // Periodic cleanup: evict oldest entries to prevent unbounded growth
+        // (incremental eviction avoids clearing all entries which could resurrect projectiles)
+        if (recentlyRemovedProjectiles.size() > 500) {
+          val iter = recentlyRemovedProjectiles.iterator()
+          var removed = 0
+          while (iter.hasNext && removed < 250) {
+            iter.next()
+            iter.remove()
+            removed += 1
+          }
+        }
 
       case ProjectileAction.MOVE =>
         val projectile = projectiles.get(projectileId)
@@ -1855,11 +1891,15 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   }
 
   def disconnect(): Unit = {
-    if (!running) {
+    if (!running && disconnected.get()) {
       return
     }
 
     running = false
+    disconnected.set(true)
+
+    // Interrupt packet processor thread so it doesn't block on take()
+    if (packetProcessor != null) packetProcessor.interrupt()
 
     val leavePacket = new PlayerLeavePacket(
       sequenceNumber.getAndIncrement(),

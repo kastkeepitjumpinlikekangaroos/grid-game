@@ -29,12 +29,20 @@ class PacketValidator {
   // Sliding window bitmap for UDP out-of-order tolerance
   private val sequenceWindow = new ConcurrentHashMap[UUID, Array[Long]]()
 
+  /** Circular comparison in 31-bit sequence space. Returns true if seqNum is ahead of last. */
+  private def isNewerSequence(seqNum: Int, last: Int): Boolean = {
+    if (last == -1) return true // First packet
+    if (seqNum == last) return false // Duplicate
+    ((seqNum - last) & 0x7FFFFFFF) < 0x40000000
+  }
+
   def validateSequence(playerId: UUID, seqNum: Int, isUdp: Boolean): Boolean = {
     if (!isUdp) {
-      // TCP is ordered: reject if seqNum <= lastSeen (lock-free CAS loop)
+      // TCP is ordered: reject if seqNum is not ahead of lastSeen (lock-free CAS loop)
+      // Uses circular comparison to handle 31-bit wrap-around
       val lastSeq = lastTcpSequence.computeIfAbsent(playerId, _ => new AtomicInteger(-1))
       var last = lastSeq.get()
-      while (seqNum > last) {
+      while (isNewerSequence(seqNum, last)) {
         if (lastSeq.compareAndSet(last, seqNum)) return true
         last = lastSeq.get()
       }
@@ -47,7 +55,7 @@ class PacketValidator {
     // Window is stored as Array[Long] where index 0 = windowBase, rest = bitmap (4 longs = 256 bits)
     val window = sequenceWindow.computeIfAbsent(playerId, _ => new Array[Long](5))
 
-    synchronized {
+    window.synchronized {
       val windowBase = window(0).toInt
 
       if (seqNum < windowBase) {
@@ -162,7 +170,7 @@ class PacketValidator {
             if (!isAbilityMovement) {
               // Check for recent item teleport (Star item) — allow within 2s window
               val allowedTime = itemTeleportAllowed.remove(packet.getPlayerId)
-              val isItemTeleport = allowedTime != null && (now - allowedTime) < 2000
+              val isItemTeleport = allowedTime != null && (now - allowedTime) < 500
               if (!isItemTeleport) {
                 System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} speed hack detected: moved $distance cells in ${deltaMs}ms")
                 return false
@@ -236,5 +244,16 @@ class PacketValidator {
     lastUdpSequence.remove(playerId)
     sequenceWindow.remove(playerId)
     itemTeleportAllowed.remove(playerId)
+  }
+
+  /** Remove entries for players no longer in the connected set (safety net for leaked state). */
+  def cleanupStale(connectedPlayerIds: java.util.Set[UUID]): Unit = {
+    val maps: Seq[ConcurrentHashMap[UUID, _]] = Seq(lastUpdateTime, lastProjectileTime, lastTcpSequence, lastUdpSequence, sequenceWindow, itemTeleportAllowed)
+    maps.foreach { map =>
+      val iter = map.keySet().iterator()
+      while (iter.hasNext) {
+        if (!connectedPlayerIds.contains(iter.next())) iter.remove()
+      }
+    }
   }
 }

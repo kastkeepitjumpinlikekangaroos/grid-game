@@ -53,6 +53,8 @@ class NetworkThread(client: GameClient, serverHost: String, serverPort: Int) ext
       val tcpBootstrap = new Bootstrap()
       tcpBootstrap.group(eventLoopGroup)
         .channel(classOf[NioSocketChannel])
+        .option[java.lang.Boolean](ChannelOption.TCP_NODELAY, true)
+        .option[java.lang.Integer](ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000)
         .handler(new ChannelInitializer[SocketChannel] {
           override def initChannel(ch: SocketChannel): Unit = {
             val sslCtx = SslContextBuilder.forClient()
@@ -62,7 +64,7 @@ class NetworkThread(client: GameClient, serverHost: String, serverPort: Int) ext
             ch.pipeline()
               .addLast(sslCtx.newHandler(ch.alloc(), serverHost, serverPort))
               .addLast(new IdleStateHandler(Constants.CLIENT_TIMEOUT_MS, 0, 0, TimeUnit.MILLISECONDS))
-              .addLast(new LengthFieldBasedFrameDecoder(82, 0, 2, 0, 2))
+              .addLast(new LengthFieldBasedFrameDecoder(Constants.PACKET_SIZE + 2, 0, 2, 0, 2))
               .addLast(new LengthFieldPrepender(2))
               .addLast(new ClientTcpHandler(client, NetworkThread.this))
           }
@@ -173,7 +175,10 @@ class ClientTcpHandler(client: GameClient, networkThread: NetworkThread) extends
       val payload = if (token != null) {
         val verified = PacketSigner.verify(data, token)
         if (verified == null) {
-          // Pre-token packets (like AUTH_RESPONSE, SESSION_TOKEN) may not be signed yet
+          // HMAC verification failed — log but still process (client trusts server;
+          // this can happen briefly during token handoff when server signs with new
+          // token before client has processed the SESSION_TOKEN packet)
+          System.err.println("ClientTcpHandler: HMAC verification failed, processing anyway")
           val p = new Array[Byte](Constants.PACKET_PAYLOAD_SIZE)
           System.arraycopy(data, 0, p, 0, Constants.PACKET_PAYLOAD_SIZE)
           p

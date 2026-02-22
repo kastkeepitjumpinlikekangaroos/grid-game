@@ -91,13 +91,14 @@ class GameServer(port: Int, val worldFile: String = "") {
         override def initChannel(ch: SocketChannel): Unit = {
           ch.pipeline()
             .addLast(sslCtx.newHandler(ch.alloc()))
-            .addLast(new LengthFieldBasedFrameDecoder(82, 0, 2, 0, 2))
+            .addLast(new LengthFieldBasedFrameDecoder(Constants.PACKET_SIZE + 2, 0, 2, 0, 2))
             .addLast(new LengthFieldPrepender(2))
             .addLast(new GameServerTcpHandler(server))
         }
       })
       .option[java.lang.Integer](ChannelOption.SO_BACKLOG, 128)
       .childOption[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
+      .childOption[java.lang.Boolean](ChannelOption.TCP_NODELAY, true)
 
     tcpServerChannel = tcpBootstrap.bind(port).sync().channel()
     println(s"TCP server listening on port $port")
@@ -611,7 +612,17 @@ class GameServer(port: Int, val worldFile: String = "") {
     }
   }
 
+  // Per-player locks for session token generation (UUIDs are not interned, so can't synchronize on them directly)
+  private val playerLocks = new ConcurrentHashMap[UUID, AnyRef]()
+
   private def generateSessionToken(playerId: UUID, tcpCh: Channel): Array[Byte] = {
+    val lock = playerLocks.computeIfAbsent(playerId, _ => new AnyRef)
+    lock.synchronized {
+      generateSessionTokenImpl(playerId, tcpCh)
+    }
+  }
+
+  private def generateSessionTokenImpl(playerId: UUID, tcpCh: Channel): Array[Byte] = {
     // Invalidate any existing session for this player (prevents stale channel reuse)
     val oldToken = sessionTokens.get(playerId)
     if (oldToken != null) {
@@ -645,6 +656,7 @@ class GameServer(port: Int, val worldFile: String = "") {
     token
   }
 
+
   def handleDisconnect(channel: Channel): Unit = {
     channelToToken.remove(channel)
     channelAuthFailures.remove(channel)
@@ -657,6 +669,7 @@ class GameServer(port: Int, val worldFile: String = "") {
       playerTcpAddresses.remove(playerId)
       lastQueryTime.remove(playerId)
       packetValidator.removePlayer(playerId)
+      playerLocks.remove(playerId)
       lobbyHandler.cleanupPlayer(playerId)
       val player = connectedPlayers.remove(playerId)
       if (player != null) {
@@ -815,6 +828,9 @@ class GameServer(port: Int, val worldFile: String = "") {
         sessionTokens.remove(playerId)
         tokenCreationTime.remove(playerId)
         playerTcpAddresses.remove(playerId)
+        lastQueryTime.remove(playerId)
+        packetValidator.removePlayer(playerId)
+        playerLocks.remove(playerId)
 
         // Close TCP channel to force re-auth
         val raw = player.getTcpChannel
@@ -867,6 +883,7 @@ class GameServer(port: Int, val worldFile: String = "") {
     }
 
     rateLimiter.cleanup()
+    packetValidator.cleanupStale(connectedPlayers.keySet())
 
     if (connectedPlayers.size() > 0) {
       println(s"Server stats: ${connectedPlayers.size()} players connected, ${lobbyManager.getActiveLobbies.size} active lobbies")

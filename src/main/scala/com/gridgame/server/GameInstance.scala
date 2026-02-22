@@ -486,13 +486,14 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                 broadcastToInstance(hitPacket)
               }
 
-              // Broadcast player health update
+              // Broadcast player health update (use newHealth captured inside synchronized block
+              // to avoid race with concurrent health changes like burn DoT)
               val updatePacket = new PlayerUpdatePacket(
                 server.getNextSequenceNumber,
                 player.getId,
                 player.getPosition,
                 player.getColorRGB,
-                player.getHealth,
+                newHealth,
                 0,
                 playerFlags(player)
               )

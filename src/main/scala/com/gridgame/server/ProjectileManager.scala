@@ -25,6 +25,8 @@ case class ProjectileAoE(projectile: Projectile) extends ProjectileEvent
 class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Boolean = (_, _) => false) {
   private val projectiles = new ConcurrentHashMap[Int, Projectile]()
   private val nextId = new AtomicInteger(1)
+  // Per-player active projectile count (avoids O(n) iteration on every spawn)
+  private val playerProjectileCount = new ConcurrentHashMap[UUID, AtomicInteger]()
 
   /** Pre-filtered snapshot of alive, hittable players rebuilt once per tick.
    *  Uses a pre-allocated array to avoid per-tick allocation. */
@@ -104,12 +106,9 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
   private val MAX_PROJECTILES_PER_PLAYER = 30
 
   def spawnProjectile(ownerId: UUID, x: Int, y: Int, dx: Float, dy: Float, colorRGB: Int, chargeLevel: Int = 0, projectileType: Byte = com.gridgame.common.model.ProjectileType.NORMAL): Projectile = {
-    // Enforce per-player active projectile cap to prevent memory exhaustion
-    var count = 0
-    projectiles.values().asScala.foreach { p =>
-      if (p.ownerId.equals(ownerId)) count += 1
-    }
-    if (count >= MAX_PROJECTILES_PER_PLAYER) return null
+    // Enforce per-player active projectile cap to prevent memory exhaustion (O(1) check)
+    val counter = playerProjectileCount.computeIfAbsent(ownerId, _ => new AtomicInteger(0))
+    if (counter.get() >= MAX_PROJECTILES_PER_PLAYER) return null
 
     val id = nextId.getAndIncrement() & 0x7FFFFFFF // Ensure positive IDs after overflow
     // Spawn the projectile one cell ahead in the velocity direction
@@ -117,6 +116,7 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
     val spawnY = y.toFloat + dy
     val projectile = new Projectile(id, ownerId, spawnX, spawnY, dx, dy, colorRGB, chargeLevel, projectileType)
     projectiles.put(id, projectile)
+    counter.incrementAndGet()
     projectile
   }
 
@@ -241,8 +241,14 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
       }
     }
 
-    // Remove despawned/hit projectiles
-    toRemove.foreach(id => projectiles.remove(id))
+    // Remove despawned/hit projectiles and decrement per-player counters
+    toRemove.foreach { id =>
+      val removed = projectiles.remove(id)
+      if (removed != null) {
+        val cnt = playerProjectileCount.get(removed.ownerId)
+        if (cnt != null) cnt.decrementAndGet()
+      }
+    }
 
     events.toSeq
   }
