@@ -442,6 +442,81 @@ object GLProjectileRenderers {
       }
     }
 
+  /** Small fast bullet: elongated metallic oval with muzzle flash, no fletching */
+  private def bulletProj(r: Float, g: Float, b: Float, size: Float = 5f): Renderer =
+    (proj, sx, sy, sb, tick) => {
+      val phase = (tick + proj.id * 31) * 0.4
+      val p = (0.9 + 0.1 * Math.sin(phase)).toFloat
+      screenDir(proj)
+      val ndx = _sdx; val ndy = _sdy
+
+      // Muzzle flash at rear
+      sb.fillOvalSoft(sx - ndx * 8f, sy - ndy * 8f, 12f, 8f, 1f, 0.9f, 0.5f, 0.15f * p, 0f, 8)
+
+      // Bullet body: elongated oval in direction of travel
+      val bodyLen = size * 2.5f
+      val bodyW = size * 0.8f
+      val tipX = sx + ndx * bodyLen * 0.5f
+      val tipY = sy + ndy * bodyLen * 0.5f
+      val tailX = sx - ndx * bodyLen * 0.5f
+      val tailY = sy - ndy * bodyLen * 0.5f
+
+      // Dark casing
+      sb.strokeLine(tailX, tailY, tipX, tipY, bodyW * 2f, dark(r), dark(g), dark(b), 0.9f * p)
+      // Metallic body
+      sb.strokeLine(tailX, tailY, tipX, tipY, bodyW * 1.4f, r, g, b, 0.85f * p)
+      // Specular highlight
+      sb.strokeLine(tailX, tailY, tipX, tipY, bodyW * 0.5f, bright(r), bright(g), bright(b), 0.6f * p)
+      // Rounded tip
+      sb.fillOval(tipX, tipY, bodyW * 1.2f, bodyW * 0.9f, bright(r), bright(g), bright(b), 0.8f * p, 8)
+
+      // Fast streak trail
+      var i = 0; while (i < 4) {
+        val t = ((tick * 0.07 + i * 0.15 + proj.id * 0.11) % 1.0).toFloat
+        val taper = 1f - t * 0.9f
+        val alpha = 0.3f * (1f - t) * p
+        sb.strokeLine(sx - ndx * t * 40, sy - ndy * t * 40,
+          sx - ndx * (t + 0.08f) * 40, sy - ndy * (t + 0.08f) * 40,
+          bodyW * taper, r * 0.7f, g * 0.7f, b * 0.7f, alpha)
+      ; i += 1 }
+    }
+
+  /** Compact fist/punch: round impact shape with motion lines */
+  private def fistProj(r: Float, g: Float, b: Float, size: Float = 14f): Renderer =
+    (proj, sx, sy, sb, tick) => {
+      val phase = (tick + proj.id * 23) * 0.4
+      val p = (0.9 + 0.1 * Math.sin(phase)).toFloat
+      screenDir(proj)
+      val ndx = _sdx; val ndy = _sdy
+      val perpX = -ndy; val perpY = ndx
+
+      // Impact ring
+      val ringPulse = 0.8f + 0.2f * Math.sin(phase * 2).toFloat
+      sb.strokeOval(sx, sy, size * 1.6f * ringPulse, size * 1.2f * ringPulse,
+        2f, r, g, b, 0.3f * p, 12)
+
+      // Fist body: solid round shape
+      sb.fillOval(sx, sy, size, size * 0.75f, r, g, b, 0.9f * p, 12)
+      // Knuckle highlight
+      sb.fillOval(sx + ndx * size * 0.2f, sy + ndy * size * 0.2f - 2f,
+        size * 0.45f, size * 0.35f, bright(r), bright(g), bright(b), 0.5f * p, 8)
+      // Dark bottom shading
+      sb.fillOval(sx, sy + size * 0.15f, size * 0.8f, size * 0.4f,
+        dark(r), dark(g), dark(b), 0.3f, 8)
+
+      // Motion lines behind fist
+      var i = -1; while (i <= 1) {
+        val lineStart = 6f + Math.abs(i) * 4f
+        val lineEnd = lineStart + 12f
+        sb.strokeLine(
+          sx - ndx * lineStart + perpX * i * size * 0.6f,
+          sy - ndy * lineStart + perpY * i * size * 0.6f,
+          sx - ndx * lineEnd + perpX * i * size * 0.6f,
+          sy - ndy * lineEnd + perpY * i * size * 0.6f,
+          1.5f, r, g, b, 0.4f * p)
+      ; i += 1 }
+    }
+
   /** Wide crescent wave/slash effect */
   private def wave(r: Float, g: Float, b: Float, spread: Float = 32f): Renderer =
     (proj, sx, sy, sb, tick) => {
@@ -489,7 +564,7 @@ object GLProjectileRenderers {
     ProjectileType.NORMAL       -> (drawNormal _),
     ProjectileType.TENTACLE     -> (drawTentacle _),
     ProjectileType.ICE_BEAM     -> beamProj(0.4f, 0.8f, 1f, 7f, 9f),
-    ProjectileType.AXE          -> spinner(0.65f, 0.55f, 0.4f, 22f, 4),
+    ProjectileType.AXE          -> spinner(0.65f, 0.55f, 0.4f, 26f, 2),
     ProjectileType.ROPE         -> chainProj(0.7f, 0.5f, 0.3f, 6f),
     ProjectileType.SPEAR        -> physProj(0.55f, 0.5f, 0.35f, 7f),
     ProjectileType.SOUL_BOLT    -> energyBolt(0.3f, 0.9f, 0.4f, 20f),
@@ -499,7 +574,7 @@ object GLProjectileRenderers {
     ProjectileType.SPLASH       -> aoeRing(0.3f, 0.6f, 1f, 50f),
     ProjectileType.TIDAL_WAVE   -> (drawTidalWave _),
     ProjectileType.GEYSER       -> (drawGeyser _),
-    ProjectileType.BULLET       -> physProj(0.75f, 0.7f, 0.55f, 3.5f),
+    ProjectileType.BULLET       -> bulletProj(0.75f, 0.7f, 0.55f),
     ProjectileType.GRENADE      -> lobbed(0.4f, 0.45f, 0.3f, 18f),
     ProjectileType.ROCKET       -> (drawRocket _),
     ProjectileType.TALON        -> physProj(0.6f, 0.5f, 0.35f, 5f),
@@ -545,7 +620,7 @@ object GLProjectileRenderers {
     // ── Undead/Dark (53-69) ──
     ProjectileType.DEATH_BOLT   -> energyBolt(0.2f, 0.5f, 0.05f, 22f),
     ProjectileType.RAISE_DEAD   -> (drawRaiseDead _),
-    ProjectileType.BONE_AXE     -> spinner(0.92f, 0.9f, 0.82f, 20f, 4),
+    ProjectileType.BONE_AXE     -> spinner(0.92f, 0.9f, 0.82f, 22f, 2),
     ProjectileType.BONE_THROW   -> spinner(0.92f, 0.88f, 0.8f, 18f, 2),
     ProjectileType.WAIL         -> (drawWail _),
     ProjectileType.SOUL_DRAIN   -> beamProj(0.35f, 0.85f, 0.25f, 6f, 8f),
@@ -556,7 +631,7 @@ object GLProjectileRenderers {
     ProjectileType.SHADOW_BOLT  -> (drawShadowBolt _),
     ProjectileType.CURSED_BLADE -> spinner(0.55f, 0.15f, 0.25f, 22f, 4),
     ProjectileType.LIFE_DRAIN   -> beamProj(0.85f, 0.1f, 0.1f, 6f, 7f),
-    ProjectileType.SHOVEL       -> spinner(0.6f, 0.6f, 0.55f, 20f, 4),
+    ProjectileType.SHOVEL       -> lobbed(0.6f, 0.6f, 0.55f, 18f),
     ProjectileType.HEAD_THROW   -> lobbed(0.75f, 0.7f, 0.6f, 20f),
     ProjectileType.BANDAGE_WHIP -> beamProj(0.85f, 0.75f, 0.6f, 6f, 6f),
     ProjectileType.CURSE        -> energyBolt(0.4f, 0.1f, 0.55f, 22f),
@@ -568,7 +643,7 @@ object GLProjectileRenderers {
     ProjectileType.POISON_ARROW -> physProj(0.25f, 0.75f, 0.2f, 6f),
     ProjectileType.SONIC_WAVE   -> wave(0.75f, 0.55f, 0.95f, 32f),
     ProjectileType.SONIC_BOOM   -> aoeRing(0.75f, 0.55f, 0.95f, 55f),
-    ProjectileType.FIST         -> physProj(0.75f, 0.6f, 0.45f, 3.5f),
+    ProjectileType.FIST         -> fistProj(0.75f, 0.6f, 0.45f),
     ProjectileType.SMITE        -> energyBolt(1f, 0.95f, 0.6f, 26f),
     ProjectileType.CHARM        -> energyBolt(1f, 0.45f, 0.65f, 18f),
     ProjectileType.CARD         -> spinner(0.92f, 0.92f, 0.88f, 16f, 4),
@@ -604,7 +679,7 @@ object GLProjectileRenderers {
     // ── Character-specific (102-111) ──
     ProjectileType.KNIFE        -> spinner(0.8f, 0.82f, 0.85f, 16f, 2),
     ProjectileType.STING        -> energyBolt(0.45f, 0.9f, 1f, 16f),
-    ProjectileType.HAMMER       -> spinner(0.55f, 0.55f, 0.6f, 24f, 4),
+    ProjectileType.HAMMER       -> lobbed(0.55f, 0.55f, 0.6f, 18f),
     ProjectileType.HORN         -> physProj(0.65f, 0.6f, 0.45f, 6f),
     ProjectileType.MYSTIC_BOLT  -> energyBolt(0.55f, 0.35f, 0.85f, 20f),
     ProjectileType.PETRIFY      -> beamProj(0.65f, 0.6f, 0.5f, 7f, 8f),

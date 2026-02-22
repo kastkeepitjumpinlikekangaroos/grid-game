@@ -1317,11 +1317,11 @@ object CharacterDef {
 
   val MedusaChar: CharacterDef = CharacterDef(
     id = CharacterId.Medusa, displayName = "Medusa",
-    description = "A gorgon who petrifies with her gaze and fires soul bolts.",
+    description = "A gorgon who petrifies with her gaze and strikes with serpent venom.",
     spriteSheet = "sprites/medusa.png",
     qAbility = AbilityDef(name = "Petrify", description = "Petrifying gaze that freezes.", cooldownMs = 5000, maxRange = 20, damage = 5, projectileType = ProjectileType.PETRIFY, keybind = "Q"),
     eAbility = AbilityDef(name = "Stone Gaze", description = "Petrifying gaze roots all nearby enemies.", cooldownMs = 12000, maxRange = 0, damage = 15, projectileType = ProjectileType.STONE_GAZE, keybind = "E", castBehavior = GroundSlam(6.0f)),
-    primaryProjectileType = ProjectileType.SOUL_BOLT
+    primaryProjectileType = ProjectileType.VENOM_BOLT
   )
 
   val CerberusChar: CharacterDef = CharacterDef(

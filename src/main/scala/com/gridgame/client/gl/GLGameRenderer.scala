@@ -188,6 +188,11 @@ class GLGameRenderer(val client: GameClient) {
   private val _shieldHlYs = new Array[Float](4)
   private val _defItemXs = new Array[Float](4)
   private val _defItemYs = new Array[Float](4)
+  // Pre-allocated arrays for star triangle decomposition
+  private val _starTriXs = new Array[Float](3)
+  private val _starTriYs = new Array[Float](3)
+  private val _starPentXs = new Array[Float](5)
+  private val _starPentYs = new Array[Float](5)
   // Pre-allocated arrays for dune/wave background layers (avoids per-call allocation)
   private val _bgPolyXs = new Array[Float](63) // points=60 → 60+3=63
   private val _bgPolyYs = new Array[Float](63)
@@ -1281,6 +1286,29 @@ class GLGameRenderer(val client: GameClient) {
     shapeBatch.setAdditiveBlend(false)
   }
 
+  /** Fill a 10-vertex star polygon (concave) by decomposing into 5 point triangles + center pentagon. */
+  private def fillStarPolygon(xs: Array[Float], ys: Array[Float], r: Float, g: Float, b: Float, a: Float): Unit = {
+    // 5 triangles for the star points: each outer vertex + its two adjacent inner vertices
+    var k = 0
+    while (k < 5) {
+      val outer = k * 2
+      val innerPrev = (k * 2 + 9) % 10
+      val innerNext = (k * 2 + 1) % 10
+      _starTriXs(0) = xs(outer);     _starTriYs(0) = ys(outer)
+      _starTriXs(1) = xs(innerPrev); _starTriYs(1) = ys(innerPrev)
+      _starTriXs(2) = xs(innerNext); _starTriYs(2) = ys(innerNext)
+      shapeBatch.fillPolygon(_starTriXs, _starTriYs, 3, r, g, b, a)
+      k += 1
+    }
+    // Center pentagon from the 5 inner vertices (convex, fan triangulation works)
+    _starPentXs(0) = xs(1); _starPentYs(0) = ys(1)
+    _starPentXs(1) = xs(3); _starPentYs(1) = ys(3)
+    _starPentXs(2) = xs(5); _starPentYs(2) = ys(5)
+    _starPentXs(3) = xs(7); _starPentYs(3) = ys(7)
+    _starPentXs(4) = xs(9); _starPentYs(4) = ys(9)
+    shapeBatch.fillPolygon(_starPentXs, _starPentYs, 5, r, g, b, a)
+  }
+
   private def drawItemShape(itemType: ItemType, cx: Float, cy: Float, hs: Float, r: Float, g: Float, b: Float, rotation: Float = 0f): Unit = {
     val cos = Math.cos(rotation).toFloat
     val sin = Math.sin(rotation).toFloat
@@ -1323,7 +1351,7 @@ class GLGameRenderer(val client: GameClient) {
           _hlYs(i) = cy - (rad * Math.sin(angle)).toFloat
           i += 1
         }
-        shapeBatch.fillPolygon(_hlXs, _hlYs, 10, dr * 0.7f, dg * 0.7f, db * 0.7f, 1f)
+        fillStarPolygon(_hlXs, _hlYs, dr * 0.7f, dg * 0.7f, db * 0.7f, 1f)
         // Main star
         i = 0
         while (i < 10) {
@@ -1333,7 +1361,7 @@ class GLGameRenderer(val client: GameClient) {
           _starYs(i) = cy - (rad * Math.sin(angle)).toFloat
           i += 1
         }
-        shapeBatch.fillPolygon(_starXs, _starYs, 10, r, g, b, 1f)
+        fillStarPolygon(_starXs, _starYs, r, g, b, 1f)
         // Inner bright star (50% size, lighter)
         i = 0
         while (i < 10) {
@@ -1343,7 +1371,7 @@ class GLGameRenderer(val client: GameClient) {
           _hlYs(i) = cy - (rad * Math.sin(angle)).toFloat
           i += 1
         }
-        shapeBatch.fillPolygon(_hlXs, _hlYs, 10, hr, hg, hb, 0.45f)
+        fillStarPolygon(_hlXs, _hlYs, hr, hg, hb, 0.45f)
         // Bright center core
         shapeBatch.fillOvalSoft(cx, cy, hs * 0.4f, hs * 0.4f, 1f, 1f, 0.9f, 0.45f, 0f, 10)
         shapeBatch.fillOval(cx, cy, hs * 0.15f, hs * 0.15f, 1f, 1f, 1f, 0.65f, 8)
