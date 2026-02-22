@@ -108,35 +108,78 @@ class EntityCollector {
       }
     }
 
-    // Remote players (with visual interpolation) — use Java iterator directly
+    // Remote players (with visual interpolation + velocity extrapolation) — use Java iterator directly
+    // Per-player array layout: [visualX, visualY, lastDiscreteX, lastDiscreteY, velX, velY, lastUpdateTimeMs]
     val remoteLerp = 1.0 - Math.exp(-18.0 * deltaSec)
+    val nowMs = System.currentTimeMillis().toDouble
     val playerIter = client.getPlayers.values().iterator()
     while (playerIter.hasNext) {
       val player = playerIter.next()
       if (!player.isDead) {
         val pos = player.getPosition
         val pid = player.getId
+        val posX = pos.getX.toDouble
+        val posY = pos.getY.toDouble
         val existing = remoteVisualPositions.get(pid)
-        val rvx: Double = if (existing != null) {
-          val prevX = existing(0)
-          val nx = prevX + (pos.getX - prevX) * remoteLerp
-          if (Math.abs(nx - pos.getX) < 0.01) pos.getX.toDouble else nx
-        } else {
-          pos.getX.toDouble
-        }
-        val rvy: Double = if (existing != null) {
-          val prevY = existing(1)
-          val ny = prevY + (pos.getY - prevY) * remoteLerp
-          if (Math.abs(ny - pos.getY) < 0.01) pos.getY.toDouble else ny
-        } else {
-          pos.getY.toDouble
-        }
-        // Reuse existing array or allocate new one (once per player, not per frame)
+
+        var rvx: Double = posX
+        var rvy: Double = posY
+
         if (existing != null) {
+          val lastDiscX = existing(2)
+          val lastDiscY = existing(3)
+
+          // Detect position change (new server update arrived)
+          if (posX != lastDiscX || posY != lastDiscY) {
+            val dtSec = (nowMs - existing(6)) / 1000.0
+            val dx = posX - lastDiscX
+            val dy = posY - lastDiscY
+
+            if (Math.abs(dx) + Math.abs(dy) > 3 || dtSec <= 0.001) {
+              // Teleport: snap visual position, zero velocity
+              existing(0) = posX
+              existing(1) = posY
+              existing(4) = 0.0
+              existing(5) = 0.0
+            } else {
+              // Compute velocity from consecutive position updates
+              existing(4) = dx / dtSec
+              existing(5) = dy / dtSec
+            }
+            existing(2) = posX
+            existing(3) = posY
+            existing(6) = nowMs
+          }
+
+          // Extrapolate target position to bridge packet gaps, then fade back when idle.
+          // This predicts where the player likely is during UDP packet loss,
+          // preventing the visual snap that occurs when the next packet arrives.
+          val msSinceUpdate = nowMs - existing(6)
+          val MaxExtrapMs = 75.0 // ~1.5 packet intervals at 50ms move rate
+          val extrapSec = if (msSinceUpdate <= MaxExtrapMs) {
+            msSinceUpdate / 1000.0
+          } else {
+            // Fade extrapolation back to zero over the next interval to avoid overshoot when player stops
+            val fade = Math.max(0.0, 1.0 - (msSinceUpdate - MaxExtrapMs) / MaxExtrapMs)
+            (MaxExtrapMs / 1000.0) * fade
+          }
+          val targetX = existing(2) + existing(4) * extrapSec
+          val targetY = existing(3) + existing(5) * extrapSec
+
+          // Exponential smooth toward extrapolated target
+          val prevX = existing(0)
+          val prevY = existing(1)
+          val nx = prevX + (targetX - prevX) * remoteLerp
+          val ny = prevY + (targetY - prevY) * remoteLerp
+
+          // Snap to discrete position when close and extrapolation has faded
+          rvx = if (extrapSec < 0.001 && Math.abs(nx - posX) < 0.01) posX else nx
+          rvy = if (extrapSec < 0.001 && Math.abs(ny - posY) < 0.01) posY else ny
+
           existing(0) = rvx
           existing(1) = rvy
         } else {
-          remoteVisualPositions.put(pid, Array(rvx, rvy))
+          remoteVisualPositions.put(pid, Array(posX, posY, posX, posY, 0.0, 0.0, nowMs))
         }
         addEntity(pos.getX, pos.getY, PlayerEntry(player, rvx, rvy))
       }
