@@ -27,6 +27,10 @@ class LightSystem(var width: Int, var height: Int) {
   // Ambient light level (set per background type)
   var ambientLevel: Float = 0.35f
 
+  // Cache tracking — skip renderLightMap when nothing changed
+  private var _lastAmbient: Float = -1f
+  private var _lastLightCount: Int = -1
+
   /** Clear all lights for a new frame. */
   def clear(): Unit = {
     lightCount = 0
@@ -64,6 +68,10 @@ class LightSystem(var width: Int, var height: Int) {
    * canvasW/canvasH are the zoomed world-space dimensions used by the main projection.
    */
   def renderLightMap(shapeBatch: ShapeBatch, canvasW: Float, canvasH: Float): Unit = {
+    if (lightCount == 0 && lightCount == _lastLightCount && ambientLevel == _lastAmbient) return
+    _lastLightCount = lightCount
+    _lastAmbient = ambientLevel
+
     lightFBO.bindAsTarget()
     glViewport(0, 0, width / 2, height / 2)
     // Clear to ambient level

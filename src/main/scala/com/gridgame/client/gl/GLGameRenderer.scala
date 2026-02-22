@@ -31,6 +31,13 @@ class GLGameRenderer(val client: GameClient) {
   private var fontLarge: GLFontRenderer = _
   private var postProcessor: PostProcessor = _
   private var lightSystem: LightSystem = _
+  // Background FBO cache — re-render every N frames to amortize procedural generation cost
+  private var bgCacheFBO: GLTexture = _
+  private var bgCacheRegion: TextureRegion = _
+  private var bgCacheValid = false
+  private var bgCacheTick = 0
+  private var bgCacheType: Byte = -1
+  private val BG_CACHE_INTERVAL = 3
   private val damageNumbers = new DamageNumberSystem()
   private val weatherParticles = new ParticleSystem(1024)
   private val combatParticles = new ParticleSystem(512)
@@ -203,6 +210,29 @@ class GLGameRenderer(val client: GameClient) {
   private val _deferBarName = new Array[String](MAX_DEFERRED_BARS) // charName
   private var _deferBarCount = 0
 
+  // Deferred additive effects — batched to minimize blend mode toggles
+  private val MAX_DEFERRED_ADD_FX = 64
+  private val _dafCX = new Array[Double](MAX_DEFERRED_ADD_FX)
+  private val _dafCY = new Array[Double](MAX_DEFERRED_ADD_FX)
+  private val _dafFlags = new Array[Int](MAX_DEFERRED_ADD_FX)
+  private val _dafChargeLevel = new Array[Int](MAX_DEFERRED_ADD_FX)
+  private val _dafHitTime = new Array[Long](MAX_DEFERRED_ADD_FX)
+  private var _dafCount = 0
+  private final val FX_GEM = 1; private final val FX_CHARGE = 2; private final val FX_PHASED = 4
+  private final val FX_BURN = 8; private final val FX_HIT = 16; private final val FX_CAST = 32
+
+  // Deferred item additive effects (ground glow + sparkles)
+  private val MAX_DEFERRED_ITEM_FX = 64
+  private val _difCX = new Array[Float](MAX_DEFERRED_ITEM_FX)
+  private val _difCY = new Array[Float](MAX_DEFERRED_ITEM_FX)
+  private val _difHS = new Array[Float](MAX_DEFERRED_ITEM_FX)
+  private val _difR = new Array[Float](MAX_DEFERRED_ITEM_FX)
+  private val _difG = new Array[Float](MAX_DEFERRED_ITEM_FX)
+  private val _difB = new Array[Float](MAX_DEFERRED_ITEM_FX)
+  private val _difGlowPulse = new Array[Float](MAX_DEFERRED_ITEM_FX)
+  private val _difBobPhase = new Array[Float](MAX_DEFERRED_ITEM_FX)
+  private var _difCount = 0
+
   private def deferHealthBar(cx: Double, topY: Double, hp: Int, maxHp: Int, team: Byte, pid: UUID, name: String): Unit = {
     if (_deferBarCount >= MAX_DEFERRED_BARS) return
     val i = _deferBarCount
@@ -232,6 +262,49 @@ class GLGameRenderer(val client: GameClient) {
       i += 1
     }
     _deferBarCount = 0
+  }
+
+  private def flushDeferredAdditiveFx(): Unit = {
+    if (_dafCount == 0 && _difCount == 0) return
+    beginShapes()
+    shapeBatch.setAdditiveBlend(true)
+    // Player effects
+    var i = 0
+    while (i < _dafCount) {
+      val cx = _dafCX(i); val cy = _dafCY(i); val flags = _dafFlags(i)
+      if ((flags & FX_GEM) != 0) drawGemGlowInner(cx, cy)
+      if ((flags & FX_CHARGE) != 0) drawChargingEffectInner(cx, cy, _dafChargeLevel(i))
+      if ((flags & FX_PHASED) != 0) drawPhasedEffectInner(cx, cy)
+      if ((flags & FX_BURN) != 0) drawBurnEffectInner(cx, cy)
+      if ((flags & FX_HIT) != 0) drawHitEffectInner(cx, cy, _dafHitTime(i))
+      if ((flags & FX_CAST) != 0) drawCastFlashInner(cx, cy)
+      i += 1
+    }
+    // Item additive effects (ground glow + sparkles)
+    i = 0
+    while (i < _difCount) {
+      val cx = _difCX(i); val cy = _difCY(i); val hs = _difHS(i)
+      val ir = _difR(i); val ig = _difG(i); val ib = _difB(i)
+      val glowPulse = _difGlowPulse(i); val bobPhase = _difBobPhase(i)
+      // Ground glow
+      shapeBatch.fillOvalSoft(cx, cy + hs * 0.3f, hs * 2.5f, hs * 0.7f, ir, ig, ib, 0.22f * glowPulse, 0f, 14)
+      shapeBatch.fillOvalSoft(cx, cy, hs * 2.8f, hs * 2f, ir, ig, ib, 0.1f * glowPulse, 0f, 14)
+      // Sparkles
+      var j = 0
+      while (j < 3) {
+        val sparkAngle = bobPhase * 0.8f + j * (2 * Math.PI / 3).toFloat
+        val sparkDist = hs * 1.1f
+        val sx = cx + sparkDist * Math.cos(sparkAngle).toFloat
+        val sy = cy + sparkDist * Math.sin(sparkAngle).toFloat * 0.6f
+        val sparkAlpha = (0.3 + 0.4 * Math.sin(bobPhase * 2.5 + j * 2.1)).toFloat
+        val sparkSize = (1.5 + Math.sin(bobPhase * 3.0 + j) * 0.7).toFloat
+        shapeBatch.fillDot(sx, sy, sparkSize, 1f, 1f, 1f, clamp(sparkAlpha))
+        j += 1
+      }
+      i += 1
+    }
+    shapeBatch.setAdditiveBlend(false)
+    _dafCount = 0; _difCount = 0
   }
 
   // ── Batch management ──
@@ -273,6 +346,8 @@ class GLGameRenderer(val client: GameClient) {
     fontLarge = new GLFontRenderer(44)
     postProcessor = new PostProcessor(width, height)
     lightSystem = new LightSystem(width, height)
+    bgCacheFBO = GLTexture.createFBO(width, height)
+    bgCacheRegion = bgCacheFBO.fullRegion
     damageNumbers.setFont(fontMedium)
     initialized = true
   }
@@ -319,6 +394,9 @@ class GLGameRenderer(val client: GameClient) {
     if (fbWidth != lastFbWidth || fbHeight != lastFbHeight) {
       postProcessor.resize(fbWidth, fbHeight)
       lightSystem.resize(fbWidth, fbHeight)
+      bgCacheFBO = GLTexture.resizeFBO(bgCacheFBO, fbWidth, fbHeight)
+      bgCacheRegion = bgCacheFBO.fullRegion
+      bgCacheValid = false
       lastFbWidth = fbWidth
       lastFbHeight = fbHeight
     }
@@ -337,17 +415,32 @@ class GLGameRenderer(val client: GameClient) {
     // Update damage numbers
     damageNumbers.update(deltaSec.toFloat)
 
-    postProcessor.beginScene()
-
     // Set up projection for zoomed world-space rendering
     projection = Matrix4.orthographic(0f, canvasW.toFloat, canvasH.toFloat, 0f)
 
-    // === Background ===
-    beginShapes()
-    renderBackground(world.background)
+    // === Background cache: re-render to dedicated FBO when stale ===
+    val bgStale = !bgCacheValid || _bgType != bgCacheType ||
+      (animationTick - bgCacheTick) >= BG_CACHE_INTERVAL
+    if (bgStale) {
+      bgCacheFBO.bindAsTarget()  // sets viewport to FBO dimensions
+      glClearColor(0f, 0f, 0f, 1f)
+      glClear(GL_COLOR_BUFFER_BIT)
+      shapeBatch.begin(projection)
+      renderBackground(world.background)
+      shapeBatch.end()
+      bgCacheFBO.unbindTarget()
+      bgCacheValid = true; bgCacheTick = animationTick; bgCacheType = _bgType
+    }
+
+    postProcessor.beginScene()
+
+    // Blit cached background
+    beginSprites()
+    spriteBatch.draw(bgCacheRegion, 0f, 0f, canvasW.toFloat, canvasH.toFloat)
 
     // === Weather particles ===
     spawnWeatherParticles(world.background, dt)
+    beginShapes()
     weatherParticles.render(shapeBatch)
 
     // === Calculate visible tile bounds (optimized: share rx/ry intermediates) ===
@@ -382,6 +475,8 @@ class GLGameRenderer(val client: GameClient) {
     drawnItemIdsThisFrame.clear()
     _specialTileCount = 0
     _deferBarCount = 0
+    _dafCount = 0
+    _difCount = 0
     val localVX = camera.visualX
     val localVY = camera.visualY
     val entitiesByCell = entityCollector.collect(
@@ -487,6 +582,9 @@ class GLGameRenderer(val client: GameClient) {
 
     // === Deferred health bars + names (batched to reduce batch switches) ===
     flushDeferredBars()
+
+    // === Deferred additive effects (single blend toggle for all player/item effects) ===
+    flushDeferredAdditiveFx()
 
     // === Item pickup detection ===
     detectItemChanges()
@@ -724,8 +822,9 @@ class GLGameRenderer(val client: GameClient) {
       else if (colorSeed < 0.8) { sr = 0.7f; sg = 0.8f; sb = 1f }
       else { sr = 1f; sg = 0.95f; sb = 0.7f }
       val size = 1f + hash(i * 3 + 8).toFloat * 2f
-      // Star core
-      shapeBatch.fillOval(sx, sy, size, size, sr, sg, sb, brightness)
+      // Star core — use fillDot for small stars (6 verts vs 60)
+      if (size <= 2f) shapeBatch.fillDot(sx, sy, size, sr, sg, sb, brightness)
+      else shapeBatch.fillOval(sx, sy, size, size, sr, sg, sb, brightness, 8)
       // Glow halo (additive)
       if (baseBrightness > 0.6f) {
         shapeBatch.fillOvalSoft(sx, sy, size * 3, size * 3, sr, sg, sb, brightness * 0.3f, 0f, 12)
@@ -935,15 +1034,10 @@ class GLGameRenderer(val client: GameClient) {
 
     val playerIsPhased = player.isPhased
 
-    // Pre-player effects
+    // Pre-player non-additive effects
     if (!playerIsPhased) {
       if (player.hasShield) drawShieldBubble(screenX, spriteCenter)
-      if (player.hasGemBoost) drawGemGlow(screenX, spriteCenter)
-      drawChargingEffect(screenX, spriteCenter, player.getChargeLevel)
     }
-
-    // Phased shimmer
-    if (playerIsPhased) drawPhasedEffect(screenX, spriteCenter)
 
     drawShadow(screenX, screenY)
 
@@ -964,13 +1058,27 @@ class GLGameRenderer(val client: GameClient) {
         displaySz.toFloat, displaySz.toFloat, 1f, g, b, alpha)
     }
 
-    // Post-player effects
+    // Post-player non-additive effects
     if (player.isFrozen) drawFrozenEffect(screenX, spriteCenter)
     if (player.isRooted) drawRootedEffect(screenX, spriteCenter)
     if (player.isSlowed) drawSlowedEffect(screenX, spriteCenter)
-    if (player.isBurning) drawBurnEffect(screenX, spriteCenter)
     if (player.hasSpeedBoost) drawSpeedBoostEffect(screenX, spriteCenter)
-    drawHitEffect(screenX, spriteCenter, hitTime)
+
+    // Defer additive effects to batch pass
+    var fxFlags = 0
+    if (player.hasGemBoost && !playerIsPhased) fxFlags |= FX_GEM
+    if (player.getChargeLevel > 0 && !playerIsPhased) fxFlags |= FX_CHARGE
+    if (playerIsPhased) fxFlags |= FX_PHASED
+    if (player.isBurning) fxFlags |= FX_BURN
+    fxFlags |= FX_HIT // hitTime checked inside Inner method
+    if (fxFlags != 0) {
+      val di = _dafCount
+      if (di < MAX_DEFERRED_ADD_FX) {
+        _dafCX(di) = screenX; _dafCY(di) = spriteCenter
+        _dafFlags(di) = fxFlags; _dafChargeLevel(di) = player.getChargeLevel
+        _dafHitTime(di) = hitTime; _dafCount += 1
+      }
+    }
 
     // Health bar + name (deferred to batch pass)
     val charName = CharacterDef.get(player.getCharacterId).displayName
@@ -986,11 +1094,7 @@ class GLGameRenderer(val client: GameClient) {
 
     if (!localIsPhased) {
       if (client.hasShield) drawShieldBubble(screenX, spriteCenter)
-      if (client.hasGemBoost) drawGemGlow(screenX, spriteCenter)
-      drawChargingEffect(screenX, spriteCenter, client.getChargeLevel)
     }
-
-    if (localIsPhased) drawPhasedEffect(screenX, spriteCenter)
 
     // Dash afterimage
     if (client.isSwooping) drawSwoopTrail(wx, wy, displaySz)
@@ -1018,14 +1122,27 @@ class GLGameRenderer(val client: GameClient) {
         displaySz.toFloat, displaySz.toFloat, 1f, g, b, alpha)
     }
 
-    drawCastFlash(screenX, spriteCenter)
+    // Non-additive post-player effects
     if (client.isFrozen) drawFrozenEffect(screenX, spriteCenter)
     if (client.isRooted) drawRootedEffect(screenX, spriteCenter)
     if (client.isSlowed) drawSlowedEffect(screenX, spriteCenter)
-    if (client.isBurning) drawBurnEffect(screenX, spriteCenter)
     if (client.hasSpeedBoost) drawSpeedBoostEffect(screenX, spriteCenter)
 
-    drawHitEffect(screenX, spriteCenter, localHitTime)
+    // Defer additive effects to batch pass
+    var fxFlags = 0
+    if (client.hasGemBoost && !localIsPhased) fxFlags |= FX_GEM
+    if (client.getChargeLevel > 0 && !localIsPhased) fxFlags |= FX_CHARGE
+    if (localIsPhased) fxFlags |= FX_PHASED
+    if (client.isBurning) fxFlags |= FX_BURN
+    fxFlags |= FX_HIT | FX_CAST
+    if (fxFlags != 0) {
+      val di = _dafCount
+      if (di < MAX_DEFERRED_ADD_FX) {
+        _dafCX(di) = screenX; _dafCY(di) = spriteCenter
+        _dafFlags(di) = fxFlags; _dafChargeLevel(di) = client.getChargeLevel
+        _dafHitTime(di) = localHitTime; _dafCount += 1
+      }
+    }
 
     // Health bar + name (deferred to batch pass)
     val charName = client.getSelectedCharacterDef.displayName
@@ -1200,6 +1317,68 @@ class GLGameRenderer(val client: GameClient) {
     shapeBatch.setAdditiveBlend(false)
   }
 
+  // Inner methods for deferred additive rendering (no blend toggle, no beginShapes)
+  private def drawGemGlowInner(cx: Double, cy: Double): Unit = {
+    val pulse = (0.7 + 0.3 * Math.sin(animationTick * 0.08)).toFloat
+    shapeBatch.fillOvalSoft(cx.toFloat, cy.toFloat, 18f, 14f, 0f, 0.9f, 0.8f, 0.12f * pulse, 0f, 16)
+  }
+
+  private def drawChargingEffectInner(cx: Double, cy: Double, chargeLevel: Int): Unit = {
+    if (chargeLevel <= 0) return
+    val pct = chargeLevel / 100f
+    val ringR = 12f + pct * 8f
+    val pulse = (0.8 + 0.2 * Math.sin(animationTick * 0.15)).toFloat
+    shapeBatch.fillOvalSoft(cx.toFloat, cy.toFloat, ringR, ringR * 0.7f, 1f, 0.8f * (1 - pct * 0.5f), 0.2f, 0.1f * pct * pulse, 0f, 20)
+  }
+
+  private def drawPhasedEffectInner(cx: Double, cy: Double): Unit = {
+    val shimmer = (0.5 + 0.5 * Math.sin(animationTick * 0.12)).toFloat
+    shapeBatch.fillOvalSoft(cx.toFloat, cy.toFloat, 16f, 14f, 0.5f, 0.3f, 0.8f, 0.08f * shimmer, 0f, 16)
+  }
+
+  private def drawBurnEffectInner(cx: Double, cy: Double): Unit = {
+    var i = 0
+    while (i < 5) {
+      val angle = (animationTick * 0.15 + i * 1.3).toFloat
+      val dist = 8f + Math.sin(animationTick * 0.1 + i).toFloat * 4
+      val fx = cx.toFloat + dist * Math.cos(angle).toFloat
+      val fy = cy.toFloat + dist * Math.sin(angle).toFloat * 0.5f - (animationTick * 0.5f + i * 2) % 10
+      shapeBatch.fillOval(fx, fy, 3f, 4f, 1f, 0.6f, 0.1f, 0.4f, 8)
+      i += 1
+    }
+  }
+
+  private def drawHitEffectInner(cx: Double, cy: Double, hitTime: Long): Unit = {
+    if (hitTime <= 0) return
+    val elapsed = _frameTimeMs - hitTime
+    if (elapsed > HIT_ANIMATION_MS) return
+    val progress = elapsed.toDouble / HIT_ANIMATION_MS
+    val fadeOut = (1.0 - progress).toFloat
+    val x = cx.toFloat
+    val y = cy.toFloat
+    shapeBatch.fillOval(x, y, 24f * fadeOut, 18f * fadeOut, 1f, 0.4f, 0.1f, 0.4f * fadeOut, 14)
+    shapeBatch.fillOval(x, y, 14f * fadeOut, 10f * fadeOut, 1f, 0.9f, 0.7f, 0.3f * fadeOut, 10)
+    val sparkDist = 8f + 20f * progress.toFloat
+    val sparkSz = 3f * fadeOut
+    var i = 0
+    while (i < 6) {
+      val angle = i * 1.047f + hitTime * 0.001f
+      val sx = x + math.cos(angle).toFloat * sparkDist
+      val sy = y + math.sin(angle).toFloat * sparkDist * 0.6f
+      shapeBatch.fillOval(sx, sy, sparkSz, sparkSz, 1f, 0.8f, 0.2f, 0.5f * fadeOut, 6)
+      i += 1
+    }
+  }
+
+  private def drawCastFlashInner(cx: Double, cy: Double): Unit = {
+    val castTime = client.getLastCastTime
+    if (castTime <= 0) return
+    val elapsed = _frameTimeMs - castTime
+    if (elapsed > 200) return
+    val fadeOut = (1.0 - elapsed / 200.0).toFloat
+    shapeBatch.fillOvalSoft(cx.toFloat, cy.toFloat, 14f, 10f, 1f, 1f, 0.8f, 0.3f * fadeOut, 0f, 16)
+  }
+
   // ═══════════════════════════════════════════════════════════════════
   //  ITEM RENDERING (5e)
   // ═══════════════════════════════════════════════════════════════════
@@ -1256,29 +1435,17 @@ class GLGameRenderer(val client: GameClient) {
     // Drop shadow on ground
     shapeBatch.fillOvalSoft(centerX, centerY + hs * 0.85f, hs * 1.2f, hs * 0.3f, 0f, 0f, 0f, 0.2f, 0f, 12)
 
-    // Ground glow (additive) — larger and more visible
-    shapeBatch.setAdditiveBlend(true)
-    shapeBatch.fillOvalSoft(centerX, centerY + hs * 0.3f, hs * 2.5f, hs * 0.7f, ir, ig, ib, 0.22f * glowPulse, 0f, 14)
-    shapeBatch.fillOvalSoft(centerX, centerY, hs * 2.8f, hs * 2f, ir, ig, ib, 0.1f * glowPulse, 0f, 14)
-    shapeBatch.setAdditiveBlend(false)
-
     // Main item shape with highlights and outline
     drawItemShape(item.itemType, centerX, centerY, hs, ir, ig, ib, rotAngle)
 
-    // Sparkle particles (additive)
-    shapeBatch.setAdditiveBlend(true)
-    var i = 0
-    while (i < 3) {
-      val sparkAngle = bobPhase * 0.8f + i * (2 * Math.PI / 3).toFloat
-      val sparkDist = hs * 1.1f
-      val sx = centerX + sparkDist * Math.cos(sparkAngle).toFloat
-      val sy = centerY + sparkDist * Math.sin(sparkAngle).toFloat * 0.6f
-      val sparkAlpha = (0.3 + 0.4 * Math.sin(bobPhase * 2.5 + i * 2.1)).toFloat
-      val sparkSize = (1.5 + Math.sin(bobPhase * 3.0 + i) * 0.7).toFloat
-      shapeBatch.fillOval(sx, sy, sparkSize, sparkSize, 1f, 1f, 1f, clamp(sparkAlpha))
-      i += 1
+    // Defer additive effects (ground glow + sparkles) to batch pass
+    val di = _difCount
+    if (di < MAX_DEFERRED_ITEM_FX) {
+      _difCX(di) = centerX; _difCY(di) = centerY; _difHS(di) = hs
+      _difR(di) = ir; _difG(di) = ig; _difB(di) = ib
+      _difGlowPulse(di) = glowPulse; _difBobPhase(di) = bobPhase
+      _difCount += 1
     }
-    shapeBatch.setAdditiveBlend(false)
   }
 
   private def drawItemShape(itemType: ItemType, cx: Float, cy: Float, hs: Float, r: Float, g: Float, b: Float, rotation: Float = 0f): Unit = {
@@ -2040,7 +2207,7 @@ class GLGameRenderer(val client: GameClient) {
     val nameY = (spriteTopY - Constants.HEALTH_BAR_OFFSET_Y - barH - fontSmall.charHeight - 2).toFloat
     val textW = fontSmall.measureWidth(name)
     val textX = (screenCenterX - textW / 2).toFloat
-    fontSmall.drawTextOutlined(spriteBatch, name, textX, nameY)
+    fontSmall.drawTextShadow(spriteBatch, name, textX, nameY)
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -3088,6 +3255,7 @@ class GLGameRenderer(val client: GameClient) {
       fontLarge.dispose()
       postProcessor.dispose()
       lightSystem.dispose()
+      if (bgCacheFBO != null) bgCacheFBO.dispose()
       GLTileRenderer.dispose()
       GLSpriteGenerator.clearCache()
       initialized = false

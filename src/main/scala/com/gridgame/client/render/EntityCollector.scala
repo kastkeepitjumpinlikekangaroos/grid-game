@@ -87,11 +87,14 @@ class EntityCollector {
     val cullingMinY = minVisY - 2
     val cullingMaxY = maxVisY + 2
 
-    // Items — use Java iterator directly
+    // Items — use Java iterator directly, skip off-screen
     val itemIter = client.getItems.values().iterator()
     while (itemIter.hasNext) {
       val item = itemIter.next()
-      addEntity(item.getCellX, item.getCellY, ItemEntry(item))
+      val ix = item.getCellX; val iy = item.getCellY
+      if (ix >= cullingMinX && ix <= cullingMaxX && iy >= cullingMinY && iy <= cullingMaxY) {
+        addEntity(ix, iy, ItemEntry(item))
+      }
     }
 
     // Projectiles — use Java iterator directly, skip off-screen

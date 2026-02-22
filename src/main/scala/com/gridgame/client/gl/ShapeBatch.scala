@@ -110,6 +110,11 @@ class ShapeBatch(val shader: ShaderProgram) {
     }
   }
 
+  /** Fast 6-vertex rect for sub-4px elements where oval detail is imperceptible. */
+  @inline def fillDot(cx: Float, cy: Float, r: Float, cr: Float, cg: Float, cb: Float, ca: Float): Unit = {
+    fillRect(cx - r, cy - r, r * 2, r * 2, cr, cg, cb, ca)
+  }
+
   def fillRect(x: Float, y: Float, w: Float, h: Float, r: Float, g: Float, b: Float, a: Float): Unit = {
     ensureCapacity(6)
     // Two triangles
