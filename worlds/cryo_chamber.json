@@ -4,62 +4,321 @@
   "width": 110,
   "height": 110,
   "layers": [
-    {"type": "fill", "tile": "void"},
-    {"type": "border", "tile": "basalt", "thickness": 3},
-
-    {"type": "rect", "tile": "metal", "x": 8, "y": 8, "width": 94, "height": 94},
-    {"type": "rect", "tile": "ice", "x": 12, "y": 12, "width": 86, "height": 86},
-
-    {"type": "rect", "tile": "snow", "x": 20, "y": 20, "width": 70, "height": 70},
-
-    {"type": "circle", "tile": "ice", "cx": 55, "cy": 55, "radius": 18},
-    {"type": "circle", "tile": "glass", "cx": 55, "cy": 55, "radius": 12},
-    {"type": "circle", "tile": "energy_field", "cx": 55, "cy": 55, "radius": 5},
-
-    {"type": "rect", "tile": "metal", "x": 20, "y": 20, "width": 16, "height": 16},
-    {"type": "rect", "tile": "snow", "x": 23, "y": 23, "width": 10, "height": 10},
-    {"type": "rect", "tile": "wall", "x": 26, "y": 26, "width": 4, "height": 4},
-
-    {"type": "rect", "tile": "metal", "x": 74, "y": 20, "width": 16, "height": 16},
-    {"type": "rect", "tile": "snow", "x": 77, "y": 23, "width": 10, "height": 10},
-    {"type": "rect", "tile": "wall", "x": 80, "y": 26, "width": 4, "height": 4},
-
-    {"type": "rect", "tile": "metal", "x": 20, "y": 74, "width": 16, "height": 16},
-    {"type": "rect", "tile": "snow", "x": 23, "y": 77, "width": 10, "height": 10},
-    {"type": "rect", "tile": "wall", "x": 26, "y": 80, "width": 4, "height": 4},
-
-    {"type": "rect", "tile": "metal", "x": 74, "y": 74, "width": 16, "height": 16},
-    {"type": "rect", "tile": "snow", "x": 77, "y": 77, "width": 10, "height": 10},
-    {"type": "rect", "tile": "wall", "x": 80, "y": 80, "width": 4, "height": 4},
-
-    {"type": "rect", "tile": "wall", "x": 40, "y": 30, "width": 3, "height": 10},
-    {"type": "rect", "tile": "wall", "x": 67, "y": 30, "width": 3, "height": 10},
-    {"type": "rect", "tile": "wall", "x": 40, "y": 70, "width": 3, "height": 10},
-    {"type": "rect", "tile": "wall", "x": 67, "y": 70, "width": 3, "height": 10},
-
-    {"type": "rect", "tile": "wall", "x": 30, "y": 43, "width": 10, "height": 3},
-    {"type": "rect", "tile": "wall", "x": 70, "y": 43, "width": 10, "height": 3},
-    {"type": "rect", "tile": "wall", "x": 30, "y": 64, "width": 10, "height": 3},
-    {"type": "rect", "tile": "wall", "x": 70, "y": 64, "width": 10, "height": 3},
-
-    {"type": "line", "tile": "metal", "x1": 12, "y1": 55, "x2": 37, "y2": 55, "thickness": 2},
-    {"type": "line", "tile": "metal", "x1": 73, "y1": 55, "x2": 98, "y2": 55, "thickness": 2},
-    {"type": "line", "tile": "metal", "x1": 55, "y1": 12, "x2": 55, "y2": 37, "thickness": 2},
-    {"type": "line", "tile": "metal", "x1": 55, "y1": 73, "x2": 55, "y2": 98, "thickness": 2},
-
-    {"type": "rect", "tile": "crystal", "x": 14, "y": 52, "width": 3, "height": 6},
-    {"type": "rect", "tile": "crystal", "x": 93, "y": 52, "width": 3, "height": 6},
-    {"type": "rect", "tile": "crystal", "x": 52, "y": 14, "width": 6, "height": 3},
-    {"type": "rect", "tile": "crystal", "x": 52, "y": 93, "width": 6, "height": 3}
+    {
+      "type": "fill",
+      "tile": "void"
+    },
+    {
+      "type": "border",
+      "tile": "basalt",
+      "thickness": 3
+    },
+    {
+      "type": "rect",
+      "tile": "metal",
+      "x": 8,
+      "y": 8,
+      "width": 94,
+      "height": 94
+    },
+    {
+      "type": "rect",
+      "tile": "ice",
+      "x": 12,
+      "y": 12,
+      "width": 86,
+      "height": 86
+    },
+    {
+      "type": "rect",
+      "tile": "snow",
+      "x": 20,
+      "y": 20,
+      "width": 70,
+      "height": 70
+    },
+    {
+      "type": "circle",
+      "tile": "ice",
+      "cx": 55,
+      "cy": 55,
+      "radius": 18
+    },
+    {
+      "type": "circle",
+      "tile": "glass",
+      "cx": 55,
+      "cy": 55,
+      "radius": 12
+    },
+    {
+      "type": "circle",
+      "tile": "energy_field",
+      "cx": 55,
+      "cy": 55,
+      "radius": 5
+    },
+    {
+      "type": "rect",
+      "tile": "metal",
+      "x": 20,
+      "y": 20,
+      "width": 16,
+      "height": 16
+    },
+    {
+      "type": "rect",
+      "tile": "snow",
+      "x": 23,
+      "y": 23,
+      "width": 10,
+      "height": 10
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 26,
+      "y": 26,
+      "width": 4,
+      "height": 4
+    },
+    {
+      "type": "rect",
+      "tile": "metal",
+      "x": 74,
+      "y": 20,
+      "width": 16,
+      "height": 16
+    },
+    {
+      "type": "rect",
+      "tile": "snow",
+      "x": 77,
+      "y": 23,
+      "width": 10,
+      "height": 10
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 80,
+      "y": 26,
+      "width": 4,
+      "height": 4
+    },
+    {
+      "type": "rect",
+      "tile": "metal",
+      "x": 20,
+      "y": 74,
+      "width": 16,
+      "height": 16
+    },
+    {
+      "type": "rect",
+      "tile": "snow",
+      "x": 23,
+      "y": 77,
+      "width": 10,
+      "height": 10
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 26,
+      "y": 80,
+      "width": 4,
+      "height": 4
+    },
+    {
+      "type": "rect",
+      "tile": "metal",
+      "x": 74,
+      "y": 74,
+      "width": 16,
+      "height": 16
+    },
+    {
+      "type": "rect",
+      "tile": "snow",
+      "x": 77,
+      "y": 77,
+      "width": 10,
+      "height": 10
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 80,
+      "y": 80,
+      "width": 4,
+      "height": 4
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 40,
+      "y": 30,
+      "width": 3,
+      "height": 10
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 67,
+      "y": 30,
+      "width": 3,
+      "height": 10
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 40,
+      "y": 70,
+      "width": 3,
+      "height": 10
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 67,
+      "y": 70,
+      "width": 3,
+      "height": 10
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 30,
+      "y": 43,
+      "width": 10,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 70,
+      "y": 43,
+      "width": 10,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 30,
+      "y": 64,
+      "width": 10,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 70,
+      "y": 64,
+      "width": 10,
+      "height": 3
+    },
+    {
+      "type": "line",
+      "tile": "metal",
+      "x1": 12,
+      "y1": 55,
+      "x2": 37,
+      "y2": 55,
+      "thickness": 2
+    },
+    {
+      "type": "line",
+      "tile": "metal",
+      "x1": 73,
+      "y1": 55,
+      "x2": 98,
+      "y2": 55,
+      "thickness": 2
+    },
+    {
+      "type": "line",
+      "tile": "metal",
+      "x1": 55,
+      "y1": 12,
+      "x2": 55,
+      "y2": 37,
+      "thickness": 2
+    },
+    {
+      "type": "line",
+      "tile": "metal",
+      "x1": 55,
+      "y1": 73,
+      "x2": 55,
+      "y2": 98,
+      "thickness": 2
+    },
+    {
+      "type": "rect",
+      "tile": "crystal",
+      "x": 14,
+      "y": 52,
+      "width": 3,
+      "height": 6
+    },
+    {
+      "type": "rect",
+      "tile": "crystal",
+      "x": 93,
+      "y": 52,
+      "width": 3,
+      "height": 6
+    },
+    {
+      "type": "rect",
+      "tile": "crystal",
+      "x": 52,
+      "y": 14,
+      "width": 6,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "crystal",
+      "x": 52,
+      "y": 93,
+      "width": 6,
+      "height": 3
+    }
   ],
   "spawnPoints": [
-    {"x": 28, "y": 28},
-    {"x": 82, "y": 28},
-    {"x": 28, "y": 82},
-    {"x": 82, "y": 82},
-    {"x": 55, "y": 15},
-    {"x": 55, "y": 95},
-    {"x": 15, "y": 55},
-    {"x": 95, "y": 55}
+    {
+      "x": 28,
+      "y": 30
+    },
+    {
+      "x": 84,
+      "y": 28
+    },
+    {
+      "x": 30,
+      "y": 82
+    },
+    {
+      "x": 84,
+      "y": 82
+    },
+    {
+      "x": 55,
+      "y": 17
+    },
+    {
+      "x": 55,
+      "y": 96
+    },
+    {
+      "x": 13,
+      "y": 55
+    },
+    {
+      "x": 96,
+      "y": 55
+    }
   ]
 }

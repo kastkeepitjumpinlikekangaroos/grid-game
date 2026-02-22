@@ -4,60 +4,315 @@
   "width": 110,
   "height": 110,
   "layers": [
-    {"type": "fill", "tile": "metal"},
-    {"type": "border", "tile": "basalt", "thickness": 4},
-
-    {"type": "circle", "tile": "circuit", "cx": 55, "cy": 55, "radius": 35},
-
-    {"type": "circle", "tile": "metal", "cx": 55, "cy": 55, "radius": 18},
-    {"type": "circle", "tile": "glass", "cx": 55, "cy": 55, "radius": 12},
-    {"type": "circle", "tile": "lava", "cx": 55, "cy": 55, "radius": 6},
-    {"type": "circle", "tile": "plasma", "cx": 55, "cy": 55, "radius": 3},
-
-    {"type": "line", "tile": "metal", "x1": 55, "y1": 8, "x2": 55, "y2": 37, "thickness": 4},
-    {"type": "line", "tile": "metal", "x1": 55, "y1": 73, "x2": 55, "y2": 102, "thickness": 4},
-    {"type": "line", "tile": "metal", "x1": 8, "y1": 55, "x2": 37, "y2": 55, "thickness": 4},
-    {"type": "line", "tile": "metal", "x1": 73, "y1": 55, "x2": 102, "y2": 55, "thickness": 4},
-
-    {"type": "rect", "tile": "energy_field", "x": 53, "y": 38, "width": 4, "height": 2},
-    {"type": "rect", "tile": "energy_field", "x": 53, "y": 70, "width": 4, "height": 2},
-    {"type": "rect", "tile": "energy_field", "x": 38, "y": 53, "width": 2, "height": 4},
-    {"type": "rect", "tile": "energy_field", "x": 70, "y": 53, "width": 2, "height": 4},
-
-    {"type": "rect", "tile": "wall", "x": 25, "y": 25, "width": 8, "height": 3},
-    {"type": "rect", "tile": "wall", "x": 77, "y": 25, "width": 8, "height": 3},
-    {"type": "rect", "tile": "wall", "x": 25, "y": 82, "width": 8, "height": 3},
-    {"type": "rect", "tile": "wall", "x": 77, "y": 82, "width": 8, "height": 3},
-    {"type": "rect", "tile": "wall", "x": 25, "y": 30, "width": 3, "height": 8},
-    {"type": "rect", "tile": "wall", "x": 82, "y": 30, "width": 3, "height": 8},
-    {"type": "rect", "tile": "wall", "x": 25, "y": 72, "width": 3, "height": 8},
-    {"type": "rect", "tile": "wall", "x": 82, "y": 72, "width": 3, "height": 8},
-
-    {"type": "rect", "tile": "circuit", "x": 8, "y": 8, "width": 14, "height": 14},
-    {"type": "rect", "tile": "wall", "x": 12, "y": 12, "width": 6, "height": 6},
-
-    {"type": "rect", "tile": "circuit", "x": 88, "y": 8, "width": 14, "height": 14},
-    {"type": "rect", "tile": "wall", "x": 92, "y": 12, "width": 6, "height": 6},
-
-    {"type": "rect", "tile": "circuit", "x": 8, "y": 88, "width": 14, "height": 14},
-    {"type": "rect", "tile": "wall", "x": 12, "y": 92, "width": 6, "height": 6},
-
-    {"type": "rect", "tile": "circuit", "x": 88, "y": 88, "width": 14, "height": 14},
-    {"type": "rect", "tile": "wall", "x": 92, "y": 92, "width": 6, "height": 6},
-
-    {"type": "line", "tile": "plasma", "x1": 20, "y1": 20, "x2": 35, "y2": 35, "thickness": 1},
-    {"type": "line", "tile": "plasma", "x1": 90, "y1": 20, "x2": 75, "y2": 35, "thickness": 1},
-    {"type": "line", "tile": "plasma", "x1": 20, "y1": 90, "x2": 35, "y2": 75, "thickness": 1},
-    {"type": "line", "tile": "plasma", "x1": 90, "y1": 90, "x2": 75, "y2": 75, "thickness": 1}
+    {
+      "type": "fill",
+      "tile": "metal"
+    },
+    {
+      "type": "border",
+      "tile": "basalt",
+      "thickness": 4
+    },
+    {
+      "type": "circle",
+      "tile": "circuit",
+      "cx": 55,
+      "cy": 55,
+      "radius": 35
+    },
+    {
+      "type": "circle",
+      "tile": "metal",
+      "cx": 55,
+      "cy": 55,
+      "radius": 18
+    },
+    {
+      "type": "circle",
+      "tile": "glass",
+      "cx": 55,
+      "cy": 55,
+      "radius": 12
+    },
+    {
+      "type": "circle",
+      "tile": "lava",
+      "cx": 55,
+      "cy": 55,
+      "radius": 6
+    },
+    {
+      "type": "circle",
+      "tile": "plasma",
+      "cx": 55,
+      "cy": 55,
+      "radius": 3
+    },
+    {
+      "type": "line",
+      "tile": "metal",
+      "x1": 55,
+      "y1": 8,
+      "x2": 55,
+      "y2": 37,
+      "thickness": 4
+    },
+    {
+      "type": "line",
+      "tile": "metal",
+      "x1": 55,
+      "y1": 73,
+      "x2": 55,
+      "y2": 102,
+      "thickness": 4
+    },
+    {
+      "type": "line",
+      "tile": "metal",
+      "x1": 8,
+      "y1": 55,
+      "x2": 37,
+      "y2": 55,
+      "thickness": 4
+    },
+    {
+      "type": "line",
+      "tile": "metal",
+      "x1": 73,
+      "y1": 55,
+      "x2": 102,
+      "y2": 55,
+      "thickness": 4
+    },
+    {
+      "type": "rect",
+      "tile": "energy_field",
+      "x": 53,
+      "y": 38,
+      "width": 4,
+      "height": 2
+    },
+    {
+      "type": "rect",
+      "tile": "energy_field",
+      "x": 53,
+      "y": 70,
+      "width": 4,
+      "height": 2
+    },
+    {
+      "type": "rect",
+      "tile": "energy_field",
+      "x": 38,
+      "y": 53,
+      "width": 2,
+      "height": 4
+    },
+    {
+      "type": "rect",
+      "tile": "energy_field",
+      "x": 70,
+      "y": 53,
+      "width": 2,
+      "height": 4
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 25,
+      "y": 25,
+      "width": 8,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 77,
+      "y": 25,
+      "width": 8,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 25,
+      "y": 82,
+      "width": 8,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 77,
+      "y": 82,
+      "width": 8,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 25,
+      "y": 30,
+      "width": 3,
+      "height": 8
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 82,
+      "y": 30,
+      "width": 3,
+      "height": 8
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 25,
+      "y": 72,
+      "width": 3,
+      "height": 8
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 82,
+      "y": 72,
+      "width": 3,
+      "height": 8
+    },
+    {
+      "type": "rect",
+      "tile": "circuit",
+      "x": 8,
+      "y": 8,
+      "width": 14,
+      "height": 14
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 12,
+      "y": 12,
+      "width": 6,
+      "height": 6
+    },
+    {
+      "type": "rect",
+      "tile": "circuit",
+      "x": 88,
+      "y": 8,
+      "width": 14,
+      "height": 14
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 92,
+      "y": 12,
+      "width": 6,
+      "height": 6
+    },
+    {
+      "type": "rect",
+      "tile": "circuit",
+      "x": 8,
+      "y": 88,
+      "width": 14,
+      "height": 14
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 12,
+      "y": 92,
+      "width": 6,
+      "height": 6
+    },
+    {
+      "type": "rect",
+      "tile": "circuit",
+      "x": 88,
+      "y": 88,
+      "width": 14,
+      "height": 14
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 92,
+      "y": 92,
+      "width": 6,
+      "height": 6
+    },
+    {
+      "type": "line",
+      "tile": "plasma",
+      "x1": 20,
+      "y1": 20,
+      "x2": 35,
+      "y2": 35,
+      "thickness": 1
+    },
+    {
+      "type": "line",
+      "tile": "plasma",
+      "x1": 90,
+      "y1": 20,
+      "x2": 75,
+      "y2": 35,
+      "thickness": 1
+    },
+    {
+      "type": "line",
+      "tile": "plasma",
+      "x1": 20,
+      "y1": 90,
+      "x2": 35,
+      "y2": 75,
+      "thickness": 1
+    },
+    {
+      "type": "line",
+      "tile": "plasma",
+      "x1": 90,
+      "y1": 90,
+      "x2": 75,
+      "y2": 75,
+      "thickness": 1
+    }
   ],
   "spawnPoints": [
-    {"x": 12, "y": 55},
-    {"x": 98, "y": 55},
-    {"x": 55, "y": 12},
-    {"x": 55, "y": 98},
-    {"x": 15, "y": 15},
-    {"x": 95, "y": 15},
-    {"x": 15, "y": 95},
-    {"x": 95, "y": 95}
+    {
+      "x": 12,
+      "y": 55
+    },
+    {
+      "x": 98,
+      "y": 55
+    },
+    {
+      "x": 55,
+      "y": 12
+    },
+    {
+      "x": 55,
+      "y": 98
+    },
+    {
+      "x": 18,
+      "y": 15
+    },
+    {
+      "x": 98,
+      "y": 15
+    },
+    {
+      "x": 15,
+      "y": 98
+    },
+    {
+      "x": 98,
+      "y": 95
+    }
   ]
 }

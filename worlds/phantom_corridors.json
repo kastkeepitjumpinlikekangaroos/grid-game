@@ -4,50 +4,248 @@
   "width": 140,
   "height": 100,
   "layers": [
-    {"type": "fill", "tile": "void"},
-    {"type": "border", "tile": "obsidian", "thickness": 2},
-
-    {"type": "rect", "tile": "glass", "x": 8, "y": 20, "width": 124, "height": 12},
-    {"type": "rect", "tile": "glass", "x": 8, "y": 68, "width": 124, "height": 12},
-
-    {"type": "rect", "tile": "glass", "x": 20, "y": 8, "width": 12, "height": 84},
-    {"type": "rect", "tile": "glass", "x": 60, "y": 8, "width": 12, "height": 84},
-    {"type": "rect", "tile": "glass", "x": 108, "y": 8, "width": 12, "height": 84},
-
-    {"type": "rect", "tile": "obsidian", "x": 36, "y": 23, "width": 20, "height": 6},
-    {"type": "rect", "tile": "obsidian", "x": 84, "y": 23, "width": 20, "height": 6},
-    {"type": "rect", "tile": "obsidian", "x": 36, "y": 71, "width": 20, "height": 6},
-    {"type": "rect", "tile": "obsidian", "x": 84, "y": 71, "width": 20, "height": 6},
-
-    {"type": "rect", "tile": "obsidian", "x": 23, "y": 36, "width": 6, "height": 10},
-    {"type": "rect", "tile": "obsidian", "x": 63, "y": 36, "width": 6, "height": 10},
-    {"type": "rect", "tile": "obsidian", "x": 111, "y": 36, "width": 6, "height": 10},
-    {"type": "rect", "tile": "obsidian", "x": 23, "y": 54, "width": 6, "height": 10},
-    {"type": "rect", "tile": "obsidian", "x": 63, "y": 54, "width": 6, "height": 10},
-    {"type": "rect", "tile": "obsidian", "x": 111, "y": 54, "width": 6, "height": 10},
-
-    {"type": "rect", "tile": "metal", "x": 38, "y": 38, "width": 18, "height": 24},
-    {"type": "rect", "tile": "glass", "x": 41, "y": 41, "width": 12, "height": 18},
-    {"type": "rect", "tile": "wall", "x": 44, "y": 46, "width": 6, "height": 6},
-
-    {"type": "rect", "tile": "metal", "x": 86, "y": 38, "width": 18, "height": 24},
-    {"type": "rect", "tile": "glass", "x": 89, "y": 41, "width": 12, "height": 18},
-    {"type": "rect", "tile": "wall", "x": 92, "y": 46, "width": 6, "height": 6},
-
-    {"type": "rect", "tile": "crystal", "x": 8, "y": 46, "width": 3, "height": 8},
-    {"type": "rect", "tile": "crystal", "x": 129, "y": 46, "width": 3, "height": 8},
-
-    {"type": "rect", "tile": "energy_field", "x": 58, "y": 24, "width": 16, "height": 2},
-    {"type": "rect", "tile": "energy_field", "x": 58, "y": 74, "width": 16, "height": 2}
+    {
+      "type": "fill",
+      "tile": "void"
+    },
+    {
+      "type": "border",
+      "tile": "obsidian",
+      "thickness": 2
+    },
+    {
+      "type": "rect",
+      "tile": "glass",
+      "x": 8,
+      "y": 20,
+      "width": 124,
+      "height": 12
+    },
+    {
+      "type": "rect",
+      "tile": "glass",
+      "x": 8,
+      "y": 68,
+      "width": 124,
+      "height": 12
+    },
+    {
+      "type": "rect",
+      "tile": "glass",
+      "x": 20,
+      "y": 8,
+      "width": 12,
+      "height": 84
+    },
+    {
+      "type": "rect",
+      "tile": "glass",
+      "x": 60,
+      "y": 8,
+      "width": 12,
+      "height": 84
+    },
+    {
+      "type": "rect",
+      "tile": "glass",
+      "x": 108,
+      "y": 8,
+      "width": 12,
+      "height": 84
+    },
+    {
+      "type": "rect",
+      "tile": "obsidian",
+      "x": 36,
+      "y": 23,
+      "width": 20,
+      "height": 6
+    },
+    {
+      "type": "rect",
+      "tile": "obsidian",
+      "x": 84,
+      "y": 23,
+      "width": 20,
+      "height": 6
+    },
+    {
+      "type": "rect",
+      "tile": "obsidian",
+      "x": 36,
+      "y": 71,
+      "width": 20,
+      "height": 6
+    },
+    {
+      "type": "rect",
+      "tile": "obsidian",
+      "x": 84,
+      "y": 71,
+      "width": 20,
+      "height": 6
+    },
+    {
+      "type": "rect",
+      "tile": "obsidian",
+      "x": 23,
+      "y": 36,
+      "width": 6,
+      "height": 10
+    },
+    {
+      "type": "rect",
+      "tile": "obsidian",
+      "x": 63,
+      "y": 36,
+      "width": 6,
+      "height": 10
+    },
+    {
+      "type": "rect",
+      "tile": "obsidian",
+      "x": 111,
+      "y": 36,
+      "width": 6,
+      "height": 10
+    },
+    {
+      "type": "rect",
+      "tile": "obsidian",
+      "x": 23,
+      "y": 54,
+      "width": 6,
+      "height": 10
+    },
+    {
+      "type": "rect",
+      "tile": "obsidian",
+      "x": 63,
+      "y": 54,
+      "width": 6,
+      "height": 10
+    },
+    {
+      "type": "rect",
+      "tile": "obsidian",
+      "x": 111,
+      "y": 54,
+      "width": 6,
+      "height": 10
+    },
+    {
+      "type": "rect",
+      "tile": "metal",
+      "x": 38,
+      "y": 38,
+      "width": 18,
+      "height": 24
+    },
+    {
+      "type": "rect",
+      "tile": "glass",
+      "x": 41,
+      "y": 41,
+      "width": 12,
+      "height": 18
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 44,
+      "y": 46,
+      "width": 6,
+      "height": 6
+    },
+    {
+      "type": "rect",
+      "tile": "metal",
+      "x": 86,
+      "y": 38,
+      "width": 18,
+      "height": 24
+    },
+    {
+      "type": "rect",
+      "tile": "glass",
+      "x": 89,
+      "y": 41,
+      "width": 12,
+      "height": 18
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 92,
+      "y": 46,
+      "width": 6,
+      "height": 6
+    },
+    {
+      "type": "rect",
+      "tile": "crystal",
+      "x": 8,
+      "y": 46,
+      "width": 3,
+      "height": 8
+    },
+    {
+      "type": "rect",
+      "tile": "crystal",
+      "x": 129,
+      "y": 46,
+      "width": 3,
+      "height": 8
+    },
+    {
+      "type": "rect",
+      "tile": "energy_field",
+      "x": 58,
+      "y": 24,
+      "width": 16,
+      "height": 2
+    },
+    {
+      "type": "rect",
+      "tile": "energy_field",
+      "x": 58,
+      "y": 74,
+      "width": 16,
+      "height": 2
+    }
   ],
   "spawnPoints": [
-    {"x": 14, "y": 26},
-    {"x": 126, "y": 26},
-    {"x": 14, "y": 74},
-    {"x": 126, "y": 74},
-    {"x": 47, "y": 14},
-    {"x": 95, "y": 14},
-    {"x": 47, "y": 86},
-    {"x": 95, "y": 86}
+    {
+      "x": 14,
+      "y": 26
+    },
+    {
+      "x": 126,
+      "y": 26
+    },
+    {
+      "x": 14,
+      "y": 74
+    },
+    {
+      "x": 126,
+      "y": 74
+    },
+    {
+      "x": 47,
+      "y": 20
+    },
+    {
+      "x": 95,
+      "y": 20
+    },
+    {
+      "x": 47,
+      "y": 79
+    },
+    {
+      "x": 95,
+      "y": 79
+    }
   ]
 }

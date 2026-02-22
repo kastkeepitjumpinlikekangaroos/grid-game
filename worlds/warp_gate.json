@@ -4,65 +4,346 @@
   "width": 140,
   "height": 140,
   "layers": [
-    {"type": "fill", "tile": "void"},
-    {"type": "border", "tile": "obsidian", "thickness": 2},
-
-    {"type": "circle", "tile": "metal", "cx": 70, "cy": 70, "radius": 55},
-    {"type": "circle", "tile": "circuit", "cx": 70, "cy": 70, "radius": 50},
-
-    {"type": "circle", "tile": "energy_field", "cx": 70, "cy": 70, "radius": 18},
-    {"type": "circle", "tile": "glass", "cx": 70, "cy": 70, "radius": 14},
-    {"type": "circle", "tile": "crystal", "cx": 70, "cy": 70, "radius": 8},
-    {"type": "circle", "tile": "plasma", "cx": 70, "cy": 70, "radius": 4},
-
-    {"type": "line", "tile": "metal", "x1": 70, "y1": 16, "x2": 70, "y2": 52, "thickness": 4},
-    {"type": "line", "tile": "metal", "x1": 70, "y1": 88, "x2": 70, "y2": 124, "thickness": 4},
-    {"type": "line", "tile": "metal", "x1": 16, "y1": 70, "x2": 52, "y2": 70, "thickness": 4},
-    {"type": "line", "tile": "metal", "x1": 88, "y1": 70, "x2": 124, "y2": 70, "thickness": 4},
-
-    {"type": "line", "tile": "metal", "x1": 30, "y1": 30, "x2": 52, "y2": 52, "thickness": 3},
-    {"type": "line", "tile": "metal", "x1": 110, "y1": 30, "x2": 88, "y2": 52, "thickness": 3},
-    {"type": "line", "tile": "metal", "x1": 30, "y1": 110, "x2": 52, "y2": 88, "thickness": 3},
-    {"type": "line", "tile": "metal", "x1": 110, "y1": 110, "x2": 88, "y2": 88, "thickness": 3},
-
-    {"type": "circle", "tile": "metal", "cx": 30, "cy": 30, "radius": 10},
-    {"type": "circle", "tile": "glass", "cx": 30, "cy": 30, "radius": 7},
-    {"type": "rect", "tile": "wall", "x": 27, "y": 27, "width": 6, "height": 3},
-
-    {"type": "circle", "tile": "metal", "cx": 110, "cy": 30, "radius": 10},
-    {"type": "circle", "tile": "glass", "cx": 110, "cy": 30, "radius": 7},
-    {"type": "rect", "tile": "wall", "x": 107, "y": 27, "width": 6, "height": 3},
-
-    {"type": "circle", "tile": "metal", "cx": 30, "cy": 110, "radius": 10},
-    {"type": "circle", "tile": "glass", "cx": 30, "cy": 110, "radius": 7},
-    {"type": "rect", "tile": "wall", "x": 27, "y": 110, "width": 6, "height": 3},
-
-    {"type": "circle", "tile": "metal", "cx": 110, "cy": 110, "radius": 10},
-    {"type": "circle", "tile": "glass", "cx": 110, "cy": 110, "radius": 7},
-    {"type": "rect", "tile": "wall", "x": 107, "y": 110, "width": 6, "height": 3},
-
-    {"type": "rect", "tile": "wall", "x": 55, "y": 35, "width": 3, "height": 8},
-    {"type": "rect", "tile": "wall", "x": 82, "y": 35, "width": 3, "height": 8},
-    {"type": "rect", "tile": "wall", "x": 55, "y": 97, "width": 3, "height": 8},
-    {"type": "rect", "tile": "wall", "x": 82, "y": 97, "width": 3, "height": 8},
-    {"type": "rect", "tile": "wall", "x": 35, "y": 55, "width": 8, "height": 3},
-    {"type": "rect", "tile": "wall", "x": 97, "y": 55, "width": 8, "height": 3},
-    {"type": "rect", "tile": "wall", "x": 35, "y": 82, "width": 8, "height": 3},
-    {"type": "rect", "tile": "wall", "x": 97, "y": 82, "width": 8, "height": 3},
-
-    {"type": "rect", "tile": "energy_field", "x": 68, "y": 53, "width": 4, "height": 2},
-    {"type": "rect", "tile": "energy_field", "x": 68, "y": 85, "width": 4, "height": 2},
-    {"type": "rect", "tile": "energy_field", "x": 53, "y": 68, "width": 2, "height": 4},
-    {"type": "rect", "tile": "energy_field", "x": 85, "y": 68, "width": 2, "height": 4}
+    {
+      "type": "fill",
+      "tile": "void"
+    },
+    {
+      "type": "border",
+      "tile": "obsidian",
+      "thickness": 2
+    },
+    {
+      "type": "circle",
+      "tile": "metal",
+      "cx": 70,
+      "cy": 70,
+      "radius": 55
+    },
+    {
+      "type": "circle",
+      "tile": "circuit",
+      "cx": 70,
+      "cy": 70,
+      "radius": 50
+    },
+    {
+      "type": "circle",
+      "tile": "energy_field",
+      "cx": 70,
+      "cy": 70,
+      "radius": 18
+    },
+    {
+      "type": "circle",
+      "tile": "glass",
+      "cx": 70,
+      "cy": 70,
+      "radius": 14
+    },
+    {
+      "type": "circle",
+      "tile": "crystal",
+      "cx": 70,
+      "cy": 70,
+      "radius": 8
+    },
+    {
+      "type": "circle",
+      "tile": "plasma",
+      "cx": 70,
+      "cy": 70,
+      "radius": 4
+    },
+    {
+      "type": "line",
+      "tile": "metal",
+      "x1": 70,
+      "y1": 16,
+      "x2": 70,
+      "y2": 52,
+      "thickness": 4
+    },
+    {
+      "type": "line",
+      "tile": "metal",
+      "x1": 70,
+      "y1": 88,
+      "x2": 70,
+      "y2": 124,
+      "thickness": 4
+    },
+    {
+      "type": "line",
+      "tile": "metal",
+      "x1": 16,
+      "y1": 70,
+      "x2": 52,
+      "y2": 70,
+      "thickness": 4
+    },
+    {
+      "type": "line",
+      "tile": "metal",
+      "x1": 88,
+      "y1": 70,
+      "x2": 124,
+      "y2": 70,
+      "thickness": 4
+    },
+    {
+      "type": "line",
+      "tile": "metal",
+      "x1": 30,
+      "y1": 30,
+      "x2": 52,
+      "y2": 52,
+      "thickness": 3
+    },
+    {
+      "type": "line",
+      "tile": "metal",
+      "x1": 110,
+      "y1": 30,
+      "x2": 88,
+      "y2": 52,
+      "thickness": 3
+    },
+    {
+      "type": "line",
+      "tile": "metal",
+      "x1": 30,
+      "y1": 110,
+      "x2": 52,
+      "y2": 88,
+      "thickness": 3
+    },
+    {
+      "type": "line",
+      "tile": "metal",
+      "x1": 110,
+      "y1": 110,
+      "x2": 88,
+      "y2": 88,
+      "thickness": 3
+    },
+    {
+      "type": "circle",
+      "tile": "metal",
+      "cx": 30,
+      "cy": 30,
+      "radius": 10
+    },
+    {
+      "type": "circle",
+      "tile": "glass",
+      "cx": 30,
+      "cy": 30,
+      "radius": 7
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 27,
+      "y": 27,
+      "width": 6,
+      "height": 3
+    },
+    {
+      "type": "circle",
+      "tile": "metal",
+      "cx": 110,
+      "cy": 30,
+      "radius": 10
+    },
+    {
+      "type": "circle",
+      "tile": "glass",
+      "cx": 110,
+      "cy": 30,
+      "radius": 7
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 107,
+      "y": 27,
+      "width": 6,
+      "height": 3
+    },
+    {
+      "type": "circle",
+      "tile": "metal",
+      "cx": 30,
+      "cy": 110,
+      "radius": 10
+    },
+    {
+      "type": "circle",
+      "tile": "glass",
+      "cx": 30,
+      "cy": 110,
+      "radius": 7
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 27,
+      "y": 110,
+      "width": 6,
+      "height": 3
+    },
+    {
+      "type": "circle",
+      "tile": "metal",
+      "cx": 110,
+      "cy": 110,
+      "radius": 10
+    },
+    {
+      "type": "circle",
+      "tile": "glass",
+      "cx": 110,
+      "cy": 110,
+      "radius": 7
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 107,
+      "y": 110,
+      "width": 6,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 55,
+      "y": 35,
+      "width": 3,
+      "height": 8
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 82,
+      "y": 35,
+      "width": 3,
+      "height": 8
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 55,
+      "y": 97,
+      "width": 3,
+      "height": 8
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 82,
+      "y": 97,
+      "width": 3,
+      "height": 8
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 35,
+      "y": 55,
+      "width": 8,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 97,
+      "y": 55,
+      "width": 8,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 35,
+      "y": 82,
+      "width": 8,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 97,
+      "y": 82,
+      "width": 8,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "energy_field",
+      "x": 68,
+      "y": 53,
+      "width": 4,
+      "height": 2
+    },
+    {
+      "type": "rect",
+      "tile": "energy_field",
+      "x": 68,
+      "y": 85,
+      "width": 4,
+      "height": 2
+    },
+    {
+      "type": "rect",
+      "tile": "energy_field",
+      "x": 53,
+      "y": 68,
+      "width": 2,
+      "height": 4
+    },
+    {
+      "type": "rect",
+      "tile": "energy_field",
+      "x": 85,
+      "y": 68,
+      "width": 2,
+      "height": 4
+    }
   ],
   "spawnPoints": [
-    {"x": 30, "y": 30},
-    {"x": 110, "y": 30},
-    {"x": 30, "y": 110},
-    {"x": 110, "y": 110},
-    {"x": 70, "y": 20},
-    {"x": 70, "y": 120},
-    {"x": 20, "y": 70},
-    {"x": 120, "y": 70}
+    {
+      "x": 30,
+      "y": 30
+    },
+    {
+      "x": 110,
+      "y": 30
+    },
+    {
+      "x": 30,
+      "y": 109
+    },
+    {
+      "x": 110,
+      "y": 109
+    },
+    {
+      "x": 70,
+      "y": 20
+    },
+    {
+      "x": 70,
+      "y": 120
+    },
+    {
+      "x": 20,
+      "y": 70
+    },
+    {
+      "x": 120,
+      "y": 70
+    }
   ]
 }

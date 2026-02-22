@@ -4,62 +4,300 @@
   "width": 150,
   "height": 150,
   "layers": [
-    {"type": "fill", "tile": "void"},
-    {"type": "border", "tile": "obsidian", "thickness": 2},
-
-    {"type": "circle", "tile": "obsidian", "cx": 75, "cy": 75, "radius": 30},
-    {"type": "circle", "tile": "ash", "cx": 75, "cy": 75, "radius": 24},
-    {"type": "circle", "tile": "gravel", "cx": 75, "cy": 75, "radius": 16},
-    {"type": "circle", "tile": "crystal", "cx": 75, "cy": 75, "radius": 6},
-
-    {"type": "circle", "tile": "obsidian", "cx": 30, "cy": 30, "radius": 14},
-    {"type": "circle", "tile": "ash", "cx": 30, "cy": 30, "radius": 10},
-
-    {"type": "circle", "tile": "obsidian", "cx": 120, "cy": 30, "radius": 14},
-    {"type": "circle", "tile": "ash", "cx": 120, "cy": 30, "radius": 10},
-
-    {"type": "circle", "tile": "obsidian", "cx": 30, "cy": 120, "radius": 14},
-    {"type": "circle", "tile": "ash", "cx": 30, "cy": 120, "radius": 10},
-
-    {"type": "circle", "tile": "obsidian", "cx": 120, "cy": 120, "radius": 14},
-    {"type": "circle", "tile": "ash", "cx": 120, "cy": 120, "radius": 10},
-
-    {"type": "circle", "tile": "obsidian", "cx": 75, "cy": 20, "radius": 10},
-    {"type": "circle", "tile": "gravel", "cx": 75, "cy": 20, "radius": 7},
-
-    {"type": "circle", "tile": "obsidian", "cx": 75, "cy": 130, "radius": 10},
-    {"type": "circle", "tile": "gravel", "cx": 75, "cy": 130, "radius": 7},
-
-    {"type": "circle", "tile": "obsidian", "cx": 20, "cy": 75, "radius": 10},
-    {"type": "circle", "tile": "gravel", "cx": 20, "cy": 75, "radius": 7},
-
-    {"type": "circle", "tile": "obsidian", "cx": 130, "cy": 75, "radius": 10},
-    {"type": "circle", "tile": "gravel", "cx": 130, "cy": 75, "radius": 7},
-
-    {"type": "line", "tile": "stone", "x1": 40, "y1": 30, "x2": 55, "y2": 55, "thickness": 2},
-    {"type": "line", "tile": "stone", "x1": 110, "y1": 30, "x2": 95, "y2": 55, "thickness": 2},
-    {"type": "line", "tile": "stone", "x1": 40, "y1": 120, "x2": 55, "y2": 95, "thickness": 2},
-    {"type": "line", "tile": "stone", "x1": 110, "y1": 120, "x2": 95, "y2": 95, "thickness": 2},
-
-    {"type": "line", "tile": "stone", "x1": 30, "y1": 75, "x2": 51, "y2": 75, "thickness": 2},
-    {"type": "line", "tile": "stone", "x1": 99, "y1": 75, "x2": 120, "y2": 75, "thickness": 2},
-    {"type": "line", "tile": "stone", "x1": 75, "y1": 30, "x2": 75, "y2": 51, "thickness": 2},
-    {"type": "line", "tile": "stone", "x1": 75, "y1": 99, "x2": 75, "y2": 120, "thickness": 2},
-
-    {"type": "rect", "tile": "wall", "x": 73, "y": 73, "width": 4, "height": 4},
-    {"type": "rect", "tile": "wall", "x": 27, "y": 27, "width": 6, "height": 3},
-    {"type": "rect", "tile": "wall", "x": 117, "y": 27, "width": 6, "height": 3},
-    {"type": "rect", "tile": "wall", "x": 27, "y": 120, "width": 6, "height": 3},
-    {"type": "rect", "tile": "wall", "x": 117, "y": 120, "width": 6, "height": 3}
+    {
+      "type": "fill",
+      "tile": "void"
+    },
+    {
+      "type": "border",
+      "tile": "obsidian",
+      "thickness": 2
+    },
+    {
+      "type": "circle",
+      "tile": "obsidian",
+      "cx": 75,
+      "cy": 75,
+      "radius": 30
+    },
+    {
+      "type": "circle",
+      "tile": "ash",
+      "cx": 75,
+      "cy": 75,
+      "radius": 24
+    },
+    {
+      "type": "circle",
+      "tile": "gravel",
+      "cx": 75,
+      "cy": 75,
+      "radius": 16
+    },
+    {
+      "type": "circle",
+      "tile": "crystal",
+      "cx": 75,
+      "cy": 75,
+      "radius": 6
+    },
+    {
+      "type": "circle",
+      "tile": "obsidian",
+      "cx": 30,
+      "cy": 30,
+      "radius": 14
+    },
+    {
+      "type": "circle",
+      "tile": "ash",
+      "cx": 30,
+      "cy": 30,
+      "radius": 10
+    },
+    {
+      "type": "circle",
+      "tile": "obsidian",
+      "cx": 120,
+      "cy": 30,
+      "radius": 14
+    },
+    {
+      "type": "circle",
+      "tile": "ash",
+      "cx": 120,
+      "cy": 30,
+      "radius": 10
+    },
+    {
+      "type": "circle",
+      "tile": "obsidian",
+      "cx": 30,
+      "cy": 120,
+      "radius": 14
+    },
+    {
+      "type": "circle",
+      "tile": "ash",
+      "cx": 30,
+      "cy": 120,
+      "radius": 10
+    },
+    {
+      "type": "circle",
+      "tile": "obsidian",
+      "cx": 120,
+      "cy": 120,
+      "radius": 14
+    },
+    {
+      "type": "circle",
+      "tile": "ash",
+      "cx": 120,
+      "cy": 120,
+      "radius": 10
+    },
+    {
+      "type": "circle",
+      "tile": "obsidian",
+      "cx": 75,
+      "cy": 20,
+      "radius": 10
+    },
+    {
+      "type": "circle",
+      "tile": "gravel",
+      "cx": 75,
+      "cy": 20,
+      "radius": 7
+    },
+    {
+      "type": "circle",
+      "tile": "obsidian",
+      "cx": 75,
+      "cy": 130,
+      "radius": 10
+    },
+    {
+      "type": "circle",
+      "tile": "gravel",
+      "cx": 75,
+      "cy": 130,
+      "radius": 7
+    },
+    {
+      "type": "circle",
+      "tile": "obsidian",
+      "cx": 20,
+      "cy": 75,
+      "radius": 10
+    },
+    {
+      "type": "circle",
+      "tile": "gravel",
+      "cx": 20,
+      "cy": 75,
+      "radius": 7
+    },
+    {
+      "type": "circle",
+      "tile": "obsidian",
+      "cx": 130,
+      "cy": 75,
+      "radius": 10
+    },
+    {
+      "type": "circle",
+      "tile": "gravel",
+      "cx": 130,
+      "cy": 75,
+      "radius": 7
+    },
+    {
+      "type": "line",
+      "tile": "stone",
+      "x1": 40,
+      "y1": 30,
+      "x2": 55,
+      "y2": 55,
+      "thickness": 2
+    },
+    {
+      "type": "line",
+      "tile": "stone",
+      "x1": 110,
+      "y1": 30,
+      "x2": 95,
+      "y2": 55,
+      "thickness": 2
+    },
+    {
+      "type": "line",
+      "tile": "stone",
+      "x1": 40,
+      "y1": 120,
+      "x2": 55,
+      "y2": 95,
+      "thickness": 2
+    },
+    {
+      "type": "line",
+      "tile": "stone",
+      "x1": 110,
+      "y1": 120,
+      "x2": 95,
+      "y2": 95,
+      "thickness": 2
+    },
+    {
+      "type": "line",
+      "tile": "stone",
+      "x1": 30,
+      "y1": 75,
+      "x2": 51,
+      "y2": 75,
+      "thickness": 2
+    },
+    {
+      "type": "line",
+      "tile": "stone",
+      "x1": 99,
+      "y1": 75,
+      "x2": 120,
+      "y2": 75,
+      "thickness": 2
+    },
+    {
+      "type": "line",
+      "tile": "stone",
+      "x1": 75,
+      "y1": 30,
+      "x2": 75,
+      "y2": 51,
+      "thickness": 2
+    },
+    {
+      "type": "line",
+      "tile": "stone",
+      "x1": 75,
+      "y1": 99,
+      "x2": 75,
+      "y2": 120,
+      "thickness": 2
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 73,
+      "y": 73,
+      "width": 4,
+      "height": 4
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 27,
+      "y": 27,
+      "width": 6,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 117,
+      "y": 27,
+      "width": 6,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 27,
+      "y": 120,
+      "width": 6,
+      "height": 3
+    },
+    {
+      "type": "rect",
+      "tile": "wall",
+      "x": 117,
+      "y": 120,
+      "width": 6,
+      "height": 3
+    }
   ],
   "spawnPoints": [
-    {"x": 30, "y": 30},
-    {"x": 120, "y": 30},
-    {"x": 30, "y": 120},
-    {"x": 120, "y": 120},
-    {"x": 75, "y": 20},
-    {"x": 75, "y": 130},
-    {"x": 20, "y": 75},
-    {"x": 130, "y": 75}
+    {
+      "x": 59,
+      "y": 58
+    },
+    {
+      "x": 92,
+      "y": 59
+    },
+    {
+      "x": 59,
+      "y": 92
+    },
+    {
+      "x": 92,
+      "y": 91
+    },
+    {
+      "x": 75,
+      "y": 29
+    },
+    {
+      "x": 75,
+      "y": 121
+    },
+    {
+      "x": 29,
+      "y": 75
+    },
+    {
+      "x": 121,
+      "y": 75
+    }
   ]
 }
