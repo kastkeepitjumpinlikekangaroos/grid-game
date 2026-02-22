@@ -276,7 +276,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       if (player != null) {
         removedItem.itemType match {
           case ItemType.Heart =>
-            player.setHealth(Math.min(player.getMaxHealth, Constants.MAX_HEALTH))
+            player.setHealth(player.getMaxHealth)
             val flags = (if (player.hasShield) 0x01 else 0) |
                         (if (player.hasGemBoost) 0x02 else 0) |
                         (if (player.isFrozen) 0x04 else 0)

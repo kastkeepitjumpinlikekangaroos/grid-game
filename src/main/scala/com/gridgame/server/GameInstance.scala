@@ -251,18 +251,10 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
               val owner = registry.get(projectile.ownerId)
               if (owner != null) {
                 val ownerPos = owner.getPosition
-                val (fdx, fdy) = owner.getDirection match {
-                  case Direction.Up    => (0, -1)
-                  case Direction.Down  => (0, 1)
-                  case Direction.Left  => (-1, 0)
-                  case Direction.Right => (1, 0)
-                }
-                val destX = ownerPos.getX + fdx
-                val destY = ownerPos.getY + fdy
-                val clampedX = Math.max(0, Math.min(world.width - 1, destX))
-                val clampedY = Math.max(0, Math.min(world.height - 1, destY))
-                if (world.isWalkable(clampedX, clampedY)) {
-                  target.setPosition(new Position(clampedX, clampedY))
+                val destX = ownerPos.getX
+                val destY = ownerPos.getY
+                if (world.isWalkable(destX, destY)) {
+                  target.setPosition(new Position(destX, destY))
                 }
               }
 
@@ -519,6 +511,15 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
 
         val aoeTarget = registry.get(targetId)
         if (aoeTarget != null) {
+          // Apply simple on-hit effects to surviving explosion victims
+          val pDef = ProjectileDef.get(projectile.projectileType)
+          pDef.onHitEffect.foreach {
+            case Freeze(durationMs) => aoeTarget.tryFreeze(durationMs)
+            case Root(durationMs) => aoeTarget.tryRoot(durationMs)
+            case Slow(durationMs, multiplier) => aoeTarget.trySlow(durationMs, multiplier)
+            case Burn(totalDamage, durationMs, tickMs) => aoeTarget.applyBurn(totalDamage, durationMs, tickMs, projectile.ownerId)
+            case _ => // Skip positional effects for AoE explosion
+          }
           val updatePacket = new PlayerUpdatePacket(
             server.getNextSequenceNumber,
             targetId,

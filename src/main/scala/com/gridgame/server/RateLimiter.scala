@@ -71,7 +71,7 @@ class RateLimiter {
       }
       return true
     }
-    (failures % MAX_AUTH_FAILURES) < MAX_AUTH_FAILURES - 1
+    false
   }
 
   def recordAuthFailure(address: InetAddress): Unit = {

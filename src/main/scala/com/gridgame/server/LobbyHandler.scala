@@ -191,11 +191,10 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     // Atomic check-and-set to prevent double start from rapid packets
     lobby.synchronized {
       if (lobby.status != LobbyStatus.WAITING) return
+      // Set match type for casual games: 0=Casual FFA, 1=Casual Teams
+      lobby.matchType = lobby.gameMode
       lobby.status = LobbyStatus.IN_GAME
     }
-
-    // Set match type for casual games: 0=Casual FFA, 1=Casual Teams
-    lobby.matchType = lobby.gameMode
 
     // Resolve world file path
     val worldFileName = WorldRegistry.getFilename(lobby.mapIndex)

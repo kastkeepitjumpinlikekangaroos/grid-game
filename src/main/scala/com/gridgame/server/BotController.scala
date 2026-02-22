@@ -255,26 +255,32 @@ class BotController(instance: GameInstance) {
       item.itemType match {
         case ItemType.Heart =>
           // Use heart when health below 50%
-          if (healthPercent < 0.5f) {
-            useItem(bot, item)
-            bot.synchronized { bot.setHealth(bot.getMaxHealth) }
-            broadcastBotPosition(bot)
+          bot.synchronized {
+            if (bot.getHealth.toFloat / bot.getMaxHealth.toFloat < 0.5f) {
+              useItem(bot, item)
+              bot.setHealth(bot.getMaxHealth)
+              broadcastBotPosition(bot)
+            }
           }
 
         case ItemType.Shield =>
           // Use shield immediately if not already shielded
-          if (!bot.hasShield) {
-            useItem(bot, item)
-            bot.synchronized { bot.setShieldUntil(System.currentTimeMillis() + Constants.SHIELD_DURATION_MS) }
-            broadcastBotPosition(bot)
+          bot.synchronized {
+            if (!bot.hasShield) {
+              useItem(bot, item)
+              bot.setShieldUntil(System.currentTimeMillis() + Constants.SHIELD_DURATION_MS)
+              broadcastBotPosition(bot)
+            }
           }
 
         case ItemType.Gem =>
           // Use gem immediately if not already boosted
-          if (!bot.hasGemBoost) {
-            useItem(bot, item)
-            bot.synchronized { bot.setGemBoostUntil(System.currentTimeMillis() + Constants.GEM_DURATION_MS) }
-            broadcastBotPosition(bot)
+          bot.synchronized {
+            if (!bot.hasGemBoost) {
+              useItem(bot, item)
+              bot.setGemBoostUntil(System.currentTimeMillis() + Constants.GEM_DURATION_MS)
+              broadcastBotPosition(bot)
+            }
           }
 
         case ItemType.Fence =>

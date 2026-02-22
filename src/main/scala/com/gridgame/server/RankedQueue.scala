@@ -261,7 +261,7 @@ class RankedQueue(server: GameServer) {
       val sorted = snapshot.sortBy(_.elo)
       val matchEntries = sorted.take(Constants.TEAMS_MAX_PLAYERS)
       startTeamsMatch(matchEntries)
-    } else if (queueSize >= 1) {
+    } else if (queueSize >= 2) {
       // Start after 60 seconds even with a single player, fill rest with bots
       val oldest = snapshot.minBy(_.joinTime)
       val waitTime = now - oldest.joinTime

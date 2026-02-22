@@ -232,6 +232,17 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     recentlyRemovedProjectiles.clear()
     isDead = false
     isRespawning = false
+    fastProjectilesUntil.set(0)
+    shieldUntil.set(0)
+    frozenUntil.set(0)
+    burningUntil.set(0)
+    speedBoostUntil.set(0)
+    rootedUntil.set(0)
+    slowedUntil.set(0)
+    phasedUntil.set(0)
+    localDeathTime.set(0)
+    lastQAbilityTime.set(0)
+    lastEAbilityTime.set(0)
 
     println("GameClient: Disconnected from server")
 
@@ -881,30 +892,31 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           val serverHealth = updatePacket.getHealth
           localHealth.set(serverHealth)
 
-          // Handle effect flags from server
+          // Handle effect flags from server — only set timer on OFF→ON transition
           val flags = updatePacket.getEffectFlags
+          val now = System.currentTimeMillis()
           if ((flags & 0x04) != 0) {
-            frozenUntil.set(System.currentTimeMillis() + 5000)
+            if (now >= frozenUntil.get()) frozenUntil.set(now + 5000)
           } else {
             frozenUntil.set(0)
           }
           if ((flags & 0x10) != 0) {
-            burningUntil.set(System.currentTimeMillis() + 1000)
+            if (now >= burningUntil.get()) burningUntil.set(now + 1000)
           } else {
             burningUntil.set(0)
           }
           if ((flags & 0x20) != 0) {
-            speedBoostUntil.set(System.currentTimeMillis() + 1000)
+            if (now >= speedBoostUntil.get()) speedBoostUntil.set(now + 1000)
           } else {
             speedBoostUntil.set(0)
           }
           if ((flags & 0x40) != 0) {
-            rootedUntil.set(System.currentTimeMillis() + 3000)
+            if (now >= rootedUntil.get()) rootedUntil.set(now + 3000)
           } else {
             rootedUntil.set(0)
           }
           if ((flags & 0x80) != 0) {
-            slowedUntil.set(System.currentTimeMillis() + 3000)
+            if (now >= slowedUntil.get()) slowedUntil.set(now + 3000)
           } else {
             slowedUntil.set(0)
           }
@@ -1097,6 +1109,15 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           localDeathTime.set(0)
           fastProjectilesUntil.set(0)
           shieldUntil.set(0)
+          frozenUntil.set(0)
+          burningUntil.set(0)
+          speedBoostUntil.set(0)
+          rootedUntil.set(0)
+          slowedUntil.set(0)
+          phasedUntil.set(0)
+          inventory.clear()
+          lastQAbilityTime.set(0)
+          lastEAbilityTime.set(0)
           if (rejoinListener != null) rejoinListener()
           println(s"GameClient: Auto-respawned at ($spawnX, $spawnY)")
         }
@@ -1565,45 +1586,46 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         player.setTeamId(packet.getTeamId)
       }
 
-      // Apply effect flags from server
+      // Apply effect flags from server — only set timer on OFF→ON transition
       val flags = packet.getEffectFlags
+      val now = System.currentTimeMillis()
       if ((flags & 0x01) != 0) {
-        player.setShieldUntil(System.currentTimeMillis() + 1000)
+        if (now >= player.getShieldUntil) player.setShieldUntil(now + 1000)
       } else {
         player.setShieldUntil(0)
       }
       if ((flags & 0x02) != 0) {
-        player.setGemBoostUntil(System.currentTimeMillis() + 1000)
+        if (now >= player.getGemBoostUntil) player.setGemBoostUntil(now + 1000)
       } else {
         player.setGemBoostUntil(0)
       }
       if ((flags & 0x04) != 0) {
-        player.setFrozenUntil(System.currentTimeMillis() + 5000)
+        if (now >= player.getFrozenUntil) player.setFrozenUntil(now + 5000)
       } else {
         player.setFrozenUntil(0)
       }
       if ((flags & 0x08) != 0) {
-        player.setPhasedUntil(System.currentTimeMillis() + 1000)
+        if (now >= player.getPhasedUntil) player.setPhasedUntil(now + 1000)
       } else {
         player.setPhasedUntil(0)
       }
       if ((flags & 0x10) != 0) {
-        player.applyBurn(0, 1000, 1000, null) // Visual-only on client; server handles actual DoT
+        if (!player.isBurning) player.applyBurn(0, 1000, 1000, null) // Visual-only on client; server handles actual DoT
       } else {
         player.clearBurn()
       }
       if ((flags & 0x20) != 0) {
-        player.setSpeedBoostUntil(System.currentTimeMillis() + 1000)
+        if (now >= player.getSpeedBoostUntil) player.setSpeedBoostUntil(now + 1000)
       } else {
         player.setSpeedBoostUntil(0)
       }
       if ((flags & 0x40) != 0) {
-        player.setRootedUntil(System.currentTimeMillis() + 3000)
+        if (now >= player.getRootedUntil) player.setRootedUntil(now + 3000)
       } else {
         player.setRootedUntil(0)
       }
       if ((flags & 0x80) != 0) {
-        player.setSlowedUntil(System.currentTimeMillis() + 3000)
+        if (now >= player.getSlowedUntil) player.setSlowedUntil(now + 3000)
       } else {
         player.setSlowedUntil(0)
       }

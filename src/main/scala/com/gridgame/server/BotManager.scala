@@ -2,7 +2,7 @@ package com.gridgame.server
 
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import scala.jdk.CollectionConverters._
 import com.gridgame.common.model.CharacterDef
 import scala.util.Random
@@ -11,11 +11,9 @@ case class BotSlot(id: UUID, name: String, characterId: Byte)
 
 class BotManager {
   private val botSlots = new ConcurrentHashMap[UUID, BotSlot]()
-  private val nextBotIndex = new AtomicInteger(1)
-
   def addBot(): BotSlot = {
-    val index = nextBotIndex.getAndIncrement()
-    val botId = new UUID(0L, index.toLong)
+    val index = BotManager.globalBotIndex.getAndIncrement()
+    val botId = new UUID(0L, index)
     val name = s"Bot $index"
     val idx = Random.nextInt(CharacterDef.all.size)
     val charId = CharacterDef.all(idx).id.id
@@ -48,5 +46,6 @@ class BotManager {
 }
 
 object BotManager {
+  private val globalBotIndex = new AtomicLong(1)
   def isBotUUID(id: UUID): Boolean = id.getMostSignificantBits == 0L && id.getLeastSignificantBits > 0L
 }

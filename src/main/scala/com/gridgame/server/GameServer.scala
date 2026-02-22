@@ -521,14 +521,14 @@ class GameServer(port: Int, val worldFile: String = "") {
     if (!allowExpensiveQuery(playerId)) return
 
     val leaderboard = authDatabase.getLeaderboard()
-    var rank: Byte = 1
+    var rank: Int = 1
     leaderboard.foreach { case (username, elo, wins, matchesPlayed) =>
       val entryPacket = new LeaderboardPacket(
         getNextSequenceNumber, playerId, Packet.getCurrentTimestamp, LeaderboardAction.ENTRY,
-        rank, elo.toShort, wins, matchesPlayed, username
+        rank.toByte, elo.toShort, wins, matchesPlayed, username
       )
       sendPacketViaChannel(entryPacket, tcpCh)
-      rank = (rank + 1).toByte
+      rank += 1
     }
 
     val endPacket = new LeaderboardPacket(getNextSequenceNumber, playerId, LeaderboardAction.END)
@@ -746,15 +746,15 @@ class GameServer(port: Int, val worldFile: String = "") {
       }
     } else {
       // FFA mode: rank individually
-      var rank: Byte = 1
+      var rank: Int = 1
       scoreboard.foreach { case (pid, kills, deaths) =>
         val scorePacket = new GameEventPacket(
           getNextSequenceNumber, pid, GameEvent.SCORE_ENTRY, lobbyId,
-          0, kills.toShort, deaths.toShort, null, rank, 0.toShort, 0.toShort
+          0, kills.toShort, deaths.toShort, null, rank.toByte, 0.toShort, 0.toShort
         )
         instance.broadcastToInstance(scorePacket)
-        matchResults += ((pid, kills, deaths, rank))
-        rank = (rank + 1).toByte
+        matchResults += ((pid, kills, deaths, rank.toByte))
+        rank += 1
       }
     }
 

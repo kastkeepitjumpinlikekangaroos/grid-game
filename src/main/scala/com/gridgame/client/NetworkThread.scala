@@ -175,14 +175,10 @@ class ClientTcpHandler(client: GameClient, networkThread: NetworkThread) extends
       val payload = if (token != null) {
         val verified = PacketSigner.verify(data, token)
         if (verified == null) {
-          // HMAC verification failed — log but still process (client trusts server;
-          // this can happen briefly during token handoff when server signs with new
-          // token before client has processed the SESSION_TOKEN packet)
-          System.err.println("ClientTcpHandler: HMAC verification failed, processing anyway")
-          val p = new Array[Byte](Constants.PACKET_PAYLOAD_SIZE)
-          System.arraycopy(data, 0, p, 0, Constants.PACKET_PAYLOAD_SIZE)
-          p
-        } else verified
+          System.err.println("ClientTcpHandler: HMAC verification failed, dropping packet")
+          return
+        }
+        verified
       } else {
         val p = new Array[Byte](Constants.PACKET_PAYLOAD_SIZE)
         System.arraycopy(data, 0, p, 0, Constants.PACKET_PAYLOAD_SIZE)
