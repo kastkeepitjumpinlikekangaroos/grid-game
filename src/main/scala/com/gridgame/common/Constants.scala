@@ -57,7 +57,6 @@ object Constants {
 
   // Collision configuration
   val ITEM_PICKUP_RADIUS: Int = 2              // Pick up items within 2 cells
-  val PROJECTILE_HIT_RADIUS: Float = 1.5f      // Default projectile hit radius
 
   // Item configuration
   val ITEM_SPAWN_INTERVAL_MS: Int = 60000     // 1 minute
