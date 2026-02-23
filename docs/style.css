@@ -249,6 +249,18 @@ h2 {
   padding: 80px 0;
 }
 
+.controls-subtitle {
+  text-align: center;
+  font-size: 1.15rem;
+  color: var(--accent);
+  margin-bottom: 20px;
+  margin-top: 40px;
+}
+
+.controls-subtitle:first-of-type {
+  margin-top: 0;
+}
+
 .controls-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
