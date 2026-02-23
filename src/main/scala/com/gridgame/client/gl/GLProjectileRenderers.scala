@@ -1111,7 +1111,24 @@ object GLProjectileRenderers {
     ProjectileType.OVERCLOCK_BEAM  -> aoeRing(0.2f, 0.9f, 0.7f, 40f),
     ProjectileType.NAPALM_STRIKE   -> lobbed(0.95f, 0.45f, 0.1f, 22f),
     ProjectileType.THROWN_BOULDER  -> (drawBoulder _),
-    ProjectileType.EYE_BEAM        -> beamProj(0.9f, 0.25f, 0.2f, 8f, 6f)
+    ProjectileType.EYE_BEAM        -> beamProj(0.9f, 0.25f, 0.2f, 8f, 6f),
+
+    // ── DPS balance variants (same visual as base type) ──
+    ProjectileType.SOUL_BOLT_HEAVY   -> energyBolt(0.3f, 0.9f, 0.4f, 20f),
+    ProjectileType.FROST_SHARD_LIGHT -> physProj(0.5f, 0.85f, 1f, 5.5f),
+    ProjectileType.FLAME_BOLT_HEAVY  -> energyBolt(1f, 0.5f, 0.1f, 20f),
+    ProjectileType.FLAME_BOLT_LIGHT  -> energyBolt(1f, 0.5f, 0.1f, 20f),
+    ProjectileType.BULLET_HEAVY      -> bulletProj(0.75f, 0.7f, 0.55f),
+    ProjectileType.BULLET_LIGHT      -> bulletProj(0.75f, 0.7f, 0.55f),
+    ProjectileType.SONIC_WAVE_HEAVY  -> wave(0.75f, 0.55f, 0.95f, 32f),
+    ProjectileType.SONIC_WAVE_MED    -> wave(0.75f, 0.55f, 0.95f, 32f),
+    ProjectileType.THORN_LIGHT       -> physProj(0.2f, 0.6f, 0.15f, 6f),
+    ProjectileType.LASER_HEAVY       -> beamProj(1f, 0.25f, 0.2f, 8f, 5f),
+    ProjectileType.LASER_LIGHT       -> beamProj(1f, 0.25f, 0.2f, 8f, 5f),
+    ProjectileType.ARROW_HEAVY       -> physProj(0.55f, 0.4f, 0.25f, 6f),
+    ProjectileType.ARROW_LIGHT       -> physProj(0.55f, 0.4f, 0.25f, 6f),
+    ProjectileType.HOLY_BOLT_HEAVY   -> (drawHolyBolt _),
+    ProjectileType.VENOM_BOLT_LIGHT  -> (drawVenomBolt _)
   )
 
   // Flat lookup table for O(1) renderer access without Option allocation.

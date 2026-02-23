@@ -147,7 +147,7 @@ object CharacterDef {
 
   private val ShurikenDef = ProjectileDef(
     id = ProjectileType.SHURIKEN, name = "Shuriken",
-    speedMultiplier = 0.95f, damage = 22, maxRange = 6,
+    speedMultiplier = 0.95f, damage = 24, maxRange = 6,
     hitRadius = 2.2f
   )
 
@@ -159,7 +159,7 @@ object CharacterDef {
 
   private val ChainBoltDef = ProjectileDef(
     id = ProjectileType.CHAIN_BOLT, name = "Chain Bolt",
-    speedMultiplier = 0.7f, damage = 12, maxRange = 14,
+    speedMultiplier = 0.7f, damage = 10, maxRange = 14,
     onHitEffect = Some(Freeze(200))
   )
 
@@ -192,7 +192,7 @@ object CharacterDef {
 
   private val PlagueBoltDef = ProjectileDef(
     id = ProjectileType.PLAGUE_BOLT, name = "Plague Bolt",
-    speedMultiplier = 0.55f, damage = 15, maxRange = 16,
+    speedMultiplier = 0.55f, damage = 14, maxRange = 16,
     aoeOnHit = Some(AoESplashConfig(2.5f, 8))
   )
 
@@ -232,14 +232,14 @@ object CharacterDef {
 
   // --- Batch 1: Elemental projectile defs ---
   private val FlameBoltDef = ProjectileDef(id = ProjectileType.FLAME_BOLT, name = "Flame Bolt", speedMultiplier = 0.75f, damage = 18, maxRange = 16, onHitEffect = Some(Burn(12, 3000, 750)))
-  private val FrostShardDef = ProjectileDef(id = ProjectileType.FROST_SHARD, name = "Frost Shard", speedMultiplier = 0.85f, damage = 16, maxRange = 18)
+  private val FrostShardDef = ProjectileDef(id = ProjectileType.FROST_SHARD, name = "Frost Shard", speedMultiplier = 0.85f, damage = 15, maxRange = 18)
   private val LightningDef = ProjectileDef(id = ProjectileType.LIGHTNING, name = "Lightning", speedMultiplier = 1.0f, damage = 14, maxRange = 20, passesThroughWalls = true, pierceCount = 2)
   private val ChainLightningDef = ProjectileDef(id = ProjectileType.CHAIN_LIGHTNING, name = "Chain Lightning", speedMultiplier = 0.7f, damage = 20, maxRange = 14, aoeOnHit = Some(AoESplashConfig(3.0f, 12)))
   private val ThunderStrikeDef = ProjectileDef(id = ProjectileType.THUNDER_STRIKE, name = "Thunder Strike", speedMultiplier = 0.4f, damage = 30, maxRange = 16, aoeOnHit = Some(AoESplashConfig(4.0f, 20)), aoeOnMaxRange = Some(AoESplashConfig(4.0f, 20)))
-  private val BoulderDef = ProjectileDef(id = ProjectileType.BOULDER, name = "Boulder", speedMultiplier = 0.4f, damage = 35, maxRange = 8, hitRadius = 2.5f)
+  private val BoulderDef = ProjectileDef(id = ProjectileType.BOULDER, name = "Boulder", speedMultiplier = 0.4f, damage = 30, maxRange = 8, hitRadius = 2.5f)
   private val SeismicSlamDef = ProjectileDef(id = ProjectileType.SEISMIC_SLAM, name = "Seismic Slam", speedMultiplier = 0.5f, damage = 25, maxRange = 12, hitRadius = 2.8f, aoeOnHit = Some(AoESplashConfig(3.5f, 15)), aoeOnMaxRange = Some(AoESplashConfig(3.5f, 15)))
-  private val WindBladeDef = ProjectileDef(id = ProjectileType.WIND_BLADE, name = "Wind Blade", speedMultiplier = 0.9f, damage = 15, maxRange = 14)
-  private val MagmaBallDef = ProjectileDef(id = ProjectileType.MAGMA_BALL, name = "Magma Ball", speedMultiplier = 0.45f, damage = 22, maxRange = 14, aoeOnHit = Some(AoESplashConfig(2.5f, 10)), onHitEffect = Some(Burn(15, 4000, 800)))
+  private val WindBladeDef = ProjectileDef(id = ProjectileType.WIND_BLADE, name = "Wind Blade", speedMultiplier = 0.9f, damage = 18, maxRange = 14)
+  private val MagmaBallDef = ProjectileDef(id = ProjectileType.MAGMA_BALL, name = "Magma Ball", speedMultiplier = 0.45f, damage = 15, maxRange = 14, aoeOnHit = Some(AoESplashConfig(2.5f, 10)), onHitEffect = Some(Burn(15, 4000, 800)))
   private val EruptionDef = ProjectileDef(id = ProjectileType.ERUPTION, name = "Eruption", speedMultiplier = 0.5f, damage = 30, maxRange = 16, passesThroughPlayers = true, explosionConfig = Some(ExplosionConfig(30, 10, 3.5f)))
   private val FrostTrapDef = ProjectileDef(id = ProjectileType.FROST_TRAP, name = "Frost Trap", speedMultiplier = 0.4f, damage = 15, maxRange = 14, passesThroughPlayers = true, aoeOnMaxRange = Some(AoESplashConfig(3.5f, 15, freezeDurationMs = 1500)))
   private val SandShotDef = ProjectileDef(id = ProjectileType.SAND_SHOT, name = "Sand Shot", speedMultiplier = 0.7f, damage = 16, maxRange = 14)
@@ -249,15 +249,15 @@ object CharacterDef {
   private val ThornWallDef = ProjectileDef(id = ProjectileType.THORN_WALL, name = "Thorn Wall", speedMultiplier = 0.5f, damage = 12, maxRange = 8)
   private val InfernoBlastDef = ProjectileDef(id = ProjectileType.INFERNO_BLAST, name = "Inferno Blast", speedMultiplier = 0.45f, damage = 40, maxRange = 15, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(40, 12, 3.0f)), onHitEffect = Some(Burn(20, 4000, 800)))
   private val GlacierSpikeDef = ProjectileDef(id = ProjectileType.GLACIER_SPIKE, name = "Glacier Spike", speedMultiplier = 0.5f, damage = 30, maxRange = 14, onHitEffect = Some(Freeze(2000)))
-  private val MudGlobDef = ProjectileDef(id = ProjectileType.MUD_GLOB, name = "Mud Glob", speedMultiplier = 0.55f, damage = 14, maxRange = 12, onHitEffect = Some(Slow(2000, 0.4f)))
+  private val MudGlobDef = ProjectileDef(id = ProjectileType.MUD_GLOB, name = "Mud Glob", speedMultiplier = 0.55f, damage = 13, maxRange = 12, onHitEffect = Some(Slow(2000, 0.4f)))
   private val MudBombDef = ProjectileDef(id = ProjectileType.MUD_BOMB, name = "Mud Bomb", speedMultiplier = 0.4f, damage = 20, maxRange = 14, passesThroughPlayers = true, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(20, 8, 3.0f)))
-  private val EmberShotDef = ProjectileDef(id = ProjectileType.EMBER_SHOT, name = "Ember Shot", speedMultiplier = 0.9f, damage = 10, maxRange = 10, onHitEffect = Some(Burn(8, 2000, 500)))
+  private val EmberShotDef = ProjectileDef(id = ProjectileType.EMBER_SHOT, name = "Ember Shot", speedMultiplier = 0.9f, damage = 24, maxRange = 10, onHitEffect = Some(Burn(8, 2000, 500)))
   private val AvalancheCrushDef = ProjectileDef(id = ProjectileType.AVALANCHE_CRUSH, name = "Avalanche Crush", speedMultiplier = 0.35f, damage = 35, maxRange = 12, hitRadius = 3.5f, aoeOnHit = Some(AoESplashConfig(4.0f, 20)), aoeOnMaxRange = Some(AoESplashConfig(4.0f, 20)))
 
   // --- Batch 2: Undead/Dark projectile defs ---
-  private val DeathBoltDef = ProjectileDef(id = ProjectileType.DEATH_BOLT, name = "Death Bolt", speedMultiplier = 0.7f, damage = 16, maxRange = 16, passesThroughWalls = true, pierceCount = 1)
+  private val DeathBoltDef = ProjectileDef(id = ProjectileType.DEATH_BOLT, name = "Death Bolt", speedMultiplier = 0.7f, damage = 14, maxRange = 16, passesThroughWalls = true, pierceCount = 1)
   private val RaiseDeadDef = ProjectileDef(id = ProjectileType.RAISE_DEAD, name = "Raise Dead", speedMultiplier = 0.5f, damage = 20, maxRange = 14, aoeOnHit = Some(AoESplashConfig(3.0f, 12)))
-  private val BoneAxeDef = ProjectileDef(id = ProjectileType.BONE_AXE, name = "Bone Axe", speedMultiplier = 0.6f, damage = 30, maxRange = 5, hitRadius = 2.5f)
+  private val BoneAxeDef = ProjectileDef(id = ProjectileType.BONE_AXE, name = "Bone Axe", speedMultiplier = 0.6f, damage = 26, maxRange = 5, hitRadius = 2.5f)
   private val BoneThrowDef = ProjectileDef(id = ProjectileType.BONE_THROW, name = "Bone Throw", speedMultiplier = 0.8f, damage = 20, maxRange = 16, boomerang = true)
   private val WailDef = ProjectileDef(id = ProjectileType.WAIL, name = "Wail", speedMultiplier = 0.5f, damage = 15, maxRange = 10, passesThroughWalls = true, aoeOnHit = Some(AoESplashConfig(3.0f, 10, freezeDurationMs = 800)))
   private val SoulDrainDef = ProjectileDef(id = ProjectileType.SOUL_DRAIN, name = "Soul Drain", speedMultiplier = 0.6f, damage = 25, maxRange = 14, onHitEffect = Some(LifeSteal(40)))
@@ -265,8 +265,8 @@ object CharacterDef {
   private val DevourDef = ProjectileDef(id = ProjectileType.DEVOUR, name = "Devour", speedMultiplier = 0.5f, damage = 30, maxRange = 6, onHitEffect = Some(LifeSteal(50)))
   private val ScytheDef = ProjectileDef(id = ProjectileType.SCYTHE, name = "Scythe", speedMultiplier = 0.65f, damage = 28, maxRange = 5, hitRadius = 2.5f)
   private val ReapDef = ProjectileDef(id = ProjectileType.REAP, name = "Reap", speedMultiplier = 0.5f, damage = 35, maxRange = 8, passesThroughWalls = true, hitRadius = 2.8f)
-  private val ShadowBoltDef = ProjectileDef(id = ProjectileType.SHADOW_BOLT, name = "Shadow Bolt", speedMultiplier = 0.8f, damage = 15, maxRange = 16, passesThroughWalls = true, ricochetCount = 2)
-  private val CursedBladeDef = ProjectileDef(id = ProjectileType.CURSED_BLADE, name = "Cursed Blade", speedMultiplier = 0.7f, damage = 24, maxRange = 5, hitRadius = 2.2f)
+  private val ShadowBoltDef = ProjectileDef(id = ProjectileType.SHADOW_BOLT, name = "Shadow Bolt", speedMultiplier = 0.8f, damage = 21, maxRange = 16, passesThroughWalls = true, ricochetCount = 2)
+  private val CursedBladeDef = ProjectileDef(id = ProjectileType.CURSED_BLADE, name = "Cursed Blade", speedMultiplier = 0.7f, damage = 22, maxRange = 5, hitRadius = 2.2f)
   private val LifeDrainDef = ProjectileDef(id = ProjectileType.LIFE_DRAIN, name = "Life Drain", speedMultiplier = 0.6f, damage = 20, maxRange = 14, onHitEffect = Some(LifeSteal(35)))
   private val ShovelDef = ProjectileDef(id = ProjectileType.SHOVEL, name = "Shovel", speedMultiplier = 0.6f, damage = 28, maxRange = 4, hitRadius = 2.2f, boomerang = true)
   private val HeadThrowDef = ProjectileDef(id = ProjectileType.HEAD_THROW, name = "Head Throw", speedMultiplier = 0.7f, damage = 25, maxRange = 16, onHitEffect = Some(Push(2.5f)))
@@ -274,7 +274,7 @@ object CharacterDef {
   private val CurseDef = ProjectileDef(id = ProjectileType.CURSE, name = "Curse", speedMultiplier = 0.5f, damage = 20, maxRange = 12, onHitEffect = Some(Burn(15, 3000, 750)))
 
   // --- Batch 3: Medieval/Fantasy projectile defs ---
-  private val HolyBladeDef = ProjectileDef(id = ProjectileType.HOLY_BLADE, name = "Holy Blade", speedMultiplier = 0.7f, damage = 26, maxRange = 5, hitRadius = 2.2f)
+  private val HolyBladeDef = ProjectileDef(id = ProjectileType.HOLY_BLADE, name = "Holy Blade", speedMultiplier = 0.7f, damage = 22, maxRange = 5, hitRadius = 2.2f)
   private val HolyBoltDef = ProjectileDef(id = ProjectileType.HOLY_BOLT, name = "Holy Bolt", speedMultiplier = 0.8f, damage = 20, maxRange = 16, pierceCount = 1)
   private val ArrowDef = ProjectileDef(id = ProjectileType.ARROW, name = "Arrow", speedMultiplier = 0.95f, damage = 18, maxRange = 22, pierceCount = 1)
   private val PoisonArrowDef = ProjectileDef(id = ProjectileType.POISON_ARROW, name = "Poison Arrow", speedMultiplier = 0.85f, damage = 12, maxRange = 20, onHitEffect = Some(Slow(2500, 0.5f)))
@@ -283,24 +283,24 @@ object CharacterDef {
   private val FistDef = ProjectileDef(id = ProjectileType.FIST, name = "Fist", speedMultiplier = 0.8f, damage = 22, maxRange = 4, hitRadius = 2.2f, boomerang = true)
   private val SmiteDef = ProjectileDef(id = ProjectileType.SMITE, name = "Smite", speedMultiplier = 0.6f, damage = 30, maxRange = 14, aoeOnHit = Some(AoESplashConfig(3.0f, 15)))
   private val CharmDef = ProjectileDef(id = ProjectileType.CHARM, name = "Charm", speedMultiplier = 0.6f, damage = 15, maxRange = 14, onHitEffect = Some(Slow(3000, 0.3f)))
-  private val CardDef = ProjectileDef(id = ProjectileType.CARD, name = "Card", speedMultiplier = 0.85f, damage = 16, maxRange = 14, ricochetCount = 2)
+  private val CardDef = ProjectileDef(id = ProjectileType.CARD, name = "Card", speedMultiplier = 0.85f, damage = 19, maxRange = 14, ricochetCount = 2)
 
   // --- Batch 4: Sci-Fi/Tech projectile defs ---
-  private val DataBoltDef = ProjectileDef(id = ProjectileType.DATA_BOLT, name = "Data Bolt", speedMultiplier = 0.85f, damage = 14, maxRange = 16, ricochetCount = 2)
+  private val DataBoltDef = ProjectileDef(id = ProjectileType.DATA_BOLT, name = "Data Bolt", speedMultiplier = 0.85f, damage = 20, maxRange = 16, ricochetCount = 2)
   private val VirusDef = ProjectileDef(id = ProjectileType.VIRUS, name = "Virus", speedMultiplier = 0.6f, damage = 10, maxRange = 14, onHitEffect = Some(Slow(3000, 0.4f)))
   private val LaserDef = ProjectileDef(id = ProjectileType.LASER, name = "Laser", speedMultiplier = 0.95f, damage = 16, maxRange = 20, ricochetCount = 1)
   private val GravityBallDef = ProjectileDef(id = ProjectileType.GRAVITY_BALL, name = "Gravity Ball", speedMultiplier = 0.6f, damage = 18, maxRange = 14, onHitEffect = Some(PullToOwner))
   private val GravityWellDef = ProjectileDef(id = ProjectileType.GRAVITY_WELL, name = "Gravity Well", speedMultiplier = 0.4f, damage = 25, maxRange = 12, aoeOnHit = Some(AoESplashConfig(3.5f, 15, freezeDurationMs = 800)), onHitEffect = Some(VortexPull(4.0f, 3.0f)))
   private val TeslaCoilDef = ProjectileDef(id = ProjectileType.TESLA_COIL, name = "Tesla Coil", speedMultiplier = 0.5f, damage = 20, maxRange = 10, aoeOnHit = Some(AoESplashConfig(3.0f, 12, freezeDurationMs = 500)), ricochetCount = 3)
   private val NanoBoltDef = ProjectileDef(id = ProjectileType.NANO_BOLT, name = "Nano Bolt", speedMultiplier = 0.8f, damage = 12, maxRange = 16, aoeOnHit = Some(AoESplashConfig(2.0f, 6)))
-  private val VoidBoltDef = ProjectileDef(id = ProjectileType.VOID_BOLT, name = "Void Bolt", speedMultiplier = 0.7f, damage = 20, maxRange = 18, passesThroughWalls = true)
+  private val VoidBoltDef = ProjectileDef(id = ProjectileType.VOID_BOLT, name = "Void Bolt", speedMultiplier = 0.7f, damage = 22, maxRange = 18, passesThroughWalls = true)
   private val RailgunDef = ProjectileDef(id = ProjectileType.RAILGUN, name = "Railgun", speedMultiplier = 1.0f, damage = 30, maxRange = 25, passesThroughWalls = true, pierceCount = 3)
   private val ClusterBombDef = ProjectileDef(id = ProjectileType.CLUSTER_BOMB, name = "Cluster Bomb", speedMultiplier = 0.4f, damage = 35, maxRange = 14, passesThroughPlayers = true, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(35, 12, 3.5f)))
 
   // --- Batch 5: Nature/Beast projectile defs ---
   private val VenomBoltDef = ProjectileDef(id = ProjectileType.VENOM_BOLT, name = "Venom Bolt", speedMultiplier = 0.75f, damage = 14, maxRange = 16, onHitEffect = Some(Slow(2000, 0.5f)))
   private val WebShotDef = ProjectileDef(id = ProjectileType.WEB_SHOT, name = "Web Shot", speedMultiplier = 0.7f, damage = 12, maxRange = 14, onHitEffect = Some(Root(1500)))
-  private val StingerDef = ProjectileDef(id = ProjectileType.STINGER, name = "Stinger", speedMultiplier = 0.7f, damage = 22, maxRange = 6, onHitEffect = Some(Burn(8, 2000, 500)))
+  private val StingerDef = ProjectileDef(id = ProjectileType.STINGER, name = "Stinger", speedMultiplier = 0.7f, damage = 18, maxRange = 6, onHitEffect = Some(Burn(8, 2000, 500)))
   private val AcidBombDef = ProjectileDef(id = ProjectileType.ACID_BOMB, name = "Acid Bomb", speedMultiplier = 0.5f, damage = 25, maxRange = 14, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(25, 10, 3.0f)))
 
   // --- AoE Root projectile defs ---
@@ -314,7 +314,7 @@ object CharacterDef {
   private val GravityLockDef = ProjectileDef(id = ProjectileType.GRAVITY_LOCK, name = "Gravity Lock", speedMultiplier = 0.4f, damage = 0, maxRange = 12, passesThroughPlayers = true, aoeOnMaxRange = Some(AoESplashConfig(6.0f, 15, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 6.0f)))
 
   // --- Character-specific projectile defs ---
-  private val KnifeDef = ProjectileDef(id = ProjectileType.KNIFE, name = "Knife", speedMultiplier = 0.95f, damage = 22, maxRange = 6, hitRadius = 2.2f)
+  private val KnifeDef = ProjectileDef(id = ProjectileType.KNIFE, name = "Knife", speedMultiplier = 0.95f, damage = 18, maxRange = 6, hitRadius = 2.2f)
   private val StingDef = ProjectileDef(id = ProjectileType.STING, name = "Sting", speedMultiplier = 0.7f, damage = 12, maxRange = 14, onHitEffect = Some(Slow(2000, 0.5f)))
   private val HammerDef = ProjectileDef(id = ProjectileType.HAMMER, name = "Hammer", speedMultiplier = 0.6f, damage = 33, maxRange = 5, hitRadius = 2.5f)
   private val HornDef = ProjectileDef(id = ProjectileType.HORN, name = "Horn", speedMultiplier = 0.6f, damage = 33, maxRange = 5, hitRadius = 2.5f)
@@ -331,7 +331,7 @@ object CharacterDef {
   private val ChainLightningForkDef = ProjectileDef(id = ProjectileType.CHAIN_LIGHTNING_FORK, name = "Chain Lightning Fork", speedMultiplier = 0.7f, damage = 22, maxRange = 16, ricochetCount = 3, pierceCount = 1, aoeOnHit = Some(AoESplashConfig(2.5f, 10)))
   private val SniperBeamDef = ProjectileDef(id = ProjectileType.SNIPER_BEAM, name = "Sniper Beam", speedMultiplier = 1.0f, damage = 10, maxRange = 28, pierceCount = 2, distanceDamageScaling = Some(DistanceDamageScaling(5, 80, 28)))
   private val MomentumStrikeDef = ProjectileDef(id = ProjectileType.MOMENTUM_STRIKE, name = "Momentum Strike", speedMultiplier = 0.8f, damage = 30, maxRange = 5, hitRadius = 2.5f, onHitEffect = Some(SpeedBoost(3000)))
-  private val LeechBoltDef = ProjectileDef(id = ProjectileType.LEECH_BOLT, name = "Leech Bolt", speedMultiplier = 0.7f, damage = 18, maxRange = 16, pierceCount = 1, onHitEffect = Some(LifeSteal(30)))
+  private val LeechBoltDef = ProjectileDef(id = ProjectileType.LEECH_BOLT, name = "Leech Bolt", speedMultiplier = 0.7f, damage = 16, maxRange = 16, pierceCount = 1, onHitEffect = Some(LifeSteal(30)))
   private val RicochetShardDef = ProjectileDef(id = ProjectileType.RICOCHET_SHARD, name = "Ricochet Shard", speedMultiplier = 0.75f, damage = 18, maxRange = 20, ricochetCount = 3, onHitEffect = Some(Freeze(500)))
   private val FlameWaveDef = ProjectileDef(id = ProjectileType.FLAME_WAVE, name = "Flame Wave", speedMultiplier = 0.65f, damage = 16, maxRange = 14, pierceCount = 2, passesThroughWalls = true, onHitEffect = Some(Burn(10, 3000, 750)))
   private val PoisonCloudDef = ProjectileDef(id = ProjectileType.POISON_CLOUD, name = "Poison Cloud", speedMultiplier = 0.4f, damage = 15, maxRange = 14, passesThroughPlayers = true, aoeOnHit = Some(AoESplashConfig(3.5f, 10)), aoeOnMaxRange = Some(AoESplashConfig(4.0f, 15)), onHitEffect = Some(Slow(2000, 0.4f)))
@@ -347,8 +347,25 @@ object CharacterDef {
   private val SoulHarvestDef = ProjectileDef(id = ProjectileType.SOUL_HARVEST, name = "Soul Harvest", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(6.0f, 25)), onHitEffect = Some(LifeSteal(30)), explosionConfig = Some(ExplosionConfig(0, 0, 6.0f)))
   private val OverclockBeamDef = ProjectileDef(id = ProjectileType.OVERCLOCK_BEAM, name = "Overclock Beam", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(5.0f, 0)), onHitEffect = Some(SpeedBoost(4000)), explosionConfig = Some(ExplosionConfig(0, 0, 5.0f)))
   private val NapalmStrikeDef = ProjectileDef(id = ProjectileType.NAPALM_STRIKE, name = "Napalm Strike", speedMultiplier = 0.45f, damage = 30, maxRange = 16, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(30, 10, 3.0f)), onHitEffect = Some(Burn(15, 4000, 800)))
-  private val ThrownBoulderDef = ProjectileDef(id = ProjectileType.THROWN_BOULDER, name = "Thrown Boulder", speedMultiplier = 0.3f, damage = 45, maxRange = 10, hitRadius = 3.0f)
+  private val ThrownBoulderDef = ProjectileDef(id = ProjectileType.THROWN_BOULDER, name = "Thrown Boulder", speedMultiplier = 0.3f, damage = 38, maxRange = 10, hitRadius = 3.0f)
   private val EyeBeamDef = ProjectileDef(id = ProjectileType.EYE_BEAM, name = "Eye Beam", speedMultiplier = 0.6f, damage = 25, maxRange = 20, pierceCount = 2, onHitEffect = Some(Burn(10, 3000, 750)))
+
+  // --- DPS balance variants (same stats as base except damage) ---
+  private val SoulBoltHeavyDef = ProjectileDef(id = ProjectileType.SOUL_BOLT_HEAVY, name = "Soul Bolt Heavy", speedMultiplier = 0.65f, damage = 22, maxRange = 15, passesThroughWalls = true, pierceCount = 1)
+  private val FrostShardLightDef = ProjectileDef(id = ProjectileType.FROST_SHARD_LIGHT, name = "Frost Shard Light", speedMultiplier = 0.85f, damage = 10, maxRange = 18)
+  private val FlameBoltHeavyDef = ProjectileDef(id = ProjectileType.FLAME_BOLT_HEAVY, name = "Flame Bolt Heavy", speedMultiplier = 0.75f, damage = 22, maxRange = 16, onHitEffect = Some(Burn(12, 3000, 750)))
+  private val FlameBoltLightDef = ProjectileDef(id = ProjectileType.FLAME_BOLT_LIGHT, name = "Flame Bolt Light", speedMultiplier = 0.75f, damage = 12, maxRange = 16, onHitEffect = Some(Burn(12, 3000, 750)))
+  private val BulletHeavyDef = ProjectileDef(id = ProjectileType.BULLET_HEAVY, name = "Bullet Heavy", speedMultiplier = 1.0f, damage = 24, maxRange = 18)
+  private val BulletLightDef = ProjectileDef(id = ProjectileType.BULLET_LIGHT, name = "Bullet Light", speedMultiplier = 1.0f, damage = 12, maxRange = 18)
+  private val SonicWaveHeavyDef = ProjectileDef(id = ProjectileType.SONIC_WAVE_HEAVY, name = "Sonic Wave Heavy", speedMultiplier = 0.7f, damage = 22, maxRange = 14, passesThroughWalls = true, pierceCount = 1)
+  private val SonicWaveMedDef = ProjectileDef(id = ProjectileType.SONIC_WAVE_MED, name = "Sonic Wave Med", speedMultiplier = 0.7f, damage = 18, maxRange = 14, passesThroughWalls = true, pierceCount = 1)
+  private val ThornLightDef = ProjectileDef(id = ProjectileType.THORN_LIGHT, name = "Thorn Light", speedMultiplier = 0.65f, damage = 10, maxRange = 15, aoeOnHit = Some(AoESplashConfig(2.0f, 6)))
+  private val LaserHeavyDef = ProjectileDef(id = ProjectileType.LASER_HEAVY, name = "Laser Heavy", speedMultiplier = 0.95f, damage = 22, maxRange = 20, ricochetCount = 1)
+  private val LaserLightDef = ProjectileDef(id = ProjectileType.LASER_LIGHT, name = "Laser Light", speedMultiplier = 0.95f, damage = 11, maxRange = 20, ricochetCount = 1)
+  private val ArrowHeavyDef = ProjectileDef(id = ProjectileType.ARROW_HEAVY, name = "Arrow Heavy", speedMultiplier = 0.95f, damage = 22, maxRange = 22, pierceCount = 1)
+  private val ArrowLightDef = ProjectileDef(id = ProjectileType.ARROW_LIGHT, name = "Arrow Light", speedMultiplier = 0.95f, damage = 12, maxRange = 22, pierceCount = 1)
+  private val HolyBoltHeavyDef = ProjectileDef(id = ProjectileType.HOLY_BOLT_HEAVY, name = "Holy Bolt Heavy", speedMultiplier = 0.8f, damage = 24, maxRange = 16, pierceCount = 1)
+  private val VenomBoltLightDef = ProjectileDef(id = ProjectileType.VENOM_BOLT_LIGHT, name = "Venom Bolt Light", speedMultiplier = 0.75f, damage = 11, maxRange = 16, onHitEffect = Some(Slow(2000, 0.5f)))
 
   // Register all projectile defs
   ProjectileDef.register(
@@ -392,7 +409,12 @@ object CharacterDef {
     PoisonCloudDef, BoneBoomerangDef, GravityLanceDef, ShadowHauntDef,
     ChargeFistDef, AcidSprayDef, EchoBoltDef, FlameTrailDef,
     StarBoltDef, RuneBoltDef, SoulHarvestDef, OverclockBeamDef,
-    NapalmStrikeDef, ThrownBoulderDef, EyeBeamDef
+    NapalmStrikeDef, ThrownBoulderDef, EyeBeamDef,
+    // DPS balance variants
+    SoulBoltHeavyDef, FrostShardLightDef, FlameBoltHeavyDef, FlameBoltLightDef,
+    BulletHeavyDef, BulletLightDef, SonicWaveHeavyDef, SonicWaveMedDef,
+    ThornLightDef, LaserHeavyDef, LaserLightDef, ArrowHeavyDef, ArrowLightDef,
+    HolyBoltHeavyDef, VenomBoltLightDef
   )
 
   // === Character definitions ===
@@ -466,7 +488,7 @@ object CharacterDef {
     qAbility = AbilityDef(
       name = "Fireball",
       description = "Launches a slow but devastating fireball that deals massive damage.",
-      cooldownMs = 6000, maxRange = 18, damage = 45,
+      cooldownMs = 5000, maxRange = 18, damage = 45,
       projectileType = ProjectileType.FIREBALL, keybind = "Q"
     ),
     eAbility = AbilityDef(
@@ -758,7 +780,7 @@ object CharacterDef {
     spriteSheet = "sprites/glacier.png",
     qAbility = AbilityDef(name = "Ricochet Shard", description = "Hurls a ricocheting ice shard that freezes on hit.", cooldownMs = 8000, maxRange = 20, damage = 18, projectileType = ProjectileType.RICOCHET_SHARD, keybind = "Q"),
     eAbility = AbilityDef(name = "Ice Wall", description = "Fires 5 frost shards in a fan.", cooldownMs = 10000, maxRange = 18, damage = 16, projectileType = ProjectileType.FROST_SHARD, keybind = "E", castBehavior = FanProjectile(5, Math.toRadians(60))),
-    primaryProjectileType = ProjectileType.FROST_SHARD, maxHealth = 120
+    primaryProjectileType = ProjectileType.FROST_SHARD_LIGHT, maxHealth = 120
   )
 
   val Mudslinger: CharacterDef = CharacterDef(
@@ -774,8 +796,8 @@ object CharacterDef {
     id = CharacterId.Ember, displayName = "Ember",
     description = "A tiny fire sprite that fans embers and bursts into protective flame.",
     spriteSheet = "sprites/ember.png",
-    qAbility = AbilityDef(name = "Ember Fan", description = "Fires 5 embers in a fan.", cooldownMs = 6000, maxRange = 10, damage = 10, projectileType = ProjectileType.EMBER_SHOT, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(45))),
-    eAbility = AbilityDef(name = "Flame Burst", description = "Erupts into protective flame, phased and immune.", cooldownMs = 14000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = PhaseShiftBuff(2000)),
+    qAbility = AbilityDef(name = "Ember Fan", description = "Fires 5 embers in a fan.", cooldownMs = 4000, maxRange = 10, damage = 10, projectileType = ProjectileType.EMBER_SHOT, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(45))),
+    eAbility = AbilityDef(name = "Flame Burst", description = "Erupts into protective flame, phased and immune.", cooldownMs = 10000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = PhaseShiftBuff(2000)),
     primaryProjectileType = ProjectileType.EMBER_SHOT, maxHealth = 65
   )
 
@@ -783,8 +805,8 @@ object CharacterDef {
     id = CharacterId.Avalanche, displayName = "Avalanche",
     description = "A slow siege brute with avalanche crush and ice quake that freezes nearby foes.",
     spriteSheet = "sprites/avalanche.png",
-    qAbility = AbilityDef(name = "Avalanche Crush", description = "Hurls a massive icy boulder with huge AoE and freeze.", cooldownMs = 14000, maxRange = 12, damage = 35, projectileType = ProjectileType.AVALANCHE_CRUSH, keybind = "Q"),
-    eAbility = AbilityDef(name = "Ice Quake", description = "Slams the ground with icy force, freezing nearby enemies.", cooldownMs = 14000, maxRange = 0, damage = 20, projectileType = ProjectileType.TREMOR_SLAM, keybind = "E", castBehavior = GroundSlam(6.0f)),
+    qAbility = AbilityDef(name = "Avalanche Crush", description = "Hurls a massive icy boulder with huge AoE and freeze.", cooldownMs = 18000, maxRange = 12, damage = 35, projectileType = ProjectileType.AVALANCHE_CRUSH, keybind = "Q"),
+    eAbility = AbilityDef(name = "Ice Quake", description = "Slams the ground with icy force, freezing nearby enemies.", cooldownMs = 18000, maxRange = 0, damage = 20, projectileType = ProjectileType.TREMOR_SLAM, keybind = "E", castBehavior = GroundSlam(6.0f)),
     primaryProjectileType = ProjectileType.BOULDER, maxHealth = 120
   )
 
@@ -803,7 +825,7 @@ object CharacterDef {
     id = CharacterId.SkeletonKing, displayName = "Skeleton King",
     description = "An undead monarch wielding bone axes and boomerang bones with AoE splash.",
     spriteSheet = "sprites/skeletonking.png",
-    qAbility = AbilityDef(name = "Bone Boomerang", description = "Hurls a bone that returns and splashes AoE on hit.", cooldownMs = 8000, maxRange = 12, damage = 25, projectileType = ProjectileType.BONE_BOOMERANG, keybind = "Q"),
+    qAbility = AbilityDef(name = "Bone Boomerang", description = "Hurls a bone that returns and splashes AoE on hit.", cooldownMs = 10000, maxRange = 12, damage = 25, projectileType = ProjectileType.BONE_BOOMERANG, keybind = "Q"),
     eAbility = AbilityDef(name = "Bone Storm", description = "Unleashes bones in all directions.", cooldownMs = 12000, maxRange = 16, damage = 20, projectileType = ProjectileType.BONE_THROW, keybind = "E", castBehavior = FanProjectile(8, 2 * Math.PI)),
     primaryProjectileType = ProjectileType.BONE_AXE, maxHealth = 110
   )
@@ -812,9 +834,9 @@ object CharacterDef {
     id = CharacterId.Banshee, displayName = "Banshee",
     description = "A sonic disruptor whose echoing bolts ricochet and wail freezes all nearby.",
     spriteSheet = "sprites/banshee.png",
-    qAbility = AbilityDef(name = "Echo Bolt", description = "A ricocheting sonic bolt that splashes AoE on each bounce.", cooldownMs = 8000, maxRange = 18, damage = 16, projectileType = ProjectileType.ECHO_BOLT, keybind = "Q"),
+    qAbility = AbilityDef(name = "Echo Bolt", description = "A ricocheting sonic bolt that splashes AoE on each bounce.", cooldownMs = 6000, maxRange = 18, damage = 16, projectileType = ProjectileType.ECHO_BOLT, keybind = "Q"),
     eAbility = AbilityDef(name = "Banshee Wail", description = "Screams, freezing all nearby enemies.", cooldownMs = 14000, maxRange = 0, damage = 15, projectileType = ProjectileType.TREMOR_SLAM, keybind = "E", castBehavior = GroundSlam(5.0f)),
-    primaryProjectileType = ProjectileType.SONIC_WAVE, maxHealth = 75
+    primaryProjectileType = ProjectileType.SONIC_WAVE_HEAVY, maxHealth = 75
   )
 
   val Lich: CharacterDef = CharacterDef(
@@ -884,9 +906,9 @@ object CharacterDef {
     id = CharacterId.Phantom, displayName = "Phantom",
     description = "An assassin ghost that teleports behind targets and blinks away.",
     spriteSheet = "sprites/phantom.png",
-    qAbility = AbilityDef(name = "Shadow Haunt", description = "Ghost bolt that teleports you behind the target on hit.", cooldownMs = 14000, maxRange = 14, damage = 25, projectileType = ProjectileType.SHADOW_HAUNT, keybind = "Q"),
+    qAbility = AbilityDef(name = "Shadow Haunt", description = "Ghost bolt that teleports you behind the target on hit.", cooldownMs = 10000, maxRange = 14, damage = 25, projectileType = ProjectileType.SHADOW_HAUNT, keybind = "Q"),
     eAbility = AbilityDef(name = "Phase Out", description = "Teleports through the spirit realm.", cooldownMs = 12000, maxRange = 10, damage = 0, projectileType = -2, keybind = "E", castBehavior = TeleportCast(10)),
-    primaryProjectileType = ProjectileType.SOUL_BOLT, maxHealth = 75
+    primaryProjectileType = ProjectileType.SOUL_BOLT_HEAVY, maxHealth = 75
   )
 
   val MummyChar: CharacterDef = CharacterDef(
@@ -920,9 +942,9 @@ object CharacterDef {
     id = CharacterId.Poltergeist, displayName = "Poltergeist",
     description = "A mischievous trickster that charms foes and blinks unpredictably.",
     spriteSheet = "sprites/poltergeist.png",
-    qAbility = AbilityDef(name = "Possession", description = "Charm that heavily slows.", cooldownMs = 8000, maxRange = 14, damage = 15, projectileType = ProjectileType.CHARM, keybind = "Q"),
+    qAbility = AbilityDef(name = "Possession", description = "Charm that heavily slows.", cooldownMs = 6000, maxRange = 14, damage = 15, projectileType = ProjectileType.CHARM, keybind = "Q"),
     eAbility = AbilityDef(name = "Blink", description = "Teleports to cursor.", cooldownMs = 10000, maxRange = 10, damage = 0, projectileType = -2, keybind = "E", castBehavior = TeleportCast(10)),
-    primaryProjectileType = ProjectileType.SOUL_BOLT, maxHealth = 65
+    primaryProjectileType = ProjectileType.SOUL_BOLT_HEAVY, maxHealth = 65
   )
 
   // === Batch 3: Medieval/Fantasy (IDs 42-56) ===
@@ -931,8 +953,8 @@ object CharacterDef {
     id = CharacterId.Paladin, displayName = "Paladin",
     description = "A holy knight who smites with radiant energy and holy nova.",
     spriteSheet = "sprites/paladin.png",
-    qAbility = AbilityDef(name = "Holy Bolt", description = "Fires a bolt of holy light.", cooldownMs = 6000, maxRange = 16, damage = 20, projectileType = ProjectileType.HOLY_BOLT, keybind = "Q"),
-    eAbility = AbilityDef(name = "Holy Nova", description = "Unleashes holy bolts in all directions.", cooldownMs = 12000, maxRange = 16, damage = 20, projectileType = ProjectileType.HOLY_BOLT, keybind = "E", castBehavior = FanProjectile(8, 2 * Math.PI)),
+    qAbility = AbilityDef(name = "Holy Bolt", description = "Fires a bolt of holy light.", cooldownMs = 10000, maxRange = 16, damage = 20, projectileType = ProjectileType.HOLY_BOLT, keybind = "Q"),
+    eAbility = AbilityDef(name = "Holy Nova", description = "Unleashes holy bolts in all directions.", cooldownMs = 16000, maxRange = 16, damage = 20, projectileType = ProjectileType.HOLY_BOLT, keybind = "E", castBehavior = FanProjectile(8, 2 * Math.PI)),
     primaryProjectileType = ProjectileType.HOLY_BLADE, maxHealth = 120
   )
 
@@ -941,8 +963,8 @@ object CharacterDef {
     description = "A skilled archer with poison arrows and multi-shot.",
     spriteSheet = "sprites/ranger.png",
     qAbility = AbilityDef(name = "Poison Arrow", description = "Arrow that slows on hit.", cooldownMs = 7000, maxRange = 20, damage = 12, projectileType = ProjectileType.POISON_ARROW, keybind = "Q"),
-    eAbility = AbilityDef(name = "Multi Shot", description = "Fires 3 arrows in a tight fan.", cooldownMs = 8000, maxRange = 22, damage = 18, projectileType = ProjectileType.ARROW, keybind = "E", castBehavior = FanProjectile(3, Math.toRadians(20))),
-    primaryProjectileType = ProjectileType.ARROW, maxHealth = 85
+    eAbility = AbilityDef(name = "Multi Shot", description = "Fires 3 arrows in a tight fan.", cooldownMs = 6000, maxRange = 22, damage = 18, projectileType = ProjectileType.ARROW, keybind = "E", castBehavior = FanProjectile(3, Math.toRadians(20))),
+    primaryProjectileType = ProjectileType.ARROW_HEAVY, maxHealth = 85
   )
 
   val BerserkerChar: CharacterDef = CharacterDef(
@@ -950,7 +972,7 @@ object CharacterDef {
     description = "A raging warrior who charges and spins axes.",
     spriteSheet = "sprites/berserker.png",
     qAbility = AbilityDef(name = "Rage Charge", description = "Charges forward in a rage.", cooldownMs = 10000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = DashBuff(10, 350, 18)),
-    eAbility = AbilityDef(name = "Axe Spin", description = "Spins axes in all directions.", cooldownMs = 12000, maxRange = 5, damage = 33, projectileType = ProjectileType.AXE, keybind = "E", castBehavior = FanProjectile(8, 2 * Math.PI)),
+    eAbility = AbilityDef(name = "Axe Spin", description = "Spins axes in all directions.", cooldownMs = 16000, maxRange = 5, damage = 33, projectileType = ProjectileType.AXE, keybind = "E", castBehavior = FanProjectile(8, 2 * Math.PI)),
     primaryProjectileType = ProjectileType.AXE, maxHealth = 120
   )
 
@@ -994,9 +1016,9 @@ object CharacterDef {
     id = CharacterId.Cleric, displayName = "Cleric",
     description = "A glass cannon holy nuker with devastating smites.",
     spriteSheet = "sprites/cleric.png",
-    qAbility = AbilityDef(name = "Smite", description = "Holy smite with AoE splash.", cooldownMs = 8000, maxRange = 14, damage = 30, projectileType = ProjectileType.SMITE, keybind = "Q"),
+    qAbility = AbilityDef(name = "Smite", description = "Holy smite with AoE splash.", cooldownMs = 6000, maxRange = 14, damage = 30, projectileType = ProjectileType.SMITE, keybind = "Q"),
     eAbility = AbilityDef(name = "Divine Judgment", description = "Fires 5 smites in a devastating fan.", cooldownMs = 14000, maxRange = 14, damage = 30, projectileType = ProjectileType.SMITE, keybind = "E", castBehavior = FanProjectile(5, Math.toRadians(60))),
-    primaryProjectileType = ProjectileType.HOLY_BOLT, maxHealth = 85
+    primaryProjectileType = ProjectileType.HOLY_BOLT_HEAVY, maxHealth = 85
   )
 
   val RogueChar: CharacterDef = CharacterDef(
@@ -1012,7 +1034,7 @@ object CharacterDef {
     id = CharacterId.Barbarian, displayName = "Barbarian",
     description = "A savage warrior with triple axes and an earth-splitting slam.",
     spriteSheet = "sprites/barbarian.png",
-    qAbility = AbilityDef(name = "Triple Axe", description = "Throws 3 axes in a fan.", cooldownMs = 8000, maxRange = 5, damage = 33, projectileType = ProjectileType.AXE, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(40))),
+    qAbility = AbilityDef(name = "Triple Axe", description = "Throws 3 axes in a fan.", cooldownMs = 12000, maxRange = 5, damage = 33, projectileType = ProjectileType.AXE, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(40))),
     eAbility = AbilityDef(name = "Earthsplitter", description = "Slams the ground, rooting nearby enemies.", cooldownMs = 12000, maxRange = 0, damage = 30, projectileType = ProjectileType.TREMOR_SLAM, keybind = "E", castBehavior = GroundSlam(6.0f)),
     primaryProjectileType = ProjectileType.AXE, maxHealth = 120
   )
@@ -1070,7 +1092,7 @@ object CharacterDef {
     spriteSheet = "sprites/cyborg.png",
     qAbility = AbilityDef(name = "Arm Rocket", description = "Fires a rocket from the arm.", cooldownMs = 12000, maxRange = 20, damage = 35, projectileType = ProjectileType.ROCKET, keybind = "Q"),
     eAbility = AbilityDef(name = "Overclock", description = "Overclocks systems, gaining massive speed boost.", cooldownMs = 14000, maxRange = 0, damage = 0, projectileType = ProjectileType.OVERCLOCK_BEAM, keybind = "E", castBehavior = GroundSlam(5.0f)),
-    primaryProjectileType = ProjectileType.BULLET, maxHealth = 110
+    primaryProjectileType = ProjectileType.BULLET_LIGHT, maxHealth = 110
   )
 
   val HackerChar: CharacterDef = CharacterDef(
@@ -1088,7 +1110,7 @@ object CharacterDef {
     spriteSheet = "sprites/mechpilot.png",
     qAbility = AbilityDef(name = "Suppress Fire", description = "Fires 3 lockdown chains in a fan.", cooldownMs = 8000, maxRange = 12, damage = 8, projectileType = ProjectileType.LOCKDOWN_CHAIN, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(40))),
     eAbility = AbilityDef(name = "Mech Slam", description = "Slams mech fist into the ground with devastating AoE.", cooldownMs = 12000, maxRange = 12, damage = 25, projectileType = ProjectileType.SEISMIC_SLAM, keybind = "E"),
-    primaryProjectileType = ProjectileType.BULLET, maxHealth = 120
+    primaryProjectileType = ProjectileType.BULLET_LIGHT, maxHealth = 120
   )
 
   val AndroidChar: CharacterDef = CharacterDef(
@@ -1149,9 +1171,9 @@ object CharacterDef {
     id = CharacterId.Photon, displayName = "Photon",
     description = "A being of pure light with laser fans and prismatic explosions.",
     spriteSheet = "sprites/photon.png",
-    qAbility = AbilityDef(name = "Light Spray", description = "Fires 5 lasers in a fan.", cooldownMs = 8000, maxRange = 20, damage = 16, projectileType = ProjectileType.LASER, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(60))),
+    qAbility = AbilityDef(name = "Light Spray", description = "Fires 5 lasers in a fan.", cooldownMs = 6000, maxRange = 20, damage = 16, projectileType = ProjectileType.LASER, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(60))),
     eAbility = AbilityDef(name = "Prismatic Burst", description = "Fires lasers in all directions.", cooldownMs = 10000, maxRange = 20, damage = 16, projectileType = ProjectileType.LASER, keybind = "E", castBehavior = FanProjectile(8, 2 * Math.PI)),
-    primaryProjectileType = ProjectileType.LASER, maxHealth = 80
+    primaryProjectileType = ProjectileType.LASER_HEAVY, maxHealth = 80
   )
 
   val RailgunnerChar: CharacterDef = CharacterDef(
@@ -1178,16 +1200,16 @@ object CharacterDef {
     spriteSheet = "sprites/sentinel.png",
     qAbility = AbilityDef(name = "Suppress", description = "Fires a lockdown chain.", cooldownMs = 8000, maxRange = 12, damage = 8, projectileType = ProjectileType.LOCKDOWN_CHAIN, keybind = "Q"),
     eAbility = AbilityDef(name = "Deploy Mine", description = "Deploys a snare mine.", cooldownMs = 14000, maxRange = 16, damage = 15, projectileType = ProjectileType.SNARE_MINE, keybind = "E"),
-    primaryProjectileType = ProjectileType.LASER, maxHealth = 110
+    primaryProjectileType = ProjectileType.LASER_LIGHT, maxHealth = 110
   )
 
   val PilotChar: CharacterDef = CharacterDef(
     id = CharacterId.Pilot, displayName = "Pilot",
     description = "A fragile air support pilot with strafing runs and napalm strikes.",
     spriteSheet = "sprites/pilot.png",
-    qAbility = AbilityDef(name = "Strafing Run", description = "Fires 3 bullets in a tight spread.", cooldownMs = 8000, maxRange = 18, damage = 20, projectileType = ProjectileType.BULLET, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(20))),
+    qAbility = AbilityDef(name = "Strafing Run", description = "Fires 3 bullets in a tight spread.", cooldownMs = 6000, maxRange = 18, damage = 20, projectileType = ProjectileType.BULLET, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(20))),
     eAbility = AbilityDef(name = "Napalm Strike", description = "Calls in a napalm strike that burns on impact.", cooldownMs = 14000, maxRange = 16, damage = 30, projectileType = ProjectileType.NAPALM_STRIKE, keybind = "E"),
-    primaryProjectileType = ProjectileType.BULLET, maxHealth = 85
+    primaryProjectileType = ProjectileType.BULLET_HEAVY, maxHealth = 85
   )
 
   val GlitcherChar: CharacterDef = CharacterDef(
@@ -1233,7 +1255,7 @@ object CharacterDef {
     description = "A devastating brawler that grabs enemies close and mauls in all directions.",
     spriteSheet = "sprites/bear.png",
     qAbility = AbilityDef(name = "Bear Hug", description = "Grabs and pulls an enemy toward you.", cooldownMs = 8000, maxRange = 18, damage = 8, projectileType = ProjectileType.GRAB, keybind = "Q"),
-    eAbility = AbilityDef(name = "Maul", description = "Swipes claws in all directions.", cooldownMs = 10000, maxRange = 4, damage = 25, projectileType = ProjectileType.CLAW_SWIPE, keybind = "E", castBehavior = FanProjectile(8, 2 * Math.PI)),
+    eAbility = AbilityDef(name = "Maul", description = "Swipes claws in all directions.", cooldownMs = 14000, maxRange = 4, damage = 25, projectileType = ProjectileType.CLAW_SWIPE, keybind = "E", castBehavior = FanProjectile(8, 2 * Math.PI)),
     primaryProjectileType = ProjectileType.CLAW_SWIPE, maxHealth = 120
   )
 
@@ -1277,9 +1299,9 @@ object CharacterDef {
     id = CharacterId.Treant, displayName = "Treant",
     description = "A living tree with root pulls and thorn bursts.",
     spriteSheet = "sprites/treant.png",
-    qAbility = AbilityDef(name = "Root Pull", description = "Roots that pull an enemy.", cooldownMs = 8000, maxRange = 18, damage = 8, projectileType = ProjectileType.VINE_WHIP, keybind = "Q"),
+    qAbility = AbilityDef(name = "Root Pull", description = "Roots that pull an enemy.", cooldownMs = 12000, maxRange = 18, damage = 8, projectileType = ProjectileType.VINE_WHIP, keybind = "Q"),
     eAbility = AbilityDef(name = "Root Growth", description = "Roots erupt from the ground, entangling nearby enemies.", cooldownMs = 14000, maxRange = 0, damage = 10, projectileType = ProjectileType.ROOT_GROWTH, keybind = "E", castBehavior = GroundSlam(8.0f)),
-    primaryProjectileType = ProjectileType.THORN, maxHealth = 125
+    primaryProjectileType = ProjectileType.THORN_LIGHT, maxHealth = 125
   )
 
   val PhoenixChar: CharacterDef = CharacterDef(
@@ -1288,7 +1310,7 @@ object CharacterDef {
     spriteSheet = "sprites/phoenix.png",
     qAbility = AbilityDef(name = "Flame Trail", description = "Passes through players and leaves burn AoE at max range.", cooldownMs = 8000, maxRange = 16, damage = 15, projectileType = ProjectileType.FLAME_TRAIL, keybind = "Q"),
     eAbility = AbilityDef(name = "Rebirth", description = "Teleports in a burst of flame.", cooldownMs = 10000, maxRange = 10, damage = 0, projectileType = -2, keybind = "E", castBehavior = TeleportCast(10)),
-    primaryProjectileType = ProjectileType.FLAME_BOLT, maxHealth = 75
+    primaryProjectileType = ProjectileType.FLAME_BOLT_HEAVY, maxHealth = 75
   )
 
   val HydraChar: CharacterDef = CharacterDef(
@@ -1297,7 +1319,7 @@ object CharacterDef {
     spriteSheet = "sprites/hydra.png",
     qAbility = AbilityDef(name = "Multi-Head Spit", description = "Spits venom from 5 heads.", cooldownMs = 10000, maxRange = 16, damage = 14, projectileType = ProjectileType.VENOM_BOLT, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(60))),
     eAbility = AbilityDef(name = "Poison Cloud", description = "Launches a poison cloud that slows and AoE damages.", cooldownMs = 12000, maxRange = 14, damage = 15, projectileType = ProjectileType.POISON_CLOUD, keybind = "E"),
-    primaryProjectileType = ProjectileType.VENOM_BOLT, maxHealth = 110
+    primaryProjectileType = ProjectileType.VENOM_BOLT_LIGHT, maxHealth = 110
   )
 
   val MantisChar: CharacterDef = CharacterDef(
@@ -1343,7 +1365,7 @@ object CharacterDef {
     description = "A bull-headed brute with a devastating long charge and stunning horn toss.",
     spriteSheet = "sprites/minotaur.png",
     qAbility = AbilityDef(name = "Bull Charge", description = "Massive charge forward with horns lowered.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = DashBuff(14, 500, 25)),
-    eAbility = AbilityDef(name = "Horn Toss", description = "Flings a horn that knocks back on hit.", cooldownMs = 10000, maxRange = 16, damage = 25, projectileType = ProjectileType.HEAD_THROW, keybind = "E"),
+    eAbility = AbilityDef(name = "Horn Toss", description = "Flings a horn that knocks back on hit.", cooldownMs = 14000, maxRange = 16, damage = 25, projectileType = ProjectileType.HEAD_THROW, keybind = "E"),
     primaryProjectileType = ProjectileType.HORN, maxHealth = 125
   )
 
@@ -1371,7 +1393,7 @@ object CharacterDef {
     spriteSheet = "sprites/centaur.png",
     qAbility = AbilityDef(name = "Lance", description = "Hurls a distance-scaling spear.", cooldownMs = 8000, maxRange = 20, damage = 10, projectileType = ProjectileType.SPEAR, keybind = "Q"),
     eAbility = AbilityDef(name = "Gallop", description = "Gallops forward.", cooldownMs = 10000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = DashBuff(12, 400, 18)),
-    primaryProjectileType = ProjectileType.ARROW, maxHealth = 110
+    primaryProjectileType = ProjectileType.ARROW_LIGHT, maxHealth = 110
   )
 
   val KrakenChar: CharacterDef = CharacterDef(
@@ -1396,8 +1418,8 @@ object CharacterDef {
     id = CharacterId.Cyclops, displayName = "Cyclops",
     description = "A one-eyed giant who hurls massive boulders and fires a piercing eye beam.",
     spriteSheet = "sprites/cyclops.png",
-    qAbility = AbilityDef(name = "Boulder Fan", description = "Hurls 3 boulders in a fan.", cooldownMs = 10000, maxRange = 8, damage = 35, projectileType = ProjectileType.BOULDER, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(40))),
-    eAbility = AbilityDef(name = "Eye Beam", description = "Fires a searing beam that pierces and burns.", cooldownMs = 12000, maxRange = 20, damage = 25, projectileType = ProjectileType.EYE_BEAM, keybind = "E"),
+    qAbility = AbilityDef(name = "Boulder Fan", description = "Hurls 3 boulders in a fan.", cooldownMs = 14000, maxRange = 8, damage = 35, projectileType = ProjectileType.BOULDER, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(40))),
+    eAbility = AbilityDef(name = "Eye Beam", description = "Fires a searing beam that pierces and burns.", cooldownMs = 16000, maxRange = 20, damage = 25, projectileType = ProjectileType.EYE_BEAM, keybind = "E"),
     primaryProjectileType = ProjectileType.THROWN_BOULDER, maxHealth = 120
   )
 
@@ -1407,7 +1429,7 @@ object CharacterDef {
     spriteSheet = "sprites/harpy.png",
     qAbility = AbilityDef(name = "Shriek", description = "Screams, pushing all nearby enemies away.", cooldownMs = 10000, maxRange = 0, damage = 15, projectileType = ProjectileType.TREMOR_SLAM, keybind = "Q", castBehavior = GroundSlam(5.0f)),
     eAbility = AbilityDef(name = "Sky Dance", description = "Takes flight, becoming phased and immune.", cooldownMs = 14000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = PhaseShiftBuff(3000)),
-    primaryProjectileType = ProjectileType.SONIC_WAVE, maxHealth = 85
+    primaryProjectileType = ProjectileType.SONIC_WAVE_MED, maxHealth = 85
   )
 
   val GriffinChar: CharacterDef = CharacterDef(
@@ -1441,8 +1463,8 @@ object CharacterDef {
     id = CharacterId.Golem, displayName = "Golem",
     description = "An immovable stone fortress that hurls slow rooting boulders.",
     spriteSheet = "sprites/golem.png",
-    qAbility = AbilityDef(name = "Stone Wall", description = "Hurls 3 slow boulders that root on hit.", cooldownMs = 12000, maxRange = 8, damage = 35, projectileType = ProjectileType.BOULDER, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(40))),
-    eAbility = AbilityDef(name = "Tremor Slam", description = "Slams the ground, rooting nearby enemies.", cooldownMs = 16000, maxRange = 0, damage = 30, projectileType = ProjectileType.TREMOR_SLAM, keybind = "E", castBehavior = GroundSlam(6.0f)),
+    qAbility = AbilityDef(name = "Stone Wall", description = "Hurls 3 slow boulders that root on hit.", cooldownMs = 16000, maxRange = 8, damage = 35, projectileType = ProjectileType.BOULDER, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(40))),
+    eAbility = AbilityDef(name = "Tremor Slam", description = "Slams the ground, rooting nearby enemies.", cooldownMs = 20000, maxRange = 0, damage = 30, projectileType = ProjectileType.TREMOR_SLAM, keybind = "E", castBehavior = GroundSlam(6.0f)),
     primaryProjectileType = ProjectileType.BOULDER, maxHealth = 130
   )
 
@@ -1460,7 +1482,7 @@ object CharacterDef {
     description = "A frenzy wolf that leaps in and drains life with savage bites.",
     spriteSheet = "sprites/fenrir.png",
     qAbility = AbilityDef(name = "Savage Leap", description = "Leaps at prey with savage force.", cooldownMs = 10000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = DashBuff(12, 400, 20)),
-    eAbility = AbilityDef(name = "Blood Frenzy", description = "Bites 8 times around self, draining life.", cooldownMs = 12000, maxRange = 4, damage = 25, projectileType = ProjectileType.CLAW_SWIPE, keybind = "E", castBehavior = FanProjectile(8, 2 * Math.PI)),
+    eAbility = AbilityDef(name = "Blood Frenzy", description = "Bites 8 times around self, draining life.", cooldownMs = 14000, maxRange = 4, damage = 25, projectileType = ProjectileType.CLAW_SWIPE, keybind = "E", castBehavior = FanProjectile(8, 2 * Math.PI)),
     primaryProjectileType = ProjectileType.CLAW_SWIPE, maxHealth = 110
   )
 
@@ -1470,7 +1492,7 @@ object CharacterDef {
     spriteSheet = "sprites/chimera.png",
     qAbility = AbilityDef(name = "Venom Fan", description = "Spits 3 venom bolts from the snake heads.", cooldownMs = 7000, maxRange = 16, damage = 14, projectileType = ProjectileType.VENOM_BOLT, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(30))),
     eAbility = AbilityDef(name = "Lion Charge", description = "Charges forward with a speed boost on arrival.", cooldownMs = 10000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = DashBuff(10, 350, 22)),
-    primaryProjectileType = ProjectileType.FLAME_BOLT, maxHealth = 110
+    primaryProjectileType = ProjectileType.FLAME_BOLT_LIGHT, maxHealth = 110
   )
 
   // === Batch 7: Specialist (IDs 102-111) ===
@@ -1506,7 +1528,7 @@ object CharacterDef {
     id = CharacterId.Blacksmith, displayName = "Blacksmith",
     description = "A forge master who hurls hammers and lays traps from the anvil.",
     spriteSheet = "sprites/blacksmith.png",
-    qAbility = AbilityDef(name = "Triple Hammer", description = "Hurls 3 hammers in a fan.", cooldownMs = 8000, maxRange = 5, damage = 33, projectileType = ProjectileType.HAMMER, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(40))),
+    qAbility = AbilityDef(name = "Triple Hammer", description = "Hurls 3 hammers in a fan.", cooldownMs = 12000, maxRange = 5, damage = 33, projectileType = ProjectileType.HAMMER, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(40))),
     eAbility = AbilityDef(name = "Anvil Trap", description = "Deploys a snare trap that freezes all nearby.", cooldownMs = 14000, maxRange = 16, damage = 15, projectileType = ProjectileType.SNARE_MINE, keybind = "E"),
     primaryProjectileType = ProjectileType.HAMMER, maxHealth = 120
   )
@@ -1542,7 +1564,7 @@ object CharacterDef {
     id = CharacterId.Astronomer, displayName = "Astronomer",
     description = "A stargazer whose star bolts scale with charge and distance.",
     spriteSheet = "sprites/astronomer.png",
-    qAbility = AbilityDef(name = "Meteor", description = "Summons a devastating meteor.", cooldownMs = 8000, maxRange = 18, damage = 45, projectileType = ProjectileType.FIREBALL, keybind = "Q"),
+    qAbility = AbilityDef(name = "Meteor", description = "Summons a devastating meteor.", cooldownMs = 6000, maxRange = 18, damage = 45, projectileType = ProjectileType.FIREBALL, keybind = "Q"),
     eAbility = AbilityDef(name = "Astral Project", description = "Teleports through the stars.", cooldownMs = 12000, maxRange = 8, damage = 0, projectileType = -2, keybind = "E", castBehavior = TeleportCast(8)),
     primaryProjectileType = ProjectileType.STAR_BOLT, maxHealth = 80
   )
