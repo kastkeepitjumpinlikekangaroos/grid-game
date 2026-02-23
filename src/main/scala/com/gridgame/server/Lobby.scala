@@ -28,7 +28,7 @@ class Lobby(
   @volatile var teamSize: Int = 2   // 2, 3, or 4
   @volatile var matchType: Byte = 0 // 0=Casual FFA, 1=Casual Teams, 2=Ranked FFA, 3=Ranked Duel, 4=Ranked Teams
 
-  def addPlayer(playerId: UUID): Boolean = {
+  def addPlayer(playerId: UUID): Boolean = this.synchronized {
     if (players.size() >= maxPlayers) return false
     if (players.contains(playerId)) return false
     players.add(playerId)

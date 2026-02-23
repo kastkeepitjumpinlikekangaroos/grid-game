@@ -216,6 +216,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
     running = false
     clientState = ClientState.CONNECTING
+    networkThread.sessionToken = null
 
     // Clear game state
     players.clear()
@@ -1934,6 +1935,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       localPlayerId
     )
     networkThread.send(leavePacket)
+    networkThread.sessionToken = null
 
     networkThread.shutdown()
 

@@ -80,6 +80,7 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     val maxPlayers = Math.max(2, Math.min(Constants.MAX_LOBBY_PLAYERS, if (packet.getMaxPlayers <= 0) Constants.MAX_LOBBY_PLAYERS else packet.getMaxPlayers.toInt))
 
     val lobby = lobbyManager.createLobby(playerId, name, mapIndex, duration, maxPlayers)
+    if (lobby == null) return
 
     // Send JOINED response to creator
     val response = new LobbyActionPacket(

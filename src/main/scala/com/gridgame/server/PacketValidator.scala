@@ -21,6 +21,9 @@ class PacketValidator {
   // Track burst start time and count per player (gem boost fires 3 in same frame)
   private val burstStartTime = new ConcurrentHashMap[UUID, java.lang.Long]()
   private val burstCount = new ConcurrentHashMap[UUID, AtomicInteger]()
+  // Track last Q/E ability projectile times for per-ability cooldown enforcement
+  private val lastQProjectileTime = new ConcurrentHashMap[UUID, java.lang.Long]()
+  private val lastEProjectileTime = new ConcurrentHashMap[UUID, java.lang.Long]()
   // Allow one large movement (e.g. Star item teleport) within a time window
   private val itemTeleportAllowed = new ConcurrentHashMap[UUID, java.lang.Long]()
 
@@ -61,14 +64,16 @@ class PacketValidator {
     window.synchronized {
       val windowBase = window(0).toInt
 
-      if (seqNum < windowBase) {
-        // Too old, behind the window
+      // Use circular arithmetic to handle 31-bit sequence wraparound
+      val delta = (seqNum - windowBase) & 0x7FFFFFFF
+      if (delta >= 0x40000000) {
+        // Behind window in circular space
         return false
       }
 
-      if (seqNum >= windowBase + windowSize) {
+      if (delta >= windowSize) {
         // Ahead of window — advance window
-        val shift = seqNum - windowBase - windowSize + 1
+        val shift = delta - windowSize + 1
         if (shift >= windowSize) {
           // Complete reset
           window(1) = 0L; window(2) = 0L; window(3) = 0L; window(4) = 0L
@@ -76,11 +81,11 @@ class PacketValidator {
           // Shift the bitmap
           shiftBitmap(window, shift)
         }
-        window(0) = (seqNum - windowSize + 1).toLong
+        window(0) = (windowBase + shift).toLong
       }
 
-      // Check and set bit for this seqNum
-      val offset = seqNum - window(0).toInt
+      // Check and set bit for this seqNum (use circular delta for correct offset)
+      val offset = (seqNum - window(0).toInt) & 0x7FFFFFFF
       val longIdx = 1 + (offset / 64)
       val bitIdx = offset % 64
 
@@ -243,6 +248,18 @@ class PacketValidator {
           burst.set(1)
           burstStartTime.put(packet.getPlayerId, now)
         }
+      } else {
+        // Ability projectile — enforce per-ability cooldown
+        val (tracker, cooldownMs) =
+          if (pType == charDef.qAbility.projectileType)
+            (lastQProjectileTime, charDef.qAbility.cooldownMs)
+          else
+            (lastEProjectileTime, charDef.eAbility.cooldownMs)
+        val lastFire: java.lang.Long = tracker.put(packet.getPlayerId, now)
+        if (lastFire != null) {
+          val gap = now - lastFire.longValue()
+          if (gap > 100 && gap < (cooldownMs * 0.8).toLong) return false
+        }
       }
     } else {
       // First projectile ever — initialize burst tracking
@@ -263,6 +280,8 @@ class PacketValidator {
     lastProjectileTime.remove(playerId)
     burstStartTime.remove(playerId)
     burstCount.remove(playerId)
+    lastQProjectileTime.remove(playerId)
+    lastEProjectileTime.remove(playerId)
     lastTcpSequence.remove(playerId)
     lastUdpSequence.remove(playerId)
     sequenceWindow.remove(playerId)
@@ -271,7 +290,7 @@ class PacketValidator {
 
   /** Remove entries for players no longer in the connected set (safety net for leaked state). */
   def cleanupStale(connectedPlayerIds: java.util.Set[UUID]): Unit = {
-    val maps: Seq[ConcurrentHashMap[UUID, _]] = Seq(lastUpdateTime, lastProjectileTime, lastTcpSequence, lastUdpSequence, sequenceWindow, itemTeleportAllowed)
+    val maps: Seq[ConcurrentHashMap[UUID, _]] = Seq(lastUpdateTime, lastProjectileTime, lastQProjectileTime, lastEProjectileTime, lastTcpSequence, lastUdpSequence, sequenceWindow, itemTeleportAllowed)
     maps.foreach { map =>
       val iter = map.keySet().iterator()
       while (iter.hasNext) {

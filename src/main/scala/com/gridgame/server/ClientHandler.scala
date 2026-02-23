@@ -64,7 +64,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       return false
     }
 
-    if (player.isFrozen) {
+    if (player.isFrozen || player.isDead) {
       return false
     }
 
@@ -221,9 +221,9 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       }
     }
 
-    // Check for item pickup
-    val pos = packet.getPosition
-    itemManager.checkPickup(playerId, pos.getX, pos.getY).foreach { event =>
+    // Check for item pickup using server-authoritative position
+    val pickupPos = player.getPosition
+    itemManager.checkPickup(playerId, pickupPos.getX, pickupPos.getY).foreach { event =>
       if (instance != null) {
         instance.broadcastItemPickup(event.item, event.playerId)
       } else {
@@ -325,11 +325,15 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
             val targetY = packet.getY
             val w = if (instance != null) instance.world else server.getWorld
             if (w != null && targetX >= 0 && targetX < w.width && targetY >= 0 && targetY < w.height && w.isWalkable(targetX, targetY)) {
-              player.setPosition(new Position(targetX, targetY))
+              val sdx = Math.abs(targetX - player.getPosition.getX)
+              val sdy = Math.abs(targetY - player.getPosition.getY)
+              if (sdx + sdy <= Constants.STAR_MAX_DISTANCE) {
+                player.setPosition(new Position(targetX, targetY))
+                // Allow the next UDP position update through speed validation
+                // (handles race where UDP arrives before this TCP packet)
+                validator.allowItemTeleport(playerId)
+              }
             }
-            // Also allow the next UDP position update through speed validation
-            // (handles race where UDP arrives before this TCP packet)
-            validator.allowItemTeleport(playerId)
           case _ =>
         }
       }
@@ -353,6 +357,11 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       System.err.println(s"ClientHandler: Fence center tile not walkable ($targetX,$targetY)")
       return false
     }
+
+    // Distance check: fence must be placed near the player
+    val fdx = Math.abs(targetX - player.getPosition.getX)
+    val fdy = Math.abs(targetY - player.getPosition.getY)
+    if (fdx + fdy > Constants.FENCE_MAX_DISTANCE) return false
 
     // Determine the perpendicular offsets based on player facing direction
     val (perpDx, perpDy) = player.getDirection match {

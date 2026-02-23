@@ -317,7 +317,7 @@ class GameServer(port: Int, val worldFile: String = "") {
                       if (phaseDuration > 0) {
                         // Use 80% of cooldown as server tolerance (matches fire rate validation)
                         val lastPhaseEnd = player.getPhasedUntil
-                        if (lastPhaseEnd == 0L || now >= lastPhaseEnd + (cooldownMs * 0.8).toLong) {
+                        if (lastPhaseEnd == 0L || now >= lastPhaseEnd + (cooldownMs * 0.9).toLong) {
                           player.setPhasedUntil(now + phaseDuration)
                         }
                       }
@@ -574,7 +574,7 @@ class GameServer(port: Int, val worldFile: String = "") {
       if (udpSender != null) {
         // Only update UDP address if sender IP matches the TCP connection IP
         val expectedAddr = playerTcpAddresses.get(playerId)
-        if (expectedAddr == null || udpSender.getAddress.equals(expectedAddr)) {
+        if (expectedAddr != null && udpSender.getAddress.equals(expectedAddr)) {
           player.setUdpAddress(udpSender)
         }
       }
@@ -597,7 +597,10 @@ class GameServer(port: Int, val worldFile: String = "") {
         if (instancePlayer != null) {
           instancePlayer.updateHeartbeat()
           if (udpSender != null) {
-            instancePlayer.setUdpAddress(udpSender)
+            val instanceExpectedAddr = playerTcpAddresses.get(playerId)
+            if (instanceExpectedAddr != null && udpSender.getAddress.equals(instanceExpectedAddr)) {
+              instancePlayer.setUdpAddress(udpSender)
+            }
           }
         }
       }
@@ -669,7 +672,6 @@ class GameServer(port: Int, val worldFile: String = "") {
       playerTcpAddresses.remove(playerId)
       lastQueryTime.remove(playerId)
       packetValidator.removePlayer(playerId)
-      playerLocks.remove(playerId)
       lobbyHandler.cleanupPlayer(playerId)
       val player = connectedPlayers.remove(playerId)
       if (player != null) {
@@ -858,27 +860,34 @@ class GameServer(port: Int, val worldFile: String = "") {
       }
     }
 
-    // Expire stale session tokens
+    // Expire stale session tokens (acquire per-player lock to avoid racing with generateSessionToken)
     val tokenIter = tokenCreationTime.entrySet().iterator()
     while (tokenIter.hasNext) {
       val entry = tokenIter.next()
       if (now - entry.getValue > Constants.SESSION_TOKEN_LIFETIME_MS) {
         val playerId = entry.getKey
-        tokenIter.remove()
-        sessionTokens.remove(playerId)
-        playerTcpAddresses.remove(playerId)
+        val lock = playerLocks.computeIfAbsent(playerId, _ => new AnyRef)
+        lock.synchronized {
+          // Re-check creation time under lock — a concurrent generateSessionToken may have refreshed it
+          val currentCreation = tokenCreationTime.get(playerId)
+          if (currentCreation != null && now - currentCreation > Constants.SESSION_TOKEN_LIFETIME_MS) {
+            tokenCreationTime.remove(playerId)
+            sessionTokens.remove(playerId)
+            playerTcpAddresses.remove(playerId)
 
-        // Close TCP channel to force re-auth
-        val player = connectedPlayers.get(playerId)
-        if (player != null) {
-          val raw = player.getTcpChannel
-          if (raw != null) {
-            val ch = raw.asInstanceOf[Channel]
-            channelToToken.remove(ch)
-            if (ch.isOpen) ch.close()
+            // Close TCP channel to force re-auth
+            val player = connectedPlayers.get(playerId)
+            if (player != null) {
+              val raw = player.getTcpChannel
+              if (raw != null) {
+                val ch = raw.asInstanceOf[Channel]
+                channelToToken.remove(ch)
+                if (ch.isOpen) ch.close()
+              }
+            }
+            println(s"Session token expired: ${playerId.toString.substring(0, 8)}")
           }
         }
-        println(s"Session token expired: ${playerId.toString.substring(0, 8)}")
       }
     }
 
@@ -1040,12 +1049,6 @@ class GameServerUdpHandler(server: GameServer) extends SimpleChannelInboundHandl
         return
       }
 
-      // Rate limit per-client UDP packets BEFORE expensive HMAC verification
-      // Prevents CPU DoS from forged packets with valid player UUIDs
-      if (!server.rateLimiter.allowPacket(playerId, true)) {
-        return
-      }
-
       // Inline token expiry check (don't wait for cleanup loop)
       val createdAt = server.tokenCreationTime.get(playerId)
       if (createdAt != null && System.currentTimeMillis() - createdAt > Constants.SESSION_TOKEN_LIFETIME_MS) {
@@ -1061,6 +1064,12 @@ class GameServerUdpHandler(server: GameServer) extends SimpleChannelInboundHandl
       val senderAddr = msg.sender().getAddress
       if (!senderAddr.equals(expectedAddr)) {
         System.err.println(s"UDP: Source IP mismatch for ${playerId.toString.substring(0, 8)}, dropping")
+        return
+      }
+
+      // Rate limit per-client UDP packets AFTER IP validation
+      // Prevents spoofed-IP packets from consuming a legitimate player's rate budget
+      if (!server.rateLimiter.allowPacket(playerId, true)) {
         return
       }
 

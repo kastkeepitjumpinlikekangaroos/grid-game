@@ -141,6 +141,7 @@ class NetworkThread(client: GameClient, serverHost: String, serverPort: Int) ext
 
   def shutdown(): Unit = {
     running = false
+    sessionToken = null
 
     heartbeatExecutor.shutdown()
     try {

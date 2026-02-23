@@ -1,5 +1,6 @@
 package com.gridgame.server
 
+import com.gridgame.common.Constants
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -11,7 +12,14 @@ class LobbyManager {
   private val nextId = new AtomicInteger(1)
 
   def createLobby(hostId: UUID, name: String, mapIndex: Int, durationMinutes: Int, maxPlayers: Int): Lobby = {
-    val id = (nextId.getAndIncrement() & 0x7FFF).toShort // Prevent overflow/collision with negative IDs
+    if (lobbies.size() >= Constants.MAX_LOBBIES) return null
+    var id: Short = 0
+    var attempts = 0
+    do {
+      id = (nextId.getAndIncrement() & 0x7FFF).toShort
+      attempts += 1
+      if (attempts > 32768) return null
+    } while (lobbies.containsKey(id))
     val lobby = new Lobby(id, hostId, name, mapIndex, durationMinutes, maxPlayers)
     lobby.addPlayer(hostId)
     lobbies.put(id, lobby)
