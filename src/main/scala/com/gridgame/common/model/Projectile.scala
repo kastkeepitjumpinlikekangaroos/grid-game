@@ -156,6 +156,23 @@ object ProjectileType {
   val NAPALM_STRIKE: Byte = -124  // 132
   val THROWN_BOULDER: Byte = -123  // 133
   val EYE_BEAM: Byte = -122       // 134
+
+  // DPS balance variants (same visual, different damage)
+  val SOUL_BOLT_HEAVY: Byte = -121   // 135
+  val FROST_SHARD_LIGHT: Byte = -120 // 136
+  val FLAME_BOLT_HEAVY: Byte = -119  // 137
+  val FLAME_BOLT_LIGHT: Byte = -118  // 138
+  val BULLET_HEAVY: Byte = -117      // 139
+  val BULLET_LIGHT: Byte = -116      // 140
+  val SONIC_WAVE_HEAVY: Byte = -115  // 141
+  val SONIC_WAVE_MED: Byte = -114    // 142
+  val THORN_LIGHT: Byte = -113       // 143
+  val LASER_HEAVY: Byte = -112       // 144
+  val LASER_LIGHT: Byte = -111       // 145
+  val ARROW_HEAVY: Byte = -110       // 146
+  val ARROW_LIGHT: Byte = -109       // 147
+  val HOLY_BOLT_HEAVY: Byte = -108   // 148
+  val VENOM_BOLT_LIGHT: Byte = -107  // 149
 }
 
 class Projectile(
