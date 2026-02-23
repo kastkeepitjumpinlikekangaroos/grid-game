@@ -1551,8 +1551,8 @@ class ClientMain extends Application {
           glKeyHandler.update()
           controllerHandler.update()
 
-          // F11 fullscreen toggle
-          if (glKeyHandler.isF11Pressed) {
+          // F11 fullscreen toggle (edge-triggered, fires once per press)
+          if (glKeyHandler.consumeF11Press()) {
             fullscreen = !fullscreen
             glWindow.setFullscreen(fullscreen)
           }

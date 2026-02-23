@@ -35,4 +35,18 @@ object IsometricTransform {
     val vsy = sy / zoom
     (screenToWorldX(vsx, vsy, camOffX, camOffY), screenToWorldY(vsx, vsy, camOffX, camOffY))
   }
+
+  // Mutable output fields for allocation-free screenToWorld (single-threaded render path only)
+  private var _stw_x: Double = 0.0
+  private var _stw_y: Double = 0.0
+  def lastWorldX: Double = _stw_x
+  def lastWorldY: Double = _stw_y
+
+  /** Allocation-free screenToWorld. Results available via lastWorldX/lastWorldY. */
+  def screenToWorldInto(sx: Double, sy: Double, camOffX: Double, camOffY: Double, zoom: Double): Unit = {
+    val vsx = sx / zoom
+    val vsy = sy / zoom
+    _stw_x = screenToWorldX(vsx, vsy, camOffX, camOffY)
+    _stw_y = screenToWorldY(vsx, vsy, camOffX, camOffY)
+  }
 }

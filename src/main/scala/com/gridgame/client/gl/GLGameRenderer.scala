@@ -112,8 +112,12 @@ class GLGameRenderer(val client: GameClient) {
   private var _cachedItemCount = -1; private var _cachedItemsStr = ""
   private var _cachedChargeLevel = -1; private var _cachedChargeStr = ""
   private var _cachedKills = -1; private var _cachedDeaths = -1; private var _cachedKDStr = ""
-  // Reusable StringBuilder for kill feed text (avoids per-entry string interpolation)
-  private val _feedTextBuilder = new java.lang.StringBuilder(64)
+  // Cached inventory slot counts — avoids double getItemCount calls and per-frame toString
+  private val _cachedSlotCounts = new Array[Int](5) // one per inventory slot
+  private val _cachedSlotCountStrs = new Array[String](5)
+  // Cached respawn text
+  private var _cachedRespawnSeconds = -1; private var _cachedRespawnStr = ""
+  private var _cachedKilledByName: String = null; private var _cachedKilledByStr = ""
   // Cached closures for damage number rendering (avoids per-frame lambda allocation)
   private val _worldToScreenXFn: (Double, Double) => Double = (wx, wy) => worldToScreenX(wx, wy)
   private val _worldToScreenYFn: (Double, Double) => Double = (wx, wy) => worldToScreenY(wx, wy)
@@ -988,15 +992,17 @@ class GLGameRenderer(val client: GameClient) {
   //  ENTITY DISPATCH (depth-sorted)
   // ═══════════════════════════════════════════════════════════════════
 
-  private def dispatchEntries(entries: mutable.ArrayBuffer[CellEntry], localVX: Double, localVY: Double): Unit = {
+  private def dispatchEntries(entries: mutable.ArrayBuffer[EntityCollector.MutableCellEntry], localVX: Double, localVY: Double): Unit = {
     var i = 0
     while (i < entries.size) {
-      entries(i) match {
-        case ItemEntry(item) => drawSingleItem(item)
-        case ProjectileEntry(proj) => drawSingleProjectile(proj)
-        case PlayerEntry(player, vx, vy) => drawPlayerInterp(player, vx, vy)
-        case LocalPlayerEntry => drawLocalPlayer(localVX, localVY)
-        case LocalDeathEntry => // handled by drawDeathAnimations()
+      val entry = entries(i)
+      entry.entryType match {
+        case EntityCollector.TYPE_ITEM => drawSingleItem(entry.ref.asInstanceOf[Item])
+        case EntityCollector.TYPE_PROJECTILE => drawSingleProjectile(entry.ref.asInstanceOf[Projectile])
+        case EntityCollector.TYPE_PLAYER => drawPlayerInterp(entry.ref.asInstanceOf[Player], entry.vx, entry.vy)
+        case EntityCollector.TYPE_LOCAL_PLAYER => drawLocalPlayer(localVX, localVY)
+        case EntityCollector.TYPE_LOCAL_DEATH => // handled by drawDeathAnimations()
+        case _ =>
       }
       i += 1
     }
@@ -2291,13 +2297,24 @@ class GLGameRenderer(val client: GameClient) {
     val startX = (screenW - totalW) / 2f
     val startY = screenH - slotSize - 14f
 
+    // Compute and cache slot counts once per frame
+    var i = 0
+    while (i < inventorySlotTypes.length) {
+      val count = client.getItemCount(inventorySlotTypes(i)._1.id)
+      if (count != _cachedSlotCounts(i)) {
+        _cachedSlotCounts(i) = count
+        _cachedSlotCountStrs(i) = if (count > 0) count.toString else null
+      }
+      i += 1
+    }
+
     // Draw all slot backgrounds + icons (shapes)
     beginShapes()
-    var i = 0
+    i = 0
     while (i < inventorySlotTypes.length) {
       val pair = inventorySlotTypes(i)
       val itemType = pair._1
-      val count = client.getItemCount(itemType.id)
+      val count = _cachedSlotCounts(i)
       val slotX = startX + i * (slotSize + slotGap)
       intToRGB(itemType.colorRGB)
       val tr = _rgb_r; val tg = _rgb_g; val tb = _rgb_b
@@ -2316,7 +2333,8 @@ class GLGameRenderer(val client: GameClient) {
       else drawItemShape(itemType, iconCX, iconCY, iconSize, tr * 0.3f, tg * 0.3f, tb * 0.3f)
 
       if (count > 0) {
-        val badgeW = Math.max(14f, 7f + count.toString.length * 6f)
+        val countStr = _cachedSlotCountStrs(i)
+        val badgeW = Math.max(14f, 7f + countStr.length * 6f)
         val badgeX = slotX + slotSize - badgeW / 2 - 1
         val badgeY = startY - 5
         shapeBatch.fillRect(badgeX, badgeY, badgeW, 14f, 0.78f, 0.18f, 0.18f, 0.9f)
@@ -2329,12 +2347,12 @@ class GLGameRenderer(val client: GameClient) {
     i = 0
     while (i < inventorySlotTypes.length) {
       val pair = inventorySlotTypes(i)
-      val itemType = pair._1; val keyLabel = pair._2
-      val count = client.getItemCount(itemType.id)
+      val keyLabel = pair._2
+      val count = _cachedSlotCounts(i)
       val slotX = startX + i * (slotSize + slotGap)
 
       if (count > 0) {
-        fontSmall.drawText(spriteBatch, count.toString, slotX + slotSize - 8, startY - 3)
+        fontSmall.drawText(spriteBatch, _cachedSlotCountStrs(i), slotX + slotSize - 8, startY - 3)
       }
       fontSmall.drawText(spriteBatch, keyLabel, slotX + slotSize / 2 - 4, startY + slotSize - 16,
         if (count > 0) 0.9f else 0.43f, if (count > 0) 0.9f else 0.43f, if (count > 0) 0.9f else 0.47f, 1f)
@@ -2558,9 +2576,7 @@ class GLGameRenderer(val client: GameClient) {
         val alpha = Math.max(0.15f, (1.0 - elapsed / 6000.0).toFloat)
         val killer = entry(1).asInstanceOf[String]
         val victim = entry(2).asInstanceOf[String]
-        _feedTextBuilder.setLength(0)
-        _feedTextBuilder.append(killer).append(" killed ").append(victim)
-        val feedText = _feedTextBuilder.toString
+        val feedText = entry(3).asInstanceOf[String]
         val textW = fontSmall.measureWidth(feedText)
         val slideOffset = if (elapsed < 200) ((1.0 - elapsed / 200.0) * 60).toFloat else 0f
         val fx = screenW - textW - 12f + slideOffset
@@ -2627,13 +2643,19 @@ class GLGameRenderer(val client: GameClient) {
     shapeBatch.fillRect(cx - 120, cy - 50, 240, 90, 0f, 0f, 0f, 0.55f)
 
     beginSprites()
-    val respawnText = "Respawning in " + secondsLeft + "s"
-    fontMedium.drawTextOutlined(spriteBatch, respawnText, cx - fontMedium.measureWidth(respawnText) / 2, cy - 30)
+    if (secondsLeft != _cachedRespawnSeconds) {
+      _cachedRespawnSeconds = secondsLeft
+      _cachedRespawnStr = "Respawning in " + secondsLeft + "s"
+    }
+    fontMedium.drawTextOutlined(spriteBatch, _cachedRespawnStr, cx - fontMedium.measureWidth(_cachedRespawnStr) / 2, cy - 30)
 
     val killerName = client.lastKillerCharacterName
     if (killerName != null && killerName.nonEmpty) {
-      val killedByText = "Killed by " + killerName
-      fontSmall.drawTextOutlined(spriteBatch, killedByText, cx - fontSmall.measureWidth(killedByText) / 2, cy)
+      if (killerName ne _cachedKilledByName) {
+        _cachedKilledByName = killerName
+        _cachedKilledByStr = "Killed by " + killerName
+      }
+      fontSmall.drawTextOutlined(spriteBatch, _cachedKilledByStr, cx - fontSmall.measureWidth(_cachedKilledByStr) / 2, cy)
     }
   }
 

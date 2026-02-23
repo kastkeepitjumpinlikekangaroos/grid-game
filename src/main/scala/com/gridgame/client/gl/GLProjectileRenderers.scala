@@ -52,6 +52,12 @@ object GLProjectileRenderers {
   private val _holyXs = new Array[Float](12)
   private val _holyYs = new Array[Float](12)
 
+  // Small polygon scratch arrays (3 and 4 vertices) — shared across all renderers
+  private val _polyXs3 = new Array[Float](3)
+  private val _polyYs3 = new Array[Float](3)
+  private val _polyXs4 = new Array[Float](4)
+  private val _polyYs4 = new Array[Float](4)
+
   def drawGeneric(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int,
                   r: Float, g: Float, b: Float): Unit = {
     val phase = (tick + proj.id * 37) * 0.35
@@ -340,12 +346,10 @@ object GLProjectileRenderers {
       // Bold arrowhead
       val headLen = 14f; val headW = 7f
       val pointX = tipX + ndx * headLen; val pointY = tipY + ndy * headLen
-      sb.fillPolygon(Array(pointX, tipX + perpX * headW, tipX - perpX * headW),
-        Array(pointY, tipY + perpY * headW, tipY - perpY * headW),
-        bright(r), bright(g), bright(b), 0.9f * p)
-      sb.strokePolygon(Array(pointX, tipX + perpX * headW, tipX - perpX * headW),
-        Array(pointY, tipY + perpY * headW, tipY - perpY * headW),
-        1.5f, r, g, b, 0.7f * p)
+      _polyXs3(0) = pointX; _polyXs3(1) = tipX + perpX * headW; _polyXs3(2) = tipX - perpX * headW
+      _polyYs3(0) = pointY; _polyYs3(1) = tipY + perpY * headW; _polyYs3(2) = tipY - perpY * headW
+      sb.fillPolygon(_polyXs3, _polyYs3, 3, bright(r), bright(g), bright(b), 0.9f * p)
+      sb.strokePolygon(_polyXs3, _polyYs3, 3, 1.5f, r, g, b, 0.7f * p)
 
       // Angled fletching — swept-back lines from tail
       { var f = -1; while (f <= 1) {
@@ -579,18 +583,18 @@ object GLProjectileRenderers {
       var af = 1; while (af <= 2) {
         val afOff = af * 8f
         val afAlpha = 0.2f * (1f - af * 0.35f) * p
-        sb.fillPolygon(
-          Array(tipX - ndx * afOff, w1x - ndx * afOff, sx - ndx * (4 + afOff), w2x - ndx * afOff),
-          Array(tipY - ndy * afOff, w1y - ndy * afOff, sy - ndy * (3 + afOff), w2y - ndy * afOff),
-          r, g, b, afAlpha)
+        _polyXs4(0) = tipX - ndx * afOff; _polyXs4(1) = w1x - ndx * afOff; _polyXs4(2) = sx - ndx * (4 + afOff); _polyXs4(3) = w2x - ndx * afOff
+        _polyYs4(0) = tipY - ndy * afOff; _polyYs4(1) = w1y - ndy * afOff; _polyYs4(2) = sy - ndy * (3 + afOff); _polyYs4(3) = w2y - ndy * afOff
+        sb.fillPolygon(_polyXs4, _polyYs4, 4, r, g, b, afAlpha)
       ; af += 1 }
 
       // Main crescent fill
-      sb.fillPolygon(Array(tipX, w1x, sx - ndx * 4, w2x), Array(tipY, w1y, sy - ndy * 3, w2y), r, g, b, 0.45f * p)
+      _polyXs4(0) = tipX; _polyXs4(1) = w1x; _polyXs4(2) = sx - ndx * 4; _polyXs4(3) = w2x
+      _polyYs4(0) = tipY; _polyYs4(1) = w1y; _polyYs4(2) = sy - ndy * 3; _polyYs4(3) = w2y
+      sb.fillPolygon(_polyXs4, _polyYs4, 4, r, g, b, 0.45f * p)
 
       // Enhanced leading edge — brighter and thicker
-      sb.strokePolygon(Array(tipX, w1x, sx - ndx * 4, w2x), Array(tipY, w1y, sy - ndy * 3, w2y),
-        4f, bright(r), bright(g), bright(b), 0.85f * p)
+      sb.strokePolygon(_polyXs4, _polyYs4, 4, 4f, bright(r), bright(g), bright(b), 0.85f * p)
 
       // Animated flowing internal energy — phase-shifted lines
       var i = 0; while (i < 3) {
@@ -846,12 +850,11 @@ object GLProjectileRenderers {
       val runeSpin = phase * 3 + rune * 2.1
       // Small diamond shape
       val rs = 3.5f
-      sb.fillPolygon(
-        Array(rx + Math.cos(runeSpin).toFloat * rs, rx + Math.cos(runeSpin + Math.PI / 2).toFloat * rs * 0.5f,
-          rx + Math.cos(runeSpin + Math.PI).toFloat * rs, rx + Math.cos(runeSpin + Math.PI * 1.5).toFloat * rs * 0.5f),
-        Array(ry + Math.sin(runeSpin).toFloat * rs * 0.6f, ry + Math.sin(runeSpin + Math.PI / 2).toFloat * rs * 0.3f,
-          ry + Math.sin(runeSpin + Math.PI).toFloat * rs * 0.6f, ry + Math.sin(runeSpin + Math.PI * 1.5).toFloat * rs * 0.3f),
-        0.5f, 0.15f, 0.7f, 0.65f * p)
+      _polyXs4(0) = rx + Math.cos(runeSpin).toFloat * rs; _polyXs4(1) = rx + Math.cos(runeSpin + Math.PI / 2).toFloat * rs * 0.5f
+      _polyXs4(2) = rx + Math.cos(runeSpin + Math.PI).toFloat * rs; _polyXs4(3) = rx + Math.cos(runeSpin + Math.PI * 1.5).toFloat * rs * 0.5f
+      _polyYs4(0) = ry + Math.sin(runeSpin).toFloat * rs * 0.6f; _polyYs4(1) = ry + Math.sin(runeSpin + Math.PI / 2).toFloat * rs * 0.3f
+      _polyYs4(2) = ry + Math.sin(runeSpin + Math.PI).toFloat * rs * 0.6f; _polyYs4(3) = ry + Math.sin(runeSpin + Math.PI * 1.5).toFloat * rs * 0.3f
+      sb.fillPolygon(_polyXs4, _polyYs4, 4, 0.5f, 0.15f, 0.7f, 0.65f * p)
     ; rune += 1 }
 
     // Faint skull impression — 2 eye dots + mouth arc
@@ -1307,13 +1310,15 @@ object GLProjectileRenderers {
       13f, 0.9f, 0.2f, 0.1f, 0.8f * p)
     // Fins
     var f = -1; while (f <= 1) {
-      sb.fillPolygon(Array(sx, (sx - nx * 5f + perpX * f * 8f).toFloat, (sx - nx * 14f).toFloat),
-        Array(sy, (sy - ny * 5f + perpY * f * 8f).toFloat, (sy - ny * 14f).toFloat), 0.4f, 0.45f, 0.3f, 0.75f * p)
+      _polyXs3(0) = sx; _polyXs3(1) = (sx - nx * 5f + perpX * f * 8f).toFloat; _polyXs3(2) = (sx - nx * 14f).toFloat
+      _polyYs3(0) = sy; _polyYs3(1) = (sy - ny * 5f + perpY * f * 8f).toFloat; _polyYs3(2) = (sy - ny * 14f).toFloat
+      sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.4f, 0.45f, 0.3f, 0.75f * p)
     ; f += 2 }
     // Nosecone
     val noseX = tipX + nx * 16f; val noseY = tipY + ny * 16f
-    sb.fillPolygon(Array(noseX, tipX + perpX * 7f, tipX - perpX * 7f),
-      Array(noseY, tipY + perpY * 7f, tipY - perpY * 7f), 0.65f, 0.65f, 0.6f, 0.9f * p)
+    _polyXs3(0) = noseX; _polyXs3(1) = tipX + perpX * 7f; _polyXs3(2) = tipX - perpX * 7f
+    _polyYs3(0) = noseY; _polyYs3(1) = tipY + perpY * 7f; _polyYs3(2) = tipY - perpY * 7f
+    sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.65f, 0.65f, 0.6f, 0.9f * p)
   }
 
   /** Lightning - thick jagged bolt with flickering regen, branches, and ambient sparks */
@@ -1567,10 +1572,12 @@ object GLProjectileRenderers {
       val wingH = 6f * batScale * wingFlap
 
       // Wings
-      sb.fillPolygon(Array(bx, bx - wingW, bx - wingW * 0.5f),
-        Array(by, by - wingH, by + 2 * batScale), 0.08f, 0f, 0.12f, 0.8f * p)
-      sb.fillPolygon(Array(bx, bx + wingW, bx + wingW * 0.5f),
-        Array(by, by - wingH, by + 2 * batScale), 0.08f, 0f, 0.12f, 0.8f * p)
+      _polyXs3(0) = bx; _polyXs3(1) = bx - wingW; _polyXs3(2) = bx - wingW * 0.5f
+      _polyYs3(0) = by; _polyYs3(1) = by - wingH; _polyYs3(2) = by + 2 * batScale
+      sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.08f, 0f, 0.12f, 0.8f * p)
+      _polyXs3(0) = bx; _polyXs3(1) = bx + wingW; _polyXs3(2) = bx + wingW * 0.5f
+      _polyYs3(0) = by; _polyYs3(1) = by - wingH; _polyYs3(2) = by + 2 * batScale
+      sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.08f, 0f, 0.12f, 0.8f * p)
       // Wing membrane highlight
       sb.strokeLine(bx, by, bx - wingW * 0.85f, by - wingH * 0.7f,
         0.8f, 0.2f, 0.05f, 0.25f, 0.4f * p)
@@ -1678,10 +1685,11 @@ object GLProjectileRenderers {
     // Teeth (6 per jaw)
     var i = 0; while (i < 6) {
       val tx = sx - 9 + i * 3.6f
-      sb.fillPolygon(Array(tx, tx + 1.8f, tx + 3.6f), Array(sy - jawOpen + 3, sy - jawOpen + 8, sy - jawOpen + 3),
-        0.95f, 0.92f, 0.85f, 0.85f * p)
-      sb.fillPolygon(Array(tx, tx + 1.8f, tx + 3.6f), Array(sy + jawOpen - 3, sy + jawOpen - 8, sy + jawOpen - 3),
-        0.95f, 0.92f, 0.85f, 0.85f * p)
+      _polyXs3(0) = tx; _polyXs3(1) = tx + 1.8f; _polyXs3(2) = tx + 3.6f
+      _polyYs3(0) = sy - jawOpen + 3; _polyYs3(1) = sy - jawOpen + 8; _polyYs3(2) = sy - jawOpen + 3
+      sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.95f, 0.92f, 0.85f, 0.85f * p)
+      _polyYs3(0) = sy + jawOpen - 3; _polyYs3(1) = sy + jawOpen - 8; _polyYs3(2) = sy + jawOpen - 3
+      sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.95f, 0.92f, 0.85f, 0.85f * p)
     ; i += 1 }
   }
 
@@ -1881,11 +1889,13 @@ object GLProjectileRenderers {
 
     // Upper jaw (solid)
     val jawW = 16f * p * chomp; val jawLen = 20f * p
-    sb.fillPolygon(Array(tipX, tipX - nx * jawLen + perpX * jawW, tipX - nx * jawLen),
-      Array(tipY, tipY - ny * jawLen + perpY * jawW, tipY - ny * jawLen), 0.45f, 0.5f, 0.55f, 0.9f * p)
+    _polyXs3(0) = tipX; _polyXs3(1) = tipX - nx * jawLen + perpX * jawW; _polyXs3(2) = tipX - nx * jawLen
+    _polyYs3(0) = tipY; _polyYs3(1) = tipY - ny * jawLen + perpY * jawW; _polyYs3(2) = tipY - ny * jawLen
+    sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.45f, 0.5f, 0.55f, 0.9f * p)
     // Lower jaw
-    sb.fillPolygon(Array(tipX, tipX - nx * jawLen - perpX * jawW, tipX - nx * jawLen),
-      Array(tipY, tipY - ny * jawLen - perpY * jawW, tipY - ny * jawLen), 0.4f, 0.45f, 0.5f, 0.9f * p)
+    _polyXs3(1) = tipX - nx * jawLen - perpX * jawW
+    _polyYs3(1) = tipY - ny * jawLen - perpY * jawW
+    sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.4f, 0.45f, 0.5f, 0.9f * p)
 
     // Teeth (5 per jaw)
     { var i = 0; while (i < 5) {
@@ -1894,17 +1904,20 @@ object GLProjectileRenderers {
       val utx = tipX - nx * jawLen * toothBase + perpX * jawW * (1f - t) * 0.9f
       val uty = tipY - ny * jawLen * toothBase + perpY * jawW * (1f - t) * 0.9f
       val th = 5f * p
-      sb.fillPolygon(Array(utx - perpX * th, utx + nx * 2.5f, utx + perpX * 0.5f),
-        Array(uty - perpY * th, uty + ny * 2.5f, uty + perpY * 0.5f), 0.95f, 0.95f, 0.9f, 0.85f * p)
+      _polyXs3(0) = utx - perpX * th; _polyXs3(1) = utx + nx * 2.5f; _polyXs3(2) = utx + perpX * 0.5f
+      _polyYs3(0) = uty - perpY * th; _polyYs3(1) = uty + ny * 2.5f; _polyYs3(2) = uty + perpY * 0.5f
+      sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.95f, 0.95f, 0.9f, 0.85f * p)
       val ltx = tipX - nx * jawLen * toothBase - perpX * jawW * (1f - t) * 0.9f
       val lty = tipY - ny * jawLen * toothBase - perpY * jawW * (1f - t) * 0.9f
-      sb.fillPolygon(Array(ltx + perpX * th, ltx + nx * 2.5f, ltx - perpX * 0.5f),
-        Array(lty + perpY * th, lty + ny * 2.5f, lty - perpY * 0.5f), 0.95f, 0.95f, 0.9f, 0.85f * p)
+      _polyXs3(0) = ltx + perpX * th; _polyXs3(1) = ltx + nx * 2.5f; _polyXs3(2) = ltx - perpX * 0.5f
+      _polyYs3(0) = lty + perpY * th; _polyYs3(1) = lty + ny * 2.5f; _polyYs3(2) = lty - perpY * 0.5f
+      sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.95f, 0.95f, 0.9f, 0.85f * p)
     ; i += 1 } }
 
     // Dorsal fin
     val finX = tipX - nx * jawLen * 0.5f; val finY = tipY - ny * jawLen * 0.5f - 10f * p
-    sb.fillPolygon(Array(finX, finX + perpX * 4f, finX - perpX * 4f),
-      Array(finY - 8f * p, finY + 8f, finY + 8f), 0.42f, 0.47f, 0.52f, 0.8f * p)
+    _polyXs3(0) = finX; _polyXs3(1) = finX + perpX * 4f; _polyXs3(2) = finX - perpX * 4f
+    _polyYs3(0) = finY - 8f * p; _polyYs3(1) = finY + 8f; _polyYs3(2) = finY + 8f
+    sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.42f, 0.47f, 0.52f, 0.8f * p)
   }
 }

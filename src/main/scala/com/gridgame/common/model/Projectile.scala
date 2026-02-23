@@ -180,6 +180,8 @@ class Projectile(
   private var _returning: Boolean = false
   // Ricochet state
   private var _remainingBounces: Int = ProjectileDef.get(projectileType).ricochetCount
+  // Cached speed (magnitude of velocity vector) to avoid per-tick sqrt
+  private var _speed: Float = math.sqrt(_dx * _dx + _dy * _dy).toFloat
 
   def dx: Float = _dx
   def dy: Float = _dy
@@ -258,6 +260,7 @@ class Projectile(
       _dx = -_dx
       _dy = -_dy
     }
+    _speed = math.sqrt(_dx * _dx + _dy * _dy).toFloat
     true
   }
 
@@ -265,13 +268,13 @@ class Projectile(
   def moveStep(fraction: Float): Unit = {
     x += _dx * speedMultiplier * fraction
     y += _dy * speedMultiplier * fraction
-    distanceTraveled += math.sqrt(_dx * _dx + _dy * _dy).toFloat * speedMultiplier * fraction
+    distanceTraveled += _speed * speedMultiplier * fraction
   }
 
   def move(): Unit = {
     x += _dx * speedMultiplier
     y += _dy * speedMultiplier
-    distanceTraveled += math.sqrt(_dx * _dx + _dy * _dy).toFloat * speedMultiplier
+    distanceTraveled += _speed * speedMultiplier
   }
 
   def isOutOfBounds(world: WorldData): Boolean = {
@@ -305,6 +308,7 @@ class Projectile(
     y = newY
     _dx = newDx
     _dy = newDy
+    _speed = math.sqrt(newDx * newDx + newDy * newDy).toFloat
   }
 
   override def toString: String = {

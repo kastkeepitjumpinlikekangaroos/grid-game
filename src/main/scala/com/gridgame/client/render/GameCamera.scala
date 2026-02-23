@@ -51,4 +51,10 @@ class GameCamera {
     val zoom = Constants.CAMERA_ZOOM
     IsometricTransform.screenToWorld(sx, sy, _camOffX, _camOffY, zoom)
   }
+
+  /** Allocation-free screenToWorld. Results available via IsometricTransform.lastWorldX/lastWorldY. */
+  def screenToWorldInto(sx: Double, sy: Double): Unit = {
+    val zoom = Constants.CAMERA_ZOOM
+    IsometricTransform.screenToWorldInto(sx, sy, _camOffX, _camOffY, zoom)
+  }
 }

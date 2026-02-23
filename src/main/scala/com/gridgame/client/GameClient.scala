@@ -811,6 +811,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   }
 
   private def processPacket(packet: Packet): Unit = {
+    cleanupHitTimes()
     // Handle session token
     if (packet.getType == PacketType.SESSION_TOKEN) {
       val tokenPacket = packet.asInstanceOf[SessionTokenPacket]
@@ -1080,7 +1081,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           val killerP = players.get(killerId)
           lastKillerCharacterName = if (killerP != null) CharacterDef.get(killerP.getCharacterId).displayName else "?"
         }
-        killFeed.add(Array(System.currentTimeMillis().asInstanceOf[AnyRef], killerName.asInstanceOf[AnyRef], victimName.asInstanceOf[AnyRef]))
+        val feedText = killerName + " killed " + victimName
+        killFeed.add(Array(System.currentTimeMillis().asInstanceOf[AnyRef], killerName.asInstanceOf[AnyRef], victimName.asInstanceOf[AnyRef], feedText.asInstanceOf[AnyRef]))
         // Keep only last 5
         while (killFeed.size() > 5) killFeed.remove(0)
 
@@ -1754,8 +1756,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   }
 
   def getInventoryCount: Int = {
-    import scala.jdk.CollectionConverters._
-    inventory.values().asScala.map(_.size()).sum
+    var sum = 0
+    val iter = inventory.values().iterator()
+    while (iter.hasNext) sum += iter.next().size()
+    sum
   }
 
   def getLocalColorRGB: Int = localColorRGB
@@ -1770,8 +1774,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   def getIsDead: Boolean = isDead
 
-  def getPlayerHitTime(playerId: UUID): Long = {
-    // Periodic cleanup of expired hit entries to prevent unbounded growth
+  def getPlayerHitTime(playerId: UUID): Long =
+    playerHitTimes.getOrDefault(playerId, 0L)
+
+  /** Periodic cleanup of expired hit entries to prevent unbounded growth. Call from packet processing, not render. */
+  private def cleanupHitTimes(): Unit = {
     val now = System.currentTimeMillis()
     if (now - lastHitCleanupTime > 2000) {
       lastHitCleanupTime = now
@@ -1780,7 +1787,6 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         if (now - iter.next().getValue > HIT_EXPIRE_MS) iter.remove()
       }
     }
-    playerHitTimes.getOrDefault(playerId, 0L)
   }
 
   def getLocalDeathTime: Long = localDeathTime.get()
