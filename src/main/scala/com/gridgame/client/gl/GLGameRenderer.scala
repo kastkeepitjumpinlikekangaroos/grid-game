@@ -2091,7 +2091,7 @@ class GLGameRenderer(val client: GameClient) {
 
   private def drawAoeSplashAnimations(): Unit = {
     val now = _frameTimeMs
-    val AOE_DURATION = 900L
+    val AOE_DURATION = 1200L
     val iter = client.getAoeSplashAnimations.entrySet().iterator()
     while (iter.hasNext) {
       val entry = iter.next()
@@ -2115,50 +2115,89 @@ class GLGameRenderer(val client: GameClient) {
 
         beginShapes()
 
-        // Ground impact flash (0-20%)
-        if (progress < 0.2f) {
-          val flashP = progress / 0.2f
-          val flashAlpha = 0.6f * (1f - flashP)
-          shapeBatch.fillOval(sx, sy, aoeW * flashP * 0.5f, aoeH * flashP * 0.5f,
-            bright(ar), bright(ag), bright(ab), flashAlpha, 16)
+        // Full-area ground highlight — colored zone showing AoE radius (0-100%)
+        val zoneAlpha = if (progress < 0.1f) progress / 0.1f * 0.35f
+                        else 0.35f * (1f - (progress - 0.1f) / 0.9f)
+        if (zoneAlpha > 0.02f) {
+          shapeBatch.fillOval(sx, sy, aoeW, aoeH, ar * 0.5f, ag * 0.5f, ab * 0.5f, zoneAlpha, 24)
         }
 
-        // Expanding ring wave (multiple rings with stagger)
+        // Bright center impact flash (0-25%)
+        if (progress < 0.25f) {
+          val flashP = progress / 0.25f
+          val flashAlpha = 0.9f * (1f - flashP)
+          val flashScale = 0.2f + flashP * 0.6f
+          // White-hot core
+          shapeBatch.fillOval(sx, sy, aoeW * flashScale * 0.4f, aoeH * flashScale * 0.4f,
+            1f, 1f, 0.95f, flashAlpha, 16)
+          // Colored glow
+          shapeBatch.fillOvalSoft(sx, sy, aoeW * flashScale * 0.8f, aoeH * flashScale * 0.8f,
+            bright(ar), bright(ag), bright(ab), flashAlpha * 0.6f, 0f, 20)
+        }
+
+        // Bold expanding ring waves (4 rings with stagger)
         var ring = 0
-        while (ring < 3) {
-          val ringDelay = ring * 0.12f
-          val ringP = Math.max(0f, (progress - ringDelay) / (1f - ringDelay))
+        while (ring < 4) {
+          val ringDelay = ring * 0.1f
+          val ringP = Math.max(0f, (progress - ringDelay) / (0.8f - ringDelay))
           if (ringP > 0f && ringP < 1f) {
-            val ringScale = 0.1f + ringP * 0.9f
-            val ringAlpha = 0.7f * (1f - ringP) / (ring + 1)
+            val ringScale = 0.05f + ringP * 0.95f
+            val ringAlpha = 0.9f * (1f - ringP) / (ring * 0.5f + 1f)
             val rw = aoeW * ringScale
             val rh = aoeH * ringScale
-            val thickness = (2.5f - ring * 0.5f) * (1f - ringP * 0.4f)
-            shapeBatch.strokeOval(sx, sy, rw, rh, thickness, ar, ag, ab, ringAlpha, 24)
+            val thickness = (4f - ring * 0.7f) * (1f - ringP * 0.3f)
+            shapeBatch.strokeOval(sx, sy, rw, rh, thickness, ar, ag, ab, ringAlpha, 28)
           }
           ring += 1
+        }
+
+        // Outer boundary ring — shows exact AoE radius (5-90%)
+        if (progress > 0.05f && progress < 0.9f) {
+          val boundP = if (progress < 0.15f) (progress - 0.05f) / 0.1f else 1f
+          val boundFade = if (progress > 0.7f) (0.9f - progress) / 0.2f else 1f
+          val boundAlpha = 0.7f * boundP * boundFade
+          shapeBatch.strokeOval(sx, sy, aoeW, aoeH, 2.5f, bright(ar), bright(ag), bright(ab), boundAlpha, 32)
         }
 
         // Ground scorch mark (fades slowly)
         if (progress > 0.15f) {
           val scorchP = (progress - 0.15f) / 0.85f
-          val scorchAlpha = 0.3f * (1f - scorchP)
-          shapeBatch.fillOval(sx, sy, aoeW * 0.6f, aoeH * 0.6f,
-            ar * 0.3f, ag * 0.3f, ab * 0.3f, scorchAlpha, 14)
+          val scorchAlpha = 0.4f * (1f - scorchP)
+          shapeBatch.fillOval(sx, sy, aoeW * 0.65f, aoeH * 0.65f,
+            ar * 0.3f, ag * 0.3f, ab * 0.3f, scorchAlpha, 16)
         }
 
-        // Sparkle particles around perimeter
-        if (progress > 0.05f && progress < 0.7f) {
-          val sparkP = (progress - 0.05f) / 0.65f
-          val numSparks = 8
+        // Radial line burst from center (0-50%)
+        if (progress < 0.5f) {
+          val burstP = progress / 0.5f
+          val numLines = 12
+          val burstAlpha = 0.7f * (1f - burstP)
+          val innerDist = burstP * 0.3f
+          val outerDist = 0.3f + burstP * 0.7f
+          var i = 0
+          while (i < numLines) {
+            val angle = i.toDouble * Math.PI * 2 / numLines + entry.getKey * 0.9
+            val ix = sx + (Math.cos(angle) * aoeW * innerDist).toFloat
+            val iy = sy + (Math.sin(angle) * aoeH * innerDist).toFloat
+            val ox = sx + (Math.cos(angle) * aoeW * outerDist).toFloat
+            val oy = sy + (Math.sin(angle) * aoeH * outerDist).toFloat
+            shapeBatch.strokeLine(ix, iy, ox, oy, 2f, bright(ar), bright(ag), bright(ab), burstAlpha)
+            i += 1
+          }
+        }
+
+        // Sparkle particles around perimeter (larger and more)
+        if (progress > 0.05f && progress < 0.8f) {
+          val sparkP = (progress - 0.05f) / 0.75f
+          val numSparks = 14
           var i = 0
           while (i < numSparks) {
             val angle = i.toDouble * Math.PI * 2 / numSparks + entry.getKey * 1.3
-            val dist = 0.5f + sparkP * 0.5f
+            val dist = 0.4f + sparkP * 0.6f
             val px = sx + (Math.cos(angle) * aoeW * dist).toFloat
             val py = sy + (Math.sin(angle) * aoeH * dist).toFloat
-            val sparkAlpha = 0.6f * (1f - sparkP)
-            shapeBatch.fillOval(px, py, 2.5f, 2f, bright(ar), bright(ag), bright(ab), sparkAlpha, 6)
+            val sparkAlpha = 0.8f * (1f - sparkP)
+            shapeBatch.fillOval(px, py, 3.5f, 2.5f, bright(ar), bright(ag), bright(ab), sparkAlpha, 6)
             i += 1
           }
         }

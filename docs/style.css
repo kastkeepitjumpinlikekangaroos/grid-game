@@ -187,11 +187,35 @@ h2 {
 }
 .char-card:hover { border-color: var(--accent); }
 
+.char-top {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.char-sprite {
+  width: 64px;
+  height: 64px;
+  min-width: 64px;
+  background-size: 400% 400%;
+  background-position: 0 0;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  border-radius: 8px;
+  background-color: rgba(255,255,255,0.04);
+}
+
+.char-info {
+  flex: 1;
+  min-width: 0;
+}
+
 .char-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .char-header h3 { font-size: 1.15rem; }
