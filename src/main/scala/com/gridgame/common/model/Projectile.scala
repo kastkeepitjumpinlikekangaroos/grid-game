@@ -129,6 +129,33 @@ object ProjectileType {
   val JAW: Byte = 109
   val TONGUE: Byte = 110
   val ACID_FLASK: Byte = 111
+
+  // Roster audit: new differentiation projectiles
+  val BOOMERANG_BLADE: Byte = 112
+  val VORTEX_BOMB: Byte = 113
+  val CHAIN_LIGHTNING_FORK: Byte = 114
+  val SNIPER_BEAM: Byte = 115
+  val MOMENTUM_STRIKE: Byte = 116
+  val LEECH_BOLT: Byte = 117
+  val RICOCHET_SHARD: Byte = 118
+  val FLAME_WAVE: Byte = 119
+  val POISON_CLOUD: Byte = 120
+  val BONE_BOOMERANG: Byte = 121
+  val GRAVITY_LANCE: Byte = 122
+  val SHADOW_HAUNT: Byte = 123
+  val CHARGE_FIST: Byte = 124
+  val ACID_SPRAY: Byte = 125
+  val ECHO_BOLT: Byte = 126
+  val FLAME_TRAIL: Byte = 127
+  // Use Byte range carefully — these are signed (-128 to 127)
+  // IDs 128+ must use negative bytes but & 0xFF handles lookup
+  val STAR_BOLT: Byte = -128    // 128
+  val RUNE_BOLT: Byte = -127    // 129
+  val SOUL_HARVEST: Byte = -126 // 130
+  val OVERCLOCK_BEAM: Byte = -125 // 131
+  val NAPALM_STRIKE: Byte = -124  // 132
+  val THROWN_BOULDER: Byte = -123  // 133
+  val EYE_BEAM: Byte = -122       // 134
 }
 
 class Projectile(

@@ -686,7 +686,32 @@ object GLProjectileRenderers {
     ProjectileType.GRAB         -> beamProj(0.5f, 0.4f, 0.25f, 8f, 9f),
     ProjectileType.JAW          -> (drawJaw _),
     ProjectileType.TONGUE       -> beamProj(0.9f, 0.35f, 0.4f, 8f, 8f),
-    ProjectileType.ACID_FLASK   -> lobbed(0.2f, 0.75f, 0.3f, 18f)
+    ProjectileType.ACID_FLASK   -> lobbed(0.2f, 0.75f, 0.3f, 18f),
+
+    // ── Roster audit: new differentiation projectiles (112+) ──
+    ProjectileType.BOOMERANG_BLADE -> spinner(0.55f, 0.15f, 0.25f, 24f, 2),
+    ProjectileType.VORTEX_BOMB     -> aoeRing(0.35f, 0.15f, 0.55f, 45f),
+    ProjectileType.CHAIN_LIGHTNING_FORK -> (drawLightning _),
+    ProjectileType.SNIPER_BEAM     -> beamProj(0.3f, 0.6f, 1f, 10f, 4f),
+    ProjectileType.MOMENTUM_STRIKE -> wave(0.95f, 0.6f, 0.2f, 30f),
+    ProjectileType.LEECH_BOLT      -> energyBolt(0.5f, 0.15f, 0.35f, 22f),
+    ProjectileType.RICOCHET_SHARD  -> physProj(0.55f, 0.9f, 1f, 5f),
+    ProjectileType.FLAME_WAVE      -> wave(1f, 0.5f, 0.1f, 35f),
+    ProjectileType.POISON_CLOUD    -> aoeRing(0.3f, 0.75f, 0.2f, 50f),
+    ProjectileType.BONE_BOOMERANG  -> spinner(0.92f, 0.88f, 0.8f, 20f, 2),
+    ProjectileType.GRAVITY_LANCE   -> beamProj(0.35f, 0.15f, 0.55f, 8f, 6f),
+    ProjectileType.SHADOW_HAUNT    -> energyBolt(0.4f, 0.15f, 0.55f, 24f),
+    ProjectileType.CHARGE_FIST     -> fistProj(0.85f, 0.65f, 0.35f),
+    ProjectileType.ACID_SPRAY      -> wave(0.25f, 0.85f, 0.3f, 28f),
+    ProjectileType.ECHO_BOLT       -> energyBolt(0.7f, 0.5f, 0.95f, 20f),
+    ProjectileType.FLAME_TRAIL     -> energyBolt(1f, 0.6f, 0.15f, 22f),
+    ProjectileType.STAR_BOLT       -> energyBolt(0.95f, 0.9f, 0.45f, 22f),
+    ProjectileType.RUNE_BOLT       -> energyBolt(0.9f, 0.75f, 0.35f, 18f),
+    ProjectileType.SOUL_HARVEST    -> aoeRing(0.3f, 0.85f, 0.25f, 45f),
+    ProjectileType.OVERCLOCK_BEAM  -> aoeRing(0.2f, 0.9f, 0.7f, 40f),
+    ProjectileType.NAPALM_STRIKE   -> lobbed(0.95f, 0.45f, 0.1f, 22f),
+    ProjectileType.THROWN_BOULDER  -> (drawBoulder _),
+    ProjectileType.EYE_BEAM        -> beamProj(0.9f, 0.25f, 0.2f, 8f, 6f)
   )
 
   // Flat lookup table for O(1) renderer access without Option allocation.
