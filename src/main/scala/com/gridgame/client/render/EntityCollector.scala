@@ -34,11 +34,21 @@ class EntityCollector {
   }
 
   // Pre-allocated map reused each frame (cleared instead of recreated)
-  private val entitiesByCell = mutable.Map.empty[Long, mutable.ArrayBuffer[CellEntry]]
+  private val entitiesByCell = mutable.Map.empty[Long, mutable.ArrayBuffer[MutableCellEntry]]
   // Buffer pool for ArrayBuffer reuse
-  private val bufferPool = mutable.ArrayBuffer.empty[mutable.ArrayBuffer[CellEntry]]
+  private val bufferPool = mutable.ArrayBuffer.empty[mutable.ArrayBuffer[MutableCellEntry]]
+  // Entry pool — grow-only, reset index each frame
+  private val entryPool = mutable.ArrayBuffer.empty[MutableCellEntry]
+  private var entryPoolIndex = 0
+  private def acquireEntry(): MutableCellEntry = {
+    if (entryPoolIndex < entryPool.size) {
+      val e = entryPool(entryPoolIndex); entryPoolIndex += 1; e
+    } else {
+      val e = new MutableCellEntry; entryPool += e; entryPoolIndex += 1; e
+    }
+  }
 
-  private def acquireBuffer(): mutable.ArrayBuffer[CellEntry] = {
+  private def acquireBuffer(): mutable.ArrayBuffer[MutableCellEntry] = {
     if (bufferPool.nonEmpty) bufferPool.remove(bufferPool.size - 1) else mutable.ArrayBuffer.empty
   }
 
@@ -50,12 +60,13 @@ class EntityCollector {
       bufferPool += buf
     }
     entitiesByCell.clear()
+    entryPoolIndex = 0
   }
 
   @inline def cellKey(cx: Int, cy: Int): Long =
     EntityCollector.cellKey(cx, cy)
 
-  private def addEntity(cx: Int, cy: Int, entry: CellEntry): Unit = {
+  private def addEntity(cx: Int, cy: Int, entry: MutableCellEntry): Unit = {
     val key = cellKey(cx, cy)
     val buf = entitiesByCell.getOrElse(key, null)
     if (buf != null) {
@@ -77,7 +88,7 @@ class EntityCollector {
     maxVisX: Int = 1000000,
     minVisY: Int = -1000000,
     maxVisY: Int = 1000000
-  ): mutable.Map[Long, mutable.ArrayBuffer[CellEntry]] = {
+  ): mutable.Map[Long, mutable.ArrayBuffer[MutableCellEntry]] = {
     // Return old buffers to pool and clear the map
     releaseBuffers()
 
@@ -93,7 +104,7 @@ class EntityCollector {
       val item = itemIter.next()
       val ix = item.getCellX; val iy = item.getCellY
       if (ix >= cullingMinX && ix <= cullingMaxX && iy >= cullingMinY && iy <= cullingMaxY) {
-        addEntity(ix, iy, ItemEntry(item))
+        addEntity(ix, iy, acquireEntry().setItem(item))
       }
     }
 
@@ -104,7 +115,7 @@ class EntityCollector {
       val cx = Math.round(proj.getX).toInt
       val cy = Math.round(proj.getY).toInt
       if (cx >= cullingMinX && cx <= cullingMaxX && cy >= cullingMinY && cy <= cullingMaxY) {
-        addEntity(cx, cy, ProjectileEntry(proj))
+        addEntity(cx, cy, acquireEntry().setProjectile(proj))
       }
     }
 
@@ -181,7 +192,7 @@ class EntityCollector {
         } else {
           remoteVisualPositions.put(pid, Array(posX, posY, posX, posY, 0.0, 0.0, nowMs))
         }
-        addEntity(pos.getX, pos.getY, PlayerEntry(player, rvx, rvy))
+        addEntity(pos.getX, pos.getY, acquireEntry().setPlayer(player, rvx, rvy))
       }
     }
 
@@ -197,9 +208,9 @@ class EntityCollector {
     // Local player
     val localPos = client.getLocalPosition
     if (localDeathAnimActive) {
-      addEntity(localPos.getX, localPos.getY, LocalDeathEntry)
+      addEntity(localPos.getX, localPos.getY, acquireEntry().setLocalDeath())
     } else if (!client.getIsDead) {
-      addEntity(localPos.getX, localPos.getY, LocalPlayerEntry)
+      addEntity(localPos.getX, localPos.getY, acquireEntry().setLocalPlayer())
     }
 
     entitiesByCell
@@ -210,11 +221,25 @@ object EntityCollector {
   @inline def cellKey(cx: Int, cy: Int): Long =
     (cx.toLong << 32) | (cy & 0xFFFFFFFFL)
 
-  /** Typed entity entries — avoids per-entity closure allocation */
-  sealed trait CellEntry
-  final case class ItemEntry(item: Item) extends CellEntry
-  final case class ProjectileEntry(proj: Projectile) extends CellEntry
-  final case class PlayerEntry(player: Player, vx: Double, vy: Double) extends CellEntry
-  case object LocalPlayerEntry extends CellEntry
-  case object LocalDeathEntry extends CellEntry
+  /** Mutable entity entry — pooled to avoid per-frame case class allocation */
+  val TYPE_ITEM: Byte = 0
+  val TYPE_PROJECTILE: Byte = 1
+  val TYPE_PLAYER: Byte = 2
+  val TYPE_LOCAL_PLAYER: Byte = 3
+  val TYPE_LOCAL_DEATH: Byte = 4
+
+  class MutableCellEntry {
+    var entryType: Byte = 0
+    var ref: AnyRef = _
+    var vx: Double = 0.0
+    var vy: Double = 0.0
+    def setItem(item: Item): MutableCellEntry = { entryType = TYPE_ITEM; ref = item; this }
+    def setProjectile(proj: Projectile): MutableCellEntry = { entryType = TYPE_PROJECTILE; ref = proj; this }
+    def setPlayer(p: Player, pvx: Double, pvy: Double): MutableCellEntry = { entryType = TYPE_PLAYER; ref = p; vx = pvx; vy = pvy; this }
+    def setLocalPlayer(): MutableCellEntry = { entryType = TYPE_LOCAL_PLAYER; ref = null; this }
+    def setLocalDeath(): MutableCellEntry = { entryType = TYPE_LOCAL_DEATH; ref = null; this }
+  }
+
+  // Keep old type alias for compatibility
+  type CellEntry = MutableCellEntry
 }

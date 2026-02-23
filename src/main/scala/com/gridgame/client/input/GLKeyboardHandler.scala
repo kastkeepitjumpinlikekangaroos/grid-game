@@ -18,10 +18,12 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
   private val pressedKeys: mutable.Set[Int] = mutable.Set.empty
   private var lastMoveTime: Long = 0
   private var lastBurstTime: Long = 0
+  private var _f11JustPressed: Boolean = false
 
   override def invoke(window: Long, key: Int, scancode: Int, action: Int, mods: Int): Unit = {
     if (action == GLFW_PRESS) {
       pressedKeys.add(key)
+      if (key == GLFW_KEY_F11) _f11JustPressed = true
       if (client.getIsDead) {
         if (client.clientState != ClientState.PLAYING) processRejoin()
       } else {
@@ -53,8 +55,10 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
     }
   }
 
-  /** Check if F11 was pressed for fullscreen toggle. */
-  def isF11Pressed: Boolean = pressedKeys.contains(GLFW_KEY_F11)
+  /** Consume F11 press event. Returns true once per press, then resets. */
+  def consumeF11Press(): Boolean = {
+    if (_f11JustPressed) { _f11JustPressed = false; true } else false
+  }
 
   private def processRejoin(): Unit = {
     if (pressedKeys.contains(GLFW_KEY_ENTER)) client.rejoin()

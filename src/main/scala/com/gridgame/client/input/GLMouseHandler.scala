@@ -1,7 +1,7 @@
 package com.gridgame.client.input
 
 import com.gridgame.client.GameClient
-import com.gridgame.client.render.GameCamera
+import com.gridgame.client.render.{GameCamera, IsometricTransform}
 import com.gridgame.common.Constants
 import com.gridgame.common.model.ProjectileDef
 
@@ -28,16 +28,16 @@ class GLMouseHandler(client: GameClient, camera: GameCamera) {
   def onCursorPos(x: Double, y: Double): Unit = {
     _cursorX = x
     _cursorY = y
-    val (worldX, worldY) = camera.screenToWorld(x, y)
-    client.setMouseWorldPosition(worldX, worldY)
+    camera.screenToWorldInto(x, y)
+    client.setMouseWorldPosition(IsometricTransform.lastWorldX, IsometricTransform.lastWorldY)
   }
 
   /** Recompute mouse world position from current cursor and camera state.
     * Call each frame after camera.update() so the world position stays accurate
     * even when the mouse is stationary but the camera is moving. */
   def refreshWorldPosition(): Unit = {
-    val (worldX, worldY) = camera.screenToWorld(_cursorX, _cursorY)
-    client.setMouseWorldPosition(worldX, worldY)
+    camera.screenToWorldInto(_cursorX, _cursorY)
+    client.setMouseWorldPosition(IsometricTransform.lastWorldX, IsometricTransform.lastWorldY)
   }
 
   /** Called from GLFW mouse button callback. */
@@ -46,7 +46,9 @@ class GLMouseHandler(client: GameClient, camera: GameCamera) {
 
     if (action == GLFW_PRESS) {
       // Update aim position
-      val (worldX, worldY) = camera.screenToWorld(_cursorX, _cursorY)
+      camera.screenToWorldInto(_cursorX, _cursorY)
+      val worldX = IsometricTransform.lastWorldX
+      val worldY = IsometricTransform.lastWorldY
       client.setMouseWorldPosition(worldX, worldY)
 
       if (client.getIsDead) return
@@ -78,7 +80,9 @@ class GLMouseHandler(client: GameClient, camera: GameCamera) {
       lastShootTime = System.currentTimeMillis()
 
       val playerPos = client.getLocalPosition
-      val (worldX, worldY) = camera.screenToWorld(_cursorX, _cursorY)
+      camera.screenToWorldInto(_cursorX, _cursorY)
+      val worldX = IsometricTransform.lastWorldX
+      val worldY = IsometricTransform.lastWorldY
       val deltaX = worldX - playerPos.getX
       val deltaY = worldY - playerPos.getY
       val magnitude = Math.sqrt(deltaX * deltaX + deltaY * deltaY)
