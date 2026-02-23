@@ -11,6 +11,7 @@ import io.netty.bootstrap.Bootstrap
 import io.netty.bootstrap.ServerBootstrap
 import io.netty.buffer.Unpooled
 import io.netty.channel._
+import io.netty.channel.WriteBufferWaterMark
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.SocketChannel
@@ -99,6 +100,7 @@ class GameServer(port: Int, val worldFile: String = "") {
       .option[java.lang.Integer](ChannelOption.SO_BACKLOG, 128)
       .childOption[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
       .childOption[java.lang.Boolean](ChannelOption.TCP_NODELAY, true)
+      .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, new WriteBufferWaterMark(64 * 1024, 256 * 1024))
 
     tcpServerChannel = tcpBootstrap.bind(port).sync().channel()
     println(s"TCP server listening on port $port")
@@ -107,6 +109,8 @@ class GameServer(port: Int, val worldFile: String = "") {
     val udpBootstrap = new Bootstrap()
     udpBootstrap.group(workerGroup)
       .channel(classOf[NioDatagramChannel])
+      .option[java.lang.Integer](ChannelOption.SO_SNDBUF, 1024 * 1024)
+      .option[java.lang.Integer](ChannelOption.SO_RCVBUF, 1024 * 1024)
       .handler(new GameServerUdpHandler(server))
 
     udpChannel = udpBootstrap.bind(port).sync().channel()
@@ -193,6 +197,41 @@ class GameServer(port: Int, val worldFile: String = "") {
         udpChannel.writeAndFlush(dgram)
       }
     }
+  }
+
+  /** Buffered send: write without flushing. Call flushPlayer() or flushUdpChannel() after a batch. */
+  def sendRawToPlayerBuffered(data: Array[Byte], isTcp: Boolean, player: Player): Unit = {
+    val token = sessionTokens.get(player.getId)
+    val signed = if (token != null) PacketSigner.sign(data, token) else padToPacketSize(data)
+    if (isTcp) {
+      val raw = player.getTcpChannel
+      if (raw != null) {
+        val ch = raw.asInstanceOf[Channel]
+        if (ch.isActive) {
+          ch.write(Unpooled.wrappedBuffer(signed))
+        }
+      }
+    } else {
+      val addr = player.getUdpAddress
+      if (addr != null && udpChannel != null) {
+        val dgram = new DatagramPacket(Unpooled.wrappedBuffer(signed), addr)
+        udpChannel.write(dgram)
+      }
+    }
+  }
+
+  /** Flush a player's TCP channel after buffered writes. */
+  def flushPlayer(player: Player): Unit = {
+    val raw = player.getTcpChannel
+    if (raw != null) {
+      val ch = raw.asInstanceOf[Channel]
+      if (ch.isActive) ch.flush()
+    }
+  }
+
+  /** Flush the server UDP channel after buffered writes. */
+  def flushUdpChannel(): Unit = {
+    if (udpChannel != null) udpChannel.flush()
   }
 
   /** Pad a 64-byte payload to 80 bytes (for pre-auth packets without HMAC). */

@@ -23,7 +23,7 @@ class RateLimiter {
   private val channelCounts = new ConcurrentHashMap[Channel, WindowCounter]()
   private val MAX_PRE_AUTH_PER_SECOND = 5
 
-  private val MAX_UDP_PER_SECOND = 120
+  private val MAX_UDP_PER_SECOND = 240
   private val MAX_TCP_PER_SECOND = 40
   private val MAX_CONNECTIONS_PER_MINUTE = 5
   private val MAX_AUTH_FAILURES = 5

@@ -151,7 +151,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
           projectile.chargeLevel.toByte,
           projectile.projectileType
         )
-        broadcastToInstance(packet)
+        broadcastBuffered(packet)
 
       case ProjectileKill(projectile, targetId) =>
         // Send hit packet
@@ -167,7 +167,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
           projectile.chargeLevel.toByte,
           projectile.projectileType
         )
-        broadcastToInstance(hitPacket)
+        broadcastBuffered(hitPacket)
+        notifyAbilityHitForOwner(projectile)
 
         // Send player update with 0 health
         val target = registry.get(targetId)
@@ -181,7 +182,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
             0,
             playerFlags(target)
           )
-          broadcastToInstance(updatePacket)
+          broadcastBuffered(updatePacket)
         }
 
         // Life-steal on killing blow
@@ -203,7 +204,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                 0,
                 playerFlags(lsOwner)
               )
-              broadcastToInstance(ownerUpdate)
+              broadcastBuffered(ownerUpdate)
             }
           case _ => // no life-steal
         }
@@ -223,7 +224,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
           targetId,
           0.toByte, 0.toShort, 0.toShort
         )
-        broadcastToInstance(killPacket)
+        broadcastBuffered(killPacket)
 
         // Schedule auto-respawn
         scheduleRespawn(targetId)
@@ -241,7 +242,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
           projectile.chargeLevel.toByte,
           projectile.projectileType
         )
-        broadcastToInstance(hitPacket)
+        broadcastBuffered(hitPacket)
+        notifyAbilityHitForOwner(projectile)
 
         val target = registry.get(targetId)
         if (target != null && !target.isDead) {
@@ -286,7 +288,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                     0,
                     playerFlags(owner)
                   )
-                  broadcastToInstance(ownerUpdate)
+                  broadcastBuffered(ownerUpdate)
                 }
               }
 
@@ -332,7 +334,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                   0,
                   playerFlags(lsOwner)
                 )
-                broadcastToInstance(ownerUpdate)
+                broadcastBuffered(ownerUpdate)
               }
               // Bat Swarm also applies a brief freeze
               if (projectile.projectileType == ProjectileType.BAT_SWARM) {
@@ -390,7 +392,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                   0,
                   playerFlags(boostOwner)
                 )
-                broadcastToInstance(ownerUpdate)
+                broadcastBuffered(ownerUpdate)
               }
           }
 
@@ -404,7 +406,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
             0,
             flags
           )
-          broadcastToInstance(updatePacket)
+          broadcastBuffered(updatePacket)
         }
 
       case ProjectileAoE(projectile) =>
@@ -421,7 +423,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
           projectile.chargeLevel.toByte,
           projectile.projectileType
         )
-        broadcastToInstance(despawnPacket)
+        broadcastBuffered(despawnPacket)
 
         // Determine blast parameters from ProjectileDef
         val pDef = ProjectileDef.get(projectile.projectileType)
@@ -459,7 +461,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                   player.getId,
                   0.toByte, 0.toShort, 0.toShort
                 )
-                broadcastToInstance(killPacket)
+                broadcastBuffered(killPacket)
                 scheduleRespawn(player.getId)
               } else {
                 // Hit packet
@@ -475,7 +477,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                   projectile.chargeLevel.toByte,
                   projectile.projectileType
                 )
-                broadcastToInstance(hitPacket)
+                broadcastBuffered(hitPacket)
+                notifyAbilityHitForOwner(projectile)
               }
 
               // Broadcast player health update (use newHealth captured inside synchronized block
@@ -489,7 +492,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                 0,
                 playerFlags(player)
               )
-              broadcastToInstance(updatePacket)
+              broadcastBuffered(updatePacket)
             }
           }
         }
@@ -507,7 +510,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
           projectile.chargeLevel.toByte,
           projectile.projectileType
         )
-        broadcastToInstance(hitPacket)
+        broadcastBuffered(hitPacket)
+        notifyAbilityHitForOwner(projectile)
 
         val aoeTarget = registry.get(targetId)
         if (aoeTarget != null) {
@@ -529,7 +533,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
             0,
             playerFlags(aoeTarget)
           )
-          broadcastToInstance(updatePacket)
+          broadcastBuffered(updatePacket)
         }
 
       case ProjectileAoEKill(projectile, targetId) =>
@@ -545,7 +549,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
           projectile.chargeLevel.toByte,
           projectile.projectileType
         )
-        broadcastToInstance(hitPacket)
+        broadcastBuffered(hitPacket)
+        notifyAbilityHitForOwner(projectile)
 
         val aoeKillTarget = registry.get(targetId)
         if (aoeKillTarget != null) {
@@ -558,7 +563,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
             0,
             playerFlags(aoeKillTarget)
           )
-          broadcastToInstance(updatePacket)
+          broadcastBuffered(updatePacket)
         }
 
         killTracker.recordKill(projectile.ownerId, targetId)
@@ -574,7 +579,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
           targetId,
           0.toByte, 0.toShort, 0.toShort
         )
-        broadcastToInstance(aoeKillPacket)
+        broadcastBuffered(aoeKillPacket)
 
         scheduleRespawn(targetId)
 
@@ -591,7 +596,17 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
           projectile.chargeLevel.toByte,
           projectile.projectileType
         )
-        broadcastToInstance(packet)
+        broadcastBuffered(packet)
+    }
+    // Flush all buffered writes at end of tick
+    flushAllInstancePlayers()
+  }
+
+  /** Mirror client-side on-hit ability cooldown reduction so server fire-rate validation stays in sync. */
+  private def notifyAbilityHitForOwner(projectile: Projectile): Unit = {
+    val owner = registry.get(projectile.ownerId)
+    if (owner != null) {
+      handler.notifyAbilityHit(projectile.ownerId, projectile.projectileType, owner.getCharacterId)
     }
   }
 
@@ -802,6 +817,27 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         }
       }
     }
+  }
+
+  /** Buffered broadcast: write without flushing. Call flushAllInstancePlayers() after the batch. */
+  private def broadcastBuffered(packet: Packet): Unit = {
+    val data = packet.serialize()
+    val isTcp = packet.getType.tcp
+    registry.getAll.asScala.foreach { player =>
+      try {
+        server.sendRawToPlayerBuffered(data, isTcp, player)
+      } catch {
+        case _: Exception =>
+      }
+    }
+  }
+
+  /** Flush all channels after a batch of buffered broadcasts. */
+  private def flushAllInstancePlayers(): Unit = {
+    registry.getAll.asScala.foreach { player =>
+      try { server.flushPlayer(player) } catch { case _: Exception => }
+    }
+    server.flushUdpChannel()
   }
 
   def broadcastProjectileSpawn(projectile: Projectile): Unit = {

@@ -96,8 +96,8 @@ object Constants {
 
   // Security configuration
   val SESSION_TOKEN_LIFETIME_MS: Long = 3600000L       // 1 hour
-  val SEQUENCE_WINDOW_SIZE: Int = 256                   // UDP out-of-order tolerance
-  val INCOMING_QUEUE_CAPACITY: Int = 2048               // Client packet queue bound
+  val SEQUENCE_WINDOW_SIZE: Int = 1024                   // UDP out-of-order tolerance
+  val INCOMING_QUEUE_CAPACITY: Int = 8192               // Client packet queue bound
   val MAX_AUTH_FAILURES_PER_CHANNEL: Int = 5            // Close connection after N failures
   val FENCE_MAX_DISTANCE: Int = 5                       // Max Manhattan distance for fence placement
   val STAR_MAX_DISTANCE: Int = 30                       // Max Manhattan distance for star teleport

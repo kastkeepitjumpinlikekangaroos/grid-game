@@ -58,8 +58,9 @@ class PacketValidator {
     // UDP: use sliding window for out-of-order tolerance
     val lastSeq = lastUdpSequence.computeIfAbsent(playerId, _ => new AtomicInteger(-1))
     val windowSize = Constants.SEQUENCE_WINDOW_SIZE
-    // Window is stored as Array[Long] where index 0 = windowBase, rest = bitmap (4 longs = 256 bits)
-    val window = sequenceWindow.computeIfAbsent(playerId, _ => new Array[Long](5))
+    val bitmapLongs = windowSize / 64 // 1024/64 = 16 longs
+    // Window is stored as Array[Long] where index 0 = windowBase, rest = bitmap
+    val window = sequenceWindow.computeIfAbsent(playerId, _ => new Array[Long](1 + bitmapLongs))
 
     window.synchronized {
       val windowBase = window(0).toInt
@@ -76,7 +77,7 @@ class PacketValidator {
         val shift = delta - windowSize + 1
         if (shift >= windowSize) {
           // Complete reset
-          window(1) = 0L; window(2) = 0L; window(3) = 0L; window(4) = 0L
+          for (i <- 1 to bitmapLongs) window(i) = 0L
         } else {
           // Shift the bitmap
           shiftBitmap(window, shift)
@@ -102,21 +103,23 @@ class PacketValidator {
   }
 
   private def shiftBitmap(window: Array[Long], shift: Int): Unit = {
-    if (shift >= 256) {
-      window(1) = 0L; window(2) = 0L; window(3) = 0L; window(4) = 0L
+    val bitmapLongs = window.length - 1 // index 0 is base, rest is bitmap
+    val totalBits = bitmapLongs * 64
+    if (shift >= totalBits) {
+      for (i <- 1 to bitmapLongs) window(i) = 0L
       return
     }
     val longShift = shift / 64
     val bitShift = shift % 64
-    for (i <- 1 to 4) {
+    for (i <- 1 to bitmapLongs) {
       val srcIdx = i + longShift
-      if (srcIdx > 4) {
+      if (srcIdx > bitmapLongs) {
         window(i) = 0L
       } else if (bitShift == 0) {
         window(i) = window(srcIdx)
       } else {
         val lo = window(srcIdx) >>> bitShift
-        val hi = if (srcIdx + 1 <= 4) window(srcIdx + 1) << (64 - bitShift) else 0L
+        val hi = if (srcIdx + 1 <= bitmapLongs) window(srcIdx + 1) << (64 - bitShift) else 0L
         window(i) = lo | hi
       }
     }
@@ -268,6 +271,28 @@ class PacketValidator {
     }
 
     true
+  }
+
+  /** Reduce per-ability fire rate cooldown for the given player (mirrors client-side on-hit reduction). */
+  def reduceAbilityCooldown(playerId: UUID, projectileType: Byte, characterId: Byte): Unit = {
+    val charDef = CharacterDef.get(characterId)
+    if (charDef == null) return
+
+    val (tracker, cooldownMs) =
+      if (projectileType == charDef.qAbility.projectileType)
+        (lastQProjectileTime, charDef.qAbility.cooldownMs.toLong)
+      else if (projectileType == charDef.eAbility.projectileType)
+        (lastEProjectileTime, charDef.eAbility.cooldownMs.toLong)
+      else return
+
+    val lastFire: java.lang.Long = tracker.get(playerId)
+    if (lastFire == null) return
+
+    val now = System.currentTimeMillis()
+    val remaining = lastFire + cooldownMs - now
+    if (remaining > 0) {
+      tracker.put(playerId, java.lang.Long.valueOf(lastFire - remaining / 2))
+    }
   }
 
   /** Allow one large movement for this player (e.g. Star item teleport). */

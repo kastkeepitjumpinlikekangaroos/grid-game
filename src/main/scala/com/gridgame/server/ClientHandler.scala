@@ -454,6 +454,11 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     }
   }
 
+  /** Notify that a player's ability projectile hit a target. Reduces server-side fire-rate cooldown tracking to mirror client-side on-hit cooldown reduction. */
+  def notifyAbilityHit(playerId: UUID, projectileType: Byte, characterId: Byte): Unit = {
+    validator.reduceAbilityCooldown(playerId, projectileType, characterId)
+  }
+
   def handleDisconnect(channel: Channel): Unit = {
     val player = registry.getByChannel(channel)
     if (player != null) {

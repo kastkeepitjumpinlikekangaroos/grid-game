@@ -121,12 +121,20 @@ class NetworkThread(client: GameClient, serverHost: String, serverPort: Int) ext
 
     if (packet.getType.tcp) {
       if (tcpChannel != null && tcpChannel.isActive) {
+        if (!tcpChannel.isWritable) {
+          System.err.println("NetworkThread: TCP write buffer full, dropping packet")
+          return
+        }
         tcpChannel.writeAndFlush(Unpooled.wrappedBuffer(data))
       } else {
         System.err.println("NetworkThread: TCP channel not active, cannot send")
       }
     } else {
       if (udpChannel != null && udpChannel.isActive) {
+        if (!udpChannel.isWritable) {
+          System.err.println("NetworkThread: UDP write buffer full, dropping packet")
+          return
+        }
         val dgram = new DatagramPacket(Unpooled.wrappedBuffer(data), serverAddress)
         udpChannel.writeAndFlush(dgram)
       } else {
