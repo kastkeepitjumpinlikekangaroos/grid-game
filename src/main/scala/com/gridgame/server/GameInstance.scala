@@ -39,6 +39,9 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   private var startTime: Long = 0L
   @volatile private var running = false
   private val spawnLock = new Object()
+  // Tracks players killed in the current tick to prevent duplicate kill events
+  // when multiple projectiles hit the same player in one tick
+  private val killedThisTick = new java.util.HashSet[UUID]()
 
   def loadWorld(): Unit = {
     if (worldFile.nonEmpty) {
@@ -136,6 +139,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   private def tickProjectiles(): Unit = {
     if (!running || world == null) return
 
+    killedThisTick.clear()
     val events = projectileManager.tick(world)
     events.foreach {
       case ProjectileMoved(projectile) =>
@@ -154,6 +158,24 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         broadcastBuffered(packet)
 
       case ProjectileKill(projectile, targetId) =>
+        // Guard: skip if target was already killed this tick by another projectile
+        val target = registry.get(targetId)
+        if (target != null && killedThisTick.contains(targetId)) {
+          // Already dead — just send the hit packet for visual feedback
+          val hitPacket = new ProjectilePacket(
+            server.getNextSequenceNumber,
+            projectile.ownerId,
+            projectile.getX, projectile.getY,
+            projectile.colorRGB,
+            projectile.id,
+            projectile.dx, projectile.dy,
+            ProjectileAction.HIT,
+            targetId,
+            projectile.chargeLevel.toByte,
+            projectile.projectileType
+          )
+          broadcastBuffered(hitPacket)
+        } else {
         // Send hit packet
         val hitPacket = new ProjectilePacket(
           server.getNextSequenceNumber,
@@ -171,7 +193,6 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         notifyAbilityHitForOwner(projectile)
 
         // Send player update with 0 health
-        val target = registry.get(targetId)
         if (target != null) {
           val updatePacket = new PlayerUpdatePacket(
             server.getNextSequenceNumber,
@@ -209,7 +230,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
           case _ => // no life-steal
         }
 
-        // Record kill
+        // Record kill and mark as killed this tick
+        killedThisTick.add(targetId)
         killTracker.recordKill(projectile.ownerId, targetId)
 
         // Broadcast kill event
@@ -228,6 +250,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
 
         // Schedule auto-respawn
         scheduleRespawn(targetId)
+        }
 
       case ProjectileHit(projectile, targetId) =>
         val hitPacket = new ProjectilePacket(
@@ -447,8 +470,9 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
                 player.setHealth(h)
                 h
               }
-              if (newHealth <= 0) {
+              if (newHealth <= 0 && !killedThisTick.contains(player.getId)) {
                 // Kill
+                killedThisTick.add(player.getId)
                 killTracker.recordKill(projectile.ownerId, player.getId)
                 val killPacket = new GameEventPacket(
                   server.getNextSequenceNumber,
@@ -537,6 +561,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         }
 
       case ProjectileAoEKill(projectile, targetId) =>
+        // Guard: skip if target was already killed this tick
+        if (!killedThisTick.contains(targetId)) {
         val hitPacket = new ProjectilePacket(
           server.getNextSequenceNumber,
           projectile.ownerId,
@@ -566,6 +592,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
           broadcastBuffered(updatePacket)
         }
 
+        killedThisTick.add(targetId)
         killTracker.recordKill(projectile.ownerId, targetId)
 
         val aoeKillPacket = new GameEventPacket(
@@ -582,6 +609,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         broadcastBuffered(aoeKillPacket)
 
         scheduleRespawn(targetId)
+        }
 
       case ProjectileDespawned(projectile) =>
         val packet = new ProjectilePacket(
@@ -639,10 +667,11 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         if (burnResult.isDefined) {
           val newHealth = burnResult.get
 
-          if (newHealth <= 0) {
+          if (newHealth <= 0 && !killedThisTick.contains(player.getId)) {
             // Burn killed the player — attribute to burn owner
             val burnOwner = player.getBurnOwnerId
             if (burnOwner != null) {
+              killedThisTick.add(player.getId)
               killTracker.recordKill(burnOwner, player.getId)
               val killPacket = new GameEventPacket(
                 server.getNextSequenceNumber,

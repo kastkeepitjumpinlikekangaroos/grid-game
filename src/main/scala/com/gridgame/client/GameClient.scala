@@ -1060,7 +1060,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           killCount = packet.getKills.toInt
           deathCount = packet.getDeaths.toInt
         }
-        if (victimId != null && victimId.equals(localPlayerId)) {
+        if (victimId != null && victimId.equals(localPlayerId) && !killerId.equals(localPlayerId)) {
           deathCount += 1
         }
 
