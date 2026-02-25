@@ -1071,6 +1071,33 @@ def _brighten(color, factor=1.25):
     return tuple(min(255, int(c * factor)) for c in color[:3])
 
 
+def draw_fur_texture(draw, cx, cy, w, h, color, density=3):
+    """Scattered dot pattern for fur texture."""
+    dark = _darken(color, 0.8)
+    light = _brighten(color, 1.15)
+    for row in range(0, h, density + 1):
+        offset = (density // 2) if (row // (density + 1)) % 2 == 0 else 0
+        for col in range(offset, w, density + 2):
+            px = cx - w // 2 + col
+            py = cy - h // 2 + row
+            draw.point((px, py), fill=dark if (row + col) % 3 == 0 else light)
+
+
+def draw_scale_texture(draw, cx, cy, w, h, color):
+    """Diamond/scale pattern for reptile/fish skin."""
+    dark = _darken(color, 0.85)
+    light = _brighten(color, 1.1)
+    for row in range(0, h, 4):
+        offset = 2 if (row // 4) % 2 == 0 else 0
+        for col in range(offset, w, 5):
+            px = cx - w // 2 + col
+            py = cy - h // 2 + row
+            draw.point((px, py - 1), fill=dark)
+            draw.point((px - 1, py), fill=light)
+            draw.point((px + 1, py), fill=light)
+            draw.point((px, py + 1), fill=dark)
+
+
 def generate_character(name, draw_func=None, **kwargs):
     """Generate a character sprite sheet.
 
