@@ -106,10 +106,6 @@ class GLGameRenderer(val client: GameClient) {
   private var _animTickF: Float = 0f    // animationTick as Float (avoids Int→Float per use)
 
   // Cached HUD strings — only re-allocated when values change
-  private var _cachedPosX = Int.MinValue; private var _cachedPosY = Int.MinValue
-  private var _cachedPosStr = ""
-  private var _cachedPlayerCount = -1; private var _cachedPlayersStr = ""
-  private var _cachedItemCount = -1; private var _cachedItemsStr = ""
   private var _cachedChargeLevel = -1; private var _cachedChargeStr = ""
   private var _cachedKills = -1; private var _cachedDeaths = -1; private var _cachedKDStr = ""
   // Cached inventory slot counts — avoids double getItemCount calls and per-frame toString
@@ -2288,42 +2284,6 @@ class GLGameRenderer(val client: GameClient) {
   // ═══════════════════════════════════════════════════════════════════
 
   private def renderHUD(screenW: Int, screenH: Int): Unit = {
-    val world = client.getWorld
-    val localPos = client.getLocalPosition
-    val playerCount = client.getPlayers.size()
-
-    // Top-left status panel with semi-transparent background
-    beginShapes()
-    shapeBatch.fillRect(4f, 4f, 200f, 96f, 0.04f, 0.04f, 0.08f, 0.6f)
-    shapeBatch.strokeRect(4f, 4f, 200f, 96f, 1f, 0.3f, 0.3f, 0.4f, 0.4f)
-    // Accent line at top
-    shapeBatch.fillRect(4f, 4f, 200f, 2f, 0.4f, 0.7f, 1f, 0.5f)
-
-    beginSprites()
-    fontSmall.drawTextOutlined(spriteBatch, world.name, 12, 12)
-    // Cache HUD strings only when values change (avoids per-frame string interpolation)
-    val lpx = localPos.getX; val lpy = localPos.getY
-    if (lpx != _cachedPosX || lpy != _cachedPosY) {
-      _cachedPosX = lpx; _cachedPosY = lpy
-      _cachedPosStr = "Pos: (" + lpx + ", " + lpy + ")"
-    }
-    fontSmall.drawTextOutlined(spriteBatch, _cachedPosStr, 12, 30)
-    val pc = playerCount + 1
-    if (pc != _cachedPlayerCount) { _cachedPlayerCount = pc; _cachedPlayersStr = "Players: " + pc }
-    fontSmall.drawTextOutlined(spriteBatch, _cachedPlayersStr, 12, 48)
-    val ic = client.getInventoryCount
-    if (ic != _cachedItemCount) { _cachedItemCount = ic; _cachedItemsStr = "Items: " + ic }
-    fontSmall.drawTextOutlined(spriteBatch, _cachedItemsStr, 12, 66)
-
-    val hasShield = client.hasShield
-    val hasGem = client.hasGemBoost
-    if (hasShield || hasGem) {
-      val effectStr = if (hasShield && hasGem) "Shield FastShot"
-        else if (hasShield) "Shield"
-        else "FastShot"
-      fontSmall.drawTextOutlined(spriteBatch, effectStr, 12, 84, 0.6f, 0.9f, 1f, 0.9f)
-    }
-
     renderInventory(screenW, screenH)
     renderAbilityHUD(screenW, screenH)
     renderChargeBar(screenW, screenH)

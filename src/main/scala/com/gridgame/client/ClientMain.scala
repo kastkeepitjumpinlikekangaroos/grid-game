@@ -387,23 +387,59 @@ class ClientMain extends Application {
       })
     }
 
-    // Connect on a background thread so the UI stays responsive
+    // Connect on a background thread with retry logic
+    val maxRetries = 3
+    val retryDelayMs = 2000L
     new Thread(() => {
-      try {
-        client.connect()
-        // Send auth request after connection is established
-        client.sendAuthRequest(username, password, isSignup)
-        Platform.runLater(() => {
-          statusLabel.setTextFill(Color.web("#8899bb"))
-          statusLabel.setText(if (isSignup) "Creating account..." else "Logging in...")
-        })
-      } catch {
-        case e: Exception =>
+      var attempt = 0
+      var connected = false
+      while (attempt < maxRetries && !connected) {
+        attempt += 1
+        try {
+          if (attempt > 1) {
+            Platform.runLater(() => {
+              statusLabel.setTextFill(Color.web("#c8aa6e"))
+              statusLabel.setText(s"Retrying connection ($attempt/$maxRetries)...")
+            })
+            Thread.sleep(retryDelayMs)
+            // Create a fresh client for the retry
+            client = new GameClient(serverHost, serverPort, initialWorld, username)
+            client.setWorldFileListener(worldFileName => {
+              println(s"ClientMain: World file listener triggered with: '$worldFileName'")
+              handleWorldFileFromServer(worldFileName)
+            })
+            client.authResponseListener = (success: Boolean, assignedUUID: java.util.UUID, message: String) => {
+              Platform.runLater(() => {
+                if (success) {
+                  client.completeAuthAndJoin(assignedUUID, username)
+                  client.requestLobbyList()
+                  showLobbyBrowser(stage)
+                } else {
+                  statusLabel.setTextFill(Color.web("#e84057"))
+                  statusLabel.setText(message)
+                  actionButton.setDisable(false)
+                }
+              })
+            }
+          }
+          client.connect()
+          connected = true
+          client.sendAuthRequest(username, password, isSignup)
           Platform.runLater(() => {
-            statusLabel.setTextFill(Color.web("#e84057"))
-            statusLabel.setText(s"Connection failed: ${e.getMessage}")
-            actionButton.setDisable(false)
+            statusLabel.setTextFill(Color.web("#8899bb"))
+            statusLabel.setText(if (isSignup) "Creating account..." else "Logging in...")
           })
+        } catch {
+          case _: InterruptedException => return
+          case e: Exception =>
+            if (attempt >= maxRetries) {
+              Platform.runLater(() => {
+                statusLabel.setTextFill(Color.web("#e84057"))
+                statusLabel.setText(s"Connection failed after $maxRetries attempts: ${e.getMessage}")
+                actionButton.setDisable(false)
+              })
+            }
+        }
       }
     }).start()
   }
