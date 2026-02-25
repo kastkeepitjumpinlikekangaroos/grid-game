@@ -428,11 +428,13 @@ class ClientMain extends Application {
     addHoverEffect(profileBtn, buttonGhostStyle, buttonGhostHoverStyle)
     val leaderboardBtn = new Button("Leaderboard")
     addHoverEffect(leaderboardBtn, buttonGhostStyle, buttonGhostHoverStyle)
+    val practiceBtn = new Button("Practice")
+    addHoverEffect(practiceBtn, buttonGreenStyle, buttonGreenHoverStyle)
     val rankedBtn = new Button("Ranked")
     addHoverEffect(rankedBtn, buttonGreenStyle, buttonGreenHoverStyle)
     val refreshBtn = new Button("Refresh")
     addHoverEffect(refreshBtn, buttonGhostStyle, buttonGhostHoverStyle)
-    titleBar.getChildren.addAll(title, spacer, profileBtn, leaderboardBtn, rankedBtn, refreshBtn)
+    titleBar.getChildren.addAll(title, spacer, profileBtn, leaderboardBtn, practiceBtn, rankedBtn, refreshBtn)
 
     val headerSep = createAccentLine()
     headerSep.setMaxWidth(Double.MaxValue)
@@ -618,10 +620,19 @@ class ClientMain extends Application {
       })
     }
 
+    // Handle direct-to-game transition (practice mode skips lobby room)
+    client.gameStartingListener = () => {
+      Platform.runLater(() => showGameScene(stage))
+    }
+
     // Button actions
     profileBtn.setOnAction(_ => showAccountView(stage))
 
     leaderboardBtn.setOnAction(_ => showLeaderboard(stage))
+
+    practiceBtn.setOnAction(_ => {
+      client.startPractice()
+    })
 
     rankedBtn.setOnAction(_ => {
       showRankedQueue(stage)
@@ -1617,12 +1628,13 @@ class ClientMain extends Application {
     titleBox.setAlignment(Pos.CENTER)
     titleBox.setPadding(new Insets(36, 0, 24, 0))
 
-    val title = new Label("Game Over")
+    val isPractice = client.isPracticeMode
+    val title = new Label(if (isPractice) "Practice Complete" else "Game Over")
     title.setFont(Font.font("System", FontWeight.BOLD, 40))
     title.setTextFill(Color.WHITE)
     title.setStyle("-fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.4), 20, 0, 0, 0);")
 
-    val subtitle = new Label("Final Scoreboard")
+    val subtitle = new Label(if (isPractice) "Target Practice" else "Final Scoreboard")
     subtitle.setFont(Font.font("System", 15))
     subtitle.setTextFill(Color.web("#8899aa"))
 
@@ -1755,6 +1767,25 @@ class ClientMain extends Application {
       rowIndex += 1
     }
 
+    // Practice stats row (only shown in practice mode)
+    if (isPractice) {
+      val practiceStatsRow = new HBox(12)
+      practiceStatsRow.setAlignment(Pos.CENTER)
+      practiceStatsRow.setPadding(new Insets(12, 20, 12, 20))
+      practiceStatsRow.setMaxWidth(700)
+      practiceStatsRow.setStyle(cardBgSubtle)
+
+      val bestComboBox = createStatBox("Best Combo", client.practiceBestCombo.toString, "#ffd700")
+      val accuracy = if (client.practiceShots > 0) (client.practiceHits * 100.0 / client.practiceShots).toInt else 0
+      val accuracyBox = createStatBox("Accuracy", s"$accuracy%", "#4a9eff")
+      val totalKillsBox = createStatBox("Total Kills", client.killCount.toString, "#2ecc71")
+      HBox.setHgrow(bestComboBox, Priority.ALWAYS)
+      HBox.setHgrow(accuracyBox, Priority.ALWAYS)
+      HBox.setHgrow(totalKillsBox, Priority.ALWAYS)
+      practiceStatsRow.getChildren.addAll(bestComboBox, accuracyBox, totalKillsBox)
+      scoreCard.getChildren.add(practiceStatsRow)
+    }
+
     val returnBtn = new Button("Return to Lobby")
     addHoverEffect(returnBtn, buttonStyle, buttonHoverStyle)
     returnBtn.setFont(Font.font("System", FontWeight.BOLD, 15))
@@ -1764,9 +1795,25 @@ class ClientMain extends Application {
       showLobbyBrowser(stage)
     })
 
-    val btnBox = new VBox(0)
+    val btnBox = new VBox(12)
     btnBox.setAlignment(Pos.CENTER)
     btnBox.setPadding(new Insets(24, 0, 0, 0))
+
+    if (isPractice) {
+      val practiceAgainBtn = new Button("Practice Again")
+      addHoverEffect(practiceAgainBtn, buttonGreenStyle, buttonGreenHoverStyle)
+      practiceAgainBtn.setFont(Font.font("System", FontWeight.BOLD, 15))
+      practiceAgainBtn.setOnAction(_ => {
+        client.returnToLobbyBrowser()
+        client.startPractice()
+        // Wire gameStartingListener for the next practice session
+        client.gameStartingListener = () => {
+          Platform.runLater(() => showGameScene(stage))
+        }
+      })
+      btnBox.getChildren.add(practiceAgainBtn)
+    }
+
     btnBox.getChildren.add(returnBtn)
 
     val scrollPane = new ScrollPane(scoreCard)

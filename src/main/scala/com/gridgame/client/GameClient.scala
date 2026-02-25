@@ -146,6 +146,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   @volatile var isRespawning: Boolean = false
   @volatile var lastKillerCharacterName: String = ""
 
+  // Practice mode state
+  @volatile var isPracticeMode: Boolean = false
+  @volatile var practiceCombo: Int = 0
+  @volatile var practiceBestCombo: Int = 0
+  @volatile var practiceHits: Int = 0
+  @volatile var practiceShots: Int = 0
+  @volatile var practiceLastHitTime: Long = 0L
+
   def gameTimeRemaining: Int = {
     if (gameTimeSyncTimestamp == 0L) return 0
     val elapsed = ((System.currentTimeMillis() - gameTimeSyncTimestamp) / 1000).toInt
@@ -539,6 +547,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   def shootToward(dx: Float, dy: Float, chargeLevel: Int = 0): Unit = {
     if (isDead || isPhased || isFrozen) return
+    if (isPracticeMode) practiceShots += 1
 
     val pos = localPosition.get()
     val chargeByte = Math.min(100, Math.max(0, chargeLevel)).toByte
@@ -1017,6 +1026,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         clientState = ClientState.PLAYING
         killCount = 0
         deathCount = 0
+        // Reset practice stats but keep isPracticeMode flag
+        practiceCombo = 0
+        practiceBestCombo = 0
+        practiceHits = 0
+        practiceShots = 0
+        practiceLastHitTime = 0L
         gameTimeSyncRemaining = currentLobbyDuration * 60
         gameTimeSyncTimestamp = System.currentTimeMillis()
         scoreboard.clear()
@@ -1059,6 +1074,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         if (killerId.equals(localPlayerId)) {
           killCount = packet.getKills.toInt
           deathCount = packet.getDeaths.toInt
+
+          // Track practice mode stats
+          if (isPracticeMode) {
+            practiceHits += 1
+            practiceCombo += 1
+            if (practiceCombo > practiceBestCombo) practiceBestCombo = practiceCombo
+            practiceLastHitTime = System.currentTimeMillis()
+          }
         }
         if (victimId != null && victimId.equals(localPlayerId) && !killerId.equals(localPlayerId)) {
           deathCount += 1
@@ -1289,6 +1312,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     networkThread.send(packet)
   }
 
+  def startPractice(): Unit = {
+    isPracticeMode = true
+    val packet = new LobbyActionPacket(
+      sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.PRACTICE_START
+    )
+    networkThread.send(packet)
+  }
+
   def updateLobbyConfig(mapIndex: Int, durationMinutes: Int, gameMode: Byte = -1, teamSize: Int = -1): Unit = {
     val gm = if (gameMode >= 0) gameMode else currentLobbyGameMode
     val ts = if (teamSize > 0) teamSize else currentLobbyTeamSize
@@ -1305,6 +1336,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     clientState = ClientState.LOBBY_BROWSER
     currentLobbyId = 0
     isLobbyHost = false
+    isPracticeMode = false
     killCount = 0
     deathCount = 0
     gameTimeSyncRemaining = 0

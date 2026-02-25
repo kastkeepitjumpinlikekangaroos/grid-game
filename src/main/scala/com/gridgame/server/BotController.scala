@@ -11,7 +11,7 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import scala.jdk.CollectionConverters._
 
-class BotController(instance: GameInstance) {
+class BotController(instance: GameInstance, isPractice: Boolean = false) {
   private val botIds = new java.util.concurrent.CopyOnWriteArrayList[UUID]()
   private val lastShotTime = new ConcurrentHashMap[UUID, Long]()
   private val lastQAbilityTime = new ConcurrentHashMap[UUID, Long]()
@@ -67,6 +67,14 @@ class BotController(instance: GameInstance) {
   }
 
   private def tickBot(bot: Player): Unit = {
+    if (isPractice) {
+      // Passive practice bots: wander randomly ~15% of ticks, no shooting/abilities
+      if (scala.util.Random.nextFloat() < 0.15f) {
+        moveRandom(bot)
+      }
+      return
+    }
+
     val target = findNearestPlayer(bot)
 
     // Try to pick up nearby items
