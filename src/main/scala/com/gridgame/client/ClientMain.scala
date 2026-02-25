@@ -620,18 +620,13 @@ class ClientMain extends Application {
       })
     }
 
-    // Handle direct-to-game transition (practice mode skips lobby room)
-    client.gameStartingListener = () => {
-      Platform.runLater(() => showGameScene(stage))
-    }
-
     // Button actions
     profileBtn.setOnAction(_ => showAccountView(stage))
 
     leaderboardBtn.setOnAction(_ => showLeaderboard(stage))
 
     practiceBtn.setOnAction(_ => {
-      client.startPractice()
+      showPracticeSetup(stage)
     })
 
     rankedBtn.setOnAction(_ => {
@@ -986,6 +981,102 @@ class ClientMain extends Application {
         showLobbyBrowser(stage)
       })
     }
+
+    val scene = new Scene(scrollPane)
+    stage.setScene(scene)
+  }
+
+  private def showPracticeSetup(stage: Stage): Unit = {
+    val root = new VBox(0)
+    root.setAlignment(Pos.TOP_CENTER)
+    root.setStyle(darkBg)
+
+    // Header
+    val headerBox = new VBox(8)
+    headerBox.setAlignment(Pos.CENTER)
+    headerBox.setPadding(new Insets(28, 24, 16, 24))
+
+    val titleLabel = new Label("Target Practice")
+    titleLabel.setFont(Font.font("System", FontWeight.BOLD, 28))
+    titleLabel.setTextFill(Color.WHITE)
+    titleLabel.setStyle("-fx-effect: dropshadow(gaussian, rgba(61, 219, 128, 0.3), 12, 0, 0, 0);")
+
+    val headerLine = new Region()
+    headerLine.setMinHeight(2)
+    headerLine.setMaxHeight(2)
+    headerLine.setMaxWidth(60)
+    headerLine.setStyle("-fx-background-color: linear-gradient(to right, transparent, #3ddb80, transparent); -fx-background-radius: 1;")
+
+    headerBox.getChildren.addAll(titleLabel, headerLine)
+
+    // Two-panel content
+    val mainContent = new HBox(24)
+    mainContent.setPadding(new Insets(0, 28, 24, 28))
+    VBox.setVgrow(mainContent, Priority.ALWAYS)
+
+    // Left panel: info + buttons
+    val leftPanel = new VBox(14)
+    leftPanel.setMinWidth(300)
+    leftPanel.setPrefWidth(340)
+
+    val infoCard = new VBox(14)
+    infoCard.setPadding(new Insets(20, 28, 20, 28))
+    infoCard.setStyle(cardBg)
+    infoCard.setAlignment(Pos.CENTER)
+
+    val descLabel = new Label("SELECT CHARACTER")
+    descLabel.setStyle(sectionHeaderStyle)
+
+    val descText = new Label("Shoot passive bots with\nsatisfying feedback. Bots\nrespawn quickly so you can\npractice non-stop.")
+    descText.setTextFill(Color.web("#8899aa"))
+    descText.setFont(Font.font("System", 14))
+    descText.setWrapText(true)
+
+    val sep = createSeparator()
+
+    val startBtn = new Button("Start Practice")
+    addHoverEffect(startBtn, buttonGreenStyle, buttonGreenHoverStyle)
+    startBtn.setFont(Font.font("System", FontWeight.BOLD, 16))
+    startBtn.setMaxWidth(Double.MaxValue)
+
+    val backBtn = new Button("Back")
+    addHoverEffect(backBtn, buttonGhostStyle, buttonGhostHoverStyle)
+    backBtn.setMaxWidth(Double.MaxValue)
+
+    infoCard.getChildren.addAll(descLabel, descText, sep, startBtn)
+    leftPanel.getChildren.addAll(infoCard, backBtn)
+
+    // Right panel: character selection
+    val rightPanel = new VBox(0)
+    HBox.setHgrow(rightPanel, Priority.ALWAYS)
+
+    val charPanel = new CharacterSelectionPanel(
+      () => client.selectedCharacterId,
+      id => { client.selectedCharacterId = id }
+    )
+    val charSection = charPanel.createPanel()
+    rightPanel.getChildren.add(charSection)
+
+    mainContent.getChildren.addAll(leftPanel, rightPanel)
+    root.getChildren.addAll(headerBox, mainContent)
+
+    val scrollPane = new ScrollPane(root)
+    scrollPane.setFitToWidth(true)
+    scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER)
+    scrollPane.setStyle("-fx-background: #1a1a2e; -fx-background-color: #1a1a2e; -fx-border-color: transparent;")
+
+    backBtn.setOnAction(_ => {
+      charPanel.stop()
+      showLobbyBrowser(stage)
+    })
+
+    startBtn.setOnAction(_ => {
+      charPanel.stop()
+      client.startPractice()
+      client.gameStartingListener = () => {
+        Platform.runLater(() => showGameScene(stage))
+      }
+    })
 
     val scene = new Scene(scrollPane)
     stage.setScene(scene)
@@ -1805,11 +1896,7 @@ class ClientMain extends Application {
       practiceAgainBtn.setFont(Font.font("System", FontWeight.BOLD, 15))
       practiceAgainBtn.setOnAction(_ => {
         client.returnToLobbyBrowser()
-        client.startPractice()
-        // Wire gameStartingListener for the next practice session
-        client.gameStartingListener = () => {
-          Platform.runLater(() => showGameScene(stage))
-        }
+        showPracticeSetup(stage)
       })
       btnBox.getChildren.add(practiceAgainBtn)
     }

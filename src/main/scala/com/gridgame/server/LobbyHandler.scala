@@ -49,7 +49,7 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
         handleRemoveBot(playerId, player)
 
       case LobbyAction.PRACTICE_START =>
-        handlePracticeStart(playerId, player)
+        handlePracticeStart(playerId, player, packet)
 
       case _ =>
         println(s"LobbyHandler: Unknown action ${packet.getAction} from ${playerId.toString.substring(0, 8)}")
@@ -456,7 +456,7 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     broadcastToLobby(lobby, broadcast, null)
   }
 
-  private def handlePracticeStart(playerId: UUID, player: Player): Unit = {
+  private def handlePracticeStart(playerId: UUID, player: Player, packet: LobbyActionPacket): Unit = {
     // Prevent starting practice while already in a lobby
     if (lobbyManager.getPlayerLobby(playerId) != null) return
 
@@ -471,6 +471,12 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     val lobby = lobbyManager.createLobby(playerId, "Practice", mapIndex, 30, 32)
     if (lobby == null) return
     lobby.matchType = 5
+
+    // Set the player's selected character
+    val charId = packet.getCharacterId
+    if (com.gridgame.common.model.CharacterDef.get(charId) != null) {
+      lobby.setCharacter(playerId, charId)
+    }
 
     // Add 5 bots
     for (_ <- 1 to 5) lobby.botManager.addBot()

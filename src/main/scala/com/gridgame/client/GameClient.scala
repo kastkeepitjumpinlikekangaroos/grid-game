@@ -1315,7 +1315,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   def startPractice(): Unit = {
     isPracticeMode = true
     val packet = new LobbyActionPacket(
-      sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.PRACTICE_START
+      sequenceNumber.getAndIncrement(), localPlayerId, Packet.getCurrentTimestamp,
+      LobbyAction.PRACTICE_START, 0.toShort,
+      0.toByte, 0.toByte, 0.toByte, 0.toByte, 0.toByte, "", selectedCharacterId
     )
     networkThread.send(packet)
   }

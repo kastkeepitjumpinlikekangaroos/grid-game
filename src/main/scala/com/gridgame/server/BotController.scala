@@ -16,16 +16,35 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
   private val lastShotTime = new ConcurrentHashMap[UUID, Long]()
   private val lastQAbilityTime = new ConcurrentHashMap[UUID, Long]()
   private val lastEAbilityTime = new ConcurrentHashMap[UUID, Long]()
+  private val lastMoveTime = new ConcurrentHashMap[UUID, Long]()
+  private val botShootCooldown = new ConcurrentHashMap[UUID, Long]()
+  private val currentTarget = new ConcurrentHashMap[UUID, UUID]()
+  private val targetSwitchTime = new ConcurrentHashMap[UUID, Long]()
+  private val strafeDirection = new ConcurrentHashMap[UUID, Int]() // 1 = clockwise, -1 = counter
   private var executor: ScheduledExecutorService = _
 
-  private val TICK_INTERVAL_MS = 200L
-  private val SHOOT_COOLDOWN_MS = 1500L
+  private val TICK_INTERVAL_MS = 100L
+  private val BOT_MOVE_INTERVAL_MS = 100L // bots move every 100ms (10 moves/sec, close to player's ~20)
+  private val SHOOT_COOLDOWN_MIN_MS = 700L
+  private val SHOOT_COOLDOWN_MAX_MS = 1100L
+  private val TARGET_HYSTERESIS_MS = 2000L // stick to a target for at least 2s
+  private val AIM_INACCURACY_RAD = 0.12f // ~7 degrees max aim wobble
+
+  // 8 cardinal + diagonal directions for obstacle avoidance
+  private val ALL_DIRS = Array(
+    (1, 0), (-1, 0), (0, 1), (0, -1),
+    (1, 1), (1, -1), (-1, 1), (-1, -1)
+  )
 
   def addBotId(id: UUID): Unit = {
     botIds.add(id)
     lastShotTime.put(id, 0L)
     lastQAbilityTime.put(id, 0L)
     lastEAbilityTime.put(id, 0L)
+    // Stagger initial move times so bots don't all move on the same tick
+    lastMoveTime.put(id, System.currentTimeMillis() - scala.util.Random.nextInt(BOT_MOVE_INTERVAL_MS.toInt))
+    botShootCooldown.put(id, SHOOT_COOLDOWN_MIN_MS + scala.util.Random.nextLong(SHOOT_COOLDOWN_MAX_MS - SHOOT_COOLDOWN_MIN_MS))
+    strafeDirection.put(id, if (scala.util.Random.nextBoolean()) 1 else -1)
   }
 
   def start(): Unit = {
@@ -51,12 +70,13 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     try {
       if (!instance.isRunning || instance.world == null) return
 
+      val now = System.currentTimeMillis()
       botIds.asScala.foreach { botId =>
         val bot = instance.registry.get(botId)
         if (bot != null && !bot.isDead) {
           bot.updateHeartbeat()
           if (!bot.isFrozen) {
-            tickBot(bot)
+            tickBot(bot, now)
           }
         }
       }
@@ -66,7 +86,7 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     }
   }
 
-  private def tickBot(bot: Player): Unit = {
+  private def tickBot(bot: Player, now: Long): Unit = {
     if (isPractice) {
       // Passive practice bots: wander randomly ~15% of ticks, no shooting/abilities
       if (scala.util.Random.nextFloat() < 0.15f) {
@@ -75,25 +95,80 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
       return
     }
 
-    val target = findNearestPlayer(bot)
+    val target = pickTarget(bot, now)
 
-    // Try to pick up nearby items
     tryPickupItems(bot)
-
-    // Try to use items from inventory
     tryUseItems(bot, target)
 
-    if (target == null) return
+    // Movement gated by per-bot move timer
+    val canMove = !bot.isRooted && {
+      val lastMove = lastMoveTime.getOrDefault(bot.getId, 0L)
+      val moveInterval = if (bot.isSlowed) BOT_MOVE_INTERVAL_MS * 2
+                         else if (bot.hasSpeedBoost) (BOT_MOVE_INTERVAL_MS * 0.6).toLong
+                         else BOT_MOVE_INTERVAL_MS
+      now - lastMove >= moveInterval
+    }
 
-    // Rooted bots can't move but can still shoot/use abilities
-    if (!bot.isRooted) {
-      // Slowed bots move every other tick
-      if (!bot.isSlowed || (System.currentTimeMillis() / TICK_INTERVAL_MS) % 2 == 0) {
+    if (canMove) {
+      if (target != null) {
         moveSmart(bot, target)
+      } else {
+        wander(bot)
+      }
+      lastMoveTime.put(bot.getId, now)
+    }
+
+    if (target != null) {
+      tryUseAbilities(bot, target)
+      tryShoot(bot, target, now)
+    }
+  }
+
+  // --- Target selection with hysteresis ---
+
+  private def pickTarget(bot: Player, now: Long): Player = {
+    val lastSwitch = targetSwitchTime.getOrDefault(bot.getId, 0L)
+    val currentId = currentTarget.get(bot.getId)
+
+    // Check if current target is still valid
+    val currentValid = if (currentId != null) {
+      val p = instance.registry.get(currentId)
+      p != null && !p.isDead && !instance.isTeammate(bot.getId, p.getId)
+    } else false
+
+    // If current target is valid and we haven't exceeded hysteresis, keep it
+    if (currentValid && now - lastSwitch < TARGET_HYSTERESIS_MS) {
+      return instance.registry.get(currentId)
+    }
+
+    // Find nearest player
+    val nearest = findNearestPlayer(bot)
+    if (nearest != null) {
+      // Only switch if the new target is significantly closer (>30% closer) or current is invalid
+      if (currentValid) {
+        val currentPlayer = instance.registry.get(currentId)
+        val currentDist = distanceBetween(bot.getPosition, currentPlayer.getPosition)
+        val nearestDist = distanceBetween(bot.getPosition, nearest.getPosition)
+        if (nearestDist < currentDist * 0.7f || !currentId.equals(nearest.getId)) {
+          if (nearestDist < currentDist * 0.7f) {
+            currentTarget.put(bot.getId, nearest.getId)
+            targetSwitchTime.put(bot.getId, now)
+          }
+          // else keep current target until hysteresis expires, then switch
+          if (now - lastSwitch >= TARGET_HYSTERESIS_MS) {
+            currentTarget.put(bot.getId, nearest.getId)
+            targetSwitchTime.put(bot.getId, now)
+          }
+          return if (now - lastSwitch >= TARGET_HYSTERESIS_MS || nearestDist < currentDist * 0.7f)
+            nearest else currentPlayer
+        }
+        return currentPlayer
+      } else {
+        currentTarget.put(bot.getId, nearest.getId)
+        targetSwitchTime.put(bot.getId, now)
       }
     }
-    tryUseAbilities(bot, target)
-    tryShoot(bot, target)
+    nearest
   }
 
   // --- Range-based movement ---
@@ -109,13 +184,8 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
 
   private def getPreferredRange(charId: Byte): Float = {
     val maxRange = getMaxRange(charId)
-    if (isRanged(charId)) {
-      // Ranged characters prefer to stay at ~65% of their max range
-      maxRange * 0.65f
-    } else {
-      // Melee characters want to be adjacent
-      1.5f
-    }
+    if (isRanged(charId)) maxRange * 0.6f
+    else 1.5f
   }
 
   private def moveSmart(bot: Player, target: Player): Unit = {
@@ -125,25 +195,31 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     val preferredRange = getPreferredRange(bot.getCharacterId)
     val ranged = isRanged(bot.getCharacterId)
 
-    val dx = targetPos.getX - botPos.getX
-    val dy = targetPos.getY - botPos.getY
-
     if (dist < 0.01f) {
-      // On top of another entity - move to a random adjacent cell
       moveRandom(bot)
-    } else if (ranged && dist < preferredRange * 0.6f) {
-      // Too close for a ranged character - kite away
+    } else if (ranged && dist < preferredRange * 0.5f) {
       moveAway(bot, target)
-    } else if (dist > preferredRange + 2) {
-      // Too far - move closer
+    } else if (ranged && dist < preferredRange * 0.8f) {
+      if (scala.util.Random.nextFloat() < 0.4f) strafe(bot, target)
+      else moveAway(bot, target)
+    } else if (dist > preferredRange * 1.3f) {
+      moveToward(bot, target)
+    } else if (ranged) {
+      strafe(bot, target)
+    } else {
       moveToward(bot, target)
     }
-    // else: at preferred range, stay put
+  }
+
+  private def wander(bot: Player): Unit = {
+    if (scala.util.Random.nextFloat() < 0.3f) {
+      moveRandom(bot)
+    }
   }
 
   private def moveRandom(bot: Player): Unit = {
     val botPos = bot.getPosition
-    val directions = scala.util.Random.shuffle(Seq((1, 0), (-1, 0), (0, 1), (0, -1)))
+    val directions = scala.util.Random.shuffle(ALL_DIRS.toSeq)
     directions.find { case (ddx, ddy) =>
       canMoveTo(botPos.getX + ddx, botPos.getY + ddy, bot.getId)
     }.foreach { case (ddx, ddy) =>
@@ -153,17 +229,145 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     }
   }
 
+  // --- BFS pathfinding (bounded to avoid expensive searches) ---
+
+  private val BFS_MAX_CELLS = 600 // max cells to explore (~25 cell radius)
+  private val BFS_DIRS = Array((1, 0), (-1, 0), (0, 1), (0, -1))
+
+  /** BFS from (fromX,fromY) toward (toX,toY). Returns the first step, or None if unreachable. */
+  private def bfsNextStep(fromX: Int, fromY: Int, toX: Int, toY: Int, botId: UUID): Option[(Int, Int)] = {
+    if (fromX == toX && fromY == toY) return None
+
+    val world = instance.world
+    // Pack coordinates into a single Long for the visited set: (x << 32) | (y & 0xFFFFFFFFL)
+    val visited = new java.util.HashSet[Long]()
+    // Queue entries: (x, y, firstStepX, firstStepY)
+    val queue = new java.util.ArrayDeque[(Int, Int, Int, Int)]()
+
+    val startKey = (fromX.toLong << 32) | (fromY.toLong & 0xFFFFFFFFL)
+    visited.add(startKey)
+
+    // Seed with walkable neighbors
+    for ((ddx, ddy) <- BFS_DIRS) {
+      val nx = fromX + ddx
+      val ny = fromY + ddy
+      val key = (nx.toLong << 32) | (ny.toLong & 0xFFFFFFFFL)
+      if (!visited.contains(key) && nx >= 0 && nx < world.width && ny >= 0 && ny < world.height &&
+          world.isWalkable(nx, ny)) {
+        visited.add(key)
+        if (nx == toX && ny == toY) return Some((ddx, ddy))
+        // Only enqueue if not occupied (but target cell itself is fine to path toward)
+        if (!isTileOccupied(nx, ny, botId)) {
+          queue.add((nx, ny, ddx, ddy))
+        }
+      }
+    }
+
+    var explored = 0
+    while (!queue.isEmpty && explored < BFS_MAX_CELLS) {
+      val (cx, cy, firstDx, firstDy) = queue.poll()
+      explored += 1
+
+      for ((ddx, ddy) <- BFS_DIRS) {
+        val nx = cx + ddx
+        val ny = cy + ddy
+        val key = (nx.toLong << 32) | (ny.toLong & 0xFFFFFFFFL)
+        if (!visited.contains(key) && nx >= 0 && nx < world.width && ny >= 0 && ny < world.height &&
+            world.isWalkable(nx, ny)) {
+          visited.add(key)
+          if (nx == toX && ny == toY) return Some((firstDx, firstDy))
+          if (!isTileOccupied(nx, ny, botId)) {
+            queue.add((nx, ny, firstDx, firstDy))
+          }
+        }
+      }
+    }
+    None
+  }
+
+  /** Move bot one step. Returns true if moved. */
+  private def applyStep(bot: Player, dx: Int, dy: Int): Boolean = {
+    val botPos = bot.getPosition
+    val nx = botPos.getX + dx
+    val ny = botPos.getY + dy
+    if (canMoveTo(nx, ny, bot.getId)) {
+      bot.setPosition(new Position(nx, ny))
+      bot.setDirection(Direction.fromMovement(dx, dy))
+      broadcastBotPosition(bot)
+      true
+    } else false
+  }
+
+  /** Try direct move toward (tx,ty), falling back to BFS if blocked. */
+  private def moveTowardPoint(bot: Player, tx: Int, ty: Int): Unit = {
+    val botPos = bot.getPosition
+    val dx = tx - botPos.getX
+    val dy = ty - botPos.getY
+    val sdx = Integer.signum(dx)
+    val sdy = Integer.signum(dy)
+
+    if (sdx == 0 && sdy == 0) return
+
+    // Fast path: try direct moves first
+    if (sdx != 0 && sdy != 0 && applyStep(bot, sdx, sdy)) return
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      if (sdx != 0 && applyStep(bot, sdx, 0)) return
+      if (sdy != 0 && applyStep(bot, 0, sdy)) return
+    } else {
+      if (sdy != 0 && applyStep(bot, 0, sdy)) return
+      if (sdx != 0 && applyStep(bot, sdx, 0)) return
+    }
+
+    // Direct path blocked - use BFS to navigate around walls
+    bfsNextStep(botPos.getX, botPos.getY, tx, ty, bot.getId).foreach { case (bfsDx, bfsDy) =>
+      applyStep(bot, bfsDx, bfsDy)
+    }
+  }
+
+  /** Strafe perpendicular to the target (orbit around them). */
+  private def strafe(bot: Player, target: Player): Unit = {
+    val botPos = bot.getPosition
+    val targetPos = target.getPosition
+    val dx = (targetPos.getX - botPos.getX).toFloat
+    val dy = (targetPos.getY - botPos.getY).toFloat
+    val dir = strafeDirection.getOrDefault(bot.getId, 1)
+
+    val perpX = -dy * dir
+    val perpY = dx * dir
+    val sdx = Integer.signum(Math.round(perpX))
+    val sdy = Integer.signum(Math.round(perpY))
+
+    if (sdx == 0 && sdy == 0) {
+      moveRandom(bot)
+      return
+    }
+
+    // Try strafe direction, then components, then flip
+    if (applyStep(bot, sdx, sdy)) return
+    if (sdx != 0 && applyStep(bot, sdx, 0)) return
+    if (sdy != 0 && applyStep(bot, 0, sdy)) return
+
+    // Blocked on all direct strafe attempts - use BFS to a strafe target point
+    val strafeTargetX = botPos.getX + sdx * 3
+    val strafeTargetY = botPos.getY + sdy * 3
+    val bfsMoved = bfsNextStep(botPos.getX, botPos.getY, strafeTargetX, strafeTargetY, bot.getId)
+      .exists { case (bfsDx, bfsDy) => applyStep(bot, bfsDx, bfsDy) }
+
+    if (!bfsMoved) {
+      // Still stuck - flip strafe direction for next time
+      strafeDirection.put(bot.getId, -dir)
+    }
+  }
+
   private def moveAway(bot: Player, target: Player): Unit = {
     val botPos = bot.getPosition
     val targetPos = target.getPosition
     val dx = botPos.getX - targetPos.getX
     val dy = botPos.getY - targetPos.getY
 
-    // Move away from target (opposite direction)
     val sdx = Integer.signum(dx)
     val sdy = Integer.signum(dy)
 
-    // If both are zero (on top of each other), pick a random direction
     val (fdx, fdy) = if (sdx == 0 && sdy == 0) {
       val r = scala.util.Random.nextInt(4)
       r match {
@@ -174,73 +378,30 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
       }
     } else (sdx, sdy)
 
-    var moved = false
-
+    // Try direct away (diagonal, then axes)
+    if (fdx != 0 && fdy != 0 && applyStep(bot, fdx, fdy)) return
     if (Math.abs(dx) >= Math.abs(dy)) {
-      if (fdx != 0 && canMoveTo(botPos.getX + fdx, botPos.getY, bot.getId)) {
-        bot.setPosition(new Position(botPos.getX + fdx, botPos.getY))
-        bot.setDirection(Direction.fromMovement(fdx, 0))
-        moved = true
-      } else if (fdy != 0 && canMoveTo(botPos.getX, botPos.getY + fdy, bot.getId)) {
-        bot.setPosition(new Position(botPos.getX, botPos.getY + fdy))
-        bot.setDirection(Direction.fromMovement(0, fdy))
-        moved = true
-      }
+      if (fdx != 0 && applyStep(bot, fdx, 0)) return
+      if (fdy != 0 && applyStep(bot, 0, fdy)) return
     } else {
-      if (fdy != 0 && canMoveTo(botPos.getX, botPos.getY + fdy, bot.getId)) {
-        bot.setPosition(new Position(botPos.getX, botPos.getY + fdy))
-        bot.setDirection(Direction.fromMovement(0, fdy))
-        moved = true
-      } else if (fdx != 0 && canMoveTo(botPos.getX + fdx, botPos.getY, bot.getId)) {
-        bot.setPosition(new Position(botPos.getX + fdx, botPos.getY))
-        bot.setDirection(Direction.fromMovement(fdx, 0))
-        moved = true
-      }
+      if (fdy != 0 && applyStep(bot, 0, fdy)) return
+      if (fdx != 0 && applyStep(bot, fdx, 0)) return
     }
 
-    if (moved) broadcastBotPosition(bot)
+    // Direct away blocked - BFS to a point away from target
+    val awayX = botPos.getX + fdx * 8
+    val awayY = botPos.getY + fdy * 8
+    // Clamp the away target to world bounds
+    val world = instance.world
+    val clampedX = Math.max(0, Math.min(world.width - 1, awayX))
+    val clampedY = Math.max(0, Math.min(world.height - 1, awayY))
+    bfsNextStep(botPos.getX, botPos.getY, clampedX, clampedY, bot.getId).foreach { case (bfsDx, bfsDy) =>
+      applyStep(bot, bfsDx, bfsDy)
+    }
   }
 
   private def moveToward(bot: Player, target: Player): Unit = {
-    val botPos = bot.getPosition
-    val targetPos = target.getPosition
-    val dx = targetPos.getX - botPos.getX
-    val dy = targetPos.getY - botPos.getY
-
-    // Don't move if already adjacent or on top of target
-    if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) return
-
-    val sdx = Integer.signum(dx)
-    val sdy = Integer.signum(dy)
-
-    var moved = false
-
-    // Prefer moving on the axis with greater distance
-    if (Math.abs(dx) >= Math.abs(dy)) {
-      val newX = botPos.getX + sdx
-      if (sdx != 0 && canMoveTo(newX, botPos.getY, bot.getId)) {
-        bot.setPosition(new Position(newX, botPos.getY))
-        bot.setDirection(Direction.fromMovement(sdx, 0))
-        moved = true
-      } else if (sdy != 0 && canMoveTo(botPos.getX, botPos.getY + sdy, bot.getId)) {
-        bot.setPosition(new Position(botPos.getX, botPos.getY + sdy))
-        bot.setDirection(Direction.fromMovement(0, sdy))
-        moved = true
-      }
-    } else {
-      val newY = botPos.getY + sdy
-      if (sdy != 0 && canMoveTo(botPos.getX, newY, bot.getId)) {
-        bot.setPosition(new Position(botPos.getX, newY))
-        bot.setDirection(Direction.fromMovement(0, sdy))
-        moved = true
-      } else if (sdx != 0 && canMoveTo(botPos.getX + sdx, botPos.getY, bot.getId)) {
-        bot.setPosition(new Position(botPos.getX + sdx, botPos.getY))
-        bot.setDirection(Direction.fromMovement(sdx, 0))
-        moved = true
-      }
-    }
-
-    if (moved) broadcastBotPosition(bot)
+    moveTowardPoint(bot, target.getPosition.getX, target.getPosition.getY)
   }
 
   // --- Item pickup and usage ---
@@ -257,12 +418,9 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     val inventory = instance.itemManager.getInventory(bot.getId)
     if (inventory.isEmpty) return
 
-    val healthPercent = bot.getHealth.toFloat / bot.getMaxHealth.toFloat
-
     inventory.foreach { item =>
       item.itemType match {
         case ItemType.Heart =>
-          // Use heart when health below 50%
           bot.synchronized {
             if (bot.getHealth.toFloat / bot.getMaxHealth.toFloat < 0.5f) {
               useItem(bot, item)
@@ -272,7 +430,6 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
           }
 
         case ItemType.Shield =>
-          // Use shield immediately if not already shielded
           bot.synchronized {
             if (!bot.hasShield) {
               useItem(bot, item)
@@ -282,7 +439,6 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
           }
 
         case ItemType.Gem =>
-          // Use gem immediately if not already boosted
           bot.synchronized {
             if (!bot.hasGemBoost) {
               useItem(bot, item)
@@ -292,7 +448,6 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
           }
 
         case ItemType.Fence =>
-          // Place fence between bot and nearest target
           if (target != null) {
             val botPos = bot.getPosition
             val targetPos = target.getPosition
@@ -305,14 +460,12 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
           }
 
         case _ =>
-          // Skip Star (teleport is client-side) and unknown items
       }
     }
   }
 
   private def useItem(bot: Player, item: com.gridgame.common.model.Item): Unit = {
     instance.itemManager.removeFromInventory(bot.getId, item.id)
-    // Broadcast USE to all clients so they see the effect
     val packet = new ItemPacket(
       instance.server.getNextSequenceNumber,
       bot.getId,
@@ -393,7 +546,6 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     val dist = distanceBetween(bot.getPosition, target.getPosition)
     val now = System.currentTimeMillis()
 
-    // Try Q ability
     val lastQ = lastQAbilityTime.getOrDefault(bot.getId, 0L)
     if (now - lastQ >= charDef.qAbility.cooldownMs) {
       if (tryFireAbility(bot, target, charDef.qAbility, dist)) {
@@ -401,7 +553,6 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
       }
     }
 
-    // Try E ability
     val lastE = lastEAbilityTime.getOrDefault(bot.getId, 0L)
     if (now - lastE >= charDef.eAbility.cooldownMs) {
       if (tryFireAbility(bot, target, charDef.eAbility, dist)) {
@@ -410,7 +561,6 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     }
   }
 
-  /** Attempt to fire an ability. Returns true if used. */
   private def tryFireAbility(bot: Player, target: Player, ability: AbilityDef, dist: Float): Boolean = {
     val botPos = bot.getPosition
     val targetPos = target.getPosition
@@ -419,7 +569,6 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     val len = Math.sqrt(dx * dx + dy * dy).toFloat
 
     val (ndx, ndy) = if (len < 0.01f) {
-      // Overlapping - pick a random direction
       val angle = scala.util.Random.nextFloat() * 2f * Math.PI.toFloat
       (Math.cos(angle).toFloat, Math.sin(angle).toFloat)
     } else {
@@ -454,14 +603,12 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
         true
 
       case PhaseShiftBuff(durationMs) =>
-        // Use phase shift when enemy is close (defensive)
         if (dist > 5) return false
         bot.setPhasedUntil(System.currentTimeMillis() + durationMs)
         broadcastBotPosition(bot)
         true
 
       case DashBuff(maxDistance, durationMs, _) =>
-        // Dash toward target
         if (dist < 3 || dist > maxDistance + 5) return false
         val clampedDist = Math.min(dist, maxDistance.toFloat)
         val world = instance.world
@@ -490,7 +637,6 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
         true
 
       case TeleportCast(maxDistance) =>
-        // Blink toward target when at mid range
         if (dist < 4 || dist > maxDistance + 8) return false
         val clampedDist = Math.min(dist, maxDistance.toFloat).toInt
         val world = instance.world
@@ -513,17 +659,19 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
 
   // --- Shooting ---
 
-  private def tryShoot(bot: Player, target: Player): Unit = {
+  private def tryShoot(bot: Player, target: Player, now: Long): Unit = {
     if (bot.isPhased) return
     val dist = distanceBetween(bot.getPosition, target.getPosition)
     val maxRange = getMaxRange(bot.getCharacterId)
     if (dist > maxRange) return
 
-    val now = System.currentTimeMillis()
     val lastShot = lastShotTime.getOrDefault(bot.getId, 0L)
-    if (now - lastShot < SHOOT_COOLDOWN_MS) return
+    val cooldown = botShootCooldown.getOrDefault(bot.getId, SHOOT_COOLDOWN_MIN_MS)
+    if (now - lastShot < cooldown) return
 
     lastShotTime.put(bot.getId, now)
+    // Randomize next cooldown slightly
+    botShootCooldown.put(bot.getId, SHOOT_COOLDOWN_MIN_MS + scala.util.Random.nextLong(SHOOT_COOLDOWN_MAX_MS - SHOOT_COOLDOWN_MIN_MS))
 
     val botPos = bot.getPosition
     val targetPos = target.getPosition
@@ -531,13 +679,19 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     val dy = (targetPos.getY - botPos.getY).toFloat
     val len = Math.sqrt(dx * dx + dy * dy).toFloat
 
-    val (ndx, ndy) = if (len < 0.01f) {
-      // Overlapping - pick a random direction
+    val (baseDx, baseDy) = if (len < 0.01f) {
       val angle = scala.util.Random.nextFloat() * 2f * Math.PI.toFloat
       (Math.cos(angle).toFloat, Math.sin(angle).toFloat)
     } else {
       (dx / len, dy / len)
     }
+
+    // Add slight aim inaccuracy for more natural feel
+    val aimOffset = (scala.util.Random.nextFloat() - 0.5f) * 2f * AIM_INACCURACY_RAD
+    val cos = Math.cos(aimOffset).toFloat
+    val sin = Math.sin(aimOffset).toFloat
+    val ndx = baseDx * cos - baseDy * sin
+    val ndy = baseDx * sin + baseDy * cos
 
     val charDef = CharacterDef.get(bot.getCharacterId)
     val projectile = instance.projectileManager.spawnProjectile(
