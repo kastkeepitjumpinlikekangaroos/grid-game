@@ -24,6 +24,7 @@ object LobbyAction {
   val CHARACTER_SELECT: Byte = 13
   val ADD_BOT: Byte = 14
   val REMOVE_BOT: Byte = 15
+  val PRACTICE_START: Byte = 16
 }
 
 /**

@@ -48,6 +48,9 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
       case LobbyAction.REMOVE_BOT =>
         handleRemoveBot(playerId, player)
 
+      case LobbyAction.PRACTICE_START =>
+        handlePracticeStart(playerId, player, packet)
+
       case _ =>
         println(s"LobbyHandler: Unknown action ${packet.getAction} from ${playerId.toString.substring(0, 8)}")
     }
@@ -193,7 +196,8 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     lobby.synchronized {
       if (lobby.status != LobbyStatus.WAITING) return
       // Set match type for casual games: 0=Casual FFA, 1=Casual Teams
-      lobby.matchType = lobby.gameMode
+      // Preserve practice matchType (5) if already set
+      if (lobby.matchType != 5) lobby.matchType = lobby.gameMode
       lobby.status = LobbyStatus.IN_GAME
     }
 
@@ -204,6 +208,7 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     // Create GameInstance and load world (needed for spawn points)
     val instance = new GameInstance(lobby.id, worldPath, lobby.durationMinutes, server)
     instance.gameMode = lobby.gameMode
+    instance.isPractice = lobby.isPractice
     instance.loadWorld()
     lobby.gameInstance = instance
     server.registerGameInstance(lobby.id, instance)
@@ -241,7 +246,7 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     }
 
     // Register bots from the lobby's BotManager
-    val botController = new BotController(instance)
+    val botController = new BotController(instance, lobby.isPractice)
     lobby.botManager.getBots.foreach { botSlot =>
       val spawnPoint = instance.world.getValidSpawnPoint(occupiedSpawns)
       occupiedSpawns += ((spawnPoint.getX, spawnPoint.getY))
@@ -449,6 +454,45 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
       lobby.status, botSlot.name
     )
     broadcastToLobby(lobby, broadcast, null)
+  }
+
+  private def handlePracticeStart(playerId: UUID, player: Player, packet: LobbyActionPacket): Unit = {
+    // Prevent starting practice while already in a lobby
+    if (lobbyManager.getPlayerLobby(playerId) != null) return
+
+    // Rate limit (reuse create cooldown)
+    val now = System.currentTimeMillis()
+    val lastCreate = lastCreateTime.get(playerId)
+    if (lastCreate != null && now - lastCreate < CREATE_COOLDOWN_MS) return
+    lastCreateTime.put(playerId, now)
+
+    // Create a practice lobby with a random map
+    val mapIndex = scala.util.Random.nextInt(com.gridgame.common.WorldRegistry.size)
+    val lobby = lobbyManager.createLobby(playerId, "Practice", mapIndex, 30, 32)
+    if (lobby == null) return
+    lobby.matchType = 5
+
+    // Set the player's selected character
+    val charId = packet.getCharacterId
+    if (com.gridgame.common.model.CharacterDef.get(charId) != null) {
+      lobby.setCharacter(playerId, charId)
+    }
+
+    // Add 5 bots
+    for (_ <- 1 to 5) lobby.botManager.addBot()
+
+    // Send JOINED response
+    val response = new LobbyActionPacket(
+      server.getNextSequenceNumber, playerId, Packet.getCurrentTimestamp,
+      LobbyAction.JOINED, lobby.id,
+      lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
+      lobby.playerCount.toByte, lobby.maxPlayers.toByte,
+      lobby.status, lobby.name, 0.toByte, lobby.gameMode, lobby.teamSize.toByte
+    )
+    server.sendPacketToPlayer(response, player)
+
+    // Auto-start the game immediately
+    handleStart(playerId, player)
   }
 
   /** Clean up per-player rate-limit state on disconnect. */

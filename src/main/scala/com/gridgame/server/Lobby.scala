@@ -49,5 +49,7 @@ class Lobby(
     characterSelections.getOrDefault(playerId, 0.toByte)
   }
 
+  def isPractice: Boolean = matchType == 5
+
   def playerCount: Int = players.size() + botManager.botCount
 }

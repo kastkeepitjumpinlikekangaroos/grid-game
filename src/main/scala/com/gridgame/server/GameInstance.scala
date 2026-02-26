@@ -29,6 +29,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     team1 != null && team2 != null && team1.byteValue() != 0 && team1.byteValue() == team2.byteValue()
   }
 
+  @volatile var isPractice: Boolean = false
   var botController: BotController = _
 
   private var projectileExecutor: ScheduledExecutorService = _
@@ -791,7 +792,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
           broadcastToInstance(updatePacket)
         }
       }
-    }, Constants.RESPAWN_DELAY_MS.toLong, TimeUnit.MILLISECONDS)
+    }, (if (isPractice) 1000L else Constants.RESPAWN_DELAY_MS.toLong), TimeUnit.MILLISECONDS)
   }
 
   private def spawnItem(): Unit = {

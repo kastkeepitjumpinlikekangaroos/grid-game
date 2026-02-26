@@ -464,11 +464,13 @@ class ClientMain extends Application {
     addHoverEffect(profileBtn, buttonGhostStyle, buttonGhostHoverStyle)
     val leaderboardBtn = new Button("Leaderboard")
     addHoverEffect(leaderboardBtn, buttonGhostStyle, buttonGhostHoverStyle)
+    val practiceBtn = new Button("Practice")
+    addHoverEffect(practiceBtn, buttonGreenStyle, buttonGreenHoverStyle)
     val rankedBtn = new Button("Ranked")
     addHoverEffect(rankedBtn, buttonGreenStyle, buttonGreenHoverStyle)
     val refreshBtn = new Button("Refresh")
     addHoverEffect(refreshBtn, buttonGhostStyle, buttonGhostHoverStyle)
-    titleBar.getChildren.addAll(title, spacer, profileBtn, leaderboardBtn, rankedBtn, refreshBtn)
+    titleBar.getChildren.addAll(title, spacer, profileBtn, leaderboardBtn, practiceBtn, rankedBtn, refreshBtn)
 
     val headerSep = createAccentLine()
     headerSep.setMaxWidth(Double.MaxValue)
@@ -658,6 +660,10 @@ class ClientMain extends Application {
     profileBtn.setOnAction(_ => showAccountView(stage))
 
     leaderboardBtn.setOnAction(_ => showLeaderboard(stage))
+
+    practiceBtn.setOnAction(_ => {
+      showPracticeSetup(stage)
+    })
 
     rankedBtn.setOnAction(_ => {
       showRankedQueue(stage)
@@ -1011,6 +1017,102 @@ class ClientMain extends Application {
         showLobbyBrowser(stage)
       })
     }
+
+    val scene = new Scene(scrollPane)
+    stage.setScene(scene)
+  }
+
+  private def showPracticeSetup(stage: Stage): Unit = {
+    val root = new VBox(0)
+    root.setAlignment(Pos.TOP_CENTER)
+    root.setStyle(darkBg)
+
+    // Header
+    val headerBox = new VBox(8)
+    headerBox.setAlignment(Pos.CENTER)
+    headerBox.setPadding(new Insets(28, 24, 16, 24))
+
+    val titleLabel = new Label("Target Practice")
+    titleLabel.setFont(Font.font("System", FontWeight.BOLD, 28))
+    titleLabel.setTextFill(Color.WHITE)
+    titleLabel.setStyle("-fx-effect: dropshadow(gaussian, rgba(61, 219, 128, 0.3), 12, 0, 0, 0);")
+
+    val headerLine = new Region()
+    headerLine.setMinHeight(2)
+    headerLine.setMaxHeight(2)
+    headerLine.setMaxWidth(60)
+    headerLine.setStyle("-fx-background-color: linear-gradient(to right, transparent, #3ddb80, transparent); -fx-background-radius: 1;")
+
+    headerBox.getChildren.addAll(titleLabel, headerLine)
+
+    // Two-panel content
+    val mainContent = new HBox(24)
+    mainContent.setPadding(new Insets(0, 28, 24, 28))
+    VBox.setVgrow(mainContent, Priority.ALWAYS)
+
+    // Left panel: info + buttons
+    val leftPanel = new VBox(14)
+    leftPanel.setMinWidth(300)
+    leftPanel.setPrefWidth(340)
+
+    val infoCard = new VBox(14)
+    infoCard.setPadding(new Insets(20, 28, 20, 28))
+    infoCard.setStyle(cardBg)
+    infoCard.setAlignment(Pos.CENTER)
+
+    val descLabel = new Label("SELECT CHARACTER")
+    descLabel.setStyle(sectionHeaderStyle)
+
+    val descText = new Label("Shoot passive bots with\nsatisfying feedback. Bots\nrespawn quickly so you can\npractice non-stop.")
+    descText.setTextFill(Color.web("#8899aa"))
+    descText.setFont(Font.font("System", 14))
+    descText.setWrapText(true)
+
+    val sep = createSeparator()
+
+    val startBtn = new Button("Start Practice")
+    addHoverEffect(startBtn, buttonGreenStyle, buttonGreenHoverStyle)
+    startBtn.setFont(Font.font("System", FontWeight.BOLD, 16))
+    startBtn.setMaxWidth(Double.MaxValue)
+
+    val backBtn = new Button("Back")
+    addHoverEffect(backBtn, buttonGhostStyle, buttonGhostHoverStyle)
+    backBtn.setMaxWidth(Double.MaxValue)
+
+    infoCard.getChildren.addAll(descLabel, descText, sep, startBtn)
+    leftPanel.getChildren.addAll(infoCard, backBtn)
+
+    // Right panel: character selection
+    val rightPanel = new VBox(0)
+    HBox.setHgrow(rightPanel, Priority.ALWAYS)
+
+    val charPanel = new CharacterSelectionPanel(
+      () => client.selectedCharacterId,
+      id => { client.selectedCharacterId = id }
+    )
+    val charSection = charPanel.createPanel()
+    rightPanel.getChildren.add(charSection)
+
+    mainContent.getChildren.addAll(leftPanel, rightPanel)
+    root.getChildren.addAll(headerBox, mainContent)
+
+    val scrollPane = new ScrollPane(root)
+    scrollPane.setFitToWidth(true)
+    scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER)
+    scrollPane.setStyle("-fx-background: #1a1a2e; -fx-background-color: #1a1a2e; -fx-border-color: transparent;")
+
+    backBtn.setOnAction(_ => {
+      charPanel.stop()
+      showLobbyBrowser(stage)
+    })
+
+    startBtn.setOnAction(_ => {
+      charPanel.stop()
+      client.startPractice()
+      client.gameStartingListener = () => {
+        Platform.runLater(() => showGameScene(stage))
+      }
+    })
 
     val scene = new Scene(scrollPane)
     stage.setScene(scene)
@@ -1653,12 +1755,13 @@ class ClientMain extends Application {
     titleBox.setAlignment(Pos.CENTER)
     titleBox.setPadding(new Insets(36, 0, 24, 0))
 
-    val title = new Label("Game Over")
+    val isPractice = client.isPracticeMode
+    val title = new Label(if (isPractice) "Practice Complete" else "Game Over")
     title.setFont(Font.font("System", FontWeight.BOLD, 40))
     title.setTextFill(Color.WHITE)
     title.setStyle("-fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.4), 20, 0, 0, 0);")
 
-    val subtitle = new Label("Final Scoreboard")
+    val subtitle = new Label(if (isPractice) "Target Practice" else "Final Scoreboard")
     subtitle.setFont(Font.font("System", 15))
     subtitle.setTextFill(Color.web("#8899aa"))
 
@@ -1791,6 +1894,25 @@ class ClientMain extends Application {
       rowIndex += 1
     }
 
+    // Practice stats row (only shown in practice mode)
+    if (isPractice) {
+      val practiceStatsRow = new HBox(12)
+      practiceStatsRow.setAlignment(Pos.CENTER)
+      practiceStatsRow.setPadding(new Insets(12, 20, 12, 20))
+      practiceStatsRow.setMaxWidth(700)
+      practiceStatsRow.setStyle(cardBgSubtle)
+
+      val bestComboBox = createStatBox("Best Combo", client.practiceBestCombo.toString, "#ffd700")
+      val accuracy = if (client.practiceShots > 0) (client.practiceHits * 100.0 / client.practiceShots).toInt else 0
+      val accuracyBox = createStatBox("Accuracy", s"$accuracy%", "#4a9eff")
+      val totalKillsBox = createStatBox("Total Kills", client.killCount.toString, "#2ecc71")
+      HBox.setHgrow(bestComboBox, Priority.ALWAYS)
+      HBox.setHgrow(accuracyBox, Priority.ALWAYS)
+      HBox.setHgrow(totalKillsBox, Priority.ALWAYS)
+      practiceStatsRow.getChildren.addAll(bestComboBox, accuracyBox, totalKillsBox)
+      scoreCard.getChildren.add(practiceStatsRow)
+    }
+
     val returnBtn = new Button("Return to Lobby")
     addHoverEffect(returnBtn, buttonStyle, buttonHoverStyle)
     returnBtn.setFont(Font.font("System", FontWeight.BOLD, 15))
@@ -1800,9 +1922,21 @@ class ClientMain extends Application {
       showLobbyBrowser(stage)
     })
 
-    val btnBox = new VBox(0)
+    val btnBox = new VBox(12)
     btnBox.setAlignment(Pos.CENTER)
     btnBox.setPadding(new Insets(24, 0, 0, 0))
+
+    if (isPractice) {
+      val practiceAgainBtn = new Button("Practice Again")
+      addHoverEffect(practiceAgainBtn, buttonGreenStyle, buttonGreenHoverStyle)
+      practiceAgainBtn.setFont(Font.font("System", FontWeight.BOLD, 15))
+      practiceAgainBtn.setOnAction(_ => {
+        client.returnToLobbyBrowser()
+        showPracticeSetup(stage)
+      })
+      btnBox.getChildren.add(practiceAgainBtn)
+    }
+
     btnBox.getChildren.add(returnBtn)
 
     val scrollPane = new ScrollPane(scoreCard)

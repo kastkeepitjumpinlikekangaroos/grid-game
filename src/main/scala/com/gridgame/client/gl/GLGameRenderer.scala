@@ -2288,6 +2288,7 @@ class GLGameRenderer(val client: GameClient) {
     renderAbilityHUD(screenW, screenH)
     renderChargeBar(screenW, screenH)
     renderLobbyHUD(screenW, screenH)
+    if (client.isPracticeMode) renderPracticeHUD(screenW, screenH)
   }
 
   private def renderInventory(screenW: Int, screenH: Int): Unit = {
@@ -2534,53 +2535,54 @@ class GLGameRenderer(val client: GameClient) {
   private def renderLobbyHUD(screenW: Int, screenH: Int): Unit = {
     if (client.clientState != ClientState.PLAYING) return
 
-    val remaining = client.gameTimeRemaining
-    if (remaining != _cachedTimerRemaining) {
-      _cachedTimerRemaining = remaining
-      val minutes = remaining / 60; val seconds = remaining % 60
-      _cachedTimerStr = f"$minutes%d:$seconds%02d"
-    }
-    val timerText = _cachedTimerStr
-    val isLowTime = remaining > 0 && remaining <= 30
-    val timerPulse = if (isLowTime) (Math.sin(_animTickF * 0.15) * 0.3 + 0.7).toFloat else 1f
+    // Timer panel at top center (skip in practice mode — practice HUD draws its own label)
+    if (!client.isPracticeMode) {
+      val remaining = client.gameTimeRemaining
+      if (remaining != _cachedTimerRemaining) {
+        _cachedTimerRemaining = remaining
+        val minutes = remaining / 60; val seconds = remaining % 60
+        _cachedTimerStr = f"$minutes%d:$seconds%02d"
+      }
+      val timerText = _cachedTimerStr
+      val isLowTime = remaining > 0 && remaining <= 30
+      val timerPulse = if (isLowTime) (Math.sin(_animTickF * 0.15) * 0.3 + 0.7).toFloat else 1f
 
-    // Timer panel at top center
-    val timerTextW = fontMedium.measureWidth(timerText)
-    val timerW = timerTextW + 50
-    val timerH = 32f
-    val timerX = (screenW / 2 - timerW / 2).toFloat
-    val timerY = 6f
-    beginShapes()
-    // Background with gradient
-    if (isLowTime) {
-      shapeBatch.fillRectGradient(timerX, timerY, timerW.toFloat, timerH,
-        0.25f * timerPulse, 0.02f, 0.02f, 0.7f,
-        0.25f * timerPulse, 0.02f, 0.02f, 0.7f,
-        0.12f * timerPulse, 0.01f, 0.01f, 0.6f,
-        0.12f * timerPulse, 0.01f, 0.01f, 0.6f)
-      shapeBatch.strokeRect(timerX, timerY, timerW.toFloat, timerH, 1.5f, 0.9f * timerPulse, 0.15f, 0.15f, 0.6f)
-    } else {
-      shapeBatch.fillRectGradient(timerX, timerY, timerW.toFloat, timerH,
-        0.06f, 0.06f, 0.12f, 0.65f,
-        0.06f, 0.06f, 0.12f, 0.65f,
-        0.03f, 0.03f, 0.06f, 0.55f,
-        0.03f, 0.03f, 0.06f, 0.55f)
-      shapeBatch.strokeRect(timerX, timerY, timerW.toFloat, timerH, 1f, 0.35f, 0.35f, 0.5f, 0.4f)
-    }
-    // Small clock icon (circle + hands) left of timer text
-    val clockCX = timerX + 16f
-    val clockCY = timerY + timerH / 2f
-    shapeBatch.strokeOval(clockCX, clockCY, 7f, 7f, 1.2f, 0.7f, 0.7f, 0.85f, 0.8f, 12)
-    shapeBatch.strokeLine(clockCX, clockCY, clockCX, clockCY - 4.5f, 1.2f, 0.9f, 0.9f, 1f, 0.8f)
-    shapeBatch.strokeLine(clockCX, clockCY, clockCX + 3.5f, clockCY, 1.2f, 0.9f, 0.9f, 1f, 0.8f)
+      val timerTextW = fontMedium.measureWidth(timerText)
+      val timerW = timerTextW + 50
+      val timerH = 32f
+      val timerX = (screenW / 2 - timerW / 2).toFloat
+      val timerY = 6f
+      beginShapes()
+      if (isLowTime) {
+        shapeBatch.fillRectGradient(timerX, timerY, timerW.toFloat, timerH,
+          0.25f * timerPulse, 0.02f, 0.02f, 0.7f,
+          0.25f * timerPulse, 0.02f, 0.02f, 0.7f,
+          0.12f * timerPulse, 0.01f, 0.01f, 0.6f,
+          0.12f * timerPulse, 0.01f, 0.01f, 0.6f)
+        shapeBatch.strokeRect(timerX, timerY, timerW.toFloat, timerH, 1.5f, 0.9f * timerPulse, 0.15f, 0.15f, 0.6f)
+      } else {
+        shapeBatch.fillRectGradient(timerX, timerY, timerW.toFloat, timerH,
+          0.06f, 0.06f, 0.12f, 0.65f,
+          0.06f, 0.06f, 0.12f, 0.65f,
+          0.03f, 0.03f, 0.06f, 0.55f,
+          0.03f, 0.03f, 0.06f, 0.55f)
+        shapeBatch.strokeRect(timerX, timerY, timerW.toFloat, timerH, 1f, 0.35f, 0.35f, 0.5f, 0.4f)
+      }
+      // Small clock icon (circle + hands) left of timer text
+      val clockCX = timerX + 16f
+      val clockCY = timerY + timerH / 2f
+      shapeBatch.strokeOval(clockCX, clockCY, 7f, 7f, 1.2f, 0.7f, 0.7f, 0.85f, 0.8f, 12)
+      shapeBatch.strokeLine(clockCX, clockCY, clockCX, clockCY - 4.5f, 1.2f, 0.9f, 0.9f, 1f, 0.8f)
+      shapeBatch.strokeLine(clockCX, clockCY, clockCX + 3.5f, clockCY, 1.2f, 0.9f, 0.9f, 1f, 0.8f)
 
-    beginSprites()
-    val timerTextX = (screenW / 2 - timerTextW / 2 + 8).toFloat
-    val timerTextY = timerY + (timerH - fontMedium.charHeight) / 2f
-    if (isLowTime) {
-      fontMedium.drawTextOutlined(spriteBatch, timerText, timerTextX, timerTextY, 1f * timerPulse, 0.25f * timerPulse, 0.25f * timerPulse)
-    } else {
-      fontMedium.drawTextOutlined(spriteBatch, timerText, timerTextX, timerTextY)
+      beginSprites()
+      val timerTextX = (screenW / 2 - timerTextW / 2 + 8).toFloat
+      val timerTextY = timerY + (timerH - fontMedium.charHeight) / 2f
+      if (isLowTime) {
+        fontMedium.drawTextOutlined(spriteBatch, timerText, timerTextX, timerTextY, 1f * timerPulse, 0.25f * timerPulse, 0.25f * timerPulse)
+      } else {
+        fontMedium.drawTextOutlined(spriteBatch, timerText, timerTextX, timerTextY)
+      }
     }
 
     // K/D display — styled panel top-left
@@ -2670,6 +2672,94 @@ class GLGameRenderer(val client: GameClient) {
         fi += 1
       }
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  PRACTICE HUD
+  // ═══════════════════════════════════════════════════════════════════
+
+  // Hit marker timestamps (small ring buffer for simultaneous kill markers)
+  private val practiceHitMarkers = new Array[Long](8)
+  private var practiceHitMarkerIdx = 0
+  private var prevPracticeHits = 0
+
+  private def renderPracticeHUD(screenW: Int, screenH: Int): Unit = {
+    val now = _frameTimeMs
+    val cx = screenW / 2f
+    val cy = screenH / 2f
+
+    // Reset combo if 2 seconds since last hit
+    if (client.practiceLastHitTime > 0 && now - client.practiceLastHitTime > 2000) {
+      client.practiceCombo = 0
+    }
+
+    // Detect new kills for hit markers
+    val currentHits = client.practiceHits
+    if (currentHits > prevPracticeHits) {
+      practiceHitMarkers(practiceHitMarkerIdx % practiceHitMarkers.length) = now
+      practiceHitMarkerIdx += 1
+      prevPracticeHits = currentHits
+    }
+
+    // --- Combo counter (center, below timer) ---
+    val combo = client.practiceCombo
+    if (combo > 0) {
+      val comboText = "COMBO x" + combo
+      val textW = fontMedium.measureWidth(comboText)
+
+      // Color scales white -> yellow -> orange -> red with combo size
+      val t = Math.min(1f, combo / 10f)
+      val cr = 1f
+      val cg = Math.max(0.2f, 1f - t * 0.8f)
+      val cb = Math.max(0.1f, 1f - t)
+
+      // Gentle pulse animation
+      val pulse = 1f + 0.05f * Math.sin(now * 0.006).toFloat
+
+      beginShapes()
+      val comboW = textW + 24
+      val comboH = 32f
+      val comboX = cx - comboW / 2
+      val comboY = 42f
+      shapeBatch.fillRect(comboX, comboY, comboW * pulse, comboH, cr * 0.15f, cg * 0.15f, cb * 0.15f, 0.6f)
+      shapeBatch.strokeRect(comboX, comboY, comboW * pulse, comboH, 1f, cr, cg, cb, 0.5f)
+
+      beginSprites()
+      fontMedium.drawText(spriteBatch, comboText, cx - textW / 2, comboY + 6, cr, cg, cb, 1f)
+    }
+
+    // --- Hit markers (screen center) ---
+    beginShapes()
+    var mi = 0
+    while (mi < practiceHitMarkers.length) {
+      val markerTime = practiceHitMarkers(mi)
+      if (markerTime > 0) {
+        val elapsed = now - markerTime
+        if (elapsed < 400) {
+          val alpha = (1f - elapsed / 400f) * 0.9f
+          val size = 12f
+          // Draw X marker (4 strokes)
+          shapeBatch.strokeLine(cx - size, cy - size, cx + size, cy + size, 2f, 1f, 1f, 1f, alpha)
+          shapeBatch.strokeLine(cx + size, cy - size, cx - size, cy + size, 2f, 1f, 1f, 1f, alpha)
+        } else {
+          practiceHitMarkers(mi) = 0
+        }
+      }
+      mi += 1
+    }
+
+    // --- Accuracy display (top-left, below K/D) ---
+    beginSprites()
+    val accuracy = if (client.practiceShots > 0) (client.practiceHits * 100.0 / client.practiceShots).toInt else 0
+    val accText = "Accuracy: " + accuracy + "%"
+    fontSmall.drawTextOutlined(spriteBatch, accText, 12, 126)
+    val bestText = "Best Combo: " + client.practiceBestCombo
+    fontSmall.drawTextOutlined(spriteBatch, bestText, 12, 144)
+
+    // --- "PRACTICE" label replacing timer ---
+    val practiceText = "PRACTICE"
+    val ptw = fontMedium.measureWidth(practiceText)
+    fontMedium.drawText(spriteBatch, practiceText, cx - ptw / 2, 8, 0.24f, 0.86f, 0.5f, 0.9f)
   }
 
   // ═══════════════════════════════════════════════════════════════════
