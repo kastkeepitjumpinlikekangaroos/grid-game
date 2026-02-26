@@ -20,11 +20,20 @@ object PacketType {
   case object LEADERBOARD extends PacketType(0x0F.toByte, true)
   case object SESSION_TOKEN extends PacketType(0x10.toByte, true)
 
-  private val values: Array[PacketType] = Array(PLAYER_JOIN, PLAYER_UPDATE, PLAYER_LEAVE, WORLD_INFO, HEARTBEAT, PROJECTILE_UPDATE, ITEM_UPDATE, TILE_UPDATE, LOBBY_ACTION, GAME_EVENT, AUTH_REQUEST, AUTH_RESPONSE, MATCH_HISTORY, RANKED_QUEUE, LEADERBOARD, SESSION_TOKEN)
+  // O(1) lookup array indexed by packet type ID (IDs range 0x01-0x10)
+  private val lookupTable: Array[PacketType] = {
+    val table = new Array[PacketType](0x11) // 17 entries, index 0 unused
+    val all = Array(PLAYER_JOIN, PLAYER_UPDATE, PLAYER_LEAVE, WORLD_INFO, HEARTBEAT, PROJECTILE_UPDATE, ITEM_UPDATE, TILE_UPDATE, LOBBY_ACTION, GAME_EVENT, AUTH_REQUEST, AUTH_RESPONSE, MATCH_HISTORY, RANKED_QUEUE, LEADERBOARD, SESSION_TOKEN)
+    all.foreach(pt => table(pt.id & 0xFF) = pt)
+    table
+  }
 
   def fromId(id: Byte): PacketType = {
-    values.find(_.id == id).getOrElse(
-      throw new IllegalArgumentException(s"Unknown packet type ID: $id")
-    )
+    val idx = id & 0xFF
+    if (idx < lookupTable.length) {
+      val pt = lookupTable(idx)
+      if (pt != null) return pt
+    }
+    throw new IllegalArgumentException(s"Unknown packet type ID: $id")
   }
 }

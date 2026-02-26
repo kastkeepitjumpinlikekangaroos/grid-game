@@ -21,6 +21,30 @@ class ItemManager {
   private val nextId = new AtomicInteger(1)
   private val random = new Random()
 
+  // Spatial grid for O(1) pickup checks instead of iterating all items
+  private val gridCellSize = 4
+  private val itemGrid = new ConcurrentHashMap[Long, java.util.ArrayList[Item]]()
+
+  private def gridKey(x: Int, y: Int): Long = {
+    val cx = x / gridCellSize
+    val cy = y / gridCellSize
+    (cx.toLong << 32) | (cy.toLong & 0xFFFFFFFFL)
+  }
+
+  private def addToGrid(item: Item): Unit = {
+    val key = gridKey(item.getCellX, item.getCellY)
+    val cell = itemGrid.computeIfAbsent(key, _ => new java.util.ArrayList[Item](4))
+    cell.synchronized { cell.add(item) }
+  }
+
+  private def removeFromGrid(item: Item): Unit = {
+    val key = gridKey(item.getCellX, item.getCellY)
+    val cell = itemGrid.get(key)
+    if (cell != null) {
+      cell.synchronized { cell.remove(item) }
+    }
+  }
+
   def spawnRandomItem(world: WorldData): Option[ItemSpawned] = {
     // Try to find a random walkable tile
     val maxAttempts = 100
@@ -33,6 +57,7 @@ class ItemManager {
         val itemType = ItemType.spawnable(random.nextInt(ItemType.spawnable.size))
         val item = new Item(id, x, y, itemType)
         items.put(id, item)
+        addToGrid(item)
         return Some(ItemSpawned(item))
       }
       attempt += 1
@@ -47,18 +72,39 @@ class ItemManager {
     if (playerInv.size() >= Constants.MAX_INVENTORY_SIZE) return None
 
     val radius = Constants.ITEM_PICKUP_RADIUS
-    val iter = items.values().iterator()
-    while (iter.hasNext) {
-      val item = iter.next()
-      val dx = item.getCellX - x
-      val dy = item.getCellY - y
-      if (dx * dx + dy * dy <= radius * radius) {
-        // Use remove-and-check to avoid double pickup race
-        if (items.remove(item.id, item)) {
-          playerInv.put(item.id, item)
-          return Some(ItemPickedUp(item, playerId))
+    val radiusSq = radius * radius
+
+    // Search 3x3 grid neighborhood
+    val cx = x / gridCellSize
+    val cy = y / gridCellSize
+    var dy = -1
+    while (dy <= 1) {
+      var dx = -1
+      while (dx <= 1) {
+        val key = ((cx + dx).toLong << 32) | ((cy + dy).toLong & 0xFFFFFFFFL)
+        val cell = itemGrid.get(key)
+        if (cell != null) {
+          cell.synchronized {
+            var i = 0
+            while (i < cell.size()) {
+              val item = cell.get(i)
+              val idx = item.getCellX - x
+              val idy = item.getCellY - y
+              if (idx * idx + idy * idy <= radiusSq) {
+                // Use remove-and-check to avoid double pickup race
+                if (items.remove(item.id, item)) {
+                  cell.remove(i)
+                  playerInv.put(item.id, item)
+                  return Some(ItemPickedUp(item, playerId))
+                }
+              }
+              i += 1
+            }
+          }
         }
+        dx += 1
       }
+      dy += 1
     }
     None
   }
@@ -76,9 +122,9 @@ class ItemManager {
     inv.put(item.id, item)
   }
 
-  def getInventory(playerId: UUID): Seq[Item] = {
+  def getInventory(playerId: UUID): Iterable[Item] = {
     val inv = inventories.get(playerId)
-    if (inv != null) inv.values().asScala.toSeq else Seq.empty
+    if (inv != null) inv.values().asScala else Iterable.empty
   }
 
   def clearInventory(playerId: UUID): Seq[Item] = {

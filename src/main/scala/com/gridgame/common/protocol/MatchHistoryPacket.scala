@@ -2,8 +2,6 @@ package com.gridgame.common.protocol
 
 import com.gridgame.common.Constants
 
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.util.UUID
 
 object MatchHistoryAction {
@@ -77,8 +75,7 @@ class MatchHistoryPacket(
   def getElo: Short = elo
 
   override def serialize(): Array[Byte] = {
-    val buffer = ByteBuffer.allocate(Constants.PACKET_PAYLOAD_SIZE)
-    buffer.order(ByteOrder.BIG_ENDIAN)
+    val buffer = SerializeUtil.acquireBuffer()
 
     // [0] Packet Type
     buffer.put(packetType.id)
@@ -118,6 +115,6 @@ class MatchHistoryPacket(
         buffer.put(new Array[Byte](42)) // [22-63] reserved
     }
 
-    buffer.array()
+    buffer.array().clone()
   }
 }

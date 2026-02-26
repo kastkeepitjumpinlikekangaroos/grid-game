@@ -802,11 +802,20 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   private def startPacketProcessor(): Unit = {
     val processor = new Thread(new Runnable {
+      private val drainBuffer = new java.util.ArrayList[Packet](64)
       def run(): Unit = {
         while (running) {
           try {
-            val packet = incomingPackets.take()
-            processPacket(packet)
+            // Block for first packet, then drain all available
+            val first = incomingPackets.take()
+            processPacket(first)
+            drainBuffer.clear()
+            incomingPackets.drainTo(drainBuffer)
+            var i = 0
+            while (i < drainBuffer.size()) {
+              processPacket(drainBuffer.get(i))
+              i += 1
+            }
           } catch {
             case _: InterruptedException =>
               return

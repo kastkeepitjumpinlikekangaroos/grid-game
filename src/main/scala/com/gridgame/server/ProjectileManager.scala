@@ -103,6 +103,30 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
     }
   }
 
+  /** Iterate players within a configurable radius using the spatial grid.
+   *  Expands the grid cell search to cover the given radius. */
+  def forEachNearbyPlayer(x: Float, y: Float, radius: Float)(fn: Player => Unit): Unit = {
+    val cellRadius = (radius / gridCellSize).toInt + 1
+    val cx = (x / gridCellSize).toInt
+    val cy = (y / gridCellSize).toInt
+    var dy = -cellRadius
+    while (dy <= cellRadius) {
+      var dx = -cellRadius
+      while (dx <= cellRadius) {
+        val cell = gridCells.get(gridKey(cx + dx, cy + dy))
+        if (cell != null) {
+          var i = 0
+          while (i < cell.length) {
+            fn(cell(i))
+            i += 1
+          }
+        }
+        dx += 1
+      }
+      dy += 1
+    }
+  }
+
   private val MAX_PROJECTILES_PER_PLAYER = 30
 
   def spawnProjectile(ownerId: UUID, x: Int, y: Int, dx: Float, dy: Float, colorRGB: Int, chargeLevel: Int = 0, projectileType: Byte = com.gridgame.common.model.ProjectileType.NORMAL): Projectile = {
@@ -124,7 +148,7 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
     val events = ArrayBuffer[ProjectileEvent]()
     val toRemove = ArrayBuffer[Int]()
 
-    rebuildGrid(registry.getAll)
+    rebuildGrid(registry.getPlayerValues)
 
     projectiles.values().asScala.foreach { projectile =>
       val owner = registry.get(projectile.ownerId)

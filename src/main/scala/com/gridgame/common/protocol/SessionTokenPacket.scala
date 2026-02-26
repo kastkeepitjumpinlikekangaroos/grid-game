@@ -2,8 +2,6 @@ package com.gridgame.common.protocol
 
 import com.gridgame.common.Constants
 
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.util.UUID
 
 class SessionTokenPacket(
@@ -20,8 +18,7 @@ class SessionTokenPacket(
   def getSessionToken: Array[Byte] = sessionToken
 
   override def serialize(): Array[Byte] = {
-    val buffer = ByteBuffer.allocate(Constants.PACKET_PAYLOAD_SIZE)
-    buffer.order(ByteOrder.BIG_ENDIAN)
+    val buffer = SerializeUtil.acquireBuffer()
 
     // [0] Packet Type
     buffer.put(packetType.id)
@@ -41,6 +38,6 @@ class SessionTokenPacket(
     // [53-63] Reserved
     buffer.put(new Array[Byte](11))
 
-    buffer.array()
+    buffer.array().clone()
   }
 }

@@ -2,8 +2,6 @@ package com.gridgame.common.protocol
 
 import com.gridgame.common.Constants
 
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 
@@ -29,8 +27,7 @@ class AuthRequestPacket(
   def getPassword: String = password
 
   override def serialize(): Array[Byte] = {
-    val buffer = ByteBuffer.allocate(Constants.PACKET_PAYLOAD_SIZE)
-    buffer.order(ByteOrder.BIG_ENDIAN)
+    val buffer = SerializeUtil.acquireBuffer()
 
     // [0] Packet Type
     buffer.put(packetType.id)
@@ -60,6 +57,6 @@ class AuthRequestPacket(
     // [62-63] Reserved
     buffer.put(new Array[Byte](2))
 
-    buffer.array()
+    buffer.array().clone()
   }
 }

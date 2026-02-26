@@ -2,8 +2,6 @@ package com.gridgame.common.protocol
 
 import com.gridgame.common.Constants
 
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.util.UUID
 
 class HeartbeatPacket(
@@ -17,8 +15,7 @@ class HeartbeatPacket(
   }
 
   override def serialize(): Array[Byte] = {
-    val buffer = ByteBuffer.allocate(Constants.PACKET_PAYLOAD_SIZE)
-    buffer.order(ByteOrder.BIG_ENDIAN)
+    val buffer = SerializeUtil.acquireBuffer()
 
     // [0] Packet Type
     buffer.put(packetType.id)
@@ -33,7 +30,7 @@ class HeartbeatPacket(
     // [21-63] Zeroed payload
     buffer.put(new Array[Byte](43))
 
-    buffer.array()
+    buffer.array().clone()
   }
 
   override def toString: String = {

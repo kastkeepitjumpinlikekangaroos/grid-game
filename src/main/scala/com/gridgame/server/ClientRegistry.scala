@@ -30,8 +30,20 @@ class ClientRegistry {
     players.get(playerId)
   }
 
+  /** Returns a snapshot copy of all players. Use only when a genuine snapshot is needed. */
   def getAll: java.util.List[Player] = {
     new java.util.ArrayList[Player](players.values())
+  }
+
+  /** Returns the live values collection — no copy. Safe for iteration but reflects concurrent changes. */
+  def getPlayerValues: java.util.Collection[Player] = players.values()
+
+  /** Iterate all players without allocating a collection. */
+  def forEachPlayer(fn: Player => Unit): Unit = {
+    val iter = players.values().iterator()
+    while (iter.hasNext) {
+      fn(iter.next())
+    }
   }
 
   def contains(playerId: UUID): Boolean = {
