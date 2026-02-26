@@ -3,8 +3,6 @@ package com.gridgame.common.protocol
 import com.gridgame.common.Constants
 import com.gridgame.common.model.Position
 
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.util.UUID
 
 class PlayerUpdatePacket(
@@ -55,8 +53,7 @@ class PlayerUpdatePacket(
   def getTeamId: Byte = teamId
 
   override def serialize(): Array[Byte] = {
-    val buffer = ByteBuffer.allocate(Constants.PACKET_PAYLOAD_SIZE)
-    buffer.order(ByteOrder.BIG_ENDIAN)
+    val buffer = SerializeUtil.acquireBuffer()
 
     // [0] Packet Type
     buffer.put(packetType.id)
@@ -98,7 +95,7 @@ class PlayerUpdatePacket(
     // [45-63] Reserved (19 bytes) - fill with zeros
     buffer.put(new Array[Byte](19))
 
-    buffer.array()
+    buffer.array().clone()
   }
 
   override def toString: String = {

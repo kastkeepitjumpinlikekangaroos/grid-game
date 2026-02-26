@@ -2,8 +2,6 @@ package com.gridgame.common.protocol
 
 import com.gridgame.common.Constants
 
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.util.UUID
 
 object ProjectileAction {
@@ -74,8 +72,7 @@ class ProjectilePacket(
   def getProjectileType: Byte = projectileType
 
   override def serialize(): Array[Byte] = {
-    val buffer = ByteBuffer.allocate(Constants.PACKET_PAYLOAD_SIZE)
-    buffer.order(ByteOrder.BIG_ENDIAN)
+    val buffer = SerializeUtil.acquireBuffer()
 
     // [0] Packet Type
     buffer.put(packetType.id)
@@ -127,7 +124,7 @@ class ProjectilePacket(
     // [63] Projectile type (0=normal, 1=tentacle, 2=ice)
     buffer.put(projectileType)
 
-    buffer.array()
+    buffer.array().clone()
   }
 
   override def toString: String = {

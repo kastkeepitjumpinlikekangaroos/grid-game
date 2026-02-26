@@ -2,8 +2,6 @@ package com.gridgame.common.protocol
 
 import com.gridgame.common.Constants
 
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.util.UUID
 
 class TileUpdatePacket(
@@ -26,8 +24,7 @@ class TileUpdatePacket(
   def getTileId: Int = tileId
 
   override def serialize(): Array[Byte] = {
-    val buffer = ByteBuffer.allocate(Constants.PACKET_PAYLOAD_SIZE)
-    buffer.order(ByteOrder.BIG_ENDIAN)
+    val buffer = SerializeUtil.acquireBuffer()
 
     // [0] Packet Type
     buffer.put(packetType.id)
@@ -57,7 +54,7 @@ class TileUpdatePacket(
     // [41-63] Reserved (23 bytes)
     buffer.put(new Array[Byte](23))
 
-    buffer.array()
+    buffer.array().clone()
   }
 
   override def toString: String = {

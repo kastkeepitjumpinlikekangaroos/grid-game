@@ -172,11 +172,14 @@ class NetworkThread(client: GameClient, serverHost: String, serverPort: Int) ext
 
 /** Handles TCP packets from the server. */
 class ClientTcpHandler(client: GameClient, networkThread: NetworkThread) extends SimpleChannelInboundHandler[io.netty.buffer.ByteBuf] {
+  // Reuse read buffer — safe because handler runs on a single Netty event loop thread
+  // and PacketSigner.verify() copies the payload before we return
+  private val readBuffer = new Array[Byte](Constants.PACKET_SIZE)
 
   override def channelRead0(ctx: ChannelHandlerContext, msg: io.netty.buffer.ByteBuf): Unit = {
     if (msg.readableBytes() < Constants.PACKET_SIZE) return
 
-    val data = new Array[Byte](Constants.PACKET_SIZE)
+    val data = readBuffer
     msg.readBytes(data)
 
     try {
@@ -227,12 +230,15 @@ class ClientTcpHandler(client: GameClient, networkThread: NetworkThread) extends
 
 /** Handles UDP packets from the server. */
 class ClientUdpHandler(client: GameClient, networkThread: NetworkThread) extends SimpleChannelInboundHandler[DatagramPacket] {
+  // Reuse read buffer — safe because handler runs on a single Netty event loop thread
+  // and PacketSigner.verify() copies the payload before we return
+  private val readBuffer = new Array[Byte](Constants.PACKET_SIZE)
 
   override def channelRead0(ctx: ChannelHandlerContext, msg: DatagramPacket): Unit = {
     val buf = msg.content()
     if (buf.readableBytes() < Constants.PACKET_SIZE) return
 
-    val data = new Array[Byte](Constants.PACKET_SIZE)
+    val data = readBuffer
     buf.readBytes(data)
 
     try {

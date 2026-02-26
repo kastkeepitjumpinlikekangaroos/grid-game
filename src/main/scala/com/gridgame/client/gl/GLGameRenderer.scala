@@ -989,9 +989,10 @@ class GLGameRenderer(val client: GameClient) {
   // ═══════════════════════════════════════════════════════════════════
 
   private def dispatchEntries(entries: mutable.ArrayBuffer[EntityCollector.MutableCellEntry], localVX: Double, localVY: Double): Unit = {
-    var i = 0
-    while (i < entries.size) {
-      val entry = entries(i)
+    val size = entries.size
+    // Fast path for single-entity cells (no reordering needed)
+    if (size == 1) {
+      val entry = entries(0)
       entry.entryType match {
         case EntityCollector.TYPE_ITEM => drawSingleItem(entry.ref.asInstanceOf[Item])
         case EntityCollector.TYPE_PROJECTILE => drawSingleProjectile(entry.ref.asInstanceOf[Projectile])
@@ -999,6 +1000,31 @@ class GLGameRenderer(val client: GameClient) {
         case EntityCollector.TYPE_LOCAL_PLAYER => drawLocalPlayer(localVX, localVY)
         case EntityCollector.TYPE_LOCAL_DEATH => // handled by drawDeathAnimations()
         case _ =>
+      }
+      return
+    }
+    // Two-pass dispatch: shape-only entities first (items, projectiles), then
+    // sprite entities (players). Reduces batch switches from up to N per cell to at most 1.
+    // Pass 1: items and projectiles (shape-based)
+    var i = 0
+    while (i < size) {
+      val entry = entries(i)
+      entry.entryType match {
+        case EntityCollector.TYPE_ITEM => drawSingleItem(entry.ref.asInstanceOf[Item])
+        case EntityCollector.TYPE_PROJECTILE => drawSingleProjectile(entry.ref.asInstanceOf[Projectile])
+        case _ => // skip players in this pass
+      }
+      i += 1
+    }
+    // Pass 2: players (shape shadow + sprite body)
+    i = 0
+    while (i < size) {
+      val entry = entries(i)
+      entry.entryType match {
+        case EntityCollector.TYPE_PLAYER => drawPlayerInterp(entry.ref.asInstanceOf[Player], entry.vx, entry.vy)
+        case EntityCollector.TYPE_LOCAL_PLAYER => drawLocalPlayer(localVX, localVY)
+        case EntityCollector.TYPE_LOCAL_DEATH => // handled by drawDeathAnimations()
+        case _ => // skip items/projectiles in this pass
       }
       i += 1
     }

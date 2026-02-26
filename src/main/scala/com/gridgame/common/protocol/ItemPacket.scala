@@ -3,8 +3,6 @@ package com.gridgame.common.protocol
 import com.gridgame.common.Constants
 import com.gridgame.common.model.ItemType
 
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.util.UUID
 
 object ItemAction {
@@ -44,8 +42,7 @@ class ItemPacket(
   def getAction: Byte = action
 
   override def serialize(): Array[Byte] = {
-    val buffer = ByteBuffer.allocate(Constants.PACKET_PAYLOAD_SIZE)
-    buffer.order(ByteOrder.BIG_ENDIAN)
+    val buffer = SerializeUtil.acquireBuffer()
 
     // [0] Packet Type
     buffer.put(packetType.id)
@@ -81,7 +78,7 @@ class ItemPacket(
     // [43-63] Reserved (21 bytes)
     buffer.put(new Array[Byte](21))
 
-    buffer.array()
+    buffer.array().clone()
   }
 
   override def toString: String = {

@@ -2,8 +2,6 @@ package com.gridgame.common.protocol
 
 import com.gridgame.common.Constants
 
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 
@@ -22,8 +20,7 @@ class WorldInfoPacket(
   def getWorldFile: String = _worldFile
 
   override def serialize(): Array[Byte] = {
-    val buffer = ByteBuffer.allocate(Constants.PACKET_PAYLOAD_SIZE)
-    buffer.order(ByteOrder.BIG_ENDIAN)
+    val buffer = SerializeUtil.acquireBuffer()
 
     // [0] Packet Type
     buffer.put(packetType.id)
@@ -54,7 +51,7 @@ class WorldInfoPacket(
     // Fill remaining bytes with zeros
     buffer.put(new Array[Byte](27 - worldLength))
 
-    buffer.array()
+    buffer.array().clone()
   }
 
   override def toString: String = {
