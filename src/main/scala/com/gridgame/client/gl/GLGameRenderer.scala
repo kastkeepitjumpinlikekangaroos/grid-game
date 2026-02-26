@@ -107,7 +107,7 @@ class GLGameRenderer(val client: GameClient) {
 
   // Cached HUD strings — only re-allocated when values change
   private var _cachedChargeLevel = -1; private var _cachedChargeStr = ""
-  private var _cachedKills = -1; private var _cachedDeaths = -1; private var _cachedKDStr = ""
+  private var _cachedKills = -1; private var _cachedDeaths = -1; private var _cachedKillStr = "0"; private var _cachedDeathStr = "0"
   // Cached inventory slot counts — avoids double getItemCount calls and per-frame toString
   private val _cachedSlotCounts = new Array[Int](5) // one per inventory slot
   private val _cachedSlotCountStrs = new Array[String](5)
@@ -2541,27 +2541,83 @@ class GLGameRenderer(val client: GameClient) {
       _cachedTimerStr = f"$minutes%d:$seconds%02d"
     }
     val timerText = _cachedTimerStr
+    val isLowTime = remaining > 0 && remaining <= 30
+    val timerPulse = if (isLowTime) (Math.sin(_animTickF * 0.15) * 0.3 + 0.7).toFloat else 1f
 
-    // Timer panel at top center (cache measureWidth — called twice otherwise)
+    // Timer panel at top center
     val timerTextW = fontMedium.measureWidth(timerText)
-    val timerW = timerTextW + 20
+    val timerW = timerTextW + 50
+    val timerH = 32f
+    val timerX = (screenW / 2 - timerW / 2).toFloat
+    val timerY = 6f
     beginShapes()
-    shapeBatch.fillRect((screenW / 2 - timerW / 2).toFloat, 4f, timerW.toFloat, 30f, 0.04f, 0.04f, 0.08f, 0.5f)
-    shapeBatch.strokeRect((screenW / 2 - timerW / 2).toFloat, 4f, timerW.toFloat, 30f, 1f, 0.3f, 0.3f, 0.4f, 0.3f)
+    // Background with gradient
+    if (isLowTime) {
+      shapeBatch.fillRectGradient(timerX, timerY, timerW.toFloat, timerH,
+        0.25f * timerPulse, 0.02f, 0.02f, 0.7f,
+        0.25f * timerPulse, 0.02f, 0.02f, 0.7f,
+        0.12f * timerPulse, 0.01f, 0.01f, 0.6f,
+        0.12f * timerPulse, 0.01f, 0.01f, 0.6f)
+      shapeBatch.strokeRect(timerX, timerY, timerW.toFloat, timerH, 1.5f, 0.9f * timerPulse, 0.15f, 0.15f, 0.6f)
+    } else {
+      shapeBatch.fillRectGradient(timerX, timerY, timerW.toFloat, timerH,
+        0.06f, 0.06f, 0.12f, 0.65f,
+        0.06f, 0.06f, 0.12f, 0.65f,
+        0.03f, 0.03f, 0.06f, 0.55f,
+        0.03f, 0.03f, 0.06f, 0.55f)
+      shapeBatch.strokeRect(timerX, timerY, timerW.toFloat, timerH, 1f, 0.35f, 0.35f, 0.5f, 0.4f)
+    }
+    // Small clock icon (circle + hands) left of timer text
+    val clockCX = timerX + 16f
+    val clockCY = timerY + timerH / 2f
+    shapeBatch.strokeOval(clockCX, clockCY, 7f, 7f, 1.2f, 0.7f, 0.7f, 0.85f, 0.8f, 12)
+    shapeBatch.strokeLine(clockCX, clockCY, clockCX, clockCY - 4.5f, 1.2f, 0.9f, 0.9f, 1f, 0.8f)
+    shapeBatch.strokeLine(clockCX, clockCY, clockCX + 3.5f, clockCY, 1.2f, 0.9f, 0.9f, 1f, 0.8f)
 
     beginSprites()
-    fontMedium.drawTextOutlined(spriteBatch, timerText, (screenW / 2 - timerTextW / 2).toFloat, 8)
+    val timerTextX = (screenW / 2 - timerTextW / 2 + 8).toFloat
+    val timerTextY = timerY + (timerH - fontMedium.charHeight) / 2f
+    if (isLowTime) {
+      fontMedium.drawTextOutlined(spriteBatch, timerText, timerTextX, timerTextY, 1f * timerPulse, 0.25f * timerPulse, 0.25f * timerPulse)
+    } else {
+      fontMedium.drawTextOutlined(spriteBatch, timerText, timerTextX, timerTextY)
+    }
 
-    // K/D display below status panel
+    // K/D display — styled panel top-left
     val kc = client.killCount; val dc = client.deathCount
     if (kc != _cachedKills || dc != _cachedDeaths) {
       _cachedKills = kc; _cachedDeaths = dc
-      _cachedKDStr = "K: " + kc + "  D: " + dc
+      _cachedKillStr = kc.toString
+      _cachedDeathStr = dc.toString
     }
-    fontSmall.drawTextOutlined(spriteBatch, _cachedKDStr, 12, 108)
+    val kdPanelX = 10f; val kdPanelY = 10f
+    val kdPanelW = 110f; val kdPanelH = 50f
+    beginShapes()
+    shapeBatch.fillRectGradient(kdPanelX, kdPanelY, kdPanelW, kdPanelH,
+      0.06f, 0.06f, 0.12f, 0.65f,
+      0.06f, 0.06f, 0.12f, 0.65f,
+      0.03f, 0.03f, 0.06f, 0.55f,
+      0.03f, 0.03f, 0.06f, 0.55f)
+    shapeBatch.strokeRect(kdPanelX, kdPanelY, kdPanelW, kdPanelH, 1f, 0.35f, 0.35f, 0.5f, 0.4f)
+    // Divider line
+    shapeBatch.strokeLine(kdPanelX + kdPanelW / 2, kdPanelY + 6, kdPanelX + kdPanelW / 2, kdPanelY + kdPanelH - 6, 1f, 0.3f, 0.3f, 0.4f, 0.4f)
+    // Sword icon (kills) — simple cross shape
+    val swordCX = kdPanelX + 15f; val swordCY = kdPanelY + 15f
+    shapeBatch.strokeLine(swordCX, swordCY - 6, swordCX, swordCY + 6, 1.5f, 0.5f, 0.9f, 0.5f, 0.9f)
+    shapeBatch.strokeLine(swordCX - 3.5f, swordCY - 1, swordCX + 3.5f, swordCY - 1, 1.5f, 0.5f, 0.9f, 0.5f, 0.9f)
+    // Skull icon (deaths) — circle + eye dots
+    val skullCX = kdPanelX + kdPanelW / 2 + 15f; val skullCY = kdPanelY + 14f
+    shapeBatch.fillOval(skullCX, skullCY, 6f, 7f, 0.85f, 0.25f, 0.25f, 0.9f, 10)
+    shapeBatch.fillOval(skullCX - 2.5f, skullCY - 1f, 1.5f, 1.5f, 0.1f, 0.02f, 0.02f, 0.9f, 6)
+    shapeBatch.fillOval(skullCX + 2.5f, skullCY - 1f, 1.5f, 1.5f, 0.1f, 0.02f, 0.02f, 0.9f, 6)
+
+    beginSprites()
+    // Kill count in green
+    fontMedium.drawTextOutlined(spriteBatch, _cachedKillStr, kdPanelX + 27f, kdPanelY + 24f, 0.4f, 1f, 0.4f)
+    // Death count in red
+    fontMedium.drawTextOutlined(spriteBatch, _cachedDeathStr, kdPanelX + kdPanelW / 2 + 27f, kdPanelY + 24f, 1f, 0.4f, 0.4f)
 
     // Kill feed — collect entries, then batch all backgrounds (shapes) and all text (sprites)
-    // to avoid per-entry batch switches (was 2 flushes × N entries, now just 1 switch)
     val now = _frameTimeMs
     var feedY = 10f
     val localName = client.getSelectedCharacterDef.displayName
@@ -2578,7 +2634,7 @@ class GLGameRenderer(val client: GameClient) {
         val feedText = entry(3).asInstanceOf[String]
         val textW = fontSmall.measureWidth(feedText)
         val slideOffset = if (elapsed < 200) ((1.0 - elapsed / 200.0) * 60).toFloat else 0f
-        val fx = screenW - textW - 12f + slideOffset
+        val fx = screenW - textW - 14f + slideOffset
         val fi = _feedCount
         _feedX(fi) = fx; _feedY(fi) = feedY; _feedW(fi) = textW; _feedA(fi) = alpha
         _feedText(fi) = feedText
@@ -2588,7 +2644,7 @@ class GLGameRenderer(val client: GameClient) {
         else if (isLocalVictim) { _feedR(fi) = 1f; _feedG(fi) = 0.4f; _feedB(fi) = 0.4f }
         else { _feedR(fi) = 1f; _feedG(fi) = 1f; _feedB(fi) = 1f }
         _feedCount += 1
-        feedY += 18
+        feedY += 22
       }
     }
     // Batch all background strips in one shapes pass
@@ -2596,14 +2652,21 @@ class GLGameRenderer(val client: GameClient) {
       beginShapes()
       var fi = 0
       while (fi < _feedCount) {
-        shapeBatch.fillRect(_feedX(fi) - 4f, _feedY(fi) - 2f, _feedW(fi) + 8f, 18f, 0.04f, 0.04f, 0.08f, 0.4f * _feedA(fi))
+        val bgAlpha = 0.5f * _feedA(fi)
+        shapeBatch.fillRectGradient(_feedX(fi) - 6f, _feedY(fi) - 3f, _feedW(fi) + 12f, 20f,
+          0.04f, 0.04f, 0.08f, bgAlpha,
+          0.06f, 0.06f, 0.12f, bgAlpha * 0.8f,
+          0.06f, 0.06f, 0.12f, bgAlpha * 0.8f,
+          0.04f, 0.04f, 0.08f, bgAlpha)
+        // Colored left accent line
+        shapeBatch.fillRect(_feedX(fi) - 6f, _feedY(fi) - 3f, 2f, 20f, _feedR(fi), _feedG(fi), _feedB(fi), bgAlpha * 1.5f)
         fi += 1
       }
       // Then all text in one sprites pass
       beginSprites()
       fi = 0
       while (fi < _feedCount) {
-        fontSmall.drawText(spriteBatch, _feedText(fi), _feedX(fi), _feedY(fi), _feedR(fi), _feedG(fi), _feedB(fi), _feedA(fi))
+        fontSmall.drawTextShadow(spriteBatch, _feedText(fi), _feedX(fi), _feedY(fi), _feedR(fi), _feedG(fi), _feedB(fi), _feedA(fi))
         fi += 1
       }
     }
@@ -2635,27 +2698,73 @@ class GLGameRenderer(val client: GameClient) {
     val elapsed = _frameTimeMs - deathTime
     val remaining = Math.max(0, Constants.RESPAWN_DELAY_MS - elapsed)
     val secondsLeft = Math.ceil(remaining / 1000.0).toInt
+    val progress = Math.min(1.0, elapsed.toDouble / Constants.RESPAWN_DELAY_MS).toFloat
 
     val cx = screenW / 2f; val cy = screenH / 2f
 
+    // Red vignette overlay across entire screen
+    val vigAlpha = 0.25f * (1f - progress * 0.5f)
     beginShapes()
-    shapeBatch.fillRect(cx - 120, cy - 50, 240, 90, 0f, 0f, 0f, 0.55f)
+    // Top edge
+    shapeBatch.fillRectGradient(0, 0, screenW.toFloat, screenH * 0.25f,
+      0.4f, 0f, 0f, vigAlpha, 0.4f, 0f, 0f, vigAlpha,
+      0.4f, 0f, 0f, 0f, 0.4f, 0f, 0f, 0f)
+    // Bottom edge
+    shapeBatch.fillRectGradient(0, screenH * 0.75f, screenW.toFloat, screenH * 0.25f,
+      0.4f, 0f, 0f, 0f, 0.4f, 0f, 0f, 0f,
+      0.4f, 0f, 0f, vigAlpha, 0.4f, 0f, 0f, vigAlpha)
+    // Left edge
+    shapeBatch.fillRectGradient(0, 0, screenW * 0.2f, screenH.toFloat,
+      0.4f, 0f, 0f, vigAlpha, 0.4f, 0f, 0f, 0f,
+      0.4f, 0f, 0f, 0f, 0.4f, 0f, 0f, vigAlpha)
+    // Right edge
+    shapeBatch.fillRectGradient(screenW * 0.8f, 0, screenW * 0.2f, screenH.toFloat,
+      0.4f, 0f, 0f, 0f, 0.4f, 0f, 0f, vigAlpha,
+      0.4f, 0f, 0f, vigAlpha, 0.4f, 0f, 0f, 0f)
+
+    // Central panel
+    val panelW = 280f; val panelH = 120f
+    val panelX = cx - panelW / 2; val panelY = cy - panelH / 2
+    shapeBatch.fillRectGradient(panelX, panelY, panelW, panelH,
+      0.08f, 0.02f, 0.02f, 0.7f,
+      0.08f, 0.02f, 0.02f, 0.7f,
+      0.04f, 0.01f, 0.01f, 0.6f,
+      0.04f, 0.01f, 0.01f, 0.6f)
+    shapeBatch.strokeRect(panelX, panelY, panelW, panelH, 1.5f, 0.7f, 0.15f, 0.15f, 0.5f)
+
+    // Progress bar at bottom of panel
+    val barX = panelX + 20f; val barY = panelY + panelH - 18f
+    val barW = panelW - 40f; val barH = 6f
+    shapeBatch.fillRect(barX, barY, barW, barH, 0.15f, 0.05f, 0.05f, 0.6f)
+    shapeBatch.fillRect(barX, barY, barW * progress, barH, 0.8f, 0.2f, 0.2f, 0.8f)
+
+    // Skull icon above text
+    val skullY = panelY + 18f
+    shapeBatch.fillOval(cx, skullY, 10f, 12f, 0.9f, 0.2f, 0.2f, 0.9f, 14)
+    shapeBatch.fillOval(cx - 3.5f, skullY - 2f, 2.5f, 2.5f, 0.1f, 0.02f, 0.02f, 0.9f, 8)
+    shapeBatch.fillOval(cx + 3.5f, skullY - 2f, 2.5f, 2.5f, 0.1f, 0.02f, 0.02f, 0.9f, 8)
+    // Jaw
+    shapeBatch.fillRect(cx - 5f, skullY + 6f, 10f, 4f, 0.9f, 0.2f, 0.2f, 0.7f)
 
     beginSprites()
-    if (secondsLeft != _cachedRespawnSeconds) {
-      _cachedRespawnSeconds = secondsLeft
-      _cachedRespawnStr = "Respawning in " + secondsLeft + "s"
-    }
-    fontMedium.drawTextOutlined(spriteBatch, _cachedRespawnStr, cx - fontMedium.measureWidth(_cachedRespawnStr) / 2, cy - 30)
-
+    // "Killed by [Name]" — prominent
     val killerName = client.lastKillerCharacterName
     if (killerName != null && killerName.nonEmpty) {
       if (killerName ne _cachedKilledByName) {
         _cachedKilledByName = killerName
         _cachedKilledByStr = "Killed by " + killerName
       }
-      fontSmall.drawTextOutlined(spriteBatch, _cachedKilledByStr, cx - fontSmall.measureWidth(_cachedKilledByStr) / 2, cy)
+      val kbW = fontMedium.measureWidth(_cachedKilledByStr)
+      fontMedium.drawTextOutlined(spriteBatch, _cachedKilledByStr, cx - kbW / 2, panelY + 42f, 1f, 0.5f, 0.5f)
     }
+
+    // Respawn countdown
+    if (secondsLeft != _cachedRespawnSeconds) {
+      _cachedRespawnSeconds = secondsLeft
+      _cachedRespawnStr = "Respawning in " + secondsLeft + "s"
+    }
+    val rsW = fontSmall.measureWidth(_cachedRespawnStr)
+    fontSmall.drawTextOutlined(spriteBatch, _cachedRespawnStr, cx - rsW / 2, panelY + 72f, 0.7f, 0.7f, 0.7f)
   }
 
   // ═══════════════════════════════════════════════════════════════════
