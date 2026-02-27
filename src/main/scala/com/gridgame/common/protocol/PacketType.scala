@@ -19,8 +19,9 @@ object PacketType {
   case object RANKED_QUEUE extends PacketType(0x0E.toByte, true)
   case object LEADERBOARD extends PacketType(0x0F.toByte, true)
   case object SESSION_TOKEN extends PacketType(0x10.toByte, true)
+  case object CHAT_MESSAGE extends PacketType(0x11.toByte, true)
 
-  private val values: Array[PacketType] = Array(PLAYER_JOIN, PLAYER_UPDATE, PLAYER_LEAVE, WORLD_INFO, HEARTBEAT, PROJECTILE_UPDATE, ITEM_UPDATE, TILE_UPDATE, LOBBY_ACTION, GAME_EVENT, AUTH_REQUEST, AUTH_RESPONSE, MATCH_HISTORY, RANKED_QUEUE, LEADERBOARD, SESSION_TOKEN)
+  private val values: Array[PacketType] = Array(PLAYER_JOIN, PLAYER_UPDATE, PLAYER_LEAVE, WORLD_INFO, HEARTBEAT, PROJECTILE_UPDATE, ITEM_UPDATE, TILE_UPDATE, LOBBY_ACTION, GAME_EVENT, AUTH_REQUEST, AUTH_RESPONSE, MATCH_HISTORY, RANKED_QUEUE, LEADERBOARD, SESSION_TOKEN, CHAT_MESSAGE)
 
   def fromId(id: Byte): PacketType = {
     values.find(_.id == id).getOrElse(

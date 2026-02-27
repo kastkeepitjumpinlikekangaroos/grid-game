@@ -308,6 +308,9 @@ class GameServer(port: Int, val worldFile: String = "") {
         case PacketType.RANKED_QUEUE =>
           handleRankedQueue(packet.asInstanceOf[RankedQueuePacket])
 
+        case PacketType.CHAT_MESSAGE =>
+          handleChatMessage(packet.asInstanceOf[ChatMessagePacket])
+
         case PacketType.LOBBY_ACTION =>
           val lobbyPacket = packet.asInstanceOf[LobbyActionPacket]
           val player = connectedPlayers.get(lobbyPacket.getPlayerId)
@@ -594,6 +597,53 @@ class GameServer(port: Int, val worldFile: String = "") {
         rankedQueue.updateCharacter(playerId, packet.getCharacterId)
 
       case _ =>
+    }
+  }
+
+  private def handleChatMessage(packet: ChatMessagePacket): Unit = {
+    val playerId = packet.getPlayerId
+    val player = connectedPlayers.get(playerId)
+    if (player == null) return
+
+    if (!rateLimiter.allowChat(playerId)) return
+
+    // Sanitize: strip control chars, trim, reject empty
+    val sanitized = packet.getMessage.filter(c => c >= 32 && c < 127).trim
+    if (sanitized.isEmpty) return
+
+    val lobby = lobbyManager.getPlayerLobby(playerId)
+    if (lobby == null) return
+
+    val broadcastPacket = new ChatMessagePacket(
+      getNextSequenceNumber, playerId, Packet.getCurrentTimestamp,
+      packet.getScope, sanitized
+    )
+
+    packet.getScope match {
+      case ChatScope.LOBBY if lobby.status == LobbyStatus.WAITING =>
+        val data = broadcastPacket.serialize()
+        lobby.players.forEach { pid =>
+          val p = connectedPlayers.get(pid)
+          if (p != null) sendRawToPlayer(data, true, p)
+        }
+
+      case ChatScope.GAME if lobby.status == LobbyStatus.IN_GAME && lobby.gameInstance != null =>
+        lobby.gameInstance.broadcastToInstance(broadcastPacket)
+
+      case ChatScope.TEAM if lobby.status == LobbyStatus.IN_GAME && lobby.gameInstance != null && lobby.gameMode == 1 =>
+        val instance = lobby.gameInstance
+        val senderTeam: java.lang.Byte = instance.teamAssignments.get(playerId)
+        if (senderTeam != null) {
+          val data = broadcastPacket.serialize()
+          instance.registry.getAll.asScala.foreach { p =>
+            val pTeam: java.lang.Byte = instance.teamAssignments.get(p.getId)
+            if (pTeam != null && pTeam.byteValue() == senderTeam.byteValue()) {
+              sendRawToPlayer(data, true, p)
+            }
+          }
+        }
+
+      case _ => // Invalid scope for current state, ignore
     }
   }
 

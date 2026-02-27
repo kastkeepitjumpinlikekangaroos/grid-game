@@ -163,6 +163,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   // Kill feed: (timestamp, killerName, victimName)
   val killFeed: CopyOnWriteArrayList[Array[AnyRef]] = new CopyOnWriteArrayList[Array[AnyRef]]()
 
+  // Chat state: each entry is Array(timestamp: Long, senderName: String, message: String, scope: Byte)
+  val chatMessages: CopyOnWriteArrayList[Array[AnyRef]] = new CopyOnWriteArrayList[Array[AnyRef]]()
+  @volatile var chatMessageListener: () => Unit = _
+  @volatile var isChatOpen: Boolean = false
+  @volatile var chatInputText: String = ""
+
   // Match history state: (matchId, mapIndex, durationMin, playedAt, kills, deaths, rank, totalPlayers, matchType)
   val matchHistory: CopyOnWriteArrayList[Array[Int]] = new CopyOnWriteArrayList[Array[Int]]()
   @volatile var totalKillsStat: Int = 0
@@ -232,6 +238,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     items.clear()
     inventory.clear()
     killFeed.clear()
+    chatMessages.clear()
     scoreboard.clear()
     deathAnimations.clear()
     teleportAnimations.clear()
@@ -850,6 +857,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       return
     }
 
+    // Handle chat message
+    if (packet.getType == PacketType.CHAT_MESSAGE) {
+      handleChatMessage(packet.asInstanceOf[ChatMessagePacket])
+      return
+    }
+
     // Handle ranked queue
     if (packet.getType == PacketType.RANKED_QUEUE) {
       handleRankedQueue(packet.asInstanceOf[RankedQueuePacket])
@@ -1005,6 +1018,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         val memberName = packet.getLobbyName
         val memberId = packet.getPlayerId
         lobbyMembers.add(Array(memberId.asInstanceOf[AnyRef], memberName.asInstanceOf[AnyRef]))
+        chatMessages.add(Array(
+          System.currentTimeMillis().asInstanceOf[AnyRef],
+          "".asInstanceOf[AnyRef],
+          (memberName + " joined the lobby").asInstanceOf[AnyRef],
+          ChatScope.LOBBY.asInstanceOf[AnyRef]
+        ))
+        val chatL1 = chatMessageListener
+        if (chatL1 != null) chatL1()
         if (lobbyUpdatedListener != null) lobbyUpdatedListener()
 
       case LobbyAction.PLAYER_LEFT =>
@@ -1013,6 +1034,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         val leftId = packet.getPlayerId
         import scala.jdk.CollectionConverters._
         lobbyMembers.asScala.find(arr => arr(0).asInstanceOf[UUID].equals(leftId)).foreach(lobbyMembers.remove)
+        chatMessages.add(Array(
+          System.currentTimeMillis().asInstanceOf[AnyRef],
+          "".asInstanceOf[AnyRef],
+          "A player left the lobby".asInstanceOf[AnyRef],
+          ChatScope.LOBBY.asInstanceOf[AnyRef]
+        ))
+        val chatL2 = chatMessageListener
+        if (chatL2 != null) chatL2()
         if (lobbyUpdatedListener != null) lobbyUpdatedListener()
 
       case LobbyAction.CONFIG_UPDATE =>
@@ -1036,6 +1065,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         gameTimeSyncTimestamp = System.currentTimeMillis()
         scoreboard.clear()
         killFeed.clear()
+        chatMessages.clear()
         isDead = false
         isRespawning = false
         localHealth.set(getSelectedCharacterMaxHealth)
@@ -1238,6 +1268,41 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     }
   }
 
+  private def handleChatMessage(packet: ChatMessagePacket): Unit = {
+    val senderId = packet.getPlayerId
+    val senderName = if (senderId.equals(localPlayerId)) playerName else {
+      // Try lobby members first, then players map, then truncated UUID
+      import scala.jdk.CollectionConverters._
+      val memberName = lobbyMembers.asScala.find(arr => arr(0).asInstanceOf[UUID].equals(senderId))
+        .map(_(1).asInstanceOf[String])
+      memberName.getOrElse {
+        val p = players.get(senderId)
+        if (p != null) p.getName else senderId.toString.substring(0, 8)
+      }
+    }
+    chatMessages.add(Array(
+      System.currentTimeMillis().asInstanceOf[AnyRef],
+      senderName.asInstanceOf[AnyRef],
+      packet.getMessage.asInstanceOf[AnyRef],
+      packet.getScope.asInstanceOf[AnyRef]
+    ))
+    while (chatMessages.size() > 50) chatMessages.remove(0)
+    val listener = chatMessageListener
+    if (listener != null) listener()
+  }
+
+  def sendChatMessage(message: String, scope: Byte): Unit = {
+    val msgBytes = message.getBytes(java.nio.charset.StandardCharsets.UTF_8)
+    val truncated = if (msgBytes.length > Constants.MAX_CHAT_MESSAGE_LEN) {
+      new String(msgBytes, 0, Constants.MAX_CHAT_MESSAGE_LEN, java.nio.charset.StandardCharsets.UTF_8)
+    } else message
+    val packet = new ChatMessagePacket(
+      sequenceNumber.getAndIncrement(), localPlayerId, Packet.getCurrentTimestamp,
+      scope, truncated
+    )
+    networkThread.send(packet)
+  }
+
   // Lobby actions
   def requestLobbyList(): Unit = {
     lobbyList.clear()
@@ -1345,6 +1410,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     gameTimeSyncTimestamp = 0L
     scoreboard.clear()
     killFeed.clear()
+    chatMessages.clear()
     players.clear()
     projectiles.clear()
     items.clear()

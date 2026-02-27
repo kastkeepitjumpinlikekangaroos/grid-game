@@ -958,7 +958,40 @@ class ClientMain extends Application {
       infoCard.getChildren.addAll(mapLabel, durationLabel, nonHostGameModeLabel, teamRosterBox, lobbyMapPreviewBox, createSeparator(), waitingLabel)
     }
 
-    leftPanel.getChildren.addAll(infoCard, leaveBtn)
+    // Chat panel
+    val chatBox = new VBox(6)
+    chatBox.setPadding(new Insets(12, 14, 12, 14))
+    chatBox.setStyle(cardBg)
+    VBox.setVgrow(chatBox, Priority.ALWAYS)
+
+    val chatHeader = new Label("CHAT")
+    chatHeader.setStyle(sectionHeaderStyle)
+
+    val chatMessagesBox = new VBox(3)
+    chatMessagesBox.setPadding(new Insets(4))
+
+    val chatScroll = new ScrollPane(chatMessagesBox)
+    chatScroll.setFitToWidth(true)
+    chatScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER)
+    chatScroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED)
+    chatScroll.setStyle("-fx-background: #181830; -fx-background-color: #181830; -fx-border-color: rgba(255,255,255,0.05); -fx-border-radius: 6; -fx-border-width: 1;")
+    chatScroll.setPrefHeight(180)
+    VBox.setVgrow(chatScroll, Priority.ALWAYS)
+
+    val chatInput = new TextField()
+    chatInput.setPromptText("Type a message...")
+    chatInput.setStyle(fieldStyle)
+    chatInput.setOnAction(_ => {
+      val text = chatInput.getText.trim
+      if (text.nonEmpty) {
+        client.sendChatMessage(text, com.gridgame.common.protocol.ChatScope.LOBBY)
+        chatInput.clear()
+      }
+    })
+
+    chatBox.getChildren.addAll(chatHeader, chatScroll, chatInput)
+
+    leftPanel.getChildren.addAll(infoCard, chatBox, leaveBtn)
 
     // Right panel (~60%): character selection grid
     val rightPanel = new VBox(0)
@@ -1001,6 +1034,34 @@ class ClientMain extends Application {
         }
         // Rebuild team roster
         rebuildTeamRoster()
+      })
+    }
+
+    client.chatMessageListener = () => {
+      Platform.runLater(() => {
+        chatMessagesBox.getChildren.clear()
+        import scala.jdk.CollectionConverters._
+        client.chatMessages.asScala.foreach { entry =>
+          val sender = entry(1).asInstanceOf[String]
+          val msg = entry(2).asInstanceOf[String]
+          val lbl = new Label()
+          if (sender.isEmpty) {
+            lbl.setText(msg)
+            lbl.setTextFill(Color.web("#778899"))
+            lbl.setFont(Font.font("System", javafx.scene.text.FontPosture.ITALIC, 12))
+          } else {
+            lbl.setText(sender + ": " + msg)
+            if (sender == client.playerName) {
+              lbl.setTextFill(Color.web("#4a9eff"))
+            } else {
+              lbl.setTextFill(Color.web("#ccdde8"))
+            }
+            lbl.setFont(Font.font("System", 12))
+          }
+          lbl.setWrapText(true)
+          chatMessagesBox.getChildren.add(lbl)
+        }
+        chatScroll.setVvalue(1.0)
       })
     }
 
@@ -1661,6 +1722,14 @@ class ClientMain extends Application {
     val glMouseHandler = new GLMouseHandler(client, glRenderer.camera)
 
     org.lwjgl.glfw.GLFW.glfwSetKeyCallback(glWindow.handle, glKeyHandler)
+    org.lwjgl.glfw.GLFW.glfwSetCharCallback(glWindow.handle, (_, codepoint: Int) => {
+      if (glKeyHandler.isChatMode && codepoint >= 32 && codepoint < 127) {
+        if (glKeyHandler.chatInputBuffer.length < Constants.MAX_CHAT_MESSAGE_LEN) {
+          glKeyHandler.chatInputBuffer.append(codepoint.toChar)
+          client.chatInputText = glKeyHandler.chatInputBuffer.toString
+        }
+      }
+    })
     org.lwjgl.glfw.GLFW.glfwSetCursorPosCallback(glWindow.handle, (_, x, y) => glMouseHandler.onCursorPos(x, y))
     org.lwjgl.glfw.GLFW.glfwSetMouseButtonCallback(glWindow.handle, (_, button, action, mods) => glMouseHandler.onMouseButton(button, action, mods))
 

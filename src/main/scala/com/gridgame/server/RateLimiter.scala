@@ -12,6 +12,7 @@ class RateLimiter {
   // Per-client packet rate limiting (sliding window)
   private val udpCounts = new ConcurrentHashMap[UUID, WindowCounter]()
   private val tcpCounts = new ConcurrentHashMap[UUID, WindowCounter]()
+  private val chatCounts = new ConcurrentHashMap[UUID, WindowCounter]()
 
   // Per-IP connection rate limiting
   private val connectionCounts = new ConcurrentHashMap[InetAddress, WindowCounter]()
@@ -48,6 +49,11 @@ class RateLimiter {
 
   def removeChannel(channel: Channel): Unit = {
     channelCounts.remove(channel)
+  }
+
+  def allowChat(clientId: UUID): Boolean = {
+    val counter = chatCounts.computeIfAbsent(clientId, _ => new WindowCounter())
+    counter.allowAndIncrement(5, 1000L)
   }
 
   def allowConnection(address: InetAddress): Boolean = {
@@ -96,6 +102,7 @@ class RateLimiter {
 
     cleanupMap(udpCounts, now, staleThreshold)
     cleanupMap(tcpCounts, now, staleThreshold)
+    cleanupMap(chatCounts, now, staleThreshold)
 
     val connIter = connectionCounts.entrySet().iterator()
     while (connIter.hasNext) {

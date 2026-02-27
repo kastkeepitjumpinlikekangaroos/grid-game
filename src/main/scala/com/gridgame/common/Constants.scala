@@ -101,4 +101,5 @@ object Constants {
   val FENCE_MAX_DISTANCE: Int = 5                       // Max Manhattan distance for fence placement
   val STAR_MAX_DISTANCE: Int = 30                       // Max Manhattan distance for star teleport
   val MAX_LOBBIES: Int = 100                            // Max concurrent active lobbies
+  val MAX_CHAT_MESSAGE_LEN: Int = 42                    // Max UTF-8 bytes per chat message
 }

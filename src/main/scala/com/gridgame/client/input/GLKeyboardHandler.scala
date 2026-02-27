@@ -4,6 +4,7 @@ import com.gridgame.client.ClientState
 import com.gridgame.client.GameClient
 import com.gridgame.common.Constants
 import com.gridgame.common.model.ItemType
+import com.gridgame.common.protocol.ChatScope
 
 import org.lwjgl.glfw.GLFW._
 import org.lwjgl.glfw.GLFWKeyCallback
@@ -20,13 +21,27 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
   private var lastBurstTime: Long = 0
   private var _f11JustPressed: Boolean = false
 
+  // Chat input state
+  var isChatMode: Boolean = false
+  val chatInputBuffer = new StringBuilder(Constants.MAX_CHAT_MESSAGE_LEN)
+
   override def invoke(window: Long, key: Int, scancode: Int, action: Int, mods: Int): Unit = {
+    if (isChatMode && action == GLFW_PRESS) {
+      handleChatKey(key, mods)
+      return
+    }
+
     if (action == GLFW_PRESS) {
       pressedKeys.add(key)
       if (key == GLFW_KEY_F11) _f11JustPressed = true
       if (client.getIsDead) {
         if (client.clientState != ClientState.PLAYING) processRejoin()
       } else {
+        // T or Enter opens chat (only when alive and not already in chat)
+        if (key == GLFW_KEY_T || key == GLFW_KEY_ENTER) {
+          enterChatMode()
+          return
+        }
         processUseItem(key)
         processBurstShot(key, mods)
         processAbilities(key)
@@ -36,13 +51,52 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
     }
   }
 
+  private def enterChatMode(): Unit = {
+    isChatMode = true
+    client.isChatOpen = true
+    pressedKeys.clear()
+    chatInputBuffer.clear()
+    client.chatInputText = ""
+  }
+
+  private def exitChatMode(): Unit = {
+    isChatMode = false
+    client.isChatOpen = false
+    client.chatInputText = ""
+  }
+
+  private def handleChatKey(key: Int, mods: Int): Unit = {
+    key match {
+      case GLFW_KEY_ENTER =>
+        val msg = chatInputBuffer.toString.trim
+        if (msg.nonEmpty) {
+          val scope = if ((mods & GLFW_MOD_SHIFT) != 0) ChatScope.TEAM else ChatScope.GAME
+          client.sendChatMessage(msg, scope)
+        }
+        exitChatMode()
+
+      case GLFW_KEY_ESCAPE =>
+        exitChatMode()
+
+      case GLFW_KEY_BACKSPACE =>
+        if (chatInputBuffer.nonEmpty) {
+          chatInputBuffer.deleteCharAt(chatInputBuffer.length - 1)
+          client.chatInputText = chatInputBuffer.toString
+        }
+
+      case _ => // Character input handled by GLFW char callback
+    }
+  }
+
   def clearAllKeys(): Unit = {
     pressedKeys.clear()
     client.setMovementInputActive(false)
+    if (isChatMode) exitChatMode()
   }
 
   /** Called each frame from the game loop. */
   def update(): Unit = {
+    if (isChatMode) return
     if (!client.getIsDead) {
       if (client.isSwooping) {
         client.tickSwoop()

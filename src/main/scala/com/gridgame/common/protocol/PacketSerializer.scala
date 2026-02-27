@@ -178,6 +178,13 @@ object PacketSerializer {
         new GameEventPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, eventType, gameId,
           remainingSeconds, kills, deaths, targetId, rank, spawnX, spawnY, teamId)
 
+      case PacketType.CHAT_MESSAGE =>
+        val scope = buffer.get()
+        val msgBytes = new Array[Byte](Constants.MAX_CHAT_MESSAGE_LEN)
+        buffer.get(msgBytes)
+        val message = extractString(msgBytes)
+        new ChatMessagePacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, scope, message)
+
       case PacketType.PROJECTILE_UPDATE =>
         // [21-24] X Position (as float)
         val x = buffer.getFloat()
