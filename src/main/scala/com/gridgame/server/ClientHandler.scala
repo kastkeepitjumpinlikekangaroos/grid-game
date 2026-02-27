@@ -415,6 +415,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
 
   private def sendExistingItems(player: Player): Unit = {
     val zeroUUID = new UUID(0L, 0L)
+    var sent = false
     itemManager.getAll.foreach { item =>
       val packet = new ItemPacket(
         server.getNextSequenceNumber,
@@ -424,8 +425,11 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
         item.id,
         ItemAction.SPAWN
       )
-      server.sendPacketToPlayer(packet, player)
+      val data = packet.serialize()
+      server.sendRawToPlayerBuffered(data, true, player)
+      sent = true
     }
+    if (sent) server.flushPlayer(player)
   }
 
   private def sendInventoryContents(playerId: UUID, player: Player): Unit = {

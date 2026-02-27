@@ -82,13 +82,13 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
       TimeUnit.MILLISECONDS
     )
 
-    // Spawn items relative to map size (1 item per 500 tiles, min 3, max 50)
+    // Spawn items relative to map size (1 item per 500 tiles, min 3, max 20)
     val mapArea = world.width * world.height
     val itemCount = Math.max(3, Math.min(20, mapArea / 2000))
     itemSpawnExecutor = Executors.newSingleThreadScheduledExecutor()
-    for (_ <- 1 to itemCount) spawnItem()
+    spawnItemBatch(itemCount)
     itemSpawnExecutor.scheduleAtFixedRate(
-      safeRunnable("spawnItem")(for (_ <- 1 to itemCount) spawnItem()),
+      safeRunnable("spawnItem")(spawnItemBatch(itemCount)),
       Constants.ITEM_SPAWN_INTERVAL_MS.toLong,
       Constants.ITEM_SPAWN_INTERVAL_MS.toLong,
       TimeUnit.MILLISECONDS
@@ -800,20 +800,27 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     }, (if (isPractice) 1000L else Constants.RESPAWN_DELAY_MS.toLong), TimeUnit.MILLISECONDS)
   }
 
-  private def spawnItem(): Unit = {
+  private def spawnItemBatch(count: Int): Unit = {
     if (!running || world == null) return
-    itemManager.spawnRandomItem(world).foreach { event =>
-      val zeroUUID = new UUID(0L, 0L)
-      val packet = new ItemPacket(
-        server.getNextSequenceNumber,
-        zeroUUID,
-        event.item.x, event.item.y,
-        event.item.itemType.id,
-        event.item.id,
-        ItemAction.SPAWN
-      )
-      broadcastToInstance(packet)
+    val zeroUUID = new UUID(0L, 0L)
+    var spawned = false
+    var i = 0
+    while (i < count) {
+      itemManager.spawnRandomItem(world).foreach { event =>
+        val packet = new ItemPacket(
+          server.getNextSequenceNumber,
+          zeroUUID,
+          event.item.x, event.item.y,
+          event.item.itemType.id,
+          event.item.id,
+          ItemAction.SPAWN
+        )
+        broadcastBuffered(packet)
+        spawned = true
+      }
+      i += 1
     }
+    if (spawned) flushAllInstancePlayers()
   }
 
   private def syncTimer(): Unit = {

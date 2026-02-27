@@ -20,6 +20,7 @@ class ItemManager {
   private val inventories = new ConcurrentHashMap[UUID, ConcurrentHashMap[Int, Item]]()
   private val nextId = new AtomicInteger(1)
   private val random = new Random()
+  private val maxWorldItems = 40
 
   // Spatial grid for O(1) pickup checks instead of iterating all items
   private val gridCellSize = 4
@@ -46,6 +47,7 @@ class ItemManager {
   }
 
   def spawnRandomItem(world: WorldData): Option[ItemSpawned] = {
+    if (items.size() >= maxWorldItems) return None
     // Try to find a random walkable tile
     val maxAttempts = 100
     var attempt = 0
