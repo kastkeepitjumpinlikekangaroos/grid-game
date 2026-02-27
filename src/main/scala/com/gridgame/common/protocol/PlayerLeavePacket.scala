@@ -2,8 +2,6 @@ package com.gridgame.common.protocol
 
 import com.gridgame.common.Constants
 
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.util.UUID
 
 class PlayerLeavePacket(
@@ -17,8 +15,7 @@ class PlayerLeavePacket(
   }
 
   override def serialize(): Array[Byte] = {
-    val buffer = ByteBuffer.allocate(Constants.PACKET_PAYLOAD_SIZE)
-    buffer.order(ByteOrder.BIG_ENDIAN)
+    val buffer = SerializeUtil.acquireBuffer()
 
     // [0] Packet Type
     buffer.put(packetType.id)
@@ -39,7 +36,7 @@ class PlayerLeavePacket(
     // [37-63] Payload/Reserved (27 bytes) - fill with zeros
     buffer.put(new Array[Byte](27))
 
-    buffer.array()
+    buffer.array().clone()
   }
 
   override def toString: String = {

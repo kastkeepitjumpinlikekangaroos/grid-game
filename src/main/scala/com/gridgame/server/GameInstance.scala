@@ -42,7 +42,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   private val spawnLock = new Object()
   // Tracks players killed in the current tick to prevent duplicate kill events
   // when multiple projectiles hit the same player in one tick
-  private val killedThisTick = new java.util.HashSet[UUID]()
+  private val killedThisTick: java.util.Set[UUID] = java.util.concurrent.ConcurrentHashMap.newKeySet[UUID]()
 
   def loadWorld(): Unit = {
     if (worldFile.nonEmpty) {
@@ -372,7 +372,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
               // Pull all nearby enemies toward the hit location
               val vx = projectile.getX
               val vy = projectile.getY
-              registry.getAll.asScala.foreach { nearby =>
+              projectileManager.forEachNearbyPlayer(vx, vy, radius) { nearby =>
                 if (!nearby.isDead && !nearby.isPhased && !nearby.getId.equals(projectile.ownerId) && !isTeammate(projectile.ownerId, nearby.getId)) {
                   val pos = nearby.getPosition
                   val ndx = vx - (pos.getX + 0.5f)
@@ -458,7 +458,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         val explosionX = projectile.getX
         val explosionY = projectile.getY
         if (centerDmg > 0 || edgeDmg > 0)
-        registry.getAll.asScala.foreach { player =>
+        projectileManager.forEachNearbyPlayer(explosionX, explosionY, blastRadius) { player =>
           if (!player.isDead && !player.hasShield && !player.isPhased && !player.getId.equals(projectile.ownerId) && !isTeammate(projectile.ownerId, player.getId)) {
             val pos = player.getPosition
             val pdx = explosionX - (pos.getX + 0.5f)
@@ -653,7 +653,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   private def tickPlayers(): Unit = {
     if (!running) return
     val now = System.currentTimeMillis()
-    registry.getAll.asScala.foreach { player =>
+    registry.forEachPlayer { player =>
       if (!player.isDead) {
         // --- Burn DoT ---
         // All burn state reads inside synchronized to prevent double-tick race
@@ -755,10 +755,15 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
             player.resetRegenAccumulator()
             // Clear inventory on respawn
             itemManager.clearInventory(playerId)
-            val occupied = registry.getAll.asScala
-              .filter(p => !p.isDead && !p.getId.equals(playerId))
-              .map(p => (p.getPosition.getX, p.getPosition.getY))
-              .toSet
+            val occupied = {
+              val set = scala.collection.mutable.HashSet[(Int, Int)]()
+              registry.forEachPlayer { p =>
+                if (!p.isDead && !p.getId.equals(playerId)) {
+                  set += ((p.getPosition.getX, p.getPosition.getY))
+                }
+              }
+              set.toSet
+            }
             val sp = world.getValidSpawnPoint(occupied)
             player.setPosition(sp)
             sp
@@ -838,7 +843,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   def broadcastToInstanceExcluding(packet: Packet, excludePlayerId: UUID): Unit = {
     val data = packet.serialize()
     val isTcp = packet.getType.tcp
-    registry.getAll.asScala.foreach { player =>
+    registry.forEachPlayer { player =>
       if (excludePlayerId == null || !player.getId.equals(excludePlayerId)) {
         try {
           server.sendRawToPlayer(data, isTcp, player)
@@ -853,7 +858,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   private def broadcastBuffered(packet: Packet): Unit = {
     val data = packet.serialize()
     val isTcp = packet.getType.tcp
-    registry.getAll.asScala.foreach { player =>
+    registry.forEachPlayer { player =>
       try {
         server.sendRawToPlayerBuffered(data, isTcp, player)
       } catch {
@@ -864,7 +869,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
 
   /** Flush all channels after a batch of buffered broadcasts. */
   private def flushAllInstancePlayers(): Unit = {
-    registry.getAll.asScala.foreach { player =>
+    registry.forEachPlayer { player =>
       try { server.flushPlayer(player) } catch { case _: Exception => }
     }
     server.flushUdpChannel()

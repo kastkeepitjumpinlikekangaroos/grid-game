@@ -36,6 +36,15 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     (1, 1), (1, -1), (-1, 1), (-1, -1)
   )
 
+  // Occupancy set rebuilt once per tick — O(1) tile occupancy checks instead of O(n)
+  private val occupiedTiles = new java.util.HashSet[Long]()
+  // Maps packed coords to player UUID for excludeId handling
+  private val occupiedTileOwners = new java.util.HashMap[Long, UUID]()
+
+  // Pre-allocated BFS structures reused between calls (bot executor is single-threaded)
+  private val bfsVisited = new java.util.HashSet[Long]()
+  private val bfsQueue = new java.util.ArrayDeque[(Int, Int, Int, Int)]()
+
   def addBotId(id: UUID): Unit = {
     botIds.add(id)
     lastShotTime.put(id, 0L)
@@ -66,9 +75,22 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     println("BotController: Stopped")
   }
 
+  private def packCoord(x: Int, y: Int): Long = (x.toLong << 32) | (y.toLong & 0xFFFFFFFFL)
+
   private def tick(): Unit = {
     try {
       if (!instance.isRunning || instance.world == null) return
+
+      // Rebuild occupancy set once per tick
+      occupiedTiles.clear()
+      occupiedTileOwners.clear()
+      instance.registry.forEachPlayer { p =>
+        if (!p.isDead) {
+          val key = packCoord(p.getPosition.getX, p.getPosition.getY)
+          occupiedTiles.add(key)
+          occupiedTileOwners.put(key, p.getId)
+        }
+      }
 
       val now = System.currentTimeMillis()
       botIds.asScala.foreach { botId =>
@@ -219,13 +241,18 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
 
   private def moveRandom(bot: Player): Unit = {
     val botPos = bot.getPosition
-    val directions = scala.util.Random.shuffle(ALL_DIRS.toSeq)
-    directions.find { case (ddx, ddy) =>
-      canMoveTo(botPos.getX + ddx, botPos.getY + ddy, bot.getId)
-    }.foreach { case (ddx, ddy) =>
-      bot.setPosition(new Position(botPos.getX + ddx, botPos.getY + ddy))
-      bot.setDirection(Direction.fromMovement(ddx, ddy))
-      broadcastBotPosition(bot)
+    // Start from random index and iterate circularly (avoids shuffle allocation)
+    val start = scala.util.Random.nextInt(ALL_DIRS.length)
+    var i = 0
+    while (i < ALL_DIRS.length) {
+      val (ddx, ddy) = ALL_DIRS((start + i) % ALL_DIRS.length)
+      if (canMoveTo(botPos.getX + ddx, botPos.getY + ddy, bot.getId)) {
+        bot.setPosition(new Position(botPos.getX + ddx, botPos.getY + ddy))
+        bot.setDirection(Direction.fromMovement(ddx, ddy))
+        broadcastBotPosition(bot)
+        return
+      }
+      i += 1
     }
   }
 
@@ -239,24 +266,22 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     if (fromX == toX && fromY == toY) return None
 
     val world = instance.world
-    // Pack coordinates into a single Long for the visited set: (x << 32) | (y & 0xFFFFFFFFL)
-    val visited = new java.util.HashSet[Long]()
-    // Queue entries: (x, y, firstStepX, firstStepY)
-    val queue = new java.util.ArrayDeque[(Int, Int, Int, Int)]()
+    // Reuse pre-allocated structures (bot executor is single-threaded)
+    val visited = bfsVisited; visited.clear()
+    val queue = bfsQueue; queue.clear()
 
-    val startKey = (fromX.toLong << 32) | (fromY.toLong & 0xFFFFFFFFL)
+    val startKey = packCoord(fromX, fromY)
     visited.add(startKey)
 
     // Seed with walkable neighbors
     for ((ddx, ddy) <- BFS_DIRS) {
       val nx = fromX + ddx
       val ny = fromY + ddy
-      val key = (nx.toLong << 32) | (ny.toLong & 0xFFFFFFFFL)
+      val key = packCoord(nx, ny)
       if (!visited.contains(key) && nx >= 0 && nx < world.width && ny >= 0 && ny < world.height &&
           world.isWalkable(nx, ny)) {
         visited.add(key)
         if (nx == toX && ny == toY) return Some((ddx, ddy))
-        // Only enqueue if not occupied (but target cell itself is fine to path toward)
         if (!isTileOccupied(nx, ny, botId)) {
           queue.add((nx, ny, ddx, ddy))
         }
@@ -271,7 +296,7 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
       for ((ddx, ddy) <- BFS_DIRS) {
         val nx = cx + ddx
         val ny = cy + ddy
-        val key = (nx.toLong << 32) | (ny.toLong & 0xFFFFFFFFL)
+        val key = packCoord(nx, ny)
         if (!visited.contains(key) && nx >= 0 && nx < world.width && ny >= 0 && ny < world.height &&
             world.isWalkable(nx, ny)) {
           visited.add(key)
@@ -509,12 +534,27 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     var nearest: Player = null
     var nearestDist = Float.MaxValue
 
-    instance.registry.getAll.asScala.foreach { player =>
+    // Try spatial grid first with generous search radius
+    val botPos = bot.getPosition
+    instance.projectileManager.forEachNearbyPlayer(botPos.getX.toFloat, botPos.getY.toFloat, 30f) { player =>
       if (!player.isDead && !player.getId.equals(bot.getId) && !instance.isTeammate(bot.getId, player.getId)) {
-        val dist = distanceBetween(bot.getPosition, player.getPosition)
+        val dist = distanceBetween(botPos, player.getPosition)
         if (dist < nearestDist) {
           nearestDist = dist
           nearest = player
+        }
+      }
+    }
+
+    // Fall back to full iteration if no one found nearby
+    if (nearest == null) {
+      instance.registry.forEachPlayer { player =>
+        if (!player.isDead && !player.getId.equals(bot.getId) && !instance.isTeammate(bot.getId, player.getId)) {
+          val dist = distanceBetween(botPos, player.getPosition)
+          if (dist < nearestDist) {
+            nearestDist = dist
+            nearest = player
+          }
         }
       }
     }
@@ -525,10 +565,11 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
   // --- Collision checks ---
 
   private def isTileOccupied(x: Int, y: Int, excludeId: UUID): Boolean = {
-    instance.registry.getAll.asScala.exists { player =>
-      !player.isDead && !player.getId.equals(excludeId) &&
-        player.getPosition.getX == x && player.getPosition.getY == y
-    }
+    val key = packCoord(x, y)
+    if (!occupiedTiles.contains(key)) return false
+    // Check if the occupant is the excluded bot
+    val owner = occupiedTileOwners.get(key)
+    owner != null && !owner.equals(excludeId)
   }
 
   private def canMoveTo(x: Int, y: Int, botId: UUID): Boolean = {
