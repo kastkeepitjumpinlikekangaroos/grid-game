@@ -40,7 +40,7 @@ class GLGameRenderer(val client: GameClient) {
   private val BG_CACHE_INTERVAL = 3
   private val damageNumbers = new DamageNumberSystem()
   private val weatherParticles = new ParticleSystem(1024)
-  private val combatParticles = new ParticleSystem(512)
+  private val combatParticles = new ParticleSystem(768)
 
   // Previous health tracking for damage number detection — Java HashMap avoids Option wrapping
   private val prevHealthMap = new java.util.HashMap[UUID, java.lang.Integer]()
@@ -1715,10 +1715,27 @@ class GLGameRenderer(val client: GameClient) {
     val sx = worldToScreenX(px, py).toFloat
     val sy = worldToScreenY(px, py).toFloat
 
-    // Projectile emits colored light
+    // Dynamic projectile lighting — charge-reactive, distance-boosted
     intToRGB(proj.colorRGB)
     val plr = _rgb_r; val plg = _rgb_g; val plb = _rgb_b
-    lightSystem.addLight(sx, sy, 55f, plr, plg, plb, 0.15f)
+    val chargeT = proj.chargeLevel / 100f
+    // Charge whitening for light color
+    val lr = Math.min(1f, plr + chargeT * (1f - plr) * 0.35f)
+    val lg = Math.min(1f, plg + chargeT * (1f - plg) * 0.35f)
+    val lb = Math.min(1f, plb + chargeT * (1f - plb) * 0.35f)
+    // Distance boost
+    val pDef = ProjectileDef.get(proj.projectileType)
+    val maxR = pDef.effectiveMaxRange(proj.chargeLevel).toFloat
+    val lifePct = if (maxR > 0f) Math.min(1f, proj.getDistanceTraveled / maxR) else 0f
+    val distBoost = 1f + lifePct * 0.3f
+    // Charge-reactive radius (55→125) and intensity (0.15→0.35)
+    val lightRadius = (55f + chargeT * 70f) * distBoost
+    var lightIntensity = 0.15f + chargeT * 0.2f
+    // Boomerang return pulse
+    if (proj.isReturning) {
+      lightIntensity *= 0.8f + 0.2f * Math.sin(animationTick * 0.5).toFloat
+    }
+    lightSystem.addLight(sx, sy, lightRadius, lr, lg, lb, lightIntensity)
 
     beginShapes()
     val renderer = GLProjectileRenderers.getRenderer(proj.projectileType)
@@ -3370,23 +3387,56 @@ class GLGameRenderer(val client: GameClient) {
     val projs = client.getProjectiles
     if (projs.isEmpty) return
     val iter = projs.values().iterator()
-    // Spawn trail particles for ~30% of projectiles each frame to limit count
     while (iter.hasNext) {
       val proj = iter.next()
-      if (rng.nextFloat() < 0.3f) {
+      val chargeT = proj.chargeLevel / 100f
+      // Spawn probability scales with charge: 30% base → 80% at full charge
+      val spawnChance = 0.3f + chargeT * 0.5f
+      if (rng.nextFloat() < spawnChance) {
         val sx = worldToScreenX(proj.getX, proj.getY).toFloat
         val sy = worldToScreenY(proj.getX, proj.getY).toFloat
         intToRGB(proj.colorRGB)
         val pr = _rgb_r; val pg = _rgb_g; val pb = _rgb_b
+        // Particle alpha and size scale with charge
+        val chgAlpha = 0.25f + chargeT * 0.2f
+        val chgSize = 1.5f + rng.nextFloat() * 1f + chargeT * 1.5f
+        // Brighter trails for charged projectiles
+        val bright = 0.3f + chargeT * 0.2f
         combatParticles.emit(
           sx + rng.nextFloat() * 4f - 2f, sy + rng.nextFloat() * 2f - 1f,
           rng.nextFloat() * 4f - 2f, rng.nextFloat() * 4f - 2f,
           plife = 0.2f + rng.nextFloat() * 0.15f,
-          pr = clamp(pr * 0.7f + 0.3f), pg = clamp(pg * 0.7f + 0.3f), pb = clamp(pb * 0.7f + 0.3f),
-          palpha = 0.25f,
-          psize = 1.5f + rng.nextFloat() * 1f,
+          pr = clamp(pr * (1f - bright) + bright), pg = clamp(pg * (1f - bright) + bright), pb = clamp(pb * (1f - bright) + bright),
+          palpha = chgAlpha,
+          psize = chgSize,
           additive = true
         )
+        // High-charge radial sparks (>50%): radial spark particles that shoot outward
+        if (chargeT > 0.5f && rng.nextFloat() < (chargeT - 0.5f) * 0.6f) {
+          val angle = rng.nextFloat() * Math.PI.toFloat * 2f
+          val speed = 15f + rng.nextFloat() * 25f
+          combatParticles.emit(
+            sx, sy,
+            Math.cos(angle).toFloat * speed, Math.sin(angle).toFloat * speed - 8f,
+            plife = 0.15f + rng.nextFloat() * 0.1f,
+            pr = clamp(pr * 0.5f + 0.5f), pg = clamp(pg * 0.5f + 0.5f), pb = clamp(pb * 0.5f + 0.5f),
+            palpha = 0.35f + chargeT * 0.15f,
+            psize = 1f + rng.nextFloat() * 1f,
+            pgravity = 12f
+          )
+        }
+        // Boomerang pulsing soft particles when returning
+        if (proj.isReturning && rng.nextFloat() < 0.4f) {
+          combatParticles.emit(
+            sx + rng.nextFloat() * 6f - 3f, sy + rng.nextFloat() * 4f - 2f,
+            rng.nextFloat() * 2f - 1f, rng.nextFloat() * 2f - 1f,
+            plife = 0.25f + rng.nextFloat() * 0.15f,
+            pr = clamp(pr * 0.6f + 0.4f), pg = clamp(pg * 0.6f + 0.4f), pb = clamp(pb * 0.6f + 0.4f),
+            palpha = 0.3f,
+            psize = 2f + rng.nextFloat() * 2f,
+            soft = true
+          )
+        }
       }
     }
   }

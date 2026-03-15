@@ -1,6 +1,6 @@
 package com.gridgame.client.gl
 
-import com.gridgame.common.model.{Projectile, ProjectileType}
+import com.gridgame.common.model.{Projectile, ProjectileDef, ProjectileType}
 
 /**
  * Projectile renderers for OpenGL ShapeBatch. All 112 projectile types mapped.
@@ -61,31 +61,41 @@ object GLProjectileRenderers {
   def drawGeneric(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int,
                   r: Float, g: Float, b: Float): Unit = {
     val phase = (tick + proj.id * 37) * 0.35
-    val p = (0.65 + 0.35 * Math.sin(phase)).toFloat
+    val p = (0.65 + 0.35 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
+    computeAllDynamics(proj, r, g, b, phase)
+    val dr = _evoR; val dg = _evoG; val db = _evoB
+    val ds = dynScale
     screenDir(proj)
     val ndx = _sdx; val ndy = _sdy
 
     // Speed lines
-    drawSpeedLines(sx, sy, ndx, ndy, r, g, b, 0.25f * p, sb, 4, 28f)
-    // Soft glow halo — bigger
-    sb.fillOvalSoft(sx, sy, 50f, 40f, r, g, b, 0.38f * p, 0f, 18)
+    drawSpeedLines(sx, sy, ndx, ndy, dr, dg, db, 0.25f * p, sb, 4 + (_lifePct * 2).toInt, 28f * ds)
+    // Soft glow halo
+    sb.fillOvalSoft(sx, sy, 50f * ds * dynGlow, 40f * ds * dynGlow, dr, dg, db, 0.38f * p, 0f, 18)
     // Dark cartoon outline
-    sb.strokeOval(sx, sy, 24f, 18f, 3f, outline(r), outline(g), outline(b), 0.8f * p, 14)
+    sb.strokeOval(sx, sy, 24f * ds, 18f * ds, 3f, outline(r), outline(g), outline(b), 0.8f * p, 14)
     // Core
-    sb.fillOval(sx, sy, 22f, 17f, r, g, b, 0.95f * p, 14)
+    sb.fillOval(sx, sy, 22f * ds, 17f * ds, dr, dg, db, 0.95f * p, 14)
     // Cartoon highlight
-    sb.fillOval(sx - 4f, sy - 4f, 7f, 5f, 1f, 1f, 1f, 0.35f * p, 8)
-    // Bright center
-    sb.fillOval(sx, sy, 10f, 7f, bright(r), bright(g), bright(b), 0.98f, 10)
-    // Trail — bigger, more particles
+    sb.fillOval(sx - 4f, sy - 4f, 7f * ds, 5f * ds, 1f, 1f, 1f, 0.35f * p, 8)
+    // Bright center — charge whitening
+    val bc = _chgBright
+    sb.fillOval(sx, sy, 10f * ds, 7f * ds,
+      mix(bright(r), 1f, bc), mix(bright(g), 1f, bc), mix(bright(b), 1f, bc), 0.98f * dynAlpha, 10)
+    // Trail — scaled by dynTrail
+    val trailLen = 45f * dynTrail
     var i = 0; while (i < 8) {
       val t = ((tick * 0.05 + i * 0.125 + proj.id * 0.13) % 1.0).toFloat
       val taper = 1f - t * 0.65f
-      val s = 14f * taper
+      val s = 14f * taper * ds
       val colorFade = 1f - t * 0.3f
-      sb.fillOval(sx - ndx * t * 45, sy - ndy * t * 45, s, s * 0.7f,
+      sb.fillOval(sx - ndx * t * trailLen, sy - ndy * t * trailLen, s, s * 0.7f,
         r * colorFade, g * colorFade, b * colorFade, 0.45f * (1f - t) * p, 8)
     ; i += 1 }
+    // Charge crackle
+    drawChargeCrackle(sx, sy, 22f * ds, r, g, b, p, sb, phase, proj.chargeLevel)
+    // Boomerang return ghosts
+    drawReturnGhosts(sx, sy, 22f * ds, dr, dg, db, p, sb, proj)
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -123,6 +133,152 @@ object GLProjectileRenderers {
   @inline private def dark(c: Float): Float = c * 0.5f
   @inline private def outline(c: Float): Float = c * 0.2f
   @inline private def mix(a: Float, b: Float, t: Float): Float = a + (b - a) * t
+  @inline private def clampF(v: Float, lo: Float, hi: Float): Float = Math.max(lo, Math.min(hi, v))
+
+  // ═══════════════════════════════════════════════════════════════
+  //  DYNAMIC VISUAL HELPERS (charge, lifetime, color, state)
+  // ═══════════════════════════════════════════════════════════════
+
+  // --- Step 1: Charge-Level Visual Escalation ---
+  private var _chgScale = 1f      // size multiplier 1.0→2.0
+  private var _chgGlow = 1f       // glow radius multiplier 1.0→2.5
+  private var _chgBright = 0f     // whiteness mix 0.0→0.4
+  private var _chgTrailLen = 1f   // trail length multiplier 1.0→2.0
+  private var _chgSparkCount = 0  // extra spark particles 0→6
+
+  private def computeChargeVisuals(chargeLevel: Int): Unit = {
+    val t = chargeLevel / 100f  // 0.0→1.0
+    _chgScale = 1f + t * 1f
+    _chgGlow = 1f + t * 1.5f
+    _chgBright = t * 0.4f
+    _chgTrailLen = 1f + t * 1f
+    _chgSparkCount = (t * 6f).toInt
+  }
+
+  /** Draw crackle strokes around a projectile for charge > 70 */
+  private def drawChargeCrackle(sx: Float, sy: Float, size: Float, r: Float, g: Float, b: Float,
+      alpha: Float, sb: ShapeBatch, phase: Double, chargeLevel: Int): Unit = {
+    if (chargeLevel <= 70) return
+    val intensity = (chargeLevel - 70) / 30f  // 0→1 over 70→100
+    var i = 0; while (i < 3) {
+      val angle = phase * 5.3 + i * Math.PI * 2 / 3
+      val forkLen = size * 0.6f * (0.5f + 0.5f * Math.sin(phase * 7.1 + i * 2.7).toFloat) * intensity
+      val jx = Math.sin(phase * 9.3 + i * 4.1).toFloat * size * 0.12f
+      val jy = Math.cos(phase * 8.1 + i * 3.3).toFloat * size * 0.09f
+      val ex = sx + Math.cos(angle).toFloat * forkLen + jx
+      val ey = sy + Math.sin(angle).toFloat * forkLen * 0.6f + jy
+      val mx = sx + Math.cos(angle).toFloat * forkLen * 0.5f + jx * 1.5f
+      val my = sy + Math.sin(angle).toFloat * forkLen * 0.3f + jy * 1.5f
+      sb.strokeLine(sx, sy, mx, my, 2f * intensity, bright(r), bright(g), bright(b), alpha * intensity * 0.7f)
+      sb.strokeLine(mx, my, ex, ey, 1.5f * intensity, 1f, 1f, 1f, alpha * intensity * 0.5f)
+    ; i += 1 }
+  }
+
+  // --- Step 2: Distance-Based Visual Evolution ---
+  private var _lifePct = 0f  // 0.0 (just spawned) → 1.0 (at max range)
+
+  private def computeLifetimeProgress(proj: Projectile): Unit = {
+    val pDef = ProjectileDef.get(proj.projectileType)
+    val maxR = pDef.effectiveMaxRange(proj.chargeLevel).toFloat
+    _lifePct = if (maxR > 0f) clampF(proj.getDistanceTraveled / maxR, 0f, 1f) else 0f
+  }
+
+  /** Compute dissipation alpha/scale for end-of-range burn-out (last 15%) */
+  @inline private def dissipationAlpha: Float = {
+    if (_lifePct > 0.85f) { val t = (_lifePct - 0.85f) / 0.15f; 1f - t * 0.7f } else 1f
+  }
+  @inline private def dissipationScale: Float = {
+    if (_lifePct > 0.85f) { val t = (_lifePct - 0.85f) / 0.15f; 1f + t * 0.3f } else 1f
+  }
+  /** Trail density multiplier that increases over lifetime */
+  @inline private def lifetimeTrailMult: Float = 1f + _lifePct * 0.5f
+  /** Glow radius growth over lifetime */
+  @inline private def lifetimeGlowMult: Float = 1f + _lifePct * 0.3f
+
+  // --- Step 3: Dynamic Color Shifting ---
+  private var _evoR = 0f; private var _evoG = 0f; private var _evoB = 0f
+
+  private def computeColorEvolution(r: Float, g: Float, b: Float, proj: Projectile, phase: Double): Unit = {
+    var er = r; var eg = g; var eb = b
+    // Charge whitening (up to 35%)
+    val chgWhite = (proj.chargeLevel / 100f) * 0.35f
+    er = mix(er, 1f, chgWhite); eg = mix(eg, 1f, chgWhite); eb = mix(eb, 1f, chgWhite)
+    // Distance warm-up
+    er = clampF(er + _lifePct * 0.08f, 0f, 1f)
+    eg = clampF(eg - _lifePct * 0.03f, 0f, 1f)
+    // Return color inversion (25% toward complementary)
+    if (proj.isReturning) {
+      er = mix(er, 1f - r, 0.25f); eg = mix(eg, 1f - g, 0.25f); eb = mix(eb, 1f - b, 0.25f)
+    }
+    // Temporal shimmer
+    val shimmer = Math.sin(phase * 8.0).toFloat * 0.04f
+    er = clampF(er + shimmer, 0f, 1f)
+    eg = clampF(eg - shimmer * 0.5f, 0f, 1f)
+    eb = clampF(eb + shimmer * 0.7f, 0f, 1f)
+    _evoR = er; _evoG = eg; _evoB = eb
+  }
+
+  // --- Step 4: State-Reactive Rendering ---
+  private var _stPulseMult = 1f     // pulse speed multiplier
+  private var _stTrailMult = 1f     // trail length multiplier
+  private var _stSizeMult = 1f      // size multiplier
+  private var _stSaturation = 1f    // color saturation (1 = normal, <1 = desaturated)
+  private var _stExtraSparks = 0    // extra orbiting sparks
+
+  private def computeStateVisuals(proj: Projectile): Unit = {
+    _stPulseMult = 1f; _stTrailMult = 1f; _stSizeMult = 1f; _stSaturation = 1f; _stExtraSparks = 0
+    // Boomerang return
+    if (proj.isReturning) {
+      _stPulseMult = 1.5f
+    }
+    // Pierce hits
+    val hits = proj.hitPlayers.size
+    if (hits > 0) {
+      _stTrailMult = 1f + hits * 0.2f
+      _stSizeMult = Math.max(0.6f, 1f - hits * 0.1f)
+      _stSaturation = Math.max(0.4f, 1f - hits * 0.15f)
+    }
+    // Ricochet bounces
+    val pDef = ProjectileDef.get(proj.projectileType)
+    val totalBounces = pDef.ricochetCount
+    if (totalBounces > 0) {
+      val bouncesUsed = totalBounces - proj.remainingBounces
+      _stPulseMult += bouncesUsed * 0.3f
+      _stExtraSparks = bouncesUsed
+    }
+  }
+
+  /** Draw boomerang afterimage ghosts when projectile is returning */
+  private def drawReturnGhosts(sx: Float, sy: Float, size: Float, r: Float, g: Float, b: Float,
+      alpha: Float, sb: ShapeBatch, proj: Projectile): Unit = {
+    if (!proj.isReturning) return
+    screenDir(proj)
+    val ndx = _sdx; val ndy = _sdy
+    var ghost = 1; while (ghost <= 3) {
+      val ga = alpha * 0.3f * (1f - ghost * 0.25f)
+      val gs = size * (1f - ghost * 0.12f)
+      val gx = sx - ndx * ghost * 16f
+      val gy = sy - ndy * ghost * 16f
+      sb.fillOval(gx, gy, gs, gs * 0.7f, r, g, b, ga, 10)
+    ; ghost += 1 }
+  }
+
+  /** Apply all dynamic helpers for a projectile — call at start of any factory renderer */
+  private def computeAllDynamics(proj: Projectile, r: Float, g: Float, b: Float, phase: Double): Unit = {
+    computeChargeVisuals(proj.chargeLevel)
+    computeLifetimeProgress(proj)
+    computeColorEvolution(r, g, b, proj, phase)
+    computeStateVisuals(proj)
+  }
+
+  /** Combined dynamic size multiplier */
+  @inline private def dynScale: Float = _chgScale * _stSizeMult * dissipationScale
+  /** Combined dynamic alpha multiplier */
+  @inline private def dynAlpha: Float = dissipationAlpha
+  /** Combined glow multiplier */
+  @inline private def dynGlow: Float = _chgGlow * lifetimeGlowMult
+  /** Combined trail length multiplier */
+  @inline private def dynTrail: Float = _chgTrailLen * _stTrailMult * lifetimeTrailMult
 
   /** Cartoon sparkle star — 4-point star burst */
   private def drawSparkleStar(sx: Float, sy: Float, size: Float, r: Float, g: Float, b: Float,
@@ -205,30 +361,32 @@ object GLProjectileRenderers {
   private def energyBolt(r: Float, g: Float, b: Float, size: Float = 20f, style: Int = 0): Renderer =
     (proj, sx, sy, sb, tick) => {
       val phase = (tick + proj.id * 37) * 0.35
-      val p = (0.65 + 0.35 * Math.sin(phase)).toFloat
-      val chargeScale = 1f + proj.chargeLevel * 0.003f
+      computeAllDynamics(proj, r, g, b, phase)
+      val p = (0.65 + 0.35 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
+      val dr = _evoR; val dg = _evoG; val db = _evoB
       // Breathing animation: subtle 8% size oscillation
       val breath = (0.92f + 0.08f * Math.sin(phase * 0.8).toFloat)
-      val sz = size * 1.4f * chargeScale * breath
+      val sz = size * 1.4f * dynScale * breath
 
       screenDir(proj)
       val ndx = _sdx; val ndy = _sdy
 
       // Manga speed lines behind
-      drawSpeedLines(sx, sy, ndx, ndy, r, g, b, 0.25f * p, sb, 5, sz * 1.5f)
+      drawSpeedLines(sx, sy, ndx, ndy, dr, dg, db, 0.25f * p, sb, 5 + (_lifePct * 2).toInt, sz * 1.5f)
 
-      // Large soft halo — dramatic glow
-      sb.fillOvalSoft(sx, sy, sz * 3.2f, sz * 2.6f, r, g, b, 0.4f * p, 0f, 18)
+      // Large soft halo — dramatic glow, charge-scaled
+      sb.fillOvalSoft(sx, sy, sz * 3.2f * dynGlow, sz * 2.6f * dynGlow, dr, dg, db, 0.4f * p, 0f, 18)
 
       // Bold dark cartoon outline
       sb.strokeOval(sx, sy, sz * 0.95f, sz * 0.72f, 3.5f,
         outline(r), outline(g), outline(b), 0.8f * p, 14)
 
-      // Main orb body — saturated and solid
-      sb.fillOval(sx, sy, sz * 0.9f, sz * 0.68f, r, g, b, 0.95f * p, 14)
-      // Inner glow core offset in travel direction
+      // Main orb body — use evolved colors for body
+      sb.fillOval(sx, sy, sz * 0.9f, sz * 0.68f, dr, dg, db, 0.95f * p, 14)
+      // Inner glow core offset in travel direction — charge whitening
+      val bc = _chgBright
       sb.fillOval(sx + ndx * sz * 0.1f, sy + ndy * sz * 0.1f, sz * 0.55f, sz * 0.4f,
-        mix(r, 1f, 0.4f), mix(g, 1f, 0.3f), mix(b, 1f, 0.2f), 0.9f * p, 12)
+        mix(dr, 1f, 0.4f + bc), mix(dg, 1f, 0.3f + bc), mix(db, 1f, 0.2f + bc), 0.9f * p, 12)
 
       // Style-specific inner patterns (drawn between body fill and orbiting particles)
       if (style == 1) {
@@ -293,11 +451,12 @@ object GLProjectileRenderers {
       // Cartoon highlight (top-left specular spot)
       sb.fillOval(sx - sz * 0.15f, sy - sz * 0.12f, sz * 0.25f, sz * 0.18f,
         1f, 1f, 1f, 0.55f * p, 8)
-      // Hot center
-      sb.fillOval(sx, sy, sz * 0.22f, sz * 0.16f, bright(r), bright(g), bright(b), 0.98f, 8)
+      // Hot center — charge whitening
+      sb.fillOval(sx, sy, sz * 0.22f, sz * 0.16f,
+        mix(bright(r), 1f, bc), mix(bright(g), 1f, bc), mix(bright(b), 1f, bc), 0.98f * dynAlpha, 8)
 
-      // 6 orbiting particles with varied speeds, eccentricity, sizes, and mini trails
-      var s = 0; while (s < 6) {
+      // 6 + charge spark orbiting particles
+      var s = 0; while (s < 6 + _chgSparkCount + _stExtraSparks) {
         val orbSpeed = 3.0 + s * 0.4
         val orbEcc = 0.45f + (s % 3) * 0.08f
         val pSize = 3f + (s % 3) * 1.5f
@@ -314,13 +473,13 @@ object GLProjectileRenderers {
         sb.fillOval(spx, spy, pSize, pSize * 0.7f, bright(r), bright(g), bright(b), sparkAlpha, 8)
       ; s += 1 }
 
-      // Ribbon trail — longer and denser
+      // Ribbon trail — longer and denser, scaled by dynTrail
       drawRibbonTrail(sx, sy, ndx, ndy, r, g, b, p, sb, tick, proj.id,
-        12, sz * 4.5f, sz * 0.45f, sz * 0.06f)
+        12, sz * 4.5f * dynTrail, sz * 0.45f, sz * 0.06f)
 
       // Spark burst at front — more particles
       drawSparkBurst(sx + ndx * sz * 0.6f, sy + ndy * sz * 0.6f,
-        r, g, b, p, sb, tick, proj.id, 6, sz * 0.8f)
+        r, g, b, p, sb, tick, proj.id, 6 + _chgSparkCount, sz * 0.8f)
 
       // Cartoon sparkle stars popping around the orb
       var star = 0; while (star < 3) {
@@ -333,6 +492,11 @@ object GLProjectileRenderers {
         drawSparkleStar(starX, starY, 4f + (1f - starPhase) * 4f,
           bright(r), bright(g), bright(b), starAlpha, sb, phase * 2 + star)
       ; star += 1 }
+
+      // Charge crackle
+      drawChargeCrackle(sx, sy, sz, r, g, b, p, sb, phase, proj.chargeLevel)
+      // Boomerang return ghosts
+      drawReturnGhosts(sx, sy, sz * 0.9f, dr, dg, db, p, sb, proj)
     }
 
   /** Focused energy stream — tapers from origin to tip, with filaments and organic undulation */
@@ -341,8 +505,10 @@ object GLProjectileRenderers {
       beamTip(sx, sy, proj, worldLen)
       val tipX = _tipX; val tipY = _tipY
       val phase = (tick + proj.id * 29) * 0.35
-      val p = (0.7 + 0.3 * Math.sin(phase)).toFloat
-      val w = width // no multiplier — use width directly
+      computeAllDynamics(proj, r, g, b, phase)
+      val p = (0.7 + 0.3 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
+      val dr = _evoR; val dg = _evoG; val db = _evoB
+      val w = width * dynScale
       val dx = tipX - sx; val dy = tipY - sy
       val beamLen = Math.sqrt(dx * dx + dy * dy).toFloat
       val perpX = if (beamLen > 1) -dy / beamLen else 0f
@@ -364,14 +530,16 @@ object GLProjectileRenderers {
         val x1 = sx + dx * t1 + perpX * ripple1
         val y1 = sy + dy * t1 + perpY * ripple1
 
-        // Soft outer glow (reduced from w*5 to w*3)
-        sb.strokeLineSoft(x0, y0, x1, y1, wAvg * 3f, r, g, b, 0.25f * p)
-        // Dark cartoon outline (reduced from w*1.5 to w*1.15)
+        // Soft outer glow — charge-scaled
+        sb.strokeLineSoft(x0, y0, x1, y1, wAvg * 3f * dynGlow, dr, dg, db, 0.25f * p)
+        // Dark cartoon outline
         sb.strokeLine(x0, y0, x1, y1, wAvg * 1.15f, outline(r), outline(g), outline(b), 0.7f * p)
-        // Main beam body
-        sb.strokeLine(x0, y0, x1, y1, wAvg, r, g, b, (0.88f + t0 * 0.07f) * p)
-        // Hot core
-        sb.strokeLine(x0, y0, x1, y1, wAvg * 0.35f, bright(r), bright(g), bright(b), 0.98f * p)
+        // Main beam body — evolved colors
+        sb.strokeLine(x0, y0, x1, y1, wAvg, dr, dg, db, (0.88f + t0 * 0.07f) * p)
+        // Hot core — charge whitening
+        val cbc = _chgBright
+        sb.strokeLine(x0, y0, x1, y1, wAvg * 0.35f,
+          mix(bright(r), 1f, cbc), mix(bright(g), 1f, cbc), mix(bright(b), 1f, cbc), 0.98f * p)
       ; seg += 1 }
 
       // 3 energy filaments weaving along the beam
@@ -404,13 +572,14 @@ object GLProjectileRenderers {
           (0.35 + 0.35 * Math.sin(phase * 6 + sp * 4.1)).toFloat * p)
       ; sp += 1 }
 
-      // Tip flare (reduced sizes)
+      // Tip flare — dynamic glow
       val tipPulse = (0.7 + 0.3 * Math.sin(phase * 3)).toFloat
-      sb.fillOvalSoft(tipX, tipY, w * 3f * tipPulse, w * 2.3f * tipPulse, r, g, b, 0.4f * p, 0f, 14)
+      sb.fillOvalSoft(tipX, tipY, w * 3f * tipPulse * dynGlow, w * 2.3f * tipPulse * dynGlow, dr, dg, db, 0.4f * p, 0f, 14)
       sb.strokeOval(tipX, tipY, w * 1.4f * tipPulse, w * 1.05f * tipPulse, 2.5f,
         outline(r), outline(g), outline(b), 0.6f * p, 10)
-      sb.fillOval(tipX, tipY, w * 1.2f, w * 0.9f, r, g, b, 0.9f * p, 10)
-      sb.fillOval(tipX, tipY, w * 0.55f, w * 0.4f, bright(r), bright(g), bright(b), 0.95f * p, 8)
+      sb.fillOval(tipX, tipY, w * 1.2f, w * 0.9f, dr, dg, db, 0.9f * p, 10)
+      sb.fillOval(tipX, tipY, w * 0.55f, w * 0.4f,
+        mix(bright(r), 1f, _chgBright), mix(bright(g), 1f, _chgBright), mix(bright(b), 1f, _chgBright), 0.95f * p, 8)
 
       // Sparkle at tip
       drawSparkleStar(tipX, tipY, w * 0.9f * tipPulse, 1f, 1f, 1f, 0.5f * p, sb, phase * 1.5)
@@ -435,21 +604,24 @@ object GLProjectileRenderers {
   private def spinner(r: Float, g: Float, b: Float, size: Float = 22f, pts: Int = 4): Renderer =
     (proj, sx, sy, sb, tick) => {
       val spin = tick * 0.35 + proj.id * 2.1
-      val p = (0.75 + 0.25 * Math.sin(spin * 2)).toFloat
-      val sz = size * 1.3f
+      val phase = spin // alias for computeAllDynamics
+      computeAllDynamics(proj, r, g, b, phase)
+      val p = (0.75 + 0.25 * Math.sin(spin * 2 * _stPulseMult)).toFloat * dynAlpha
+      val dr = _evoR; val dg = _evoG; val db = _evoB
+      val sz = size * 1.3f * dynScale
       screenDir(proj)
       val ndx = _sdx; val ndy = _sdy
       val n = pts * 2
 
       // Speed lines behind
-      drawSpeedLines(sx, sy, ndx, ndy, r, g, b, 0.3f * p, sb, 4, sz * 1.2f)
+      drawSpeedLines(sx, sy, ndx, ndy, dr, dg, db, 0.3f * p, sb, 4, sz * 1.2f)
 
       // Impact ring — pulsing spin radius
       val ringPulse = (0.7 + 0.3 * Math.sin(spin * 3)).toFloat
-      sb.strokeOval(sx, sy, sz * 1.25f * ringPulse, sz * 0.8f * ringPulse,
-        2.5f, r, g, b, 0.2f * p, 14)
+      sb.strokeOval(sx, sy, sz * 1.25f * ringPulse * dynGlow, sz * 0.8f * ringPulse * dynGlow,
+        2.5f, dr, dg, db, 0.2f * p, 14)
 
-      // Motion blur trail — 5 ghosts
+      // Motion blur trail — 5 ghosts + return ghosts
       var ghost = 1; while (ghost <= 5) {
         val taper = 1f - ghost * 0.15f
         val colorFade = 1f - ghost * 0.12f
@@ -473,9 +645,12 @@ object GLProjectileRenderers {
         _spinXs(i) = (sx + Math.cos(angle) * rad).toFloat
         _spinYs(i) = (sy + Math.sin(angle) * rad * 0.6f).toFloat
       ; i += 1 } }
-      sb.fillPolygon(_spinXs, _spinYs, n, r, g, b, 0.95f * p)
+      sb.fillPolygon(_spinXs, _spinYs, n, dr, dg, db, 0.95f * p)
       // Bold dark cartoon outline
       sb.strokePolygon(_spinXs, _spinYs, n, 3.5f, outline(r), outline(g), outline(b), 0.85f * p)
+
+      // Charge crackle
+      drawChargeCrackle(sx, sy, sz, r, g, b, p, sb, phase, proj.chargeLevel)
 
       // Bright inner edge
       { var i = 0; while (i < n) {
@@ -518,21 +693,25 @@ object GLProjectileRenderers {
       beamTip(sx, sy, proj, worldLen)
       val tipX = _tipX; val tipY = _tipY
       val phase = (tick + proj.id * 31) * 0.4
-      val p = (0.75 + 0.25 * Math.sin(phase)).toFloat
+      computeAllDynamics(proj, r, g, b, phase)
+      val p = (0.75 + 0.25 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
+      val dr = _evoR; val dg = _evoG; val db = _evoB
       screenDir(proj)
       val ndx = _sdx; val ndy = _sdy
       val perpX = -ndy; val perpY = ndx
 
       // Manga speed lines behind
-      drawSpeedLines(sx, sy, ndx, ndy, r, g, b, 0.35f * p, sb, 5, 35f)
+      drawSpeedLines(sx, sy, ndx, ndy, dr, dg, db, 0.35f * p, sb, 5 + (_lifePct * 2).toInt, 35f * dynScale)
 
       // Shaft — dark outline, colored body, bright core
-      sb.strokeLine(sx, sy, tipX, tipY, 8f, outline(r), outline(g), outline(b), 0.85f * p)
-      sb.strokeLine(sx, sy, tipX, tipY, 5.5f, r, g, b, 0.9f * p)
-      sb.strokeLine(sx, sy, tipX, tipY, 2f, bright(r), bright(g), bright(b), 0.6f * p)
+      val ds = dynScale
+      sb.strokeLine(sx, sy, tipX, tipY, 8f * ds, outline(r), outline(g), outline(b), 0.85f * p)
+      sb.strokeLine(sx, sy, tipX, tipY, 5.5f * ds, dr, dg, db, 0.9f * p)
+      sb.strokeLine(sx, sy, tipX, tipY, 2f * ds,
+        mix(bright(r), 1f, _chgBright), mix(bright(g), 1f, _chgBright), mix(bright(b), 1f, _chgBright), 0.6f * p)
 
       // Bold arrowhead — bigger and outlined
-      val headLen = 20f; val headW = 10f
+      val headLen = 20f * ds; val headW = 10f * ds
       val pointX = tipX + ndx * headLen; val pointY = tipY + ndy * headLen
       // Dark outline first
       _polyXs3(0) = pointX + ndx * 2f; _polyXs3(1) = tipX + perpX * (headW + 2f); _polyXs3(2) = tipX - perpX * (headW + 2f)
@@ -541,7 +720,7 @@ object GLProjectileRenderers {
       // Filled head
       _polyXs3(0) = pointX; _polyXs3(1) = tipX + perpX * headW; _polyXs3(2) = tipX - perpX * headW
       _polyYs3(0) = pointY; _polyYs3(1) = tipY + perpY * headW; _polyYs3(2) = tipY - perpY * headW
-      sb.fillPolygon(_polyXs3, _polyYs3, 3, r, g, b, 0.95f * p)
+      sb.fillPolygon(_polyXs3, _polyYs3, 3, dr, dg, db, 0.95f * p)
       // Cartoon shine on arrowhead
       _polyXs3(0) = pointX - perpX * 1f; _polyXs3(1) = tipX + perpX * headW * 0.3f; _polyXs3(2) = tipX + perpX * headW * 0.6f
       _polyYs3(0) = pointY - perpY * 1f; _polyYs3(1) = tipY + perpY * headW * 0.3f; _polyYs3(2) = tipY + perpY * headW * 0.6f
@@ -557,25 +736,32 @@ object GLProjectileRenderers {
         sb.strokeLine(tailX, tailY, featherX, featherY, 1f, bright(r), bright(g), bright(b), 0.3f * p)
       ; f += 2 } }
 
-      // Trail — bigger, more dots
+      // Trail — scaled by dynTrail
+      val trailLen = 38f * dynTrail
       var i = 0; while (i < 8) {
         val t = ((tick * 0.06 + i * 0.125 + proj.id * 0.11) % 1.0).toFloat
         val taper = 1f - t * 0.7f
         val colorFade = 1f - t * 0.3f
-        sb.fillOval(sx - ndx * t * 38, sy - ndy * t * 38,
-          5f * taper, 3.5f * taper, r * colorFade, g * colorFade, b * colorFade, 0.4f * (1f - t) * p, 8)
+        sb.fillOval(sx - ndx * t * trailLen, sy - ndy * t * trailLen,
+          5f * taper * ds, 3.5f * taper * ds, r * colorFade, g * colorFade, b * colorFade, 0.4f * (1f - t) * p, 8)
       ; i += 1 }
+
+      // Charge crackle
+      drawChargeCrackle(sx, sy, 22f * ds, r, g, b, p, sb, phase, proj.chargeLevel)
+      drawReturnGhosts(sx, sy, 22f * ds, dr, dg, db, p, sb, proj)
     }
 
   /** Large bouncing thrown object — CARTOONISH with big squash/stretch and bold outline */
   private def lobbed(r: Float, g: Float, b: Float, size: Float = 18f): Renderer =
     (proj, sx, sy, sb, tick) => {
       val phase = (tick + proj.id * 13) * 0.3
+      computeAllDynamics(proj, r, g, b, phase)
       val bounceRaw = Math.sin(phase * 1.5).toFloat
       val bounce = (Math.abs(bounceRaw) * 14f).toFloat
       val spin = tick * 0.18f + proj.id * 1.3f
-      val p = (0.7 + 0.3 * Math.sin(phase)).toFloat
-      val sz = size * 1.35f
+      val p = (0.7 + 0.3 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
+      val dr = _evoR; val dg = _evoG; val db = _evoB
+      val sz = size * 1.35f * dynScale
 
       // Exaggerated squash and stretch
       val stretchY = 1f + bounceRaw * bounceRaw * 0.25f
@@ -596,13 +782,13 @@ object GLProjectileRenderers {
           sz * 0.4f * (1f - t), sz * 0.3f * (1f - t), r, g, b, 0.3f * (1f - t) * p, 8)
       ; arc += 1 }
 
-      // Outer glow
-      sb.fillOvalSoft(sx, sy - bounce, sz * 2f * stretchX, sz * 1.6f * stretchY, r, g, b, 0.3f * p, 0f, 16)
+      // Outer glow — charge-scaled
+      sb.fillOvalSoft(sx, sy - bounce, sz * 2f * stretchX * dynGlow, sz * 1.6f * stretchY * dynGlow, dr, dg, db, 0.3f * p, 0f, 16)
       // Bold dark cartoon outline
       sb.strokeOval(sx, sy - bounce, sz * 1.05f * stretchX, sz * 0.85f * stretchY,
-        3.5f, outline(r), outline(g), outline(b), 0.85f, 16)
-      // Main body — solid and punchy
-      sb.fillOval(sx, sy - bounce, sz * stretchX, sz * 0.8f * stretchY, r, g, b, 0.98f, 16)
+        3.5f, outline(r), outline(g), outline(b), 0.85f * dynAlpha, 16)
+      // Main body — evolved colors
+      sb.fillOval(sx, sy - bounce, sz * stretchX, sz * 0.8f * stretchY, dr, dg, db, 0.98f * dynAlpha, 16)
       // Bottom shading
       sb.fillOval(sx, sy - bounce + sz * 0.18f * stretchY, sz * 0.85f * stretchX, sz * 0.5f * stretchY,
         dark(r), dark(g), dark(b), 0.35f, 14)
@@ -623,11 +809,13 @@ object GLProjectileRenderers {
   private def aoeRing(r: Float, g: Float, b: Float, maxR: Float = 50f): Renderer =
     (proj, sx, sy, sb, tick) => {
       val phase = (tick + proj.id * 23) * 0.4
-      val p = (0.65 + 0.35 * Math.sin(phase * 2)).toFloat
-      val mR = maxR * 1.3f
+      computeAllDynamics(proj, r, g, b, phase)
+      val p = (0.65 + 0.35 * Math.sin(phase * 2 * _stPulseMult)).toFloat * dynAlpha
+      val dr = _evoR; val dg = _evoG; val db = _evoB
+      val mR = maxR * 1.3f * dynScale
 
-      // Ground fill — bigger
-      sb.fillOvalSoft(sx, sy, mR * 0.7f, mR * 0.35f, r, g, b, 0.25f * p, 0f, 18)
+      // Ground fill — charge-scaled glow
+      sb.fillOvalSoft(sx, sy, mR * 0.7f * dynGlow, mR * 0.35f * dynGlow, dr, dg, db, 0.25f * p, 0f, 18)
 
       // 5 bold expanding rings with dark outlines
       var ring = 0; while (ring < 5) {
@@ -657,8 +845,9 @@ object GLProjectileRenderers {
 
       // Core — bold with outline
       sb.strokeOval(sx, sy, 14f, 8.5f, 3f, outline(r), outline(g), outline(b), 0.7f * p, 12)
-      sb.fillOval(sx, sy, 13f, 8f, r, g, b, 0.85f * p, 12)
-      sb.fillOval(sx, sy, 6f, 3.5f, bright(r), bright(g), bright(b), 0.95f * p, 8)
+      sb.fillOval(sx, sy, 13f, 8f, dr, dg, db, 0.85f * p, 12)
+      sb.fillOval(sx, sy, 6f, 3.5f,
+        mix(bright(r), 1f, _chgBright), mix(bright(g), 1f, _chgBright), mix(bright(b), 1f, _chgBright), 0.95f * p, 8)
 
       // Sparkle stars popping at the ring edges
       var star = 0; while (star < 4) {
@@ -679,12 +868,14 @@ object GLProjectileRenderers {
       beamTip(sx, sy, proj, worldLen)
       val tipX = _tipX; val tipY = _tipY
       val phase = (tick + proj.id * 23) * 0.3
-      val p = (0.7 + 0.3 * Math.sin(phase)).toFloat
+      computeAllDynamics(proj, r, g, b, phase)
+      val p = (0.7 + 0.3 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
+      val dr = _evoR; val dg = _evoG; val db = _evoB
       val dx = tipX - sx; val dy = tipY - sy
       val len = Math.sqrt(dx * dx + dy * dy).toFloat
       if (len >= 1) {
         val nx = -dy / len; val ny = dx / len
-        val zigW = 12f * p
+        val zigW = 12f * p * dynScale
         val segs = 8
 
         var i = 0; while (i < segs) {
@@ -697,10 +888,11 @@ object GLProjectileRenderers {
           val x1 = sx + dx * t1 + nx * z1; val y1 = sy + dy * t1 + ny * z1
 
           // Dark outline
-          sb.strokeLine(x0, y0, x1, y1, 9f, outline(r), outline(g), outline(b), 0.75f * p)
-          // Main segment — thicker
-          sb.strokeLine(x0, y0, x1, y1, 7f, r, g, b, 0.9f * p)
-          if (i % 2 == 0) sb.strokeLine(x0, y0, x1, y1, 3f, bright(r), bright(g), bright(b), 0.8f * p)
+          sb.strokeLine(x0, y0, x1, y1, 9f * dynScale, outline(r), outline(g), outline(b), 0.75f * p)
+          // Main segment — evolved colors
+          sb.strokeLine(x0, y0, x1, y1, 7f * dynScale, dr, dg, db, 0.9f * p)
+          if (i % 2 == 0) sb.strokeLine(x0, y0, x1, y1, 3f * dynScale,
+            mix(bright(r), 1f, _chgBright), mix(bright(g), 1f, _chgBright), mix(bright(b), 1f, _chgBright), 0.8f * p)
 
           // Bigger branch forks at alternating joints
           if (i % 2 == 1 && i < segs - 1) {
@@ -736,13 +928,15 @@ object GLProjectileRenderers {
   private def bulletProj(r: Float, g: Float, b: Float, size: Float = 5f): Renderer =
     (proj, sx, sy, sb, tick) => {
       val phase = (tick + proj.id * 31) * 0.4
-      val p = (0.7 + 0.3 * Math.sin(phase)).toFloat
-      val sz = size * 1.5f
+      computeAllDynamics(proj, r, g, b, phase)
+      val p = (0.7 + 0.3 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
+      val dr = _evoR; val dg = _evoG; val db = _evoB
+      val sz = size * 1.5f * dynScale
       screenDir(proj)
       val ndx = _sdx; val ndy = _sdy
 
       // Speed lines behind
-      drawSpeedLines(sx, sy, ndx, ndy, r, g, b, 0.35f * p, sb, 5, 30f)
+      drawSpeedLines(sx, sy, ndx, ndy, dr, dg, db, 0.35f * p, sb, 5, 30f)
 
       // Big muzzle flash at rear — cartoon explosion puff
       val flashSize = 18f * (0.7f + 0.3f * Math.sin(phase * 3).toFloat)
@@ -759,10 +953,11 @@ object GLProjectileRenderers {
 
       // Dark cartoon outline
       sb.strokeLine(tailX, tailY, tipX, tipY, bodyW * 2.5f, outline(r), outline(g), outline(b), 0.9f * p)
-      // Metallic body
-      sb.strokeLine(tailX, tailY, tipX, tipY, bodyW * 1.8f, r, g, b, 0.95f * p)
-      // Specular highlight
-      sb.strokeLine(tailX, tailY, tipX, tipY, bodyW * 0.6f, bright(r), bright(g), bright(b), 0.7f * p)
+      // Metallic body — evolved colors
+      sb.strokeLine(tailX, tailY, tipX, tipY, bodyW * 1.8f, dr, dg, db, 0.95f * p)
+      // Specular highlight — charge whitening
+      sb.strokeLine(tailX, tailY, tipX, tipY, bodyW * 0.6f,
+        mix(bright(r), 1f, _chgBright), mix(bright(g), 1f, _chgBright), mix(bright(b), 1f, _chgBright), 0.7f * p)
       // Rounded tip with outline
       sb.strokeOval(tipX, tipY, bodyW * 1.6f, bodyW * 1.2f, 2f, outline(r), outline(g), outline(b), 0.8f * p, 8)
       sb.fillOval(tipX, tipY, bodyW * 1.4f, bodyW * 1f, bright(r), bright(g), bright(b), 0.9f * p, 8)
@@ -782,14 +977,16 @@ object GLProjectileRenderers {
   private def fistProj(r: Float, g: Float, b: Float, size: Float = 14f): Renderer =
     (proj, sx, sy, sb, tick) => {
       val phase = (tick + proj.id * 23) * 0.4
-      val p = (0.65 + 0.35 * Math.sin(phase)).toFloat
-      val sz = size * 1.4f
+      computeAllDynamics(proj, r, g, b, phase)
+      val p = (0.65 + 0.35 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
+      val dr = _evoR; val dg = _evoG; val db = _evoB
+      val sz = size * 1.4f * dynScale
       screenDir(proj)
       val ndx = _sdx; val ndy = _sdy
       val perpX = -ndy; val perpY = ndx
 
       // Speed lines behind — manga punch style
-      drawSpeedLines(sx, sy, ndx, ndy, r, g, b, 0.4f * p, sb, 6, sz * 2f)
+      drawSpeedLines(sx, sy, ndx, ndy, dr, dg, db, 0.4f * p, sb, 6, sz * 2f)
 
       // Impact burst ring — big pulsing
       val ringPulse = 0.6f + 0.4f * Math.sin(phase * 3).toFloat
@@ -804,8 +1001,8 @@ object GLProjectileRenderers {
       // Bold dark cartoon outline
       sb.strokeOval(sx, sy, sz * 1.05f, sz * 0.8f, 3.5f,
         outline(r), outline(g), outline(b), 0.85f * p, 14)
-      // Fist body — solid and punchy
-      sb.fillOval(sx, sy, sz, sz * 0.75f, r, g, b, 0.95f * p, 14)
+      // Fist body — evolved colors
+      sb.fillOval(sx, sy, sz, sz * 0.75f, dr, dg, db, 0.95f * p, 14)
       // Knuckle highlight
       sb.fillOval(sx + ndx * sz * 0.2f, sy + ndy * sz * 0.2f - 2f,
         sz * 0.45f, sz * 0.35f, bright(r), bright(g), bright(b), 0.6f * p, 10)
@@ -833,8 +1030,10 @@ object GLProjectileRenderers {
   private def wave(r: Float, g: Float, b: Float, spread: Float = 32f): Renderer =
     (proj, sx, sy, sb, tick) => {
       val phase = (tick + proj.id * 41) * 0.4
-      val p = (0.65 + 0.35 * Math.sin(phase)).toFloat
-      val sp = spread * 1.3f
+      computeAllDynamics(proj, r, g, b, phase)
+      val p = (0.65 + 0.35 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
+      val dr = _evoR; val dg = _evoG; val db = _evoB
+      val sp = spread * 1.3f * dynScale
       screenDir(proj)
       val ndx = _sdx; val ndy = _sdy
       val perpX = -ndy; val perpY = ndx
@@ -851,10 +1050,10 @@ object GLProjectileRenderers {
         sb.fillPolygon(_polyXs4, _polyYs4, 4, r, g, b, afAlpha)
       ; af += 1 }
 
-      // Main crescent fill — brighter
+      // Main crescent fill — evolved colors
       _polyXs4(0) = tipX; _polyXs4(1) = w1x; _polyXs4(2) = sx - ndx * 4; _polyXs4(3) = w2x
       _polyYs4(0) = tipY; _polyYs4(1) = w1y; _polyYs4(2) = sy - ndy * 3; _polyYs4(3) = w2y
-      sb.fillPolygon(_polyXs4, _polyYs4, 4, r, g, b, 0.6f * p)
+      sb.fillPolygon(_polyXs4, _polyYs4, 4, dr, dg, db, 0.6f * p)
 
       // Bold dark cartoon outline
       sb.strokePolygon(_polyXs4, _polyYs4, 4, 4f, outline(r), outline(g), outline(b), 0.75f * p)

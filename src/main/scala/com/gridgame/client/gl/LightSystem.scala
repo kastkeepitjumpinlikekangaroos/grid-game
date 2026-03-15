@@ -10,7 +10,7 @@ import org.lwjgl.opengl.GL30._
  * Uses a pre-allocated pool of lights to avoid per-frame allocations.
  */
 class LightSystem(var width: Int, var height: Int) {
-  private val MAX_LIGHTS = 64
+  private val MAX_LIGHTS = 96
   // Light pool: each light has (screenX, screenY, radius, r, g, b, intensity)
   private val lx = new Array[Float](MAX_LIGHTS)
   private val ly = new Array[Float](MAX_LIGHTS)
