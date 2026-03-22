@@ -114,6 +114,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     )
 
     println(s"GameInstance[$gameId]: Started ($durationMinutes min)")
+    server.metrics.setGauge("matches.active", 1 + server.metrics.getGauge("matches.active"))
+    server.eventLog.info(EventCategory.GAME, s"Match started (${durationMinutes}min)", Map("gameId" -> gameId.toString, "worldFile" -> worldFile))
   }
 
   def stop(): Unit = {
@@ -234,6 +236,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         // Record kill and mark as killed this tick
         killedThisTick.add(targetId)
         killTracker.recordKill(projectile.ownerId, targetId)
+        server.metrics.increment("kills.total")
+        server.eventLog.info(EventCategory.GAME, "Player killed", Map("killerId" -> projectile.ownerId.toString.substring(0, 8), "victimId" -> targetId.toString.substring(0, 8), "gameId" -> gameId.toString))
 
         // Broadcast kill event
         val killPacket = new GameEventPacket(

@@ -84,6 +84,8 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
 
     val lobby = lobbyManager.createLobby(playerId, name, mapIndex, duration, maxPlayers)
     if (lobby == null) return
+    server.metrics.setGauge("lobbies.active", lobbyManager.getActiveLobbies.size.toLong)
+    server.eventLog.info(EventCategory.LOBBY, s"Lobby created: $name", Map("lobbyId" -> lobby.id.toString, "playerName" -> player.getName, "playerId" -> playerId.toString.substring(0, 8)))
 
     // Send JOINED response to creator
     val response = new LobbyActionPacket(
@@ -105,6 +107,7 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
       println(s"LobbyHandler: Player ${playerId.toString.substring(0, 8)} failed to join lobby ${packet.getLobbyId}")
       return
     }
+    server.eventLog.info(EventCategory.LOBBY, s"Player joined lobby: ${player.getName}", Map("lobbyId" -> lobby.id.toString, "playerName" -> player.getName, "playerId" -> playerId.toString.substring(0, 8)))
 
     // Send JOINED to the new player
     val response = new LobbyActionPacket(
@@ -156,6 +159,8 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
   private def handleLeave(playerId: UUID, player: Player): Unit = {
     val lobby = lobbyManager.leaveLobby(playerId)
     if (lobby == null) return
+    server.eventLog.info(EventCategory.LOBBY, s"Player left lobby: ${player.getName}", Map("lobbyId" -> lobby.id.toString, "playerName" -> player.getName, "playerId" -> playerId.toString.substring(0, 8)))
+    server.metrics.setGauge("lobbies.active", lobbyManager.getActiveLobbies.size.toLong)
 
     if (lobby.isHost(playerId)) {
       // Host left - close lobby
@@ -204,6 +209,8 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     // Resolve world file path
     val worldFileName = WorldRegistry.getFilename(lobby.mapIndex)
     val worldPath = resolveWorldPath("worlds/" + worldFileName)
+
+    server.eventLog.info(EventCategory.LOBBY, s"Game starting for lobby ${lobby.id}", Map("lobbyId" -> lobby.id.toString, "mapIndex" -> lobby.mapIndex.toString, "duration" -> lobby.durationMinutes.toString))
 
     // Create GameInstance and load world (needed for spawn points)
     val instance = new GameInstance(lobby.id, worldPath, lobby.durationMinutes, server)

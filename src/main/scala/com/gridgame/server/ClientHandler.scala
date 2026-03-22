@@ -82,6 +82,8 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     }
 
     if (!validator.validateProjectileSpawn(packet, player)) {
+      server.metrics.increment("validation.rejected")
+      server.eventLog.warn(EventCategory.VALIDATION, "Projectile validation failed", Map("playerId" -> playerId.toString.substring(0, 8), "packetType" -> "PROJECTILE_UPDATE"))
       return false
     }
 
@@ -98,6 +100,8 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     )
 
     if (projectile == null) return false // Per-player projectile cap reached
+
+    server.metrics.increment("projectiles.spawned")
 
     // Broadcast spawn to instance or all clients
     if (instance != null) {
@@ -171,6 +175,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       registry.add(player)
 
       println(s"Player joined: ${playerId.toString.substring(0, 8)} ('${packet.getPlayerName}') at ${packet.getPosition} with health ${player.getHealth}")
+      server.eventLog.info(EventCategory.GAME, s"Player joined match: ${packet.getPlayerName}", Map("playerId" -> playerId.toString.substring(0, 8), "playerName" -> packet.getPlayerName, "gameId" -> (if (instance != null) instance.gameId.toString else "-")))
 
       // Send existing players, items, and tile modifications to new player
       sendExistingPlayers(playerId, player)
@@ -191,7 +196,11 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     if (player != null) {
       val world = if (instance != null) instance.world else server.getWorld
       if (world != null) {
-        if (!validator.validateMovement(packet, player, world)) return false
+        if (!validator.validateMovement(packet, player, world)) {
+          server.metrics.increment("validation.rejected")
+          server.eventLog.warn(EventCategory.VALIDATION, "Movement validation failed", Map("playerId" -> playerId.toString.substring(0, 8), "packetType" -> "PLAYER_UPDATE"))
+          return false
+        }
       } else if (instance != null) {
         // World should be loaded for active game instances — reject if missing
         return false
@@ -243,6 +252,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       itemManager.clearInventory(playerId)
       validator.removePlayer(playerId)
       println(s"Player left: ${playerId.toString.substring(0, 8)} ('${player.getName}')")
+      server.eventLog.info(EventCategory.GAME, s"Player left match: ${player.getName}", Map("playerId" -> playerId.toString.substring(0, 8), "playerName" -> player.getName))
     }
 
     true
