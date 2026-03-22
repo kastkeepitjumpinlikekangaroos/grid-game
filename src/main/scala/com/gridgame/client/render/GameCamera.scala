@@ -18,8 +18,18 @@ class GameCamera {
   private var _camOffX: Double = 0.0
   private var _camOffY: Double = 0.0
 
+  // Screen shake state
+  private var shakeIntensity: Double = 0.0
+  private var shakeSeed: Long = 0L
+
   def camOffX: Double = _camOffX
   def camOffY: Double = _camOffY
+
+  /** Trigger screen shake. Intensity is in pixels, decays exponentially. */
+  def addShake(intensity: Double): Unit = {
+    shakeIntensity = Math.min(shakeIntensity + intensity, 18.0) // cap total shake
+    shakeSeed = System.nanoTime()
+  }
 
   /** Update camera position with smooth interpolation. Results available via camOffX/camOffY. */
   def update(targetX: Double, targetY: Double, deltaSec: Double, canvasW: Double, canvasH: Double): Unit = {
@@ -38,6 +48,19 @@ class GameCamera {
     val playerSy = (visualX + visualY) * HH
     _camOffX = canvasW / 2.0 - playerSx
     _camOffY = canvasH / 2.0 - playerSy
+
+    // Apply screen shake
+    if (shakeIntensity > 0.3) {
+      shakeSeed = shakeSeed * 6364136223846793005L + 1442695040888963407L
+      val rx = ((shakeSeed >> 16) & 0xFFFF).toDouble / 32768.0 - 1.0
+      shakeSeed = shakeSeed * 6364136223846793005L + 1442695040888963407L
+      val ry = ((shakeSeed >> 16) & 0xFFFF).toDouble / 32768.0 - 1.0
+      _camOffX += rx * shakeIntensity
+      _camOffY += ry * shakeIntensity * 0.6 // less vertical shake
+      // Exponential decay
+      shakeIntensity *= Math.exp(-12.0 * deltaSec)
+      if (shakeIntensity < 0.3) shakeIntensity = 0.0
+    }
   }
 
   /** Reset visual position (e.g., on rejoin). */

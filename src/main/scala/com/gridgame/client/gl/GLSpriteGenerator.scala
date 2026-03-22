@@ -8,19 +8,19 @@ import com.gridgame.common.model.Direction
  * OpenGL character sprite loader. Packs all character sprite sheets into a
  * single texture atlas to eliminate per-character texture bind flushes in SpriteBatch.
  *
- * Atlas layout: 8 sprite sheets per row (each 256×256), up to 16 rows = 128 slots.
+ * Atlas layout: 8 sprite sheets per row (each 512×512), up to 16 rows = 128 slots.
  * Characters are uploaded lazily on first use via glTexSubImage2D.
  */
 object GLSpriteGenerator {
-  private val frameSize = Constants.SPRITE_SIZE_PX // 64
+  private val frameSize = Constants.SPRITE_SIZE_PX // 128
   private val framesPerDirection = 4
-  private val sheetSize = frameSize * framesPerDirection // 256
+  private val sheetSize = frameSize * framesPerDirection // 512
 
   // Atlas dimensions: 8 columns × 16 rows = 128 character slots
   private val ATLAS_COLS = 8
   private val ATLAS_ROWS = 16
-  private val ATLAS_W = ATLAS_COLS * sheetSize // 2048
-  private val ATLAS_H = ATLAS_ROWS * sheetSize // 4096
+  private val ATLAS_W = ATLAS_COLS * sheetSize // 4096 (128px frames)
+  private val ATLAS_H = ATLAS_ROWS * sheetSize // 8192
 
   // Direction.id → row index within a spritesheet (identity mapping — Down=0, Up=1, Left=2, Right=3)
   // Direction.id already matches spritesheet row order, so we use it directly

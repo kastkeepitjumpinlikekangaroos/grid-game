@@ -72,7 +72,16 @@ class ClientMain extends Application {
   private def addHoverEffect(btn: Button, normalStyle: String, hoverStyle: String): Unit = {
     btn.setStyle(normalStyle)
     btn.setOnMouseEntered(_ => btn.setStyle(hoverStyle))
-    btn.setOnMouseExited(_ => btn.setStyle(normalStyle))
+    btn.setOnMouseExited(_ => {
+      btn.setStyle(normalStyle)
+      btn.setScaleX(1.0); btn.setScaleY(1.0)
+    })
+    btn.setOnMousePressed(_ => {
+      btn.setScaleX(0.95); btn.setScaleY(0.95)
+    })
+    btn.setOnMouseReleased(_ => {
+      btn.setScaleX(1.0); btn.setScaleY(1.0)
+    })
   }
 
   private def addFieldFocusEffect(field: TextField): Unit = {
@@ -80,6 +89,23 @@ class ClientMain extends Application {
     field.focusedProperty().addListener((_, _, focused) => {
       field.setStyle(if (focused) fieldFocusStyle else fieldStyle)
     })
+  }
+
+  private def fadeInScene(stage: Stage, root: javafx.scene.Parent): Unit = {
+    val overlay = new javafx.scene.shape.Rectangle()
+    overlay.setFill(Color.BLACK)
+    overlay.setMouseTransparent(true)
+    val stack = new StackPane(root, overlay)
+    overlay.widthProperty().bind(stack.widthProperty())
+    overlay.heightProperty().bind(stack.heightProperty())
+    val scene = new Scene(stack)
+    scene.setFill(Color.BLACK)
+    stage.setScene(scene)
+    val fade = new javafx.animation.FadeTransition(javafx.util.Duration.millis(300), overlay)
+    fade.setFromValue(1.0)
+    fade.setToValue(0.0)
+    fade.setOnFinished(_ => stack.getChildren.remove(overlay))
+    fade.play()
   }
 
   private def styleCombo(combo: ComboBox[String]): Unit = {
@@ -152,17 +178,24 @@ class ClientMain extends Application {
       }
       // Draw map name and size
       gc.setFill(Color.color(1, 1, 1, 0.4))
-      gc.setFont(Font.font("System", 10))
+      gc.setFont(Font.font("Exo 2", 10))
       gc.fillText(s"${world.width}x${world.height}", 4, canvasH - 4)
     } catch {
       case _: Exception =>
         gc.setFill(Color.web("#556677"))
-        gc.setFont(Font.font("System", 12))
+        gc.setFont(Font.font("Exo 2", 12))
         gc.fillText("Preview unavailable", canvasW / 2 - 50, canvasH / 2)
     }
   }
 
   override def start(primaryStage: Stage): Unit = {
+    // Load custom game font for JavaFX
+    val fontStream = getClass.getResourceAsStream("/fonts/Exo2-Bold.ttf")
+    if (fontStream != null) {
+      Font.loadFont(fontStream, 16)
+      fontStream.close()
+    }
+
     primaryStage.setTitle("Grid Game - Multiplayer 2D")
     primaryStage.setResizable(true)
     val bounds = Screen.getPrimary.getVisualBounds
@@ -179,23 +212,42 @@ class ClientMain extends Application {
     root.setAlignment(Pos.CENTER)
     root.setStyle(darkBg)
 
-    // Title section with glow
-    val titleBox = new VBox(6)
+    // Title section with dramatic presentation and animated glow
+    val titleBox = new VBox(8)
     titleBox.setAlignment(Pos.CENTER)
     titleBox.setPadding(new Insets(48, 0, 28, 0))
 
     val title = new Label("Grid Game")
-    title.setFont(Font.font("System", FontWeight.BOLD, 48))
+    title.setFont(Font.font("Exo 2", FontWeight.BOLD, 56))
     title.setTextFill(Color.WHITE)
-    title.setStyle("-fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.5), 24, 0, 0, 0);")
+    title.setStyle("-fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.6), 32, 0, 0, 0);")
+    // Subtle breathing glow animation on title
+    val titleGlow = new javafx.animation.Timeline(
+      new javafx.animation.KeyFrame(javafx.util.Duration.ZERO,
+        new javafx.animation.KeyValue(title.opacityProperty(), java.lang.Double.valueOf(0.92))),
+      new javafx.animation.KeyFrame(javafx.util.Duration.millis(2000),
+        new javafx.animation.KeyValue(title.opacityProperty(), java.lang.Double.valueOf(1.0)))
+    )
+    titleGlow.setCycleCount(javafx.animation.Animation.INDEFINITE)
+    titleGlow.setAutoReverse(true)
+    titleGlow.play()
 
-    val accentLine = createAccentLine()
+    // Wider accent line with gradient
+    val accentLine = new Region()
+    accentLine.setMinHeight(2)
+    accentLine.setMaxHeight(2)
+    accentLine.setMaxWidth(120)
+    accentLine.setStyle("-fx-background-color: linear-gradient(to right, transparent, #4a9eff, #7b61ff, #4a9eff, transparent); -fx-background-radius: 1;")
 
     val subtitle = new Label("Multiplayer Arena")
-    subtitle.setFont(Font.font("System", FontWeight.NORMAL, 15))
-    subtitle.setTextFill(Color.web("#778899"))
+    subtitle.setFont(Font.font("Exo 2", FontWeight.NORMAL, 15))
+    subtitle.setTextFill(Color.web("#8899aa"))
 
-    titleBox.getChildren.addAll(title, accentLine, subtitle)
+    val versionLabel = new Label("v1.0")
+    versionLabel.setFont(Font.font("Exo 2", FontWeight.NORMAL, 11))
+    versionLabel.setTextFill(Color.web("#556677"))
+
+    titleBox.getChildren.addAll(title, accentLine, subtitle, versionLabel)
 
     // Card container for the form
     val card = new VBox(16)
@@ -205,7 +257,7 @@ class ClientMain extends Application {
     card.setStyle(cardBg)
 
     val modeLabel = new Label("Login")
-    modeLabel.setFont(Font.font("System", FontWeight.BOLD, 20))
+    modeLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 20))
     modeLabel.setTextFill(Color.web("#4a9eff"))
 
     val usernameLabel = new Label("USERNAME")
@@ -296,7 +348,7 @@ class ClientMain extends Application {
 
     val statusLabel = new Label("")
     statusLabel.setTextFill(Color.web("#e84057"))
-    statusLabel.setFont(Font.font("System", FontWeight.BOLD, 13))
+    statusLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 13))
     statusLabel.setWrapText(true)
     statusLabel.setMaxWidth(Double.MaxValue)
 
@@ -353,10 +405,22 @@ class ClientMain extends Application {
       serverSep, serverLabel, serverRow,
       actionButton, statusLabel)
 
+    // Subtle animated border glow on the card
+    val cardGlow = new javafx.animation.Timeline(
+      new javafx.animation.KeyFrame(javafx.util.Duration.ZERO,
+        new javafx.animation.KeyValue(card.effectProperty(),
+          new javafx.scene.effect.DropShadow(javafx.scene.effect.BlurType.GAUSSIAN, Color.web("rgba(74, 158, 255, 0.15)"), 24, 0, 0, 0))),
+      new javafx.animation.KeyFrame(javafx.util.Duration.millis(3000),
+        new javafx.animation.KeyValue(card.effectProperty(),
+          new javafx.scene.effect.DropShadow(javafx.scene.effect.BlurType.GAUSSIAN, Color.web("rgba(74, 158, 255, 0.35)"), 32, 0, 0, 0)))
+    )
+    cardGlow.setCycleCount(javafx.animation.Animation.INDEFINITE)
+    cardGlow.setAutoReverse(true)
+    cardGlow.play()
+
     root.getChildren.addAll(titleBox, card, new Region() { setMinHeight(16) }, toggleLink)
 
-    val scene = new Scene(root)
-    stage.setScene(scene)
+    fadeInScene(stage, root)
     stage.show()
   }
 
@@ -455,7 +519,7 @@ class ClientMain extends Application {
     val titleBar = new HBox(10)
     titleBar.setAlignment(Pos.CENTER_LEFT)
     val title = new Label("Lobby Browser")
-    title.setFont(Font.font("System", FontWeight.BOLD, 30))
+    title.setFont(Font.font("Exo 2", FontWeight.BOLD, 30))
     title.setTextFill(Color.WHITE)
     title.setStyle("-fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.3), 12, 0, 0, 0);")
     val spacer = new Region()
@@ -498,8 +562,24 @@ class ClientMain extends Application {
 
     val lobbyCellFactory = new Callback[ListView[String], ListCell[String]] {
       override def call(param: ListView[String]): ListCell[String] = new ListCell[String] {
+        private var pulseTimeline: javafx.animation.Timeline = _
+
+        setOnMouseEntered(_ => {
+          if (!isEmpty && !isSelected) {
+            setStyle(getStyle.replace("-fx-background-color: rgba(255,255,255,0.02)", "-fx-background-color: rgba(74, 158, 255, 0.06)")
+              .replace("-fx-background-color: transparent", "-fx-background-color: rgba(74, 158, 255, 0.06)") +
+              " -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.12), 12, 0, 0, 0);")
+          }
+        })
+        setOnMouseExited(_ => {
+          if (!isEmpty && !isSelected) {
+            updateItem(getItem, false)
+          }
+        })
+
         override def updateItem(item: String, empty: Boolean): Unit = {
           super.updateItem(item, empty)
+          if (pulseTimeline != null) { pulseTimeline.stop(); pulseTimeline = null }
           if (empty || item == null) {
             setText(null)
             setGraphic(null)
@@ -516,60 +596,86 @@ class ClientMain extends Application {
 
               // Lobby name + status
               val nameLabel = new Label(info.name)
-              nameLabel.setFont(Font.font("System", FontWeight.BOLD, 15))
+              nameLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 15))
               nameLabel.setTextFill(Color.web("#ccdde8"))
               val statusDot = new Label("\u25CF")
               statusDot.setTextFill(Color.web(statusColor))
-              statusDot.setFont(Font.font("System", 8))
+              statusDot.setFont(Font.font("Exo 2", 10))
+
+              // Animated pulse for "Waiting" status dot
+              if (info.status == 0) {
+                pulseTimeline = new javafx.animation.Timeline(
+                  new javafx.animation.KeyFrame(javafx.util.Duration.ZERO,
+                    new javafx.animation.KeyValue(statusDot.opacityProperty(), java.lang.Double.valueOf(1.0))),
+                  new javafx.animation.KeyFrame(javafx.util.Duration.millis(800),
+                    new javafx.animation.KeyValue(statusDot.opacityProperty(), java.lang.Double.valueOf(0.3)))
+                )
+                pulseTimeline.setCycleCount(javafx.animation.Animation.INDEFINITE)
+                pulseTimeline.setAutoReverse(true)
+                pulseTimeline.play()
+              }
+
               val statusText = new Label(s"$statusStr  \u2022  ${info.durationMinutes}min")
-              statusText.setFont(Font.font("System", 12))
+              statusText.setFont(Font.font("Exo 2", 12))
               statusText.setTextFill(Color.web("#778899"))
               val nameRow = new HBox(6, statusDot, nameLabel)
               nameRow.setAlignment(Pos.CENTER_LEFT)
-              val nameCol = new VBox(2, nameRow, statusText)
+
+              // Player icon next to player count
+              val playerIcon = new Label("\u2302")
+              playerIcon.setFont(Font.font("Exo 2", 11))
+              playerIcon.setTextFill(Color.web("#778899"))
+              val playerCountText = new Label(s"${info.playerCount}/${info.maxPlayers}")
+              playerCountText.setFont(Font.font("Exo 2", 11))
+              playerCountText.setTextFill(Color.web("#778899"))
+              val playerRow = new HBox(3, playerIcon, playerCountText)
+              playerRow.setAlignment(Pos.CENTER_LEFT)
+
+              val nameCol = new VBox(2, nameRow, new HBox(8, statusText, playerRow))
 
               val cardSpacer = new Region()
               HBox.setHgrow(cardSpacer, Priority.ALWAYS)
 
               // Mode badge
               val modeBadge = new Label(modeStr)
-              modeBadge.setFont(Font.font("System", FontWeight.BOLD, 11))
+              modeBadge.setFont(Font.font("Exo 2", FontWeight.BOLD, 11))
               if (info.gameMode == 1) {
                 modeBadge.setTextFill(Color.web("#e84057"))
-                modeBadge.setStyle("-fx-background-color: rgba(232, 64, 87, 0.15); -fx-padding: 3 10; -fx-background-radius: 12;")
+                modeBadge.setStyle("-fx-background-color: rgba(232, 64, 87, 0.15); -fx-padding: 4 12; -fx-background-radius: 12;")
               } else {
                 modeBadge.setTextFill(Color.web("#4a9eff"))
-                modeBadge.setStyle("-fx-background-color: rgba(74, 158, 255, 0.15); -fx-padding: 3 10; -fx-background-radius: 12;")
+                modeBadge.setStyle("-fx-background-color: rgba(74, 158, 255, 0.15); -fx-padding: 4 12; -fx-background-radius: 12;")
               }
 
               // Player count badge
               val countBadge = new Label(s"${info.playerCount}/${info.maxPlayers}")
-              countBadge.setFont(Font.font("System", FontWeight.BOLD, 11))
+              countBadge.setFont(Font.font("Exo 2", FontWeight.BOLD, 11))
               countBadge.setTextFill(Color.web("#2ecc71"))
-              countBadge.setStyle("-fx-background-color: rgba(46, 204, 113, 0.15); -fx-padding: 3 10; -fx-background-radius: 12;")
+              countBadge.setStyle("-fx-background-color: rgba(46, 204, 113, 0.15); -fx-padding: 4 12; -fx-background-radius: 12;")
 
-              // Mini map preview
-              val miniCanvas = new Canvas(48, 48)
+              // Larger mini map preview
+              val miniCanvas = new Canvas(56, 56)
               renderMapPreview(miniCanvas, info.mapIndex)
+              miniCanvas.setStyle("-fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.4), 6, 0, 0, 2);")
               val mapNameLabel = new Label(mapName)
-              mapNameLabel.setFont(Font.font("System", 10))
+              mapNameLabel.setFont(Font.font("Exo 2", 10))
               mapNameLabel.setTextFill(Color.web("#778899"))
               mapNameLabel.setAlignment(Pos.CENTER)
-              mapNameLabel.setMaxWidth(56)
-              val mapCol = new VBox(2, miniCanvas, mapNameLabel)
+              mapNameLabel.setMaxWidth(64)
+              val mapCol = new VBox(3, miniCanvas, mapNameLabel)
               mapCol.setAlignment(Pos.CENTER)
 
-              val badgeCol = new VBox(4, modeBadge, countBadge)
+              val badgeCol = new VBox(5, modeBadge, countBadge)
               badgeCol.setAlignment(Pos.CENTER_RIGHT)
 
-              val card = new HBox(12, nameCol, cardSpacer, badgeCol, mapCol)
+              val card = new HBox(14, nameCol, cardSpacer, badgeCol, mapCol)
               card.setAlignment(Pos.CENTER_LEFT)
-              card.setPadding(new Insets(10, 14, 10, 14))
+              card.setPadding(new Insets(10, 16, 10, 16))
 
               setGraphic(card)
-              val base = "-fx-padding: 2 4; -fx-background-radius: 10;"
+              val base = "-fx-padding: 3 4; -fx-background-radius: 12;"
               if (isSelected) {
-                setStyle(s"-fx-background-color: rgba(74, 158, 255, 0.12); $base -fx-border-color: #4a9eff; -fx-border-width: 0 0 0 3; -fx-border-radius: 10; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.15), 8, 0, 0, 0);")
+                setStyle(s"-fx-background-color: rgba(74, 158, 255, 0.12); $base -fx-border-color: #4a9eff; -fx-border-width: 0 0 0 3; -fx-border-radius: 12; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.2), 12, 0, 0, 0);")
               } else if (getIndex % 2 == 0) {
                 setStyle(s"-fx-background-color: rgba(255,255,255,0.02); $base")
               } else {
@@ -628,7 +734,7 @@ class ClientMain extends Application {
 
     val statusLabel = new Label("")
     statusLabel.setTextFill(Color.web("#8899bb"))
-    statusLabel.setFont(Font.font("System", 12))
+    statusLabel.setFont(Font.font("Exo 2", 12))
 
     // Wire up lobby list listener
     val updateList = () => {
@@ -723,8 +829,7 @@ class ClientMain extends Application {
 
     root.getChildren.addAll(headerArea, contentArea)
 
-    val scene = new Scene(root)
-    stage.setScene(scene)
+    fadeInScene(stage, root)
 
     // Auto-refresh on show
     client.requestLobbyList()
@@ -741,12 +846,12 @@ class ClientMain extends Application {
     headerBox.setPadding(new Insets(28, 24, 16, 24))
 
     val lobbyTitle = new Label(client.currentLobbyName)
-    lobbyTitle.setFont(Font.font("System", FontWeight.BOLD, 28))
+    lobbyTitle.setFont(Font.font("Exo 2", FontWeight.BOLD, 28))
     lobbyTitle.setTextFill(Color.WHITE)
     lobbyTitle.setStyle("-fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.3), 12, 0, 0, 0);")
 
     val playersLabel = new Label(s"Players: ${client.currentLobbyPlayerCount}/${client.currentLobbyMaxPlayers}")
-    playersLabel.setFont(Font.font("System", FontWeight.BOLD, 16))
+    playersLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 16))
     playersLabel.setTextFill(Color.web("#4a9eff"))
 
     val headerLine = createAccentLine()
@@ -768,15 +873,15 @@ class ClientMain extends Application {
     infoCard.setStyle(cardBg)
 
     val mapLabel = new Label(s"Map: ${WorldRegistry.getDisplayName(client.currentLobbyMapIndex)}")
-    mapLabel.setFont(Font.font("System", 14))
+    mapLabel.setFont(Font.font("Exo 2", 14))
     mapLabel.setTextFill(Color.web("#aabbcc"))
 
     val durationLabel = new Label(s"Duration: ${client.currentLobbyDuration} min")
-    durationLabel.setFont(Font.font("System", 14))
+    durationLabel.setFont(Font.font("Exo 2", 14))
     durationLabel.setTextFill(Color.web("#aabbcc"))
 
     val waitingLabel = new Label("Waiting for host to start...")
-    waitingLabel.setFont(Font.font("System", 14))
+    waitingLabel.setFont(Font.font("Exo 2", 14))
     waitingLabel.setTextFill(Color.web("#8899aa"))
 
     // Map preview (enlarged)
@@ -810,11 +915,11 @@ class ClientMain extends Application {
       val members = client.lobbyMembers.asScala.toSeq
 
       val team1Header = new Label("Team 1 (Blue)")
-      team1Header.setFont(Font.font("System", FontWeight.BOLD, 14))
+      team1Header.setFont(Font.font("Exo 2", FontWeight.BOLD, 14))
       team1Header.setTextFill(Color.web("#4a82ff"))
 
       val team2Header = new Label("Team 2 (Red)")
-      team2Header.setFont(Font.font("System", FontWeight.BOLD, 14))
+      team2Header.setFont(Font.font("Exo 2", FontWeight.BOLD, 14))
       team2Header.setTextFill(Color.web("#e84057"))
 
       val team1List = new VBox(3)
@@ -825,7 +930,7 @@ class ClientMain extends Application {
         val isLocal = arr(0).asInstanceOf[java.util.UUID].equals(client.getLocalPlayerId)
         val displayName = if (isLocal) s"$name (You)" else name
         val lbl = new Label(s"  $displayName")
-        lbl.setFont(Font.font("System", 13))
+        lbl.setFont(Font.font("Exo 2", 13))
         if (idx % 2 == 0) {
           lbl.setTextFill(Color.web("#8899cc"))
           team1List.getChildren.add(lbl)
@@ -855,7 +960,7 @@ class ClientMain extends Application {
     if (client.isLobbyHost) {
       waitingLabel.setText("You are the host")
       waitingLabel.setTextFill(Color.web("#2ecc71"))
-      waitingLabel.setFont(Font.font("System", FontWeight.BOLD, 13))
+      waitingLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 13))
 
       val configLabel = new Label("GAME SETTINGS")
       configLabel.setStyle(sectionHeaderStyle)
@@ -912,7 +1017,7 @@ class ClientMain extends Application {
 
       val startBtn = new Button("Start Game")
       addHoverEffect(startBtn, buttonGreenStyle, buttonGreenHoverStyle)
-      startBtn.setFont(Font.font("System", FontWeight.BOLD, 16))
+      startBtn.setFont(Font.font("Exo 2", FontWeight.BOLD, 16))
       startBtn.setMaxWidth(Double.MaxValue)
       startBtn.setOnAction(_ => {
         client.startGame()
@@ -953,7 +1058,7 @@ class ClientMain extends Application {
       val gameModeStr = if (client.currentLobbyGameMode == 1) s"Teams (${client.currentLobbyTeamSize}v${client.currentLobbyTeamSize})" else "Free-For-All"
       val nonHostGameModeLabel = new Label(s"Mode: $gameModeStr")
       nonHostGameModeLabel.setTextFill(Color.web("#ccdde8"))
-      nonHostGameModeLabel.setFont(Font.font("System", FontWeight.NORMAL, 14))
+      nonHostGameModeLabel.setFont(Font.font("Exo 2", FontWeight.NORMAL, 14))
       nonHostGameModeLabel.setId("gameModeLabel")
       infoCard.getChildren.addAll(mapLabel, durationLabel, nonHostGameModeLabel, teamRosterBox, lobbyMapPreviewBox, createSeparator(), waitingLabel)
     }
@@ -1048,7 +1153,7 @@ class ClientMain extends Application {
           if (sender.isEmpty) {
             lbl.setText(msg)
             lbl.setTextFill(Color.web("#778899"))
-            lbl.setFont(Font.font("System", javafx.scene.text.FontPosture.ITALIC, 12))
+            lbl.setFont(Font.font("Exo 2", javafx.scene.text.FontPosture.ITALIC, 12))
           } else {
             lbl.setText(sender + ": " + msg)
             if (sender == client.playerName) {
@@ -1056,7 +1161,7 @@ class ClientMain extends Application {
             } else {
               lbl.setTextFill(Color.web("#ccdde8"))
             }
-            lbl.setFont(Font.font("System", 12))
+            lbl.setFont(Font.font("Exo 2", 12))
           }
           lbl.setWrapText(true)
           chatMessagesBox.getChildren.add(lbl)
@@ -1094,7 +1199,7 @@ class ClientMain extends Application {
     headerBox.setPadding(new Insets(28, 24, 16, 24))
 
     val titleLabel = new Label("Target Practice")
-    titleLabel.setFont(Font.font("System", FontWeight.BOLD, 28))
+    titleLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 28))
     titleLabel.setTextFill(Color.WHITE)
     titleLabel.setStyle("-fx-effect: dropshadow(gaussian, rgba(61, 219, 128, 0.3), 12, 0, 0, 0);")
 
@@ -1126,14 +1231,14 @@ class ClientMain extends Application {
 
     val descText = new Label("Shoot passive bots with\nsatisfying feedback. Bots\nrespawn quickly so you can\npractice non-stop.")
     descText.setTextFill(Color.web("#8899aa"))
-    descText.setFont(Font.font("System", 14))
+    descText.setFont(Font.font("Exo 2", 14))
     descText.setWrapText(true)
 
     val sep = createSeparator()
 
     val startBtn = new Button("Start Practice")
     addHoverEffect(startBtn, buttonGreenStyle, buttonGreenHoverStyle)
-    startBtn.setFont(Font.font("System", FontWeight.BOLD, 16))
+    startBtn.setFont(Font.font("Exo 2", FontWeight.BOLD, 16))
     startBtn.setMaxWidth(Double.MaxValue)
 
     val backBtn = new Button("Back")
@@ -1193,13 +1298,13 @@ class ClientMain extends Application {
     titleRow.setAlignment(Pos.CENTER)
 
     val queueTitle = new Label("Ranked Queue")
-    queueTitle.setFont(Font.font("System", FontWeight.BOLD, 28))
+    queueTitle.setFont(Font.font("Exo 2", FontWeight.BOLD, 28))
     queueTitle.setTextFill(Color.WHITE)
     queueTitle.setStyle("-fx-effect: dropshadow(gaussian, rgba(255, 215, 0, 0.3), 12, 0, 0, 0);")
 
     // ELO badge
     val eloLabel = new Label(s"ELO: ${client.rankedElo}")
-    eloLabel.setFont(Font.font("System", FontWeight.BOLD, 18))
+    eloLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 18))
     eloLabel.setTextFill(Color.web("#ffd700"))
     eloLabel.setStyle("-fx-background-color: rgba(255, 215, 0, 0.08); -fx-padding: 6 20; -fx-background-radius: 20; -fx-border-color: rgba(255, 215, 0, 0.2); -fx-border-radius: 20; -fx-border-width: 1;")
 
@@ -1288,19 +1393,19 @@ class ClientMain extends Application {
 
     // Queue status elements (initially hidden)
     val queueSizeLabel = new Label("Players in queue: 1")
-    queueSizeLabel.setFont(Font.font("System", 14))
+    queueSizeLabel.setFont(Font.font("Exo 2", 14))
     queueSizeLabel.setTextFill(Color.web("#aabbcc"))
     queueSizeLabel.setVisible(false)
     queueSizeLabel.setManaged(false)
 
     val waitTimeLabel = new Label("Wait time: 0s")
-    waitTimeLabel.setFont(Font.font("System", 14))
+    waitTimeLabel.setFont(Font.font("Exo 2", 14))
     waitTimeLabel.setTextFill(Color.web("#aabbcc"))
     waitTimeLabel.setVisible(false)
     waitTimeLabel.setManaged(false)
 
     val searchingLabel = new Label("")
-    searchingLabel.setFont(Font.font("System", FontWeight.BOLD, 14))
+    searchingLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 14))
     searchingLabel.setTextFill(Color.web("#4a9eff"))
     searchingLabel.setVisible(false)
     searchingLabel.setManaged(false)
@@ -1331,7 +1436,7 @@ class ClientMain extends Application {
     // Find Match button
     val findMatchBtn = new Button("Find Match")
     addHoverEffect(findMatchBtn, buttonGreenStyle, buttonGreenHoverStyle)
-    findMatchBtn.setFont(Font.font("System", FontWeight.BOLD, 15))
+    findMatchBtn.setFont(Font.font("Exo 2", FontWeight.BOLD, 15))
     findMatchBtn.setMaxWidth(Double.MaxValue)
 
     modeCard.getChildren.addAll(modeLabel, modeButtonsCol, findMatchBtn, searchingLabel, searchSeparator, queueSizeLabel, waitTimeLabel)
@@ -1444,7 +1549,7 @@ class ClientMain extends Application {
     val titleBar = new HBox(12)
     titleBar.setAlignment(Pos.CENTER_LEFT)
     val title = new Label("Leaderboard")
-    title.setFont(Font.font("System", FontWeight.BOLD, 28))
+    title.setFont(Font.font("Exo 2", FontWeight.BOLD, 28))
     title.setTextFill(Color.WHITE)
     val spacer = new Region()
     HBox.setHgrow(spacer, Priority.ALWAYS)
@@ -1497,7 +1602,7 @@ class ClientMain extends Application {
 
     val loadingLabel = new Label("Loading...")
     loadingLabel.setTextFill(Color.web("#8899bb"))
-    loadingLabel.setFont(Font.font("System", 13))
+    loadingLabel.setFont(Font.font("Exo 2", 13))
 
     root.getChildren.addAll(titleBar, leaderboardListView, loadingLabel)
 
@@ -1535,12 +1640,12 @@ class ClientMain extends Application {
     val titleBar = new HBox(12)
     titleBar.setAlignment(Pos.CENTER_LEFT)
     val title = new Label("Profile")
-    title.setFont(Font.font("System", FontWeight.BOLD, 30))
+    title.setFont(Font.font("Exo 2", FontWeight.BOLD, 30))
     title.setTextFill(Color.WHITE)
     title.setStyle("-fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.3), 12, 0, 0, 0);")
 
     val playerTag = new Label(client.playerName)
-    playerTag.setFont(Font.font("System", FontWeight.BOLD, 14))
+    playerTag.setFont(Font.font("Exo 2", FontWeight.BOLD, 14))
     playerTag.setTextFill(Color.web("#4a9eff"))
     playerTag.setStyle("-fx-background-color: rgba(74, 158, 255, 0.1); -fx-padding: 4 12; -fx-background-radius: 12; -fx-border-color: rgba(74, 158, 255, 0.2); -fx-border-radius: 12; -fx-border-width: 1;")
 
@@ -1628,7 +1733,7 @@ class ClientMain extends Application {
 
     val loadingLabel = new Label("Loading...")
     loadingLabel.setTextFill(Color.web("#8899aa"))
-    loadingLabel.setFont(Font.font("System", 13))
+    loadingLabel.setFont(Font.font("Exo 2", 13))
 
     contentArea.getChildren.addAll(statsCard, historyTitle, historyListView, loadingLabel)
 
@@ -1691,7 +1796,7 @@ class ClientMain extends Application {
     val nameLabel = new Label(label)
     nameLabel.setStyle(sectionHeaderStyle)
     val valueLabel = new Label(value)
-    valueLabel.setFont(Font.font("System", FontWeight.BOLD, 22))
+    valueLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 22))
     valueLabel.setTextFill(Color.web(accentColor))
     inner.getChildren.addAll(nameLabel, valueLabel)
 
@@ -1826,12 +1931,12 @@ class ClientMain extends Application {
 
     val isPractice = client.isPracticeMode
     val title = new Label(if (isPractice) "Practice Complete" else "Game Over")
-    title.setFont(Font.font("System", FontWeight.BOLD, 40))
+    title.setFont(Font.font("Exo 2", FontWeight.BOLD, 40))
     title.setTextFill(Color.WHITE)
     title.setStyle("-fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.4), 20, 0, 0, 0);")
 
     val subtitle = new Label(if (isPractice) "Target Practice" else "Final Scoreboard")
-    subtitle.setFont(Font.font("System", 15))
+    subtitle.setFont(Font.font("Exo 2", 15))
     subtitle.setTextFill(Color.web("#8899aa"))
 
     val accentLine = createAccentLine()
@@ -1879,7 +1984,7 @@ class ClientMain extends Application {
       if (client.currentLobbyGameMode == 1 && entry.teamId != lastTeamId) {
         lastTeamId = entry.teamId
         val teamLabel = new Label(s"Team $lastTeamId")
-        teamLabel.setFont(Font.font("System", FontWeight.BOLD, 14))
+        teamLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 14))
         val teamColor = lastTeamId match {
           case 1 => Color.web("#4a82ff")
           case 2 => Color.web("#e84057")
@@ -1933,7 +2038,7 @@ class ClientMain extends Application {
         case _ => Color.web("#556677")
       }
       rankLabel.setTextFill(rankColor)
-      rankLabel.setFont(Font.font("System", FontWeight.BOLD, if (entry.rank <= 3) 20 else 16))
+      rankLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, if (entry.rank <= 3) 20 else 16))
       if (entry.rank <= 3) {
         rankLabel.setStyle(s"-fx-effect: dropshadow(gaussian, ${if (entry.rank == 1) "rgba(255,215,0,0.4)" else if (entry.rank == 2) "rgba(192,192,192,0.3)" else "rgba(205,127,50,0.3)"}, 8, 0, 0, 0);")
       }
@@ -1946,17 +2051,17 @@ class ClientMain extends Application {
       nameLabel.setMinWidth(240)
       HBox.setHgrow(nameLabel, Priority.ALWAYS)
       nameLabel.setTextFill(if (isLocal) Color.web("#4a9eff") else Color.web("#ccdde8"))
-      nameLabel.setFont(Font.font("System", FontWeight.BOLD, 15))
+      nameLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 15))
 
       val killsLabel = new Label(entry.kills.toString)
       killsLabel.setMinWidth(90)
       killsLabel.setTextFill(Color.web("#2ecc71"))
-      killsLabel.setFont(Font.font("System", FontWeight.BOLD, 16))
+      killsLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 16))
 
       val deathsLabel = new Label(entry.deaths.toString)
       deathsLabel.setMinWidth(90)
       deathsLabel.setTextFill(Color.web("#e84057"))
-      deathsLabel.setFont(Font.font("System", FontWeight.BOLD, 15))
+      deathsLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 15))
 
       row.getChildren.addAll(rankLabel, nameLabel, killsLabel, deathsLabel)
       scoreCard.getChildren.add(row)
@@ -1984,7 +2089,7 @@ class ClientMain extends Application {
 
     val returnBtn = new Button("Return to Lobby")
     addHoverEffect(returnBtn, buttonStyle, buttonHoverStyle)
-    returnBtn.setFont(Font.font("System", FontWeight.BOLD, 15))
+    returnBtn.setFont(Font.font("Exo 2", FontWeight.BOLD, 15))
     returnBtn.setOnAction(_ => {
       client.returnToLobbyBrowser()
       client.requestLobbyList()
@@ -1998,7 +2103,7 @@ class ClientMain extends Application {
     if (isPractice) {
       val practiceAgainBtn = new Button("Practice Again")
       addHoverEffect(practiceAgainBtn, buttonGreenStyle, buttonGreenHoverStyle)
-      practiceAgainBtn.setFont(Font.font("System", FontWeight.BOLD, 15))
+      practiceAgainBtn.setFont(Font.font("Exo 2", FontWeight.BOLD, 15))
       practiceAgainBtn.setOnAction(_ => {
         client.returnToLobbyBrowser()
         showPracticeSetup(stage)
@@ -2015,8 +2120,7 @@ class ClientMain extends Application {
 
     root.getChildren.addAll(titleBox, scrollPane, btnBox)
 
-    val scene = new Scene(root)
-    stage.setScene(scene)
+    fadeInScene(stage, root)
   }
 
   private def handleWorldFileFromServer(worldFileName: String): Unit = {

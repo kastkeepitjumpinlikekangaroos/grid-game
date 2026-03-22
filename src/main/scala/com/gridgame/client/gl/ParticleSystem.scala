@@ -146,6 +146,21 @@ class ParticleSystem(val maxParticles: Int = 2048) {
     }
   }
 
+  /** Emit a ring of particles expanding outward from a center point. */
+  def emitRing(cx: Float, cy: Float, count: Int, speed: Float, life: Float,
+               r: Float, g: Float, b: Float, alpha: Float, size: Float,
+               gravity: Float = 0f, drag: Float = 2f, additive: Boolean = false): Unit = {
+    val step = (Math.PI * 2.0 / count).toFloat
+    var i = 0
+    while (i < count) {
+      val angle = i * step
+      val vx = Math.cos(angle).toFloat * speed
+      val vy = Math.sin(angle).toFloat * speed
+      emit(cx, cy, vx, vy, life, r, g, b, alpha, size, gravity, drag, additive, shrink = true, soft = true)
+      i += 1
+    }
+  }
+
   /** Clear all particles. */
   def clear(): Unit = {
     count = 0

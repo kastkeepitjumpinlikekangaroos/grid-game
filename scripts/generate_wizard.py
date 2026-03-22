@@ -14,11 +14,12 @@ Enhanced 64x64: staff with wood grain, larger orb with inner swirl, zigzag robe 
 
 from PIL import Image, ImageDraw
 
-FRAME_SIZE = 64
+FRAME_SIZE = 128
+DRAW_SIZE = 64   # Internal drawing size (upscaled to FRAME_SIZE)
 COLS = 4
 ROWS = 4
-IMG_W = FRAME_SIZE * COLS   # 256
-IMG_H = FRAME_SIZE * ROWS   # 256
+IMG_W = FRAME_SIZE * COLS   # 512
+IMG_H = FRAME_SIZE * ROWS   # 512
 
 # Colors
 OUTLINE = (25, 20, 40)
@@ -431,9 +432,10 @@ def main():
 
     for direction in range(ROWS):
         for frame in range(COLS):
-            frame_img = Image.new("RGBA", (FRAME_SIZE, FRAME_SIZE), (0, 0, 0, 0))
+            frame_img = Image.new("RGBA", (DRAW_SIZE, DRAW_SIZE), (0, 0, 0, 0))
             frame_draw = ImageDraw.Draw(frame_img)
             draw_wizard(frame_draw, 0, 0, direction, frame)
+            frame_img = frame_img.resize((FRAME_SIZE, FRAME_SIZE), Image.LANCZOS)
             img.paste(frame_img, (frame * FRAME_SIZE, direction * FRAME_SIZE))
 
     img.save("sprites/wizard.png")

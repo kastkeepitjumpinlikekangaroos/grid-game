@@ -173,6 +173,7 @@ object ShaderProgram {
       |in vec2 vTexCoord;
       |uniform sampler2D uScene;
       |uniform sampler2D uBloom;
+      |uniform sampler2D uBloomQ;
       |uniform sampler2D uLightMap;
       |uniform float uBloomStrength;
       |uniform float uVignetteStrength;
@@ -183,6 +184,11 @@ object ShaderProgram {
       |uniform vec2 uDistortionCenter;
       |uniform float uDistortionStrength;
       |uniform float uDamageVignette;
+      |uniform vec2 uResolution;
+      |// ACES filmic tone mapping
+      |vec3 acesToneMap(vec3 x) {
+      |  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+      |}
       |out vec4 FragColor;
       |void main() {
       |  vec2 uv = vTexCoord;
@@ -206,7 +212,18 @@ object ShaderProgram {
       |  } else {
       |    scene = texture(uScene, uv);
       |  }
-      |  vec4 bloom = texture(uBloom, uv);
+      |  // Unsharp mask sharpening — sample 4 neighbors, enhance edges
+      |  vec2 texel = 1.0 / uResolution;
+      |  vec3 blurSample = (
+      |    texture(uScene, uv + vec2(texel.x, 0.0)).rgb +
+      |    texture(uScene, uv - vec2(texel.x, 0.0)).rgb +
+      |    texture(uScene, uv + vec2(0.0, texel.y)).rgb +
+      |    texture(uScene, uv - vec2(0.0, texel.y)).rgb
+      |  ) * 0.25;
+      |  scene.rgb += (scene.rgb - blurSample) * 0.15;
+      |  vec4 bloomH = texture(uBloom, uv);
+      |  vec4 bloomQ = texture(uBloomQ, uv);
+      |  vec4 bloom = bloomH * 0.6 + bloomQ * 0.4;
       |  // Screen blend for bloom — brightens without blowing out whites
       |  vec3 color = scene.rgb + bloom.rgb * uBloomStrength * (1.0 - scene.rgb);
       |  // Dynamic lighting: multiply scene by light map
@@ -214,13 +231,20 @@ object ShaderProgram {
       |    vec3 light = texture(uLightMap, vTexCoord).rgb;
       |    color *= min(light * 1.6, vec3(1.2));
       |  }
-      |  // Warm-cool color grading: shadows toward blue-purple, highlights toward warm amber
+      |  // Warm-cool color grading: teal shadows, warm highlights
       |  float luma = dot(color, vec3(0.299, 0.587, 0.114));
-      |  vec3 shadows = vec3(0.05, 0.03, 0.1);
-      |  vec3 highlights = vec3(1.05, 1.0, 0.92);
+      |  vec3 shadows = vec3(0.01, 0.02, 0.05);
+      |  vec3 highlights = vec3(1.03, 1.01, 0.96);
       |  color = mix(color + shadows * (1.0 - luma), color * highlights, luma);
-      |  // Contrast S-curve: subtle contrast boost
-      |  color = color * color * (3.0 - 2.0 * color);
+      |  // Subtle contrast boost — S-curve in luminance
+      |  float contrastLuma = dot(color, vec3(0.299, 0.587, 0.114));
+      |  float boosted = smoothstep(0.0, 1.0, contrastLuma);
+      |  color *= (boosted / max(contrastLuma, 0.001)) * 0.15 + 0.85;
+      |  // ACES filmic tone mapping — cinematic highlight rolloff
+      |  color = acesToneMap(color);
+      |  // Slight saturation boost for vibrancy
+      |  float postLuma = dot(color, vec3(0.299, 0.587, 0.114));
+      |  color = mix(vec3(postLuma), color, 0.96);
       |  // Film grain: per-pixel noise
       |  float grain = fract(sin(dot(vTexCoord * uTime, vec2(12.9898, 78.233))) * 43758.5453);
       |  color += (grain - 0.5) * 0.015;

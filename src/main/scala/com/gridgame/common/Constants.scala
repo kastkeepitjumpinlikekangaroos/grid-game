@@ -8,7 +8,7 @@ object Constants {
   val VIEWPORT_SIZE_PX: Int = VIEWPORT_CELLS * CELL_SIZE_PX // 500px
 
   // Sprite size for isometric view
-  val SPRITE_SIZE_PX: Int = 64         // Source frame size in spritesheet (2x atlas)
+  val SPRITE_SIZE_PX: Int = 128        // Source frame size in spritesheet (high-res)
   val PLAYER_DISPLAY_SIZE_PX: Int = 48 // Rendered display size (scaled up)
 
   // Camera zoom level (1.0 = default, 2.0 = 2x zoom)
@@ -41,8 +41,8 @@ object Constants {
 
   // Health configuration
   val MAX_HEALTH: Int = 100
-  val HEALTH_BAR_WIDTH_PX: Int = 24
-  val HEALTH_BAR_HEIGHT_PX: Int = 4
+  val HEALTH_BAR_WIDTH_PX: Int = 44
+  val HEALTH_BAR_HEIGHT_PX: Int = 6
   val HEALTH_BAR_OFFSET_Y: Int = 5
 
   // Projectile configuration

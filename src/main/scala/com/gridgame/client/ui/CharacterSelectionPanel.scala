@@ -176,11 +176,11 @@ class CharacterSelectionPanel(
     detailPreviewCanvas = new Canvas(96, 96)
 
     detailNameLabel = new Label("")
-    detailNameLabel.setFont(Font.font("System", FontWeight.BOLD, 17))
+    detailNameLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 17))
     detailNameLabel.setTextFill(Color.web("#4a9eff"))
 
     detailDescLabel = new Label("")
-    detailDescLabel.setFont(Font.font("System", 13))
+    detailDescLabel.setFont(Font.font("Exo 2", 13))
     detailDescLabel.setTextFill(Color.web("#aabbcc"))
     detailDescLabel.setWrapText(true)
     detailDescLabel.setMaxWidth(320)
@@ -299,7 +299,7 @@ class CharacterSelectionPanel(
       cellCanvases += (charId -> cellCanvas)
 
       val nameLabel = new Label(charDef.displayName)
-      nameLabel.setFont(Font.font("System", FontWeight.BOLD, 9))
+      nameLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 9))
       nameLabel.setTextFill(Color.web("#aabbcc"))
       nameLabel.setMaxWidth(60)
       nameLabel.setAlignment(Pos.CENTER)
@@ -325,9 +325,11 @@ class CharacterSelectionPanel(
       })
       cellPane.setOnMouseEntered(_ => {
         if (charId != getSelectedId()) cellPane.setStyle(cellHoverStyle)
+        cellPane.setScaleX(1.05); cellPane.setScaleY(1.05)
       })
       cellPane.setOnMouseExited(_ => {
         if (charId != getSelectedId()) cellPane.setStyle(cellBaseStyle)
+        cellPane.setScaleX(1.0); cellPane.setScaleY(1.0)
       })
 
       val col = i % currentGridCols
@@ -406,17 +408,17 @@ class CharacterSelectionPanel(
 
   private def createAbilityRow(): AbilityRow = {
     val nameLabel = new Label("")
-    nameLabel.setFont(Font.font("System", FontWeight.BOLD, 12))
+    nameLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 12))
     nameLabel.setTextFill(Color.web("#ccdde8"))
 
     val cooldownLabel = new Label("")
-    cooldownLabel.setFont(Font.font("System", 11))
+    cooldownLabel.setFont(Font.font("Exo 2", 11))
     cooldownLabel.setTextFill(Color.web("#8899aa"))
 
     val canvas = new Canvas(260, 44)
 
     val statsLabel = new Label("")
-    statsLabel.setFont(Font.font("System", 11))
+    statsLabel.setFont(Font.font("Exo 2", 11))
     statsLabel.setTextFill(Color.web("#8899bb"))
 
     AbilityRow(nameLabel, cooldownLabel, canvas, statsLabel)

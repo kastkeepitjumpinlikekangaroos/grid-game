@@ -10,7 +10,7 @@ import javafx.scene.image.{Image, PixelReader, WritableImage}
 import java.io.{File, FileInputStream, InputStream}
 
 object SpriteGenerator {
-  private val frameSize = Constants.SPRITE_SIZE_PX // 32
+  private val frameSize = Constants.SPRITE_SIZE_PX // 128
   // Row order in spritesheet: Down=0, Up=1, Left=2, Right=3
   private val directionRow: Map[Direction, Int] = Map(
     Direction.Down  -> 0,

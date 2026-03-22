@@ -17,6 +17,9 @@ class PostProcessor(var width: Int, var height: Int) {
   private var bloomExtractFBO: GLTexture = GLTexture.createFBO(width / 2, height / 2)
   private var blurPingFBO: GLTexture = GLTexture.createFBO(width / 2, height / 2)
   private var blurPongFBO: GLTexture = GLTexture.createFBO(width / 2, height / 2)
+  // Quarter-res bloom for wider, softer glow
+  private var bloomQPingFBO: GLTexture = GLTexture.createFBO(width / 4, height / 4)
+  private var bloomQPongFBO: GLTexture = GLTexture.createFBO(width / 4, height / 4)
 
   // Shaders
   private val bloomExtractShader = new ShaderProgram(ShaderProgram.FULLSCREEN_VERT, ShaderProgram.BLOOM_EXTRACT_FRAG)
@@ -37,11 +40,12 @@ class PostProcessor(var width: Int, var height: Int) {
   compositeShader.setUniform1i("uScene", 0)
   compositeShader.setUniform1i("uBloom", 1)
   compositeShader.setUniform1i("uLightMap", 2)
+  compositeShader.setUniform1i("uBloomQ", 3)
 
   // Post-process parameters (tuned for subtle enhancement, not high contrast)
-  var bloomThreshold: Float = 0.82f
-  var bloomStrength: Float = 0.18f
-  var vignetteStrength: Float = 0.20f
+  var bloomThreshold: Float = 0.80f
+  var bloomStrength: Float = 0.22f
+  var vignetteStrength: Float = 0.25f
   var animationTime: Float = 0f
   var overlayR: Float = 0f
   var overlayG: Float = 0f
@@ -127,6 +131,24 @@ class PostProcessor(var width: Int, var height: Int) {
     drawQuad()
     blurPongFBO.unbindTarget()
 
+    // 3b. Quarter-res bloom — horizontal blur
+    val quartW = width / 4; val quartH = height / 4
+    glViewport(0, 0, quartW, quartH)
+    bloomQPingFBO.bindAsTarget()
+    glClear(GL_COLOR_BUFFER_BIT)
+    blurShader.setUniform2f("uDirection", 1f / quartW, 0f)
+    bloomExtractFBO.bind(0) // re-use bloom extract as input
+    drawQuad()
+    bloomQPingFBO.unbindTarget()
+
+    // 3c. Quarter-res bloom — vertical blur
+    bloomQPongFBO.bindAsTarget()
+    glClear(GL_COLOR_BUFFER_BIT)
+    blurShader.setUniform2f("uDirection", 0f, 1f / quartH)
+    bloomQPingFBO.bind(0)
+    drawQuad()
+    bloomQPongFBO.unbindTarget()
+
     // 4. Composite: scene + bloom + vignette + lighting + effects → default framebuffer
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
     glViewport(0, 0, screenWidth, screenHeight)
@@ -145,6 +167,7 @@ class PostProcessor(var width: Int, var height: Int) {
     }
     // Chromatic aberration
     compositeShader.setUniform1f("uChromaticAberration", chromaticAberration)
+    compositeShader.setUniform2f("uResolution", width.toFloat, height.toFloat)
     // Screen distortion
     compositeShader.setUniform2f("uDistortionCenter", distortionCenterX, distortionCenterY)
     compositeShader.setUniform1f("uDistortionStrength", distortionStrength)
@@ -152,6 +175,7 @@ class PostProcessor(var width: Int, var height: Int) {
     compositeShader.setUniform1f("uDamageVignette", damageVignette)
     sceneFBO.bind(0)
     blurPongFBO.bind(1)
+    bloomQPongFBO.bind(3)
     drawQuad()
   }
 
@@ -164,6 +188,8 @@ class PostProcessor(var width: Int, var height: Int) {
     bloomExtractFBO = GLTexture.resizeFBO(bloomExtractFBO, width / 2, height / 2)
     blurPingFBO = GLTexture.resizeFBO(blurPingFBO, width / 2, height / 2)
     blurPongFBO = GLTexture.resizeFBO(blurPongFBO, width / 2, height / 2)
+    bloomQPingFBO = GLTexture.resizeFBO(bloomQPingFBO, width / 4, height / 4)
+    bloomQPongFBO = GLTexture.resizeFBO(bloomQPongFBO, width / 4, height / 4)
   }
 
   private def drawQuad(): Unit = {
@@ -177,6 +203,8 @@ class PostProcessor(var width: Int, var height: Int) {
     bloomExtractFBO.dispose()
     blurPingFBO.dispose()
     blurPongFBO.dispose()
+    bloomQPingFBO.dispose()
+    bloomQPongFBO.dispose()
     bloomExtractShader.dispose()
     blurShader.dispose()
     compositeShader.dispose()

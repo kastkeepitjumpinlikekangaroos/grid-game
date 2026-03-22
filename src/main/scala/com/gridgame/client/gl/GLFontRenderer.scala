@@ -23,7 +23,7 @@ class GLFontRenderer(val fontSize: Int) {
   private val ATLAS_ROWS = (CHAR_COUNT + ATLAS_COLS - 1) / ATLAS_COLS
 
   // Use a clean sans-serif font
-  private val awtFont = new Font(Font.SANS_SERIF, Font.BOLD, fontSize)
+  private val awtFont = GLFontRenderer.gameFont.deriveFont(java.awt.Font.BOLD, fontSize.toFloat)
 
   // Measure character metrics using AWT
   private val metrics = {
@@ -192,4 +192,22 @@ class GLFontRenderer(val fontSize: Int) {
   }
 
   def dispose(): Unit = texture.dispose()
+}
+
+object GLFontRenderer {
+  /** Shared game font loaded once from bundled TTF. Falls back to system sans-serif. */
+  val gameFont: Font = {
+    try {
+      val stream = getClass.getResourceAsStream("/fonts/Exo2-Bold.ttf")
+      if (stream != null) {
+        val font = Font.createFont(Font.TRUETYPE_FONT, stream)
+        stream.close()
+        font
+      } else {
+        new Font(Font.SANS_SERIF, Font.BOLD, 16)
+      }
+    } catch {
+      case _: Exception => new Font(Font.SANS_SERIF, Font.BOLD, 16)
+    }
+  }
 }

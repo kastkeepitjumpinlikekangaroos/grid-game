@@ -62,6 +62,18 @@ object GLTexture {
     fromBytes(bytes, nearest)
   }
 
+  /** Create a 1x1 solid white pixel texture (useful for tinted sprite drawing). */
+  def createWhitePixel(): GLTexture = {
+    val texId = glGenTextures()
+    glBindTexture(GL_TEXTURE_2D, texId)
+    val buf = org.lwjgl.BufferUtils.createByteBuffer(4)
+    buf.put(0xFF.toByte).put(0xFF.toByte).put(0xFF.toByte).put(0xFF.toByte).flip()
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, buf)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+    new GLTexture(texId, 1, 1, false)
+  }
+
   /** Create an empty texture for use as an FBO render target. */
   def createFBO(width: Int, height: Int): GLTexture = {
     val texId = glGenTextures()

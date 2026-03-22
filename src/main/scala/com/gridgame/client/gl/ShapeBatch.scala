@@ -115,6 +115,58 @@ class ShapeBatch(val shader: ShaderProgram) {
     fillRect(cx - r, cy - r, r * 2, r * 2, cr, cg, cb, ca)
   }
 
+  /** Fill a rounded rectangle with uniform color. Corner radius is clamped to half the smallest dimension. */
+  def fillRoundedRect(x: Float, y: Float, w: Float, h: Float, radius: Float, r: Float, g: Float, b: Float, a: Float): Unit = {
+    val rad = Math.min(radius, Math.min(w, h) * 0.5f)
+    if (rad < 1f) { fillRect(x, y, w, h, r, g, b, a); return }
+    val segs = 6 // segments per corner quarter
+    // Center cross (two rects)
+    fillRect(x + rad, y, w - rad * 2, h, r, g, b, a)
+    fillRect(x, y + rad, rad, h - rad * 2, r, g, b, a)
+    fillRect(x + w - rad, y + rad, rad, h - rad * 2, r, g, b, a)
+    // Four corners as triangle fans
+    roundedCorner(x + rad, y + rad, rad, Math.PI.toFloat, segs, r, g, b, a)         // TL
+    roundedCorner(x + w - rad, y + rad, rad, Math.PI.toFloat * 1.5f, segs, r, g, b, a) // TR
+    roundedCorner(x + w - rad, y + h - rad, rad, 0f, segs, r, g, b, a)               // BR
+    roundedCorner(x + rad, y + h - rad, rad, Math.PI.toFloat * 0.5f, segs, r, g, b, a) // BL
+  }
+
+  /** Fill a rounded rectangle with a vertical gradient (top to bottom). */
+  def fillRoundedRectGradient(x: Float, y: Float, w: Float, h: Float, radius: Float,
+                               r0: Float, g0: Float, b0: Float, a0: Float,
+                               r1: Float, g1: Float, b1: Float, a1: Float): Unit = {
+    val rad = Math.min(radius, Math.min(w, h) * 0.5f)
+    if (rad < 1f) {
+      fillRectGradient(x, y, w, h, r0, g0, b0, a0, r0, g0, b0, a0, r1, g1, b1, a1, r1, g1, b1, a1)
+      return
+    }
+    // Approximate with 3 horizontal bands (top corners, middle, bottom corners)
+    val topFrac = rad / h; val botFrac = 1f - topFrac
+    val mr = r0 + (r1 - r0) * topFrac; val mg = g0 + (g1 - g0) * topFrac; val mb = b0 + (b1 - b0) * topFrac; val ma = a0 + (a1 - a0) * topFrac
+    val mr2 = r0 + (r1 - r0) * botFrac; val mg2 = g0 + (g1 - g0) * botFrac; val mb2 = b0 + (b1 - b0) * botFrac; val ma2 = a0 + (a1 - a0) * botFrac
+    // Top band with rounded corners
+    fillRoundedRect(x, y, w, rad, rad, r0, g0, b0, a0)
+    // Middle band (straight rect)
+    fillRectGradient(x, y + rad, w, h - rad * 2, mr, mg, mb, ma, mr, mg, mb, ma, mr2, mg2, mb2, ma2, mr2, mg2, mb2, ma2)
+    // Bottom band with rounded corners
+    fillRoundedRect(x, y + h - rad, w, rad, rad, r1, g1, b1, a1)
+  }
+
+  private def roundedCorner(cx: Float, cy: Float, radius: Float, startAngle: Float, segs: Int,
+                            r: Float, g: Float, b: Float, a: Float): Unit = {
+    val step = (Math.PI.toFloat * 0.5f) / segs
+    ensureCapacity(segs * 3)
+    var i = 0
+    while (i < segs) {
+      val a1 = startAngle + i * step
+      val a2 = startAngle + (i + 1) * step
+      vertex(cx, cy, r, g, b, a)
+      vertex(cx + Math.cos(a1).toFloat * radius, cy + Math.sin(a1).toFloat * radius, r, g, b, a)
+      vertex(cx + Math.cos(a2).toFloat * radius, cy + Math.sin(a2).toFloat * radius, r, g, b, a)
+      i += 1
+    }
+  }
+
   def fillRect(x: Float, y: Float, w: Float, h: Float, r: Float, g: Float, b: Float, a: Float): Unit = {
     ensureCapacity(6)
     // Two triangles
