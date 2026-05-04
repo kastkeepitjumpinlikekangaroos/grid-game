@@ -1,0 +1,83 @@
+{
+  "name": "The Nexus",
+  "background": "space",
+  "width": 150,
+  "height": 150,
+  "layers": [
+    {"type": "fill", "tile": "void"},
+    {"type": "border", "tile": "obsidian", "thickness": 3},
+    {"type": "circle", "tile": "circuit", "cx": 75, "cy": 75, "radius": 60},
+
+    {"type": "circle", "tile": "toxic", "cx": 75, "cy": 75, "radius": 8},
+    {"type": "circle", "tile": "circuit", "cx": 75, "cy": 75, "radius": 5},
+    {"type": "rect", "tile": "obsidian", "x": 74, "y": 74, "width": 3, "height": 3},
+
+    {"type": "circle", "tile": "toxic", "cx": 75, "cy": 50, "radius": 5},
+    {"type": "circle", "tile": "circuit", "cx": 75, "cy": 50, "radius": 3},
+
+    {"type": "circle", "tile": "toxic", "cx": 100, "cy": 75, "radius": 5},
+    {"type": "circle", "tile": "circuit", "cx": 100, "cy": 75, "radius": 3},
+
+    {"type": "circle", "tile": "toxic", "cx": 75, "cy": 100, "radius": 5},
+    {"type": "circle", "tile": "circuit", "cx": 75, "cy": 100, "radius": 3},
+
+    {"type": "circle", "tile": "toxic", "cx": 50, "cy": 75, "radius": 5},
+    {"type": "circle", "tile": "circuit", "cx": 50, "cy": 75, "radius": 3},
+
+    {"type": "circle", "tile": "toxic", "cx": 75, "cy": 27, "radius": 4},
+    {"type": "circle", "tile": "circuit", "cx": 75, "cy": 27, "radius": 2},
+
+    {"type": "circle", "tile": "toxic", "cx": 109, "cy": 41, "radius": 4},
+    {"type": "circle", "tile": "circuit", "cx": 109, "cy": 41, "radius": 2},
+
+    {"type": "circle", "tile": "toxic", "cx": 123, "cy": 75, "radius": 4},
+    {"type": "circle", "tile": "circuit", "cx": 123, "cy": 75, "radius": 2},
+
+    {"type": "circle", "tile": "toxic", "cx": 109, "cy": 109, "radius": 4},
+    {"type": "circle", "tile": "circuit", "cx": 109, "cy": 109, "radius": 2},
+
+    {"type": "circle", "tile": "toxic", "cx": 75, "cy": 123, "radius": 4},
+    {"type": "circle", "tile": "circuit", "cx": 75, "cy": 123, "radius": 2},
+
+    {"type": "circle", "tile": "toxic", "cx": 41, "cy": 109, "radius": 4},
+    {"type": "circle", "tile": "circuit", "cx": 41, "cy": 109, "radius": 2},
+
+    {"type": "circle", "tile": "toxic", "cx": 27, "cy": 75, "radius": 4},
+    {"type": "circle", "tile": "circuit", "cx": 27, "cy": 75, "radius": 2},
+
+    {"type": "circle", "tile": "toxic", "cx": 41, "cy": 41, "radius": 4},
+    {"type": "circle", "tile": "circuit", "cx": 41, "cy": 41, "radius": 2},
+
+    {"type": "line", "tile": "circuit", "x1": 75, "y1": 67, "x2": 75, "y2": 30, "thickness": 2},
+    {"type": "line", "tile": "circuit", "x1": 80, "y1": 68, "x2": 106, "y2": 44, "thickness": 2},
+    {"type": "line", "tile": "circuit", "x1": 83, "y1": 75, "x2": 120, "y2": 75, "thickness": 2},
+    {"type": "line", "tile": "circuit", "x1": 80, "y1": 82, "x2": 106, "y2": 106, "thickness": 2},
+    {"type": "line", "tile": "circuit", "x1": 75, "y1": 83, "x2": 75, "y2": 120, "thickness": 2},
+    {"type": "line", "tile": "circuit", "x1": 70, "y1": 82, "x2": 44, "y2": 106, "thickness": 2},
+    {"type": "line", "tile": "circuit", "x1": 67, "y1": 75, "x2": 30, "y2": 75, "thickness": 2},
+    {"type": "line", "tile": "circuit", "x1": 70, "y1": 68, "x2": 44, "y2": 44, "thickness": 2},
+
+    {"type": "rect", "tile": "obsidian", "x": 91, "y": 44, "width": 3, "height": 4},
+    {"type": "rect", "tile": "obsidian", "x": 104, "y": 91, "width": 4, "height": 3},
+    {"type": "rect", "tile": "obsidian", "x": 56, "y": 104, "width": 3, "height": 4},
+    {"type": "rect", "tile": "obsidian", "x": 44, "y": 56, "width": 4, "height": 3},
+    {"type": "rect", "tile": "obsidian", "x": 56, "y": 44, "width": 3, "height": 4},
+    {"type": "rect", "tile": "obsidian", "x": 104, "y": 56, "width": 4, "height": 3},
+    {"type": "rect", "tile": "obsidian", "x": 91, "y": 104, "width": 3, "height": 4},
+    {"type": "rect", "tile": "obsidian", "x": 44, "y": 91, "width": 4, "height": 3}
+  ],
+  "spawnPoints": [
+    {"x": 75, "y": 50},
+    {"x": 100, "y": 75},
+    {"x": 75, "y": 100},
+    {"x": 50, "y": 75},
+    {"x": 75, "y": 27},
+    {"x": 109, "y": 41},
+    {"x": 123, "y": 75},
+    {"x": 109, "y": 109},
+    {"x": 75, "y": 123},
+    {"x": 41, "y": 109},
+    {"x": 27, "y": 75},
+    {"x": 41, "y": 41}
+  ]
+}

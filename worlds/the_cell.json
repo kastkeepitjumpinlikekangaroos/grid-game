@@ -1,0 +1,47 @@
+{
+  "name": "The Cell",
+  "background": "space",
+  "width": 80,
+  "height": 80,
+  "layers": [
+    {"type": "fill", "tile": "void"},
+    {"type": "border", "tile": "obsidian", "thickness": 3},
+    {"type": "circle", "tile": "circuit", "cx": 40, "cy": 40, "radius": 30},
+
+    {"type": "circle", "tile": "toxic", "cx": 40, "cy": 40, "radius": 6},
+    {"type": "circle", "tile": "circuit", "cx": 40, "cy": 40, "radius": 4},
+    {"type": "rect", "tile": "obsidian", "x": 39, "y": 39, "width": 3, "height": 3},
+
+    {"type": "circle", "tile": "toxic", "cx": 23, "cy": 23, "radius": 4},
+    {"type": "circle", "tile": "circuit", "cx": 23, "cy": 23, "radius": 2},
+
+    {"type": "circle", "tile": "toxic", "cx": 57, "cy": 23, "radius": 4},
+    {"type": "circle", "tile": "circuit", "cx": 57, "cy": 23, "radius": 2},
+
+    {"type": "circle", "tile": "toxic", "cx": 23, "cy": 57, "radius": 4},
+    {"type": "circle", "tile": "circuit", "cx": 23, "cy": 57, "radius": 2},
+
+    {"type": "circle", "tile": "toxic", "cx": 57, "cy": 57, "radius": 4},
+    {"type": "circle", "tile": "circuit", "cx": 57, "cy": 57, "radius": 2},
+
+    {"type": "line", "tile": "circuit", "x1": 26, "y1": 23, "x2": 34, "y2": 35, "thickness": 2},
+    {"type": "line", "tile": "circuit", "x1": 54, "y1": 23, "x2": 46, "y2": 35, "thickness": 2},
+    {"type": "line", "tile": "circuit", "x1": 26, "y1": 57, "x2": 34, "y2": 45, "thickness": 2},
+    {"type": "line", "tile": "circuit", "x1": 54, "y1": 57, "x2": 46, "y2": 45, "thickness": 2},
+
+    {"type": "rect", "tile": "obsidian", "x": 39, "y": 20, "width": 2, "height": 5},
+    {"type": "rect", "tile": "obsidian", "x": 39, "y": 55, "width": 2, "height": 5},
+    {"type": "rect", "tile": "obsidian", "x": 20, "y": 39, "width": 5, "height": 2},
+    {"type": "rect", "tile": "obsidian", "x": 55, "y": 39, "width": 5, "height": 2}
+  ],
+  "spawnPoints": [
+    {"x": 23, "y": 23},
+    {"x": 57, "y": 23},
+    {"x": 23, "y": 57},
+    {"x": 57, "y": 57},
+    {"x": 40, "y": 15},
+    {"x": 40, "y": 65},
+    {"x": 15, "y": 40},
+    {"x": 65, "y": 40}
+  ]
+}
