@@ -1,6 +1,8 @@
 package com.gridgame.client
 
 import com.gridgame.common.Constants
+import com.gridgame.common.observability.Attrs
+import com.gridgame.common.observability.Metrics
 import com.gridgame.common.protocol.Packet
 import com.gridgame.common.protocol.PacketSerializer
 import com.gridgame.common.protocol.PacketSigner
@@ -123,9 +125,11 @@ class NetworkThread(client: GameClient, serverHost: String, serverPort: Int) ext
       if (tcpChannel != null && tcpChannel.isActive) {
         if (!tcpChannel.isWritable) {
           System.err.println("NetworkThread: TCP write buffer full, dropping packet")
+          Metrics.clientErrors.add(1L, io.opentelemetry.api.common.Attributes.of(Attrs.Kind, "tcp_buffer_full"))
           return
         }
         tcpChannel.writeAndFlush(Unpooled.wrappedBuffer(data))
+        Metrics.clientPacketsSent.add(1L, Attrs.packet(packet.getType))
       } else {
         System.err.println("NetworkThread: TCP channel not active, cannot send")
       }
@@ -133,10 +137,12 @@ class NetworkThread(client: GameClient, serverHost: String, serverPort: Int) ext
       if (udpChannel != null && udpChannel.isActive) {
         if (!udpChannel.isWritable) {
           System.err.println("NetworkThread: UDP write buffer full, dropping packet")
+          Metrics.clientErrors.add(1L, io.opentelemetry.api.common.Attributes.of(Attrs.Kind, "udp_buffer_full"))
           return
         }
         val dgram = new DatagramPacket(Unpooled.wrappedBuffer(data), serverAddress)
         udpChannel.writeAndFlush(dgram)
+        Metrics.clientPacketsSent.add(1L, Attrs.packet(packet.getType))
       } else {
         System.err.println("NetworkThread: UDP channel not active, cannot send")
       }
@@ -198,10 +204,12 @@ class ClientTcpHandler(client: GameClient, networkThread: NetworkThread) extends
         p
       }
       val packet = PacketSerializer.deserialize(payload)
+      Metrics.clientPacketsReceived.add(1L, Attrs.packet(packet.getType))
       client.enqueuePacket(packet)
     } catch {
       case e: IllegalArgumentException =>
         System.err.println(s"ClientTcpHandler: Invalid packet - ${e.getMessage}")
+        Metrics.clientErrors.add(1L, io.opentelemetry.api.common.Attributes.of(Attrs.Kind, "deserialize_tcp"))
     }
   }
 
@@ -255,10 +263,12 @@ class ClientUdpHandler(client: GameClient, networkThread: NetworkThread) extends
         return
       }
       val packet = PacketSerializer.deserialize(payload)
+      Metrics.clientPacketsReceived.add(1L, Attrs.packet(packet.getType))
       client.enqueuePacket(packet)
     } catch {
       case e: IllegalArgumentException =>
         System.err.println(s"ClientUdpHandler: Invalid packet - ${e.getMessage}")
+        Metrics.clientErrors.add(1L, io.opentelemetry.api.common.Attributes.of(Attrs.Kind, "deserialize_udp"))
     }
   }
 

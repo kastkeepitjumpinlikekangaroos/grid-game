@@ -1853,6 +1853,7 @@ class ClientMain extends Application {
     var fullscreen = false
     renderLoop = new AnimationTimer() {
       override def handle(now: Long): Unit = {
+        val frameStartNs = System.nanoTime()
         try {
           if (!glWindow.isValid) return
           val deltaNs = if (lastFrameTime == 0L) 16_666_667L else now - lastFrameTime
@@ -1891,6 +1892,8 @@ class ClientMain extends Application {
           case e: Exception =>
             System.err.println("=== RENDER LOOP EXCEPTION ===")
             e.printStackTrace()
+            com.gridgame.common.observability.Metrics.clientErrors.add(1L,
+              io.opentelemetry.api.common.Attributes.of(com.gridgame.common.observability.Attrs.Kind, "render_loop"))
             renderLoop.stop()
             glRenderer.dispose()
             glWindow.destroy()
@@ -1899,6 +1902,11 @@ class ClientMain extends Application {
               client.disconnect()
               Platform.exit()
             })
+        } finally {
+          com.gridgame.common.observability.Metrics.clientFrameDuration.record(
+            (System.nanoTime() - frameStartNs) / 1e6,
+            io.opentelemetry.api.common.Attributes.empty()
+          )
         }
       }
     }
@@ -2162,6 +2170,16 @@ class ClientMain extends Application {
 
 object ClientMain {
   def main(args: Array[String]): Unit = {
-    Application.launch(classOf[ClientMain], args: _*)
+    // Client telemetry is opt-in. Enable with `--telemetry` flag or `GRIDGAME_TELEMETRY=1`.
+    val telemetryEnabled = args.contains("--telemetry") ||
+      sys.env.get("GRIDGAME_TELEMETRY").exists(v => v == "1" || v.equalsIgnoreCase("true"))
+    if (telemetryEnabled) {
+      com.gridgame.common.observability.Telemetry.init("grid-game-client")
+      Runtime.getRuntime.addShutdownHook(new Thread(new Runnable {
+        def run(): Unit = com.gridgame.common.observability.Telemetry.shutdown()
+      }))
+    }
+    val passThrough = args.filterNot(_ == "--telemetry")
+    Application.launch(classOf[ClientMain], passThrough: _*)
   }
 }

@@ -2,6 +2,8 @@ package com.gridgame.client
 
 import com.gridgame.common.Constants
 import com.gridgame.common.model._
+import com.gridgame.common.observability.Attrs
+import com.gridgame.common.observability.Metrics
 import com.gridgame.common.protocol._
 
 import java.util.UUID
@@ -83,7 +85,13 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   private val lastChargingUpdateTime: AtomicLong = new AtomicLong(0)
 
   // Hit animation tracking (entries expire after HIT_EXPIRE_MS)
+  // Stored as parallel maps so renderer can read each component without allocation per frame.
   private val playerHitTimes: ConcurrentHashMap[UUID, Long] = new ConcurrentHashMap()
+  // Projectile colorRGB and screen-space direction at hit moment — used for themed/directional hit FX.
+  private val playerHitColors: ConcurrentHashMap[UUID, Integer] = new ConcurrentHashMap()
+  private val playerHitDx: ConcurrentHashMap[UUID, java.lang.Float] = new ConcurrentHashMap()
+  private val playerHitDy: ConcurrentHashMap[UUID, java.lang.Float] = new ConcurrentHashMap()
+  private val playerHitProjType: ConcurrentHashMap[UUID, java.lang.Byte] = new ConcurrentHashMap()
   private val HIT_EXPIRE_MS = 600L
   private var lastHitCleanupTime: Long = 0L
 
@@ -228,6 +236,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   private def handleDisconnect(): Unit = {
     if (!disconnected.compareAndSet(false, true)) return
 
+    Metrics.clientReconnects.add(1L, io.opentelemetry.api.common.Attributes.empty())
     running = false
     clientState = ClientState.CONNECTING
     networkThread.sessionToken = null
@@ -245,6 +254,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     explosionAnimations.clear()
     aoeSplashAnimations.clear()
     playerHitTimes.clear()
+    playerHitColors.clear()
+    playerHitDx.clear()
+    playerHitDy.clear()
+    playerHitProjType.clear()
     recentlyRemovedProjectiles.clear()
     isDead = false
     isRespawning = false
@@ -307,11 +320,16 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     networkThread.send(packet)
   }
 
+  // Tracks the time the most recent heartbeat was sent — set in sendHeartbeat, read when the
+  // server echoes it back. Used to derive `gridgame.client.latency`.
+  private val heartbeatSentAtNs = new AtomicLong(0L)
+
   def sendHeartbeat(): Unit = {
     val packet = new HeartbeatPacket(
       sequenceNumber.getAndIncrement(),
       localPlayerId
     )
+    heartbeatSentAtNs.set(System.nanoTime())
     networkThread.send(packet)
   }
 
@@ -988,6 +1006,13 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       case PacketType.PLAYER_LEAVE =>
         handlePlayerLeave(packet.asInstanceOf[PlayerLeavePacket])
 
+      case PacketType.HEARTBEAT =>
+        // Server echoes heartbeats back — derive RTT
+        val sentNs = heartbeatSentAtNs.getAndSet(0L)
+        if (sentNs > 0) {
+          Metrics.clientLatency.record((System.nanoTime() - sentNs) / 1e6, io.opentelemetry.api.common.Attributes.empty())
+        }
+
       case _ =>
       // Ignore other packet types
     }
@@ -1087,6 +1112,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         explosionAnimations.clear()
         aoeSplashAnimations.clear()
         playerHitTimes.clear()
+        playerHitColors.clear()
+        playerHitDx.clear()
+        playerHitDy.clear()
+        playerHitProjType.clear()
         recentlyRemovedProjectiles.clear()
         if (gameStartingListener != null) gameStartingListener()
 
@@ -1434,6 +1463,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     explosionAnimations.clear()
     aoeSplashAnimations.clear()
     playerHitTimes.clear()
+    playerHitColors.clear()
+    playerHitDx.clear()
+    playerHitDy.clear()
+    playerHitProjType.clear()
     recentlyRemovedProjectiles.clear()
   }
 
@@ -1530,6 +1563,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         val targetId = packet.getTargetId
         if (targetId != null) {
           playerHitTimes.put(targetId, System.currentTimeMillis())
+          playerHitColors.put(targetId, Integer.valueOf(packet.getColorRGB))
+          playerHitDx.put(targetId, java.lang.Float.valueOf(packet.getDx))
+          playerHitDy.put(targetId, java.lang.Float.valueOf(packet.getDy))
+          playerHitProjType.put(targetId, java.lang.Byte.valueOf(hitPType))
 
           // If our projectile hit another player, reduce ability cooldown by 50%
           if (packet.getPlayerId.equals(localPlayerId)) {
@@ -1773,6 +1810,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     val playerId = packet.getPlayerId
     val player = players.remove(playerId)
     playerHitTimes.remove(playerId)
+    playerHitColors.remove(playerId)
+    playerHitDx.remove(playerId)
+    playerHitDy.remove(playerId)
+    playerHitProjType.remove(playerId)
 
     if (player != null) {
       println(s"GameClient: Player left - ${playerId.toString.substring(0, 8)} ('${player.getName}')")
@@ -1886,6 +1927,26 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   def getPlayerHitTime(playerId: UUID): Long =
     playerHitTimes.getOrDefault(playerId, 0L)
 
+  /** Color of the projectile that last hit this player (0 if none). */
+  def getPlayerHitColorRGB(playerId: UUID): Int = {
+    val v = playerHitColors.get(playerId)
+    if (v == null) 0 else v.intValue()
+  }
+
+  /** Direction (world space) the projectile that last hit this player was traveling. */
+  def getPlayerHitDx(playerId: UUID): Float = {
+    val v = playerHitDx.get(playerId)
+    if (v == null) 0f else v.floatValue()
+  }
+  def getPlayerHitDy(playerId: UUID): Float = {
+    val v = playerHitDy.get(playerId)
+    if (v == null) 0f else v.floatValue()
+  }
+  def getPlayerHitProjectileType(playerId: UUID): Byte = {
+    val v = playerHitProjType.get(playerId)
+    if (v == null) 0.toByte else v.byteValue()
+  }
+
   /** Periodic cleanup of expired hit entries to prevent unbounded growth. Call from packet processing, not render. */
   private def cleanupHitTimes(): Unit = {
     val now = System.currentTimeMillis()
@@ -1893,7 +1954,15 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       lastHitCleanupTime = now
       val iter = playerHitTimes.entrySet().iterator()
       while (iter.hasNext) {
-        if (now - iter.next().getValue > HIT_EXPIRE_MS) iter.remove()
+        val entry = iter.next()
+        if (now - entry.getValue > HIT_EXPIRE_MS) {
+          val k = entry.getKey
+          iter.remove()
+          playerHitColors.remove(k)
+          playerHitDx.remove(k)
+          playerHitDy.remove(k)
+          playerHitProjType.remove(k)
+        }
       }
     }
   }

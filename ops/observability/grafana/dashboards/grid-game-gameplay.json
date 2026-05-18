@@ -1,0 +1,195 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "row",
+      "title": "Match throughput",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "id": 100,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Matches started / sec (by mode & type)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 1},
+      "id": 1,
+      "targets": [{"expr": "sum by (mode, match_type) (rate(gridgame_matches_started_total[5m]))", "legendFormat": "{{mode}} {{match_type}}"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Matches finished / sec (by mode & type)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 1},
+      "id": 2,
+      "targets": [{"expr": "sum by (mode, match_type) (rate(gridgame_matches_finished_total[5m]))", "legendFormat": "{{mode}} {{match_type}}"}]
+    },
+    {
+      "type": "heatmap",
+      "title": "Match duration distribution (seconds)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 9},
+      "id": 3,
+      "targets": [{"expr": "sum by (le) (rate(gridgame_match_duration_seconds_bucket[15m]))", "format": "heatmap", "legendFormat": "{{le}}"}]
+    },
+
+    {
+      "type": "row",
+      "title": "Kills & characters",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 17},
+      "id": 101,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Kills / sec by cause",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 18},
+      "id": 10,
+      "targets": [{"expr": "sum by (cause) (rate(gridgame_deaths_total[5m]))", "legendFormat": "{{cause}}"}]
+    },
+    {
+      "type": "bargauge",
+      "title": "Top 15 killer characters (last hour)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 18},
+      "id": 11,
+      "targets": [{"expr": "topk(15, sum by (killer_character) (increase(gridgame_kills_total[1h])))", "legendFormat": "{{killer_character}}"}]
+    },
+    {
+      "type": "bargauge",
+      "title": "Top 20 character picks (last 24h)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 26},
+      "id": 12,
+      "targets": [{"expr": "topk(20, sum by (character) (increase(gridgame_character_played_total[24h])))", "legendFormat": "{{character}}"}]
+    },
+
+    {
+      "type": "row",
+      "title": "Projectiles & items",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 36},
+      "id": 102,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Projectiles spawned / sec by type (top 12)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 37},
+      "id": 20,
+      "targets": [{"expr": "topk(12, sum by (projectile_type) (rate(gridgame_projectiles_spawned_total[5m])))", "legendFormat": "{{projectile_type}}"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Projectile outcomes / sec (hit/expire)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 37},
+      "id": 21,
+      "targets": [
+        {"expr": "sum(rate(gridgame_projectiles_hit_total[5m]))", "legendFormat": "hits"},
+        {"expr": "sum(rate(gridgame_projectiles_expired_total[5m]))", "legendFormat": "expires"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Items spawned vs picked up vs used / sec",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 45},
+      "id": 22,
+      "targets": [
+        {"expr": "sum by (item_type) (rate(gridgame_items_spawned_total[5m]))", "legendFormat": "spawned {{item_type}}"},
+        {"expr": "sum by (item_type) (rate(gridgame_items_picked_up_total[5m]))", "legendFormat": "picked {{item_type}}"},
+        {"expr": "sum by (item_type) (rate(gridgame_items_used_total[5m]))", "legendFormat": "used {{item_type}}"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Respawns / sec",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 45},
+      "id": 23,
+      "targets": [{"expr": "sum(rate(gridgame_respawns_total[5m]))", "legendFormat": "respawns"}]
+    },
+
+    {
+      "type": "row",
+      "title": "Ranked matchmaking",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 53},
+      "id": 103,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Queue size by mode",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 54},
+      "id": 30,
+      "targets": [{"expr": "sum by (mode) (gridgame_queue_players)", "legendFormat": "{{mode}}"}]
+    },
+    {
+      "type": "heatmap",
+      "title": "Queue wait time distribution (sec)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 54},
+      "id": 31,
+      "targets": [{"expr": "sum by (le) (rate(gridgame_queue_wait_time_seconds_bucket[15m]))", "format": "heatmap", "legendFormat": "{{le}}"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Matches made / sec by mode",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 62},
+      "id": 32,
+      "targets": [{"expr": "sum by (mode) (rate(gridgame_queue_matches_made_total[5m]))", "legendFormat": "{{mode}}"}]
+    },
+    {
+      "type": "heatmap",
+      "title": "ELO delta distribution",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 62},
+      "id": 33,
+      "targets": [{"expr": "sum by (le) (rate(gridgame_elo_delta_bucket[15m]))", "format": "heatmap", "legendFormat": "{{le}}"}]
+    },
+
+    {
+      "type": "row",
+      "title": "Lobbies & chat",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 70},
+      "id": 104,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Lobby actions / sec",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 71},
+      "id": 40,
+      "targets": [{"expr": "sum by (action) (rate(gridgame_lobby_action_total[5m]))", "legendFormat": "{{action}}"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Chat messages / sec by scope",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 71},
+      "id": 41,
+      "targets": [{"expr": "sum by (scope) (rate(gridgame_chat_messages_total[5m]))", "legendFormat": "{{scope}}"}]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["grid-game"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timezone": "browser",
+  "title": "Grid Game — Gameplay",
+  "uid": "grid-game-gameplay",
+  "version": 1,
+  "weekStart": ""
+}

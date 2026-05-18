@@ -1,10 +1,13 @@
 package com.gridgame.server
 
 import com.gridgame.common.Constants
+import com.gridgame.common.observability.Telemetry
 
 object ServerMain {
 
   def main(args: Array[String]): Unit = {
+    Telemetry.init("grid-game-server")
+
     var port = Constants.SERVER_PORT
 
     // Parse arguments: [port]
@@ -31,6 +34,7 @@ object ServerMain {
       def run(): Unit = {
         println("\nShutdown signal received...")
         server.stop()
+        Telemetry.shutdown()
       }
     }))
 

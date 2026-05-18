@@ -1,0 +1,284 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "row",
+      "title": "Live state",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "collapsed": false,
+      "id": 100,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Connected players",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 1},
+      "id": 1,
+      "targets": [{"expr": "sum(gridgame_connections_active)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green"}]}}}
+    },
+    {
+      "type": "stat",
+      "title": "Active lobbies",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 1},
+      "id": 2,
+      "targets": [{"expr": "sum(gridgame_lobbies_active)", "refId": "A"}]
+    },
+    {
+      "type": "stat",
+      "title": "Active matches",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 1},
+      "id": 3,
+      "targets": [{"expr": "sum(gridgame_instances_active)", "refId": "A"}]
+    },
+    {
+      "type": "stat",
+      "title": "Active sessions",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 1},
+      "id": 4,
+      "targets": [{"expr": "sum(gridgame_sessions_active)", "refId": "A"}]
+    },
+    {
+      "type": "stat",
+      "title": "Projectiles in flight",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 1},
+      "id": 5,
+      "targets": [{"expr": "sum(gridgame_projectiles_active)", "refId": "A"}]
+    },
+    {
+      "type": "stat",
+      "title": "Active bots",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 1},
+      "id": 6,
+      "targets": [{"expr": "sum(gridgame_bots_active)", "refId": "A"}]
+    },
+
+    {
+      "type": "row",
+      "title": "Gameplay activity (server-authoritative)",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5},
+      "collapsed": false,
+      "id": 110,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Projectile spawns / sec (incl. bots)",
+      "description": "Total projectiles spawned by ProjectileManager — covers both player-fired and bot-fired projectiles. NOT the same as PROJECTILE_UPDATE packets received from clients (bots bypass the network).",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 6},
+      "id": 50,
+      "targets": [{"expr": "sum(rate(gridgame_projectiles_spawned_total[5m]))", "legendFormat": "spawns"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Projectile outcomes / sec",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 6},
+      "id": 51,
+      "targets": [
+        {"expr": "sum(rate(gridgame_projectiles_hit_total[5m]))", "legendFormat": "hits"},
+        {"expr": "sum(rate(gridgame_projectiles_expired_total[5m]))", "legendFormat": "expired"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Kills / sec by cause",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 6},
+      "id": 52,
+      "targets": [{"expr": "sum by (cause) (rate(gridgame_deaths_total[5m]))", "legendFormat": "{{cause}}"}]
+    },
+
+    {
+      "type": "row",
+      "title": "Network (wire packets only)",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14},
+      "collapsed": false,
+      "id": 101,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Packets received / sec by type",
+      "description": "Wire-level packets received from clients. Bot activity does NOT appear here (bots run in-process). For game-event rates, see the Gameplay row above.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 15},
+      "id": 10,
+      "targets": [{"expr": "sum by (type) (rate(gridgame_packets_received_total[5m]))", "legendFormat": "{{type}}"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Packets sent / sec by type",
+      "description": "Wire-level packets sent to clients (includes broadcasts of bot activity).",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 15},
+      "id": 11,
+      "targets": [{"expr": "sum by (type) (rate(gridgame_packets_sent_total[5m]))", "legendFormat": "{{type}}"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Packets dropped / sec by reason",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 23},
+      "id": 12,
+      "targets": [{"expr": "sum by (reason) (rate(gridgame_packets_dropped_total[5m]))", "legendFormat": "{{reason}}"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Bandwidth (bytes/sec)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "Bps"}},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 23},
+      "id": 13,
+      "targets": [{"expr": "sum by (direction) (rate(gridgame_bandwidth_bytes_total[5m]))", "legendFormat": "{{direction}}"}]
+    },
+
+    {
+      "type": "row",
+      "title": "Latency & performance",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 31},
+      "collapsed": false,
+      "id": 102,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Packet process p50 / p95 / p99 (ms)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "ms"}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
+      "id": 20,
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum by (le) (rate(gridgame_packet_process_duration_milliseconds_bucket[5m])))", "legendFormat": "p50"},
+        {"expr": "histogram_quantile(0.95, sum by (le) (rate(gridgame_packet_process_duration_milliseconds_bucket[5m])))", "legendFormat": "p95"},
+        {"expr": "histogram_quantile(0.99, sum by (le) (rate(gridgame_packet_process_duration_milliseconds_bucket[5m])))", "legendFormat": "p99"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Tick durations p99 (ms) by phase",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "ms"}},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+      "id": 21,
+      "targets": [
+        {"expr": "histogram_quantile(0.99, sum by (phase, le) (rate(gridgame_tick_duration_milliseconds_bucket[5m])))", "legendFormat": "{{phase}} p99"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "DB query duration p99 (ms) by op",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "ms"}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40},
+      "id": 22,
+      "targets": [
+        {"expr": "histogram_quantile(0.99, sum by (op, le) (rate(gridgame_db_duration_milliseconds_bucket[5m])))", "legendFormat": "{{op}}"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Auth duration p50 / p95",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "ms"}},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40},
+      "id": 23,
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum by (action, le) (rate(gridgame_auth_duration_milliseconds_bucket[5m])))", "legendFormat": "{{action}} p50"},
+        {"expr": "histogram_quantile(0.95, sum by (action, le) (rate(gridgame_auth_duration_milliseconds_bucket[5m])))", "legendFormat": "{{action}} p95"}
+      ]
+    },
+
+    {
+      "type": "row",
+      "title": "Security / anti-cheat",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 48},
+      "collapsed": false,
+      "id": 103,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Rate limit triggers / sec",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 49},
+      "id": 30,
+      "targets": [{"expr": "sum by (kind) (rate(gridgame_rate_limit_triggered_total[5m]))", "legendFormat": "{{kind}}"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Server-side validation rejections / sec",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 49},
+      "id": 31,
+      "targets": [{"expr": "sum by (kind) (rate(gridgame_validation_failed_total[5m]))", "legendFormat": "{{kind}}"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "HMAC failures / sec",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 57},
+      "id": 32,
+      "targets": [{"expr": "sum by (transport) (rate(gridgame_hmac_failures_total[5m]))", "legendFormat": "{{transport}}"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Replay rejections / sec",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 57},
+      "id": 33,
+      "targets": [{"expr": "sum by (transport) (rate(gridgame_replay_rejected_total[5m]))", "legendFormat": "{{transport}}"}]
+    },
+
+    {
+      "type": "row",
+      "title": "Auth & sessions",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 65},
+      "collapsed": false,
+      "id": 104,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Auth attempts / sec (action × outcome)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 66},
+      "id": 40,
+      "targets": [{"expr": "sum by (action, outcome) (rate(gridgame_auth_attempts_total[5m]))", "legendFormat": "{{action}} {{outcome}}"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Connections opened/closed / sec",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 66},
+      "id": 41,
+      "targets": [
+        {"expr": "sum(rate(gridgame_connections_opened_total[5m]))", "legendFormat": "opened"},
+        {"expr": "sum(rate(gridgame_connections_closed_total[5m]))", "legendFormat": "closed"}
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["grid-game"],
+  "templating": {"list": []},
+  "time": {"from": "now-15m", "to": "now"},
+  "timezone": "browser",
+  "title": "Grid Game — Overview",
+  "uid": "grid-game-overview",
+  "version": 1,
+  "weekStart": ""
+}

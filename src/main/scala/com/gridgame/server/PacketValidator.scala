@@ -6,6 +6,8 @@ import com.gridgame.common.model.Player
 import com.gridgame.common.model.DashBuff
 import com.gridgame.common.model.TeleportCast
 import com.gridgame.common.model.WorldData
+import com.gridgame.common.observability.Attrs
+import com.gridgame.common.observability.Metrics
 import com.gridgame.common.protocol.PlayerUpdatePacket
 import com.gridgame.common.protocol.ProjectilePacket
 
@@ -141,12 +143,14 @@ class PacketValidator {
     // World bounds check
     if (x < 0 || x >= world.width || y < 0 || y >= world.height) {
       System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} out of bounds ($x, $y)")
+      Metrics.validationFailed.add(1L, Attrs.VfMovementBounds)
       return false
     }
 
     // Walkability check (skip for phased players)
     if (!player.isPhased && !world.isWalkable(x, y)) {
       System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} moved to non-walkable tile ($x, $y)")
+      Metrics.validationFailed.add(1L, Attrs.VfMovementWalkable)
       return false
     }
 
@@ -184,6 +188,7 @@ class PacketValidator {
               val isItemTeleport = allowedTime != null && (now - allowedTime) < 500
               if (!isItemTeleport) {
                 System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} speed hack detected: moved $distance cells in ${deltaMs}ms")
+                Metrics.validationFailed.add(1L, Attrs.VfMovementSpeed)
                 return false
               }
             }
@@ -203,23 +208,29 @@ class PacketValidator {
     val dy = Math.abs(packet.getY - pos.getY)
     if (dx > 3 || dy > 3) {
       System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} projectile spawn too far from player")
+      Metrics.validationFailed.add(1L, Attrs.VfProjectilePosition)
       return false
     }
 
     // Validate charge level
     if (!validateChargeLevel(packet.getChargeLevel)) {
       System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} invalid charge level ${packet.getChargeLevel}")
+      Metrics.validationFailed.add(1L, Attrs.VfProjectileCharge)
       return false
     }
 
     // Validate projectile type is valid for this character
     val charDef = CharacterDef.get(player.getCharacterId)
-    if (charDef == null) return false
+    if (charDef == null) {
+      Metrics.validationFailed.add(1L, Attrs.VfCharacter)
+      return false
+    }
     val pType = packet.getProjectileType
     if (pType != charDef.primaryProjectileType &&
         pType != charDef.qAbility.projectileType &&
         pType != charDef.eAbility.projectileType) {
       System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} spoofed projectile type $pType")
+      Metrics.validationFailed.add(1L, Attrs.VfProjectileFireRate)
       return false
     }
 

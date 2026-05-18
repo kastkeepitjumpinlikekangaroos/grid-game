@@ -6,6 +6,8 @@ import com.gridgame.common.model.ItemType
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
 import com.gridgame.common.model.Tile
+import com.gridgame.common.observability.Attrs
+import com.gridgame.common.observability.Metrics
 import com.gridgame.common.protocol._
 import io.netty.channel.Channel
 
@@ -74,14 +76,17 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     if (java.lang.Float.isNaN(pdx) || java.lang.Float.isNaN(pdy) ||
         java.lang.Float.isInfinite(pdx) || java.lang.Float.isInfinite(pdy)) {
       System.err.println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} projectile velocity NaN/Inf")
+      Metrics.validationFailed.add(1L, Attrs.VfProjectileVelocity)
       return false
     }
     if (pdx * pdx + pdy * pdy > 2.0f) {
       System.err.println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} projectile velocity too large")
+      Metrics.validationFailed.add(1L, Attrs.VfProjectileVelocity)
       return false
     }
 
     if (!validator.validateProjectileSpawn(packet, player)) {
+      Metrics.validationFailed.add(1L, Attrs.VfProjectileFireRate)
       return false
     }
 
@@ -151,8 +156,10 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       val charDef = com.gridgame.common.model.CharacterDef.get(packet.getCharacterId)
       if (charDef == null) {
         System.err.println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} invalid character ID: ${packet.getCharacterId}")
+        Metrics.validationFailed.add(1L, Attrs.VfCharacter)
         return false
       }
+      // gridgame.character.played is incremented from ClientRegistry.add to cover all join paths
       // Validate new player join position against world bounds and walkability
       val joinPos = packet.getPosition
       val world = if (instance != null) instance.world else server.getWorld
@@ -191,9 +198,13 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     if (player != null) {
       val world = if (instance != null) instance.world else server.getWorld
       if (world != null) {
-        if (!validator.validateMovement(packet, player, world)) return false
+        if (!validator.validateMovement(packet, player, world)) {
+          Metrics.validationFailed.add(1L, Attrs.VfMovementSpeed)
+          return false
+        }
       } else if (instance != null) {
         // World should be loaded for active game instances — reject if missing
+        Metrics.validationFailed.add(1L, Attrs.VfWorldMissing)
         return false
       }
     }
@@ -271,6 +282,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
         System.err.println(s"ClientHandler: Item USE failed — item ${packet.getItemId} not in server inventory for ${playerId.toString.substring(0, 8)}")
         return false
       }
+      Metrics.itemsUsed.add(1L, Attrs.itemTypeAttrs(removedItem.itemType.id))
 
       val player = registry.get(playerId)
       if (player != null) {

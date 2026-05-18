@@ -1,0 +1,87 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "row",
+      "title": "Performance",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "id": 100,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Client frame duration p50/p95/p99 (ms)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "ms"}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 1},
+      "id": 1,
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum by (le) (rate(gridgame_client_frame_duration_milliseconds_bucket[1m])))", "legendFormat": "p50"},
+        {"expr": "histogram_quantile(0.95, sum by (le) (rate(gridgame_client_frame_duration_milliseconds_bucket[1m])))", "legendFormat": "p95"},
+        {"expr": "histogram_quantile(0.99, sum by (le) (rate(gridgame_client_frame_duration_milliseconds_bucket[1m])))", "legendFormat": "p99"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Client latency (heartbeat RTT) p50/p95 (ms)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "ms"}},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 1},
+      "id": 2,
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum by (le) (rate(gridgame_client_latency_milliseconds_bucket[1m])))", "legendFormat": "p50"},
+        {"expr": "histogram_quantile(0.95, sum by (le) (rate(gridgame_client_latency_milliseconds_bucket[1m])))", "legendFormat": "p95"}
+      ]
+    },
+
+    {
+      "type": "row",
+      "title": "Network",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 9},
+      "id": 101,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Client packets in/out per sec",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 10},
+      "id": 10,
+      "targets": [
+        {"expr": "sum(rate(gridgame_client_packets_received_total[1m]))", "legendFormat": "in"},
+        {"expr": "sum(rate(gridgame_client_packets_sent_total[1m]))", "legendFormat": "out"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Client errors by kind",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 10},
+      "id": 11,
+      "targets": [{"expr": "sum by (kind) (rate(gridgame_client_errors_total[5m]))", "legendFormat": "{{kind}}"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Reconnects / 5m",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 18},
+      "id": 12,
+      "targets": [{"expr": "sum(rate(gridgame_client_reconnects_total[5m])) * 300", "legendFormat": "reconnects"}]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["grid-game", "client"],
+  "templating": {"list": []},
+  "time": {"from": "now-15m", "to": "now"},
+  "timezone": "browser",
+  "title": "Grid Game — Client",
+  "uid": "grid-game-client",
+  "version": 1
+}

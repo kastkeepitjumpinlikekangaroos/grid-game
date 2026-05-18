@@ -2,6 +2,8 @@ package com.gridgame.server
 
 import com.gridgame.common.Constants
 import com.gridgame.common.model._
+import com.gridgame.common.observability.Attrs
+import com.gridgame.common.observability.Metrics
 import com.gridgame.common.protocol._
 import com.gridgame.common.world.WorldLoader
 
@@ -113,6 +115,10 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
       TimeUnit.SECONDS
     )
 
+    Metrics.matchesStarted.add(1L, io.opentelemetry.api.common.Attributes.builder()
+      .putAll(Attrs.modeOf(gameMode))
+      .putAll(if (isPractice) Attrs.MatchPractice else Attrs.MatchCasual)
+      .build())
     println(s"GameInstance[$gameId]: Started ($durationMinutes min)")
   }
 
@@ -137,8 +143,13 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
 
   def isRunning: Boolean = running
 
+  private val projectileTickAttrs = Attrs.tickPhase("projectile")
+  private val playerTickAttrs = Attrs.tickPhase("player")
+  private val timerTickAttrs = Attrs.tickPhase("timer")
+
   private def tickProjectiles(): Unit = {
     if (!running || world == null) return
+    val tickStart = System.nanoTime()
 
     killedThisTick.clear()
     val events = projectileManager.tick(world)
@@ -235,6 +246,16 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         killedThisTick.add(targetId)
         killTracker.recordKill(projectile.ownerId, targetId)
 
+        // Metrics: kill event
+        val killer = registry.get(projectile.ownerId)
+        val victim = target
+        Metrics.kills.add(1L, Attrs.killCombo(
+          if (killer != null) killer.getCharacterId else 0,
+          if (victim != null) victim.getCharacterId else 0,
+          projectile.projectileType
+        ))
+        Metrics.deaths.add(1L, Attrs.CauseProjectile)
+
         // Broadcast kill event
         val killPacket = new GameEventPacket(
           server.getNextSequenceNumber,
@@ -254,6 +275,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         }
 
       case ProjectileHit(projectile, targetId) =>
+        Metrics.projectilesHit.add(1L, Attrs.projectileType(projectile.projectileType))
         val hitPacket = new ProjectilePacket(
           server.getNextSequenceNumber,
           projectile.ownerId,
@@ -564,6 +586,14 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
       case ProjectileAoEKill(projectile, targetId) =>
         // Guard: skip if target was already killed this tick
         if (!killedThisTick.contains(targetId)) {
+        val aoeKiller = registry.get(projectile.ownerId)
+        val aoeVictim = registry.get(targetId)
+        Metrics.kills.add(1L, Attrs.killCombo(
+          if (aoeKiller != null) aoeKiller.getCharacterId else 0,
+          if (aoeVictim != null) aoeVictim.getCharacterId else 0,
+          projectile.projectileType
+        ))
+        Metrics.deaths.add(1L, Attrs.CauseAoe)
         val hitPacket = new ProjectilePacket(
           server.getNextSequenceNumber,
           projectile.ownerId,
@@ -626,9 +656,11 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
           projectile.projectileType
         )
         broadcastBuffered(packet)
+        Metrics.projectilesExpired.add(1L, Attrs.projectileType(projectile.projectileType))
     }
     // Flush all buffered writes at end of tick
     flushAllInstancePlayers()
+    Metrics.tickDuration.record((System.nanoTime() - tickStart) / 1e6, projectileTickAttrs)
   }
 
   /** Mirror client-side on-hit ability cooldown reduction so server fire-rate validation stays in sync. */
@@ -652,6 +684,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   /** Tick player state (burn DoT + health regen). Runs every 200ms. */
   private def tickPlayers(): Unit = {
     if (!running) return
+    val tickStart = System.nanoTime()
     val now = System.currentTimeMillis()
     registry.forEachPlayer { player =>
       if (!player.isDead) {
@@ -674,6 +707,13 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
             if (burnOwner != null) {
               killedThisTick.add(player.getId)
               killTracker.recordKill(burnOwner, player.getId)
+              val burnKiller = registry.get(burnOwner)
+              Metrics.kills.add(1L, Attrs.killCombo(
+                if (burnKiller != null) burnKiller.getCharacterId else 0,
+                player.getCharacterId,
+                0.toByte // burn doesn't have a single projectile type
+              ))
+              Metrics.deaths.add(1L, Attrs.CauseBurn)
               val killPacket = new GameEventPacket(
                 server.getNextSequenceNumber,
                 burnOwner,
@@ -735,6 +775,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         }
       }
     }
+    Metrics.tickDuration.record((System.nanoTime() - tickStart) / 1e6, playerTickAttrs)
   }
 
   private def scheduleRespawn(playerId: UUID): Unit = {
@@ -769,6 +810,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
             sp
           }
 
+          Metrics.respawns.add(1L, io.opentelemetry.api.common.Attributes.empty())
           // Send respawn event
           val respawnPacket = new GameEventPacket(
             server.getNextSequenceNumber,
@@ -817,6 +859,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         )
         broadcastBuffered(packet)
         spawned = true
+        Metrics.itemsSpawned.add(1L, Attrs.itemTypeAttrs(event.item.itemType.id))
       }
       i += 1
     }
@@ -825,6 +868,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
 
   private def syncTimer(): Unit = {
     if (!running) return
+    val tickStart = System.nanoTime()
 
     if (isTimeUp) {
       server.endGame(gameId)
@@ -841,6 +885,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
       0.toShort, 0.toShort, null, 0.toByte, 0.toShort, 0.toShort
     )
     broadcastToInstance(packet)
+    Metrics.tickDuration.record((System.nanoTime() - tickStart) / 1e6, timerTickAttrs)
   }
 
   def broadcastToInstance(packet: Packet): Unit = {
@@ -896,6 +941,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
       projectile.projectileType
     )
     broadcastToInstance(packet)
+    Metrics.projectilesSpawned.add(1L, Attrs.projectileType(projectile.projectileType))
   }
 
   def broadcastItemPickup(item: Item, playerId: UUID): Unit = {
@@ -908,6 +954,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
       ItemAction.PICKUP
     )
     broadcastToInstance(packet)
+    Metrics.itemsPickedUp.add(1L, Attrs.itemTypeAttrs(item.itemType.id))
   }
 
   def broadcastTileUpdate(playerId: UUID, x: Int, y: Int, tileId: Int): Unit = {
@@ -919,6 +966,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
       tileId
     )
     broadcastToInstance(packet)
+    Metrics.tilesModified.add(1L, io.opentelemetry.api.common.Attributes.of(Attrs.ItemType, "tile_" + tileId))
   }
 
   def sendModifiedTiles(player: Player): Unit = {

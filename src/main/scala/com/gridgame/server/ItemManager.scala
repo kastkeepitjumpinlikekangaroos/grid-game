@@ -22,6 +22,16 @@ class ItemManager {
   private val random = new Random()
   private val maxWorldItems = 40
 
+  // Async gauge: number of items currently in the world
+  private val itemsActiveGauge = com.gridgame.common.observability.Telemetry.meter("com.gridgame.items")
+    .gaugeBuilder("gridgame.items.active")
+    .setDescription("Items currently spawned in the world")
+    .setUnit("{item}")
+    .ofLongs()
+    .buildWithCallback { obs =>
+      obs.record(items.size().toLong, io.opentelemetry.api.common.Attributes.empty())
+    }
+
   // Spatial grid for O(1) pickup checks instead of iterating all items
   private val gridCellSize = 4
   private val itemGrid = new ConcurrentHashMap[Long, java.util.ArrayList[Item]]()

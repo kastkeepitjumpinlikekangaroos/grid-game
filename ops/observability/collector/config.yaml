@@ -1,0 +1,89 @@
+# OpenTelemetry Collector — receives OTLP from grid-game, fans signals out
+# to Prometheus / Tempo / Loki.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 512
+
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+
+  # Tail sampling: keep all error traces, 5% of normal traces.
+  tail_sampling:
+    decision_wait: 5s
+    num_traces: 50000
+    policies:
+      - name: errors-always
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      - name: normal-sample
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 5
+
+  # Tag every signal with cluster + environment if not already set.
+  resource:
+    attributes:
+      - key: cluster
+        value: grid-game-local
+        action: upsert
+
+exporters:
+  # Metrics → Prometheus (scraped from :8889)
+  # NOTE: do not set `const_labels: cluster: ...` here — the `resource` processor
+  # already adds `cluster` as a resource attribute, and `resource_to_telemetry_conversion`
+  # promotes it to a label. Setting both produces "duplicate label" errors and silently
+  # drops every metric. (See gridgame ops README.)
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  # Traces → Tempo (Tempo speaks OTLP natively)
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+  # Logs → Loki (via the OTLP-native endpoint added in Loki 3.x)
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
+
+  # Always-on stdout exporter for collector debugging — quiet by default.
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, tail_sampling, resource, batch]
+      exporters: [otlp/tempo]
+
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [prometheus]
+
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlphttp/loki]
+
+  telemetry:
+    metrics:
+      address: 0.0.0.0:8888

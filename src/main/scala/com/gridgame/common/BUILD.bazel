@@ -1,5 +1,26 @@
 load("@rules_scala//scala:scala.bzl", "scala_library")
 
+# Group OTel deps so server/client don't have to list each one
+OTEL_DEPS = [
+    "@maven//:io_opentelemetry_opentelemetry_api",
+    "@maven//:io_opentelemetry_opentelemetry_context",
+    "@maven//:io_opentelemetry_opentelemetry_sdk",
+    "@maven//:io_opentelemetry_opentelemetry_sdk_common",
+    "@maven//:io_opentelemetry_opentelemetry_sdk_metrics",
+    "@maven//:io_opentelemetry_opentelemetry_sdk_trace",
+    "@maven//:io_opentelemetry_opentelemetry_sdk_logs",
+    "@maven//:io_opentelemetry_opentelemetry_sdk_extension_autoconfigure",
+    "@maven//:io_opentelemetry_opentelemetry_sdk_extension_autoconfigure_spi",
+    "@maven//:io_opentelemetry_opentelemetry_exporter_otlp",
+    "@maven//:io_opentelemetry_opentelemetry_exporter_otlp_common",
+    "@maven//:io_opentelemetry_opentelemetry_exporter_common",
+    "@maven//:io_opentelemetry_opentelemetry_exporter_sender_okhttp",
+    "@maven//:io_opentelemetry_opentelemetry_exporter_logging",
+    "@maven//:io_opentelemetry_semconv_opentelemetry_semconv",
+    "@maven//:io_opentelemetry_instrumentation_opentelemetry_runtime_telemetry_java17",
+    "@maven//:io_opentelemetry_instrumentation_opentelemetry_instrumentation_api",
+]
+
 scala_library(
     name = "common",
     srcs = glob(["**/*.scala"]),
@@ -7,5 +28,6 @@ scala_library(
     deps = [
         "@maven//:com_google_guava_guava",
         "@maven//:com_google_code_gson_gson",
-    ],
+    ] + OTEL_DEPS,
+    exports = OTEL_DEPS,
 )

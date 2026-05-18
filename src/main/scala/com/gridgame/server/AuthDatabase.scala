@@ -1,5 +1,8 @@
 package com.gridgame.server
 
+import com.gridgame.common.observability.Attrs
+import com.gridgame.common.observability.Metrics
+
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -21,6 +24,22 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
   private val dbLock = new Object()
 
   init()
+
+  /** Time an operation and emit `gridgame.db.duration{op=<label>}` (+ error counter on throw). */
+  private def timed[T](op: String)(body: => T): T = {
+    val start = System.nanoTime()
+    val attrs = Attrs.dbOp(op)
+    try {
+      val out = body
+      Metrics.dbDuration.record((System.nanoTime() - start) / 1e6, attrs)
+      out
+    } catch {
+      case e: Throwable =>
+        Metrics.dbDuration.record((System.nanoTime() - start) / 1e6, attrs)
+        Metrics.dbErrors.add(1L, attrs)
+        throw e
+    }
+  }
 
   private def init(): Unit = {
     val stmt = connection.createStatement()
@@ -118,7 +137,7 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
 
   private val VALID_USERNAME_PATTERN = "^[a-zA-Z0-9_-]{1,20}$".r
 
-  def register(username: String, password: String): Boolean = {
+  def register(username: String, password: String): Boolean = timed("register") {
     if (username == null || username.isEmpty || password == null || password.isEmpty) {
       return false
     }
@@ -155,7 +174,7 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     }
   }
 
-  def authenticate(username: String, password: String): Boolean = {
+  def authenticate(username: String, password: String): Boolean = timed("authenticate") {
     if (username == null || username.isEmpty || password == null || password.isEmpty) {
       return false
     }
@@ -218,7 +237,7 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     new UUID(msb, lsb)
   }
 
-  def saveMatch(mapIndex: Int, durationMinutes: Int, results: Seq[(UUID, Int, Int, Byte)], matchType: Byte = 0): Unit = dbLock.synchronized {
+  def saveMatch(mapIndex: Int, durationMinutes: Int, results: Seq[(UUID, Int, Int, Byte)], matchType: Byte = 0): Unit = timed("save_match") { dbLock.synchronized {
     try {
       connection.setAutoCommit(false)
 
@@ -264,10 +283,10 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     } finally {
       connection.setAutoCommit(true)
     }
-  }
+  } }
 
   /** Returns (matchId, mapIndex, durationMinutes, playedAt, kills, deaths, rank, playerCount, matchType) */
-  def getMatchHistory(playerUUID: UUID, limit: Int = 20): Seq[(Long, Int, Int, Long, Int, Int, Int, Int, Int)] = dbLock.synchronized {
+  def getMatchHistory(playerUUID: UUID, limit: Int = 20): Seq[(Long, Int, Int, Long, Int, Int, Int, Int, Int)] = timed("history") { dbLock.synchronized {
     val stmt = connection.prepareStatement(
       """SELECT m.match_id, m.map_index, m.duration_minutes, m.played_at,
         |       mr.kills, mr.deaths, mr.rank, m.player_count, m.match_type
@@ -298,10 +317,10 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     rs.close()
     stmt.close()
     results.toSeq
-  }
+  } }
 
   /** Returns (totalKills, totalDeaths, matchesPlayed, wins, elo) */
-  def getPlayerStats(playerUUID: UUID): (Int, Int, Int, Int, Int) = dbLock.synchronized {
+  def getPlayerStats(playerUUID: UUID): (Int, Int, Int, Int, Int) = timed("stats") { dbLock.synchronized {
     val stmt = connection.prepareStatement(
       """SELECT COALESCE(SUM(kills), 0) AS total_kills,
         |       COALESCE(SUM(deaths), 0) AS total_deaths,
@@ -324,10 +343,10 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
 
     val elo = getEloByUUID(playerUUID)
     (result._1, result._2, result._3, result._4, elo)
-  }
+  } }
 
   /** Returns (username, elo, wins, matchesPlayed) sorted by ELO descending */
-  def getLeaderboard(limit: Int = 50): Seq[(String, Int, Int, Int)] = dbLock.synchronized {
+  def getLeaderboard(limit: Int = 50): Seq[(String, Int, Int, Int)] = timed("leaderboard") { dbLock.synchronized {
     val stmt = connection.prepareStatement(
       """SELECT a.username, a.elo,
         |       COALESCE(SUM(CASE WHEN mr.rank = 1 THEN 1 ELSE 0 END), 0) AS wins,
@@ -353,9 +372,9 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     rs.close()
     stmt.close()
     results.toSeq
-  }
+  } }
 
-  def getElo(username: String): Int = dbLock.synchronized {
+  def getElo(username: String): Int = timed("elo_get") { dbLock.synchronized {
     val stmt = connection.prepareStatement("SELECT elo FROM accounts WHERE username = ?")
     stmt.setString(1, username.toLowerCase)
     val rs = stmt.executeQuery()
@@ -363,22 +382,22 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     rs.close()
     stmt.close()
     elo
-  }
+  } }
 
   def getEloByUUID(playerUUID: UUID): Int = {
     val username = getUsernameByUUID(playerUUID)
     if (username != null) getElo(username) else 1000
   }
 
-  def updateElo(username: String, newElo: Int): Unit = dbLock.synchronized {
+  def updateElo(username: String, newElo: Int): Unit = timed("elo_update") { dbLock.synchronized {
     val stmt = connection.prepareStatement("UPDATE accounts SET elo = ? WHERE username = ?")
     stmt.setInt(1, newElo)
     stmt.setString(2, username.toLowerCase)
     stmt.executeUpdate()
     stmt.close()
-  }
+  } }
 
-  def getUsernameByUUID(uuid: UUID): String = dbLock.synchronized {
+  def getUsernameByUUID(uuid: UUID): String = timed("username_by_uuid") { dbLock.synchronized {
     val stmt = connection.prepareStatement("SELECT username FROM accounts WHERE uuid = ?")
     stmt.setString(1, uuid.toString)
     val rs = stmt.executeQuery()
@@ -386,7 +405,7 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     rs.close()
     stmt.close()
     found
-  }
+  } }
 
   /** Legacy SHA-256 hash for migrating old accounts to bcrypt. */
   private def hashPasswordLegacy(password: String, salt: String): String = {

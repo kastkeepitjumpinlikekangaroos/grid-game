@@ -2,6 +2,8 @@ package com.gridgame.server
 
 import com.gridgame.common.Constants
 import com.gridgame.common.model.Player
+import com.gridgame.common.observability.Attrs
+import com.gridgame.common.observability.Metrics
 import io.netty.channel.Channel
 
 import java.util.UUID
@@ -13,9 +15,12 @@ class ClientRegistry {
   private val channelToPlayer = new ConcurrentHashMap[Channel, UUID]()
 
   def add(player: Player): Unit = {
-    players.put(player.getId, player)
+    val isNew = players.put(player.getId, player) == null
     val ch = player.getTcpChannel
     if (ch != null) channelToPlayer.put(ch.asInstanceOf[Channel], player.getId)
+    // Count each fresh entry into an instance registry — covers human joins through
+    // LobbyHandler/RankedQueue, bot setup, and (re)connects through ClientHandler.
+    if (isNew) Metrics.characterPlayed.add(1L, Attrs.character(player.getCharacterId))
   }
 
   def remove(playerId: UUID): Unit = {

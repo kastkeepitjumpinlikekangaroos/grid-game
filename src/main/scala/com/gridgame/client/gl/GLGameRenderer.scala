@@ -249,6 +249,11 @@ class GLGameRenderer(val client: GameClient) {
   private val _dafFlags = new Array[Int](MAX_DEFERRED_ADD_FX)
   private val _dafChargeLevel = new Array[Int](MAX_DEFERRED_ADD_FX)
   private val _dafHitTime = new Array[Long](MAX_DEFERRED_ADD_FX)
+  private val _dafHitColorR = new Array[Float](MAX_DEFERRED_ADD_FX)
+  private val _dafHitColorG = new Array[Float](MAX_DEFERRED_ADD_FX)
+  private val _dafHitColorB = new Array[Float](MAX_DEFERRED_ADD_FX)
+  private val _dafHitDirX = new Array[Float](MAX_DEFERRED_ADD_FX)
+  private val _dafHitDirY = new Array[Float](MAX_DEFERRED_ADD_FX)
   private var _dafCount = 0
   private final val FX_GEM = 1; private final val FX_CHARGE = 2; private final val FX_PHASED = 4
   private final val FX_BURN = 8; private final val FX_HIT = 16; private final val FX_CAST = 32
@@ -314,7 +319,9 @@ class GLGameRenderer(val client: GameClient) {
       if ((flags & FX_CHARGE) != 0) drawChargingEffectInner(cx, cy, _dafChargeLevel(i))
       if ((flags & FX_PHASED) != 0) drawPhasedEffectInner(cx, cy)
       if ((flags & FX_BURN) != 0) drawBurnEffectInner(cx, cy)
-      if ((flags & FX_HIT) != 0) drawHitEffectInner(cx, cy, _dafHitTime(i))
+      if ((flags & FX_HIT) != 0) drawHitEffectInner(cx, cy, _dafHitTime(i),
+        _dafHitColorR(i), _dafHitColorG(i), _dafHitColorB(i),
+        _dafHitDirX(i), _dafHitDirY(i))
       if ((flags & FX_CAST) != 0) drawCastFlashInner(cx, cy)
       i += 1
     }
@@ -1257,7 +1264,24 @@ class GLGameRenderer(val client: GameClient) {
       if (di < MAX_DEFERRED_ADD_FX) {
         _dafCX(di) = screenX; _dafCY(di) = spriteCenter
         _dafFlags(di) = fxFlags; _dafChargeLevel(di) = player.getChargeLevel
-        _dafHitTime(di) = hitTime; _dafCount += 1
+        _dafHitTime(di) = hitTime
+        // Themed hit FX inputs — color and screen-space direction of the hit projectile
+        val hitColorRGB = client.getPlayerHitColorRGB(playerId)
+        intToRGB(if (hitColorRGB != 0) hitColorRGB else player.getColorRGB)
+        _dafHitColorR(di) = _rgb_r; _dafHitColorG(di) = _rgb_g; _dafHitColorB(di) = _rgb_b
+        val hDx = client.getPlayerHitDx(playerId).toDouble
+        val hDy = client.getPlayerHitDy(playerId).toDouble
+        // Convert world dx/dy to screen-space using same isometric mapping (2:1, dy halved)
+        val sdx = (hDx - hDy).toFloat
+        val sdy = ((hDx + hDy) * 0.5f).toFloat
+        val sLen = Math.sqrt(sdx * sdx + sdy * sdy).toFloat
+        if (sLen > 0.01f) {
+          _dafHitDirX(di) = sdx / sLen
+          _dafHitDirY(di) = sdy / sLen
+        } else {
+          _dafHitDirX(di) = 1f; _dafHitDirY(di) = 0f
+        }
+        _dafCount += 1
       }
     }
 
@@ -1376,7 +1400,23 @@ class GLGameRenderer(val client: GameClient) {
       if (di < MAX_DEFERRED_ADD_FX) {
         _dafCX(di) = screenX; _dafCY(di) = spriteCenter
         _dafFlags(di) = fxFlags; _dafChargeLevel(di) = client.getChargeLevel
-        _dafHitTime(di) = localHitTime; _dafCount += 1
+        _dafHitTime(di) = localHitTime
+        val lpId = client.getLocalPlayerId
+        val hitColorRGB = client.getPlayerHitColorRGB(lpId)
+        intToRGB(if (hitColorRGB != 0) hitColorRGB else client.getLocalColorRGB)
+        _dafHitColorR(di) = _rgb_r; _dafHitColorG(di) = _rgb_g; _dafHitColorB(di) = _rgb_b
+        val hDx = client.getPlayerHitDx(lpId).toDouble
+        val hDy = client.getPlayerHitDy(lpId).toDouble
+        val sdx = (hDx - hDy).toFloat
+        val sdy = ((hDx + hDy) * 0.5f).toFloat
+        val sLen = Math.sqrt(sdx * sdx + sdy * sdy).toFloat
+        if (sLen > 0.01f) {
+          _dafHitDirX(di) = sdx / sLen
+          _dafHitDirY(di) = sdy / sLen
+        } else {
+          _dafHitDirX(di) = 1f; _dafHitDirY(di) = 0f
+        }
+        _dafCount += 1
       }
     }
 
@@ -1811,27 +1851,57 @@ class GLGameRenderer(val client: GameClient) {
     val y = cy.toFloat
     beginShapes()
     shapeBatch.setAdditiveBlend(true)
-    drawHitEffectCore(x, y, progress, fadeOut, hitTime)
+    drawHitEffectCore(x, y, progress, fadeOut, hitTime, 1f, 0.7f, 0.25f, 1f, 0f)
     shapeBatch.setAdditiveBlend(false)
   }
 
-  /** Core hit visuals shared by drawHitEffect and drawHitEffectInner. */
-  private def drawHitEffectCore(x: Float, y: Float, progress: Double, fadeOut: Float, hitTime: Long): Unit = {
-    // Bright white flash overlay (40px, first 80ms ~16% of 500ms)
-    if (progress < 0.16) {
-      val flashAlpha = 0.35f * (1f - (progress / 0.16).toFloat)
-      shapeBatch.fillOval(x, y, 44f, 34f, 1f, 1f, 1f, flashAlpha, 16)
-      shapeBatch.fillOval(x, y, 30f, 22f, 1f, 1f, 0.95f, flashAlpha * 1.2f, 12)
+  /** Core hit visuals shared by drawHitEffect and drawHitEffectInner.
+   *  hr/hg/hb is the projectile color (themed); ddx/ddy is the screen-space unit direction
+   *  the projectile was traveling (for directional impact streak / knockback arrow). */
+  private def drawHitEffectCore(x: Float, y: Float, progress: Double, fadeOut: Float, hitTime: Long,
+                                hr: Float, hg: Float, hb: Float, ddx: Float, ddy: Float): Unit = {
+    // Brighter, fuller hit color (mix with white so themed flash still pops)
+    val br = Math.min(1f, hr * 0.4f + 0.6f)
+    val bg = Math.min(1f, hg * 0.4f + 0.6f)
+    val bb = Math.min(1f, hb * 0.4f + 0.6f)
+
+    // White-out flash overlay (longer + bigger — unmistakable IMPACT FRAME, first 24% / ~120ms)
+    if (progress < 0.24) {
+      val flashAlpha = 0.55f * (1f - (progress / 0.24).toFloat)
+      shapeBatch.fillOval(x, y, 56f, 42f, 1f, 1f, 1f, flashAlpha, 18)
+      shapeBatch.fillOval(x, y, 38f, 28f, 1f, 1f, 0.95f, flashAlpha * 1.2f, 14)
+      shapeBatch.fillOval(x, y, 20f, 14f, 1f, 1f, 1f, flashAlpha * 1.5f, 10)
     }
 
-    // Massive central glow burst (3 layers: 40px -> 25px -> 12px)
-    shapeBatch.fillOvalSoft(x, y, 44f * fadeOut, 34f * fadeOut, 1f, 0.4f, 0.08f, 0.4f * fadeOut, 0f, 18)
-    shapeBatch.fillOvalSoft(x, y, 28f * fadeOut, 20f * fadeOut, 1f, 0.7f, 0.25f, 0.45f * fadeOut, 0f, 14)
-    shapeBatch.fillOval(x, y, 14f * fadeOut, 10f * fadeOut, 1f, 0.95f, 0.75f, 0.4f * fadeOut, 10)
+    // Themed central glow burst (3 layers, projectile-colored)
+    shapeBatch.fillOvalSoft(x, y, 50f * fadeOut, 38f * fadeOut, hr, hg, hb, 0.45f * fadeOut, 0f, 18)
+    shapeBatch.fillOvalSoft(x, y, 32f * fadeOut, 22f * fadeOut, br, bg, bb, 0.5f * fadeOut, 0f, 14)
+    shapeBatch.fillOval(x, y, 16f * fadeOut, 12f * fadeOut, 1f, 1f, 1f, 0.45f * fadeOut, 10)
 
-    // 12 directional sparks with thick trailing streaks
-    val sparkDist = 12f + 36f * progress.toFloat
-    val sparkSz = 5f * fadeOut
+    // Directional IMPACT STREAK — a fat slash that points along the projectile direction
+    // (so the hit player can tell where the shot came from)
+    if (progress < 0.5 && (ddx * ddx + ddy * ddy) > 0.01f) {
+      val streakProgress = (progress / 0.5).toFloat
+      val streakFade = 1f - streakProgress
+      val streakLen = 38f * (0.5f + streakProgress * 0.8f)
+      val backLen = 18f
+      val sx0 = x - ddx * backLen
+      val sy0 = y - ddy * backLen * 0.6f
+      val sx1 = x + ddx * streakLen
+      val sy1 = y + ddy * streakLen * 0.6f
+      // Outer halo
+      shapeBatch.strokeLineSoft(sx0, sy0, sx1, sy1, 12f, hr, hg, hb, 0.45f * streakFade)
+      // Mid layer
+      shapeBatch.strokeLineSoft(sx0, sy0, sx1, sy1, 6f, br, bg, bb, 0.7f * streakFade)
+      // Bright white core
+      shapeBatch.strokeLine(sx0, sy0, sx1, sy1, 2.5f, 1f, 1f, 1f, 0.85f * streakFade)
+      // Streak head — bright orb at the impact entry side
+      shapeBatch.fillOval(sx1, sy1, 7f * streakFade, 5.5f * streakFade, 1f, 1f, 1f, 0.85f * streakFade, 10)
+    }
+
+    // 12 directional sparks with thick trailing streaks — themed
+    val sparkDist = 12f + 40f * progress.toFloat
+    val sparkSz = 5.5f * fadeOut
     var i = 0
     while (i < 12) {
       val angle = i * 0.5236f + hitTime * 0.001f // 30 degree spacing
@@ -1839,47 +1909,48 @@ class GLGameRenderer(val client: GameClient) {
       val finalAngle = angle + jitter
       val sx = x + math.cos(finalAngle).toFloat * sparkDist
       val sy = y + math.sin(finalAngle).toFloat * sparkDist * 0.6f
-      // Long trailing streak (from near center to spark)
       val trailStartDist = sparkDist * 0.3f
       val trailX = x + math.cos(finalAngle).toFloat * trailStartDist
       val trailY = y + math.sin(finalAngle).toFloat * trailStartDist * 0.6f
-      // Thick streak
-      shapeBatch.strokeLineSoft(trailX, trailY, sx, sy, 3f, 1f, 0.6f, 0.15f, 0.3f * fadeOut)
-      shapeBatch.strokeLine(trailX, trailY, sx, sy, 1.5f, 1f, 0.85f, 0.4f, 0.45f * fadeOut)
-      // Bright spark head
-      shapeBatch.fillOval(sx, sy, sparkSz, sparkSz * 0.8f, 1f, 0.9f, 0.35f, 0.6f * fadeOut, 6)
-      shapeBatch.fillOval(sx, sy, sparkSz * 0.5f, sparkSz * 0.4f, 1f, 1f, 0.8f, 0.5f * fadeOut, 4)
+      shapeBatch.strokeLineSoft(trailX, trailY, sx, sy, 3.5f, hr, hg, hb, 0.35f * fadeOut)
+      shapeBatch.strokeLine(trailX, trailY, sx, sy, 1.5f, br, bg, bb, 0.55f * fadeOut)
+      shapeBatch.fillOval(sx, sy, sparkSz, sparkSz * 0.8f, br, bg, bb, 0.7f * fadeOut, 6)
+      shapeBatch.fillOval(sx, sy, sparkSz * 0.5f, sparkSz * 0.4f, 1f, 1f, 1f, 0.55f * fadeOut, 4)
       i += 1
     }
 
-    // Expanding ring at 60% speed (screen-shake equivalent)
+    // PRIMARY shockwave ring — thick, themed, expands fast (impact ring)
     val ringProgress = progress * 0.6
     if (ringProgress < 1.0) {
-      val ringR = (8f + 40f * ringProgress.toFloat)
-      val ringAlpha = 0.4f * (1f - ringProgress.toFloat)
-      shapeBatch.strokeOval(x, y, ringR, ringR * 0.65f, 2.5f, 1f, 0.8f, 0.3f, ringAlpha, 20)
-      shapeBatch.strokeOval(x, y, ringR * 0.85f, ringR * 0.55f, 1.5f, 1f, 0.9f, 0.5f, ringAlpha * 0.6f, 18)
+      val ringR = (10f + 50f * ringProgress.toFloat)
+      val ringAlpha = 0.55f * (1f - ringProgress.toFloat)
+      shapeBatch.strokeOval(x, y, ringR, ringR * 0.65f, 3.5f, hr, hg, hb, ringAlpha, 22)
+      shapeBatch.strokeOval(x, y, ringR * 0.9f, ringR * 0.6f, 2f, br, bg, bb, ringAlpha * 0.7f, 20)
+      shapeBatch.strokeOval(x, y, ringR * 0.78f, ringR * 0.5f, 1f, 1f, 1f, ringAlpha * 0.5f, 18)
     }
 
-    // Secondary flash ring at 200ms (~40% progress)
+    // SECONDARY flash ring — adds a "double pulse" for clarity (35-65% progress)
     if (progress > 0.35 && progress < 0.65) {
       val ring2Phase = ((progress - 0.35) / 0.3).toFloat
-      val ring2R = 5f + 30f * ring2Phase
-      val ring2Alpha = 0.25f * (1f - ring2Phase)
-      shapeBatch.strokeOval(x, y, ring2R, ring2R * 0.65f, 1.8f, 1f, 0.6f, 0.2f, ring2Alpha, 16)
+      val ring2R = 5f + 36f * ring2Phase
+      val ring2Alpha = 0.35f * (1f - ring2Phase)
+      shapeBatch.strokeOval(x, y, ring2R, ring2R * 0.65f, 2.5f, hr, hg, hb, ring2Alpha, 18)
+      shapeBatch.strokeOval(x, y, ring2R * 0.7f, ring2R * 0.45f, 1.4f, 1f, 1f, 1f, ring2Alpha * 0.6f, 16)
     }
 
-    // 6 debris particles flying outward (small chunks)
-    { var d = 0; while (d < 6) {
-      val debrisAngle = d * 1.047f + hitTime * 0.002f // 60 degree spacing
-      val debrisDist = 6f + 32f * progress.toFloat + Math.sin(d * 2.3).toFloat * 5f
-      val debrisGravity = progress.toFloat * progress.toFloat * 15f // gravity pull down
+    // 8 debris chunks flying outward — themed color
+    { var d = 0; while (d < 8) {
+      val debrisAngle = d * 0.785f + hitTime * 0.002f // 45 degree spacing
+      val debrisDist = 6f + 38f * progress.toFloat + Math.sin(d * 2.3).toFloat * 6f
+      val debrisGravity = progress.toFloat * progress.toFloat * 18f
       val dx = x + math.cos(debrisAngle).toFloat * debrisDist
       val dy = y + math.sin(debrisAngle).toFloat * debrisDist * 0.5f + debrisGravity
-      val debrisSz = 3f * fadeOut
-      val debrisAlpha = 0.5f * fadeOut
+      val debrisSz = 3.5f * fadeOut
+      val debrisAlpha = 0.55f * fadeOut
       shapeBatch.fillRect(dx - debrisSz * 0.5f, dy - debrisSz * 0.5f, debrisSz, debrisSz,
-        0.85f, 0.7f, 0.5f, debrisAlpha)
+        br, bg, bb, debrisAlpha)
+      // Bright pip on each debris
+      shapeBatch.fillRect(dx - 0.5f, dy - 0.5f, 1f, 1f, 1f, 1f, 1f, debrisAlpha)
     ; d += 1 } }
   }
 
@@ -1918,13 +1989,15 @@ class GLGameRenderer(val client: GameClient) {
     drawBurnEffectCore(cx.toFloat, cy.toFloat, animationTick)
   }
 
-  private def drawHitEffectInner(cx: Double, cy: Double, hitTime: Long): Unit = {
+  private def drawHitEffectInner(cx: Double, cy: Double, hitTime: Long,
+                                 hr: Float, hg: Float, hb: Float,
+                                 ddx: Float, ddy: Float): Unit = {
     if (hitTime <= 0) return
     val elapsed = _frameTimeMs - hitTime
     if (elapsed > HIT_ANIMATION_MS) return
     val progress = elapsed.toDouble / HIT_ANIMATION_MS
     val fadeOut = (1.0 - progress).toFloat
-    drawHitEffectCore(cx.toFloat, cy.toFloat, progress, fadeOut, hitTime)
+    drawHitEffectCore(cx.toFloat, cy.toFloat, progress, fadeOut, hitTime, hr, hg, hb, ddx, ddy)
   }
 
   private def drawCastFlashInner(cx: Double, cy: Double): Unit = {

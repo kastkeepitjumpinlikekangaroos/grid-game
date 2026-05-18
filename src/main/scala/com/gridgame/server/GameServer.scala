@@ -6,6 +6,10 @@ import com.gridgame.common.model.Item
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Projectile
 import com.gridgame.common.model.WorldData
+import com.gridgame.common.observability.Attrs
+import com.gridgame.common.observability.Metrics
+import com.gridgame.common.observability.Telemetry
+import com.gridgame.common.observability.Tracing
 import com.gridgame.common.protocol._
 import io.netty.bootstrap.Bootstrap
 import io.netty.bootstrap.ServerBootstrap
@@ -73,6 +77,37 @@ class GameServer(port: Int, val worldFile: String = "") {
   private var tcpServerChannel: Channel = _
   private var udpChannel: Channel = _
 
+  // Async gauges — read these atomically on each metric scrape
+  private val meter = Telemetry.meter("com.gridgame.server")
+  private val connectedPlayersGauge = meter.gaugeBuilder("gridgame.connections.active")
+    .setDescription("Currently connected players")
+    .setUnit("{player}")
+    .ofLongs()
+    .buildWithCallback { obs =>
+      obs.record(connectedPlayers.size().toLong, io.opentelemetry.api.common.Attributes.empty())
+    }
+  private val activeLobbiesGauge = meter.gaugeBuilder("gridgame.lobbies.active")
+    .setDescription("Active lobbies")
+    .setUnit("{lobby}")
+    .ofLongs()
+    .buildWithCallback { obs =>
+      obs.record(lobbyManager.getActiveLobbies.size.toLong, io.opentelemetry.api.common.Attributes.empty())
+    }
+  private val activeInstancesGauge = meter.gaugeBuilder("gridgame.instances.active")
+    .setDescription("Active game instances")
+    .setUnit("{instance}")
+    .ofLongs()
+    .buildWithCallback { obs =>
+      obs.record(gameInstances.size().toLong, io.opentelemetry.api.common.Attributes.empty())
+    }
+  private val activeSessionsGauge = meter.gaugeBuilder("gridgame.sessions.active")
+    .setDescription("Active session tokens")
+    .setUnit("{session}")
+    .ofLongs()
+    .buildWithCallback { obs =>
+      obs.record(sessionTokens.size().toLong, io.opentelemetry.api.common.Attributes.empty())
+    }
+
   def start(): Unit = {
     running = true
 
@@ -139,6 +174,7 @@ class GameServer(port: Int, val worldFile: String = "") {
   /** Send a packet to a specific player, using the correct transport based on packet type. */
   def sendPacketToPlayer(packet: Packet, player: Player): Unit = {
     val token = sessionTokens.get(player.getId)
+    val pktAttrs = Attrs.packet(packet.getType)
     if (packet.getType.tcp) {
       val raw = player.getTcpChannel
       if (raw != null) {
@@ -147,6 +183,8 @@ class GameServer(port: Int, val worldFile: String = "") {
           val payload = packet.serialize()
           val data = if (token != null) PacketSigner.sign(payload, token) else padToPacketSize(payload)
           ch.writeAndFlush(Unpooled.wrappedBuffer(data))
+          Metrics.packetsSent.add(1L, pktAttrs)
+          Metrics.bandwidthBytes.add(data.length.toLong, Attrs.DirOut)
         }
       }
     } else {
@@ -156,6 +194,8 @@ class GameServer(port: Int, val worldFile: String = "") {
         val data = if (token != null) PacketSigner.sign(payload, token) else padToPacketSize(payload)
         val dgram = new DatagramPacket(Unpooled.wrappedBuffer(data), addr)
         udpChannel.writeAndFlush(dgram)
+        Metrics.packetsSent.add(1L, pktAttrs)
+        Metrics.bandwidthBytes.add(data.length.toLong, Attrs.DirOut)
       }
     }
   }
@@ -167,15 +207,20 @@ class GameServer(port: Int, val worldFile: String = "") {
       val token = channelToToken.get(channel)
       val data = if (token != null) PacketSigner.sign(payload, token) else padToPacketSize(payload)
       channel.writeAndFlush(Unpooled.wrappedBuffer(data))
+      Metrics.packetsSent.add(1L, Attrs.packet(packet.getType))
+      Metrics.bandwidthBytes.add(data.length.toLong, Attrs.DirOut)
     }
   }
 
   /** Broadcast a packet to all connected players (lobby-wide). */
   def broadcastToAllPlayers(packet: Packet): Unit = {
     val data = packet.serialize()
+    var fanout = 0
     connectedPlayers.values().asScala.foreach { player =>
       sendRawToPlayer(data, packet.getType.tcp, player)
+      fanout += 1
     }
+    Metrics.broadcastFanout.record(fanout.toLong, Attrs.packet(packet.getType))
   }
 
   /** Send pre-serialized packet bytes to a player. Serialization is done once by the caller. */
@@ -188,6 +233,7 @@ class GameServer(port: Int, val worldFile: String = "") {
         val ch = raw.asInstanceOf[Channel]
         if (ch.isActive) {
           ch.writeAndFlush(Unpooled.wrappedBuffer(signed))
+          Metrics.bandwidthBytes.add(signed.length.toLong, Attrs.DirOut)
         }
       }
     } else {
@@ -195,6 +241,7 @@ class GameServer(port: Int, val worldFile: String = "") {
       if (addr != null && udpChannel != null) {
         val dgram = new DatagramPacket(Unpooled.wrappedBuffer(signed), addr)
         udpChannel.writeAndFlush(dgram)
+        Metrics.bandwidthBytes.add(signed.length.toLong, Attrs.DirOut)
       }
     }
   }
@@ -209,6 +256,7 @@ class GameServer(port: Int, val worldFile: String = "") {
         val ch = raw.asInstanceOf[Channel]
         if (ch.isActive) {
           ch.write(Unpooled.wrappedBuffer(signed))
+          Metrics.bandwidthBytes.add(signed.length.toLong, Attrs.DirOut)
         }
       }
     } else {
@@ -216,6 +264,7 @@ class GameServer(port: Int, val worldFile: String = "") {
       if (addr != null && udpChannel != null) {
         val dgram = new DatagramPacket(Unpooled.wrappedBuffer(signed), addr)
         udpChannel.write(dgram)
+        Metrics.bandwidthBytes.add(signed.length.toLong, Attrs.DirOut)
       }
     }
   }
@@ -275,9 +324,13 @@ class GameServer(port: Int, val worldFile: String = "") {
 
   /** Handle an incoming packet from a TCP or UDP handler. */
   def handleIncomingPacket(packet: Packet, tcpCh: Channel, udpSender: InetSocketAddress): Unit = {
+    val pktAttrs = Attrs.packet(packet.getType)
+    Metrics.packetsReceived.add(1L, pktAttrs)
+    val startNs = System.nanoTime()
     try {
       // Block TCP-only packet types arriving via UDP
       if (udpSender != null && packet.getType.tcp) {
+        Metrics.packetsDropped.add(1L, Attrs.ReasonTcpOnlyOverUdp)
         return // TCP-only packets must not arrive over UDP
       }
 
@@ -287,10 +340,12 @@ class GameServer(port: Int, val worldFile: String = "") {
         if (authenticatedId == null) {
           // channelToPlayer is set during generateSessionToken — if missing, channel hasn't authenticated
           System.err.println(s"TCP: Packet from unauthenticated channel (no channelToPlayer binding)")
+          Metrics.packetsDropped.add(1L, Attrs.ReasonUnauthenticated)
           return
         }
         if (packet.getPlayerId != null && !authenticatedId.equals(packet.getPlayerId)) {
           System.err.println(s"TCP: UUID mismatch — channel authenticated as ${authenticatedId.toString.substring(0, 8)} but packet claims ${packet.getPlayerId.toString.substring(0, 8)}")
+          Metrics.packetsDropped.add(1L, Attrs.ReasonUuidMismatch)
           return
         }
       }
@@ -417,6 +472,10 @@ class GameServer(port: Int, val worldFile: String = "") {
     } catch {
       case e: IllegalArgumentException =>
         System.err.println(s"Invalid packet received: ${e.getMessage}")
+        Metrics.packetsDropped.add(1L, Attrs.ReasonMalformed)
+    } finally {
+      val elapsedMs = (System.nanoTime() - startNs) / 1e6
+      Metrics.packetProcessDuration.record(elapsedMs, pktAttrs)
     }
   }
 
@@ -439,6 +498,7 @@ class GameServer(port: Int, val worldFile: String = "") {
       channelToPlayer.put(tcpCh, playerId)
     }
 
+    Metrics.connectionsOpened.add(1L, Attrs.ConnTcpOpen)
     println(s"Global connect: ${playerId.toString.substring(0, 8)} ('${packet.getPlayerName}')")
 
     // Check if player is in a lobby that's in-game; if so, register in instance
@@ -450,15 +510,18 @@ class GameServer(port: Int, val worldFile: String = "") {
     }
   }
 
-  private def handleAuthRequest(packet: AuthRequestPacket, tcpCh: Channel): Unit = {
+  private def handleAuthRequest(packet: AuthRequestPacket, tcpCh: Channel): Unit = Tracing.span("auth.request", io.opentelemetry.api.common.Attributes.of(Attrs.Action, if (packet.getAction == AuthAction.SIGNUP) "signup" else "login")) {
     val username = packet.getUsername
     val password = packet.getPassword
     val isSignup = packet.getAction == AuthAction.SIGNUP
+    val startNs = System.nanoTime()
 
     // Rate limit auth attempts
     val remoteAddr = tcpCh.remoteAddress().asInstanceOf[InetSocketAddress].getAddress
     if (!rateLimiter.allowAuthAttempt(remoteAddr)) {
       println(s"Auth: Rate limited - $remoteAddr")
+      Metrics.authAttempts.add(1L, if (isSignup) Attrs.AuthSignupRateLimited else Attrs.AuthLoginRateLimited)
+      Metrics.rateLimitTriggered.add(1L, Attrs.RlAuth)
       val response = new AuthResponsePacket(getNextSequenceNumber, false, null, "Too many attempts")
       sendPacketViaChannel(response, tcpCh)
       return
@@ -468,6 +531,7 @@ class GameServer(port: Int, val worldFile: String = "") {
       if (password.length < 6) {
         println(s"Auth: Signup failed - '$username' (password too short)")
         recordChannelAuthFailure(tcpCh)
+        Metrics.authAttempts.add(1L, Attrs.AuthSignupFail)
         val response = new AuthResponsePacket(getNextSequenceNumber, false, null, "Password must be 6+ chars")
         sendPacketViaChannel(response, tcpCh)
         return
@@ -478,6 +542,7 @@ class GameServer(port: Int, val worldFile: String = "") {
         println(s"Auth: New account registered - '$username' (${uuid.toString.substring(0, 8)})")
         playerTcpAddresses.put(uuid, remoteAddr)
         val token = generateSessionToken(uuid, tcpCh)
+        Metrics.authAttempts.add(1L, Attrs.AuthSignupSuccess)
         val response = new AuthResponsePacket(getNextSequenceNumber, true, uuid, "Account created")
         sendPacketViaChannel(response, tcpCh)
         val tokenPacket = new SessionTokenPacket(getNextSequenceNumber, uuid, token)
@@ -485,6 +550,7 @@ class GameServer(port: Int, val worldFile: String = "") {
       } else {
         println(s"Auth: Signup failed - '$username' (already exists)")
         recordChannelAuthFailure(tcpCh)
+        Metrics.authAttempts.add(1L, Attrs.AuthSignupFail)
         val response = new AuthResponsePacket(getNextSequenceNumber, false, null, "Username taken")
         sendPacketViaChannel(response, tcpCh)
       }
@@ -496,6 +562,7 @@ class GameServer(port: Int, val worldFile: String = "") {
         println(s"Auth: Login successful - '$username' (${uuid.toString.substring(0, 8)})")
         playerTcpAddresses.put(uuid, remoteAddr)
         val token = generateSessionToken(uuid, tcpCh)
+        Metrics.authAttempts.add(1L, Attrs.AuthLoginSuccess)
         val response = new AuthResponsePacket(getNextSequenceNumber, true, uuid, "Login successful")
         sendPacketViaChannel(response, tcpCh)
         val tokenPacket = new SessionTokenPacket(getNextSequenceNumber, uuid, token)
@@ -504,10 +571,12 @@ class GameServer(port: Int, val worldFile: String = "") {
         rateLimiter.recordAuthFailure(remoteAddr)
         recordChannelAuthFailure(tcpCh)
         println(s"Auth: Login failed - '$username' (invalid credentials)")
+        Metrics.authAttempts.add(1L, Attrs.AuthLoginFail)
         val response = new AuthResponsePacket(getNextSequenceNumber, false, null, "Invalid credentials")
         sendPacketViaChannel(response, tcpCh)
       }
     }
+    Metrics.authDuration.record((System.nanoTime() - startNs) / 1e6, io.opentelemetry.api.common.Attributes.of(Attrs.Action, if (isSignup) "signup" else "login"))
   }
 
   private def handleMatchHistoryRequest(packet: MatchHistoryPacket, tcpCh: Channel): Unit = {
@@ -605,11 +674,21 @@ class GameServer(port: Int, val worldFile: String = "") {
     val player = connectedPlayers.get(playerId)
     if (player == null) return
 
-    if (!rateLimiter.allowChat(playerId)) return
+    if (!rateLimiter.allowChat(playerId)) {
+      Metrics.rateLimitTriggered.add(1L, Attrs.RlChat)
+      return
+    }
 
     // Sanitize: strip control chars, trim, reject empty
     val sanitized = packet.getMessage.filter(c => c >= 32 && c < 127).trim
     if (sanitized.isEmpty) return
+
+    Metrics.chatMessages.add(1L, packet.getScope match {
+      case ChatScope.LOBBY => Attrs.ChatLobby
+      case ChatScope.GAME => Attrs.ChatGame
+      case ChatScope.TEAM => Attrs.ChatTeam
+      case _ => Attrs.ChatLobby
+    })
 
     val lobby = lobbyManager.getPlayerLobby(playerId)
     if (lobby == null) return
@@ -754,6 +833,7 @@ class GameServer(port: Int, val worldFile: String = "") {
     channelAuthFailures.remove(channel)
     malformedPacketCounts.remove(channel)
     rateLimiter.removeChannel(channel)
+    Metrics.connectionsClosed.add(1L, Attrs.ConnTcpClose)
     val playerId = channelToPlayer.remove(channel)
     if (playerId != null) {
       sessionTokens.remove(playerId)
@@ -792,6 +872,12 @@ class GameServer(port: Int, val worldFile: String = "") {
     val instance = lobby.gameInstance
     if (instance == null) return
 
+    val modeAttrs = io.opentelemetry.api.common.Attributes.builder()
+      .putAll(Attrs.modeOf(instance.gameMode))
+      .putAll(Attrs.matchTypeOf(lobby.matchType))
+      .build()
+    Metrics.matchesFinished.add(1L, modeAttrs)
+    Metrics.matchDuration.record(lobby.durationMinutes.toDouble * 60.0, modeAttrs)
     lobby.status = LobbyStatus.FINISHED
 
     // Stop the instance (shutdownNow() interrupts worker threads including the
@@ -903,6 +989,7 @@ class GameServer(port: Int, val worldFile: String = "") {
         authDatabase.updateElo(username, newElo)
         println(s"RankedELO: ${username} $myElo -> $newElo (delta=${Math.round(delta)})")
       }
+      Metrics.eloDelta.record(Math.round(delta).toDouble, io.opentelemetry.api.common.Attributes.empty())
     }
   }
 
@@ -963,6 +1050,7 @@ class GameServer(port: Int, val worldFile: String = "") {
             tokenCreationTime.remove(playerId)
             sessionTokens.remove(playerId)
             playerTcpAddresses.remove(playerId)
+            Metrics.sessionsExpired.add(1L, io.opentelemetry.api.common.Attributes.empty())
 
             // Close TCP channel to force re-auth
             val player = connectedPlayers.get(playerId)
@@ -1028,6 +1116,8 @@ class GameServerTcpHandler(server: GameServer) extends SimpleChannelInboundHandl
     val remoteAddr = ctx.channel().remoteAddress().asInstanceOf[InetSocketAddress].getAddress
     if (!server.rateLimiter.allowConnection(remoteAddr)) {
       System.err.println(s"TCP: Connection rate limit exceeded for $remoteAddr, closing")
+      Metrics.rateLimitTriggered.add(1L, Attrs.RlConnection)
+      Metrics.connectionsClosed.add(1L, Attrs.ConnTcpRejectedRateLimit)
       ctx.close()
       return
     }
@@ -1035,10 +1125,14 @@ class GameServerTcpHandler(server: GameServer) extends SimpleChannelInboundHandl
   }
 
   override def channelRead0(ctx: ChannelHandlerContext, msg: io.netty.buffer.ByteBuf): Unit = {
-    if (msg.readableBytes() < Constants.PACKET_SIZE) return
+    if (msg.readableBytes() < Constants.PACKET_SIZE) {
+      Metrics.packetsDropped.add(1L, Attrs.ReasonTooShort)
+      return
+    }
 
     val data = new Array[Byte](Constants.PACKET_SIZE)
     msg.readBytes(data)
+    Metrics.bandwidthBytes.add(data.length.toLong, Attrs.DirIn)
 
     try {
       // Peek at packet type byte
@@ -1058,6 +1152,7 @@ class GameServerTcpHandler(server: GameServer) extends SimpleChannelInboundHandl
             val createdAt = server.tokenCreationTime.get(chPlayerId)
             if (createdAt != null && System.currentTimeMillis() - createdAt > Constants.SESSION_TOKEN_LIFETIME_MS) {
               System.err.println("TCP: Session token expired, closing channel")
+              Metrics.packetsDropped.add(1L, Attrs.ReasonExpired)
               ctx.close()
               return
             }
@@ -1065,6 +1160,8 @@ class GameServerTcpHandler(server: GameServer) extends SimpleChannelInboundHandl
           val verified = PacketSigner.verify(data, token)
           if (verified == null) {
             System.err.println("TCP: HMAC verification failed, dropping packet")
+            Metrics.packetsDropped.add(1L, Attrs.ReasonHmacFail)
+            Metrics.hmacFailures.add(1L, io.opentelemetry.api.common.Attributes.of(Attrs.Transport, "tcp"))
             return
           }
           verified
@@ -1072,6 +1169,7 @@ class GameServerTcpHandler(server: GameServer) extends SimpleChannelInboundHandl
           // No token yet (pre-auth) — ONLY allow AUTH_REQUEST
           // All other packet types require authentication
           System.err.println(s"TCP: Non-auth packet on pre-auth channel (type=$packetTypeId), dropping")
+          Metrics.packetsDropped.add(1L, Attrs.ReasonNoToken)
           return
         }
       }
@@ -1079,13 +1177,25 @@ class GameServerTcpHandler(server: GameServer) extends SimpleChannelInboundHandl
       // Rate limit packets
       if (packetTypeId == PacketType.AUTH_REQUEST.id) {
         // Pre-auth: rate limit by channel (no player ID available yet)
-        if (!server.rateLimiter.allowPreAuthPacket(ctx.channel())) return
+        if (!server.rateLimiter.allowPreAuthPacket(ctx.channel())) {
+          Metrics.rateLimitTriggered.add(1L, Attrs.RlPreAuth)
+          Metrics.packetsDropped.add(1L, Attrs.ReasonRateLimit)
+          return
+        }
       } else {
         val pid = packet.getPlayerId
         if (pid != null) {
-          if (!server.rateLimiter.allowPacket(pid, false)) return
+          if (!server.rateLimiter.allowPacket(pid, false)) {
+            Metrics.rateLimitTriggered.add(1L, Attrs.RlTcp)
+            Metrics.packetsDropped.add(1L, Attrs.ReasonRateLimit)
+            return
+          }
           // Replay protection: reject duplicate/out-of-order TCP sequence numbers
-          if (!server.packetValidator.validateSequence(pid, packet.getSequenceNumber, isUdp = false)) return
+          if (!server.packetValidator.validateSequence(pid, packet.getSequenceNumber, isUdp = false)) {
+            Metrics.replayRejected.add(1L, io.opentelemetry.api.common.Attributes.of(Attrs.Transport, "tcp"))
+            Metrics.packetsDropped.add(1L, Attrs.ReasonReplay)
+            return
+          }
         }
       }
       server.handleIncomingPacket(packet, ctx.channel(), null)
@@ -1093,11 +1203,14 @@ class GameServerTcpHandler(server: GameServer) extends SimpleChannelInboundHandl
       case e: Exception =>
         val msg = if (e.getMessage != null) e.getMessage else e.getClass.getSimpleName
         System.err.println(s"TCP: Invalid packet received: $msg")
+        Metrics.packetDeserializeFailures.add(1L, io.opentelemetry.api.common.Attributes.of(Attrs.Transport, "tcp"))
+        Metrics.packetsDropped.add(1L, Attrs.ReasonMalformed)
         // Track malformed packets per channel and disconnect on excessive errors
         val ch = ctx.channel()
         val counter = server.malformedPacketCounts.computeIfAbsent(ch, _ => new AtomicInteger(0))
         if (counter.incrementAndGet() >= server.MAX_MALFORMED_PACKETS) {
           System.err.println(s"TCP: Too many malformed packets, closing: ${ch.remoteAddress()}")
+          Metrics.rateLimitTriggered.add(1L, Attrs.RlMalformed)
           ch.close()
         }
     }
@@ -1120,10 +1233,14 @@ class GameServerUdpHandler(server: GameServer) extends SimpleChannelInboundHandl
 
   override def channelRead0(ctx: ChannelHandlerContext, msg: DatagramPacket): Unit = {
     val buf = msg.content()
-    if (buf.readableBytes() < Constants.PACKET_SIZE) return
+    if (buf.readableBytes() < Constants.PACKET_SIZE) {
+      Metrics.packetsDropped.add(1L, Attrs.ReasonTooShort)
+      return
+    }
 
     val data = new Array[Byte](Constants.PACKET_SIZE)
     buf.readBytes(data)
+    Metrics.bandwidthBytes.add(data.length.toLong, Attrs.DirIn)
 
     try {
       // Extract UUID from bytes [5-20] to look up session token
@@ -1135,12 +1252,14 @@ class GameServerUdpHandler(server: GameServer) extends SimpleChannelInboundHandl
 
       // Require HMAC for all UDP packets (no pre-auth UDP allowed)
       if (token == null) {
+        Metrics.packetsDropped.add(1L, Attrs.ReasonNoToken)
         return
       }
 
       // Inline token expiry check (don't wait for cleanup loop)
       val createdAt = server.tokenCreationTime.get(playerId)
       if (createdAt != null && System.currentTimeMillis() - createdAt > Constants.SESSION_TOKEN_LIFETIME_MS) {
+        Metrics.packetsDropped.add(1L, Attrs.ReasonExpired)
         return
       }
 
@@ -1148,29 +1267,37 @@ class GameServerUdpHandler(server: GameServer) extends SimpleChannelInboundHandl
       val expectedAddr = server.playerTcpAddresses.get(playerId)
       if (expectedAddr == null) {
         // No TCP address registered yet — reject UDP until TCP handshake completes
+        Metrics.packetsDropped.add(1L, Attrs.ReasonUnauthenticated)
         return
       }
       val senderAddr = msg.sender().getAddress
       if (!senderAddr.equals(expectedAddr)) {
         System.err.println(s"UDP: Source IP mismatch for ${playerId.toString.substring(0, 8)}, dropping")
+        Metrics.packetsDropped.add(1L, Attrs.ReasonUdpSpoof)
         return
       }
 
       // Rate limit per-client UDP packets AFTER IP validation
       // Prevents spoofed-IP packets from consuming a legitimate player's rate budget
       if (!server.rateLimiter.allowPacket(playerId, true)) {
+        Metrics.rateLimitTriggered.add(1L, Attrs.RlUdp)
+        Metrics.packetsDropped.add(1L, Attrs.ReasonRateLimit)
         return
       }
 
       val verified = PacketSigner.verify(data, token)
       if (verified == null) {
         System.err.println("UDP: HMAC verification failed, dropping packet")
+        Metrics.packetsDropped.add(1L, Attrs.ReasonHmacFail)
+        Metrics.hmacFailures.add(1L, io.opentelemetry.api.common.Attributes.of(Attrs.Transport, "udp"))
         return
       }
       val payload = verified
       val packet = PacketSerializer.deserialize(payload)
       // Replay protection: reject duplicate/out-of-order UDP sequence numbers
       if (!server.packetValidator.validateSequence(playerId, packet.getSequenceNumber, isUdp = true)) {
+        Metrics.replayRejected.add(1L, io.opentelemetry.api.common.Attributes.of(Attrs.Transport, "udp"))
+        Metrics.packetsDropped.add(1L, Attrs.ReasonReplay)
         return
       }
       server.handleIncomingPacket(packet, null, msg.sender())
@@ -1178,6 +1305,8 @@ class GameServerUdpHandler(server: GameServer) extends SimpleChannelInboundHandl
       case e: Exception =>
         val emsg = if (e.getMessage != null) e.getMessage else e.getClass.getSimpleName
         System.err.println(s"UDP: Invalid packet received: $emsg")
+        Metrics.packetDeserializeFailures.add(1L, io.opentelemetry.api.common.Attributes.of(Attrs.Transport, "udp"))
+        Metrics.packetsDropped.add(1L, Attrs.ReasonMalformed)
     }
   }
 

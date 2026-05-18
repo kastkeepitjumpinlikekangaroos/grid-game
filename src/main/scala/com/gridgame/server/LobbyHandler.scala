@@ -4,6 +4,8 @@ import com.gridgame.common.Constants
 import com.gridgame.common.WorldRegistry
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
+import com.gridgame.common.observability.Attrs
+import com.gridgame.common.observability.Metrics
 import com.gridgame.common.protocol._
 
 import java.io.File
@@ -19,6 +21,7 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
 
   def processLobbyAction(packet: LobbyActionPacket, player: Player): Unit = {
     val playerId = packet.getPlayerId
+    Metrics.lobbyAction.add(1L, Attrs.lobbyAction(packet.getAction))
 
     packet.getAction match {
       case LobbyAction.CREATE =>
@@ -423,6 +426,7 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     if (lobby.playerCount >= lobby.maxPlayers) return
 
     val botSlot = lobby.botManager.addBot()
+    Metrics.botsAdded.add(1L, io.opentelemetry.api.common.Attributes.empty())
     println(s"LobbyHandler: Bot '${botSlot.name}' added to lobby ${lobby.id}")
 
     // Broadcast PLAYER_JOINED with updated player count (lobbyName carries bot name)
@@ -444,6 +448,7 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     if (removed.isEmpty) return
 
     val botSlot = removed.get
+    Metrics.botsRemoved.add(1L, io.opentelemetry.api.common.Attributes.empty())
     println(s"LobbyHandler: Bot '${botSlot.name}' removed from lobby ${lobby.id}")
 
     // Broadcast PLAYER_LEFT with updated player count (lobbyName carries bot name)

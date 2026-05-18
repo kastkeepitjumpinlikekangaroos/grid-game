@@ -1,0 +1,74 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "JVM heap (used / committed)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "decbytes"}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "targets": [
+        {"expr": "sum by (service_name) (jvm_memory_used_bytes{type=\"heap\"})", "legendFormat": "{{service_name}} used"},
+        {"expr": "sum by (service_name) (jvm_memory_committed_bytes{type=\"heap\"})", "legendFormat": "{{service_name}} committed"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "JVM non-heap memory",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "decbytes"}},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "targets": [
+        {"expr": "sum by (service_name) (jvm_memory_used_bytes{type=\"non_heap\"})", "legendFormat": "{{service_name}}"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "GC pause time / sec",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "ms"}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "id": 3,
+      "targets": [
+        {"expr": "sum by (service_name, jvm_gc_action) (rate(jvm_gc_duration_seconds_sum[5m])) * 1000", "legendFormat": "{{service_name}} {{jvm_gc_action}}"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Threads",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "id": 4,
+      "targets": [
+        {"expr": "sum by (service_name) (jvm_thread_count)", "legendFormat": "{{service_name}}"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Process CPU time / sec",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "percentunit"}},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+      "id": 5,
+      "targets": [
+        {"expr": "sum by (service_name) (rate(jvm_cpu_time_seconds_total[5m]))", "legendFormat": "{{service_name}}"}
+      ]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["grid-game", "jvm"],
+  "templating": {"list": []},
+  "time": {"from": "now-30m", "to": "now"},
+  "timezone": "browser",
+  "title": "Grid Game — JVM Runtime",
+  "uid": "grid-game-jvm",
+  "version": 1
+}

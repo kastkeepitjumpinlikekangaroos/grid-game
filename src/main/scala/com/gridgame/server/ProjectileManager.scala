@@ -28,6 +28,16 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
   // Per-player active projectile count (avoids O(n) iteration on every spawn)
   private val playerProjectileCount = new ConcurrentHashMap[UUID, AtomicInteger]()
 
+  // Async gauge: projectiles in flight, exposed to the metric backend
+  private val projectilesActiveGauge = com.gridgame.common.observability.Telemetry.meter("com.gridgame.projectiles")
+    .gaugeBuilder("gridgame.projectiles.active")
+    .setDescription("Projectiles currently in flight")
+    .setUnit("{projectile}")
+    .ofLongs()
+    .buildWithCallback { obs =>
+      obs.record(projectiles.size().toLong, io.opentelemetry.api.common.Attributes.empty())
+    }
+
   /** Pre-filtered snapshot of alive, hittable players rebuilt once per tick.
    *  Uses a pre-allocated array to avoid per-tick allocation. */
   private var hittablePlayers: Array[Player] = new Array[Player](64)

@@ -3,6 +3,8 @@ package com.gridgame.server
 import com.gridgame.common.Constants
 import com.gridgame.common.WorldRegistry
 import com.gridgame.common.model.Player
+import com.gridgame.common.observability.Attrs
+import com.gridgame.common.observability.Metrics
 import com.gridgame.common.protocol._
 
 import java.io.File
@@ -37,6 +39,18 @@ class RankedQueue(server: GameServer) {
       new Runnable { def run(): Unit = checkQueue() },
       5, 5, TimeUnit.SECONDS
     )
+
+    // Async gauges expose queue sizes per mode
+    val meter = com.gridgame.common.observability.Telemetry.meter("com.gridgame.queue")
+    meter.gaugeBuilder("gridgame.queue.players")
+      .setDescription("Players currently in a ranked matchmaking queue")
+      .setUnit("{player}")
+      .ofLongs()
+      .buildWithCallback { obs =>
+        obs.record(queue.size().toLong, Attrs.ModeFfa)
+        obs.record(duelQueue.size().toLong, Attrs.ModeDuel)
+        obs.record(teamsQueue.size().toLong, Attrs.ModeTeams)
+      }
     println("RankedQueue: Started matchmaking service")
   }
 
@@ -82,21 +96,28 @@ class RankedQueue(server: GameServer) {
   }
 
   def removePlayer(playerId: UUID): Unit = {
+    val now = System.currentTimeMillis()
+    val leftAttrs = io.opentelemetry.api.common.Attributes.of(Attrs.Mode, "any", Attrs.Outcome, "left")
+
     val entry = playerInQueue.remove(playerId)
     if (entry != null) {
       queue.remove(entry)
+      Metrics.queueWaitTime.record((now - entry.joinTime).toDouble / 1000.0, io.opentelemetry.api.common.Attributes.of(Attrs.Mode, "ffa", Attrs.Outcome, "left"))
       println(s"RankedQueue: Player ${playerId.toString.substring(0, 8)} left FFA queue (queue size=${queue.size()})")
     }
     val duelEntry = duelPlayerInQueue.remove(playerId)
     if (duelEntry != null) {
       duelQueue.remove(duelEntry)
+      Metrics.queueWaitTime.record((now - duelEntry.joinTime).toDouble / 1000.0, io.opentelemetry.api.common.Attributes.of(Attrs.Mode, "duel", Attrs.Outcome, "left"))
       println(s"RankedQueue: Player ${playerId.toString.substring(0, 8)} left duel queue (queue size=${duelQueue.size()})")
     }
     val teamsEntry = teamsPlayerInQueue.remove(playerId)
     if (teamsEntry != null) {
       teamsQueue.remove(teamsEntry)
+      Metrics.queueWaitTime.record((now - teamsEntry.joinTime).toDouble / 1000.0, io.opentelemetry.api.common.Attributes.of(Attrs.Mode, "teams", Attrs.Outcome, "left"))
       println(s"RankedQueue: Player ${playerId.toString.substring(0, 8)} left teams queue (queue size=${teamsQueue.size()})")
     }
+    val _ = leftAttrs // appease unused warning if any
   }
 
   def updateCharacter(playerId: UUID, characterId: Byte): Unit = {
@@ -277,6 +298,11 @@ class RankedQueue(server: GameServer) {
   }
 
   private def startTeamsMatch(entries: Seq[QueueEntry]): Unit = {
+    val now = System.currentTimeMillis()
+    Metrics.queueMatchesMade.add(1L, Attrs.ModeTeams)
+    entries.foreach { e =>
+      Metrics.queueWaitTime.record((now - e.joinTime).toDouble / 1000.0, io.opentelemetry.api.common.Attributes.of(Attrs.Mode, "teams", Attrs.Outcome, "matched"))
+    }
     // Remove matched players from teams queue
     entries.foreach { entry =>
       teamsQueue.remove(entry)
@@ -462,6 +488,11 @@ class RankedQueue(server: GameServer) {
   }
 
   private def startRankedMatch(entries: Seq[QueueEntry]): Unit = {
+    val now = System.currentTimeMillis()
+    Metrics.queueMatchesMade.add(1L, Attrs.ModeFfa)
+    entries.foreach { e =>
+      Metrics.queueWaitTime.record((now - e.joinTime).toDouble / 1000.0, io.opentelemetry.api.common.Attributes.of(Attrs.Mode, "ffa", Attrs.Outcome, "matched"))
+    }
     // Remove matched players from queue
     entries.foreach { entry =>
       queue.remove(entry)
@@ -626,6 +657,11 @@ class RankedQueue(server: GameServer) {
   }
 
   private def startDuelMatch(entries: Seq[QueueEntry]): Unit = {
+    val now = System.currentTimeMillis()
+    Metrics.queueMatchesMade.add(1L, Attrs.ModeDuel)
+    entries.foreach { e =>
+      Metrics.queueWaitTime.record((now - e.joinTime).toDouble / 1000.0, io.opentelemetry.api.common.Attributes.of(Attrs.Mode, "duel", Attrs.Outcome, "matched"))
+    }
     // Remove matched players from duel queue
     entries.foreach { entry =>
       duelQueue.remove(entry)

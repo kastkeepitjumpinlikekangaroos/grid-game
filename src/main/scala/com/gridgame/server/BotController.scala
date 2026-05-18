@@ -2,6 +2,8 @@ package com.gridgame.server
 
 import com.gridgame.common.Constants
 import com.gridgame.common.model._
+import com.gridgame.common.observability.Attrs
+import com.gridgame.common.observability.Metrics
 import com.gridgame.common.protocol._
 
 import java.util.UUID
@@ -56,6 +58,18 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     strafeDirection.put(id, if (scala.util.Random.nextBoolean()) 1 else -1)
   }
 
+  // Async gauge for active bots
+  private val botsActiveGauge = com.gridgame.common.observability.Telemetry.meter("com.gridgame.bots")
+    .gaugeBuilder("gridgame.bots.active")
+    .setDescription("Bots active in this instance")
+    .setUnit("{bot}")
+    .ofLongs()
+    .buildWithCallback { obs =>
+      obs.record(botIds.size().toLong, io.opentelemetry.api.common.Attributes.empty())
+    }
+
+  private val botTickAttrs = Attrs.tickPhase("bot")
+
   def start(): Unit = {
     executor = Executors.newSingleThreadScheduledExecutor()
     executor.scheduleAtFixedRate(
@@ -78,6 +92,7 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
   private def packCoord(x: Int, y: Int): Long = (x.toLong << 32) | (y.toLong & 0xFFFFFFFFL)
 
   private def tick(): Unit = {
+    val tickStart = System.nanoTime()
     try {
       if (!instance.isRunning || instance.world == null) return
 
@@ -105,6 +120,8 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     } catch {
       case e: Exception =>
         System.err.println(s"BotController: Error in tick: ${e.getMessage}")
+    } finally {
+      Metrics.tickDuration.record((System.nanoTime() - tickStart) / 1e6, botTickAttrs)
     }
   }
 

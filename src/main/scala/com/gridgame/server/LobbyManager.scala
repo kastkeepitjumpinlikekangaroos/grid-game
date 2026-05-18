@@ -1,6 +1,8 @@
 package com.gridgame.server
 
 import com.gridgame.common.Constants
+import com.gridgame.common.observability.Attrs
+import com.gridgame.common.observability.Metrics
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -24,6 +26,7 @@ class LobbyManager {
     lobby.addPlayer(hostId)
     lobbies.put(id, lobby)
     playerLobby.put(hostId, id)
+    Metrics.lobbiesCreated.add(1L, io.opentelemetry.api.common.Attributes.empty())
     println(s"LobbyManager: Created lobby $id '$name' by ${hostId.toString.substring(0, 8)}")
     lobby
   }
@@ -65,6 +68,7 @@ class LobbyManager {
     if (lobby != null) {
       import scala.jdk.CollectionConverters._
       lobby.players.asScala.foreach(playerLobby.remove)
+      Metrics.lobbiesClosed.add(1L, io.opentelemetry.api.common.Attributes.empty())
       println(s"LobbyManager: Removed lobby $lobbyId")
     }
   }
