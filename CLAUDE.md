@@ -19,6 +19,17 @@ bazel run //src/main/scala/com/gridgame/client:client
 
 # Run map editor
 bazel run //src/main/scala/com/gridgame/mapeditor
+
+# Bring up the observability stack (Grafana at http://localhost:3000)
+cd ops/observability && docker compose up -d
+
+# Disable telemetry on the server (uses no-op OTel SDK)
+OTEL_SDK_DISABLED=true bazel run //src/main/scala/com/gridgame/server:server
+
+# Run the client with telemetry opted in
+GRIDGAME_TELEMETRY=1 bazel run //src/main/scala/com/gridgame/client:client
+# or
+bazel run //src/main/scala/com/gridgame/client:client -- --telemetry
 ```
 
 ## Architecture Overview
@@ -98,6 +109,8 @@ src/main/scala/com/gridgame/
 │   │                           # 10 on-hit effects, charge/distance damage scaling
 │   │                           # 5 item types (Gem, Heart, Star, Shield, Fence)
 │   ├── protocol/               # Network packets (16 packet types), PacketSigner (HMAC-SHA256)
+│   ├── observability/          # OpenTelemetry facade (Telemetry, Metrics, Attrs, Tracing, Log)
+│   │                           # Pre-built instruments + cached Attributes for hot paths
 │   └── world/                  # WorldLoader (JSON map parsing, 7 layer types)
 ├── server/                     # GameServer, GameInstance, Lobby, LobbyManager, LobbyHandler
 │   │                           # AuthDatabase, BotManager, BotController, ProjectileManager
@@ -123,6 +136,9 @@ worlds/                         # World definition files (16 JSON maps)
 sprites/                        # Sprite assets (tiles.png + 112 character PNGs)
 scripts/                        # Asset generation scripts (14 Python scripts)
 docs/                           # GitHub Pages landing site
+ops/observability/              # Local docker-compose stack
+                                # OTel Collector, Prometheus, Tempo, Loki, Grafana
+                                # Auto-provisioned datasources + dashboards (JSON)
 ```
 
 ## Rendering Architecture
@@ -396,10 +412,63 @@ Client                              Server
 2. Implement tile placement logic
 3. Supported layer types: `fill`, `rect`, `border`, `circle`, `line`, `points`, `grid`
 
+### Adding a New Metric
+1. Add the instrument to `common/observability/Metrics.scala` — counter / histogram / async gauge as appropriate. Set a descriptive `setDescription` and an OTel unit (`ms`, `s`, `By`, `{event}`, etc.).
+2. If the metric carries labels that recur in hot paths, pre-build the `Attributes` in `common/observability/Attrs.scala` (cache by key — never allocate per call inside a tick loop).
+3. Call `Metrics.<instrument>.add(...)` / `.record(...)` at the call site. For async gauges, register a callback in the file that owns the underlying state (see how `ProjectileManager`, `ItemManager`, `BotController` wire their gauges in their constructor).
+4. Add a Grafana panel to the relevant dashboard JSON in `ops/observability/grafana/dashboards/`. The OTel Prometheus exporter normalizes names: dots → underscores, counters get `_total`, histograms get `_bucket`/`_sum`/`_count`, and the unit becomes a suffix (`ms` → `_milliseconds`, `s` → `_seconds`, `By` → `_bytes`). Grafana auto-reloads dashboards from the mounted volume every 10s — no restart needed.
+
+## Observability
+
+OpenTelemetry is wired in at server startup via `Telemetry.init("grid-game-server")` in `ServerMain.main`. The client opt-in path lives in `ClientMain.main` (`--telemetry` flag or `GRIDGAME_TELEMETRY=1`).
+
+### Pipeline
+
+```
+Server  ──OTLP gRPC──►  OTel Collector  ──►  Prometheus  ──►  Grafana
+(SDK 1.42)  :4317                       ──►  Tempo (traces)
+                                        ──►  Loki (logs)
+```
+
+All four backends + Grafana are docker-composed in `ops/observability/`. Defaults target `localhost:4317`; falls back to a no-op SDK if init fails so the game runs identically with or without the stack up.
+
+### Code layout (`common/observability/`)
+
+| File | Purpose |
+|------|---------|
+| `Telemetry.scala` | SDK init via `AutoConfiguredOpenTelemetrySdk`; reads `OTEL_*` env vars. Idempotent `init()` + `shutdown()`. Registers JVM runtime metrics. |
+| `Metrics.scala` | All ~40 instruments declared once as `val`s on a single `Meter("com.gridgame")`. Use `Metrics.foo.add(1L, attrs)` from call sites — no need to look up by name. |
+| `Attrs.scala` | Cached `Attributes` instances keyed by packet type, character id, projectile type, drop reason, etc. Hot loops must NOT allocate via `Attributes.of(...)` per call. |
+| `Tracing.scala` | `Tracing.span("name", attrs) { body }` helper. Used sparingly — counters/histograms are the primary instrumentation. |
+| `Log.scala` | OTel logs bridge with `Log.info/warn/error(msg, kv...)`. Currently most code still uses `println` / `System.err.println`. |
+
+### Key wiring decisions
+
+- **`Metrics.characterPlayed` is incremented from `ClientRegistry.add`**, not from `ClientHandler.handlePlayerJoin`. Real human joins go through `LobbyHandler.handleStart` / `RankedQueue.start*Match` (which call `registry.add` directly), not through the `PLAYER_JOIN` packet path — only client *rejoins* during an active match hit `handlePlayerJoin`. Putting the counter at the registry chokepoint covers all join paths, including bots.
+- **Async gauges live on the owning class**, registered in its constructor with `Meter.gaugeBuilder(...).buildWithCallback { obs => obs.record(state.size(), Attrs.Empty) }`. See `ProjectileManager`, `ItemManager`, `BotController`, `GameServer`, `RankedQueue` for examples.
+- **`gridgame.kills` is labeled with `killer_character × victim_character × projectile_type`**. With 112 characters × 112 × 112 projectile types that's high theoretical cardinality but Prometheus handles it fine because most combos never occur. If this gets out of hand, drop one of the dimensions.
+- **Network metrics are wire-only.** Bot-fired projectiles bypass the network entirely, so `gridgame.packets.received{type="PROJECTILE_UPDATE"}` shows just human activity. For total game-event rates use the server-authoritative counters like `gridgame.projectiles.spawned`.
+
+### Backend stack gotchas (resolved during integration — read before changing collector config)
+
+- **Do not set `const_labels:` on the `prometheus` exporter when also using `resource_to_telemetry_conversion: enabled: true`.** The `resource` processor's attributes get promoted to labels, and if the same name appears in `const_labels` the Go Prometheus client throws "duplicate label names in constant and variable labels" and silently drops every metric (the OTel collector still reports them as "sent" — there's no error in `otelcol_*` metrics either). The collector logs show the error, but only there.
+- **Grafana provisioned datasources need an explicit `uid:`** in `provisioning/datasources/datasources.yaml`. Without it, Grafana auto-generates a UID and dashboards that reference `uid: prometheus` (or any specific UID) silently fail to render with no error message in the UI.
+- **The `OTLP receiver` and `prometheusexporter` are bound to different ports**: `:4317`/`:4318` for OTLP in, `:8889` for Prometheus scrape out. Confirm by curling `http://localhost:8889/metrics` to see what the exporter is actually serving.
+
+### Configuration
+
+Standard `OTEL_*` env vars (see `ops/observability/.env.example`). Most useful:
+
+- `OTEL_SDK_DISABLED=true` — turn off entirely
+- `OTEL_EXPORTER_OTLP_ENDPOINT=http://remote:4317` — point at a non-local collector
+- `OTEL_RESOURCE_ATTRIBUTES=service.version=...,deployment.environment=prod`
+- `OTEL_METRIC_EXPORT_INTERVAL=10000` — milliseconds between metric flushes
+
 ## Bazel Build Notes
 
 - Uses `rules_scala` with Scala 2.13.16
-- Dependencies: JavaFX 21.0.1, Netty 4.1.104, Gson 2.10.1, SQLite JDBC 3.44.0, Guava 32.1.3, LWJGL 3.3.4 (glfw, opengl, stb + macOS ARM64 and Windows natives)
+- Dependencies: JavaFX 21.0.1, Netty 4.1.104, Gson 2.10.1, SQLite JDBC 3.44.0, Guava 32.1.3, LWJGL 3.3.4 (glfw, opengl, stb + macOS ARM64 and Windows natives), OpenTelemetry Java SDK 1.42.1 + autoconfigure + OTLP exporter + JVM runtime metrics (2.8.0-alpha)
+- OTel deps live in `common/BUILD.bazel` as `OTEL_DEPS` and are re-exported, so `server` and `client` pick them up transitively through `//src/main/scala/com/gridgame/common:common`
 - Build targets:
   - `//src/main/scala/com/gridgame/server:server`
   - `//src/main/scala/com/gridgame/client:client`

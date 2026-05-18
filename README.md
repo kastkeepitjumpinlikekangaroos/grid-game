@@ -21,6 +21,10 @@ bazel run //src/main/scala/com/gridgame/client:client
 
 # Run map editor
 bazel run //src/main/scala/com/gridgame/mapeditor
+
+# Run the local observability stack (Grafana + Prometheus + Tempo + Loki + OTel Collector)
+cd ops/observability && docker compose up -d
+# Then open http://localhost:3000 — pre-provisioned dashboards under "Grid Game"
 ```
 
 ## Features
@@ -33,6 +37,7 @@ bazel run //src/main/scala/com/gridgame/mapeditor
 - **Ranked Queue** - ELO-based matchmaking
 - **Accounts** - Login/register with persistent stats, match history, and leaderboards
 - **Network Security** - TLS 1.3 encrypted TCP (explicit cipher suites), HMAC-signed packets, session tokens with expiration, rate limiting, per-channel auth failure tracking, UDP replay protection (sliding window), UDP source IP validation, projectile velocity validation, and server-side anti-cheat validation
+- **Observability** - OpenTelemetry SDK with metrics, traces, and logs over OTLP. ~40 server-side instruments cover packets, latency, kills/deaths, validation, ranked queue, DB, and JVM runtime. Self-hosted stack in `ops/observability/` (Collector + Prometheus + Tempo + Loki + Grafana, all docker-compose). Opt-in client telemetry via `--telemetry`.
 - **GPU-Accelerated Rendering** - OpenGL 3.3 via LWJGL with batched draw calls, post-processing (bloom, vignette), and 112 distinct projectile visual effects
 - **Isometric Rendering** - 2.5D tile-based world with parallax backgrounds
 - **Gamepad Support** - Controller input via LWJGL/GLFW
@@ -78,6 +83,7 @@ Each character has unique abilities using cast behaviors: StandardProjectile, Ph
 - **Build**: Bazel with rules_scala
 - **Input**: GLFW (keyboard, mouse, gamepad)
 - **Assets**: Python (Pillow) sprite generators
+- **Observability**: OpenTelemetry Java SDK 1.42 + autoconfigure, JVM runtime metrics, OTLP gRPC export. Local stack: OTel Collector, Prometheus, Tempo, Loki, Grafana (docker-compose)
 
 ## Project Structure
 
@@ -87,6 +93,7 @@ src/main/scala/com/gridgame/
     model/           # Player, Tile (34), CharacterDef (112), ProjectileDef, Item, Projectile
     protocol/        # 16 packet types, serialization, HMAC signing (PacketSigner)
     world/           # WorldLoader (JSON map parsing, 7 layer types)
+    observability/   # OpenTelemetry facade (Telemetry, Metrics, Attrs, Tracing, Log)
   server/            # Game server, lobbies, auth, bots, projectiles, items, ranked queue
                      # TLS (TlsProvider), rate limiting (RateLimiter), validation (PacketValidator)
   client/            # Client entry point (ClientMain, GameClient, NetworkThread)
@@ -99,6 +106,8 @@ worlds/              # 16 JSON map definitions
 sprites/             # Tile sheet + 112 character sprite sheets
 scripts/             # Python sprite generators (14 scripts)
 docs/                # GitHub Pages landing site
+ops/observability/   # docker-compose stack (Collector, Prometheus, Tempo, Loki, Grafana)
+                     # with auto-provisioned Grafana dashboards and datasources
 ```
 
 ## Rendering Architecture
@@ -165,3 +174,41 @@ The `PostProcessor` applies screen-wide effects after all game rendering:
 - **Damage overlay**: Red flash when the player takes a hit
 
 Settings: `bloomThreshold=0.88`, `bloomStrength=0.12`, `vignetteStrength=0.08` (tuned for subtle enhancement).
+
+## Observability
+
+The server is instrumented with OpenTelemetry (metrics, traces, logs). Telemetry is enabled by default on the server and falls back to a no-op SDK if the OTLP endpoint is unreachable, so the game runs identically with or without the stack running. The client opts in via `--telemetry` or `GRIDGAME_TELEMETRY=1`.
+
+```bash
+# Bring up the local stack (Collector + Prometheus + Tempo + Loki + Grafana)
+cd ops/observability && docker compose up -d
+# Grafana is at http://localhost:3000 with anonymous admin access.
+# Four dashboards under the "Grid Game" folder:
+#   Overview      — connections, packets, latency, anti-cheat, gameplay activity
+#   Gameplay      — kills, characters, projectiles, ranked queue, ELO
+#   Client        — frame duration, RTT, reconnects (when --telemetry enabled)
+#   JVM Runtime   — heap, GC, threads
+```
+
+Configuration is via standard `OTEL_*` env vars (see `ops/observability/.env.example`). Set `OTEL_SDK_DISABLED=true` to turn off entirely.
+
+### What's instrumented (server)
+
+~40 instruments. Highlights:
+
+- **Network**: `gridgame.packets.received|sent|dropped`, `gridgame.bandwidth.bytes`, `gridgame.packet.process.duration`, `gridgame.hmac.failures`, `gridgame.replay.rejected`
+- **Connections / sessions**: async gauges for `gridgame.connections.active`, `gridgame.sessions.active`, `gridgame.lobbies.active`, `gridgame.instances.active`, `gridgame.projectiles.active`, `gridgame.items.active`, `gridgame.bots.active`
+- **Gameplay** (server-authoritative — includes bot activity): `gridgame.kills` (killer × victim × projectile), `gridgame.deaths` (by cause), `gridgame.respawns`, `gridgame.projectiles.spawned|hit|expired`, `gridgame.items.spawned|picked_up|used`, `gridgame.character.played` (incremented from `ClientRegistry.add`, covers all join paths), `gridgame.tiles.modified`, `gridgame.chat.messages`
+- **Performance**: `gridgame.tick.duration` (phase = projectile|player|timer|bot), `gridgame.db.duration` (per op), `gridgame.auth.duration`
+- **Anti-cheat**: `gridgame.rate_limit.triggered` (kind), `gridgame.validation.failed` (kind = movement_speed|movement_bounds|projectile_velocity|fire_rate|character|…)
+- **Ranked**: `gridgame.queue.players` (gauge per mode), `gridgame.queue.matches_made`, `gridgame.queue.wait_time`, `gridgame.elo.delta`
+- **JVM**: standard `jvm.memory.*`, `jvm.gc.*`, `jvm.threads`, `jvm.cpu.*` via the OTel runtime metrics module
+
+The instrumentation lives in `common/observability/`. Hot paths use pre-built `Attributes` instances (`Attrs.scala`) so per-call allocation is zero.
+
+### Key gotchas discovered during integration
+
+- **Wire-packet counts ≠ activity counts.** `gridgame.packets.received{type="PROJECTILE_UPDATE"}` only counts client TCP/UDP packets — bot projectiles bypass the network. Use `gridgame.projectiles.spawned` for total activity (humans + bots).
+- **Don't set `const_labels` on the Prometheus exporter** when also using `resource_to_telemetry_conversion: enabled: true` — same label name twice triggers a "duplicate label" error in the Go Prometheus client and silently drops every metric. The `resource` processor's `cluster` attribute already becomes a label.
+- **Grafana provisioned datasources need an explicit `uid:`** — otherwise a random UID is assigned and dashboards that reference `uid: prometheus` show "datasource not found" with no error in the UI.
+- **Histogram unit suffixes.** OTel's Prometheus exporter renames `gridgame.tick.duration` (unit `ms`) to `gridgame_tick_duration_milliseconds_bucket` and `gridgame.match.duration` (unit `s`) to `gridgame_match_duration_seconds_bucket`. Match-duration queries need `_seconds`, not `_milliseconds`.
