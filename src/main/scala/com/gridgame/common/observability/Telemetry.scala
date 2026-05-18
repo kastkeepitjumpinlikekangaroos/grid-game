@@ -78,8 +78,33 @@ object Telemetry {
     }
 
     try {
+      // Server tick and per-packet processing are usually sub-millisecond. The OTel
+      // default histogram boundaries jump 0 → 5 → 10 → 25 ms, so >99% of samples land
+      // in the (0, 5] bucket and histogram_quantile collapses to ~2.5–5 ms for every
+      // percentile — outliers and regressions are invisible. Override with finer
+      // boundaries on the histograms we actually care about.
+      val meterProviderCustomizer: java.util.function.BiFunction[
+        io.opentelemetry.sdk.metrics.SdkMeterProviderBuilder,
+        io.opentelemetry.sdk.autoconfigure.spi.ConfigProperties,
+        io.opentelemetry.sdk.metrics.SdkMeterProviderBuilder
+      ] = (mpBuilder, _) => {
+        val fineMs = java.util.Arrays.asList[java.lang.Double](
+          0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0
+        )
+        val histAgg = io.opentelemetry.sdk.metrics.Aggregation.explicitBucketHistogram(fineMs)
+        mpBuilder.registerView(
+          io.opentelemetry.sdk.metrics.InstrumentSelector.builder().setName("gridgame.tick.duration").build(),
+          io.opentelemetry.sdk.metrics.View.builder().setAggregation(histAgg).build()
+        )
+        mpBuilder.registerView(
+          io.opentelemetry.sdk.metrics.InstrumentSelector.builder().setName("gridgame.packet.process.duration").build(),
+          io.opentelemetry.sdk.metrics.View.builder().setAggregation(histAgg).build()
+        )
+        mpBuilder
+      }
       val auto = AutoConfiguredOpenTelemetrySdk.builder()
         .setResultAsGlobal()
+        .addMeterProviderCustomizer(meterProviderCustomizer)
         .build()
       val configured = auto.getOpenTelemetrySdk
       sdk = configured

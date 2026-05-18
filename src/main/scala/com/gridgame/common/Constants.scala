@@ -77,6 +77,7 @@ object Constants {
   val MAX_LOBBY_NAME_LEN: Int = 24
   val TIME_SYNC_INTERVAL_S: Int = 10
   val MAX_LOBBY_PLAYERS: Int = 32
+  val RANKED_FFA_MAX_PLAYERS: Int = 8
 
   // CC immunity — guaranteed free window after a freeze expires
   val CC_IMMUNITY_MS: Int = 1500

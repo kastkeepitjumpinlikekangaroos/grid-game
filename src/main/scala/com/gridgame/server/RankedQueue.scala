@@ -15,6 +15,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import scala.jdk.CollectionConverters._
+import scala.util.control.NonFatal
 
 case class QueueEntry(playerId: UUID, var characterId: Byte, elo: Int, joinTime: Long, mode: Byte = RankedQueueMode.FFA)
 
@@ -198,6 +199,24 @@ class RankedQueue(server: GameServer) {
     server.sendPacketToPlayer(packet, player)
   }
 
+  /**
+   * Re-add entries to a queue (preserving original joinTime so the 60s timer doesn't reset).
+   * Used on match-start failure to avoid silently stranding players who were already
+   * removed from the queue when something later failed (e.g. createLobby returned null).
+   */
+  private def rollbackEntriesToQueue(
+      entries: Seq[QueueEntry],
+      q: CopyOnWriteArrayList[QueueEntry],
+      m: ConcurrentHashMap[UUID, QueueEntry]
+  ): Unit = {
+    entries.foreach { entry =>
+      val existing = m.putIfAbsent(entry.playerId, entry)
+      if (existing == null) {
+        q.add(entry)
+      }
+    }
+  }
+
   private def checkQueue(): Unit = {
     try {
       checkFfaQueue()
@@ -214,9 +233,9 @@ class RankedQueue(server: GameServer) {
     val snapshot = queue.asScala.toSeq
     val queueSize = snapshot.size
 
-    if (queueSize >= Constants.MAX_LOBBY_PLAYERS) {
+    if (queueSize >= Constants.RANKED_FFA_MAX_PLAYERS) {
       val sorted = snapshot.sortBy(_.elo)
-      val matchEntries = sorted.take(Constants.MAX_LOBBY_PLAYERS)
+      val matchEntries = sorted.take(Constants.RANKED_FFA_MAX_PLAYERS)
       startRankedMatch(matchEntries)
     } else if (queueSize >= 1) {
       val oldest = snapshot.minBy(_.joinTime)
@@ -298,495 +317,586 @@ class RankedQueue(server: GameServer) {
   }
 
   private def startTeamsMatch(entries: Seq[QueueEntry]): Unit = {
-    val now = System.currentTimeMillis()
-    Metrics.queueMatchesMade.add(1L, Attrs.ModeTeams)
-    entries.foreach { e =>
-      Metrics.queueWaitTime.record((now - e.joinTime).toDouble / 1000.0, io.opentelemetry.api.common.Attributes.of(Attrs.Mode, "teams", Attrs.Outcome, "matched"))
-    }
-    // Remove matched players from teams queue
+    // Filter to entries whose players are still connected — drop the rest.
+    val connected = entries.filter(e => server.getConnectedPlayer(e.playerId) != null)
+
+    // Remove all entries from the teams queue up front; restore `connected` on failure.
     entries.foreach { entry =>
       teamsQueue.remove(entry)
       teamsPlayerInQueue.remove(entry.playerId)
     }
 
-    // Pick random map
-    val random = new java.util.Random()
-    val mapIndex = random.nextInt(WorldRegistry.size)
-    val worldFileName = WorldRegistry.getFilename(mapIndex)
-
-    // Create lobby
-    val hostId = entries.head.playerId
-    val lobbyName = "Ranked Teams"
-    val lobby = server.lobbyManager.createLobby(hostId, lobbyName, mapIndex, Constants.TEAMS_GAME_DURATION_MIN, Constants.TEAMS_MAX_PLAYERS)
-    lobby.isRanked = true
-    lobby.gameMode = 1 // Teams mode
-    lobby.teamSize = Constants.TEAMS_TEAM_SIZE
-    lobby.matchType = 4 // Ranked Teams
-
-    // Add remaining players to lobby
-    entries.tail.foreach { entry =>
-      lobby.addPlayer(entry.playerId)
-      server.lobbyManager.setPlayerLobby(entry.playerId, lobby.id)
+    if (connected.isEmpty) {
+      println(s"RankedQueue: startTeamsMatch aborted — none of ${entries.size} entries are still connected")
+      return
     }
 
-    // Set character selections
-    entries.foreach { entry =>
-      lobby.setCharacter(entry.playerId, entry.characterId)
-    }
+    var createdLobby: Lobby = null
+    try {
+      // Pick random map
+      val random = new java.util.Random()
+      val mapIndex = random.nextInt(WorldRegistry.size)
+      val worldFileName = WorldRegistry.getFilename(mapIndex)
 
-    // Send MATCH_FOUND to each player
-    entries.foreach { entry =>
-      val player = server.getConnectedPlayer(entry.playerId)
-      if (player != null) {
-        val matchFoundPacket = new RankedQueuePacket(
-          server.getNextSequenceNumber, entry.playerId, Packet.getCurrentTimestamp,
-          RankedQueueAction.MATCH_FOUND,
-          entry.characterId,
-          entries.size.toByte,
-          entry.elo.toShort,
-          0,
-          lobby.id,
-          mapIndex.toByte,
-          Constants.TEAMS_GAME_DURATION_MIN.toByte,
-          entries.size.toByte,
-          Constants.TEAMS_MAX_PLAYERS.toByte,
-          lobbyName,
-          RankedQueueMode.TEAMS
-        )
-        server.sendPacketToPlayer(matchFoundPacket, player)
+      // Create lobby
+      val hostId = connected.head.playerId
+      val lobbyName = "Ranked Teams"
+      createdLobby = server.lobbyManager.createLobby(hostId, lobbyName, mapIndex, Constants.TEAMS_GAME_DURATION_MIN, Constants.TEAMS_MAX_PLAYERS)
+      if (createdLobby == null) {
+        System.err.println(s"RankedQueue: startTeamsMatch failed — createLobby returned null (max lobbies reached?); rolling back ${connected.size} entries to teams queue")
+        rollbackEntriesToQueue(connected, teamsQueue, teamsPlayerInQueue)
+        return
       }
-    }
+      val lobby = createdLobby
+      lobby.isRanked = true
+      lobby.gameMode = 1 // Teams mode
+      lobby.teamSize = Constants.TEAMS_TEAM_SIZE
+      lobby.matchType = 4 // Ranked Teams
 
-    // Start the game
-    lobby.status = LobbyStatus.IN_GAME
+      println(s"RankedQueue: startTeamsMatch creating lobby ${lobby.id} for ${connected.size} players on $worldFileName")
 
-    val worldPath = resolveWorldPath("worlds/" + worldFileName)
-    val instance = new GameInstance(lobby.id, worldPath, lobby.durationMinutes, server)
-    instance.gameMode = 1 // Teams mode
-    instance.loadWorld()
-    lobby.gameInstance = instance
-    server.registerGameInstance(lobby.id, instance)
+      // Add remaining players to lobby
+      connected.tail.foreach { entry =>
+        lobby.addPlayer(entry.playerId)
+        server.lobbyManager.setPlayerLobby(entry.playerId, lobby.id)
+      }
 
-    // Fill remaining slots with bots first so team assignment includes them
-    val botController = new BotController(instance)
-    val botsNeeded = Constants.TEAMS_MAX_PLAYERS - entries.size
-    for (_ <- 1 to botsNeeded) {
-      lobby.botManager.addBot()
-    }
+      // Set character selections
+      connected.foreach { entry =>
+        lobby.setCharacter(entry.playerId, entry.characterId)
+      }
 
-    // Assign teams: round-robin (players first, then bots)
-    val allIds = entries.map(_.playerId) ++ lobby.botManager.getBots.map(_.id)
-    allIds.zipWithIndex.foreach { case (pid, index) =>
-      val teamId = (index % 2 + 1).toByte
-      instance.teamAssignments.put(pid, teamId)
-    }
+      // Send MATCH_FOUND to each player
+      connected.foreach { entry =>
+        val player = server.getConnectedPlayer(entry.playerId)
+        if (player != null) {
+          val matchFoundPacket = new RankedQueuePacket(
+            server.getNextSequenceNumber, entry.playerId, Packet.getCurrentTimestamp,
+            RankedQueueAction.MATCH_FOUND,
+            entry.characterId,
+            connected.size.toByte,
+            entry.elo.toShort,
+            0,
+            lobby.id,
+            mapIndex.toByte,
+            Constants.TEAMS_GAME_DURATION_MIN.toByte,
+            connected.size.toByte,
+            Constants.TEAMS_MAX_PLAYERS.toByte,
+            lobbyName,
+            RankedQueueMode.TEAMS
+          )
+          server.sendPacketToPlayer(matchFoundPacket, player)
+        }
+      }
 
-    // Register all human players in the instance
-    var occupiedSpawns = Set.empty[(Int, Int)]
-    entries.foreach { entry =>
-      val p = server.getConnectedPlayer(entry.playerId)
-      if (p != null) {
+      // Start the game
+      lobby.status = LobbyStatus.IN_GAME
+
+      val worldPath = resolveWorldPath("worlds/" + worldFileName)
+      val instance = new GameInstance(lobby.id, worldPath, lobby.durationMinutes, server)
+      instance.gameMode = 1 // Teams mode
+      instance.loadWorld()
+      lobby.gameInstance = instance
+      server.registerGameInstance(lobby.id, instance)
+
+      // Fill remaining slots with bots first so team assignment includes them
+      val botController = new BotController(instance)
+      val botsNeeded = Constants.TEAMS_MAX_PLAYERS - connected.size
+      for (_ <- 1 to botsNeeded) {
+        lobby.botManager.addBot()
+      }
+
+      // Assign teams: round-robin (players first, then bots)
+      val allIds = connected.map(_.playerId) ++ lobby.botManager.getBots.map(_.id)
+      allIds.zipWithIndex.foreach { case (pid, index) =>
+        val teamId = (index % 2 + 1).toByte
+        instance.teamAssignments.put(pid, teamId)
+      }
+
+      // Register all human players in the instance
+      var occupiedSpawns = Set.empty[(Int, Int)]
+      connected.foreach { entry =>
+        val p = server.getConnectedPlayer(entry.playerId)
+        if (p != null) {
+          val spawnPoint = instance.world.getValidSpawnPoint(occupiedSpawns)
+          occupiedSpawns += ((spawnPoint.getX, spawnPoint.getY))
+          val charDef = com.gridgame.common.model.CharacterDef.get(entry.characterId)
+          val instancePlayer = new Player(entry.playerId, p.getName, spawnPoint, p.getColorRGB, charDef.maxHealth, charDef.maxHealth)
+          instancePlayer.setCharacterId(entry.characterId)
+          instancePlayer.setTcpChannel(p.getTcpChannel)
+          if (p.getUdpAddress != null) {
+            instancePlayer.setUdpAddress(p.getUdpAddress)
+          }
+          val playerTeamId = instance.teamAssignments.getOrDefault(entry.playerId, 0.toByte)
+          instancePlayer.setTeamId(playerTeamId)
+          instance.registry.add(instancePlayer)
+          instance.killTracker.registerPlayer(entry.playerId)
+        }
+      }
+
+      // Register bots in the instance
+      lobby.botManager.getBots.foreach { botSlot =>
         val spawnPoint = instance.world.getValidSpawnPoint(occupiedSpawns)
         occupiedSpawns += ((spawnPoint.getX, spawnPoint.getY))
-        val charDef = com.gridgame.common.model.CharacterDef.get(entry.characterId)
-        val instancePlayer = new Player(entry.playerId, p.getName, spawnPoint, p.getColorRGB, charDef.maxHealth, charDef.maxHealth)
-        instancePlayer.setCharacterId(entry.characterId)
-        instancePlayer.setTcpChannel(p.getTcpChannel)
-        if (p.getUdpAddress != null) {
-          instancePlayer.setUdpAddress(p.getUdpAddress)
+        val charDef = com.gridgame.common.model.CharacterDef.get(botSlot.characterId)
+        val colorRGB = Player.generateColorFromUUID(botSlot.id)
+        val botPlayer = new Player(botSlot.id, botSlot.name, spawnPoint, colorRGB, charDef.maxHealth, charDef.maxHealth)
+        botPlayer.setCharacterId(botSlot.characterId)
+        val botTeamId = instance.teamAssignments.getOrDefault(botSlot.id, 0.toByte)
+        botPlayer.setTeamId(botTeamId)
+        instance.registry.add(botPlayer)
+        instance.killTracker.registerPlayer(botSlot.id)
+        botController.addBotId(botSlot.id)
+      }
+      instance.botController = botController
+
+      // Send GAME_STARTING to all players
+      val startingPacket = new LobbyActionPacket(
+        server.getNextSequenceNumber, hostId, LobbyAction.GAME_STARTING, lobby.id,
+        lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
+        lobby.playerCount.toByte, lobby.maxPlayers.toByte,
+        lobby.status, lobby.name
+      )
+      connected.foreach { entry =>
+        val p = server.getConnectedPlayer(entry.playerId)
+        if (p != null) {
+          server.sendPacketToPlayer(startingPacket, p)
         }
-        val playerTeamId = instance.teamAssignments.getOrDefault(entry.playerId, 0.toByte)
-        instancePlayer.setTeamId(playerTeamId)
-        instance.registry.add(instancePlayer)
-        instance.killTracker.registerPlayer(entry.playerId)
       }
-    }
 
-    // Register bots in the instance
-    lobby.botManager.getBots.foreach { botSlot =>
-      val spawnPoint = instance.world.getValidSpawnPoint(occupiedSpawns)
-      occupiedSpawns += ((spawnPoint.getX, spawnPoint.getY))
-      val charDef = com.gridgame.common.model.CharacterDef.get(botSlot.characterId)
-      val colorRGB = Player.generateColorFromUUID(botSlot.id)
-      val botPlayer = new Player(botSlot.id, botSlot.name, spawnPoint, colorRGB, charDef.maxHealth, charDef.maxHealth)
-      botPlayer.setCharacterId(botSlot.characterId)
-      val botTeamId = instance.teamAssignments.getOrDefault(botSlot.id, 0.toByte)
-      botPlayer.setTeamId(botTeamId)
-      instance.registry.add(botPlayer)
-      instance.killTracker.registerPlayer(botSlot.id)
-      botController.addBotId(botSlot.id)
-    }
-    instance.botController = botController
-
-    // Send GAME_STARTING to all players
-    val startingPacket = new LobbyActionPacket(
-      server.getNextSequenceNumber, hostId, LobbyAction.GAME_STARTING, lobby.id,
-      lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
-      lobby.playerCount.toByte, lobby.maxPlayers.toByte,
-      lobby.status, lobby.name
-    )
-    entries.foreach { entry =>
-      val p = server.getConnectedPlayer(entry.playerId)
-      if (p != null) {
-        server.sendPacketToPlayer(startingPacket, p)
+      // Send WorldInfo to each player
+      connected.foreach { entry =>
+        val p = server.getConnectedPlayer(entry.playerId)
+        if (p != null) {
+          val worldInfoPacket = new WorldInfoPacket(server.getNextSequenceNumber, worldFileName)
+          server.sendPacketToPlayer(worldInfoPacket, p)
+        }
       }
-    }
 
-    // Send WorldInfo to each player
-    entries.foreach { entry =>
-      val p = server.getConnectedPlayer(entry.playerId)
-      if (p != null) {
-        val worldInfoPacket = new WorldInfoPacket(server.getNextSequenceNumber, worldFileName)
-        server.sendPacketToPlayer(worldInfoPacket, p)
+      // Start the instance
+      instance.start()
+
+      // Broadcast join packets for all players (human + bot) so each client
+      // knows every player's server-assigned spawn position
+      connected.foreach { entry =>
+        val instancePlayer = instance.registry.get(entry.playerId)
+        if (instancePlayer != null) {
+          val joinPacket = new PlayerJoinPacket(
+            server.getNextSequenceNumber,
+            entry.playerId,
+            instancePlayer.getPosition,
+            instancePlayer.getColorRGB,
+            instancePlayer.getName,
+            instancePlayer.getHealth,
+            instancePlayer.getCharacterId,
+            instancePlayer.getTeamId
+          )
+          instance.broadcastToInstance(joinPacket)
+        }
       }
-    }
-
-    // Start the instance
-    instance.start()
-
-    // Broadcast join packets for all players (human + bot) so each client
-    // knows every player's server-assigned spawn position
-    entries.foreach { entry =>
-      val instancePlayer = instance.registry.get(entry.playerId)
-      if (instancePlayer != null) {
-        val joinPacket = new PlayerJoinPacket(
-          server.getNextSequenceNumber,
-          entry.playerId,
-          instancePlayer.getPosition,
-          instancePlayer.getColorRGB,
-          instancePlayer.getName,
-          instancePlayer.getHealth,
-          instancePlayer.getCharacterId,
-          instancePlayer.getTeamId
-        )
-        instance.broadcastToInstance(joinPacket)
+      lobby.botManager.getBots.foreach { botSlot =>
+        val botPlayer = instance.registry.get(botSlot.id)
+        if (botPlayer != null) {
+          val joinPacket = new PlayerJoinPacket(
+            server.getNextSequenceNumber,
+            botSlot.id,
+            botPlayer.getPosition,
+            botPlayer.getColorRGB,
+            botSlot.name,
+            botPlayer.getHealth,
+            botSlot.characterId,
+            botPlayer.getTeamId
+          )
+          instance.broadcastToInstance(joinPacket)
+        }
       }
-    }
-    lobby.botManager.getBots.foreach { botSlot =>
-      val botPlayer = instance.registry.get(botSlot.id)
-      if (botPlayer != null) {
-        val joinPacket = new PlayerJoinPacket(
-          server.getNextSequenceNumber,
-          botSlot.id,
-          botPlayer.getPosition,
-          botPlayer.getColorRGB,
-          botSlot.name,
-          botPlayer.getHealth,
-          botSlot.characterId,
-          botPlayer.getTeamId
-        )
-        instance.broadcastToInstance(joinPacket)
+
+      // Start bot AI
+      if (lobby.botManager.botCount > 0) {
+        botController.start()
       }
-    }
 
-    // Start bot AI
-    if (lobby.botManager.botCount > 0) {
-      botController.start()
-    }
+      // Emit metrics only after the match has actually been set up successfully
+      val matchedNow = System.currentTimeMillis()
+      Metrics.queueMatchesMade.add(1L, Attrs.ModeTeams)
+      connected.foreach { e =>
+        Metrics.queueWaitTime.record((matchedNow - e.joinTime).toDouble / 1000.0, io.opentelemetry.api.common.Attributes.of(Attrs.Mode, "teams", Attrs.Outcome, "matched"))
+      }
 
-    println(s"RankedQueue: Started ranked teams match (lobby ${lobby.id}) with ${entries.size} players + $botsNeeded bots on $worldFileName")
+      println(s"RankedQueue: Started ranked teams match (lobby ${lobby.id}) with ${connected.size} players + $botsNeeded bots on $worldFileName")
+    } catch {
+      case NonFatal(e) =>
+        System.err.println(s"RankedQueue: startTeamsMatch threw ${e.getClass.getSimpleName}: ${e.getMessage}; rolling back ${connected.size} entries to teams queue")
+        e.printStackTrace()
+        if (createdLobby != null) {
+          server.lobbyManager.removeLobby(createdLobby.id)
+        }
+        rollbackEntriesToQueue(connected, teamsQueue, teamsPlayerInQueue)
+    }
   }
 
   private def startRankedMatch(entries: Seq[QueueEntry]): Unit = {
-    val now = System.currentTimeMillis()
-    Metrics.queueMatchesMade.add(1L, Attrs.ModeFfa)
-    entries.foreach { e =>
-      Metrics.queueWaitTime.record((now - e.joinTime).toDouble / 1000.0, io.opentelemetry.api.common.Attributes.of(Attrs.Mode, "ffa", Attrs.Outcome, "matched"))
-    }
-    // Remove matched players from queue
+    // Filter to entries whose players are still connected — drop the rest.
+    val connected = entries.filter(e => server.getConnectedPlayer(e.playerId) != null)
+
+    // Remove all entries (connected + disconnected) from the queue up front;
+    // we'll restore `connected` if anything fails before the match actually starts.
     entries.foreach { entry =>
       queue.remove(entry)
       playerInQueue.remove(entry.playerId)
     }
 
-    // Pick random map
-    val random = new java.util.Random()
-    val mapIndex = random.nextInt(WorldRegistry.size)
-    val worldFileName = WorldRegistry.getFilename(mapIndex)
-
-    // Create lobby
-    val hostId = entries.head.playerId
-    val lobbyName = "Ranked Match"
-    val lobby = server.lobbyManager.createLobby(hostId, lobbyName, mapIndex, Constants.DEFAULT_GAME_DURATION_MIN, Constants.MAX_LOBBY_PLAYERS)
-    lobby.isRanked = true
-    lobby.matchType = 2 // Ranked FFA
-
-    // Add remaining players to lobby
-    entries.tail.foreach { entry =>
-      lobby.addPlayer(entry.playerId)
-      server.lobbyManager.setPlayerLobby(entry.playerId, lobby.id)
+    if (connected.isEmpty) {
+      println(s"RankedQueue: startRankedMatch aborted — none of ${entries.size} entries are still connected")
+      return
     }
 
-    // Set character selections
-    entries.foreach { entry =>
-      lobby.setCharacter(entry.playerId, entry.characterId)
-    }
+    var createdLobby: Lobby = null
+    try {
+      // Pick random map
+      val random = new java.util.Random()
+      val mapIndex = random.nextInt(WorldRegistry.size)
+      val worldFileName = WorldRegistry.getFilename(mapIndex)
 
-    // Send MATCH_FOUND to each player
-    entries.foreach { entry =>
-      val player = server.getConnectedPlayer(entry.playerId)
-      if (player != null) {
-        val matchFoundPacket = new RankedQueuePacket(
-          server.getNextSequenceNumber, entry.playerId, Packet.getCurrentTimestamp,
-          RankedQueueAction.MATCH_FOUND,
-          entry.characterId,
-          entries.size.toByte,
-          entry.elo.toShort,
-          0,
-          lobby.id,
-          mapIndex.toByte,
-          Constants.DEFAULT_GAME_DURATION_MIN.toByte,
-          entries.size.toByte,
-          Constants.MAX_LOBBY_PLAYERS.toByte,
-          lobbyName
-        )
-        server.sendPacketToPlayer(matchFoundPacket, player)
+      // Create lobby
+      val hostId = connected.head.playerId
+      val lobbyName = "Ranked Match"
+      createdLobby = server.lobbyManager.createLobby(hostId, lobbyName, mapIndex, Constants.DEFAULT_GAME_DURATION_MIN, Constants.RANKED_FFA_MAX_PLAYERS)
+      if (createdLobby == null) {
+        System.err.println(s"RankedQueue: startRankedMatch failed — createLobby returned null (max lobbies reached?); rolling back ${connected.size} entries to FFA queue")
+        rollbackEntriesToQueue(connected, queue, playerInQueue)
+        return
       }
-    }
+      val lobby = createdLobby
+      lobby.isRanked = true
+      lobby.matchType = 2 // Ranked FFA
 
-    // Start the game (similar to LobbyHandler.handleStart)
-    lobby.status = LobbyStatus.IN_GAME
+      println(s"RankedQueue: startRankedMatch creating lobby ${lobby.id} for ${connected.size} players on $worldFileName")
 
-    val worldPath = resolveWorldPath("worlds/" + worldFileName)
-    val instance = new GameInstance(lobby.id, worldPath, lobby.durationMinutes, server)
-    instance.loadWorld()
-    lobby.gameInstance = instance
-    server.registerGameInstance(lobby.id, instance)
+      // Add remaining players to lobby
+      connected.tail.foreach { entry =>
+        lobby.addPlayer(entry.playerId)
+        server.lobbyManager.setPlayerLobby(entry.playerId, lobby.id)
+      }
 
-    // Register all players in the instance
-    var occupiedSpawns = Set.empty[(Int, Int)]
-    entries.foreach { entry =>
-      val p = server.getConnectedPlayer(entry.playerId)
-      if (p != null) {
+      // Set character selections
+      connected.foreach { entry =>
+        lobby.setCharacter(entry.playerId, entry.characterId)
+      }
+
+      // Send MATCH_FOUND to each player
+      connected.foreach { entry =>
+        val player = server.getConnectedPlayer(entry.playerId)
+        if (player != null) {
+          val matchFoundPacket = new RankedQueuePacket(
+            server.getNextSequenceNumber, entry.playerId, Packet.getCurrentTimestamp,
+            RankedQueueAction.MATCH_FOUND,
+            entry.characterId,
+            connected.size.toByte,
+            entry.elo.toShort,
+            0,
+            lobby.id,
+            mapIndex.toByte,
+            Constants.DEFAULT_GAME_DURATION_MIN.toByte,
+            connected.size.toByte,
+            Constants.RANKED_FFA_MAX_PLAYERS.toByte,
+            lobbyName
+          )
+          server.sendPacketToPlayer(matchFoundPacket, player)
+        }
+      }
+
+      // Start the game (similar to LobbyHandler.handleStart)
+      lobby.status = LobbyStatus.IN_GAME
+
+      val worldPath = resolveWorldPath("worlds/" + worldFileName)
+      val instance = new GameInstance(lobby.id, worldPath, lobby.durationMinutes, server)
+      instance.loadWorld()
+      lobby.gameInstance = instance
+      server.registerGameInstance(lobby.id, instance)
+
+      // Register all players in the instance
+      var occupiedSpawns = Set.empty[(Int, Int)]
+      connected.foreach { entry =>
+        val p = server.getConnectedPlayer(entry.playerId)
+        if (p != null) {
+          val spawnPoint = instance.world.getValidSpawnPoint(occupiedSpawns)
+          occupiedSpawns += ((spawnPoint.getX, spawnPoint.getY))
+          val charDef = com.gridgame.common.model.CharacterDef.get(entry.characterId)
+          val instancePlayer = new Player(entry.playerId, p.getName, spawnPoint, p.getColorRGB, charDef.maxHealth, charDef.maxHealth)
+          instancePlayer.setCharacterId(entry.characterId)
+          instancePlayer.setTcpChannel(p.getTcpChannel)
+          if (p.getUdpAddress != null) {
+            instancePlayer.setUdpAddress(p.getUdpAddress)
+          }
+          instance.registry.add(instancePlayer)
+          instance.killTracker.registerPlayer(entry.playerId)
+        }
+      }
+
+      // Fill remaining slots with bots
+      val botController = new BotController(instance)
+      val botsNeeded = Constants.RANKED_FFA_MAX_PLAYERS - connected.size
+      for (_ <- 1 to botsNeeded) {
+        val botSlot = lobby.botManager.addBot()
         val spawnPoint = instance.world.getValidSpawnPoint(occupiedSpawns)
         occupiedSpawns += ((spawnPoint.getX, spawnPoint.getY))
-        val charDef = com.gridgame.common.model.CharacterDef.get(entry.characterId)
-        val instancePlayer = new Player(entry.playerId, p.getName, spawnPoint, p.getColorRGB, charDef.maxHealth, charDef.maxHealth)
-        instancePlayer.setCharacterId(entry.characterId)
-        instancePlayer.setTcpChannel(p.getTcpChannel)
-        if (p.getUdpAddress != null) {
-          instancePlayer.setUdpAddress(p.getUdpAddress)
+        val charDef = com.gridgame.common.model.CharacterDef.get(botSlot.characterId)
+        val colorRGB = Player.generateColorFromUUID(botSlot.id)
+        val botPlayer = new Player(botSlot.id, botSlot.name, spawnPoint, colorRGB, charDef.maxHealth, charDef.maxHealth)
+        botPlayer.setCharacterId(botSlot.characterId)
+        instance.registry.add(botPlayer)
+        instance.killTracker.registerPlayer(botSlot.id)
+        botController.addBotId(botSlot.id)
+      }
+      instance.botController = botController
+
+      // Send GAME_STARTING to all players
+      val startingPacket = new LobbyActionPacket(
+        server.getNextSequenceNumber, hostId, LobbyAction.GAME_STARTING, lobby.id,
+        lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
+        lobby.playerCount.toByte, lobby.maxPlayers.toByte,
+        lobby.status, lobby.name
+      )
+      connected.foreach { entry =>
+        val p = server.getConnectedPlayer(entry.playerId)
+        if (p != null) {
+          server.sendPacketToPlayer(startingPacket, p)
         }
-        instance.registry.add(instancePlayer)
-        instance.killTracker.registerPlayer(entry.playerId)
       }
-    }
 
-    // Fill remaining slots with bots
-    val botController = new BotController(instance)
-    val botsNeeded = Constants.MAX_LOBBY_PLAYERS - entries.size
-    for (_ <- 1 to botsNeeded) {
-      val botSlot = lobby.botManager.addBot()
-      val spawnPoint = instance.world.getValidSpawnPoint(occupiedSpawns)
-      occupiedSpawns += ((spawnPoint.getX, spawnPoint.getY))
-      val charDef = com.gridgame.common.model.CharacterDef.get(botSlot.characterId)
-      val colorRGB = Player.generateColorFromUUID(botSlot.id)
-      val botPlayer = new Player(botSlot.id, botSlot.name, spawnPoint, colorRGB, charDef.maxHealth, charDef.maxHealth)
-      botPlayer.setCharacterId(botSlot.characterId)
-      instance.registry.add(botPlayer)
-      instance.killTracker.registerPlayer(botSlot.id)
-      botController.addBotId(botSlot.id)
-    }
-    instance.botController = botController
-
-    // Send GAME_STARTING to all players
-    val startingPacket = new LobbyActionPacket(
-      server.getNextSequenceNumber, hostId, LobbyAction.GAME_STARTING, lobby.id,
-      lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
-      lobby.playerCount.toByte, lobby.maxPlayers.toByte,
-      lobby.status, lobby.name
-    )
-    entries.foreach { entry =>
-      val p = server.getConnectedPlayer(entry.playerId)
-      if (p != null) {
-        server.sendPacketToPlayer(startingPacket, p)
+      // Send WorldInfo to each player
+      connected.foreach { entry =>
+        val p = server.getConnectedPlayer(entry.playerId)
+        if (p != null) {
+          val worldInfoPacket = new WorldInfoPacket(server.getNextSequenceNumber, worldFileName)
+          server.sendPacketToPlayer(worldInfoPacket, p)
+        }
       }
-    }
 
-    // Send WorldInfo to each player
-    entries.foreach { entry =>
-      val p = server.getConnectedPlayer(entry.playerId)
-      if (p != null) {
-        val worldInfoPacket = new WorldInfoPacket(server.getNextSequenceNumber, worldFileName)
-        server.sendPacketToPlayer(worldInfoPacket, p)
+      // Start the instance
+      instance.start()
+
+      // Broadcast join packets for all players (human + bot) so each client
+      // knows every player's server-assigned spawn position
+      connected.foreach { entry =>
+        val instancePlayer = instance.registry.get(entry.playerId)
+        if (instancePlayer != null) {
+          val joinPacket = new PlayerJoinPacket(
+            server.getNextSequenceNumber,
+            entry.playerId,
+            instancePlayer.getPosition,
+            instancePlayer.getColorRGB,
+            instancePlayer.getName,
+            instancePlayer.getHealth,
+            instancePlayer.getCharacterId
+          )
+          instance.broadcastToInstance(joinPacket)
+        }
       }
-    }
-
-    // Start the instance
-    instance.start()
-
-    // Broadcast join packets for all players (human + bot) so each client
-    // knows every player's server-assigned spawn position
-    entries.foreach { entry =>
-      val instancePlayer = instance.registry.get(entry.playerId)
-      if (instancePlayer != null) {
-        val joinPacket = new PlayerJoinPacket(
-          server.getNextSequenceNumber,
-          entry.playerId,
-          instancePlayer.getPosition,
-          instancePlayer.getColorRGB,
-          instancePlayer.getName,
-          instancePlayer.getHealth,
-          instancePlayer.getCharacterId
-        )
-        instance.broadcastToInstance(joinPacket)
+      lobby.botManager.getBots.foreach { botSlot =>
+        val botPlayer = instance.registry.get(botSlot.id)
+        if (botPlayer != null) {
+          val joinPacket = new PlayerJoinPacket(
+            server.getNextSequenceNumber,
+            botSlot.id,
+            botPlayer.getPosition,
+            botPlayer.getColorRGB,
+            botSlot.name,
+            botPlayer.getHealth,
+            botSlot.characterId
+          )
+          instance.broadcastToInstance(joinPacket)
+        }
       }
-    }
-    lobby.botManager.getBots.foreach { botSlot =>
-      val botPlayer = instance.registry.get(botSlot.id)
-      if (botPlayer != null) {
-        val joinPacket = new PlayerJoinPacket(
-          server.getNextSequenceNumber,
-          botSlot.id,
-          botPlayer.getPosition,
-          botPlayer.getColorRGB,
-          botSlot.name,
-          botPlayer.getHealth,
-          botSlot.characterId
-        )
-        instance.broadcastToInstance(joinPacket)
+
+      // Start bot AI
+      if (lobby.botManager.botCount > 0) {
+        botController.start()
       }
-    }
 
-    // Start bot AI
-    if (lobby.botManager.botCount > 0) {
-      botController.start()
-    }
+      // Emit metrics only after the match has actually been set up successfully
+      val matchedNow = System.currentTimeMillis()
+      Metrics.queueMatchesMade.add(1L, Attrs.ModeFfa)
+      connected.foreach { e =>
+        Metrics.queueWaitTime.record((matchedNow - e.joinTime).toDouble / 1000.0, io.opentelemetry.api.common.Attributes.of(Attrs.Mode, "ffa", Attrs.Outcome, "matched"))
+      }
 
-    println(s"RankedQueue: Started ranked match (lobby ${lobby.id}) with ${entries.size} players + ${botsNeeded} bots on $worldFileName")
+      println(s"RankedQueue: Started ranked match (lobby ${lobby.id}) with ${connected.size} players + $botsNeeded bots on $worldFileName")
+    } catch {
+      case NonFatal(e) =>
+        System.err.println(s"RankedQueue: startRankedMatch threw ${e.getClass.getSimpleName}: ${e.getMessage}; rolling back ${connected.size} entries to FFA queue")
+        e.printStackTrace()
+        if (createdLobby != null) {
+          server.lobbyManager.removeLobby(createdLobby.id)
+        }
+        rollbackEntriesToQueue(connected, queue, playerInQueue)
+    }
   }
 
   private def startDuelMatch(entries: Seq[QueueEntry]): Unit = {
-    val now = System.currentTimeMillis()
-    Metrics.queueMatchesMade.add(1L, Attrs.ModeDuel)
-    entries.foreach { e =>
-      Metrics.queueWaitTime.record((now - e.joinTime).toDouble / 1000.0, io.opentelemetry.api.common.Attributes.of(Attrs.Mode, "duel", Attrs.Outcome, "matched"))
-    }
-    // Remove matched players from duel queue
+    // Filter to entries whose players are still connected — drop the rest.
+    val connected = entries.filter(e => server.getConnectedPlayer(e.playerId) != null)
+
+    // Remove all entries from the duel queue up front; restore `connected` on failure.
     entries.foreach { entry =>
       duelQueue.remove(entry)
       duelPlayerInQueue.remove(entry.playerId)
     }
 
-    // Pick random map
-    val random = new java.util.Random()
-    val mapIndex = random.nextInt(WorldRegistry.size)
-    val worldFileName = WorldRegistry.getFilename(mapIndex)
-
-    // Create lobby
-    val hostId = entries.head.playerId
-    val lobbyName = "Ranked Duel"
-    val lobby = server.lobbyManager.createLobby(hostId, lobbyName, mapIndex, Constants.DUEL_GAME_DURATION_MIN, Constants.DUEL_MAX_PLAYERS)
-    lobby.isRanked = true
-    lobby.matchType = 3 // Ranked Duel
-
-    // Add remaining players to lobby
-    entries.tail.foreach { entry =>
-      lobby.addPlayer(entry.playerId)
-      server.lobbyManager.setPlayerLobby(entry.playerId, lobby.id)
+    // Duels need at least 2 connected players to be meaningful.
+    if (connected.size < 2) {
+      println(s"RankedQueue: startDuelMatch aborted — only ${connected.size} of ${entries.size} entries are still connected")
+      // Restore any survivors so they can rematch in the next tick
+      if (connected.nonEmpty) rollbackEntriesToQueue(connected, duelQueue, duelPlayerInQueue)
+      return
     }
 
-    // Set character selections
-    entries.foreach { entry =>
-      lobby.setCharacter(entry.playerId, entry.characterId)
-    }
+    var createdLobby: Lobby = null
+    try {
+      // Pick random map
+      val random = new java.util.Random()
+      val mapIndex = random.nextInt(WorldRegistry.size)
+      val worldFileName = WorldRegistry.getFilename(mapIndex)
 
-    // Send MATCH_FOUND to each player
-    entries.foreach { entry =>
-      val player = server.getConnectedPlayer(entry.playerId)
-      if (player != null) {
-        val matchFoundPacket = new RankedQueuePacket(
-          server.getNextSequenceNumber, entry.playerId, Packet.getCurrentTimestamp,
-          RankedQueueAction.MATCH_FOUND,
-          entry.characterId,
-          entries.size.toByte,
-          entry.elo.toShort,
-          0,
-          lobby.id,
-          mapIndex.toByte,
-          Constants.DUEL_GAME_DURATION_MIN.toByte,
-          entries.size.toByte,
-          Constants.DUEL_MAX_PLAYERS.toByte,
-          lobbyName,
-          RankedQueueMode.DUEL
-        )
-        server.sendPacketToPlayer(matchFoundPacket, player)
+      // Create lobby
+      val hostId = connected.head.playerId
+      val lobbyName = "Ranked Duel"
+      createdLobby = server.lobbyManager.createLobby(hostId, lobbyName, mapIndex, Constants.DUEL_GAME_DURATION_MIN, Constants.DUEL_MAX_PLAYERS)
+      if (createdLobby == null) {
+        System.err.println(s"RankedQueue: startDuelMatch failed — createLobby returned null (max lobbies reached?); rolling back ${connected.size} entries to duel queue")
+        rollbackEntriesToQueue(connected, duelQueue, duelPlayerInQueue)
+        return
       }
-    }
+      val lobby = createdLobby
+      lobby.isRanked = true
+      lobby.matchType = 3 // Ranked Duel
 
-    // Start the game
-    lobby.status = LobbyStatus.IN_GAME
+      println(s"RankedQueue: startDuelMatch creating lobby ${lobby.id} for ${connected.size} players on $worldFileName")
 
-    val worldPath = resolveWorldPath("worlds/" + worldFileName)
-    val instance = new GameInstance(lobby.id, worldPath, lobby.durationMinutes, server)
-    instance.loadWorld()
-    lobby.gameInstance = instance
-    server.registerGameInstance(lobby.id, instance)
+      // Add remaining players to lobby
+      connected.tail.foreach { entry =>
+        lobby.addPlayer(entry.playerId)
+        server.lobbyManager.setPlayerLobby(entry.playerId, lobby.id)
+      }
 
-    // Register all players in the instance (no bots for duels)
-    var occupiedSpawns = Set.empty[(Int, Int)]
-    entries.foreach { entry =>
-      val p = server.getConnectedPlayer(entry.playerId)
-      if (p != null) {
-        val spawnPoint = instance.world.getValidSpawnPoint(occupiedSpawns)
-        occupiedSpawns += ((spawnPoint.getX, spawnPoint.getY))
-        val charDef = com.gridgame.common.model.CharacterDef.get(entry.characterId)
-        val instancePlayer = new Player(entry.playerId, p.getName, spawnPoint, p.getColorRGB, charDef.maxHealth, charDef.maxHealth)
-        instancePlayer.setCharacterId(entry.characterId)
-        instancePlayer.setTcpChannel(p.getTcpChannel)
-        if (p.getUdpAddress != null) {
-          instancePlayer.setUdpAddress(p.getUdpAddress)
+      // Set character selections
+      connected.foreach { entry =>
+        lobby.setCharacter(entry.playerId, entry.characterId)
+      }
+
+      // Send MATCH_FOUND to each player
+      connected.foreach { entry =>
+        val player = server.getConnectedPlayer(entry.playerId)
+        if (player != null) {
+          val matchFoundPacket = new RankedQueuePacket(
+            server.getNextSequenceNumber, entry.playerId, Packet.getCurrentTimestamp,
+            RankedQueueAction.MATCH_FOUND,
+            entry.characterId,
+            connected.size.toByte,
+            entry.elo.toShort,
+            0,
+            lobby.id,
+            mapIndex.toByte,
+            Constants.DUEL_GAME_DURATION_MIN.toByte,
+            connected.size.toByte,
+            Constants.DUEL_MAX_PLAYERS.toByte,
+            lobbyName,
+            RankedQueueMode.DUEL
+          )
+          server.sendPacketToPlayer(matchFoundPacket, player)
         }
-        instance.registry.add(instancePlayer)
-        instance.killTracker.registerPlayer(entry.playerId)
       }
-    }
 
-    // Send GAME_STARTING to all players
-    val startingPacket = new LobbyActionPacket(
-      server.getNextSequenceNumber, hostId, LobbyAction.GAME_STARTING, lobby.id,
-      lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
-      lobby.playerCount.toByte, lobby.maxPlayers.toByte,
-      lobby.status, lobby.name
-    )
-    entries.foreach { entry =>
-      val p = server.getConnectedPlayer(entry.playerId)
-      if (p != null) {
-        server.sendPacketToPlayer(startingPacket, p)
+      // Start the game
+      lobby.status = LobbyStatus.IN_GAME
+
+      val worldPath = resolveWorldPath("worlds/" + worldFileName)
+      val instance = new GameInstance(lobby.id, worldPath, lobby.durationMinutes, server)
+      instance.loadWorld()
+      lobby.gameInstance = instance
+      server.registerGameInstance(lobby.id, instance)
+
+      // Register all players in the instance (no bots for duels)
+      var occupiedSpawns = Set.empty[(Int, Int)]
+      connected.foreach { entry =>
+        val p = server.getConnectedPlayer(entry.playerId)
+        if (p != null) {
+          val spawnPoint = instance.world.getValidSpawnPoint(occupiedSpawns)
+          occupiedSpawns += ((spawnPoint.getX, spawnPoint.getY))
+          val charDef = com.gridgame.common.model.CharacterDef.get(entry.characterId)
+          val instancePlayer = new Player(entry.playerId, p.getName, spawnPoint, p.getColorRGB, charDef.maxHealth, charDef.maxHealth)
+          instancePlayer.setCharacterId(entry.characterId)
+          instancePlayer.setTcpChannel(p.getTcpChannel)
+          if (p.getUdpAddress != null) {
+            instancePlayer.setUdpAddress(p.getUdpAddress)
+          }
+          instance.registry.add(instancePlayer)
+          instance.killTracker.registerPlayer(entry.playerId)
+        }
       }
-    }
 
-    // Send WorldInfo to each player
-    entries.foreach { entry =>
-      val p = server.getConnectedPlayer(entry.playerId)
-      if (p != null) {
-        val worldInfoPacket = new WorldInfoPacket(server.getNextSequenceNumber, worldFileName)
-        server.sendPacketToPlayer(worldInfoPacket, p)
+      // Send GAME_STARTING to all players
+      val startingPacket = new LobbyActionPacket(
+        server.getNextSequenceNumber, hostId, LobbyAction.GAME_STARTING, lobby.id,
+        lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
+        lobby.playerCount.toByte, lobby.maxPlayers.toByte,
+        lobby.status, lobby.name
+      )
+      connected.foreach { entry =>
+        val p = server.getConnectedPlayer(entry.playerId)
+        if (p != null) {
+          server.sendPacketToPlayer(startingPacket, p)
+        }
       }
-    }
 
-    // Start the instance
-    instance.start()
-
-    // Broadcast join packets for all players so each client
-    // knows every player's server-assigned spawn position
-    entries.foreach { entry =>
-      val instancePlayer = instance.registry.get(entry.playerId)
-      if (instancePlayer != null) {
-        val joinPacket = new PlayerJoinPacket(
-          server.getNextSequenceNumber,
-          entry.playerId,
-          instancePlayer.getPosition,
-          instancePlayer.getColorRGB,
-          instancePlayer.getName,
-          instancePlayer.getHealth,
-          instancePlayer.getCharacterId
-        )
-        instance.broadcastToInstance(joinPacket)
+      // Send WorldInfo to each player
+      connected.foreach { entry =>
+        val p = server.getConnectedPlayer(entry.playerId)
+        if (p != null) {
+          val worldInfoPacket = new WorldInfoPacket(server.getNextSequenceNumber, worldFileName)
+          server.sendPacketToPlayer(worldInfoPacket, p)
+        }
       }
-    }
 
-    println(s"RankedQueue: Started ranked duel (lobby ${lobby.id}) with ${entries.size} players on $worldFileName")
+      // Start the instance
+      instance.start()
+
+      // Broadcast join packets for all players so each client
+      // knows every player's server-assigned spawn position
+      connected.foreach { entry =>
+        val instancePlayer = instance.registry.get(entry.playerId)
+        if (instancePlayer != null) {
+          val joinPacket = new PlayerJoinPacket(
+            server.getNextSequenceNumber,
+            entry.playerId,
+            instancePlayer.getPosition,
+            instancePlayer.getColorRGB,
+            instancePlayer.getName,
+            instancePlayer.getHealth,
+            instancePlayer.getCharacterId
+          )
+          instance.broadcastToInstance(joinPacket)
+        }
+      }
+
+      // Emit metrics only after the match has actually been set up successfully
+      val matchedNow = System.currentTimeMillis()
+      Metrics.queueMatchesMade.add(1L, Attrs.ModeDuel)
+      connected.foreach { e =>
+        Metrics.queueWaitTime.record((matchedNow - e.joinTime).toDouble / 1000.0, io.opentelemetry.api.common.Attributes.of(Attrs.Mode, "duel", Attrs.Outcome, "matched"))
+      }
+
+      println(s"RankedQueue: Started ranked duel (lobby ${lobby.id}) with ${connected.size} players on $worldFileName")
+    } catch {
+      case NonFatal(e) =>
+        System.err.println(s"RankedQueue: startDuelMatch threw ${e.getClass.getSimpleName}: ${e.getMessage}; rolling back ${connected.size} entries to duel queue")
+        e.printStackTrace()
+        if (createdLobby != null) {
+          server.lobbyManager.removeLobby(createdLobby.id)
+        }
+        rollbackEntriesToQueue(connected, duelQueue, duelPlayerInQueue)
+    }
   }
 
   private def resolveWorldPath(worldFile: String): String = {

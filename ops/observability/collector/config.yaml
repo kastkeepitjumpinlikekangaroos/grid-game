@@ -40,16 +40,34 @@ processors:
         value: grid-game-local
         action: upsert
 
+  # Promote selected resource attributes to data point attributes for the prometheus
+  # exporter. We do this explicitly (rather than `resource_to_telemetry_conversion: true`)
+  # because that flag promotes *every* resource attribute, which races with attributes
+  # added by JVM RuntimeMetrics / SDK self-monitoring and produces "duplicate label
+  # names in constant and variable labels" errors — every affected data point is
+  # silently dropped at the conversion step. (We saw 4k+ such errors in one window
+  # during early dev; this transform makes it impossible for that class of collision
+  # to recur, regardless of what new instrumentation gets added.)
+  transform/promote_resource_to_metric_attrs:
+    metric_statements:
+      - context: datapoint
+        statements:
+          - set(attributes["cluster"], resource.attributes["cluster"]) where resource.attributes["cluster"] != nil and attributes["cluster"] == nil
+          - set(attributes["service_name"], resource.attributes["service.name"]) where resource.attributes["service.name"] != nil and attributes["service_name"] == nil
+          - set(attributes["service_version"], resource.attributes["service.version"]) where resource.attributes["service.version"] != nil and attributes["service_version"] == nil
+          - set(attributes["deployment_environment"], resource.attributes["deployment.environment"]) where resource.attributes["deployment.environment"] != nil and attributes["deployment_environment"] == nil
+
 exporters:
-  # Metrics → Prometheus (scraped from :8889)
-  # NOTE: do not set `const_labels: cluster: ...` here — the `resource` processor
-  # already adds `cluster` as a resource attribute, and `resource_to_telemetry_conversion`
-  # promotes it to a label. Setting both produces "duplicate label" errors and silently
-  # drops every metric. (See gridgame ops README.)
+  # Metrics → Prometheus (scraped from :8889).
+  # `resource_to_telemetry_conversion` is intentionally disabled — see the
+  # transform/promote_resource_to_metric_attrs processor above for the rationale.
+  # The transform copies the resource attrs we want as labels (cluster, service_name,
+  # service_version, deployment_environment) onto every data point in a controlled
+  # way that can't collide.
   prometheus:
     endpoint: 0.0.0.0:8889
     resource_to_telemetry_conversion:
-      enabled: true
+      enabled: false
 
   # Traces → Tempo (Tempo speaks OTLP natively)
   otlp/tempo:
@@ -76,7 +94,7 @@ service:
 
     metrics:
       receivers: [otlp]
-      processors: [memory_limiter, resource, batch]
+      processors: [memory_limiter, resource, transform/promote_resource_to_metric_attrs, batch]
       exporters: [prometheus]
 
     logs:

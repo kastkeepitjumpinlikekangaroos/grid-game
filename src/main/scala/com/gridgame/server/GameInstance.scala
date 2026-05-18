@@ -130,6 +130,15 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     if (itemSpawnExecutor != null) { itemSpawnExecutor.shutdown(); itemSpawnExecutor.shutdownNow() }
     if (respawnExecutor != null) { respawnExecutor.shutdown(); respawnExecutor.shutdownNow() }
     if (timerSyncExecutor != null) { timerSyncExecutor.shutdown(); timerSyncExecutor.shutdownNow() }
+    // Release manager state and unregister their async gauges. Without this, the
+    // gauge callbacks remain registered against OTel's meter and keep reporting the
+    // post-mortem sizes of projectiles/items, and across matches the callbacks
+    // accumulate (memory leak + metric corruption).
+    projectileManager.close()
+    itemManager.close()
+    killedThisTick.clear()
+    modifiedTiles.clear()
+    teamAssignments.clear()
     println(s"GameInstance[$gameId]: Stopped")
   }
 
@@ -170,6 +179,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         broadcastBuffered(packet)
 
       case ProjectileKill(projectile, targetId) =>
+        Metrics.projectilesHit.add(1L, Attrs.projectileType(projectile.projectileType))
         // Guard: skip if target was already killed this tick by another projectile
         val target = registry.get(targetId)
         if (target != null && killedThisTick.contains(targetId)) {
@@ -545,6 +555,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         }
 
       case ProjectileAoEHit(projectile, targetId) =>
+        Metrics.projectilesHit.add(1L, Attrs.projectileType(projectile.projectileType))
         val hitPacket = new ProjectilePacket(
           server.getNextSequenceNumber,
           projectile.ownerId,
@@ -584,6 +595,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         }
 
       case ProjectileAoEKill(projectile, targetId) =>
+        Metrics.projectilesHit.add(1L, Attrs.projectileType(projectile.projectileType))
         // Guard: skip if target was already killed this tick
         if (!killedThisTick.contains(targetId)) {
         val aoeKiller = registry.get(projectile.ownerId)

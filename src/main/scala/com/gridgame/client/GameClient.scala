@@ -188,6 +188,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   // Ranked queue state
   @volatile var isInRankedQueue: Boolean = false
   @volatile var rankedElo: Int = 1000
+  // Set by the server's unsolicited post-ranked-match STATS push. Holds
+  // (oldElo, newElo) so the scoreboard can show the change. Cleared on
+  // GAME_OVER, so it never leaks into a casual match's post-game screen.
+  @volatile var pendingEloChange: Option[(Int, Int)] = None
   @volatile var rankedQueueSize: Int = 0
   @volatile var rankedQueueWaitTime: Int = 0
   @volatile var rankedQueueListener: () => Unit = _
@@ -1183,6 +1187,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
       case GameEvent.GAME_OVER =>
         scoreboard.clear()
+        // Reset any leftover ELO delta from a previous match so a casual
+        // game's scoreboard doesn't inherit ranked info.
+        pendingEloChange = None
 
       case GameEvent.SCORE_ENTRY =>
         val entry = new ScoreEntry(packet.getPlayerId, packet.getKills.toInt, packet.getDeaths.toInt, packet.getRank.toInt, packet.getTeamId.toInt)
@@ -1263,6 +1270,13 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         matchesPlayedStat = packet.getMatchesPlayed
         winsStat = packet.getWins
         rankedElo = packet.getElo.toInt
+        // Server sets oldElo == elo for profile queries (no change). It only
+        // differs when this is a post-match push, which is our signal that
+        // the just-ended match was ranked and the scoreboard should render
+        // the ELO delta.
+        if (packet.getOldElo != packet.getElo) {
+          pendingEloChange = Some((packet.getOldElo.toInt, packet.getElo.toInt))
+        }
 
       case MatchHistoryAction.ENTRY =>
         matchHistory.add(Array(

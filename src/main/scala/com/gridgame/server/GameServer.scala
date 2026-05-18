@@ -223,16 +223,26 @@ class GameServer(port: Int, val worldFile: String = "") {
     Metrics.broadcastFanout.record(fanout.toLong, Attrs.packet(packet.getType))
   }
 
+  /** Resolve the {type, transport} attribute set for a serialized payload's first byte.
+   *  Returns the UNKNOWN sentinel if the byte doesn't match a known packet type. */
+  private def rawSendAttrs(data: Array[Byte], isTcp: Boolean): io.opentelemetry.api.common.Attributes = {
+    if (data.length == 0) return if (isTcp) Attrs.UnknownPacket else Attrs.UnknownPacketUdp
+    try Attrs.packet(PacketType.fromId(data(0)))
+    catch { case _: Throwable => if (isTcp) Attrs.UnknownPacket else Attrs.UnknownPacketUdp }
+  }
+
   /** Send pre-serialized packet bytes to a player. Serialization is done once by the caller. */
   def sendRawToPlayer(data: Array[Byte], isTcp: Boolean, player: Player): Unit = {
     val token = sessionTokens.get(player.getId)
     val signed = if (token != null) PacketSigner.sign(data, token) else padToPacketSize(data)
+    val pktAttrs = rawSendAttrs(data, isTcp)
     if (isTcp) {
       val raw = player.getTcpChannel
       if (raw != null) {
         val ch = raw.asInstanceOf[Channel]
         if (ch.isActive) {
           ch.writeAndFlush(Unpooled.wrappedBuffer(signed))
+          Metrics.packetsSent.add(1L, pktAttrs)
           Metrics.bandwidthBytes.add(signed.length.toLong, Attrs.DirOut)
         }
       }
@@ -241,6 +251,7 @@ class GameServer(port: Int, val worldFile: String = "") {
       if (addr != null && udpChannel != null) {
         val dgram = new DatagramPacket(Unpooled.wrappedBuffer(signed), addr)
         udpChannel.writeAndFlush(dgram)
+        Metrics.packetsSent.add(1L, pktAttrs)
         Metrics.bandwidthBytes.add(signed.length.toLong, Attrs.DirOut)
       }
     }
@@ -250,12 +261,14 @@ class GameServer(port: Int, val worldFile: String = "") {
   def sendRawToPlayerBuffered(data: Array[Byte], isTcp: Boolean, player: Player): Unit = {
     val token = sessionTokens.get(player.getId)
     val signed = if (token != null) PacketSigner.sign(data, token) else padToPacketSize(data)
+    val pktAttrs = rawSendAttrs(data, isTcp)
     if (isTcp) {
       val raw = player.getTcpChannel
       if (raw != null) {
         val ch = raw.asInstanceOf[Channel]
         if (ch.isActive) {
           ch.write(Unpooled.wrappedBuffer(signed))
+          Metrics.packetsSent.add(1L, pktAttrs)
           Metrics.bandwidthBytes.add(signed.length.toLong, Attrs.DirOut)
         }
       }
@@ -264,6 +277,7 @@ class GameServer(port: Int, val worldFile: String = "") {
       if (addr != null && udpChannel != null) {
         val dgram = new DatagramPacket(Unpooled.wrappedBuffer(signed), addr)
         udpChannel.write(dgram)
+        Metrics.packetsSent.add(1L, pktAttrs)
         Metrics.bandwidthBytes.add(signed.length.toLong, Attrs.DirOut)
       }
     }
@@ -588,12 +602,13 @@ class GameServer(port: Int, val worldFile: String = "") {
 
     if (!allowExpensiveQuery(playerId)) return
 
-    // Send stats
+    // Send stats. Use oldElo = elo here so the client knows there's no ELO
+    // change to display (this is a profile query, not a post-match push).
     val (totalKills, totalDeaths, matchesPlayed, wins, elo) = authDatabase.getPlayerStats(playerId)
     val statsPacket = new MatchHistoryPacket(
       getNextSequenceNumber, playerId, Packet.getCurrentTimestamp, MatchHistoryAction.STATS,
       totalKills = totalKills, totalDeaths = totalDeaths,
-      matchesPlayed = matchesPlayed, wins = wins, elo = elo.toShort
+      matchesPlayed = matchesPlayed, wins = wins, elo = elo.toShort, oldElo = elo.toShort
     )
     sendPacketViaChannel(statsPacket, tcpCh)
 
@@ -939,9 +954,25 @@ class GameServer(port: Int, val worldFile: String = "") {
     val humanResults = matchResults.filter { case (pid, _, _, _) => !BotManager.isBotUUID(pid) }.toSeq
     authDatabase.saveMatch(lobby.mapIndex, lobby.durationMinutes, humanResults, lobby.matchType)
 
-    // Update ELO for ranked matches (exclude bots)
+    // Update ELO for ranked matches (exclude bots) and push fresh stats to each
+    // human so the post-match scoreboard can show the ELO delta without forcing
+    // the client to manually re-query match history.
     if (lobby.isRanked && humanResults.size >= 2) {
-      updateRankedElo(humanResults)
+      val eloDeltas = updateRankedElo(humanResults)
+      eloDeltas.foreach { case (uuid, (oldElo, newElo)) =>
+        val player = connectedPlayers.get(uuid)
+        if (player != null) {
+          val (totalKills, totalDeaths, matchesPlayed, wins, _) = authDatabase.getPlayerStats(uuid)
+          val statsPacket = new MatchHistoryPacket(
+            getNextSequenceNumber, uuid, Packet.getCurrentTimestamp,
+            MatchHistoryAction.STATS,
+            totalKills = totalKills, totalDeaths = totalDeaths,
+            matchesPlayed = matchesPlayed, wins = wins,
+            elo = newElo.toShort, oldElo = oldElo.toShort
+          )
+          sendPacketToPlayer(statsPacket, player)
+        }
+      }
     }
 
     // Send SCORE_END
@@ -958,9 +989,14 @@ class GameServer(port: Int, val worldFile: String = "") {
     println(s"Game ended for lobby $lobbyId")
   }
 
-  private def updateRankedElo(results: Seq[(UUID, Int, Int, Byte)]): Unit = {
+  /**
+   * Apply ELO updates for a finished ranked match.
+   * Returns a map of playerId -> (oldElo, newElo) so callers can notify clients.
+   * Returns an empty map if the match had fewer than 2 humans.
+   */
+  private def updateRankedElo(results: Seq[(UUID, Int, Int, Byte)]): Map[UUID, (Int, Int)] = {
     val n = results.size
-    if (n < 2) return
+    if (n < 2) return Map.empty
 
     val kAdjusted = 32.0 / (n - 1)
 
@@ -968,6 +1004,8 @@ class GameServer(port: Int, val worldFile: String = "") {
     val elos = results.map { case (uuid, _, _, _) =>
       uuid -> authDatabase.getEloByUUID(uuid)
     }.toMap
+
+    val deltas = scala.collection.mutable.Map.empty[UUID, (Int, Int)]
 
     // Calculate new ELOs using FFA formula
     results.foreach { case (uuid, _, _, rank) =>
@@ -990,7 +1028,10 @@ class GameServer(port: Int, val worldFile: String = "") {
         println(s"RankedELO: ${username} $myElo -> $newElo (delta=${Math.round(delta)})")
       }
       Metrics.eloDelta.record(Math.round(delta).toDouble, io.opentelemetry.api.common.Attributes.empty())
+      deltas(uuid) = (myElo, newElo)
     }
+
+    deltas.toMap
   }
 
   private def cleanup(): Unit = {

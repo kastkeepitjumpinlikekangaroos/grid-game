@@ -86,6 +86,23 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
       executor.shutdown()
       executor.shutdownNow()
     }
+    // Unregister the gauge callback and drop per-bot tables; otherwise the gauge keeps
+    // reporting the final bot count after the match ends, and across matches the
+    // callbacks accumulate.
+    try botsActiveGauge.close() catch { case _: Throwable => () }
+    botIds.clear()
+    lastShotTime.clear()
+    lastQAbilityTime.clear()
+    lastEAbilityTime.clear()
+    lastMoveTime.clear()
+    botShootCooldown.clear()
+    currentTarget.clear()
+    targetSwitchTime.clear()
+    strafeDirection.clear()
+    occupiedTiles.clear()
+    occupiedTileOwners.clear()
+    bfsVisited.clear()
+    bfsQueue.clear()
     println("BotController: Stopped")
   }
 

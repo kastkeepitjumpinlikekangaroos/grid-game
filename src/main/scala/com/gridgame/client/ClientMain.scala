@@ -2099,6 +2099,7 @@ class ClientMain extends Application {
     addHoverEffect(returnBtn, buttonStyle, buttonHoverStyle)
     returnBtn.setFont(Font.font("Exo 2", FontWeight.BOLD, 15))
     returnBtn.setOnAction(_ => {
+      client.pendingEloChange = None
       client.returnToLobbyBrowser()
       client.requestLobbyList()
       showLobbyBrowser(stage)
@@ -2126,7 +2127,48 @@ class ClientMain extends Application {
     scrollPane.setStyle("-fx-background: transparent; -fx-background-color: transparent; -fx-border-color: transparent;")
     VBox.setVgrow(scrollPane, Priority.ALWAYS)
 
-    root.getChildren.addAll(titleBox, scrollPane, btnBox)
+    root.getChildren.add(titleBox)
+
+    // Ranked ELO delta — only shown when the server pushed a post-match STATS
+    // (i.e. the just-ended match was ranked with >=2 humans).
+    client.pendingEloChange.foreach { case (oldElo, newElo) =>
+      val delta = newElo - oldElo
+      val (deltaColor, deltaText) =
+        if (delta > 0) ("#2ecc71", s"+$delta")
+        else if (delta < 0) ("#e84057", delta.toString)
+        else ("#8899aa", "±0")
+
+      val eloBox = new VBox(6)
+      eloBox.setAlignment(Pos.CENTER)
+      eloBox.setPadding(new Insets(0, 0, 20, 0))
+
+      val eloHeader = new Label("RANKED ELO")
+      eloHeader.setFont(Font.font("Exo 2", FontWeight.BOLD, 11))
+      eloHeader.setTextFill(Color.web("#8899aa"))
+      eloHeader.setStyle("-fx-letter-spacing: 2px;")
+
+      val eloRow = new HBox(14)
+      eloRow.setAlignment(Pos.CENTER)
+      val oldLbl = new Label(oldElo.toString)
+      oldLbl.setFont(Font.font("Exo 2", FontWeight.BOLD, 24))
+      oldLbl.setTextFill(Color.web("#8899aa"))
+      val arrow = new Label("→")
+      arrow.setFont(Font.font("Exo 2", 22))
+      arrow.setTextFill(Color.web("#556677"))
+      val newLbl = new Label(newElo.toString)
+      newLbl.setFont(Font.font("Exo 2", FontWeight.BOLD, 28))
+      newLbl.setTextFill(Color.web("#ffd700"))
+      newLbl.setStyle("-fx-effect: dropshadow(gaussian, rgba(255, 215, 0, 0.4), 12, 0, 0, 0);")
+      val deltaLbl = new Label(deltaText)
+      deltaLbl.setFont(Font.font("Exo 2", FontWeight.BOLD, 22))
+      deltaLbl.setTextFill(Color.web(deltaColor))
+      eloRow.getChildren.addAll(oldLbl, arrow, newLbl, deltaLbl)
+
+      eloBox.getChildren.addAll(eloHeader, eloRow)
+      root.getChildren.add(eloBox)
+    }
+
+    root.getChildren.addAll(scrollPane, btnBox)
 
     fadeInScene(stage, root)
   }

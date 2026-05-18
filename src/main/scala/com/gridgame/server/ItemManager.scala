@@ -147,4 +147,12 @@ class ItemManager {
   def getAll: Seq[Item] = items.values().asScala.toSeq
 
   def size: Int = items.size()
+
+  /** Release all state and unregister the active-items gauge callback. */
+  def close(): Unit = {
+    try itemsActiveGauge.close() catch { case _: Throwable => () }
+    items.clear()
+    inventories.clear()
+    itemGrid.clear()
+  }
 }

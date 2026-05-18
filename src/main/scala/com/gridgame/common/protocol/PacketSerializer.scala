@@ -87,9 +87,10 @@ object PacketSerializer {
             val matchesPlayed = buffer.getInt()
             val wins = buffer.getInt()
             val elo = buffer.getShort()
+            val oldElo = buffer.getShort()
             new MatchHistoryPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, action,
               totalKills = totalKills, totalDeaths = totalDeaths,
-              matchesPlayed = matchesPlayed, wins = wins, elo = elo)
+              matchesPlayed = matchesPlayed, wins = wins, elo = elo, oldElo = oldElo)
 
           case _ => // QUERY or END
             new MatchHistoryPacket(sequenceNumber, playerId, action)

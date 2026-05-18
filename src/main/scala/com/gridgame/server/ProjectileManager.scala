@@ -28,7 +28,9 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
   // Per-player active projectile count (avoids O(n) iteration on every spawn)
   private val playerProjectileCount = new ConcurrentHashMap[UUID, AtomicInteger]()
 
-  // Async gauge: projectiles in flight, exposed to the metric backend
+  // Async gauge: projectiles in flight. Held as AutoCloseable so the callback can be
+  // unregistered when the instance ends — otherwise the gauge keeps reporting stale
+  // sizes against this manager (and across instances, callbacks accumulate).
   private val projectilesActiveGauge = com.gridgame.common.observability.Telemetry.meter("com.gridgame.projectiles")
     .gaugeBuilder("gridgame.projectiles.active")
     .setDescription("Projectiles currently in flight")
@@ -294,6 +296,17 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
   def getAll: Seq[Projectile] = projectiles.values().asScala.toSeq
 
   def size: Int = projectiles.size()
+
+  /** Release all state and unregister the active-projectiles gauge callback. */
+  def close(): Unit = {
+    try projectilesActiveGauge.close() catch { case _: Throwable => () }
+    projectiles.clear()
+    playerProjectileCount.clear()
+    gridCells.clear()
+    activeKeys.clear()
+    hittableCount = 0
+    java.util.Arrays.fill(hittablePlayers.asInstanceOf[Array[AnyRef]], null)
+  }
 
   /** Deal AoE damage to all players within radius of the projectile, excluding excludeId (the direct-hit target). */
   private def applyAoEDamage(projectile: Projectile, radius: Float, damage: Int, excludeId: UUID, freezeDurationMs: Int = 0, rootDurationMs: Int = 0): Seq[ProjectileEvent] = {
