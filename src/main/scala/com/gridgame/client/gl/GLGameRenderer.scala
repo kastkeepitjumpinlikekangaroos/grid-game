@@ -2,6 +2,7 @@ package com.gridgame.client.gl
 
 import com.gridgame.client.ClientState
 import com.gridgame.client.GameClient
+import com.gridgame.client.i18n.{I18n, Messages}
 import com.gridgame.client.render.{EntityCollector, GameCamera, IsometricTransform}
 import com.gridgame.client.render.EntityCollector._
 import com.gridgame.common.Constants
@@ -389,6 +390,11 @@ class GLGameRenderer(val client: GameClient) {
     fontSmall = new GLFontRenderer(14)
     fontMedium = new GLFontRenderer(22)
     fontLarge = new GLFontRenderer(44)
+    // Pre-rasterize the active language's glyphs (cheap ASCII for English, the CJK
+    // set for Chinese/Korean) so the first HUD frame with translated text doesn't hitch.
+    val i18nGlyphs = com.gridgame.client.i18n.Messages.currentCodepoints
+    fontSmall.prewarm(i18nGlyphs)
+    fontMedium.prewarm(i18nGlyphs)
     postProcessor = new PostProcessor(width, height)
     lightSystem = new LightSystem(width, height)
     bgCacheFBO = GLTexture.createFBO(width, height)
@@ -1286,7 +1292,7 @@ class GLGameRenderer(val client: GameClient) {
     }
 
     // Health bar + name (deferred to batch pass)
-    val charName = CharacterDef.get(player.getCharacterId).displayName
+    val charName = I18n.characterName(CharacterDef.get(player.getCharacterId))
     deferHealthBar(screenX, screenY - displaySz, player.getHealth, player.getMaxHealth, player.getTeamId, player.getId, charName)
   }
 
@@ -1421,7 +1427,7 @@ class GLGameRenderer(val client: GameClient) {
     }
 
     // Health bar + name (deferred to batch pass)
-    val charName = client.getSelectedCharacterDef.displayName
+    val charName = I18n.characterName(client.getSelectedCharacterDef)
     deferHealthBar(screenX, screenY - displaySz, client.getLocalHealth, client.getSelectedCharacterMaxHealth, client.localTeamId, client.getLocalPlayerId, charName)
   }
 
@@ -4141,7 +4147,7 @@ class GLGameRenderer(val client: GameClient) {
     // Kill feed — collect entries first (needed before shapes pass)
     val now = _frameTimeMs
     var feedY = 10f
-    val localName = client.getSelectedCharacterDef.displayName
+    val localName = I18n.characterName(client.getSelectedCharacterDef)
     _feedCount = 0
     val feedIter = client.killFeed.iterator()
     while (feedIter.hasNext && _feedCount < MAX_FEED_ENTRIES) {
@@ -4356,7 +4362,7 @@ class GLGameRenderer(val client: GameClient) {
         val inputText = client.chatInputText
         val cursor = if ((now / 500) % 2 == 0) "_" else ""
         fontSmall.drawText(spriteBatch, "> " + inputText + cursor, 14f, inputY + 4f, 0.9f, 0.9f, 0.95f, 1f)
-        fontSmall.drawText(spriteBatch, "[Enter] Send  [Shift+Enter] Team  [Esc] Cancel", 14f, inputY + 28f, 0.45f, 0.45f, 0.5f, 0.7f)
+        fontSmall.drawText(spriteBatch, Messages.t("[Enter] Send  [Shift+Enter] Team  [Esc] Cancel"), 14f, inputY + 28f, 0.45f, 0.45f, 0.5f, 0.7f)
       }
     }
   }
@@ -4391,7 +4397,7 @@ class GLGameRenderer(val client: GameClient) {
     // --- Combo counter (center, below timer) ---
     val combo = client.practiceCombo
     if (combo > 0) {
-      val comboText = "COMBO x" + combo
+      val comboText = Messages.t("COMBO x{0}", combo)
       val textW = fontMedium.measureWidth(comboText)
 
       // Color scales white -> yellow -> orange -> red with combo size
@@ -4437,13 +4443,13 @@ class GLGameRenderer(val client: GameClient) {
     // --- Accuracy display (top-left, below K/D) ---
     beginSprites()
     val accuracy = if (client.practiceShots > 0) (client.practiceHits * 100.0 / client.practiceShots).toInt else 0
-    val accText = "Accuracy: " + accuracy + "%"
+    val accText = Messages.t("Accuracy: {0}%", accuracy)
     fontSmall.drawTextOutlined(spriteBatch, accText, 12, 126)
-    val bestText = "Best Combo: " + client.practiceBestCombo
+    val bestText = Messages.t("Best Combo: {0}", client.practiceBestCombo)
     fontSmall.drawTextOutlined(spriteBatch, bestText, 12, 144)
 
     // --- "PRACTICE" label replacing timer ---
-    val practiceText = "PRACTICE"
+    val practiceText = Messages.t("PRACTICE")
     val ptw = fontMedium.measureWidth(practiceText)
     fontMedium.drawText(spriteBatch, practiceText, cx - ptw / 2, 8, 0.24f, 0.86f, 0.5f, 0.9f)
   }
@@ -4508,8 +4514,9 @@ class GLGameRenderer(val client: GameClient) {
 
     spriteBatch.begin(proj)
     // "GAME OVER" text with dramatic styling
-    fontLarge.drawTextOutlined(spriteBatch, "GAME OVER", cx - fontLarge.measureWidth("GAME OVER") / 2, panelY + 74f, 0.95f * skullPulse, 0.2f, 0.2f, 1f)
-    val subText = "Press Enter to continue"
+    val gameOverText = Messages.t("GAME OVER")
+    fontLarge.drawTextOutlined(spriteBatch, gameOverText, cx - fontLarge.measureWidth(gameOverText) / 2, panelY + 74f, 0.95f * skullPulse, 0.2f, 0.2f, 1f)
+    val subText = Messages.t("Press Enter to continue")
     val subPulse = (Math.sin(t * 0.1) * 0.3 + 0.7).toFloat
     fontMedium.drawTextOutlined(spriteBatch, subText, cx - fontMedium.measureWidth(subText) / 2, panelY + 118f, 0.7f, 0.7f, 0.7f, subPulse)
     spriteBatch.end()
@@ -4586,7 +4593,7 @@ class GLGameRenderer(val client: GameClient) {
     if (killerName != null && killerName.nonEmpty) {
       if (killerName ne _cachedKilledByName) {
         _cachedKilledByName = killerName
-        _cachedKilledByStr = "Killed by " + killerName
+        _cachedKilledByStr = Messages.t("Killed by {0}", killerName)
       }
       val kbW = fontMedium.measureWidth(_cachedKilledByStr)
       fontMedium.drawTextOutlined(spriteBatch, _cachedKilledByStr, cx - kbW / 2, panelY + 42f, 1f, 0.5f, 0.5f)
@@ -4595,7 +4602,7 @@ class GLGameRenderer(val client: GameClient) {
     // Respawn countdown
     if (secondsLeft != _cachedRespawnSeconds) {
       _cachedRespawnSeconds = secondsLeft
-      _cachedRespawnStr = "Respawning in " + secondsLeft + "s"
+      _cachedRespawnStr = Messages.t("Respawning in {0}s", secondsLeft)
     }
     val rsW = fontSmall.measureWidth(_cachedRespawnStr)
     fontSmall.drawTextOutlined(spriteBatch, _cachedRespawnStr, cx - rsW / 2, panelY + 72f, 0.7f, 0.7f, 0.7f)

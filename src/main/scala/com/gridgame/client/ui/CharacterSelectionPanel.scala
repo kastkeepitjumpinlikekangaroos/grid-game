@@ -1,6 +1,7 @@
 package com.gridgame.client.ui
 
 import com.gridgame.common.model._
+import com.gridgame.client.i18n.{I18n, Messages}
 import javafx.animation.AnimationTimer
 import javafx.geometry.Insets
 import javafx.geometry.Pos
@@ -90,14 +91,14 @@ class CharacterSelectionPanel(
   private var currentGridCols = 6
 
   def createPanel(): VBox = {
-    val charSectionLabel = new Label("SELECT CHARACTER")
+    val charSectionLabel = new Label(Messages.t("SELECT CHARACTER"))
     charSectionLabel.setStyle(sectionHeaderStyle)
 
     // Category filter tabs
     val tabsRow = new FlowPane(6, 6)
     tabsRow.setAlignment(Pos.CENTER_LEFT)
     for ((catName, _) <- categories) {
-      val tab = new Label(catName)
+      val tab = new Label(Messages.t(catName))
       tab.setStyle(if (catName == "All") tabActiveStyle else tabBaseStyle)
       tab.setOnMouseClicked(_ => selectCategory(catName))
       tab.setOnMouseEntered(_ => {
@@ -112,7 +113,7 @@ class CharacterSelectionPanel(
 
     // Search field
     val searchField = new TextField()
-    searchField.setPromptText("Search characters...")
+    searchField.setPromptText(Messages.t("Search characters..."))
     searchField.setStyle(
       "-fx-background-color: #1c1c34; -fx-text-fill: #ccdde8; -fx-prompt-text-fill: #556677; " +
       "-fx-background-radius: 8; -fx-border-color: rgba(255,255,255,0.1); -fx-border-radius: 8; " +
@@ -284,7 +285,9 @@ class CharacterSelectionPanel(
     filteredChars = if (searchQuery.isEmpty) {
       catFiltered
     } else {
-      catFiltered.filter(_.displayName.toLowerCase.contains(searchQuery))
+      catFiltered.filter(c =>
+        I18n.characterName(c).toLowerCase.contains(searchQuery) ||
+        c.displayName.toLowerCase.contains(searchQuery))
     }
 
     val glow = new DropShadow()
@@ -298,7 +301,7 @@ class CharacterSelectionPanel(
       val cellCanvas = new Canvas(44, 44)
       cellCanvases += (charId -> cellCanvas)
 
-      val nameLabel = new Label(charDef.displayName)
+      val nameLabel = new Label(I18n.characterName(charDef))
       nameLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 9))
       nameLabel.setTextFill(Color.web("#aabbcc"))
       nameLabel.setMaxWidth(60)
@@ -392,16 +395,16 @@ class CharacterSelectionPanel(
 
   private def updateDetailPanel(): Unit = {
     val charDef = CharacterDef.get(getSelectedId())
-    detailNameLabel.setText(charDef.displayName)
-    detailDescLabel.setText(charDef.description)
+    detailNameLabel.setText(I18n.characterName(charDef))
+    detailDescLabel.setText(I18n.characterDesc(charDef))
     animTick = 0
     dirIndex = 0
     drawDetailPreview()
 
     // Update ability rows
-    updateAbilityRow(primaryRow, "LMB", "Primary Attack", charDef.primaryProjectileType, 0, charDef)
-    updateAbilityRow(qRow, "Q", charDef.qAbility.name, charDef.qAbility.projectileType, charDef.qAbility.cooldownMs, charDef)
-    updateAbilityRow(eRow, "E", charDef.eAbility.name, charDef.eAbility.projectileType, charDef.eAbility.cooldownMs, charDef)
+    updateAbilityRow(primaryRow, "LMB", Messages.t("Primary Attack"), charDef.primaryProjectileType, 0, charDef)
+    updateAbilityRow(qRow, "Q", I18n.qName(charDef), charDef.qAbility.projectileType, charDef.qAbility.cooldownMs, charDef)
+    updateAbilityRow(eRow, "E", I18n.eName(charDef), charDef.eAbility.projectileType, charDef.eAbility.cooldownMs, charDef)
 
     renderAbilityCanvases()
   }

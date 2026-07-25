@@ -1,0 +1,12 @@
+load("@rules_scala//scala:scala.bzl", "scala_binary")
+
+# Dev tool for regenerating the English game-content i18n catalog. Not shipped.
+scala_binary(
+    name = "gencontent",
+    srcs = ["GenContentCatalog.scala"],
+    main_class = "com.gridgame.tools.GenContentCatalog",
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:com_google_code_gson_gson",
+    ],
+)

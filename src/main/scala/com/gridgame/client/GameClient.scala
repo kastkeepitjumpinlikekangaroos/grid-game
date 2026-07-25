@@ -1,5 +1,6 @@
 package com.gridgame.client
 
+import com.gridgame.client.i18n.{I18n, Messages}
 import com.gridgame.common.Constants
 import com.gridgame.common.model._
 import com.gridgame.common.observability.Attrs
@@ -1160,23 +1161,23 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         }
 
         // Add to kill feed (using character names)
-        val killerName = if (killerId.equals(localPlayerId)) "You" else {
+        val killerName = if (killerId.equals(localPlayerId)) Messages.t("You") else {
           val p = players.get(killerId)
-          if (p != null) CharacterDef.get(p.getCharacterId).displayName else killerId.toString.substring(0, 8)
+          if (p != null) I18n.characterName(CharacterDef.get(p.getCharacterId)) else killerId.toString.substring(0, 8)
         }
-        val victimName = if (victimId != null && victimId.equals(localPlayerId)) "You" else {
+        val victimName = if (victimId != null && victimId.equals(localPlayerId)) Messages.t("You") else {
           if (victimId != null) {
             val p = players.get(victimId)
-            if (p != null) CharacterDef.get(p.getCharacterId).displayName else victimId.toString.substring(0, 8)
+            if (p != null) I18n.characterName(CharacterDef.get(p.getCharacterId)) else victimId.toString.substring(0, 8)
           } else "?"
         }
 
         // Track who killed the local player (for death screen)
         if (victimId != null && victimId.equals(localPlayerId)) {
           val killerP = players.get(killerId)
-          lastKillerCharacterName = if (killerP != null) CharacterDef.get(killerP.getCharacterId).displayName else "?"
+          lastKillerCharacterName = if (killerP != null) I18n.characterName(CharacterDef.get(killerP.getCharacterId)) else "?"
         }
-        val feedText = killerName + " killed " + victimName
+        val feedText = Messages.t("{0} killed {1}", killerName, victimName)
         killFeed.add(Array(System.currentTimeMillis().asInstanceOf[AnyRef], killerName.asInstanceOf[AnyRef], victimName.asInstanceOf[AnyRef], feedText.asInstanceOf[AnyRef]))
         // Keep only last 5
         while (killFeed.size() > 5) killFeed.remove(0)
