@@ -1726,8 +1726,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       val dx = newPos.getX - oldPos.getX
       val dy = newPos.getY - oldPos.getY
 
-      // Detect teleport: large position jump (Manhattan distance > 3)
-      if (Math.abs(dx) + Math.abs(dy) > 3) {
+      // Detect teleport: large position jump (Manhattan distance > 3).
+      // Skip if the player was dead — a respawn also resets position to an
+      // unrelated point on the map and would otherwise be misread as a cast.
+      if (wasAlive && Math.abs(dx) + Math.abs(dy) > 3) {
         teleportAnimations.put(playerId, Array(
           System.currentTimeMillis(),
           oldPos.getX.toLong, oldPos.getY.toLong,
