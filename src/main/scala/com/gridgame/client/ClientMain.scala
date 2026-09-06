@@ -1,5 +1,6 @@
 package com.gridgame.client
 
+import com.gridgame.client.audio.AudioManager
 import com.gridgame.client.gl.{GLFWManager, GLGameRenderer, GLWindow}
 import com.gridgame.client.input.{ControllerHandler, GLKeyboardHandler, GLMouseHandler}
 import com.gridgame.client.ui.CharacterSelectionPanel
@@ -491,6 +492,10 @@ class ClientMain extends Application {
 
     fadeInScene(stage, root)
     stage.show()
+    AudioManager.playMenuMusic()
+    // Decode every sound now, on a background thread, so no WAV parsing or disk
+    // I/O ever lands mid-match on the render or packet threads.
+    AudioManager.preload()
   }
 
   private def startConnection(stage: Stage, serverHost: String, serverPort: Int,
@@ -1916,6 +1921,7 @@ class ClientMain extends Application {
     controllerHandler.init()
 
     glWindow.show()
+    AudioManager.playBattleMusic()
 
     // Game loop via AnimationTimer (fires on FX/main thread — required for GLFW on macOS)
     var lastFrameTime = 0L
@@ -1946,6 +1952,7 @@ class ClientMain extends Application {
             glWindow.destroy()
             Platform.runLater(() => {
               Platform.setImplicitExit(true)
+              AudioManager.stopMusic()
               client.disconnect()
               Platform.exit()
             })
@@ -1968,6 +1975,7 @@ class ClientMain extends Application {
             glWindow.destroy()
             Platform.runLater(() => {
               Platform.setImplicitExit(true)
+              AudioManager.stopMusic()
               client.disconnect()
               Platform.exit()
             })
@@ -1988,6 +1996,7 @@ class ClientMain extends Application {
         glRenderer.dispose()
         glWindow.destroy()
         Platform.setImplicitExit(true)
+        AudioManager.playMenuMusic()
         stage.show()
         showScoreboard(stage)
       })
@@ -2275,6 +2284,7 @@ class ClientMain extends Application {
     if (glWindow != null) glWindow.destroy()
     if (controllerHandler != null) controllerHandler.cleanup()
     if (client != null) client.disconnect()
+    AudioManager.shutdown()
     GLFWManager.terminate()
   }
 }

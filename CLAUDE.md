@@ -308,6 +308,79 @@ python3 scripts/generate_all_new_characters.py
 
 Each sprite sheet contains 4 directions x 4 animation frames.
 
+### Sound Effects & Music
+All audio is procedurally synthesized (numpy oscillators/noise, no samples or external
+audio libraries — zero licensing concerns) into `sounds/*.wav`, mirroring how sprites are
+generated.
+
+```bash
+# Requires numpy: pip install numpy
+python3 scripts/generate_sounds.py   # -> sounds/*.wav (80 files, ~5s)
+```
+
+`scripts/generate_sounds.py` is a small sound-design toolkit, not just tone+noise
+bursts — that distinction is what keeps sounds from reading as cheap beeps. It provides
+FM synthesis (`fm`), a time-varying resonant state-variable filter (`svf`, for sweeps)
+plus fast static resonant filters (`res_lp`/`res_bp`), `saturate`, `bitcrush`,
+convolution `reverb`, `delay_fx`, `chorus`, and vowel `formant` filters (what makes the
+wail/moan/growl sounds read as a creature rather than filtered noise). Every sound is
+layered as **transient → body → texture → tail**.
+
+Generators output mono; every sound then goes through the shared `master()` chain —
+`transient_shape` → `compress` → `sub_boost` → `stereoize` (decorrelated width) →
+`stereo_reverb` (separate impulse response per channel) → optional `auto_pan`/`ping_pong`
+→ `limit`. Per-sound `level`s give the mix real dynamics (a stinger is quiet, thunder is
+loud) instead of normalizing everything to the same loudness. Output is 16-bit **stereo**
+44.1kHz; SFX tails are trimmed at -52dB and capped at 2.2s, since long quiet tails cost
+file size but are inaudible under gameplay.
+
+Pitched attacks are tuned to **A minor**, the key of both music tracks, so a firefight
+stays harmonically coherent. `sounds/` is ~26MB, the largest asset directory — if that
+becomes a problem, the two music loops are ~8.5MB of it.
+
+- `sounds/atk_*.wav` — one sound per projectile-visual archetype. `AbilitySounds.scala`
+  maps each of the 150 `ProjectileType` ids to one of these files, mirroring the
+  many-to-one grouping already used by `GLProjectileRenderers.registry` (types that
+  share a renderer share a sound).
+- `sounds/spawn.wav`, `sounds/death.wav`, `sounds/dash.wav`, `sounds/teleport.wav`,
+  `sounds/phase_shift.wav` — non-projectile events/cast behaviors.
+- `sounds/hit_taken.wav` (you were hit), `sounds/hit_dealt.wav` (hitmarker — bright and
+  high-mid so it cuts through), `sounds/hit_other.wav` (someone else was hit, duller and
+  distance-attenuated), `sounds/explosion.wav` (explosive projectile despawn).
+- `sounds/music_menu.wav` (calm, loops through JavaFX UI screens) and
+  `sounds/music_battle.wav` (faster/more intense, loops during a match).
+- `client/audio/AudioManager.scala` **mixes in software onto a single
+  `SourceDataLine`** (no LWJGL/OpenAL dependency needed for 2D game audio). All
+  playback is best-effort — a missing device sets `initFailed` and every call
+  no-ops, so the game runs identically without sound hardware.
+
+  **Do not go back to a `Clip` per playback.** It was measured at ~6.4ms of CPU per
+  sound (native line acquisition + buffer copy + a thread per Clip) — 40-60% of a
+  core in a firefight, ~35 audio threads competing with the render thread, and
+  `getClip()/open()` stalling up to **96ms**, which lands directly on the render
+  thread because dash/teleport/phase-shift are triggered from the input handler.
+  Measured at 120 sounds/sec, Clip-per-play gave a 58ms worst frame; the mixer gives
+  4.4ms with 4 threads. Triggering a sound is now just claiming a voice slot
+  (~0.05ms median, 0.29ms worst) — no allocation, no native call, no thread.
+
+  Voices are capped at `MAX_VOICES` (24); when they are all busy the trigger is
+  dropped, which is correct since the mix is already saturated. Idle mixer cost is
+  ~1% of a core. `AudioManager.preload()` decodes every sound on a background thread
+  at startup so no WAV parsing or disk I/O lands mid-match.
+- **Pitch and pan are applied per voice in the mixer**, not via `AudioFormat` tricks
+  or `BALANCE`/`PAN` controls: `±7%` playback-rate jitter (`PITCH_SPREAD`, via
+  linear-interpolated resampling) so rapid fire isn't machine-gun identical, and
+  constant-power panning. Attack/hit/death sounds also attenuate by distance.
+- **Positional stereo**: sounds are panned by where they happened. Screen X in an
+  isometric projection is `(wx - wy)`, so `GameClient.panFromLocal` pans on that axis
+  rather than world X, scaled by `Constants.AUDIO_PAN_RANGE_CELLS`.
+  `hit_taken`/`hit_dealt` are deliberately left centred — they are about you, not
+  about a location in the arena.
+- If you add a new `ProjectileType`, add a matching entry to `AbilitySounds.scala`
+  (falls back to `atk_normal_bolt` if omitted). If you add a wholly new sound
+  archetype, add a generator function + entry in `scripts/generate_sounds.py` and
+  rerun it.
+
 ## Characters (112 total)
 
 Characters are defined across 8 categories in `CharacterId.scala` and `CharacterDef.scala`:

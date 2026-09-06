@@ -14,6 +14,10 @@ object Constants {
   // Camera zoom level (1.0 = default, 2.0 = 2x zoom)
   val CAMERA_ZOOM: Double = 1.6
 
+  // Screen-X offset (in cells, on the isometric (wx - wy) axis) at which a
+  // sound is panned fully to one side.
+  val AUDIO_PAN_RANGE_CELLS: Float = 22f
+
   // Isometric tile dimensions (2:1 ratio)
   val ISO_TILE_WIDTH: Int = 40
   val ISO_TILE_HEIGHT: Int = 20

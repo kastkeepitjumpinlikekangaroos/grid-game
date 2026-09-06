@@ -1,0 +1,5 @@
+filegroup(
+    name = "sound_files",
+    srcs = glob(["*.wav"]),
+    visibility = ["//visibility:public"],
+)

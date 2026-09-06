@@ -4,7 +4,7 @@ scala_binary(
     name = "client",
     main_class = "com.gridgame.client.Main",
     srcs = glob(["**/*.scala"]),
-    resources = ["//worlds:world_files", "//sprites:sprite_files", "//fonts:font_files", "//i18n:i18n_files"],
+    resources = ["//worlds:world_files", "//sprites:sprite_files", "//fonts:font_files", "//i18n:i18n_files", "//sounds:sound_files"],
     jvm_flags = [
         "-Xdock:name='Grid Game'",
         "-Dapple.awt.application.name='Grid Game'",
@@ -39,7 +39,7 @@ scala_binary(
     name = "client_windows",
     main_class = "com.gridgame.client.Main",
     srcs = glob(["**/*.scala"]),
-    resources = ["//worlds:world_files", "//sprites:sprite_files", "//fonts:font_files", "//i18n:i18n_files"],
+    resources = ["//worlds:world_files", "//sprites:sprite_files", "//fonts:font_files", "//i18n:i18n_files", "//sounds:sound_files"],
     deps = [
         "//src/main/scala/com/gridgame/common",
         "@maven//:com_google_code_gson_gson",

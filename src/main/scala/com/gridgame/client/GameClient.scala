@@ -1,5 +1,6 @@
 package com.gridgame.client
 
+import com.gridgame.client.audio.AudioManager
 import com.gridgame.client.i18n.{I18n, Messages}
 import com.gridgame.common.Constants
 import com.gridgame.common.model._
@@ -682,6 +683,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
     abilityDef.castBehavior match {
       case DashBuff(maxDistance, durationMs, _) =>
+        AudioManager.playDash()
         // Dash toward cursor, phased during dash (e.g. Raptor Swoop)
         val pos = localPosition.get()
         val dx = (mouseWorldX - pos.getX).toFloat
@@ -714,10 +716,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         }
 
       case PhaseShiftBuff(durationMs) =>
+        AudioManager.playPhaseShift()
         phasedUntil.set(now + durationMs)
         sendPositionUpdate(localPosition.get())
 
       case TeleportCast(_) =>
+        AudioManager.playTeleport()
         performBlink()
 
       case FanProjectile(count, fanAngle) =>
@@ -1177,6 +1181,17 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           val killerP = players.get(killerId)
           lastKillerCharacterName = if (killerP != null) I18n.characterName(CharacterDef.get(killerP.getCharacterId)) else "?"
         }
+        if (victimId != null) {
+          val victimPlayer = players.get(victimId)
+          val (distance, pan) =
+            if (victimPlayer != null) {
+              val vx = victimPlayer.getPosition.getX.toFloat
+              val vy = victimPlayer.getPosition.getY.toFloat
+              (distanceFromLocal(vx, vy), panFromLocal(vx, vy))
+            } else (0f, 0f)
+          AudioManager.playDeath(distance, pan)
+        }
+
         val feedText = Messages.t("{0} killed {1}", killerName, victimName)
         killFeed.add(Array(System.currentTimeMillis().asInstanceOf[AnyRef], killerName.asInstanceOf[AnyRef], victimName.asInstanceOf[AnyRef], feedText.asInstanceOf[AnyRef]))
         // Keep only last 5
@@ -1202,6 +1217,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
       case GameEvent.RESPAWN =>
         if (packet.getPlayerId.equals(localPlayerId)) {
+          AudioManager.playSpawn()
           isDead = false
           isRespawning = false
           localHealth.set(getSelectedCharacterMaxHealth)
@@ -1517,6 +1533,23 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     }
   }
 
+  /** Distance in grid cells from the local player — drives sound attenuation. */
+  private def distanceFromLocal(x: Float, y: Float): Float = {
+    val pos = localPosition.get()
+    val dx = x - pos.getX
+    val dy = y - pos.getY
+    Math.sqrt((dx * dx + dy * dy).toDouble).toFloat
+  }
+
+  /** Stereo pan (-1 left .. +1 right) for a world position. Screen X in an
+    * isometric projection is (wx - wy), so that — not world X — is the axis
+    * that maps to left/right for the listener. */
+  private def panFromLocal(x: Float, y: Float): Float = {
+    val pos = localPosition.get()
+    val screenDx = (x - pos.getX) - (y - pos.getY)
+    Math.max(-1f, Math.min(1f, screenDx / Constants.AUDIO_PAN_RANGE_CELLS))
+  }
+
   private def handleProjectileUpdate(packet: ProjectilePacket): Unit = {
     val projectileId = packet.getProjectileId
 
@@ -1535,6 +1568,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           packet.getProjectileType
         )
         projectiles.put(projectileId, projectile)
+        AudioManager.playAttack(packet.getProjectileType,
+          distanceFromLocal(packet.getX, packet.getY), panFromLocal(packet.getX, packet.getY))
         // Periodic cleanup: evict oldest entries to prevent unbounded growth
         // (incremental eviction avoids clearing all entries which could resurrect projectiles)
         if (recentlyRemovedProjectiles.size() > 500) {
@@ -1587,6 +1622,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           if (packet.getPlayerId.equals(localPlayerId)) {
             reduceAbilityCooldownOnHit(packet.getProjectileType)
           }
+
+          if (targetId.equals(localPlayerId)) AudioManager.playHitTaken()
+          else if (packet.getPlayerId.equals(localPlayerId)) AudioManager.playHitDealt()
+          else AudioManager.playHitOther(
+            distanceFromLocal(packet.getX, packet.getY), panFromLocal(packet.getX, packet.getY))
         }
 
         // AoE splash visual on hit
@@ -1608,6 +1648,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         val pDef = ProjectileDef.get(pType)
         val colorRGB = if (despawned != null) despawned.colorRGB else packet.getColorRGB
         if (pDef.isExplosive) {
+          AudioManager.playExplosion(
+            distanceFromLocal(packet.getX, packet.getY), panFromLocal(packet.getX, packet.getY))
           val blastRadius = pDef.explosionConfig.map(_.blastRadius).getOrElse(3f)
           explosionAnimations.put(projectileId, Array(
             System.currentTimeMillis(),
@@ -1710,6 +1752,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       localTeamId = packet.getTeamId
       localPosition.set(packet.getPosition)
       localHealth.set(packet.getHealth)
+      AudioManager.playSpawn()
     }
 
     println(s"GameClient: Player joined - ${player.getId.toString.substring(0, 8)} ('${player.getName}') at ${player.getPosition} with health ${player.getHealth} team=${packet.getTeamId}")
