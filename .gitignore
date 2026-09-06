@@ -14,3 +14,6 @@ MODULE.bazel.lock
 
 # Auth database
 game_accounts.db
+
+# Generated macOS .app bundles (scripts/build_macos_app.sh)
+/dist

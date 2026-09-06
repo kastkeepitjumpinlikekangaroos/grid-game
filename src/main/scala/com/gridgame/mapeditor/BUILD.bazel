@@ -5,6 +5,10 @@ scala_binary(
     main_class = "com.gridgame.mapeditor.Main",
     srcs = glob(["**/*.scala"]),
     resources = ["//sprites:sprite_files"],
+    jvm_flags = [
+        "-Xdock:name='Grid Game Map Editor'",
+        "-Dapple.awt.application.name='Grid Game Map Editor'",
+    ],
     deps = [
         "//src/main/scala/com/gridgame/common",
         "@maven//:com_google_code_gson_gson",

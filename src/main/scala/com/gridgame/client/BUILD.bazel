@@ -5,6 +5,10 @@ scala_binary(
     main_class = "com.gridgame.client.Main",
     srcs = glob(["**/*.scala"]),
     resources = ["//worlds:world_files", "//sprites:sprite_files", "//fonts:font_files", "//i18n:i18n_files"],
+    jvm_flags = [
+        "-Xdock:name='Grid Game'",
+        "-Dapple.awt.application.name='Grid Game'",
+    ],
     deps = [
         "//src/main/scala/com/gridgame/common",
         "@maven//:com_google_code_gson_gson",

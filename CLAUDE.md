@@ -32,6 +32,52 @@ GRIDGAME_TELEMETRY=1 bazel run //src/main/scala/com/gridgame/client:client
 bazel run //src/main/scala/com/gridgame/client:client -- --telemetry
 ```
 
+### macOS: proper app name/icon in Dock & Cmd+Tab
+
+`bazel run` launches the JVM directly, so macOS shows "java" as the app name/icon
+in the Dock, Cmd+Tab switcher, and Force Quit dialog — there is no supported Java
+API to override that for an unbundled process (see `ClientMain.setDockIcon` /
+`-Xdock:name` in `client/BUILD.bazel`, which only cover the title bar and best-effort
+Dock icon). To get "Grid Game" / "Grid Game Map Editor" with the wizard icon
+everywhere, build a real `.app` bundle via `jpackage`:
+
+```bash
+# Requires a JDK 14+ with jpackage on PATH (e.g. brew install openjdk)
+scripts/build_macos_app.sh client       # -> dist/macos/Grid Game.app
+scripts/build_macos_app.sh mapeditor    # -> dist/macos/Grid Game Map Editor.app
+
+open "dist/macos/Grid Game.app"
+```
+
+The script builds the target's `_deploy.jar` (already carries `sprites/`, `worlds/`,
+`fonts/`, `i18n/` on its classpath) and wraps it with `sprites/icon_wizard.icns` via
+`jpackage --type app-image`. `dist/` is gitignored — regenerate locally as needed.
+
+### Windows: standalone .exe with a bundled runtime
+
+The `_windows` Bazel targets (`client_windows`, `mapeditor_windows`) cross-build fine
+from any OS — Bazel just packages the Windows-native LWJGL/JavaFX jars onto the
+classpath. But turning that into a real `.exe` (bundled JRE, no separate Java install
+needed, our icon baked into the executable, optional Start Menu installer) requires
+`jpackage`, and **jpackage does not cross-compile** — it must run ON Windows, since it
+links a native Windows launcher against the local JDK's runtime image. This can't be
+produced from this (macOS) checkout; it needs to run on a Windows machine or a
+`windows-latest` CI runner.
+
+```powershell
+# On Windows, with a JDK 14+ (jpackage) and Bazel installed:
+python3 scripts\generate_icon.py                # -> sprites\icon_wizard.ico (cross-platform via Pillow)
+.\scripts\build_windows_exe.ps1                  # -> dist\windows\Grid Game\Grid Game.exe
+.\scripts\build_windows_exe.ps1 -Target mapeditor
+.\scripts\build_windows_exe.ps1 -Installer       # WiX Toolset v3 installer (Start Menu/desktop shortcut, uninstaller)
+```
+
+`-Installer` requires the WiX Toolset v3 (`candle.exe`/`light.exe`) on `PATH`; without
+it, the default `--type app-image` build still produces a fully standalone, icon'd,
+double-click-able `.exe` folder — just without an installer wizard. `sprites/icon_wizard.ico`
+is already committed (Pillow can write `.ico` cross-platform, unlike `.icns`), so only
+the jpackage step itself needs a Windows box.
+
 ## Architecture Overview
 
 ```
@@ -234,6 +280,18 @@ python3 scripts/generate_tiles.py
 - Flat (walkable) tiles: diamond at bottom 20px, upper area transparent
 - Elevated (non-walkable) tiles: top diamond + left/right side faces, bottom-aligned
 - If you add a new tile type to `Tile.scala`, also add its entry to the `TILES` list in this script and regenerate
+
+### Application Icon
+```bash
+python3 scripts/generate_icon.py   # -> sprites/icon_wizard_{128,256,1024}.png + sprites/icon_wizard.ico
+scripts/generate_icns.sh           # macOS-only: -> sprites/icon_wizard.icns (from the 1024 master)
+```
+Renders the wizard's front-facing frame (via `generate_wizard.py`'s `draw_wizard`) standalone,
+crops/centers it, and exports at icon sizes. Used for the JavaFX Stage/Taskbar icon
+(`ClientMain.loadAppIcons`/`setDockIcon`, `MapEditorApp`), the GLFW in-game window icon
+(`GLWindow.setIcon`), the `.icns` consumed by `scripts/build_macos_app.sh`, and the
+`.ico` consumed by `scripts/build_windows_exe.ps1`. Pillow writes `.ico` directly
+(cross-platform); `.icns` needs macOS's `sips`/`iconutil`, hence the separate script.
 
 ### Character Sprites
 The original 11 characters each have a dedicated generator script (`scripts/generate_<name>.py`). The remaining 100 characters are generated in batch using shared utilities.

@@ -161,7 +161,12 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     if (lobby == null) return
 
     if (lobby.isHost(playerId)) {
-      // Host left - close lobby
+      // Host left - close lobby. If a match was in progress, stop its GameInstance first —
+      // otherwise its executors and OTel async gauge callbacks (items/bots/projectiles.active)
+      // are orphaned and keep running/reporting forever, colliding with the next match's gauges.
+      if (lobby.status == LobbyStatus.IN_GAME && lobby.gameInstance != null) {
+        lobby.gameInstance.stop()
+      }
       val closePacket = new LobbyActionPacket(
         server.getNextSequenceNumber, playerId, LobbyAction.LOBBY_CLOSED, lobby.id
       )

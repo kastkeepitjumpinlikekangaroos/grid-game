@@ -1,10 +1,15 @@
 package com.gridgame.client.gl
 
 import org.lwjgl.glfw.GLFW._
-import org.lwjgl.glfw.GLFWErrorCallback
+import org.lwjgl.glfw.{GLFWErrorCallback, GLFWImage}
 import org.lwjgl.opengl.GL
 import org.lwjgl.opengl.GL11._
+import org.lwjgl.stb.STBImage._
+import org.lwjgl.system.MemoryStack
 import org.lwjgl.system.MemoryUtil.NULL
+import org.lwjgl.BufferUtils
+
+import java.io.{File, FileInputStream, InputStream}
 
 /**
  * Manages a GLFW window with an OpenGL 3.3 core context for game rendering.
@@ -38,6 +43,8 @@ class GLWindow(title: String, initialWidth: Int, initialHeight: Int) {
 
     window = glfwCreateWindow(initialWidth, initialHeight, title, NULL, NULL)
     if (window == NULL) throw new RuntimeException("Failed to create GLFW window")
+
+    setIcon(Seq("sprites/icon_wizard_256.png", "sprites/icon_wizard_128.png"))
 
     // Set up resize callback
     glfwSetWindowSizeCallback(window, (_, w, h) => {
@@ -74,6 +81,52 @@ class GLWindow(title: String, initialWidth: Int, initialHeight: Int) {
     glEnable(GL_BLEND)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
     glDisable(GL_DEPTH_TEST)
+  }
+
+  /** Set the window/taskbar icon (no-op on macOS, where the dock icon comes from the app process instead). */
+  def setIcon(relativePaths: Seq[String]): Unit = {
+    if (window == NULL) return
+    val loaded = relativePaths.flatMap(loadIconPixels)
+    if (loaded.isEmpty) return
+    val stack = MemoryStack.stackPush()
+    try {
+      val images = GLFWImage.malloc(loaded.size, stack)
+      loaded.zipWithIndex.foreach { case ((w, h, pixels), i) =>
+        images.get(i).set(w, h, pixels)
+      }
+      glfwSetWindowIcon(window, images)
+    } finally {
+      stack.pop()
+    }
+    loaded.foreach { case (_, _, pixels) => stbi_image_free(pixels) }
+  }
+
+  private def loadIconPixels(relativePath: String): Option[(Int, Int, java.nio.ByteBuffer)] = {
+    val stream = resolveIconStream(relativePath)
+    if (stream == null) return None
+    val bytes = try stream.readAllBytes() finally stream.close()
+    val buf = BufferUtils.createByteBuffer(bytes.length)
+    buf.put(bytes)
+    buf.flip()
+    val w = BufferUtils.createIntBuffer(1)
+    val h = BufferUtils.createIntBuffer(1)
+    val channels = BufferUtils.createIntBuffer(1)
+    stbi_set_flip_vertically_on_load(false)
+    val pixels = stbi_load_from_memory(buf, w, h, channels, 4)
+    if (pixels == null) None else Some((w.get(0), h.get(0), pixels))
+  }
+
+  private def resolveIconStream(relativePath: String): InputStream = {
+    val direct = new File(relativePath)
+    if (direct.exists()) return new FileInputStream(direct)
+
+    val buildWorkDir = System.getenv("BUILD_WORKING_DIRECTORY")
+    if (buildWorkDir != null) {
+      val fromWorkDir = new File(buildWorkDir, relativePath)
+      if (fromWorkDir.exists()) return new FileInputStream(fromWorkDir)
+    }
+
+    getClass.getClassLoader.getResourceAsStream(relativePath)
   }
 
   def show(): Unit = {

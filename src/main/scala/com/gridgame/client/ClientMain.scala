@@ -28,6 +28,7 @@ import javafx.scene.control.ListCell
 import javafx.scene.control.ListView
 import javafx.scene.control.PasswordField
 import javafx.scene.control.TextField
+import javafx.scene.image.Image
 import javafx.util.Callback
 import javafx.scene.input.KeyCode
 import javafx.scene.input.KeyEvent
@@ -202,6 +203,9 @@ class ClientMain extends Application {
     Messages.init()
     Messages.onLocaleChanged = () => showWelcomeScreen(primaryStage)
 
+    loadAppIcons(primaryStage)
+    setDockIcon()
+
     primaryStage.setTitle("Grid Game - Multiplayer 2D")
     primaryStage.setResizable(true)
     val bounds = Screen.getPrimary.getVisualBounds
@@ -211,6 +215,46 @@ class ClientMain extends Application {
     primaryStage.setHeight(bounds.getHeight)
 
     showWelcomeScreen(primaryStage)
+  }
+
+  /** Sets the title bar / taskbar icon (Windows/Linux; macOS uses the dock icon instead, see setDockIcon). */
+  private def loadAppIcons(stage: Stage): Unit = {
+    val images = Seq("sprites/icon_wizard_256.png", "sprites/icon_wizard_128.png").flatMap { path =>
+      val stream = resolveIconStream(path)
+      if (stream == null) None else Some(new Image(stream))
+    }
+    stage.getIcons.addAll(images: _*)
+  }
+
+  /** Sets the macOS dock icon via the AWT Taskbar API (no-op on platforms without a taskbar/dock). */
+  private def setDockIcon(): Unit = {
+    try {
+      if (java.awt.Taskbar.isTaskbarSupported) {
+        val taskbar = java.awt.Taskbar.getTaskbar
+        if (taskbar.isSupported(java.awt.Taskbar.Feature.ICON_IMAGE)) {
+          val stream = resolveIconStream("sprites/icon_wizard_256.png")
+          if (stream != null) {
+            val img = try javax.imageio.ImageIO.read(stream) finally stream.close()
+            if (img != null) taskbar.setIconImage(img)
+          }
+        }
+      }
+    } catch {
+      case _: Throwable => // Taskbar API unavailable on this platform; ignore
+    }
+  }
+
+  private def resolveIconStream(relativePath: String): java.io.InputStream = {
+    val direct = new java.io.File(relativePath)
+    if (direct.exists()) return new java.io.FileInputStream(direct)
+
+    val buildWorkDir = System.getenv("BUILD_WORKING_DIRECTORY")
+    if (buildWorkDir != null) {
+      val fromWorkDir = new java.io.File(buildWorkDir, relativePath)
+      if (fromWorkDir.exists()) return new java.io.FileInputStream(fromWorkDir)
+    }
+
+    getClass.getClassLoader.getResourceAsStream(relativePath)
   }
 
   private def showWelcomeScreen(stage: Stage): Unit = {

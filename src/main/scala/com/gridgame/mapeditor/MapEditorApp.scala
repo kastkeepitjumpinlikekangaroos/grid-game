@@ -3,12 +3,16 @@ package com.gridgame.mapeditor
 import javafx.animation.AnimationTimer
 import javafx.application.Application
 import javafx.scene.Scene
+import javafx.scene.image.Image
 import javafx.scene.layout.{BorderPane, VBox}
 import javafx.stage.{Screen, Stage}
 
 class MapEditorApp extends Application {
 
   override def start(primaryStage: Stage): Unit = {
+    loadAppIcons(primaryStage)
+    setDockIcon()
+
     primaryStage.setTitle("Map Editor - Untitled")
 
     val state = new EditorState()
@@ -73,5 +77,45 @@ class MapEditorApp extends Application {
     primaryStage.setOnCloseRequest(_ => {
       renderLoop.stop()
     })
+  }
+
+  /** Sets the title bar / taskbar icon (Windows/Linux; macOS uses the dock icon instead, see setDockIcon). */
+  private def loadAppIcons(stage: Stage): Unit = {
+    val images = Seq("sprites/icon_wizard_256.png", "sprites/icon_wizard_128.png").flatMap { path =>
+      val stream = resolveIconStream(path)
+      if (stream == null) None else Some(new Image(stream))
+    }
+    stage.getIcons.addAll(images: _*)
+  }
+
+  /** Sets the macOS dock icon via the AWT Taskbar API (no-op on platforms without a taskbar/dock). */
+  private def setDockIcon(): Unit = {
+    try {
+      if (java.awt.Taskbar.isTaskbarSupported) {
+        val taskbar = java.awt.Taskbar.getTaskbar
+        if (taskbar.isSupported(java.awt.Taskbar.Feature.ICON_IMAGE)) {
+          val stream = resolveIconStream("sprites/icon_wizard_256.png")
+          if (stream != null) {
+            val img = try javax.imageio.ImageIO.read(stream) finally stream.close()
+            if (img != null) taskbar.setIconImage(img)
+          }
+        }
+      }
+    } catch {
+      case _: Throwable => // Taskbar API unavailable on this platform; ignore
+    }
+  }
+
+  private def resolveIconStream(relativePath: String): java.io.InputStream = {
+    val direct = new java.io.File(relativePath)
+    if (direct.exists()) return new java.io.FileInputStream(direct)
+
+    val buildWorkDir = System.getenv("BUILD_WORKING_DIRECTORY")
+    if (buildWorkDir != null) {
+      val fromWorkDir = new java.io.File(buildWorkDir, relativePath)
+      if (fromWorkDir.exists()) return new java.io.FileInputStream(fromWorkDir)
+    }
+
+    getClass.getClassLoader.getResourceAsStream(relativePath)
   }
 }
