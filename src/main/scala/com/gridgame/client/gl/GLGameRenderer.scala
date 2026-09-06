@@ -203,6 +203,14 @@ class GLGameRenderer(val client: GameClient) {
   private val _chatB = new Array[Float](MAX_CHAT_DISPLAY)
   private var _chatCount = 0
 
+  // Pre-allocated polygon scratch shared by the status-effect / buff renderers
+  private val _fxXs = new Array[Float](8)
+  private val _fxYs = new Array[Float](8)
+  // Screen-space facing vector per Direction.id (Down, Up, Left, Right), i.e. the world
+  // step run through the isometric mapping ((dx - dy), (dx + dy) / 2) and normalised.
+  private val _dirSX = Array(-0.894f, 0.894f, -0.894f, 0.894f)
+  private val _dirSY = Array(0.447f, -0.447f, -0.447f, 0.447f)
+
   // Pre-allocated arrays for item shapes
   private val _starXs = new Array[Float](10)
   private val _starYs = new Array[Float](10)
@@ -335,16 +343,39 @@ class GLGameRenderer(val client: GameClient) {
       // Ground glow
       shapeBatch.fillOvalSoft(cx, cy + hs * 0.3f, hs * 2.5f, hs * 0.7f, ir, ig, ib, 0.22f * glowPulse, 0f, 14)
       shapeBatch.fillOvalSoft(cx, cy, hs * 2.8f, hs * 2f, ir, ig, ib, 0.1f * glowPulse, 0f, 14)
-      // Sparkles
+      // Light shafts sweeping off the pickup — two tapered wedges rotating slowly, so an
+      // item reads as radiating light instead of sitting inside a glow blob
       var j = 0
+      while (j < 2) {
+        val ra = bobPhase * 0.35f + j * 3.1415927f
+        val rc = Math.cos(ra).toFloat; val rs = Math.sin(ra).toFloat * 0.55f
+        val rl = hs * (2.6f + 0.5f * Math.sin(bobPhase * 1.7f + j).toFloat)
+        _fxXs(0) = cx - rs * hs * 0.35f; _fxYs(0) = cy + rc * hs * 0.2f
+        _fxXs(1) = cx + rs * hs * 0.35f; _fxYs(1) = cy - rc * hs * 0.2f
+        _fxXs(2) = cx + rc * rl;         _fxYs(2) = cy + rs * rl
+        shapeBatch.fillPolygon(_fxXs, _fxYs, 3, ir, ig, ib, 0.09f * glowPulse)
+        j += 1
+      }
+      // Orbiting twinkles
+      j = 0
       while (j < 3) {
-        val sparkAngle = bobPhase * 0.8f + j * (2 * Math.PI / 3).toFloat
+        val sparkAngle = bobPhase * 0.8f + j * 2.0943951f
         val sparkDist = hs * 1.1f
         val sx = cx + sparkDist * Math.cos(sparkAngle).toFloat
         val sy = cy + sparkDist * Math.sin(sparkAngle).toFloat * 0.6f
-        val sparkAlpha = (0.3 + 0.4 * Math.sin(bobPhase * 2.5 + j * 2.1)).toFloat
-        val sparkSize = (1.5 + Math.sin(bobPhase * 3.0 + j) * 0.7).toFloat
-        shapeBatch.fillDot(sx, sy, sparkSize, 1f, 1f, 1f, clamp(sparkAlpha))
+        val sparkAlpha = (0.28 + 0.34 * Math.sin(bobPhase * 2.5 + j * 2.1)).toFloat
+        val sparkSize = (2.6 + Math.sin(bobPhase * 3.0 + j) * 1.1).toFloat
+        shapeBatch.fillStarFlare(sx, sy, sparkSize * 2.2f, sparkSize * 0.5f,
+          bobPhase * 0.6f + j, 0.5f, 1f, 1f, 0.95f, clamp(sparkAlpha))
+        j += 1
+      }
+      // Motes rising off the item
+      j = 0
+      while (j < 2) {
+        val mp = (bobPhase * 0.07f + j * 0.5f) % 1f
+        shapeBatch.fillDot(cx + Math.sin(bobPhase * 0.9f + j * 2.2f).toFloat * hs * 0.8f,
+          cy - hs * 0.4f - mp * hs * 2.4f, 1.1f, ir * 0.5f + 0.5f, ig * 0.5f + 0.5f, ib * 0.5f + 0.5f,
+          0.28f * (1f - mp))
         j += 1
       }
       i += 1
@@ -743,6 +774,17 @@ class GLGameRenderer(val client: GameClient) {
   private def hash(seed: Int): Double = {
     val x = Math.sin(seed.toDouble * 127.1 + 311.7) * 43758.5453
     x - x.floor
+  }
+
+  /**
+   * Stable 0..1 value per (tile, salt) — integer mix, no trig, so the tile-overlay pass can
+   * call it several times per tile. Used to give each lava vent / ice nucleus / bubble its
+   * own position and timing, so a field of one tile type doesn't animate in lockstep.
+   */
+  @inline private def tileHash(wx: Int, wy: Int, salt: Int): Float = {
+    var h = wx * 374761393 + wy * 668265263 + salt * 1911520717
+    h = (h ^ (h >>> 13)) * 1274126177
+    ((h ^ (h >>> 16)) & 0xFFFF) * (1f / 65535f)
   }
 
   private def renderBackground(background: String): Unit = {
@@ -1194,7 +1236,7 @@ class GLGameRenderer(val client: GameClient) {
 
     // Pre-player non-additive effects
     if (!playerIsPhased) {
-      if (player.hasShield) drawShieldBubble(screenX, spriteCenter)
+      if (player.hasShield) drawShieldBubble(screenX, spriteCenter, client.getPlayerHitTime(playerId))
     }
 
     drawShadow(screenX, screenY)
@@ -1209,7 +1251,7 @@ class GLGameRenderer(val client: GameClient) {
         plife = 0.35f + rng.nextFloat() * 0.2f,
         pr = 0.55f, pg = 0.50f, pb = 0.42f, palpha = 0.18f,
         psize = 1.5f + rng.nextFloat() * 1.5f,
-        pgravity = 5f, soft = true
+        pgravity = 5f, shrink = false, soft = true, pkind = ParticleSystem.KIND_SMOKE
       )
     }
 
@@ -1256,7 +1298,7 @@ class GLGameRenderer(val client: GameClient) {
     if (player.isFrozen) drawFrozenEffect(screenX, spriteCenter)
     if (player.isRooted) drawRootedEffect(screenX, spriteCenter)
     if (player.isSlowed) drawSlowedEffect(screenX, spriteCenter)
-    if (player.hasSpeedBoost) drawSpeedBoostEffect(screenX, spriteCenter)
+    if (player.hasSpeedBoost) drawSpeedBoostEffect(screenX, spriteCenter, player.getDirection.id)
 
     // Defer additive effects to batch pass
     var fxFlags = 0
@@ -1315,7 +1357,7 @@ class GLGameRenderer(val client: GameClient) {
     if (client.isFrozen) lightSystem.addLight(screenX.toFloat, spriteCenter.toFloat, 45f, 0.5f, 0.8f, 1f, 0.12f)
 
     if (!localIsPhased) {
-      if (client.hasShield) drawShieldBubble(screenX, spriteCenter)
+      if (client.hasShield) drawShieldBubble(screenX, spriteCenter, client.getPlayerHitTime(client.getLocalPlayerId))
     }
 
     // Dash afterimage
@@ -1392,7 +1434,7 @@ class GLGameRenderer(val client: GameClient) {
     if (client.isFrozen) drawFrozenEffect(screenX, spriteCenter)
     if (client.isRooted) drawRootedEffect(screenX, spriteCenter)
     if (client.isSlowed) drawSlowedEffect(screenX, spriteCenter)
-    if (client.hasSpeedBoost) drawSpeedBoostEffect(screenX, spriteCenter)
+    if (client.hasSpeedBoost) drawSpeedBoostEffect(screenX, spriteCenter, client.getLocalDirection.id)
 
     // Defer additive effects to batch pass
     var fxFlags = 0
@@ -1465,39 +1507,80 @@ class GLGameRenderer(val client: GameClient) {
   //  STATUS EFFECTS (5f)
   // ═══════════════════════════════════════════════════════════════════
 
-  private def drawShieldBubble(cx: Double, cy: Double): Unit = {
+  /**
+   * Shield — a faceted force field turning around the player: three longitude ribs that
+   * squeeze as they rotate (so the shell reads as a sphere, not a circle), two latitude
+   * rings, hex cells flickering across the surface, and a shockwave when damage lands on it.
+   * Drawn behind the sprite, so it is deliberately rim-weighted rather than filled.
+   */
+  private def drawShieldBubble(cx: Double, cy: Double, hitTime: Long): Unit = {
     beginShapes()
-    val pulse = (0.7 + 0.3 * Math.sin(animationTick * 0.1)).toFloat
-    shapeBatch.fillOvalSoft(cx.toFloat, cy.toFloat, 22f, 18f, 0.3f, 0.6f, 1f, 0.05f * pulse, 0.15f * pulse, 24)
-    // Use strokeOval which leverages pre-computed sin/cos LUTs (avoids 48 Math.sin/cos calls)
-    shapeBatch.strokeOval(cx.toFloat, cy.toFloat, 22f, 18f, 1.5f, 0.4f, 0.7f, 1f, 0.25f * pulse, 24)
-  }
+    val x = cx.toFloat; val y = cy.toFloat
+    val t = _animTickF
+    val pulse = (0.7 + 0.3 * Math.sin(t * 0.1)).toFloat
+    // Impact reaction — the shell swells and brightens for 320ms after being hit
+    val impact = if (hitTime > 0) {
+      val el = (_frameTimeMs - hitTime).toFloat
+      if (el < 320f) 1f - el / 320f else 0f
+    } else 0f
+    val rx = 23f + impact * 3f
+    val ry = 19f + impact * 2f
 
-  private def drawGemGlow(cx: Double, cy: Double): Unit = {
-    beginShapes()
-    shapeBatch.setAdditiveBlend(true)
-    val pulse = (0.7 + 0.3 * Math.sin(animationTick * 0.08)).toFloat
-    shapeBatch.fillOvalSoft(cx.toFloat, cy.toFloat, 18f, 14f, 0f, 0.9f, 0.8f, 0.12f * pulse, 0f, 16)
-    shapeBatch.setAdditiveBlend(false)
-  }
+    // Refractive body: nearly clear at the centre, brightening toward the rim
+    shapeBatch.fillOvalSoft(x, y, rx, ry, 0.35f, 0.65f, 1f, 0.02f, 0.10f + impact * 0.14f, 20)
+    // Energy pooling where the shell meets the ground
+    shapeBatch.fillOvalSoft(x, y + ry * 0.72f, rx * 0.85f, ry * 0.30f, 0.4f, 0.75f, 1f, 0.16f * pulse, 0f, 12)
 
-  private def drawChargingEffect(cx: Double, cy: Double, chargeLevel: Int): Unit = {
-    if (chargeLevel <= 0) return
-    val pct = chargeLevel / 100f
-    beginShapes()
-    shapeBatch.setAdditiveBlend(true)
-    val ringR = 12f + pct * 8f
-    val pulse = (0.8 + 0.2 * Math.sin(animationTick * 0.15)).toFloat
-    shapeBatch.fillOvalSoft(cx.toFloat, cy.toFloat, ringR, ringR * 0.7f, 1f, 0.8f * (1 - pct * 0.5f), 0.2f, 0.1f * pct * pulse, 0f, 20)
-    shapeBatch.setAdditiveBlend(false)
-  }
+    // Longitude ribs — |cos(phase)| squeezes each ellipse toward edge-on as it turns
+    val spin = t * 0.022f
+    var i = 0
+    while (i < 3) {
+      val ph = spin + i * 1.0471976f
+      val squeeze = Math.abs(Math.cos(ph)).toFloat
+      val ribRx = squeeze * rx
+      val a = (0.09f + 0.15f * (1f - squeeze)) * pulse + impact * 0.22f
+      if (ribRx > 1.5f) shapeBatch.strokeOval(x, y, ribRx, ry, 1.2f, 0.55f, 0.85f, 1f, clamp(a), 12)
+      i += 1
+    }
+    // Latitude rings
+    shapeBatch.strokeOval(x, y - ry * 0.42f, rx * 0.72f, ry * 0.30f, 1f, 0.5f, 0.8f, 1f,
+      clamp((0.10f + impact * 0.2f) * pulse), 12)
+    shapeBatch.strokeOval(x, y + ry * 0.34f, rx * 0.86f, ry * 0.34f, 1f, 0.5f, 0.8f, 1f,
+      clamp((0.09f + impact * 0.2f) * pulse), 12)
 
-  private def drawPhasedEffect(cx: Double, cy: Double): Unit = {
-    beginShapes()
-    shapeBatch.setAdditiveBlend(true)
-    val shimmer = (0.5 + 0.5 * Math.sin(animationTick * 0.12)).toFloat
-    shapeBatch.fillOvalSoft(cx.toFloat, cy.toFloat, 16f, 14f, 0.5f, 0.3f, 0.8f, 0.08f * shimmer, 0f, 16)
-    shapeBatch.setAdditiveBlend(false)
+    // Hex cells lighting up across the surface
+    i = 0
+    while (i < 4) {
+      val flick = Math.sin(t * 0.05f + i * 1.9f).toFloat
+      if (flick > 0.55f) {
+        val fa = (flick - 0.55f) / 0.45f
+        val ang = i * 1.5707963f + t * 0.012f
+        val fx = x + Math.cos(ang).toFloat * rx * 0.55f
+        val fy = y + Math.sin(ang).toFloat * ry * 0.62f
+        var v = 0
+        while (v < 6) {
+          val va = v * 1.0471976f + 0.3f
+          _fxXs(v) = fx + Math.cos(va).toFloat * 5.5f
+          _fxYs(v) = fy + Math.sin(va).toFloat * 4.4f
+          v += 1
+        }
+        shapeBatch.fillPolygon(_fxXs, _fxYs, 6, 0.6f, 0.85f, 1f, 0.09f * fa)
+        shapeBatch.strokePolygon(_fxXs, _fxYs, 6, 0.8f, 0.75f, 0.95f, 1f, 0.22f * fa)
+      }
+      i += 1
+    }
+
+    // Rim outline + a brighter arc on the key-light side (upper left)
+    shapeBatch.strokeOval(x, y, rx, ry, 1.4f, 0.5f, 0.8f, 1f, clamp((0.20f + impact * 0.4f) * pulse), 20)
+    shapeBatch.strokeArc(x, y, rx, ry, 3.4f, 1.5f, 2.2f, 0.85f, 0.95f, 1f,
+      clamp((0.28f + impact * 0.35f) * pulse), 8)
+
+    // Shockwave racing off the shell after a hit
+    if (impact > 0f) {
+      val ringT = 1f - impact
+      shapeBatch.strokeOval(x, y, rx * (1f + ringT * 0.9f), ry * (1f + ringT * 0.9f),
+        2.5f * impact, 0.8f, 0.92f, 1f, 0.5f * impact, 16)
+    }
   }
 
   private def drawFrozenEffect(cx: Double, cy: Double): Unit = {
@@ -1834,15 +1917,60 @@ class GLGameRenderer(val client: GameClient) {
     ; sm += 1 } }
   }
 
-  private def drawSpeedBoostEffect(cx: Double, cy: Double): Unit = {
+  /**
+   * Speed boost — swept chevrons, a ground ribbon and kicked-up dust, all streaming off the
+   * player's trailing side. Oriented by facing (through the isometric mapping) so the wake
+   * points the right way instead of always to screen-left.
+   */
+  private def drawSpeedBoostEffect(cx: Double, cy: Double, dirId: Int): Unit = {
     beginShapes()
+    val x = cx.toFloat; val y = cy.toFloat
+    val t = _animTickF
+    val d = if (dirId >= 0 && dirId < 4) dirId else 0
+    // Trailing direction (opposite of facing) and its perpendicular, in screen space
+    val bx = -_dirSX(d); val by = -_dirSY(d)
+    val px = -by; val py = bx
+
+    // Speed lines streaming off the body, staggered laterally and in time
     var i = 0
+    while (i < 4) {
+      val ph = ((t * 0.11f + i * 0.25f) % 1f)
+      val lat = (i - 1.5f) * 6f              // lateral offset across the body
+      val start = 4f + ph * 10f
+      val len = 13f * (1f - ph * 0.45f)
+      val a = (1f - ph) * 0.42f
+      val ox = x + px * lat + by * 3f        // slight vertical bias so lines sit on the torso
+      val oy = y + py * lat
+      shapeBatch.strokeLineSoft(ox + bx * start, oy + by * start,
+        ox + bx * (start + len), oy + by * (start + len), 2.2f * (1f - ph * 0.4f),
+        0.45f, 0.85f, 1f, a)
+      i += 1
+    }
+
+    // Chevrons pointing the way they're travelling, sliding backward down the wake
+    i = 0
+    while (i < 2) {
+      val ph = ((t * 0.08f + i * 0.5f) % 1f)
+      val dist = 10f + ph * 20f
+      val a = (1f - ph) * (1f - ph) * 0.55f
+      val arm = 11f - ph * 3f
+      val apexX = x + bx * dist; val apexY = y + by * dist
+      val w = 2.6f * (1f - ph * 0.4f)
+      shapeBatch.strokeLineSoft(apexX, apexY, apexX + bx * arm + px * arm * 0.75f,
+        apexY + by * arm + py * arm * 0.75f, w, 0.5f, 0.88f, 1f, a)
+      shapeBatch.strokeLineSoft(apexX, apexY, apexX + bx * arm - px * arm * 0.75f,
+        apexY + by * arm - py * arm * 0.75f, w, 0.5f, 0.88f, 1f, a)
+      i += 1
+    }
+
+    // Dust kicked up along the wake, hugging the ground
+    val gy = y + 20f
+    i = 0
     while (i < 3) {
-      val offset = i * 5f
-      shapeBatch.strokeLine(
-        cx.toFloat - 8 - offset, cy.toFloat + 4,
-        cx.toFloat - 14 - offset, cy.toFloat + 4,
-        1.5f, 0.2f, 0.8f, 1f, 0.3f - i * 0.08f)
+      val dp = ((t * 0.05f + i * 0.34f) % 1f)
+      shapeBatch.fillOvalSoft(x + bx * (8f + dp * 22f) + px * (i - 1) * 4f,
+        gy + by * (4f + dp * 9f) - dp * 5f,
+        4f + dp * 8f, 2.5f + dp * 4f, 0.62f, 0.60f, 0.52f, 0.22f * (1f - dp), 0f, 8)
       i += 1
     }
   }
@@ -1960,35 +2088,182 @@ class GLGameRenderer(val client: GameClient) {
     ; d += 1 } }
   }
 
-  private def drawCastFlash(cx: Double, cy: Double): Unit = {
-    val castTime = client.getLastCastTime
-    if (castTime <= 0) return
-    val elapsed = _frameTimeMs - castTime
-    if (elapsed > 200) return
-    val fadeOut = (1.0 - elapsed / 200.0).toFloat
-    beginShapes()
-    shapeBatch.setAdditiveBlend(true)
-    shapeBatch.fillOvalSoft(cx.toFloat, cy.toFloat, 14f, 10f, 1f, 1f, 0.8f, 0.3f * fadeOut, 0f, 16)
-    shapeBatch.setAdditiveBlend(false)
-  }
+  // ── Additive buff effects ─────────────────────────────────────────────
+  // These run inside flushDeferredAdditiveFx's single additive pass, so they never toggle
+  // blend mode or call beginShapes themselves.
 
-  // Inner methods for deferred additive rendering (no blend toggle, no beginShapes)
+  /**
+   * Gem boost — crystal shards orbiting on an isometric ellipse (scaled by depth so they
+   * pass in front of and behind the player), motes of value drifting off the top, and a
+   * twinkle at the crown.
+   */
   private def drawGemGlowInner(cx: Double, cy: Double): Unit = {
-    val pulse = (0.7 + 0.3 * Math.sin(animationTick * 0.08)).toFloat
-    shapeBatch.fillOvalSoft(cx.toFloat, cy.toFloat, 18f, 14f, 0f, 0.9f, 0.8f, 0.12f * pulse, 0f, 16)
+    val x = cx.toFloat; val y = cy.toFloat
+    val t = _animTickF
+    val pulse = (0.7 + 0.3 * Math.sin(t * 0.08)).toFloat
+    shapeBatch.fillOvalSoft(x, y, 19f, 15f, 0f, 0.9f, 0.8f, 0.09f * pulse, 0f, 14)
+
+    var i = 0
+    while (i < 3) {
+      val ang = t * 0.045f + i * 2.0943951f
+      val ca = Math.cos(ang).toFloat; val sa = Math.sin(ang).toFloat
+      val ox = x + ca * 20f
+      val oy = y + sa * 9f - 2f
+      val depth = 0.65f + 0.35f * (0.5f + 0.5f * sa) // nearer the viewer (lower) = larger
+      val h = 7f * depth; val w = 3.4f * depth
+      _fxXs(0) = ox;     _fxYs(0) = oy - h
+      _fxXs(1) = ox + w; _fxYs(1) = oy
+      _fxXs(2) = ox;     _fxYs(2) = oy + h
+      _fxXs(3) = ox - w; _fxYs(3) = oy
+      val a = clamp((0.20f + 0.13f * sa) * pulse)
+      shapeBatch.fillPolygon(_fxXs, _fxYs, 4, 0.2f, 1f, 0.85f, a)
+      // Facet highlight down one edge
+      shapeBatch.strokeLine(ox, oy - h, ox + w * 0.6f, oy + h * 0.2f, 1f, 0.9f, 1f, 0.95f, clamp(a * 1.4f))
+      shapeBatch.fillOvalSoft(ox, oy, w * 2.6f, w * 2.6f, 0.3f, 1f, 0.8f, clamp(a * 0.5f), 0f, 6)
+      i += 1
+    }
+
+    i = 0
+    while (i < 3) {
+      val mp = (t * 0.02f + i * 0.37f) % 1f
+      val mx = x + Math.sin(t * 0.06f + i * 2.3f).toFloat * 7f
+      val my = y + 10f - mp * 26f
+      shapeBatch.fillDot(mx, my, 1.2f + (1f - mp), 0.6f, 1f, 0.85f, (1f - mp) * 0.32f * pulse)
+      i += 1
+    }
+
+    val tw = Math.sin(t * 0.11f).toFloat
+    if (tw > 0.3f) {
+      shapeBatch.fillStarFlare(x, y - 14f, 9f, 1.8f, 0.4f, 0.5f, 0.75f, 1f, 0.9f,
+        0.32f * ((tw - 0.3f) / 0.7f))
+    }
   }
 
+  /**
+   * Charging — an arc gauge that literally fills with charge, motes spiralling in to feed
+   * the core, a tightening ground rune, then crackle above 70% and a ready-pulse at full.
+   */
   private def drawChargingEffectInner(cx: Double, cy: Double, chargeLevel: Int): Unit = {
     if (chargeLevel <= 0) return
+    val x = cx.toFloat; val y = cy.toFloat
+    val t = _animTickF
     val pct = chargeLevel / 100f
-    val ringR = 12f + pct * 8f
-    val pulse = (0.8 + 0.2 * Math.sin(animationTick * 0.15)).toFloat
-    shapeBatch.fillOvalSoft(cx.toFloat, cy.toFloat, ringR, ringR * 0.7f, 1f, 0.8f * (1 - pct * 0.5f), 0.2f, 0.1f * pct * pulse, 0f, 20)
+    val pulse = (0.8 + 0.2 * Math.sin(t * 0.15)).toFloat
+    // Heat ramp: gold while building → white-hot at full
+    val cr = 1f
+    val cg = 0.75f + pct * 0.25f
+    val cb = 0.25f + pct * 0.6f
+
+    // Core bulge
+    val coreR = 6f + pct * 7f
+    shapeBatch.fillOvalSoft(x, y, coreR * 2.2f, coreR * 1.6f, cr, cg, cb, 0.07f * pct * pulse, 0f, 16)
+    shapeBatch.fillOvalSoft(x, y, coreR, coreR * 0.8f, 1f, 1f, 0.92f, 0.15f * pct * pulse, 0f, 12)
+
+    // Gauge: band sweeping clockwise from the top, so charge is readable at a glance
+    val gRx = 17f; val gRy = 13f
+    val sweep = pct * 6.2831853f
+    val segs = Math.max(2, (sweep * 3f).toInt)
+    shapeBatch.fillArcBand(x, y, gRx, gRy, gRx + 2.4f, gRy + 2f, -1.5707963f, sweep, segs,
+      cr, cg, cb, 0.26f * pulse, 0.38f * pulse)
+    // Spark riding the head of the gauge
+    val headA = -1.5707963f + sweep
+    shapeBatch.fillStarFlare(x + gRx * Math.cos(headA).toFloat, y + gRy * Math.sin(headA).toFloat,
+      7f + pct * 4f, 1.6f, t * 0.2f, 0.55f, 1f, 1f, 0.9f, 0.5f * pulse)
+
+    // Motes spiralling inward — more of them, faster, as charge builds
+    val motes = 3 + (pct * 4f).toInt
+    var i = 0
+    while (i < motes) {
+      val mt = (t * (0.012f + pct * 0.02f) + i.toFloat / motes) % 1f // 1 = far out, 0 = arrived
+      val rad = 30f * mt
+      val ang = t * 0.05f + i * 2.4f + (1f - mt) * 3.5f
+      val ca = Math.cos(ang).toFloat; val sa = Math.sin(ang).toFloat * 0.75f
+      val ma = (1f - mt) * 0.42f * pct
+      shapeBatch.strokeLine(x + ca * rad, y + sa * rad, x + ca * rad * 0.82f, y + sa * rad * 0.82f,
+        1.3f, cr, cg, cb, clamp(ma * 0.7f))
+      shapeBatch.fillDot(x + ca * rad, y + sa * rad, 1.3f + (1f - mt) * 1.2f, 1f, 1f, 0.9f, clamp(ma))
+      i += 1
+    }
+
+    // Ground rune ring with rising ticks, tightening as charge builds
+    val groundY = y + 22f
+    val gr = 26f - pct * 5f
+    shapeBatch.strokeOval(x, groundY, gr, gr * 0.42f, 1.2f, cr, cg, cb, 0.13f * pct * pulse, 16)
+    i = 0
+    while (i < 6) {
+      val ta = i * 1.0471976f - t * 0.03f
+      val tx = x + Math.cos(ta).toFloat * gr
+      val ty = groundY + Math.sin(ta).toFloat * gr * 0.42f
+      shapeBatch.strokeLine(tx, ty, tx, ty - 3f - pct * 4f, 1.4f, cr, cg, cb, clamp(0.20f * pct * pulse))
+      i += 1
+    }
+
+    // Crackle above 70%
+    if (pct > 0.7f) {
+      val ci = (pct - 0.7f) / 0.3f
+      i = 0
+      while (i < 3) {
+        val ang = t * 0.16f + i * 2.0943951f
+        val len = 12f + 8f * Math.sin(t * 0.31f + i * 1.7f).toFloat * ci
+        val ca = Math.cos(ang).toFloat; val sa = Math.sin(ang).toFloat
+        val mx = x + ca * len * 0.55f + Math.sin(t * 0.4f + i).toFloat * 3f
+        val my = y + sa * len * 0.4f + Math.cos(t * 0.37f + i).toFloat * 2.5f
+        shapeBatch.strokeLine(x, y, mx, my, 1.6f * ci, 1f, 1f, 0.95f, clamp(0.36f * ci))
+        shapeBatch.strokeLine(mx, my, x + ca * len, y + sa * len * 0.7f, 1.2f * ci, 1f, 1f, 1f, clamp(0.28f * ci))
+        i += 1
+      }
+    }
+
+    // Fully charged: ready-pulse breathing outward
+    if (pct >= 0.99f) {
+      val rp = (t * 0.04f) % 1f
+      shapeBatch.strokeOval(x, y, 18f + rp * 16f, 14f + rp * 12f, 2f * (1f - rp),
+        1f, 1f, 0.9f, 0.32f * (1f - rp), 16)
+    }
   }
 
+  /**
+   * Phased — a void rim (dark centre, glowing edge) with a displaced phase echo sliding
+   * through it, scanline bands drifting up the body, and wisps peeling off the silhouette.
+   */
   private def drawPhasedEffectInner(cx: Double, cy: Double): Unit = {
-    val shimmer = (0.5 + 0.5 * Math.sin(animationTick * 0.12)).toFloat
-    shapeBatch.fillOvalSoft(cx.toFloat, cy.toFloat, 16f, 14f, 0.5f, 0.3f, 0.8f, 0.08f * shimmer, 0f, 16)
+    val x = cx.toFloat; val y = cy.toFloat
+    val t = _animTickF
+    val shimmer = (0.5 + 0.5 * Math.sin(t * 0.12)).toFloat
+
+    // Rim only — a filled body would light the whole silhouette additively and bury the
+    // sprite underneath. A thin band leaves the middle clear, so they read as see-through.
+    val ra = 0.13f + 0.07f * shimmer
+    shapeBatch.fillArcBand(x, y, 15f, 18f, 18f, 21.5f, 0f, 6.2831853f, 20,
+      0.5f, 0.3f, 0.85f, ra, ra)
+
+    // Phase echo — two chromatically split outlines sliding apart and back
+    val ex = Math.sin(t * 0.09f).toFloat * 5f
+    val ea = 0.10f * (0.5f + shimmer * 0.5f)
+    shapeBatch.strokeOval(x + ex, y, 11f, 17f, 1.4f, 0.6f, 0.4f, 1f, ea, 14)
+    shapeBatch.strokeOval(x - ex, y, 11f, 17f, 1.4f, 0.35f, 0.65f, 1f, ea * 0.85f, 14)
+
+    // Scanline bands travelling up the body
+    var i = 0
+    while (i < 4) {
+      val bp = (t * 0.03f + i * 0.25f) % 1f
+      val env = Math.sin(bp * 3.1415927f).toFloat
+      val bw = 15f * (0.45f + 0.55f * env)
+      shapeBatch.fillRect(x - bw, y + 20f - bp * 42f, bw * 2f, 1.4f, 0.75f, 0.6f, 1f, 0.15f * env)
+      i += 1
+    }
+
+    // Wisps dissolving off the edge
+    i = 0
+    while (i < 5) {
+      val wp = (t * 0.025f + i * 0.2f) % 1f
+      val wa = i * 1.2566371f + t * 0.02f
+      val wx = x + Math.cos(wa).toFloat * (9f + wp * 12f)
+      val wy = y - wp * 16f + Math.sin(wa).toFloat * 6f
+      val ws = 1f - wp * 0.5f
+      shapeBatch.fillOvalSoft(wx, wy, 2.5f * ws, 3.5f * ws, 0.6f, 0.45f, 1f, 0.16f * (1f - wp), 0f, 6)
+      i += 1
+    }
   }
 
   private def drawBurnEffectInner(cx: Double, cy: Double): Unit = {
@@ -2006,13 +2281,49 @@ class GLGameRenderer(val client: GameClient) {
     drawHitEffectCore(cx.toFloat, cy.toFloat, progress, fadeOut, hitTime, hr, hg, hb, ddx, ddy)
   }
 
+  /**
+   * Cast flash — a collapsing core, an expanding shockwave band, radial spikes of
+   * alternating length and sparks thrown clear. 200ms, so it has to land in a few frames.
+   */
   private def drawCastFlashInner(cx: Double, cy: Double): Unit = {
     val castTime = client.getLastCastTime
     if (castTime <= 0) return
     val elapsed = _frameTimeMs - castTime
     if (elapsed > 200) return
-    val fadeOut = (1.0 - elapsed / 200.0).toFloat
-    shapeBatch.fillOvalSoft(cx.toFloat, cy.toFloat, 14f, 10f, 1f, 1f, 0.8f, 0.3f * fadeOut, 0f, 16)
+    val x = cx.toFloat; val y = cy.toFloat
+    val prog = (elapsed / 200.0).toFloat
+    val fade = 1f - prog
+
+    // Collapsing core
+    val coreS = 1f - prog * 0.6f
+    shapeBatch.fillOvalSoft(x, y, 15f * coreS, 11f * coreS, 1f, 1f, 0.85f, 0.32f * fade, 0f, 14)
+
+    // Expanding shockwave, thinning as it goes
+    val rr = 8f + prog * 26f
+    val rw = 3f * fade
+    shapeBatch.fillArcBand(x, y, rr, rr * 0.72f, rr + rw, (rr + rw) * 0.72f,
+      0f, 6.2831853f, 16, 1f, 0.95f, 0.7f, 0.28f * fade, 0.28f * fade)
+
+    // Radial spikes
+    var i = 0
+    while (i < 8) {
+      val ang = i * 0.7853982f + 0.2f
+      val len = (14f + (if ((i & 1) == 0) 10f else 0f)) * (0.4f + prog * 1.1f)
+      val ca = Math.cos(ang).toFloat; val sa = Math.sin(ang).toFloat * 0.7f
+      shapeBatch.strokeLineSoft(x + ca * 4f, y + sa * 4f, x + ca * len, y + sa * len,
+        2.6f * fade, 1f, 0.97f, 0.8f, 0.32f * fade)
+      i += 1
+    }
+
+    // Sparks outrunning the ring
+    i = 0
+    while (i < 6) {
+      val ang = i * 1.0471976f + 0.5f
+      val d = 10f + prog * 30f
+      shapeBatch.fillDot(x + Math.cos(ang).toFloat * d, y + Math.sin(ang).toFloat * d * 0.7f,
+        1.6f * fade, 1f, 1f, 0.9f, 0.38f * fade)
+      i += 1
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -4622,53 +4933,77 @@ class GLGameRenderer(val client: GameClient) {
       val sx = worldToScreenX(wx, wy).toFloat
       val sy = worldToScreenY(wx, wy).toFloat
       tid match {
-        case 1 | 7 => // Water / DeepWater — shimmer lines + specular highlight
+        case 1 | 7 => // Water / DeepWater — shimmer, glints, spreading ripple rings
           val phase = time * 0.04f + wx * 1.1f + wy * 0.7f
-          // Moving shimmer lines across diamond
-          var j = 0
-          while (j < 3) {
-            val linePhase = phase + j * 2.1f
-            val t = (linePhase % 3.0f) / 3.0f
-            val lx1 = sx - HW * (1f - t) + HW * t
-            val ly1 = sy - HH * t + HH * (1f - t) * 0.3f
-            val lx2 = lx1 + HW * 0.4f
-            val ly2 = ly1 + HH * 0.2f
-            val shimmerA = (0.3f * Math.sin(linePhase * 1.5).toFloat).abs
-            shapeBatch.strokeLine(lx1, ly1, lx2, ly2, 1f, 0.6f, 0.8f, 1f, shimmerA)
-            j += 1
-          }
-          // Specular highlight dot
-          val specPhase = time * 0.03f + wx * 2.3f + wy * 1.7f
-          val specA = (0.15f + 0.15f * Math.sin(specPhase * 2.0)).toFloat
-          shapeBatch.fillOval(sx + Math.sin(specPhase).toFloat * 5f, sy + Math.cos(specPhase * 0.7).toFloat * 2f,
-            2.5f, 1.5f, 0.8f, 0.95f, 1f, specA, 6)
-          // Animated caustic bright spots
-          var ci = 0
-          while (ci < 2) {
-            val caustPhase = time * 0.025f + wx * 3.1f + wy * 2.7f + ci * 4.2f
-            val cxOff = Math.sin(caustPhase).toFloat * 8f
-            val cyOff = Math.cos(caustPhase * 0.7f).toFloat * 4f
-            val ca = (0.08f + 0.06f * Math.sin(caustPhase * 1.8f)).toFloat
-            shapeBatch.fillOvalSoft(sx + cxOff, sy + cyOff, 6f, 3f, 0.5f, 0.8f, 1f, ca, 0f, 8)
-            ci += 1
-          }
-
-        case 10 => // Lava — pulsing orange glow + crack lines
-          val lavaPhase = time * 0.05f + wx * 0.9f + wy * 1.3f
-          val glowA = (0.10f + 0.06f * Math.sin(lavaPhase)).toFloat
-          shapeBatch.fillOvalSoft(sx, sy, HW.toFloat * 0.8f, HH.toFloat * 0.6f, 1f, 0.5f, 0.1f, glowA, 0f, 10)
-          // Bright crack lines
+          // Shimmer crescents sliding along the surface
           var j = 0
           while (j < 2) {
-            val crackPhase = lavaPhase + j * 1.5f
-            val ca = (0.2f + 0.1f * Math.sin(crackPhase * 2.0)).toFloat
-            val cx1 = sx - 6 + Math.sin(crackPhase + j).toFloat * 4
-            val cy1 = sy - 2 + Math.cos(crackPhase * 0.8).toFloat * 2
-            val cx2 = cx1 + 8 + Math.sin(crackPhase * 1.3).toFloat * 3
-            val cy2 = cy1 + 3
-            shapeBatch.strokeLine(cx1, cy1, cx2, cy2, 1.5f, 1f, 0.85f, 0.3f, ca)
+            val lp = phase + j * 2.1f
+            val t = (lp % 3.0f) / 3.0f
+            val lx = sx - HW * 0.55f + HW * 1.1f * t
+            val ly = sy + HH * 0.35f - HH * 0.7f * t
+            val sa = 0.24f * Math.abs(Math.sin(lp * 1.5).toFloat)
+            shapeBatch.strokeLineSoft(lx - 5f, ly + 1.4f, lx + 5f, ly - 1.4f, 1.6f, 0.6f, 0.85f, 1f, sa)
             j += 1
           }
+          // Sun glint skating over the water — a flare, not a dot
+          val gp = time * 0.03f + wx * 2.3f + wy * 1.7f
+          val glint = Math.sin(gp * 2.0).toFloat
+          if (glint > 0.4f) {
+            shapeBatch.fillStarFlare(sx + Math.sin(gp).toFloat * 6f, sy + Math.cos(gp * 0.7).toFloat * 2.5f,
+              5.5f * glint, 1.1f, 0.5f, 0.55f, 0.85f, 0.97f, 1f, 0.28f * glint)
+          }
+          // Ripple ring spreading from a per-tile drip — staggered so only some tiles ripple
+          val rt = (time * 0.012f + tileHash(wx, wy, 3)) % 1f
+          if (rt < 0.55f) {
+            val k = rt / 0.55f
+            val rr = 2f + k * 13f
+            val ra = 0.16f * (1f - k)
+            shapeBatch.fillArcBand(sx, sy, rr, rr * 0.45f, rr + 1.7f, (rr + 1.7f) * 0.45f,
+              0f, 6.2831853f, 6, 0.65f, 0.9f, 1f, ra, ra)
+          }
+
+        case 10 => // Lava — molten vent with glowing crust seams, blisters that pop, heat haze
+          val lp = time * 0.05f + wx * 0.9f + wy * 1.3f
+          shapeBatch.fillOvalSoft(sx, sy, HW.toFloat * 0.8f, HH.toFloat * 0.6f, 1f, 0.45f, 0.1f,
+            (0.09f + 0.05f * Math.sin(lp)).toFloat, 0f, 10)
+          // Vent, offset per tile so a lava field isn't a grid of identical cells
+          val vx = sx + (tileHash(wx, wy, 1) - 0.5f) * 11f
+          val vy = sy + (tileHash(wx, wy, 2) - 0.5f) * 5f
+          // Crust seams: wedges radiating from the vent, brightest where the magma shows
+          var j = 0
+          while (j < 3) {
+            val a = tileHash(wx, wy, j + 4) * 6.2831853f + Math.sin(lp * 0.4f + j).toFloat * 0.25f
+            val len = 9f + 4f * Math.sin(lp * 1.7f + j * 2.1f).toFloat
+            val ca = Math.cos(a).toFloat; val sa = Math.sin(a).toFloat * 0.5f
+            val heat = clamp(0.24f + 0.13f * Math.sin(lp * 2.3f + j).toFloat)
+            // Wide dull crust wedge with a hot core wedge inside it
+            _fxXs(0) = vx + sa * 4.5f; _fxYs(0) = vy - ca * 2.2f
+            _fxXs(1) = vx - sa * 4.5f; _fxYs(1) = vy + ca * 2.2f
+            _fxXs(2) = vx + ca * len;  _fxYs(2) = vy + sa * len
+            shapeBatch.fillPolygon(_fxXs, _fxYs, 3, 1f, 0.5f, 0.12f, heat)
+            _fxXs(0) = vx + sa * 1.9f; _fxYs(0) = vy - ca * 0.95f
+            _fxXs(1) = vx - sa * 1.9f; _fxYs(1) = vy + ca * 0.95f
+            _fxXs(2) = vx + ca * len * 0.8f; _fxYs(2) = vy + sa * len * 0.8f
+            shapeBatch.fillPolygon(_fxXs, _fxYs, 3, 1f, 0.88f, 0.45f, heat * 0.9f)
+            j += 1
+          }
+          // Blister swelling at the vent, then bursting into a ring
+          val bt = (time * 0.02f + tileHash(wx, wy, 7)) % 1f
+          if (bt < 0.7f) {
+            val k = bt / 0.7f
+            val br = 1.5f + k * 4f
+            shapeBatch.fillOvalSoft(vx, vy, br, br * 0.6f, 1f, 0.85f, 0.4f, 0.28f * (1f - k * 0.4f), 0f, 8)
+          } else {
+            val k = (bt - 0.7f) / 0.3f
+            val rr = 5f + k * 7f
+            shapeBatch.fillArcBand(vx, vy, rr, rr * 0.5f, rr + 1.6f, (rr + 1.6f) * 0.5f,
+              0f, 6.2831853f, 6, 1f, 0.6f, 0.2f, 0.26f * (1f - k), 0.26f * (1f - k))
+          }
+          // Heat haze lifting off the surface
+          val ht = (time * 0.018f + tileHash(wx, wy, 11)) % 1f
+          shapeBatch.fillOvalSoft(vx + Math.sin(lp * 0.8f).toFloat * 3f, vy - 4f - ht * 13f,
+            4f + ht * 4f, 2f + ht * 3f, 1f, 0.55f, 0.25f, 0.10f * (1f - ht), 0f, 8)
           // Occasional upward lava ember particles
           if (rng.nextFloat() < 0.02f) {
             val ex = sx + rng.nextFloat() * 16f - 8f
@@ -4678,55 +5013,146 @@ class GLGameRenderer(val client: GameClient) {
               plife = 0.6f + rng.nextFloat() * 0.4f,
               pr = 1f, pg = 0.5f + rng.nextFloat() * 0.3f, pb = 0.1f,
               palpha = 0.7f, psize = 1.5f + rng.nextFloat(),
-              pgravity = -5f, additive = true, shrink = true)
+              pgravity = -5f, additive = true, shrink = true, pkind = ParticleSystem.KIND_STREAK)
           }
 
-        case 9 => // Ice — flashing sparkle points
-          val icePhase = time * 0.08f + wx * 3.7f + wy * 2.3f
+        case 9 => // Ice — growing frost needles, a sheen sweep, twinkling glints
+          val ip = time * 0.08f + wx * 3.7f + wy * 2.3f
+          val nx = sx + (tileHash(wx, wy, 1) - 0.5f) * 10f
+          val ny = sy + (tileHash(wx, wy, 2) - 0.5f) * 4f
+          // Frost needles radiating from a nucleus, breathing in and out
           var j = 0
           while (j < 3) {
-            val sparkPhase = icePhase + j * 2.094f
-            val flash = Math.max(0f, Math.sin(sparkPhase * 1.5).toFloat)
-            if (flash > 0.3f) {
-              // Deterministic positions based on tile coords
-              val offX = ((wx * 13 + wy * 7 + j * 17) % 11 - 5).toFloat
-              val offY = ((wx * 7 + wy * 11 + j * 23) % 7 - 3).toFloat * 0.5f
-              shapeBatch.fillOval(sx + offX, sy + offY, 1.5f, 1.5f, 0.85f, 0.95f, 1f, flash * 0.5f, 4)
+            val a = tileHash(wx, wy, j + 3) * 6.2831853f
+            val len = 5f + 3.5f * Math.sin(ip * 0.6f + j * 2.1f).toFloat
+            val ca = Math.cos(a).toFloat; val sa = Math.sin(a).toFloat * 0.5f
+            _fxXs(0) = nx + sa * 2.6f; _fxYs(0) = ny - ca * 1.3f
+            _fxXs(1) = nx - sa * 2.6f; _fxYs(1) = ny + ca * 1.3f
+            _fxXs(2) = nx + ca * len;  _fxYs(2) = ny + sa * len
+            shapeBatch.fillPolygon(_fxXs, _fxYs, 3, 0.72f, 0.9f, 1f, 0.22f)
+            // Bright spine along the needle
+            shapeBatch.strokeLine(nx, ny, nx + ca * len * 0.9f, ny + sa * len * 0.9f, 1f,
+              0.92f, 0.98f, 1f, 0.24f)
+            j += 1
+          }
+          shapeBatch.fillOvalSoft(nx, ny, 4.5f, 3f, 0.8f, 0.94f, 1f, 0.18f, 0f, 8)
+          // Sheen sweeping across the facet
+          val st = (time * 0.02f + tileHash(wx, wy, 9)) % 1f
+          if (st < 0.35f) {
+            val k = st / 0.35f
+            val bx = sx - HW * 0.6f + HW * 1.2f * k
+            val ba = 0.20f * Math.sin(k * 3.1415927f).toFloat
+            shapeBatch.strokeLineSoft(bx - 4f, sy + 4f, bx + 4f, sy - 4f, 2.2f, 0.85f, 0.96f, 1f, ba)
+          }
+          // Glints on the crystal faces
+          j = 0
+          while (j < 2) {
+            val flash = Math.sin(ip * 1.5f + j * 2.9f).toFloat
+            if (flash > 0.55f) {
+              val offX = (tileHash(wx, wy, j + 12) - 0.5f) * 14f
+              val offY = (tileHash(wx, wy, j + 14) - 0.5f) * 6f
+              shapeBatch.fillStarFlare(sx + offX, sy + offY, 4.5f, 1f, 0.7f, 0.5f,
+                0.9f, 0.97f, 1f, 0.34f * (flash - 0.55f) / 0.45f)
             }
             j += 1
           }
 
-        case 24 => // Crystal — prismatic hue cycling glow
-          val crystPhase = time * 0.03f + wx * 1.3f + wy * 0.9f
-          val cr = (0.5f + 0.5f * Math.sin(crystPhase)).toFloat
-          val cg = (0.5f + 0.5f * Math.sin(crystPhase + 2.094f)).toFloat
-          val cb = (0.5f + 0.5f * Math.sin(crystPhase + 4.189f)).toFloat
-          shapeBatch.fillOvalSoft(sx, sy, HW.toFloat * 0.6f, HH.toFloat * 0.5f, cr, cg, cb, 0.10f, 0f, 10)
+        case 24 => // Crystal — prismatic facet cluster with a rotating light shaft
+          val cp = time * 0.03f + wx * 1.3f + wy * 0.9f
+          val cr = (0.5f + 0.5f * Math.sin(cp)).toFloat
+          val cg = (0.5f + 0.5f * Math.sin(cp + 2.0943951f)).toFloat
+          val cb = (0.5f + 0.5f * Math.sin(cp + 4.1887902f)).toFloat
+          shapeBatch.fillOvalSoft(sx, sy, HW.toFloat * 0.6f, HH.toFloat * 0.5f, cr, cg, cb, 0.08f, 0f, 10)
+          // Three facets, each refracting a different part of the spectrum
+          var j = 0
+          while (j < 3) {
+            val a = j * 2.0943951f + cp * 0.25f
+            val ca = Math.cos(a).toFloat; val sa = Math.sin(a).toFloat * 0.5f
+            val fr = (0.5f + 0.5f * Math.sin(cp + j * 2.0943951f)).toFloat
+            val fg = (0.5f + 0.5f * Math.sin(cp + j * 2.0943951f + 2.0943951f)).toFloat
+            val fb = (0.5f + 0.5f * Math.sin(cp + j * 2.0943951f + 4.1887902f)).toFloat
+            val len = 8.5f
+            _fxXs(0) = sx;                _fxYs(0) = sy
+            _fxXs(1) = sx + ca * len - sa * 3f; _fxYs(1) = sy + sa * len + ca * 1.5f
+            _fxXs(2) = sx + ca * len + sa * 3f; _fxYs(2) = sy + sa * len - ca * 1.5f
+            shapeBatch.fillPolygon(_fxXs, _fxYs, 3, fr, fg, fb, 0.16f)
+            j += 1
+          }
+          // Light shaft sweeping off the cluster
+          val shaftA = cp * 0.6f
+          val sc = Math.cos(shaftA).toFloat; val ss = Math.sin(shaftA).toFloat * 0.5f
+          _fxXs(0) = sx - ss * 2f; _fxYs(0) = sy + sc * 1f
+          _fxXs(1) = sx + ss * 2f; _fxYs(1) = sy - sc * 1f
+          _fxXs(2) = sx + sc * 16f; _fxYs(2) = sy + ss * 16f
+          shapeBatch.fillPolygon(_fxXs, _fxYs, 3, 1f, 1f, 1f, 0.10f)
+          // Twinkle at the apex
+          val tw = Math.sin(cp * 2.2f).toFloat
+          if (tw > 0.5f) shapeBatch.fillStarFlare(sx, sy - 3f, 7f, 1.3f, cp, 0.5f, 1f, 1f, 1f, 0.3f * tw)
 
-        case 18 => // Toxic — bubbling green glow pulse
-          val toxPhase = time * 0.06f + wx * 1.7f + wy * 2.1f
-          val bubbleA = (0.06f + 0.04f * Math.sin(toxPhase)).toFloat
-          shapeBatch.fillOvalSoft(sx, sy, HW.toFloat * 0.7f, HH.toFloat * 0.5f, 0.2f, 0.9f, 0.1f, bubbleA, 0f, 10)
-          // Rising bubble
-          val bubbleY = sy - ((time * 0.3f + wx * 5) % 8)
-          val bubbleSize = 1.5f + Math.sin(toxPhase * 2).toFloat
-          shapeBatch.fillOval(sx + Math.sin(toxPhase * 1.5).toFloat * 3, bubbleY,
-            bubbleSize, bubbleSize, 0.3f, 1f, 0.2f, 0.15f, 4)
+        case 18 => // Toxic — bubbles surfacing and popping, sheen swirl, drifting spores
+          val tp = time * 0.06f + wx * 1.7f + wy * 2.1f
+          shapeBatch.fillOvalSoft(sx, sy, HW.toFloat * 0.7f, HH.toFloat * 0.5f, 0.2f, 0.9f, 0.1f,
+            (0.05f + 0.04f * Math.sin(tp)).toFloat, 0f, 10)
+          // Bubbles: rise, swell, then burst into a ring
+          var j = 0
+          while (j < 3) {
+            val bt = (time * 0.016f + tileHash(wx, wy, j + 1)) % 1f
+            val bx = sx + (tileHash(wx, wy, j + 5) - 0.5f) * 15f
+            val by = sy + (tileHash(wx, wy, j + 8) - 0.5f) * 6f
+            if (bt < 0.75f) {
+              val k = bt / 0.75f
+              val br = 1.2f + k * 3.2f
+              shapeBatch.strokeOval(bx, by - k * 2f, br, br * 0.75f, 1f, 0.5f, 1f, 0.35f, 0.24f, 8)
+              shapeBatch.fillOvalSoft(bx - br * 0.3f, by - k * 2f - br * 0.3f, br * 0.5f, br * 0.4f,
+                0.8f, 1f, 0.6f, 0.20f, 0f, 6)
+            } else {
+              val k = (bt - 0.75f) / 0.25f
+              val rr = 3.5f + k * 5f
+              shapeBatch.fillArcBand(bx, by - 1.5f, rr, rr * 0.5f, rr + 1.3f, (rr + 1.3f) * 0.5f,
+                0f, 6.2831853f, 6, 0.55f, 1f, 0.3f, 0.22f * (1f - k), 0.22f * (1f - k))
+            }
+            j += 1
+          }
+          // Spores drifting off the pool
+          j = 0
+          while (j < 2) {
+            val spT = (time * 0.01f + tileHash(wx, wy, j + 16)) % 1f
+            shapeBatch.fillDot(sx + Math.sin(tp * 0.7f + j * 2f).toFloat * 7f, sy - 2f - spT * 14f,
+              1.1f, 0.6f, 1f, 0.4f, 0.16f * (1f - spT))
+            j += 1
+          }
 
-        case 15 => // EnergyField — electric arc flicker
-          val ePhase = time * 0.12f + wx * 2.1f + wy * 1.3f
-          val flicker = if (Math.sin(ePhase * 3.0) > 0.2) 1f else 0.3f
-          val arcA = 0.12f * flicker
-          // Small electric arc
-          val ax1 = sx - 5 + Math.sin(ePhase).toFloat * 3
-          val ay1 = sy - 2
-          val ax2 = sx + 5 + Math.cos(ePhase * 1.3).toFloat * 3
-          val ay2 = sy + 1
-          val amid = sx + Math.sin(ePhase * 5).toFloat * 4
-          shapeBatch.strokeLine(ax1, ay1, amid, (ay1 + ay2) / 2 + Math.sin(ePhase * 7).toFloat * 2,
-            1f, 0.6f, 0.3f, 1f, arcA)
-          shapeBatch.strokeLine(amid, (ay1 + ay2) / 2 + Math.sin(ePhase * 7).toFloat * 2, ax2, ay2,
-            1f, 0.6f, 0.3f, 1f, arcA)
+        case 15 => // EnergyField — forked arcs strung between anchor nodes over a hex glow
+          val ep = time * 0.12f + wx * 2.1f + wy * 1.3f
+          val flicker = if (Math.sin(ep * 3.0) > 0.2) 1f else 0.35f
+          // Containment hex pulsing on the tile floor
+          val hexPulse = 0.06f + 0.04f * Math.sin(ep * 0.5f).toFloat
+          var v = 0
+          while (v < 6) {
+            val va = v * 1.0471976f
+            _fxXs(v) = sx + Math.cos(va).toFloat * 13f
+            _fxYs(v) = sy + Math.sin(va).toFloat * 6.5f
+            v += 1
+          }
+          shapeBatch.strokePolygon(_fxXs, _fxYs, 6, 1f, 0.55f, 0.3f, 1f, hexPulse * flicker)
+          // Three anchor nodes with jagged arcs strung between them
+          var j = 0
+          while (j < 3) {
+            val na = j * 2.0943951f + ep * 0.1f
+            val ax = sx + Math.cos(na).toFloat * 9f
+            val ay = sy + Math.sin(na).toFloat * 4.5f
+            val nb = (j + 1) % 3 * 2.0943951f + ep * 0.1f
+            val bx = sx + Math.cos(nb).toFloat * 9f
+            val by = sy + Math.sin(nb).toFloat * 4.5f
+            // Arc: two segments kinked off the midpoint, jittering every frame
+            val mx = (ax + bx) * 0.5f + Math.sin(ep * 5f + j * 2.3f).toFloat * 4f
+            val my = (ay + by) * 0.5f + Math.cos(ep * 7f + j * 1.7f).toFloat * 2.5f
+            val arcA = 0.16f * flicker
+            shapeBatch.strokeLine(ax, ay, mx, my, 1.1f, 0.65f, 0.35f, 1f, arcA)
+            shapeBatch.strokeLine(mx, my, bx, by, 1.1f, 0.65f, 0.35f, 1f, arcA)
+            shapeBatch.fillDot(ax, ay, 1.6f, 0.85f, 0.7f, 1f, 0.22f * flicker)
+            j += 1
+          }
 
         case _ => // shouldn't happen
       }
@@ -4804,7 +5230,8 @@ class GLGameRenderer(val client: GameClient) {
       // Hit ripple particles
       val lsx = worldToScreenX(lvx.toFloat, lvy.toFloat).toFloat
       val lsy = worldToScreenY(lvx.toFloat, lvy.toFloat).toFloat - 10f
-      combatParticles.emitRing(lsx, lsy, 8, 80f, 0.25f, 1f, 0.8f, 0.3f, 0.7f, 3f)
+      combatParticles.emitRing(lsx, lsy, 10, 80f, 0.25f, 1f, 0.8f, 0.3f, 0.7f, 3f,
+        pkind = ParticleSystem.KIND_STREAK)
     }
     prevHealthMap.put(localId, localHealth)
 
@@ -4827,7 +5254,8 @@ class GLGameRenderer(val client: GameClient) {
         // Hit ripple particles
         val rsx = worldToScreenX(pvx.toFloat, pvy.toFloat).toFloat
         val rsy = worldToScreenY(pvx.toFloat, pvy.toFloat).toFloat - 10f
-        combatParticles.emitRing(rsx, rsy, 8, 80f, 0.25f, 1f, 0.8f, 0.3f, 0.7f, 3f)
+        combatParticles.emitRing(rsx, rsy, 10, 80f, 0.25f, 1f, 0.8f, 0.3f, 0.7f, 3f,
+          pkind = ParticleSystem.KIND_STREAK)
       }
       prevHealthMap.put(playerId, health)
     }
@@ -4930,7 +5358,7 @@ class GLGameRenderer(val client: GameClient) {
       plife = 2f + rng.nextFloat() * 2f,
       pr = 0.7f, pg = 0.85f, pb = 0.95f, palpha = 0.08f + rng.nextFloat() * 0.07f,
       psize = 2f + rng.nextFloat() * 3f,
-      soft = true
+      shrink = false, soft = true, pkind = ParticleSystem.KIND_SMOKE
     )
   }
 
@@ -4944,7 +5372,7 @@ class GLGameRenderer(val client: GameClient) {
       plife = 5f + rng.nextFloat() * 4f,
       pr = 0.6f, pg = 0.5f, pb = 0.8f, palpha = 0.06f + rng.nextFloat() * 0.06f,
       psize = 1f + rng.nextFloat() * 1.5f,
-      additive = true, soft = true
+      additive = true, soft = true, pkind = ParticleSystem.KIND_SPARK
     )
   }
 
@@ -4958,7 +5386,7 @@ class GLGameRenderer(val client: GameClient) {
       plife = 2.5f + rng.nextFloat() * 2f,
       pr = 0.9f, pg = 0.8f, pb = 0.5f, palpha = 0.08f + rng.nextFloat() * 0.06f,
       psize = 1f + rng.nextFloat() * 1.5f,
-      soft = true
+      soft = true, pkind = ParticleSystem.KIND_STREAK
     )
   }
 
@@ -4970,8 +5398,8 @@ class GLGameRenderer(val client: GameClient) {
       rng.nextFloat() * 6f - 3f, -(5f + rng.nextFloat() * 4f),
       plife = 4f + rng.nextFloat() * 3f,
       pr = 0.5f, pg = 0.45f, pb = 0.55f, palpha = 0.07f + rng.nextFloat() * 0.06f,
-      psize = 1f + rng.nextFloat() * 1f,
-      soft = true
+      psize = 1.2f + rng.nextFloat() * 1.2f,
+      shrink = false, soft = true, pkind = ParticleSystem.KIND_SMOKE
     )
   }
 
@@ -5010,7 +5438,9 @@ class GLGameRenderer(val client: GameClient) {
         pr = mr, pg = mg, pb = mb,
         palpha = 0.06f + rng.nextFloat() * 0.06f,
         psize = 1f + rng.nextFloat() * 1.5f,
-        pdrag = 0.3f, additive = true, soft = true
+        pdrag = 0.3f, additive = true, soft = true,
+        // A third of them twinkle as tiny flares so the ambience isn't a field of dots
+        pkind = if (rng.nextFloat() < 0.33f) ParticleSystem.KIND_SPARK else ParticleSystem.KIND_AUTO
       )
     }
   }
@@ -5040,7 +5470,7 @@ class GLGameRenderer(val client: GameClient) {
             plife = 0.5f + rng.nextFloat() * 0.35f,
             pr = 0.55f, pg = 0.50f, pb = 0.42f, palpha = 0.28f,
             psize = 2f + rng.nextFloat() * 2f,
-            pgravity = 6f, soft = true
+            pgravity = 6f, shrink = false, soft = true, pkind = ParticleSystem.KIND_SMOKE
           )
           _k += 1
         }
@@ -5067,7 +5497,7 @@ class GLGameRenderer(val client: GameClient) {
         val chgSize = 2f + rng.nextFloat() * 1.5f + chargeT * 2f
         // Brighter trails for charged projectiles
         val bright = 0.3f + chargeT * 0.2f
-        // Core trail particle
+        // Core trail particle — a soft ember of the projectile's own colour
         combatParticles.emit(
           sx + rng.nextFloat() * 4f - 2f, sy + rng.nextFloat() * 2f - 1f,
           rng.nextFloat() * 4f - 2f, rng.nextFloat() * 4f - 2f,
@@ -5075,7 +5505,7 @@ class GLGameRenderer(val client: GameClient) {
           pr = clamp(pr * (1f - bright) + bright), pg = clamp(pg * (1f - bright) + bright), pb = clamp(pb * (1f - bright) + bright),
           palpha = chgAlpha,
           psize = chgSize,
-          additive = true
+          additive = true, soft = true
         )
         // High-charge radial sparks (>60%): shoot outward with gravity
         if (chargeT > 0.6f && rng.nextFloat() < (chargeT - 0.5f) * 0.8f) {
@@ -5088,7 +5518,7 @@ class GLGameRenderer(val client: GameClient) {
             pr = clamp(pr * 0.4f + 0.6f), pg = clamp(pg * 0.4f + 0.6f), pb = clamp(pb * 0.4f + 0.6f),
             palpha = 0.4f + chargeT * 0.2f,
             psize = 1.2f + rng.nextFloat() * 1.2f,
-            pgravity = 15f
+            pgravity = 15f, pkind = ParticleSystem.KIND_STREAK
           )
         }
         // Boomerang pulsing soft particles when returning
@@ -5115,6 +5545,8 @@ class GLGameRenderer(val client: GameClient) {
     while (_k < 8) {
       val angle = rng.nextFloat() * Math.PI.toFloat * 2f
       val speed = 25f + rng.nextFloat() * 35f
+      // Fast debris streaks, punctuated by twinkling star flares
+      val kind = if ((_k & 1) == 0) ParticleSystem.KIND_STREAK else ParticleSystem.KIND_SPARK
       combatParticles.emit(
         sx, sy,
         Math.cos(angle).toFloat * speed, Math.sin(angle).toFloat * speed - 10f,
@@ -5122,7 +5554,23 @@ class GLGameRenderer(val client: GameClient) {
         pr = clamp(cr * 0.5f + 0.5f), pg = clamp(cg * 0.5f + 0.5f), pb = clamp(cb * 0.5f + 0.5f),
         palpha = 0.7f,
         psize = 1.5f + rng.nextFloat() * 1.5f,
-        pgravity = 60f, additive = true
+        pgravity = 60f, additive = true, pkind = kind
+      )
+      _k += 1
+    }
+    // Fragments knocked loose — non-additive so they stay dark against the flash
+    _k = 0
+    while (_k < 3) {
+      val angle = rng.nextFloat() * Math.PI.toFloat * 2f
+      val speed = 18f + rng.nextFloat() * 22f
+      combatParticles.emit(
+        sx, sy,
+        Math.cos(angle).toFloat * speed, Math.sin(angle).toFloat * speed - 18f,
+        plife = 0.3f + rng.nextFloat() * 0.25f,
+        pr = cr * 0.7f, pg = cg * 0.7f, pb = cb * 0.7f,
+        palpha = 0.55f,
+        psize = 1.4f + rng.nextFloat() * 1.2f,
+        pgravity = 110f, shrink = false, pkind = ParticleSystem.KIND_SHARD
       )
       _k += 1
     }
@@ -5142,6 +5590,8 @@ class GLGameRenderer(val client: GameClient) {
       val pr = if (bright > 0.6f) 1f else cr
       val pg = if (bright > 0.6f) 1f else cg
       val pb = if (bright > 0.6f) 0.9f else cb
+      // Bright bits fling out as star flares, the rest as streaks of ejecta
+      val kind = if (bright > 0.6f) ParticleSystem.KIND_SPARK else ParticleSystem.KIND_STREAK
       combatParticles.emit(
         sx + rng.nextFloat() * 4f - 2f, sy + rng.nextFloat() * 4f - 2f,
         Math.cos(angle).toFloat * speed, Math.sin(angle).toFloat * speed * 0.7f - 15f,
@@ -5149,7 +5599,36 @@ class GLGameRenderer(val client: GameClient) {
         pr = pr, pg = pg, pb = pb,
         palpha = 0.6f,
         psize = 2f + rng.nextFloat() * 2.5f,
-        pgravity = 40f, additive = true
+        pgravity = 40f, additive = true, pkind = kind
+      )
+      _k += 1
+    }
+    // Tumbling debris and a smoke column left behind — gives the burst weight and an aftermath
+    _k = 0
+    while (_k < 6) {
+      val angle = rng.nextFloat() * Math.PI.toFloat * 2f
+      val speed = 20f + rng.nextFloat() * 30f
+      combatParticles.emit(
+        sx, sy,
+        Math.cos(angle).toFloat * speed, Math.sin(angle).toFloat * speed * 0.6f - 30f,
+        plife = 0.6f + rng.nextFloat() * 0.5f,
+        pr = cr * 0.75f, pg = cg * 0.75f, pb = cb * 0.75f,
+        palpha = 0.6f,
+        psize = 1.8f + rng.nextFloat() * 1.6f,
+        pgravity = 130f, shrink = false, pkind = ParticleSystem.KIND_SHARD
+      )
+      _k += 1
+    }
+    _k = 0
+    while (_k < 5) {
+      combatParticles.emit(
+        sx + rng.nextFloat() * 10f - 5f, sy + rng.nextFloat() * 6f - 3f,
+        rng.nextFloat() * 10f - 5f, -(8f + rng.nextFloat() * 12f),
+        plife = 0.8f + rng.nextFloat() * 0.7f,
+        pr = 0.32f, pg = 0.30f, pb = 0.34f,
+        palpha = 0.30f,
+        psize = 4f + rng.nextFloat() * 3f,
+        pdrag = 0.8f, shrink = false, pkind = ParticleSystem.KIND_SMOKE
       )
       _k += 1
     }

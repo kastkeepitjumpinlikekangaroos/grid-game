@@ -88,7 +88,12 @@ class ShapeBatch(val shader: ShaderProgram) {
     shader.use()
     shader.setUniformMat4("uProjection", projection)
     glEnable(GL_BLEND)
-    setAdditiveBlend(false)
+    // Set the func directly rather than via setAdditiveBlend(false): that call is a no-op
+    // when `additive` is already false, which would leave the batch drawing under whatever
+    // blend func the previous GL state happened to have (GL_ONE/GL_ZERO on a fresh context,
+    // i.e. every alpha ignored).
+    additive = false
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
   }
 
   def end(): Unit = {
@@ -315,6 +320,81 @@ class ShapeBatch(val shader: ShaderProgram) {
       strokeLine(x1, y1, x2, y2, lineWidth, r, g, b, a)
       i += 1
     }
+  }
+
+  /** Stroke a partial oval outline. startAngle/sweep in radians, CCW. */
+  def strokeArc(cx: Float, cy: Float, rx: Float, ry: Float,
+                startAngle: Float, sweep: Float, lineWidth: Float,
+                r: Float, g: Float, b: Float, a: Float, segments: Int = 12): Unit = {
+    if (segments < 1) return
+    val step = sweep / segments
+    var px = cx + rx * Math.cos(startAngle).toFloat
+    var py = cy + ry * Math.sin(startAngle).toFloat
+    var i = 0
+    while (i < segments) {
+      val ang = startAngle + step * (i + 1)
+      val nx = cx + rx * Math.cos(ang).toFloat
+      val ny = cy + ry * Math.sin(ang).toFloat
+      strokeLine(px, py, nx, ny, lineWidth, r, g, b, a)
+      px = nx; py = ny
+      i += 1
+    }
+  }
+
+  /**
+   * Filled band between an inner and an outer ellipse over an angular sweep, with alpha
+   * ramping from aStart at startAngle to aEnd at the far end. One primitive for gauges,
+   * crescents, shockwave arcs and swept motion trails — all of which read as flat
+   * geometry when built from plain strokeLine.
+   */
+  def fillArcBand(cx: Float, cy: Float, rxIn: Float, ryIn: Float, rxOut: Float, ryOut: Float,
+                  startAngle: Float, sweep: Float, segments: Int,
+                  r: Float, g: Float, b: Float, aStart: Float, aEnd: Float): Unit = {
+    if (segments < 1) return
+    ensureCapacity(segments * 6)
+    val step = sweep / segments
+    val invSegs = 1f / segments
+    var i = 0
+    while (i < segments) {
+      val a0 = startAngle + step * i
+      val a1 = a0 + step
+      val al0 = aStart + (aEnd - aStart) * (i * invSegs)
+      val al1 = aStart + (aEnd - aStart) * ((i + 1) * invSegs)
+      val c0 = Math.cos(a0).toFloat; val s0 = Math.sin(a0).toFloat
+      val c1 = Math.cos(a1).toFloat; val s1 = Math.sin(a1).toFloat
+      val ix0 = cx + rxIn * c0;  val iy0 = cy + ryIn * s0
+      val ox0 = cx + rxOut * c0; val oy0 = cy + ryOut * s0
+      val ix1 = cx + rxIn * c1;  val iy1 = cy + ryIn * s1
+      val ox1 = cx + rxOut * c1; val oy1 = cy + ryOut * s1
+      vertex(ix0, iy0, r, g, b, al0); vertex(ox0, oy0, r, g, b, al0); vertex(ox1, oy1, r, g, b, al1)
+      vertex(ix0, iy0, r, g, b, al0); vertex(ox1, oy1, r, g, b, al1); vertex(ix1, iy1, r, g, b, al1)
+      i += 1
+    }
+  }
+
+  /**
+   * Four-point star flare: two crossed tapered spikes with a hot core. `angle` rotates the
+   * long axis, `ratio` is the short spike length relative to the long one.
+   */
+  def fillStarFlare(cx: Float, cy: Float, len: Float, thickness: Float, angle: Float, ratio: Float,
+                    r: Float, g: Float, b: Float, a: Float): Unit = {
+    ensureCapacity(24)
+    val c = Math.cos(angle).toFloat; val s = Math.sin(angle).toFloat
+    // Long axis spikes (along +/- (c,s)), short axis spikes (along +/- (-s,c))
+    starSpike(cx, cy, c, s, len, thickness, r, g, b, a)
+    starSpike(cx, cy, -c, -s, len, thickness, r, g, b, a)
+    starSpike(cx, cy, -s, c, len * ratio, thickness, r, g, b, a)
+    starSpike(cx, cy, s, -c, len * ratio, thickness, r, g, b, a)
+    fillOvalSoft(cx, cy, thickness * 1.4f, thickness * 1.4f, 1f, 1f, 1f, a, 0f, 6)
+  }
+
+  private def starSpike(cx: Float, cy: Float, dx: Float, dy: Float, len: Float, thickness: Float,
+                        r: Float, g: Float, b: Float, a: Float): Unit = {
+    val px = -dy * thickness * 0.5f
+    val py = dx * thickness * 0.5f
+    vertex(cx + px, cy + py, r, g, b, a)
+    vertex(cx - px, cy - py, r, g, b, a)
+    vertex(cx + dx * len, cy + dy * len, r, g, b, 0f)
   }
 
   /** Stroke a polygon outline. */

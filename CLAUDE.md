@@ -200,7 +200,7 @@ When a match starts, `ClientMain.showGameScene()` hides the JavaFX Stage and cre
 |------|-------|---------|
 | `GLGameRenderer.scala` | ~1530 | Main renderer: tiles, players, projectiles, items, status effects, HUD, aim arrow, backgrounds, death/teleport/explosion animations |
 | `GLProjectileRenderers.scala` | ~1150 | All 112 projectile type renderers (8 pattern factories + 19 specialized renderers) |
-| `ShapeBatch.scala` | ~300 | Batched colored 2D primitives: fillRect, fillOval, fillOvalSoft, fillPolygon, strokeLine, strokeLineSoft, strokeOval, strokePolygon. Supports additive blend mode toggle. |
+| `ShapeBatch.scala` | ~380 | Batched colored 2D primitives: fillRect, fillOval, fillOvalSoft, fillPolygon, fillArcBand (ring segment with an alpha ramp — gauges, crescents, shockwaves), fillStarFlare (4-point glint), strokeLine, strokeLineSoft, strokeArc, strokeOval, strokePolygon. Supports additive blend mode toggle. |
 | `SpriteBatch.scala` | ~200 | Batched textured quads with per-vertex tint/alpha. Flushes on texture change. |
 | `ShaderProgram.scala` | ~190 | GLSL shader compilation + embedded shader source: ColorShader (pos+color), TextureShader (pos+texcoord+color), BloomExtract, GaussianBlur, Composite (bloom+vignette+overlay) |
 | `PostProcessor.scala` | ~150 | Post-processing FBO pipeline: Scene FBO → Bloom extract (half-res) → Blur H → Blur V → Composite |
