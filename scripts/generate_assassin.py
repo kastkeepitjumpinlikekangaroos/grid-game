@@ -490,18 +490,14 @@ def draw_assassin(draw, ox, oy, direction, frame):
 
 
 def main():
-    img = Image.new("RGBA", (IMG_W, IMG_H), (0, 0, 0, 0))
+    # Rendering (supersampling + the shared detail pass) lives in sprite_base so
+    # every character sheet is produced the same way; this script only draws.
+    import os
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from sprite_base import generate_character
 
-    for direction in range(ROWS):
-        for frame in range(COLS):
-            frame_img = Image.new("RGBA", (DRAW_SIZE, DRAW_SIZE), (0, 0, 0, 0))
-            frame_draw = ImageDraw.Draw(frame_img)
-            draw_assassin(frame_draw, 0, 0, direction, frame)
-            frame_img = frame_img.resize((FRAME_SIZE, FRAME_SIZE), Image.LANCZOS)
-            img.paste(frame_img, (frame * FRAME_SIZE, direction * FRAME_SIZE))
-
-    img.save("sprites/assassin.png")
-    print(f"Generated sprites/assassin.png ({IMG_W}x{IMG_H})")
+    generate_character("assassin", draw_func=draw_assassin)
 
 
 if __name__ == "__main__":

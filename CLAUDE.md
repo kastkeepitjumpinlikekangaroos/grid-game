@@ -287,7 +287,10 @@ python3 scripts/generate_icon.py   # -> sprites/icon_wizard_{128,256,1024}.png +
 scripts/generate_icns.sh           # macOS-only: -> sprites/icon_wizard.icns (from the 1024 master)
 ```
 Renders the wizard's front-facing frame (via `generate_wizard.py`'s `draw_wizard`) standalone,
-crops/centers it, and exports at icon sizes. Used for the JavaFX Stage/Taskbar icon
+crops/centers it, and exports at icon sizes. It draws through `sprite_base.ScaledDraw` at
+`RENDER_SCALE` and applies the same `finish_frame` detail pass at each output size, so the
+1024px icon is rendered at native resolution rather than a 64px sprite blown up 16x.
+Used for the JavaFX Stage/Taskbar icon
 (`ClientMain.loadAppIcons`/`setDockIcon`, `MapEditorApp`), the GLFW in-game window icon
 (`GLWindow.setIcon`), the `.icns` consumed by `scripts/build_macos_app.sh`, and the
 `.ico` consumed by `scripts/build_windows_exe.ps1`. Pillow writes `.ico` directly
@@ -307,6 +310,58 @@ python3 scripts/generate_all_new_characters.py
 ```
 
 Each sprite sheet contains 4 directions x 4 animation frames.
+
+**Every script goes through `sprite_base.generate_character`** — the individual
+ones only own their `draw_<name>` function, they do not run their own render
+loop. That single chokepoint is what lets a rendering change apply to all 112
+characters at once, so keep it that way rather than re-adding a per-script loop.
+
+#### Rendering pipeline (`sprite_base.py`)
+
+Draw functions author in a 64x64 space (or 128x128, for `draw_generic_character`).
+They never draw at that size:
+
+```
+ScaledDraw onto a 256px canvas  →  Lanczos down to 128  →  finish_frame  →  quantize
+   (supersampling)                                          (detail pass)     (255-colour palette)
+```
+
+- **`ScaledDraw`** proxies `ImageDraw` and multiplies every coordinate, radius
+  and stroke width. Box primitives map `x1` to `(x1 + 1) * scale - 1` so a
+  scaled rectangle still exactly covers its source pixels and leaves no seam
+  against an adjoining polygon; `point` fills a whole `scale x scale` block, or
+  one-pixel highlights would render sub-pixel and vanish in the downsample.
+  Stroke widths scale but are **not** boosted beyond that — bumping them merges
+  adjacent thin strokes (a banshee's hair strands, medusa's snakes) into a blob.
+- **`finish_frame`** = `add_contour` → `add_shading` → `add_grain`. All three
+  derive from the frame's own pixels, so no character is hand-shaded:
+  - `add_contour` dilates the silhouette by a pixel and lays a dark ring
+    *behind* the frame (so the sprite's anti-aliased edge survives). This is
+    what keeps characters readable over both pale sand and dark water.
+  - `add_shading` bevels interior colour boundaries, rim-lights the fill just
+    inside the upper-left silhouette, and occludes the lower-right, plus a
+    top-to-bottom ambient ramp. Light comes from the upper left to match the
+    ground shadow `GLGameRenderer.drawShadow` offsets to (+2, +1).
+  - `add_grain` adds a fixed low-amplitude field — fixed, not per-frame, or it
+    would crawl visibly across the four walk frames.
+- Two masks protect the art from the shading. Dark **outline** pixels are never
+  lightened (brightening them turns the rim light into a halo), and **emissive**
+  pixels — bright *and* saturated, i.e. flame, plasma, glowing eyes — are never
+  darkened, since those are exactly what the renderer's bloom keys off.
+- Sheets are saved as a **255-colour palette PNG** with alpha in `tRNS`. The
+  shading fills what used to be flat colour with gradients, which triples an
+  RGBA PNG; quantizing is visually indistinguishable at the size a sprite is
+  displayed and lands well under the original size. Palette alphas ≥250 are
+  snapped to 255 (the octree splits on alpha too, and would otherwise leave
+  every body pixel at 252-254). Both loaders expand it back to RGBA:
+  `stbi_load_from_memory(..., 4)` on the GL side, `javafx.scene.image.Image`
+  on the UI side.
+
+Tuning constants (`BEVEL_LIGHT`, `RIM_LIGHT`, `GRAIN`, …) sit at the top of the
+detail-pass section. They are deliberately restrained: a sprite is displayed at
+`PLAYER_DISPLAY_SIZE_PX` (48) times `CAMERA_ZOOM` (1.6) ≈ 77px, and anything
+heavier reads as noise rather than detail. **Judge any change at that size**,
+not at the 128px sheet resolution.
 
 ### Sound Effects & Music
 All audio is procedurally synthesized (numpy oscillators/noise, no samples or external

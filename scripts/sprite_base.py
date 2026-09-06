@@ -9,18 +9,27 @@ Each character script imports from here and provides:
 Output: 512x512 PNG, 4 columns (frames) x 4 rows (directions).
 Row layout: Down=0, Up=1, Left=2, Right=3.
 
-Frame size is 128x128 (high-res). Custom draw functions that still draw
-at 64x64 are automatically upscaled via Lanczos resampling.
+Frame size is 128x128. Draw functions still author at 64x64 (or, for
+draw_generic_character, at 128x128), but they never draw at that size: every
+primitive goes through ScaledDraw onto a RENDER_SIZE (256px) canvas, which is
+then resampled down to 128. See "Rendering pipeline" below.
 """
 
-from PIL import Image, ImageDraw
+import random
+
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 FRAME_SIZE = 128
-DRAW_SIZE = 64     # Internal drawing size for legacy/custom draw functions
+DRAW_SIZE = 64     # Coordinate space custom draw functions author in
 COLS = 4
 ROWS = 4
 IMG_W = FRAME_SIZE * COLS   # 512
 IMG_H = FRAME_SIZE * ROWS   # 512
+
+# Supersampling: every frame is rendered at RENDER_SIZE and resampled to
+# FRAME_SIZE, so curves, diagonals and thin strokes come out anti-aliased
+# instead of being drawn hard at 64px and blurred upward.
+RENDER_SIZE = 256
 
 DOWN, UP, LEFT, RIGHT = 0, 1, 2, 3
 
@@ -35,6 +44,103 @@ _S = FRAME_SIZE / 64.0
 def _s(v):
     """Scale a pixel value from 64px base to current FRAME_SIZE."""
     return int(v * _S)
+
+
+class ScaledDraw:
+    """ImageDraw proxy that scales a draw function's coordinates onto a larger canvas.
+
+    Draw functions author in a 64px (or 128px, for draw_generic_character) space;
+    this multiplies every coordinate by `scale` so the same code renders onto the
+    RENDER_SIZE supersampling canvas. Two details matter for fidelity:
+
+    - Box primitives use inclusive bounds, so x1 maps to (x1 + 1) * scale - 1.
+      That keeps a scaled rectangle exactly covering the source pixels, leaving
+      no seam against an adjoining polygon whose vertices scale directly.
+    - `point` covers a whole source pixel (a scale x scale block), and stroke
+      widths scale with the canvas. Without this, one-pixel highlights and
+      outlines would render sub-pixel and vanish in the downsample.
+    """
+
+    def __init__(self, draw, scale):
+        self._d = draw
+        self._s = scale
+
+    def _pts(self, xy):
+        s = self._s
+        if len(xy) and isinstance(xy[0], (tuple, list)):
+            return [(x * s, y * s) for (x, y) in xy]
+        return [v * s for v in xy]
+
+    def _box(self, xy):
+        s = self._s
+        if len(xy) and isinstance(xy[0], (tuple, list)):
+            (x0, y0), (x1, y1) = xy[0], xy[1]
+        else:
+            x0, y0, x1, y1 = xy
+        if x1 < x0:
+            x0, x1 = x1, x0
+        if y1 < y0:
+            y0, y1 = y1, y0
+        return [x0 * s, y0 * s, (x1 + 1) * s - 1, (y1 + 1) * s - 1]
+
+    def _w(self, width):
+        return max(1, int(round((width if width else 1) * self._s)))
+
+    def _ow(self, outline, width):
+        # Pillow ignores width when there is no outline; keep it untouched then.
+        return self._w(width) if outline is not None else (width if width is not None else 0)
+
+    def rectangle(self, xy, fill=None, outline=None, width=1):
+        self._d.rectangle(self._box(xy), fill=fill, outline=outline,
+                          width=self._ow(outline, width))
+
+    def rounded_rectangle(self, xy, radius=0, fill=None, outline=None, width=1, **kw):
+        self._d.rounded_rectangle(self._box(xy), radius=radius * self._s, fill=fill,
+                                  outline=outline, width=self._ow(outline, width), **kw)
+
+    def ellipse(self, xy, fill=None, outline=None, width=1):
+        self._d.ellipse(self._box(xy), fill=fill, outline=outline,
+                        width=self._ow(outline, width))
+
+    def polygon(self, xy, fill=None, outline=None, width=1):
+        self._d.polygon(self._pts(xy), fill=fill, outline=outline,
+                        width=self._ow(outline, width))
+
+    def line(self, xy, fill=None, width=1, joint=None):
+        # Lines are centred on their endpoints, so nudge to the middle of the
+        # scaled block; otherwise a stroke along y=0 has half its width clipped.
+        off = (self._s - 1) / 2.0
+        pts = self._pts(xy)
+        if pts and isinstance(pts[0], (tuple, list)):
+            pts = [(x + off, y + off) for (x, y) in pts]
+        else:
+            pts = [v + off for v in pts]
+        self._d.line(pts, fill=fill, width=self._w(width), joint=joint)
+
+    def arc(self, xy, start, end, fill=None, width=1):
+        self._d.arc(self._box(xy), start, end, fill=fill, width=self._w(width))
+
+    def chord(self, xy, start, end, fill=None, outline=None, width=1):
+        self._d.chord(self._box(xy), start, end, fill=fill, outline=outline,
+                      width=self._ow(outline, width))
+
+    def pieslice(self, xy, start, end, fill=None, outline=None, width=1):
+        self._d.pieslice(self._box(xy), start, end, fill=fill, outline=outline,
+                         width=self._ow(outline, width))
+
+    def point(self, xy, fill=None):
+        s = self._s
+        if isinstance(xy[0], (tuple, list)):
+            pts = xy
+        elif len(xy) == 2:
+            pts = [xy]
+        else:
+            pts = [(xy[i], xy[i + 1]) for i in range(0, len(xy), 2)]
+        for (x, y) in pts:
+            self._d.rectangle([x * s, y * s, (x + 1) * s - 1, (y + 1) * s - 1], fill=fill)
+
+    def __getattr__(self, name):
+        return getattr(self._d, name)
 
 
 def ellipse(draw, cx, cy, rx, ry, fill, outline=OUTLINE):
@@ -1120,37 +1226,231 @@ def draw_scale_texture(draw, cx, cy, w, h, color):
             draw.point((px, py + 1), fill=dark)
 
 
+# ---------------------------------------------------------------------------
+# Detail pass
+#
+# Every frame goes through the same image-space shading after it is drawn. The
+# draw functions paint flat regions; these passes derive lighting from the
+# frame's own colour boundaries, so all 112 characters gain volume without any
+# of them being hand-shaded. Light comes from the upper-left, matching the
+# ground shadow the renderer offsets to (+2, +1) in GLGameRenderer.drawShadow.
+# ---------------------------------------------------------------------------
+
+# Shading strengths. These are deliberately restrained: the sprite is displayed
+# at PLAYER_DISPLAY_SIZE_PX (48), so anything heavier reads as noise in game.
+BEVEL_LIGHT = 0.28      # lit side of an interior material boundary
+BEVEL_SHADOW = 0.28     # shaded side of an interior material boundary
+RIM_LIGHT = 0.26        # fill just inside the upper-left silhouette
+CONTACT_AO = 0.28       # lower-right silhouette occlusion
+FORM_GRADIENT = 0.11    # top-to-bottom ambient ramp over the whole sprite
+EMISSIVE_GAIN = 0.06    # extra lift on fire/energy so it still blooms in game
+GRAIN = 0.05            # material grain, breaks up large flat fills
+CONTOUR_COLOR = (20, 16, 26)
+CONTOUR_ALPHA = 210
+
+_LIGHT_TINT = (255, 250, 236)
+_SHADOW_TINT = (22, 16, 30)
+_RIM_TINT = (255, 253, 244)
+_AO_TINT = (16, 11, 22)
+
+
+def _shift(img, dx, dy):
+    """Translate an image, padding with zero (unlike ImageChops.offset, which wraps)."""
+    out = Image.new(img.mode, img.size, 0 if img.mode == "L" else (0, 0, 0))
+    out.paste(img, (dx, dy))
+    return out
+
+
+def _blend_toward(base, tint, mask, k):
+    if k <= 0:
+        return base
+    target = Image.new("RGB", base.size, tint)
+    return Image.composite(Image.blend(base, target, k), base, mask)
+
+
+def add_contour(frame, color=CONTOUR_COLOR, alpha=CONTOUR_ALPHA, scale=1):
+    """Lay a dark one-pixel contour behind the silhouette.
+
+    Sprites are drawn over terrain of every brightness; a uniform dark contour
+    is what keeps a character readable against pale sand and dark water alike.
+    It goes *behind* the frame so the sprite's own anti-aliased edge survives.
+
+    `scale` is the frame's size relative to FRAME_SIZE, so the same look holds
+    when the pass runs on something larger (the app icon).
+    """
+    a = frame.getchannel("A")
+    solid = a.point(lambda v: 255 if v > 100 else 0)
+    ring = ImageChops.subtract(solid.filter(ImageFilter.MaxFilter(2 * scale + 1)), solid)
+    ring = ring.filter(ImageFilter.GaussianBlur(0.5 * scale))
+
+    backdrop = Image.new("RGBA", frame.size, (0, 0, 0, 0))
+    backdrop.paste(Image.new("RGBA", frame.size, tuple(color) + (alpha,)), (0, 0), ring)
+    return Image.alpha_composite(backdrop, frame)
+
+
+def add_shading(frame, bevel_light=BEVEL_LIGHT, bevel_shadow=BEVEL_SHADOW,
+                rim=RIM_LIGHT, ao=CONTACT_AO, gradient=FORM_GRADIENT,
+                emissive_gain=EMISSIVE_GAIN, blur=0.9, edge_threshold=22, scale=1):
+    """Bevel, rim light and occlusion derived from the frame's own colour regions."""
+    rgb = frame.convert("RGB")
+    a = frame.getchannel("A")
+    w, h = frame.size
+
+    solid = a.point(lambda v: 255 if v > 128 else 0)
+    # The art's own dark outlines carry the shapes; brightening them turns the
+    # rim light into a halo, so keep every lightening pass off them.
+    fill_only = ImageChops.multiply(solid, rgb.convert("L").point(lambda v: 255 if v > 60 else 0))
+
+    # Emissive = bright and saturated (flame, plasma, glowing eyes). Darkening
+    # these would flatten exactly the pixels the renderer's bloom keys off.
+    hsv = rgb.convert("HSV")
+    emissive = ImageChops.multiply(
+        hsv.getchannel("V").point(lambda v: 255 if v > 205 else 0),
+        hsv.getchannel("S").point(lambda v: 255 if v > 135 else 0))
+    emissive = ImageChops.lighter(emissive, hsv.getchannel("V").point(lambda v: 255 if v > 232 else 0))
+    emissive = ImageChops.multiply(emissive, solid)
+    shadeable = ImageChops.invert(emissive)
+
+    up_rgb, up_a = _shift(rgb, scale, scale), _shift(a, scale, scale)
+    dn_rgb, dn_a = _shift(rgb, -scale, -scale), _shift(a, -scale, -scale)
+
+    def boundary(other):
+        return ImageChops.difference(rgb, other).convert("L").point(
+            lambda v: 255 if v > edge_threshold else 0)
+
+    lit = ImageChops.multiply(boundary(up_rgb), fill_only)
+    shaded = ImageChops.multiply(ImageChops.multiply(boundary(dn_rgb), solid), shadeable)
+
+    # Silhouette edges. The rim goes one pixel in, onto the fill rather than the
+    # outline; the occlusion stays on the outline itself.
+    edge_up = ImageChops.multiply(solid, up_a.point(lambda v: 255 if v <= 128 else 0))
+    inner_rim = ImageChops.multiply(_shift(edge_up, scale, scale), fill_only)
+    edge_dn = ImageChops.multiply(
+        ImageChops.multiply(solid, dn_a.point(lambda v: 255 if v <= 128 else 0)), shadeable)
+
+    lit = ImageChops.subtract(lit, edge_up)
+    shaded = ImageChops.subtract(shaded, edge_dn)
+
+    if blur:
+        soften = ImageFilter.GaussianBlur(blur * scale)
+        lit = ImageChops.multiply(lit.filter(soften), fill_only)
+        shaded = ImageChops.multiply(ImageChops.multiply(shaded.filter(soften), solid), shadeable)
+        inner_rim = ImageChops.multiply(inner_rim.filter(soften), fill_only)
+        edge_dn = ImageChops.multiply(
+            ImageChops.multiply(edge_dn.filter(soften), solid), shadeable)
+
+    out = rgb
+    if gradient > 0:
+        ramp = Image.linear_gradient("L").resize((w, h))     # 0 at top, 255 at bottom
+        out = _blend_toward(out, (30, 24, 40),
+                            ImageChops.multiply(ImageChops.multiply(ramp, solid), shadeable),
+                            gradient)
+        out = _blend_toward(out, (255, 250, 240),
+                            ImageChops.multiply(ImageChops.invert(ramp), solid),
+                            gradient * 0.55)
+
+    out = _blend_toward(out, _LIGHT_TINT, lit, bevel_light)
+    out = _blend_toward(out, _SHADOW_TINT, shaded, bevel_shadow)
+    out = _blend_toward(out, _RIM_TINT, inner_rim, rim)
+    out = _blend_toward(out, _AO_TINT, edge_dn, ao)
+    out = _blend_toward(out, (255, 255, 245), emissive, emissive_gain)
+
+    out.putalpha(a)
+    return out
+
+
+_grain_cache = {}
+
+
+def _grain_field(size, scale=1, seed=7):
+    key = (size, scale)
+    if key not in _grain_cache:
+        rnd = random.Random(seed)
+        side = size // scale
+        field = Image.new("L", (side, side))
+        field.putdata([rnd.randint(0, 255) for _ in range(side * side)])
+        field = field.filter(ImageFilter.GaussianBlur(0.6))
+        if scale != 1:
+            field = field.resize((size, size), Image.BILINEAR)
+        _grain_cache[key] = field
+    return _grain_cache[key]
+
+
+def add_grain(frame, strength=GRAIN, scale=1):
+    """Faint per-pixel grain so large flat fills read as a material, not a swatch.
+
+    Fixed field, not per-frame noise -- a field that changed between the four
+    animation frames would crawl visibly while a character walks.
+    """
+    if strength <= 0:
+        return frame
+    rgb = frame.convert("RGB")
+    a = frame.getchannel("A")
+    field = _grain_field(frame.size[0], scale)
+    ramp = lambda v: min(255, max(0, v - 150) * 2)
+    light = ImageChops.multiply(field.point(ramp), a)
+    dark = ImageChops.multiply(ImageChops.invert(field).point(ramp), a)
+
+    out = _blend_toward(rgb, (255, 255, 255), light, strength)
+    out = _blend_toward(out, (0, 0, 0), dark, strength)
+    out.putalpha(a)
+    return out
+
+
+def finish_frame(frame, scale=1):
+    """Apply the full detail pass to one rendered frame.
+
+    `scale` is the frame's size relative to FRAME_SIZE (1 for sprite sheets,
+    larger for the app icon), so the shading keeps the same proportions.
+    """
+    return add_grain(add_shading(add_contour(frame, scale=scale), scale=scale), scale=scale)
+
+
 def generate_character(name, draw_func=None, **kwargs):
     """Generate a character sprite sheet.
 
-    If draw_func is provided, it's called as draw_func(draw, ox, oy, direction, frame).
-    Custom draw functions still draw at DRAW_SIZE (64px) and are upscaled to FRAME_SIZE
-    via Lanczos resampling for smooth anti-aliased output.
+    If draw_func is provided, it's called as draw_func(draw, ox, oy, direction, frame)
+    and authors in the DRAW_SIZE (64px) coordinate space. Otherwise
+    draw_generic_character is used with kwargs, authoring at FRAME_SIZE.
 
-    If no draw_func, draw_generic_character is used with kwargs -- it draws natively
-    at FRAME_SIZE using the built-in scale factor for true high-resolution output.
+    Either way the frame is rendered supersampled at RENDER_SIZE through
+    ScaledDraw, resampled down to FRAME_SIZE, and put through finish_frame.
 
     Each frame is drawn on its own canvas to prevent pixel bleeding
     between adjacent cells when elements extend beyond frame boundaries.
     """
     img = Image.new("RGBA", (IMG_W, IMG_H), (0, 0, 0, 0))
+    scale = RENDER_SIZE // (DRAW_SIZE if draw_func else FRAME_SIZE)
 
     for direction in range(ROWS):
         for frame_idx in range(COLS):
+            frame_img = Image.new("RGBA", (RENDER_SIZE, RENDER_SIZE), (0, 0, 0, 0))
+            frame_draw = ScaledDraw(ImageDraw.Draw(frame_img), scale)
             if draw_func:
-                # Custom draw functions draw at legacy DRAW_SIZE, then upscale
-                frame_img = Image.new("RGBA", (DRAW_SIZE, DRAW_SIZE), (0, 0, 0, 0))
-                frame_draw = ImageDraw.Draw(frame_img)
                 draw_func(frame_draw, 0, 0, direction, frame_idx)
-                if FRAME_SIZE != DRAW_SIZE:
-                    frame_img = frame_img.resize((FRAME_SIZE, FRAME_SIZE), Image.LANCZOS)
             else:
-                # Generic character draws natively at FRAME_SIZE (scaled coords)
-                frame_img = Image.new("RGBA", (FRAME_SIZE, FRAME_SIZE), (0, 0, 0, 0))
-                frame_draw = ImageDraw.Draw(frame_img)
                 draw_generic_character(frame_draw, 0, 0, direction, frame_idx, **kwargs)
+            frame_img = finish_frame(frame_img.resize((FRAME_SIZE, FRAME_SIZE), Image.LANCZOS))
             img.paste(frame_img, (frame_idx * FRAME_SIZE, direction * FRAME_SIZE))
 
+    # The detail pass replaces flat fills with gradients, which triples the RGBA
+    # PNG. Quantizing to a 255-colour palette (alpha carried per entry in tRNS)
+    # gets that back to well under the original size and is indistinguishable at
+    # the size a sprite is ever displayed. Both loaders expand it back to RGBA:
+    # stbi_load_from_memory(..., 4) on the GL side, javafx.scene.image.Image on
+    # the UI side.
     path = f"sprites/{name}.png"
-    img.save(path)
+    quantized = img.quantize(colors=255, method=Image.FASTOCTREE)
+    # The octree splits on alpha as well as colour, so interior pixels come back
+    # at 252-254 rather than solid. Snap the palette's near-extreme alphas so the
+    # body stays fully opaque and cleared pixels stay fully clear; only the
+    # genuinely anti-aliased edge keeps a partial value.
+    entries = bytearray(quantized.palette.palette)
+    for i in range(3, len(entries), 4):
+        if entries[i] >= 250:
+            entries[i] = 255
+        elif entries[i] <= 5:
+            entries[i] = 0
+    quantized.putpalette(bytes(entries), "RGBA")
+    quantized.save(path, optimize=True)
     print(f"Generated {path} ({IMG_W}x{IMG_H})")
