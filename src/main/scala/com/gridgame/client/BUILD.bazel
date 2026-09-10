@@ -65,3 +65,38 @@ scala_binary(
         "@maven//:org_lwjgl_lwjgl_stb_natives_windows",
     ],
 )
+
+# Dev tool: renders every projectile type to contact-sheet PNGs for visual review.
+# Not shipped — the client binary above already carries the source, this just gives it
+# a main class and the macOS main-thread flag LWJGL needs outside JavaFX.
+scala_binary(
+    name = "projectile_gallery",
+    main_class = "com.gridgame.client.gl.ProjectileGallery",
+    srcs = glob(["**/*.scala"]),
+    resources = ["//worlds:world_files", "//sprites:sprite_files", "//fonts:font_files", "//i18n:i18n_files", "//sounds:sound_files"],
+    jvm_flags = ["-XstartOnFirstThread", "-Djava.awt.headless=true"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:com_google_code_gson_gson",
+        "@maven//:io_netty_netty_buffer",
+        "@maven//:io_netty_netty_codec",
+        "@maven//:io_netty_netty_common",
+        "@maven//:io_netty_netty_handler",
+        "@maven//:io_netty_netty_transport",
+        "@maven//:org_openjfx_javafx_base",
+        "@maven//:org_openjfx_javafx_controls",
+        "@maven//:org_openjfx_javafx_fxml",
+        "@maven//:org_openjfx_javafx_graphics",
+        "@maven//:org_openjfx_javafx_base_mac_aarch64",
+        "@maven//:org_openjfx_javafx_controls_mac_aarch64",
+        "@maven//:org_openjfx_javafx_graphics_mac_aarch64",
+        "@maven//:org_lwjgl_lwjgl",
+        "@maven//:org_lwjgl_lwjgl_glfw",
+        "@maven//:org_lwjgl_lwjgl_opengl",
+        "@maven//:org_lwjgl_lwjgl_stb",
+        "@maven//:org_lwjgl_lwjgl_natives_macos_arm64",
+        "@maven//:org_lwjgl_lwjgl_glfw_natives_macos_arm64",
+        "@maven//:org_lwjgl_lwjgl_opengl_natives_macos_arm64",
+        "@maven//:org_lwjgl_lwjgl_stb_natives_macos_arm64",
+    ],
+)

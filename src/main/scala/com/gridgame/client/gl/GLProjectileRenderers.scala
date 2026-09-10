@@ -401,6 +401,219 @@ object GLProjectileRenderers {
   }
 
   // ═══════════════════════════════════════════════════════════════
+  //  WEAPON / OBJECT SILHOUETTES
+  // ═══════════════════════════════════════════════════════════════
+  //
+  // A thrown object is authored once in a local frame — +x along the object, +y across
+  // it, both roughly within [-1.3, 1.3] — and stamped through `blitPart`, which rotates
+  // it, squashes y into the isometric ground plane and scales it to the projectile's
+  // size.
+  //
+  // This exists because the old `spinner` built its outline from a polar radius per
+  // vertex, which can only ever describe a star: an axe, a katana, a femur and a playing
+  // card all came out as the same spinning lens. A silhouette in a local frame can carry
+  // a haft at one end and a head at the other, so it still reads as an axe at every spin
+  // angle — which is the whole point of giving a character a themed weapon.
+  //
+  // Parts must be convex: ShapeBatch.fillPolygon fan-triangulates from vertex 0. Curved
+  // blades are therefore split into two convex spans rather than described in one loop.
+
+  private val ISO_Y = 0.6f
+
+  /** One convex piece of a silhouette. `tint` blends the part toward the projectile's
+   *  registered colour, so steel stays steel while the energy parts take the character's
+   *  palette. */
+  private final class Part(val xs: Array[Float], val ys: Array[Float],
+                           val r: Float, val g: Float, val b: Float, val tint: Float) {
+    val n: Int = xs.length
+  }
+  private def part(pts: Array[Float], r: Float, g: Float, b: Float, tint: Float): Part = {
+    val n = pts.length / 2
+    val xs = new Array[Float](n); val ys = new Array[Float](n)
+    var i = 0; while (i < n) { xs(i) = pts(i * 2); ys(i) = pts(i * 2 + 1); i += 1 }
+    new Part(xs, ys, r, g, b, tint)
+  }
+
+  // Scratch for the transformed polygon. Sized for the largest part plus headroom.
+  private val _shpXs = new Array[Float](16)
+  private val _shpYs = new Array[Float](16)
+
+  /** Rotate/squash/scale a part's local points into _shpXs/_shpYs. */
+  @inline private def blitPart(p: Part, cx: Float, cy: Float, ca: Float, sa: Float, s: Float,
+                               flipY: Float, sclX: Float): Unit = {
+    var i = 0; while (i < p.n) {
+      val lx = p.xs(i) * sclX; val ly = p.ys(i) * flipY
+      _shpXs(i) = cx + (lx * ca - ly * sa) * s
+      _shpYs(i) = cy + (lx * sa + ly * ca) * s * ISO_Y
+      i += 1
+    }
+  }
+
+  /** Transform a single local point into (_ptX, _ptY). */
+  private var _ptX = 0f; private var _ptY = 0f
+  @inline private def blitPoint(lx: Float, ly: Float, cx: Float, cy: Float,
+                                ca: Float, sa: Float, s: Float): Unit = {
+    _ptX = cx + (lx * ca - ly * sa) * s
+    _ptY = cy + (lx * sa + ly * ca) * s * ISO_Y
+  }
+
+  /** Draw a whole silhouette: dark contour behind, then each part's body. The contour is
+   *  stroked before the fill so exactly half of its width survives — the same read as the
+   *  sprite sheets' `add_contour`, which is what keeps these legible over pale sand. */
+  private def drawParts(sb: ShapeBatch, parts: Array[Part], cx: Float, cy: Float,
+                        ca: Float, sa: Float, s: Float, tr: Float, tg: Float, tb: Float,
+                        alpha: Float, outlineW: Float, flipY: Float = 1f, sclX: Float = 1f): Unit = {
+    if (alpha <= 0.01f) return
+    var i = 0; while (i < parts.length) {
+      val pt = parts(i)
+      blitPart(pt, cx, cy, ca, sa, s, flipY, sclX)
+      if (outlineW > 0f) sb.strokePolygon(_shpXs, _shpYs, pt.n, outlineW, 0.06f, 0.05f, 0.07f, 0.85f * alpha)
+      sb.fillPolygon(_shpXs, _shpYs, pt.n,
+        mix(pt.r, tr, pt.tint), mix(pt.g, tg, pt.tint), mix(pt.b, tb, pt.tint), alpha)
+      i += 1
+    }
+  }
+
+  /** Flat silhouette pass used for motion-blur ghosts — one colour, no contour. */
+  private def drawPartsFlat(sb: ShapeBatch, parts: Array[Part], cx: Float, cy: Float,
+                            ca: Float, sa: Float, s: Float,
+                            r: Float, g: Float, b: Float, alpha: Float, flipY: Float = 1f,
+                            sclX: Float = 1f): Unit = {
+    if (alpha <= 0.01f) return
+    var i = 0; while (i < parts.length) {
+      val pt = parts(i)
+      blitPart(pt, cx, cy, ca, sa, s, flipY, sclX)
+      sb.fillPolygon(_shpXs, _shpYs, pt.n, r, g, b, alpha)
+      i += 1
+    }
+  }
+
+  // ── Material palette shared by the silhouettes ──
+  private val WOOD_R = 0.58f; private val WOOD_G = 0.42f; private val WOOD_B = 0.25f
+  private val DKWOOD_R = 0.30f; private val DKWOOD_G = 0.20f; private val DKWOOD_B = 0.12f
+  private val STEEL_R = 0.84f; private val STEEL_G = 0.87f; private val STEEL_B = 0.93f
+  private val DKSTEEL_R = 0.46f; private val DKSTEEL_G = 0.50f; private val DKSTEEL_B = 0.58f
+  private val BONE_R = 0.93f; private val BONE_G = 0.91f; private val BONE_B = 0.83f
+  private val GOLD_R = 0.86f; private val GOLD_G = 0.70f; private val GOLD_B = 0.30f
+  private val LEATHER_R = 0.24f; private val LEATHER_G = 0.19f; private val LEATHER_B = 0.20f
+
+  // ── Weapon kinds ──
+  private val WPN_AXE = 0
+  private val WPN_KATANA = 1
+  private val WPN_KNIFE = 2
+  private val WPN_SWORD = 3
+  private val WPN_BONE = 4
+  private val WPN_CURSED = 5
+  private val WPN_CARD = 6
+  private val WPN_BONE_AXE = 7
+
+  private val AXE_PARTS = Array(
+    part(Array(-1.05f,-0.11f, 0.55f,-0.11f, 0.55f,0.11f, -1.05f,0.11f), WOOD_R, WOOD_G, WOOD_B, 0.12f),
+    part(Array(-1.26f,-0.17f, -0.96f,-0.17f, -0.96f,0.17f, -1.26f,0.17f), DKSTEEL_R, DKSTEEL_G, DKSTEEL_B, 0.35f),
+    part(Array(0.28f,-0.14f, 0.44f,-0.86f, 0.80f,-1.02f, 1.22f,-0.60f, 1.24f,0.02f, 0.66f,0.18f),
+      STEEL_R, STEEL_G, STEEL_B, 0.30f),
+    part(Array(0.52f,-0.92f, 0.84f,-1.06f, 1.30f,-0.58f, 1.10f,-0.46f), 0.98f, 0.99f, 1f, 0.10f)
+  )
+  private val BONE_AXE_PARTS = Array(
+    part(Array(-1.05f,-0.12f, 0.48f,-0.12f, 0.48f,0.12f, -1.05f,0.12f), BONE_R * 0.92f, BONE_G * 0.90f, BONE_B * 0.86f, 0.10f),
+    // Broad jawbone bit
+    part(Array(0.18f,-0.18f, 0.34f,-0.84f, 0.78f,-1.04f, 1.26f,-0.66f, 1.30f,-0.02f, 0.60f,0.24f),
+      BONE_R, BONE_G, BONE_B, 0.22f),
+    // Teeth standing proud of the cutting edge
+    part(Array(0.44f,-0.86f, 0.58f,-1.20f, 0.74f,-0.96f), BONE_R, BONE_G, BONE_B, 0.15f),
+    part(Array(0.80f,-1.02f, 1.02f,-1.24f, 1.06f,-0.86f), BONE_R, BONE_G, BONE_B, 0.15f),
+    part(Array(1.16f,-0.72f, 1.46f,-0.62f, 1.28f,-0.30f), BONE_R, BONE_G, BONE_B, 0.15f),
+    // Socket where haft meets bone
+    part(Array(0.20f,-0.24f, 0.44f,-0.24f, 0.44f,0.24f, 0.20f,0.24f), 0.52f, 0.44f, 0.36f, 0.25f)
+  )
+  private val KATANA_PARTS = Array(
+    part(Array(-1.10f,-0.10f, -0.34f,-0.10f, -0.34f,0.10f, -1.10f,0.10f), LEATHER_R, LEATHER_G, LEATHER_B, 0.15f),
+    part(Array(-0.42f,-0.30f, -0.22f,-0.30f, -0.22f,0.30f, -0.42f,0.30f), GOLD_R, GOLD_G, GOLD_B, 0.20f),
+    part(Array(-0.22f,-0.11f, 0.42f,-0.17f, 0.42f,0.05f, -0.22f,0.11f), STEEL_R, STEEL_G, STEEL_B, 0.22f),
+    part(Array(0.42f,-0.17f, 0.98f,-0.16f, 1.30f,-0.03f, 0.98f,0.01f, 0.42f,0.05f), STEEL_R, STEEL_G, STEEL_B, 0.22f),
+    // Hamon: the temper line that makes a katana read as a katana and not a steel bar
+    part(Array(-0.16f,-0.05f, 0.42f,-0.11f, 0.98f,-0.10f, 1.16f,-0.03f, 0.98f,-0.05f, 0.42f,-0.06f, -0.16f,-0.01f),
+      1f, 1f, 1f, 0.06f)
+  )
+  private val KNIFE_PARTS = Array(
+    part(Array(-1.05f,-0.13f, -0.28f,-0.11f, -0.28f,0.13f, -1.05f,0.15f), DKWOOD_R, DKWOOD_G, DKWOOD_B, 0.12f),
+    part(Array(-0.36f,-0.13f, -0.18f,-0.15f, -0.18f,0.15f, -0.36f,0.15f), GOLD_R, GOLD_G, GOLD_B, 0.20f),
+    part(Array(-0.18f,-0.16f, 0.75f,-0.13f, 1.18f,0.02f, 0.30f,0.22f, -0.18f,0.16f), STEEL_R, STEEL_G, STEEL_B, 0.22f),
+    part(Array(-0.10f,-0.10f, 0.72f,-0.08f, 1.02f,0.0f, 0.30f,0.06f, -0.10f,0.0f), 0.98f, 0.99f, 1f, 0.08f)
+  )
+  private val SWORD_PARTS = Array(
+    part(Array(-1.05f,-0.10f, -0.30f,-0.10f, -0.30f,0.10f, -1.05f,0.10f), DKWOOD_R, DKWOOD_G, DKWOOD_B, 0.15f),
+    part(Array(-1.22f,-0.18f, -1.00f,-0.18f, -1.00f,0.18f, -1.22f,0.18f), GOLD_R, GOLD_G, GOLD_B, 0.30f),
+    part(Array(-0.40f,-0.54f, -0.18f,-0.54f, -0.18f,0.54f, -0.40f,0.54f), GOLD_R, GOLD_G, GOLD_B, 0.30f),
+    part(Array(-0.18f,-0.17f, 0.85f,-0.15f, 1.28f,0f, 0.85f,0.15f, -0.18f,0.17f), 0.98f, 0.96f, 0.82f, 0.35f),
+    part(Array(-0.14f,-0.05f, 0.88f,-0.04f, 1.10f,0f, 0.88f,0.04f, -0.14f,0.05f), 1f, 1f, 0.94f, 0.12f)
+  )
+  private val BONE_PARTS = Array(
+    part(Array(-0.86f,-0.15f, 0.86f,-0.15f, 0.86f,0.15f, -0.86f,0.15f), BONE_R, BONE_G, BONE_B, 0.15f)
+  )
+  private val CURSED_PARTS = Array(
+    part(Array(-1.10f,-0.11f, -0.42f,-0.11f, -0.42f,0.11f, -1.10f,0.11f), 0.13f, 0.09f, 0.12f, 0.20f),
+    part(Array(-0.52f,-0.46f, -0.30f,-0.52f, -0.30f,0.52f, -0.52f,0.46f), 0.34f, 0.10f, 0.16f, 0.55f),
+    part(Array(-0.30f,-0.24f, 0.34f,-0.30f, 0.34f,0.12f, -0.30f,0.24f), 0.22f, 0.08f, 0.13f, 0.45f),
+    part(Array(0.34f,-0.30f, 0.80f,-0.14f, 1.30f,-0.02f, 0.36f,0.12f), 0.22f, 0.08f, 0.13f, 0.45f),
+    // Glowing edge — this is the part that carries the character's colour
+    part(Array(0.30f,-0.24f, 0.80f,-0.10f, 1.24f,-0.02f, 0.78f,-0.03f, 0.32f,-0.16f), 1f, 0.55f, 0.55f, 0.75f)
+  )
+  private val CARD_PARTS = Array(
+    part(Array(-0.72f,-0.50f, 0.72f,-0.50f, 0.72f,0.50f, -0.72f,0.50f), 0.97f, 0.97f, 0.99f, 0.06f)
+  )
+
+  private def weaponParts(kind: Int): Array[Part] = kind match {
+    case WPN_AXE      => AXE_PARTS
+    case WPN_KATANA   => KATANA_PARTS
+    case WPN_KNIFE    => KNIFE_PARTS
+    case WPN_SWORD    => SWORD_PARTS
+    case WPN_BONE     => BONE_PARTS
+    case WPN_CURSED   => CURSED_PARTS
+    case WPN_CARD     => CARD_PARTS
+    case WPN_BONE_AXE => BONE_AXE_PARTS
+    case _            => AXE_PARTS
+  }
+
+  /** Per-kind extras that a convex-polygon list cannot express (round bone knobs, card
+   *  pips, the cursed blade's aura). Drawn after the parts. */
+  private def weaponDetail(sb: ShapeBatch, kind: Int, cx: Float, cy: Float,
+                           ca: Float, sa: Float, s: Float,
+                           tr: Float, tg: Float, tb: Float, alpha: Float): Unit = kind match {
+    case WPN_BONE =>
+      var i = 0; while (i < 4) {
+        val lx = if (i < 2) -0.94f else 0.94f
+        val ly = if ((i & 1) == 0) -0.22f else 0.22f
+        blitPoint(lx, ly, cx, cy, ca, sa, s)
+        val kr = 0.27f * s
+        sb.fillOval(_ptX, _ptY, kr + 1.2f, kr + 1.2f, 0.06f, 0.05f, 0.07f, 0.8f * alpha, 10)
+        sb.fillOval(_ptX, _ptY, kr, kr, BONE_R, BONE_G, BONE_B, alpha, 10)
+        sb.fillOval(_ptX - kr * 0.28f, _ptY - kr * 0.28f, kr * 0.42f, kr * 0.42f, 1f, 1f, 0.97f, 0.55f * alpha, 8)
+        i += 1
+      }
+    case WPN_BONE_AXE =>
+      blitPoint(-1.14f, 0f, cx, cy, ca, sa, s)
+      val kr = 0.24f * s
+      sb.fillOval(_ptX, _ptY, kr + 1.2f, kr + 1.2f, 0.06f, 0.05f, 0.07f, 0.8f * alpha, 10)
+      sb.fillOval(_ptX, _ptY, kr, kr, BONE_R, BONE_G, BONE_B, alpha, 10)
+    case WPN_CARD =>
+      // Suit pip in the middle plus corner marks, so it reads as a card and not a tile
+      blitPoint(0f, 0f, cx, cy, ca, sa, s)
+      val px = _ptX; val py = _ptY
+      sb.fillOval(px, py, s * 0.20f, s * 0.20f * ISO_Y + s * 0.05f, tr * 0.7f, tg * 0.25f, tb * 0.3f, 0.9f * alpha, 10)
+      var i = 0; while (i < 2) {
+        val sgn = if (i == 0) -1f else 1f
+        blitPoint(sgn * 0.48f, sgn * 0.30f, cx, cy, ca, sa, s)
+        sb.fillOval(_ptX, _ptY, s * 0.09f, s * 0.09f, tr * 0.7f, tg * 0.25f, tb * 0.3f, 0.85f * alpha, 8)
+        i += 1
+      }
+    case WPN_CURSED =>
+      blitPoint(0.80f, -0.10f, cx, cy, ca, sa, s)
+      sb.fillOvalSoft(_ptX, _ptY, s * 0.55f, s * 0.42f, tr, tg * 0.4f, tb * 0.5f, 0.45f * alpha, 0f, 12)
+    case _ => ()
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   //  PATTERN FACTORIES
   // ═══════════════════════════════════════════════════════════════
 
@@ -423,6 +636,77 @@ object GLProjectileRenderers {
 
       // Large soft halo — dramatic glow, charge-scaled
       sb.fillOvalSoft(sx, sy, sz * 3.2f * dynGlow, sz * 2.6f * dynGlow, dr, dg, db, 0.4f * p, 0f, 18)
+
+      // Outer silhouette by style — drawn behind the orb so it breaks the ellipse
+      val pxv = -ndy; val pyv = ndx
+      style match {
+        case 1 =>
+          // Fire: tongues licking off the orb, longest on the trailing side
+          var f = 0; while (f < 8) {
+            val a = f * Math.PI * 2 / 8 + phase * 0.5
+            val ca2 = Math.cos(a).toFloat; val sa2 = Math.sin(a).toFloat
+            val back = 0.5f + 0.5f * (1f - (ca2 * ndx + sa2 * ndy))
+            val lick = (0.45f + 0.55f * Math.sin(phase * 4.2 + f * 1.9).toFloat) * back
+            sb.strokeLineSoft(sx + ca2 * sz * 0.40f, sy + sa2 * sz * 0.30f,
+              sx + ca2 * sz * (0.62f + 0.85f * lick), sy + sa2 * sz * (0.48f + 0.62f * lick),
+              sz * 0.34f, 1f, mix(0.32f, 0.92f, lick), 0.12f, 0.78f * p)
+            f += 1
+          }
+        case 2 =>
+          // Rune ring: glyph ticks orbiting the orb on two counter-rotating rings
+          sb.strokeOval(sx, sy, sz * 0.88f, sz * 0.64f, 2.8f, outline(r), outline(g), outline(b), 0.55f * p, 16)
+          sb.strokeOval(sx, sy, sz * 0.88f, sz * 0.64f, 1.8f, mix(bright(r), 1f, 0.35f),
+            mix(bright(g), 1f, 0.35f), mix(bright(b), 1f, 0.35f), 0.85f * p, 16)
+          sb.strokeOval(sx, sy, sz * 1.12f, sz * 0.81f, 1.4f, bright(r), bright(g), bright(b), 0.5f * p, 16)
+          var k = 0; while (k < 6) {
+            val a = -phase * 0.9 + k * Math.PI / 3
+            val ca2 = Math.cos(a).toFloat; val sa2 = Math.sin(a).toFloat
+            val gx = sx + ca2 * sz * 0.95f; val gy = sy + sa2 * sz * 0.69f
+            sb.strokeLine(gx - sa2 * sz * 0.13f, gy + ca2 * sz * 0.09f,
+              gx + sa2 * sz * 0.13f, gy - ca2 * sz * 0.09f, 5.5f,
+              outline(r), outline(g), outline(b), 0.6f * p)
+            sb.strokeLine(gx - sa2 * sz * 0.12f, gy + ca2 * sz * 0.08f,
+              gx + sa2 * sz * 0.12f, gy - ca2 * sz * 0.08f, 3.2f,
+              mix(bright(r), 1f, 0.45f), mix(bright(g), 1f, 0.45f), mix(bright(b), 1f, 0.45f), 0.95f * p)
+            k += 1
+          }
+        case 3 =>
+          // Soul wisp: a tapering tail streaming behind the head, plus hollow eyes
+          val waver = Math.sin(phase * 2.2).toFloat * sz * 0.42f
+          _polyXs4(0) = sx + pxv * sz * 0.62f; _polyYs4(0) = sy + pyv * sz * 0.62f
+          _polyXs4(1) = sx - ndx * sz * 1.7f + pxv * waver; _polyYs4(1) = sy - ndy * sz * 1.7f + pyv * waver
+          _polyXs4(2) = sx - ndx * sz * 2.5f + pxv * waver * 1.6f; _polyYs4(2) = sy - ndy * sz * 2.5f + pyv * waver * 1.6f
+          _polyXs4(3) = sx - pxv * sz * 0.62f; _polyYs4(3) = sy - pyv * sz * 0.62f
+          sb.fillPolygon(_polyXs4, _polyYs4, 4, dr, dg, db, 0.72f * p)
+          _polyXs4(0) = sx + pxv * sz * 0.34f; _polyYs4(0) = sy + pyv * sz * 0.34f
+          _polyXs4(1) = sx - ndx * sz * 1.3f + pxv * waver * 0.7f; _polyYs4(1) = sy - ndy * sz * 1.3f + pyv * waver * 0.7f
+          _polyXs4(2) = sx - ndx * sz * 1.9f + pxv * waver; _polyYs4(2) = sy - ndy * sz * 1.9f + pyv * waver
+          _polyXs4(3) = sx - pxv * sz * 0.34f; _polyYs4(3) = sy - pyv * sz * 0.34f
+          sb.fillPolygon(_polyXs4, _polyYs4, 4, bright(r), bright(g), bright(b), 0.5f * p)
+          // Torn hem where the wisp frays out
+          var w = 0; while (w < 3) {
+            val wt = (w - 1) * 0.55f
+            val bxw = sx - ndx * sz * 2.4f + pxv * (waver * 1.5f + wt * sz * 0.5f)
+            val byw = sy - ndy * sz * 2.4f + pyv * (waver * 1.5f + wt * sz * 0.5f)
+            sb.strokeLineSoft(sx - ndx * sz * 1.5f, sy - ndy * sz * 1.5f, bxw, byw,
+              sz * 0.16f, dr, dg, db, 0.42f * p)
+            w += 1
+          }
+        case 4 =>
+          // Nebula: an irregular cloud boundary so the outline is never a clean ellipse
+          var c = 0; while (c < 6) {
+            val a = c * Math.PI * 2 / 6 + phase * 0.35
+            val puff = 0.72f + 0.28f * Math.sin(phase * 1.7 + c * 2.3).toFloat
+            sb.fillOvalSoft(sx + Math.cos(a).toFloat * sz * 0.62f, sy + Math.sin(a).toFloat * sz * 0.46f,
+              sz * 0.62f * puff, sz * 0.50f * puff, dr, dg, db, 0.48f * p, 0.04f * p, 10)
+            c += 1
+          }
+        case _ =>
+          // Plain orb: a hard leading crescent, which is what stops it reading as a dot
+          val th0 = Math.atan2(ndy / ISO_Y, ndx).toFloat
+          sb.fillArcBand(sx, sy, sz * 0.46f, sz * 0.46f * ISO_Y, sz * 0.74f, sz * 0.74f * ISO_Y,
+            th0 - 1.15f, 2.3f, 12, bright(r), bright(g), bright(b), 0.7f * p, 0.7f * p)
+      }
 
       // Bold dark cartoon outline
       sb.strokeOval(sx, sy, sz * 0.95f, sz * 0.72f, 3.5f,
@@ -493,6 +777,15 @@ object GLProjectileRenderers {
           val cb = if (shift == 0) b else if (shift == 1) mix(b, r, 0.3f) else mix(b, g, 0.4f)
           sb.fillOvalSoft(cx, cy, cSize, cSize * 0.7f, cr, cg, cb, 0.3f * p, 0f, 10)
         ; cloud += 1 }
+      }
+
+      if (style == 3) {
+        // Two hollow eyes: the cheapest possible cue that this is a spirit, not an orb
+        val eo = sz * 0.20f
+        sb.fillOval(sx + pxv * eo + ndx * sz * 0.12f, sy + pyv * eo + ndy * sz * 0.12f,
+          sz * 0.11f, sz * 0.14f, outline(r), outline(g), outline(b), 0.85f * p, 8)
+        sb.fillOval(sx - pxv * eo + ndx * sz * 0.12f, sy - pyv * eo + ndy * sz * 0.12f,
+          sz * 0.11f, sz * 0.14f, outline(r), outline(g), outline(b), 0.85f * p, 8)
       }
 
       // Cartoon highlight (top-left specular spot)
@@ -679,18 +972,18 @@ object GLProjectileRenderers {
         // ── DRAIN: back-flowing particles + bright bands rushing toward origin ──
         case BEAM_DRAIN =>
           // 12 small particles streaming back toward source
-          { var i = 0; while (i < 12) {
-            val tRev = ((1.0 - ((tick * 0.09 + i * 0.0833 + pId * 0.13) % 1.0)) % 1.0).toFloat
+          { var i = 0; while (i < 7) {
+            val tRev = ((1.0 - ((tick * 0.09 + i * 0.143 + pId * 0.13) % 1.0)) % 1.0).toFloat
             val ox = pathOff(tRev) + Math.sin(phase * 3.0 + i * 1.7).toFloat * w * 0.5f
             val px = sx + dx * tRev + perpX * ox
             val py = sy + dy * tRev + perpY * ox
-            val pSz = (3.5f + (1f - tRev) * 3f)
+            val pSz = (2.2f + (1f - tRev) * 1.8f)
             // Streak behind toward origin
             val streakAhead = 0.06f
             val nx = sx + dx * (tRev - streakAhead) + perpX * pathOff(tRev - streakAhead)
             val ny = sy + dy * (tRev - streakAhead) + perpY * pathOff(tRev - streakAhead)
-            sb.strokeLine(nx, ny, px, py, 2.2f, bright(r), bright(g), bright(b), 0.7f * (1f - tRev * 0.4f) * p)
-            sb.fillOval(px, py, pSz, pSz * 0.7f, bright(r), bright(g), bright(b), 0.85f * p, 8)
+            sb.strokeLine(nx, ny, px, py, 1.8f, bright(r), bright(g), bright(b), 0.6f * (1f - tRev * 0.4f) * p)
+            sb.fillOval(px, py, pSz, pSz * 0.7f, bright(r), bright(g), bright(b), 0.75f * p, 8)
           ; i += 1 } }
           // Bright bands rushing along beam back to origin
           { var bd = 0; while (bd < 3) {
@@ -840,15 +1133,22 @@ object GLProjectileRenderers {
 
         // ── RAILGUN: pencil-thin beam, shock cone at origin, periodic perpendicular rings ──
         case BEAM_RAILGUN =>
-          // Origin shock cone (cone widens behind origin away from tip)
-          val coneLen = w * 4f
-          val coneW = w * 2.2f
-          val backX = sx - (dx / Math.max(beamLen, 1f)) * coneLen
-          val backY = sy - (dy / Math.max(beamLen, 1f)) * coneLen
-          _polyXs3(0) = sx; _polyXs3(1) = backX + perpX * coneW; _polyXs3(2) = backX - perpX * coneW
-          _polyYs3(0) = sy; _polyYs3(1) = backY + perpY * coneW; _polyYs3(2) = backY - perpY * coneW
-          sb.fillPolygon(_polyXs3, _polyYs3, 3, bright(r), bright(g), bright(b), 0.4f * p)
-          sb.strokePolygon(_polyXs3, _polyYs3, 3, 2f, outline(r), outline(g), outline(b), 0.5f * p);
+          // Muzzle blast. A hard-edged filled triangle behind the origin read as a stray
+          // grey shape sitting in the field, so this is a soft flare plus two swept
+          // streaks — the shape of escaping gas rather than a polygon.
+          val ux = dx / Math.max(beamLen, 1f); val uy = dy / Math.max(beamLen, 1f)
+          val flareP = 0.75f + 0.25f * Math.sin(phase * 5).toFloat
+          sb.fillOvalSoft(sx - ux * w * 0.6f, sy - uy * w * 0.6f, w * 2.4f * flareP, w * 1.7f * flareP,
+            bright(r), bright(g), bright(b), 0.5f * p, 0f, 12)
+          var mc = -1
+          while (mc <= 1) {
+            if (mc != 0) {
+              val ex = sx - ux * w * 4.2f + perpX * mc * w * 1.9f
+              val ey = sy - uy * w * 4.2f + perpY * mc * w * 1.9f
+              sb.strokeLineSoft(sx, sy, ex, ey, w * 0.7f, bright(r), bright(g), bright(b), 0.42f * p)
+            }
+            mc += 1
+          }
           // 3 perpendicular shock rings traveling outward (tip-ward) along beam
           { var sh = 0; while (sh < 4) {
             val st = ((tick * 0.1 + sh * 0.25 + pId * 0.07) % 1.0).toFloat
@@ -859,11 +1159,14 @@ object GLProjectileRenderers {
             sb.strokeOval(cx, cy, rOuter * 0.25f, rOuter * 1.2f, 2.5f * (1f - st * 0.4f),
               bright(r), bright(g), bright(b), 0.65f * (1f - st) * p, 12)
           ; sh += 1 } }
-          // Hot dotted scanning blips along the beam
-          { var bp = 0; while (bp < 10) {
-            val st = ((tick * 0.18 + bp * 0.1) % 1.0).toFloat
+          // A charge packet racing down the rail. Ten fat dots along the run turned the
+          // beam into a bead necklace; one travelling slug reads as velocity.
+          { var bp = 0; while (bp < 3) {
+            val st = ((tick * 0.16 + bp * 0.34 + pId * 0.11) % 1.0).toFloat
             val cx = sx + dx * st; val cy = sy + dy * st
-            sb.fillOval(cx, cy, w * 0.5f, w * 0.5f, 1f, 1f, 1f, 0.9f * p, 6)
+            val bx = sx + dx * Math.max(0f, st - 0.12f); val by = sy + dy * Math.max(0f, st - 0.12f)
+            sb.strokeLineSoft(bx, by, cx, cy, w * 0.85f, 1f, 1f, 1f, 0.6f * p)
+            sb.fillOval(cx, cy, w * 0.42f, w * 0.42f, 1f, 1f, 1f, 0.9f * p, 6)
           ; bp += 1 } }
 
         // ── GRAVITY: warped path, dark core, particles spiraling inward ──
@@ -1020,503 +1323,821 @@ object GLProjectileRenderers {
       sb.fillOval(sx, sy, sz * 0.16f, sz * 0.11f, bright(r), bright(g), bright(b), 0.8f * p, 8)
     }
 
-  /** Solid physical projectile — CARTOONISH with bold outline, big head, speed lines, glow, ribbon trail */
-  private def physProj(r: Float, g: Float, b: Float, worldLen: Float = 6f): Renderer =
+  /**
+   * Thrown weapon tumbling end over end. Unlike `spinner` — which builds a polar star and
+   * so renders every melee weapon as the same lens — this stamps the weapon's own
+   * silhouette, then sells the rotation with a swept arc and silhouette ghosts rather
+   * than by smearing the shape itself.
+   */
+  private def bladeSpinner(kind: Int, r: Float, g: Float, b: Float, size: Float = 22f,
+                           spinRate: Double = 0.30): Renderer =
     (proj, sx, sy, sb, tick) => {
-      beamTip(sx, sy, proj, worldLen)
-      val tipX = _tipX; val tipY = _tipY
-      val phase = (tick + proj.id * 31) * 0.4
-      computeAllDynamics(proj, r, g, b, phase)
-      val p = (0.75 + 0.25 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
+      val spin = tick * spinRate + proj.id * 2.1
+      computeAllDynamics(proj, r, g, b, spin)
+      val p = (0.85f + 0.15f * Math.sin(spin * 2 * _stPulseMult).toFloat) * dynAlpha
       val dr = _evoR; val dg = _evoG; val db = _evoB
+      // Physical weapons ignore most of the charge inflation: a 2x axe reads as a bug.
+      val ds = Math.min(dynScale, 1.3f)
+      val s = size * 0.80f * ds
+      val reach = s * 1.3f
       screenDir(proj)
       val ndx = _sdx; val ndy = _sdy
-      val perpX = -ndy; val perpY = ndx
-      // Dampen charge scaling for physical projectiles (cap at 1.35x instead of 2x)
-      val ds = Math.min(dynScale, 1.35f)
+      val ca = Math.cos(spin).toFloat; val sa = Math.sin(spin).toFloat
+      // A card flips about its short axis instead of tumbling in plane.
+      val sclX = if (kind == WPN_CARD) Math.max(0.42f, Math.abs(Math.cos(spin * 1.1).toFloat)) else 1f
 
-      // Speed lines behind (compact)
-      drawSpeedLines(sx, sy, ndx, ndy, dr, dg, db, 0.30f * p, sb, 4 + (_lifePct * 2).toInt, 20f * ds)
+      drawSpeedLines(sx, sy, ndx, ndy, dr, dg, db, 0.22f * p, sb, 4, reach * 1.1f)
 
-      // Short ribbon trail
-      drawRibbonTrail(sx, sy, ndx, ndy, dr, dg, db, 0.25f * p, sb, tick, proj.id, 6, 26f * ds * dynTrail, 3.5f * ds, 1f)
+      // Ground shadow — anchors the weapon to the arena instead of floating over it
+      sb.fillOval(sx + 3f, sy + reach * 0.42f, reach * 0.62f, reach * 0.20f, 0f, 0f, 0f, 0.22f * p, 12)
 
-      // Subtle glow halo
-      val haloPulse = 0.8f + 0.2f * Math.sin(phase * 2.0).toFloat
-      sb.fillOvalSoft(sx + ndx * 8f * ds, sy + ndy * 8f * ds, 16f * ds * dynGlow * haloPulse,
-        12f * ds * dynGlow * haloPulse, dr, dg, db, 0.15f * p, 0f, 12)
+      // Swept arc behind the leading edge: the tumble read, drawn as geometry rather than
+      // as ghosts of the whole shape, which is what used to turn the silhouette to mush.
+      val sweepStart = spin.toFloat - 2.5f
+      sb.fillArcBand(sx, sy, reach * 0.62f, reach * 0.62f * ISO_Y, reach * 1.04f, reach * 1.04f * ISO_Y,
+        sweepStart, 2.5f, 12, bright(r), bright(g), bright(b), 0.02f * p, 0.42f * p)
 
-      // Ground shadow
-      val midX = (sx + tipX) * 0.5f; val midY = (sy + tipY) * 0.5f
-      sb.fillOval(midX, midY + 8f * ds, 18f * ds, 4f * ds, 0f, 0f, 0f, 0.2f * p, 10)
+      // Silhouette ghosts a few frames back along the tumble AND the flight path
+      var ghost = 3; while (ghost >= 1) {
+        val gA = 0.16f * (1f - (ghost - 1) * 0.28f) * p
+        val gSpin = spin - ghost * 0.32
+        val gx = sx - ndx * ghost * 7f; val gy = sy - ndy * ghost * 7f
+        drawPartsFlat(sb, weaponParts(kind), gx, gy,
+          Math.cos(gSpin).toFloat, Math.sin(gSpin).toFloat, s * (1f - ghost * 0.04f),
+          dr * 0.8f, dg * 0.8f, db * 0.8f, gA, 1f, sclX)
+        ghost -= 1
+      }
 
-      // Shaft — dark outline, colored body, bright core
-      sb.strokeLine(sx, sy, tipX, tipY, 5f * ds, outline(r), outline(g), outline(b), 0.85f * p)
-      sb.strokeLine(sx, sy, tipX, tipY, 3.5f * ds, dr, dg, db, 0.9f * p)
-      sb.strokeLine(sx, sy, tipX, tipY, 1.2f * ds,
-        mix(bright(r), 1f, _chgBright), mix(bright(g), 1f, _chgBright), mix(bright(b), 1f, _chgBright), 0.6f * p)
+      // Halo so the weapon separates from busy ground without washing it out
+      sb.fillOvalSoft(sx, sy, reach * 1.5f * dynGlow, reach * 1.5f * ISO_Y * dynGlow,
+        dr, dg, db, 0.20f * p, 0f, 14)
 
-      // Arrowhead — 3-layer fill (outline, body, bright tip)
-      val headLen = 13f * ds; val headW = 6.5f * ds
-      val pointX = tipX + ndx * headLen; val pointY = tipY + ndy * headLen
-      // Layer 1: Dark outline
-      _polyXs3(0) = pointX + ndx * 2f; _polyXs3(1) = tipX + perpX * (headW + 2f); _polyXs3(2) = tipX - perpX * (headW + 2f)
-      _polyYs3(0) = pointY + ndy * 2f; _polyYs3(1) = tipY + perpY * (headW + 2f); _polyYs3(2) = tipY - perpY * (headW + 2f)
-      sb.fillPolygon(_polyXs3, _polyYs3, 3, outline(r), outline(g), outline(b), 0.88f * p)
-      // Layer 2: Colored body
-      _polyXs3(0) = pointX; _polyXs3(1) = tipX + perpX * headW; _polyXs3(2) = tipX - perpX * headW
-      _polyYs3(0) = pointY; _polyYs3(1) = tipY + perpY * headW; _polyYs3(2) = tipY - perpY * headW
-      sb.fillPolygon(_polyXs3, _polyYs3, 3, dr, dg, db, 0.95f * p)
-      // Layer 3: Bright tip highlight
-      val tipHL = 0.6f
-      _polyXs3(0) = pointX; _polyXs3(1) = tipX + perpX * headW * tipHL + ndx * headLen * 0.3f
-      _polyXs3(2) = tipX - perpX * headW * 0.2f + ndx * headLen * 0.3f
-      _polyYs3(0) = pointY; _polyYs3(1) = tipY + perpY * headW * tipHL + ndy * headLen * 0.3f
-      _polyYs3(2) = tipY - perpY * headW * 0.2f + ndy * headLen * 0.3f
-      sb.fillPolygon(_polyXs3, _polyYs3, 3,
-        mix(bright(r), 1f, _chgBright), mix(bright(g), 1f, _chgBright), mix(bright(b), 1f, _chgBright), 0.55f * p)
-      // Shine on arrowhead
-      _polyXs3(0) = pointX - perpX * 1f; _polyXs3(1) = tipX + perpX * headW * 0.3f; _polyXs3(2) = tipX + perpX * headW * 0.6f
-      _polyYs3(0) = pointY - perpY * 1f; _polyYs3(1) = tipY + perpY * headW * 0.3f; _polyYs3(2) = tipY + perpY * headW * 0.6f
-      sb.fillPolygon(_polyXs3, _polyYs3, 3, 1f, 1f, 1f, 0.25f * p)
+      drawParts(sb, weaponParts(kind), sx, sy, ca, sa, s, dr, dg, db, 0.97f * dynAlpha,
+        clampF(s * 0.13f, 1.4f, 3f), 1f, sclX)
+      weaponDetail(sb, kind, sx, sy, ca, sa, s, dr, dg, db, 0.97f * dynAlpha)
 
-      // Compact fletching with feather barb lines
-      { var f = -1; while (f <= 1) {
-        val tailX = sx - ndx * 3f; val tailY = sy - ndy * 3f
-        val featherX = tailX - ndx * 11f + perpX * f * 5.5f
-        val featherY = tailY - ndy * 11f + perpY * f * 5.5f
-        sb.strokeLine(tailX, tailY, featherX, featherY, 3f, outline(r), outline(g), outline(b), 0.6f * p)
-        sb.strokeLine(tailX, tailY, featherX, featherY, 2f, r, g, b, 0.55f * p)
-        sb.strokeLine(tailX, tailY, featherX, featherY, 0.7f, bright(r), bright(g), bright(b), 0.3f * p)
-        // Feather barb detail lines
-        var barb = 0; while (barb < 2) {
-          val bt = (barb + 1).toFloat / 3f
-          val bx = tailX + (featherX - tailX) * bt
-          val by = tailY + (featherY - tailY) * bt
-          val barbLen = 3.5f * (1f - bt * 0.5f) * ds
-          sb.strokeLine(bx, by, bx + perpX * f * barbLen, by + perpY * f * barbLen,
-            1.2f, r, g, b, 0.3f * p * (1f - bt * 0.4f))
-        ; barb += 1 }
-      ; f += 2 } }
+      // Edge glint: a star flare that fires as the cutting edge sweeps through the
+      // light direction, which is what makes steel read as steel.
+      val glint = Math.sin(spin * 2 + proj.id).toFloat
+      if (glint > 0.72f) {
+        blitPoint(1.05f, -0.30f, sx, sy, ca, sa, s)
+        sb.fillStarFlare(_ptX, _ptY, s * 0.85f * (glint - 0.72f) / 0.28f, 2.2f,
+          spin.toFloat * 0.5f, 0.45f, 1f, 1f, 0.96f, 0.75f * p)
+      }
 
-      // Trail particles — scaled by dynTrail
-      val trailLen = 26f * dynTrail
-      var i = 0; while (i < 6) {
-        val t = ((tick * 0.06 + i * 0.167 + proj.id * 0.11) % 1.0).toFloat
-        val taper = 1f - t * 0.7f
-        val colorFade = 1f - t * 0.3f
-        val tx = sx - ndx * t * trailLen; val ty = sy - ndy * t * trailLen
-        val tsz = 3.5f * taper * ds
-        sb.fillOval(tx, ty, tsz + 1f, (tsz + 1f) * 0.65f, outline(r), outline(g), outline(b), 0.2f * (1f - t) * p, 8)
-        sb.fillOval(tx, ty, tsz, tsz * 0.65f, r * colorFade, g * colorFade, b * colorFade, 0.4f * (1f - t) * p, 8)
-      ; i += 1 }
-
-      // 2 sparkle stars along trajectory
-      { var star = 0; while (star < 2) {
-        val starPhase = ((phase * 0.4 + star * 0.5) % 1.0).toFloat
-        val starT = star.toFloat / 1.5f
-        val starX = sx + (tipX - sx) * starT + perpX * Math.sin(phase * 2 + star * 1.7).toFloat * 5f
-        val starY = sy + (tipY - sy) * starT + perpY * Math.sin(phase * 2 + star * 1.7).toFloat * 5f
-        drawSparkleStar(starX, starY, 3.5f * (1f - starPhase * 0.4f) * ds,
-          bright(r), bright(g), bright(b), 0.4f * (1f - starPhase) * p, sb, phase * 1.5 + star)
-      ; star += 1 } }
-
-      // Charge crackle
-      drawChargeCrackle(sx, sy, 22f * ds, r, g, b, p, sb, phase, proj.chargeLevel)
-      drawReturnGhosts(sx, sy, 22f * ds, dr, dg, db, p, sb, proj)
+      drawChargeCrackle(sx, sy, reach, r, g, b, p, sb, spin, proj.chargeLevel)
+      drawReturnGhosts(sx, sy, reach * 0.7f, dr, dg, db, p, sb, proj)
     }
 
-  /** Large bouncing thrown object — CARTOONISH with squash/stretch, tumble rotation, afterimages, landing shadow */
-  private def lobbed(r: Float, g: Float, b: Float, size: Float = 18f): Renderer =
+  // ── Direction-aligned silhouettes (spears, arrows, darts, thorns) ──
+  //
+  // A flying shaft must NOT go through blitPart's extra ISO_Y squash: the travel vector
+  // handed to the renderer is already in screen space, and squashing it again shortens a
+  // spear thrown "north" to two thirds of one thrown "east". These stamp with a pure
+  // screen rotation and narrow only the cross-axis, so the object still reads as lying
+  // flat without changing length with heading.
+  private val FLAT_Y = 0.80f
+
+  @inline private def blitPartDir(p: Part, cx: Float, cy: Float, fx: Float, fy: Float,
+                                  s: Float, flipY: Float): Unit = {
+    val px = -fy * FLAT_Y; val py = fx * FLAT_Y
+    var i = 0; while (i < p.n) {
+      val lx = p.xs(i) * s; val ly = p.ys(i) * flipY * s
+      _shpXs(i) = cx + lx * fx + ly * px
+      _shpYs(i) = cy + lx * fy + ly * py
+      i += 1
+    }
+  }
+
+  private def drawPartsDir(sb: ShapeBatch, parts: Array[Part], cx: Float, cy: Float,
+                           fx: Float, fy: Float, s: Float, tr: Float, tg: Float, tb: Float,
+                           alpha: Float, outlineW: Float): Unit = {
+    if (alpha <= 0.01f) return
+    var i = 0; while (i < parts.length) {
+      val pt = parts(i)
+      blitPartDir(pt, cx, cy, fx, fy, s, 1f)
+      if (outlineW > 0f) sb.strokePolygon(_shpXs, _shpYs, pt.n, outlineW, 0.06f, 0.05f, 0.07f, 0.85f * alpha)
+      sb.fillPolygon(_shpXs, _shpYs, pt.n,
+        mix(pt.r, tr, pt.tint), mix(pt.g, tg, pt.tint), mix(pt.b, tb, pt.tint), alpha)
+      i += 1
+    }
+  }
+
+  private def drawPartsDirFlat(sb: ShapeBatch, parts: Array[Part], cx: Float, cy: Float,
+                               fx: Float, fy: Float, s: Float,
+                               r: Float, g: Float, b: Float, alpha: Float): Unit = {
+    if (alpha <= 0.01f) return
+    var i = 0; while (i < parts.length) {
+      val pt = parts(i)
+      blitPartDir(pt, cx, cy, fx, fy, s, 1f)
+      sb.fillPolygon(_shpXs, _shpYs, pt.n, r, g, b, alpha)
+      i += 1
+    }
+  }
+
+  @inline private def dirPoint(lx: Float, ly: Float, cx: Float, cy: Float,
+                               fx: Float, fy: Float, s: Float): Unit = {
+    _ptX = cx + lx * s * fx + ly * s * FLAT_Y * -fy
+    _ptY = cy + lx * s * fy + ly * s * FLAT_Y * fx
+  }
+
+  private val SHF_SPEAR = 0
+  private val SHF_ARROW = 1
+  private val SHF_DART = 2
+  private val SHF_THORN = 3
+  private val SHF_PARROW = 4
+  private val SHF_ICE = 5
+
+  private val SPEAR_PARTS = Array(
+    part(Array(-1.10f,-0.11f, 0.42f,-0.11f, 0.42f,0.11f, -1.10f,0.11f), WOOD_R, WOOD_G, WOOD_B, 0.15f),
+    part(Array(-1.30f,-0.15f, -1.04f,-0.15f, -1.04f,0.15f, -1.30f,0.15f), GOLD_R, GOLD_G, GOLD_B, 0.35f),
+    part(Array(0.16f,-0.09f, 0.27f,-0.09f, 0.27f,-0.46f, 0.16f,-0.46f), GOLD_R, GOLD_G, GOLD_B, 0.35f),
+    part(Array(0.16f,0.09f, 0.27f,0.09f, 0.27f,0.46f, 0.16f,0.46f), GOLD_R, GOLD_G, GOLD_B, 0.35f),
+    part(Array(0.30f,-0.17f, 0.52f,-0.17f, 0.52f,0.17f, 0.30f,0.17f), GOLD_R, GOLD_G, GOLD_B, 0.35f),
+    part(Array(0.48f,-0.34f, 0.78f,-0.30f, 1.38f,0f, 0.78f,0.30f, 0.48f,0.34f), STEEL_R, STEEL_G, STEEL_B, 0.28f),
+    part(Array(0.56f,-0.13f, 0.86f,-0.10f, 1.20f,0f, 0.86f,0.06f, 0.56f,0.09f), 1f, 1f, 1f, 0.10f)
+  )
+  private val ARROW_PARTS = Array(
+    part(Array(-0.85f,-0.10f, 0.55f,-0.10f, 0.55f,0.10f, -0.85f,0.10f), WOOD_R, WOOD_G, WOOD_B, 0.18f),
+    part(Array(-1.06f,-0.10f, -0.86f,-0.10f, -0.86f,0.10f, -1.06f,0.10f), DKWOOD_R, DKWOOD_G, DKWOOD_B, 0.10f),
+    part(Array(-0.90f,-0.07f, -0.42f,-0.11f, -0.32f,-0.48f, -0.96f,-0.38f), 0.82f, 0.30f, 0.26f, 0.45f),
+    part(Array(-0.90f,0.07f, -0.42f,0.11f, -0.32f,0.48f, -0.96f,0.38f), 0.92f, 0.92f, 0.90f, 0.35f),
+    part(Array(0.50f,-0.30f, 0.72f,-0.24f, 1.28f,0f, 0.72f,0.24f, 0.50f,0.30f), STEEL_R, STEEL_G, STEEL_B, 0.30f)
+  )
+  private val DART_PARTS = Array(
+    part(Array(-0.70f,-0.09f, 0.55f,-0.07f, 0.55f,0.07f, -0.70f,0.09f), 0.42f, 0.34f, 0.24f, 0.18f),
+    part(Array(-0.74f,-0.06f, -0.46f,-0.09f, -0.38f,-0.44f, -0.84f,-0.36f), 0.92f, 0.72f, 0.24f, 0.40f),
+    part(Array(-0.74f,0.06f, -0.46f,0.09f, -0.38f,0.44f, -0.84f,0.36f), 0.92f, 0.72f, 0.24f, 0.40f),
+    part(Array(0.46f,-0.20f, 1.32f,0f, 0.46f,0.20f), 0.55f, 0.92f, 0.42f, 0.70f)
+  )
+  private val THORN_PARTS = Array(
+    part(Array(-1.00f,-0.17f, 0.45f,-0.13f, 1.32f,0f, 0.45f,0.13f, -1.00f,0.17f), 0.36f, 0.28f, 0.14f, 0.25f),
+    part(Array(-0.34f,-0.12f, -0.06f,-0.56f, 0.12f,-0.11f), 0.30f, 0.24f, 0.12f, 0.25f),
+    part(Array(0.06f,0.11f, 0.34f,0.54f, 0.48f,0.10f), 0.30f, 0.24f, 0.12f, 0.25f),
+    part(Array(-0.74f,0.13f, -0.52f,0.48f, -0.38f,0.12f), 0.30f, 0.24f, 0.12f, 0.25f),
+    part(Array(-0.98f,-0.12f, -0.62f,-0.44f, -1.12f,-0.56f, -1.30f,-0.18f), 0.30f, 0.62f, 0.22f, 0.55f),
+    part(Array(0.52f,-0.07f, 1.16f,0f, 0.52f,0.05f), 0.62f, 0.86f, 0.40f, 0.45f)
+  )
+
+  private val PARROW_PARTS = Array(
+    part(Array(-0.85f,-0.10f, 0.55f,-0.10f, 0.55f,0.10f, -0.85f,0.10f), 0.40f, 0.34f, 0.20f, 0.15f),
+    part(Array(-1.06f,-0.10f, -0.86f,-0.10f, -0.86f,0.10f, -1.06f,0.10f), DKWOOD_R, DKWOOD_G, DKWOOD_B, 0.10f),
+    part(Array(-0.90f,-0.07f, -0.42f,-0.11f, -0.32f,-0.48f, -0.96f,-0.38f), 0.30f, 0.48f, 0.22f, 0.45f),
+    part(Array(-0.90f,0.07f, -0.42f,0.11f, -0.32f,0.48f, -0.96f,0.38f), 0.52f, 0.62f, 0.34f, 0.35f),
+    part(Array(0.50f,-0.30f, 0.72f,-0.24f, 1.28f,0f, 0.72f,0.24f, 0.50f,0.30f), 0.45f, 0.88f, 0.35f, 0.65f)
+  )
+
+  private val ICE_PARTS = Array(
+    part(Array(-0.86f,-0.30f, 0.10f,-0.36f, 1.26f,0f, 0.10f,0.36f, -0.86f,0.28f), 0.30f, 0.60f, 0.88f, 0.45f),
+    part(Array(-0.40f,-0.28f, -0.06f,-0.76f, 0.30f,-0.24f), 0.52f, 0.80f, 0.98f, 0.40f),
+    part(Array(-0.52f,0.24f, -0.18f,0.70f, 0.18f,0.22f), 0.52f, 0.80f, 0.98f, 0.40f),
+    part(Array(-0.62f,-0.16f, 0.10f,-0.18f, 1.00f,0f, 0.10f,0.06f, -0.62f,0.04f), 0.86f, 0.96f, 1f, 0.18f)
+  )
+
+  private def shaftParts(kind: Int): Array[Part] = kind match {
+    case SHF_SPEAR => SPEAR_PARTS
+    case SHF_ARROW => ARROW_PARTS
+    case SHF_DART  => DART_PARTS
+    case SHF_THORN => THORN_PARTS
+    case SHF_PARROW => PARROW_PARTS
+    case SHF_ICE   => ICE_PARTS
+    case _         => ARROW_PARTS
+  }
+
+  /**
+   * Shaft weapon flying point-first: spear, arrow, blowdart, thorn.
+   *
+   * These used to be drawn as a `strokeLine` from the projectile back over `worldLen`
+   * world units — 6 units is 120 virtual px, so what reached the screen was a ~190px
+   * hairline with a 13px head on the end. The silhouette below is a whole object about
+   * two tiles long with a head that carries real area, which is what makes a spear read
+   * as a spear rather than as a scratch on the display.
+   */
+  private def flyingShaft(kind: Int, r: Float, g: Float, b: Float, size: Float = 24f): Renderer =
+    (proj, sx, sy, sb, tick) => {
+      val phase = (tick + proj.id * 31) * 0.4
+      computeAllDynamics(proj, r, g, b, phase)
+      val p = (0.86f + 0.14f * Math.sin(phase * _stPulseMult).toFloat) * dynAlpha
+      val dr = _evoR; val dg = _evoG; val db = _evoB
+      // Physical shafts barely inflate with charge — they gain a hotter head instead.
+      val ds = Math.min(dynScale, 1.25f)
+      val s = size * ds
+      screenDir(proj)
+      val ndx = _sdx; val ndy = _sdy
+      val parts = shaftParts(kind)
+
+      drawSpeedLines(sx, sy, ndx, ndy, dr, dg, db, 0.28f * p, sb, 4 + (_lifePct * 2).toInt, s * 1.3f)
+      drawRibbonTrail(sx, sy, ndx, ndy, dr, dg, db, 0.24f * p, sb, tick, proj.id, 7,
+        s * 1.9f * dynTrail, s * 0.16f, 1f)
+
+      // Ground shadow under the shaft
+      sb.fillOval(sx + 3f, sy + s * 0.42f, s * 0.72f, s * 0.16f, 0f, 0f, 0f, 0.22f * p, 12)
+
+      // Two afterimages down the flight path — motion without smearing the silhouette
+      var ghost = 2; while (ghost >= 1) {
+        drawPartsDirFlat(sb, parts, sx - ndx * ghost * 9f, sy - ndy * ghost * 9f, ndx, ndy,
+          s * (1f - ghost * 0.05f), dr * 0.85f, dg * 0.85f, db * 0.85f, 0.14f * (1f - (ghost - 1) * 0.35f) * p)
+        ghost -= 1
+      }
+
+      // Halo pinned to the head, not the middle, so the eye lands on the business end
+      dirPoint(0.9f, 0f, sx, sy, ndx, ndy, s)
+      val headX = _ptX; val headY = _ptY
+      sb.fillOvalSoft(headX, headY, s * 0.85f * dynGlow, s * 0.68f * dynGlow, dr, dg, db, 0.24f * p, 0f, 14)
+
+      drawPartsDir(sb, parts, sx, sy, ndx, ndy, s, dr, dg, db, 0.97f * dynAlpha,
+        clampF(s * 0.11f, 1.3f, 2.8f))
+
+      // Head glint. For the spear this also carries the distance-damage ramp: the point
+      // brightens as the throw travels, which is exactly when it starts hitting harder.
+      val heat = if (kind == SHF_SPEAR) _lifePct else 0f
+      sb.fillStarFlare(headX, headY, s * (0.42f + heat * 0.5f), 2.2f,
+        (phase * 0.6).toFloat, 0.5f, 1f, mix(1f, 0.85f, heat), mix(0.95f, 0.45f, heat),
+        (0.55f + heat * 0.4f) * p)
+
+      kind match {
+        case SHF_DART | SHF_PARROW =>
+          // Venom beading off the point and falling away
+          var i = 0; while (i < 3) {
+            val t = ((tick * 0.05 + i * 0.34 + proj.id * 0.19) % 1.0).toFloat
+            dirPoint(1.15f - t * 0.5f, 0f, sx, sy, ndx, ndy, s)
+            val dy2 = t * t * 14f
+            sb.fillOval(_ptX, _ptY + dy2, 3.2f * (1f - t * 0.5f), 3.8f * (1f - t * 0.5f),
+              0.45f, 0.9f, 0.35f, 0.65f * (1f - t) * p, 8)
+            i += 1
+          }
+        case SHF_THORN =>
+          // Leaf motes shaken loose behind the spike
+          var i = 0; while (i < 4) {
+            val t = ((tick * 0.035 + i * 0.25 + proj.id * 0.13) % 1.0).toFloat
+            val drift = Math.sin(t * 6.0 + i).toFloat * 7f
+            val lx = sx - ndx * t * s * 1.6f - ndy * drift
+            val ly = sy - ndy * t * s * 1.6f + ndx * drift + t * t * 9f
+            sb.fillOval(lx, ly, 3.6f * (1f - t * 0.5f), 2.4f * (1f - t * 0.5f),
+              0.32f, 0.62f, 0.24f, 0.5f * (1f - t) * p, 6)
+            i += 1
+          }
+        case SHF_ARROW =>
+          drawSparkBurst(headX, headY, dr, dg, db, 0.34f * p, sb, tick, proj.id, 3, s * 0.4f)
+        case SHF_ICE =>
+          // Frost crystals shedding off the spike and settling behind it
+          var i = 0; while (i < 5) {
+            val t = ((tick * 0.04 + i * 0.2 + proj.id * 0.17) % 1.0).toFloat
+            val drift = Math.sin(t * 5.0 + i * 2.1).toFloat * 8f
+            val fx = sx - ndx * t * s * 1.7f - ndy * drift
+            val fy = sy - ndy * t * s * 1.7f + ndx * drift
+            drawSparkleStar(fx, fy, 5.5f * (1f - t * 0.6f), 0.85f, 0.96f, 1f, 0.6f * (1f - t) * p, sb, t * 6.0 + i)
+            i += 1
+          }
+        case _ =>
+          // Spear: a light streak riding the shaft toward the point
+          val t = ((tick * 0.09 + proj.id * 0.21) % 1.0).toFloat
+          dirPoint(-1f + t * 2.2f, 0f, sx, sy, ndx, ndy, s)
+          sb.fillOvalSoft(_ptX, _ptY, s * 0.22f, s * 0.14f, 1f, 0.95f, 0.7f, 0.5f * (1f - t) * p, 0f, 8)
+      }
+
+      drawChargeCrackle(headX, headY, s * 0.5f, r, g, b, p, sb, phase, proj.chargeLevel)
+      drawReturnGhosts(sx, sy, s * 0.5f, dr, dg, db, p, sb, proj)
+    }
+
+
+  // ── Thrown-object kinds for `lobbed` ──
+  // A grenade, a gravedigger's shovel, a blacksmith's hammer and a minotaur's horn are
+  // all "an object on an arc", and the old factory drew all four as the same grey disc
+  // with a shadow. The kind selects a body so the arc still says whose ability it is.
+  private val LOB_BOMB = 0
+  private val LOB_FLASK = 1
+  private val LOB_SHOVEL = 2
+  private val LOB_HAMMER = 3
+  private val LOB_HORN = 4
+  private val LOB_MINE = 5
+  private val LOB_ICE = 6
+  private val LOB_GLOB = 7
+
+  private val SHOVEL_PARTS = Array(
+    part(Array(-1.15f,-0.10f, 0.22f,-0.10f, 0.22f,0.10f, -1.15f,0.10f), WOOD_R, WOOD_G, WOOD_B, 0.12f),
+    part(Array(-1.30f,-0.34f, -1.10f,-0.34f, -1.10f,0.34f, -1.30f,0.34f), DKWOOD_R, DKWOOD_G, DKWOOD_B, 0.12f),
+    part(Array(0.18f,-0.44f, 0.72f,-0.42f, 1.16f,0f, 0.72f,0.42f, 0.18f,0.44f), DKSTEEL_R, DKSTEEL_G, DKSTEEL_B, 0.30f),
+    part(Array(0.30f,-0.26f, 0.70f,-0.24f, 0.96f,0f, 0.70f,0.10f, 0.30f,0.06f), STEEL_R, STEEL_G, STEEL_B, 0.18f)
+  )
+  private val HAMMER_PARTS = Array(
+    part(Array(-1.20f,-0.11f, 0.42f,-0.11f, 0.42f,0.11f, -1.20f,0.11f), WOOD_R, WOOD_G, WOOD_B, 0.12f),
+    part(Array(0.38f,-0.56f, 1.18f,-0.50f, 1.18f,0.50f, 0.38f,0.56f), DKSTEEL_R, DKSTEEL_G, DKSTEEL_B, 0.35f),
+    part(Array(0.46f,-0.42f, 1.06f,-0.38f, 1.06f,-0.06f, 0.46f,-0.10f), STEEL_R, STEEL_G, STEEL_B, 0.20f),
+    part(Array(-1.32f,-0.16f, -1.14f,-0.16f, -1.14f,0.16f, -1.32f,0.16f), DKSTEEL_R, DKSTEEL_G, DKSTEEL_B, 0.30f)
+  )
+  private val HORN_PARTS = Array(
+    part(Array(-1.05f,-0.30f, -0.30f,-0.34f, -0.30f,0.28f, -1.05f,0.32f), 0.90f, 0.86f, 0.76f, 0.20f),
+    part(Array(-0.32f,-0.36f, 0.42f,-0.50f, 0.42f,0.06f, -0.32f,0.26f), 0.86f, 0.81f, 0.70f, 0.20f),
+    part(Array(0.40f,-0.52f, 1.12f,-0.86f, 1.02f,-0.48f, 0.40f,0.04f), 0.78f, 0.72f, 0.62f, 0.20f),
+    part(Array(-1.10f,-0.24f, -0.86f,-0.26f, -0.86f,0.26f, -1.10f,0.24f), 0.46f, 0.34f, 0.28f, 0.25f)
+  )
+
+  /** The object itself, drawn at the top of the arc. `spin` tumbles the rigid kinds; the
+   *  round kinds stay upright and animate their own detail instead. */
+  private def drawLobBody(sb: ShapeBatch, kind: Int, cx: Float, cy: Float, sz: Float,
+                          spin: Float, phase: Double, sx2: Float, sy2: Float,
+                          dr: Float, dg: Float, db: Float, r: Float, g: Float, b: Float,
+                          a: Float): Unit = {
+    val ca = Math.cos(spin).toFloat; val sa = Math.sin(spin).toFloat
+    val ow = clampF(sz * 0.12f, 1.4f, 3f)
+    kind match {
+      case LOB_SHOVEL => drawParts(sb, SHOVEL_PARTS, cx, cy, ca, sa, sz * 0.95f, dr, dg, db, a, ow)
+      case LOB_HAMMER => drawParts(sb, HAMMER_PARTS, cx, cy, ca, sa, sz * 0.90f, dr, dg, db, a, ow)
+      case LOB_HORN   => drawParts(sb, HORN_PARTS, cx, cy, ca, sa, sz * 0.95f, dr, dg, db, a, ow)
+
+      case LOB_BOMB =>
+        // Cast-iron sphere with a banded seam, a collar and a burning fuse
+        sb.strokeOval(cx, cy, sz * 0.98f, sz * 0.86f, ow + 1f, 0.05f, 0.05f, 0.07f, 0.9f * a, 18)
+        sb.fillOval(cx, cy, sz * 0.95f, sz * 0.83f, 0.17f, 0.17f, 0.20f, a, 18)
+        sb.fillOval(cx - sz * 0.26f, cy - sz * 0.26f, sz * 0.30f, sz * 0.24f, 0.62f, 0.64f, 0.70f, 0.55f * a, 10)
+        sb.strokeArc(cx, cy, sz * 0.72f, sz * 0.62f, 0.6f, 2.2f, 2f, 0.34f, 0.35f, 0.40f, 0.8f * a, 8)
+        sb.fillRoundedRect(cx - sz * 0.20f, cy - sz * 1.00f, sz * 0.40f, sz * 0.28f, 2f,
+          mix(0.30f, dr, 0.4f), mix(0.30f, dg, 0.4f), mix(0.34f, db, 0.4f), a)
+        // Fuse: a curl with a spark that eats along it
+        val fx = cx + sz * 0.12f; val fy = cy - sz * 1.06f
+        val curl = Math.sin(phase * 2.2).toFloat * sz * 0.16f
+        sb.strokeLine(fx, fy, fx + sz * 0.22f + curl, fy - sz * 0.40f, 2.4f, 0.42f, 0.36f, 0.26f, 0.9f * a)
+        val spark = fx + sz * 0.24f + curl
+        val sparkY = fy - sz * 0.44f
+        sb.fillOvalSoft(spark, sparkY, sz * 0.32f, sz * 0.32f, 1f, 0.72f, 0.2f, 0.7f * a, 0f, 10)
+        sb.fillStarFlare(spark, sparkY, sz * 0.30f, 2f, phase.toFloat * 3f, 0.6f, 1f, 0.92f, 0.6f, 0.9f * a)
+
+      case LOB_FLASK =>
+        // Corked glass flask with sloshing contents
+        sb.strokeOval(cx, cy + sz * 0.10f, sz * 0.82f, sz * 0.72f, ow, 0.06f, 0.08f, 0.06f, 0.85f * a, 16)
+        sb.fillOval(cx, cy + sz * 0.10f, sz * 0.80f, sz * 0.70f, 0.62f, 0.72f, 0.66f, 0.35f * a, 16)
+        val slosh = Math.sin(phase * 2.6).toFloat * sz * 0.09f
+        sb.fillOval(cx + slosh * 0.5f, cy + sz * 0.26f, sz * 0.68f, sz * 0.42f, dr, dg, db, 0.92f * a, 14)
+        sb.fillOval(cx + slosh, cy + sz * 0.10f, sz * 0.62f, sz * 0.14f,
+          bright(r), bright(g), bright(b), 0.75f * a, 12)
+        sb.fillRect(cx - sz * 0.17f, cy - sz * 0.64f, sz * 0.34f, sz * 0.56f, 0.66f, 0.75f, 0.68f, 0.4f * a)
+        sb.fillRoundedRect(cx - sz * 0.21f, cy - sz * 0.88f, sz * 0.42f, sz * 0.26f, 2f,
+          0.52f, 0.36f, 0.20f, 0.95f * a)
+        sb.fillOval(cx - sz * 0.26f, cy - sz * 0.06f, sz * 0.14f, sz * 0.26f, 1f, 1f, 1f, 0.35f * a, 8)
+        // Bubbles rising through the liquid
+        var i = 0; while (i < 3) {
+          val t = ((phase * 0.35 + i * 0.34) % 1.0).toFloat
+          sb.fillOval(cx + (i - 1) * sz * 0.18f, cy + sz * 0.36f - t * sz * 0.34f,
+            sz * 0.07f, sz * 0.07f, bright(r), bright(g), bright(b), 0.6f * (1f - t) * a, 6)
+          i += 1
+        }
+
+      case LOB_MINE =>
+        // Spiked contact mine with a blinking arming light
+        var i = 0; while (i < 8) {
+          val ang = spin * 0.5f + i * Math.PI.toFloat / 4f
+          val c2 = Math.cos(ang).toFloat; val s2 = Math.sin(ang).toFloat * ISO_Y
+          _polyXs3(0) = cx + c2 * sz * 0.62f - s2 * sz * 0.16f
+          _polyYs3(0) = cy + s2 * sz * 0.62f + c2 * sz * 0.16f
+          _polyXs3(1) = cx + c2 * sz * 0.62f + s2 * sz * 0.16f
+          _polyYs3(1) = cy + s2 * sz * 0.62f - c2 * sz * 0.16f
+          _polyXs3(2) = cx + c2 * sz * 1.06f; _polyYs3(2) = cy + s2 * sz * 1.06f
+          sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.56f, 0.59f, 0.66f, 0.95f * a)
+          i += 1
+        }
+        sb.strokeOval(cx, cy, sz * 0.72f, sz * 0.62f, ow + 1f, 0.05f, 0.05f, 0.07f, 0.9f * a, 16)
+        sb.fillOval(cx, cy, sz * 0.70f, sz * 0.60f, 0.30f, 0.33f, 0.39f, a, 16)
+        sb.strokeOval(cx, cy, sz * 0.56f, sz * 0.47f, 2f, 0.62f, 0.66f, 0.74f, 0.55f * a, 14)
+        sb.fillOval(cx - sz * 0.20f, cy - sz * 0.20f, sz * 0.24f, sz * 0.18f, 0.74f, 0.78f, 0.84f, 0.55f * a, 8)
+        val blink = (0.35f + 0.65f * Math.abs(Math.sin(phase * 3.2).toFloat))
+        sb.fillOvalSoft(cx, cy, sz * 0.46f, sz * 0.40f, dr, dg, db, 0.55f * blink * a, 0f, 12)
+        sb.fillOval(cx, cy, sz * 0.18f, sz * 0.15f, bright(r), bright(g), bright(b), blink * a, 8)
+
+      case LOB_ICE =>
+        // Faceted ice/rock chunk — an irregular hull, never a circle
+        var i = 0; while (i < 7) {
+          val ang = i * (Math.PI * 2 / 7) + spin * 0.35
+          val rad = sz * (0.72f + 0.30f * Math.sin(i * 2.7 + proj7(i)).toFloat)
+          _shpXs(i) = cx + Math.cos(ang).toFloat * rad
+          _shpYs(i) = cy + Math.sin(ang).toFloat * rad * 0.82f
+          i += 1
+        }
+        sb.strokePolygon(_shpXs, _shpYs, 7, ow + 1.5f, 0.05f, 0.09f, 0.16f, 0.92f * a)
+        sb.fillPolygon(_shpXs, _shpYs, 7, dr * 0.72f, dg * 0.82f, db * 0.95f, a)
+        // Facets: dark seams from the corners, then one lit face. Without the dark seams
+        // a white block on pale ground is a flat cut-out.
+        i = 0; while (i < 7) {
+          sb.strokeLine(_shpXs(i), _shpYs(i), cx + (_shpXs(i) - cx) * 0.15f, cy + (_shpYs(i) - cy) * 0.15f,
+            1.8f, 0.16f, 0.28f, 0.44f, 0.5f * a)
+          i += 1
+        }
+        _polyXs3(0) = cx; _polyYs3(0) = cy
+        _polyXs3(1) = _shpXs(5); _polyYs3(1) = _shpYs(5)
+        _polyXs3(2) = _shpXs(6); _polyYs3(2) = _shpYs(6)
+        sb.fillPolygon(_polyXs3, _polyYs3, 3, 1f, 1f, 1f, 0.34f * a)
+        sb.fillOval(cx - sz * 0.22f, cy - sz * 0.26f, sz * 0.26f, sz * 0.18f, 1f, 1f, 1f, 0.55f * a, 8)
+
+      case _ =>
+        // LOB_GLOB — a wobbling sack of mud/ink with drips peeling off the bottom
+        val wob = Math.sin(phase * 3.1).toFloat
+        sb.strokeOval(cx, cy, sz * (0.92f + wob * 0.10f), sz * (0.80f - wob * 0.10f), ow + 1f,
+          0.05f, 0.05f, 0.06f, 0.85f * a, 16)
+        sb.fillOval(cx, cy, sz * (0.90f + wob * 0.10f), sz * (0.78f - wob * 0.10f), dr, dg, db, a, 16)
+        sb.fillOval(cx - sz * 0.24f, cy - sz * 0.22f, sz * 0.24f, sz * 0.16f,
+          bright(r), bright(g), bright(b), 0.4f * a, 8)
+        var i = 0; while (i < 3) {
+          val t = ((phase * 0.4 + i * 0.34) % 1.0).toFloat
+          val dxo = (i - 1) * sz * 0.34f
+          sb.fillOval(cx + dxo, cy + sz * 0.55f + t * sz * 0.7f, sz * 0.16f * (1f - t * 0.4f),
+            sz * 0.22f * (1f - t * 0.4f), dark(r), dark(g), dark(b), 0.7f * (1f - t) * a, 8)
+          i += 1
+        }
+    }
+  }
+
+  /** Deterministic per-vertex jitter for the ice chunk's hull. */
+  @inline private def proj7(i: Int): Float = (i * 1.7f) % 3.1f
+
+  /**
+   * Object travelling on a lobbed arc: bomb, flask, shovel, hammer, horn, mine, ice
+   * chunk, mud glob. The arc machinery (bounce, squash, landing shadow and target ring,
+   * afterimages) is shared; `kind` picks the body, so a gravedigger's shovel and a
+   * bombardier's grenade no longer arrive as the same grey disc.
+   */
+  private def lobbed(kind: Int, r: Float, g: Float, b: Float, size: Float = 18f): Renderer =
     (proj, sx, sy, sb, tick) => {
       val phase = (tick + proj.id * 13) * 0.3
       computeAllDynamics(proj, r, g, b, phase)
       val bounceRaw = Math.sin(phase * 1.5).toFloat
-      val bounce = (Math.abs(bounceRaw) * 16f).toFloat
+      val bounce = Math.abs(bounceRaw) * 16f
       val bounceContact = Math.abs(bounceRaw)
-      val spin = tick * 0.18f + proj.id * 1.3f
-      val p = (0.7 + 0.3 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
+      val spin = tick * 0.16f + proj.id * 1.3f
+      val p = (0.75f + 0.25f * Math.sin(phase * _stPulseMult).toFloat) * dynAlpha
       val dr = _evoR; val dg = _evoG; val db = _evoB
-      val sz = size * 1.4f * dynScale
-
-      // Squash on apex (high bounce), stretch on descent
-      val squashFactor = bounceRaw * bounceRaw
-      val stretchY = 1f + squashFactor * 0.28f
-      val stretchX = 1f - squashFactor * 0.14f
+      val sz = size * 1.15f * Math.min(dynScale, 1.4f)
+      val bodyY = sy - bounce
 
       screenDir(proj)
       val ndx = _sdx; val ndy = _sdy
 
-      // Speed lines behind
-      drawSpeedLines(sx, sy, ndx, ndy, dr, dg, db, 0.2f * p, sb, 5, sz * 1.4f)
+      drawSpeedLines(sx, sy, ndx, ndy, dr, dg, db, 0.2f * p, sb, 4, sz * 1.4f)
+      drawRibbonTrail(sx, sy, ndx, ndy, dr, dg, db, 0.28f * p, sb, tick, proj.id, 7,
+        sz * 2.2f * dynTrail, sz * 0.36f, 1f)
 
-      // Ribbon trail
-      drawRibbonTrail(sx, sy, ndx, ndy, dr, dg, db, 0.3f * p, sb, tick, proj.id, 7, 40f * dynScale * dynTrail, 7f * dynScale, 1f)
-
-      // Landing target shadow that grows AND a pulsing target ring
+      // Landing shadow that tightens as the object comes down, plus a target ring — the
+      // arc's whole read is "this lands over there", so the ground marker carries it.
       val shadowScale = 1f + bounce * 0.04f
-      val shadowAlpha = Math.max(0.1f, 0.45f - bounce * 0.015f)
-      sb.fillOval(sx, sy + sz * 0.38f, sz * 1.3f * shadowScale, sz * 0.35f * shadowScale,
+      val shadowAlpha = Math.max(0.12f, 0.48f - bounce * 0.015f)
+      sb.fillOval(sx, sy + sz * 0.42f, sz * 1.2f * shadowScale, sz * 0.32f * shadowScale,
         0f, 0f, 0f, shadowAlpha, 16)
-      sb.fillOval(sx, sy + sz * 0.38f, sz * 0.9f * shadowScale, sz * 0.22f * shadowScale,
-        0f, 0f, 0f, shadowAlpha * 0.4f, 14)
-      // Pulsing target ring
-      val targetPulse = (0.5f + 0.5f * Math.sin(phase * 3).toFloat)
-      val targetAlpha = Math.max(0f, (0.35f - bounce * 0.015f)) * targetPulse * p
+      val targetPulse = 0.5f + 0.5f * Math.sin(phase * 3).toFloat
+      val targetAlpha = Math.max(0f, 0.35f - bounce * 0.015f) * targetPulse * p
       if (targetAlpha > 0.01f) {
-        sb.strokeOval(sx, sy + sz * 0.38f, sz * 1f * shadowScale, sz * 0.28f * shadowScale,
+        sb.strokeOval(sx, sy + sz * 0.42f, sz * 1.0f * shadowScale, sz * 0.27f * shadowScale,
           2f, dark(r), dark(g), dark(b), targetAlpha, 12)
-        sb.strokeOval(sx, sy + sz * 0.38f, sz * 0.6f * shadowScale, sz * 0.16f * shadowScale,
+        sb.strokeOval(sx, sy + sz * 0.42f, sz * 0.6f * shadowScale, sz * 0.16f * shadowScale,
           1.2f, r, g, b, targetAlpha * 0.6f, 10)
       }
 
-      // Spark burst at bounce contact points
       if (bounceContact < 0.15f) {
         val impactT = 1f - bounceContact / 0.15f
-        drawSparkBurst(sx, sy + sz * 0.35f, dr, dg, db, impactT * 0.6f * p, sb, tick, proj.id, 6, sz * 1.1f)
+        drawSparkBurst(sx, sy + sz * 0.38f, dr, dg, db, impactT * 0.6f * p, sb, tick, proj.id, 6, sz * 1.1f)
       }
 
-      // 4 fading afterimage ghosts along arc trajectory
-      { var ghost = 0; while (ghost < 4) {
-        val gt = ((tick * 0.06 + ghost * 0.17 + proj.id * 0.11) % 1.0).toFloat
-        val ghostBounce = Math.abs(Math.sin(phase * 1.5 - gt * Math.PI)).toFloat * 14f
-        val ghostSz = sz * (0.6f - ghost * 0.1f) * (1f - gt * 0.3f)
-        val ghostAlpha = 0.28f * (1f - gt) * (1f - ghost * 0.18f) * p
-        val gx = sx - ndx * gt * 45; val gy = sy - ndy * gt * 45 - ghostBounce
-        // Ghost outline
-        sb.strokeOval(gx, gy, ghostSz * stretchX + 1f, ghostSz * 0.7f * stretchY + 0.5f,
-          1.5f, outline(r), outline(g), outline(b), ghostAlpha * 0.4f, 10)
-        sb.fillOval(gx, gy, ghostSz * stretchX, ghostSz * 0.7f * stretchY, dr, dg, db, ghostAlpha, 10)
-      ; ghost += 1 } }
+      // Afterimages back along the arc
+      var ghost = 3; while (ghost >= 1) {
+        val gt = ghost * 0.3f
+        val gBounce = Math.abs(Math.sin(phase * 1.5 - gt * Math.PI)).toFloat * 14f
+        val gx = sx - ndx * gt * 42f; val gy = sy - ndy * gt * 42f - gBounce
+        sb.fillOval(gx, gy, sz * (0.55f - ghost * 0.08f), sz * (0.45f - ghost * 0.07f),
+          dr, dg, db, 0.16f * (1f - (ghost - 1) * 0.3f) * p, 10)
+        ghost -= 1
+      }
 
-      // Huge outer glow halo (charge-scaled)
-      sb.fillOvalSoft(sx, sy - bounce, sz * 2.2f * stretchX * dynGlow, sz * 1.8f * stretchY * dynGlow,
-        dr, dg, db, 0.32f * p, 0f, 18)
-      sb.fillOvalSoft(sx, sy - bounce, sz * 1.5f * stretchX * dynGlow, sz * 1.2f * stretchY * dynGlow,
-        bright(r), bright(g), bright(b), 0.15f * p, 0f, 16)
+      // Halo — kept modest so the body's own silhouette stays the thing you read
+      sb.fillOvalSoft(sx, bodyY, sz * 1.7f * dynGlow, sz * 1.45f * dynGlow, dr, dg, db, 0.24f * p, 0f, 18)
 
-      // 4px dark cartoon outline with squash/stretch
-      sb.strokeOval(sx, sy - bounce, sz * 1.08f * stretchX, sz * 0.88f * stretchY,
-        4f, outline(r), outline(g), outline(b), 0.88f * dynAlpha, 18)
+      drawLobBody(sb, kind, sx, bodyY, sz, spin, phase, sx, sy, dr, dg, db, r, g, b, 0.97f * dynAlpha)
 
-      // Multi-layer body (3 concentric fills)
-      sb.fillOval(sx, sy - bounce, sz * 1.02f * stretchX, sz * 0.82f * stretchY, dr, dg, db, 0.98f * dynAlpha, 18)
-      sb.fillOval(sx, sy - bounce, sz * 0.75f * stretchX, sz * 0.6f * stretchY,
-        mix(dr, bright(r), 0.3f), mix(dg, bright(g), 0.3f), mix(db, bright(b), 0.3f), 0.7f * dynAlpha, 14)
-      sb.fillOval(sx, sy - bounce, sz * 0.4f * stretchX, sz * 0.32f * stretchY,
-        mix(bright(r), 1f, _chgBright), mix(bright(g), 1f, _chgBright), mix(bright(b), 1f, _chgBright), 0.85f * dynAlpha, 10)
+      // A couple of sparkles so the object still catches the eye in a busy fight
+      var i = 0; while (i < 3) {
+        val starPhase = ((phase * 0.45 + i * 0.34) % 1.0).toFloat
+        val starAngle = phase * 1.2 + i * Math.PI * 2 / 3
+        val starDist = sz * (0.85f + starPhase * 0.5f)
+        drawSparkleStar(sx + Math.cos(starAngle).toFloat * starDist,
+          bodyY + Math.sin(starAngle).toFloat * starDist * 0.55f,
+          4.5f * (1f - starPhase * 0.5f), bright(r), bright(g), bright(b),
+          0.4f * (1f - starPhase) * p, sb, phase * 2 + i)
+        i += 1
+      }
 
-      // Bottom shadow shading — must fade with the body, or a dark blob outlives
-      // the projectile through the end-of-range dissipation.
-      sb.fillOval(sx, sy - bounce + sz * 0.2f * stretchY, sz * 0.88f * stretchX, sz * 0.45f * stretchY,
-        dark(r), dark(g), dark(b), 0.4f * dynAlpha, 14)
-
-      // Tumble rotation with moving highlight AND moving shadow
-      val hlAngle = spin * 2.5
-      val hlOffX = Math.cos(hlAngle).toFloat * sz * 0.22f
-      val hlOffY = Math.sin(hlAngle).toFloat * sz * 0.16f
-      // Moving shadow (opposite side of highlight)
-      sb.fillOval(sx - hlOffX * 0.8f, sy - bounce - hlOffY * 0.6f + sz * 0.12f * stretchY,
-        sz * 0.32f * stretchX, sz * 0.24f * stretchY, dark(r), dark(g), dark(b), 0.3f * p, 8)
-      // Moving highlight — fades with the body (see bottom shading above)
-      sb.fillOval(sx + hlOffX, sy - bounce + hlOffY - sz * 0.18f * stretchY,
-        sz * 0.38f * stretchX, sz * 0.28f * stretchY, 1f, 1f, 1f, 0.5f * dynAlpha, 8)
-      sb.fillOval(sx + hlOffX * 0.7f, sy - bounce + hlOffY * 0.7f - sz * 0.2f * stretchY,
-        sz * 0.18f * stretchX, sz * 0.12f * stretchY, 1f, 1f, 1f, 0.3f * dynAlpha, 6)
-
-      // 5 surface detail marks rotating
-      var v = 0; while (v < 5) {
-        val a = spin * 2.5 + v * Math.PI * 2 / 5
-        val markR = sz * 0.48f
-        val vx = (sx + Math.cos(a) * markR * stretchX).toFloat
-        val vy = (sy - bounce + Math.sin(a) * markR * 0.75f * stretchY).toFloat
-        // Mark outline
-        sb.strokeLine(sx, sy - bounce, vx, vy, 2.5f, outline(r), outline(g), outline(b), 0.2f * p)
-        // Mark body
-        sb.strokeLine(sx, sy - bounce, vx, vy, 1.5f, dark(r), dark(g), dark(b), 0.35f * p)
-        // Dot at end
-        sb.fillOval(vx, vy, 2.5f, 2f, dark(r), dark(g), dark(b), 0.3f * p, 4)
-      ; v += 1 }
-
-      // 4 sparkle stars
-      { var i = 0; while (i < 4) {
-        val starPhase = ((phase * 0.45 + i * 0.25) % 1.0).toFloat
-        val starAngle = phase * 1.2 + i * Math.PI * 2 / 4
-        val starDist = (sz * 0.8f + starPhase * sz * 0.6f)
-        val starX = sx + Math.cos(starAngle).toFloat * starDist
-        val starY = sy - bounce + Math.sin(starAngle).toFloat * starDist * 0.55f
-        drawSparkleStar(starX, starY, 5f * (1f - starPhase * 0.5f) * dynScale,
-          bright(r), bright(g), bright(b), 0.45f * (1f - starPhase) * p, sb, phase * 2 + i)
-      ; i += 1 } }
-
-      drawChargeCrackle(sx, sy - bounce, sz, r, g, b, p, sb, phase, proj.chargeLevel)
-      drawReturnGhosts(sx, sy - bounce, sz, dr, dg, db, p, sb, proj)
+      drawChargeCrackle(sx, bodyY, sz, r, g, b, p, sb, phase, proj.chargeLevel)
+      drawReturnGhosts(sx, bodyY, sz, dr, dg, db, p, sb, proj)
     }
 
-  /** Large expanding ring AoE — maximum drama shockwave with ground cracks, debris, sparkles, blast wave */
-  private def aoeRing(r: Float, g: Float, b: Float, maxR: Float = 50f): Renderer =
+  // ── Blast flavours for `aoeRing` ──
+  private val AOE_QUAKE = 0
+  private val AOE_WATER = 1
+  private val AOE_TOXIC = 2
+  private val AOE_FIRE = 3
+  private val AOE_SONIC = 4
+  private val AOE_VOID = 5
+  private val AOE_NATURE = 6
+
+  /**
+   * Expanding ground blast.
+   *
+   * The rings used to be hairline strokes at low alpha, which on grass came out as a
+   * barely-visible ripple — the same ripple for a tidal splash, a plague cloud, an
+   * eruption and a gravity vortex. They are now filled bands over a darkened ground
+   * scorch, and `kind` chooses what the blast throws off: rubble, water, spores, flame,
+   * pressure rings, inward-falling motes, or roots.
+   */
+  private def aoeRing(kind: Int, r: Float, g: Float, b: Float, maxR: Float = 50f): Renderer =
     (proj, sx, sy, sb, tick) => {
       val phase = (tick + proj.id * 23) * 0.4
       computeAllDynamics(proj, r, g, b, phase)
-      val p = (0.65 + 0.35 * Math.sin(phase * 2 * _stPulseMult)).toFloat * dynAlpha
+      val p = (0.78f + 0.22f * Math.sin(phase * 2 * _stPulseMult).toFloat) * dynAlpha
       val dr = _evoR; val dg = _evoG; val db = _evoB
-      val mR = maxR * 1.35f * dynScale
+      val mR = maxR * 1.3f * dynScale
+      val flat = 0.45f // ground ellipse ratio for this projection
 
-      // Ground fill glow — charge-scaled, pulsing
-      val groundPulse = (0.7f + 0.3f * Math.sin(phase * 1.8).toFloat)
-      sb.fillOvalSoft(sx, sy, mR * 0.8f * dynGlow * groundPulse, mR * 0.4f * dynGlow * groundPulse,
-        dr, dg, db, 0.3f * p, 0f, 20)
-      sb.fillOvalSoft(sx, sy, mR * 0.5f * dynGlow, mR * 0.25f * dynGlow,
-        bright(r), bright(g), bright(b), 0.15f * p, 0f, 16)
+      // Ground scorch: without something darker than the terrain underneath, a bright
+      // ring on grass reads as a smudge. This is what gives the blast a floor.
+      sb.fillOvalSoft(sx, sy, mR * 0.86f, mR * 0.86f * flat, dark(r) * 0.42f, dark(g) * 0.42f, dark(b) * 0.45f,
+        (if (kind == AOE_QUAKE) 0.62f else 0.44f) * p, 0.02f, 20)
+      val groundPulse = 0.75f + 0.25f * Math.sin(phase * 1.8).toFloat
+      sb.fillOvalSoft(sx, sy, mR * 0.66f * dynGlow * groundPulse, mR * 0.66f * flat * dynGlow * groundPulse,
+        dr, dg, db, 0.34f * p, 0f, 20)
 
-      // 10 ground crack lines with forked ends
-      { var crack = 0; while (crack < 10) {
-        val cAngle = crack * Math.PI * 2 / 10 + proj.id * 0.5
-        val cLen = mR * (0.35f + 0.18f * Math.sin(phase * 0.3 + crack * 2.1).toFloat)
-        val cx1 = sx + Math.cos(cAngle).toFloat * cLen
-        val cy1 = sy + Math.sin(cAngle).toFloat * cLen * 0.45f
-        // Dark crack line (thick)
-        sb.strokeLine(sx, sy, cx1, cy1, 2.5f, dark(r), dark(g), dark(b), 0.4f * p)
-        // Bright edge
-        sb.strokeLine(sx + 0.5f, sy + 0.5f, cx1 + 0.5f, cy1 + 0.5f, 0.8f, r, g, b, 0.2f * p)
-        // Fork 1
-        val forkLen = cLen * 0.35f
-        val fAngle1 = cAngle + 0.4 + Math.sin(phase * 0.5 + crack) * 0.2
-        val fx1 = cx1 + Math.cos(fAngle1).toFloat * forkLen
-        val fy1 = cy1 + Math.sin(fAngle1).toFloat * forkLen * 0.45f
-        sb.strokeLine(cx1, cy1, fx1, fy1, 1.5f, dark(r), dark(g), dark(b), 0.25f * p)
-        // Fork 2
-        val fAngle2 = cAngle - 0.35 + Math.cos(phase * 0.5 + crack) * 0.2
-        val fx2 = cx1 + Math.cos(fAngle2).toFloat * forkLen * 0.7f
-        val fy2 = cy1 + Math.sin(fAngle2).toFloat * forkLen * 0.7f * 0.45f
-        sb.strokeLine(cx1, cy1, fx2, fy2, 1.2f, dark(r), dark(g), dark(b), 0.2f * p)
-        // Sub-fork on fork 1
-        val sfAngle = fAngle1 + 0.5
-        sb.strokeLine(fx1, fy1, fx1 + Math.cos(sfAngle).toFloat * forkLen * 0.4f,
-          fy1 + Math.sin(sfAngle).toFloat * forkLen * 0.4f * 0.45f, 0.8f, dark(r), dark(g), dark(b), 0.15f * p)
-      ; crack += 1 } }
-
-      // Expanding blast wave effect at creation (fast expanding ring that fades)
-      val blastPhase = ((phase * 0.15) % 1.0).toFloat
-      if (blastPhase < 0.5f) {
-        val blastR = mR * blastPhase * 2f
-        val blastA = 0.4f * (1f - blastPhase * 2f) * p
-        sb.strokeOval(sx, sy, blastR, blastR * 0.45f, 6f * (1f - blastPhase * 2f),
-          bright(r), bright(g), bright(b), blastA, 16)
+      // Three filled shockwave bands, widest and brightest at the leading edge
+      var ring = 0; while (ring < 3) {
+        val rp = ((phase * 0.20 + ring * 0.333) % 1.0).toFloat
+        val rr = 10f + rp * mR
+        val a = Math.max(0f, 0.62f * (1f - rp * rp) * p)
+        val bandIn = rr * (1f - 0.20f - 0.10f * rp)
+        sb.fillArcBand(sx, sy, bandIn, bandIn * flat, rr, rr * flat, 0f, 6.2832f, 22,
+          mix(r, bright(r), rp * 0.5f), mix(g, bright(g), rp * 0.5f), mix(b, bright(b), rp * 0.5f), a, a)
+        sb.strokeOval(sx, sy, rr + 1.5f, (rr + 1.5f) * flat, 3.5f, 0.05f, 0.05f, 0.07f, a * 0.7f, 22)
+        sb.strokeOval(sx, sy, rr, rr * flat, 2.2f, mix(bright(r), 1f, 0.4f), mix(bright(g), 1f, 0.4f),
+          mix(bright(b), 1f, 0.4f), a * 1.1f, 22)
+        ring += 1
       }
 
-      // 6 bold expanding rings with thick leading-edge shockwave flash
-      var ring = 0; while (ring < 6) {
-        val rp = ((phase * 0.22 + ring * 0.167) % 1.0).toFloat
-        val ringR = 8f + rp * mR
-        val a = Math.max(0f, 0.75f * (1f - rp) * p)
-        val colorShift = rp * 0.4f
-        val thickness = 5.5f * (1f - rp * 0.2f)
-        // Dark outline ring
-        sb.strokeOval(sx, sy, ringR + 2f, (ringR + 2f) * 0.45f, thickness + 3f,
-          outline(r), outline(g), outline(b), a * 0.5f, 16)
-        // Colored ring
-        sb.strokeOval(sx, sy, ringR, ringR * 0.45f, thickness,
-          mix(r, bright(r), colorShift), mix(g, bright(g), colorShift), mix(b, bright(b), colorShift), a, 16)
-        // Thick leading-edge shockwave flash (first 2 rings)
-        if (ring < 2 && rp < 0.6f) {
-          val shockAlpha = a * 0.65f * (1f - rp / 0.6f)
-          sb.strokeOval(sx, sy, ringR + 4f, (ringR + 4f) * 0.45f, thickness + 5f,
-            bright(r), bright(g), bright(b), shockAlpha, 16)
-          // Extra bright flash on outermost ring
-          if (ring == 0 && rp < 0.3f) {
-            sb.strokeOval(sx, sy, ringR + 6f, (ringR + 6f) * 0.45f, thickness + 8f,
-              1f, 1f, 1f, shockAlpha * 0.4f * (1f - rp / 0.3f), 16)
+      kind match {
+        case AOE_QUAKE =>
+          // Forked ground cracks plus rubble thrown clear of the rim
+          var c = 0; while (c < 9) {
+            val ang = c * Math.PI * 2 / 9 + proj.id * 0.5
+            val cl = mR * (0.36f + 0.16f * Math.sin(phase * 0.3 + c * 2.1).toFloat)
+            val ex = sx + Math.cos(ang).toFloat * cl; val ey = sy + Math.sin(ang).toFloat * cl * flat
+            sb.strokeLine(sx, sy, ex, ey, 3.2f, 0.06f, 0.05f, 0.05f, 0.55f * p)
+            val fa = ang + 0.45
+            sb.strokeLine(ex, ey, ex + Math.cos(fa).toFloat * cl * 0.35f,
+              ey + Math.sin(fa).toFloat * cl * 0.35f * flat, 2f, 0.06f, 0.05f, 0.05f, 0.4f * p)
+            c += 1
           }
-        }
-      ; ring += 1 }
+          var d = 0; while (d < 9) {
+            val t = ((phase * 0.28 + d * 0.111) % 1.0).toFloat
+            val ang = phase * 0.4 + d * Math.PI * 2 / 9
+            val dist = 12f + t * mR
+            val dx2 = sx + Math.cos(ang).toFloat * dist
+            val dy2 = sy + Math.sin(ang).toFloat * dist * flat - t * t * 26f
+            val sz2 = 4f + (1f - t) * 5f
+            _polyXs3(0) = dx2 - sz2; _polyYs3(0) = dy2 + sz2 * 0.5f
+            _polyXs3(1) = dx2 + sz2 * 0.3f; _polyYs3(1) = dy2 - sz2 * 0.8f
+            _polyXs3(2) = dx2 + sz2; _polyYs3(2) = dy2 + sz2 * 0.4f
+            sb.fillPolygon(_polyXs3, _polyYs3, 3, dark(r), dark(g), dark(b), 0.75f * (1f - t) * p)
+            d += 1
+          }
+        case AOE_WATER =>
+          // Droplets thrown up and falling back, over a rippled surface
+          var i = 1; while (i <= 4) {
+            val rr = mR * (0.18f * i) + ((phase * 4) % 10).toFloat
+            sb.strokeOval(sx, sy, rr, rr * flat, 1.4f, bright(r), bright(g), bright(b), 0.30f * p, 18)
+            i += 1
+          }
+          var d = 0; while (d < 12) {
+            val t = ((phase * 0.36 + d * 0.083) % 1.0).toFloat
+            val ang = d * Math.PI * 2 / 12 + proj.id * 0.3
+            val dist = 10f + t * mR * 0.85f
+            val rise = Math.sin(t * Math.PI).toFloat * 30f
+            sb.fillOval(sx + Math.cos(ang).toFloat * dist, sy + Math.sin(ang).toFloat * dist * flat - rise,
+              3.4f * (1f - t * 0.4f), 4.6f * (1f - t * 0.4f), bright(r), bright(g), bright(b), 0.8f * (1f - t) * p, 7)
+            d += 1
+          }
+        case AOE_TOXIC =>
+          // Spore puffs boiling upward out of the cloud
+          var d = 0; while (d < 10) {
+            val t = ((phase * 0.22 + d * 0.1) % 1.0).toFloat
+            val ang = d * 2.39f + proj.id * 0.4f
+            val dist = mR * (0.2f + 0.55f * t)
+            val bx = sx + Math.cos(ang).toFloat * dist
+            val by = sy + Math.sin(ang).toFloat * dist * flat - t * 26f
+            val bs = 7f + t * 12f
+            sb.fillOvalSoft(bx, by, bs, bs * 0.8f, dr, dg, db, 0.38f * (1f - t) * p, 0f, 10)
+            sb.strokeOval(bx, by, bs * 0.6f, bs * 0.48f, 1.4f, bright(r), bright(g), bright(b), 0.28f * (1f - t) * p, 8)
+            d += 1
+          }
+        case AOE_FIRE =>
+          // Flame tongues standing up around the rim, embers drifting off
+          var f = 0; while (f < 10) {
+            val ang = f * Math.PI * 2 / 10 + phase * 0.2
+            val lick = 0.5f + 0.5f * Math.sin(phase * 3.6 + f * 1.7).toFloat
+            val rr = mR * 0.52f
+            val bx = sx + Math.cos(ang).toFloat * rr; val by = sy + Math.sin(ang).toFloat * rr * flat
+            val fh = (14f + lick * 26f) * (0.65f + 0.55f * ((f * 5) % 7) / 6f)
+            val lean = Math.sin(phase * 2.1 + f).toFloat * 7f
+            _polyXs3(0) = bx - 7f; _polyYs3(0) = by + 3f
+            _polyXs3(1) = bx + lean; _polyYs3(1) = by - fh
+            _polyXs3(2) = bx + 7f; _polyYs3(2) = by + 3f
+            sb.fillPolygon(_polyXs3, _polyYs3, 3, 1f, 0.42f + lick * 0.3f, 0.08f, 0.75f * p)
+            _polyXs3(0) = bx - 3.4f; _polyYs3(0) = by + 2f
+            _polyXs3(1) = bx + lean * 0.6f; _polyYs3(1) = by - fh * 0.62f
+            _polyXs3(2) = bx + 3.4f; _polyYs3(2) = by + 2f
+            sb.fillPolygon(_polyXs3, _polyYs3, 3, 1f, 0.92f, 0.55f, 0.8f * p)
+            f += 1
+          }
+          var e = 0; while (e < 8) {
+            val t = ((phase * 0.3 + e * 0.125) % 1.0).toFloat
+            val ang = e * 0.9f + proj.id * 0.3f
+            sb.fillOval(sx + Math.cos(ang).toFloat * mR * 0.4f * (0.5f + t),
+              sy + Math.sin(ang).toFloat * mR * 0.4f * flat - t * 42f,
+              3.5f * (1f - t), 3.5f * (1f - t), 1f, 0.72f, 0.28f, 0.8f * (1f - t) * p, 6)
+            e += 1
+          }
+        case AOE_SONIC =>
+          // A dense stack of pressure rings — the blast is the air itself
+          var i = 0; while (i < 7) {
+            val rp = ((phase * 0.30 + i * 0.143) % 1.0).toFloat
+            val rr = 6f + rp * mR
+            sb.strokeOval(sx, sy, rr, rr * flat, 2.6f * (1f - rp * 0.6f),
+              bright(r), bright(g), bright(b), 0.45f * (1f - rp) * p, 20)
+            i += 1
+          }
+        case AOE_VOID =>
+          // Everything falls inward, and the middle is a hole rather than a light
+          var d = 0; while (d < 14) {
+            val t = ((phase * 0.4 + d * 0.0714) % 1.0).toFloat
+            val ti = 1f - t
+            val ang = d * 0.9f + phase * 0.8 + ti * 3.2
+            val dist = mR * 0.9f * ti
+            val px2 = sx + Math.cos(ang).toFloat * dist
+            val py2 = sy + Math.sin(ang).toFloat * dist * flat
+            sb.strokeLineSoft(px2, py2, sx + Math.cos(ang + 0.3).toFloat * dist * 0.86f,
+              sy + Math.sin(ang + 0.3).toFloat * dist * 0.86f * flat, 2.6f,
+              bright(r), bright(g), bright(b), 0.55f * t * p)
+            d += 1
+          }
+          sb.fillOval(sx, sy, mR * 0.20f, mR * 0.20f * flat, 0.02f, 0.01f, 0.04f, 0.9f * p, 16)
+          sb.strokeOval(sx, sy, mR * 0.21f, mR * 0.21f * flat, 2.5f, bright(r), bright(g), bright(b), 0.8f * p, 16)
+        case _ =>
+          // AOE_NATURE — barbed roots shoving up out of the ground
+          var v = 0; while (v < 9) {
+            val ang = v * Math.PI * 2 / 9 + proj.id * 0.4
+            val grow = 0.55f + 0.45f * Math.sin(phase * 0.8 + v * 1.3).toFloat
+            val rr = mR * 0.62f * grow
+            val ca2 = Math.cos(ang).toFloat; val sa2 = Math.sin(ang).toFloat
+            var seg = 0; while (seg < 3) {
+              val t0 = seg / 3f; val t1 = (seg + 1) / 3f
+              val wob0 = Math.sin(t0 * 5.0 + v).toFloat * 6f
+              val wob1 = Math.sin(t1 * 5.0 + v).toFloat * 6f
+              val x0 = sx + ca2 * rr * t0 - sa2 * wob0; val y0 = sy + sa2 * rr * t0 * flat + ca2 * wob0 * flat - t0 * 9f
+              val x1 = sx + ca2 * rr * t1 - sa2 * wob1; val y1 = sy + sa2 * rr * t1 * flat + ca2 * wob1 * flat - t1 * 9f
+              sb.strokeLine(x0, y0, x1, y1, 6f * (1f - t0 * 0.5f), 0.10f, 0.09f, 0.05f, 0.7f * p)
+              sb.strokeLine(x0, y0, x1, y1, 3.8f * (1f - t0 * 0.5f), dr, dg, db, 0.9f * p)
+              if (seg == 1) {
+                sb.strokeLine(x1, y1, x1 - sa2 * 9f, y1 + ca2 * 9f * flat - 4f, 2.4f, dark(r), dark(g), dark(b), 0.7f * p)
+              }
+              seg += 1
+            }
+            v += 1
+          }
+      }
 
-      // Inner pulsing glow that expands
-      val innerGlowPhase = ((phase * 0.45) % 1.0).toFloat
-      val innerGlowR = 8f + innerGlowPhase * mR * 0.5f
-      val innerGlowA = 0.3f * (1f - innerGlowPhase) * p
-      sb.fillOvalSoft(sx, sy, innerGlowR, innerGlowR * 0.45f, bright(r), bright(g), bright(b), innerGlowA, 0f, 16)
-      // Second inner glow wave offset
-      val innerGlow2 = ((phase * 0.45 + 0.5) % 1.0).toFloat
-      val igR2 = 8f + innerGlow2 * mR * 0.5f
-      sb.fillOvalSoft(sx, sy, igR2, igR2 * 0.45f, dr, dg, db, 0.18f * (1f - innerGlow2) * p, 0f, 14)
+      // Core: bright and outlined so the epicentre is never ambiguous
+      sb.strokeOval(sx, sy, 17f, 17f * flat, 3.5f, 0.05f, 0.05f, 0.07f, 0.85f * p, 14)
+      sb.fillOval(sx, sy, 16f, 16f * flat, dr, dg, db, 0.92f * p, 14)
+      sb.fillOval(sx, sy, 10f, 10f * flat, mix(dr, bright(r), 0.5f), mix(dg, bright(g), 0.5f),
+        mix(db, bright(b), 0.5f), 0.85f * p, 12)
+      if (kind != AOE_VOID) sb.fillOval(sx, sy, 4.5f, 4.5f * flat, 1f, 1f, 1f, 0.9f * p, 8)
 
-      // 10 debris particles kicked up at ring edge with gravity
-      { var deb = 0; while (deb < 10) {
-        val debPhase = ((phase * 0.3 + deb * 0.1) % 1.0).toFloat
-        val debAngle = phase * 0.4 + deb * Math.PI * 2 / 10
-        val debDist = 10f + debPhase * mR
-        val debRise = debPhase * debPhase * 20f
-        val debX = sx + Math.cos(debAngle).toFloat * debDist
-        val debY = sy + Math.sin(debAngle).toFloat * debDist * 0.45f - debRise
-        val debSz = (3.5f + (1f - debPhase) * 5f)
-        val debAlpha = 0.5f * (1f - debPhase) * p
-        // Debris outline
-        sb.fillOval(debX, debY, debSz + 1f, (debSz + 1f) * 0.7f, outline(r), outline(g), outline(b), debAlpha * 0.4f, 6)
-        // Debris body
-        sb.fillOval(debX, debY, debSz, debSz * 0.7f, dark(r), dark(g), dark(b), debAlpha, 6)
-      ; deb += 1 } }
-
-      // 10 radial energy spark lines with dots
-      var spark = 0; while (spark < 10) {
-        val sa = phase * 0.6 + spark * Math.PI * 2 / 10
-        // Length is geometry — decoupled from the alpha pulse so the spokes stop
-        // telescoping in and out with the ring's brightness.
-        val sl = mR * 0.5f
-        val sparkEndX = sx + Math.cos(sa).toFloat * sl
-        val sparkEndY = sy + Math.sin(sa).toFloat * sl * 0.45f
-        // Spark line outline
-        sb.strokeLine(sx, sy, sparkEndX, sparkEndY, 3.5f, outline(r), outline(g), outline(b), 0.2f * p)
-        // Spark line body
-        sb.strokeLine(sx, sy, sparkEndX, sparkEndY, 2f, r, g, b, 0.35f * p)
-        // Bright core
-        sb.strokeLine(sx, sy, sparkEndX, sparkEndY, 0.8f, bright(r), bright(g), bright(b), 0.2f * p)
-        // Dot at end with glow
-        sb.fillOvalSoft(sparkEndX, sparkEndY, 6f, 4.5f, bright(r), bright(g), bright(b), 0.25f * p, 0f, 6)
-        sb.fillOval(sparkEndX, sparkEndY, 4f, 3f, bright(r), bright(g), bright(b), 0.55f * p, 6)
-      ; spark += 1 }
-
-      // Bold outlined core (3.5px) with multi-layer fill + hot center
-      sb.strokeOval(sx, sy, 16f, 10f, 3.5f, outline(r), outline(g), outline(b), 0.8f * p, 14)
-      sb.fillOval(sx, sy, 15f, 9.5f, dr, dg, db, 0.9f * p, 14)
-      sb.fillOval(sx, sy, 10f, 6f, mix(dr, bright(r), 0.4f), mix(dg, bright(g), 0.4f), mix(db, bright(b), 0.4f), 0.8f * p, 12)
-      sb.fillOval(sx, sy, 5.5f, 3.5f,
-        mix(bright(r), 1f, _chgBright), mix(bright(g), 1f, _chgBright), mix(bright(b), 1f, _chgBright), 0.97f * p, 10)
-      // Hot white center
-      sb.fillOval(sx, sy, 2.5f, 1.5f, 1f, 1f, 1f, 0.85f * p, 6)
-
-      // 8 sparkle stars at ring edges
-      var star = 0; while (star < 8) {
-        val starPhase = ((phase * 0.35 + star * 0.125) % 1.0).toFloat
-        val starAngle = phase * 0.6 + star * Math.PI / 4
-        val starDist = 10f + starPhase * mR
-        val starX = sx + Math.cos(starAngle).toFloat * starDist
-        val starY = sy + Math.sin(starAngle).toFloat * starDist * 0.45f
-        val starAlpha = 0.55f * (1f - starPhase) * p
-        drawSparkleStar(starX, starY, 5.5f * (1f - starPhase * 0.5f),
-          bright(r), bright(g), bright(b), starAlpha, sb, phase + star)
-      ; star += 1 }
+      var star = 0; while (star < 6) {
+        val starPhase = ((phase * 0.35 + star * 0.167) % 1.0).toFloat
+        val starAngle = phase * 0.6 + star * Math.PI / 3
+        val starDist = 12f + starPhase * mR
+        drawSparkleStar(sx + Math.cos(starAngle).toFloat * starDist,
+          sy + Math.sin(starAngle).toFloat * starDist * flat, 6f * (1f - starPhase * 0.5f),
+          bright(r), bright(g), bright(b), 0.6f * (1f - starPhase) * p, sb, phase + star)
+        star += 1
+      }
     }
 
-  /** Thick zigzag chain/bolt — CARTOONISH with bold segments, big forks, bright nodes, glow, sparks */
-  private def chainProj(r: Float, g: Float, b: Float, worldLen: Float = 6f): Renderer =
+  private val CHN_CHAIN = 0
+  private val CHN_ROPE = 1
+
+  /**
+   * Tether thrown at a target: a length of chain, or a rope with a grappling hook.
+   *
+   * The old version drew a zigzag with glowing nodes and forks — an electrical arc — so a
+   * gladiator's rope, a warden's chain and a puppeteer's string all read as lightning.
+   * A chain is now actual interlocking links and a rope is two twisted strands, both
+   * sagging between the caster and the head.
+   */
+  private def chainProj(kind: Int, r: Float, g: Float, b: Float, worldLen: Float = 6f): Renderer =
     (proj, sx, sy, sb, tick) => {
       beamTip(sx, sy, proj, worldLen)
       val tipX = _tipX; val tipY = _tipY
       val phase = (tick + proj.id * 23) * 0.3
       computeAllDynamics(proj, r, g, b, phase)
-      val p = (0.7 + 0.3 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
+      val p = (0.82f + 0.18f * Math.sin(phase * _stPulseMult).toFloat) * dynAlpha
       val dr = _evoR; val dg = _evoG; val db = _evoB
-      val ds = dynScale
+      val ds = Math.min(dynScale, 1.3f)
       val dx = tipX - sx; val dy = tipY - sy
       val len = Math.sqrt(dx * dx + dy * dy).toFloat
-      if (len >= 1) {
-        val nx = -dy / len; val ny = dx / len
-        val dirX = dx / len; val dirY = dy / len
-        // Zigzag amplitude is geometry, not opacity: driving it by `p` made the whole
-        // chain visibly flatten and inflate in lockstep with the brightness pulse.
-        // It now breathes on its own slower oscillator.
-        val zigW = 14f * ds * (0.86f + 0.14f * Math.sin(phase * 1.1).toFloat)
-        val segs = 8
+      if (len >= 1f) {
+      val dirX = dx / len; val dirY = dy / len
+      val nx = -dirY; val ny = dirX
 
-        // Ribbon trail behind origin
-        drawRibbonTrail(sx, sy, dirX, dirY, dr, dg, db, 0.25f * p, sb, tick, proj.id, 6, 35f * ds * dynTrail, 5f * ds, 1f)
+      // A thrown tether hangs. The sag is what separates it from a beam, and it swings
+      // slowly so the line looks like it has weight rather than being a drawn stroke.
+      val sag = len * 0.16f * (0.75f + 0.25f * Math.sin(phase * 0.9).toFloat)
+      @inline def px(t: Float): Float = sx + dx * t + nx * (sag * 4f * t * (1f - t))
+      @inline def py(t: Float): Float = sy + dy * t + ny * (sag * 4f * t * (1f - t)) + sag * 2.2f * t * (1f - t)
 
-        // Glow halo (40px+) along the chain
-        val haloPulse = 0.75f + 0.25f * Math.sin(phase * 1.8).toFloat
-        val midX = (sx + tipX) * 0.5f; val midY = (sy + tipY) * 0.5f
-        sb.fillOvalSoft(midX, midY, 30.2f * ds * dynGlow * haloPulse, 21.6f * ds * dynGlow * haloPulse,
-          dr, dg, db, 0.2f * p, 0f, 18)
-        sb.fillOvalSoft(sx, sy, 25f * ds * dynGlow, 18f * ds * dynGlow, dr, dg, db, 0.12f * p, 0f, 14)
-        sb.fillOvalSoft(tipX, tipY, 28f * ds * dynGlow, 20f * ds * dynGlow, dr, dg, db, 0.15f * p, 0f, 14)
+      drawRibbonTrail(sx, sy, dirX, dirY, dr, dg, db, 0.18f * p, sb, tick, proj.id, 6, 26f * ds * dynTrail, 4f * ds, 1f)
 
-        // Main zigzag segments
-        var i = 0; while (i < segs) {
-          val t0 = i.toFloat / segs; val t1 = (i + 1).toFloat / segs
-          val jitter0 = Math.sin(phase * 2.3 + i * 1.7).toFloat * 5f
-          val jitter1 = Math.sin(phase * 2.3 + (i + 1) * 1.7).toFloat * 5f
-          val z0 = (if (i % 2 == 0) zigW else -zigW) + jitter0
-          val z1 = (if ((i + 1) % 2 == 0) zigW else -zigW) + jitter1
-          val x0 = sx + dx * t0 + nx * z0; val y0 = sy + dy * t0 + ny * z0
-          val x1 = sx + dx * t1 + nx * z1; val y1 = sy + dy * t1 + ny * z1
-
-          // Dark outline
-          sb.strokeLine(x0, y0, x1, y1, 10f * ds, outline(r), outline(g), outline(b), 0.75f * p)
-          // Main segment — evolved colors
-          sb.strokeLine(x0, y0, x1, y1, 7.5f * ds, dr, dg, db, 0.9f * p)
-          if (i % 2 == 0) sb.strokeLine(x0, y0, x1, y1, 3.5f * ds,
-            mix(bright(r), 1f, _chgBright), mix(bright(g), 1f, _chgBright), mix(bright(b), 1f, _chgBright), 0.8f * p)
-
-          // Bigger branch forks with sub-forks at alternating joints
-          if (i % 2 == 1 && i < segs - 1) {
-            val forkLen = 18f + Math.sin(phase * 3 + i * 1.3).toFloat * 6f
-            val forkAngle = if (i % 4 == 1) 0.7 else -0.7
-            val baseAngle = Math.atan2(ny, nx)
-            val forkX = x1 + Math.cos(baseAngle + forkAngle).toFloat * forkLen
-            val forkY = y1 + Math.sin(baseAngle + forkAngle).toFloat * forkLen
-            sb.strokeLine(x1, y1, forkX, forkY, 5f, outline(r), outline(g), outline(b), 0.45f * p)
-            sb.strokeLine(x1, y1, forkX, forkY, 3.5f, r, g, b, 0.55f * p)
-            sb.strokeLine(x1, y1, forkX, forkY, 1.5f, bright(r), bright(g), bright(b), 0.3f * p)
-            // Sub-fork 1
-            val sf1Angle = baseAngle + forkAngle + 0.5
-            val sf1Len = forkLen * 0.5f
-            val sf1X = forkX + Math.cos(sf1Angle).toFloat * sf1Len
-            val sf1Y = forkY + Math.sin(sf1Angle).toFloat * sf1Len
-            sb.strokeLine(forkX, forkY, sf1X, sf1Y, 2.5f, r, g, b, 0.35f * p)
-            sb.fillOval(sf1X, sf1Y, 2.5f, 2f, bright(r), bright(g), bright(b), 0.4f * p, 5)
-            // Sub-fork 2
-            val sf2Angle = baseAngle + forkAngle - 0.4
-            val sf2X = forkX + Math.cos(sf2Angle).toFloat * sf1Len * 0.7f
-            val sf2Y = forkY + Math.sin(sf2Angle).toFloat * sf1Len * 0.7f
-            sb.strokeLine(forkX, forkY, sf2X, sf2Y, 2f, r, g, b, 0.3f * p)
-            // Fork tip dot — bigger
-            sb.fillOval(forkX, forkY, 4.5f, 3.5f, bright(r), bright(g), bright(b), 0.55f * p, 6)
+      if (kind == CHN_CHAIN) {
+        val links = 9
+        val lw = 5.2f * ds
+        var i = 0; while (i <= links) {
+          val t = i.toFloat / links
+          val cx = px(t); val cy = py(t)
+          // Alternating link orientation: flat / on-edge, which is what reads as a chain
+          // rather than as a string of beads.
+          val flat = (i % 2) == 0
+          val rx = if (flat) lw * 1.35f else lw * 0.52f
+          val ry = if (flat) lw * 0.66f else lw * 0.95f
+          val ang = Math.atan2(dirY, dirX).toFloat
+          val ca2 = Math.cos(ang); val sa2 = Math.sin(ang)
+          // Approximate the rotated link by an axis-aligned ring scaled along the run
+          val ex = Math.abs(rx * ca2) + Math.abs(ry * sa2)
+          val ey = Math.abs(rx * sa2) + Math.abs(ry * ca2) * ISO_Y + 1f
+          sb.strokeOval(cx, cy, ex.toFloat + 1.2f, ey.toFloat + 1.2f, 3.4f, 0.06f, 0.06f, 0.08f, 0.85f * p, 10)
+          sb.strokeOval(cx, cy, ex.toFloat, ey.toFloat, 2.6f, dr, dg, db, 0.95f * p, 10)
+          sb.strokeArc(cx, cy, ex.toFloat, ey.toFloat, -2.4f, 1.5f, 1.2f,
+            mix(bright(r), 1f, 0.3f), mix(bright(g), 1f, 0.3f), mix(bright(b), 1f, 0.3f), 0.7f * p, 5)
+          i += 1
+        }
+        // Anchor hook at the head: a hooked claw, not a glowing dot
+        val hx = tipX; val hy = tipY
+        sb.fillOvalSoft(hx, hy, 15f * ds * dynGlow, 12f * ds * dynGlow, dr, dg, db, 0.25f * p, 0f, 12)
+        var k = -1; while (k <= 1) {
+          val a = Math.atan2(dirY, dirX) + k * 0.75
+          val ex = hx + Math.cos(a).toFloat * 15f * ds
+          val ey = hy + Math.sin(a).toFloat * 15f * ds * ISO_Y
+          sb.strokeLine(hx, hy, ex, ey, 5.4f * ds, 0.06f, 0.06f, 0.08f, 0.85f * p)
+          sb.strokeLine(hx, hy, ex, ey, 3.4f * ds, dr, dg, db, 0.95f * p)
+          k += 1
+        }
+        sb.fillOval(hx, hy, 6.5f * ds, 5.5f * ds, 0.06f, 0.06f, 0.08f, 0.85f * p, 10)
+        sb.fillOval(hx, hy, 5f * ds, 4f * ds, mix(dr, 1f, 0.35f), mix(dg, 1f, 0.35f), mix(db, 1f, 0.35f), 0.95f * p, 10)
+      } else {
+        // Rope: two counter-phased strands braiding around the run
+        val segs = 22
+        val amp = 3.2f * ds
+        var strand = 0; while (strand < 2) {
+          val ph = strand * Math.PI
+          var i = 0; while (i < segs) {
+            val t0 = i.toFloat / segs; val t1 = (i + 1).toFloat / segs
+            val o0 = Math.sin(t0 * 20.0 + ph + phase * 0.8).toFloat * amp
+            val o1 = Math.sin(t1 * 20.0 + ph + phase * 0.8).toFloat * amp
+            val x0 = px(t0) + nx * o0; val y0 = py(t0) + ny * o0 * ISO_Y
+            val x1 = px(t1) + nx * o1; val y1 = py(t1) + ny * o1 * ISO_Y
+            sb.strokeLine(x0, y0, x1, y1, 6.4f * ds, 0.10f, 0.07f, 0.05f, 0.7f * p)
+            sb.strokeLine(x0, y0, x1, y1, 4.4f * ds, dr, dg, db, 0.95f * p)
+            sb.strokeLine(x0, y0, x1, y1, 1.5f * ds, bright(r), bright(g), bright(b), 0.4f * p)
+            i += 1
           }
-        ; i += 1 }
+          strand += 1
+        }
+        // Grappling hook: shank plus three curved flukes
+        val hx = tipX; val hy = tipY
+        val ang = Math.atan2(dirY, dirX)
+        sb.fillOvalSoft(hx, hy, 16f * ds * dynGlow, 13f * ds * dynGlow, dr, dg, db, 0.22f * p, 0f, 12)
+        val shx = hx - Math.cos(ang).toFloat * 12f * ds
+        val shy = hy - Math.sin(ang).toFloat * 12f * ds * ISO_Y
+        sb.strokeLine(shx, shy, hx, hy, 6f * ds, 0.06f, 0.06f, 0.08f, 0.85f * p)
+        sb.strokeLine(shx, shy, hx, hy, 4f * ds, DKSTEEL_R, DKSTEEL_G, DKSTEEL_B, 0.95f * p)
+        var k = 0; while (k < 3) {
+          val a = ang + (k - 1) * 0.9
+          val mx = hx + Math.cos(a).toFloat * 9f * ds
+          val my = hy + Math.sin(a).toFloat * 9f * ds * ISO_Y
+          val ex = mx + Math.cos(a - 1.1).toFloat * 8f * ds
+          val ey = my + Math.sin(a - 1.1).toFloat * 8f * ds * ISO_Y
+          sb.strokeLine(hx, hy, mx, my, 5.4f * ds, 0.06f, 0.06f, 0.08f, 0.85f * p)
+          sb.strokeLine(mx, my, ex, ey, 4.6f * ds, 0.06f, 0.06f, 0.08f, 0.85f * p)
+          sb.strokeLine(hx, hy, mx, my, 3.4f * ds, STEEL_R, STEEL_G, STEEL_B, 0.95f * p)
+          sb.strokeLine(mx, my, ex, ey, 2.6f * ds, STEEL_R, STEEL_G, STEEL_B, 0.95f * p)
+          k += 1
+        }
+      }
 
-        // 6 electric spark particles along the chain with small trails
-        { var sp = 0; while (sp < 6) {
-          val spT = ((tick * 0.08 + sp * 0.167 + proj.id * 0.13) % 1.0).toFloat
-          val chainT = sp.toFloat / 5f
-          val spJitter = Math.sin(phase * 3.5 + sp * 2.1).toFloat * zigW * 0.8f
-          val spx = sx + dx * chainT + nx * spJitter
-          val spy = sy + dy * chainT + ny * spJitter
-          val spTailX = spx - dirX * 8f * spT; val spTailY = spy - dirY * 8f * spT
-          sb.strokeLine(spTailX, spTailY, spx, spy, 2f, bright(r), bright(g), bright(b),
-            0.45f * (1f - spT * 0.5f) * p)
-          sb.fillOval(spx, spy, 3.5f, 2.5f, 1f, 1f, 1f, 0.5f * (1f - spT * 0.3f) * p, 6)
-        ; sp += 1 } }
-
-        // Bright nodes at joints — bigger, with outline
-        { var j = 0; while (j <= segs) {
-          val t = j.toFloat / segs
-          val jitter = Math.sin(phase * 2.3 + j * 1.7).toFloat * 5f
-          val z = (if (j % 2 == 0) zigW else -zigW) + jitter
-          val jx = sx + dx * t + nx * z; val jy = sy + dy * t + ny * z
-          sb.strokeOval(jx, jy, 9f, 7f, 2.5f, outline(r), outline(g), outline(b), 0.65f * p, 8)
-          sb.fillOval(jx, jy, 8f, 6.5f, bright(r), bright(g), bright(b), 0.85f * p, 8)
-          // Sparkle star at every other joint
-          if (j % 3 == 0) {
-            drawSparkleStar(jx, jy, 6f, bright(r), bright(g), bright(b), 0.4f * p, sb, phase * 2.5 + j)
-          }
-        ; j += 3 } }
-
-        // Expanding ring at tip
-        val ringPhase = ((phase * 0.4) % 1.0).toFloat
-        val ringR = 6f + ringPhase * 18f * ds
-        val ringA = 0.5f * (1f - ringPhase) * p
-        sb.strokeOval(tipX, tipY, ringR, ringR * 0.7f, 3f * (1f - ringPhase * 0.5f),
-          bright(r), bright(g), bright(b), ringA, 12)
-
-        // Spark burst at tip AND origin
-        drawSparkBurst(tipX, tipY, dr, dg, db, 0.4f * p, sb, tick, proj.id, 5, 16f * ds)
-        drawSparkBurst(sx, sy, dr, dg, db, 0.3f * p, sb, tick, proj.id + 7, 4, 12f * ds)
-
-        // Tip with outline and sparkle — bigger
-        sb.strokeOval(tipX, tipY, 12f, 8.5f, 3f, outline(r), outline(g), outline(b), 0.65f * p, 10)
-        sb.fillOval(tipX, tipY, 11f, 8f, dr, dg, db, 0.8f * p, 10)
-        sb.fillOval(tipX, tipY, 7f, 5f, bright(r), bright(g), bright(b), 0.85f * p, 8)
-        drawSparkleStar(tipX, tipY, 9f, bright(r), bright(g), bright(b), 0.45f * p, sb, phase * 2)
+      // Origin cleat so the tether visibly starts at the caster
+      sb.fillOval(sx, sy, 6f * ds, 5f * ds, 0.06f, 0.06f, 0.08f, 0.7f * p, 8)
+      sb.fillOval(sx, sy, 4.5f * ds, 3.6f * ds, dr, dg, db, 0.85f * p, 8)
+      drawReturnGhosts(sx, sy, 14f * ds, dr, dg, db, p, sb, proj)
       }
     }
 
@@ -1622,231 +2243,255 @@ object GLProjectileRenderers {
       drawReturnGhosts(sx, sy, sz * 2f, dr, dg, db, p, sb, proj)
     }
 
-  /** Compact fist/punch — CARTOONISH with bold outline, impact burst, POW lines, shockwave, ground shadow */
+  private val FIST_PARTS = Array(
+    part(Array(-1.20f,-0.28f, -0.30f,-0.38f, -0.30f,0.38f, -1.20f,0.28f), 0.62f, 0.46f, 0.34f, 0.35f),
+    part(Array(-0.46f,-0.50f, -0.24f,-0.52f, -0.24f,0.52f, -0.46f,0.50f), DKSTEEL_R, DKSTEEL_G, DKSTEEL_B, 0.45f),
+    part(Array(-0.26f,-0.52f, 0.42f,-0.58f, 0.82f,-0.30f, 0.82f,0.30f, 0.42f,0.58f, -0.26f,0.52f),
+      0.72f, 0.55f, 0.42f, 0.35f),
+    part(Array(-0.20f,-0.34f, 0.40f,-0.40f, 0.66f,-0.20f, 0.10f,-0.12f), 0.86f, 0.70f, 0.56f, 0.20f)
+  )
+
+  /** Thrown/charged punch. The old version was three concentric rings over a plain
+   *  ellipse, so a monk's strike and a gorilla's grab arrived as the same grey coin. */
   private def fistProj(r: Float, g: Float, b: Float, size: Float = 14f): Renderer =
     (proj, sx, sy, sb, tick) => {
       val phase = (tick + proj.id * 23) * 0.4
       computeAllDynamics(proj, r, g, b, phase)
-      val p = (0.65 + 0.35 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
+      val p = (0.8f + 0.2f * Math.sin(phase * _stPulseMult).toFloat) * dynAlpha
       val dr = _evoR; val dg = _evoG; val db = _evoB
-      val ds = dynScale
-      val sz = size * 1.4f * ds
+      val ds = Math.min(dynScale, 1.35f)
+      val sz = size * 1.15f * ds
       screenDir(proj)
       val ndx = _sdx; val ndy = _sdy
-      val perpX = -ndy; val perpY = ndx
-      val frontX = sx + ndx * sz * 0.3f; val frontY = sy + ndy * sz * 0.3f
+      val frontX = sx + ndx * sz * 0.9f; val frontY = sy + ndy * sz * 0.9f
 
-      // Speed lines behind — manga punch style
-      drawSpeedLines(sx, sy, ndx, ndy, dr, dg, db, 0.4f * p, sb, 7, sz * 2.2f)
+      drawSpeedLines(sx, sy, ndx, ndy, dr, dg, db, 0.42f * p, sb, 6, sz * 2.4f)
+      drawRibbonTrail(sx, sy, ndx, ndy, dr, dg, db, 0.3f * p, sb, tick, proj.id, 6,
+        sz * 2.6f * dynTrail, sz * 0.55f, 1.5f)
+      sb.fillOval(sx, sy + sz * 0.62f, sz * 1.3f, sz * 0.3f, 0f, 0f, 0f, 0.22f * p, 14)
 
-      // Ribbon trail behind
-      drawRibbonTrail(sx, sy, ndx, ndy, dr, dg, db, 0.3f * p, sb, tick, proj.id, 6, 35f * ds * dynTrail, 8f * ds, 1.5f)
+      // Impact shock stacking up in front of the knuckles
+      val shock = ((phase * 0.4) % 1.0).toFloat
+      if (shock < 0.6f) {
+        val sr = sz * (0.7f + shock * 2.2f)
+        sb.strokeOval(frontX, frontY, sr, sr * ISO_Y, 5f * (1f - shock / 0.6f),
+          bright(r), bright(g), bright(b), 0.42f * (1f - shock / 0.6f) * p, 16)
+      }
+      sb.fillOvalSoft(frontX, frontY, sz * 1.5f * dynGlow, sz * 1.2f * dynGlow, dr, dg, db, 0.3f * p, 0f, 14)
 
-      // Ground shadow
-      sb.fillOval(sx, sy + sz * 0.45f, sz * 1.5f, sz * 0.3f, 0f, 0f, 0f, 0.22f * p, 14)
-
-      // 3 impact burst expanding rings + shockwave flash
-      val ringPulse = 0.6f + 0.4f * Math.sin(phase * 3).toFloat
-      // Ring 1 — outer
-      sb.strokeOval(frontX, frontY, sz * 2.4f * ringPulse, sz * 1.8f * ringPulse,
-        3.5f, outline(r), outline(g), outline(b), 0.25f * p, 16)
-      sb.strokeOval(frontX, frontY, sz * 2.2f * ringPulse, sz * 1.6f * ringPulse,
-        3f, r, g, b, 0.35f * p, 14)
-      // Ring 2 — mid
-      val ringP2 = 0.5f + 0.5f * Math.sin(phase * 3 + 1.0).toFloat
-      sb.strokeOval(frontX, frontY, sz * 1.5f * ringP2, sz * 1.1f * ringP2,
-        2.5f, bright(r), bright(g), bright(b), 0.3f * p, 12)
-      // Ring 3 — inner
-      val ringP3 = 0.4f + 0.6f * Math.sin(phase * 3 + 2.0).toFloat
-      sb.strokeOval(frontX, frontY, sz * 0.9f * ringP3, sz * 0.65f * ringP3,
-        2f, 1f, 1f, 1f, 0.2f * p, 10)
-      // Shockwave flash (expanding and fading)
-      val shockPhase = ((phase * 0.35) % 1.0).toFloat
-      if (shockPhase < 0.5f) {
-        val shockR = sz * 1.5f + shockPhase * sz * 2.5f
-        val shockA = 0.35f * (1f - shockPhase * 2f) * p
-        sb.strokeOval(frontX, frontY, shockR, shockR * 0.7f, 5f * (1f - shockPhase * 2f),
-          bright(r), bright(g), bright(b), shockA, 14)
+      // Two afterimages so the punch reads as travelling, not hovering
+      var ghost = 2; while (ghost >= 1) {
+        drawPartsDirFlat(sb, FIST_PARTS, sx - ndx * ghost * 10f, sy - ndy * ghost * 10f, ndx, ndy,
+          sz * (1f - ghost * 0.06f), dr * 0.8f, dg * 0.8f, db * 0.8f, 0.15f * (1f - (ghost - 1) * 0.35f) * p)
+        ghost -= 1
       }
 
-      // 6 comic-book "POW" impact lines — bold radial lines from front
-      { var pow = 0; while (pow < 6) {
-        val powAngle = phase * 0.5 + pow * Math.PI * 2 / 6
-        val powInner = sz * 0.6f; val powOuter = sz * 1.6f + Math.sin(phase * 2.5 + pow * 1.3).toFloat * sz * 0.4f
-        val ix = frontX + Math.cos(powAngle).toFloat * powInner
-        val iy = frontY + Math.sin(powAngle).toFloat * powInner * 0.6f
-        val ox = frontX + Math.cos(powAngle).toFloat * powOuter
-        val oy = frontY + Math.sin(powAngle).toFloat * powOuter * 0.6f
-        sb.strokeLine(ix, iy, ox, oy, 4f, outline(r), outline(g), outline(b), 0.4f * p)
-        sb.strokeLine(ix, iy, ox, oy, 2.5f, bright(r), bright(g), bright(b), 0.55f * p)
-      ; pow += 1 } }
+      drawPartsDir(sb, FIST_PARTS, sx, sy, ndx, ndy, sz, dr, dg, db, 0.97f * dynAlpha,
+        clampF(sz * 0.13f, 1.5f, 3f))
 
-      // Bold dark cartoon outline
-      sb.strokeOval(sx, sy, sz * 1.1f, sz * 0.85f, 4f,
-        outline(r), outline(g), outline(b), 0.88f * p, 14)
-      // Fist body — evolved colors
-      sb.fillOval(sx, sy, sz * 1.02f, sz * 0.78f, dr, dg, db, 0.95f * p, 14)
+      // Four knuckles across the leading face
+      var k = 0; while (k < 4) {
+        val ly = -0.36f + k * 0.24f
+        dirPoint(0.70f, ly, sx, sy, ndx, ndy, sz)
+        sb.fillOval(_ptX, _ptY, sz * 0.15f, sz * 0.15f, 0.06f, 0.05f, 0.07f, 0.6f * p, 8)
+        sb.fillOval(_ptX - sz * 0.03f, _ptY - sz * 0.03f, sz * 0.11f, sz * 0.11f,
+          mix(0.88f, dr, 0.3f), mix(0.72f, dg, 0.3f), mix(0.58f, db, 0.3f), 0.9f * p, 8)
+        k += 1
+      }
 
-      // 3 knuckle detail lines across the fist
-      { var k = 0; while (k < 3) {
-        val kOff = (k - 1f) * sz * 0.22f
-        val kx0 = sx + perpX * kOff + ndx * sz * 0.15f
-        val ky0 = sy + perpY * kOff + ndy * sz * 0.15f
-        val kx1 = sx + perpX * kOff + ndx * sz * 0.35f
-        val ky1 = sy + perpY * kOff + ndy * sz * 0.35f
-        sb.strokeLine(kx0, ky0, kx1, ky1, 2f, dark(r), dark(g), dark(b), 0.4f * p)
-      ; k += 1 } }
-
-      // Knuckle highlight
-      sb.fillOval(sx + ndx * sz * 0.2f, sy + ndy * sz * 0.2f - 2f,
-        sz * 0.5f, sz * 0.38f, bright(r), bright(g), bright(b), 0.6f * p, 10)
-      // Cartoon shine spot
-      sb.fillOval(sx - sz * 0.15f, sy - sz * 0.15f, sz * 0.22f, sz * 0.16f,
-        1f, 1f, 1f, 0.45f * p, 6)
-      // Dark bottom shading — larger; fades with the body
-      sb.fillOval(sx, sy + sz * 0.18f, sz * 0.92f, sz * 0.48f,
-        dark(r), dark(g), dark(b), 0.38f * dynAlpha, 12)
-
-      // 8 impact spark particles radiating from front
-      { var sp = 0; while (sp < 8) {
-        val spAngle = tick * 0.15 + sp * Math.PI * 2 / 8 + proj.id * 0.7
-        val spDist = sz * (0.5f + 0.5f * Math.sin(tick * 0.2 + sp * 1.5).toFloat)
-        val spx = frontX + Math.cos(spAngle).toFloat * spDist
-        val spy = frontY + Math.sin(spAngle).toFloat * spDist * 0.6f
-        val spLen = sz * 0.35f
-        val sex = spx + Math.cos(spAngle).toFloat * spLen
-        val sey = spy + Math.sin(spAngle).toFloat * spLen * 0.6f
-        sb.strokeLine(spx, spy, sex, sey, 2.5f, bright(r), bright(g), bright(b),
-          (0.35 + 0.25 * Math.sin(tick * 0.3 + sp * 2.0)).toFloat * p)
-        sb.fillOval(sex, sey, 3f, 2.5f, 1f, 1f, 1f, 0.4f * p, 5)
-      ; sp += 1 } }
-
-      // 3 sparkle stars
-      { var star = 0; while (star < 3) {
-        val starPhase = ((phase * 0.45 + star * 0.33) % 1.0).toFloat
-        val starAngle = phase * 1.2 + star * Math.PI * 2 / 3
-        val starDist = sz * 1.0f + starPhase * sz * 0.8f
-        val starX = sx + Math.cos(starAngle).toFloat * starDist
-        val starY = sy + Math.sin(starAngle).toFloat * starDist * 0.55f
-        drawSparkleStar(starX, starY, 5f * (1f - starPhase * 0.4f) * ds,
-          bright(r), bright(g), bright(b), 0.45f * (1f - starPhase) * p, sb, phase * 2 + star)
-      ; star += 1 } }
-
-      // Charge crackle
+      drawSparkBurst(frontX, frontY, dr, dg, db, 0.45f * p, sb, tick, proj.id, 5, sz * 0.8f)
       drawChargeCrackle(sx, sy, sz, r, g, b, p, sb, phase, proj.chargeLevel)
-      drawReturnGhosts(sx, sy, sz, dr, dg, db, p, sb, proj)
+      drawReturnGhosts(sx, sy, sz * 0.7f, dr, dg, db, p, sb, proj)
     }
 
-  /** Wide crescent wave/slash — CARTOONISH with bold outline, glow halo, energy node, wisps, sparkles */
-  private def wave(r: Float, g: Float, b: Float, spread: Float = 32f): Renderer =
+  // ── Sweep kinds for `wave` ──
+  private val WAV_WIND = 0
+  private val WAV_SAND = 1
+  private val WAV_SONIC = 2
+  private val WAV_FLAME = 3
+  private val WAV_ACID = 4
+  private val WAV_IMPACT = 5
+  private val WAV_WATER = 6
+
+  /**
+   * Crescent sweep travelling forward — a gust, a sand blast, a sonic wave, a wall of
+   * flame, an acid spray, a shoulder charge.
+   *
+   * This used to be a four-vertex polygon (tip, both wingtips, tail), which renders as a
+   * triangle: a bard's song, a windwalker's cyclone and an inferno's flame wall all came
+   * out as the same outlined triangle in three colours. It is now a real arc band, built
+   * so the arc passes exactly through the projectile's position and bulges forward,
+   * which is what a wave front actually looks like from above.
+   */
+  private def wave(kind: Int, r: Float, g: Float, b: Float, spread: Float = 32f): Renderer =
     (proj, sx, sy, sb, tick) => {
       val phase = (tick + proj.id * 41) * 0.4
       computeAllDynamics(proj, r, g, b, phase)
-      val p = (0.65 + 0.35 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
+      val p = (0.72f + 0.28f * Math.sin(phase * _stPulseMult).toFloat) * dynAlpha
       val dr = _evoR; val dg = _evoG; val db = _evoB
       val ds = dynScale
-      val sp = spread * 1.3f * ds
+      val R = spread * 1.25f * ds
       screenDir(proj)
       val ndx = _sdx; val ndy = _sdy
-      val perpX = -ndy; val perpY = ndx
-      val tipX = sx + ndx * sp; val tipY = sy + ndy * sp * 0.6f
-      val w1x = sx + perpX * sp; val w1y = sy + perpY * sp * 0.6f
-      val w2x = sx - perpX * sp; val w2y = sy - perpY * sp * 0.6f
 
-      // Big glow halo (50px+) behind crescent
-      val haloPulse = 0.75f + 0.25f * Math.sin(phase * 1.6).toFloat
-      sb.fillOvalSoft(sx + ndx * sp * 0.3f, sy + ndy * sp * 0.2f,
-        37.4f * ds * dynGlow * haloPulse, 27.4f * ds * dynGlow * haloPulse, dr, dg, db, 0.22f * p, 0f, 20)
-      sb.fillOvalSoft(sx + ndx * sp * 0.3f, sy + ndy * sp * 0.2f,
-        25.2f * ds * dynGlow, 18f * ds * dynGlow, bright(r), bright(g), bright(b), 0.1f * p, 0f, 16)
+      // Arc centre placed so the band's leading edge runs through (sx, sy). Solving in the
+      // ellipse's own parameter space keeps the crescent square to the travel direction at
+      // every heading — using atan2(ndy, ndx) directly skews it badly on the diagonals.
+      val th = Math.atan2(ndy / ISO_Y, ndx).toFloat
+      val cxA = sx - R * Math.cos(th).toFloat
+      val cyA = sy - R * ISO_Y * Math.sin(th).toFloat
+      val sweep = kind match {
+        case WAV_WATER => 1.75f
+        case WAV_SONIC => 1.9f
+        case WAV_IMPACT => 1.1f
+        case WAV_FLAME => 1.7f
+        case _ => 1.55f
+      }
+      val start = th - sweep * 0.5f
+      val thickness = kind match {
+        case WAV_WATER => 0.48f
+        case WAV_IMPACT => 0.42f
+        case WAV_SONIC => 0.22f
+        case _ => 0.32f
+      }
 
-      // Trailing afterimages — 3 fading copies WITH outlines
-      var af = 1; while (af <= 3) {
-        val afOff = af * 11f
-        val afAlpha = 0.25f * (1f - af * 0.25f) * p
-        _polyXs4(0) = tipX - ndx * afOff; _polyXs4(1) = w1x - ndx * afOff; _polyXs4(2) = sx - ndx * (4 + afOff); _polyXs4(3) = w2x - ndx * afOff
-        _polyYs4(0) = tipY - ndy * afOff; _polyYs4(1) = w1y - ndy * afOff; _polyYs4(2) = sy - ndy * (3 + afOff); _polyYs4(3) = w2y - ndy * afOff
-        sb.fillPolygon(_polyXs4, _polyYs4, 4, r, g, b, afAlpha)
-        // Outline on each afterimage
-        sb.strokePolygon(_polyXs4, _polyYs4, 4, 2f, outline(r), outline(g), outline(b), afAlpha * 0.5f)
-      ; af += 1 }
+      // Trailing echoes of the front, fading back
+      var e = 3; while (e >= 1) {
+        val eR = R * (1f - e * 0.16f)
+        val eA = 0.20f * (1f - (e - 1) * 0.3f) * p
+        sb.fillArcBand(cxA, cyA, eR * (1f - thickness), eR * (1f - thickness) * ISO_Y, eR, eR * ISO_Y,
+          start + e * 0.05f, sweep - e * 0.1f, 12, r, g, b, eA, eA)
+        e -= 1
+      }
 
-      // Main crescent fill — evolved colors
-      _polyXs4(0) = tipX; _polyXs4(1) = w1x; _polyXs4(2) = sx - ndx * 4; _polyXs4(3) = w2x
-      _polyYs4(0) = tipY; _polyYs4(1) = w1y; _polyYs4(2) = sy - ndy * 3; _polyYs4(3) = w2y
-      sb.fillPolygon(_polyXs4, _polyYs4, 4, dr, dg, db, 0.65f * p)
+      // Soft glow hugging the front. fillArcBand ramps alpha ALONG the sweep, so the
+      // radial falloff has to come from nesting bands rather than from its ramp — using
+      // the ramp for it leaves one horn of the crescent bright and the other invisible.
+      sb.fillArcBand(cxA, cyA, R * 0.90f, R * 0.90f * ISO_Y, R * 1.34f * dynGlow, R * 1.34f * ISO_Y * dynGlow,
+        start - 0.06f, sweep + 0.12f, 14, dr, dg, db, 0.20f * p, 0.20f * p)
 
-      // Prominent dark outline on all 4 polygon edges
-      sb.strokePolygon(_polyXs4, _polyYs4, 4, 4.5f, outline(r), outline(g), outline(b), 0.8f * p)
-      // Bright leading edge — even thicker
-      sb.strokePolygon(_polyXs4, _polyYs4, 4, 2.5f, bright(r), bright(g), bright(b), 0.9f * p)
+      // Body of the wave front: three nested bands, densest at the leading edge
+      sb.fillArcBand(cxA, cyA, R * (1f - thickness), R * (1f - thickness) * ISO_Y, R, R * ISO_Y,
+        start, sweep, 16, dr, dg, db, 0.42f * p, 0.42f * p)
+      sb.fillArcBand(cxA, cyA, R * (1f - thickness * 0.6f), R * (1f - thickness * 0.6f) * ISO_Y, R, R * ISO_Y,
+        start, sweep, 16, dr, dg, db, 0.34f * p, 0.34f * p)
+      sb.fillArcBand(cxA, cyA, R * (1f - thickness * 0.25f), R * (1f - thickness * 0.25f) * ISO_Y, R, R * ISO_Y,
+        start, sweep, 16, mix(dr, 1f, 0.25f), mix(dg, 1f, 0.25f), mix(db, 1f, 0.25f), 0.40f * p, 0.40f * p)
+      // Dark contour behind the leading edge, then the bright edge itself
+      sb.strokeArc(cxA, cyA, R * 1.015f, R * 1.015f * ISO_Y, start, sweep,
+        if (kind == WAV_WIND || kind == WAV_WATER) 6f else 4.5f,
+        0.06f, 0.05f, 0.07f, if (kind == WAV_WIND || kind == WAV_WATER) 0.75f * p else 0.55f * p, 16)
+      sb.strokeArc(cxA, cyA, R, R * ISO_Y, start, sweep, 2.4f,
+        mix(bright(r), 1f, _chgBright), mix(bright(g), 1f, _chgBright), mix(bright(b), 1f, _chgBright),
+        0.95f * p, 16)
 
-      // Internal energy flow lines — bolder with outline layer
-      var i = 0; while (i < 5) {
-        val off = (i - 2f) * sp * 0.2f
-        val flowPhase = Math.sin(phase * 2.5 + i * 1.8).toFloat * sp * 0.15f
-        val fx0 = sx + perpX * off - ndx * 3; val fy0 = sy + perpY * off * 0.6f - ndy * 2
-        val fx1 = sx + perpX * off + ndx * (sp * 0.55f + flowPhase)
-        val fy1 = sy + perpY * off * 0.6f + ndy * (sp * 0.35f + flowPhase * 0.5f)
-        val flowA = (0.22 + 0.13 * Math.sin(phase * 3 + i * 2.3)).toFloat * p
-        // Outline layer
-        sb.strokeLine(fx0, fy0, fx1, fy1, 4f, outline(r), outline(g), outline(b), flowA * 0.4f)
-        // Main flow line
-        sb.strokeLine(fx0, fy0, fx1, fy1, 2.5f, r, g, b, flowA)
-        // Bright core
-        sb.strokeLine(fx0, fy0, fx1, fy1, 1f, bright(r), bright(g), bright(b), flowA * 0.6f)
-      ; i += 1 }
+      kind match {
+        case WAV_WIND =>
+          // Streaks curling along the front — the wind's direction made visible
+          var i = 0; while (i < 5) {
+            val t = ((phase * 0.18 + i * 0.2) % 1.0).toFloat
+            val a0 = start + sweep * (0.12f + 0.76f * ((i + t * 0.5f) % 1f))
+            val rr = R * (0.62f + 0.3f * Math.sin(phase * 1.4 + i).toFloat)
+            sb.strokeArc(cxA, cyA, rr, rr * ISO_Y, a0, 0.42f, 1.8f,
+              bright(r), bright(g), bright(b), 0.4f * p, 6)
+            i += 1
+          }
+        case WAV_SAND =>
+          // Grains scoured off the front
+          var i = 0; while (i < 14) {
+            val t = ((phase * 0.25 + i * 0.0714) % 1.0).toFloat
+            val a0 = start + sweep * ((i * 0.137f + t * 0.3f) % 1f)
+            val rr = R * (0.72f + t * 0.42f)
+            val gx = cxA + Math.cos(a0).toFloat * rr
+            val gy = cyA + Math.sin(a0).toFloat * rr * ISO_Y
+            sb.fillOval(gx, gy, 2.6f + t * 2f, 2f + t * 1.6f, dark(r), dark(g), dark(b), 0.5f * (1f - t) * p, 5)
+            i += 1
+          }
+        case WAV_SONIC =>
+          // Concentric ripples behind the front
+          var i = 1; while (i <= 3) {
+            val rr = R * (1f - i * 0.17f) - ((phase * 3) % 8).toFloat
+            if (rr > 6f) sb.strokeArc(cxA, cyA, rr, rr * ISO_Y, start + 0.08f, sweep - 0.16f, 1.6f,
+              bright(r), bright(g), bright(b), 0.34f * (1f - i * 0.22f) * p, 14)
+            i += 1
+          }
+        case WAV_FLAME =>
+          // Tongues licking forward off the crest, plus embers riding behind it
+          var i = 0; while (i < 7) {
+            val a0 = start + sweep * (0.08f + 0.84f * i / 6f)
+            val lick = (0.5f + 0.5f * Math.sin(phase * 3.4 + i * 1.9).toFloat)
+            val ca2 = Math.cos(a0).toFloat; val sa2 = Math.sin(a0).toFloat
+            val bx = cxA + ca2 * R * 0.98f; val by = cyA + sa2 * R * ISO_Y * 0.98f
+            val tx = cxA + ca2 * (R + R * 0.34f * lick); val ty = cyA + sa2 * (R + R * 0.34f * lick) * ISO_Y
+            sb.strokeLineSoft(bx, by, tx, ty, 5f + lick * 4f, 1f, mix(0.45f, 0.9f, lick), 0.15f, 0.55f * p)
+            sb.strokeLineSoft(bx, by, (bx + tx) * 0.5f, (by + ty) * 0.5f, 3f, 1f, 0.95f, 0.6f, 0.5f * p)
+            i += 1
+          }
+          var k = 0; while (k < 6) {
+            val t = ((phase * 0.3 + k * 0.167) % 1.0).toFloat
+            val a0 = start + sweep * ((k * 0.19f) % 1f)
+            val rr = R * (0.9f - t * 0.5f)
+            sb.fillOval(cxA + Math.cos(a0).toFloat * rr, cyA + Math.sin(a0).toFloat * rr * ISO_Y - t * 10f,
+              3.5f * (1f - t), 3.5f * (1f - t), 1f, 0.7f, 0.25f, 0.7f * (1f - t) * p, 6)
+            k += 1
+          }
+        case WAV_WATER =>
+          // Foam caps riding the crest and spray thrown off the top of it
+          var i = 0; while (i < 9) {
+            val a0 = start + sweep * (0.06f + 0.88f * i / 8f)
+            val ca2 = Math.cos(a0).toFloat; val sa2 = Math.sin(a0).toFloat
+            val bob = 0.5f + 0.5f * Math.sin(phase * 2.6 + i * 1.4).toFloat
+            val fx = cxA + ca2 * R * 0.97f; val fy = cyA + sa2 * R * ISO_Y * 0.97f
+            sb.fillOval(fx, fy - bob * 5f, 7f + bob * 4f, 5f + bob * 3f, 1f, 1f, 1f, 0.55f * p, 8)
+            sb.fillOval(fx, fy - bob * 9f, 3.4f, 2.6f, 1f, 1f, 1f, 0.45f * p, 6)
+            i += 1
+          }
+          var k = 0; while (k < 7) {
+            val t = ((phase * 0.4 + k * 0.143) % 1.0).toFloat
+            val a0 = start + sweep * ((k * 0.19f) % 1f)
+            val rr = R * 0.95f
+            sb.fillOval(cxA + Math.cos(a0).toFloat * rr, cyA + Math.sin(a0).toFloat * rr * ISO_Y
+              - Math.sin(t * Math.PI).toFloat * 22f, 3.2f * (1f - t * 0.4f), 4f * (1f - t * 0.4f),
+              bright(r), bright(g), bright(b), 0.8f * (1f - t) * p, 6)
+            k += 1
+          }
+        case WAV_ACID =>
+          // Droplets sagging off the underside of the spray
+          var i = 0; while (i < 8) {
+            val t = ((phase * 0.35 + i * 0.125) % 1.0).toFloat
+            val a0 = start + sweep * (0.1f + 0.8f * i / 7f)
+            val rr = R * 0.92f
+            val gx = cxA + Math.cos(a0).toFloat * rr
+            val gy = cyA + Math.sin(a0).toFloat * rr * ISO_Y + t * 16f
+            sb.fillOval(gx, gy, 3.4f * (1f - t * 0.4f), 4.6f * (1f - t * 0.4f),
+              bright(r), bright(g), bright(b), 0.65f * (1f - t) * p, 7)
+            i += 1
+          }
+        case _ =>
+          // WAV_IMPACT — a hard double crest with speed streaks raking back
+          sb.strokeArc(cxA, cyA, R * 0.80f, R * 0.80f * ISO_Y, start + 0.14f, sweep - 0.28f, 3f,
+            bright(r), bright(g), bright(b), 0.55f * p, 12)
+          var i = 0; while (i < 5) {
+            val a0 = start + sweep * (0.12f + 0.76f * i / 4f)
+            val ca2 = Math.cos(a0).toFloat; val sa2 = Math.sin(a0).toFloat
+            sb.strokeLineSoft(cxA + ca2 * R * 0.5f, cyA + sa2 * R * 0.5f * ISO_Y,
+              cxA + ca2 * R * 0.94f, cyA + sa2 * R * 0.94f * ISO_Y, 3f,
+              bright(r), bright(g), bright(b), 0.4f * p)
+            i += 1
+          }
+      }
 
-      // Center pulsing energy node with outline
-      val nodePulse = 0.7f + 0.3f * Math.sin(phase * 2.8).toFloat
-      val nodeSz = sp * 0.18f * nodePulse
-      sb.strokeOval(sx + ndx * sp * 0.35f, sy + ndy * sp * 0.2f, nodeSz + 2f, (nodeSz + 2f) * 0.7f,
-        2.5f, outline(r), outline(g), outline(b), 0.6f * p, 10)
-      sb.fillOval(sx + ndx * sp * 0.35f, sy + ndy * sp * 0.2f, nodeSz, nodeSz * 0.7f,
-        bright(r), bright(g), bright(b), 0.75f * p, 10)
-      sb.fillOval(sx + ndx * sp * 0.35f, sy + ndy * sp * 0.2f, nodeSz * 0.5f, nodeSz * 0.35f,
-        1f, 1f, 1f, 0.45f * p, 6)
+      // Sparks riding the crest
+      var s2 = 0; while (s2 < 5) {
+        val t = ((phase * 0.5 + s2 * 0.2) % 1.0).toFloat
+        val a0 = start + sweep * ((s2 * 0.23f + t * 0.4f) % 1f)
+        drawSparkleStar(cxA + Math.cos(a0).toFloat * R, cyA + Math.sin(a0).toFloat * R * ISO_Y,
+          5f * (1f - t * 0.5f) * ds, bright(r), bright(g), bright(b), 0.55f * (1f - t) * p, sb, phase + s2)
+        s2 += 1
+      }
 
-      // 6 trailing energy wisps with gravity
-      { var w = 0; while (w < 6) {
-        val wT = ((tick * 0.04 + w * 0.167 + proj.id * 0.13) % 1.0).toFloat
-        val wOff = (w - 2.5f) * sp * 0.25f
-        val wx = sx + perpX * wOff - ndx * (5f + wT * 30f)
-        val wy = sy + perpY * wOff * 0.6f - ndy * (3f + wT * 20f) + wT * wT * 12f
-        val wSz = (4f + (1f - wT) * 5f) * ds
-        val wA = 0.35f * (1f - wT) * p
-        sb.fillOval(wx, wy, wSz, wSz * 0.65f, r, g, b, wA, 6)
-        sb.fillOval(wx, wy, wSz * 0.5f, wSz * 0.35f, bright(r), bright(g), bright(b), wA * 0.5f, 4)
-      ; w += 1 } }
-
-      // Sparkle stars along the leading edge
-      { var s = 0; while (s < 6) {
-        val starPhase = ((phase * 0.5 + s * 0.167) % 1.0).toFloat
-        val edgeT = s.toFloat / 5
-        val ex = tipX * (1f - edgeT) + (if (s % 2 == 0) w1x else w2x) * edgeT
-        val ey = tipY * (1f - edgeT) + (if (s % 2 == 0) w1y else w2y) * edgeT
-        val starAlpha = 0.6f * (1f - starPhase) * p
-        drawSparkleStar(ex, ey, 5.5f * (1f - starPhase * 0.4f) * ds,
-          bright(r), bright(g), bright(b), starAlpha, sb, phase * 1.5 + s)
-      ; s += 1 } }
-
-      // 8 leading edge spark particles — bigger with small trails
-      { var sp2 = 0; while (sp2 < 8) {
-        val t = ((tick * 0.1 + sp2 * 0.125 + proj.id * 0.11) % 1.0).toFloat
-        val edgeT = sp2.toFloat / 7
-        val ex = tipX * (1f - edgeT) + (if (sp2 % 2 == 0) w1x else w2x) * edgeT
-        val ey = tipY * (1f - edgeT) + (if (sp2 % 2 == 0) w1y else w2y) * edgeT
-        val sparkSz = 6f * ds
-        // Small trail behind each spark
-        sb.strokeLine(ex - ndx * 6f, ey - ndy * 4f, ex + ndx * t * 8, ey + ndy * t * 5,
-          1.5f, r, g, b, Math.max(0f, 0.3f * (1f - t) * p))
-        sb.fillOval(ex + ndx * t * 8, ey + ndy * t * 5, sparkSz, sparkSz * 0.7f,
-          bright(r), bright(g), bright(b), Math.max(0f, 0.6f * (1f - t) * p), 8)
-      ; sp2 += 1 } }
-
-      // Charge crackle
-      drawChargeCrackle(sx + ndx * sp * 0.3f, sy + ndy * sp * 0.2f, sp * 0.5f, r, g, b, p, sb, phase, proj.chargeLevel)
-      drawReturnGhosts(sx, sy, sp * 0.5f, dr, dg, db, p, sb, proj)
+      drawChargeCrackle(sx, sy, R * 0.4f, r, g, b, p, sb, phase, proj.chargeLevel)
+      drawReturnGhosts(sx, sy, R * 0.35f, dr, dg, db, p, sb, proj)
     }
 
   // ═══════════════════════════════════════════════════════════════
@@ -2077,7 +2722,7 @@ object GLProjectileRenderers {
     val mainB = if (isVirus) 0.15f else 0.55f
     computeAllDynamics(proj, mainR, mainG, mainB, phase)
     val p = (0.85 + 0.15 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
-    val ds = dynScale
+    val ds = dynScale * 1.5f // this one reads far below the roster's scale unscaled
     val bc = _chgBright
     screenDir(proj)
     val ndx = _sdx; val ndy = _sdy
@@ -2561,102 +3206,102 @@ object GLProjectileRenderers {
     // ── Original (0-30) ──
     ProjectileType.NORMAL       -> (drawNormal _),
     ProjectileType.TENTACLE     -> (drawTentacle _),
-    ProjectileType.ICE_BEAM     -> beamProj(0.4f, 0.8f, 1f, 7f, 9f, BEAM_ICE),
-    ProjectileType.AXE          -> spinner(0.65f, 0.55f, 0.4f, 36f, 2),
-    ProjectileType.ROPE         -> chainProj(0.7f, 0.5f, 0.3f, 6f),
-    ProjectileType.SPEAR        -> physProj(0.55f, 0.5f, 0.35f, 7f),
+    ProjectileType.ICE_BEAM     -> beamProj(0.42f, 0.82f, 1f, 6.5f, 12f, BEAM_ICE),
+    ProjectileType.AXE          -> bladeSpinner(WPN_AXE, 0.78f, 0.70f, 0.55f, 30f),
+    ProjectileType.ROPE         -> chainProj(CHN_ROPE, 0.72f, 0.54f, 0.30f, 6f),
+    ProjectileType.SPEAR        -> flyingShaft(SHF_SPEAR, 0.95f, 0.82f, 0.42f, 28f),
     ProjectileType.SOUL_BOLT    -> energyBolt(0.3f, 0.9f, 0.4f, 20f, 3),
     ProjectileType.HAUNT        -> energyBolt(0.5f, 0.7f, 0.95f, 24f, 4),
     ProjectileType.ARCANE_BOLT  -> energyBolt(0.65f, 0.3f, 0.95f, 22f, 2),
     ProjectileType.FIREBALL     -> (drawFireball _),
-    ProjectileType.SPLASH       -> aoeRing(0.3f, 0.6f, 1f, 50f),
-    ProjectileType.TIDAL_WAVE   -> (drawTidalWave _),
+    ProjectileType.SPLASH       -> aoeRing(AOE_WATER, 0.32f, 0.62f, 1f, 46f),
+    ProjectileType.TIDAL_WAVE   -> wave(WAV_WATER, 0.35f, 0.66f, 1f, 40f),
     ProjectileType.GEYSER       -> (drawGeyser _),
     ProjectileType.BULLET       -> bulletProj(0.75f, 0.7f, 0.55f),
-    ProjectileType.GRENADE      -> lobbed(0.4f, 0.45f, 0.3f, 18f),
+    ProjectileType.GRENADE      -> lobbed(LOB_BOMB, 0.95f, 0.62f, 0.25f, 17f),
     ProjectileType.ROCKET       -> (drawRocket _),
     ProjectileType.TALON        -> (drawTalon _),
-    ProjectileType.GUST         -> wave(0.8f, 0.9f, 1f, 32f),
-    ProjectileType.SHURIKEN     -> spinner(0.6f, 0.6f, 0.65f, 32f, 4),
-    ProjectileType.POISON_DART  -> (drawPoisonDart _),
-    ProjectileType.CHAIN_BOLT   -> chainProj(0.5f, 0.5f, 0.55f, 5.5f),
-    ProjectileType.LOCKDOWN_CHAIN -> chainProj(0.4f, 0.4f, 0.45f, 6f),
-    ProjectileType.SNARE_MINE   -> lobbed(0.3f, 0.6f, 1f, 20f),
-    ProjectileType.KATANA       -> spinner(0.75f, 0.75f, 0.8f, 32f, 2),
+    ProjectileType.GUST         -> wave(WAV_WIND, 0.82f, 0.92f, 1f, 33f),
+    ProjectileType.SHURIKEN     -> spinner(0.72f, 0.74f, 0.82f, 30f, 4),
+    ProjectileType.POISON_DART  -> flyingShaft(SHF_DART, 0.4f, 0.9f, 0.35f, 26f),
+    ProjectileType.CHAIN_BOLT   -> chainProj(CHN_CHAIN, 0.62f, 0.64f, 0.72f, 5.5f),
+    ProjectileType.LOCKDOWN_CHAIN -> chainProj(CHN_CHAIN, 0.46f, 0.48f, 0.56f, 6f),
+    ProjectileType.SNARE_MINE   -> lobbed(LOB_MINE, 0.35f, 0.7f, 1f, 17f),
+    ProjectileType.KATANA       -> bladeSpinner(WPN_KATANA, 0.78f, 0.84f, 0.95f, 32f),
     ProjectileType.SWORD_WAVE   -> (drawSwordWave _),
     ProjectileType.PLAGUE_BOLT  -> energyBolt(0.45f, 0.75f, 0.15f, 20f, 3),
-    ProjectileType.MIASMA       -> aoeRing(0.35f, 0.65f, 0.15f, 45f),
-    ProjectileType.BLIGHT_BOMB  -> lobbed(0.35f, 0.55f, 0.15f, 18f),
+    ProjectileType.MIASMA       -> aoeRing(AOE_TOXIC, 0.42f, 0.72f, 0.18f, 42f),
+    ProjectileType.BLIGHT_BOMB  -> lobbed(LOB_FLASK, 0.45f, 0.8f, 0.2f, 17f),
     ProjectileType.BLOOD_FANG   -> (drawBloodFang _),
-    ProjectileType.BLOOD_SIPHON -> beamProj(0.85f, 0.15f, 0.1f, 6f, 7f, BEAM_DRAIN),
+    ProjectileType.BLOOD_SIPHON -> beamProj(0.88f, 0.16f, 0.12f, 5.5f, 11f, BEAM_DRAIN),
     ProjectileType.BAT_SWARM    -> (drawBatSwarm _),
 
     // ── Elemental (31-52) ──
     ProjectileType.FLAME_BOLT   -> energyBolt(1f, 0.5f, 0.1f, 20f, 1),
-    ProjectileType.FROST_SHARD  -> (drawFrostShard _),
-    ProjectileType.LIGHTNING    -> (drawLightning _),
-    ProjectileType.CHAIN_LIGHTNING -> (drawLightning _),
+    ProjectileType.FROST_SHARD  -> flyingShaft(SHF_ICE, 0.55f, 0.85f, 1f, 22f),
+    ProjectileType.LIGHTNING    -> lightningBolt(1f, 0.90f, 0.30f),
+    ProjectileType.CHAIN_LIGHTNING -> lightningBolt(0.95f, 0.85f, 0.35f),
     ProjectileType.THUNDER_STRIKE -> (drawThunderStrike _),
     ProjectileType.BOULDER      -> ((proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int) => drawBoulder(proj, sx, sy, sb, tick, 24f)),
-    ProjectileType.SEISMIC_SLAM -> aoeRing(0.6f, 0.45f, 0.25f, 55f),
-    ProjectileType.WIND_BLADE   -> wave(0.8f, 0.95f, 1f, 30f),
+    ProjectileType.SEISMIC_SLAM -> aoeRing(AOE_QUAKE, 0.68f, 0.50f, 0.28f, 50f),
+    ProjectileType.WIND_BLADE   -> wave(WAV_WIND, 0.78f, 0.96f, 1f, 31f),
     ProjectileType.MAGMA_BALL   -> energyBolt(1f, 0.45f, 0.05f, 24f, 1),
-    ProjectileType.ERUPTION     -> aoeRing(1f, 0.45f, 0.05f, 50f),
-    ProjectileType.FROST_TRAP   -> lobbed(0.45f, 0.75f, 1f, 18f),
+    ProjectileType.ERUPTION     -> aoeRing(AOE_FIRE, 1f, 0.45f, 0.05f, 46f),
+    ProjectileType.FROST_TRAP   -> lobbed(LOB_ICE, 0.62f, 0.85f, 1f, 17f),
     ProjectileType.SAND_SHOT    -> energyBolt(0.9f, 0.75f, 0.4f, 18f),
-    ProjectileType.SAND_BLAST   -> wave(0.85f, 0.75f, 0.4f, 28f),
-    ProjectileType.THORN        -> (drawThorn _),
-    ProjectileType.VINE_WHIP    -> beamProj(0.2f, 0.6f, 0.15f, 6f, 7f, BEAM_VINE),
-    ProjectileType.THORN_WALL   -> aoeRing(0.25f, 0.55f, 0.15f, 35f),
+    ProjectileType.SAND_BLAST   -> wave(WAV_SAND, 0.88f, 0.76f, 0.42f, 30f),
+    ProjectileType.THORN        -> flyingShaft(SHF_THORN, 0.42f, 0.75f, 0.28f, 26f),
+    ProjectileType.VINE_WHIP    -> beamProj(0.24f, 0.66f, 0.18f, 5.5f, 10f, BEAM_VINE),
+    ProjectileType.THORN_WALL   -> aoeRing(AOE_NATURE, 0.30f, 0.62f, 0.18f, 34f),
     ProjectileType.INFERNO_BLAST -> (drawInfernoBlast _),
-    ProjectileType.GLACIER_SPIKE -> (drawFrostShard _),
+    ProjectileType.GLACIER_SPIKE -> flyingShaft(SHF_ICE, 0.60f, 0.88f, 1f, 27f),
     ProjectileType.MUD_GLOB     -> energyBolt(0.4f, 0.3f, 0.15f, 22f),
-    ProjectileType.MUD_BOMB     -> lobbed(0.35f, 0.28f, 0.12f, 20f),
+    ProjectileType.MUD_BOMB     -> lobbed(LOB_GLOB, 0.40f, 0.30f, 0.14f, 18f),
     ProjectileType.EMBER_SHOT   -> energyBolt(1f, 0.55f, 0.15f, 18f, 1),
-    ProjectileType.AVALANCHE_CRUSH -> lobbed(0.65f, 0.8f, 0.95f, 48f),
+    ProjectileType.AVALANCHE_CRUSH -> lobbed(LOB_ICE, 0.72f, 0.85f, 0.98f, 40f),
 
     // ── Undead/Dark (53-69) ──
     ProjectileType.DEATH_BOLT   -> energyBolt(0.2f, 0.5f, 0.05f, 22f, 3),
     ProjectileType.RAISE_DEAD   -> (drawRaiseDead _),
-    ProjectileType.BONE_AXE     -> spinner(0.92f, 0.9f, 0.82f, 36f, 2),
-    ProjectileType.BONE_THROW   -> spinner(0.92f, 0.88f, 0.8f, 18f, 2),
+    ProjectileType.BONE_AXE     -> bladeSpinner(WPN_BONE_AXE, 0.94f, 0.92f, 0.84f, 30f),
+    ProjectileType.BONE_THROW   -> bladeSpinner(WPN_BONE, 0.94f, 0.92f, 0.84f, 24f, 0.38),
     ProjectileType.WAIL         -> (drawWail _),
-    ProjectileType.SOUL_DRAIN   -> beamProj(0.35f, 0.85f, 0.25f, 6f, 8f, BEAM_DRAIN),
+    ProjectileType.SOUL_DRAIN   -> beamProj(0.38f, 0.88f, 0.28f, 5.5f, 11.5f, BEAM_DRAIN),
     ProjectileType.CLAW_SWIPE   -> (drawClawSwipe _),
     ProjectileType.DEVOUR       -> (drawDevour _),
     ProjectileType.SCYTHE       -> (drawScythe _),
     ProjectileType.REAP         -> (drawReap _),
     ProjectileType.SHADOW_BOLT  -> (drawShadowBolt _),
-    ProjectileType.CURSED_BLADE -> spinner(0.55f, 0.15f, 0.25f, 32f, 4),
-    ProjectileType.LIFE_DRAIN   -> beamProj(0.85f, 0.1f, 0.1f, 6f, 7f, BEAM_DRAIN),
-    ProjectileType.SHOVEL       -> lobbed(0.6f, 0.6f, 0.55f, 30f),
-    ProjectileType.HEAD_THROW   -> lobbed(0.75f, 0.7f, 0.6f, 20f),
-    ProjectileType.BANDAGE_WHIP -> beamProj(0.85f, 0.75f, 0.6f, 6f, 6f, BEAM_WHIP),
+    ProjectileType.CURSED_BLADE -> bladeSpinner(WPN_CURSED, 0.90f, 0.18f, 0.28f, 30f),
+    ProjectileType.LIFE_DRAIN   -> beamProj(0.88f, 0.12f, 0.12f, 5.5f, 11f, BEAM_DRAIN),
+    ProjectileType.SHOVEL       -> lobbed(LOB_SHOVEL, 0.62f, 0.64f, 0.62f, 26f),
+    ProjectileType.HEAD_THROW   -> lobbed(LOB_HORN, 0.86f, 0.80f, 0.68f, 22f),
+    ProjectileType.BANDAGE_WHIP -> beamProj(0.88f, 0.80f, 0.64f, 5.5f, 9f, BEAM_WHIP),
     ProjectileType.CURSE        -> (drawCurse _),
 
     // ── Medieval/Fantasy (70-79) ──
-    ProjectileType.HOLY_BLADE   -> spinner(1f, 0.95f, 0.5f, 32f, 4),
+    ProjectileType.HOLY_BLADE   -> bladeSpinner(WPN_SWORD, 1f, 0.92f, 0.45f, 31f),
     ProjectileType.HOLY_BOLT    -> (drawHolyBolt _),
-    ProjectileType.ARROW        -> (drawEnchantedArrow _),
-    ProjectileType.POISON_ARROW -> (drawPoisonArrow _),
-    ProjectileType.SONIC_WAVE   -> wave(0.75f, 0.55f, 0.95f, 32f),
-    ProjectileType.SONIC_BOOM   -> aoeRing(0.75f, 0.55f, 0.95f, 55f),
+    ProjectileType.ARROW        -> flyingShaft(SHF_ARROW, 0.95f, 0.72f, 0.32f, 25f),
+    ProjectileType.POISON_ARROW -> flyingShaft(SHF_PARROW, 0.4f, 0.9f, 0.32f, 25f),
+    ProjectileType.SONIC_WAVE   -> wave(WAV_SONIC, 0.78f, 0.58f, 0.97f, 33f),
+    ProjectileType.SONIC_BOOM   -> aoeRing(AOE_SONIC, 0.78f, 0.58f, 0.97f, 50f),
     ProjectileType.FIST         -> fistProj(0.75f, 0.6f, 0.45f, 28f),
     ProjectileType.SMITE        -> (drawHolyBolt _),
     ProjectileType.CHARM        -> energyBolt(1f, 0.45f, 0.65f, 18f, 4),
-    ProjectileType.CARD         -> spinner(0.92f, 0.92f, 0.88f, 16f, 4),
+    ProjectileType.CARD         -> bladeSpinner(WPN_CARD, 0.92f, 0.25f, 0.32f, 26f, 0.22),
 
     // ── Sci-Fi/Tech (80-89) ──
     ProjectileType.DATA_BOLT    -> ((proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int) => drawDataBolt(proj, sx, sy, sb, tick, isVirus = false)),
     ProjectileType.VIRUS        -> ((proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int) => drawDataBolt(proj, sx, sy, sb, tick, isVirus = true)),
-    ProjectileType.LASER        -> beamProj(1f, 0.25f, 0.2f, 8f, 5f, BEAM_LASER),
+    ProjectileType.LASER        -> beamProj(1f, 0.25f, 0.2f, 7.5f, 9f, BEAM_LASER),
     ProjectileType.GRAVITY_BALL -> (drawGravityBall _),
     ProjectileType.GRAVITY_WELL -> (drawGravityBall _),
-    ProjectileType.TESLA_COIL   -> (drawLightning _),
+    ProjectileType.TESLA_COIL   -> lightningBolt(0.35f, 0.85f, 1f),
     ProjectileType.NANO_BOLT    -> energyBolt(0.25f, 0.85f, 0.65f, 16f, 4),
     ProjectileType.VOID_BOLT    -> (drawVoidBolt _),
-    ProjectileType.RAILGUN      -> beamProj(0.25f, 0.55f, 1f, 10f, 5f, BEAM_RAILGUN),
-    ProjectileType.CLUSTER_BOMB -> lobbed(0.55f, 0.55f, 0.45f, 20f),
+    ProjectileType.RAILGUN      -> beamProj(0.25f, 0.55f, 1f, 9f, 8.5f, BEAM_RAILGUN),
+    ProjectileType.CLUSTER_BOMB -> lobbed(LOB_BOMB, 0.9f, 0.66f, 0.3f, 19f),
 
     // ── Nature/Beast (90-93) ──
     ProjectileType.VENOM_BOLT   -> (drawVenomBolt _),
@@ -2665,66 +3310,66 @@ object GLProjectileRenderers {
     ProjectileType.ACID_BOMB    -> (drawVenomBolt _),
 
     // ── AoE Root (94-101) ──
-    ProjectileType.SEISMIC_ROOT -> aoeRing(0.55f, 0.45f, 0.25f, 40f),
-    ProjectileType.ROOT_GROWTH  -> aoeRing(0.25f, 0.6f, 0.15f, 38f),
+    ProjectileType.SEISMIC_ROOT -> aoeRing(AOE_QUAKE, 0.62f, 0.48f, 0.28f, 38f),
+    ProjectileType.ROOT_GROWTH  -> aoeRing(AOE_NATURE, 0.30f, 0.66f, 0.18f, 36f),
     ProjectileType.WEB_TRAP     -> (drawWebShot _),
-    ProjectileType.TREMOR_SLAM  -> aoeRing(0.55f, 0.45f, 0.25f, 50f),
-    ProjectileType.ENTANGLE     -> aoeRing(0.2f, 0.55f, 0.15f, 38f),
-    ProjectileType.STONE_GAZE   -> beamProj(0.65f, 0.6f, 0.5f, 7f, 8f, BEAM_STONE),
-    ProjectileType.INK_SNARE    -> lobbed(0.15f, 0.15f, 0.2f, 20f),
+    ProjectileType.TREMOR_SLAM  -> aoeRing(AOE_QUAKE, 0.62f, 0.48f, 0.28f, 46f),
+    ProjectileType.ENTANGLE     -> aoeRing(AOE_NATURE, 0.26f, 0.60f, 0.18f, 36f),
+    ProjectileType.STONE_GAZE   -> beamProj(0.68f, 0.63f, 0.52f, 6.5f, 12f, BEAM_STONE),
+    ProjectileType.INK_SNARE    -> lobbed(LOB_GLOB, 0.16f, 0.14f, 0.24f, 19f),
     ProjectileType.GRAVITY_LOCK -> (drawGravityBall _),
 
     // ── Character-specific (102-111) ──
-    ProjectileType.KNIFE        -> spinner(0.8f, 0.82f, 0.85f, 32f, 2),
+    ProjectileType.KNIFE        -> bladeSpinner(WPN_KNIFE, 0.84f, 0.86f, 0.92f, 25f, 0.36),
     ProjectileType.STING        -> energyBolt(0.45f, 0.9f, 1f, 16f),
-    ProjectileType.HAMMER       -> lobbed(0.55f, 0.55f, 0.6f, 34f),
+    ProjectileType.HAMMER       -> lobbed(LOB_HAMMER, 0.60f, 0.62f, 0.70f, 27f),
     ProjectileType.HORN         -> (drawHorn _),
     ProjectileType.MYSTIC_BOLT  -> energyBolt(0.55f, 0.35f, 0.85f, 20f, 2),
-    ProjectileType.PETRIFY      -> beamProj(0.65f, 0.6f, 0.5f, 7f, 8f, BEAM_STONE),
-    ProjectileType.GRAB         -> beamProj(0.5f, 0.4f, 0.25f, 8f, 9f, BEAM_WHIP),
+    ProjectileType.PETRIFY      -> beamProj(0.68f, 0.63f, 0.52f, 6.5f, 12f, BEAM_STONE),
+    ProjectileType.GRAB         -> beamProj(0.55f, 0.44f, 0.28f, 7f, 11f, BEAM_WHIP),
     ProjectileType.JAW          -> (drawJaw _),
-    ProjectileType.TONGUE       -> beamProj(0.9f, 0.35f, 0.4f, 8f, 8f, BEAM_WHIP),
+    ProjectileType.TONGUE       -> beamProj(0.92f, 0.38f, 0.42f, 7f, 10f, BEAM_WHIP),
     ProjectileType.ACID_FLASK   -> (drawVenomBolt _),
 
     // ── Roster audit: new differentiation projectiles (112+) ──
-    ProjectileType.BOOMERANG_BLADE -> spinner(0.55f, 0.15f, 0.25f, 32f, 2),
-    ProjectileType.VORTEX_BOMB     -> aoeRing(0.35f, 0.15f, 0.55f, 45f),
-    ProjectileType.CHAIN_LIGHTNING_FORK -> (drawLightning _),
-    ProjectileType.SNIPER_BEAM     -> beamProj(0.3f, 0.6f, 1f, 10f, 4f, BEAM_RAILGUN),
-    ProjectileType.MOMENTUM_STRIKE -> wave(0.95f, 0.6f, 0.2f, 30f),
+    ProjectileType.BOOMERANG_BLADE -> bladeSpinner(WPN_CURSED, 0.90f, 0.18f, 0.28f, 30f),
+    ProjectileType.VORTEX_BOMB     -> aoeRing(AOE_VOID, 0.55f, 0.25f, 0.85f, 42f),
+    ProjectileType.CHAIN_LIGHTNING_FORK -> lightningBolt(1f, 0.92f, 0.42f),
+    ProjectileType.SNIPER_BEAM     -> beamProj(0.3f, 0.6f, 1f, 9f, 8f, BEAM_RAILGUN),
+    ProjectileType.MOMENTUM_STRIKE -> wave(WAV_IMPACT, 0.97f, 0.62f, 0.22f, 30f),
     ProjectileType.LEECH_BOLT      -> energyBolt(0.5f, 0.15f, 0.35f, 22f, 3),
-    ProjectileType.RICOCHET_SHARD  -> (drawFrostShard _),
-    ProjectileType.FLAME_WAVE      -> wave(1f, 0.5f, 0.1f, 35f),
-    ProjectileType.POISON_CLOUD    -> aoeRing(0.3f, 0.75f, 0.2f, 50f),
-    ProjectileType.BONE_BOOMERANG  -> spinner(0.92f, 0.88f, 0.8f, 20f, 2),
-    ProjectileType.GRAVITY_LANCE   -> beamProj(0.35f, 0.15f, 0.55f, 8f, 6f, BEAM_GRAVITY),
+    ProjectileType.RICOCHET_SHARD  -> flyingShaft(SHF_ICE, 0.62f, 0.90f, 1f, 21f),
+    ProjectileType.FLAME_WAVE      -> wave(WAV_FLAME, 1f, 0.5f, 0.1f, 35f),
+    ProjectileType.POISON_CLOUD    -> aoeRing(AOE_TOXIC, 0.36f, 0.80f, 0.24f, 46f),
+    ProjectileType.BONE_BOOMERANG  -> bladeSpinner(WPN_BONE, 0.94f, 0.92f, 0.84f, 24f, 0.34),
+    ProjectileType.GRAVITY_LANCE   -> beamProj(0.45f, 0.20f, 0.75f, 7f, 10f, BEAM_GRAVITY),
     ProjectileType.SHADOW_HAUNT    -> (drawVoidBolt _),
     ProjectileType.CHARGE_FIST     -> fistProj(0.85f, 0.65f, 0.35f, 28f),
-    ProjectileType.ACID_SPRAY      -> wave(0.25f, 0.85f, 0.3f, 28f),
+    ProjectileType.ACID_SPRAY      -> wave(WAV_ACID, 0.35f, 0.9f, 0.32f, 29f),
     ProjectileType.ECHO_BOLT       -> energyBolt(0.7f, 0.5f, 0.95f, 20f, 2),
     ProjectileType.FLAME_TRAIL     -> energyBolt(1f, 0.6f, 0.15f, 22f, 1),
     ProjectileType.STAR_BOLT       -> energyBolt(0.95f, 0.9f, 0.45f, 22f, 4),
     ProjectileType.RUNE_BOLT       -> energyBolt(0.9f, 0.75f, 0.35f, 18f, 2),
-    ProjectileType.SOUL_HARVEST    -> aoeRing(0.3f, 0.85f, 0.25f, 45f),
-    ProjectileType.OVERCLOCK_BEAM  -> aoeRing(0.2f, 0.9f, 0.7f, 40f),
-    ProjectileType.NAPALM_STRIKE   -> lobbed(0.95f, 0.45f, 0.1f, 22f),
+    ProjectileType.SOUL_HARVEST    -> aoeRing(AOE_VOID, 0.34f, 0.90f, 0.40f, 42f),
+    ProjectileType.OVERCLOCK_BEAM  -> aoeRing(AOE_SONIC, 0.22f, 0.95f, 0.75f, 40f),
+    ProjectileType.NAPALM_STRIKE   -> lobbed(LOB_BOMB, 1f, 0.5f, 0.12f, 20f),
     ProjectileType.THROWN_BOULDER  -> ((proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int) => drawBoulder(proj, sx, sy, sb, tick, 28f)),
-    ProjectileType.EYE_BEAM        -> beamProj(0.9f, 0.25f, 0.2f, 8f, 6f, BEAM_LASER),
+    ProjectileType.EYE_BEAM        -> beamProj(0.9f, 0.25f, 0.2f, 7.5f, 10f, BEAM_LASER),
 
     // ── DPS balance variants (same visual as base type) ──
     ProjectileType.SOUL_BOLT_HEAVY   -> energyBolt(0.3f, 0.9f, 0.4f, 20f, 3),
-    ProjectileType.FROST_SHARD_LIGHT -> (drawFrostShard _),
+    ProjectileType.FROST_SHARD_LIGHT -> flyingShaft(SHF_ICE, 0.55f, 0.85f, 1f, 20f),
     ProjectileType.FLAME_BOLT_HEAVY  -> energyBolt(1f, 0.5f, 0.1f, 20f, 1),
     ProjectileType.FLAME_BOLT_LIGHT  -> energyBolt(1f, 0.5f, 0.1f, 20f, 1),
     ProjectileType.BULLET_HEAVY      -> bulletProj(0.75f, 0.7f, 0.55f),
     ProjectileType.BULLET_LIGHT      -> bulletProj(0.75f, 0.7f, 0.55f),
-    ProjectileType.SONIC_WAVE_HEAVY  -> wave(0.75f, 0.55f, 0.95f, 32f),
-    ProjectileType.SONIC_WAVE_MED    -> wave(0.75f, 0.55f, 0.95f, 32f),
-    ProjectileType.THORN_LIGHT       -> (drawThorn _),
-    ProjectileType.LASER_HEAVY       -> beamProj(1f, 0.25f, 0.2f, 8f, 5f, BEAM_LASER),
-    ProjectileType.LASER_LIGHT       -> beamProj(1f, 0.25f, 0.2f, 8f, 5f, BEAM_LASER),
-    ProjectileType.ARROW_HEAVY       -> (drawEnchantedArrow _),
-    ProjectileType.ARROW_LIGHT       -> (drawEnchantedArrow _),
+    ProjectileType.SONIC_WAVE_HEAVY  -> wave(WAV_SONIC, 0.78f, 0.58f, 0.97f, 35f),
+    ProjectileType.SONIC_WAVE_MED    -> wave(WAV_SONIC, 0.78f, 0.58f, 0.97f, 33f),
+    ProjectileType.THORN_LIGHT       -> flyingShaft(SHF_THORN, 0.42f, 0.75f, 0.28f, 24f),
+    ProjectileType.LASER_HEAVY       -> beamProj(1f, 0.25f, 0.2f, 7.5f, 9f, BEAM_LASER),
+    ProjectileType.LASER_LIGHT       -> beamProj(1f, 0.25f, 0.2f, 7.5f, 9f, BEAM_LASER),
+    ProjectileType.ARROW_HEAVY       -> flyingShaft(SHF_ARROW, 0.95f, 0.72f, 0.32f, 27f),
+    ProjectileType.ARROW_LIGHT       -> flyingShaft(SHF_ARROW, 0.95f, 0.72f, 0.32f, 24f),
     ProjectileType.HOLY_BOLT_HEAVY   -> (drawHolyBolt _),
     ProjectileType.VENOM_BOLT_LIGHT  -> (drawVenomBolt _)
   )
@@ -3051,11 +3696,19 @@ object GLProjectileRenderers {
   }
 
   /** Lightning — CARTOONISH: thick bold bolt with dark outline, huge branches, sparkle stars */
-  private def drawLightning(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
+  private def lightningBolt(r: Float, g: Float, b: Float): Renderer =
+    (proj, sx, sy, sb, tick) => drawLightning(proj, sx, sy, sb, tick, r, g, b)
+
+  private def drawLightning(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int,
+                            lr: Float, lg: Float, lb: Float): Unit = {
+    // Derived once so the bolt, its branches, its sparks and its tip flash all agree on
+    // one palette — the previous version hard-coded a different lavender at each layer.
+    val oR = lr * 0.18f; val oG = lg * 0.18f; val oB = lb * 0.22f + 0.06f
+    val hR = mix(lr, 1f, 0.55f); val hG = mix(lg, 1f, 0.55f); val hB = mix(lb, 1f, 0.55f)
     beamTip(sx, sy, proj, 6f)
     val tipX = _tipX; val tipY = _tipY
     val phase = (tick + proj.id * 41) * 0.5
-    computeAllDynamics(proj, 0.5f, 0.4f, 1f, phase)
+    computeAllDynamics(proj, lr, lg, lb, phase)
     val flicker = (0.6 + 0.4 * Math.sin(phase * 8)).toFloat * dynAlpha
     val ds = dynScale
     val bc = _chgBright
@@ -3077,11 +3730,11 @@ object GLProjectileRenderers {
     ; i += 1 }
 
     // Dark cartoon outline bolt
-    { var i = 0; while (i < segs) { sb.strokeLine(_boltXs(i), _boltYs(i), _boltXs(i + 1), _boltYs(i + 1), 12f * ds, 0.1f, 0.08f, 0.2f, 0.7f * flicker); i += 1 } }
+    { var i = 0; while (i < segs) { sb.strokeLine(_boltXs(i), _boltYs(i), _boltXs(i + 1), _boltYs(i + 1), 14f * ds, oR, oG, oB, 0.7f * flicker); i += 1 } }
     // Main bolt — thicker
-    { var i = 0; while (i < segs) { sb.strokeLine(_boltXs(i), _boltYs(i), _boltXs(i + 1), _boltYs(i + 1), 9f * ds, 0.5f, 0.4f, 1f, 0.9f * flicker); i += 1 } }
+    { var i = 0; while (i < segs) { sb.strokeLine(_boltXs(i), _boltYs(i), _boltXs(i + 1), _boltYs(i + 1), 10.5f * ds, lr, lg, lb, 0.9f * flicker); i += 1 } }
     // White-hot core — thicker
-    { var i = 0; while (i < segs) { sb.strokeLine(_boltXs(i), _boltYs(i), _boltXs(i + 1), _boltYs(i + 1), 4f * ds, mix(0.95f, 1f, bc), mix(0.92f, 1f, bc), 1f, 0.98f * flicker); i += 1 } }
+    { var i = 0; while (i < segs) { sb.strokeLine(_boltXs(i), _boltYs(i), _boltXs(i + 1), _boltYs(i + 1), 5f * ds, mix(hR, 1f, 0.6f + bc * 0.4f), mix(hG, 1f, 0.6f + bc * 0.4f), mix(hB, 1f, 0.5f + bc * 0.5f), 0.98f * flicker); i += 1 } }
 
     // 6 branch forks — bigger with outlines
     var b = 0; while (b < 6) {
@@ -3093,11 +3746,11 @@ object GLProjectileRenderers {
         val bex = _boltXs(bSeg) + Math.cos(bAngle).toFloat * bLen
         val bey = _boltYs(bSeg) + Math.sin(bAngle).toFloat * bLen * 0.5f
         // Branch outline
-        sb.strokeLine(_boltXs(bSeg), _boltYs(bSeg), bex, bey, 6f * ds, 0.1f, 0.08f, 0.2f, 0.35f * flicker)
-        sb.strokeLine(_boltXs(bSeg), _boltYs(bSeg), bex, bey, 4.5f * ds, 0.5f, 0.4f, 1f, 0.55f * flicker)
-        sb.strokeLine(_boltXs(bSeg), _boltYs(bSeg), bex, bey, 2f * ds, 0.9f, 0.85f, 1f, 0.7f * flicker)
+        sb.strokeLine(_boltXs(bSeg), _boltYs(bSeg), bex, bey, 6f * ds, oR, oG, oB, 0.35f * flicker)
+        sb.strokeLine(_boltXs(bSeg), _boltYs(bSeg), bex, bey, 4.5f * ds, lr, lg, lb, 0.55f * flicker)
+        sb.strokeLine(_boltXs(bSeg), _boltYs(bSeg), bex, bey, 2f * ds, hR, hG, hB, 0.7f * flicker)
         // Branch tip spark
-        sb.fillOval(bex, bey, 4f * ds, 3f * ds, 0.9f, 0.85f, 1f, 0.6f * flicker, 6)
+        sb.fillOval(bex, bey, 4f * ds, 3f * ds, hR, hG, hB, 0.6f * flicker, 6)
       }
     ; b += 1 }
 
@@ -3108,21 +3761,21 @@ object GLProjectileRenderers {
       val sparkX = _boltXs(sparkSeg) + nx * sparkOff
       val sparkY = _boltYs(sparkSeg) + ny * sparkOff
       val sparkAlpha = (0.35 + 0.45 * Math.sin(phase * 9 + i * 2.9)).toFloat * flicker
-      sb.fillOval(sparkX, sparkY, 4.5f * ds, 3.5f * ds, 0.85f, 0.8f, 1f, sparkAlpha, 8)
+      sb.fillOval(sparkX, sparkY, 4.5f * ds, 3.5f * ds, hR, hG, hB, sparkAlpha, 8)
     ; i += 1 } }
 
     // Tip flash — bigger with cartoon outline and sparkle star
     val tipPulse = (0.6 + 0.4 * Math.sin(phase * 4)).toFloat
-    sb.fillOvalSoft(tipX, tipY, 24f * ds * dynGlow * tipPulse, 18f * ds * dynGlow * tipPulse, 0.5f, 0.4f, 1f, 0.35f * flicker, 0f, 12)
-    sb.strokeOval(tipX, tipY, 14f * ds * tipPulse, 10f * ds * tipPulse, outlineW(14f * ds * tipPulse), 0.1f, 0.08f, 0.2f, 0.6f * flicker, 10)
-    sb.fillOval(tipX, tipY, 13f * ds * tipPulse, 9f * ds * tipPulse, mix(0.85f, 1f, bc), mix(0.8f, 1f, bc), 1f, 0.75f * flicker, 10)
+    sb.fillOvalSoft(tipX, tipY, 24f * ds * dynGlow * tipPulse, 18f * ds * dynGlow * tipPulse, lr, lg, lb, 0.35f * flicker, 0f, 12)
+    sb.strokeOval(tipX, tipY, 14f * ds * tipPulse, 10f * ds * tipPulse, outlineW(14f * ds * tipPulse), oR, oG, oB, 0.6f * flicker, 10)
+    sb.fillOval(tipX, tipY, 13f * ds * tipPulse, 9f * ds * tipPulse, mix(hR, 1f, bc), mix(hG, 1f, bc), mix(hB, 1f, bc), 0.75f * flicker, 10)
     drawSparkleStar(tipX, tipY, 10f * ds * tipPulse, 1f, 1f, 1f, 0.5f * flicker, sb, phase * 2)
 
     // Expanding ring at tip
     val ringP = ((phase * 0.7) % 1.0).toFloat
     sb.strokeOval(tipX, tipY, (8f + ringP * 20f) * ds, (5.5f + ringP * 14f) * ds,
-      2.5f * (1f - ringP), 0.85f, 0.8f, 1f, 0.4f * (1f - ringP) * flicker, 10)
-    drawReturnGhosts(tipX, tipY, 13f * ds, 0.6f, 0.5f, 1f, flicker, sb, proj)
+      2.5f * (1f - ringP), hR, hG, hB, 0.4f * (1f - ringP) * flicker, 10)
+    drawReturnGhosts(tipX, tipY, 13f * ds, lr, lg, lb, flicker, sb, proj)
   }
 
   /** Thunder Strike — CARTOONISH: huge bold bolt, massive ground impact with debris */
@@ -3220,11 +3873,27 @@ object GLProjectileRenderers {
     sb.fillOval(sx, sy + rr * 0.38f, rr * 1f * shadowScale, rr * 0.25f * shadowScale,
       0f, 0f, 0f, shadowAlpha * 0.4f, 14)
 
-    // 4-layer rock: thick dark cartoon outline (4px), stone body, rotating shadow face, rotating highlight face
-    // 4px dark cartoon outline
-    sb.strokeOval(sx, sy - bounce, rr * 1.08f, rr * 0.95f, 4f, 0.1f, 0.06f, 0.02f, 0.88f * p, 18)
-    // Stone body — main fill
-    sb.fillOval(sx, sy - bounce, rr * 1.02f, rr * 0.9f, 0.42f, 0.34f, 0.22f, 0.97f * p, 18)
+    // Faceted stone hull. The vertex radii come from a fixed per-index pattern so the
+    // silhouette is lumpy but stable as it tumbles — re-randomising per frame makes the
+    // rock boil.
+    val hullN = 9
+    var hv = 0
+    while (hv < hullN) {
+      val a = spin * 0.6 + hv * (Math.PI * 2 / hullN)
+      val jag = 0.80f + 0.26f * Math.sin(hv * 2.399f).toFloat
+      _shpXs(hv) = sx + Math.cos(a).toFloat * rr * 1.05f * jag
+      _shpYs(hv) = sy - bounce + Math.sin(a).toFloat * rr * 0.92f * jag
+      hv += 1
+    }
+    sb.strokePolygon(_shpXs, _shpYs, hullN, 4.5f, 0.10f, 0.06f, 0.02f, 0.9f * p)
+    sb.fillPolygon(_shpXs, _shpYs, hullN, 0.42f, 0.34f, 0.22f, 0.97f * p)
+    // Facet edges from the hull corners toward the centre — what makes it read as carved
+    hv = 0
+    while (hv < hullN) {
+      sb.strokeLine(_shpXs(hv), _shpYs(hv), sx + (_shpXs(hv) - sx) * 0.25f,
+        sy - bounce + (_shpYs(hv) - sy + bounce) * 0.25f, 1.6f, 0.26f, 0.20f, 0.12f, 0.45f * p)
+      hv += 1
+    }
     // Rotating shadow face (bottom half follows spin)
     sb.fillOval(sx - hlX * rr * 0.12f, sy - bounce + rr * 0.18f + hlY * rr * 0.08f,
       rr * 0.85f, rr * 0.55f, 0.22f, 0.17f, 0.1f, 0.45f * p, 14)
@@ -3292,120 +3961,6 @@ object GLProjectileRenderers {
     drawReturnGhosts(sx, sy - bounce, rr, 0.4f, 0.32f, 0.2f, p, sb, proj)
   }
 
-  /** Tidal Wave - massive cresting water wall */
-  private def drawTidalWave(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
-    val phase = (tick + proj.id * 29) * 0.35
-    computeAllDynamics(proj, 0.25f, 0.5f, 0.9f, phase)
-    val p = (0.85 + 0.15 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
-    val ds = dynScale
-    screenDir(proj)
-    val ndx = _sdx; val ndy = _sdy
-    val perpX = -ndy; val perpY = ndx
-
-    // Speed lines behind
-    drawSpeedLines(sx, sy, ndx, ndy, 0.25f, 0.5f, 0.9f, 0.22f * p, sb, 5 + (_lifePct * 2).toInt, 32f * ds)
-
-    // Ribbon trail
-    drawRibbonTrail(sx, sy, ndx, ndy, 0.2f, 0.45f, 0.85f, 0.28f * p, sb, tick, proj.id,
-      10, 45f * ds * dynTrail, 10f * ds, 1.5f)
-
-    // Dynamic glow halo
-    val haloPulse = (0.7f + 0.3f * Math.sin(phase * 2.0).toFloat)
-    sb.fillOvalSoft(sx, sy - 6f * ds, 39.6f * ds * dynGlow * haloPulse, 31.7f * ds * dynGlow * haloPulse,
-      0.25f, 0.55f, 1f, 0.2f * p, 0f, 20)
-
-    val crestW = 42f * ds; val crestH = 28f * ds
-    var i = 0; while (i < 10) {
-      val t = i.toFloat / 9
-      val off = (t - 0.5f) * 2f
-      // Crest height follows dissipation only. Driving it by the full `p` pumped the
-      // wall up and down 30% at the brightness-pulse rate, which read as jitter.
-      val height = (1f - off * off) * crestH * (0.82f + 0.18f * dynAlpha)
-      _waveXs(i) = sx + perpX * off * crestW + ndx * height * 0.3f
-      _waveYs(i) = sy + perpY * off * crestW * 0.6f + ndy * height * 0.3f - height
-    ; i += 1 }
-
-    // Bold dark outline on crest (4px)
-    { var i = 0; while (i < 9) {
-      sb.strokeLine(_waveXs(i), _waveYs(i), _waveXs(i + 1), _waveYs(i + 1),
-        12f * ds, 0.06f, 0.15f, 0.35f, 0.6f * p)
-    ; i += 1 } }
-    // 4-layer water body: dark blue outline -> deep blue -> light blue -> foam white cap
-    // Deep blue layer
-    { var i = 0; while (i < 9) {
-      sb.strokeLine(_waveXs(i), _waveYs(i), _waveXs(i + 1), _waveYs(i + 1),
-        9f * ds, 0.15f, 0.35f, 0.7f, 0.65f * p)
-    ; i += 1 } }
-    // Light blue layer
-    { var i = 0; while (i < 9) {
-      sb.strokeLine(_waveXs(i), _waveYs(i), _waveXs(i + 1), _waveYs(i + 1),
-        6f * ds, 0.3f, 0.6f, 0.92f, 0.75f * p)
-    ; i += 1 } }
-    // Bright blue core
-    { var i = 0; while (i < 9) {
-      sb.strokeLine(_waveXs(i), _waveYs(i), _waveXs(i + 1), _waveYs(i + 1),
-        3f * ds, 0.5f, 0.8f, 1f, 0.85f * p)
-    ; i += 1 } }
-    // Foam white cap on crest top
-    { var i = 2; while (i < 8) {
-      sb.strokeLine(_waveXs(i), _waveYs(i), _waveXs(i + 1), _waveYs(i + 1),
-        3.5f * ds, 0.88f, 0.96f, 1f, 0.55f * p)
-    ; i += 1 } }
-
-    // 12 foam bubble particles on crest with outlines
-    { var i = 0; while (i < 12) {
-      val foamT = ((tick * 0.09 + i * 0.083 + proj.id * 0.07) % 1.0).toFloat
-      val foamIdx = 1 + (i % 8)
-      if (foamIdx < 9) {
-        val fx = _waveXs(foamIdx) + Math.sin(phase * 5 + i * 3.1).toFloat * 4f * ds
-        val fy = _waveYs(foamIdx) + Math.cos(phase * 4 + i * 2.7).toFloat * 3f * ds
-        val fSz = (3f + Math.sin(phase * 6 + i * 1.9).toFloat * 1.5f) * ds
-        // Foam outline
-        sb.fillOval(fx, fy, fSz + 0.5f, fSz * 0.85f + 0.5f, 0.15f, 0.35f, 0.65f, 0.2f * p, 6)
-        // Foam body
-        sb.fillOval(fx, fy, fSz, fSz * 0.85f, 0.82f, 0.95f, 1f, (0.35 + 0.25 * Math.sin(phase * 6 + i * 1.9)).toFloat * p, 6)
-        // Foam highlight
-        sb.fillOval(fx - fSz * 0.2f, fy - fSz * 0.2f, fSz * 0.35f, fSz * 0.3f, 1f, 1f, 1f, 0.25f * p, 4)
-      }
-    ; i += 1 } }
-
-    // Base splash with 3-layer pool
-    sb.strokeOval(sx, sy, 40f * ds, 14f * ds, 3f, 0.08f, 0.2f, 0.5f, 0.45f * p, 14)
-    sb.fillOval(sx, sy, 38f * ds, 13f * ds, 0.18f, 0.4f, 0.78f, 0.4f * p, 14)
-    sb.fillOval(sx, sy, 28f * ds, 10f * ds, 0.3f, 0.58f, 0.92f, 0.35f * p, 12)
-    sb.fillOval(sx, sy, 16f * ds, 6f * ds, 0.5f, 0.78f, 1f, 0.3f * p, 10)
-
-    // 10 spray particles with gravity arcs
-    { var i = 0; while (i < 10) {
-      val t = ((tick * 0.06 + i * 0.1 + proj.id * 0.11) % 1.0).toFloat
-      val sprayIdx = Math.min(8, 1 + (i % 8))
-      val spAngle = phase * 1.5 + i * Math.PI * 2 / 10
-      val dropX = _waveXs(sprayIdx) + ndx * t * 14f * ds + Math.cos(spAngle).toFloat * t * 10f * ds
-      val dropY = _waveYs(sprayIdx) + ndy * t * 14f * ds - t * 10f * ds + t * t * 22f * ds
-      val spSz = (4f + (1f - t) * 4f) * ds
-      // Spray outline
-      sb.fillOval(dropX, dropY, spSz + 0.5f, spSz * 0.8f + 0.5f, 0.12f, 0.3f, 0.6f, 0.2f * (1f - t) * p, 6)
-      // Spray body
-      sb.fillOval(dropX, dropY, spSz, spSz * 0.8f, 0.55f, 0.82f, 1f, 0.55f * (1f - t) * p, 6)
-      // Spray highlight
-      sb.fillOval(dropX - spSz * 0.2f, dropY - spSz * 0.25f, spSz * 0.3f, spSz * 0.25f,
-        0.85f, 0.96f, 1f, 0.3f * (1f - t) * p, 4)
-    ; i += 1 } }
-
-    // Sparkle stars
-    { var i = 0; while (i < 4) {
-      val starPhase = ((phase * 0.5 + i * 0.25) % 1.0).toFloat
-      val starAngle = phase * 1.3 + i * Math.PI * 2 / 4
-      val starDist = (16f + starPhase * 18f) * ds
-      val starX = sx + Math.cos(starAngle).toFloat * starDist
-      val starY = sy + Math.sin(starAngle).toFloat * starDist * 0.55f - 6f * ds
-      drawSparkleStar(starX, starY, 5f * (1f - starPhase * 0.5f) * ds,
-        0.65f, 0.9f, 1f, 0.45f * (1f - starPhase) * p, sb, phase * 2 + i)
-    ; i += 1 } }
-
-    drawChargeCrackle(sx, sy - crestH * 0.3f, 22f * ds, 0.25f, 0.5f, 0.9f, p, sb, phase, proj.chargeLevel)
-    drawReturnGhosts(sx, sy, 22f * ds, 0.25f, 0.5f, 0.9f, p, sb, proj)
-  }
 
   /** Geyser — MASSIVE towering water eruption with dense layering, mist halo, foam crown, spray arcs */
   private def drawGeyser(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
@@ -3640,7 +4195,7 @@ object GLProjectileRenderers {
     val phase = (tick + proj.id * 31) * 0.4
     computeAllDynamics(proj, 0.2f, 0.03f, 0.3f, phase)
     val p = (0.85 + 0.15 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
-    val ds = dynScale
+    val ds = dynScale * 1.6f // this one reads far below the roster's scale unscaled
     screenDir(proj)
     val ndx = _sdx; val ndy = _sdy
 
@@ -4391,7 +4946,7 @@ object GLProjectileRenderers {
     val phase = (tick + proj.id * 17) * 0.4
     computeAllDynamics(proj, 0.42f, 0.47f, 0.55f, phase)
     val p = (0.9 + 0.1 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
-    val ds = dynScale
+    val ds = dynScale * 1.3f // this one reads far below the roster's scale unscaled
     val chompCycle = Math.sin(phase * 3).toFloat
     val chomp = (Math.abs(chompCycle) * 0.45f + 0.55f).toFloat
     val dx = tipX - sx; val dy = tipY - sy
@@ -4615,91 +5170,6 @@ object GLProjectileRenderers {
   //  CHARACTER-SPECIFIC SPECIALIZED RENDERERS
   // ═══════════════════════════════════════════════════════════════
 
-  /** Frost Shard — jagged hexagonal ice crystal with frost particles and frozen mist trail */
-  private def drawFrostShard(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
-    val phase = (tick + proj.id * 31) * 0.35
-    computeAllDynamics(proj, 0.5f, 0.85f, 1f, phase)
-    val p = (0.85 + 0.15 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
-    val dr = _evoR; val dg = _evoG; val db = _evoB
-    val ds = dynScale
-    screenDir(proj)
-    val ndx = _sdx; val ndy = _sdy
-    val perpX = -ndy; val perpY = ndx
-
-    // Speed lines (icy blue)
-    drawSpeedLines(sx, sy, ndx, ndy, 0.5f, 0.8f, 1f, 0.25f * p, sb, 5 + (_lifePct * 2).toInt, 30f * ds)
-
-    // Frozen mist ribbon trail
-    drawRibbonTrail(sx, sy, ndx, ndy, 0.6f, 0.85f, 1f, 0.3f * p, sb, tick, proj.id, 10, 45f * ds * dynTrail, 10f * ds, 1.5f)
-
-    // Icy glow halo
-    val haloPulse = 0.7f + 0.3f * Math.sin(phase * 2.0).toFloat
-    sb.fillOvalSoft(sx, sy, 39.6f * ds * dynGlow * haloPulse, 31.7f * ds * dynGlow * haloPulse, 0.5f, 0.85f, 1f, 0.28f * p, 0f, 20)
-    sb.fillOvalSoft(sx, sy, 25.2f * ds * dynGlow, 20.2f * ds * dynGlow, 0.7f, 0.92f, 1f, 0.14f * p, 0f, 16)
-
-    // Hexagonal crystal body (6-point) — dark outline layer
-    val crystalSpin = phase * 0.25
-    val outerR = 20f * ds; val innerR = 14f * ds;
-    { var i = 0; while (i < 6) {
-      val a = crystalSpin + i * Math.PI / 3
-      val rad = if (i % 2 == 0) outerR else innerR * 0.85f
-      _holyXs(i) = (sx + Math.cos(a).toFloat * rad + ndx * (if (i < 3) 6f else -4f) * ds).toFloat
-      _holyYs(i) = (sy + Math.sin(a).toFloat * rad * 0.65f + ndy * (if (i < 3) 6f else -4f) * ds).toFloat
-    ; i += 1 } }
-    sb.strokePolygon(_holyXs, _holyYs, 6, 3.5f, 0.1f, 0.2f, 0.35f, 0.85f * p)
-    sb.fillPolygon(_holyXs, _holyYs, 6, 0.45f, 0.78f, 0.95f, 0.88f * p)
-
-    // Inner crystal facet (smaller, brighter)
-    { var i = 0; while (i < 6) {
-      val a = crystalSpin + i * Math.PI / 3
-      val rad = if (i % 2 == 0) outerR * 0.6f else innerR * 0.55f
-      _holyXs(i) = (sx + Math.cos(a).toFloat * rad + ndx * 3f * ds).toFloat
-      _holyYs(i) = (sy + Math.sin(a).toFloat * rad * 0.65f + ndy * 3f * ds).toFloat
-    ; i += 1 } }
-    sb.fillPolygon(_holyXs, _holyYs, 6, 0.7f, 0.92f, 1f, 0.7f * p)
-
-    // White-hot center
-    val bc = _chgBright
-    sb.fillOval(sx + ndx * 2f * ds, sy + ndy * 2f * ds, 8f * ds, 6f * ds,
-      mix(0.85f, 1f, bc), mix(0.95f, 1f, bc), mix(1f, 1f, bc), 0.92f * p, 8)
-    // Cartoon highlight
-    sb.fillOval(sx - 3f * ds, sy - 3f * ds, 6f * ds, 4f * ds, 1f, 1f, 1f, 0.4f * p, 8)
-
-    // Sharp tip spike extending forward
-    val tipLen = 16f * ds
-    _polyXs3(0) = sx + ndx * (outerR + tipLen); _polyXs3(1) = sx + ndx * outerR * 0.6f + perpX * 5f * ds
-    _polyXs3(2) = sx + ndx * outerR * 0.6f - perpX * 5f * ds
-    _polyYs3(0) = sy + ndy * (outerR + tipLen); _polyYs3(1) = sy + ndy * outerR * 0.6f + perpY * 5f * ds
-    _polyYs3(2) = sy + ndy * outerR * 0.6f - perpY * 5f * ds
-    sb.strokePolygon(_polyXs3, _polyYs3, 3, 2f, 0.15f, 0.25f, 0.4f, 0.8f * p)
-    sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.55f, 0.88f, 1f, 0.9f * p)
-    sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.8f, 0.95f, 1f, 0.35f * p)
-
-    // 10 frost particles swirling around
-    { var i = 0; while (i < 10) {
-      val t = ((tick * 0.05 + i * 0.1 + proj.id * 0.13) % 1.0).toFloat
-      val frostAngle = phase * 1.8 + i * Math.PI * 2 / 10
-      val frostDist = (14f + t * 18f) * ds
-      val fx = sx + Math.cos(frostAngle).toFloat * frostDist - ndx * t * 25f * ds
-      val fy = sy + Math.sin(frostAngle).toFloat * frostDist * 0.55f - ndy * t * 25f * ds
-      val fSz = (3f + (1f - t) * 2.5f) * ds
-      sb.fillOval(fx, fy, fSz, fSz * 0.8f, 0.75f, 0.92f, 1f, 0.45f * (1f - t) * p, 6)
-    ; i += 1 } }
-
-    // Snowflake sparkle stars
-    { var i = 0; while (i < 5) {
-      val starPhase = ((phase * 0.45 + i * 0.2) % 1.0).toFloat
-      val starAngle = phase * 1.3 + i * Math.PI * 2 / 5
-      val starDist = (12f + starPhase * 20f) * ds
-      val starX = sx + Math.cos(starAngle).toFloat * starDist
-      val starY = sy + Math.sin(starAngle).toFloat * starDist * 0.55f
-      drawSparkleStar(starX, starY, 5f * (1f - starPhase * 0.4f) * ds,
-        0.7f, 0.92f, 1f, 0.5f * (1f - starPhase) * p, sb, phase * 2 + i)
-    ; i += 1 } }
-
-    drawChargeCrackle(sx, sy, 22f * ds, 0.5f, 0.85f, 1f, p, sb, phase, proj.chargeLevel)
-    drawReturnGhosts(sx, sy, 22f * ds, dr, dg, db, p, sb, proj)
-  }
 
   /** Talon — curved 3-prong razor claw with slash trail */
   private def drawTalon(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
@@ -4707,7 +5177,7 @@ object GLProjectileRenderers {
     computeAllDynamics(proj, 0.6f, 0.45f, 0.3f, phase)
     val p = (0.8 + 0.2 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
     val dr = _evoR; val dg = _evoG; val db = _evoB
-    val ds = dynScale
+    val ds = dynScale * 1.3f // this one reads far below the roster's scale unscaled
     screenDir(proj)
     val ndx = _sdx; val ndy = _sdy
     val perpX = -ndy; val perpY = ndx
@@ -4854,86 +5324,6 @@ object GLProjectileRenderers {
     drawReturnGhosts(sx, sy, 20f * ds, dr, dg, db, p, sb, proj)
   }
 
-  /** Thorn — woody bark spike with leaves and vine trail */
-  private def drawThorn(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
-    val phase = (tick + proj.id * 33) * 0.3
-    computeAllDynamics(proj, 0.25f, 0.6f, 0.18f, phase)
-    val p = (0.85 + 0.15 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
-    val dr = _evoR; val dg = _evoG; val db = _evoB
-    val ds = dynScale
-    screenDir(proj)
-    val ndx = _sdx; val ndy = _sdy
-    val perpX = -ndy; val perpY = ndx
-
-    drawSpeedLines(sx, sy, ndx, ndy, 0.3f, 0.55f, 0.2f, 0.2f * p, sb, 4 + (_lifePct * 2).toInt, 28f * ds)
-
-    // Vine ribbon trail
-    drawRibbonTrail(sx, sy, ndx, ndy, 0.2f, 0.5f, 0.15f, 0.3f * p, sb, tick, proj.id, 10, 50f * ds * dynTrail, 7f * ds, 1.5f)
-
-    // Nature glow
-    sb.fillOvalSoft(sx, sy, 32.4f * ds * dynGlow, 25.9f * ds * dynGlow, 0.25f, 0.55f, 0.18f, 0.2f * p, 0f, 18)
-
-    // Main thorn spike — thick woody shape
-    beamTip(sx, sy, proj, 6f)
-    val tipX = _tipX; val tipY = _tipY
-
-    // Dark bark outline
-    sb.strokeLine(sx - ndx * 8f * ds, sy - ndy * 8f * ds, tipX + ndx * 6f * ds, tipY + ndy * 6f * ds, 9f * ds, 0.12f, 0.08f, 0.04f, 0.85f * p)
-    // Bark body (brown-green)
-    sb.strokeLine(sx - ndx * 6f * ds, sy - ndy * 6f * ds, tipX + ndx * 4f * ds, tipY + ndy * 4f * ds, 6.5f * ds, 0.35f, 0.28f, 0.15f, 0.9f * p)
-    // Green inner
-    sb.strokeLine(sx - ndx * 4f * ds, sy - ndy * 4f * ds, tipX + ndx * 2f * ds, tipY + ndy * 2f * ds, 3.5f * ds, 0.3f, 0.55f, 0.2f, 0.7f * p)
-    // Bright highlight core
-    sb.strokeLine(sx, sy, tipX, tipY, 1.5f * ds, bright(0.3f), bright(0.55f), bright(0.2f), 0.4f * p)
-
-    // Sharp green tip
-    val sharpTip = 12f * ds
-    _polyXs3(0) = tipX + ndx * sharpTip; _polyXs3(1) = tipX + perpX * 4f * ds; _polyXs3(2) = tipX - perpX * 4f * ds
-    _polyYs3(0) = tipY + ndy * sharpTip; _polyYs3(1) = tipY + perpY * 4f * ds; _polyYs3(2) = tipY - perpY * 4f * ds
-    sb.strokePolygon(_polyXs3, _polyYs3, 3, 2f, 0.1f, 0.15f, 0.05f, 0.85f * p)
-    sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.2f, 0.65f, 0.15f, 0.9f * p)
-    sb.fillOval(tipX + ndx * sharpTip * 0.5f, tipY + ndy * sharpTip * 0.5f, 3f * ds, 2f * ds,
-      bright(0.3f), bright(0.65f), bright(0.2f), 0.6f * p, 6)
-
-    // 4 small leaves along the shaft
-    { var lf = 0; while (lf < 4) {
-      val lt = (lf + 1).toFloat / 5f
-      val lx = sx + (tipX - sx) * lt; val ly = sy + (tipY - sy) * lt
-      val side = if (lf % 2 == 0) 1f else -1f
-      val leafAngle = phase * 0.3 + lf * 1.5
-      val leafWave = Math.sin(leafAngle).toFloat * 2f * ds
-      val leafX = lx + perpX * side * (7f + leafWave) * ds
-      val leafY = ly + perpY * side * (7f + leafWave) * ds
-      // Leaf outline
-      sb.fillOval(leafX, leafY, 5f * ds, 3f * ds, 0.1f, 0.2f, 0.05f, 0.6f * p, 6)
-      // Leaf body
-      sb.fillOval(leafX, leafY, 4f * ds, 2.2f * ds, 0.25f, 0.7f, 0.2f, 0.75f * p, 6)
-      // Leaf vein
-      sb.strokeLine(lx + perpX * side * 2f * ds, ly + perpY * side * 2f * ds, leafX, leafY,
-        0.8f, 0.18f, 0.45f, 0.12f, 0.4f * p)
-    ; lf += 1 } }
-
-    // Small bark texture lines on shaft
-    { var b = 0; while (b < 3) {
-      val bt = 0.25f + b * 0.2f
-      val bx = sx + (tipX - sx) * bt; val by = sy + (tipY - sy) * bt
-      sb.strokeLine(bx - perpX * 3f * ds, by - perpY * 3f * ds,
-        bx + perpX * 3f * ds, by + perpY * 3f * ds, 1f, 0.2f, 0.15f, 0.08f, 0.5f * p)
-    ; b += 1 } }
-
-    { var i = 0; while (i < 4) {
-      val starPhase = ((phase * 0.4 + i * 0.25) % 1.0).toFloat
-      val starAngle = phase * 1.2 + i * Math.PI * 2 / 4
-      val starDist = (12f + starPhase * 16f) * ds
-      val starX = sx + Math.cos(starAngle).toFloat * starDist
-      val starY = sy + Math.sin(starAngle).toFloat * starDist * 0.55f
-      drawSparkleStar(starX, starY, 4f * (1f - starPhase * 0.4f) * ds,
-        0.3f, 0.7f, 0.2f, 0.4f * (1f - starPhase) * p, sb, phase * 2 + i)
-    ; i += 1 } }
-
-    drawChargeCrackle(sx, sy, 20f * ds, 0.25f, 0.6f, 0.18f, p, sb, phase, proj.chargeLevel)
-    drawReturnGhosts(sx, sy, 20f * ds, dr, dg, db, p, sb, proj)
-  }
 
   /** Stinger — curved venomous barbed stinger with poison drip */
   private def drawStinger(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
@@ -4941,7 +5331,7 @@ object GLProjectileRenderers {
     computeAllDynamics(proj, 0.45f, 0.85f, 0.15f, phase)
     val p = (0.8 + 0.2 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
     val dr = _evoR; val dg = _evoG; val db = _evoB
-    val ds = dynScale
+    val ds = dynScale * 1.35f // this one reads far below the roster's scale unscaled
     screenDir(proj)
     val ndx = _sdx; val ndy = _sdy
     val perpX = -ndy; val perpY = ndx
@@ -5013,344 +5403,50 @@ object GLProjectileRenderers {
     drawReturnGhosts(sx, sy, 22f * ds, dr, dg, db, p, sb, proj)
   }
 
-  /** Horn — massive bull horn with impact dust and weight */
+  /** Minotaur's thrown horn. Built from the same tapering silhouette the lobbed horn
+   *  uses, flying point-first — the previous version stacked two untapered strokes under
+   *  a fat base knob, so what reached the screen was a circle on a stick. */
   private def drawHorn(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
     val phase = (tick + proj.id * 37) * 0.3
-    computeAllDynamics(proj, 0.65f, 0.58f, 0.4f, phase)
-    val p = (0.85 + 0.15 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
+    computeAllDynamics(proj, 0.80f, 0.74f, 0.58f, phase)
+    val p = (0.88f + 0.12f * Math.sin(phase * _stPulseMult).toFloat) * dynAlpha
     val dr = _evoR; val dg = _evoG; val db = _evoB
-    val ds = dynScale * 1.2f // larger for weight
+    val ds = Math.min(dynScale, 1.3f)
+    val s = 26f * ds
     screenDir(proj)
     val ndx = _sdx; val ndy = _sdy
-    val perpX = -ndy; val perpY = ndx
 
-    drawSpeedLines(sx, sy, ndx, ndy, 0.55f, 0.48f, 0.35f, 0.3f * p, sb, 6 + (_lifePct * 2).toInt, 40f * ds)
-    drawRibbonTrail(sx, sy, ndx, ndy, 0.5f, 0.45f, 0.3f, 0.3f * p, sb, tick, proj.id, 10, 48f * ds * dynTrail, 12f * ds, 2f)
+    drawSpeedLines(sx, sy, ndx, ndy, dr, dg, db, 0.32f * p, sb, 6 + (_lifePct * 2).toInt, s * 1.5f)
+    drawRibbonTrail(sx, sy, ndx, ndy, 0.55f, 0.48f, 0.34f, 0.28f * p, sb, tick, proj.id, 8,
+      s * 2.0f * dynTrail, s * 0.4f, 1.5f)
+    sb.fillOval(sx + 3f, sy + s * 0.5f, s * 0.8f, s * 0.2f, 0f, 0f, 0f, 0.24f * p, 12)
+    sb.fillOvalSoft(sx, sy, s * 1.2f * dynGlow, s * 0.95f * dynGlow, dr, dg, db, 0.2f * p, 0f, 16)
 
-    // Warm dust glow
-    sb.fillOvalSoft(sx, sy, 36f * ds * dynGlow, 28.8f * ds * dynGlow, 0.6f, 0.5f, 0.3f, 0.2f * p, 0f, 18)
+    var ghost = 2; while (ghost >= 1) {
+      drawPartsDirFlat(sb, HORN_PARTS, sx - ndx * ghost * 10f, sy - ndy * ghost * 10f, ndx, ndy,
+        s * (1f - ghost * 0.05f), dr * 0.85f, dg * 0.85f, db * 0.85f, 0.15f * (1f - (ghost - 1) * 0.35f) * p)
+      ghost -= 1
+    }
+    drawPartsDir(sb, HORN_PARTS, sx, sy, ndx, ndy, s, dr, dg, db, 0.97f * dynAlpha,
+      clampF(s * 0.12f, 1.5f, 3f))
 
-    // Ground shadow
-    sb.fillOval(sx, sy + 14f * ds, 30f * ds, 7f * ds, 0f, 0f, 0f, 0.3f * p, 12)
-
-    // Thick curved horn — base to tip with curve
-    val hornLen = 36f * ds
-    val hornCurve = Math.sin(phase * 0.2).toFloat * 4f * ds + 6f * ds
-    val baseX = sx - ndx * 8f * ds; val baseY = sy - ndy * 8f * ds
-    val midX = sx + ndx * hornLen * 0.5f + perpX * hornCurve
-    val midY = sy + ndy * hornLen * 0.5f + perpY * hornCurve
-    val tipHX = sx + ndx * hornLen + perpX * hornCurve * 0.6f
-    val tipHY = sy + ndy * hornLen + perpY * hornCurve * 0.6f
-
-    // Dark outline (very thick base)
-    sb.strokeLine(baseX, baseY, midX, midY, 12f * ds, 0.12f, 0.1f, 0.06f, 0.85f * p)
-    sb.strokeLine(midX, midY, tipHX, tipHY, 7f * ds, 0.12f, 0.1f, 0.06f, 0.85f * p)
-    // Bone/ivory body
-    sb.strokeLine(baseX, baseY, midX, midY, 9f * ds, 0.72f, 0.65f, 0.48f, 0.92f * p)
-    sb.strokeLine(midX, midY, tipHX, tipHY, 5f * ds, 0.72f, 0.65f, 0.48f, 0.92f * p)
-    // Highlight streak
-    sb.strokeLine(baseX + perpX * -2f * ds, baseY + perpY * -2f * ds,
-      midX + perpX * -1f * ds, midY + perpY * -1f * ds, 3f * ds, 0.85f, 0.8f, 0.65f, 0.4f * p)
-    // Bright tip
-    sb.fillOval(tipHX, tipHY, 5f * ds, 4f * ds, 0.92f, 0.88f, 0.72f, 0.95f * p, 8)
-    sb.fillOval(tipHX, tipHY, 3f * ds, 2f * ds, 1f, 0.95f, 0.85f, 0.7f * p, 6)
-
-    // Horn ridges (3 rings)
-    { var r = 0; while (r < 3) {
-      val rt = 0.2f + r * 0.2f
-      val rx = baseX + (tipHX - baseX) * rt + perpX * hornCurve * rt
-      val ry = baseY + (tipHY - baseY) * rt + perpY * hornCurve * rt
-      val rw = (9f - r * 1.5f) * ds
-      sb.strokeOval(rx, ry, rw, rw * 0.6f, 1.5f, 0.45f, 0.38f, 0.25f, 0.55f * p, 8)
-    ; r += 1 } }
-
-    // Base knob (where horn meets skull)
-    sb.strokeOval(baseX, baseY, 10f * ds, 8f * ds, 3f, 0.12f, 0.1f, 0.06f, 0.8f * p, 12)
-    sb.fillOval(baseX, baseY, 9f * ds, 7f * ds, 0.55f, 0.48f, 0.35f, 0.9f * p, 12)
-    sb.fillOval(baseX - 2f * ds, baseY - 2f * ds, 4f * ds, 3f * ds, 1f, 1f, 1f, 0.25f * p, 6)
-
-    // Dust cloud behind (8 particles)
-    { var i = 0; while (i < 8) {
+    // Tip glint, then the dust the charge kicks up
+    dirPoint(1.05f, -0.6f, sx, sy, ndx, ndy, s)
+    sb.fillStarFlare(_ptX, _ptY, s * 0.4f, 2.2f, (phase * 0.6).toFloat, 0.5f, 1f, 0.98f, 0.88f, 0.6f * p)
+    var i = 0; while (i < 8) {
       val t = ((tick * 0.05 + i * 0.125 + proj.id * 0.11) % 1.0).toFloat
-      val dustX = sx - ndx * t * 45f * ds + Math.sin(phase + i * 2.3).toFloat * 6f * ds
-      val dustY = sy - ndy * t * 45f * ds + Math.sin(phase * 0.7 + i * 1.5).toFloat * 4f * ds
-      val dSz = (4f + t * 6f) * ds
-      sb.fillOval(dustX, dustY, dSz, dSz * 0.7f, 0.55f, 0.48f, 0.35f, 0.25f * (1f - t) * p, 8)
-    ; i += 1 } }
-
-    // Impact shockwave ring at front
-    val impactPhase = ((phase * 0.6) % 1.0).toFloat
-    val impactR = (4f + impactPhase * 16f) * ds
-    sb.strokeOval(tipHX, tipHY, impactR, impactR * 0.5f, 2f * (1f - impactPhase),
-      0.7f, 0.6f, 0.4f, 0.3f * (1f - impactPhase) * p, 10)
-
-    drawChargeCrackle(sx, sy, 24f * ds, 0.65f, 0.58f, 0.4f, p, sb, phase, proj.chargeLevel)
-    drawReturnGhosts(sx, sy, 24f * ds, dr, dg, db, p, sb, proj)
+      val dustX = sx - ndx * t * s * 1.8f + Math.sin(phase + i * 2.3).toFloat * 7f
+      val dustY = sy - ndy * t * s * 1.8f + Math.sin(phase * 0.7 + i * 1.5).toFloat * 5f + t * t * 8f
+      val dsz = (5f + t * 11f) * ds
+      sb.fillOval(dustX, dustY, dsz, dsz * 0.6f, 0.62f, 0.55f, 0.42f, 0.34f * (1f - t) * p, 8)
+      i += 1
+    }
+    drawChargeCrackle(sx, sy, s * 0.6f, 0.8f, 0.74f, 0.58f, p, sb, phase, proj.chargeLevel)
+    drawReturnGhosts(sx, sy, s * 0.5f, dr, dg, db, p, sb, proj)
   }
 
-  /** Poison Dart — sleek thin needle with feathered tail and poison bubble trail */
-  private def drawPoisonDart(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
-    val phase = (tick + proj.id * 29) * 0.45
-    computeAllDynamics(proj, 0.25f, 0.75f, 0.2f, phase)
-    val p = (0.8 + 0.2 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
-    val dr = _evoR; val dg = _evoG; val db = _evoB
-    val ds = dynScale
-    screenDir(proj)
-    val ndx = _sdx; val ndy = _sdy
-    val perpX = -ndy; val perpY = ndx
 
-    drawSpeedLines(sx, sy, ndx, ndy, 0.2f, 0.6f, 0.15f, 0.2f * p, sb, 5 + (_lifePct * 2).toInt, 28f * ds)
-    drawRibbonTrail(sx, sy, ndx, ndy, 0.25f, 0.7f, 0.2f, 0.25f * p, sb, tick, proj.id, 8, 38f * ds * dynTrail, 5f * ds, 1f)
 
-    // Subtle stealth glow (purple-green)
-    sb.fillOvalSoft(sx, sy, 25.2f * ds * dynGlow, 20.2f * ds * dynGlow, 0.3f, 0.6f, 0.25f, 0.18f * p, 0f, 16)
-
-    // Thin needle shaft
-    beamTip(sx, sy, proj, 5.5f)
-    val tipX = _tipX; val tipY = _tipY
-
-    // Dark outline
-    sb.strokeLine(sx - ndx * 6f * ds, sy - ndy * 6f * ds, tipX, tipY, 4f * ds, 0.06f, 0.12f, 0.04f, 0.85f * p)
-    // Metallic needle body
-    sb.strokeLine(sx - ndx * 4f * ds, sy - ndy * 4f * ds, tipX, tipY, 2.5f * ds, 0.5f, 0.55f, 0.5f, 0.9f * p)
-    // Bright highlight
-    sb.strokeLine(sx, sy, tipX, tipY, 0.8f * ds, 0.8f, 0.85f, 0.78f, 0.5f * p)
-
-    // Sharp poisoned tip (green)
-    val tipPt = 8f * ds
-    _polyXs3(0) = tipX + ndx * tipPt; _polyXs3(1) = tipX + perpX * 3.5f * ds; _polyXs3(2) = tipX - perpX * 3.5f * ds
-    _polyYs3(0) = tipY + ndy * tipPt; _polyYs3(1) = tipY + perpY * 3.5f * ds; _polyYs3(2) = tipY - perpY * 3.5f * ds
-    sb.strokePolygon(_polyXs3, _polyYs3, 3, 1.5f, 0.05f, 0.15f, 0.03f, 0.85f * p)
-    sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.2f, 0.8f, 0.15f, 0.92f * p)
-    // Venom gleam
-    sb.fillOval(tipX + ndx * tipPt * 0.4f, tipY + ndy * tipPt * 0.4f, 2.5f * ds, 1.8f * ds,
-      0.4f, 1f, 0.3f, 0.65f * p, 6)
-
-    // Feathered tail (2 small feathers)
-    { var f = -1; while (f <= 1) {
-      if (f != 0) {
-        val tailX = sx - ndx * 6f * ds; val tailY = sy - ndy * 6f * ds
-        val featherX = tailX - ndx * 14f * ds + perpX * f * 7f * ds
-        val featherY = tailY - ndy * 14f * ds + perpY * f * 7f * ds
-        sb.strokeLine(tailX, tailY, featherX, featherY, 3f * ds, 0.06f, 0.12f, 0.04f, 0.6f * p)
-        sb.strokeLine(tailX, tailY, featherX, featherY, 1.8f * ds, 0.35f, 0.2f, 0.5f, 0.55f * p)
-        sb.strokeLine(tailX, tailY, featherX, featherY, 0.7f * ds, 0.55f, 0.35f, 0.7f, 0.3f * p)
-      }
-    ; f += 2 } }
-
-    // Poison bubble trail (8 rising bubbles)
-    { var i = 0; while (i < 8) {
-      val t = ((tick * 0.055 + i * 0.125 + proj.id * 0.13) % 1.0).toFloat
-      val bubX = sx - ndx * t * 35f * ds + Math.sin(phase + i * 2.1).toFloat * 5f * ds
-      val bubY = sy - ndy * t * 35f * ds - t * 8f * ds
-      val bSz = (2f + Math.sin(phase * 3 + i * 1.7).toFloat * 1f + (1f - t) * 2f) * ds
-      // Bubble outline
-      sb.strokeOval(bubX, bubY, bSz + 0.5f, bSz + 0.5f, 0.8f, 0.08f, 0.2f, 0.05f, 0.3f * (1f - t) * p, 6)
-      // Bubble body
-      sb.fillOval(bubX, bubY, bSz, bSz, 0.2f, 0.75f, 0.15f, 0.4f * (1f - t) * p, 6)
-      // Bubble highlight
-      sb.fillOval(bubX - bSz * 0.3f, bubY - bSz * 0.3f, bSz * 0.3f, bSz * 0.3f, 0.5f, 1f, 0.4f, 0.3f * (1f - t) * p, 4)
-    ; i += 1 } }
-
-    { var i = 0; while (i < 4) {
-      val starPhase = ((phase * 0.5 + i * 0.25) % 1.0).toFloat
-      val starAngle = phase * 1.2 + i * Math.PI * 2 / 4
-      val starDist = (10f + starPhase * 14f) * ds
-      val starX = sx + Math.cos(starAngle).toFloat * starDist
-      val starY = sy + Math.sin(starAngle).toFloat * starDist * 0.55f
-      drawSparkleStar(starX, starY, 3.5f * (1f - starPhase * 0.4f) * ds,
-        0.3f, 0.8f, 0.2f, 0.4f * (1f - starPhase) * p, sb, phase * 2 + i)
-    ; i += 1 } }
-
-    drawChargeCrackle(sx, sy, 18f * ds, 0.25f, 0.75f, 0.2f, p, sb, phase, proj.chargeLevel)
-    drawReturnGhosts(sx, sy, 18f * ds, dr, dg, db, p, sb, proj)
-  }
-
-  /** Enchanted Arrow — glowing enchanted ranger arrow with fire trail and detailed feathers */
-  private def drawEnchantedArrow(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
-    val phase = (tick + proj.id * 31) * 0.4
-    computeAllDynamics(proj, 0.55f, 0.4f, 0.25f, phase)
-    val p = (0.8 + 0.2 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
-    val dr = _evoR; val dg = _evoG; val db = _evoB
-    // Dampen charge scaling for arrows (cap at 1.35x)
-    val ds = Math.min(dynScale, 1.35f)
-    screenDir(proj)
-    val ndx = _sdx; val ndy = _sdy
-    val perpX = -ndy; val perpY = ndx
-
-    drawSpeedLines(sx, sy, ndx, ndy, 0.7f, 0.5f, 0.3f, 0.25f * p, sb, 4 + (_lifePct * 2).toInt, 22f * ds)
-    drawRibbonTrail(sx, sy, ndx, ndy, 0.8f, 0.55f, 0.2f, 0.25f * p, sb, tick, proj.id, 6, 28f * ds * dynTrail, 4f * ds, 1.2f)
-
-    // Warm enchanted glow (compact)
-    val haloPulse = 0.7f + 0.3f * Math.sin(phase * 2.2).toFloat
-    sb.fillOvalSoft(sx + ndx * 6f * ds, sy + ndy * 6f * ds, 22f * ds * dynGlow * haloPulse,
-      16f * ds * dynGlow * haloPulse, 0.9f, 0.6f, 0.2f, 0.18f * p, 0f, 14)
-
-    beamTip(sx, sy, proj, 6f)
-    val tipX = _tipX; val tipY = _tipY
-
-    // Ground shadow
-    val midAX = (sx + tipX) * 0.5f; val midAY = (sy + tipY) * 0.5f
-    sb.fillOval(midAX, midAY + 8f * ds, 18f * ds, 4f * ds, 0f, 0f, 0f, 0.18f * p, 10)
-
-    // Shaft — dark outline, wooden body, bright core
-    sb.strokeLine(sx, sy, tipX, tipY, 4.5f * ds, 0.12f, 0.08f, 0.04f, 0.85f * p)
-    sb.strokeLine(sx, sy, tipX, tipY, 3f * ds, 0.55f, 0.38f, 0.2f, 0.9f * p)
-    sb.strokeLine(sx, sy, tipX, tipY, 1f * ds, 0.75f, 0.55f, 0.3f, 0.5f * p)
-
-    // Enchanted arrowhead — glowing
-    val headLen = 12f * ds; val headW = 6f * ds
-    val pointX = tipX + ndx * headLen; val pointY = tipY + ndy * headLen
-    // Outline
-    _polyXs3(0) = pointX + ndx * 2f; _polyXs3(1) = tipX + perpX * (headW + 1.5f); _polyXs3(2) = tipX - perpX * (headW + 1.5f)
-    _polyYs3(0) = pointY + ndy * 2f; _polyYs3(1) = tipY + perpY * (headW + 1.5f); _polyYs3(2) = tipY - perpY * (headW + 1.5f)
-    sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.12f, 0.08f, 0.04f, 0.88f * p)
-    // Body (warm orange enchantment)
-    _polyXs3(0) = pointX; _polyXs3(1) = tipX + perpX * headW; _polyXs3(2) = tipX - perpX * headW
-    _polyYs3(0) = pointY; _polyYs3(1) = tipY + perpY * headW; _polyYs3(2) = tipY - perpY * headW
-    sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.95f, 0.65f, 0.2f, 0.95f * p)
-    // Bright enchanted highlight
-    _polyXs3(0) = pointX; _polyXs3(1) = tipX + perpX * headW * 0.5f + ndx * headLen * 0.3f
-    _polyXs3(2) = tipX - perpX * headW * 0.15f + ndx * headLen * 0.3f
-    _polyYs3(0) = pointY; _polyYs3(1) = tipY + perpY * headW * 0.5f + ndy * headLen * 0.3f
-    _polyYs3(2) = tipY - perpY * headW * 0.15f + ndy * headLen * 0.3f
-    sb.fillPolygon(_polyXs3, _polyYs3, 3, 1f, 0.85f, 0.4f, 0.55f * p)
-    // Enchantment glow at tip
-    sb.fillOvalSoft(pointX, pointY, 6f * ds, 5f * ds, 1f, 0.7f, 0.2f, 0.30f * p, 0f, 8)
-    sb.fillOval(pointX, pointY, 2f * ds, 1.5f * ds, 1f, 0.95f, 0.7f, 0.85f * p, 6)
-
-    // Compact fletching (2 feathers with barbs)
-    { var f = -1; while (f <= 1) {
-      val tailX = sx - ndx * 3f * ds; val tailY = sy - ndy * 3f * ds
-      val featherX = tailX - ndx * 10f * ds + perpX * f * 5f * ds
-      val featherY = tailY - ndy * 10f * ds + perpY * f * 5f * ds
-      sb.strokeLine(tailX, tailY, featherX, featherY, 2.5f * ds, 0.12f, 0.08f, 0.04f, 0.6f * p)
-      sb.strokeLine(tailX, tailY, featherX, featherY, 1.5f * ds, 0.7f, 0.45f, 0.2f, 0.55f * p)
-      sb.strokeLine(tailX, tailY, featherX, featherY, 0.5f * ds, 0.9f, 0.7f, 0.4f, 0.3f * p)
-      // Feather barbs
-      var barb = 0; while (barb < 2) {
-        val bt = (barb + 1).toFloat / 3f
-        val bx = tailX + (featherX - tailX) * bt
-        val by = tailY + (featherY - tailY) * bt
-        val barbLen = 3f * (1f - bt * 0.5f) * ds
-        sb.strokeLine(bx, by, bx + perpX * f * barbLen, by + perpY * f * barbLen,
-          1f, 0.6f, 0.4f, 0.2f, 0.3f * p * (1f - bt * 0.3f))
-      ; barb += 1 }
-    ; f += 2 } }
-
-    // Fire ember trail (6 particles, compact)
-    { var i = 0; while (i < 6) {
-      val t = ((tick * 0.06 + i * 0.167 + proj.id * 0.13) % 1.0).toFloat
-      val embX = sx - ndx * t * 26f * ds + Math.sin(phase + i * 2.3).toFloat * 3f * ds
-      val embY = sy - ndy * t * 26f * ds - t * 4f * ds
-      val eSz = (2f + (1f - t) * 2f) * ds
-      sb.fillOval(embX, embY, eSz, eSz * 0.8f, 1f, 0.55f + (1f - t) * 0.3f, 0.15f, 0.4f * (1f - t) * p, 6)
-    ; i += 1 } }
-
-    { var i = 0; while (i < 2) {
-      val starPhase = ((phase * 0.45 + i * 0.5) % 1.0).toFloat
-      val starAngle = phase * 1.2 + i * Math.PI
-      val starDist = (8f + starPhase * 12f) * ds
-      val starX = sx + Math.cos(starAngle).toFloat * starDist
-      val starY = sy + Math.sin(starAngle).toFloat * starDist * 0.55f
-      drawSparkleStar(starX, starY, 3f * (1f - starPhase * 0.4f) * ds,
-        1f, 0.7f, 0.25f, 0.4f * (1f - starPhase) * p, sb, phase * 2 + i)
-    ; i += 1 } }
-
-    drawChargeCrackle(sx, sy, 14f * ds, 0.55f, 0.4f, 0.25f, p, sb, phase, proj.chargeLevel)
-    drawReturnGhosts(sx, sy, 14f * ds, dr, dg, db, p, sb, proj)
-  }
-
-  /** Poison Arrow — arrow with green dripping poison tip and toxic bubbles */
-  private def drawPoisonArrow(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
-    val phase = (tick + proj.id * 33) * 0.4
-    computeAllDynamics(proj, 0.25f, 0.72f, 0.2f, phase)
-    val p = (0.8 + 0.2 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
-    val dr = _evoR; val dg = _evoG; val db = _evoB
-    // Dampen charge scaling for arrows (cap at 1.35x)
-    val ds = Math.min(dynScale, 1.35f)
-    screenDir(proj)
-    val ndx = _sdx; val ndy = _sdy
-    val perpX = -ndy; val perpY = ndx
-
-    drawSpeedLines(sx, sy, ndx, ndy, 0.3f, 0.65f, 0.2f, 0.2f * p, sb, 4 + (_lifePct * 2).toInt, 20f * ds)
-    drawRibbonTrail(sx, sy, ndx, ndy, 0.25f, 0.7f, 0.18f, 0.25f * p, sb, tick, proj.id, 6, 26f * ds * dynTrail, 4f * ds, 1.2f)
-
-    // Toxic green glow (compact)
-    sb.fillOvalSoft(sx + ndx * 6f * ds, sy + ndy * 6f * ds, 22f * ds * dynGlow, 16f * ds * dynGlow,
-      0.2f, 0.7f, 0.15f, 0.18f * p, 0f, 14)
-
-    beamTip(sx, sy, proj, 6f)
-    val tipX = _tipX; val tipY = _tipY
-
-    // Shaft — dark outline, wooden body
-    sb.strokeLine(sx, sy, tipX, tipY, 4.5f * ds, 0.08f, 0.12f, 0.04f, 0.85f * p)
-    sb.strokeLine(sx, sy, tipX, tipY, 3f * ds, 0.45f, 0.35f, 0.2f, 0.9f * p)
-    sb.strokeLine(sx, sy, tipX, tipY, 1f * ds, 0.6f, 0.5f, 0.3f, 0.5f * p)
-
-    // Poison arrowhead — dripping green
-    val headLen = 11f * ds; val headW = 5.5f * ds
-    val pointX = tipX + ndx * headLen; val pointY = tipY + ndy * headLen
-    // Outline
-    _polyXs3(0) = pointX + ndx * 1.5f; _polyXs3(1) = tipX + perpX * (headW + 1.5f); _polyXs3(2) = tipX - perpX * (headW + 1.5f)
-    _polyYs3(0) = pointY + ndy * 1.5f; _polyYs3(1) = tipY + perpY * (headW + 1.5f); _polyYs3(2) = tipY - perpY * (headW + 1.5f)
-    sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.06f, 0.12f, 0.04f, 0.88f * p)
-    // Green poison body
-    _polyXs3(0) = pointX; _polyXs3(1) = tipX + perpX * headW; _polyXs3(2) = tipX - perpX * headW
-    _polyYs3(0) = pointY; _polyYs3(1) = tipY + perpY * headW; _polyYs3(2) = tipY - perpY * headW
-    sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.2f, 0.75f, 0.15f, 0.92f * p)
-    // Bright toxic highlight
-    _polyXs3(0) = pointX; _polyXs3(1) = tipX + perpX * headW * 0.5f + ndx * headLen * 0.3f
-    _polyXs3(2) = tipX - perpX * headW * 0.15f + ndx * headLen * 0.3f
-    _polyYs3(0) = pointY; _polyYs3(1) = tipY + perpY * headW * 0.5f + ndy * headLen * 0.3f
-    _polyYs3(2) = tipY - perpY * headW * 0.15f + ndy * headLen * 0.3f
-    sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.4f, 0.95f, 0.3f, 0.5f * p)
-    // Glow at tip
-    sb.fillOvalSoft(pointX, pointY, 6f * ds, 5f * ds, 0.3f, 0.9f, 0.2f, 0.25f * p, 0f, 8)
-
-    // Poison drips from arrowhead (fewer, smaller)
-    { var d = 0; while (d < 4) {
-      val t = ((tick * 0.045 + d * 0.25 + proj.id * 0.11) % 1.0).toFloat
-      val dripStartX = tipX + ndx * headLen * 0.5f + perpX * (d - 1.5f) * 2.5f * ds
-      val dripStartY = tipY + ndy * headLen * 0.5f + perpY * (d - 1.5f) * 2.5f * ds
-      val dripX = dripStartX + Math.sin(phase + d * 1.7).toFloat * 1.5f * ds
-      val dripY = dripStartY + t * t * 14f * ds
-      val dSz = (1.5f + (1f - t) * 1.5f) * ds
-      sb.fillOval(dripX, dripY, dSz, dSz * 1.4f, 0.15f, 0.8f, 0.1f, 0.4f * (1f - t) * p, 6)
-    ; d += 1 } }
-
-    // Compact feathers
-    { var f = -1; while (f <= 1) {
-      val tailX = sx - ndx * 3f * ds; val tailY = sy - ndy * 3f * ds
-      val featherX = tailX - ndx * 9f * ds + perpX * f * 4.5f * ds
-      val featherY = tailY - ndy * 9f * ds + perpY * f * 4.5f * ds
-      sb.strokeLine(tailX, tailY, featherX, featherY, 2.5f * ds, 0.08f, 0.12f, 0.04f, 0.55f * p)
-      sb.strokeLine(tailX, tailY, featherX, featherY, 1.5f * ds, 0.3f, 0.55f, 0.2f, 0.5f * p)
-    ; f += 2 } }
-
-    // Toxic bubble trail (compact)
-    { var i = 0; while (i < 4) {
-      val t = ((tick * 0.05 + i * 0.25 + proj.id * 0.13) % 1.0).toFloat
-      val bubX = sx - ndx * t * 22f * ds + Math.sin(phase + i * 2.3).toFloat * 3f * ds
-      val bubY = sy - ndy * t * 22f * ds - t * 5f * ds
-      val bSz = (1.8f + (1f - t) * 1.5f) * ds
-      sb.strokeOval(bubX, bubY, bSz, bSz, 0.8f, 0.06f, 0.18f, 0.04f, 0.25f * (1f - t) * p, 6)
-      sb.fillOval(bubX, bubY, bSz, bSz, 0.18f, 0.7f, 0.12f, 0.3f * (1f - t) * p, 6)
-    ; i += 1 } }
-
-    { var i = 0; while (i < 2) {
-      val starPhase = ((phase * 0.5 + i * 0.5) % 1.0).toFloat
-      val starAngle = phase * 1.2 + i * Math.PI
-      val starDist = (8f + starPhase * 10f) * ds
-      val starX = sx + Math.cos(starAngle).toFloat * starDist
-      val starY = sy + Math.sin(starAngle).toFloat * starDist * 0.55f
-      drawSparkleStar(starX, starY, 3f * (1f - starPhase * 0.4f) * ds,
-        0.3f, 0.8f, 0.2f, 0.35f * (1f - starPhase) * p, sb, phase * 2 + i)
-    ; i += 1 } }
-
-    drawChargeCrackle(sx, sy, 13f * ds, 0.25f, 0.72f, 0.2f, p, sb, phase, proj.chargeLevel)
-    drawReturnGhosts(sx, sy, 13f * ds, dr, dg, db, p, sb, proj)
-  }
 
   /** Claw Swipe — 3-4 visible parallel slash marks with raking motion and sparks */
   private def drawClawSwipe(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {

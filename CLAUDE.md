@@ -20,6 +20,9 @@ bazel run //src/main/scala/com/gridgame/client:client
 # Run map editor
 bazel run //src/main/scala/com/gridgame/mapeditor
 
+# Render the projectile gallery contact sheets (dev tool, see Projectile Rendering System)
+bazel run //src/main/scala/com/gridgame/client:projectile_gallery -- /tmp/gallery
+
 # Bring up the observability stack (Grafana at http://localhost:3000)
 cd ops/observability && docker compose up -d
 
@@ -204,7 +207,7 @@ When a match starts, `ClientMain.showGameScene()` hides the JavaFX Stage and cre
 | File | Lines | Purpose |
 |------|-------|---------|
 | `GLGameRenderer.scala` | ~5850 | Main renderer: tiles, players, projectiles, items, status effects, HUD, aim arrow, backgrounds, death/teleport/explosion animations |
-| `GLProjectileRenderers.scala` | ~5430 | All 112 projectile type renderers (8 pattern factories + 19 specialized renderers) |
+| `GLProjectileRenderers.scala` | ~5560 | All 150 projectile type renderers (11 pattern factories + 30 specialized renderers + the local-frame silhouette system) |
 | `ShapeBatch.scala` | ~380 | Batched colored 2D primitives: fillRect, fillOval, fillOvalSoft, fillPolygon, fillArcBand (ring segment with an alpha ramp — gauges, crescents, shockwaves), fillStarFlare (4-point glint), strokeLine, strokeLineSoft, strokeArc, strokeOval, strokePolygon. Supports additive blend mode toggle. |
 | `SpriteBatch.scala` | ~200 | Batched textured quads with per-vertex tint/alpha. Flushes on texture change. |
 | `ShaderProgram.scala` | ~190 | GLSL shader compilation + embedded shader source: ColorShader (pos+color), TextureShader (pos+texcoord+color), BloomExtract, GaussianBlur, Composite (bloom+vignette+overlay) |
@@ -252,26 +255,104 @@ whatever the offset, orphan+`glBufferSubData` 3.7us, and the unsynchronized mapp
 `UNSYNCHRONIZED` safe: no byte is ever rewritten while a draw that reads it is in flight.
 
 ### Projectile Rendering System
-All 112 projectile types are registered in `GLProjectileRenderers.registry` (`Map[Byte, Renderer]`). Projectiles use **standard alpha blending** for solid, visible shapes — the bloom post-processor provides natural glow on bright elements.
-
-**8 pattern factories** (configurable color + size):
-- `energyBolt` — round glowing orb with orbiting sparkles and trail
-- `beamProj` — thick directional beam with bright core
-- `spinner` — rotating multi-armed star (axes, shurikens, katanas)
-- `physProj` — arrow/dart with prominent head and fletching
-- `lobbed` — arcing sphere with ground shadow
-- `aoeRing` — expanding concentric rings with pulsing glow
-- `chainProj` — zigzag lightning bolt segments
-- `wave` — wide crescent sweep
-
-**19 specialized renderers** for unique projectiles: fireball (spiral fire arms), lightning (forking bolts), tidal wave (cresting water), boulder (tumbling rock), shark jaw (animated chomping teeth), bat swarm, shadow bolt (void tendrils with purple eyes), inferno blast (fire vortex), and more.
+All 150 projectile types are registered in `GLProjectileRenderers.registry` (`Map[Byte, Renderer]`, flattened into `_rendererLUT` for O(1) lookup with no `Option` allocation). Projectiles use **standard alpha blending** for solid, visible shapes — the bloom post-processor provides natural glow on bright elements.
 
 Type alias: `type Renderer = (Projectile, Float, Float, ShapeBatch, Int) => Unit`
 
+#### Silhouettes: how a projectile says whose ability it is
+
+Anything with a recognisable real-world shape — an axe, a katana, a femur, a playing
+card, a shovel, a grenade, a spear, an arrow — is authored **once in a local frame**
+(+x along the object, +y across it, both roughly within [-1.3, 1.3]) as an array of
+convex `Part`s, then stamped through one of two transforms:
+
+| Transform | Used by | What it does |
+|---|---|---|
+| `drawParts` / `blitPart` | tumbling objects (`bladeSpinner`, `lobbed`) | rotate by the spin angle, squash y by `ISO_Y` into the ground plane, scale |
+| `drawPartsDir` / `blitPartDir` | objects flying point-first (`flyingShaft`, `fistProj`) | pure screen rotation onto the travel vector, narrowing only the cross-axis by `FLAT_Y` |
+
+The direction-aligned transform deliberately does **not** apply `ISO_Y`: the travel
+vector handed to a renderer is already in screen space, and squashing it again shortens a
+spear thrown "north" to two thirds of one thrown "east".
+
+`Part`s must be convex — `ShapeBatch.fillPolygon` fan-triangulates from vertex 0 — so a
+curved blade is split into two convex spans rather than described in one loop. Each part
+carries a material colour plus a `tint` weight toward the projectile's registered colour,
+so steel stays steel while the energy parts take the character's palette. Round details a
+polygon list cannot express (bone knobs, card pips, a cursed blade's aura) live in
+`weaponDetail`.
+
+This exists because the previous `spinner` built its outline from a polar radius per
+vertex, which can only ever describe a star: an axe, a katana, a femur and a playing card
+all came out as the same spinning lens. A local-frame silhouette can carry a haft at one
+end and a head at the other, so it still reads as an axe at every spin angle.
+
+**11 pattern factories** (configurable colour + size, most also taking a `kind`):
+- `energyBolt(r, g, b, size, style)` — glowing orb. `style` picks an **outer** silhouette
+  (0 plain + leading crescent, 1 fire tongues, 2 rune ring, 3 soul wisp with a tail and
+  eyes, 4 nebula cloud). The outer shape is what distinguishes bolts; inner detail is
+  invisible at the size a projectile is actually displayed.
+- `beamProj(r, g, b, worldLen, width, style)` — directional beam. 8 styles: laser, drain
+  (back-flowing siphon), whip, ice, vine, stone, railgun, gravity.
+- `bladeSpinner(kind, …)` — thrown weapon tumbling end over end (axe, bone axe, katana,
+  chef's knife, sword, femur, cursed blade, playing card). Sells the rotation with a
+  swept arc band and silhouette ghosts rather than by smearing the shape.
+- `flyingShaft(kind, …)` — shaft flying point-first (spear, arrow, poison arrow, blowdart,
+  thorn, ice spike).
+- `spinner(r, g, b, size, pts)` — polar star; correct for the one thing that *is* a star
+  (shuriken).
+- `lobbed(kind, …)` — object on an arc (bomb, flask, shovel, hammer, horn, spiked mine,
+  ice chunk, mud glob) with landing shadow, target ring and bounce.
+- `aoeRing(kind, …)` — ground blast as filled shockwave bands over a darkened scorch.
+  `kind` picks what it throws off: quake rubble, water, spores, flame, pressure rings,
+  inward-falling motes, roots.
+- `wave(kind, …)` — crescent sweep built from a real arc band whose centre is solved in
+  the ellipse's own parameter space so it stays square to the travel direction at every
+  heading. Kinds: wind, sand, sonic, flame, acid, impact, water.
+- `chainProj(kind, …)` — tether: interlocking metal links with an anchor hook, or a rope
+  of two braided strands with a grappling hook. Both sag between caster and head.
+- `bulletProj`, `fistProj` — small fast round; gauntleted punch.
+
+**30 specialized `draw*` renderers** for one-off projectiles: fireball (spiral fire arms),
+lightning (`lightningBolt(r, g, b)` — colour is a parameter so a storm reads yellow and a
+tesla coil reads arc-cyan), boulder (faceted tumbling hull), shark jaw, bat swarm, shadow
+bolt, inferno blast, geyser, wail, raise dead, and more.
+
+**Two things to watch when editing this file:**
+- `fillArcBand` ramps alpha **along the sweep**, not radially. A radial falloff has to be
+  built by nesting bands at constant alpha; using the ramp for it leaves one horn of a
+  crescent bright and the other invisible.
+- A block literal on the line after an expression is parsed as an *argument* to it
+  (`val n = 9` followed by `{ … }` becomes `9 { … }`). Use a plain `var`/`while` at
+  statement level rather than a `{ … }` wrapper.
+
 To add a new projectile renderer:
 1. Add an entry to the `registry` map in `GLProjectileRenderers`
-2. Either use a pattern factory (`energyBolt(r, g, b, size)`) or write a specialized `draw*` method
+2. Either use a pattern factory (`energyBolt(r, g, b, size, style)`, `bladeSpinner(kind, …)`,
+   …), add a `kind`/`Part` array if the object has its own silhouette, or write a
+   specialized `draw*` method
 3. The renderer receives screen-space coordinates (sx, sy) already transformed from world space
+4. Check it in the gallery (below) — judge at the size the player sees, over all three
+   terrain bands
+
+#### Projectile gallery (dev tool)
+
+```bash
+bazel run //src/main/scala/com/gridgame/client:projectile_gallery -- out/dir
+bazel run //src/main/scala/com/gridgame/client:projectile_gallery -- out/dir --bench
+```
+
+Renders every registered projectile type into contact-sheet PNGs (10 pages x 4 animation
+ticks) plus an `index.txt` naming each cell. Each cell draws one projectile over real
+isometric tiles banded dark stone / grass / sand, at `CAMERA_ZOOM`, with a 48-unit player
+footprint box for scale — a projectile that reads on one ground can disappear on another,
+and judging any of this at 1:1 flatters it by a third. This is the loop to use for any
+projectile art change; it needs no server, no login and no match.
+
+`--bench` times a screenful of projectiles against a ground-only baseline, so an art
+change can be checked against the frame budget instead of guessed at. Measured on this
+machine after the silhouette pass: 16 projectiles cost **0.18 ms/frame** over a 0.72 ms
+ground+post baseline — about 11us each, against a 16.7 ms budget.
 
 ### Post-Processing
 Settings in `PostProcessor`: `bloomThreshold`, `bloomStrength`, `vignetteStrength`. Bloom
@@ -319,6 +400,14 @@ interval, and particle emission rate.
   re-uploads the sheets already in it, and retires the old texture for `disposeRetired()`
   to free at the top of the next frame — never mid-frame, where a batch may still hold
   queued vertices naming it.
+- **A projectile's silhouette carries its identity, not its palette** — the pattern
+  factories used to describe shapes in polar form (a radius per vertex) or as a stroked
+  line from the caster, so a whole family came out identical: every melee weapon was the
+  same spinning lens, every thrown object the same grey disc, every wave the same
+  triangle, and a spear or arrow was a ~190px hairline drawn `worldLen` world units long.
+  Recognisable objects are now authored as convex `Part` silhouettes in a local frame and
+  stamped per frame (see *Projectile Rendering System*), and the family factories take a
+  `kind`. Colour differentiates within a family; shape differentiates between them.
 - **Standard alpha blending for projectiles** — additive blending (`GL_SRC_ALPHA, GL_ONE`) makes projectiles invisible on bright terrain and removes all visual distinction. Standard blending with high alpha (0.7-0.95) produces solid, visible, distinct shapes. Bloom post-processor handles glow naturally.
 - **GLFW window swap** — hiding JavaFX Stage and creating a GLFW window avoids FBO→WritableImage pixel-copy overhead. Both use Cocoa NSWindows on macOS and coexist safely.
 - **AnimationTimer game loop** — fires on the FX Application Thread (main thread on macOS), which is required for both GLFW and OpenGL calls. No threading complexity.
@@ -718,6 +807,7 @@ Standard `OTEL_*` env vars (see `ops/observability/.env.example`). Most useful:
   - `//src/main/scala/com/gridgame/server:server`
   - `//src/main/scala/com/gridgame/client:client`
   - `//src/main/scala/com/gridgame/client:client_windows`
+  - `//src/main/scala/com/gridgame/client:projectile_gallery` (dev tool, not shipped)
   - `//src/main/scala/com/gridgame/common:common`
   - `//src/main/scala/com/gridgame/mapeditor`
   - `//src/main/scala/com/gridgame/mapeditor:mapeditor_windows`
