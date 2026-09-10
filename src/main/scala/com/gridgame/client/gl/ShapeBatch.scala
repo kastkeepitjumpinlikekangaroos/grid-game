@@ -5,8 +5,9 @@ import org.lwjgl.opengl.GL15._
 import org.lwjgl.opengl.GL20._
 import org.lwjgl.opengl.GL30._
 import org.lwjgl.BufferUtils
+import org.lwjgl.system.MemoryUtil
 
-import java.nio.FloatBuffer
+import java.nio.{ByteBuffer, FloatBuffer}
 
 /**
  * Batched renderer for colored 2D primitives: filled rectangles, ovals, polygons, and lines.
@@ -14,6 +15,18 @@ import java.nio.FloatBuffer
  * Supports standard alpha blending and additive blending for glow effects.
  */
 object ShapeBatch {
+  /** How many staging-buffer-fulls the GPU ring holds before it wraps and orphans. */
+  private[gl] val RING_FRAMES = 8
+
+  /**
+   * Streaming upload flags. Measured on this machine, per flush: plain glBufferSubData
+   * 70us (it waits for every pending draw that reads the buffer, whatever offset you
+   * write), orphan+glBufferSubData 3.7us, and an unsynchronized mapped range 0.4us.
+   * The ring plus orphan-on-wrap is what makes UNSYNCHRONIZED safe: no byte is ever
+   * rewritten while a draw that reads it is still in flight.
+   */
+  private[gl] val MAP_FLAGS = GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT | GL_MAP_INVALIDATE_RANGE_BIT
+
   // Pre-computed sin/cos lookup tables for common segment counts used in oval rendering.
   // Uses direct array indexing (max segment count 32) to avoid Map.get Option allocation.
   private val MAX_SEGMENTS = 32
@@ -65,13 +78,23 @@ class ShapeBatch(val shader: ShaderProgram) {
   private var drawing = false
   private var additive = false
 
+  // GPU ring buffer. Each flush appends at a fresh offset and draws from there, so no
+  // upload ever lands on bytes the GPU may still be reading — overwriting a range that is
+  // still in flight is what makes the driver stall (a single 330-vertex flush was measured
+  // at 1.7ms). When the ring wraps we orphan the whole store, which hands us fresh storage
+  // instead of waiting on the old one.
+  private var ringVerts = INITIAL_CAPACITY * ShapeBatch.RING_FRAMES
+  private var ringOffset = 0
+  // Reused wrapper for the mapped range, so a flush doesn't allocate.
+  private var mapReuse: ByteBuffer = _
+
   private val vao = glGenVertexArrays()
   private val vbo = glGenBuffers()
 
   // Set up VAO
   glBindVertexArray(vao)
   glBindBuffer(GL_ARRAY_BUFFER, vbo)
-  glBufferData(GL_ARRAY_BUFFER, capacity * VERTEX_SIZE * 4L, GL_DYNAMIC_DRAW)
+  glBufferData(GL_ARRAY_BUFFER, ringVerts * VERTEX_SIZE * 4L, GL_STREAM_DRAW)
   // position
   glVertexAttribPointer(0, 2, GL_FLOAT, false, VERTEX_SIZE * 4, 0)
   glEnableVertexAttribArray(0)
@@ -431,9 +454,27 @@ class ShapeBatch(val shader: ShaderProgram) {
     glBindVertexArray(vao)
     glBindBuffer(GL_ARRAY_BUFFER, vbo)
 
-    glBufferSubData(GL_ARRAY_BUFFER, 0, buffer)
+    if (ringOffset + vertexCount > ringVerts) {
+      // Wrapped: discard the old store. The driver hands back untouched memory instead of
+      // waiting on draws that still reference the old one, and every offset in the new
+      // generation is safe to write unsynchronized again.
+      glBufferData(GL_ARRAY_BUFFER, ringVerts.toLong * VERTEX_SIZE * 4L, GL_STREAM_DRAW)
+      ringOffset = 0
+    }
+    val byteOffset = ringOffset.toLong * VERTEX_SIZE * 4L
+    val byteLen = vertexCount.toLong * VERTEX_SIZE * 4L
+    val mapped = glMapBufferRange(GL_ARRAY_BUFFER, byteOffset, byteLen, ShapeBatch.MAP_FLAGS, mapReuse)
+    if (mapped != null) {
+      mapReuse = mapped
+      MemoryUtil.memCopy(MemoryUtil.memAddress(buffer), MemoryUtil.memAddress(mapped), byteLen)
+      glUnmapBuffer(GL_ARRAY_BUFFER)
+    } else {
+      // Driver refused the mapping — fall back to the (much slower) copy path.
+      glBufferSubData(GL_ARRAY_BUFFER, byteOffset, buffer)
+    }
+    glDrawArrays(GL_TRIANGLES, ringOffset, vertexCount)
+    ringOffset += vertexCount
 
-    glDrawArrays(GL_TRIANGLES, 0, vertexCount)
     glBindVertexArray(0)
 
     vertexCount = 0
@@ -455,12 +496,14 @@ class ShapeBatch(val shader: ShaderProgram) {
     val needed = (vertexCount + additionalVertices) * VERTEX_SIZE
     if (needed > capacity * VERTEX_SIZE) {
       flush()
-      if (additionalVertices * VERTEX_SIZE > capacity * VERTEX_SIZE) {
-        // Grow buffer
+      if (additionalVertices > capacity) {
+        // Grow the staging buffer, and the GPU ring with it
         capacity = additionalVertices * 2
         buffer = BufferUtils.createFloatBuffer(capacity * VERTEX_SIZE)
+        ringVerts = capacity * ShapeBatch.RING_FRAMES
+        ringOffset = 0
         glBindBuffer(GL_ARRAY_BUFFER, vbo)
-        glBufferData(GL_ARRAY_BUFFER, capacity * VERTEX_SIZE * 4L, GL_DYNAMIC_DRAW)
+        glBufferData(GL_ARRAY_BUFFER, ringVerts * VERTEX_SIZE * 4L, GL_STREAM_DRAW)
       }
     }
   }

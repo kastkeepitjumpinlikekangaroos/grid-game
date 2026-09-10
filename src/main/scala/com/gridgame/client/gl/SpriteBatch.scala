@@ -5,8 +5,14 @@ import org.lwjgl.opengl.GL15._
 import org.lwjgl.opengl.GL20._
 import org.lwjgl.opengl.GL30._
 import org.lwjgl.BufferUtils
+import org.lwjgl.system.MemoryUtil
 
-import java.nio.FloatBuffer
+import java.nio.{ByteBuffer, FloatBuffer}
+
+object SpriteBatch {
+  /** How many staging-buffer-fulls the GPU ring holds before it wraps and orphans. */
+  private[gl] val RING_FRAMES = 8
+}
 
 /**
  * Batched renderer for textured quads with per-vertex tint/alpha.
@@ -23,12 +29,18 @@ class SpriteBatch(val shader: ShaderProgram) {
   private var additive = false
   private var currentTexture: GLTexture = _
 
+  // GPU ring buffer — see ShapeBatch for why each flush must land on fresh bytes.
+  private var ringVerts = INITIAL_CAPACITY * SpriteBatch.RING_FRAMES
+  private var ringOffset = 0
+  // Reused wrapper for the mapped range, so a flush doesn't allocate.
+  private var mapReuse: ByteBuffer = _
+
   private val vao = glGenVertexArrays()
   private val vbo = glGenBuffers()
 
   glBindVertexArray(vao)
   glBindBuffer(GL_ARRAY_BUFFER, vbo)
-  glBufferData(GL_ARRAY_BUFFER, capacity * VERTEX_SIZE * 4L, GL_DYNAMIC_DRAW)
+  glBufferData(GL_ARRAY_BUFFER, ringVerts * VERTEX_SIZE * 4L, GL_STREAM_DRAW)
   // position
   glVertexAttribPointer(0, 2, GL_FLOAT, false, VERTEX_SIZE * 4, 0)
   glEnableVertexAttribArray(0)
@@ -136,9 +148,27 @@ class SpriteBatch(val shader: ShaderProgram) {
     glBindVertexArray(vao)
     glBindBuffer(GL_ARRAY_BUFFER, vbo)
 
-    glBufferSubData(GL_ARRAY_BUFFER, 0, buffer)
+    if (ringOffset + vertexCount > ringVerts) {
+      // Wrapped: discard the old store. The driver hands back untouched memory instead of
+      // waiting on draws that still reference the old one, and every offset in the new
+      // generation is safe to write unsynchronized again.
+      glBufferData(GL_ARRAY_BUFFER, ringVerts.toLong * VERTEX_SIZE * 4L, GL_STREAM_DRAW)
+      ringOffset = 0
+    }
+    val byteOffset = ringOffset.toLong * VERTEX_SIZE * 4L
+    val byteLen = vertexCount.toLong * VERTEX_SIZE * 4L
+    val mapped = glMapBufferRange(GL_ARRAY_BUFFER, byteOffset, byteLen, ShapeBatch.MAP_FLAGS, mapReuse)
+    if (mapped != null) {
+      mapReuse = mapped
+      MemoryUtil.memCopy(MemoryUtil.memAddress(buffer), MemoryUtil.memAddress(mapped), byteLen)
+      glUnmapBuffer(GL_ARRAY_BUFFER)
+    } else {
+      // Driver refused the mapping — fall back to the (much slower) copy path.
+      glBufferSubData(GL_ARRAY_BUFFER, byteOffset, buffer)
+    }
+    glDrawArrays(GL_TRIANGLES, ringOffset, vertexCount)
+    ringOffset += vertexCount
 
-    glDrawArrays(GL_TRIANGLES, 0, vertexCount)
     glBindVertexArray(0)
 
     vertexCount = 0
@@ -160,11 +190,13 @@ class SpriteBatch(val shader: ShaderProgram) {
     val needed = (vertexCount + additionalVertices) * VERTEX_SIZE
     if (needed > capacity * VERTEX_SIZE) {
       flush()
-      if (additionalVertices * VERTEX_SIZE > capacity * VERTEX_SIZE) {
+      if (additionalVertices > capacity) {
         capacity = additionalVertices * 2
         buffer = BufferUtils.createFloatBuffer(capacity * VERTEX_SIZE)
+        ringVerts = capacity * SpriteBatch.RING_FRAMES
+        ringOffset = 0
         glBindBuffer(GL_ARRAY_BUFFER, vbo)
-        glBufferData(GL_ARRAY_BUFFER, capacity * VERTEX_SIZE * 4L, GL_DYNAMIC_DRAW)
+        glBufferData(GL_ARRAY_BUFFER, ringVerts * VERTEX_SIZE * 4L, GL_STREAM_DRAW)
       }
     }
   }

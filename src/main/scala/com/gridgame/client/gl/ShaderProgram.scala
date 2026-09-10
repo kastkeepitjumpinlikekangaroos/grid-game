@@ -185,6 +185,9 @@ object ShaderProgram {
       |uniform float uDistortionStrength;
       |uniform float uDamageVignette;
       |uniform vec2 uResolution;
+      |uniform float uSharpen;    // quality tier: 0 disables the unsharp mask
+      |uniform float uGrain;      // quality tier: 0 disables film grain
+      |uniform float uWideBloom;  // weight of the quarter-res bloom (0 disables it)
       |// ACES filmic tone mapping
       |vec3 acesToneMap(vec3 x) {
       |  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
@@ -212,20 +215,24 @@ object ShaderProgram {
       |  } else {
       |    scene = texture(uScene, uv);
       |  }
-      |  // Unsharp mask sharpening — sample 4 neighbors, enhance edges
-      |  vec2 texel = 1.0 / uResolution;
-      |  vec3 blurSample = (
-      |    texture(uScene, uv + vec2(texel.x, 0.0)).rgb +
-      |    texture(uScene, uv - vec2(texel.x, 0.0)).rgb +
-      |    texture(uScene, uv + vec2(0.0, texel.y)).rgb +
-      |    texture(uScene, uv - vec2(0.0, texel.y)).rgb
-      |  ) * 0.25;
-      |  scene.rgb += (scene.rgb - blurSample) * 0.15;
-      |  vec4 bloomH = texture(uBloom, uv);
-      |  vec4 bloomQ = texture(uBloomQ, uv);
-      |  vec4 bloom = bloomH * 0.6 + bloomQ * 0.4;
-      |  // Screen blend for bloom — brightens without blowing out whites
-      |  vec3 color = scene.rgb + bloom.rgb * uBloomStrength * (1.0 - scene.rgb);
+      |  // Unsharp mask sharpening — sample 4 neighbors, enhance edges.
+      |  // Four extra full-resolution fetches per pixel, so the quality tiers drop it first.
+      |  if (uSharpen > 0.0) {
+      |    vec2 texel = 1.0 / uResolution;
+      |    vec3 blurSample = (
+      |      texture(uScene, uv + vec2(texel.x, 0.0)).rgb +
+      |      texture(uScene, uv - vec2(texel.x, 0.0)).rgb +
+      |      texture(uScene, uv + vec2(0.0, texel.y)).rgb +
+      |      texture(uScene, uv - vec2(0.0, texel.y)).rgb
+      |    ) * 0.25;
+      |    scene.rgb += (scene.rgb - blurSample) * 0.15;
+      |  }
+      |  vec3 color = scene.rgb;
+      |  if (uBloomStrength > 0.0) {
+      |    vec4 bloom = texture(uBloom, uv) * 0.6 + texture(uBloomQ, uv) * uWideBloom;
+      |    // Screen blend for bloom — brightens without blowing out whites
+      |    color += bloom.rgb * uBloomStrength * (1.0 - scene.rgb);
+      |  }
       |  // Dynamic lighting: multiply scene by light map
       |  if (uUseLightMap == 1) {
       |    vec3 light = texture(uLightMap, vTexCoord).rgb;
@@ -246,8 +253,10 @@ object ShaderProgram {
       |  float postLuma = dot(color, vec3(0.299, 0.587, 0.114));
       |  color = mix(vec3(postLuma), color, 0.96);
       |  // Film grain: per-pixel noise
-      |  float grain = fract(sin(dot(vTexCoord * uTime, vec2(12.9898, 78.233))) * 43758.5453);
-      |  color += (grain - 0.5) * 0.015;
+      |  if (uGrain > 0.0) {
+      |    float grain = fract(sin(dot(vTexCoord * uTime, vec2(12.9898, 78.233))) * 43758.5453);
+      |    color += (grain - 0.5) * 0.015;
+      |  }
       |  // Soft vignette using smoothstep for gradual falloff
       |  vec2 vigUV = vTexCoord * 2.0 - 1.0;
       |  float dist = dot(vigUV, vigUV);

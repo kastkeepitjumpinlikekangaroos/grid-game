@@ -30,6 +30,11 @@ OTEL_SDK_DISABLED=true bazel run //src/main/scala/com/gridgame/server:server
 GRIDGAME_TELEMETRY=1 bazel run //src/main/scala/com/gridgame/client:client
 # or
 bazel run //src/main/scala/com/gridgame/client:client -- --telemetry
+
+# Graphics quality (default auto — starts high, steps down if frames stay slow).
+# F7 cycles it in game.
+bazel run //src/main/scala/com/gridgame/client:client -- --quality=low
+GRIDGAME_QUALITY=medium bazel run //src/main/scala/com/gridgame/client:client
 ```
 
 ### macOS: proper app name/icon in Dock & Cmd+Tab
@@ -198,18 +203,18 @@ When a match starts, `ClientMain.showGameScene()` hides the JavaFX Stage and cre
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `GLGameRenderer.scala` | ~1530 | Main renderer: tiles, players, projectiles, items, status effects, HUD, aim arrow, backgrounds, death/teleport/explosion animations |
-| `GLProjectileRenderers.scala` | ~1150 | All 112 projectile type renderers (8 pattern factories + 19 specialized renderers) |
+| `GLGameRenderer.scala` | ~5850 | Main renderer: tiles, players, projectiles, items, status effects, HUD, aim arrow, backgrounds, death/teleport/explosion animations |
+| `GLProjectileRenderers.scala` | ~5430 | All 112 projectile type renderers (8 pattern factories + 19 specialized renderers) |
 | `ShapeBatch.scala` | ~380 | Batched colored 2D primitives: fillRect, fillOval, fillOvalSoft, fillPolygon, fillArcBand (ring segment with an alpha ramp — gauges, crescents, shockwaves), fillStarFlare (4-point glint), strokeLine, strokeLineSoft, strokeArc, strokeOval, strokePolygon. Supports additive blend mode toggle. |
 | `SpriteBatch.scala` | ~200 | Batched textured quads with per-vertex tint/alpha. Flushes on texture change. |
 | `ShaderProgram.scala` | ~190 | GLSL shader compilation + embedded shader source: ColorShader (pos+color), TextureShader (pos+texcoord+color), BloomExtract, GaussianBlur, Composite (bloom+vignette+overlay) |
-| `PostProcessor.scala` | ~150 | Post-processing FBO pipeline: Scene FBO → Bloom extract (half-res) → Blur H → Blur V → Composite |
-| `GLTexture.scala` | ~120 | PNG loading via STB image → GL texture. FBO creation for render-to-texture. |
+| `PostProcessor.scala` | ~230 | Post-processing FBO pipeline: Scene FBO → Bloom extract (half-res) → Blur H → Blur V → quarter-res pair → Composite |
+| `GLTexture.scala` | ~195 | PNG loading via STB image → GL texture. FBO creation for render-to-texture. |
 | `GLFontRenderer.scala` | ~160 | AWT-based font rasterization → GL texture atlas. Supports outlined text with drop shadows. Three sizes (16/24/48px). |
 | `GLWindow.scala` | ~100 | GLFW window create/show/destroy/resize |
 | `GLFWManager.scala` | ~25 | Singleton `ensureInitialized()` shared by ControllerHandler and GLWindow |
-| `GLTileRenderer.scala` | ~50 | Loads `sprites/tiles.png` as GL texture, returns TextureRegion per tile ID + frame |
-| `GLSpriteGenerator.scala` | ~70 | Loads character sprite sheets as GL textures |
+| `GLTileRenderer.scala` | ~130 | Loads `sprites/tiles.png` as GL texture; returns full or transparent-margin-trimmed TextureRegion per tile ID + frame |
+| `GLSpriteGenerator.scala` | ~160 | Packs character sprite sheets into one growable GL atlas |
 | `Matrix4.scala` | ~30 | Orthographic projection matrix |
 | `TextureRegion.scala` | ~10 | Case class for (texture, u, v, u2, v2) sub-regions |
 
@@ -223,16 +228,28 @@ When a match starts, `ClientMain.showGameScene()` hides the JavaFX Stage and cre
 
 ### Rendering Pipeline
 ```
-PostProcessor.beginScene()        -- bind scene FBO
+PostProcessor.beginScene()        -- bind scene FBO (sized by the quality tier)
 GLGameRenderer.render()           -- all game drawing into scene FBO
   Background → Tiles → Items → Players → Projectiles →
-  Status Effects → Aim Arrow → Animations → HUD
+  Status Effects → Aim Arrow → Animations
 PostProcessor.endScene()          -- bloom extract → blur H → blur V →
                                      composite (scene + bloom + vignette + overlay)
+                                     upscales to the real framebuffer
+HUD                               -- drawn after the composite, always at full resolution
 ```
 
 ### Batch Management
 `GLGameRenderer` uses `beginShapes()` / `beginSprites()` / `endAll()` helpers to minimize state transitions. Only one batch (shape or sprite) is active at a time; calling `beginShapes()` while the sprite batch is active will end the sprite batch first, and vice versa.
+
+**Never upload a batch with a plain `glBufferSubData` at offset 0.** `ShapeBatch.flush` /
+`SpriteBatch.flush` append into a GPU ring buffer and map it with
+`GL_MAP_UNSYNCHRONIZED_BIT | GL_MAP_INVALIDATE_RANGE_BIT`, orphaning the whole store when
+the ring wraps. Rewriting bytes a queued draw still reads makes the driver stall until that
+draw retires: measured per flush on this machine, plain `glBufferSubData` costs **70us**
+whatever the offset, orphan+`glBufferSubData` 3.7us, and the unsynchronized mapped range
+**0.4us**. At ~110 flushes a frame that difference was the whole frame budget — a single
+330-vertex HUD flush was stalling for 1.7ms. The ring plus orphan-on-wrap is what makes
+`UNSYNCHRONIZED` safe: no byte is ever rewritten while a draw that reads it is in flight.
 
 ### Projectile Rendering System
 All 112 projectile types are registered in `GLProjectileRenderers.registry` (`Map[Byte, Renderer]`). Projectiles use **standard alpha blending** for solid, visible shapes — the bloom post-processor provides natural glow on bright elements.
@@ -257,9 +274,51 @@ To add a new projectile renderer:
 3. The renderer receives screen-space coordinates (sx, sy) already transformed from world space
 
 ### Post-Processing
-Settings in `PostProcessor`: `bloomThreshold=0.88`, `bloomStrength=0.12`, `vignetteStrength=0.08`. Bloom FBOs run at half resolution. Composite shader uses screen blending for bloom and smoothstep vignette.
+Settings in `PostProcessor`: `bloomThreshold`, `bloomStrength`, `vignetteStrength`. Bloom
+FBOs run at half resolution, plus a quarter-res pair for the wide glow. Composite shader
+uses screen blending for bloom and smoothstep vignette, and gates its optional work on
+`uSharpen` / `uGrain` / `uWideBloom` so the quality tiers can drop it without a second
+shader. The four-tap unsharp mask is the composite's most expensive part — four extra
+full-resolution texture fetches per pixel.
+
+### Graphics quality tiers (`RenderQuality`)
+
+The renderer is fill-rate bound, so `RenderQuality` exists to keep it playable on a weak
+GPU. Set with `--quality=low|medium|high|auto`, `GRIDGAME_QUALITY`, or **F7** in game.
+Default is `auto`: starts at High and steps down (never back up) after ~2s of frames slower
+than 20ms, so an underpowered machine settles on its own; the first explicit choice — flag
+or F7 — turns auto off.
+
+`sceneScale` is the main lever. It sizes the scene/bloom/light targets, while the composite
+still upscales to the display's real framebuffer and the HUD is drawn on top at full
+resolution — so lowering it costs sharpness in the world only, never in text. It is
+expressed against both the framebuffer and the logical window because the worst case is a
+cheap machine driving a HiDPI screen: there the framebuffer is 2x the window, so the world
+is being drawn at 4x the pixels the art carries (tiles are 40x56 magnified 1.6x). Medium
+gives up that free 2x first.
+
+Tiers also gate: bloom, the quarter-res wide bloom, composite sharpen and grain, the
+dynamic light map, water reflections, the animated tile-overlay budget, background cache
+interval, and particle emission rate.
 
 ### Key Design Decisions
+- **Tiles are culled against the visible diamond, not its bounding box** — the screen rect
+  maps to a diamond in world space, whose AABB holds ~2.7x as many cells as are on screen.
+  `render` computes bounds in the projection's own axes (`u = wx - wy`, `v = wx + wy`) and
+  clips each row exactly; verified against brute force over 400 camera positions with zero
+  tiles missed and 6% overdraw. Entity cells walk a few rows further (`entPad`) because a
+  player sprite and its name plate hang above their own cell.
+- **Ground tiles draw a trimmed quad** — a flat tile only paints the bottom 40 of its 112
+  atlas rows, so drawing the full cell rasterized ~2.8x the pixels it needed, over the whole
+  screen. `GLTileRenderer` measures each cell's first non-transparent row at load time
+  (so it follows whatever `generate_tiles.py` emits) and exposes `getTrimmedRegion` /
+  `getTrimTopPx`. The UV mapping is exact — the trimmed quad samples the identical texel.
+- **The character atlas grows instead of reserving every slot** — sized for all 112
+  characters it would hold 128MB of texture memory for the whole session however few
+  characters a match uses. It starts at 16 slots (16MB) and doubles to at most 64. A grow
+  re-uploads the sheets already in it, and retires the old texture for `disposeRetired()`
+  to free at the top of the next frame — never mid-frame, where a batch may still hold
+  queued vertices naming it.
 - **Standard alpha blending for projectiles** — additive blending (`GL_SRC_ALPHA, GL_ONE`) makes projectiles invisible on bright terrain and removes all visual distinction. Standard blending with high alpha (0.7-0.95) produces solid, visible, distinct shapes. Bloom post-processor handles glow naturally.
 - **GLFW window swap** — hiding JavaFX Stage and creating a GLFW window avoids FBO→WritableImage pixel-copy overhead. Both use Cocoa NSWindows on macOS and coexist safely.
 - **AnimationTimer game loop** — fires on the FX Application Thread (main thread on macOS), which is required for both GLFW and OpenGL calls. No threading complexity.

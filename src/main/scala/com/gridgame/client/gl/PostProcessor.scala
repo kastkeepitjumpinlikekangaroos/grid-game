@@ -12,7 +12,10 @@ import org.lwjgl.BufferUtils
  * Pipeline: Scene FBO → Bloom extract → Blur H → Blur V → Composite (scene + bloom + vignette + overlay)
  */
 class PostProcessor(var width: Int, var height: Int) {
-  // FBOs (bloom at half resolution for efficiency)
+  // FBOs (bloom at half resolution for efficiency). They stay allocated even when a
+  // quality tier turns bloom off — together they are under a fifth of a screen, and the
+  // composite samples them unconditionally (weighted to zero) rather than needing a
+  // second shader.
   private var sceneFBO: GLTexture = GLTexture.createFBO(width, height)
   private var bloomExtractFBO: GLTexture = GLTexture.createFBO(width / 2, height / 2)
   private var blurPingFBO: GLTexture = GLTexture.createFBO(width / 2, height / 2)
@@ -96,10 +99,12 @@ class PostProcessor(var width: Int, var height: Int) {
     glClear(GL_COLOR_BUFFER_BIT)
   }
 
-  /** End scene rendering and apply post-processing to the default framebuffer. */
-  def endScene(screenWidth: Int, screenHeight: Int): Unit = {
-    sceneFBO.unbindTarget()
-
+  /**
+   * Bloom chain: extract bright pixels, then blur them at half resolution and (for the
+   * wide glow) again at quarter resolution. Five off-screen passes, so the quality tiers
+   * drop the quarter-res pair first and the whole chain at the lowest tier.
+   */
+  private def renderBloom(wide: Boolean): Unit = {
     // All bloom passes use half-resolution — set viewport once
     val halfW = width / 2; val halfH = height / 2
     glViewport(0, 0, halfW, halfH)
@@ -131,6 +136,8 @@ class PostProcessor(var width: Int, var height: Int) {
     drawQuad()
     blurPongFBO.unbindTarget()
 
+    if (!wide) return
+
     // 3b. Quarter-res bloom — horizontal blur
     val quartW = width / 4; val quartH = height / 4
     glViewport(0, 0, quartW, quartH)
@@ -148,18 +155,30 @@ class PostProcessor(var width: Int, var height: Int) {
     bloomQPingFBO.bind(0)
     drawQuad()
     bloomQPongFBO.unbindTarget()
+  }
+
+  /** End scene rendering and apply post-processing to the default framebuffer. */
+  def endScene(screenWidth: Int, screenHeight: Int): Unit = {
+    sceneFBO.unbindTarget()
+
+    val doBloom = RenderQuality.bloom
+    val doWideBloom = doBloom && RenderQuality.wideBloom
+    if (doBloom) renderBloom(doWideBloom)
 
     // 4. Composite: scene + bloom + vignette + lighting + effects → default framebuffer
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
     glViewport(0, 0, screenWidth, screenHeight)
     glClear(GL_COLOR_BUFFER_BIT)
     compositeShader.use()
-    compositeShader.setUniform1f("uBloomStrength", bloomStrength)
+    compositeShader.setUniform1f("uBloomStrength", if (doBloom) bloomStrength else 0f)
+    compositeShader.setUniform1f("uWideBloom", if (doWideBloom) 0.4f else 0f)
+    compositeShader.setUniform1f("uSharpen", if (RenderQuality.sharpen) 1f else 0f)
+    compositeShader.setUniform1f("uGrain", if (RenderQuality.grain) 1f else 0f)
     compositeShader.setUniform1f("uVignetteStrength", vignetteStrength)
     compositeShader.setUniform4f("uOverlayColor", overlayR, overlayG, overlayB, overlayA)
     compositeShader.setUniform1f("uTime", animationTime)
     // Dynamic lighting
-    if (useLightMap && lightMapTexture != null) {
+    if (useLightMap && lightMapTexture != null && RenderQuality.lighting) {
       compositeShader.setUniform1i("uUseLightMap", 1)
       lightMapTexture.bind(2)
     } else {

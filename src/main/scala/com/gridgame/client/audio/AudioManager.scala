@@ -2,6 +2,7 @@ package com.gridgame.client.audio
 
 import java.io.{ByteArrayInputStream, File, FileInputStream, InputStream}
 import java.util.concurrent.ConcurrentHashMap
+import java.util.prefs.Preferences
 import javax.sound.sampled._
 
 /** Loads and plays the procedurally generated WAV assets under sounds/
@@ -65,7 +66,60 @@ object AudioManager {
   @volatile private var initFailed = false
   @volatile private var currentMusicName: String = null
 
+  // Best-effort like the rest of this object: a backing store this JVM cannot
+  // open must not take audio down with it, so the whole lookup is guarded and a
+  // null `prefs` simply means the mute state lives for this run only.
+  private val MutedPrefKey = "muted"
+  private val prefs: Preferences =
+    try Preferences.userRoot().node("com/gridgame/client/audio")
+    catch { case _: Throwable => null }
+  // Read once at class-init so the very first playMenuMusic() already honours it.
+  @volatile private var muted: Boolean =
+    try prefs != null && prefs.getBoolean(MutedPrefKey, false)
+    catch { case _: Throwable => false }
+
   // ── public API ──────────────────────────────────────────────────────────
+
+  def isMuted: Boolean = muted
+
+  /** Global mute for music and SFX, persisted across runs.
+    *
+    * Muting silences every voice immediately but keeps `currentMusicName`, so
+    * unmuting resumes whichever track the current screen asked for instead of
+    * leaving the game silent until the next screen transition. The mixer thread
+    * and the decoded-sound cache are deliberately left alone — closing the line
+    * would put the ~96ms `open()` stall back on the first sound after unmuting. */
+  def setMuted(m: Boolean): Unit = {
+    if (m == muted) return
+    muted = m
+    try if (prefs != null) prefs.putBoolean(MutedPrefKey, m)
+    catch { case _: Throwable => () }
+    if (m) {
+      voiceLock.synchronized {
+        var i = 0
+        while (i < MAX_VOICES) {
+          val v = voices(i)
+          v.active = false
+          v.sound = null
+          v.pos = 0.0
+          i += 1
+        }
+        musicVoice.active = false
+        musicVoice.sound = null
+      }
+    } else {
+      // playMusic() short-circuits on an unchanged name, so clear it first.
+      val resume = currentMusicName
+      currentMusicName = null
+      if (resume != null) playMusic(resume)
+    }
+  }
+
+  /** Flips the mute state and returns the new one, for a UI toggle button. */
+  def toggleMuted(): Boolean = {
+    setMuted(!muted)
+    muted
+  }
 
   def playAttack(projectileType: Byte, distanceInCells: Float = 0f, pan: Float = 0f): Unit =
     playSfx(AbilitySounds.forProjectileType(projectileType), volumeAtDistance(distanceInCells), PITCH_SPREAD, pan)
@@ -141,6 +195,7 @@ object AudioManager {
   }
 
   private def playSfx(name: String, volume: Float, pitchSpread: Float = 0f, pan: Float = 0f): Unit = {
+    if (muted) return
     if (volume <= 0.01f) return
     if (!ensureStarted()) return
     val sound = loadSound(name)
@@ -175,6 +230,8 @@ object AudioManager {
 
   private def playMusic(name: String): Unit = {
     if (name == currentMusicName) return
+    // Remember the request even while muted, so unmuting can resume this track.
+    if (muted) { currentMusicName = name; return }
     if (!ensureStarted()) return
     val sound = loadSound(name)
     if (sound == null) return

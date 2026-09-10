@@ -59,7 +59,19 @@ object GLTexture {
   def load(relativePath: String, nearest: Boolean = true): GLTexture = {
     val bytes = loadBytes(relativePath)
     if (bytes == null) throw new RuntimeException(s"Texture not found: $relativePath")
-    fromBytes(bytes, nearest)
+    fromBytes(bytes, nearest, null)
+  }
+
+  /**
+   * Load a texture, handing the decoded RGBA pixels to `inspect` before they are freed.
+   * Lets a caller measure the image (e.g. where a tile's transparent margin ends) without
+   * keeping a second copy of it around.
+   */
+  def loadInspected(relativePath: String, nearest: Boolean,
+                    inspect: (ByteBuffer, Int, Int) => Unit): GLTexture = {
+    val bytes = loadBytes(relativePath)
+    if (bytes == null) throw new RuntimeException(s"Texture not found: $relativePath")
+    fromBytes(bytes, nearest, inspect)
   }
 
   /** Create a 1x1 solid white pixel texture (useful for tinted sprite drawing). */
@@ -137,7 +149,8 @@ object GLTexture {
     true
   }
 
-  private def fromBytes(data: Array[Byte], nearest: Boolean): GLTexture = {
+  private def fromBytes(data: Array[Byte], nearest: Boolean,
+                        inspect: (ByteBuffer, Int, Int) => Unit): GLTexture = {
     val buf = BufferUtils.createByteBuffer(data.length)
     buf.put(data)
     buf.flip()
@@ -162,6 +175,7 @@ object GLTexture {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
 
+    if (inspect != null) inspect(pixels, w.get(0), h.get(0))
     stbi_image_free(pixels)
 
     new GLTexture(texId, w.get(0), h.get(0), false)

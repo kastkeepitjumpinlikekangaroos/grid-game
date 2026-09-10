@@ -87,6 +87,22 @@ class ClientMain extends Application {
     })
   }
 
+  /** Sound on/off toggle. `AudioManager` is a global, so one button covers the
+    * JavaFX screens and the in-game GLFW window alike, and the choice is
+    * persisted so it survives a restart. */
+  private def createSoundToggleButton(): Button = {
+    val btn = new Button()
+    def soundLabel: String =
+      if (AudioManager.isMuted) Messages.t("Sound: Off") else Messages.t("Sound: On")
+    btn.setText(soundLabel)
+    addHoverEffect(btn, buttonGhostStyle, buttonGhostHoverStyle)
+    btn.setOnAction(_ => {
+      AudioManager.toggleMuted()
+      btn.setText(soundLabel)
+    })
+    btn
+  }
+
   private def addFieldFocusEffect(field: TextField): Unit = {
     field.setStyle(fieldStyle)
     field.focusedProperty().addListener((_, _, focused) => {
@@ -484,7 +500,7 @@ class ClientMain extends Application {
       val l = langCombo.getValue
       if (l != null) Messages.setLocale(l.tag)
     })
-    val langRow = new HBox(8, langLabel, langCombo)
+    val langRow = new HBox(8, langLabel, langCombo, createSoundToggleButton())
     langRow.setAlignment(Pos.CENTER)
     langRow.setPadding(new Insets(12, 0, 0, 0))
 
@@ -608,7 +624,8 @@ class ClientMain extends Application {
     addHoverEffect(rankedBtn, buttonGreenStyle, buttonGreenHoverStyle)
     val refreshBtn = new Button(Messages.t("Refresh"))
     addHoverEffect(refreshBtn, buttonGhostStyle, buttonGhostHoverStyle)
-    titleBar.getChildren.addAll(title, spacer, profileBtn, leaderboardBtn, practiceBtn, rankedBtn, refreshBtn)
+    val soundBtn = createSoundToggleButton()
+    titleBar.getChildren.addAll(title, spacer, soundBtn, profileBtn, leaderboardBtn, practiceBtn, rankedBtn, refreshBtn)
 
     val headerSep = createAccentLine()
     headerSep.setMaxWidth(Double.MaxValue)
@@ -1980,10 +1997,12 @@ class ClientMain extends Application {
               Platform.exit()
             })
         } finally {
+          val frameMs = (System.nanoTime() - frameStartNs) / 1e6
           com.gridgame.common.observability.Metrics.clientFrameDuration.record(
-            (System.nanoTime() - frameStartNs) / 1e6,
-            io.opentelemetry.api.common.Attributes.empty()
+            frameMs, io.opentelemetry.api.common.Attributes.empty()
           )
+          // In `auto` quality this steps the tier down if frames stay slow.
+          com.gridgame.client.gl.RenderQuality.noteFrame(frameMs)
         }
       }
     }
@@ -2300,7 +2319,9 @@ object ClientMain {
         def run(): Unit = com.gridgame.common.observability.Telemetry.shutdown()
       }))
     }
-    val passThrough = args.filterNot(_ == "--telemetry")
+    // Graphics quality: `--quality=low|medium|high|auto` or `GRIDGAME_QUALITY`.
+    // Defaults to auto, which starts high and steps down if frames stay slow.
+    val passThrough = com.gridgame.client.gl.RenderQuality.configure(args.filterNot(_ == "--telemetry"))
     Application.launch(classOf[ClientMain], passThrough: _*)
   }
 }

@@ -34,6 +34,9 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
     if (action == GLFW_PRESS) {
       pressedKeys.add(key)
       if (key == GLFW_KEY_F11) _f11JustPressed = true
+      // F7 cycles graphics quality, so a player on a slow machine can drop it mid-match
+      // without restarting or finding a launch flag.
+      if (key == GLFW_KEY_F7) com.gridgame.client.gl.RenderQuality.cycleTier()
       if (client.getIsDead) {
         if (client.clientState != ClientState.PLAYING) processRejoin()
       } else {

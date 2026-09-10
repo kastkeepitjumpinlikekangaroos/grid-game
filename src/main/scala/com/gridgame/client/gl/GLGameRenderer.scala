@@ -74,6 +74,9 @@ class GLGameRenderer(val client: GameClient) {
 
   private val HW = Constants.ISO_HALF_W
   private val HH = Constants.ISO_HALF_H
+  // Vertical room a name plate + health bar take above a player sprite, used when deciding
+  // how far past the visible tiles the entity pass has to walk.
+  private val NAME_PLATE_HEADROOM_PX = 40
 
   // Particle tracking
   private var weatherSpawnAccum: Float = 0f
@@ -439,7 +442,15 @@ class GLGameRenderer(val client: GameClient) {
   }
 
   def render(deltaSec: Double, fbWidth: Int, fbHeight: Int, windowWidth: Int, windowHeight: Int): Unit = {
-    ensureInitialized(fbWidth, fbHeight)
+    // The world is rendered into off-screen targets whose size the quality tier controls;
+    // the composite still upscales to the real framebuffer and the HUD is drawn on top of
+    // it at full resolution, so lowering the scale costs sharpness in the world only.
+    val scale = RenderQuality.sceneScale(fbWidth, windowWidth)
+    val sceneW = Math.max(64, (fbWidth * scale).toInt)
+    val sceneH = Math.max(64, (fbHeight * scale).toInt)
+    ensureInitialized(sceneW, sceneH)
+    // Safe point to free a character atlas that a grow replaced: no batch has queued work.
+    GLSpriteGenerator.disposeRetired()
     animationTick += 1
     _frameTimeMs = System.currentTimeMillis()
     _animTickF = animationTick.toFloat
@@ -477,14 +488,14 @@ class GLGameRenderer(val client: GameClient) {
     camOffY = camera.camOffY
 
     // Post-processing: render to FBO (only resize when dimensions actually change)
-    if (fbWidth != lastFbWidth || fbHeight != lastFbHeight) {
-      postProcessor.resize(fbWidth, fbHeight)
-      lightSystem.resize(fbWidth, fbHeight)
-      bgCacheFBO = GLTexture.resizeFBO(bgCacheFBO, fbWidth, fbHeight)
+    if (sceneW != lastFbWidth || sceneH != lastFbHeight) {
+      postProcessor.resize(sceneW, sceneH)
+      lightSystem.resize(sceneW, sceneH)
+      bgCacheFBO = GLTexture.resizeFBO(bgCacheFBO, sceneW, sceneH)
       bgCacheRegion = bgCacheFBO.fullRegion
       bgCacheValid = false
-      lastFbWidth = fbWidth
-      lastFbHeight = fbHeight
+      lastFbWidth = sceneW
+      lastFbHeight = sceneH
     }
 
     // Dynamic lighting: clear lights and set ambient for current background (only recompute on change)
@@ -506,7 +517,7 @@ class GLGameRenderer(val client: GameClient) {
 
     // === Background cache: re-render to dedicated FBO when stale ===
     val bgStale = !bgCacheValid || _bgType != bgCacheType ||
-      (animationTick - bgCacheTick) >= BG_CACHE_INTERVAL
+      (animationTick - bgCacheTick) >= RenderQuality.bgCacheInterval
     if (bgStale) {
       bgCacheFBO.bindAsTarget()  // sets viewport to FBO dimensions
       glClearColor(0f, 0f, 0f, 1f)
@@ -526,33 +537,38 @@ class GLGameRenderer(val client: GameClient) {
 
     beginShapes()
 
-    // === Calculate visible tile bounds (optimized: share rx/ry intermediates) ===
+    // === Visible tile bounds ===
+    // The screen rect maps to a *diamond* in world space, so its axis-aligned bounding
+    // box holds nearly three times as many cells as are actually on screen. Culling per
+    // row against the diamond instead of the box is exact and costs two comparisons.
+    //
+    // Work in the projection's own axes: u = wx - wy (screen x) and v = wx + wy (screen y),
+    // where sx = u*HW + camOffX and sy = v*HH + camOffY. A cell's sprite covers
+    // [sx-HW, sx+HW] x [sy-(cellH-HH), sy+HH], so it is on screen exactly when its u and v
+    // fall in the ranges below.
+    val cellH = Constants.TILE_CELL_HEIGHT
     val invHW = 1.0 / HW; val invHH = 1.0 / HH
-    // Corner 0: (0, 0)
-    val rx0 = -camOffX; val ry0 = -camOffY
-    val h0 = rx0 * invHW; val v0 = ry0 * invHH
-    val cx0 = (h0 + v0) * 0.5; val cy0 = (v0 - h0) * 0.5
-    // Corner 1: (canvasW, 0)
-    val rx1 = canvasW - camOffX
-    val h1 = rx1 * invHW
-    val cx1 = (h1 + v0) * 0.5; val cy1 = (v0 - h1) * 0.5
-    // Corner 2: (0, canvasH)
-    val ry2 = canvasH - camOffY
-    val v2 = ry2 * invHH
-    val cx2 = (h0 + v2) * 0.5; val cy2 = (v2 - h0) * 0.5
-    // Corner 3: (canvasW, canvasH)
-    val cx3 = (h1 + v2) * 0.5; val cy3 = (v2 - h1) * 0.5
-    val minWX = Math.min(Math.min(cx0, cx1), Math.min(cx2, cx3))
-    val maxWX = Math.max(Math.max(cx0, cx1), Math.max(cx2, cx3))
-    val minWY = Math.min(Math.min(cy0, cy1), Math.min(cy2, cy3))
-    val maxWY = Math.max(Math.max(cy0, cy1), Math.max(cy2, cy3))
-    val startX = Math.max(0, minWX.floor.toInt - 6)
-    val endX = Math.min(world.width - 1, maxWX.ceil.toInt + 6)
-    val startY = Math.max(0, minWY.floor.toInt - 6)
-    val endY = Math.min(world.height - 1, maxWY.ceil.toInt + 6)
+    val uMin = (-camOffX - HW) * invHW
+    val uMax = (canvasW - camOffX + HW) * invHW
+    val vMin = (-camOffY - HH) * invHH
+    val vMax = (canvasH - camOffY + (cellH - HH)) * invHH
+    // Entities hang above their own cell — a player sprite is drawn upward from it, with a
+    // name plate and health bar above that — so the pass that interleaves them walks
+    // further than the tiles need, or a player just off the bottom edge would pop in.
+    val entPad = ((Constants.PLAYER_DISPLAY_SIZE_PX + NAME_PLATE_HEADROOM_PX) * invHH).toInt + 2
+
+    val startY = Math.max(0, ((vMin - uMax) * 0.5).floor.toInt - entPad)
+    val endY = Math.min(world.height - 1, ((vMax - uMin) * 0.5).ceil.toInt + entPad)
+    val startX = Math.max(0, ((uMin + vMin) * 0.5).floor.toInt - entPad)
+    val endX = Math.min(world.width - 1, ((uMax + vMax) * 0.5).ceil.toInt + entPad)
+    // Per-row x bounds: wx - wy in [uMin, uMax] and wx + wy in [vMin, vMax].
+    @inline def rowLo(wy: Int, pad: Int): Int =
+      Math.max(startX, Math.max(wy + uMin, vMin - wy).floor.toInt - pad)
+    @inline def rowHi(wy: Int, pad: Int): Int =
+      Math.min(endX, Math.min(wy + uMax, vMax - wy).ceil.toInt + pad)
 
     val tileFrame = (animationTick / TILE_ANIM_SPEED) % GLTileRenderer.getNumFrames
-    val cellH = Constants.TILE_CELL_HEIGHT
+    val overlayBudget = Math.min(MAX_SPECIAL_TILES, RenderQuality.maxOverlayTiles)
 
     // === Collect entities by cell ===
     drawnItemIdsThisFrame.clear()
@@ -574,21 +590,26 @@ class GLGameRenderer(val client: GameClient) {
     beginSprites()
     var wy = startY
     while (wy <= endY) {
-      var wx = startX
-      while (wx <= endX) {
+      val loX = rowLo(wy, 0)
+      val hiX = rowHi(wy, 0)
+      var wx = loX
+      while (wx <= hiX) {
         val tile = world.getTile(wx, wy)
         if (tile.walkable) {
           val tid = tile.id
           val sx = worldToScreenX(wx, wy).toFloat
           val sy = worldToScreenY(wx, wy).toFloat
           val variantFrame = ((wx * 7 + wy * 13) & 0x7FFFFFFF) % numTileFrames
-          val region = GLTileRenderer.getTileRegion(tid, variantFrame)
+          // Trimmed cell: identical pixels, but the empty rows above the diamond aren't
+          // rasterized. Ground covers the screen, so this is the frame's largest fill saving.
+          val region = GLTileRenderer.getTrimmedRegion(tid, variantFrame)
           if (region != null) {
-            spriteBatch.draw(region, sx - HW, sy - (cellH - HH), tileW, tileCellH)
+            val top = GLTileRenderer.getTrimTopPx(tid, variantFrame)
+            spriteBatch.draw(region, sx - HW, sy - (cellH - HH) + top, tileW, tileCellH - top)
           }
           // Collect special tiles for overlay pass
           if (tid == 1 || tid == 7 || tid == 9 || tid == 10 || tid == 15 || tid == 18 || tid == 24) {
-            if (_specialTileCount < MAX_SPECIAL_TILES) {
+            if (_specialTileCount < overlayBudget) {
               _specialTileWX(_specialTileCount) = wx
               _specialTileWY(_specialTileCount) = wy
               _specialTileTid(_specialTileCount) = tid
@@ -623,8 +644,10 @@ class GLGameRenderer(val client: GameClient) {
     beginShapes()
     wy = startY
     while (wy <= endY) {
-      var wx = startX
-      while (wx <= endX) {
+      val loX = rowLo(wy, 0)
+      val hiX = rowHi(wy, 0)
+      var wx = loX
+      while (wx <= hiX) {
         if (!world.getTile(wx, wy).walkable) {
           drawElevatedTileShadow(wx, wy, world)
         }
@@ -636,17 +659,26 @@ class GLGameRenderer(val client: GameClient) {
     // === Phase 2: Elevated tiles + entities interleaved by depth ===
     wy = startY
     while (wy <= endY) {
-      var wx = startX
-      while (wx <= endX) {
-        val tile = world.getTile(wx, wy)
-        if (!tile.walkable) {
-          val variantFrame = (tileFrame + wx * 7 + wy * 13) % numTileFrames
-          val region = GLTileRenderer.getTileRegion(tile.id, variantFrame)
-          if (region != null) {
-            beginSprites()
-            val sx = worldToScreenX(wx, wy).toFloat
-            val sy = worldToScreenY(wx, wy).toFloat
-            spriteBatch.draw(region, sx - HW, sy - (cellH - HH), tileW, tileCellH)
+      // Tiles stop at the visible diamond; entity cells run a few further so a sprite
+      // standing just off the bottom edge still draws (and still draws in depth order).
+      val tileLoX = rowLo(wy, 0)
+      val tileHiX = rowHi(wy, 0)
+      val loX = rowLo(wy, entPad)
+      val hiX = rowHi(wy, entPad)
+      var wx = loX
+      while (wx <= hiX) {
+        if (wx >= tileLoX && wx <= tileHiX) {
+          val tile = world.getTile(wx, wy)
+          if (!tile.walkable) {
+            val variantFrame = (tileFrame + wx * 7 + wy * 13) % numTileFrames
+            val region = GLTileRenderer.getTrimmedRegion(tile.id, variantFrame)
+            if (region != null) {
+              beginSprites()
+              val sx = worldToScreenX(wx, wy).toFloat
+              val sy = worldToScreenY(wx, wy).toFloat
+              val top = GLTileRenderer.getTrimTopPx(tile.id, variantFrame)
+              spriteBatch.draw(region, sx - HW, sy - (cellH - HH) + top, tileW, tileCellH - top)
+            }
           }
         }
         val cellKey = entityCollector.cellKey(wx, wy)
@@ -724,10 +756,14 @@ class GLGameRenderer(val client: GameClient) {
 
     endAll()
 
-    // Render light map
-    lightSystem.renderLightMap(shapeBatch, canvasW.toFloat, canvasH.toFloat)
-    postProcessor.lightMapTexture = lightSystem.getLightMapTexture
-    postProcessor.useLightMap = true
+    // Render light map (an extra half-res target; the lowest tier drops it entirely)
+    if (RenderQuality.lighting) {
+      lightSystem.renderLightMap(shapeBatch, canvasW.toFloat, canvasH.toFloat)
+      postProcessor.lightMapTexture = lightSystem.getLightMapTexture
+      postProcessor.useLightMap = true
+    } else {
+      postProcessor.useLightMap = false
+    }
 
     postProcessor.animationTime = _animTickF
 
@@ -5410,9 +5446,11 @@ class GLGameRenderer(val client: GameClient) {
   private var ambientSpawnAccum: Float = 0f
 
   private def spawnGameplayParticles(dt: Float): Unit = {
-    spawnFootstepDust(dt)
-    spawnProjectileTrails(dt)
-    spawnAmbientMotes(dt)
+    // Emission is rate-based, so scaling dt scales how many particles a tier spawns.
+    val pdt = dt * RenderQuality.particleScale
+    spawnFootstepDust(pdt)
+    spawnProjectileTrails(pdt)
+    spawnAmbientMotes(pdt)
   }
 
   /** Spawn ambient energy motes floating near the terrain — adds life to the world. */
@@ -5639,6 +5677,7 @@ class GLGameRenderer(val client: GameClient) {
   // ═══════════════════════════════════════════════════════════════════
 
   private def drawWaterReflections(): Unit = {
+    if (!RenderQuality.waterReflections) return
     val world = client.getWorld
     val lvx = camera.visualX; val lvy = camera.visualY
     val localPX = Math.round(lvx).toInt
