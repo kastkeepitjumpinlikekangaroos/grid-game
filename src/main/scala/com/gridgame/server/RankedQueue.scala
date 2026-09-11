@@ -3,6 +3,7 @@ package com.gridgame.server
 import com.gridgame.common.Constants
 import com.gridgame.common.WorldRegistry
 import com.gridgame.common.model.Player
+import com.gridgame.common.model.TeamAssignment
 import com.gridgame.common.observability.Attrs
 import com.gridgame.common.observability.Metrics
 import com.gridgame.common.protocol._
@@ -407,9 +408,7 @@ class RankedQueue(server: GameServer) {
       }
 
       // Assign teams: round-robin (players first, then bots)
-      val allIds = connected.map(_.playerId) ++ lobby.botManager.getBots.map(_.id)
-      allIds.zipWithIndex.foreach { case (pid, index) =>
-        val teamId = (index % 2 + 1).toByte
+      TeamAssignment.assign(connected.map(_.playerId), lobby.botManager.getBots.map(_.id)).foreach { case (pid, teamId) =>
         instance.teamAssignments.put(pid, teamId)
       }
 

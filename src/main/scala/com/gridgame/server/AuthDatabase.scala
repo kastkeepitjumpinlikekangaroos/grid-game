@@ -237,7 +237,10 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     new UUID(msb, lsb)
   }
 
-  def saveMatch(mapIndex: Int, durationMinutes: Int, results: Seq[(UUID, Int, Int, Byte)], matchType: Byte = 0): Unit = timed("save_match") { dbLock.synchronized {
+  /** `results` holds the humans only; `playerCount` is everyone who played, bots included,
+    * since that is the field the ranks were placed among. */
+  def saveMatch(mapIndex: Int, durationMinutes: Int, results: Seq[(UUID, Int, Int, Byte)], matchType: Byte = 0,
+                playerCount: Int = -1): Unit = timed("save_match") { dbLock.synchronized {
     try {
       connection.setAutoCommit(false)
 
@@ -247,7 +250,7 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
       matchStmt.setInt(1, mapIndex)
       matchStmt.setInt(2, durationMinutes)
       matchStmt.setLong(3, System.currentTimeMillis())
-      matchStmt.setInt(4, results.size)
+      matchStmt.setInt(4, if (playerCount > 0) playerCount else results.size)
       matchStmt.setInt(5, matchType & 0xFF)
       matchStmt.executeUpdate()
       matchStmt.close()
@@ -319,15 +322,17 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     results.toSeq
   } }
 
-  /** Returns (totalKills, totalDeaths, matchesPlayed, wins, elo) */
+  /** Returns (totalKills, totalDeaths, matchesPlayed, wins, elo). Practice sessions are
+    * left out: kills on passive target bots, and a "win" for topping them, aren't a record. */
   def getPlayerStats(playerUUID: UUID): (Int, Int, Int, Int, Int) = timed("stats") { dbLock.synchronized {
     val stmt = connection.prepareStatement(
-      """SELECT COALESCE(SUM(kills), 0) AS total_kills,
-        |       COALESCE(SUM(deaths), 0) AS total_deaths,
+      s"""SELECT COALESCE(SUM(mr.kills), 0) AS total_kills,
+        |       COALESCE(SUM(mr.deaths), 0) AS total_deaths,
         |       COUNT(*) AS matches_played,
-        |       COALESCE(SUM(CASE WHEN rank = 1 THEN 1 ELSE 0 END), 0) AS wins
-        |FROM match_results
-        |WHERE player_uuid = ?""".stripMargin
+        |       COALESCE(SUM(CASE WHEN mr.rank = 1 THEN 1 ELSE 0 END), 0) AS wins
+        |FROM match_results mr
+        |JOIN matches m ON m.match_id = mr.match_id
+        |WHERE mr.player_uuid = ? AND COALESCE(m.match_type, 0) <> ${AuthDatabase.PracticeMatchType}""".stripMargin
     )
     stmt.setString(1, playerUUID.toString)
     val rs = stmt.executeQuery()
@@ -345,16 +350,22 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     (result._1, result._2, result._3, result._4, elo)
   } }
 
-  /** Returns (username, elo, wins, matchesPlayed) sorted by ELO descending */
+  /** Returns (username, elo, wins, matchesPlayed) sorted by ELO descending. Like the profile
+    * stats, practice sessions don't count as matches or wins. */
   def getLeaderboard(limit: Int = 50): Seq[(String, Int, Int, Int)] = timed("leaderboard") { dbLock.synchronized {
     val stmt = connection.prepareStatement(
-      """SELECT a.username, a.elo,
+      s"""SELECT a.username, a.elo,
         |       COALESCE(SUM(CASE WHEN mr.rank = 1 THEN 1 ELSE 0 END), 0) AS wins,
         |       COUNT(mr.id) AS matches_played
         |FROM accounts a
-        |LEFT JOIN match_results mr ON mr.player_uuid = a.uuid
+        |LEFT JOIN (
+        |  SELECT r.id, r.player_uuid, r.rank
+        |  FROM match_results r
+        |  JOIN matches m ON m.match_id = r.match_id
+        |  WHERE COALESCE(m.match_type, 0) <> ${AuthDatabase.PracticeMatchType}
+        |) mr ON mr.player_uuid = a.uuid
         |GROUP BY a.username, a.elo
-        |ORDER BY a.elo DESC
+        |ORDER BY a.elo DESC, a.username ASC
         |LIMIT ?""".stripMargin
     )
     stmt.setInt(1, limit)
@@ -445,6 +456,9 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
 }
 
 object AuthDatabase {
+  /** `matches.match_type` of a practice session (see `Lobby.matchType`). */
+  val PracticeMatchType = 5
+
   def resolveDbPath(): String = {
     val fileName = "game_accounts.db"
     val buildWorkDir = System.getenv("BUILD_WORKING_DIRECTORY")

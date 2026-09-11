@@ -478,19 +478,24 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
   def handleDisconnect(channel: Channel): Unit = {
     val player = registry.getByChannel(channel)
     if (player != null) {
-      val playerId = player.getId
-      registry.remove(playerId)
-      itemManager.clearInventory(playerId)
-      validator.removePlayer(playerId)
-      println(s"Player disconnected (TCP): ${playerId.toString.substring(0, 8)} ('${player.getName}')")
+      println(s"Player disconnected (TCP): ${player.getId.toString.substring(0, 8)} ('${player.getName}')")
+      removePlayer(player.getId)
+    }
+  }
 
-      // Broadcast leave to remaining players
-      val leavePacket = new PlayerLeavePacket(server.getNextSequenceNumber, playerId)
-      if (instance != null) {
-        instance.broadcastToInstance(leavePacket)
-      } else {
-        server.broadcastToAllPlayers(leavePacket)
-      }
+  /** Take a player out of the match (they disconnected or left it) and tell the others.
+    * Their kills and deaths stay with the kill tracker, so they are still scored. */
+  def removePlayer(playerId: UUID): Unit = {
+    if (registry.get(playerId) == null) return
+    registry.remove(playerId)
+    itemManager.clearInventory(playerId)
+    validator.removePlayer(playerId)
+
+    val leavePacket = new PlayerLeavePacket(server.getNextSequenceNumber, playerId)
+    if (instance != null) {
+      instance.broadcastToInstance(leavePacket)
+    } else {
+      server.broadcastToAllPlayers(leavePacket)
     }
   }
 }

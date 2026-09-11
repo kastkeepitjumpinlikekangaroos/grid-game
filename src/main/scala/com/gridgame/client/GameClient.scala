@@ -1,5 +1,6 @@
 package com.gridgame.client
 
+import com.gridgame.client.render.{FadingProjectile, TerrainImpact}
 import com.gridgame.client.audio.AudioManager
 import com.gridgame.client.i18n.{I18n, Messages}
 import com.gridgame.common.Constants
@@ -26,6 +27,18 @@ object ClientState {
   val PLAYING = 3
   val SCOREBOARD = 4
 }
+
+/** Someone in the current lobby, human or bot. */
+final case class LobbyMember(id: UUID, name: String)
+
+/** One row of the ranked leaderboard. */
+final case class LeaderboardEntry(rank: Int, username: String, elo: Int, wins: Int, matchesPlayed: Int)
+
+/** One of the profile's recent matches. `playedAt` is epoch seconds; `rank` is the team's
+  * place in a Teams match; `matchType` is the server's (0 casual FFA, 1 casual Teams,
+  * 2 ranked FFA, 3 ranked duel, 4 ranked Teams, 5 practice). */
+final case class MatchHistoryEntry(matchId: Int, mapIndex: Int, durationMinutes: Int, playedAt: Long,
+                                   kills: Int, deaths: Int, rank: Int, totalPlayers: Int, matchType: Int)
 
 class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, var playerName: String = "Player") {
   private var networkThread: NetworkThread = _
@@ -107,6 +120,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   // Explosion animation tracking: projectileId -> (timestamp, worldX*1000, worldY*1000, colorRGB, blastRadius*1000)
   private val explosionAnimations: ConcurrentHashMap[Int, Array[Long]] = new ConcurrentHashMap()
 
+  // Projectiles stopped by terrain or the end of their range: kept for TerrainImpact.FADE_MS
+  // where they stopped, so they read as absorbed rather than blinking out. The renderer drops
+  // expired entries.
+  private val fadingProjectiles: ConcurrentHashMap[Int, FadingProjectile] = new ConcurrentHashMap()
+
   // Movement interpolation for smooth camera following
   @volatile private var moveInterpFromX: Double = 0.0
   @volatile private var moveInterpFromY: Double = 0.0
@@ -144,8 +162,22 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   @volatile var currentLobbyGameMode: Byte = 0  // 0=FFA, 1=Teams
   @volatile var currentLobbyTeamSize: Int = 2
   @volatile var localTeamId: Byte = 0
-  val lobbyList: CopyOnWriteArrayList[LobbyInfo] = new CopyOnWriteArrayList[LobbyInfo]()
-  val lobbyMembers: CopyOnWriteArrayList[Array[AnyRef]] = new CopyOnWriteArrayList[Array[AnyRef]]() // Array(UUID, String)
+
+  // Server listings (lobbies, leaderboard, match history) arrive as ENTRY... END. Entries
+  // collect in a pending buffer (packet-processor thread only) and replace the published
+  // list at END. A request the server rate-limits gets no reply, so it leaves the last
+  // listing up; clearing the list on request used to leave blank rows or "Loading..." forever.
+  @volatile var lobbyList: Vector[LobbyInfo] = Vector.empty
+  private val pendingLobbyList = scala.collection.mutable.ArrayBuffer.empty[LobbyInfo]
+  // In server order: humans as they joined, bots as they were added (see previewTeams).
+  val lobbyMembers: CopyOnWriteArrayList[LobbyMember] = new CopyOnWriteArrayList[LobbyMember]()
+  @volatile var lobbyActionFailedListener: Byte => Unit = _
+
+  // Players who left mid-match, kept so the final scoreboard can still name them.
+  private val departedPlayers: ConcurrentHashMap[UUID, Player] = new ConcurrentHashMap()
+
+  // Esc arms leaving the match until this time; a second Esc before then leaves.
+  @volatile var leaveConfirmUntil: Long = 0L
 
   // Game stats
   @volatile var killCount: Int = 0
@@ -179,8 +211,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   @volatile var isChatOpen: Boolean = false
   @volatile var chatInputText: String = ""
 
-  // Match history state: (matchId, mapIndex, durationMin, playedAt, kills, deaths, rank, totalPlayers, matchType)
-  val matchHistory: CopyOnWriteArrayList[Array[Int]] = new CopyOnWriteArrayList[Array[Int]]()
+  @volatile var matchHistory: Vector[MatchHistoryEntry] = Vector.empty
+  @volatile var matchHistoryLoaded: Boolean = false
+  private val pendingMatchHistory = scala.collection.mutable.ArrayBuffer.empty[MatchHistoryEntry]
   @volatile var totalKillsStat: Int = 0
   @volatile var totalDeathsStat: Int = 0
   @volatile var matchesPlayedStat: Int = 0
@@ -199,8 +232,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   @volatile var rankedQueueListener: () => Unit = _
   @volatile var rankedMatchFoundListener: () => Unit = _
 
-  // Leaderboard state: (rank, username, elo, wins, matchesPlayed)
-  val leaderboard: CopyOnWriteArrayList[Array[AnyRef]] = new CopyOnWriteArrayList[Array[AnyRef]]()
+  @volatile var leaderboard: Vector[LeaderboardEntry] = Vector.empty
+  @volatile var leaderboardLoaded: Boolean = false
+  private val pendingLeaderboard = scala.collection.mutable.ArrayBuffer.empty[LeaderboardEntry]
   @volatile var leaderboardListener: () => Unit = _
 
   @volatile var matchHistoryListener: () => Unit = _
@@ -250,6 +284,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     // Clear game state
     players.clear()
     projectiles.clear()
+    fadingProjectiles.clear()
     items.clear()
     inventory.clear()
     killFeed.clear()
@@ -354,6 +389,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
     // Clear local projectiles and inventory
     projectiles.clear()
+    fadingProjectiles.clear()
     inventory.clear()
 
     // Reset effect timers
@@ -828,6 +864,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     System.currentTimeMillis() < movementBlockedUntil.get()
   }
 
+  /** Run a screen's listener if one is registered. The listener is read once: the FX thread
+    * clears these as screens go away (ClientMain.switchScreen), so a check-then-call on the
+    * field could race to a null. */
+  private def fire(listener: () => Unit): Unit = if (listener != null) listener()
+
   def enqueuePacket(packet: Packet): Unit = {
     if (!incomingPackets.offer(packet)) {
       System.err.println(s"GameClient: Packet queue full, dropping ${packet.getType}")
@@ -853,6 +894,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           } catch {
             case _: InterruptedException =>
               return
+            case scala.util.control.NonFatal(e) =>
+              // One bad packet or listener must not kill this thread; every screen after it
+              // would stop responding to the server.
+              System.err.println(s"GameClient: Error processing packet - $e")
+              e.printStackTrace()
           }
         }
       }
@@ -1000,6 +1046,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
             localDeathTime.set(System.currentTimeMillis())
             println("GameClient: You have died! Auto-respawning in 3s...")
           }
+        case PacketType.PLAYER_JOIN =>
+          // Our own join echo is the only place we learn our team (it colours our health
+          // bar). Take just that: the position stays ours, since the server already took
+          // our first position update, and snapping back would fail its speed check.
+          localTeamId = packet.asInstanceOf[PlayerJoinPacket].getTeamId
         case _ =>
       }
       return
@@ -1036,10 +1087,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           packet.getMaxPlayers & 0xFF, packet.getLobbyStatus & 0xFF,
           packet.getGameMode & 0xFF, packet.getTeamSize & 0xFF
         )
-        lobbyList.add(info)
+        pendingLobbyList += info
 
       case LobbyAction.LIST_END =>
-        if (lobbyListListener != null) lobbyListListener()
+        lobbyList = pendingLobbyList.toVector
+        pendingLobbyList.clear()
+        fire(lobbyListListener)
 
       case LobbyAction.JOINED =>
         currentLobbyId = packet.getLobbyId
@@ -1052,50 +1105,58 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         currentLobbyTeamSize = packet.getTeamSize & 0xFF
         clientState = ClientState.IN_LOBBY
         lobbyMembers.clear()
-        lobbyMembers.add(Array(localPlayerId.asInstanceOf[AnyRef], playerName.asInstanceOf[AnyRef]))
+        lobbyMembers.add(LobbyMember(localPlayerId, playerName))
+        chatMessages.clear() // the last lobby's chat isn't this one's
         if (lobbyJoinedListener != null) lobbyJoinedListener()
+
+      case LobbyAction.MEMBER =>
+        // The roster a joiner is sent, in server order and including themselves: re-adding
+        // at the end moves us from the front, where JOINED put us, to our real place.
+        currentLobbyPlayerCount = packet.getPlayerCount & 0xFF
+        val memberId = packet.getPlayerId
+        lobbyMembers.removeIf(_.id == memberId)
+        lobbyMembers.add(LobbyMember(memberId, packet.getLobbyName))
+        fire(lobbyUpdatedListener)
 
       case LobbyAction.PLAYER_JOINED =>
         currentLobbyPlayerCount = packet.getPlayerCount & 0xFF
         currentLobbyMaxPlayers = packet.getMaxPlayers & 0xFF
         val memberName = packet.getLobbyName
         val memberId = packet.getPlayerId
-        lobbyMembers.add(Array(memberId.asInstanceOf[AnyRef], memberName.asInstanceOf[AnyRef]))
-        chatMessages.add(Array(
-          System.currentTimeMillis().asInstanceOf[AnyRef],
-          "".asInstanceOf[AnyRef],
-          (memberName + " joined the lobby").asInstanceOf[AnyRef],
-          ChatScope.LOBBY.asInstanceOf[AnyRef]
-        ))
-        val chatL1 = chatMessageListener
-        if (chatL1 != null) chatL1()
-        if (lobbyUpdatedListener != null) lobbyUpdatedListener()
+        lobbyMembers.removeIf(_.id == memberId)
+        lobbyMembers.add(LobbyMember(memberId, memberName))
+        addLobbySystemMessage(Messages.t("{0} joined the lobby", memberName))
+        fire(lobbyUpdatedListener)
 
       case LobbyAction.PLAYER_LEFT =>
         currentLobbyPlayerCount = packet.getPlayerCount & 0xFF
         currentLobbyMaxPlayers = packet.getMaxPlayers & 0xFF
         val leftId = packet.getPlayerId
         import scala.jdk.CollectionConverters._
-        lobbyMembers.asScala.find(arr => arr(0).asInstanceOf[UUID].equals(leftId)).foreach(lobbyMembers.remove)
-        chatMessages.add(Array(
-          System.currentTimeMillis().asInstanceOf[AnyRef],
-          "".asInstanceOf[AnyRef],
-          "A player left the lobby".asInstanceOf[AnyRef],
-          ChatScope.LOBBY.asInstanceOf[AnyRef]
-        ))
-        val chatL2 = chatMessageListener
-        if (chatL2 != null) chatL2()
-        if (lobbyUpdatedListener != null) lobbyUpdatedListener()
+        val leftName = Option(packet.getLobbyName).filter(_.nonEmpty)
+          .orElse(lobbyMembers.asScala.find(_.id == leftId).map(_.name))
+          .getOrElse("?")
+        lobbyMembers.removeIf(_.id == leftId)
+        addLobbySystemMessage(Messages.t("{0} left the lobby", leftName))
+        fire(lobbyUpdatedListener)
 
       case LobbyAction.CONFIG_UPDATE =>
         currentLobbyMapIndex = packet.getMapIndex & 0xFF
         currentLobbyDuration = packet.getDurationMinutes & 0xFF
         currentLobbyGameMode = packet.getGameMode
         currentLobbyTeamSize = packet.getTeamSize & 0xFF
-        if (lobbyUpdatedListener != null) lobbyUpdatedListener()
+        // Switching to Teams caps the lobby (and may drop bots), so the counts change too.
+        currentLobbyPlayerCount = packet.getPlayerCount & 0xFF
+        currentLobbyMaxPlayers = packet.getMaxPlayers & 0xFF
+        fire(lobbyUpdatedListener)
+
+      case LobbyAction.ACTION_FAILED =>
+        val listener = lobbyActionFailedListener
+        if (listener != null) listener(packet.getLobbyStatus)
 
       case LobbyAction.GAME_STARTING =>
         clientState = ClientState.PLAYING
+        leaveConfirmUntil = 0L
         killCount = 0
         deathCount = 0
         // Reset practice stats but keep isPracticeMode flag
@@ -1113,7 +1174,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         isRespawning = false
         localHealth.set(getSelectedCharacterMaxHealth)
         players.clear()
+        departedPlayers.clear()
         projectiles.clear()
+        fadingProjectiles.clear()
         items.clear()
         inventory.clear()
         deathAnimations.clear()
@@ -1130,7 +1193,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
       case LobbyAction.CHARACTER_SELECT =>
         lobbyCharacterSelections.put(packet.getPlayerId, packet.getCharacterId)
-        if (lobbyUpdatedListener != null) lobbyUpdatedListener()
+        fire(lobbyUpdatedListener)
 
       case LobbyAction.LOBBY_CLOSED =>
         clientState = ClientState.LOBBY_BROWSER
@@ -1141,6 +1204,38 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         println(s"GameClient: Unknown lobby action ${packet.getAction}")
     }
   }
+
+  private def addLobbySystemMessage(text: String): Unit = {
+    chatMessages.add(Array(
+      System.currentTimeMillis().asInstanceOf[AnyRef],
+      "".asInstanceOf[AnyRef],
+      text.asInstanceOf[AnyRef],
+      ChatScope.LOBBY.asInstanceOf[AnyRef]
+    ))
+    while (chatMessages.size() > 50) chatMessages.remove(0)
+    val listener = chatMessageListener
+    if (listener != null) listener()
+  }
+
+  /** The lobby roster with the team each member will play on, as `TeamAssignment` deals them
+    * when the match starts: humans in join order, then bots in the order they were added. */
+  def previewTeams: Seq[(LobbyMember, Byte)] = {
+    import scala.jdk.CollectionConverters._
+    val members = lobbyMembers.asScala.toVector
+    val (bots, humans) = members.partition(m => TeamAssignment.isBot(m.id))
+    val byId = members.map(m => m.id -> m).toMap
+    TeamAssignment.assign(humans.map(_.id), bots.sortBy(_.id.getLeastSignificantBits).map(_.id))
+      .map { case (id, team) => (byId(id), team) }
+  }
+
+  /** A player of the current match, including one who has since left it. */
+  def findPlayer(playerId: UUID): Player = {
+    val p = players.get(playerId)
+    if (p != null) p else departedPlayers.get(playerId)
+  }
+
+  def playerLeftMatch(playerId: UUID): Boolean =
+    !players.containsKey(playerId) && departedPlayers.containsKey(playerId)
 
   private def handleGameEvent(packet: GameEventPacket): Unit = {
     packet.getEventType match {
@@ -1212,8 +1307,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         scoreboard.add(entry)
 
       case GameEvent.SCORE_END =>
-        clientState = ClientState.SCOREBOARD
-        if (gameOverListener != null) gameOverListener()
+        // Only for the match we are in: one we just left can still end before the server
+        // has taken us out of it, and must not pull us out of the lobby browser.
+        if (clientState == ClientState.PLAYING) {
+          clientState = ClientState.SCOREBOARD
+          if (gameOverListener != null) gameOverListener()
+        }
 
       case GameEvent.RESPAWN =>
         if (packet.getPlayerId.equals(localPlayerId)) {
@@ -1264,16 +1363,16 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   private def handleLeaderboard(packet: LeaderboardPacket): Unit = {
     packet.getAction match {
       case LeaderboardAction.ENTRY =>
-        leaderboard.add(Array(
-          (packet.getRank & 0xFF).asInstanceOf[AnyRef],
-          packet.getUsername.asInstanceOf[AnyRef],
-          packet.getElo.toInt.asInstanceOf[AnyRef],
-          packet.getWins.asInstanceOf[AnyRef],
-          packet.getMatchesPlayed.asInstanceOf[AnyRef]
-        ))
+        pendingLeaderboard += LeaderboardEntry(
+          packet.getRank & 0xFF, packet.getUsername, packet.getElo.toInt,
+          packet.getWins, packet.getMatchesPlayed
+        )
 
       case LeaderboardAction.END =>
-        if (leaderboardListener != null) leaderboardListener()
+        leaderboard = pendingLeaderboard.toVector
+        pendingLeaderboard.clear()
+        leaderboardLoaded = true
+        fire(leaderboardListener)
 
       case _ =>
     }
@@ -1296,15 +1395,18 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         }
 
       case MatchHistoryAction.ENTRY =>
-        matchHistory.add(Array(
+        pendingMatchHistory += MatchHistoryEntry(
           packet.getMatchId, packet.getMapIndex & 0xFF, packet.getDuration & 0xFF,
-          packet.getPlayedAt, packet.getKills.toInt, packet.getDeaths.toInt,
+          packet.getPlayedAt & 0xFFFFFFFFL, packet.getKills.toInt, packet.getDeaths.toInt,
           packet.getRank & 0xFF, packet.getTotalPlayers & 0xFF,
           packet.getMatchType & 0xFF
-        ))
+        )
 
       case MatchHistoryAction.END =>
-        if (matchHistoryListener != null) matchHistoryListener()
+        matchHistory = pendingMatchHistory.toVector
+        pendingMatchHistory.clear()
+        matchHistoryLoaded = true
+        fire(matchHistoryListener)
 
       case _ =>
     }
@@ -1316,7 +1418,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         rankedQueueSize = packet.getQueueSize & 0xFF
         rankedElo = packet.getElo.toInt
         rankedQueueWaitTime = packet.getWaitTimeSeconds
-        if (rankedQueueListener != null) rankedQueueListener()
+        fire(rankedQueueListener)
 
       case RankedQueueAction.MATCH_FOUND =>
         isInRankedQueue = false
@@ -1326,9 +1428,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         currentLobbyDuration = packet.getDurationMinutes & 0xFF
         currentLobbyPlayerCount = packet.getPlayerCount & 0xFF
         currentLobbyMaxPlayers = packet.getMaxPlayers & 0xFF
+        // Set both ways: a Teams value left over from an earlier lobby made an FFA or duel
+        // scoreboard group everyone under one team.
         if (packet.getMode == RankedQueueMode.TEAMS) {
           currentLobbyGameMode = 1
           currentLobbyTeamSize = Constants.TEAMS_TEAM_SIZE
+        } else {
+          currentLobbyGameMode = 0
+          currentLobbyTeamSize = 2
         }
         clientState = ClientState.IN_LOBBY
         if (rankedMatchFoundListener != null) rankedMatchFoundListener()
@@ -1342,8 +1449,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     val senderName = if (senderId.equals(localPlayerId)) playerName else {
       // Try lobby members first, then players map, then truncated UUID
       import scala.jdk.CollectionConverters._
-      val memberName = lobbyMembers.asScala.find(arr => arr(0).asInstanceOf[UUID].equals(senderId))
-        .map(_(1).asInstanceOf[String])
+      val memberName = lobbyMembers.asScala.find(_.id == senderId).map(_.name)
       memberName.getOrElse {
         val p = players.get(senderId)
         if (p != null) p.getName else senderId.toString.substring(0, 8)
@@ -1374,7 +1480,6 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   // Lobby actions
   def requestLobbyList(): Unit = {
-    lobbyList.clear()
     val packet = new LobbyActionPacket(
       sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.LIST_REQUEST
     )
@@ -1407,6 +1512,20 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     clientState = ClientState.LOBBY_BROWSER
     currentLobbyId = 0
     isLobbyHost = false
+    currentLobbyGameMode = 0
+    currentLobbyTeamSize = 2
+    lobbyMembers.clear()
+  }
+
+  /** Leave the match in progress. Practice ends on the server and its results screen still
+    * follows; any other match carries on without us, so we are straight back in the browser. */
+  def leaveMatch(): Unit = {
+    leaveConfirmUntil = 0L
+    val packet = new LobbyActionPacket(
+      sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.LEAVE
+    )
+    networkThread.send(packet)
+    if (!isPracticeMode) returnToLobbyBrowser()
   }
 
   def startGame(): Unit = {
@@ -1417,7 +1536,6 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   }
 
   def requestLeaderboard(): Unit = {
-    leaderboard.clear()
     val packet = new LeaderboardPacket(
       sequenceNumber.getAndIncrement(), localPlayerId, LeaderboardAction.QUERY
     )
@@ -1425,7 +1543,6 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   }
 
   def requestMatchHistory(): Unit = {
-    matchHistory.clear()
     val packet = new MatchHistoryPacket(
       sequenceNumber.getAndIncrement(), localPlayerId, MatchHistoryAction.QUERY
     )
@@ -1473,6 +1590,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     currentLobbyId = 0
     isLobbyHost = false
     isPracticeMode = false
+    leaveConfirmUntil = 0L
+    departedPlayers.clear()
     killCount = 0
     deathCount = 0
     gameTimeSyncRemaining = 0
@@ -1482,6 +1601,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     chatMessages.clear()
     players.clear()
     projectiles.clear()
+    fadingProjectiles.clear()
     items.clear()
     isDead = false
     isRespawning = false
@@ -1550,6 +1670,16 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     Math.max(-1f, Math.min(1f, screenDx / Constants.AUDIO_PAN_RANGE_CELLS))
   }
 
+  /** The character a shooter is playing, or -1 if we have not seen them yet.
+    * `players` does not hold the local player, so that case is answered from
+    * the local selection. */
+  private def characterIdOf(shooterId: UUID): Byte = {
+    if (shooterId == null) return -1
+    if (shooterId.equals(localPlayerId)) return selectedCharacterId
+    val p = players.get(shooterId)
+    if (p != null) p.getCharacterId else -1
+  }
+
   private def handleProjectileUpdate(packet: ProjectilePacket): Unit = {
     val projectileId = packet.getProjectileId
 
@@ -1568,7 +1698,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           packet.getProjectileType
         )
         projectiles.put(projectileId, projectile)
-        AudioManager.playAttack(packet.getProjectileType,
+        AudioManager.playAttack(packet.getProjectileType, characterIdOf(packet.getPlayerId),
           distanceFromLocal(packet.getX, packet.getY), panFromLocal(packet.getX, packet.getY))
         // Periodic cleanup: evict oldest entries to prevent unbounded growth
         // (incremental eviction avoids clearing all entries which could resurrect projectiles)
@@ -1647,17 +1777,26 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         val pType = if (despawned != null) despawned.projectileType else packet.getProjectileType
         val pDef = ProjectileDef.get(pType)
         val colorRGB = if (despawned != null) despawned.colorRGB else packet.getColorRGB
+        // Where it actually met the terrain: the server removes it up to half a cell inside
+        // the wall, so walk back to the face before showing anything there.
+        val impact = TerrainImpact.resolve(getWorld, packet.getX, packet.getY,
+          packet.getDx, packet.getDy, pDef.passesThroughWalls)
         if (pDef.isExplosive) {
           AudioManager.playExplosion(
-            distanceFromLocal(packet.getX, packet.getY), panFromLocal(packet.getX, packet.getY))
+            distanceFromLocal(impact.x, impact.y), panFromLocal(impact.x, impact.y))
           val blastRadius = pDef.explosionConfig.map(_.blastRadius).getOrElse(3f)
           explosionAnimations.put(projectileId, Array(
             System.currentTimeMillis(),
-            (packet.getX * 1000).toLong,
-            (packet.getY * 1000).toLong,
+            (impact.x * 1000).toLong,
+            (impact.y * 1000).toLong,
             colorRGB.toLong,
             (blastRadius * 1000).toLong
           ))
+        } else if (despawned != null) {
+          // Stop it where it struck and let it sink into the surface there
+          despawned.updatePosition(impact.x, impact.y, despawned.dx, despawned.dy)
+          fadingProjectiles.put(projectileId,
+            new FadingProjectile(despawned, System.currentTimeMillis(), impact.hitTerrain, impact.tileColor))
         }
         // AoE splash visual on max range
         pDef.aoeOnMaxRange.foreach { aoe =>
@@ -1876,6 +2015,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     playerHitProjType.remove(playerId)
 
     if (player != null) {
+      departedPlayers.put(playerId, player)
       println(s"GameClient: Player left - ${playerId.toString.substring(0, 8)} ('${player.getName}')")
     }
   }
@@ -2035,6 +2175,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   def getExplosionAnimations: ConcurrentHashMap[Int, Array[Long]] = explosionAnimations
   def getAoeSplashAnimations: ConcurrentHashMap[Int, Array[Long]] = aoeSplashAnimations
+  def getFadingProjectiles: ConcurrentHashMap[Int, FadingProjectile] = fadingProjectiles
 
   def getWorld: WorldData = currentWorld.get()
 
@@ -2173,6 +2314,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
     // Interrupt packet processor thread so it doesn't block on take()
     if (packetProcessor != null) packetProcessor.interrupt()
+
+    // Null if connect() was never reached
+    if (networkThread == null) return
 
     val leavePacket = new PlayerLeavePacket(
       sequenceNumber.getAndIncrement(),

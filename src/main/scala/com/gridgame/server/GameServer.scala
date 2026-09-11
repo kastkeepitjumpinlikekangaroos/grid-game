@@ -3,7 +3,9 @@ package com.gridgame.server
 import com.gridgame.common.Constants
 import com.gridgame.common.model.Direction
 import com.gridgame.common.model.Item
+import com.gridgame.common.model.MatchResults
 import com.gridgame.common.model.Player
+import com.gridgame.common.model.PlayerResult
 import com.gridgame.common.model.Projectile
 import com.gridgame.common.model.WorldData
 import com.gridgame.common.observability.Attrs
@@ -52,8 +54,9 @@ class GameServer(port: Int, val worldFile: String = "") {
   val tokenCreationTime = new ConcurrentHashMap[UUID, java.lang.Long]()
   // Per-channel auth failure tracking
   val channelAuthFailures = new ConcurrentHashMap[Channel, AtomicInteger]()
-  // Per-player rate limiting for expensive queries (leaderboard, match history)
-  private val lastQueryTime = new ConcurrentHashMap[UUID, java.lang.Long]()
+  // Per-player rate limiting for expensive queries, one budget per kind
+  private val lastHistoryQueryTime = new ConcurrentHashMap[UUID, java.lang.Long]()
+  private val lastLeaderboardQueryTime = new ConcurrentHashMap[UUID, java.lang.Long]()
   // Per-channel malformed packet tracking (disconnect after too many)
   private[server] val malformedPacketCounts = new ConcurrentHashMap[Channel, AtomicInteger]()
   private[server] val MAX_MALFORMED_PACKETS = 3
@@ -309,6 +312,10 @@ class GameServer(port: Int, val worldFile: String = "") {
 
   def getConnectedPlayer(playerId: UUID): Player = connectedPlayers.get(playerId)
 
+  def unregisterGameInstance(lobbyId: Short): Unit = {
+    gameInstances.remove(lobbyId)
+  }
+
   def registerGameInstance(lobbyId: Short, instance: GameInstance): Unit = {
     gameInstances.put(lobbyId, instance)
   }
@@ -557,10 +564,12 @@ class GameServer(port: Int, val worldFile: String = "") {
         playerTcpAddresses.put(uuid, remoteAddr)
         val token = generateSessionToken(uuid, tcpCh)
         Metrics.authAttempts.add(1L, Attrs.AuthSignupSuccess)
-        val response = new AuthResponsePacket(getNextSequenceNumber, true, uuid, "Account created")
-        sendPacketViaChannel(response, tcpCh)
+        // Token first: the client acts on a successful AUTH_RESPONSE by sending packets that
+        // must be signed, so it has to hold the token by then.
         val tokenPacket = new SessionTokenPacket(getNextSequenceNumber, uuid, token)
         sendPacketViaChannel(tokenPacket, tcpCh)
+        val response = new AuthResponsePacket(getNextSequenceNumber, true, uuid, "Account created")
+        sendPacketViaChannel(response, tcpCh)
       } else {
         println(s"Auth: Signup failed - '$username' (already exists)")
         recordChannelAuthFailure(tcpCh)
@@ -577,10 +586,11 @@ class GameServer(port: Int, val worldFile: String = "") {
         playerTcpAddresses.put(uuid, remoteAddr)
         val token = generateSessionToken(uuid, tcpCh)
         Metrics.authAttempts.add(1L, Attrs.AuthLoginSuccess)
-        val response = new AuthResponsePacket(getNextSequenceNumber, true, uuid, "Login successful")
-        sendPacketViaChannel(response, tcpCh)
+        // Token first, as for signup
         val tokenPacket = new SessionTokenPacket(getNextSequenceNumber, uuid, token)
         sendPacketViaChannel(tokenPacket, tcpCh)
+        val response = new AuthResponsePacket(getNextSequenceNumber, true, uuid, "Login successful")
+        sendPacketViaChannel(response, tcpCh)
       } else {
         rateLimiter.recordAuthFailure(remoteAddr)
         recordChannelAuthFailure(tcpCh)
@@ -600,7 +610,7 @@ class GameServer(port: Int, val worldFile: String = "") {
     val player = connectedPlayers.get(playerId)
     if (player == null) return
 
-    if (!allowExpensiveQuery(playerId)) return
+    if (!allowExpensiveQuery(lastHistoryQueryTime, playerId)) return
 
     // Send stats. Use oldElo = elo here so the client knows there's no ELO
     // change to display (this is a profile query, not a post-match push).
@@ -631,10 +641,15 @@ class GameServer(port: Int, val worldFile: String = "") {
 
   private val QUERY_RATE_LIMIT_MS = 10000L // 10 seconds between expensive queries
 
-  private def allowExpensiveQuery(playerId: UUID): Boolean = {
+  /** Each query kind has its own budget, and only an answered query spends it. Sharing one
+    * timestamp (and restamping it on every rejected request) meant opening the leaderboard
+    * within 10s of the profile, or clicking either twice, got no reply at all. */
+  private def allowExpensiveQuery(lastTimes: ConcurrentHashMap[UUID, java.lang.Long], playerId: UUID): Boolean = {
     val now = System.currentTimeMillis()
-    val lastTime = lastQueryTime.put(playerId, now)
-    lastTime == null || (now - lastTime) >= QUERY_RATE_LIMIT_MS
+    val lastTime = lastTimes.get(playerId)
+    if (lastTime != null && now - lastTime < QUERY_RATE_LIMIT_MS) return false
+    lastTimes.put(playerId, now)
+    true
   }
 
   private def handleLeaderboardRequest(packet: LeaderboardPacket, tcpCh: Channel): Unit = {
@@ -644,7 +659,7 @@ class GameServer(port: Int, val worldFile: String = "") {
     val player = connectedPlayers.get(playerId)
     if (player == null) return
 
-    if (!allowExpensiveQuery(playerId)) return
+    if (!allowExpensiveQuery(lastLeaderboardQueryTime, playerId)) return
 
     val leaderboard = authDatabase.getLeaderboard()
     var rank: Int = 1
@@ -854,7 +869,8 @@ class GameServer(port: Int, val worldFile: String = "") {
       sessionTokens.remove(playerId)
       tokenCreationTime.remove(playerId)
       playerTcpAddresses.remove(playerId)
-      lastQueryTime.remove(playerId)
+      lastHistoryQueryTime.remove(playerId)
+      lastLeaderboardQueryTime.remove(playerId)
       packetValidator.removePlayer(playerId)
       lobbyHandler.cleanupPlayer(playerId)
       val player = connectedPlayers.remove(playerId)
@@ -887,13 +903,25 @@ class GameServer(port: Int, val worldFile: String = "") {
     val instance = lobby.gameInstance
     if (instance == null) return
 
+    // The match timer and a player ending their practice session can both get here; only
+    // the first may end the match, or it is scored and saved twice.
+    lobby.synchronized {
+      if (lobby.status == LobbyStatus.FINISHED) return
+      lobby.status = LobbyStatus.FINISHED
+    }
+
+    // Practice can end early, so time the match rather than trusting its configured length.
+    val playedSeconds = instance.getElapsedSeconds
     val modeAttrs = io.opentelemetry.api.common.Attributes.builder()
       .putAll(Attrs.modeOf(instance.gameMode))
       .putAll(Attrs.matchTypeOf(lobby.matchType))
       .build()
     Metrics.matchesFinished.add(1L, modeAttrs)
-    Metrics.matchDuration.record(lobby.durationMinutes.toDouble * 60.0, modeAttrs)
-    lobby.status = LobbyStatus.FINISHED
+    Metrics.matchDuration.record(playedSeconds.toDouble, modeAttrs)
+
+    // Snapshot the teams before stop() clears them. Reading them afterwards put every
+    // player on "team 0", one team, so a Teams scoreboard ranked everybody #1.
+    val teams: Map[UUID, Byte] = instance.teamAssignments.asScala.toMap
 
     // Stop the instance (shutdownNow() interrupts worker threads including the
     // current thread when called from syncTimer). Clear the interrupt flag so
@@ -909,50 +937,26 @@ class GameServer(port: Int, val worldFile: String = "") {
     )
     instance.broadcastToInstance(gameOverPacket)
 
-    // Send SCORE_ENTRY for each player and collect results for persistence
+    // Send SCORE_ENTRY for each player. In Teams mode every member carries their team's
+    // place; players who left mid-match are still scored.
     val scoreboard = instance.killTracker.getScoreboard
-    val matchResults = scala.collection.mutable.ArrayBuffer[(UUID, Int, Int, Byte)]()
-
-    if (instance.gameMode == 1) {
-      // Teams mode: group by team, rank teams by total kills, assign same rank to team members
-      val playerScores = scoreboard.map { case (pid, kills, deaths) =>
-        val teamId = instance.teamAssignments.getOrDefault(pid, 0.toByte)
-        (pid, kills, deaths, teamId)
-      }
-      val teamTotals = playerScores.groupBy(_._4).toSeq.map { case (teamId, members) =>
-        (teamId, members.map(_._2).sum)
-      }.sortBy(-_._2)
-
-      val teamRanks = teamTotals.zipWithIndex.map { case ((teamId, _), idx) =>
-        teamId -> (idx + 1).toByte
-      }.toMap
-
-      playerScores.foreach { case (pid, kills, deaths, teamId) =>
-        val rank = teamRanks.getOrElse(teamId, 1.toByte)
-        val scorePacket = new GameEventPacket(
-          getNextSequenceNumber, pid, GameEvent.SCORE_ENTRY, lobbyId,
-          0, kills.toShort, deaths.toShort, null, rank, 0.toShort, 0.toShort, teamId
-        )
-        instance.broadcastToInstance(scorePacket)
-        matchResults += ((pid, kills, deaths, rank))
-      }
-    } else {
-      // FFA mode: rank individually
-      var rank: Int = 1
-      scoreboard.foreach { case (pid, kills, deaths) =>
-        val scorePacket = new GameEventPacket(
-          getNextSequenceNumber, pid, GameEvent.SCORE_ENTRY, lobbyId,
-          0, kills.toShort, deaths.toShort, null, rank.toByte, 0.toShort, 0.toShort
-        )
-        instance.broadcastToInstance(scorePacket)
-        matchResults += ((pid, kills, deaths, rank.toByte))
-        rank += 1
-      }
+    val results =
+      if (instance.gameMode == 1) MatchResults.rankTeams(scoreboard, pid => teams.getOrElse(pid, 0.toByte))
+      else MatchResults.rankFfa(scoreboard)
+    results.foreach { r =>
+      val scorePacket = new GameEventPacket(
+        getNextSequenceNumber, r.playerId, GameEvent.SCORE_ENTRY, lobbyId,
+        0, r.kills.toShort, r.deaths.toShort, null, r.rank.toByte, 0.toShort, 0.toShort, r.teamId
+      )
+      instance.broadcastToInstance(scorePacket)
     }
 
-    // Persist match results (exclude bots)
-    val humanResults = matchResults.filter { case (pid, _, _, _) => !BotManager.isBotUUID(pid) }.toSeq
-    authDatabase.saveMatch(lobby.mapIndex, lobby.durationMinutes, humanResults, lobby.matchType)
+    // Persist match results (exclude bots). The player count includes the bots, since
+    // ranks were placed among them: "#3 of 1" is what counting only humans produced.
+    val humanResults = results.filterNot(r => BotManager.isBotUUID(r.playerId))
+    val playedMinutes = Math.max(1, Math.round(playedSeconds / 60.0).toInt)
+    authDatabase.saveMatch(lobby.mapIndex, playedMinutes,
+      humanResults.map(r => (r.playerId, r.kills, r.deaths, r.rank.toByte)), lobby.matchType, results.size)
 
     // Update ELO for ranked matches (exclude bots) and push fresh stats to each
     // human so the post-match scoreboard can show the ELO delta without forcing
@@ -994,44 +998,19 @@ class GameServer(port: Int, val worldFile: String = "") {
    * Returns a map of playerId -> (oldElo, newElo) so callers can notify clients.
    * Returns an empty map if the match had fewer than 2 humans.
    */
-  private def updateRankedElo(results: Seq[(UUID, Int, Int, Byte)]): Map[UUID, (Int, Int)] = {
-    val n = results.size
-    if (n < 2) return Map.empty
+  private def updateRankedElo(results: Seq[PlayerResult]): Map[UUID, (Int, Int)] = {
+    if (results.size < 2) return Map.empty
 
-    val kAdjusted = 32.0 / (n - 1)
-
-    // Get current ELOs
-    val elos = results.map { case (uuid, _, _, _) =>
-      uuid -> authDatabase.getEloByUUID(uuid)
-    }.toMap
-
-    val deltas = scala.collection.mutable.Map.empty[UUID, (Int, Int)]
-
-    // Calculate new ELOs using FFA formula
-    results.foreach { case (uuid, _, _, rank) =>
-      val myElo = elos(uuid)
-      var delta = 0.0
-
-      results.foreach { case (opponentUuid, _, _, opponentRank) =>
-        if (!opponentUuid.equals(uuid)) {
-          val opponentElo = elos(opponentUuid)
-          val expected = 1.0 / (1.0 + Math.pow(10, (opponentElo - myElo) / 400.0))
-          val actual = if ((rank & 0xFF) < (opponentRank & 0xFF)) 1.0 else 0.0
-          delta += kAdjusted * (actual - expected)
-        }
-      }
-
-      val newElo = Math.max(0, (myElo + Math.round(delta)).toInt)
+    val changes = MatchResults.eloChanges(results.map(r => (r, authDatabase.getEloByUUID(r.playerId))))
+    changes.foreach { case (uuid, (oldElo, newElo)) =>
       val username = authDatabase.getUsernameByUUID(uuid)
       if (username != null) {
         authDatabase.updateElo(username, newElo)
-        println(s"RankedELO: ${username} $myElo -> $newElo (delta=${Math.round(delta)})")
+        println(s"RankedELO: ${username} $oldElo -> $newElo (delta=${newElo - oldElo})")
       }
-      Metrics.eloDelta.record(Math.round(delta).toDouble, io.opentelemetry.api.common.Attributes.empty())
-      deltas(uuid) = (myElo, newElo)
+      Metrics.eloDelta.record((newElo - oldElo).toDouble, io.opentelemetry.api.common.Attributes.empty())
     }
-
-    deltas.toMap
+    changes
   }
 
   private def cleanup(): Unit = {
@@ -1047,7 +1026,8 @@ class GameServer(port: Int, val worldFile: String = "") {
         sessionTokens.remove(playerId)
         tokenCreationTime.remove(playerId)
         playerTcpAddresses.remove(playerId)
-        lastQueryTime.remove(playerId)
+        lastHistoryQueryTime.remove(playerId)
+        lastLeaderboardQueryTime.remove(playerId)
         packetValidator.removePlayer(playerId)
         playerLocks.remove(playerId)
 
@@ -1064,13 +1044,13 @@ class GameServer(port: Int, val worldFile: String = "") {
         // Remove from ranked queue
         rankedQueue.removePlayer(playerId)
 
-        // Remove from lobby
-        val lobby = lobbyManager.getPlayerLobby(playerId)
-        if (lobby != null) {
-          if (lobby.gameInstance != null) {
-            lobby.gameInstance.registry.remove(playerId)
-          }
-          lobbyManager.leaveLobby(playerId)
+        // Leave the lobby the same way a disconnect does, so the other members are told and
+        // a host who timed out closes their lobby instead of orphaning it.
+        if (lobbyManager.getPlayerLobby(playerId) != null) {
+          lobbyHandler.processLobbyAction(
+            new LobbyActionPacket(getNextSequenceNumber, playerId, LobbyAction.LEAVE),
+            player
+          )
         }
 
         println(s"Player timed out: ${playerId.toString.substring(0, 8)}")

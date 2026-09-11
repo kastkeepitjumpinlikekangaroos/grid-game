@@ -4,6 +4,7 @@ import com.gridgame.common.Constants
 import com.gridgame.common.WorldRegistry
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
+import com.gridgame.common.model.TeamAssignment
 import com.gridgame.common.observability.Attrs
 import com.gridgame.common.observability.Metrics
 import com.gridgame.common.protocol._
@@ -17,7 +18,7 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
   private val lastListRequestTime = new ConcurrentHashMap[UUID, java.lang.Long]()
   private val LIST_REQUEST_COOLDOWN_MS = 2000L
   private val lastCreateTime = new ConcurrentHashMap[UUID, java.lang.Long]()
-  private val CREATE_COOLDOWN_MS = 5000L
+  private val CREATE_COOLDOWN_MS = 3000L
 
   def processLobbyAction(packet: LobbyActionPacket, player: Player): Unit = {
     val playerId = packet.getPlayerId
@@ -69,24 +70,24 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
 
   private def handleCreate(playerId: UUID, player: Player, packet: LobbyActionPacket): Unit = {
     // Prevent creating a lobby while already in one
-    if (lobbyManager.getPlayerLobby(playerId) != null) return
+    if (lobbyManager.getPlayerLobby(playerId) != null) { sendFailure(player, LobbyFailure.ALREADY_IN_LOBBY); return }
 
-    // Rate limit lobby creation (5s cooldown)
+    // Rate limit lobby creation; only a lobby actually created spends the cooldown
     val now = System.currentTimeMillis()
     val lastCreate = lastCreateTime.get(playerId)
-    if (lastCreate != null && now - lastCreate < CREATE_COOLDOWN_MS) return
-    lastCreateTime.put(playerId, now)
+    if (lastCreate != null && now - lastCreate < CREATE_COOLDOWN_MS) { sendFailure(player, LobbyFailure.RATE_LIMITED); return }
 
     val rawName = if (packet.getLobbyName.isEmpty) s"${player.getName}'s Game" else packet.getLobbyName
     val name = sanitizeName(rawName)
-    if (name.isEmpty) return
+    if (name.isEmpty) { sendFailure(player, LobbyFailure.INVALID_NAME); return }
     val rawMapIndex = packet.getMapIndex.toInt & 0xFF
     val mapIndex = if (rawMapIndex >= 0 && rawMapIndex < com.gridgame.common.WorldRegistry.size) rawMapIndex else 0
     val duration = Math.max(1, Math.min(30, if (packet.getDurationMinutes <= 0) Constants.DEFAULT_GAME_DURATION_MIN else packet.getDurationMinutes.toInt))
     val maxPlayers = Math.max(2, Math.min(Constants.MAX_LOBBY_PLAYERS, if (packet.getMaxPlayers <= 0) Constants.MAX_LOBBY_PLAYERS else packet.getMaxPlayers.toInt))
 
     val lobby = lobbyManager.createLobby(playerId, name, mapIndex, duration, maxPlayers)
-    if (lobby == null) return
+    if (lobby == null) { sendFailure(player, LobbyFailure.SERVER_FULL); return }
+    lastCreateTime.put(playerId, now)
 
     // Send JOINED response to creator
     val response = new LobbyActionPacket(
@@ -101,11 +102,17 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
 
   private def handleJoin(playerId: UUID, player: Player, packet: LobbyActionPacket): Unit = {
     // Prevent joining if already in a lobby
-    if (lobbyManager.getPlayerLobby(playerId) != null) return
+    if (lobbyManager.getPlayerLobby(playerId) != null) { sendFailure(player, LobbyFailure.ALREADY_IN_LOBBY); return }
 
+    val target = lobbyManager.getLobby(packet.getLobbyId)
+    if (target == null || target.status != LobbyStatus.WAITING || target.isPractice || target.isRanked) {
+      sendFailure(player, LobbyFailure.NOT_JOINABLE)
+      return
+    }
     val lobby = lobbyManager.joinLobby(playerId, packet.getLobbyId)
     if (lobby == null) {
       println(s"LobbyHandler: Player ${playerId.toString.substring(0, 8)} failed to join lobby ${packet.getLobbyId}")
+      sendFailure(player, if (target.status == LobbyStatus.WAITING) LobbyFailure.LOBBY_FULL else LobbyFailure.NOT_JOINABLE)
       return
     }
 
@@ -129,25 +136,23 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     )
     broadcastToLobby(lobby, broadcast, playerId)
 
-    // Send existing players to the new joiner
-    lobby.players.asScala.foreach { existingPid =>
-      if (!existingPid.equals(playerId)) {
-        val ep = server.getConnectedPlayer(existingPid)
-        if (ep != null) {
-          val memberPacket = new LobbyActionPacket(
-            server.getNextSequenceNumber, existingPid, LobbyAction.PLAYER_JOINED, lobby.id,
-            lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
-            lobby.playerCount.toByte, lobby.maxPlayers.toByte,
-            lobby.status, ep.getName
-          )
-          server.sendPacketToPlayer(memberPacket, player)
-        }
+    // Send the roster to the new joiner in server order, themselves included, so their
+    // lobby room lists everyone (and previews teams) in the order the match will deal them.
+    lobby.players.asScala.foreach { memberId =>
+      val member = if (memberId.equals(playerId)) player else server.getConnectedPlayer(memberId)
+      if (member != null) {
+        val memberPacket = new LobbyActionPacket(
+          server.getNextSequenceNumber, memberId, LobbyAction.MEMBER, lobby.id,
+          lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
+          lobby.playerCount.toByte, lobby.maxPlayers.toByte,
+          lobby.status, member.getName
+        )
+        server.sendPacketToPlayer(memberPacket, player)
       }
     }
-    // Send existing bots to the new joiner
     lobby.botManager.getBots.foreach { botSlot =>
       val botPacket = new LobbyActionPacket(
-        server.getNextSequenceNumber, botSlot.id, LobbyAction.PLAYER_JOINED, lobby.id,
+        server.getNextSequenceNumber, botSlot.id, LobbyAction.MEMBER, lobby.id,
         lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
         lobby.playerCount.toByte, lobby.maxPlayers.toByte,
         lobby.status, botSlot.name
@@ -160,13 +165,30 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     val lobby = lobbyManager.leaveLobby(playerId)
     if (lobby == null) return
 
-    if (lobby.isHost(playerId)) {
-      // Host left - close lobby. If a match was in progress, stop its GameInstance first —
-      // otherwise its executors and OTel async gauge callbacks (items/bots/projectiles.active)
-      // are orphaned and keep running/reporting forever, colliding with the next match's gauges.
-      if (lobby.status == LobbyStatus.IN_GAME && lobby.gameInstance != null) {
-        lobby.gameInstance.stop()
+    val instance = lobby.gameInstance
+    if (lobby.status == LobbyStatus.IN_GAME && instance != null) {
+      if (lobby.isPractice) {
+        // Leaving practice ends the session, and the player still gets its results screen.
+        server.endGame(lobby.id)
+      } else {
+        // Leaving takes you out of the match but it carries on for everyone else, host or
+        // not. Closing the lobby here used to strand the rest in a frozen match with no
+        // scoreboard, and let a losing host void a ranked match by quitting.
+        instance.handler.removePlayer(playerId)
+        if (lobby.players.isEmpty) {
+          // No humans left to finish it. Stop it, or its executors and OTel gauge callbacks
+          // keep running and reporting forever.
+          instance.stop()
+          server.unregisterGameInstance(lobby.id)
+          lobbyManager.removeLobby(lobby.id)
+        }
       }
+      return
+    }
+    // Finished: endGame is already tearing the lobby down.
+    if (lobby.status != LobbyStatus.WAITING) return
+
+    if (lobby.isHost(playerId)) {
       val closePacket = new LobbyActionPacket(
         server.getNextSequenceNumber, playerId, LobbyAction.LOBBY_CLOSED, lobby.id
       )
@@ -174,13 +196,11 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
       lobbyManager.removeLobby(lobby.id)
     } else {
       // Notify remaining players (lobbyName field carries the leaver's name)
-      val leaverPlayer = server.getConnectedPlayer(playerId)
-      val leaverName = if (leaverPlayer != null) leaverPlayer.getName else "Player"
       val leftPacket = new LobbyActionPacket(
         server.getNextSequenceNumber, playerId, LobbyAction.PLAYER_LEFT, lobby.id,
         lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
         lobby.playerCount.toByte, lobby.maxPlayers.toByte,
-        lobby.status, leaverName
+        lobby.status, player.getName
       )
       broadcastToLobby(lobby, leftPacket, null)
     }
@@ -221,11 +241,10 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     lobby.gameInstance = instance
     server.registerGameInstance(lobby.id, instance)
 
-    // Assign teams if in Teams mode (deterministic order matches lobby roster preview)
+    // Assign teams if in Teams mode, in the order the lobby room previewed them
     if (lobby.gameMode == 1) {
-      val allPlayerIds = lobby.players.asScala.toSeq ++ lobby.botManager.getBots.map(_.id)
-      allPlayerIds.zipWithIndex.foreach { case (pid, index) =>
-        val teamId = (index % 2 + 1).toByte
+      val humans = lobby.players.asScala.toSeq.filter(pid => server.getConnectedPlayer(pid) != null)
+      TeamAssignment.assign(humans, lobby.botManager.getBots.map(_.id)).foreach { case (pid, teamId) =>
         instance.teamAssignments.put(pid, teamId)
       }
     }
@@ -341,7 +360,8 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     if (last != null && now - last < LIST_REQUEST_COOLDOWN_MS) return
     lastListRequestTime.put(player.getId, now)
 
-    val lobbies = lobbyManager.getActiveLobbies
+    // Practice sessions are private; listing them only clutters the browser with games no one can join.
+    val lobbies = lobbyManager.getActiveLobbies.filterNot(_.isPractice)
 
     lobbies.foreach { lobby =>
       val entry = new LobbyActionPacket(
@@ -388,9 +408,13 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     val rawMapIndex = packet.getMapIndex.toInt & 0xFF
     lobby.mapIndex = if (rawMapIndex >= 0 && rawMapIndex < com.gridgame.common.WorldRegistry.size) rawMapIndex else 0
     lobby.durationMinutes = Math.max(1, Math.min(30, if (packet.getDurationMinutes <= 0) Constants.DEFAULT_GAME_DURATION_MIN else packet.getDurationMinutes.toInt))
-    val rawGameMode = packet.getGameMode
-    lobby.gameMode = if (rawGameMode == 0 || rawGameMode == 1) rawGameMode else 0
-    lobby.teamSize = Math.max(2, Math.min(4, packet.getTeamSize.toInt))
+    // Teams go up to 4v4. A team size too small for the humans already here would leave a
+    // lopsided match, so it grows to fit them; more humans than 4v4 holds can't play Teams.
+    val requestedSize = Math.max(2, Math.min(4, packet.getTeamSize.toInt))
+    val minTeamSize = (lobby.players.size + 1) / 2
+    val teamsFit = minTeamSize <= 4
+    lobby.gameMode = if (packet.getGameMode == 1 && teamsFit) 1 else 0
+    lobby.teamSize = if (teamsFit) Math.max(requestedSize, minTeamSize) else requestedSize
 
     // Auto-adjust maxPlayers for Teams mode
     if (lobby.gameMode == 1) {
@@ -468,18 +492,18 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
 
   private def handlePracticeStart(playerId: UUID, player: Player, packet: LobbyActionPacket): Unit = {
     // Prevent starting practice while already in a lobby
-    if (lobbyManager.getPlayerLobby(playerId) != null) return
+    if (lobbyManager.getPlayerLobby(playerId) != null) { sendFailure(player, LobbyFailure.ALREADY_IN_LOBBY); return }
 
     // Rate limit (reuse create cooldown)
     val now = System.currentTimeMillis()
     val lastCreate = lastCreateTime.get(playerId)
-    if (lastCreate != null && now - lastCreate < CREATE_COOLDOWN_MS) return
-    lastCreateTime.put(playerId, now)
+    if (lastCreate != null && now - lastCreate < CREATE_COOLDOWN_MS) { sendFailure(player, LobbyFailure.RATE_LIMITED); return }
 
     // Create a practice lobby with a random map
     val mapIndex = scala.util.Random.nextInt(com.gridgame.common.WorldRegistry.size)
     val lobby = lobbyManager.createLobby(playerId, "Practice", mapIndex, 30, 32)
-    if (lobby == null) return
+    if (lobby == null) { sendFailure(player, LobbyFailure.SERVER_FULL); return }
+    lastCreateTime.put(playerId, now)
     lobby.matchType = 5
 
     // Set the player's selected character
@@ -503,6 +527,16 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
 
     // Auto-start the game immediately
     handleStart(playerId, player)
+  }
+
+  /** Tell a player why their create / join / practice request did nothing, rather than
+    * leaving their button looking broken. */
+  private def sendFailure(player: Player, reason: Byte): Unit = {
+    val packet = new LobbyActionPacket(
+      server.getNextSequenceNumber, player.getId, Packet.getCurrentTimestamp,
+      LobbyAction.ACTION_FAILED, 0.toShort, 0.toByte, 0.toByte, 0.toByte, 0.toByte, reason, ""
+    )
+    server.sendPacketToPlayer(packet, player)
   }
 
   /** Clean up per-player rate-limit state on disconnect. */

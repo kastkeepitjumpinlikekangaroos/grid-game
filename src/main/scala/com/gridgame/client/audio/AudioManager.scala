@@ -63,7 +63,9 @@ object AudioManager {
 
   @volatile private var line: SourceDataLine = null
   @volatile private var running = false
-  @volatile private var initFailed = false
+  // GRIDGAME_AUDIO=off runs without sound entirely (no output line, nothing decoded) —
+  // for automated runs of the client, or a machine whose audio device misbehaves.
+  @volatile private var initFailed = sys.env.get("GRIDGAME_AUDIO").exists(_.equalsIgnoreCase("off"))
   @volatile private var currentMusicName: String = null
 
   // Best-effort like the rest of this object: a backing store this JVM cannot
@@ -121,8 +123,13 @@ object AudioManager {
     muted
   }
 
-  def playAttack(projectileType: Byte, distanceInCells: Float = 0f, pan: Float = 0f): Unit =
-    playSfx(AbilitySounds.forProjectileType(projectileType), volumeAtDistance(distanceInCells), PITCH_SPREAD, pan)
+  /** @param characterId the shooter's character — a few projectiles are shared
+    *                     by characters who should not sound alike, so this
+    *                     selects between them. Pass -1 when it isn't known. */
+  def playAttack(projectileType: Byte, characterId: Byte = -1,
+                 distanceInCells: Float = 0f, pan: Float = 0f): Unit =
+    playSfx(AbilitySounds.forAttack(projectileType, characterId),
+            volumeAtDistance(distanceInCells), PITCH_SPREAD, pan)
 
   def playSpawn(): Unit = playSfx("spawn", SFX_VOLUME)
   def playDeath(distanceInCells: Float = 0f, pan: Float = 0f): Unit =

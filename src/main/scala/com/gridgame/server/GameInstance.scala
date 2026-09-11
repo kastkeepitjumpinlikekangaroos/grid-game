@@ -148,6 +148,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     Math.max(0, (total - elapsed).toInt)
   }
 
+  def getElapsedSeconds: Int = ((System.currentTimeMillis() - startTime) / 1000).toInt
+
   def isTimeUp: Boolean = getRemainingSeconds <= 0
 
   def isRunning: Boolean = running

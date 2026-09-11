@@ -29,7 +29,8 @@ class Lobby(
   @volatile var matchType: Byte = 0 // 0=Casual FFA, 1=Casual Teams, 2=Ranked FFA, 3=Ranked Duel, 4=Ranked Teams
 
   def addPlayer(playerId: UUID): Boolean = this.synchronized {
-    if (players.size() >= maxPlayers) return false
+    // Bots hold seats too: counting only humans let a 2v2 lobby of host + 3 bots take a fifth player.
+    if (playerCount >= maxPlayers) return false
     if (players.contains(playerId)) return false
     players.add(playerId)
     true

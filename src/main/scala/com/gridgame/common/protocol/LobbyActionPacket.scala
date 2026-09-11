@@ -23,6 +23,21 @@ object LobbyAction {
   val ADD_BOT: Byte = 14
   val REMOVE_BOT: Byte = 15
   val PRACTICE_START: Byte = 16
+  // Server -> client: a CREATE / JOIN / PRACTICE_START did nothing; lobbyStatus holds a LobbyFailure code.
+  val ACTION_FAILED: Byte = 17
+  // Server -> joiner: one lobby member (lobbyName = name), sent for every member, the joiner
+  // included, in the order teams are dealt. Unlike PLAYER_JOINED it isn't news to announce.
+  val MEMBER: Byte = 18
+}
+
+/** Why a lobby request failed, carried in the lobbyStatus byte of an ACTION_FAILED reply. */
+object LobbyFailure {
+  val RATE_LIMITED: Byte = 1
+  val LOBBY_FULL: Byte = 2
+  val NOT_JOINABLE: Byte = 3 // closed, or its match already started
+  val SERVER_FULL: Byte = 4
+  val ALREADY_IN_LOBBY: Byte = 5
+  val INVALID_NAME: Byte = 6
 }
 
 /**

@@ -110,9 +110,10 @@ class DamageNumberSystem {
         val dmg = damage(i)
 
         // Color by damage amount: high=orange-red, medium=yellow, low=white
-        val (dr, dg, db) = if (dmg >= 25) (1f, 0.25f, 0.15f)
-                           else if (dmg >= 10) (1f, 0.85f, 0.2f)
-                           else (1f, 1f, 1f)
+        // (three vals rather than a destructured tuple, which boxed all three every frame)
+        val dr = 1f
+        val dg = if (dmg >= 25) 0.25f else if (dmg >= 10) 0.85f else 1f
+        val db = if (dmg >= 25) 0.15f else if (dmg >= 10) 0.2f else 1f
 
         // Scale pop: 1.5x -> 1.0x over first 0.2s with ease-out-back
         val popDuration = 0.2f

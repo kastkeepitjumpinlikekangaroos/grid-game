@@ -5,6 +5,7 @@ import com.gridgame.client.GameClient
 import com.gridgame.client.i18n.{I18n, Messages}
 import com.gridgame.client.render.{EntityCollector, GameCamera, IsometricTransform}
 import com.gridgame.client.render.EntityCollector._
+import com.gridgame.client.render.{FadingProjectile, TerrainImpact}
 import com.gridgame.common.Constants
 import com.gridgame.common.model._
 
@@ -47,8 +48,9 @@ class GLGameRenderer(val client: GameClient) {
 
   // Previous health tracking for damage number detection — Java HashMap avoids Option wrapping
   private val prevHealthMap = new java.util.HashMap[UUID, java.lang.Integer]()
-  // Smooth health drain animation tracking
-  private val smoothHealthMap = new java.util.HashMap[UUID, java.lang.Float]()
+  // Smooth health drain animation tracking — a one-element array per player, updated in
+  // place; a java.lang.Float value was boxed afresh for every bar every frame
+  private val smoothHealthMap = new java.util.HashMap[UUID, Array[Float]]()
 
   // Tile overlay collection (parallel primitive arrays, reused each frame)
   private val MAX_SPECIAL_TILES = 512
@@ -578,7 +580,7 @@ class GLGameRenderer(val client: GameClient) {
     _difCount = 0
     val localVX = camera.visualX
     val localVY = camera.visualY
-    val entitiesByCell = entityCollector.collect(
+    entityCollector.collect(
       client, deltaSec,
       localVX, localVY, localDeathAnimActive,
       startX, endX, startY, endY
@@ -681,19 +683,21 @@ class GLGameRenderer(val client: GameClient) {
             }
           }
         }
-        val cellKey = entityCollector.cellKey(wx, wy)
-        val cellEntries = entitiesByCell.getOrElse(cellKey, null)
-        if (cellEntries != null) {
-          entitiesByCell -= cellKey  // -= avoids Option allocation from .remove()
-          dispatchEntries(cellEntries, localVX, localVY)
-        }
+        val cellEntries = entityCollector.takeCell(wx, wy)
+        if (cellEntries != null) dispatchEntries(cellEntries, localVX, localVY)
         wx += 1
       }
       wy += 1
     }
     // Any entities outside visible range
-    val remainIter = entitiesByCell.valuesIterator
-    while (remainIter.hasNext) dispatchEntries(remainIter.next(), localVX, localVY)
+    var leftover = entityCollector.takeRemaining()
+    while (leftover != null) {
+      dispatchEntries(leftover, localVX, localVY)
+      leftover = entityCollector.takeRemaining()
+    }
+
+    // === Projectiles flying over terrain: bodies after every wall and entity ===
+    drawFlyingProjectiles()
 
     // === Deferred health bars + names (batched to reduce batch switches) ===
     flushDeferredBars()
@@ -1170,14 +1174,15 @@ class GLGameRenderer(val client: GameClient) {
   //  ENTITY DISPATCH (depth-sorted)
   // ═══════════════════════════════════════════════════════════════════
 
-  private def dispatchEntries(entries: mutable.ArrayBuffer[EntityCollector.MutableCellEntry], localVX: Double, localVY: Double): Unit = {
-    val size = entries.size
+  /** Draw one cell's entities; `head` is the first, the rest follow through `next`. */
+  private def dispatchEntries(head: EntityCollector.MutableCellEntry, localVX: Double, localVY: Double): Unit = {
     // Fast path for single-entity cells (no reordering needed)
-    if (size == 1) {
-      val entry = entries(0)
+    if (head.next == null) {
+      val entry = head
       entry.entryType match {
         case EntityCollector.TYPE_ITEM => drawSingleItem(entry.ref.asInstanceOf[Item])
         case EntityCollector.TYPE_PROJECTILE => drawSingleProjectile(entry.ref.asInstanceOf[Projectile])
+        case EntityCollector.TYPE_FADING_PROJECTILE => drawFadingProjectile(entry.ref.asInstanceOf[FadingProjectile])
         case EntityCollector.TYPE_PLAYER => drawPlayerInterp(entry.ref.asInstanceOf[Player], entry.vx, entry.vy)
         case EntityCollector.TYPE_LOCAL_PLAYER => drawLocalPlayer(localVX, localVY)
         case EntityCollector.TYPE_LOCAL_DEATH => // handled by drawDeathAnimations()
@@ -1188,27 +1193,26 @@ class GLGameRenderer(val client: GameClient) {
     // Two-pass dispatch: shape-only entities first (items, projectiles), then
     // sprite entities (players). Reduces batch switches from up to N per cell to at most 1.
     // Pass 1: items and projectiles (shape-based)
-    var i = 0
-    while (i < size) {
-      val entry = entries(i)
+    var entry = head
+    while (entry != null) {
       entry.entryType match {
         case EntityCollector.TYPE_ITEM => drawSingleItem(entry.ref.asInstanceOf[Item])
         case EntityCollector.TYPE_PROJECTILE => drawSingleProjectile(entry.ref.asInstanceOf[Projectile])
+        case EntityCollector.TYPE_FADING_PROJECTILE => drawFadingProjectile(entry.ref.asInstanceOf[FadingProjectile])
         case _ => // skip players in this pass
       }
-      i += 1
+      entry = entry.next
     }
     // Pass 2: players (shape shadow + sprite body)
-    i = 0
-    while (i < size) {
-      val entry = entries(i)
+    entry = head
+    while (entry != null) {
       entry.entryType match {
         case EntityCollector.TYPE_PLAYER => drawPlayerInterp(entry.ref.asInstanceOf[Player], entry.vx, entry.vy)
         case EntityCollector.TYPE_LOCAL_PLAYER => drawLocalPlayer(localVX, localVY)
         case EntityCollector.TYPE_LOCAL_DEATH => // handled by drawDeathAnimations()
         case _ => // skip items/projectiles in this pass
       }
-      i += 1
+      entry = entry.next
     }
   }
 
@@ -2757,13 +2761,69 @@ class GLGameRenderer(val client: GameClient) {
     }
 
     beginShapes()
-    val renderer = GLProjectileRenderers.getRenderer(proj.projectileType)
-    if (renderer != null) {
-      renderer(proj, sx, sy, shapeBatch, animationTick)
+    if (pDef.passesThroughWalls) {
+      // Travels over terrain: its shadow goes down here, in depth order, so a wall in front
+      // still covers it; the projectile itself is drawn lifted after all the terrain
+      // (drawFlyingProjectiles), so no wall block can slice through it on the way over.
+      val lift = GLProjectileRenderers.flyLift(proj, animationTick)
+      GLProjectileRenderers.drawFlightShadow(proj, sx, sy - surfaceLift(px, py), shapeBatch, animationTick, lift)
+      if (_flyingCount < _flying.length) { _flying(_flyingCount) = proj; _flyingCount += 1 }
     } else {
       // Reuse plr/plg/plb from intToRGB call above (same proj.colorRGB)
-      GLProjectileRenderers.drawGeneric(proj, sx, sy, shapeBatch, animationTick, plr, plg, plb)
+      GLProjectileRenderers.draw(proj, sx, sy, shapeBatch, animationTick, plr, plg, plb)
     }
+  }
+
+  // Wall-passing projectiles gathered during the depth pass; their bodies are drawn after it
+  private val _flying = new Array[Projectile](256)
+  private var _flyingCount = 0
+
+  /** Height of the surface at a world point in virtual px: the top face of an elevated tile
+   *  (wall, tree, mountain), 0 on flat ground and off the map. Lets a flier's shadow ride up
+   *  onto the wall it is crossing. */
+  private def surfaceLift(wx: Double, wy: Double): Float = {
+    val world = client.getWorld
+    val cx = Math.floor(wx + 0.5).toInt; val cy = Math.floor(wy + 0.5).toInt
+    if (cx < 0 || cy < 0 || cx >= world.width || cy >= world.height) return 0f
+    val tile = world.getTile(cx, cy)
+    if (tile.walkable) 0f
+    else Math.max(0f, tileCellH - 2f * HH - GLTileRenderer.getTrimTopPx(tile.id, 0))
+  }
+
+  /** Bodies of the wall-passing projectiles, lifted, drawn after every wall and entity in
+   *  the frame. Their shadows were laid down in the depth pass. */
+  private def drawFlyingProjectiles(): Unit = {
+    if (_flyingCount == 0) return
+    beginShapes()
+    var i = 0
+    while (i < _flyingCount) {
+      val proj = _flying(i)
+      _flying(i) = null
+      val px = proj.getX.toDouble; val py = proj.getY.toDouble
+      val sx = worldToScreenX(px, py).toFloat
+      val sy = worldToScreenY(px, py).toFloat - GLProjectileRenderers.flyLift(proj, animationTick)
+      intToRGB(proj.colorRGB)
+      GLProjectileRenderers.draw(proj, sx, sy, shapeBatch, animationTick, _rgb_r, _rgb_g, _rgb_b)
+      i += 1
+    }
+    _flyingCount = 0
+  }
+
+  /** A projectile that has just been stopped: drawn where it stopped, sinking into the
+   *  surface and fading, with a puff off whatever it struck (TerrainImpact.FADE_MS long). */
+  private def drawFadingProjectile(fp: FadingProjectile): Unit = {
+    val t = (_frameTimeMs - fp.startMs).toFloat / TerrainImpact.FADE_MS
+    if (t >= 1f) return
+    val proj = fp.proj
+    val px = proj.getX.toDouble; val py = proj.getY.toDouble
+    val lift = if (ProjectileDef.get(proj.projectileType).passesThroughWalls)
+      GLProjectileRenderers.flyLift(proj, animationTick) else 0f
+    val sx = worldToScreenX(px, py).toFloat
+    val sy = worldToScreenY(px, py).toFloat - lift
+    intToRGB(proj.colorRGB)
+    beginShapes()
+    GLProjectileRenderers.drawAbsorbed(proj, sx, sy, shapeBatch, animationTick, Math.max(0f, t),
+      fp.hitTerrain, fp.tileColor, _rgb_r, _rgb_g, _rgb_b)
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -3894,11 +3954,12 @@ class GLGameRenderer(val client: GameClient) {
     }
 
     // Smooth drain bar (white ghost segment that shrinks behind the real bar)
-    val existingSmooth = smoothHealthMap.get(playerId)
-    val smoothPct = if (existingSmooth != null) existingSmooth.floatValue() else pct
+    var smoothSlot = smoothHealthMap.get(playerId)
+    if (smoothSlot == null) { smoothSlot = Array(pct); smoothHealthMap.put(playerId, smoothSlot) }
+    val smoothPct = smoothSlot(0)
     val newSmooth = if (smoothPct > pct) Math.max(pct, smoothPct - 0.8f * (1f / 60f))
                     else pct // snap to actual on heal
-    smoothHealthMap.put(playerId, newSmooth: java.lang.Float)
+    smoothSlot(0) = newSmooth
     if (newSmooth > pct) {
       shapeBatch.fillRect(barX + barW * pct, barY, barW * (newSmooth - pct), barH, 1f, 1f, 1f, 0.45f)
     }
@@ -4006,6 +4067,25 @@ class GLGameRenderer(val client: GameClient) {
     renderLobbyHUD(screenW, screenH)
     renderChat(screenW, screenH)
     if (client.isPracticeMode) renderPracticeHUD(screenW, screenH)
+    renderLeavePrompt(screenW)
+  }
+
+  /** "Press Esc again", shown for the few seconds the first Esc arms leaving the match. */
+  private def renderLeavePrompt(screenW: Int): Unit = {
+    if (_frameTimeMs >= client.leaveConfirmUntil) return
+    val text =
+      if (client.isPracticeMode) Messages.t("Press Esc again to end practice")
+      else Messages.t("Press Esc again to leave the match")
+    val textW = fontMedium.measureWidth(text)
+    val boxW = textW + 36f
+    val boxH = 36f
+    val boxX = screenW / 2f - boxW / 2f
+    val boxY = 84f
+    beginShapes()
+    shapeBatch.fillRoundedRect(boxX, boxY, boxW, boxH, 8f, 0.10f, 0.03f, 0.05f, 0.85f)
+    shapeBatch.strokeRect(boxX, boxY, boxW, boxH, 1f, 0.9f, 0.3f, 0.35f, 0.6f)
+    beginSprites()
+    fontMedium.drawTextOutlined(spriteBatch, text, screenW / 2f - textW / 2f, boxY + (boxH - fontMedium.charHeight) / 2f, 1f, 0.85f, 0.85f)
   }
 
   private def renderInventory(screenW: Int, screenH: Int): Unit = {
@@ -4494,7 +4574,9 @@ class GLGameRenderer(val client: GameClient) {
     // Kill feed — collect entries first (needed before shapes pass)
     val now = _frameTimeMs
     var feedY = 10f
-    val localName = I18n.characterName(client.getSelectedCharacterDef)
+    // The feed names the local player "You", not by character; matching the character name
+    // missed our own kills and lit up anyone else playing the same character.
+    val localName = Messages.t("You")
     _feedCount = 0
     val feedIter = client.killFeed.iterator()
     while (feedIter.hasNext && _feedCount < MAX_FEED_ENTRIES) {
@@ -4794,6 +4876,8 @@ class GLGameRenderer(val client: GameClient) {
     fontSmall.drawTextOutlined(spriteBatch, accText, 12, 126)
     val bestText = Messages.t("Best Combo: {0}", client.practiceBestCombo)
     fontSmall.drawTextOutlined(spriteBatch, bestText, 12, 144)
+    // A session runs 30 minutes, so say how to end it sooner
+    fontSmall.drawTextOutlined(spriteBatch, Messages.t("[Esc] End practice"), 12, 166, 0.6f, 0.65f, 0.7f, 0.8f)
 
     // --- "PRACTICE" label replacing timer ---
     val practiceText = Messages.t("PRACTICE")
@@ -5527,7 +5611,9 @@ class GLGameRenderer(val client: GameClient) {
       val spawnChance = 0.35f + chargeT * 0.35f
       if (rng.nextFloat() < spawnChance) {
         val sx = worldToScreenX(proj.getX, proj.getY).toFloat
-        val sy = worldToScreenY(proj.getX, proj.getY).toFloat
+        val sy = worldToScreenY(proj.getX, proj.getY).toFloat -
+          (if (ProjectileDef.get(proj.projectileType).passesThroughWalls)
+            GLProjectileRenderers.flyLift(proj, animationTick) else 0f)
         intToRGB(proj.colorRGB)
         val pr = _rgb_r; val pg = _rgb_g; val pb = _rgb_b
         // Particle alpha and size scale with charge

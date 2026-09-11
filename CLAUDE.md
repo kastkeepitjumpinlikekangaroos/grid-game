@@ -38,6 +38,13 @@ bazel run //src/main/scala/com/gridgame/client:client -- --telemetry
 # F7 cycles it in game.
 bazel run //src/main/scala/com/gridgame/client:client -- --quality=low
 GRIDGAME_QUALITY=medium bazel run //src/main/scala/com/gridgame/client:client
+
+# Run the client with no sound at all (automated runs, a misbehaving audio device)
+GRIDGAME_AUDIO=off bazel run //src/main/scala/com/gridgame/client:client
+
+# Performance dev tools (see Client Memory & Performance)
+bazel run //src/main/scala/com/gridgame/client:render_bench   # a busy match, no server
+bazel run //src/main/scala/com/gridgame/client:ui_bench       # the JavaFX menus
 ```
 
 ### macOS: proper app name/icon in Dock & Cmd+Tab
@@ -207,8 +214,8 @@ When a match starts, `ClientMain.showGameScene()` hides the JavaFX Stage and cre
 | File | Lines | Purpose |
 |------|-------|---------|
 | `GLGameRenderer.scala` | ~5850 | Main renderer: tiles, players, projectiles, items, status effects, HUD, aim arrow, backgrounds, death/teleport/explosion animations |
-| `GLProjectileRenderers.scala` | ~5560 | All 150 projectile type renderers (11 pattern factories + 30 specialized renderers + the local-frame silhouette system) |
-| `ShapeBatch.scala` | ~380 | Batched colored 2D primitives: fillRect, fillOval, fillOvalSoft, fillPolygon, fillArcBand (ring segment with an alpha ramp — gauges, crescents, shockwaves), fillStarFlare (4-point glint), strokeLine, strokeLineSoft, strokeArc, strokeOval, strokePolygon. Supports additive blend mode toggle. |
+| `GLProjectileRenderers.scala` | ~5800 | All 150 projectile type renderers (15 pattern factories + 33 specialized renderers + the local-frame silhouette system) |
+| `ShapeBatch.scala` | ~380 | Batched colored 2D primitives: fillRect, fillOval, fillOvalSoft, fillPolygon, fillArcBand (ring segment with an alpha ramp — gauges, crescents, shockwaves), fillStarFlare (4-point glint), strokeLine, strokeLineSoft, strokeArc, strokeOval, strokePolygon. Supports additive blend mode toggle, plus an alpha multiplier and a scale-about-pivot applied to every vertex (`setAlphaMultiplier` / `setScaleAbout`; reset by `begin`). |
 | `SpriteBatch.scala` | ~200 | Batched textured quads with per-vertex tint/alpha. Flushes on texture change. |
 | `ShaderProgram.scala` | ~190 | GLSL shader compilation + embedded shader source: ColorShader (pos+color), TextureShader (pos+texcoord+color), BloomExtract, GaussianBlur, Composite (bloom+vignette+overlay) |
 | `PostProcessor.scala` | ~230 | Post-processing FBO pipeline: Scene FBO → Bloom extract (half-res) → Blur H → Blur V → quarter-res pair → Composite |
@@ -227,7 +234,7 @@ When a match starts, `ClientMain.showGameScene()` hides the JavaFX Stage and cre
 |------|---------|
 | `GameCamera.scala` | Holds visualX/Y, smooth lerp, screen shake, zoom. Provides camera offsets. |
 | `IsometricTransform.scala` | `worldToScreen(wx,wy,cam)`, `screenToWorld(sx,sy,cam,zoom)` |
-| `EntityCollector.scala` | Collects items/projectiles/players by grid cell for depth-sorted rendering |
+| `EntityCollector.scala` | Collects items/projectiles/players by grid cell for depth-sorted rendering. Cells are a flat grid over the visible window, each a linked list of pooled entries (`takeCell` / `takeRemaining`) — no map, no boxed keys, no allocation per frame |
 
 ### Rendering Pipeline
 ```
@@ -254,10 +261,21 @@ whatever the offset, orphan+`glBufferSubData` 3.7us, and the unsynchronized mapp
 330-vertex HUD flush was stalling for 1.7ms. The ring plus orphan-on-wrap is what makes
 `UNSYNCHRONIZED` safe: no byte is ever rewritten while a draw that reads it is in flight.
 
+Both batches map with `nglMapBufferRange` (a raw address) rather than `glMapBufferRange`,
+which wraps every mapping in a new `ByteBuffer` because each flush maps a different range,
+and write vertices with `MemoryUtil.memPutFloat` into their staging memory rather than
+`FloatBuffer.put`. That makes a primitive's cost its arithmetic: the puts' limit checks and
+position stores were the largest single cost of building a busy frame. Every primitive must
+reserve its vertices with `ensureCapacity` before writing them; `vertex` only has a backstop.
+
 ### Projectile Rendering System
 All 150 projectile types are registered in `GLProjectileRenderers.registry` (`Map[Byte, Renderer]`, flattened into `_rendererLUT` for O(1) lookup with no `Option` allocation). Projectiles use **standard alpha blending** for solid, visible shapes — the bloom post-processor provides natural glow on bright elements.
 
-Type alias: `type Renderer = (Projectile, Float, Float, ShapeBatch, Int) => Unit`
+`Renderer` is a single-method trait, `apply(proj, sx, sy, sb, tick)`, not a
+`(Projectile, Float, Float, ShapeBatch, Int) => Unit`: `scala.Function5` isn't specialized,
+so calling one boxed both coordinates and the tick — three allocations per projectile per
+frame. Factory lambdas (`(proj, sx, sy, sb, tick) => …` returned as a `Renderer`) convert to
+it directly; a method in the registry goes through `asRenderer(drawX)`, not `(drawX _)`.
 
 #### Silhouettes: how a projectile says whose ability it is
 
@@ -287,18 +305,76 @@ vertex, which can only ever describe a star: an axe, a katana, a femur and a pla
 all came out as the same spinning lens. A local-frame silhouette can carry a haft at one
 end and a head at the other, so it still reads as an axe at every spin angle.
 
-**11 pattern factories** (configurable colour + size, most also taking a `kind`):
+#### Heads sit on the hitbox
+
+`(sx, sy)` is where the projectile's hitbox is. Draw the thing that hits **there**, and let
+anything elongated — a trail, a tether, a wake, the bolt a lightning strike just drew —
+trail *behind* it through `fadeLine`, which narrows and fades to nothing instead of ending
+in a hard edge.
+
+Never draw a body out *ahead* of `(sx, sy)`. Seven renderers used to (via a `beamTip`
+helper, since removed): beams, the charge shot, the tentacle, the tethers, lightning, the
+rocket and the shark jaw each ran a line `worldLen` world units forward and capped it with
+a disc. That produced two problems:
+- **It looked wrong.** A stroked line with a ball on the end is the silhouette of a snake,
+  not of an ability, and the whip and vine styles wiggled along their length so they
+  literally slithered.
+- **It lied about the hitbox.** The disc that read as the projectile's head arrived 100–150px
+  before the damage did.
+
+#### Terrain: stopped by it, or flying over it
+
+**Collision cells match the drawn tiles.** The renderer draws tile `(c, r)` centred on world
+`(c, r)`, so it covers `[c − 0.5, c + 0.5)`; `Projectile.getCellX/Y` is `floor(x + 0.5)` to
+match. It used to truncate (`x.toInt`), which put every wall half a tile down-screen of its
+sprite: shots heading toward the camera sank halfway into wall blocks (and, bucketed into the
+wall's own draw slot, were drawn *over* the block face) before vanishing, shots heading away
+stopped short, and projectiles flew half a tile off the bottom edges of the map.
+`Projectile.ricochet` snaps to the faces at `c ± 0.5` for the same reason.
+`ProjectileTerrainTest` pins all of this.
+
+**A stopped projectile sinks into what it hit.** The server still removes a projectile on the
+first half-cell sub-step that lands in a blocking cell, so the DESPAWN position can be up to
+half a cell *inside* the wall. On DESPAWN the client runs `TerrainImpact.resolve`, which walks
+back along the heading to the wall face, stops the projectile there, and keeps it in
+`GameClient.fadingProjectiles` for `TerrainImpact.FADE_MS` (260 ms). `EntityCollector` puts it
+in the depth pass, so walls in front still cover it, and it is dropped once expired.
+`GLProjectileRenderers.drawAbsorbed` draws it shrinking toward the impact point while it fades,
+with a contact flash, a ring across the face and chips kicked back in the colour of the tile it
+struck (`Tile.color`: grey off stone, spray off water, dust at the map edge). Explosives still
+explode, now centred on the face. A despawn at the end of range in open ground fades the same
+way, without the puff.
+
+The fade and shrink come from `ShapeBatch.setAlphaMultiplier` / `setScaleAbout`, applied in
+`vertex`, so any renderer can be faded or shrunk without knowing it. `begin` resets them.
+
+**Wall-passers fly.** Types with `passesThroughWalls` are drawn `flyLift` above their ground
+point (20 px with a slow bob). Their bodies go in `drawFlyingProjectiles`, after the depth pass,
+so no wall block can slice through them. Their shadow goes down *in* the depth pass, on the
+surface below: `surfaceLift` raises it onto the top face of an elevated tile, so the shadow
+climbs over the wall the projectile clears. Their particle trails spawn at the same height.
+
+**15 pattern factories** (configurable colour + size, most also taking a `kind`):
 - `energyBolt(r, g, b, size, style)` — glowing orb. `style` picks an **outer** silhouette
   (0 plain + leading crescent, 1 fire tongues, 2 rune ring, 3 soul wisp with a tail and
   eyes, 4 nebula cloud). The outer shape is what distinguishes bolts; inner detail is
   invisible at the size a projectile is actually displayed.
-- `beamProj(r, g, b, worldLen, width, style)` — directional beam. 8 styles: laser, drain
-  (back-flowing siphon), whip, ice, vine, stone, railgun, gravity.
+- `laserBolt(kind, …)` — blaster bolt: a short capsule, round at the hitbox and drawn to a
+  point behind, with a dissolving afterglow. Kinds: plain, prismatic fringes (Photon),
+  rings of force pulsing off the head (Cyclops).
+- `railSlug(…)` — a dense dart shedding electromagnetic coil rings that widen and fade
+  behind it (Railgunner).
+- `siphonVortex(kind, …)` — drain abilities as a travelling whirlpool, motes spiralling
+  *into* a dark core: blood sheds drips, life drain beats a heart, soul drain stares back.
+- `graspingClaw(kind, …)` — grab-and-pull as three talons curling shut around a knot:
+  thorny vine with leaves (vine whip, root pull) or suckered tentacles.
+- `gorgonEye(petrify)` — Medusa's gaze as a blinking almond eye with a slit pupil, ringed
+  by crumbling stone.
 - `bladeSpinner(kind, …)` — thrown weapon tumbling end over end (axe, bone axe, katana,
   chef's knife, sword, femur, cursed blade, playing card). Sells the rotation with a
   swept arc band and silhouette ghosts rather than by smearing the shape.
 - `flyingShaft(kind, …)` — shaft flying point-first (spear, arrow, poison arrow, blowdart,
-  thorn, ice spike).
+  thorn, ice spike, void lance).
 - `spinner(r, g, b, size, pts)` — polar star; correct for the one thing that *is* a star
   (shuriken).
 - `lobbed(kind, …)` — object on an arc (bomb, flask, shovel, hammer, horn, spiked mine,
@@ -309,16 +385,23 @@ end and a head at the other, so it still reads as an axe at every spin angle.
 - `wave(kind, …)` — crescent sweep built from a real arc band whose centre is solved in
   the ellipse's own parameter space so it stays square to the travel direction at every
   heading. Kinds: wind, sand, sonic, flame, acid, impact, water.
-- `chainProj(kind, …)` — tether: interlocking metal links with an anchor hook, or a rope
-  of two braided strands with a grappling hook. Both sag between caster and head.
+- `chainProj(kind, …)` — thrown restraint: a grappling hook with rope paying out behind
+  it only as far as the throw has travelled; a tumbling manacle trailing swinging links;
+  a loop of links spinning around a padlock.
 - `bulletProj`, `fistProj` — small fast round; gauntleted punch.
 
-**30 specialized `draw*` renderers** for one-off projectiles: fireball (spiral fire arms),
+**33 specialized `draw*` renderers** for one-off projectiles: fireball (spiral fire arms),
 lightning (`lightningBolt(r, g, b)` — colour is a parameter so a storm reads yellow and a
-tesla coil reads arc-cyan), boulder (faceted tumbling hull), shark jaw, bat swarm, shadow
-bolt, inferno blast, geyser, wail, raise dead, and more.
+tesla coil reads arc-cyan), frost comet (ice beam), grab paw, bandage wad, tongue lash,
+boulder (faceted tumbling hull), shark jaw, bat swarm, shadow bolt, inferno blast, geyser,
+wail, raise dead, and more.
 
-**Two things to watch when editing this file:**
+**Things to watch when editing this file:**
+- **Kind constants must be defined above `registry`.** `registry` is a `val` built while
+  the object initialises, in textual order, so a `private val FOO_KIND = 3` declared
+  *below* it still reads `0` when `factory(FOO_KIND, …)` is evaluated — it silently
+  renders the wrong kind. New factories and their constants go in the sections above the
+  registry.
 - `fillArcBand` ramps alpha **along the sweep**, not radially. A radial falloff has to be
   built by nesting bands at constant alpha; using the ramp for it leaves one horn of a
   crescent bright and the other invisible.
@@ -327,11 +410,13 @@ bolt, inferno blast, geyser, wail, raise dead, and more.
   statement level rather than a `{ … }` wrapper.
 
 To add a new projectile renderer:
-1. Add an entry to the `registry` map in `GLProjectileRenderers`
+1. Add an entry to the `registry` map in `GLProjectileRenderers` (`asRenderer(drawX)` for a
+   `draw*` method, the factory call as it is for a pattern)
 2. Either use a pattern factory (`energyBolt(r, g, b, size, style)`, `bladeSpinner(kind, …)`,
    …), add a `kind`/`Part` array if the object has its own silhouette, or write a
    specialized `draw*` method
-3. The renderer receives screen-space coordinates (sx, sy) already transformed from world space
+3. The renderer receives screen-space coordinates (sx, sy) already transformed from world space.
+   That point is the hitbox: draw the head there and trail anything elongated behind it
 4. Check it in the gallery (below) — judge at the size the player sees, over all three
    terrain bands
 
@@ -343,11 +428,13 @@ bazel run //src/main/scala/com/gridgame/client:projectile_gallery -- out/dir --b
 ```
 
 Renders every registered projectile type into contact-sheet PNGs (10 pages x 4 animation
-ticks) plus an `index.txt` naming each cell. Each cell draws one projectile over real
+ticks) plus an `index.txt` naming each cell. It also writes `impacts_NN.png` (projectiles sinking
+into a wall block across the fade) and `flyers_00.png` (wall-passers crossing one). Each cell draws one projectile over real
 isometric tiles banded dark stone / grass / sand, at `CAMERA_ZOOM`, with a 48-unit player
 footprint box for scale — a projectile that reads on one ground can disappear on another,
 and judging any of this at 1:1 flatters it by a third. This is the loop to use for any
-projectile art change; it needs no server, no login and no match.
+projectile art change; it needs no server, no login and no match. Its target compiles only the
+ten GL files it needs, so it keeps building while unrelated client code is mid-edit.
 
 `--bench` times a screenful of projectiles against a ground-only baseline, so an art
 change can be checked against the frame budget instead of guessed at. Measured on this
@@ -382,6 +469,12 @@ Tiers also gate: bloom, the quarter-res wide bloom, composite sharpen and grain,
 dynamic light map, water reflections, the animated tile-overlay budget, background cache
 interval, and particle emission rate.
 
+Choosing Low outright (`--quality=low` / `GRIDGAME_QUALITY=low`, not auto) also sets
+`prism.allowhidpi=false`, so the JavaFX menus draw at 1x on a HiDPI screen and the OS scales
+them up: softer text, a quarter of the pixels per repaint, and a quarter-size window surface
+pool (see Client Memory & Performance). It must be set before JavaFX starts, which is why
+auto — which only steps down mid-match — can't do it.
+
 ### Key Design Decisions
 - **Tiles are culled against the visible diamond, not its bounding box** — the screen rect
   maps to a diamond in world space, whose AABB holds ~2.7x as many cells as are on screen.
@@ -408,10 +501,95 @@ interval, and particle emission rate.
   Recognisable objects are now authored as convex `Part` silhouettes in a local frame and
   stamped per frame (see *Projectile Rendering System*), and the family factories take a
   `kind`. Colour differentiates within a family; shape differentiates between them.
+- **A projectile's head sits on its hitbox** — nothing is drawn ahead of `(sx, sy)`; trails,
+  tethers and wakes stream out behind it and fade (`fadeLine`). Beams, tethers, lightning,
+  the rocket and the jaw used to run a line several tiles ahead of the hitbox to a disc,
+  which both looked like a snake and showed the head arriving 100–150px before the damage.
+- **Projectile collision uses the drawn tile extents** — `Projectile.getCellX/Y` is
+  `floor(x + 0.5)` because tiles are drawn centred on integer coordinates. Truncating put
+  walls and map edges half a tile off their sprites, which is what made projectiles glitch
+  into walls and off the map. A stopped projectile then sinks into the face it struck rather
+  than blinking out, and wall-passers are drawn flying over the terrain.
 - **Standard alpha blending for projectiles** — additive blending (`GL_SRC_ALPHA, GL_ONE`) makes projectiles invisible on bright terrain and removes all visual distinction. Standard blending with high alpha (0.7-0.95) produces solid, visible, distinct shapes. Bloom post-processor handles glow naturally.
 - **GLFW window swap** — hiding JavaFX Stage and creating a GLFW window avoids FBO→WritableImage pixel-copy overhead. Both use Cocoa NSWindows on macOS and coexist safely.
 - **AnimationTimer game loop** — fires on the FX Application Thread (main thread on macOS), which is required for both GLFW and OpenGL calls. No threading complexity.
 - **JavaFX UI retained** — Login, lobby, character selection, and scoreboard remain in JavaFX. Only in-game rendering uses OpenGL.
+
+## Client Memory & Performance
+
+The target is an old machine with little RAM. Two dev tools measure it, and any change that
+could move these numbers should be checked with them rather than guessed at:
+
+```bash
+# A busy match (16 players, 150 projectiles of every type, deaths, explosions) through the
+# real GLGameRenderer in a real window, no server: frame CPU/GPU time, bytes allocated per
+# frame on the render thread, GC count, process footprint. --quality=, --players=,
+# --projectiles=, --w= --h=, --screenshot=out.png
+bazel run //src/main/scala/com/gridgame/client:render_bench -- --quality=low
+
+# The JavaFX menus: the character select screen, then a match start (stage hidden), a second
+# visit, and the same screen idle — live/committed heap, CPU, footprint for each phase.
+bazel run //src/main/scala/com/gridgame/client:ui_bench
+```
+
+On macOS both print the footprint as Activity Monitor counts it, split into `graphics`
+(GPU memory), `IOSurface` (window surfaces), and `VM_ALLOCATE` (mostly the Java heap).
+
+### In game: the render thread allocates next to nothing
+A busy frame allocated 167KB (10MB/s) and now allocates ~3.5KB, with no GC during a
+15-second bench run where there were nine. What it took, and what to keep that way:
+- `EntityCollector` is a flat grid of linked lists, not a `Map[Long, ArrayBuffer]` — the
+  boxed cell key looked up for every visible cell was two thirds of all allocation, and
+  cells the renderer removed from the map never returned their buffers to the pool.
+- `GLProjectileRenderers.Renderer` is a trait, not a `Function5` (which boxes its floats).
+- Batches map and write through raw addresses (see Batch Management).
+- `GLFontRenderer` looks glyphs up in a flat Latin-1 table / `LongMap` — a
+  `getOrElseUpdate` builds a closure per character drawn.
+- Per-frame state lives in primitive arrays updated in place: no `java.lang.Float` map
+  values, no destructured tuples in a loop.
+
+The same bench measured frame-build CPU ~20% lower (2.9 vs 3.6ms at Low).
+
+### Menus: every changed frame repaints the whole window
+JavaFX on macOS presents the whole window for any change, however small, so the menus' cost
+is set by how often something on them moves, not by what moves: a 10px square animating at
+60 fps on an otherwise empty full-screen window burns ~60% of a core on a 5K display. Rules
+the screens follow:
+- **Animations are stepped and pause when nobody's looking.** `steppedLoop` (ClientMain)
+  runs looping decoration at 12 fps; the character panel's ability previews run at 30 fps
+  with the sprite steps on the same pulses. All of it holds still while the window is in
+  the background or has had no input for 30s (`UiActivity`). Measured interleaved on a 5K
+  display, character select went from 50% of a core to 40% in use and 1% idle (it used to
+  cost the same idle as in use), and the idle login screen from 35-90% to ~2%.
+- **No per-frame images.** `SpriteGenerator` keeps whole sheets — thumbnails decoded at the
+  size the grid draws them, on JavaFX's background loader — and draws frames with a source
+  rectangle. It used to keep 16 `WritableImage`s per character forever: 117MB of heap and
+  1792 GPU textures after browsing the grid.
+- **Only on-screen grid cells are drawn**, when their frame changes.
+- **`ViewportCache.disable` on any `ScrollPane` around animated content.** ScrollPane's skin
+  caches its viewport as a bitmap; around canvases that animate, every frame re-renders the
+  whole viewport into a texture as big as the viewport and draws it again.
+- **Screens don't outlive themselves.** `switchScreen` unregisters the listeners that update
+  a screen's controls (they held the whole scene graph, and the lobby chat kept rebuilding
+  off screen through the next match), and `showGameScene` swaps the hidden stage's scene
+  for an empty one and drops the sprite cache, so none of the menus stay resident in a match.
+
+What none of this fixes: a visible JavaFX window on macOS builds up a pool of about 15
+window-sized IOSurfaces as it keeps presenting — ~650MB on a 5K display, ~120MB at 1080p —
+and only gives it back when the window is hidden (a match start does). It is Core
+Animation's pool behind the `CAOpenGLLayer` JavaFX draws into; nothing in JavaFX's API sizes
+it, a resize doesn't release it, and JavaFX 21.0.12 and 23.0.2 behave exactly like 21.0.1
+(measured interleaved). Fewer presents only delay it; Low quality's 1x menus quarter it. The
+GLFW game window's surfaces don't grow. When measuring the menus, keep the window visible
+and unobstructed: an occluded window presents less and flatters every number.
+
+### JVM heap
+The heap is capped and started small (`-Xms64m -Xmx768m` in the client's `jvm_flags`, and
+passed through `--java-options` by `scripts/build_macos_app.sh` / `build_windows_exe.ps1`);
+the live set is well under 100MB. `ClientMain.tuneHeap` sets, at runtime so it applies to
+`java -jar` too, `G1PeriodicGCInterval=30000` and `Min/MaxHeapFreeRatio=10/30`: HotSpot only
+returns memory after a concurrent cycle or full GC, which a game this light on allocation
+rarely triggers, so without them the heap stayed at its high-water mark in the menus.
 
 ## Asset Generation
 
@@ -518,33 +696,139 @@ generated.
 
 ```bash
 # Requires numpy: pip install numpy
-python3 scripts/generate_sounds.py   # -> sounds/*.wav (80 files, ~5s)
+python3 scripts/generate_sounds.py   # -> sounds/*.wav (182 files, ~20s)
+
+# Look at what you just made — the contact sheet is the review loop (see below).
+# Needs Pillow as well as numpy: pip install numpy Pillow
+python3 scripts/sound_gallery.py /tmp/sndgallery
 ```
 
-`scripts/generate_sounds.py` is a small sound-design toolkit, not just tone+noise
-bursts — that distinction is what keeps sounds from reading as cheap beeps. It provides
-FM synthesis (`fm`), a time-varying resonant state-variable filter (`svf`, for sweeps)
-plus fast static resonant filters (`res_lp`/`res_bp`), `saturate`, `bitcrush`,
-convolution `reverb`, `delay_fx`, `chorus`, and vowel `formant` filters (what makes the
-wail/moan/growl sounds read as a creature rather than filtered noise). Every sound is
-layered as **transient → body → texture → tail**.
+`scripts/generate_sounds.py` is a sound-design toolkit, not tone+noise bursts. Alongside
+FM (`fm`), a time-varying resonant state-variable filter (`svf`), fast static resonant
+filters (`res_lp`/`res_bp`), causal RBJ biquads (`eq`, used wherever a transient or the
+master EQ is involved — the zero-phase FFT filters pre-ring, which puts a ghost tick
+before a click), `saturate`, `bitcrush`, convolution `reverb`, `delay_fx` and `chorus`,
+three engines carry most of the character:
+
+- **`modal` + `MATERIALS`** — a struck object rings at frequency ratios fixed by its
+  shape, each partial decaying at its own rate. Those two tables *are* the difference
+  between iron, wood, bone, stone, ice, glass, chitin and flesh; no amount of filtering
+  noise gets there. Every impact goes through `strike` (= `modal` + the bright edge of
+  the contact).
+- **`cry`/`glottal`/`tract`** — source-filter voice synthesis: a glottal pulse train with
+  jitter and shimmer through formants that *move*. Every howl, screech, wail, bellow,
+  roar and death exhale in the game comes out of this one throat and differs by pitch
+  contour, vowel path and roughness.
+- **`air`** — a whoosh is pink noise through a resonance tracing a doppler arc, with slow
+  turbulence, an optional edge tone, and a `body` layer an octave and a half below
+  standing in for the mass of air displaced. Without that body a swing is 100% 2-5kHz
+  hiss.
+
+Attacks are then assembled by thirteen family engines (`bolt`, `beam`, `swing`, `thrown`,
+`shaft`, `lobbed`, `slam`, `burst`, `wavefront`, `gun`, `chain`, `chime`, `elec`,
+`machine`) plus ~40 one-offs. Keeping families as engines rather than 120 bespoke
+functions is what lets one quality change reach the whole roster, the same reason every
+sprite goes through `sprite_base.generate_character`.
 
 Generators output mono; every sound then goes through the shared `master()` chain —
-`transient_shape` → `compress` → `sub_boost` → `stereoize` (decorrelated width) →
-`stereo_reverb` (separate impulse response per channel) → optional `auto_pan`/`ping_pong`
-→ `limit`. Per-sound `level`s give the mix real dynamics (a stinger is quiet, thunder is
-loud) instead of normalizing everything to the same loudness. Output is 16-bit **stereo**
-44.1kHz; SFX tails are trimmed at -52dB and capped at 2.2s, since long quiet tails cost
-file size but are inaudible under gameplay.
+`transient_shape` → `compress` → `sub_boost` → `presence_dip` → `air_tame` → `stereoize`
+(decorrelated width) → `stereo_reverb` (separate impulse response per channel) → optional
+`auto_pan`/`ping_pong` → `stereo_glue` (music only) → limiting. Per-sound `level`s give
+the mix real dynamics (a thrown card is quiet, thunder is loud) — the set spans ~12dB.
+Output is 16-bit **stereo** 44.1kHz. `sounds/` is ~33MB, the largest asset directory; the
+two music loops are ~8.5MB of it.
 
-Pitched attacks are tuned to **A minor**, the key of both music tracks, so a firefight
-stays harmonically coherent. `sounds/` is ~26MB, the largest asset directory — if that
-becomes a problem, the two music loops are ~8.5MB of it.
+Three rules the earlier version of this file broke, and why they matter:
 
-- `sounds/atk_*.wav` — one sound per projectile-visual archetype. `AbilitySounds.scala`
-  maps each of the 150 `ProjectileType` ids to one of these files, mirroring the
-  many-to-one grouping already used by `GLProjectileRenderers.registry` (types that
-  share a renderer share a sound).
+- **Length is bounded by `SHOOT_COOLDOWN_MS` (500).** `MAX_DUR` caps each sound by class
+  (`bolt` 0.55s, `melee` 0.6s, `ability` 0.9s, `heavy` 1.5s). An attack with more than
+  ~0.5s of audible energy is still sounding when its own next shot fires; stacked across
+  a firefight that is the difference between distinct attacks and mush.
+- **`presence_dip` (a wide −3.5dB bell at 3.2kHz) is applied to every SFX.** The ear's
+  sensitivity peaks at 3-4kHz, so 150 attacks all piling energy there is physically
+  tiring inside a minute — more than any individual sound, that was what made the old
+  set shrill. Median 2-5kHz energy fraction is now 0.03 (it was 0.17, with a long tail
+  up to 0.76).
+- **Identity goes in the body, not on top.** A bolt's fundamental sits at 90-350Hz with a
+  short sub under it, and the timbre that names the school of magic rides on top at about
+  −12dB. Built the other way round — all identity, no body — bolts read as UI beeps and
+  vanish the moment anything else plays.
+
+#### Judging a change: the spectrogram gallery
+
+`scripts/sound_gallery.py` renders every sound as a log-frequency spectrogram
+with a dB envelope strip underneath, 24 to a contact sheet. It exists for the
+same reason `projectile_gallery` does — 182 assets cannot be judged one at a
+time, and the faults that matter are the ones visible when they sit side by
+side. **Run it after any change here.** What to look for:
+
+| in the picture | in the sound |
+|---|---|
+| parallel lines sloping down | a pitch glide. One is a cartoon "boing"; a whole family doing it is why a set reads as generic |
+| horizontal lines after the onset | a struck object ringing. A few, inharmonic, is the sound of hitting a metal bucket |
+| a flat-topped envelope strip | no shape. The ear reads shape first, so this is heard as generic texture however good the texture is |
+| energy filling 60Hz-16kHz | no focus. Once every sound occupies the whole range, none of them is distinguishable |
+| no vertical stripe at the onset | no transient, so no impact |
+
+Three faults found exactly this way, after the numbers said the set was fine:
+
+- **every bolt was a slide whistle.** `bolt()`'s pitch envelope slid a harmonic
+  stack down most of an octave across the whole sound. It is now a fast, small
+  settle inside the first 35ms — a launch, not a swoop.
+- **nothing decayed.** Generator-stage reverb and the master send were both
+  near 60% wet, in series, which turned a bolt that reaches -44dB by 250ms dry
+  into -20dB. Hence `GEN_REVERB` and, as a backstop, `enforce_shape()`: a
+  per-class amplitude *ceiling* (flat for `hold`, then down to -60dB over
+  `t60`) that ducks anything refusing to fall away. Deliberately held sounds —
+  beams, howls, gas clouds — are listed in `SUSTAINED` and get the `drone`
+  contour instead.
+- **everything was full-spectrum.** Summing five layers and saturating the
+  result fills the whole band on every sound. `air_tame` is now a real -7dB
+  shelf at 9kHz, with `BRIGHT`/`SPARK` for the sounds that have earned their
+  top end (ice, glass, sparkle, electricity, the hitmarker).
+
+**The clang rule.** A modal bank is a *colour under* an impact, never the impact itself.
+Four ways to turn the whole game into someone hitting a metal bucket, all of which this
+file has done at some point:
+
+- letting the partials lead — `MATERIALS["ring"]` is 0.14-0.55 for everything except
+  `bell` for exactly this reason, and the decay rates are weapon rates, not the
+  instrument rates a physical-modelling paper gives you;
+- ringing a material once per rotation in `thrown()`, which is *literally* banging on
+  metal at 7Hz. The tumble is air being chopped; the weapon rings once, on release;
+- building a debris scatter out of `strike()` — a dozen tuned resonators inside half a
+  second. `debris()` exists for this: each grain is its own short filtered noise burst;
+- a high-Q resonance riding on noise (`air(q=…)` is capped at 3.0). Narrow resonance on
+  noise is the sound of blowing across a bottle, and it is hollow in the same way on
+  every sound that uses it.
+
+`thud()` covers the other half: a body impact is one damped sine with no overtone series.
+A drum-membrane mode set at 80Hz is a tom, and a tom under every hit is a bucket.
+
+Avoid also: sustained pure tones (the old horn was a 2.2s sine stack — a foghorn),
+melodic arpeggios as attacks (the old data bolt was a five-note chiptune riff fired twice
+a second), tremolo rates in the 20-60Hz roughness band (the old stinger was a kazoo), and
+a global `tanh` on the master bus (it costs several dB of crest on *every* sound —
+`_soft_knee` rounds off only what is above the knee).
+
+- `sounds/atk_*.wav` — one sound per attack archetype. `AbilitySounds.scala` maps all 150
+  `ProjectileType` ids onto them, mirroring the many-to-one grouping already used by
+  `GLProjectileRenderers.registry` (types that share a renderer usually share a sound),
+  **plus a per-character override table**. A handful of projectile types are shared by
+  characters with nothing in common — `TREMOR_SLAM` is a barbarian splitting the earth
+  *and* a wolf's howl *and* a banshee's wail; `FIREBALL` is a wizard's fireball *and* a
+  chef's flambé *and* an alchemist's thrown potion — so `forAttack(projectileType,
+  characterId)` checks `(character, projectile)` first. `GameClient.characterIdOf`
+  resolves the shooter at the call site.
+- **A projectile type names the object, not who is holding it.** Six characters "throw a
+  boulder" and five "swipe a claw"; the base sound can only be one of them, so the rest
+  get a character voice (`gen_ape_throw`, `gen_stone_fist`, `gen_mantis_scythe`, …) built
+  as the base plus what that creature adds — an effort grunt, wingbeats, chitin scrape,
+  a snarl. The primary attack is what a player hears for a whole match, so it is worth a
+  file of its own; abilities on long cooldowns can share.
+- `python3 scripts/sound_roster.py` prints what every character actually hears with both
+  tables resolved, and `--shared` lists the sounds more than one character's primary
+  still shares — the audit to run after touching either table.
 - `sounds/spawn.wav`, `sounds/death.wav`, `sounds/dash.wav`, `sounds/teleport.wav`,
   `sounds/phase_shift.wav` — non-projectile events/cast behaviors.
 - `sounds/hit_taken.wav` (you were hit), `sounds/hit_dealt.wav` (hitmarker — bright and
@@ -581,8 +865,13 @@ becomes a problem, the two music loops are ~8.5MB of it.
   about a location in the arena.
 - If you add a new `ProjectileType`, add a matching entry to `AbilitySounds.scala`
   (falls back to `atk_normal_bolt` if omitted). If you add a wholly new sound
-  archetype, add a generator function + entry in `scripts/generate_sounds.py` and
-  rerun it.
+  archetype, add an entry to the `_sounds()` table in `scripts/generate_sounds.py`
+  and rerun it — the script cross-checks itself against `AbilitySounds.scala` and
+  fails if that file names a sound it does not generate, so the two cannot drift.
+- If a character's ability would read as somebody else's — because it shares a
+  projectile type with a character of a different fantasy — add a line to the
+  `only(...)` override block in `AbilitySounds.scala` rather than splitting the
+  projectile type.
 
 ## Characters (112 total)
 
@@ -808,6 +1097,7 @@ Standard `OTEL_*` env vars (see `ops/observability/.env.example`). Most useful:
   - `//src/main/scala/com/gridgame/client:client`
   - `//src/main/scala/com/gridgame/client:client_windows`
   - `//src/main/scala/com/gridgame/client:projectile_gallery` (dev tool, not shipped)
+  - `//src/main/scala/com/gridgame/client:render_bench`, `:ui_bench` (dev tools, not shipped)
   - `//src/main/scala/com/gridgame/common:common`
   - `//src/main/scala/com/gridgame/mapeditor`
   - `//src/main/scala/com/gridgame/mapeditor:mapeditor_windows`

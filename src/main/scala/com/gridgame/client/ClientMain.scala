@@ -3,12 +3,16 @@ package com.gridgame.client
 import com.gridgame.client.audio.AudioManager
 import com.gridgame.client.gl.{GLFWManager, GLGameRenderer, GLWindow}
 import com.gridgame.client.input.{ControllerHandler, GLKeyboardHandler, GLMouseHandler}
-import com.gridgame.client.ui.CharacterSelectionPanel
+import com.gridgame.client.ui.{CharacterSelectionPanel, UiActivity, ViewportCache}
 import com.gridgame.client.i18n.{I18n, Messages}
 import com.gridgame.common.Constants
 import com.gridgame.common.WorldRegistry
 import com.gridgame.common.model.CharacterDef
+import com.gridgame.common.model.LobbyInfo
+import com.gridgame.common.model.ScoreEntry
+import com.gridgame.common.model.TeamAssignment
 import com.gridgame.common.model.WorldData
+import com.gridgame.common.protocol.LobbyFailure
 import com.gridgame.common.protocol.RankedQueueMode
 import com.gridgame.common.world.WorldLoader
 
@@ -53,6 +57,80 @@ class ClientMain extends Application {
   private var glRenderer: GLGameRenderer = _
   private var primaryStageRef: Stage = _
 
+  // Stops the current screen's endless animations (character previews, pulsing dots, glows).
+  // Every screen switch runs it, so a screen stops however it was left, including by a
+  // disconnect or a match starting; left running, they piled up on the FX thread, which
+  // is also the game's render thread.
+  private var stopCurrentScreen: () => Unit = () => ()
+
+  private def switchScreen(): Unit = {
+    val stop = stopCurrentScreen
+    stopCurrentScreen = () => ()
+    stop()
+    // A listener that updates a screen's controls holds on to that whole screen — its scene
+    // graph, its canvases and their textures — for as long as it stays registered, and keeps
+    // updating it after it's gone: the lobby room's chat was rebuilt, off screen, on every
+    // chat message of the match that followed. Each screen registers the ones it needs
+    // after this. (Navigation listeners, which only hold the stage, are left alone.)
+    if (client != null) {
+      client.lobbyListListener = null
+      client.lobbyUpdatedListener = null
+      client.chatMessageListener = null
+      client.lobbyActionFailedListener = null
+      client.rankedQueueListener = null
+      client.matchHistoryListener = null
+      client.leaderboardListener = null
+    }
+  }
+
+  private val lobbyDurations = Seq(1, 3, 5, 10, 15, 20)
+
+  private def makeDurationCombo(selectedMinutes: Int): ComboBox[String] = {
+    val combo = new ComboBox[String](FXCollections.observableArrayList(lobbyDurations.map(d => Messages.t("{0} min", d.toString)): _*))
+    combo.getSelectionModel.select(Math.max(0, lobbyDurations.indexOf(selectedMinutes)))
+    combo.setMaxWidth(Double.MaxValue)
+    styleCombo(combo)
+    combo
+  }
+
+  private def selectedDuration(combo: ComboBox[String]): Int =
+    lobbyDurations(Math.max(0, combo.getSelectionModel.getSelectedIndex))
+
+  private def showStatus(label: Label, text: String, error: Boolean): Unit = {
+    label.setTextFill(Color.web(if (error) "#e84057" else "#8899bb"))
+    label.setText(text)
+  }
+
+  private def lobbyFailureMessage(reason: Byte): String = reason match {
+    case LobbyFailure.RATE_LIMITED => Messages.t("Please wait a moment and try again")
+    case LobbyFailure.LOBBY_FULL => Messages.t("That lobby is full")
+    case LobbyFailure.NOT_JOINABLE => Messages.t("That lobby is no longer open")
+    case LobbyFailure.SERVER_FULL => Messages.t("The server has no room for another lobby")
+    case LobbyFailure.ALREADY_IN_LOBBY => Messages.t("You are already in a lobby")
+    case LobbyFailure.INVALID_NAME => Messages.t("Invalid lobby name")
+    case _ => Messages.t("Something went wrong, please try again")
+  }
+
+  // Lets a scroll pane show its page's background. The other way, defining -fx-background on
+  // the pane, recolours every label inside: Modena derives label text from that looked-up
+  // colour, and taken from an inline style it outranks setTextFill, so all the coloured text
+  // in a scroll pane (scoreboard ranks and teams, roster, chat, the ELO badge) came out white.
+  private val appStylesheet = "data:text/css;base64," + java.util.Base64.getEncoder.encodeToString(
+    ".scroll-pane > .viewport { -fx-background-color: transparent; }".getBytes(java.nio.charset.StandardCharsets.UTF_8))
+
+  private def newScene(root: javafx.scene.Parent): Scene = {
+    val scene = new Scene(root)
+    scene.getStylesheets.add(appStylesheet)
+    scene
+  }
+
+  private def placeholderLabel(text: String): Label = {
+    val label = new Label(text)
+    label.setTextFill(Color.web("#667788"))
+    label.setFont(Font.font("Exo 2", 14))
+    label
+  }
+
   // -- Enhanced color palette & styles --
   private val darkBg = "-fx-background-color: linear-gradient(to bottom, #1a1a2e 0%, #151528 50%, #111124 100%);"
   private val cardBg = "-fx-background-color: #20203a; -fx-background-radius: 16; -fx-border-color: rgba(255,255,255,0.07); -fx-border-radius: 16; -fx-border-width: 1; -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.5), 24, 0, 0, 8);"
@@ -69,7 +147,10 @@ class ClientMain extends Application {
   private val buttonGhostHoverStyle = "-fx-background-color: rgba(255,255,255,0.12); -fx-text-fill: #ccdde8; -fx-font-size: 13; -fx-font-weight: bold; -fx-padding: 9 20; -fx-background-radius: 8; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.2); -fx-border-radius: 8; -fx-border-width: 1;"
   private val labelStyle = "-fx-text-fill: #bbc; -fx-font-size: 14;"
   private val comboStyle = "-fx-background-color: #181830; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 8; -fx-background-radius: 8; -fx-border-color: rgba(255,255,255,0.08); -fx-border-radius: 8; -fx-border-width: 1;"
-  private val listViewCss = "-fx-background-color: #1a1a32; -fx-control-inner-background: #1a1a32; -fx-text-fill: white; -fx-font-size: 14; -fx-background-radius: 12; -fx-border-color: rgba(255,255,255,0.05); -fx-border-radius: 12; -fx-border-width: 1;"
+  // No -fx-control-inner-background here: list cells derive their labels' text colour from it,
+  // so defining it inline turned every coloured label in a lobby card white (see appStylesheet).
+  // The cell factories paint each cell's background themselves.
+  private val listViewCss = "-fx-background-color: #1a1a32; -fx-font-size: 14; -fx-background-radius: 12; -fx-border-color: rgba(255,255,255,0.05); -fx-border-radius: 12; -fx-border-width: 1;"
   private val sectionHeaderStyle = "-fx-text-fill: #99aabb; -fx-font-size: 13; -fx-font-weight: bold;"
 
   private def addHoverEffect(btn: Button, normalStyle: String, hoverStyle: String): Unit = {
@@ -110,6 +191,30 @@ class ClientMain extends Application {
     })
   }
 
+  /**
+   * A looping menu animation stepped at 12 fps, calling `apply` with the loop's phase
+   * (0 to 1). Any change on screen makes JavaFX present the whole window, and on macOS a
+   * full-screen window doing that every pulse holds a CPU core at ~60% on a 5K display,
+   * just for a gently pulsing label. The slow swings these animations make look the same
+   * stepped, and they hold still while nobody is using the window (see UiActivity).
+   */
+  private def steppedLoop(periodSec: Double, apply: Double => Unit): AnimationTimer = {
+    UiActivity.touch()
+    val timer = new AnimationTimer {
+      private var last = 0L
+      override def handle(now: Long): Unit = {
+        if (now - last < 83_000_000L || UiActivity.idle) return
+        last = now
+        apply((now / 1e9 % periodSec) / periodSec)
+      }
+    }
+    timer.start()
+    timer
+  }
+
+  /** 0 -> 1 -> 0 as `t` runs 0 -> 1: what a Timeline with auto-reverse traces. */
+  private def triangle(t: Double): Double = if (t < 0.5) t * 2 else 2 - t * 2
+
   private def fadeInScene(stage: Stage, root: javafx.scene.Parent): Unit = {
     val overlay = new javafx.scene.shape.Rectangle()
     overlay.setFill(Color.BLACK)
@@ -117,7 +222,7 @@ class ClientMain extends Application {
     val stack = new StackPane(root, overlay)
     overlay.widthProperty().bind(stack.widthProperty())
     overlay.heightProperty().bind(stack.heightProperty())
-    val scene = new Scene(stack)
+    val scene = newScene(stack)
     scene.setFill(Color.BLACK)
     stage.setScene(scene)
     val fade = new javafx.animation.FadeTransition(javafx.util.Duration.millis(300), overlay)
@@ -222,6 +327,8 @@ class ClientMain extends Application {
 
     loadAppIcons(primaryStage)
     setDockIcon()
+    // Menu animations pause while nobody is using the window
+    UiActivity.install(primaryStage)
 
     primaryStage.setTitle("Grid Game - Multiplayer 2D")
     primaryStage.setResizable(true)
@@ -274,7 +381,8 @@ class ClientMain extends Application {
     getClass.getClassLoader.getResourceAsStream(relativePath)
   }
 
-  private def showWelcomeScreen(stage: Stage): Unit = {
+  private def showWelcomeScreen(stage: Stage, notice: String = ""): Unit = {
+    switchScreen()
     val root = new VBox(0)
     root.setAlignment(Pos.CENTER)
     root.setStyle(darkBg)
@@ -288,16 +396,8 @@ class ClientMain extends Application {
     title.setFont(Font.font("Exo 2", FontWeight.BOLD, 56))
     title.setTextFill(Color.WHITE)
     title.setStyle("-fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.6), 32, 0, 0, 0);")
-    // Subtle breathing glow animation on title
-    val titleGlow = new javafx.animation.Timeline(
-      new javafx.animation.KeyFrame(javafx.util.Duration.ZERO,
-        new javafx.animation.KeyValue(title.opacityProperty(), java.lang.Double.valueOf(0.92))),
-      new javafx.animation.KeyFrame(javafx.util.Duration.millis(2000),
-        new javafx.animation.KeyValue(title.opacityProperty(), java.lang.Double.valueOf(1.0)))
-    )
-    titleGlow.setCycleCount(javafx.animation.Animation.INDEFINITE)
-    titleGlow.setAutoReverse(true)
-    titleGlow.play()
+    // Subtle breathing glow animation on title: 0.92 -> 1.0 -> 0.92 opacity over 4s
+    val titleGlow = steppedLoop(4.0, t => title.setOpacity(0.92 + 0.08 * triangle(t)))
 
     // Wider accent line with gradient
     val accentLine = new Region()
@@ -413,7 +513,7 @@ class ClientMain extends Application {
       }
     })
 
-    val statusLabel = new Label("")
+    val statusLabel = new Label(notice)
     statusLabel.setTextFill(Color.web("#e84057"))
     statusLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 13))
     statusLabel.setWrapText(true)
@@ -456,7 +556,7 @@ class ClientMain extends Application {
         if (port > 0) {
           actionButton.setDisable(true)
           statusLabel.setTextFill(Color.web("#8899bb"))
-          statusLabel.setText(s"Connecting to $host:$port...")
+          statusLabel.setText(Messages.t("Connecting to {0}...", s"$host:$port"))
           startConnection(stage, host, port, username, password, isSignupMode, statusLabel, actionButton)
         }
       }
@@ -484,6 +584,7 @@ class ClientMain extends Application {
     cardGlow.setCycleCount(javafx.animation.Animation.INDEFINITE)
     cardGlow.setAutoReverse(true)
     cardGlow.play()
+    stopCurrentScreen = () => { titleGlow.stop(); cardGlow.stop() }
 
     // Language selector — changing it applies the choice globally, persists it,
     // and rebuilds this screen (via Messages.onLocaleChanged) in the new language.
@@ -519,27 +620,34 @@ class ClientMain extends Application {
                               statusLabel: Label, actionButton: Button): Unit = {
     val initialWorld = WorldData.createEmpty(Constants.GRID_SIZE, Constants.GRID_SIZE)
 
-    client = new GameClient(serverHost, serverPort, initialWorld, username)
-
-    client.setWorldFileListener(worldFileName => {
-      println(s"ClientMain: World file listener triggered with: '$worldFileName'")
-      handleWorldFileFromServer(worldFileName)
-    })
-
-    // Set up auth response listener
-    client.authResponseListener = (success: Boolean, assignedUUID: java.util.UUID, message: String) => {
-      Platform.runLater(() => {
-        if (success) {
-          client.completeAuthAndJoin(assignedUUID, username)
-          client.requestLobbyList()
-          showLobbyBrowser(stage)
-        } else {
-          statusLabel.setTextFill(Color.web("#e84057"))
-          statusLabel.setText(message)
-          actionButton.setDisable(false)
-        }
+    def newClient(): GameClient = {
+      val c = new GameClient(serverHost, serverPort, initialWorld, username)
+      c.setWorldFileListener(worldFileName => {
+        println(s"ClientMain: World file listener triggered with: '$worldFileName'")
+        handleWorldFileFromServer(worldFileName)
       })
+      c.authResponseListener = (success: Boolean, assignedUUID: java.util.UUID, message: String) => {
+        Platform.runLater(() => {
+          if (success) {
+            c.completeAuthAndJoin(assignedUUID, username)
+            // Stats now, so the ranked screen shows the real rating rather than the default 1000
+            c.requestMatchHistory()
+            showLobbyBrowser(stage)
+          } else {
+            statusLabel.setTextFill(Color.web("#e84057"))
+            statusLabel.setText(message)
+            actionButton.setDisable(false)
+          }
+        })
+      }
+      c.disconnectListener = () => handleServerDisconnect(stage)
+      c
     }
+
+    // An earlier attempt's connection (a wrong password, say) is still open. Close it rather
+    // than leak one per click toward the server's per-IP connection limit.
+    if (client != null) client.disconnect()
+    client = newClient()
 
     // Connect on a background thread with retry logic
     val maxRetries = 3
@@ -551,45 +659,31 @@ class ClientMain extends Application {
         attempt += 1
         try {
           if (attempt > 1) {
+            val shownAttempt = attempt
             Platform.runLater(() => {
               statusLabel.setTextFill(Color.web("#c8aa6e"))
-              statusLabel.setText(s"Retrying connection ($attempt/$maxRetries)...")
+              statusLabel.setText(Messages.t("Retrying connection ({0}/{1})...", shownAttempt.toString, maxRetries.toString))
             })
             Thread.sleep(retryDelayMs)
             // Create a fresh client for the retry
-            client = new GameClient(serverHost, serverPort, initialWorld, username)
-            client.setWorldFileListener(worldFileName => {
-              println(s"ClientMain: World file listener triggered with: '$worldFileName'")
-              handleWorldFileFromServer(worldFileName)
-            })
-            client.authResponseListener = (success: Boolean, assignedUUID: java.util.UUID, message: String) => {
-              Platform.runLater(() => {
-                if (success) {
-                  client.completeAuthAndJoin(assignedUUID, username)
-                  client.requestLobbyList()
-                  showLobbyBrowser(stage)
-                } else {
-                  statusLabel.setTextFill(Color.web("#e84057"))
-                  statusLabel.setText(message)
-                  actionButton.setDisable(false)
-                }
-              })
-            }
+            client = newClient()
           }
           client.connect()
           connected = true
-          client.sendAuthRequest(username, password, isSignup)
+          // Posted before the request goes out, so a fast rejection can't be overwritten
+          // by "Logging in..." and leave it showing next to a re-enabled button.
           Platform.runLater(() => {
             statusLabel.setTextFill(Color.web("#8899bb"))
-            statusLabel.setText(if (isSignup) "Creating account..." else "Logging in...")
+            statusLabel.setText(if (isSignup) Messages.t("Creating account...") else Messages.t("Logging in..."))
           })
+          client.sendAuthRequest(username, password, isSignup)
         } catch {
           case _: InterruptedException => return
           case e: Exception =>
             if (attempt >= maxRetries) {
               Platform.runLater(() => {
                 statusLabel.setTextFill(Color.web("#e84057"))
-                statusLabel.setText(s"Connection failed after $maxRetries attempts: ${e.getMessage}")
+                statusLabel.setText(Messages.t("Could not connect to the server ({0})", e.getMessage))
                 actionButton.setDisable(false)
               })
             }
@@ -598,7 +692,8 @@ class ClientMain extends Application {
     }).start()
   }
 
-  private def showLobbyBrowser(stage: Stage): Unit = {
+  private def showLobbyBrowser(stage: Stage, notice: String = ""): Unit = {
+    switchScreen()
     val root = new VBox(0)
     root.setStyle(darkBg)
 
@@ -645,15 +740,25 @@ class ClientMain extends Application {
     val lobbyHeader = new Label(Messages.t("AVAILABLE LOBBIES"))
     lobbyHeader.setStyle(sectionHeaderStyle)
 
-    // Lobby list with card-based cell factory
-    val lobbyListView = new ListView[String]()
+    // Cells render the LobbyInfo they hold. Reading the client's list at the cell's index
+    // instead drew blank rows once a refresh had changed that list under the ListView.
+    val lobbyListView = new ListView[LobbyInfo]()
     lobbyListView.setStyle(listViewCss)
     lobbyListView.setPrefHeight(400)
+    lobbyListView.setPlaceholder(placeholderLabel(Messages.t("No open lobbies yet. Create one!")))
     VBox.setVgrow(lobbyListView, Priority.ALWAYS)
 
-    val lobbyCellFactory = new Callback[ListView[String], ListCell[String]] {
-      override def call(param: ListView[String]): ListCell[String] = new ListCell[String] {
-        private var pulseTimeline: javafx.animation.Timeline = _
+    // The "Waiting" dots pulse forever, so they are tracked to be stopped with the screen.
+    // "Waiting" status dots pulse 1.0 -> 0.3 -> 1.0 opacity, together, from one stepped timer
+    val pulsingDots = new java.util.HashSet[Label]()
+    val dotPulse = steppedLoop(1.6, t => {
+      val opacity = 1.0 - 0.7 * triangle(t)
+      pulsingDots.forEach(_.setOpacity(opacity))
+    })
+
+    val lobbyCellFactory = new Callback[ListView[LobbyInfo], ListCell[LobbyInfo]] {
+      override def call(param: ListView[LobbyInfo]): ListCell[LobbyInfo] = new ListCell[LobbyInfo] {
+        private var pulseDot: Label = _
 
         setOnMouseEntered(_ => {
           if (!isEmpty && !isSelected) {
@@ -668,113 +773,98 @@ class ClientMain extends Application {
           }
         })
 
-        override def updateItem(item: String, empty: Boolean): Unit = {
-          super.updateItem(item, empty)
-          if (pulseTimeline != null) { pulseTimeline.stop(); pulseTimeline = null }
-          if (empty || item == null) {
-            setText(null)
+        override def updateItem(info: LobbyInfo, empty: Boolean): Unit = {
+          super.updateItem(info, empty)
+          if (pulseDot != null) {
+            pulsingDots.remove(pulseDot)
+            pulseDot = null
+          }
+          setText(null)
+          if (empty || info == null) {
             setGraphic(null)
             setStyle("-fx-background-color: transparent; -fx-padding: 0;")
           } else {
-            setText(null)
-            val idx = getIndex
-            if (idx >= 0 && idx < client.lobbyList.size()) {
-              val info = client.lobbyList.get(idx)
-              val mapName = WorldRegistry.getDisplayName(info.mapIndex)
-              val statusStr = if (info.status == 0) "Waiting" else "In Game"
-              val statusColor = if (info.status == 0) "#2ecc71" else "#e84057"
-              val modeStr = if (info.gameMode == 1) s"Teams ${info.teamSize}v${info.teamSize}" else "FFA"
+            val mapName = WorldRegistry.getDisplayName(info.mapIndex)
+            val waiting = info.status == 0
+            val statusStr = if (waiting) Messages.t("Waiting") else Messages.t("In Game")
+            val statusColor = if (waiting) "#2ecc71" else "#e84057"
+            val modeStr = if (info.gameMode == 1) Messages.t("Teams {0}v{0}", info.teamSize.toString) else Messages.t("FFA")
 
-              // Lobby name + status
-              val nameLabel = new Label(info.name)
-              nameLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 15))
-              nameLabel.setTextFill(Color.web("#ccdde8"))
-              val statusDot = new Label(Messages.t("\u25CF"))
-              statusDot.setTextFill(Color.web(statusColor))
-              statusDot.setFont(Font.font("Exo 2", 10))
+            // Lobby name + status
+            val nameLabel = new Label(info.name)
+            nameLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 15))
+            nameLabel.setTextFill(Color.web("#ccdde8"))
+            val statusDot = new Label("●")
+            statusDot.setTextFill(Color.web(statusColor))
+            statusDot.setFont(Font.font("Exo 2", 10))
 
-              // Animated pulse for "Waiting" status dot
-              if (info.status == 0) {
-                pulseTimeline = new javafx.animation.Timeline(
-                  new javafx.animation.KeyFrame(javafx.util.Duration.ZERO,
-                    new javafx.animation.KeyValue(statusDot.opacityProperty(), java.lang.Double.valueOf(1.0))),
-                  new javafx.animation.KeyFrame(javafx.util.Duration.millis(800),
-                    new javafx.animation.KeyValue(statusDot.opacityProperty(), java.lang.Double.valueOf(0.3)))
-                )
-                pulseTimeline.setCycleCount(javafx.animation.Animation.INDEFINITE)
-                pulseTimeline.setAutoReverse(true)
-                pulseTimeline.play()
-              }
+            // Animated pulse for "Waiting" status dot
+            if (waiting) {
+              pulseDot = statusDot
+              pulsingDots.add(statusDot)
+            }
 
-              val statusText = new Label(s"$statusStr  \u2022  ${info.durationMinutes}min")
-              statusText.setFont(Font.font("Exo 2", 12))
-              statusText.setTextFill(Color.web("#778899"))
-              val nameRow = new HBox(6, statusDot, nameLabel)
-              nameRow.setAlignment(Pos.CENTER_LEFT)
+            val statusText = new Label(s"$statusStr  •  ${Messages.t("{0} min", info.durationMinutes.toString)}")
+            statusText.setFont(Font.font("Exo 2", 12))
+            statusText.setTextFill(Color.web("#778899"))
+            val nameRow = new HBox(6, statusDot, nameLabel)
+            nameRow.setAlignment(Pos.CENTER_LEFT)
 
-              // Player icon next to player count
-              val playerIcon = new Label(Messages.t("\u2302"))
-              playerIcon.setFont(Font.font("Exo 2", 11))
-              playerIcon.setTextFill(Color.web("#778899"))
-              val playerCountText = new Label(s"${info.playerCount}/${info.maxPlayers}")
-              playerCountText.setFont(Font.font("Exo 2", 11))
-              playerCountText.setTextFill(Color.web("#778899"))
-              val playerRow = new HBox(3, playerIcon, playerCountText)
-              playerRow.setAlignment(Pos.CENTER_LEFT)
+            val nameCol = new VBox(2, nameRow, statusText)
 
-              val nameCol = new VBox(2, nameRow, new HBox(8, statusText, playerRow))
+            val cardSpacer = new Region()
+            HBox.setHgrow(cardSpacer, Priority.ALWAYS)
 
-              val cardSpacer = new Region()
-              HBox.setHgrow(cardSpacer, Priority.ALWAYS)
+            // Mode badge
+            val modeBadge = new Label(modeStr)
+            modeBadge.setFont(Font.font("Exo 2", FontWeight.BOLD, 11))
+            if (info.gameMode == 1) {
+              modeBadge.setTextFill(Color.web("#e84057"))
+              modeBadge.setStyle("-fx-background-color: rgba(232, 64, 87, 0.15); -fx-padding: 4 12; -fx-background-radius: 12;")
+            } else {
+              modeBadge.setTextFill(Color.web("#4a9eff"))
+              modeBadge.setStyle("-fx-background-color: rgba(74, 158, 255, 0.15); -fx-padding: 4 12; -fx-background-radius: 12;")
+            }
 
-              // Mode badge
-              val modeBadge = new Label(modeStr)
-              modeBadge.setFont(Font.font("Exo 2", FontWeight.BOLD, 11))
-              if (info.gameMode == 1) {
-                modeBadge.setTextFill(Color.web("#e84057"))
-                modeBadge.setStyle("-fx-background-color: rgba(232, 64, 87, 0.15); -fx-padding: 4 12; -fx-background-radius: 12;")
-              } else {
-                modeBadge.setTextFill(Color.web("#4a9eff"))
-                modeBadge.setStyle("-fx-background-color: rgba(74, 158, 255, 0.15); -fx-padding: 4 12; -fx-background-radius: 12;")
-              }
-
-              // Player count badge
-              val countBadge = new Label(s"${info.playerCount}/${info.maxPlayers}")
-              countBadge.setFont(Font.font("Exo 2", FontWeight.BOLD, 11))
+            // Player count badge, red when there's no seat left
+            val full = info.playerCount >= info.maxPlayers
+            val countBadge = new Label(s"${info.playerCount}/${info.maxPlayers}")
+            countBadge.setFont(Font.font("Exo 2", FontWeight.BOLD, 11))
+            if (full) {
+              countBadge.setTextFill(Color.web("#e84057"))
+              countBadge.setStyle("-fx-background-color: rgba(232, 64, 87, 0.15); -fx-padding: 4 12; -fx-background-radius: 12;")
+            } else {
               countBadge.setTextFill(Color.web("#2ecc71"))
               countBadge.setStyle("-fx-background-color: rgba(46, 204, 113, 0.15); -fx-padding: 4 12; -fx-background-radius: 12;")
+            }
 
-              // Larger mini map preview
-              val miniCanvas = new Canvas(56, 56)
-              renderMapPreview(miniCanvas, info.mapIndex)
-              miniCanvas.setStyle("-fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.4), 6, 0, 0, 2);")
-              val mapNameLabel = new Label(mapName)
-              mapNameLabel.setFont(Font.font("Exo 2", 10))
-              mapNameLabel.setTextFill(Color.web("#778899"))
-              mapNameLabel.setAlignment(Pos.CENTER)
-              mapNameLabel.setMaxWidth(64)
-              val mapCol = new VBox(3, miniCanvas, mapNameLabel)
-              mapCol.setAlignment(Pos.CENTER)
+            // Larger mini map preview
+            val miniCanvas = new Canvas(56, 56)
+            renderMapPreview(miniCanvas, info.mapIndex)
+            miniCanvas.setStyle("-fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.4), 6, 0, 0, 2);")
+            val mapNameLabel = new Label(mapName)
+            mapNameLabel.setFont(Font.font("Exo 2", 10))
+            mapNameLabel.setTextFill(Color.web("#778899"))
+            mapNameLabel.setAlignment(Pos.CENTER)
+            mapNameLabel.setMaxWidth(64)
+            val mapCol = new VBox(3, miniCanvas, mapNameLabel)
+            mapCol.setAlignment(Pos.CENTER)
 
-              val badgeCol = new VBox(5, modeBadge, countBadge)
-              badgeCol.setAlignment(Pos.CENTER_RIGHT)
+            val badgeCol = new VBox(5, modeBadge, countBadge)
+            badgeCol.setAlignment(Pos.CENTER_RIGHT)
 
-              val card = new HBox(14, nameCol, cardSpacer, badgeCol, mapCol)
-              card.setAlignment(Pos.CENTER_LEFT)
-              card.setPadding(new Insets(10, 16, 10, 16))
+            val card = new HBox(14, nameCol, cardSpacer, badgeCol, mapCol)
+            card.setAlignment(Pos.CENTER_LEFT)
+            card.setPadding(new Insets(10, 16, 10, 16))
 
-              setGraphic(card)
-              val base = "-fx-padding: 3 4; -fx-background-radius: 12;"
-              if (isSelected) {
-                setStyle(s"-fx-background-color: rgba(74, 158, 255, 0.12); $base -fx-border-color: #4a9eff; -fx-border-width: 0 0 0 3; -fx-border-radius: 12; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.2), 12, 0, 0, 0);")
-              } else if (getIndex % 2 == 0) {
-                setStyle(s"-fx-background-color: rgba(255,255,255,0.02); $base")
-              } else {
-                setStyle(s"-fx-background-color: transparent; $base")
-              }
+            setGraphic(card)
+            val base = "-fx-padding: 3 4; -fx-background-radius: 12;"
+            if (isSelected) {
+              setStyle(s"-fx-background-color: rgba(74, 158, 255, 0.12); $base -fx-border-color: #4a9eff; -fx-border-width: 0 0 0 3; -fx-border-radius: 12; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.2), 12, 0, 0, 0);")
+            } else if (getIndex % 2 == 0) {
+              setStyle(s"-fx-background-color: rgba(255,255,255,0.02); $base")
             } else {
-              setGraphic(null)
-              setStyle("-fx-background-color: transparent; -fx-padding: 0;")
+              setStyle(s"-fx-background-color: transparent; $base")
             }
           }
         }
@@ -786,10 +876,6 @@ class ClientMain extends Application {
     addHoverEffect(joinBtn, buttonStyle, buttonHoverStyle)
     joinBtn.setDisable(true)
     joinBtn.setMaxWidth(Double.MaxValue)
-
-    lobbyListView.getSelectionModel.selectedIndexProperty().addListener((_, _, newVal) => {
-      joinBtn.setDisable(newVal.intValue() < 0)
-    })
 
     leftColumn.getChildren.addAll(lobbyHeader, lobbyListView, joinBtn)
 
@@ -808,50 +894,73 @@ class ClientMain extends Application {
     val nameField = new TextField()
     nameField.setPromptText(Messages.t("Lobby name"))
     addFieldFocusEffect(nameField)
+    // The name travels in a fixed-size field; stop at its limit rather than let the packet
+    // cut a character in half.
+    nameField.setTextFormatter(new javafx.scene.control.TextFormatter[String]((change: javafx.scene.control.TextFormatter.Change) =>
+      if (change.getControlNewText.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= Constants.MAX_LOBBY_NAME_LEN) change else null
+    ))
 
     val mapCombo = new ComboBox[String](FXCollections.observableArrayList(WorldRegistry.displayNames: _*))
     mapCombo.getSelectionModel.select(0)
     mapCombo.setMaxWidth(Double.MaxValue)
     styleCombo(mapCombo)
 
-    val durationCombo = new ComboBox[String](FXCollections.observableArrayList("1 min", "3 min", "5 min", "10 min", "15 min", "20 min"))
-    durationCombo.getSelectionModel.select(2) // Default 5 min
-    durationCombo.setMaxWidth(Double.MaxValue)
-    styleCombo(durationCombo)
+    val durationCombo = makeDurationCombo(Constants.DEFAULT_GAME_DURATION_MIN)
 
     val createBtn = new Button(Messages.t("Create Lobby"))
     addHoverEffect(createBtn, buttonGreenStyle, buttonGreenHoverStyle)
     createBtn.setMaxWidth(Double.MaxValue)
 
     val statusLabel = new Label("")
-    statusLabel.setTextFill(Color.web("#8899bb"))
     statusLabel.setFont(Font.font("Exo 2", 12))
+    statusLabel.setWrapText(true)
+    statusLabel.setMaxWidth(Double.MaxValue)
+    if (notice.nonEmpty) showStatus(statusLabel, notice, error = false)
 
-    // Wire up lobby list listener
-    val updateList = () => {
-      Platform.runLater(() => {
-        val items = new java.util.ArrayList[String]()
-        import scala.jdk.CollectionConverters._
-        client.lobbyList.asScala.foreach { info =>
-          // Items are just index markers; the cell factory reads from client.lobbyList directly
-          items.add(info.name)
-        }
-        lobbyListView.setItems(FXCollections.observableArrayList(items))
-      })
+    // A create or join is in flight until the server answers with JOINED or ACTION_FAILED.
+    // The buttons stay disabled meanwhile so a second click can't send a second request.
+    var busy = false
+    val busyTimeout = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(6))
+    def setBusy(b: Boolean): Unit = {
+      busy = b
+      createBtn.setDisable(b)
+      joinBtn.setDisable(b || lobbyListView.getSelectionModel.getSelectedItem == null)
+      if (b) busyTimeout.playFromStart() else busyTimeout.stop()
     }
-    client.lobbyListListener = () => updateList()
+    busyTimeout.setOnFinished(_ => if (busy) {
+      setBusy(false)
+      showStatus(statusLabel, Messages.t("No response from the server, please try again"), error = true)
+    })
 
-    // Wire up lobby joined listener
+    lobbyListView.getSelectionModel.selectedItemProperty().addListener((_, _, selected) => {
+      joinBtn.setDisable(busy || selected == null)
+    })
+    lobbyListView.setOnMouseClicked(e => if (e.getClickCount == 2) joinBtn.fire())
+
+    import scala.jdk.CollectionConverters._
+    val updateList = () => {
+      val selectedId = Option(lobbyListView.getSelectionModel.getSelectedItem).map(_.lobbyId)
+      lobbyListView.getItems.setAll(client.lobbyList.asJava)
+      selectedId.flatMap(id => client.lobbyList.find(_.lobbyId == id)).foreach(info => lobbyListView.getSelectionModel.select(info))
+    }
+    // Show the last listing right away; the refresh below replaces it when it lands.
+    updateList()
+    client.lobbyListListener = () => Platform.runLater(() => updateList())
+
     client.lobbyJoinedListener = () => {
       Platform.runLater(() => showLobbyRoom(stage))
     }
 
     client.lobbyClosedListener = () => {
-      Platform.runLater(() => {
-        showLobbyBrowser(stage)
-        statusLabel.setText(Messages.t("Lobby was closed by the host"))
-      })
+      Platform.runLater(() => showLobbyBrowser(stage, Messages.t("Lobby was closed by the host")))
     }
+
+    client.lobbyActionFailedListener = reason => Platform.runLater(() => {
+      setBusy(false)
+      showStatus(statusLabel, lobbyFailureMessage(reason), error = true)
+      // Our listing was wrong about that lobby
+      if (reason == LobbyFailure.LOBBY_FULL || reason == LobbyFailure.NOT_JOINABLE) client.requestLobbyList()
+    })
 
     // Button actions
     profileBtn.setOnAction(_ => showAccountView(stage))
@@ -871,23 +980,25 @@ class ClientMain extends Application {
     })
 
     joinBtn.setOnAction(_ => {
-      val idx = lobbyListView.getSelectionModel.getSelectedIndex
-      if (idx >= 0 && idx < client.lobbyList.size()) {
-        val info = client.lobbyList.get(idx)
-        if (info.status == 0) {
-          client.joinLobby(info.lobbyId)
+      val info = lobbyListView.getSelectionModel.getSelectedItem
+      if (info != null) {
+        if (info.status != 0) {
+          showStatus(statusLabel, Messages.t("Can't join - game already in progress"), error = true)
+        } else if (info.playerCount >= info.maxPlayers) {
+          showStatus(statusLabel, Messages.t("That lobby is full"), error = true)
         } else {
-          statusLabel.setText(Messages.t("Can't join - game already in progress"))
+          showStatus(statusLabel, Messages.t("Joining lobby..."), error = false)
+          setBusy(true)
+          client.joinLobby(info.lobbyId)
         }
       }
     })
 
     createBtn.setOnAction(_ => {
       val name = if (nameField.getText.trim.isEmpty) s"${client.playerName}'s Lobby" else nameField.getText.trim
-      val mapIdx = mapCombo.getSelectionModel.getSelectedIndex
-      val durStr = durationCombo.getSelectionModel.getSelectedItem
-      val duration = durStr.split(" ")(0).toInt
-      client.createLobby(name, mapIdx, duration)
+      showStatus(statusLabel, Messages.t("Creating lobby..."), error = false)
+      setBusy(true)
+      client.createLobby(name, mapCombo.getSelectionModel.getSelectedIndex, selectedDuration(durationCombo))
     })
 
     val formRow1 = new HBox(10, new Label(Messages.t("Name")) { setStyle(sectionHeaderStyle); setMinWidth(44) }, nameField)
@@ -920,6 +1031,12 @@ class ClientMain extends Application {
 
     root.getChildren.addAll(headerArea, contentArea)
 
+    stopCurrentScreen = () => {
+      busyTimeout.stop()
+      dotPulse.stop()
+      pulsingDots.clear()
+    }
+
     fadeInScene(stage, root)
 
     // Auto-refresh on show
@@ -927,9 +1044,17 @@ class ClientMain extends Application {
   }
 
   private def showLobbyRoom(stage: Stage): Unit = {
+    switchScreen()
+    import scala.jdk.CollectionConverters._
     val root = new VBox(0)
     root.setAlignment(Pos.TOP_CENTER)
     root.setStyle(darkBg)
+
+    def playersText: String =
+      Messages.t("Players: {0}/{1}", client.currentLobbyPlayerCount.toString, client.currentLobbyMaxPlayers.toString)
+    def modeText: String =
+      if (client.currentLobbyGameMode == 1) Messages.t("Teams ({0}v{0})", client.currentLobbyTeamSize.toString)
+      else Messages.t("Free-For-All")
 
     // Header
     val headerBox = new VBox(6)
@@ -941,7 +1066,7 @@ class ClientMain extends Application {
     lobbyTitle.setTextFill(Color.WHITE)
     lobbyTitle.setStyle("-fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.3), 12, 0, 0, 0);")
 
-    val playersLabel = new Label(s"Players: ${client.currentLobbyPlayerCount}/${client.currentLobbyMaxPlayers}")
+    val playersLabel = new Label(playersText)
     playersLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 16))
     playersLabel.setTextFill(Color.web("#4a9eff"))
 
@@ -963,11 +1088,11 @@ class ClientMain extends Application {
     infoCard.setPadding(new Insets(20, 28, 20, 28))
     infoCard.setStyle(cardBg)
 
-    val mapLabel = new Label(s"Map: ${WorldRegistry.getDisplayName(client.currentLobbyMapIndex)}")
+    val mapLabel = new Label(Messages.t("Map: {0}", WorldRegistry.getDisplayName(client.currentLobbyMapIndex)))
     mapLabel.setFont(Font.font("Exo 2", 14))
     mapLabel.setTextFill(Color.web("#aabbcc"))
 
-    val durationLabel = new Label(s"Duration: ${client.currentLobbyDuration} min")
+    val durationLabel = new Label(Messages.t("Duration: {0} min", client.currentLobbyDuration.toString))
     durationLabel.setFont(Font.font("Exo 2", 14))
     durationLabel.setTextFill(Color.web("#aabbcc"))
 
@@ -975,7 +1100,8 @@ class ClientMain extends Application {
     waitingLabel.setFont(Font.font("Exo 2", 14))
     waitingLabel.setTextFill(Color.web("#8899aa"))
 
-    // Map preview (enlarged)
+    // Map preview (enlarged). Loading a map for its preview parses the world file, so it is
+    // redrawn only when the map changes, not on every join, leave or character pick.
     val lobbyMapPreviewCanvas = new Canvas(320, 240)
     val lobbyMapPreviewWrapper = new StackPane(lobbyMapPreviewCanvas)
     lobbyMapPreviewWrapper.setMaxWidth(328)
@@ -984,70 +1110,60 @@ class ClientMain extends Application {
     lobbyMapPreviewWrapper.setStyle("-fx-background-color: #111124; -fx-background-radius: 8; -fx-border-color: rgba(255,255,255,0.08); -fx-border-radius: 8; -fx-border-width: 1;")
     val lobbyMapPreviewBox = new VBox(0, lobbyMapPreviewWrapper)
     lobbyMapPreviewBox.setAlignment(Pos.CENTER)
-    renderMapPreview(lobbyMapPreviewCanvas, client.currentLobbyMapIndex)
+    var previewedMap = client.currentLobbyMapIndex
+    renderMapPreview(lobbyMapPreviewCanvas, previewedMap)
 
-    // Team roster
-    val teamRosterBox = new VBox(8)
-    teamRosterBox.setId("teamRosterBox")
-    teamRosterBox.setPadding(new Insets(8, 12, 8, 12))
-    teamRosterBox.setStyle(cardBgSubtle)
+    // Roster: who is here, split into the teams the match will deal in Teams mode
+    val rosterBox = new VBox(6)
+    rosterBox.setPadding(new Insets(8, 12, 8, 12))
+    rosterBox.setStyle(cardBgSubtle)
 
-    def rebuildTeamRoster(): Unit = {
-      teamRosterBox.getChildren.clear()
-      if (client.currentLobbyGameMode != 1) {
-        teamRosterBox.setVisible(false)
-        teamRosterBox.setManaged(false)
-        return
-      }
-      teamRosterBox.setVisible(true)
-      teamRosterBox.setManaged(true)
-
-      import scala.jdk.CollectionConverters._
-      val members = client.lobbyMembers.asScala.toSeq
-
-      val team1Header = new Label(Messages.t("Team 1 (Blue)"))
-      team1Header.setFont(Font.font("Exo 2", FontWeight.BOLD, 14))
-      team1Header.setTextFill(Color.web("#4a82ff"))
-
-      val team2Header = new Label(Messages.t("Team 2 (Red)"))
-      team2Header.setFont(Font.font("Exo 2", FontWeight.BOLD, 14))
-      team2Header.setTextFill(Color.web("#e84057"))
-
-      val team1List = new VBox(3)
-      val team2List = new VBox(3)
-
-      members.zipWithIndex.foreach { case (arr, idx) =>
-        val name = arr(1).asInstanceOf[String]
-        val isLocal = arr(0).asInstanceOf[java.util.UUID].equals(client.getLocalPlayerId)
-        val displayName = if (isLocal) s"$name (You)" else name
-        val lbl = new Label(s"  $displayName")
-        lbl.setFont(Font.font("Exo 2", 13))
-        if (idx % 2 == 0) {
-          lbl.setTextFill(Color.web("#8899cc"))
-          team1List.getChildren.add(lbl)
-        } else {
-          lbl.setTextFill(Color.web("#cc8899"))
-          team2List.getChildren.add(lbl)
-        }
-      }
-
-      val col1 = new VBox(4, team1Header, team1List)
-      HBox.setHgrow(col1, Priority.ALWAYS)
-      val col2 = new VBox(4, team2Header, team2List)
-      HBox.setHgrow(col2, Priority.ALWAYS)
-
-      val rosterRow = new HBox(16, col1, col2)
-      rosterRow.setAlignment(Pos.CENTER_LEFT)
-
-      teamRosterBox.getChildren.add(rosterRow)
+    def memberLabel(member: LobbyMember, color: String): Label = {
+      val isLocal = member.id == client.getLocalPlayerId
+      val lbl = new Label("  " + (if (isLocal) s"${member.name} ${Messages.t("(you)")}" else member.name))
+      lbl.setFont(Font.font("Exo 2", if (isLocal) FontWeight.BOLD else FontWeight.NORMAL, 13))
+      lbl.setTextFill(Color.web(color))
+      lbl
     }
-    rebuildTeamRoster()
+
+    def rebuildRoster(): Unit = {
+      rosterBox.getChildren.clear()
+      if (client.currentLobbyGameMode == 1) {
+        val teams = client.previewTeams
+        def teamColumn(team: Byte, header: String, headerColor: String, memberColor: String): VBox = {
+          val headerLabel = new Label(header)
+          headerLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 14))
+          headerLabel.setTextFill(Color.web(headerColor))
+          val column = new VBox(3, headerLabel)
+          teams.filter(_._2 == team).foreach { case (member, _) => column.getChildren.add(memberLabel(member, memberColor)) }
+          HBox.setHgrow(column, Priority.ALWAYS)
+          column
+        }
+        val rosterRow = new HBox(16,
+          teamColumn(1, Messages.t("Team 1 (Blue)"), "#4a82ff", "#8899cc"),
+          teamColumn(2, Messages.t("Team 2 (Red)"), "#e84057", "#cc8899"))
+        rosterRow.setAlignment(Pos.TOP_LEFT)
+        rosterBox.getChildren.add(rosterRow)
+      } else {
+        val header = new Label(Messages.t("PLAYERS"))
+        header.setStyle(sectionHeaderStyle)
+        rosterBox.getChildren.add(header)
+        client.lobbyMembers.asScala.foreach(m => rosterBox.getChildren.add(memberLabel(m, "#ccdde8")))
+      }
+    }
+    rebuildRoster()
 
     val leaveBtn = new Button(Messages.t("Leave"))
     addHoverEffect(leaveBtn, buttonRedStyle, buttonRedHoverStyle)
     leaveBtn.setMaxWidth(Double.MaxValue)
 
-    // Host-only controls
+    val nonHostGameModeLabel = new Label(Messages.t("Mode: {0}", modeText))
+    nonHostGameModeLabel.setTextFill(Color.web("#ccdde8"))
+    nonHostGameModeLabel.setFont(Font.font("Exo 2", FontWeight.NORMAL, 14))
+
+    // Host-only controls, refreshed from the server's view of the lobby on every update
+    var refreshHostControls: () => Unit = () => ()
+
     if (client.isLobbyHost) {
       waitingLabel.setText(Messages.t("You are the host"))
       waitingLabel.setTextFill(Color.web("#2ecc71"))
@@ -1061,50 +1177,28 @@ class ClientMain extends Application {
       mapCombo.setMaxWidth(Double.MaxValue)
       styleCombo(mapCombo)
 
-      val durationCombo = new ComboBox[String](FXCollections.observableArrayList("1 min", "3 min", "5 min", "10 min", "15 min", "20 min"))
-      val durIdx = client.currentLobbyDuration match {
-        case 1 => 0; case 3 => 1; case 5 => 2; case 10 => 3; case 15 => 4; case 20 => 5; case _ => 2
-      }
-      durationCombo.getSelectionModel.select(durIdx)
-      durationCombo.setMaxWidth(Double.MaxValue)
-      styleCombo(durationCombo)
+      val durationCombo = makeDurationCombo(client.currentLobbyDuration)
 
-      val gameModeCombo = new ComboBox[String](FXCollections.observableArrayList("Free-For-All", "Teams"))
-      gameModeCombo.getSelectionModel.select(client.currentLobbyGameMode.toInt)
+      val gameModeCombo = new ComboBox[String](FXCollections.observableArrayList(Messages.t("Free-For-All"), Messages.t("Teams")))
+      gameModeCombo.getSelectionModel.select(if (client.currentLobbyGameMode == 1) 1 else 0)
       gameModeCombo.setMaxWidth(Double.MaxValue)
       styleCombo(gameModeCombo)
 
-      val teamSizeCombo = new ComboBox[String](FXCollections.observableArrayList("2v2", "3v3", "4v4"))
-      val tsIdx = client.currentLobbyTeamSize match {
-        case 3 => 1; case 4 => 2; case _ => 0
-      }
-      teamSizeCombo.getSelectionModel.select(tsIdx)
+      val teamSizes = Seq(2, 3, 4)
+      val teamSizeCombo = new ComboBox[String](FXCollections.observableArrayList(teamSizes.map(n => s"${n}v$n"): _*))
+      teamSizeCombo.getSelectionModel.select(Math.max(0, teamSizes.indexOf(client.currentLobbyTeamSize)))
       teamSizeCombo.setMaxWidth(Double.MaxValue)
       styleCombo(teamSizeCombo)
-      teamSizeCombo.setVisible(client.currentLobbyGameMode == 1)
-      teamSizeCombo.setManaged(client.currentLobbyGameMode == 1)
 
+      // Set while showing the server's values, so selecting them doesn't send another update
+      var syncing = false
       val sendConfigUpdate = () => {
-        val dur = durationCombo.getSelectionModel.getSelectedItem.split(" ")(0).toInt
-        val gm: Byte = gameModeCombo.getSelectionModel.getSelectedIndex.toByte
-        val ts = teamSizeCombo.getSelectionModel.getSelectedIndex match {
-          case 1 => 3; case 2 => 4; case _ => 2
+        if (!syncing) {
+          val ts = teamSizes(Math.max(0, teamSizeCombo.getSelectionModel.getSelectedIndex))
+          client.updateLobbyConfig(mapCombo.getSelectionModel.getSelectedIndex, selectedDuration(durationCombo),
+            gameModeCombo.getSelectionModel.getSelectedIndex.toByte, ts)
         }
-        client.updateLobbyConfig(mapCombo.getSelectionModel.getSelectedIndex, dur, gm, ts)
       }
-
-      mapCombo.setOnAction(_ => {
-        sendConfigUpdate()
-        renderMapPreview(lobbyMapPreviewCanvas, mapCombo.getSelectionModel.getSelectedIndex)
-      })
-      durationCombo.setOnAction(_ => sendConfigUpdate())
-      gameModeCombo.setOnAction(_ => {
-        val isTeams = gameModeCombo.getSelectionModel.getSelectedIndex == 1
-        teamSizeCombo.setVisible(isTeams)
-        teamSizeCombo.setManaged(isTeams)
-        sendConfigUpdate()
-      })
-      teamSizeCombo.setOnAction(_ => sendConfigUpdate())
 
       val startBtn = new Button(Messages.t("Start Game"))
       addHoverEffect(startBtn, buttonGreenStyle, buttonGreenHoverStyle)
@@ -1143,15 +1237,37 @@ class ClientMain extends Application {
       val row4 = new HBox(10, new Label(Messages.t("Size")) { setStyle(sectionHeaderStyle); setMinWidth(44) }, teamSizeCombo)
       row4.setAlignment(Pos.CENTER_LEFT)
       HBox.setHgrow(teamSizeCombo, Priority.ALWAYS)
+      def showTeamSize(isTeams: Boolean): Unit = { row4.setVisible(isTeams); row4.setManaged(isTeams) }
 
-      infoCard.getChildren.addAll(waitingLabel, createSeparator(), configLabel, row1, lobbyMapPreviewBox, row2, row3, row4, botRow, teamRosterBox, startBtn)
+      mapCombo.setOnAction(_ => {
+        sendConfigUpdate()
+        previewedMap = mapCombo.getSelectionModel.getSelectedIndex
+        renderMapPreview(lobbyMapPreviewCanvas, previewedMap)
+      })
+      durationCombo.setOnAction(_ => sendConfigUpdate())
+      gameModeCombo.setOnAction(_ => {
+        showTeamSize(gameModeCombo.getSelectionModel.getSelectedIndex == 1)
+        sendConfigUpdate()
+      })
+      teamSizeCombo.setOnAction(_ => sendConfigUpdate())
+
+      refreshHostControls = () => {
+        syncing = true
+        try {
+          // The server can settle on something other than what was asked (a team size that
+          // fits everyone here, or FFA when there are more humans than Teams holds).
+          gameModeCombo.getSelectionModel.select(if (client.currentLobbyGameMode == 1) 1 else 0)
+          teamSizeCombo.getSelectionModel.select(Math.max(0, teamSizes.indexOf(client.currentLobbyTeamSize)))
+          showTeamSize(client.currentLobbyGameMode == 1)
+        } finally syncing = false
+        addBotBtn.setDisable(client.currentLobbyPlayerCount >= client.currentLobbyMaxPlayers)
+        removeBotBtn.setDisable(!client.lobbyMembers.asScala.exists(m => TeamAssignment.isBot(m.id)))
+      }
+      refreshHostControls()
+
+      infoCard.getChildren.addAll(waitingLabel, createSeparator(), configLabel, row1, lobbyMapPreviewBox, row2, row3, row4, botRow, rosterBox, startBtn)
     } else {
-      val gameModeStr = if (client.currentLobbyGameMode == 1) s"Teams (${client.currentLobbyTeamSize}v${client.currentLobbyTeamSize})" else "Free-For-All"
-      val nonHostGameModeLabel = new Label(s"Mode: $gameModeStr")
-      nonHostGameModeLabel.setTextFill(Color.web("#ccdde8"))
-      nonHostGameModeLabel.setFont(Font.font("Exo 2", FontWeight.NORMAL, 14))
-      nonHostGameModeLabel.setId("gameModeLabel")
-      infoCard.getChildren.addAll(mapLabel, durationLabel, nonHostGameModeLabel, teamRosterBox, lobbyMapPreviewBox, createSeparator(), waitingLabel)
+      infoCard.getChildren.addAll(mapLabel, durationLabel, nonHostGameModeLabel, rosterBox, lobbyMapPreviewBox, createSeparator(), waitingLabel)
     }
 
     // Chat panel
@@ -1170,7 +1286,7 @@ class ClientMain extends Application {
     chatScroll.setFitToWidth(true)
     chatScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER)
     chatScroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED)
-    chatScroll.setStyle("-fx-background: #181830; -fx-background-color: #181830; -fx-border-color: rgba(255,255,255,0.05); -fx-border-radius: 6; -fx-border-width: 1;")
+    chatScroll.setStyle("-fx-background-color: #181830; -fx-border-color: rgba(255,255,255,0.05); -fx-border-radius: 6; -fx-border-width: 1;")
     chatScroll.setPrefHeight(180)
     VBox.setVgrow(chatScroll, Priority.ALWAYS)
 
@@ -1199,9 +1315,9 @@ class ClientMain extends Application {
     )
     val charSection = charPanel.createPanel()
     rightPanel.getChildren.add(charSection)
+    stopCurrentScreen = () => charPanel.stop()
 
     leaveBtn.setOnAction(_ => {
-      charPanel.stop()
       client.leaveLobby()
       showLobbyBrowser(stage)
     })
@@ -1213,73 +1329,69 @@ class ClientMain extends Application {
     val scrollPane = new ScrollPane(root)
     scrollPane.setFitToWidth(true)
     scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER)
-    scrollPane.setStyle("-fx-background: #1a1a2e; -fx-background-color: #1a1a2e; -fx-border-color: transparent;")
+    scrollPane.setStyle("-fx-background-color: #1a1a2e; -fx-border-color: transparent;")
+    ViewportCache.disable(scrollPane) // the character panel inside animates
 
     // Wire up listeners
-    client.lobbyUpdatedListener = () => {
-      Platform.runLater(() => {
-        playersLabel.setText(s"Players: ${client.currentLobbyPlayerCount}/${client.currentLobbyMaxPlayers}")
-        mapLabel.setText(s"Map: ${WorldRegistry.getDisplayName(client.currentLobbyMapIndex)}")
-        durationLabel.setText(s"Duration: ${client.currentLobbyDuration} min")
-        renderMapPreview(lobbyMapPreviewCanvas, client.currentLobbyMapIndex)
-        // Update game mode label for non-hosts
-        val gml = infoCard.lookup("#gameModeLabel")
-        if (gml != null && gml.isInstanceOf[Label]) {
-          val gmStr = if (client.currentLobbyGameMode == 1) s"Teams (${client.currentLobbyTeamSize}v${client.currentLobbyTeamSize})" else "Free-For-All"
-          gml.asInstanceOf[Label].setText(s"Mode: $gmStr")
-        }
-        // Rebuild team roster
-        rebuildTeamRoster()
-      })
+    def refreshRoom(): Unit = {
+      playersLabel.setText(playersText)
+      mapLabel.setText(Messages.t("Map: {0}", WorldRegistry.getDisplayName(client.currentLobbyMapIndex)))
+      durationLabel.setText(Messages.t("Duration: {0} min", client.currentLobbyDuration.toString))
+      if (client.currentLobbyMapIndex != previewedMap) {
+        previewedMap = client.currentLobbyMapIndex
+        renderMapPreview(lobbyMapPreviewCanvas, previewedMap)
+      }
+      nonHostGameModeLabel.setText(Messages.t("Mode: {0}", modeText))
+      rebuildRoster()
+      refreshHostControls()
     }
+    client.lobbyUpdatedListener = () => Platform.runLater(() => refreshRoom())
 
-    client.chatMessageListener = () => {
-      Platform.runLater(() => {
-        chatMessagesBox.getChildren.clear()
-        import scala.jdk.CollectionConverters._
-        client.chatMessages.asScala.foreach { entry =>
-          val sender = entry(1).asInstanceOf[String]
-          val msg = entry(2).asInstanceOf[String]
-          val lbl = new Label()
-          if (sender.isEmpty) {
-            lbl.setText(msg)
-            lbl.setTextFill(Color.web("#778899"))
-            lbl.setFont(Font.font("Exo 2", javafx.scene.text.FontPosture.ITALIC, 12))
+    def renderChat(): Unit = {
+      chatMessagesBox.getChildren.clear()
+      client.chatMessages.asScala.foreach { entry =>
+        val sender = entry(1).asInstanceOf[String]
+        val msg = entry(2).asInstanceOf[String]
+        val lbl = new Label()
+        if (sender.isEmpty) {
+          lbl.setText(msg)
+          lbl.setTextFill(Color.web("#778899"))
+          lbl.setFont(Font.font("Exo 2", javafx.scene.text.FontPosture.ITALIC, 12))
+        } else {
+          lbl.setText(sender + ": " + msg)
+          if (sender == client.playerName) {
+            lbl.setTextFill(Color.web("#4a9eff"))
           } else {
-            lbl.setText(sender + ": " + msg)
-            if (sender == client.playerName) {
-              lbl.setTextFill(Color.web("#4a9eff"))
-            } else {
-              lbl.setTextFill(Color.web("#ccdde8"))
-            }
-            lbl.setFont(Font.font("Exo 2", 12))
+            lbl.setTextFill(Color.web("#ccdde8"))
           }
-          lbl.setWrapText(true)
-          chatMessagesBox.getChildren.add(lbl)
+          lbl.setFont(Font.font("Exo 2", 12))
         }
-        chatScroll.setVvalue(1.0)
-      })
+        lbl.setWrapText(true)
+        chatMessagesBox.getChildren.add(lbl)
+      }
+      chatScroll.setVvalue(1.0)
     }
+    client.chatMessageListener = () => Platform.runLater(() => renderChat())
 
     client.gameStartingListener = () => {
-      Platform.runLater(() => {
-        charPanel.stop()
-        showGameScene(stage)
-      })
+      Platform.runLater(() => showGameScene(stage))
     }
 
     client.lobbyClosedListener = () => {
-      Platform.runLater(() => {
-        charPanel.stop()
-        showLobbyBrowser(stage)
-      })
+      Platform.runLater(() => showLobbyBrowser(stage, Messages.t("Lobby was closed by the host")))
     }
 
-    val scene = new Scene(scrollPane)
+    // The roster a joiner is sent lands right behind JOINED, before these listeners were
+    // set, so draw once from the current state now that they are.
+    refreshRoom()
+    renderChat()
+
+    val scene = newScene(scrollPane)
     stage.setScene(scene)
   }
 
   private def showPracticeSetup(stage: Stage): Unit = {
+    switchScreen()
     val root = new VBox(0)
     root.setAlignment(Pos.TOP_CENTER)
     root.setStyle(darkBg)
@@ -1317,13 +1429,18 @@ class ClientMain extends Application {
     infoCard.setStyle(cardBg)
     infoCard.setAlignment(Pos.CENTER)
 
-    val descLabel = new Label(Messages.t("SELECT CHARACTER"))
+    val descLabel = new Label(Messages.t("HOW IT WORKS"))
     descLabel.setStyle(sectionHeaderStyle)
 
     val descText = new Label(Messages.t("Shoot passive bots with\nsatisfying feedback. Bots\nrespawn quickly so you can\npractice non-stop."))
     descText.setTextFill(Color.web("#8899aa"))
     descText.setFont(Font.font("Exo 2", 14))
     descText.setWrapText(true)
+
+    val exitHint = new Label(Messages.t("Press Esc twice in game to end the session."))
+    exitHint.setTextFill(Color.web("#667788"))
+    exitHint.setFont(Font.font("Exo 2", 12))
+    exitHint.setWrapText(true)
 
     val sep = createSeparator()
 
@@ -1332,11 +1449,15 @@ class ClientMain extends Application {
     startBtn.setFont(Font.font("Exo 2", FontWeight.BOLD, 16))
     startBtn.setMaxWidth(Double.MaxValue)
 
+    val statusLabel = new Label("")
+    statusLabel.setFont(Font.font("Exo 2", 12))
+    statusLabel.setWrapText(true)
+
     val backBtn = new Button(Messages.t("Back"))
     addHoverEffect(backBtn, buttonGhostStyle, buttonGhostHoverStyle)
     backBtn.setMaxWidth(Double.MaxValue)
 
-    infoCard.getChildren.addAll(descLabel, descText, sep, startBtn)
+    infoCard.getChildren.addAll(descLabel, descText, exitHint, sep, startBtn, statusLabel)
     leftPanel.getChildren.addAll(infoCard, backBtn)
 
     // Right panel: character selection
@@ -1349,6 +1470,7 @@ class ClientMain extends Application {
     )
     val charSection = charPanel.createPanel()
     rightPanel.getChildren.add(charSection)
+    stopCurrentScreen = () => charPanel.stop()
 
     mainContent.getChildren.addAll(leftPanel, rightPanel)
     root.getChildren.addAll(headerBox, mainContent)
@@ -1356,26 +1478,37 @@ class ClientMain extends Application {
     val scrollPane = new ScrollPane(root)
     scrollPane.setFitToWidth(true)
     scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER)
-    scrollPane.setStyle("-fx-background: #1a1a2e; -fx-background-color: #1a1a2e; -fx-border-color: transparent;")
+    scrollPane.setStyle("-fx-background-color: #1a1a2e; -fx-border-color: transparent;")
+    ViewportCache.disable(scrollPane) // the character panel inside animates
 
     backBtn.setOnAction(_ => {
-      charPanel.stop()
+      client.isPracticeMode = false
       showLobbyBrowser(stage)
     })
 
     startBtn.setOnAction(_ => {
-      charPanel.stop()
-      client.startPractice()
+      startBtn.setDisable(true)
+      showStatus(statusLabel, Messages.t("Starting practice..."), error = false)
+      // Set before sending: the reply can beat the next line on a local server. The session
+      // starts straight away, so the JOINED it opens with must not flash up the lobby room.
+      client.lobbyJoinedListener = () => ()
       client.gameStartingListener = () => {
         Platform.runLater(() => showGameScene(stage))
       }
+      client.lobbyActionFailedListener = reason => Platform.runLater(() => {
+        client.isPracticeMode = false
+        startBtn.setDisable(false)
+        showStatus(statusLabel, lobbyFailureMessage(reason), error = true)
+      })
+      client.startPractice()
     })
 
-    val scene = new Scene(scrollPane)
+    val scene = newScene(scrollPane)
     stage.setScene(scene)
   }
 
   private def showRankedQueue(stage: Stage): Unit = {
+    switchScreen()
     val root = new VBox(0)
     root.setAlignment(Pos.TOP_CENTER)
     root.setStyle(darkBg)
@@ -1463,6 +1596,7 @@ class ClientMain extends Application {
         }
       }
     }
+    updateModeButtons()
 
     ffaBtn.setOnAction(_ => {
       selectedMode = RankedQueueMode.FFA
@@ -1483,13 +1617,13 @@ class ClientMain extends Application {
     val modeButtonsCol = new VBox(10, ffaBtn, duelBtn, teamsBtn)
 
     // Queue status elements (initially hidden)
-    val queueSizeLabel = new Label(Messages.t("Players in queue: 1"))
+    val queueSizeLabel = new Label(Messages.t("Players in queue: {0}", "1"))
     queueSizeLabel.setFont(Font.font("Exo 2", 14))
     queueSizeLabel.setTextFill(Color.web("#aabbcc"))
     queueSizeLabel.setVisible(false)
     queueSizeLabel.setManaged(false)
 
-    val waitTimeLabel = new Label(Messages.t("Wait time: 0s"))
+    val waitTimeLabel = new Label(Messages.t("Wait time: {0}s", "0"))
     waitTimeLabel.setFont(Font.font("Exo 2", 14))
     waitTimeLabel.setTextFill(Color.web("#aabbcc"))
     waitTimeLabel.setVisible(false)
@@ -1515,9 +1649,9 @@ class ClientMain extends Application {
           lastUpdate = now
           dotTick = (dotTick + 1) % 4
           val dots = "." * dotTick
-          val modeText = if (selectedMode == RankedQueueMode.DUEL) "Searching for opponent"
-            else if (selectedMode == RankedQueueMode.TEAMS) "Searching for teammates"
-            else "Searching for match"
+          val modeText = if (selectedMode == RankedQueueMode.DUEL) Messages.t("Searching for opponent")
+            else if (selectedMode == RankedQueueMode.TEAMS) Messages.t("Searching for teammates")
+            else Messages.t("Searching for match")
           searchingLabel.setText(s"$modeText$dots")
         }
       }
@@ -1538,18 +1672,16 @@ class ClientMain extends Application {
       id => client.changeRankedCharacter(id)
     )
     val charSection = charPanel.createPanel()
+    stopCurrentScreen = () => { charPanel.stop(); dotTimer.stop() }
 
     // Back / Leave queue button
     val leaveBtn = new Button(Messages.t("Back"))
     addHoverEffect(leaveBtn, buttonRedStyle, buttonRedHoverStyle)
     leaveBtn.setMaxWidth(Double.MaxValue)
     leaveBtn.setOnAction(_ => {
-      charPanel.stop()
-      dotTimer.stop()
       if (isSearching) {
         client.leaveRankedQueue()
       }
-      client.requestLobbyList()
       showLobbyBrowser(stage)
     })
 
@@ -1592,16 +1724,23 @@ class ClientMain extends Application {
     val scrollPane = new ScrollPane(root)
     scrollPane.setFitToWidth(true)
     scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER)
-    scrollPane.setStyle("-fx-background: #1a1a2e; -fx-background-color: #1a1a2e; -fx-border-color: transparent;")
+    scrollPane.setStyle("-fx-background-color: #1a1a2e; -fx-border-color: transparent;")
+    ViewportCache.disable(scrollPane) // the character panel inside animates
 
     // Wire up queue status listener
     client.rankedQueueListener = () => {
       Platform.runLater(() => {
-        queueSizeLabel.setText(s"Players in queue: ${client.rankedQueueSize}")
-        waitTimeLabel.setText(s"Wait time: ${client.rankedQueueWaitTime}s")
+        queueSizeLabel.setText(Messages.t("Players in queue: {0}", client.rankedQueueSize.toString))
+        waitTimeLabel.setText(Messages.t("Wait time: {0}s", client.rankedQueueWaitTime.toString))
         eloLabel.setText(s"ELO: ${client.rankedElo}")
       })
     }
+
+    // The rating is only known once stats arrive; until then the badge showed the default 1000.
+    client.matchHistoryListener = () => {
+      Platform.runLater(() => eloLabel.setText(s"ELO: ${client.rankedElo}"))
+    }
+    client.requestMatchHistory()
 
     // Wire up match found listener - transition to game
     client.rankedMatchFoundListener = () => {
@@ -1612,27 +1751,19 @@ class ClientMain extends Application {
 
     // Wire up game starting listener to transition to game scene
     client.gameStartingListener = () => {
-      Platform.runLater(() => {
-        charPanel.stop()
-        dotTimer.stop()
-        showGameScene(stage)
-      })
+      Platform.runLater(() => showGameScene(stage))
     }
 
     client.lobbyClosedListener = () => {
-      Platform.runLater(() => {
-        charPanel.stop()
-        dotTimer.stop()
-        client.requestLobbyList()
-        showLobbyBrowser(stage)
-      })
+      Platform.runLater(() => showLobbyBrowser(stage))
     }
 
-    val scene = new Scene(scrollPane)
+    val scene = newScene(scrollPane)
     stage.setScene(scene)
   }
 
   private def showLeaderboard(stage: Stage): Unit = {
+    switchScreen()
     val root = new VBox(16)
     root.setPadding(new Insets(24))
     root.setStyle(darkBg)
@@ -1646,39 +1777,32 @@ class ClientMain extends Application {
     HBox.setHgrow(spacer, Priority.ALWAYS)
     val backBtn = new Button(Messages.t("Back"))
     addHoverEffect(backBtn, buttonStyle, buttonHoverStyle)
-    backBtn.setOnAction(_ => {
-      client.requestLobbyList()
-      showLobbyBrowser(stage)
-    })
+    backBtn.setOnAction(_ => showLobbyBrowser(stage))
     titleBar.getChildren.addAll(title, spacer, backBtn)
 
-    val leaderboardListView = new ListView[String]()
+    val leaderboardListView = new ListView[LeaderboardEntry]()
     leaderboardListView.setStyle(listViewCss)
     VBox.setVgrow(leaderboardListView, Priority.ALWAYS)
 
-    val leaderboardCellFactory = new Callback[ListView[String], ListCell[String]] {
-      override def call(param: ListView[String]): ListCell[String] = new ListCell[String] {
-        override def updateItem(item: String, empty: Boolean): Unit = {
-          super.updateItem(item, empty)
-          if (empty || item == null) {
+    val leaderboardCellFactory = new Callback[ListView[LeaderboardEntry], ListCell[LeaderboardEntry]] {
+      override def call(param: ListView[LeaderboardEntry]): ListCell[LeaderboardEntry] = new ListCell[LeaderboardEntry] {
+        override def updateItem(entry: LeaderboardEntry, empty: Boolean): Unit = {
+          super.updateItem(entry, empty)
+          if (empty || entry == null) {
             setText(null)
             setStyle("-fx-background-color: #242440;")
           } else {
-            setText(item)
+            setText(Messages.t("#{0}  |  {1}  |  ELO: {2}  |  {3}W  |  {4} Matches",
+              entry.rank.toString, entry.username, entry.elo.toString, entry.wins.toString, entry.matchesPlayed.toString))
             val base = "-fx-font-size: 15; -fx-padding: 10 12; -fx-font-weight: bold;"
             val idx = getIndex
-            // Check if this row is the local player
-            val isLocal = idx >= 0 && idx < client.leaderboard.size() && {
-              val entry = client.leaderboard.get(idx)
-              entry(1).asInstanceOf[String].equalsIgnoreCase(client.playerName)
-            }
-            if (isLocal) {
+            if (entry.username.equalsIgnoreCase(client.playerName)) {
               setStyle(s"-fx-background-color: rgba(74, 158, 255, 0.15); -fx-text-fill: #4a9eff; $base")
-            } else if (idx == 0) {
+            } else if (entry.rank == 1) {
               setStyle(s"-fx-background-color: #242440; -fx-text-fill: #ffd700; $base")
-            } else if (idx == 1) {
+            } else if (entry.rank == 2) {
               setStyle(s"-fx-background-color: #2a2a48; -fx-text-fill: #c0c0c0; $base")
-            } else if (idx == 2) {
+            } else if (entry.rank == 3) {
               setStyle(s"-fx-background-color: #242440; -fx-text-fill: #cd7f32; $base")
             } else if (idx % 2 == 0) {
               setStyle(s"-fx-background-color: #242440; -fx-text-fill: #dde; $base")
@@ -1691,36 +1815,32 @@ class ClientMain extends Application {
     }
     leaderboardListView.setCellFactory(leaderboardCellFactory)
 
-    val loadingLabel = new Label(Messages.t("Loading..."))
+    val loadingLabel = new Label("")
     loadingLabel.setTextFill(Color.web("#8899bb"))
     loadingLabel.setFont(Font.font("Exo 2", 13))
 
     root.getChildren.addAll(titleBar, leaderboardListView, loadingLabel)
 
-    val scene = new Scene(root)
+    val scene = newScene(root)
     stage.setScene(scene)
 
-    // Set up listener and request data
-    client.leaderboardListener = () => {
-      Platform.runLater(() => {
-        val items = new java.util.ArrayList[String]()
-        import scala.jdk.CollectionConverters._
-        client.leaderboard.asScala.foreach { entry =>
-          val rank = entry(0).asInstanceOf[Int]
-          val username = entry(1).asInstanceOf[String]
-          val elo = entry(2).asInstanceOf[Int]
-          val wins = entry(3).asInstanceOf[Int]
-          val matches = entry(4).asInstanceOf[Int]
-          items.add(s"#$rank  |  $username  |  ELO: $elo  |  ${wins}W  |  $matches Matches")
-        }
-        leaderboardListView.setItems(FXCollections.observableArrayList(items))
-        loadingLabel.setText(if (items.isEmpty) "No players found" else "")
-      })
+    // Show what we have now and replace it when the response lands. The server rate-limits
+    // this query, so reopening the screen within a few seconds gets the cached board.
+    import scala.jdk.CollectionConverters._
+    def render(): Unit = {
+      leaderboardListView.getItems.setAll(client.leaderboard.asJava)
+      loadingLabel.setText(
+        if (!client.leaderboardLoaded) Messages.t("Loading...")
+        else if (client.leaderboard.isEmpty) Messages.t("No players found")
+        else "")
     }
+    render()
+    client.leaderboardListener = () => Platform.runLater(() => render())
     client.requestLeaderboard()
   }
 
   private def showAccountView(stage: Stage): Unit = {
+    switchScreen()
     val root = new VBox(0)
     root.setStyle(darkBg)
 
@@ -1744,10 +1864,7 @@ class ClientMain extends Application {
     HBox.setHgrow(spacer, Priority.ALWAYS)
     val backBtn = new Button(Messages.t("Back"))
     addHoverEffect(backBtn, buttonGhostStyle, buttonGhostHoverStyle)
-    backBtn.setOnAction(_ => {
-      client.requestLobbyList()
-      showLobbyBrowser(stage)
-    })
+    backBtn.setOnAction(_ => showLobbyBrowser(stage))
     titleBar.getChildren.addAll(title, playerTag, spacer, backBtn)
 
     val headerSep = createAccentLine()
@@ -1773,19 +1890,19 @@ class ClientMain extends Application {
     statsRow.setAlignment(Pos.CENTER)
     statsRow.setPadding(new Insets(8, 0, 4, 0))
 
-    val killsBox = createStatBox("Kills", "0", "#2ecc71")
-    val deathsBox = createStatBox("Deaths", "0", "#e84057")
-    val matchesBox = createStatBox("Matches", "0", "#4a9eff")
-    val winsBox = createStatBox("Wins", "0", "#ffd700")
-    val eloBox = createStatBox("ELO", "1000", "#e88d3f")
-    HBox.setHgrow(killsBox, Priority.ALWAYS)
-    HBox.setHgrow(deathsBox, Priority.ALWAYS)
-    HBox.setHgrow(matchesBox, Priority.ALWAYS)
-    HBox.setHgrow(winsBox, Priority.ALWAYS)
-    HBox.setHgrow(eloBox, Priority.ALWAYS)
+    val (killsBox, killsValue) = createStatBox(Messages.t("Kills"), "-", "#2ecc71")
+    val (deathsBox, deathsValue) = createStatBox(Messages.t("Deaths"), "-", "#e84057")
+    val (matchesBox, matchesValue) = createStatBox(Messages.t("Matches"), "-", "#4a9eff")
+    val (winsBox, winsValue) = createStatBox(Messages.t("Wins"), "-", "#ffd700")
+    val (eloBox, eloValue) = createStatBox("ELO", "-", "#e88d3f")
+    Seq(killsBox, deathsBox, matchesBox, winsBox, eloBox).foreach(b => HBox.setHgrow(b, Priority.ALWAYS))
     statsRow.getChildren.addAll(killsBox, deathsBox, matchesBox, winsBox, eloBox)
 
-    statsCard.getChildren.addAll(statsTitle, statsRow)
+    val practiceNote = new Label(Messages.t("Practice sessions don't count toward stats."))
+    practiceNote.setTextFill(Color.web("#667788"))
+    practiceNote.setFont(Font.font("Exo 2", 11))
+
+    statsCard.getChildren.addAll(statsTitle, statsRow, practiceNote)
 
     // Match history label
     val historyTitle = new Label(Messages.t("RECENT MATCHES"))
@@ -1793,23 +1910,39 @@ class ClientMain extends Application {
     historyTitle.setPadding(new Insets(4, 0, 0, 0))
 
     // Match history list
-    val historyListView = new ListView[String]()
+    val historyListView = new ListView[MatchHistoryEntry]()
     historyListView.setStyle(listViewCss)
     VBox.setVgrow(historyListView, Priority.ALWAYS)
 
-    val historyCellFactory = new Callback[ListView[String], ListCell[String]] {
-      override def call(param: ListView[String]): ListCell[String] = new ListCell[String] {
-        override def updateItem(item: String, empty: Boolean): Unit = {
-          super.updateItem(item, empty)
-          if (empty || item == null) {
+    val dateFormat = new java.text.SimpleDateFormat("MMM d, HH:mm", Messages.currentLocale)
+    def matchTypeLabel(matchType: Int): String = matchType match {
+      case 1 => Messages.t("Casual Teams")
+      case 2 => Messages.t("Ranked FFA")
+      case 3 => Messages.t("Ranked Duel")
+      case 4 => Messages.t("Ranked Teams")
+      case 5 => Messages.t("Practice")
+      case _ => Messages.t("Casual FFA")
+    }
+    def isTeamMatch(e: MatchHistoryEntry): Boolean = e.matchType == 1 || e.matchType == 4
+
+    val historyCellFactory = new Callback[ListView[MatchHistoryEntry], ListCell[MatchHistoryEntry]] {
+      override def call(param: ListView[MatchHistoryEntry]): ListCell[MatchHistoryEntry] = new ListCell[MatchHistoryEntry] {
+        override def updateItem(e: MatchHistoryEntry, empty: Boolean): Unit = {
+          super.updateItem(e, empty)
+          if (empty || e == null) {
             setText(null)
             setStyle("-fx-background-color: transparent;")
           } else {
-            setText(item)
+            // A Teams rank is the team's place, so it reads as a result, not "#1/6"
+            val result =
+              if (isTeamMatch(e)) { if (e.rank == 1) Messages.t("Victory") else Messages.t("Defeat") }
+              else s"#${e.rank}/${e.totalPlayers}"
+            val date = dateFormat.format(new java.util.Date(e.playedAt * 1000L))
+            setText(Messages.t("{0}  |  {1}  |  {2}  |  {3}K/{4}D  |  {5}min  |  {6}",
+              matchTypeLabel(e.matchType), result, WorldRegistry.getDisplayName(e.mapIndex),
+              e.kills.toString, e.deaths.toString, e.durationMinutes.toString, date))
             val base = "-fx-text-fill: #ccdde8; -fx-font-size: 14; -fx-padding: 12 16; -fx-background-radius: 6;"
-            // Color-code by rank
-            val isWin = item.startsWith("#1/")
-            if (isWin) {
+            if (e.rank == 1 && e.matchType != 5) {
               setStyle(s"-fx-background-color: rgba(255, 215, 0, 0.06); $base -fx-border-color: rgba(255, 215, 0, 0.15); -fx-border-width: 0 0 0 3; -fx-border-radius: 6;")
             } else if (getIndex % 2 == 0) {
               setStyle(s"-fx-background-color: rgba(255,255,255,0.02); $base")
@@ -1822,7 +1955,7 @@ class ClientMain extends Application {
     }
     historyListView.setCellFactory(historyCellFactory)
 
-    val loadingLabel = new Label(Messages.t("Loading..."))
+    val loadingLabel = new Label("")
     loadingLabel.setTextFill(Color.web("#8899aa"))
     loadingLabel.setFont(Font.font("Exo 2", 13))
 
@@ -1830,53 +1963,33 @@ class ClientMain extends Application {
 
     root.getChildren.addAll(headerArea, contentArea)
 
-    val scene = new Scene(root)
+    val scene = newScene(root)
     stage.setScene(scene)
 
-    // Set up listener and request data
-    client.matchHistoryListener = () => {
-      Platform.runLater(() => {
-        // Update stats
-        val killsLabel = killsBox.getChildren.get(0).asInstanceOf[VBox].getChildren.get(1).asInstanceOf[Label]
-        killsLabel.setText(client.totalKillsStat.toString)
-        val deathsLabel = deathsBox.getChildren.get(0).asInstanceOf[VBox].getChildren.get(1).asInstanceOf[Label]
-        deathsLabel.setText(client.totalDeathsStat.toString)
-        val matchesLabel = matchesBox.getChildren.get(0).asInstanceOf[VBox].getChildren.get(1).asInstanceOf[Label]
-        matchesLabel.setText(client.matchesPlayedStat.toString)
-        val winsLabel = winsBox.getChildren.get(0).asInstanceOf[VBox].getChildren.get(1).asInstanceOf[Label]
-        winsLabel.setText(client.winsStat.toString)
-        val eloLabel = eloBox.getChildren.get(0).asInstanceOf[VBox].getChildren.get(1).asInstanceOf[Label]
-        eloLabel.setText(client.rankedElo.toString)
-
-        // Update match list
-        val items = new java.util.ArrayList[String]()
-        import scala.jdk.CollectionConverters._
-        client.matchHistory.asScala.foreach { entry =>
-          val mapName = WorldRegistry.getDisplayName(entry(1))
-          val playedAt = entry(3).toLong * 1000L
-          val date = new java.text.SimpleDateFormat("MMM d, HH:mm").format(new java.util.Date(playedAt))
-          val kills = entry(4)
-          val deaths = entry(5)
-          val rank = entry(6)
-          val totalPlayers = entry(7)
-          val duration = entry(2)
-          val matchTypeLabel = if (entry.length > 8) entry(8) match {
-            case 1 => "Casual Teams"
-            case 2 => "Ranked FFA"
-            case 3 => "Ranked Duel"
-            case 4 => "Ranked Teams"
-            case _ => "Casual FFA"
-          } else "Casual FFA"
-          items.add(s"$matchTypeLabel  |  #${rank}/${totalPlayers}  |  $mapName  |  ${kills}K/${deaths}D  |  ${duration}min  |  $date")
-        }
-        historyListView.setItems(FXCollections.observableArrayList(items))
-        loadingLabel.setText(if (items.isEmpty) "No matches played yet" else "")
-      })
+    // Show what we have now and replace it when the response lands. The server rate-limits
+    // this query, so reopening the screen within a few seconds gets the cached profile.
+    import scala.jdk.CollectionConverters._
+    def render(): Unit = {
+      if (client.matchHistoryLoaded) {
+        killsValue.setText(client.totalKillsStat.toString)
+        deathsValue.setText(client.totalDeathsStat.toString)
+        matchesValue.setText(client.matchesPlayedStat.toString)
+        winsValue.setText(client.winsStat.toString)
+        eloValue.setText(client.rankedElo.toString)
+      }
+      historyListView.getItems.setAll(client.matchHistory.asJava)
+      loadingLabel.setText(
+        if (!client.matchHistoryLoaded) Messages.t("Loading...")
+        else if (client.matchHistory.isEmpty) Messages.t("No matches played yet")
+        else "")
     }
+    render()
+    client.matchHistoryListener = () => Platform.runLater(() => render())
     client.requestMatchHistory()
   }
 
-  private def createStatBox(label: String, value: String, accentColor: String): StackPane = {
+  /** A labelled stat tile; returns the tile and its value label, to update later. */
+  private def createStatBox(label: String, value: String, accentColor: String): (StackPane, Label) = {
     val container = new StackPane()
     container.setStyle(s"-fx-background-color: rgba(255,255,255,0.03); -fx-background-radius: 12; -fx-border-color: rgba(255,255,255,0.05); -fx-border-radius: 12; -fx-border-width: 1;")
     container.setPadding(new Insets(12, 8, 12, 8))
@@ -1892,10 +2005,11 @@ class ClientMain extends Application {
     inner.getChildren.addAll(nameLabel, valueLabel)
 
     container.getChildren.add(inner)
-    container
+    (container, valueLabel)
   }
 
   private def showGameScene(stage: Stage): Unit = {
+    switchScreen()
     primaryStageRef = stage
 
     // Create GL renderer
@@ -1905,7 +2019,12 @@ class ClientMain extends Application {
     // Prevent JavaFX from shutting down when we hide the last stage
     Platform.setImplicitExit(false)
 
-    // Hide JavaFX stage — GLFW window takes over rendering
+    // Hide JavaFX stage — GLFW window takes over rendering. Its screen goes with it: a hidden
+    // stage still holds its scene, so the character grid's canvases, sprite sheets and the
+    // textures behind them stayed allocated for the whole match. Every way out of a match
+    // shows a new screen, so nothing needs this one again.
+    stage.setScene(new Scene(new StackPane(), Color.BLACK))
+    com.gridgame.client.ui.SpriteGenerator.clearCache()
     stage.hide()
 
     // Create GLFW window
@@ -1916,6 +2035,9 @@ class ClientMain extends Application {
     // Set up GLFW input handlers
     val glKeyHandler = new GLKeyboardHandler(client)
     val glMouseHandler = new GLMouseHandler(client, glRenderer.camera)
+    // Esc twice leaves. It fires inside this frame's event poll, so tearing down the window
+    // it is drawing to waits for the frame to finish.
+    glKeyHandler.onLeaveMatch = () => Platform.runLater(() => leaveMatch(stage))
 
     org.lwjgl.glfw.GLFW.glfwSetKeyCallback(glWindow.handle, glKeyHandler)
     org.lwjgl.glfw.GLFW.glfwSetCharCallback(glWindow.handle, (_, codepoint: Int) => {
@@ -1947,7 +2069,7 @@ class ClientMain extends Application {
       override def handle(now: Long): Unit = {
         val frameStartNs = System.nanoTime()
         try {
-          if (!glWindow.isValid) return
+          if (glWindow == null || !glWindow.isValid) return
           val deltaNs = if (lastFrameTime == 0L) 16_666_667L else now - lastFrameTime
           lastFrameTime = now
           val deltaSec = Math.min(deltaNs / 1_000_000_000.0, 0.05)
@@ -1966,7 +2088,9 @@ class ClientMain extends Application {
           if (glWindow.shouldClose) {
             renderLoop.stop()
             glRenderer.dispose()
+            glRenderer = null
             glWindow.destroy()
+            glWindow = null
             Platform.runLater(() => {
               Platform.setImplicitExit(true)
               AudioManager.stopMusic()
@@ -1988,8 +2112,8 @@ class ClientMain extends Application {
             com.gridgame.common.observability.Metrics.clientErrors.add(1L,
               io.opentelemetry.api.common.Attributes.of(com.gridgame.common.observability.Attrs.Kind, "render_loop"))
             renderLoop.stop()
-            glRenderer.dispose()
-            glWindow.destroy()
+            if (glRenderer != null) { glRenderer.dispose(); glRenderer = null }
+            if (glWindow != null) { glWindow.destroy(); glWindow = null }
             Platform.runLater(() => {
               Platform.setImplicitExit(true)
               AudioManager.stopMusic()
@@ -2011,219 +2135,145 @@ class ClientMain extends Application {
     // Wire game over listener
     client.gameOverListener = () => {
       Platform.runLater(() => {
-        renderLoop.stop()
-        glRenderer.dispose()
-        glWindow.destroy()
-        Platform.setImplicitExit(true)
-        AudioManager.playMenuMusic()
-        stage.show()
+        closeGameScene(stage)
         showScoreboard(stage)
+      })
+    }
+
+    // The server no longer closes a lobby mid-match, but if one closes anyway don't leave
+    // the player in a match nothing is driving.
+    client.lobbyClosedListener = () => {
+      Platform.runLater(() => {
+        closeGameScene(stage)
+        client.returnToLobbyBrowser()
+        showLobbyBrowser(stage, Messages.t("The match was closed"))
       })
     }
 
     println("Game started!")
   }
 
+  /** Take down the in-game window and bring the JavaFX stage back; a no-op when no match is
+    * showing. Run it between frames (from a runLater), never inside one: it destroys the
+    * window the frame is drawing to. */
+  private def closeGameScene(stage: Stage): Unit = {
+    if (renderLoop == null) return
+    renderLoop.stop()
+    renderLoop = null
+    client.gameOverListener = null
+    if (glRenderer != null) { glRenderer.dispose(); glRenderer = null }
+    if (glWindow != null) { glWindow.destroy(); glWindow = null }
+    Platform.setImplicitExit(true)
+    AudioManager.playMenuMusic()
+    stage.show()
+  }
+
+  /** Esc-Esc in a match. */
+  private def leaveMatch(stage: Stage): Unit = {
+    if (renderLoop == null) return
+    if (client.isPracticeMode) {
+      // The server ends the session and sends its results like any finished match. Should
+      // they never come, don't leave the player standing in a session nothing is running.
+      val sessionLobby = client.currentLobbyId
+      client.leaveMatch()
+      val fallback = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(4))
+      fallback.setOnFinished(_ => {
+        if (client.clientState == ClientState.PLAYING && client.currentLobbyId == sessionLobby) {
+          closeGameScene(stage)
+          client.returnToLobbyBrowser()
+          showLobbyBrowser(stage)
+        }
+      })
+      fallback.play()
+    } else {
+      client.leaveMatch()
+      closeGameScene(stage)
+      showLobbyBrowser(stage)
+    }
+  }
+
+  /** The server connection dropped: leave whatever screen, or match, we were on for login. */
+  private def handleServerDisconnect(stage: Stage): Unit = {
+    // GameClient already posts this onto the FX thread.
+    closeGameScene(stage)
+    stage.show()
+    showWelcomeScreen(stage, Messages.t("Disconnected from the server"))
+  }
+
   private def showScoreboard(stage: Stage): Unit = {
+    switchScreen()
+    import scala.jdk.CollectionConverters._
+
+    val isPractice = client.isPracticeMode
+    val localId = client.getLocalPlayerId
+    val entries = client.scoreboard.asScala.toVector
+    // Decided by the results rather than by lobby state that can outlive its lobby
+    val teamMode = entries.exists(_.teamId != 0)
+
+    val rows: Vector[ScoreEntry] =
+      if (teamMode) entries.sortBy(e => (e.rank, e.teamId, -e.kills, e.deaths))
+      else entries.sortBy(e => (e.rank, -e.kills, e.deaths))
+    val localEntry = entries.find(_.playerId.equals(localId))
+    val teamRanks: Map[Int, Int] = entries.groupBy(_.teamId).map { case (team, members) => team -> members.head.rank }
+    val teamKills: Map[Int, Int] = entries.groupBy(_.teamId).map { case (team, members) => team -> members.map(_.kills).sum }
+    val isDraw = teamMode && teamRanks.size > 1 && teamRanks.values.forall(_ == 1)
+
+    def teamName(team: Int): String = team match {
+      case 1 => Messages.t("Team 1 (Blue)")
+      case 2 => Messages.t("Team 2 (Red)")
+      case n => Messages.t("Team {0}", n.toString)
+    }
+    def teamColor(team: Int): String = team match {
+      case 1 => "#4a82ff"
+      case 2 => "#e84057"
+      case 3 => "#2ecc71"
+      case 4 => "#f1c40f"
+      case _ => "#8899aa"
+    }
+    val teamRowColors = Map(1 -> "rgba(74, 130, 255, 0.12)", 2 -> "rgba(232, 64, 87, 0.12)", 3 -> "rgba(46, 204, 113, 0.12)", 4 -> "rgba(241, 196, 15, 0.12)")
+
+    // Headline: the player's own result, which is what they came to this screen for
+    val (titleText, titleColor, titleGlow) =
+      if (isPractice) (Messages.t("Practice Complete"), "#ffffff", "rgba(61, 219, 128, 0.4)")
+      else localEntry match {
+        case Some(_) if isDraw => (Messages.t("Draw"), "#ffffff", "rgba(74, 158, 255, 0.4)")
+        case Some(e) if e.rank == 1 => (Messages.t("Victory!"), "#ffd700", "rgba(255, 215, 0, 0.5)")
+        case Some(_) if teamMode => (Messages.t("Defeat"), "#ff8090", "rgba(232, 64, 87, 0.45)")
+        case _ => (Messages.t("Game Over"), "#ffffff", "rgba(74, 158, 255, 0.4)")
+      }
+    val subtitleText =
+      if (isPractice) Messages.t("Target Practice")
+      else if (teamMode) {
+        val byPlace = teamKills.toSeq.sortBy { case (team, kills) => (teamRanks(team), team) }
+        val score = byPlace.map(_._2.toString).mkString(" – ")
+        if (isDraw) Messages.t("Tied at {0}", score)
+        else byPlace.headOption.map { case (team, _) => Messages.t("{0} wins {1}", teamName(team), score) }.getOrElse(Messages.t("Final Scoreboard"))
+      } else localEntry match {
+        case Some(e) => Messages.t("You placed #{0} of {1}", e.rank.toString, entries.size.toString)
+        case None => Messages.t("Final Scoreboard")
+      }
+
     val root = new VBox(0)
     root.setAlignment(Pos.TOP_CENTER)
     root.setStyle(darkBg)
+    root.setPadding(new Insets(0, 24, 36, 24))
+    root.setMinHeight(Region.USE_PREF_SIZE)
 
     // Title section with glow
     val titleBox = new VBox(6)
     titleBox.setAlignment(Pos.CENTER)
     titleBox.setPadding(new Insets(36, 0, 24, 0))
 
-    val isPractice = client.isPracticeMode
-    val title = new Label(if (isPractice) "Practice Complete" else "Game Over")
+    val title = new Label(titleText)
     title.setFont(Font.font("Exo 2", FontWeight.BOLD, 40))
-    title.setTextFill(Color.WHITE)
-    title.setStyle("-fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.4), 20, 0, 0, 0);")
+    title.setTextFill(Color.web(titleColor))
+    title.setStyle(s"-fx-effect: dropshadow(gaussian, $titleGlow, 20, 0, 0, 0);")
 
-    val subtitle = new Label(if (isPractice) "Target Practice" else "Final Scoreboard")
+    val subtitle = new Label(subtitleText)
     subtitle.setFont(Font.font("Exo 2", 15))
     subtitle.setTextFill(Color.web("#8899aa"))
 
-    val accentLine = createAccentLine()
-
-    titleBox.getChildren.addAll(title, subtitle, accentLine)
-
-    // Scoreboard card
-    val scoreCard = new VBox(0)
-    scoreCard.setMaxWidth(700)
-    scoreCard.setStyle(cardBg)
-
-    // Header row
-    val header = new HBox(0)
-    header.setAlignment(Pos.CENTER_LEFT)
-    header.setPadding(new Insets(14, 20, 14, 20))
-    header.setStyle("-fx-background-color: rgba(255,255,255,0.03); -fx-background-radius: 16 16 0 0; -fx-border-color: transparent transparent rgba(255,255,255,0.06) transparent; -fx-border-width: 0 0 1 0;")
-    val hRank = new Label(Messages.t("RANK"))
-    hRank.setMinWidth(80); hRank.setStyle(sectionHeaderStyle)
-    val hPlayer = new Label(Messages.t("CHARACTER"))
-    hPlayer.setMinWidth(240); hPlayer.setStyle(sectionHeaderStyle)
-    HBox.setHgrow(hPlayer, Priority.ALWAYS)
-    val hKills = new Label(Messages.t("KILLS"))
-    hKills.setMinWidth(90); hKills.setStyle(sectionHeaderStyle)
-    val hDeaths = new Label(Messages.t("DEATHS"))
-    hDeaths.setMinWidth(90); hDeaths.setStyle(sectionHeaderStyle)
-    header.getChildren.addAll(hRank, hPlayer, hKills, hDeaths)
-    scoreCard.getChildren.add(header)
-
-    import scala.jdk.CollectionConverters._
-
-    // Team color map for team-colored rows
-    val teamColors = Map(1 -> "rgba(74, 130, 255, 0.12)", 2 -> "rgba(232, 64, 87, 0.12)", 3 -> "rgba(46, 204, 113, 0.12)", 4 -> "rgba(241, 196, 15, 0.12)")
-
-    // Sort by team then rank when in teams mode
-    val sortedEntries = if (client.currentLobbyGameMode == 1) {
-      client.scoreboard.asScala.toSeq.sortBy(e => (e.rank, e.teamId))
-    } else {
-      client.scoreboard.asScala.toSeq
-    }
-
-    var rowIndex = 0
-    var lastTeamId = -1
-    sortedEntries.foreach { entry =>
-      // Add team separator header in Teams mode
-      if (client.currentLobbyGameMode == 1 && entry.teamId != lastTeamId) {
-        lastTeamId = entry.teamId
-        val teamLabel = new Label(s"Team $lastTeamId")
-        teamLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 14))
-        val teamColor = lastTeamId match {
-          case 1 => Color.web("#4a82ff")
-          case 2 => Color.web("#e84057")
-          case 3 => Color.web("#2ecc71")
-          case 4 => Color.web("#f1c40f")
-          case _ => Color.web("#8899aa")
-        }
-        teamLabel.setTextFill(teamColor)
-        val teamHeaderBox = new HBox(teamLabel)
-        teamHeaderBox.setPadding(new Insets(10, 20, 4, 20))
-        teamHeaderBox.setStyle(s"-fx-background-color: ${teamColors.getOrElse(lastTeamId, "transparent")};")
-        scoreCard.getChildren.add(teamHeaderBox)
-      }
-
-      val row = new HBox(0)
-      row.setAlignment(Pos.CENTER_LEFT)
-      row.setPadding(new Insets(12, 20, 12, 20))
-
-      val isLocal = entry.playerId.equals(client.getLocalPlayerId)
-      val isLast = rowIndex == sortedEntries.size - 1
-      val bottomRadius = if (isLast) "-fx-background-radius: 0 0 16 16;" else ""
-
-      val teamBg = if (client.currentLobbyGameMode == 1) {
-        teamColors.getOrElse(entry.teamId, "transparent")
-      } else "transparent"
-
-      val rowBg = if (isLocal) {
-        s"-fx-background-color: rgba(74, 158, 255, 0.1); -fx-border-color: transparent transparent rgba(255,255,255,0.04) transparent; -fx-border-width: 0 0 1 0; $bottomRadius"
-      } else if (client.currentLobbyGameMode == 1) {
-        s"-fx-background-color: $teamBg; -fx-border-color: transparent transparent rgba(255,255,255,0.03) transparent; -fx-border-width: 0 0 1 0; $bottomRadius"
-      } else if (rowIndex % 2 == 0) {
-        s"-fx-background-color: transparent; -fx-border-color: transparent transparent rgba(255,255,255,0.03) transparent; -fx-border-width: 0 0 1 0; $bottomRadius"
-      } else {
-        s"-fx-background-color: rgba(255,255,255,0.02); -fx-border-color: transparent transparent rgba(255,255,255,0.03) transparent; -fx-border-width: 0 0 1 0; $bottomRadius"
-      }
-      row.setStyle(rowBg)
-
-      // Medal styling for top 3
-      val rankText = entry.rank match {
-        case 1 => "#1"
-        case 2 => "#2"
-        case 3 => "#3"
-        case n => s"#$n"
-      }
-      val rankLabel = new Label(rankText)
-      rankLabel.setMinWidth(80)
-      val rankColor = entry.rank match {
-        case 1 => Color.web("#ffd700")
-        case 2 => Color.web("#c0c0c0")
-        case 3 => Color.web("#cd7f32")
-        case _ => Color.web("#556677")
-      }
-      rankLabel.setTextFill(rankColor)
-      rankLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, if (entry.rank <= 3) 20 else 16))
-      if (entry.rank <= 3) {
-        rankLabel.setStyle(s"-fx-effect: dropshadow(gaussian, ${if (entry.rank == 1) "rgba(255,215,0,0.4)" else if (entry.rank == 2) "rgba(192,192,192,0.3)" else "rgba(205,127,50,0.3)"}, 8, 0, 0, 0);")
-      }
-
-      val nameStr = if (isLocal) s"${I18n.characterName(client.getSelectedCharacterDef)} ${Messages.t("(you)")}" else {
-        val p = client.getPlayers.get(entry.playerId)
-        if (p != null) I18n.characterName(CharacterDef.get(p.getCharacterId)) else entry.playerId.toString.substring(0, 8)
-      }
-      val nameLabel = new Label(nameStr)
-      nameLabel.setMinWidth(240)
-      HBox.setHgrow(nameLabel, Priority.ALWAYS)
-      nameLabel.setTextFill(if (isLocal) Color.web("#4a9eff") else Color.web("#ccdde8"))
-      nameLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 15))
-
-      val killsLabel = new Label(entry.kills.toString)
-      killsLabel.setMinWidth(90)
-      killsLabel.setTextFill(Color.web("#2ecc71"))
-      killsLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 16))
-
-      val deathsLabel = new Label(entry.deaths.toString)
-      deathsLabel.setMinWidth(90)
-      deathsLabel.setTextFill(Color.web("#e84057"))
-      deathsLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 15))
-
-      row.getChildren.addAll(rankLabel, nameLabel, killsLabel, deathsLabel)
-      scoreCard.getChildren.add(row)
-      rowIndex += 1
-    }
-
-    // Practice stats row (only shown in practice mode)
-    if (isPractice) {
-      val practiceStatsRow = new HBox(12)
-      practiceStatsRow.setAlignment(Pos.CENTER)
-      practiceStatsRow.setPadding(new Insets(12, 20, 12, 20))
-      practiceStatsRow.setMaxWidth(700)
-      practiceStatsRow.setStyle(cardBgSubtle)
-
-      val bestComboBox = createStatBox("Best Combo", client.practiceBestCombo.toString, "#ffd700")
-      val accuracy = if (client.practiceShots > 0) (client.practiceHits * 100.0 / client.practiceShots).toInt else 0
-      val accuracyBox = createStatBox("Accuracy", s"$accuracy%", "#4a9eff")
-      val totalKillsBox = createStatBox("Total Kills", client.killCount.toString, "#2ecc71")
-      HBox.setHgrow(bestComboBox, Priority.ALWAYS)
-      HBox.setHgrow(accuracyBox, Priority.ALWAYS)
-      HBox.setHgrow(totalKillsBox, Priority.ALWAYS)
-      practiceStatsRow.getChildren.addAll(bestComboBox, accuracyBox, totalKillsBox)
-      scoreCard.getChildren.add(practiceStatsRow)
-    }
-
-    val returnBtn = new Button(Messages.t("Return to Lobby"))
-    addHoverEffect(returnBtn, buttonStyle, buttonHoverStyle)
-    returnBtn.setFont(Font.font("Exo 2", FontWeight.BOLD, 15))
-    returnBtn.setOnAction(_ => {
-      client.pendingEloChange = None
-      client.returnToLobbyBrowser()
-      client.requestLobbyList()
-      showLobbyBrowser(stage)
-    })
-
-    val btnBox = new VBox(12)
-    btnBox.setAlignment(Pos.CENTER)
-    btnBox.setPadding(new Insets(24, 0, 0, 0))
-
-    if (isPractice) {
-      val practiceAgainBtn = new Button(Messages.t("Practice Again"))
-      addHoverEffect(practiceAgainBtn, buttonGreenStyle, buttonGreenHoverStyle)
-      practiceAgainBtn.setFont(Font.font("Exo 2", FontWeight.BOLD, 15))
-      practiceAgainBtn.setOnAction(_ => {
-        client.returnToLobbyBrowser()
-        showPracticeSetup(stage)
-      })
-      btnBox.getChildren.add(practiceAgainBtn)
-    }
-
-    btnBox.getChildren.add(returnBtn)
-
-    val scrollPane = new ScrollPane(scoreCard)
-    scrollPane.setFitToWidth(true)
-    scrollPane.setStyle("-fx-background: transparent; -fx-background-color: transparent; -fx-border-color: transparent;")
-    VBox.setVgrow(scrollPane, Priority.ALWAYS)
-
+    titleBox.getChildren.addAll(title, subtitle, createAccentLine())
     root.getChildren.add(titleBox)
 
     // Ranked ELO delta — only shown when the server pushed a post-match STATS
@@ -2265,9 +2315,194 @@ class ClientMain extends Application {
       root.getChildren.add(eloBox)
     }
 
-    root.getChildren.addAll(scrollPane, btnBox)
+    // Scoreboard card
+    val scoreCard = new VBox(0)
+    scoreCard.setMaxWidth(760)
+    scoreCard.setStyle(cardBg)
 
-    fadeInScene(stage, root)
+    // Header row
+    val header = new HBox(0)
+    header.setAlignment(Pos.CENTER_LEFT)
+    header.setPadding(new Insets(14, 20, 14, 20))
+    header.setStyle("-fx-background-color: rgba(255,255,255,0.03); -fx-background-radius: 16 16 0 0; -fx-border-color: transparent transparent rgba(255,255,255,0.06) transparent; -fx-border-width: 0 0 1 0;")
+    val hRank = new Label(Messages.t("RANK"))
+    hRank.setMinWidth(80); hRank.setStyle(sectionHeaderStyle)
+    val hPlayer = new Label(Messages.t("PLAYER"))
+    hPlayer.setMinWidth(240); hPlayer.setMaxWidth(Double.MaxValue); hPlayer.setStyle(sectionHeaderStyle)
+    HBox.setHgrow(hPlayer, Priority.ALWAYS)
+    val hKills = new Label(Messages.t("KILLS"))
+    hKills.setMinWidth(90); hKills.setStyle(sectionHeaderStyle)
+    val hDeaths = new Label(Messages.t("DEATHS"))
+    hDeaths.setMinWidth(90); hDeaths.setStyle(sectionHeaderStyle)
+    header.getChildren.addAll(hRank, hPlayer, hKills, hDeaths)
+    scoreCard.getChildren.add(header)
+
+    val rowBorder = "-fx-border-color: transparent transparent rgba(255,255,255,0.04) transparent; -fx-border-width: 0 0 1 0;"
+    var lastTeamId = -1
+    var placeInTeam = 0
+    rows.zipWithIndex.foreach { case (entry, rowIndex) =>
+      // Team header: name, total kills, and the result, above each team's rows
+      if (teamMode && entry.teamId != lastTeamId) {
+        lastTeamId = entry.teamId
+        placeInTeam = 0
+        val teamLabel = new Label(teamName(entry.teamId))
+        teamLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 15))
+        teamLabel.setTextFill(Color.web(teamColor(entry.teamId)))
+        val killsTotal = new Label(Messages.t("{0} kills", teamKills(entry.teamId).toString))
+        killsTotal.setFont(Font.font("Exo 2", FontWeight.BOLD, 13))
+        killsTotal.setTextFill(Color.web("#aabbcc"))
+        val teamSpacer = new Region()
+        HBox.setHgrow(teamSpacer, Priority.ALWAYS)
+        val teamHeaderBox = new HBox(12, teamLabel, killsTotal, teamSpacer)
+        teamHeaderBox.setAlignment(Pos.CENTER_LEFT)
+        if (!isDraw && teamRanks(entry.teamId) == 1) {
+          val winnerBadge = new Label(Messages.t("WINNER"))
+          winnerBadge.setFont(Font.font("Exo 2", FontWeight.BOLD, 11))
+          winnerBadge.setTextFill(Color.web("#ffd700"))
+          winnerBadge.setStyle("-fx-background-color: rgba(255, 215, 0, 0.12); -fx-padding: 3 10; -fx-background-radius: 10;")
+          teamHeaderBox.getChildren.add(winnerBadge)
+        }
+        teamHeaderBox.setPadding(new Insets(12, 20, 6, 20))
+        teamHeaderBox.setStyle(s"-fx-background-color: ${teamRowColors.getOrElse(entry.teamId, "transparent")};")
+        scoreCard.getChildren.add(teamHeaderBox)
+      }
+      placeInTeam += 1
+
+      val row = new HBox(0)
+      row.setAlignment(Pos.CENTER_LEFT)
+
+      val isLocal = entry.playerId.equals(localId)
+      val bottomRadius = if (rowIndex == rows.size - 1) "-fx-background-radius: 0 0 16 16;" else ""
+      // Our own row is marked by an accent bar, so in Teams it keeps its team's tint rather
+      // than taking a blue that reads as the other team.
+      val rowBg =
+        if (teamMode) teamRowColors.getOrElse(entry.teamId, "transparent")
+        else if (isLocal) "rgba(74, 158, 255, 0.14)"
+        else if (rowIndex % 2 == 0) "transparent"
+        else "rgba(255,255,255,0.02)"
+      if (isLocal) {
+        row.setPadding(new Insets(12, 20, 12, 17))
+        row.setStyle(s"-fx-background-color: $rowBg; -fx-border-color: transparent transparent rgba(255,255,255,0.04) #4a9eff; -fx-border-width: 0 0 1 3; $bottomRadius")
+      } else {
+        row.setPadding(new Insets(12, 20, 12, 20))
+        row.setStyle(s"-fx-background-color: $rowBg; $rowBorder $bottomRadius")
+      }
+
+      // FFA: the finishing place, medal-coloured, shared by exact ties. Teams: the place is
+      // the team's (in its header), so rows show each player's standing within their team.
+      val rankLabel = new Label(if (teamMode) placeInTeam.toString else s"#${entry.rank}")
+      rankLabel.setMinWidth(80)
+      if (teamMode) {
+        rankLabel.setTextFill(Color.web("#667788"))
+        rankLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 15))
+      } else {
+        rankLabel.setTextFill(entry.rank match {
+          case 1 => Color.web("#ffd700")
+          case 2 => Color.web("#c0c0c0")
+          case 3 => Color.web("#cd7f32")
+          case _ => Color.web("#556677")
+        })
+        rankLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, if (entry.rank <= 3) 20 else 16))
+        if (entry.rank <= 3) {
+          rankLabel.setStyle(s"-fx-effect: dropshadow(gaussian, ${if (entry.rank == 1) "rgba(255,215,0,0.4)" else if (entry.rank == 2) "rgba(192,192,192,0.3)" else "rgba(205,127,50,0.3)"}, 8, 0, 0, 0);")
+        }
+      }
+
+      // Character first, as the match showed everyone; then who was playing it
+      val player = if (isLocal) null else client.findPlayer(entry.playerId)
+      val characterName =
+        if (isLocal) I18n.characterName(client.getSelectedCharacterDef)
+        else if (player != null) I18n.characterName(CharacterDef.get(player.getCharacterId))
+        else "?"
+      val playerName =
+        if (isLocal) client.playerName
+        else if (player != null) player.getName
+        else entry.playerId.toString.substring(0, 8)
+      val charLabel = new Label(if (isLocal) s"$characterName ${Messages.t("(you)")}" else characterName)
+      charLabel.setTextFill(if (isLocal) Color.web("#4a9eff") else Color.web("#ccdde8"))
+      charLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 15))
+      val left = !isLocal && client.playerLeftMatch(entry.playerId)
+      val playerLabel = new Label(if (left) s"$playerName  ${Messages.t("(left)")}" else playerName)
+      playerLabel.setTextFill(Color.web("#778899"))
+      playerLabel.setFont(Font.font("Exo 2", 12))
+      val nameCell = new HBox(10, charLabel, playerLabel)
+      nameCell.setAlignment(Pos.BASELINE_LEFT)
+      nameCell.setMinWidth(240)
+      nameCell.setMaxWidth(Double.MaxValue)
+      HBox.setHgrow(nameCell, Priority.ALWAYS)
+
+      val killsLabel = new Label(entry.kills.toString)
+      killsLabel.setMinWidth(90)
+      killsLabel.setTextFill(Color.web("#2ecc71"))
+      killsLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 16))
+
+      val deathsLabel = new Label(entry.deaths.toString)
+      deathsLabel.setMinWidth(90)
+      deathsLabel.setTextFill(Color.web("#e84057"))
+      deathsLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 15))
+
+      row.getChildren.addAll(rankLabel, nameCell, killsLabel, deathsLabel)
+      scoreCard.getChildren.add(row)
+    }
+    root.getChildren.add(scoreCard)
+
+    // Practice stats row (only shown in practice mode)
+    if (isPractice) {
+      val practiceStatsRow = new HBox(12)
+      practiceStatsRow.setAlignment(Pos.CENTER)
+      practiceStatsRow.setPadding(new Insets(12, 20, 12, 20))
+      practiceStatsRow.setMaxWidth(760)
+      practiceStatsRow.setStyle(cardBgSubtle)
+      VBox.setMargin(practiceStatsRow, new Insets(16, 0, 0, 0))
+
+      val accuracy = if (client.practiceShots > 0) (client.practiceHits * 100.0 / client.practiceShots).toInt else 0
+      val (bestComboBox, _) = createStatBox(Messages.t("Best Combo"), client.practiceBestCombo.toString, "#ffd700")
+      val (accuracyBox, _) = createStatBox(Messages.t("Accuracy"), s"$accuracy%", "#4a9eff")
+      val (totalKillsBox, _) = createStatBox(Messages.t("Total Kills"), client.killCount.toString, "#2ecc71")
+      HBox.setHgrow(bestComboBox, Priority.ALWAYS)
+      HBox.setHgrow(accuracyBox, Priority.ALWAYS)
+      HBox.setHgrow(totalKillsBox, Priority.ALWAYS)
+      practiceStatsRow.getChildren.addAll(bestComboBox, accuracyBox, totalKillsBox)
+      root.getChildren.add(practiceStatsRow)
+    }
+
+    val returnBtn = new Button(Messages.t("Return to Lobby"))
+    addHoverEffect(returnBtn, buttonStyle, buttonHoverStyle)
+    returnBtn.setFont(Font.font("Exo 2", FontWeight.BOLD, 15))
+    returnBtn.setOnAction(_ => {
+      client.pendingEloChange = None
+      client.returnToLobbyBrowser()
+      showLobbyBrowser(stage)
+    })
+
+    // Buttons sit right under the results; pinned to the bottom edge they were cut off
+    val btnBox = new HBox(12)
+    btnBox.setAlignment(Pos.CENTER)
+    btnBox.setPadding(new Insets(24, 0, 0, 0))
+
+    if (isPractice) {
+      val practiceAgainBtn = new Button(Messages.t("Practice Again"))
+      addHoverEffect(practiceAgainBtn, buttonGreenStyle, buttonGreenHoverStyle)
+      practiceAgainBtn.setFont(Font.font("Exo 2", FontWeight.BOLD, 15))
+      practiceAgainBtn.setOnAction(_ => {
+        client.returnToLobbyBrowser()
+        showPracticeSetup(stage)
+      })
+      btnBox.getChildren.add(practiceAgainBtn)
+    }
+
+    btnBox.getChildren.add(returnBtn)
+    root.getChildren.add(btnBox)
+
+    // The whole page scrolls when a big lobby outgrows the window. The card used to sit in a
+    // scroll pane of its own, which pinned it to the left edge and the button to the bottom.
+    val scrollPane = new ScrollPane(root)
+    scrollPane.setFitToWidth(true)
+    scrollPane.setFitToHeight(true)
+    scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER)
+    scrollPane.setStyle("-fx-background-color: #151528; -fx-border-color: transparent;")
+
+    fadeInScene(stage, scrollPane)
   }
 
   private def handleWorldFileFromServer(worldFileName: String): Unit = {
@@ -2309,7 +2544,36 @@ class ClientMain extends Application {
 }
 
 object ClientMain {
+  /**
+   * Let the heap give memory back. The JVM's defaults suit a server: the heap grows to
+   * whatever the busiest moment needed and keeps it, since HotSpot only shrinks after a
+   * full GC or a concurrent cycle and G1 rarely runs either in a game this light on
+   * allocation. So a client that had been through a match sat in the menus holding
+   * several hundred MB of heap it wasn't using. These are manageable flags, set here so
+   * they apply however the game was launched (bazel run, the packaged app, java -jar);
+   * a value given on the command line wins.
+   *
+   *  - G1PeriodicGCInterval: when no GC has run for 30s, run a concurrent cycle, which is
+   *    when G1 returns memory (JEP 346). It never fires while a match is allocating.
+   *  - Min/MaxHeapFreeRatio: shrink to at most 30% free rather than 70%.
+   */
+  private def tuneHeap(): Unit = {
+    try {
+      val hotspot = java.lang.management.ManagementFactory
+        .getPlatformMXBean(classOf[com.sun.management.HotSpotDiagnosticMXBean])
+      def setIfDefault(name: String, value: String): Unit =
+        if (hotspot.getVMOption(name).getOrigin == com.sun.management.VMOption.Origin.DEFAULT)
+          hotspot.setVMOption(name, value)
+      setIfDefault("MinHeapFreeRatio", "10") // first: Min may not exceed Max
+      setIfDefault("MaxHeapFreeRatio", "30")
+      setIfDefault("G1PeriodicGCInterval", "30000")
+    } catch {
+      case _: Throwable => // not HotSpot: nothing to tune
+    }
+  }
+
   def main(args: Array[String]): Unit = {
+    tuneHeap()
     // Client telemetry is opt-in. Enable with `--telemetry` flag or `GRIDGAME_TELEMETRY=1`.
     val telemetryEnabled = args.contains("--telemetry") ||
       sys.env.get("GRIDGAME_TELEMETRY").exists(v => v == "1" || v.equalsIgnoreCase("true"))
@@ -2322,6 +2586,16 @@ object ClientMain {
     // Graphics quality: `--quality=low|medium|high|auto` or `GRIDGAME_QUALITY`.
     // Defaults to auto, which starts high and steps down if frames stay slow.
     val passThrough = com.gridgame.client.gl.RenderQuality.configure(args.filterNot(_ == "--telemetry"))
+    // Asked for low quality outright: also draw the menus at 1x on a HiDPI screen and let the
+    // OS scale them up. Text is softer, but every menu repaint fills a quarter of the pixels,
+    // and on macOS the pool of window surfaces JavaFX's layer builds up is a quarter the size
+    // (at most ~165MB instead of ~650MB on a 5K display). It has to be decided before JavaFX
+    // starts, which is why auto — which only steps down once a match is running — can't.
+    if (!com.gridgame.client.gl.RenderQuality.isAuto &&
+        com.gridgame.client.gl.RenderQuality.tier == com.gridgame.client.gl.RenderQuality.LOW &&
+        System.getProperty("prism.allowhidpi") == null) {
+      System.setProperty("prism.allowhidpi", "false")
+    }
     Application.launch(classOf[ClientMain], passThrough: _*)
   }
 }

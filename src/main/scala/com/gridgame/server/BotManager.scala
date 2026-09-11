@@ -5,6 +5,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import scala.jdk.CollectionConverters._
 import com.gridgame.common.model.CharacterDef
+import com.gridgame.common.model.TeamAssignment
 import scala.util.Random
 
 case class BotSlot(id: UUID, name: String, characterId: Byte)
@@ -40,12 +41,12 @@ class BotManager {
 
   def botCount: Int = botSlots.size()
 
-  def isBot(id: UUID): Boolean = id.getMostSignificantBits == 0L && id.getLeastSignificantBits > 0L
+  def isBot(id: UUID): Boolean = TeamAssignment.isBot(id)
 
   def clear(): Unit = botSlots.clear()
 }
 
 object BotManager {
   private val globalBotIndex = new AtomicLong(1)
-  def isBotUUID(id: UUID): Boolean = id.getMostSignificantBits == 0L && id.getLeastSignificantBits > 0L
+  def isBotUUID(id: UUID): Boolean = TeamAssignment.isBot(id)
 }

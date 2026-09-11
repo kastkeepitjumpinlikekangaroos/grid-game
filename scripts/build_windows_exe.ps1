@@ -42,12 +42,15 @@ switch ($Target) {
         $MainClass  = "com.gridgame.client.Main"
         $BazelLabel = "//src/main/scala/com/gridgame/client:client_windows_deploy.jar"
         $DeployJar  = "bazel-bin/src/main/scala/com/gridgame/client/client_windows_deploy.jar"
+        # Heap sizing, as the client's jvm_flags in BUILD.bazel (a deploy jar carries none)
+        $JavaOptions = @("-Xms64m", "-Xmx768m")
     }
     "mapeditor" {
         $AppName    = "Grid Game Map Editor"
         $MainClass  = "com.gridgame.mapeditor.Main"
         $BazelLabel = "//src/main/scala/com/gridgame/mapeditor:mapeditor_windows_deploy.jar"
         $DeployJar  = "bazel-bin/src/main/scala/com/gridgame/mapeditor/mapeditor_windows_deploy.jar"
+        $JavaOptions = @()
     }
 }
 
@@ -94,6 +97,9 @@ try {
         "--runtime-image", $RuntimeHome,
         "--dest", $Dest
     )
+    foreach ($opt in $JavaOptions) {
+        $jpackageArgs += @("--java-options", $opt)
+    }
     if ($Installer) {
         $jpackageArgs += @("--win-shortcut", "--win-menu", "--win-dir-chooser")
     }

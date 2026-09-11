@@ -34,6 +34,17 @@ class CharacterSelectionPanel(
   private var dirIndex = 0
   private val dirs = Array(Direction.Down, Direction.Left, Direction.Up, Direction.Right)
 
+  // What the sprite canvases last showed. Every frame this screen changes costs a repaint
+  // of the whole window, so sprites are redrawn only when their animation frame, facing or
+  // character actually changes (6 times a second), not on every pulse.
+  private var shownFrame = -1
+  private var shownDir = -1
+  private var shownSelection: Int = -1
+  private var gridDirty = true
+
+  private val cellBgColor = Color.web("#1a1a30")
+  private val previewRingColor = Color.web("#3a3a5e")
+
   // Current filtered characters
   private var filteredChars: Seq[CharacterDef] = CharacterDef.all
   private var selectedCategory: String = "All"
@@ -43,6 +54,8 @@ class CharacterSelectionPanel(
   private var cellCanvases = Map.empty[Byte, Canvas]     // charId -> canvas
   private var cellPanes = Map.empty[Byte, StackPane]     // charId -> pane
   private var gridContainer: GridPane = _
+  private var gridScroll: ScrollPane = _
+  private var countLabel: Label = _
 
   // Detail panel elements
   private var detailPreviewCanvas: Canvas = _
@@ -133,8 +146,8 @@ class CharacterSelectionPanel(
       )
     })
 
-    // Character count label
-    val countLabel = new Label(s"${CharacterDef.all.size} characters")
+    // Character count label: how many the current filter shows (see rebuildGrid)
+    countLabel = new Label(Messages.t("{0} characters", CharacterDef.all.size.toString))
     countLabel.setStyle("-fx-text-fill: #556677; -fx-font-size: 11;")
 
     val searchRow = new HBox(8, searchField, countLabel)
@@ -153,15 +166,18 @@ class CharacterSelectionPanel(
     scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER)
     scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED)
     scrollPane.setStyle(
-      "-fx-background: transparent; -fx-background-color: transparent; " +
+      "-fx-background-color: transparent; " +
       "-fx-border-color: transparent; -fx-padding: 0;"
     )
     scrollPane.setPrefHeight(500)
     scrollPane.setMaxHeight(Double.MaxValue)
     VBox.setVgrow(scrollPane, Priority.ALWAYS)
+    ViewportCache.disable(scrollPane) // the cells animate
+    gridScroll = scrollPane
 
     // Dynamically recompute grid columns when width changes
     scrollPane.viewportBoundsProperty().addListener((_, _, bounds) => {
+      gridDirty = true
       if (bounds != null) {
         val newCols = Math.max(4, ((bounds.getWidth + GridGap) / (CellWidth + GridGap)).toInt)
         if (newCols != currentGridCols) {
@@ -170,6 +186,8 @@ class CharacterSelectionPanel(
         }
       }
     })
+    // Only on-screen cells are drawn, so cells scrolled into view need drawing now
+    scrollPane.vvalueProperty().addListener((_, _, _) => gridDirty = true)
 
     val gridSection = new VBox(8, tabsRow, searchRow, scrollPane)
 
@@ -215,25 +233,34 @@ class CharacterSelectionPanel(
     // Initialize detail panel
     updateDetailPanel()
 
-    // Animation timer
+    // Animation timer. Any change to the screen costs a repaint of the whole window, so
+    // everything here changes on the same pulses: the ability previews run at 30 fps (every
+    // other pulse), and the sprites — which only step every 10 pulses — ride along on one
+    // of those. It used to redraw all of it on every pulse, which held the menus at ~50% of
+    // a CPU core (5K display) just sitting on this screen.
+    UiActivity.touch()
     timer = new AnimationTimer {
       override def handle(now: Long): Unit = {
+        // Nobody's watching (window in the background, or no input for a while): hold the
+        // current frame rather than repaint the window 30 times a second for it
+        if (UiActivity.idle) return
         animTick += 1
         if (animTick % 40 == 0) {
           dirIndex = (dirIndex + 1) % dirs.length
         }
-        drawDetailPreview()
-        // Draw grid cell sprites (throttled for performance)
-        if (animTick % 12 == 0) {
-          drawVisibleGridCells()
+        val frame = (animTick / 10) % 4
+        if (frame != shownFrame || dirIndex != shownDir || getSelectedId() != shownSelection) {
+          if (frame != shownFrame || dirIndex != shownDir) gridDirty = true
+          drawDetailPreview()
         }
-        renderAbilityCanvases()
+        if (gridDirty) drawVisibleGridCells()
+        if ((animTick & 1) == 0) {
+          if (!pendingCells.isEmpty) drawLoadedPendingCells()
+          renderAbilityCanvases()
+        }
       }
     }
     timer.start()
-
-    // Draw initial grid cells
-    drawVisibleGridCells()
 
     // Main row: grid on left, details on right
     val mainRow = new HBox(20, gridSection, detailsPanel)
@@ -267,7 +294,9 @@ class CharacterSelectionPanel(
     cellPanes = Map.empty
     gridContainer.getChildren.clear()
     buildGrid()
-    drawVisibleGridCells()
+    countLabel.setText(Messages.t("{0} characters", filteredChars.size.toString))
+    // Drawn on the next pulse, once layout has placed the new cells
+    gridDirty = true
   }
 
   private def buildGrid(): Unit = {
@@ -359,20 +388,50 @@ class CharacterSelectionPanel(
     }
   }
 
+  /** Whether a grid cell is inside the grid's viewport and the window. */
+  private def onScreen(canvas: Canvas): Boolean = {
+    val scene = canvas.getScene
+    if (scene == null || gridScroll == null) return false
+    val cb = canvas.localToScene(canvas.getBoundsInLocal)
+    val vb = gridScroll.localToScene(gridScroll.getBoundsInLocal)
+    cb.getMaxY >= Math.max(0.0, vb.getMinY) && cb.getMinY <= Math.min(scene.getHeight, vb.getMaxY) &&
+      cb.getMaxX >= Math.max(0.0, vb.getMinX) && cb.getMinX <= Math.min(scene.getWidth, vb.getMaxX)
+  }
+
+  // Grid cells drawn before their sheet finished loading (sheets load in the background)
+  private val pendingCells = new java.util.HashSet[java.lang.Byte]()
+
+  private def drawCell(charId: Byte, canvas: Canvas): Unit = {
+    val gc = canvas.getGraphicsContext2D
+    val s = canvas.getWidth
+    gc.clearRect(0, 0, s, s)
+    gc.setFill(cellBgColor)
+    gc.fillOval(2, 2, s - 4, s - 4)
+    val spriteSize = SpriteGenerator.ThumbDisplayPx
+    val offset = (s - spriteSize) / 2.0
+    if (!SpriteGenerator.drawFrame(gc, charId, dirs(dirIndex), (animTick / 10) % 4, offset, offset, spriteSize))
+      pendingCells.add(charId)
+  }
+
+  /** Draw the grid cells that are on screen; the rest are drawn when scrolled into view.
+    * Before, all 112 were redrawn five times a second wherever the grid was scrolled. */
   private def drawVisibleGridCells(): Unit = {
-    val frame = (animTick / 10) % 4
-    val dir = dirs(dirIndex)
+    gridDirty = false
+    pendingCells.clear()
     cellCanvases.foreach { case (charId, canvas) =>
-      val gc = canvas.getGraphicsContext2D
-      val s = canvas.getWidth
-      gc.clearRect(0, 0, s, s)
-      gc.setFill(Color.web("#1a1a30"))
-      gc.fillOval(2, 2, s - 4, s - 4)
-      val sprite = SpriteGenerator.getSprite(0, dir, frame, charId)
-      val spriteSize = 34.0
-      val offset = (s - spriteSize) / 2.0
-      gc.drawImage(sprite, offset, offset, spriteSize, spriteSize)
+      if (onScreen(canvas)) drawCell(charId, canvas)
     }
+  }
+
+  /** Draw the cells whose sheets have finished loading since they were last drawn. */
+  private def drawLoadedPendingCells(): Unit = {
+    var ready: List[Byte] = Nil
+    val it = pendingCells.iterator()
+    while (it.hasNext) {
+      val charId = it.next().byteValue()
+      if (SpriteGenerator.isReady(charId, SpriteGenerator.ThumbDisplayPx)) { it.remove(); ready ::= charId }
+    }
+    ready.foreach(charId => cellCanvases.get(charId).foreach(c => drawCell(charId, c)))
   }
 
   private def drawDetailPreview(): Unit = {
@@ -382,15 +441,15 @@ class CharacterSelectionPanel(
     val charDef = CharacterDef.get(getSelectedId())
     val dir = dirs(dirIndex)
     val frame = (animTick / 10) % 4
-    val sprite = SpriteGenerator.getSprite(0, dir, frame, charDef.id.id)
-    gc.setStroke(Color.web("#3a3a5e"))
+    shownFrame = frame; shownDir = dirIndex; shownSelection = charDef.id.id
+    gc.setStroke(previewRingColor)
     gc.setLineWidth(2)
     gc.strokeOval(4, 4, s - 8, s - 8)
-    gc.setFill(Color.web("#1a1a30"))
+    gc.setFill(cellBgColor)
     gc.fillOval(6, 6, s - 12, s - 12)
     val spriteDisplaySize = 68.0
     val offset = (s - spriteDisplaySize) / 2.0
-    gc.drawImage(sprite, offset, offset, spriteDisplaySize, spriteDisplaySize)
+    SpriteGenerator.drawFrame(gc, charDef.id.id, dir, frame, offset, offset, spriteDisplaySize)
   }
 
   private def updateDetailPanel(): Unit = {

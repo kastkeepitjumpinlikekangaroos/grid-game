@@ -207,9 +207,15 @@ class Projectile(
 
   def getY: Float = y
 
-  def getCellX: Int = x.toInt
+  // Terrain cell. Tiles are drawn centred on integer coordinates — tile (c, r) covers
+  // [c - 0.5, c + 0.5) — so that is the cell a projectile occupies as far as walls and map
+  // edges are concerned. Truncating (x.toInt) put every wall half a tile down-screen of where
+  // it is drawn: shots heading toward the camera sank halfway into wall blocks before
+  // stopping, shots heading away stopped half a tile short, and at the bottom edges of the
+  // map projectiles flew half a tile out over the void.
+  def getCellX: Int = Math.floor(x + 0.5f).toInt
 
-  def getCellY: Int = y.toInt
+  def getCellY: Int = Math.floor(y + 0.5f).toInt
 
   def getDistanceTraveled: Float = distanceTraveled
 
@@ -249,9 +255,9 @@ class Projectile(
       _dx = -_dx
       _dy = -_dy
     } else if (hitX) {
-      // Snap back to walkable side of the vertical wall
-      if (_dx > 0) x = curX.toFloat - 0.01f
-      else x = (curX + 1).toFloat + 0.01f
+      // Snap back to the walkable side of the vertical wall (its faces are at curX +/- 0.5)
+      if (_dx > 0) x = curX.toFloat - 0.51f
+      else x = curX.toFloat + 0.51f
       // 90° turn away from vertical wall
       val oldDx = _dx
       val oldDy = _dy
@@ -261,9 +267,9 @@ class Projectile(
         _dx = oldDy; _dy = -oldDx
       }
     } else if (hitY) {
-      // Snap back to walkable side of the horizontal wall
-      if (_dy > 0) y = curY.toFloat - 0.01f
-      else y = (curY + 1).toFloat + 0.01f
+      // Snap back to the walkable side of the horizontal wall (its faces are at curY +/- 0.5)
+      if (_dy > 0) y = curY.toFloat - 0.51f
+      else y = curY.toFloat + 0.51f
       // 90° turn away from horizontal wall
       val oldDx = _dx
       val oldDy = _dy

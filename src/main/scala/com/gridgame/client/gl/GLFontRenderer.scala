@@ -44,7 +44,12 @@ class GLFontRenderer(val fontSize: Int) {
 
   private final class Glyph(val region: TextureRegion, val advance: Int, val width: Int)
 
-  private val glyphs = mutable.HashMap[Int, Glyph]()
+  // Looked up once per character drawn, so the lookup must not allocate: Latin-1 (nearly
+  // all HUD text) sits in a flat table, and everything else in a LongMap, which takes the
+  // code point unboxed. The HashMap[Int, Glyph] this replaces boxed every CJK code point
+  // and built a closure for its getOrElseUpdate default on every character.
+  private val latinGlyphs = new Array[Glyph](256)
+  private val glyphs = mutable.LongMap.empty[Glyph]
 
   // Dynamic atlas: shelf-packed pages grown on demand.
   private val pages = mutable.ArrayBuffer[GLTexture]()
@@ -118,7 +123,17 @@ class GLFontRenderer(val fontSize: Int) {
     glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, h, GL_RGBA, GL_UNSIGNED_BYTE, buf)
   }
 
-  private def glyph(cp: Int): Glyph = glyphs.getOrElseUpdate(cp, rasterize(cp))
+  private def glyph(cp: Int): Glyph = {
+    if (cp >= 0 && cp < 256) {
+      var g = latinGlyphs(cp)
+      if (g == null) { g = rasterize(cp); latinGlyphs(cp) = g }
+      g
+    } else {
+      var g = glyphs.getOrNull(cp.toLong)
+      if (g == null) { g = rasterize(cp); glyphs.update(cp.toLong, g) }
+      g
+    }
+  }
 
   /**
    * Pre-rasterize a set of code points (e.g. every glyph in the active language

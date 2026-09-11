@@ -107,6 +107,8 @@ object ProjectileGallery {
       }
     }
     java.nio.file.Files.write(new File(outDir, "index.txt").toPath, index.toString.getBytes("UTF-8"))
+    renderImpacts(sb, post, types, outDir)
+    renderFlyers(sb, post, types, outDir)
     println(s"wrote ${pages * ticks.size} sheets for ${types.size} types to ${outDir.getAbsolutePath}")
     glfwDestroyWindow(win)
     glfwTerminate()
@@ -135,8 +137,10 @@ object ProjectileGallery {
       val (_, id) = slice(i)
       val cx = (i % Cols) * CellW
       val cy = (i / Cols) * CellH
-      // Origin sits left-of-centre so beams (which extend forward from the caster) fit.
-      val sx = cx + CellW * 0.22f
+      // Origin sits right-of-centre: every projectile's head is at its hitbox and
+      // trails, tethers and wakes stream out BEHIND it (leftward here), so that is where
+      // the room is needed.
+      val sx = cx + CellW * 0.62f
       val sy = cy + CellH * 0.55f
       val p = makeProjectile(id, i)
       val r = GLProjectileRenderers.getRenderer(id)
@@ -178,6 +182,103 @@ object ProjectileGallery {
     // 48-unit player footprint marker (PLAYER_DISPLAY_SIZE_PX) for scale
     sb.strokeRect(ox + 6f, oy + CellH - 54f, 48f, 48f, 1f, 1f, 1f, 1f, 0.18f)
   }
+
+  /**
+   * Terrain impact sheet: each row is one projectile running into a wall block and being
+   * absorbed, each column a later moment of the fade (t = 0.05, 0.3, 0.55, 0.8). Written
+   * as impacts_NN.png next to the pages.
+   */
+  private def renderImpacts(sb: ShapeBatch, post: PostProcessor, types: Seq[(String, Byte)], outDir: File): Unit = {
+    val picks = Seq("NORMAL", "FIREBALL", "ARROW", "LASER", "AXE", "FROST_SHARD", "GRENADE", "BULLET")
+    val byName = types.toMap
+    val ts = Array(0.05f, 0.3f, 0.55f, 0.8f)
+    val wall = com.gridgame.common.model.Tile.Wall.color
+    picks.grouped(Rows).zipWithIndex.foreach { case (group, sheet) =>
+      post.beginScene()
+      sb.begin(Matrix4.orthographic(0f, W / Zoom, H / Zoom, 0f))
+      var row = 0
+      while (row < group.size) {
+        var col = 0
+        while (col < Cols) {
+          val cx = col * CellW; val cy = row * CellH
+          drawGround(sb, cx.toFloat, cy.toFloat)
+          // Impact point on the wall's up-left face; the wall's own diamond is half a tile on
+          val ix = cx + CellW * 0.5f; val iy = cy + CellH * 0.55f
+          val wx = ix + 10f; val wy = iy + 5f
+          drawWallBlock(sb, wx, wy, 18f)
+          val p = makeProjectile(byName(group(row)), row * 7 + col)
+          GLProjectileRenderers.drawAbsorbed(p, ix, iy, sb, 9, ts(col), hitTerrain = true, wall, 0.55f, 0.7f, 0.95f)
+          col += 1
+        }
+        row += 1
+      }
+      sb.end()
+      post.endScene(W, H)
+      ImageIO.write(readback(), "png", new File(outDir, f"impacts_$sheet%02d.png"))
+      val idx = new StringBuilder
+      group.zipWithIndex.foreach { case (n, r) => idx.append(s"$r $n\n") }
+      java.nio.file.Files.write(new File(outDir, f"impacts_$sheet%02d.txt").toPath, idx.toString.getBytes("UTF-8"))
+    }
+  }
+
+  /**
+   * Flight sheet: each row is one wall-passing projectile crossing a wall block, each column
+   * a point along the crossing — before it, over its near half, over its far half, past it.
+   * Mirrors the game's order: the block, then the shadow on whatever surface is under the
+   * projectile, then the projectile itself lifted by GLProjectileRenderers.flyLift.
+   * Written as flyers_00.png.
+   */
+  private def renderFlyers(sb: ShapeBatch, post: PostProcessor, types: Seq[(String, Byte)], outDir: File): Unit = {
+    val picks = Seq("SOUL_BOLT", "LIGHTNING", "SONIC_WAVE", "RAILGUN")
+    val byName = types.toMap
+    val offs = Array(-1.3f, -0.25f, 0.25f, 1.3f)
+    val e = 18f
+    post.beginScene()
+    sb.begin(Matrix4.orthographic(0f, W / Zoom, H / Zoom, 0f))
+    var row = 0
+    while (row < picks.size) {
+      var col = 0
+      while (col < Cols) {
+        val cx = col * CellW; val cy = row * CellH
+        drawGround(sb, cx.toFloat, cy.toFloat)
+        val bx = cx + CellW * 0.5f; val by = cy + CellH * 0.62f
+        drawWallBlock(sb, bx, by, e)
+        val k = offs(col)
+        val sx = bx + k * 20f; val sy = by + k * 10f
+        val p = makeProjectile(byName(picks(row)), row * 5 + col)
+        val lift = GLProjectileRenderers.flyLift(p, 9)
+        val groundY = if (Math.abs(k) < 0.5f) sy - e else sy
+        GLProjectileRenderers.drawFlightShadow(p, sx, groundY, sb, 9, lift)
+        GLProjectileRenderers.draw(p, sx, sy - lift, sb, 9, 0.55f, 0.7f, 0.95f)
+        col += 1
+      }
+      row += 1
+    }
+    sb.end()
+    post.endScene(W, H)
+    ImageIO.write(readback(), "png", new File(outDir, "flyers_00.png"))
+  }
+
+  /** A wall-coloured elevated block, `e` tall, whose ground diamond is centred on (wx, wy). */
+  private def drawWallBlock(sb: ShapeBatch, wx: Float, wy: Float, e: Float): Unit = {
+    val wall = com.gridgame.common.model.Tile.Wall.color
+    val wr = ((wall >> 16) & 0xFF) / 255f; val wg = ((wall >> 8) & 0xFF) / 255f; val wb = (wall & 0xFF) / 255f
+    _polyXs(0) = wx - 20f; _polyYs(0) = wy - e
+    _polyXs(1) = wx; _polyYs(1) = wy - 10f - e
+    _polyXs(2) = wx + 20f; _polyYs(2) = wy - e
+    _polyXs(3) = wx + 20f; _polyYs(3) = wy
+    _polyXs(4) = wx; _polyYs(4) = wy + 10f
+    _polyXs(5) = wx - 20f; _polyYs(5) = wy
+    sb.fillPolygon(_polyXs, _polyYs, 6, wr * 0.7f, wg * 0.7f, wb * 0.7f, 1f)
+    _polyXs(0) = wx - 20f; _polyYs(0) = wy - e
+    _polyXs(1) = wx; _polyYs(1) = wy - 10f - e
+    _polyXs(2) = wx + 20f; _polyYs(2) = wy - e
+    _polyXs(3) = wx; _polyYs(3) = wy + 10f - e
+    sb.fillPolygon(_polyXs, _polyYs, 4, wr * 1.15f, wg * 1.15f, wb * 1.15f, 1f)
+  }
+
+  private val _polyXs = new Array[Float](8)
+  private val _polyYs = new Array[Float](8)
 
   /** A projectile travelling right-and-down (screen-right in the isometric projection). */
   private def makeProjectile(id: Byte, seed: Int): Projectile = {

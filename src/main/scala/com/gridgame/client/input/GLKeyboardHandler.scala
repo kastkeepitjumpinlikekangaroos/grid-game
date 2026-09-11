@@ -25,9 +25,22 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
   var isChatMode: Boolean = false
   val chatInputBuffer = new StringBuilder(Constants.MAX_CHAT_MESSAGE_LEN)
 
+  /** Set by the game scene: leaves the match (Esc, twice). */
+  var onLeaveMatch: () => Unit = () => ()
+  private val LEAVE_CONFIRM_MS = 3000L
+
   override def invoke(window: Long, key: Int, scancode: Int, action: Int, mods: Int): Unit = {
     if (isChatMode && action == GLFW_PRESS) {
       handleChatKey(key, mods)
+      return
+    }
+
+    if (action == GLFW_PRESS && key == GLFW_KEY_ESCAPE) {
+      // The first press only arms it (the HUD asks for a second), so a stray Esc, say one
+      // meant to close chat, can't end a match.
+      val now = System.currentTimeMillis()
+      if (now < client.leaveConfirmUntil) onLeaveMatch()
+      else client.leaveConfirmUntil = now + LEAVE_CONFIRM_MS
       return
     }
 

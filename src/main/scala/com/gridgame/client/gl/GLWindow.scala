@@ -63,8 +63,10 @@ class GLWindow(title: String, initialWidth: Int, initialHeight: Int) {
     _fbWidth = fbw(0)
     _fbHeight = fbh(0)
 
-    // Center on primary monitor
-    val vidMode = glfwGetVideoMode(glfwGetPrimaryMonitor())
+    // Center on primary monitor (GLFW reports none until AppKit has finished launching,
+    // which JavaFX has always done by now but a standalone tool may not have)
+    val monitor = glfwGetPrimaryMonitor()
+    val vidMode = if (monitor != NULL) glfwGetVideoMode(monitor) else null
     if (vidMode != null) {
       glfwSetWindowPos(window,
         (vidMode.width() - initialWidth) / 2,

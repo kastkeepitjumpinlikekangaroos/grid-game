@@ -31,6 +31,7 @@ import java.util.concurrent.TimeUnit
 class NetworkThread(client: GameClient, serverHost: String, serverPort: Int) extends Thread("NetworkThread") {
   private val heartbeatExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
   private val ready = new CountDownLatch(1)
+  @volatile private var connectError: Throwable = _
   @volatile private var running = false
   @volatile var sessionToken: Array[Byte] = _
   @volatile var disconnectCallback: Runnable = _
@@ -42,8 +43,11 @@ class NetworkThread(client: GameClient, serverHost: String, serverPort: Int) ext
 
   setDaemon(true)
 
+  /** Blocks until both channels are up; throws if connecting failed. */
   def waitForReady(): Unit = {
     ready.await()
+    val err = connectError
+    if (err != null) throw new java.io.IOException(s"Could not connect to $serverHost:$serverPort: ${err.getMessage}", err)
   }
 
   override def run(): Unit = {
@@ -98,8 +102,12 @@ class NetworkThread(client: GameClient, serverHost: String, serverPort: Int) ext
       tcpChannel.closeFuture().sync()
     } catch {
       case e: Exception =>
+        if (ready.getCount > 0) connectError = e
         System.err.println(s"NetworkThread: Connection error - ${e.getMessage}")
     } finally {
+      // Release waitForReady() on failure too; counting down only on success left the
+      // login screen stuck on "Connecting..." forever when the server was unreachable.
+      ready.countDown()
       shutdown()
     }
   }

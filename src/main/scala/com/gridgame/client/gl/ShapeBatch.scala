@@ -7,7 +7,7 @@ import org.lwjgl.opengl.GL30._
 import org.lwjgl.BufferUtils
 import org.lwjgl.system.MemoryUtil
 
-import java.nio.{ByteBuffer, FloatBuffer}
+import java.nio.FloatBuffer
 
 /**
  * Batched renderer for colored 2D primitives: filled rectangles, ovals, polygons, and lines.
@@ -71,12 +71,33 @@ object ShapeBatch {
 
 class ShapeBatch(val shader: ShaderProgram) {
   private val VERTEX_SIZE = 6 // x, y, r, g, b, a
+  private val VERTEX_BYTES = VERTEX_SIZE * 4L
   private val INITIAL_CAPACITY = 4096 // vertices
   private var capacity = INITIAL_CAPACITY
+  // Staging memory, written through its raw address: a FloatBuffer.put per float (a limit
+  // check and a position store each, six per vertex) was the single largest cost of
+  // building a busy frame.
   private var buffer: FloatBuffer = BufferUtils.createFloatBuffer(capacity * VERTEX_SIZE)
+  private var bufferAddr: Long = MemoryUtil.memAddress(buffer)
   private var vertexCount = 0
   private var drawing = false
   private var additive = false
+
+  // Whole-batch modifiers applied in `vertex`: an alpha multiplier and a uniform scale about
+  // a pivot. They let any shape renderer be faded or shrunk without knowing it — which is
+  // how a projectile the terrain has stopped is drawn sinking into the surface. `begin`
+  // resets them, so a caller that forgets `resetModifiers` cannot leak them into a frame.
+  private var alphaMul = 1f
+  private var xfOn = false
+  private var xfPivX = 0f
+  private var xfPivY = 0f
+  private var xfScale = 1f
+
+  def setAlphaMultiplier(m: Float): Unit = { alphaMul = m }
+  def setScaleAbout(pivotX: Float, pivotY: Float, scale: Float): Unit = {
+    xfPivX = pivotX; xfPivY = pivotY; xfScale = scale; xfOn = scale != 1f
+  }
+  def resetModifiers(): Unit = { alphaMul = 1f; xfOn = false }
 
   // GPU ring buffer. Each flush appends at a fresh offset and draws from there, so no
   // upload ever lands on bytes the GPU may still be reading — overwriting a range that is
@@ -85,8 +106,6 @@ class ShapeBatch(val shader: ShaderProgram) {
   // instead of waiting on the old one.
   private var ringVerts = INITIAL_CAPACITY * ShapeBatch.RING_FRAMES
   private var ringOffset = 0
-  // Reused wrapper for the mapped range, so a flush doesn't allocate.
-  private var mapReuse: ByteBuffer = _
 
   private val vao = glGenVertexArrays()
   private val vbo = glGenBuffers()
@@ -107,7 +126,7 @@ class ShapeBatch(val shader: ShaderProgram) {
     if (drawing) throw new IllegalStateException("Already drawing")
     drawing = true
     vertexCount = 0
-    buffer.clear()
+    resetModifiers()
     shader.use()
     shader.setUniformMat4("uProjection", projection)
     glEnable(GL_BLEND)
@@ -449,7 +468,6 @@ class ShapeBatch(val shader: ShaderProgram) {
 
   def flush(): Unit = {
     if (vertexCount == 0) return
-    buffer.flip()
 
     glBindVertexArray(vao)
     glBindBuffer(GL_ARRAY_BUFFER, vbo)
@@ -458,19 +476,22 @@ class ShapeBatch(val shader: ShaderProgram) {
       // Wrapped: discard the old store. The driver hands back untouched memory instead of
       // waiting on draws that still reference the old one, and every offset in the new
       // generation is safe to write unsynchronized again.
-      glBufferData(GL_ARRAY_BUFFER, ringVerts.toLong * VERTEX_SIZE * 4L, GL_STREAM_DRAW)
+      glBufferData(GL_ARRAY_BUFFER, ringVerts.toLong * VERTEX_BYTES, GL_STREAM_DRAW)
       ringOffset = 0
     }
-    val byteOffset = ringOffset.toLong * VERTEX_SIZE * 4L
-    val byteLen = vertexCount.toLong * VERTEX_SIZE * 4L
-    val mapped = glMapBufferRange(GL_ARRAY_BUFFER, byteOffset, byteLen, ShapeBatch.MAP_FLAGS, mapReuse)
-    if (mapped != null) {
-      mapReuse = mapped
-      MemoryUtil.memCopy(MemoryUtil.memAddress(buffer), MemoryUtil.memAddress(mapped), byteLen)
+    val byteOffset = ringOffset.toLong * VERTEX_BYTES
+    val byteLen = vertexCount.toLong * VERTEX_BYTES
+    // The raw-address form: glMapBufferRange wraps each mapping in a new ByteBuffer, since
+    // every flush maps a different range — one allocation per flush, ~100 a frame.
+    val mapped = nglMapBufferRange(GL_ARRAY_BUFFER, byteOffset, byteLen, ShapeBatch.MAP_FLAGS)
+    if (mapped != 0L) {
+      MemoryUtil.memCopy(bufferAddr, mapped, byteLen)
       glUnmapBuffer(GL_ARRAY_BUFFER)
     } else {
       // Driver refused the mapping — fall back to the (much slower) copy path.
+      buffer.limit(vertexCount * VERTEX_SIZE).position(0)
       glBufferSubData(GL_ARRAY_BUFFER, byteOffset, buffer)
+      buffer.clear()
     }
     glDrawArrays(GL_TRIANGLES, ringOffset, vertexCount)
     ringOffset += vertexCount
@@ -478,7 +499,6 @@ class ShapeBatch(val shader: ShaderProgram) {
     glBindVertexArray(0)
 
     vertexCount = 0
-    buffer.clear()
   }
 
   def dispose(): Unit = {
@@ -487,24 +507,48 @@ class ShapeBatch(val shader: ShaderProgram) {
     shader.dispose()
   }
 
+  /** Every primitive reserves its vertices with [[ensureCapacity]] first; the check here
+    * is only a backstop, since a raw write past the end would corrupt native memory. */
   private def vertex(x: Float, y: Float, r: Float, g: Float, b: Float, a: Float): Unit = {
-    buffer.put(x).put(y).put(r).put(g).put(b).put(a)
+    if (vertexCount >= capacity) growStaging(capacity * 2)
+    val p = bufferAddr + vertexCount * VERTEX_BYTES
+    if (xfOn) {
+      MemoryUtil.memPutFloat(p, xfPivX + (x - xfPivX) * xfScale)
+      MemoryUtil.memPutFloat(p + 4, xfPivY + (y - xfPivY) * xfScale)
+    } else {
+      MemoryUtil.memPutFloat(p, x)
+      MemoryUtil.memPutFloat(p + 4, y)
+    }
+    MemoryUtil.memPutFloat(p + 8, r)
+    MemoryUtil.memPutFloat(p + 12, g)
+    MemoryUtil.memPutFloat(p + 16, b)
+    MemoryUtil.memPutFloat(p + 20, a * alphaMul)
     vertexCount += 1
   }
 
+  /** Replace the staging buffer with a larger one, keeping the vertices already in it. */
+  private def growStaging(newCapacity: Int): Unit = {
+    val grown = BufferUtils.createFloatBuffer(newCapacity * VERTEX_SIZE)
+    val grownAddr = MemoryUtil.memAddress(grown)
+    MemoryUtil.memCopy(bufferAddr, grownAddr, vertexCount * VERTEX_BYTES)
+    buffer = grown
+    bufferAddr = grownAddr
+    capacity = newCapacity
+    // The GPU ring holds RING_FRAMES staging-buffer-fulls; a flush larger than the ring
+    // would never fit, so grow it with the staging buffer.
+    if (ringVerts < capacity * ShapeBatch.RING_FRAMES) {
+      ringVerts = capacity * ShapeBatch.RING_FRAMES
+      ringOffset = 0
+      glBindBuffer(GL_ARRAY_BUFFER, vbo)
+      glBufferData(GL_ARRAY_BUFFER, ringVerts * VERTEX_BYTES, GL_STREAM_DRAW)
+    }
+  }
+
   private def ensureCapacity(additionalVertices: Int): Unit = {
-    val needed = (vertexCount + additionalVertices) * VERTEX_SIZE
-    if (needed > capacity * VERTEX_SIZE) {
+    if (vertexCount + additionalVertices > capacity) {
       flush()
-      if (additionalVertices > capacity) {
-        // Grow the staging buffer, and the GPU ring with it
-        capacity = additionalVertices * 2
-        buffer = BufferUtils.createFloatBuffer(capacity * VERTEX_SIZE)
-        ringVerts = capacity * ShapeBatch.RING_FRAMES
-        ringOffset = 0
-        glBindBuffer(GL_ARRAY_BUFFER, vbo)
-        glBufferData(GL_ARRAY_BUFFER, ringVerts * VERTEX_SIZE * 4L, GL_STREAM_DRAW)
-      }
+      // Grow the staging buffer, and the GPU ring with it
+      if (additionalVertices > capacity) growStaging(additionalVertices * 2)
     }
   }
 }

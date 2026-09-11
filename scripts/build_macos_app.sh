@@ -20,6 +20,8 @@ case "$TARGET" in
     BAZEL_LABEL="//src/main/scala/com/gridgame/client:client_deploy.jar"
     DEPLOY_JAR="bazel-bin/src/main/scala/com/gridgame/client/client_deploy.jar"
     BUNDLE_ID="com.gridgame.client"
+    # Heap sizing, as the client's jvm_flags in BUILD.bazel (a deploy jar carries none)
+    CLIENT_JAVA_OPTIONS="-Xms64m -Xmx768m"
     ;;
   mapeditor)
     APP_NAME="Grid Game Map Editor"
@@ -27,6 +29,7 @@ case "$TARGET" in
     BAZEL_LABEL="//src/main/scala/com/gridgame/mapeditor:mapeditor_deploy.jar"
     DEPLOY_JAR="bazel-bin/src/main/scala/com/gridgame/mapeditor/mapeditor_deploy.jar"
     BUNDLE_ID="com.gridgame.mapeditor"
+    CLIENT_JAVA_OPTIONS=""
     ;;
   *)
     echo "Usage: $0 [client|mapeditor]" >&2
@@ -60,6 +63,9 @@ mkdir -p "$DEST"
 
 JAVA_HOME_FOR_RUNTIME="${JPACKAGE_RUNTIME_HOME:-$(/usr/libexec/java_home)}"
 
+JAVA_OPTION_ARGS=()
+for opt in $CLIENT_JAVA_OPTIONS; do JAVA_OPTION_ARGS+=(--java-options "$opt"); done
+
 jpackage \
   --type app-image \
   --name "$APP_NAME" \
@@ -69,6 +75,7 @@ jpackage \
   --icon "$ICON" \
   --runtime-image "$JAVA_HOME_FOR_RUNTIME" \
   --mac-package-identifier "$BUNDLE_ID" \
+  ${JAVA_OPTION_ARGS[@]+"${JAVA_OPTION_ARGS[@]}"} \
   --dest "$DEST"
 
 echo "Built $DEST/${APP_NAME}.app — launch with: open \"$DEST/${APP_NAME}.app\""
