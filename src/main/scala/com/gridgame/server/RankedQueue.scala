@@ -73,7 +73,7 @@ class RankedQueue(server: GameServer) {
   def addPlayer(playerId: UUID, characterId: Byte, elo: Int, mode: Byte = RankedQueueMode.FFA): Unit = {
     if (playerInQueue.containsKey(playerId) || duelPlayerInQueue.containsKey(playerId) || teamsPlayerInQueue.containsKey(playerId)) return
     // Validate character ID
-    if (com.gridgame.common.model.CharacterDef.get(characterId) == null) {
+    if (!com.gridgame.common.model.CharacterDef.isValid(characterId)) {
       System.err.println(s"RankedQueue: Player ${playerId.toString.substring(0, 8)} invalid character ID: $characterId")
       return
     }
@@ -124,7 +124,7 @@ class RankedQueue(server: GameServer) {
 
   def updateCharacter(playerId: UUID, characterId: Byte): Unit = {
     // Validate character ID before accepting the change
-    if (com.gridgame.common.model.CharacterDef.get(characterId) == null) {
+    if (!com.gridgame.common.model.CharacterDef.isValid(characterId)) {
       System.err.println(s"RankedQueue: Player ${playerId.toString.substring(0, 8)} invalid character ID: $characterId")
       return
     }

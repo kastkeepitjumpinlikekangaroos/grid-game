@@ -56,6 +56,12 @@ class ItemManager {
     }
   }
 
+  /** Put an item on the ground where it says it is. */
+  private[server] def place(item: Item): Unit = {
+    items.put(item.id, item)
+    addToGrid(item)
+  }
+
   def spawnRandomItem(world: WorldData): Option[ItemSpawned] = {
     if (items.size() >= maxWorldItems) return None
     // Try to find a random walkable tile

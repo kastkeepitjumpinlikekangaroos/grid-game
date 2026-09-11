@@ -105,6 +105,9 @@ object Constants {
   val MAX_AUTH_FAILURES_PER_CHANNEL: Int = 5            // Close connection after N failures
   val FENCE_MAX_DISTANCE: Int = 5                       // Max Manhattan distance for fence placement
   val STAR_MAX_DISTANCE: Int = 30                       // Max Manhattan distance for star teleport
+  // Cells the server's teleport/dash range checks allow past the nominal range: the client rounds
+  // its landing cell (+0.7) and the server's copy of the position can trail it by a step (+1.4)
+  val TELEPORT_RANGE_TOLERANCE: Int = 3
   val MAX_LOBBIES: Int = 100                            // Max concurrent active lobbies
   val MAX_CHAT_MESSAGE_LEN: Int = 42                    // Max UTF-8 bytes per chat message
 }

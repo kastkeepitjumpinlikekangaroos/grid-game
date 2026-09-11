@@ -15,9 +15,12 @@ import scala.jdk.CollectionConverters._
 
 sealed trait ProjectileEvent
 case class ProjectileMoved(projectile: Projectile) extends ProjectileEvent
-case class ProjectileHit(projectile: Projectile, targetId: UUID) extends ProjectileEvent
-case class ProjectileKill(projectile: Projectile, targetId: UUID) extends ProjectileEvent
-case class ProjectileAoEHit(projectile: Projectile, targetId: UUID) extends ProjectileEvent
+// flyingOn: the projectile pierced this player and keeps going
+case class ProjectileHit(projectile: Projectile, targetId: UUID, flyingOn: Boolean = false) extends ProjectileEvent
+// Only the blow that killed the target: a player already dead is never hit, so never killed twice
+case class ProjectileKill(projectile: Projectile, targetId: UUID, flyingOn: Boolean = false) extends ProjectileEvent
+// held: the splash froze or rooted the target
+case class ProjectileAoEHit(projectile: Projectile, targetId: UUID, held: Boolean = false) extends ProjectileEvent
 case class ProjectileAoEKill(projectile: Projectile, targetId: UUID) extends ProjectileEvent
 case class ProjectileDespawned(projectile: Projectile) extends ProjectileEvent
 case class ProjectileAoE(projectile: Projectile) extends ProjectileEvent
@@ -116,7 +119,9 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
   }
 
   /** Iterate players within a configurable radius using the spatial grid.
-   *  Expands the grid cell search to cover the given radius. */
+   *  Expands the grid cell search to cover the given radius. The grid belongs to the projectile
+   *  tick, which rebuilds it in place: call this only from that thread (GameInstance's event
+   *  handling). The bots used to call it from theirs and read cells mid-rebuild. */
   def forEachNearbyPlayer(x: Float, y: Float, radius: Float)(fn: Player => Unit): Unit = {
     val cellRadius = (radius / gridCellSize).toInt + 1
     val cx = (x / gridCellSize).toInt
@@ -238,22 +243,20 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
                 resolved = true
               } else {
                 val damage = pDef.effectiveDamage(projectile.chargeLevel, projectile.getDistanceTraveled)
-                val newHealth = hitPlayer.synchronized {
-                  val h = hitPlayer.getHealth - damage
-                  hitPlayer.setHealth(h)
-                  h
-                }
-                // Pierce: track hit player and continue if pierce count not exhausted
+                val killed = hitPlayer.damage(damage)
+                // Pierce: track hit player and continue if pierce count not exhausted. It used to
+                // stop at hit number pierceCount, so the fourteen types with a pierce of 1 (Arrow,
+                // Soul Bolt, Boomerang Blade...) never passed through anyone.
                 projectile.hitPlayers += hitPlayer.getId
-                val canPierce = pDef.pierceCount > 0 && projectile.hitPlayers.size < pDef.pierceCount
+                val canPierce = pDef.piercesAfter(projectile.hitPlayers.size)
 
                 if (!canPierce) {
                   toRemove += projectile.id
                 }
-                if (newHealth <= 0) {
-                  events += ProjectileKill(projectile, hitPlayer.getId)
+                if (killed) {
+                  events += ProjectileKill(projectile, hitPlayer.getId, flyingOn = canPierce)
                 } else {
-                  events += ProjectileHit(projectile, hitPlayer.getId)
+                  events += ProjectileHit(projectile, hitPlayer.getId, flyingOn = canPierce)
                 }
 
                 // AoE splash damage to nearby players (excluding the direct hit target)
@@ -320,29 +323,19 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
     while (i < len) {
       val player = players(i)
       i += 1
-      if (!player.getId.equals(projectile.ownerId) &&
+      // The snapshot is from the start of the tick: skip anyone killed since
+      if (!player.isDead &&
+          !player.getId.equals(projectile.ownerId) &&
           (excludeId == null || !player.getId.equals(excludeId)) &&
-          !isTeammate(projectile.ownerId, player.getId)) {
-        val pos = player.getPosition
-        val dx = px - (pos.getX + 0.5f)
-        val dy = py - (pos.getY + 0.5f)
-        if (dx * dx + dy * dy <= radius * radius) {
-          val newHealth = player.synchronized {
-            val h = player.getHealth - damage
-            player.setHealth(h)
-            h
-          }
-          if (freezeDurationMs > 0) {
-            player.tryFreeze(freezeDurationMs)
-          }
-          if (rootDurationMs > 0) {
-            player.tryRoot(rootDurationMs)
-          }
-          if (newHealth <= 0) {
-            events += ProjectileAoEKill(projectile, player.getId)
-          } else {
-            events += ProjectileAoEHit(projectile, player.getId)
-          }
+          !isTeammate(projectile.ownerId, player.getId) &&
+          Projectile.withinPlayer(px, py, player, radius)) {
+        val killed = player.damage(damage)
+        if (killed) {
+          events += ProjectileAoEKill(projectile, player.getId)
+        } else if (!player.isDead) {
+          val frozen = freezeDurationMs > 0 && player.tryFreeze(freezeDurationMs)
+          val rooted = rootDurationMs > 0 && player.tryRoot(rootDurationMs)
+          events += ProjectileAoEHit(projectile, player.getId, held = frozen || rooted)
         }
       }
     }

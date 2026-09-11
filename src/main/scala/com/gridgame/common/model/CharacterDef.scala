@@ -6,7 +6,17 @@ case object StandardProjectile extends CastBehavior
 case class PhaseShiftBuff(durationMs: Int) extends CastBehavior
 case class DashBuff(maxDistance: Int, durationMs: Int, moveRateMs: Int) extends CastBehavior
 case class TeleportCast(maxDistance: Int) extends CastBehavior
-case class FanProjectile(count: Int, fanAngle: Double) extends CastBehavior
+case class FanProjectile(count: Int, fanAngle: Double) extends CastBehavior {
+  def isFullCircle: Boolean = fanAngle >= 2 * Math.PI - 0.1
+
+  /** Heading of projectile `i` relative to the aim, in radians. A fan spans its angle edge to edge.
+    * A full circle is spaced evenly starting from the aim: spanned edge to edge, its first and last
+    * projectiles land on the same heading, straight behind the caster, with none toward the cursor. */
+  def angleOf(i: Int): Double =
+    if (isFullCircle) 2 * Math.PI * i / count
+    else if (count <= 1) 0.0
+    else -fanAngle / 2 + fanAngle * i / (count - 1)
+}
 case class GroundSlam(radius: Float) extends CastBehavior
 
 case class AbilityDef(
@@ -1609,7 +1619,13 @@ object CharacterDef {
 
   val all: Seq[CharacterDef] = allDefs
 
+  /** Does nothing but make sure this object, and with it every ProjectileDef, is initialized. */
+  private[model] def ensureRegistered(): Unit = ()
+
   def get(id: CharacterId): CharacterDef = byId.getOrElse(id.id, Spaceman)
 
   def get(id: Byte): CharacterDef = byId.getOrElse(id, Spaceman)
+
+  /** Is this the id of a real character? (`get` falls back to Spaceman for anything else.) */
+  def isValid(id: Byte): Boolean = byId.contains(id)
 }

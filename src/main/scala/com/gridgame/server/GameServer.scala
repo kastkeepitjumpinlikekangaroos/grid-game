@@ -78,7 +78,11 @@ class GameServer(port: Int, val worldFile: String = "") {
   private var bossGroup: NioEventLoopGroup = _
   private var workerGroup: NioEventLoopGroup = _
   private var tcpServerChannel: Channel = _
-  private var udpChannel: Channel = _
+  @volatile private var udpChannel: Channel = _
+
+  /** The channel UDP packets are sent from. start() binds the real one; tests attach their own
+    * to see what each player is sent. */
+  private[server] def attachUdpChannel(ch: Channel): Unit = udpChannel = ch
 
   // Async gauges — read these atomically on each metric scrape
   private val meter = Telemetry.meter("com.gridgame.server")
@@ -409,84 +413,7 @@ class GameServer(port: Int, val worldFile: String = "") {
             val shouldBroadcast = instance.handler.processPacket(packet, tcpCh, udpSender)
 
             if (shouldBroadcast) {
-              val packetToBroadcast = packet.getType match {
-                case PacketType.PLAYER_UPDATE =>
-                  val updatePacket = packet.asInstanceOf[PlayerUpdatePacket]
-                  val player = instance.registry.get(updatePacket.getPlayerId)
-                  if (player != null) {
-                    // Reject position updates from frozen players
-                    val pos = if (player.isFrozen) player.getPosition else updatePacket.getPosition
-
-                    // Handle phased flag from client — enforce server-side cooldown
-                    val clientFlags = updatePacket.getEffectFlags
-                    if ((clientFlags & 0x08) != 0 && !player.isPhased) {
-                      val charDef = com.gridgame.common.model.CharacterDef.get(player.getCharacterId)
-                      val now = System.currentTimeMillis()
-                      // Check which ability grants phase/dash and enforce its cooldown
-                      val (phaseDuration, cooldownMs) = charDef.qAbility.castBehavior match {
-                        case com.gridgame.common.model.PhaseShiftBuff(d) => (d, charDef.qAbility.cooldownMs)
-                        case com.gridgame.common.model.DashBuff(_, d, _) => (d, charDef.qAbility.cooldownMs)
-                        case _ => charDef.eAbility.castBehavior match {
-                          case com.gridgame.common.model.PhaseShiftBuff(d) => (d, charDef.eAbility.cooldownMs)
-                          case com.gridgame.common.model.DashBuff(_, d, _) => (d, charDef.eAbility.cooldownMs)
-                          case _ => (0, 0)
-                        }
-                      }
-                      if (phaseDuration > 0) {
-                        // Use 80% of cooldown as server tolerance (matches fire rate validation)
-                        val lastPhaseEnd = player.getPhasedUntil
-                        if (lastPhaseEnd == 0L || now >= lastPhaseEnd + (cooldownMs * 0.9).toLong) {
-                          player.setPhasedUntil(now + phaseDuration)
-                        }
-                      }
-                    }
-
-                    val flags = (if (player.hasShield) 0x01 else 0) |
-                                (if (player.hasGemBoost) 0x02 else 0) |
-                                (if (player.isFrozen) 0x04 else 0) |
-                                (if (player.isPhased) 0x08 else 0)
-                    new PlayerUpdatePacket(
-                      updatePacket.getSequenceNumber,
-                      updatePacket.getPlayerId,
-                      updatePacket.getTimestamp,
-                      pos,
-                      updatePacket.getColorRGB,
-                      player.getHealth,
-                      updatePacket.getChargeLevel,
-                      flags,
-                      player.getCharacterId,
-                      player.getTeamId
-                    )
-                  } else {
-                    packet
-                  }
-                case PacketType.PLAYER_JOIN =>
-                  val joinPacket = packet.asInstanceOf[PlayerJoinPacket]
-                  val player = instance.registry.get(joinPacket.getPlayerId)
-                  if (player != null) {
-                    new PlayerJoinPacket(
-                      joinPacket.getSequenceNumber,
-                      joinPacket.getPlayerId,
-                      joinPacket.getTimestamp,
-                      joinPacket.getPosition,
-                      joinPacket.getColorRGB,
-                      joinPacket.getPlayerName,
-                      player.getHealth,
-                      player.getCharacterId,
-                      player.getTeamId
-                    )
-                  } else {
-                    packet
-                  }
-                case _ => packet
-              }
-              // Broadcast to instance players only, excluding sender
-              val data = packetToBroadcast.serialize()
-              instance.registry.getAll.asScala.foreach { p =>
-                if (!p.getId.equals(packet.getPlayerId)) {
-                  sendRawToPlayer(data, packetToBroadcast.getType.tcp, p)
-                }
-              }
+              instance.broadcastToInstanceExcluding(relayed(instance, packet), packet.getPlayerId)
             }
           }
       }
@@ -498,6 +425,20 @@ class GameServer(port: Int, val worldFile: String = "") {
       val elapsedMs = (System.nanoTime() - startNs) / 1e6
       Metrics.packetProcessDuration.record(elapsedMs, pktAttrs)
     }
+  }
+
+  /**
+   * What the rest of the match is told about a packet the instance accepted from a player. A
+   * position update goes out as the server now has that player, not as the client claimed:
+   * where it held them (frozen, rooted) it held them, and every status effect is on it. Relaying
+   * the claim with four of the eight flags showed a rooted player walking away, and turned a
+   * burning, rooted, slowed or sped-up player's effects off on every step they took.
+   */
+  private[server] def relayed(instance: GameInstance, packet: Packet): Packet = packet match {
+    case update: PlayerUpdatePacket =>
+      val player = instance.registry.get(update.getPlayerId)
+      if (player != null) instance.stateUpdate(player) else packet
+    case _ => packet
   }
 
   private def handleGlobalConnect(packet: PlayerJoinPacket, tcpCh: Channel): Unit = {
@@ -543,17 +484,25 @@ class GameServer(port: Int, val worldFile: String = "") {
       println(s"Auth: Rate limited - $remoteAddr")
       Metrics.authAttempts.add(1L, if (isSignup) Attrs.AuthSignupRateLimited else Attrs.AuthLoginRateLimited)
       Metrics.rateLimitTriggered.add(1L, Attrs.RlAuth)
-      val response = new AuthResponsePacket(getNextSequenceNumber, false, null, "Too many attempts")
+      val response = new AuthResponsePacket(getNextSequenceNumber, false, null, AuthRules.TooManyAttempts)
       sendPacketViaChannel(response, tcpCh)
       return
     }
 
     if (isSignup) {
-      if (password.length < 6) {
+      if (!AuthRules.isValidUsername(username)) {
+        // register() refuses these too, and it used to be reported as "Username taken"
+        println(s"Auth: Signup failed - '$username' (invalid username)")
+        recordChannelAuthFailure(tcpCh)
+        Metrics.authAttempts.add(1L, Attrs.AuthSignupFail)
+        sendPacketViaChannel(new AuthResponsePacket(getNextSequenceNumber, false, null, AuthRules.InvalidUsername), tcpCh)
+        return
+      }
+      if (password.length < AuthRules.MinPasswordLength) {
         println(s"Auth: Signup failed - '$username' (password too short)")
         recordChannelAuthFailure(tcpCh)
         Metrics.authAttempts.add(1L, Attrs.AuthSignupFail)
-        val response = new AuthResponsePacket(getNextSequenceNumber, false, null, "Password must be 6+ chars")
+        val response = new AuthResponsePacket(getNextSequenceNumber, false, null, AuthRules.PasswordTooShort)
         sendPacketViaChannel(response, tcpCh)
         return
       }
@@ -568,13 +517,13 @@ class GameServer(port: Int, val worldFile: String = "") {
         // must be signed, so it has to hold the token by then.
         val tokenPacket = new SessionTokenPacket(getNextSequenceNumber, uuid, token)
         sendPacketViaChannel(tokenPacket, tcpCh)
-        val response = new AuthResponsePacket(getNextSequenceNumber, true, uuid, "Account created")
+        val response = new AuthResponsePacket(getNextSequenceNumber, true, uuid, AuthRules.AccountCreated)
         sendPacketViaChannel(response, tcpCh)
       } else {
         println(s"Auth: Signup failed - '$username' (already exists)")
         recordChannelAuthFailure(tcpCh)
         Metrics.authAttempts.add(1L, Attrs.AuthSignupFail)
-        val response = new AuthResponsePacket(getNextSequenceNumber, false, null, "Username taken")
+        val response = new AuthResponsePacket(getNextSequenceNumber, false, null, AuthRules.UsernameTaken)
         sendPacketViaChannel(response, tcpCh)
       }
     } else {
@@ -589,14 +538,14 @@ class GameServer(port: Int, val worldFile: String = "") {
         // Token first, as for signup
         val tokenPacket = new SessionTokenPacket(getNextSequenceNumber, uuid, token)
         sendPacketViaChannel(tokenPacket, tcpCh)
-        val response = new AuthResponsePacket(getNextSequenceNumber, true, uuid, "Login successful")
+        val response = new AuthResponsePacket(getNextSequenceNumber, true, uuid, AuthRules.LoginSuccessful)
         sendPacketViaChannel(response, tcpCh)
       } else {
         rateLimiter.recordAuthFailure(remoteAddr)
         recordChannelAuthFailure(tcpCh)
         println(s"Auth: Login failed - '$username' (invalid credentials)")
         Metrics.authAttempts.add(1L, Attrs.AuthLoginFail)
-        val response = new AuthResponsePacket(getNextSequenceNumber, false, null, "Invalid credentials")
+        val response = new AuthResponsePacket(getNextSequenceNumber, false, null, AuthRules.InvalidCredentials)
         sendPacketViaChannel(response, tcpCh)
       }
     }
@@ -816,7 +765,7 @@ class GameServer(port: Int, val worldFile: String = "") {
   // Per-player locks for session token generation (UUIDs are not interned, so can't synchronize on them directly)
   private val playerLocks = new ConcurrentHashMap[UUID, AnyRef]()
 
-  private def generateSessionToken(playerId: UUID, tcpCh: Channel): Array[Byte] = {
+  private[server] def generateSessionToken(playerId: UUID, tcpCh: Channel): Array[Byte] = {
     val lock = playerLocks.computeIfAbsent(playerId, _ => new AnyRef)
     lock.synchronized {
       generateSessionTokenImpl(playerId, tcpCh)
@@ -844,6 +793,12 @@ class GameServer(port: Int, val worldFile: String = "") {
         }
       }
     }
+
+    // The new session's client counts its packets from zero. When the old channel was still
+    // open here, closing it above doesn't clear the old session's sequence numbers (its
+    // disconnect no longer finds the player), and every packet of the new session was taken for
+    // a replay until its count passed the old one's: logged in, and nothing worked.
+    packetValidator.resetSequences(playerId)
 
     val token = new Array[Byte](32)
     secureRandom.nextBytes(token)

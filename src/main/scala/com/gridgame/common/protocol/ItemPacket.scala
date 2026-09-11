@@ -10,6 +10,9 @@ object ItemAction {
   val PICKUP: Byte = 1
   val INVENTORY: Byte = 2
   val USE: Byte = 3
+  // Server -> the player whose USE it refused: the item is back in their inventory, and (x, y)
+  // is where the server has them, to undo what the client already did (a star's teleport)
+  val USE_REJECTED: Byte = 4
 }
 
 class ItemPacket(
@@ -86,6 +89,8 @@ class ItemPacket(
       case ItemAction.SPAWN => "SPAWN"
       case ItemAction.PICKUP => "PICKUP"
       case ItemAction.INVENTORY => "INVENTORY"
+      case ItemAction.USE => "USE"
+      case ItemAction.USE_REJECTED => "USE_REJECTED"
       case _ => "UNKNOWN"
     }
     s"ItemPacket{seq=$sequenceNumber, player=${playerId.toString.substring(0, 8)}, type=${getItemType.name}, pos=($x, $y), itemId=$itemId, action=$actionStr}"

@@ -3,7 +3,7 @@ package com.gridgame.client
 import com.gridgame.client.audio.AudioManager
 import com.gridgame.client.gl.{GLFWManager, GLGameRenderer, GLWindow}
 import com.gridgame.client.input.{ControllerHandler, GLKeyboardHandler, GLMouseHandler}
-import com.gridgame.client.ui.{CharacterSelectionPanel, UiActivity, ViewportCache}
+import com.gridgame.client.ui.{CharacterSelectionPanel, LoginForm, UiActivity, ViewportCache}
 import com.gridgame.client.i18n.{I18n, Messages}
 import com.gridgame.common.Constants
 import com.gridgame.common.WorldRegistry
@@ -50,7 +50,8 @@ import javafx.stage.Stage
 
 class ClientMain extends Application {
 
-  private var client: GameClient = _
+  // Package-private so the screen tests can give a screen a GameClient of their own
+  private[client] var client: GameClient = _
   private var renderLoop: AnimationTimer = _
   private var controllerHandler: ControllerHandler = _
   private var glWindow: GLWindow = _
@@ -101,7 +102,7 @@ class ClientMain extends Application {
     label.setText(text)
   }
 
-  private def lobbyFailureMessage(reason: Byte): String = reason match {
+  private[client] def lobbyFailureMessage(reason: Byte): String = reason match {
     case LobbyFailure.RATE_LIMITED => Messages.t("Please wait a moment and try again")
     case LobbyFailure.LOBBY_FULL => Messages.t("That lobby is full")
     case LobbyFailure.NOT_JOINABLE => Messages.t("That lobby is no longer open")
@@ -381,7 +382,7 @@ class ClientMain extends Application {
     getClass.getClassLoader.getResourceAsStream(relativePath)
   }
 
-  private def showWelcomeScreen(stage: Stage, notice: String = ""): Unit = {
+  private[client] def showWelcomeScreen(stage: Stage, notice: String = ""): Unit = {
     switchScreen()
     val root = new VBox(0)
     root.setAlignment(Pos.CENTER)
@@ -523,21 +524,10 @@ class ClientMain extends Application {
       val username = usernameField.getText.trim
       val password = passwordField.getText
 
-      if (username.isEmpty) {
+      val problem = LoginForm.problem(username, password, confirmField.getText, isSignupMode)
+      if (problem.isDefined) {
         statusLabel.setTextFill(Color.web("#e84057"))
-        statusLabel.setText(Messages.t("Username is required"))
-      } else if (password.isEmpty) {
-        statusLabel.setTextFill(Color.web("#e84057"))
-        statusLabel.setText(Messages.t("Password is required"))
-      } else if (isSignupMode && password != confirmField.getText) {
-        statusLabel.setTextFill(Color.web("#e84057"))
-        statusLabel.setText(Messages.t("Passwords do not match"))
-      } else if (username.length > 20) {
-        statusLabel.setTextFill(Color.web("#e84057"))
-        statusLabel.setText(Messages.t("Username max 20 characters"))
-      } else if (password.length > 20) {
-        statusLabel.setTextFill(Color.web("#e84057"))
-        statusLabel.setText(Messages.t("Password max 20 characters"))
+        statusLabel.setText(problem.get)
       } else {
         val host = if (hostField.getText.trim.isEmpty) "localhost" else hostField.getText.trim
         val portText = portField.getText.trim
@@ -692,7 +682,7 @@ class ClientMain extends Application {
     }).start()
   }
 
-  private def showLobbyBrowser(stage: Stage, notice: String = ""): Unit = {
+  private[client] def showLobbyBrowser(stage: Stage, notice: String = ""): Unit = {
     switchScreen()
     val root = new VBox(0)
     root.setStyle(darkBg)
@@ -1043,7 +1033,7 @@ class ClientMain extends Application {
     client.requestLobbyList()
   }
 
-  private def showLobbyRoom(stage: Stage): Unit = {
+  private[client] def showLobbyRoom(stage: Stage): Unit = {
     switchScreen()
     import scala.jdk.CollectionConverters._
     val root = new VBox(0)
@@ -2200,7 +2190,7 @@ class ClientMain extends Application {
     showWelcomeScreen(stage, Messages.t("Disconnected from the server"))
   }
 
-  private def showScoreboard(stage: Stage): Unit = {
+  private[client] def showScoreboard(stage: Stage): Unit = {
     switchScreen()
     import scala.jdk.CollectionConverters._
 

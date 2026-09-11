@@ -1,0 +1,12 @@
+load("@rules_scala//scala:scala.bzl", "scala_junit_test")
+
+scala_junit_test(
+    name = "world_maps_test",
+    srcs = ["WorldMapsTest.scala"],
+    data = ["//worlds:world_files"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+)

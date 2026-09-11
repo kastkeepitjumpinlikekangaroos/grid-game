@@ -1,0 +1,50 @@
+load("@rules_scala//scala:scala.bzl", "scala_junit_test", "scala_library")
+
+# A GameClient with no network (its packets captured) and a JavaFX helper, for the tests here
+scala_library(
+    name = "client_test_kit",
+    testonly = True,
+    srcs = ["ClientTestKit.scala"],
+    visibility = ["//src/test/scala/com/gridgame/client:__subpackages__"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:org_openjfx_javafx_base",
+        "@maven//:org_openjfx_javafx_controls",
+        "@maven//:org_openjfx_javafx_graphics",
+        "@maven//:org_openjfx_javafx_base_mac_aarch64",
+        "@maven//:org_openjfx_javafx_controls_mac_aarch64",
+        "@maven//:org_openjfx_javafx_graphics_mac_aarch64",
+    ],
+)
+
+CLIENT_TEST_DEPS = [
+    ":client_test_kit",
+    "//src/main/scala/com/gridgame/client:client_lib",
+    "//src/main/scala/com/gridgame/common",
+    "@maven//:junit_junit",
+    "@maven//:org_openjfx_javafx_base",
+    "@maven//:org_openjfx_javafx_controls",
+    "@maven//:org_openjfx_javafx_graphics",
+    "@maven//:org_openjfx_javafx_base_mac_aarch64",
+    "@maven//:org_openjfx_javafx_controls_mac_aarch64",
+    "@maven//:org_openjfx_javafx_graphics_mac_aarch64",
+]
+
+# No sound device in a test: every AudioManager call is a no-op
+AUDIO_OFF = {"GRIDGAME_AUDIO": "off"}
+
+[scala_junit_test(
+    name = name,
+    srcs = [src],
+    env = AUDIO_OFF,
+    suffixes = ["Test"],
+    deps = CLIENT_TEST_DEPS,
+) for (name, src) in [
+    ("game_client_match_test", "GameClientMatchTest.scala"),
+    ("game_client_position_test", "GameClientPositionTest.scala"),
+    ("game_client_combat_test", "GameClientCombatTest.scala"),
+    ("game_client_lobby_test", "GameClientLobbyTest.scala"),
+    ("lobby_room_screen_test", "LobbyRoomScreenTest.scala"),
+    ("scoreboard_screen_test", "ScoreboardScreenTest.scala"),
+]]

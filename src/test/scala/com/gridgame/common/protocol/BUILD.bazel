@@ -1,0 +1,31 @@
+load("@rules_scala//scala:scala.bzl", "scala_junit_test")
+
+scala_junit_test(
+    name = "packet_round_trip_test",
+    srcs = ["PacketRoundTripTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "packet_signer_test",
+    srcs = ["PacketSignerTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "auth_rules_test",
+    srcs = ["AuthRulesTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+)

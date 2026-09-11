@@ -15,7 +15,10 @@ class PlayerUpdatePacket(
     val chargeLevel: Int = 0,
     val effectFlags: Int = 0,
     val characterId: Byte = 0,
-    val teamId: Byte = 0
+    val teamId: Byte = 0,
+    // Server -> the player: how many times the server has moved them (Player.getServerMoves).
+    // Client -> server: the count the client had seen when it sent this position.
+    val serverMoves: Int = 0
 ) extends Packet(PacketType.PLAYER_UPDATE, sequenceNumber, playerId, timestamp) {
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int) = {
@@ -51,6 +54,8 @@ class PlayerUpdatePacket(
   def getCharacterId: Byte = characterId
 
   def getTeamId: Byte = teamId
+
+  def getServerMoves: Int = serverMoves
 
   override def serialize(): Array[Byte] = {
     val buffer = SerializeUtil.acquireBuffer()
@@ -92,8 +97,11 @@ class PlayerUpdatePacket(
     // [44] Team ID
     buffer.put(teamId)
 
-    // [45-63] Reserved (19 bytes) - fill with zeros
-    buffer.put(new Array[Byte](19))
+    // [45-48] Server moves
+    buffer.putInt(serverMoves)
+
+    // [49-63] Reserved (15 bytes) - fill with zeros
+    buffer.put(new Array[Byte](15))
 
     buffer.array().clone()
   }

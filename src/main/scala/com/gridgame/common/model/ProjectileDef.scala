@@ -75,16 +75,29 @@ case class ProjectileDef(
     }
 
   def isExplosive: Boolean = explosionConfig.isDefined
+
+  /** After hitting `hits` players, does it fly on? `pierceCount` is how many players it passes
+    * through, so it is used up by hit number pierceCount + 1. */
+  def piercesAfter(hits: Int): Boolean = hits <= pierceCount
 }
 
 object ProjectileDef {
-  private var registry: Map[Byte, ProjectileDef] = Map.empty
+  @volatile private var registry: Map[Byte, ProjectileDef] = Map.empty
 
   def register(defs: ProjectileDef*): Unit =
     defs.foreach(d => registry += (d.id -> d))
 
-  def get(id: Byte): ProjectileDef =
-    registry.getOrElse(id, defaultDef)
+  def get(id: Byte): ProjectileDef = {
+    val d = registry.getOrElse(id, null)
+    if (d != null) d
+    else {
+      // The definitions are registered by CharacterDef's initializer, so until something had
+      // touched CharacterDef every lookup missed and came back as the default bolt: the gallery
+      // drew wall-passers with no lift, and a Projectile built then took the default's speed.
+      CharacterDef.ensureRegistered()
+      registry.getOrElse(id, defaultDef)
+    }
+  }
 
   // Default def for the NORMAL (charge) projectile
   private val defaultDef: ProjectileDef = ProjectileDef(

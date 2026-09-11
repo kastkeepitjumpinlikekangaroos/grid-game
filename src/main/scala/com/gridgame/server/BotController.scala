@@ -536,7 +536,7 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     instance.broadcastToInstance(packet)
   }
 
-  private def placeFence(bot: Player, targetX: Int, targetY: Int): Unit = {
+  private[server] def placeFence(bot: Player, targetX: Int, targetY: Int): Unit = {
     val (perpDx, perpDy) = bot.getDirection match {
       case Direction.Up | Direction.Down    => (1, 0)
       case Direction.Left | Direction.Right => (0, 1)
@@ -548,9 +548,11 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
       (targetX + perpDx, targetY + perpDy)
     )
 
+    // Only on open ground, as a player's fence (ClientHandler.placeFence): this used to turn any
+    // cell into fence, walls and water included, and a fence stops the shots that fly over walls
     val w = instance.world
     positions.foreach { case (tx, ty) =>
-      if (w.setTile(tx, ty, com.gridgame.common.model.Tile.Fence)) {
+      if (w.isWalkable(tx, ty) && w.setTile(tx, ty, com.gridgame.common.model.Tile.Fence)) {
         instance.broadcastTileUpdate(bot.getId, tx, ty, com.gridgame.common.model.Tile.Fence.id)
       }
     }
@@ -568,27 +570,16 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     var nearest: Player = null
     var nearestDist = Float.MaxValue
 
-    // Try spatial grid first with generous search radius
+    // Straight over the registry: a match holds at most a few dozen players. This used to search
+    // the projectile manager's spatial grid, which belongs to the projectile tick's thread and is
+    // rebuilt in place every 30ms, so from this thread it was read mid-rebuild.
     val botPos = bot.getPosition
-    instance.projectileManager.forEachNearbyPlayer(botPos.getX.toFloat, botPos.getY.toFloat, 30f) { player =>
+    instance.registry.forEachPlayer { player =>
       if (!player.isDead && !player.getId.equals(bot.getId) && !instance.isTeammate(bot.getId, player.getId)) {
         val dist = distanceBetween(botPos, player.getPosition)
         if (dist < nearestDist) {
           nearestDist = dist
           nearest = player
-        }
-      }
-    }
-
-    // Fall back to full iteration if no one found nearby
-    if (nearest == null) {
-      instance.registry.forEachPlayer { player =>
-        if (!player.isDead && !player.getId.equals(bot.getId) && !instance.isTeammate(bot.getId, player.getId)) {
-          val dist = distanceBetween(botPos, player.getPosition)
-          if (dist < nearestDist) {
-            nearestDist = dist
-            nearest = player
-          }
         }
       }
     }
@@ -660,11 +651,10 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
         if (projectile != null) instance.broadcastProjectileSpawn(projectile)
         true
 
-      case FanProjectile(count, fanAngle) =>
+      case fan @ FanProjectile(count, _) =>
         if (dist > ability.maxRange) return false
-        val halfAngle = fanAngle / 2.0
         for (i <- 0 until count) {
-          val theta = -halfAngle + (fanAngle * i / (count - 1).toDouble)
+          val theta = fan.angleOf(i)
           val cos = Math.cos(theta).toFloat
           val sin = Math.sin(theta).toFloat
           val rdx = ndx * cos - ndy * sin
@@ -714,19 +704,8 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
       case TeleportCast(maxDistance) =>
         if (dist < 4 || dist > maxDistance + 8) return false
         val clampedDist = Math.min(dist, maxDistance.toFloat).toInt
-        val world = instance.world
-        var bestX = botPos.getX
-        var bestY = botPos.getY
-        for (step <- 1 to clampedDist) {
-          val testX = Math.max(0, Math.min(world.width - 1, (botPos.getX + ndx * step).toInt))
-          val testY = Math.max(0, Math.min(world.height - 1, (botPos.getY + ndy * step).toInt))
-          if (world.isWalkable(testX, testY)) {
-            bestX = testX
-            bestY = testY
-          }
-        }
-        bot.setPosition(new Position(bestX, bestY))
-        bot.setServerTeleportedUntil(System.currentTimeMillis() + 500)
+        // A player's blink, stopping before the first wall rather than coming out beyond it
+        bot.setPosition(Teleport.blinkTarget(instance.world, botPos.getX, botPos.getY, ndx, ndy, clampedDist))
         broadcastBotPosition(bot)
         true
     }
@@ -783,24 +762,6 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
   // --- Broadcasting ---
 
   private def broadcastBotPosition(bot: Player): Unit = {
-    val flags = (if (bot.hasShield) 0x01 else 0) |
-                (if (bot.hasGemBoost) 0x02 else 0) |
-                (if (bot.isFrozen) 0x04 else 0) |
-                (if (bot.isPhased) 0x08 else 0) |
-                (if (bot.isBurning) 0x10 else 0) |
-                (if (bot.hasSpeedBoost) 0x20 else 0) |
-                (if (bot.isRooted) 0x40 else 0) |
-                (if (bot.isSlowed) 0x80 else 0)
-    val packet = new PlayerUpdatePacket(
-      instance.server.getNextSequenceNumber,
-      bot.getId,
-      bot.getPosition,
-      bot.getColorRGB,
-      bot.getHealth,
-      0,
-      flags,
-      bot.getCharacterId
-    )
-    instance.broadcastToInstance(packet)
+    instance.broadcastToInstance(instance.stateUpdate(bot))
   }
 }

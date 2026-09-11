@@ -78,8 +78,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   private val rootedUntil: AtomicLong = new AtomicLong(0)
   private val slowedUntil: AtomicLong = new AtomicLong(0)
 
-  // Client-authoritative movement: skip server position corrections during dashes/teleports
-  private val clientMoveAuthUntil: AtomicLong = new AtomicLong(0)
+  // Server moves we have taken (Player.getServerMoves): pulls, knockbacks, respawns, freezes,
+  // corrections. Sent with every position; the server drops positions sent before a move we
+  // hadn't seen yet. Reset each match, since each match counts its own.
+  @volatile private var serverMovesSeen: Int = 0
 
   // Ability cast flash state
   private val lastCastTime: AtomicLong = new AtomicLong(0)
@@ -140,6 +142,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   // Track recently removed projectile IDs to prevent UDP MOVE packets from resurrecting them
   private val recentlyRemovedProjectiles: java.util.Set[Int] =
     java.util.Collections.newSetFromMap(new ConcurrentHashMap[Int, java.lang.Boolean]())
+
+  // Where outgoing packets go: the network thread, or a test capturing them
+  @volatile private[client] var packetSink: Packet => Unit = _
+
+  private def send(packet: Packet): Unit = {
+    val sink = packetSink
+    if (sink != null) sink(packet) else networkThread.send(packet)
+  }
 
   @volatile private var running = false
   @volatile private var isDead = false
@@ -332,7 +342,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       username,
       password
     )
-    networkThread.send(packet)
+    send(packet)
   }
 
   def completeAuthAndJoin(assignedUUID: UUID, username: String): Unit = {
@@ -358,7 +368,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       getSelectedCharacterMaxHealth,
       selectedCharacterId
     )
-    networkThread.send(packet)
+    send(packet)
   }
 
   // Tracks the time the most recent heartbeat was sent — set in sendHeartbeat, read when the
@@ -371,7 +381,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       localPlayerId
     )
     heartbeatSentAtNs.set(System.nanoTime())
-    networkThread.send(packet)
+    send(packet)
   }
 
   def rejoin(): Unit = {
@@ -502,11 +512,6 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       swoopingUntil.set(0)
       val finalPos = new Position(Math.round(swoopTargetX).toInt, Math.round(swoopTargetY).toInt)
       localPosition.set(finalPos)
-      // Extend auth window so server corrections from stale broadcasts don't snap us back
-      val newAuth = now + 1000
-      if (newAuth > clientMoveAuthUntil.get()) {
-        clientMoveAuthUntil.set(newAuth)
-      }
       // Send twice for UDP redundancy (dash end position is critical)
       sendPositionUpdate(finalPos)
       sendPositionUpdate(finalPos)
@@ -524,12 +529,6 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     val posY = Math.round(newY).toInt
     val newPos = new Position(posX, posY)
     localPosition.set(newPos)
-    // Extend authority window if needed, but never shorten it — shootAbility already
-    // set it to cover the full dash duration + grace period
-    val newAuth = now + 200
-    if (newAuth > clientMoveAuthUntil.get()) {
-      clientMoveAuthUntil.set(newAuth)
-    }
     sendPositionUpdate(newPos)
 
     // Update direction based on swoop direction
@@ -548,17 +547,19 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   }
 
   private def sendPositionUpdate(position: Position): Unit = {
-    val packet = new PlayerUpdatePacket(
+    send(new PlayerUpdatePacket(
       sequenceNumber.getAndIncrement(),
       localPlayerId,
+      Packet.getCurrentTimestamp,
       position,
       localColorRGB,
       localHealth.get(),
       getChargeLevel,
       getEffectFlags,
-      selectedCharacterId
-    )
-    networkThread.send(packet)
+      selectedCharacterId,
+      localTeamId,
+      serverMovesSeen
+    ))
   }
 
   def sendChargingUpdate(): Unit = {
@@ -566,18 +567,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     if (now - lastChargingUpdateTime.get() < 100) return // Rate limit to every 100ms
     lastChargingUpdateTime.set(now)
 
-    val pos = localPosition.get()
-    val packet = new PlayerUpdatePacket(
-      sequenceNumber.getAndIncrement(),
-      localPlayerId,
-      pos,
-      localColorRGB,
-      localHealth.get(),
-      getChargeLevel,
-      getEffectFlags,
-      selectedCharacterId
-    )
-    networkThread.send(packet)
+    sendPositionUpdate(localPosition.get())
   }
 
   def startCharging(): Unit = {
@@ -630,66 +620,37 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         val sin = Math.sin(theta).toFloat
         val rdx = dx * cos - dy * sin
         val rdy = dx * sin + dy * cos
-        val packet = new ProjectilePacket(
-          sequenceNumber.getAndIncrement(),
-          localPlayerId,
-          pos.getX.toFloat,
-          pos.getY.toFloat,
-          localColorRGB,
-          0,
-          rdx, rdy,
-          ProjectileAction.SPAWN,
-          null,
-          chargeByte,
-          primaryType
-        )
-        networkThread.send(packet)
+        send(ProjectilePacket.spawnRequest(
+          sequenceNumber.getAndIncrement(), localPlayerId,
+          pos.getX.toFloat, pos.getY.toFloat, localColorRGB, rdx, rdy,
+          chargeByte, primaryType, AttackSlot.PRIMARY))
       }
     } else {
-      val packet = new ProjectilePacket(
-        sequenceNumber.getAndIncrement(),
-        localPlayerId,
-        pos.getX.toFloat,
-        pos.getY.toFloat,
-        localColorRGB,
-        0,
-        dx, dy,
-        ProjectileAction.SPAWN,
-        null,
-        chargeByte,
-        primaryType
-      )
-      networkThread.send(packet)
+      send(ProjectilePacket.spawnRequest(
+        sequenceNumber.getAndIncrement(), localPlayerId,
+        pos.getX.toFloat, pos.getY.toFloat, localColorRGB, dx, dy,
+        chargeByte, primaryType, AttackSlot.PRIMARY))
     }
   }
 
+  /** Burst shot (Shift+Space): the character's primary projectile along all eight compass points
+    * (AttackSlot.BURST), at the cost of standing still for a moment. It used to send four of the
+    * default bolt, which the server refused from every character but Spaceman, whose primary it
+    * is: pressing it rooted the player and fired nothing. */
   def shootAllDirections(): Unit = {
-    if (isDead) return
+    if (isDead || isPhased || isFrozen) return
 
     val pos = localPosition.get()
 
     // Block movement for 500ms
     movementBlockedUntil.set(System.currentTimeMillis() + Constants.BURST_SHOT_MOVEMENT_BLOCK_MS)
 
-    // Shoot in all 4 cardinal directions using dx/dy
-    val velocities = Seq(
-      (0.0f, -1.0f),  // Up
-      (0.0f, 1.0f),   // Down
-      (-1.0f, 0.0f),  // Left
-      (1.0f, 0.0f)    // Right
-    )
-    velocities.foreach { case (dx, dy) =>
-      val packet = new ProjectilePacket(
-        sequenceNumber.getAndIncrement(),
-        localPlayerId,
-        pos.getX.toFloat,
-        pos.getY.toFloat,
-        localColorRGB,
-        0, // Server assigns real ID
-        dx, dy,
-        ProjectileAction.SPAWN
-      )
-      networkThread.send(packet)
+    val primaryType = getSelectedCharacterDef.primaryProjectileType
+    AttackSlot.BurstDirections.foreach { case (dx, dy) =>
+      send(ProjectilePacket.spawnRequest(
+        sequenceNumber.getAndIncrement(), localPlayerId,
+        pos.getX.toFloat, pos.getY.toFloat, localColorRGB, dx, dy,
+        0.toByte, primaryType, AttackSlot.BURST))
     }
   }
 
@@ -697,9 +658,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     if (isDead || isFrozen) return
 
     val charDef = getSelectedCharacterDef
-    val (abilityDef, lastAbilityTime) = slot match {
-      case 0 => (charDef.qAbility, lastQAbilityTime)
-      case 1 => (charDef.eAbility, lastEAbilityTime)
+    val (abilityDef, lastAbilityTime, attackSlot) = slot match {
+      case 0 => (charDef.qAbility, lastQAbilityTime, AttackSlot.Q)
+      case 1 => (charDef.eAbility, lastEAbilityTime, AttackSlot.E)
       case _ => return
     }
 
@@ -747,7 +708,6 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           swoopStartTime.set(now)
           swoopingUntil.set(now + durationMs)
           phasedUntil.set(now + durationMs)
-          clientMoveAuthUntil.set(now + durationMs + 200)
           sendPositionUpdate(localPosition.get())
         }
 
@@ -756,55 +716,40 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         phasedUntil.set(now + durationMs)
         sendPositionUpdate(localPosition.get())
 
-      case TeleportCast(_) =>
+      case TeleportCast(maxDistance) =>
         AudioManager.playTeleport()
-        performBlink()
+        // This ability's own range: a blink on Q used to take E's (Glitcher blinked 16 of its 6)
+        performBlink(maxDistance)
 
-      case FanProjectile(count, fanAngle) =>
+      case fan @ FanProjectile(count, _) =>
         val pos = localPosition.get()
         val (ndx, ndy) = getAimDirection
-        val halfAngle = fanAngle / 2.0
         for (i <- 0 until count) {
-          val theta = -halfAngle + (fanAngle * i / (count - 1).toDouble)
+          val theta = fan.angleOf(i)
           val cos = Math.cos(theta).toFloat
           val sin = Math.sin(theta).toFloat
           val rdx = ndx * cos - ndy * sin
           val rdy = ndx * sin + ndy * cos
-          val fanPacket = new ProjectilePacket(
-            sequenceNumber.getAndIncrement(),
-            localPlayerId,
-            pos.getX.toFloat, pos.getY.toFloat,
-            localColorRGB, 0, rdx, rdy,
-            ProjectileAction.SPAWN, null, 0.toByte,
-            abilityDef.projectileType
-          )
-          networkThread.send(fanPacket)
+          send(ProjectilePacket.spawnRequest(
+            sequenceNumber.getAndIncrement(), localPlayerId,
+            pos.getX.toFloat, pos.getY.toFloat, localColorRGB, rdx, rdy,
+            0.toByte, abilityDef.projectileType, attackSlot))
         }
 
       case GroundSlam(_) =>
         val pos = localPosition.get()
-        val packet = new ProjectilePacket(
-          sequenceNumber.getAndIncrement(),
-          localPlayerId,
-          pos.getX.toFloat, pos.getY.toFloat,
-          localColorRGB, 0, 0.0f, 0.0f,
-          ProjectileAction.SPAWN, null, 0.toByte,
-          abilityDef.projectileType
-        )
-        networkThread.send(packet)
+        send(ProjectilePacket.spawnRequest(
+          sequenceNumber.getAndIncrement(), localPlayerId,
+          pos.getX.toFloat, pos.getY.toFloat, localColorRGB, 0.0f, 0.0f,
+          0.toByte, abilityDef.projectileType, attackSlot))
 
       case StandardProjectile =>
         val pos = localPosition.get()
         val (ndx, ndy) = getAimDirection
-        val packet = new ProjectilePacket(
-          sequenceNumber.getAndIncrement(),
-          localPlayerId,
-          pos.getX.toFloat, pos.getY.toFloat,
-          localColorRGB, 0, ndx, ndy,
-          ProjectileAction.SPAWN, null, 0.toByte,
-          abilityDef.projectileType
-        )
-        networkThread.send(packet)
+        send(ProjectilePacket.spawnRequest(
+          sequenceNumber.getAndIncrement(), localPlayerId,
+          pos.getX.toFloat, pos.getY.toFloat, localColorRGB, ndx, ndy,
+          0.toByte, abilityDef.projectileType, attackSlot))
     }
   }
 
@@ -908,7 +853,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     processor.start()
   }
 
-  private def processPacket(packet: Packet): Unit = {
+  private[client] def processPacket(packet: Packet): Unit = {
     cleanupHitTimes()
     // Handle session token
     if (packet.getType == PacketType.SESSION_TOKEN) {
@@ -1029,15 +974,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           // Don't overwrite local phased state from server echo — local timer is authoritative
           // Server echoes phased flag to confirm it, but we don't reset the timer
 
-          // Handle position correction (e.g. tentacle pull)
-          // Skip during client-authoritative movement (dash/teleport/blink) to prevent
-          // stale server echoes from rubber-banding the player back to old positions
-          val serverPos = updatePacket.getPosition
-          val localPos = localPosition.get()
-          if (System.currentTimeMillis() >= clientMoveAuthUntil.get()) {
-            if (serverPos.getX != localPos.getX || serverPos.getY != localPos.getY) {
-              localPosition.set(serverPos)
-            }
+          // The position counts only when it is a server move we haven't taken yet (a pull, a
+          // knockback, a freeze, a respawn, a correction). Any other update carries wherever the
+          // server last heard we were, a step or two behind a player who is walking, and
+          // snapping to that on every regen tick, burn tick or lifesteal rubber-banded us back.
+          if (updatePacket.getServerMoves - serverMovesSeen > 0) {
+            serverMovesSeen = updatePacket.getServerMoves
+            swoopingUntil.set(0) // the server's move ends a dash
+            localPosition.set(updatePacket.getPosition)
           }
 
           if (serverHealth <= 0 && !isDead) {
@@ -1047,10 +991,15 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
             println("GameClient: You have died! Auto-respawning in 3s...")
           }
         case PacketType.PLAYER_JOIN =>
-          // Our own join echo is the only place we learn our team (it colours our health
-          // bar). Take just that: the position stays ours, since the server already took
-          // our first position update, and snapping back would fail its speed check.
-          localTeamId = packet.asInstanceOf[PlayerJoinPacket].getTeamId
+          // Our own join echo, at the start of a match: our team (it colours our health bar)
+          // and where the server placed us, which it picked to keep players apart. We used to
+          // keep a spawn setWorld had picked at random and send that instead, which the server
+          // took: two players could start on one spawn, and everyone saw each other teleport.
+          val join = packet.asInstanceOf[PlayerJoinPacket]
+          localTeamId = join.getTeamId
+          localPosition.set(join.getPosition)
+          localHealth.set(join.getHealth)
+          AudioManager.playSpawn()
         case _ =>
       }
       return
@@ -1157,6 +1106,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       case LobbyAction.GAME_STARTING =>
         clientState = ClientState.PLAYING
         leaveConfirmUntil = 0L
+        serverMovesSeen = 0
         killCount = 0
         deathCount = 0
         // Reset practice stats but keep isPracticeMode flag
@@ -1356,7 +1306,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         LobbyAction.CHARACTER_SELECT, currentLobbyId,
         0.toByte, 0.toByte, 0.toByte, 0.toByte, 0.toByte, "", id
       )
-      networkThread.send(packet)
+      send(packet)
     }
   }
 
@@ -1475,7 +1425,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       sequenceNumber.getAndIncrement(), localPlayerId, Packet.getCurrentTimestamp,
       scope, truncated
     )
-    networkThread.send(packet)
+    send(packet)
   }
 
   // Lobby actions
@@ -1483,32 +1433,35 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     val packet = new LobbyActionPacket(
       sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.LIST_REQUEST
     )
-    networkThread.send(packet)
+    send(packet)
   }
 
+  // Both carry the character already selected (in practice, ranked or the last lobby), which
+  // the lobby room shows as picked: the server enters us as it, not as whatever it last heard.
   def createLobby(name: String, mapIndex: Int, durationMinutes: Int): Unit = {
     isLobbyHost = true
     val packet = new LobbyActionPacket(
-      sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.CREATE, 0.toShort,
+      sequenceNumber.getAndIncrement(), localPlayerId, Packet.getCurrentTimestamp, LobbyAction.CREATE, 0.toShort,
       mapIndex.toByte, durationMinutes.toByte, 0.toByte, Constants.MAX_LOBBY_PLAYERS.toByte,
-      0.toByte, name
+      0.toByte, name, selectedCharacterId
     )
-    networkThread.send(packet)
+    send(packet)
   }
 
   def joinLobby(lobbyId: Short): Unit = {
     isLobbyHost = false
     val packet = new LobbyActionPacket(
-      sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.JOIN, lobbyId
+      sequenceNumber.getAndIncrement(), localPlayerId, Packet.getCurrentTimestamp, LobbyAction.JOIN, lobbyId,
+      characterId = selectedCharacterId
     )
-    networkThread.send(packet)
+    send(packet)
   }
 
   def leaveLobby(): Unit = {
     val packet = new LobbyActionPacket(
       sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.LEAVE
     )
-    networkThread.send(packet)
+    send(packet)
     clientState = ClientState.LOBBY_BROWSER
     currentLobbyId = 0
     isLobbyHost = false
@@ -1524,7 +1477,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     val packet = new LobbyActionPacket(
       sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.LEAVE
     )
-    networkThread.send(packet)
+    send(packet)
     if (!isPracticeMode) returnToLobbyBrowser()
   }
 
@@ -1532,35 +1485,35 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     val packet = new LobbyActionPacket(
       sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.START
     )
-    networkThread.send(packet)
+    send(packet)
   }
 
   def requestLeaderboard(): Unit = {
     val packet = new LeaderboardPacket(
       sequenceNumber.getAndIncrement(), localPlayerId, LeaderboardAction.QUERY
     )
-    networkThread.send(packet)
+    send(packet)
   }
 
   def requestMatchHistory(): Unit = {
     val packet = new MatchHistoryPacket(
       sequenceNumber.getAndIncrement(), localPlayerId, MatchHistoryAction.QUERY
     )
-    networkThread.send(packet)
+    send(packet)
   }
 
   def addBot(): Unit = {
     val packet = new LobbyActionPacket(
       sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.ADD_BOT
     )
-    networkThread.send(packet)
+    send(packet)
   }
 
   def removeBot(): Unit = {
     val packet = new LobbyActionPacket(
       sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.REMOVE_BOT
     )
-    networkThread.send(packet)
+    send(packet)
   }
 
   def startPractice(): Unit = {
@@ -1570,7 +1523,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       LobbyAction.PRACTICE_START, 0.toShort,
       0.toByte, 0.toByte, 0.toByte, 0.toByte, 0.toByte, "", selectedCharacterId
     )
-    networkThread.send(packet)
+    send(packet)
   }
 
   def updateLobbyConfig(mapIndex: Int, durationMinutes: Int, gameMode: Byte = -1, teamSize: Int = -1): Unit = {
@@ -1582,7 +1535,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       mapIndex.toByte, durationMinutes.toByte, 0.toByte, 0.toByte, 0.toByte, "",
       0.toByte, gm, ts.toByte
     )
-    networkThread.send(packet)
+    send(packet)
   }
 
   def returnToLobbyBrowser(): Unit = {
@@ -1631,7 +1584,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       sequenceNumber.getAndIncrement(), localPlayerId,
       RankedQueueAction.QUEUE_JOIN, selectedCharacterId, mode
     )
-    networkThread.send(packet)
+    send(packet)
   }
 
   def leaveRankedQueue(): Unit = {
@@ -1639,7 +1592,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     val packet = new RankedQueuePacket(
       sequenceNumber.getAndIncrement(), localPlayerId, RankedQueueAction.QUEUE_LEAVE
     )
-    networkThread.send(packet)
+    send(packet)
   }
 
   def changeRankedCharacter(id: Byte): Unit = {
@@ -1649,7 +1602,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         sequenceNumber.getAndIncrement(), localPlayerId,
         RankedQueueAction.CHARACTER_CHANGE, id
       )
-      networkThread.send(packet)
+      send(packet)
     }
   }
 
@@ -1736,9 +1689,13 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           projectile.updatePosition(packet.getX, packet.getY, packet.getDx, packet.getDy)
         }
 
-      case ProjectileAction.HIT =>
-        projectiles.remove(projectileId)
-        recentlyRemovedProjectiles.add(projectileId)
+      case ProjectileAction.HIT | ProjectileAction.PIERCE =>
+        // A pierce passed through the target and keeps flying, so the projectile stays (its
+        // MOVEs keep coming). Dropped here, it vanished at its first hit.
+        if (packet.getAction == ProjectileAction.HIT) {
+          projectiles.remove(projectileId)
+          recentlyRemovedProjectiles.add(projectileId)
+        }
         val hitPType = packet.getProjectileType
         val targetId = packet.getTargetId
         if (targetId != null) {
@@ -1848,6 +1805,16 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           addToInventory(item)
         }
 
+      case ItemAction.USE_REJECTED =>
+        if (packet.getPlayerId.equals(localPlayerId)) {
+          addToInventory(new Item(packet.getItemId, packet.getX, packet.getY, packet.getItemType))
+          if (packet.getItemType == ItemType.Star) {
+            // The server didn't take the teleport: back to where it has us
+            localPosition.set(new Position(packet.getX, packet.getY))
+            println(s"GameClient: Teleport refused by server, back at (${packet.getX}, ${packet.getY})")
+          }
+        }
+
       case _ =>
         // Unknown action
     }
@@ -1885,14 +1852,6 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     player.setCharacterId(packet.getCharacterId)
     player.setTeamId(packet.getTeamId)
     players.put(player.getId, player)
-
-    // If this is the local player's join echo, use server-assigned spawn position
-    if (packet.getPlayerId.equals(localPlayerId)) {
-      localTeamId = packet.getTeamId
-      localPosition.set(packet.getPosition)
-      localHealth.set(packet.getHealth)
-      AudioManager.playSpawn()
-    }
 
     println(s"GameClient: Player joined - ${player.getId.toString.substring(0, 8)} ('${player.getName}') at ${player.getPosition} with health ${player.getHealth} team=${packet.getTeamId}")
   }
@@ -2026,12 +1985,26 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       return
     }
 
+    // A star lands on the cell the server will check it against (Teleport), so it can't show a
+    // teleport the server then undoes. Nowhere to go keeps the star.
+    var starTarget: Position = null
+    if (itemTypeId == ItemType.Star.id) {
+      val pos = localPosition.get()
+      starTarget = Teleport.starTarget(currentWorld.get(), pos.getX, pos.getY, mouseWorldX, mouseWorldY).orNull
+      if (starTarget == null) {
+        println("GameClient: Nowhere to teleport to!")
+        return
+      }
+    }
+
     val item = deque.poll()
     if (item == null) return
 
     // Notify server that item was used
-    // For fence and star, send mouse world position as target coordinates
-    val (packetX, packetY) = if (item.itemType == ItemType.Fence || item.itemType == ItemType.Star) {
+    // For fence and star, send the target cell as coordinates
+    val (packetX, packetY) = if (item.itemType == ItemType.Star) {
+      (starTarget.getX, starTarget.getY)
+    } else if (item.itemType == ItemType.Fence) {
       (Math.round(mouseWorldX).toInt, Math.round(mouseWorldY).toInt)
     } else {
       (item.getCellX, item.getCellY)
@@ -2044,14 +2017,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       item.id,
       ItemAction.USE
     )
-    networkThread.send(packet)
+    send(packet)
 
     println(s"GameClient: Used item '${item.itemType.name}' (${deque.size()} remaining)")
 
     val now = System.currentTimeMillis()
     item.itemType match {
       case ItemType.Star =>
-        teleportToMouse()
+        teleportTo(starTarget)
       case ItemType.Gem =>
         fastProjectilesUntil.set(now + Constants.GEM_DURATION_MS)
       case ItemType.Shield =>
@@ -2181,12 +2154,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   def setWorld(world: WorldData): Unit = {
     currentWorld.set(world)
-    // Pick a temporary spawn so the player isn't stranded in the old world.
-    // The server will override this with the authoritative position via
-    // PlayerJoinPacket shortly after.
+    // Somewhere in the new world until the server's join echo, which follows the world on the
+    // same connection, says where it placed us. Kept to ourselves: sent, the server took it as
+    // our position (see the PLAYER_JOIN case in processPacket).
     val tempSpawn = world.getValidSpawnPoint()
     localPosition.set(tempSpawn)
-    sendPositionUpdate(tempSpawn)
     println(s"GameClient: World changed to '${world.name}', temp spawn at $tempSpawn")
   }
 
@@ -2198,43 +2170,26 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   def getMouseWorldX: Double = mouseWorldX
   def getMouseWorldY: Double = mouseWorldY
 
-  private def teleportToMouse(): Unit = {
-    val world = currentWorld.get()
+  /** Star: show the teleport now. The item packet already sent is what moves us on the server,
+    * which tells everyone else, so there's no position update to send. */
+  private def teleportTo(target: Position): Unit = {
     val oldPos = localPosition.get()
-    val targetX = Math.round(mouseWorldX).toInt
-    val targetY = Math.round(mouseWorldY).toInt
-
-    // Clamp to world bounds
-    val clampedX = Math.max(0, Math.min(world.width - 1, targetX))
-    val clampedY = Math.max(0, Math.min(world.height - 1, targetY))
-
-    if (!world.isWalkable(clampedX, clampedY)) {
-      println("GameClient: Can't teleport to non-walkable tile!")
-      return
-    }
-
-    val newPos = new Position(clampedX, clampedY)
-    localPosition.set(newPos)
+    localPosition.set(target)
     val now = System.currentTimeMillis()
     lastMoveTime.set(now)
-    clientMoveAuthUntil.set(now + 1000)
-    // Send twice for UDP redundancy (star teleport is a single critical event)
-    sendPositionUpdate(newPos)
-    sendPositionUpdate(newPos)
 
     // Record teleport animation
     teleportAnimations.put(localPlayerId, Array(
       now,
       oldPos.getX.toLong, oldPos.getY.toLong,
-      clampedX.toLong, clampedY.toLong,
+      target.getX.toLong, target.getY.toLong,
       localColorRGB.toLong
     ))
 
-    println(s"GameClient: Teleported to ($clampedX, $clampedY)")
+    println(s"GameClient: Teleported to (${target.getX}, ${target.getY})")
   }
 
-  private def performBlink(): Unit = {
-    val world = currentWorld.get()
+  private def performBlink(maxDistance: Int): Unit = {
     val oldPos = localPosition.get()
     val dx = (mouseWorldX - oldPos.getX).toFloat
     val dy = (mouseWorldY - oldPos.getY).toFloat
@@ -2249,24 +2204,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       }
     }
 
-    // Walk cell-by-cell up to maxRange, find farthest walkable position
-    val blinkDist = getSelectedCharacterDef.eAbility.maxRange
-    var bestX = oldPos.getX
-    var bestY = oldPos.getY
-    for (step <- 1 to blinkDist) {
-      val cx = Math.round(oldPos.getX + ndx * step).toInt
-      val cy = Math.round(oldPos.getY + ndy * step).toInt
-      val clampedX = Math.max(0, Math.min(world.width - 1, cx))
-      val clampedY = Math.max(0, Math.min(world.height - 1, cy))
-      if (world.isWalkable(clampedX, clampedY)) {
-        bestX = clampedX
-        bestY = clampedY
-      } else {
-        // Stop at first non-walkable cell
-        return blinkTo(oldPos, bestX, bestY)
-      }
-    }
-    blinkTo(oldPos, bestX, bestY)
+    // Walk cell-by-cell up to the blink's range, stopping before the first non-walkable cell
+    val dest = Teleport.blinkTarget(currentWorld.get(), oldPos.getX, oldPos.getY, ndx, ndy, maxDistance)
+    blinkTo(oldPos, dest.getX, dest.getY)
   }
 
   private def blinkTo(oldPos: Position, x: Int, y: Int): Unit = {
@@ -2276,7 +2216,6 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     localPosition.set(newPos)
     val now = System.currentTimeMillis()
     lastMoveTime.set(now)
-    clientMoveAuthUntil.set(now + 1000)
     // Send twice for UDP redundancy (blink is a single critical event)
     sendPositionUpdate(newPos)
     sendPositionUpdate(newPos)

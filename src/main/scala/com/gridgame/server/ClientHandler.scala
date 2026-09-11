@@ -1,10 +1,14 @@
 package com.gridgame.server
 
 import com.gridgame.common.Constants
+import com.gridgame.common.model.CharacterDef
+import com.gridgame.common.model.DashBuff
 import com.gridgame.common.model.Direction
 import com.gridgame.common.model.ItemType
+import com.gridgame.common.model.PhaseShiftBuff
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
+import com.gridgame.common.model.Teleport
 import com.gridgame.common.model.Tile
 import com.gridgame.common.observability.Attrs
 import com.gridgame.common.observability.Metrics
@@ -128,6 +132,9 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       println("No world file configured on server")
     }
 
+    // The join places the player, and a reconnected client counts its packets from zero again
+    validator.resetMovementFence(playerId)
+
     if (registry.contains(playerId)) {
       println(s"Player rejoining: $playerId")
       val existing = registry.get(playerId)
@@ -150,6 +157,9 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       sendInventoryContents(playerId, existing)
       if (instance != null) instance.sendModifiedTiles(existing)
       else server.sendModifiedTiles(existing)
+      // Its state, with the count of server moves: a client that has lost count of them (a
+      // restarted one starts from zero) picks it up, or all its updates would be taken as stale
+      if (instance != null) instance.sendStateToPlayer(existing)
 
       true
     } else {
@@ -192,45 +202,63 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
 
   private def handlePlayerUpdate(packet: PlayerUpdatePacket, udpSender: InetSocketAddress): Boolean = {
     val playerId = packet.getPlayerId
-    var player = registry.get(playerId)
+    val player = registry.get(playerId)
+    // Reject updates from unknown players — they must join via PLAYER_JOIN first
+    if (player == null) return false
 
-    // Validate movement if player exists
-    if (player != null) {
-      val world = if (instance != null) instance.world else server.getWorld
-      if (world != null) {
-        if (!validator.validateMovement(packet, player, world)) {
-          Metrics.validationFailed.add(1L, Attrs.VfMovementSpeed)
-          return false
-        }
-      } else if (instance != null) {
-        // World should be loaded for active game instances — reject if missing
-        Metrics.validationFailed.add(1L, Attrs.VfWorldMissing)
-        return false
-      }
-    }
-
-    if (player == null) {
-      // Reject updates from unknown players — they must join via PLAYER_JOIN first
+    val world = if (instance != null) instance.world else server.getWorld
+    if (world == null && instance != null) {
+      // World should be loaded for active game instances — reject if missing
+      Metrics.validationFailed.add(1L, Attrs.VfWorldMissing)
       return false
-    } else {
-      val oldPos = player.getPosition
-      val newPos = packet.getPosition
-      val dx = newPos.getX - oldPos.getX
-      val dy = newPos.getY - oldPos.getY
-      if (dx != 0 || dy != 0) {
-        player.setDirection(Direction.fromMovement(dx, dy))
-      }
-      // Don't overwrite position if player was recently teleported by server (e.g. haunt)
-      // Don't allow movement if player is frozen
-      if (!player.isServerTeleported && !player.isFrozen && !player.isRooted) {
-        player.setPosition(newPos)
-      }
-      player.setColorRGB(packet.getColorRGB)
-      // Character ID is set on join only — ignore mid-game character changes
-      if (udpSender != null) {
-        player.setUdpAddress(udpSender)
+    }
+
+    // Check and apply as one step under the player's lock. A star moves the player on the TCP
+    // thread while this runs on the UDP one, and a move checked against the position from before
+    // the star must not be written after it.
+    var refused = false
+    val accepted = player.synchronized {
+      if (packet.getServerMoves != player.getServerMoves) {
+        // Sent before the client knew the server had moved it (a pull, a knockback, a respawn):
+        // it would only drag the player back to where they were
+        false
+      } else if (validator.isStaleMovement(playerId, packet.getSequenceNumber)) {
+        // Sent before a position already applied: it would only put the player back
+        false
+      } else {
+        // A phase lets the player through walls, so it takes effect before this very update is
+        // checked: the first one sent with the flag can already be inside one
+        if ((packet.getEffectFlags & 0x08) != 0) activatePhase(player)
+        if (world != null && !validator.validateMovement(packet, player, world)) {
+          Metrics.validationFailed.add(1L, Attrs.VfMovementSpeed)
+          refused = true
+          false
+        } else {
+          validator.movementApplied(playerId, packet.getSequenceNumber)
+          val oldPos = player.getPosition
+          val newPos = packet.getPosition
+          val dx = newPos.getX - oldPos.getX
+          val dy = newPos.getY - oldPos.getY
+          if (dx != 0 || dy != 0) {
+            player.setDirection(Direction.fromMovement(dx, dy))
+          }
+          // Don't allow movement if player is frozen or rooted
+          if (!player.isFrozen && !player.isRooted) {
+            player.setPosition(newPos)
+          }
+          player.setColorRGB(packet.getColorRGB)
+          // Kept so the server's own updates about this player don't show their charge dropping
+          player.setChargeLevel(packet.getChargeLevel)
+          // Character ID is set on join only — ignore mid-game character changes
+          if (udpSender != null) {
+            player.setUdpAddress(udpSender)
+          }
+          true
+        }
       }
     }
+    if (refused) noteRefused(player) else if (accepted) refusedSince.remove(playerId)
+    if (!accepted) return false
 
     // Check for item pickup using server-authoritative position
     val pickupPos = player.getPosition
@@ -245,6 +273,66 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     true
   }
 
+  /**
+   * The client says the player is phased (its phase ability, or a dash). Honour it if that
+   * ability is off cooldown: 80% of it since the last phase started, the tolerance every other
+   * attack gets. This used to count from when the last phase ended, at 90%, which a phase recast
+   * as soon as it was ready never passed (Wraith: 5s phase, 12s cooldown, allowed after 15.8s),
+   * so every second phase showed on the client and wasn't honoured: the player took hits, and
+   * walking through walls was refused.
+   */
+  private def activatePhase(player: Player): Unit = {
+    if (player.isPhased) return
+    val charDef = CharacterDef.get(player.getCharacterId)
+    val grants = Seq(charDef.qAbility, charDef.eAbility).flatMap { ability =>
+      ability.castBehavior match {
+        case PhaseShiftBuff(durationMs) => Some((durationMs, ability.cooldownMs))
+        case DashBuff(_, durationMs, _) => Some((durationMs, ability.cooldownMs))
+        case _ => None
+      }
+    }
+    grants.headOption.foreach { case (durationMs, cooldownMs) =>
+      val now = System.currentTimeMillis()
+      val lastEnd = player.getPhasedUntil
+      val lastStart = lastEnd - durationMs
+      if (lastEnd == 0L || now - lastStart >= (cooldownMs * 0.8).toLong) {
+        player.setPhasedUntil(now + durationMs)
+      }
+    }
+  }
+
+  // When the current run of refused positions began, per player; cleared by an accepted one
+  private val refusedSince = new java.util.concurrent.ConcurrentHashMap[UUID, java.lang.Long]()
+  // When each player was last corrected, so a client that keeps sending refused positions is
+  // told where it is at most every CORRECTION_INTERVAL_MS
+  private val lastCorrectionAt = new java.util.concurrent.ConcurrentHashMap[UUID, java.lang.Long]()
+  private val CORRECTION_AFTER_MS = 250L
+  private val CORRECTION_INTERVAL_MS = 500L
+
+  /**
+   * One of the player's positions was refused. A lone refusal is usually a race the server is
+   * about to catch up with (a step that overtook the star it was taken from), so nothing is said.
+   * Refusals that keep coming mean the client and server disagree about where the player is, and
+   * every step it takes from where it thinks it is will be refused too: the client only takes a
+   * position from the server when it is a server move, so tell it where it is with one.
+   */
+  private def noteRefused(player: Player): Unit = {
+    val now = System.currentTimeMillis()
+    val since = refusedSince.putIfAbsent(player.getId, now)
+    if (since != null && now - since.longValue() >= CORRECTION_AFTER_MS) correctPosition(player)
+  }
+
+  /** Send the player the position the server has for them, as a server move: their client takes
+    * it, and the steps it sent from where it wrongly thought it was are dropped. */
+  private def correctPosition(player: Player): Unit = {
+    if (instance == null) return
+    val now = System.currentTimeMillis()
+    val last = lastCorrectionAt.get(player.getId)
+    if (last != null && now - last.longValue() < CORRECTION_INTERVAL_MS) return
+    lastCorrectionAt.put(player.getId, now)
+    instance.moveByServer(player, player.getPosition)
+  }
+
   private def handlePlayerLeave(packet: PlayerLeavePacket): Boolean = {
     val playerId = packet.getPlayerId
     val player = registry.get(playerId)
@@ -253,6 +341,8 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       registry.remove(playerId)
       itemManager.clearInventory(playerId)
       validator.removePlayer(playerId)
+      lastCorrectionAt.remove(playerId)
+      refusedSince.remove(playerId)
       println(s"Player left: ${playerId.toString.substring(0, 8)} ('${player.getName}')")
     }
 
@@ -277,6 +367,11 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
   private def handleItemUpdate(packet: ItemPacket): Boolean = {
     if (packet.getAction == ItemAction.USE) {
       val playerId = packet.getPlayerId
+      val player = registry.get(playerId)
+      // The dead can't use items. The client doesn't offer it, but a use sent just before the
+      // death reached it arrived after: a heart then brought the player back where they fell,
+      // with a respawn still due to move them three seconds later.
+      if (player != null && player.isDead) return false
       val removedItem = itemManager.removeFromInventory(playerId, packet.getItemId)
       if (removedItem == null) {
         System.err.println(s"ClientHandler: Item USE failed — item ${packet.getItemId} not in server inventory for ${playerId.toString.substring(0, 8)}")
@@ -284,33 +379,21 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       }
       Metrics.itemsUsed.add(1L, Attrs.itemTypeAttrs(removedItem.itemType.id))
 
-      val player = registry.get(playerId)
       if (player != null) {
         removedItem.itemType match {
           case ItemType.Heart =>
-            player.setHealth(player.getMaxHealth)
-            val flags = (if (player.hasShield) 0x01 else 0) |
-                        (if (player.hasGemBoost) 0x02 else 0) |
-                        (if (player.isFrozen) 0x04 else 0)
-            val updatePacket = new PlayerUpdatePacket(
-              server.getNextSequenceNumber,
-              playerId,
-              player.getPosition,
-              player.getColorRGB,
-              player.getHealth,
-              0,
-              flags
-            )
-            if (instance != null) instance.broadcastPlayerUpdate(updatePacket)
-            else server.broadcastPlayerUpdate(updatePacket)
+            player.synchronized { player.setHealth(player.getMaxHealth) }
+            broadcastState(player)
             println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} healed to full")
 
           case ItemType.Shield =>
             player.setShieldUntil(System.currentTimeMillis() + Constants.SHIELD_DURATION_MS)
+            broadcastState(player)
             println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} shield activated")
 
           case ItemType.Gem =>
             player.setGemBoostUntil(System.currentTimeMillis() + Constants.GEM_DURATION_MS)
+            broadcastState(player)
             println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} gem boost activated")
 
           case ItemType.Fence =>
@@ -332,25 +415,63 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
             }
 
           case ItemType.Star =>
-            // Star teleports the player to cursor — validate and apply position server-side
-            val targetX = packet.getX
-            val targetY = packet.getY
-            val w = if (instance != null) instance.world else server.getWorld
-            if (w != null && targetX >= 0 && targetX < w.width && targetY >= 0 && targetY < w.height && w.isWalkable(targetX, targetY)) {
-              val sdx = Math.abs(targetX - player.getPosition.getX)
-              val sdy = Math.abs(targetY - player.getPosition.getY)
-              if (sdx + sdy <= Constants.STAR_MAX_DISTANCE) {
-                player.setPosition(new Position(targetX, targetY))
-                // Allow the next UDP position update through speed validation
-                // (handles race where UDP arrives before this TCP packet)
-                validator.allowItemTeleport(playerId)
-              }
+            if (!teleportWithStar(player, packet.getX, packet.getY, packet.getSequenceNumber)) {
+              // The client has already moved itself there, so give the star back and tell it
+              // where the server has it
+              itemManager.addToInventory(playerId, removedItem)
+              val pos = player.getPosition
+              System.err.println(s"ClientHandler: Star refused for ${playerId.toString.substring(0, 8)}: (${packet.getX},${packet.getY}) from (${pos.getX},${pos.getY})")
+              val rejectPacket = new ItemPacket(
+                server.getNextSequenceNumber,
+                playerId,
+                pos.getX, pos.getY,
+                removedItem.itemType.id,
+                removedItem.id,
+                ItemAction.USE_REJECTED
+              )
+              try {
+                server.sendRawToPlayer(rejectPacket.serialize(), true, player)
+              } catch { case _: Exception => }
+              // Anything the client sent from the landing cell is stale
+              if (instance != null) instance.moveByServer(player, pos)
             }
           case _ =>
         }
       }
     }
     false
+  }
+
+  /** Tell everyone in the match the player's state as the server has it. */
+  private def broadcastState(player: Player): Unit = {
+    if (instance != null) instance.broadcastPlayerUpdate(instance.stateUpdate(player))
+  }
+
+  /**
+   * Star: move the player to the cell they aimed at. This item packet is the teleport; the
+   * client picked the cell with the same Teleport rule, so the server refuses only when its world
+   * or its copy of the position has moved on since. Returns false if refused.
+   */
+  private def teleportWithStar(player: Player, targetX: Int, targetY: Int, seqNum: Int): Boolean = {
+    val w = if (instance != null) instance.world else server.getWorld
+    if (w == null) return false
+    val moved = player.synchronized {
+      val pos = player.getPosition
+      if (validator.isStaleMovement(player.getId, seqNum)) {
+        // An update the client sent after using the star is already applied, so it's past here
+        true
+      } else if (!Teleport.isValidStarTarget(w, pos.getX, pos.getY, targetX, targetY)) {
+        false
+      } else {
+        player.setPosition(new Position(targetX, targetY))
+        // Updates the client sent before using the star still describe where it was
+        validator.movementApplied(player.getId, seqNum)
+        true
+      }
+    }
+    // Everyone else sees the teleport now rather than on the player's next step
+    if (moved) broadcastState(player)
+    moved
   }
 
   /** Try to place a fence. Returns true if at least one tile was placed. */
@@ -463,6 +584,9 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     if (player != null) {
       registry.remove(playerId)
       itemManager.clearInventory(playerId)
+      validator.removePlayer(playerId)
+      lastCorrectionAt.remove(playerId)
+      refusedSince.remove(playerId)
       println(s"Player timed out: ${playerId.toString.substring(0, 8)} ('${player.getName}')")
       new PlayerLeavePacket(sequenceNumber, playerId)
     } else {
@@ -490,6 +614,8 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     registry.remove(playerId)
     itemManager.clearInventory(playerId)
     validator.removePlayer(playerId)
+    lastCorrectionAt.remove(playerId)
+    refusedSince.remove(playerId)
 
     val leavePacket = new PlayerLeavePacket(server.getNextSequenceNumber, playerId)
     if (instance != null) {

@@ -317,12 +317,11 @@ class Projectile(
   def hitsPlayer(player: Player): Boolean = {
     if (player.getId.equals(ownerId)) return false
     if (_hitPlayers.contains(player.getId)) return false
+    // Killed earlier this tick: a body doesn't stop the next shot
+    if (player.isDead) return false
     val pDef = ProjectileDef.get(projectileType)
     if (pDef.passesThroughPlayers) return false
-    val pos = player.getPosition
-    val ddx = x - (pos.getX + 0.5f)
-    val ddy = y - (pos.getY + 0.5f)
-    ddx * ddx + ddy * ddy <= pDef.hitRadius * pDef.hitRadius
+    Projectile.withinPlayer(x, y, player, pDef.hitRadius)
   }
 
   /** Update position and velocity in-place (used by client for MOVE packets to avoid allocation). */
@@ -336,5 +335,29 @@ class Projectile(
 
   override def toString: String = {
     s"Projectile{id=$id, owner=${ownerId.toString.substring(0, 8)}, pos=($x, $y), vel=(${_dx}, ${_dy})}"
+  }
+}
+
+object Projectile {
+  /**
+   * Is the point (x, y) within `radius` of the player? A player stands at the centre of their
+   * cell, (x, y) exactly, which is where they are drawn and where their shots start; tiles are
+   * centred on integer coordinates (see getCellX). Hits used to be measured from (x + 0.5,
+   * y + 0.5), the cell's far corner: shots from one side connected a cell sooner than from the
+   * other, and blasts and slams were centred half a cell off their caster.
+   */
+  def withinPlayer(x: Float, y: Float, player: Player, radius: Float): Boolean = {
+    val pos = player.getPosition
+    val dx = x - pos.getX
+    val dy = y - pos.getY
+    dx * dx + dy * dy <= radius * radius
+  }
+
+  /** Distance from (x, y) to the centre of the player's cell. */
+  def distanceToPlayer(x: Float, y: Float, player: Player): Float = {
+    val pos = player.getPosition
+    val dx = x - pos.getX
+    val dy = y - pos.getY
+    math.sqrt(dx * dx + dy * dy).toFloat
   }
 }

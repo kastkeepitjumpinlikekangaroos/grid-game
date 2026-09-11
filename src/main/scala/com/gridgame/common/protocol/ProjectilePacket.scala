@@ -7,8 +7,39 @@ import java.util.UUID
 object ProjectileAction {
   val SPAWN: Byte = 0
   val MOVE: Byte = 1
+  // A hit that used the projectile up
   val HIT: Byte = 2
   val DESPAWN: Byte = 3
+  // A hit it flies on from (pierce): the client shows the hit and keeps the projectile. Sent as a
+  // HIT, the client dropped it, and then ignored the MOVEs of a projectile it had seen hit.
+  val PIERCE: Byte = 4
+}
+
+/** Which of a character's attacks fired a projectile. A client's spawn request has to say, because
+  * the projectile type can't: many characters fire one type from two of their attacks (Bear mauls
+  * with the claw it swipes with), and the server holds each attack to its own cooldown and
+  * projectile count. PRIMARY is 0, so a request that doesn't say is taken as the primary attack. */
+object AttackSlot {
+  val PRIMARY = 0
+  val Q = 1
+  val E = 2
+  // Shift+Space: the primary projectile in all eight directions at once
+  val BURST = 3
+
+  /** Headings a burst shot fires along, as (dx, dy) unit vectors: the eight compass points. */
+  val BurstDirections: Seq[(Float, Float)] = (0 until 8).map { i =>
+    val a = Math.PI * i / 4
+    (Math.cos(a).toFloat, Math.sin(a).toFloat)
+  }
+}
+
+object ProjectilePacket {
+  /** A client asking the server to fire one projectile from one of its attacks ([[AttackSlot]]).
+    * The server assigns the projectile its ID, so the request carries the slot in that field. */
+  def spawnRequest(sequenceNumber: Int, ownerId: UUID, x: Float, y: Float, colorRGB: Int,
+                   dx: Float, dy: Float, chargeLevel: Byte, projectileType: Byte, slot: Int): ProjectilePacket =
+    new ProjectilePacket(sequenceNumber, ownerId, x, y, colorRGB, slot, dx, dy,
+      ProjectileAction.SPAWN, null, chargeLevel, projectileType)
 }
 
 class ProjectilePacket(
@@ -52,6 +83,9 @@ class ProjectilePacket(
   }
 
   def getProjectileId: Int = projectileId
+
+  /** In a client's SPAWN request, the [[AttackSlot]] that fired it. */
+  def getAttackSlot: Int = projectileId
 
   def getDx: Float = dx
 
@@ -97,7 +131,7 @@ class ProjectilePacket(
     buffer.putInt(timestamp)
 
     // Payload [37-63] (27 bytes)
-    // [37-40] Projectile ID
+    // [37-40] Projectile ID (a client's SPAWN request carries its AttackSlot here instead)
     buffer.putInt(projectileId)
 
     // [41-42] DX (scaled short: dx * 32767)
@@ -133,6 +167,7 @@ class ProjectilePacket(
       case ProjectileAction.MOVE => "MOVE"
       case ProjectileAction.HIT => "HIT"
       case ProjectileAction.DESPAWN => "DESPAWN"
+      case ProjectileAction.PIERCE => "PIERCE"
       case _ => "UNKNOWN"
     }
     s"ProjectilePacket{seq=$sequenceNumber, owner=${playerId.toString.substring(0, 8)}, pos=($x, $y), projId=$projectileId, vel=($dx, $dy), action=$actionStr}"

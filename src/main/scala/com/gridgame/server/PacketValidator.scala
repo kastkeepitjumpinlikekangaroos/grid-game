@@ -1,13 +1,19 @@
 package com.gridgame.server
 
 import com.gridgame.common.Constants
+import com.gridgame.common.model.AbilityDef
 import com.gridgame.common.model.CharacterDef
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.DashBuff
+import com.gridgame.common.model.FanProjectile
+import com.gridgame.common.model.GroundSlam
+import com.gridgame.common.model.StandardProjectile
+import com.gridgame.common.model.Teleport
 import com.gridgame.common.model.TeleportCast
 import com.gridgame.common.model.WorldData
 import com.gridgame.common.observability.Attrs
 import com.gridgame.common.observability.Metrics
+import com.gridgame.common.protocol.AttackSlot
 import com.gridgame.common.protocol.PlayerUpdatePacket
 import com.gridgame.common.protocol.ProjectilePacket
 
@@ -15,19 +21,48 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
+/** Fire-rate state for one of a player's attacks. */
+private final class AttackClock {
+  /** When its latest cast started (0: never). Groups the projectiles one press sends. */
+  var castAt = 0L
+  /** Projectiles that cast has fired. */
+  var fired = 0
+  /** Where its cooldown counts from: castAt, moved back by on-hit reductions. Kept apart from
+    * castAt so a hit landing mid-cast doesn't cut the rest of that cast off. */
+  var cooldownFrom = 0L
+}
+
+object PacketValidator {
+  /** How long after a cast's first projectile the rest of it may arrive. The client sends them all
+    * in the same frame. */
+  private val CAST_WINDOW_MS = 100L
+
+  /** Projectiles one primary shot sends: three with a gem boost. Allowed whether or not the server
+    * has seen the boost yet, since the item packet can arrive after the shots it boosted. */
+  private val PRIMARY_PER_CAST = 3
+
+  /** One clock per AttackSlot: primary, Q, E and the burst shot. */
+  private val SLOT_COUNT = 4
+
+  /** Projectiles one cast of the ability sends. Dashes, blinks and buffs send none. */
+  private def projectilesPerCast(ability: AbilityDef): Int = ability.castBehavior match {
+    case FanProjectile(count, _) => count
+    case StandardProjectile | GroundSlam(_) => 1
+    case _ => 0
+  }
+}
+
 class PacketValidator {
+  import PacketValidator._
+
   // Track last position update time per player for speed checking
   private val lastUpdateTime = new ConcurrentHashMap[UUID, java.lang.Long]()
-  // Track last projectile spawn time per player for fire rate enforcement
-  private val lastProjectileTime = new ConcurrentHashMap[UUID, java.lang.Long]()
-  // Track burst start time and count per player (gem boost fires 3 in same frame)
-  private val burstStartTime = new ConcurrentHashMap[UUID, java.lang.Long]()
-  private val burstCount = new ConcurrentHashMap[UUID, AtomicInteger]()
-  // Track last Q/E ability projectile times for per-ability cooldown enforcement
-  private val lastQProjectileTime = new ConcurrentHashMap[UUID, java.lang.Long]()
-  private val lastEProjectileTime = new ConcurrentHashMap[UUID, java.lang.Long]()
-  // Allow one large movement (e.g. Star item teleport) within a time window
-  private val itemTeleportAllowed = new ConcurrentHashMap[UUID, java.lang.Long]()
+  // Fire rate: a clock for each of a player's attacks, indexed by AttackSlot
+  private val attackClocks = new ConcurrentHashMap[UUID, Array[AttackClock]]()
+  // Sequence number of the newest position applied for each player: an accepted update, or a
+  // star's item packet. Positions are absolute, so an update sent before that one can only drag
+  // the player back to where they were (a reordered datagram, or a step sent just before a star).
+  private val movementFence = new ConcurrentHashMap[UUID, java.lang.Integer]()
 
   // Replay protection: separate sequence tracking for TCP and UDP per player
   // TCP and UDP share a single client-side counter but arrive via different transports,
@@ -158,46 +193,70 @@ class PacketValidator {
     val now = System.currentTimeMillis()
     val lastTime: java.lang.Long = lastUpdateTime.put(packet.getPlayerId, now)
     if (lastTime != null) {
-      val deltaMs = now - lastTime.longValue()
-      if (deltaMs > 0) {
-        val oldPos = player.getPosition
-        val dx = Math.abs(x - oldPos.getX)
-        val dy = Math.abs(y - oldPos.getY)
-        val distance = dx.toLong + dy.toLong // Long arithmetic to prevent overflow
+      // Updates handled in the same millisecond are checked too. Skipping them let the second of
+      // any pair go anywhere: it quietly waved through refused teleports (the client sends those
+      // twice), and any jump a modified client cared to send twice.
+      val deltaMs = Math.max(0L, now - lastTime.longValue())
+      val oldPos = player.getPosition
+      val dx = x - oldPos.getX
+      val dy = y - oldPos.getY
+      val distance = Math.abs(dx.toLong) + Math.abs(dy.toLong) // Long arithmetic to prevent overflow
 
-        // Skip speed check for phased/dashing players
-        if (!player.isPhased) {
-          // Max expected speed: 1 cell per MOVE_RATE_LIMIT_MS (50ms)
-          // With tolerance: allow 2x expected max + 2 cells grace
-          val expectedMaxCells = (deltaMs.toDouble / Constants.MOVE_RATE_LIMIT_MS) * 2 + 2
-          if (distance > expectedMaxCells.toLong) {
-            // Allow teleport/dash abilities: check if this player's character has TeleportCast or DashBuff
-            // on either Q or E ability, and the distance is within the ability's max range
-            val charDef = CharacterDef.get(player.getCharacterId)
-            val abilities = if (charDef != null) Seq(charDef.qAbility, charDef.eAbility) else Seq.empty
-            val isAbilityMovement = abilities.exists { ability =>
-              ability.castBehavior match {
-                case TeleportCast(maxDistance) => distance <= maxDistance + 2
-                case DashBuff(maxDistance, _, _) => distance <= maxDistance + 2
-                case _ => false
-              }
+      // Skip speed check for phased/dashing players
+      if (!player.isPhased) {
+        // Max expected speed: 1 cell per MOVE_RATE_LIMIT_MS (50ms)
+        // With tolerance: allow 2x expected max + 2 cells grace
+        val expectedMaxCells = (deltaMs.toDouble / Constants.MOVE_RATE_LIMIT_MS) * 2 + 2
+        if (distance > expectedMaxCells.toLong) {
+          // Allow teleport/dash abilities: check if this player's character has TeleportCast or DashBuff
+          // on either Q or E ability, and the jump is within the ability's reach
+          val charDef = CharacterDef.get(player.getCharacterId)
+          val abilities = if (charDef != null) Seq(charDef.qAbility, charDef.eAbility) else Seq.empty
+          val isAbilityMovement = abilities.exists { ability =>
+            ability.castBehavior match {
+              case TeleportCast(maxDistance) => Teleport.withinReach(dx, dy, maxDistance)
+              case DashBuff(maxDistance, _, _) => Teleport.withinReach(dx, dy, maxDistance)
+              case _ => false
             }
-            if (!isAbilityMovement) {
-              // Check for recent item teleport (Star item) — allow within 2s window
-              val allowedTime = itemTeleportAllowed.remove(packet.getPlayerId)
-              val isItemTeleport = allowedTime != null && (now - allowedTime) < 500
-              if (!isItemTeleport) {
-                System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} speed hack detected: moved $distance cells in ${deltaMs}ms")
-                Metrics.validationFailed.add(1L, Attrs.VfMovementSpeed)
-                return false
-              }
-            }
+          }
+          // A star needs no exception here: its item packet moves the player (ClientHandler),
+          // so the client's next update starts from the new cell
+          if (!isAbilityMovement) {
+            System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} speed hack detected: moved $distance cells in ${deltaMs}ms")
+            Metrics.validationFailed.add(1L, Attrs.VfMovementSpeed)
+            return false
           }
         }
       }
     }
 
     true
+  }
+
+  /** True if this update was sent before a position already applied for the player: drop it. */
+  def isStaleMovement(playerId: UUID, seqNum: Int): Boolean = {
+    val fence = movementFence.get(playerId)
+    fence != null && !isNewerSequence(seqNum, fence.intValue())
+  }
+
+  /** The position carried by packet `seqNum` has been applied. Never moves the fence back.
+    * Callers hold the player's lock, which is what makes the check-and-apply atomic. */
+  def movementApplied(playerId: UUID, seqNum: Int): Unit = {
+    val fence = movementFence.get(playerId)
+    if (fence == null || isNewerSequence(seqNum, fence.intValue())) {
+      movementFence.put(playerId, Integer.valueOf(seqNum))
+    }
+  }
+
+  /** A (re)join places the player afresh, and a new session restarts its sequence numbers. */
+  def resetMovementFence(playerId: UUID): Unit = movementFence.remove(playerId)
+
+  /** A new session: its client counts packets from zero again. Packets from the old session
+    * can't be replayed into it, since they are signed with the old session's token. */
+  def resetSequences(playerId: UUID): Unit = {
+    lastTcpSequence.remove(playerId)
+    lastUdpSequence.remove(playerId)
+    sequenceWindow.remove(playerId)
   }
 
   def validateProjectileSpawn(packet: ProjectilePacket, player: Player): Boolean = {
@@ -219,69 +278,50 @@ class PacketValidator {
       return false
     }
 
-    // Validate projectile type is valid for this character
     val charDef = CharacterDef.get(player.getCharacterId)
     if (charDef == null) {
       Metrics.validationFailed.add(1L, Attrs.VfCharacter)
       return false
     }
+
+    // Judge it by the attack the client says fired it. The type alone can't say: many characters
+    // fire one type from two of their attacks. Bear's Maul is eight of the claws it swipes with,
+    // so judged by type it was a primary burst, capped at a gem boost's three: the first three
+    // the client sent, which pointed behind the bear.
+    val slot = packet.getAttackSlot
+    val (slotType, cooldownMs, perCast) = slot match {
+      case AttackSlot.PRIMARY => (charDef.primaryProjectileType, Constants.SHOOT_COOLDOWN_MS, PRIMARY_PER_CAST)
+      case AttackSlot.Q => (charDef.qAbility.projectileType, charDef.qAbility.cooldownMs, projectilesPerCast(charDef.qAbility))
+      case AttackSlot.E => (charDef.eAbility.projectileType, charDef.eAbility.cooldownMs, projectilesPerCast(charDef.eAbility))
+      case AttackSlot.BURST => (charDef.primaryProjectileType, Constants.BURST_SHOT_COOLDOWN_MS, AttackSlot.BurstDirections.size)
+      case _ => (0.toByte, 0, 0)
+    }
     val pType = packet.getProjectileType
-    if (pType != charDef.primaryProjectileType &&
-        pType != charDef.qAbility.projectileType &&
-        pType != charDef.eAbility.projectileType) {
-      System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} spoofed projectile type $pType")
+    if (perCast == 0 || pType != slotType) {
+      System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} spoofed projectile type $pType for attack $slot")
       Metrics.validationFailed.add(1L, Attrs.VfProjectileFireRate)
       return false
     }
 
-    // Fire rate enforcement: 80% of SHOOT_COOLDOWN_MS as minimum gap between shots.
-    // Gem boost fires 3 projectiles in a single burst (same frame). Due to TCP/UDP race,
-    // player.hasGemBoost may be false when the burst arrives, so we allow bursts of up to 3
-    // rapid primary projectiles and enforce cooldown from the burst start time.
-    val now = System.currentTimeMillis()
-    val lastTime: java.lang.Long = lastProjectileTime.put(packet.getPlayerId, now)
-    if (lastTime != null) {
-      val gap = now - lastTime.longValue()
-      if (pType == charDef.primaryProjectileType) {
-        val burst = burstCount.computeIfAbsent(packet.getPlayerId, _ => new AtomicInteger(0))
-        if (gap <= 100) {
-          // Rapid fire — part of a burst (gem boost). Allow up to 3 per burst.
-          if (burst.incrementAndGet() > 3) {
-            System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} burst too large")
-            return false
-          }
-        } else {
-          // New shot — check cooldown from burst start time (not last projectile)
-          val burstStart = burstStartTime.getOrDefault(packet.getPlayerId, lastTime)
-          val gapFromBurst = now - burstStart.longValue()
-          val minGap = (Constants.SHOOT_COOLDOWN_MS * 0.8).toLong
-          if (gapFromBurst < minGap) {
-            System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} fire rate too fast (${gapFromBurst}ms)")
-            return false
-          }
-          burst.set(1)
-          burstStartTime.put(packet.getPlayerId, now)
-        }
-      } else {
-        // Ability projectile — enforce per-ability cooldown
-        val (tracker, cooldownMs) =
-          if (pType == charDef.qAbility.projectileType)
-            (lastQProjectileTime, charDef.qAbility.cooldownMs)
-          else
-            (lastEProjectileTime, charDef.eAbility.cooldownMs)
-        val lastFire: java.lang.Long = tracker.put(packet.getPlayerId, now)
-        if (lastFire != null) {
-          val gap = now - lastFire.longValue()
-          if (gap > 100 && gap < (cooldownMs * 0.8).toLong) return false
-        }
-      }
-    } else {
-      // First projectile ever — initialize burst tracking
-      burstCount.computeIfAbsent(packet.getPlayerId, _ => new AtomicInteger(1))
-      burstStartTime.put(packet.getPlayerId, now)
+    // Fire rate. A cast is everything one press of the attack sends, all in the same frame: a
+    // primary shot or an ability's whole fan. A new cast needs 80% of that attack's cooldown.
+    val clock = attackClocks.computeIfAbsent(packet.getPlayerId, _ => Array.fill(SLOT_COUNT)(new AttackClock))(slot)
+    val accepted = clock.synchronized {
+      val now = System.currentTimeMillis()
+      if (now - clock.castAt <= CAST_WINDOW_MS && clock.fired < perCast) {
+        clock.fired += 1
+        true
+      } else if (now - clock.cooldownFrom >= (cooldownMs * 0.8).toLong) {
+        clock.castAt = now
+        clock.cooldownFrom = now
+        clock.fired = 1
+        true
+      } else false
     }
-
-    true
+    if (!accepted) {
+      System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} attack $slot fired too fast")
+    }
+    accepted
   }
 
   /** Reduce per-ability fire rate cooldown for the given player (mirrors client-side on-hit reduction). */
@@ -289,44 +329,36 @@ class PacketValidator {
     val charDef = CharacterDef.get(characterId)
     if (charDef == null) return
 
-    val (tracker, cooldownMs) =
+    // Picked by type, exactly as the client's reduceAbilityCooldownOnHit picks it, so the two
+    // clocks stay in step
+    val (slot, cooldownMs) =
       if (projectileType == charDef.qAbility.projectileType)
-        (lastQProjectileTime, charDef.qAbility.cooldownMs.toLong)
+        (AttackSlot.Q, charDef.qAbility.cooldownMs.toLong)
       else if (projectileType == charDef.eAbility.projectileType)
-        (lastEProjectileTime, charDef.eAbility.cooldownMs.toLong)
+        (AttackSlot.E, charDef.eAbility.cooldownMs.toLong)
       else return
 
-    val lastFire: java.lang.Long = tracker.get(playerId)
-    if (lastFire == null) return
-
-    val now = System.currentTimeMillis()
-    val remaining = lastFire + cooldownMs - now
-    if (remaining > 0) {
-      tracker.put(playerId, java.lang.Long.valueOf(lastFire - remaining / 2))
+    val clocks = attackClocks.get(playerId)
+    if (clocks == null) return
+    val clock = clocks(slot)
+    clock.synchronized {
+      val remaining = clock.cooldownFrom + cooldownMs - System.currentTimeMillis()
+      if (remaining > 0) clock.cooldownFrom -= remaining / 2
     }
-  }
-
-  /** Allow one large movement for this player (e.g. Star item teleport). */
-  def allowItemTeleport(playerId: UUID): Unit = {
-    itemTeleportAllowed.put(playerId, System.currentTimeMillis())
   }
 
   def removePlayer(playerId: UUID): Unit = {
     lastUpdateTime.remove(playerId)
-    lastProjectileTime.remove(playerId)
-    burstStartTime.remove(playerId)
-    burstCount.remove(playerId)
-    lastQProjectileTime.remove(playerId)
-    lastEProjectileTime.remove(playerId)
+    attackClocks.remove(playerId)
     lastTcpSequence.remove(playerId)
     lastUdpSequence.remove(playerId)
     sequenceWindow.remove(playerId)
-    itemTeleportAllowed.remove(playerId)
+    movementFence.remove(playerId)
   }
 
   /** Remove entries for players no longer in the connected set (safety net for leaked state). */
   def cleanupStale(connectedPlayerIds: java.util.Set[UUID]): Unit = {
-    val maps: Seq[ConcurrentHashMap[UUID, _]] = Seq(lastUpdateTime, lastProjectileTime, lastQProjectileTime, lastEProjectileTime, lastTcpSequence, lastUdpSequence, sequenceWindow, itemTeleportAllowed)
+    val maps: Seq[ConcurrentHashMap[UUID, _]] = Seq(lastUpdateTime, attackClocks, lastTcpSequence, lastUdpSequence, sequenceWindow, movementFence)
     maps.foreach { map =>
       val iter = map.keySet().iterator()
       while (iter.hasNext) {

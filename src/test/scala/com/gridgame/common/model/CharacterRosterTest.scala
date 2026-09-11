@@ -1,0 +1,75 @@
+package com.gridgame.common.model
+
+import org.junit.Assert._
+import org.junit.Test
+
+import java.io.File
+
+/**
+ * The roster is data, 112 characters of it, and the game trusts it everywhere: the server
+ * validates attacks against it, the client fires by it, the lobby picks from it. A slip in it
+ * (a duplicate id, an ability pointing at a projectile nobody defined) fails quietly in a match,
+ * so it is checked here as a whole.
+ */
+class CharacterRosterTest {
+  private val all = CharacterDef.all
+
+  private def firesProjectiles(a: AbilityDef): Boolean = a.castBehavior match {
+    case StandardProjectile | FanProjectile(_, _) | GroundSlam(_) => true
+    case _ => false
+  }
+
+  /** Is `t` a type with a definition of its own (rather than falling back to the default)? */
+  private def defined(t: Byte): Boolean = t == ProjectileType.NORMAL || ProjectileDef.get(t).id == t
+
+  @Test def idsAreUniqueAndRunFromZero(): Unit = {
+    assertEquals(112, all.size)
+    assertEquals((0 until 112).toList, all.map(_.id.id.toInt).sorted.toList)
+    all.foreach(c => assertEquals(c.id, CharacterId.fromId(c.id.id)))
+  }
+
+  @Test def isValidMatchesTheRoster(): Unit = {
+    all.foreach(c => assertTrue(CharacterDef.isValid(c.id.id)))
+    assertFalse(CharacterDef.isValid(112.toByte))
+    assertFalse(CharacterDef.isValid(-1.toByte))
+  }
+
+  @Test def everyAttackThatFiresHasADefinedProjectile(): Unit = {
+    for (c <- all) {
+      assertTrue(s"${c.displayName} primary", defined(c.primaryProjectileType))
+      for (a <- Seq(c.qAbility, c.eAbility) if firesProjectiles(a)) {
+        assertTrue(s"${c.displayName} ${a.name} fires type ${a.projectileType}", defined(a.projectileType))
+      }
+    }
+  }
+
+  @Test def abilitiesHaveSensibleNumbers(): Unit = {
+    for (c <- all; a <- Seq(c.qAbility, c.eAbility)) {
+      val name = s"${c.displayName} ${a.name}"
+      assertTrue(s"$name cooldown", a.cooldownMs > 0)
+      a.castBehavior match {
+        case FanProjectile(count, angle) =>
+          assertTrue(s"$name count", count >= 2)
+          assertTrue(s"$name angle", angle > 0)
+        case DashBuff(dist, dur, rate) => assertTrue(name, dist > 0 && dur > 0 && rate > 0)
+        case TeleportCast(dist) => assertTrue(name, dist > 0)
+        case PhaseShiftBuff(dur) => assertTrue(name, dur > 0 && dur < a.cooldownMs)
+        case GroundSlam(radius) => assertTrue(name, radius > 0)
+        case StandardProjectile =>
+      }
+    }
+    all.foreach(c => assertTrue(s"${c.displayName} health", c.maxHealth > 0))
+  }
+
+  @Test def everySpriteSheetIsThere(): Unit = {
+    // Bundled from sprites/ (a data dependency of this test)
+    for (c <- all) assertTrue(c.spriteSheet, new File(c.spriteSheet).isFile)
+  }
+
+  @Test def keybindsAreQAndE(): Unit = {
+    all.foreach { c =>
+      assertEquals(c.displayName, "Q", c.qAbility.keybind)
+      assertEquals(c.displayName, "E", c.eAbility.keybind)
+    }
+  }
+}

@@ -1,0 +1,236 @@
+load("@rules_scala//scala:scala.bzl", "scala_junit_test", "scala_library")
+
+scala_junit_test(
+    name = "teleport_validation_test",
+    srcs = ["TeleportValidationTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:io_netty_netty_buffer",
+        "@maven//:io_netty_netty_common",
+        "@maven//:io_netty_netty_transport",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "ability_cast_validation_test",
+    srcs = ["AbilityCastValidationTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:io_netty_netty_buffer",
+        "@maven//:io_netty_netty_common",
+        "@maven//:io_netty_netty_transport",
+        "@maven//:junit_junit",
+    ],
+)
+
+# Drives a match by hand for the tests below: ticks on demand, every packet each player is sent
+scala_library(
+    name = "server_test_kit",
+    testonly = True,
+    srcs = ["ServerTestKit.scala"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:io_netty_netty_buffer",
+        "@maven//:io_netty_netty_common",
+        "@maven//:io_netty_netty_transport",
+    ],
+)
+
+scala_junit_test(
+    name = "combat_test",
+    srcs = ["CombatTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        ":server_test_kit",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "on_hit_effects_test",
+    srcs = ["OnHitEffectsTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        ":server_test_kit",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:io_netty_netty_buffer",
+        "@maven//:io_netty_netty_common",
+        "@maven//:io_netty_netty_transport",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "position_authority_test",
+    srcs = ["PositionAuthorityTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        ":server_test_kit",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:io_netty_netty_buffer",
+        "@maven//:io_netty_netty_common",
+        "@maven//:io_netty_netty_transport",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "respawn_test",
+    srcs = ["RespawnTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        ":server_test_kit",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:io_netty_netty_buffer",
+        "@maven//:io_netty_netty_common",
+        "@maven//:io_netty_netty_transport",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "player_relay_test",
+    srcs = ["PlayerRelayTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        ":server_test_kit",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:io_netty_netty_buffer",
+        "@maven//:io_netty_netty_common",
+        "@maven//:io_netty_netty_transport",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "phase_shift_test",
+    srcs = ["PhaseShiftTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        ":server_test_kit",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:io_netty_netty_buffer",
+        "@maven//:io_netty_netty_common",
+        "@maven//:io_netty_netty_transport",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "item_test",
+    srcs = ["ItemTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        ":server_test_kit",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:io_netty_netty_buffer",
+        "@maven//:io_netty_netty_common",
+        "@maven//:io_netty_netty_transport",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "session_test",
+    srcs = ["SessionTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        ":server_test_kit",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:io_netty_netty_buffer",
+        "@maven//:io_netty_netty_common",
+        "@maven//:io_netty_netty_transport",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "packet_validator_test",
+    srcs = ["PacketValidatorTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        ":server_test_kit",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:io_netty_netty_buffer",
+        "@maven//:io_netty_netty_common",
+        "@maven//:io_netty_netty_transport",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "auth_database_test",
+    srcs = ["AuthDatabaseTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        ":server_test_kit",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:io_netty_netty_buffer",
+        "@maven//:io_netty_netty_common",
+        "@maven//:io_netty_netty_transport",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "auth_flow_test",
+    srcs = ["AuthFlowTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        ":server_test_kit",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:io_netty_netty_buffer",
+        "@maven//:io_netty_netty_common",
+        "@maven//:io_netty_netty_transport",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "end_game_test",
+    srcs = ["EndGameTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        ":server_test_kit",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:io_netty_netty_buffer",
+        "@maven//:io_netty_netty_common",
+        "@maven//:io_netty_netty_transport",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "lobby_flow_test",
+    srcs = ["LobbyFlowTest.scala"],
+    data = ["//worlds:world_files"],
+    suffixes = ["Test"],
+    deps = [
+        ":server_test_kit",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:io_netty_netty_buffer",
+        "@maven//:io_netty_netty_common",
+        "@maven//:io_netty_netty_transport",
+        "@maven//:junit_junit",
+    ],
+)

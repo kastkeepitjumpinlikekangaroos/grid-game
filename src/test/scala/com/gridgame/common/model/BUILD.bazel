@@ -39,3 +39,85 @@ scala_junit_test(
         "@maven//:junit_junit",
     ],
 )
+
+scala_junit_test(
+    name = "fan_projectile_test",
+    srcs = ["FanProjectileTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "teleport_test",
+    srcs = ["TeleportTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+)
+
+# Alone in its JVM: it checks the first projectile lookup, before anything touches CharacterDef
+scala_junit_test(
+    name = "projectile_def_registry_test",
+    srcs = ["ProjectileDefRegistryTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "projectile_hit_test",
+    srcs = ["ProjectileHitTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "player_test",
+    srcs = ["PlayerTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "knockback_test",
+    srcs = ["KnockbackTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "character_roster_test",
+    srcs = ["CharacterRosterTest.scala"],
+    data = ["//sprites:sprite_files"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "world_data_test",
+    srcs = ["WorldDataTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+)

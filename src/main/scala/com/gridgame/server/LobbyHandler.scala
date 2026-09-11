@@ -88,6 +88,7 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     val lobby = lobbyManager.createLobby(playerId, name, mapIndex, duration, maxPlayers)
     if (lobby == null) { sendFailure(player, LobbyFailure.SERVER_FULL); return }
     lastCreateTime.put(playerId, now)
+    takeCharacter(lobby, playerId, packet.getCharacterId)
 
     // Send JOINED response to creator
     val response = new LobbyActionPacket(
@@ -115,6 +116,7 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
       sendFailure(player, if (target.status == LobbyStatus.WAITING) LobbyFailure.LOBBY_FULL else LobbyFailure.NOT_JOINABLE)
       return
     }
+    val picked = takeCharacter(lobby, playerId, packet.getCharacterId)
 
     // Send JOINED to the new player
     val response = new LobbyActionPacket(
@@ -159,6 +161,31 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
       )
       server.sendPacketToPlayer(botPacket, player)
     }
+
+    // The others see the joiner's pick, as they would had it been picked in the room
+    if (picked) broadcastCharacterSelect(lobby, playerId, packet.getCharacterId)
+  }
+
+  /**
+   * The character a player arrives with. CREATE and JOIN carry the one the client has selected,
+   * which it shows as picked in the lobby room; only a click there used to reach the server, so
+   * a player who had picked before joining (in practice, ranked, or the last lobby) was entered
+   * as Spaceman and every shot they fired was refused as another character's. Returns whether
+   * one was taken.
+   */
+  private def takeCharacter(lobby: Lobby, playerId: UUID, charId: Byte): Boolean = {
+    if (!com.gridgame.common.model.CharacterDef.isValid(charId)) return false
+    lobby.setCharacter(playerId, charId)
+    true
+  }
+
+  private def broadcastCharacterSelect(lobby: Lobby, playerId: UUID, charId: Byte): Unit = {
+    val broadcast = new LobbyActionPacket(
+      server.getNextSequenceNumber, playerId, Packet.getCurrentTimestamp,
+      LobbyAction.CHARACTER_SELECT, lobby.id,
+      0.toByte, 0.toByte, 0.toByte, 0.toByte, 0.toByte, "", charId
+    )
+    broadcastToLobby(lobby, broadcast, playerId)
   }
 
   private def handleLeave(playerId: UUID, player: Player): Unit = {
@@ -385,19 +412,11 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     if (lobby == null) return
     if (lobby.status != LobbyStatus.WAITING) return
 
-    // Validate character ID
-    val charId = packet.getCharacterId
-    if (com.gridgame.common.model.CharacterDef.get(charId) == null) return
-
-    lobby.setCharacter(playerId, charId)
+    // Validate character ID (CharacterDef.get never returns null: it falls back to Spaceman)
+    if (!takeCharacter(lobby, playerId, packet.getCharacterId)) return
 
     // Broadcast CHARACTER_SELECT to other lobby members
-    val broadcast = new LobbyActionPacket(
-      server.getNextSequenceNumber, playerId, Packet.getCurrentTimestamp,
-      LobbyAction.CHARACTER_SELECT, lobby.id,
-      0.toByte, 0.toByte, 0.toByte, 0.toByte, 0.toByte, "", packet.getCharacterId
-    )
-    broadcastToLobby(lobby, broadcast, playerId)
+    broadcastCharacterSelect(lobby, playerId, packet.getCharacterId)
   }
 
   private def handleConfigUpdate(playerId: UUID, packet: LobbyActionPacket): Unit = {
@@ -507,10 +526,7 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     lobby.matchType = 5
 
     // Set the player's selected character
-    val charId = packet.getCharacterId
-    if (com.gridgame.common.model.CharacterDef.get(charId) != null) {
-      lobby.setCharacter(playerId, charId)
-    }
+    takeCharacter(lobby, playerId, packet.getCharacterId)
 
     // Add 5 bots
     for (_ <- 1 to 5) lobby.botManager.addBot()

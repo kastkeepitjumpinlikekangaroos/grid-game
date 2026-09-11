@@ -10,6 +10,30 @@ object AuthAction {
   val SIGNUP: Byte = 1
 }
 
+/** What the server accepts for a new account. The client checks the same rules before it sends
+  * a signup, so a name the server would refuse is reported as that, not as "Username taken". */
+object AuthRules {
+  /** The username field of an AuthRequestPacket; usernames are ASCII, so bytes are characters. */
+  val MaxUsernameLength = 20
+  val MinPasswordLength = 6
+  /** The password field of an AuthRequestPacket, in characters (the form's limit). */
+  val MaxPasswordLength = 20
+
+  private val UsernamePattern = "[a-zA-Z0-9_-]{1,20}".r
+
+  def isValidUsername(username: String): Boolean = username != null && UsernamePattern.matches(username)
+
+  // Replies, each within the 23 bytes an AuthResponsePacket carries. "Password must be 6+ chars"
+  // was 25, and reached the login screen as "Password must be 6+ cha".
+  val PasswordTooShort = "Password needs 6+ chars"
+  val InvalidUsername = "Invalid username"
+  val UsernameTaken = "Username taken"
+  val InvalidCredentials = "Invalid credentials"
+  val TooManyAttempts = "Too many attempts"
+  val AccountCreated = "Account created"
+  val LoginSuccessful = "Login successful"
+}
+
 class AuthRequestPacket(
     sequenceNumber: Int,
     timestamp: Int,

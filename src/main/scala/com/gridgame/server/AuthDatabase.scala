@@ -2,6 +2,7 @@ package com.gridgame.server
 
 import com.gridgame.common.observability.Attrs
 import com.gridgame.common.observability.Metrics
+import com.gridgame.common.protocol.AuthRules
 
 import java.io.File
 import java.nio.charset.StandardCharsets
@@ -135,15 +136,13 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     println(s"AuthDatabase: Initialized ($dbPath)")
   }
 
-  private val VALID_USERNAME_PATTERN = "^[a-zA-Z0-9_-]{1,20}$".r
-
   def register(username: String, password: String): Boolean = timed("register") {
     if (username == null || username.isEmpty || password == null || password.isEmpty) {
       return false
     }
-    if (password.length < 6) return false
+    if (password.length < AuthRules.MinPasswordLength) return false
     // Reject usernames with control chars, emoji, RTL marks, or other unsafe characters
-    if (VALID_USERNAME_PATTERN.findFirstIn(username).isEmpty) return false
+    if (!AuthRules.isValidUsername(username)) return false
 
     // Compute bcrypt hash outside the lock (slow ~200ms)
     val hash = BCrypt.hashpw(password, BCrypt.gensalt(12))

@@ -26,7 +26,6 @@ class Player(
   private var frozenUntil: Long = 0
   private var ccImmuneUntil: Long = 0
   @volatile private var phasedUntil: Long = 0
-  private var serverTeleportedUntil: Long = 0
   private var characterId: Byte = CharacterId.DEFAULT.id
   private var teamId: Byte = 0
 
@@ -107,6 +106,31 @@ class Player(
     this.health = Math.max(0, Math.min(maxHealth, h))
   }
 
+  /**
+   * Take `amount` damage. True if this is the blow that killed the player: however many hits
+   * land together, from whichever threads (projectile tick, burn tick), exactly one of them sees
+   * the player go from alive to dead, so a death is scored and a respawn scheduled once.
+   */
+  def damage(amount: Int): Boolean = synchronized {
+    val wasAlive = health > 0
+    setHealth(health - amount)
+    wasAlive && health <= 0
+  }
+
+  // Server side: how many times the server has put this player somewhere their client didn't —
+  // a pull, a knockback, a respawn, a freeze holding them in place. The client sends back the
+  // count it has seen with every position, which is how the server tells a step sent before
+  // the client knew about the move (drop it) from one sent after (apply it).
+  @volatile private var serverMoves: Int = 0
+
+  def getServerMoves: Int = serverMoves
+
+  /** The server has just moved (or pinned) this player. Returns the new count. */
+  def recordServerMove(): Int = synchronized {
+    serverMoves += 1
+    serverMoves
+  }
+
   def getShieldUntil: Long = shieldUntil
 
   def setShieldUntil(until: Long): Unit = {
@@ -155,12 +179,6 @@ class Player(
   }
 
   def isPhased: Boolean = System.currentTimeMillis() < phasedUntil
-
-  def setServerTeleportedUntil(until: Long): Unit = {
-    this.serverTeleportedUntil = until
-  }
-
-  def isServerTeleported: Boolean = System.currentTimeMillis() < serverTeleportedUntil
 
   def getCharacterId: Byte = characterId
 
