@@ -319,7 +319,11 @@ in a hard edge.
 Never draw a body out *ahead* of `(sx, sy)`. Seven renderers used to (via a `beamTip`
 helper, since removed): beams, the charge shot, the tentacle, the tethers, lightning, the
 rocket and the shark jaw each ran a line `worldLen` world units forward and capped it with
-a disc. That produced two problems:
+a disc. The talon and the blood fang were the same bug in another shape — claws and fangs
+running 24-36px forward from a knuckle or gum at the hitbox, so the points that read as the
+projectile arrived a third of a tile before the bite did. They now close *on* the hitbox:
+the foot/jaw sits a claw's length behind and the points land at `(sx, sy)`. That produced
+two problems:
 - **It looked wrong.** A stroked line with a ball on the end is the silhouette of a snake,
   not of an ability, and the whip and vine styles wiggled along their length so they
   literally slithered.
@@ -359,10 +363,18 @@ surface below: `surfaceLift` raises it onto the top face of an elevated tile, so
 climbs over the wall the projectile clears. Their particle trails spawn at the same height.
 
 **15 pattern factories** (configurable colour + size, most also taking a `kind`):
-- `energyBolt(r, g, b, size, style)` — glowing orb. `style` picks an **outer** silhouette
-  (0 plain + leading crescent, 1 fire tongues, 2 rune ring, 3 soul wisp with a tail and
-  eyes, 4 nebula cloud). The outer shape is what distinguishes bolts; inner detail is
-  invisible at the size a projectile is actually displayed.
+- `energyBolt(r, g, b, size, style)` — glowing orb. `style` picks an **outer** silhouette,
+  named by the `ORB_*` constants: `ORB_PLAIN` (leading crescent), `ORB_FIRE` (tapered
+  tongues), `ORB_RUNE` (flat glyph rings), `ORB_ORBIT` (a tilted, precessing ring the orb
+  passes through, with motes riding it), `ORB_CLOUD` (lumpy inked lobes, body unstroked),
+  `ORB_ASTRAL` (`ORB_ORBIT` plus a corona and a four-point glint — the Astronomer),
+  `ORB_SPIRIT` (`ORB_ORBIT` plus a wraith's sockets and a fraying hem). The outer shape is
+  what distinguishes bolts; inner detail is invisible at the size a projectile is actually
+  displayed. **Whatever the style draws has to stand outside the body** — everything in the
+  `style match` is drawn *behind* the 0.90 x 0.68 sz orb, so a feature inside that ellipse
+  is painted over and the bolt comes out plain. That is what happened to the rune ring (at
+  0.88 x 0.64 sz) and to the cloud lobes (the body's own colour at half alpha, behind an
+  inked ellipse): four bolts each, all reading as featureless eggs.
 - `laserBolt(kind, …)` — blaster bolt: a short capsule, round at the hitbox and drawn to a
   point behind, with a dissolving afterglow. Kinds: plain, prismatic fringes (Photon),
   rings of force pulsing off the head (Cyclops).
@@ -417,6 +429,10 @@ wail, raise dead, and more.
   projectile gallery covers the whole roster in a single pass. This caught eight renderers
   at once (the shuriken, both crescent blades, the holy star, two faceted hulls, the soul
   wisp's tail) plus three authored `Part` silhouettes.
+- **A stroke of uniform width is a bar, whatever colour it is.** `strokeLineSoft` at
+  `sz * 0.34` gave `ORB_FIRE` eight flat yellow paddles stuck round a disc — a cog, not a
+  flame. Anything meant to taper is either a triangle (`fillPolygon`; a triangle is always
+  convex) or a `fadeLine`, which narrows *and* fades to nothing.
 - `fillArcBand` ramps alpha **along the sweep**, not radially. A radial falloff has to be
   built by nesting bands at constant alpha; using the ramp for it leaves one horn of a
   crescent bright and the other invisible.
@@ -447,14 +463,20 @@ ticks) plus an `index.txt` naming each cell. It also writes `impacts_NN.png` (pr
 into a wall block across the fade) and `flyers_00.png` (wall-passers crossing one). Each cell draws one projectile over real
 isometric tiles banded dark stone / grass / sand, at `CAMERA_ZOOM`, with a 48-unit player
 footprint box for scale — a projectile that reads on one ground can disappear on another,
-and judging any of this at 1:1 flatters it by a third. This is the loop to use for any
+and judging any of this at 1:1 flatters it by a third. Each cell advances the projectile to
+**35% of its own effective range**, not a fixed number of steps: at six steps every
+short-range type (a talon, a fang, a punch are all `maxRange` 3-4) was past its end of range
+and drawn in its dissipation, at 30% alpha and 130% scale, which is not a state a player
+ever aims at. This is the loop to use for any
 projectile art change; it needs no server, no login and no match. Its target compiles only the
 ten GL files it needs, so it keeps building while unrelated client code is mid-edit.
 
 `--bench` times a screenful of projectiles against a ground-only baseline, so an art
 change can be checked against the frame budget instead of guessed at. Measured on this
-machine after the silhouette pass: 16 projectiles cost **0.18 ms/frame** over a 0.72 ms
-ground+post baseline — about 11us each, against a 16.7 ms budget.
+machine after the orbital-bolt pass: 16 projectiles cost **0.11 ms/frame** over a 0.68 ms
+ground+post baseline — about 7us each, against a 16.7 ms budget. (The same 16 cost 0.157 ms
+before that pass: an orbit ring drawn as two arcs is cheaper than the swinging tail and the
+soft-stroke cloud it replaced.)
 
 ### Post-Processing
 Settings in `PostProcessor`: `bloomThreshold`, `bloomStrength`, `vignetteStrength`. Bloom
@@ -529,6 +551,19 @@ auto — which only steps down mid-match — can't do it.
   tethers and wakes stream out behind it and fade (`fadeLine`). Beams, tethers, lightning,
   the rocket and the jaw used to run a line several tiles ahead of the hitbox to a disc,
   which both looked like a snake and showed the head arriving 100–150px before the damage.
+  The talon and the blood fang ran their claws and fangs forward the same way; they now
+  close on the hitbox with the foot and the gum trailing behind.
+- **An energy bolt's identity is whatever stands outside the orb** — every `energyBolt`
+  draws the same 0.90 x 0.68 sz ellipse, so a style's shape only exists where it clears
+  that ellipse, and only if it is not a uniform-width stroke. Three of the five styles
+  failed one of those tests at once: the rune ring was drawn *inside* the body, the cloud's
+  lobes were the body's own colour behind an inked ellipse, and the fire tongues were
+  9px-wide soft strokes. Eleven bolts across nine characters came out as plain orbs or as
+  a disc with paddles. The fourth, the soul wisp, failed differently — a tapering tail two
+  and a half diameters long, swung side to side by a sine, which with a round head in front
+  of it is a tadpole swimming, and which five characters' primaries all shared. Those bolts
+  now sit inside a tilted ring they pass through (`ORB_ORBIT`), which reads as an orbit
+  precisely *because* the orb occludes half of it.
 - **Projectile collision uses the drawn tile extents** — `Projectile.getCellX/Y` is
   `floor(x + 0.5)` because tiles are drawn centred on integer coordinates. Truncating put
   walls and map edges half a tile off their sprites, which is what made projectiles glitch

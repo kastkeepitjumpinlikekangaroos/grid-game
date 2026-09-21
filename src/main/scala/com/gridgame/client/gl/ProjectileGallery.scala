@@ -1,6 +1,6 @@
 package com.gridgame.client.gl
 
-import com.gridgame.common.model.{Projectile, ProjectileType}
+import com.gridgame.common.model.{Projectile, ProjectileDef, ProjectileType}
 import org.lwjgl.BufferUtils
 import org.lwjgl.glfw.GLFW._
 import org.lwjgl.opengl.GL
@@ -283,8 +283,13 @@ object ProjectileGallery {
   /** A projectile travelling right-and-down (screen-right in the isometric projection). */
   private def makeProjectile(id: Byte, seed: Int): Projectile = {
     val p = new Projectile(seed * 7 + 3, UUID.randomUUID(), 10f, 10f, 1f, 0f, 0x88AAFF, 0, id)
-    var n = 0
-    while (n < 6) { p.moveStep(1f); n += 1 } // mid-flight, so lifetime-driven visuals show
+    // A third of the way into this type's own range, not a fixed six steps. Six steps put
+    // every short-range projectile — a talon, a fang, a punch are all maxRange 3-4 — past
+    // its end of range, so the cell showed it dissipating at 30% alpha and 130% scale,
+    // which is not a state a player ever aims at. Lifetime-driven visuals still show.
+    val target = ProjectileDef.get(id).effectiveMaxRange(0) * 0.35
+    var guard = 0
+    while (p.getDistanceTraveled < target && guard < 64) { p.moveStep(1f); guard += 1 }
     p
   }
 
