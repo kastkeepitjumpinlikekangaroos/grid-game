@@ -1,2662 +1,913 @@
 #!/usr/bin/env python3
 """Elemental character sprite generators (IDs 12-26).
 
-15 characters with elemental effects replacing the generic humanoid template.
+Fifteen elementalists, in MapleStory's style. The humans are on the shared rig
+and are told apart by their silhouettes -- flame hair, an ice crown, a storm
+cloud on the shoulder, a turban, a flower crown, cloud hair and a cloud to
+stand on -- while the elementals themselves (Inferno, Ember, Glacier,
+Avalanche, Frostbite, Mudslinger) are creatures with bodies of their own.
 """
 
-import sys
-import os
 import math
+import os
+import sys
+
 sys.path.insert(0, os.path.dirname(__file__))
 from sprite_base import (
-    generate_character, ellipse, pill, _darken, _brighten,
-    OUTLINE, BLACK, DOWN, UP, LEFT, RIGHT,
+    DOWN, UP, LEFT, RIGHT, FIRE, ICE, GOLD, LEATHER, STEEL, WOOD, SKIN, SKIN_TAN, HAIR_STYLES,
+    Ell, Limb, Poly, RRect, arc_pts, blade, blob, bolt, cel, cloud, crystal, flame, flame_pts,
+    generate_character, hand_at, head_face, head_skull, ink, leaf, lit, mix, ms_eye, ms_mouth,
+    rig, rig_arms, rig_belt, rig_cape, rig_hair, rig_hand, rig_head, rig_hood, rig_legs, rig_robe,
+    rig_torso, shade, sparkle, star, stroke, xform, arm_pts, face_anchor,
 )
 
-# ---------------------------------------------------------------------------
-# Palettes
-# ---------------------------------------------------------------------------
 
-# Pyromancer palette
-PYRO_ROBE = (160, 40, 30)
-PYRO_ROBE_DARK = (110, 25, 20)
-PYRO_ROBE_LIGHT = (200, 60, 40)
-PYRO_SKIN = (220, 185, 150)
-PYRO_SKIN_DARK = (190, 155, 120)
-PYRO_FLAME_OUTER = (255, 120, 20)
-PYRO_FLAME_MID = (255, 180, 40)
-PYRO_FLAME_INNER = (255, 240, 120)
-PYRO_EMBER = (255, 100, 30)
-PYRO_CROWN = (255, 200, 50)
-PYRO_EYE = (255, 160, 20)
+def _sides(r):
+    return (-1, 1) if not r.d else (r.d,)
 
-# Cryomancer palette
-CRYO_ROBE = (80, 140, 200)
-CRYO_ROBE_DARK = (50, 100, 160)
-CRYO_ROBE_LIGHT = (120, 180, 230)
-CRYO_SKIN = (210, 220, 235)
-CRYO_SKIN_DARK = (180, 195, 210)
-CRYO_ICE = (160, 220, 255)
-CRYO_ICE_DARK = (100, 170, 220)
-CRYO_ICE_BRIGHT = (200, 240, 255)
-CRYO_SNOW = (230, 240, 255)
-CRYO_CRYSTAL = (140, 200, 250)
-CRYO_EYE = (100, 200, 255)
 
-# Stormcaller palette
-STORM_ROBE = (80, 60, 120)
-STORM_ROBE_DARK = (55, 40, 85)
-STORM_ROBE_LIGHT = (110, 85, 155)
-STORM_SKIN = (200, 195, 210)
-STORM_SKIN_DARK = (170, 165, 180)
-STORM_LIGHTNING = (200, 220, 255)
-STORM_LIGHTNING_BRIGHT = (240, 245, 255)
-STORM_CLOUD = (90, 95, 110)
-STORM_CLOUD_DARK = (60, 65, 80)
-STORM_CLOUD_LIGHT = (130, 135, 150)
-STORM_EYE = (180, 200, 255)
+def _hold_side(r):
+    """The hand that carries a staff or weapon: screen right head-on, screen
+    left from behind, the leading hand in profile."""
+    return (1 if not r.back else -1) if not r.d else r.d
 
-# Earthshaker palette
-EARTH_ARMOR = (130, 100, 70)
-EARTH_ARMOR_DARK = (95, 70, 45)
-EARTH_ARMOR_LIGHT = (165, 130, 95)
-EARTH_SKIN = (180, 155, 120)
-EARTH_SKIN_DARK = (150, 125, 90)
-EARTH_STONE = (140, 135, 125)
-EARTH_STONE_DARK = (100, 95, 85)
-EARTH_STONE_LIGHT = (180, 175, 165)
-EARTH_CRYSTAL = (120, 200, 100)
-EARTH_CRACK = (80, 70, 55)
-EARTH_MOSS = (80, 120, 60)
 
-# Windwalker palette
-WIND_ROBE = (210, 230, 245)
-WIND_ROBE_DARK = (170, 195, 215)
-WIND_ROBE_LIGHT = (235, 245, 255)
-WIND_SKIN = (220, 210, 200)
-WIND_SKIN_DARK = (190, 180, 170)
-WIND_SWIRL = (180, 210, 240, 180)
-WIND_SWIRL_BRIGHT = (220, 235, 255)
-WIND_CAPE = (190, 215, 235)
-WIND_CAPE_DARK = (150, 180, 205)
-WIND_EYE = (150, 200, 240)
-
-# MagmaKnight palette
-MAGMA_ARMOR = (50, 45, 50)
-MAGMA_ARMOR_DARK = (30, 28, 32)
-MAGMA_ARMOR_LIGHT = (75, 70, 78)
-MAGMA_LAVA = (255, 130, 20)
-MAGMA_LAVA_BRIGHT = (255, 200, 60)
-MAGMA_LAVA_DIM = (200, 80, 10)
-MAGMA_VISOR = (255, 160, 40)
-MAGMA_VISOR_BRIGHT = (255, 220, 80)
-MAGMA_CRACK = (255, 100, 10)
-MAGMA_EYE = (255, 180, 40)
-
-# Frostbite palette
-FROST_BODY = (100, 160, 200)
-FROST_BODY_DARK = (70, 120, 160)
-FROST_BODY_LIGHT = (140, 195, 230)
-FROST_SPIKE = (160, 220, 250)
-FROST_SPIKE_DARK = (110, 170, 210)
-FROST_SPIKE_BRIGHT = (200, 240, 255)
-FROST_BREATH = (180, 220, 255, 160)
-FROST_EYE = (200, 240, 255)
-FROST_EYE_DIM = (140, 190, 230)
-FROST_CLAW = (80, 130, 170)
-
-# Sandstorm palette
-SAND_ROBE = (190, 165, 120)
-SAND_ROBE_DARK = (155, 130, 90)
-SAND_ROBE_LIGHT = (220, 195, 150)
-SAND_SKIN = (180, 150, 100)
-SAND_SKIN_DARK = (150, 120, 75)
-SAND_TURBAN = (210, 185, 140)
-SAND_TURBAN_DARK = (175, 150, 105)
-SAND_PARTICLE = (220, 195, 140, 180)
-SAND_PARTICLE_DIM = (200, 175, 120, 120)
-SAND_EYE = (160, 130, 60)
+def _staff(draw, r, side, out, top_y, color=WOOD, width=1.1):
+    h = hand_at(r, side, 0.0, 0.0, out)
+    x = h[0] + 0.2
+    cel(draw, Limb([(x, r.base_y - 1.2), (x, top_y)], [width, width * 0.92]), color, sh=(0.5, 0.0))
+    return x
 
 
 # ===================================================================
-# PYROMANCER (ID 12) -- Red/orange robes, flame particles from hands
-#                       and shoulders, fire crown effect
+# PYROMANCER (12) -- hair that is a flame, a fireball in hand
 # ===================================================================
+
+PYRO_ROBE = (198, 44, 50)
+PYRO_HAIR = (232, 70, 40)
+PYRO_TRIM = (255, 176, 56)
+
 
 def draw_pyromancer(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    robe_sway = [-2, 0, 2, 0][frame]
-    flame_flicker = [0, 2, -1, 1][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 18
-
-    # --- Robe body (wide, flowing) ---
-    if direction == DOWN:
-        draw.polygon([
-            (cx - 14, body_cy - 10),
-            (cx + 14, body_cy - 10),
-            (cx + 18 + robe_sway, base_y + 2),
-            (cx - 18 + robe_sway, base_y + 2),
-        ], fill=PYRO_ROBE, outline=OUTLINE)
-        # Fold lines
-        draw.line([(cx - 4, body_cy - 6), (cx - 6 + robe_sway, base_y)],
-                  fill=PYRO_ROBE_DARK, width=1)
-        draw.line([(cx + 4, body_cy - 6), (cx + 6 + robe_sway, base_y)],
-                  fill=PYRO_ROBE_DARK, width=1)
-        draw.line([(cx - 10, body_cy - 4), (cx - 14 + robe_sway, base_y)],
-                  fill=PYRO_ROBE_LIGHT, width=1)
-        # Belt
-        draw.rectangle([cx - 14, body_cy + 6, cx + 14, body_cy + 12],
-                       fill=PYRO_ROBE_DARK, outline=OUTLINE)
-        # Belt buckle -- flame motif
-        draw.rectangle([cx - 3, body_cy + 7, cx + 3, body_cy + 11],
-                       fill=PYRO_FLAME_OUTER, outline=OUTLINE)
-        draw.point((cx, body_cy + 9), fill=PYRO_FLAME_INNER)
-        # Fire hem
-        for hx in range(cx - 16 + robe_sway, cx + 16 + robe_sway, 5):
-            draw.polygon([(hx, base_y), (hx + 2, base_y - 3 + flame_flicker),
-                          (hx + 5, base_y)],
-                         fill=PYRO_FLAME_OUTER, outline=None)
-    elif direction == UP:
-        draw.polygon([
-            (cx - 14, body_cy - 10),
-            (cx + 14, body_cy - 10),
-            (cx + 18 + robe_sway, base_y + 2),
-            (cx - 18 + robe_sway, base_y + 2),
-        ], fill=PYRO_ROBE, outline=OUTLINE)
-        draw.line([(cx, body_cy - 6), (cx + robe_sway, base_y)],
-                  fill=PYRO_ROBE_DARK, width=1)
-        draw.line([(cx - 8, body_cy - 4), (cx - 10 + robe_sway, base_y)],
-                  fill=PYRO_ROBE_DARK, width=1)
-        draw.line([(cx + 8, body_cy - 4), (cx + 10 + robe_sway, base_y)],
-                  fill=PYRO_ROBE_DARK, width=1)
-        draw.rectangle([cx - 14, body_cy + 6, cx + 14, body_cy + 12],
-                       fill=PYRO_ROBE_DARK, outline=OUTLINE)
-    elif direction == LEFT:
-        draw.polygon([
-            (cx - 10, body_cy - 10),
-            (cx + 8, body_cy - 10),
-            (cx + 12 + robe_sway, base_y + 2),
-            (cx - 14 + robe_sway, base_y + 2),
-        ], fill=PYRO_ROBE, outline=OUTLINE)
-        draw.line([(cx - 2, body_cy - 6), (cx - 4 + robe_sway, base_y)],
-                  fill=PYRO_ROBE_DARK, width=1)
-        draw.line([(cx - 8, body_cy - 4), (cx - 10 + robe_sway, base_y)],
-                  fill=PYRO_ROBE_LIGHT, width=1)
-        draw.rectangle([cx - 10, body_cy + 6, cx + 8, body_cy + 12],
-                       fill=PYRO_ROBE_DARK, outline=OUTLINE)
-    else:  # RIGHT
-        draw.polygon([
-            (cx - 8, body_cy - 10),
-            (cx + 10, body_cy - 10),
-            (cx + 14 + robe_sway, base_y + 2),
-            (cx - 12 + robe_sway, base_y + 2),
-        ], fill=PYRO_ROBE, outline=OUTLINE)
-        draw.line([(cx + 2, body_cy - 6), (cx + 4 + robe_sway, base_y)],
-                  fill=PYRO_ROBE_DARK, width=1)
-        draw.line([(cx + 8, body_cy - 4), (cx + 10 + robe_sway, base_y)],
-                  fill=PYRO_ROBE_LIGHT, width=1)
-        draw.rectangle([cx - 8, body_cy + 6, cx + 10, body_cy + 12],
-                       fill=PYRO_ROBE_DARK, outline=OUTLINE)
-
-    # --- Arms with flame hands ---
-    if direction == DOWN:
-        for side in [-1, 1]:
-            ax = cx + side * 16
-            draw.rectangle([ax - 3, body_cy - 4, ax + 3, body_cy + 4],
-                           fill=PYRO_ROBE, outline=OUTLINE)
-            # Flame hand
-            ellipse(draw, ax, body_cy + 6, 4, 4, PYRO_FLAME_OUTER)
-            ellipse(draw, ax, body_cy + 5, 2, 3, PYRO_FLAME_MID, outline=None)
-            draw.point((ax, body_cy + 4), fill=PYRO_FLAME_INNER)
-            # Shoulder flame
-            draw.polygon([(ax - 3, body_cy - 6), (ax, body_cy - 12 + flame_flicker),
-                          (ax + 3, body_cy - 6)],
-                         fill=PYRO_FLAME_OUTER, outline=None)
-            draw.polygon([(ax - 1, body_cy - 6), (ax, body_cy - 10 + flame_flicker),
-                          (ax + 1, body_cy - 6)],
-                         fill=PYRO_FLAME_MID, outline=None)
-    elif direction == UP:
-        for side in [-1, 1]:
-            ax = cx + side * 16
-            draw.rectangle([ax - 3, body_cy - 4, ax + 3, body_cy + 4],
-                           fill=PYRO_ROBE, outline=OUTLINE)
-            # Shoulder flame
-            draw.polygon([(ax - 3, body_cy - 6), (ax, body_cy - 12 + flame_flicker),
-                          (ax + 3, body_cy - 6)],
-                         fill=PYRO_FLAME_OUTER, outline=None)
-    elif direction == LEFT:
-        ax = cx - 12
-        draw.rectangle([ax - 3, body_cy - 3, ax + 3, body_cy + 5],
-                       fill=PYRO_ROBE, outline=OUTLINE)
-        ellipse(draw, ax, body_cy + 7, 4, 3, PYRO_FLAME_OUTER)
-        ellipse(draw, ax, body_cy + 6, 2, 2, PYRO_FLAME_MID, outline=None)
-        draw.polygon([(ax - 3, body_cy - 5), (ax, body_cy - 11 + flame_flicker),
-                      (ax + 3, body_cy - 5)],
-                     fill=PYRO_FLAME_OUTER, outline=None)
-    else:  # RIGHT
-        ax = cx + 12
-        draw.rectangle([ax - 3, body_cy - 3, ax + 3, body_cy + 5],
-                       fill=PYRO_ROBE, outline=OUTLINE)
-        ellipse(draw, ax, body_cy + 7, 4, 3, PYRO_FLAME_OUTER)
-        ellipse(draw, ax, body_cy + 6, 2, 2, PYRO_FLAME_MID, outline=None)
-        draw.polygon([(ax - 3, body_cy - 5), (ax, body_cy - 11 + flame_flicker),
-                      (ax + 3, body_cy - 5)],
-                     fill=PYRO_FLAME_OUTER, outline=None)
-
-    # --- Head ---
-    if direction == DOWN:
-        ellipse(draw, cx, head_cy, 12, 10, PYRO_ROBE)
-        ellipse(draw, cx, head_cy + 2, 8, 6, PYRO_SKIN)
-        ellipse(draw, cx + 2, head_cy + 4, 5, 4, PYRO_SKIN_DARK, outline=None)
-        # Eyes (glowing orange)
-        draw.rectangle([cx - 5, head_cy + 1, cx - 2, head_cy + 4], fill=PYRO_EYE)
-        draw.rectangle([cx + 2, head_cy + 1, cx + 5, head_cy + 4], fill=PYRO_EYE)
-        draw.point((cx - 4, head_cy + 2), fill=PYRO_FLAME_INNER)
-        draw.point((cx + 3, head_cy + 2), fill=PYRO_FLAME_INNER)
-    elif direction == UP:
-        ellipse(draw, cx, head_cy, 12, 10, PYRO_ROBE)
-        ellipse(draw, cx, head_cy, 9, 7, PYRO_ROBE_DARK, outline=None)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, head_cy, 11, 10, PYRO_ROBE)
-        ellipse(draw, cx - 4, head_cy + 2, 6, 5, PYRO_SKIN)
-        ellipse(draw, cx - 3, head_cy + 4, 4, 3, PYRO_SKIN_DARK, outline=None)
-        draw.rectangle([cx - 8, head_cy + 1, cx - 5, head_cy + 4], fill=PYRO_EYE)
-        draw.point((cx - 7, head_cy + 2), fill=PYRO_FLAME_INNER)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, head_cy, 11, 10, PYRO_ROBE)
-        ellipse(draw, cx + 4, head_cy + 2, 6, 5, PYRO_SKIN)
-        ellipse(draw, cx + 3, head_cy + 4, 4, 3, PYRO_SKIN_DARK, outline=None)
-        draw.rectangle([cx + 5, head_cy + 1, cx + 8, head_cy + 4], fill=PYRO_EYE)
-        draw.point((cx + 6, head_cy + 2), fill=PYRO_FLAME_INNER)
-
-    # --- Fire crown ---
-    crown_offsets = [(-8, -4), (-4, -6), (0, -7), (4, -6), (8, -4)]
-    for i, (dx, dy) in enumerate(crown_offsets):
-        flame_h = 6 + (i % 2) * 3 + flame_flicker
-        fx = cx + dx if direction in (DOWN, UP) else cx + dx + (-2 if direction == LEFT else 2)
-        fy = head_cy + dy
-        draw.polygon([(fx - 2, fy), (fx, fy - flame_h), (fx + 2, fy)],
-                     fill=PYRO_FLAME_OUTER, outline=None)
-        draw.polygon([(fx - 1, fy), (fx, fy - flame_h + 2), (fx + 1, fy)],
-                     fill=PYRO_FLAME_MID, outline=None)
-
-    # --- Orbiting ember particles ---
-    ember_radius = 20
-    for i in range(4):
-        angle = frame * (math.pi / 2) + i * (math.pi / 2)
-        ex = int(cx + math.cos(angle) * ember_radius)
-        ey = int(body_cy + math.sin(angle) * (ember_radius * 0.5))
-        draw.point((ex, ey), fill=PYRO_EMBER)
-        draw.point((ex + 1, ey), fill=PYRO_FLAME_MID)
+    r = rig(ox, oy, direction, frame, head=0.96)
+    d = r.d
+    sway = [0.0, 1.0, 0.0, -1.0][frame]
+    fire_side = _hold_side(r)
+    if d:
+        rig_arms(r, draw, PYRO_ROBE, SKIN, layer="far", cuff=PYRO_TRIM)
+    rig_legs(r, draw, shade(PYRO_ROBE, 1.4), (120, 56, 40))
+    rig_robe(r, draw, PYRO_ROBE, trim=PYRO_TRIM, flare=3.2)
+    # flames licking up from the hem
+    xs = (-6.4, -2.2, 2.2, 6.4) if not d else (-d * 4.6, -d * 0.6, d * 3.4)
+    for i, x in enumerate(xs):
+        flame(draw, r.cx + x + r.ph * 0.6, r.base_y - 2.6, 3.2, 4.0 + (i % 2) * 1.4, sway=sway * 0.6)
+    rig_belt(r, draw, (120, 34, 40), buckle=PYRO_TRIM)
+    rig_arms(r, draw, PYRO_ROBE, SKIN, layer="near", cuff=PYRO_TRIM, hands=False)
+    # the flame crest the hair rises into
+    hx, hy = r.hx, r.head_cy
+    flame(draw, hx - d * 2.0, hy - 3.0, 22.0, 20.0, colors=(PYRO_HAIR, (255, 132, 50), (255, 214, 96)),
+          sway=sway * 1.6 - d * 3.0)
+    rig_head(r, draw, SKIN, hair=PYRO_HAIR, style="spiky", eye_color=(236, 140, 30), expression="grin",
+             mood="sharp")
+    for side in _sides(r):
+        h = rig_hand(r, draw, side, SKIN, reach=0.35 if side == fire_side else 0.0)
+        if side == fire_side and not r.back:
+            fx, fy = h[0] + (1.8 if not d else d * 2.4), h[1] - 3.0
+            cel(draw, Ell(fx, fy + 0.6, 2.6, 2.4), (255, 150, 52), sh=None)
+            flame(draw, fx, fy + 2.6, 6.4, 8.4 + [0, 1.0, 0, 1.0][frame], sway=sway)
 
 
 # ===================================================================
-# CRYOMANCER (ID 13) -- Ice blue robes, frost crystal shoulders,
-#                        icicle effects, snow particles
+# CRYOMANCER (13) -- ice crown, fur-trimmed robe, crystal staff
 # ===================================================================
+
+CRYO_ROBE = (118, 176, 238)
+CRYO_FUR = (246, 250, 255)
+CRYO_HAIR = (176, 214, 248)
+
+
+def _snowflake(draw, x, y, rad, color=(255, 255, 255)):
+    for a in (0, 60, 120):
+        ca, sa = math.cos(math.radians(a)), math.sin(math.radians(a))
+        stroke(draw, [(x - ca * rad, y - sa * rad), (x + ca * rad, y + sa * rad)], 0.6, color)
+
 
 def draw_cryomancer(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    robe_sway = [-2, 0, 2, 0][frame]
-    crystal_pulse = [0, 1, 0, -1][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 18
-
-    # --- Robe body ---
-    if direction == DOWN:
-        draw.polygon([
-            (cx - 14, body_cy - 10),
-            (cx + 14, body_cy - 10),
-            (cx + 18 + robe_sway, base_y + 2),
-            (cx - 18 + robe_sway, base_y + 2),
-        ], fill=CRYO_ROBE, outline=OUTLINE)
-        draw.line([(cx - 4, body_cy - 6), (cx - 6 + robe_sway, base_y)],
-                  fill=CRYO_ROBE_DARK, width=1)
-        draw.line([(cx + 4, body_cy - 6), (cx + 6 + robe_sway, base_y)],
-                  fill=CRYO_ROBE_DARK, width=1)
-        draw.line([(cx - 10, body_cy - 4), (cx - 14 + robe_sway, base_y)],
-                  fill=CRYO_ROBE_LIGHT, width=1)
-        # Ice trim at hem
-        for hx in range(cx - 16 + robe_sway, cx + 16 + robe_sway, 4):
-            draw.polygon([(hx, base_y), (hx + 2, base_y + 4), (hx + 4, base_y)],
-                         fill=CRYO_ICE, outline=None)
-        # Belt
-        draw.rectangle([cx - 14, body_cy + 6, cx + 14, body_cy + 12],
-                       fill=CRYO_ICE_DARK, outline=OUTLINE)
-        draw.rectangle([cx - 3, body_cy + 7, cx + 3, body_cy + 11],
-                       fill=CRYO_CRYSTAL, outline=OUTLINE)
-    elif direction == UP:
-        draw.polygon([
-            (cx - 14, body_cy - 10),
-            (cx + 14, body_cy - 10),
-            (cx + 18 + robe_sway, base_y + 2),
-            (cx - 18 + robe_sway, base_y + 2),
-        ], fill=CRYO_ROBE, outline=OUTLINE)
-        draw.line([(cx, body_cy - 6), (cx + robe_sway, base_y)],
-                  fill=CRYO_ROBE_DARK, width=1)
-        draw.line([(cx - 8, body_cy - 4), (cx - 10 + robe_sway, base_y)],
-                  fill=CRYO_ROBE_DARK, width=1)
-        draw.rectangle([cx - 14, body_cy + 6, cx + 14, body_cy + 12],
-                       fill=CRYO_ICE_DARK, outline=OUTLINE)
-    elif direction == LEFT:
-        draw.polygon([
-            (cx - 10, body_cy - 10),
-            (cx + 8, body_cy - 10),
-            (cx + 12 + robe_sway, base_y + 2),
-            (cx - 14 + robe_sway, base_y + 2),
-        ], fill=CRYO_ROBE, outline=OUTLINE)
-        draw.line([(cx - 2, body_cy - 6), (cx - 4 + robe_sway, base_y)],
-                  fill=CRYO_ROBE_DARK, width=1)
-        draw.rectangle([cx - 10, body_cy + 6, cx + 8, body_cy + 12],
-                       fill=CRYO_ICE_DARK, outline=OUTLINE)
-    else:  # RIGHT
-        draw.polygon([
-            (cx - 8, body_cy - 10),
-            (cx + 10, body_cy - 10),
-            (cx + 14 + robe_sway, base_y + 2),
-            (cx - 12 + robe_sway, base_y + 2),
-        ], fill=CRYO_ROBE, outline=OUTLINE)
-        draw.line([(cx + 2, body_cy - 6), (cx + 4 + robe_sway, base_y)],
-                  fill=CRYO_ROBE_DARK, width=1)
-        draw.rectangle([cx - 8, body_cy + 6, cx + 10, body_cy + 12],
-                       fill=CRYO_ICE_DARK, outline=OUTLINE)
-
-    # --- Arms with frost crystal shoulders ---
-    if direction == DOWN:
-        for side in [-1, 1]:
-            ax = cx + side * 16
-            draw.rectangle([ax - 3, body_cy - 4, ax + 3, body_cy + 4],
-                           fill=CRYO_ROBE, outline=OUTLINE)
-            # Hands with frost glow
-            draw.rectangle([ax - 3, body_cy + 2, ax + 3, body_cy + 6],
-                           fill=CRYO_SKIN, outline=OUTLINE)
-            # Ice crystal shoulder
-            draw.polygon([(ax - 4, body_cy - 6), (ax, body_cy - 14 + crystal_pulse),
-                          (ax + 4, body_cy - 6)],
-                         fill=CRYO_ICE, outline=OUTLINE)
-            draw.polygon([(ax - 2, body_cy - 6), (ax, body_cy - 12 + crystal_pulse),
-                          (ax + 2, body_cy - 6)],
-                         fill=CRYO_ICE_BRIGHT, outline=None)
-    elif direction == UP:
-        for side in [-1, 1]:
-            ax = cx + side * 16
-            draw.rectangle([ax - 3, body_cy - 4, ax + 3, body_cy + 4],
-                           fill=CRYO_ROBE, outline=OUTLINE)
-            draw.polygon([(ax - 4, body_cy - 6), (ax, body_cy - 14 + crystal_pulse),
-                          (ax + 4, body_cy - 6)],
-                         fill=CRYO_ICE, outline=OUTLINE)
-    elif direction == LEFT:
-        ax = cx - 12
-        draw.rectangle([ax - 3, body_cy - 3, ax + 3, body_cy + 5],
-                       fill=CRYO_ROBE, outline=OUTLINE)
-        draw.rectangle([ax - 3, body_cy + 2, ax + 3, body_cy + 6],
-                       fill=CRYO_SKIN, outline=OUTLINE)
-        draw.polygon([(ax - 4, body_cy - 5), (ax, body_cy - 13 + crystal_pulse),
-                      (ax + 4, body_cy - 5)],
-                     fill=CRYO_ICE, outline=OUTLINE)
-        draw.polygon([(ax - 2, body_cy - 5), (ax, body_cy - 11 + crystal_pulse),
-                      (ax + 2, body_cy - 5)],
-                     fill=CRYO_ICE_BRIGHT, outline=None)
-    else:  # RIGHT
-        ax = cx + 12
-        draw.rectangle([ax - 3, body_cy - 3, ax + 3, body_cy + 5],
-                       fill=CRYO_ROBE, outline=OUTLINE)
-        draw.rectangle([ax - 3, body_cy + 2, ax + 3, body_cy + 6],
-                       fill=CRYO_SKIN, outline=OUTLINE)
-        draw.polygon([(ax - 4, body_cy - 5), (ax, body_cy - 13 + crystal_pulse),
-                      (ax + 4, body_cy - 5)],
-                     fill=CRYO_ICE, outline=OUTLINE)
-        draw.polygon([(ax - 2, body_cy - 5), (ax, body_cy - 11 + crystal_pulse),
-                      (ax + 2, body_cy - 5)],
-                     fill=CRYO_ICE_BRIGHT, outline=None)
-
-    # --- Head ---
-    if direction == DOWN:
-        ellipse(draw, cx, head_cy, 12, 10, CRYO_ROBE)
-        ellipse(draw, cx, head_cy - 2, 10, 8, CRYO_ROBE_LIGHT, outline=None)
-        ellipse(draw, cx, head_cy + 2, 8, 6, CRYO_SKIN)
-        ellipse(draw, cx + 2, head_cy + 4, 5, 4, CRYO_SKIN_DARK, outline=None)
-        draw.rectangle([cx - 5, head_cy + 1, cx - 2, head_cy + 4], fill=CRYO_EYE)
-        draw.rectangle([cx + 2, head_cy + 1, cx + 5, head_cy + 4], fill=CRYO_EYE)
-        draw.point((cx - 4, head_cy + 2), fill=CRYO_ICE_BRIGHT)
-        draw.point((cx + 3, head_cy + 2), fill=CRYO_ICE_BRIGHT)
-    elif direction == UP:
-        ellipse(draw, cx, head_cy, 12, 10, CRYO_ROBE)
-        ellipse(draw, cx, head_cy, 9, 7, CRYO_ROBE_DARK, outline=None)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, head_cy, 11, 10, CRYO_ROBE)
-        ellipse(draw, cx - 4, head_cy + 2, 6, 5, CRYO_SKIN)
-        draw.rectangle([cx - 8, head_cy + 1, cx - 5, head_cy + 4], fill=CRYO_EYE)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, head_cy, 11, 10, CRYO_ROBE)
-        ellipse(draw, cx + 4, head_cy + 2, 6, 5, CRYO_SKIN)
-        draw.rectangle([cx + 5, head_cy + 1, cx + 8, head_cy + 4], fill=CRYO_EYE)
-
-    # --- Icicle crown ---
-    icicle_heights = [8, 5, 10, 5, 8]
-    for i, (dx, ih) in enumerate(zip([-8, -4, 0, 4, 8], icicle_heights)):
-        ix = cx + dx if direction in (DOWN, UP) else cx + dx + (-2 if direction == LEFT else 2)
-        iy = head_cy - 6
-        draw.polygon([(ix - 1, iy), (ix, iy - ih - crystal_pulse), (ix + 1, iy)],
-                     fill=CRYO_ICE, outline=None)
-        draw.point((ix, iy - ih + 1 - crystal_pulse), fill=CRYO_ICE_BRIGHT)
-
-    # --- Snow particles ---
-    snow_positions = [
-        (cx - 14, body_cy - 8), (cx + 12, body_cy + 4),
-        (cx - 8, body_cy + 10), (cx + 16, body_cy - 4),
-        (cx - 18, body_cy + 2), (cx + 6, body_cy - 12),
-    ]
-    snow_offset = frame * 3
-    for i, (sx, sy) in enumerate(snow_positions):
-        if (i + frame) % 2 != 0:
-            continue
-        px = sx + (snow_offset + i * 5) % 7 - 3
-        py = sy + (snow_offset + i * 3) % 5 - 2
-        draw.point((px, py), fill=CRYO_SNOW)
-        draw.point((px + 1, py), fill=CRYO_SNOW)
+    r = rig(ox, oy, direction, frame, head=0.95)
+    d = r.d
+    side_s = _hold_side(r)
+    out = 1.6 if not d else 0.4
+    if r.back:
+        x = _staff(draw, r, side_s, out, r.head_cy - 2.0, color=(196, 206, 226))
+        crystal(draw, x, r.head_cy - 1.0, -90, 9.0, 4.6)
+    if d:
+        rig_arms(r, draw, CRYO_ROBE, SKIN, layer="far", cuff=CRYO_FUR)
+    rig_legs(r, draw, shade(CRYO_ROBE, 1.2), (150, 170, 206))
+    rig_robe(r, draw, CRYO_ROBE, trim=CRYO_FUR, flare=3.2)
+    if not r.back:
+        _snowflake(draw, r.cx + d * 2.0, r.hip_y - 2.0, 2.2)
+    rig_belt(r, draw, (80, 120, 190), buckle=(206, 236, 255))
+    # fur collar
+    cx = r.cx
+    cel(draw, RRect(cx - 7.4, r.sh_y - 3.2, cx + 7.4, r.sh_y + 0.4, 1.8) if not d else
+        RRect(cx - 5.4, r.sh_y - 3.2, cx + 5.8, r.sh_y + 0.4, 1.8), CRYO_FUR, sh=(0.0, 0.8))
+    rig_arms(r, draw, CRYO_ROBE, SKIN, layer="near", cuff=CRYO_FUR, hands=False)
+    rig_head(r, draw, SKIN, hair=CRYO_HAIR, style="swept", eye_color=(70, 150, 214), expression="set",
+             mood="calm")
+    # a crown of ice crystals
+    hx, hy, ry = r.hx, r.head_cy, r.head_ry
+    spikes = ((-5.4, -110, 5.0), (-2.6, -98, 7.0), (0.4, -90, 8.4), (3.2, -82, 7.0), (5.8, -70, 5.0)) if not d else \
+        ((-d * 2.4, -90 - d * 18, 6.0), (d * 0.8, -90 - d * 8, 7.6), (d * 3.8, -90 + d * 2, 6.0))
+    for (u, a, ln) in spikes:
+        crystal(draw, hx + u, hy - ry + 2.6, a, ln, 2.8)
+    if not r.back:
+        x = _staff(draw, r, side_s, out, r.head_cy - 2.0, color=(196, 206, 226))
+        crystal(draw, x, r.head_cy - 1.0, -90, 9.0, 4.6)
+        for i, (sx, sy) in enumerate(((-4.0, -2.0), (4.2, 3.0), (-3.0, 6.0))):
+            if (frame + i) % 2 == 0:
+                sparkle(draw, x + sx, r.head_cy - 6.0 + sy, 1.6, (230, 246, 255))
+    for side in _sides(r):
+        rig_hand(r, draw, side, SKIN, out=out if side == side_s else 0.0)
 
 
 # ===================================================================
-# STORMCALLER (ID 14) -- Purple robes, lightning bolt effects from
-#                         hands, storm cloud above head
+# STORMCALLER (14) -- electric hair, a thundercloud on the shoulder
 # ===================================================================
+
+STORM_COAT = (62, 60, 128)
+STORM_TRIM = (255, 226, 76)
+STORM_HAIR = (250, 246, 196)
+STORM_CLOUD = (132, 136, 162)
+
 
 def draw_stormcaller(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    robe_sway = [-2, 0, 2, 0][frame]
-    bolt_flicker = [0, 2, -1, 3][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 18
-
-    # --- Robe body ---
-    if direction == DOWN:
-        draw.polygon([
-            (cx - 14, body_cy - 10),
-            (cx + 14, body_cy - 10),
-            (cx + 18 + robe_sway, base_y + 2),
-            (cx - 18 + robe_sway, base_y + 2),
-        ], fill=STORM_ROBE, outline=OUTLINE)
-        draw.line([(cx - 4, body_cy - 6), (cx - 6 + robe_sway, base_y)],
-                  fill=STORM_ROBE_DARK, width=1)
-        draw.line([(cx + 4, body_cy - 6), (cx + 6 + robe_sway, base_y)],
-                  fill=STORM_ROBE_DARK, width=1)
-        draw.line([(cx - 10, body_cy - 4), (cx - 14 + robe_sway, base_y)],
-                  fill=STORM_ROBE_LIGHT, width=1)
-        draw.rectangle([cx - 14, body_cy + 6, cx + 14, body_cy + 12],
-                       fill=STORM_ROBE_DARK, outline=OUTLINE)
-    elif direction == UP:
-        draw.polygon([
-            (cx - 14, body_cy - 10),
-            (cx + 14, body_cy - 10),
-            (cx + 18 + robe_sway, base_y + 2),
-            (cx - 18 + robe_sway, base_y + 2),
-        ], fill=STORM_ROBE, outline=OUTLINE)
-        draw.line([(cx, body_cy - 6), (cx + robe_sway, base_y)],
-                  fill=STORM_ROBE_DARK, width=1)
-        draw.rectangle([cx - 14, body_cy + 6, cx + 14, body_cy + 12],
-                       fill=STORM_ROBE_DARK, outline=OUTLINE)
-    elif direction == LEFT:
-        draw.polygon([
-            (cx - 10, body_cy - 10),
-            (cx + 8, body_cy - 10),
-            (cx + 12 + robe_sway, base_y + 2),
-            (cx - 14 + robe_sway, base_y + 2),
-        ], fill=STORM_ROBE, outline=OUTLINE)
-        draw.line([(cx - 2, body_cy - 6), (cx - 4 + robe_sway, base_y)],
-                  fill=STORM_ROBE_DARK, width=1)
-        draw.rectangle([cx - 10, body_cy + 6, cx + 8, body_cy + 12],
-                       fill=STORM_ROBE_DARK, outline=OUTLINE)
-    else:  # RIGHT
-        draw.polygon([
-            (cx - 8, body_cy - 10),
-            (cx + 10, body_cy - 10),
-            (cx + 14 + robe_sway, base_y + 2),
-            (cx - 12 + robe_sway, base_y + 2),
-        ], fill=STORM_ROBE, outline=OUTLINE)
-        draw.line([(cx + 2, body_cy - 6), (cx + 4 + robe_sway, base_y)],
-                  fill=STORM_ROBE_DARK, width=1)
-        draw.rectangle([cx - 8, body_cy + 6, cx + 10, body_cy + 12],
-                       fill=STORM_ROBE_DARK, outline=OUTLINE)
-
-    # --- Arms with lightning from hands ---
-    if direction == DOWN:
-        for side in [-1, 1]:
-            ax = cx + side * 16
-            draw.rectangle([ax - 3, body_cy - 4, ax + 3, body_cy + 4],
-                           fill=STORM_ROBE, outline=OUTLINE)
-            draw.rectangle([ax - 3, body_cy + 2, ax + 3, body_cy + 6],
-                           fill=STORM_SKIN, outline=OUTLINE)
-            # Lightning bolts from hands
-            bx = ax + side * 2
-            by = body_cy + 8
-            draw.line([(bx, by), (bx + side * 3, by + 4 + bolt_flicker),
-                       (bx, by + 8 + bolt_flicker)],
-                      fill=STORM_LIGHTNING, width=2)
-            draw.line([(bx, by + 2), (bx + side * 2, by + 5 + bolt_flicker)],
-                      fill=STORM_LIGHTNING_BRIGHT, width=1)
-    elif direction == UP:
-        for side in [-1, 1]:
-            ax = cx + side * 16
-            draw.rectangle([ax - 3, body_cy - 4, ax + 3, body_cy + 4],
-                           fill=STORM_ROBE, outline=OUTLINE)
-    elif direction == LEFT:
-        ax = cx - 12
-        draw.rectangle([ax - 3, body_cy - 3, ax + 3, body_cy + 5],
-                       fill=STORM_ROBE, outline=OUTLINE)
-        draw.rectangle([ax - 3, body_cy + 2, ax + 3, body_cy + 6],
-                       fill=STORM_SKIN, outline=OUTLINE)
-        draw.line([(ax - 2, body_cy + 8), (ax - 5, body_cy + 12 + bolt_flicker),
-                   (ax - 2, body_cy + 16 + bolt_flicker)],
-                  fill=STORM_LIGHTNING, width=2)
-    else:  # RIGHT
-        ax = cx + 12
-        draw.rectangle([ax - 3, body_cy - 3, ax + 3, body_cy + 5],
-                       fill=STORM_ROBE, outline=OUTLINE)
-        draw.rectangle([ax - 3, body_cy + 2, ax + 3, body_cy + 6],
-                       fill=STORM_SKIN, outline=OUTLINE)
-        draw.line([(ax + 2, body_cy + 8), (ax + 5, body_cy + 12 + bolt_flicker),
-                   (ax + 2, body_cy + 16 + bolt_flicker)],
-                  fill=STORM_LIGHTNING, width=2)
-
-    # --- Head ---
-    if direction == DOWN:
-        ellipse(draw, cx, head_cy, 12, 10, STORM_ROBE)
-        ellipse(draw, cx, head_cy - 2, 10, 8, STORM_ROBE_LIGHT, outline=None)
-        ellipse(draw, cx, head_cy + 2, 8, 6, STORM_SKIN)
-        draw.rectangle([cx - 5, head_cy + 1, cx - 2, head_cy + 4], fill=STORM_EYE)
-        draw.rectangle([cx + 2, head_cy + 1, cx + 5, head_cy + 4], fill=STORM_EYE)
-        draw.point((cx - 4, head_cy + 2), fill=STORM_LIGHTNING_BRIGHT)
-        draw.point((cx + 3, head_cy + 2), fill=STORM_LIGHTNING_BRIGHT)
-    elif direction == UP:
-        ellipse(draw, cx, head_cy, 12, 10, STORM_ROBE)
-        ellipse(draw, cx, head_cy, 9, 7, STORM_ROBE_DARK, outline=None)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, head_cy, 11, 10, STORM_ROBE)
-        ellipse(draw, cx - 4, head_cy + 2, 6, 5, STORM_SKIN)
-        draw.rectangle([cx - 8, head_cy + 1, cx - 5, head_cy + 4], fill=STORM_EYE)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, head_cy, 11, 10, STORM_ROBE)
-        ellipse(draw, cx + 4, head_cy + 2, 6, 5, STORM_SKIN)
-        draw.rectangle([cx + 5, head_cy + 1, cx + 8, head_cy + 4], fill=STORM_EYE)
-
-    # --- Storm cloud above head ---
-    cloud_y = head_cy - 18
-    cloud_x = cx if direction in (DOWN, UP) else cx + (-2 if direction == LEFT else 2)
-    cloud_sway = [-1, 0, 1, 0][frame]
-    # Cloud puffs
-    ellipse(draw, cloud_x + cloud_sway, cloud_y, 10, 5, STORM_CLOUD)
-    ellipse(draw, cloud_x - 4 + cloud_sway, cloud_y + 1, 6, 4, STORM_CLOUD_DARK, outline=None)
-    ellipse(draw, cloud_x + 4 + cloud_sway, cloud_y - 1, 7, 4, STORM_CLOUD_LIGHT, outline=None)
-    # Mini lightning from cloud
-    if direction != UP:
-        bx = cloud_x + cloud_sway + bolt_flicker
-        draw.line([(bx, cloud_y + 4), (bx - 2, cloud_y + 8),
-                   (bx + 1, cloud_y + 10)],
-                  fill=STORM_LIGHTNING_BRIGHT, width=1)
+    r = rig(ox, oy, direction, frame)
+    d = r.d
+    rod_side = _hold_side(r)
+    out = 1.4 if not d else 0.4
+    if d:
+        rig_arms(r, draw, STORM_COAT, SKIN, layer="far", cuff=STORM_TRIM)
+    rig_legs(r, draw, shade(STORM_COAT, 1.0), (60, 52, 80))
+    shape = rig_robe(r, draw, STORM_COAT, trim=STORM_TRIM, flare=2.6, split=True)
+    # zigzag bolt embroidered down the front
+    if not r.back:
+        x = r.cx + d * 2.2
+        bolt(draw, [(x - 1.2, r.sh_y + 0.8), (x + 1.4, r.waist_y - 0.6), (x - 1.0, r.waist_y + 1.2),
+                    (x + 1.6, r.hip_y + 3.0)], 1.3, STORM_TRIM)
+    rig_belt(r, draw, shade(STORM_COAT, 1.6), buckle=STORM_TRIM)
+    rig_arms(r, draw, STORM_COAT, SKIN, layer="near", cuff=STORM_TRIM, hands=False)
+    rig_head(r, draw, SKIN, hair=STORM_HAIR, style="wild", eye_color=(230, 170, 30), expression="grin",
+             mood="sharp")
+    # the thundercloud riding his shoulder, a bolt dropping out of it
+    side = -rod_side if not d else -d
+    cx0 = r.cx + side * 13.0 if not d else r.cx - d * 11.0
+    cy0 = r.head_cy - 1.0 + [0, -0.6, 0, -0.6][frame]
+    cloud(draw, cx0, cy0, 11.0, 6.0, STORM_CLOUD, tone=shade(STORM_CLOUD, 1.2))
+    if frame % 2 == 0:
+        bolt(draw, [(cx0 - 0.6, cy0 + 3.0), (cx0 + 1.4, cy0 + 6.0), (cx0 - 0.8, cy0 + 7.0), (cx0 + 0.8, cy0 + 10.4)],
+             1.4, STORM_TRIM)
+    for side2 in _sides(r):
+        h = rig_hand(r, draw, side2, SKIN, out=out if side2 == rod_side else 0.0)
+    # lightning rod: a forked metal staff crackling at the tips
+    if not r.back:
+        h = hand_at(r, rod_side, 0.0, 0.0, out)
+        x = h[0] + 0.2
+        top = r.head_cy - 4.0
+        cel(draw, Limb([(x, r.base_y - 1.0), (x, top)], [0.9, 0.8]), (190, 196, 214), sh=None)
+        for s in (-1, 1):
+            cel(draw, Limb([(x, top + 1.6), (x + s * 3.0, top - 1.4), (x + s * 3.4, top - 4.2)], [0.7, 0.6, 0.4]),
+                (190, 196, 214), sh=None)
+            if (frame + (s > 0)) % 2 == 0:
+                sparkle(draw, x + s * 3.4, top - 4.6, 2.2, STORM_TRIM)
 
 
 # ===================================================================
-# EARTHSHAKER (ID 15) -- Heavy brown/stone armor, rocky shoulders,
-#                         crystal formations, cracks at feet
+# EARTHSHAKER (15) -- a stout dwarf with boulder pauldrons and rock fists
 # ===================================================================
+
+EARTH_STONE = (152, 142, 130)
+EARTH_MOSS = (112, 164, 80)
+EARTH_TUNIC = (72, 122, 100)
+EARTH_BEARD = (200, 112, 54)
+
+
+def _rock(draw, x, y, rx, ry, color=EARTH_STONE, moss=True):
+    pts = []
+    for i in range(9):
+        a = math.radians(i * 40 + 12)
+        k = 1.0 + (0.12 if i % 3 == 0 else (-0.08 if i % 3 == 1 else 0.02))
+        pts.append((x + rx * k * math.cos(a), y + ry * k * math.sin(a)))
+    cel(draw, Poly(pts), color, sh=(0.9, 0.9), hi=(0.6, 0.6))
+    if moss:
+        cel(draw, Poly([(x - rx * 0.9, y - ry * 0.3), (x - rx * 0.2, y - ry * 1.02), (x + rx * 0.6, y - ry * 0.86),
+                        (x + rx * 0.2, y - ry * 0.4), (x - rx * 0.3, y - ry * 0.2)]), EARTH_MOSS, sh=None, line=False)
+
 
 def draw_earthshaker(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    leg_spread = [-4, 0, 4, 0][frame]
-    rumble = [0, 1, 0, -1][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 20
-
-    # --- Legs (stocky) ---
-    if direction in (DOWN, UP):
-        for side in [-1, 1]:
-            ls = leg_spread if side == -1 else -leg_spread
-            lx = cx + side * 7 + ls
-            draw.rectangle([lx - 4, body_cy + 10, lx + 4, base_y],
-                           fill=EARTH_ARMOR, outline=OUTLINE)
-            draw.rectangle([lx - 4, body_cy + 10, lx - 2, base_y - 6],
-                           fill=EARTH_ARMOR_LIGHT, outline=None)
-            # Stone boots
-            draw.rectangle([lx - 4, base_y - 6, lx + 4, base_y],
-                           fill=EARTH_STONE, outline=OUTLINE)
-            draw.point((lx, base_y - 3), fill=EARTH_STONE_LIGHT)
-    elif direction == LEFT:
-        for i, offset in enumerate([leg_spread, -leg_spread]):
-            lx = cx - 3 + offset
-            draw.rectangle([lx - 4, body_cy + 10, lx + 4, base_y],
-                           fill=EARTH_ARMOR, outline=OUTLINE)
-            draw.rectangle([lx - 4, base_y - 6, lx + 4, base_y],
-                           fill=EARTH_STONE, outline=OUTLINE)
-    else:  # RIGHT
-        for i, offset in enumerate([leg_spread, -leg_spread]):
-            lx = cx + 3 + offset
-            draw.rectangle([lx - 4, body_cy + 10, lx + 4, base_y],
-                           fill=EARTH_ARMOR, outline=OUTLINE)
-            draw.rectangle([lx - 4, base_y - 6, lx + 4, base_y],
-                           fill=EARTH_STONE, outline=OUTLINE)
-
-    # --- Heavy body ---
-    if direction == DOWN:
-        ellipse(draw, cx, body_cy, 16, 14, EARTH_ARMOR)
-        ellipse(draw, cx + 4, body_cy + 2, 12, 10, EARTH_ARMOR_DARK, outline=None)
-        ellipse(draw, cx - 2, body_cy - 2, 10, 8, EARTH_ARMOR_LIGHT, outline=None)
-        # Stone plate detail
-        draw.line([(cx - 4, body_cy - 8), (cx - 8, body_cy + 6)],
-                  fill=EARTH_CRACK, width=1)
-        draw.line([(cx + 4, body_cy - 8), (cx + 8, body_cy + 6)],
-                  fill=EARTH_CRACK, width=1)
-        # Belt with stone buckle
-        draw.rectangle([cx - 16, body_cy + 8, cx + 16, body_cy + 14],
-                       fill=EARTH_ARMOR_DARK, outline=OUTLINE)
-        draw.rectangle([cx - 4, body_cy + 9, cx + 4, body_cy + 13],
-                       fill=EARTH_STONE_LIGHT, outline=OUTLINE)
-        draw.point((cx, body_cy + 11), fill=EARTH_CRYSTAL)
-    elif direction == UP:
-        ellipse(draw, cx, body_cy, 16, 14, EARTH_ARMOR)
-        ellipse(draw, cx + 4, body_cy + 2, 12, 10, EARTH_ARMOR_DARK, outline=None)
-        ellipse(draw, cx, body_cy - 2, 12, 10, _darken(EARTH_ARMOR, 0.85), outline=None)
-        draw.line([(cx, body_cy - 6), (cx, body_cy + 6)],
-                  fill=EARTH_CRACK, width=1)
-        draw.rectangle([cx - 16, body_cy + 8, cx + 16, body_cy + 14],
-                       fill=EARTH_ARMOR_DARK, outline=OUTLINE)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, body_cy, 14, 14, EARTH_ARMOR)
-        ellipse(draw, cx + 2, body_cy + 2, 10, 10, EARTH_ARMOR_DARK, outline=None)
-        ellipse(draw, cx - 4, body_cy - 2, 8, 8, EARTH_ARMOR_LIGHT, outline=None)
-        draw.rectangle([cx - 16, body_cy + 8, cx + 12, body_cy + 14],
-                       fill=EARTH_ARMOR_DARK, outline=OUTLINE)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, body_cy, 14, 14, EARTH_ARMOR)
-        ellipse(draw, cx + 6, body_cy + 2, 10, 10, EARTH_ARMOR_DARK, outline=None)
-        ellipse(draw, cx, body_cy - 2, 8, 8, EARTH_ARMOR_LIGHT, outline=None)
-        draw.rectangle([cx - 12, body_cy + 8, cx + 16, body_cy + 14],
-                       fill=EARTH_ARMOR_DARK, outline=OUTLINE)
-
-    # --- Arms with rocky shoulders ---
-    if direction == DOWN:
-        for side in [-1, 1]:
-            ax = cx + side * 18
-            draw.rectangle([ax - 4, body_cy - 4, ax + 4, body_cy + 6],
-                           fill=EARTH_ARMOR, outline=OUTLINE)
-            draw.rectangle([ax - 3, body_cy + 2, ax + 3, body_cy + 6],
-                           fill=EARTH_SKIN, outline=OUTLINE)
-            # Rocky shoulder pauldron
-            ellipse(draw, ax, body_cy - 6, 7, 5, EARTH_STONE)
-            ellipse(draw, ax - 1, body_cy - 8, 4, 3, EARTH_STONE_LIGHT, outline=None)
-            # Crystal shard on shoulder
-            draw.polygon([(ax + side * 2, body_cy - 10),
-                          (ax + side * 4, body_cy - 16 + rumble),
-                          (ax + side * 6, body_cy - 10)],
-                         fill=EARTH_CRYSTAL, outline=OUTLINE)
-    elif direction == UP:
-        for side in [-1, 1]:
-            ax = cx + side * 18
-            draw.rectangle([ax - 4, body_cy - 4, ax + 4, body_cy + 6],
-                           fill=EARTH_ARMOR, outline=OUTLINE)
-            ellipse(draw, ax, body_cy - 6, 7, 5, EARTH_STONE)
-            draw.polygon([(ax + side * 2, body_cy - 10),
-                          (ax + side * 4, body_cy - 16 + rumble),
-                          (ax + side * 6, body_cy - 10)],
-                         fill=EARTH_CRYSTAL, outline=OUTLINE)
-    elif direction == LEFT:
-        ax = cx - 14
-        draw.rectangle([ax - 4, body_cy - 3, ax + 4, body_cy + 6],
-                       fill=EARTH_ARMOR, outline=OUTLINE)
-        draw.rectangle([ax - 3, body_cy + 2, ax + 3, body_cy + 6],
-                       fill=EARTH_SKIN, outline=OUTLINE)
-        ellipse(draw, ax, body_cy - 5, 7, 5, EARTH_STONE)
-        draw.polygon([(ax - 4, body_cy - 9), (ax - 6, body_cy - 15 + rumble),
-                      (ax - 2, body_cy - 9)],
-                     fill=EARTH_CRYSTAL, outline=OUTLINE)
-    else:  # RIGHT
-        ax = cx + 14
-        draw.rectangle([ax - 4, body_cy - 3, ax + 4, body_cy + 6],
-                       fill=EARTH_ARMOR, outline=OUTLINE)
-        draw.rectangle([ax - 3, body_cy + 2, ax + 3, body_cy + 6],
-                       fill=EARTH_SKIN, outline=OUTLINE)
-        ellipse(draw, ax, body_cy - 5, 7, 5, EARTH_STONE)
-        draw.polygon([(ax + 2, body_cy - 9), (ax + 6, body_cy - 15 + rumble),
-                      (ax + 4, body_cy - 9)],
-                     fill=EARTH_CRYSTAL, outline=OUTLINE)
-
-    # --- Head (stone helm) ---
-    if direction == DOWN:
-        ellipse(draw, cx, head_cy, 14, 12, EARTH_STONE)
-        ellipse(draw, cx + 2, head_cy + 2, 10, 8, EARTH_STONE_DARK, outline=None)
-        ellipse(draw, cx - 2, head_cy - 2, 8, 6, EARTH_STONE_LIGHT, outline=None)
-        # Visor opening
-        draw.rectangle([cx - 8, head_cy, cx + 8, head_cy + 4],
-                       fill=BLACK, outline=None)
-        # Eyes glow through visor
-        draw.rectangle([cx - 5, head_cy + 1, cx - 2, head_cy + 3], fill=EARTH_CRYSTAL)
-        draw.rectangle([cx + 2, head_cy + 1, cx + 5, head_cy + 3], fill=EARTH_CRYSTAL)
-        # Moss growth on helm
-        draw.point((cx - 10, head_cy - 4), fill=EARTH_MOSS)
-        draw.point((cx - 11, head_cy - 3), fill=EARTH_MOSS)
-        draw.point((cx + 10, head_cy - 2), fill=EARTH_MOSS)
-    elif direction == UP:
-        ellipse(draw, cx, head_cy, 14, 12, EARTH_STONE)
-        ellipse(draw, cx + 2, head_cy + 2, 10, 8, EARTH_STONE_DARK, outline=None)
-        ellipse(draw, cx, head_cy - 2, 10, 8, _darken(EARTH_STONE, 0.85), outline=None)
-        draw.point((cx - 8, head_cy - 4), fill=EARTH_MOSS)
-        draw.point((cx + 8, head_cy - 6), fill=EARTH_MOSS)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, head_cy, 13, 12, EARTH_STONE)
-        ellipse(draw, cx + 2, head_cy + 2, 9, 8, EARTH_STONE_DARK, outline=None)
-        ellipse(draw, cx - 4, head_cy - 2, 7, 6, EARTH_STONE_LIGHT, outline=None)
-        draw.rectangle([cx - 10, head_cy, cx - 2, head_cy + 4], fill=BLACK, outline=None)
-        draw.rectangle([cx - 8, head_cy + 1, cx - 4, head_cy + 3], fill=EARTH_CRYSTAL)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, head_cy, 13, 12, EARTH_STONE)
-        ellipse(draw, cx + 6, head_cy + 2, 9, 8, EARTH_STONE_DARK, outline=None)
-        ellipse(draw, cx, head_cy - 2, 7, 6, EARTH_STONE_LIGHT, outline=None)
-        draw.rectangle([cx + 2, head_cy, cx + 10, head_cy + 4], fill=BLACK, outline=None)
-        draw.rectangle([cx + 4, head_cy + 1, cx + 8, head_cy + 3], fill=EARTH_CRYSTAL)
-
-    # --- Cracks at feet ---
-    crack_y = base_y + 1
-    if direction in (DOWN, UP):
-        draw.line([(cx - 8, crack_y), (cx - 4, crack_y + rumble)],
-                  fill=EARTH_CRACK, width=1)
-        draw.line([(cx - 4, crack_y + rumble), (cx, crack_y)],
-                  fill=EARTH_CRACK, width=1)
-        draw.line([(cx + 2, crack_y), (cx + 6, crack_y + rumble)],
-                  fill=EARTH_CRACK, width=1)
-        draw.line([(cx + 6, crack_y + rumble), (cx + 10, crack_y)],
-                  fill=EARTH_CRACK, width=1)
-    elif direction == LEFT:
-        draw.line([(cx - 12, crack_y), (cx - 6, crack_y + rumble),
-                   (cx, crack_y)], fill=EARTH_CRACK, width=1)
+    r = rig(ox, oy, direction, frame, build=1.32, head=0.96)
+    d = r.d
+    if d:
+        rig_arms(r, draw, SKIN_TAN, SKIN_TAN, layer="far", hands=False)
+        h = hand_at(r, -d)
+        _rock(draw, h[0], h[1], 3.4, 3.0, shade(EARTH_STONE, 0.5), moss=False)
+    rig_legs(r, draw, shade(EARTH_TUNIC, 1.0), (96, 70, 52), width=1.1)
+    rig_torso(r, draw, EARTH_TUNIC)
+    if not r.back:
+        cel(draw, Poly([(r.cx - 3.0 + d * 2, r.sh_y - 1.8), (r.cx + 3.0 + d * 2, r.sh_y - 1.8),
+                        (r.cx + 2.0 + d * 2, r.waist_y), (r.cx - 2.0 + d * 2, r.waist_y)]), shade(EARTH_TUNIC, 1.3),
+            sh=None, line=False)
+    rig_belt(r, draw, (96, 70, 52), buckle=EARTH_STONE)
+    rig_arms(r, draw, SKIN_TAN, SKIN_TAN, layer="near", hands=False)
+    for side in _sides(r):
+        sx, sy = r.shoulder(side)
+        _rock(draw, sx + (side * 1.2 if not d else 0.0), sy - 1.0, 4.6, 3.6)
+    head_skull(r, draw, SKIN_TAN, ears=False)
+    hx, hy = r.hx, r.head_cy
+    if not r.back:
+        head_face(r, draw, SKIN_TAN, iris=(84, 150, 70), mood="sharp", mouth=None, brows=False)
+        e1, e2, ey, _, _ = face_anchor(r)
+        for side, ex in (((-1, e1), (1, e2)) if not d else ((-d, e1),)):
+            blob(draw, [Ell(ex, ey - 3.8, 2.8, 1.3), Ell(ex + side * 2.0, ey - 3.4, 1.6, 1.1)], EARTH_BEARD,
+                 sh=(0.0, 0.5), lw=0.8)
+        # the beard: a big braided mass
+        if d:
+            parts = [Ell(hx + d * 4.6, hy + 9.4, 5.6, 5.8), Ell(hx + d * 1.4, hy + 6.8, 4.0, 4.0),
+                     Ell(hx + d * 5.4, hy + 14.6, 2.6, 3.0)]
+        else:
+            parts = [Ell(hx, hy + 9.8, 7.8, 6.6), Ell(hx - 7.4, hy + 6.8, 3.6, 3.8), Ell(hx + 7.4, hy + 6.8, 3.6, 3.8),
+                     Ell(hx - 2.6, hy + 15.4, 2.4, 3.2), Ell(hx + 2.6, hy + 15.4, 2.4, 3.2)]
+        blob(draw, parts, EARTH_BEARD, sh=(1.1, 1.2))
+        if not d:
+            for s in (-1, 1):
+                cel(draw, RRect(hx + s * 2.6 - 1.0, hy + 15.6, hx + s * 2.6 + 1.0, hy + 16.8, 0.4), GOLD, sh=None)
     else:
-        draw.line([(cx, crack_y), (cx + 6, crack_y + rumble),
-                   (cx + 12, crack_y)], fill=EARTH_CRACK, width=1)
+        rig_hair(r, draw, EARTH_BEARD, "crop", hat=True)
+    # stone helm with a crack and a pair of stubby horns
+    rx, ry = r.head_rx, r.head_ry
+    for s in ((-1, 1) if not d else (-d,)):
+        hb = (hx + s * (rx - 1.0), hy - ry + 3.6) if not d else (hx - d * 3.0, hy - ry + 1.6)
+        cel(draw, Limb([hb, (hb[0] + s * 3.4 if not d else hb[0] - d * 3.4, hb[1] - 3.0),
+                        (hb[0] + s * 4.0 if not d else hb[0] - d * 5.4, hb[1] - 6.0)], [2.0, 1.4, 0.4]),
+            (236, 226, 204), sh=(0.5, 0.5))
+    dome = arc_pts(hx - d * 0.4, hy - 0.6, rx + 1.4, ry + 0.8, 182, 358, 26)
+    cel(draw, Poly(dome + [(hx + rx + 1.6, hy - 1.4), (hx - rx - 1.6, hy - 1.4)]), EARTH_STONE, sh=(1.4, 1.0),
+        hi=(0.7, 0.7))
+    stroke(draw, [(hx - 1.0, hy - ry - 0.6), (hx + 0.8, hy - ry + 3.0), (hx - 0.4, hy - ry + 5.4)], 0.6,
+           shade(EARTH_STONE, 1.8))
+    cel(draw, Poly([(hx - rx * 0.6, hy - ry + 0.2), (hx - rx * 0.1, hy - ry - 0.8), (hx + rx * 0.3, hy - ry + 0.6),
+                    (hx - rx * 0.2, hy - ry + 1.8)]), EARTH_MOSS, sh=None, line=False)
+    # rock fists, oversized
+    for side in _sides(r):
+        h = hand_at(r, side)
+        _rock(draw, h[0], h[1], 3.6, 3.2, moss=False)
 
 
 # ===================================================================
-# WINDWALKER (ID 16) -- Light flowing white/sky-blue robes, wind
-#                        swirl particles, flowing cape
+# WINDWALKER (16) -- mint and white, a ribbon the wind carries, a fan
 # ===================================================================
+
+WIND_ROBE = (226, 246, 238)
+WIND_MINT = (96, 206, 170)
+WIND_HAIR = (180, 236, 216)
+
+
+def _swirl(draw, x, y, rad, frame, color=(255, 255, 255)):
+    a0 = frame * 50.0
+    pts = [(x + math.cos(math.radians(a0 + t * 22)) * rad * (1 - t * 0.06),
+            y + math.sin(math.radians(a0 + t * 22)) * rad * 0.42 * (1 - t * 0.06)) for t in range(0, 12)]
+    cel(draw, Limb(pts, [0.2] + [0.8] * 9 + [0.5, 0.2]), color, sh=None, line_color=shade(WIND_MINT, 0.8), lw=0.5)
+
 
 def draw_windwalker(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    robe_sway = [-3, 0, 3, 0][frame]
-    cape_sway = [0, 3, 0, -3][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 18
-
-    # --- Flowing cape (drawn behind body) ---
-    if direction == DOWN:
-        draw.polygon([
-            (cx - 14, body_cy - 8),
-            (cx + 14, body_cy - 8),
-            (cx + 18 + cape_sway, base_y),
-            (cx - 18 + cape_sway, base_y),
-        ], fill=WIND_CAPE, outline=OUTLINE)
-        draw.line([(cx - 6, body_cy - 4), (cx - 8 + cape_sway, base_y - 2)],
-                  fill=WIND_CAPE_DARK, width=1)
-        draw.line([(cx + 6, body_cy - 4), (cx + 8 + cape_sway, base_y - 2)],
-                  fill=WIND_CAPE_DARK, width=1)
-    elif direction == UP:
-        draw.polygon([
-            (cx - 14, body_cy - 8),
-            (cx + 14, body_cy - 8),
-            (cx + 20 + cape_sway, base_y + 2),
-            (cx - 20 + cape_sway, base_y + 2),
-        ], fill=WIND_CAPE, outline=OUTLINE)
-        draw.polygon([
-            (cx - 8, body_cy - 4),
-            (cx + 8, body_cy - 4),
-            (cx + 14 + cape_sway, base_y - 2),
-            (cx - 14 + cape_sway, base_y - 2),
-        ], fill=_brighten(WIND_CAPE, 1.1), outline=None)
-    elif direction == LEFT:
-        draw.polygon([
-            (cx + 4, body_cy - 8),
-            (cx + 16, body_cy - 6),
-            (cx + 18 + cape_sway, base_y),
-            (cx + 4, base_y),
-        ], fill=WIND_CAPE, outline=OUTLINE)
-    else:  # RIGHT
-        draw.polygon([
-            (cx - 4, body_cy - 8),
-            (cx - 16, body_cy - 6),
-            (cx - 18 - cape_sway, base_y),
-            (cx - 4, base_y),
-        ], fill=WIND_CAPE, outline=OUTLINE)
-
-    # --- Robe body (light, flowing) ---
-    if direction == DOWN:
-        draw.polygon([
-            (cx - 12, body_cy - 10),
-            (cx + 12, body_cy - 10),
-            (cx + 16 + robe_sway, base_y + 2),
-            (cx - 16 + robe_sway, base_y + 2),
-        ], fill=WIND_ROBE, outline=OUTLINE)
-        draw.line([(cx - 4, body_cy - 6), (cx - 6 + robe_sway, base_y)],
-                  fill=WIND_ROBE_DARK, width=1)
-        draw.line([(cx + 4, body_cy - 6), (cx + 6 + robe_sway, base_y)],
-                  fill=WIND_ROBE_DARK, width=1)
-        draw.line([(cx - 8, body_cy - 4), (cx - 12 + robe_sway, base_y)],
-                  fill=WIND_ROBE_LIGHT, width=1)
-    elif direction == UP:
-        draw.polygon([
-            (cx - 12, body_cy - 10),
-            (cx + 12, body_cy - 10),
-            (cx + 16 + robe_sway, base_y + 2),
-            (cx - 16 + robe_sway, base_y + 2),
-        ], fill=WIND_ROBE, outline=OUTLINE)
-        draw.line([(cx, body_cy - 6), (cx + robe_sway, base_y)],
-                  fill=WIND_ROBE_DARK, width=1)
-    elif direction == LEFT:
-        draw.polygon([
-            (cx - 10, body_cy - 10),
-            (cx + 6, body_cy - 10),
-            (cx + 10 + robe_sway, base_y + 2),
-            (cx - 14 + robe_sway, base_y + 2),
-        ], fill=WIND_ROBE, outline=OUTLINE)
-        draw.line([(cx - 2, body_cy - 6), (cx - 4 + robe_sway, base_y)],
-                  fill=WIND_ROBE_DARK, width=1)
-    else:  # RIGHT
-        draw.polygon([
-            (cx - 6, body_cy - 10),
-            (cx + 10, body_cy - 10),
-            (cx + 14 + robe_sway, base_y + 2),
-            (cx - 10 + robe_sway, base_y + 2),
-        ], fill=WIND_ROBE, outline=OUTLINE)
-        draw.line([(cx + 2, body_cy - 6), (cx + 4 + robe_sway, base_y)],
-                  fill=WIND_ROBE_DARK, width=1)
-
-    # --- Arms ---
-    if direction == DOWN:
-        for side in [-1, 1]:
-            ax = cx + side * 14
-            draw.rectangle([ax - 3, body_cy - 4, ax + 3, body_cy + 4],
-                           fill=WIND_ROBE, outline=OUTLINE)
-            draw.rectangle([ax - 3, body_cy + 2, ax + 3, body_cy + 6],
-                           fill=WIND_SKIN, outline=OUTLINE)
-    elif direction == UP:
-        for side in [-1, 1]:
-            ax = cx + side * 14
-            draw.rectangle([ax - 3, body_cy - 4, ax + 3, body_cy + 4],
-                           fill=WIND_ROBE, outline=OUTLINE)
-    elif direction == LEFT:
-        ax = cx - 10
-        draw.rectangle([ax - 3, body_cy - 3, ax + 3, body_cy + 5],
-                       fill=WIND_ROBE, outline=OUTLINE)
-        draw.rectangle([ax - 3, body_cy + 2, ax + 3, body_cy + 6],
-                       fill=WIND_SKIN, outline=OUTLINE)
-    else:  # RIGHT
-        ax = cx + 10
-        draw.rectangle([ax - 3, body_cy - 3, ax + 3, body_cy + 5],
-                       fill=WIND_ROBE, outline=OUTLINE)
-        draw.rectangle([ax - 3, body_cy + 2, ax + 3, body_cy + 6],
-                       fill=WIND_SKIN, outline=OUTLINE)
-
-    # --- Head ---
-    if direction == DOWN:
-        ellipse(draw, cx, head_cy, 12, 10, WIND_ROBE_LIGHT)
-        ellipse(draw, cx, head_cy + 2, 8, 6, WIND_SKIN)
-        ellipse(draw, cx + 2, head_cy + 4, 5, 4, WIND_SKIN_DARK, outline=None)
-        draw.rectangle([cx - 5, head_cy + 1, cx - 2, head_cy + 4], fill=WIND_EYE)
-        draw.rectangle([cx + 2, head_cy + 1, cx + 5, head_cy + 4], fill=WIND_EYE)
-        draw.point((cx, head_cy + 6), fill=WIND_SKIN_DARK)
-    elif direction == UP:
-        ellipse(draw, cx, head_cy, 12, 10, WIND_ROBE_LIGHT)
-        ellipse(draw, cx, head_cy, 9, 7, WIND_ROBE_DARK, outline=None)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, head_cy, 11, 10, WIND_ROBE_LIGHT)
-        ellipse(draw, cx - 4, head_cy + 2, 6, 5, WIND_SKIN)
-        draw.rectangle([cx - 8, head_cy + 1, cx - 5, head_cy + 4], fill=WIND_EYE)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, head_cy, 11, 10, WIND_ROBE_LIGHT)
-        ellipse(draw, cx + 4, head_cy + 2, 6, 5, WIND_SKIN)
-        draw.rectangle([cx + 5, head_cy + 1, cx + 8, head_cy + 4], fill=WIND_EYE)
-
-    # --- Wind swirl particles orbiting ---
-    swirl_radius = 20
-    for i in range(5):
-        angle = frame * (math.pi / 2) + i * (2 * math.pi / 5)
-        sx = int(cx + math.cos(angle) * swirl_radius)
-        sy = int(body_cy + math.sin(angle) * (swirl_radius * 0.6))
-        draw.point((sx, sy), fill=WIND_SWIRL_BRIGHT)
-        draw.point((sx + 1, sy), fill=WIND_ROBE_LIGHT)
-    # Secondary inner swirl ring
-    for i in range(3):
-        angle = frame * (math.pi / 2) + i * (2 * math.pi / 3) + math.pi / 6
-        sx = int(cx + math.cos(angle) * 12)
-        sy = int(body_cy + math.sin(angle) * 8)
-        draw.point((sx, sy), fill=WIND_SWIRL_BRIGHT)
+    r = rig(ox, oy, direction, frame, build=0.92)
+    d = r.d
+    fan_side = _hold_side(r)
+    style = dict(HAIR_STYLES["swept"], extra="pony")
+    rig_hair(r, draw, WIND_HAIR, style, layer="back")
+    # the ribbon streaming behind
+    wave = [0.0, 1.0, 0.0, -1.0][frame]
+    if not r.back:
+        s = -1 if not d else -d
+        bx = r.cx + (s * 4.0 if not d else -d * 3.0)
+        cel(draw, Limb([(bx, r.waist_y), (bx + s * 6.0, r.waist_y - 2.0 + wave), (bx + s * 11.0, r.waist_y + 1.0 - wave),
+                        (bx + s * 15.0, r.waist_y - 1.6)], [1.4, 1.4, 1.2, 0.4]), WIND_MINT, sh=(0.0, 0.6))
+    if d:
+        rig_arms(r, draw, WIND_ROBE, SKIN, layer="far", cuff=WIND_MINT)
+    rig_legs(r, draw, WIND_MINT, (80, 150, 126))
+    rig_robe(r, draw, WIND_ROBE, trim=WIND_MINT, flare=2.2, hem=r.hip_y + 3.4, split=True)
+    rig_belt(r, draw, WIND_MINT, buckle=(255, 255, 255))
+    rig_arms(r, draw, WIND_ROBE, SKIN, layer="near", cuff=WIND_MINT, hands=False)
+    rig_head(r, draw, SKIN, hair=WIND_HAIR, style=style, eye_color=(46, 160, 120), expression="smile")
+    _swirl(draw, r.cx, r.base_y - 1.4, 11.0, frame)
+    if r.back:
+        rig_hair(r, draw, WIND_HAIR, style, layer="back")
+    for side in _sides(r):
+        h = rig_hand(r, draw, side, SKIN, reach=0.3 if side == fan_side else 0.0)
+        if side == fan_side:
+            # an open war fan, ribbed
+            fx, fy = h[0], h[1] - 1.0
+            base_a = -100 + (40 if (side > 0 and not d) or d > 0 else -40)
+            pts = [(fx, fy)] + [(fx + math.cos(math.radians(base_a + t)) * 8.4, fy + math.sin(math.radians(base_a + t)) * 8.4)
+                                for t in range(-50, 51, 10)]
+            cel(draw, Poly(pts), (248, 252, 250), sh=None, line_color=shade(WIND_MINT, 1.4))
+            for t in range(-50, 51, 20):
+                stroke(draw, [(fx, fy), (fx + math.cos(math.radians(base_a + t)) * 8.0,
+                                         fy + math.sin(math.radians(base_a + t)) * 8.0)], 0.45, WIND_MINT)
+            arc = [(fx + math.cos(math.radians(base_a + t)) * 6.0, fy + math.sin(math.radians(base_a + t)) * 6.0)
+                   for t in range(-50, 51, 10)]
+            stroke(draw, arc, 0.6, WIND_MINT)
 
 
 # ===================================================================
-# MAGMA KNIGHT (ID 17) -- Dark armor with glowing lava cracks,
-#                          molten glow from visor, orange seams
+# MAGMA KNIGHT (17) -- volcanic plate; the helm is a little volcano
 # ===================================================================
+
+MAG_ROCK = (112, 70, 62)
+MAG_DARK = (70, 46, 48)
+MAG_LAVA = (255, 122, 40)
+MAG_HOT = (255, 216, 96)
+MAG_FIRE = ((240, 80, 36), (255, 160, 52), (255, 236, 130))
+
+
+def _cracks(draw, pts_list, glow=0):
+    for pts in pts_list:
+        stroke(draw, pts, 0.9, MAG_HOT if glow else MAG_LAVA)
+
 
 def draw_magmaknight(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    leg_spread = [-4, 0, 4, 0][frame]
-    lava_pulse = [0, 1, 0, -1][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 20
-
-    # --- Legs (heavy plate) ---
-    if direction in (DOWN, UP):
-        for side in [-1, 1]:
-            ls = leg_spread if side == -1 else -leg_spread
-            lx = cx + side * 7 + ls
-            draw.rectangle([lx - 4, body_cy + 10, lx + 4, base_y],
-                           fill=MAGMA_ARMOR, outline=OUTLINE)
-            # Lava crack seam on legs
-            draw.line([(lx, body_cy + 12), (lx + 1, base_y - 4)],
-                      fill=MAGMA_LAVA, width=1)
-            # Boots
-            draw.rectangle([lx - 4, base_y - 6, lx + 4, base_y],
-                           fill=MAGMA_ARMOR_DARK, outline=OUTLINE)
-            draw.point((lx - 2, base_y - 3), fill=MAGMA_LAVA_DIM)
-    elif direction == LEFT:
-        for i, offset in enumerate([leg_spread, -leg_spread]):
-            lx = cx - 3 + offset
-            draw.rectangle([lx - 4, body_cy + 10, lx + 4, base_y],
-                           fill=MAGMA_ARMOR, outline=OUTLINE)
-            draw.line([(lx, body_cy + 12), (lx, base_y - 4)],
-                      fill=MAGMA_LAVA, width=1)
-            draw.rectangle([lx - 4, base_y - 6, lx + 4, base_y],
-                           fill=MAGMA_ARMOR_DARK, outline=OUTLINE)
-    else:  # RIGHT
-        for i, offset in enumerate([leg_spread, -leg_spread]):
-            lx = cx + 3 + offset
-            draw.rectangle([lx - 4, body_cy + 10, lx + 4, base_y],
-                           fill=MAGMA_ARMOR, outline=OUTLINE)
-            draw.line([(lx, body_cy + 12), (lx, base_y - 4)],
-                      fill=MAGMA_LAVA, width=1)
-            draw.rectangle([lx - 4, base_y - 6, lx + 4, base_y],
-                           fill=MAGMA_ARMOR_DARK, outline=OUTLINE)
-
-    # --- Heavy plate body ---
-    if direction == DOWN:
-        ellipse(draw, cx, body_cy, 16, 14, MAGMA_ARMOR)
-        ellipse(draw, cx + 4, body_cy + 2, 12, 10, MAGMA_ARMOR_DARK, outline=None)
-        ellipse(draw, cx - 2, body_cy - 2, 10, 8, MAGMA_ARMOR_LIGHT, outline=None)
-        # Lava cracks across body
-        draw.line([(cx - 8, body_cy - 4), (cx - 4, body_cy), (cx - 6, body_cy + 6)],
-                  fill=MAGMA_LAVA, width=1)
-        draw.line([(cx + 4, body_cy - 6), (cx + 8, body_cy + 2)],
-                  fill=MAGMA_LAVA, width=1)
-        # Bright lava glow in cracks (pulsing)
-        if lava_pulse >= 0:
-            draw.point((cx - 5, body_cy), fill=MAGMA_LAVA_BRIGHT)
-            draw.point((cx + 6, body_cy - 2), fill=MAGMA_LAVA_BRIGHT)
-        # Belt
-        draw.rectangle([cx - 16, body_cy + 8, cx + 16, body_cy + 14],
-                       fill=MAGMA_ARMOR_DARK, outline=OUTLINE)
-        draw.line([(cx - 14, body_cy + 11), (cx + 14, body_cy + 11)],
-                  fill=MAGMA_CRACK, width=1)
-    elif direction == UP:
-        ellipse(draw, cx, body_cy, 16, 14, MAGMA_ARMOR)
-        ellipse(draw, cx + 4, body_cy + 2, 12, 10, MAGMA_ARMOR_DARK, outline=None)
-        draw.line([(cx - 6, body_cy - 4), (cx - 2, body_cy + 4)],
-                  fill=MAGMA_LAVA, width=1)
-        draw.line([(cx + 6, body_cy - 2), (cx + 4, body_cy + 6)],
-                  fill=MAGMA_LAVA, width=1)
-        draw.rectangle([cx - 16, body_cy + 8, cx + 16, body_cy + 14],
-                       fill=MAGMA_ARMOR_DARK, outline=OUTLINE)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, body_cy, 14, 14, MAGMA_ARMOR)
-        ellipse(draw, cx + 2, body_cy + 2, 10, 10, MAGMA_ARMOR_DARK, outline=None)
-        draw.line([(cx - 6, body_cy - 4), (cx - 4, body_cy + 4)],
-                  fill=MAGMA_LAVA, width=1)
-        draw.rectangle([cx - 16, body_cy + 8, cx + 12, body_cy + 14],
-                       fill=MAGMA_ARMOR_DARK, outline=OUTLINE)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, body_cy, 14, 14, MAGMA_ARMOR)
-        ellipse(draw, cx + 6, body_cy + 2, 10, 10, MAGMA_ARMOR_DARK, outline=None)
-        draw.line([(cx + 6, body_cy - 4), (cx + 4, body_cy + 4)],
-                  fill=MAGMA_LAVA, width=1)
-        draw.rectangle([cx - 12, body_cy + 8, cx + 16, body_cy + 14],
-                       fill=MAGMA_ARMOR_DARK, outline=OUTLINE)
-
-    # --- Arms with lava seams ---
-    if direction == DOWN:
-        for side in [-1, 1]:
-            ax = cx + side * 18
-            draw.rectangle([ax - 4, body_cy - 4, ax + 4, body_cy + 6],
-                           fill=MAGMA_ARMOR, outline=OUTLINE)
-            # Lava seam down arm
-            draw.line([(ax, body_cy - 3), (ax + 1, body_cy + 5)],
-                      fill=MAGMA_LAVA, width=1)
-            # Shoulder pauldron
-            ellipse(draw, ax, body_cy - 6, 6, 4, MAGMA_ARMOR_DARK)
-            ellipse(draw, ax - 1, body_cy - 8, 3, 2, MAGMA_ARMOR_LIGHT, outline=None)
-            draw.point((ax + 2, body_cy - 6), fill=MAGMA_CRACK)
-    elif direction == UP:
-        for side in [-1, 1]:
-            ax = cx + side * 18
-            draw.rectangle([ax - 4, body_cy - 4, ax + 4, body_cy + 6],
-                           fill=MAGMA_ARMOR, outline=OUTLINE)
-            draw.line([(ax, body_cy - 3), (ax, body_cy + 5)],
-                      fill=MAGMA_LAVA, width=1)
-            ellipse(draw, ax, body_cy - 6, 6, 4, MAGMA_ARMOR_DARK)
-    elif direction == LEFT:
-        ax = cx - 14
-        draw.rectangle([ax - 4, body_cy - 3, ax + 4, body_cy + 6],
-                       fill=MAGMA_ARMOR, outline=OUTLINE)
-        draw.line([(ax, body_cy - 2), (ax, body_cy + 5)],
-                  fill=MAGMA_LAVA, width=1)
-        ellipse(draw, ax, body_cy - 5, 6, 4, MAGMA_ARMOR_DARK)
-    else:  # RIGHT
-        ax = cx + 14
-        draw.rectangle([ax - 4, body_cy - 3, ax + 4, body_cy + 6],
-                       fill=MAGMA_ARMOR, outline=OUTLINE)
-        draw.line([(ax, body_cy - 2), (ax, body_cy + 5)],
-                  fill=MAGMA_LAVA, width=1)
-        ellipse(draw, ax, body_cy - 5, 6, 4, MAGMA_ARMOR_DARK)
-
-    # --- Head (dark helm with glowing visor) ---
-    if direction == DOWN:
-        ellipse(draw, cx, head_cy, 14, 12, MAGMA_ARMOR)
-        ellipse(draw, cx + 2, head_cy + 2, 10, 8, MAGMA_ARMOR_DARK, outline=None)
-        ellipse(draw, cx - 2, head_cy - 2, 8, 6, MAGMA_ARMOR_LIGHT, outline=None)
-        # Crest on helm
-        draw.rectangle([cx - 2, head_cy - 14, cx + 2, head_cy - 4],
-                       fill=MAGMA_ARMOR_LIGHT, outline=OUTLINE)
-        # Visor slit with lava glow
-        draw.rectangle([cx - 8, head_cy, cx + 8, head_cy + 3],
-                       fill=BLACK, outline=None)
-        draw.rectangle([cx - 6, head_cy + 1, cx + 6, head_cy + 2],
-                       fill=MAGMA_VISOR, outline=None)
-        # Bright visor center
-        draw.rectangle([cx - 3, head_cy + 1, cx + 3, head_cy + 2],
-                       fill=MAGMA_VISOR_BRIGHT, outline=None)
-        # Lava cracks on helm
-        draw.line([(cx - 10, head_cy - 4), (cx - 6, head_cy + 2)],
-                  fill=MAGMA_CRACK, width=1)
-        draw.line([(cx + 8, head_cy - 6), (cx + 10, head_cy)],
-                  fill=MAGMA_CRACK, width=1)
-    elif direction == UP:
-        ellipse(draw, cx, head_cy, 14, 12, MAGMA_ARMOR)
-        ellipse(draw, cx + 2, head_cy + 2, 10, 8, MAGMA_ARMOR_DARK, outline=None)
-        draw.rectangle([cx - 2, head_cy - 14, cx + 2, head_cy - 4],
-                       fill=MAGMA_ARMOR_LIGHT, outline=OUTLINE)
-        draw.line([(cx - 8, head_cy - 4), (cx - 4, head_cy + 2)],
-                  fill=MAGMA_CRACK, width=1)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, head_cy, 13, 12, MAGMA_ARMOR)
-        ellipse(draw, cx + 2, head_cy + 2, 9, 8, MAGMA_ARMOR_DARK, outline=None)
-        draw.rectangle([cx - 4, head_cy - 14, cx, head_cy - 4],
-                       fill=MAGMA_ARMOR_LIGHT, outline=OUTLINE)
-        draw.rectangle([cx - 10, head_cy, cx - 2, head_cy + 3],
-                       fill=BLACK, outline=None)
-        draw.rectangle([cx - 9, head_cy + 1, cx - 3, head_cy + 2],
-                       fill=MAGMA_VISOR, outline=None)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, head_cy, 13, 12, MAGMA_ARMOR)
-        ellipse(draw, cx + 6, head_cy + 2, 9, 8, MAGMA_ARMOR_DARK, outline=None)
-        draw.rectangle([cx, head_cy - 14, cx + 4, head_cy - 4],
-                       fill=MAGMA_ARMOR_LIGHT, outline=OUTLINE)
-        draw.rectangle([cx + 2, head_cy, cx + 10, head_cy + 3],
-                       fill=BLACK, outline=None)
-        draw.rectangle([cx + 3, head_cy + 1, cx + 9, head_cy + 2],
-                       fill=MAGMA_VISOR, outline=None)
+    r = rig(ox, oy, direction, frame, build=1.24, head=0.96)
+    d = r.d
+    sword_side = _hold_side(r)
+    glow = [0, 1, 0, 1][frame]
+    sway = [0.0, 1.0, 0.0, -1.0][frame]
+    if d:
+        rig_arms(r, draw, MAG_ROCK, MAG_DARK, layer="far")
+    rig_legs(r, draw, MAG_ROCK, MAG_DARK, width=1.1)
+    rig_torso(r, draw, MAG_ROCK)
+    cx = r.cx
+    if not r.back:
+        _cracks(draw, [[(cx - 3.0 + d * 2, r.sh_y), (cx - 1.0 + d * 2, r.sh_y + 3.0), (cx - 2.4 + d * 2, r.waist_y)],
+                       [(cx + 2.4 + d * 2, r.sh_y + 1.0), (cx + 1.0 + d * 2, r.sh_y + 4.0)]], glow)
+    else:
+        _cracks(draw, [[(cx - 2.0, r.sh_y), (cx + 1.0, r.sh_y + 3.4), (cx - 0.6, r.waist_y)]], glow)
+    rig_belt(r, draw, MAG_DARK, buckle=MAG_LAVA)
+    rig_arms(r, draw, MAG_ROCK, MAG_DARK, layer="near", hands=False)
+    for side in _sides(r):
+        sx, sy = r.shoulder(side)
+        ox2 = side * 1.2 if not d else 0.0
+        # pauldrons of jagged rock, lava dripping from them
+        cel(draw, Poly([(sx + ox2 - 5.0, sy + 1.4), (sx + ox2 - 4.4, sy - 2.6), (sx + ox2 - 1.6, sy - 4.8), (sx + ox2 + 1.8, sy - 4.2),
+                        (sx + ox2 + 4.6, sy - 2.2), (sx + ox2 + 5.0, sy + 1.4)]), MAG_ROCK, sh=(0.8, 0.8), hi=(0.5, 0.5))
+        _cracks(draw, [[(sx + ox2 - 2.0, sy - 3.4), (sx + ox2 - 0.6, sy - 1.0), (sx + ox2 - 1.6, sy + 0.8)]], glow)
+        Poly([(sx + ox2 + 2.0, sy + 1.2), (sx + ox2 + 3.2, sy + 1.2), (sx + ox2 + 2.6, sy + 3.6 + glow)]).draw(draw, fill=MAG_LAVA)
+    head_skull(r, draw, MAG_ROCK, ears=False)
+    hx, hy, rx, ry = r.hx, r.head_cy, r.head_rx, r.head_ry
+    # the helm: a cone of volcanic rock with a crater on top, erupting
+    top = hy - ry - 1.4
+    flame(draw, hx - d * 0.6, top + 2.4, 12.0, 11.0 + glow * 1.6, MAG_FIRE, sway=sway - d * 1.6)
+    helm = Poly([(hx - rx - 1.0, hy + 4.4), (hx - rx - 1.6, hy - 1.0), (hx - 5.6, top), (hx - 3.4, top + 1.0), (hx - 1.0, top - 0.2),
+                 (hx + 1.2, top + 1.0), (hx + 3.6, top - 0.2), (hx + 5.6, top), (hx + rx + 1.6, hy - 1.0), (hx + rx + 1.0, hy + 4.4)])
+    cel(draw, helm, MAG_ROCK, sh=(1.8, 1.2), hi=(0.9, 0.9))
+    # lava running down from the crater
+    for (u, ln) in ((-3.6, 5.4), (1.4, 7.4), (4.4, 4.4)) if not d else ((-d * 3.0, 5.0), (d * 1.0, 6.6)):
+        cel(draw, Limb([(hx + u, top + 0.6), (hx + u * 1.14, top + ln)], [1.1, 0.7]), MAG_LAVA, sh=None, line=False)
+    if not r.back:
+        vx = hx + d * 3.0
+        w = rx - 2.4 if not d else rx * 0.6
+        cel(draw, RRect(vx - w, hy + 0.6, vx + w, hy + 3.8, 1.4), (40, 24, 26), sh=None)
+        for s in ((-1, 1) if not d else (d,)):
+            ex = vx + s * 4.0 if not d else vx + d * 2.4
+            Ell(ex, hy + 2.2, 2.2, 1.1).draw(draw, fill=MAG_HOT if glow else MAG_LAVA)
+    # molten greatsword
+    h = hand_at(r, sword_side)
+    ang = 90 + sword_side * 28 if not d else 90 - d * 40
+    blade(draw, h[0], h[1], ang, length=15.0, width=2.0, color=MAG_LAVA, hilt=MAG_DARK, grip=(50, 34, 36),
+          guard=3.4, flip=sword_side if not d else -d)
+    tip = xform([(15.0, 0.0)], h[0], h[1], ang)[0]
+    if glow:
+        sparkle(draw, tip[0], tip[1], 2.0, MAG_HOT)
+    for side in _sides(r):
+        rig_hand(r, draw, side, MAG_DARK)
 
 
 # ===================================================================
-# FROSTBITE (ID 18) -- Hunched icy blue creature, ice spike shoulders,
-#                       frozen breath effect
+# FROSTBITE (18) -- an ice imp: icicle crown, fang grin, ice daggers
 # ===================================================================
+
+FROST_SKIN = (164, 216, 246)
+FROST_FUR = (246, 250, 255)
+
 
 def draw_frostbite(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    leg_spread = [-3, 0, 3, 0][frame]
-    breath_extend = [0, 2, 4, 2][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 18  # slightly hunched
-    head_cy = body_cy - 16
-
-    # --- Legs (digitigrade / bestial) ---
-    if direction in (DOWN, UP):
-        for side in [-1, 1]:
-            ls = leg_spread if side == -1 else -leg_spread
-            lx = cx + side * 7 + ls
-            draw.rectangle([lx - 3, body_cy + 8, lx + 3, base_y],
-                           fill=FROST_BODY, outline=OUTLINE)
-            draw.rectangle([lx - 3, body_cy + 8, lx - 1, base_y - 4],
-                           fill=FROST_BODY_LIGHT, outline=None)
-            # Clawed feet
-            draw.polygon([(lx - 4, base_y), (lx, base_y - 4), (lx + 4, base_y)],
-                         fill=FROST_CLAW, outline=OUTLINE)
-            draw.point((lx - 2, base_y - 1), fill=FROST_SPIKE_BRIGHT)
-            draw.point((lx + 2, base_y - 1), fill=FROST_SPIKE_BRIGHT)
-    elif direction == LEFT:
-        for i, offset in enumerate([leg_spread, -leg_spread]):
-            lx = cx - 3 + offset
-            draw.rectangle([lx - 3, body_cy + 8, lx + 3, base_y],
-                           fill=FROST_BODY, outline=OUTLINE)
-            draw.polygon([(lx - 4, base_y), (lx, base_y - 4), (lx + 4, base_y)],
-                         fill=FROST_CLAW, outline=OUTLINE)
-    else:  # RIGHT
-        for i, offset in enumerate([leg_spread, -leg_spread]):
-            lx = cx + 3 + offset
-            draw.rectangle([lx - 3, body_cy + 8, lx + 3, base_y],
-                           fill=FROST_BODY, outline=OUTLINE)
-            draw.polygon([(lx - 4, base_y), (lx, base_y - 4), (lx + 4, base_y)],
-                         fill=FROST_CLAW, outline=OUTLINE)
-
-    # --- Hunched body ---
-    if direction == DOWN:
-        ellipse(draw, cx, body_cy, 14, 12, FROST_BODY)
-        ellipse(draw, cx + 3, body_cy + 2, 10, 8, FROST_BODY_DARK, outline=None)
-        ellipse(draw, cx - 2, body_cy - 2, 8, 6, FROST_BODY_LIGHT, outline=None)
-        # Frost texture on body
-        draw.point((cx - 6, body_cy - 4), fill=FROST_SPIKE_BRIGHT)
-        draw.point((cx + 8, body_cy), fill=FROST_SPIKE_BRIGHT)
-        draw.point((cx - 2, body_cy + 4), fill=FROST_SPIKE_BRIGHT)
-    elif direction == UP:
-        ellipse(draw, cx, body_cy, 14, 12, FROST_BODY)
-        ellipse(draw, cx + 3, body_cy + 2, 10, 8, FROST_BODY_DARK, outline=None)
-        ellipse(draw, cx, body_cy - 2, 10, 8, _darken(FROST_BODY, 0.85), outline=None)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, body_cy, 12, 12, FROST_BODY)
-        ellipse(draw, cx + 2, body_cy + 2, 8, 8, FROST_BODY_DARK, outline=None)
-        ellipse(draw, cx - 4, body_cy - 2, 6, 6, FROST_BODY_LIGHT, outline=None)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, body_cy, 12, 12, FROST_BODY)
-        ellipse(draw, cx + 6, body_cy + 2, 8, 8, FROST_BODY_DARK, outline=None)
-        ellipse(draw, cx, body_cy - 2, 6, 6, FROST_BODY_LIGHT, outline=None)
-
-    # --- Arms with ice spikes ---
-    if direction == DOWN:
-        for side in [-1, 1]:
-            ax = cx + side * 14
-            draw.rectangle([ax - 3, body_cy - 2, ax + 3, body_cy + 6],
-                           fill=FROST_BODY, outline=OUTLINE)
-            # Claw hand
-            draw.polygon([(ax - 3, body_cy + 6), (ax, body_cy + 10),
-                          (ax + 3, body_cy + 6)],
-                         fill=FROST_CLAW, outline=OUTLINE)
-            # Ice spike shoulder
-            draw.polygon([(ax - 3, body_cy - 4), (ax + side * 2, body_cy - 14),
-                          (ax + 3, body_cy - 4)],
-                         fill=FROST_SPIKE, outline=OUTLINE)
-            draw.polygon([(ax - 1, body_cy - 4), (ax + side * 1, body_cy - 12),
-                          (ax + 1, body_cy - 4)],
-                         fill=FROST_SPIKE_BRIGHT, outline=None)
-            # Secondary smaller spike
-            draw.polygon([(ax + side * 3, body_cy - 2),
-                          (ax + side * 6, body_cy - 10),
-                          (ax + side * 5, body_cy - 2)],
-                         fill=FROST_SPIKE_DARK, outline=OUTLINE)
-    elif direction == UP:
-        for side in [-1, 1]:
-            ax = cx + side * 14
-            draw.rectangle([ax - 3, body_cy - 2, ax + 3, body_cy + 6],
-                           fill=FROST_BODY, outline=OUTLINE)
-            draw.polygon([(ax - 3, body_cy - 4), (ax + side * 2, body_cy - 14),
-                          (ax + 3, body_cy - 4)],
-                         fill=FROST_SPIKE, outline=OUTLINE)
-    elif direction == LEFT:
-        ax = cx - 12
-        draw.rectangle([ax - 3, body_cy - 1, ax + 3, body_cy + 6],
-                       fill=FROST_BODY, outline=OUTLINE)
-        draw.polygon([(ax - 3, body_cy + 6), (ax, body_cy + 10),
-                      (ax + 3, body_cy + 6)],
-                     fill=FROST_CLAW, outline=OUTLINE)
-        draw.polygon([(ax - 3, body_cy - 3), (ax - 4, body_cy - 13),
-                      (ax + 3, body_cy - 3)],
-                     fill=FROST_SPIKE, outline=OUTLINE)
-        draw.polygon([(ax - 5, body_cy - 1), (ax - 8, body_cy - 9),
-                      (ax - 3, body_cy - 1)],
-                     fill=FROST_SPIKE_DARK, outline=OUTLINE)
-    else:  # RIGHT
-        ax = cx + 12
-        draw.rectangle([ax - 3, body_cy - 1, ax + 3, body_cy + 6],
-                       fill=FROST_BODY, outline=OUTLINE)
-        draw.polygon([(ax - 3, body_cy + 6), (ax, body_cy + 10),
-                      (ax + 3, body_cy + 6)],
-                     fill=FROST_CLAW, outline=OUTLINE)
-        draw.polygon([(ax - 3, body_cy - 3), (ax + 4, body_cy - 13),
-                      (ax + 3, body_cy - 3)],
-                     fill=FROST_SPIKE, outline=OUTLINE)
-        draw.polygon([(ax + 3, body_cy - 1), (ax + 8, body_cy - 9),
-                      (ax + 5, body_cy - 1)],
-                     fill=FROST_SPIKE_DARK, outline=OUTLINE)
-
-    # --- Head (bestial, icy) ---
-    if direction == DOWN:
-        ellipse(draw, cx, head_cy, 10, 9, FROST_BODY)
-        ellipse(draw, cx + 2, head_cy + 2, 7, 5, FROST_BODY_DARK, outline=None)
-        ellipse(draw, cx - 2, head_cy - 2, 6, 4, FROST_BODY_LIGHT, outline=None)
-        # Glowing eyes
-        draw.rectangle([cx - 5, head_cy, cx - 2, head_cy + 3], fill=FROST_EYE)
-        draw.rectangle([cx + 2, head_cy, cx + 5, head_cy + 3], fill=FROST_EYE)
-        draw.point((cx - 4, head_cy + 1), fill=FROST_SPIKE_BRIGHT)
-        draw.point((cx + 3, head_cy + 1), fill=FROST_SPIKE_BRIGHT)
-        # Jagged mouth
-        draw.line([(cx - 4, head_cy + 5), (cx + 4, head_cy + 5)],
-                  fill=FROST_BODY_DARK, width=1)
-        draw.point((cx - 2, head_cy + 6), fill=FROST_SPIKE_BRIGHT)
-        draw.point((cx + 2, head_cy + 6), fill=FROST_SPIKE_BRIGHT)
-        # Frozen breath effect
-        for i in range(breath_extend):
-            bx = cx + (i * 2) - breath_extend
-            by = head_cy + 8 + i
-            draw.point((bx, by), fill=FROST_SPIKE_BRIGHT)
-            draw.point((bx + 1, by), fill=CRYO_SNOW)
-    elif direction == UP:
-        ellipse(draw, cx, head_cy, 10, 9, FROST_BODY)
-        ellipse(draw, cx + 2, head_cy + 2, 7, 5, FROST_BODY_DARK, outline=None)
-        ellipse(draw, cx, head_cy - 2, 7, 5, _darken(FROST_BODY, 0.8), outline=None)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, head_cy, 9, 9, FROST_BODY)
-        ellipse(draw, cx + 1, head_cy + 2, 6, 5, FROST_BODY_DARK, outline=None)
-        draw.rectangle([cx - 7, head_cy, cx - 3, head_cy + 3], fill=FROST_EYE)
-        draw.line([(cx - 8, head_cy + 5), (cx - 2, head_cy + 5)],
-                  fill=FROST_BODY_DARK, width=1)
-        # Breath sideways
-        for i in range(breath_extend):
-            bx = cx - 10 - i * 2
-            by = head_cy + 4 + i
-            draw.point((bx, by), fill=FROST_SPIKE_BRIGHT)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, head_cy, 9, 9, FROST_BODY)
-        ellipse(draw, cx + 5, head_cy + 2, 6, 5, FROST_BODY_DARK, outline=None)
-        draw.rectangle([cx + 3, head_cy, cx + 7, head_cy + 3], fill=FROST_EYE)
-        draw.line([(cx + 2, head_cy + 5), (cx + 8, head_cy + 5)],
-                  fill=FROST_BODY_DARK, width=1)
-        for i in range(breath_extend):
-            bx = cx + 10 + i * 2
-            by = head_cy + 4 + i
-            draw.point((bx, by), fill=FROST_SPIKE_BRIGHT)
-
-    # --- Ice spike crown on head ---
-    for dx in [-6, -2, 2, 6]:
-        ix = cx + dx if direction in (DOWN, UP) else cx + dx + (-2 if direction == LEFT else 2)
-        iy = head_cy - 6
-        draw.polygon([(ix - 1, iy), (ix, iy - 5), (ix + 1, iy)],
-                     fill=FROST_SPIKE, outline=None)
+    r = rig(ox, oy, direction, frame, build=0.9, head=1.0)
+    d = r.d
+    if d:
+        rig_arms(r, draw, FROST_SKIN, FROST_SKIN, layer="far", hands=False)
+    rig_legs(r, draw, FROST_SKIN, shade(FROST_SKIN, 1.4), bare=True)
+    rig_torso(r, draw, FROST_SKIN)
+    # fur wrap round the middle, a fur collar
+    cx = r.cx
+    cel(draw, Poly([(cx - r.hip_w - 0.8, r.waist_y - 0.4), (cx + r.hip_w + 0.8, r.waist_y - 0.4),
+                    (cx + r.hip_w + 1.6, r.hip_y + 2.6), (cx + 2.0, r.hip_y + 1.6), (cx - 1.0, r.hip_y + 3.2),
+                    (cx - r.hip_w - 1.6, r.hip_y + 2.4)]) if not d else
+        Poly([(cx - 4.8, r.waist_y - 0.4), (cx + 5.0, r.waist_y - 0.4), (cx + 5.6, r.hip_y + 2.6), (cx - 5.6, r.hip_y + 2.8)]),
+        FROST_FUR, sh=(0.8, 0.8), tone=(200, 216, 240))
+    blob(draw, [Ell(cx - 4.4, r.sh_y - 1.6, 3.4, 2.2), Ell(cx, r.sh_y - 1.0, 4.0, 2.4), Ell(cx + 4.4, r.sh_y - 1.6, 3.4, 2.2)]
+         if not d else [Ell(cx, r.sh_y - 1.4, 4.6, 2.4)], FROST_FUR, sh=(0.6, 0.8), tone=(200, 216, 240))
+    rig_arms(r, draw, FROST_SKIN, FROST_SKIN, layer="near", hands=False)
+    head_skull(r, draw, FROST_SKIN, ears=False)
+    hx, hy, rx, ry = r.hx, r.head_cy, r.head_rx, r.head_ry
+    # long pointed ears
+    for s in ((-1, 1) if not d else (-d,)):
+        ex = hx + s * (rx - 0.8) if not d else hx - d * 3.4
+        tip = (ex + s * 5.0, hy - 3.0) if not d else (ex - d * 4.6, hy - 3.4)
+        cel(draw, Poly([(ex, hy - 0.4), tip, (ex + (s * 0.8 if not d else 0), hy + 3.8)]), FROST_SKIN, sh=(0.3, 0.4))
+    if not r.back:
+        head_face(r, draw, FROST_SKIN, iris=(40, 170, 220), mood="sharp", mouth="fangs", blush=False)
+    # a crown of icicles standing up off the scalp
+    spikes = ((-6.6, -122, 6.0), (-3.4, -104, 8.4), (0.0, -90, 9.6), (3.4, -76, 8.4), (6.6, -58, 6.0)) if not d else \
+        ((-d * 5.2, -90 - d * 40, 7.0), (-d * 2.0, -90 - d * 22, 9.0), (d * 1.6, -90 - d * 6, 8.0))
+    for (u, a, ln) in spikes:
+        crystal(draw, hx + u, hy - ry + 3.6, a, ln, 3.4, color=(210, 240, 255))
+    for side in _sides(r):
+        h = rig_hand(r, draw, side, FROST_SKIN)
+        if not r.back:
+            ang = 90 + (side * 30 if not d else -d * 40)
+            crystal(draw, h[0], h[1] + 0.6, ang, 7.4, 2.4, color=(214, 242, 255))
 
 
 # ===================================================================
-# SANDSTORM (ID 19) -- Desert robes, sand particle swirl around
-#                       lower body, turban headwrap
+# SANDSTORM (19) -- turban and veil, desert robes, a scimitar
 # ===================================================================
+
+SAND = (224, 198, 142)
+SAND_RED = (196, 60, 52)
+
 
 def draw_sandstorm(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    robe_sway = [-2, 0, 2, 0][frame]
-    sand_phase = frame * (math.pi / 2)
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 18
-
-    # --- Robe body ---
-    if direction == DOWN:
-        draw.polygon([
-            (cx - 14, body_cy - 10),
-            (cx + 14, body_cy - 10),
-            (cx + 18 + robe_sway, base_y + 2),
-            (cx - 18 + robe_sway, base_y + 2),
-        ], fill=SAND_ROBE, outline=OUTLINE)
-        draw.line([(cx - 4, body_cy - 6), (cx - 6 + robe_sway, base_y)],
-                  fill=SAND_ROBE_DARK, width=1)
-        draw.line([(cx + 4, body_cy - 6), (cx + 6 + robe_sway, base_y)],
-                  fill=SAND_ROBE_DARK, width=1)
-        draw.line([(cx - 10, body_cy - 4), (cx - 14 + robe_sway, base_y)],
-                  fill=SAND_ROBE_LIGHT, width=1)
-        # Belt / sash
-        draw.rectangle([cx - 14, body_cy + 6, cx + 14, body_cy + 12],
-                       fill=SAND_ROBE_DARK, outline=OUTLINE)
-        # Sash tail hanging
-        draw.polygon([(cx + 8, body_cy + 12), (cx + 6, body_cy + 18),
-                      (cx + 10, body_cy + 18), (cx + 12, body_cy + 12)],
-                     fill=SAND_ROBE_DARK, outline=OUTLINE)
-    elif direction == UP:
-        draw.polygon([
-            (cx - 14, body_cy - 10),
-            (cx + 14, body_cy - 10),
-            (cx + 18 + robe_sway, base_y + 2),
-            (cx - 18 + robe_sway, base_y + 2),
-        ], fill=SAND_ROBE, outline=OUTLINE)
-        draw.line([(cx, body_cy - 6), (cx + robe_sway, base_y)],
-                  fill=SAND_ROBE_DARK, width=1)
-        draw.rectangle([cx - 14, body_cy + 6, cx + 14, body_cy + 12],
-                       fill=SAND_ROBE_DARK, outline=OUTLINE)
-    elif direction == LEFT:
-        draw.polygon([
-            (cx - 10, body_cy - 10),
-            (cx + 8, body_cy - 10),
-            (cx + 12 + robe_sway, base_y + 2),
-            (cx - 14 + robe_sway, base_y + 2),
-        ], fill=SAND_ROBE, outline=OUTLINE)
-        draw.line([(cx - 2, body_cy - 6), (cx - 4 + robe_sway, base_y)],
-                  fill=SAND_ROBE_DARK, width=1)
-        draw.rectangle([cx - 10, body_cy + 6, cx + 8, body_cy + 12],
-                       fill=SAND_ROBE_DARK, outline=OUTLINE)
-    else:  # RIGHT
-        draw.polygon([
-            (cx - 8, body_cy - 10),
-            (cx + 10, body_cy - 10),
-            (cx + 14 + robe_sway, base_y + 2),
-            (cx - 12 + robe_sway, base_y + 2),
-        ], fill=SAND_ROBE, outline=OUTLINE)
-        draw.line([(cx + 2, body_cy - 6), (cx + 4 + robe_sway, base_y)],
-                  fill=SAND_ROBE_DARK, width=1)
-        draw.rectangle([cx - 8, body_cy + 6, cx + 10, body_cy + 12],
-                       fill=SAND_ROBE_DARK, outline=OUTLINE)
-
-    # --- Arms ---
-    if direction == DOWN:
-        for side in [-1, 1]:
-            ax = cx + side * 16
-            draw.rectangle([ax - 3, body_cy - 4, ax + 3, body_cy + 4],
-                           fill=SAND_ROBE, outline=OUTLINE)
-            draw.rectangle([ax - 3, body_cy + 2, ax + 3, body_cy + 6],
-                           fill=SAND_SKIN, outline=OUTLINE)
-    elif direction == UP:
-        for side in [-1, 1]:
-            ax = cx + side * 16
-            draw.rectangle([ax - 3, body_cy - 4, ax + 3, body_cy + 4],
-                           fill=SAND_ROBE, outline=OUTLINE)
-    elif direction == LEFT:
-        ax = cx - 12
-        draw.rectangle([ax - 3, body_cy - 3, ax + 3, body_cy + 5],
-                       fill=SAND_ROBE, outline=OUTLINE)
-        draw.rectangle([ax - 3, body_cy + 2, ax + 3, body_cy + 6],
-                       fill=SAND_SKIN, outline=OUTLINE)
-    else:  # RIGHT
-        ax = cx + 12
-        draw.rectangle([ax - 3, body_cy - 3, ax + 3, body_cy + 5],
-                       fill=SAND_ROBE, outline=OUTLINE)
-        draw.rectangle([ax - 3, body_cy + 2, ax + 3, body_cy + 6],
-                       fill=SAND_SKIN, outline=OUTLINE)
-
-    # --- Head with turban ---
-    if direction == DOWN:
-        # Turban (layered wraps)
-        ellipse(draw, cx, head_cy - 4, 14, 10, SAND_TURBAN)
-        ellipse(draw, cx + 2, head_cy - 2, 10, 7, SAND_TURBAN_DARK, outline=None)
-        ellipse(draw, cx - 2, head_cy - 6, 8, 5, _brighten(SAND_TURBAN, 1.1), outline=None)
-        # Turban wrap lines
-        draw.line([(cx - 10, head_cy - 2), (cx + 10, head_cy - 4)],
-                  fill=SAND_TURBAN_DARK, width=1)
-        draw.line([(cx - 8, head_cy - 6), (cx + 8, head_cy - 8)],
-                  fill=SAND_TURBAN_DARK, width=1)
-        # Gem on front
-        draw.rectangle([cx - 2, head_cy - 5, cx + 2, head_cy - 2],
-                       fill=SAND_EYE, outline=OUTLINE)
-        # Face
-        ellipse(draw, cx, head_cy + 4, 8, 6, SAND_SKIN)
-        ellipse(draw, cx + 1, head_cy + 6, 5, 4, SAND_SKIN_DARK, outline=None)
-        # Eyes
-        draw.rectangle([cx - 5, head_cy + 2, cx - 2, head_cy + 5], fill=SAND_EYE)
-        draw.rectangle([cx + 2, head_cy + 2, cx + 5, head_cy + 5], fill=SAND_EYE)
-        # Face covering (lower)
-        draw.rectangle([cx - 6, head_cy + 6, cx + 6, head_cy + 10],
-                       fill=SAND_ROBE, outline=None)
-    elif direction == UP:
-        ellipse(draw, cx, head_cy - 4, 14, 10, SAND_TURBAN)
-        ellipse(draw, cx + 2, head_cy - 2, 10, 7, SAND_TURBAN_DARK, outline=None)
-        draw.line([(cx - 10, head_cy - 2), (cx + 10, head_cy - 4)],
-                  fill=SAND_TURBAN_DARK, width=1)
-        # Turban tail hanging down back
-        draw.polygon([(cx + 4, head_cy + 2), (cx + 6, head_cy + 10 + robe_sway),
-                      (cx + 10, head_cy + 2)],
-                     fill=SAND_TURBAN, outline=OUTLINE)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, head_cy - 4, 13, 10, SAND_TURBAN)
-        ellipse(draw, cx + 1, head_cy - 2, 9, 7, SAND_TURBAN_DARK, outline=None)
-        draw.line([(cx - 10, head_cy - 4), (cx + 6, head_cy - 6)],
-                  fill=SAND_TURBAN_DARK, width=1)
-        ellipse(draw, cx - 4, head_cy + 4, 6, 5, SAND_SKIN)
-        draw.rectangle([cx - 8, head_cy + 2, cx - 5, head_cy + 5], fill=SAND_EYE)
-        draw.rectangle([cx - 7, head_cy + 6, cx - 1, head_cy + 9],
-                       fill=SAND_ROBE, outline=None)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, head_cy - 4, 13, 10, SAND_TURBAN)
-        ellipse(draw, cx + 5, head_cy - 2, 9, 7, SAND_TURBAN_DARK, outline=None)
-        draw.line([(cx - 6, head_cy - 4), (cx + 10, head_cy - 6)],
-                  fill=SAND_TURBAN_DARK, width=1)
-        ellipse(draw, cx + 4, head_cy + 4, 6, 5, SAND_SKIN)
-        draw.rectangle([cx + 5, head_cy + 2, cx + 8, head_cy + 5], fill=SAND_EYE)
-        draw.rectangle([cx + 1, head_cy + 6, cx + 7, head_cy + 9],
-                       fill=SAND_ROBE, outline=None)
-
-    # --- Sand particle swirl around lower body ---
-    sand_radius_outer = 22
-    sand_radius_inner = 14
-    for i in range(8):
-        angle = sand_phase + i * (math.pi / 4)
-        r = sand_radius_outer if i % 2 == 0 else sand_radius_inner
-        sx = int(cx + math.cos(angle) * r)
-        sy = int(base_y - 6 + math.sin(angle) * (r * 0.35))
-        draw.point((sx, sy), fill=SAND_ROBE_LIGHT)
-        draw.point((sx + 1, sy), fill=SAND_ROBE_LIGHT)
-    # Additional scattered sand dots
-    for i in range(5):
-        angle = sand_phase + i * (2 * math.pi / 5) + math.pi / 3
-        sx = int(cx + math.cos(angle) * 18)
-        sy = int(base_y - 4 + math.sin(angle) * 6)
-        draw.point((sx, sy), fill=SAND_TURBAN)
-
-
-# ---------------------------------------------------------------------------
-# Palettes (continued)
-# ---------------------------------------------------------------------------
-
-# Thornweaver palette
-THORN_ROBE = (50, 100, 50)
-THORN_ROBE_DARK = (35, 70, 35)
-THORN_ROBE_LIGHT = (70, 130, 70)
-THORN_SKIN = (200, 195, 170)
-THORN_SKIN_DARK = (170, 165, 140)
-THORN_VINE = (60, 110, 40)
-THORN_VINE_DARK = (40, 80, 25)
-THORN_THORN = (100, 70, 30)
-THORN_STAFF = (110, 80, 40)
-THORN_STAFF_DARK = (80, 55, 25)
-THORN_LEAF = (80, 160, 50)
-THORN_LEAF_DARK = (60, 120, 35)
-
-# Cloudrunner palette
-CLOUD_ROBE = (210, 225, 240)
-CLOUD_ROBE_DARK = (175, 195, 215)
-CLOUD_ROBE_LIGHT = (235, 245, 255)
-CLOUD_SKIN = (225, 215, 205)
-CLOUD_SKIN_DARK = (195, 185, 175)
-CLOUD_PUFF = (240, 245, 255)
-CLOUD_PUFF_DARK = (200, 210, 225)
-CLOUD_EYE = (140, 190, 240)
-
-# Inferno palette
-INFERNO_BODY = (200, 60, 20)
-INFERNO_BODY_DARK = (150, 40, 10)
-INFERNO_BODY_LIGHT = (240, 100, 40)
-INFERNO_CORE = (255, 200, 60)
-INFERNO_CORE_BRIGHT = (255, 240, 140)
-INFERNO_FLAME = (255, 140, 30)
-INFERNO_FLAME_TIP = (255, 220, 80)
-INFERNO_SPARK = (255, 180, 60)
-INFERNO_EYE = (255, 255, 180)
-
-# Glacier palette
-GLACIER_BODY = (100, 150, 200)
-GLACIER_BODY_DARK = (70, 110, 165)
-GLACIER_BODY_LIGHT = (140, 190, 230)
-GLACIER_PLATE = (130, 180, 230)
-GLACIER_PLATE_DARK = (90, 140, 190)
-GLACIER_PLATE_LIGHT = (170, 210, 245)
-GLACIER_FROST = (200, 235, 255)
-GLACIER_EYE = (180, 230, 255)
-
-# Mudslinger palette
-MUD_BODY = (120, 90, 60)
-MUD_BODY_DARK = (85, 60, 38)
-MUD_BODY_LIGHT = (155, 120, 85)
-MUD_SPLASH = (100, 75, 45)
-MUD_SPLASH_LIGHT = (140, 110, 70)
-MUD_DRIP = (90, 65, 40)
-MUD_EYE = (180, 160, 80)
-MUD_CLOTH = (110, 80, 50)
-
-# Ember palette
-EMBER_BODY = (255, 160, 40)
-EMBER_BODY_DARK = (220, 120, 20)
-EMBER_BODY_LIGHT = (255, 200, 80)
-EMBER_CORE = (255, 240, 120)
-EMBER_SPARK = (255, 220, 100)
-EMBER_SPARK_BRIGHT = (255, 255, 180)
-EMBER_EYE = (255, 255, 200)
-
-# Avalanche palette
-AVAL_ARMOR = (160, 170, 180)
-AVAL_ARMOR_DARK = (120, 130, 140)
-AVAL_ARMOR_LIGHT = (195, 205, 215)
-AVAL_ICE = (170, 210, 240)
-AVAL_ICE_DARK = (130, 175, 210)
-AVAL_ICE_BRIGHT = (210, 235, 255)
-AVAL_FROST = (200, 230, 250)
-AVAL_EYE = (160, 220, 255)
-AVAL_SKIN = (200, 210, 220)
+    r = rig(ox, oy, direction, frame)
+    d = r.d
+    sw_side = _hold_side(r)
+    if d:
+        rig_arms(r, draw, SAND, SKIN_TAN, layer="far")
+    rig_legs(r, draw, shade(SAND, 0.8), (150, 104, 62))
+    rig_robe(r, draw, SAND, trim=SAND_RED, flare=3.0, split=True)
+    rig_belt(r, draw, SAND_RED, buckle=GOLD)
+    if not d and not r.back:
+        cel(draw, Poly([(r.cx - 5.0, r.waist_y + 2.6), (r.cx - 7.6, r.waist_y + 7.0), (r.cx - 5.6, r.waist_y + 7.4),
+                        (r.cx - 3.6, r.waist_y + 3.2)]), SAND_RED, sh=(0.3, 0.3))
+    rig_arms(r, draw, SAND, SKIN_TAN, layer="near", hands=False)
+    head_skull(r, draw, SKIN_TAN, ears=False)
+    hx, hy, rx, ry = r.hx, r.head_cy, r.head_rx, r.head_ry
+    if not r.back:
+        head_face(r, draw, SKIN_TAN, iris=(150, 104, 40), mood="sharp", mouth=None, blush=False, brows=True,
+                  brow_color=(90, 60, 40))
+        # veil over the lower face
+        if d:
+            veil = Poly([(hx - d * 3.6, hy + 4.4), (hx + d * (rx + 0.6), hy + 4.0), (hx + d * (rx - 1.0), hy + 9.6),
+                         (hx + d * 3.0, hy + 12.4), (hx - d * 4.4, hy + 10.0)])
+        else:
+            veil = Poly([(hx - rx + 0.4, hy + 4.4), (hx + rx - 0.4, hy + 4.4), (hx + rx - 2.0, hy + 9.6),
+                         (hx, hy + 13.0), (hx - rx + 2.0, hy + 9.6)])
+        cel(draw, veil, SAND_RED, sh=(0.8, 0.8))
+    # turban: wound bands over the crown, a red gem on the front
+    dome = arc_pts(hx - d * 0.5, hy - 1.2, rx + 1.8, ry + 1.8, 180, 360, 30)
+    cel(draw, Poly(dome + [(hx + rx + 1.8, hy + 1.0 - (0 if not r.back else -3)), (hx - rx - 1.8, hy + 1.0 - (0 if not r.back else -3))]),
+        SAND, sh=(1.5, 1.1), hi=(0.8, 0.8))
+    for k in (-3.2, 1.0):
+        stroke(draw, [(hx - rx * 0.9, hy + k - 0.4), (hx, hy + k - 3.4), (hx + rx * 0.9, hy + k - 5.0)], 0.6,
+               shade(SAND, 1.2))
+    if not r.back:
+        gx = hx + d * 3.6
+        cel(draw, Ell(gx, hy - 5.4, 2.0, 2.2), GOLD, sh=None)
+        from sprite_base import gem
+        gem(draw, gx, hy - 5.4, 1.3, SAND_RED)
+    else:
+        cel(draw, Limb([(hx + 3.0, hy + 0.6), (hx + 5.4, hy + 8.0 + [0, 1, 0, -1][frame])], [1.8, 0.8]), SAND, sh=None)
+    # a scimitar
+    h = hand_at(r, sw_side)
+    ang = 90 + sw_side * 34 if not d else 90 - d * 44
+    blade(draw, h[0], h[1], ang, length=12.0, width=1.8, curve=-0.9, hilt=GOLD, grip=SAND_RED, guard=2.4,
+          flip=sw_side if not d else -d)
+    for side in _sides(r):
+        rig_hand(r, draw, side, SKIN_TAN)
+    # grit blowing past
+    for i, (u, v) in enumerate(((-13, -6), (12, 2), (-10, 8))):
+        k = (frame + i) % 4
+        Ell(r.cx + u + k * 1.4, r.sh_y + v - k * 0.4, 0.8, 0.8).draw(draw, fill=lit(SAND, 0.8))
 
 
 # ===================================================================
-# THORNWEAVER (ID 20) -- Green robes, vine/thorn patterns, wooden
-#                         staff, leaf particles
+# THORNWEAVER (20) -- flower crown, leaf-hemmed dress, a blooming staff
 # ===================================================================
+
+THORN_DRESS = (86, 168, 86)
+THORN_HAIR = (164, 96, 62)
+THORN_PINK = (255, 136, 182)
+THORN_WOOD = (132, 88, 56)
+
 
 def draw_thornweaver(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    robe_sway = [-2, 0, 2, 0][frame]
-    vine_grow = [0, 1, 2, 1][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 18
-
-    # --- Wooden staff (behind body for DOWN/UP) ---
-    if direction == DOWN:
-        staff_x = cx + 14
-        draw.line([(staff_x, head_cy - 10), (staff_x, base_y + 2)],
-                  fill=THORN_STAFF, width=2)
-        draw.line([(staff_x + 1, head_cy - 10), (staff_x + 1, base_y + 2)],
-                  fill=THORN_STAFF_DARK, width=1)
-        # Leaf cluster at top
-        ellipse(draw, staff_x, head_cy - 14, 5, 4, THORN_LEAF)
-        ellipse(draw, staff_x - 1, head_cy - 15, 3, 2, THORN_LEAF_DARK, outline=None)
-        # Vine wrapping staff
-        for vy in range(head_cy - 6, base_y - 4, 6):
-            draw.point((staff_x - 1, vy), fill=THORN_VINE)
-            draw.point((staff_x + 1, vy + 2), fill=THORN_VINE)
-    elif direction == UP:
-        staff_x = cx - 14
-        draw.line([(staff_x, head_cy - 10), (staff_x, base_y + 2)],
-                  fill=THORN_STAFF, width=2)
-        ellipse(draw, staff_x, head_cy - 14, 5, 4, THORN_LEAF)
-    elif direction == LEFT:
-        staff_x = cx + 10
-        draw.line([(staff_x, head_cy - 10), (staff_x, base_y + 2)],
-                  fill=THORN_STAFF, width=2)
-        ellipse(draw, staff_x, head_cy - 14, 5, 4, THORN_LEAF)
-        draw.point((staff_x, head_cy - 15), fill=THORN_LEAF_DARK)
-    else:  # RIGHT
-        staff_x = cx - 10
-        draw.line([(staff_x, head_cy - 10), (staff_x, base_y + 2)],
-                  fill=THORN_STAFF, width=2)
-        ellipse(draw, staff_x, head_cy - 14, 5, 4, THORN_LEAF)
-        draw.point((staff_x, head_cy - 15), fill=THORN_LEAF_DARK)
-
-    # --- Robe body ---
-    if direction == DOWN:
-        draw.polygon([
-            (cx - 14, body_cy - 10),
-            (cx + 14, body_cy - 10),
-            (cx + 18 + robe_sway, base_y + 2),
-            (cx - 18 + robe_sway, base_y + 2),
-        ], fill=THORN_ROBE, outline=OUTLINE)
-        draw.line([(cx - 4, body_cy - 6), (cx - 6 + robe_sway, base_y)],
-                  fill=THORN_ROBE_DARK, width=1)
-        draw.line([(cx + 4, body_cy - 6), (cx + 6 + robe_sway, base_y)],
-                  fill=THORN_ROBE_DARK, width=1)
-        draw.line([(cx - 10, body_cy - 4), (cx - 14 + robe_sway, base_y)],
-                  fill=THORN_ROBE_LIGHT, width=1)
-        # Vine pattern on robe
-        draw.line([(cx - 6, body_cy), (cx - 8, body_cy + 6),
-                   (cx - 4, body_cy + 10)],
-                  fill=THORN_VINE, width=1)
-        draw.line([(cx + 4, body_cy + 2), (cx + 6, body_cy + 8)],
-                  fill=THORN_VINE, width=1)
-        # Thorns on vine pattern
-        draw.point((cx - 7, body_cy + 2), fill=THORN_THORN)
-        draw.point((cx - 5, body_cy + 8), fill=THORN_THORN)
-        draw.point((cx + 5, body_cy + 4), fill=THORN_THORN)
-    elif direction == UP:
-        draw.polygon([
-            (cx - 14, body_cy - 10),
-            (cx + 14, body_cy - 10),
-            (cx + 18 + robe_sway, base_y + 2),
-            (cx - 18 + robe_sway, base_y + 2),
-        ], fill=THORN_ROBE, outline=OUTLINE)
-        draw.line([(cx, body_cy - 6), (cx + robe_sway, base_y)],
-                  fill=THORN_ROBE_DARK, width=1)
-        draw.line([(cx - 6, body_cy), (cx - 8, body_cy + 8)],
-                  fill=THORN_VINE, width=1)
-        draw.line([(cx + 6, body_cy + 2), (cx + 4, body_cy + 10)],
-                  fill=THORN_VINE, width=1)
-    elif direction == LEFT:
-        draw.polygon([
-            (cx - 10, body_cy - 10),
-            (cx + 8, body_cy - 10),
-            (cx + 12 + robe_sway, base_y + 2),
-            (cx - 14 + robe_sway, base_y + 2),
-        ], fill=THORN_ROBE, outline=OUTLINE)
-        draw.line([(cx - 2, body_cy - 6), (cx - 4 + robe_sway, base_y)],
-                  fill=THORN_ROBE_DARK, width=1)
-        draw.line([(cx - 4, body_cy), (cx - 6, body_cy + 6)],
-                  fill=THORN_VINE, width=1)
-        draw.point((cx - 5, body_cy + 2), fill=THORN_THORN)
-    else:  # RIGHT
-        draw.polygon([
-            (cx - 8, body_cy - 10),
-            (cx + 10, body_cy - 10),
-            (cx + 14 + robe_sway, base_y + 2),
-            (cx - 12 + robe_sway, base_y + 2),
-        ], fill=THORN_ROBE, outline=OUTLINE)
-        draw.line([(cx + 2, body_cy - 6), (cx + 4 + robe_sway, base_y)],
-                  fill=THORN_ROBE_DARK, width=1)
-        draw.line([(cx + 4, body_cy), (cx + 6, body_cy + 6)],
-                  fill=THORN_VINE, width=1)
-        draw.point((cx + 5, body_cy + 2), fill=THORN_THORN)
-
-    # --- Arms ---
-    if direction == DOWN:
-        for side in [-1, 1]:
-            ax = cx + side * 16
-            draw.rectangle([ax - 3, body_cy - 4, ax + 3, body_cy + 4],
-                           fill=THORN_ROBE, outline=OUTLINE)
-            draw.rectangle([ax - 3, body_cy + 2, ax + 3, body_cy + 6],
-                           fill=THORN_SKIN, outline=OUTLINE)
-            # Vine wrapping arm
-            draw.line([(ax - 2, body_cy - 2), (ax + 2, body_cy + 2)],
-                      fill=THORN_VINE, width=1)
-    elif direction == UP:
-        for side in [-1, 1]:
-            ax = cx + side * 16
-            draw.rectangle([ax - 3, body_cy - 4, ax + 3, body_cy + 4],
-                           fill=THORN_ROBE, outline=OUTLINE)
-    elif direction == LEFT:
-        ax = cx - 12
-        draw.rectangle([ax - 3, body_cy - 3, ax + 3, body_cy + 5],
-                       fill=THORN_ROBE, outline=OUTLINE)
-        draw.rectangle([ax - 3, body_cy + 2, ax + 3, body_cy + 6],
-                       fill=THORN_SKIN, outline=OUTLINE)
-    else:  # RIGHT
-        ax = cx + 12
-        draw.rectangle([ax - 3, body_cy - 3, ax + 3, body_cy + 5],
-                       fill=THORN_ROBE, outline=OUTLINE)
-        draw.rectangle([ax - 3, body_cy + 2, ax + 3, body_cy + 6],
-                       fill=THORN_SKIN, outline=OUTLINE)
-
-    # --- Head with leaf crown ---
-    if direction == DOWN:
-        ellipse(draw, cx, head_cy, 12, 10, THORN_ROBE)
-        ellipse(draw, cx, head_cy - 2, 10, 8, THORN_ROBE_LIGHT, outline=None)
-        ellipse(draw, cx, head_cy + 2, 8, 6, THORN_SKIN)
-        ellipse(draw, cx + 2, head_cy + 4, 5, 4, THORN_SKIN_DARK, outline=None)
-        draw.rectangle([cx - 5, head_cy + 1, cx - 2, head_cy + 4], fill=(60, 120, 40))
-        draw.rectangle([cx + 2, head_cy + 1, cx + 5, head_cy + 4], fill=(60, 120, 40))
-        draw.point((cx, head_cy + 6), fill=THORN_SKIN_DARK)
-    elif direction == UP:
-        ellipse(draw, cx, head_cy, 12, 10, THORN_ROBE)
-        ellipse(draw, cx, head_cy, 9, 7, THORN_ROBE_DARK, outline=None)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, head_cy, 11, 10, THORN_ROBE)
-        ellipse(draw, cx - 4, head_cy + 2, 6, 5, THORN_SKIN)
-        draw.rectangle([cx - 8, head_cy + 1, cx - 5, head_cy + 4], fill=(60, 120, 40))
-    else:  # RIGHT
-        ellipse(draw, cx + 2, head_cy, 11, 10, THORN_ROBE)
-        ellipse(draw, cx + 4, head_cy + 2, 6, 5, THORN_SKIN)
-        draw.rectangle([cx + 5, head_cy + 1, cx + 8, head_cy + 4], fill=(60, 120, 40))
-
-    # Leaf crown
-    for dx in [-8, -4, 0, 4, 8]:
-        lx = cx + dx if direction in (DOWN, UP) else cx + dx + (-2 if direction == LEFT else 2)
-        ly = head_cy - 8
-        draw.polygon([(lx - 2, ly + 2), (lx, ly - 4 - vine_grow), (lx + 2, ly + 2)],
-                     fill=THORN_LEAF, outline=None)
-        draw.point((lx, ly - 3 - vine_grow), fill=THORN_LEAF_DARK)
-
-    # --- Leaf particles ---
-    leaf_positions = [
-        (cx - 16, body_cy - 6), (cx + 14, body_cy + 6),
-        (cx - 10, body_cy + 12), (cx + 18, body_cy - 2),
-    ]
-    for i, (lx, ly) in enumerate(leaf_positions):
-        if (i + frame) % 2 != 0:
+    r = rig(ox, oy, direction, frame, build=0.94)
+    d = r.d
+    st_side = _hold_side(r)
+    out = 1.6 if not d else 0.4
+    if d:
+        rig_arms(r, draw, THORN_DRESS, SKIN, layer="far")
+    rig_legs(r, draw, shade(THORN_DRESS, 1.0), THORN_WOOD)
+    rig_robe(r, draw, THORN_DRESS, flare=3.6)
+    # a hem of leaves
+    xs = [r.cx + i * 2.8 for i in range(-4, 5)] if not d else [r.cx + i * 2.8 for i in range(-3, 3)]
+    for i, x in enumerate(xs):
+        leaf(draw, x, r.base_y - 4.4, 90 + (i % 2) * 16 - 8, 4.2, 2.6, lit(THORN_DRESS, 0.4) if i % 2 else THORN_DRESS)
+    rig_belt(r, draw, THORN_WOOD, buckle=THORN_PINK)
+    rig_arms(r, draw, THORN_DRESS, SKIN, layer="near", hands=False)
+    # vines wound round the forearms
+    for side in _sides(r):
+        _, e, w, h = arm_pts(r, side)
+        stroke(draw, [e, ((e[0] + w[0]) / 2 + 1.2, (e[1] + w[1]) / 2), w], 0.6, THORN_WOOD)
+    rig_head(r, draw, SKIN, hair=THORN_HAIR, style="bob", eye_color=(60, 150, 70), expression="smile")
+    # flower crown
+    hx, hy, rx, ry = r.hx, r.head_cy, r.head_rx, r.head_ry
+    pts = ((-8.4, 5.6), (-4.4, 8.6), (0.0, 9.6), (4.4, 8.6), (8.4, 5.6)) if not d else \
+        ((d * 7.2, 7.0), (d * 3.2, 9.4), (-d * 1.6, 9.8), (-d * 6.0, 8.2))
+    for i, (u, v) in enumerate(pts):
+        if r.back and i % 2:
             continue
-        draw.polygon([(lx, ly - 2), (lx - 2, ly), (lx, ly + 2), (lx + 2, ly)],
-                     fill=THORN_LEAF, outline=None)
+        x, y = hx + u, hy - v
+        leaf(draw, x, y, -60 + i * 30, 3.6, 2.2, THORN_DRESS, vein=False)
+        if i % 2 == 0:
+            for a in range(0, 360, 72):
+                Ell(x + math.cos(math.radians(a)) * 1.3, y + math.sin(math.radians(a)) * 1.3, 1.1, 1.1).draw(
+                    draw, fill=THORN_PINK)
+            Ell(x, y, 0.8, 0.8).draw(draw, fill=(255, 226, 120))
+    # thorny staff with a bloom on top
+    if not r.back:
+        x = _staff(draw, r, st_side, out, r.head_cy - 1.0, THORN_WOOD)
+        for y in (r.hip_y - 2, r.sh_y + 1, r.head_cy + 8):
+            Poly([(x + 0.8, y), (x + 2.6, y - 1.4), (x + 0.8, y - 1.6)]).draw(draw, fill=shade(THORN_WOOD, 1.2))
+        top = r.head_cy - 2.0
+        for a in range(0, 360, 60):
+            cel(draw, Ell(x + math.cos(math.radians(a + frame * 10)) * 2.4, top + math.sin(math.radians(a + frame * 10)) * 2.4,
+                          1.9, 1.9), THORN_PINK, sh=None, lw=0.6)
+        cel(draw, Ell(x, top, 1.5, 1.5), (255, 226, 120), sh=None, lw=0.6)
+        leaf(draw, x, top + 3.0, 200, 4.4, 2.6, THORN_DRESS)
+    for side in _sides(r):
+        rig_hand(r, draw, side, SKIN, out=out if side == st_side else 0.0)
 
 
 # ===================================================================
-# CLOUDRUNNER (ID 21) -- White/sky-blue flowing robes, cloud puff
-#                         effects, light/airy build
+# CLOUDRUNNER (21) -- cloud-puff hair, riding a little cloud
 # ===================================================================
+
+CLOUD_TUNIC = (104, 176, 242)
+CLOUD_WHITE = (250, 252, 255)
+CLOUD_SCARF = (255, 206, 72)
+
 
 def draw_cloudrunner(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    robe_sway = [-2, 0, 2, 0][frame]
-    puff_phase = frame * (math.pi / 2)
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 18
-
-    # --- Cloud puff at feet (drawn first, behind everything) ---
-    puff_y = base_y + 2
-    ellipse(draw, cx - 6, puff_y, 8, 4, CLOUD_PUFF, outline=None)
-    ellipse(draw, cx + 6, puff_y, 8, 4, CLOUD_PUFF, outline=None)
-    ellipse(draw, cx, puff_y - 1, 10, 5, CLOUD_PUFF, outline=None)
-    ellipse(draw, cx - 2, puff_y - 2, 6, 3, CLOUD_ROBE_LIGHT, outline=None)
-
-    # --- Robe body (flowing, airy) ---
-    if direction == DOWN:
-        draw.polygon([
-            (cx - 12, body_cy - 10),
-            (cx + 12, body_cy - 10),
-            (cx + 16 + robe_sway, base_y + 2),
-            (cx - 16 + robe_sway, base_y + 2),
-        ], fill=CLOUD_ROBE, outline=OUTLINE)
-        draw.line([(cx - 3, body_cy - 6), (cx - 5 + robe_sway, base_y)],
-                  fill=CLOUD_ROBE_DARK, width=1)
-        draw.line([(cx + 3, body_cy - 6), (cx + 5 + robe_sway, base_y)],
-                  fill=CLOUD_ROBE_DARK, width=1)
-        draw.line([(cx - 8, body_cy - 4), (cx - 12 + robe_sway, base_y)],
-                  fill=CLOUD_ROBE_LIGHT, width=1)
-    elif direction == UP:
-        draw.polygon([
-            (cx - 12, body_cy - 10),
-            (cx + 12, body_cy - 10),
-            (cx + 16 + robe_sway, base_y + 2),
-            (cx - 16 + robe_sway, base_y + 2),
-        ], fill=CLOUD_ROBE, outline=OUTLINE)
-        draw.line([(cx, body_cy - 6), (cx + robe_sway, base_y)],
-                  fill=CLOUD_ROBE_DARK, width=1)
-    elif direction == LEFT:
-        draw.polygon([
-            (cx - 10, body_cy - 10),
-            (cx + 6, body_cy - 10),
-            (cx + 10 + robe_sway, base_y + 2),
-            (cx - 14 + robe_sway, base_y + 2),
-        ], fill=CLOUD_ROBE, outline=OUTLINE)
-        draw.line([(cx - 2, body_cy - 6), (cx - 4 + robe_sway, base_y)],
-                  fill=CLOUD_ROBE_DARK, width=1)
-    else:  # RIGHT
-        draw.polygon([
-            (cx - 6, body_cy - 10),
-            (cx + 10, body_cy - 10),
-            (cx + 14 + robe_sway, base_y + 2),
-            (cx - 10 + robe_sway, base_y + 2),
-        ], fill=CLOUD_ROBE, outline=OUTLINE)
-        draw.line([(cx + 2, body_cy - 6), (cx + 4 + robe_sway, base_y)],
-                  fill=CLOUD_ROBE_DARK, width=1)
-
-    # --- Arms (slender) ---
-    if direction == DOWN:
-        for side in [-1, 1]:
-            ax = cx + side * 14
-            draw.rectangle([ax - 3, body_cy - 3, ax + 3, body_cy + 4],
-                           fill=CLOUD_ROBE, outline=OUTLINE)
-            draw.rectangle([ax - 2, body_cy + 2, ax + 2, body_cy + 5],
-                           fill=CLOUD_SKIN, outline=OUTLINE)
-    elif direction == UP:
-        for side in [-1, 1]:
-            ax = cx + side * 14
-            draw.rectangle([ax - 3, body_cy - 3, ax + 3, body_cy + 4],
-                           fill=CLOUD_ROBE, outline=OUTLINE)
-    elif direction == LEFT:
-        ax = cx - 10
-        draw.rectangle([ax - 3, body_cy - 2, ax + 3, body_cy + 5],
-                       fill=CLOUD_ROBE, outline=OUTLINE)
-        draw.rectangle([ax - 2, body_cy + 2, ax + 2, body_cy + 5],
-                       fill=CLOUD_SKIN, outline=OUTLINE)
-    else:  # RIGHT
-        ax = cx + 10
-        draw.rectangle([ax - 3, body_cy - 2, ax + 3, body_cy + 5],
-                       fill=CLOUD_ROBE, outline=OUTLINE)
-        draw.rectangle([ax - 2, body_cy + 2, ax + 2, body_cy + 5],
-                       fill=CLOUD_SKIN, outline=OUTLINE)
-
-    # --- Head (light, airy) ---
-    if direction == DOWN:
-        ellipse(draw, cx, head_cy, 11, 9, CLOUD_ROBE_LIGHT)
-        ellipse(draw, cx, head_cy - 2, 9, 7, CLOUD_ROBE_LIGHT, outline=None)
-        ellipse(draw, cx, head_cy + 2, 7, 5, CLOUD_SKIN)
-        ellipse(draw, cx + 1, head_cy + 4, 5, 3, CLOUD_SKIN_DARK, outline=None)
-        draw.rectangle([cx - 4, head_cy + 1, cx - 2, head_cy + 3], fill=CLOUD_EYE)
-        draw.rectangle([cx + 2, head_cy + 1, cx + 4, head_cy + 3], fill=CLOUD_EYE)
-        draw.point((cx, head_cy + 5), fill=CLOUD_SKIN_DARK)
-    elif direction == UP:
-        ellipse(draw, cx, head_cy, 11, 9, CLOUD_ROBE_LIGHT)
-        ellipse(draw, cx, head_cy, 8, 6, CLOUD_ROBE_DARK, outline=None)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, head_cy, 10, 9, CLOUD_ROBE_LIGHT)
-        ellipse(draw, cx - 4, head_cy + 2, 5, 4, CLOUD_SKIN)
-        draw.rectangle([cx - 7, head_cy + 1, cx - 5, head_cy + 3], fill=CLOUD_EYE)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, head_cy, 10, 9, CLOUD_ROBE_LIGHT)
-        ellipse(draw, cx + 4, head_cy + 2, 5, 4, CLOUD_SKIN)
-        draw.rectangle([cx + 5, head_cy + 1, cx + 7, head_cy + 3], fill=CLOUD_EYE)
-
-    # --- Cloud puff effects orbiting ---
-    for i in range(4):
-        angle = puff_phase + i * (math.pi / 2)
-        px = int(cx + math.cos(angle) * 18)
-        py = int(body_cy + math.sin(angle) * 12)
-        ellipse(draw, px, py, 4, 3, CLOUD_PUFF, outline=None)
-        ellipse(draw, px - 1, py - 1, 2, 2, CLOUD_ROBE_LIGHT, outline=None)
-
-    # --- Wispy hair / aura on head ---
-    for dx in [-6, -3, 0, 3, 6]:
-        hx = cx + dx if direction in (DOWN, UP) else cx + dx + (-2 if direction == LEFT else 2)
-        hy = head_cy - 8
-        draw.line([(hx, hy), (hx + robe_sway, hy - 5)],
-                  fill=CLOUD_PUFF, width=1)
+    r = rig(ox, oy, direction, frame, bob=[-1, -2, -2, -1][frame], step=0)
+    d = r.d
+    wave = [0.0, 1.0, 0.0, -1.0][frame]
+    # scarf streaming behind
+    s = -1 if not d else -d
+    y0 = r.sh_y - 1.6
+    bx = r.cx + (s * 3.4 if not d else -d * 2.6)
+    if not r.back:
+        cel(draw, Limb([(bx, y0), (bx + s * 5.4, y0 + 1.0 + wave), (bx + s * 10.4, y0 - 0.6 - wave), (bx + s * 13.6, y0 + 0.8)],
+                       [1.5, 1.4, 1.2, 0.5]), CLOUD_SCARF, sh=(0.0, 0.7))
+    if d:
+        rig_arms(r, draw, CLOUD_TUNIC, SKIN, layer="far")
+    rig_legs(r, draw, shade(CLOUD_TUNIC, 1.2), CLOUD_WHITE, bare=True)
+    rig_torso(r, draw, CLOUD_TUNIC, bottom=r.hip_y + 2.0)
+    cx = r.cx
+    cel(draw, Poly([(cx - r.hip_w - 0.4, r.hip_y + 0.2), (cx + r.hip_w + 0.4, r.hip_y + 0.2),
+                    (cx + r.hip_w + 0.6, r.hip_y + 2.2), (cx - r.hip_w - 0.6, r.hip_y + 2.2)]) if not d else
+        Poly([(cx - 4.6, r.hip_y + 0.2), (cx + 4.8, r.hip_y + 0.2), (cx + 5.0, r.hip_y + 2.2), (cx - 4.8, r.hip_y + 2.2)]),
+        CLOUD_WHITE, sh=None)
+    rig_belt(r, draw, CLOUD_SCARF, buckle=CLOUD_WHITE)
+    rig_arms(r, draw, CLOUD_TUNIC, SKIN, layer="near", hands=False)
+    # scarf round the neck
+    cel(draw, RRect(cx - 6.8, y0 - 1.4, cx + 6.8, y0 + 1.8, 1.6) if not d else RRect(cx - 5.0, y0 - 1.4, cx + 5.4, y0 + 1.8, 1.6),
+        CLOUD_SCARF, sh=(0.6, 0.6))
+    rig_head(r, draw, SKIN, hair=CLOUD_WHITE, style="curly", eye_color=(70, 150, 230), expression="open" if frame % 2 else "smile")
+    if r.back:
+        cel(draw, Limb([(bx, y0), (bx + 4.0, y0 + 6.0 + wave), (bx + 3.0, y0 + 11.0)], [1.5, 1.3, 0.5]), CLOUD_SCARF, sh=(0.0, 0.7))
+    for side in _sides(r):
+        rig_hand(r, draw, side, SKIN)
+    # the cloud he rides on, hiding his feet
+    cloud(draw, r.cx, r.base_y + 0.4 - r.bob * 0.0, 20.0, 6.0, CLOUD_WHITE, tone=(206, 222, 246),
+          bumps=((-0.34, 0.0, 0.22), (-0.08, -0.16, 0.26), (0.2, -0.08, 0.24), (0.38, 0.06, 0.18)))
 
 
 # ===================================================================
-# INFERNO (ID 22) -- Body made of fire, orange/red gradient,
-#                     flame edges, ember core
+# INFERNO (22) -- a living flame
 # ===================================================================
+
+INF_COLORS = ((226, 62, 38), (255, 142, 44), (255, 226, 110))
+
 
 def draw_inferno(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    flame_flicker = [0, 2, -1, 1][frame]
-    flame_phase = frame * (math.pi / 2)
-
-    base_y = oy + 54 + bob
+    bob = [0, -1, -2, -1][frame]
+    base = oy + 54 + bob
     cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 18
-
-    # --- Fire legs (flickering) ---
-    if direction in (DOWN, UP):
-        for side in [-1, 1]:
-            lx = cx + side * 6
-            # Flame leg shape
-            draw.polygon([
-                (lx - 4, body_cy + 8),
-                (lx + 4, body_cy + 8),
-                (lx + 3, base_y + 2),
-                (lx - 3, base_y + 2),
-            ], fill=INFERNO_BODY, outline=None)
-            draw.polygon([
-                (lx - 2, body_cy + 10),
-                (lx + 2, body_cy + 10),
-                (lx + 1, base_y),
-                (lx - 1, base_y),
-            ], fill=INFERNO_CORE, outline=None)
-            # Flame tips at feet
-            draw.polygon([(lx - 3, base_y + 2),
-                          (lx, base_y + 6 + flame_flicker),
-                          (lx + 3, base_y + 2)],
-                         fill=INFERNO_FLAME, outline=None)
-    elif direction == LEFT:
-        lx = cx - 3
-        draw.polygon([(lx - 4, body_cy + 8), (lx + 4, body_cy + 8),
-                      (lx + 3, base_y + 2), (lx - 3, base_y + 2)],
-                     fill=INFERNO_BODY, outline=None)
-        draw.polygon([(lx - 2, base_y + 2), (lx, base_y + 6 + flame_flicker),
-                      (lx + 2, base_y + 2)], fill=INFERNO_FLAME, outline=None)
-    else:  # RIGHT
-        lx = cx + 3
-        draw.polygon([(lx - 4, body_cy + 8), (lx + 4, body_cy + 8),
-                      (lx + 3, base_y + 2), (lx - 3, base_y + 2)],
-                     fill=INFERNO_BODY, outline=None)
-        draw.polygon([(lx - 2, base_y + 2), (lx, base_y + 6 + flame_flicker),
-                      (lx + 2, base_y + 2)], fill=INFERNO_FLAME, outline=None)
-
-    # --- Fire body (gradient) ---
-    if direction == DOWN:
-        ellipse(draw, cx, body_cy, 14, 12, INFERNO_BODY)
-        ellipse(draw, cx, body_cy, 10, 9, INFERNO_BODY_LIGHT, outline=None)
-        ellipse(draw, cx, body_cy, 6, 5, INFERNO_CORE, outline=None)
-        ellipse(draw, cx, body_cy, 3, 2, INFERNO_CORE_BRIGHT, outline=None)
-        # Flame edge tendrils
-        for angle_off in range(0, 360, 45):
-            a = math.radians(angle_off) + flame_phase * 0.3
-            fx = int(cx + math.cos(a) * 14)
-            fy = int(body_cy + math.sin(a) * 12)
-            draw.polygon([(fx - 2, fy), (fx, fy - 4 + flame_flicker), (fx + 2, fy)],
-                         fill=INFERNO_FLAME, outline=None)
-    elif direction == UP:
-        ellipse(draw, cx, body_cy, 14, 12, INFERNO_BODY)
-        ellipse(draw, cx, body_cy, 10, 9, INFERNO_BODY_DARK, outline=None)
-        ellipse(draw, cx, body_cy, 6, 5, INFERNO_CORE, outline=None)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, body_cy, 12, 12, INFERNO_BODY)
-        ellipse(draw, cx - 2, body_cy, 8, 8, INFERNO_BODY_LIGHT, outline=None)
-        ellipse(draw, cx - 2, body_cy, 4, 4, INFERNO_CORE, outline=None)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, body_cy, 12, 12, INFERNO_BODY)
-        ellipse(draw, cx + 2, body_cy, 8, 8, INFERNO_BODY_LIGHT, outline=None)
-        ellipse(draw, cx + 2, body_cy, 4, 4, INFERNO_CORE, outline=None)
-
-    # --- Fire arms ---
-    if direction == DOWN:
-        for side in [-1, 1]:
-            ax = cx + side * 14
-            draw.rectangle([ax - 3, body_cy - 4, ax + 3, body_cy + 4],
-                           fill=INFERNO_BODY, outline=None)
-            draw.rectangle([ax - 2, body_cy - 3, ax + 2, body_cy + 3],
-                           fill=INFERNO_BODY_LIGHT, outline=None)
-            # Flame hand
-            draw.polygon([(ax - 3, body_cy + 4), (ax, body_cy + 10 + flame_flicker),
-                          (ax + 3, body_cy + 4)],
-                         fill=INFERNO_FLAME, outline=None)
-            draw.polygon([(ax - 1, body_cy + 4), (ax, body_cy + 8 + flame_flicker),
-                          (ax + 1, body_cy + 4)],
-                         fill=INFERNO_FLAME_TIP, outline=None)
-    elif direction == UP:
-        for side in [-1, 1]:
-            ax = cx + side * 14
-            draw.rectangle([ax - 3, body_cy - 4, ax + 3, body_cy + 4],
-                           fill=INFERNO_BODY, outline=None)
-    elif direction == LEFT:
-        ax = cx - 12
-        draw.rectangle([ax - 3, body_cy - 3, ax + 3, body_cy + 5],
-                       fill=INFERNO_BODY, outline=None)
-        draw.polygon([(ax - 3, body_cy + 5), (ax, body_cy + 10 + flame_flicker),
-                      (ax + 3, body_cy + 5)], fill=INFERNO_FLAME, outline=None)
-    else:  # RIGHT
-        ax = cx + 12
-        draw.rectangle([ax - 3, body_cy - 3, ax + 3, body_cy + 5],
-                       fill=INFERNO_BODY, outline=None)
-        draw.polygon([(ax - 3, body_cy + 5), (ax, body_cy + 10 + flame_flicker),
-                      (ax + 3, body_cy + 5)], fill=INFERNO_FLAME, outline=None)
-
-    # --- Fire head ---
-    if direction == DOWN:
-        ellipse(draw, cx, head_cy, 10, 9, INFERNO_BODY)
-        ellipse(draw, cx, head_cy, 7, 6, INFERNO_BODY_LIGHT, outline=None)
-        ellipse(draw, cx, head_cy, 4, 3, INFERNO_CORE, outline=None)
-        # Eyes (white-hot)
-        draw.rectangle([cx - 5, head_cy, cx - 2, head_cy + 3], fill=INFERNO_EYE)
-        draw.rectangle([cx + 2, head_cy, cx + 5, head_cy + 3], fill=INFERNO_EYE)
-        # Flame crown
-        for dx in [-6, -3, 0, 3, 6]:
-            fh = 8 + (abs(dx) % 4) + flame_flicker
-            draw.polygon([(cx + dx - 2, head_cy - 6), (cx + dx, head_cy - 6 - fh),
-                          (cx + dx + 2, head_cy - 6)],
-                         fill=INFERNO_FLAME, outline=None)
-            draw.polygon([(cx + dx - 1, head_cy - 6), (cx + dx, head_cy - 6 - fh + 2),
-                          (cx + dx + 1, head_cy - 6)],
-                         fill=INFERNO_FLAME_TIP, outline=None)
-    elif direction == UP:
-        ellipse(draw, cx, head_cy, 10, 9, INFERNO_BODY)
-        ellipse(draw, cx, head_cy, 7, 6, INFERNO_BODY_DARK, outline=None)
-        for dx in [-6, -3, 0, 3, 6]:
-            fh = 7 + (abs(dx) % 3) + flame_flicker
-            draw.polygon([(cx + dx - 2, head_cy - 6), (cx + dx, head_cy - 6 - fh),
-                          (cx + dx + 2, head_cy - 6)],
-                         fill=INFERNO_FLAME, outline=None)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, head_cy, 9, 9, INFERNO_BODY)
-        ellipse(draw, cx - 2, head_cy, 6, 6, INFERNO_BODY_LIGHT, outline=None)
-        draw.rectangle([cx - 7, head_cy, cx - 4, head_cy + 3], fill=INFERNO_EYE)
-        for dx in [-6, -2, 2, 6]:
-            fh = 6 + flame_flicker
-            draw.polygon([(cx + dx - 3, head_cy - 6), (cx + dx - 1, head_cy - 6 - fh),
-                          (cx + dx + 1, head_cy - 6)],
-                         fill=INFERNO_FLAME, outline=None)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, head_cy, 9, 9, INFERNO_BODY)
-        ellipse(draw, cx + 2, head_cy, 6, 6, INFERNO_BODY_LIGHT, outline=None)
-        draw.rectangle([cx + 4, head_cy, cx + 7, head_cy + 3], fill=INFERNO_EYE)
-        for dx in [-6, -2, 2, 6]:
-            fh = 6 + flame_flicker
-            draw.polygon([(cx + dx - 1, head_cy - 6), (cx + dx + 1, head_cy - 6 - fh),
-                          (cx + dx + 3, head_cy - 6)],
-                         fill=INFERNO_FLAME, outline=None)
-
-    # --- Ember spark particles ---
-    for i in range(6):
-        angle = flame_phase + i * (math.pi / 3)
-        er = 16 + (i % 3) * 4
-        ex = int(cx + math.cos(angle) * er)
-        ey = int(body_cy - 6 + math.sin(angle) * (er * 0.5))
-        draw.point((ex, ey), fill=INFERNO_SPARK)
-        draw.point((ex + 1, ey), fill=INFERNO_CORE_BRIGHT)
+    d = {DOWN: 0, UP: 0, LEFT: -1, RIGHT: 1}[direction]
+    back = direction == UP
+    sway = [0.0, 1.2, 0.0, -1.2][frame]
+    # flame tail instead of legs
+    flame(draw, cx - d * 2.0, base - 1.0, 12.0, 16.0, INF_COLORS, sway=sway - d * 2.0, flip=-1)
+    # body: a flame torso
+    body = Poly(flame_pts(cx, base - 6.0, 17.0, 22.0, sway * 0.5 - d * 1.4))
+    cel(draw, body, INF_COLORS[0], sh=None)
+    Poly(flame_pts(cx, base - 7.0, 11.0, 15.0, sway * 0.3)).draw(draw, fill=INF_COLORS[1])
+    Ell(cx + d * 1.4, base - 15.0, 3.6, 4.2).draw(draw, fill=INF_COLORS[2])
+    # flame arms, reaching out
+    for side in ((-1, 1) if not d else (d, -d)):
+        sx = cx + side * 5.4 if not d else cx + side * 1.4
+        near = (not d) or side == d
+        col = INF_COLORS[0] if near else shade(INF_COLORS[0], 0.5)
+        end = (sx + (side * 5.6 if not d else side * 6.2), base - 18.0 + (sway if side > 0 else -sway) * 0.6)
+        cel(draw, Limb([(sx, base - 21.0), ((sx + end[0]) / 2 + (side if not d else 0) * 0.6, base - 17.6), end],
+                       [2.6, 2.2, 1.8]), col, sh=None)
+        flame(draw, end[0], end[1] + 1.6, 4.4, 6.0, INF_COLORS, sway=(side if not d else d) * 1.0)
+    # head: a tall flame with a face in it
+    hy = base - 30.0
+    hx = cx + d * 1.6
+    flame(draw, hx, hy + 10.0, 22.0, 30.0, INF_COLORS, sway=sway * 1.4 - d * 3.4)
+    cel(draw, Ell(hx, hy + 2.4, 8.4, 7.6), INF_COLORS[1], sh=None, line=False)
+    if back:
+        return
+    e1, e2 = (hx - 3.6, hx + 3.6) if not d else (hx + d * 0.6, hx + d * 5.4)
+    for side, ex in ((-1, e1), (1, e2)):
+        w = 1.0 if not d or (ex - hx) * d < 3 else 0.7
+        Poly([(ex - side * 2.2 * w, hy + 1.6), (ex - side * 0.6 * w, hy - 0.8), (ex + side * 2.2 * w, hy - 1.0),
+              (ex + side * 1.6 * w, hy + 2.0), (ex - side * 0.8 * w, hy + 2.6)]).draw(draw, fill=(90, 20, 22))
+        Ell(ex + side * 0.3, hy + 0.6, 0.8 * w, 0.8).draw(draw, fill=(255, 250, 220))
+    mx = hx + d * 3.0
+    Poly([(mx - 2.8, hy + 4.6), (mx + 2.8, hy + 4.6), (mx + 1.6, hy + 6.6), (mx - 1.6, hy + 6.6)]).draw(draw, fill=(90, 20, 22))
+    for k in (-1.4, 0.0, 1.4):
+        Poly([(mx + k - 0.5, hy + 4.6), (mx + k + 0.5, hy + 4.6), (mx + k, hy + 5.6)]).draw(draw, fill=(255, 240, 200))
 
 
 # ===================================================================
-# GLACIER (ID 23) -- Bulky ice/blue body, crystalline armor plates,
-#                     frost aura
+# GLACIER (23) -- a crystal ice golem
 # ===================================================================
+
+GL_ICE = (170, 220, 246)
+GL_DEEP = (104, 164, 222)
+GL_SNOW = (246, 250, 255)
+GL_EYE = (120, 250, 255)
+
+
+def _block(draw, pts, color=GL_ICE):
+    cel(draw, Poly(pts), color, sh=(1.0, 1.0), hi=(0.6, 0.6), tone=shade(color, 1.1))
+
+
+def _facets(cx, cy, rx, ry, n=11, jitter=(1.0, 0.93, 1.05, 0.97)):
+    pts = []
+    for i in range(n):
+        a = math.radians(i * 360.0 / n - 90)
+        k = jitter[i % len(jitter)]
+        pts.append((cx + rx * k * math.cos(a), cy + ry * k * math.sin(a)))
+    return pts
+
 
 def draw_glacier(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    leg_spread = [-4, 0, 4, 0][frame]
-    frost_pulse = [0, 1, 0, -1][frame]
-
-    base_y = oy + 54 + bob
+    bob = [0, -1, 0, -1][frame]
+    ph = [0, 1, 0, -1][frame]
+    base = oy + 54 + bob
     cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 20
-
-    # --- Bulky legs ---
-    if direction in (DOWN, UP):
-        for side in [-1, 1]:
-            ls = leg_spread if side == -1 else -leg_spread
-            lx = cx + side * 7 + ls
-            draw.rectangle([lx - 5, body_cy + 10, lx + 5, base_y],
-                           fill=GLACIER_BODY, outline=OUTLINE)
-            draw.rectangle([lx - 5, body_cy + 10, lx - 3, base_y - 6],
-                           fill=GLACIER_BODY_LIGHT, outline=None)
-            # Ice plate on legs
-            draw.rectangle([lx - 4, body_cy + 12, lx + 4, body_cy + 18],
-                           fill=GLACIER_PLATE, outline=None)
-            draw.point((lx, body_cy + 14), fill=GLACIER_PLATE_LIGHT)
-            # Boots
-            draw.rectangle([lx - 5, base_y - 6, lx + 5, base_y],
-                           fill=GLACIER_BODY_DARK, outline=OUTLINE)
-    elif direction == LEFT:
-        for i, offset in enumerate([leg_spread, -leg_spread]):
-            lx = cx - 3 + offset
-            draw.rectangle([lx - 5, body_cy + 10, lx + 5, base_y],
-                           fill=GLACIER_BODY, outline=OUTLINE)
-            draw.rectangle([lx - 5, base_y - 6, lx + 5, base_y],
-                           fill=GLACIER_BODY_DARK, outline=OUTLINE)
-    else:  # RIGHT
-        for i, offset in enumerate([leg_spread, -leg_spread]):
-            lx = cx + 3 + offset
-            draw.rectangle([lx - 5, body_cy + 10, lx + 5, base_y],
-                           fill=GLACIER_BODY, outline=OUTLINE)
-            draw.rectangle([lx - 5, base_y - 6, lx + 5, base_y],
-                           fill=GLACIER_BODY_DARK, outline=OUTLINE)
-
-    # --- Bulky body with ice plates ---
-    if direction == DOWN:
-        ellipse(draw, cx, body_cy, 16, 14, GLACIER_BODY)
-        ellipse(draw, cx + 4, body_cy + 2, 12, 10, GLACIER_BODY_DARK, outline=None)
-        ellipse(draw, cx - 2, body_cy - 2, 10, 8, GLACIER_BODY_LIGHT, outline=None)
-        # Crystal plate armor
-        draw.polygon([(cx - 8, body_cy - 6), (cx, body_cy - 10),
-                      (cx + 8, body_cy - 6), (cx + 6, body_cy + 4),
-                      (cx - 6, body_cy + 4)],
-                     fill=GLACIER_PLATE, outline=OUTLINE)
-        draw.polygon([(cx - 4, body_cy - 4), (cx, body_cy - 8),
-                      (cx + 4, body_cy - 4)],
-                     fill=GLACIER_PLATE_LIGHT, outline=None)
-        draw.point((cx, body_cy - 2), fill=GLACIER_FROST)
-        # Belt
-        draw.rectangle([cx - 16, body_cy + 8, cx + 16, body_cy + 14],
-                       fill=GLACIER_BODY_DARK, outline=OUTLINE)
-    elif direction == UP:
-        ellipse(draw, cx, body_cy, 16, 14, GLACIER_BODY)
-        ellipse(draw, cx + 4, body_cy + 2, 12, 10, GLACIER_BODY_DARK, outline=None)
-        draw.rectangle([cx - 16, body_cy + 8, cx + 16, body_cy + 14],
-                       fill=GLACIER_BODY_DARK, outline=OUTLINE)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, body_cy, 14, 14, GLACIER_BODY)
-        ellipse(draw, cx + 2, body_cy + 2, 10, 10, GLACIER_BODY_DARK, outline=None)
-        ellipse(draw, cx - 4, body_cy - 2, 8, 8, GLACIER_BODY_LIGHT, outline=None)
-        draw.rectangle([cx - 16, body_cy + 8, cx + 12, body_cy + 14],
-                       fill=GLACIER_BODY_DARK, outline=OUTLINE)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, body_cy, 14, 14, GLACIER_BODY)
-        ellipse(draw, cx + 6, body_cy + 2, 10, 10, GLACIER_BODY_DARK, outline=None)
-        ellipse(draw, cx, body_cy - 2, 8, 8, GLACIER_BODY_LIGHT, outline=None)
-        draw.rectangle([cx - 12, body_cy + 8, cx + 16, body_cy + 14],
-                       fill=GLACIER_BODY_DARK, outline=OUTLINE)
-
-    # --- Arms with ice plate shoulders ---
-    if direction == DOWN:
-        for side in [-1, 1]:
-            ax = cx + side * 18
-            draw.rectangle([ax - 4, body_cy - 4, ax + 4, body_cy + 6],
-                           fill=GLACIER_BODY, outline=OUTLINE)
-            # Ice shoulder plate
-            ellipse(draw, ax, body_cy - 6, 7, 5, GLACIER_PLATE)
-            ellipse(draw, ax - 1, body_cy - 8, 4, 3, GLACIER_PLATE_LIGHT, outline=None)
-            # Ice crystal spike from shoulder
-            draw.polygon([(ax + side * 2, body_cy - 10),
-                          (ax + side * 3, body_cy - 18 + frost_pulse),
-                          (ax + side * 5, body_cy - 10)],
-                         fill=GLACIER_FROST, outline=OUTLINE)
-    elif direction == UP:
-        for side in [-1, 1]:
-            ax = cx + side * 18
-            draw.rectangle([ax - 4, body_cy - 4, ax + 4, body_cy + 6],
-                           fill=GLACIER_BODY, outline=OUTLINE)
-            ellipse(draw, ax, body_cy - 6, 7, 5, GLACIER_PLATE)
-    elif direction == LEFT:
-        ax = cx - 14
-        draw.rectangle([ax - 4, body_cy - 3, ax + 4, body_cy + 6],
-                       fill=GLACIER_BODY, outline=OUTLINE)
-        ellipse(draw, ax, body_cy - 5, 7, 5, GLACIER_PLATE)
-        draw.polygon([(ax - 4, body_cy - 9), (ax - 5, body_cy - 17 + frost_pulse),
-                      (ax - 2, body_cy - 9)],
-                     fill=GLACIER_FROST, outline=OUTLINE)
-    else:  # RIGHT
-        ax = cx + 14
-        draw.rectangle([ax - 4, body_cy - 3, ax + 4, body_cy + 6],
-                       fill=GLACIER_BODY, outline=OUTLINE)
-        ellipse(draw, ax, body_cy - 5, 7, 5, GLACIER_PLATE)
-        draw.polygon([(ax + 2, body_cy - 9), (ax + 5, body_cy - 17 + frost_pulse),
-                      (ax + 4, body_cy - 9)],
-                     fill=GLACIER_FROST, outline=OUTLINE)
-
-    # --- Head (icy helm) ---
-    if direction == DOWN:
-        ellipse(draw, cx, head_cy, 14, 12, GLACIER_BODY)
-        ellipse(draw, cx + 2, head_cy + 2, 10, 8, GLACIER_BODY_DARK, outline=None)
-        ellipse(draw, cx - 2, head_cy - 2, 8, 6, GLACIER_BODY_LIGHT, outline=None)
-        # Ice visor
-        draw.rectangle([cx - 8, head_cy, cx + 8, head_cy + 4],
-                       fill=GLACIER_PLATE_DARK, outline=None)
-        draw.rectangle([cx - 6, head_cy + 1, cx + 6, head_cy + 3],
-                       fill=GLACIER_EYE, outline=None)
-        draw.rectangle([cx - 3, head_cy + 1, cx + 3, head_cy + 3],
-                       fill=_brighten(GLACIER_EYE, 1.2), outline=None)
-    elif direction == UP:
-        ellipse(draw, cx, head_cy, 14, 12, GLACIER_BODY)
-        ellipse(draw, cx + 2, head_cy + 2, 10, 8, GLACIER_BODY_DARK, outline=None)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, head_cy, 13, 12, GLACIER_BODY)
-        ellipse(draw, cx + 2, head_cy + 2, 9, 8, GLACIER_BODY_DARK, outline=None)
-        draw.rectangle([cx - 10, head_cy, cx - 2, head_cy + 4],
-                       fill=GLACIER_PLATE_DARK, outline=None)
-        draw.rectangle([cx - 9, head_cy + 1, cx - 3, head_cy + 3],
-                       fill=GLACIER_EYE, outline=None)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, head_cy, 13, 12, GLACIER_BODY)
-        ellipse(draw, cx + 6, head_cy + 2, 9, 8, GLACIER_BODY_DARK, outline=None)
-        draw.rectangle([cx + 2, head_cy, cx + 10, head_cy + 4],
-                       fill=GLACIER_PLATE_DARK, outline=None)
-        draw.rectangle([cx + 3, head_cy + 1, cx + 9, head_cy + 3],
-                       fill=GLACIER_EYE, outline=None)
-
-    # --- Frost aura particles ---
-    for i in range(6):
-        angle = frame * (math.pi / 2) + i * (math.pi / 3)
-        fr = 22
-        fx = int(cx + math.cos(angle) * fr)
-        fy = int(body_cy + math.sin(angle) * (fr * 0.6))
-        draw.point((fx, fy), fill=GLACIER_FROST)
-        draw.point((fx + 1, fy), fill=GLACIER_FROST)
+    d = {DOWN: 0, UP: 0, LEFT: -1, RIGHT: 1}[direction]
+    back = direction == UP
+    bcx, bcy = cx - d * 0.8, base - 19.0
+    rx, ry = (13.4, 13.8) if not d else (11.8, 13.8)
+    # stubby legs
+    for side in ((-1, 1) if not d else (-d, d)):
+        near = (not d) or side == d
+        fwd = ph * side if not d else (ph if near else -ph)
+        lx = cx + (side * 5.4 if not d else d * fwd * 3.0)
+        ly = base - (1.2 if fwd < 0 and not d else 0)
+        _block(draw, [(lx - 3.6, ly - 7.0), (lx + 3.6, ly - 7.0), (lx + 4.0, ly), (lx - 4.0, ly)],
+               GL_DEEP if near else shade(GL_DEEP, 0.6))
+    # a crest of crystals along the top of the body (drawn first: the body hides the roots)
+    crest = ((200, 6.4), (228, 9.4), (256, 11.6), (284, 10.0), (312, 8.0), (338, 5.6)) if not d else \
+        [((180 + a if d > 0 else 360 - a), ln) for (a, ln) in ((10, 6.0), (36, 9.4), (62, 11.4), (88, 9.0), (112, 6.4))]
+    for (a, ln) in crest:
+        x = bcx + math.cos(math.radians(a)) * rx * 0.72
+        y = bcy + math.sin(math.radians(a)) * ry * 0.72
+        crystal(draw, x, y, a, ln + 3.0, 4.6 if ln > 8 else 3.8, color=GL_ICE)
+    # the far fist behind the body in profile
+    def fist(side, near):
+        fwd = -ph * side if not d else (-ph if near else ph)
+        fx = bcx + (side * (rx + 1.6) if not d else d * (fwd * 3.4 + (2.0 if near else -2.0)))
+        fy = base - 11.0 - fwd * 0.8
+        col = GL_ICE if near else shade(GL_ICE, 0.6)
+        _block(draw, _facets(fx, fy, 4.6, 4.4, 8, (1.0, 0.9, 1.06, 0.95)), col)
+        if near:
+            stroke(draw, [(fx - 1.8, fy - 1.0), (fx + 0.6, fy + 1.6)], 0.5, GL_DEEP)
+    if d:
+        fist(-d, False)
+    body = Poly(_facets(bcx, bcy, rx, ry))
+    cel(draw, body, GL_ICE, sh=(1.8, 1.6), hi=(1.0, 1.0), tone=shade(GL_ICE, 1.1),
+        regions=[(Poly([(bcx - rx * 0.7, bcy - ry * 0.5), (bcx - rx * 0.2, bcy - ry * 0.86), (bcx + rx * 0.02, bcy - ry * 0.4),
+                        (bcx - rx * 0.5, bcy - ry * 0.1)]), lit(GL_ICE, 1.0))])
+    stroke(draw, [(bcx + rx * 0.3 + d * 2, bcy + ry * 0.1), (bcx + rx * 0.05 + d * 2, bcy + ry * 0.55), (bcx + rx * 0.34 + d * 2, bcy + ry * 0.8)],
+           0.6, GL_DEEP)
+    if not back:
+        # a face in the ice: two cold glowing eyes and a frosty grimace
+        fx0 = bcx + d * 4.2
+        for side, ex in (((-1, fx0 - 4.4), (1, fx0 + 4.4)) if not d else ((d, fx0 + d * 2.4), (-d, fx0 - d * 3.0))):
+            w = 1.0 if not d or side == d else 0.62
+            Poly([(ex - side * 2.6 * w, bcy - 4.4), (ex + side * 2.2 * w, bcy - 5.4), (ex + side * 2.4 * w, bcy - 3.0),
+                  (ex - side * 1.8 * w, bcy - 2.4)]).draw(draw, fill=GL_DEEP)
+            Poly([(ex - side * 2.0 * w, bcy - 4.2), (ex + side * 1.8 * w, bcy - 5.0), (ex + side * 1.9 * w, bcy - 3.3),
+                  (ex - side * 1.4 * w, bcy - 2.9)]).draw(draw, fill=GL_EYE)
+            Ell(ex, bcy - 3.9, 0.6 * w, 0.5).draw(draw, fill=(255, 255, 255))
+        mx = fx0 + d * 0.8
+        Poly([(mx - 3.0, bcy + 1.0), (mx + 3.0, bcy + 1.0), (mx + 2.0, bcy + 3.0), (mx - 2.0, bcy + 3.0)]).draw(
+            draw, fill=shade(GL_DEEP, 1.6))
+        for k in (-1.6, 0.0, 1.6):
+            Poly([(mx + k - 0.6, bcy + 1.0), (mx + k + 0.6, bcy + 1.0), (mx + k, bcy + 2.4)]).draw(draw, fill=GL_SNOW)
+    for side in ((-1, 1) if not d else (d,)):
+        fist(side, True)
 
 
 # ===================================================================
-# MUDSLINGER (ID 24) -- Brown/earth tones, mud splash effects,
-#                        hunched posture, mud drips
+# MUDSLINGER (24) -- a swamp goblin under a lily-pad hat
 # ===================================================================
+
+MUD_SKIN = (126, 158, 84)
+MUD = (132, 94, 62)
+MUD_PAD = (84, 162, 74)
+MUD_LOTUS = (255, 170, 206)
+
 
 def draw_mudslinger(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    leg_spread = [-3, 0, 3, 0][frame]
-    drip_extend = [0, 1, 2, 1][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 18  # slightly hunched
-    head_cy = body_cy - 16
-
-    # --- Legs (stocky, muddy) ---
-    if direction in (DOWN, UP):
-        for side in [-1, 1]:
-            ls = leg_spread if side == -1 else -leg_spread
-            lx = cx + side * 6 + ls
-            draw.rectangle([lx - 4, body_cy + 8, lx + 4, base_y],
-                           fill=MUD_BODY, outline=OUTLINE)
-            draw.rectangle([lx - 4, body_cy + 8, lx - 2, base_y - 4],
-                           fill=MUD_BODY_LIGHT, outline=None)
-            # Mud-caked boots
-            draw.rectangle([lx - 4, base_y - 5, lx + 4, base_y],
-                           fill=MUD_BODY_DARK, outline=OUTLINE)
-            # Mud drip on boot
-            draw.point((lx - 1, base_y + drip_extend), fill=MUD_DRIP)
-    elif direction == LEFT:
-        for offset in [leg_spread, -leg_spread]:
-            lx = cx - 3 + offset
-            draw.rectangle([lx - 4, body_cy + 8, lx + 4, base_y],
-                           fill=MUD_BODY, outline=OUTLINE)
-            draw.rectangle([lx - 4, base_y - 5, lx + 4, base_y],
-                           fill=MUD_BODY_DARK, outline=OUTLINE)
-    else:  # RIGHT
-        for offset in [leg_spread, -leg_spread]:
-            lx = cx + 3 + offset
-            draw.rectangle([lx - 4, body_cy + 8, lx + 4, base_y],
-                           fill=MUD_BODY, outline=OUTLINE)
-            draw.rectangle([lx - 4, base_y - 5, lx + 4, base_y],
-                           fill=MUD_BODY_DARK, outline=OUTLINE)
-
-    # --- Hunched body ---
-    if direction == DOWN:
-        ellipse(draw, cx, body_cy, 14, 12, MUD_BODY)
-        ellipse(draw, cx + 3, body_cy + 2, 10, 8, MUD_BODY_DARK, outline=None)
-        ellipse(draw, cx - 2, body_cy - 2, 8, 6, MUD_BODY_LIGHT, outline=None)
-        # Mud texture blobs
-        ellipse(draw, cx - 6, body_cy + 4, 3, 2, MUD_SPLASH, outline=None)
-        ellipse(draw, cx + 8, body_cy - 2, 3, 2, MUD_SPLASH, outline=None)
-        # Cloth wrap
-        draw.rectangle([cx - 8, body_cy + 6, cx + 8, body_cy + 10],
-                       fill=MUD_CLOTH, outline=OUTLINE)
-    elif direction == UP:
-        ellipse(draw, cx, body_cy, 14, 12, MUD_BODY)
-        ellipse(draw, cx + 3, body_cy + 2, 10, 8, MUD_BODY_DARK, outline=None)
-        draw.rectangle([cx - 8, body_cy + 6, cx + 8, body_cy + 10],
-                       fill=MUD_CLOTH, outline=OUTLINE)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, body_cy, 12, 12, MUD_BODY)
-        ellipse(draw, cx + 2, body_cy + 2, 8, 8, MUD_BODY_DARK, outline=None)
-        ellipse(draw, cx - 4, body_cy - 2, 6, 6, MUD_BODY_LIGHT, outline=None)
-        draw.rectangle([cx - 8, body_cy + 6, cx + 6, body_cy + 10],
-                       fill=MUD_CLOTH, outline=OUTLINE)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, body_cy, 12, 12, MUD_BODY)
-        ellipse(draw, cx + 6, body_cy + 2, 8, 8, MUD_BODY_DARK, outline=None)
-        ellipse(draw, cx, body_cy - 2, 6, 6, MUD_BODY_LIGHT, outline=None)
-        draw.rectangle([cx - 6, body_cy + 6, cx + 8, body_cy + 10],
-                       fill=MUD_CLOTH, outline=OUTLINE)
-
-    # --- Arms (thick, muddy) ---
-    if direction == DOWN:
-        for side in [-1, 1]:
-            ax = cx + side * 14
-            draw.rectangle([ax - 4, body_cy - 2, ax + 4, body_cy + 6],
-                           fill=MUD_BODY, outline=OUTLINE)
-            # Mud glob hands
-            ellipse(draw, ax, body_cy + 8, 5, 4, MUD_SPLASH)
-            ellipse(draw, ax, body_cy + 7, 3, 2, MUD_SPLASH_LIGHT, outline=None)
-            # Drip from hand
-            draw.line([(ax, body_cy + 12), (ax, body_cy + 14 + drip_extend)],
-                      fill=MUD_DRIP, width=1)
-    elif direction == UP:
-        for side in [-1, 1]:
-            ax = cx + side * 14
-            draw.rectangle([ax - 4, body_cy - 2, ax + 4, body_cy + 6],
-                           fill=MUD_BODY, outline=OUTLINE)
-    elif direction == LEFT:
-        ax = cx - 12
-        draw.rectangle([ax - 4, body_cy - 1, ax + 4, body_cy + 6],
-                       fill=MUD_BODY, outline=OUTLINE)
-        ellipse(draw, ax, body_cy + 8, 5, 4, MUD_SPLASH)
-        draw.line([(ax, body_cy + 12), (ax, body_cy + 14 + drip_extend)],
-                  fill=MUD_DRIP, width=1)
-    else:  # RIGHT
-        ax = cx + 12
-        draw.rectangle([ax - 4, body_cy - 1, ax + 4, body_cy + 6],
-                       fill=MUD_BODY, outline=OUTLINE)
-        ellipse(draw, ax, body_cy + 8, 5, 4, MUD_SPLASH)
-        draw.line([(ax, body_cy + 12), (ax, body_cy + 14 + drip_extend)],
-                  fill=MUD_DRIP, width=1)
-
-    # --- Head (round, muddy) ---
-    if direction == DOWN:
-        ellipse(draw, cx, head_cy, 10, 9, MUD_BODY)
-        ellipse(draw, cx + 2, head_cy + 2, 7, 5, MUD_BODY_DARK, outline=None)
-        ellipse(draw, cx - 2, head_cy - 2, 6, 4, MUD_BODY_LIGHT, outline=None)
-        # Mud dripping from top
-        draw.line([(cx - 4, head_cy - 6), (cx - 4, head_cy - 3)],
-                  fill=MUD_DRIP, width=1)
-        draw.line([(cx + 6, head_cy - 4), (cx + 6, head_cy)],
-                  fill=MUD_DRIP, width=1)
-        # Eyes (glowing yellow)
-        draw.rectangle([cx - 5, head_cy, cx - 2, head_cy + 3], fill=MUD_EYE)
-        draw.rectangle([cx + 2, head_cy, cx + 5, head_cy + 3], fill=MUD_EYE)
-        # Wide grinning mouth
-        draw.line([(cx - 4, head_cy + 5), (cx + 4, head_cy + 5)],
-                  fill=MUD_BODY_DARK, width=1)
-        draw.line([(cx - 4, head_cy + 6), (cx + 4, head_cy + 6)],
-                  fill=BLACK, width=1)
-    elif direction == UP:
-        ellipse(draw, cx, head_cy, 10, 9, MUD_BODY)
-        ellipse(draw, cx + 2, head_cy + 2, 7, 5, MUD_BODY_DARK, outline=None)
-        draw.line([(cx - 6, head_cy - 4), (cx - 6, head_cy - 1)],
-                  fill=MUD_DRIP, width=1)
-        draw.line([(cx + 4, head_cy - 6), (cx + 4, head_cy - 3)],
-                  fill=MUD_DRIP, width=1)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, head_cy, 9, 9, MUD_BODY)
-        ellipse(draw, cx + 1, head_cy + 2, 6, 5, MUD_BODY_DARK, outline=None)
-        draw.rectangle([cx - 7, head_cy, cx - 4, head_cy + 3], fill=MUD_EYE)
-        draw.line([(cx - 7, head_cy + 5), (cx - 1, head_cy + 5)],
-                  fill=BLACK, width=1)
-        draw.line([(cx - 2, head_cy - 6), (cx - 2, head_cy - 3)],
-                  fill=MUD_DRIP, width=1)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, head_cy, 9, 9, MUD_BODY)
-        ellipse(draw, cx + 5, head_cy + 2, 6, 5, MUD_BODY_DARK, outline=None)
-        draw.rectangle([cx + 4, head_cy, cx + 7, head_cy + 3], fill=MUD_EYE)
-        draw.line([(cx + 1, head_cy + 5), (cx + 7, head_cy + 5)],
-                  fill=BLACK, width=1)
-        draw.line([(cx + 2, head_cy - 6), (cx + 2, head_cy - 3)],
-                  fill=MUD_DRIP, width=1)
-
-    # --- Mud splash effects around feet ---
-    splash_positions = [
-        (cx - 14, base_y), (cx + 12, base_y + 1),
-        (cx - 8, base_y + 2), (cx + 16, base_y),
-    ]
-    for i, (sx, sy) in enumerate(splash_positions):
-        if (i + frame) % 2 != 0:
-            continue
-        ellipse(draw, sx, sy, 3, 2, MUD_SPLASH, outline=None)
-        draw.point((sx, sy - 1), fill=MUD_SPLASH_LIGHT)
+    r = rig(ox, oy, direction, frame, build=1.06, head=1.02)
+    d = r.d
+    ball_side = _hold_side(r)
+    if d:
+        rig_arms(r, draw, MUD_SKIN, MUD_SKIN, layer="far")
+    rig_legs(r, draw, MUD_SKIN, MUD, bare=True)
+    rig_torso(r, draw, MUD)
+    cx = r.cx
+    # mud splashes on the vest
+    if not r.back:
+        for (u, v, k) in ((-3.0, 1.4, 1.2), (2.6, 4.0, 1.5), (-1.0, 6.4, 1.0)):
+            blob(draw, [Ell(cx + u + d * 1.4, r.sh_y + v, k * 1.4, k), Ell(cx + u + d * 1.4 + k, r.sh_y + v + k * 0.8, k * 0.6, k * 0.8)],
+                 shade(MUD, 1.2), sh=None, line=False)
+    rig_belt(r, draw, shade(MUD, 1.6), buckle=MUD_PAD)
+    rig_arms(r, draw, MUD_SKIN, MUD_SKIN, layer="near", hands=False)
+    head_skull(r, draw, MUD_SKIN, ears=False)
+    hx, hy, rx, ry = r.hx, r.head_cy, r.head_rx, r.head_ry
+    if not r.back:
+        # frog eyes bulging above the head line, and a wide grin
+        e1, e2, ey, mx, my = face_anchor(r)
+        for side, ex in (((-1, e1), (1, e2)) if not d else ((-d, e1), (d, e2))):
+            w = 1.0 if (not d or side == -d) else 0.72
+            cel(draw, Ell(ex, ey - 2.6, 3.4 * w, 3.2), MUD_SKIN, sh=(0.4, 0.4))
+            ms_eye(draw, ex, ey - 2.2, 4.0 * w, 4.4, (230, 180, 40), (float(d), 0.0), "bright", skin=MUD_SKIN, side=side)
+        mw = 5.0 if not d else 3.4
+        mxc = hx + d * 5.6
+        stroke(draw, [(mxc - mw, my - 0.6), (mxc - mw * 0.4, my + 0.8), (mxc + mw * 0.4, my + 0.8), (mxc + mw, my - 0.6)],
+               0.8, shade(MUD_SKIN, 2.4))
+        Poly([(mxc + 1.0, my + 0.5), (mxc + 2.0, my + 0.4), (mxc + 1.5, my + 1.8)]).draw(draw, fill=(250, 248, 236))
+    # lily pad hat with a lotus
+    pad = Ell(hx - d * 0.6, hy - ry + 2.8, rx + 3.6, 3.6)
+    cel(draw, pad, MUD_PAD, sh=(0.0, 1.0))
+    stroke(draw, [(hx - 8.0, hy - ry + 2.6), (hx + 8.0, hy - ry + 2.6)], 0.5, shade(MUD_PAD, 1.4))
+    lx, ly = hx + (4.0 if not d else -d * 2.0), hy - ry + 0.6
+    for a in range(-150, -20, 26):
+        cel(draw, Poly([(lx, ly + 1.0), (lx + math.cos(math.radians(a - 12)) * 2.2, ly + math.sin(math.radians(a - 12)) * 2.2),
+                        (lx + math.cos(math.radians(a)) * 4.0, ly + math.sin(math.radians(a)) * 4.0),
+                        (lx + math.cos(math.radians(a + 12)) * 2.2, ly + math.sin(math.radians(a + 12)) * 2.2)]),
+            MUD_LOTUS, sh=None, lw=0.6)
+    cel(draw, Ell(lx, ly, 1.2, 1.0), (255, 226, 110), sh=None, lw=0.5)
+    for side in _sides(r):
+        h = rig_hand(r, draw, side, MUD_SKIN)
+        if side == ball_side and not r.back:
+            bx, by = h[0] + (1.6 if not d else d * 2.0), h[1] - 3.4
+            blob(draw, [Ell(bx, by, 3.4, 3.2), Ell(bx - 1.6, by + 2.6, 1.0, 1.6), Ell(bx + 1.8, by + 2.2, 0.8, 1.4)],
+                 MUD, sh=(0.8, 0.8))
+            Ell(bx - 1.2, by - 1.2, 0.8, 0.7).draw(draw, fill=lit(MUD, 1.2))
 
 
 # ===================================================================
-# EMBER (ID 25) -- Small fire elemental, glowing orange body,
-#                   spark particles
+# EMBER (25) -- a tiny fire sprite
 # ===================================================================
+
+EMB_COLORS = ((244, 96, 40), (255, 172, 60), (255, 238, 150))
+
 
 def draw_ember(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    flicker = [0, 2, -1, 1][frame]
-    spark_phase = frame * (math.pi / 2)
-
-    base_y = oy + 54 + bob
+    bob = [0, -2, -3, -2][frame]
+    base = oy + 54 + bob
     cx = ox + 32
-    body_cy = base_y - 16  # smaller character
-    head_cy = body_cy - 14
-
-    # --- Small flame legs ---
-    if direction in (DOWN, UP):
-        for side in [-1, 1]:
-            lx = cx + side * 5
-            draw.polygon([(lx - 3, body_cy + 6), (lx + 3, body_cy + 6),
-                          (lx + 2, base_y + 2), (lx - 2, base_y + 2)],
-                         fill=EMBER_BODY, outline=None)
-            draw.polygon([(lx - 1, body_cy + 8), (lx + 1, body_cy + 8),
-                          (lx, base_y), (lx, base_y)],
-                         fill=EMBER_CORE, outline=None)
-            # Flame tip
-            draw.polygon([(lx - 2, base_y + 2), (lx, base_y + 4 + flicker),
-                          (lx + 2, base_y + 2)],
-                         fill=EMBER_BODY_DARK, outline=None)
-    elif direction == LEFT:
-        lx = cx - 2
-        draw.polygon([(lx - 3, body_cy + 6), (lx + 3, body_cy + 6),
-                      (lx + 2, base_y + 2), (lx - 2, base_y + 2)],
-                     fill=EMBER_BODY, outline=None)
-    else:  # RIGHT
-        lx = cx + 2
-        draw.polygon([(lx - 3, body_cy + 6), (lx + 3, body_cy + 6),
-                      (lx + 2, base_y + 2), (lx - 2, base_y + 2)],
-                     fill=EMBER_BODY, outline=None)
-
-    # --- Small round body (glowing) ---
-    if direction == DOWN:
-        ellipse(draw, cx, body_cy, 10, 9, EMBER_BODY)
-        ellipse(draw, cx, body_cy, 7, 6, EMBER_BODY_LIGHT, outline=None)
-        ellipse(draw, cx, body_cy, 4, 3, EMBER_CORE, outline=None)
-        draw.point((cx, body_cy), fill=EMBER_SPARK_BRIGHT)
-    elif direction == UP:
-        ellipse(draw, cx, body_cy, 10, 9, EMBER_BODY)
-        ellipse(draw, cx, body_cy, 7, 6, EMBER_BODY_DARK, outline=None)
-        ellipse(draw, cx, body_cy, 4, 3, EMBER_CORE, outline=None)
-    elif direction == LEFT:
-        ellipse(draw, cx - 1, body_cy, 9, 9, EMBER_BODY)
-        ellipse(draw, cx - 1, body_cy, 6, 6, EMBER_BODY_LIGHT, outline=None)
-        ellipse(draw, cx - 1, body_cy, 3, 3, EMBER_CORE, outline=None)
-    else:  # RIGHT
-        ellipse(draw, cx + 1, body_cy, 9, 9, EMBER_BODY)
-        ellipse(draw, cx + 1, body_cy, 6, 6, EMBER_BODY_LIGHT, outline=None)
-        ellipse(draw, cx + 1, body_cy, 3, 3, EMBER_CORE, outline=None)
-
-    # --- Small arms (flame wisps) ---
-    if direction == DOWN:
-        for side in [-1, 1]:
-            ax = cx + side * 10
-            draw.polygon([(ax - 2, body_cy - 2), (ax, body_cy + 6 + flicker),
-                          (ax + 2, body_cy - 2)],
-                         fill=EMBER_BODY, outline=None)
-            draw.polygon([(ax - 1, body_cy - 1), (ax, body_cy + 4 + flicker),
-                          (ax + 1, body_cy - 1)],
-                         fill=EMBER_BODY_LIGHT, outline=None)
-    elif direction == UP:
-        for side in [-1, 1]:
-            ax = cx + side * 10
-            draw.polygon([(ax - 2, body_cy - 2), (ax, body_cy + 4),
-                          (ax + 2, body_cy - 2)],
-                         fill=EMBER_BODY, outline=None)
-    elif direction == LEFT:
-        ax = cx - 8
-        draw.polygon([(ax - 2, body_cy - 1), (ax, body_cy + 5 + flicker),
-                      (ax + 2, body_cy - 1)],
-                     fill=EMBER_BODY, outline=None)
-    else:  # RIGHT
-        ax = cx + 8
-        draw.polygon([(ax - 2, body_cy - 1), (ax, body_cy + 5 + flicker),
-                      (ax + 2, body_cy - 1)],
-                     fill=EMBER_BODY, outline=None)
-
-    # --- Head (round flame) ---
-    if direction == DOWN:
-        ellipse(draw, cx, head_cy, 8, 7, EMBER_BODY)
-        ellipse(draw, cx, head_cy, 5, 4, EMBER_BODY_LIGHT, outline=None)
-        ellipse(draw, cx, head_cy, 3, 2, EMBER_CORE, outline=None)
-        # Bright eyes
-        draw.rectangle([cx - 4, head_cy, cx - 2, head_cy + 2], fill=EMBER_EYE)
-        draw.rectangle([cx + 2, head_cy, cx + 4, head_cy + 2], fill=EMBER_EYE)
-        # Flame top
-        for dx in [-4, -1, 2, 5]:
-            fh = 5 + (abs(dx) % 3) + flicker
-            draw.polygon([(cx + dx - 1, head_cy - 4),
-                          (cx + dx, head_cy - 4 - fh),
-                          (cx + dx + 1, head_cy - 4)],
-                         fill=EMBER_BODY, outline=None)
-    elif direction == UP:
-        ellipse(draw, cx, head_cy, 8, 7, EMBER_BODY)
-        ellipse(draw, cx, head_cy, 5, 4, EMBER_BODY_DARK, outline=None)
-        for dx in [-4, -1, 2, 5]:
-            fh = 4 + flicker
-            draw.polygon([(cx + dx - 1, head_cy - 4),
-                          (cx + dx, head_cy - 4 - fh),
-                          (cx + dx + 1, head_cy - 4)],
-                         fill=EMBER_BODY, outline=None)
-    elif direction == LEFT:
-        ellipse(draw, cx - 1, head_cy, 7, 7, EMBER_BODY)
-        ellipse(draw, cx - 1, head_cy, 4, 4, EMBER_BODY_LIGHT, outline=None)
-        draw.rectangle([cx - 5, head_cy, cx - 3, head_cy + 2], fill=EMBER_EYE)
-        for dx in [-4, -1, 2]:
-            fh = 4 + flicker
-            draw.polygon([(cx + dx - 2, head_cy - 4),
-                          (cx + dx, head_cy - 4 - fh),
-                          (cx + dx + 1, head_cy - 4)],
-                         fill=EMBER_BODY, outline=None)
-    else:  # RIGHT
-        ellipse(draw, cx + 1, head_cy, 7, 7, EMBER_BODY)
-        ellipse(draw, cx + 1, head_cy, 4, 4, EMBER_BODY_LIGHT, outline=None)
-        draw.rectangle([cx + 3, head_cy, cx + 5, head_cy + 2], fill=EMBER_EYE)
-        for dx in [-2, 1, 4]:
-            fh = 4 + flicker
-            draw.polygon([(cx + dx - 1, head_cy - 4),
-                          (cx + dx, head_cy - 4 - fh),
-                          (cx + dx + 2, head_cy - 4)],
-                         fill=EMBER_BODY, outline=None)
-
-    # --- Spark particles ---
-    for i in range(8):
-        angle = spark_phase + i * (math.pi / 4)
-        er = 14 + (i % 3) * 3
-        ex = int(cx + math.cos(angle) * er)
-        ey = int(body_cy - 4 + math.sin(angle) * (er * 0.5))
-        draw.point((ex, ey), fill=EMBER_SPARK)
-        if i % 2 == 0:
-            draw.point((ex + 1, ey), fill=EMBER_SPARK_BRIGHT)
+    d = {DOWN: 0, UP: 0, LEFT: -1, RIGHT: 1}[direction]
+    back = direction == UP
+    sway = [0.0, 1.0, 0.0, -1.0][frame]
+    by = base - 14.0
+    # sparks circling
+    for i in range(3):
+        a = math.radians(frame * 90 + i * 120)
+        sparkle(draw, cx + math.cos(a) * 14.0, by - 2.0 + math.sin(a) * 4.0, 1.6, EMB_COLORS[2])
+    # a round flame body, its tip curling up into a lick
+    flame(draw, cx - d * 1.0, base - 3.0, 26.0, 36.0, EMB_COLORS, sway=sway * 1.6 - d * 4.0)
+    cel(draw, Ell(cx, by, 10.4, 9.6), EMB_COLORS[1], sh=None, line=False)
+    cel(draw, Ell(cx + d * 1.4, by + 1.0, 6.8, 6.0), EMB_COLORS[2], sh=None, line=False)
+    # little flame hands
+    for side in ((-1, 1) if not d else (d,)):
+        hx = cx + side * 11.6 if not d else cx + d * 9.4
+        hy2 = by + 3.0 + (sway if side > 0 else -sway) * 0.6
+        flame(draw, hx, hy2 + 2.4, 4.4, 5.6, EMB_COLORS, sway=(side if not d else d) * 1.2)
+    # tiny feet
+    for side in (-1, 1):
+        cel(draw, Ell(cx + side * 3.4, base - 2.6, 2.2, 1.4), EMB_COLORS[0], sh=None)
+    if back:
+        return
+    # big bright eyes and a little smile
+    for side in ((-1, 1) if not d else (d, -d)):
+        ex = cx + side * 4.0 + d * 2.0
+        w = 1.0 if not d or side == d else 0.7
+        ms_eye(draw, ex, by - 0.6, 4.0 * w, 5.2, (150, 60, 30), (float(d), 0.0), "bright", skin=EMB_COLORS[2],
+               side=side if not d else -side, lash=(120, 40, 30))
+    ms_mouth(draw, cx + d * 3.0, by + 4.2, "open" if frame % 2 else "smile", EMB_COLORS[2], 0.9)
+    for side in (-1, 1):
+        Ell(cx + side * 7.4 + d * 1.6, by + 2.6, 1.6, 0.8).draw(draw, fill=(255, 140, 110))
 
 
 # ===================================================================
-# AVALANCHE (ID 26) -- Large icy/gray armored figure, snow/ice
-#                       shoulder pads, frost breath
+# AVALANCHE (26) -- a yeti
 # ===================================================================
+
+YETI_FUR = (242, 246, 252)
+YETI_SH = (200, 214, 238)
+YETI_FACE = (132, 184, 230)
+YETI_HORN = (214, 206, 190)
+
 
 def draw_avalanche(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    leg_spread = [-4, 0, 4, 0][frame]
-    breath_extend = [0, 2, 4, 2][frame]
-
-    base_y = oy + 54 + bob
+    bob = [0, -1, 0, -1][frame]
+    ph = [0, 1, 0, -1][frame]
+    base = oy + 54 + bob
     cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 20
+    d = {DOWN: 0, UP: 0, LEFT: -1, RIGHT: 1}[direction]
+    back = direction == UP
+    # legs
+    for side in ((-1, 1) if not d else (-d, d)):
+        near = (not d) or side == d
+        fwd = ph * side if not d else (ph if near else -ph)
+        lx = cx + (side * 5.4 if not d else d * fwd * 3.2)
+        ly = base - (1.2 if fwd < 0 and not d else 0)
+        col = YETI_FUR if near else shade(YETI_FUR, 0.6)
+        blob(draw, [Ell(lx, ly - 5.0, 4.0, 5.2)], col, sh=(0.8, 0.8), tone=YETI_SH)
+        cel(draw, Ell(lx + d * 1.0, ly - 0.8, 3.8, 1.8), YETI_FACE if near else shade(YETI_FACE, 0.6), sh=None)
+    # body: a shaggy mass
+    by = base - 17.0
+    w = 11.6 if not d else 9.6
+    parts = [Ell(cx, by, w, 11.0), Ell(cx - w * 0.7, by + 7.0, 3.6, 3.2), Ell(cx, by + 9.4, 4.4, 3.0),
+             Ell(cx + w * 0.7, by + 7.0, 3.6, 3.2)]
+    blob(draw, parts, YETI_FUR, sh=(1.6, 1.4), tone=YETI_SH)
+    if not back:
+        cel(draw, Ell(cx + d * 2.0, by + 2.0, w * 0.52, 6.4), YETI_SH, sh=None, line=False)
+    # arms: long and heavy, knuckles low
+    for side in ((-1, 1) if not d else (-d, d)):
+        near = (not d) or side == d
+        fwd = -ph * side if not d else (-ph if near else ph)
+        sx = cx + (side * (w - 1.0) if not d else side * 0.6)
+        fx = sx + (side * 4.4 if not d else d * fwd * 3.4)
+        fy = base - 7.0 - fwd * 0.8
+        col = YETI_FUR if near else shade(YETI_FUR, 0.6)
+        blob(draw, [Limb([(sx, by - 6.0), ((sx + fx) / 2 + (side if not d else 0) * 1.4, by + 1.0), (fx, fy - 3.0)],
+                         [4.0, 3.6, 3.2])], col, sh=(1.0, 0.8), tone=YETI_SH)
+        cel(draw, Ell(fx, fy, 3.4, 2.8), YETI_FACE if near else shade(YETI_FACE, 0.6), sh=(0.6, 0.6))
+        for k in (-1.4, 0.0, 1.4):
+            Poly([(fx + k - 0.5, fy + 2.0), (fx + k + 0.5, fy + 2.0), (fx + k, fy + 3.4)]).draw(draw, fill=(250, 250, 244))
+        if near:
+            crystal(draw, sx + (side * 1.4 if not d else 0), by + 3.0, 90, 3.4, 1.6, color=(206, 240, 255))
+    # head: sunk into the shoulders, horns, a blue face with a big mouth
+    hx, hy = cx + d * 3.0, base - 30.0
+    for s in ((-1, 1) if not d else (-d,)):
+        hb = (hx + s * 7.4, hy - 4.0) if not d else (hx - d * 4.0, hy - 6.0)
+        tip = (hb[0] + (s * 5.0 if not d else -d * 5.4), hb[1] - 4.4)
+        cel(draw, Limb([hb, ((hb[0] + tip[0]) / 2 + (s if not d else -d) * 1.4, hb[1] - 1.0), tip], [1.9, 1.4, 0.4]),
+            YETI_HORN, sh=(0.4, 0.4))
+    blob(draw, [Ell(hx, hy, 10.0, 8.6), Ell(hx - 6.0, hy - 5.4, 3.0, 2.6), Ell(hx, hy - 7.4, 3.6, 2.8),
+                Ell(hx + 6.0, hy - 5.4, 3.0, 2.6)], YETI_FUR, sh=(1.2, 1.0), tone=YETI_SH)
+    if back:
+        return
+    fx0 = hx + d * 2.4
+    cel(draw, Ell(fx0, hy + 1.6, 7.0 if not d else 5.6, 6.0), YETI_FACE, sh=(0.8, 0.8))
+    for side, ex in (((-1, fx0 - 3.0), (1, fx0 + 3.0)) if not d else ((d, fx0 + d * 2.0), (-d, fx0 - d * 2.0))):
+        w = 1.0 if not d or side == d else 0.7
+        ms_eye(draw, ex, hy - 0.2, 3.2 * w, 3.8, (40, 70, 120), (float(d), 0.0), "sharp", skin=YETI_FACE,
+               side=side if not d else -side, lash=(30, 50, 90))
+    mx = fx0 + d * 1.0
+    Poly([(mx - 3.6, hy + 3.6), (mx + 3.6, hy + 3.6), (mx + 2.4, hy + 6.4), (mx - 2.4, hy + 6.4)]).draw(draw, fill=(60, 40, 70))
+    for s in (-1, 1):
+        Poly([(mx + s * 2.6 - 0.7, hy + 3.6), (mx + s * 2.6 + 0.7, hy + 3.6), (mx + s * 2.4, hy + 5.6)]).draw(
+            draw, fill=(252, 252, 246))
 
-    # --- Heavy legs ---
-    if direction in (DOWN, UP):
-        for side in [-1, 1]:
-            ls = leg_spread if side == -1 else -leg_spread
-            lx = cx + side * 7 + ls
-            draw.rectangle([lx - 5, body_cy + 10, lx + 5, base_y],
-                           fill=AVAL_ARMOR, outline=OUTLINE)
-            draw.rectangle([lx - 5, body_cy + 10, lx - 3, base_y - 6],
-                           fill=AVAL_ARMOR_LIGHT, outline=None)
-            # Ice-encrusted boots
-            draw.rectangle([lx - 5, base_y - 6, lx + 5, base_y],
-                           fill=AVAL_ARMOR_DARK, outline=OUTLINE)
-            draw.point((lx - 2, base_y - 4), fill=AVAL_ICE)
-            draw.point((lx + 2, base_y - 2), fill=AVAL_ICE)
-    elif direction == LEFT:
-        for offset in [leg_spread, -leg_spread]:
-            lx = cx - 3 + offset
-            draw.rectangle([lx - 5, body_cy + 10, lx + 5, base_y],
-                           fill=AVAL_ARMOR, outline=OUTLINE)
-            draw.rectangle([lx - 5, base_y - 6, lx + 5, base_y],
-                           fill=AVAL_ARMOR_DARK, outline=OUTLINE)
-    else:  # RIGHT
-        for offset in [leg_spread, -leg_spread]:
-            lx = cx + 3 + offset
-            draw.rectangle([lx - 5, body_cy + 10, lx + 5, base_y],
-                           fill=AVAL_ARMOR, outline=OUTLINE)
-            draw.rectangle([lx - 5, base_y - 6, lx + 5, base_y],
-                           fill=AVAL_ARMOR_DARK, outline=OUTLINE)
-
-    # --- Large body ---
-    if direction == DOWN:
-        ellipse(draw, cx, body_cy, 16, 14, AVAL_ARMOR)
-        ellipse(draw, cx + 4, body_cy + 2, 12, 10, AVAL_ARMOR_DARK, outline=None)
-        ellipse(draw, cx - 2, body_cy - 2, 10, 8, AVAL_ARMOR_LIGHT, outline=None)
-        # Ice plate chest
-        draw.polygon([(cx - 6, body_cy - 6), (cx, body_cy - 10),
-                      (cx + 6, body_cy - 6), (cx + 4, body_cy + 2),
-                      (cx - 4, body_cy + 2)],
-                     fill=AVAL_ICE, outline=OUTLINE)
-        draw.polygon([(cx - 3, body_cy - 4), (cx, body_cy - 8),
-                      (cx + 3, body_cy - 4)],
-                     fill=AVAL_ICE_BRIGHT, outline=None)
-        # Belt
-        draw.rectangle([cx - 16, body_cy + 8, cx + 16, body_cy + 14],
-                       fill=AVAL_ARMOR_DARK, outline=OUTLINE)
-    elif direction == UP:
-        ellipse(draw, cx, body_cy, 16, 14, AVAL_ARMOR)
-        ellipse(draw, cx + 4, body_cy + 2, 12, 10, AVAL_ARMOR_DARK, outline=None)
-        draw.rectangle([cx - 16, body_cy + 8, cx + 16, body_cy + 14],
-                       fill=AVAL_ARMOR_DARK, outline=OUTLINE)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, body_cy, 14, 14, AVAL_ARMOR)
-        ellipse(draw, cx + 2, body_cy + 2, 10, 10, AVAL_ARMOR_DARK, outline=None)
-        ellipse(draw, cx - 4, body_cy - 2, 8, 8, AVAL_ARMOR_LIGHT, outline=None)
-        draw.rectangle([cx - 16, body_cy + 8, cx + 12, body_cy + 14],
-                       fill=AVAL_ARMOR_DARK, outline=OUTLINE)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, body_cy, 14, 14, AVAL_ARMOR)
-        ellipse(draw, cx + 6, body_cy + 2, 10, 10, AVAL_ARMOR_DARK, outline=None)
-        ellipse(draw, cx, body_cy - 2, 8, 8, AVAL_ARMOR_LIGHT, outline=None)
-        draw.rectangle([cx - 12, body_cy + 8, cx + 16, body_cy + 14],
-                       fill=AVAL_ARMOR_DARK, outline=OUTLINE)
-
-    # --- Arms with ice/snow shoulder pads ---
-    if direction == DOWN:
-        for side in [-1, 1]:
-            ax = cx + side * 18
-            draw.rectangle([ax - 4, body_cy - 4, ax + 4, body_cy + 6],
-                           fill=AVAL_ARMOR, outline=OUTLINE)
-            draw.rectangle([ax - 3, body_cy + 2, ax + 3, body_cy + 6],
-                           fill=AVAL_SKIN, outline=OUTLINE)
-            # Snow/ice shoulder pad
-            ellipse(draw, ax, body_cy - 6, 8, 5, AVAL_ICE)
-            ellipse(draw, ax - 2, body_cy - 8, 5, 3, AVAL_ICE_BRIGHT, outline=None)
-            # Snow cap on top
-            ellipse(draw, ax, body_cy - 10, 6, 3, AVAL_FROST, outline=None)
-            draw.point((ax - 3, body_cy - 10), fill=(255, 255, 255))
-    elif direction == UP:
-        for side in [-1, 1]:
-            ax = cx + side * 18
-            draw.rectangle([ax - 4, body_cy - 4, ax + 4, body_cy + 6],
-                           fill=AVAL_ARMOR, outline=OUTLINE)
-            ellipse(draw, ax, body_cy - 6, 8, 5, AVAL_ICE)
-            ellipse(draw, ax, body_cy - 10, 6, 3, AVAL_FROST, outline=None)
-    elif direction == LEFT:
-        ax = cx - 14
-        draw.rectangle([ax - 4, body_cy - 3, ax + 4, body_cy + 6],
-                       fill=AVAL_ARMOR, outline=OUTLINE)
-        draw.rectangle([ax - 3, body_cy + 2, ax + 3, body_cy + 6],
-                       fill=AVAL_SKIN, outline=OUTLINE)
-        ellipse(draw, ax, body_cy - 5, 8, 5, AVAL_ICE)
-        ellipse(draw, ax - 2, body_cy - 7, 5, 3, AVAL_ICE_BRIGHT, outline=None)
-        ellipse(draw, ax, body_cy - 9, 6, 3, AVAL_FROST, outline=None)
-    else:  # RIGHT
-        ax = cx + 14
-        draw.rectangle([ax - 4, body_cy - 3, ax + 4, body_cy + 6],
-                       fill=AVAL_ARMOR, outline=OUTLINE)
-        draw.rectangle([ax - 3, body_cy + 2, ax + 3, body_cy + 6],
-                       fill=AVAL_SKIN, outline=OUTLINE)
-        ellipse(draw, ax, body_cy - 5, 8, 5, AVAL_ICE)
-        ellipse(draw, ax + 2, body_cy - 7, 5, 3, AVAL_ICE_BRIGHT, outline=None)
-        ellipse(draw, ax, body_cy - 9, 6, 3, AVAL_FROST, outline=None)
-
-    # --- Head (icy helm) ---
-    if direction == DOWN:
-        ellipse(draw, cx, head_cy, 14, 12, AVAL_ARMOR)
-        ellipse(draw, cx + 2, head_cy + 2, 10, 8, AVAL_ARMOR_DARK, outline=None)
-        ellipse(draw, cx - 2, head_cy - 2, 8, 6, AVAL_ARMOR_LIGHT, outline=None)
-        # Visor
-        draw.rectangle([cx - 8, head_cy, cx + 8, head_cy + 4],
-                       fill=BLACK, outline=None)
-        draw.rectangle([cx - 6, head_cy + 1, cx + 6, head_cy + 3],
-                       fill=AVAL_EYE, outline=None)
-        # Snow on helm
-        ellipse(draw, cx, head_cy - 8, 10, 4, AVAL_FROST, outline=None)
-        draw.point((cx - 6, head_cy - 8), fill=(255, 255, 255))
-        draw.point((cx + 4, head_cy - 9), fill=(255, 255, 255))
-        # Frost breath
-        if direction == DOWN:
-            for i in range(breath_extend):
-                bx = cx - breath_extend + i * 2
-                by = head_cy + 8 + i
-                draw.point((bx, by), fill=AVAL_FROST)
-                draw.point((bx + 1, by), fill=AVAL_ICE_BRIGHT)
-    elif direction == UP:
-        ellipse(draw, cx, head_cy, 14, 12, AVAL_ARMOR)
-        ellipse(draw, cx + 2, head_cy + 2, 10, 8, AVAL_ARMOR_DARK, outline=None)
-        ellipse(draw, cx, head_cy - 8, 10, 4, AVAL_FROST, outline=None)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, head_cy, 13, 12, AVAL_ARMOR)
-        ellipse(draw, cx + 2, head_cy + 2, 9, 8, AVAL_ARMOR_DARK, outline=None)
-        ellipse(draw, cx - 4, head_cy - 2, 7, 6, AVAL_ARMOR_LIGHT, outline=None)
-        draw.rectangle([cx - 10, head_cy, cx - 2, head_cy + 4],
-                       fill=BLACK, outline=None)
-        draw.rectangle([cx - 9, head_cy + 1, cx - 3, head_cy + 3],
-                       fill=AVAL_EYE, outline=None)
-        ellipse(draw, cx - 2, head_cy - 8, 9, 4, AVAL_FROST, outline=None)
-        # Frost breath sideways
-        for i in range(breath_extend):
-            bx = cx - 12 - i * 2
-            by = head_cy + 4 + i
-            draw.point((bx, by), fill=AVAL_FROST)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, head_cy, 13, 12, AVAL_ARMOR)
-        ellipse(draw, cx + 6, head_cy + 2, 9, 8, AVAL_ARMOR_DARK, outline=None)
-        ellipse(draw, cx, head_cy - 2, 7, 6, AVAL_ARMOR_LIGHT, outline=None)
-        draw.rectangle([cx + 2, head_cy, cx + 10, head_cy + 4],
-                       fill=BLACK, outline=None)
-        draw.rectangle([cx + 3, head_cy + 1, cx + 9, head_cy + 3],
-                       fill=AVAL_EYE, outline=None)
-        ellipse(draw, cx + 2, head_cy - 8, 9, 4, AVAL_FROST, outline=None)
-        for i in range(breath_extend):
-            bx = cx + 12 + i * 2
-            by = head_cy + 4 + i
-            draw.point((bx, by), fill=AVAL_FROST)
-
-    # --- Snow/frost particles ---
-    for i in range(6):
-        angle = frame * (math.pi / 2) + i * (math.pi / 3)
-        fr = 22
-        fx = int(cx + math.cos(angle) * fr)
-        fy = int(body_cy + math.sin(angle) * (fr * 0.6))
-        draw.point((fx, fy), fill=AVAL_FROST)
-        draw.point((fx + 1, fy), fill=(255, 255, 255))
-
-
-# ===================================================================
-# REGISTRY & MAIN
-# ===================================================================
 
 ELEMENTAL_DRAW_FUNCTIONS = {
     'pyromancer': draw_pyromancer,

@@ -1,3208 +1,710 @@
 #!/usr/bin/env python3
 """Specialist character sprite generators (IDs 102-111).
 
-10 characters with unique draw functions for profession-defining visuals.
-This file contains the first 5: Alchemist, Puppeteer, Gambler, Blacksmith, Pirate.
+Ten tradespeople and oddballs, in MapleStory's style, each carrying the tool
+of their trade oversized: the alchemist's bubbling flask, the puppeteer's
+marionette, the gambler's cards, the blacksmith's glowing hammer, the
+pirate's parrot, the chef's frying pan, the musician's guitar, the
+astronomer's telescope, the runesmith's floating runestone -- and the
+shapeshifter, caught halfway through turning into something else.
 """
 
-import sys
+import math
 import os
+import sys
+
 sys.path.insert(0, os.path.dirname(__file__))
 from sprite_base import (
-    generate_character, ellipse, pill, _darken, _brighten,
-    draw_fur_texture, draw_scale_texture,
-    OUTLINE, BLACK, DOWN, UP, LEFT, RIGHT,
+    DOWN, UP, LEFT, RIGHT, GOLD, LEATHER, STEEL, WOOD, SKIN, SKIN_TAN, SKIN_BROWN, SKIN_PALE, TOOTH,
+    HAIR_STYLES, Ell, Limb, Poly, RRect, arc_pts, blade, blob, bolt, cel, cloud, crystal, flame, gem,
+    generate_character, hand_at, head_face, head_skull, ink, leaf, lit, mix, ms_eye, ms_mouth, rig,
+    rig_arms, rig_belt, rig_cape, rig_hair, rig_hand, rig_head, rig_hood, rig_legs, rig_robe, rig_torso,
+    shade, sparkle, star, stroke, xform, arm_pts, face_anchor,
 )
 
-# ---------------------------------------------------------------------------
-# Palettes
-# ---------------------------------------------------------------------------
+VOID = (34, 26, 40)
 
-# Alchemist palette
-ALC_COAT = (70, 110, 55)
-ALC_COAT_LIGHT = (95, 140, 75)
-ALC_COAT_DARK = (48, 78, 38)
-ALC_APRON = (180, 170, 150)
-ALC_APRON_DARK = (150, 140, 120)
-ALC_APRON_STAIN = (120, 100, 60)
-ALC_SKIN = (220, 200, 175)
-ALC_SKIN_DARK = (190, 170, 145)
-ALC_GOGGLES = (160, 140, 80)
-ALC_GOGGLES_LENS = (140, 200, 220)
-ALC_GOGGLES_LENS_BRIGHT = (180, 230, 245)
-ALC_FLASK = (100, 180, 110)
-ALC_FLASK_BRIGHT = (140, 220, 150)
-ALC_FLASK_LIQUID = (80, 200, 60)
-ALC_FLASK_BUBBLE = (160, 240, 140)
-ALC_VIAL_RED = (200, 60, 60)
-ALC_VIAL_BLUE = (60, 100, 200)
-ALC_VIAL_YELLOW = (220, 200, 60)
-ALC_BELT = (100, 75, 50)
-ALC_BELT_DARK = (70, 52, 35)
-ALC_HAIR = (140, 100, 60)
-ALC_BOOT = (80, 60, 40)
-ALC_RESIDUE = (160, 140, 50)
-ALC_RESIDUE2 = (100, 80, 40)
-ALC_LEG = (90, 80, 65)
 
-# Puppeteer palette
-PUP_COAT = (80, 35, 90)
-PUP_COAT_LIGHT = (110, 55, 120)
-PUP_COAT_DARK = (55, 22, 62)
-PUP_SKIN = (230, 215, 220)
-PUP_SKIN_DARK = (200, 185, 190)
-PUP_STRING = (200, 200, 210)
-PUP_STRING_DIM = (160, 160, 170)
-PUP_PUPPET_BODY = (200, 120, 80)
-PUP_PUPPET_HEAD = (220, 180, 150)
-PUP_PUPPET_EYE = (30, 30, 30)
-PUP_MASK = (230, 220, 200)
-PUP_MASK_DARK = (190, 180, 160)
-PUP_MASK_ACCENT = (200, 50, 50)
-PUP_BAR = (140, 110, 70)
-PUP_BAR_DARK = (100, 78, 48)
-PUP_HAIR = (50, 30, 55)
-PUP_LEG = (60, 30, 65)
-PUP_BOOT = (45, 25, 50)
-PUP_GLOVE = (90, 40, 100)
+def _sides(r):
+    return (-1, 1) if not r.d else (r.d,)
 
-# Gambler palette
-GAM_SUIT = (40, 40, 45)
-GAM_SUIT_LIGHT = (65, 65, 72)
-GAM_SUIT_DARK = (25, 25, 30)
-GAM_VEST = (160, 40, 40)
-GAM_VEST_LIGHT = (190, 60, 60)
-GAM_VEST_DARK = (120, 28, 28)
-GAM_SKIN = (230, 215, 195)
-GAM_SKIN_DARK = (200, 185, 165)
-GAM_HAT = (30, 30, 35)
-GAM_HAT_BAND = (200, 170, 50)
-GAM_HAT_DARK = (20, 20, 22)
-GAM_HAT_LIGHT = (50, 50, 55)
-GAM_CARD_WHITE = (245, 245, 240)
-GAM_CARD_RED = (200, 40, 40)
-GAM_CARD_BLACK = (30, 30, 30)
-GAM_CHAIN = (220, 190, 60)
-GAM_CHAIN_BRIGHT = (250, 220, 80)
-GAM_DICE_WHITE = (240, 240, 235)
-GAM_DICE_DOT = (30, 30, 30)
-GAM_HAIR = (50, 40, 35)
-GAM_LEG = (35, 35, 40)
-GAM_BOOT = (25, 25, 28)
 
-# Blacksmith palette
-BKS_APRON = (120, 80, 45)
-BKS_APRON_DARK = (85, 55, 30)
-BKS_APRON_LIGHT = (150, 105, 60)
-BKS_SKIN = (200, 160, 130)
-BKS_SKIN_DARK = (170, 130, 100)
-BKS_SKIN_SOOT = (140, 110, 85)
-BKS_GAUNTLET = (140, 145, 155)
-BKS_GAUNTLET_DARK = (100, 105, 115)
-BKS_GAUNTLET_LIGHT = (175, 180, 190)
-BKS_HAMMER_HEAD = (160, 165, 175)
-BKS_HAMMER_DARK = (120, 125, 135)
-BKS_HAMMER_HANDLE = (100, 70, 40)
-BKS_GOGGLES = (130, 135, 145)
-BKS_GOGGLES_LENS = (200, 140, 60)
-BKS_GOGGLES_DARK = (90, 95, 105)
-BKS_HAIR = (60, 45, 35)
-BKS_FORGE_GLOW = (255, 140, 40)
-BKS_FORGE_DIM = (200, 100, 30)
-BKS_BELT = (90, 65, 40)
-BKS_BELT_BUCKLE = (180, 170, 50)
-BKS_SOOT = (60, 55, 50)
-BKS_LEG = (100, 80, 60)
-BKS_BOOT = (70, 55, 40)
-BKS_BODY = (160, 130, 100)
-BKS_BODY_DARK = (130, 100, 75)
+def _hold_side(r):
+    return (1 if not r.back else -1) if not r.d else r.d
 
-# Pirate palette
-PIR_COAT = (100, 40, 35)
-PIR_COAT_LIGHT = (135, 60, 50)
-PIR_COAT_DARK = (70, 28, 24)
-PIR_BANDANA = (180, 40, 40)
-PIR_BANDANA_DARK = (140, 30, 30)
-PIR_BANDANA_LIGHT = (210, 60, 55)
-PIR_SKIN = (210, 180, 150)
-PIR_SKIN_DARK = (180, 150, 120)
-PIR_EYEPATCH = (30, 25, 25)
-PIR_EYEPATCH_STRAP = (50, 40, 35)
-PIR_EARRING = (220, 190, 50)
-PIR_CUTLASS_BLADE = (180, 185, 195)
-PIR_CUTLASS_LIGHT = (210, 215, 225)
-PIR_CUTLASS_GUARD = (200, 170, 50)
-PIR_CUTLASS_HANDLE = (100, 70, 40)
-PIR_SKULL_BUCKLE = (220, 215, 200)
-PIR_SKULL_EYE = (30, 25, 25)
-PIR_PEG = (180, 150, 100)
-PIR_PEG_DARK = (140, 115, 75)
-PIR_BELT = (80, 60, 35)
-PIR_BELT_DARK = (55, 42, 25)
-PIR_LEG = (70, 55, 45)
-PIR_BOOT = (50, 38, 30)
-PIR_HAIR = (40, 30, 25)
-PIR_COAT_TAIL = (90, 35, 30)
+
+def _goggles(draw, r, lens=(150, 220, 240), frame_col=(200, 170, 110), y_off=-4.4):
+    hx, hy, rx, d = r.hx, r.head_cy, r.head_rx, r.d
+    if r.back:
+        stroke(draw, [(hx - rx - 0.6, hy + y_off + 0.2), (hx + rx + 0.6, hy + y_off + 0.2)], 1.1, (70, 60, 56))
+        return
+    stroke(draw, [(hx - rx - 0.6, hy + y_off), (hx + rx + 0.6, hy + y_off)] if not d else
+           [(hx - d * 2.0, hy + y_off - 0.2), (hx + d * (rx + 0.6), hy + y_off - 0.4)], 1.1, (70, 60, 56))
+    for k in ((-3.2, 3.2) if not d else (d * 4.4,)):
+        gx = hx + k + d * 1.4
+        cel(draw, Ell(gx, hy + y_off - 0.4, 2.7, 2.3), frame_col, sh=None)
+        cel(draw, Ell(gx, hy + y_off - 0.4, 1.7, 1.4), lens, sh=None, line=False)
+        Ell(gx - 0.6, hy + y_off - 0.9, 0.5, 0.5).draw(draw, fill=(255, 255, 255))
 
 
 # ===================================================================
-# ALCHEMIST (ID 102)
-# Green/brown lab coat, bubbling potion flask, goggles, belt of vials,
-# stained apron, explosion residue marks.
+# ALCHEMIST (102) -- goggles up, a belt of vials, a bubbling flask
 # ===================================================================
+
+ALC_APRON = (92, 154, 86)
+ALC_SHIRT = (240, 236, 226)
+ALC_HAIR = (206, 110, 60)
+POTIONS = ((120, 230, 100), (250, 110, 150), (110, 180, 255))
+
 
 def draw_alchemist(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    leg_spread = [-4, 0, 4, 0][frame]
-    bubble_offset = [0, -2, -1, -3][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 20
-
-    if direction == DOWN:
-        # Legs
-        draw.rectangle([cx - 10 + leg_spread, body_cy + 10,
-                        cx - 4 + leg_spread, base_y], fill=ALC_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=ALC_LEG, outline=OUTLINE)
-        # Boots
-        draw.rectangle([cx - 10 + leg_spread, base_y - 5,
-                        cx - 4 + leg_spread, base_y], fill=ALC_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 5,
-                        cx + 10 - leg_spread, base_y], fill=ALC_BOOT, outline=OUTLINE)
-
-        # Lab coat body
-        ellipse(draw, cx, body_cy, 14, 12, ALC_COAT)
-        ellipse(draw, cx - 3, body_cy - 2, 8, 7, ALC_COAT_LIGHT, outline=None)
-        # V-neck seam
-        draw.line([(cx, body_cy - 8), (cx - 4, body_cy + 4)],
-                  fill=ALC_COAT_DARK, width=1)
-        draw.line([(cx, body_cy - 8), (cx + 4, body_cy + 4)],
-                  fill=ALC_COAT_DARK, width=1)
-
-        # Apron over coat
-        draw.rectangle([cx - 10, body_cy + 2, cx + 10, body_cy + 12],
-                       fill=ALC_APRON, outline=OUTLINE)
-        # Apron stains
-        draw.point((cx - 4, body_cy + 5), fill=ALC_APRON_STAIN)
-        draw.point((cx + 3, body_cy + 7), fill=ALC_APRON_STAIN)
-        draw.point((cx - 6, body_cy + 9), fill=ALC_RESIDUE2)
-
-        # Belt with vials
-        draw.rectangle([cx - 14, body_cy + 10, cx + 14, body_cy + 14],
-                       fill=ALC_BELT, outline=OUTLINE)
-        # Vials on belt
-        draw.rectangle([cx - 10, body_cy + 6, cx - 8, body_cy + 10],
-                       fill=ALC_VIAL_RED, outline=OUTLINE)
-        draw.rectangle([cx - 6, body_cy + 6, cx - 4, body_cy + 10],
-                       fill=ALC_VIAL_BLUE, outline=OUTLINE)
-        draw.rectangle([cx + 4, body_cy + 6, cx + 6, body_cy + 10],
-                       fill=ALC_VIAL_YELLOW, outline=OUTLINE)
-        draw.rectangle([cx + 8, body_cy + 6, cx + 10, body_cy + 10],
-                       fill=ALC_FLASK, outline=OUTLINE)
-
-        # Arms
-        draw.rectangle([cx - 18, body_cy - 6, cx - 12, body_cy + 6],
-                       fill=ALC_COAT, outline=OUTLINE)
-        draw.rectangle([cx - 18, body_cy + 2, cx - 12, body_cy + 6],
-                       fill=ALC_SKIN, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy - 6, cx + 18, body_cy + 6],
-                       fill=ALC_COAT, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy + 2, cx + 18, body_cy + 6],
-                       fill=ALC_SKIN, outline=OUTLINE)
-        # Shoulder pads
-        ellipse(draw, cx - 14, body_cy - 6, 5, 3, ALC_COAT_LIGHT)
-        ellipse(draw, cx + 14, body_cy - 6, 5, 3, ALC_COAT_LIGHT)
-
-        # Flask in right hand
-        flask_x = cx + 20
-        flask_y = body_cy - 2
-        # Flask body (round bottom)
-        ellipse(draw, flask_x, flask_y + 4, 4, 5, ALC_FLASK)
-        ellipse(draw, flask_x - 1, flask_y + 3, 2, 3, ALC_FLASK_BRIGHT, outline=None)
-        # Flask neck
-        draw.rectangle([flask_x - 1, flask_y - 4, flask_x + 1, flask_y],
-                       fill=ALC_FLASK, outline=OUTLINE)
-        # Liquid inside
-        ellipse(draw, flask_x, flask_y + 5, 3, 3, ALC_FLASK_LIQUID, outline=None)
-        # Bubbles
-        draw.point((flask_x - 1, flask_y + 2 + bubble_offset), fill=ALC_FLASK_BUBBLE)
-        draw.point((flask_x + 1, flask_y + bubble_offset), fill=ALC_FLASK_BUBBLE)
-
-        # Head
-        ellipse(draw, cx, head_cy, 14, 13, ALC_HAIR)
-        ellipse(draw, cx, head_cy + 2, 12, 10, ALC_SKIN)
-        ellipse(draw, cx + 2, head_cy + 4, 8, 6, ALC_SKIN_DARK, outline=None)
-        # Eyes
-        draw.rectangle([cx - 6, head_cy + 1, cx - 3, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx - 5, head_cy + 2, cx - 4, head_cy + 3], fill=BLACK)
-        draw.rectangle([cx + 3, head_cy + 1, cx + 6, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx + 4, head_cy + 2, cx + 5, head_cy + 3], fill=BLACK)
-        # Nose and mouth
-        draw.point((cx, head_cy + 6), fill=ALC_SKIN_DARK)
-        draw.line([(cx - 2, head_cy + 8), (cx + 2, head_cy + 8)],
-                  fill=ALC_SKIN_DARK, width=1)
-        # Goggles on forehead
-        draw.rectangle([cx - 8, head_cy - 6, cx + 8, head_cy - 2],
-                       fill=ALC_GOGGLES, outline=OUTLINE)
-        ellipse(draw, cx - 4, head_cy - 4, 3, 2, ALC_GOGGLES_LENS)
-        draw.point((cx - 5, head_cy - 5), fill=ALC_GOGGLES_LENS_BRIGHT)
-        ellipse(draw, cx + 4, head_cy - 4, 3, 2, ALC_GOGGLES_LENS)
-        draw.point((cx + 3, head_cy - 5), fill=ALC_GOGGLES_LENS_BRIGHT)
-        # Explosion residue on coat
-        draw.point((cx - 12, body_cy - 2), fill=ALC_RESIDUE)
-        draw.point((cx + 10, body_cy + 1), fill=ALC_RESIDUE)
-        draw.point((cx - 8, body_cy - 6), fill=ALC_RESIDUE2)
-
-    elif direction == UP:
-        # Legs
-        draw.rectangle([cx - 10 + leg_spread, body_cy + 10,
-                        cx - 4 + leg_spread, base_y], fill=ALC_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=ALC_LEG, outline=OUTLINE)
-        draw.rectangle([cx - 10 + leg_spread, base_y - 5,
-                        cx - 4 + leg_spread, base_y], fill=ALC_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 5,
-                        cx + 10 - leg_spread, base_y], fill=ALC_BOOT, outline=OUTLINE)
-
-        # Lab coat body (back)
-        ellipse(draw, cx, body_cy, 14, 12, ALC_COAT)
-        ellipse(draw, cx, body_cy, 10, 9, ALC_COAT_DARK, outline=None)
-        # Back seam
-        draw.line([(cx, body_cy - 6), (cx, body_cy + 6)],
-                  fill=_darken(ALC_COAT, 0.7), width=1)
-        # Apron ties visible from back
-        draw.line([(cx - 6, body_cy + 4), (cx - 10, body_cy + 8)],
-                  fill=ALC_APRON_DARK, width=2)
-        draw.line([(cx + 6, body_cy + 4), (cx + 10, body_cy + 8)],
-                  fill=ALC_APRON_DARK, width=2)
-        # Belt
-        draw.rectangle([cx - 14, body_cy + 10, cx + 14, body_cy + 14],
-                       fill=ALC_BELT, outline=OUTLINE)
-
-        # Arms
-        draw.rectangle([cx - 18, body_cy - 6, cx - 12, body_cy + 6],
-                       fill=ALC_COAT, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy - 6, cx + 18, body_cy + 6],
-                       fill=ALC_COAT, outline=OUTLINE)
-        ellipse(draw, cx - 14, body_cy - 6, 5, 3, ALC_COAT_LIGHT)
-        ellipse(draw, cx + 14, body_cy - 6, 5, 3, ALC_COAT_LIGHT)
-
-        # Head (back)
-        ellipse(draw, cx, head_cy, 14, 13, ALC_HAIR)
-        ellipse(draw, cx, head_cy - 2, 10, 8, _darken(ALC_HAIR, 0.85), outline=None)
-        # Goggles strap visible from back
-        draw.line([(cx - 10, head_cy - 4), (cx + 10, head_cy - 4)],
-                  fill=ALC_GOGGLES, width=2)
-        # Residue
-        draw.point((cx + 8, body_cy - 4), fill=ALC_RESIDUE)
-
-    elif direction == LEFT:
-        # Legs
-        draw.rectangle([cx - 2 - leg_spread, body_cy + 10,
-                        cx + 4 - leg_spread, base_y],
-                       fill=_darken(ALC_LEG, 0.85), outline=OUTLINE)
-        draw.rectangle([cx - 2 - leg_spread, base_y - 5,
-                        cx + 4 - leg_spread, base_y], fill=ALC_BOOT, outline=OUTLINE)
-        draw.rectangle([cx - 8 + leg_spread, body_cy + 10,
-                        cx - 2 + leg_spread, base_y], fill=ALC_LEG, outline=OUTLINE)
-        draw.rectangle([cx - 8 + leg_spread, base_y - 5,
-                        cx - 2 + leg_spread, base_y], fill=ALC_BOOT, outline=OUTLINE)
-
-        # Lab coat body
-        ellipse(draw, cx - 2, body_cy, 12, 12, ALC_COAT)
-        ellipse(draw, cx - 4, body_cy - 2, 7, 7, ALC_COAT_LIGHT, outline=None)
-        # Apron (side view)
-        draw.rectangle([cx - 8, body_cy + 2, cx + 4, body_cy + 12],
-                       fill=ALC_APRON, outline=OUTLINE)
-        draw.point((cx - 4, body_cy + 6), fill=ALC_APRON_STAIN)
-        # Belt
-        draw.rectangle([cx - 14, body_cy + 10, cx + 10, body_cy + 14],
-                       fill=ALC_BELT, outline=OUTLINE)
-        # Vial on belt
-        draw.rectangle([cx - 8, body_cy + 6, cx - 6, body_cy + 10],
-                       fill=ALC_VIAL_RED, outline=OUTLINE)
-
-        # Front arm with flask
-        draw.rectangle([cx - 14, body_cy - 4, cx - 8, body_cy + 6],
-                       fill=ALC_COAT, outline=OUTLINE)
-        draw.rectangle([cx - 14, body_cy + 2, cx - 8, body_cy + 6],
-                       fill=ALC_SKIN, outline=OUTLINE)
-        ellipse(draw, cx - 10, body_cy - 6, 5, 3, ALC_COAT_LIGHT)
-        # Flask held in front
-        flask_x = cx - 16
-        flask_y = body_cy
-        ellipse(draw, flask_x, flask_y + 4, 3, 4, ALC_FLASK)
-        ellipse(draw, flask_x - 1, flask_y + 3, 2, 2, ALC_FLASK_BRIGHT, outline=None)
-        draw.rectangle([flask_x - 1, flask_y - 2, flask_x + 1, flask_y + 1],
-                       fill=ALC_FLASK, outline=OUTLINE)
-        ellipse(draw, flask_x, flask_y + 5, 2, 2, ALC_FLASK_LIQUID, outline=None)
-        draw.point((flask_x, flask_y + 1 + bubble_offset), fill=ALC_FLASK_BUBBLE)
-
-        # Head
-        ellipse(draw, cx - 2, head_cy, 13, 13, ALC_HAIR)
-        ellipse(draw, cx - 4, head_cy + 2, 10, 9, ALC_SKIN)
-        ellipse(draw, cx - 2, head_cy + 4, 6, 5, ALC_SKIN_DARK, outline=None)
-        # Eye
-        draw.rectangle([cx - 10, head_cy + 1, cx - 7, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx - 9, head_cy + 2, cx - 8, head_cy + 3], fill=BLACK)
-        # Nose and mouth
-        draw.point((cx - 9, head_cy + 6), fill=ALC_SKIN_DARK)
-        draw.line([(cx - 10, head_cy + 8), (cx - 7, head_cy + 8)],
-                  fill=ALC_SKIN_DARK, width=1)
-        # Goggles on forehead
-        draw.rectangle([cx - 8, head_cy - 6, cx + 4, head_cy - 2],
-                       fill=ALC_GOGGLES, outline=OUTLINE)
-        ellipse(draw, cx - 4, head_cy - 4, 3, 2, ALC_GOGGLES_LENS)
-        draw.point((cx - 5, head_cy - 5), fill=ALC_GOGGLES_LENS_BRIGHT)
-        # Residue
-        draw.point((cx - 10, body_cy - 3), fill=ALC_RESIDUE)
-
-    else:  # RIGHT
-        # Legs
-        draw.rectangle([cx - 2 + leg_spread, body_cy + 10,
-                        cx + 4 + leg_spread, base_y],
-                       fill=_darken(ALC_LEG, 0.85), outline=OUTLINE)
-        draw.rectangle([cx - 2 + leg_spread, base_y - 5,
-                        cx + 4 + leg_spread, base_y], fill=ALC_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=ALC_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 5,
-                        cx + 10 - leg_spread, base_y], fill=ALC_BOOT, outline=OUTLINE)
-
-        # Lab coat body
-        ellipse(draw, cx + 2, body_cy, 12, 12, ALC_COAT)
-        ellipse(draw, cx, body_cy - 2, 7, 7, ALC_COAT_LIGHT, outline=None)
-        # Apron
-        draw.rectangle([cx - 4, body_cy + 2, cx + 8, body_cy + 12],
-                       fill=ALC_APRON, outline=OUTLINE)
-        draw.point((cx + 4, body_cy + 6), fill=ALC_APRON_STAIN)
-        # Belt
-        draw.rectangle([cx - 10, body_cy + 10, cx + 14, body_cy + 14],
-                       fill=ALC_BELT, outline=OUTLINE)
-        draw.rectangle([cx + 6, body_cy + 6, cx + 8, body_cy + 10],
-                       fill=ALC_VIAL_BLUE, outline=OUTLINE)
-
-        # Front arm with flask
-        draw.rectangle([cx + 8, body_cy - 4, cx + 14, body_cy + 6],
-                       fill=ALC_COAT, outline=OUTLINE)
-        draw.rectangle([cx + 8, body_cy + 2, cx + 14, body_cy + 6],
-                       fill=ALC_SKIN, outline=OUTLINE)
-        ellipse(draw, cx + 10, body_cy - 6, 5, 3, ALC_COAT_LIGHT)
-        # Flask
-        flask_x = cx + 16
-        flask_y = body_cy
-        ellipse(draw, flask_x, flask_y + 4, 3, 4, ALC_FLASK)
-        ellipse(draw, flask_x + 1, flask_y + 3, 2, 2, ALC_FLASK_BRIGHT, outline=None)
-        draw.rectangle([flask_x - 1, flask_y - 2, flask_x + 1, flask_y + 1],
-                       fill=ALC_FLASK, outline=OUTLINE)
-        ellipse(draw, flask_x, flask_y + 5, 2, 2, ALC_FLASK_LIQUID, outline=None)
-        draw.point((flask_x, flask_y + 1 + bubble_offset), fill=ALC_FLASK_BUBBLE)
-
-        # Head
-        ellipse(draw, cx + 2, head_cy, 13, 13, ALC_HAIR)
-        ellipse(draw, cx + 4, head_cy + 2, 10, 9, ALC_SKIN)
-        ellipse(draw, cx + 6, head_cy + 4, 6, 5, ALC_SKIN_DARK, outline=None)
-        # Eye
-        draw.rectangle([cx + 7, head_cy + 1, cx + 10, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx + 8, head_cy + 2, cx + 9, head_cy + 3], fill=BLACK)
-        # Nose and mouth
-        draw.point((cx + 9, head_cy + 6), fill=ALC_SKIN_DARK)
-        draw.line([(cx + 7, head_cy + 8), (cx + 10, head_cy + 8)],
-                  fill=ALC_SKIN_DARK, width=1)
-        # Goggles
-        draw.rectangle([cx - 4, head_cy - 6, cx + 8, head_cy - 2],
-                       fill=ALC_GOGGLES, outline=OUTLINE)
-        ellipse(draw, cx + 4, head_cy - 4, 3, 2, ALC_GOGGLES_LENS)
-        draw.point((cx + 3, head_cy - 5), fill=ALC_GOGGLES_LENS_BRIGHT)
-        # Residue
-        draw.point((cx + 10, body_cy - 3), fill=ALC_RESIDUE)
+    r = rig(ox, oy, direction, frame)
+    d = r.d
+    hs = _hold_side(r)
+    if d:
+        rig_arms(r, draw, ALC_SHIRT, SKIN, layer="far")
+    rig_legs(r, draw, (104, 90, 80), (110, 76, 52))
+    rig_torso(r, draw, ALC_SHIRT)
+    cx = r.cx
+    # green apron
+    if not r.back:
+        ap = Poly([(cx - 4.6 + d * 1.4, r.sh_y - 0.6), (cx + 4.6 + d * 1.4, r.sh_y - 0.6), (cx + 5.8 + d * 1.4, r.hip_y + 3.6),
+                   (cx - 5.8 + d * 1.4, r.hip_y + 3.6)]) if not d else \
+            Poly([(cx + d * 0.6, r.sh_y - 0.6), (cx + d * 4.6, r.sh_y - 0.6), (cx + d * 5.4, r.hip_y + 3.6), (cx - d * 1.0, r.hip_y + 3.6)])
+        cel(draw, ap, ALC_APRON, sh=(0.8, 0.6))
+        cel(draw, RRect(cx - 2.6 + d * 1.4, r.hip_y - 1.6, cx + 2.6 + d * 1.4, r.hip_y + 1.2, 0.5), shade(ALC_APRON, 0.6), sh=None)
+    else:
+        stroke(draw, [(cx - 4.0, r.sh_y - 1.0), (cx + 4.0, r.waist_y)], 0.7, ALC_APRON)
+        stroke(draw, [(cx + 4.0, r.sh_y - 1.0), (cx - 4.0, r.waist_y)], 0.7, ALC_APRON)
+    rig_belt(r, draw, LEATHER, buckle=GOLD)
+    if not r.back:
+        for i, u in enumerate((-4.6, -1.6, 3.8) if not d else (d * 3.4,)):
+            vx = cx + u
+            col = POTIONS[i % 3]
+            cel(draw, RRect(vx - 1.0, r.waist_y + 2.8, vx + 1.0, r.waist_y + 5.6, 0.6), col, sh=(0.4, 0.0))
+            cel(draw, RRect(vx - 0.6, r.waist_y + 2.0, vx + 0.6, r.waist_y + 3.0, 0.3), LEATHER, sh=None)
+    rig_arms(r, draw, ALC_SHIRT, SKIN, layer="near", hands=False, reach=0.3)
+    rig_head(r, draw, SKIN, hair=ALC_HAIR, style="wild", eye_color=(90, 160, 90), expression="grin", hat=True)
+    _goggles(draw, r)
+    for side in _sides(r):
+        h = rig_hand(r, draw, side, SKIN, reach=0.3)
+        if side == hs and not r.back:
+            # a round-bottomed flask, bubbling
+            fx, fy = h[0] + (1.8 if not d else d * 2.2), h[1] - 3.4
+            cel(draw, RRect(fx - 1.1, fy - 5.6, fx + 1.1, fy - 2.4, 0.4), (220, 236, 240), sh=None, line_color=(120, 150, 160))
+            cel(draw, Ell(fx, fy, 3.8, 3.6), (220, 236, 240), sh=None, line_color=(120, 150, 160))
+            cel(draw, Poly(arc_pts(fx, fy, 3.0, 2.8, -10, 190, 12)), POTIONS[0], sh=None, line=False)
+            Ell(fx - 1.4, fy - 1.4, 0.8, 0.8).draw(draw, fill=(255, 255, 255))
+            for k in range(2):
+                bx = fx + (k - 0.5) * 1.4 + [0, 0.4, 0, -0.4][frame]
+                by = fy - 7.4 - ((frame + k * 2) % 4) * 1.4
+                cel(draw, Ell(bx, by, 0.9, 0.9), lit(POTIONS[0], 0.6), sh=None, lw=0.4)
 
 
 # ===================================================================
-# PUPPETEER (ID 103)
-# Dark purple outfit, puppet strings from fingers upward, marionette,
-# theatrical mask on hip, control bar held overhead.
+# PUPPETEER (103) -- a doll-like face, a control bar, a dangling marionette
 # ===================================================================
+
+PUP_COAT = (106, 60, 150)
+PUP_SKIN = (250, 238, 238)
+PUP_HAIR = (70, 50, 96)
+PUP_RIBBON = (230, 60, 90)
+PUP_DOLL = (214, 170, 116)
+
+
+def _marionette(draw, x, y, frame):
+    sw = [0.0, 1.0, 0.0, -1.0][frame]
+    # the doll: jointed wooden body, little red hat
+    cel(draw, Limb([(x - 1.4, y + 4.0), (x - 2.0 + sw * 0.4, y + 8.4)], [0.7, 0.6]), PUP_DOLL, sh=None, lw=0.5)
+    cel(draw, Limb([(x + 1.4, y + 4.0), (x + 2.0 - sw * 0.4, y + 8.4)], [0.7, 0.6]), PUP_DOLL, sh=None, lw=0.5)
+    cel(draw, RRect(x - 2.2, y, x + 2.2, y + 4.6, 1.0), PUP_RIBBON, sh=None, lw=0.5)
+    cel(draw, Limb([(x - 2.0, y + 0.6), (x - 4.0, y + 2.6 - sw)], [0.6, 0.5]), PUP_DOLL, sh=None, lw=0.5)
+    cel(draw, Limb([(x + 2.0, y + 0.6), (x + 4.0, y + 2.6 + sw)], [0.6, 0.5]), PUP_DOLL, sh=None, lw=0.5)
+    cel(draw, Ell(x, y - 2.4, 2.6, 2.6), PUP_DOLL, sh=(0.4, 0.4), lw=0.5)
+    Ell(x - 0.9, y - 2.4, 0.4, 0.4).draw(draw, fill=VOID)
+    Ell(x + 0.9, y - 2.4, 0.4, 0.4).draw(draw, fill=VOID)
+    cel(draw, Poly([(x - 2.2, y - 4.0), (x + 2.2, y - 4.0), (x + 0.4, y - 7.4)]), PUP_RIBBON, sh=None, lw=0.5)
+
 
 def draw_puppeteer(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    leg_spread = [-4, 0, 4, 0][frame]
-    puppet_sway = [-2, 0, 2, 0][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 20
-
-    if direction == DOWN:
-        # Legs
-        draw.rectangle([cx - 10 + leg_spread, body_cy + 10,
-                        cx - 4 + leg_spread, base_y], fill=PUP_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=PUP_LEG, outline=OUTLINE)
-        draw.rectangle([cx - 10 + leg_spread, base_y - 5,
-                        cx - 4 + leg_spread, base_y], fill=PUP_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 5,
-                        cx + 10 - leg_spread, base_y], fill=PUP_BOOT, outline=OUTLINE)
-
-        # Body
-        ellipse(draw, cx, body_cy, 14, 12, PUP_COAT)
-        ellipse(draw, cx - 3, body_cy - 2, 8, 7, PUP_COAT_LIGHT, outline=None)
-        # Decorative seam
-        draw.line([(cx, body_cy - 8), (cx, body_cy + 8)],
-                  fill=PUP_COAT_DARK, width=1)
-        # Belt
-        draw.rectangle([cx - 14, body_cy + 8, cx + 14, body_cy + 12],
-                       fill=PUP_COAT_DARK, outline=OUTLINE)
-        # Theatrical mask on belt (right hip)
-        ellipse(draw, cx + 10, body_cy + 6, 4, 5, PUP_MASK)
-        draw.point((cx + 9, body_cy + 5), fill=PUP_MASK_DARK)
-        draw.point((cx + 11, body_cy + 5), fill=PUP_MASK_DARK)
-        draw.arc([cx + 8, body_cy + 5, cx + 12, body_cy + 9],
-                 start=0, end=180, fill=PUP_MASK_ACCENT, width=1)
-
-        # Arms (raised, holding control bar)
-        # Left arm raised
-        draw.rectangle([cx - 18, body_cy - 14, cx - 12, body_cy - 4],
-                       fill=PUP_COAT, outline=OUTLINE)
-        draw.rectangle([cx - 18, body_cy - 14, cx - 12, body_cy - 10],
-                       fill=PUP_GLOVE, outline=OUTLINE)
-        # Right arm raised
-        draw.rectangle([cx + 12, body_cy - 14, cx + 18, body_cy - 4],
-                       fill=PUP_COAT, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy - 14, cx + 18, body_cy - 10],
-                       fill=PUP_GLOVE, outline=OUTLINE)
-        # Control bar (horizontal, above hands)
-        draw.rectangle([cx - 16, body_cy - 17, cx + 16, body_cy - 14],
-                       fill=PUP_BAR, outline=OUTLINE)
-        draw.line([(cx - 14, body_cy - 16), (cx + 14, body_cy - 16)],
-                  fill=_brighten(PUP_BAR, 1.2), width=1)
-
-        # Puppet strings (from bar downward to puppet)
-        puppet_cx = cx + puppet_sway
-        puppet_y = body_cy + 20
-        draw.line([(cx - 8, body_cy - 14), (puppet_cx - 4, puppet_y - 6)],
-                  fill=PUP_STRING, width=1)
-        draw.line([(cx, body_cy - 14), (puppet_cx, puppet_y - 8)],
-                  fill=PUP_STRING, width=1)
-        draw.line([(cx + 8, body_cy - 14), (puppet_cx + 4, puppet_y - 6)],
-                  fill=PUP_STRING, width=1)
-        draw.line([(cx - 4, body_cy - 14), (puppet_cx - 2, puppet_y + 2)],
-                  fill=PUP_STRING_DIM, width=1)
-        draw.line([(cx + 4, body_cy - 14), (puppet_cx + 2, puppet_y + 2)],
-                  fill=PUP_STRING_DIM, width=1)
-
-        # Small marionette puppet
-        ellipse(draw, puppet_cx, puppet_y - 6, 3, 3, PUP_PUPPET_HEAD)
-        draw.point((puppet_cx - 1, puppet_y - 7), fill=PUP_PUPPET_EYE)
-        draw.point((puppet_cx + 1, puppet_y - 7), fill=PUP_PUPPET_EYE)
-        draw.rectangle([puppet_cx - 3, puppet_y - 3, puppet_cx + 3, puppet_y + 3],
-                       fill=PUP_PUPPET_BODY, outline=OUTLINE)
-        # Puppet limbs
-        draw.line([(puppet_cx - 3, puppet_y - 1), (puppet_cx - 6, puppet_y + 3)],
-                  fill=PUP_PUPPET_BODY, width=1)
-        draw.line([(puppet_cx + 3, puppet_y - 1), (puppet_cx + 6, puppet_y + 3)],
-                  fill=PUP_PUPPET_BODY, width=1)
-
-        # Head
-        ellipse(draw, cx, head_cy, 14, 13, PUP_HAIR)
-        ellipse(draw, cx, head_cy + 2, 11, 9, PUP_SKIN)
-        ellipse(draw, cx + 2, head_cy + 4, 7, 5, PUP_SKIN_DARK, outline=None)
-        # Eyes (dramatic, theatrical)
-        draw.rectangle([cx - 6, head_cy + 1, cx - 3, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx - 5, head_cy + 2, cx - 4, head_cy + 3], fill=(60, 30, 80))
-        draw.rectangle([cx + 3, head_cy + 1, cx + 6, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx + 4, head_cy + 2, cx + 5, head_cy + 3], fill=(60, 30, 80))
-        # Smirk
-        draw.arc([cx - 3, head_cy + 6, cx + 3, head_cy + 10],
-                 start=0, end=180, fill=PUP_SKIN_DARK, width=1)
-
-    elif direction == UP:
-        # Legs
-        draw.rectangle([cx - 10 + leg_spread, body_cy + 10,
-                        cx - 4 + leg_spread, base_y], fill=PUP_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=PUP_LEG, outline=OUTLINE)
-        draw.rectangle([cx - 10 + leg_spread, base_y - 5,
-                        cx - 4 + leg_spread, base_y], fill=PUP_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 5,
-                        cx + 10 - leg_spread, base_y], fill=PUP_BOOT, outline=OUTLINE)
-
-        # Body (back)
-        ellipse(draw, cx, body_cy, 14, 12, PUP_COAT)
-        ellipse(draw, cx, body_cy, 10, 9, PUP_COAT_DARK, outline=None)
-        draw.line([(cx, body_cy - 6), (cx, body_cy + 6)],
-                  fill=_darken(PUP_COAT, 0.65), width=1)
-        draw.rectangle([cx - 14, body_cy + 8, cx + 14, body_cy + 12],
-                       fill=PUP_COAT_DARK, outline=OUTLINE)
-
-        # Arms raised
-        draw.rectangle([cx - 18, body_cy - 14, cx - 12, body_cy - 4],
-                       fill=PUP_COAT, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy - 14, cx + 18, body_cy - 4],
-                       fill=PUP_COAT, outline=OUTLINE)
-        # Control bar
-        draw.rectangle([cx - 16, body_cy - 17, cx + 16, body_cy - 14],
-                       fill=PUP_BAR, outline=OUTLINE)
-        # Strings downward (behind body in UP view)
-        puppet_cx = cx + puppet_sway
-        puppet_y = body_cy + 22
-        draw.line([(cx - 6, body_cy - 14), (puppet_cx - 3, puppet_y - 4)],
-                  fill=PUP_STRING_DIM, width=1)
-        draw.line([(cx + 6, body_cy - 14), (puppet_cx + 3, puppet_y - 4)],
-                  fill=PUP_STRING_DIM, width=1)
-
-        # Head (back)
-        ellipse(draw, cx, head_cy, 14, 13, PUP_HAIR)
-        ellipse(draw, cx, head_cy - 2, 10, 8, _darken(PUP_HAIR, 0.8), outline=None)
-
-    elif direction == LEFT:
-        # Legs
-        draw.rectangle([cx - 2 - leg_spread, body_cy + 10,
-                        cx + 4 - leg_spread, base_y],
-                       fill=_darken(PUP_LEG, 0.85), outline=OUTLINE)
-        draw.rectangle([cx - 2 - leg_spread, base_y - 5,
-                        cx + 4 - leg_spread, base_y], fill=PUP_BOOT, outline=OUTLINE)
-        draw.rectangle([cx - 8 + leg_spread, body_cy + 10,
-                        cx - 2 + leg_spread, base_y], fill=PUP_LEG, outline=OUTLINE)
-        draw.rectangle([cx - 8 + leg_spread, base_y - 5,
-                        cx - 2 + leg_spread, base_y], fill=PUP_BOOT, outline=OUTLINE)
-
-        # Body
-        ellipse(draw, cx - 2, body_cy, 12, 12, PUP_COAT)
-        ellipse(draw, cx - 4, body_cy - 2, 7, 7, PUP_COAT_LIGHT, outline=None)
-        draw.rectangle([cx - 14, body_cy + 8, cx + 10, body_cy + 12],
-                       fill=PUP_COAT_DARK, outline=OUTLINE)
-        # Mask on hip (back side)
-        ellipse(draw, cx + 6, body_cy + 6, 3, 4, PUP_MASK)
-        draw.point((cx + 5, body_cy + 5), fill=PUP_MASK_DARK)
-
-        # Front arm raised with bar
-        draw.rectangle([cx - 14, body_cy - 14, cx - 8, body_cy - 4],
-                       fill=PUP_COAT, outline=OUTLINE)
-        draw.rectangle([cx - 14, body_cy - 14, cx - 8, body_cy - 10],
-                       fill=PUP_GLOVE, outline=OUTLINE)
-        # Control bar
-        draw.rectangle([cx - 16, body_cy - 17, cx + 2, body_cy - 14],
-                       fill=PUP_BAR, outline=OUTLINE)
-        # Strings and puppet
-        puppet_cx = cx - 10 + puppet_sway
-        puppet_y = body_cy + 16
-        draw.line([(cx - 12, body_cy - 14), (puppet_cx, puppet_y - 6)],
-                  fill=PUP_STRING, width=1)
-        draw.line([(cx - 6, body_cy - 14), (puppet_cx, puppet_y - 2)],
-                  fill=PUP_STRING, width=1)
-        # Puppet
-        ellipse(draw, puppet_cx, puppet_y - 5, 2, 3, PUP_PUPPET_HEAD)
-        draw.point((puppet_cx - 1, puppet_y - 6), fill=PUP_PUPPET_EYE)
-        draw.rectangle([puppet_cx - 2, puppet_y - 2, puppet_cx + 2, puppet_y + 2],
-                       fill=PUP_PUPPET_BODY, outline=OUTLINE)
-
-        # Head
-        ellipse(draw, cx - 2, head_cy, 13, 13, PUP_HAIR)
-        ellipse(draw, cx - 4, head_cy + 2, 10, 9, PUP_SKIN)
-        ellipse(draw, cx - 2, head_cy + 4, 6, 5, PUP_SKIN_DARK, outline=None)
-        # Eye
-        draw.rectangle([cx - 10, head_cy + 1, cx - 7, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx - 9, head_cy + 2, cx - 8, head_cy + 3], fill=(60, 30, 80))
-        draw.arc([cx - 8, head_cy + 6, cx - 4, head_cy + 10],
-                 start=0, end=180, fill=PUP_SKIN_DARK, width=1)
-
-    else:  # RIGHT
-        # Legs
-        draw.rectangle([cx - 2 + leg_spread, body_cy + 10,
-                        cx + 4 + leg_spread, base_y],
-                       fill=_darken(PUP_LEG, 0.85), outline=OUTLINE)
-        draw.rectangle([cx - 2 + leg_spread, base_y - 5,
-                        cx + 4 + leg_spread, base_y], fill=PUP_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=PUP_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 5,
-                        cx + 10 - leg_spread, base_y], fill=PUP_BOOT, outline=OUTLINE)
-
-        # Body
-        ellipse(draw, cx + 2, body_cy, 12, 12, PUP_COAT)
-        ellipse(draw, cx, body_cy - 2, 7, 7, PUP_COAT_LIGHT, outline=None)
-        draw.rectangle([cx - 10, body_cy + 8, cx + 14, body_cy + 12],
-                       fill=PUP_COAT_DARK, outline=OUTLINE)
-        # Mask on hip
-        ellipse(draw, cx - 6, body_cy + 6, 3, 4, PUP_MASK)
-        draw.point((cx - 5, body_cy + 5), fill=PUP_MASK_DARK)
-
-        # Front arm raised with bar
-        draw.rectangle([cx + 8, body_cy - 14, cx + 14, body_cy - 4],
-                       fill=PUP_COAT, outline=OUTLINE)
-        draw.rectangle([cx + 8, body_cy - 14, cx + 14, body_cy - 10],
-                       fill=PUP_GLOVE, outline=OUTLINE)
-        # Control bar
-        draw.rectangle([cx - 2, body_cy - 17, cx + 16, body_cy - 14],
-                       fill=PUP_BAR, outline=OUTLINE)
-        # Strings and puppet
-        puppet_cx = cx + 10 + puppet_sway
-        puppet_y = body_cy + 16
-        draw.line([(cx + 12, body_cy - 14), (puppet_cx, puppet_y - 6)],
-                  fill=PUP_STRING, width=1)
-        draw.line([(cx + 6, body_cy - 14), (puppet_cx, puppet_y - 2)],
-                  fill=PUP_STRING, width=1)
-        # Puppet
-        ellipse(draw, puppet_cx, puppet_y - 5, 2, 3, PUP_PUPPET_HEAD)
-        draw.point((puppet_cx + 1, puppet_y - 6), fill=PUP_PUPPET_EYE)
-        draw.rectangle([puppet_cx - 2, puppet_y - 2, puppet_cx + 2, puppet_y + 2],
-                       fill=PUP_PUPPET_BODY, outline=OUTLINE)
-
-        # Head
-        ellipse(draw, cx + 2, head_cy, 13, 13, PUP_HAIR)
-        ellipse(draw, cx + 4, head_cy + 2, 10, 9, PUP_SKIN)
-        ellipse(draw, cx + 6, head_cy + 4, 6, 5, PUP_SKIN_DARK, outline=None)
-        # Eye
-        draw.rectangle([cx + 7, head_cy + 1, cx + 10, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx + 8, head_cy + 2, cx + 9, head_cy + 3], fill=(60, 30, 80))
-        draw.arc([cx + 4, head_cy + 6, cx + 8, head_cy + 10],
-                 start=0, end=180, fill=PUP_SKIN_DARK, width=1)
+    r = rig(ox, oy, direction, frame, build=0.94)
+    d = r.d
+    hs = _hold_side(r)
+    style = dict(HAIR_STYLES["bob"], extra="twin")
+    rig_hair(r, draw, PUP_HAIR, style, layer="back")
+    if d:
+        rig_arms(r, draw, PUP_COAT, (250, 250, 252), layer="far")
+    rig_legs(r, draw, (60, 50, 76), (40, 34, 50))
+    rig_robe(r, draw, PUP_COAT, trim=GOLD, flare=3.0, hem=r.hip_y + 4.6, split=True)
+    cx = r.cx
+    if not r.back:
+        for k in range(3):
+            Ell(cx + d * 1.8, r.sh_y + 0.6 + k * 2.4, 0.6, 0.6).draw(draw, fill=GOLD)
+        # a big bow at the collar
+        bx = cx + d * 1.6
+        for s in (-1, 1):
+            cel(draw, Poly([(bx, r.sh_y - 1.6), (bx + s * 3.6, r.sh_y - 3.6), (bx + s * 3.6, r.sh_y + 0.4)]), PUP_RIBBON, sh=None, lw=0.6)
+        cel(draw, Ell(bx, r.sh_y - 1.6, 1.0, 1.0), lit(PUP_RIBBON, 0.8), sh=None, lw=0.5)
+    rig_belt(r, draw, shade(PUP_COAT, 1.6), buckle=GOLD)
+    rig_arms(r, draw, PUP_COAT, (250, 250, 252), layer="near", hands=False, reach=0.6)
+    rig_head(r, draw, PUP_SKIN, hair=PUP_HAIR, style=style, eye_color=(170, 70, 170), expression="smile", mood="calm")
+    # doll-like round blush, and a stitch at the corner of the smile
+    if not r.back:
+        e1, e2, ey, mx, my = face_anchor(r)
+        for ex in ((e1, e2) if not d else (e1,)):
+            cel(draw, Ell(ex + (1 if ex > r.hx else -1) * 2.4, ey + 3.6, 1.5, 1.5), (255, 170, 190), sh=None, line=False)
+        stroke(draw, [(mx + 1.6, my - 0.4), (mx + 2.4, my + 0.8)], 0.4, shade(PUP_SKIN, 2.0))
+    for side in _sides(r):
+        h = rig_hand(r, draw, side, (250, 250, 252), reach=0.6)
+        if side == hs and not r.back:
+            # the control bar and strings down to the marionette
+            bx0, by0 = h[0] + (2.0 if not d else d * 2.4), h[1] - 3.0
+            cel(draw, Limb([(bx0 - 4.0, by0), (bx0 + 4.0, by0)], [0.8, 0.8]), WOOD, sh=None)
+            cel(draw, Limb([(bx0, by0 - 2.6), (bx0, by0 + 2.6)], [0.8, 0.8]), WOOD, sh=None)
+            px, py = bx0 + (1.0 if not d else d * 1.6), r.hip_y + 3.0
+            for (sx, tx) in ((-4.0, -3.4), (4.0, 3.4), (0.0, 0.0)):
+                stroke(draw, [(bx0 + sx, by0), (px + tx, py + (0.8 if sx else -4.8))], 0.3, (236, 236, 244))
+            _marionette(draw, px, py, frame)
 
 
 # ===================================================================
-# GAMBLER (ID 104)
-# Black formal suit, top hat, playing cards fanned in hand, gold pocket
-# watch chain, red vest, dice on belt.
+# GAMBLER (104) -- a top hat with a card in the band, vest and bow tie
 # ===================================================================
+
+GAM_SUIT = (46, 42, 56)
+GAM_RED = (200, 36, 52)
+GAM_HAIR = (240, 214, 150)
+
 
 def draw_gambler(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    leg_spread = [-4, 0, 4, 0][frame]
-    card_fan = [-1, 0, 1, 0][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 20
-
-    if direction == DOWN:
-        # Legs
-        draw.rectangle([cx - 10 + leg_spread, body_cy + 10,
-                        cx - 4 + leg_spread, base_y], fill=GAM_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=GAM_LEG, outline=OUTLINE)
-        draw.rectangle([cx - 10 + leg_spread, base_y - 5,
-                        cx - 4 + leg_spread, base_y], fill=GAM_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 5,
-                        cx + 10 - leg_spread, base_y], fill=GAM_BOOT, outline=OUTLINE)
-
-        # Suit body
-        ellipse(draw, cx, body_cy, 14, 12, GAM_SUIT)
-        ellipse(draw, cx - 3, body_cy - 2, 8, 7, GAM_SUIT_LIGHT, outline=None)
-        # Red vest visible under jacket
-        draw.polygon([(cx - 6, body_cy - 6), (cx + 6, body_cy - 6),
-                      (cx + 4, body_cy + 8), (cx - 4, body_cy + 8)],
-                     fill=GAM_VEST, outline=None)
-        draw.line([(cx, body_cy - 6), (cx, body_cy + 8)],
-                  fill=GAM_VEST_DARK, width=1)
-        # Vest buttons
-        draw.point((cx, body_cy - 2), fill=GAM_CHAIN)
-        draw.point((cx, body_cy + 2), fill=GAM_CHAIN)
-        # Jacket lapels
-        draw.line([(cx - 2, body_cy - 8), (cx - 6, body_cy + 2)],
-                  fill=GAM_SUIT_DARK, width=2)
-        draw.line([(cx + 2, body_cy - 8), (cx + 6, body_cy + 2)],
-                  fill=GAM_SUIT_DARK, width=2)
-        # Belt with dice
-        draw.rectangle([cx - 14, body_cy + 8, cx + 14, body_cy + 12],
-                       fill=GAM_SUIT_DARK, outline=OUTLINE)
-        # Dice on belt
-        draw.rectangle([cx + 6, body_cy + 5, cx + 10, body_cy + 9],
-                       fill=GAM_DICE_WHITE, outline=OUTLINE)
-        draw.point((cx + 7, body_cy + 6), fill=GAM_DICE_DOT)
-        draw.point((cx + 9, body_cy + 8), fill=GAM_DICE_DOT)
-        # Pocket watch chain (curved line from vest to pocket)
-        draw.arc([cx - 8, body_cy + 2, cx + 2, body_cy + 10],
-                 start=180, end=360, fill=GAM_CHAIN, width=1)
-        draw.point((cx - 8, body_cy + 6), fill=GAM_CHAIN_BRIGHT)
-
-        # Arms
-        draw.rectangle([cx - 18, body_cy - 6, cx - 12, body_cy + 6],
-                       fill=GAM_SUIT, outline=OUTLINE)
-        draw.rectangle([cx - 18, body_cy + 2, cx - 12, body_cy + 6],
-                       fill=GAM_SKIN, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy - 6, cx + 18, body_cy + 6],
-                       fill=GAM_SUIT, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy + 2, cx + 18, body_cy + 6],
-                       fill=GAM_SKIN, outline=OUTLINE)
-        ellipse(draw, cx - 14, body_cy - 6, 5, 3, GAM_SUIT_LIGHT)
-        ellipse(draw, cx + 14, body_cy - 6, 5, 3, GAM_SUIT_LIGHT)
-
-        # Playing cards fanned in right hand
-        card_x = cx + 19
-        card_y = body_cy + 2
-        # Three cards fanned
-        for i, angle_off in enumerate([-4 + card_fan, 0, 4 - card_fan]):
-            cx_c = card_x + angle_off
-            draw.rectangle([cx_c - 2, card_y - 6, cx_c + 2, card_y + 2],
-                           fill=GAM_CARD_WHITE, outline=OUTLINE)
-        # Card suit symbols
-        draw.point((card_x - 4 + card_fan, card_y - 3), fill=GAM_CARD_RED)
-        draw.point((card_x, card_y - 4), fill=GAM_CARD_BLACK)
-        draw.point((card_x + 4 - card_fan, card_y - 3), fill=GAM_CARD_RED)
-
-        # Head
-        ellipse(draw, cx, head_cy, 14, 13, GAM_HAIR)
-        ellipse(draw, cx, head_cy + 2, 12, 10, GAM_SKIN)
-        ellipse(draw, cx + 2, head_cy + 4, 8, 6, GAM_SKIN_DARK, outline=None)
-        # Eyes
-        draw.rectangle([cx - 6, head_cy + 1, cx - 3, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx - 5, head_cy + 2, cx - 4, head_cy + 3], fill=BLACK)
-        draw.rectangle([cx + 3, head_cy + 1, cx + 6, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx + 4, head_cy + 2, cx + 5, head_cy + 3], fill=BLACK)
-        # Sly grin
-        draw.arc([cx - 4, head_cy + 6, cx + 4, head_cy + 10],
-                 start=10, end=170, fill=GAM_SKIN_DARK, width=1)
-
-        # Top hat
-        draw.rectangle([cx - 16, head_cy - 10, cx + 16, head_cy - 6],
-                       fill=GAM_HAT, outline=OUTLINE)
-        draw.rectangle([cx - 10, head_cy - 28, cx + 10, head_cy - 10],
-                       fill=GAM_HAT, outline=OUTLINE)
-        draw.rectangle([cx + 4, head_cy - 27, cx + 9, head_cy - 11],
-                       fill=GAM_HAT_DARK, outline=None)
-        draw.rectangle([cx - 10, head_cy - 14, cx + 10, head_cy - 10],
-                       fill=GAM_HAT_BAND, outline=None)
-        draw.line([(cx - 6, head_cy - 24), (cx - 6, head_cy - 16)],
-                  fill=GAM_HAT_LIGHT, width=1)
-
-    elif direction == UP:
-        # Legs
-        draw.rectangle([cx - 10 + leg_spread, body_cy + 10,
-                        cx - 4 + leg_spread, base_y], fill=GAM_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=GAM_LEG, outline=OUTLINE)
-        draw.rectangle([cx - 10 + leg_spread, base_y - 5,
-                        cx - 4 + leg_spread, base_y], fill=GAM_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 5,
-                        cx + 10 - leg_spread, base_y], fill=GAM_BOOT, outline=OUTLINE)
-
-        # Suit body (back)
-        ellipse(draw, cx, body_cy, 14, 12, GAM_SUIT)
-        ellipse(draw, cx, body_cy, 10, 9, GAM_SUIT_DARK, outline=None)
-        draw.line([(cx, body_cy - 6), (cx, body_cy + 6)],
-                  fill=_darken(GAM_SUIT, 0.6), width=1)
-        # Coattails
-        draw.rectangle([cx - 14, body_cy + 8, cx + 14, body_cy + 12],
-                       fill=GAM_SUIT_DARK, outline=OUTLINE)
-        # Arms
-        draw.rectangle([cx - 18, body_cy - 6, cx - 12, body_cy + 6],
-                       fill=GAM_SUIT, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy - 6, cx + 18, body_cy + 6],
-                       fill=GAM_SUIT, outline=OUTLINE)
-        ellipse(draw, cx - 14, body_cy - 6, 5, 3, GAM_SUIT_LIGHT)
-        ellipse(draw, cx + 14, body_cy - 6, 5, 3, GAM_SUIT_LIGHT)
-
-        # Head (back)
-        ellipse(draw, cx, head_cy, 14, 13, GAM_HAIR)
-        ellipse(draw, cx, head_cy - 2, 10, 8, _darken(GAM_HAIR, 0.8), outline=None)
-        # Top hat
-        draw.rectangle([cx - 16, head_cy - 10, cx + 16, head_cy - 6],
-                       fill=GAM_HAT, outline=OUTLINE)
-        draw.rectangle([cx - 10, head_cy - 28, cx + 10, head_cy - 10],
-                       fill=GAM_HAT, outline=OUTLINE)
-        draw.rectangle([cx + 4, head_cy - 27, cx + 9, head_cy - 11],
-                       fill=GAM_HAT_DARK, outline=None)
-        draw.rectangle([cx - 10, head_cy - 14, cx + 10, head_cy - 10],
-                       fill=GAM_HAT_BAND, outline=None)
-
-    elif direction == LEFT:
-        # Legs
-        draw.rectangle([cx - 2 - leg_spread, body_cy + 10,
-                        cx + 4 - leg_spread, base_y],
-                       fill=_darken(GAM_LEG, 0.85), outline=OUTLINE)
-        draw.rectangle([cx - 2 - leg_spread, base_y - 5,
-                        cx + 4 - leg_spread, base_y], fill=GAM_BOOT, outline=OUTLINE)
-        draw.rectangle([cx - 8 + leg_spread, body_cy + 10,
-                        cx - 2 + leg_spread, base_y], fill=GAM_LEG, outline=OUTLINE)
-        draw.rectangle([cx - 8 + leg_spread, base_y - 5,
-                        cx - 2 + leg_spread, base_y], fill=GAM_BOOT, outline=OUTLINE)
-
-        # Body
-        ellipse(draw, cx - 2, body_cy, 12, 12, GAM_SUIT)
-        ellipse(draw, cx - 4, body_cy - 2, 7, 7, GAM_SUIT_LIGHT, outline=None)
-        # Vest visible
-        draw.polygon([(cx - 6, body_cy - 4), (cx + 2, body_cy - 4),
-                      (cx + 1, body_cy + 6), (cx - 5, body_cy + 6)],
-                     fill=GAM_VEST, outline=None)
-        draw.line([(cx - 2, body_cy - 4), (cx - 2, body_cy + 6)],
-                  fill=GAM_VEST_DARK, width=1)
-        # Watch chain
-        draw.arc([cx - 8, body_cy + 2, cx, body_cy + 8],
-                 start=180, end=360, fill=GAM_CHAIN, width=1)
-        # Belt
-        draw.rectangle([cx - 14, body_cy + 8, cx + 10, body_cy + 12],
-                       fill=GAM_SUIT_DARK, outline=OUTLINE)
-
-        # Front arm with cards
-        draw.rectangle([cx - 14, body_cy - 4, cx - 8, body_cy + 6],
-                       fill=GAM_SUIT, outline=OUTLINE)
-        draw.rectangle([cx - 14, body_cy + 2, cx - 8, body_cy + 6],
-                       fill=GAM_SKIN, outline=OUTLINE)
-        ellipse(draw, cx - 10, body_cy - 6, 5, 3, GAM_SUIT_LIGHT)
-        # Cards
-        card_x = cx - 16
-        card_y = body_cy
-        for i, dy in enumerate([-3 + card_fan, 0, 3 - card_fan]):
-            draw.rectangle([card_x - 3, card_y + dy - 3, card_x + 1, card_y + dy + 1],
-                           fill=GAM_CARD_WHITE, outline=OUTLINE)
-        draw.point((card_x - 1, card_y - 4), fill=GAM_CARD_RED)
-
-        # Head
-        ellipse(draw, cx - 2, head_cy, 13, 13, GAM_HAIR)
-        ellipse(draw, cx - 4, head_cy + 2, 10, 9, GAM_SKIN)
-        ellipse(draw, cx - 2, head_cy + 4, 6, 5, GAM_SKIN_DARK, outline=None)
-        # Eye
-        draw.rectangle([cx - 10, head_cy + 1, cx - 7, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx - 9, head_cy + 2, cx - 8, head_cy + 3], fill=BLACK)
-        draw.arc([cx - 8, head_cy + 6, cx - 4, head_cy + 10],
-                 start=10, end=170, fill=GAM_SKIN_DARK, width=1)
-        # Top hat
-        draw.rectangle([cx - 16, head_cy - 10, cx + 8, head_cy - 6],
-                       fill=GAM_HAT, outline=OUTLINE)
-        draw.rectangle([cx - 10, head_cy - 28, cx + 4, head_cy - 10],
-                       fill=GAM_HAT, outline=OUTLINE)
-        draw.rectangle([cx, head_cy - 27, cx + 3, head_cy - 11],
-                       fill=GAM_HAT_DARK, outline=None)
-        draw.rectangle([cx - 10, head_cy - 14, cx + 4, head_cy - 10],
-                       fill=GAM_HAT_BAND, outline=None)
-        draw.line([(cx - 6, head_cy - 24), (cx - 6, head_cy - 16)],
-                  fill=GAM_HAT_LIGHT, width=1)
-
-    else:  # RIGHT
-        # Legs
-        draw.rectangle([cx - 2 + leg_spread, body_cy + 10,
-                        cx + 4 + leg_spread, base_y],
-                       fill=_darken(GAM_LEG, 0.85), outline=OUTLINE)
-        draw.rectangle([cx - 2 + leg_spread, base_y - 5,
-                        cx + 4 + leg_spread, base_y], fill=GAM_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=GAM_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 5,
-                        cx + 10 - leg_spread, base_y], fill=GAM_BOOT, outline=OUTLINE)
-
-        # Body
-        ellipse(draw, cx + 2, body_cy, 12, 12, GAM_SUIT)
-        ellipse(draw, cx, body_cy - 2, 7, 7, GAM_SUIT_LIGHT, outline=None)
-        # Vest visible
-        draw.polygon([(cx - 2, body_cy - 4), (cx + 6, body_cy - 4),
-                      (cx + 5, body_cy + 6), (cx - 1, body_cy + 6)],
-                     fill=GAM_VEST, outline=None)
-        draw.line([(cx + 2, body_cy - 4), (cx + 2, body_cy + 6)],
-                  fill=GAM_VEST_DARK, width=1)
-        # Watch chain
-        draw.arc([cx, body_cy + 2, cx + 8, body_cy + 8],
-                 start=180, end=360, fill=GAM_CHAIN, width=1)
-        # Belt
-        draw.rectangle([cx - 10, body_cy + 8, cx + 14, body_cy + 12],
-                       fill=GAM_SUIT_DARK, outline=OUTLINE)
-
-        # Front arm with cards
-        draw.rectangle([cx + 8, body_cy - 4, cx + 14, body_cy + 6],
-                       fill=GAM_SUIT, outline=OUTLINE)
-        draw.rectangle([cx + 8, body_cy + 2, cx + 14, body_cy + 6],
-                       fill=GAM_SKIN, outline=OUTLINE)
-        ellipse(draw, cx + 10, body_cy - 6, 5, 3, GAM_SUIT_LIGHT)
-        # Cards
-        card_x = cx + 16
-        card_y = body_cy
-        for i, dy in enumerate([-3 + card_fan, 0, 3 - card_fan]):
-            draw.rectangle([card_x - 1, card_y + dy - 3, card_x + 3, card_y + dy + 1],
-                           fill=GAM_CARD_WHITE, outline=OUTLINE)
-        draw.point((card_x + 1, card_y - 4), fill=GAM_CARD_BLACK)
-
-        # Head
-        ellipse(draw, cx + 2, head_cy, 13, 13, GAM_HAIR)
-        ellipse(draw, cx + 4, head_cy + 2, 10, 9, GAM_SKIN)
-        ellipse(draw, cx + 6, head_cy + 4, 6, 5, GAM_SKIN_DARK, outline=None)
-        # Eye
-        draw.rectangle([cx + 7, head_cy + 1, cx + 10, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx + 8, head_cy + 2, cx + 9, head_cy + 3], fill=BLACK)
-        draw.arc([cx + 4, head_cy + 6, cx + 8, head_cy + 10],
-                 start=10, end=170, fill=GAM_SKIN_DARK, width=1)
-        # Top hat
-        draw.rectangle([cx - 8, head_cy - 10, cx + 16, head_cy - 6],
-                       fill=GAM_HAT, outline=OUTLINE)
-        draw.rectangle([cx - 4, head_cy - 28, cx + 10, head_cy - 10],
-                       fill=GAM_HAT, outline=OUTLINE)
-        draw.rectangle([cx + 4, head_cy - 27, cx + 9, head_cy - 11],
-                       fill=GAM_HAT_DARK, outline=None)
-        draw.rectangle([cx - 4, head_cy - 14, cx + 10, head_cy - 10],
-                       fill=GAM_HAT_BAND, outline=None)
-        draw.line([(cx, head_cy - 24), (cx, head_cy - 16)],
-                  fill=GAM_HAT_LIGHT, width=1)
+    r = rig(ox, oy, direction, frame, build=0.98, head=0.96)
+    d = r.d
+    hs = _hold_side(r)
+    if d:
+        rig_arms(r, draw, GAM_SUIT, (250, 250, 252), layer="far")
+    rig_legs(r, draw, GAM_SUIT, (30, 26, 34))
+    rig_torso(r, draw, GAM_SUIT)
+    cx = r.cx
+    if not r.back:
+        vx = cx + d * 1.6
+        cel(draw, Poly([(vx - 3.4, r.sh_y - 1.8), (vx + 3.4, r.sh_y - 1.8), (vx + 3.0, r.waist_y + 1.8), (vx, r.waist_y + 3.0),
+                        (vx - 3.0, r.waist_y + 1.8)]), GAM_RED, sh=(0.6, 0.0))
+        cel(draw, Poly([(vx - 1.6, r.sh_y - 2.2), (vx + 1.6, r.sh_y - 2.2), (vx, r.sh_y + 0.8)]), (250, 250, 252), sh=None, lw=0.5)
+        for s in (-1, 1):
+            cel(draw, Poly([(vx, r.sh_y - 1.4), (vx + s * 2.4, r.sh_y - 2.6), (vx + s * 2.4, r.sh_y - 0.2)]), VOID, sh=None, lw=0.4)
+        for k in range(2):
+            Ell(vx, r.sh_y + 2.0 + k * 2.2, 0.5, 0.5).draw(draw, fill=GOLD)
+        # a gold watch chain
+        stroke(draw, [(vx - 2.0, r.waist_y - 0.6), (vx - 0.4, r.waist_y + 0.6), (vx + 2.0, r.waist_y - 0.4)], 0.4, GOLD)
+    rig_arms(r, draw, GAM_SUIT, (250, 250, 252), layer="near", hands=False, reach=0.4)
+    rig_head(r, draw, SKIN, hair=GAM_HAIR, style="swept", eye_color=(200, 60, 70), expression="smirk", mood="calm", hat=True)
+    # top hat, a playing card tucked in the band
+    hx, hy, rx, ry = r.hx, r.head_cy, r.head_rx, r.head_ry
+    cx0 = hx - d * 0.6
+    cel(draw, Ell(cx0 + d * 0.8, hy - 7.4, 12.6 if not d else 11.0, 3.4), GAM_SUIT, sh=(0.0, 1.0))
+    crown = RRect(cx0 - 7.4, hy - 20.0, cx0 + 7.4, hy - 7.6, 1.2)
+    cel(draw, crown, GAM_SUIT, sh=(1.6, 0.6), hi=(0.6, 0.6))
+    cel(draw, RRect(cx0 - 7.4, hy - 11.0, cx0 + 7.4, hy - 8.6, 0.4), GAM_RED, sh=None)
+    if not r.back:
+        kx = cx0 + (4.0 if not d else d * 3.0)
+        card = Poly(xform([(-1.8, -2.6), (1.8, -2.6), (1.8, 2.6), (-1.8, 2.6)], kx, hy - 12.4, 12))
+        cel(draw, card, (252, 252, 252), sh=None, lw=0.5)
+        cel(draw, Poly([(kx, hy - 13.8), (kx + 1.0, hy - 12.4), (kx, hy - 11.0), (kx - 1.0, hy - 12.4)]), GAM_RED, sh=None, line=False)
+    for side in _sides(r):
+        h = rig_hand(r, draw, side, (250, 250, 252), reach=0.4)
+        if side == hs and not r.back:
+            for j, a in enumerate((-50, -25, 0, 25)):
+                ang = -90 + a + (0 if not d else d * 24)
+                c = xform([(4.8, 0.0)], h[0], h[1] - 1.0, ang)[0]
+                card = Poly(xform([(-2.2, -1.6), (2.2, -1.6), (2.2, 1.6), (-2.2, 1.6)], c[0], c[1], ang + 90))
+                cel(draw, card, (252, 252, 252), sh=None, lw=0.5)
+                Poly([(c[0], c[1] - 0.9), (c[0] + 0.7, c[1]), (c[0], c[1] + 0.9), (c[0] - 0.7, c[1])]).draw(
+                    draw, fill=GAM_RED if j % 2 == 0 else VOID)
+    # a die tumbling beside him
+    if not r.back:
+        dx, dy = r.cx - (12.0 if not d else d * 10.0), r.waist_y - 2.0 - [0, 1.4, 2.0, 1.4][frame]
+        die = Poly(xform([(-2.0, -2.0), (2.0, -2.0), (2.0, 2.0), (-2.0, 2.0)], dx, dy, frame * 22.5))
+        cel(draw, die, (252, 252, 252), sh=None, lw=0.5)
+        Ell(dx, dy, 0.5, 0.5).draw(draw, fill=GAM_RED)
 
 
 # ===================================================================
-# BLACKSMITH (ID 105)
-# Heavy leather apron over muscular frame, hammer, soot marks,
-# protective goggles, metal gauntlets, forge glow accents.
+# BLACKSMITH (105) -- a leather apron, bare arms, a hammer glowing hot
 # ===================================================================
+
+BS_SHIRT = (84, 84, 96)
+BS_APRON = (150, 96, 58)
+BS_BAND = (200, 60, 50)
+BS_HOT = (255, 150, 60)
+
 
 def draw_blacksmith(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    leg_spread = [-4, 0, 4, 0][frame]
-    hammer_swing = [0, -2, 0, 2][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 20
-
-    if direction == DOWN:
-        # Legs (stocky)
-        draw.rectangle([cx - 10 + leg_spread, body_cy + 10,
-                        cx - 4 + leg_spread, base_y], fill=BKS_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=BKS_LEG, outline=OUTLINE)
-        draw.rectangle([cx - 10 + leg_spread, base_y - 5,
-                        cx - 4 + leg_spread, base_y], fill=BKS_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 5,
-                        cx + 10 - leg_spread, base_y], fill=BKS_BOOT, outline=OUTLINE)
-
-        # Broad body (muscular)
-        ellipse(draw, cx, body_cy, 15, 13, BKS_BODY)
-        ellipse(draw, cx - 3, body_cy - 2, 9, 8, _brighten(BKS_BODY, 1.15), outline=None)
-        # Leather apron over chest
-        draw.polygon([(cx - 10, body_cy - 6), (cx + 10, body_cy - 6),
-                      (cx + 12, body_cy + 12), (cx - 12, body_cy + 12)],
-                     fill=BKS_APRON, outline=OUTLINE)
-        draw.polygon([(cx - 6, body_cy - 4), (cx + 6, body_cy - 4),
-                      (cx + 8, body_cy + 8), (cx - 8, body_cy + 8)],
-                     fill=BKS_APRON_LIGHT, outline=None)
-        # Soot marks on apron
-        draw.point((cx - 4, body_cy + 2), fill=BKS_SOOT)
-        draw.point((cx + 3, body_cy + 4), fill=BKS_SOOT)
-        draw.point((cx - 2, body_cy + 8), fill=BKS_SOOT)
-        draw.point((cx + 6, body_cy), fill=BKS_SOOT)
-        # Belt with buckle
-        draw.rectangle([cx - 15, body_cy + 10, cx + 15, body_cy + 14],
-                       fill=BKS_BELT, outline=OUTLINE)
-        draw.rectangle([cx - 3, body_cy + 10, cx + 3, body_cy + 14],
-                       fill=BKS_BELT_BUCKLE, outline=OUTLINE)
-        draw.point((cx, body_cy + 12), fill=_brighten(BKS_BELT_BUCKLE, 1.3))
-
-        # Arms (thick, muscular with gauntlets)
-        draw.rectangle([cx - 20, body_cy - 6, cx - 12, body_cy + 6],
-                       fill=BKS_SKIN, outline=OUTLINE)
-        # Muscle definition
-        draw.line([(cx - 16, body_cy - 4), (cx - 16, body_cy + 4)],
-                  fill=BKS_SKIN_DARK, width=1)
-        # Left gauntlet
-        draw.rectangle([cx - 20, body_cy + 2, cx - 12, body_cy + 8],
-                       fill=BKS_GAUNTLET, outline=OUTLINE)
-        draw.line([(cx - 18, body_cy + 4), (cx - 14, body_cy + 4)],
-                  fill=BKS_GAUNTLET_LIGHT, width=1)
-        # Right arm
-        draw.rectangle([cx + 12, body_cy - 6, cx + 20, body_cy + 6],
-                       fill=BKS_SKIN, outline=OUTLINE)
-        draw.line([(cx + 16, body_cy - 4), (cx + 16, body_cy + 4)],
-                  fill=BKS_SKIN_DARK, width=1)
-        # Right gauntlet
-        draw.rectangle([cx + 12, body_cy + 2, cx + 20, body_cy + 8],
-                       fill=BKS_GAUNTLET, outline=OUTLINE)
-        draw.line([(cx + 14, body_cy + 4), (cx + 18, body_cy + 4)],
-                  fill=BKS_GAUNTLET_LIGHT, width=1)
-        # Shoulder pads
-        ellipse(draw, cx - 15, body_cy - 6, 6, 4, BKS_APRON)
-        ellipse(draw, cx + 15, body_cy - 6, 6, 4, BKS_APRON)
-
-        # Hammer (held in right hand)
-        hammer_x = cx + 22
-        hammer_y = body_cy - 4 + hammer_swing
-        # Handle
-        draw.rectangle([hammer_x - 1, hammer_y, hammer_x + 1, hammer_y + 16],
-                       fill=BKS_HAMMER_HANDLE, outline=OUTLINE)
-        # Head
-        draw.rectangle([hammer_x - 4, hammer_y - 4, hammer_x + 4, hammer_y + 2],
-                       fill=BKS_HAMMER_HEAD, outline=OUTLINE)
-        draw.rectangle([hammer_x - 3, hammer_y - 3, hammer_x + 1, hammer_y + 1],
-                       fill=BKS_GAUNTLET_LIGHT, outline=None)
-        # Forge glow on hammer
-        draw.point((hammer_x - 2, hammer_y - 2), fill=BKS_FORGE_GLOW)
-        draw.point((hammer_x + 2, hammer_y), fill=BKS_FORGE_DIM)
-
-        # Head (broad)
-        ellipse(draw, cx, head_cy, 15, 13, BKS_HAIR)
-        ellipse(draw, cx, head_cy + 2, 12, 10, BKS_SKIN)
-        ellipse(draw, cx + 2, head_cy + 4, 8, 6, BKS_SKIN_DARK, outline=None)
-        # Soot on face
-        draw.point((cx + 6, head_cy + 4), fill=BKS_SKIN_SOOT)
-        draw.point((cx - 4, head_cy + 8), fill=BKS_SKIN_SOOT)
-        # Eyes
-        draw.rectangle([cx - 6, head_cy + 1, cx - 3, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx - 5, head_cy + 2, cx - 4, head_cy + 3], fill=BLACK)
-        draw.rectangle([cx + 3, head_cy + 1, cx + 6, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx + 4, head_cy + 2, cx + 5, head_cy + 3], fill=BLACK)
-        # Eyebrows (thick)
-        draw.line([(cx - 7, head_cy), (cx - 2, head_cy)],
-                  fill=_darken(BKS_SKIN, 0.5), width=2)
-        draw.line([(cx + 2, head_cy), (cx + 7, head_cy)],
-                  fill=_darken(BKS_SKIN, 0.5), width=2)
-        # Nose and mouth
-        draw.point((cx, head_cy + 6), fill=BKS_SKIN_DARK)
-        draw.line([(cx - 3, head_cy + 8), (cx + 3, head_cy + 8)],
-                  fill=BKS_SKIN_DARK, width=1)
-        # Goggles pushed up on forehead
-        draw.rectangle([cx - 8, head_cy - 6, cx + 8, head_cy - 2],
-                       fill=BKS_GOGGLES, outline=OUTLINE)
-        ellipse(draw, cx - 4, head_cy - 4, 3, 2, BKS_GOGGLES_LENS)
-        ellipse(draw, cx + 4, head_cy - 4, 3, 2, BKS_GOGGLES_LENS)
-        draw.point((cx - 5, head_cy - 5), fill=_brighten(BKS_GOGGLES_LENS, 1.3))
-
-    elif direction == UP:
-        # Legs
-        draw.rectangle([cx - 10 + leg_spread, body_cy + 10,
-                        cx - 4 + leg_spread, base_y], fill=BKS_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=BKS_LEG, outline=OUTLINE)
-        draw.rectangle([cx - 10 + leg_spread, base_y - 5,
-                        cx - 4 + leg_spread, base_y], fill=BKS_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 5,
-                        cx + 10 - leg_spread, base_y], fill=BKS_BOOT, outline=OUTLINE)
-
-        # Body (back)
-        ellipse(draw, cx, body_cy, 15, 13, BKS_BODY)
-        ellipse(draw, cx, body_cy, 11, 10, BKS_BODY_DARK, outline=None)
-        # Apron ties from back
-        draw.line([(cx - 8, body_cy + 4), (cx - 12, body_cy + 8)],
-                  fill=BKS_APRON_DARK, width=2)
-        draw.line([(cx + 8, body_cy + 4), (cx + 12, body_cy + 8)],
-                  fill=BKS_APRON_DARK, width=2)
-        draw.rectangle([cx - 15, body_cy + 10, cx + 15, body_cy + 14],
-                       fill=BKS_BELT, outline=OUTLINE)
-        # Arms
-        draw.rectangle([cx - 20, body_cy - 6, cx - 12, body_cy + 6],
-                       fill=BKS_SKIN, outline=OUTLINE)
-        draw.rectangle([cx - 20, body_cy + 2, cx - 12, body_cy + 8],
-                       fill=BKS_GAUNTLET, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy - 6, cx + 20, body_cy + 6],
-                       fill=BKS_SKIN, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy + 2, cx + 20, body_cy + 8],
-                       fill=BKS_GAUNTLET, outline=OUTLINE)
-        ellipse(draw, cx - 15, body_cy - 6, 6, 4, BKS_APRON)
-        ellipse(draw, cx + 15, body_cy - 6, 6, 4, BKS_APRON)
-        # Head (back)
-        ellipse(draw, cx, head_cy, 15, 13, BKS_HAIR)
-        ellipse(draw, cx, head_cy - 2, 11, 8, _darken(BKS_HAIR, 0.8), outline=None)
-        # Goggle strap
-        draw.line([(cx - 10, head_cy - 4), (cx + 10, head_cy - 4)],
-                  fill=BKS_GOGGLES, width=2)
-
-    elif direction == LEFT:
-        # Legs
-        draw.rectangle([cx - 2 - leg_spread, body_cy + 10,
-                        cx + 4 - leg_spread, base_y],
-                       fill=_darken(BKS_LEG, 0.85), outline=OUTLINE)
-        draw.rectangle([cx - 2 - leg_spread, base_y - 5,
-                        cx + 4 - leg_spread, base_y], fill=BKS_BOOT, outline=OUTLINE)
-        draw.rectangle([cx - 8 + leg_spread, body_cy + 10,
-                        cx - 2 + leg_spread, base_y], fill=BKS_LEG, outline=OUTLINE)
-        draw.rectangle([cx - 8 + leg_spread, base_y - 5,
-                        cx - 2 + leg_spread, base_y], fill=BKS_BOOT, outline=OUTLINE)
-
-        # Hammer behind body
-        hammer_x = cx + 10
-        hammer_y = body_cy - 4 + hammer_swing
-        draw.rectangle([hammer_x - 1, hammer_y, hammer_x + 1, hammer_y + 14],
-                       fill=BKS_HAMMER_HANDLE, outline=OUTLINE)
-        draw.rectangle([hammer_x - 3, hammer_y - 3, hammer_x + 3, hammer_y + 1],
-                       fill=BKS_HAMMER_HEAD, outline=OUTLINE)
-        draw.point((hammer_x - 1, hammer_y - 1), fill=BKS_FORGE_GLOW)
-
-        # Body
-        ellipse(draw, cx - 2, body_cy, 13, 13, BKS_BODY)
-        ellipse(draw, cx - 4, body_cy - 2, 8, 8, _brighten(BKS_BODY, 1.15), outline=None)
-        # Apron
-        draw.polygon([(cx - 8, body_cy - 4), (cx + 4, body_cy - 4),
-                      (cx + 6, body_cy + 10), (cx - 10, body_cy + 10)],
-                     fill=BKS_APRON, outline=OUTLINE)
-        draw.point((cx - 2, body_cy + 2), fill=BKS_SOOT)
-        draw.point((cx + 2, body_cy + 6), fill=BKS_SOOT)
-        # Belt
-        draw.rectangle([cx - 15, body_cy + 10, cx + 10, body_cy + 14],
-                       fill=BKS_BELT, outline=OUTLINE)
-        draw.rectangle([cx - 5, body_cy + 10, cx - 1, body_cy + 14],
-                       fill=BKS_BELT_BUCKLE, outline=OUTLINE)
-
-        # Arm with gauntlet
-        draw.rectangle([cx - 16, body_cy - 4, cx - 10, body_cy + 6],
-                       fill=BKS_SKIN, outline=OUTLINE)
-        draw.line([(cx - 13, body_cy - 2), (cx - 13, body_cy + 4)],
-                  fill=BKS_SKIN_DARK, width=1)
-        draw.rectangle([cx - 16, body_cy + 2, cx - 10, body_cy + 8],
-                       fill=BKS_GAUNTLET, outline=OUTLINE)
-        ellipse(draw, cx - 12, body_cy - 6, 5, 4, BKS_APRON)
-
-        # Head
-        ellipse(draw, cx - 2, head_cy, 14, 13, BKS_HAIR)
-        ellipse(draw, cx - 4, head_cy + 2, 11, 9, BKS_SKIN)
-        ellipse(draw, cx - 2, head_cy + 4, 7, 5, BKS_SKIN_DARK, outline=None)
-        draw.point((cx - 8, head_cy + 5), fill=BKS_SKIN_SOOT)
-        # Eye
-        draw.rectangle([cx - 10, head_cy + 1, cx - 7, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx - 9, head_cy + 2, cx - 8, head_cy + 3], fill=BLACK)
-        draw.line([(cx - 11, head_cy), (cx - 6, head_cy)],
-                  fill=_darken(BKS_SKIN, 0.5), width=2)
-        draw.point((cx - 9, head_cy + 6), fill=BKS_SKIN_DARK)
-        # Goggles
-        draw.rectangle([cx - 8, head_cy - 6, cx + 4, head_cy - 2],
-                       fill=BKS_GOGGLES, outline=OUTLINE)
-        ellipse(draw, cx - 4, head_cy - 4, 3, 2, BKS_GOGGLES_LENS)
-
-    else:  # RIGHT
-        # Legs
-        draw.rectangle([cx - 2 + leg_spread, body_cy + 10,
-                        cx + 4 + leg_spread, base_y],
-                       fill=_darken(BKS_LEG, 0.85), outline=OUTLINE)
-        draw.rectangle([cx - 2 + leg_spread, base_y - 5,
-                        cx + 4 + leg_spread, base_y], fill=BKS_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=BKS_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 5,
-                        cx + 10 - leg_spread, base_y], fill=BKS_BOOT, outline=OUTLINE)
-
-        # Hammer behind body
-        hammer_x = cx - 10
-        hammer_y = body_cy - 4 + hammer_swing
-        draw.rectangle([hammer_x - 1, hammer_y, hammer_x + 1, hammer_y + 14],
-                       fill=BKS_HAMMER_HANDLE, outline=OUTLINE)
-        draw.rectangle([hammer_x - 3, hammer_y - 3, hammer_x + 3, hammer_y + 1],
-                       fill=BKS_HAMMER_HEAD, outline=OUTLINE)
-        draw.point((hammer_x + 1, hammer_y - 1), fill=BKS_FORGE_GLOW)
-
-        # Body
-        ellipse(draw, cx + 2, body_cy, 13, 13, BKS_BODY)
-        ellipse(draw, cx, body_cy - 2, 8, 8, _brighten(BKS_BODY, 1.15), outline=None)
-        # Apron
-        draw.polygon([(cx - 4, body_cy - 4), (cx + 8, body_cy - 4),
-                      (cx + 10, body_cy + 10), (cx - 6, body_cy + 10)],
-                     fill=BKS_APRON, outline=OUTLINE)
-        draw.point((cx + 2, body_cy + 2), fill=BKS_SOOT)
-        draw.point((cx - 2, body_cy + 6), fill=BKS_SOOT)
-        # Belt
-        draw.rectangle([cx - 10, body_cy + 10, cx + 15, body_cy + 14],
-                       fill=BKS_BELT, outline=OUTLINE)
-        draw.rectangle([cx + 1, body_cy + 10, cx + 5, body_cy + 14],
-                       fill=BKS_BELT_BUCKLE, outline=OUTLINE)
-
-        # Arm with gauntlet
-        draw.rectangle([cx + 10, body_cy - 4, cx + 16, body_cy + 6],
-                       fill=BKS_SKIN, outline=OUTLINE)
-        draw.line([(cx + 13, body_cy - 2), (cx + 13, body_cy + 4)],
-                  fill=BKS_SKIN_DARK, width=1)
-        draw.rectangle([cx + 10, body_cy + 2, cx + 16, body_cy + 8],
-                       fill=BKS_GAUNTLET, outline=OUTLINE)
-        ellipse(draw, cx + 12, body_cy - 6, 5, 4, BKS_APRON)
-
-        # Head
-        ellipse(draw, cx + 2, head_cy, 14, 13, BKS_HAIR)
-        ellipse(draw, cx + 4, head_cy + 2, 11, 9, BKS_SKIN)
-        ellipse(draw, cx + 6, head_cy + 4, 7, 5, BKS_SKIN_DARK, outline=None)
-        draw.point((cx + 8, head_cy + 5), fill=BKS_SKIN_SOOT)
-        # Eye
-        draw.rectangle([cx + 7, head_cy + 1, cx + 10, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx + 8, head_cy + 2, cx + 9, head_cy + 3], fill=BLACK)
-        draw.line([(cx + 6, head_cy), (cx + 11, head_cy)],
-                  fill=_darken(BKS_SKIN, 0.5), width=2)
-        draw.point((cx + 9, head_cy + 6), fill=BKS_SKIN_DARK)
-        # Goggles
-        draw.rectangle([cx - 4, head_cy - 6, cx + 8, head_cy - 2],
-                       fill=BKS_GOGGLES, outline=OUTLINE)
-        ellipse(draw, cx + 4, head_cy - 4, 3, 2, BKS_GOGGLES_LENS)
+    r = rig(ox, oy, direction, frame, build=1.22)
+    d = r.d
+    hs = _hold_side(r)
+    glow = [0, 1, 0, 1][frame]
+    if d:
+        rig_arms(r, draw, SKIN_TAN, SKIN_TAN, layer="far")
+    rig_legs(r, draw, (90, 84, 96), (70, 56, 46), width=1.08)
+    rig_torso(r, draw, BS_SHIRT)
+    cx = r.cx
+    if not r.back:
+        ap = Poly([(cx - 4.2 + d * 1.4, r.sh_y - 1.4), (cx + 4.2 + d * 1.4, r.sh_y - 1.4), (cx + 6.4 + d * 1.4, r.hip_y + 4.4),
+                   (cx - 6.4 + d * 1.4, r.hip_y + 4.4)]) if not d else \
+            Poly([(cx + d * 0.6, r.sh_y - 1.4), (cx + d * 4.8, r.sh_y - 1.0), (cx + d * 5.8, r.hip_y + 4.4), (cx - d * 1.4, r.hip_y + 4.4)])
+        cel(draw, ap, BS_APRON, sh=(0.8, 0.6))
+        cel(draw, RRect(cx - 2.0 + d * 1.4, r.sh_y + 1.6, cx + 2.0 + d * 1.4, r.sh_y + 4.0, 0.4), shade(BS_APRON, 0.6), sh=None)
+    else:
+        for s in (-1, 1):
+            stroke(draw, [(cx + s * 4.0, r.sh_y - 1.4), (cx - s * 3.0, r.waist_y)], 0.7, BS_APRON)
+    rig_belt(r, draw, (80, 60, 44), buckle=(200, 200, 210))
+    rig_arms(r, draw, SKIN_TAN, SKIN_TAN, layer="near", hands=False)
+    for side in _sides(r):
+        sx, sy = r.shoulder(side)
+        cel(draw, Ell(sx + (side * 0.6 if not d else 0), sy + 0.4, 2.6, 2.0), BS_SHIRT, sh=(0.4, 0.4))
+    head_skull(r, draw, SKIN_TAN)
+    hx, hy, rx, ry = r.hx, r.head_cy, r.head_rx, r.head_ry
+    if not r.back:
+        head_face(r, draw, SKIN_TAN, iris=(90, 70, 50), mood="bright", mouth="grin", brows=True, brow_color=(60, 44, 40))
+        # a short dark beard along the jaw
+        if d:
+            blob(draw, [Ell(hx + d * 4.4, hy + 8.4, 4.4, 3.4), Ell(hx + d * 1.0, hy + 7.4, 3.0, 3.0)], (70, 50, 44), sh=(0.6, 0.6))
+        else:
+            blob(draw, [Ell(hx, hy + 9.0, 6.0, 3.0), Ell(hx - 6.0, hy + 6.6, 2.6, 3.0), Ell(hx + 6.0, hy + 6.6, 2.6, 3.0)],
+                 (70, 50, 44), sh=(0.6, 0.6))
+        ms_mouth(draw, hx + d * 6.0 if d else hx, hy + 7.6, "grin", SKIN_TAN, 0.9)
+    rig_hair(r, draw, (70, 50, 44), "short", hat=True, skin=SKIN_TAN)
+    # a red headband, knotted behind
+    band = RRect(hx - rx - 0.6, hy - 5.4, hx + rx + 0.6, hy - 2.6, 1.2)
+    cel(draw, band, BS_BAND, sh=(0.0, 0.6))
+    kx = hx + (rx if not d else -d * rx)
+    cel(draw, Limb([(kx, hy - 4.0), (kx + (3.0 if not d else -d * 3.0), hy - 2.0 + [0, 1, 0, -1][frame]), (kx + (4.0 if not d else -d * 4.4), hy + 1.6)],
+                   [1.0, 0.9, 0.4]), BS_BAND, sh=None)
+    # the smithing hammer, its head glowing from the forge
+    h = hand_at(r, hs)
+    ang = -90 + (hs * 20 if not d else d * 30)
+    shaft = xform([(-2.4, 0.0), (11.6, 0.0)], h[0], h[1], ang)
+    cel(draw, Limb(shaft, [1.0, 1.0]), WOOD, sh=None)
+    hd = xform([(9.0, -3.6), (14.6, -3.6), (14.6, 3.6), (9.0, 3.6)], h[0], h[1], ang)
+    cel(draw, Poly(hd), (110, 110, 124), sh=None, hi=None)
+    face_ = xform([(13.0, -3.6), (14.6, -3.6), (14.6, 3.6), (13.0, 3.6)], h[0], h[1], ang)
+    cel(draw, Poly(face_), BS_HOT if glow else lit(BS_HOT, 0.6), sh=None, line=False)
+    if glow:
+        p = xform([(15.4, 0.0)], h[0], h[1], ang)[0]
+        sparkle(draw, p[0] + 1.0, p[1] - 1.0, 2.0, (255, 220, 120))
+    for side in _sides(r):
+        rig_hand(r, draw, side, SKIN_TAN)
 
 
 # ===================================================================
-# PIRATE (ID 106)
-# Red bandana, eyepatch, cutlass at hip, captain's long coat,
-# peg leg (one wooden leg), gold earring, skull belt buckle.
+# PIRATE (106) -- tricorn and skull, eyepatch, red coat, a parrot
 # ===================================================================
+
+PIR_COAT = (196, 48, 50)
+PIR_HAT = (40, 36, 48)
+PIR_SHIRT = (246, 244, 236)
+PIR_STRIPE = (60, 90, 170)
+PARROT = (60, 190, 90)
+
+
+def _parrot(draw, x, y, d, frame):
+    k = -1 if d > 0 else 1
+    flap = [0, 1, 0, 1][frame]
+    cel(draw, Poly([(x + k * 1.0, y + 1.0), (x + k * 5.0, y + 6.0), (x + k * 3.0, y + 6.4), (x - k * 0.4, y + 2.4)]), (240, 60, 60), sh=None, lw=0.5)
+    cel(draw, Ell(x, y, 2.8, 3.4), PARROT, sh=(0.4, 0.4), lw=0.6)
+    cel(draw, Poly([(x - k * 1.0, y - 1.0), (x + k * 3.4, y - 2.0 - flap * 1.4), (x + k * 2.6, y + 2.0)]), (80, 150, 240), sh=None, lw=0.5)
+    cel(draw, Ell(x - k * 0.6, y - 3.6, 2.2, 2.0), PARROT, sh=None, lw=0.6)
+    cel(draw, Poly([(x - k * 2.4, y - 4.0), (x - k * 4.0, y - 2.6), (x - k * 2.4, y - 2.0)]), (252, 200, 60), sh=None, lw=0.4)
+    Ell(x - k * 1.2, y - 4.0, 0.5, 0.5).draw(draw, fill=VOID)
+
 
 def draw_pirate(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    leg_spread = [-4, 0, 4, 0][frame]
-    coat_sway = [-2, 0, 2, 0][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 20
-
-    if direction == DOWN:
-        # Coat tails (behind body, flowing)
-        draw.polygon([
-            (cx - 16, body_cy + 6),
-            (cx + 16, body_cy + 6),
-            (cx + 18 + coat_sway, base_y + 2),
-            (cx - 18 + coat_sway, base_y + 2),
-        ], fill=PIR_COAT_DARK, outline=OUTLINE)
-        draw.line([(cx - 6, body_cy + 8), (cx - 8 + coat_sway, base_y)],
-                  fill=_darken(PIR_COAT_DARK, 0.8), width=1)
-        draw.line([(cx + 6, body_cy + 8), (cx + 8 + coat_sway, base_y)],
-                  fill=_darken(PIR_COAT_DARK, 0.8), width=1)
-
-        # Legs -- left normal, right is peg leg
-        draw.rectangle([cx - 10 + leg_spread, body_cy + 10,
-                        cx - 4 + leg_spread, base_y], fill=PIR_LEG, outline=OUTLINE)
-        draw.rectangle([cx - 10 + leg_spread, base_y - 5,
-                        cx - 4 + leg_spread, base_y], fill=PIR_BOOT, outline=OUTLINE)
-        # Peg leg (right)
-        draw.rectangle([cx + 5 - leg_spread, body_cy + 10,
-                        cx + 9 - leg_spread, body_cy + 16], fill=PIR_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 6 - leg_spread, body_cy + 16,
-                        cx + 8 - leg_spread, base_y], fill=PIR_PEG, outline=OUTLINE)
-        draw.line([(cx + 6 - leg_spread, body_cy + 18),
-                   (cx + 8 - leg_spread, body_cy + 18)],
-                  fill=PIR_PEG_DARK, width=1)
-        draw.line([(cx + 6 - leg_spread, body_cy + 22),
-                   (cx + 8 - leg_spread, body_cy + 22)],
-                  fill=PIR_PEG_DARK, width=1)
-
-        # Body (captain's coat)
-        ellipse(draw, cx, body_cy, 14, 12, PIR_COAT)
-        ellipse(draw, cx - 3, body_cy - 2, 8, 7, PIR_COAT_LIGHT, outline=None)
-        # Open coat showing shirt
-        draw.polygon([(cx - 4, body_cy - 6), (cx + 4, body_cy - 6),
-                      (cx + 3, body_cy + 6), (cx - 3, body_cy + 6)],
-                     fill=(200, 190, 170), outline=None)
-        # Coat lapels
-        draw.line([(cx - 2, body_cy - 8), (cx - 6, body_cy + 4)],
-                  fill=PIR_COAT_DARK, width=2)
-        draw.line([(cx + 2, body_cy - 8), (cx + 6, body_cy + 4)],
-                  fill=PIR_COAT_DARK, width=2)
-        # Belt with skull buckle
-        draw.rectangle([cx - 14, body_cy + 8, cx + 14, body_cy + 12],
-                       fill=PIR_BELT, outline=OUTLINE)
-        # Skull buckle
-        ellipse(draw, cx, body_cy + 10, 3, 3, PIR_SKULL_BUCKLE)
-        draw.point((cx - 1, body_cy + 9), fill=PIR_SKULL_EYE)
-        draw.point((cx + 1, body_cy + 9), fill=PIR_SKULL_EYE)
-        draw.point((cx, body_cy + 11), fill=PIR_SKULL_EYE)
-
-        # Cutlass at left hip
-        cutlass_x = cx - 18
-        draw.line([(cutlass_x, body_cy + 6), (cutlass_x - 2, body_cy + 22)],
-                  fill=PIR_CUTLASS_BLADE, width=2)
-        draw.line([(cutlass_x + 1, body_cy + 8), (cutlass_x - 1, body_cy + 20)],
-                  fill=PIR_CUTLASS_LIGHT, width=1)
-        # Guard (curved)
-        draw.arc([cutlass_x - 4, body_cy + 4, cutlass_x + 4, body_cy + 10],
-                 start=0, end=180, fill=PIR_CUTLASS_GUARD, width=2)
-        # Handle
-        draw.rectangle([cutlass_x - 1, body_cy + 2, cutlass_x + 1, body_cy + 6],
-                       fill=PIR_CUTLASS_HANDLE, outline=OUTLINE)
-
-        # Arms
-        draw.rectangle([cx - 18, body_cy - 6, cx - 12, body_cy + 6],
-                       fill=PIR_COAT, outline=OUTLINE)
-        draw.rectangle([cx - 18, body_cy + 2, cx - 12, body_cy + 6],
-                       fill=PIR_SKIN, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy - 6, cx + 18, body_cy + 6],
-                       fill=PIR_COAT, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy + 2, cx + 18, body_cy + 6],
-                       fill=PIR_SKIN, outline=OUTLINE)
-        # Gold cuff trim
-        draw.line([(cx - 18, body_cy + 1), (cx - 12, body_cy + 1)],
-                  fill=PIR_EARRING, width=1)
-        draw.line([(cx + 12, body_cy + 1), (cx + 18, body_cy + 1)],
-                  fill=PIR_EARRING, width=1)
-        ellipse(draw, cx - 14, body_cy - 6, 5, 3, PIR_COAT_LIGHT)
-        ellipse(draw, cx + 14, body_cy - 6, 5, 3, PIR_COAT_LIGHT)
-
-        # Head
-        ellipse(draw, cx, head_cy, 14, 13, PIR_HAIR)
-        ellipse(draw, cx, head_cy + 2, 12, 10, PIR_SKIN)
-        ellipse(draw, cx + 2, head_cy + 4, 8, 6, PIR_SKIN_DARK, outline=None)
-        # Eyes -- left eye has eyepatch
-        # Right eye (visible)
-        draw.rectangle([cx + 3, head_cy + 1, cx + 6, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx + 4, head_cy + 2, cx + 5, head_cy + 3], fill=BLACK)
-        # Eyepatch on left eye
-        draw.rectangle([cx - 7, head_cy + 1, cx - 3, head_cy + 5],
-                       fill=PIR_EYEPATCH, outline=OUTLINE)
-        # Eyepatch strap
-        draw.line([(cx - 7, head_cy + 2), (cx - 14, head_cy - 6)],
-                  fill=PIR_EYEPATCH_STRAP, width=1)
-        draw.line([(cx - 3, head_cy + 2), (cx + 14, head_cy - 6)],
-                  fill=PIR_EYEPATCH_STRAP, width=1)
-        # Nose and mouth
-        draw.point((cx, head_cy + 6), fill=PIR_SKIN_DARK)
-        draw.line([(cx - 3, head_cy + 8), (cx + 3, head_cy + 8)],
-                  fill=PIR_SKIN_DARK, width=1)
-        # Gold earring (right ear)
-        draw.point((cx + 12, head_cy + 4), fill=PIR_EARRING)
-        draw.point((cx + 12, head_cy + 6), fill=PIR_EARRING)
-        draw.point((cx + 11, head_cy + 7), fill=PIR_EARRING)
-
-        # Red bandana
-        draw.rectangle([cx - 14, head_cy - 7, cx + 14, head_cy - 2],
-                       fill=PIR_BANDANA, outline=OUTLINE)
-        draw.rectangle([cx + 6, head_cy - 6, cx + 13, head_cy - 3],
-                       fill=PIR_BANDANA_DARK, outline=None)
-        draw.line([(cx - 10, head_cy - 5), (cx + 10, head_cy - 5)],
-                  fill=PIR_BANDANA_LIGHT, width=1)
-        # Bandana knot tails (left side)
-        draw.line([(cx - 12, head_cy - 4), (cx - 16, head_cy + 4)],
-                  fill=PIR_BANDANA, width=2)
-        draw.line([(cx - 14, head_cy - 4), (cx - 18, head_cy + 2)],
-                  fill=PIR_BANDANA_DARK, width=1)
-
-    elif direction == UP:
-        # Coat tails (visible from behind, dramatic)
-        draw.polygon([
-            (cx - 18, body_cy + 4),
-            (cx + 18, body_cy + 4),
-            (cx + 22 + coat_sway, base_y + 2),
-            (cx - 22 + coat_sway, base_y + 2),
-        ], fill=PIR_COAT, outline=OUTLINE)
-        # Inner coat highlight
-        draw.polygon([
-            (cx - 12, body_cy + 6),
-            (cx + 12, body_cy + 6),
-            (cx + 16 + coat_sway, base_y),
-            (cx - 16 + coat_sway, base_y),
-        ], fill=PIR_COAT_DARK, outline=None)
-        draw.line([(cx, body_cy + 8), (cx + coat_sway, base_y - 2)],
-                  fill=_darken(PIR_COAT, 0.7), width=1)
-
-        # Legs
-        draw.rectangle([cx - 10 + leg_spread, body_cy + 10,
-                        cx - 4 + leg_spread, base_y], fill=PIR_LEG, outline=OUTLINE)
-        draw.rectangle([cx - 10 + leg_spread, base_y - 5,
-                        cx - 4 + leg_spread, base_y], fill=PIR_BOOT, outline=OUTLINE)
-        # Peg leg
-        draw.rectangle([cx + 5 - leg_spread, body_cy + 10,
-                        cx + 9 - leg_spread, body_cy + 16], fill=PIR_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 6 - leg_spread, body_cy + 16,
-                        cx + 8 - leg_spread, base_y], fill=PIR_PEG, outline=OUTLINE)
-
-        # Body
-        ellipse(draw, cx, body_cy, 14, 12, PIR_COAT)
-        ellipse(draw, cx, body_cy, 10, 9, PIR_COAT_DARK, outline=None)
-        draw.line([(cx, body_cy - 6), (cx, body_cy + 6)],
-                  fill=_darken(PIR_COAT, 0.65), width=1)
-        draw.rectangle([cx - 14, body_cy + 8, cx + 14, body_cy + 12],
-                       fill=PIR_BELT, outline=OUTLINE)
-        # Arms
-        draw.rectangle([cx - 18, body_cy - 6, cx - 12, body_cy + 6],
-                       fill=PIR_COAT, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy - 6, cx + 18, body_cy + 6],
-                       fill=PIR_COAT, outline=OUTLINE)
-        draw.line([(cx - 18, body_cy + 1), (cx - 12, body_cy + 1)],
-                  fill=PIR_EARRING, width=1)
-        draw.line([(cx + 12, body_cy + 1), (cx + 18, body_cy + 1)],
-                  fill=PIR_EARRING, width=1)
-        ellipse(draw, cx - 14, body_cy - 6, 5, 3, PIR_COAT_LIGHT)
-        ellipse(draw, cx + 14, body_cy - 6, 5, 3, PIR_COAT_LIGHT)
-
-        # Head (back)
-        ellipse(draw, cx, head_cy, 14, 13, PIR_HAIR)
-        ellipse(draw, cx, head_cy - 2, 10, 8, _darken(PIR_HAIR, 0.75), outline=None)
-        # Bandana from back with knot tails
-        draw.rectangle([cx - 14, head_cy - 7, cx + 14, head_cy - 2],
-                       fill=PIR_BANDANA, outline=OUTLINE)
-        draw.line([(cx + 6, head_cy - 3), (cx + 12, head_cy + 6)],
-                  fill=PIR_BANDANA, width=3)
-        draw.line([(cx + 10, head_cy - 3), (cx + 16, head_cy + 4)],
-                  fill=PIR_BANDANA_DARK, width=2)
-
-    elif direction == LEFT:
-        # Coat tail (flowing behind to right)
-        draw.polygon([
-            (cx + 4, body_cy + 4),
-            (cx + 16, body_cy + 2),
-            (cx + 20 + coat_sway, base_y + 2),
-            (cx + 4, base_y + 2),
-        ], fill=PIR_COAT, outline=OUTLINE)
-        draw.polygon([
-            (cx + 6, body_cy + 6),
-            (cx + 14, body_cy + 4),
-            (cx + 16 + coat_sway, base_y),
-            (cx + 6, base_y),
-        ], fill=PIR_COAT_DARK, outline=None)
-
-        # Legs
-        draw.rectangle([cx - 2 - leg_spread, body_cy + 10,
-                        cx + 4 - leg_spread, base_y],
-                       fill=_darken(PIR_LEG, 0.85), outline=OUTLINE)
-        draw.rectangle([cx - 2 - leg_spread, base_y - 5,
-                        cx + 4 - leg_spread, base_y], fill=PIR_BOOT, outline=OUTLINE)
-        # Front leg is peg leg
-        draw.rectangle([cx - 8 + leg_spread, body_cy + 10,
-                        cx - 4 + leg_spread, body_cy + 16], fill=PIR_LEG, outline=OUTLINE)
-        draw.rectangle([cx - 7 + leg_spread, body_cy + 16,
-                        cx - 5 + leg_spread, base_y], fill=PIR_PEG, outline=OUTLINE)
-
-        # Body
-        ellipse(draw, cx - 2, body_cy, 12, 12, PIR_COAT)
-        ellipse(draw, cx - 4, body_cy - 2, 7, 7, PIR_COAT_LIGHT, outline=None)
-        # Shirt visible
-        draw.polygon([(cx - 4, body_cy - 4), (cx + 2, body_cy - 4),
-                      (cx + 1, body_cy + 4), (cx - 3, body_cy + 4)],
-                     fill=(200, 190, 170), outline=None)
-        # Belt
-        draw.rectangle([cx - 14, body_cy + 8, cx + 10, body_cy + 12],
-                       fill=PIR_BELT, outline=OUTLINE)
-        ellipse(draw, cx - 4, body_cy + 10, 2, 2, PIR_SKULL_BUCKLE)
-
-        # Cutlass at hip
-        draw.line([(cx + 6, body_cy + 6), (cx + 8, body_cy + 20)],
-                  fill=PIR_CUTLASS_BLADE, width=2)
-        draw.arc([cx + 3, body_cy + 3, cx + 9, body_cy + 9],
-                 start=0, end=180, fill=PIR_CUTLASS_GUARD, width=1)
-
-        # Front arm
-        draw.rectangle([cx - 14, body_cy - 4, cx - 8, body_cy + 6],
-                       fill=PIR_COAT, outline=OUTLINE)
-        draw.rectangle([cx - 14, body_cy + 2, cx - 8, body_cy + 6],
-                       fill=PIR_SKIN, outline=OUTLINE)
-        draw.line([(cx - 14, body_cy + 1), (cx - 8, body_cy + 1)],
-                  fill=PIR_EARRING, width=1)
-        ellipse(draw, cx - 10, body_cy - 6, 5, 3, PIR_COAT_LIGHT)
-
-        # Head
-        ellipse(draw, cx - 2, head_cy, 13, 13, PIR_HAIR)
-        ellipse(draw, cx - 4, head_cy + 2, 10, 9, PIR_SKIN)
-        ellipse(draw, cx - 2, head_cy + 4, 6, 5, PIR_SKIN_DARK, outline=None)
-        # Eye (with eyepatch)
-        draw.rectangle([cx - 10, head_cy + 1, cx - 6, head_cy + 5],
-                       fill=PIR_EYEPATCH, outline=OUTLINE)
-        draw.line([(cx - 10, head_cy + 2), (cx - 14, head_cy - 6)],
-                  fill=PIR_EYEPATCH_STRAP, width=1)
-        draw.line([(cx - 6, head_cy + 2), (cx + 6, head_cy - 6)],
-                  fill=PIR_EYEPATCH_STRAP, width=1)
-        draw.point((cx - 9, head_cy + 6), fill=PIR_SKIN_DARK)
-        # Bandana
-        draw.rectangle([cx - 14, head_cy - 7, cx + 8, head_cy - 2],
-                       fill=PIR_BANDANA, outline=OUTLINE)
-        draw.rectangle([cx + 2, head_cy - 6, cx + 7, head_cy - 3],
-                       fill=PIR_BANDANA_DARK, outline=None)
-        draw.line([(cx - 10, head_cy - 5), (cx + 4, head_cy - 5)],
-                  fill=PIR_BANDANA_LIGHT, width=1)
-        # Tails trailing right
-        draw.line([(cx + 6, head_cy - 4), (cx + 14, head_cy + 2)],
-                  fill=PIR_BANDANA, width=2)
-
-    else:  # RIGHT
-        # Coat tail (flowing behind to left)
-        coat_sway_r = [-coat_sway for coat_sway in [coat_sway]][0]
-        draw.polygon([
-            (cx - 4, body_cy + 4),
-            (cx - 16, body_cy + 2),
-            (cx - 20 + coat_sway_r, base_y + 2),
-            (cx - 4, base_y + 2),
-        ], fill=PIR_COAT, outline=OUTLINE)
-        draw.polygon([
-            (cx - 6, body_cy + 6),
-            (cx - 14, body_cy + 4),
-            (cx - 16 + coat_sway_r, base_y),
-            (cx - 6, base_y),
-        ], fill=PIR_COAT_DARK, outline=None)
-
-        # Legs
-        draw.rectangle([cx - 2 + leg_spread, body_cy + 10,
-                        cx + 4 + leg_spread, base_y],
-                       fill=_darken(PIR_LEG, 0.85), outline=OUTLINE)
-        draw.rectangle([cx - 2 + leg_spread, base_y - 5,
-                        cx + 4 + leg_spread, base_y], fill=PIR_BOOT, outline=OUTLINE)
-        # Front leg is peg leg
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 8 - leg_spread, body_cy + 16], fill=PIR_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 5 - leg_spread, body_cy + 16,
-                        cx + 7 - leg_spread, base_y], fill=PIR_PEG, outline=OUTLINE)
-
-        # Body
-        ellipse(draw, cx + 2, body_cy, 12, 12, PIR_COAT)
-        ellipse(draw, cx, body_cy - 2, 7, 7, PIR_COAT_LIGHT, outline=None)
-        draw.polygon([(cx - 2, body_cy - 4), (cx + 4, body_cy - 4),
-                      (cx + 3, body_cy + 4), (cx - 1, body_cy + 4)],
-                     fill=(200, 190, 170), outline=None)
-        # Belt
-        draw.rectangle([cx - 10, body_cy + 8, cx + 14, body_cy + 12],
-                       fill=PIR_BELT, outline=OUTLINE)
-        ellipse(draw, cx + 4, body_cy + 10, 2, 2, PIR_SKULL_BUCKLE)
-
-        # Cutlass at hip
-        draw.line([(cx - 6, body_cy + 6), (cx - 8, body_cy + 20)],
-                  fill=PIR_CUTLASS_BLADE, width=2)
-        draw.arc([cx - 9, body_cy + 3, cx - 3, body_cy + 9],
-                 start=0, end=180, fill=PIR_CUTLASS_GUARD, width=1)
-
-        # Front arm
-        draw.rectangle([cx + 8, body_cy - 4, cx + 14, body_cy + 6],
-                       fill=PIR_COAT, outline=OUTLINE)
-        draw.rectangle([cx + 8, body_cy + 2, cx + 14, body_cy + 6],
-                       fill=PIR_SKIN, outline=OUTLINE)
-        draw.line([(cx + 8, body_cy + 1), (cx + 14, body_cy + 1)],
-                  fill=PIR_EARRING, width=1)
-        ellipse(draw, cx + 10, body_cy - 6, 5, 3, PIR_COAT_LIGHT)
-
-        # Head
-        ellipse(draw, cx + 2, head_cy, 13, 13, PIR_HAIR)
-        ellipse(draw, cx + 4, head_cy + 2, 10, 9, PIR_SKIN)
-        ellipse(draw, cx + 6, head_cy + 4, 6, 5, PIR_SKIN_DARK, outline=None)
-        # Eye (visible, no patch on this side)
-        draw.rectangle([cx + 7, head_cy + 1, cx + 10, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx + 8, head_cy + 2, cx + 9, head_cy + 3], fill=BLACK)
-        # Eyepatch strap crosses forehead
-        draw.line([(cx + 4, head_cy - 2), (cx - 6, head_cy - 6)],
-                  fill=PIR_EYEPATCH_STRAP, width=1)
-        draw.point((cx + 9, head_cy + 6), fill=PIR_SKIN_DARK)
-        # Gold earring (left ear visible)
-        draw.point((cx - 8, head_cy + 4), fill=PIR_EARRING)
-        draw.point((cx - 8, head_cy + 6), fill=PIR_EARRING)
-        draw.point((cx - 7, head_cy + 7), fill=PIR_EARRING)
-        # Bandana
-        draw.rectangle([cx - 8, head_cy - 7, cx + 14, head_cy - 2],
-                       fill=PIR_BANDANA, outline=OUTLINE)
-        draw.rectangle([cx + 6, head_cy - 6, cx + 13, head_cy - 3],
-                       fill=PIR_BANDANA_DARK, outline=None)
-        draw.line([(cx - 4, head_cy - 5), (cx + 10, head_cy - 5)],
-                  fill=PIR_BANDANA_LIGHT, width=1)
-        # Tails trailing left
-        draw.line([(cx - 6, head_cy - 4), (cx - 14, head_cy + 2)],
-                  fill=PIR_BANDANA, width=2)
+    r = rig(ox, oy, direction, frame, build=1.04)
+    d = r.d
+    hs = _hold_side(r)
+    if d:
+        rig_arms(r, draw, PIR_COAT, SKIN_TAN, layer="far", cuff=GOLD)
+    rig_legs(r, draw, (60, 56, 70), (50, 40, 44))
+    rig_torso(r, draw, PIR_SHIRT)
+    cx = r.cx
+    if not r.back:
+        for k in range(3):
+            y = r.sh_y + 1.0 + k * 2.4
+            stroke(draw, [(cx - 3.0 + d * 1.6, y), (cx + 3.0 + d * 1.6, y)], 0.8, PIR_STRIPE)
+    # the long red coat, open at the front
+    if d:
+        coat = Poly([(cx - d * 3.8, r.sh_y - 2.4), (cx + d * 1.0, r.sh_y - 2.4), (cx + d * 0.4, r.hip_y + 5.0), (cx - d * 6.4, r.hip_y + 5.0)])
+        cel(draw, coat, PIR_COAT, sh=(0.8, 0.6))
+    elif r.back:
+        cel(draw, Poly([(cx - r.sh_w + 0.6, r.sh_y - 2.4), (cx + r.sh_w - 0.6, r.sh_y - 2.4), (cx + r.sh_w + 2.4, r.hip_y + 5.0),
+                        (cx - r.sh_w - 2.4, r.hip_y + 5.0)]), PIR_COAT, sh=(1.2, 0.6))
+    else:
+        for s in (-1, 1):
+            cel(draw, Poly([(cx + s * 2.8, r.sh_y - 2.4), (cx + s * r.sh_w, r.sh_y - 1.8), (cx + s * (r.sh_w + 2.6), r.hip_y + 5.0),
+                            (cx + s * 3.4, r.hip_y + 5.0)]), PIR_COAT, sh=(0.8, 0.6), regions=[(Poly([(cx + s * 2.8, r.sh_y - 2.4), (cx + s * 3.6, r.sh_y - 2.4),
+                                                                                                   (cx + s * 4.2, r.hip_y + 5.0), (cx + s * 3.4, r.hip_y + 5.0)]), GOLD)])
+    rig_belt(r, draw, (60, 44, 40), buckle=GOLD)
+    rig_arms(r, draw, PIR_COAT, SKIN_TAN, layer="near", hands=False, cuff=GOLD)
+    head_skull(r, draw, SKIN_TAN)
+    hx, hy, rx, ry = r.hx, r.head_cy, r.head_rx, r.head_ry
+    if not r.back:
+        head_face(r, draw, SKIN_TAN, iris=(80, 60, 40), mood="sharp", mouth="grin", brows=True, brow_color=(50, 36, 30))
+        # the eyepatch over one eye
+        e1, e2, ey, _, _ = face_anchor(r)
+        ex = e2 if not d else e1
+        cel(draw, Ell(ex, ey + 0.4, 2.8, 2.6), VOID, sh=None)
+        stroke(draw, [(hx - rx + 0.6, hy - 3.6), (ex, ey), (hx + rx - 0.4, hy - 1.6)] if not d else [(ex - d * 3.0, ey - 2.4), (ex, ey), (hx - d * 3.0, hy - 3.0)],
+               0.6, VOID)
+    rig_hair(r, draw, (60, 44, 36), "long", hat=True, skin=SKIN_TAN)
+    # tricorn: a brim folded up in three points, a white skull on the front
+    cx0 = hx - d * 0.6
+    by = hy - 6.0
+    if d:
+        tri = Poly([(cx0 + d * 13.0, by + 0.6), (cx0 + d * 6.0, by - 4.4), (cx0 - d * 4.0, by - 5.4), (cx0 - d * 12.0, by - 1.0), (cx0 - d * 8.0, by + 1.6),
+                    (cx0 + d * 6.0, by + 1.8)])
+    else:
+        tri = Poly([(cx0 - 15.4, by - 3.0), (cx0 - 7.0, by - 1.8), (cx0, by + 1.4), (cx0 + 7.0, by - 1.8), (cx0 + 15.4, by - 3.0), (cx0 + 11.0, by - 7.4),
+                    (cx0 + 4.0, by - 9.4), (cx0 - 4.0, by - 9.4), (cx0 - 11.0, by - 7.4)])
+    crown = Poly(arc_pts(cx0, by - 3.0, 7.6, 7.4, 180, 360, 20))
+    cel(draw, crown, PIR_HAT, sh=(1.2, 0.6))
+    cel(draw, tri, PIR_HAT, sh=(0.0, 1.0))
+    stroke(draw, [(cx0 - 12.0, by - 3.2), (cx0, by - 0.4), (cx0 + 12.0, by - 3.2)] if not d else [(cx0 - d * 9.0, by - 1.0), (cx0 + d * 10.0, by - 0.8)],
+           0.6, GOLD)
+    if not r.back:
+        sx = cx0 + d * 3.0
+        cel(draw, Ell(sx, by - 5.0, 1.8, 1.6), (246, 244, 236), sh=None, lw=0.4)
+        for s in (-1, 1):
+            Ell(sx + s * 0.7, by - 5.0, 0.4, 0.4).draw(draw, fill=VOID)
+    # the parrot on his shoulder
+    ps = -hs if not d else -d
+    sx, sy = r.shoulder(ps)
+    _parrot(draw, sx + (ps * 1.2 if not d else -d * 1.0), sy - 4.4, d if d else -ps, frame)
+    # a cutlass
+    h = hand_at(r, hs)
+    ang = 90 + (hs * 30 if not d else -d * 40)
+    blade(draw, h[0], h[1], ang, length=11.0, width=1.7, curve=-0.7, hilt=GOLD, grip=(60, 44, 40), guard=2.4, flip=hs if not d else -d)
+    for side in _sides(r):
+        rig_hand(r, draw, side, SKIN_TAN)
 
 
 # ===================================================================
-# CHEF (ID 107)
-# White chef uniform, tall white toque hat, red neckerchief, meat
-# cleaver/spatula in hand, stained apron, kitchen details.
+# CHEF (107) -- a towering toque, a double-breasted jacket, a frying pan
 # ===================================================================
 
-# Chef palette
-CHF_UNIFORM = (240, 238, 232)
-CHF_UNIFORM_LIGHT = (250, 248, 245)
-CHF_UNIFORM_DARK = (210, 205, 195)
-CHF_UNIFORM_SHADOW = (185, 180, 172)
-CHF_APRON = (230, 225, 215)
-CHF_APRON_DARK = (200, 195, 185)
-CHF_APRON_STAIN_RED = (180, 60, 50)
-CHF_APRON_STAIN_BROWN = (140, 100, 60)
-CHF_APRON_STAIN_YELLOW = (190, 170, 60)
-CHF_NECKERCHIEF = (200, 40, 40)
-CHF_NECKERCHIEF_DARK = (160, 30, 30)
-CHF_NECKERCHIEF_LIGHT = (230, 60, 55)
-CHF_SKIN = (215, 185, 155)
-CHF_SKIN_DARK = (185, 155, 125)
-CHF_TOQUE = (245, 242, 235)
-CHF_TOQUE_DARK = (215, 210, 200)
-CHF_TOQUE_LIGHT = (255, 255, 252)
-CHF_TOQUE_BAND = (220, 215, 205)
-CHF_CLEAVER_BLADE = (185, 190, 200)
-CHF_CLEAVER_LIGHT = (215, 220, 230)
-CHF_CLEAVER_HANDLE = (100, 65, 35)
-CHF_CLEAVER_RIVET = (180, 175, 165)
-CHF_BUTTONS = (190, 185, 175)
-CHF_LEG = (60, 60, 65)
-CHF_BOOT = (45, 42, 40)
-CHF_HAIR = (80, 55, 35)
-CHF_BELT = (90, 70, 45)
+CHEF_WHITE = (250, 250, 252)
+CHEF_RED = (220, 56, 60)
 
 
 def draw_chef(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    leg_spread = [-4, 0, 4, 0][frame]
-    chop_offset = [-1, 2, -1, 0][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 20
-
-    if direction == DOWN:
-        # Legs
-        draw.rectangle([cx - 10 + leg_spread, body_cy + 10,
-                        cx - 4 + leg_spread, base_y], fill=CHF_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=CHF_LEG, outline=OUTLINE)
-        # Boots
-        draw.rectangle([cx - 10 + leg_spread, base_y - 5,
-                        cx - 4 + leg_spread, base_y], fill=CHF_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 5,
-                        cx + 10 - leg_spread, base_y], fill=CHF_BOOT, outline=OUTLINE)
-
-        # Chef jacket body
-        ellipse(draw, cx, body_cy, 14, 12, CHF_UNIFORM)
-        ellipse(draw, cx - 3, body_cy - 2, 8, 7, CHF_UNIFORM_LIGHT, outline=None)
-        # Double-breasted buttons
-        draw.point((cx - 3, body_cy - 4), fill=CHF_BUTTONS)
-        draw.point((cx - 3, body_cy), fill=CHF_BUTTONS)
-        draw.point((cx - 3, body_cy + 4), fill=CHF_BUTTONS)
-        draw.point((cx + 3, body_cy - 4), fill=CHF_BUTTONS)
-        draw.point((cx + 3, body_cy), fill=CHF_BUTTONS)
-        draw.point((cx + 3, body_cy + 4), fill=CHF_BUTTONS)
-
-        # Apron over jacket
-        draw.rectangle([cx - 10, body_cy + 2, cx + 10, body_cy + 14],
-                       fill=CHF_APRON, outline=OUTLINE)
-        # Apron stains
-        draw.point((cx - 5, body_cy + 5), fill=CHF_APRON_STAIN_RED)
-        draw.point((cx + 3, body_cy + 8), fill=CHF_APRON_STAIN_BROWN)
-        draw.point((cx - 2, body_cy + 10), fill=CHF_APRON_STAIN_YELLOW)
-        draw.point((cx + 6, body_cy + 6), fill=CHF_APRON_STAIN_RED)
-
-        # Belt / apron tie
-        draw.rectangle([cx - 12, body_cy + 12, cx + 12, body_cy + 14],
-                       fill=CHF_BELT, outline=OUTLINE)
-
-        # Arms
-        draw.rectangle([cx - 18, body_cy - 6, cx - 12, body_cy + 6],
-                       fill=CHF_UNIFORM, outline=OUTLINE)
-        draw.rectangle([cx - 18, body_cy + 2, cx - 12, body_cy + 6],
-                       fill=CHF_SKIN, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy - 6, cx + 18, body_cy + 6],
-                       fill=CHF_UNIFORM, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy + 2, cx + 18, body_cy + 6],
-                       fill=CHF_SKIN, outline=OUTLINE)
-        # Shoulder puffs
-        ellipse(draw, cx - 14, body_cy - 6, 5, 3, CHF_UNIFORM_LIGHT)
-        ellipse(draw, cx + 14, body_cy - 6, 5, 3, CHF_UNIFORM_LIGHT)
-
-        # Cleaver in right hand
-        clv_x = cx + 20
-        clv_y = body_cy - 2 + chop_offset
-        draw.rectangle([clv_x - 1, clv_y - 8, clv_x + 1, clv_y - 2],
-                       fill=CHF_CLEAVER_HANDLE, outline=OUTLINE)
-        draw.rectangle([clv_x - 4, clv_y - 14, clv_x + 4, clv_y - 8],
-                       fill=CHF_CLEAVER_BLADE, outline=OUTLINE)
-        draw.line([(clv_x - 3, clv_y - 12), (clv_x + 3, clv_y - 12)],
-                  fill=CHF_CLEAVER_LIGHT, width=1)
-        draw.point((clv_x, clv_y - 4), fill=CHF_CLEAVER_RIVET)
-
-        # Neckerchief
-        draw.polygon([(cx - 4, body_cy - 10), (cx + 4, body_cy - 10),
-                      (cx, body_cy - 4)], fill=CHF_NECKERCHIEF, outline=OUTLINE)
-        draw.line([(cx - 2, body_cy - 9), (cx, body_cy - 6)],
-                  fill=CHF_NECKERCHIEF_LIGHT, width=1)
-
-        # Head
-        ellipse(draw, cx, head_cy, 14, 13, CHF_HAIR)
-        ellipse(draw, cx, head_cy + 2, 12, 10, CHF_SKIN)
-        ellipse(draw, cx + 2, head_cy + 4, 8, 6, CHF_SKIN_DARK, outline=None)
-        # Eyes
-        draw.rectangle([cx - 6, head_cy + 1, cx - 3, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx - 5, head_cy + 2, cx - 4, head_cy + 3], fill=BLACK)
-        draw.rectangle([cx + 3, head_cy + 1, cx + 6, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx + 4, head_cy + 2, cx + 5, head_cy + 3], fill=BLACK)
-        # Nose and mouth
-        draw.point((cx, head_cy + 6), fill=CHF_SKIN_DARK)
-        draw.line([(cx - 2, head_cy + 8), (cx + 2, head_cy + 8)],
-                  fill=CHF_SKIN_DARK, width=1)
-        # Mustache
-        draw.line([(cx - 5, head_cy + 7), (cx - 1, head_cy + 6)],
-                  fill=CHF_HAIR, width=1)
-        draw.line([(cx + 1, head_cy + 6), (cx + 5, head_cy + 7)],
-                  fill=CHF_HAIR, width=1)
-
-        # Toque (tall chef hat)
-        draw.rectangle([cx - 8, head_cy - 8, cx + 8, head_cy - 6],
-                       fill=CHF_TOQUE_BAND, outline=OUTLINE)
-        draw.rectangle([cx - 7, head_cy - 24, cx + 7, head_cy - 8],
-                       fill=CHF_TOQUE, outline=OUTLINE)
-        ellipse(draw, cx, head_cy - 24, 7, 3, CHF_TOQUE)
-        draw.line([(cx - 4, head_cy - 20), (cx - 4, head_cy - 12)],
-                  fill=CHF_TOQUE_DARK, width=1)
-        draw.line([(cx + 2, head_cy - 18), (cx + 2, head_cy - 10)],
-                  fill=CHF_TOQUE_LIGHT, width=1)
-
-    elif direction == UP:
-        # Legs
-        draw.rectangle([cx - 10 + leg_spread, body_cy + 10,
-                        cx - 4 + leg_spread, base_y], fill=CHF_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=CHF_LEG, outline=OUTLINE)
-        draw.rectangle([cx - 10 + leg_spread, base_y - 5,
-                        cx - 4 + leg_spread, base_y], fill=CHF_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 5,
-                        cx + 10 - leg_spread, base_y], fill=CHF_BOOT, outline=OUTLINE)
-
-        # Chef jacket (back)
-        ellipse(draw, cx, body_cy, 14, 12, CHF_UNIFORM)
-        ellipse(draw, cx, body_cy, 10, 9, CHF_UNIFORM_DARK, outline=None)
-        # Back seam
-        draw.line([(cx, body_cy - 6), (cx, body_cy + 6)],
-                  fill=CHF_UNIFORM_SHADOW, width=1)
-        # Apron ties visible from back
-        draw.line([(cx - 6, body_cy + 4), (cx - 10, body_cy + 8)],
-                  fill=CHF_APRON_DARK, width=2)
-        draw.line([(cx + 6, body_cy + 4), (cx + 10, body_cy + 8)],
-                  fill=CHF_APRON_DARK, width=2)
-        # Belt
-        draw.rectangle([cx - 12, body_cy + 12, cx + 12, body_cy + 14],
-                       fill=CHF_BELT, outline=OUTLINE)
-
-        # Arms
-        draw.rectangle([cx - 18, body_cy - 6, cx - 12, body_cy + 6],
-                       fill=CHF_UNIFORM, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy - 6, cx + 18, body_cy + 6],
-                       fill=CHF_UNIFORM, outline=OUTLINE)
-        ellipse(draw, cx - 14, body_cy - 6, 5, 3, CHF_UNIFORM_LIGHT)
-        ellipse(draw, cx + 14, body_cy - 6, 5, 3, CHF_UNIFORM_LIGHT)
-
-        # Head (back)
-        ellipse(draw, cx, head_cy, 14, 13, CHF_HAIR)
-        ellipse(draw, cx, head_cy - 2, 10, 8, _darken(CHF_HAIR, 0.85), outline=None)
-        # Neckerchief knot visible from back
-        draw.rectangle([cx - 2, body_cy - 10, cx + 2, body_cy - 7],
-                       fill=CHF_NECKERCHIEF, outline=OUTLINE)
-
-        # Toque (back view)
-        draw.rectangle([cx - 8, head_cy - 8, cx + 8, head_cy - 6],
-                       fill=CHF_TOQUE_BAND, outline=OUTLINE)
-        draw.rectangle([cx - 7, head_cy - 24, cx + 7, head_cy - 8],
-                       fill=CHF_TOQUE, outline=OUTLINE)
-        ellipse(draw, cx, head_cy - 24, 7, 3, CHF_TOQUE)
-        draw.line([(cx - 3, head_cy - 20), (cx - 3, head_cy - 10)],
-                  fill=CHF_TOQUE_DARK, width=1)
-        draw.line([(cx + 3, head_cy - 18), (cx + 3, head_cy - 10)],
-                  fill=CHF_TOQUE_DARK, width=1)
-
-    elif direction == LEFT:
-        # Legs
-        draw.rectangle([cx - 2 - leg_spread, body_cy + 10,
-                        cx + 4 - leg_spread, base_y],
-                       fill=_darken(CHF_LEG, 0.85), outline=OUTLINE)
-        draw.rectangle([cx - 2 - leg_spread, base_y - 5,
-                        cx + 4 - leg_spread, base_y], fill=CHF_BOOT, outline=OUTLINE)
-        draw.rectangle([cx - 8 + leg_spread, body_cy + 10,
-                        cx - 2 + leg_spread, base_y], fill=CHF_LEG, outline=OUTLINE)
-        draw.rectangle([cx - 8 + leg_spread, base_y - 5,
-                        cx - 2 + leg_spread, base_y], fill=CHF_BOOT, outline=OUTLINE)
-
-        # Chef jacket body (side)
-        ellipse(draw, cx - 2, body_cy, 12, 12, CHF_UNIFORM)
-        ellipse(draw, cx - 4, body_cy - 2, 7, 7, CHF_UNIFORM_LIGHT, outline=None)
-        # Apron (side view)
-        draw.rectangle([cx - 8, body_cy + 2, cx + 4, body_cy + 14],
-                       fill=CHF_APRON, outline=OUTLINE)
-        draw.point((cx - 4, body_cy + 6), fill=CHF_APRON_STAIN_RED)
-        draw.point((cx - 2, body_cy + 10), fill=CHF_APRON_STAIN_BROWN)
-        # Belt
-        draw.rectangle([cx - 14, body_cy + 12, cx + 10, body_cy + 14],
-                       fill=CHF_BELT, outline=OUTLINE)
-
-        # Front arm with cleaver
-        draw.rectangle([cx - 14, body_cy - 4, cx - 8, body_cy + 6],
-                       fill=CHF_UNIFORM, outline=OUTLINE)
-        draw.rectangle([cx - 14, body_cy + 2, cx - 8, body_cy + 6],
-                       fill=CHF_SKIN, outline=OUTLINE)
-        ellipse(draw, cx - 10, body_cy - 6, 5, 3, CHF_UNIFORM_LIGHT)
-        # Cleaver
-        clv_x = cx - 16
-        clv_y = body_cy + chop_offset
-        draw.rectangle([clv_x - 1, clv_y - 6, clv_x + 1, clv_y],
-                       fill=CHF_CLEAVER_HANDLE, outline=OUTLINE)
-        draw.rectangle([clv_x - 3, clv_y - 12, clv_x + 3, clv_y - 6],
-                       fill=CHF_CLEAVER_BLADE, outline=OUTLINE)
-        draw.line([(clv_x - 2, clv_y - 10), (clv_x + 2, clv_y - 10)],
-                  fill=CHF_CLEAVER_LIGHT, width=1)
-
-        # Neckerchief (side)
-        draw.polygon([(cx - 6, body_cy - 10), (cx + 2, body_cy - 10),
-                      (cx - 2, body_cy - 4)], fill=CHF_NECKERCHIEF, outline=OUTLINE)
-
-        # Head
-        ellipse(draw, cx - 2, head_cy, 13, 13, CHF_HAIR)
-        ellipse(draw, cx - 4, head_cy + 2, 10, 9, CHF_SKIN)
-        ellipse(draw, cx - 2, head_cy + 4, 6, 5, CHF_SKIN_DARK, outline=None)
-        # Eye
-        draw.rectangle([cx - 10, head_cy + 1, cx - 7, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx - 9, head_cy + 2, cx - 8, head_cy + 3], fill=BLACK)
-        # Nose and mouth
-        draw.point((cx - 9, head_cy + 6), fill=CHF_SKIN_DARK)
-        draw.line([(cx - 10, head_cy + 8), (cx - 7, head_cy + 8)],
-                  fill=CHF_SKIN_DARK, width=1)
-        # Mustache
-        draw.line([(cx - 12, head_cy + 7), (cx - 8, head_cy + 6)],
-                  fill=CHF_HAIR, width=1)
-
-        # Toque (side)
-        draw.rectangle([cx - 8, head_cy - 8, cx + 4, head_cy - 6],
-                       fill=CHF_TOQUE_BAND, outline=OUTLINE)
-        draw.rectangle([cx - 7, head_cy - 24, cx + 3, head_cy - 8],
-                       fill=CHF_TOQUE, outline=OUTLINE)
-        ellipse(draw, cx - 2, head_cy - 24, 5, 3, CHF_TOQUE)
-        draw.line([(cx - 4, head_cy - 20), (cx - 4, head_cy - 10)],
-                  fill=CHF_TOQUE_DARK, width=1)
-
-    else:  # RIGHT
-        # Legs
-        draw.rectangle([cx - 2 + leg_spread, body_cy + 10,
-                        cx + 4 + leg_spread, base_y],
-                       fill=_darken(CHF_LEG, 0.85), outline=OUTLINE)
-        draw.rectangle([cx - 2 + leg_spread, base_y - 5,
-                        cx + 4 + leg_spread, base_y], fill=CHF_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=CHF_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 5,
-                        cx + 10 - leg_spread, base_y], fill=CHF_BOOT, outline=OUTLINE)
-
-        # Chef jacket body (side)
-        ellipse(draw, cx + 2, body_cy, 12, 12, CHF_UNIFORM)
-        ellipse(draw, cx, body_cy - 2, 7, 7, CHF_UNIFORM_LIGHT, outline=None)
-        # Apron
-        draw.rectangle([cx - 4, body_cy + 2, cx + 8, body_cy + 14],
-                       fill=CHF_APRON, outline=OUTLINE)
-        draw.point((cx + 4, body_cy + 6), fill=CHF_APRON_STAIN_RED)
-        draw.point((cx + 2, body_cy + 10), fill=CHF_APRON_STAIN_BROWN)
-        # Belt
-        draw.rectangle([cx - 10, body_cy + 12, cx + 14, body_cy + 14],
-                       fill=CHF_BELT, outline=OUTLINE)
-
-        # Front arm with cleaver
-        draw.rectangle([cx + 8, body_cy - 4, cx + 14, body_cy + 6],
-                       fill=CHF_UNIFORM, outline=OUTLINE)
-        draw.rectangle([cx + 8, body_cy + 2, cx + 14, body_cy + 6],
-                       fill=CHF_SKIN, outline=OUTLINE)
-        ellipse(draw, cx + 10, body_cy - 6, 5, 3, CHF_UNIFORM_LIGHT)
-        # Cleaver
-        clv_x = cx + 16
-        clv_y = body_cy + chop_offset
-        draw.rectangle([clv_x - 1, clv_y - 6, clv_x + 1, clv_y],
-                       fill=CHF_CLEAVER_HANDLE, outline=OUTLINE)
-        draw.rectangle([clv_x - 3, clv_y - 12, clv_x + 3, clv_y - 6],
-                       fill=CHF_CLEAVER_BLADE, outline=OUTLINE)
-        draw.line([(clv_x - 2, clv_y - 10), (clv_x + 2, clv_y - 10)],
-                  fill=CHF_CLEAVER_LIGHT, width=1)
-
-        # Neckerchief (side)
-        draw.polygon([(cx - 2, body_cy - 10), (cx + 6, body_cy - 10),
-                      (cx + 2, body_cy - 4)], fill=CHF_NECKERCHIEF, outline=OUTLINE)
-
-        # Head
-        ellipse(draw, cx + 2, head_cy, 13, 13, CHF_HAIR)
-        ellipse(draw, cx + 4, head_cy + 2, 10, 9, CHF_SKIN)
-        ellipse(draw, cx + 6, head_cy + 4, 6, 5, CHF_SKIN_DARK, outline=None)
-        # Eye
-        draw.rectangle([cx + 7, head_cy + 1, cx + 10, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx + 8, head_cy + 2, cx + 9, head_cy + 3], fill=BLACK)
-        # Nose and mouth
-        draw.point((cx + 9, head_cy + 6), fill=CHF_SKIN_DARK)
-        draw.line([(cx + 7, head_cy + 8), (cx + 10, head_cy + 8)],
-                  fill=CHF_SKIN_DARK, width=1)
-        # Mustache
-        draw.line([(cx + 8, head_cy + 6), (cx + 12, head_cy + 7)],
-                  fill=CHF_HAIR, width=1)
-
-        # Toque (side)
-        draw.rectangle([cx - 4, head_cy - 8, cx + 8, head_cy - 6],
-                       fill=CHF_TOQUE_BAND, outline=OUTLINE)
-        draw.rectangle([cx - 3, head_cy - 24, cx + 7, head_cy - 8],
-                       fill=CHF_TOQUE, outline=OUTLINE)
-        ellipse(draw, cx + 2, head_cy - 24, 5, 3, CHF_TOQUE)
-        draw.line([(cx + 4, head_cy - 20), (cx + 4, head_cy - 10)],
-                  fill=CHF_TOQUE_DARK, width=1)
+    r = rig(ox, oy, direction, frame, build=1.08, head=0.94)
+    d = r.d
+    hs = _hold_side(r)
+    if d:
+        rig_arms(r, draw, CHEF_WHITE, SKIN, layer="far")
+    rig_legs(r, draw, (70, 70, 84), (40, 36, 44))
+    rig_torso(r, draw, CHEF_WHITE)
+    cx = r.cx
+    if not r.back:
+        for k in range(3):
+            for s in ((-1, 1) if not d else (1,)):
+                Ell(cx + s * 2.0 + d * 2.0, r.sh_y + 1.4 + k * 2.4, 0.6, 0.6).draw(draw, fill=(200, 200, 210))
+        # a red neckerchief
+        cel(draw, Poly([(cx - 3.6 + d * 1.4, r.sh_y - 2.4), (cx + 3.6 + d * 1.4, r.sh_y - 2.4), (cx + d * 1.4, r.sh_y + 1.6)]), CHEF_RED, sh=None, lw=0.6)
+    # an apron
+    if not r.back:
+        cel(draw, Poly([(cx - 5.4 + d, r.waist_y + 0.6), (cx + 5.4 + d, r.waist_y + 0.6), (cx + 6.0 + d, r.hip_y + 4.0), (cx - 6.0 + d, r.hip_y + 4.0)]) if not d else
+            Poly([(cx - d * 0.4, r.waist_y + 0.6), (cx + d * 4.8, r.waist_y + 0.6), (cx + d * 5.4, r.hip_y + 4.0), (cx - d * 1.4, r.hip_y + 4.0)]),
+            (236, 236, 240), sh=(0.6, 0.4))
+    rig_arms(r, draw, CHEF_WHITE, SKIN, layer="near", hands=False)
+    head_skull(r, draw, SKIN)
+    hx, hy, rx, ry = r.hx, r.head_cy, r.head_rx, r.head_ry
+    if not r.back:
+        head_face(r, draw, SKIN, iris=(90, 70, 60), mood="closed" if frame in (1, 3) else "bright", mouth="smile", brows=True,
+                  brow_color=(90, 60, 50))
+        # a curled moustache
+        mx = hx + d * 6.0 if d else hx
+        for s in ((-1, 1) if not d else (d, -d)):
+            cel(draw, Limb([(mx, hy + 6.4), (mx + s * 2.4, hy + 6.8), (mx + s * 3.8, hy + 5.6)], [0.9, 0.9, 0.4]), (90, 60, 50), sh=None)
+    rig_hair(r, draw, (120, 80, 56), "short", hat=True, skin=SKIN)
+    # the toque: a band and a tall puffed crown
+    cx0 = hx - d * 0.6
+    band = RRect(cx0 - rx + 0.6, hy - 8.4, cx0 + rx - 0.6, hy - 4.2, 1.4)
+    puff = [Ell(cx0 - 4.4, hy - 13.0, 5.4, 5.0), Ell(cx0 + 4.4, hy - 13.0, 5.4, 5.0), Ell(cx0, hy - 16.4, 6.4, 5.6),
+            RRect(cx0 - 8.4, hy - 13.0, cx0 + 8.4, hy - 7.4, 1.0)]
+    blob(draw, puff, CHEF_WHITE, sh=(1.4, 1.2), tone=(214, 218, 232))
+    cel(draw, band, CHEF_WHITE, sh=(0.0, 0.8), tone=(214, 218, 232))
+    for k in (-3.0, 0.0, 3.0):
+        stroke(draw, [(cx0 + k, hy - 8.0), (cx0 + k * 1.2, hy - 11.0)], 0.4, (200, 204, 222))
+    # a frying pan with an egg in it
+    h = hand_at(r, hs)
+    ang = -40 if hs > 0 else -140
+    if d:
+        ang = -20 if d > 0 else -160
+    handle = xform([(-1.0, 0.0), (6.0, 0.0)], h[0], h[1], ang)
+    cel(draw, Limb(handle, [0.9, 0.9]), (60, 56, 64), sh=None)
+    pc = xform([(10.4, 0.0)], h[0], h[1], ang)[0]
+    cel(draw, Ell(pc[0], pc[1], 5.0, 3.2), (70, 68, 80), sh=(0.0, 0.8))
+    if not r.back:
+        cel(draw, Ell(pc[0], pc[1] - 0.4, 3.4, 2.0), (250, 250, 250), sh=None, lw=0.5)
+        Ell(pc[0] + 0.4, pc[1] - 0.6, 1.3, 1.0).draw(draw, fill=(255, 196, 60))
+    for side in _sides(r):
+        rig_hand(r, draw, side, SKIN)
 
 
 # ===================================================================
-# MUSICIAN (ID 108)
-# Purple/dark outfit with feathered cap, lute on back, flowing cape,
-# music note particles floating nearby, elegant pose.
+# MUSICIAN (108) -- a rocker: dyed spiky hair, studded jacket, a flying-V
 # ===================================================================
 
-# Musician palette
-MUS_OUTFIT = (80, 40, 100)
-MUS_OUTFIT_LIGHT = (110, 60, 135)
-MUS_OUTFIT_DARK = (55, 25, 70)
-MUS_OUTFIT_TRIM = (180, 150, 60)
-MUS_CAPE = (100, 50, 130)
-MUS_CAPE_DARK = (70, 35, 90)
-MUS_CAPE_LIGHT = (130, 70, 160)
-MUS_SKIN = (225, 200, 175)
-MUS_SKIN_DARK = (195, 170, 145)
-MUS_FEATHER_CAP = (70, 35, 90)
-MUS_FEATHER_CAP_DARK = (50, 25, 65)
-MUS_FEATHER = (200, 50, 50)
-MUS_FEATHER_TIP = (240, 80, 70)
-MUS_LUTE_BODY = (160, 110, 60)
-MUS_LUTE_DARK = (120, 80, 40)
-MUS_LUTE_NECK = (140, 95, 50)
-MUS_LUTE_STRING = (200, 195, 180)
-MUS_NOTE = (255, 220, 80)
-MUS_NOTE_DIM = (200, 170, 60)
-MUS_BELT = (90, 60, 40)
-MUS_BUCKLE = (200, 180, 60)
-MUS_LEG = (70, 45, 55)
-MUS_BOOT = (55, 35, 42)
-MUS_HAIR = (50, 35, 25)
+MUS_JACKET = (48, 44, 58)
+MUS_HAIR = (255, 110, 170)
+MUS_GUITAR = (230, 46, 70)
 
 
 def draw_musician(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    leg_spread = [-4, 0, 4, 0][frame]
-    note_float = [-3, -6, -4, -7][frame]
-    note_drift = [0, 2, 4, 1][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 20
-
-    if direction == DOWN:
-        # Cape behind body
-        draw.polygon([(cx - 12, body_cy - 8), (cx + 12, body_cy - 8),
-                      (cx + 14, body_cy + 14), (cx - 14, body_cy + 14)],
-                     fill=MUS_CAPE, outline=OUTLINE)
-        draw.polygon([(cx - 8, body_cy - 4), (cx + 8, body_cy - 4),
-                      (cx + 10, body_cy + 10), (cx - 10, body_cy + 10)],
-                     fill=MUS_CAPE_DARK, outline=None)
-
-        # Legs
-        draw.rectangle([cx - 10 + leg_spread, body_cy + 10,
-                        cx - 4 + leg_spread, base_y], fill=MUS_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=MUS_LEG, outline=OUTLINE)
-        draw.rectangle([cx - 10 + leg_spread, base_y - 5,
-                        cx - 4 + leg_spread, base_y], fill=MUS_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 5,
-                        cx + 10 - leg_spread, base_y], fill=MUS_BOOT, outline=OUTLINE)
-
-        # Body (tunic)
-        ellipse(draw, cx, body_cy, 14, 12, MUS_OUTFIT)
-        ellipse(draw, cx - 3, body_cy - 2, 8, 7, MUS_OUTFIT_LIGHT, outline=None)
-        # V-neck trim
-        draw.line([(cx, body_cy - 8), (cx - 4, body_cy + 2)],
-                  fill=MUS_OUTFIT_TRIM, width=1)
-        draw.line([(cx, body_cy - 8), (cx + 4, body_cy + 2)],
-                  fill=MUS_OUTFIT_TRIM, width=1)
-        # Belt
-        draw.rectangle([cx - 14, body_cy + 10, cx + 14, body_cy + 14],
-                       fill=MUS_BELT, outline=OUTLINE)
-        draw.rectangle([cx - 2, body_cy + 10, cx + 2, body_cy + 14],
-                       fill=MUS_BUCKLE, outline=OUTLINE)
-
-        # Arms
-        draw.rectangle([cx - 18, body_cy - 6, cx - 12, body_cy + 6],
-                       fill=MUS_OUTFIT, outline=OUTLINE)
-        draw.rectangle([cx - 18, body_cy + 2, cx - 12, body_cy + 6],
-                       fill=MUS_SKIN, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy - 6, cx + 18, body_cy + 6],
-                       fill=MUS_OUTFIT, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy + 2, cx + 18, body_cy + 6],
-                       fill=MUS_SKIN, outline=OUTLINE)
-        # Puffy shoulders
-        ellipse(draw, cx - 14, body_cy - 6, 5, 4, MUS_OUTFIT_LIGHT)
-        ellipse(draw, cx + 14, body_cy - 6, 5, 4, MUS_OUTFIT_LIGHT)
-
-        # Head
-        ellipse(draw, cx, head_cy, 14, 13, MUS_HAIR)
-        ellipse(draw, cx, head_cy + 2, 12, 10, MUS_SKIN)
-        ellipse(draw, cx + 2, head_cy + 4, 8, 6, MUS_SKIN_DARK, outline=None)
-        # Eyes
-        draw.rectangle([cx - 6, head_cy + 1, cx - 3, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx - 5, head_cy + 2, cx - 4, head_cy + 3], fill=BLACK)
-        draw.rectangle([cx + 3, head_cy + 1, cx + 6, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx + 4, head_cy + 2, cx + 5, head_cy + 3], fill=BLACK)
-        # Nose and smile
-        draw.point((cx, head_cy + 6), fill=MUS_SKIN_DARK)
-        draw.line([(cx - 3, head_cy + 8), (cx + 3, head_cy + 8)],
-                  fill=MUS_SKIN_DARK, width=1)
-
-        # Feathered cap
-        draw.rectangle([cx - 10, head_cy - 8, cx + 10, head_cy - 4],
-                       fill=MUS_FEATHER_CAP, outline=OUTLINE)
-        ellipse(draw, cx, head_cy - 8, 10, 3, MUS_FEATHER_CAP)
-        draw.rectangle([cx - 8, head_cy - 7, cx + 8, head_cy - 5],
-                       fill=MUS_FEATHER_CAP_DARK, outline=None)
-        # Feather plume
-        draw.line([(cx + 6, head_cy - 8), (cx + 14, head_cy - 18)],
-                  fill=MUS_FEATHER, width=2)
-        draw.line([(cx + 14, head_cy - 18), (cx + 16, head_cy - 22)],
-                  fill=MUS_FEATHER_TIP, width=1)
-
-        # Music notes floating
-        nt_x = cx - 14 + note_drift
-        nt_y = head_cy - 10 + note_float
-        draw.ellipse([nt_x - 2, nt_y - 1, nt_x + 2, nt_y + 1], fill=MUS_NOTE)
-        draw.line([(nt_x + 2, nt_y - 1), (nt_x + 2, nt_y - 6)],
-                  fill=MUS_NOTE, width=1)
-        nt_x2 = cx + 16 - note_drift
-        nt_y2 = head_cy - 4 + note_float
-        draw.ellipse([nt_x2 - 2, nt_y2 - 1, nt_x2 + 2, nt_y2 + 1],
-                     fill=MUS_NOTE_DIM)
-        draw.line([(nt_x2 + 2, nt_y2 - 1), (nt_x2 + 2, nt_y2 - 5)],
-                  fill=MUS_NOTE_DIM, width=1)
-
-    elif direction == UP:
-        # Lute on back (visible from behind)
-        lute_x = cx
-        lute_y = body_cy - 2
-        ellipse(draw, lute_x, lute_y + 2, 8, 10, MUS_LUTE_BODY)
-        ellipse(draw, lute_x, lute_y + 2, 5, 7, MUS_LUTE_DARK, outline=None)
-        draw.rectangle([lute_x - 2, lute_y - 14, lute_x + 2, lute_y - 4],
-                       fill=MUS_LUTE_NECK, outline=OUTLINE)
-        # Strings
-        draw.line([(lute_x - 1, lute_y - 12), (lute_x - 1, lute_y + 6)],
-                  fill=MUS_LUTE_STRING, width=1)
-        draw.line([(lute_x + 1, lute_y - 12), (lute_x + 1, lute_y + 6)],
-                  fill=MUS_LUTE_STRING, width=1)
-
-        # Cape behind
-        draw.polygon([(cx - 12, body_cy - 8), (cx + 12, body_cy - 8),
-                      (cx + 16, body_cy + 16), (cx - 16, body_cy + 16)],
-                     fill=MUS_CAPE, outline=OUTLINE)
-        draw.polygon([(cx - 8, body_cy - 4), (cx + 8, body_cy - 4),
-                      (cx + 12, body_cy + 12), (cx - 12, body_cy + 12)],
-                     fill=MUS_CAPE_DARK, outline=None)
-
-        # Legs
-        draw.rectangle([cx - 10 + leg_spread, body_cy + 10,
-                        cx - 4 + leg_spread, base_y], fill=MUS_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=MUS_LEG, outline=OUTLINE)
-        draw.rectangle([cx - 10 + leg_spread, base_y - 5,
-                        cx - 4 + leg_spread, base_y], fill=MUS_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 5,
-                        cx + 10 - leg_spread, base_y], fill=MUS_BOOT, outline=OUTLINE)
-
-        # Body (back)
-        ellipse(draw, cx, body_cy, 14, 12, MUS_OUTFIT)
-        ellipse(draw, cx, body_cy, 10, 9, MUS_OUTFIT_DARK, outline=None)
-        draw.line([(cx, body_cy - 6), (cx, body_cy + 6)],
-                  fill=_darken(MUS_OUTFIT, 0.7), width=1)
-        # Belt
-        draw.rectangle([cx - 14, body_cy + 10, cx + 14, body_cy + 14],
-                       fill=MUS_BELT, outline=OUTLINE)
-
-        # Arms
-        draw.rectangle([cx - 18, body_cy - 6, cx - 12, body_cy + 6],
-                       fill=MUS_OUTFIT, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy - 6, cx + 18, body_cy + 6],
-                       fill=MUS_OUTFIT, outline=OUTLINE)
-        ellipse(draw, cx - 14, body_cy - 6, 5, 4, MUS_OUTFIT_LIGHT)
-        ellipse(draw, cx + 14, body_cy - 6, 5, 4, MUS_OUTFIT_LIGHT)
-
-        # Head (back)
-        ellipse(draw, cx, head_cy, 14, 13, MUS_HAIR)
-        ellipse(draw, cx, head_cy - 2, 10, 8, _darken(MUS_HAIR, 0.85), outline=None)
-        # Feathered cap from back
-        draw.rectangle([cx - 10, head_cy - 8, cx + 10, head_cy - 4],
-                       fill=MUS_FEATHER_CAP, outline=OUTLINE)
-        ellipse(draw, cx, head_cy - 8, 10, 3, MUS_FEATHER_CAP)
-        draw.line([(cx + 6, head_cy - 8), (cx + 14, head_cy - 18)],
-                  fill=MUS_FEATHER, width=2)
-        draw.line([(cx + 14, head_cy - 18), (cx + 16, head_cy - 22)],
-                  fill=MUS_FEATHER_TIP, width=1)
-
-    elif direction == LEFT:
-        # Cape trailing right
-        draw.polygon([(cx + 4, body_cy - 8), (cx + 16, body_cy + 14),
-                      (cx + 6, body_cy + 14), (cx + 2, body_cy - 4)],
-                     fill=MUS_CAPE, outline=OUTLINE)
-        draw.polygon([(cx + 5, body_cy - 4), (cx + 12, body_cy + 10),
-                      (cx + 6, body_cy + 10), (cx + 4, body_cy - 2)],
-                     fill=MUS_CAPE_DARK, outline=None)
-
-        # Legs
-        draw.rectangle([cx - 2 - leg_spread, body_cy + 10,
-                        cx + 4 - leg_spread, base_y],
-                       fill=_darken(MUS_LEG, 0.85), outline=OUTLINE)
-        draw.rectangle([cx - 2 - leg_spread, base_y - 5,
-                        cx + 4 - leg_spread, base_y], fill=MUS_BOOT, outline=OUTLINE)
-        draw.rectangle([cx - 8 + leg_spread, body_cy + 10,
-                        cx - 2 + leg_spread, base_y], fill=MUS_LEG, outline=OUTLINE)
-        draw.rectangle([cx - 8 + leg_spread, base_y - 5,
-                        cx - 2 + leg_spread, base_y], fill=MUS_BOOT, outline=OUTLINE)
-
-        # Body (side)
-        ellipse(draw, cx - 2, body_cy, 12, 12, MUS_OUTFIT)
-        ellipse(draw, cx - 4, body_cy - 2, 7, 7, MUS_OUTFIT_LIGHT, outline=None)
-        # Trim line
-        draw.line([(cx - 4, body_cy - 8), (cx - 6, body_cy + 2)],
-                  fill=MUS_OUTFIT_TRIM, width=1)
-        # Belt
-        draw.rectangle([cx - 14, body_cy + 10, cx + 10, body_cy + 14],
-                       fill=MUS_BELT, outline=OUTLINE)
-        draw.rectangle([cx - 4, body_cy + 10, cx, body_cy + 14],
-                       fill=MUS_BUCKLE, outline=OUTLINE)
-
-        # Lute peeking from behind (strap visible)
-        draw.line([(cx + 2, body_cy - 8), (cx + 6, body_cy + 4)],
-                  fill=MUS_LUTE_DARK, width=2)
-        ellipse(draw, cx + 6, body_cy + 6, 5, 6, MUS_LUTE_BODY)
-
-        # Front arm
-        draw.rectangle([cx - 14, body_cy - 4, cx - 8, body_cy + 6],
-                       fill=MUS_OUTFIT, outline=OUTLINE)
-        draw.rectangle([cx - 14, body_cy + 2, cx - 8, body_cy + 6],
-                       fill=MUS_SKIN, outline=OUTLINE)
-        ellipse(draw, cx - 10, body_cy - 6, 5, 4, MUS_OUTFIT_LIGHT)
-
-        # Head
-        ellipse(draw, cx - 2, head_cy, 13, 13, MUS_HAIR)
-        ellipse(draw, cx - 4, head_cy + 2, 10, 9, MUS_SKIN)
-        ellipse(draw, cx - 2, head_cy + 4, 6, 5, MUS_SKIN_DARK, outline=None)
-        # Eye
-        draw.rectangle([cx - 10, head_cy + 1, cx - 7, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx - 9, head_cy + 2, cx - 8, head_cy + 3], fill=BLACK)
-        # Nose and smile
-        draw.point((cx - 9, head_cy + 6), fill=MUS_SKIN_DARK)
-        draw.line([(cx - 10, head_cy + 8), (cx - 7, head_cy + 8)],
-                  fill=MUS_SKIN_DARK, width=1)
-
-        # Feathered cap
-        draw.rectangle([cx - 10, head_cy - 8, cx + 2, head_cy - 4],
-                       fill=MUS_FEATHER_CAP, outline=OUTLINE)
-        ellipse(draw, cx - 4, head_cy - 8, 7, 3, MUS_FEATHER_CAP)
-        # Feather pointing back-right
-        draw.line([(cx, head_cy - 8), (cx + 10, head_cy - 16)],
-                  fill=MUS_FEATHER, width=2)
-        draw.line([(cx + 10, head_cy - 16), (cx + 12, head_cy - 20)],
-                  fill=MUS_FEATHER_TIP, width=1)
-
-        # Music notes
-        nt_x = cx - 18 + note_drift
-        nt_y = head_cy - 8 + note_float
-        draw.ellipse([nt_x - 2, nt_y - 1, nt_x + 2, nt_y + 1], fill=MUS_NOTE)
-        draw.line([(nt_x + 2, nt_y - 1), (nt_x + 2, nt_y - 6)],
-                  fill=MUS_NOTE, width=1)
-
-    else:  # RIGHT
-        # Cape trailing left
-        draw.polygon([(cx - 4, body_cy - 8), (cx - 16, body_cy + 14),
-                      (cx - 6, body_cy + 14), (cx - 2, body_cy - 4)],
-                     fill=MUS_CAPE, outline=OUTLINE)
-        draw.polygon([(cx - 5, body_cy - 4), (cx - 12, body_cy + 10),
-                      (cx - 6, body_cy + 10), (cx - 4, body_cy - 2)],
-                     fill=MUS_CAPE_DARK, outline=None)
-
-        # Legs
-        draw.rectangle([cx - 2 + leg_spread, body_cy + 10,
-                        cx + 4 + leg_spread, base_y],
-                       fill=_darken(MUS_LEG, 0.85), outline=OUTLINE)
-        draw.rectangle([cx - 2 + leg_spread, base_y - 5,
-                        cx + 4 + leg_spread, base_y], fill=MUS_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=MUS_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 5,
-                        cx + 10 - leg_spread, base_y], fill=MUS_BOOT, outline=OUTLINE)
-
-        # Body (side)
-        ellipse(draw, cx + 2, body_cy, 12, 12, MUS_OUTFIT)
-        ellipse(draw, cx, body_cy - 2, 7, 7, MUS_OUTFIT_LIGHT, outline=None)
-        # Trim line
-        draw.line([(cx + 4, body_cy - 8), (cx + 6, body_cy + 2)],
-                  fill=MUS_OUTFIT_TRIM, width=1)
-        # Belt
-        draw.rectangle([cx - 10, body_cy + 10, cx + 14, body_cy + 14],
-                       fill=MUS_BELT, outline=OUTLINE)
-        draw.rectangle([cx, body_cy + 10, cx + 4, body_cy + 14],
-                       fill=MUS_BUCKLE, outline=OUTLINE)
-
-        # Lute peeking from behind (strap visible)
-        draw.line([(cx - 2, body_cy - 8), (cx - 6, body_cy + 4)],
-                  fill=MUS_LUTE_DARK, width=2)
-        ellipse(draw, cx - 6, body_cy + 6, 5, 6, MUS_LUTE_BODY)
-
-        # Front arm
-        draw.rectangle([cx + 8, body_cy - 4, cx + 14, body_cy + 6],
-                       fill=MUS_OUTFIT, outline=OUTLINE)
-        draw.rectangle([cx + 8, body_cy + 2, cx + 14, body_cy + 6],
-                       fill=MUS_SKIN, outline=OUTLINE)
-        ellipse(draw, cx + 10, body_cy - 6, 5, 4, MUS_OUTFIT_LIGHT)
-
-        # Head
-        ellipse(draw, cx + 2, head_cy, 13, 13, MUS_HAIR)
-        ellipse(draw, cx + 4, head_cy + 2, 10, 9, MUS_SKIN)
-        ellipse(draw, cx + 6, head_cy + 4, 6, 5, MUS_SKIN_DARK, outline=None)
-        # Eye
-        draw.rectangle([cx + 7, head_cy + 1, cx + 10, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx + 8, head_cy + 2, cx + 9, head_cy + 3], fill=BLACK)
-        # Nose and smile
-        draw.point((cx + 9, head_cy + 6), fill=MUS_SKIN_DARK)
-        draw.line([(cx + 7, head_cy + 8), (cx + 10, head_cy + 8)],
-                  fill=MUS_SKIN_DARK, width=1)
-
-        # Feathered cap
-        draw.rectangle([cx - 2, head_cy - 8, cx + 10, head_cy - 4],
-                       fill=MUS_FEATHER_CAP, outline=OUTLINE)
-        ellipse(draw, cx + 4, head_cy - 8, 7, 3, MUS_FEATHER_CAP)
-        # Feather pointing back-left
-        draw.line([(cx, head_cy - 8), (cx - 10, head_cy - 16)],
-                  fill=MUS_FEATHER, width=2)
-        draw.line([(cx - 10, head_cy - 16), (cx - 12, head_cy - 20)],
-                  fill=MUS_FEATHER_TIP, width=1)
-
-        # Music notes
-        nt_x = cx + 18 - note_drift
-        nt_y = head_cy - 8 + note_float
-        draw.ellipse([nt_x - 2, nt_y - 1, nt_x + 2, nt_y + 1], fill=MUS_NOTE)
-        draw.line([(nt_x + 2, nt_y - 1), (nt_x + 2, nt_y - 6)],
-                  fill=MUS_NOTE, width=1)
+    r = rig(ox, oy, direction, frame, build=0.98)
+    d = r.d
+    strum = [0.0, 1.0, 0.0, 1.0][frame]
+    if d:
+        rig_arms(r, draw, MUS_JACKET, SKIN, layer="far", reach=0.6)
+    rig_legs(r, draw, (70, 76, 120), (40, 36, 46))
+    rig_torso(r, draw, (240, 240, 244))
+    cx = r.cx
+    # the leather jacket over a white tee, studs on the shoulders
+    if not r.back and not d:
+        for s in (-1, 1):
+            cel(draw, Poly([(cx + s * 2.6, r.sh_y - 2.4), (cx + s * r.sh_w, r.sh_y - 1.8), (cx + s * (r.hip_w + 0.4), r.hip_y + 0.8),
+                            (cx + s * 3.0, r.hip_y + 0.8)]), MUS_JACKET, sh=(0.6, 0.4))
+    elif d:
+        cel(draw, Poly([(cx - d * 3.8, r.sh_y - 2.4), (cx + d * 1.4, r.sh_y - 2.4), (cx + d * 1.0, r.hip_y + 0.8), (cx - d * 4.4, r.hip_y + 0.8)]),
+            MUS_JACKET, sh=(0.6, 0.4))
+    else:
+        cel(draw, Poly([(cx - r.sh_w + 0.6, r.sh_y - 2.4), (cx + r.sh_w - 0.6, r.sh_y - 2.4), (cx + r.hip_w + 0.4, r.hip_y + 0.8),
+                        (cx - r.hip_w - 0.4, r.hip_y + 0.8)]), MUS_JACKET, sh=(0.8, 0.4))
+        star(draw, cx, r.sh_y + 3.0, 2.8, MUS_HAIR)
+    rig_belt(r, draw, (30, 28, 36), buckle=(214, 216, 226))
+    rig_arms(r, draw, MUS_JACKET, SKIN, layer="near", hands=False, reach=0.6)
+    for side in _sides(r):
+        sx, sy = r.shoulder(side)
+        for k in (-1.2, 1.2):
+            Ell(sx + k, sy - 1.2, 0.5, 0.5).draw(draw, fill=(220, 222, 232))
+    rig_head(r, draw, SKIN, hair=MUS_HAIR, style="spiky", eye_color=(90, 200, 230), expression="grin" if frame % 2 else "smirk", mood="sharp")
+    # a flying-V guitar slung across the front
+    if not r.back:
+        gx, gy = (cx + 1.0, r.waist_y + 1.4) if not d else (cx + d * 3.0, r.waist_y + 1.4)
+        ang = -30 if not d else (-20 if d > 0 else -160)
+        body = Poly(xform([(-1.0, 0.0), (-8.4, -5.4), (-9.6, -3.2), (-4.0, 0.0), (-9.6, 3.2), (-8.4, 5.4)], gx, gy, ang))
+        cel(draw, body, MUS_GUITAR, sh=(0.6, 0.6), hi=(0.4, 0.4))
+        neck = xform([(-1.0, 0.0), (11.0, 0.0)], gx, gy, ang)
+        cel(draw, Limb(neck, [0.9, 0.8]), (60, 50, 50), sh=None)
+        hd = Poly(xform([(10.6, -1.2), (14.0, -2.0), (14.0, 1.0), (10.6, 1.2)], gx, gy, ang))
+        cel(draw, hd, MUS_GUITAR, sh=None)
+        for k in (-0.4, 0.4):
+            stroke(draw, xform([(-4.0, k), (11.0, k)], gx, gy, ang), 0.25, (240, 240, 230))
+        if strum:
+            for k in range(2):
+                a = math.radians(-60 + k * 30)
+                nx, ny = gx + math.cos(a) * 9.0, gy - 6.0 + math.sin(a) * 4.0
+                cel(draw, Ell(nx, ny, 1.2, 0.9), MUS_HAIR, sh=None, lw=0.5)
+                stroke(draw, [(nx + 1.0, ny), (nx + 1.0, ny - 3.4)], 0.5, MUS_HAIR)
+    for side in _sides(r):
+        rig_hand(r, draw, side, SKIN, reach=0.6)
 
 
 # ===================================================================
-# ASTRONOMER (ID 109)
-# Dark blue/navy robes with star patterns, pointed hat with moon/star
-# decal, telescope prop, constellation dots, night sky themed.
+# ASTRONOMER (109) -- a crescent-moon circlet, a starry robe, a telescope
 # ===================================================================
 
-# Astronomer palette
-AST_ROBE = (30, 40, 80)
-AST_ROBE_LIGHT = (50, 65, 115)
-AST_ROBE_DARK = (20, 28, 55)
-AST_STAR_BRIGHT = (255, 240, 160)
-AST_STAR_DIM = (200, 190, 120)
-AST_MOON = (240, 235, 180)
-AST_MOON_DARK = (200, 195, 145)
-AST_SKIN = (220, 200, 175)
-AST_SKIN_DARK = (190, 170, 145)
-AST_HAT = (25, 35, 70)
-AST_HAT_DARK = (18, 25, 50)
-AST_HAT_BAND = (60, 50, 100)
-AST_TELESCOPE = (120, 100, 70)
-AST_TELESCOPE_DARK = (85, 70, 50)
-AST_TELESCOPE_LENS = (140, 180, 220)
-AST_TELESCOPE_RIM = (160, 140, 90)
-AST_BELT = (60, 50, 90)
-AST_BELT_BUCKLE = (180, 170, 120)
-AST_LEG = (40, 45, 70)
-AST_BOOT = (30, 32, 50)
-AST_HAIR = (160, 155, 145)
-AST_CONSTELLATION = (180, 200, 255)
+AST_ROBE = (44, 54, 122)
+AST_GOLD = (246, 206, 96)
+AST_HAIR = (170, 150, 220)
 
 
 def draw_astronomer(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    leg_spread = [-4, 0, 4, 0][frame]
-    twinkle = [0, 1, 0, -1][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 20
-
-    if direction == DOWN:
-        # Robe skirt (long flowing robe)
-        draw.polygon([(cx - 14, body_cy + 6), (cx + 14, body_cy + 6),
-                      (cx + 16, base_y), (cx - 16, base_y)],
-                     fill=AST_ROBE, outline=OUTLINE)
-        draw.polygon([(cx - 10, body_cy + 8), (cx + 10, body_cy + 8),
-                      (cx + 12, base_y - 2), (cx - 12, base_y - 2)],
-                     fill=AST_ROBE_DARK, outline=None)
-        # Stars on robe
-        draw.point((cx - 6, body_cy + 12), fill=AST_STAR_BRIGHT)
-        draw.point((cx + 8, body_cy + 14), fill=AST_STAR_DIM)
-        draw.point((cx - 2, base_y - 4), fill=AST_STAR_BRIGHT)
-        draw.point((cx + 4, body_cy + 10), fill=AST_STAR_DIM)
-
-        # Boots peeking under robe
-        draw.rectangle([cx - 8 + leg_spread, base_y - 4,
-                        cx - 4 + leg_spread, base_y], fill=AST_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 4,
-                        cx + 8 - leg_spread, base_y], fill=AST_BOOT, outline=OUTLINE)
-
-        # Upper body
-        ellipse(draw, cx, body_cy, 14, 12, AST_ROBE)
-        ellipse(draw, cx - 3, body_cy - 2, 8, 7, AST_ROBE_LIGHT, outline=None)
-        # Stars on chest
-        draw.point((cx + 5, body_cy - 2), fill=AST_STAR_BRIGHT)
-        draw.point((cx - 7, body_cy + 3), fill=AST_STAR_DIM)
-        # Belt / sash
-        draw.rectangle([cx - 14, body_cy + 8, cx + 14, body_cy + 12],
-                       fill=AST_BELT, outline=OUTLINE)
-        draw.rectangle([cx - 2, body_cy + 8, cx + 2, body_cy + 12],
-                       fill=AST_BELT_BUCKLE, outline=OUTLINE)
-
-        # Arms (long sleeves)
-        draw.rectangle([cx - 18, body_cy - 6, cx - 12, body_cy + 8],
-                       fill=AST_ROBE, outline=OUTLINE)
-        draw.rectangle([cx - 18, body_cy + 4, cx - 12, body_cy + 8],
-                       fill=AST_SKIN, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy - 6, cx + 18, body_cy + 8],
-                       fill=AST_ROBE, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy + 4, cx + 18, body_cy + 8],
-                       fill=AST_SKIN, outline=OUTLINE)
-        # Star on sleeve
-        draw.point((cx - 15, body_cy - 2), fill=AST_STAR_BRIGHT)
-        draw.point((cx + 15, body_cy), fill=AST_STAR_DIM)
-
-        # Telescope in right hand
-        tl_x = cx + 20
-        tl_y = body_cy - 4
-        draw.rectangle([tl_x - 1, tl_y - 12, tl_x + 1, tl_y + 2],
-                       fill=AST_TELESCOPE, outline=OUTLINE)
-        draw.rectangle([tl_x - 1, tl_y - 10, tl_x + 1, tl_y - 8],
-                       fill=AST_TELESCOPE_DARK, outline=None)
-        # Lens end
-        draw.rectangle([tl_x - 2, tl_y - 14, tl_x + 2, tl_y - 12],
-                       fill=AST_TELESCOPE_RIM, outline=OUTLINE)
-        draw.point((tl_x, tl_y - 13), fill=AST_TELESCOPE_LENS)
-
-        # Head
-        ellipse(draw, cx, head_cy, 14, 13, AST_HAIR)
-        ellipse(draw, cx, head_cy + 2, 12, 10, AST_SKIN)
-        ellipse(draw, cx + 2, head_cy + 4, 8, 6, AST_SKIN_DARK, outline=None)
-        # Eyes
-        draw.rectangle([cx - 6, head_cy + 1, cx - 3, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx - 5, head_cy + 2, cx - 4, head_cy + 3], fill=BLACK)
-        draw.rectangle([cx + 3, head_cy + 1, cx + 6, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx + 4, head_cy + 2, cx + 5, head_cy + 3], fill=BLACK)
-        # Nose and mouth
-        draw.point((cx, head_cy + 6), fill=AST_SKIN_DARK)
-        draw.line([(cx - 2, head_cy + 8), (cx + 2, head_cy + 8)],
-                  fill=AST_SKIN_DARK, width=1)
-        # Beard (wise astronomer)
-        draw.line([(cx - 4, head_cy + 9), (cx + 4, head_cy + 9)],
-                  fill=AST_HAIR, width=1)
-        draw.line([(cx - 3, head_cy + 10), (cx + 3, head_cy + 10)],
-                  fill=AST_HAIR, width=1)
-
-        # Pointed wizard-style hat with moon/star
-        draw.polygon([(cx - 10, head_cy - 6), (cx + 10, head_cy - 6),
-                      (cx + 4, head_cy - 28)], fill=AST_HAT, outline=OUTLINE)
-        draw.rectangle([cx - 12, head_cy - 8, cx + 12, head_cy - 6],
-                       fill=AST_HAT_BAND, outline=OUTLINE)
-        # Moon decal on hat
-        ellipse(draw, cx - 2, head_cy - 16, 3, 3, AST_MOON)
-        ellipse(draw, cx - 1, head_cy - 16, 2, 2, AST_HAT, outline=None)
-        # Star decal near tip
-        draw.point((cx + 2, head_cy - 22 + twinkle), fill=AST_STAR_BRIGHT)
-
-        # Constellation dots floating nearby
-        draw.point((cx - 18, head_cy - 14 + twinkle), fill=AST_CONSTELLATION)
-        draw.point((cx - 16, head_cy - 18), fill=AST_CONSTELLATION)
-        draw.line([(cx - 18, head_cy - 14 + twinkle),
-                   (cx - 16, head_cy - 18)], fill=AST_CONSTELLATION, width=1)
-        draw.point((cx + 18, head_cy - 10 - twinkle), fill=AST_CONSTELLATION)
-
-    elif direction == UP:
-        # Robe skirt (back)
-        draw.polygon([(cx - 14, body_cy + 6), (cx + 14, body_cy + 6),
-                      (cx + 16, base_y), (cx - 16, base_y)],
-                     fill=AST_ROBE, outline=OUTLINE)
-        draw.polygon([(cx - 10, body_cy + 8), (cx + 10, body_cy + 8),
-                      (cx + 12, base_y - 2), (cx - 12, base_y - 2)],
-                     fill=AST_ROBE_DARK, outline=None)
-        draw.point((cx - 4, body_cy + 14), fill=AST_STAR_DIM)
-        draw.point((cx + 6, base_y - 6), fill=AST_STAR_BRIGHT)
-        # Boots
-        draw.rectangle([cx - 8 + leg_spread, base_y - 4,
-                        cx - 4 + leg_spread, base_y], fill=AST_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 4,
-                        cx + 8 - leg_spread, base_y], fill=AST_BOOT, outline=OUTLINE)
-
-        # Upper body (back)
-        ellipse(draw, cx, body_cy, 14, 12, AST_ROBE)
-        ellipse(draw, cx, body_cy, 10, 9, AST_ROBE_DARK, outline=None)
-        draw.line([(cx, body_cy - 6), (cx, body_cy + 6)],
-                  fill=_darken(AST_ROBE, 0.7), width=1)
-        draw.point((cx + 6, body_cy - 4), fill=AST_STAR_DIM)
-        draw.point((cx - 8, body_cy + 2), fill=AST_STAR_BRIGHT)
-        # Belt
-        draw.rectangle([cx - 14, body_cy + 8, cx + 14, body_cy + 12],
-                       fill=AST_BELT, outline=OUTLINE)
-
-        # Arms
-        draw.rectangle([cx - 18, body_cy - 6, cx - 12, body_cy + 8],
-                       fill=AST_ROBE, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy - 6, cx + 18, body_cy + 8],
-                       fill=AST_ROBE, outline=OUTLINE)
-
-        # Head (back)
-        ellipse(draw, cx, head_cy, 14, 13, AST_HAIR)
-        ellipse(draw, cx, head_cy - 2, 10, 8, _darken(AST_HAIR, 0.85), outline=None)
-
-        # Pointed hat (back)
-        draw.polygon([(cx - 10, head_cy - 6), (cx + 10, head_cy - 6),
-                      (cx + 4, head_cy - 28)], fill=AST_HAT, outline=OUTLINE)
-        draw.rectangle([cx - 12, head_cy - 8, cx + 12, head_cy - 6],
-                       fill=AST_HAT_BAND, outline=OUTLINE)
-        draw.point((cx, head_cy - 20), fill=AST_STAR_DIM)
-
-    elif direction == LEFT:
-        # Robe skirt (side)
-        draw.polygon([(cx - 10, body_cy + 6), (cx + 8, body_cy + 6),
-                      (cx + 10, base_y), (cx - 14, base_y)],
-                     fill=AST_ROBE, outline=OUTLINE)
-        draw.polygon([(cx - 6, body_cy + 8), (cx + 4, body_cy + 8),
-                      (cx + 6, base_y - 2), (cx - 10, base_y - 2)],
-                     fill=AST_ROBE_DARK, outline=None)
-        draw.point((cx - 6, body_cy + 14), fill=AST_STAR_BRIGHT)
-        draw.point((cx + 2, base_y - 4), fill=AST_STAR_DIM)
-        # Boot
-        draw.rectangle([cx - 6 + leg_spread, base_y - 4,
-                        cx - 2 + leg_spread, base_y], fill=AST_BOOT, outline=OUTLINE)
-
-        # Upper body (side)
-        ellipse(draw, cx - 2, body_cy, 12, 12, AST_ROBE)
-        ellipse(draw, cx - 4, body_cy - 2, 7, 7, AST_ROBE_LIGHT, outline=None)
-        draw.point((cx - 8, body_cy + 2), fill=AST_STAR_BRIGHT)
-        # Belt
-        draw.rectangle([cx - 14, body_cy + 8, cx + 10, body_cy + 12],
-                       fill=AST_BELT, outline=OUTLINE)
-        draw.rectangle([cx - 4, body_cy + 8, cx, body_cy + 12],
-                       fill=AST_BELT_BUCKLE, outline=OUTLINE)
-
-        # Telescope held out front
-        tl_x = cx - 18
-        tl_y = body_cy - 6
-        draw.line([(tl_x, tl_y), (tl_x - 10, tl_y - 6)],
-                  fill=AST_TELESCOPE, width=2)
-        draw.rectangle([tl_x - 12, tl_y - 8, tl_x - 9, tl_y - 5],
-                       fill=AST_TELESCOPE_RIM, outline=OUTLINE)
-        draw.point((tl_x - 10, tl_y - 6), fill=AST_TELESCOPE_LENS)
-
-        # Front arm
-        draw.rectangle([cx - 14, body_cy - 4, cx - 8, body_cy + 8],
-                       fill=AST_ROBE, outline=OUTLINE)
-        draw.rectangle([cx - 14, body_cy + 4, cx - 8, body_cy + 8],
-                       fill=AST_SKIN, outline=OUTLINE)
-
-        # Head
-        ellipse(draw, cx - 2, head_cy, 13, 13, AST_HAIR)
-        ellipse(draw, cx - 4, head_cy + 2, 10, 9, AST_SKIN)
-        ellipse(draw, cx - 2, head_cy + 4, 6, 5, AST_SKIN_DARK, outline=None)
-        # Eye
-        draw.rectangle([cx - 10, head_cy + 1, cx - 7, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx - 9, head_cy + 2, cx - 8, head_cy + 3], fill=BLACK)
-        # Nose and mouth
-        draw.point((cx - 9, head_cy + 6), fill=AST_SKIN_DARK)
-        draw.line([(cx - 10, head_cy + 8), (cx - 7, head_cy + 8)],
-                  fill=AST_SKIN_DARK, width=1)
-        # Beard
-        draw.line([(cx - 10, head_cy + 9), (cx - 6, head_cy + 9)],
-                  fill=AST_HAIR, width=1)
-        draw.line([(cx - 9, head_cy + 10), (cx - 6, head_cy + 10)],
-                  fill=AST_HAIR, width=1)
-
-        # Pointed hat (side)
-        draw.polygon([(cx - 10, head_cy - 6), (cx + 4, head_cy - 6),
-                      (cx, head_cy - 26)], fill=AST_HAT, outline=OUTLINE)
-        draw.rectangle([cx - 12, head_cy - 8, cx + 6, head_cy - 6],
-                       fill=AST_HAT_BAND, outline=OUTLINE)
-        # Moon decal
-        ellipse(draw, cx - 4, head_cy - 14, 2, 2, AST_MOON)
-        ellipse(draw, cx - 3, head_cy - 14, 1, 1, AST_HAT, outline=None)
-        # Star
-        draw.point((cx - 1, head_cy - 22 + twinkle), fill=AST_STAR_BRIGHT)
-
-        # Constellation dots
-        draw.point((cx - 20, head_cy - 12 + twinkle), fill=AST_CONSTELLATION)
-        draw.point((cx - 18, head_cy - 16), fill=AST_CONSTELLATION)
-
-    else:  # RIGHT
-        # Robe skirt (side)
-        draw.polygon([(cx - 8, body_cy + 6), (cx + 10, body_cy + 6),
-                      (cx + 14, base_y), (cx - 10, base_y)],
-                     fill=AST_ROBE, outline=OUTLINE)
-        draw.polygon([(cx - 4, body_cy + 8), (cx + 6, body_cy + 8),
-                      (cx + 10, base_y - 2), (cx - 6, base_y - 2)],
-                     fill=AST_ROBE_DARK, outline=None)
-        draw.point((cx + 6, body_cy + 14), fill=AST_STAR_BRIGHT)
-        draw.point((cx - 2, base_y - 4), fill=AST_STAR_DIM)
-        # Boot
-        draw.rectangle([cx + 2 - leg_spread, base_y - 4,
-                        cx + 6 - leg_spread, base_y], fill=AST_BOOT, outline=OUTLINE)
-
-        # Upper body (side)
-        ellipse(draw, cx + 2, body_cy, 12, 12, AST_ROBE)
-        ellipse(draw, cx, body_cy - 2, 7, 7, AST_ROBE_LIGHT, outline=None)
-        draw.point((cx + 8, body_cy + 2), fill=AST_STAR_BRIGHT)
-        # Belt
-        draw.rectangle([cx - 10, body_cy + 8, cx + 14, body_cy + 12],
-                       fill=AST_BELT, outline=OUTLINE)
-        draw.rectangle([cx, body_cy + 8, cx + 4, body_cy + 12],
-                       fill=AST_BELT_BUCKLE, outline=OUTLINE)
-
-        # Telescope held out front
-        tl_x = cx + 18
-        tl_y = body_cy - 6
-        draw.line([(tl_x, tl_y), (tl_x + 10, tl_y - 6)],
-                  fill=AST_TELESCOPE, width=2)
-        draw.rectangle([tl_x + 9, tl_y - 8, tl_x + 12, tl_y - 5],
-                       fill=AST_TELESCOPE_RIM, outline=OUTLINE)
-        draw.point((tl_x + 10, tl_y - 6), fill=AST_TELESCOPE_LENS)
-
-        # Front arm
-        draw.rectangle([cx + 8, body_cy - 4, cx + 14, body_cy + 8],
-                       fill=AST_ROBE, outline=OUTLINE)
-        draw.rectangle([cx + 8, body_cy + 4, cx + 14, body_cy + 8],
-                       fill=AST_SKIN, outline=OUTLINE)
-
-        # Head
-        ellipse(draw, cx + 2, head_cy, 13, 13, AST_HAIR)
-        ellipse(draw, cx + 4, head_cy + 2, 10, 9, AST_SKIN)
-        ellipse(draw, cx + 6, head_cy + 4, 6, 5, AST_SKIN_DARK, outline=None)
-        # Eye
-        draw.rectangle([cx + 7, head_cy + 1, cx + 10, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx + 8, head_cy + 2, cx + 9, head_cy + 3], fill=BLACK)
-        # Nose and mouth
-        draw.point((cx + 9, head_cy + 6), fill=AST_SKIN_DARK)
-        draw.line([(cx + 7, head_cy + 8), (cx + 10, head_cy + 8)],
-                  fill=AST_SKIN_DARK, width=1)
-        # Beard
-        draw.line([(cx + 6, head_cy + 9), (cx + 10, head_cy + 9)],
-                  fill=AST_HAIR, width=1)
-        draw.line([(cx + 6, head_cy + 10), (cx + 9, head_cy + 10)],
-                  fill=AST_HAIR, width=1)
-
-        # Pointed hat (side)
-        draw.polygon([(cx - 4, head_cy - 6), (cx + 10, head_cy - 6),
-                      (cx, head_cy - 26)], fill=AST_HAT, outline=OUTLINE)
-        draw.rectangle([cx - 6, head_cy - 8, cx + 12, head_cy - 6],
-                       fill=AST_HAT_BAND, outline=OUTLINE)
-        # Moon decal
-        ellipse(draw, cx + 4, head_cy - 14, 2, 2, AST_MOON)
-        ellipse(draw, cx + 5, head_cy - 14, 1, 1, AST_HAT, outline=None)
-        # Star
-        draw.point((cx + 1, head_cy - 22 + twinkle), fill=AST_STAR_BRIGHT)
-
-        # Constellation dots
-        draw.point((cx + 20, head_cy - 12 + twinkle), fill=AST_CONSTELLATION)
-        draw.point((cx + 18, head_cy - 16), fill=AST_CONSTELLATION)
+    r = rig(ox, oy, direction, frame, build=0.96)
+    d = r.d
+    hs = _hold_side(r)
+    rig_hair(r, draw, AST_HAIR, "long", layer="back")
+    if d:
+        rig_arms(r, draw, AST_ROBE, SKIN, layer="far", cuff=AST_GOLD)
+    rig_legs(r, draw, shade(AST_ROBE, 1.0), (60, 50, 70))
+    rig_robe(r, draw, AST_ROBE, trim=AST_GOLD, flare=3.4)
+    cx = r.cx
+    for (u, v, k) in ((-4.0, 1.4, 1.2), (3.6, 4.0, 0.9), (-1.4, 7.4, 1.0), (5.0, 9.4, 1.2), (-5.4, 10.0, 0.8)):
+        if d and abs(u) > 4.0:
+            continue
+        star(draw, cx + u, r.sh_y + v, 1.2 * k, AST_GOLD)
+    rig_belt(r, draw, AST_GOLD, buckle=(200, 220, 255))
+    rig_arms(r, draw, AST_ROBE, SKIN, layer="near", cuff=AST_GOLD, hands=False, reach=0.4)
+    rig_head(r, draw, SKIN, hair=AST_HAIR, style="long", eye_color=(110, 110, 210), expression="smile")
+    hx, hy, rx, ry = r.hx, r.head_cy, r.head_rx, r.head_ry
+    # round spectacles
+    if not r.back:
+        e1, e2, ey, _, _ = face_anchor(r)
+        layer = draw.sub()
+        for ex in ((e1, e2) if not d else (e1,)):
+            Ell(ex, ey, 3.0, 2.9).draw(layer, fill=None, outline=AST_GOLD, width=0.6)
+        draw.merge(layer)
+        # a crescent moon circlet
+        mx, my = hx + d * 3.0, hy - ry + 1.0
+        layer = draw.sub()
+        cel(layer, Ell(mx, my, 3.4, 3.4), AST_GOLD, sh=None)
+        Ell(mx + 1.6, my - 1.0, 2.8, 2.8).draw(layer, fill=(0, 0, 0, 0))
+        draw.merge(layer)
+    # a planet with a ring, orbiting
+    a = math.radians(frame * 90)
+    px, py = cx + math.cos(a) * 14.0, r.head_cy - 2.0 + math.sin(a) * 3.0
+    cel(draw, Ell(px, py, 2.4, 2.4), (240, 150, 110), sh=(0.5, 0.5))
+    stroke(draw, arc_pts(px, py, 4.0, 1.0, 160, 380, 12), 0.5, (250, 220, 170))
+    for side in _sides(r):
+        h = rig_hand(r, draw, side, SKIN, reach=0.4)
+        if side == hs and not r.back:
+            # a brass telescope held up, pointing to the sky
+            ang = -60 if not d else (-40 if d > 0 else -140)
+            if not d:
+                ang = -90 + hs * 36
+            tube = xform([(-4.0, 0.0), (4.0, 0.0), (11.0, 0.0)], h[0], h[1], ang)
+            cel(draw, Limb(tube, [1.4, 1.8, 2.2], cap=False), (214, 170, 84), sh=None)
+            for t in (3.8, 8.0):
+                p = xform([(t, 0.0)], h[0], h[1], ang)[0]
+                q = xform([(t, 2.4)], h[0], h[1], ang)[0]
+                q2 = xform([(t, -2.4)], h[0], h[1], ang)[0]
+                stroke(draw, [q2, q], 0.6, shade((214, 170, 84), 1.4))
+            lens = xform([(11.2, 0.0)], h[0], h[1], ang)[0]
+            cel(draw, Ell(lens[0], lens[1], 1.6, 1.6), (180, 220, 255), sh=None, lw=0.5)
+            if frame % 2 == 0:
+                sparkle(draw, lens[0] + 2.4, lens[1] - 2.4, 1.8, (255, 250, 200))
 
 
 # ===================================================================
-# RUNESMITH (ID 110)
-# Brown/tan leather apron over sturdy frame, glowing blue rune
-# inscriptions on arms/chest, helm, forging hammer, runic stones.
+# RUNESMITH (110) -- rune tattoos, a rune hammer, a floating runestone
 # ===================================================================
 
-# Runesmith palette
-RNS_APRON = (140, 110, 70)
-RNS_APRON_DARK = (110, 85, 55)
-RNS_APRON_LIGHT = (170, 140, 95)
-RNS_BODY = (160, 130, 100)
-RNS_BODY_DARK = (130, 100, 75)
-RNS_SKIN = (210, 180, 150)
-RNS_SKIN_DARK = (180, 150, 120)
-RNS_RUNE_BLUE = (80, 160, 255)
-RNS_RUNE_BRIGHT = (140, 200, 255)
-RNS_RUNE_DIM = (50, 110, 200)
-RNS_HELM = (140, 145, 155)
-RNS_HELM_DARK = (100, 105, 115)
-RNS_HELM_LIGHT = (175, 180, 190)
-RNS_HAMMER_HEAD = (150, 155, 165)
-RNS_HAMMER_DARK = (110, 115, 125)
-RNS_HAMMER_HANDLE = (100, 70, 40)
-RNS_HAMMER_GLOW = (100, 180, 255)
-RNS_BELT = (90, 65, 40)
-RNS_BELT_BUCKLE = (120, 140, 180)
-RNS_STONE = (100, 95, 85)
-RNS_STONE_RUNE = (60, 140, 230)
-RNS_LEG = (100, 80, 60)
-RNS_BOOT = (70, 55, 40)
-RNS_HAIR = (60, 45, 35)
-RNS_GAUNTLET = (130, 135, 145)
+RUNE_CLOAK = (70, 92, 134)
+RUNE_GLOW = (100, 232, 255)
+RUNE_STONE = (150, 150, 162)
+RUNE_HAIR = (210, 118, 66)
+
+
+def _runestone(draw, x, y, frame):
+    k = 1.35
+    pts = [(x - 3.6 * k, y - 4.4 * k), (x + 2.6 * k, y - 5.0 * k), (x + 4.0 * k, y + 0.6 * k), (x + 2.4 * k, y + 5.0 * k),
+           (x - 3.0 * k, y + 4.4 * k), (x - 4.4 * k, y - 0.4 * k)]
+    cel(draw, Poly(pts), RUNE_STONE, sh=(0.8, 0.8), hi=(0.4, 0.4))
+    col = RUNE_GLOW if frame % 2 == 0 else lit(RUNE_GLOW, 0.6)
+    stroke(draw, [(x, y - 4.0), (x, y + 4.0)], 0.9, col)
+    stroke(draw, [(x, y - 4.0), (x + 2.8, y - 1.4), (x, y + 0.8)], 0.9, col)
+    stroke(draw, [(x - 2.8, y + 1.2), (x, y + 3.2)], 0.9, col)
+    if frame % 2 == 0:
+        sparkle(draw, x + 5.0, y - 5.0, 1.6, RUNE_GLOW)
 
 
 def draw_runesmith(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    leg_spread = [-4, 0, 4, 0][frame]
-    rune_pulse = [0, 1, 0, -1][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 20
-
-    # Choose rune color based on frame for pulsing effect
-    rune_color = RNS_RUNE_BLUE if frame % 2 == 0 else RNS_RUNE_BRIGHT
-
-    if direction == DOWN:
-        # Legs (sturdy)
-        draw.rectangle([cx - 10 + leg_spread, body_cy + 10,
-                        cx - 4 + leg_spread, base_y], fill=RNS_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=RNS_LEG, outline=OUTLINE)
-        # Boots
-        draw.rectangle([cx - 11 + leg_spread, base_y - 6,
-                        cx - 3 + leg_spread, base_y], fill=RNS_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 3 - leg_spread, base_y - 6,
-                        cx + 11 - leg_spread, base_y], fill=RNS_BOOT, outline=OUTLINE)
-
-        # Sturdy body
-        ellipse(draw, cx, body_cy, 15, 13, RNS_BODY)
-        ellipse(draw, cx - 3, body_cy - 2, 9, 8, RNS_BODY_DARK, outline=None)
-        # Leather apron over body
-        draw.rectangle([cx - 10, body_cy - 2, cx + 10, body_cy + 14],
-                       fill=RNS_APRON, outline=OUTLINE)
-        draw.rectangle([cx - 8, body_cy, cx + 8, body_cy + 12],
-                       fill=RNS_APRON_DARK, outline=None)
-        # Apron stitching
-        draw.line([(cx, body_cy - 2), (cx, body_cy + 14)],
-                  fill=RNS_APRON_LIGHT, width=1)
-        # Glowing rune on chest
-        draw.point((cx - 4, body_cy + 2 + rune_pulse), fill=rune_color)
-        draw.point((cx + 4, body_cy + 2 - rune_pulse), fill=rune_color)
-        draw.point((cx, body_cy + 6), fill=rune_color)
-        draw.line([(cx - 4, body_cy + 2 + rune_pulse), (cx, body_cy + 6)],
-                  fill=RNS_RUNE_DIM, width=1)
-        draw.line([(cx + 4, body_cy + 2 - rune_pulse), (cx, body_cy + 6)],
-                  fill=RNS_RUNE_DIM, width=1)
-
-        # Belt with runic stones
-        draw.rectangle([cx - 15, body_cy + 10, cx + 15, body_cy + 14],
-                       fill=RNS_BELT, outline=OUTLINE)
-        draw.rectangle([cx - 2, body_cy + 10, cx + 2, body_cy + 14],
-                       fill=RNS_BELT_BUCKLE, outline=OUTLINE)
-        # Runic stones on belt
-        draw.rectangle([cx - 10, body_cy + 10, cx - 7, body_cy + 13],
-                       fill=RNS_STONE, outline=OUTLINE)
-        draw.point((cx - 8, body_cy + 11), fill=RNS_STONE_RUNE)
-        draw.rectangle([cx + 7, body_cy + 10, cx + 10, body_cy + 13],
-                       fill=RNS_STONE, outline=OUTLINE)
-        draw.point((cx + 8, body_cy + 11), fill=RNS_STONE_RUNE)
-
-        # Arms with rune inscriptions
-        draw.rectangle([cx - 19, body_cy - 6, cx - 12, body_cy + 6],
-                       fill=RNS_BODY, outline=OUTLINE)
-        draw.rectangle([cx - 19, body_cy + 2, cx - 12, body_cy + 6],
-                       fill=RNS_GAUNTLET, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy - 6, cx + 19, body_cy + 6],
-                       fill=RNS_BODY, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy + 2, cx + 19, body_cy + 6],
-                       fill=RNS_GAUNTLET, outline=OUTLINE)
-        # Rune marks on arms
-        draw.point((cx - 16, body_cy - 2), fill=rune_color)
-        draw.point((cx - 15, body_cy), fill=rune_color)
-        draw.point((cx + 16, body_cy - 2), fill=rune_color)
-        draw.point((cx + 15, body_cy), fill=rune_color)
-
-        # Forging hammer in right hand
-        hm_x = cx + 22
-        hm_y = body_cy - 4
-        draw.rectangle([hm_x - 1, hm_y - 6, hm_x + 1, hm_y + 4],
-                       fill=RNS_HAMMER_HANDLE, outline=OUTLINE)
-        draw.rectangle([hm_x - 4, hm_y - 12, hm_x + 4, hm_y - 6],
-                       fill=RNS_HAMMER_HEAD, outline=OUTLINE)
-        draw.rectangle([hm_x - 3, hm_y - 11, hm_x + 3, hm_y - 8],
-                       fill=RNS_HAMMER_DARK, outline=None)
-        # Rune glow on hammer head
-        draw.point((hm_x, hm_y - 9), fill=RNS_HAMMER_GLOW)
-
-        # Head
-        ellipse(draw, cx, head_cy + 2, 12, 10, RNS_SKIN)
-        ellipse(draw, cx + 2, head_cy + 4, 8, 6, RNS_SKIN_DARK, outline=None)
-        # Eyes
-        draw.rectangle([cx - 6, head_cy + 1, cx - 3, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx - 5, head_cy + 2, cx - 4, head_cy + 3], fill=BLACK)
-        draw.rectangle([cx + 3, head_cy + 1, cx + 6, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx + 4, head_cy + 2, cx + 5, head_cy + 3], fill=BLACK)
-        # Nose and mouth
-        draw.point((cx, head_cy + 6), fill=RNS_SKIN_DARK)
-        draw.line([(cx - 2, head_cy + 8), (cx + 2, head_cy + 8)],
-                  fill=RNS_SKIN_DARK, width=1)
-        # Thick brows
-        draw.line([(cx - 7, head_cy), (cx - 3, head_cy - 1)],
-                  fill=RNS_HAIR, width=1)
-        draw.line([(cx + 3, head_cy - 1), (cx + 7, head_cy)],
-                  fill=RNS_HAIR, width=1)
-
-        # Helm
-        draw.rectangle([cx - 12, head_cy - 10, cx + 12, head_cy - 2],
-                       fill=RNS_HELM, outline=OUTLINE)
-        draw.rectangle([cx - 10, head_cy - 9, cx + 10, head_cy - 4],
-                       fill=RNS_HELM_DARK, outline=None)
-        draw.line([(cx - 10, head_cy - 7), (cx + 10, head_cy - 7)],
-                  fill=RNS_HELM_LIGHT, width=1)
-        # Helm nose guard
-        draw.rectangle([cx - 1, head_cy - 6, cx + 1, head_cy],
-                       fill=RNS_HELM, outline=OUTLINE)
-        # Rune on helm
-        draw.point((cx - 6, head_cy - 6), fill=rune_color)
-        draw.point((cx + 6, head_cy - 6), fill=rune_color)
-
-    elif direction == UP:
-        # Legs
-        draw.rectangle([cx - 10 + leg_spread, body_cy + 10,
-                        cx - 4 + leg_spread, base_y], fill=RNS_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=RNS_LEG, outline=OUTLINE)
-        draw.rectangle([cx - 11 + leg_spread, base_y - 6,
-                        cx - 3 + leg_spread, base_y], fill=RNS_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 3 - leg_spread, base_y - 6,
-                        cx + 11 - leg_spread, base_y], fill=RNS_BOOT, outline=OUTLINE)
-
-        # Body (back)
-        ellipse(draw, cx, body_cy, 15, 13, RNS_BODY)
-        ellipse(draw, cx, body_cy, 11, 10, RNS_BODY_DARK, outline=None)
-        draw.line([(cx, body_cy - 6), (cx, body_cy + 6)],
-                  fill=_darken(RNS_BODY, 0.7), width=1)
-        # Apron ties from back
-        draw.line([(cx - 6, body_cy + 4), (cx - 12, body_cy + 8)],
-                  fill=RNS_APRON_DARK, width=2)
-        draw.line([(cx + 6, body_cy + 4), (cx + 12, body_cy + 8)],
-                  fill=RNS_APRON_DARK, width=2)
-        # Belt
-        draw.rectangle([cx - 15, body_cy + 10, cx + 15, body_cy + 14],
-                       fill=RNS_BELT, outline=OUTLINE)
-
-        # Arms
-        draw.rectangle([cx - 19, body_cy - 6, cx - 12, body_cy + 6],
-                       fill=RNS_BODY, outline=OUTLINE)
-        draw.rectangle([cx - 19, body_cy + 2, cx - 12, body_cy + 6],
-                       fill=RNS_GAUNTLET, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy - 6, cx + 19, body_cy + 6],
-                       fill=RNS_BODY, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy + 2, cx + 19, body_cy + 6],
-                       fill=RNS_GAUNTLET, outline=OUTLINE)
-        # Rune marks visible from back
-        draw.point((cx - 16, body_cy - 2), fill=rune_color)
-        draw.point((cx + 16, body_cy - 2), fill=rune_color)
-
-        # Head (back)
-        ellipse(draw, cx, head_cy + 2, 12, 10, RNS_SKIN)
-        ellipse(draw, cx, head_cy, 10, 8, _darken(RNS_HAIR, 0.85), outline=None)
-
-        # Helm (back)
-        draw.rectangle([cx - 12, head_cy - 10, cx + 12, head_cy - 2],
-                       fill=RNS_HELM, outline=OUTLINE)
-        draw.rectangle([cx - 10, head_cy - 9, cx + 10, head_cy - 4],
-                       fill=RNS_HELM_DARK, outline=None)
-        draw.line([(cx - 10, head_cy - 7), (cx + 10, head_cy - 7)],
-                  fill=RNS_HELM_LIGHT, width=1)
-
-    elif direction == LEFT:
-        # Legs
-        draw.rectangle([cx - 2 - leg_spread, body_cy + 10,
-                        cx + 4 - leg_spread, base_y],
-                       fill=_darken(RNS_LEG, 0.85), outline=OUTLINE)
-        draw.rectangle([cx - 3 - leg_spread, base_y - 6,
-                        cx + 5 - leg_spread, base_y], fill=RNS_BOOT, outline=OUTLINE)
-        draw.rectangle([cx - 8 + leg_spread, body_cy + 10,
-                        cx - 2 + leg_spread, base_y], fill=RNS_LEG, outline=OUTLINE)
-        draw.rectangle([cx - 9 + leg_spread, base_y - 6,
-                        cx - 1 + leg_spread, base_y], fill=RNS_BOOT, outline=OUTLINE)
-
-        # Body (side)
-        ellipse(draw, cx - 2, body_cy, 13, 13, RNS_BODY)
-        # Apron (side view)
-        draw.rectangle([cx - 10, body_cy - 2, cx + 2, body_cy + 14],
-                       fill=RNS_APRON, outline=OUTLINE)
-        draw.rectangle([cx - 8, body_cy, cx, body_cy + 12],
-                       fill=RNS_APRON_DARK, outline=None)
-        # Rune on apron
-        draw.point((cx - 5, body_cy + 4 + rune_pulse), fill=rune_color)
-        draw.point((cx - 3, body_cy + 6), fill=rune_color)
-        # Belt
-        draw.rectangle([cx - 15, body_cy + 10, cx + 10, body_cy + 14],
-                       fill=RNS_BELT, outline=OUTLINE)
-        draw.rectangle([cx - 8, body_cy + 10, cx - 5, body_cy + 13],
-                       fill=RNS_STONE, outline=OUTLINE)
-        draw.point((cx - 6, body_cy + 11), fill=RNS_STONE_RUNE)
-
-        # Front arm with hammer
-        draw.rectangle([cx - 15, body_cy - 4, cx - 9, body_cy + 6],
-                       fill=RNS_BODY, outline=OUTLINE)
-        draw.rectangle([cx - 15, body_cy + 2, cx - 9, body_cy + 6],
-                       fill=RNS_GAUNTLET, outline=OUTLINE)
-        # Rune on arm
-        draw.point((cx - 12, body_cy - 1), fill=rune_color)
-        # Hammer
-        hm_x = cx - 18
-        hm_y = body_cy - 2
-        draw.rectangle([hm_x - 1, hm_y - 4, hm_x + 1, hm_y + 4],
-                       fill=RNS_HAMMER_HANDLE, outline=OUTLINE)
-        draw.rectangle([hm_x - 3, hm_y - 10, hm_x + 3, hm_y - 4],
-                       fill=RNS_HAMMER_HEAD, outline=OUTLINE)
-        draw.point((hm_x, hm_y - 7), fill=RNS_HAMMER_GLOW)
-
-        # Head
-        ellipse(draw, cx - 2, head_cy + 2, 11, 10, RNS_SKIN)
-        ellipse(draw, cx - 2, head_cy + 4, 6, 5, RNS_SKIN_DARK, outline=None)
-        # Eye
-        draw.rectangle([cx - 10, head_cy + 1, cx - 7, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx - 9, head_cy + 2, cx - 8, head_cy + 3], fill=BLACK)
-        # Nose and mouth
-        draw.point((cx - 9, head_cy + 6), fill=RNS_SKIN_DARK)
-        draw.line([(cx - 10, head_cy + 8), (cx - 7, head_cy + 8)],
-                  fill=RNS_SKIN_DARK, width=1)
-        # Thick brow
-        draw.line([(cx - 11, head_cy), (cx - 7, head_cy - 1)],
-                  fill=RNS_HAIR, width=1)
-
-        # Helm (side)
-        draw.rectangle([cx - 10, head_cy - 10, cx + 6, head_cy - 2],
-                       fill=RNS_HELM, outline=OUTLINE)
-        draw.rectangle([cx - 8, head_cy - 9, cx + 4, head_cy - 4],
-                       fill=RNS_HELM_DARK, outline=None)
-        draw.line([(cx - 8, head_cy - 7), (cx + 4, head_cy - 7)],
-                  fill=RNS_HELM_LIGHT, width=1)
-        # Nose guard
-        draw.rectangle([cx - 8, head_cy - 4, cx - 6, head_cy],
-                       fill=RNS_HELM, outline=OUTLINE)
-        draw.point((cx - 4, head_cy - 6), fill=rune_color)
-
-    else:  # RIGHT
-        # Legs
-        draw.rectangle([cx - 2 + leg_spread, body_cy + 10,
-                        cx + 4 + leg_spread, base_y],
-                       fill=_darken(RNS_LEG, 0.85), outline=OUTLINE)
-        draw.rectangle([cx - 3 + leg_spread, base_y - 6,
-                        cx + 5 + leg_spread, base_y], fill=RNS_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=RNS_LEG, outline=OUTLINE)
-        draw.rectangle([cx + 3 - leg_spread, base_y - 6,
-                        cx + 11 - leg_spread, base_y], fill=RNS_BOOT, outline=OUTLINE)
-
-        # Body (side)
-        ellipse(draw, cx + 2, body_cy, 13, 13, RNS_BODY)
-        # Apron (side view)
-        draw.rectangle([cx - 2, body_cy - 2, cx + 10, body_cy + 14],
-                       fill=RNS_APRON, outline=OUTLINE)
-        draw.rectangle([cx, body_cy, cx + 8, body_cy + 12],
-                       fill=RNS_APRON_DARK, outline=None)
-        # Rune on apron
-        draw.point((cx + 5, body_cy + 4 + rune_pulse), fill=rune_color)
-        draw.point((cx + 3, body_cy + 6), fill=rune_color)
-        # Belt
-        draw.rectangle([cx - 10, body_cy + 10, cx + 15, body_cy + 14],
-                       fill=RNS_BELT, outline=OUTLINE)
-        draw.rectangle([cx + 5, body_cy + 10, cx + 8, body_cy + 13],
-                       fill=RNS_STONE, outline=OUTLINE)
-        draw.point((cx + 6, body_cy + 11), fill=RNS_STONE_RUNE)
-
-        # Front arm with hammer
-        draw.rectangle([cx + 9, body_cy - 4, cx + 15, body_cy + 6],
-                       fill=RNS_BODY, outline=OUTLINE)
-        draw.rectangle([cx + 9, body_cy + 2, cx + 15, body_cy + 6],
-                       fill=RNS_GAUNTLET, outline=OUTLINE)
-        # Rune on arm
-        draw.point((cx + 12, body_cy - 1), fill=rune_color)
-        # Hammer
-        hm_x = cx + 18
-        hm_y = body_cy - 2
-        draw.rectangle([hm_x - 1, hm_y - 4, hm_x + 1, hm_y + 4],
-                       fill=RNS_HAMMER_HANDLE, outline=OUTLINE)
-        draw.rectangle([hm_x - 3, hm_y - 10, hm_x + 3, hm_y - 4],
-                       fill=RNS_HAMMER_HEAD, outline=OUTLINE)
-        draw.point((hm_x, hm_y - 7), fill=RNS_HAMMER_GLOW)
-
-        # Head
-        ellipse(draw, cx + 2, head_cy + 2, 11, 10, RNS_SKIN)
-        ellipse(draw, cx + 2, head_cy + 4, 6, 5, RNS_SKIN_DARK, outline=None)
-        # Eye
-        draw.rectangle([cx + 7, head_cy + 1, cx + 10, head_cy + 4], fill=(255, 255, 255))
-        draw.rectangle([cx + 8, head_cy + 2, cx + 9, head_cy + 3], fill=BLACK)
-        # Nose and mouth
-        draw.point((cx + 9, head_cy + 6), fill=RNS_SKIN_DARK)
-        draw.line([(cx + 7, head_cy + 8), (cx + 10, head_cy + 8)],
-                  fill=RNS_SKIN_DARK, width=1)
-        # Thick brow
-        draw.line([(cx + 7, head_cy - 1), (cx + 11, head_cy)],
-                  fill=RNS_HAIR, width=1)
-
-        # Helm (side)
-        draw.rectangle([cx - 6, head_cy - 10, cx + 10, head_cy - 2],
-                       fill=RNS_HELM, outline=OUTLINE)
-        draw.rectangle([cx - 4, head_cy - 9, cx + 8, head_cy - 4],
-                       fill=RNS_HELM_DARK, outline=None)
-        draw.line([(cx - 4, head_cy - 7), (cx + 8, head_cy - 7)],
-                  fill=RNS_HELM_LIGHT, width=1)
-        # Nose guard
-        draw.rectangle([cx + 6, head_cy - 4, cx + 8, head_cy],
-                       fill=RNS_HELM, outline=OUTLINE)
-        draw.point((cx + 4, head_cy - 6), fill=rune_color)
+    r = rig(ox, oy, direction, frame, build=1.04)
+    d = r.d
+    hs = _hold_side(r)
+    bob2 = [0.0, -0.8, -1.2, -0.8][frame]
+    rig_cape(r, draw, RUNE_CLOAK, layer="under")
+    if d:
+        rig_arms(r, draw, SKIN_TAN, SKIN_TAN, layer="far")
+    rig_legs(r, draw, (80, 76, 90), (70, 56, 46))
+    rig_torso(r, draw, (120, 110, 100))
+    cx = r.cx
+    rig_belt(r, draw, (80, 60, 46), buckle=RUNE_GLOW)
+    rig_arms(r, draw, SKIN_TAN, SKIN_TAN, layer="near", hands=False)
+    # glowing rune tattoos down the arms
+    for side in _sides(r):
+        s, e, w, h = arm_pts(r, side)
+        for t in (0.35, 0.7):
+            p = (s[0] + (w[0] - s[0]) * t, s[1] + (w[1] - s[1]) * t)
+            stroke(draw, [(p[0] - 0.8, p[1] - 0.8), (p[0], p[1] + 0.4), (p[0] + 0.8, p[1] - 0.8)], 0.5, RUNE_GLOW)
+    # a mantle with runic trim
+    cel(draw, Poly([(cx - 8.4, r.sh_y - 2.6), (cx + 8.4, r.sh_y - 2.6), (cx + 6.0, r.sh_y + 2.6), (cx, r.sh_y + 4.0), (cx - 6.0, r.sh_y + 2.6)])
+        if not d else Poly([(cx - 5.4, r.sh_y - 2.6), (cx + 5.8, r.sh_y - 2.6), (cx + 4.0, r.sh_y + 3.0), (cx - 4.4, r.sh_y + 3.0)]), RUNE_CLOAK, sh=(0.6, 0.6))
+    rig_head(r, draw, SKIN_TAN, hair=RUNE_HAIR, style="swept", eye_color=(60, 200, 230), expression="set", mood="sharp")
+    hx, hy, rx = r.hx, r.head_cy, r.head_rx
+    # a leather headband with a glowing rune
+    cel(draw, RRect(hx - rx - 0.6, hy - 5.8, hx + rx + 0.6, hy - 3.4, 1.0), LEATHER, sh=(0.0, 0.5))
+    if not r.back:
+        stroke(draw, [(hx + d * 3.0 - 0.8, hy - 5.2), (hx + d * 3.0, hy - 4.0), (hx + d * 3.0 + 0.8, hy - 5.2)], 0.5, RUNE_GLOW)
+    rig_cape(r, draw, RUNE_CLOAK, layer="over")
+    # the runestone floating at his off side
+    os_ = -hs if not d else -d
+    _runestone(draw, cx + (os_ * 13.0 if not d else -d * 11.0), r.sh_y - 3.0 + bob2, frame)
+    # a rune hammer
+    h = hand_at(r, hs)
+    ang = -90 + (hs * 20 if not d else d * 30)
+    cel(draw, Limb(xform([(-2.4, 0.0), (10.4, 0.0)], h[0], h[1], ang), [0.9, 0.9]), WOOD, sh=None)
+    hd = xform([(8.4, -3.0), (12.6, -3.0), (12.6, 3.0), (8.4, 3.0)], h[0], h[1], ang)
+    cel(draw, Poly(hd), RUNE_STONE, sh=None)
+    c = xform([(10.5, 0.0)], h[0], h[1], ang)[0]
+    Ell(c[0], c[1], 1.0, 1.0).draw(draw, fill=RUNE_GLOW)
+    for side in _sides(r):
+        rig_hand(r, draw, side, SKIN_TAN)
 
 
 # ===================================================================
-# SHAPESHIFTER (ID 111)
-# Purple/shifting-color body that changes hue per frame, cape, glowing
-# eyes, unstable edges/outline that shifts between frames, morphing
-# silhouette hints.
+# SHAPESHIFTER (111) -- caught halfway: a beast arm, one wolf ear, a tail
 # ===================================================================
 
-# Shapeshifter palettes — one per frame to simulate shifting colors
-SHP_BODY_FRAMES = [
-    (120, 50, 160),   # frame 0: purple
-    (50, 120, 160),   # frame 1: teal
-    (160, 50, 80),    # frame 2: crimson
-    (80, 160, 50),    # frame 3: green
-]
-SHP_BODY_LIGHT_FRAMES = [
-    (155, 75, 200),
-    (75, 155, 200),
-    (200, 75, 110),
-    (110, 200, 75),
-]
-SHP_BODY_DARK_FRAMES = [
-    (80, 30, 110),
-    (30, 80, 110),
-    (110, 30, 55),
-    (55, 110, 30),
-]
-SHP_CAPE = (90, 40, 120)
-SHP_CAPE_DARK = (60, 25, 80)
-SHP_CAPE_LIGHT = (120, 60, 155)
-SHP_EYE_GLOW = (200, 255, 200)
-SHP_EYE_CORE = (255, 255, 220)
-SHP_EDGE_FRAMES = [
-    (140, 60, 180),   # unstable edge colors per frame
-    (60, 140, 180),
-    (180, 60, 100),
-    (100, 180, 60),
-]
-SHP_SKIN = (180, 160, 190)
-SHP_SKIN_DARK = (150, 130, 160)
-SHP_LEG_FRAMES = [
-    (90, 40, 120),
-    (40, 90, 120),
-    (120, 40, 60),
-    (60, 120, 40),
-]
-SHP_BOOT = (50, 40, 55)
-SHP_BELT = (70, 50, 80)
-SHP_MORPH = (200, 180, 220)
+SS_CLOAK = (120, 70, 170)
+SS_FUR = (126, 100, 84)
+SS_MAGIC = (220, 150, 255)
 
 
 def draw_shapeshifter(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    leg_spread = [-4, 0, 4, 0][frame]
-    edge_jitter = [-1, 1, -1, 0][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 20
-
-    # Per-frame shifting colors
-    body_col = SHP_BODY_FRAMES[frame]
-    body_light = SHP_BODY_LIGHT_FRAMES[frame]
-    body_dark = SHP_BODY_DARK_FRAMES[frame]
-    edge_col = SHP_EDGE_FRAMES[frame]
-    leg_col = SHP_LEG_FRAMES[frame]
-
-    if direction == DOWN:
-        # Cape behind (shifting edges)
-        draw.polygon([(cx - 12 + edge_jitter, body_cy - 8),
-                      (cx + 12 - edge_jitter, body_cy - 8),
-                      (cx + 15 + edge_jitter, body_cy + 16),
-                      (cx - 15 - edge_jitter, body_cy + 16)],
-                     fill=SHP_CAPE, outline=edge_col)
-        draw.polygon([(cx - 8, body_cy - 4), (cx + 8, body_cy - 4),
-                      (cx + 10, body_cy + 12), (cx - 10, body_cy + 12)],
-                     fill=SHP_CAPE_DARK, outline=None)
-
-        # Legs (shifting color)
-        draw.rectangle([cx - 10 + leg_spread, body_cy + 10,
-                        cx - 4 + leg_spread, base_y], fill=leg_col, outline=edge_col)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=leg_col, outline=edge_col)
-        # Boots
-        draw.rectangle([cx - 10 + leg_spread, base_y - 5,
-                        cx - 4 + leg_spread, base_y], fill=SHP_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 5,
-                        cx + 10 - leg_spread, base_y], fill=SHP_BOOT, outline=OUTLINE)
-
-        # Body (shifting color with unstable outline)
-        ellipse(draw, cx, body_cy, 14 + edge_jitter, 12, body_col, outline=edge_col)
-        ellipse(draw, cx - 3, body_cy - 2, 8, 7, body_light, outline=None)
-        # Morphing detail — shifting inner pattern
-        draw.point((cx - 5 + edge_jitter, body_cy - 3), fill=body_dark)
-        draw.point((cx + 6 - edge_jitter, body_cy + 2), fill=body_dark)
-        draw.point((cx + 2, body_cy + 5 + edge_jitter), fill=body_dark)
-        # Belt
-        draw.rectangle([cx - 14, body_cy + 10, cx + 14, body_cy + 14],
-                       fill=SHP_BELT, outline=edge_col)
-
-        # Arms (shifting)
-        draw.rectangle([cx - 18 + edge_jitter, body_cy - 6,
-                        cx - 12, body_cy + 6],
-                       fill=body_col, outline=edge_col)
-        draw.rectangle([cx - 18 + edge_jitter, body_cy + 2,
-                        cx - 12, body_cy + 6],
-                       fill=SHP_SKIN, outline=OUTLINE)
-        draw.rectangle([cx + 12, body_cy - 6,
-                        cx + 18 - edge_jitter, body_cy + 6],
-                       fill=body_col, outline=edge_col)
-        draw.rectangle([cx + 12, body_cy + 2,
-                        cx + 18 - edge_jitter, body_cy + 6],
-                       fill=SHP_SKIN, outline=OUTLINE)
-
-        # Morph hint particles (silhouette fragments)
-        draw.point((cx - 20, body_cy - 4), fill=SHP_MORPH)
-        draw.point((cx + 20, body_cy + 2), fill=SHP_MORPH)
-        draw.point((cx - 16, body_cy + 8), fill=edge_col)
-
-        # Head (shifting outline)
-        ellipse(draw, cx, head_cy, 14 + edge_jitter, 13, body_col, outline=edge_col)
-        ellipse(draw, cx, head_cy + 2, 12, 10, SHP_SKIN)
-        ellipse(draw, cx + 2, head_cy + 4, 8, 6, SHP_SKIN_DARK, outline=None)
-        # Glowing eyes
-        draw.rectangle([cx - 6, head_cy + 1, cx - 3, head_cy + 4], fill=SHP_EYE_GLOW)
-        draw.rectangle([cx - 5, head_cy + 2, cx - 4, head_cy + 3], fill=SHP_EYE_CORE)
-        draw.rectangle([cx + 3, head_cy + 1, cx + 6, head_cy + 4], fill=SHP_EYE_GLOW)
-        draw.rectangle([cx + 4, head_cy + 2, cx + 5, head_cy + 3], fill=SHP_EYE_CORE)
-        # No visible mouth — mysterious
-        draw.point((cx, head_cy + 7), fill=SHP_SKIN_DARK)
-
-        # Unstable crown / shifting head top
-        draw.point((cx - 6, head_cy - 10 + edge_jitter), fill=edge_col)
-        draw.point((cx, head_cy - 12), fill=body_light)
-        draw.point((cx + 5, head_cy - 9 - edge_jitter), fill=edge_col)
-
-    elif direction == UP:
-        # Cape (back, prominent)
-        draw.polygon([(cx - 12 + edge_jitter, body_cy - 8),
-                      (cx + 12 - edge_jitter, body_cy - 8),
-                      (cx + 17 + edge_jitter, body_cy + 18),
-                      (cx - 17 - edge_jitter, body_cy + 18)],
-                     fill=SHP_CAPE, outline=edge_col)
-        draw.polygon([(cx - 8, body_cy - 4), (cx + 8, body_cy - 4),
-                      (cx + 13, body_cy + 14), (cx - 13, body_cy + 14)],
-                     fill=SHP_CAPE_DARK, outline=None)
-        # Shifting cape edge details
-        draw.point((cx - 14, body_cy + 14), fill=SHP_CAPE_LIGHT)
-        draw.point((cx + 14, body_cy + 12), fill=SHP_CAPE_LIGHT)
-
-        # Legs
-        draw.rectangle([cx - 10 + leg_spread, body_cy + 10,
-                        cx - 4 + leg_spread, base_y], fill=leg_col, outline=edge_col)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=leg_col, outline=edge_col)
-        draw.rectangle([cx - 10 + leg_spread, base_y - 5,
-                        cx - 4 + leg_spread, base_y], fill=SHP_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 5,
-                        cx + 10 - leg_spread, base_y], fill=SHP_BOOT, outline=OUTLINE)
-
-        # Body (back)
-        ellipse(draw, cx, body_cy, 14 + edge_jitter, 12, body_col, outline=edge_col)
-        ellipse(draw, cx, body_cy, 10, 9, body_dark, outline=None)
-        draw.line([(cx, body_cy - 6), (cx, body_cy + 6)],
-                  fill=_darken(body_col, 0.7), width=1)
-        # Belt
-        draw.rectangle([cx - 14, body_cy + 10, cx + 14, body_cy + 14],
-                       fill=SHP_BELT, outline=edge_col)
-
-        # Arms
-        draw.rectangle([cx - 18 + edge_jitter, body_cy - 6,
-                        cx - 12, body_cy + 6],
-                       fill=body_col, outline=edge_col)
-        draw.rectangle([cx + 12, body_cy - 6,
-                        cx + 18 - edge_jitter, body_cy + 6],
-                       fill=body_col, outline=edge_col)
-
-        # Head (back)
-        ellipse(draw, cx, head_cy, 14 + edge_jitter, 13, body_col, outline=edge_col)
-        ellipse(draw, cx, head_cy - 2, 10, 8, body_dark, outline=None)
-
-        # Unstable crown
-        draw.point((cx - 5, head_cy - 10 + edge_jitter), fill=edge_col)
-        draw.point((cx + 1, head_cy - 12), fill=body_light)
-        draw.point((cx + 6, head_cy - 9 - edge_jitter), fill=edge_col)
-
-    elif direction == LEFT:
-        # Cape trailing right
-        draw.polygon([(cx + 4 + edge_jitter, body_cy - 8),
-                      (cx + 16 - edge_jitter, body_cy + 16),
-                      (cx + 6, body_cy + 16),
-                      (cx + 2, body_cy - 4)],
-                     fill=SHP_CAPE, outline=edge_col)
-        draw.polygon([(cx + 5, body_cy - 2), (cx + 12, body_cy + 12),
-                      (cx + 6, body_cy + 12), (cx + 4, body_cy)],
-                     fill=SHP_CAPE_DARK, outline=None)
-
-        # Legs
-        draw.rectangle([cx - 2 - leg_spread, body_cy + 10,
-                        cx + 4 - leg_spread, base_y],
-                       fill=_darken(leg_col, 0.85), outline=edge_col)
-        draw.rectangle([cx - 2 - leg_spread, base_y - 5,
-                        cx + 4 - leg_spread, base_y], fill=SHP_BOOT, outline=OUTLINE)
-        draw.rectangle([cx - 8 + leg_spread, body_cy + 10,
-                        cx - 2 + leg_spread, base_y], fill=leg_col, outline=edge_col)
-        draw.rectangle([cx - 8 + leg_spread, base_y - 5,
-                        cx - 2 + leg_spread, base_y], fill=SHP_BOOT, outline=OUTLINE)
-
-        # Body (side, shifting)
-        ellipse(draw, cx - 2, body_cy, 12 + edge_jitter, 12, body_col, outline=edge_col)
-        ellipse(draw, cx - 4, body_cy - 2, 7, 7, body_light, outline=None)
-        draw.point((cx - 8 + edge_jitter, body_cy + 3), fill=body_dark)
-        # Belt
-        draw.rectangle([cx - 14, body_cy + 10, cx + 10, body_cy + 14],
-                       fill=SHP_BELT, outline=edge_col)
-
-        # Front arm
-        draw.rectangle([cx - 14 + edge_jitter, body_cy - 4,
-                        cx - 8, body_cy + 6],
-                       fill=body_col, outline=edge_col)
-        draw.rectangle([cx - 14 + edge_jitter, body_cy + 2,
-                        cx - 8, body_cy + 6],
-                       fill=SHP_SKIN, outline=OUTLINE)
-
-        # Morph particles
-        draw.point((cx - 18, body_cy - 2), fill=SHP_MORPH)
-        draw.point((cx + 10, body_cy + 6), fill=edge_col)
-
-        # Head (shifting outline)
-        ellipse(draw, cx - 2, head_cy, 13 + edge_jitter, 13, body_col, outline=edge_col)
-        ellipse(draw, cx - 4, head_cy + 2, 10, 9, SHP_SKIN)
-        ellipse(draw, cx - 2, head_cy + 4, 6, 5, SHP_SKIN_DARK, outline=None)
-        # Glowing eye
-        draw.rectangle([cx - 10, head_cy + 1, cx - 7, head_cy + 4], fill=SHP_EYE_GLOW)
-        draw.rectangle([cx - 9, head_cy + 2, cx - 8, head_cy + 3], fill=SHP_EYE_CORE)
-        draw.point((cx - 9, head_cy + 7), fill=SHP_SKIN_DARK)
-
-        # Unstable head top
-        draw.point((cx - 8, head_cy - 10 + edge_jitter), fill=edge_col)
-        draw.point((cx - 2, head_cy - 12), fill=body_light)
-        draw.point((cx + 4, head_cy - 9 - edge_jitter), fill=edge_col)
-
-    else:  # RIGHT
-        # Cape trailing left
-        draw.polygon([(cx - 4 - edge_jitter, body_cy - 8),
-                      (cx - 16 + edge_jitter, body_cy + 16),
-                      (cx - 6, body_cy + 16),
-                      (cx - 2, body_cy - 4)],
-                     fill=SHP_CAPE, outline=edge_col)
-        draw.polygon([(cx - 5, body_cy - 2), (cx - 12, body_cy + 12),
-                      (cx - 6, body_cy + 12), (cx - 4, body_cy)],
-                     fill=SHP_CAPE_DARK, outline=None)
-
-        # Legs
-        draw.rectangle([cx - 2 + leg_spread, body_cy + 10,
-                        cx + 4 + leg_spread, base_y],
-                       fill=_darken(leg_col, 0.85), outline=edge_col)
-        draw.rectangle([cx - 2 + leg_spread, base_y - 5,
-                        cx + 4 + leg_spread, base_y], fill=SHP_BOOT, outline=OUTLINE)
-        draw.rectangle([cx + 4 - leg_spread, body_cy + 10,
-                        cx + 10 - leg_spread, base_y], fill=leg_col, outline=edge_col)
-        draw.rectangle([cx + 4 - leg_spread, base_y - 5,
-                        cx + 10 - leg_spread, base_y], fill=SHP_BOOT, outline=OUTLINE)
-
-        # Body (side, shifting)
-        ellipse(draw, cx + 2, body_cy, 12 + edge_jitter, 12, body_col, outline=edge_col)
-        ellipse(draw, cx, body_cy - 2, 7, 7, body_light, outline=None)
-        draw.point((cx + 8 - edge_jitter, body_cy + 3), fill=body_dark)
-        # Belt
-        draw.rectangle([cx - 10, body_cy + 10, cx + 14, body_cy + 14],
-                       fill=SHP_BELT, outline=edge_col)
-
-        # Front arm
-        draw.rectangle([cx + 8, body_cy - 4,
-                        cx + 14 - edge_jitter, body_cy + 6],
-                       fill=body_col, outline=edge_col)
-        draw.rectangle([cx + 8, body_cy + 2,
-                        cx + 14 - edge_jitter, body_cy + 6],
-                       fill=SHP_SKIN, outline=OUTLINE)
-
-        # Morph particles
-        draw.point((cx + 18, body_cy - 2), fill=SHP_MORPH)
-        draw.point((cx - 10, body_cy + 6), fill=edge_col)
-
-        # Head (shifting outline)
-        ellipse(draw, cx + 2, head_cy, 13 + edge_jitter, 13, body_col, outline=edge_col)
-        ellipse(draw, cx + 4, head_cy + 2, 10, 9, SHP_SKIN)
-        ellipse(draw, cx + 6, head_cy + 4, 6, 5, SHP_SKIN_DARK, outline=None)
-        # Glowing eye
-        draw.rectangle([cx + 7, head_cy + 1, cx + 10, head_cy + 4], fill=SHP_EYE_GLOW)
-        draw.rectangle([cx + 8, head_cy + 2, cx + 9, head_cy + 3], fill=SHP_EYE_CORE)
-        draw.point((cx + 9, head_cy + 7), fill=SHP_SKIN_DARK)
-
-        # Unstable head top
-        draw.point((cx - 4, head_cy - 9 + edge_jitter), fill=edge_col)
-        draw.point((cx + 2, head_cy - 12), fill=body_light)
-        draw.point((cx + 8, head_cy - 10 - edge_jitter), fill=edge_col)
+    r = rig(ox, oy, direction, frame)
+    d = r.d
+    beast = (1 if not r.back else -1) if not d else d
+    wag = [0.0, 1.0, 0.0, -1.0][frame]
+    cx = r.cx
+    # a bushy tail
+    tx = cx - (d * 3.0 if d else (-beast * 3.0))
+    ts = -d if d else -beast
+    cel(draw, Limb([(tx, r.hip_y), (tx + ts * 5.0, r.hip_y + 2.0 + wag), (tx + ts * 9.0, r.hip_y - 3.0)], [1.6, 2.6, 1.0]), SS_FUR, sh=(0.6, 0.6))
+    rig_cape(r, draw, SS_CLOAK, layer="under", length=r.hip_y + 4.0)
+    if d:
+        rig_arms(r, draw, SS_CLOAK, SKIN, layer="far")
+    rig_legs(r, draw, (80, 60, 100), SS_FUR)
+    rig_torso(r, draw, (90, 70, 120))
+    rig_belt(r, draw, (60, 44, 60), buckle=SS_MAGIC)
+    # one arm human, the other a clawed beast arm
+    for side in _sides(r):
+        if side == beast:
+            s, e, w, h = arm_pts(r, side)
+            cel(draw, Limb([s, e, w], [2.8, 2.6, 2.4]), SS_FUR, sh=(0.8, 0.4))
+            cel(draw, Ell(h[0], h[1], 2.8, 2.6), SS_FUR, sh=(0.5, 0.5))
+            for k in (-1, 0, 1):
+                x = h[0] + k * 1.3
+                Poly([(x - 0.5, h[1] + 1.8), (x + 0.5, h[1] + 1.8), (x + k * 0.4, h[1] + 4.0)]).draw(draw, fill=TOOTH)
+        else:
+            rig_arms(r, draw, SS_CLOAK, SKIN, sides=(side,))
+    head_skull(r, draw, SKIN)
+    hx, hy, rx, ry = r.hx, r.head_cy, r.head_rx, r.head_ry
+    if not r.back:
+        e1, e2, ey, mx, my = face_anchor(r)
+        pairs = ((-1, e1), (1, e2)) if not d else ((-d, e1), (d, e2))
+        for side, ex in pairs:
+            w = 1.0 if not d or side == -d else 0.72
+            is_beast = (side == beast) if not d else (side == d)
+            ms_eye(draw, ex, ey, 4.2 * w, 5.6, (250, 200, 50) if is_beast else (110, 80, 170), (float(d), 0.0),
+                   "sharp" if is_beast else "bright", skin=SKIN, side=side)
+        ms_mouth(draw, mx, my, "fangs", SKIN)
+    rig_hair(r, draw, (80, 60, 110), "wild", skin=SKIN)
+    # one big furry wolf ear on the beast side
+    es = beast if not d else -d
+    ex = hx + es * 6.6 if not d else hx - d * 2.0
+    ear = Poly([(ex - 4.2, hy - ry + 4.4), (ex - 2.6, hy - ry - 1.0), (ex + es * 1.4, hy - ry - 6.4), (ex + 2.8, hy - ry - 0.6),
+                (ex + 4.2, hy - ry + 4.4)])
+    blob(draw, [ear, Ell(ex, hy - ry + 3.4, 4.6, 2.2)], SS_FUR, sh=(0.6, 0.6))
+    Poly([(ex - 2.0, hy - ry + 2.8), (ex - 1.0, hy - ry - 0.2), (ex + es * 1.0, hy - ry - 3.8), (ex + 1.6, hy - ry + 0.2),
+          (ex + 2.2, hy - ry + 2.8)]).draw(draw, fill=(240, 180, 190))
+    rig_cape(r, draw, SS_CLOAK, layer="over", length=r.hip_y + 4.0)
+    # changing magic swirling round it
+    for i in range(3):
+        a = math.radians(frame * 90 + i * 120)
+        sparkle(draw, cx + math.cos(a) * 14.0, r.waist_y - 4.0 + math.sin(a) * 8.0, 1.8 if i == 0 else 1.3, SS_MAGIC)
 
 
-# ─── REGISTRY ─────────────────────────────────────────────────────
 SPECIALIST_DRAW_FUNCTIONS = {
     'alchemist': draw_alchemist,
     'puppeteer': draw_puppeteer,

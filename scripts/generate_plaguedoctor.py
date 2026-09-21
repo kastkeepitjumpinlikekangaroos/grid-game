@@ -1,549 +1,129 @@
 #!/usr/bin/env python3
-"""Generate sprites/plaguedoctor.png — 4-column x 4-row character spritesheet.
+"""Generate sprites/plaguedoctor.png -- the Plague Doctor.
 
-256x256 PNG, 64x64 per frame.
-Row layout: Down=0, Up=1, Left=2, Right=3
-4 walking animation frames per direction.
-
-Style matches Spaceman/Gladiator: big round head, round body, small limbs, dark outlines.
-Theme: Plague Doctor — dark robes, tall hat, long beaked plague mask, censer with green fumes.
-Enhanced 64x64: more detailed beak mask (curved with nostril dots), leather coat with
-buckle details, potion bottles on belt (colored dots), longer coat tails.
+A wide-brimmed black hat over a bone-white beaked mask with two round green
+lenses for eyes, a long coat with a shoulder cape and a belt of vials,
+leather gloves, and a lantern burning with sickly green flame.
 """
 
-from PIL import Image, ImageDraw
+import os
+import sys
 
-FRAME_SIZE = 128
-DRAW_SIZE = 64   # Internal drawing size (upscaled to FRAME_SIZE)
-COLS = 4
-ROWS = 4
-IMG_W = FRAME_SIZE * COLS   # 512
-IMG_H = FRAME_SIZE * ROWS   # 512
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from sprite_base import (
+    Ell, Limb, Poly, RRect, arc_pts, cel, generate_character, hand_at, head_skull, ink, lit,
+    rig, rig_arms, rig_belt, rig_hand, rig_legs, rig_robe, shade, sparkle, stroke,
+)
 
-# Colors
-OUTLINE = (40, 35, 35)
-ROBE_DARK = (38, 33, 45)
-ROBE_MID = (55, 48, 62)
-ROBE_LIGHT = (70, 62, 78)
-MASK_WHITE = (215, 210, 200)
-MASK_SHADOW = (180, 175, 165)
-BEAK = (185, 175, 145)
-BEAK_DARK = (145, 135, 110)
-BEAK_TIP = (160, 150, 120)
-BEAK_STITCH = (120, 110, 85)
-MASK_STITCH = (170, 160, 145)
-LENS_RED = (175, 35, 35)
-LENS_GLOW = (220, 70, 55)
-LENS_BRIGHT = (255, 120, 90)
-LENS_REFLECT = (240, 200, 180)
-HAT_DARK = (28, 22, 32)
-HAT_MID = (38, 32, 42)
-HAT_BAND = (95, 38, 38)
-HAT_BUCKLE = (180, 155, 55)
-GLOVE_DARK = (45, 35, 30)
-GLOVE = (60, 50, 40)
-VIAL_GREEN = (50, 140, 60)
-VIAL_AMBER = (180, 130, 40)
-VIAL_BLUE = (45, 90, 160)
-VIAL_GLASS = (100, 120, 110)
-VIAL_CORK = (160, 130, 80)
-BELT = (55, 45, 40)
-BELT_BUCKLE = (140, 120, 50)
-CENSER_METAL = (130, 118, 95)
-CENSER_DARK = (85, 78, 62)
-CENSER_LIGHT = (160, 148, 120)
-BLACK = (25, 25, 30)
-SMOKE_1 = (60, 140, 50, 160)
-SMOKE_2 = (70, 160, 55, 120)
-SMOKE_3 = (80, 180, 65, 80)
-NOSTRIL = (100, 90, 70)
-# New detail colors
-COAT_BUCKLE = (120, 100, 45)
-COAT_STRAP = (65, 55, 50)
-COAT_TAIL = (42, 36, 48)
-
-DOWN, UP, LEFT, RIGHT = 0, 1, 2, 3
+COAT = (70, 62, 84)
+HAT = (50, 44, 60)
+BAND = (170, 58, 60)
+MASK = (238, 228, 202)
+LENS = (132, 240, 120)
+LEATHER = (132, 90, 62)
+BRASS = (216, 172, 82)
+FLAME = (170, 255, 124)
+VIAL = (120, 226, 110)
 
 
-def ellipse(draw, cx, cy, rx, ry, fill, outline=OUTLINE):
-    draw.ellipse([cx - rx, cy - ry, cx + rx, cy + ry], fill=fill, outline=outline)
+def _hat(r, draw):
+    hx, hy, rx, ry, d = r.hx, r.head_cy, r.head_rx, r.head_ry, r.d
+    cx0 = hx - d * 0.8
+    by = hy - 5.8
+    brim = Ell(cx0 + d * 1.2, by, 16.2 if not d else 15.0, 4.4)
+    cel(draw, brim, HAT, sh=(0.0, 1.4))
+    crown = Poly([(cx0 - 7.6, by + 0.4), (cx0 - 7.0, by - 8.6), (cx0 - 5.6, by - 10.0), (cx0 + 5.6, by - 10.0),
+                  (cx0 + 7.0, by - 8.6), (cx0 + 7.6, by + 0.4)])
+    cel(draw, crown, HAT, sh=(1.6, 0.6), hi=(0.6, 0.6))
+    cel(draw, Poly([(cx0 - 7.6, by + 0.4), (cx0 + 7.6, by + 0.4), (cx0 + 7.4, by - 2.2), (cx0 - 7.4, by - 2.2)]),
+        BAND, sh=None)
 
 
-def draw_smoke(draw, sx, sy, frame):
-    """Draw animated green smoke puffs rising from a point. Uses per-frame offsets."""
-    # Four smoke particles that shift position each frame
-    offsets = [
-        # (dx, dy) per frame — 4 particles
-        [(-2, -4), (2, -8), (0, -12), (-1, -16)],
-        [(0, -6), (-2, -10), (2, -14), (1, -18)],
-        [(2, -4), (0, -8), (-2, -12), (0, -16)],
-        [(-2, -6), (2, -10), (0, -14), (-1, -18)],
-    ]
-    smokes = [(SMOKE_1, 4), (SMOKE_2, 3), (SMOKE_3, 2), (SMOKE_3, 2)]
-    for i, (color, size) in enumerate(smokes):
-        dx, dy = offsets[frame][i]
-        px, py = sx + dx, sy + dy
-        if size >= 4:
-            draw.rectangle([px, py, px + 3, py + 3], fill=color)
-        elif size >= 3:
-            draw.rectangle([px, py, px + 2, py + 2], fill=color)
-        else:
-            draw.rectangle([px, py, px + 1, py + 1], fill=color)
+def _mask(r, draw):
+    hx, hy, rx, ry, d = r.hx, r.head_cy, r.head_rx, r.head_ry, r.d
+    head_skull(r, draw, MASK, ears=False)
+    if r.back:
+        # the mask's straps and the coat's hood behind
+        cel(draw, Ell(hx, hy + 1.0, rx - 0.2, ry - 0.6), shade(COAT, 0.6), sh=(1.0, 1.0))
+        stroke(draw, [(hx - rx + 0.6, hy + 0.6), (hx + rx - 0.6, hy + 0.6)], 1.0, LEATHER)
+        return
+    if d:
+        # the beak in profile: long, curved, pointing forward and down
+        bx = hx + d * (rx - 1.4)
+        beak = Poly([(bx - d * 2.0, hy + 1.4), (bx + d * 5.0, hy + 3.6), (bx + d * 9.4, hy + 7.6),
+                     (bx + d * 10.4, hy + 9.6), (bx + d * 6.4, hy + 9.4), (bx - d * 0.6, hy + 9.8)])
+        cel(draw, beak, MASK, sh=(0.0, 1.2))
+        stroke(draw, [(bx + d * 0.6, hy + 5.6), (bx + d * 8.4, hy + 8.6)], 0.5, shade(MASK, 1.6))
+        Ell(bx + d * 2.6, hy + 4.4, 0.5, 0.4).draw(draw, fill=shade(MASK, 2.5))
+        lenses = ((hx + d * 1.6, 3.2),)
+    else:
+        beak = Poly([(hx - 4.2, hy + 3.4), (hx + 4.2, hy + 3.4), (hx + 3.0, hy + 8.6), (hx + 1.0, hy + 13.4),
+                     (hx, hy + 14.4), (hx - 1.0, hy + 13.4), (hx - 3.0, hy + 8.6)])
+        cel(draw, beak, MASK, sh=(1.4, 0.6))
+        stroke(draw, [(hx, hy + 5.0), (hx, hy + 12.4)], 0.5, shade(MASK, 1.5))
+        for s in (-1, 1):
+            Ell(hx + s * 1.4, hy + 5.4, 0.45, 0.35).draw(draw, fill=shade(MASK, 2.5))
+        lenses = ((hx - 5.0, 3.4), (hx + 5.0, 3.4))
+    for (lx, rad) in lenses:
+        cel(draw, Ell(lx, hy + 1.6, rad, rad), BRASS, sh=(0.5, 0.5))
+        cel(draw, Ell(lx, hy + 1.6, rad - 1.0, rad - 1.0), LENS, sh=(0.6, 0.6), tone=shade(LENS, 0.8), line=False)
+        Ell(lx - 0.9, hy + 0.6, 0.8, 0.8).draw(draw, fill=(255, 255, 255))
 
 
-def draw_potion_bottle(draw, cx, cy, color):
-    """Draw a small potion bottle with cork and glass detail."""
-    # Glass body
-    draw.rectangle([cx - 2, cy, cx + 2, cy + 5], fill=VIAL_GLASS, outline=OUTLINE)
-    # Liquid inside
-    draw.rectangle([cx - 1, cy + 1, cx + 1, cy + 4], fill=color)
-    # Cork
-    draw.rectangle([cx - 1, cy - 2, cx + 1, cy], fill=VIAL_CORK)
+def _capelet(r, draw):
+    cx, d = r.cx, r.d
+    y0 = r.sh_y - 2.6
+    if d:
+        shape = Poly([(cx - d * 4.6, y0), (cx + d * 4.0, y0), (cx + d * 6.0, r.sh_y + 4.4), (cx - d * 7.0, r.sh_y + 4.8)])
+    else:
+        w = r.sh_w + 2.4
+        shape = Poly([(cx - w + 2.6, y0), (cx + w - 2.6, y0), (cx + w, r.sh_y + 4.2), (cx + 2.0, r.sh_y + 5.6),
+                      (cx - 2.0, r.sh_y + 5.6), (cx - w, r.sh_y + 4.2)])
+    cel(draw, shape, shade(COAT, 0.5), sh=(1.2, 0.8))
 
 
-def draw_coat_buckles(draw, body_cx, body_cy):
-    """Draw leather coat buckle details on the front."""
-    # Three buckle straps across the chest
-    for i in range(3):
-        y = body_cy - 4 + i * 5
-        draw.line([(body_cx - 6, y), (body_cx + 6, y)], fill=COAT_STRAP, width=1)
-        # Small buckle in center
-        draw.rectangle([body_cx - 2, y - 1, body_cx + 2, y + 1], fill=COAT_BUCKLE)
-
-
-def draw_coat_tails(draw, body_cx, body_cy, base_y, frame):
-    """Draw longer coat tails that extend below the body."""
-    sway = [-2, 0, 2, 0][frame]
-    # Left coat tail
-    draw.polygon([
-        (body_cx - 8, body_cy + 8),
-        (body_cx - 4, body_cy + 8),
-        (body_cx - 3 + sway, base_y + 4),
-        (body_cx - 9 + sway, base_y + 4),
-    ], fill=COAT_TAIL, outline=OUTLINE)
-    # Right coat tail
-    draw.polygon([
-        (body_cx + 4, body_cy + 8),
-        (body_cx + 8, body_cy + 8),
-        (body_cx + 9 - sway, base_y + 4),
-        (body_cx + 3 - sway, base_y + 4),
-    ], fill=COAT_TAIL, outline=OUTLINE)
+def _lantern(r, draw, side, out):
+    h = hand_at(r, side, 0.0, 0.0, out)
+    x, y = h[0], h[1] + 1.4
+    stroke(draw, [(x, y - 0.4), (x, y + 1.6)], 0.5, BRASS)
+    cel(draw, Poly([(x - 2.2, y + 1.6), (x + 2.2, y + 1.6), (x + 1.4, y + 0.6), (x - 1.4, y + 0.6)]), BRASS, sh=None)
+    body = RRect(x - 2.3, y + 1.6, x + 2.3, y + 7.0, 0.8)
+    cel(draw, body, (220, 255, 200), sh=None, line_color=ink(BRASS))
+    flick = [0.0, 0.5, 0.0, -0.5][r.frame]
+    Poly([(x - 1.3, y + 6.2), (x + flick, y + 2.4), (x + 1.3, y + 6.2)]).draw(draw, fill=FLAME)
+    Ell(x, y + 5.4, 0.7, 0.9).draw(draw, fill=(250, 255, 236))
+    for sx in (-2.3, 2.3):
+        stroke(draw, [(x + sx, y + 1.6), (x + sx, y + 7.0)], 0.6, BRASS)
+    cel(draw, RRect(x - 2.6, y + 7.0, x + 2.6, y + 8.2, 0.5), BRASS, sh=None)
 
 
 def draw_plaguedoctor(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    leg_spread = [-4, 0, 4, 0][frame]
-
-    base_y = oy + 54 + bob
-    body_cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 20
-
-    if direction == DOWN:
-        # === Coat tails (behind legs) ===
-        draw_coat_tails(draw, body_cx, body_cy, base_y, frame)
-
-        # === Legs ===
-        draw.rectangle([body_cx - 10 + leg_spread, body_cy + 10,
-                        body_cx - 4 + leg_spread, base_y], fill=ROBE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx + 4 - leg_spread, body_cy + 10,
-                        body_cx + 10 - leg_spread, base_y], fill=ROBE_DARK, outline=OUTLINE)
-        # Boots
-        draw.rectangle([body_cx - 10 + leg_spread, base_y - 6,
-                        body_cx - 4 + leg_spread, base_y], fill=BLACK, outline=OUTLINE)
-        draw.rectangle([body_cx + 4 - leg_spread, base_y - 6,
-                        body_cx + 10 - leg_spread, base_y], fill=BLACK, outline=OUTLINE)
-
-        # === Body - dark flowing robes ===
-        ellipse(draw, body_cx, body_cy, 14, 12, ROBE_MID)
-        # Robe fold details for depth
-        draw.rectangle([body_cx - 8, body_cy - 6, body_cx - 4, body_cy + 6], fill=ROBE_DARK)
-        draw.rectangle([body_cx + 4, body_cy - 4, body_cx + 8, body_cy + 4], fill=ROBE_LIGHT)
-        # Robe hem highlight
-        draw.line([body_cx - 10, body_cy + 10, body_cx + 10, body_cy + 10], fill=ROBE_LIGHT, width=2)
-
-        # Leather coat buckle details
-        draw_coat_buckles(draw, body_cx, body_cy)
-
-        # Belt with potion vials
-        draw.rectangle([body_cx - 14, body_cy + 6, body_cx + 14, body_cy + 10],
-                       fill=BELT, outline=OUTLINE)
-        draw.rectangle([body_cx - 2, body_cy + 6, body_cx + 2, body_cy + 10], fill=BELT_BUCKLE)
-        # Potion bottles on belt
-        draw_potion_bottle(draw, body_cx - 9, body_cy + 6, VIAL_GREEN)
-        draw_potion_bottle(draw, body_cx + 9, body_cy + 6, VIAL_AMBER)
-        draw_potion_bottle(draw, body_cx - 5, body_cy + 7, VIAL_BLUE)
-
-        # === Arms ===
-        draw.rectangle([body_cx - 18, body_cy - 6, body_cx - 12, body_cy + 6],
-                       fill=ROBE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx + 12, body_cy - 6, body_cx + 18, body_cy + 6],
-                       fill=ROBE_DARK, outline=OUTLINE)
-        # Gloves
-        draw.rectangle([body_cx - 18, body_cy + 2, body_cx - 12, body_cy + 6],
-                       fill=GLOVE, outline=OUTLINE)
-        draw.rectangle([body_cx + 12, body_cy + 2, body_cx + 18, body_cy + 6],
-                       fill=GLOVE, outline=OUTLINE)
-
-        # === Censer in right hand ===
-        censer_sway = [-2, 0, 2, 0][frame]
-        cx_c = body_cx + 18 + censer_sway
-        cy_c = body_cy + 6
-        draw.ellipse([cx_c - 4, cy_c, cx_c + 4, cy_c + 6],
-                     fill=CENSER_METAL, outline=OUTLINE)
-        draw.rectangle([cx_c - 1, cy_c + 1, cx_c + 1, cy_c + 3], fill=CENSER_LIGHT)
-        # Chain hint
-        draw.line([(cx_c, cy_c - 2), (cx_c, cy_c)], fill=CENSER_DARK, width=2)
-
-        # Green smoke from censer
-        draw_smoke(draw, cx_c, cy_c - 2, frame)
-
-        # === Head - plague mask (front view) ===
-        # Tall hat crown (drawn first, behind brim)
-        draw.rectangle([body_cx - 10, head_cy - 16, body_cx + 10, head_cy - 2],
-                       fill=HAT_DARK, outline=OUTLINE)
-        # Rounded top of crown
-        ellipse(draw, body_cx, head_cy - 16, 10, 6, HAT_DARK)
-        # Hat crown highlight
-        draw.line([body_cx - 2, head_cy - 20, body_cx - 2, head_cy - 6], fill=HAT_MID, width=2)
-        # Wide brim
-        draw.rectangle([body_cx - 18, head_cy, body_cx + 18, head_cy + 4],
-                       fill=HAT_DARK, outline=OUTLINE)
-        # Hat band
-        draw.rectangle([body_cx - 12, head_cy - 2, body_cx + 12, head_cy + 2],
-                       fill=HAT_BAND, outline=None)
-        # Buckle on hat band
-        draw.rectangle([body_cx - 2, head_cy - 2, body_cx + 2, head_cy + 2],
-                       fill=HAT_BUCKLE)
-
-        # Mask face
-        ellipse(draw, body_cx, head_cy + 8, 10, 8, MASK_WHITE)
-        # Mask shadow for depth
-        draw.arc([body_cx - 10, head_cy, body_cx + 10, head_cy + 16],
-                 start=30, end=150, fill=MASK_SHADOW, width=2)
-
-        # Stitching detail on mask
-        draw.point((body_cx - 4, head_cy + 10), fill=MASK_STITCH)
-        draw.point((body_cx + 4, head_cy + 10), fill=MASK_STITCH)
-        draw.point((body_cx - 6, head_cy + 8), fill=MASK_STITCH)
-        draw.point((body_cx + 6, head_cy + 8), fill=MASK_STITCH)
-
-        # BIG BEAK - the signature feature, extends well below the face
-        # Main beak shape - large diamond/kite pointing down, curved
-        draw.polygon([
-            (body_cx, head_cy + 6),        # top of beak (at nose bridge)
-            (body_cx - 6, head_cy + 12),   # left widest point
-            (body_cx - 2, head_cy + 20),   # left narrowing
-            (body_cx, head_cy + 22),       # bottom tip (long!)
-            (body_cx + 2, head_cy + 20),   # right narrowing
-            (body_cx + 6, head_cy + 12),   # right widest point
-        ], fill=BEAK, outline=OUTLINE)
-        # Beak center line (stitching ridge)
-        draw.line([body_cx, head_cy + 8, body_cx, head_cy + 20], fill=BEAK_STITCH, width=2)
-        # Curved tip shading
-        draw.rectangle([body_cx - 1, head_cy + 20, body_cx + 1, head_cy + 22], fill=BEAK_TIP)
-        draw.point((body_cx, head_cy + 22), fill=BEAK_DARK)
-        # Nostril dots on beak (larger, more prominent)
-        draw.ellipse([body_cx - 3, head_cy + 15, body_cx - 1, head_cy + 17], fill=NOSTRIL)
-        draw.ellipse([body_cx + 1, head_cy + 15, body_cx + 3, head_cy + 17], fill=NOSTRIL)
-        # Beak cross-stitch marks
-        draw.point((body_cx - 3, head_cy + 12), fill=BEAK_STITCH)
-        draw.point((body_cx + 3, head_cy + 12), fill=BEAK_STITCH)
-        draw.point((body_cx - 2, head_cy + 14), fill=BEAK_STITCH)
-        draw.point((body_cx + 2, head_cy + 14), fill=BEAK_STITCH)
-
-        # Red lens eyes - larger and more dramatic
-        ellipse(draw, body_cx - 6, head_cy + 6, 4, 4, LENS_RED)
-        ellipse(draw, body_cx + 6, head_cy + 6, 4, 4, LENS_RED)
-        # Inner glow
-        draw.rectangle([body_cx - 7, head_cy + 5, body_cx - 5, head_cy + 7], fill=LENS_GLOW)
-        draw.rectangle([body_cx + 5, head_cy + 5, body_cx + 7, head_cy + 7], fill=LENS_GLOW)
-        # Bright center dot
-        draw.point((body_cx - 4, head_cy + 4), fill=LENS_BRIGHT)
-        draw.point((body_cx + 4, head_cy + 4), fill=LENS_BRIGHT)
-        # Reflection lines
-        draw.point((body_cx - 8, head_cy + 4), fill=LENS_REFLECT)
-        draw.point((body_cx + 8, head_cy + 4), fill=LENS_REFLECT)
-
-    elif direction == UP:
-        # === Coat tails (behind legs) ===
-        draw_coat_tails(draw, body_cx, body_cy, base_y, frame)
-
-        # === Legs ===
-        draw.rectangle([body_cx - 10 + leg_spread, body_cy + 10,
-                        body_cx - 4 + leg_spread, base_y], fill=ROBE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx + 4 - leg_spread, body_cy + 10,
-                        body_cx + 10 - leg_spread, base_y], fill=ROBE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx - 10 + leg_spread, base_y - 6,
-                        body_cx - 4 + leg_spread, base_y], fill=BLACK, outline=OUTLINE)
-        draw.rectangle([body_cx + 4 - leg_spread, base_y - 6,
-                        body_cx + 10 - leg_spread, base_y], fill=BLACK, outline=OUTLINE)
-
-        # === Body - back of robes ===
-        ellipse(draw, body_cx, body_cy, 14, 12, ROBE_MID)
-        ellipse(draw, body_cx, body_cy - 2, 10, 8, ROBE_DARK)
-        # Robe back fold detail
-        draw.line([body_cx, body_cy - 8, body_cx, body_cy + 8], fill=ROBE_LIGHT, width=2)
-
-        # Belt (visible from behind)
-        draw.rectangle([body_cx - 14, body_cy + 6, body_cx + 14, body_cy + 10],
-                       fill=BELT, outline=OUTLINE)
-        # Vials visible from behind
-        draw_potion_bottle(draw, body_cx - 8, body_cy + 6, VIAL_GREEN)
-        draw_potion_bottle(draw, body_cx + 8, body_cy + 6, VIAL_AMBER)
-
-        # === Arms ===
-        draw.rectangle([body_cx - 18, body_cy - 6, body_cx - 12, body_cy + 6],
-                       fill=ROBE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx + 12, body_cy - 6, body_cx + 18, body_cy + 6],
-                       fill=ROBE_DARK, outline=OUTLINE)
-        # Gloves
-        draw.rectangle([body_cx - 18, body_cy + 2, body_cx - 12, body_cy + 6],
-                       fill=GLOVE, outline=OUTLINE)
-        draw.rectangle([body_cx + 12, body_cy + 2, body_cx + 18, body_cy + 6],
-                       fill=GLOVE, outline=OUTLINE)
-
-        # Censer in right hand (visible from behind)
-        censer_sway = [-2, 0, 2, 0][frame]
-        cx_c = body_cx + 18 + censer_sway
-        cy_c = body_cy + 6
-        draw.ellipse([cx_c - 4, cy_c, cx_c + 4, cy_c + 6],
-                     fill=CENSER_METAL, outline=OUTLINE)
-        draw_smoke(draw, cx_c, cy_c - 2, frame)
-
-        # === Head (back of tall hat) ===
-        # Tall crown from behind
-        draw.rectangle([body_cx - 10, head_cy - 16, body_cx + 10, head_cy - 2],
-                       fill=HAT_DARK, outline=OUTLINE)
-        ellipse(draw, body_cx, head_cy - 16, 10, 6, HAT_DARK)
-        # Crown back highlight
-        draw.line([body_cx + 2, head_cy - 20, body_cx + 2, head_cy - 6], fill=HAT_MID, width=2)
-        # Brim
-        draw.rectangle([body_cx - 18, head_cy, body_cx + 18, head_cy + 4],
-                       fill=HAT_DARK, outline=OUTLINE)
-        # Back of head/mask visible under brim
-        ellipse(draw, body_cx, head_cy + 6, 12, 8, ROBE_DARK)
-        # Hat band (visible from behind)
-        draw.rectangle([body_cx - 12, head_cy - 2, body_cx + 12, head_cy + 2],
-                       fill=HAT_BAND, outline=None)
-
-    elif direction == LEFT:
-        # === Coat tails (behind legs, side view) ===
-        sway = [-2, 0, 2, 0][frame]
-        draw.polygon([
-            (body_cx + 2, body_cy + 8),
-            (body_cx + 6, body_cy + 8),
-            (body_cx + 7 - sway, base_y + 4),
-            (body_cx + 1 - sway, base_y + 4),
-        ], fill=COAT_TAIL, outline=OUTLINE)
-
-        # === Legs (side view) ===
-        draw.rectangle([body_cx - 2 - leg_spread, body_cy + 10,
-                        body_cx + 4 - leg_spread, base_y], fill=ROBE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx - 2 - leg_spread, base_y - 6,
-                        body_cx + 4 - leg_spread, base_y], fill=BLACK, outline=OUTLINE)
-        draw.rectangle([body_cx - 8 + leg_spread, body_cy + 10,
-                        body_cx - 2 + leg_spread, base_y], fill=ROBE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx - 8 + leg_spread, base_y - 6,
-                        body_cx - 2 + leg_spread, base_y], fill=BLACK, outline=OUTLINE)
-
-        # === Body ===
-        ellipse(draw, body_cx - 2, body_cy, 12, 12, ROBE_MID)
-        ellipse(draw, body_cx - 2, body_cy - 2, 8, 8, ROBE_DARK)
-        # Robe side fold
-        draw.line([body_cx - 6, body_cy - 6, body_cx - 6, body_cy + 6], fill=ROBE_LIGHT, width=2)
-        # Coat buckle details (side view)
-        for i in range(2):
-            y = body_cy - 2 + i * 5
-            draw.line([(body_cx - 6, y), (body_cx + 4, y)], fill=COAT_STRAP, width=1)
-            draw.rectangle([body_cx - 2, y - 1, body_cx + 1, y + 1], fill=COAT_BUCKLE)
-        # Belt
-        draw.rectangle([body_cx - 14, body_cy + 6, body_cx + 10, body_cy + 10],
-                       fill=BELT, outline=OUTLINE)
-        draw.rectangle([body_cx - 4, body_cy + 6, body_cx, body_cy + 10], fill=BELT_BUCKLE)
-        # Potion vials on belt (side view - fewer visible)
-        draw_potion_bottle(draw, body_cx + 4, body_cy + 6, VIAL_GREEN)
-        draw_potion_bottle(draw, body_cx + 8, body_cy + 7, VIAL_AMBER)
-
-        # === Arm (front - holding censer) ===
-        draw.rectangle([body_cx - 14, body_cy - 4, body_cx - 8, body_cy + 6],
-                       fill=ROBE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx - 14, body_cy + 2, body_cx - 8, body_cy + 6],
-                       fill=GLOVE, outline=OUTLINE)
-        # Censer
-        censer_sway = [-2, 0, 2, 0][frame]
-        cx_c = body_cx - 16
-        cy_c = body_cy + 6 + censer_sway
-        draw.ellipse([cx_c - 4, cy_c, cx_c + 4, cy_c + 6],
-                     fill=CENSER_METAL, outline=OUTLINE)
-        draw.rectangle([cx_c - 1, cy_c + 1, cx_c + 1, cy_c + 3], fill=CENSER_LIGHT)
-        draw.line([(cx_c, cy_c - 2), (cx_c, cy_c)], fill=CENSER_DARK, width=2)
-        # Green smoke
-        draw_smoke(draw, cx_c, cy_c - 2, frame)
-
-        # === Head (side, facing left) - beak prominent ===
-        # Tall hat (side view)
-        draw.rectangle([body_cx - 10, head_cy - 16, body_cx + 6, head_cy - 2],
-                       fill=HAT_DARK, outline=OUTLINE)
-        ellipse(draw, body_cx - 2, head_cy - 16, 8, 6, HAT_DARK)
-        # Hat side highlight
-        draw.line([body_cx - 6, head_cy - 20, body_cx - 6, head_cy - 6], fill=HAT_MID, width=2)
-        # Wide brim
-        draw.rectangle([body_cx - 18, head_cy, body_cx + 8, head_cy + 4],
-                       fill=HAT_DARK, outline=OUTLINE)
-        # Hat band
-        draw.rectangle([body_cx - 12, head_cy - 2, body_cx + 6, head_cy + 2],
-                       fill=HAT_BAND, outline=None)
-        # Buckle on hat band
-        draw.rectangle([body_cx - 4, head_cy - 2, body_cx, head_cy + 2],
-                       fill=HAT_BUCKLE)
-
-        # Mask (side view)
-        ellipse(draw, body_cx - 4, head_cy + 8, 8, 6, MASK_WHITE)
-        # Mask shadow
-        draw.rectangle([body_cx - 1, head_cy + 9, body_cx + 1, head_cy + 11], fill=MASK_SHADOW)
-        # Mask stitching
-        draw.point((body_cx - 2, head_cy + 10), fill=MASK_STITCH)
-        draw.point((body_cx - 4, head_cy + 10), fill=MASK_STITCH)
-
-        # Beak pointing left - long and prominent (side view, curved)
-        draw.polygon([
-            (body_cx - 10, head_cy + 6),    # top base
-            (body_cx - 22, head_cy + 9),    # tip area
-            (body_cx - 24, head_cy + 10),   # tip (far left, long!)
-            (body_cx - 22, head_cy + 11),   # tip area
-            (body_cx - 10, head_cy + 14),   # bottom base
-        ], fill=BEAK, outline=OUTLINE)
-        # Beak center stitching line
-        draw.line([body_cx - 12, head_cy + 10, body_cx - 22, head_cy + 10], fill=BEAK_STITCH, width=2)
-        # Curved tip
-        draw.rectangle([body_cx - 25, head_cy + 9, body_cx - 23, head_cy + 11], fill=BEAK_DARK)
-        # Nostril dots
-        draw.ellipse([body_cx - 19, head_cy + 7, body_cx - 17, head_cy + 9], fill=NOSTRIL)
-        # Cross-stitch marks
-        draw.point((body_cx - 14, head_cy + 8), fill=BEAK_STITCH)
-        draw.point((body_cx - 16, head_cy + 9), fill=BEAK_STITCH)
-        draw.point((body_cx - 14, head_cy + 12), fill=BEAK_STITCH)
-
-        # Red lens eye (side - one visible)
-        ellipse(draw, body_cx - 8, head_cy + 6, 4, 4, LENS_RED)
-        draw.rectangle([body_cx - 9, head_cy + 5, body_cx - 7, head_cy + 7], fill=LENS_GLOW)
-        draw.point((body_cx - 6, head_cy + 4), fill=LENS_BRIGHT)
-        draw.point((body_cx - 10, head_cy + 4), fill=LENS_REFLECT)
-
-    elif direction == RIGHT:
-        # === Coat tails (behind legs, side view) ===
-        sway = [-2, 0, 2, 0][frame]
-        draw.polygon([
-            (body_cx - 6, body_cy + 8),
-            (body_cx - 2, body_cy + 8),
-            (body_cx - 1 + sway, base_y + 4),
-            (body_cx - 7 + sway, base_y + 4),
-        ], fill=COAT_TAIL, outline=OUTLINE)
-
-        # === Legs ===
-        draw.rectangle([body_cx - 2 + leg_spread, body_cy + 10,
-                        body_cx + 4 + leg_spread, base_y], fill=ROBE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx - 2 + leg_spread, base_y - 6,
-                        body_cx + 4 + leg_spread, base_y], fill=BLACK, outline=OUTLINE)
-        draw.rectangle([body_cx + 4 - leg_spread, body_cy + 10,
-                        body_cx + 10 - leg_spread, base_y], fill=ROBE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx + 4 - leg_spread, base_y - 6,
-                        body_cx + 10 - leg_spread, base_y], fill=BLACK, outline=OUTLINE)
-
-        # === Body ===
-        ellipse(draw, body_cx + 2, body_cy, 12, 12, ROBE_MID)
-        ellipse(draw, body_cx + 2, body_cy - 2, 8, 8, ROBE_DARK)
-        # Robe side fold
-        draw.line([body_cx + 6, body_cy - 6, body_cx + 6, body_cy + 6], fill=ROBE_LIGHT, width=2)
-        # Coat buckle details (side view)
-        for i in range(2):
-            y = body_cy - 2 + i * 5
-            draw.line([(body_cx - 4, y), (body_cx + 6, y)], fill=COAT_STRAP, width=1)
-            draw.rectangle([body_cx - 1, y - 1, body_cx + 2, y + 1], fill=COAT_BUCKLE)
-        # Belt
-        draw.rectangle([body_cx - 10, body_cy + 6, body_cx + 14, body_cy + 10],
-                       fill=BELT, outline=OUTLINE)
-        draw.rectangle([body_cx, body_cy + 6, body_cx + 4, body_cy + 10], fill=BELT_BUCKLE)
-        # Potion vials on belt
-        draw_potion_bottle(draw, body_cx - 6, body_cy + 6, VIAL_GREEN)
-        draw_potion_bottle(draw, body_cx - 10, body_cy + 7, VIAL_AMBER)
-
-        # === Arm (holding censer) ===
-        draw.rectangle([body_cx + 8, body_cy - 4, body_cx + 14, body_cy + 6],
-                       fill=ROBE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx + 8, body_cy + 2, body_cx + 14, body_cy + 6],
-                       fill=GLOVE, outline=OUTLINE)
-        # Censer
-        censer_sway = [-2, 0, 2, 0][frame]
-        cx_c = body_cx + 16
-        cy_c = body_cy + 6 + censer_sway
-        draw.ellipse([cx_c - 4, cy_c, cx_c + 4, cy_c + 6],
-                     fill=CENSER_METAL, outline=OUTLINE)
-        draw.rectangle([cx_c - 1, cy_c + 1, cx_c + 1, cy_c + 3], fill=CENSER_LIGHT)
-        draw.line([(cx_c, cy_c - 2), (cx_c, cy_c)], fill=CENSER_DARK, width=2)
-        # Green smoke
-        draw_smoke(draw, cx_c, cy_c - 2, frame)
-
-        # === Head (side, facing right) - beak prominent ===
-        # Tall hat (side view)
-        draw.rectangle([body_cx - 6, head_cy - 16, body_cx + 10, head_cy - 2],
-                       fill=HAT_DARK, outline=OUTLINE)
-        ellipse(draw, body_cx + 2, head_cy - 16, 8, 6, HAT_DARK)
-        # Hat side highlight
-        draw.line([body_cx + 6, head_cy - 20, body_cx + 6, head_cy - 6], fill=HAT_MID, width=2)
-        # Wide brim
-        draw.rectangle([body_cx - 8, head_cy, body_cx + 18, head_cy + 4],
-                       fill=HAT_DARK, outline=OUTLINE)
-        # Hat band
-        draw.rectangle([body_cx - 6, head_cy - 2, body_cx + 12, head_cy + 2],
-                       fill=HAT_BAND, outline=None)
-        # Buckle on hat band
-        draw.rectangle([body_cx, head_cy - 2, body_cx + 4, head_cy + 2],
-                       fill=HAT_BUCKLE)
-
-        # Mask (side view)
-        ellipse(draw, body_cx + 4, head_cy + 8, 8, 6, MASK_WHITE)
-        # Mask shadow
-        draw.rectangle([body_cx - 1, head_cy + 9, body_cx + 1, head_cy + 11], fill=MASK_SHADOW)
-        # Mask stitching
-        draw.point((body_cx + 2, head_cy + 10), fill=MASK_STITCH)
-        draw.point((body_cx + 4, head_cy + 10), fill=MASK_STITCH)
-
-        # Beak pointing right - long and prominent (side view, curved)
-        draw.polygon([
-            (body_cx + 10, head_cy + 6),    # top base
-            (body_cx + 22, head_cy + 9),    # tip area
-            (body_cx + 24, head_cy + 10),   # tip (far right, long!)
-            (body_cx + 22, head_cy + 11),   # tip area
-            (body_cx + 10, head_cy + 14),   # bottom base
-        ], fill=BEAK, outline=OUTLINE)
-        # Beak center stitching line
-        draw.line([body_cx + 12, head_cy + 10, body_cx + 22, head_cy + 10], fill=BEAK_STITCH, width=2)
-        # Curved tip
-        draw.rectangle([body_cx + 23, head_cy + 9, body_cx + 25, head_cy + 11], fill=BEAK_DARK)
-        # Nostril dots
-        draw.ellipse([body_cx + 17, head_cy + 7, body_cx + 19, head_cy + 9], fill=NOSTRIL)
-        # Cross-stitch marks
-        draw.point((body_cx + 14, head_cy + 8), fill=BEAK_STITCH)
-        draw.point((body_cx + 16, head_cy + 9), fill=BEAK_STITCH)
-        draw.point((body_cx + 14, head_cy + 12), fill=BEAK_STITCH)
-
-        # Red lens eye (side - one visible)
-        ellipse(draw, body_cx + 8, head_cy + 6, 4, 4, LENS_RED)
-        draw.rectangle([body_cx + 7, head_cy + 5, body_cx + 9, head_cy + 7], fill=LENS_GLOW)
-        draw.point((body_cx + 6, head_cy + 4), fill=LENS_BRIGHT)
-        draw.point((body_cx + 10, head_cy + 4), fill=LENS_REFLECT)
+    r = rig(ox, oy, direction, frame, head=0.95)
+    d = r.d
+    lamp_side = (1 if not r.back else -1) if not d else d
+    out = 1.4 if not d else 0.6
+    if d:
+        rig_arms(r, draw, COAT, LEATHER, layer="far")
+    rig_legs(r, draw, shade(COAT, 1.0), shade(LEATHER, 1.0))
+    rig_robe(r, draw, COAT, flare=3.6, split=True)
+    rig_belt(r, draw, LEATHER, buckle=BRASS)
+    if not r.back:
+        for i, x in enumerate((-3.6, 3.8) if not d else (d * 2.4,)):
+            vx = r.cx + x
+            cel(draw, RRect(vx - 1.0, r.waist_y + 2.6, vx + 1.0, r.waist_y + 6.0, 0.6), VIAL, sh=(0.4, 0.0),
+                line_color=ink(VIAL))
+            cel(draw, RRect(vx - 0.7, r.waist_y + 1.8, vx + 0.7, r.waist_y + 2.8, 0.3), LEATHER, sh=None)
+    _capelet(r, draw)
+    rig_arms(r, draw, COAT, LEATHER, layer="near", hands=False, out=0.0)
+    _mask(r, draw)
+    _hat(r, draw)
+    if not r.back:
+        _lantern(r, draw, lamp_side, out)
+    for side in ((-1, 1) if not d else (d,)):
+        rig_hand(r, draw, side, LEATHER, out=out if side == lamp_side else 0.0)
 
 
 def main():
-    # Rendering (supersampling + the shared detail pass) lives in sprite_base so
-    # every character sheet is produced the same way; this script only draws.
-    import os
-    import sys
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from sprite_base import generate_character
-
     generate_character("plaguedoctor", draw_func=draw_plaguedoctor)
 
 

@@ -1,519 +1,193 @@
 #!/usr/bin/env python3
-"""Generate sprites/gladiator.png — 4-column x 4-row character spritesheet.
+"""Generate sprites/gladiator.png -- the Gladiator.
 
-256x256 PNG, 64x64 per frame.
-Row layout: Down=0, Up=1, Left=2, Right=3
-4 walking animation frames per direction.
-
-Style matches Spaceman: big round head, round body, small limbs, dark outlines.
-Theme: Roman gladiator — bronze helmet with tall flowing red crest, gold-trimmed
-armor, short sword in right hand, round shield on left arm.
-Enhanced 64x64: detailed shield face with cross emblem, sword with fuller/guard,
-muscle definition on arms, pauldrons with rivet dots.
+A Roman arena fighter: a bronze galea whose red horsehair crest is the
+silhouette, a muscled cuirass over a red tunic, a skirt of leather strips,
+sandals, a big round shield and a gladius. In profile the shield rides on the
+far arm behind him and the sword is in front.
 """
 
-from PIL import Image, ImageDraw
+import os
+import sys
 
-FRAME_SIZE = 128
-DRAW_SIZE = 64   # Internal drawing size (upscaled to FRAME_SIZE)
-COLS = 4
-ROWS = 4
-IMG_W = FRAME_SIZE * COLS   # 512
-IMG_H = FRAME_SIZE * ROWS   # 512
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from sprite_base import (
+    SKIN_TAN, STEEL, GOLD, LEATHER, Ell, Limb, Poly, arc_pts, blade, cel, generate_character,
+    hand_at, head_face, head_skull, ink, lit, rig, rig_arms, rig_hair, rig_hand, rig_legs,
+    rig_torso, round_shield, shade, star, stroke, arm_pts,
+)
 
-# Colors — matching Spaceman's palette approach (dark outline + fill + highlight)
-OUTLINE = (40, 35, 35)
-SKIN = (220, 180, 140)
-SKIN_DARK = (185, 145, 110)
-BRONZE = (180, 135, 55)
-BRONZE_LIGHT = (215, 170, 75)
-BRONZE_DARK = (130, 95, 35)
-RED = (175, 45, 45)
-RED_DARK = (130, 35, 35)
-RED_LIGHT = (200, 70, 70)
-RED_BRIGHT = (220, 55, 55)
-GOLD = (245, 200, 65)
-GOLD_DARK = (200, 160, 40)
-BROWN = (110, 75, 45)
-BROWN_DARK = (80, 55, 35)
-BLACK = (30, 30, 30)
-WHITE_GLINT = (255, 245, 220)
-STEEL = (170, 180, 195)
-STEEL_LIGHT = (210, 215, 225)
-STEEL_DARK = (120, 130, 145)
-SHIELD_BROWN = (140, 90, 50)
-SHIELD_BROWN_DARK = (100, 65, 35)
-# New detail colors
-MUSCLE_LINE = (200, 160, 120)
-RIVET = (230, 210, 130)
-SHIELD_EMBLEM = (170, 120, 60)
-
-DOWN, UP, LEFT, RIGHT = 0, 1, 2, 3
+BRONZE = (234, 176, 76)
+RED = (212, 58, 54)
+HAIR = (92, 60, 44)
+IRIS = (112, 70, 44)
 
 
-def ellipse(draw, cx, cy, rx, ry, fill, outline=OUTLINE):
-    """Draw an outlined ellipse centered at (cx, cy)."""
-    draw.ellipse([cx - rx, cy - ry, cx + rx, cy + ry], fill=fill, outline=outline)
+def _helmet(r, draw):
+    hx, hy, rx, ry, d = r.hx, r.head_cy, r.head_rx, r.head_ry, r.d
+    # crest first: it stands on the dome, and the dome covers its root
+    if d:
+        pts = arc_pts(hx - d * 1.6, hy - ry + 0.6, rx + 0.4, 7.4, 180, 360, 24)
+        pts = [(x, y) for (x, y) in pts]
+        crest = Poly(pts + [(hx + d * rx * 0.7, hy - ry + 1.4), (hx - d * (rx + 1.6), hy - ry + 1.4)])
+        cel(draw, crest, RED, sh=(0.0, 1.4))
+        for i in range(5):
+            x = hx - d * 1.6 + (i - 2) * 3.4
+            stroke(draw, [(x, hy - ry - 4.8 + abs(i - 2) * 1.2), (x - d * 0.8, hy - ry + 0.2)], 0.5,
+                   shade(RED, 1.2))
+    else:
+        crest = Ell(hx, hy - ry - 2.0, 4.2, 6.6)
+        cel(draw, crest, RED, sh=(1.2, 0.8))
+        stroke(draw, [(hx - 1.2, hy - ry - 6.6), (hx - 1.6, hy - ry - 1.0)], 0.7, lit(RED, 1.0))
+        stroke(draw, [(hx + 1.4, hy - ry - 6.0), (hx + 1.6, hy - ry + 0.6)], 0.6, shade(RED, 1.3))
+    # dome down to the brow, with cheek guards
+    brow = hy - 2.6
+    dome = arc_pts(hx, hy - 0.4, rx + 1.1, ry + 1.2, 182, 358, 30)
+    if d:
+        # the cheek guard hangs behind the near eye, in front of the ear
+        cheek = [(hx + d * (rx + 0.8), brow + 0.2), (hx - d * 0.4, brow + 0.4), (hx - d * 0.9, hy + 6.4),
+                 (hx - d * 4.6, hy + 7.0), (hx - d * (rx + 1.4), hy + 4.0)]
+        shape = Poly(dome + (cheek if d > 0 else cheek[::-1]))
+    elif r.back:
+        shape = Poly(dome + [(hx + rx + 1.2, hy + 7.0), (hx + rx - 1.0, hy + 9.0),
+                             (hx - rx + 1.0, hy + 9.0), (hx - rx - 1.2, hy + 7.0)])
+    else:
+        shape = Poly(dome + [(hx + rx + 1.2, hy + 1.0), (hx + rx - 0.4, hy + 7.4), (hx + rx - 3.2, hy + 7.0),
+                             (hx + rx - 3.6, brow + 1.4), (hx - rx + 3.6, brow + 1.4),
+                             (hx - rx + 3.2, hy + 7.0), (hx - rx + 0.4, hy + 7.4), (hx - rx - 1.2, hy + 1.0)])
+    cel(draw, shape, BRONZE, sh=(1.4, 1.1), hi=(0.8, 0.8))
+    # brow band and rivets
+    if not r.back:
+        y = brow
+        x0, x1 = (hx - rx + 3.4, hx + rx - 3.4) if not d else sorted((hx + d * 0.2, hx + d * (rx - 0.6)))
+        stroke(draw, [(x0, y), (x1, y)], 1.0, shade(BRONZE, 1.3))
+        for x in ((hx - rx + 1.6, hx + rx - 1.6) if not d else (hx - d * 1.6,)):
+            Ell(x, hy + 2.0, 0.7, 0.7).draw(draw, fill=lit(BRONZE, 1.4))
 
 
-def pill(draw, cx, cy, rx, ry, fill, outline=OUTLINE):
-    """Draw a rounded rectangle (pill shape) as an ellipse."""
-    draw.rounded_rectangle([cx - rx, cy - ry, cx + rx, cy + ry],
-                           radius=min(rx, ry), fill=fill, outline=outline)
+def _skirt(r, draw):
+    cx, d = r.cx, r.d
+    top, bot = r.waist_y + 0.8, r.hip_y + 3.4
+    if d:
+        pts = [(cx - d * 4.6, top), (cx + d * 4.8, top), (cx + d * 5.8, bot), (cx - d * 5.6, bot)]
+    else:
+        w = r.hip_w + 0.2
+        pts = [(cx - w, top), (cx + w, top), (cx + w + 1.4, bot), (cx - w - 1.4, bot)]
+    shape = Poly(pts)
+    cel(draw, shape, LEATHER, sh=(1.0, 0.6))
+    n = 5 if not d else 4
+    x0, x1 = pts[3][0], pts[2][0]
+    for i in range(1, n):
+        t = i / float(n)
+        xt = pts[0][0] + (pts[1][0] - pts[0][0]) * t
+        xb = x0 + (x1 - x0) * t
+        stroke(draw, [(xt, top + 0.6), (xb, bot - 0.4)], 0.6, shade(LEATHER, 1.6))
+    for i in range(n):
+        t = (i + 0.5) / float(n)
+        xt = pts[0][0] + (pts[1][0] - pts[0][0]) * t
+        Ell(xt, top + 1.2, 0.6, 0.6).draw(draw, fill=GOLD)
 
 
-def draw_shield_emblem(draw, cx, cy):
-    """Draw a cross emblem pattern on the shield face."""
-    # Vertical bar of cross
-    draw.line([(cx, cy - 6), (cx, cy + 6)], fill=SHIELD_EMBLEM, width=2)
-    # Horizontal bar of cross
-    draw.line([(cx - 6, cy), (cx + 6, cy)], fill=SHIELD_EMBLEM, width=2)
-    # Corner rivets
-    for dx, dy in [(-4, -4), (4, -4), (-4, 4), (4, 4)]:
-        draw.point((cx + dx, cy + dy), fill=RIVET)
+def _cuirass(r, draw):
+    cx, d = r.cx, r.d
+    top, bot = r.sh_y - 2.0, r.waist_y + 1.2
+    if d:
+        shape = Poly([(cx - d * 3.2, top), (cx + d * 2.8, top), (cx + d * 4.6, top + 2.0),
+                      (cx + d * 4.4, bot), (cx - d * 4.2, bot), (cx - d * 4.6, top + 1.6)])
+    else:
+        w = r.sh_w - 0.4
+        shape = Poly([(cx - w + 1.6, top), (cx + w - 1.6, top), (cx + w, top + 1.4), (cx + w - 0.6, bot),
+                      (cx - w + 0.6, bot), (cx - w, top + 1.4)])
+    cel(draw, shape, BRONZE, sh=(1.3, 0.8), hi=(0.7, 0.7))
+    if not r.back and not d:
+        # sculpted chest and abdomen
+        stroke(draw, [(cx - 4.2, r.sh_y + 1.8), (cx - 1.0, r.sh_y + 2.8), (cx, r.sh_y + 1.6)], 0.6,
+               shade(BRONZE, 1.3))
+        stroke(draw, [(cx + 4.2, r.sh_y + 1.8), (cx + 1.0, r.sh_y + 2.8), (cx, r.sh_y + 1.6)], 0.6,
+               shade(BRONZE, 1.3))
+        stroke(draw, [(cx, r.sh_y + 3.4), (cx, bot - 0.8)], 0.55, shade(BRONZE, 1.3))
+
+
+def _pauldron(r, draw, side):
+    sx, sy = r.shoulder(side)
+    k = 1 if not r.d else 0.9
+    for i, dy in enumerate((0.0, 1.8)):
+        cel(draw, Ell(sx + (side if not r.d else 0) * 0.6, sy - 0.8 + dy, 3.6 * k - i * 0.4, 2.4 - i * 0.3),
+            BRONZE if i == 0 else shade(BRONZE, 0.5), sh=(0.6, 0.6))
+
+
+def _vambrace(r, draw, side, reach=0.0):
+    _, e, w, h = arm_pts(r, side, reach)
+    px, py = (e[0] + w[0] * 2) / 3.0, (e[1] + w[1] * 2) / 3.0
+    cel(draw, Limb([((e[0] + px) / 2, (e[1] + py) / 2), (w[0], w[1] - 0.2)], [2.2, 2.1]),
+        BRONZE if r.near(side) else shade(BRONZE, 0.6), sh=(0.5, 0.3))
+
+
+def _shield(r, draw, side):
+    h = hand_at(r, side)
+    if r.back:
+        round_shield(draw, h[0] + side * 0.6, h[1] - 3.4, 7.2, 7.2, LEATHER, rim=BRONZE, boss=None)
+        stroke(draw, [(h[0] - 2.4, h[1] - 3.4), (h[0] + 3.0, h[1] - 3.4)], 1.2, shade(LEATHER, 1.6))
+        return
+    if r.d:
+        x = r.cx - r.d * 3.4
+        round_shield(draw, x, r.sh_y + 3.4, 7.4, 7.6, RED, rim=BRONZE, boss=BRONZE)
+        return
+
+    def eagle(dr, x, y):
+        star(dr, x, y - 0.2, 4.6, lit(RED, 0.6), points=4, inner=0.28)
+
+    round_shield(draw, h[0] + side * 1.8, h[1] - 3.2, 7.4, 7.4, RED, rim=BRONZE, boss=BRONZE, emblem=eagle)
+
+
+def _sword(r, draw, side):
+    h = hand_at(r, side)
+    if r.d:
+        blade(draw, h[0], h[1], 90 - r.d * 38, length=11.5, width=1.6)
+    elif r.back:
+        blade(draw, h[0], h[1], 90 + side * 22, length=11.5, width=1.6)
+    else:
+        blade(draw, h[0], h[1], 90 + side * 30, length=11.5, width=1.6)
 
 
 def draw_gladiator(draw, ox, oy, direction, frame):
-    """Draw a single gladiator frame at offset (ox, oy).
-
-    Proportions match Spaceman: big round head ~22px, body ~16px tall,
-    small stick legs, centered in 64x64 frame.
-    """
-    # Walking bob
-    bob = [0, -2, 0, -1][frame]
-    leg_spread = [-4, 0, 4, 0][frame]
-
-    # Anchor: bottom of feet at oy+56, so character sits in lower portion of frame
-    base_y = oy + 54 + bob
-    # Body center
-    body_cx = ox + 32
-    body_cy = base_y - 20
-    # Head center (big round head above body)
-    head_cy = body_cy - 20
-
-    if direction == DOWN:
-        # --- Legs (behind body) ---
-        # Left leg
-        draw.rectangle([body_cx - 10 + leg_spread, body_cy + 10,
-                        body_cx - 4 + leg_spread, base_y], fill=BROWN, outline=OUTLINE)
-        # Right leg
-        draw.rectangle([body_cx + 4 - leg_spread, body_cy + 10,
-                        body_cx + 10 - leg_spread, base_y], fill=BROWN, outline=OUTLINE)
-        # Greave accents
-        draw.rectangle([body_cx - 10 + leg_spread, base_y - 6,
-                        body_cx - 4 + leg_spread, base_y], fill=BRONZE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx + 4 - leg_spread, base_y - 6,
-                        body_cx + 10 - leg_spread, base_y], fill=BRONZE_DARK, outline=OUTLINE)
-        # Gold knee accents
-        draw.line([body_cx - 10 + leg_spread, base_y - 6,
-                   body_cx - 4 + leg_spread, base_y - 6], fill=GOLD)
-        draw.line([body_cx + 4 - leg_spread, base_y - 6,
-                   body_cx + 10 - leg_spread, base_y - 6], fill=GOLD)
-
-        # --- Sword (right hand, extends below) ---
-        sword_x = body_cx + 16
-        # Blade with fuller detail
-        draw.rectangle([sword_x, body_cy + 4, sword_x + 2, body_cy + 20],
-                       fill=STEEL, outline=OUTLINE)
-        # Fuller line (groove in blade)
-        draw.line([sword_x + 1, body_cy + 6, sword_x + 1, body_cy + 18], fill=STEEL_LIGHT)
-        # Blade tip
-        draw.point((sword_x, body_cy + 22), fill=STEEL_LIGHT)
-        draw.point((sword_x + 1, body_cy + 22), fill=STEEL_LIGHT)
-        draw.point((sword_x + 2, body_cy + 22), fill=STEEL_LIGHT)
-        # Crossguard (wider)
-        draw.rectangle([sword_x - 2, body_cy + 2, sword_x + 4, body_cy + 4],
-                       fill=GOLD, outline=None)
-        # Guard detail
-        draw.point((sword_x - 2, body_cy + 3), fill=GOLD_DARK)
-        draw.point((sword_x + 4, body_cy + 3), fill=GOLD_DARK)
-
-        # --- Shield (left arm) ---
-        ellipse(draw, body_cx - 20, body_cy, 8, 10, SHIELD_BROWN, outline=OUTLINE)
-        ellipse(draw, body_cx - 20, body_cy, 4, 6, SHIELD_BROWN_DARK, outline=None)
-        # Shield boss (center nub)
-        draw.rectangle([body_cx - 21, body_cy - 1, body_cx - 19, body_cy + 1], fill=GOLD)
-        # Shield cross emblem
-        draw_shield_emblem(draw, body_cx - 20, body_cy)
-
-        # --- Body (round torso with armor) ---
-        ellipse(draw, body_cx, body_cy, 14, 12, BRONZE)
-        # Armor highlight
-        ellipse(draw, body_cx, body_cy - 2, 10, 8, BRONZE_LIGHT)
-        # Gold trim on armor edge
-        draw.arc([body_cx - 14, body_cy - 12, body_cx + 14, body_cy + 12],
-                 start=200, end=340, fill=GOLD)
-        # Red belt
-        draw.rectangle([body_cx - 14, body_cy + 6, body_cx + 14, body_cy + 10],
-                       fill=RED, outline=OUTLINE)
-        # Gold belt buckle
-        draw.rectangle([body_cx - 2, body_cy + 6, body_cx + 2, body_cy + 10],
-                       fill=GOLD, outline=None)
-
-        # --- Arms (small, at sides) ---
-        # Left arm (behind shield)
-        draw.rectangle([body_cx - 18, body_cy - 6, body_cx - 12, body_cy + 6],
-                       fill=SKIN, outline=OUTLINE)
-        # Muscle definition on left arm
-        draw.line([(body_cx - 15, body_cy - 4), (body_cx - 15, body_cy + 4)], fill=MUSCLE_LINE)
-        # Right arm (holding sword)
-        draw.rectangle([body_cx + 12, body_cy - 6, body_cx + 18, body_cy + 6],
-                       fill=SKIN, outline=OUTLINE)
-        # Muscle definition on right arm
-        draw.line([(body_cx + 15, body_cy - 4), (body_cx + 15, body_cy + 4)], fill=MUSCLE_LINE)
-
-        # Shoulder pauldrons (more defined)
-        ellipse(draw, body_cx - 14, body_cy - 8, 8, 6, BRONZE)
-        ellipse(draw, body_cx - 14, body_cy - 8, 4, 2, BRONZE_LIGHT, outline=None)
-        draw.arc([body_cx - 22, body_cy - 14, body_cx - 6, body_cy - 2],
-                 start=180, end=360, fill=GOLD)
-        # Rivet dots on left pauldron
-        draw.point((body_cx - 18, body_cy - 10), fill=RIVET)
-        draw.point((body_cx - 10, body_cy - 10), fill=RIVET)
-        ellipse(draw, body_cx + 14, body_cy - 8, 8, 6, BRONZE)
-        ellipse(draw, body_cx + 14, body_cy - 8, 4, 2, BRONZE_LIGHT, outline=None)
-        draw.arc([body_cx + 6, body_cy - 14, body_cx + 22, body_cy - 2],
-                 start=180, end=360, fill=GOLD)
-        # Rivet dots on right pauldron
-        draw.point((body_cx + 10, body_cy - 10), fill=RIVET)
-        draw.point((body_cx + 18, body_cy - 10), fill=RIVET)
-
-        # --- Head (big round helmet) ---
-        # Helmet (main dome)
-        ellipse(draw, body_cx, head_cy, 16, 14, BRONZE)
-        # Helmet highlight band
-        draw.arc([body_cx - 16, head_cy - 14, body_cx + 16, head_cy + 14],
-                 start=210, end=330, fill=BRONZE_LIGHT)
-        # Face opening
-        ellipse(draw, body_cx, head_cy + 4, 10, 8, SKIN)
-        # Helmet brim
-        draw.rectangle([body_cx - 16, head_cy + 2, body_cx + 16, head_cy + 6],
-                       fill=BRONZE_DARK, outline=OUTLINE)
-        # Gold trim on brim
-        draw.line([body_cx - 16, head_cy + 2, body_cx + 16, head_cy + 2], fill=GOLD)
-        # Eyes
-        draw.rectangle([body_cx - 6, head_cy + 2, body_cx - 2, head_cy + 6], fill=BLACK)
-        draw.rectangle([body_cx + 2, head_cy + 2, body_cx + 6, head_cy + 6], fill=BLACK)
-        # White glint on helmet dome
-        draw.point((body_cx - 4, head_cy - 10), fill=WHITE_GLINT)
-        draw.point((body_cx - 6, head_cy - 8), fill=WHITE_GLINT)
-        draw.point((body_cx - 5, head_cy - 9), fill=WHITE_GLINT)
-        # Crest (tall, flowing red plume)
-        # Wider base, tapers up
-        draw.rectangle([body_cx - 4, head_cy - 14, body_cx + 4, head_cy - 10],
-                       fill=RED, outline=OUTLINE)
-        draw.rectangle([body_cx - 2, head_cy - 22, body_cx + 2, head_cy - 14],
-                       fill=RED, outline=OUTLINE)
-        draw.rectangle([body_cx - 2, head_cy - 26, body_cx, head_cy - 22],
-                       fill=RED_LIGHT, outline=None)
-        # Crest highlight streaks
-        draw.line([body_cx, head_cy - 24, body_cx, head_cy - 16], fill=RED_BRIGHT)
-        draw.line([body_cx - 2, head_cy - 20, body_cx - 2, head_cy - 14], fill=RED_LIGHT)
-        draw.line([body_cx + 1, head_cy - 22, body_cx + 1, head_cy - 16], fill=RED_BRIGHT)
-        # Gold accent at crest base
-        draw.line([body_cx - 4, head_cy - 10, body_cx + 4, head_cy - 10], fill=GOLD)
-
-    elif direction == UP:
-        # --- Legs ---
-        draw.rectangle([body_cx - 10 + leg_spread, body_cy + 10,
-                        body_cx - 4 + leg_spread, base_y], fill=BROWN, outline=OUTLINE)
-        draw.rectangle([body_cx + 4 - leg_spread, body_cy + 10,
-                        body_cx + 10 - leg_spread, base_y], fill=BROWN, outline=OUTLINE)
-        draw.rectangle([body_cx - 10 + leg_spread, base_y - 6,
-                        body_cx - 4 + leg_spread, base_y], fill=BRONZE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx + 4 - leg_spread, base_y - 6,
-                        body_cx + 10 - leg_spread, base_y], fill=BRONZE_DARK, outline=OUTLINE)
-        # Gold knee accents
-        draw.line([body_cx - 10 + leg_spread, base_y - 6,
-                   body_cx - 4 + leg_spread, base_y - 6], fill=GOLD)
-        draw.line([body_cx + 4 - leg_spread, base_y - 6,
-                   body_cx + 10 - leg_spread, base_y - 6], fill=GOLD)
-
-        # --- Cape (visible from behind, flowing) ---
-        cape_sway = [0, 2, 0, -2][frame]
-        draw.rounded_rectangle([body_cx - 12 + cape_sway, body_cy - 6,
-                                body_cx + 12 + cape_sway, body_cy + 14],
-                               radius=6, fill=RED, outline=OUTLINE)
-        draw.rounded_rectangle([body_cx - 10 + cape_sway, body_cy - 4,
-                                body_cx + 10 + cape_sway, body_cy + 12],
-                               radius=4, fill=RED_DARK, outline=None)
-
-        # --- Sword (right hand, visible from behind) ---
-        sword_x = body_cx + 16
-        draw.rectangle([sword_x, body_cy + 4, sword_x + 2, body_cy + 20],
-                       fill=STEEL, outline=OUTLINE)
-        draw.line([sword_x + 1, body_cy + 6, sword_x + 1, body_cy + 18], fill=STEEL_LIGHT)
-        draw.point((sword_x, body_cy + 22), fill=STEEL_LIGHT)
-        draw.point((sword_x + 1, body_cy + 22), fill=STEEL_LIGHT)
-        draw.point((sword_x + 2, body_cy + 22), fill=STEEL_LIGHT)
-        draw.rectangle([sword_x - 2, body_cy + 2, sword_x + 4, body_cy + 4],
-                       fill=GOLD, outline=None)
-
-        # --- Shield (left arm, from behind) ---
-        ellipse(draw, body_cx - 20, body_cy, 8, 10, SHIELD_BROWN, outline=OUTLINE)
-        ellipse(draw, body_cx - 20, body_cy, 4, 6, SHIELD_BROWN_DARK, outline=None)
-
-        # --- Body ---
-        ellipse(draw, body_cx, body_cy, 14, 12, BRONZE)
-        ellipse(draw, body_cx, body_cy - 2, 10, 8, BRONZE_DARK)
-        # Gold trim on back
-        draw.arc([body_cx - 14, body_cy - 12, body_cx + 14, body_cy + 12],
-                 start=200, end=340, fill=GOLD)
-
-        # --- Arms ---
-        draw.rectangle([body_cx - 18, body_cy - 6, body_cx - 12, body_cy + 6],
-                       fill=SKIN, outline=OUTLINE)
-        draw.rectangle([body_cx + 12, body_cy - 6, body_cx + 18, body_cy + 6],
-                       fill=SKIN, outline=OUTLINE)
-        # Shoulder pauldrons
-        ellipse(draw, body_cx - 14, body_cy - 8, 8, 6, BRONZE)
-        ellipse(draw, body_cx - 14, body_cy - 8, 4, 2, BRONZE_LIGHT, outline=None)
-        draw.arc([body_cx - 22, body_cy - 14, body_cx - 6, body_cy - 2],
-                 start=180, end=360, fill=GOLD)
-        draw.point((body_cx - 18, body_cy - 10), fill=RIVET)
-        draw.point((body_cx - 10, body_cy - 10), fill=RIVET)
-        ellipse(draw, body_cx + 14, body_cy - 8, 8, 6, BRONZE)
-        ellipse(draw, body_cx + 14, body_cy - 8, 4, 2, BRONZE_LIGHT, outline=None)
-        draw.arc([body_cx + 6, body_cy - 14, body_cx + 22, body_cy - 2],
-                 start=180, end=360, fill=GOLD)
-        draw.point((body_cx + 10, body_cy - 10), fill=RIVET)
-        draw.point((body_cx + 18, body_cy - 10), fill=RIVET)
-
-        # --- Head (back of helmet) ---
-        ellipse(draw, body_cx, head_cy, 16, 14, BRONZE)
-        ellipse(draw, body_cx, head_cy, 12, 10, BRONZE_DARK)
-        # Gold trim band on back of helmet
-        draw.arc([body_cx - 16, head_cy - 14, body_cx + 16, head_cy + 14],
-                 start=20, end=160, fill=GOLD)
-        # Crest (tall, flowing red plume)
-        draw.rectangle([body_cx - 4, head_cy - 14, body_cx + 4, head_cy - 10],
-                       fill=RED, outline=OUTLINE)
-        draw.rectangle([body_cx - 2, head_cy - 22, body_cx + 2, head_cy - 14],
-                       fill=RED, outline=OUTLINE)
-        draw.rectangle([body_cx - 2, head_cy - 26, body_cx, head_cy - 22],
-                       fill=RED_LIGHT, outline=None)
-        draw.line([body_cx, head_cy - 24, body_cx, head_cy - 16], fill=RED_BRIGHT)
-        draw.line([body_cx - 2, head_cy - 20, body_cx - 2, head_cy - 14], fill=RED_LIGHT)
-        draw.line([body_cx + 1, head_cy - 22, body_cx + 1, head_cy - 16], fill=RED_BRIGHT)
-        # Gold accent at crest base
-        draw.line([body_cx - 4, head_cy - 10, body_cx + 4, head_cy - 10], fill=GOLD)
-
-    elif direction == LEFT:
-        # --- Legs (side view) ---
-        # Back leg
-        draw.rectangle([body_cx - 2 - leg_spread, body_cy + 10,
-                        body_cx + 4 - leg_spread, base_y], fill=BROWN_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx - 2 - leg_spread, base_y - 6,
-                        body_cx + 4 - leg_spread, base_y], fill=BRONZE_DARK, outline=OUTLINE)
-        # Front leg
-        draw.rectangle([body_cx - 8 + leg_spread, body_cy + 10,
-                        body_cx - 2 + leg_spread, base_y], fill=BROWN, outline=OUTLINE)
-        draw.rectangle([body_cx - 8 + leg_spread, base_y - 6,
-                        body_cx - 2 + leg_spread, base_y], fill=BRONZE_DARK, outline=OUTLINE)
-        # Gold knee accents
-        draw.line([body_cx - 2 - leg_spread, base_y - 6,
-                   body_cx + 4 - leg_spread, base_y - 6], fill=GOLD)
-        draw.line([body_cx - 8 + leg_spread, base_y - 6,
-                   body_cx - 2 + leg_spread, base_y - 6], fill=GOLD)
-
-        # --- Cape (flowing right/behind) ---
-        cape_sway = [0, 2, 0, -2][frame]
-        draw.rounded_rectangle([body_cx + 6, body_cy - 8,
-                                body_cx + 16 + cape_sway, body_cy + 12],
-                               radius=6, fill=RED, outline=OUTLINE)
-
-        # --- Sword (right hand, behind body in left-facing view) ---
-        sword_x = body_cx + 10
-        draw.rectangle([sword_x, body_cy + 4, sword_x + 2, body_cy + 20],
-                       fill=STEEL, outline=OUTLINE)
-        draw.line([sword_x + 1, body_cy + 6, sword_x + 1, body_cy + 18], fill=STEEL_LIGHT)
-        draw.point((sword_x, body_cy + 22), fill=STEEL_LIGHT)
-        draw.point((sword_x + 1, body_cy + 22), fill=STEEL_LIGHT)
-        draw.point((sword_x + 2, body_cy + 22), fill=STEEL_LIGHT)
-        draw.rectangle([sword_x - 2, body_cy + 2, sword_x + 4, body_cy + 4],
-                       fill=GOLD, outline=None)
-
-        # --- Body ---
-        ellipse(draw, body_cx - 2, body_cy, 12, 12, BRONZE)
-        ellipse(draw, body_cx - 2, body_cy - 2, 8, 8, BRONZE_LIGHT)
-        # Gold trim on armor edge
-        draw.arc([body_cx - 14, body_cy - 12, body_cx + 10, body_cy + 12],
-                 start=220, end=320, fill=GOLD)
-        # Red belt
-        draw.rectangle([body_cx - 14, body_cy + 6, body_cx + 10, body_cy + 10],
-                       fill=RED, outline=OUTLINE)
-        # Gold belt buckle
-        draw.rectangle([body_cx - 4, body_cy + 6, body_cx, body_cy + 10],
-                       fill=GOLD, outline=None)
-
-        # --- Shield (left arm, facing viewer) ---
-        ellipse(draw, body_cx - 16, body_cy - 2, 8, 10, SHIELD_BROWN, outline=OUTLINE)
-        ellipse(draw, body_cx - 16, body_cy - 2, 4, 6, SHIELD_BROWN_DARK, outline=None)
-        # Shield boss
-        draw.rectangle([body_cx - 17, body_cy - 3, body_cx - 15, body_cy - 1], fill=GOLD)
-        # Shield cross emblem
-        draw_shield_emblem(draw, body_cx - 16, body_cy - 2)
-        # Shield rim highlight
-        draw.arc([body_cx - 24, body_cy - 12, body_cx - 8, body_cy + 8],
-                 start=240, end=360, fill=GOLD_DARK)
-
-        # --- Arm (front, leading with shield) ---
-        draw.rectangle([body_cx - 14, body_cy - 4, body_cx - 8, body_cy + 6],
-                       fill=SKIN, outline=OUTLINE)
-        # Muscle definition
-        draw.line([(body_cx - 11, body_cy - 2), (body_cx - 11, body_cy + 4)], fill=MUSCLE_LINE)
-        # Shoulder pauldron (more defined)
-        ellipse(draw, body_cx - 10, body_cy - 8, 8, 6, BRONZE)
-        ellipse(draw, body_cx - 10, body_cy - 8, 4, 2, BRONZE_LIGHT, outline=None)
-        draw.arc([body_cx - 18, body_cy - 14, body_cx - 2, body_cy - 2],
-                 start=180, end=360, fill=GOLD)
-        draw.point((body_cx - 14, body_cy - 10), fill=RIVET)
-        draw.point((body_cx - 6, body_cy - 10), fill=RIVET)
-
-        # --- Head (side view, facing left) ---
-        ellipse(draw, body_cx - 2, head_cy, 14, 14, BRONZE)
-        # Face (partial)
-        ellipse(draw, body_cx - 6, head_cy + 4, 8, 6, SKIN)
-        # Helmet brim
-        draw.rectangle([body_cx - 16, head_cy + 2, body_cx + 8, head_cy + 6],
-                       fill=BRONZE_DARK, outline=OUTLINE)
-        # Gold trim on brim
-        draw.line([body_cx - 16, head_cy + 2, body_cx + 8, head_cy + 2], fill=GOLD)
-        # Eye
-        draw.rectangle([body_cx - 10, head_cy + 2, body_cx - 6, head_cy + 6], fill=BLACK)
-        # White glint on helmet dome
-        draw.point((body_cx - 6, head_cy - 10), fill=WHITE_GLINT)
-        draw.point((body_cx - 8, head_cy - 8), fill=WHITE_GLINT)
-        draw.point((body_cx - 7, head_cy - 9), fill=WHITE_GLINT)
-        # Crest (tall, swept back in side view)
-        # Base of crest
-        draw.rectangle([body_cx - 4, head_cy - 14, body_cx + 2, head_cy - 10],
-                       fill=RED, outline=OUTLINE)
-        # Main crest body sweeping back
-        draw.rectangle([body_cx - 2, head_cy - 22, body_cx + 2, head_cy - 14],
-                       fill=RED, outline=OUTLINE)
-        # Flowing back portion
-        draw.rectangle([body_cx + 2, head_cy - 20, body_cx + 6, head_cy - 12],
-                       fill=RED_DARK, outline=OUTLINE)
-        # Crest tip
-        draw.point((body_cx, head_cy - 24), fill=RED_LIGHT)
-        draw.point((body_cx + 1, head_cy - 24), fill=RED_LIGHT)
-        # Highlight streaks
-        draw.line([body_cx, head_cy - 20, body_cx, head_cy - 14], fill=RED_BRIGHT)
-        draw.line([body_cx + 1, head_cy - 22, body_cx + 1, head_cy - 16], fill=RED_BRIGHT)
-        # Gold accent at crest base
-        draw.line([body_cx - 4, head_cy - 10, body_cx + 2, head_cy - 10], fill=GOLD)
-
-    elif direction == RIGHT:
-        # --- Legs ---
-        # Back leg
-        draw.rectangle([body_cx - 2 + leg_spread, body_cy + 10,
-                        body_cx + 4 + leg_spread, base_y], fill=BROWN_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx - 2 + leg_spread, base_y - 6,
-                        body_cx + 4 + leg_spread, base_y], fill=BRONZE_DARK, outline=OUTLINE)
-        # Front leg
-        draw.rectangle([body_cx + 4 - leg_spread, body_cy + 10,
-                        body_cx + 10 - leg_spread, base_y], fill=BROWN, outline=OUTLINE)
-        draw.rectangle([body_cx + 4 - leg_spread, base_y - 6,
-                        body_cx + 10 - leg_spread, base_y], fill=BRONZE_DARK, outline=OUTLINE)
-        # Gold knee accents
-        draw.line([body_cx - 2 + leg_spread, base_y - 6,
-                   body_cx + 4 + leg_spread, base_y - 6], fill=GOLD)
-        draw.line([body_cx + 4 - leg_spread, base_y - 6,
-                   body_cx + 10 - leg_spread, base_y - 6], fill=GOLD)
-
-        # --- Cape (flowing left/behind) ---
-        cape_sway = [0, -2, 0, 2][frame]
-        draw.rounded_rectangle([body_cx - 16 + cape_sway, body_cy - 8,
-                                body_cx - 6, body_cy + 12],
-                               radius=6, fill=RED, outline=OUTLINE)
-
-        # --- Sword (right hand, in front in right-facing view) ---
-        sword_x = body_cx + 10
-        draw.rectangle([sword_x, body_cy + 4, sword_x + 2, body_cy + 20],
-                       fill=STEEL, outline=OUTLINE)
-        # Blade highlight / fuller
-        draw.line([sword_x, body_cy + 6, sword_x, body_cy + 18], fill=STEEL_LIGHT)
-        draw.point((sword_x, body_cy + 22), fill=STEEL_LIGHT)
-        draw.point((sword_x + 1, body_cy + 22), fill=STEEL_LIGHT)
-        draw.point((sword_x + 2, body_cy + 22), fill=STEEL_LIGHT)
-        draw.rectangle([sword_x - 2, body_cy + 2, sword_x + 4, body_cy + 4],
-                       fill=GOLD, outline=None)
-        draw.point((sword_x - 2, body_cy + 3), fill=GOLD_DARK)
-        draw.point((sword_x + 4, body_cy + 3), fill=GOLD_DARK)
-
-        # --- Body ---
-        ellipse(draw, body_cx + 2, body_cy, 12, 12, BRONZE)
-        ellipse(draw, body_cx + 2, body_cy - 2, 8, 8, BRONZE_LIGHT)
-        # Gold trim on armor edge
-        draw.arc([body_cx - 10, body_cy - 12, body_cx + 14, body_cy + 12],
-                 start=220, end=320, fill=GOLD)
-        # Red belt
-        draw.rectangle([body_cx - 10, body_cy + 6, body_cx + 14, body_cy + 10],
-                       fill=RED, outline=OUTLINE)
-        # Gold belt buckle
-        draw.rectangle([body_cx, body_cy + 6, body_cx + 4, body_cy + 10],
-                       fill=GOLD, outline=None)
-
-        # --- Shield (left arm, behind body in right-facing view) ---
-        ellipse(draw, body_cx - 12, body_cy - 2, 8, 10, SHIELD_BROWN, outline=OUTLINE)
-        ellipse(draw, body_cx - 12, body_cy - 2, 4, 6, SHIELD_BROWN_DARK, outline=None)
-        draw.rectangle([body_cx - 13, body_cy - 3, body_cx - 11, body_cy - 1], fill=GOLD)
-
-        # --- Arm (front, sword arm) ---
-        draw.rectangle([body_cx + 8, body_cy - 4, body_cx + 14, body_cy + 6],
-                       fill=SKIN, outline=OUTLINE)
-        # Muscle definition
-        draw.line([(body_cx + 11, body_cy - 2), (body_cx + 11, body_cy + 4)], fill=MUSCLE_LINE)
-        # Shoulder pauldron (more defined)
-        ellipse(draw, body_cx + 10, body_cy - 8, 8, 6, BRONZE)
-        ellipse(draw, body_cx + 10, body_cy - 8, 4, 2, BRONZE_LIGHT, outline=None)
-        draw.arc([body_cx + 2, body_cy - 14, body_cx + 18, body_cy - 2],
-                 start=180, end=360, fill=GOLD)
-        draw.point((body_cx + 6, body_cy - 10), fill=RIVET)
-        draw.point((body_cx + 14, body_cy - 10), fill=RIVET)
-
-        # --- Head ---
-        ellipse(draw, body_cx + 2, head_cy, 14, 14, BRONZE)
-        ellipse(draw, body_cx + 6, head_cy + 4, 8, 6, SKIN)
-        draw.rectangle([body_cx - 8, head_cy + 2, body_cx + 16, head_cy + 6],
-                       fill=BRONZE_DARK, outline=OUTLINE)
-        # Gold trim on brim
-        draw.line([body_cx - 8, head_cy + 2, body_cx + 16, head_cy + 2], fill=GOLD)
-        # Eye
-        draw.rectangle([body_cx + 6, head_cy + 2, body_cx + 10, head_cy + 6], fill=BLACK)
-        # White glint on helmet dome
-        draw.point((body_cx + 6, head_cy - 10), fill=WHITE_GLINT)
-        draw.point((body_cx + 8, head_cy - 8), fill=WHITE_GLINT)
-        draw.point((body_cx + 7, head_cy - 9), fill=WHITE_GLINT)
-        # Crest (tall, swept back in side view - mirrored from LEFT)
-        # Base of crest
-        draw.rectangle([body_cx - 2, head_cy - 14, body_cx + 4, head_cy - 10],
-                       fill=RED, outline=OUTLINE)
-        # Main crest body sweeping back
-        draw.rectangle([body_cx - 2, head_cy - 22, body_cx + 2, head_cy - 14],
-                       fill=RED, outline=OUTLINE)
-        # Flowing back portion (swept left for right-facing)
-        draw.rectangle([body_cx - 6, head_cy - 20, body_cx - 2, head_cy - 12],
-                       fill=RED_DARK, outline=OUTLINE)
-        # Crest tip
-        draw.point((body_cx, head_cy - 24), fill=RED_LIGHT)
-        draw.point((body_cx + 1, head_cy - 24), fill=RED_LIGHT)
-        # Highlight streaks
-        draw.line([body_cx, head_cy - 20, body_cx, head_cy - 14], fill=RED_BRIGHT)
-        draw.line([body_cx - 1, head_cy - 22, body_cx - 1, head_cy - 16], fill=RED_BRIGHT)
-        # Gold accent at crest base
-        draw.line([body_cx - 2, head_cy - 10, body_cx + 4, head_cy - 10], fill=GOLD)
+    r = rig(ox, oy, direction, frame, build=1.12, head=0.95)
+    d = r.d
+    shield_side = (1 if not r.back else -1) if not d else -d
+    sword_side = -shield_side if not d else d
+    if d:
+        _shield(r, draw, shield_side)
+        rig_arms(r, draw, SKIN_TAN, SKIN_TAN, layer="far")
+    rig_legs(r, draw, SKIN_TAN, LEATHER)
+    for side in ((-1, 1) if not d else (-d, d)):
+        fx, fy = r.foot(side)
+        for k in (2.6, 4.6):
+            stroke(draw, [(fx - 1.9, fy - k), (fx + 1.9, fy - k - 0.8)], 0.6,
+                   LEATHER if r.near(side) else shade(LEATHER, 0.6))
+    rig_torso(r, draw, RED)
+    _skirt(r, draw)
+    _cuirass(r, draw)
+    rig_arms(r, draw, SKIN_TAN, SKIN_TAN, layer="near")
+    for side in ((-1, 1) if not d else (d,)):
+        _vambrace(r, draw, side)
+    _pauldron(r, draw, sword_side if not d else d)
+    head_skull(r, draw, SKIN_TAN, ears=False)
+    if not r.back:
+        head_face(r, draw, SKIN_TAN, iris=IRIS, mood="sharp", mouth="smirk", brows=True,
+                  brow_color=shade(HAIR, 0.6))
+    if not r.back:
+        rig_hair(r, draw, HAIR, "crop", hat=True, skin=SKIN_TAN)
+    _helmet(r, draw)
+    if not d:
+        _sword(r, draw, sword_side)
+        rig_hand(r, draw, sword_side, SKIN_TAN)
+        _shield(r, draw, shield_side)
+    else:
+        _sword(r, draw, sword_side)
+        rig_hand(r, draw, sword_side, SKIN_TAN)
 
 
 def main():
-    # Rendering (supersampling + the shared detail pass) lives in sprite_base so
-    # every character sheet is produced the same way; this script only draws.
-    import os
-    import sys
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from sprite_base import generate_character
-
     generate_character("gladiator", draw_func=draw_gladiator)
 
 

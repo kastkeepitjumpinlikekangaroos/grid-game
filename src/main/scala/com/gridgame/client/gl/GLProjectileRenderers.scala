@@ -107,12 +107,6 @@ object GLProjectileRenderers {
   //  PRE-ALLOCATED ARRAY POOLS (avoid per-frame GC pressure)
   // ═══════════════════════════════════════════════════════════════
 
-  // Spinner: max pts=4 → n=8 per array, 4 arrays (ghost xs/ys, main xs/ys)
-  private val _spinXs = new Array[Float](8)
-  private val _spinYs = new Array[Float](8)
-  private val _spinGhostXs = new Array[Float](8)
-  private val _spinGhostYs = new Array[Float](8)
-
   // Lightning: segs=8 → 9 entries
   private val _boltXs = new Array[Float](9)
   private val _boltYs = new Array[Float](9)
@@ -611,9 +605,10 @@ object GLProjectileRenderers {
     part(Array(-0.42f,-0.30f, -0.22f,-0.30f, -0.22f,0.30f, -0.42f,0.30f), GOLD_R, GOLD_G, GOLD_B, 0.20f),
     part(Array(-0.22f,-0.11f, 0.42f,-0.17f, 0.42f,0.05f, -0.22f,0.11f), STEEL_R, STEEL_G, STEEL_B, 0.22f),
     part(Array(0.42f,-0.17f, 0.98f,-0.16f, 1.30f,-0.03f, 0.98f,0.01f, 0.42f,0.05f), STEEL_R, STEEL_G, STEEL_B, 0.22f),
-    // Hamon: the temper line that makes a katana read as a katana and not a steel bar
-    part(Array(-0.16f,-0.05f, 0.42f,-0.11f, 0.98f,-0.10f, 1.16f,-0.03f, 0.98f,-0.05f, 0.42f,-0.06f, -0.16f,-0.01f),
-      1f, 1f, 1f, 0.06f)
+    // Hamon: the temper line that makes a katana read as a katana and not a steel bar.
+    // A wedge along the spine rather than a run out and back — the doubled-back outline
+    // was non-convex, and at two pixels wide what it fanned into was not a temper line.
+    part(Array(-0.16f,-0.05f, 0.98f,-0.09f, 1.16f,-0.03f, -0.16f,-0.01f), 1f, 1f, 1f, 0.06f)
   )
   private val KNIFE_PARTS = Array(
     part(Array(-1.05f,-0.13f, -0.28f,-0.11f, -0.28f,0.13f, -1.05f,0.15f), DKWOOD_R, DKWOOD_G, DKWOOD_B, 0.12f),
@@ -635,13 +630,31 @@ object GLProjectileRenderers {
     part(Array(-1.10f,-0.11f, -0.42f,-0.11f, -0.42f,0.11f, -1.10f,0.11f), 0.13f, 0.09f, 0.12f, 0.20f),
     part(Array(-0.52f,-0.46f, -0.30f,-0.52f, -0.30f,0.52f, -0.52f,0.46f), 0.34f, 0.10f, 0.16f, 0.55f),
     part(Array(-0.30f,-0.24f, 0.34f,-0.30f, 0.34f,0.12f, -0.30f,0.24f), 0.22f, 0.08f, 0.13f, 0.45f),
-    part(Array(0.34f,-0.30f, 0.80f,-0.14f, 1.30f,-0.02f, 0.36f,0.12f), 0.22f, 0.08f, 0.13f, 0.45f),
+    // The blade's back edge bows just outside the chord, so the span stays convex: bowed
+    // the other way it was a notch, and fanning it cut the blade's own middle out.
+    part(Array(0.34f,-0.30f, 0.80f,-0.18f, 1.30f,-0.02f, 0.36f,0.12f), 0.22f, 0.08f, 0.13f, 0.45f),
     // Glowing edge — this is the part that carries the character's colour
-    part(Array(0.30f,-0.24f, 0.80f,-0.10f, 1.24f,-0.02f, 0.78f,-0.03f, 0.32f,-0.16f), 1f, 0.55f, 0.55f, 0.75f)
+    part(Array(0.30f,-0.24f, 0.80f,-0.14f, 1.24f,-0.02f, 0.32f,-0.16f), 1f, 0.55f, 0.55f, 0.75f)
   )
   private val CARD_PARTS = Array(
     part(Array(-0.72f,-0.50f, 0.72f,-0.50f, 0.72f,0.50f, -0.72f,0.50f), 0.97f, 0.97f, 0.99f, 0.06f)
   )
+  /** Four-bladed throwing star: one swept blade, stamped at exact quarter turns. A star is
+   *  the one silhouette a polar radius per vertex really does describe — but it is also
+   *  non-convex, so the old `spinner` handed `fillPolygon` a shape it fans into a blob with
+   *  two of the notches bridged over. Four convex blades stay exact at every spin angle. */
+  private val SHURIKEN_PARTS: Array[Part] = Array.tabulate(4) { q =>
+    val blade = Array(0.16f,-0.34f, 0.74f,-0.30f, 1.30f,-0.02f, 0.60f,0.26f, 0.14f,0.30f)
+    val pts = new Array[Float](blade.length)
+    var i = 0
+    while (i < blade.length / 2) {
+      val x = blade(i * 2); val y = blade(i * 2 + 1)
+      pts(i * 2)     = q match { case 0 => x; case 1 => -y; case 2 => -x; case _ => y }
+      pts(i * 2 + 1) = q match { case 0 => y; case 1 => x;  case 2 => -y; case _ => -x }
+      i += 1
+    }
+    part(pts, STEEL_R, STEEL_G, STEEL_B, 0.26f)
+  }
 
   private def weaponParts(kind: Int): Array[Part] = kind match {
     case WPN_AXE      => AXE_PARTS
@@ -753,16 +766,26 @@ object GLProjectileRenderers {
         case 3 =>
           // Soul wisp: a tapering tail streaming behind the head, plus hollow eyes
           val waver = Math.sin(phase * 2.2).toFloat * sz * 0.42f
-          _polyXs4(0) = sx + pxv * sz * 0.62f; _polyYs4(0) = sy + pyv * sz * 0.62f
-          _polyXs4(1) = sx - ndx * sz * 1.7f + pxv * waver; _polyYs4(1) = sy - ndy * sz * 1.7f + pyv * waver
-          _polyXs4(2) = sx - ndx * sz * 2.5f + pxv * waver * 1.6f; _polyYs4(2) = sy - ndy * sz * 2.5f + pyv * waver * 1.6f
-          _polyXs4(3) = sx - pxv * sz * 0.62f; _polyYs4(3) = sy - pyv * sz * 0.62f
-          sb.fillPolygon(_polyXs4, _polyYs4, 4, dr, dg, db, 0.72f * p)
-          _polyXs4(0) = sx + pxv * sz * 0.34f; _polyYs4(0) = sy + pyv * sz * 0.34f
-          _polyXs4(1) = sx - ndx * sz * 1.3f + pxv * waver * 0.7f; _polyYs4(1) = sy - ndy * sz * 1.3f + pyv * waver * 0.7f
-          _polyXs4(2) = sx - ndx * sz * 1.9f + pxv * waver; _polyYs4(2) = sy - ndy * sz * 1.9f + pyv * waver
-          _polyXs4(3) = sx - pxv * sz * 0.34f; _polyYs4(3) = sy - pyv * sz * 0.34f
-          sb.fillPolygon(_polyXs4, _polyYs4, 4, bright(r), bright(g), bright(b), 0.5f * p)
+          // The tail is a tapering trapezoid into a tip, not one quad from the head edge to
+          // two points on the spine: with the waver swinging, that quad went concave once a
+          // cycle and fanning it flicked a sliver back across the head.
+          @inline def wispTail(headW: Float, midW: Float, midD: Float, tipD: Float,
+                               tr: Float, tg: Float, tb: Float, ta: Float): Unit = {
+            val mx = sx - ndx * sz * midD + pxv * waver * (midD / 1.7f)
+            val my = sy - ndy * sz * midD + pyv * waver * (midD / 1.7f)
+            _polyXs4(0) = sx + pxv * headW;  _polyYs4(0) = sy + pyv * headW
+            _polyXs4(1) = mx + pxv * midW;   _polyYs4(1) = my + pyv * midW
+            _polyXs4(2) = mx - pxv * midW;   _polyYs4(2) = my - pyv * midW
+            _polyXs4(3) = sx - pxv * headW;  _polyYs4(3) = sy - pyv * headW
+            sb.fillPolygon(_polyXs4, _polyYs4, 4, tr, tg, tb, ta)
+            _polyXs3(0) = mx + pxv * midW; _polyYs3(0) = my + pyv * midW
+            _polyXs3(1) = sx - ndx * sz * tipD + pxv * waver * (tipD / 1.7f)
+            _polyYs3(1) = sy - ndy * sz * tipD + pyv * waver * (tipD / 1.7f)
+            _polyXs3(2) = mx - pxv * midW; _polyYs3(2) = my - pyv * midW
+            sb.fillPolygon(_polyXs3, _polyYs3, 3, tr, tg, tb, ta)
+          }
+          wispTail(sz * 0.62f, sz * 0.26f, 1.7f, 2.5f, dr, dg, db, 0.72f * p)
+          wispTail(sz * 0.34f, sz * 0.14f, 1.3f, 1.9f, bright(r), bright(g), bright(b), 0.5f * p)
           // Torn hem where the wisp frays out
           var w = 0; while (w < 3) {
             val wt = (w - 1) * 0.55f
@@ -919,96 +942,72 @@ object GLProjectileRenderers {
       drawReturnGhosts(sx, sy, sz * 0.9f, dr, dg, db, p, sb, proj)
     }
 
-  /** Large spinning star/blade weapon — CARTOONISH with bold outline and motion blur */
-  private def spinner(r: Float, g: Float, b: Float, size: Float = 22f, pts: Int = 4): Renderer =
+  /**
+   * Four-bladed throwing star. Its plate lies in the ground plane, so it is stamped like a
+   * tumbling weapon and sells its spin with a swept band across the blade tips rather than
+   * with smeared copies of itself. Nothing is drawn on a radius out from the hub: the four
+   * straight "swoosh" lines the old version fired off past the blades read as stray
+   * geometry poking out of the star, not as motion.
+   */
+  private def shuriken(r: Float, g: Float, b: Float, size: Float = 26f): Renderer =
     (proj, sx, sy, sb, tick) => {
-      val spin = tick * 0.35 + proj.id * 2.1
-      val phase = spin // alias for computeAllDynamics
-      computeAllDynamics(proj, r, g, b, phase)
-      val p = (0.75 + 0.25 * Math.sin(spin * 2 * _stPulseMult)).toFloat * dynAlpha
+      val spin = tick * 0.55 + proj.id * 2.1
+      computeAllDynamics(proj, r, g, b, spin)
+      val p = (0.88f + 0.12f * Math.sin(spin * 2 * _stPulseMult).toFloat) * dynAlpha
       val dr = _evoR; val dg = _evoG; val db = _evoB
-      val sz = size * 1.3f * dynScale
+      // Steel doesn't inflate with charge — a 2x throwing star reads as a bug.
+      val ds = Math.min(dynScale, 1.3f)
+      val s = size * 0.62f * ds
+      val reach = s * 1.3f
       screenDir(proj)
       val ndx = _sdx; val ndy = _sdy
-      val n = pts * 2
+      val ca = Math.cos(spin).toFloat; val sa = Math.sin(spin).toFloat
 
-      // Speed lines behind
-      drawSpeedLines(sx, sy, ndx, ndy, dr, dg, db, 0.3f * p, sb, 4, sz * 1.2f)
+      drawSpeedLines(sx, sy, ndx, ndy, dr, dg, db, 0.22f * p, sb, 4, reach * 1.2f)
 
-      // Impact ring — pulsing spin radius
-      val ringPulse = (0.7 + 0.3 * Math.sin(spin * 3)).toFloat
-      sb.strokeOval(sx, sy, sz * 1.25f * ringPulse * dynGlow, sz * 0.8f * ringPulse * dynGlow,
-        2.5f, dr, dg, db, 0.2f * p, 14)
+      // Ground shadow — anchors the star to the arena instead of floating over it
+      sb.fillOval(sx + 3f, sy + reach * 0.40f, reach * 0.55f, reach * 0.18f, 0f, 0f, 0f, 0.22f * p, 12)
 
-      // Motion blur trail — 5 ghosts + return ghosts
-      var ghost = 1; while (ghost <= 5) {
-        val taper = 1f - ghost * 0.15f
-        val colorFade = 1f - ghost * 0.12f
-        val ga = 0.25f * (1f - ghost * 0.17f) * p
-        val gx = sx - ndx * ghost * 14f
-        val gy = sy - ndy * ghost * 14f
-        val gSpin = spin - ghost * 0.4
-        var i = 0; while (i < n) {
-          val angle = gSpin + i * Math.PI / pts
-          val rad = if (i % 2 == 0) sz * 0.85f * taper else sz * 0.28f * taper
-          _spinGhostXs(i) = (gx + Math.cos(angle) * rad).toFloat
-          _spinGhostYs(i) = (gy + Math.sin(angle) * rad * 0.6f).toFloat
-        ; i += 1 }
-        sb.fillPolygon(_spinGhostXs, _spinGhostYs, n, r * colorFade, g * colorFade, b * colorFade, ga)
-      ; ghost += 1 }
+      // Swept band across the blade tips: the spin read, drawn as geometry
+      sb.fillArcBand(sx, sy, reach * 0.66f, reach * 0.66f * ISO_Y, reach * 1.02f, reach * 1.02f * ISO_Y,
+        spin.toFloat - 1.9f, 1.9f, 10, bright(r), bright(g), bright(b), 0.02f * p, 0.34f * p)
 
-      // Main shape — bigger
-      { var i = 0; while (i < n) {
-        val angle = spin + i * Math.PI / pts
-        val rad = if (i % 2 == 0) sz else sz * 0.28f
-        _spinXs(i) = (sx + Math.cos(angle) * rad).toFloat
-        _spinYs(i) = (sy + Math.sin(angle) * rad * 0.6f).toFloat
-      ; i += 1 } }
-      sb.fillPolygon(_spinXs, _spinYs, n, dr, dg, db, 0.95f * p)
-      // Bold dark cartoon outline
-      sb.strokePolygon(_spinXs, _spinYs, n, 3.5f, outline(r), outline(g), outline(b), 0.85f * p)
+      // Silhouette ghosts back along the flight path
+      var ghost = 3; while (ghost >= 1) {
+        val gA = 0.14f * (1f - (ghost - 1) * 0.3f) * p
+        val gSpin = spin - ghost * 0.45
+        drawPartsFlat(sb, SHURIKEN_PARTS, sx - ndx * ghost * 7f, sy - ndy * ghost * 7f,
+          Math.cos(gSpin).toFloat, Math.sin(gSpin).toFloat, s * (1f - ghost * 0.05f),
+          dr * 0.8f, dg * 0.8f, db * 0.8f, gA)
+        ghost -= 1
+      }
 
-      // Charge crackle
-      drawChargeCrackle(sx, sy, sz, r, g, b, p, sb, phase, proj.chargeLevel)
+      // Halo so steel separates from busy ground without washing it out
+      sb.fillOvalSoft(sx, sy, reach * 1.35f * dynGlow, reach * 1.35f * ISO_Y * dynGlow,
+        dr, dg, db, 0.18f * p, 0f, 14)
 
-      // Bright inner edge
-      { var i = 0; while (i < n) {
-        val angle = spin + i * Math.PI / pts
-        val rad = if (i % 2 == 0) sz * 0.92f else sz * 0.25f
-        _spinGhostXs(i) = (sx + Math.cos(angle) * rad).toFloat
-        _spinGhostYs(i) = (sy + Math.sin(angle) * rad * 0.6f).toFloat
-      ; i += 1 } }
-      sb.strokePolygon(_spinGhostXs, _spinGhostYs, n, 1.5f, bright(r), bright(g), bright(b), 0.65f * p)
+      drawParts(sb, SHURIKEN_PARTS, sx, sy, ca, sa, s, dr, dg, db, 0.97f * dynAlpha,
+        clampF(s * 0.13f, 1.2f, 2.6f))
 
-      // Metallic specular highlight — offset cartoon shine
-      { var i = 0; while (i < n) {
-        val angle = spin + i * Math.PI / pts
-        val rad = if (i % 2 == 0) sz * 0.5f else sz * 0.16f
-        _spinGhostXs(i) = (sx - 3f + Math.cos(angle) * rad).toFloat
-        _spinGhostYs(i) = (sy - 3f + Math.sin(angle) * rad * 0.6f).toFloat
-      ; i += 1 } }
-      sb.fillPolygon(_spinGhostXs, _spinGhostYs, n, 1f, 1f, 1f, 0.2f * p)
+      // Rimmed centre hole — what separates a throwing star from a pinwheel
+      sb.fillOval(sx, sy, s * 0.30f, s * 0.30f * ISO_Y, 0.10f, 0.10f, 0.12f, 0.85f * p, 10)
+      sb.strokeOval(sx, sy, s * 0.30f, s * 0.30f * ISO_Y, 1.6f, bright(r), bright(g), bright(b), 0.55f * p, 10)
 
-      // Spin swoosh arcs — curved motion lines around the spinning edge
-      var sl = 0; while (sl < 4) {
-        val slAngle = spin * 1.5 + sl * Math.PI / 2
-        val slInner = sz * 0.5f
-        val slOuter = sz * 1.3f
-        val slx0 = sx + Math.cos(slAngle).toFloat * slInner
-        val sly0 = sy + Math.sin(slAngle).toFloat * slInner * 0.6f
-        val slx1 = sx + Math.cos(slAngle).toFloat * slOuter
-        val sly1 = sy + Math.sin(slAngle).toFloat * slOuter * 0.6f
-        sb.strokeLine(slx0, sly0, slx1, sly1, 1.5f, bright(r), bright(g), bright(b), 0.3f * p)
-      ; sl += 1 }
+      // Edge glint as a blade sweeps through the light direction
+      val glint = Math.sin(spin * 2 + proj.id).toFloat
+      if (glint > 0.74f) {
+        blitPoint(1.18f, -0.10f, sx, sy, ca, sa, s)
+        sb.fillStarFlare(_ptX, _ptY, s * 0.8f * (glint - 0.74f) / 0.26f, 2f,
+          spin.toFloat * 0.5f, 0.45f, 1f, 1f, 0.96f, 0.7f * p)
+      }
 
-      // Two-layer center hub — bolder
-      sb.strokeOval(sx, sy, sz * 0.22f, sz * 0.15f, 3f, outline(r), outline(g), outline(b), 0.6f * p, 8)
-      sb.fillOval(sx, sy, sz * 0.16f, sz * 0.11f, bright(r), bright(g), bright(b), 0.8f * p, 8)
+      drawChargeCrackle(sx, sy, reach, r, g, b, p, sb, spin, proj.chargeLevel)
+      drawReturnGhosts(sx, sy, reach * 0.7f, dr, dg, db, p, sb, proj)
     }
 
   /**
-   * Thrown weapon tumbling end over end. Unlike `spinner` — which builds a polar star and
-   * so renders every melee weapon as the same lens — this stamps the weapon's own
+   * Thrown weapon tumbling end over end. Rather than building a polar star — which
+   * renders every melee weapon as the same lens — this stamps the weapon's own
    * silhouette, then sells the rotation with a swept arc and silhouette ghosts rather
    * than by smearing the shape itself.
    */
@@ -1416,7 +1415,7 @@ object GLProjectileRenderers {
           i += 1
         }
         sb.strokePolygon(_shpXs, _shpYs, 7, ow + 1.5f, 0.05f, 0.09f, 0.16f, 0.92f * a)
-        sb.fillPolygon(_shpXs, _shpYs, 7, dr * 0.72f, dg * 0.82f, db * 0.95f, a)
+        sb.fillFan(cx, cy, _shpXs, _shpYs, 7, dr * 0.72f, dg * 0.82f, db * 0.95f, a)
         // Facets: dark seams from the corners, then one lit face. Without the dark seams
         // a white block on pale ground is a flat cut-out.
         i = 0; while (i < 7) {
@@ -2576,8 +2575,9 @@ object GLProjectileRenderers {
     ; i += 1 }
     // Bold 4px dark outline on star
     sb.strokePolygon(_holyXs, _holyYs, 12, 4f, 0.3f, 0.2f, 0.05f, 0.8f * p)
-    // Golden star fill
-    sb.fillPolygon(_holyXs, _holyYs, 12, dr, dg, db, 0.88f * p);
+    // Golden star fill, fanned from the centre the radii were measured from — a star is
+    // non-convex, and fanned from vertex 0 it fills as a blob with its notches bridged.
+    sb.fillFan(sx, sy, _holyXs, _holyYs, 12, dr, dg, db, 0.88f * p);
     // Bright highlight layer (smaller star)
     { var i = 0; while (i < 12) {
       val a = starSpin + i * Math.PI / 6
@@ -2585,7 +2585,7 @@ object GLProjectileRenderers {
       _holyXs(i) = (sx + Math.cos(a).toFloat * rad).toFloat
       _holyYs(i) = (sy + Math.sin(a).toFloat * rad * 0.65f).toFloat
     ; i += 1 } }
-    sb.fillPolygon(_holyXs, _holyYs, 12, 1f, 0.98f, 0.75f, 0.5f * p)
+    sb.fillFan(sx, sy, _holyXs, _holyYs, 12, 1f, 0.98f, 0.75f, 0.5f * p)
     // White-hot center
     val bc = _chgBright
     sb.fillOval(sx, sy, 7f * ds, 5f * ds,
@@ -3723,7 +3723,7 @@ object GLProjectileRenderers {
     ProjectileType.ROCKET       -> asRenderer(drawRocket),
     ProjectileType.TALON        -> asRenderer(drawTalon),
     ProjectileType.GUST         -> wave(WAV_WIND, 0.82f, 0.92f, 1f, 33f),
-    ProjectileType.SHURIKEN     -> spinner(0.72f, 0.74f, 0.82f, 30f, 4),
+    ProjectileType.SHURIKEN     -> shuriken(0.72f, 0.74f, 0.82f, 30f),
     ProjectileType.POISON_DART  -> flyingShaft(SHF_DART, 0.4f, 0.9f, 0.35f, 26f),
     ProjectileType.CHAIN_BOLT   -> chainProj(CHN_SHACKLE, 0.62f, 0.64f, 0.72f, 5.5f),
     ProjectileType.LOCKDOWN_CHAIN -> chainProj(CHN_LOCK, 0.52f, 0.54f, 0.62f, 6f),
@@ -4266,7 +4266,9 @@ object GLProjectileRenderers {
       hv += 1
     }
     sb.strokePolygon(_shpXs, _shpYs, hullN, 4.5f, 0.10f, 0.06f, 0.02f, 0.9f * p)
-    sb.fillPolygon(_shpXs, _shpYs, hullN, 0.42f, 0.34f, 0.22f, 0.97f * p)
+    // Fanned from the centre the vertex radii were measured from: the jagged hull is
+    // non-convex, so fanning from vertex 0 cuts its own corners off.
+    sb.fillFan(sx, sy - bounce, _shpXs, _shpYs, hullN, 0.42f, 0.34f, 0.22f, 0.97f * p)
     // Facet edges from the hull corners toward the centre — what makes it read as carved
     hv = 0
     while (hv < hullN) {
@@ -4512,7 +4514,7 @@ object GLProjectileRenderers {
       ; i += 1 } }
       { var i = 0; while (i <= segs) { _swCrescXs(i) = _swOuterXs(i); _swCrescYs(i) = _swOuterYs(i); i += 1 } }
       { var i = 0; while (i <= segs) { _swCrescXs(segs + 1 + i) = _swInnerXs(segs - i); _swCrescYs(segs + 1 + i) = _swInnerYs(segs - i); i += 1 } }
-      sb.fillPolygon(_swCrescXs, _swCrescYs, (segs + 1) * 2, 0.5f, 0.5f, 0.75f, gAlpha)
+      sb.fillRibbon(_swCrescXs, _swCrescYs, (segs + 1) * 2, 0.5f, 0.5f, 0.75f, gAlpha)
     ; ghost += 1 }
 
     // Main crescent geometry
@@ -4531,8 +4533,9 @@ object GLProjectileRenderers {
       sb.strokeLine(_swOuterXs(j), _swOuterYs(j), _swOuterXs(j + 1), _swOuterYs(j + 1),
         4.5f, 0.15f, 0.15f, 0.25f, 0.75f * p)
     ; j += 1 } }
-    // Crescent body fill (dark -> body -> bright)
-    sb.fillPolygon(_swCrescXs, _swCrescYs, (segs + 1) * 2, dr, dg, db, 0.7f * p);
+    // Crescent body fill (dark -> body -> bright). A ribbon, not a polygon: the crescent
+    // is concave, and fanned from vertex 0 it fills its own hollow and reads as a slab.
+    sb.fillRibbon(_swCrescXs, _swCrescYs, (segs + 1) * 2, dr, dg, db, 0.7f * p);
     // Bright inner edge (white-hot core)
     { var j = 0; while (j < segs) {
       sb.strokeLine(_swOuterXs(j), _swOuterYs(j), _swOuterXs(j + 1), _swOuterYs(j + 1),
@@ -5029,7 +5032,7 @@ object GLProjectileRenderers {
         _scyXs(segs + 1 + i) = (sx + Math.cos(a).toFloat * gR * 0.4f)
         _scyYs(segs + 1 + i) = (sy + Math.sin(a).toFloat * gR * 0.24f)
       ; i += 1 } }
-      sb.fillPolygon(_scyXs, _scyYs, segs * 2 + 2, 0.4f, 0.42f, 0.48f, gAlpha)
+      sb.fillRibbon(_scyXs, _scyYs, segs * 2 + 2, 0.4f, 0.42f, 0.48f, gAlpha)
     ; ghost += 1 } }
 
     // Main blade geometry
@@ -5046,8 +5049,9 @@ object GLProjectileRenderers {
 
     // Bold dark outline on blade
     sb.strokePolygon(_scyXs, _scyYs, segs * 2 + 2, 3.5f, 0.08f, 0.06f, 0.05f, 0.8f * p)
-    // Steel body (3-layer fill)
-    sb.fillPolygon(_scyXs, _scyYs, segs * 2 + 2, 0.55f, 0.57f, 0.62f, 0.85f * p);
+    // Steel body (3-layer fill). A ribbon, not a polygon: a fanned crescent fills its own
+    // hollow, which turned the scythe blade into a solid plate.
+    sb.fillRibbon(_scyXs, _scyYs, segs * 2 + 2, 0.55f, 0.57f, 0.62f, 0.85f * p);
     // Inner highlight stripe (brighter)
     { var i = 0; while (i <= segs) {
       val a = startAngle + arcLen * i / segs
@@ -5059,7 +5063,7 @@ object GLProjectileRenderers {
       _scyXs(segs + 1 + i) = (sx + Math.cos(a).toFloat * bladeR * 0.52f)
       _scyYs(segs + 1 + i) = (sy + Math.sin(a).toFloat * bladeR * 0.52f * 0.6f)
     ; i += 1 } }
-    sb.fillPolygon(_scyXs, _scyYs, segs * 2 + 2, 0.72f, 0.74f, 0.8f, 0.5f * p)
+    sb.fillRibbon(_scyXs, _scyYs, segs * 2 + 2, 0.72f, 0.74f, 0.8f, 0.5f * p)
 
     // Bright outer edge gleam
     { var j = 0; while (j < segs) {

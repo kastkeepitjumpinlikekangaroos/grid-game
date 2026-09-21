@@ -53,6 +53,36 @@ object ShapeBatch {
     }
   }
 
+  /**
+   * Dev check for the convexity `fillPolygon` requires. A non-convex outline fans into
+   * something that is not its own shape — a throwing star fills as a lopsided blob with
+   * its notches bridged, a crescent blade as a solid slab — and because the stroked
+   * outline still traces the true shape, it reads as a rendering glitch rather than as
+   * wrong geometry. Run any client binary with `GRIDGAME_POLYCHECK=1` and every offending
+   * call site prints once; the projectile gallery covers the whole roster in one pass.
+   * Free when unset: the flag is a static val, so the branch folds away.
+   */
+  private[gl] val POLY_CHECK = System.getenv("GRIDGAME_POLYCHECK") != null
+  private val polySeen = new java.util.HashSet[String]()
+  private[gl] def checkConvex(xs: Array[Float], ys: Array[Float], n: Int): Unit = {
+    var pos = false; var neg = false
+    var i = 0
+    while (i < n) {
+      val ax = xs((i + 1) % n) - xs(i); val ay = ys((i + 1) % n) - ys(i)
+      val bx = xs((i + 2) % n) - xs((i + 1) % n); val by = ys((i + 2) % n) - ys((i + 1) % n)
+      val cr = ax * by - ay * bx
+      if (cr > 1e-3f) pos = true else if (cr < -1e-3f) neg = true
+      i += 1
+    }
+    if (pos && neg) {
+      val st = Thread.currentThread.getStackTrace
+      var f = 2
+      while (f < st.length && st(f).getClassName.endsWith("ShapeBatch")) f += 1
+      val key = s"n=$n ${st(f).getClassName}.${st(f).getMethodName}:${st(f).getLineNumber}"
+      if (polySeen.add(key)) System.err.println(s"[NONCONVEX] $key")
+    }
+  }
+
   @inline def getCos(segments: Int, index: Int): Float = {
     if (segments <= MAX_SEGMENTS) {
       val arr = cosLUT(segments)
@@ -274,6 +304,7 @@ class ShapeBatch(val shader: ShaderProgram) {
   /** Fill a convex polygon using the first `n` elements of the given arrays. */
   def fillPolygon(xs: Array[Float], ys: Array[Float], n: Int, r: Float, g: Float, b: Float, a: Float): Unit = {
     if (n < 3) return
+    if (ShapeBatch.POLY_CHECK) ShapeBatch.checkConvex(xs, ys, n)
     // Fan triangulation from first vertex (works for convex polygons)
     val numTris = n - 2
     ensureCapacity(numTris * 3)
@@ -282,6 +313,52 @@ class ShapeBatch(val shader: ShaderProgram) {
       vertex(xs(0), ys(0), r, g, b, a)
       vertex(xs(i), ys(i), r, g, b, a)
       vertex(xs(i + 1), ys(i + 1), r, g, b, a)
+      i += 1
+    }
+  }
+
+  /**
+   * Fill a polygon as a fan from an explicit centre: `n` triangles (centre, vᵢ, vᵢ₊₁),
+   * closing back to v₀. Correct for any outline that is star-shaped about that centre —
+   * anything built as a radius per vertex, so throwing stars, sunbursts and faceted
+   * hulls. `fillPolygon` cannot draw these: fanning from vertex 0 bridges the notches.
+   */
+  def fillFan(cx: Float, cy: Float, xs: Array[Float], ys: Array[Float], n: Int,
+              r: Float, g: Float, b: Float, a: Float): Unit = {
+    if (n < 3) return
+    ensureCapacity(n * 3)
+    var i = 0
+    while (i < n) {
+      val j = if (i == n - 1) 0 else i + 1
+      vertex(cx, cy, r, g, b, a)
+      vertex(xs(i), ys(i), r, g, b, a)
+      vertex(xs(j), ys(j), r, g, b, a)
+      i += 1
+    }
+  }
+
+  /**
+   * Fill a band given as an outer run followed by the inner run reversed — the layout the
+   * crescent renderers build, where vertex i pairs with vertex n-1-i. One quad per
+   * segment, so the concave side stays open and the inner and outer edges may have
+   * different radii or squash. `fillPolygon` fans a crescent into a filled disc, which
+   * turns a blade into a slab.
+   */
+  def fillRibbon(xs: Array[Float], ys: Array[Float], n: Int,
+                 r: Float, g: Float, b: Float, a: Float): Unit = {
+    if (n < 4) return
+    val half = n / 2
+    ensureCapacity((half - 1) * 6)
+    var i = 0
+    while (i < half - 1) {
+      val oa = i;         val ob = i + 1
+      val ia = n - 1 - i; val ib = n - 2 - i
+      vertex(xs(oa), ys(oa), r, g, b, a)
+      vertex(xs(ob), ys(ob), r, g, b, a)
+      vertex(xs(ib), ys(ib), r, g, b, a)
+      vertex(xs(oa), ys(oa), r, g, b, a)
+      vertex(xs(ib), ys(ib), r, g, b, a)
+      vertex(xs(ia), ys(ia), r, g, b, a)
       i += 1
     }
   }

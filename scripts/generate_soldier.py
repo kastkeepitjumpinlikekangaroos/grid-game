@@ -1,371 +1,141 @@
 #!/usr/bin/env python3
-"""Generate sprites/soldier.png — 4-column x 4-row character spritesheet.
+"""Generate sprites/soldier.png -- the Soldier.
 
-256x256 PNG, 64x64 per frame.
-Row layout: Down=0, Up=1, Left=2, Right=3
-4 walking animation frames per direction.
-
-Style matches Spaceman/Gladiator: big round head, round body, small limbs, dark outlines.
-Theme: Military soldier — olive green helmet with chin strap, camo torso with tactical vest,
-brown combat boots with knee pads, ammo belt with pouches, rifle, dog tags.
-Enhanced 64x64: detailed combat vest with pocket outlines, helmet with chin strap,
-ammo belt across chest, boot treads.
+A cute army grunt: a round olive helmet with goggles strapped to it, a
+tactical vest with chest pouches, dog tags, big brown boots, and a chunky
+rifle held at the ready (slung across his back from behind).
 """
 
-from PIL import Image, ImageDraw
+import os
+import sys
 
-FRAME_SIZE = 128
-DRAW_SIZE = 64   # Internal drawing size (upscaled to FRAME_SIZE)
-COLS = 4
-ROWS = 4
-IMG_W = FRAME_SIZE * COLS   # 512
-IMG_H = FRAME_SIZE * ROWS   # 512
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from sprite_base import (
+    SKIN, Ell, Limb, Poly, RRect, arc_pts, cel, generate_character, hand_at, head_face,
+    head_skull, ink, lit, rig, rig_arms, rig_belt, rig_hair, rig_hand, rig_legs, rig_torso,
+    shade, stroke, xform,
+)
 
-# Colors
-OUTLINE = (40, 35, 35)
-SKIN = (210, 175, 135)
-SKIN_DARK = (180, 145, 110)
-OLIVE = (85, 105, 55)
-OLIVE_LIGHT = (110, 135, 70)
-OLIVE_DARK = (60, 75, 40)
-CAMO_SPOT = (70, 85, 45)
-CAMO_BROWN = (95, 80, 45)
-CAMO_TAN = (120, 110, 65)
-CAMO_DARK = (50, 60, 35)
-BROWN = (100, 70, 40)
-BROWN_DARK = (70, 50, 30)
-BROWN_LIGHT = (130, 95, 55)
-BELT = (55, 50, 40)
-BELT_BUCKLE = (200, 175, 60)
-POUCH = (75, 65, 45)
-POUCH_DARK = (55, 48, 32)
-BLACK = (30, 30, 30)
-METAL = (140, 140, 150)
-METAL_DARK = (100, 100, 110)
-METAL_BRIGHT = (190, 195, 205)
-GUN_BARREL = (65, 65, 70)
-GUN_STOCK = (80, 55, 35)
-GUN_BODY = (55, 55, 60)
-VEST_POCKET = (75, 95, 50)
-VEST_STITCH = (65, 85, 40)
-KNEE_PAD = (90, 110, 60)
-STRAP = (80, 65, 45)
-DOG_TAG = (200, 205, 215)
-BOOT_TREAD = (50, 40, 25)
-AMMO_BELT = (90, 80, 50)
-AMMO_ROUND = (160, 150, 60)
-
-DOWN, UP, LEFT, RIGHT = 0, 1, 2, 3
+OLIVE = (118, 140, 76)
+VEST = (90, 104, 62)
+KHAKI = (210, 188, 134)
+BOOT = (98, 72, 52)
+GUN = (78, 82, 94)
+WOOD = (154, 102, 60)
+HAIR = (116, 78, 52)
+LENS = (140, 214, 236)
+IRIS = (92, 76, 58)
 
 
-def ellipse(draw, cx, cy, rx, ry, fill, outline=OUTLINE):
-    draw.ellipse([cx - rx, cy - ry, cx + rx, cy + ry], fill=fill, outline=outline)
+def _helmet(r, draw):
+    hx, hy, rx, ry, d = r.hx, r.head_cy, r.head_rx, r.head_ry, r.d
+    cx0 = hx - d * 0.6
+    dome = arc_pts(cx0, hy - 1.2, rx + 1.6, ry + 0.8, 180, 360, 30)
+    lip = [(cx0 + rx + 2.4, hy - 0.4), (cx0 - rx - 2.4, hy - 0.4)]
+    cel(draw, Poly(dome + lip), OLIVE, sh=(1.5, 1.0), hi=(0.9, 0.9))
+    # the rim, a band of shadow under the dome
+    cel(draw, RRect(cx0 - rx - 2.6, hy - 2.0, cx0 + rx + 2.6, hy + 0.2, 1.0), shade(OLIVE, 1.0), sh=None)
+    if not r.back:
+        # goggles pushed up onto the helmet
+        gx = cx0 + d * 3.6
+        stroke(draw, [(cx0 - rx - 0.6, hy - 4.2), (cx0 + rx + 0.6, hy - 4.2)] if not d else
+               [(cx0 - d * (rx + 0.8), hy - 4.0), (cx0 + d * (rx + 0.4), hy - 4.6)], 1.0, shade(OLIVE, 2.0))
+        for k in ((-2.4, 2.4) if not d else (0.6,)):
+            lx = gx + k * (1 if not d else d)
+            cel(draw, Ell(lx, hy - 4.6, 2.3, 2.0), shade(GUN, 0.4), sh=None)
+            cel(draw, Ell(lx, hy - 4.6, 1.5, 1.3), LENS, sh=None, line=False)
+            Ell(lx - 0.5, hy - 5.1, 0.5, 0.5).draw(draw, fill=(255, 255, 255))
+        # chin strap
+        for s in ((-1, 1) if not d else (-d,)):
+            x = cx0 + s * (rx - 0.6) if not d else hx - d * 1.4
+            stroke(draw, [(x, hy - 0.2), (x + (s * -1.2 if not d else d * 0.6), hy + 6.6)], 0.6, shade(OLIVE, 2.2))
 
 
-def draw_vest_pocket(draw, x1, y1, x2, y2):
-    """Draw a detailed vest pocket with stitch outline."""
-    draw.rectangle([x1, y1, x2, y2], fill=VEST_POCKET, outline=OUTLINE)
-    # Stitch detail
-    draw.rectangle([x1 + 1, y1 + 1, x2 - 1, y1 + 2], fill=VEST_STITCH)
-    # Flap line
-    draw.line([(x1 + 1, y1 + 3), (x2 - 1, y1 + 3)], fill=OLIVE_DARK)
-
-
-def draw_ammo_belt_detail(draw, x1, y, x2):
-    """Draw ammo belt with individual round details."""
-    draw.rectangle([x1, y, x2, y + 3], fill=AMMO_BELT, outline=OUTLINE)
-    for x in range(x1 + 2, x2 - 1, 4):
-        draw.rectangle([x, y + 1, x + 1, y + 2], fill=AMMO_ROUND)
+def _rifle(draw, x, y, ang, flip=1.0):
+    """A chunky rifle gripped at (x, y), pointing along `ang`."""
+    stock = [(-7.0, -1.2), (-1.6, -1.6), (-1.0, 1.4), (-6.2, 2.4)]
+    cel(draw, Poly(xform(stock, x, y, ang, 1.0, flip)), WOOD, sh=None)
+    body = [(-1.8, -1.9), (4.6, -1.9), (4.6, 1.2), (-1.8, 1.2)]
+    cel(draw, Poly(xform(body, x, y, ang, 1.0, flip)), GUN, sh=None,
+        regions=[(Poly(xform([(-1.8, 0.0), (4.6, 0.0), (4.6, 1.2), (-1.8, 1.2)], x, y, ang, 1.0, flip)),
+                  shade(GUN, 0.8))])
+    mag = [(0.8, 1.0), (2.8, 1.0), (3.4, 4.2), (1.4, 4.4)]
+    cel(draw, Poly(xform(mag, x, y, ang, 1.0, flip)), shade(GUN, 0.8), sh=None)
+    guard = [(4.4, -1.5), (9.6, -1.3), (9.6, 1.1), (4.4, 1.2)]
+    cel(draw, Poly(xform(guard, x, y, ang, 1.0, flip)), WOOD, sh=None)
+    barrel = xform([(9.4, -0.4), (13.6, -0.4)], x, y, ang, 1.0, flip)
+    cel(draw, Limb(barrel, [0.75, 0.75]), GUN, sh=None)
+    sight = [(1.0, -1.8), (2.6, -1.8), (2.4, -3.0), (1.2, -3.0)]
+    cel(draw, Poly(xform(sight, x, y, ang, 1.0, flip)), GUN, sh=None)
 
 
 def draw_soldier(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    leg_spread = [-4, 0, 4, 0][frame]
-
-    base_y = oy + 54 + bob
-    body_cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 20
-
-    if direction == DOWN:
-        # Legs
-        draw.rectangle([body_cx - 10 + leg_spread, body_cy + 10,
-                        body_cx - 4 + leg_spread, base_y], fill=OLIVE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx + 4 - leg_spread, body_cy + 10,
-                        body_cx + 10 - leg_spread, base_y], fill=OLIVE_DARK, outline=OUTLINE)
-        # Knee pads
-        draw.rectangle([body_cx - 10 + leg_spread, body_cy + 12,
-                        body_cx - 4 + leg_spread, body_cy + 16], fill=KNEE_PAD)
-        draw.rectangle([body_cx + 4 - leg_spread, body_cy + 12,
-                        body_cx + 10 - leg_spread, body_cy + 16], fill=KNEE_PAD)
-        # Boots with treads
-        draw.rectangle([body_cx - 10 + leg_spread, base_y - 6,
-                        body_cx - 4 + leg_spread, base_y], fill=BROWN_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx + 4 - leg_spread, base_y - 6,
-                        body_cx + 10 - leg_spread, base_y], fill=BROWN_DARK, outline=OUTLINE)
-        # Boot treads
-        draw.line([(body_cx - 9 + leg_spread, base_y - 1), (body_cx - 5 + leg_spread, base_y - 1)], fill=BOOT_TREAD)
-        draw.line([(body_cx + 5 - leg_spread, base_y - 1), (body_cx + 9 - leg_spread, base_y - 1)], fill=BOOT_TREAD)
-
-        # Body
-        ellipse(draw, body_cx, body_cy, 14, 12, OLIVE)
-        # Camo pattern
-        draw.rectangle([body_cx - 8, body_cy - 6, body_cx - 2, body_cy - 2], fill=CAMO_SPOT)
-        draw.rectangle([body_cx + 2, body_cy, body_cx + 8, body_cy + 4], fill=OLIVE_DARK)
-        draw.rectangle([body_cx - 4, body_cy + 2, body_cx + 2, body_cy + 6], fill=CAMO_BROWN)
-        draw.rectangle([body_cx + 4, body_cy - 6, body_cx + 10, body_cy - 2], fill=CAMO_TAN)
-        draw.rectangle([body_cx - 10, body_cy - 2, body_cx - 6, body_cy + 2], fill=CAMO_DARK)
-
-        # Vest pockets with stitch detail
-        draw_vest_pocket(draw, body_cx - 10, body_cy - 8, body_cx - 4, body_cy - 4)
-        draw_vest_pocket(draw, body_cx + 4, body_cy - 8, body_cx + 10, body_cy - 4)
-
-        # Dog tags
-        draw.rectangle([body_cx, body_cy - 10, body_cx + 2, body_cy - 8], fill=DOG_TAG)
-        draw.point((body_cx + 1, body_cy - 11), fill=METAL)
-
-        # Ammo belt across chest
-        draw_ammo_belt_detail(draw, body_cx - 12, body_cy - 2, body_cx + 12)
-
-        # Belt
-        draw.rectangle([body_cx - 14, body_cy + 6, body_cx + 14, body_cy + 10],
-                       fill=BELT, outline=OUTLINE)
-        draw.rectangle([body_cx - 2, body_cy + 6, body_cx + 2, body_cy + 10], fill=BELT_BUCKLE)
-        # Ammo pouches on belt
-        draw.rectangle([body_cx - 12, body_cy + 6, body_cx - 8, body_cy + 12],
-                       fill=POUCH, outline=OUTLINE)
-        draw.rectangle([body_cx + 8, body_cy + 6, body_cx + 12, body_cy + 12],
-                       fill=POUCH, outline=OUTLINE)
-        draw.rectangle([body_cx + 4, body_cy + 8, body_cx + 6, body_cy + 12],
-                       fill=POUCH_DARK)
-
-        # Arms
-        draw.rectangle([body_cx - 18, body_cy - 6, body_cx - 12, body_cy + 6],
-                       fill=OLIVE, outline=OUTLINE)
-        draw.rectangle([body_cx + 12, body_cy - 6, body_cx + 18, body_cy + 6],
-                       fill=OLIVE, outline=OUTLINE)
-        # Gloves
-        draw.rectangle([body_cx - 18, body_cy + 2, body_cx - 12, body_cy + 6],
-                       fill=BROWN, outline=OUTLINE)
-        draw.rectangle([body_cx + 12, body_cy + 2, body_cx + 18, body_cy + 6],
-                       fill=BROWN, outline=OUTLINE)
-
-        # Rifle
-        rifle_sway = [0, 0, 2, 0][frame]
-        draw.rectangle([body_cx + 18, body_cy - 2, body_cx + 22 + rifle_sway, body_cy + 14],
-                       fill=GUN_BODY, outline=OUTLINE)
-        draw.rectangle([body_cx + 18, body_cy + 10, body_cx + 20, body_cy + 20],
-                       fill=GUN_BARREL)
-        draw.rectangle([body_cx + 18, body_cy - 6, body_cx + 22, body_cy - 2],
-                       fill=GUN_STOCK, outline=OUTLINE)
-
-        # Head
-        ellipse(draw, body_cx, head_cy, 16, 14, OLIVE)
-        draw.rectangle([body_cx - 18, head_cy + 4, body_cx + 18, head_cy + 8],
-                       fill=OLIVE_DARK, outline=OUTLINE)
-        ellipse(draw, body_cx, head_cy + 4, 10, 8, SKIN)
-        # Eyes
-        draw.rectangle([body_cx - 6, head_cy + 2, body_cx - 2, head_cy + 6], fill=BLACK)
-        draw.rectangle([body_cx + 2, head_cy + 2, body_cx + 6, head_cy + 6], fill=BLACK)
-        # Helmet band
-        draw.rectangle([body_cx - 14, head_cy - 2, body_cx + 14, head_cy + 2],
-                       fill=OLIVE_DARK, outline=None)
-        # Chin strap
-        draw.line([body_cx - 10, head_cy + 8, body_cx - 10, head_cy + 12], fill=STRAP, width=2)
-        draw.line([body_cx + 10, head_cy + 8, body_cx + 10, head_cy + 12], fill=STRAP, width=2)
-        # Chin strap connector
-        draw.line([body_cx - 10, head_cy + 12, body_cx - 6, head_cy + 14], fill=STRAP, width=1)
-        draw.line([body_cx + 10, head_cy + 12, body_cx + 6, head_cy + 14], fill=STRAP, width=1)
-
-    elif direction == UP:
-        # Legs
-        draw.rectangle([body_cx - 10 + leg_spread, body_cy + 10,
-                        body_cx - 4 + leg_spread, base_y], fill=OLIVE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx + 4 - leg_spread, body_cy + 10,
-                        body_cx + 10 - leg_spread, base_y], fill=OLIVE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx - 10 + leg_spread, body_cy + 12,
-                        body_cx - 4 + leg_spread, body_cy + 16], fill=KNEE_PAD)
-        draw.rectangle([body_cx + 4 - leg_spread, body_cy + 12,
-                        body_cx + 10 - leg_spread, body_cy + 16], fill=KNEE_PAD)
-        draw.rectangle([body_cx - 10 + leg_spread, base_y - 6,
-                        body_cx - 4 + leg_spread, base_y], fill=BROWN_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx + 4 - leg_spread, base_y - 6,
-                        body_cx + 10 - leg_spread, base_y], fill=BROWN_DARK, outline=OUTLINE)
-        draw.line([(body_cx - 9 + leg_spread, base_y - 1), (body_cx - 5 + leg_spread, base_y - 1)], fill=BOOT_TREAD)
-        draw.line([(body_cx + 5 - leg_spread, base_y - 1), (body_cx + 9 - leg_spread, base_y - 1)], fill=BOOT_TREAD)
-
-        # Backpack
-        pack_sway = [0, 2, 0, -2][frame]
-        draw.rounded_rectangle([body_cx - 10 + pack_sway, body_cy - 8,
-                                body_cx + 10 + pack_sway, body_cy + 10],
-                               radius=4, fill=OLIVE_DARK, outline=OUTLINE)
-        draw.rounded_rectangle([body_cx - 8 + pack_sway, body_cy - 6,
-                                body_cx + 8 + pack_sway, body_cy + 8],
-                               radius=4, fill=BROWN, outline=None)
-        draw.line([body_cx - 6 + pack_sway, body_cy - 8, body_cx - 6, body_cy - 12],
-                  fill=STRAP, width=2)
-        draw.line([body_cx + 6 + pack_sway, body_cy - 8, body_cx + 6, body_cy - 12],
-                  fill=STRAP, width=2)
-
-        # Body
-        ellipse(draw, body_cx, body_cy, 14, 12, OLIVE)
-        ellipse(draw, body_cx, body_cy - 2, 10, 8, OLIVE_DARK)
-        draw.rectangle([body_cx - 6, body_cy - 4, body_cx, body_cy], fill=CAMO_BROWN)
-        draw.rectangle([body_cx + 2, body_cy + 2, body_cx + 8, body_cy + 6], fill=CAMO_DARK)
-
-        # Belt
-        draw.rectangle([body_cx - 14, body_cy + 6, body_cx + 14, body_cy + 10],
-                       fill=BELT, outline=OUTLINE)
-        draw.rectangle([body_cx - 10, body_cy + 6, body_cx - 6, body_cy + 12],
-                       fill=POUCH, outline=OUTLINE)
-        draw.rectangle([body_cx + 6, body_cy + 6, body_cx + 10, body_cy + 12],
-                       fill=POUCH, outline=OUTLINE)
-
-        # Arms
-        draw.rectangle([body_cx - 18, body_cy - 6, body_cx - 12, body_cy + 6],
-                       fill=OLIVE, outline=OUTLINE)
-        draw.rectangle([body_cx + 12, body_cy - 6, body_cx + 18, body_cy + 6],
-                       fill=OLIVE, outline=OUTLINE)
-
-        # Head (back of helmet)
-        ellipse(draw, body_cx, head_cy, 16, 14, OLIVE)
-        ellipse(draw, body_cx, head_cy, 12, 10, OLIVE_DARK)
-        draw.rectangle([body_cx - 14, head_cy - 2, body_cx + 14, head_cy + 2],
-                       fill=OLIVE_DARK, outline=None)
-
-    elif direction == LEFT:
-        # Rifle behind body
-        rifle_bob = [0, -2, 0, -2][frame]
-        draw.rectangle([body_cx - 24, body_cy - 2 + rifle_bob,
-                        body_cx - 6, body_cy + 2 + rifle_bob],
-                       fill=GUN_BODY, outline=OUTLINE)
-        draw.rectangle([body_cx - 30, body_cy - 2 + rifle_bob,
-                        body_cx - 24, body_cy + rifle_bob],
-                       fill=GUN_BARREL)
-        draw.rectangle([body_cx - 6, body_cy - 4 + rifle_bob,
-                        body_cx, body_cy + 4 + rifle_bob],
-                       fill=GUN_STOCK, outline=OUTLINE)
-
-        # Legs (side view)
-        draw.rectangle([body_cx - 2 - leg_spread, body_cy + 10,
-                        body_cx + 4 - leg_spread, base_y], fill=OLIVE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx - 2 - leg_spread, base_y - 6,
-                        body_cx + 4 - leg_spread, base_y], fill=BROWN_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx - 8 + leg_spread, body_cy + 10,
-                        body_cx - 2 + leg_spread, base_y], fill=OLIVE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx - 8 + leg_spread, base_y - 6,
-                        body_cx - 2 + leg_spread, base_y], fill=BROWN_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx - 2 - leg_spread, body_cy + 12,
-                        body_cx + 4 - leg_spread, body_cy + 16], fill=KNEE_PAD)
-        draw.rectangle([body_cx - 8 + leg_spread, body_cy + 12,
-                        body_cx - 2 + leg_spread, body_cy + 16], fill=KNEE_PAD)
-        # Boot treads
-        draw.line([(body_cx - 1 - leg_spread, base_y - 1), (body_cx + 3 - leg_spread, base_y - 1)], fill=BOOT_TREAD)
-        draw.line([(body_cx - 7 + leg_spread, base_y - 1), (body_cx - 3 + leg_spread, base_y - 1)], fill=BOOT_TREAD)
-
-        # Body
-        ellipse(draw, body_cx - 2, body_cy, 12, 12, OLIVE)
-        draw.rectangle([body_cx - 6, body_cy - 6, body_cx, body_cy - 2], fill=CAMO_SPOT)
-        draw.rectangle([body_cx - 10, body_cy, body_cx - 4, body_cy + 4], fill=CAMO_BROWN)
-        draw.rectangle([body_cx + 2, body_cy - 4, body_cx + 6, body_cy], fill=CAMO_TAN)
-        draw_vest_pocket(draw, body_cx - 10, body_cy - 8, body_cx - 4, body_cy - 4)
-        # Ammo belt
-        draw_ammo_belt_detail(draw, body_cx - 10, body_cy - 2, body_cx + 8)
-        # Belt
-        draw.rectangle([body_cx - 14, body_cy + 6, body_cx + 10, body_cy + 10],
-                       fill=BELT, outline=OUTLINE)
-        draw.rectangle([body_cx - 12, body_cy + 6, body_cx - 8, body_cy + 12],
-                       fill=POUCH, outline=OUTLINE)
-        draw.rectangle([body_cx + 4, body_cy + 6, body_cx + 8, body_cy + 12],
-                       fill=POUCH, outline=OUTLINE)
-
-        # Arm (front)
-        draw.rectangle([body_cx - 14, body_cy - 4, body_cx - 8, body_cy + 6],
-                       fill=OLIVE, outline=OUTLINE)
-        draw.rectangle([body_cx - 14, body_cy + 2, body_cx - 8, body_cy + 6],
-                       fill=BROWN, outline=OUTLINE)
-
-        # Head (side, facing left)
-        ellipse(draw, body_cx - 2, head_cy, 14, 14, OLIVE)
-        ellipse(draw, body_cx - 6, head_cy + 4, 8, 6, SKIN)
-        draw.rectangle([body_cx - 18, head_cy + 4, body_cx + 8, head_cy + 8],
-                       fill=OLIVE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx - 10, head_cy + 2, body_cx - 6, head_cy + 6], fill=BLACK)
-        draw.rectangle([body_cx - 14, head_cy - 2, body_cx + 10, head_cy + 2],
-                       fill=OLIVE_DARK, outline=None)
-        # Chin strap
-        draw.line([body_cx - 12, head_cy + 8, body_cx - 12, head_cy + 12], fill=STRAP, width=2)
-        draw.line([body_cx - 12, head_cy + 12, body_cx - 8, head_cy + 14], fill=STRAP, width=1)
-
-    elif direction == RIGHT:
-        # Rifle behind body
-        rifle_bob = [0, -2, 0, -2][frame]
-        draw.rectangle([body_cx + 6, body_cy - 2 + rifle_bob,
-                        body_cx + 24, body_cy + 2 + rifle_bob],
-                       fill=GUN_BODY, outline=OUTLINE)
-        draw.rectangle([body_cx + 24, body_cy - 2 + rifle_bob,
-                        body_cx + 30, body_cy + rifle_bob],
-                       fill=GUN_BARREL)
-        draw.rectangle([body_cx, body_cy - 4 + rifle_bob,
-                        body_cx + 6, body_cy + 4 + rifle_bob],
-                       fill=GUN_STOCK, outline=OUTLINE)
-
-        # Legs
-        draw.rectangle([body_cx - 2 + leg_spread, body_cy + 10,
-                        body_cx + 4 + leg_spread, base_y], fill=OLIVE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx - 2 + leg_spread, base_y - 6,
-                        body_cx + 4 + leg_spread, base_y], fill=BROWN_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx + 4 - leg_spread, body_cy + 10,
-                        body_cx + 10 - leg_spread, base_y], fill=OLIVE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx + 4 - leg_spread, base_y - 6,
-                        body_cx + 10 - leg_spread, base_y], fill=BROWN_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx - 2 + leg_spread, body_cy + 12,
-                        body_cx + 4 + leg_spread, body_cy + 16], fill=KNEE_PAD)
-        draw.rectangle([body_cx + 4 - leg_spread, body_cy + 12,
-                        body_cx + 10 - leg_spread, body_cy + 16], fill=KNEE_PAD)
-        draw.line([(body_cx - 1 + leg_spread, base_y - 1), (body_cx + 3 + leg_spread, base_y - 1)], fill=BOOT_TREAD)
-        draw.line([(body_cx + 5 - leg_spread, base_y - 1), (body_cx + 9 - leg_spread, base_y - 1)], fill=BOOT_TREAD)
-
-        # Body
-        ellipse(draw, body_cx + 2, body_cy, 12, 12, OLIVE)
-        draw.rectangle([body_cx, body_cy - 6, body_cx + 6, body_cy - 2], fill=CAMO_SPOT)
-        draw.rectangle([body_cx + 4, body_cy, body_cx + 10, body_cy + 4], fill=CAMO_BROWN)
-        draw.rectangle([body_cx - 6, body_cy - 4, body_cx - 2, body_cy], fill=CAMO_TAN)
-        draw_vest_pocket(draw, body_cx + 4, body_cy - 8, body_cx + 10, body_cy - 4)
-        draw_ammo_belt_detail(draw, body_cx - 8, body_cy - 2, body_cx + 10)
-        draw.rectangle([body_cx - 10, body_cy + 6, body_cx + 14, body_cy + 10],
-                       fill=BELT, outline=OUTLINE)
-        draw.rectangle([body_cx - 8, body_cy + 6, body_cx - 4, body_cy + 12],
-                       fill=POUCH, outline=OUTLINE)
-        draw.rectangle([body_cx + 8, body_cy + 6, body_cx + 12, body_cy + 12],
-                       fill=POUCH, outline=OUTLINE)
-
-        # Arm
-        draw.rectangle([body_cx + 8, body_cy - 4, body_cx + 14, body_cy + 6],
-                       fill=OLIVE, outline=OUTLINE)
-        draw.rectangle([body_cx + 8, body_cy + 2, body_cx + 14, body_cy + 6],
-                       fill=BROWN, outline=OUTLINE)
-
-        # Head
-        ellipse(draw, body_cx + 2, head_cy, 14, 14, OLIVE)
-        ellipse(draw, body_cx + 6, head_cy + 4, 8, 6, SKIN)
-        draw.rectangle([body_cx - 8, head_cy + 4, body_cx + 18, head_cy + 8],
-                       fill=OLIVE_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx + 6, head_cy + 2, body_cx + 10, head_cy + 6], fill=BLACK)
-        draw.rectangle([body_cx - 10, head_cy - 2, body_cx + 14, head_cy + 2],
-                       fill=OLIVE_DARK, outline=None)
-        draw.line([body_cx + 12, head_cy + 8, body_cx + 12, head_cy + 12], fill=STRAP, width=2)
-        draw.line([body_cx + 12, head_cy + 12, body_cx + 8, head_cy + 14], fill=STRAP, width=1)
+    r = rig(ox, oy, direction, frame, build=1.05)
+    d = r.d
+    if r.back:
+        pass
+    if d:
+        rig_arms(r, draw, OLIVE, SKIN, layer="far")
+    rig_legs(r, draw, OLIVE, BOOT)
+    rig_torso(r, draw, OLIVE)
+    # tactical vest over the shirt
+    cx = r.cx
+    if d:
+        vest = Poly([(cx - d * 3.0, r.sh_y - 1.4), (cx + d * 3.4, r.sh_y - 1.0), (cx + d * 4.6, r.waist_y + 1.0),
+                     (cx - d * 4.2, r.waist_y + 1.0)])
+    else:
+        w = r.sh_w - 0.6
+        vest = Poly([(cx - w + 1.2, r.sh_y - 1.8), (cx - 2.2, r.sh_y - 1.8), (cx, r.sh_y + 1.0),
+                     (cx + 2.2, r.sh_y - 1.8), (cx + w - 1.2, r.sh_y - 1.8), (cx + w + 0.2, r.waist_y + 1.2),
+                     (cx - w - 0.2, r.waist_y + 1.2)]) if not r.back else \
+            Poly([(cx - w + 1.2, r.sh_y - 1.8), (cx + w - 1.2, r.sh_y - 1.8), (cx + w + 0.2, r.waist_y + 1.2),
+                  (cx - w - 0.2, r.waist_y + 1.2)])
+    cel(draw, vest, VEST, sh=(1.2, 0.8))
+    if not r.back:
+        for s in ((-1, 1) if not d else (d,)):
+            px = cx + s * 3.2 if not d else cx + d * 1.8
+            cel(draw, RRect(px - 1.7, r.sh_y + 1.6, px + 1.7, r.sh_y + 4.6, 0.6), shade(VEST, 0.6), sh=(0.0, 0.5))
+            stroke(draw, [(px - 1.5, r.sh_y + 2.4), (px + 1.5, r.sh_y + 2.4)], 0.5, shade(VEST, 1.6))
+        # dog tags
+        if not d:
+            stroke(draw, [(cx - 1.8, r.sh_y - 1.8), (cx, r.sh_y + 0.8), (cx + 1.8, r.sh_y - 1.8)], 0.4, (200, 204, 214))
+            cel(draw, RRect(cx - 0.8, r.sh_y + 0.6, cx + 0.8, r.sh_y + 2.6, 0.4), (214, 218, 228), sh=None)
+    rig_belt(r, draw, KHAKI, buckle=(196, 196, 206))
+    if r.back:
+        _rifle(draw, cx - 7.0, r.hip_y - 1.0, -35.0)
+        stroke(draw, [(cx - 5.0, r.sh_y - 1.6), (cx + 5.4, r.waist_y + 0.6)], 0.9, KHAKI)
+    # arms: head-on the rifle is held across the body at the ready
+    if d:
+        rig_arms(r, draw, OLIVE, SKIN, layer="near", reach=0.5, hands=False)
+    elif not r.back:
+        rig_arms(r, draw, OLIVE, SKIN, sides=(1,), reach=0.35, hands=False)
+        rig_arms(r, draw, OLIVE, SKIN, sides=(-1,), reach=0.9, hands=False)
+    else:
+        rig_arms(r, draw, OLIVE, SKIN, layer="near")
+    head_skull(r, draw, SKIN)
+    if not r.back:
+        head_face(r, draw, SKIN, iris=IRIS, mood="sharp", mouth="set", brows=True,
+                  brow_color=shade(HAIR, 0.8))
+        # a sticking plaster on the cheek
+        bx = r.hx + (5.6 if not d else d * 4.0)
+        cel(draw, RRect(bx - 1.3, r.head_cy + 5.6, bx + 1.3, r.head_cy + 6.9, 0.5), (246, 226, 196), sh=None)
+    rig_hair(r, draw, HAIR, "crop", hat=True, skin=SKIN)
+    _helmet(r, draw)
+    if d:
+        h = hand_at(r, d, 0.5)
+        _rifle(draw, h[0], h[1], 12.0 if d > 0 else 168.0, flip=1.0 if d > 0 else -1.0)
+        rig_hand(r, draw, d, SKIN, 0.5)
+    elif not r.back:
+        hr = hand_at(r, 1, 0.35)
+        hl = hand_at(r, -1, 0.9, 0.0)
+        import math
+        ang = math.degrees(math.atan2(hl[1] - hr[1], hl[0] - hr[0]))
+        _rifle(draw, hr[0], hr[1], ang, flip=-1.0)
+        rig_hand(r, draw, 1, SKIN, 0.35)
+        rig_hand(r, draw, -1, SKIN, 0.9)
 
 
 def main():
-    # Rendering (supersampling + the shared detail pass) lives in sprite_base so
-    # every character sheet is produced the same way; this script only draws.
-    import os
-    import sys
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from sprite_base import generate_character
-
     generate_character("soldier", draw_func=draw_soldier)
 
 

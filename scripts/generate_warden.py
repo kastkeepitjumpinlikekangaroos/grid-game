@@ -1,514 +1,158 @@
 #!/usr/bin/env python3
-"""Generate sprites/warden.png — 4-column x 4-row character spritesheet.
+"""Generate sprites/warden.png -- the Warden.
 
-256x256 PNG, 64x64 per frame.
-Row layout: Down=0, Up=1, Left=2, Right=3
-4 walking animation frames per direction.
-
-Style matches Spaceman/Gladiator: big round head, round body, small limbs, dark outlines.
-Theme: Prison warden — dark iron armor, chain details, heavy key ring, iron mask/visor.
-Enhanced 64x64: heavy mace weapon, intense visor glow, chain gauntlets, rivet details,
-          heavier boots, bigger key ring, stomp animation.
-          Shield with detailed emblem, chain mail texture (dot grid), nature-themed
-          green accents with leaf detail.
+A jailer in heavy plate: a round great helm with a barred visor and two
+yellow eyes glowing behind the bars, oversized pauldrons, a chain slung across
+his chest, a ring of keys at his hip, a gold padlock for a shield and a
+length of chain with a manacle swinging from his fist.
 """
 
-from PIL import Image, ImageDraw
+import math
+import os
+import sys
 
-FRAME_SIZE = 128
-DRAW_SIZE = 64   # Internal drawing size (upscaled to FRAME_SIZE)
-COLS = 4
-ROWS = 4
-IMG_W = FRAME_SIZE * COLS   # 512
-IMG_H = FRAME_SIZE * ROWS   # 512
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from sprite_base import (
+    Ell, Limb, Poly, RRect, arc_pts, cel, generate_character, hand_at, head_skull, ink, lit,
+    rig, rig_arms, rig_belt, rig_hand, rig_legs, rig_torso, shade, stroke,
+)
 
-# Colors
-OUTLINE = (40, 35, 35)
-IRON = (70, 70, 80)
-IRON_LIGHT = (100, 100, 115)
-IRON_BRIGHT = (140, 140, 155)       # Rivet highlights
-IRON_DARK = (45, 45, 55)
-CHAIN = (120, 120, 130)
-CHAIN_DARK = (80, 80, 90)
-CHAIN_BRIGHT = (150, 150, 165)      # Bright chain links
-VISOR_SLIT = (200, 220, 255)        # Brighter icy blue glow
-VISOR_GLOW = (160, 200, 255, 200)   # Glow bleed around visor
-VISOR_CORE = (230, 240, 255)        # White-hot center of visor
-VISOR_DIM = (100, 130, 180)
-ARMOR_ACCENT = (55, 60, 70)
-KEY_GOLD = (200, 170, 60)
-KEY_BRIGHT = (230, 200, 80)         # Key highlight
-KEY_DARK = (150, 125, 40)
-BELT = (50, 45, 40)
-BOOT = (40, 38, 35)
-BOOT_CAP = (110, 110, 120)          # Metal toe cap
-BLACK = (25, 25, 30)
-FROST_BLUE = (140, 190, 255)
-MACE_HANDLE = (90, 65, 35)          # Brown wood handle
-MACE_HEAD = (55, 55, 65)            # Dark iron mace ball
-MACE_SPIKE = (180, 180, 195)        # Bright spike tips
-# New detail colors
-SHIELD_FACE = (60, 60, 70)
-SHIELD_RIM = (90, 90, 105)
-SHIELD_EMBLEM = (180, 160, 55)
-CHAINMAIL_DOT = (100, 100, 110)
-GREEN_ACCENT = (50, 100, 45)
-GREEN_LIGHT = (75, 135, 65)
-LEAF = (60, 120, 50)
-LEAF_VEIN = (40, 85, 35)
-
-DOWN, UP, LEFT, RIGHT = 0, 1, 2, 3
+STEEL = (144, 152, 176)
+DARK = (84, 88, 108)
+GOLD = (242, 196, 84)
+CHAIN = (184, 192, 210)
+GLOW = (255, 224, 110)
+TABARD = (132, 42, 56)
+VOID = (26, 24, 34)
 
 
-def ellipse(draw, cx, cy, rx, ry, fill, outline=OUTLINE):
-    draw.ellipse([cx - rx, cy - ry, cx + rx, cy + ry], fill=fill, outline=outline)
+def _links(draw, pts, size=1.3, color=CHAIN):
+    """Chain links along a polyline, alternating face-on and edge-on."""
+    total = []
+    for i in range(len(pts) - 1):
+        (x0, y0), (x1, y1) = pts[i], pts[i + 1]
+        seg = math.hypot(x1 - x0, y1 - y0)
+        n = max(1, int(seg / (size * 1.5)))
+        for j in range(n):
+            t = j / float(n)
+            total.append((x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, math.atan2(y1 - y0, x1 - x0)))
+    for k, (x, y, a) in enumerate(total):
+        if k % 2 == 0:
+            cel(draw, Ell(x, y, size, size * 0.8), color, sh=None, line_color=ink(color), lw=0.55)
+            Ell(x, y, size * 0.45, size * 0.3).draw(draw, fill=shade(color, 2.2))
+        else:
+            ca, sa = math.cos(a), math.sin(a)
+            stroke(draw, [(x - ca * size, y - sa * size), (x + ca * size, y + sa * size)], 0.9, shade(color, 0.8))
 
 
-def draw_chainmail_texture(draw, x1, y1, x2, y2):
-    """Draw a chain mail dot grid pattern on the body."""
-    for y in range(y1 + 2, y2, 4):
-        offset = 2 if ((y - y1) // 4) % 2 == 0 else 0
-        for x in range(x1 + 2 + offset, x2, 4):
-            draw.point((x, y), fill=CHAINMAIL_DOT)
+def _helm(r, draw):
+    hx, hy, rx, ry, d = r.hx, r.head_cy, r.head_rx, r.head_ry, r.d
+    cx0 = hx - d * 0.4
+    helm = Ell(cx0, hy + 0.2, rx + 1.2, ry + 1.4)
+    cel(draw, helm, STEEL, sh=(1.8, 1.4), hi=(0.9, 0.9))
+    # ridge over the crown and a knob on top
+    stroke(draw, [(cx0 - d * 2.0, hy - ry - 0.6), (cx0 - d * 2.0 if not d else cx0 + d * 6.0, hy - ry + 4.0)] if d
+           else [(cx0, hy - ry - 0.8), (cx0, hy - 2.6)], 1.4, shade(STEEL, 0.8))
+    cel(draw, Ell(cx0 - d * 1.0, hy - ry - 1.4, 1.8, 1.4), GOLD, sh=(0.4, 0.4))
+    if r.back:
+        for y in (hy + 2.0, hy + 6.0):
+            stroke(draw, [(cx0 - rx + 1.0, y), (cx0 + rx - 1.0, y)], 0.7, shade(STEEL, 0.9))
+        return
+    # the visor: a dark slot with bars, eyes glowing behind them
+    vx = cx0 + d * 3.0
+    w = (rx - 1.4) if not d else rx * 0.62
+    slot = RRect(vx - w, hy - 1.2, vx + w, hy + 5.0, 1.8)
+    cel(draw, slot, VOID, sh=None, line_color=shade(STEEL, 1.8))
+    for side, ex in (((-1, vx - 4.4), (1, vx + 4.4)) if not d else ((d, vx + d * 3.2),)):
+        Poly([(ex - 2.4, hy + 1.9), (ex - 0.8, hy + 0.6), (ex + 2.2, hy + 0.9), (ex + 1.6, hy + 2.8),
+              (ex - 1.2, hy + 3.0)] if side > 0 else
+             [(ex + 2.4, hy + 1.9), (ex + 0.8, hy + 0.6), (ex - 2.2, hy + 0.9), (ex - 1.6, hy + 2.8),
+              (ex + 1.2, hy + 3.0)]).draw(draw, fill=GLOW)
+        Ell(ex, hy + 1.7, 0.7, 0.6).draw(draw, fill=(255, 255, 240))
+    nbars = 5 if not d else 3
+    for i in range(nbars):
+        x = vx - w + (2 * w) * (i + 0.5) / nbars
+        stroke(draw, [(x, hy - 1.0), (x, hy + 4.8)], 0.8, STEEL)
+    # rivets round the visor
+    for s in ((-1, 1) if not d else (-d,)):
+        Ell(cx0 + s * (rx - 0.6), hy + 2.0, 0.7, 0.7).draw(draw, fill=lit(STEEL, 1.4))
 
 
-def draw_shield_with_emblem(draw, cx, cy, direction):
-    """Draw a shield with a detailed emblem (cross or diamond)."""
-    if direction == DOWN:
-        # Shield on left arm — round shield
-        ellipse(draw, cx, cy, 10, 10, SHIELD_FACE, outline=OUTLINE)
-        # Shield rim
-        draw.arc([cx - 10, cy - 10, cx + 10, cy + 10], 0, 360, fill=SHIELD_RIM, width=2)
-        # Cross emblem
-        draw.line([(cx, cy - 6), (cx, cy + 6)], fill=SHIELD_EMBLEM, width=2)
-        draw.line([(cx - 6, cy), (cx + 6, cy)], fill=SHIELD_EMBLEM, width=2)
-        # Center rivet
-        draw.rectangle([cx - 1, cy - 1, cx + 1, cy + 1], fill=IRON_BRIGHT)
-    elif direction == LEFT:
-        # Shield visible on right side (back arm)
-        ellipse(draw, cx, cy, 8, 10, SHIELD_FACE, outline=OUTLINE)
-        draw.arc([cx - 8, cy - 10, cx + 8, cy + 10], 0, 360, fill=SHIELD_RIM, width=2)
-        draw.line([(cx, cy - 6), (cx, cy + 6)], fill=SHIELD_EMBLEM, width=2)
-        draw.line([(cx - 5, cy), (cx + 5, cy)], fill=SHIELD_EMBLEM, width=2)
-        draw.rectangle([cx - 1, cy - 1, cx + 1, cy + 1], fill=IRON_BRIGHT)
-    elif direction == RIGHT:
-        ellipse(draw, cx, cy, 8, 10, SHIELD_FACE, outline=OUTLINE)
-        draw.arc([cx - 8, cy - 10, cx + 8, cy + 10], 0, 360, fill=SHIELD_RIM, width=2)
-        draw.line([(cx, cy - 6), (cx, cy + 6)], fill=SHIELD_EMBLEM, width=2)
-        draw.line([(cx - 5, cy), (cx + 5, cy)], fill=SHIELD_EMBLEM, width=2)
-        draw.rectangle([cx - 1, cy - 1, cx + 1, cy + 1], fill=IRON_BRIGHT)
+def _pauldron(r, draw, side):
+    sx, sy = r.shoulder(side)
+    ox = side * 1.0 if not r.d else 0.0
+    col = STEEL if r.near(side) else shade(STEEL, 0.6)
+    for i in range(2):
+        cel(draw, Ell(sx + ox, sy - 1.2 + i * 2.2, 4.6 - i * 0.6, 3.0 - i * 0.3), col if i == 0 else shade(col, 0.5),
+            sh=(0.8, 0.8), hi=(0.5, 0.5) if i == 0 else None)
+    Ell(sx + ox - 1.4, sy - 2.2, 0.6, 0.6).draw(draw, fill=GOLD)
 
 
-def draw_leaf_detail(draw, cx, cy):
-    """Draw a small nature-themed leaf accent."""
-    # Leaf shape — small pointed oval
-    draw.polygon([
-        (cx, cy - 4),
-        (cx + 3, cy),
-        (cx, cy + 4),
-        (cx - 3, cy),
-    ], fill=LEAF, outline=OUTLINE)
-    # Leaf vein
-    draw.line([(cx, cy - 3), (cx, cy + 3)], fill=LEAF_VEIN, width=1)
+def _padlock(r, draw, x, y, k=1.0):
+    """The shield: a big gold padlock, keyhole and all."""
+    cel(draw, Limb(arc_pts(x, y - 4.6 * k, 3.6 * k, 4.4 * k, 180, 360, 14), [1.3 * k] * 15), CHAIN, sh=None)
+    body = RRect(x - 5.8 * k, y - 4.4 * k, x + 5.8 * k, y + 5.0 * k, 1.8 * k)
+    cel(draw, body, GOLD, sh=(1.2, 1.2), hi=(0.7, 0.7))
+    cel(draw, Ell(x, y - 0.4 * k, 1.5 * k, 1.5 * k), VOID, sh=None, line=False)
+    Poly([(x - 0.8 * k, y), (x + 0.8 * k, y), (x + 0.5 * k, y + 2.6 * k), (x - 0.5 * k, y + 2.6 * k)]).draw(
+        draw, fill=VOID)
 
 
 def draw_warden(draw, ox, oy, direction, frame):
-    # Heavier stomp bob pattern: [0, -2, 0, -4]
-    bob = [0, -2, 0, -4][frame]
-    leg_spread = [-4, 0, 4, 0][frame]
-
-    base_y = oy + 54 + bob
-    body_cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 20
-
-    if direction == DOWN:
-        # ---- Legs — heavy iron boots (wider/blockier) ----
-        draw.rectangle([body_cx - 10 + leg_spread, body_cy + 10,
-                        body_cx - 4 + leg_spread, base_y], fill=IRON_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx + 4 - leg_spread, body_cy + 10,
-                        body_cx + 10 - leg_spread, base_y], fill=IRON_DARK, outline=OUTLINE)
-        # Boots — wider with metal toe cap
-        draw.rectangle([body_cx - 14 + leg_spread, base_y - 8,
-                        body_cx - 2 + leg_spread, base_y], fill=BOOT, outline=OUTLINE)
-        draw.rectangle([body_cx + 2 - leg_spread, base_y - 8,
-                        body_cx + 14 - leg_spread, base_y], fill=BOOT, outline=OUTLINE)
-        # Metal toe caps
-        draw.rectangle([body_cx - 13 + leg_spread, base_y - 3,
-                        body_cx - 9 + leg_spread, base_y - 1], fill=BOOT_CAP)
-        draw.rectangle([body_cx + 9 - leg_spread, base_y - 3,
-                        body_cx + 13 - leg_spread, base_y - 1], fill=BOOT_CAP)
-
-        # ---- Body — dark iron armor ----
-        ellipse(draw, body_cx, body_cy, 14, 12, IRON)
-        # Chain mail texture on body
-        draw_chainmail_texture(draw, body_cx - 10, body_cy - 8, body_cx + 10, body_cy + 4)
-        # Armor chest plate with center seam
-        draw.rectangle([body_cx - 6, body_cy - 8, body_cx + 6, body_cy + 2],
-                       fill=IRON_LIGHT, outline=OUTLINE)
-        # Center plate seam line
-        draw.line([(body_cx, body_cy - 8), (body_cx, body_cy + 2)], fill=ARMOR_ACCENT)
-        # Rivet dots at chest plate corners
-        draw.rectangle([body_cx - 7, body_cy - 9, body_cx - 5, body_cy - 7], fill=IRON_BRIGHT)
-        draw.rectangle([body_cx + 5, body_cy - 9, body_cx + 7, body_cy - 7], fill=IRON_BRIGHT)
-        draw.rectangle([body_cx - 7, body_cy + 1, body_cx - 5, body_cy + 3], fill=IRON_BRIGHT)
-        draw.rectangle([body_cx + 5, body_cy + 1, body_cx + 7, body_cy + 3], fill=IRON_BRIGHT)
-
-        # Nature-themed green accent — leaf on chest plate
-        draw_leaf_detail(draw, body_cx, body_cy - 3)
-
-        # Chain belt
-        draw.rectangle([body_cx - 14, body_cy + 6, body_cx + 14, body_cy + 10],
-                       fill=CHAIN_DARK, outline=OUTLINE)
-        # Chain link details on belt
-        for i in range(-10, 12, 6):
-            draw.rectangle([body_cx + i, body_cy + 6, body_cx + i + 2, body_cy + 10],
-                           fill=CHAIN)
-
-        # Green accent on belt
-        draw.rectangle([body_cx - 2, body_cy + 7, body_cx + 2, body_cy + 9], fill=GREEN_ACCENT)
-
-        # Key ring hanging from belt — bigger with key-tooth shape
-        draw.ellipse([body_cx + 6, body_cy + 8, body_cx + 16, body_cy + 16],
-                     fill=KEY_GOLD, outline=OUTLINE)
-        draw.rectangle([body_cx + 9, body_cy + 10, body_cx + 11, body_cy + 12], fill=KEY_BRIGHT)
-        # Key shaft
-        draw.rectangle([body_cx + 10, body_cy + 14, body_cx + 14, body_cy + 20],
-                       fill=KEY_DARK, outline=OUTLINE)
-        # Key teeth (distinct tooth shape)
-        draw.rectangle([body_cx + 14, body_cy + 17, body_cx + 16, body_cy + 19], fill=KEY_GOLD)
-        draw.rectangle([body_cx + 14, body_cy + 19, body_cx + 17, body_cy + 20], fill=KEY_DARK)
-
-        # ---- Arms — armored gauntlets with chains ----
-        # Left arm
-        draw.rectangle([body_cx - 18, body_cy - 6, body_cx - 12, body_cy + 6],
-                       fill=IRON, outline=OUTLINE)
-        draw.rectangle([body_cx - 18, body_cy + 2, body_cx - 12, body_cy + 6],
-                       fill=IRON_DARK, outline=OUTLINE)
-        # Left gauntlet chain links (alternating bright/dark)
-        draw.rectangle([body_cx - 19, body_cy + 7, body_cx - 17, body_cy + 9], fill=CHAIN_BRIGHT)
-        draw.rectangle([body_cx - 17, body_cy + 9, body_cx - 15, body_cy + 11], fill=CHAIN_DARK)
-        draw.rectangle([body_cx - 15, body_cy + 7, body_cx - 13, body_cy + 9], fill=CHAIN_BRIGHT)
-
-        # Shield on left arm
-        draw_shield_with_emblem(draw, body_cx - 18, body_cy - 2, DOWN)
-
-        # Right arm
-        draw.rectangle([body_cx + 12, body_cy - 6, body_cx + 18, body_cy + 6],
-                       fill=IRON, outline=OUTLINE)
-        draw.rectangle([body_cx + 12, body_cy + 2, body_cx + 18, body_cy + 6],
-                       fill=IRON_DARK, outline=OUTLINE)
-        # Right gauntlet chain links
-        draw.rectangle([body_cx + 13, body_cy + 7, body_cx + 15, body_cy + 9], fill=CHAIN_BRIGHT)
-        draw.rectangle([body_cx + 15, body_cy + 9, body_cx + 17, body_cy + 11], fill=CHAIN_DARK)
-        draw.rectangle([body_cx + 17, body_cy + 7, body_cx + 19, body_cy + 9], fill=CHAIN_BRIGHT)
-
-        # ---- Heavy Mace (right hand, extending down) ----
-        # Handle (brown, 4px tall from right hand)
-        draw.rectangle([body_cx + 18, body_cy + 4, body_cx + 20, body_cy + 8],
-                       fill=MACE_HANDLE, outline=OUTLINE)
-        # Mace head — dark iron ball
-        draw.ellipse([body_cx + 16, body_cy + 8, body_cx + 24, body_cy + 16],
-                     fill=MACE_HEAD, outline=OUTLINE)
-        # Spikes on mace head (bright metallic)
-        draw.rectangle([body_cx + 24, body_cy + 9, body_cx + 26, body_cy + 11], fill=MACE_SPIKE)
-        draw.rectangle([body_cx + 19, body_cy + 7, body_cx + 21, body_cy + 9], fill=MACE_SPIKE)
-        draw.rectangle([body_cx + 15, body_cy + 11, body_cx + 17, body_cy + 13], fill=MACE_SPIKE)
-        draw.rectangle([body_cx + 19, body_cy + 15, body_cx + 21, body_cy + 17], fill=MACE_SPIKE)
-
-        # ---- Head — iron helm with intense visor glow ----
-        ellipse(draw, body_cx, head_cy, 16, 14, IRON)
-        # Chain mail texture on helm sides
-        draw_chainmail_texture(draw, body_cx - 12, head_cy - 8, body_cx - 4, head_cy + 2)
-        draw_chainmail_texture(draw, body_cx + 4, head_cy - 8, body_cx + 12, head_cy + 2)
-        # Visor plate
-        draw.rectangle([body_cx - 12, head_cy, body_cx + 12, head_cy + 8],
-                       fill=IRON_DARK, outline=OUTLINE)
-        # Visor slit — brighter glowing icy blue
-        draw.rectangle([body_cx - 8, head_cy + 2, body_cx + 8, head_cy + 6],
-                       fill=VISOR_SLIT)
-        # White-hot center core of visor
-        draw.rectangle([body_cx - 4, head_cy + 4, body_cx + 4, head_cy + 4],
-                       fill=VISOR_CORE)
-        # Glow leak pixels above and below the slit
-        draw.rectangle([body_cx - 5, head_cy - 1, body_cx - 3, head_cy + 1], fill=FROST_BLUE)
-        draw.rectangle([body_cx + 3, head_cy - 1, body_cx + 5, head_cy + 1], fill=FROST_BLUE)
-        draw.rectangle([body_cx - 3, head_cy + 7, body_cx - 1, head_cy + 9], fill=FROST_BLUE)
-        draw.rectangle([body_cx + 1, head_cy + 7, body_cx + 3, head_cy + 9], fill=FROST_BLUE)
-        # Glow pixel right at slit edges
-        draw.rectangle([body_cx - 10, head_cy + 3, body_cx - 8, head_cy + 5], fill=VISOR_DIM)
-        draw.rectangle([body_cx + 8, head_cy + 3, body_cx + 10, head_cy + 5], fill=VISOR_DIM)
-
-        # Helm crest
-        draw.rectangle([body_cx - 2, head_cy - 14, body_cx + 2, head_cy - 4],
-                       fill=IRON_LIGHT, outline=OUTLINE)
-        # Green accent on crest
-        draw.rectangle([body_cx - 1, head_cy - 12, body_cx + 1, head_cy - 6], fill=GREEN_LIGHT)
-        # Rivet details on helm
-        draw.rectangle([body_cx - 13, head_cy - 5, body_cx - 11, head_cy - 3], fill=IRON_BRIGHT)
-        draw.rectangle([body_cx + 11, head_cy - 5, body_cx + 13, head_cy - 3], fill=IRON_BRIGHT)
-
-    elif direction == UP:
-        # ---- Legs — heavier boots ----
-        draw.rectangle([body_cx - 10 + leg_spread, body_cy + 10,
-                        body_cx - 4 + leg_spread, base_y], fill=IRON_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx + 4 - leg_spread, body_cy + 10,
-                        body_cx + 10 - leg_spread, base_y], fill=IRON_DARK, outline=OUTLINE)
-        # Wider boots
-        draw.rectangle([body_cx - 14 + leg_spread, base_y - 8,
-                        body_cx - 2 + leg_spread, base_y], fill=BOOT, outline=OUTLINE)
-        draw.rectangle([body_cx + 2 - leg_spread, base_y - 8,
-                        body_cx + 14 - leg_spread, base_y], fill=BOOT, outline=OUTLINE)
-        # Metal toe caps (visible even from back, at edges)
-        draw.rectangle([body_cx - 13 + leg_spread, base_y - 3,
-                        body_cx - 9 + leg_spread, base_y - 1], fill=BOOT_CAP)
-        draw.rectangle([body_cx + 9 - leg_spread, base_y - 3,
-                        body_cx + 13 - leg_spread, base_y - 1], fill=BOOT_CAP)
-
-        # Chain cape on back
-        chain_sway = [0, 2, 0, -2][frame]
-        for i in range(3):
-            cy_off = body_cy - 4 + i * 6
-            draw.rectangle([body_cx - 8 + chain_sway, cy_off,
-                            body_cx + 8 + chain_sway, cy_off + 4],
-                           fill=CHAIN_DARK, outline=None)
-            for j in range(-6, 8, 4):
-                draw.rectangle([body_cx + j + chain_sway, cy_off + 1,
-                                body_cx + j + 1 + chain_sway, cy_off + 3], fill=CHAIN)
-
-        # ---- Body ----
-        ellipse(draw, body_cx, body_cy, 14, 12, IRON)
-        # Back armor plate
-        ellipse(draw, body_cx, body_cy - 2, 10, 8, IRON_DARK)
-        # Chain mail on back
-        draw_chainmail_texture(draw, body_cx - 8, body_cy - 6, body_cx + 8, body_cy + 4)
-        # Rivet dots on back plate
-        draw.rectangle([body_cx - 9, body_cy - 7, body_cx - 7, body_cy - 5], fill=IRON_BRIGHT)
-        draw.rectangle([body_cx + 7, body_cy - 7, body_cx + 9, body_cy - 5], fill=IRON_BRIGHT)
-        draw.rectangle([body_cx - 9, body_cy + 1, body_cx - 7, body_cy + 3], fill=IRON_BRIGHT)
-        draw.rectangle([body_cx + 7, body_cy + 1, body_cx + 9, body_cy + 3], fill=IRON_BRIGHT)
-
-        # ---- Arms with chain gauntlets ----
-        draw.rectangle([body_cx - 18, body_cy - 6, body_cx - 12, body_cy + 6],
-                       fill=IRON, outline=OUTLINE)
-        draw.rectangle([body_cx + 12, body_cy - 6, body_cx + 18, body_cy + 6],
-                       fill=IRON, outline=OUTLINE)
-        # Gauntlet chain links
-        draw.rectangle([body_cx - 19, body_cy + 7, body_cx - 17, body_cy + 9], fill=CHAIN_BRIGHT)
-        draw.rectangle([body_cx - 17, body_cy + 9, body_cx - 15, body_cy + 11], fill=CHAIN_DARK)
-        draw.rectangle([body_cx + 15, body_cy + 7, body_cx + 17, body_cy + 9], fill=CHAIN_BRIGHT)
-        draw.rectangle([body_cx + 17, body_cy + 9, body_cx + 19, body_cy + 11], fill=CHAIN_DARK)
-
-        # ---- Mace (visible on right side from behind) ----
-        draw.rectangle([body_cx + 18, body_cy + 4, body_cx + 20, body_cy + 8],
-                       fill=MACE_HANDLE, outline=OUTLINE)
-        draw.ellipse([body_cx + 16, body_cy + 8, body_cx + 24, body_cy + 16],
-                     fill=MACE_HEAD, outline=OUTLINE)
-        draw.rectangle([body_cx + 24, body_cy + 9, body_cx + 26, body_cy + 11], fill=MACE_SPIKE)
-        draw.rectangle([body_cx + 19, body_cy + 15, body_cx + 21, body_cy + 17], fill=MACE_SPIKE)
-
-        # ---- Head — back of helm ----
-        ellipse(draw, body_cx, head_cy, 16, 14, IRON)
-        ellipse(draw, body_cx, head_cy, 12, 10, IRON_DARK)
-        # Chain mail on back of helm
-        draw_chainmail_texture(draw, body_cx - 8, head_cy - 6, body_cx + 8, head_cy + 4)
-        # Crest
-        draw.rectangle([body_cx - 2, head_cy - 14, body_cx + 2, head_cy - 4],
-                       fill=IRON_LIGHT, outline=OUTLINE)
-        draw.rectangle([body_cx - 1, head_cy - 12, body_cx + 1, head_cy - 6], fill=GREEN_LIGHT)
-        # Rivet dots on back of helm
-        draw.rectangle([body_cx - 11, head_cy - 1, body_cx - 9, head_cy + 1], fill=IRON_BRIGHT)
-        draw.rectangle([body_cx + 9, head_cy - 1, body_cx + 11, head_cy + 1], fill=IRON_BRIGHT)
-
-    elif direction == LEFT:
-        # ---- Legs (side view) — heavier boots ----
-        draw.rectangle([body_cx - 2 - leg_spread, body_cy + 10,
-                        body_cx + 4 - leg_spread, base_y], fill=IRON_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx - 2 - leg_spread, base_y - 8,
-                        body_cx + 6 - leg_spread, base_y], fill=BOOT, outline=OUTLINE)
-        # Metal toe cap on front boot
-        draw.rectangle([body_cx - 3 - leg_spread, base_y - 3,
-                        body_cx - 1 - leg_spread, base_y - 1], fill=BOOT_CAP)
-
-        draw.rectangle([body_cx - 8 + leg_spread, body_cy + 10,
-                        body_cx - 2 + leg_spread, base_y], fill=IRON_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx - 10 + leg_spread, base_y - 8,
-                        body_cx + 0 + leg_spread, base_y], fill=BOOT, outline=OUTLINE)
-        # Toe cap
-        draw.rectangle([body_cx - 11 + leg_spread, base_y - 3,
-                        body_cx - 9 + leg_spread, base_y - 1], fill=BOOT_CAP)
-
-        # ---- Body ----
-        ellipse(draw, body_cx - 2, body_cy, 12, 12, IRON)
-        ellipse(draw, body_cx - 2, body_cy - 2, 8, 8, IRON_LIGHT)
-        # Chain mail texture on side body
-        draw_chainmail_texture(draw, body_cx - 8, body_cy - 6, body_cx + 4, body_cy + 4)
-        # Center plate seam
-        draw.line([(body_cx - 2, body_cy - 8), (body_cx - 2, body_cy + 2)], fill=ARMOR_ACCENT)
-        # Rivet dots
-        draw.rectangle([body_cx - 9, body_cy - 7, body_cx - 7, body_cy - 5], fill=IRON_BRIGHT)
-        draw.rectangle([body_cx + 3, body_cy - 7, body_cx + 5, body_cy - 5], fill=IRON_BRIGHT)
-
-        # Nature leaf detail on body
-        draw_leaf_detail(draw, body_cx - 2, body_cy - 2)
-
-        # Belt
-        draw.rectangle([body_cx - 14, body_cy + 6, body_cx + 10, body_cy + 10],
-                       fill=CHAIN_DARK, outline=OUTLINE)
-        # Key ring — bigger with tooth detail
-        draw.ellipse([body_cx - 18, body_cy + 6, body_cx - 8, body_cy + 16],
-                     fill=KEY_GOLD, outline=OUTLINE)
-        draw.rectangle([body_cx - 15, body_cy + 9, body_cx - 13, body_cy + 11], fill=KEY_BRIGHT)
-        # Key shaft hanging down
-        draw.rectangle([body_cx - 14, body_cy + 14, body_cx - 10, body_cy + 20],
-                       fill=KEY_DARK, outline=OUTLINE)
-        # Key teeth
-        draw.rectangle([body_cx - 10, body_cy + 17, body_cx - 8, body_cy + 19], fill=KEY_GOLD)
-        draw.rectangle([body_cx - 10, body_cy + 19, body_cx - 7, body_cy + 21], fill=KEY_DARK)
-
-        # ---- Arm (front) with gauntlet chains ----
-        draw.rectangle([body_cx - 14, body_cy - 4, body_cx - 8, body_cy + 6],
-                       fill=IRON, outline=OUTLINE)
-        draw.rectangle([body_cx - 14, body_cy + 2, body_cx - 8, body_cy + 6],
-                       fill=IRON_DARK, outline=OUTLINE)
-        # Chain links dangling from gauntlet
-        draw.rectangle([body_cx - 15, body_cy + 7, body_cx - 13, body_cy + 9], fill=CHAIN_BRIGHT)
-        draw.rectangle([body_cx - 13, body_cy + 9, body_cx - 11, body_cy + 11], fill=CHAIN_DARK)
-        draw.rectangle([body_cx - 11, body_cy + 7, body_cx - 9, body_cy + 9], fill=CHAIN_BRIGHT)
-
-        # Shield on far arm
-        draw_shield_with_emblem(draw, body_cx + 10, body_cy, LEFT)
-
-        # ---- Head (side, facing left) — iron helm with intense visor ----
-        ellipse(draw, body_cx - 2, head_cy, 14, 14, IRON)
-        # Chain mail on side of helm
-        draw_chainmail_texture(draw, body_cx + 2, head_cy - 8, body_cx + 10, head_cy + 4)
-        # Visor plate
-        draw.rectangle([body_cx - 16, head_cy, body_cx + 4, head_cy + 6],
-                       fill=IRON_DARK, outline=OUTLINE)
-        # Visor slit — bright
-        draw.rectangle([body_cx - 12, head_cy + 2, body_cx, head_cy + 4],
-                       fill=VISOR_SLIT)
-        # White-hot core
-        draw.rectangle([body_cx - 9, head_cy + 2, body_cx - 5, head_cy + 3], fill=VISOR_CORE)
-        # Glow leak above/below
-        draw.rectangle([body_cx - 11, head_cy - 1, body_cx - 9, head_cy + 1], fill=FROST_BLUE)
-        draw.rectangle([body_cx - 7, head_cy + 5, body_cx - 5, head_cy + 7], fill=FROST_BLUE)
-        draw.rectangle([body_cx - 15, head_cy + 1, body_cx - 13, head_cy + 3], fill=VISOR_DIM)
-
-        # Crest
-        draw.rectangle([body_cx - 4, head_cy - 14, body_cx, head_cy - 4],
-                       fill=IRON_LIGHT, outline=OUTLINE)
-        draw.rectangle([body_cx - 3, head_cy - 12, body_cx - 1, head_cy - 6], fill=GREEN_LIGHT)
-        # Helm rivets
-        draw.rectangle([body_cx - 13, head_cy - 5, body_cx - 11, head_cy - 3], fill=IRON_BRIGHT)
-        draw.rectangle([body_cx + 7, head_cy - 5, body_cx + 9, head_cy - 3], fill=IRON_BRIGHT)
-
-    elif direction == RIGHT:
-        # ---- Legs — heavier boots ----
-        draw.rectangle([body_cx - 2 + leg_spread, body_cy + 10,
-                        body_cx + 4 + leg_spread, base_y], fill=IRON_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx - 4 + leg_spread, base_y - 8,
-                        body_cx + 6 + leg_spread, base_y], fill=BOOT, outline=OUTLINE)
-        # Metal toe cap
-        draw.rectangle([body_cx + 3 + leg_spread, base_y - 3,
-                        body_cx + 7 + leg_spread, base_y - 1], fill=BOOT_CAP)
-
-        draw.rectangle([body_cx + 4 - leg_spread, body_cy + 10,
-                        body_cx + 10 - leg_spread, base_y], fill=IRON_DARK, outline=OUTLINE)
-        draw.rectangle([body_cx + 2 - leg_spread, base_y - 8,
-                        body_cx + 12 - leg_spread, base_y], fill=BOOT, outline=OUTLINE)
-        # Toe cap
-        draw.rectangle([body_cx + 11 - leg_spread, base_y - 3,
-                        body_cx + 13 - leg_spread, base_y - 1], fill=BOOT_CAP)
-
-        # ---- Body ----
-        ellipse(draw, body_cx + 2, body_cy, 12, 12, IRON)
-        ellipse(draw, body_cx + 2, body_cy - 2, 8, 8, IRON_LIGHT)
-        # Chain mail texture on side body
-        draw_chainmail_texture(draw, body_cx - 4, body_cy - 6, body_cx + 8, body_cy + 4)
-        # Center plate seam
-        draw.line([(body_cx + 2, body_cy - 8), (body_cx + 2, body_cy + 2)], fill=ARMOR_ACCENT)
-        # Rivet dots
-        draw.rectangle([body_cx - 5, body_cy - 7, body_cx - 3, body_cy - 5], fill=IRON_BRIGHT)
-        draw.rectangle([body_cx + 7, body_cy - 7, body_cx + 9, body_cy - 5], fill=IRON_BRIGHT)
-
-        # Nature leaf detail on body
-        draw_leaf_detail(draw, body_cx + 2, body_cy - 2)
-
-        # Belt
-        draw.rectangle([body_cx - 10, body_cy + 6, body_cx + 14, body_cy + 10],
-                       fill=CHAIN_DARK, outline=OUTLINE)
-        # Key ring — bigger with tooth detail
-        draw.ellipse([body_cx + 8, body_cy + 6, body_cx + 18, body_cy + 16],
-                     fill=KEY_GOLD, outline=OUTLINE)
-        draw.rectangle([body_cx + 13, body_cy + 9, body_cx + 15, body_cy + 11], fill=KEY_BRIGHT)
-        # Key shaft
-        draw.rectangle([body_cx + 10, body_cy + 14, body_cx + 14, body_cy + 20],
-                       fill=KEY_DARK, outline=OUTLINE)
-        # Key teeth
-        draw.rectangle([body_cx + 14, body_cy + 17, body_cx + 16, body_cy + 19], fill=KEY_GOLD)
-        draw.rectangle([body_cx + 14, body_cy + 19, body_cx + 17, body_cy + 21], fill=KEY_DARK)
-
-        # ---- Arm with gauntlet chains ----
-        draw.rectangle([body_cx + 8, body_cy - 4, body_cx + 14, body_cy + 6],
-                       fill=IRON, outline=OUTLINE)
-        draw.rectangle([body_cx + 8, body_cy + 2, body_cx + 14, body_cy + 6],
-                       fill=IRON_DARK, outline=OUTLINE)
-        # Chain links dangling from gauntlet
-        draw.rectangle([body_cx + 9, body_cy + 7, body_cx + 11, body_cy + 9], fill=CHAIN_BRIGHT)
-        draw.rectangle([body_cx + 11, body_cy + 9, body_cx + 13, body_cy + 11], fill=CHAIN_DARK)
-        draw.rectangle([body_cx + 13, body_cy + 7, body_cx + 15, body_cy + 9], fill=CHAIN_BRIGHT)
-
-        # Shield on far arm
-        draw_shield_with_emblem(draw, body_cx - 10, body_cy, RIGHT)
-
-        # ---- Heavy Mace (right hand, extending right) ----
-        # Handle (short, brown)
-        draw.rectangle([body_cx + 14, body_cy + 0, body_cx + 18, body_cy + 2],
-                       fill=MACE_HANDLE, outline=OUTLINE)
-        # Mace head — dark iron ball with spikes
-        draw.ellipse([body_cx + 18, body_cy - 4, body_cx + 26, body_cy + 4],
-                     fill=MACE_HEAD, outline=OUTLINE)
-        # Spikes
-        draw.rectangle([body_cx + 26, body_cy - 3, body_cx + 28, body_cy - 1], fill=MACE_SPIKE)
-        draw.rectangle([body_cx + 21, body_cy - 5, body_cx + 23, body_cy - 3], fill=MACE_SPIKE)
-        draw.rectangle([body_cx + 26, body_cy + 1, body_cx + 28, body_cy + 3], fill=MACE_SPIKE)
-
-        # ---- Head (side, facing right) — iron helm with intense visor ----
-        ellipse(draw, body_cx + 2, head_cy, 14, 14, IRON)
-        # Chain mail on side of helm
-        draw_chainmail_texture(draw, body_cx - 8, head_cy - 8, body_cx, head_cy + 4)
-        # Visor plate
-        draw.rectangle([body_cx - 4, head_cy, body_cx + 16, head_cy + 6],
-                       fill=IRON_DARK, outline=OUTLINE)
-        # Visor slit — bright
-        draw.rectangle([body_cx, head_cy + 2, body_cx + 12, head_cy + 4],
-                       fill=VISOR_SLIT)
-        # White-hot core
-        draw.rectangle([body_cx + 5, head_cy + 2, body_cx + 9, head_cy + 3], fill=VISOR_CORE)
-        # Glow leak above/below
-        draw.rectangle([body_cx + 9, head_cy - 1, body_cx + 11, head_cy + 1], fill=FROST_BLUE)
-        draw.rectangle([body_cx + 5, head_cy + 5, body_cx + 7, head_cy + 7], fill=FROST_BLUE)
-        draw.rectangle([body_cx + 13, head_cy + 1, body_cx + 15, head_cy + 3], fill=VISOR_DIM)
-
-        # Crest
-        draw.rectangle([body_cx, head_cy - 14, body_cx + 4, head_cy - 4],
-                       fill=IRON_LIGHT, outline=OUTLINE)
-        draw.rectangle([body_cx + 1, head_cy - 12, body_cx + 3, head_cy - 6], fill=GREEN_LIGHT)
-        # Helm rivets
-        draw.rectangle([body_cx - 9, head_cy - 5, body_cx - 7, head_cy - 3], fill=IRON_BRIGHT)
-        draw.rectangle([body_cx + 11, head_cy - 5, body_cx + 13, head_cy - 3], fill=IRON_BRIGHT)
+    r = rig(ox, oy, direction, frame, build=1.2)
+    d = r.d
+    lock_side = (-1 if not r.back else 1) if not d else -d
+    chain_side = -lock_side if not d else d
+    swing = [0.0, 1.2, 0.0, -1.2][frame]
+    if d:
+        h = hand_at(r, -d)
+        _padlock(r, draw, r.cx - d * 4.0, r.sh_y + 3.6, 1.05)
+        rig_arms(r, draw, DARK, STEEL, layer="far")
+    rig_legs(r, draw, DARK, shade(STEEL, 1.2), width=1.1)
+    rig_torso(r, draw, STEEL)
+    cx = r.cx
+    # tabard and chest chain
+    if not d:
+        cel(draw, Poly([(cx - 3.4, r.sh_y + 0.4), (cx + 3.4, r.sh_y + 0.4), (cx + 3.8, r.hip_y + 3.0),
+                        (cx - 3.8, r.hip_y + 3.0)]), TABARD, sh=(0.8, 0.0))
+    if not r.back:
+        if d:
+            _links(draw, [(cx - d * 3.4, r.sh_y - 1.4), (cx + d * 4.0, r.waist_y + 0.4)])
+        else:
+            _links(draw, [(cx - r.sh_w + 1.0, r.sh_y - 1.4), (cx + r.hip_w - 0.6, r.waist_y + 0.6)])
+    rig_belt(r, draw, shade(DARK, 1.2), buckle=GOLD)
+    if not r.back:
+        # the key ring on the hip
+        kx = cx + (4.8 if not d else d * 2.6)
+        ky = r.waist_y + 4.4
+        cel(draw, Ell(kx, ky, 2.0, 2.0), GOLD, sh=None, lw=0.8)
+        Ell(kx, ky, 1.1, 1.1).draw(draw, fill=TABARD if not d else STEEL)
+        for i, a in enumerate((-30, 10, 50)):
+            ex = kx + math.cos(math.radians(90 + a)) * 4.4
+            ey = ky + math.sin(math.radians(90 + a)) * 4.4
+            stroke(draw, [(kx + math.cos(math.radians(90 + a)) * 1.6, ky + math.sin(math.radians(90 + a)) * 1.6),
+                          (ex, ey)], 0.8, GOLD)
+            Ell(ex, ey, 0.9, 0.9).draw(draw, fill=GOLD)
+    rig_arms(r, draw, DARK, STEEL, layer="near", hands=False)
+    for side in ((-1, 1) if not d else (d,)):
+        _pauldron(r, draw, side)
+    head_skull(r, draw, STEEL, ears=False)
+    _helm(r, draw)
+    # chain swinging from one fist, a manacle on the end
+    h = hand_at(r, chain_side)
+    if not r.back or True:
+        end = (h[0] + (chain_side * 2.6 if not d else d * 3.4) + swing, h[1] + 8.0)
+        _links(draw, [(h[0], h[1] + 1.0), ((h[0] + end[0]) / 2 + swing * 0.5, h[1] + 4.6), end], 1.15)
+        cel(draw, Ell(end[0], end[1] + 1.6, 1.9, 1.7), CHAIN, sh=None, lw=0.8)
+        Ell(end[0], end[1] + 1.6, 1.0, 0.9).draw(draw, fill=VOID if not r.back else shade(CHAIN, 2.0))
+    for side in ((-1, 1) if not d else (d,)):
+        rig_hand(r, draw, side, STEEL)
+    if not d:
+        hl = hand_at(r, lock_side)
+        _padlock(r, draw, hl[0] + lock_side * 1.6, hl[1] - 3.0, 1.0 if not r.back else 0.95)
 
 
 def main():
-    # Rendering (supersampling + the shared detail pass) lives in sprite_base so
-    # every character sheet is produced the same way; this script only draws.
-    import os
-    import sys
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from sprite_base import generate_character
-
     generate_character("warden", draw_func=draw_warden)
 
 

@@ -1,3002 +1,1089 @@
 #!/usr/bin/env python3
 """Beast/Nature character sprite generators (IDs 72-86).
 
-15 characters with unique body shapes replacing the generic humanoid template.
-Each draw function produces a visually distinct silhouette per creature.
+Fifteen creatures, drawn the way MapleStory draws monsters: chibi, round,
+big-headed and big-eyed, fierce-cute rather than realistic. Every one has a
+body of its own rather than the humanoid rig, and a silhouette nothing else in
+the roster shares. Quadrupeds are drawn coming at the camera head-on (head
+biggest, body falling away behind) and walking in profile; the birds are
+kept apart by species -- the Raptor is a bald eagle, the Hawk a slate-blue
+falcon, the Phoenix is made of fire.
 """
 
-import sys
+import math
 import os
+import sys
+
 sys.path.insert(0, os.path.dirname(__file__))
 from sprite_base import (
-    generate_character, ellipse, pill, _darken, _brighten,
-    draw_fur_texture, draw_scale_texture,
-    OUTLINE, BLACK, DOWN, UP, LEFT, RIGHT,
+    DOWN, UP, LEFT, RIGHT, FIRE, TOOTH, Ell, Limb, Poly, RRect, arc_pts, blob, bolt, cel, cloud,
+    creature_setup as _setup, crystal, eye_pair as _eyes, flame, flame_pts, generate_character, ink,
+    leaf, lit, mix, ms_eye, ms_mouth, draw_paw as _paw, quad_legs as _quad_legs, rot_pts as _rot, shade,
+    sparkle, star, stroke, xform,
 )
 
-# ---------------------------------------------------------------------------
-# Shared constants
-# ---------------------------------------------------------------------------
-
-# Wolf palette
-WOLF_BODY = (120, 110, 100)
-WOLF_LIGHT = (155, 145, 130)
-WOLF_DARK = (85, 75, 65)
-WOLF_BELLY = (160, 150, 135)
-WOLF_EYE = (200, 180, 50)
-WOLF_NOSE = (30, 25, 25)
-WOLF_INNER_EAR = (150, 110, 100)
-
-# Serpent palette
-SERP_BODY = (50, 120, 50)
-SERP_SCALE = (80, 150, 60)
-SERP_BELLY = (120, 180, 100)
-SERP_DARK = (30, 80, 30)
-SERP_HOOD = (60, 140, 55)
-SERP_HOOD_EDGE = (40, 100, 40)
-SERP_EYE = (200, 200, 50)
-SERP_TONGUE = (180, 40, 40)
-
-# Spider palette
-SPIDER_BODY = (50, 40, 50)
-SPIDER_ABDOMEN = (60, 45, 55)
-SPIDER_LEG = (40, 30, 40)
-SPIDER_LIGHT = (80, 65, 80)
-SPIDER_MARK = (180, 30, 30)
-SPIDER_EYE = (180, 40, 40)
-SPIDER_FANG = (200, 200, 190)
-
-# Bear palette
-BEAR_BODY = (130, 90, 50)
-BEAR_LIGHT = (165, 120, 75)
-BEAR_BELLY = (180, 150, 110)
-BEAR_DARK = (95, 65, 35)
-BEAR_NOSE = (30, 25, 25)
-BEAR_INNER_EAR = (160, 110, 90)
-BEAR_EYE = (35, 30, 25)
-BEAR_CLAW = (60, 50, 40)
-
-# Scorpion palette
-SCORP_BODY = (100, 50, 30)
-SCORP_ARMOR = (120, 60, 35)
-SCORP_STINGER = (80, 30, 20)
-SCORP_DARK = (70, 35, 20)
-SCORP_LIGHT = (145, 80, 50)
-SCORP_PINCER = (110, 55, 30)
-SCORP_EYE = (30, 30, 25)
+VOID = (34, 26, 40)
 
 
 # ===================================================================
-# WOLF (ID 72) — upright beast biped with muzzle, pointed ears, tail
+# WOLF (72) -- blue-grey, white muzzle and ruff, gold eyes, bushy tail
 # ===================================================================
+
+WOLF = (150, 162, 188)
+WOLF_W = (238, 240, 248)
+WOLF_NOSE = (52, 46, 60)
+WOLF_EYE = (250, 196, 60)
+
+
+def _wolf_head(draw, hx, hy, d, frame, back=False):
+    # ears
+    for s in ((-1, 1) if not d else (-d, d)):
+        near = not d or s == -d
+        ex = hx + s * 6.0 if not d else hx - d * 1.6 + s * 2.4
+        col = WOLF if near else shade(WOLF, 0.6)
+        cel(draw, Poly([(ex - 3.0, hy - 5.4), (ex + (s * 1.0 if not d else -d * 1.4), hy - 13.4), (ex + 3.0, hy - 5.4)]), col, sh=(0.5, 0.5))
+        if not back:
+            Poly([(ex - 1.4, hy - 6.4), (ex + (s * 0.8 if not d else -d * 1.0), hy - 11.0), (ex + 1.4, hy - 6.4)]).draw(draw, fill=(236, 186, 190))
+    parts = [Ell(hx, hy, 9.8 if not d else 8.8, 8.6)]
+    # cheek ruff
+    for s in ((-1, 1) if not d else (-d,)):
+        parts.append(Poly([(hx + s * 7.0, hy - 1.0), (hx + s * 11.6, hy + 2.6), (hx + s * 8.4, hy + 3.6), (hx + s * 10.4, hy + 6.4),
+                           (hx + s * 5.4, hy + 6.4)]))
+    blob(draw, parts, WOLF, sh=(1.2, 1.0))
+    if back:
+        return
+    if d:
+        mz = [Ell(hx + d * 7.4, hy + 2.6, 5.4, 3.6)]
+        blob(draw, mz, WOLF_W, sh=(0.0, 0.8))
+        cel(draw, Ell(hx + d * 12.0, hy + 1.2, 1.8, 1.5), WOLF_NOSE, sh=None, line=False)
+        stroke(draw, [(hx + d * 5.0, hy + 4.4), (hx + d * 8.6, hy + 5.0), (hx + d * 11.4, hy + 4.0)], 0.6, WOLF_NOSE)
+        Poly([(hx + d * 9.0, hy + 4.8), (hx + d * 9.8, hy + 4.7), (hx + d * 9.4, hy + 6.2)]).draw(draw, fill=TOOTH)
+        _eyes(draw, hx + d * 2.6, hx + d * 6.6, hy - 1.6, d, WOLF_EYE, skin=WOLF, w=3.8, h=4.4)
+        return
+    cel(draw, Ell(hx, hy + 3.6, 5.2, 4.0), WOLF_W, sh=(0.6, 0.6))
+    cel(draw, Ell(hx, hy + 1.4, 2.2, 1.6), WOLF_NOSE, sh=None, line=False)
+    Ell(hx - 0.7, hy + 0.9, 0.6, 0.4).draw(draw, fill=(150, 150, 170))
+    stroke(draw, [(hx - 2.6, hy + 4.6), (hx, hy + 5.4), (hx + 2.6, hy + 4.6)], 0.6, WOLF_NOSE)
+    for s in (-1, 1):
+        Poly([(hx + s * 1.8 - 0.4, hy + 5.0), (hx + s * 1.8 + 0.4, hy + 5.0), (hx + s * 1.8, hy + 6.4)]).draw(draw, fill=TOOTH)
+    _eyes(draw, hx - 4.6, hx + 4.6, hy - 1.8, 0, WOLF_EYE, skin=WOLF, w=3.8, h=4.6)
+
 
 def draw_wolf(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    leg_spread = [-3, 0, 3, 0][frame]
-    tail_sway = [-3, 0, 3, 0][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 20
-    head_cy = body_cy - 18
-
-    body_shadow = _darken(WOLF_BODY, 0.75)
-
-    # --- Tail (drawn behind body) ---
-    if direction == DOWN:
-        # Tail visible poking out to the side
-        draw.polygon([
-            (cx + 10, body_cy + 4),
-            (cx + 20 + tail_sway, body_cy - 6),
-            (cx + 22 + tail_sway, body_cy - 4),
-            (cx + 12, body_cy + 6),
-        ], fill=WOLF_BODY, outline=OUTLINE)
-        # Tail tip
-        ellipse(draw, cx + 21 + tail_sway, body_cy - 5, 3, 3, WOLF_LIGHT)
-    elif direction == UP:
-        # Tail hangs down center
-        draw.polygon([
-            (cx - 2, body_cy + 8),
-            (cx + 2, body_cy + 8),
-            (cx + 4 + tail_sway, base_y + 2),
-            (cx - 4 + tail_sway, base_y + 4),
-        ], fill=WOLF_BODY, outline=OUTLINE)
-        ellipse(draw, cx + tail_sway, base_y + 3, 4, 3, WOLF_LIGHT)
-    elif direction == LEFT:
-        draw.polygon([
-            (cx + 8, body_cy + 2),
-            (cx + 18 + tail_sway, body_cy - 8),
-            (cx + 20 + tail_sway, body_cy - 4),
-            (cx + 10, body_cy + 6),
-        ], fill=WOLF_BODY, outline=OUTLINE)
-        ellipse(draw, cx + 19 + tail_sway, body_cy - 6, 3, 3, WOLF_LIGHT)
-    else:  # RIGHT
-        draw.polygon([
-            (cx - 8, body_cy + 2),
-            (cx - 18 - tail_sway, body_cy - 8),
-            (cx - 20 - tail_sway, body_cy - 4),
-            (cx - 10, body_cy + 6),
-        ], fill=WOLF_BODY, outline=OUTLINE)
-        ellipse(draw, cx - 19 - tail_sway, body_cy - 6, 3, 3, WOLF_LIGHT)
-
-    # --- Legs (digitigrade — ankle higher, paws smaller) ---
-    if direction in (DOWN, UP):
-        for side in [-1, 1]:
-            lx = cx + side * (7 + abs(leg_spread)) + (leg_spread if side == -1 else -leg_spread)
-            # Upper leg
-            draw.rectangle([lx - 3, body_cy + 8, lx + 3, body_cy + 18],
-                           fill=WOLF_BODY, outline=OUTLINE)
-            # Lower leg (thinner)
-            draw.rectangle([lx - 2, body_cy + 16, lx + 2, base_y - 3],
-                           fill=WOLF_DARK, outline=OUTLINE)
-            # Paw
-            ellipse(draw, lx, base_y - 1, 4, 3, WOLF_DARK)
-            # Claw dots
-            draw.point((lx - 2, base_y + 1), fill=BLACK)
-            draw.point((lx + 2, base_y + 1), fill=BLACK)
-    elif direction == LEFT:
-        for offset in [leg_spread, -leg_spread]:
-            lx = cx - 2 + offset
-            draw.rectangle([lx - 3, body_cy + 8, lx + 3, body_cy + 18],
-                           fill=WOLF_BODY, outline=OUTLINE)
-            draw.rectangle([lx - 2, body_cy + 16, lx + 2, base_y - 3],
-                           fill=WOLF_DARK, outline=OUTLINE)
-            ellipse(draw, lx, base_y - 1, 4, 3, WOLF_DARK)
-            draw.point((lx - 2, base_y + 1), fill=BLACK)
-    else:  # RIGHT
-        for offset in [leg_spread, -leg_spread]:
-            lx = cx + 2 + offset
-            draw.rectangle([lx - 3, body_cy + 8, lx + 3, body_cy + 18],
-                           fill=WOLF_BODY, outline=OUTLINE)
-            draw.rectangle([lx - 2, body_cy + 16, lx + 2, base_y - 3],
-                           fill=WOLF_DARK, outline=OUTLINE)
-            ellipse(draw, lx, base_y - 1, 4, 3, WOLF_DARK)
-            draw.point((lx + 2, base_y + 1), fill=BLACK)
-
-    # --- Body ---
-    if direction == DOWN:
-        ellipse(draw, cx, body_cy, 14, 12, WOLF_BODY)
-        ellipse(draw, cx + 3, body_cy + 2, 10, 8, body_shadow, outline=None)
-        ellipse(draw, cx, body_cy, 11, 9, WOLF_BODY, outline=None)
-        ellipse(draw, cx - 2, body_cy - 2, 8, 6, WOLF_LIGHT, outline=None)
-        # Belly patch
-        ellipse(draw, cx, body_cy + 4, 7, 5, WOLF_BELLY, outline=None)
-        draw_fur_texture(draw, cx, body_cy, 18, 14, WOLF_BODY, density=4)
-    elif direction == UP:
-        ellipse(draw, cx, body_cy, 14, 12, WOLF_BODY)
-        ellipse(draw, cx, body_cy, 11, 9, WOLF_DARK, outline=None)
-        draw_fur_texture(draw, cx, body_cy, 18, 14, WOLF_DARK, density=4)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, body_cy, 12, 12, WOLF_BODY)
-        ellipse(draw, cx + 2, body_cy + 2, 8, 8, body_shadow, outline=None)
-        ellipse(draw, cx - 2, body_cy, 9, 9, WOLF_BODY, outline=None)
-        ellipse(draw, cx - 4, body_cy - 2, 6, 6, WOLF_LIGHT, outline=None)
-        draw_fur_texture(draw, cx, body_cy, 14, 14, WOLF_BODY, density=4)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, body_cy, 12, 12, WOLF_BODY)
-        ellipse(draw, cx + 6, body_cy + 2, 8, 8, body_shadow, outline=None)
-        ellipse(draw, cx + 2, body_cy, 9, 9, WOLF_BODY, outline=None)
-        ellipse(draw, cx, body_cy - 2, 6, 6, WOLF_LIGHT, outline=None)
-        draw_fur_texture(draw, cx + 2, body_cy, 14, 14, WOLF_BODY, density=4)
-
-    # --- Head ---
-    if direction == DOWN:
-        ellipse(draw, cx, head_cy, 12, 10, WOLF_BODY)
-        ellipse(draw, cx - 2, head_cy - 2, 8, 6, WOLF_LIGHT, outline=None)
-        # Muzzle
-        ellipse(draw, cx, head_cy + 6, 6, 5, WOLF_BELLY)
-        draw.point((cx, head_cy + 4), fill=WOLF_NOSE)
-        draw.point((cx - 1, head_cy + 4), fill=WOLF_NOSE)
-        draw.point((cx + 1, head_cy + 4), fill=WOLF_NOSE)
-        # Eyes
-        draw.rectangle([cx - 7, head_cy - 1, cx - 3, head_cy + 2], fill=WOLF_EYE)
-        draw.point((cx - 5, head_cy), fill=BLACK)
-        draw.rectangle([cx + 3, head_cy - 1, cx + 7, head_cy + 2], fill=WOLF_EYE)
-        draw.point((cx + 5, head_cy), fill=BLACK)
-        # Pointed ears
-        draw.polygon([(cx - 8, head_cy - 6), (cx - 12, head_cy - 18),
-                      (cx - 4, head_cy - 8)], fill=WOLF_BODY, outline=OUTLINE)
-        draw.polygon([(cx - 7, head_cy - 8), (cx - 11, head_cy - 16),
-                      (cx - 5, head_cy - 10)], fill=WOLF_INNER_EAR, outline=None)
-        draw.polygon([(cx + 8, head_cy - 6), (cx + 12, head_cy - 18),
-                      (cx + 4, head_cy - 8)], fill=WOLF_BODY, outline=OUTLINE)
-        draw.polygon([(cx + 7, head_cy - 8), (cx + 11, head_cy - 16),
-                      (cx + 5, head_cy - 10)], fill=WOLF_INNER_EAR, outline=None)
-    elif direction == UP:
-        ellipse(draw, cx, head_cy, 12, 10, WOLF_BODY)
-        ellipse(draw, cx, head_cy, 9, 7, WOLF_DARK, outline=None)
-        # Ears
-        draw.polygon([(cx - 8, head_cy - 6), (cx - 12, head_cy - 18),
-                      (cx - 4, head_cy - 8)], fill=WOLF_BODY, outline=OUTLINE)
-        draw.polygon([(cx + 8, head_cy - 6), (cx + 12, head_cy - 18),
-                      (cx + 4, head_cy - 8)], fill=WOLF_BODY, outline=OUTLINE)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, head_cy, 11, 10, WOLF_BODY)
-        ellipse(draw, cx - 4, head_cy - 2, 7, 6, WOLF_LIGHT, outline=None)
-        # Muzzle extends left
-        draw.polygon([(cx - 10, head_cy + 2), (cx - 18, head_cy + 4),
-                      (cx - 16, head_cy + 6), (cx - 10, head_cy + 6)],
-                     fill=WOLF_BELLY, outline=OUTLINE)
-        draw.point((cx - 17, head_cy + 4), fill=WOLF_NOSE)
-        draw.point((cx - 17, head_cy + 5), fill=WOLF_NOSE)
-        # Eye
-        draw.rectangle([cx - 8, head_cy - 1, cx - 4, head_cy + 2], fill=WOLF_EYE)
-        draw.point((cx - 6, head_cy), fill=BLACK)
-        # Ear
-        draw.polygon([(cx - 4, head_cy - 6), (cx - 8, head_cy - 18),
-                      (cx, head_cy - 8)], fill=WOLF_BODY, outline=OUTLINE)
-        draw.polygon([(cx - 3, head_cy - 8), (cx - 7, head_cy - 16),
-                      (cx - 1, head_cy - 10)], fill=WOLF_INNER_EAR, outline=None)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, head_cy, 11, 10, WOLF_BODY)
-        ellipse(draw, cx + 4, head_cy - 2, 7, 6, WOLF_LIGHT, outline=None)
-        # Muzzle extends right
-        draw.polygon([(cx + 10, head_cy + 2), (cx + 18, head_cy + 4),
-                      (cx + 16, head_cy + 6), (cx + 10, head_cy + 6)],
-                     fill=WOLF_BELLY, outline=OUTLINE)
-        draw.point((cx + 17, head_cy + 4), fill=WOLF_NOSE)
-        draw.point((cx + 17, head_cy + 5), fill=WOLF_NOSE)
-        # Eye
-        draw.rectangle([cx + 4, head_cy - 1, cx + 8, head_cy + 2], fill=WOLF_EYE)
-        draw.point((cx + 6, head_cy), fill=BLACK)
-        # Ear
-        draw.polygon([(cx + 4, head_cy - 6), (cx + 8, head_cy - 18),
-                      (cx, head_cy - 8)], fill=WOLF_BODY, outline=OUTLINE)
-        draw.polygon([(cx + 3, head_cy - 8), (cx + 7, head_cy - 16),
-                      (cx + 1, head_cy - 10)], fill=WOLF_INNER_EAR, outline=None)
+    d, back, base, cx, ph = _setup(ox, oy, direction, frame)
+    wag = [0.0, 1.0, 0.0, -1.0][frame]
+    if d:
+        # bushy tail
+        tail = Limb([(cx - d * 8.0, base - 14.0), (cx - d * 13.0, base - 17.0 + wag), (cx - d * 15.0, base - 22.0 + wag)], [2.6, 3.2, 1.0])
+        cel(draw, tail, WOLF, sh=(0.8, 0.8))
+        cel(draw, Ell(cx - d * 15.0, base - 22.0 + wag, 1.8, 1.8), WOLF_W, sh=None)
+        _quad_legs(draw, cx, base, d, ph, WOLF, 5.6, -6.4, base - 11.0, paw=WOLF_W)
+        body = Poly(_rot(arc_pts(cx - d * 0.6, base - 13.0, 10.4, 6.2, 0, 360)[:-1], cx, base - 13.0, -d * 6))
+        cel(draw, body, WOLF, sh=(1.2, 1.2))
+        blob(draw, [Ell(cx + d * 6.0, base - 13.0, 4.4, 4.6), Ell(cx + d * 7.4, base - 9.6, 3.0, 2.6)], WOLF_W, sh=(0.6, 0.8))
+        _wolf_head(draw, cx + d * 8.0, base - 23.0, d, frame)
+        return
+    if back:
+        for s in (-1, 1):
+            fwd = ph * s
+            cel(draw, Limb([(cx + s * 5.0, base - 11.0), (cx + s * 5.4, base - 1.8 - (1.0 if fwd < 0 else 0))], [2.4, 2.0]), WOLF, sh=(0.6, 0.0))
+            _paw(draw, cx + s * 5.4, base - 1.2 - (1.0 if fwd < 0 else 0), WOLF_W, claws=False)
+        cel(draw, Ell(cx, base - 13.0, 9.4, 7.4), WOLF, sh=(1.2, 1.2))
+        tail = Limb([(cx, base - 12.0), (cx + 2.0 + wag, base - 16.0), (cx + 1.0 + wag * 1.6, base - 22.0)], [2.8, 3.4, 1.2])
+        cel(draw, tail, WOLF, sh=(0.8, 0.8))
+        cel(draw, Ell(cx + 1.0 + wag * 1.6, base - 22.0, 2.0, 2.0), WOLF_W, sh=None)
+        _wolf_head(draw, cx, base - 25.0, 0, frame, back=True)
+        return
+    # head-on: the tail flicks up behind, back legs peek out, chest ruff, front legs
+    cel(draw, Limb([(cx + 6.0, base - 12.0), (cx + 12.0, base - 16.0 + wag), (cx + 13.0, base - 22.0 + wag)], [2.4, 3.0, 1.0]), WOLF, sh=(0.8, 0.8))
+    for s in (-1, 1):
+        cel(draw, Limb([(cx + s * 7.4, base - 9.0), (cx + s * 7.6, base - 1.8)], [2.0, 1.8]), shade(WOLF, 0.6), sh=None)
+        _paw(draw, cx + s * 7.6, base - 1.4, shade(WOLF_W, 0.6), claws=False, r=2.0)
+    cel(draw, Ell(cx, base - 12.0, 8.4, 6.4), WOLF, sh=(1.2, 1.0))
+    for s in (-1, 1):
+        fwd = ph * s
+        lift = 1.0 if fwd < 0 else 0.0
+        cel(draw, Limb([(cx + s * 3.8, base - 12.0), (cx + s * 3.8, base - 1.8 - lift)], [2.4, 2.1]), WOLF, sh=(0.6, 0.0))
+        _paw(draw, cx + s * 3.8, base - 1.0 - lift, WOLF_W)
+    blob(draw, [Ell(cx, base - 15.0, 6.4, 4.4), Ell(cx - 3.0, base - 12.0, 2.6, 2.2), Ell(cx + 3.0, base - 12.0, 2.6, 2.2),
+                Ell(cx, base - 11.0, 2.4, 2.4)], WOLF_W, sh=(0.6, 0.8))
+    _wolf_head(draw, cx, base - 25.0, 0, frame)
 
 
 # ===================================================================
-# SERPENT (ID 73) — coiled S-curve body, cobra hood, forked tongue
+# SERPENT (73) -- a coiled cobra, hood flared, forked tongue
 # ===================================================================
+
+SNAKE = (84, 176, 84)
+SNAKE_BELLY = (236, 222, 132)
+SNAKE_MARK = (48, 110, 66)
+SNAKE_EYE = (250, 214, 60)
+
 
 def draw_serpent(draw, ox, oy, direction, frame):
-    bob = [0, -1, 0, -1][frame]
-    # Slithering body phase shifts per frame
-    curve_shift = [-2, 0, 2, 0][frame]
-    tongue_out = frame % 2 == 0  # tongue flicks every other frame
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 14
-    head_cy = body_cy - 22
-
-    body_dark = _darken(SERP_BODY, 0.7)
-
-    if direction == DOWN:
-        # --- Coiled body: S-curve using overlapping ellipses ---
-        # Lower coil (on ground)
-        ellipse(draw, cx + 4 + curve_shift, base_y - 4, 12, 5, SERP_BODY)
-        draw_scale_texture(draw, cx + 4 + curve_shift, base_y - 4, 16, 6, SERP_SCALE)
-        # Middle coil
-        ellipse(draw, cx - 4 - curve_shift, body_cy + 4, 10, 6, SERP_BODY)
-        ellipse(draw, cx - 4 - curve_shift, body_cy + 4, 7, 4, SERP_BELLY, outline=None)
-        draw_scale_texture(draw, cx - 4 - curve_shift, body_cy + 4, 12, 8, SERP_SCALE)
-        # Upper coil / neck
-        ellipse(draw, cx + curve_shift, body_cy - 6, 6, 8, SERP_BODY)
-        ellipse(draw, cx + curve_shift, body_cy - 6, 4, 6, SERP_BELLY, outline=None)
-
-        # --- Head ---
-        ellipse(draw, cx, head_cy, 10, 8, SERP_BODY)
-        ellipse(draw, cx - 2, head_cy - 2, 6, 4, _brighten(SERP_BODY, 1.2), outline=None)
-        # Cobra hood fans out
-        draw.polygon([
-            (cx - 16, head_cy + 2),
-            (cx - 10, head_cy - 8),
-            (cx, head_cy - 10),
-            (cx + 10, head_cy - 8),
-            (cx + 16, head_cy + 2),
-            (cx + 12, head_cy + 6),
-            (cx - 12, head_cy + 6),
-        ], fill=SERP_HOOD, outline=OUTLINE)
-        # Hood pattern (V-marks)
-        draw.polygon([(cx, head_cy - 6), (cx - 4, head_cy),
-                      (cx, head_cy + 2), (cx + 4, head_cy)],
-                     fill=SERP_HOOD_EDGE, outline=None)
-        # Head over hood
-        ellipse(draw, cx, head_cy, 7, 6, SERP_BODY)
-        # Eyes (slit pupils)
-        draw.rectangle([cx - 5, head_cy - 2, cx - 2, head_cy + 1], fill=SERP_EYE)
-        draw.line([(cx - 3, head_cy - 2), (cx - 3, head_cy + 1)], fill=BLACK, width=1)
-        draw.rectangle([cx + 2, head_cy - 2, cx + 5, head_cy + 1], fill=SERP_EYE)
-        draw.line([(cx + 3, head_cy - 2), (cx + 3, head_cy + 1)], fill=BLACK, width=1)
-        # Forked tongue
-        if tongue_out:
-            draw.line([(cx, head_cy + 6), (cx, head_cy + 12)], fill=SERP_TONGUE, width=1)
-            draw.line([(cx, head_cy + 12), (cx - 2, head_cy + 14)], fill=SERP_TONGUE, width=1)
-            draw.line([(cx, head_cy + 12), (cx + 2, head_cy + 14)], fill=SERP_TONGUE, width=1)
-
-    elif direction == UP:
-        # Lower coil
-        ellipse(draw, cx - 4 + curve_shift, base_y - 4, 12, 5, SERP_BODY)
-        draw_scale_texture(draw, cx - 4 + curve_shift, base_y - 4, 16, 6, SERP_SCALE)
-        # Middle coil
-        ellipse(draw, cx + 4 - curve_shift, body_cy + 4, 10, 6, SERP_BODY)
-        draw_scale_texture(draw, cx + 4 - curve_shift, body_cy + 4, 12, 8, SERP_SCALE)
-        # Upper coil / neck
-        ellipse(draw, cx - curve_shift, body_cy - 6, 6, 8, SERP_BODY)
-
-        # Head (back view, hood narrower)
-        ellipse(draw, cx, head_cy, 10, 8, SERP_BODY)
-        # Cobra hood (back view, flatter)
-        draw.polygon([
-            (cx - 12, head_cy + 2),
-            (cx - 8, head_cy - 6),
-            (cx, head_cy - 8),
-            (cx + 8, head_cy - 6),
-            (cx + 12, head_cy + 2),
-            (cx + 8, head_cy + 4),
-            (cx - 8, head_cy + 4),
-        ], fill=SERP_HOOD, outline=OUTLINE)
-        ellipse(draw, cx, head_cy, 7, 6, SERP_DARK)
-        draw_scale_texture(draw, cx, head_cy, 10, 8, SERP_SCALE)
-
-    elif direction == LEFT:
-        # Body stretches horizontally in S-curve
-        # Rear coil
-        ellipse(draw, cx + 10 - curve_shift, base_y - 6, 8, 6, SERP_BODY)
-        draw_scale_texture(draw, cx + 10 - curve_shift, base_y - 6, 10, 8, SERP_SCALE)
-        # Mid section
-        ellipse(draw, cx + curve_shift, body_cy + 2, 8, 5, SERP_BODY)
-        ellipse(draw, cx + curve_shift, body_cy + 2, 5, 3, SERP_BELLY, outline=None)
-        # Neck
-        draw.polygon([
-            (cx - 4, body_cy),
-            (cx - 10, head_cy + 6),
-            (cx - 8, head_cy + 4),
-            (cx - 2, body_cy - 2),
-        ], fill=SERP_BODY, outline=OUTLINE)
-
-        # Head facing left
-        ellipse(draw, cx - 12, head_cy, 8, 7, SERP_BODY)
-        # Cobra hood (side view, narrower)
-        draw.polygon([
-            (cx - 12, head_cy - 10),
-            (cx - 6, head_cy - 4),
-            (cx - 6, head_cy + 6),
-            (cx - 12, head_cy + 10),
-            (cx - 16, head_cy + 4),
-            (cx - 16, head_cy - 4),
-        ], fill=SERP_HOOD, outline=OUTLINE)
-        ellipse(draw, cx - 12, head_cy, 6, 5, SERP_BODY)
-        # Eye
-        draw.rectangle([cx - 16, head_cy - 2, cx - 13, head_cy + 1], fill=SERP_EYE)
-        draw.line([(cx - 14, head_cy - 2), (cx - 14, head_cy + 1)], fill=BLACK, width=1)
-        # Tongue
-        if tongue_out:
-            draw.line([(cx - 18, head_cy + 2), (cx - 24, head_cy + 2)],
-                      fill=SERP_TONGUE, width=1)
-            draw.line([(cx - 24, head_cy + 2), (cx - 26, head_cy)],
-                      fill=SERP_TONGUE, width=1)
-            draw.line([(cx - 24, head_cy + 2), (cx - 26, head_cy + 4)],
-                      fill=SERP_TONGUE, width=1)
-
-    else:  # RIGHT
-        # Rear coil
-        ellipse(draw, cx - 10 + curve_shift, base_y - 6, 8, 6, SERP_BODY)
-        draw_scale_texture(draw, cx - 10 + curve_shift, base_y - 6, 10, 8, SERP_SCALE)
-        # Mid section
-        ellipse(draw, cx - curve_shift, body_cy + 2, 8, 5, SERP_BODY)
-        ellipse(draw, cx - curve_shift, body_cy + 2, 5, 3, SERP_BELLY, outline=None)
-        # Neck
-        draw.polygon([
-            (cx + 4, body_cy),
-            (cx + 10, head_cy + 6),
-            (cx + 8, head_cy + 4),
-            (cx + 2, body_cy - 2),
-        ], fill=SERP_BODY, outline=OUTLINE)
-
-        # Head facing right
-        ellipse(draw, cx + 12, head_cy, 8, 7, SERP_BODY)
-        # Hood
-        draw.polygon([
-            (cx + 12, head_cy - 10),
-            (cx + 6, head_cy - 4),
-            (cx + 6, head_cy + 6),
-            (cx + 12, head_cy + 10),
-            (cx + 16, head_cy + 4),
-            (cx + 16, head_cy - 4),
-        ], fill=SERP_HOOD, outline=OUTLINE)
-        ellipse(draw, cx + 12, head_cy, 6, 5, SERP_BODY)
-        # Eye
-        draw.rectangle([cx + 13, head_cy - 2, cx + 16, head_cy + 1], fill=SERP_EYE)
-        draw.line([(cx + 14, head_cy - 2), (cx + 14, head_cy + 1)], fill=BLACK, width=1)
-        # Tongue
-        if tongue_out:
-            draw.line([(cx + 18, head_cy + 2), (cx + 24, head_cy + 2)],
-                      fill=SERP_TONGUE, width=1)
-            draw.line([(cx + 24, head_cy + 2), (cx + 26, head_cy)],
-                      fill=SERP_TONGUE, width=1)
-            draw.line([(cx + 24, head_cy + 2), (cx + 26, head_cy + 4)],
-                      fill=SERP_TONGUE, width=1)
+    d, back, base, cx, ph = _setup(ox, oy, direction, frame, bob=[0, 0, 0, 0])
+    sway = [0.0, 1.2, 0.0, -1.2][frame]
+    # coils on the ground
+    for (u, v, rx, ry) in ((0.0, -3.6, 11.4, 4.0), (-1.0, -7.4, 9.0, 3.6), (0.6, -10.6, 6.6, 3.0)):
+        cel(draw, Ell(cx + u - d * 1.0, base + v, rx, ry), SNAKE, sh=(1.2, 1.0))
+        if not back:
+            cel(draw, Poly(arc_pts(cx + u - d * 1.0, base + v, rx - 1.4, ry - 1.2, 20, 160, 12)), SNAKE_BELLY, sh=None, line=False)
+    # the tail tip curling out
+    tip = cx + (9.0 if not d else -d * 10.0)
+    cel(draw, Limb([(tip - (3.0 if not d else -d * 3.0), base - 2.6), (tip, base - 3.6), (tip + (2.4 if not d else -d * 2.4), base - 6.6 + sway)],
+                   [2.0, 1.4, 0.4]), SNAKE, sh=(0.4, 0.4))
+    # the neck rising
+    nx = cx + sway * 0.6 + d * 2.0
+    neck = Limb([(cx - d * 0.6, base - 11.0), (nx - d * 1.0, base - 18.0), (nx, base - 24.0)], [4.0, 3.6, 3.4])
+    cel(draw, neck, SNAKE, sh=(0.8, 0.6))
+    if not back and not d:
+        cel(draw, Limb([(cx, base - 11.0), (nx - d * 1.0, base - 18.0), (nx, base - 23.0)], [2.2, 2.0, 1.8]), SNAKE_BELLY, sh=None, line=False)
+    # the hood
+    hx, hy = nx + d * 1.4, base - 30.0
+    if d:
+        hood = Poly([(hx - d * 5.0, hy - 2.0), (hx - d * 1.0, hy - 6.0), (hx + d * 2.0, hy - 2.0), (hx + d * 1.6, hy + 8.0), (hx - d * 4.0, hy + 9.0)])
+        cel(draw, hood, SNAKE, sh=(0.8, 0.8))
+    else:
+        hood = Poly([(hx - 3.0, hy - 6.0), (hx + 3.0, hy - 6.0), (hx + 10.6, hy + 2.0), (hx + 8.4, hy + 9.4), (hx + 3.4, hy + 11.0),
+                     (hx - 3.4, hy + 11.0), (hx - 8.4, hy + 9.4), (hx - 10.6, hy + 2.0)])
+        cel(draw, hood, SNAKE, sh=(1.2, 1.0))
+        if not back:
+            cel(draw, Poly([(hx - 3.0, hy + 2.0), (hx + 3.0, hy + 2.0), (hx + 2.6, hy + 11.0), (hx - 2.6, hy + 11.0)]), SNAKE_BELLY, sh=None, line=False)
+            for s in (-1, 1):
+                cel(draw, Ell(hx + s * 6.6, hy + 4.6, 1.8, 2.4), SNAKE_MARK, sh=None, line=False)
+                Ell(hx + s * 6.6, hy + 4.6, 0.8, 1.1).draw(draw, fill=SNAKE_BELLY)
+        else:
+            for s in (-1, 1):
+                cel(draw, Ell(hx + s * 5.0, hy + 3.4, 2.4, 2.4), SNAKE_MARK, sh=None, line=False)
+    # head
+    head = Ell(hx + d * 3.0, hy - 1.0, 7.4 if not d else 7.8, 6.2)
+    cel(draw, head, SNAKE, sh=(1.0, 1.0), hi=(0.6, 0.6))
+    if back:
+        return
+    if d:
+        cel(draw, Ell(hx + d * 7.4, hy + 1.4, 3.6, 2.4), SNAKE_BELLY, sh=None, line=False)
+        _eyes(draw, hx + d * 3.4, hx + d * 7.4, hy - 2.6, d, SNAKE_EYE, skin=SNAKE, w=3.6, h=4.2)
+        mx = hx + d * 10.4
+    else:
+        _eyes(draw, hx - 3.4, hx + 3.4, hy - 1.8, 0, SNAKE_EYE, skin=SNAKE, w=3.8, h=4.4)
+        mx = hx
+        for s in (-1, 1):
+            Ell(hx + s * 1.0, hy + 2.0, 0.4, 0.3).draw(draw, fill=SNAKE_MARK)
+    if frame % 2 == 0:
+        ty = hy + 3.4
+        tx = mx + d * 1.4
+        stroke(draw, [(tx, ty), (tx + d * 2.4, ty + 2.4), (tx + d * 2.4 - 1.0, ty + 4.0)], 0.5, (230, 60, 80))
+        stroke(draw, [(tx + d * 2.4, ty + 2.4), (tx + d * 2.4 + 1.0, ty + 4.0)], 0.5, (230, 60, 80))
+    for s in ((-1, 1) if not d else (d,)):
+        fx = mx + s * 1.4 if not d else mx - d * 1.0
+        Poly([(fx - 0.5, hy + 2.8), (fx + 0.5, hy + 2.8), (fx, hy + 4.4)]).draw(draw, fill=TOOTH)
 
 
 # ===================================================================
-# SPIDER (ID 74) — round abdomen, 8 legs, multiple eyes, no humanoid
+# SPIDER (74) -- a round fuzzy body, a red mark, big eyes, eight legs
 # ===================================================================
+
+SPI = (84, 64, 104)
+SPI_LT = (150, 122, 170)
+SPI_RED = (226, 44, 60)
+SPI_EYE = (255, 90, 90)
+
 
 def draw_spider(draw, ox, oy, direction, frame):
-    bob = [0, -1, 0, -1][frame]
-    # Legs alternate in two groups: group A moves forward when group B moves back
-    leg_phase_a = [-3, 0, 3, 0][frame]
-    leg_phase_b = [3, 0, -3, 0][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    # Spider body sits low — abdomen is the main mass
-    abdomen_cy = base_y - 10
-    ceph_cy = abdomen_cy - 12  # cephalothorax (head section)
-
-    abd_light = _brighten(SPIDER_ABDOMEN, 1.2)
-    abd_dark = _darken(SPIDER_ABDOMEN, 0.7)
-
-    def draw_legs_front_back(leg_cx, cy):
-        """Draw 8 legs — 4 per side, angled out and down."""
-        # Leg angles from cephalothorax, not abdomen
-        # Group A: legs 1,3 on left; legs 2,4 on right
-        # Group B: legs 2,4 on left; legs 1,3 on right
-        leg_defs = [
-            # (side, angle_x_base, angle_y_end, group)
-            (-1, 14, 6, 'A'),   # left front leg
-            (-1, 18, 2, 'B'),   # left mid-front
-            (-1, 16, -4, 'A'),  # left mid-rear
-            (-1, 10, -8, 'B'),  # left rear
-            (+1, 14, 6, 'B'),   # right front
-            (+1, 18, 2, 'A'),   # right mid-front
-            (+1, 16, -4, 'B'),  # right mid-rear
-            (+1, 10, -8, 'A'),  # right rear
-        ]
-        for side, ax, ay, group in leg_defs:
-            phase = leg_phase_a if group == 'A' else leg_phase_b
-            # Knee joint midpoint
-            knee_x = leg_cx + side * (ax - 2)
-            knee_y = cy + ay - 4
-            # Foot endpoint
-            foot_x = leg_cx + side * (ax + 4) + phase * side
-            foot_y = base_y + 1
-            # Upper leg segment (body to knee)
-            draw.line([(leg_cx + side * 4, cy), (knee_x, knee_y)],
-                      fill=SPIDER_LEG, width=2)
-            # Lower leg segment (knee to foot)
-            draw.line([(knee_x, knee_y), (foot_x, foot_y)],
-                      fill=SPIDER_LEG, width=2)
-            # Joint dot
-            draw.point((knee_x, knee_y), fill=SPIDER_LIGHT)
-
-    def draw_legs_side(leg_cx, cy, facing_left):
-        """Draw legs for side view — all 8 visible, fanning out."""
-        d = -1 if facing_left else 1
-        # 4 legs on near side (prominent), 4 on far side (shorter)
-        near_legs = [
-            (8, -6, 'A'), (14, -2, 'B'), (16, 4, 'A'), (12, 8, 'B'),
-        ]
-        far_legs = [
-            (6, -8, 'B'), (10, -4, 'A'), (12, 2, 'B'), (8, 6, 'A'),
-        ]
-        # Draw far legs first (behind body)
-        for ax, ay, group in far_legs:
-            phase = leg_phase_a if group == 'A' else leg_phase_b
-            knee_x = leg_cx + d * (ax - 4)
-            knee_y = cy + ay - 2
-            foot_x = leg_cx + d * (ax + 2) + phase * d
-            foot_y = base_y + 1
-            draw.line([(leg_cx + d * 2, cy + ay // 2), (knee_x, knee_y)],
-                      fill=_darken(SPIDER_LEG, 0.8), width=1)
-            draw.line([(knee_x, knee_y), (foot_x, foot_y)],
-                      fill=_darken(SPIDER_LEG, 0.8), width=1)
-        # Near legs (in front)
-        for ax, ay, group in near_legs:
-            phase = leg_phase_a if group == 'A' else leg_phase_b
-            knee_x = leg_cx + d * ax
-            knee_y = cy + ay - 4
-            foot_x = leg_cx + d * (ax + 6) + phase * d
-            foot_y = base_y + 1
-            draw.line([(leg_cx + d * 4, cy + ay // 2), (knee_x, knee_y)],
-                      fill=SPIDER_LEG, width=2)
-            draw.line([(knee_x, knee_y), (foot_x, foot_y)],
-                      fill=SPIDER_LEG, width=2)
-            draw.point((knee_x, knee_y), fill=SPIDER_LIGHT)
-
-    if direction == DOWN:
-        draw_legs_front_back(cx, ceph_cy)
-        # Abdomen (large, round)
-        ellipse(draw, cx, abdomen_cy, 14, 10, SPIDER_ABDOMEN)
-        ellipse(draw, cx - 2, abdomen_cy - 2, 10, 6, abd_light, outline=None)
-        ellipse(draw, cx + 3, abdomen_cy + 3, 8, 5, abd_dark, outline=None)
-        # Red hourglass marking
-        draw.polygon([(cx - 3, abdomen_cy - 2), (cx, abdomen_cy - 5),
-                      (cx + 3, abdomen_cy - 2), (cx, abdomen_cy + 1)],
-                     fill=SPIDER_MARK, outline=None)
-        draw.polygon([(cx - 3, abdomen_cy + 2), (cx, abdomen_cy - 1),
-                      (cx + 3, abdomen_cy + 2), (cx, abdomen_cy + 5)],
-                     fill=SPIDER_MARK, outline=None)
-        # Cephalothorax (smaller, in front)
-        ellipse(draw, cx, ceph_cy, 8, 6, SPIDER_BODY)
-        ellipse(draw, cx - 1, ceph_cy - 1, 5, 3, SPIDER_LIGHT, outline=None)
-        # 8 eyes — cluster of small dots
-        for ex, ey in [(-4, -3), (-2, -4), (0, -4), (2, -4), (4, -3),
-                       (-3, -1), (0, -2), (3, -1)]:
-            draw.point((cx + ex, ceph_cy + ey), fill=SPIDER_EYE)
-        # Fangs
-        draw.line([(cx - 3, ceph_cy + 4), (cx - 4, ceph_cy + 8)],
-                  fill=SPIDER_FANG, width=2)
-        draw.line([(cx + 3, ceph_cy + 4), (cx + 4, ceph_cy + 8)],
-                  fill=SPIDER_FANG, width=2)
-
-    elif direction == UP:
-        draw_legs_front_back(cx, ceph_cy)
-        # Abdomen
-        ellipse(draw, cx, abdomen_cy, 14, 10, SPIDER_ABDOMEN)
-        ellipse(draw, cx, abdomen_cy, 10, 7, abd_dark, outline=None)
-        # Spinnerets at rear
-        draw.point((cx - 2, abdomen_cy + 9), fill=SPIDER_LIGHT)
-        draw.point((cx + 2, abdomen_cy + 9), fill=SPIDER_LIGHT)
-        # Cephalothorax
-        ellipse(draw, cx, ceph_cy, 8, 6, SPIDER_BODY)
-        ellipse(draw, cx, ceph_cy, 5, 3, _darken(SPIDER_BODY, 0.8), outline=None)
-
-    elif direction == LEFT:
-        draw_legs_side(cx, ceph_cy, facing_left=True)
-        # Abdomen (shifted slightly right to show profile)
-        ellipse(draw, cx + 4, abdomen_cy, 13, 10, SPIDER_ABDOMEN)
-        ellipse(draw, cx + 2, abdomen_cy - 2, 9, 6, abd_light, outline=None)
-        ellipse(draw, cx + 6, abdomen_cy + 3, 7, 5, abd_dark, outline=None)
-        # Red marking (side view — partial)
-        draw.polygon([(cx + 2, abdomen_cy - 2), (cx + 4, abdomen_cy - 5),
-                      (cx + 6, abdomen_cy - 2), (cx + 4, abdomen_cy + 3)],
-                     fill=SPIDER_MARK, outline=None)
-        # Cephalothorax
-        ellipse(draw, cx - 6, ceph_cy, 7, 6, SPIDER_BODY)
-        ellipse(draw, cx - 7, ceph_cy - 1, 4, 3, SPIDER_LIGHT, outline=None)
-        # Eyes (side cluster)
-        for ex, ey in [(-4, -3), (-3, -4), (-1, -3), (-4, -1)]:
-            draw.point((cx - 6 + ex, ceph_cy + ey), fill=SPIDER_EYE)
-        # Fangs
-        draw.line([(cx - 10, ceph_cy + 3), (cx - 13, ceph_cy + 7)],
-                  fill=SPIDER_FANG, width=2)
-
-    else:  # RIGHT
-        draw_legs_side(cx, ceph_cy, facing_left=False)
-        # Abdomen
-        ellipse(draw, cx - 4, abdomen_cy, 13, 10, SPIDER_ABDOMEN)
-        ellipse(draw, cx - 6, abdomen_cy - 2, 9, 6, abd_light, outline=None)
-        ellipse(draw, cx - 2, abdomen_cy + 3, 7, 5, abd_dark, outline=None)
-        # Red marking
-        draw.polygon([(cx - 6, abdomen_cy - 2), (cx - 4, abdomen_cy - 5),
-                      (cx - 2, abdomen_cy - 2), (cx - 4, abdomen_cy + 3)],
-                     fill=SPIDER_MARK, outline=None)
-        # Cephalothorax
-        ellipse(draw, cx + 6, ceph_cy, 7, 6, SPIDER_BODY)
-        ellipse(draw, cx + 7, ceph_cy - 1, 4, 3, SPIDER_LIGHT, outline=None)
-        # Eyes
-        for ex, ey in [(4, -3), (3, -4), (1, -3), (4, -1)]:
-            draw.point((cx + 6 + ex, ceph_cy + ey), fill=SPIDER_EYE)
-        # Fangs
-        draw.line([(cx + 10, ceph_cy + 3), (cx + 13, ceph_cy + 7)],
-                  fill=SPIDER_FANG, width=2)
+    d, back, base, cx, ph = _setup(ox, oy, direction, frame)
+    by = base - 10.0
+    step = [0.0, 1.2, 0.0, -1.2][frame]
+    # eight legs radiating out: knees raised above the body, feet fanned
+    # front to back -- the front pair reach forward, the back pair trail
+    if d:
+        legs = [((3.0, -1.0), (12.0, -10.0), (16.0, 0.0)), ((1.0, -1.0), (7.0, -13.0), (9.0, 0.0)),
+                ((-1.0, -1.0), (-4.4, -13.0), (-6.0, 0.0)), ((-3.0, -1.0), (-11.0, -11.0), (-15.0, 0.0))]
+        for layer in (0, 1):
+            for i, (hip, knee, foot) in enumerate(legs):
+                k = 1 if (i + layer) % 2 else -1
+                near = layer == 1
+                off = 0.0 if near else -1.6
+                col = SPI if near else shade(SPI, 0.5)
+                h = (cx + d * hip[0], by + hip[1] + off)
+                kn = (cx + d * (knee[0] + (0.0 if near else -1.0)), by + knee[1] + k * step + off)
+                ft = (cx + d * (foot[0] + (0.0 if near else -1.6)), base - 0.6 + off)
+                cel(draw, Limb([h, kn], [1.4, 1.1]), col, sh=None)
+                cel(draw, Limb([kn, ft], [1.1, 0.5]), col, sh=None)
+                if near:
+                    Ell(kn[0], kn[1], 1.1, 1.1).draw(draw, fill=SPI_LT)
+    else:
+        legs = [((4.0, 1.0), (11.0, -6.0), (10.4, 0.0)), ((5.0, -1.0), (15.0, -10.0), (17.0, 0.0)),
+                ((5.0, -3.0), (18.0, -12.4), (21.0, -1.6)), ((4.0, -5.0), (15.4, -15.4), (19.4, -4.0))]
+        for i in (3, 2, 1, 0):
+            hip, knee, foot = legs[i]
+            for s in (-1, 1):
+                k = 1 if (i + (s > 0)) % 2 else -1
+                col = SPI if i < 2 else shade(SPI, 0.3 + (i - 2) * 0.2)
+                h = (cx + s * hip[0], by + hip[1])
+                kn = (cx + s * knee[0], by + knee[1] + k * step)
+                ft = (cx + s * foot[0], (base - 0.6) + (foot[1] if i >= 2 else 0.0))
+                cel(draw, Limb([h, kn], [1.5, 1.2]), col, sh=None)
+                cel(draw, Limb([kn, ft], [1.2, 0.5]), col, sh=None)
+                Ell(kn[0], kn[1], 1.2, 1.2).draw(draw, fill=SPI_LT)
+                Ell((kn[0] + ft[0]) / 2, (kn[1] + ft[1]) / 2, 0.8, 0.8).draw(draw, fill=SPI_LT)
+    # abdomen behind, head-thorax in front
+    ab = (cx - d * 6.0, by - 3.0) if d else (cx, by - 5.0)
+    cel(draw, Ell(ab[0], ab[1], 10.0 if not d else 9.4, 9.0), SPI, sh=(1.4, 1.2), hi=(0.8, 0.8))
+    if back or d:
+        cel(draw, Poly([(ab[0], ab[1] - 5.0), (ab[0] + 2.6, ab[1] - 2.0), (ab[0], ab[1] + 1.0), (ab[0] - 2.6, ab[1] - 2.0)]), SPI_RED, sh=None)
+        cel(draw, Poly([(ab[0], ab[1] + 1.6), (ab[0] + 2.2, ab[1] + 4.0), (ab[0], ab[1] + 6.2), (ab[0] - 2.2, ab[1] + 4.0)]), SPI_RED, sh=None)
+    if back:
+        return
+    hx, hy = (cx + d * 5.0, by + 0.6) if d else (cx, by + 2.0)
+    blob(draw, [Ell(hx, hy, 8.0 if not d else 6.6, 6.6)] + [Ell(hx + u, hy - 6.0, 1.4, 1.8) for u in ((-4.0, -1.2, 1.6, 4.4) if not d else (-2.0, 1.4))],
+         SPI, sh=(1.0, 1.0))
+    # eyes: two big, four little
+    e1, e2 = (hx - 2.8, hx + 2.8) if not d else (hx + d * 1.4, hx + d * 4.4)
+    _eyes(draw, e1, e2, hy - 1.0, d, SPI_EYE, mood="bright", skin=SPI, w=3.6, h=4.2)
+    for (u, v) in ((-5.4, -3.6), (5.4, -3.6), (-3.0, -4.8), (3.0, -4.8)) if not d else ((d * 5.4, -3.6), (d * 3.0, -4.6)):
+        cel(draw, Ell(hx + u, hy + v, 0.9, 0.9), SPI_EYE, sh=None, lw=0.4)
+    for s in ((-1, 1) if not d else (d,)):
+        fx = hx + s * 1.6 if not d else hx + d * 6.4
+        cel(draw, Poly([(fx - 0.8, hy + 3.6), (fx + 0.8, hy + 3.6), (fx + (0.6 * s if not d else d * 0.4), hy + 6.6)]), TOOTH, sh=None, lw=0.5)
 
 
 # ===================================================================
-# BEAR (ID 75) — very wide body, small ears, thick paws, lumbering
+# BEAR (75) -- a brown brawler on its hind legs, claws out
 # ===================================================================
+
+BEAR = (156, 104, 62)
+BEAR_LT = (222, 186, 136)
+BEAR_NOSE = (52, 40, 40)
+
 
 def draw_bear(draw, ox, oy, direction, frame):
-    bob = [0, -1, 0, -1][frame]
-    # Body sways side to side for lumbering walk
-    sway = [-2, 0, 2, 0][frame]
-    leg_spread = [-3, 0, 3, 0][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32 + sway
-    body_cy = base_y - 18
-    head_cy = body_cy - 16
-
-    body_shadow = _darken(BEAR_BODY, 0.7)
-
-    # --- Legs (short, thick, wide stance) ---
-    if direction in (DOWN, UP):
-        for side in [-1, 1]:
-            lx = cx + side * 10 + (leg_spread if side == -1 else -leg_spread)
-            # Thick leg
-            draw.rectangle([lx - 5, body_cy + 10, lx + 5, base_y - 2],
-                           fill=BEAR_BODY, outline=OUTLINE)
-            if direction == DOWN:
-                draw.rectangle([lx - 5, body_cy + 10, lx - 3, base_y - 6],
-                               fill=BEAR_LIGHT, outline=None)
-            # Paw
-            ellipse(draw, lx, base_y, 6, 3, BEAR_DARK)
-            # Claw marks
-            for c in [-3, 0, 3]:
-                draw.point((lx + c, base_y + 2), fill=BEAR_CLAW)
-    elif direction == LEFT:
-        for offset in [leg_spread, -leg_spread]:
-            lx = cx - 2 + offset
-            draw.rectangle([lx - 5, body_cy + 10, lx + 5, base_y - 2],
-                           fill=BEAR_BODY, outline=OUTLINE)
-            ellipse(draw, lx, base_y, 6, 3, BEAR_DARK)
-            for c in [-3, 0, 3]:
-                draw.point((lx + c, base_y + 2), fill=BEAR_CLAW)
-    else:  # RIGHT
-        for offset in [leg_spread, -leg_spread]:
-            lx = cx + 2 + offset
-            draw.rectangle([lx - 5, body_cy + 10, lx + 5, base_y - 2],
-                           fill=BEAR_BODY, outline=OUTLINE)
-            ellipse(draw, lx, base_y, 6, 3, BEAR_DARK)
-            for c in [-3, 0, 3]:
-                draw.point((lx + c, base_y + 2), fill=BEAR_CLAW)
-
-    # --- Body (very wide) ---
-    if direction == DOWN:
-        ellipse(draw, cx, body_cy, 18, 14, BEAR_BODY)
-        ellipse(draw, cx + 4, body_cy + 3, 14, 10, body_shadow, outline=None)
-        ellipse(draw, cx, body_cy, 15, 11, BEAR_BODY, outline=None)
-        ellipse(draw, cx - 3, body_cy - 3, 10, 7, BEAR_LIGHT, outline=None)
-        # Belly patch
-        ellipse(draw, cx, body_cy + 4, 10, 6, BEAR_BELLY, outline=None)
-        draw_fur_texture(draw, cx, body_cy, 24, 18, BEAR_BODY, density=4)
-        # Arms / thick forelimbs at sides
-        draw.rectangle([cx - 22, body_cy - 6, cx - 16, body_cy + 8],
-                       fill=BEAR_BODY, outline=OUTLINE)
-        draw.rectangle([cx - 22, body_cy - 6, cx - 20, body_cy + 4],
-                       fill=BEAR_LIGHT, outline=None)
-        ellipse(draw, cx - 19, body_cy + 10, 4, 3, BEAR_DARK)
-        for c in [-2, 0, 2]:
-            draw.point((cx - 19 + c, body_cy + 12), fill=BEAR_CLAW)
-        draw.rectangle([cx + 16, body_cy - 6, cx + 22, body_cy + 8],
-                       fill=BEAR_BODY, outline=OUTLINE)
-        ellipse(draw, cx + 19, body_cy + 10, 4, 3, BEAR_DARK)
-        for c in [-2, 0, 2]:
-            draw.point((cx + 19 + c, body_cy + 12), fill=BEAR_CLAW)
-    elif direction == UP:
-        ellipse(draw, cx, body_cy, 18, 14, BEAR_BODY)
-        ellipse(draw, cx, body_cy, 15, 11, BEAR_DARK, outline=None)
-        draw_fur_texture(draw, cx, body_cy, 24, 18, BEAR_DARK, density=4)
-        # Arms
-        draw.rectangle([cx - 22, body_cy - 6, cx - 16, body_cy + 8],
-                       fill=BEAR_BODY, outline=OUTLINE)
-        draw.rectangle([cx + 16, body_cy - 6, cx + 22, body_cy + 8],
-                       fill=BEAR_BODY, outline=OUTLINE)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, body_cy, 16, 14, BEAR_BODY)
-        ellipse(draw, cx + 2, body_cy + 3, 12, 10, body_shadow, outline=None)
-        ellipse(draw, cx - 2, body_cy, 13, 11, BEAR_BODY, outline=None)
-        ellipse(draw, cx - 4, body_cy - 3, 8, 6, BEAR_LIGHT, outline=None)
-        draw_fur_texture(draw, cx, body_cy, 20, 18, BEAR_BODY, density=4)
-        # Forelimb
-        draw.rectangle([cx - 16, body_cy - 4, cx - 10, body_cy + 8],
-                       fill=BEAR_BODY, outline=OUTLINE)
-        draw.rectangle([cx - 16, body_cy - 4, cx - 14, body_cy + 4],
-                       fill=BEAR_LIGHT, outline=None)
-        ellipse(draw, cx - 13, body_cy + 10, 4, 3, BEAR_DARK)
-        for c in [-2, 0, 2]:
-            draw.point((cx - 13 + c, body_cy + 12), fill=BEAR_CLAW)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, body_cy, 16, 14, BEAR_BODY)
-        ellipse(draw, cx + 6, body_cy + 3, 12, 10, body_shadow, outline=None)
-        ellipse(draw, cx + 2, body_cy, 13, 11, BEAR_BODY, outline=None)
-        ellipse(draw, cx, body_cy - 3, 8, 6, BEAR_LIGHT, outline=None)
-        draw_fur_texture(draw, cx + 2, body_cy, 20, 18, BEAR_BODY, density=4)
-        # Forelimb
-        draw.rectangle([cx + 10, body_cy - 4, cx + 16, body_cy + 8],
-                       fill=BEAR_BODY, outline=OUTLINE)
-        ellipse(draw, cx + 13, body_cy + 10, 4, 3, BEAR_DARK)
-        for c in [-2, 0, 2]:
-            draw.point((cx + 13 + c, body_cy + 12), fill=BEAR_CLAW)
-
-    # --- Head (large, round, with small ears and short muzzle) ---
-    if direction == DOWN:
-        ellipse(draw, cx, head_cy, 14, 12, BEAR_BODY)
-        ellipse(draw, cx - 2, head_cy - 3, 10, 7, BEAR_LIGHT, outline=None)
-        # Muzzle
-        ellipse(draw, cx, head_cy + 6, 6, 4, BEAR_BELLY)
-        # Nose
-        ellipse(draw, cx, head_cy + 4, 3, 2, BEAR_NOSE)
-        # Eyes
-        draw.rectangle([cx - 6, head_cy - 1, cx - 3, head_cy + 2], fill=BEAR_EYE)
-        draw.point((cx - 5, head_cy), fill=(255, 255, 255))
-        draw.rectangle([cx + 3, head_cy - 1, cx + 6, head_cy + 2], fill=BEAR_EYE)
-        draw.point((cx + 4, head_cy), fill=(255, 255, 255))
-        # Small round ears
-        ellipse(draw, cx - 10, head_cy - 10, 5, 4, BEAR_BODY)
-        ellipse(draw, cx - 10, head_cy - 10, 3, 2, BEAR_INNER_EAR, outline=None)
-        ellipse(draw, cx + 10, head_cy - 10, 5, 4, BEAR_BODY)
-        ellipse(draw, cx + 10, head_cy - 10, 3, 2, BEAR_INNER_EAR, outline=None)
-    elif direction == UP:
-        ellipse(draw, cx, head_cy, 14, 12, BEAR_BODY)
-        ellipse(draw, cx, head_cy, 10, 8, BEAR_DARK, outline=None)
-        # Ears
-        ellipse(draw, cx - 10, head_cy - 10, 5, 4, BEAR_BODY)
-        ellipse(draw, cx + 10, head_cy - 10, 5, 4, BEAR_BODY)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, head_cy, 12, 11, BEAR_BODY)
-        ellipse(draw, cx - 4, head_cy - 3, 8, 6, BEAR_LIGHT, outline=None)
-        # Muzzle extending left
-        ellipse(draw, cx - 10, head_cy + 4, 6, 4, BEAR_BELLY)
-        ellipse(draw, cx - 12, head_cy + 3, 3, 2, BEAR_NOSE)
-        # Eye
-        draw.rectangle([cx - 7, head_cy - 1, cx - 4, head_cy + 2], fill=BEAR_EYE)
-        draw.point((cx - 6, head_cy), fill=(255, 255, 255))
-        # Ear
-        ellipse(draw, cx - 6, head_cy - 10, 5, 4, BEAR_BODY)
-        ellipse(draw, cx - 6, head_cy - 10, 3, 2, BEAR_INNER_EAR, outline=None)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, head_cy, 12, 11, BEAR_BODY)
-        ellipse(draw, cx + 4, head_cy - 3, 8, 6, BEAR_LIGHT, outline=None)
-        # Muzzle
-        ellipse(draw, cx + 10, head_cy + 4, 6, 4, BEAR_BELLY)
-        ellipse(draw, cx + 12, head_cy + 3, 3, 2, BEAR_NOSE)
-        # Eye
-        draw.rectangle([cx + 4, head_cy - 1, cx + 7, head_cy + 2], fill=BEAR_EYE)
-        draw.point((cx + 5, head_cy), fill=(255, 255, 255))
-        # Ear
-        ellipse(draw, cx + 6, head_cy - 10, 5, 4, BEAR_BODY)
-        ellipse(draw, cx + 6, head_cy - 10, 3, 2, BEAR_INNER_EAR, outline=None)
+    d, back, base, cx, ph = _setup(ox, oy, direction, frame)
+    # legs: short and thick
+    for s in ((-1, 1) if not d else (-d, d)):
+        near = not d or s == d
+        fwd = ph * s if not d else (ph if near else -ph)
+        lx = cx + (s * 5.2 if not d else d * fwd * 2.6 + s * 1.4)
+        lift = 1.0 if fwd < 0 and not d else 0.0
+        col = BEAR if near else shade(BEAR, 0.6)
+        cel(draw, Limb([(lx, base - 9.0), (lx, base - 2.4 - lift)], [3.2, 3.0]), col, sh=(0.8, 0.0))
+        cel(draw, Ell(lx + d * 1.0, base - 1.4 - lift, 3.4, 1.8), BEAR_LT if near else shade(BEAR_LT, 0.6), sh=(0.0, 0.5))
+    # body: a big round barrel with a pale belly
+    bw = 11.0 if not d else 9.4
+    cel(draw, Ell(cx - d * 0.6, base - 15.0, bw, 10.4), BEAR, sh=(1.6, 1.4))
+    if not back:
+        cel(draw, Ell(cx + d * 2.6, base - 13.6, bw * 0.6, 7.0), BEAR_LT, sh=None, line=False)
+    else:
+        cel(draw, Ell(cx, base - 7.4, 2.4, 2.0), BEAR, sh=None)
+    # arms up, claws out, ready to maul
+    for s in ((-1, 1) if not d else (-d, d)):
+        near = not d or s == d
+        col = BEAR if near else shade(BEAR, 0.6)
+        sx = cx + (s * (bw - 1.6) if not d else s * 1.0)
+        raise_ = [0.0, 1.0, 0.0, 1.0][frame]
+        end = (sx + (s * 4.4 if not d else d * 5.6), base - 21.0 - raise_ * (1 if s > 0 else 0.4))
+        cel(draw, Limb([(sx, base - 20.0), ((sx + end[0]) / 2 + (s * 1.4 if not d else 0), base - 17.0), end], [3.4, 3.0, 2.8]), col, sh=(0.8, 0.6))
+        px, py = end
+        cel(draw, Ell(px, py, 3.2, 3.0), col, sh=(0.6, 0.6))
+        if near and not back:
+            cel(draw, Ell(px, py + 0.6, 1.6, 1.4), BEAR_LT, sh=None, line=False)
+            for k in (-1.4, 0.0, 1.4):
+                Poly([(px + k - 0.5, py - 2.6), (px + k + 0.5, py - 2.6), (px + k * 1.3, py - 4.4)]).draw(draw, fill=TOOTH)
+    # head
+    hx, hy = cx + d * 2.6, base - 29.0
+    for s in ((-1, 1) if not d else (-d, d)):
+        near = not d or s == -d
+        ex = hx + s * 7.4 if not d else hx - d * 1.4 + s * 3.4
+        cel(draw, Ell(ex, hy - 7.4, 3.2, 3.2), BEAR if near else shade(BEAR, 0.6), sh=(0.5, 0.5))
+        if not back:
+            Ell(ex, hy - 7.2, 1.6, 1.6).draw(draw, fill=BEAR_LT)
+    cel(draw, Ell(hx, hy, 10.4 if not d else 9.4, 9.2), BEAR, sh=(1.2, 1.0), hi=(0.6, 0.6))
+    if back:
+        return
+    if d:
+        cel(draw, Ell(hx + d * 7.4, hy + 2.6, 4.6, 3.6), BEAR_LT, sh=(0.0, 0.6))
+        cel(draw, Ell(hx + d * 11.0, hy + 1.4, 1.8, 1.4), BEAR_NOSE, sh=None, line=False)
+        stroke(draw, [(hx + d * 6.4, hy + 5.0), (hx + d * 9.4, hy + 5.0)], 0.6, BEAR_NOSE)
+        _eyes(draw, hx + d * 2.4, hx + d * 6.0, hy - 1.8, d, (60, 40, 30), skin=BEAR, w=3.6, h=4.2)
+        return
+    cel(draw, Ell(hx, hy + 3.6, 5.2, 4.0), BEAR_LT, sh=(0.6, 0.6))
+    cel(draw, Ell(hx, hy + 1.8, 2.2, 1.5), BEAR_NOSE, sh=None, line=False)
+    stroke(draw, [(hx - 2.4, hy + 5.0), (hx, hy + 5.8), (hx + 2.4, hy + 5.0)], 0.6, BEAR_NOSE)
+    for s in (-1, 1):
+        Poly([(hx + s * 1.6 - 0.45, hy + 5.4), (hx + s * 1.6 + 0.45, hy + 5.4), (hx + s * 1.6, hy + 6.8)]).draw(draw, fill=TOOTH)
+    _eyes(draw, hx - 4.6, hx + 4.6, hy - 1.6, 0, (70, 44, 30), skin=BEAR, w=3.6, h=4.4)
 
 
 # ===================================================================
-# SCORPION (ID 76) — low wide body, pincers, curled stinger tail
+# SCORPION (76) -- pincers forward, a segmented tail arched over its head
 # ===================================================================
+
+SCO = (214, 110, 58)
+SCO_DK = (150, 70, 44)
+SCO_VENOM = (170, 255, 90)
+
 
 def draw_scorpion(draw, ox, oy, direction, frame):
-    bob = [0, -1, 0, -1][frame]
-    # Scuttling: body stays low, legs alternate
-    leg_phase_a = [-2, 0, 2, 0][frame]
-    leg_phase_b = [2, 0, -2, 0][frame]
-    # Tail sway / pulse
-    tail_pulse = [0, 1, 0, -1][frame]
-    pincer_open = [2, 0, -1, 0][frame]
+    d, back, base, cx, ph = _setup(ox, oy, direction, frame, bob=[0, 0, 0, 0])
+    step = [0.0, 1.0, 0.0, -1.0][frame]
+    by = base - 8.0
+    sway = [0.0, 0.8, 0.0, -0.8][frame]
 
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    # Scorpion body sits very low
-    body_cy = base_y - 8
-    head_cy = body_cy - 6
+    def tail(front):
+        """The tail: segments rising from the rear, arching over, sting forward."""
+        if d:
+            seg = [(cx - d * 8.0, by - 1.0), (cx - d * 12.0, by - 7.0), (cx - d * 12.4, by - 14.4), (cx - d * 9.0, by - 20.4),
+                   (cx - d * 3.0, by - 23.0 + sway), (cx + d * 2.6, by - 21.4 + sway)]
+        else:
+            # head-on the tail comes up behind, swings to one side and arcs
+            # toward the camera: each segment nearer, so larger, than the last
+            seg = [(cx + 0.4, by - 4.0), (cx + 2.4, by - 9.4), (cx + 4.0 + sway, by - 15.0), (cx + 3.4 + sway, by - 20.6),
+                   (cx + 1.0 + sway, by - 25.4), (cx - 0.6 + sway, by - 28.6)]
+        for i in range(len(seg) - 1):
+            a, b = seg[i], seg[i + 1]
+            w = (3.4 - i * 0.3) if d else (2.6 + i * 0.36)
+            cel(draw, Ell((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, w, w * (1.0 if d else 0.86)), SCO if i % 2 == 0 else lit(SCO, 0.4),
+                sh=(0.6, 0.6))
+        tip = seg[-1]
+        if d:
+            sting = [(tip[0] - d * 1.6, tip[1] - 2.4), (tip[0] + d * 3.4, tip[1] - 1.4), (tip[0] + d * 5.4, tip[1] + 2.4),
+                     (tip[0] + d * 1.6, tip[1] + 1.6), (tip[0] - d * 1.2, tip[1] + 2.0)]
+        else:
+            cel(draw, Ell(tip[0], tip[1] - 0.4, 4.2, 3.6), SCO, sh=(0.8, 0.8), hi=(0.5, 0.5))
+            sting = [(tip[0] - 1.6, tip[1] + 1.4), (tip[0] + 1.6, tip[1] + 1.4), (tip[0] + 0.4, tip[1] + 5.4)]
+        cel(draw, Poly(sting), SCO_DK, sh=None)
+        vx, vy = (tip[0] + d * 5.2, tip[1] + 2.2) if d else (tip[0] + 0.4, tip[1] + 6.0)
+        cel(draw, Ell(vx, vy, 1.2, 1.2), SCO_VENOM, sh=None, lw=0.5)
+        if frame % 2 == 0:
+            sparkle(draw, vx + 1.4, vy - 1.4, 1.6, SCO_VENOM)
 
-    armor_dark = _darken(SCORP_ARMOR, 0.7)
-    armor_light = _brighten(SCORP_ARMOR, 1.2)
+    def pincer(s, near=True):
+        col = SCO if near else shade(SCO, 0.6)
+        if d:
+            shx = cx + d * 5.0
+            px, py = cx + d * 12.6 + (step if s > 0 else -step) * 0.6, by - 3.0 + (0 if near else -2.0)
+            cel(draw, Limb([(shx, by + 0.4), (shx + d * 3.4, by - 1.6), (px - d * 2.4, py)], [1.6, 1.4, 1.3]), col, sh=None)
+            claw_c = (px, py)
+            ang = 0 if d > 0 else 180
+        else:
+            shx = cx + s * 6.0
+            px, py = cx + s * 12.0, by - 9.4 + (step * s) * 0.6
+            cel(draw, Limb([(shx, by), (cx + s * 11.4, by - 2.0), (px, py + 3.4)], [2.2, 2.0, 1.8]), col, sh=None)
+            claw_c = (px, py)
+            ang = -90 + s * 8
+        k = 1.0 if d else 1.4
+        top = xform([(0.0, -1.6), (3.0, -3.2), (6.4, -2.6), (7.2, -0.8), (4.4, -1.0), (2.4, 0.4), (0.0, 1.4)], claw_c[0], claw_c[1], ang, k)
+        bot = xform([(0.0, 1.4), (2.6, 2.6), (5.4, 2.4), (4.0, 1.0), (1.6, 0.4)], claw_c[0], claw_c[1], ang, k)
+        cel(draw, Ell(claw_c[0], claw_c[1], 3.0, 3.0), col, sh=(0.6, 0.6))
+        cel(draw, Poly(top), col, sh=(0.4, 0.4))
+        cel(draw, Poly(bot), shade(col, 0.4), sh=None)
 
-    def draw_scorp_legs(lcx, lcy):
-        """Draw 8 small legs underneath body — 4 per side."""
-        for side in [-1, 1]:
-            for i, (ax, group) in enumerate([(6, 'A'), (10, 'B'), (14, 'A'), (18, 'B')]):
-                phase = leg_phase_a if group == 'A' else leg_phase_b
-                knee_x = lcx + side * ax
-                knee_y = lcy + 2
-                foot_x = lcx + side * (ax + 4) + phase * side
-                foot_y = base_y + 1
-                draw.line([(lcx + side * 4, lcy + i), (knee_x, knee_y)],
-                          fill=SCORP_DARK, width=1)
-                draw.line([(knee_x, knee_y), (foot_x, foot_y)],
-                          fill=SCORP_DARK, width=1)
-
-    def draw_tail_curl(tcx, tcy, facing):
-        """Draw segmented tail curling up and over, ending in stinger."""
-        # Segments: base → up → forward → stinger tip
-        if facing == DOWN:
-            # Tail goes up from rear and curves forward over body
-            segs = [
-                (tcx, tcy + 4),
-                (tcx, tcy - 2),
-                (tcx + tail_pulse, tcy - 10),
-                (tcx + tail_pulse, tcy - 18),
-                (tcx + tail_pulse * 2, tcy - 22),
-            ]
-        elif facing == UP:
-            segs = [
-                (tcx, tcy + 4),
-                (tcx, tcy - 2),
-                (tcx - tail_pulse, tcy - 10),
-                (tcx - tail_pulse, tcy - 18),
-                (tcx - tail_pulse * 2, tcy - 22),
-            ]
-        elif facing == LEFT:
-            segs = [
-                (tcx + 8, tcy),
-                (tcx + 4, tcy - 6),
-                (tcx + tail_pulse, tcy - 12),
-                (tcx - 4 + tail_pulse, tcy - 18),
-                (tcx - 6 + tail_pulse, tcy - 22),
-            ]
-        else:  # RIGHT
-            segs = [
-                (tcx - 8, tcy),
-                (tcx - 4, tcy - 6),
-                (tcx - tail_pulse, tcy - 12),
-                (tcx + 4 - tail_pulse, tcy - 18),
-                (tcx + 6 - tail_pulse, tcy - 22),
-            ]
-
-        # Draw segments as connected thick lines with ellipse joints
-        seg_width = [4, 3, 3, 2, 2]
-        for i in range(len(segs) - 1):
-            draw.line([segs[i], segs[i + 1]], fill=SCORP_BODY, width=seg_width[i])
-            # Joint dot
-            ellipse(draw, segs[i][0], segs[i][1], 3, 2, SCORP_ARMOR)
-        # Armor highlight on segments
-        for i in range(len(segs) - 1):
-            mx = (segs[i][0] + segs[i + 1][0]) // 2
-            my = (segs[i][1] + segs[i + 1][1]) // 2
-            draw.point((mx - 1, my), fill=armor_light)
-
-        # Stinger at tip
-        tip = segs[-1]
-        draw.polygon([
-            (tip[0] - 3, tip[1] + 2),
-            (tip[0], tip[1] - 4),
-            (tip[0] + 3, tip[1] + 2),
-        ], fill=SCORP_STINGER, outline=OUTLINE)
-        draw.point((tip[0], tip[1] - 3), fill=_brighten(SCORP_STINGER, 1.4))
-
-    def draw_pincers(pcx, pcy, facing):
-        """Draw two large pincers extending forward from body."""
-        if facing == DOWN:
-            for side in [-1, 1]:
-                # Arm extending forward
-                arm_x = pcx + side * 12
-                draw.line([(pcx + side * 8, pcy), (arm_x, pcy + 10)],
-                          fill=SCORP_PINCER, width=3)
-                # Pincer claw (two prongs)
-                open_amt = pincer_open * side
-                draw.line([(arm_x, pcy + 10),
-                           (arm_x - 4 + open_amt, pcy + 16)],
-                          fill=SCORP_PINCER, width=2)
-                draw.line([(arm_x, pcy + 10),
-                           (arm_x + 4 + open_amt, pcy + 16)],
-                          fill=SCORP_PINCER, width=2)
-                # Pincer tips
-                draw.point((arm_x - 4 + open_amt, pcy + 16), fill=SCORP_DARK)
-                draw.point((arm_x + 4 + open_amt, pcy + 16), fill=SCORP_DARK)
-        elif facing == UP:
-            for side in [-1, 1]:
-                arm_x = pcx + side * 12
-                draw.line([(pcx + side * 8, pcy), (arm_x, pcy - 10)],
-                          fill=SCORP_PINCER, width=3)
-                open_amt = pincer_open * side
-                draw.line([(arm_x, pcy - 10),
-                           (arm_x - 4 + open_amt, pcy - 16)],
-                          fill=SCORP_PINCER, width=2)
-                draw.line([(arm_x, pcy - 10),
-                           (arm_x + 4 + open_amt, pcy - 16)],
-                          fill=SCORP_PINCER, width=2)
-                draw.point((arm_x - 4 + open_amt, pcy - 16), fill=SCORP_DARK)
-                draw.point((arm_x + 4 + open_amt, pcy - 16), fill=SCORP_DARK)
-        elif facing == LEFT:
-            for v_off in [-6, 6]:
-                arm_y = pcy + v_off
-                draw.line([(pcx - 6, pcy + v_off // 2),
-                           (pcx - 16, arm_y)],
-                          fill=SCORP_PINCER, width=3)
-                draw.line([(pcx - 16, arm_y),
-                           (pcx - 22, arm_y - 3 + pincer_open)],
-                          fill=SCORP_PINCER, width=2)
-                draw.line([(pcx - 16, arm_y),
-                           (pcx - 22, arm_y + 3 + pincer_open)],
-                          fill=SCORP_PINCER, width=2)
-                draw.point((pcx - 22, arm_y - 3 + pincer_open), fill=SCORP_DARK)
-                draw.point((pcx - 22, arm_y + 3 + pincer_open), fill=SCORP_DARK)
-        else:  # RIGHT
-            for v_off in [-6, 6]:
-                arm_y = pcy + v_off
-                draw.line([(pcx + 6, pcy + v_off // 2),
-                           (pcx + 16, arm_y)],
-                          fill=SCORP_PINCER, width=3)
-                draw.line([(pcx + 16, arm_y),
-                           (pcx + 22, arm_y - 3 - pincer_open)],
-                          fill=SCORP_PINCER, width=2)
-                draw.line([(pcx + 16, arm_y),
-                           (pcx + 22, arm_y + 3 - pincer_open)],
-                          fill=SCORP_PINCER, width=2)
-                draw.point((pcx + 22, arm_y - 3 - pincer_open), fill=SCORP_DARK)
-                draw.point((pcx + 22, arm_y + 3 - pincer_open), fill=SCORP_DARK)
-
-    if direction == DOWN:
-        # Draw order: tail behind, then legs, body, pincers on top
-        draw_tail_curl(cx, body_cy, DOWN)
-        draw_scorp_legs(cx, body_cy)
-        # Body: wide, flat, armored
-        ellipse(draw, cx, body_cy, 16, 8, SCORP_ARMOR)
-        ellipse(draw, cx - 2, body_cy - 2, 12, 5, armor_light, outline=None)
-        ellipse(draw, cx + 3, body_cy + 2, 10, 4, armor_dark, outline=None)
-        # Armor plate segments
-        draw.line([(cx - 10, body_cy - 2), (cx + 10, body_cy - 2)],
-                  fill=armor_dark, width=1)
-        draw.line([(cx - 8, body_cy + 2), (cx + 8, body_cy + 2)],
-                  fill=armor_dark, width=1)
-        # Head section
-        ellipse(draw, cx, head_cy, 8, 5, SCORP_ARMOR)
-        ellipse(draw, cx - 1, head_cy - 1, 5, 3, armor_light, outline=None)
-        # Eyes
-        draw.point((cx - 4, head_cy - 1), fill=SCORP_EYE)
-        draw.point((cx + 4, head_cy - 1), fill=SCORP_EYE)
-        draw.point((cx - 3, head_cy - 2), fill=SCORP_EYE)
-        draw.point((cx + 3, head_cy - 2), fill=SCORP_EYE)
-        draw_pincers(cx, head_cy, DOWN)
-
-    elif direction == UP:
-        draw_pincers(cx, head_cy, UP)
-        draw_scorp_legs(cx, body_cy)
-        # Body
-        ellipse(draw, cx, body_cy, 16, 8, SCORP_ARMOR)
-        ellipse(draw, cx, body_cy, 12, 5, armor_dark, outline=None)
-        draw.line([(cx - 10, body_cy - 2), (cx + 10, body_cy - 2)],
-                  fill=armor_dark, width=1)
-        draw.line([(cx - 8, body_cy + 2), (cx + 8, body_cy + 2)],
-                  fill=armor_dark, width=1)
-        # Head
-        ellipse(draw, cx, head_cy, 8, 5, SCORP_ARMOR)
-        ellipse(draw, cx, head_cy, 5, 3, _darken(SCORP_ARMOR, 0.8), outline=None)
-        draw_tail_curl(cx, body_cy, UP)
-
-    elif direction == LEFT:
-        draw_tail_curl(cx, body_cy, LEFT)
-        draw_scorp_legs(cx, body_cy)
-        # Body (side view — slightly elongated)
-        ellipse(draw, cx + 2, body_cy, 14, 8, SCORP_ARMOR)
-        ellipse(draw, cx, body_cy - 2, 10, 5, armor_light, outline=None)
-        ellipse(draw, cx + 5, body_cy + 2, 8, 4, armor_dark, outline=None)
-        # Segment lines
-        draw.line([(cx - 6, body_cy - 2), (cx + 10, body_cy - 2)],
-                  fill=armor_dark, width=1)
-        # Head
-        ellipse(draw, cx - 8, head_cy, 6, 5, SCORP_ARMOR)
-        ellipse(draw, cx - 9, head_cy - 1, 4, 3, armor_light, outline=None)
-        # Eyes
-        draw.point((cx - 12, head_cy - 1), fill=SCORP_EYE)
-        draw.point((cx - 11, head_cy - 2), fill=SCORP_EYE)
-        draw_pincers(cx - 8, head_cy, LEFT)
-
-    else:  # RIGHT
-        draw_tail_curl(cx, body_cy, RIGHT)
-        draw_scorp_legs(cx, body_cy)
-        # Body
-        ellipse(draw, cx - 2, body_cy, 14, 8, SCORP_ARMOR)
-        ellipse(draw, cx - 4, body_cy - 2, 10, 5, armor_light, outline=None)
-        ellipse(draw, cx + 1, body_cy + 2, 8, 4, armor_dark, outline=None)
-        draw.line([(cx - 10, body_cy - 2), (cx + 6, body_cy - 2)],
-                  fill=armor_dark, width=1)
-        # Head
-        ellipse(draw, cx + 8, head_cy, 6, 5, SCORP_ARMOR)
-        ellipse(draw, cx + 9, head_cy - 1, 4, 3, armor_light, outline=None)
-        # Eyes
-        draw.point((cx + 12, head_cy - 1), fill=SCORP_EYE)
-        draw.point((cx + 11, head_cy - 2), fill=SCORP_EYE)
-        draw_pincers(cx + 8, head_cy, RIGHT)
-
-
-# Hawk palette
-HAWK_BODY = (160, 120, 50)
-HAWK_WING = (140, 100, 40)
-HAWK_BELLY = (210, 180, 120)
-HAWK_DARK = (100, 70, 30)
-HAWK_LIGHT = (190, 150, 70)
-HAWK_WING_TIP = (140, 60, 30)
-HAWK_BEAK = (200, 160, 40)
-HAWK_EYE = (220, 180, 40)
-HAWK_TALON = (90, 70, 30)
-HAWK_CREST = (180, 130, 45)
-
-# Shark palette
-SHARK_BODY = (100, 120, 140)
-SHARK_BELLY = (180, 190, 200)
-SHARK_FIN = (80, 100, 120)
-SHARK_DARK = (60, 80, 100)
-SHARK_LIGHT = (130, 150, 170)
-SHARK_EYE = (30, 30, 35)
-SHARK_MOUTH = (50, 30, 30)
-SHARK_TEETH = (230, 230, 225)
-SHARK_GILL = (70, 90, 110)
-SHARK_SHADOW = (40, 40, 50, 90)
-
-# Beetle palette
-BEETLE_SHELL = (50, 120, 60)
-BEETLE_DARK = (30, 80, 40)
-BEETLE_LIGHT = (80, 180, 90)
-BEETLE_HEAD = (40, 70, 45)
-BEETLE_HORN = (60, 50, 30)
-BEETLE_HORN_TIP = (90, 75, 45)
-BEETLE_LEG = (45, 60, 35)
-BEETLE_EYE = (180, 160, 40)
-
-# Treant palette
-TREANT_TRUNK = (100, 80, 50)
-TREANT_DARK = (70, 55, 30)
-TREANT_LIGHT = (140, 110, 70)
-TREANT_LEAF = (60, 140, 50)
-TREANT_LEAF_LIGHT = (90, 180, 70)
-TREANT_KNOT = (50, 40, 25)
-TREANT_ROOT = (90, 70, 40)
-
-# Phoenix palette
-PHOENIX_BODY = (240, 100, 20)
-PHOENIX_WING = (255, 150, 50)
-PHOENIX_FLAME = (255, 200, 50)
-PHOENIX_EMBER = (255, 255, 100)
-PHOENIX_DARK = (180, 60, 10)
-PHOENIX_CHEST = (255, 210, 80)
-PHOENIX_EYE = (255, 255, 200)
-PHOENIX_BEAK = (200, 80, 20)
+    # legs: three pairs, low and splayed
+    for i in range(3):
+        for s in (-1, 1):
+            k = 1 if (i + (s > 0)) % 2 else -1
+            if d:
+                near = s == 1
+                x0 = cx + d * (2.0 - i * 3.0)
+                knee = (x0 + d * (1.0 - i * 1.4), by - 3.6 + k * step * 0.6 - (0 if near else 1.0))
+                foot = (x0 + d * (2.4 - i * 2.4), base - 0.6 - (0 if near else 1.2))
+                col = SCO_DK if near else shade(SCO_DK, 0.6)
+            else:
+                x0 = cx + s * 4.6
+                knee = (cx + s * (8.4 + i * 1.4), by - 3.0 + i * 1.4 + k * step * 0.6)
+                foot = (cx + s * (10.4 + i * 1.8), base - 0.6)
+                col = SCO_DK
+            cel(draw, Limb([(x0, by + i * 0.8), knee, foot], [1.1, 0.9, 0.4]), col, sh=None)
+    if back or d:
+        if d:
+            pincer(-1, near=False)
+        tail(False)
+    # body: a segmented carapace, the head at the front
+    if d:
+        body = Poly(_rot(arc_pts(cx - d * 1.4, by, 9.6, 4.8, 0, 360)[:-1], cx, by, -d * 4))
+        cel(draw, body, SCO, sh=(1.0, 1.0), hi=(0.6, 0.6))
+        for k in (-3.0, 0.0, 3.0):
+            stroke(draw, [(cx - d * 1.4 + d * k, by - 4.2), (cx - d * 1.4 + d * k - d * 0.6, by + 3.4)], 0.5, SCO_DK)
+    else:
+        body = Ell(cx, by - 1.0 if not back else by, 8.4, 7.4)
+        cel(draw, body, SCO, sh=(1.2, 1.0), hi=(0.6, 0.6))
+        if back:
+            for k in (2.4, 5.0):
+                stroke(draw, [(cx - 7.4, by - 1.0 + (k - 3.0)), (cx + 7.4, by - 1.0 + (k - 3.0))], 0.5, SCO_DK)
+    if not back:
+        hx, hy = (cx + d * 7.4, by - 2.4) if d else (cx, by - 2.0)
+        cel(draw, Ell(hx, hy, 6.4 if not d else 5.0, 5.0), SCO, sh=(0.8, 0.8), hi=(0.5, 0.5))
+        e1, e2 = (hx - 2.8, hx + 2.8) if not d else (hx + d * 0.6, hx + d * 3.2)
+        _eyes(draw, e1, e2, hy - 1.4, d, (60, 30, 30), skin=SCO, w=3.4, h=4.0)
+        for s in ((-1, 1) if not d else (d,)):
+            fx = hx + s * 1.4 if not d else hx + d * 4.4
+            Poly([(fx - 0.6, hy + 2.4), (fx + 0.6, hy + 2.4), (fx + (s * 0.4 if not d else d * 0.5), hy + 4.0)]).draw(draw, fill=SCO_DK)
+    if not back:
+        if not d:
+            tail(True)
+        for s in ((-1, 1) if not d else (1,)):
+            pincer(s, near=True)
+    else:
+        for s in (-1, 1):
+            pincer(s, near=False)
 
 
 # ===================================================================
-# HAWK (ID 77) — broad-winged raptor, golden-brown, feather crest
+# HAWK (77) -- a slate-blue falcon: moustache marks, barred chest
 # ===================================================================
+
+HAWK = (104, 122, 156)
+HAWK_DK = (70, 82, 112)
+HAWK_CHEST = (246, 236, 214)
+HAWK_BAR = (150, 128, 110)
+HAWK_BEAK = (250, 204, 70)
+HAWK_EYE = (40, 32, 34)
+
+
+def _hawk_wing(draw, sx, sy, side, spread, near=True):
+    col = HAWK if near else shade(HAWK, 0.6)
+    tipx = sx + side * (5.0 + spread * 6.0)
+    tipy = sy + 10.0 - spread * 7.0
+    pts = [(sx - side * 1.0, sy - 1.6), (sx + side * 4.4, sy - 1.4 - spread * 3.0), (tipx + side * 2.4, tipy - 2.0),
+           (tipx + side * 0.6, tipy + 1.6), (tipx - side * 1.6, tipy + 0.6), (tipx - side * 2.6, tipy + 2.8),
+           (sx + side * 1.6, sy + 8.0), (sx - side * 1.2, sy + 5.0)]
+    cel(draw, Poly(pts), col, sh=(0.8, 0.8))
+    for k in (0.0, 1.4, 2.8):
+        stroke(draw, [(tipx - side * (1.0 + k), tipy - 3.0 + k * 0.3), (tipx - side * (0.4 + k), tipy + 1.8)], 0.5, HAWK_DK)
+
 
 def draw_hawk(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    wing_flap = [-4, 2, -4, 0][frame]
-    leg_step = [0, 2, 0, -2][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 18
-    head_cy = body_cy - 16
-
-    hawk_shadow = _darken(HAWK_BODY, 0.7)
-
-    # --- Talons (3-toed) ---
-    def draw_hawk_talons():
-        if direction in (DOWN, UP):
-            for side in [-1, 1]:
-                fx = cx + side * 7 + side * leg_step
-                for tx in [-4, 0, 4]:
-                    draw.line([(fx, base_y), (fx + tx, base_y + 5)],
-                              fill=HAWK_TALON, width=2)
-                    draw.point((fx + tx, base_y + 5), fill=OUTLINE)
-        elif direction == LEFT:
-            for off in [leg_step, -leg_step]:
-                fx = cx - 3 + off
-                for tx in [-4, 0, 3]:
-                    draw.line([(fx, base_y), (fx + tx, base_y + 5)],
-                              fill=HAWK_TALON, width=2)
-                    draw.point((fx + tx, base_y + 5), fill=OUTLINE)
-        else:  # RIGHT
-            for off in [leg_step, -leg_step]:
-                fx = cx + 3 + off
-                for tx in [-3, 0, 4]:
-                    draw.line([(fx, base_y), (fx + tx, base_y + 5)],
-                              fill=HAWK_TALON, width=2)
-                    draw.point((fx + tx, base_y + 5), fill=OUTLINE)
-
-    # --- Legs ---
-    def draw_hawk_legs():
-        if direction in (DOWN, UP):
-            for side in [-1, 1]:
-                lx = cx + side * 7 + side * leg_step
-                draw.line([(lx, base_y), (cx + side * 5, body_cy + 8)],
-                          fill=HAWK_DARK, width=3)
-        elif direction == LEFT:
-            for off in [leg_step, -leg_step]:
-                lx = cx - 3 + off
-                draw.line([(lx, base_y), (cx - 2, body_cy + 8)],
-                          fill=HAWK_DARK, width=3)
-        else:
-            for off in [leg_step, -leg_step]:
-                lx = cx + 3 + off
-                draw.line([(lx, base_y), (cx + 2, body_cy + 8)],
-                          fill=HAWK_DARK, width=3)
-
-    # --- Wings (broad, spread to sides) ---
-    def draw_hawk_wing(side, trailing=False):
-        wy = body_cy + wing_flap
-        base = HAWK_DARK if trailing else HAWK_WING
-        if direction in (DOWN, UP):
-            # Broad wing polygon
-            draw.polygon([
-                (cx + side * 10, body_cy - 6),
-                (cx + side * 24, wy - 2),
-                (cx + side * 26, wy + 4),
-                (cx + side * 22, wy + 8),
-                (cx + side * 10, body_cy + 6),
-            ], fill=base, outline=OUTLINE)
-            if not trailing:
-                # Feather lines
-                draw.line([(cx + side * 12, body_cy - 2),
-                           (cx + side * 22, wy + 2)], fill=HAWK_LIGHT, width=1)
-                draw.line([(cx + side * 12, body_cy + 2),
-                           (cx + side * 22, wy + 6)], fill=HAWK_DARK, width=1)
-                # Wing tips (red-brown accent)
-                draw.point((cx + side * 26, wy + 4), fill=HAWK_WING_TIP)
-                draw.point((cx + side * 24, wy + 6), fill=HAWK_WING_TIP)
-                draw.point((cx + side * 22, wy + 8), fill=HAWK_WING_TIP)
-        else:
-            d = -1 if direction == LEFT else 1
-            draw.polygon([
-                (cx + d * 8, body_cy - 6),
-                (cx + d * 20, wy - 2),
-                (cx + d * 22, wy + 4),
-                (cx + d * 18, wy + 8),
-                (cx + d * 8, body_cy + 6),
-            ], fill=base, outline=OUTLINE)
-            if not trailing:
-                draw.line([(cx + d * 10, body_cy),
-                           (cx + d * 18, wy + 2)], fill=HAWK_LIGHT, width=1)
-                draw.point((cx + d * 22, wy + 4), fill=HAWK_WING_TIP)
-                draw.point((cx + d * 20, wy + 6), fill=HAWK_WING_TIP)
-
-    # --- Draw order ---
-    if direction == DOWN:
-        draw_hawk_talons()
-        draw_hawk_legs()
-        for s in [-1, 1]:
-            draw_hawk_wing(s)
-        # Body
-        ellipse(draw, cx, body_cy, 12, 10, HAWK_BODY)
-        ellipse(draw, cx + 2, body_cy + 2, 8, 6, hawk_shadow, outline=None)
-        ellipse(draw, cx - 2, body_cy - 2, 8, 6, HAWK_LIGHT, outline=None)
-        ellipse(draw, cx, body_cy + 3, 8, 5, HAWK_BELLY, outline=None)
-        # Head
-        ellipse(draw, cx, head_cy, 10, 9, HAWK_BODY)
-        ellipse(draw, cx - 2, head_cy - 2, 6, 5, HAWK_LIGHT, outline=None)
-        # Crest feathers
-        draw.polygon([(cx - 2, head_cy - 8), (cx, head_cy - 16),
-                      (cx + 2, head_cy - 8)], fill=HAWK_CREST, outline=OUTLINE)
-        draw.polygon([(cx - 6, head_cy - 6), (cx - 8, head_cy - 13),
-                      (cx - 3, head_cy - 7)], fill=HAWK_CREST, outline=OUTLINE)
-        draw.polygon([(cx + 6, head_cy - 6), (cx + 8, head_cy - 13),
-                      (cx + 3, head_cy - 7)], fill=HAWK_CREST, outline=OUTLINE)
-        # Eyes
-        draw.rectangle([cx - 6, head_cy - 2, cx - 3, head_cy + 1], fill=HAWK_EYE)
-        draw.point((cx - 4, head_cy - 1), fill=BLACK)
-        draw.rectangle([cx + 3, head_cy - 2, cx + 6, head_cy + 1], fill=HAWK_EYE)
-        draw.point((cx + 4, head_cy - 1), fill=BLACK)
-        # Hooked beak
-        draw.polygon([(cx - 3, head_cy + 4), (cx + 3, head_cy + 4),
-                      (cx, head_cy + 10)], fill=HAWK_BEAK, outline=OUTLINE)
-        draw.point((cx, head_cy + 9), fill=_darken(HAWK_BEAK, 0.7))
-
-    elif direction == UP:
-        draw_hawk_talons()
-        draw_hawk_legs()
-        for s in [-1, 1]:
-            draw_hawk_wing(s)
-        ellipse(draw, cx, body_cy, 12, 10, HAWK_BODY)
-        ellipse(draw, cx, body_cy, 9, 7, HAWK_DARK, outline=None)
-        ellipse(draw, cx, head_cy, 10, 9, HAWK_BODY)
-        ellipse(draw, cx, head_cy, 7, 6, HAWK_DARK, outline=None)
-        # Crest (back view)
-        draw.polygon([(cx - 2, head_cy - 8), (cx, head_cy - 16),
-                      (cx + 2, head_cy - 8)], fill=HAWK_CREST, outline=OUTLINE)
-        draw.polygon([(cx - 6, head_cy - 6), (cx - 8, head_cy - 13),
-                      (cx - 3, head_cy - 7)], fill=HAWK_CREST, outline=OUTLINE)
-        draw.polygon([(cx + 6, head_cy - 6), (cx + 8, head_cy - 13),
-                      (cx + 3, head_cy - 7)], fill=HAWK_CREST, outline=OUTLINE)
-
-    elif direction == LEFT:
-        draw_hawk_talons()
-        draw_hawk_legs()
-        draw_hawk_wing(1, trailing=True)
-        ellipse(draw, cx - 2, body_cy, 11, 10, HAWK_BODY)
-        ellipse(draw, cx, body_cy + 2, 7, 6, hawk_shadow, outline=None)
-        ellipse(draw, cx - 4, body_cy - 2, 7, 5, HAWK_LIGHT, outline=None)
-        ellipse(draw, cx - 2, body_cy + 3, 7, 5, HAWK_BELLY, outline=None)
-        draw_hawk_wing(-1)
-        # Head
-        ellipse(draw, cx - 4, head_cy, 9, 9, HAWK_BODY)
-        ellipse(draw, cx - 6, head_cy - 2, 5, 5, HAWK_LIGHT, outline=None)
-        # Eye
-        draw.rectangle([cx - 9, head_cy - 2, cx - 6, head_cy + 1], fill=HAWK_EYE)
-        draw.point((cx - 7, head_cy - 1), fill=BLACK)
-        # Crest
-        draw.polygon([(cx - 2, head_cy - 8), (cx, head_cy - 15),
-                      (cx + 2, head_cy - 7)], fill=HAWK_CREST, outline=OUTLINE)
-        draw.polygon([(cx + 4, head_cy - 6), (cx + 6, head_cy - 12),
-                      (cx + 6, head_cy - 5)], fill=HAWK_CREST, outline=OUTLINE)
-        # Hooked beak (shorter than raptor)
-        draw.polygon([(cx - 12, head_cy + 1), (cx - 6, head_cy - 2),
-                      (cx - 6, head_cy + 3)], fill=HAWK_BEAK, outline=OUTLINE)
-        draw.point((cx - 11, head_cy + 1), fill=_darken(HAWK_BEAK, 0.7))
-
-    else:  # RIGHT
-        draw_hawk_talons()
-        draw_hawk_legs()
-        draw_hawk_wing(-1, trailing=True)
-        ellipse(draw, cx + 2, body_cy, 11, 10, HAWK_BODY)
-        ellipse(draw, cx, body_cy + 2, 7, 6, hawk_shadow, outline=None)
-        ellipse(draw, cx + 4, body_cy - 2, 7, 5, HAWK_LIGHT, outline=None)
-        ellipse(draw, cx + 2, body_cy + 3, 7, 5, HAWK_BELLY, outline=None)
-        draw_hawk_wing(1)
-        # Head
-        ellipse(draw, cx + 4, head_cy, 9, 9, HAWK_BODY)
-        ellipse(draw, cx + 6, head_cy - 2, 5, 5, HAWK_LIGHT, outline=None)
-        # Eye
-        draw.rectangle([cx + 6, head_cy - 2, cx + 9, head_cy + 1], fill=HAWK_EYE)
-        draw.point((cx + 7, head_cy - 1), fill=BLACK)
-        # Crest
-        draw.polygon([(cx + 2, head_cy - 8), (cx, head_cy - 15),
-                      (cx - 2, head_cy - 7)], fill=HAWK_CREST, outline=OUTLINE)
-        draw.polygon([(cx - 4, head_cy - 6), (cx - 6, head_cy - 12),
-                      (cx - 6, head_cy - 5)], fill=HAWK_CREST, outline=OUTLINE)
-        # Hooked beak
-        draw.polygon([(cx + 12, head_cy + 1), (cx + 6, head_cy - 2),
-                      (cx + 6, head_cy + 3)], fill=HAWK_BEAK, outline=OUTLINE)
-        draw.point((cx + 11, head_cy + 1), fill=_darken(HAWK_BEAK, 0.7))
+    d, back, base, cx, ph = _setup(ox, oy, direction, frame)
+    spread = [0.3, 0.9, 0.3, 0.9][frame]
+    # feet
+    for s in ((-1, 1) if not d else (-1, 1)):
+        fwd = ph * s
+        fx = cx + (s * 3.0 if not d else d * fwd * 2.4)
+        fy = base - 1.2 - (1.0 if fwd < 0 else 0.0)
+        cel(draw, Limb([(fx, base - 7.0), (fx, fy)], [1.1, 0.9]), HAWK_BEAK, sh=None, lw=0.7)
+        for k in ((-1, 0, 1) if not d else (0, 1, 2)):
+            tx = fx + (k * 1.5 if not d else d * (1.2 + k * 0.9))
+            stroke(draw, [(fx, fy), (tx, fy + 1.2)], 0.7, HAWK_BEAK)
+            Ell(tx, fy + 1.4, 0.45, 0.45).draw(draw, fill=VOID)
+    if d:
+        # sleek profile: the body tilted forward, tail straight back, wing folded
+        cel(draw, Poly([(cx - d * 6.0, base - 12.0), (cx - d * 14.4, base - 9.0), (cx - d * 14.0, base - 6.2), (cx - d * 6.4, base - 8.4)]),
+            HAWK_DK, sh=None)
+        body = Poly(_rot(arc_pts(cx, base - 13.4, 8.4, 7.0, 0, 360)[:-1], cx, base - 13.4, -d * 22))
+        cel(draw, body, HAWK_CHEST, sh=(0.8, 1.0))
+        for k in range(3):
+            y = base - 16.0 + k * 2.6
+            stroke(draw, [(cx + d * 1.6, y), (cx + d * 4.0, y + 0.4)], 0.5, HAWK_BAR)
+        wing = Poly([(cx + d * 3.0, base - 20.0), (cx - d * 3.4, base - 20.6), (cx - d * 12.4, base - 12.0 - spread * 2.0),
+                     (cx - d * 13.4, base - 8.4 - spread * 2.0), (cx - d * 6.0, base - 8.2), (cx + d * 1.0, base - 11.0)])
+        cel(draw, wing, HAWK, sh=(0.8, 1.0))
+        for k in (0.0, 2.2, 4.4):
+            stroke(draw, [(cx - d * (3.0 + k), base - 15.0 + k * 0.5), (cx - d * (8.4 + k * 0.7), base - 10.0 - spread * 1.6)], 0.5, HAWK_DK)
+        hx, hy = cx + d * 3.4, base - 26.0
+        cel(draw, Ell(hx, hy, 9.4, 8.4), HAWK, sh=(1.0, 1.0), hi=(0.6, 0.6))
+        cel(draw, Poly(arc_pts(hx + d * 1.4, hy + 1.4, 6.4, 5.4, 0 if d > 0 else 90, 90 if d > 0 else 180, 8) + [(hx + d * 1.4, hy + 1.4)]),
+            HAWK_CHEST, sh=None, line=False)
+        # the falcon's moustache
+        cel(draw, Poly([(hx + d * 2.6, hy + 0.4), (hx + d * 4.6, hy + 1.0), (hx + d * 3.4, hy + 6.0), (hx + d * 2.0, hy + 5.6)]), HAWK_DK, sh=None,
+            line=False)
+        beak = Poly([(hx + d * 7.0, hy - 1.6), (hx + d * 10.8, hy - 0.6), (hx + d * 12.0, hy + 1.8), (hx + d * 11.0, hy + 3.4), (hx + d * 10.0, hy + 1.8),
+                     (hx + d * 7.0, hy + 2.2)])
+        cel(draw, beak, HAWK_BEAK, sh=(0.0, 0.6))
+        ms_eye(draw, hx + d * 4.2, hy - 1.4, 3.8, 4.4, HAWK_EYE, (float(d), 0.0), "sharp", skin=HAWK, side=-d)
+        return
+    # head-on / from behind: upright, wings half open
+    if back:
+        cel(draw, Poly([(cx - 3.0, base - 10.0), (cx + 3.0, base - 10.0), (cx + 4.4, base - 3.0), (cx, base - 4.4), (cx - 4.4, base - 3.0)]),
+            HAWK_DK, sh=None)
+    for s in (-1, 1):
+        _hawk_wing(draw, cx + s * 6.0, base - 20.0, s, spread)
+    cel(draw, Ell(cx, base - 14.0, 8.0, 9.0), HAWK if back else HAWK_CHEST, sh=(1.2, 1.0))
+    if not back:
+        for (u, v) in ((-3.0, -3.6), (0.0, -2.6), (3.0, -3.6), (-2.0, 0.4), (2.0, 0.4), (0.0, 3.4)):
+            stroke(draw, [(cx + u - 1.2, base - 14.0 + v), (cx + u, base - 14.0 + v + 0.6), (cx + u + 1.2, base - 14.0 + v)], 0.5, HAWK_BAR)
+    hx, hy = cx, base - 27.0
+    cel(draw, Ell(hx, hy, 10.2, 9.0), HAWK, sh=(1.2, 1.0), hi=(0.6, 0.6))
+    if back:
+        return
+    cel(draw, Ell(hx, hy + 3.4, 6.4, 5.0), HAWK_CHEST, sh=None, line=False)
+    for s in (-1, 1):
+        cel(draw, Poly([(hx + s * 4.0, hy + 0.6), (hx + s * 6.2, hy + 1.2), (hx + s * 5.4, hy + 6.6), (hx + s * 3.8, hy + 6.0)]), HAWK_DK, sh=None, line=False)
+    _eyes(draw, hx - 4.4, hx + 4.4, hy - 1.4, 0, HAWK_EYE, mood="sharp", skin=HAWK, w=3.8, h=4.6)
+    beak = Poly([(hx - 2.2, hy + 0.8), (hx + 2.2, hy + 0.8), (hx + 1.6, hy + 4.4), (hx, hy + 6.0), (hx - 1.6, hy + 4.4)])
+    cel(draw, beak, HAWK_BEAK, sh=(0.6, 0.4))
 
 
 # ===================================================================
-# SHARK (ID 78) — torpedo body, dorsal fin, hovering with shadow
+# SHARK (78) -- stands on its tail: a grin full of teeth, fins for arms
 # ===================================================================
+
+SHARK = (104, 134, 176)
+SHARK_BELLY = (240, 244, 250)
+SHARK_GUM = (200, 70, 90)
+
 
 def draw_shark(draw, ox, oy, direction, frame):
-    # Hovering bob + undulation
-    hover = [0, -2, 0, -2][frame]
-    undulate = [-2, 0, 2, 0][frame]
-    tail_wag = [-3, 0, 3, 0][frame]
-    mouth_open = [0, 1, 0, -1][frame]
-
-    base_y = oy + 54
-    cx = ox + 32
-    body_cy = base_y - 18 + hover
-    head_cy = body_cy  # head is same vertical level, offset horizontally
-
-    body_dark = _darken(SHARK_BODY, 0.75)
-
-    # --- Shadow on ground (always below hovering body) ---
-    ellipse(draw, cx, base_y + 2, 14, 4, (40, 40, 50, 90), outline=None)
-
-    if direction == DOWN:
-        # Tail fin (behind body)
-        draw.polygon([
-            (cx + tail_wag, body_cy - 14),
-            (cx - 6 + tail_wag, body_cy - 20),
-            (cx + 6 + tail_wag, body_cy - 20),
-        ], fill=SHARK_FIN, outline=OUTLINE)
-
-        # Body — torpedo oval
-        ellipse(draw, cx, body_cy, 12, 16, SHARK_BODY)
-        # Belly (lighter underside)
-        ellipse(draw, cx, body_cy + 4, 8, 10, SHARK_BELLY, outline=None)
-        # Shading
-        ellipse(draw, cx + 3, body_cy - 2, 8, 12, body_dark, outline=None)
-        ellipse(draw, cx - 2, body_cy, 8, 12, SHARK_BODY, outline=None)
-
-        # Side pectoral fins
-        draw.polygon([
-            (cx - 10, body_cy + 2),
-            (cx - 20, body_cy + 8 + undulate),
-            (cx - 16, body_cy + 12 + undulate),
-            (cx - 8, body_cy + 6),
-        ], fill=SHARK_FIN, outline=OUTLINE)
-        draw.polygon([
-            (cx + 10, body_cy + 2),
-            (cx + 20, body_cy + 8 + undulate),
-            (cx + 16, body_cy + 12 + undulate),
-            (cx + 8, body_cy + 6),
-        ], fill=SHARK_FIN, outline=OUTLINE)
-
-        # Dorsal fin (on top/front of body)
-        draw.polygon([
-            (cx, body_cy - 4),
-            (cx - 2, body_cy - 14),
-            (cx + 3, body_cy - 10),
-        ], fill=SHARK_FIN, outline=OUTLINE)
-
-        # Eyes
-        draw.point((cx - 6, body_cy + 6), fill=SHARK_EYE)
-        draw.point((cx - 5, body_cy + 6), fill=SHARK_EYE)
-        draw.point((cx + 5, body_cy + 6), fill=SHARK_EYE)
-        draw.point((cx + 6, body_cy + 6), fill=SHARK_EYE)
-
-        # Mouth with teeth
-        my = body_cy + 14 + mouth_open
-        draw.line([(cx - 6, my), (cx + 6, my)], fill=SHARK_MOUTH, width=2)
-        for tx in range(-5, 6, 2):
-            draw.point((cx + tx, my + 1), fill=SHARK_TEETH)
-
-        # Gill slits
-        for gy in [-2, 0, 2]:
-            draw.line([(cx - 8, body_cy + gy + 2), (cx - 10, body_cy + gy + 4)],
-                      fill=SHARK_GILL, width=1)
-            draw.line([(cx + 8, body_cy + gy + 2), (cx + 10, body_cy + gy + 4)],
-                      fill=SHARK_GILL, width=1)
-
-    elif direction == UP:
-        # Tail fin
-        draw.polygon([
-            (cx + tail_wag, body_cy + 14),
-            (cx - 6 + tail_wag, body_cy + 20),
-            (cx + 6 + tail_wag, body_cy + 20),
-        ], fill=SHARK_FIN, outline=OUTLINE)
-
-        # Body
-        ellipse(draw, cx, body_cy, 12, 16, SHARK_BODY)
-        ellipse(draw, cx, body_cy, 9, 12, body_dark, outline=None)
-        draw_scale_texture(draw, cx, body_cy, 14, 20, SHARK_LIGHT)
-
-        # Pectoral fins
-        draw.polygon([
-            (cx - 10, body_cy - 2),
-            (cx - 20, body_cy - 8 - undulate),
-            (cx - 16, body_cy - 12 - undulate),
-            (cx - 8, body_cy - 6),
-        ], fill=SHARK_FIN, outline=OUTLINE)
-        draw.polygon([
-            (cx + 10, body_cy - 2),
-            (cx + 20, body_cy - 8 - undulate),
-            (cx + 16, body_cy - 12 - undulate),
-            (cx + 8, body_cy - 6),
-        ], fill=SHARK_FIN, outline=OUTLINE)
-
-        # Dorsal fin
-        draw.polygon([
-            (cx, body_cy + 4),
-            (cx - 2, body_cy + 14),
-            (cx + 3, body_cy + 10),
-        ], fill=SHARK_FIN, outline=OUTLINE)
-
-    elif direction == LEFT:
-        # Tail fin at right
-        draw.polygon([
-            (cx + 14, body_cy + tail_wag),
-            (cx + 20, body_cy - 6 + tail_wag),
-            (cx + 20, body_cy + 6 + tail_wag),
-        ], fill=SHARK_FIN, outline=OUTLINE)
-
-        # Body — horizontal torpedo
-        ellipse(draw, cx, body_cy, 16, 10, SHARK_BODY)
-        # Belly underside
-        ellipse(draw, cx, body_cy + 4, 12, 5, SHARK_BELLY, outline=None)
-        # Shading
-        ellipse(draw, cx + 2, body_cy - 2, 12, 6, body_dark, outline=None)
-        ellipse(draw, cx - 2, body_cy, 12, 6, SHARK_BODY, outline=None)
-
-        # Dorsal fin
-        draw.polygon([
-            (cx + 2, body_cy - 8),
-            (cx - 2, body_cy - 18),
-            (cx + 6, body_cy - 12),
-        ], fill=SHARK_FIN, outline=OUTLINE)
-
-        # Pectoral fin (underside)
-        draw.polygon([
-            (cx + 2, body_cy + 6),
-            (cx - 4, body_cy + 14 + undulate),
-            (cx + 6, body_cy + 10 + undulate),
-        ], fill=SHARK_FIN, outline=OUTLINE)
-
-        # Eye
-        draw.point((cx - 10, body_cy - 2), fill=SHARK_EYE)
-        draw.point((cx - 11, body_cy - 2), fill=SHARK_EYE)
-
-        # Mouth
-        my = body_cy + 2 + mouth_open
-        draw.line([(cx - 14, my - 1), (cx - 8, my)], fill=SHARK_MOUTH, width=2)
-        for tx in range(0, 6):
-            draw.point((cx - 14 + tx, my), fill=SHARK_TEETH)
-
-        # Gill slits
-        for gy in [-3, 0, 3]:
-            draw.line([(cx - 4, body_cy + gy - 1), (cx - 6, body_cy + gy + 1)],
-                      fill=SHARK_GILL, width=1)
-
-    else:  # RIGHT
-        # Tail fin at left
-        draw.polygon([
-            (cx - 14, body_cy + tail_wag),
-            (cx - 20, body_cy - 6 + tail_wag),
-            (cx - 20, body_cy + 6 + tail_wag),
-        ], fill=SHARK_FIN, outline=OUTLINE)
-
-        # Body
-        ellipse(draw, cx, body_cy, 16, 10, SHARK_BODY)
-        ellipse(draw, cx, body_cy + 4, 12, 5, SHARK_BELLY, outline=None)
-        ellipse(draw, cx - 2, body_cy - 2, 12, 6, body_dark, outline=None)
-        ellipse(draw, cx + 2, body_cy, 12, 6, SHARK_BODY, outline=None)
-
-        # Dorsal fin
-        draw.polygon([
-            (cx - 2, body_cy - 8),
-            (cx + 2, body_cy - 18),
-            (cx - 6, body_cy - 12),
-        ], fill=SHARK_FIN, outline=OUTLINE)
-
-        # Pectoral fin
-        draw.polygon([
-            (cx - 2, body_cy + 6),
-            (cx + 4, body_cy + 14 + undulate),
-            (cx - 6, body_cy + 10 + undulate),
-        ], fill=SHARK_FIN, outline=OUTLINE)
-
-        # Eye
-        draw.point((cx + 10, body_cy - 2), fill=SHARK_EYE)
-        draw.point((cx + 11, body_cy - 2), fill=SHARK_EYE)
-
-        # Mouth
-        my = body_cy + 2 + mouth_open
-        draw.line([(cx + 14, my - 1), (cx + 8, my)], fill=SHARK_MOUTH, width=2)
-        for tx in range(0, 6):
-            draw.point((cx + 14 - tx, my), fill=SHARK_TEETH)
-
-        # Gill slits
-        for gy in [-3, 0, 3]:
-            draw.line([(cx + 4, body_cy + gy - 1), (cx + 6, body_cy + gy + 1)],
-                      fill=SHARK_GILL, width=1)
+    d, back, base, cx, ph = _setup(ox, oy, direction, frame, bob=[0, -2, 0, -2])
+    wag = [0.0, 1.0, 0.0, -1.0][frame]
+    # tail fin as feet
+    tf = [(cx - 8.0, base + 0.4), (cx - 2.0, base - 5.0), (cx + 2.0, base - 5.0), (cx + 8.0, base + 0.4), (cx + 3.0, base - 1.4), (cx, base - 0.4),
+          (cx - 3.0, base - 1.4)] if not d else \
+        [(cx - d * 4.0, base - 6.0), (cx - d * 11.0 + wag, base - 11.0), (cx - d * 9.0, base - 3.0), (cx - d * 11.0 - wag, base + 0.6), (cx - d * 2.0, base - 1.4)]
+    cel(draw, Poly(tf), SHARK, sh=(0.6, 0.6))
+    # body: a torpedo standing on end
+    bw = 11.4 if not d else 10.0
+    body = Poly(arc_pts(cx - d * 0.6, base - 22.0, bw, 18.0, 180, 360, 30) + arc_pts(cx - d * 0.6, base - 13.0, bw * 0.84, 9.0, 0, 180, 16)[1:-1])
+    cel(draw, body, SHARK, sh=(1.8, 1.4), hi=(1.0, 1.0))
+    if not back:
+        belly = Ell(cx + d * 3.0, base - 13.0, bw * (0.66 if not d else 0.52), 10.0)
+        cel(draw, belly, SHARK_BELLY, sh=None, line=False)
+    # dorsal fin
+    fx = cx - d * 4.0
+    cel(draw, Poly([(fx - 3.4, base - 37.0), (fx + (0.6 if not d else -d * 4.4), base - 45.0), (fx + 3.4, base - 37.4)]), SHARK, sh=(0.6, 0.6))
+    # pectoral fins as arms
+    for s in ((-1, 1) if not d else (d, -d)):
+        near = not d or s == d
+        sx = cx + s * (bw - 1.4) if not d else cx + s * 2.0
+        tip = (sx + (s * 6.0 if not d else s * 6.4), base - 15.0 + (wag if s > 0 else -wag))
+        cel(draw, Poly([(sx, base - 22.0), tip, (sx - (s * 1.0 if not d else 0.0), base - 16.0)]), SHARK if near else shade(SHARK, 0.6), sh=(0.6, 0.6))
+    if back:
+        for k in (-1.6, 1.6):
+            stroke(draw, [(cx + k, base - 30.0), (cx + k, base - 18.0)], 0.4, shade(SHARK, 1.2))
+        return
+    # gills
+    for k in range(3):
+        gx = cx + (-bw + 2.4 + k * 1.4 if not d else -d * (1.0 + k * 1.4))
+        stroke(draw, [(gx, base - 25.0 + k * 0.4), (gx + 0.4, base - 21.0 + k * 0.4)], 0.5, shade(SHARK, 1.4))
+        if not d:
+            gx2 = cx + bw - 2.4 - k * 1.4
+            stroke(draw, [(gx2, base - 25.0 + k * 0.4), (gx2 - 0.4, base - 21.0 + k * 0.4)], 0.5, shade(SHARK, 1.4))
+    # eyes high on the head, a huge grin below
+    hx = cx + d * 4.0
+    e1, e2 = (hx - 6.0, hx + 6.0) if not d else (hx + d * 0.6, hx + d * 4.8)
+    _eyes(draw, e1, e2, base - 30.0, d, (40, 40, 60), mood="sharp", skin=SHARK, w=3.6, h=4.2)
+    mw = 7.4 if not d else 5.4
+    mx = hx + d * 1.6
+    my = base - 24.0
+    mouth = Poly([(mx - mw, my - 1.0), (mx + mw, my - 1.0), (mx + mw * 0.6, my + 3.6), (mx - mw * 0.6, my + 3.6)])
+    cel(draw, mouth, SHARK_GUM, sh=None, line_color=shade(SHARK, 1.8))
+    n = 6 if not d else 4
+    for i in range(n):
+        tx = mx - mw + (2 * mw) * (i + 0.5) / n
+        Poly([(tx - 0.9, my - 1.0), (tx + 0.9, my - 1.0), (tx, my + 1.4)]).draw(draw, fill=TOOTH)
+        tb = mx - mw * 0.6 + (1.2 * mw) * (i + 0.5) / n
+        Poly([(tb - 0.7, my + 3.6), (tb + 0.7, my + 3.6), (tb, my + 1.8)]).draw(draw, fill=TOOTH)
 
 
 # ===================================================================
-# BEETLE (ID 79) — dome shell, horn, 6 thin legs, scuttling
+# BEETLE (79) -- a rhinoceros beetle: a great horn, a shining shell
 # ===================================================================
+
+BTL = (70, 150, 110)
+BTL_DK = (40, 90, 80)
+BTL_HORN = (60, 60, 76)
+
 
 def draw_beetle(draw, ox, oy, direction, frame):
-    bob = [0, -1, 0, -1][frame]
-    # 6 legs in two alternating groups
-    leg_a = [-2, 0, 2, 0][frame]
-    leg_b = [2, 0, -2, 0][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    shell_cy = base_y - 14
-    head_cy = shell_cy - 6
-
-    shell_light = _brighten(BEETLE_SHELL, 1.3)
-    shell_dark = _darken(BEETLE_SHELL, 0.7)
-
-    def draw_beetle_legs(lcx, lcy):
-        """Draw 6 thin jointed legs — 3 per side."""
-        if direction in (DOWN, UP):
-            for side in [-1, 1]:
-                for i, (ax, group) in enumerate([(8, 'A'), (14, 'B'), (18, 'A')]):
-                    phase = leg_a if group == 'A' else leg_b
-                    knee_x = lcx + side * ax
-                    knee_y = lcy + i * 2 - 2
-                    foot_x = lcx + side * (ax + 5) + phase * side
-                    foot_y = base_y + 1
-                    draw.line([(lcx + side * 6, lcy + i * 2),
-                               (knee_x, knee_y)], fill=BEETLE_LEG, width=1)
-                    draw.line([(knee_x, knee_y), (foot_x, foot_y)],
-                              fill=BEETLE_LEG, width=1)
-                    draw.point((knee_x, knee_y), fill=BEETLE_LIGHT)
-        else:
-            d = -1 if direction == LEFT else 1
-            for i, (ax, group) in enumerate([(6, 'A'), (12, 'B'), (16, 'A')]):
-                phase = leg_a if group == 'A' else leg_b
-                knee_x = lcx + d * (ax - 2)
-                knee_y = lcy + i * 2 - 2
-                foot_x = lcx + d * (ax + 4) + phase * d
-                foot_y = base_y + 1
-                draw.line([(lcx + d * 4, lcy + i), (knee_x, knee_y)],
-                          fill=BEETLE_LEG, width=1)
-                draw.line([(knee_x, knee_y), (foot_x, foot_y)],
-                          fill=BEETLE_LEG, width=1)
-                draw.point((knee_x, knee_y), fill=BEETLE_LIGHT)
-            # Far-side legs (thinner, behind)
-            for i, (ax, group) in enumerate([(4, 'B'), (9, 'A'), (13, 'B')]):
-                phase = leg_a if group == 'A' else leg_b
-                knee_x = lcx - d * (ax - 2)
-                knee_y = lcy + i * 2 - 1
-                foot_x = lcx - d * (ax + 3) - phase * d
-                foot_y = base_y + 1
-                draw.line([(lcx - d * 2, lcy + i), (knee_x, knee_y)],
-                          fill=_darken(BEETLE_LEG, 0.7), width=1)
-                draw.line([(knee_x, knee_y), (foot_x, foot_y)],
-                          fill=_darken(BEETLE_LEG, 0.7), width=1)
-
-    if direction == DOWN:
-        draw_beetle_legs(cx, shell_cy)
-        # Shell (dome — large ellipse)
-        ellipse(draw, cx, shell_cy, 16, 12, BEETLE_SHELL)
-        # Highlight dome
-        ellipse(draw, cx - 3, shell_cy - 4, 10, 6, shell_light, outline=None)
-        ellipse(draw, cx + 4, shell_cy + 3, 10, 6, shell_dark, outline=None)
-        # Elytra seam (center line)
-        draw.line([(cx, shell_cy - 10), (cx, shell_cy + 10)],
-                  fill=BEETLE_DARK, width=1)
-        # Head (small, tucked under front)
-        ellipse(draw, cx, head_cy + 10, 7, 4, BEETLE_HEAD)
-        # Eyes
-        draw.point((cx - 4, head_cy + 9), fill=BEETLE_EYE)
-        draw.point((cx + 4, head_cy + 9), fill=BEETLE_EYE)
-        # Horn curving forward
-        draw.polygon([
-            (cx - 2, head_cy + 8),
-            (cx, head_cy - 4),
-            (cx + 2, head_cy + 8),
-        ], fill=BEETLE_HORN, outline=OUTLINE)
-        draw.point((cx, head_cy - 3), fill=BEETLE_HORN_TIP)
-
-    elif direction == UP:
-        draw_beetle_legs(cx, shell_cy)
-        # Shell
-        ellipse(draw, cx, shell_cy, 16, 12, BEETLE_SHELL)
-        ellipse(draw, cx, shell_cy, 12, 8, shell_dark, outline=None)
-        # Elytra seam
-        draw.line([(cx, shell_cy - 10), (cx, shell_cy + 10)],
-                  fill=BEETLE_DARK, width=1)
-        # Head (visible at top in back view, small)
-        ellipse(draw, cx, head_cy + 10, 7, 4, BEETLE_HEAD)
-        ellipse(draw, cx, head_cy + 10, 5, 3, _darken(BEETLE_HEAD, 0.8), outline=None)
-        # Horn base visible
-        draw.polygon([
-            (cx - 2, head_cy + 8),
-            (cx, head_cy),
-            (cx + 2, head_cy + 8),
-        ], fill=BEETLE_HORN, outline=OUTLINE)
-
-    elif direction == LEFT:
-        draw_beetle_legs(cx, shell_cy)
-        # Shell (dome from side — taller)
-        ellipse(draw, cx + 2, shell_cy, 14, 12, BEETLE_SHELL)
-        ellipse(draw, cx, shell_cy - 3, 10, 7, shell_light, outline=None)
-        ellipse(draw, cx + 5, shell_cy + 3, 9, 6, shell_dark, outline=None)
-        # Elytra seam (side = horizontal curve)
-        draw.line([(cx + 2, shell_cy - 10), (cx + 2, shell_cy + 10)],
-                  fill=BEETLE_DARK, width=1)
-        # Head
-        ellipse(draw, cx - 10, head_cy + 8, 6, 5, BEETLE_HEAD)
-        ellipse(draw, cx - 11, head_cy + 7, 4, 3, _brighten(BEETLE_HEAD, 1.2), outline=None)
-        # Eye
-        draw.point((cx - 14, head_cy + 7), fill=BEETLE_EYE)
-        # Horn curving forward-left
-        draw.polygon([
-            (cx - 10, head_cy + 5),
-            (cx - 18, head_cy - 2),
-            (cx - 10, head_cy + 8),
-        ], fill=BEETLE_HORN, outline=OUTLINE)
-        draw.point((cx - 17, head_cy - 1), fill=BEETLE_HORN_TIP)
-
-    else:  # RIGHT
-        draw_beetle_legs(cx, shell_cy)
-        # Shell
-        ellipse(draw, cx - 2, shell_cy, 14, 12, BEETLE_SHELL)
-        ellipse(draw, cx - 4, shell_cy - 3, 10, 7, shell_light, outline=None)
-        ellipse(draw, cx + 1, shell_cy + 3, 9, 6, shell_dark, outline=None)
-        # Elytra seam
-        draw.line([(cx - 2, shell_cy - 10), (cx - 2, shell_cy + 10)],
-                  fill=BEETLE_DARK, width=1)
-        # Head
-        ellipse(draw, cx + 10, head_cy + 8, 6, 5, BEETLE_HEAD)
-        ellipse(draw, cx + 11, head_cy + 7, 4, 3, _brighten(BEETLE_HEAD, 1.2), outline=None)
-        # Eye
-        draw.point((cx + 14, head_cy + 7), fill=BEETLE_EYE)
-        # Horn
-        draw.polygon([
-            (cx + 10, head_cy + 5),
-            (cx + 18, head_cy - 2),
-            (cx + 10, head_cy + 8),
-        ], fill=BEETLE_HORN, outline=OUTLINE)
-        draw.point((cx + 17, head_cy - 1), fill=BEETLE_HORN_TIP)
+    d, back, base, cx, ph = _setup(ox, oy, direction, frame, bob=[0, 0, 0, 0])
+    step = [0.0, 1.0, 0.0, -1.0][frame]
+    # six legs
+    for i in range(3):
+        for s in (-1, 1):
+            k = 1 if (i + (s > 0)) % 2 else -1
+            if d:
+                near = s == 1
+                x0 = cx + d * (3.0 - i * 4.0)
+                knee = (x0 + d * (1.6 - i * 1.0), base - 7.0 + k * step * 0.6 - (0 if near else 1.0))
+                foot = (x0 + d * (2.6 - i * 1.6), base - 0.6 - (0 if near else 1.2))
+                col = BTL_HORN if near else shade(BTL_HORN, 0.4)
+            else:
+                x0 = cx + s * 5.0
+                knee = (cx + s * (10.0 + i * 1.0), base - 8.0 + i * 1.6 + k * step * 0.6)
+                foot = (cx + s * (11.6 + i * 1.4), base - 0.6)
+                col = BTL_HORN
+            cel(draw, Limb([(x0, base - 9.0 + i), knee, foot], [1.2, 1.0, 0.5]), col, sh=None)
+    # the shell: two elytra meeting down the middle, with a highlight
+    sy = base - 15.0
+    if d:
+        shell = Poly(_rot(arc_pts(cx - d * 2.0, sy, 13.2, 10.6, 180, 360, 26) + [(cx + d * 10.6, sy + 3.4), (cx - d * 15.2, sy + 3.8)],
+                          cx, sy, -d * 6))
+        cel(draw, shell, BTL, sh=(1.4, 1.2), hi=(1.0, 1.0), regions=[(Ell(cx - d * 4.0, sy - 6.0, 4.4, 2.0), lit(BTL, 1.6))])
+    else:
+        shell = Ell(cx, sy, 13.6, 12.4)
+        cel(draw, shell, BTL, sh=(1.6, 1.4), hi=(1.0, 1.0), regions=[(Ell(cx - 5.0, sy - 5.4, 3.4, 2.0), lit(BTL, 1.6)),
+                                                                   (Ell(cx + 5.0, sy - 5.4, 2.4, 1.4), lit(BTL, 1.2))])
+        if back:
+            stroke(draw, [(cx, sy - 10.6), (cx, sy + 10.6)], 0.8, BTL_DK)
+            return
+    if back:
+        return
+    # the head in front of the shell, the great horn sweeping up off it
+    if d:
+        hx, hy = cx + d * 9.0, base - 12.0
+        cel(draw, Ell(hx, hy, 5.4, 4.8), BTL_DK, sh=(0.8, 0.8), hi=(0.4, 0.4))
+        horn = [(hx + d * 1.4, hy - 3.6), (hx + d * 6.4, hy - 8.0), (hx + d * 7.0, hy - 14.4), (hx + d * 5.0, hy - 17.6)]
+        cel(draw, Limb(horn, [2.2, 1.8, 1.2, 0.4]), BTL_HORN, sh=(0.4, 0.4))
+        cel(draw, Limb([(hx + d * 5.2, hy - 11.0), (hx + d * 8.6, hy - 12.4)], [0.9, 0.3]), BTL_HORN, sh=None)
+        _eyes(draw, hx + d * 1.4, hx + d * 3.6, hy - 0.4, d, (250, 220, 60), mood="bright", skin=BTL_DK, w=3.0, h=3.6, lash=(20, 30, 30))
+        return
+    hx, hy = cx, base - 10.0
+    cel(draw, Ell(hx, hy, 6.4, 5.0), BTL_DK, sh=(0.8, 0.8), hi=(0.4, 0.4))
+    horn = [(hx, hy - 3.0), (hx - 0.6, hy - 12.0), (hx + 0.8, hy - 20.0), (hx + 3.6, hy - 24.0)]
+    cel(draw, Limb(horn, [2.6, 2.2, 1.4, 0.4]), BTL_HORN, sh=(0.6, 0.4))
+    cel(draw, Limb([(hx + 0.4, hy - 16.0), (hx - 3.4, hy - 19.4)], [1.0, 0.3]), BTL_HORN, sh=None)
+    _eyes(draw, hx - 3.4, hx + 3.4, hy + 0.2, 0, (250, 220, 60), mood="bright", skin=BTL_DK, w=3.0, h=3.6, lash=(20, 30, 30))
 
 
 # ===================================================================
-# TREANT (ID 80) — tree trunk body, branch arms, knothole face, leaves
+# TREANT (80) -- a walking tree: bark face, branch arms, a leafy crown
 # ===================================================================
+
+BARK = (140, 98, 64)
+BARK_DK = (96, 66, 46)
+LEAVES = (90, 170, 76)
+TREANT_EYE = (250, 230, 110)
+
 
 def draw_treant(draw, ox, oy, direction, frame):
-    bob = [0, -1, 0, -1][frame]
-    sway = [-1, 0, 1, 0][frame]
-    branch_sway = [-2, 0, 2, 0][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32 + sway
-    body_cy = base_y - 20
-    head_cy = body_cy - 14
-
-    trunk_shadow = _darken(TREANT_TRUNK, 0.7)
-
-    def draw_bark_texture(tcx, tcy, w, h):
-        """Bark line texture on trunk."""
-        dark = _darken(TREANT_TRUNK, 0.8)
-        for row in range(0, h, 5):
-            offset = 2 if (row // 5) % 2 == 0 else 0
-            for col in range(offset, w, 6):
-                px = tcx - w // 2 + col
-                py = tcy - h // 2 + row
-                draw.point((px, py), fill=dark)
-                draw.point((px + 1, py + 1), fill=dark)
-
-    def draw_leaf_cluster(lcx, lcy, size=3):
-        """Draw a small cluster of leaves."""
-        for dx, dy in [(-size, -1), (0, -size), (size, -1), (-1, size-2), (1, size-2)]:
-            ellipse(draw, lcx + dx, lcy + dy, size, size - 1, TREANT_LEAF, outline=None)
-        for dx, dy in [(-size+1, -2), (1, -size+1)]:
-            draw.point((lcx + dx, lcy + dy), fill=TREANT_LEAF_LIGHT)
-
-    # --- Root-feet ---
-    def draw_roots():
-        if direction in (DOWN, UP):
-            for side in [-1, 1]:
-                rx = cx + side * 8
-                # Thick spreading roots
-                draw.polygon([
-                    (rx - 4, base_y - 4),
-                    (rx + 4, base_y - 4),
-                    (rx + 8, base_y + 2),
-                    (rx - 8, base_y + 2),
-                ], fill=TREANT_ROOT, outline=OUTLINE)
-                # Root tendrils
-                draw.line([(rx - 6, base_y + 1), (rx - 10, base_y + 3)],
-                          fill=TREANT_ROOT, width=2)
-                draw.line([(rx + 6, base_y + 1), (rx + 10, base_y + 3)],
-                          fill=TREANT_ROOT, width=2)
-        elif direction == LEFT:
-            for off in [-4, 4]:
-                rx = cx + off
-                draw.polygon([
-                    (rx - 4, base_y - 4), (rx + 4, base_y - 4),
-                    (rx + 7, base_y + 2), (rx - 7, base_y + 2),
-                ], fill=TREANT_ROOT, outline=OUTLINE)
-                draw.line([(rx - 5, base_y + 1), (rx - 9, base_y + 3)],
-                          fill=TREANT_ROOT, width=2)
-        else:  # RIGHT
-            for off in [-4, 4]:
-                rx = cx + off
-                draw.polygon([
-                    (rx - 4, base_y - 4), (rx + 4, base_y - 4),
-                    (rx + 7, base_y + 2), (rx - 7, base_y + 2),
-                ], fill=TREANT_ROOT, outline=OUTLINE)
-                draw.line([(rx + 5, base_y + 1), (rx + 9, base_y + 3)],
-                          fill=TREANT_ROOT, width=2)
-
-    # --- Branch arms ---
-    def draw_branches():
-        if direction == DOWN:
-            for side in [-1, 1]:
-                bx = cx + side * 16
-                by = body_cy - 4 + branch_sway * side
-                # Main branch
-                draw.line([(cx + side * 10, body_cy - 2), (bx, by)],
-                          fill=TREANT_TRUNK, width=4)
-                draw.line([(bx, by), (bx + side * 4, by - 6)],
-                          fill=TREANT_TRUNK, width=3)
-                draw.line([(bx, by), (bx + side * 6, by + 2)],
-                          fill=TREANT_TRUNK, width=2)
-                # Leaf clusters at branch tips
-                draw_leaf_cluster(bx + side * 5, by - 7, 3)
-                draw_leaf_cluster(bx + side * 7, by + 2, 2)
-        elif direction == UP:
-            for side in [-1, 1]:
-                bx = cx + side * 16
-                by = body_cy - 4 + branch_sway * side
-                draw.line([(cx + side * 10, body_cy - 2), (bx, by)],
-                          fill=TREANT_TRUNK, width=4)
-                draw.line([(bx, by), (bx + side * 4, by - 5)],
-                          fill=TREANT_TRUNK, width=3)
-                draw_leaf_cluster(bx + side * 5, by - 6, 3)
-        elif direction == LEFT:
-            # Leading branch extends left
-            draw.line([(cx - 8, body_cy - 4), (cx - 20, body_cy - 8 + branch_sway)],
-                      fill=TREANT_TRUNK, width=4)
-            draw.line([(cx - 20, body_cy - 8 + branch_sway),
-                       (cx - 24, body_cy - 14 + branch_sway)],
-                      fill=TREANT_TRUNK, width=2)
-            draw_leaf_cluster(cx - 25, body_cy - 15 + branch_sway, 3)
-            # Trailing branch (shorter)
-            draw.line([(cx + 6, body_cy - 2), (cx + 14, body_cy - 6 - branch_sway)],
-                      fill=TREANT_TRUNK, width=3)
-            draw_leaf_cluster(cx + 15, body_cy - 7 - branch_sway, 2)
-        else:  # RIGHT
-            draw.line([(cx + 8, body_cy - 4), (cx + 20, body_cy - 8 + branch_sway)],
-                      fill=TREANT_TRUNK, width=4)
-            draw.line([(cx + 20, body_cy - 8 + branch_sway),
-                       (cx + 24, body_cy - 14 + branch_sway)],
-                      fill=TREANT_TRUNK, width=2)
-            draw_leaf_cluster(cx + 25, body_cy - 15 + branch_sway, 3)
-            draw.line([(cx - 6, body_cy - 2), (cx - 14, body_cy - 6 - branch_sway)],
-                      fill=TREANT_TRUNK, width=3)
-            draw_leaf_cluster(cx - 15, body_cy - 7 - branch_sway, 2)
-
-    # --- Draw order ---
-    draw_roots()
-
-    if direction == DOWN:
-        # Trunk body (wide rectangle-ish)
-        draw.rectangle([cx - 10, body_cy - 8, cx + 10, body_cy + 12],
-                       fill=TREANT_TRUNK, outline=OUTLINE)
-        draw.rectangle([cx - 10, body_cy - 8, cx - 6, body_cy + 8],
-                       fill=TREANT_LIGHT, outline=None)
-        draw.rectangle([cx + 4, body_cy - 4, cx + 10, body_cy + 10],
-                       fill=trunk_shadow, outline=None)
-        draw_bark_texture(cx, body_cy + 2, 16, 18)
-        draw_branches()
-        # Leaf crown
-        draw_leaf_cluster(cx - 6, head_cy - 6, 4)
-        draw_leaf_cluster(cx + 6, head_cy - 6, 4)
-        draw_leaf_cluster(cx, head_cy - 10, 5)
-        draw_leaf_cluster(cx - 10, head_cy - 2, 3)
-        draw_leaf_cluster(cx + 10, head_cy - 2, 3)
-        # Head / knothole face
-        # Knothole eyes
-        ellipse(draw, cx - 5, head_cy + 2, 3, 4, TREANT_KNOT)
-        ellipse(draw, cx + 5, head_cy + 2, 3, 4, TREANT_KNOT)
-        # Dark pupil dots
-        draw.point((cx - 5, head_cy + 2), fill=BLACK)
-        draw.point((cx + 5, head_cy + 2), fill=BLACK)
-        # Knothole mouth
-        ellipse(draw, cx, head_cy + 10, 4, 3, TREANT_KNOT)
-
-    elif direction == UP:
-        draw.rectangle([cx - 10, body_cy - 8, cx + 10, body_cy + 12],
-                       fill=TREANT_TRUNK, outline=OUTLINE)
-        draw.rectangle([cx - 10, body_cy - 8, cx + 10, body_cy + 10],
-                       fill=trunk_shadow, outline=None)
-        draw_bark_texture(cx, body_cy + 2, 16, 18)
-        draw_branches()
-        # Leaf crown
-        draw_leaf_cluster(cx - 6, head_cy - 6, 4)
-        draw_leaf_cluster(cx + 6, head_cy - 6, 4)
-        draw_leaf_cluster(cx, head_cy - 10, 5)
-
-    elif direction == LEFT:
-        draw.rectangle([cx - 8, body_cy - 8, cx + 8, body_cy + 12],
-                       fill=TREANT_TRUNK, outline=OUTLINE)
-        draw.rectangle([cx - 8, body_cy - 8, cx - 4, body_cy + 8],
-                       fill=TREANT_LIGHT, outline=None)
-        draw.rectangle([cx + 2, body_cy - 4, cx + 8, body_cy + 10],
-                       fill=trunk_shadow, outline=None)
-        draw_bark_texture(cx, body_cy + 2, 12, 18)
-        draw_branches()
-        # Leaf crown
-        draw_leaf_cluster(cx - 4, head_cy - 6, 4)
-        draw_leaf_cluster(cx + 4, head_cy - 8, 4)
-        draw_leaf_cluster(cx, head_cy - 10, 5)
-        # Knothole face (facing left)
-        ellipse(draw, cx - 6, head_cy + 2, 3, 3, TREANT_KNOT)
-        draw.point((cx - 6, head_cy + 2), fill=BLACK)
-        ellipse(draw, cx - 4, head_cy + 8, 3, 2, TREANT_KNOT)
-
-    else:  # RIGHT
-        draw.rectangle([cx - 8, body_cy - 8, cx + 8, body_cy + 12],
-                       fill=TREANT_TRUNK, outline=OUTLINE)
-        draw.rectangle([cx + 4, body_cy - 8, cx + 8, body_cy + 8],
-                       fill=TREANT_LIGHT, outline=None)
-        draw.rectangle([cx - 8, body_cy - 4, cx - 2, body_cy + 10],
-                       fill=trunk_shadow, outline=None)
-        draw_bark_texture(cx, body_cy + 2, 12, 18)
-        draw_branches()
-        # Leaf crown
-        draw_leaf_cluster(cx + 4, head_cy - 6, 4)
-        draw_leaf_cluster(cx - 4, head_cy - 8, 4)
-        draw_leaf_cluster(cx, head_cy - 10, 5)
-        # Knothole face (facing right)
-        ellipse(draw, cx + 6, head_cy + 2, 3, 3, TREANT_KNOT)
-        draw.point((cx + 6, head_cy + 2), fill=BLACK)
-        ellipse(draw, cx + 4, head_cy + 8, 3, 2, TREANT_KNOT)
+    d, back, base, cx, ph = _setup(ox, oy, direction, frame)
+    sway = [0.0, 1.0, 0.0, -1.0][frame]
+    # root feet
+    for s in ((-1, 1) if not d else (-1, 1)):
+        fwd = ph * s
+        fx = cx + (s * 5.0 if not d else d * fwd * 2.4 + s * 1.2)
+        lift = 1.0 if fwd < 0 else 0.0
+        for k in (-1, 0, 1):
+            cel(draw, Limb([(fx, base - 5.0 - lift), (fx + k * 2.4 + d * 1.0, base - 0.6 - lift)], [1.8, 0.7]), BARK_DK, sh=None)
+    # the trunk
+    w = 8.4 if not d else 7.0
+    trunk = Poly([(cx - w, base - 30.0), (cx + w, base - 30.0), (cx + w + 1.0, base - 12.0), (cx + w + 2.4, base - 4.0),
+                  (cx - w - 2.4, base - 4.0), (cx - w - 1.0, base - 12.0)])
+    cel(draw, trunk, BARK, sh=(1.8, 1.0))
+    for (u, v0, v1) in ((-4.0, 26.0, 16.0), (3.4, 22.0, 9.0), (-1.0, 12.0, 6.0)):
+        stroke(draw, [(cx + u, base - v0), (cx + u + 0.8, base - v1)], 0.6, BARK_DK)
+    # branch arms with leaf tufts
+    for s in ((-1, 1) if not d else (d, -d)):
+        near = not d or s == d
+        col = BARK if near else shade(BARK, 0.6)
+        sx = cx + s * (w - 1.0) if not d else cx + s * 1.0
+        mid = (sx + (s * 5.0 if not d else s * 4.4), base - 22.0 + (sway if s > 0 else -sway))
+        end = (sx + (s * 8.0 if not d else s * 8.4), base - 17.0 + (sway if s > 0 else -sway))
+        cel(draw, Limb([(sx, base - 24.0), mid, end], [2.4, 1.8, 1.2]), col, sh=(0.5, 0.5))
+        cel(draw, Limb([mid, (mid[0] + (s * 2.0 if not d else s * 2.0), mid[1] - 4.0)], [1.0, 0.4]), col, sh=None)
+        blob(draw, [Ell(end[0], end[1] + 1.0, 3.2, 2.8), Ell(end[0] + (s * 1.8 if not d else s * 1.8), end[1] - 1.0, 2.4, 2.2)],
+             LEAVES if near else shade(LEAVES, 0.6), sh=(0.6, 0.6))
+    # face in the bark
+    if not back:
+        fx = cx + d * 2.4
+        for side, ex in (((-1, fx - 3.6), (1, fx + 3.6)) if not d else ((d, fx + d * 2.6), (-d, fx - d * 2.0))):
+            k = 1.0 if not d or side == d else 0.62
+            Ell(ex, base - 24.0, 2.6 * k, 2.6).draw(draw, fill=VOID)
+            Ell(ex, base - 23.8, 1.4 * k, 1.4).draw(draw, fill=TREANT_EYE)
+        Poly([(fx - 3.0, base - 18.6), (fx + 3.0, base - 18.6), (fx + 1.8, base - 16.4), (fx - 1.8, base - 16.4)]).draw(draw, fill=VOID)
+    # canopy crown
+    cy = base - 36.0
+    parts = [Ell(cx - d * 1.0, cy, 14.0, 9.4), Ell(cx - 9.0 - d * 1.0, cy + 3.0, 6.0, 5.4), Ell(cx + 9.0 - d * 1.0, cy + 3.0, 6.0, 5.4),
+             Ell(cx - 4.0 - d * 1.0, cy - 6.0, 6.4, 5.0), Ell(cx + 5.0 - d * 1.0, cy - 5.4, 6.0, 4.8)]
+    blob(draw, parts, LEAVES, sh=(1.6, 1.4), regions=[(Ell(cx - 6.0, cy - 5.0, 4.0, 2.4), lit(LEAVES, 1.0))])
+    for (u, v) in ((-6.0, 1.0), (5.0, -1.0), (0.0, 4.0)):
+        Ell(cx + u + sway * 0.4, cy + v, 0.9, 0.9).draw(draw, fill=(255, 150, 170))
 
 
 # ===================================================================
-# PHOENIX (ID 81) — fire bird, flame wings, ember particles
+# PHOENIX (81) -- a bird of fire: flame crest, blazing wings, long tail
 # ===================================================================
+
+PHX = (240, 96, 44)
+PHX_GOLD = (255, 196, 60)
+PHX_CORE = (255, 240, 170)
+PHX_FIRE = ((236, 70, 40), (255, 150, 50), (255, 234, 130))
+
 
 def draw_phoenix(draw, ox, oy, direction, frame):
-    hover = [0, -2, 0, -2][frame]
-    wing_flap = [-4, 3, -4, 0][frame]
-    flame_phase = frame  # used to shift flame particles
-
-    base_y = oy + 54
-    cx = ox + 32
-    body_cy = base_y - 20 + hover
-    head_cy = body_cy - 14
-
-    body_dark = _darken(PHOENIX_BODY, 0.75)
-
-    # --- Hovering shadow ---
-    ellipse(draw, cx, base_y + 2, 12, 3, (60, 30, 10, 80), outline=None)
-
-    # --- Flame particles (shift per frame for flickering effect) ---
-    def draw_flames(fcx, fcy, count=5, spread=10, upward=True):
-        """Draw flame ember particles near a point."""
-        import random
-        # Use deterministic positions seeded by frame
-        offsets = [
-            (-4, -3), (3, -5), (-1, -7), (5, -2), (-6, -4),
-            (2, -8), (-3, -1), (4, -6), (-5, -5), (6, -3),
-        ]
-        colors = [PHOENIX_FLAME, PHOENIX_EMBER, PHOENIX_WING, PHOENIX_FLAME]
-        for i in range(count):
-            idx = (i + flame_phase) % len(offsets)
-            dx, dy = offsets[idx]
-            dx = dx * spread // 8
-            if not upward:
-                dy = -dy
-            c = colors[(i + flame_phase) % len(colors)]
-            draw.point((fcx + dx, fcy + dy), fill=c)
-            draw.point((fcx + dx + 1, fcy + dy), fill=c)
-
-    # --- Tail feathers (fire) ---
-    def draw_fire_tail():
-        if direction == DOWN:
-            # Tail behind, going up
-            for i, color in enumerate([PHOENIX_DARK, PHOENIX_BODY, PHOENIX_WING]):
-                tw = 4 - i
-                ty = body_cy - 8 - i * 4
-                draw.polygon([
-                    (cx - tw - i, body_cy - 4),
-                    (cx + tw + i, body_cy - 4),
-                    (cx + i * 2, ty),
-                    (cx - i * 2, ty),
-                ], fill=color, outline=None)
-            draw_flames(cx, body_cy - 18, 4, 6, True)
-        elif direction == UP:
-            for i, color in enumerate([PHOENIX_DARK, PHOENIX_BODY, PHOENIX_WING]):
-                tw = 4 - i
-                ty = body_cy + 10 + i * 4
-                draw.polygon([
-                    (cx - tw - i, body_cy + 6),
-                    (cx + tw + i, body_cy + 6),
-                    (cx + i * 2, ty),
-                    (cx - i * 2, ty),
-                ], fill=color, outline=None)
-            draw_flames(cx, body_cy + 22, 4, 6, False)
-        elif direction == LEFT:
-            for i, color in enumerate([PHOENIX_DARK, PHOENIX_BODY, PHOENIX_WING]):
-                tw = 3 - i
-                tx = cx + 10 + i * 4
-                draw.polygon([
-                    (cx + 6, body_cy - tw),
-                    (cx + 6, body_cy + tw),
-                    (tx, body_cy + i * 2),
-                    (tx, body_cy - i * 2),
-                ], fill=color, outline=None)
-            draw_flames(cx + 22, body_cy, 4, 4, True)
-        else:  # RIGHT
-            for i, color in enumerate([PHOENIX_DARK, PHOENIX_BODY, PHOENIX_WING]):
-                tw = 3 - i
-                tx = cx - 10 - i * 4
-                draw.polygon([
-                    (cx - 6, body_cy - tw),
-                    (cx - 6, body_cy + tw),
-                    (tx, body_cy + i * 2),
-                    (tx, body_cy - i * 2),
-                ], fill=color, outline=None)
-            draw_flames(cx - 22, body_cy, 4, 4, True)
-
-    # --- Wings (flame gradient: red base -> orange -> yellow tips) ---
-    def draw_fire_wing(side, trailing=False):
-        wy = body_cy + wing_flap
-        if direction in (DOWN, UP):
-            # Wing polygon
-            draw.polygon([
-                (cx + side * 8, body_cy - 6),
-                (cx + side * 22, wy - 4),
-                (cx + side * 24, wy + 2),
-                (cx + side * 20, wy + 8),
-                (cx + side * 8, body_cy + 4),
-            ], fill=PHOENIX_BODY if not trailing else PHOENIX_DARK, outline=OUTLINE)
-            if not trailing:
-                # Gradient layers: orange mid, yellow tips
-                draw.polygon([
-                    (cx + side * 14, body_cy - 4),
-                    (cx + side * 22, wy - 2),
-                    (cx + side * 24, wy + 2),
-                    (cx + side * 20, wy + 6),
-                    (cx + side * 14, body_cy + 2),
-                ], fill=PHOENIX_WING, outline=None)
-                draw.polygon([
-                    (cx + side * 18, wy - 2),
-                    (cx + side * 24, wy),
-                    (cx + side * 22, wy + 4),
-                    (cx + side * 18, wy + 2),
-                ], fill=PHOENIX_FLAME, outline=None)
-                # Yellow ember tips
-                draw.point((cx + side * 24, wy + 2), fill=PHOENIX_EMBER)
-                draw.point((cx + side * 22, wy + 4), fill=PHOENIX_EMBER)
-                draw.point((cx + side * 20, wy + 8), fill=PHOENIX_EMBER)
-                # Flame particles at wing tip
-                draw_flames(cx + side * 24, wy, 3, 4, True)
+    d, back, base, cx, ph = _setup(ox, oy, direction, frame, bob=[-1, -3, -4, -3])
+    flap = [0.0, 1.0, 0.4, 1.0][frame]
+    sway = [0.0, 1.0, 0.0, -1.0][frame]
+    # tail plumes streaming down and back
+    tails = ((-4.0, 0.0), (0.0, 1.0), (4.0, 0.0)) if not d else ((0.0, 0.0), (1.0, 1.0))
+    for i, (u, k) in enumerate(tails):
+        if d:
+            flame(draw, cx - d * (8.0 + i * 3.0), base - 10.0 + i * 2.0, 5.0, 14.0, PHX_FIRE, sway=sway - d * 6.0, flip=-1.0)
         else:
-            d = -1 if direction == LEFT else 1
-            draw.polygon([
-                (cx + d * 6, body_cy - 6),
-                (cx + d * 18, wy - 4),
-                (cx + d * 20, wy + 2),
-                (cx + d * 16, wy + 8),
-                (cx + d * 6, body_cy + 4),
-            ], fill=PHOENIX_BODY if not trailing else PHOENIX_DARK, outline=OUTLINE)
-            if not trailing:
-                draw.polygon([
-                    (cx + d * 12, body_cy - 3),
-                    (cx + d * 18, wy - 2),
-                    (cx + d * 20, wy + 2),
-                    (cx + d * 16, wy + 6),
-                    (cx + d * 12, body_cy + 2),
-                ], fill=PHOENIX_WING, outline=None)
-                draw.polygon([
-                    (cx + d * 16, wy - 1),
-                    (cx + d * 20, wy + 1),
-                    (cx + d * 18, wy + 4),
-                ], fill=PHOENIX_FLAME, outline=None)
-                draw.point((cx + d * 20, wy + 2), fill=PHOENIX_EMBER)
-                draw_flames(cx + d * 20, wy, 3, 3, True)
-
-    # --- Draw order ---
-    if direction == DOWN:
-        draw_fire_tail()
-        for s in [-1, 1]:
-            draw_fire_wing(s)
-        # Body
-        ellipse(draw, cx, body_cy, 10, 10, PHOENIX_BODY)
-        ellipse(draw, cx + 2, body_cy + 2, 7, 7, body_dark, outline=None)
-        ellipse(draw, cx - 2, body_cy - 2, 7, 6, _brighten(PHOENIX_BODY, 1.2), outline=None)
-        # Golden chest plumage
-        ellipse(draw, cx, body_cy + 3, 6, 5, PHOENIX_CHEST, outline=None)
-        # Head
-        ellipse(draw, cx, head_cy, 8, 8, PHOENIX_BODY)
-        ellipse(draw, cx - 2, head_cy - 2, 5, 4, _brighten(PHOENIX_BODY, 1.3), outline=None)
-        # Fierce eyes
-        draw.rectangle([cx - 5, head_cy - 2, cx - 2, head_cy + 1], fill=PHOENIX_EYE)
-        draw.point((cx - 3, head_cy - 1), fill=BLACK)
-        draw.rectangle([cx + 2, head_cy - 2, cx + 5, head_cy + 1], fill=PHOENIX_EYE)
-        draw.point((cx + 3, head_cy - 1), fill=BLACK)
-        # Sharp beak
-        draw.polygon([(cx - 3, head_cy + 4), (cx + 3, head_cy + 4),
-                      (cx, head_cy + 9)], fill=PHOENIX_BEAK, outline=OUTLINE)
-        # Flame crest on head
-        for dx, dy in [(-2, -8), (0, -12), (2, -9), (-4, -6), (4, -7)]:
-            draw.polygon([
-                (cx + dx - 1, head_cy - 4),
-                (cx + dx, head_cy + dy),
-                (cx + dx + 1, head_cy - 4),
-            ], fill=PHOENIX_FLAME, outline=None)
-        draw.point((cx, head_cy - 11), fill=PHOENIX_EMBER)
-        draw.point((cx - 2, head_cy - 7), fill=PHOENIX_EMBER)
-        draw.point((cx + 2, head_cy - 8), fill=PHOENIX_EMBER)
-
-    elif direction == UP:
-        for s in [-1, 1]:
-            draw_fire_wing(s)
-        # Body
-        ellipse(draw, cx, body_cy, 10, 10, PHOENIX_BODY)
-        ellipse(draw, cx, body_cy, 7, 7, body_dark, outline=None)
-        # Head
-        ellipse(draw, cx, head_cy, 8, 8, PHOENIX_BODY)
-        ellipse(draw, cx, head_cy, 6, 6, body_dark, outline=None)
-        # Flame crest (back view)
-        for dx, dy in [(-2, -8), (0, -12), (2, -9), (-4, -6), (4, -7)]:
-            draw.polygon([
-                (cx + dx - 1, head_cy - 4),
-                (cx + dx, head_cy + dy),
-                (cx + dx + 1, head_cy - 4),
-            ], fill=PHOENIX_FLAME, outline=None)
-        draw.point((cx, head_cy - 11), fill=PHOENIX_EMBER)
-        draw_fire_tail()
-
-    elif direction == LEFT:
-        draw_fire_tail()
-        draw_fire_wing(1, trailing=True)
-        # Body
-        ellipse(draw, cx - 2, body_cy, 9, 10, PHOENIX_BODY)
-        ellipse(draw, cx, body_cy + 2, 6, 6, body_dark, outline=None)
-        ellipse(draw, cx - 4, body_cy - 2, 6, 6, _brighten(PHOENIX_BODY, 1.2), outline=None)
-        ellipse(draw, cx - 2, body_cy + 3, 5, 4, PHOENIX_CHEST, outline=None)
-        draw_fire_wing(-1)
-        # Head
-        ellipse(draw, cx - 4, head_cy, 7, 7, PHOENIX_BODY)
-        ellipse(draw, cx - 6, head_cy - 2, 4, 4, _brighten(PHOENIX_BODY, 1.3), outline=None)
-        # Eye
-        draw.rectangle([cx - 8, head_cy - 2, cx - 5, head_cy + 1], fill=PHOENIX_EYE)
-        draw.point((cx - 6, head_cy - 1), fill=BLACK)
-        # Beak
-        draw.polygon([(cx - 10, head_cy + 2), (cx - 4, head_cy - 1),
-                      (cx - 4, head_cy + 3)], fill=PHOENIX_BEAK, outline=OUTLINE)
-        # Flame crest
-        for dx, dy in [(0, -10), (2, -8), (4, -6)]:
-            draw.polygon([
-                (cx - 4 + dx - 1, head_cy - 3),
-                (cx - 4 + dx, head_cy + dy),
-                (cx - 4 + dx + 1, head_cy - 3),
-            ], fill=PHOENIX_FLAME, outline=None)
-        draw.point((cx - 4, head_cy - 9), fill=PHOENIX_EMBER)
-
-    else:  # RIGHT
-        draw_fire_tail()
-        draw_fire_wing(-1, trailing=True)
-        # Body
-        ellipse(draw, cx + 2, body_cy, 9, 10, PHOENIX_BODY)
-        ellipse(draw, cx, body_cy + 2, 6, 6, body_dark, outline=None)
-        ellipse(draw, cx + 4, body_cy - 2, 6, 6, _brighten(PHOENIX_BODY, 1.2), outline=None)
-        ellipse(draw, cx + 2, body_cy + 3, 5, 4, PHOENIX_CHEST, outline=None)
-        draw_fire_wing(1)
-        # Head
-        ellipse(draw, cx + 4, head_cy, 7, 7, PHOENIX_BODY)
-        ellipse(draw, cx + 6, head_cy - 2, 4, 4, _brighten(PHOENIX_BODY, 1.3), outline=None)
-        # Eye
-        draw.rectangle([cx + 5, head_cy - 2, cx + 8, head_cy + 1], fill=PHOENIX_EYE)
-        draw.point((cx + 6, head_cy - 1), fill=BLACK)
-        # Beak
-        draw.polygon([(cx + 10, head_cy + 2), (cx + 4, head_cy - 1),
-                      (cx + 4, head_cy + 3)], fill=PHOENIX_BEAK, outline=OUTLINE)
-        # Flame crest
-        for dx, dy in [(0, -10), (-2, -8), (-4, -6)]:
-            draw.polygon([
-                (cx + 4 + dx - 1, head_cy - 3),
-                (cx + 4 + dx, head_cy + dy),
-                (cx + 4 + dx + 1, head_cy - 3),
-            ], fill=PHOENIX_FLAME, outline=None)
-        draw.point((cx + 4, head_cy - 9), fill=PHOENIX_EMBER)
+            flame(draw, cx + u, base + 1.0, 5.0, 12.0 + k * 3.0, PHX_FIRE, sway=sway * (1 if i % 2 else -1), flip=-1.0)
+    # wings: great flames spread wide
+    for s in ((-1, 1) if not d else (-d,)):
+        wx = cx + s * 5.0 if not d else cx - d * 2.0
+        tip = (wx + s * (15.0 + flap * 2.0), base - 26.0 - flap * 4.0)
+        pts = [(wx, base - 20.0), (wx + s * 6.0, base - 24.0 - flap * 2.0), tip, (tip[0] - s * 1.6, tip[1] + 4.0), (tip[0] + s * 0.6, tip[1] + 6.0),
+               (tip[0] - s * 3.6, tip[1] + 7.4), (tip[0] - s * 2.4, tip[1] + 10.0), (wx + s * 5.0, base - 12.0), (wx, base - 14.0)]
+        cel(draw, Poly(pts), PHX, sh=(0.6, 0.6), tone=(214, 60, 40))
+        cel(draw, Poly([(wx + s * 1.0, base - 19.0), (wx + s * 6.0, base - 22.0 - flap * 2.0), (tip[0] - s * 3.0, tip[1] + 3.0),
+                        (wx + s * 5.0, base - 15.0)]), PHX_GOLD, sh=None, line=False)
+    # body
+    body = Ell(cx - d * 0.6, base - 16.0, 7.4 if not d else 7.0, 8.4)
+    cel(draw, body, PHX, sh=(1.2, 1.0))
+    if not back:
+        cel(draw, Ell(cx + d * 1.6, base - 15.0, 4.4, 6.0), PHX_GOLD, sh=None, line=False)
+    # legs: gold, tucked
+    for s in (-1, 1):
+        lx = cx + s * 2.4 + d * 0.6
+        stroke(draw, [(lx, base - 9.0), (lx + d * 0.6, base - 5.4)], 0.9, PHX_GOLD)
+        for k in (-1, 0, 1):
+            stroke(draw, [(lx + d * 0.6, base - 5.4), (lx + d * 0.6 + k * 1.1, base - 4.2)], 0.6, PHX_GOLD)
+    # head with a flame crest
+    hx, hy = cx + d * 3.0, base - 28.0
+    flame(draw, hx - d * 2.0, hy - 4.0, 12.0, 15.0, PHX_FIRE, sway=sway * 1.4 - d * 4.0)
+    cel(draw, Ell(hx, hy, 7.6 if not d else 7.2, 6.8), PHX, sh=(0.8, 0.8), hi=(0.5, 0.5))
+    if back:
+        return
+    if d:
+        beak = Poly([(hx + d * 5.0, hy - 1.4), (hx + d * 9.4, hy + 0.0), (hx + d * 10.0, hy + 2.6), (hx + d * 8.6, hy + 2.0), (hx + d * 5.4, hy + 2.4)])
+        cel(draw, beak, PHX_GOLD, sh=(0.0, 0.6))
+        ms_eye(draw, hx + d * 2.6, hy - 1.0, 3.4, 4.0, (120, 30, 20), (float(d), 0.0), "sharp", skin=PHX, side=-d, lash=(90, 20, 20))
+        return
+    _eyes(draw, hx - 3.4, hx + 3.4, hy - 1.0, 0, (120, 30, 20), mood="sharp", skin=PHX, w=3.4, h=4.2, lash=(90, 20, 20))
+    beak = Poly([(hx - 1.8, hy + 1.8), (hx + 1.8, hy + 1.8), (hx + 1.0, hy + 4.4), (hx, hy + 5.6), (hx - 1.0, hy + 4.4)])
+    cel(draw, beak, PHX_GOLD, sh=(0.5, 0.4))
+    for i in range(2):
+        a = math.radians(frame * 90 + i * 180)
+        sparkle(draw, cx + math.cos(a) * 16.0, base - 8.0 + math.sin(a) * 3.0, 1.6, PHX_CORE)
 
 
 # ===================================================================
-# HYDRA (ID 82) — wide dragon-like body, 3 serpentine necks + heads
+# HYDRA (82) -- three heads on short necks over a squat scaled body
 # ===================================================================
 
-# Hydra palette
-HYDRA_BODY = (50, 100, 60)
-HYDRA_SCALE = (70, 130, 80)
-HYDRA_BELLY = (100, 160, 110)
-HYDRA_NECK = (60, 110, 70)
-HYDRA_EYE = (200, 200, 50)
-HYDRA_MOUTH = (120, 30, 30)
-HYDRA_TOOTH = (220, 220, 210)
+HYD = (74, 160, 138)
+HYD_BELLY = (234, 222, 150)
+HYD_FIN = (120, 70, 150)
+HYD_EYE = (255, 200, 60)
+
+
+def _hydra_head(draw, x, y, d, big=1.0, back=False, frame=0):
+    k = big
+    for s in ((-1, 1) if not d else (-d,)):
+        cel(draw, Poly([(x + s * 3.0 * k, y - 2.0 * k), (x + s * 7.0 * k, y - 5.4 * k), (x + s * 5.4 * k, y + 0.6 * k)]), HYD_FIN, sh=None, lw=0.6)
+    cel(draw, Ell(x, y, 5.4 * k, 4.6 * k), HYD, sh=(0.6, 0.6), hi=(0.4, 0.4))
+    if back:
+        return
+    if d:
+        cel(draw, Ell(x + d * 4.4 * k, y + 1.4 * k, 3.4 * k, 2.4 * k), HYD, sh=(0.0, 0.6))
+        ms_eye(draw, x + d * 1.4 * k, y - 1.0 * k, 2.8 * k, 3.2 * k, HYD_EYE, (float(d), 0.0), "sharp", skin=HYD, side=-d)
+        Poly([(x + d * 5.4 * k, y + 2.6 * k), (x + d * 6.2 * k, y + 2.6 * k), (x + d * 5.8 * k, y + 4.2 * k)]).draw(draw, fill=TOOTH)
+        return
+    ms_eye(draw, x - 2.2 * k, y - 0.6 * k, 2.8 * k, 3.4 * k, HYD_EYE, (0.0, 0.0), "sharp", skin=HYD, side=-1)
+    ms_eye(draw, x + 2.2 * k, y - 0.6 * k, 2.8 * k, 3.4 * k, HYD_EYE, (0.0, 0.0), "sharp", skin=HYD, side=1)
+    stroke(draw, [(x - 2.2 * k, y + 2.6 * k), (x, y + 3.2 * k), (x + 2.2 * k, y + 2.6 * k)], 0.5, shade(HYD, 1.8))
+    for s in (-1, 1):
+        Poly([(x + s * 1.4 * k - 0.4, y + 2.8 * k), (x + s * 1.4 * k + 0.4, y + 2.8 * k), (x + s * 1.4 * k, y + 4.2 * k)]).draw(draw, fill=TOOTH)
 
 
 def draw_hydra(draw, ox, oy, direction, frame):
-    bob = [0, -1, 0, -1][frame]
-    # Each head sways with different phase
-    sway_a = [-2, 1, 2, -1][frame]
-    sway_b = [1, -2, -1, 2][frame]
-    sway_c = [0, 2, -2, 0][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 14
-    neck_base_y = body_cy - 8
-
-    body_dark = _darken(HYDRA_BODY, 0.7)
-    neck_dark = _darken(HYDRA_NECK, 0.75)
-
-    def draw_head(hx, hy, facing_dir, mouth_open=True):
-        """Draw a single hydra head at (hx, hy)."""
-        ellipse(draw, hx, hy, 6, 5, HYDRA_NECK)
-        ellipse(draw, hx, hy - 1, 4, 3, _brighten(HYDRA_NECK, 1.2), outline=None)
-        # Eyes
-        if facing_dir == 'front':
-            draw.rectangle([hx - 4, hy - 2, hx - 2, hy], fill=HYDRA_EYE)
-            draw.point((hx - 3, hy - 1), fill=BLACK)
-            draw.rectangle([hx + 2, hy - 2, hx + 4, hy], fill=HYDRA_EYE)
-            draw.point((hx + 3, hy - 1), fill=BLACK)
-            if mouth_open:
-                draw.rectangle([hx - 3, hy + 3, hx + 3, hy + 5], fill=HYDRA_MOUTH)
-                for tx in [-2, 0, 2]:
-                    draw.point((hx + tx, hy + 3), fill=HYDRA_TOOTH)
-        elif facing_dir == 'left':
-            draw.rectangle([hx - 5, hy - 2, hx - 3, hy], fill=HYDRA_EYE)
-            draw.point((hx - 4, hy - 1), fill=BLACK)
-            if mouth_open:
-                draw.polygon([(hx - 6, hy + 1), (hx - 6, hy + 4), (hx - 2, hy + 3)],
-                             fill=HYDRA_MOUTH, outline=OUTLINE)
-                draw.point((hx - 5, hy + 1), fill=HYDRA_TOOTH)
-        elif facing_dir == 'right':
-            draw.rectangle([hx + 3, hy - 2, hx + 5, hy], fill=HYDRA_EYE)
-            draw.point((hx + 4, hy - 1), fill=BLACK)
-            if mouth_open:
-                draw.polygon([(hx + 6, hy + 1), (hx + 6, hy + 4), (hx + 2, hy + 3)],
-                             fill=HYDRA_MOUTH, outline=OUTLINE)
-                draw.point((hx + 5, hy + 1), fill=HYDRA_TOOTH)
-        else:  # back
-            ellipse(draw, hx, hy, 5, 4, neck_dark, outline=None)
-
-    def draw_neck(x1, y1, x2, y2):
-        """Draw a thick neck segment."""
-        draw.polygon([
-            (x1 - 3, y1), (x1 + 3, y1),
-            (x2 + 2, y2), (x2 - 2, y2),
-        ], fill=HYDRA_NECK, outline=OUTLINE)
-        # Scale dots along neck
-        steps = 3
-        for i in range(1, steps + 1):
-            t = i / (steps + 1)
-            mx = int(x1 + (x2 - x1) * t)
-            my = int(y1 + (y2 - y1) * t)
-            draw.point((mx, my), fill=HYDRA_SCALE)
-
-    # --- Thick tail ---
-    if direction == DOWN:
-        draw.polygon([
-            (cx + 8, body_cy + 2), (cx + 18, body_cy - 4),
-            (cx + 20, body_cy - 2), (cx + 10, body_cy + 4),
-        ], fill=HYDRA_BODY, outline=OUTLINE)
-        draw.point((cx + 19, body_cy - 3), fill=HYDRA_SCALE)
-    elif direction == UP:
-        draw.polygon([
-            (cx - 2, body_cy + 10), (cx + 2, body_cy + 10),
-            (cx + 4, body_cy + 20), (cx - 4, body_cy + 20),
-        ], fill=HYDRA_BODY, outline=OUTLINE)
-        draw.point((cx, body_cy + 16), fill=HYDRA_SCALE)
-    elif direction == LEFT:
-        draw.polygon([
-            (cx + 10, body_cy), (cx + 22, body_cy - 2),
-            (cx + 24, body_cy + 1), (cx + 12, body_cy + 3),
-        ], fill=HYDRA_BODY, outline=OUTLINE)
+    d, back, base, cx, ph = _setup(ox, oy, direction, frame)
+    sway = [0.0, 1.0, 0.0, -1.0][frame]
+    # tail
+    tx = cx - (d * 8.0 if d else 7.0)
+    cel(draw, Limb([(tx, base - 8.0), (tx - (d * 5.0 if d else 5.0), base - 6.0 + sway), (tx - (d * 8.0 if d else 8.0), base - 10.0)],
+                   [3.4, 2.4, 0.5]), HYD, sh=(0.6, 0.6))
+    # legs
+    for s in ((-1, 1) if not d else (-1, 1)):
+        fwd = ph * s
+        for (u, near) in (((5.0, True), (-5.0, False)) if d else ((6.4, True),)):
+            lx = cx + (s * u if not d else d * (u + fwd * 1.6) + s * 0.8)
+            lift = 1.0 if fwd < 0 else 0.0
+            col = HYD if (not d or s == 1) else shade(HYD, 0.6)
+            cel(draw, Limb([(lx, base - 9.0), (lx, base - 1.8 - lift)], [2.6, 2.4]), col, sh=(0.6, 0.0))
+            _paw(draw, lx, base - 1.2 - lift, col, d)
+    # body
+    body = Ell(cx - d * 1.0, base - 12.0, 11.4 if not d else 10.6, 8.4)
+    cel(draw, body, HYD, sh=(1.4, 1.2))
+    if not back:
+        cel(draw, Ell(cx + d * 2.0, base - 10.0, 7.0 if not d else 5.4, 5.4), HYD_BELLY, sh=None, line=False)
+    for (u, v) in ((-4.0, -6.0), (0.0, -8.0), (4.0, -6.0)):
+        Poly([(cx + u - 1.6 - d, base - 12.0 + v), (cx + u - d, base - 15.4 + v), (cx + u + 1.6 - d, base - 12.0 + v)]).draw(draw, fill=HYD_FIN)
+    # three necks and heads
+    if d:
+        heads = [(cx + d * 3.0, base - 18.0, cx + d * 9.4, base - 25.0 + sway, 0.9), (cx + d * 1.0, base - 18.0, cx + d * 4.4, base - 33.0 - sway, 1.1),
+                 (cx - d * 1.0, base - 18.0, cx - d * 3.4, base - 28.0 + sway, 0.9)]
+        order = [2, 1, 0]
     else:
-        draw.polygon([
-            (cx - 10, body_cy), (cx - 22, body_cy - 2),
-            (cx - 24, body_cy + 1), (cx - 12, body_cy + 3),
-        ], fill=HYDRA_BODY, outline=OUTLINE)
-
-    # --- Short thick legs ---
-    if direction in (DOWN, UP):
-        for side in [-1, 1]:
-            lx = cx + side * 10
-            draw.rectangle([lx - 4, body_cy + 6, lx + 4, base_y],
-                           fill=HYDRA_BODY, outline=OUTLINE)
-            if direction == DOWN:
-                draw.rectangle([lx - 4, body_cy + 6, lx - 2, base_y - 4],
-                               fill=_brighten(HYDRA_BODY, 1.1), outline=None)
-            ellipse(draw, lx, base_y + 1, 5, 2, body_dark)
-    else:
-        d = -1 if direction == LEFT else 1
-        for offset in [-3, 3]:
-            lx = cx + d * 4 + offset
-            draw.rectangle([lx - 4, body_cy + 6, lx + 4, base_y],
-                           fill=HYDRA_BODY, outline=OUTLINE)
-            ellipse(draw, lx, base_y + 1, 5, 2, body_dark)
-
-    # --- Body (wide, heavy, low) ---
-    if direction == DOWN:
-        ellipse(draw, cx, body_cy, 16, 12, HYDRA_BODY)
-        ellipse(draw, cx + 3, body_cy + 3, 12, 8, body_dark, outline=None)
-        ellipse(draw, cx - 2, body_cy - 2, 10, 6, _brighten(HYDRA_BODY, 1.15), outline=None)
-        ellipse(draw, cx, body_cy + 3, 8, 5, HYDRA_BELLY, outline=None)
-        draw_scale_texture(draw, cx, body_cy, 24, 16, HYDRA_SCALE)
-    elif direction == UP:
-        ellipse(draw, cx, body_cy, 16, 12, HYDRA_BODY)
-        ellipse(draw, cx, body_cy, 12, 8, body_dark, outline=None)
-        draw_scale_texture(draw, cx, body_cy, 24, 16, HYDRA_SCALE)
-    elif direction == LEFT:
-        ellipse(draw, cx + 2, body_cy, 14, 12, HYDRA_BODY)
-        ellipse(draw, cx + 4, body_cy + 3, 10, 8, body_dark, outline=None)
-        ellipse(draw, cx - 2, body_cy - 2, 8, 6, _brighten(HYDRA_BODY, 1.15), outline=None)
-        draw_scale_texture(draw, cx + 2, body_cy, 20, 16, HYDRA_SCALE)
-    else:
-        ellipse(draw, cx - 2, body_cy, 14, 12, HYDRA_BODY)
-        ellipse(draw, cx - 4, body_cy + 3, 10, 8, body_dark, outline=None)
-        ellipse(draw, cx + 2, body_cy - 2, 8, 6, _brighten(HYDRA_BODY, 1.15), outline=None)
-        draw_scale_texture(draw, cx - 2, body_cy, 20, 16, HYDRA_SCALE)
-
-    # --- Three necks and heads ---
-    if direction == DOWN:
-        # Left head — angles outward left
-        lhx = cx - 10 + sway_a
-        lhy = neck_base_y - 16
-        draw_neck(cx - 6, neck_base_y, lhx, lhy + 4)
-        draw_head(lhx, lhy, 'front', mouth_open=(frame == 1))
-        # Center head — straight forward
-        chx = cx + sway_b
-        chy = neck_base_y - 20
-        draw_neck(cx, neck_base_y, chx, chy + 4)
-        draw_head(chx, chy, 'front', mouth_open=(frame == 3))
-        # Right head — angles outward right
-        rhx = cx + 10 + sway_c
-        rhy = neck_base_y - 16
-        draw_neck(cx + 6, neck_base_y, rhx, rhy + 4)
-        draw_head(rhx, rhy, 'front', mouth_open=(frame == 0))
-
-    elif direction == UP:
-        # All three necks visible from behind, heads facing away
-        lhx = cx - 10 + sway_a
-        lhy = neck_base_y - 16
-        draw_neck(cx - 6, neck_base_y, lhx, lhy + 4)
-        draw_head(lhx, lhy, 'back')
-        chx = cx + sway_b
-        chy = neck_base_y - 20
-        draw_neck(cx, neck_base_y, chx, chy + 4)
-        draw_head(chx, chy, 'back')
-        rhx = cx + 10 + sway_c
-        rhy = neck_base_y - 16
-        draw_neck(cx + 6, neck_base_y, rhx, rhy + 4)
-        draw_head(rhx, rhy, 'back')
-
-    elif direction == LEFT:
-        # Heads extend to the left in a fan
-        # Far head (behind)
-        fhx = cx - 14 + sway_a
-        fhy = neck_base_y - 12
-        draw_neck(cx - 4, neck_base_y, fhx + 4, fhy + 4)
-        draw_head(fhx, fhy, 'left', mouth_open=(frame == 2))
-        # Mid head
-        mhx = cx - 16 + sway_b
-        mhy = neck_base_y - 18
-        draw_neck(cx - 2, neck_base_y - 2, mhx + 4, mhy + 4)
-        draw_head(mhx, mhy, 'left', mouth_open=(frame == 0))
-        # Near head (front)
-        nhx = cx - 14 + sway_c
-        nhy = neck_base_y - 8
-        draw_neck(cx - 4, neck_base_y + 2, nhx + 4, nhy + 4)
-        draw_head(nhx, nhy, 'left', mouth_open=(frame == 1))
-
-    else:  # RIGHT
-        # Heads extend to the right in a fan
-        fhx = cx + 14 + sway_a
-        fhy = neck_base_y - 12
-        draw_neck(cx + 4, neck_base_y, fhx - 4, fhy + 4)
-        draw_head(fhx, fhy, 'right', mouth_open=(frame == 2))
-        mhx = cx + 16 + sway_b
-        mhy = neck_base_y - 18
-        draw_neck(cx + 2, neck_base_y - 2, mhx - 4, mhy + 4)
-        draw_head(mhx, mhy, 'right', mouth_open=(frame == 0))
-        nhx = cx + 14 + sway_c
-        nhy = neck_base_y - 8
-        draw_neck(cx + 4, neck_base_y + 2, nhx - 4, nhy + 4)
-        draw_head(nhx, nhy, 'right', mouth_open=(frame == 1))
+        heads = [(cx - 5.0, base - 18.0, cx - 10.4, base - 27.0 + sway, 0.9), (cx, base - 19.0, cx, base - 33.0 - sway, 1.1),
+                 (cx + 5.0, base - 18.0, cx + 10.4, base - 27.0 - sway, 0.9)]
+        order = [0, 2, 1]
+    for i in order:
+        x0, y0, x1, y1, k = heads[i]
+        cel(draw, Limb([(x0, y0), ((x0 + x1) / 2, (y0 + y1) / 2 + 1.0), (x1, y1 + 3.0)], [3.0, 2.6, 2.4]), HYD, sh=(0.6, 0.4))
+        if not back and not d:
+            cel(draw, Limb([(x0, y0 + 0.6), ((x0 + x1) / 2, (y0 + y1) / 2 + 1.4), (x1, y1 + 3.4)], [1.4, 1.2, 1.1]), HYD_BELLY, sh=None, line=False)
+        _hydra_head(draw, x1, y1, d, k, back, frame)
 
 
 # ===================================================================
-# MANTIS (ID 83) — thin elongated body, triangular head, raptorial arms
+# MANTIS (83) -- bug eyes, a triangle face, scythe arms folded to strike
 # ===================================================================
 
-# Mantis palette
-MANTIS_BODY = (80, 160, 50)
-MANTIS_HEAD = (90, 170, 60)
-MANTIS_ARMS = (70, 140, 45)
-MANTIS_DARK = (50, 110, 30)
-MANTIS_LIGHT = (120, 200, 90)
-MANTIS_EYE = (180, 160, 40)
-MANTIS_WING = (100, 170, 80, 120)
-MANTIS_SPIKE = (60, 120, 35)
+MAN = (130, 200, 86)
+MAN_DK = (84, 140, 62)
+MAN_WING = (196, 236, 170)
 
 
 def draw_mantis(draw, ox, oy, direction, frame):
-    bob = [0, -1, 0, -1][frame]
-    # Walking legs alternate
-    leg_a = [-2, 1, 2, -1][frame]
-    leg_b = [2, -1, -2, 1][frame]
-    # Raptorial arms subtle motion
-    arm_shift = [0, 1, 0, -1][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    # Mantis is tall and thin
-    body_cy = base_y - 22
-    thorax_cy = body_cy - 8
-    head_cy = thorax_cy - 12
-
-    body_dark = _darken(MANTIS_BODY, 0.7)
-
-    def draw_walking_legs(lcx, lcy):
-        """Draw 4 thin walking legs."""
-        if direction in (DOWN, UP):
-            for side in [-1, 1]:
-                # Front pair
-                foot_x = lcx + side * 10 + (leg_a if side == 1 else leg_b)
-                draw.line([(lcx + side * 3, lcy + 4), (lcx + side * 7, lcy + 10),
-                           (foot_x, base_y)], fill=MANTIS_DARK, width=1)
-                # Rear pair
-                foot_x2 = lcx + side * 8 + (leg_b if side == 1 else leg_a)
-                draw.line([(lcx + side * 2, lcy + 8), (lcx + side * 6, lcy + 14),
-                           (foot_x2, base_y)], fill=MANTIS_DARK, width=1)
-        else:
-            d = -1 if direction == LEFT else 1
-            # 4 legs visible in profile
-            for i, phase in enumerate([leg_a, leg_b, -leg_a, -leg_b]):
-                ly = lcy + 4 + i * 3
-                foot_x = lcx + d * 6 + phase
-                draw.line([(lcx + d * 2, ly), (lcx + d * 5, ly + 4),
-                           (foot_x, base_y)], fill=MANTIS_DARK, width=1)
-
-    def draw_raptorial_arms(acx, acy):
-        """Draw large folded raptorial forelegs."""
-        if direction == DOWN:
-            for side in [-1, 1]:
-                # Upper arm segment
-                ux = acx + side * 8
-                uy = acy + arm_shift
-                draw.polygon([
-                    (acx + side * 4, acy - 2),
-                    (ux, acy - 6),
-                    (ux + side * 2, acy - 4),
-                    (acx + side * 5, acy),
-                ], fill=MANTIS_ARMS, outline=OUTLINE)
-                # Forearm (folded back, pointing down)
-                draw.polygon([
-                    (ux, acy - 6),
-                    (ux + side * 1, acy + 6 + arm_shift),
-                    (ux - side * 1, acy + 6 + arm_shift),
-                    (ux - side * 1, acy - 4),
-                ], fill=MANTIS_ARMS, outline=OUTLINE)
-                # Spikes on inner edge of forearm
-                for sy in range(-3, 5, 3):
-                    draw.point((ux - side * 1, acy + sy), fill=MANTIS_SPIKE)
-        elif direction == UP:
-            # Arms mostly hidden behind body, just tips visible
-            for side in [-1, 1]:
-                ux = acx + side * 6
-                draw.line([(acx + side * 3, acy), (ux, acy - 4)],
-                          fill=MANTIS_ARMS, width=2)
-        elif direction == LEFT:
-            # One arm visible, folded in front
-            ax = acx - 6
-            ay = acy + arm_shift
-            draw.polygon([
-                (acx - 3, acy - 2), (ax, acy - 8),
-                (ax - 2, acy - 6), (acx - 4, acy),
-            ], fill=MANTIS_ARMS, outline=OUTLINE)
-            draw.polygon([
-                (ax, acy - 8), (ax - 1, acy + 4 + arm_shift),
-                (ax + 2, acy + 4 + arm_shift), (ax + 1, acy - 6),
-            ], fill=MANTIS_ARMS, outline=OUTLINE)
-            for sy in range(-5, 3, 3):
-                draw.point((ax + 1, acy + sy), fill=MANTIS_SPIKE)
-        else:  # RIGHT
-            ax = acx + 6
-            ay = acy + arm_shift
-            draw.polygon([
-                (acx + 3, acy - 2), (ax, acy - 8),
-                (ax + 2, acy - 6), (acx + 4, acy),
-            ], fill=MANTIS_ARMS, outline=OUTLINE)
-            draw.polygon([
-                (ax, acy - 8), (ax + 1, acy + 4 + arm_shift),
-                (ax - 2, acy + 4 + arm_shift), (ax - 1, acy - 6),
-            ], fill=MANTIS_ARMS, outline=OUTLINE)
-            for sy in range(-5, 3, 3):
-                draw.point((ax - 1, acy + sy), fill=MANTIS_SPIKE)
-
-    # --- Draw order ---
-    # Walking legs (behind body)
-    draw_walking_legs(cx, body_cy)
-
-    # --- Abdomen (elongated, lower body) ---
-    if direction == DOWN:
-        ellipse(draw, cx, body_cy + 4, 7, 10, MANTIS_BODY)
-        ellipse(draw, cx - 1, body_cy + 2, 4, 6, MANTIS_LIGHT, outline=None)
-        ellipse(draw, cx + 2, body_cy + 6, 4, 6, body_dark, outline=None)
-    elif direction == UP:
-        ellipse(draw, cx, body_cy + 4, 7, 10, MANTIS_BODY)
-        ellipse(draw, cx, body_cy + 4, 5, 7, body_dark, outline=None)
-        # Wings (subtle, folded on back)
-        draw.polygon([
-            (cx - 5, body_cy - 2), (cx - 8, body_cy + 10),
-            (cx - 3, body_cy + 12), (cx - 2, body_cy),
-        ], fill=MANTIS_WING, outline=None)
-        draw.polygon([
-            (cx + 5, body_cy - 2), (cx + 8, body_cy + 10),
-            (cx + 3, body_cy + 12), (cx + 2, body_cy),
-        ], fill=MANTIS_WING, outline=None)
-    elif direction == LEFT:
-        ellipse(draw, cx + 2, body_cy + 4, 6, 10, MANTIS_BODY)
-        ellipse(draw, cx, body_cy + 2, 4, 6, MANTIS_LIGHT, outline=None)
-        ellipse(draw, cx + 4, body_cy + 6, 4, 6, body_dark, outline=None)
-        # Wing edge visible
-        draw.polygon([
-            (cx + 6, body_cy - 2), (cx + 8, body_cy + 10),
-            (cx + 4, body_cy + 12), (cx + 4, body_cy),
-        ], fill=MANTIS_WING, outline=None)
-    else:  # RIGHT
-        ellipse(draw, cx - 2, body_cy + 4, 6, 10, MANTIS_BODY)
-        ellipse(draw, cx, body_cy + 2, 4, 6, MANTIS_LIGHT, outline=None)
-        ellipse(draw, cx - 4, body_cy + 6, 4, 6, body_dark, outline=None)
-        draw.polygon([
-            (cx - 6, body_cy - 2), (cx - 8, body_cy + 10),
-            (cx - 4, body_cy + 12), (cx - 4, body_cy),
-        ], fill=MANTIS_WING, outline=None)
-
-    # --- Thorax (narrow waist connecting abdomen to head) ---
-    if direction in (DOWN, UP):
-        ellipse(draw, cx, thorax_cy, 5, 6, MANTIS_BODY)
-        if direction == DOWN:
-            ellipse(draw, cx - 1, thorax_cy - 1, 3, 3, MANTIS_LIGHT, outline=None)
-    elif direction == LEFT:
-        ellipse(draw, cx - 1, thorax_cy, 4, 6, MANTIS_BODY)
+    d, back, base, cx, ph = _setup(ox, oy, direction, frame)
+    step = [0.0, 1.0, 0.0, -1.0][frame]
+    # four walking legs
+    for i in range(2):
+        for s in (-1, 1):
+            k = 1 if (i + (s > 0)) % 2 else -1
+            if d:
+                near = s == 1
+                x0 = cx - d * (1.0 + i * 4.0)
+                knee = (x0 + d * (2.0 - i * 3.0), base - 8.0 + k * step - (0 if near else 1.0))
+                foot = (x0 + d * (3.0 - i * 5.0), base - 0.6 - (0 if near else 1.2))
+                col = MAN_DK if near else shade(MAN_DK, 0.6)
+            else:
+                x0 = cx + s * 2.4
+                knee = (cx + s * (7.0 + i * 2.0), base - 9.0 + i * 2.0 + k * step)
+                foot = (cx + s * (8.0 + i * 3.0), base - 0.6)
+                col = MAN_DK
+            cel(draw, Limb([(x0, base - 10.0), knee, foot], [0.9, 0.7, 0.4]), col, sh=None)
+    # abdomen: long, curving down behind
+    if d:
+        ab = Poly(_rot(arc_pts(cx - d * 6.0, base - 10.0, 7.0, 4.0, 0, 360)[:-1], cx - d * 6.0, base - 10.0, d * 20))
     else:
-        ellipse(draw, cx + 1, thorax_cy, 4, 6, MANTIS_BODY)
-
-    # Raptorial arms (attached at thorax)
-    draw_raptorial_arms(cx, thorax_cy)
-
-    # --- Head (triangular, wider than neck) ---
-    if direction == DOWN:
-        # Triangular head, wider at top
-        draw.polygon([
-            (cx - 10, head_cy - 2), (cx + 10, head_cy - 2),
-            (cx + 6, head_cy + 6), (cx - 6, head_cy + 6),
-        ], fill=MANTIS_HEAD, outline=OUTLINE)
-        ellipse(draw, cx, head_cy + 2, 6, 4, _brighten(MANTIS_HEAD, 1.2), outline=None)
-        # Large compound eyes on sides
-        ellipse(draw, cx - 9, head_cy, 4, 4, MANTIS_EYE)
-        draw.point((cx - 10, head_cy), fill=BLACK)
-        draw.point((cx - 8, head_cy - 1), fill=BLACK)
-        ellipse(draw, cx + 9, head_cy, 4, 4, MANTIS_EYE)
-        draw.point((cx + 10, head_cy), fill=BLACK)
-        draw.point((cx + 8, head_cy - 1), fill=BLACK)
-        # Antennae
-        draw.line([(cx - 4, head_cy - 4), (cx - 8, head_cy - 12)],
-                  fill=MANTIS_DARK, width=1)
-        draw.point((cx - 8, head_cy - 12), fill=MANTIS_LIGHT)
-        draw.line([(cx + 4, head_cy - 4), (cx + 8, head_cy - 12)],
-                  fill=MANTIS_DARK, width=1)
-        draw.point((cx + 8, head_cy - 12), fill=MANTIS_LIGHT)
-
-    elif direction == UP:
-        draw.polygon([
-            (cx - 10, head_cy - 2), (cx + 10, head_cy - 2),
-            (cx + 6, head_cy + 6), (cx - 6, head_cy + 6),
-        ], fill=MANTIS_HEAD, outline=OUTLINE)
-        ellipse(draw, cx, head_cy + 2, 6, 4, body_dark, outline=None)
-        # Eyes peeking around sides
-        ellipse(draw, cx - 10, head_cy, 3, 3, MANTIS_EYE)
-        ellipse(draw, cx + 10, head_cy, 3, 3, MANTIS_EYE)
-        # Antennae
-        draw.line([(cx - 4, head_cy - 4), (cx - 8, head_cy - 12)],
-                  fill=MANTIS_DARK, width=1)
-        draw.line([(cx + 4, head_cy - 4), (cx + 8, head_cy - 12)],
-                  fill=MANTIS_DARK, width=1)
-
-    elif direction == LEFT:
-        # Triangular head profile
-        draw.polygon([
-            (cx - 4, head_cy - 6), (cx - 4, head_cy + 4),
-            (cx - 12, head_cy + 2), (cx - 12, head_cy - 4),
-        ], fill=MANTIS_HEAD, outline=OUTLINE)
-        ellipse(draw, cx - 6, head_cy, 5, 4, _brighten(MANTIS_HEAD, 1.15), outline=None)
-        # Large compound eye
-        ellipse(draw, cx - 5, head_cy - 4, 4, 4, MANTIS_EYE)
-        draw.point((cx - 6, head_cy - 4), fill=BLACK)
-        draw.point((cx - 4, head_cy - 5), fill=BLACK)
-        # Antenna
-        draw.line([(cx - 8, head_cy - 6), (cx - 14, head_cy - 14)],
-                  fill=MANTIS_DARK, width=1)
-        draw.point((cx - 14, head_cy - 14), fill=MANTIS_LIGHT)
-
-    else:  # RIGHT
-        draw.polygon([
-            (cx + 4, head_cy - 6), (cx + 4, head_cy + 4),
-            (cx + 12, head_cy + 2), (cx + 12, head_cy - 4),
-        ], fill=MANTIS_HEAD, outline=OUTLINE)
-        ellipse(draw, cx + 6, head_cy, 5, 4, _brighten(MANTIS_HEAD, 1.15), outline=None)
-        ellipse(draw, cx + 5, head_cy - 4, 4, 4, MANTIS_EYE)
-        draw.point((cx + 6, head_cy - 4), fill=BLACK)
-        draw.point((cx + 4, head_cy - 5), fill=BLACK)
-        draw.line([(cx + 8, head_cy - 6), (cx + 14, head_cy - 14)],
-                  fill=MANTIS_DARK, width=1)
-        draw.point((cx + 14, head_cy - 14), fill=MANTIS_LIGHT)
+        ab = Ell(cx, base - 10.0, 5.0, 6.4)
+    cel(draw, ab, MAN, sh=(1.0, 1.0))
+    # folded wings on the back
+    if back or d:
+        wing = Poly([(cx - d * 1.0, base - 20.0), (cx - d * 9.0, base - 12.0), (cx - d * 10.0, base - 8.0), (cx - d * 2.0, base - 14.0)]) if d else \
+            Poly([(cx - 4.4, base - 20.0), (cx + 4.4, base - 20.0), (cx + 3.6, base - 5.0), (cx, base - 3.6), (cx - 3.6, base - 5.0)])
+        cel(draw, wing, MAN_WING, sh=(0.6, 0.6))
+        stroke(draw, [(cx, base - 20.0), (cx, base - 5.0)] if not d else [(cx - d * 2.0, base - 18.0), (cx - d * 8.4, base - 10.0)], 0.4, MAN_DK)
+    # thorax, upright
+    cel(draw, Limb([(cx - d * 1.0, base - 12.0), (cx + d * 1.0, base - 24.0)], [3.2, 2.6]), MAN, sh=(0.6, 0.4))
+    # raptorial arms: folded scythes held up in front
+    for s in ((-1, 1) if not d else (d, -d)):
+        near = not d or s == d
+        col = MAN if near else shade(MAN, 0.6)
+        sx = cx + (s * 2.0 if not d else d * 1.6)
+        elbow = (sx + (s * 5.4 if not d else d * 6.0), base - 26.0 - step * 0.4)
+        wrist = (sx + (s * 3.4 if not d else d * 7.4), base - 18.0)
+        cel(draw, Limb([(sx, base - 22.0), elbow], [1.6, 1.4]), col, sh=None)
+        cel(draw, Limb([elbow, wrist], [1.8, 1.0]), col, sh=None)
+        for t in (0.4, 0.7):
+            p = (elbow[0] + (wrist[0] - elbow[0]) * t, elbow[1] + (wrist[1] - elbow[1]) * t)
+            Poly([(p[0] - 0.5, p[1]), (p[0] + 0.5, p[1]), (p[0] - (s if not d else d) * 1.4, p[1] + 1.0)]).draw(draw, fill=MAN_DK)
+        cel(draw, Limb([wrist, (wrist[0] - (s * 1.6 if not d else -d * 1.0), wrist[1] - 3.4)], [0.8, 0.3]), col, sh=None)
+    # head: a triangle with huge bulb eyes on its corners
+    hx, hy = cx + d * 2.4, base - 29.0
+    tri = Poly([(hx - 8.0, hy - 3.4), (hx + 8.0, hy - 3.4), (hx + 1.6, hy + 6.0), (hx - 1.6, hy + 6.0)]) if not d else \
+        Poly([(hx - d * 3.0, hy - 4.0), (hx + d * 6.0, hy - 3.0), (hx + d * 5.0, hy + 5.4), (hx + d * 2.0, hy + 5.4), (hx - d * 3.4, hy + 1.0)])
+    cel(draw, tri, MAN, sh=(0.8, 0.8), hi=(0.4, 0.4))
+    for s in ((-1, 1) if not d else (-d, d)):
+        near = not d or s == d
+        ex = hx + s * 7.0 if not d else hx + (d * 5.0 if s == d else -d * 2.4)
+        cel(draw, Ell(ex, hy - 3.4, 3.4 if near else 2.4, 3.2), MAN, sh=None)
+        if not back:
+            ms_eye(draw, ex, hy - 3.2, 4.2 if near else 2.8, 4.6, (250, 120, 60), (float(d), 0.0), "bright", skin=MAN,
+                   side=s if not d else (-d if near else d), lash=(40, 70, 30))
+    # antennae
+    for s in ((-1, 1) if not d else (-1, 1)):
+        bx = hx + s * 1.6
+        tip = (bx + (s * 6.0 if not d else d * 4.0 + s * 1.6), hy - 13.0 + (step if s > 0 else -step) * 0.6)
+        stroke(draw, [(bx, hy - 3.0), ((bx + tip[0]) / 2 + (s if not d else 0) * 1.4, hy - 9.0), tip], 0.5, MAN_DK)
+    if not back:
+        stroke(draw, [(hx + d * 2.0 - 1.4, hy + 4.2), (hx + d * 2.0, hy + 4.8), (hx + d * 2.0 + 1.4, hy + 4.2)], 0.5, MAN_DK)
 
 
 # ===================================================================
-# JELLYFISH (ID 84) — translucent dome, trailing tentacles, pulsing
+# JELLYFISH (84) -- a pink bell with a face, frilly hem, trailing tentacles
 # ===================================================================
 
-# Jellyfish palette (RGBA for translucency)
-JELLY_DOME = (150, 100, 200, 180)
-JELLY_DOME_LIGHT = (180, 140, 230, 160)
-JELLY_DOME_DARK = (110, 70, 160, 190)
-JELLY_GLOW_A = (200, 180, 255, 200)
-JELLY_GLOW_B = (100, 220, 255, 200)
-JELLY_GLOW_C = (255, 180, 220, 200)
-JELLY_TENTACLE = (140, 90, 190, 150)
-JELLY_TENT_TIP = (120, 70, 170, 100)
-JELLY_EYE = (200, 220, 255, 220)
+JELLY = (236, 150, 220)
+JELLY_LT = (255, 206, 244)
+JELLY_DK = (176, 96, 180)
+JELLY_GLOW = (255, 250, 150)
 
 
 def draw_jellyfish(draw, ox, oy, direction, frame):
-    # Hovering bob — gentle float
-    hover = [0, -3, -1, -2][frame]
-    # Dome pulsing — expands/contracts
-    pulse = [0, 2, 0, -1][frame]
-
-    base_y = oy + 54
-    cx = ox + 32
-    dome_cy = base_y - 30 + hover
-    dome_rx = 14 + pulse
-    dome_ry = 12 + pulse
-
-    # --- Hovering shadow on ground ---
-    shadow_alpha = 60 + pulse * 5
-    ellipse(draw, cx, base_y + 2, 10, 3, (80, 50, 100, shadow_alpha), outline=None)
-
-    # --- Tentacles (drawn behind dome) ---
-    # Tentacles sway based on frame and direction
-    tent_sways = [
-        [-2, 1, 3, -1],   # tentacle 0
-        [1, -3, 0, 2],    # tentacle 1
-        [3, 0, -2, 1],    # tentacle 2
-        [-1, 2, -3, 0],   # tentacle 3
-        [0, -1, 2, -2],   # tentacle 4
-    ]
-
-    # Direction offset for tentacles
-    if direction == DOWN:
-        dx_bias = 0
-    elif direction == UP:
-        dx_bias = 0
-    elif direction == LEFT:
-        dx_bias = 3
-    else:
-        dx_bias = -3
-
-    tent_base_y = dome_cy + dome_ry - 2
-    tent_positions = [-10, -5, 0, 5, 10]
-    for i, tx_off in enumerate(tent_positions):
-        sway = tent_sways[i][frame]
-        tx = cx + tx_off + dx_bias
-        # Each tentacle is 3-4 line segments curving downward
-        mid_y = tent_base_y + 8 + (i % 3) * 2
-        end_y = tent_base_y + 18 + (i % 2) * 4
-        mid_x = tx + sway
-        end_x = tx + sway * 2
-        # Tentacle color fades with depth
-        alpha_mid = 140 - i * 10
-        alpha_tip = 90 - i * 8
-        draw.line([(tx, tent_base_y), (mid_x, mid_y)],
-                  fill=JELLY_TENTACLE[:3], width=2)
-        draw.line([(mid_x, mid_y), (end_x, end_y)],
-                  fill=JELLY_TENT_TIP[:3], width=1)
-        # Curl at tip
-        draw.point((end_x + sway // 2, end_y + 2), fill=JELLY_TENT_TIP[:3])
-
-    # --- Dome / bell shape ---
-    # Outer dome
-    ellipse(draw, cx, dome_cy, dome_rx, dome_ry, JELLY_DOME)
-    # Inner highlight (upper-left)
-    ellipse(draw, cx - 3, dome_cy - 3, dome_rx - 4, dome_ry - 4,
-            JELLY_DOME_LIGHT, outline=None)
-    # Dark underside
-    ellipse(draw, cx + 2, dome_cy + 3, dome_rx - 3, dome_ry - 5,
-            JELLY_DOME_DARK, outline=None)
-
-    # --- Bioluminescent glow dots (shift per frame) ---
-    glow_positions = [
-        (-6, -4), (-2, -6), (3, -3), (6, -1), (-4, 1),
-        (1, -1), (5, -5), (-3, 3), (4, 2), (-7, -2),
-    ]
-    glow_colors = [JELLY_GLOW_A, JELLY_GLOW_B, JELLY_GLOW_C]
-    for i, (gx, gy) in enumerate(glow_positions):
-        idx = (i + frame) % len(glow_colors)
-        c = glow_colors[idx]
-        px = cx + gx + (frame % 2)
-        py = dome_cy + gy - (frame % 3)
-        # Only draw if inside dome area (rough check)
-        if abs(gx) < dome_rx - 2 and abs(gy) < dome_ry - 2:
-            draw.point((px, py), fill=c[:3])
-            # Some dots slightly larger
-            if i % 3 == 0:
-                draw.point((px + 1, py), fill=c[:3])
-
-    # --- Eyes (two glowing spots inside dome) ---
-    if direction == DOWN:
-        draw.rectangle([cx - 5, dome_cy, cx - 3, dome_cy + 2], fill=JELLY_EYE[:3])
-        draw.point((cx - 4, dome_cy + 1), fill=BLACK)
-        draw.rectangle([cx + 3, dome_cy, cx + 5, dome_cy + 2], fill=JELLY_EYE[:3])
-        draw.point((cx + 4, dome_cy + 1), fill=BLACK)
-    elif direction == UP:
-        # Eyes not visible from behind, just faint glow
-        draw.point((cx - 4, dome_cy), fill=JELLY_GLOW_A[:3])
-        draw.point((cx + 4, dome_cy), fill=JELLY_GLOW_A[:3])
-    elif direction == LEFT:
-        draw.rectangle([cx - 7, dome_cy - 1, cx - 5, dome_cy + 1], fill=JELLY_EYE[:3])
-        draw.point((cx - 6, dome_cy), fill=BLACK)
-    else:  # RIGHT
-        draw.rectangle([cx + 5, dome_cy - 1, cx + 7, dome_cy + 1], fill=JELLY_EYE[:3])
-        draw.point((cx + 6, dome_cy), fill=BLACK)
-
-    # --- Dome edge / rim (frilly border at bottom of bell) ---
-    rim_y = dome_cy + dome_ry - 1
-    for rx in range(-dome_rx + 2, dome_rx - 1, 3):
-        wave = (frame + rx) % 2
-        draw.point((cx + rx, rim_y + wave), fill=JELLY_DOME_LIGHT[:3])
-        draw.point((cx + rx + 1, rim_y + wave), fill=JELLY_DOME_LIGHT[:3])
+    d, back, base, cx, ph = _setup(ox, oy, direction, frame, bob=[0, -2, -3, -1])
+    wave = frame * math.pi / 2.0
+    bell_y = base - 24.0
+    pulse = [0.0, 0.8, 1.2, 0.6][frame]
+    # tentacles
+    for i in range(6):
+        u = (i - 2.5) * 3.2
+        pts = []
+        for j in range(6):
+            t = j / 5.0
+            pts.append((cx + u + math.sin(wave + i + t * 3.0) * 1.8 - d * t * 4.0, bell_y + 3.0 + t * 20.0))
+        cel(draw, Limb(pts, [1.2, 1.1, 1.0, 0.9, 0.7, 0.4]), JELLY if i % 2 else JELLY_DK, sh=None, lw=0.6)
+    # oral arms, frilly, in the middle
+    for s in (-1, 1):
+        pts = [(cx + s * 1.6, bell_y + 3.0), (cx + s * 2.6 + math.sin(wave) * 1.0, bell_y + 9.0), (cx + s * 1.4, bell_y + 14.0)]
+        cel(draw, Limb(pts, [2.0, 1.8, 0.8]), JELLY_LT, sh=None, lw=0.6)
+    # the bell
+    bw = 12.4 + pulse * 0.6
+    bh = 11.0 - pulse * 0.6
+    bell = arc_pts(cx - d * 0.6, bell_y, bw, bh, 180, 360, 30)
+    hem = []
+    n = 8
+    for i in range(n + 1):
+        t = i / float(n)
+        x = cx - d * 0.6 + bw - 2 * bw * t
+        hem.append((x, bell_y + (2.4 if i % 2 else 0.6)))
+    cel(draw, Poly(bell + hem[1:-1]), JELLY, sh=(1.6, 1.4), hi=(1.0, 1.0),
+        regions=[(Ell(cx - 5.0, bell_y - 6.0, 3.4, 2.0), JELLY_LT)])
+    # glowing spots
+    for (u, v) in ((-7.0, -3.0), (7.0, -3.0), (0.0, -8.0)):
+        Ell(cx + u - d * 0.6, bell_y + v, 1.2, 1.2).draw(draw, fill=JELLY_GLOW if frame % 2 == 0 else lit(JELLY_GLOW, 0.6))
+    if not back:
+        fx = cx + d * 3.0
+        _eyes(draw, fx - 4.0 if not d else fx + d * 1.0, fx + 4.0 if not d else fx + d * 5.0, bell_y - 2.0, d, (120, 40, 110), mood="bright",
+              skin=JELLY, w=3.6, h=4.4, lash=(110, 40, 100))
+        ms_mouth(draw, fx + d * 1.0, bell_y + 1.6, "cat", JELLY, 0.9)
+        for s in (-1, 1):
+            Ell(fx + s * 7.0, bell_y + 0.4, 1.6, 0.8).draw(draw, fill=lit(JELLY, 0.8))
+    # a crackle of electricity
+    if frame % 2 == 1:
+        bolt(draw, [(cx + 13.0, bell_y + 4.0), (cx + 15.0, bell_y + 7.0), (cx + 13.6, bell_y + 8.0), (cx + 15.6, bell_y + 11.0)], 1.0, JELLY_GLOW)
+        bolt(draw, [(cx - 13.0, bell_y + 8.0), (cx - 15.0, bell_y + 11.0), (cx - 13.6, bell_y + 12.0), (cx - 15.6, bell_y + 15.0)], 1.0, JELLY_GLOW)
 
 
 # ===================================================================
-# GORILLA (ID 85) — massive upper body, long arms, knuckle-walking
+# GORILLA (85) -- knuckle-walking: huge arms, a silver back, a heavy brow
 # ===================================================================
 
-# Gorilla palette
-GORILLA_BODY = (60, 55, 50)
-GORILLA_ARMS = (55, 50, 45)
-GORILLA_SILVER = (120, 115, 110)
-GORILLA_CHEST = (80, 75, 68)
-GORILLA_DARK = (40, 35, 30)
-GORILLA_LIGHT = (90, 85, 78)
-GORILLA_SKIN = (50, 45, 42)
-GORILLA_EYE = (140, 100, 40)
+GOR = (70, 66, 82)
+GOR_FACE = (150, 136, 150)
+GOR_SILVER = (184, 186, 200)
 
 
 def draw_gorilla(draw, ox, oy, direction, frame):
-    bob = [0, -2, 0, -1][frame]
-    # Heavy arm swing
-    arm_swing = [-4, 0, 4, 0][frame]
-    leg_spread = [-2, 0, 2, 0][frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 18
-    head_cy = body_cy - 14
-
-    body_shadow = _darken(GORILLA_BODY, 0.7)
-
-    # --- Legs (short, wide stance) ---
-    if direction in (DOWN, UP):
-        for side in [-1, 1]:
-            lx = cx + side * 7 + (leg_spread if side == 1 else -leg_spread)
-            draw.rectangle([lx - 5, body_cy + 10, lx + 5, base_y - 1],
-                           fill=GORILLA_BODY, outline=OUTLINE)
-            if direction == DOWN and side == -1:
-                draw.rectangle([lx - 5, body_cy + 10, lx - 3, base_y - 4],
-                               fill=GORILLA_LIGHT, outline=None)
-            # Feet
-            ellipse(draw, lx, base_y + 1, 6, 3, GORILLA_DARK)
+    d, back, base, cx, ph = _setup(ox, oy, direction, frame)
+    # short legs
+    for s in ((-1, 1) if not d else (-1, 1)):
+        fwd = ph * s
+        lx = cx + (s * 4.4 if not d else -d * 3.0 + d * fwd * 2.0 + s * 1.0)
+        lift = 1.0 if fwd < 0 else 0.0
+        col = GOR if (not d or s == 1) else shade(GOR, 0.6)
+        cel(draw, Limb([(lx, base - 9.0), (lx, base - 2.0 - lift)], [2.8, 2.6]), col, sh=(0.6, 0.0))
+        cel(draw, Ell(lx + d * 0.8, base - 1.2 - lift, 3.0, 1.6), GOR_FACE if (not d or s == 1) else shade(GOR_FACE, 0.6), sh=None)
+    # body: a huge chest and shoulders
+    bw = 12.0 if not d else 10.4
+    body = Ell(cx - d * 1.0, base - 17.0, bw, 10.4)
+    cel(draw, body, GOR if not back else GOR_SILVER, sh=(1.6, 1.4))
+    if back:
+        cel(draw, Ell(cx, base - 12.0, bw * 0.7, 5.0), GOR, sh=None, line=False)
+    elif not d:
+        for s in (-1, 1):
+            cel(draw, Ell(cx + s * 3.6, base - 18.4, 4.2, 3.4), GOR_FACE, sh=(0.6, 0.6), tone=shade(GOR_FACE, 0.8))
     else:
-        d = -1 if direction == LEFT else 1
-        for offset in [leg_spread, -leg_spread]:
-            lx = cx + d * 2 + offset
-            draw.rectangle([lx - 5, body_cy + 10, lx + 5, base_y - 1],
-                           fill=GORILLA_BODY, outline=OUTLINE)
-            ellipse(draw, lx, base_y + 1, 6, 3, GORILLA_DARK)
-
-    # --- Long arms (reaching to ground, knuckle-walking) ---
-    if direction == DOWN:
-        for side in [-1, 1]:
-            ax = cx + side * 18
-            shoulder_y = body_cy - 6
-            elbow_y = body_cy + 4
-            knuckle_y = base_y - 2
-            ax_swing = arm_swing * side
-            # Upper arm
-            draw.polygon([
-                (cx + side * 14, shoulder_y), (cx + side * 16, shoulder_y),
-                (ax + ax_swing + side, elbow_y), (ax + ax_swing - side, elbow_y),
-            ], fill=GORILLA_ARMS, outline=OUTLINE)
-            # Forearm to ground
-            draw.polygon([
-                (ax + ax_swing - side * 2, elbow_y),
-                (ax + ax_swing + side * 2, elbow_y),
-                (ax + ax_swing + side * 2, knuckle_y),
-                (ax + ax_swing - side * 2, knuckle_y),
-            ], fill=GORILLA_ARMS, outline=OUTLINE)
-            if side == -1:
-                draw.rectangle([ax + ax_swing - 2, elbow_y, ax + ax_swing, knuckle_y - 4],
-                               fill=GORILLA_LIGHT, outline=None)
-            # Knuckle
-            ellipse(draw, ax + ax_swing, knuckle_y + 1, 4, 2, GORILLA_SKIN)
-
-    elif direction == UP:
-        for side in [-1, 1]:
-            ax = cx + side * 18
-            shoulder_y = body_cy - 6
-            elbow_y = body_cy + 4
-            knuckle_y = base_y - 2
-            ax_swing = arm_swing * side
-            draw.polygon([
-                (cx + side * 14, shoulder_y), (cx + side * 16, shoulder_y),
-                (ax + ax_swing + side, elbow_y), (ax + ax_swing - side, elbow_y),
-            ], fill=GORILLA_ARMS, outline=OUTLINE)
-            draw.polygon([
-                (ax + ax_swing - side * 2, elbow_y),
-                (ax + ax_swing + side * 2, elbow_y),
-                (ax + ax_swing + side * 2, knuckle_y),
-                (ax + ax_swing - side * 2, knuckle_y),
-            ], fill=GORILLA_ARMS, outline=OUTLINE)
-            ellipse(draw, ax + ax_swing, knuckle_y + 1, 4, 2, GORILLA_SKIN)
-
-    elif direction == LEFT:
-        # Far arm (behind body)
-        ax_far = cx + 8
-        draw.polygon([
-            (cx + 6, body_cy - 6), (cx + 8, body_cy - 4),
-            (ax_far - arm_swing + 2, base_y - 2),
-            (ax_far - arm_swing - 2, base_y - 2),
-        ], fill=_darken(GORILLA_ARMS, 0.85), outline=OUTLINE)
-        ellipse(draw, ax_far - arm_swing, base_y - 1, 3, 2, GORILLA_SKIN)
-        # Near arm (in front)
-        ax_near = cx - 14
-        draw.polygon([
-            (cx - 10, body_cy - 6), (cx - 12, body_cy - 4),
-            (ax_near + arm_swing + 3, body_cy + 4),
-            (ax_near + arm_swing - 1, body_cy + 4),
-        ], fill=GORILLA_ARMS, outline=OUTLINE)
-        draw.polygon([
-            (ax_near + arm_swing - 2, body_cy + 4),
-            (ax_near + arm_swing + 4, body_cy + 4),
-            (ax_near + arm_swing + 4, base_y - 2),
-            (ax_near + arm_swing - 2, base_y - 2),
-        ], fill=GORILLA_ARMS, outline=OUTLINE)
-        draw.rectangle([ax_near + arm_swing - 2, body_cy + 4,
-                        ax_near + arm_swing, base_y - 6],
-                       fill=GORILLA_LIGHT, outline=None)
-        ellipse(draw, ax_near + arm_swing + 1, base_y - 1, 4, 2, GORILLA_SKIN)
-
-    else:  # RIGHT
-        # Far arm (behind body)
-        ax_far = cx - 8
-        draw.polygon([
-            (cx - 6, body_cy - 6), (cx - 8, body_cy - 4),
-            (ax_far + arm_swing + 2, base_y - 2),
-            (ax_far + arm_swing - 2, base_y - 2),
-        ], fill=_darken(GORILLA_ARMS, 0.85), outline=OUTLINE)
-        ellipse(draw, ax_far + arm_swing, base_y - 1, 3, 2, GORILLA_SKIN)
-        # Near arm (in front)
-        ax_near = cx + 14
-        draw.polygon([
-            (cx + 10, body_cy - 6), (cx + 12, body_cy - 4),
-            (ax_near - arm_swing - 3, body_cy + 4),
-            (ax_near - arm_swing + 1, body_cy + 4),
-        ], fill=GORILLA_ARMS, outline=OUTLINE)
-        draw.polygon([
-            (ax_near - arm_swing - 4, body_cy + 4),
-            (ax_near - arm_swing + 2, body_cy + 4),
-            (ax_near - arm_swing + 2, base_y - 2),
-            (ax_near - arm_swing - 4, base_y - 2),
-        ], fill=GORILLA_ARMS, outline=OUTLINE)
-        ellipse(draw, ax_near - arm_swing - 1, base_y - 1, 4, 2, GORILLA_SKIN)
-
-    # --- Body (massive upper body, broad chest and shoulders) ---
-    if direction == DOWN:
-        # Broad shoulders + torso
-        ellipse(draw, cx, body_cy, 18, 14, GORILLA_BODY)
-        ellipse(draw, cx + 3, body_cy + 4, 14, 10, body_shadow, outline=None)
-        ellipse(draw, cx - 3, body_cy - 3, 12, 8, GORILLA_LIGHT, outline=None)
-        # Chest
-        ellipse(draw, cx, body_cy + 2, 10, 7, GORILLA_CHEST, outline=None)
-        draw_fur_texture(draw, cx, body_cy, 28, 20, GORILLA_BODY, density=4)
-    elif direction == UP:
-        ellipse(draw, cx, body_cy, 18, 14, GORILLA_BODY)
-        ellipse(draw, cx, body_cy, 14, 10, body_shadow, outline=None)
-        # Silver-back stripe
-        draw.rectangle([cx - 8, body_cy - 6, cx + 8, body_cy - 2],
-                       fill=GORILLA_SILVER, outline=None)
-        draw.rectangle([cx - 6, body_cy - 4, cx + 6, body_cy],
-                       fill=_brighten(GORILLA_SILVER, 1.1), outline=None)
-        draw_fur_texture(draw, cx, body_cy, 28, 20, GORILLA_BODY, density=4)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, body_cy, 16, 14, GORILLA_BODY)
-        ellipse(draw, cx + 2, body_cy + 3, 12, 10, body_shadow, outline=None)
-        ellipse(draw, cx - 4, body_cy - 3, 8, 6, GORILLA_LIGHT, outline=None)
-        draw_fur_texture(draw, cx, body_cy, 24, 20, GORILLA_BODY, density=4)
-    else:  # RIGHT
-        ellipse(draw, cx + 2, body_cy, 16, 14, GORILLA_BODY)
-        ellipse(draw, cx - 2, body_cy + 3, 12, 10, body_shadow, outline=None)
-        ellipse(draw, cx + 4, body_cy - 3, 8, 6, GORILLA_LIGHT, outline=None)
-        draw_fur_texture(draw, cx + 2, body_cy, 24, 20, GORILLA_BODY, density=4)
-
-    # --- Head (small relative to body) ---
-    if direction == DOWN:
-        ellipse(draw, cx, head_cy, 9, 8, GORILLA_BODY)
-        ellipse(draw, cx - 2, head_cy - 2, 6, 4, GORILLA_LIGHT, outline=None)
-        # Brow ridge
-        draw.rectangle([cx - 7, head_cy - 3, cx + 7, head_cy - 1],
-                       fill=GORILLA_DARK, outline=None)
-        # Eyes (deep-set under brow)
-        draw.rectangle([cx - 5, head_cy, cx - 3, head_cy + 2], fill=GORILLA_EYE)
-        draw.point((cx - 4, head_cy + 1), fill=BLACK)
-        draw.rectangle([cx + 3, head_cy, cx + 5, head_cy + 2], fill=GORILLA_EYE)
-        draw.point((cx + 4, head_cy + 1), fill=BLACK)
-        # Flat nose
-        draw.rectangle([cx - 3, head_cy + 3, cx + 3, head_cy + 5],
-                       fill=GORILLA_SKIN, outline=OUTLINE)
-        draw.point((cx - 1, head_cy + 4), fill=BLACK)
-        draw.point((cx + 1, head_cy + 4), fill=BLACK)
-        # Mouth
-        draw.line([(cx - 3, head_cy + 6), (cx + 3, head_cy + 6)],
-                  fill=GORILLA_DARK, width=1)
-
-    elif direction == UP:
-        ellipse(draw, cx, head_cy, 9, 8, GORILLA_BODY)
-        ellipse(draw, cx, head_cy, 7, 6, body_shadow, outline=None)
-        # Sagittal crest (ridge on top of skull)
-        draw.rectangle([cx - 2, head_cy - 7, cx + 2, head_cy - 3],
-                       fill=GORILLA_DARK, outline=None)
-
-    elif direction == LEFT:
-        ellipse(draw, cx - 4, head_cy, 8, 8, GORILLA_BODY)
-        ellipse(draw, cx - 6, head_cy - 2, 5, 4, GORILLA_LIGHT, outline=None)
-        # Brow ridge
-        draw.rectangle([cx - 10, head_cy - 3, cx - 2, head_cy - 1],
-                       fill=GORILLA_DARK, outline=None)
-        # Eye
-        draw.rectangle([cx - 8, head_cy, cx - 6, head_cy + 2], fill=GORILLA_EYE)
-        draw.point((cx - 7, head_cy + 1), fill=BLACK)
-        # Flat nose/muzzle
-        draw.polygon([(cx - 10, head_cy + 2), (cx - 12, head_cy + 4),
-                      (cx - 10, head_cy + 6), (cx - 8, head_cy + 4)],
-                     fill=GORILLA_SKIN, outline=OUTLINE)
-        draw.point((cx - 11, head_cy + 4), fill=BLACK)
-
-    else:  # RIGHT
-        ellipse(draw, cx + 4, head_cy, 8, 8, GORILLA_BODY)
-        ellipse(draw, cx + 6, head_cy - 2, 5, 4, GORILLA_LIGHT, outline=None)
-        draw.rectangle([cx + 2, head_cy - 3, cx + 10, head_cy - 1],
-                       fill=GORILLA_DARK, outline=None)
-        draw.rectangle([cx + 6, head_cy, cx + 8, head_cy + 2], fill=GORILLA_EYE)
-        draw.point((cx + 7, head_cy + 1), fill=BLACK)
-        draw.polygon([(cx + 10, head_cy + 2), (cx + 12, head_cy + 4),
-                      (cx + 10, head_cy + 6), (cx + 8, head_cy + 4)],
-                     fill=GORILLA_SKIN, outline=OUTLINE)
-        draw.point((cx + 11, head_cy + 4), fill=BLACK)
+        cel(draw, Poly(arc_pts(cx - d * 1.0, base - 17.0, bw - 0.6, 9.8, 190 if d > 0 else 280, 260 if d > 0 else 350, 10) + [(cx - d * 1.0, base - 17.0)]),
+            GOR_SILVER, sh=None, line=False)
+    # arms: enormous, knuckles planted
+    for s in ((-1, 1) if not d else (d, -d)):
+        near = not d or s == d
+        col = GOR if near else shade(GOR, 0.6)
+        fwd = -ph * s if not d else (-ph if near else ph)
+        sx = cx + (s * (bw - 2.0) if not d else s * 2.0)
+        kx = sx + (s * 3.6 if not d else d * (fwd * 2.4 + (3.0 if near else -2.0)))
+        ky = base - 1.4
+        cel(draw, Limb([(sx, base - 24.0), (sx + (s * 3.4 if not d else d * 2.0), base - 14.0), (kx, ky - 3.0)], [4.4, 3.6, 3.0]), col, sh=(1.0, 0.6))
+        cel(draw, Ell(kx, ky - 1.6, 3.4, 2.6), GOR_FACE if near else shade(GOR_FACE, 0.6), sh=(0.4, 0.4))
+        if near and not back:
+            for k in (-1.6, 0.0, 1.6):
+                stroke(draw, [(kx + k, ky - 3.4), (kx + k, ky - 1.8)], 0.4, shade(GOR_FACE, 1.6))
+    # head: sunk low between the shoulders, crested
+    hx, hy = cx + d * 3.4, base - 27.0
+    blob(draw, [Ell(hx, hy, 8.4, 7.6), Ell(hx - d * 1.4, hy - 6.4, 4.4, 3.4)], GOR if not back else GOR_SILVER, sh=(1.0, 0.9))
+    if back:
+        return
+    fx = hx + d * 2.0
+    cel(draw, Ell(fx, hy + 1.4, 6.2 if not d else 5.2, 5.4), GOR_FACE, sh=(0.8, 0.6))
+    # the heavy brow shelf
+    cel(draw, RRect(fx - 6.4 if not d else fx - 4.2, hy - 3.6, fx + 6.4 if not d else fx + 4.6, hy - 1.4, 1.0), shade(GOR, 0.4), sh=None)
+    e1, e2 = (fx - 2.8, fx + 2.8) if not d else (fx + d * 0.6, fx + d * 3.4)
+    _eyes(draw, e1, e2, hy + 0.2, d, (120, 60, 30), mood="sharp", skin=GOR_FACE, w=3.0, h=3.4)
+    for s in ((-1, 1) if not d else (d,)):
+        Ell(fx + s * 1.2 + d * 1.6, hy + 3.4, 0.7, 0.5).draw(draw, fill=shade(GOR_FACE, 2.4))
+    stroke(draw, [(fx - 2.6 + d * 1.6, hy + 5.4), (fx + 2.6 + d * 1.6, hy + 5.4)], 0.6, shade(GOR_FACE, 2.4))
 
 
 # ===================================================================
-# CHAMELEON (ID 86) — upright lizard, curled tail, turret eyes, color shift
+# CHAMELEON (86) -- turret eyes, a curled tail, colours that shift
 # ===================================================================
 
-# Chameleon palette
-CHAM_BODY = (80, 180, 80)
-CHAM_HIGHLIGHT = (120, 220, 110)
-CHAM_ACCENT = (200, 200, 50)
-CHAM_DARK = (50, 120, 50)
-CHAM_BELLY = (140, 210, 130)
-CHAM_EYE_DOME = (100, 200, 100)
-CHAM_EYE_PUPIL = (30, 30, 25)
-CHAM_TOE = (60, 140, 60)
-# Color-shift spots per frame
-CHAM_SPOTS = [
-    (200, 200, 50),   # yellow
-    (200, 100, 50),   # orange
-    (50, 150, 200),   # blue
-    (180, 80, 180),   # purple
-]
+CHAM = ((110, 200, 90), (90, 190, 150), (170, 200, 80), (100, 190, 120))
+CHAM_SPOT = ((250, 200, 70), (255, 150, 90), (240, 230, 90), (255, 180, 120))
 
 
 def draw_chameleon(draw, ox, oy, direction, frame):
-    bob = [0, -1, 0, -1][frame]
-    # Slow deliberate walk
-    leg_step = [-2, 0, 2, 0][frame]
-    # Eye direction shifts per frame (pupil offset)
-    eye_dx = [-1, 1, 0, -1][frame]
-    eye_dy = [0, -1, 1, 0][frame]
-    spot_color = CHAM_SPOTS[frame]
-
-    base_y = oy + 54 + bob
-    cx = ox + 32
-    body_cy = base_y - 18
-    head_cy = body_cy - 14
-
-    body_dark = _darken(CHAM_BODY, 0.75)
-
-    def draw_curled_tail(tx, ty, curl_dir):
-        """Draw a distinctive curled spiral tail."""
-        # Tail base
-        draw.polygon([
-            (tx, ty - 2), (tx, ty + 2),
-            (tx + curl_dir * 8, ty + 1),
-            (tx + curl_dir * 8, ty - 1),
-        ], fill=CHAM_BODY, outline=OUTLINE)
-        # Spiral curl (series of small arcs approximated by points/lines)
-        spiral_cx = tx + curl_dir * 10
-        spiral_cy = ty
-        # Outer ring
-        r = 5
-        points = []
-        import math
-        for a in range(0, 300, 30):
-            rad = math.radians(a)
-            px = spiral_cx + int(r * math.cos(rad) * curl_dir)
-            py = spiral_cy + int(r * math.sin(rad))
-            points.append((px, py))
-            r -= 0.4
-        if len(points) >= 2:
-            draw.line(points, fill=CHAM_BODY, width=2)
-        # Inner spiral
-        for a in range(0, 200, 40):
-            rad = math.radians(a)
-            r2 = 3 - a / 100
-            if r2 < 0.5:
-                break
-            px = spiral_cx + int(r2 * math.cos(rad) * curl_dir)
-            py = spiral_cy + int(r2 * math.sin(rad))
-            draw.point((px, py), fill=CHAM_DARK)
-
-    def draw_turret_eye(ex, ey, pupil_dx, pupil_dy):
-        """Draw a prominent dome/turret eye."""
-        ellipse(draw, ex, ey, 5, 5, CHAM_EYE_DOME)
-        ellipse(draw, ex, ey, 3, 3, _brighten(CHAM_EYE_DOME, 1.2), outline=None)
-        # Pupil (shifts position for independent eye movement)
-        draw.point((ex + pupil_dx, ey + pupil_dy), fill=CHAM_EYE_PUPIL)
-        draw.point((ex + pupil_dx + 1, ey + pupil_dy), fill=CHAM_EYE_PUPIL)
-
-    def draw_gripping_feet(fx, fy, facing):
-        """Draw split-toe gripping feet (2+3 syndactyl)."""
-        if facing in ('front', 'back'):
-            # Front group (2 toes)
-            draw.line([(fx - 3, fy), (fx - 4, fy + 3)], fill=CHAM_TOE, width=2)
-            draw.line([(fx - 1, fy), (fx - 2, fy + 3)], fill=CHAM_TOE, width=2)
-            # Back group (3 toes)
-            draw.line([(fx + 1, fy), (fx + 2, fy + 3)], fill=CHAM_TOE, width=1)
-            draw.line([(fx + 3, fy), (fx + 4, fy + 3)], fill=CHAM_TOE, width=1)
-            draw.line([(fx + 2, fy), (fx + 3, fy + 2)], fill=CHAM_TOE, width=1)
-        else:
-            d = -1 if facing == 'left' else 1
-            draw.line([(fx, fy), (fx + d * 3, fy + 2)], fill=CHAM_TOE, width=2)
-            draw.line([(fx, fy + 1), (fx + d * 2, fy + 3)], fill=CHAM_TOE, width=1)
-            draw.line([(fx, fy - 1), (fx - d * 2, fy + 2)], fill=CHAM_TOE, width=1)
-
-    def draw_color_spots(scx, scy, w, h):
-        """Draw subtle color-shifting spots on body."""
-        spot_positions = [
-            (-3, -2), (4, -1), (-1, 3), (3, 4), (-4, 1),
-            (2, -4), (-2, 2), (5, 0),
-        ]
-        for i, (sx, sy) in enumerate(spot_positions):
-            if abs(sx) < w // 2 and abs(sy) < h // 2:
-                c = spot_color if (i + frame) % 3 == 0 else _darken(spot_color, 0.6)
-                draw.point((scx + sx, scy + sy), fill=c)
-
-    # --- Tail (behind body) ---
-    if direction == DOWN:
-        draw_curled_tail(cx + 10, body_cy + 4, 1)
-    elif direction == UP:
-        draw_curled_tail(cx - 10, body_cy + 4, -1)
-    elif direction == LEFT:
-        draw_curled_tail(cx + 12, body_cy + 2, 1)
+    d, back, base, cx, ph = _setup(ox, oy, direction, frame)
+    col = CHAM[frame]
+    spot = CHAM_SPOT[frame]
+    belly = lit(col, 1.2)
+    # the curled tail
+    if d:
+        tb = (cx - d * 9.0, base - 12.0)
+        spiral = [tb] + [(tb[0] - d * (5.4 + math.cos(math.radians(a)) * r), tb[1] + 2.0 + math.sin(math.radians(a)) * r)
+                         for (a, r) in ((180, 5.4), (225, 5.4), (270, 5.0), (315, 4.2), (0, 3.4), (45, 2.6), (90, 1.8), (135, 1.2))]
     else:
-        draw_curled_tail(cx - 12, body_cy + 2, -1)
-
-    # --- Legs ---
-    if direction in (DOWN, UP):
-        for side in [-1, 1]:
-            lx = cx + side * 8 + (leg_step if side == 1 else -leg_step)
-            draw.rectangle([lx - 3, body_cy + 8, lx + 3, base_y - 2],
-                           fill=CHAM_BODY, outline=OUTLINE)
-            if direction == DOWN and side == -1:
-                draw.rectangle([lx - 3, body_cy + 8, lx - 1, base_y - 4],
-                               fill=CHAM_HIGHLIGHT, outline=None)
-            foot_face = 'front' if direction == DOWN else 'back'
-            draw_gripping_feet(lx, base_y - 1, foot_face)
-    else:
-        d = -1 if direction == LEFT else 1
-        for offset in [leg_step, -leg_step]:
-            lx = cx + d * 2 + offset
-            draw.rectangle([lx - 3, body_cy + 8, lx + 3, base_y - 2],
-                           fill=CHAM_BODY, outline=OUTLINE)
-            facing = 'left' if direction == LEFT else 'right'
-            draw_gripping_feet(lx, base_y - 1, facing)
-
-    # --- Body (upright lizard shape) ---
-    if direction == DOWN:
-        ellipse(draw, cx, body_cy, 12, 12, CHAM_BODY)
-        ellipse(draw, cx + 2, body_cy + 3, 8, 8, body_dark, outline=None)
-        ellipse(draw, cx - 2, body_cy - 2, 8, 6, CHAM_HIGHLIGHT, outline=None)
-        ellipse(draw, cx, body_cy + 3, 6, 4, CHAM_BELLY, outline=None)
-        draw_scale_texture(draw, cx, body_cy, 16, 16, _darken(CHAM_BODY, 0.85))
-        draw_color_spots(cx, body_cy, 16, 16)
-    elif direction == UP:
-        ellipse(draw, cx, body_cy, 12, 12, CHAM_BODY)
-        ellipse(draw, cx, body_cy, 8, 8, body_dark, outline=None)
-        draw_scale_texture(draw, cx, body_cy, 16, 16, _darken(CHAM_BODY, 0.85))
-        draw_color_spots(cx, body_cy, 16, 16)
-    elif direction == LEFT:
-        ellipse(draw, cx - 2, body_cy, 10, 12, CHAM_BODY)
-        ellipse(draw, cx, body_cy + 3, 7, 8, body_dark, outline=None)
-        ellipse(draw, cx - 4, body_cy - 2, 6, 6, CHAM_HIGHLIGHT, outline=None)
-        draw_scale_texture(draw, cx - 2, body_cy, 14, 16, _darken(CHAM_BODY, 0.85))
-        draw_color_spots(cx - 2, body_cy, 14, 16)
-    else:
-        ellipse(draw, cx + 2, body_cy, 10, 12, CHAM_BODY)
-        ellipse(draw, cx, body_cy + 3, 7, 8, body_dark, outline=None)
-        ellipse(draw, cx + 4, body_cy - 2, 6, 6, CHAM_HIGHLIGHT, outline=None)
-        draw_scale_texture(draw, cx + 2, body_cy, 14, 16, _darken(CHAM_BODY, 0.85))
-        draw_color_spots(cx + 2, body_cy, 14, 16)
-
-    # --- Head (with turret eyes) ---
-    if direction == DOWN:
-        ellipse(draw, cx, head_cy, 9, 8, CHAM_BODY)
-        ellipse(draw, cx - 2, head_cy - 1, 6, 4, CHAM_HIGHLIGHT, outline=None)
-        # Prominent turret eyes on top of head
-        draw_turret_eye(cx - 7, head_cy - 3, eye_dx, eye_dy)
-        draw_turret_eye(cx + 7, head_cy - 3, -eye_dx, eye_dy)  # opposite direction
-        # Snout
-        draw.polygon([(cx - 3, head_cy + 4), (cx + 3, head_cy + 4),
-                      (cx, head_cy + 8)], fill=CHAM_BODY, outline=OUTLINE)
-        # Mouth line
-        draw.line([(cx - 4, head_cy + 5), (cx + 4, head_cy + 5)],
-                  fill=CHAM_DARK, width=1)
-
-    elif direction == UP:
-        ellipse(draw, cx, head_cy, 9, 8, CHAM_BODY)
-        ellipse(draw, cx, head_cy, 6, 5, body_dark, outline=None)
-        # Turret eyes visible from behind
-        draw_turret_eye(cx - 7, head_cy - 3, -eye_dx, eye_dy)
-        draw_turret_eye(cx + 7, head_cy - 3, eye_dx, eye_dy)
-
-    elif direction == LEFT:
-        ellipse(draw, cx - 4, head_cy, 8, 7, CHAM_BODY)
-        ellipse(draw, cx - 6, head_cy - 1, 5, 4, CHAM_HIGHLIGHT, outline=None)
-        # Turret eye (one visible, prominent)
-        draw_turret_eye(cx - 5, head_cy - 5, eye_dx, eye_dy)
-        # Long snout
-        draw.polygon([(cx - 10, head_cy), (cx - 10, head_cy + 3),
-                      (cx - 16, head_cy + 2)], fill=CHAM_BODY, outline=OUTLINE)
-        draw.line([(cx - 10, head_cy + 2), (cx - 16, head_cy + 2)],
-                  fill=CHAM_DARK, width=1)
-
-    else:  # RIGHT
-        ellipse(draw, cx + 4, head_cy, 8, 7, CHAM_BODY)
-        ellipse(draw, cx + 6, head_cy - 1, 5, 4, CHAM_HIGHLIGHT, outline=None)
-        draw_turret_eye(cx + 5, head_cy - 5, -eye_dx, eye_dy)
-        draw.polygon([(cx + 10, head_cy), (cx + 10, head_cy + 3),
-                      (cx + 16, head_cy + 2)], fill=CHAM_BODY, outline=OUTLINE)
-        draw.line([(cx + 10, head_cy + 2), (cx + 16, head_cy + 2)],
-                  fill=CHAM_DARK, width=1)
+        tb = (cx + 6.0, base - 6.0)
+        spiral = [tb] + [(tb[0] + 7.4 + math.cos(math.radians(a)) * r, tb[1] - 3.0 + math.sin(math.radians(a)) * r)
+                         for (a, r) in ((180, 5.4), (230, 5.0), (280, 4.6), (330, 3.8), (20, 3.0), (70, 2.2), (120, 1.4))]
+    cel(draw, Limb(spiral, [2.8] + [2.6 - i * 0.26 for i in range(len(spiral) - 1)]), col, sh=(0.5, 0.5))
+    if d:
+        _quad_legs(draw, cx, base, d, ph, col, 6.0, -6.0, base - 10.0, w=2.2)
+        body = Poly(_rot(arc_pts(cx, base - 13.4, 11.4, 7.0, 0, 360)[:-1], cx, base - 13.4, -d * 4))
+        cel(draw, body, col, sh=(1.2, 1.2), regions=[(Ell(cx + d * 1.0, base - 9.4, 8.4, 2.6), belly)])
+        for (u, v) in ((-5.0, -2.0), (0.0, -3.4), (4.4, -1.0)):
+            Ell(cx + d * u, base - 13.4 + v, 1.6, 1.3).draw(draw, fill=spot)
+        # the crest along the spine
+        for k in range(4):
+            x = cx - d * (7.0 - k * 4.0)
+            Poly([(x - 1.4, base - 19.4 + k * 0.2), (x + 1.4, base - 19.6 + k * 0.2), (x, base - 22.0)]).draw(draw, fill=shade(col, 0.8))
+        # a big head with a casque and one turret eye
+        hx, hy = cx + d * 10.0, base - 20.0
+        cel(draw, Poly([(hx - d * 6.4, hy + 4.0), (hx - d * 5.4, hy - 8.4), (hx + d * 1.0, hy - 5.4), (hx + d * 9.4, hy + 1.0),
+                        (hx + d * 8.4, hy + 5.4), (hx, hy + 7.0)]), col, sh=(0.8, 0.8))
+        cel(draw, Ell(hx + d * 1.4, hy - 0.4, 4.6, 4.4), col, sh=(0.5, 0.5))
+        ms_eye(draw, hx + d * 1.8, hy - 0.4, 4.2, 4.2, (60, 40, 30), (float(d), 0.0), "bright", skin=col, side=-d)
+        stroke(draw, [(hx + d * 5.0, hy + 4.2), (hx + d * 8.6, hy + 3.4)], 0.6, shade(col, 1.8))
+        Ell(hx - d * 2.6, hy + 3.0, 1.4, 1.1).draw(draw, fill=spot)
+        if frame == 2:
+            # the tongue, snapping out
+            stroke(draw, [(hx + d * 8.6, hy + 3.6), (hx + d * 16.0, hy + 2.4)], 1.0, (240, 110, 140))
+            cel(draw, Ell(hx + d * 16.6, hy + 2.4, 2.0, 2.0), (240, 110, 140), sh=None, lw=0.5)
+        return
+    # head-on / from behind: a big head on a squat body, legs splayed like a frog's
+    for s in (-1, 1):
+        fwd = ph * s
+        lift = 1.0 if fwd < 0 else 0.0
+        for (u, dark) in ((9.4, True), (5.0, False)):
+            lx = cx + s * u
+            lc = shade(col, 0.6) if dark else col
+            cel(draw, Limb([(lx - s * 2.0, base - 10.0), (lx + s * 1.4, base - 6.0), (lx, base - 1.8 - lift)], [2.2, 2.0, 1.6]), lc, sh=None)
+            for k in (-1, 1):
+                stroke(draw, [(lx, base - 1.8 - lift), (lx + k * 1.8, base - 0.4 - lift)], 1.1, lc)
+    cel(draw, Ell(cx, base - 12.0, 10.4, 6.6), col, sh=(1.2, 1.0), regions=[(Ell(cx, base - 9.6, 6.4, 3.4), belly)])
+    hx, hy = cx, base - 23.0
+    cel(draw, Poly([(hx - 6.0, hy - 5.4), (hx, hy - 14.4), (hx + 6.0, hy - 5.4)]), col, sh=(0.5, 0.5))
+    cel(draw, Ell(hx, hy, 11.4, 9.0), col, sh=(1.2, 1.0), hi=(0.7, 0.7))
+    if back:
+        for (u, v) in ((-4.0, -1.0), (3.6, 1.6), (0.0, -5.0)):
+            Ell(hx + u, hy + v, 1.6, 1.3).draw(draw, fill=spot)
+        return
+    cel(draw, Ell(hx, hy + 4.0, 7.4, 3.6), belly, sh=None, line=False)
+    for (u, v) in ((-8.0, 3.0), (8.4, 2.0)):
+        Ell(hx + u, hy + v, 1.4, 1.1).draw(draw, fill=spot)
+    # turret eyes on the sides of the head, each looking a different way
+    looks = ((-0.8, 0.0), (0.8, -0.4)) if frame % 2 == 0 else ((0.6, 0.4), (-0.6, 0.0))
+    for s, lk in zip((-1, 1), looks):
+        ex = hx + s * 7.4
+        cel(draw, Ell(ex, hy - 2.0, 4.8, 4.6), col, sh=(0.5, 0.5))
+        ms_eye(draw, ex, hy - 2.0, 4.4, 4.4, (60, 40, 30), lk, "bright", skin=col, side=s)
+    stroke(draw, [(hx - 4.4, hy + 4.4), (hx, hy + 5.4), (hx + 4.4, hy + 4.4)], 0.7, shade(col, 1.8))
 
 
-# ─── REGISTRY ─────────────────────────────────────────────────────
 BEAST_DRAW_FUNCTIONS = {
     'wolf': draw_wolf,
     'serpent': draw_serpent,
