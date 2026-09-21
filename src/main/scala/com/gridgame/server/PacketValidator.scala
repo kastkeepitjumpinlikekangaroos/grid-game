@@ -7,6 +7,7 @@ import com.gridgame.common.model.Player
 import com.gridgame.common.model.DashBuff
 import com.gridgame.common.model.FanProjectile
 import com.gridgame.common.model.GroundSlam
+import com.gridgame.common.model.Movement
 import com.gridgame.common.model.StandardProjectile
 import com.gridgame.common.model.Teleport
 import com.gridgame.common.model.TeleportCast
@@ -43,6 +44,15 @@ object PacketValidator {
 
   /** One clock per AttackSlot: primary, Q, E and the burst shot. */
   private val SLOT_COUNT = 4
+
+  /**
+   * The furthest a character of this speed could honestly have walked in `deltaMs`: twice what
+   * their own step interval allows (Movement), plus two cells of grace for a client whose
+   * updates bunched up. A quicker character is allowed to be quicker; the tolerance is not a
+   * flat number of cells that a fast character would eat into and a slow one would never reach.
+   */
+  def maxCellsIn(deltaMs: Long, moveSpeed: Float): Long =
+    ((deltaMs.toDouble / Movement.baseStepIntervalMs(moveSpeed)) * 2 + 2).toLong
 
   /** Projectiles one cast of the ability sends. Dashes, blinks and buffs send none. */
   private def projectilesPerCast(ability: AbilityDef): Int = ability.castBehavior match {
@@ -204,13 +214,11 @@ class PacketValidator {
 
       // Skip speed check for phased/dashing players
       if (!player.isPhased) {
-        // Max expected speed: 1 cell per MOVE_RATE_LIMIT_MS (50ms)
-        // With tolerance: allow 2x expected max + 2 cells grace
-        val expectedMaxCells = (deltaMs.toDouble / Constants.MOVE_RATE_LIMIT_MS) * 2 + 2
-        if (distance > expectedMaxCells.toLong) {
+        val charDef = CharacterDef.get(player.getCharacterId)
+        val expectedMaxCells = maxCellsIn(deltaMs, if (charDef != null) charDef.moveSpeed else 1.0f)
+        if (distance > expectedMaxCells) {
           // Allow teleport/dash abilities: check if this player's character has TeleportCast or DashBuff
           // on either Q or E ability, and the jump is within the ability's reach
-          val charDef = CharacterDef.get(player.getCharacterId)
           val abilities = if (charDef != null) Seq(charDef.qAbility, charDef.eAbility) else Seq.empty
           val isAbilityMovement = abilities.exists { ability =>
             ability.castBehavior match {

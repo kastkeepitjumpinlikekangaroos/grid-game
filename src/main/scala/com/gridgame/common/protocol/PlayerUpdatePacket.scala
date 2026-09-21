@@ -18,7 +18,15 @@ class PlayerUpdatePacket(
     val teamId: Byte = 0,
     // Server -> the player: how many times the server has moved them (Player.getServerMoves).
     // Client -> server: the count the client had seen when it sent this position.
-    val serverMoves: Int = 0
+    val serverMoves: Int = 0,
+    // Status flags that didn't fit in the first byte: bit 0 stunned, bit 1 poisoned,
+    // bit 2 barrier up. Defaulted so the call sites that predate them still compile.
+    val effectFlags2: Int = 0,
+    // Where the player is aiming, as angle / 2pi * 65536 (see aimAngleRadians).
+    val aimAngle: Int = 0,
+    // The speed multiplier while slowed, 0-100, so the client steps at the rate the slow that
+    // landed actually calls for instead of a flat half.
+    val slowPercent: Int = 0
 ) extends Packet(PacketType.PLAYER_UPDATE, sequenceNumber, playerId, timestamp) {
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int) = {
@@ -56,6 +64,15 @@ class PlayerUpdatePacket(
   def getTeamId: Byte = teamId
 
   def getServerMoves: Int = serverMoves
+
+  def getEffectFlags2: Int = effectFlags2
+
+  def getAimAngle: Int = aimAngle
+
+  /** The aim angle back in radians, in [0, 2pi). */
+  def aimAngleRadians: Double = PlayerUpdatePacket.decodeAimAngle(aimAngle)
+
+  def getSlowPercent: Int = slowPercent
 
   override def serialize(): Array[Byte] = {
     val buffer = SerializeUtil.acquireBuffer()
@@ -100,13 +117,34 @@ class PlayerUpdatePacket(
     // [45-48] Server moves
     buffer.putInt(serverMoves)
 
-    // [49-63] Reserved (15 bytes) - fill with zeros
-    buffer.put(new Array[Byte](15))
+    // [49] Second effect flags byte (bit 0: stunned, bit 1: poisoned, bit 2: barrier up)
+    buffer.put(effectFlags2.toByte)
+
+    // [50-51] Aim angle, angle / 2pi * 65536
+    buffer.putShort((aimAngle & 0xFFFF).toShort)
+
+    // [52] Slow multiplier as a percentage (0-100)
+    buffer.put(slowPercent.toByte)
+
+    // [53-63] Reserved (11 bytes) - fill with zeros
+    buffer.put(new Array[Byte](11))
 
     buffer.array().clone()
   }
 
   override def toString: String = {
-    s"PlayerUpdatePacket{seq=$sequenceNumber, playerId=${playerId.toString.substring(0, 8)}, position=$position, color=0x${colorRGB.toHexString.toUpperCase}, health=$health, charge=$chargeLevel, effects=$effectFlags}"
+    s"PlayerUpdatePacket{seq=$sequenceNumber, playerId=${playerId.toString.substring(0, 8)}, position=$position, color=0x${colorRGB.toHexString.toUpperCase}, health=$health, charge=$chargeLevel, effects=$effectFlags/$effectFlags2}"
   }
+}
+
+object PlayerUpdatePacket {
+  /** An angle in radians as the 16-bit value byte [50-51] carries. */
+  def encodeAimAngle(radians: Double): Int = {
+    val turns = radians / (2 * Math.PI)
+    val wrapped = turns - Math.floor(turns)
+    (Math.round(wrapped * 65536.0).toInt) & 0xFFFF
+  }
+
+  /** The inverse of [[encodeAimAngle]]: radians in [0, 2pi). */
+  def decodeAimAngle(raw: Int): Double = (raw & 0xFFFF) * (2 * Math.PI) / 65536.0
 }

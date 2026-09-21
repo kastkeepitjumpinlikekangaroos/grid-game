@@ -51,6 +51,16 @@ scala_junit_test(
 )
 
 scala_junit_test(
+    name = "movement_test",
+    srcs = ["MovementTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
     name = "teleport_test",
     srcs = ["TeleportTest.scala"],
     suffixes = ["Test"],

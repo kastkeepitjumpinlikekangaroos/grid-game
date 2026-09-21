@@ -47,6 +47,7 @@ GRIDGAME_AUDIO=off bazel run //src/main/scala/com/gridgame/client:client
 
 # Performance dev tools (see Client Memory & Performance)
 bazel run //src/main/scala/com/gridgame/client:render_bench   # a busy match, no server
+bazel run //src/main/scala/com/gridgame/client:render_bench -- --effects  # ... with status effects on
 bazel run //src/main/scala/com/gridgame/client:ui_bench       # the JavaFX menus
 ```
 
@@ -588,7 +589,9 @@ could move these numbers should be checked with them rather than guessed at:
 # A busy match (16 players, 150 projectiles of every type, deaths, explosions) through the
 # real GLGameRenderer in a real window, no server: frame CPU/GPU time, bytes allocated per
 # frame on the render thread, GC count, process footprint. --quality=, --players=,
-# --projectiles=, --w= --h=, --screenshot=out.png
+# --projectiles=, --w= --h=, --screenshot=out.png. --effects puts a status effect on every
+# player (frozen, stunned, poisoned, burning, rooted, slowed, boosted), which the default
+# scene has none of — off by default so the numbers below stay comparable.
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --quality=low
 
 # The JavaFX menus: the character select screen, then a match start (stage hidden), a second
@@ -1048,6 +1051,25 @@ Each ability uses one of these cast behaviors (defined in `CharacterDef.scala`):
 - `FanProjectile(count, fanAngle)` — fires multiple projectiles in a fan pattern
 - `GroundSlam(radius)` — AoE ground slam around the caster
 
+### Movement speed
+`CharacterDef.moveSpeed` multiplies the base walking rate of 20 cells a second
+(`Constants.MOVE_RATE_LIMIT_MS`, 50ms a cell). It is 1.0 for every character today.
+
+`common/model/Movement.scala` holds the one rule that turns it into a step interval, and
+everything that moves a player or checks a move reads it: `GLKeyboardHandler` and
+`ControllerHandler` (through `GameClient.moveStepIntervalMs`; the isometric "pure left/right
+takes twice the delay" rule stays in the handlers), `BotController` (bots step at twice a
+player's interval for the same character and state), and `PacketValidator.maxCellsIn`, whose
+tolerance is twice that character's own rate plus two cells of grace. The two input handlers
+each used to carry their own copy of the numbers.
+
+Everything acting on a player is a factor on their interval, not an absolute: charging drags a
+step out to ten times its length at full, a phase halves it, a speed boost takes it to 60%, and
+**a slow divides by its own multiplier** — a `Slow(_, 0.3f)` really is 30% of their pace. Only
+the "slowed" bit used to cross the wire, so every slow was a flat half whatever its def said;
+`PlayerUpdatePacket` byte [52] now carries the strength with it. `MovementTest` pins the
+arithmetic, and that at a speed of 1.0 it is exactly what the handlers computed before.
+
 ### Projectile System
 Projectiles are defined in `ProjectileDef.scala` with extensive customization:
 - **Charge scaling** — speed, damage, and range scale with charge level
@@ -1058,16 +1080,38 @@ Projectiles are defined in `ProjectileDef.scala` with extensive customization:
   with `ProjectileAction.PIERCE`, so they keep drawing it
 - **Boomerang** — returns to owner after max range
 - **Ricochet** — bounces off walls (`ricochetCount`)
-- **AoE splash** — area damage on hit or at max range, with optional freeze/root
+- **AoE splash** — area damage on hit or at max range, with an optional freeze, stun or root
 - **Explosions** — center/edge damage with blast radius
 - **Pass-through** — can ignore players or walls
 
 ### On-Hit Effects
-10 effect types applied when projectiles hit players:
-- `Freeze(durationMs)`, `Root(durationMs)`, `Slow(durationMs, multiplier)`
-- `Burn(totalDamage, durationMs, tickMs)`, `Push(distance)`, `PullToOwner`
-- `VortexPull(radius, pullStrength)`, `LifeSteal(healPercent)`
-- `SpeedBoost(durationMs)`, `TeleportOwnerBehind(distance, freezeDurationMs)`
+12 effect types applied when projectiles hit players:
+- `Freeze(durationMs)`, `Stun(durationMs)`, `Root(durationMs)`, `Slow(durationMs, multiplier)`
+- `Burn(totalDamage, durationMs, tickMs)`, `Poison(totalDamage, durationMs, tickMs)`
+- `Push(distance)`, `PullToOwner`, `VortexPull(radius, pullStrength)`
+- `LifeSteal(healPercent)`, `SpeedBoost(durationMs)`, `TeleportOwnerBehind(distance, freezeDurationMs)`
+
+**A stun is a freeze wearing different clothes.** `Player.tryStun` sets the same `frozenUntil`
+timer with the same rules (refused while frozen, CC-immune or phased) and the same CC immunity
+after it, so every "is frozen" gate in the server, the client and the bots holds a stunned
+player without knowing stuns exist. All `stunnedUntil` adds is which of the two the client
+draws — stars round the head instead of frost (`GLGameRenderer.drawStunnedEffect`). Splashes
+carry one through `AoESplashConfig.stunDurationMs`, beside `freezeDurationMs`/`rootDurationMs`.
+
+**A poison is a second damage-over-time slot, not a second kind of burn.** It has its own
+timer, tick and owner on `Player`, so a poison and a burn run at once — sharing burn's slot,
+whichever landed second wiped the first out. `GameInstance.tickPlayers` ticks both every 200ms
+through `tickDot`, neither regenerates while one is biting, and a kill is credited to whoever
+cast it (`Attrs.CausePoison`).
+
+**A blast carries the same on-hit effect a direct hit would.** The `ProjectileAoEHit` case used
+to apply only the holds and the burn and drop the rest, so no slam could push or pull, the
+Necromancer's Soul Harvest ("healing from damage dealt") healed nothing, and the Cyborg's
+Overclock boosted nobody. Life steal off a blast heals by the splash damage the event carries,
+because a slam's own `effectiveDamage` is 0. `TeleportOwnerBehind` stays direct-hit only: it
+needs one target to land behind, not a crowd. A slam whose on-hit effect is a `SpeedBoost` is a
+self-buff, so it lands on the caster at cast time (`GameInstance.applyCastSelfBuff`) whether or
+not anyone is standing in it.
 
 ### Item Types
 5 item types (defined in `ItemType.scala`): Gem, Heart, Star, Shield, Fence
@@ -1083,7 +1127,7 @@ Projectiles are defined in `ProjectileDef.scala` with extensive customization:
 1. **TLS 1.3 for TCP** — All TCP traffic encrypted via Netty `SslHandler`. Server generates a self-signed certificate at startup using `keytool` with a random password and restrictive temp directory permissions (`rwx------`). Explicit cipher suites: `TLS_AES_256_GCM_SHA384`, `TLS_CHACHA20_POLY1305_SHA256`. Client trusts all certs (game server, not web).
 2. **HMAC Packet Signing** — After auth, server issues a 32-byte session token. All subsequent packets (TCP and UDP) carry a 16-byte truncated HMAC-SHA256. Packets with invalid HMAC are dropped silently. UDP packets without a valid session token are dropped entirely (no unsigned UDP fallback).
 3. **Rate Limiting** — Per-client: 60 UDP/s, 20 TCP/s. Per-IP: 5 connections/min, 5 auth failures before 30s cooldown. Per-channel: connection closed after 5 auth failures (`MAX_AUTH_FAILURES_PER_CHANNEL`). Race-free auth tracking via `computeIfAbsent`. Stale entries cleaned up every 5s.
-4. **Server-Side Validation** — Movement validated against world bounds, walkability, and speed limits (2x expected + 2 cells tolerance, Long arithmetic to prevent overflow; updates in the same millisecond are checked too). Position updates older (by sequence number) than the newest position already applied are dropped, since positions are absolute. Teleports go through `common/model/Teleport.scala` on both sides: the client picks a star's or blink's landing cell with it and the server checks with it, because a teleport the client shows and the server refuses snaps the player back. A star is applied by its TCP item packet, not by letting a UDP jump through; a refused one comes back as `ItemAction.USE_REJECTED`. Projectile spawn validated against player position (max 3 cells), velocity (NaN/Inf rejection, magnitude <= sqrt(2)), charge level (0-100), and the attack that fired it: a spawn request names its `AttackSlot` (primary, Q, E, or the burst shot — the primary along `AttackSlot.BurstDirections`, 8 a cast on `BURST_SHOT_COOLDOWN_MS` — carried in the unused projectile-ID field), its type must be that attack's, and each attack has its own clock — a new cast after 80% of that attack's cooldown (`SHOOT_COOLDOWN_MS` for the primary), at most its own projectile count per cast (3 for a gem-boosted primary, a fan's count). **Don't go back to inferring the attack from the projectile type**: many characters fire one type from two attacks (Bear's Maul is eight of its primary's claws), and judged as a primary burst the ring was cut to the three projectiles the fan sends first, straight behind the caster. `AbilityCastValidationTest` pins this across the roster. Health values validated against `MAX_HEALTH`.
+4. **Server-Side Validation** — Movement validated against world bounds, walkability, and speed limits (`PacketValidator.maxCellsIn`: 2x the character's own rate, from `CharacterDef.moveSpeed` through `Movement`, + 2 cells tolerance, Long arithmetic to prevent overflow; updates in the same millisecond are checked too). Position updates older (by sequence number) than the newest position already applied are dropped, since positions are absolute. Teleports go through `common/model/Teleport.scala` on both sides: the client picks a star's or blink's landing cell with it and the server checks with it, because a teleport the client shows and the server refuses snaps the player back. A star is applied by its TCP item packet, not by letting a UDP jump through; a refused one comes back as `ItemAction.USE_REJECTED`. Projectile spawn validated against player position (max 3 cells), velocity (NaN/Inf rejection, magnitude <= sqrt(2)), charge level (0-100), and the attack that fired it: a spawn request names its `AttackSlot` (primary, Q, E, or the burst shot — the primary along `AttackSlot.BurstDirections`, 8 a cast on `BURST_SHOT_COOLDOWN_MS` — carried in the unused projectile-ID field), its type must be that attack's, and each attack has its own clock — a new cast after 80% of that attack's cooldown (`SHOOT_COOLDOWN_MS` for the primary), at most its own projectile count per cast (3 for a gem-boosted primary, a fan's count). **Don't go back to inferring the attack from the projectile type**: many characters fire one type from two attacks (Bear's Maul is eight of its primary's claws), and judged as a primary burst the ring was cut to the three projectiles the fan sends first, straight behind the caster. `AbilityCastValidationTest` pins this across the roster. Health values validated against `MAX_HEALTH`.
 5. **Auth Hardening** — Constant-time hash comparison (`MessageDigest.isEqual`), dummy hash on username-not-found (prevents timing enumeration), password minimum 6 characters.
 6. **Replay Protection** — `PacketValidator` tracks sequence numbers per player with a sliding window bitmap (`SEQUENCE_WINDOW_SIZE = 256`) for UDP out-of-order tolerance. TCP enforces strictly increasing sequence numbers. Duplicate/replayed packets are rejected. Issuing a session token resets the player's sequence tracking (`resetSequences`): the new session's client counts from zero, and when a re-login closed a channel the server still had open, the old session's numbers used to stay and every packet of the new one was dropped as a replay. `SessionTest` pins it.
 7. **UDP Source Validation** — Server records each player's TCP connection IP (`playerTcpAddresses`). UDP packets are only accepted if the sender IP matches the player's TCP IP, preventing UDP source spoofing.
@@ -1136,6 +1180,28 @@ a correction — made with `GameInstance.moveByServer` / `holdByServer`, which c
 ```
 
 Serialization uses `Constants.PACKET_PAYLOAD_SIZE` (64 bytes). Transport uses `Constants.PACKET_SIZE` (80 bytes). The HMAC is an outer layer — `PacketSigner.sign()` wraps a 64-byte payload into an 80-byte signed packet, and `PacketSigner.verify()` unwraps it back.
+
+`PLAYER_UPDATE` is the packet with the most in it, and the one new fields keep being found for.
+Its payload:
+
+| Bytes | Field |
+|---|---|
+| [21-28] | position x, y |
+| [29-32] | colour (ARGB) |
+| [33-36] | timestamp |
+| [37-40] | health |
+| [41] | charge level (0-100) |
+| [42] | effect flags: 0x01 shield, 0x02 gem, 0x04 frozen, 0x08 phased, 0x10 burning, 0x20 speed boost, 0x40 rooted, 0x80 slowed |
+| [43] | character id |
+| [44] | team id |
+| [45-48] | server moves (see *Position authority*) |
+| [49] | effect flags 2: bit 0 stunned, bit 1 poisoned, bit 2 barrier up, bits 3-7 free |
+| [50-51] | aim angle, `angle / 2pi * 65536` (`PlayerUpdatePacket.encodeAimAngle`) |
+| [52] | slow strength as a percentage (0-100): how fast the player moves while slowed |
+| [53-63] | reserved, zero |
+
+A stunned player has both 0x04 and flags2 bit 0 set: the freeze bit is what holds them, the
+stun bit only says what to draw. Byte [49] bit 2 and bytes [50-51] are written as 0 today.
 
 ### Packet Types (16 total)
 
@@ -1315,7 +1381,15 @@ suites mirror the source tree:
   The screen tests (`LobbyRoomScreenTest`, `ScoreboardScreenTest`, `CharacterSelectionPanelTest`)
   build the real JavaFX screens, never shown, on the FX thread via `Fx { ... }`, and click
   them. They set `GRIDGAME_AUDIO=off`, and they must not call `Messages.setLocale`, which would
-  save a language to the player's own settings.
+  save a language to the player's own settings. `ContentCatalogTest` ties `i18n/messages_en.json`
+  to `CharacterDef`: the catalog wins over the code (`I18n.tOr`), so renaming an ability in
+  `CharacterDef` alone leaves the old name on every screen, silently. Regenerate the entries
+  with `bazel run //src/main/scala/com/gridgame/tools:gencontent 2>/dev/null`.
+
+**Effects nothing in the roster has yet** (a stun, a poison, a slam that pushes or pulls) are
+pinned with `ProjectileDef`s registered by the test itself, on ids the game doesn't use — see
+`TestEffects` at the foot of `OnHitEffectsTest`. Each test file gets its own JVM, so a test-only
+registration can't leak into another suite.
 
 When a test fixes a bug, check it fails with the bug put back.
 

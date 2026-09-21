@@ -38,7 +38,10 @@ case class CharacterDef(
     qAbility: AbilityDef,
     eAbility: AbilityDef,
     primaryProjectileType: Byte,
-    maxHealth: Int = 100
+    maxHealth: Int = 100,
+    // Multiplier on the base walking rate of 20 cells a second (Movement). 1.0 for every
+    // character today; the roster passes set it per character.
+    moveSpeed: Float = 1.0f
 )
 
 object CharacterDef {

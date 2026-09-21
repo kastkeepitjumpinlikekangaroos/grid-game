@@ -26,7 +26,9 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
   private var executor: ScheduledExecutorService = _
 
   private val TICK_INTERVAL_MS = 100L
-  private val BOT_MOVE_INTERVAL_MS = 100L // bots move every 100ms (10 moves/sec, close to player's ~20)
+  // Bots take a step every other one a player of the same character would (Movement), so their
+  // 100ms at speed 1.0 is the player's 50ms doubled.
+  private val BOT_MOVE_INTERVAL_MS = 100L
   private val SHOOT_COOLDOWN_MIN_MS = 700L
   private val SHOOT_COOLDOWN_MAX_MS = 1100L
   private val TARGET_HYSTERESIS_MS = 2000L // stick to a target for at least 2s
@@ -159,9 +161,12 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     // Movement gated by per-bot move timer
     val canMove = !bot.isRooted && {
       val lastMove = lastMoveTime.getOrDefault(bot.getId, 0L)
-      val moveInterval = if (bot.isSlowed) BOT_MOVE_INTERVAL_MS * 2
-                         else if (bot.hasSpeedBoost) (BOT_MOVE_INTERVAL_MS * 0.6).toLong
-                         else BOT_MOVE_INTERVAL_MS
+      // Twice a player's interval for the same character and state. Bots never charge, and a
+      // phase has never made one quicker, so neither is passed in.
+      val moveInterval = 2L * Movement.stepIntervalMs(
+        CharacterDef.get(bot.getCharacterId).moveSpeed,
+        charging = false, chargeLevel = 0, phased = false,
+        speedBoost = bot.hasSpeedBoost, slowed = bot.isSlowed, slowMultiplier = bot.getSlowMultiplier)
       now - lastMove >= moveInterval
     }
 

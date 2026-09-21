@@ -77,6 +77,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   private val speedBoostUntil: AtomicLong = new AtomicLong(0)
   private val rootedUntil: AtomicLong = new AtomicLong(0)
   private val slowedUntil: AtomicLong = new AtomicLong(0)
+  // A stun is a freeze the client draws differently, so it comes with the frozen flag set too
+  private val stunnedUntil: AtomicLong = new AtomicLong(0)
+  private val poisonedUntil: AtomicLong = new AtomicLong(0)
+  // How strong the slow we are under is (packet byte [52]). A Slow(_, 0.3f) really is 30% of
+  // our pace; every slow used to be a flat half whatever its def said, which is what we assume
+  // until the server tells us.
+  private val DEFAULT_SLOW_MULTIPLIER = 0.5f
+  @volatile private var slowMultiplier: Float = DEFAULT_SLOW_MULTIPLIER
 
   // Server moves we have taken (Player.getServerMoves): pulls, knockbacks, respawns, freezes,
   // corrections. Sent with every position; the server drops positions sent before a move we
@@ -319,6 +327,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     speedBoostUntil.set(0)
     rootedUntil.set(0)
     slowedUntil.set(0)
+    stunnedUntil.set(0)
+    poisonedUntil.set(0)
+    slowMultiplier = DEFAULT_SLOW_MULTIPLIER
     phasedUntil.set(0)
     localDeathTime.set(0)
     lastQAbilityTime.set(0)
@@ -414,6 +425,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     speedBoostUntil.set(0)
     rootedUntil.set(0)
     slowedUntil.set(0)
+    stunnedUntil.set(0)
+    poisonedUntil.set(0)
+    slowMultiplier = DEFAULT_SLOW_MULTIPLIER
 
     // Send join packet to server
     sendJoinPacket()
@@ -546,6 +560,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     (if (hasShield) 0x01 else 0) | (if (hasGemBoost) 0x02 else 0) | (if (isFrozen) 0x04 else 0) | (if (isPhased) 0x08 else 0) | (if (isBurning) 0x10 else 0) | (if (hasSpeedBoost) 0x20 else 0) | (if (isRooted) 0x40 else 0) | (if (isSlowed) 0x80 else 0)
   }
 
+  private def getEffectFlags2: Int = (if (isStunned) 0x01 else 0) | (if (isPoisoned) 0x02 else 0)
+
+  private def getSlowPercent: Int = if (isSlowed) Math.round(slowMultiplier * 100f) else 0
+
   private def sendPositionUpdate(position: Position): Unit = {
     send(new PlayerUpdatePacket(
       sequenceNumber.getAndIncrement(),
@@ -558,7 +576,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       getEffectFlags,
       selectedCharacterId,
       localTeamId,
-      serverMovesSeen
+      serverMovesSeen,
+      getEffectFlags2,
+      0, // aim angle: nothing aims by it yet
+      getSlowPercent
     ))
   }
 
@@ -779,6 +800,18 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   def isSlowed: Boolean = System.currentTimeMillis() < slowedUntil.get()
 
+  def isStunned: Boolean = System.currentTimeMillis() < stunnedUntil.get()
+
+  def isPoisoned: Boolean = System.currentTimeMillis() < poisonedUntil.get()
+
+  def getSlowMultiplier: Float = slowMultiplier
+
+  /** How long this player waits between steps in their current state — the rule both input
+    * handlers move by, and the server checks against (Movement). */
+  def moveStepIntervalMs: Int = Movement.stepIntervalMs(
+    getSelectedCharacterDef.moveSpeed, isCharging, getChargeLevel, isPhased, hasSpeedBoost,
+    isSlowed, slowMultiplier)
+
   def getQCooldownFraction: Float = {
     val cooldownMs = getSelectedCharacterDef.qAbility.cooldownMs
     val elapsed = System.currentTimeMillis() - lastQAbilityTime.get()
@@ -968,8 +1001,23 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           }
           if ((flags & 0x80) != 0) {
             if (now >= slowedUntil.get()) slowedUntil.set(now + 3000)
+            // How hard: a slow only makes us step at its own rate if we know what that rate is
+            if (updatePacket.getSlowPercent > 0) slowMultiplier = updatePacket.getSlowPercent / 100f
           } else {
             slowedUntil.set(0)
+            slowMultiplier = DEFAULT_SLOW_MULTIPLIER
+          }
+          // A stun comes with the frozen flag as well: this only says which of the two to draw
+          val flags2 = updatePacket.getEffectFlags2
+          if ((flags2 & 0x01) != 0) {
+            if (now >= stunnedUntil.get()) stunnedUntil.set(now + 5000)
+          } else {
+            stunnedUntil.set(0)
+          }
+          if ((flags2 & 0x02) != 0) {
+            if (now >= poisonedUntil.get()) poisonedUntil.set(now + 1000)
+          } else {
+            poisonedUntil.set(0)
           }
           // Don't overwrite local phased state from server echo — local timer is authoritative
           // Server echoes phased flag to confirm it, but we don't reset the timer
@@ -1281,6 +1329,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           speedBoostUntil.set(0)
           rootedUntil.set(0)
           slowedUntil.set(0)
+          stunnedUntil.set(0)
+          poisonedUntil.set(0)
+          slowMultiplier = DEFAULT_SLOW_MULTIPLIER
           phasedUntil.set(0)
           inventory.clear()
           lastQAbilityTime.set(0)
@@ -1933,8 +1984,20 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       }
       if ((flags & 0x80) != 0) {
         if (now >= player.getSlowedUntil) player.setSlowedUntil(now + 3000)
+        if (packet.getSlowPercent > 0) player.setSlowMultiplier(packet.getSlowPercent / 100f)
       } else {
-        player.setSlowedUntil(0)
+        player.clearSlow()
+      }
+      val flags2 = packet.getEffectFlags2
+      if ((flags2 & 0x01) != 0) {
+        if (now >= player.getStunnedUntil) player.setStunnedUntil(now + 5000)
+      } else {
+        player.setStunnedUntil(0)
+      }
+      if ((flags2 & 0x02) != 0) {
+        if (!player.isPoisoned) player.applyPoison(0, 1000, 1000, null) // visual only: the server does the damage
+      } else {
+        player.clearPoison()
       }
 
       // Record death animation when player newly dies
@@ -1960,6 +2023,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       if ((flags & 0x20) != 0) player.setSpeedBoostUntil(System.currentTimeMillis() + 1000)
       if ((flags & 0x40) != 0) player.setRootedUntil(System.currentTimeMillis() + 3000)
       if ((flags & 0x80) != 0) player.setSlowedUntil(System.currentTimeMillis() + 3000)
+      if (packet.getSlowPercent > 0) player.setSlowMultiplier(packet.getSlowPercent / 100f)
+      val flags2 = packet.getEffectFlags2
+      if ((flags2 & 0x01) != 0) player.setStunnedUntil(System.currentTimeMillis() + 5000)
+      if ((flags2 & 0x02) != 0) player.applyPoison(0, 1000, 1000, null)
       players.put(playerId, player)
     }
   }

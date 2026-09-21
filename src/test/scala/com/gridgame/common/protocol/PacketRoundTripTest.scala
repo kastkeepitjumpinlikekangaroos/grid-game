@@ -42,6 +42,48 @@ class PacketRoundTripTest {
     assertEquals(123456, p.getServerMoves)
   }
 
+  @Test def playerUpdateKeepsTheSecondFlagByteAimAndSlowStrength(): Unit = {
+    val p = trip(new PlayerUpdatePacket(78, id, 1234, new Position(4, 9), 0, 100, 0, 0x84,
+      1.toByte, 0.toByte, 5, 0x07, 40000, 30))
+    assertEquals("stunned, poisoned and a barrier", 0x07, p.getEffectFlags2)
+    assertEquals(40000, p.getAimAngle)
+    assertEquals("a Slow(_, 0.3f) reaches the client as 30%", 30, p.getSlowPercent)
+    // The first flag byte is untouched by the second
+    assertEquals(0x84, p.getEffectFlags)
+    assertEquals(5, p.getServerMoves)
+  }
+
+  @Test def eachSecondaryStatusFlagSurvivesOnItsOwn(): Unit = {
+    for (bit <- 0 until 8) {
+      val flag = 1 << bit
+      val p = trip(new PlayerUpdatePacket(1, id, 0, new Position(5, 5), 0, 100, 0, 0, 0.toByte,
+        0.toByte, 0, flag))
+      assertEquals(s"flag2 0x${flag.toHexString}", flag, p.getEffectFlags2)
+    }
+  }
+
+  @Test def aimAnglesMakeTheRoundTripToWithinAStep(): Unit = {
+    // 16 bits over a full turn: a step is 2pi/65536, well under a pixel of aim at any range
+    val step = 2 * Math.PI / 65536
+    for (i <- 0 until 16) {
+      val radians = i * (2 * Math.PI / 16)
+      val p = trip(new PlayerUpdatePacket(1, id, 0, new Position(5, 5), 0, 100, 0, 0, 0.toByte,
+        0.toByte, 0, 0, PlayerUpdatePacket.encodeAimAngle(radians)))
+      assertEquals(f"$radians%.3f rad", radians, p.aimAngleRadians, step)
+    }
+    assertEquals("a full turn wraps to zero", 0, PlayerUpdatePacket.encodeAimAngle(2 * Math.PI))
+    assertEquals("and so does a negative angle", PlayerUpdatePacket.encodeAimAngle(1.0),
+      PlayerUpdatePacket.encodeAimAngle(1.0 - 2 * Math.PI))
+  }
+
+  @Test def slowPercentCoversTheWholeRange(): Unit = {
+    for (pct <- Seq(0, 1, 30, 50, 60, 100)) {
+      val p = trip(new PlayerUpdatePacket(1, id, 0, new Position(5, 5), 0, 100, 0, 0, 0.toByte,
+        0.toByte, 0, 0, 0, pct))
+      assertEquals(pct, p.getSlowPercent)
+    }
+  }
+
   @Test def eachStatusFlagSurvivesOnItsOwn(): Unit = {
     for (bit <- 0 until 8) {
       val flag = 1 << bit

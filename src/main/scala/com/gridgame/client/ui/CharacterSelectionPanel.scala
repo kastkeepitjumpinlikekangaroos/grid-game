@@ -581,10 +581,12 @@ class CharacterSelectionPanel(
     pDef.onHitEffect.foreach {
       case PullToOwner => stats.append("  Pull")
       case Freeze(dur) => stats.append(s"  Freeze ${dur / 1000}s")
+      case Stun(dur) => stats.append(s"  Stun ${dur / 1000}s")
       case Push(dist) => stats.append(s"  Push")
       case TeleportOwnerBehind(_, _) => stats.append("  Teleport")
       case LifeSteal(pct) => stats.append(s"  LifeSteal ${pct}%")
       case Burn(_, _, _) => stats.append("  Burn")
+      case Poison(total, _, _) => stats.append(s"  Poison $total")
       case SpeedBoost(_) => stats.append("  Speed")
       case VortexPull(_, _) => stats.append("  Vortex")
       case Root(dur) => stats.append(s"  Root ${dur / 1000}s")

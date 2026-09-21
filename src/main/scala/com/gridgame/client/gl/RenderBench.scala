@@ -113,10 +113,26 @@ class RenderBenchApp extends Application {
 
     // Players around the local player, a spread of characters
     val chars = CharacterDef.all.toArray
+    // --effects puts a status effect on everyone, cycling through them, so the effect renderers
+    // are in the frame too — they are some of the most expensive things drawn over a player.
+    // Off by default, so the numbers stay comparable with the ones in CLAUDE.md.
+    val withEffects = args.contains("--effects")
     val players = (0 until nPlayers).map { i =>
       val id = UUID.randomUUID()
       val p = new Player(id, s"Bot$i", walkableNear(home.getX, home.getY, 10), Player.generateColorFromUUID(id), 100)
       p.setCharacterId(chars((i * 7) % chars.length).id.id)
+      if (withEffects) {
+        val forever = System.currentTimeMillis() + 3600000L
+        (i % 7) match {
+          case 0 => p.setFrozenUntil(forever)
+          case 1 => p.setFrozenUntil(forever); p.setStunnedUntil(forever) // a stun is a freeze wearing stars
+          case 2 => p.applyPoison(1, 3600000, 1000, null)
+          case 3 => p.applyBurn(1, 3600000, 1000, null)
+          case 4 => p.setRootedUntil(forever)
+          case 5 => p.setSlowedUntil(forever)
+          case _ => p.setSpeedBoostUntil(forever)
+        }
+      }
       client.getPlayers.put(id, p)
       p
     }.toArray
@@ -253,7 +269,8 @@ class RenderBenchApp extends Application {
         System.gc(); System.gc()
         val heap = ManagementFactory.getMemoryMXBean.getHeapMemoryUsage
         println(f"render bench: ${window.fbWidth}x${window.fbHeight} fb (${window.width}x${window.height} window), " +
-          f"quality ${RenderQuality.tierName}, $nPlayers players, ${client.getProjectiles.size} projectiles, $n frames")
+          f"quality ${RenderQuality.tierName}, $nPlayers players, ${client.getProjectiles.size} projectiles, " +
+          f"${if (withEffects) "status effects, " else ""}$n frames")
         println(f"  frame build (wall):  mean ${mean(cpuNs)}%.2f ms, p50 ${pct(cpuNs, 0.5)}%.2f, p99 ${pct(cpuNs, 0.99)}%.2f, max ${pct(cpuNs, 1.0)}%.2f")
         println(f"  frame build (CPU):   mean ${mean(threadCpuNs)}%.2f ms, p50 ${pct(threadCpuNs, 0.5)}%.2f, p99 ${pct(threadCpuNs, 0.99)}%.2f  (render thread CPU time)")
         println(f"  frame done (GPU):    mean ${mean(gpuNs)}%.2f ms, p50 ${pct(gpuNs, 0.5)}%.2f, p99 ${pct(gpuNs, 0.99)}%.2f, max ${pct(gpuNs, 1.0)}%.2f")

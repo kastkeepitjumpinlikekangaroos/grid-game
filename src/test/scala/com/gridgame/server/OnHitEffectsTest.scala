@@ -170,4 +170,209 @@ class OnHitEffectsTest {
     assertTrue(target.isBurning)
     assertEquals(pyro.getId, target.getBurnOwnerId)
   }
+
+  // --- Stuns ---
+
+  @Test def aStunHoldsThePlayerAndRefusesTheirShots(): Unit = {
+    val shooter = m.join(CharacterId.Spaceman, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 15, 30)
+    m.clearSent()
+    shoot(shooter, TestEffects.StunBolt)
+    assertTrue("stunned", target.isStunned)
+    assertTrue("and held, like any freeze", target.isFrozen)
+    assertEquals(1, target.getServerMoves)
+    assertEquals(new Position(15, 30), movesToldOverTcp(target).last.getPosition)
+    // Held: their steps are taken but go nowhere, and they can't fire
+    assertTrue(m.move(target, 16, 30))
+    assertEquals((15, 30), m.at(target))
+    val primary = CharacterDef.get(target.getCharacterId).primaryProjectileType
+    assertTrue("no shot while stunned", m.fire(target, AttackSlot.PRIMARY, primary, Seq((1f, 0f))).isEmpty)
+  }
+
+  @Test def aStunReachesTheirScreenAsAStunAndNotAsIce(): Unit = {
+    val shooter = m.join(CharacterId.Spaceman, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 15, 30)
+    m.clearSent()
+    shoot(shooter, TestEffects.StunBolt)
+    val told = movesToldOverTcp(target).last
+    assertEquals("frozen: every gate that already reads this keeps working", 0x04, told.getEffectFlags & 0x04)
+    assertEquals("and stunned, so the client draws stars rather than frost", 0x01, told.getEffectFlags2 & 0x01)
+  }
+
+  @Test def aStunCannotBeRenewedWhileTheImmunityLasts(): Unit = {
+    val shooter = m.join(CharacterId.Spaceman, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 15, 30)
+    shoot(shooter, TestEffects.StunBolt)
+    assertTrue(target.isStunned)
+    target.setFrozenUntil(0) // as if it had worn off
+    target.setStunnedUntil(0)
+    shoot(shooter, TestEffects.StunBolt)
+    assertFalse("immune", target.isStunned)
+    assertFalse(target.isFrozen)
+  }
+
+  @Test def aSplashStunsWhatItCatches(): Unit = {
+    // AoESplashConfig.stunDurationMs, the way freezes and roots already travel with a splash
+    val caster = m.join(CharacterId.Earthshaker, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 13, 30)
+    m.tickUntilGone(m.launch(caster, TestEffects.StunSplashSlam, 0f, 0f))
+    assertTrue("stunned by the splash", target.isStunned)
+    assertEquals("and held where the server has them", 1, target.getServerMoves)
+  }
+
+  @Test def aBlastCarriesItsStun(): Unit = {
+    // The same, from the on-hit effect rather than the splash config
+    val caster = m.join(CharacterId.Earthshaker, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 13, 30)
+    m.tickUntilGone(m.launch(caster, TestEffects.StunSlam, 0f, 0f))
+    assertTrue(target.isStunned)
+  }
+
+  // --- Poison ---
+
+  @Test def aPoisonLandsAndRemembersWhoCastIt(): Unit = {
+    val shooter = m.join(CharacterId.PlagueDoctor, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 15, 30)
+    shoot(shooter, TestEffects.PoisonBolt)
+    assertTrue(target.isPoisoned)
+    assertEquals(shooter.getId, target.getPoisonOwnerId)
+    assertEquals("20 over four ticks", 5, target.getPoisonDamagePerTick)
+  }
+
+  @Test def aPoisonTicksToItsTotalAndThenStops(): Unit = {
+    val poisoner = m.join(CharacterId.PlagueDoctor, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 15, 30)
+    val full = target.getHealth
+    target.applyPoison(20, 400, 100, poisoner.getId)
+    // Its four ticks, driven without waiting on the clock
+    for (_ <- 0 until 4) {
+      target.setLastPoisonTick(0)
+      m.instance.tickPlayers()
+    }
+    assertEquals("the whole 20 and no more", full - 20, target.getHealth)
+    // And once it has run out, a due tick does nothing
+    target.applyPoison(20, 30, 10, poisoner.getId)
+    Thread.sleep(60)
+    val afterExpiry = target.getHealth
+    target.setLastPoisonTick(0)
+    m.instance.tickPlayers()
+    assertEquals(afterExpiry, target.getHealth)
+  }
+
+  @Test def aPoisonAndABurnRunAtOnce(): Unit = {
+    // A DoT slot of its own: sharing burn's, the second one applied wiped the first out
+    val poisoner = m.join(CharacterId.PlagueDoctor, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 15, 30)
+    val full = target.getHealth
+    target.applyBurn(20, 400, 100, poisoner.getId)   // 5 a tick
+    target.applyPoison(40, 400, 100, poisoner.getId) // 10 a tick
+    assertTrue(target.isBurning)
+    assertTrue(target.isPoisoned)
+    target.setLastBurnTick(0)
+    target.setLastPoisonTick(0)
+    m.instance.tickPlayers()
+    assertEquals("both bit", full - 15, target.getHealth)
+  }
+
+  @Test def aPoisonCreditsTheKillToWhoeverCastIt(): Unit = {
+    val poisoner = m.join(CharacterId.PlagueDoctor, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 15, 30)
+    target.setHealth(4)
+    target.applyPoison(20, 400, 100, poisoner.getId)
+    target.setLastPoisonTick(0)
+    m.instance.tickPlayers()
+    assertTrue("killed by the poison", target.isDead)
+    assertEquals(1, m.instance.killTracker.getKills(poisoner.getId))
+    assertEquals(1, m.instance.killTracker.getDeaths(target.getId))
+  }
+
+  // --- What a blast carries ---
+
+  @Test def aSlamThrowsWhatItCatchesOutwards(): Unit = {
+    // Away from where the blast went off, not from the caster's aim: the caster is standing in it
+    val caster = m.join(CharacterId.Earthshaker, 10, 30)
+    val east = m.join(CharacterId.Gladiator, 12, 30)
+    val north = m.join(CharacterId.Gladiator, 10, 27)
+    m.tickUntilGone(m.launch(caster, TestEffects.PushSlam, 0f, 0f))
+    assertEquals("thrown three cells east", (15, 30), m.at(east))
+    assertEquals("and three cells north", (10, 24), m.at(north))
+    assertEquals(1, east.getServerMoves)
+  }
+
+  @Test def aSlamCanDragWhatItCatchesIn(): Unit = {
+    val caster = m.join(CharacterId.Earthshaker, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 13, 30)
+    m.tickUntilGone(m.launch(caster, TestEffects.PullSlam, 0f, 0f))
+    assertEquals("pulled onto the caster", (10, 30), m.at(target))
+  }
+
+  @Test def soulHarvestHealsTheNecromancer(): Unit = {
+    // Its life steal was skipped for blasts, and the projectile's own damage is 0 anyway, so
+    // the ability described as "healing from damage dealt" healed nothing at all
+    val necro = m.join(CharacterId.Necromancer, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 13, 30)
+    necro.setHealth(50)
+    val splash = ProjectileDef.get(ProjectileType.SOUL_HARVEST).aoeOnMaxRange.get
+    m.tickUntilGone(m.launch(necro, ProjectileType.SOUL_HARVEST, 0f, 0f))
+    assertEquals("the blast hurt", target.getMaxHealth - splash.damage, target.getHealth)
+    assertEquals("and healed 30% of it", 50 + splash.damage * 30 / 100, necro.getHealth)
+  }
+
+  @Test def soulHarvestHealsFromAVictimItKills(): Unit = {
+    val necro = m.join(CharacterId.Necromancer, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 13, 30)
+    necro.setHealth(50)
+    target.setHealth(5)
+    val splash = ProjectileDef.get(ProjectileType.SOUL_HARVEST).aoeOnMaxRange.get
+    m.tickUntilGone(m.launch(necro, ProjectileType.SOUL_HARVEST, 0f, 0f))
+    assertTrue(target.isDead)
+    assertEquals(50 + splash.damage * 30 / 100, necro.getHealth)
+  }
+
+  @Test def overclockSpeedsTheCyborgUpWithNobodyNear(): Unit = {
+    // A ring that does no damage and buffs on hit only ever caught someone standing in it,
+    // which for an ability that is entirely a self-buff is never when it matters
+    val cyborg = m.join(CharacterId.Cyborg, 10, 30)
+    assertFalse(cyborg.hasSpeedBoost)
+    m.launch(cyborg, ProjectileType.OVERCLOCK_BEAM, 0f, 0f)
+    assertTrue("boosted on the cast", cyborg.hasSpeedBoost)
+  }
+
+  @Test def aThrownAttackThatBuffsOnHitStillOnlyBuffsOnAHit(): Unit = {
+    // The self-buff on cast is for slams; a claw swipe has to connect
+    val bear = m.join(CharacterId.Bear, 10, 30)
+    m.launch(bear, ProjectileType.CLAW_SWIPE, 1f, 0f)
+    assertFalse(bear.hasSpeedBoost)
+  }
+}
+
+/**
+ * Projectiles that exist only here. Nothing in the roster stuns or poisons yet (the kits come in
+ * a later pass), and no slam pushes or pulls, so the engine's handling of those is pinned with
+ * definitions of their own on ids the game does not use.
+ */
+private object TestEffects {
+  val StunBolt: Byte = -2
+  val PoisonBolt: Byte = -3
+  val PushSlam: Byte = -4
+  val PullSlam: Byte = -5
+  val StunSlam: Byte = -6
+  val StunSplashSlam: Byte = -7
+
+  /** A ground slam: no speed, no range, everything it does happens in the splash where it lands. */
+  private def slam(id: Byte, name: String, splash: AoESplashConfig, effect: Option[OnHitEffect]) =
+    ProjectileDef(id = id, name = name, speedMultiplier = 0f, damage = 0, maxRange = 0,
+      aoeOnMaxRange = Some(splash), onHitEffect = effect,
+      explosionConfig = Some(ExplosionConfig(0, 0, splash.radius)))
+
+  ProjectileDef.register(
+    ProjectileDef(id = StunBolt, name = "Test Stun Bolt", speedMultiplier = 0.9f, damage = 5,
+      maxRange = 20, onHitEffect = Some(Stun(1200))),
+    ProjectileDef(id = PoisonBolt, name = "Test Poison Bolt", speedMultiplier = 0.9f, damage = 5,
+      maxRange = 20, onHitEffect = Some(Poison(20, 400, 100))),
+    slam(PushSlam, "Test Push Slam", AoESplashConfig(6.0f, 10), Some(Push(3.0f))),
+    slam(PullSlam, "Test Pull Slam", AoESplashConfig(6.0f, 10), Some(PullToOwner)),
+    slam(StunSlam, "Test Stun Slam", AoESplashConfig(6.0f, 10), Some(Stun(1200))),
+    slam(StunSplashSlam, "Test Stun Splash", AoESplashConfig(6.0f, 10, stunDurationMs = 1200), None)
+  )
 }

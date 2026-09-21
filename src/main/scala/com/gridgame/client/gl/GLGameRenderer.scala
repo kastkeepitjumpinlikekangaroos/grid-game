@@ -216,7 +216,8 @@ class GLGameRenderer(val client: GameClient) {
   private val _dirSX = Array(-0.894f, 0.894f, -0.894f, 0.894f)
   private val _dirSY = Array(0.447f, -0.447f, -0.447f, 0.447f)
 
-  // Pre-allocated arrays for item shapes
+  // Pre-allocated arrays for item shapes and the stun's stars: ten vertices, an outer and an
+  // inner radius alternating. Each is built and drawn before the next one touches them.
   private val _starXs = new Array[Float](10)
   private val _starYs = new Array[Float](10)
   // Pre-allocated arrays for cooldown sweep polygon
@@ -1271,8 +1272,11 @@ class GLGameRenderer(val client: GameClient) {
     if (player.hasShield) lightSystem.addLight(screenX.toFloat, spriteCenter.toFloat, 60f, 0.3f, 0.5f, 1f, 0.15f)
     // Burn orange glow
     if (player.isBurning) lightSystem.addLight(screenX.toFloat, spriteCenter.toFloat, 50f, 1f, 0.45f, 0.05f, 0.15f)
-    // Frozen blue glow
-    if (player.isFrozen) lightSystem.addLight(screenX.toFloat, spriteCenter.toFloat, 45f, 0.5f, 0.8f, 1f, 0.12f)
+    // Frozen blue glow, or a warm one for the stun that wears the same freeze
+    if (player.isFrozen && !player.isStunned) lightSystem.addLight(screenX.toFloat, spriteCenter.toFloat, 45f, 0.5f, 0.8f, 1f, 0.12f)
+    if (player.isStunned) lightSystem.addLight(screenX.toFloat, spriteCenter.toFloat, 45f, 1f, 0.85f, 0.3f, 0.12f)
+    // Poison green glow
+    if (player.isPoisoned) lightSystem.addLight(screenX.toFloat, spriteCenter.toFloat, 45f, 0.3f, 0.9f, 0.25f, 0.13f)
 
     // Pre-player non-additive effects
     if (!playerIsPhased) {
@@ -1334,8 +1338,11 @@ class GLGameRenderer(val client: GameClient) {
       spriteBatch.draw(region, drawX, drawY, spriteW, spriteH, 1f, g, b, alpha)
     }
 
-    // Post-player non-additive effects
-    if (player.isFrozen) drawFrozenEffect(screenX, spriteCenter)
+    // Post-player non-additive effects. A stun is a freeze underneath (Player.tryStun), so the
+    // two flags come together and the stars stand in for the ice.
+    if (player.isStunned) drawStunnedEffect(screenX, spriteCenter)
+    else if (player.isFrozen) drawFrozenEffect(screenX, spriteCenter)
+    if (player.isPoisoned) drawPoisonEffect(screenX, spriteCenter)
     if (player.isRooted) drawRootedEffect(screenX, spriteCenter)
     if (player.isSlowed) drawSlowedEffect(screenX, spriteCenter)
     if (player.hasSpeedBoost) drawSpeedBoostEffect(screenX, spriteCenter, player.getDirection.id)
@@ -1394,7 +1401,9 @@ class GLGameRenderer(val client: GameClient) {
     lightSystem.addLight(screenX.toFloat, spriteCenter.toFloat, localLightRadius, lpLR, lpLG, lpLB, localChargeIntensity)
     if (client.hasShield) lightSystem.addLight(screenX.toFloat, spriteCenter.toFloat, 60f, 0.3f, 0.5f, 1f, 0.15f)
     if (client.isBurning) lightSystem.addLight(screenX.toFloat, spriteCenter.toFloat, 50f, 1f, 0.45f, 0.05f, 0.15f)
-    if (client.isFrozen) lightSystem.addLight(screenX.toFloat, spriteCenter.toFloat, 45f, 0.5f, 0.8f, 1f, 0.12f)
+    if (client.isFrozen && !client.isStunned) lightSystem.addLight(screenX.toFloat, spriteCenter.toFloat, 45f, 0.5f, 0.8f, 1f, 0.12f)
+    if (client.isStunned) lightSystem.addLight(screenX.toFloat, spriteCenter.toFloat, 45f, 1f, 0.85f, 0.3f, 0.12f)
+    if (client.isPoisoned) lightSystem.addLight(screenX.toFloat, spriteCenter.toFloat, 45f, 0.3f, 0.9f, 0.25f, 0.13f)
 
     if (!localIsPhased) {
       if (client.hasShield) drawShieldBubble(screenX, spriteCenter, client.getPlayerHitTime(client.getLocalPlayerId))
@@ -1471,7 +1480,9 @@ class GLGameRenderer(val client: GameClient) {
     }
 
     // Non-additive post-player effects
-    if (client.isFrozen) drawFrozenEffect(screenX, spriteCenter)
+    if (client.isStunned) drawStunnedEffect(screenX, spriteCenter)
+    else if (client.isFrozen) drawFrozenEffect(screenX, spriteCenter)
+    if (client.isPoisoned) drawPoisonEffect(screenX, spriteCenter)
     if (client.isRooted) drawRootedEffect(screenX, spriteCenter)
     if (client.isSlowed) drawSlowedEffect(screenX, spriteCenter)
     if (client.hasSpeedBoost) drawSpeedBoostEffect(screenX, spriteCenter, client.getLocalDirection.id)
@@ -1695,6 +1706,113 @@ class GLGameRenderer(val client: GameClient) {
     val pulse = (0.5 + 0.5 * Math.sin(tick * 0.07)).toFloat
     shapeBatch.fillOvalSoft(x, y, 14f, 11f, 0.6f, 0.88f, 1f, 0.25f * pulse, 0f, 14)
     shapeBatch.fillOval(x, y, 8f, 6f, 0.8f, 0.95f, 1f, 0.15f * pulse, 10)
+  }
+
+  /**
+   * Stunned — the cartoon shorthand, stars going round the head. Drawn instead of the frost,
+   * since a stun is a freeze as far as everything else is concerned: the ice would say the
+   * wrong thing about how the player got held and how they will get out of it.
+   */
+  private def drawStunnedEffect(cx: Double, cy: Double): Unit = {
+    beginShapes()
+    val x = cx.toFloat
+    val y = (cy - 22).toFloat // just above the head
+    val tick = animationTick
+
+    // A warm glow behind them, so the stars hold up over pale sand as well as dark stone
+    val pulse = (0.6 + 0.4 * Math.sin(tick * 0.09)).toFloat
+    shapeBatch.fillOvalSoft(x, y, 22f, 10f, 1f, 0.9f, 0.35f, 0.13f * pulse, 0f, 14)
+
+    // Four stars round a squashed ellipse: the far half of the orbit is smaller and dimmer,
+    // which is what makes it read as going round the head rather than as a ring of stickers
+    var i = 0
+    while (i < 4) {
+      val a = tick * 0.07f + i * (Math.PI.toFloat / 2f)
+      val sx = x + Math.cos(a).toFloat * 17f
+      val sy = y + Math.sin(a).toFloat * 6f
+      val front = (Math.sin(a).toFloat + 1f) * 0.5f
+      star5(sx, sy, 3.2f + front * 1.8f, a * 0.6f + i, 1f, 0.87f, 0.25f, 0.45f + front * 0.45f)
+      i += 1
+    }
+
+    // A spark or two thrown off the ring
+    var s = 0
+    while (s < 3) {
+      val ph = (tick * 0.05f + s * 0.33f) % 1f
+      val sa = tick * 0.03f + s * 2.1f
+      val sx = x + Math.cos(sa).toFloat * (10f + ph * 14f)
+      val sy = y + Math.sin(sa).toFloat * (4f + ph * 5f) - ph * 4f
+      shapeBatch.fillOval(sx, sy, 1.6f, 1.6f, 1f, 0.95f, 0.6f, (1f - ph) * 0.5f, 5)
+      s += 1
+    }
+  }
+
+  /** A five-pointed star: a radius per vertex, so it is filled from its own centre. Fanned from
+    * vertex 0 (fillPolygon) a star bridges its own notches and comes out a lopsided blob. */
+  private def star5(cx: Float, cy: Float, radius: Float, rotation: Float,
+                    r: Float, g: Float, b: Float, a: Float): Unit = {
+    var i = 0
+    while (i < 10) {
+      val ang = rotation + i * (Math.PI.toFloat / 5f) - Math.PI.toFloat / 2f
+      val rad = if ((i & 1) == 0) radius else radius * 0.42f
+      _starXs(i) = cx + Math.cos(ang).toFloat * rad
+      _starYs(i) = cy + Math.sin(ang).toFloat * rad * 0.85f
+      i += 1
+    }
+    shapeBatch.fillFan(cx, cy, _starXs, _starYs, 10, r, g, b, a)
+    shapeBatch.strokePolygon(_starXs, _starYs, 10, 1f, 0.4f, 0.22f, 0.02f, a * 0.8f)
+  }
+
+  /**
+   * Poisoned — acid bubbles boiling off them over a dark, murky pool, with a sickly wash over
+   * the body. Green alone is no use: half the maps are grass, and a mid-green effect over a
+   * green ground disappears. Every part of this pairs an acid highlight with a near-black rim
+   * so it reads by value as well as by hue, over grass as much as over sand or stone. Kept off
+   * the burn's additive pass: poison is meant to look sickly, not to glow.
+   */
+  private def drawPoisonEffect(cx: Double, cy: Double): Unit = {
+    beginShapes()
+    val x = cx.toFloat; val y = cy.toFloat
+    val tick = animationTick
+    val pulse = (0.6 + 0.4 * Math.sin(tick * 0.06)).toFloat
+
+    // A sick wash over the body, which is what darkens them against a green map
+    shapeBatch.fillOvalSoft(x, y, 26f, 21f, 0.10f, 0.30f, 0.06f, 0.26f * pulse, 0f, 16)
+    shapeBatch.fillOval(x, y + 2f, 16f, 14f, 0.08f, 0.24f, 0.05f, 0.16f, 14)
+
+    // The pool at their feet: dark and murky, ringed in acid
+    shapeBatch.fillOvalSoft(x, y + 10f, 27f, 12f, 0.06f, 0.17f, 0.04f, 0.38f * pulse, 0f, 16)
+    shapeBatch.fillOval(x, y + 10f, 18f, 8f, 0.10f, 0.26f, 0.06f, 0.35f, 14)
+    shapeBatch.strokeOval(x, y + 10f, 21f, 9f, 2.2f, 0.55f, 1f, 0.2f, 0.55f * pulse, 16)
+
+    // Bubbles boiling off them, each rimmed in near-black so it stands off the sprite
+    var i = 0
+    while (i < 9) {
+      val ph = (tick * 0.02f + i * 0.111f) % 1f
+      val bx = x + Math.sin(tick * 0.035 + i * 1.9).toFloat * (11f - ph * 5f)
+      val by = y + 9f - ph * 31f
+      val sz = 2.2f + (1f - ph) * 3f
+      val fade = if (ph > 0.82f) (1f - ph) / 0.18f else 1f
+      shapeBatch.fillOval(bx, by, sz + 1.3f, sz * 0.9f + 1.3f, 0.04f, 0.13f, 0.03f, 0.55f * fade, 8)
+      shapeBatch.fillOval(bx, by, sz, sz * 0.9f, 0.45f, 0.92f, 0.22f, 0.8f * fade, 8)
+      // The catchlight that makes it a bubble and not a dot
+      shapeBatch.fillOval(bx - sz * 0.32f, by - sz * 0.34f, sz * 0.32f, sz * 0.28f, 0.9f, 1f, 0.75f, 0.7f * fade, 5)
+      // The burst it goes out on
+      if (ph > 0.82f) shapeBatch.strokeOval(bx, by, sz * 2.2f, sz * 1.9f, 1.4f, 0.6f, 1f, 0.3f, 0.5f * fade, 10)
+      i += 1
+    }
+
+    // Drips running off them into it
+    var d = 0
+    while (d < 3) {
+      val ph = (tick * 0.035f + d * 0.33f) % 1f
+      val dx0 = x + (d - 1) * 9f + Math.sin(tick * 0.03 + d).toFloat * 2f
+      val dy0 = y - 5f + ph * 16f
+      shapeBatch.strokeLineSoft(dx0, dy0 - 5f, dx0, dy0, 1.6f, 0.12f, 0.3f, 0.07f, 0.4f * (1f - ph))
+      shapeBatch.fillOval(dx0, dy0, 2.2f, 3.4f, 0.05f, 0.15f, 0.03f, 0.55f * (1f - ph * 0.5f), 6)
+      shapeBatch.fillOval(dx0, dy0, 1.4f, 2.4f, 0.45f, 0.92f, 0.22f, 0.7f * (1f - ph * 0.5f), 6)
+      d += 1
+    }
   }
 
   private def drawRootedEffect(cx: Double, cy: Double): Unit = {

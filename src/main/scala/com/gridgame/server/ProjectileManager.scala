@@ -19,9 +19,10 @@ case class ProjectileMoved(projectile: Projectile) extends ProjectileEvent
 case class ProjectileHit(projectile: Projectile, targetId: UUID, flyingOn: Boolean = false) extends ProjectileEvent
 // Only the blow that killed the target: a player already dead is never hit, so never killed twice
 case class ProjectileKill(projectile: Projectile, targetId: UUID, flyingOn: Boolean = false) extends ProjectileEvent
-// held: the splash froze or rooted the target
-case class ProjectileAoEHit(projectile: Projectile, targetId: UUID, held: Boolean = false) extends ProjectileEvent
-case class ProjectileAoEKill(projectile: Projectile, targetId: UUID) extends ProjectileEvent
+// damage: what the splash took off this victim, which is not the projectile's own damage (a
+// ground slam's is 0). held: the splash froze, stunned or rooted the target
+case class ProjectileAoEHit(projectile: Projectile, targetId: UUID, damage: Int, held: Boolean = false) extends ProjectileEvent
+case class ProjectileAoEKill(projectile: Projectile, targetId: UUID, damage: Int) extends ProjectileEvent
 case class ProjectileDespawned(projectile: Projectile) extends ProjectileEvent
 case class ProjectileAoE(projectile: Projectile) extends ProjectileEvent
 
@@ -196,7 +197,8 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
               toRemove += projectile.id
               // AoE on max range (e.g. geyser, snare mine)
               pDef.aoeOnMaxRange.foreach { aoe =>
-                events ++= applyAoEDamage(projectile, aoe.radius, aoe.damage, null, aoe.freezeDurationMs, aoe.rootDurationMs)
+                events ++= applyAoEDamage(projectile, aoe.radius, aoe.damage, null, aoe.freezeDurationMs,
+                  aoe.rootDurationMs, aoe.stunDurationMs)
               }
               if (pDef.isExplosive) {
                 events += ProjectileAoE(projectile)
@@ -261,7 +263,8 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
 
                 // AoE splash damage to nearby players (excluding the direct hit target)
                 pDef.aoeOnHit.foreach { aoe =>
-                  events ++= applyAoEDamage(projectile, aoe.radius, aoe.damage, hitPlayer.getId, aoe.freezeDurationMs, aoe.rootDurationMs)
+                  events ++= applyAoEDamage(projectile, aoe.radius, aoe.damage, hitPlayer.getId, aoe.freezeDurationMs,
+                    aoe.rootDurationMs, aoe.stunDurationMs)
                 }
 
                 if (!canPierce) {
@@ -312,7 +315,9 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
   }
 
   /** Deal AoE damage to all players within radius of the projectile, excluding excludeId (the direct-hit target). */
-  private def applyAoEDamage(projectile: Projectile, radius: Float, damage: Int, excludeId: UUID, freezeDurationMs: Int = 0, rootDurationMs: Int = 0): Seq[ProjectileEvent] = {
+  private def applyAoEDamage(projectile: Projectile, radius: Float, damage: Int, excludeId: UUID,
+                             freezeDurationMs: Int = 0, rootDurationMs: Int = 0,
+                             stunDurationMs: Int = 0): Seq[ProjectileEvent] = {
     val events = ArrayBuffer[ProjectileEvent]()
     val px = projectile.getX
     val py = projectile.getY
@@ -331,11 +336,12 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
           Projectile.withinPlayer(px, py, player, radius)) {
         val killed = player.damage(damage)
         if (killed) {
-          events += ProjectileAoEKill(projectile, player.getId)
+          events += ProjectileAoEKill(projectile, player.getId, damage)
         } else if (!player.isDead) {
           val frozen = freezeDurationMs > 0 && player.tryFreeze(freezeDurationMs)
+          val stunned = stunDurationMs > 0 && player.tryStun(stunDurationMs)
           val rooted = rootDurationMs > 0 && player.tryRoot(rootDurationMs)
-          events += ProjectileAoEHit(projectile, player.getId, held = frozen || rooted)
+          events += ProjectileAoEHit(projectile, player.getId, damage, held = frozen || stunned || rooted)
         }
       }
     }

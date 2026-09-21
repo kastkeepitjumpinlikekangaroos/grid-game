@@ -195,6 +195,7 @@ object Attrs {
   val CauseProjectile: Attributes = Attributes.of(Cause, "projectile")
   val CauseAoe: Attributes = Attributes.of(Cause, "aoe")
   val CauseBurn: Attributes = Attributes.of(Cause, "burn")
+  val CausePoison: Attributes = Attributes.of(Cause, "poison")
 
   // ---------- Bot action kinds ----------
   val BotMove: Attributes = Attributes.of(Action, "move")

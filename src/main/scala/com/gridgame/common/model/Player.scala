@@ -24,6 +24,9 @@ class Player(
   private var gemBoostUntil: Long = 0
   private var _chargeLevel: Int = 0
   private var frozenUntil: Long = 0
+  // A stun is a freeze that is drawn differently: frozenUntil holds it, this only says which
+  // of the two it is, so every "is frozen" gate keeps working untouched.
+  private var stunnedUntil: Long = 0
   private var ccImmuneUntil: Long = 0
   @volatile private var phasedUntil: Long = 0
   private var characterId: Byte = CharacterId.DEFAULT.id
@@ -35,6 +38,13 @@ class Player(
   private var burnTickMs: Int = 0
   private var lastBurnTick: Long = 0
   private var burnOwnerId: UUID = _
+
+  // Poison (DoT) state — a slot of its own, so a poison and a burn run at once
+  private var poisonUntil: Long = 0
+  private var poisonDamagePerTick: Int = 0
+  private var poisonTickMs: Int = 0
+  private var lastPoisonTick: Long = 0
+  private var poisonOwnerId: UUID = _
 
   // Speed boost state
   private var speedBoostUntil: Long = 0
@@ -168,6 +178,30 @@ class Player(
     if (isFrozen || isCCImmune || isPhased) return false
     val now = System.currentTimeMillis()
     frozenUntil = now + durationMs
+    stunnedUntil = 0
+    ccImmuneUntil = frozenUntil + com.gridgame.common.Constants.CC_IMMUNITY_MS
+    true
+  }
+
+  def getStunnedUntil: Long = stunnedUntil
+
+  def setStunnedUntil(until: Long): Unit = {
+    this.stunnedUntil = until
+  }
+
+  /** A stunned player is frozen too — this is only what the client draws over them. */
+  def isStunned: Boolean = System.currentTimeMillis() < stunnedUntil
+
+  /**
+   * Try to stun this player: a freeze by another name, with the same rules, the same timer and
+   * the same CC immunity after it, so everything that already refuses to move, fire or cast
+   * while frozen refuses while stunned without knowing stuns exist.
+   */
+  def tryStun(durationMs: Long): Boolean = {
+    if (isFrozen || isCCImmune || isPhased) return false
+    val now = System.currentTimeMillis()
+    frozenUntil = now + durationMs
+    stunnedUntil = frozenUntil
     ccImmuneUntil = frozenUntil + com.gridgame.common.Constants.CC_IMMUNITY_MS
     true
   }
@@ -221,6 +255,36 @@ class Player(
   def clearBurn(): Unit = {
     this.burnUntil = 0
     this.burnDamagePerTick = 0
+  }
+
+  // Poison accessors
+  def isPoisoned: Boolean = System.currentTimeMillis() < poisonUntil
+
+  def getPoisonUntil: Long = poisonUntil
+
+  def getPoisonDamagePerTick: Int = poisonDamagePerTick
+
+  def getPoisonTickMs: Int = poisonTickMs
+
+  def getLastPoisonTick: Long = lastPoisonTick
+
+  def setLastPoisonTick(t: Long): Unit = { lastPoisonTick = t }
+
+  def getPoisonOwnerId: UUID = poisonOwnerId
+
+  def applyPoison(totalDamage: Int, durationMs: Int, tickMs: Int, ownerId: UUID): Unit = {
+    val now = System.currentTimeMillis()
+    this.poisonUntil = now + durationMs
+    this.poisonTickMs = tickMs
+    val numTicks = durationMs / tickMs
+    this.poisonDamagePerTick = if (numTicks > 0) totalDamage / numTicks else totalDamage
+    this.lastPoisonTick = now
+    this.poisonOwnerId = ownerId
+  }
+
+  def clearPoison(): Unit = {
+    this.poisonUntil = 0
+    this.poisonDamagePerTick = 0
   }
 
   // Speed boost accessors

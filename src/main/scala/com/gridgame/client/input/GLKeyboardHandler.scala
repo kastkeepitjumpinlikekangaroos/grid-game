@@ -166,18 +166,7 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
     val now = System.currentTimeMillis()
     if (client.isSwooping) return
 
-    val moveRate = if (client.isCharging) {
-      val chargePct = client.getChargeLevel / 100.0
-      (Constants.MOVE_RATE_LIMIT_MS * (1.0 + chargePct * 9.0)).toInt
-    } else if (client.isPhased) {
-      25
-    } else if (client.hasSpeedBoost) {
-      30
-    } else if (client.isSlowed) {
-      (Constants.MOVE_RATE_LIMIT_MS * 2)
-    } else {
-      Constants.MOVE_RATE_LIMIT_MS
-    }
+    val moveRate = client.moveStepIntervalMs
 
     // Isometric WASD
     var dx = 0

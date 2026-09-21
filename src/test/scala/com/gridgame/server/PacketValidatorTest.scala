@@ -1,12 +1,14 @@
 package com.gridgame.server
 
 import com.gridgame.common.Constants
+import com.gridgame.common.model.CharacterId
+import com.gridgame.common.model.Movement
 import org.junit.Assert._
 import org.junit.Test
 
 import java.util.UUID
 
-/** Replay protection: each session's packets carry increasing sequence numbers. */
+/** Replay protection and the movement speed check. */
 class PacketValidatorTest {
   private val v = new PacketValidator()
   private val id = UUID.randomUUID()
@@ -65,5 +67,38 @@ class PacketValidatorTest {
     val other = UUID.randomUUID()
     assertTrue(tcp(100))
     assertTrue(v.validateSequence(other, 1, isUdp = false))
+  }
+
+  // --- The speed check ---
+
+  @Test def theAllowanceIsTwiceTheCharactersOwnRatePlusTwoCells(): Unit = {
+    // A second of walking at speed 1.0 is 20 cells; the allowance is 42
+    assertEquals(42, PacketValidator.maxCellsIn(1000, 1.0f))
+    assertEquals(22, PacketValidator.maxCellsIn(500, 1.0f))
+    assertEquals("the grace with no time at all", 2, PacketValidator.maxCellsIn(0, 1.0f))
+  }
+
+  @Test def aFasterCharacterIsAllowedToBeFaster(): Unit = {
+    // It used to be a cell per MOVE_RATE_LIMIT_MS for everyone, so a character quicker than 1.0
+    // would have been refused for walking at the speed they were given
+    assertEquals("twice the pace, twice the allowance", 82, PacketValidator.maxCellsIn(1000, 2.0f))
+    assertEquals(52, PacketValidator.maxCellsIn(1000, 1.25f))
+    assertEquals(42, PacketValidator.maxCellsIn(1000, 1.0f))
+    assertEquals(22, PacketValidator.maxCellsIn(1000, 0.5f))
+    // 25ms a cell at 2.0, 50 at 1.0, 100 at 0.5 — the rate Movement moves them at
+    assertEquals(25.0, Movement.baseStepIntervalMs(2.0f), 0.0)
+    assertEquals(100.0, Movement.baseStepIntervalMs(0.5f), 0.0)
+  }
+
+  @Test def aOneSpeedCharacterIsStillRefusedBeyondTheAllowance(): Unit = {
+    val m = new TestMatch()
+    val player = m.join(CharacterId.Gladiator, 20, 20) // a Gladiator walks at 1.0, as all of them do
+    // Two updates a measurable gap apart: the first only starts the clock
+    assertTrue(m.move(player, 21, 20, gapMs = 5))
+    assertTrue("a step is fine", m.move(player, 22, 20, gapMs = 5))
+    // A jump of 40 cells in a few milliseconds is beyond 2x + 2 however it is sliced, and the
+    // Gladiator has neither a blink nor a dash to excuse it
+    assertFalse("a 40-cell jump", m.move(player, 22, 60, gapMs = 5))
+    assertEquals((22, 20), m.at(player))
   }
 }

@@ -59,6 +59,10 @@ class CharacterRosterTest {
       }
     }
     all.foreach(c => assertTrue(s"${c.displayName} health", c.maxHealth > 0))
+    // A multiplier on the base walking rate (Movement), so a stray 10f is a character crossing
+    // the map in a second and a stray 0.1f is one who can't get out of their spawn
+    all.foreach(c => assertTrue(s"${c.displayName} speed ${c.moveSpeed}",
+      c.moveSpeed >= 0.5f && c.moveSpeed <= 2.0f))
   }
 
   @Test def everySpriteSheetIsThere(): Unit = {

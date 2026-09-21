@@ -214,17 +214,13 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         if (target != null && !target.isDead) {
           // Apply type-specific on-hit effects from ProjectileDef (skip dead targets)
           ProjectileDef.get(projectile.projectileType).onHitEffect.foreach {
-            case PullToOwner =>
-              val owner = registry.get(projectile.ownerId)
-              if (owner != null) {
-                val ownerPos = owner.getPosition
-                if (world.isWalkable(ownerPos.getX, ownerPos.getY) && ownerPos != target.getPosition) {
-                  moveByServer(target, ownerPos)
-                }
-              }
+            case PullToOwner => pullToOwner(projectile, target)
 
             case Freeze(durationMs) =>
               if (target.tryFreeze(durationMs)) holdByServer(target)
+
+            case Stun(durationMs) =>
+              if (target.tryStun(durationMs)) holdByServer(target)
 
             case TeleportOwnerBehind(distance, freezeDurationMs) =>
               if (target.tryFreeze(freezeDurationMs)) holdByServer(target)
@@ -246,20 +242,11 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
               }
 
             case Push(pushDistance) =>
+              // Straight back from whoever fired it
               val pushOwner = registry.get(projectile.ownerId)
               if (pushOwner != null) {
-                val pushOwnerPos = pushOwner.getPosition
-                val pushTargetPos = target.getPosition
-                val pdx = pushTargetPos.getX - pushOwnerPos.getX
-                val pdy = pushTargetPos.getY - pushOwnerPos.getY
-                val dist = Math.sqrt(pdx * pdx + pdy * pdy)
-                if (dist > 0.01) {
-                  // Straight back from the owner, stopping at the first wall rather than
-                  // coming out on its far side
-                  val dest = Teleport.slide(world, pushTargetPos.getX, pushTargetPos.getY,
-                    pdx / dist, pdy / dist, pushDistance.toInt)
-                  if (dest != pushTargetPos) moveByServer(target, dest)
-                }
+                val from = pushOwner.getPosition
+                pushFrom(target, from.getX.toFloat, from.getY.toFloat, pushDistance)
               }
 
             case LifeSteal(healPercent) =>
@@ -271,6 +258,9 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
 
             case Burn(totalDamage, durationMs, tickMs) =>
               target.applyBurn(totalDamage, durationMs, tickMs, projectile.ownerId)
+
+            case Poison(totalDamage, durationMs, tickMs) =>
+              target.applyPoison(totalDamage, durationMs, tickMs, projectile.ownerId)
 
             case VortexPull(radius, pullStrength) =>
               // Pull all nearby enemies toward the hit location
@@ -290,12 +280,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
             case Slow(durationMs, multiplier) =>
               target.trySlow(durationMs, multiplier)
 
-            case SpeedBoost(durationMs) =>
-              val boostOwner = registry.get(projectile.ownerId)
-              if (boostOwner != null && !boostOwner.isDead) {
-                boostOwner.setSpeedBoostUntil(System.currentTimeMillis() + durationMs)
-                broadcastBuffered(stateUpdate(boostOwner))
-              }
+            case SpeedBoost(durationMs) => boostOwner(projectile, durationMs)
           }
 
           broadcastBuffered(stateUpdate(target))
@@ -328,39 +313,55 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
           }
         }
 
-      case ProjectileAoEHit(projectile, targetId, held) =>
+      case ProjectileAoEHit(projectile, targetId, damage, held) =>
         Metrics.projectilesHit.add(1L, Attrs.projectileType(projectile.projectileType))
         broadcastBuffered(projectilePacket(projectile, ProjectileAction.HIT, targetId))
         notifyAbilityHitForOwner(projectile)
 
         val aoeTarget = registry.get(targetId)
         if (aoeTarget != null) {
-          // Apply simple on-hit effects to surviving explosion victims
+          // A blast carries the same on-hit effect a direct hit would. All but the holds used to
+          // be dropped here, so a slam could neither push nor pull, the Necromancer's Soul
+          // Harvest never healed him and the Cyborg's Overclock boosted nobody.
           val pDef = ProjectileDef.get(projectile.projectileType)
           var heldHere = held
           pDef.onHitEffect.foreach {
             case Freeze(durationMs) => if (aoeTarget.tryFreeze(durationMs)) heldHere = true
+            case Stun(durationMs) => if (aoeTarget.tryStun(durationMs)) heldHere = true
             case Root(durationMs) => if (aoeTarget.tryRoot(durationMs)) heldHere = true
             case Slow(durationMs, multiplier) => aoeTarget.trySlow(durationMs, multiplier)
             case Burn(totalDamage, durationMs, tickMs) => aoeTarget.applyBurn(totalDamage, durationMs, tickMs, projectile.ownerId)
+            case Poison(totalDamage, durationMs, tickMs) => aoeTarget.applyPoison(totalDamage, durationMs, tickMs, projectile.ownerId)
             case VortexPull(radius, pullStrength) =>
               // A vortex that bursts where it lands (Vortex Bomb) pulls in what its blast caught.
               // It passes through players, so it never lands a direct hit: skipped here like the
               // other positional effects, its pull never happened at all.
               pullToward(aoeTarget, projectile.getX, projectile.getY, radius, pullStrength)
-            case _ => // Skip positional effects for AoE explosion
+            case Push(pushDistance) => pushFrom(aoeTarget, projectile.getX, projectile.getY, pushDistance)
+            case PullToOwner => pullToOwner(projectile, aoeTarget)
+            case LifeSteal(healPercent) =>
+              // Once per victim, off what the blast took from them: the projectile's own damage
+              // is 0 for a slam, so healing by that healed nothing
+              lifeSteal(projectile, healPercent, damage)
+            case SpeedBoost(durationMs) => boostOwner(projectile, durationMs)
+            case TeleportOwnerBehind(_, _) => // one target to land behind, not a crowd: direct hits only
           }
           if (heldHere) holdByServer(aoeTarget)
           broadcastBuffered(stateUpdate(aoeTarget))
         }
 
-      case ProjectileAoEKill(projectile, targetId) =>
+      case ProjectileAoEKill(projectile, targetId, damage) =>
         Metrics.projectilesHit.add(1L, Attrs.projectileType(projectile.projectileType))
         broadcastBuffered(projectilePacket(projectile, ProjectileAction.HIT, targetId))
         notifyAbilityHitForOwner(projectile)
 
         val aoeKillTarget = registry.get(targetId)
         if (aoeKillTarget != null) broadcastBuffered(stateUpdate(aoeKillTarget))
+
+        ProjectileDef.get(projectile.projectileType).onHitEffect.foreach {
+          case LifeSteal(healPercent) => lifeSteal(projectile, healPercent, damage)
+          case _ => // no life-steal
+        }
 
         recordKill(projectile.ownerId, targetId, projectile.projectileType, Attrs.CauseAoe)
 
@@ -371,6 +372,35 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     // Flush all buffered writes at end of tick
     flushAllInstancePlayers()
     Metrics.tickDuration.record((System.nanoTime() - tickStart) / 1e6, projectileTickAttrs)
+  }
+
+  /** Knock a player `cells` straight back from (fromX, fromY), stopping at the first wall rather
+    * than coming out on its far side. */
+  private def pushFrom(p: Player, fromX: Float, fromY: Float, cells: Float): Unit = {
+    val pos = p.getPosition
+    val pdx = pos.getX - fromX
+    val pdy = pos.getY - fromY
+    val dist = Math.sqrt(pdx * pdx + pdy * pdy)
+    if (dist <= 0.01) return
+    val dest = Teleport.slide(world, pos.getX, pos.getY, pdx / dist, pdy / dist, cells.toInt)
+    if (dest != pos) moveByServer(p, dest)
+  }
+
+  /** Drag a player onto the cell the projectile's owner is standing on. */
+  private def pullToOwner(projectile: Projectile, p: Player): Unit = {
+    val owner = registry.get(projectile.ownerId)
+    if (owner == null) return
+    val ownerPos = owner.getPosition
+    if (world.isWalkable(ownerPos.getX, ownerPos.getY) && ownerPos != p.getPosition) moveByServer(p, ownerPos)
+  }
+
+  /** Speed the projectile's owner up — the effect lands on whoever fired it, not on what it hit. */
+  private def boostOwner(projectile: Projectile, durationMs: Int): Unit = {
+    val owner = registry.get(projectile.ownerId)
+    if (owner != null && !owner.isDead) {
+      owner.setSpeedBoostUntil(System.currentTimeMillis() + durationMs)
+      broadcastBuffered(stateUpdate(owner))
+    }
   }
 
   /** Pull a player up to `strength` cells toward (vx, vy), if they are within `radius` of it,
@@ -386,13 +416,17 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     true
   }
 
-  /** Heal the owner of a life-stealing projectile by its share of the damage it dealt. */
+  /** Heal the owner of a life-stealing projectile by its share of the damage the hit dealt. */
   private def lifeSteal(projectile: Projectile, healPercent: Int): Unit = {
+    val pDef = ProjectileDef.get(projectile.projectileType)
+    lifeSteal(projectile, healPercent, pDef.effectiveDamage(projectile.chargeLevel, projectile.getDistanceTraveled))
+  }
+
+  /** The same, for a blast: a slam's own damage is 0, so it has to be told what its splash took. */
+  private def lifeSteal(projectile: Projectile, healPercent: Int, damage: Int): Unit = {
     val lsOwner = registry.get(projectile.ownerId)
     if (lsOwner != null && !lsOwner.isDead) {
-      val pDef = ProjectileDef.get(projectile.projectileType)
-      val dmg = pDef.effectiveDamage(projectile.chargeLevel, projectile.getDistanceTraveled)
-      val healAmount = dmg * healPercent / 100
+      val healAmount = damage * healPercent / 100
       lsOwner.synchronized {
         lsOwner.setHealth(Math.min(lsOwner.getMaxHealth, lsOwner.getHealth + healAmount))
       }
@@ -451,6 +485,15 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     (if (p.isRooted) 0x40 else 0) |
     (if (p.isSlowed) 0x80 else 0)
 
+  /** The status flags that didn't fit in the first byte. Bit 2 (a barrier) is not ours yet. */
+  private[server] def playerFlags2(p: Player): Int =
+    (if (p.isStunned) 0x01 else 0) |
+    (if (p.isPoisoned) 0x02 else 0)
+
+  /** How slow a slow has this player, as a percentage, so their client steps at the real rate. */
+  private def slowPercent(p: Player): Int =
+    if (!p.isSlowed) 0 else Math.max(1, Math.min(100, Math.round(p.getSlowMultiplier * 100f)))
+
   /**
    * A player as the server has them, for everyone to be told: position, health, every status
    * flag, character, team, and how many times the server has moved them. Every update the
@@ -470,7 +513,10 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
       playerFlags(p),
       p.getCharacterId,
       p.getTeamId,
-      p.getServerMoves
+      p.getServerMoves,
+      playerFlags2(p),
+      0, // aim angle: the server has no use for one yet
+      slowPercent(p)
     )
 
   /**
@@ -501,30 +547,44 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     catch { case _: Exception => }
   }
 
-  /** Tick player state (burn DoT + health regen). Runs every 200ms. */
+  // What one damage-over-time tick did, without allocating an Option per player per tick
+  private val DOT_NOT_DUE = 0
+  private val DOT_TICKED = 1
+  private val DOT_KILLED = 2
+
+  /**
+   * One tick of a player's burn or poison, if it is due. The state is read and written under the
+   * player's lock so two ticks can't both take the same one.
+   */
+  private def tickDot(player: Player, now: Long, poison: Boolean): Int = player.synchronized {
+    val due =
+      if (poison) player.isPoisoned && now >= player.getLastPoisonTick + player.getPoisonTickMs
+      else player.isBurning && now >= player.getLastBurnTick + player.getBurnTickMs
+    if (!due) DOT_NOT_DUE
+    else {
+      if (poison) player.setLastPoisonTick(now) else player.setLastBurnTick(now)
+      val killed = player.damage(if (poison) player.getPoisonDamagePerTick else player.getBurnDamagePerTick)
+      if (killed) DOT_KILLED else DOT_TICKED
+    }
+  }
+
+  /** Tick player state (burn and poison DoTs + health regen). Runs every 200ms. */
   private[server] def tickPlayers(): Unit = {
     if (!running) return
     val tickStart = System.nanoTime()
     val now = System.currentTimeMillis()
     registry.forEachPlayer { player =>
       if (!player.isDead) {
-        // --- Burn DoT ---
-        // All burn state reads inside synchronized to prevent double-tick race
-        val burnResult = player.synchronized {
-          if (player.isBurning && now >= player.getLastBurnTick + player.getBurnTickMs) {
-            player.setLastBurnTick(now)
-            Some(player.damage(player.getBurnDamagePerTick))
-          } else None
-        }
-        if (burnResult.isDefined) {
-          if (burnResult.get) {
-            // Burn killed the player — attribute to burn owner
-            recordKill(player.getBurnOwnerId, player.getId, 0.toByte, Attrs.CauseBurn)
-          }
-          // Broadcast updated health
+        // --- Damage over time: a burn and a poison run side by side ---
+        val burn = tickDot(player, now, poison = false)
+        if (burn == DOT_KILLED) recordKill(player.getBurnOwnerId, player.getId, 0.toByte, Attrs.CauseBurn)
+        val poison = if (player.isDead) DOT_NOT_DUE else tickDot(player, now, poison = true)
+        if (poison == DOT_KILLED) recordKill(player.getPoisonOwnerId, player.getId, 0.toByte, Attrs.CausePoison)
+        if (burn != DOT_NOT_DUE || poison != DOT_NOT_DUE) {
+          // Broadcast updated health. No regen on a tick a DoT took a bite out of them.
           broadcastToInstance(stateUpdate(player))
         } else if (player.getHealth < player.getMaxHealth) {
-          // --- Health Regen (only when not burning and not at full health) ---
+          // --- Health Regen (only when no DoT ticked and not at full health) ---
           val maxHp = player.getMaxHealth
           val regenPerSec = 3.0 - (maxHp - 70) * (2.0 / 50.0)
           player.addRegenAccumulator(regenPerSec * 0.2) // 200ms tick
@@ -568,9 +628,11 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
       player.setHealth(player.getMaxHealth)
       player.setDirection(Direction.Down)
       player.clearBurn()
+      player.clearPoison()
       player.clearSlow()
       player.setRootedUntil(0)
       player.setFrozenUntil(0)
+      player.setStunnedUntil(0)
       player.setSpeedBoostUntil(0)
       // The client drops these on respawn too. Kept here, a shield or phase still running from
       // the last life made the new one briefly unhittable, and a gem boost doubled the speed
@@ -707,6 +769,35 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   def broadcastProjectileSpawn(projectile: Projectile): Unit = {
     broadcastToInstance(projectilePacket(projectile, ProjectileAction.SPAWN))
     Metrics.projectilesSpawned.add(1L, Attrs.projectileType(projectile.projectileType))
+    applyCastSelfBuff(projectile)
+  }
+
+  /**
+   * A slam that buffs its caster does it on the cast, not on a hit. The Cyborg's Overclock is a
+   * 0-damage ring whose on-hit effect is a speed boost, so it only sped him up when an enemy
+   * happened to be standing inside it — which, for an ability that is entirely a self-buff, is
+   * never when it matters.
+   */
+  private def applyCastSelfBuff(projectile: Projectile): Unit =
+    ProjectileDef.get(projectile.projectileType).onHitEffect match {
+      case Some(SpeedBoost(durationMs)) =>
+        val owner = registry.get(projectile.ownerId)
+        if (owner != null && !owner.isDead && castsAsSlam(owner, projectile.projectileType)) {
+          owner.setSpeedBoostUntil(System.currentTimeMillis() + durationMs)
+          broadcastToInstance(stateUpdate(owner))
+        }
+      case _ => // a travelling projectile buffs on the hit, as before
+    }
+
+  /** Does this player's Q or E throw this projectile down as a ground slam? */
+  private def castsAsSlam(p: Player, projectileType: Byte): Boolean = {
+    def isSlam(a: AbilityDef): Boolean =
+      a.projectileType == projectileType && (a.castBehavior match {
+        case GroundSlam(_) => true
+        case _ => false
+      })
+    val charDef = CharacterDef.get(p.getCharacterId)
+    charDef != null && (isSlam(charDef.qAbility) || isSlam(charDef.eAbility))
   }
 
   def broadcastItemPickup(item: Item, playerId: UUID): Unit = {
