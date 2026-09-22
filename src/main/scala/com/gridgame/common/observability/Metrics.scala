@@ -231,6 +231,18 @@ object Metrics {
     .setUnit("{item}")
     .build()
 
+  val trapsPlaced: LongCounter = meter
+    .counterBuilder("gridgame.traps.placed")
+    .setDescription("Traps put on the ground")
+    .setUnit("{trap}")
+    .build()
+
+  val trapsSprung: LongCounter = meter
+    .counterBuilder("gridgame.traps.sprung")
+    .setDescription("Traps an enemy stepped on")
+    .setUnit("{trap}")
+    .build()
+
   val tilesModified: LongCounter = meter
     .counterBuilder("gridgame.tiles.modified")
     .setDescription("Tiles changed at runtime (fence placement)")

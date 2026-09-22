@@ -309,6 +309,15 @@ class GLGameRenderer(val client: GameClient) {
   private val _barRingXs = new Array[Float](BARRIER_RING_POINTS)
   private val _barRingYs = new Array[Float](BARRIER_RING_POINTS)
 
+  // Traps: how plainly an enemy's is drawn (ours and our allies' are drawn in full), how long
+  // before it runs out it starts to fade, and how long its going off is shown for
+  private val ENEMY_TRAP_ALPHA = 0.30f
+  private val TRAP_FADE_MS = 800f
+  private val TRAP_EFFECT_MS = 620f
+  // Scratch for one trap's decal: a tooth, a chip, a flame tongue
+  private val _trapXs = new Array[Float](8)
+  private val _trapYs = new Array[Float](8)
+
   private def deferHealthBar(cx: Double, topY: Double, hp: Int, maxHp: Int, team: Byte, pid: UUID, name: String): Unit = {
     if (_deferBarCount >= MAX_DEFERRED_BARS) return
     val i = _deferBarCount
@@ -664,6 +673,9 @@ class GLGameRenderer(val client: GameClient) {
 
     // === Water reflections ===
     drawWaterReflections()
+
+    // === Traps: flat decals on the ground, so walls in front of them cover them in phase 2 ===
+    drawTraps()
 
     // === Aim arrow ===
     drawAimArrow()
@@ -3201,6 +3213,258 @@ class GLGameRenderer(val client: GameClient) {
   //  AIM ARROW (5g)
   // ═══════════════════════════════════════════════════════════════════
 
+  // ═══════════════════════════════════════════════════════════════════
+  //  TRAPS
+  // ═══════════════════════════════════════════════════════════════════
+
+  @inline private def onScreen(sx: Float, sy: Float): Boolean =
+    sx > -60f && sx < canvasW + 60f && sy > -60f && sy < canvasH + 60f
+
+  /**
+   * Traps on the ground and traps going off, drawn flat in the ground pass: a wall in front of
+   * one covers it when the depth pass draws that wall, with nothing asked of EntityCollector.
+   *
+   * Ours and our allies' are drawn plainly, everyone else's at [[ENEMY_TRAP_ALPHA]] — there to
+   * be found if you look for it, not invisible and not obvious.
+   */
+  private def drawTraps(): Unit = {
+    val traps = client.getTraps
+    val effects = client.getTrapEffects
+    if (traps.isEmpty && effects.isEmpty) return
+    val now = _frameTimeMs
+    beginShapes()
+
+    if (!traps.isEmpty) {
+      val iter = traps.values().iterator()
+      while (iter.hasNext) {
+        val trap = iter.next()
+        val sx = worldToScreenX(trap.x, trap.y).toFloat
+        val sy = worldToScreenY(trap.x, trap.y).toFloat
+        if (onScreen(sx, sy)) drawTrap(trap, sx, sy, now)
+      }
+    }
+
+    if (!effects.isEmpty) {
+      val iter = effects.entrySet().iterator()
+      while (iter.hasNext) {
+        val entry = iter.next()
+        val data = entry.getValue
+        val elapsed = now - data(0)
+        if (elapsed > TRAP_EFFECT_MS) iter.remove()
+        else {
+          val wx = data(1) / 1000.0
+          val wy = data(2) / 1000.0
+          val sx = worldToScreenX(wx, wy).toFloat
+          val sy = worldToScreenY(wx, wy).toFloat
+          if (onScreen(sx, sy)) drawTrapEffect(data(3).toByte, sx, sy, elapsed / TRAP_EFFECT_MS)
+        }
+      }
+    }
+  }
+
+  private def drawTrap(trap: Trap, sx: Float, sy: Float, now: Long): Unit = {
+    val tDef = trap.defn
+    if (tDef == null) return
+    val friendly = client.isFriendlyTrap(trap)
+    val arming = !trap.isArmed(now)
+    var a = if (friendly) 1f else ENEMY_TRAP_ALPHA
+    // Dimmer while it is still arming, and fading out as its time runs out
+    if (arming) a *= 0.55f
+    val left = trap.expiresAt - now
+    if (left < TRAP_FADE_MS) a *= Math.max(0f, left / TRAP_FADE_MS)
+    if (a <= 0.01f) return
+
+    intToRGB(tDef.colorRGB)
+    val r = _rgb_r; val g = _rgb_g; val b = _rgb_b
+
+    // Sitting in the cell rather than floating over it
+    shapeBatch.fillOvalSoft(sx, sy + 1.5f, 12f, 5.5f, 0f, 0f, 0f, 0.3f * a, 0f, 12)
+
+    tDef.kind match {
+      case TrapKind.JAWS => drawJawTrap(sx, sy, r, g, b, a)
+      case TrapKind.MINE => drawMineTrap(sx, sy, r, g, b, a, now)
+      case TrapKind.POD  => drawPodTrap(sx, sy, r, g, b, a)
+      case TrapKind.RUNE => drawRuneTrap(sx, sy, r, g, b, a, trap.id)
+      case _             => drawWebTrap(sx, sy, r, g, b, a)
+    }
+
+    // Arming: a ring closing on it. Nothing is going to happen until it has finished.
+    if (arming) {
+      val armT = 1f - (trap.armedAt - now).toFloat / Math.max(1, tDef.armDelayMs)
+      val rad = 21f - 10f * armT
+      shapeBatch.strokeOval(sx, sy, rad, rad * 0.5f, 1.2f, r, g, b,
+        (if (friendly) 0.6f else 0.3f) * (0.3f + 0.7f * armT), 16)
+    }
+  }
+
+  /** A bear trap: a plate between two springs, jaws standing open around it. */
+  private def drawJawTrap(sx: Float, sy: Float, r: Float, g: Float, b: Float, a: Float): Unit = {
+    // Base plate and the springs at either end
+    shapeBatch.fillOval(sx, sy, 9.5f, 4.6f, r * 0.34f, g * 0.34f, b * 0.38f, 0.9f * a, 14)
+    shapeBatch.fillOval(sx - 10.5f, sy, 3.2f, 2.1f, r * 0.55f, g * 0.55f, b * 0.55f, 0.9f * a, 8)
+    shapeBatch.fillOval(sx + 10.5f, sy, 3.2f, 2.1f, r * 0.55f, g * 0.55f, b * 0.55f, 0.9f * a, 8)
+    // The two jaws, open: a band of steel above the plate and one below
+    shapeBatch.fillArcBand(sx, sy, 7.6f, 3.6f, 10.4f, 5.0f, Math.PI.toFloat, Math.PI.toFloat, 9,
+      r, g, b, 0.95f * a, 0.95f * a)
+    shapeBatch.fillArcBand(sx, sy, 7.6f, 3.6f, 10.4f, 5.0f, 0f, Math.PI.toFloat, 9,
+      r * 0.82f, g * 0.82f, b * 0.82f, 0.95f * a, 0.95f * a)
+    // Teeth, pointing in at whatever stands on the plate. Kept short: a tooth authored much
+    // longer than this reads as a row of shark's teeth at the size a trap is actually seen.
+    var i = 0
+    while (i < 8) {
+      val ang = (Math.PI * (0.18 + 0.21 * (i % 4)) + (if (i < 4) Math.PI else 0.0)).toFloat
+      val c = Math.cos(ang).toFloat
+      val sn = Math.sin(ang).toFloat
+      _trapXs(0) = sx + 7.6f * c; _trapYs(0) = sy + 3.6f * sn
+      _trapXs(1) = sx + 4.4f * c - 1.4f * sn; _trapYs(1) = sy + 2.1f * sn + 0.7f * c
+      _trapXs(2) = sx + 4.4f * c + 1.4f * sn; _trapYs(2) = sy + 2.1f * sn - 0.7f * c
+      shapeBatch.fillPolygon(_trapXs, _trapYs, 3, 0.92f, 0.93f, 0.95f, 0.85f * a)
+      i += 1
+    }
+    // The pressure plate
+    shapeBatch.fillOval(sx, sy, 3.6f, 1.8f, r * 0.75f, g * 0.7f, b * 0.6f, 0.95f * a, 10)
+  }
+
+  /** A mine: a cased charge sunk into the ground with a diode that blinks. */
+  private def drawMineTrap(sx: Float, sy: Float, r: Float, g: Float, b: Float, a: Float, now: Long): Unit = {
+    shapeBatch.fillOval(sx, sy, 8.4f, 4.4f, r * 0.3f, g * 0.3f, b * 0.32f, 0.9f * a, 14)
+    shapeBatch.fillOval(sx, sy - 2.4f, 8.4f, 4.4f, r * 0.55f, g * 0.5f, b * 0.5f, 0.95f * a, 14)
+    // A warning band round the casing
+    shapeBatch.fillArcBand(sx, sy - 2.4f, 5.4f, 2.8f, 7.4f, 3.9f, 0f, (Math.PI * 2).toFloat, 14,
+      r, g * 0.55f, b * 0.35f, 0.6f * a, 0.6f * a)
+    shapeBatch.strokeOval(sx, sy - 2.4f, 8.4f, 4.4f, 1f, r * 0.8f, g * 0.75f, b * 0.7f, 0.6f * a, 14)
+    // The diode: on for a fifth of every beat, which is what reads as blinking rather than pulsing
+    val blink = if ((now % 900L) < 170L) 1f else 0.12f
+    shapeBatch.fillOvalSoft(sx, sy - 3.4f, 5.5f, 3.4f, 1f, 0.25f, 0.15f, 0.4f * blink * a, 0f, 10)
+    shapeBatch.fillOval(sx, sy - 3.4f, 1.6f, 1.2f, 1f, 0.35f, 0.25f, (0.35f + 0.65f * blink) * a, 8)
+  }
+
+  /** A spore pod: a swollen sac, split at the top, ready to burst. */
+  private def drawPodTrap(sx: Float, sy: Float, r: Float, g: Float, b: Float, a: Float): Unit = {
+    shapeBatch.fillOval(sx, sy - 0.5f, 8.2f, 5.0f, r * 0.45f, g * 0.5f, b * 0.35f, 0.92f * a, 14)
+    shapeBatch.fillOval(sx - 3.8f, sy + 1.2f, 4.4f, 2.9f, r * 0.55f, g * 0.6f, b * 0.4f, 0.9f * a, 10)
+    shapeBatch.fillOval(sx + 3.9f, sy + 1.3f, 4.2f, 2.8f, r * 0.5f, g * 0.55f, b * 0.38f, 0.9f * a, 10)
+    // The lit cap, and the split across it
+    shapeBatch.fillOval(sx, sy - 2.6f, 5.4f, 3.2f, r, g, b, 0.9f * a, 12)
+    shapeBatch.strokeLine(sx - 3.4f, sy - 3.2f, sx + 3.2f, sy - 2.0f, 1.1f,
+      r * 0.35f, g * 0.4f, b * 0.25f, 0.8f * a)
+    // Pores, and the haze over it
+    shapeBatch.fillOvalSoft(sx, sy - 3.4f, 7.5f, 4.5f, r, g, b, 0.18f * a, 0f, 12)
+    shapeBatch.fillOval(sx - 2.2f, sy - 0.2f, 1.1f, 0.8f, r * 0.3f, g * 0.35f, b * 0.2f, 0.8f * a, 6)
+    shapeBatch.fillOval(sx + 2.6f, sy + 0.4f, 1.0f, 0.7f, r * 0.3f, g * 0.35f, b * 0.2f, 0.8f * a, 6)
+  }
+
+  /** A fire rune: a glyph burnt into the ground, still smouldering. */
+  private def drawRuneTrap(sx: Float, sy: Float, r: Float, g: Float, b: Float, a: Float, seed: Int): Unit = {
+    val flicker = 0.68f + 0.32f * Math.sin(_animTickF * 0.21f + seed * 1.7f).toFloat
+    // Scorched ground under it
+    shapeBatch.fillOvalSoft(sx, sy, 12f, 6f, 0.06f, 0.04f, 0.03f, 0.5f * a, 0f, 14)
+    shapeBatch.strokeOval(sx, sy, 9.4f, 4.7f, 1.4f, r, g, b, 0.85f * a * flicker, 16)
+    shapeBatch.strokeOval(sx, sy, 6.2f, 3.1f, 0.9f, r, g * 0.8f, b * 0.6f, 0.5f * a * flicker, 14)
+    // The glyph: three strokes, bright enough that the bloom picks them up
+    shapeBatch.strokeLine(sx - 4.2f, sy - 1.6f, sx + 4.2f, sy + 1.6f, 1.3f, 1f, g + 0.25f, b + 0.2f, 0.9f * a * flicker)
+    shapeBatch.strokeLine(sx + 4.2f, sy - 1.6f, sx - 4.2f, sy + 1.6f, 1.3f, 1f, g + 0.25f, b + 0.2f, 0.9f * a * flicker)
+    shapeBatch.strokeLine(sx, sy - 3.1f, sx, sy + 3.1f, 1.1f, 1f, g + 0.15f, b + 0.1f, 0.7f * a * flicker)
+    // An ember lifting off it
+    val emberY = sy - 3f - 3.5f * ((_animTickF * 0.05f + seed * 0.3f) % 1f)
+    shapeBatch.fillOval(sx + 2.5f, emberY, 0.9f, 0.9f, 1f, 0.7f, 0.35f, 0.55f * a * flicker, 6)
+  }
+
+  /** A snare: a web stretched flat across the cell. */
+  private def drawWebTrap(sx: Float, sy: Float, r: Float, g: Float, b: Float, a: Float): Unit = {
+    var i = 0
+    while (i < 8) {
+      val ang = (Math.PI * 2 * i / 8).toFloat
+      val c = Math.cos(ang).toFloat
+      val sn = Math.sin(ang).toFloat
+      shapeBatch.strokeLine(sx, sy, sx + 11.5f * c, sy + 5.6f * sn, 0.8f, r, g, b, 0.7f * a)
+      i += 1
+    }
+    shapeBatch.strokeOval(sx, sy, 5.6f, 2.8f, 0.8f, r, g, b, 0.6f * a, 12)
+    shapeBatch.strokeOval(sx, sy, 10.5f, 5.2f, 0.8f, r, g, b, 0.45f * a, 14)
+    shapeBatch.fillOval(sx, sy, 1.4f, 1.0f, r, g, b, 0.7f * a, 6)
+  }
+
+  /**
+   * A trap going off, over the fraction `t` of its short life. A mine is never here: its blast is
+   * the explosion a grenade's is, keyed into the same animations past every projectile id.
+   */
+  private def drawTrapEffect(trapType: Byte, sx: Float, sy: Float, t: Float): Unit = {
+    val tDef = TrapDef.get(trapType)
+    if (tDef == null) return
+    intToRGB(tDef.colorRGB)
+    val r = _rgb_r; val g = _rgb_g; val b = _rgb_b
+    val fade = 1f - t
+
+    // The flash of it springing, and the ring that runs out from it
+    if (t < 0.3f) {
+      val f = 1f - t / 0.3f
+      shapeBatch.setAdditiveBlend(true)
+      shapeBatch.fillOvalSoft(sx, sy, 16f * (0.4f + 0.6f * (1f - f)), 8f * (0.4f + 0.6f * (1f - f)),
+        1f, 1f, 0.92f, 0.55f * f, 0f, 14)
+      shapeBatch.setAdditiveBlend(false)
+    }
+    val ring = 8f + 16f * t
+    shapeBatch.strokeOval(sx, sy, ring, ring * 0.5f, 1.4f, r, g, b, 0.5f * fade, 16)
+
+    tDef.kind match {
+      case TrapKind.JAWS =>
+        // The jaws slamming shut, and chips of steel thrown off the plate
+        val close = Math.min(1f, t * 3.2f)
+        val open = (1f - close) * 0.85f
+        shapeBatch.fillArcBand(sx, sy, 7.6f, 3.6f, 10.4f, 5.0f,
+          (Math.PI - open).toFloat, (Math.PI + 2 * open).toFloat, 8, r, g, b, fade, fade)
+        shapeBatch.fillArcBand(sx, sy, 7.6f, 3.6f, 10.4f, 5.0f,
+          (-open).toFloat, (Math.PI + 2 * open).toFloat, 8, r * 0.8f, g * 0.8f, b * 0.8f, fade, fade)
+        var i = 0
+        while (i < 5) {
+          val ang = (i * 1.27f).toFloat
+          val d = 6f + 20f * t
+          shapeBatch.fillOval(sx + Math.cos(ang).toFloat * d, sy + Math.sin(ang).toFloat * d * 0.5f - 6f * t,
+            1.3f, 1.0f, 0.9f, 0.9f, 0.92f, 0.8f * fade, 5)
+          i += 1
+        }
+
+      case TrapKind.POD =>
+        // A puff of spores, rising and spreading
+        var i = 0
+        while (i < 4) {
+          val ang = (i * 1.57f + 0.4f).toFloat
+          val d = 3f + 12f * t
+          shapeBatch.fillOvalSoft(sx + Math.cos(ang).toFloat * d, sy + Math.sin(ang).toFloat * d * 0.5f - 7f * t,
+            5f + 7f * t, 3.5f + 5f * t, r, g, b, 0.4f * fade, 0f, 10)
+          i += 1
+        }
+
+      case TrapKind.RUNE =>
+        // Tongues of flame standing up out of the glyph
+        var i = 0
+        while (i < 5) {
+          val ang = (i * 1.257f).toFloat
+          val bx = sx + Math.cos(ang).toFloat * (4f + 6f * t)
+          val by = sy + Math.sin(ang).toFloat * (2f + 3f * t)
+          val h = 13f * (1f - t) + 4f
+          _trapXs(0) = bx - 2.4f; _trapYs(0) = by
+          _trapXs(1) = bx + 2.4f; _trapYs(1) = by
+          _trapXs(2) = bx; _trapYs(2) = by - h
+          shapeBatch.fillPolygon(_trapXs, _trapYs, 3, 1f, 0.55f + 0.3f * fade, 0.2f, 0.75f * fade)
+          i += 1
+        }
+        shapeBatch.fillOvalSoft(sx, sy - 4f, 11f, 8f, 1f, 0.45f, 0.15f, 0.3f * fade, 0f, 12)
+
+      case _ =>
+        // A web pulling taut: the strands whip back in
+        var i = 0
+        while (i < 8) {
+          val ang = (Math.PI * 2 * i / 8).toFloat
+          val d = 12f * (1f - t)
+          shapeBatch.strokeLine(sx, sy, sx + Math.cos(ang).toFloat * d, sy + Math.sin(ang).toFloat * d * 0.5f,
+            1f, r, g, b, 0.7f * fade)
+          i += 1
+        }
+    }
+  }
+
   private def drawAimArrow(): Unit = {
     if (!client.isCharging || client.getIsDead) return
     val pt = client.getSelectedCharacterDef.primaryProjectileType
@@ -4598,7 +4862,7 @@ class GLGameRenderer(val client: GameClient) {
       i += 1
     }
 
-    // Key labels
+    // Key labels, and for a trap the count of ours on the ground
     beginSprites()
     i = 0
     while (i < numAbilities) {
@@ -4610,8 +4874,32 @@ class GLGameRenderer(val client: GameClient) {
       fontSmall.drawTextOutlined(spriteBatch, aDef.keybind,
         slotX + slotSize - fontSmall.measureWidth(aDef.keybind) - 3, startY + slotSize - fontSmall.charHeight - 1,
         ar * ka, ag * ka, ab * ka, ka)
+      aDef.castBehavior match {
+        case TrapCast(trapType, _) =>
+          val tDef = TrapDef.get(trapType)
+          val max = if (tDef != null) tDef.maxActive else 0
+          val out = client.myTrapCount
+          val text = trapCountText(out, max)
+          // Full is worth noticing: the next one takes your oldest away
+          val full = out >= max
+          fontSmall.drawTextOutlined(spriteBatch, text, slotX + 3, startY + 2,
+            if (full) 1f else ar, if (full) 0.75f else ag, if (full) 0.4f else ab, 0.95f)
+        case _ =>
+      }
       i += 1
     }
+  }
+
+  // "2/3" on a trap ability's slot, rebuilt only when it changes — the HUD is drawn every frame
+  private var _trapCountText: String = ""
+  private var _trapCountN = -1
+  private var _trapCountMax = -1
+  private def trapCountText(n: Int, max: Int): String = {
+    if (n != _trapCountN || max != _trapCountMax) {
+      _trapCountN = n; _trapCountMax = max
+      _trapCountText = n + "/" + max
+    }
+    _trapCountText
   }
 
   /** Draw a detailed icon representing the cast behavior type. */
@@ -4748,6 +5036,39 @@ class GLGameRenderer(val client: GameClient) {
           val dy = cy - sz * 0.15f + (Math.sin(dAngle * 1.3) * sz * 0.12f).toFloat
           shapeBatch.fillOval(dx, dy, sz * 0.06f, sz * 0.06f, r, g, b, a * 0.5f, 4)
         ; i += 1 } }
+
+      case TrapCast(trapType, _) =>
+        val tDef = TrapDef.get(trapType)
+        val glow = (Math.sin(t * 0.1) * 0.25 + 0.75).toFloat
+        if (tDef != null && tDef.kind == TrapKind.MINE) {
+          // A mine: a cased charge with a diode that blinks
+          shapeBatch.fillOvalSoft(cx, cy, sz * 0.95f, sz * 0.8f, r, g, b, a * 0.16f * glow, 0f, 14)
+          shapeBatch.fillOval(cx, cy + sz * 0.3f, sz * 0.62f, sz * 0.3f, r * 0.4f, g * 0.4f, b * 0.42f, a * 0.9f, 14)
+          shapeBatch.fillOval(cx, cy, sz * 0.62f, sz * 0.34f, r * 0.62f, g * 0.58f, b * 0.56f, a, 14)
+          shapeBatch.fillRect(cx - sz * 0.62f, cy + sz * 0.02f, sz * 1.24f, sz * 0.14f, r, g * 0.55f, b * 0.3f, a * 0.8f)
+          shapeBatch.strokeOval(cx, cy, sz * 0.62f, sz * 0.34f, 1.2f, clamp(r + 0.2f), clamp(g + 0.2f), clamp(b + 0.2f), a * 0.8f, 14)
+          val blink = if ((_frameTimeMs % 900L) < 170L) 1f else 0.15f
+          shapeBatch.fillOval(cx, cy - sz * 0.28f, sz * 0.13f, sz * 0.13f, 1f, 0.4f, 0.3f, a * (0.3f + 0.7f * blink), 8)
+        } else {
+          // Jaws standing open around a plate, seen from above
+          shapeBatch.fillOvalSoft(cx, cy, sz * 0.95f, sz * 0.8f, r, g, b, a * 0.16f * glow, 0f, 14)
+          shapeBatch.fillArcBand(cx, cy, sz * 0.5f, sz * 0.4f, sz * 0.8f, sz * 0.66f,
+            Math.PI.toFloat, Math.PI.toFloat, 10, r, g, b, a * 0.95f, a * 0.95f)
+          shapeBatch.fillArcBand(cx, cy, sz * 0.5f, sz * 0.4f, sz * 0.8f, sz * 0.66f,
+            0f, Math.PI.toFloat, 10, r * 0.8f, g * 0.8f, b * 0.8f, a * 0.95f, a * 0.95f)
+          var k = 0
+          while (k < 8) {
+            val ang = (Math.PI * (0.18 + 0.21 * (k % 4)) + (if (k < 4) Math.PI else 0.0)).toFloat
+            val c = Math.cos(ang).toFloat
+            val sn = Math.sin(ang).toFloat
+            _iconXs(0) = cx + sz * 0.5f * c; _iconYs(0) = cy + sz * 0.4f * sn
+            _iconXs(1) = cx + sz * 0.28f * c - sz * 0.1f * sn; _iconYs(1) = cy + sz * 0.22f * sn + sz * 0.08f * c
+            _iconXs(2) = cx + sz * 0.28f * c + sz * 0.1f * sn; _iconYs(2) = cy + sz * 0.22f * sn - sz * 0.08f * c
+            shapeBatch.fillPolygon(_iconXs, _iconYs, 3, 0.95f, 0.96f, 0.98f, a * 0.9f)
+            k += 1
+          }
+          shapeBatch.fillOval(cx, cy, sz * 0.26f, sz * 0.2f, r * 0.8f, g * 0.75f, b * 0.6f, a, 10)
+        }
 
       case _: BarrierCast =>
         // A heater shield: flat top, straight sides curving in to a point

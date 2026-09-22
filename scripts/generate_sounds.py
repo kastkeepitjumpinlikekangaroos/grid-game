@@ -2934,6 +2934,71 @@ def gen_barrier_up():
     return reverb(out, decay=0.55, damp=5000, mix=0.22, name="bu", predelay=0.01)
 
 
+def gen_trap_place():
+    """A trap set down: the weight of it landing on earth, the catch taking, and the small click
+    of the mechanism being armed. Deliberately quiet and short — the point of laying one is that
+    the other side does not notice, and everyone nearby hears it."""
+    dur = 0.38
+    out = np.zeros(n_of(dur))
+    # It lands on ground, not on a struck plate
+    land = thud(78, 0.2, drive=1.4, name="tpl")
+    earth = bandpass(noise(0.07, "tpe"), 200, 1800) * exp_env(0.07, attack=0.001, decay=14.0) * 0.45
+    out[:len(land)] += land * 0.8
+    at(out, 0.004, earth)
+    # The catch takes: one short iron partial, heavily damped. Left ringing this is the bucket.
+    at(out, 0.1, strike("iron", 620, 0.16, hardness=1.2, damp=2.6, name="tpc", ring=0.18) * 0.42)
+    # And the arming click
+    at(out, 0.17, click(0.006, fc=2600, name="tpk") * 0.35)
+    return reverb(saturate(out, 1.5), decay=0.3, damp=4200, mix=0.15, name="tp", predelay=0.004)
+
+
+def gen_trap_snap():
+    """Jaws closing on somebody. The loudest thing a trap does: a hard contact, a short dense ring
+    off the steel, the low displacement of something being caught, and the chain snatching tight
+    after it. The ring is kept short and damped — a partial left singing here plays every time
+    anyone is caught all match, which is the clang rule exactly."""
+    dur = 0.5
+    out = np.zeros(n_of(dur))
+    snap = strike("steel", 340, 0.24, hardness=1.8, damp=2.2, name="tsn", ring=0.26)
+    body = thud(96, 0.26, drive=2.2, name="tsb")
+    out[:len(snap)] += snap * 0.95
+    out[:len(body)] += body * 0.85
+    at(out, 0.05, debris(0.26, count=6, band=(900, 4200), decay=(14.0, 26.0), name="tsc") * 0.3)
+    return reverb(eq(saturate(out, 2.0), "lp", 8000, q=0.8), decay=0.42, damp=3800, mix=0.18,
+                  name="ts", predelay=0.005)
+
+
+def gen_trap_poison():
+    """A spore pod bursting: a wet split, then the gas going out of it. The hiss falls away rather
+    than holding — this is the pod giving way, not a cloud sitting on the ground."""
+    dur = 0.5
+    out = np.zeros(n_of(dur))
+    split = mixdown(water(0.16, size=1.2, bubbles=9, foam=0.85, name="tpw") * 0.8,
+                    thud(120, 0.14, drive=1.8, name="tpt") * 0.5)
+    out[:len(split)] += split
+    at(out, 0.03, gas(0.36, band=(260, 3200), fizz=0.5, name="tpg") * 0.55)
+    # Banded: a burst that reaches the top of the spectrum is every other burst in the set
+    out = eq(saturate(out, 1.6), "lp", 7000, q=0.7)
+    return reverb(out, decay=0.4, damp=3000, mix=0.18, name="tpo", predelay=0.006)
+
+
+def gen_trap_ignite():
+    """A rune catching: the intake as it takes, then a short roar of flame off the ground. Over
+    inside half a second — what it leaves burning is on the victim, not in the mix."""
+    dur = 0.52
+    out = np.zeros(n_of(dur))
+    catch = air(0.1, band=(700, 3000), q=2.6, arc=2.4, turb=0.2, body=0.6, name="tia") * 0.5
+    out[:len(catch)] += catch
+    # Few crackles and a short roar: a rune taking, not the wall of flame a napalm strike is
+    at(out, 0.04, fire(0.34, low=120, roar=0.8, crackles=9, name="tif") * 0.75)
+    at(out, 0.04, saturate(sine(seg_env([(0.0, 150), (1.0, 52)], 0.22), 0.22) *
+                           exp_env(0.22, decay=5.5), 2.2) * 0.6)
+    # Kept under 7kHz. Fire that runs to the top of the band is the same cloud as every other
+    # fire in the set, and there are a lot of them.
+    out = eq(saturate(out, 1.7), "lp", 6800, q=0.7)
+    return reverb(out, decay=0.42, damp=3000, mix=0.18, name="ti", predelay=0.008)
+
+
 def gen_barrier_block():
     """A shot stopped dead on a barrier: a dull, soft thump of energy and a short fizz as the
     shot comes apart on it. One damped sine for the body and nothing that rings. This is heard
@@ -3542,6 +3607,16 @@ EVENTS = [
     # heard for every shot a barrier stops, so short, narrow, and well down in the mix
     ("barrier_block", gen_barrier_block, 0.54, "melee", dict(width=0.5, transient=1.6, comp=(0.22, 4.0),
                                                              tail=(0.35, 0.12))),
+    # A trap being laid is heard by everyone nearby, so it sits low; the snap it makes later is
+    # the payoff and is allowed to be loud.
+    ("trap_place", gen_trap_place, 0.5, "melee", dict(width=0.55, transient=1.4, comp=(0.26, 3.0),
+                                                      tail=(0.3, 0.11))),
+    ("trap_snap", gen_trap_snap, 0.74, "melee", dict(width=0.6, transient=1.9, sub=(44, 0.4),
+                                                     comp=(0.22, 3.6), tail=(0.45, 0.14))),
+    ("trap_poison", gen_trap_poison, 0.58, "ability", dict(width=0.8, transient=1.0,
+                                                           tail=(0.6, 0.18))),
+    ("trap_ignite", gen_trap_ignite, 0.62, "ability", dict(width=0.75, transient=1.2,
+                                                           tail=(0.7, 0.2))),
 ]
 
 

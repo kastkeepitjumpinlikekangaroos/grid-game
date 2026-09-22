@@ -22,6 +22,9 @@ case class GroundSlam(radius: Float) extends CastBehavior
   * enemy projectiles for `durationMs` or until the caster fires or casts anything. Fires nothing,
   * so its ability's projectile type is -3. */
 case class BarrierCast(durationMs: Int) extends CastBehavior
+/** Throw a [[Trap]] of `trapType` onto the ground, at most `maxRange` cells toward the cursor
+  * ([[TrapPlacement]]). Fires nothing, so its ability's projectile type is -4. */
+case class TrapCast(trapType: Byte, maxRange: Int) extends CastBehavior
 
 case class AbilityDef(
     name: String,
@@ -617,9 +620,10 @@ object CharacterDef {
     ),
     eAbility = AbilityDef(
       name = "Snare Mine",
-      description = "Lobs a mine that passes through players and detonates at max range, freezing all nearby for 1s.",
-      cooldownMs = 14000, maxRange = 16, damage = 15,
-      projectileType = ProjectileType.SNARE_MINE, keybind = "E"
+      description = "Throws a bear trap that arms in a moment and stuns the first enemy over it for 2s.",
+      cooldownMs = 12000, maxRange = 6, damage = 10,
+      projectileType = -4, keybind = "E",
+      castBehavior = TrapCast(TrapType.BEAR_TRAP, 6)
     ),
     primaryProjectileType = ProjectileType.CHAIN_BOLT,
     maxHealth = 110
@@ -1216,7 +1220,7 @@ object CharacterDef {
     description = "A defensive specialist with ricocheting lasers, lockdown chains, and mines.",
     spriteSheet = "sprites/sentinel.png",
     qAbility = AbilityDef(name = "Suppress", description = "Fires a lockdown chain.", cooldownMs = 8000, maxRange = 12, damage = 8, projectileType = ProjectileType.LOCKDOWN_CHAIN, keybind = "Q"),
-    eAbility = AbilityDef(name = "Deploy Mine", description = "Deploys a snare mine.", cooldownMs = 14000, maxRange = 16, damage = 15, projectileType = ProjectileType.SNARE_MINE, keybind = "E"),
+    eAbility = AbilityDef(name = "Deploy Mine", description = "Lays a mine that arms in a moment and blows up under the first enemy over it.", cooldownMs = 14000, maxRange = 6, damage = 45, projectileType = -4, keybind = "E", castBehavior = TrapCast(TrapType.MINE, 6)),
     primaryProjectileType = ProjectileType.LASER_LIGHT, maxHealth = 110
   )
 
@@ -1546,7 +1550,7 @@ object CharacterDef {
     description = "A forge master who hurls hammers and lays traps from the anvil.",
     spriteSheet = "sprites/blacksmith.png",
     qAbility = AbilityDef(name = "Triple Hammer", description = "Hurls 3 hammers in a fan.", cooldownMs = 12000, maxRange = 5, damage = 33, projectileType = ProjectileType.HAMMER, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(40))),
-    eAbility = AbilityDef(name = "Anvil Trap", description = "Deploys a snare trap that freezes all nearby.", cooldownMs = 14000, maxRange = 16, damage = 15, projectileType = ProjectileType.SNARE_MINE, keybind = "E"),
+    eAbility = AbilityDef(name = "Anvil Trap", description = "Sets a forged trap that arms in a moment and stuns the first enemy over it for 2s.", cooldownMs = 12000, maxRange = 6, damage = 10, projectileType = -4, keybind = "E", castBehavior = TrapCast(TrapType.BEAR_TRAP, 6)),
     primaryProjectileType = ProjectileType.HAMMER, maxHealth = 120
   )
 
@@ -1591,7 +1595,7 @@ object CharacterDef {
     description = "A trap specialist whose ricocheting rune bolts bounce off walls.",
     spriteSheet = "sprites/runesmith.png",
     qAbility = AbilityDef(name = "Rune Burst", description = "Fires 5 rune bolts in a fan.", cooldownMs = 8000, maxRange = 18, damage = 18, projectileType = ProjectileType.RUNE_BOLT, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(60))),
-    eAbility = AbilityDef(name = "Rune Trap", description = "Deploys a rune trap.", cooldownMs = 14000, maxRange = 16, damage = 15, projectileType = ProjectileType.SNARE_MINE, keybind = "E"),
+    eAbility = AbilityDef(name = "Rune Trap", description = "Burns a rune into the ground that sets the first enemy over it alight for 40 over 5s.", cooldownMs = 12000, maxRange = 6, damage = 40, projectileType = -4, keybind = "E", castBehavior = TrapCast(TrapType.FIRE_RUNE, 6)),
     primaryProjectileType = ProjectileType.RUNE_BOLT
   )
 

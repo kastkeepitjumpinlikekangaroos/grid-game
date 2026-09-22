@@ -303,8 +303,139 @@ object AbilityPreviewRenderer {
         renderProjectile(gc, projectileType, animTick, canvasWidth, canvasHeight)
       case BarrierCast(_) =>
         renderBarrier(gc, animTick, canvasWidth, canvasHeight)
+      case TrapCast(trapType, _) =>
+        renderTrap(gc, trapType, animTick, canvasWidth, canvasHeight)
     }
   }
+
+  /**
+   * A trap over its whole life: thrown out along an arc, arming where it lands, and snapping on
+   * whoever walks into it. The three are what the ability actually is — a throw that does nothing
+   * at all for a moment and then takes somebody — so the preview shows all three rather than the
+   * object sitting still.
+   */
+  private def renderTrap(gc: GraphicsContext, trapType: Byte, animTick: Int, w: Double, h: Double): Unit = {
+    val tDef = TrapDef.get(trapType)
+    if (tDef == null) return
+    val col = trapColor(tDef)
+    val cy = h * 0.62
+    val fromX = 24.0
+    val toX = w * 0.66
+
+    val period = 132
+    val t = animTick % period
+    val phase = animTick * 0.15
+
+    // Where it lands: the ground under it, drawn throughout so the arc reads as a throw
+    gc.setFill(Color.color(0, 0, 0, 0.25))
+    gc.fillOval(toX - 13, cy - 4, 26, 8)
+
+    if (t < 34) {
+      // Thrown: an arc out to the landing cell, with its shadow running along the ground
+      val f = t / 34.0
+      val x = fromX + (toX - fromX) * f
+      val lift = 22 * Math.sin(f * Math.PI)
+      gc.setFill(Color.color(0, 0, 0, 0.22))
+      gc.fillOval(x - 5, cy - 3, 10, 6)
+      gc.setFill(col.deriveColor(0, 1, 0.7, 1))
+      gc.fillOval(x - 5, cy - lift - 5, 10, 10)
+      gc.setStroke(col.deriveColor(0, 1, 1, 0.35))
+      gc.setLineWidth(1)
+      gc.strokeOval(x - 7, cy - lift - 7, 14, 14)
+    } else {
+      val landed = t - 34
+      drawTrapTop(gc, tDef, col, toX, cy, phase, snapped = landed >= 62)
+      if (landed < 26) {
+        // Arming: a ring closing on it, and it is not live until it has
+        val f = landed / 26.0
+        val rad = 22 - 11 * f
+        gc.setStroke(Color.color(col.getRed, col.getGreen, col.getBlue, 0.25 + 0.55 * f))
+        gc.setLineWidth(1.3)
+        gc.strokeOval(toX - rad, cy - rad * 0.45, rad * 2, rad * 0.9)
+      } else if (landed < 62) {
+        // Live, and something walking into it
+        val f = (landed - 26) / 36.0
+        val px = w * 0.06 + (toX - w * 0.06) * f
+        gc.setFill(Color.color(0.75, 0.8, 0.9, 0.75))
+        gc.fillOval(px - 5, cy - 16, 10, 12)
+        gc.fillRect(px - 3, cy - 6, 6, 8)
+      } else {
+        // Sprung: a flash and a ring going out from it
+        val f = (landed - 62) / 36.0
+        val rad = 8 + 26 * f
+        gc.setStroke(Color.color(col.getRed, col.getGreen, col.getBlue, Math.max(0.0, 0.75 * (1 - f))))
+        gc.setLineWidth(2)
+        gc.strokeOval(toX - rad, cy - rad * 0.45, rad * 2, rad * 0.9)
+        if (f < 0.4) {
+          gc.setFill(Color.color(1, 1, 0.92, 0.55 * (1 - f / 0.4)))
+          gc.fillOval(toX - 16, cy - 9, 32, 18)
+        }
+      }
+    }
+  }
+
+  /** The trap itself, seen from above: jaws, a mine, a pod, a rune or a web. */
+  private def drawTrapTop(gc: GraphicsContext, tDef: TrapDef, col: Color, cx: Double, cy: Double,
+                          phase: Double, snapped: Boolean): Unit = {
+    val dark = col.deriveColor(0, 1, 0.45, 1)
+    tDef.kind match {
+      case TrapKind.MINE =>
+        gc.setFill(dark)
+        gc.fillOval(cx - 11, cy - 4, 22, 11)
+        gc.setFill(col)
+        gc.fillOval(cx - 11, cy - 8, 22, 11)
+        gc.setStroke(Color.color(1, 0.75, 0.4, 0.8))
+        gc.setLineWidth(1.4)
+        gc.strokeOval(cx - 7, cy - 6, 14, 7)
+        val blink = if ((phase * 40).toInt % 12 < 3) 1.0 else 0.2
+        gc.setFill(Color.color(1, 0.35, 0.25, blink))
+        gc.fillOval(cx - 2, cy - 7, 4, 3)
+
+      case TrapKind.POD =>
+        gc.setFill(dark)
+        gc.fillOval(cx - 11, cy - 6, 22, 13)
+        gc.setFill(col)
+        gc.fillOval(cx - 7, cy - 9, 14, 9)
+        gc.setFill(Color.color(col.getRed, col.getGreen, col.getBlue, 0.25))
+        gc.fillOval(cx - 13, cy - 13, 26, 16)
+
+      case TrapKind.RUNE =>
+        gc.setFill(Color.color(0.05, 0.03, 0.02, 0.6))
+        gc.fillOval(cx - 15, cy - 7, 30, 14)
+        val flick = 0.65 + 0.35 * Math.sin(phase * 1.6)
+        gc.setStroke(Color.color(col.getRed, col.getGreen, col.getBlue, flick))
+        gc.setLineWidth(1.6)
+        gc.strokeOval(cx - 12, cy - 6, 24, 12)
+        gc.strokeLine(cx - 6, cy - 2, cx + 6, cy + 2)
+        gc.strokeLine(cx + 6, cy - 2, cx - 6, cy + 2)
+        gc.strokeLine(cx, cy - 4, cx, cy + 4)
+
+      case TrapKind.WEB =>
+        gc.setStroke(Color.color(col.getRed, col.getGreen, col.getBlue, 0.7))
+        gc.setLineWidth(1)
+        for (i <- 0 until 8) {
+          val a = Math.PI * 2 * i / 8
+          gc.strokeLine(cx, cy, cx + Math.cos(a) * 14, cy + Math.sin(a) * 7)
+        }
+        gc.strokeOval(cx - 7, cy - 3.5, 14, 7)
+        gc.strokeOval(cx - 13, cy - 6.5, 26, 13)
+
+      case _ =>
+        // Jaws: open around the plate, shut once it has sprung
+        val open = if (snapped) 0.0 else 4.0
+        gc.setFill(dark)
+        gc.fillOval(cx - 12, cy - 5, 24, 11)
+        gc.setStroke(col)
+        gc.setLineWidth(3)
+        gc.strokeArc(cx - 13, cy - 7 - open, 26, 14, 20, 140, javafx.scene.shape.ArcType.OPEN)
+        gc.strokeArc(cx - 13, cy - 7 + open, 26, 14, 200, 140, javafx.scene.shape.ArcType.OPEN)
+        gc.setFill(col.deriveColor(0, 1, 1.3, 1))
+        gc.fillOval(cx - 4, cy - 2, 8, 4)
+    }
+  }
+
+  private def trapColor(tDef: TrapDef): Color =
+    Color.rgb((tDef.colorRGB >> 16) & 0xFF, (tDef.colorRGB >> 8) & 0xFF, tDef.colorRGB & 0xFF)
 
   private def renderProjectile(gc: GraphicsContext, projType: Byte, animTick: Int,
                                 w: Double, h: Double): Unit = {

@@ -49,6 +49,7 @@ GRIDGAME_AUDIO=off bazel run //src/main/scala/com/gridgame/client:client
 bazel run //src/main/scala/com/gridgame/client:render_bench   # a busy match, no server
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --effects  # ... with status effects on
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --barriers # ... with barriers raised
+bazel run //src/main/scala/com/gridgame/client:render_bench -- --traps    # ... with traps on the ground
 bazel run //src/main/scala/com/gridgame/client:ui_bench       # the JavaFX menus
 ```
 
@@ -170,17 +171,19 @@ the jpackage step itself needs a Windows box.
 src/main/scala/com/gridgame/
 ├── common/                     # Shared code between client and server
 │   ├── model/                  # Data models (Player, Tile, CharacterDef, Item, Projectile, etc.)
-│   │                           # 112 characters, 34 tiles, 7 cast behaviors, projectile defs
+│   │                           # 112 characters, 34 tiles, 8 cast behaviors, projectile defs
 │   │                           # ProjectileDef (pierce, boomerang, ricochet, AoE, explosions)
 │   │                           # 10 on-hit effects, charge/distance damage scaling
 │   │                           # 5 item types (Gem, Heart, Star, Shield, Fence)
-│   ├── protocol/               # Network packets (16 packet types), PacketSigner (HMAC-SHA256)
+│   │                           # Trap, TrapDef (5 kinds), TrapPlacement
+│   ├── protocol/               # Network packets (18 packet types), PacketSigner (HMAC-SHA256)
 │   ├── observability/          # OpenTelemetry facade (Telemetry, Metrics, Attrs, Tracing, Log)
 │   │                           # Pre-built instruments + cached Attributes for hot paths
 │   └── world/                  # WorldLoader (JSON map parsing, 7 layer types)
 ├── server/                     # GameServer, GameInstance, Lobby, LobbyManager, LobbyHandler
 │   │                           # AuthDatabase, BotManager, BotController, ProjectileManager
-│   │                           # ItemManager, RankedQueue, KillTracker, ClientHandler, ClientRegistry
+│   │                           # ItemManager, TrapManager, RankedQueue, KillTracker,
+│   │                           # ClientHandler, ClientRegistry
 │   │                           # TlsProvider, RateLimiter, PacketValidator
 ├── client/                     # Client (GameClient, ClientMain, NetworkThread)
 │   ├── gl/                     # OpenGL renderer (GLGameRenderer, GLProjectileRenderers,
@@ -593,7 +596,9 @@ could move these numbers should be checked with them rather than guessed at:
 # --projectiles=, --w= --h=, --screenshot=out.png. --effects puts a status effect on every
 # player (frozen, stunned, poisoned, burning, rooted, slowed, boosted), which the default
 # scene has none of — off by default so the numbers below stay comparable. --barriers has
-# every fourth player hold a barrier up, turning and being struck, half of them allies.
+# every fourth player hold a barrier up, turning and being struck, half of them allies, and
+# --traps scatters 30 traps of every kind, half ours and half an enemy's, some arming, some
+# going off.
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --quality=low
 
 # The JavaFX menus: the character select screen, then a match start (stage hidden), a second
@@ -852,7 +857,7 @@ generated.
 
 ```bash
 # Requires numpy: pip install numpy
-python3 scripts/generate_sounds.py   # -> sounds/*.wav (184 files, ~20s)
+python3 scripts/generate_sounds.py   # -> sounds/*.wav (188 files, ~23s)
 
 # Look at what you just made — the contact sheet is the review loop (see below).
 # Needs Pillow as well as numpy: pip install numpy Pillow
@@ -914,7 +919,7 @@ Three rules the earlier version of this file broke, and why they matter:
 
 `scripts/sound_gallery.py` renders every sound as a log-frequency spectrogram
 with a dB envelope strip underneath, 24 to a contact sheet. It exists for the
-same reason `projectile_gallery` does — 184 assets cannot be judged one at a
+same reason `projectile_gallery` does — 188 assets cannot be judged one at a
 time, and the faults that matter are the ones visible when they sit side by
 side. **Run it after any change here.** What to look for:
 
@@ -989,6 +994,9 @@ a global `tanh` on the master bus (it costs several dB of crest on *every* sound
   `sounds/phase_shift.wav`, `sounds/barrier_up.wav` — non-projectile events/cast behaviors.
   `sounds/barrier_block.wav` is a shot stopped on a barrier: a dull thud of energy with a
   short fizz and nothing that rings, since it plays for every shot anyone fires into one.
+- `sounds/trap_place.wav` (one set down — quiet and short, since everyone nearby hears it),
+  and one per trap kind going off: `trap_snap.wav` (jaws, and a web closing), `trap_poison.wav`
+  (a pod bursting), `trap_ignite.wav` (a rune catching). A mine's blast is `explosion.wav`.
 - `sounds/hit_taken.wav` (you were hit), `sounds/hit_dealt.wav` (hitmarker — bright and
   high-mid so it cuts through), `sounds/hit_other.wav` (someone else was hit, duller and
   distance-attenuated), `sounds/explosion.wav` (explosive projectile despawn).
@@ -1056,6 +1064,8 @@ Each ability uses one of these cast behaviors (defined in `CharacterDef.scala`):
 - `GroundSlam(radius)` — AoE ground slam around the caster
 - `BarrierCast(durationMs)` — raises a barrier in front of the caster (see *Barriers*); fires
   nothing, so its ability's projectile type is -3 (buffs and dashes carry -1, teleports -2)
+- `TrapCast(trapType, maxRange)` — throws a trap onto the ground (see *Traps*); fires nothing
+  either, so its ability's projectile type is -4
 
 ### Movement speed
 `CharacterDef.moveSpeed` multiplies the base walking rate of 20 cells a second
@@ -1183,6 +1193,69 @@ flag 0x01) already has the name; the player-facing ability can still say shield.
 `BarrierTest` (in `common/model` for the shape, and in `server`), `GameClientBarrierTest` and
 `PacketRoundTripTest` pin all of this.
 
+### Traps
+`TrapCast` throws a trap onto the ground, where it waits for an enemy to walk into it. Four
+abilities are one: the Warden's Snare Mine and the Blacksmith's Anvil Trap (bear traps), the
+Sentinel's Deploy Mine (a mine) and the Runesmith's Rune Trap (a fire rune).
+
+- **One registry.** `common/model/Trap.scala` holds `TrapDef` — what a trap does — and `TrapKind`
+  — what it looks like, kept apart so two traps that do different things can share a look. Five
+  are defined: a bear trap (10 damage and a 2s stun), a mine (a 45/15 blast over 3 cells), a
+  poison pod (48 over 6s, and a slow), a fire rune (a 40 burn over 5s) and a snare (a 2s root;
+  Plan 5b gives it to the Spider). Unlike `ProjectileDef`, the registry is filled by its own
+  initializer, so nothing can look a trap up before it is there.
+- **Where it lands.** `TrapPlacement.target` walks from the caster toward the cursor, at most the
+  ability's range (6 cells), and stops before the first cell a trap can't lie on: the client picks
+  the cell with it and the server checks with `isValidTarget`, the same reason `Teleport` exists
+  for blinks and stars. A throw can't be dropped past a wall. No cell at all means no cast and no
+  cooldown spent.
+- **Arming and lasting.** It arms 800ms after it lands and lies there 25s. A player keeps three;
+  a fourth takes their oldest away. One trap to a cell.
+- **What sets it off.** An enemy — not the owner, not a teammate — within `triggerRadius` (1.0
+  cell: the trap's own cell and its four neighbours). Phased players walk over it, and so does
+  anyone a Shield item has made invulnerable, exactly as a projectile can't touch them. A trigger
+  consumes it whatever happens next: its stun obeys CC immunity like any other hold, and is spent
+  either way.
+- **What it then does** (`GameInstance.springTrap`): its damage and effects to the one who stepped
+  on it, or its explosion with the same falloff and the same shelter behind a barrier a
+  projectile's blast has. A burn or a poison is owned by whoever laid the trap, so the kill is
+  theirs (`Attrs.CauseTrap`). The blast walks the registry rather than the projectile tick's
+  spatial grid, because a trap goes off on whichever thread stepped on it and that grid belongs to
+  the tick.
+- **When it is checked.** `GameInstance.tickProjectiles` calls `trapManager.tick` every 30ms,
+  which expires old traps and catches everyone standing on one. `ClientHandler.handlePlayerUpdate`
+  also walks the cells an accepted step crossed: an update can carry a player several cells (a
+  lost datagram), and a trap hopped clean over has still been stepped on. Every trap leaves
+  through `TrapManager.claim`, which takes it with `traps.remove(id, trap)`, so however many
+  threads find the same one, exactly one springs it.
+- **Placing one** goes over TCP as a `TRAP_UPDATE` carrying its `AttackSlot`. `ClientHandler`
+  checks the player can cast, that the attack really throws that trap, that the cell is in reach
+  with a clear path, that the cell is free, and the cooldown — through
+  `PacketValidator.validateCast`, on the same per-slot clock a shot uses. Anything judged without
+  the clock is judged first, so only a genuine race can spend a cast and still be refused. A
+  refusal comes back as `REJECTED` and the client gives the cooldown back, ready again in 400ms
+  rather than instantly: the reason a placement was refused often hasn't gone away, and a cooldown
+  handed back whole turns a held key into a request every frame.
+- **A new life starts with every attack ready.** `GameInstance.respawn` clears the server's attack
+  clocks (`PacketValidator.resetAttackClocks`), which the client has always done for its own.
+  Without it the server spent the rest of the last life's cooldown refusing abilities the player
+  could see were ready — silently for a projectile, and as a refused placement for a trap.
+- **Everyone is sent every trap**, joiners and rejoiners included. The owner and their allies see
+  it plainly; everyone else sees it at 30% alpha — findable if you look, which is the point of
+  looking. A player leaving takes their traps with them.
+- **Drawn** by `GLGameRenderer.drawTraps` in the ground pass, so a wall in front of one covers it
+  in the depth pass that follows, with nothing asked of `EntityCollector`. Per kind: a bear trap's
+  jaws, a mine with a blinking diode, a spore pod, a burning rune, a web. A ring closes on one
+  that is still arming, and it fades over its last 800ms. A trap going off is a flash, a ring and
+  something of its own (jaws snapping, spores rising, flame standing up, strands whipping back); a
+  mine's blast goes through `explosionAnimations`, keyed past `GameClient.TRAP_EXPLOSION_IDS` so a
+  trap and a projectile can never collide. The ability slot carries the count ("2/3").
+- **Bots** lay one for a target within 8 cells that is closing in, and treat armed enemy traps as
+  cells to walk round — in `canMoveTo` and in the BFS — unless their target is standing on one.
+- **Sounds**: `trap_place`, `trap_snap`, `trap_poison`, `trap_ignite`; a mine reuses `explosion`.
+
+`TrapTest`, `GameClientTrapTest`, `PacketRoundTripTest` and `CharacterRosterTest` pin all of this.
+
 ### Item Types
 5 item types (defined in `ItemType.scala`): Gem, Heart, Star, Shield, Fence
 
@@ -1275,7 +1348,7 @@ stun bit only says what to draw. Byte [49] bit 2 is a raised barrier and bytes [
 it faces (see *Barriers*): a client sends its aim there while its barrier is up, and the server
 writes the barrier's facing. Both are 0 otherwise.
 
-### Packet Types (16 total)
+### Packet Types (18 total)
 
 | ID   | Name              | Transport | Description                    |
 |------|-------------------|-----------|--------------------------------|
@@ -1295,6 +1368,8 @@ writes the barrier's facing. Both are 0 otherwise.
 | 0x0E | RANKED_QUEUE      | TCP       | Ranked matchmaking             |
 | 0x0F | LEADERBOARD       | TCP       | Rankings                       |
 | 0x10 | SESSION_TOKEN     | TCP       | Session token delivery (post-auth) |
+| 0x11 | CHAT_MESSAGE      | TCP       | Lobby and match chat           |
+| 0x12 | TRAP_UPDATE       | TCP       | Traps placed, sprung, removed  |
 
 A `PROJECTILE_UPDATE` carries one of these `ProjectileAction`s:
 
@@ -1306,6 +1381,17 @@ A `PROJECTILE_UPDATE` carries one of these `ProjectileAction`s:
 | 3 DESPAWN | stopped by terrain or its range, or an explosive going off |
 | 4 PIERCE | hit targetId and flies on |
 | 5 BLOCKED | stopped on targetId's barrier, at x, y |
+
+A `TRAP_UPDATE` carries one of these `TrapAction`s. The packet's own player id is the trap's
+owner; its layout is in `TrapPacket`.
+
+| Action | Meaning |
+|---|---|
+| 0 PLACE | a client asking to put one down (its `AttackSlot` is in byte [44]) |
+| 1 SPAWN | it is on the ground here |
+| 2 TRIGGER | it went off under the victim in bytes [45-60], and is gone |
+| 3 REMOVE | gone without going off: it ran out, its owner left, or a newer one pushed it off |
+| 4 REJECTED | the placement was refused; the placer's client gives the cooldown back |
 
 ### Connection Flow
 
@@ -1352,6 +1438,20 @@ Client                              Server
 3. Create packet class extending `Packet` (use `Constants.PACKET_PAYLOAD_SIZE` for `ByteBuffer.allocate` in `serialize()`)
 4. Add deserialization case in `PacketSerializer.deserialize()`
 5. Handle in `GameClient.processPacket()` or `ClientHandler.processPacket()`
+
+### Adding a New Trap
+1. Add a `TrapType` id and a `TrapDef` to `common/model/Trap.scala`, and put it in `TrapDef.all`
+   (the registry is built from that list by the object's own initializer). Pick an existing
+   `TrapKind` or add one.
+2. If it is a new kind, draw it: a `case` in `GLGameRenderer.drawTrap` and one in
+   `drawTrapEffect` for it going off, plus `AbilityPreviewRenderer.drawTrapTop` for the character
+   panel. Convex polygons only (`GRIDGAME_POLYCHECK=1`), and no per-frame allocation.
+3. Give an ability `castBehavior = TrapCast(TrapType.X, range)` with `projectileType = -4` and
+   `maxRange` equal to the cast's range (`CharacterRosterTest` checks both).
+4. Update `i18n/messages_en.json` (`char.<id>.e.name`/`.desc` — `ContentCatalogTest` enforces it)
+   and `docs/index.html`.
+5. A new kind that should not sound like the others gets an entry in `AudioManager.playTrapSprung`
+   and a generator in `scripts/generate_sounds.py` (see *Sound Effects & Music*).
 
 ### Adding a New Character
 1. Add `CharacterId` entry in `CharacterId.scala` (next available ID byte)
@@ -1472,7 +1572,9 @@ suites mirror the source tree:
 **Effects nothing in the roster has yet** (a stun, a poison, a slam that pushes or pulls) are
 pinned with `ProjectileDef`s registered by the test itself, on ids the game doesn't use — see
 `TestEffects` at the foot of `OnHitEffectsTest`. Each test file gets its own JVM, so a test-only
-registration can't leak into another suite. A character the roster doesn't have (one quicker
+registration can't leak into another suite. `TrapDef.register` is the same door for a trap the
+roster hasn't got — a poison short enough for a test to sit through (`TestTraps` in `TrapTest`).
+A character the roster doesn't have (one quicker
 than any in it) goes through `PacketValidator`'s `characterOf` parameter instead — see
 `PacketValidatorTest.aFasterCharacterIsJudgedByItsOwnPace`.
 

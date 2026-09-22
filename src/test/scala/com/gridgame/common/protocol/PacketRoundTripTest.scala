@@ -4,6 +4,8 @@ import com.gridgame.common.Constants
 import com.gridgame.common.WorldRegistry
 import com.gridgame.common.model.Position
 import com.gridgame.common.model.ProjectileType
+import com.gridgame.common.model.TrapDef
+import com.gridgame.common.model.TrapType
 import org.junit.Assert._
 import org.junit.Test
 
@@ -169,6 +171,30 @@ class PacketRoundTripTest {
       assertEquals(901, p.getItemId)
       assertEquals(action, p.getAction)
     }
+  }
+
+  @Test def trapKeepsItsFieldsThroughEveryAction(): Unit = {
+    for (action <- Seq(TrapAction.PLACE, TrapAction.SPAWN, TrapAction.TRIGGER, TrapAction.REMOVE,
+                       TrapAction.REJECTED)) {
+      val p = trip(new TrapPacket(9, id, 61, 42, 777, action, TrapType.MINE, 2.toByte,
+        AttackSlot.E, other))
+      assertEquals(id, p.getPlayerId)
+      assertEquals((61, 42), (p.getX, p.getY))
+      assertEquals(777, p.getTrapId)
+      assertEquals(s"action $action", action, p.getAction)
+      assertEquals(TrapType.MINE, p.getTrapType)
+      assertEquals(2.toByte, p.getTeamId)
+      assertEquals("the slot that threw it", AttackSlot.E, p.getAttackSlot)
+      assertEquals("and who stepped on it", other, p.getVictimId)
+    }
+  }
+
+  @Test def aTrapWithNoVictimComesBackWithNone(): Unit = {
+    // A SPAWN names nobody, and a zeroed UUID has to come back as null rather than as a player
+    // whose id is all zeros
+    val p = trip(new TrapPacket(10, id, 5, 6, 3, TrapAction.SPAWN, TrapType.BEAR_TRAP, 0.toByte, 0, null))
+    assertNull(p.getVictimId)
+    assertEquals("and it carries its type's colour", TrapDef.BearTrap.colorRGB, p.getColorRGB)
   }
 
   @Test def tileUpdateKeepsItsFields(): Unit = {

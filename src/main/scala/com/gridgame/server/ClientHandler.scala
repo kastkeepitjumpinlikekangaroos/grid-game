@@ -11,6 +11,8 @@ import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
 import com.gridgame.common.model.Teleport
 import com.gridgame.common.model.Tile
+import com.gridgame.common.model.TrapCast
+import com.gridgame.common.model.TrapPlacement
 import com.gridgame.common.observability.Attrs
 import com.gridgame.common.observability.Metrics
 import com.gridgame.common.protocol._
@@ -50,6 +52,9 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
 
       case PacketType.ITEM_UPDATE =>
         handleItemUpdate(packet.asInstanceOf[ItemPacket])
+
+      case PacketType.TRAP_UPDATE =>
+        handleTrapUpdate(packet.asInstanceOf[TrapPacket])
 
       case _ =>
         System.err.println(s"Unknown packet type: ${packet.getType}")
@@ -126,6 +131,82 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     false // Don't auto-broadcast; we handled it
   }
 
+  /**
+   * A client throwing one of its traps onto the ground. Everything the placement rests on is
+   * checked here — that the player can cast at all, that the attack they name really throws this
+   * trap and is off cooldown, and that the cell is one [[TrapPlacement]] would have reached from
+   * where the server has them — because a trap the client shows and the server refuses is a long
+   * cooldown spent on nothing. A refusal is sent back so the client gives that cooldown up again.
+   *
+   * The order matters: everything that can be judged without touching the clock is judged first,
+   * so only a genuine race (someone else's trap landing on the cell in between) can spend a cast
+   * and still be refused.
+   */
+  private def handleTrapUpdate(packet: TrapPacket): Boolean = {
+    if (packet.getAction != TrapAction.PLACE || instance == null) return false
+    val playerId = packet.getPlayerId
+    val player = registry.get(playerId)
+    if (player == null) return false
+    val world = instance.world
+    if (world == null) return false
+
+    def refuse(why: String): Boolean = {
+      System.err.println(s"ClientHandler: Trap refused for ${playerId.toString.substring(0, 8)}: $why")
+      Metrics.validationFailed.add(1L, Attrs.VfTrapPlacement)
+      val reject = new TrapPacket(server.getNextSequenceNumber, playerId, packet.getX, packet.getY,
+        0, TrapAction.REJECTED, packet.getTrapType, player.getTeamId, packet.getAttackSlot, null)
+      try server.sendRawToPlayer(reject.serialize(), true, player) catch { case _: Exception => }
+      false
+    }
+
+    // The dead, the held and the phased cast nothing
+    if (player.isDead || player.isFrozen || player.isPhased) return refuse("dead, held or phased")
+
+    val charDef = CharacterDef.get(player.getCharacterId)
+    val slot = packet.getAttackSlot
+    val ability = if (charDef == null) null else slot match {
+      case AttackSlot.Q => charDef.qAbility
+      case AttackSlot.E => charDef.eAbility
+      case _ => null
+    }
+    val cast = if (ability == null) null else ability.castBehavior match {
+      case t: TrapCast => t
+      case _ => null
+    }
+    if (cast == null || cast.trapType != packet.getTrapType) {
+      return refuse(s"attack $slot throws no trap of type ${packet.getTrapType}")
+    }
+
+    val pos = player.getPosition
+    if (!TrapPlacement.isValidTarget(world, pos.getX, pos.getY, packet.getX, packet.getY, cast.maxRange)) {
+      return refuse(s"(${packet.getX},${packet.getY}) is out of reach of (${pos.getX},${pos.getY})")
+    }
+    if (instance.trapManager.trapAt(packet.getX, packet.getY) != null) return refuse("a trap is already there")
+    if (!validator.validateCast(playerId, slot, ability.cooldownMs)) return refuse("cast too soon")
+
+    val placed = instance.trapManager.place(playerId, player.getTeamId, packet.getX, packet.getY,
+      cast.trapType, System.currentTimeMillis())
+    if (placed == null) return refuse("a trap landed there first")
+
+    // Casting anything drops a raised barrier, as firing does
+    if (player.hasBarrier) {
+      player.dropBarrier()
+      broadcastState(player)
+    }
+
+    // A fourth trap takes their oldest away
+    placed.removed.foreach(instance.broadcastTrap(_, TrapAction.REMOVE))
+    instance.broadcastTrap(placed.trap, TrapAction.SPAWN)
+    Metrics.trapsPlaced.add(1L, Attrs.trapType(cast.trapType))
+    false
+  }
+
+  /** Their traps go with them when they leave the match. */
+  private def clearTrapsOf(playerId: UUID): Unit = {
+    if (instance == null) return
+    instance.trapManager.removeAllOf(playerId).foreach(instance.broadcastTrap(_, TrapAction.REMOVE))
+  }
+
   private def handlePlayerJoin(packet: PlayerJoinPacket, tcpChannel: Channel): Boolean = {
     val playerId = packet.getPlayerId
 
@@ -162,6 +243,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       // Send existing players, items, and tile modifications to rejoining player
       sendExistingPlayers(playerId, existing)
       sendExistingItems(existing)
+      if (instance != null) instance.sendTrapsTo(existing)
       sendInventoryContents(playerId, existing)
       if (instance != null) instance.sendModifiedTiles(existing)
       else server.sendModifiedTiles(existing)
@@ -200,6 +282,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       // Send existing players, items, and tile modifications to new player
       sendExistingPlayers(playerId, player)
       sendExistingItems(player)
+      if (instance != null) instance.sendTrapsTo(player)
       sendInventoryContents(playerId, player)
       if (instance != null) instance.sendModifiedTiles(player)
       else server.sendModifiedTiles(player)
@@ -225,6 +308,10 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     // thread while this runs on the UDP one, and a move checked against the position from before
     // the star must not be written after it.
     var refused = false
+    // Where an accepted step started, so the traps it passed over can be sprung (-1: it moved
+    // nobody, so there is nothing to walk)
+    var steppedFromX = -1
+    var steppedFromY = -1
     val accepted = player.synchronized {
       if (packet.getServerMoves != player.getServerMoves) {
         // Sent before the client knew the server had moved it (a pull, a knockback, a respawn):
@@ -253,6 +340,10 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
           }
           // Don't allow movement if player is frozen or rooted
           if (!player.isFrozen && !player.isRooted) {
+            if (dx != 0 || dy != 0) {
+              steppedFromX = oldPos.getX
+              steppedFromY = oldPos.getY
+            }
             player.setPosition(newPos)
           }
           player.setColorRGB(packet.getColorRGB)
@@ -277,6 +368,15 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       } else {
         server.broadcastItemPickup(event.item, event.playerId)
       }
+    }
+
+    // And for traps, over every cell the step crossed. An accepted update can carry a player
+    // more than one cell — a datagram was lost, or they dashed — and a trap hopped clean over
+    // has still been stepped on. The projectile tick catches whoever is standing on one; this
+    // is the only thing that catches one they went past.
+    if (steppedFromX >= 0 && instance != null) {
+      instance.applyTrapEvents(instance.trapManager.triggerAlong(player, steppedFromX, steppedFromY,
+        pickupPos.getX, pickupPos.getY, System.currentTimeMillis()))
     }
 
     true
@@ -375,6 +475,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     if (player != null) {
       registry.remove(playerId)
       itemManager.clearInventory(playerId)
+      clearTrapsOf(playerId)
       validator.removePlayer(playerId)
       lastCorrectionAt.remove(playerId)
       refusedSince.remove(playerId)
@@ -619,6 +720,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     if (player != null) {
       registry.remove(playerId)
       itemManager.clearInventory(playerId)
+      clearTrapsOf(playerId)
       validator.removePlayer(playerId)
       lastCorrectionAt.remove(playerId)
       refusedSince.remove(playerId)
@@ -628,6 +730,9 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       null
     }
   }
+
+  /** A new life: every attack off cooldown, as the player's own client has it. */
+  def resetAttacks(playerId: UUID): Unit = validator.resetAttackClocks(playerId)
 
   /** Notify that a player's ability projectile hit a target. Reduces server-side fire-rate cooldown tracking to mirror client-side on-hit cooldown reduction. */
   def notifyAbilityHit(playerId: UUID, projectileType: Byte, characterId: Byte): Unit = {
@@ -648,6 +753,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     if (registry.get(playerId) == null) return
     registry.remove(playerId)
     itemManager.clearInventory(playerId)
+    clearTrapsOf(playerId)
     validator.removePlayer(playerId)
     lastCorrectionAt.remove(playerId)
     refusedSince.remove(playerId)

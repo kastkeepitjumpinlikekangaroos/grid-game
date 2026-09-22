@@ -37,6 +37,7 @@ object Attrs {
   val VictimCharacter: AttributeKey[String] = AttributeKey.stringKey("victim_character")
   val ProjectileType: AttributeKey[String] = AttributeKey.stringKey("projectile_type")
   val ItemType: AttributeKey[String] = AttributeKey.stringKey("item_type")
+  val TrapType: AttributeKey[String] = AttributeKey.stringKey("trap_type")
   val LobbyId: AttributeKey[java.lang.Long] = AttributeKey.longKey("lobby.id")
   val InstanceId: AttributeKey[java.lang.Long] = AttributeKey.longKey("instance.id")
   val PlayerId: AttributeKey[String] = AttributeKey.stringKey("player.id")
@@ -95,6 +96,7 @@ object Attrs {
   val VfProjectileCharge: Attributes = kind("projectile_charge")
   val VfCharacter: Attributes = kind("character")
   val VfWorldMissing: Attributes = kind("world_missing")
+  val VfTrapPlacement: Attributes = kind("trap_placement")
 
   // ---------- Auth outcomes ----------
   val AuthLoginSuccess: Attributes = Attributes.of(Action, "login", Outcome, "success")
@@ -175,6 +177,10 @@ object Attrs {
   def itemTypeAttrs(id: Byte): Attributes =
     itemCache.computeIfAbsent(id, b => Attributes.of(ItemType, itemTypeName(b)))
 
+  private val trapCache = new ConcurrentHashMap[Byte, Attributes]()
+  def trapType(id: Byte): Attributes =
+    trapCache.computeIfAbsent(id, b => Attributes.of(TrapType, trapTypeName(b)))
+
   private val killCache = new ConcurrentHashMap[(Byte, Byte, Byte), Attributes]()
   def killCombo(killerCharId: Byte, victimCharId: Byte, projType: Byte): Attributes = {
     killCache.computeIfAbsent((killerCharId, victimCharId, projType), _ =>
@@ -196,6 +202,7 @@ object Attrs {
   val CauseAoe: Attributes = Attributes.of(Cause, "aoe")
   val CauseBurn: Attributes = Attributes.of(Cause, "burn")
   val CausePoison: Attributes = Attributes.of(Cause, "poison")
+  val CauseTrap: Attributes = Attributes.of(Cause, "trap")
 
   // ---------- Bot action kinds ----------
   val BotMove: Attributes = Attributes.of(Action, "move")
@@ -224,6 +231,13 @@ object Attrs {
       val pd = com.gridgame.common.model.ProjectileDef.get(id)
       if (pd != null && pd.name != null) pd.name else s"proj_$id"
     } catch { case _: Throwable => s"proj_$id" }
+  }
+
+  private def trapTypeName(id: Byte): String = {
+    try {
+      val td = com.gridgame.common.model.TrapDef.get(id)
+      if (td != null && td.name != null) td.name else s"trap_$id"
+    } catch { case _: Throwable => s"trap_$id" }
   }
 
   private def itemTypeName(id: Byte): String = id match {

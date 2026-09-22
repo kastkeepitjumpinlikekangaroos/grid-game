@@ -293,6 +293,19 @@ object PacketSerializer {
             val tileId = payloadBuffer.getInt
             new TileUpdatePacket(sequenceNumber, playerId, timestamp, x, y, tileId)
 
+          case PacketType.TRAP_UPDATE =>
+            val payloadBuffer = ByteBuffer.wrap(payload).order(ByteOrder.BIG_ENDIAN)
+            val trapId = payloadBuffer.getInt
+            val action = payloadBuffer.get()
+            val trapType = payloadBuffer.get()
+            val trapTeamId = payloadBuffer.get()
+            val attackSlot = payloadBuffer.get() & 0xFF
+            val victimMost = payloadBuffer.getLong
+            val victimLeast = payloadBuffer.getLong
+            val victimId = if (victimMost != 0L || victimLeast != 0L) new UUID(victimMost, victimLeast) else null
+            new TrapPacket(sequenceNumber, playerId, timestamp, x, y, trapId, action, trapType,
+              trapTeamId, attackSlot, victimId)
+
           case _ =>
             throw new IllegalArgumentException(s"Unknown packet type: $packetType")
         }

@@ -67,6 +67,13 @@ class TestClient(world: WorldData = WorldData.createEmpty(60, 60), val name: Str
     receive(new ProjectilePacket(nextSeq(), owner, Packet.getCurrentTimestamp, x, y, 0xFF112233, projectileId,
       1f, 0f, action, target, 0.toByte, pType))
 
+  def trap(action: Byte, trapId: Int, trapType: Byte = TrapType.BEAR_TRAP, who: UUID = id,
+           x: Int = 5, y: Int = 5, team: Byte = 0, victim: UUID = null): Unit =
+    receive(new TrapPacket(nextSeq(), who, Packet.getCurrentTimestamp, x, y, trapId, action,
+      trapType, team, 0, victim))
+
+  def sentTraps: Seq[TrapPacket] = sent.collect { case tp: TrapPacket => tp }
+
   def item(action: Byte, itemId: Int, itemType: ItemType, who: UUID = id, x: Int = 5, y: Int = 5): Unit =
     receive(new ItemPacket(nextSeq(), who, x, y, itemType.id, itemId, action))
 

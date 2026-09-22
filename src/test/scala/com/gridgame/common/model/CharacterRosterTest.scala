@@ -58,6 +58,11 @@ class CharacterRosterTest {
         // Down before it is ready again: the server counts its cooldown from the raise, and one
         // that outlasted it could be raised afresh the moment the last came down
         case BarrierCast(dur) => assertTrue(name, dur > 0 && dur < a.cooldownMs)
+        // Thrown somewhere, so it needs a range; and a trap nobody defined would be a cooldown
+        // spent on a cell that stays empty
+        case TrapCast(trapType, maxRange) =>
+          assertTrue(s"$name range", maxRange > 0)
+          assertNotNull(s"$name trap type $trapType", TrapDef.get(trapType))
         case StandardProjectile =>
       }
     }
@@ -76,6 +81,25 @@ class CharacterRosterTest {
     barriers.foreach { a =>
       assertFalse(a.name, firesProjectiles(a))
       assertEquals(a.name, -3, a.projectileType.toInt)
+    }
+  }
+
+  @Test def aTrapFiresNothingAndLandsWithinItsAbilitysRange(): Unit = {
+    // It goes down through a trap packet, not a spawn, so its projectile type is -4 — which
+    // nothing is registered as — and a spawn claiming it is refused
+    val traps = for (c <- all; a <- Seq(c.qAbility, c.eAbility) if a.castBehavior.isInstanceOf[TrapCast]) yield (c, a)
+    assertTrue("the Warden has one", traps.nonEmpty)
+    traps.foreach { case (c, a) =>
+      val cast = a.castBehavior.asInstanceOf[TrapCast]
+      val name = s"${c.displayName} ${a.name}"
+      assertFalse(name, firesProjectiles(a))
+      assertEquals(name, -4, a.projectileType.toInt)
+      // The ability's own range is what the character panel shows and what the bots aim by
+      assertEquals(s"$name range", cast.maxRange, a.maxRange)
+      val tDef = TrapDef.get(cast.trapType)
+      assertTrue(s"$name lasts longer than it takes to arm", tDef.lifetimeMs > tDef.armDelayMs)
+      assertTrue(s"$name may have more than one out", tDef.maxActive >= 1)
+      assertTrue(s"$name does something", tDef.damage > 0 || tDef.effects.nonEmpty || tDef.explosion.isDefined)
     }
   }
 

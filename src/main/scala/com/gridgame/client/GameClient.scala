@@ -40,7 +40,14 @@ final case class LeaderboardEntry(rank: Int, username: String, elo: Int, wins: I
 final case class MatchHistoryEntry(matchId: Int, mapIndex: Int, durationMinutes: Int, playedAt: Long,
                                    kills: Int, deaths: Int, rank: Int, totalPlayers: Int, matchType: Int)
 
+object GameClient {
+  /** A trap's blast goes into the same animation map a projectile's does, keyed past every id the
+    * server hands out (positive 31-bit) so the two can never land on each other. */
+  val TRAP_EXPLOSION_IDS: Int = 0x40000000
+}
+
 class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, var playerName: String = "Player") {
+  import GameClient.TRAP_EXPLOSION_IDS
   private var networkThread: NetworkThread = _
 
   private var localPlayerId: UUID = UUID.randomUUID()
@@ -54,6 +61,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   private val players: ConcurrentHashMap[UUID, Player] = new ConcurrentHashMap()
   private val projectiles: ConcurrentHashMap[Int, Projectile] = new ConcurrentHashMap()
   private val items: ConcurrentHashMap[Int, Item] = new ConcurrentHashMap()
+  // Traps on the ground, ours and everyone else's: the server sends every client every trap, and
+  // the renderer draws an enemy's faintly rather than not at all
+  private val traps: ConcurrentHashMap[Int, Trap] = new ConcurrentHashMap()
   private val inventory: ConcurrentHashMap[Byte, ConcurrentLinkedDeque[Item]] = new ConcurrentHashMap()
   private val incomingPackets: BlockingQueue[Packet] = new LinkedBlockingQueue(Constants.INCOMING_QUEUE_CAPACITY)
   private val sequenceNumber: AtomicInteger = new AtomicInteger(0)
@@ -154,6 +164,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   // Explosion animation tracking: projectileId -> (timestamp, worldX*1000, worldY*1000, colorRGB, blastRadius*1000)
   private val explosionAnimations: ConcurrentHashMap[Int, Array[Long]] = new ConcurrentHashMap()
+
+  // A trap going off: trapId -> (timestamp, worldX*1000, worldY*1000, trapType). A mine's blast
+  // goes through explosionAnimations instead, keyed past every projectile id so the two can't
+  // collide (TRAP_EXPLOSION_IDS).
+  private val trapEffects: ConcurrentHashMap[Int, Array[Long]] = new ConcurrentHashMap()
 
   // Projectiles stopped by terrain or the end of their range: kept for TerrainImpact.FADE_MS
   // where they stopped, so they read as absorbed rather than blinking out. The renderer drops
@@ -329,6 +344,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     projectiles.clear()
     fadingProjectiles.clear()
     items.clear()
+    traps.clear()
+    trapEffects.clear()
     inventory.clear()
     killFeed.clear()
     chatMessages.clear()
@@ -434,9 +451,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     localPosition.set(newSpawn)
     localDirection.set(Direction.Down)
 
-    // Clear local projectiles and inventory
+    // Clear local projectiles, traps and inventory
     projectiles.clear()
     fadingProjectiles.clear()
+    traps.clear()
+    trapEffects.clear()
     inventory.clear()
 
     // Reset effect timers
@@ -822,6 +841,19 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     val now = System.currentTimeMillis()
     if (now - lastAbilityTime.get() < abilityDef.cooldownMs) return
 
+    // A trap has to have somewhere to land. With nowhere — aimed into a wall from inside one —
+    // nothing is cast and the cooldown is not spent, so the cell is picked before anything else
+    // happens. The server picks it the same way (TrapPlacement), from its own copy of where we
+    // are, so a placement we show is one it takes.
+    val trapCell = abilityDef.castBehavior match {
+      case TrapCast(_, range) =>
+        val pos = localPosition.get()
+        val cell = TrapPlacement.target(currentWorld.get(), pos.getX, pos.getY, mouseWorldX, mouseWorldY, range)
+        if (cell.isEmpty) return
+        cell
+      case _ => None
+    }
+
     lastAbilityTime.set(now)
     // Casting anything drops a raised barrier. (Raising one can't: it is on cooldown while up.)
     dropBarrier()
@@ -903,6 +935,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           sequenceNumber.getAndIncrement(), localPlayerId,
           pos.getX.toFloat, pos.getY.toFloat, localColorRGB, 0.0f, 0.0f,
           0.toByte, abilityDef.projectileType, attackSlot))
+
+      case TrapCast(trapType, _) =>
+        val cell = trapCell.get
+        AudioManager.playTrapPlace()
+        send(new TrapPacket(sequenceNumber.getAndIncrement(), localPlayerId,
+          cell.getX, cell.getY, 0, TrapAction.PLACE, trapType, localTeamId, attackSlot, null))
 
       case StandardProjectile =>
         val pos = localPosition.get()
@@ -1103,6 +1141,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     // Handle tile updates
     if (packet.getType == PacketType.TILE_UPDATE) {
       handleTileUpdate(packet.asInstanceOf[TileUpdatePacket])
+      return
+    }
+
+    // Handle traps
+    if (packet.getType == PacketType.TRAP_UPDATE) {
+      handleTrapUpdate(packet.asInstanceOf[TrapPacket])
       return
     }
 
@@ -1321,6 +1365,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         projectiles.clear()
         fadingProjectiles.clear()
         items.clear()
+        traps.clear()
+        trapEffects.clear()
         inventory.clear()
         deathAnimations.clear()
         teleportAnimations.clear()
@@ -1753,6 +1799,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     projectiles.clear()
     fadingProjectiles.clear()
     items.clear()
+    traps.clear()
+    trapEffects.clear()
     isDead = false
     isRespawning = false
     localTeamId = 0
@@ -2029,6 +2077,78 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         // Unknown action
     }
   }
+
+  /**
+   * Traps as the server tells us about them. Their timers are taken from when we heard, not from
+   * the server's clock: the arming ring only says "not yet", and a trap whose lifetime we had
+   * wrong would fade off the ground while it was still there (the server's REMOVE is what takes
+   * it away).
+   */
+  private def handleTrapUpdate(packet: TrapPacket): Unit = {
+    val now = System.currentTimeMillis()
+    val trapId = packet.getTrapId
+    packet.getAction match {
+      case TrapAction.SPAWN =>
+        val tDef = TrapDef.get(packet.getTrapType)
+        if (tDef != null) {
+          traps.put(trapId, new Trap(trapId, packet.getPlayerId, packet.getTeamId, packet.getX,
+            packet.getY, packet.getTrapType, now, now + tDef.armDelayMs, now + tDef.lifetimeMs))
+          // Ours was heard when we threw it; this is someone else setting one down over there
+          if (!packet.getPlayerId.equals(localPlayerId)) {
+            AudioManager.playTrapPlace(distanceFromLocal(packet.getX.toFloat, packet.getY.toFloat),
+              panFromLocal(packet.getX.toFloat, packet.getY.toFloat))
+          }
+        }
+
+      case TrapAction.TRIGGER =>
+        val sprung = traps.remove(trapId)
+        val trapType = if (sprung != null) sprung.trapType else packet.getTrapType
+        val tDef = TrapDef.get(trapType)
+        if (tDef != null) {
+          val wx = packet.getX.toFloat
+          val wy = packet.getY.toFloat
+          val dist = distanceFromLocal(wx, wy)
+          val pan = panFromLocal(wx, wy)
+          tDef.explosion match {
+            case Some(blast) =>
+              explosionAnimations.put(TRAP_EXPLOSION_IDS + trapId, Array(now,
+                (wx * 1000).toLong, (wy * 1000).toLong, tDef.colorRGB.toLong,
+                (blast.blastRadius * 1000).toLong))
+              AudioManager.playExplosion(dist, pan)
+            case None =>
+              trapEffects.put(trapId, Array(now, (wx * 1000).toLong, (wy * 1000).toLong, trapType.toLong))
+              AudioManager.playTrapSprung(tDef.kind, dist, pan)
+          }
+        }
+
+      case TrapAction.REMOVE =>
+        traps.remove(trapId)
+
+      case TrapAction.REJECTED =>
+        // The server wouldn't take it, so the ability was spent on nothing: have it back — but
+        // ready in a moment rather than this instant. Refused placements have a reason that
+        // often hasn't gone away (a trap is already on that cell), and a cooldown handed back
+        // whole turns a held key into a placement request every frame.
+        if (packet.getPlayerId.equals(localPlayerId)) {
+          val charDef = getSelectedCharacterDef
+          packet.getAttackSlot match {
+            case AttackSlot.Q => refundAbility(lastQAbilityTime, charDef.qAbility.cooldownMs)
+            case AttackSlot.E => refundAbility(lastEAbilityTime, charDef.eAbility.cooldownMs)
+            case _ =>
+          }
+          println(s"GameClient: Trap placement refused at (${packet.getX}, ${packet.getY})")
+        }
+
+      case _ =>
+      // A PLACE echoed back, or an action we don't know
+    }
+  }
+
+  /** How long after a refused cast the ability may be tried again. */
+  private val REFUND_RETRY_MS = 400
+
+  private def refundAbility(lastCast: AtomicLong, cooldownMs: Int): Unit =
+    lastCast.set(System.currentTimeMillis() - Math.max(0, cooldownMs - REFUND_RETRY_MS))
 
   private def addToInventory(item: Item): Boolean = {
     val deque = inventory.computeIfAbsent(item.itemType.id, _ => new ConcurrentLinkedDeque[Item]())
@@ -2386,6 +2506,24 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   def getTeleportAnimations: ConcurrentHashMap[UUID, Array[Long]] = teleportAnimations
 
   def getExplosionAnimations: ConcurrentHashMap[Int, Array[Long]] = explosionAnimations
+
+  def getTraps: ConcurrentHashMap[Int, Trap] = traps
+
+  /** Traps going off, for the renderer: trapId -> (when, x*1000, y*1000, trap type). */
+  def getTrapEffects: ConcurrentHashMap[Int, Array[Long]] = trapEffects
+
+  /** Ours or an ally's — drawn plainly. Everyone else's is drawn faintly, findable if looked for. */
+  def isFriendlyTrap(trap: Trap): Boolean =
+    trap.ownerId.equals(localPlayerId) || (localTeamId != 0 && trap.teamId == localTeamId)
+
+  /** How many of our own traps are on the ground, for the ability slot's count. */
+  def myTrapCount: Int = {
+    if (traps.isEmpty) return 0
+    var n = 0
+    val iter = traps.values().iterator()
+    while (iter.hasNext) if (iter.next().ownerId.equals(localPlayerId)) n += 1
+    n
+  }
   def getAoeSplashAnimations: ConcurrentHashMap[Int, Array[Long]] = aoeSplashAnimations
   def getFadingProjectiles: ConcurrentHashMap[Int, FadingProjectile] = fadingProjectiles
 

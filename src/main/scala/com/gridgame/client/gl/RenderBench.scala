@@ -20,6 +20,7 @@ import scala.jdk.CollectionConverters._
  *   bazel run //src/main/scala/com/gridgame/client:render_bench
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --players=24 --projectiles=300 --quality=low
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --barriers   # some players hold barriers
+ *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --traps      # traps on the ground
  *
  * Drives the real GLGameRenderer the way the client does — a GLFW window at the client's
  * size, frames driven by a JavaFX AnimationTimer on the FX thread — over a fabricated
@@ -122,6 +123,11 @@ class RenderBenchApp extends Application {
     // default for the same reason.
     val withBarriers = args.contains("--barriers")
     if (withBarriers) client.localTeamId = 1
+    // --traps scatters 30 traps of every kind over the ground, half of them ours (drawn plainly)
+    // and half an enemy's (drawn faint), with some still arming and some going off. Off by
+    // default for the same reason as the two above.
+    val withTraps = args.contains("--traps")
+    val nTraps = if (withTraps) argOf(args, "traps").map(_.toInt).getOrElse(30) else 0
     val players = (0 until nPlayers).map { i =>
       val id = UUID.randomUUID()
       val p = new Player(id, s"Bot$i", walkableNear(home.getX, home.getY, 10), Player.generateColorFromUUID(id), 100)
@@ -152,6 +158,20 @@ class RenderBenchApp extends Application {
     (0 until 10).foreach { i =>
       val pos = walkableNear(home.getX, home.getY, 12)
       client.getItems.put(i, new Item(i, pos.getX, pos.getY, itemTypes(i % itemTypes.length)))
+    }
+
+    // Traps: every kind, ours and an enemy's, some of them still arming
+    val trapTypes = TrapDef.all.map(_.id).toArray
+    val trapOwner = UUID.randomUUID()
+    (0 until nTraps).foreach { i =>
+      val pos = walkableNear(home.getX, home.getY, 11)
+      val now = System.currentTimeMillis()
+      // Every third is still arming, and a couple are nearly out of time
+      val placed = now - (if (i % 3 == 0) 0L else 4000L)
+      val life = if (i % 7 == 0) 900L else TrapDef.get(trapTypes(i % trapTypes.length)).lifetimeMs.toLong
+      client.getTraps.put(i, new Trap(i, if (i % 2 == 0) client.getLocalPlayerId else trapOwner,
+        0.toByte, pos.getX, pos.getY, trapTypes(i % trapTypes.length), placed,
+        placed + TrapDef.get(trapTypes(i % trapTypes.length)).armDelayMs, placed + life))
     }
 
     // Projectiles: cycle through every registered type so every renderer gets exercised
@@ -228,6 +248,21 @@ class RenderBenchApp extends Application {
           i += 1
         }
       }
+      // Traps going off and being laid again, so the sprung-trap effects are in the frame too
+      if (withTraps && frame % 20 == 0) {
+        val id = (frame / 20) % Math.max(1, nTraps)
+        val trap = client.getTraps.remove(id)
+        if (trap != null) {
+          client.getTrapEffects.put(id, Array(now, (trap.x * 1000).toLong, (trap.y * 1000).toLong,
+            trap.trapType.toLong))
+        }
+        val pos = walkableNear(home.getX, home.getY, 11)
+        val tType = trapTypes(id % trapTypes.length)
+        client.getTraps.put(id, new Trap(id, if (id % 2 == 0) client.getLocalPlayerId else trapOwner,
+          0.toByte, pos.getX, pos.getY, tType, now, now + TrapDef.get(tType).armDelayMs,
+          now + TrapDef.get(tType).lifetimeMs))
+      }
+
       // A death and a teleport somewhere every couple of seconds
       if (frame % 120 == 0) {
         val p = players(rng.nextInt(players.length)); val pos = p.getPosition
@@ -297,7 +332,8 @@ class RenderBenchApp extends Application {
         val heap = ManagementFactory.getMemoryMXBean.getHeapMemoryUsage
         println(f"render bench: ${window.fbWidth}x${window.fbHeight} fb (${window.width}x${window.height} window), " +
           f"quality ${RenderQuality.tierName}, $nPlayers players, ${client.getProjectiles.size} projectiles, " +
-          f"${if (withEffects) "status effects, " else ""}${if (withBarriers) "barriers, " else ""}$n frames")
+          f"${if (withEffects) "status effects, " else ""}${if (withBarriers) "barriers, " else ""}" +
+          f"${if (withTraps) s"$nTraps traps, " else ""}$n frames")
         println(f"  frame build (wall):  mean ${mean(cpuNs)}%.2f ms, p50 ${pct(cpuNs, 0.5)}%.2f, p99 ${pct(cpuNs, 0.99)}%.2f, max ${pct(cpuNs, 1.0)}%.2f")
         println(f"  frame build (CPU):   mean ${mean(threadCpuNs)}%.2f ms, p50 ${pct(threadCpuNs, 0.5)}%.2f, p99 ${pct(threadCpuNs, 0.99)}%.2f  (render thread CPU time)")
         println(f"  frame done (GPU):    mean ${mean(gpuNs)}%.2f ms, p50 ${pct(gpuNs, 0.5)}%.2f, p99 ${pct(gpuNs, 0.99)}%.2f, max ${pct(gpuNs, 1.0)}%.2f")

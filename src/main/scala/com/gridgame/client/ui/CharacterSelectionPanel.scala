@@ -536,6 +536,8 @@ class CharacterSelectionPanel(
             stats.append(s"${maxDist} cells")
           case BarrierCast(dur) =>
             stats.append(s"${seconds(dur)}, ${Barrier.WIDTH.toInt} wide, blocks shots")
+          case TrapCast(trapType, range) =>
+            appendTrapStats(stats, trapType, range)
           case _ =>
             appendProjectileStats(stats, ab.projectileType, ab.damage, ab.maxRange, ab.castBehavior)
         }
@@ -551,6 +553,28 @@ class CharacterSelectionPanel(
     * Divided down to whole seconds, a 0.7s freeze read "Freeze 0s". */
   private def seconds(ms: Int): String =
     if (ms % 1000 == 0) s"${ms / 1000}s" else f"${ms / 1000.0}%.1fs"
+
+  /** A trap's line: how far it is thrown, how long before it is live, and what it does to whoever
+    * steps on it — the numbers that decide whether the ability is worth taking. */
+  private def appendTrapStats(stats: StringBuilder, trapType: Byte, range: Int): Unit = {
+    val tDef = TrapDef.get(trapType)
+    stats.append(s"$range rng")
+    if (tDef == null) return
+    if (tDef.damage > 0) stats.append(s"  ${tDef.damage} dmg")
+    tDef.explosion.foreach(e =>
+      stats.append(s"  ${e.centerDamage}-${e.edgeDamage} blast ${e.blastRadius.toInt} cells"))
+    tDef.effects.foreach {
+      case Stun(dur) => stats.append(s"  Stun ${seconds(dur)}")
+      case Freeze(dur) => stats.append(s"  Freeze ${seconds(dur)}")
+      case Root(dur) => stats.append(s"  Root ${seconds(dur)}")
+      case Slow(dur, _) => stats.append(s"  Slow ${seconds(dur)}")
+      case Burn(total, dur, _) => stats.append(s"  Burn $total over ${seconds(dur)}")
+      case Poison(total, dur, _) => stats.append(s"  Poison $total over ${seconds(dur)}")
+      case Push(_) => stats.append("  Push")
+      case _ =>
+    }
+    stats.append(f"  arms ${tDef.armDelayMs / 1000.0}%.1fs  ${tDef.maxActive} at once")
+  }
 
   private def appendProjectileStats(stats: StringBuilder, projType: Byte, abilityDamage: Int,
                                      abilityRange: Int, castBehavior: CastBehavior): Unit = {

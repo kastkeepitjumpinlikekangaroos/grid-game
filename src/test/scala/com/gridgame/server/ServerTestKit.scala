@@ -170,6 +170,38 @@ class TestMatch(val world: WorldData = WorldData.createEmpty(60, 60), gameMode: 
     instance.projectileManager.getAll.filterNot(pr => before.contains(pr.id))
   }
 
+  /** A trap placement from the player's client, as the wire carries it: the trap it put on the
+    * ground, or null if the server refused it. */
+  def placeTrap(p: Player, slot: Int, trapType: Byte, x: Int, y: Int): Trap = {
+    val before = instance.trapManager.getAll.map(_.id).toSet
+    seq += 1
+    instance.handler.processPacket(
+      PacketSerializer.deserialize(new TrapPacket(seq, p.getId, x, y, 0, TrapAction.PLACE, trapType,
+        p.getTeamId, slot, null).serialize()),
+      null, null)
+    instance.trapManager.getAll.find(t => !before.contains(t.id)).orNull
+  }
+
+  /** A trap already on the ground and past its arming delay, without the wait or the checks. */
+  def armedTrap(owner: Player, x: Int, y: Int, trapType: Byte): Trap = {
+    val placed = instance.trapManager.place(owner.getId, owner.getTeamId, x, y, trapType,
+      System.currentTimeMillis() - 5000)
+    if (placed == null) null else placed.trap
+  }
+
+  /** A player's client rejoining a match already in progress. */
+  def rejoin(p: Player): Unit = {
+    seq += 1
+    val pos = p.getPosition
+    instance.handler.processPacket(
+      new PlayerJoinPacket(seq, p.getId, Packet.getCurrentTimestamp, pos, p.getColorRGB, p.getName,
+        p.getHealth, p.getCharacterId, p.getTeamId),
+      tcp(p.getId), null)
+  }
+
+  def trapEvents(packets: Seq[Packet], action: Byte): Seq[TrapPacket] =
+    packets.collect { case tp: TrapPacket if tp.getAction == action => tp }
+
   def useItem(p: Player, itemType: ItemType, x: Int = 0, y: Int = 0): Item = {
     seq += 1
     val item = new Item(10000 + seq, 0, 0, itemType)

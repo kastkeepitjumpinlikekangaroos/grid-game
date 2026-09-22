@@ -263,6 +263,14 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
   /** A (re)join places the player afresh, and a new session restarts its sequence numbers. */
   def resetMovementFence(playerId: UUID): Unit = movementFence.remove(playerId)
 
+  /**
+   * A new life starts with every attack ready. The client already clears its own cooldowns on
+   * respawn (GameClient's RESPAWN handler), so without this the server spent the rest of the
+   * last life's cooldown refusing abilities the player could see were ready — silently for a
+   * projectile, and as a refused placement for a trap.
+   */
+  def resetAttackClocks(playerId: UUID): Unit = attackClocks.remove(playerId)
+
   /** A new session: its client counts packets from zero again. Packets from the old session
     * can't be replayed into it, since they are signed with the old session's token. */
   def resetSequences(playerId: UUID): Unit = {
@@ -334,6 +342,26 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
       System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} attack $slot fired too fast")
     }
     accepted
+  }
+
+  /**
+   * A cast that spawns no projectile, held to the same clock a shot is: a new one needs 80% of
+   * that attack's cooldown, the tolerance every attack gets. Traps come in on a packet of their
+   * own rather than as a spawn request, so they have nowhere else to be counted.
+   */
+  def validateCast(playerId: UUID, slot: Int, cooldownMs: Int): Boolean = {
+    if (slot < 0 || slot >= SLOT_COUNT) return false
+    val clock = attackClocks.computeIfAbsent(playerId, _ => Array.fill(SLOT_COUNT)(new AttackClock))(slot)
+    clock.synchronized {
+      val now = System.currentTimeMillis()
+      if (now - clock.cooldownFrom < (cooldownMs * 0.8).toLong) false
+      else {
+        clock.castAt = now
+        clock.cooldownFrom = now
+        clock.fired = 1
+        true
+      }
+    }
   }
 
   /** Reduce per-ability fire rate cooldown for the given player (mirrors client-side on-hit reduction). */

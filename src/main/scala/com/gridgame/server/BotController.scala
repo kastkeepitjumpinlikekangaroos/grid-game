@@ -25,6 +25,8 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
   private val strafeDirection = new ConcurrentHashMap[UUID, Int]() // 1 = clockwise, -1 = counter
   // Bots whose raised barrier the clients have been told about, so its end can be announced too
   private val barrierShown = ConcurrentHashMap.newKeySet[UUID]()
+  // How far each bot's target was on the tick before, so a trap is laid for someone coming in
+  private val lastTargetDist = new ConcurrentHashMap[UUID, java.lang.Float]()
   private var executor: ScheduledExecutorService = _
 
   private val TICK_INTERVAL_MS = 100L
@@ -35,6 +37,8 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
   private val SHOOT_COOLDOWN_MAX_MS = 1100L
   private val TARGET_HYSTERESIS_MS = 2000L // stick to a target for at least 2s
   private val AIM_INACCURACY_RAD = 0.12f // ~7 degrees max aim wobble
+  // A trap is laid for a target no further off than this, and only while they are closing in
+  private val TRAP_TARGET_CELLS = 8f
   // A barrier goes up against a shot coming at the bot from this close
   private val INCOMING_SHOT_CELLS = 6f
   // ...that would pass within this of it
@@ -62,6 +66,7 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     lastEAbilityTime.put(id, 0L)
     // Stagger initial move times so bots don't all move on the same tick
     lastMoveTime.put(id, System.currentTimeMillis() - scala.util.Random.nextInt(BOT_MOVE_INTERVAL_MS.toInt))
+    lastTargetDist.put(id, java.lang.Float.valueOf(Float.MaxValue))
     botShootCooldown.put(id, SHOOT_COOLDOWN_MIN_MS + scala.util.Random.nextLong(SHOOT_COOLDOWN_MAX_MS - SHOOT_COOLDOWN_MIN_MS))
     strafeDirection.put(id, if (scala.util.Random.nextBoolean()) 1 else -1)
   }
@@ -108,6 +113,7 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     targetSwitchTime.clear()
     strafeDirection.clear()
     barrierShown.clear()
+    lastTargetDist.clear()
     occupiedTiles.clear()
     occupiedTileOwners.clear()
     bfsVisited.clear()
@@ -135,6 +141,7 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
       }
 
       val now = System.currentTimeMillis()
+      tickNow = now
       botIds.asScala.foreach { botId =>
         val bot = instance.registry.get(botId)
         if (bot != null && !bot.isDead) {
@@ -187,6 +194,13 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
 
     val posBefore = bot.getPosition
     if (canMove) {
+      // The cell the target stands on: a trap under them is no reason to break off the chase
+      if (target != null) {
+        val tp = target.getPosition
+        chaseX = tp.getX; chaseY = tp.getY
+      } else {
+        chaseX = Int.MinValue; chaseY = Int.MinValue
+      }
       // Behind a barrier, a bot closes in whatever its range: that is what the barrier is for
       if (target != null && bot.hasBarrier) {
         moveToward(bot, target)
@@ -340,7 +354,7 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
       val ny = fromY + ddy
       val key = packCoord(nx, ny)
       if (!visited.contains(key) && nx >= 0 && nx < world.width && ny >= 0 && ny < world.height &&
-          world.isWalkable(nx, ny)) {
+          world.isWalkable(nx, ny) && !trapBlocks(nx, ny, botId)) {
         visited.add(key)
         if (nx == toX && ny == toY) return Some((ddx, ddy))
         if (!isTileOccupied(nx, ny, botId)) {
@@ -359,7 +373,7 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
         val ny = cy + ddy
         val key = packCoord(nx, ny)
         if (!visited.contains(key) && nx >= 0 && nx < world.width && ny >= 0 && ny < world.height &&
-            world.isWalkable(nx, ny)) {
+            world.isWalkable(nx, ny) && !trapBlocks(nx, ny, botId)) {
           visited.add(key)
           if (nx == toX && ny == toY) return Some((firstDx, firstDy))
           if (!isTileOccupied(nx, ny, botId)) {
@@ -627,7 +641,24 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
   private def canMoveTo(x: Int, y: Int, botId: UUID): Boolean = {
     val world = instance.world
     x >= 0 && x < world.width && y >= 0 && y < world.height &&
-      world.isWalkable(x, y) && !isTileOccupied(x, y, botId)
+      world.isWalkable(x, y) && !isTileOccupied(x, y, botId) && !trapBlocks(x, y, botId)
+  }
+
+  // The cell the bot currently being moved is chasing. A trap under the target is not a reason to
+  // stand off — the whole point of one laid there is that the target is standing on it.
+  private var chaseX = Int.MinValue
+  private var chaseY = Int.MinValue
+  // This tick's clock, so the hundreds of cells a BFS looks at don't each read it
+  private var tickNow = 0L
+
+  /** Would an enemy's armed trap catch a bot stepping onto (x, y)? */
+  private def trapBlocks(x: Int, y: Int, botId: UUID): Boolean = {
+    // The usual case, and the BFS asks this of every cell it reaches
+    if (instance.trapManager.size == 0) return false
+    if (x == chaseX && y == chaseY) return false
+    val trap = instance.trapManager.trapAt(x, y)
+    trap != null && trap.isArmed(tickNow) &&
+      !trap.ownerId.equals(botId) && !instance.isTeammate(trap.ownerId, botId)
   }
 
   // --- Barriers ---
@@ -681,23 +712,32 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     val charDef = CharacterDef.get(bot.getCharacterId)
     val dist = distanceBetween(bot.getPosition, target.getPosition)
     val now = System.currentTimeMillis()
+    // Read and rolled forward once a tick, so both abilities see the same answer
+    val closing = isClosing(bot.getId, dist)
 
     val lastQ = lastQAbilityTime.getOrDefault(bot.getId, 0L)
     if (now - lastQ >= charDef.qAbility.cooldownMs) {
-      if (tryFireAbility(bot, target, charDef.qAbility, dist)) {
+      if (tryFireAbility(bot, target, charDef.qAbility, dist, closing)) {
         lastQAbilityTime.put(bot.getId, now)
       }
     }
 
     val lastE = lastEAbilityTime.getOrDefault(bot.getId, 0L)
     if (now - lastE >= charDef.eAbility.cooldownMs) {
-      if (tryFireAbility(bot, target, charDef.eAbility, dist)) {
+      if (tryFireAbility(bot, target, charDef.eAbility, dist, closing)) {
         lastEAbilityTime.put(bot.getId, now)
       }
     }
   }
 
-  private def tryFireAbility(bot: Player, target: Player, ability: AbilityDef, dist: Float): Boolean = {
+  /** Is this bot's target nearer than it was, and does it stay noted for next time? */
+  private def isClosing(botId: UUID, dist: Float): Boolean = {
+    val before = lastTargetDist.put(botId, java.lang.Float.valueOf(dist))
+    before != null && dist < before.floatValue()
+  }
+
+  private def tryFireAbility(bot: Player, target: Player, ability: AbilityDef, dist: Float,
+                             closing: Boolean): Boolean = {
     val botPos = bot.getPosition
     val targetPos = target.getPosition
     val dx = (targetPos.getX - botPos.getX).toFloat
@@ -784,6 +824,28 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
         bot.setPosition(Teleport.blinkTarget(instance.world, botPos.getX, botPos.getY, ndx, ndy, clampedDist))
         broadcastBotPosition(bot)
         true
+
+      case TrapCast(trapType, maxRange) =>
+        // Laid in the path of someone coming in: further off than this they will have wandered
+        // away before it arms, and stepping away from it they will never meet it
+        if (dist > TRAP_TARGET_CELLS || !closing) return false
+        val botPos2 = bot.getPosition
+        val cell = TrapPlacement.target(instance.world, botPos2.getX, botPos2.getY,
+          targetPos.getX.toDouble, targetPos.getY.toDouble, maxRange)
+        cell match {
+          case Some(at) if instance.trapManager.trapAt(at.getX, at.getY) == null =>
+            lowerBarrier(bot)
+            val placed = instance.trapManager.place(bot.getId, bot.getTeamId, at.getX, at.getY,
+              trapType, System.currentTimeMillis())
+            if (placed == null) false
+            else {
+              placed.removed.foreach(instance.broadcastTrap(_, TrapAction.REMOVE))
+              instance.broadcastTrap(placed.trap, TrapAction.SPAWN)
+              Metrics.trapsPlaced.add(1L, Attrs.trapType(trapType))
+              true
+            }
+          case _ => false
+        }
 
       case BarrierCast(durationMs) =>
         // Up against someone ranged who can shoot it from where they are, while it still has

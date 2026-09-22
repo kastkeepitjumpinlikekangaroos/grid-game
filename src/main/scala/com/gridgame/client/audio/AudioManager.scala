@@ -1,5 +1,7 @@
 package com.gridgame.client.audio
 
+import com.gridgame.common.model.TrapKind
+
 import java.io.{ByteArrayInputStream, File, FileInputStream, InputStream}
 import java.util.concurrent.ConcurrentHashMap
 import java.util.prefs.Preferences
@@ -139,6 +141,22 @@ object AudioManager {
   def playPhaseShift(): Unit = playSfx("phase_shift", SFX_VOLUME)
   def playBarrierUp(): Unit = playSfx("barrier_up", SFX_VOLUME, PITCH_SPREAD)
 
+  /** A trap being set down. Centred when it is ours (no distance to speak of), out there when
+    * it is somebody else's — an enemy setting one nearby is a thing worth hearing. */
+  def playTrapPlace(distanceInCells: Float = 0f, pan: Float = 0f): Unit =
+    playSfx("trap_place", volumeAtDistance(distanceInCells), PITCH_SPREAD, pan)
+
+  /** A trap going off, by what kind it is ([[com.gridgame.common.model.TrapKind]]). A mine is not
+    * here: its blast is the explosion everything else's is. */
+  def playTrapSprung(kind: Byte, distanceInCells: Float, pan: Float): Unit = {
+    val name = kind match {
+      case TrapKind.POD => "trap_poison"
+      case TrapKind.RUNE => "trap_ignite"
+      case _ => "trap_snap" // jaws, and a web closing
+    }
+    playSfx(name, volumeAtDistance(distanceInCells), PITCH_SPREAD, pan)
+  }
+
   /** A shot stopped on someone's barrier, over there. */
   def playBarrierBlock(distanceInCells: Float, pan: Float): Unit =
     playSfx("barrier_block", volumeAtDistance(distanceInCells), PITCH_SPREAD, pan)
@@ -197,6 +215,7 @@ object AudioManager {
   private val EVENT_SOUNDS = Seq(
     "spawn", "death", "hit_taken", "hit_dealt", "hit_other",
     "explosion", "dash", "teleport", "phase_shift", "barrier_up", "barrier_block",
+    "trap_place", "trap_snap", "trap_poison", "trap_ignite",
     "music_menu", "music_battle"
   )
 
