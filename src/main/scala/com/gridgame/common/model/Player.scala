@@ -39,11 +39,15 @@ class Player(
   private var lastBurnTick: Long = 0
   private var burnOwnerId: UUID = _
 
-  // Poison (DoT) state — a slot of its own, so a poison and a burn run at once
-  private var poisonUntil: Long = 0
-  private var poisonDamagePerTick: Int = 0
+  // Poison (DoT) state — a slot of its own, so a poison and a burn run at once. Counted in
+  // ticks rather than timed out: each tick falls due a whole tickMs after the one before was
+  // due, and the poison lasts until its last tick has landed. Timed out on the clock like a
+  // burn, every bite lands up to a server tick late, the last one falls after the deadline, and
+  // the poison comes up a tick short of the damage its def promises.
+  private var poisonTicksLeft: Int = 0
+  private var poisonDamageLeft: Int = 0
   private var poisonTickMs: Int = 0
-  private var lastPoisonTick: Long = 0
+  private var nextPoisonTickAt: Long = 0
   private var poisonOwnerId: UUID = _
 
   // Speed boost state
@@ -55,6 +59,13 @@ class Player(
   // Slow state (reduced movement speed)
   private var slowedUntil: Long = 0
   private var slowMultiplier: Float = 1.0f
+
+  // Barrier state (BarrierCast): a shield wall carried in front, facing barrierAngle (world
+  // radians). Up until barrierUntil; dropping it early moves that to the moment it dropped, which
+  // is what a client fades it out from. The cooldown counts from the raise, so that is kept apart.
+  @volatile private var barrierRaisedAt: Long = 0
+  @volatile private var barrierUntil: Long = 0
+  @volatile private var barrierAngle: Float = 0f
 
   // Health regen accumulator
   private var _regenAccumulator: Double = 0.0
@@ -124,7 +135,10 @@ class Player(
   def damage(amount: Int): Boolean = synchronized {
     val wasAlive = health > 0
     setHealth(health - amount)
-    wasAlive && health <= 0
+    val killed = wasAlive && health <= 0
+    // The dead hold nothing up
+    if (killed) dropBarrier()
+    killed
   }
 
   // Server side: how many times the server has put this player somewhere their client didn't —
@@ -258,33 +272,44 @@ class Player(
   }
 
   // Poison accessors
-  def isPoisoned: Boolean = System.currentTimeMillis() < poisonUntil
+  /** Poisoned until the last tick has landed. On the client, where nothing ticks it, until the
+    * server's updates stop saying so (clearPoison). */
+  def isPoisoned: Boolean = poisonTicksLeft > 0
 
-  def getPoisonUntil: Long = poisonUntil
+  /** What the next tick will take: the damage left over the ticks left, so they add up to the
+    * total exactly rather than losing the remainder of an uneven split. */
+  def getPoisonDamagePerTick: Int = if (poisonTicksLeft > 0) poisonDamageLeft / poisonTicksLeft else 0
 
-  def getPoisonDamagePerTick: Int = poisonDamagePerTick
-
-  def getPoisonTickMs: Int = poisonTickMs
-
-  def getLastPoisonTick: Long = lastPoisonTick
-
-  def setLastPoisonTick(t: Long): Unit = { lastPoisonTick = t }
+  def getNextPoisonTickAt: Long = nextPoisonTickAt
 
   def getPoisonOwnerId: UUID = poisonOwnerId
 
-  def applyPoison(totalDamage: Int, durationMs: Int, tickMs: Int, ownerId: UUID): Unit = {
-    val now = System.currentTimeMillis()
-    this.poisonUntil = now + durationMs
-    this.poisonTickMs = tickMs
-    val numTicks = durationMs / tickMs
-    this.poisonDamagePerTick = if (numTicks > 0) totalDamage / numTicks else totalDamage
-    this.lastPoisonTick = now
+  /** Poison this player: `totalDamage` over `durationMs`, a tick every `tickMs`. A new poison
+    * replaces the one running, as a new burn does. Under the lock the ticks are taken under, so
+    * a tick can't read half of the old poison and half of the new. */
+  def applyPoison(totalDamage: Int, durationMs: Int, tickMs: Int, ownerId: UUID): Unit = synchronized {
+    val tick = Math.max(1, tickMs)
+    this.poisonTickMs = tick
+    this.poisonTicksLeft = Math.max(1, durationMs / tick)
+    this.poisonDamageLeft = Math.max(0, totalDamage)
+    this.nextPoisonTickAt = System.currentTimeMillis() + tick
     this.poisonOwnerId = ownerId
   }
 
+  /** Take the poison's next tick if it has fallen due by `now`: the damage it does, or -1 when
+    * none is due. Callers hold the player's lock, so two ticks can't both take the same one. */
+  def takePoisonTick(now: Long): Int = {
+    if (poisonTicksLeft <= 0 || now < nextPoisonTickAt) return -1
+    val dmg = poisonDamageLeft / poisonTicksLeft
+    poisonDamageLeft -= dmg
+    poisonTicksLeft -= 1
+    nextPoisonTickAt += poisonTickMs
+    dmg
+  }
+
   def clearPoison(): Unit = {
-    this.poisonUntil = 0
-    this.poisonDamagePerTick = 0
+    this.poisonTicksLeft = 0
+    this.poisonDamageLeft = 0
   }
 
   // Speed boost accessors
@@ -333,6 +358,34 @@ class Player(
   def clearSlow(): Unit = {
     this.slowedUntil = 0
     this.slowMultiplier = 1.0f
+  }
+
+  // Barrier accessors
+  def hasBarrier: Boolean = System.currentTimeMillis() < barrierUntil
+
+  def getBarrierUntil: Long = barrierUntil
+
+  def setBarrierUntil(until: Long): Unit = { this.barrierUntil = until }
+
+  def getBarrierRaisedAt: Long = barrierRaisedAt
+
+  def setBarrierRaisedAt(at: Long): Unit = { this.barrierRaisedAt = at }
+
+  def getBarrierAngle: Float = barrierAngle
+
+  def setBarrierAngle(radians: Float): Unit = { this.barrierAngle = radians }
+
+  /** Raise a barrier facing `angle` (world radians) for `durationMs` from `now`. */
+  def raiseBarrier(now: Long, durationMs: Int, angle: Float): Unit = {
+    this.barrierAngle = angle
+    this.barrierRaisedAt = now
+    this.barrierUntil = now + durationMs
+  }
+
+  /** Drop the barrier, if it is up: it ends now. */
+  def dropBarrier(): Unit = {
+    val now = System.currentTimeMillis()
+    if (now < barrierUntil) barrierUntil = now
   }
 
   // Health regen accessors

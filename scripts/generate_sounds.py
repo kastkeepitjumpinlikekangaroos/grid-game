@@ -2908,6 +2908,51 @@ def gen_phase_shift():
     return reverb(mixdown(shimmer, pad), decay=1.1, damp=6200, mix=0.30, name="ph", predelay=0.012)
 
 
+def gen_barrier_up():
+    """A wall of light going up in front of you: a short upward rush of energy that locks with
+    a soft, low thump and hums for a moment after. The lock is a damped thud, not a struck plate:
+    this is a heavy shield being set, not a chime."""
+    dur = 0.62
+    n = n_of(dur)
+    rush_d = 0.16
+    rush = svf(pink(rush_d, "bur"), seg_env([(0.0, 380), (1.0, 2400)], rush_d), q=3.0, mode="bp")
+    rush *= (np.linspace(0.0, 1.0, n_of(rush_d)) ** 1.8) * 0.55
+    lock = thud(96, 0.3, drive=1.8, name="bul")
+    seat = bandpass(contact(0.012, name="buc"), 300, 2200) * 0.35
+    # the field settling: a low fifth that beats slowly and dies away
+    hum_d = 0.46
+    hum = sine(110.0, hum_d) + sine(165.3, hum_d) * 0.55 + sine(220.4, hum_d) * 0.2
+    hum *= exp_env(hum_d, attack=0.015, decay=5.0) * (0.8 + 0.2 * np.sin(2 * np.pi * 7.0 * t_axis(hum_d)))
+    hum = chorus(hum, rate=0.7, depth_ms=5.0, voices=2, mix=0.3, name="buh")
+    glint = sparkle(0.3, 2600, 7000, count=5, rise=False, name="bug") * 0.12
+    out = np.zeros(n)
+    out[:len(rush)] += rush
+    at(out, rush_d - 0.02, saturate(lock, 1.6) * 0.9)
+    at(out, rush_d - 0.02, seat)
+    at(out, rush_d - 0.01, hum * 0.42)
+    at(out, rush_d - 0.03, glint)
+    return reverb(out, decay=0.55, damp=5000, mix=0.22, name="bu", predelay=0.01)
+
+
+def gen_barrier_block():
+    """A shot stopped dead on a barrier: a dull, soft thump of energy and a short fizz as the
+    shot comes apart on it. One damped sine for the body and nothing that rings. This is heard
+    every time anyone fires into a shield, so it is the clang rule twice over: a partial left
+    ringing here is someone hitting a bucket all fight long."""
+    dur = 0.26
+    body = thud(82, 0.2, drive=1.9, name="bbt")
+    # the field giving under it: a short drop in pitch, gone in under 100ms
+    give_d = 0.09
+    give = sine(seg_env([(0.0, 196), (1.0, 118)], give_d), give_d) * exp_env(give_d, attack=0.001, decay=9.0) * 0.45
+    fizz = bandpass(noise(0.07, "bbf"), 700, 2600) * exp_env(0.07, attack=0.0006, decay=17.0) * 0.5
+    out = np.zeros(n_of(dur))
+    out[:len(body)] += body * 0.9
+    out[:len(give)] += saturate(give, 2.0)
+    at(out, 0.002, fizz)
+    out = eq(saturate(out, 1.8), "lp", 6000, q=0.8)
+    return reverb(out, decay=0.35, damp=3000, mix=0.16, name="bb", predelay=0.004)
+
+
 # ═══════════════════════════ music ═══════════════════════════
 
 def midi_hz(m):
@@ -3493,6 +3538,10 @@ EVENTS = [
     ("teleport", gen_teleport, 0.62, "ability", dict(width=0.9, transient=1.2,
                                                      pingpong=(0.07, 0.3, 0.22), tail=(0.9, 0.22))),
     ("phase_shift", gen_phase_shift, 0.56, "ability", dict(width=1.0, transient=0.5, tail=(1.3, 0.28))),
+    ("barrier_up", gen_barrier_up, 0.6, "ability", dict(width=0.85, transient=1.1, tail=(0.7, 0.2))),
+    # heard for every shot a barrier stops, so short, narrow, and well down in the mix
+    ("barrier_block", gen_barrier_block, 0.54, "melee", dict(width=0.5, transient=1.6, comp=(0.22, 4.0),
+                                                             tail=(0.35, 0.12))),
 ]
 
 

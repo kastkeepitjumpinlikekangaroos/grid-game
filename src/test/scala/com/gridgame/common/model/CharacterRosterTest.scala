@@ -55,6 +55,9 @@ class CharacterRosterTest {
         case TeleportCast(dist) => assertTrue(name, dist > 0)
         case PhaseShiftBuff(dur) => assertTrue(name, dur > 0 && dur < a.cooldownMs)
         case GroundSlam(radius) => assertTrue(name, radius > 0)
+        // Down before it is ready again: the server counts its cooldown from the raise, and one
+        // that outlasted it could be raised afresh the moment the last came down
+        case BarrierCast(dur) => assertTrue(name, dur > 0 && dur < a.cooldownMs)
         case StandardProjectile =>
       }
     }
@@ -63,6 +66,17 @@ class CharacterRosterTest {
     // the map in a second and a stray 0.1f is one who can't get out of their spawn
     all.foreach(c => assertTrue(s"${c.displayName} speed ${c.moveSpeed}",
       c.moveSpeed >= 0.5f && c.moveSpeed <= 2.0f))
+  }
+
+  @Test def aBarrierFiresNothing(): Unit = {
+    // It is raised by the player's update, not by a spawn: a spawn claiming it is refused, and its
+    // projectile type is -3, which nothing is registered as
+    val barriers = for (c <- all; a <- Seq(c.qAbility, c.eAbility) if a.castBehavior.isInstanceOf[BarrierCast]) yield a
+    assertTrue("the Crusader has one", barriers.nonEmpty)
+    barriers.foreach { a =>
+      assertFalse(a.name, firesProjectiles(a))
+      assertEquals(a.name, -3, a.projectileType.toInt)
+    }
   }
 
   @Test def everySpriteSheetIsThere(): Unit = {

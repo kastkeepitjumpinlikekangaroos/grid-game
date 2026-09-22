@@ -1,6 +1,7 @@
 package com.gridgame.server
 
 import com.gridgame.common.Constants
+import com.gridgame.common.model.BarrierCast
 import com.gridgame.common.model.CharacterDef
 import com.gridgame.common.model.DashBuff
 import com.gridgame.common.model.Direction
@@ -92,6 +93,13 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     if (!validator.validateProjectileSpawn(packet, player)) {
       Metrics.validationFailed.add(1L, Attrs.VfProjectileFireRate)
       return false
+    }
+
+    // Firing anything drops a raised barrier. The client drops it first and says so, but that
+    // update and this spawn race each other over UDP, so the spawn drops it too.
+    if (player.hasBarrier) {
+      player.dropBarrier()
+      broadcastState(player)
     }
 
     // Spawn projectile at player's position with velocity from packet
@@ -229,6 +237,7 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
         // A phase lets the player through walls, so it takes effect before this very update is
         // checked: the first one sent with the flag can already be inside one
         if ((packet.getEffectFlags & 0x08) != 0) activatePhase(player)
+        updateBarrier(player, packet)
         if (world != null && !validator.validateMovement(packet, player, world)) {
           Metrics.validationFailed.add(1L, Attrs.VfMovementSpeed)
           refused = true
@@ -297,6 +306,32 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       val lastStart = lastEnd - durationMs
       if (lastEnd == 0L || now - lastStart >= (cooldownMs * 0.8).toLong) {
         player.setPhasedUntil(now + durationMs)
+      }
+    }
+  }
+
+  /**
+   * The client says whether the player's barrier is up (effect flags 2, bit 2) and which way it
+   * faces (the aim angle). A raise is honoured if the character has a barrier and it is off
+   * cooldown: 80% of it since the last raise, the tolerance every other attack gets, counted from
+   * the raise because a barrier can drop early. While it is up every update turns it, and one
+   * without the bit drops it. Stale and reordered updates never get here, so an old one can't.
+   */
+  private def updateBarrier(player: Player, packet: PlayerUpdatePacket): Unit = {
+    val raised = (packet.getEffectFlags2 & 0x04) != 0
+    if (player.hasBarrier) {
+      if (raised) player.setBarrierAngle(packet.aimAngleRadians.toFloat)
+      else player.dropBarrier()
+    } else if (raised && !player.isDead && !player.isFrozen && !player.isPhased) {
+      val charDef = CharacterDef.get(player.getCharacterId)
+      Seq(charDef.qAbility, charDef.eAbility).collectFirst {
+        case a if a.castBehavior.isInstanceOf[BarrierCast] => (a.castBehavior.asInstanceOf[BarrierCast].durationMs, a.cooldownMs)
+      }.foreach { case (durationMs, cooldownMs) =>
+        val now = System.currentTimeMillis()
+        val last = player.getBarrierRaisedAt
+        if (last == 0L || now - last >= (cooldownMs * 0.8).toLong) {
+          player.raiseBarrier(now, durationMs, packet.aimAngleRadians.toFloat)
+        }
       }
     }
   }

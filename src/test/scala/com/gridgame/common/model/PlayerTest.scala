@@ -59,10 +59,27 @@ class PlayerTest {
     assertTrue(p.isCCImmune)
   }
 
+  @Test def aStunIsAFreezeByAnotherName(): Unit = {
+    // The freeze's own timer and rules, so everything that holds a frozen player holds a stunned
+    // one without knowing stuns exist; the marker only says which of the two to draw
+    val p = player()
+    assertTrue(p.tryStun(1000))
+    assertTrue(p.isStunned)
+    assertTrue("held", p.isFrozen)
+    assertEquals(p.getFrozenUntil, p.getStunnedUntil)
+    assertFalse("already held", p.tryStun(1000))
+    assertFalse(p.tryFreeze(1000))
+    p.setFrozenUntil(0)
+    p.setStunnedUntil(0)
+    assertFalse("immune for a while after, as after a freeze", p.tryStun(1000))
+    assertTrue(p.isCCImmune)
+  }
+
   @Test def aPhasedPlayerCannotBeHeld(): Unit = {
     val p = player()
     p.setPhasedUntil(System.currentTimeMillis() + 5000)
     assertFalse(p.tryFreeze(1000))
+    assertFalse(p.tryStun(1000))
     assertFalse(p.tryRoot(1000))
     assertFalse(p.trySlow(1000, 0.5f))
   }
@@ -87,6 +104,21 @@ class PlayerTest {
     assertEquals(3, p.getBurnDamagePerTick)
     p.clearBurn()
     assertFalse(p.isBurning)
+  }
+
+  @Test def aPoisonDealsItsWholeTotalOnAFixedSchedule(): Unit = {
+    val p = player()
+    p.applyPoison(totalDamage = 25, durationMs = 4000, tickMs = 1000, ownerId = UUID.randomUUID())
+    assertTrue(p.isPoisoned)
+    val due = p.getNextPoisonTickAt
+    assertEquals("not due yet", -1, p.takePoisonTick(due - 1))
+    // Each tick falls due a whole tick after the one before was due, however late that one was
+    // taken (the server only looks every 200ms), so lateness never pushes the last one out
+    val bites = Seq(p.takePoisonTick(due + 190), p.takePoisonTick(due + 1000),
+      p.takePoisonTick(due + 2150), p.takePoisonTick(due + 3199))
+    assertEquals("25 won't split four ways: the remainder comes last", Seq(6, 6, 6, 7), bites)
+    assertFalse("over once the last has landed", p.isPoisoned)
+    assertEquals(-1, p.takePoisonTick(due + 60000))
   }
 
   @Test def serverMovesAreCounted(): Unit = {

@@ -23,6 +23,8 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
   private val currentTarget = new ConcurrentHashMap[UUID, UUID]()
   private val targetSwitchTime = new ConcurrentHashMap[UUID, Long]()
   private val strafeDirection = new ConcurrentHashMap[UUID, Int]() // 1 = clockwise, -1 = counter
+  // Bots whose raised barrier the clients have been told about, so its end can be announced too
+  private val barrierShown = ConcurrentHashMap.newKeySet[UUID]()
   private var executor: ScheduledExecutorService = _
 
   private val TICK_INTERVAL_MS = 100L
@@ -33,6 +35,10 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
   private val SHOOT_COOLDOWN_MAX_MS = 1100L
   private val TARGET_HYSTERESIS_MS = 2000L // stick to a target for at least 2s
   private val AIM_INACCURACY_RAD = 0.12f // ~7 degrees max aim wobble
+  // A barrier goes up against a shot coming at the bot from this close
+  private val INCOMING_SHOT_CELLS = 6f
+  // ...that would pass within this of it
+  private val INCOMING_SHOT_MISS_CELLS = 2f
 
   // 8 cardinal + diagonal directions for obstacle avoidance
   private val ALL_DIRS = Array(
@@ -101,6 +107,7 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     currentTarget.clear()
     targetSwitchTime.clear()
     strafeDirection.clear()
+    barrierShown.clear()
     occupiedTiles.clear()
     occupiedTileOwners.clear()
     bfsVisited.clear()
@@ -110,7 +117,8 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
 
   private def packCoord(x: Int, y: Int): Long = (x.toLong << 32) | (y.toLong & 0xFFFFFFFFL)
 
-  private def tick(): Unit = {
+  /** One pass over every bot. Runs every TICK_INTERVAL_MS once started; tests call it themselves. */
+  private[server] def tick(): Unit = {
     val tickStart = System.nanoTime()
     try {
       if (!instance.isRunning || instance.world == null) return
@@ -158,6 +166,13 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     tryPickupItems(bot)
     tryUseItems(bot, target)
 
+    // A barrier faces the target every tick it is up, and its end is announced when it runs out
+    if (bot.hasBarrier) {
+      if (target != null) faceBarrier(bot, target)
+    } else if (barrierShown.remove(bot.getId)) {
+      broadcastBotPosition(bot)
+    }
+
     // Movement gated by per-bot move timer
     val canMove = !bot.isRooted && {
       val lastMove = lastMoveTime.getOrDefault(bot.getId, 0L)
@@ -170,14 +185,21 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
       now - lastMove >= moveInterval
     }
 
+    val posBefore = bot.getPosition
     if (canMove) {
-      if (target != null) {
+      // Behind a barrier, a bot closes in whatever its range: that is what the barrier is for
+      if (target != null && bot.hasBarrier) {
+        moveToward(bot, target)
+      } else if (target != null) {
         moveSmart(bot, target)
       } else {
         wander(bot)
       }
       lastMoveTime.put(bot.getId, now)
     }
+    // A step tells the clients where the barrier faces. Standing still it has to be said anyway:
+    // so they see it turn, and because their copy of it lapses when updates stop coming
+    if (bot.hasBarrier && (bot.getPosition eq posBefore)) broadcastBotPosition(bot)
 
     if (target != null) {
       tryUseAbilities(bot, target)
@@ -608,6 +630,49 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
       world.isWalkable(x, y) && !isTileOccupied(x, y, botId)
   }
 
+  // --- Barriers ---
+
+  /** Turn the bot's raised barrier to face the target. */
+  private def faceBarrier(bot: Player, target: Player): Unit = {
+    val bp = bot.getPosition
+    val tp = target.getPosition
+    val dx = tp.getX - bp.getX
+    val dy = tp.getY - bp.getY
+    if (dx != 0 || dy != 0) bot.setBarrierAngle(Math.atan2(dy, dx).toFloat)
+  }
+
+  /** Drop the bot's barrier before it fires or casts anything, as a player's does. */
+  private def lowerBarrier(bot: Player): Unit = {
+    if (bot.hasBarrier) {
+      bot.dropBarrier()
+      barrierShown.remove(bot.getId)
+      broadcastBotPosition(bot)
+    }
+  }
+
+  /** Is an enemy's shot, one a barrier would stop, coming at the bot from close by? */
+  private def incomingShot(bot: Player): Boolean = {
+    val bp = bot.getPosition
+    val bx = bp.getX.toFloat
+    val by = bp.getY.toFloat
+    var found = false
+    instance.projectileManager.forEachProjectile { p =>
+      if (!found && !p.ownerId.equals(bot.getId) && !instance.isTeammate(bot.getId, p.ownerId) &&
+          !ProjectileDef.get(p.projectileType).passesThroughWalls) {
+        val rx = bx - p.getX
+        val ry = by - p.getY
+        val dist = Math.sqrt(rx * rx + ry * ry).toFloat
+        val speed = Math.sqrt(p.dx * p.dx + p.dy * p.dy).toFloat
+        if (dist <= INCOMING_SHOT_CELLS && speed > 0.01f) {
+          val along = (rx * p.dx + ry * p.dy) / speed
+          // Heading this way, and would pass close enough to hit
+          if (along > 0f && Math.abs(rx * p.dy - ry * p.dx) / speed <= INCOMING_SHOT_MISS_CELLS) found = true
+        }
+      }
+    }
+    found
+  }
+
   // --- Abilities ---
 
   private def tryUseAbilities(bot: Player, target: Player): Unit = {
@@ -649,6 +714,7 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     ability.castBehavior match {
       case StandardProjectile =>
         if (dist > ability.maxRange) return false
+        lowerBarrier(bot)
         val projectile = instance.projectileManager.spawnProjectile(
           bot.getId, botPos.getX, botPos.getY,
           ndx, ndy, bot.getColorRGB, 0, ability.projectileType
@@ -658,6 +724,7 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
 
       case fan @ FanProjectile(count, _) =>
         if (dist > ability.maxRange) return false
+        lowerBarrier(bot)
         for (i <- 0 until count) {
           val theta = fan.angleOf(i)
           val cos = Math.cos(theta).toFloat
@@ -674,12 +741,14 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
 
       case PhaseShiftBuff(durationMs) =>
         if (dist > 5) return false
+        lowerBarrier(bot)
         bot.setPhasedUntil(System.currentTimeMillis() + durationMs)
         broadcastBotPosition(bot)
         true
 
       case DashBuff(maxDistance, durationMs, _) =>
         if (dist < 3 || dist > maxDistance + 5) return false
+        lowerBarrier(bot)
         val clampedDist = Math.min(dist, maxDistance.toFloat)
         val world = instance.world
         var bestX = botPos.getX
@@ -699,6 +768,7 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
 
       case GroundSlam(radius) =>
         if (dist > radius) return false
+        lowerBarrier(bot)
         val projectile = instance.projectileManager.spawnProjectile(
           bot.getId, botPos.getX, botPos.getY,
           0.0f, 0.0f, bot.getColorRGB, 0, ability.projectileType
@@ -708,9 +778,22 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
 
       case TeleportCast(maxDistance) =>
         if (dist < 4 || dist > maxDistance + 8) return false
+        lowerBarrier(bot)
         val clampedDist = Math.min(dist, maxDistance.toFloat).toInt
         // A player's blink, stopping before the first wall rather than coming out beyond it
         bot.setPosition(Teleport.blinkTarget(instance.world, botPos.getX, botPos.getY, ndx, ndy, clampedDist))
+        broadcastBotPosition(bot)
+        true
+
+      case BarrierCast(durationMs) =>
+        // Up against someone ranged who can shoot it from where they are, while it still has
+        // ground to close (in its own range it is about to attack, which would drop it), or
+        // against a shot on its way in
+        val underFire = (isRanged(target.getCharacterId) && dist <= getMaxRange(target.getCharacterId) &&
+          dist > getMaxRange(bot.getCharacterId)) || incomingShot(bot)
+        if (!underFire) return false
+        bot.raiseBarrier(System.currentTimeMillis(), durationMs, Math.atan2(ndy, ndx).toFloat)
+        barrierShown.add(bot.getId)
         broadcastBotPosition(bot)
         true
     }
@@ -729,6 +812,7 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     if (now - lastShot < cooldown) return
 
     lastShotTime.put(bot.getId, now)
+    lowerBarrier(bot)
     // Randomize next cooldown slightly
     botShootCooldown.put(bot.getId, SHOOT_COOLDOWN_MIN_MS + scala.util.Random.nextLong(SHOOT_COOLDOWN_MAX_MS - SHOOT_COOLDOWN_MIN_MS))
 

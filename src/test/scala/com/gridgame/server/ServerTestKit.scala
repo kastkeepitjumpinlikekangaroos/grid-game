@@ -141,14 +141,17 @@ class TestMatch(val world: WorldData = WorldData.createEmpty(60, 60), gameMode: 
   }
 
   /** A position update from the player's client, as it would send it: the server moves it has
-    * heard of by default. Returns whether the server accepted it. */
-  def move(p: Player, x: Int, y: Int, serverMoves: Int = -1, flags: Int = 0, gapMs: Long = 2): Boolean = {
+    * heard of by default. `flags2` and `aimAngle` are the second flag byte and the aim, in
+    * radians (a barrier's bit and its facing). Returns whether the server accepted it. */
+  def move(p: Player, x: Int, y: Int, serverMoves: Int = -1, flags: Int = 0, gapMs: Long = 2,
+           flags2: Int = 0, aimAngle: Double = 0.0): Boolean = {
     if (gapMs > 0) Thread.sleep(gapMs)
     seq += 1
     val moves = if (serverMoves >= 0) serverMoves else p.getServerMoves
     instance.handler.processPacket(
       new PlayerUpdatePacket(seq, p.getId, Packet.getCurrentTimestamp, new Position(x, y), p.getColorRGB,
-        p.getHealth, 0, flags, p.getCharacterId, p.getTeamId, moves),
+        p.getHealth, 0, flags, p.getCharacterId, p.getTeamId, moves, flags2,
+        PlayerUpdatePacket.encodeAimAngle(aimAngle)),
       null, p.getUdpAddress)
   }
 

@@ -1,8 +1,13 @@
 package com.gridgame.server
 
 import com.gridgame.common.Constants
+import com.gridgame.common.model.CharacterDef
 import com.gridgame.common.model.CharacterId
 import com.gridgame.common.model.Movement
+import com.gridgame.common.model.Player
+import com.gridgame.common.model.Position
+import com.gridgame.common.model.WorldData
+import com.gridgame.common.protocol.PlayerUpdatePacket
 import org.junit.Assert._
 import org.junit.Test
 
@@ -88,6 +93,29 @@ class PacketValidatorTest {
     // 25ms a cell at 2.0, 50 at 1.0, 100 at 0.5 — the rate Movement moves them at
     assertEquals(25.0, Movement.baseStepIntervalMs(2.0f), 0.0)
     assertEquals(100.0, Movement.baseStepIntervalMs(0.5f), 0.0)
+  }
+
+  /** A Gladiator takes one step to start the validator's clock, waits `gapMs`, then covers
+    * `cells` more: does the validator let the second update through? */
+  private def walk(validator: PacketValidator, cells: Int, gapMs: Long): Boolean = {
+    val world = WorldData.createEmpty(60, 60)
+    val p = new Player(UUID.randomUUID(), "walker", new Position(20, 20), 0)
+    p.setCharacterId(CharacterId.Gladiator.id)
+    def at(seq: Int, x: Int) = new PlayerUpdatePacket(seq, p.getId, 0, new Position(x, 20), 0, 100, 0, 0,
+      p.getCharacterId, 0.toByte, 0)
+    assertTrue("the first step", validator.validateMovement(at(1, 21), p, world))
+    p.setPosition(new Position(21, 20))
+    Thread.sleep(gapMs)
+    validator.validateMovement(at(2, 21 + cells), p, world)
+  }
+
+  @Test def aFasterCharacterIsJudgedByItsOwnPace(): Unit = {
+    // Ten cells in 110ms: at 2.0 the allowance is (110 / 25) * 2 + 2 = 10, at 1.0 it is 6, and
+    // stays under 10 however late the second update is taken, up to 200ms. The check used to
+    // allow a cell per MOVE_RATE_LIMIT_MS whoever was walking.
+    val twiceAsQuick = new PacketValidator(id => CharacterDef.get(id).copy(moveSpeed = 2.0f))
+    assertTrue("a character twice as quick", walk(twiceAsQuick, 10, 110))
+    assertFalse("the Gladiator at the roster's 1.0", walk(new PacketValidator(), 10, 110))
   }
 
   @Test def aOneSpeedCharacterIsStillRefusedBeyondTheAllowance(): Unit = {

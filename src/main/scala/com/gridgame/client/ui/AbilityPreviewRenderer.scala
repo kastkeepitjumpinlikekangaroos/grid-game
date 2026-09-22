@@ -301,6 +301,8 @@ object AbilityPreviewRenderer {
         renderProjectile(gc, projectileType, animTick, canvasWidth, canvasHeight)
       case StandardProjectile =>
         renderProjectile(gc, projectileType, animTick, canvasWidth, canvasHeight)
+      case BarrierCast(_) =>
+        renderBarrier(gc, animTick, canvasWidth, canvasHeight)
     }
   }
 
@@ -469,6 +471,71 @@ object AbilityPreviewRenderer {
         val py = cy + Math.sin(angle) * dist
         gc.setFill(Color.color(0.7, 0.5, 1.0, 0.4 * fadeIn))
         gc.fillOval(px - 2, py - 2, 4, 4)
+      }
+    }
+  }
+
+  /** A figure behind a raised barrier, and enemy shots coming in from the right and stopping on
+    * it, each with a ripple where it struck. The barrier is Barrier's own polyline, turned to face
+    * right: bent back at the ends, as it is in the game. */
+  private def renderBarrier(gc: GraphicsContext, animTick: Int, w: Double, h: Double): Unit = {
+    val cy = h / 2.0
+    val figX = 34.0
+    // Barrier's frame on the canvas: px per cell across it, and where the ends and middle stand
+    val perCell = (h / 2.0 - 5.0) / (Barrier.WIDTH / 2)
+    def barrierX(across: Double): Double =
+      figX + 13.0 + (Barrier.forwardAt(across.toFloat) - (Barrier.DISTANCE - Barrier.BEND)) / Barrier.BEND * 7.0
+    def barrierY(across: Double): Double = cy + across * perCell
+
+    val period = 54
+    val flight = 36
+    val shots = Array(-2.0, 0.4, 2.2)
+    // How hard the barrier has just been struck: it flares with each ripple
+    var flare = 0.0
+    for (i <- shots.indices) {
+      val t = (animTick + i * (period / shots.length)) % period
+      if (t >= flight) flare = Math.max(flare, 1.0 - (t - flight).toDouble / (period - flight))
+    }
+
+    // The holder
+    gc.setFill(Color.color(0.6, 0.8, 1.0, 0.45))
+    gc.fillOval(figX - 5, cy - 7, 10, 14)
+
+    // The barrier: a glow along it, the line of it, and a post at each end
+    val xs = Array.tabulate(Barrier.POINTS)(i => barrierX(Barrier.localA(i)))
+    val ys = Array.tabulate(Barrier.POINTS)(i => barrierY(Barrier.localA(i)))
+    gc.setStroke(Color.color(0.35, 0.7, 1.0, 0.16 + 0.2 * flare))
+    gc.setLineWidth(7)
+    gc.strokePolyline(xs, ys, Barrier.POINTS)
+    gc.setStroke(Color.color(0.7, 0.88, 1.0, 0.75 + 0.25 * flare))
+    gc.setLineWidth(1.8)
+    gc.strokePolyline(xs, ys, Barrier.POINTS)
+    gc.setFill(Color.color(0.8, 0.92, 1.0, 0.9))
+    gc.fillOval(xs(0) - 2, ys(0) - 2, 4, 4)
+    gc.fillOval(xs(Barrier.POINTS - 1) - 2, ys(Barrier.POINTS - 1) - 2, 4, 4)
+
+    // Shots flying in, and the ripple each leaves where the barrier stops it
+    for (i <- shots.indices) {
+      val t = (animTick + i * (period / shots.length)) % period
+      val sy = barrierY(shots(i))
+      val stopX = barrierX(shots(i)) + 3
+      if (t < flight) {
+        val x = (w - 8) - (t.toDouble / flight) * ((w - 8) - stopX)
+        drawTrail(gc, x + 10, sy, Color.web("#ff7744"), 1.0, 22)
+        gc.setFill(Color.color(1.0, 0.45, 0.25, 0.3))
+        gc.fillOval(x - 6, sy - 6, 12, 12)
+        gc.setFill(Color.color(1.0, 0.75, 0.5, 0.9))
+        gc.fillOval(x - 3, sy - 3, 6, 6)
+      } else {
+        val r = (t - flight).toDouble / (period - flight)
+        val fade = 1.0 - r
+        gc.setFill(Color.color(0.8, 0.92, 1.0, 0.55 * fade * fade))
+        gc.fillOval(stopX - 4, sy - 4, 8, 8)
+        gc.setStroke(Color.color(0.6, 0.85, 1.0, 0.85 * fade))
+        gc.setLineWidth(0.8 + 1.4 * fade)
+        val rx = 2.0 + 5.0 * r
+        val ry = 3.0 + 9.0 * r
+        gc.strokeOval(stopX - 3 - rx, sy - ry, rx * 2, ry * 2)
       }
     }
   }

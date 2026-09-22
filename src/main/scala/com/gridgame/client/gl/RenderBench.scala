@@ -19,6 +19,7 @@ import scala.jdk.CollectionConverters._
  *
  *   bazel run //src/main/scala/com/gridgame/client:render_bench
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --players=24 --projectiles=300 --quality=low
+ *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --barriers   # some players hold barriers
  *
  * Drives the real GLGameRenderer the way the client does — a GLFW window at the client's
  * size, frames driven by a JavaFX AnimationTimer on the FX thread — over a fabricated
@@ -117,6 +118,10 @@ class RenderBenchApp extends Application {
     // are in the frame too — they are some of the most expensive things drawn over a player.
     // Off by default, so the numbers stay comparable with the ones in CLAUDE.md.
     val withEffects = args.contains("--effects")
+    // --barriers has every fourth player hold a barrier up, turning, and struck now and then. Off by
+    // default for the same reason.
+    val withBarriers = args.contains("--barriers")
+    if (withBarriers) client.localTeamId = 1
     val players = (0 until nPlayers).map { i =>
       val id = UUID.randomUUID()
       val p = new Player(id, s"Bot$i", walkableNear(home.getX, home.getY, 10), Player.generateColorFromUUID(id), 100)
@@ -132,6 +137,11 @@ class RenderBenchApp extends Application {
           case 5 => p.setSlowedUntil(forever)
           case _ => p.setSpeedBoostUntil(forever)
         }
+      }
+      // Half of them on our side, so both tints are in the frame
+      if (withBarriers && i % 4 == 0) {
+        p.raiseBarrier(System.currentTimeMillis(), 3600000, (i * 0.7).toFloat)
+        p.setTeamId(if (i % 8 == 0) 1 else 2)
       }
       client.getPlayers.put(id, p)
       p
@@ -200,6 +210,23 @@ class RenderBenchApp extends Application {
           p.setHealth(if (hp <= 0) 100 else hp)
         }
         i += 1
+      }
+      // Barriers turning as their holders aim, and stopping a shot every half second or so
+      if (withBarriers) {
+        i = 0
+        while (i < players.length) {
+          val p = players(i)
+          if (p.hasBarrier) {
+            p.setBarrierAngle(p.getBarrierAngle + 0.02f)
+            if ((frame + i) % 30 == 0) {
+              val a = p.getBarrierAngle
+              val pos = p.getPosition
+              client.recordBarrierImpact(p.getId, pos.getX + 2f * Math.cos(a).toFloat,
+                pos.getY + 2f * Math.sin(a).toFloat, now)
+            }
+          }
+          i += 1
+        }
       }
       // A death and a teleport somewhere every couple of seconds
       if (frame % 120 == 0) {
@@ -270,7 +297,7 @@ class RenderBenchApp extends Application {
         val heap = ManagementFactory.getMemoryMXBean.getHeapMemoryUsage
         println(f"render bench: ${window.fbWidth}x${window.fbHeight} fb (${window.width}x${window.height} window), " +
           f"quality ${RenderQuality.tierName}, $nPlayers players, ${client.getProjectiles.size} projectiles, " +
-          f"${if (withEffects) "status effects, " else ""}$n frames")
+          f"${if (withEffects) "status effects, " else ""}${if (withBarriers) "barriers, " else ""}$n frames")
         println(f"  frame build (wall):  mean ${mean(cpuNs)}%.2f ms, p50 ${pct(cpuNs, 0.5)}%.2f, p99 ${pct(cpuNs, 0.99)}%.2f, max ${pct(cpuNs, 1.0)}%.2f")
         println(f"  frame build (CPU):   mean ${mean(threadCpuNs)}%.2f ms, p50 ${pct(threadCpuNs, 0.5)}%.2f, p99 ${pct(threadCpuNs, 0.99)}%.2f  (render thread CPU time)")
         println(f"  frame done (GPU):    mean ${mean(gpuNs)}%.2f ms, p50 ${pct(gpuNs, 0.5)}%.2f, p99 ${pct(gpuNs, 0.99)}%.2f, max ${pct(gpuNs, 1.0)}%.2f")

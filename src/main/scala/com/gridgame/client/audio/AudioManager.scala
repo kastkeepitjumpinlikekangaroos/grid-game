@@ -137,6 +137,11 @@ object AudioManager {
   def playDash(): Unit = playSfx("dash", SFX_VOLUME, PITCH_SPREAD)
   def playTeleport(): Unit = playSfx("teleport", SFX_VOLUME, PITCH_SPREAD)
   def playPhaseShift(): Unit = playSfx("phase_shift", SFX_VOLUME)
+  def playBarrierUp(): Unit = playSfx("barrier_up", SFX_VOLUME, PITCH_SPREAD)
+
+  /** A shot stopped on someone's barrier, over there. */
+  def playBarrierBlock(distanceInCells: Float, pan: Float): Unit =
+    playSfx("barrier_block", volumeAtDistance(distanceInCells), PITCH_SPREAD, pan)
 
   /** Local player took damage — deliberately centred, it is about you. */
   def playHitTaken(): Unit = playSfx("hit_taken", SFX_VOLUME, PITCH_SPREAD)
@@ -191,7 +196,8 @@ object AudioManager {
 
   private val EVENT_SOUNDS = Seq(
     "spawn", "death", "hit_taken", "hit_dealt", "hit_other",
-    "explosion", "dash", "teleport", "phase_shift", "music_menu", "music_battle"
+    "explosion", "dash", "teleport", "phase_shift", "barrier_up", "barrier_block",
+    "music_menu", "music_battle"
   )
 
   // ── playback ────────────────────────────────────────────────────────────

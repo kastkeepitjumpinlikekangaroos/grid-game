@@ -18,6 +18,10 @@ case class FanProjectile(count: Int, fanAngle: Double) extends CastBehavior {
     else -fanAngle / 2 + fanAngle * i / (count - 1)
 }
 case class GroundSlam(radius: Float) extends CastBehavior
+/** Raise a [[Barrier]]: a shield wall carried in front of the caster, facing their aim, that stops
+  * enemy projectiles for `durationMs` or until the caster fires or casts anything. Fires nothing,
+  * so its ability's projectile type is -3. */
+case class BarrierCast(durationMs: Int) extends CastBehavior
 
 case class AbilityDef(
     name: String,
@@ -991,9 +995,9 @@ object CharacterDef {
 
   val CrusaderChar: CharacterDef = CharacterDef(
     id = CharacterId.Crusader, displayName = "Crusader",
-    description = "A melee-focused shield warrior who charges and bashes enemies away.",
+    description = "A melee-focused shield warrior who walls off enemy fire and bashes enemies away.",
     spriteSheet = "sprites/crusader.png",
-    qAbility = AbilityDef(name = "Shield Charge", description = "Charges forward with shield.", cooldownMs = 10000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = DashBuff(8, 350, 20)),
+    qAbility = AbilityDef(name = "Bulwark", description = "Raises a shield wall that stops enemy shots until you attack.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -3, keybind = "Q", castBehavior = BarrierCast(3500)),
     eAbility = AbilityDef(name = "Shield Bash", description = "Bashes all nearby enemies, pushing them back.", cooldownMs = 10000, maxRange = 0, damage = 20, projectileType = ProjectileType.TREMOR_SLAM, keybind = "E", castBehavior = GroundSlam(5.0f)),
     primaryProjectileType = ProjectileType.HOLY_BLADE, maxHealth = 110
   )

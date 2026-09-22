@@ -13,6 +13,9 @@ object ProjectileAction {
   // A hit it flies on from (pierce): the client shows the hit and keeps the projectile. Sent as a
   // HIT, the client dropped it, and then ignored the MOVEs of a projectile it had seen hit.
   val PIERCE: Byte = 4
+  // Stopped by a raised barrier: x, y are where it met the barrier, targetId the barrier's holder.
+  // An explosive the barrier stops goes off there instead, and is sent as a DESPAWN like any other.
+  val BLOCKED: Byte = 5
 }
 
 /** Which of a character's attacks fired a projectile. A client's spawn request has to say, because
@@ -168,6 +171,7 @@ class ProjectilePacket(
       case ProjectileAction.HIT => "HIT"
       case ProjectileAction.DESPAWN => "DESPAWN"
       case ProjectileAction.PIERCE => "PIERCE"
+      case ProjectileAction.BLOCKED => "BLOCKED"
       case _ => "UNKNOWN"
     }
     s"ProjectilePacket{seq=$sequenceNumber, owner=${playerId.toString.substring(0, 8)}, pos=($x, $y), projId=$projectileId, vel=($dx, $dy), action=$actionStr}"

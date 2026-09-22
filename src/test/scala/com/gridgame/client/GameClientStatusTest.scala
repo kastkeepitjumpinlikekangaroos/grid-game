@@ -40,6 +40,19 @@ class GameClientStatusTest {
     assertFalse(c.isPoisoned)
   }
 
+  @Test def aPoisonStaysOnUsBetweenItsTicks(): Unit = {
+    // A poison stops regen, so a player standing still hears of it only when it ticks. Armed
+    // once, on the first update, the bubbles went out a second later however long it had left.
+    t.startMatch(spawn = (20, 20))
+    t.update(t.id, 20, 20, flags2 = POISONED2)
+    Thread.sleep(700)
+    t.update(t.id, 20, 20, flags2 = POISONED2) // its next tick
+    Thread.sleep(700)
+    assertTrue("still poisoned, 0.7s after a tick said so", c.isPoisoned)
+    t.update(t.id, 20, 20) // its last tick, which goes out without the flag
+    assertFalse(c.isPoisoned)
+  }
+
   @Test def aPoisonAndABurnShowAtOnce(): Unit = {
     t.startMatch(spawn = (20, 20))
     t.update(t.id, 20, 20, flags = 0x10, flags2 = POISONED2)

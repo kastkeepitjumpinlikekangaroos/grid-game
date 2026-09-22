@@ -199,6 +199,9 @@ class Projectile(
   private var _remainingBounces: Int = ProjectileDef.get(projectileType).ricochetCount
   // Cached speed (magnitude of velocity vector) to avoid per-tick sqrt
   private var _speed: Float = math.sqrt(_dx * _dx + _dy * _dy).toFloat
+  // Whether the server has flown it yet. It is spawned a cell out from where it was fired, and
+  // its first tick checks that hop as well, so it can't start on the far side of a barrier.
+  private var _flown: Boolean = false
 
   def dx: Float = _dx
   def dy: Float = _dy
@@ -228,6 +231,10 @@ class Projectile(
   def remainingBounces: Int = _remainingBounces
 
   def resetDistanceTraveled(): Unit = { distanceTraveled = 0f }
+
+  def hasFlown: Boolean = _flown
+
+  def markFlown(): Unit = { _flown = true }
 
   /** Reverse direction (for boomerang). */
   def reverseDirection(): Unit = {

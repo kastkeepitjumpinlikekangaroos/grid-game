@@ -239,24 +239,55 @@ class OnHitEffectsTest {
     assertEquals("20 over four ticks", 5, target.getPoisonDamagePerTick)
   }
 
+  /** Tick the match, on the real clock, until the player's poison has run its course. */
+  private def tickOutPoison(p: Player): Unit = {
+    val deadline = System.currentTimeMillis() + 3000
+    while (p.isPoisoned && System.currentTimeMillis() < deadline) {
+      Thread.sleep(25)
+      m.instance.tickPlayers()
+    }
+    assertFalse("the poison ran its course", p.isPoisoned)
+  }
+
   @Test def aPoisonTicksToItsTotalAndThenStops(): Unit = {
+    // On the real clock. Timed out the way a burn is, each bite landed up to a server tick late,
+    // the last one fell after the deadline, and 20 over four ticks came to 15.
     val poisoner = m.join(CharacterId.PlagueDoctor, 10, 30)
     val target = m.join(CharacterId.Gladiator, 15, 30)
     val full = target.getHealth
     target.applyPoison(20, 400, 100, poisoner.getId)
-    // Its four ticks, driven without waiting on the clock
-    for (_ <- 0 until 4) {
-      target.setLastPoisonTick(0)
-      m.instance.tickPlayers()
-    }
-    assertEquals("the whole 20 and no more", full - 20, target.getHealth)
-    // And once it has run out, a due tick does nothing
-    target.applyPoison(20, 30, 10, poisoner.getId)
-    Thread.sleep(60)
-    val afterExpiry = target.getHealth
-    target.setLastPoisonTick(0)
+    tickOutPoison(target)
+    assertEquals("the whole 20", full - 20, target.getHealth)
+    Thread.sleep(150)
     m.instance.tickPlayers()
-    assertEquals(afterExpiry, target.getHealth)
+    assertEquals("and no more", full - 20, target.getHealth)
+  }
+
+  @Test def aPoisonsLastTickTellsEveryoneItIsOver(): Unit = {
+    // Nothing else would: the client only stops drawing it when an update says so
+    val poisoner = m.join(CharacterId.PlagueDoctor, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 15, 30)
+    target.applyPoison(10, 200, 100, poisoner.getId)
+    m.clearSent()
+    tickOutPoison(target)
+    val told = m.updatesAbout(m.udpSent(poisoner), target)
+    assertEquals("one update a tick", 2, told.size)
+    assertEquals("poisoned after the first", 0x02, told.head.getEffectFlags2 & 0x02)
+    assertEquals("and over after the last", 0, told.last.getEffectFlags2 & 0x02)
+  }
+
+  @Test def nobodyRegeneratesWhilePoisoned(): Unit = {
+    // Between its ticks as well as on them. A burn only holds regen off on the ticks it bites,
+    // so a poison built the same way healed its victim back up between them.
+    val poisoner = m.join(CharacterId.PlagueDoctor, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 15, 30)
+    target.setHealth(50)
+    target.applyPoison(10, 5000, 2500, poisoner.getId) // nothing due for 2.5s
+    for (_ <- 0 until 25) m.instance.tickPlayers() // 5s of 200ms ticks
+    assertEquals("not a point back", 50, target.getHealth)
+    target.clearPoison()
+    for (_ <- 0 until 25) m.instance.tickPlayers()
+    assertTrue("and regen resumes once it is gone", target.getHealth > 50)
   }
 
   @Test def aPoisonAndABurnRunAtOnce(): Unit = {
@@ -268,8 +299,7 @@ class OnHitEffectsTest {
     target.applyPoison(40, 400, 100, poisoner.getId) // 10 a tick
     assertTrue(target.isBurning)
     assertTrue(target.isPoisoned)
-    target.setLastBurnTick(0)
-    target.setLastPoisonTick(0)
+    Thread.sleep(120)
     m.instance.tickPlayers()
     assertEquals("both bit", full - 15, target.getHealth)
   }
@@ -279,11 +309,26 @@ class OnHitEffectsTest {
     val target = m.join(CharacterId.Gladiator, 15, 30)
     target.setHealth(4)
     target.applyPoison(20, 400, 100, poisoner.getId)
-    target.setLastPoisonTick(0)
+    Thread.sleep(120)
     m.instance.tickPlayers()
     assertTrue("killed by the poison", target.isDead)
     assertEquals(1, m.instance.killTracker.getKills(poisoner.getId))
     assertEquals(1, m.instance.killTracker.getDeaths(target.getId))
+  }
+
+  // --- How hard a slow is ---
+
+  @Test def aSlowTellsClientsHowHardItIs(): Unit = {
+    // Only "slowed" used to cross the wire, so every client stepped at half pace whatever the
+    // slow's def said. The Charm is a Slow(3000, 0.3f): 30% of their pace.
+    val enchantress = m.join(CharacterId.Enchantress, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 15, 30)
+    m.clearSent()
+    shoot(enchantress, ProjectileType.CHARM)
+    assertTrue(target.isSlowed)
+    val told = m.updatesAbout(m.udpSent(target), target).last
+    assertEquals("slowed", 0x80, told.getEffectFlags & 0x80)
+    assertEquals("to 30%", 30, told.getSlowPercent)
   }
 
   // --- What a blast carries ---

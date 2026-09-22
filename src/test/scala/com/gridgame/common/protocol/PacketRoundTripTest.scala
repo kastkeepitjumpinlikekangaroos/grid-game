@@ -105,7 +105,7 @@ class PacketRoundTripTest {
 
   @Test def projectileKeepsPositionTypeTargetAndAction(): Unit = {
     for (action <- Seq(ProjectileAction.SPAWN, ProjectileAction.MOVE, ProjectileAction.HIT,
-                       ProjectileAction.DESPAWN, ProjectileAction.PIERCE)) {
+                       ProjectileAction.DESPAWN, ProjectileAction.PIERCE, ProjectileAction.BLOCKED)) {
       val p = trip(new ProjectilePacket(9, id, 12.375f, 998.5f, 0x44556677, 31337, 0.6f, -0.8f, action,
         other, 100.toByte, ProjectileType.VENOM_BOLT_LIGHT))
       assertEquals(12.375f, p.getX, 0f)
@@ -118,6 +118,15 @@ class PacketRoundTripTest {
       assertEquals(0.6f, p.getDx, 1f / 32767)
       assertEquals(-0.8f, p.getDy, 1f / 32767)
     }
+  }
+
+  @Test def aBlockedProjectileSaysWhereItStoppedAndWhoseBarrierItWas(): Unit = {
+    val p = trip(new ProjectilePacket(9, id, 22.05f, 30f, 0, 44, -1f, 0f, ProjectileAction.BLOCKED, other))
+    assertEquals(ProjectileAction.BLOCKED, p.getAction)
+    assertEquals("where it met the barrier", 22.05f, p.getX, 0f)
+    assertEquals(30f, p.getY, 0f)
+    assertEquals("the barrier's holder", other, p.getTargetId)
+    assertTrue(p.toString.contains("BLOCKED"))
   }
 
   @Test def aProjectileWithNoTargetHasNone(): Unit = {

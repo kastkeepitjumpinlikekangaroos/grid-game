@@ -267,7 +267,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
               val vx = projectile.getX
               val vy = projectile.getY
               projectileManager.forEachNearbyPlayer(vx, vy, radius) { nearby =>
-                if (!nearby.isDead && !nearby.isPhased && !nearby.getId.equals(projectile.ownerId) && !isTeammate(projectile.ownerId, nearby.getId)) {
+                if (!nearby.isDead && !nearby.isPhased && !nearby.getId.equals(projectile.ownerId) && !isTeammate(projectile.ownerId, nearby.getId) &&
+                    !projectileManager.shelteredFromBlast(projectile.ownerId, vx, vy, nearby)) {
                   if (pullToward(nearby, vx, vy, radius, pullStrength) && (nearby ne target)) {
                     broadcastBuffered(stateUpdate(nearby))
                   }
@@ -300,7 +301,9 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         val explosionY = projectile.getY
         if (centerDmg > 0 || edgeDmg > 0)
         projectileManager.forEachNearbyPlayer(explosionX, explosionY, blastRadius) { player =>
-          if (!player.isDead && !player.hasShield && !player.isPhased && !player.getId.equals(projectile.ownerId) && !isTeammate(projectile.ownerId, player.getId)) {
+          // Nor through a barrier: one it went off in front of shelters whoever is behind it
+          if (!player.isDead && !player.hasShield && !player.isPhased && !player.getId.equals(projectile.ownerId) && !isTeammate(projectile.ownerId, player.getId) &&
+              !projectileManager.shelteredFromBlast(projectile.ownerId, explosionX, explosionY, player)) {
             val distance = Projectile.distanceToPlayer(explosionX, explosionY, player)
             if (distance <= blastRadius) {
               val damage = (centerDmg - (distance / blastRadius) * (centerDmg - edgeDmg)).toInt
@@ -368,6 +371,10 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
       case ProjectileDespawned(projectile) =>
         broadcastBuffered(projectilePacket(projectile, ProjectileAction.DESPAWN))
         Metrics.projectilesExpired.add(1L, Attrs.projectileType(projectile.projectileType))
+
+      case ProjectileBlocked(projectile, barrierOwner) =>
+        // Where it met the barrier, and whose it was
+        broadcastBuffered(projectilePacket(projectile, ProjectileAction.BLOCKED, barrierOwner))
     }
     // Flush all buffered writes at end of tick
     flushAllInstancePlayers()
@@ -485,10 +492,11 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     (if (p.isRooted) 0x40 else 0) |
     (if (p.isSlowed) 0x80 else 0)
 
-  /** The status flags that didn't fit in the first byte. Bit 2 (a barrier) is not ours yet. */
+  /** The status flags that didn't fit in the first byte. */
   private[server] def playerFlags2(p: Player): Int =
     (if (p.isStunned) 0x01 else 0) |
-    (if (p.isPoisoned) 0x02 else 0)
+    (if (p.isPoisoned) 0x02 else 0) |
+    (if (p.hasBarrier) 0x04 else 0)
 
   /** How slow a slow has this player, as a percentage, so their client steps at the real rate. */
   private def slowPercent(p: Player): Int =
@@ -515,7 +523,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
       p.getTeamId,
       p.getServerMoves,
       playerFlags2(p),
-      0, // aim angle: the server has no use for one yet
+      // Which way a raised barrier faces, so every client turns it as its holder does
+      if (p.hasBarrier) PlayerUpdatePacket.encodeAimAngle(p.getBarrierAngle) else 0,
       slowPercent(p)
     )
 
@@ -553,19 +562,23 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   private val DOT_KILLED = 2
 
   /**
-   * One tick of a player's burn or poison, if it is due. The state is read and written under the
-   * player's lock so two ticks can't both take the same one.
+   * One tick of a player's burn, if it is due. The state is read and written under the player's
+   * lock so two ticks can't both take the same one.
    */
-  private def tickDot(player: Player, now: Long, poison: Boolean): Int = player.synchronized {
-    val due =
-      if (poison) player.isPoisoned && now >= player.getLastPoisonTick + player.getPoisonTickMs
-      else player.isBurning && now >= player.getLastBurnTick + player.getBurnTickMs
-    if (!due) DOT_NOT_DUE
+  private def tickBurn(player: Player, now: Long): Int = player.synchronized {
+    if (!player.isBurning || now < player.getLastBurnTick + player.getBurnTickMs) DOT_NOT_DUE
     else {
-      if (poison) player.setLastPoisonTick(now) else player.setLastBurnTick(now)
-      val killed = player.damage(if (poison) player.getPoisonDamagePerTick else player.getBurnDamagePerTick)
-      if (killed) DOT_KILLED else DOT_TICKED
+      player.setLastBurnTick(now)
+      if (player.damage(player.getBurnDamagePerTick)) DOT_KILLED else DOT_TICKED
     }
+  }
+
+  /** One tick of a player's poison, if it is due, under the same lock. */
+  private def tickPoison(player: Player, now: Long): Int = player.synchronized {
+    val dmg = player.takePoisonTick(now)
+    if (dmg < 0) DOT_NOT_DUE
+    else if (player.damage(dmg)) DOT_KILLED
+    else DOT_TICKED
   }
 
   /** Tick player state (burn and poison DoTs + health regen). Runs every 200ms. */
@@ -576,15 +589,19 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     registry.forEachPlayer { player =>
       if (!player.isDead) {
         // --- Damage over time: a burn and a poison run side by side ---
-        val burn = tickDot(player, now, poison = false)
+        val burn = tickBurn(player, now)
         if (burn == DOT_KILLED) recordKill(player.getBurnOwnerId, player.getId, 0.toByte, Attrs.CauseBurn)
-        val poison = if (player.isDead) DOT_NOT_DUE else tickDot(player, now, poison = true)
+        val poison = if (player.isDead) DOT_NOT_DUE else tickPoison(player, now)
         if (poison == DOT_KILLED) recordKill(player.getPoisonOwnerId, player.getId, 0.toByte, Attrs.CausePoison)
         if (burn != DOT_NOT_DUE || poison != DOT_NOT_DUE) {
-          // Broadcast updated health. No regen on a tick a DoT took a bite out of them.
+          // Broadcast updated health. No regen on a tick a DoT took a bite out of them. The update
+          // for a poison's last tick goes out without the flag: that is how clients hear it is over.
           broadcastToInstance(stateUpdate(player))
+        } else if (player.isPoisoned) {
+          // No regen while a poison lasts, between its ticks as much as on them
+          player.resetRegenAccumulator()
         } else if (player.getHealth < player.getMaxHealth) {
-          // --- Health Regen (only when no DoT ticked and not at full health) ---
+          // --- Health Regen (only when no DoT ticked, no poison, and not at full health) ---
           val maxHp = player.getMaxHealth
           val regenPerSec = 3.0 - (maxHp - 70) * (2.0 / 50.0)
           player.addRegenAccumulator(regenPerSec * 0.2) // 200ms tick
@@ -640,6 +657,9 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
       player.setShieldUntil(0)
       player.setGemBoostUntil(0)
       player.setPhasedUntil(0)
+      // Down, and ready: the client starts every life with its abilities off cooldown
+      player.setBarrierUntil(0)
+      player.setBarrierRaisedAt(0)
       player.resetRegenAccumulator()
       // Clear inventory on respawn
       itemManager.clearInventory(playerId)

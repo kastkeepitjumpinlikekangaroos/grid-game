@@ -234,3 +234,18 @@ scala_junit_test(
         "@maven//:junit_junit",
     ],
 )
+
+scala_junit_test(
+    name = "barrier_test",
+    srcs = ["BarrierTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        ":server_test_kit",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:io_netty_netty_buffer",
+        "@maven//:io_netty_netty_common",
+        "@maven//:io_netty_netty_transport",
+        "@maven//:junit_junit",
+    ],
+)

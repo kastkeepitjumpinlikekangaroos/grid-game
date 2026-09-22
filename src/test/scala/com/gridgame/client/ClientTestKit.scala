@@ -58,9 +58,9 @@ class TestClient(world: WorldData = WorldData.createEmpty(60, 60), val name: Str
       health, charId, team))
 
   def update(who: UUID, x: Int, y: Int, health: Int = 100, flags: Int = 0, serverMoves: Int = 0,
-             charId: Byte = 0, flags2: Int = 0, slowPercent: Int = 0): Unit =
+             charId: Byte = 0, flags2: Int = 0, slowPercent: Int = 0, aimAngle: Double = 0.0): Unit =
     receive(new PlayerUpdatePacket(nextSeq(), who, Packet.getCurrentTimestamp, new Position(x, y), 0xFF00AA00,
-      health, 0, flags, charId, 0.toByte, serverMoves, flags2, 0, slowPercent))
+      health, 0, flags, charId, 0.toByte, serverMoves, flags2, PlayerUpdatePacket.encodeAimAngle(aimAngle), slowPercent))
 
   def projectile(action: Byte, projectileId: Int, owner: UUID, x: Float = 10f, y: Float = 10f, target: UUID = null,
                  pType: Byte = ProjectileType.ARROW): Unit =

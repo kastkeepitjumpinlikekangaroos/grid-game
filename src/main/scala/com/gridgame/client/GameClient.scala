@@ -86,6 +86,31 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   private val DEFAULT_SLOW_MULTIPLIER = 0.5f
   @volatile private var slowMultiplier: Float = DEFAULT_SLOW_MULTIPLIER
 
+  // Our barrier (BarrierCast): up until barrierUntil, facing wherever we aim. Dropping it early
+  // moves barrierUntil to the moment it dropped, which is what the renderer fades it out from.
+  private val barrierUntil: AtomicLong = new AtomicLong(0)
+  private val barrierRaisedAt: AtomicLong = new AtomicLong(0)
+  // When we last told the server where it faces, and what we said; and whether the last update we
+  // sent had it up, so that it running out gets said too
+  private val lastBarrierSentAt: AtomicLong = new AtomicLong(0)
+  @volatile private var lastBarrierSentAngle: Float = 0f
+  @volatile private var barrierAnnounced: Boolean = false
+  private val BARRIER_STREAM_MS = 100L
+  private val BARRIER_TURN_STREAM_MS = 50L
+  private val BARRIER_TURN_RAD = 0.035f
+  // A remote barrier is renewed by every update that has it up, which its holder streams while it
+  // is: if they stop coming, it goes down on its own this long after the last
+  private val REMOTE_BARRIER_RENEW_MS = 600L
+
+  // Shots stopped on barriers, for the ripple where each struck: a ring of slots, overwritten
+  // oldest first. `across` is where along the barrier it struck (Barrier.acrossOf), so the
+  // ripple moves with a barrier that is carried on.
+  val BARRIER_IMPACT_SLOTS = 16
+  private val barrierImpactOwner = new Array[UUID](BARRIER_IMPACT_SLOTS)
+  private val barrierImpactAcross = new Array[Float](BARRIER_IMPACT_SLOTS)
+  private val barrierImpactTime = new Array[Long](BARRIER_IMPACT_SLOTS)
+  private var barrierImpactNext = 0
+
   // Server moves we have taken (Player.getServerMoves): pulls, knockbacks, respawns, freezes,
   // corrections. Sent with every position; the server drops positions sent before a move we
   // hadn't seen yet. Reset each match, since each match counts its own.
@@ -331,6 +356,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     poisonedUntil.set(0)
     slowMultiplier = DEFAULT_SLOW_MULTIPLIER
     phasedUntil.set(0)
+    clearBarrier()
     localDeathTime.set(0)
     lastQAbilityTime.set(0)
     lastEAbilityTime.set(0)
@@ -428,6 +454,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     stunnedUntil.set(0)
     poisonedUntil.set(0)
     slowMultiplier = DEFAULT_SLOW_MULTIPLIER
+    clearBarrier()
 
     // Send join packet to server
     sendJoinPacket()
@@ -560,11 +587,15 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     (if (hasShield) 0x01 else 0) | (if (hasGemBoost) 0x02 else 0) | (if (isFrozen) 0x04 else 0) | (if (isPhased) 0x08 else 0) | (if (isBurning) 0x10 else 0) | (if (hasSpeedBoost) 0x20 else 0) | (if (isRooted) 0x40 else 0) | (if (isSlowed) 0x80 else 0)
   }
 
-  private def getEffectFlags2: Int = (if (isStunned) 0x01 else 0) | (if (isPoisoned) 0x02 else 0)
+  private def getEffectFlags2: Int =
+    (if (isStunned) 0x01 else 0) | (if (isPoisoned) 0x02 else 0) | (if (hasBarrier) 0x04 else 0)
 
   private def getSlowPercent: Int = if (isSlowed) Math.round(slowMultiplier * 100f) else 0
 
   private def sendPositionUpdate(position: Position): Unit = {
+    // With a barrier up, where we aim is where it faces
+    val barrierUp = hasBarrier
+    val aim = if (barrierUp) getAimAngle else 0f
     send(new PlayerUpdatePacket(
       sequenceNumber.getAndIncrement(),
       localPlayerId,
@@ -578,10 +609,108 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       localTeamId,
       serverMovesSeen,
       getEffectFlags2,
-      0, // aim angle: nothing aims by it yet
+      if (barrierUp) PlayerUpdatePacket.encodeAimAngle(aim) else 0,
       getSlowPercent
     ))
+    barrierAnnounced = barrierUp
+    if (barrierUp) {
+      lastBarrierSentAt.set(System.currentTimeMillis())
+      lastBarrierSentAngle = aim
+    }
   }
+
+  def hasBarrier: Boolean = System.currentTimeMillis() < barrierUntil.get()
+
+  /** When our barrier went up, and when it comes (or came) down: the renderer fades it by these. */
+  def getBarrierRaisedAt: Long = barrierRaisedAt.get()
+  def getBarrierUntil: Long = barrierUntil.get()
+
+  /** Which way we aim, in world radians: at the cursor, or the way we face when it is on us. A
+    * raised barrier faces this way. */
+  def getAimAngle: Float = {
+    val pos = localPosition.get()
+    val dx = mouseWorldX - pos.getX
+    val dy = mouseWorldY - pos.getY
+    if (dx * dx + dy * dy > 1e-4) Math.atan2(dy, dx).toFloat
+    else localDirection.get() match {
+      case Direction.Up    => (-Math.PI / 2).toFloat
+      case Direction.Down  => (Math.PI / 2).toFloat
+      case Direction.Left  => Math.PI.toFloat
+      case Direction.Right => 0f
+    }
+  }
+
+  /**
+   * While our barrier is up, keep the server told which way it faces: every 100ms, and every 50ms
+   * while it is turning, so everyone else sees it swing as we aim. When it runs out, say that too,
+   * twice, since nothing else would: we may well be standing still. Called every frame by the
+   * input handlers; it decides for itself whether anything needs sending.
+   */
+  def streamBarrier(): Unit = {
+    if (hasBarrier) {
+      val since = System.currentTimeMillis() - lastBarrierSentAt.get()
+      if (since >= BARRIER_STREAM_MS ||
+          (since >= BARRIER_TURN_STREAM_MS && angleBetween(getAimAngle, lastBarrierSentAngle) > BARRIER_TURN_RAD)) {
+        sendPositionUpdate(localPosition.get())
+      }
+    } else if (barrierAnnounced) {
+      val pos = localPosition.get()
+      sendPositionUpdate(pos)
+      sendPositionUpdate(pos)
+    }
+  }
+
+  private def angleBetween(a: Float, b: Float): Float = {
+    val d = Math.abs(a - b) % (2 * Math.PI).toFloat
+    if (d > Math.PI) (2 * Math.PI).toFloat - d else d
+  }
+
+  /** Firing or casting anything drops our barrier: it goes down, and the server hears so, before
+    * the shot is sent. */
+  private def dropBarrier(): Unit = {
+    val now = System.currentTimeMillis()
+    if (now < barrierUntil.get()) {
+      barrierUntil.set(now)
+      sendPositionUpdate(localPosition.get())
+    }
+  }
+
+  /** A new life or a new match: no barrier, and nothing left to announce about the last one. */
+  private def clearBarrier(): Unit = {
+    barrierUntil.set(0)
+    barrierRaisedAt.set(0)
+    barrierAnnounced = false
+  }
+
+  /** A shot stopped on `holder`'s barrier at (x, y): kept for the ripple, as where along the
+    * barrier it struck. */
+  private[client] def recordBarrierImpact(holder: UUID, x: Float, y: Float, now: Long): Unit = {
+    if (holder == null) return
+    val (hx, hy, angle) =
+      if (holder.equals(localPlayerId)) {
+        val pos = localPosition.get()
+        (pos.getX.toFloat, pos.getY.toFloat, getAimAngle)
+      } else {
+        val p = players.get(holder)
+        if (p == null) return
+        (p.getPosition.getX.toFloat, p.getPosition.getY.toFloat, p.getBarrierAngle)
+      }
+    val across = Barrier.acrossOf(hx, hy, Math.cos(angle).toFloat, Math.sin(angle).toFloat, x, y)
+    barrierImpactOwner.synchronized {
+      val i = barrierImpactNext
+      barrierImpactOwner(i) = holder
+      barrierImpactAcross(i) = Math.max(-Barrier.WIDTH / 2, Math.min(Barrier.WIDTH / 2, across))
+      barrierImpactTime(i) = now
+      barrierImpactNext = (i + 1) % BARRIER_IMPACT_SLOTS
+    }
+  }
+
+  /** Slot `i` of the barrier impacts: whose barrier it struck, where along it, and when (0 if the
+    * slot has never been used). Read by the renderer; a slot being overwritten mid-read only
+    * misplaces one ripple for a frame. */
+  def getBarrierImpactOwner(i: Int): UUID = barrierImpactOwner(i)
+  def getBarrierImpactAcross(i: Int): Float = barrierImpactAcross(i)
+  def getBarrierImpactTime(i: Int): Long = barrierImpactTime(i)
 
   def sendChargingUpdate(): Unit = {
     val now = System.currentTimeMillis()
@@ -626,6 +755,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   def shootToward(dx: Float, dy: Float, chargeLevel: Int = 0): Unit = {
     if (isDead || isPhased || isFrozen) return
     if (isPracticeMode) practiceShots += 1
+    dropBarrier()
 
     val pos = localPosition.get()
     val chargeByte = Math.min(100, Math.max(0, chargeLevel)).toByte
@@ -660,6 +790,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     * is: pressing it rooted the player and fired nothing. */
   def shootAllDirections(): Unit = {
     if (isDead || isPhased || isFrozen) return
+    dropBarrier()
 
     val pos = localPosition.get()
 
@@ -692,6 +823,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     if (now - lastAbilityTime.get() < abilityDef.cooldownMs) return
 
     lastAbilityTime.set(now)
+    // Casting anything drops a raised barrier. (Raising one can't: it is on cooldown while up.)
+    dropBarrier()
 
     // Track cast flash direction
     val (castDx, castDy) = getAimDirection
@@ -735,6 +868,13 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       case PhaseShiftBuff(durationMs) =>
         AudioManager.playPhaseShift()
         phasedUntil.set(now + durationMs)
+        sendPositionUpdate(localPosition.get())
+
+      case BarrierCast(durationMs) =>
+        AudioManager.playBarrierUp()
+        // Up now, facing the cursor; the update carries both (streamBarrier keeps it turning)
+        barrierRaisedAt.set(now)
+        barrierUntil.set(now + durationMs)
         sendPositionUpdate(localPosition.get())
 
       case TeleportCast(maxDistance) =>
@@ -1014,13 +1154,15 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           } else {
             stunnedUntil.set(0)
           }
-          if ((flags2 & 0x02) != 0) {
-            if (now >= poisonedUntil.get()) poisonedUntil.set(now + 1000)
-          } else {
-            poisonedUntil.set(0)
-          }
+          // Renewed by every update that carries it, not only the first. A poison stops regen, so
+          // a player standing still hears nothing between its ticks, and a timer armed once ran
+          // out between them and blinked the bubbles off. The update for its last tick clears it.
+          if ((flags2 & 0x02) != 0) poisonedUntil.set(now + 3000)
+          else poisonedUntil.set(0)
           // Don't overwrite local phased state from server echo — local timer is authoritative
-          // Server echoes phased flag to confirm it, but we don't reset the timer
+          // Server echoes phased flag to confirm it, but we don't reset the timer. The same goes
+          // for a barrier (flags2 bit 2): we raise, turn and drop our own, and the server's view
+          // of it lags ours by the time it takes an update to get there and back.
 
           // The position counts only when it is a server move we haven't taken yet (a pull, a
           // knockback, a freeze, a respawn, a correction). Any other update carries wherever the
@@ -1035,6 +1177,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           if (serverHealth <= 0 && !isDead) {
             isDead = true
             isRespawning = true
+            // The server dropped it with the killing blow; there is nothing to tell it
+            clearBarrier()
             localDeathTime.set(System.currentTimeMillis())
             println("GameClient: You have died! Auto-respawning in 3s...")
           }
@@ -1155,6 +1299,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         clientState = ClientState.PLAYING
         leaveConfirmUntil = 0L
         serverMovesSeen = 0
+        clearBarrier()
         killCount = 0
         deathCount = 0
         // Reset practice stats but keep isPracticeMode flag
@@ -1333,6 +1478,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           poisonedUntil.set(0)
           slowMultiplier = DEFAULT_SLOW_MULTIPLIER
           phasedUntil.set(0)
+          clearBarrier()
           inventory.clear()
           lastQAbilityTime.set(0)
           lastEAbilityTime.set(0)
@@ -1817,6 +1963,19 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           ))
         }
 
+      case ProjectileAction.BLOCKED =>
+        // Stopped on a barrier: it fades out where it met it (no puff, there is no terrain to kick
+        // up), and the barrier ripples there
+        val blocked = projectiles.remove(projectileId)
+        recentlyRemovedProjectiles.add(projectileId)
+        val now = System.currentTimeMillis()
+        if (blocked != null) {
+          blocked.updatePosition(packet.getX, packet.getY, blocked.dx, blocked.dy)
+          fadingProjectiles.put(projectileId, new FadingProjectile(blocked, now, false, 0))
+        }
+        recordBarrierImpact(packet.getTargetId, packet.getX, packet.getY, now)
+        AudioManager.playBarrierBlock(distanceFromLocal(packet.getX, packet.getY), panFromLocal(packet.getX, packet.getY))
+
       case _ =>
         // Unknown action
     }
@@ -1994,10 +2153,21 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       } else {
         player.setStunnedUntil(0)
       }
+      // Visual only: the server does the damage. Nothing ticks it here, so it shows until an
+      // update without the flag, which the poison's last tick always sends.
       if ((flags2 & 0x02) != 0) {
-        if (!player.isPoisoned) player.applyPoison(0, 1000, 1000, null) // visual only: the server does the damage
+        if (!player.isPoisoned) player.applyPoison(0, 1000, 1000, null)
       } else {
         player.clearPoison()
+      }
+      // A barrier is turned, and kept up, by every update that has it up (its holder streams them
+      // while it is), and dropped by one that doesn't: it fades out from then
+      if ((flags2 & 0x04) != 0) {
+        if (!player.hasBarrier) player.setBarrierRaisedAt(now)
+        player.setBarrierUntil(now + REMOTE_BARRIER_RENEW_MS)
+        player.setBarrierAngle(packet.aimAngleRadians.toFloat)
+      } else {
+        player.dropBarrier()
       }
 
       // Record death animation when player newly dies
@@ -2027,6 +2197,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       val flags2 = packet.getEffectFlags2
       if ((flags2 & 0x01) != 0) player.setStunnedUntil(System.currentTimeMillis() + 5000)
       if ((flags2 & 0x02) != 0) player.applyPoison(0, 1000, 1000, null)
+      if ((flags2 & 0x04) != 0) player.raiseBarrier(System.currentTimeMillis(), REMOTE_BARRIER_RENEW_MS.toInt,
+        packet.aimAngleRadians.toFloat)
       players.put(playerId, player)
     }
   }

@@ -534,6 +534,8 @@ class CharacterSelectionPanel(
             stats.append(s"${maxDist} cells")
           case TeleportCast(maxDist) =>
             stats.append(s"${maxDist} cells")
+          case BarrierCast(dur) =>
+            stats.append(s"${seconds(dur)}, ${Barrier.WIDTH.toInt} wide, blocks shots")
           case _ =>
             appendProjectileStats(stats, ab.projectileType, ab.damage, ab.maxRange, ab.castBehavior)
         }
@@ -544,6 +546,11 @@ class CharacterSelectionPanel(
 
     row.statsLabel.setText(stats.toString)
   }
+
+  /** A hold's length as the stats line shows it: to a tenth of a second unless it is whole.
+    * Divided down to whole seconds, a 0.7s freeze read "Freeze 0s". */
+  private def seconds(ms: Int): String =
+    if (ms % 1000 == 0) s"${ms / 1000}s" else f"${ms / 1000.0}%.1fs"
 
   private def appendProjectileStats(stats: StringBuilder, projType: Byte, abilityDamage: Int,
                                      abilityRange: Int, castBehavior: CastBehavior): Unit = {
@@ -580,8 +587,8 @@ class CharacterSelectionPanel(
     // Special effects
     pDef.onHitEffect.foreach {
       case PullToOwner => stats.append("  Pull")
-      case Freeze(dur) => stats.append(s"  Freeze ${dur / 1000}s")
-      case Stun(dur) => stats.append(s"  Stun ${dur / 1000}s")
+      case Freeze(dur) => stats.append(s"  Freeze ${seconds(dur)}")
+      case Stun(dur) => stats.append(s"  Stun ${seconds(dur)}")
       case Push(dist) => stats.append(s"  Push")
       case TeleportOwnerBehind(_, _) => stats.append("  Teleport")
       case LifeSteal(pct) => stats.append(s"  LifeSteal ${pct}%")
@@ -589,8 +596,8 @@ class CharacterSelectionPanel(
       case Poison(total, _, _) => stats.append(s"  Poison $total")
       case SpeedBoost(_) => stats.append("  Speed")
       case VortexPull(_, _) => stats.append("  Vortex")
-      case Root(dur) => stats.append(s"  Root ${dur / 1000}s")
-      case Slow(dur, _) => stats.append(s"  Slow ${dur / 1000}s")
+      case Root(dur) => stats.append(s"  Root ${seconds(dur)}")
+      case Slow(dur, _) => stats.append(s"  Slow ${seconds(dur)}")
     }
 
     if (pDef.aoeOnHit.isDefined || pDef.aoeOnMaxRange.isDefined) stats.append("  AoE")

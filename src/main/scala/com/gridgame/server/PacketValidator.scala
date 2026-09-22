@@ -62,7 +62,11 @@ object PacketValidator {
   }
 }
 
-class PacketValidator {
+/**
+ * @param characterOf where the checks look a player's character up: the roster, unless a test
+ *                    needs one the roster doesn't have yet (a character quicker than any in it).
+ */
+class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get(id)) {
   import PacketValidator._
 
   // Track last position update time per player for speed checking
@@ -214,7 +218,7 @@ class PacketValidator {
 
       // Skip speed check for phased/dashing players
       if (!player.isPhased) {
-        val charDef = CharacterDef.get(player.getCharacterId)
+        val charDef = characterOf(player.getCharacterId)
         val expectedMaxCells = maxCellsIn(deltaMs, if (charDef != null) charDef.moveSpeed else 1.0f)
         if (distance > expectedMaxCells) {
           // Allow teleport/dash abilities: check if this player's character has TeleportCast or DashBuff
@@ -286,7 +290,7 @@ class PacketValidator {
       return false
     }
 
-    val charDef = CharacterDef.get(player.getCharacterId)
+    val charDef = characterOf(player.getCharacterId)
     if (charDef == null) {
       Metrics.validationFailed.add(1L, Attrs.VfCharacter)
       return false
@@ -334,7 +338,7 @@ class PacketValidator {
 
   /** Reduce per-ability fire rate cooldown for the given player (mirrors client-side on-hit reduction). */
   def reduceAbilityCooldown(playerId: UUID, projectileType: Byte, characterId: Byte): Unit = {
-    val charDef = CharacterDef.get(characterId)
+    val charDef = characterOf(characterId)
     if (charDef == null) return
 
     // Picked by type, exactly as the client's reduceAbilityCooldownOnHit picks it, so the two

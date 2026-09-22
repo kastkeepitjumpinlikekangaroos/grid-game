@@ -48,6 +48,7 @@ GRIDGAME_AUDIO=off bazel run //src/main/scala/com/gridgame/client:client
 # Performance dev tools (see Client Memory & Performance)
 bazel run //src/main/scala/com/gridgame/client:render_bench   # a busy match, no server
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --effects  # ... with status effects on
+bazel run //src/main/scala/com/gridgame/client:render_bench -- --barriers # ... with barriers raised
 bazel run //src/main/scala/com/gridgame/client:ui_bench       # the JavaFX menus
 ```
 
@@ -169,7 +170,7 @@ the jpackage step itself needs a Windows box.
 src/main/scala/com/gridgame/
 ├── common/                     # Shared code between client and server
 │   ├── model/                  # Data models (Player, Tile, CharacterDef, Item, Projectile, etc.)
-│   │                           # 112 characters, 34 tiles, 6 cast behaviors, projectile defs
+│   │                           # 112 characters, 34 tiles, 7 cast behaviors, projectile defs
 │   │                           # ProjectileDef (pierce, boomerang, ricochet, AoE, explosions)
 │   │                           # 10 on-hit effects, charge/distance damage scaling
 │   │                           # 5 item types (Gem, Heart, Star, Shield, Fence)
@@ -591,7 +592,8 @@ could move these numbers should be checked with them rather than guessed at:
 # frame on the render thread, GC count, process footprint. --quality=, --players=,
 # --projectiles=, --w= --h=, --screenshot=out.png. --effects puts a status effect on every
 # player (frozen, stunned, poisoned, burning, rooted, slowed, boosted), which the default
-# scene has none of — off by default so the numbers below stay comparable.
+# scene has none of — off by default so the numbers below stay comparable. --barriers has
+# every fourth player hold a barrier up, turning and being struck, half of them allies.
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --quality=low
 
 # The JavaFX menus: the character select screen, then a match start (stage hidden), a second
@@ -850,7 +852,7 @@ generated.
 
 ```bash
 # Requires numpy: pip install numpy
-python3 scripts/generate_sounds.py   # -> sounds/*.wav (182 files, ~20s)
+python3 scripts/generate_sounds.py   # -> sounds/*.wav (184 files, ~20s)
 
 # Look at what you just made — the contact sheet is the review loop (see below).
 # Needs Pillow as well as numpy: pip install numpy Pillow
@@ -912,7 +914,7 @@ Three rules the earlier version of this file broke, and why they matter:
 
 `scripts/sound_gallery.py` renders every sound as a log-frequency spectrogram
 with a dB envelope strip underneath, 24 to a contact sheet. It exists for the
-same reason `projectile_gallery` does — 182 assets cannot be judged one at a
+same reason `projectile_gallery` does — 184 assets cannot be judged one at a
 time, and the faults that matter are the ones visible when they sit side by
 side. **Run it after any change here.** What to look for:
 
@@ -984,7 +986,9 @@ a global `tanh` on the master bus (it costs several dB of crest on *every* sound
   tables resolved, and `--shared` lists the sounds more than one character's primary
   still shares — the audit to run after touching either table.
 - `sounds/spawn.wav`, `sounds/death.wav`, `sounds/dash.wav`, `sounds/teleport.wav`,
-  `sounds/phase_shift.wav` — non-projectile events/cast behaviors.
+  `sounds/phase_shift.wav`, `sounds/barrier_up.wav` — non-projectile events/cast behaviors.
+  `sounds/barrier_block.wav` is a shot stopped on a barrier: a dull thud of energy with a
+  short fizz and nothing that rings, since it plays for every shot anyone fires into one.
 - `sounds/hit_taken.wav` (you were hit), `sounds/hit_dealt.wav` (hitmarker — bright and
   high-mid so it cuts through), `sounds/hit_other.wav` (someone else was hit, duller and
   distance-attenuated), `sounds/explosion.wav` (explosive projectile despawn).
@@ -1050,6 +1054,8 @@ Each ability uses one of these cast behaviors (defined in `CharacterDef.scala`):
 - `TeleportCast(maxDistance)` — instant teleport to cursor position
 - `FanProjectile(count, fanAngle)` — fires multiple projectiles in a fan pattern
 - `GroundSlam(radius)` — AoE ground slam around the caster
+- `BarrierCast(durationMs)` — raises a barrier in front of the caster (see *Barriers*); fires
+  nothing, so its ability's projectile type is -3 (buffs and dashes carry -1, teleports -2)
 
 ### Movement speed
 `CharacterDef.moveSpeed` multiplies the base walking rate of 20 cells a second
@@ -1099,10 +1105,23 @@ draws — stars round the head instead of frost (`GLGameRenderer.drawStunnedEffe
 carry one through `AoESplashConfig.stunDurationMs`, beside `freezeDurationMs`/`rootDurationMs`.
 
 **A poison is a second damage-over-time slot, not a second kind of burn.** It has its own
-timer, tick and owner on `Player`, so a poison and a burn run at once — sharing burn's slot,
+ticks and owner on `Player`, so a poison and a burn run at once — sharing burn's slot,
 whichever landed second wiped the first out. `GameInstance.tickPlayers` ticks both every 200ms
-through `tickDot`, neither regenerates while one is biting, and a kill is credited to whoever
-cast it (`Attrs.CausePoison`).
+(`tickBurn`, `tickPoison`), and a kill is credited to whoever cast it (`Attrs.CausePoison`).
+
+A poison counts its ticks rather than timing out (`Player.takePoisonTick`): each falls due a
+whole `tickMs` after the one before was *due*, it lasts until the last one has landed, and the
+damage left is spread over the ticks left, so it deals exactly its total. The update for its
+last tick goes out without the flag, which is how clients hear it is over. Nobody regenerates
+while poisoned, between its ticks as well as on them.
+
+**A burn does not deal its listed total**, and is left that way here so burns play as they did.
+It times out on the clock (`isBurning` is `now < burnUntil`) and schedules each tick from when
+the last one actually landed, so on a 200ms server tick every bite is late, the last falls after
+the deadline, and the per-tick split truncates: the roster's burns deal 60-80% of their totals
+(`Burn(15, 3000, 750)` does 9, `Burn(12, 3000, 750)` 9, `Burn(20, 4000, 800)` 16). It also only
+holds regen off on the ticks it bites. Tune burns by what they deal, or move them onto the
+poison's rules and retune.
 
 **A blast carries the same on-hit effect a direct hit would.** The `ProjectileAoEHit` case used
 to apply only the holds and the burn and drop the rest, so no slam could push or pull, the
@@ -1112,6 +1131,57 @@ because a slam's own `effectiveDamage` is 0. `TeleportOwnerBehind` stays direct-
 needs one target to land behind, not a crowd. A slam whose on-hit effect is a `SpeedBoost` is a
 self-buff, so it lands on the caster at cast time (`GameInstance.applyCastSelfBuff`) whether or
 not anyone is standing in it.
+
+### Barriers
+`BarrierCast` raises a shield wall carried in front of its caster and turned to face their aim:
+the Crusader's Bulwark (3.5s, a 12s cooldown counted from the raise). It is called a barrier in
+code because the Shield *item* (key 4, five seconds of invulnerability, `Player.hasShield`,
+flag 0x01) already has the name; the player-facing ability can still say shield.
+
+- **One shape.** `common/model/Barrier.scala` is a polyline of three segments, 2.0 cells out
+  along the aim, 6.0 wide, its ends bent 0.6 back. The server stops shots on it and the client
+  draws it from it. It is one-sided: only a path that crosses its front (heading in, toward the
+  holder) meets it, so the holder's own shots go out through it and an enemy who gets inside the
+  arc is past it.
+- **What it stops**: enemy projectile bodies. Not the holder's own, not a teammate's
+  (`GameInstance.isTeammate`; in FFA everyone else is an enemy), and never a
+  `passesThroughWalls` type. A stopped projectile halts where it met the barrier and is sent as
+  `ProjectileAction.BLOCKED`; an explosive goes off there instead, as against a wall, and pierce,
+  ricochet and boomerang types simply stop.
+- **Who it shelters**: nobody can be hit through it, because the line from the projectile to
+  them has to be clear. That is required, not a nicety: hit radii (1.8 to 3.5 cells) reach past
+  a barrier standing 2 cells out, so without it a shot hit the holder, or whoever was beside
+  them, before it got to the barrier. Blasts, splashes, slams and vortices centred in front of it
+  don't reach anyone it stands between (`ProjectileManager.shelteredFromBlast`).
+- **It moves.** `ProjectileManager` snapshots the raised barriers once a tick, with where each
+  was on the tick before. A projectile the barrier was carried or swung onto, in front of it last
+  tick and behind it now, is stopped too: without that, a holder walking into fire, which is what
+  the Crusader is for, let the shots through. A shot's first tick also checks the one-cell hop
+  from where it was fired to where `spawnProjectile` put it, so an enemy pressed up against the
+  barrier can't start a shot on its far side.
+- **Up and down.** The client raises it by sending effect flags 2 bit 2 with the aim angle,
+  keeps its facing streamed while it is up (`GameClient.streamBarrier`: every 100ms, every 50ms
+  while it turns, from both input handlers) and says when it has run out. The server
+  (`ClientHandler.updateBarrier`) honours a raise at 80% of the cooldown since the last raise,
+  turns the barrier with every update, and drops it on an update without the bit and on any spawn
+  it accepts from the holder. Firing the primary, the burst shot or any ability drops it; the
+  client drops it first and says so before the shot is sent. Death drops it (`Player.damage`),
+  and a respawn resets it. The client's own barrier follows its own timer, as a phase does;
+  another player's is kept up by the updates that carry it (each renews it for 600ms) and fades
+  out from the first one that doesn't.
+- **Drawn** by `GLGameRenderer.drawBarriers`, after the flying projectiles: a translucent sheet
+  22px tall along the polyline and a glowing strip on the ground under it, blue for ours and our
+  allies', red for everyone else's. It grows out of the ground as it goes up, sinks and fades as
+  it drops, and ripples for 300ms where a shot struck it. A ripple is kept as how far along the
+  barrier it struck (`GameClient.getBarrierImpact*`), so it moves with a barrier that is carried
+  on. The strip is what shows a barrier aimed straight left or right, whose sheet this projection
+  sees edge-on.
+- **Bots** raise it against a ranged target that can reach them and that they can't yet reach,
+  or against a shot coming in; face the target and close in while it is up; and drop it to fire or
+  cast.
+
+`BarrierTest` (in `common/model` for the shape, and in `server`), `GameClientBarrierTest` and
+`PacketRoundTripTest` pin all of this.
 
 ### Item Types
 5 item types (defined in `ItemType.scala`): Gem, Heart, Star, Shield, Fence
@@ -1201,7 +1271,9 @@ Its payload:
 | [53-63] | reserved, zero |
 
 A stunned player has both 0x04 and flags2 bit 0 set: the freeze bit is what holds them, the
-stun bit only says what to draw. Byte [49] bit 2 and bytes [50-51] are written as 0 today.
+stun bit only says what to draw. Byte [49] bit 2 is a raised barrier and bytes [50-51] the way
+it faces (see *Barriers*): a client sends its aim there while its barrier is up, and the server
+writes the barrier's facing. Both are 0 otherwise.
 
 ### Packet Types (16 total)
 
@@ -1223,6 +1295,17 @@ stun bit only says what to draw. Byte [49] bit 2 and bytes [50-51] are written a
 | 0x0E | RANKED_QUEUE      | TCP       | Ranked matchmaking             |
 | 0x0F | LEADERBOARD       | TCP       | Rankings                       |
 | 0x10 | SESSION_TOKEN     | TCP       | Session token delivery (post-auth) |
+
+A `PROJECTILE_UPDATE` carries one of these `ProjectileAction`s:
+
+| Action | Meaning |
+|---|---|
+| 0 SPAWN | fired (a client's request carries its `AttackSlot` in the projectile-id field) |
+| 1 MOVE | where it is now |
+| 2 HIT | hit targetId and was used up |
+| 3 DESPAWN | stopped by terrain or its range, or an explosive going off |
+| 4 PIERCE | hit targetId and flies on |
+| 5 BLOCKED | stopped on targetId's barrier, at x, y |
 
 ### Connection Flow
 
@@ -1389,7 +1472,9 @@ suites mirror the source tree:
 **Effects nothing in the roster has yet** (a stun, a poison, a slam that pushes or pulls) are
 pinned with `ProjectileDef`s registered by the test itself, on ids the game doesn't use — see
 `TestEffects` at the foot of `OnHitEffectsTest`. Each test file gets its own JVM, so a test-only
-registration can't leak into another suite.
+registration can't leak into another suite. A character the roster doesn't have (one quicker
+than any in it) goes through `PacketValidator`'s `characterOf` parameter instead — see
+`PacketValidatorTest.aFasterCharacterIsJudgedByItsOwnPace`.
 
 When a test fixes a bug, check it fails with the bug put back.
 

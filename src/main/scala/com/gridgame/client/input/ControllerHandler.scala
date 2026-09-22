@@ -243,6 +243,8 @@ class ControllerHandler(client: GameClient) {
       processShooting()
       processAbilities()
       processItems()
+      // The stick turns a raised barrier: send where it faces now, not on the keyboard's next frame
+      client.streamBarrier()
     }
 
     // Save button states for next frame's edge detection

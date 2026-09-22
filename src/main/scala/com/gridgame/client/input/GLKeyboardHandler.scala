@@ -112,6 +112,8 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
 
   /** Called each frame from the game loop. */
   def update(): Unit = {
+    // Before the chat check: a barrier keeps turning, and its end is announced, while typing
+    if (!client.getIsDead) client.streamBarrier()
     if (isChatMode) return
     if (!client.getIsDead) {
       if (client.isSwooping) {
