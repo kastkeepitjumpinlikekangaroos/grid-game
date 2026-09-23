@@ -36,6 +36,22 @@ object IsometricTransform {
     (screenToWorldX(vsx, vsy, camOffX, camOffY), screenToWorldY(vsx, vsy, camOffX, camOffY))
   }
 
+  /**
+   * Whether the whole of a view `canvasW` x `canvasH` units across, at these camera offsets, lies
+   * over the cells of a `width` x `height` world (tile (c, r) covers [c - 0.5, c + 0.5) on both
+   * axes). The world is convex in screen space, so the view's four corners decide it. The renderer
+   * skips the background when it is: every cell's ground or block covers its own diamond.
+   */
+  def viewInsideWorld(camOffX: Double, camOffY: Double, canvasW: Double, canvasH: Double,
+                      width: Int, height: Int): Boolean = {
+    @inline def over(px: Double, py: Double): Boolean = {
+      val wx = screenToWorldX(px, py, camOffX, camOffY)
+      val wy = screenToWorldY(px, py, camOffX, camOffY)
+      wx >= -0.5 && wy >= -0.5 && wx < width - 0.5 && wy < height - 0.5
+    }
+    over(0, 0) && over(canvasW, 0) && over(0, canvasH) && over(canvasW, canvasH)
+  }
+
   // Mutable output fields for allocation-free screenToWorld (single-threaded render path only)
   private var _stw_x: Double = 0.0
   private var _stw_y: Double = 0.0

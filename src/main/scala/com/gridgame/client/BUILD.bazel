@@ -153,6 +153,16 @@ scala_binary(
     ],
 )
 
+# Dev tool: every character and projectile over every map's ground, through the real renderer,
+# in pairs with and without them, for scripts/render_audit.py to measure. Not shipped. See RenderAudit.
+scala_binary(
+    name = "render_audit",
+    main_class = "com.gridgame.client.gl.RenderAudit",
+    srcs = glob(["**/*.scala"]),
+    resources = ["//worlds:world_files", "//sprites:sprite_files", "//fonts:font_files", "//i18n:i18n_files", "//sounds:sound_files"],
+    deps = CLIENT_DEPS,
+)
+
 # Dev tool: renders every projectile type to contact-sheet PNGs for visual review.
 # Not shipped. `srcs` names the handful of GL files the gallery needs instead of globbing
 # the whole client, so projectile art work never waits on unrelated client code that

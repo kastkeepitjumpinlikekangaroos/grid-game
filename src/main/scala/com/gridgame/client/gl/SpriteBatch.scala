@@ -65,12 +65,26 @@ class SpriteBatch(val shader: ShaderProgram) {
     shader.use()
     shader.setUniformMat4("uProjection", projection)
     glEnable(GL_BLEND)
+    blending = true
     setAdditiveBlend(false)
+  }
+
+  private var blending = true
+
+  /** Turn blending off for opaque geometry that covers every pixel it touches (the ground), which
+    * then costs the GPU no framebuffer read. Flushes; [[begin]] and [[end]] turn it back on. */
+  def setBlending(enabled: Boolean): Unit = {
+    if (enabled != blending) {
+      flush()
+      blending = enabled
+      if (enabled) glEnable(GL_BLEND) else glDisable(GL_BLEND)
+    }
   }
 
   def end(): Unit = {
     if (!drawing) throw new IllegalStateException("Not drawing")
     flush()
+    if (!blending) { glEnable(GL_BLEND); blending = true }
     drawing = false
   }
 
@@ -107,6 +121,30 @@ class SpriteBatch(val shader: ShaderProgram) {
     vertex(x, y, u, v, r, g, b, a)
     vertex(x + w, y + h, u2, v2, r, g, b, a)
     vertex(x, y + h, u, v2, r, g, b, a)
+  }
+
+  /**
+   * A textured quad with its four corners and their texture coordinates given, in order round it,
+   * as two triangles (0, 1, 2) and (0, 2, 3). Neighbouring quads whose shared corners are the
+   * same floats meet without a gap or an overlap.
+   */
+  def drawQuad(texture: GLTexture,
+               x0: Float, y0: Float, u0: Float, v0: Float,
+               x1: Float, y1: Float, u1: Float, v1: Float,
+               x2: Float, y2: Float, u2: Float, v2: Float,
+               x3: Float, y3: Float, u3: Float, v3: Float): Unit = {
+    if (texture != currentTexture) {
+      flush()
+      currentTexture = texture
+      currentTexture.bind(0)
+    }
+    ensureCapacity(6)
+    vertex(x0, y0, u0, v0, 1f, 1f, 1f, 1f)
+    vertex(x1, y1, u1, v1, 1f, 1f, 1f, 1f)
+    vertex(x2, y2, u2, v2, 1f, 1f, 1f, 1f)
+    vertex(x0, y0, u0, v0, 1f, 1f, 1f, 1f)
+    vertex(x2, y2, u2, v2, 1f, 1f, 1f, 1f)
+    vertex(x3, y3, u3, v3, 1f, 1f, 1f, 1f)
   }
 
   /** Draw a textured quad with rotation around its center. Angle in radians. */

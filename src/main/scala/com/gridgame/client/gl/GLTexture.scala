@@ -63,9 +63,9 @@ object GLTexture {
   }
 
   /**
-   * Load a texture, handing the decoded RGBA pixels to `inspect` before they are freed.
+   * Load a texture, handing the decoded RGBA pixels to `inspect` before they are uploaded.
    * Lets a caller measure the image (e.g. where a tile's transparent margin ends) without
-   * keeping a second copy of it around.
+   * keeping a second copy of it around, or amend it in place before the GPU gets it.
    */
   def loadInspected(relativePath: String, nearest: Boolean,
                     inspect: (ByteBuffer, Int, Int) => Unit): GLTexture = {
@@ -117,21 +117,98 @@ object GLTexture {
     createFBO(width, height)
   }
 
-  /** Create an empty RGBA texture for use as a texture atlas. */
-  def createEmpty(width: Int, height: Int, nearest: Boolean = false): GLTexture = {
+  /**
+   * Create an empty RGBA texture for use as a texture atlas. With `mipLevels` > 0 it is
+   * trilinear-filtered through that many halvings, which the caller builds with
+   * [[generateMipmaps]] after filling it.
+   */
+  def createEmpty(width: Int, height: Int, nearest: Boolean = false, mipLevels: Int = 0): GLTexture = {
     val texId = glGenTextures()
     glBindTexture(GL_TEXTURE_2D, texId)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0: Long)
     val filter = if (nearest) GL_NEAREST else GL_LINEAR
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter)
+    if (mipLevels > 0) {
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+      glTexParameteri(GL_TEXTURE_2D, org.lwjgl.opengl.GL12.GL_TEXTURE_MAX_LEVEL, mipLevels)
+      glGenerateMipmap(GL_TEXTURE_2D) // allocate the chain, so the texture is complete before it is filled
+    } else glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
     new GLTexture(texId, width, height, false)
   }
 
-  /** Load image pixels from a file and upload as a sub-image into an existing texture. */
-  def uploadSubImage(target: GLTexture, destX: Int, destY: Int, relativePath: String): Boolean = {
+  /** Rebuild a texture's mip chain from its top level, after its pixels changed. */
+  def generateMipmaps(target: GLTexture): Unit = {
+    glBindTexture(GL_TEXTURE_2D, target.id)
+    glGenerateMipmap(GL_TEXTURE_2D)
+  }
+
+  /**
+   * Give every transparent texel within `passes` of opaque ones the average colour of its opaque
+   * neighbours, keeping its alpha at 0, reading only within the same `cellW` x `cellH` cell of an
+   * atlas so no cell takes its neighbour's colour. A texel with alpha 0 contributes nothing to a
+   * blended draw, but it does to anything that samples between texels — filtering, a mip level,
+   * geometry drawn without blending — and what a PNG leaves in transparent texels is black.
+   */
+  def padTransparent(px: ByteBuffer, w: Int, h: Int, cellW: Int, cellH: Int, passes: Int): Unit = {
+    val n = w * h
+    val rgb = new Array[Int](n)
+    val filled = new Array[Boolean](n)
+    var i = 0
+    while (i < n) {
+      val o = i * 4
+      rgb(i) = ((px.get(o) & 0xFF) << 16) | ((px.get(o + 1) & 0xFF) << 8) | (px.get(o + 2) & 0xFF)
+      filled(i) = px.get(o + 3) != 0
+      i += 1
+    }
+    var pass = 0
+    while (pass < passes) {
+      val next = filled.clone()
+      var y = 0
+      while (y < h) {
+        val cy0 = (y / cellH) * cellH
+        var x = 0
+        while (x < w) {
+          val idx = y * w + x
+          if (!filled(idx)) {
+            val cx0 = (x / cellW) * cellW
+            var sr = 0; var sg = 0; var sb = 0; var k = 0
+            var dy = -1
+            while (dy <= 1) {
+              val ny = y + dy
+              if (ny >= cy0 && ny < cy0 + cellH && ny < h) {
+                var dx = -1
+                while (dx <= 1) {
+                  val nx = x + dx
+                  if (nx >= cx0 && nx < cx0 + cellW && nx < w && filled(ny * w + nx)) {
+                    val c = rgb(ny * w + nx)
+                    sr += (c >> 16) & 0xFF; sg += (c >> 8) & 0xFF; sb += c & 0xFF; k += 1
+                  }
+                  dx += 1
+                }
+              }
+              dy += 1
+            }
+            if (k > 0) {
+              rgb(idx) = ((sr / k) << 16) | ((sg / k) << 8) | (sb / k)
+              next(idx) = true
+              val o = idx * 4
+              px.put(o, (sr / k).toByte); px.put(o + 1, (sg / k).toByte); px.put(o + 2, (sb / k).toByte)
+            }
+          }
+          x += 1
+        }
+        y += 1
+      }
+      System.arraycopy(next, 0, filled, 0, n)
+      pass += 1
+    }
+  }
+
+  /** Load image pixels from a file and upload as a sub-image into an existing texture, padding
+    * its transparent texels first ([[padTransparent]]) if `padCell` > 0. */
+  def uploadSubImage(target: GLTexture, destX: Int, destY: Int, relativePath: String, padCell: Int = 0): Boolean = {
     val bytes = loadBytes(relativePath)
     if (bytes == null) return false
     val buf = BufferUtils.createByteBuffer(bytes.length)
@@ -143,6 +220,7 @@ object GLTexture {
     stbi_set_flip_vertically_on_load(false)
     val pixels = stbi_load_from_memory(buf, w, h, channels, 4)
     if (pixels == null) return false
+    if (padCell > 0) padTransparent(pixels, w.get(0), h.get(0), padCell, padCell, 2)
     glBindTexture(GL_TEXTURE_2D, target.id)
     glTexSubImage2D(GL_TEXTURE_2D, 0, destX, destY, w.get(0), h.get(0), GL_RGBA, GL_UNSIGNED_BYTE, pixels)
     stbi_image_free(pixels)
@@ -165,6 +243,8 @@ object GLTexture {
       throw new RuntimeException(s"STB image load failed: ${stbi_failure_reason()}")
     }
 
+    if (inspect != null) inspect(pixels, w.get(0), h.get(0))
+
     val texId = glGenTextures()
     glBindTexture(GL_TEXTURE_2D, texId)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w.get(0), h.get(0), 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels)
@@ -175,7 +255,6 @@ object GLTexture {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
 
-    if (inspect != null) inspect(pixels, w.get(0), h.get(0))
     stbi_image_free(pixels)
 
     new GLTexture(texId, w.get(0), h.get(0), false)

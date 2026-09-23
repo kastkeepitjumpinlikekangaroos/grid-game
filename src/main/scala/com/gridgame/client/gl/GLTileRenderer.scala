@@ -24,6 +24,15 @@ object GLTileRenderer {
   private var trimmed: Array[Array[TextureRegion]] = _
   private var trimTopPx: Array[Array[Float]] = _
 
+  // One texel in texture coordinates, for drawing a flat tile as exactly its diamond
+  private var texelU = 0f
+  private var texelV = 0f
+  // The diamond a tile stands on, in a cell's texels: centred on column 40, from row 72 to row 112
+  private val centerCol = cellW / 2
+  private val bottomRow = cellH
+  private val midRow = cellH - Constants.ISO_HALF_H * 2
+  private val topRow = cellH - Constants.ISO_HALF_H * 4
+
   private def ensureLoaded(): Unit = {
     if (texture != null) return
     try {
@@ -54,7 +63,13 @@ object GLTileRenderer {
           }
           id += 1
         }
+        // The ground is drawn as exact diamonds with blending off (drawDiamond), and a flat tile's
+        // pixel-art edge is a staircase crossing the diamond's true edge: the pixels just inside
+        // the edge sample texels just outside the staircase. Transparent, and black in the PNG
+        GLTexture.padTransparent(px, w, h, cellW, cellH, 2)
       })
+      texelU = 1f / texture.width
+      texelV = 1f / texture.height
       numTiles = (texture.width / cellW).max(1)
       numFrames = (texture.height / cellH).max(1)
       regions = Array.tabulate(numTiles) { id =>
@@ -85,6 +100,29 @@ object GLTileRenderer {
         trimmed = Array.empty
         trimTopPx = Array.empty
     }
+  }
+
+  /**
+   * Draw a flat tile — ground or a pool — as exactly its diamond: corners left (xl, ym), top
+   * (xc, yt), right (xr, ym) and bottom (xc, yb) on screen, each on the matching corner of the
+   * tile's diamond in the atlas. Drawn as the cell's bounding rectangle instead, as the ground
+   * used to be, every pixel of the ground was shaded and blended twice, since each tile's
+   * transparent corners lie under its neighbours. Neighbours built from the same corner floats
+   * meet exactly, so the ground can be drawn with blending off.
+   */
+  def drawDiamond(batch: SpriteBatch, tileId: Int, frame: Int,
+                  xl: Float, xc: Float, xr: Float, yt: Float, ym: Float, yb: Float): Unit = {
+    ensureLoaded()
+    if (numTiles == 0) return
+    val id = if (tileId >= 0 && tileId < numTiles) tileId else 0
+    val f = frame % numFrames
+    val u0 = id * cellW * texelU
+    val v0 = f * cellH * texelV
+    batch.drawQuad(texture,
+      xl, ym, u0, v0 + midRow * texelV,
+      xc, yt, u0 + centerCol * texelU, v0 + topRow * texelV,
+      xr, ym, u0 + cellW * texelU, v0 + midRow * texelV,
+      xc, yb, u0 + centerCol * texelU, v0 + bottomRow * texelV)
   }
 
   def getNumFrames: Int = {

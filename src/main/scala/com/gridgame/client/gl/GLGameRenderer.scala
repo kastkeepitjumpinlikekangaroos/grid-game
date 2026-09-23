@@ -184,8 +184,12 @@ class GLGameRenderer(val client: GameClient) {
   // Cached flipped TextureRegion for water reflections (avoids per-frame case class allocation)
   private var _reflectionRegion: TextureRegion = _
   private var _reflectionSourceRegion: TextureRegion = _
+  // How opaque the overlay over the world is: it fades in with the match, as the world does
+  private var _overlayAlpha = 1f
   // Cached background type ID (avoids per-frame string matching in 3 places)
   private var _bgType: Byte = 0 // 0=sky, 1=cityscape, 2=space, 3=desert, 4=ocean, 5=snow, 6=sea
+  // Whether projectiles light the ground round them: not in daylight (set with the grade)
+  private var _projectileLights = true
 
   // Deferred kill feed entries (batch backgrounds in shapes, then text in sprites)
   private val MAX_FEED_ENTRIES = 10
@@ -245,9 +249,10 @@ class GLGameRenderer(val client: GameClient) {
   private val _starTriYs = new Array[Float](3)
   private val _starPentXs = new Array[Float](5)
   private val _starPentYs = new Array[Float](5)
-  // Pre-allocated arrays for dune/wave background layers (avoids per-call allocation)
-  private val _bgPolyXs = new Array[Float](63) // points=60 → 60+3=63
-  private val _bgPolyYs = new Array[Float](63)
+  // Pre-allocated arrays for dune/wave background layers (avoids per-call allocation): a ribbon of
+  // the ridge's 61 points left to right, then the bottom of the screen right to left
+  private val _bgPolyXs = new Array[Float](122)
+  private val _bgPolyYs = new Array[Float](122)
 
   // Deferred health bars + names (batched after entity dispatch to reduce batch switches)
   private val MAX_DEFERRED_BARS = 32
@@ -333,7 +338,9 @@ class GLGameRenderer(val client: GameClient) {
 
   private def flushDeferredBars(): Unit = {
     if (_deferBarCount == 0) return
-    // Draw all health bar shapes in one shapes batch
+    // Draw all health bar shapes in one shapes batch, faded in with the match
+    beginShapes()
+    shapeBatch.setAlphaMultiplier(_overlayAlpha)
     var i = 0
     while (i < _deferBarCount) {
       drawHealthBar(_deferBarCX(i), _deferBarTY(i), _deferBarHP(i), _deferBarMax(i), _deferBarTeam(i), _deferBarId(i))
@@ -345,6 +352,7 @@ class GLGameRenderer(val client: GameClient) {
       drawNameBackground(_deferBarName(i), _deferBarCX(i), _deferBarTY(i))
       i += 1
     }
+    shapeBatch.resetModifiers()
     // Draw all character names in one sprites batch
     beginSprites()
     i = 0
@@ -451,30 +459,54 @@ class GLGameRenderer(val client: GameClient) {
     if (_spriteActive) { spriteBatch.end(); _spriteActive = false }
   }
 
+  /** A phase boundary for the GPU profiler (GpuProfiler): what is queued is submitted first, so
+    * it is counted in the phase that drew it. Nothing at all when profiling is off. */
+  @inline private def gpuMark(label: String): Unit =
+    if (GpuProfiler.enabled) { endAll(); GpuProfiler.timestamp(label) }
+
+  /** A render target's texture the right way up. The background is drawn into its target with
+    * the world's projection, which puts the top of the screen at the top of the target — row
+    * height-1, v = 1 — and then drawn out again as a quad whose top edge is v = 0: blitted with its
+    * plain full region it came out upside down, hills and trees hanging from the top of the screen
+    * and clouds along the bottom, wherever the edge of a map let it show. */
+  private def flippedRegion(target: GLTexture): TextureRegion = TextureRegion(target, 0f, 1f, 1f, 0f)
+
   private def ensureInitialized(width: Int, height: Int): Unit = {
     if (initialized) return
     val colorShader = new ShaderProgram(ShaderProgram.COLOR_VERT, ShaderProgram.COLOR_FRAG)
     val textureShader = new ShaderProgram(ShaderProgram.TEXTURE_VERT, ShaderProgram.TEXTURE_FRAG)
     shapeBatch = new ShapeBatch(colorShader)
     spriteBatch = new SpriteBatch(textureShader)
-    fontSmall = new GLFontRenderer(14)
-    fontMedium = new GLFontRenderer(22)
-    fontLarge = new GLFontRenderer(44)
+    postProcessor = new PostProcessor(width, height)
+    lightSystem = new LightSystem(width, height)
+    bgCacheFBO = GLTexture.createFBO(width, height)
+    bgCacheRegion = flippedRegion(bgCacheFBO)
+    whitePixel = GLTexture.createWhitePixel()
+    whiteRegion = whitePixel.fullRegion
+    initialized = true
+    matchStartTime = System.currentTimeMillis()
+  }
+
+  private var fontPixelScale = 0f
+  private var _preloadedPlayers = -1
+
+  /** Fonts rasterized for the display's pixel density (GLFontRenderer's pixelScale): 2 on a HiDPI
+    * screen. Made again if the window moves to a screen of another density. */
+  private def ensureFonts(pixelScale: Float): Unit = {
+    if (pixelScale == fontPixelScale) return
+    if (fontSmall != null) { fontSmall.dispose(); fontMedium.dispose(); fontLarge.dispose() }
+    fontSmall = new GLFontRenderer(14, pixelScale)
+    fontMedium = new GLFontRenderer(22, pixelScale)
+    fontLarge = new GLFontRenderer(44, pixelScale)
     // Pre-rasterize the active language's glyphs (cheap ASCII for English, the CJK
     // set for Chinese/Korean) so the first HUD frame with translated text doesn't hitch.
     val i18nGlyphs = com.gridgame.client.i18n.Messages.currentCodepoints
     fontSmall.prewarm(i18nGlyphs)
     fontMedium.prewarm(i18nGlyphs)
-    postProcessor = new PostProcessor(width, height)
-    lightSystem = new LightSystem(width, height)
-    bgCacheFBO = GLTexture.createFBO(width, height)
-    bgCacheRegion = bgCacheFBO.fullRegion
-    whitePixel = GLTexture.createWhitePixel()
-    whiteRegion = whitePixel.fullRegion
-    damageNumbers.setFont(fontSmall)
-    damageNumbers.setFontLarge(fontMedium)
-    initialized = true
-    matchStartTime = System.currentTimeMillis()
+    // Damage numbers are drawn in the overlay over the world, in its units (see render)
+    damageNumbers.setFont(fontMedium)
+    damageNumbers.setFontLarge(fontLarge)
+    fontPixelScale = pixelScale
   }
 
   def render(deltaSec: Double, fbWidth: Int, fbHeight: Int, windowWidth: Int, windowHeight: Int): Unit = {
@@ -485,8 +517,17 @@ class GLGameRenderer(val client: GameClient) {
     val sceneW = Math.max(64, (fbWidth * scale).toInt)
     val sceneH = Math.max(64, (fbHeight * scale).toInt)
     ensureInitialized(sceneW, sceneH)
+    ensureFonts(Math.max(1f, Math.min(4f, fbWidth.toFloat / Math.max(1, windowWidth))))
     // Safe point to free a character atlas that a grow replaced: no batch has queued work.
     GLSpriteGenerator.disposeRetired()
+    // Every character in the match loaded now, not when it first walks into view: looked over when
+    // someone joins or leaves, and twice a second in case one changes character
+    if (client.getPlayers.size != _preloadedPlayers || animationTick % 30 == 0) {
+      _preloadedPlayers = client.getPlayers.size
+      GLSpriteGenerator.preload(client.selectedCharacterId)
+      val it = client.getPlayers.values().iterator()
+      while (it.hasNext) GLSpriteGenerator.preload(it.next().getCharacterId)
+    }
     animationTick += 1
     _frameTimeMs = System.currentTimeMillis()
     _animTickF = animationTick.toFloat
@@ -510,6 +551,7 @@ class GLGameRenderer(val client: GameClient) {
       return
     }
 
+    GpuProfiler.beginFrame()
     val localPos = client.getLocalPosition
     val world = client.getWorld
 
@@ -519,7 +561,7 @@ class GLGameRenderer(val client: GameClient) {
     val visualPosY = client.visualPosY
 
     // Update camera with smooth interpolation
-    camera.update(visualPosX, visualPosY, deltaSec, canvasW, canvasH)
+    camera.update(visualPosX, visualPosY, deltaSec, canvasW, canvasH, sceneW / canvasW)
     camOffX = camera.camOffX
     camOffY = camera.camOffY
 
@@ -528,7 +570,7 @@ class GLGameRenderer(val client: GameClient) {
       postProcessor.resize(sceneW, sceneH)
       lightSystem.resize(sceneW, sceneH)
       bgCacheFBO = GLTexture.resizeFBO(bgCacheFBO, sceneW, sceneH)
-      bgCacheRegion = bgCacheFBO.fullRegion
+      bgCacheRegion = flippedRegion(bgCacheFBO)
       bgCacheValid = false
       lastFbWidth = sceneW
       lastFbHeight = sceneH
@@ -557,6 +599,9 @@ class GLGameRenderer(val client: GameClient) {
       // In daylight a warm pool of light round every player reads as a spotlight on the grass;
       // explosions still flash
       lightSystem.gain = if (bright) 0.35f else 1f
+      // and a shot carries no light at all: on sand or snow its pool only brightened the ground
+      // round it toward white, washing out the pale ones (render_audit measured it)
+      _projectileLights = !bright
       weatherParticles.clear()
     }
 
@@ -565,11 +610,19 @@ class GLGameRenderer(val client: GameClient) {
 
     // Set up projection for zoomed world-space rendering
     projection = Matrix4.orthographic(0f, canvasW.toFloat, canvasH.toFloat, 0f)
+    shapeBatch.pixelsPerUnit = sceneW / canvasW.toFloat
+
+    // The background only shows past the edge of the world: every cell in it is covered by its
+    // ground diamond or its block (a prop has its ground drawn under it). Mid-map, which is most
+    // of a match, drawing it was a full-screen redraw every few frames and a full-screen blit
+    // every frame — a fifth of the frame's pixels — all of it painted over by the ground.
+    val bgVisible = !IsometricTransform.viewInsideWorld(camOffX, camOffY, canvasW, canvasH, world.width, world.height)
+    if (!bgVisible) bgCacheValid = false // stale by the time it next shows
 
     // === Background cache: re-render to dedicated FBO when stale ===
     val bgStale = !bgCacheValid || _bgType != bgCacheType ||
       (animationTick - bgCacheTick) >= RenderQuality.bgCacheInterval
-    if (bgStale) {
+    if (bgVisible && bgStale) {
       bgCacheFBO.bindAsTarget()  // sets viewport to FBO dimensions
       glClearColor(0f, 0f, 0f, 1f)
       glClear(GL_COLOR_BUFFER_BIT)
@@ -579,12 +632,16 @@ class GLGameRenderer(val client: GameClient) {
       bgCacheFBO.unbindTarget()
       bgCacheValid = true; bgCacheTick = animationTick; bgCacheType = _bgType
     }
+    gpuMark("bg render")
 
     postProcessor.beginScene()
 
     // Blit cached background
-    beginSprites()
-    spriteBatch.draw(bgCacheRegion, 0f, 0f, canvasW.toFloat, canvasH.toFloat)
+    if (bgVisible) {
+      beginSprites()
+      spriteBatch.draw(bgCacheRegion, 0f, 0f, canvasW.toFloat, canvasH.toFloat)
+    }
+    gpuMark("bg blit")
 
     beginShapes()
 
@@ -642,6 +699,9 @@ class GLGameRenderer(val client: GameClient) {
     // ground use a fixed variant per position so they don't animate; a pool cycles its frames.
     val numTileFrames = GLTileRenderer.getNumFrames
     beginSprites()
+    // Every flat tile is an opaque diamond meeting its neighbours exactly (GLTileRenderer.drawDiamond),
+    // so the ground covers each pixel once, and needs no blending
+    spriteBatch.setBlending(false)
     var wy = startY
     while (wy <= endY) {
       val loX = rowLo(wy, 0)
@@ -656,18 +716,17 @@ class GLGameRenderer(val client: GameClient) {
           else null
         if (tile != null) {
           val tid = tile.id
-          val sx = worldToScreenX(wx, wy).toFloat
-          val sy = worldToScreenY(wx, wy).toFloat
           val variantFrame =
             if (form eq TileForm.Pool) (tileFrame + wx * 7 + wy * 13) % numTileFrames
             else ((wx * 7 + wy * 13) & 0x7FFFFFFF) % numTileFrames
-          // Trimmed cell: identical pixels, but the empty rows above the diamond aren't
-          // rasterized. Ground covers the screen, so this is the frame's largest fill saving.
-          val region = GLTileRenderer.getTrimmedRegion(tid, variantFrame)
-          if (region != null) {
-            val top = GLTileRenderer.getTrimTopPx(tid, variantFrame)
-            spriteBatch.draw(region, sx - HW, sy - (cellH - HH) + top, tileW, tileCellH - top)
-          }
+          // Corners from the integer lattice (u = wx - wy across, v = wx + wy down), so the corner
+          // two neighbours share is the same float in both and they meet without a gap
+          val u = wx - wy; val v = wx + wy
+          val sx = (u * HW + camOffX).toFloat
+          val sy = (v * HH + camOffY).toFloat
+          GLTileRenderer.drawDiamond(spriteBatch, tid, variantFrame,
+            ((u - 1) * HW + camOffX).toFloat, sx, ((u + 1) * HW + camOffX).toFloat,
+            ((v - 1) * HH + camOffY).toFloat, sy, ((v + 1) * HH + camOffY).toFloat)
           // Collect special tiles for overlay pass. Not water or ice: their tiles animate and
           // shine on their own, and the glints, ripples and frost needles drawn over them turned a
           // sea into static and a frozen pond into flocks of white birds.
@@ -692,6 +751,10 @@ class GLGameRenderer(val client: GameClient) {
       wy += 1
     }
 
+    gpuMark("ground")
+
+    spriteBatch.setBlending(true)
+
     // === Animated tile overlays ===
     if (_specialTileCount > 0) {
       drawTileOverlays()
@@ -705,6 +768,8 @@ class GLGameRenderer(val client: GameClient) {
 
     // === Aim arrow ===
     drawAimArrow()
+
+    gpuMark("overlays")
 
     // === Elevated tile edge shadows (batched in one shapes pass — more efficient than per-tile) ===
     // Blocks only: a pool lies flat, and a prop carries its own round shadow in its sprite.
@@ -722,6 +787,8 @@ class GLGameRenderer(val client: GameClient) {
       }
       wy += 1
     }
+
+    gpuMark("block shadows")
 
     // === Phase 2: Elevated tiles + entities interleaved by depth ===
     wy = startY
@@ -765,6 +832,8 @@ class GLGameRenderer(val client: GameClient) {
       leftover = entityCollector.takeRemaining()
     }
 
+    gpuMark("depth pass")
+
     // === Projectiles flying over terrain: bodies after every wall and entity ===
     drawFlyingProjectiles()
 
@@ -774,8 +843,7 @@ class GLGameRenderer(val client: GameClient) {
     // === The wall between the two teams while a team match opens ===
     drawTeamDivider(uMin, uMax, vMin, vMax)
 
-    // === Deferred health bars + names (batched to reduce batch switches) ===
-    flushDeferredBars()
+    gpuMark("fliers+walls")
 
     // === Deferred additive effects (single blend toggle for all player/item effects) ===
     flushDeferredAdditiveFx()
@@ -789,6 +857,8 @@ class GLGameRenderer(val client: GameClient) {
     drawExplosionAnimations()
     drawAoeSplashAnimations()
 
+    gpuMark("effects")
+
     // === Gameplay particles (trails, footsteps, impacts) ===
     spawnGameplayParticles(dt)
     beginShapes()
@@ -800,15 +870,10 @@ class GLGameRenderer(val client: GameClient) {
       weatherParticles.render(shapeBatch)
     }
 
-    // === Damage number detection ===
-    detectDamageNumbers()
+    gpuMark("particles")
 
-    // === Render damage numbers (in world space) ===
-    if (damageNumbers.hasActive) {
-      beginSprites()
-      damageNumbers.render(fontSmall, fontMedium, spriteBatch, camOffX, camOffY,
-        _worldToScreenXFn, _worldToScreenYFn)
-    }
+    // === Damage number detection (they are drawn over the finished frame, below) ===
+    detectDamageNumbers()
 
     // === Populate lights from entities ===
     populateLights()
@@ -865,10 +930,29 @@ class GLGameRenderer(val client: GameClient) {
       }
     }
 
+    gpuMark("light map")
     postProcessor.endScene(fbWidth, fbHeight)
+    gpuMark("post")
+
+    // === Over the finished world: name plates, health bars and damage numbers ===
+    // Drawn into the display's own framebuffer, at its full resolution, after the grade. In the
+    // scene they came out as soft as the scene's scale (a third of the display's pixels at Low),
+    // dimmed by the light map and tinted by the grade: a white damage number on a dark map was
+    // a muddy grey. Same world projection, so each lands exactly where it did.
+    projection = Matrix4.orthographic(0f, canvasW.toFloat, canvasH.toFloat, 0f)
+    shapeBatch.pixelsPerUnit = fbWidth / canvasW.toFloat
+    _overlayAlpha = 1f - postProcessor.overlayA // fade in with the match, as the world does
+    flushDeferredBars()
+    if (damageNumbers.hasActive) {
+      beginSprites()
+      damageNumbers.render(spriteBatch, _worldToScreenXFn, _worldToScreenYFn)
+    }
+    endAll()
+    gpuMark("world overlay")
 
     // === HUD (rendered at screen-pixel scale, not zoomed) ===
     projection = Matrix4.orthographic(0f, windowWidth.toFloat, windowHeight.toFloat, 0f)
+    shapeBatch.pixelsPerUnit = fbWidth.toFloat / Math.max(1, windowWidth)
     renderHUD(windowWidth, windowHeight)
 
     // === Respawn countdown ===
@@ -876,6 +960,8 @@ class GLGameRenderer(val client: GameClient) {
       renderRespawnCountdown(windowWidth, windowHeight)
     }
     endAll()
+    gpuMark("hud")
+    GpuProfiler.endFrame()
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -928,16 +1014,14 @@ class GLGameRenderer(val client: GameClient) {
   private val _hillXs = new Array[Float](HILL_PTS * 2)
   private val _hillYs = new Array[Float](HILL_PTS * 2)
 
-  private def skyGradient(w: Float, h: Float, r0: Float, g0: Float, b0: Float, r1: Float, g1: Float, b1: Float): Unit = {
-    val bands = 14
-    var i = 0
-    while (i < bands) {
-      val t = i.toFloat / (bands - 1)
-      shapeBatch.fillRect(0, h * i / bands, w, h / bands + 1,
-        r0 + (r1 - r0) * t, g0 + (g1 - g0) * t, b0 + (b1 - b0) * t, 1f)
-      i += 1
-    }
-  }
+  /** A vertical gradient over the whole screen, in one quad the GPU interpolates. It was drawn as
+    * fourteen flat bands, and the steps between them showed as stripes across the sky. */
+  private def skyGradient(w: Float, h: Float, r0: Float, g0: Float, b0: Float, r1: Float, g1: Float, b1: Float): Unit =
+    verticalGradient(0f, h, w, r0, g0, b0, r1, g1, b1)
+
+  private def verticalGradient(y0: Float, y1: Float, w: Float,
+                               r0: Float, g0: Float, b0: Float, r1: Float, g1: Float, b1: Float): Unit =
+    shapeBatch.fillRectGradient(0f, y0, w, y1 - y0, r0, g0, b0, 1f, r0, g0, b0, 1f, r1, g1, b1, 1f, r1, g1, b1, 1f)
 
   /** Height of a ridge at point i of HILL_PTS: round humps, as MapleStory draws its hills. */
   private def ridgeY(i: Int, baseY: Float, amp: Float, seed: Int, sharp: Boolean): Float = {
@@ -1085,25 +1169,12 @@ class GLGameRenderer(val client: GameClient) {
     val w = canvasW.toFloat; val h = canvasH.toFloat
     val horizon = h * 0.36f
     // sky, down to the horizon
-    val bands = 8
+    verticalGradient(0f, horizon, w, 0.38f, 0.68f, 1f, 0.82f, 0.93f, 1f)
     var i = 0
-    while (i < bands) {
-      val t = i.toFloat / (bands - 1)
-      shapeBatch.fillRect(0, horizon * i / bands, w, horizon / bands + 1,
-        0.38f + 0.44f * t, 0.68f + 0.25f * t, 1f, 1f)
-      i += 1
-    }
     val px = (camOffX * 0.02).toFloat
     drawCloudBand(w, h, 0.12f, 0.05f, px * 0.3f, 22f, 4, 919, snowy = false)
     // sea, pale at the horizon and deepening toward the viewer
-    i = 0
-    while (i < bands) {
-      val t = i.toFloat / (bands - 1)
-      val y0 = horizon + (h - horizon) * i / bands
-      shapeBatch.fillRect(0, y0, w, (h - horizon) / bands + 1,
-        0.48f - 0.30f * t, 0.76f - 0.26f * t, 0.94f - 0.10f * t, 1f)
-      i += 1
-    }
+    verticalGradient(horizon, h, w, 0.48f, 0.76f, 0.94f, 0.18f, 0.50f, 0.84f)
     // two islands on the horizon: a green hump with a palm on it
     var k = 0
     while (k < 2) {
@@ -1148,12 +1219,8 @@ class GLGameRenderer(val client: GameClient) {
   private def drawCityscapeBg(): Unit = {
     val w = canvasW.toFloat; val h = canvasH.toFloat
     // Dark gradient sky
+    verticalGradient(0f, h, w, 0.05f, 0.02f, 0.15f, 0.13f, 0.07f, 0.10f)
     var i = 0
-    while (i < 12) {
-      val t = i.toFloat / 12
-      shapeBatch.fillRect(0, h * t, w, h / 12 + 1, 0.05f + t * 0.08f, 0.02f + t * 0.05f, 0.15f - t * 0.05f, 1f)
-      i += 1
-    }
     // Horizon glow
     shapeBatch.fillRect(0, h * 0.55f, w, h * 0.15f, 0.2f, 0.08f, 0.3f, 0.3f)
     shapeBatch.fillRect(0, h * 0.5f, w, h * 0.1f, 0.3f, 0.1f, 0.4f, 0.15f)
@@ -1210,13 +1277,8 @@ class GLGameRenderer(val client: GameClient) {
 
   private def drawSpaceBg(): Unit = {
     val w = canvasW.toFloat; val h = canvasH.toFloat
+    verticalGradient(0f, h, w, 0.006f, 0.004f, 0.02f, 0.018f, 0.012f, 0.06f)
     var i = 0
-    while (i < 8) {
-      val t = i.toFloat / 8
-      val b = 0.02f + t * 0.04f
-      shapeBatch.fillRect(0, h * t, w, h / 8 + 1, b * 0.3f, b * 0.2f, b, 1f)
-      i += 1
-    }
     val px = (camOffX * 0.01).toFloat; val py = (camOffY * 0.01).toFloat
 
     // Nebulae
@@ -1278,13 +1340,8 @@ class GLGameRenderer(val client: GameClient) {
 
   private def drawDesertBg(): Unit = {
     val w = canvasW.toFloat; val h = canvasH.toFloat
+    verticalGradient(0f, h, w, 0.95f, 0.65f, 0.25f, 0.70f, 0.45f, 0.15f)
     var i = 0
-    while (i < 12) {
-      val t = i.toFloat / 12
-      val r = clamp(0.95f - t * 0.25f); val g = clamp(0.65f - t * 0.20f); val b = clamp(0.25f - t * 0.10f)
-      shapeBatch.fillRect(0, h * t, w, h / 12 + 1, r, g, b, 1f)
-      i += 1
-    }
     val px = (camOffX * 0.02).toFloat
     // Sun with glow
     val sunX = w * 0.75f + px * 0.5f; val sunY = h * 0.18f; val sunR = 35f
@@ -1324,28 +1381,27 @@ class GLGameRenderer(val client: GameClient) {
     val baseY = h * yFrac
     val points = 60
     val xStep = (w + 40) / points
-    _bgPolyXs(0) = -20; _bgPolyYs(0) = h + 10
+    val n = (points + 1) * 2
     var i = 0
     while (i <= points) {
-      _bgPolyXs(i + 1) = -20 + i * xStep + parallax
-      _bgPolyYs(i + 1) = (baseY +
+      val x = -20 + i * xStep + parallax
+      _bgPolyXs(i) = x
+      _bgPolyYs(i) = (baseY +
         Math.sin(i * 0.15 + seedOff * 0.1) * h * 0.04 +
         Math.sin(i * 0.07 + seedOff * 0.3 + animationTick * 0.002) * h * 0.02 +
         Math.sin(i * 0.3 + seedOff * 0.5) * h * 0.015).toFloat
+      _bgPolyXs(n - 1 - i) = x; _bgPolyYs(n - 1 - i) = h + 10
       i += 1
     }
-    _bgPolyXs(points + 2) = w + 20; _bgPolyYs(points + 2) = h + 10
-    shapeBatch.fillPolygon(_bgPolyXs, _bgPolyYs, points + 3, r, g, b, alpha)
+    // A ribbon, not a polygon fanned from a corner, which overlapped itself wherever a slope faced
+    // away from that corner and blended the overlap twice (ShapeBatch.fillRibbon)
+    shapeBatch.fillRibbon(_bgPolyXs, _bgPolyYs, n, r, g, b, alpha)
   }
 
   private def drawOceanBg(): Unit = {
     val w = canvasW.toFloat; val h = canvasH.toFloat
+    verticalGradient(0f, h, w, 0.02f, 0.08f, 0.25f, 0.06f, 0.20f, 0.40f)
     var i = 0
-    while (i < 12) {
-      val t = i.toFloat / 12
-      shapeBatch.fillRect(0, h * t, w, h / 12 + 1, 0.02f + t * 0.04f, 0.08f + t * 0.12f, 0.25f + t * 0.15f, 1f)
-      i += 1
-    }
     val px = (camOffX * 0.02).toFloat
     // Caustics
     shapeBatch.setAdditiveBlend(true)
@@ -1400,19 +1456,19 @@ class GLGameRenderer(val client: GameClient) {
     val baseY = h * yFrac
     val points = 60
     val xStep = (w + 40) / points
-    val n = points + 3 // exact vertex count needed
-    _bgPolyXs(0) = -20; _bgPolyYs(0) = h + 10
+    val n = (points + 1) * 2
     var i = 0
     while (i <= points) {
-      _bgPolyXs(i + 1) = -20 + i * xStep + parallax * (0.3f + yFrac)
-      _bgPolyYs(i + 1) = (baseY +
+      val x = -20 + i * xStep + parallax * (0.3f + yFrac)
+      _bgPolyXs(i) = x
+      _bgPolyYs(i) = (baseY +
         Math.sin(i * 0.12 + seedOff * 0.1 + animationTick * speed) * amplitude +
         Math.sin(i * 0.25 + seedOff * 0.3 + animationTick * speed * 1.3) * amplitude * 0.5 +
         Math.sin(i * 0.06 + seedOff * 0.7 + animationTick * speed * 0.7) * amplitude * 1.5).toFloat
+      _bgPolyXs(n - 1 - i) = x; _bgPolyYs(n - 1 - i) = h + 10
       i += 1
     }
-    _bgPolyXs(points + 2) = w + 20; _bgPolyYs(points + 2) = h + 10
-    shapeBatch.fillPolygon(_bgPolyXs, _bgPolyYs, n, r, g, b, alpha)
+    shapeBatch.fillRibbon(_bgPolyXs, _bgPolyYs, n, r, g, b, alpha)
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -3047,6 +3103,25 @@ class GLGameRenderer(val client: GameClient) {
     // Dynamic projectile lighting — charge-reactive, distance-boosted
     intToRGB(proj.colorRGB)
     val plr = _rgb_r; val plg = _rgb_g; val plb = _rgb_b
+    if (_projectileLights) addProjectileLights(proj, sx, sy, plr, plg, plb)
+
+    beginShapes()
+    if (ProjectileDef.get(proj.projectileType).passesThroughWalls) {
+      // Travels over terrain: its shadow goes down here, in depth order, so a wall in front
+      // still covers it; the projectile itself is drawn lifted after all the terrain
+      // (drawFlyingProjectiles), so no wall block can slice through it on the way over.
+      val lift = GLProjectileRenderers.flyLift(proj, animationTick)
+      GLProjectileRenderers.drawFlightShadow(proj, sx, sy - surfaceLift(px, py), shapeBatch, animationTick, lift)
+      if (_flyingCount < _flying.length) { _flying(_flyingCount) = proj; _flyingCount += 1 }
+    } else {
+      // Reuse plr/plg/plb from intToRGB call above (same proj.colorRGB)
+      GLProjectileRenderers.draw(proj, sx, sy, shapeBatch, animationTick, plr, plg, plb)
+    }
+  }
+
+  /** A projectile's light: its own colour, charge-reactive and distance-boosted, and a second one
+    * in the colour of its element. */
+  private def addProjectileLights(proj: Projectile, sx: Float, sy: Float, plr: Float, plg: Float, plb: Float): Unit = {
     val chargeT = proj.chargeLevel / 100f
     // Charge whitening for light color
     val lr = Math.min(1f, plr + chargeT * (1f - plr) * 0.35f)
@@ -3131,19 +3206,6 @@ class GLGameRenderer(val client: GameClient) {
         lightSystem.addLight(sx, sy, 55f, 0.1f, 0.9f, 0.6f, 0.15f)
 
       case _ => // No additional element light for uncategorized projectiles
-    }
-
-    beginShapes()
-    if (pDef.passesThroughWalls) {
-      // Travels over terrain: its shadow goes down here, in depth order, so a wall in front
-      // still covers it; the projectile itself is drawn lifted after all the terrain
-      // (drawFlyingProjectiles), so no wall block can slice through it on the way over.
-      val lift = GLProjectileRenderers.flyLift(proj, animationTick)
-      GLProjectileRenderers.drawFlightShadow(proj, sx, sy - surfaceLift(px, py), shapeBatch, animationTick, lift)
-      if (_flyingCount < _flying.length) { _flying(_flyingCount) = proj; _flyingCount += 1 }
-    } else {
-      // Reuse plr/plg/plb from intToRGB call above (same proj.colorRGB)
-      GLProjectileRenderers.draw(proj, sx, sy, shapeBatch, animationTick, plr, plg, plb)
     }
   }
 
@@ -5006,7 +5068,9 @@ class GLGameRenderer(val client: GameClient) {
     // Dark background
     shapeBatch.fillRect(barX, barY, barW, barH, 0.15f, 0.05f, 0.05f, 0.85f)
 
-    val pct = health.toFloat / maxHealth
+    // Clamped: a health reported above the max (a heal racing a change of character) ran the fill
+    // off the end of the bar
+    val pct = if (maxHealth <= 0) 0f else Math.max(0f, Math.min(1f, health.toFloat / maxHealth))
     var fr = 0f; var fg = 0f; var fb = 0f
     teamId match {
       case 1 => fr = 0.29f; fg = 0.51f; fb = 1f
@@ -5076,38 +5140,41 @@ class GLGameRenderer(val client: GameClient) {
     }
   }
 
-  private def drawCharacterName(name: String, screenCenterX: Double, spriteTopY: Double): Unit = {
-    beginSprites()
-    drawCharacterNameDirect(name, screenCenterX, spriteTopY)
-  }
+  // How tall a name's text stands over the world, in world units; its plate is sized to it. It
+  // was the 14-unit font with a 3-unit margin, and a crowd's plates covered the heads of whoever
+  // stood a row behind.
+  private val NAME_UNITS = 12f
+  @inline private def nameScale: Float = NAME_UNITS / fontMedium.fontSize
+  private def nameTop(spriteTopY: Double): Float =
+    (spriteTopY - Constants.HEALTH_BAR_OFFSET_Y - Constants.HEALTH_BAR_HEIGHT_PX - fontMedium.charHeight * nameScale - 2).toFloat
 
-  /** Draw character name without calling beginSprites() — used by flushDeferredBars. */
+  /** Draw a character's name without calling beginSprites() — used by flushDeferredBars. On its
+    * dark plate it needs no outline, which was four more copies of every glyph. */
   private def drawCharacterNameDirect(name: String, screenCenterX: Double, spriteTopY: Double): Unit = {
-    val barH = Constants.HEALTH_BAR_HEIGHT_PX
-    val nameY = (spriteTopY - Constants.HEALTH_BAR_OFFSET_Y - barH - fontSmall.charHeight - 2).toFloat
-    val textW = fontSmall.measureWidth(name)
-    val textX = (screenCenterX - textW / 2).toFloat
-    fontSmall.drawTextOutlined(spriteBatch, name, textX, nameY)
+    val sc = nameScale
+    val textW = fontMedium.measureWidth(name, sc)
+    fontMedium.drawText(spriteBatch, name, (screenCenterX - textW / 2).toFloat, nameTop(spriteTopY),
+      1f, 1f, 1f, _overlayAlpha, sc)
   }
 
   /** Draw dark pill background behind character name — called before name sprites pass. */
   private def drawNameBackground(name: String, screenCenterX: Double, spriteTopY: Double): Unit = {
-    val barH = Constants.HEALTH_BAR_HEIGHT_PX
-    val nameY = (spriteTopY - Constants.HEALTH_BAR_OFFSET_Y - barH - fontSmall.charHeight - 2).toFloat
-    val textW = fontSmall.measureWidth(name)
+    val sc = nameScale
+    val nameY = nameTop(spriteTopY)
+    val textW = fontMedium.measureWidth(name, sc)
     val textX = (screenCenterX - textW / 2).toFloat
-    val padW = 6f; val padH = 3f
+    val padW = 5f; val padH = 2f
     val bgX = textX - padW; val bgY = nameY - padH
-    val bgW = textW + padW * 2; val bgH = fontSmall.charHeight + padH * 2
+    val bgW = textW + padW * 2; val bgH = fontMedium.charHeight * sc + padH * 2
     beginShapes()
     // Gradient background: darker at bottom
-    shapeBatch.fillRoundedRectGradient(bgX, bgY, bgW, bgH, 5f,
+    shapeBatch.fillRoundedRectGradient(bgX, bgY, bgW, bgH, 4f,
       0.06f, 0.06f, 0.12f, 0.70f,
       0.02f, 0.02f, 0.05f, 0.80f)
-    // Subtle border
-    shapeBatch.strokeRect(bgX, bgY, bgW, bgH, 1f, 0.4f, 0.4f, 0.5f, 0.20f)
+    // Subtle border, rounded like the plate (a square one stuck out past its corners)
+    shapeBatch.strokeRoundedRect(bgX, bgY, bgW, bgH, 4f, 1f, 0.4f, 0.4f, 0.5f, 0.20f)
     // Top edge highlight
-    shapeBatch.strokeLine(bgX + 5f, bgY, bgX + bgW - 5f, bgY, 1f, 1f, 1f, 1f, 0.08f)
+    shapeBatch.strokeLine(bgX + 4f, bgY + 0.5f, bgX + bgW - 4f, bgY + 0.5f, 1f, 1f, 1f, 1f, 0.08f)
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -6566,9 +6633,10 @@ class GLGameRenderer(val client: GameClient) {
         val exsx = worldToScreenX(wx, wy)
         val exsy = worldToScreenY(wx, wy)
 
-        // Convert to UV space (0-1) for the shader
+        // Convert to UV space (0-1) for the shader, whose v runs up the screen: without the flip
+        // an explosion above the player rippled the screen below them
         val uvX = (exsx / canvasW).toFloat
-        val uvY = (exsy / canvasH).toFloat
+        val uvY = (1.0 - exsy / canvasH).toFloat
 
         // Check proximity to local player (use cached visual position)
         val lvx = client.visualPosX; val lvy = client.visualPosY
@@ -7067,29 +7135,32 @@ class GLGameRenderer(val client: GameClient) {
     val hw = HW.toFloat  // 20
     val hh = HH.toFloat  // 10
 
-    // Single-layer shadow for ambient occlusion
+    // Single-layer shadow for ambient occlusion, on each edge of the block's diamond whose
+    // neighbour is open ground. Neighbour (wx+1, wy) is down-right on screen and (wx, wy+1) down-left;
+    // the checks used to be crossed, so a wall's base shadow went on the edge its next block covers
+    // and was missing from the edge facing the open ground.
     val shadowDist = 5f; val shadowAlpha = 0.22f
 
-    // Check south neighbor (wx, wy+1)
-    if (wy + 1 < world.height && world.getTile(wx, wy + 1).walkable) {
+    // Down-right edge, shared with (wx+1, wy)
+    if (wx + 1 < world.width && world.getTile(wx + 1, wy).walkable) {
       _shadowXs(0) = sx; _shadowXs(1) = sx + hw; _shadowXs(2) = sx + hw; _shadowXs(3) = sx
       _shadowYs(0) = sy + hh; _shadowYs(1) = sy; _shadowYs(2) = sy + shadowDist; _shadowYs(3) = sy + hh + shadowDist
       shapeBatch.fillPolygon(_shadowXs, _shadowYs, 4, 0.0f, 0.0f, 0.03f, shadowAlpha)
     }
-    // Check east neighbor (wx+1, wy)
-    if (wx + 1 < world.width && world.getTile(wx + 1, wy).walkable) {
+    // Down-left edge, shared with (wx, wy+1)
+    if (wy + 1 < world.height && world.getTile(wx, wy + 1).walkable) {
       _shadowXs(0) = sx; _shadowXs(1) = sx - hw; _shadowXs(2) = sx - hw; _shadowXs(3) = sx
       _shadowYs(0) = sy + hh; _shadowYs(1) = sy; _shadowYs(2) = sy + shadowDist; _shadowYs(3) = sy + hh + shadowDist
       shapeBatch.fillPolygon(_shadowXs, _shadowYs, 4, 0.0f, 0.0f, 0.03f, shadowAlpha)
     }
-    // Check north neighbor (wx, wy-1) — subtler shadows
-    if (wy - 1 >= 0 && world.getTile(wx, wy - 1).walkable) {
+    // Up-left edge, shared with (wx-1, wy) — subtler, and mostly behind the block
+    if (wx - 1 >= 0 && world.getTile(wx - 1, wy).walkable) {
       _shadowXs(0) = sx; _shadowXs(1) = sx - hw; _shadowXs(2) = sx - hw; _shadowXs(3) = sx
       _shadowYs(0) = sy - hh; _shadowYs(1) = sy; _shadowYs(2) = sy - shadowDist; _shadowYs(3) = sy - hh - shadowDist
       shapeBatch.fillPolygon(_shadowXs, _shadowYs, 4, 0.0f, 0.0f, 0.03f, shadowAlpha * 0.4f)
     }
-    // Check west neighbor (wx-1, wy) — subtler shadows
-    if (wx - 1 >= 0 && world.getTile(wx - 1, wy).walkable) {
+    // Up-right edge, shared with (wx, wy-1)
+    if (wy - 1 >= 0 && world.getTile(wx, wy - 1).walkable) {
       _shadowXs(0) = sx; _shadowXs(1) = sx + hw; _shadowXs(2) = sx + hw; _shadowXs(3) = sx
       _shadowYs(0) = sy - hh; _shadowYs(1) = sy; _shadowYs(2) = sy - shadowDist; _shadowYs(3) = sy - hh - shadowDist
       shapeBatch.fillPolygon(_shadowXs, _shadowYs, 4, 0.0f, 0.0f, 0.03f, shadowAlpha * 0.4f)
@@ -7133,9 +7204,9 @@ class GLGameRenderer(val client: GameClient) {
     if (initialized) {
       shapeBatch.dispose()
       spriteBatch.dispose()
-      fontSmall.dispose()
-      fontMedium.dispose()
-      fontLarge.dispose()
+      if (fontSmall != null) { fontSmall.dispose(); fontMedium.dispose(); fontLarge.dispose() }
+      fontSmall = null; fontMedium = null; fontLarge = null
+      fontPixelScale = 0f
       postProcessor.dispose()
       lightSystem.dispose()
       if (bgCacheFBO != null) bgCacheFBO.dispose()

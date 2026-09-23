@@ -2152,7 +2152,8 @@ object GLProjectileRenderers {
     (proj, sx, sy, sb, tick) => {
       val phase = (tick + proj.id * 41) * 0.4
       computeAllDynamics(proj, r, g, b, phase)
-      val p = (0.72f + 0.28f * Math.sin(phase * _stPulseMult).toFloat) * dynAlpha
+      // A shallow pulse: at 0.72 the whole front thinned by a quarter every beat
+      val p = (0.86f + 0.14f * Math.sin(phase * _stPulseMult).toFloat) * dynAlpha
       val dr = _evoR; val dg = _evoG; val db = _evoB
       val ds = dynScale
       val R = spread * 1.25f * ds
@@ -2195,17 +2196,30 @@ object GLProjectileRenderers {
       sb.fillArcBand(cxA, cyA, R * 0.90f, R * 0.90f * ISO_Y, R * 1.34f * dynGlow, R * 1.34f * ISO_Y * dynGlow,
         start - 0.06f, sweep + 0.12f, 14, dr, dg, db, 0.20f * p, 0.20f * p)
 
-      // Body of the wave front: three nested bands, densest at the leading edge
+      // Body of the wave front: three nested bands, densest at the leading edge. Denser than it
+      // was: at 42/34/40% a pale front (wind, sand, water) vanished on sand and snow, and even a
+      // saturated one (acid) into grass of its own colour (render_audit)
       sb.fillArcBand(cxA, cyA, R * (1f - thickness), R * (1f - thickness) * ISO_Y, R, R * ISO_Y,
-        start, sweep, 16, dr, dg, db, 0.42f * p, 0.42f * p)
+        start, sweep, 16, dr, dg, db, 0.58f * p, 0.58f * p)
       sb.fillArcBand(cxA, cyA, R * (1f - thickness * 0.6f), R * (1f - thickness * 0.6f) * ISO_Y, R, R * ISO_Y,
-        start, sweep, 16, dr, dg, db, 0.34f * p, 0.34f * p)
+        start, sweep, 16, dr, dg, db, 0.42f * p, 0.42f * p)
       sb.fillArcBand(cxA, cyA, R * (1f - thickness * 0.25f), R * (1f - thickness * 0.25f) * ISO_Y, R, R * ISO_Y,
-        start, sweep, 16, mix(dr, 1f, 0.25f), mix(dg, 1f, 0.25f), mix(db, 1f, 0.25f), 0.40f * p, 0.40f * p)
+        start, sweep, 16, mix(dr, 1f, 0.25f), mix(dg, 1f, 0.25f), mix(db, 1f, 0.25f), 0.46f * p, 0.46f * p)
+      // Ink round the whole crescent: the trailing edge and both horns as well as the front, so
+      // the shape holds on ground as pale as it is. Only the leading edge used to be inked, and
+      // the rest of the band faded into the ground behind it
+      val rIn = R * (1f - thickness)
+      sb.strokeArc(cxA, cyA, rIn, rIn * ISO_Y, start, sweep, 2.2f, 0.06f, 0.05f, 0.07f, 0.5f * p, 16)
+      val c0 = Math.cos(start).toFloat; val s0 = Math.sin(start).toFloat
+      val c1 = Math.cos(start + sweep).toFloat; val s1 = Math.sin(start + sweep).toFloat
+      sb.strokeLine(cxA + c0 * rIn, cyA + s0 * rIn * ISO_Y, cxA + c0 * R * 1.02f, cyA + s0 * R * 1.02f * ISO_Y,
+        2.2f, 0.06f, 0.05f, 0.07f, 0.5f * p)
+      sb.strokeLine(cxA + c1 * rIn, cyA + s1 * rIn * ISO_Y, cxA + c1 * R * 1.02f, cyA + s1 * R * 1.02f * ISO_Y,
+        2.2f, 0.06f, 0.05f, 0.07f, 0.5f * p)
       // Dark contour behind the leading edge, then the bright edge itself
       sb.strokeArc(cxA, cyA, R * 1.015f, R * 1.015f * ISO_Y, start, sweep,
         if (kind == WAV_WIND || kind == WAV_WATER) 6f else 4.5f,
-        0.06f, 0.05f, 0.07f, if (kind == WAV_WIND || kind == WAV_WATER) 0.75f * p else 0.55f * p, 16)
+        0.06f, 0.05f, 0.07f, if (kind == WAV_WIND || kind == WAV_WATER) 0.8f * p else 0.7f * p, 16)
       sb.strokeArc(cxA, cyA, R, R * ISO_Y, start, sweep, 2.4f,
         mix(bright(r), 1f, _chgBright), mix(bright(g), 1f, _chgBright), mix(bright(b), 1f, _chgBright),
         0.95f * p, 16)
@@ -4193,6 +4207,9 @@ object GLProjectileRenderers {
   }
 
   /** Lightning — CARTOONISH: thick bold bolt with dark outline, huge branches, sparkle stars */
+  private val _forkXs = new Array[Float](3)
+  private val _forkYs = new Array[Float](3)
+
   private def lightningBolt(r: Float, g: Float, b: Float): Renderer =
     (proj, sx, sy, sb, tick) => drawLightning(proj, sx, sy, sb, tick, r, g, b)
 
@@ -4205,7 +4222,9 @@ object GLProjectileRenderers {
     val hR = mix(lr, 1f, 0.55f); val hG = mix(lg, 1f, 0.55f); val hB = mix(lb, 1f, 0.55f)
     val phase = (tick + proj.id * 41) * 0.5
     computeAllDynamics(proj, lr, lg, lb, phase)
-    val flicker = (0.62 + 0.38 * Math.sin(phase * 8)).toFloat * dynAlpha
+    // Crackles without ever going out: sin(phase * 8) lands on an unrelated value every frame, so
+    // a swing down to 24% strobed the bolt; on sand or snow the dim frames were nearly invisible
+    val flicker = (0.84 + 0.16 * Math.sin(phase * 8)).toFloat * dynAlpha
     val ds = Math.min(dynScale, 1.35f)
     val bc = _chgBright
     screenDir(proj)
@@ -4225,25 +4244,17 @@ object GLProjectileRenderers {
       _boltYs(i) = tailY + (sy - tailY) * t + ny * jitter
       i += 1
     }
-    // Contour, body and core — each thinning and fading toward the tail
-    var pass = 0
-    while (pass < 3) {
-      i = 0
-      while (i < segs) {
-        val k = 0.15f + 0.85f * (i + 1f) / segs
-        pass match {
-          case 0 => sb.strokeLine(_boltXs(i), _boltYs(i), _boltXs(i + 1), _boltYs(i + 1),
-            13f * ds * (0.45f + 0.55f * k), oR, oG, oB, 0.7f * flicker * k)
-          case 1 => sb.strokeLine(_boltXs(i), _boltYs(i), _boltXs(i + 1), _boltYs(i + 1),
-            9.5f * ds * (0.4f + 0.6f * k), lr, lg, lb, 0.92f * flicker * k)
-          case _ => sb.strokeLine(_boltXs(i), _boltYs(i), _boltXs(i + 1), _boltYs(i + 1),
-            4.4f * ds * (0.35f + 0.65f * k), mix(hR, 1f, 0.6f + bc * 0.4f), mix(hG, 1f, 0.6f + bc * 0.4f),
-            mix(hB, 1f, 0.5f + bc * 0.5f), 0.98f * flicker * k)
-        }
-        i += 1
-      }
-      pass += 1
-    }
+    // Contour, body and core — each one stroke along the whole bolt, thinning and fading toward
+    // the tail. A quad per segment overlapped the next at every bend, and each overlap blended
+    // twice: the bolt came out as a chain of translucent rectangles
+    val kT = 0.15f
+    sb.strokePolylineTapered(_boltXs, _boltYs, segs + 1, 13f * ds * (0.45f + 0.55f * kT), 13f * ds,
+      oR, oG, oB, 0.85f * flicker * kT, 0.85f * flicker)
+    sb.strokePolylineTapered(_boltXs, _boltYs, segs + 1, 9.5f * ds * (0.4f + 0.6f * kT), 9.5f * ds,
+      lr, lg, lb, 0.95f * flicker * kT, 0.95f * flicker)
+    sb.strokePolylineTapered(_boltXs, _boltYs, segs + 1, 4.4f * ds * (0.35f + 0.65f * kT), 4.4f * ds,
+      mix(hR, 1f, 0.6f + bc * 0.4f), mix(hG, 1f, 0.6f + bc * 0.4f), mix(hB, 1f, 0.5f + bc * 0.5f),
+      0.98f * flicker * kT, 0.98f * flicker)
     // Forks striking out ahead of the head
     var f = 0
     while (f < 3) {
@@ -4253,10 +4264,9 @@ object GLProjectileRenderers {
       val mx = sx + Math.cos(fa).toFloat * fl * 0.5f + nx * kink
       val my = sy + Math.sin(fa).toFloat * fl * 0.5f + ny * kink
       val ex = sx + Math.cos(fa).toFloat * fl; val ey = sy + Math.sin(fa).toFloat * fl
-      sb.strokeLine(sx, sy, mx, my, 5.5f * ds, oR, oG, oB, 0.4f * flicker)
-      sb.strokeLine(mx, my, ex, ey, 4f * ds, oR, oG, oB, 0.3f * flicker)
-      sb.strokeLine(sx, sy, mx, my, 3.2f * ds, lr, lg, lb, 0.75f * flicker)
-      sb.strokeLine(mx, my, ex, ey, 2f * ds, hR, hG, hB, 0.6f * flicker)
+      _forkXs(0) = sx; _forkYs(0) = sy; _forkXs(1) = mx; _forkYs(1) = my; _forkXs(2) = ex; _forkYs(2) = ey
+      sb.strokePolylineTapered(_forkXs, _forkYs, 3, 5.5f * ds, 4f * ds, oR, oG, oB, 0.45f * flicker, 0.35f * flicker)
+      sb.strokePolylineTapered(_forkXs, _forkYs, 3, 3.2f * ds, 2f * ds, lr, lg, lb, 0.8f * flicker, 0.6f * flicker)
       f += 1
     }
     i = 0
@@ -4279,7 +4289,8 @@ object GLProjectileRenderers {
   private def drawThunderStrike(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
     val phase = (tick + proj.id * 31) * 0.5
     computeAllDynamics(proj, 1f, 0.9f, 0.35f, phase)
-    val flicker = (0.5 + 0.5 * Math.sin(phase * 8)).toFloat * dynAlpha
+    // Crackles without going out (see drawLightning): at 0.5 +- 0.5 it vanished on alternate frames
+    val flicker = (0.8 + 0.2 * Math.sin(phase * 8)).toFloat * dynAlpha
     val ds = dynScale
     val bc = _chgBright
 
@@ -4298,14 +4309,13 @@ object GLProjectileRenderers {
     _thunderXs(7) = sx + 18 * ds; _thunderYs(7) = sy + 38 * ds
     _thunderXs(8) = sx + 5 * ds; _thunderYs(8) = sy + 38 * ds
 
-    // Dark cartoon outline
-    { var i = 0; while (i < pts - 1) { sb.strokeLine(_thunderXs(i), _thunderYs(i), _thunderXs(i + 1), _thunderYs(i + 1), 18f * ds, 0.15f, 0.12f, 0.03f, 0.7f * flicker); i += 1 } }
     // Soft glow
     { var i = 0; while (i < pts - 1) { sb.strokeLineSoft(_thunderXs(i), _thunderYs(i), _thunderXs(i + 1), _thunderYs(i + 1), 28f * ds, 1f, 0.85f, 0.2f, 0.25f * flicker); i += 1 } }
-    // Main bolt — thick
-    { var i = 0; while (i < pts - 1) { sb.strokeLine(_thunderXs(i), _thunderYs(i), _thunderXs(i + 1), _thunderYs(i + 1), 12f * ds, 1f, 0.9f, 0.35f, 0.85f * flicker); i += 1 } }
-    // White-hot core
-    { var i = 0; while (i < pts - 1) { sb.strokeLine(_thunderXs(i), _thunderYs(i), _thunderXs(i + 1), _thunderYs(i + 1), 5f * ds, 1f, 1f, mix(0.9f, 1f, bc), 0.98f * flicker); i += 1 } }
+    // Dark cartoon outline, main bolt and white-hot core, each one mitred stroke down the zigzag
+    // (a quad per segment blended twice at every bend)
+    sb.strokePolyline(_thunderXs, _thunderYs, pts, 18f * ds, 0.15f, 0.12f, 0.03f, 0.85f * flicker)
+    sb.strokePolyline(_thunderXs, _thunderYs, pts, 12f * ds, 1f, 0.9f, 0.35f, 0.92f * flicker)
+    sb.strokePolyline(_thunderXs, _thunderYs, pts, 5f * ds, 1f, 1f, mix(0.9f, 1f, bc), 0.98f * flicker)
 
     // Ground impact — bigger with debris
     sb.strokeOval(sx, sy + 36f * ds, 26f * ds, 9f * ds, outlineW(26f * ds), 0.2f, 0.15f, 0.02f, 0.5f * flicker, 14)

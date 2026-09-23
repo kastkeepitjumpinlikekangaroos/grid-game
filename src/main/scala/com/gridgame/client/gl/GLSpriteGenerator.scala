@@ -59,10 +59,16 @@ object GLSpriteGenerator {
 
   private def atlasHeight: Int = atlasRows * sheetSize
 
+  // Mip levels below the sheets as drawn: 128px frames down to 32px. A frame is drawn at 77px at
+  // High on an ordinary screen and 42px at Low; minified that far with no mip chain, bilinear
+  // filtering skips texels, and the one-texel contour that keeps a character readable breaks up
+  // and shimmers as it moves. Two levels keep each frame's margin between it and the next.
+  private val MIP_LEVELS = 2
+
   private def ensureAtlas(): Unit = {
     if (atlas == null) {
       atlasRows = INITIAL_ROWS
-      atlas = GLTexture.createEmpty(ATLAS_W, atlasHeight, nearest = false)
+      atlas = GLTexture.createEmpty(ATLAS_W, atlasHeight, nearest = false, mipLevels = MIP_LEVELS)
     }
   }
 
@@ -72,7 +78,7 @@ object GLSpriteGenerator {
     val filled = nextSlot
     retired += atlas
     atlasRows = Math.min(MAX_ROWS, atlasRows * 2)
-    atlas = GLTexture.createEmpty(ATLAS_W, atlasHeight, nearest = false)
+    atlas = GLTexture.createEmpty(ATLAS_W, atlasHeight, nearest = false, mipLevels = MIP_LEVELS)
     // Re-place every sheet: the slot grid is unchanged, but the regions' V coordinates
     // are relative to the new height, so both the pixels and the regions are rebuilt.
     nextSlot = 0
@@ -91,7 +97,9 @@ object GLSpriteGenerator {
     val slot = nextSlot
     val atlasX = (slot % ATLAS_COLS) * sheetSize
     val atlasY = (slot / ATLAS_COLS) * sheetSize
-    if (!GLTexture.uploadSubImage(atlas, atlasX, atlasY, spriteSheet)) {
+    // Padded, so the mip levels and filtering average the sprite's edge with its own colours
+    // rather than with the black of its transparent texels
+    if (!GLTexture.uploadSubImage(atlas, atlasX, atlasY, spriteSheet, padCell = frameSize)) {
       System.err.println(s"GLSpriteGenerator: Failed to load $spriteSheet")
       return false
     }
@@ -137,6 +145,7 @@ object GLSpriteGenerator {
         return
       }
       uploadToNextSlot(id, charDef.spriteSheet)
+      GLTexture.generateMipmaps(atlas)
     } catch {
       case e: Exception =>
         System.err.println(s"GLSpriteGenerator: Failed to load ${charDef.spriteSheet}: ${e.getMessage}")
@@ -152,6 +161,11 @@ object GLSpriteGenerator {
     val dir = direction.id
     regions(dir * 4 + (frame % framesPerDirection))
   }
+
+  /** Load a character's sheet now if it isn't already: at once for every player in the match,
+    * rather than the first time each walks into view. A load decodes, pads and uploads the sheet
+    * and rebuilds the atlas's mip chain, which on a weak machine is a hitch mid-fight. */
+  def preload(characterId: Byte): Unit = ensureLoaded(characterId)
 
   def getTexture(characterId: Byte): GLTexture = {
     ensureLoaded(characterId)

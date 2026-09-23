@@ -53,7 +53,12 @@ bazel run //src/main/scala/com/gridgame/client:render_bench -- --traps    # ... 
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --divider  # ... with a Teams match's opening wall
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --ceasefire # ... with a free-for-all's opening ceasefire
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --map=the_meadow.json --at=60,17 # another map, from one cell of it
+GRIDGAME_GPU_PROFILE=1 bazel run //src/main/scala/com/gridgame/client:render_bench  # ... with fragments and GPU time per phase
 bazel run //src/main/scala/com/gridgame/client:ui_bench       # the JavaFX menus
+
+# Can everything be seen on every map? (see Rendering Architecture: Readability audit)
+bazel run //src/main/scala/com/gridgame/client:render_audit -- --out=/tmp/audit
+python3 scripts/render_audit.py /tmp/audit                  # needs numpy and Pillow
 
 # Terrain: the tileset, the gallery to judge it in, and the generated maps (see Asset Generation)
 python3 scripts/generate_tiles.py                  # -> sprites/tiles.png (needs Pillow)
@@ -234,18 +239,21 @@ When a match starts, `ClientMain.showGameScene()` hides the JavaFX Stage and cre
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `GLGameRenderer.scala` | ~6050 | Main renderer: tiles, players, projectiles, items, status effects, barriers, the team divider, HUD, aim arrow, backgrounds, death/teleport/explosion animations |
-| `GLProjectileRenderers.scala` | ~5930 | All 176 projectile type renderers (15 pattern factories + 33 specialized renderers + the local-frame silhouette system) |
-| `ShapeBatch.scala` | ~630 | Batched colored 2D primitives: fillRect, fillOval, fillOvalSoft, fillPolygon (**convex only**), fillFan (star-shaped outline, fanned from an explicit centre — stars, sunbursts, faceted hulls), fillRibbon (a band given as an outer run plus the inner run reversed — crescent blades), fillArcBand (ring segment with an alpha ramp — gauges, crescents, shockwaves), fillStarFlare (4-point glint), strokeLine, strokeLineSoft, strokeArc, strokeOval, strokePolygon. Supports additive blend mode toggle, plus an alpha multiplier and a scale-about-pivot applied to every vertex (`setAlphaMultiplier` / `setScaleAbout`; reset by `begin`). |
-| `SpriteBatch.scala` | ~200 | Batched textured quads with per-vertex tint/alpha. Flushes on texture change. |
+| `GLGameRenderer.scala` | ~7200 | Main renderer: tiles, players, projectiles, items, status effects, barriers, the team divider, the overlay over the finished world (name plates, health bars, damage numbers), HUD, aim arrow, backgrounds, death/teleport/explosion animations |
+| `GLProjectileRenderers.scala` | ~6040 | All 176 projectile type renderers (15 pattern factories + 33 specialized renderers + the local-frame silhouette system) |
+| `ShapeBatch.scala` | ~800 | Batched colored 2D primitives: fillRect, fillOval, fillOvalSoft, fillPolygon (**convex only**), fillFan (star-shaped outline, fanned from an explicit centre — stars, sunbursts, faceted hulls), fillRibbon (a band given as an outer run plus the inner run reversed — crescent blades), fillArcBand (ring segment with an alpha ramp — gauges, crescents, shockwaves), fillStarFlare (4-point glint), fillRoundedRect(Gradient), strokeLine, strokeLineSoft, and the joined strokes — strokeArc, strokeOval, strokePolygon, strokeRect, strokeRoundedRect, strokePolyline, strokePolylineTapered (see *Strokes are one band*). Oval segment counts follow the oval's size on screen (`pixelsPerUnit`, set per pass). Supports additive blend mode toggle, plus an alpha multiplier and a scale-about-pivot applied to every vertex (`setAlphaMultiplier` / `setScaleAbout`; reset by `begin`). |
+| `SpriteBatch.scala` | ~250 | Batched textured quads with per-vertex tint/alpha, and `drawQuad` for any four corners (the ground's diamonds). Flushes on texture change. `setBlending(false)` for opaque geometry. |
 | `ShaderProgram.scala` | ~190 | GLSL shader compilation + embedded shader source: ColorShader (pos+color), TextureShader (pos+texcoord+color), BloomExtract, GaussianBlur, Composite (bloom+vignette+overlay) |
-| `PostProcessor.scala` | ~230 | Post-processing FBO pipeline: Scene FBO → Bloom extract (half-res) → Blur H → Blur V → quarter-res pair → Composite |
-| `GLTexture.scala` | ~195 | PNG loading via STB image → GL texture. FBO creation for render-to-texture. |
-| `GLFontRenderer.scala` | ~160 | AWT-based font rasterization → GL texture atlas. Supports outlined text with drop shadows. Three sizes (16/24/48px). |
+| `PostProcessor.scala` | ~240 | Post-processing FBO pipeline: Scene FBO → Bloom extract (half-res) → Blur H → Blur V → quarter-res pair → Composite. `GRIDGAME_HOLECHECK=1` clears the scene to magenta, so any pixel the terrain leaves uncovered shows. |
+| `GLTexture.scala` | ~280 | PNG loading via STB image → GL texture (`loadInspected` lets the caller measure or amend the pixels before upload). FBO creation for render-to-texture. `padTransparent` (colour into transparent texels, cell by cell) and mipmapped atlases. |
+| `GLFontRenderer.scala` | ~280 | AWT-based font rasterization → GL texture atlas. Rasterized at the display's pixel density (`pixelScale`) so text is sharp on HiDPI screens; metrics and sizes in units; every draw takes a `scale`. Outlined text with drop shadows, and a heavy eight-copy outline for text over the world. Three sizes (14/22/44). |
 | `GLWindow.scala` | ~100 | GLFW window create/show/destroy/resize |
 | `GLFWManager.scala` | ~25 | Singleton `ensureInitialized()` shared by ControllerHandler and GLWindow |
-| `GLTileRenderer.scala` | ~130 | Loads `sprites/tiles.png` as GL texture; returns full or transparent-margin-trimmed TextureRegion per tile ID + frame |
-| `GLSpriteGenerator.scala` | ~160 | Packs character sprite sheets into one growable GL atlas |
+| `GLTileRenderer.scala` | ~170 | Loads `sprites/tiles.png` as GL texture (transparent texels padded with their neighbours' colour); returns full or transparent-margin-trimmed TextureRegion per tile ID + frame, and `drawDiamond` draws a flat tile as exactly its diamond |
+| `GLSpriteGenerator.scala` | ~190 | Packs character sprite sheets into one growable, mipmapped GL atlas |
+| `LightSystem.scala` | ~170 | The dynamic light map (quarter-res soft blobs, multiplied in by the composite) and `LightPool`, which keeps a busy frame's strongest lights |
+| `GpuProfiler.scala` | ~110 | Dev tool: fragments shaded and GPU time per frame phase, with `GRIDGAME_GPU_PROFILE=1` |
+| `RenderAudit.scala` | ~250 | Dev tool: the whole roster and every projectile over every map's ground, for `scripts/render_audit.py` to measure |
 | `Matrix4.scala` | ~30 | Orthographic projection matrix |
 | `TextureRegion.scala` | ~10 | Case class for (texture, u, v, u2, v2) sub-regions |
 
@@ -253,19 +261,21 @@ When a match starts, `ClientMain.showGameScene()` hides the JavaFX Stage and cre
 
 | File | Purpose |
 |------|---------|
-| `GameCamera.scala` | Holds visualX/Y, smooth lerp, screen shake, zoom. Provides camera offsets. |
-| `IsometricTransform.scala` | `worldToScreen(wx,wy,cam)`, `screenToWorld(sx,sy,cam,zoom)` |
+| `GameCamera.scala` | Holds visualX/Y, smooth lerp, screen shake, zoom. Provides camera offsets, on the render target's pixel grid when it is told the grid. |
+| `IsometricTransform.scala` | `worldToScreen(wx,wy,cam)`, `screenToWorld(sx,sy,cam,zoom)`, `viewInsideWorld` (is the whole screen over the map?) |
 | `EntityCollector.scala` | Collects items/projectiles/players by grid cell for depth-sorted rendering. Cells are a flat grid over the visible window, each a linked list of pooled entries (`takeCell` / `takeRemaining`) — no map, no boxed keys, no allocation per frame |
 
 ### Rendering Pipeline
 ```
 PostProcessor.beginScene()        -- bind scene FBO (sized by the quality tier)
 GLGameRenderer.render()           -- all game drawing into scene FBO
-  Background → Tiles → Items → Players → Projectiles →
-  Status Effects → Aim Arrow → Animations
+  Background (only if the screen runs off the map) → Ground (opaque diamonds) →
+  Items → Players → Projectiles → Status Effects → Aim Arrow → Animations
 PostProcessor.endScene()          -- bloom extract → blur H → blur V →
                                      composite (scene + bloom + vignette + overlay)
                                      upscales to the real framebuffer
+World overlay                     -- name plates, health bars, damage numbers: world
+                                     positions, drawn after the composite at full resolution
 HUD                               -- drawn after the composite, always at full resolution
 ```
 
@@ -453,6 +463,17 @@ wail, raise dead, and more.
 - `fillArcBand` ramps alpha **along the sweep**, not radially. A radial falloff has to be
   built by nesting bands at constant alpha; using the ramp for it leaves one horn of a
   crescent bright and the other invisible.
+- **A bend in a translucent line needs a joined stroke.** A zigzag or a curve built from
+  `strokeLine` quads overlaps itself on the outside of every bend, and with any alpha below 1
+  each overlap blends twice: the lightning bolts came out as chains of translucent rectangles.
+  `strokePolyline` / `strokePolylineTapered` mitre the joins (see *Strokes are one band*).
+- **Ink the whole silhouette, not only its leading edge.** A pale shape reads on sand and snow
+  only by its outline. The wave crescents were inked along the front alone, with a body at
+  35-45% alpha, and all eleven waves faded into the ground behind their front; the audit had
+  Acid Spray at 4 strong pixels per 1000 on sand, and 32 once inked round and filled denser.
+- **Never flicker a whole projectile toward zero.** `sin(phase * 8)` lands on an unrelated value
+  every frame, so a flicker between 0 and 1 is a strobe, and on a dim frame on pale ground the
+  shot isn't there. Flicker the core; keep the body up.
 - A block literal on the line after an expression is parsed as an *argument* to it
   (`val n = 9` followed by `{ … }` becomes `9 { … }`). Use a plain `var`/`while` at
   statement level rather than a `{ … }` wrapper.
@@ -466,7 +487,8 @@ To add a new projectile renderer:
 3. The renderer receives screen-space coordinates (sx, sy) already transformed from world space.
    That point is the hitbox: draw the head there and trail anything elongated behind it
 4. Check it in the gallery (below) — judge at the size the player sees, over all three
-   terrain bands
+   terrain bands — and then on every map's real ground with the readability audit (below the
+   gallery), which is where a pale shape on snow or sand shows up
 
 #### Projectile gallery (dev tool)
 
@@ -495,13 +517,48 @@ ground+post baseline — about 7us each, against a 16.7 ms budget. (The same 16 
 before that pass: an orbit ring drawn as two arcs is cheaper than the swinging tail and the
 soft-stroke cloud it replaced.)
 
+#### Readability audit (dev tool)
+
+```bash
+bazel run //src/main/scala/com/gridgame/client:render_audit -- --out=/tmp/audit
+bazel run //src/main/scala/com/gridgame/client:render_audit -- --out=/tmp/audit --maps=the_snowglobe --what=projectiles
+python3 scripts/render_audit.py /tmp/audit     # report.txt and worst_*.png (needs numpy and Pillow)
+```
+
+The gallery judges a projectile over three flat bands under the dark maps' grade. This judges
+the whole roster and every projectile over every map's real ground — each walkable tile
+covering 2% of its open ground, and each pool covering 2% of it — through the real
+`GLGameRenderer`: the map's own background, grade, lighting, name plates, at the player's size.
+A map whose ground and sky an earlier one already had (the four space arenas) is shot once.
+Every picture is taken twice, as rendered and with what is judged taken out (a character keeps
+its shadow, light and name plate and loses only its sprite; a projectile goes altogether), so
+the difference between the two is exactly what it adds to the frame. The script measures that
+difference as CIE76 colour difference in Lab: for characters, `edge` (the upper quartile over
+the silhouette's outer 6px, which is what separates a figure from the ground); for
+projectiles, `strong` (pixels per 1000 of its box differing by more than 20, what reads at a
+glance). It writes the worst of each, and the worst on each map, as contact sheets beside the
+same ground without them.
+
+Measured at High (2026-09-23): every character's edge is at least 23 on the space maps'
+circuit (Windwalker, Mudslinger, Serpent and Nanoswarm, teal and green on a teal floor, are the
+lowest, still readable by their contour) and at least 39 on every bright ground. The weakest
+projectiles on bright ground were down to 0.6-4 strong: the lightning family and the eleven
+wave crescents, pale, translucent, and in lightning's case strobing. After inking the waves
+round and joining the lightning's strokes, the lowest on any ground is 8 (the Sniper Beam, a
+small inked dart on snow) and the 10th percentile on snow went from 18 to 30.
+
 ### Post-Processing
 Settings in `PostProcessor`: `bloomThreshold`, `bloomStrength`, `vignetteStrength`, `toneMap`.
-Bloom FBOs run at half resolution, plus a quarter-res pair for the wide glow. Composite shader
+Bloom FBOs run at half resolution, plus a quarter-res pair for the wide glow. The blur is the
+nine-tap Gaussian in five fetches (each pair of taps is one bilinear fetch between them). The
+light map runs at quarter resolution: every light is a soft blob fading to nothing, which
+bilinear upsampling reproduces exactly. Composite shader
 uses screen blending for bloom and smoothstep vignette, and gates its optional work on
 `uSharpen` / `uGrain` / `uWideBloom` so the quality tiers can drop it without a second
 shader. The four-tap unsharp mask is the composite's most expensive part — four extra
-full-resolution texture fetches per pixel.
+full-resolution texture fetches per pixel. The film grain is hashed from the pixel and a frame
+index that wraps: it used `sin()` of a value that grew every frame, and a GPU's `sin()` loses
+its precision on numbers that size within minutes, turning the grain into bands.
 
 **A bright map is graded differently from a dark one.** The composite's ACES curve lifts
 mid-tones and pulls highlights down. That is what keeps the space maps legible, and it turned a
@@ -526,8 +583,11 @@ than 20ms, so an underpowered machine settles on its own; the first explicit cho
 or F7 — turns auto off.
 
 `sceneScale` is the main lever. It sizes the scene/bloom/light targets, while the composite
-still upscales to the display's real framebuffer and the HUD is drawn on top at full
-resolution — so lowering it costs sharpness in the world only, never in text. It is
+still upscales to the display's real framebuffer and the HUD — and the name plates, health bars
+and damage numbers over the world — are drawn on top at full resolution, so lowering it costs
+sharpness in the world only, never in text. It lowers the CPU's work too: ovals take their
+segment counts from their size on screen, so a world drawn at a third of the pixels is built
+from a fraction of the vertices. It is
 expressed against both the framebuffer and the logical window because the worst case is a
 cheap machine driving a HiDPI screen: there the framebuffer is 2x the window, so the world
 is being drawn at 4x the pixels the art carries (tiles are 40x56 magnified 1.6x). Medium
@@ -560,11 +620,72 @@ auto — which only steps down mid-match — can't do it.
   clips each row exactly; verified against brute force over 400 camera positions with zero
   tiles missed and 6% overdraw. Entity cells walk a few rows further (`entPad`) because a
   player sprite and its name plate hang above their own cell.
-- **Ground tiles draw a trimmed quad** — a flat tile only paints the bottom 40 of its 112
-  atlas rows, so drawing the full cell rasterized ~2.8x the pixels it needed, over the whole
-  screen. `GLTileRenderer` measures each cell's first non-transparent row at load time
-  (so it follows whatever `generate_tiles.py` emits) and exposes `getTrimmedRegion` /
-  `getTrimTopPx`. The UV mapping is exact — the trimmed quad samples the identical texel.
+- **The ground is drawn as opaque diamonds** (`GLTileRenderer.drawDiamond`) — every ground and
+  pool tile is exactly its diamond, so the ground pass draws each tile as a quad through the four
+  corners, with blending off, and covers every pixel once. Drawn as the cell's bounding rect it
+  shaded and blended the whole screen twice, since each tile's transparent corners lie under its
+  neighbours (7.4 → 3.7 million fragments a frame at 2560x1440). Neighbours meet exactly because
+  their shared corners are computed from the integer lattice (`u = wx - wy`, `v = wx + wy`), so
+  they are the same floats. The pixel-art edge is a staircase either side of the true edge, so
+  the pixels just inside it sample texels just outside, which are transparent — and black in the
+  PNG: `GLTexture.padTransparent` gives those texels their neighbours' colour at load. `TileTest`
+  checks every flat tile is its whole diamond and nothing outside it; `GRIDGAME_HOLECHECK=1`
+  shows any gap in magenta. Blocks and props are still trimmed quads (`getTrimmedRegion` /
+  `getTrimTopPx`), measured per cell at load, since they rise above their diamond.
+- **The background is only drawn where the map ends** — every cell's ground or block covers its
+  own diamond (`TileTest` checks a block covers its footprint), so mid-map, which is most of a
+  match, the background can't be seen at all. It used to be redrawn every few frames and blitted
+  every frame anyway: a fifth of the frame's pixels, all painted over.
+  `IsometricTransform.viewInsideWorld` decides it from the screen's four corners.
+- **The cached background is flipped on the way out** (`flippedRegion`). It is drawn into its
+  target with the world's projection, which puts the top of the screen at v = 1, and it was
+  blitted with the plain full region, top edge v = 0: every background came out upside down —
+  hills and trees hanging from the top of the screen, clouds along the bottom — wherever the edge
+  of a map let it show.
+- **The camera sits on the pixel grid** (`GameCamera.update`'s `pixelsPerUnit`, the scene
+  target's pixels per unit). The terrain is pixel art sampled nearest-neighbour at a scale that
+  isn't a whole number (80 texels onto 64 or 128 pixels), so at a sub-pixel offset which texels
+  get doubled or dropped depends on the offset, and with the camera gliding between pixels every
+  tile's detail crawled whenever anyone moved. Entities still move smoothly: only the offset is
+  rounded, never their positions. The mouse reads the same offsets. `CameraTest` pins it.
+- **Name plates, health bars and damage numbers are drawn over the finished frame** — after
+  the composite, at the display's full resolution, with the world's projection so each lands
+  where it did. In the scene they were only as sharp as the scene (a third of the display's
+  pixels at Low), dimmed by the light map and tinted by the grade: a white damage number on a
+  dark map was muddy grey, a pale yellow one on snow all but invisible. Damage numbers now have
+  a heavy eight-copy outline; a name on its dark plate needs no outline at all, which was four
+  more copies of every glyph. Name text is 12 world units high (it was 14 with a wider plate,
+  and a crowd's plates covered the heads of whoever stood a row behind). The overlay fades in
+  with the match, as the world does.
+- **Fonts are rasterized at the display's pixel density** (`GLFontRenderer`'s `pixelScale`,
+  made again if the window moves to another screen): rasterized at 1x and magnified, all text
+  on a HiDPI screen — the HUD included — was soft.
+- **Strokes are one band** — `strokeOval`, `strokeArc`, `strokePolygon`, `strokeRect`,
+  `strokeRoundedRect` and `strokePolyline(Tapered)` build one strip whose neighbouring segments
+  share their edges (ovals as a band between an inner and an outer ellipse, polygons and
+  polylines mitred at every corner). They used to be a separate quad per segment, which overlap
+  on the outside of every bend and leave a notch inside it: with any alpha below 1 every joint
+  blended twice, so rings, auras and shields came out beaded, the wave crescents' rims dashed,
+  and lightning a chain of translucent rectangles. Anything drawn as a chain of `strokeLine`s
+  that bends and isn't opaque has the same fault — use `strokePolyline`.
+- **Oval segment counts follow their size on screen** (`ShapeBatch.curveSegments`): enough that
+  no chord strays a pixel from the curve, and no more, from `pixelsPerUnit`, which the renderer
+  sets for each pass. A ring 30 units across was a visible sixteen-sided polygon on a HiDPI
+  screen, and a spark a few pixels wide was given twenty segments. Now big ovals get more and
+  small ones fewer, and at Low the whole world is drawn smaller, so a weak machine builds a
+  fraction of the vertices. A request under 10 is a shape (a hexagon drawn as a 6-segment oval)
+  and is left alone.
+- **A busy frame keeps its strongest lights** (`LightPool`) — it holds 96, and when full a new
+  light replaces the weakest if it is stronger. It used to drop whatever came after the 96th, in
+  depth order: an explosion's flash, added last, went missing in exactly the fights that have
+  explosions, and lights blinked as entities moved between cells. `LightPoolTest` pins it.
+- **In daylight a shot carries no light** (`_projectileLights`, off for `sky`, `sea` and
+  `snow`): its pool only brightened the sand or snow round it toward white, washing out the pale
+  projectiles in exactly the place they were hardest to see.
+- **The character atlas is mipmapped** (two levels, 128px frames down to 32) and its sheets are
+  padded like the tiles. A frame is drawn at 77px at High on an ordinary screen and 42px at Low;
+  minified that far without a mip chain, bilinear filtering skips texels, and the one-texel
+  contour that keeps a character readable broke up and shimmered as it moved.
 - **The character atlas grows instead of reserving every slot** — sized for all 112
   characters it would hold 128MB of texture memory for the whole session however few
   characters a match uses. It starts at 16 slots (16MB) and doubles to at most 64. A grow
@@ -661,6 +782,32 @@ A busy frame allocated 167KB (10MB/s) and now allocates ~3.5KB, with no GC durin
   values, no destructured tuples in a loop.
 
 The same bench measured frame-build CPU ~20% lower (2.9 vs 3.6ms at Low).
+
+### In game: where the GPU's pixels go
+`GRIDGAME_GPU_PROFILE=1` makes the render bench count, per phase of the frame, the fragments the
+GPU shaded (occlusion queries) and the time it took. **Compare fragments, not time**: the weak
+GPUs this targets are fill-rate bound, so fragments are their cost, and a fragment count is the
+same on every machine. Time is only meaningful on a desktop GPU; Apple's GPUs are tile-based
+and run a whole render pass at once, so time inside a pass lands on whichever phase closed it,
+and can come out negative. (Their GL answers timestamp queries with zeros, which is why it
+uses elapsed-time queries.)
+
+Mid-map on the Meadow, 16 players, at High on a 2560x1440 framebuffer, the fixed costs went:
+background redraw + blit 6.7 → 0 million fragments a frame (it can't be seen mid-map), ground
+7.4 → 3.7 (opaque diamonds, once per pixel), light map 1.5 → 0.4-0.6 (quarter res) — about
+30 → 19-23 million in all, depending on what is in view (props and projectiles are what
+varies). What is left is the post chain (6.9: the full-resolution composite and the bloom
+passes) and whatever the scene holds; 150 projectiles are ~30 million on their own. The name
+plates, health bars and damage numbers are ~1.3 million at full resolution whatever the tier,
+the price of their staying sharp.
+
+Measured back to back on the Hive (this machine, High, 2560x1440), render-thread CPU per frame
+went 5.6 → 4.9 ms with 150 projectiles and 3.4 → 2.7-3.1 ms with 30, and GPU frame time
+13.6 → 12.3 ms and 11.9 → 9.5-10.2 ms; allocation stayed at 3.6KB a frame with no GC. The CPU
+came from oval segments sized to the screen, arcs rotated incrementally instead of a sin/cos per
+vertex, and a four-times larger staging buffer (a busy frame flushed every few projectiles).
+Bench numbers drift 20% or more between runs on this machine as it warms: compare runs made
+back to back, and repeat them.
 
 ### Menus: every changed frame repaints the whole window
 JavaFX on macOS presents the whole window for any change, however small, so the menus' cost
@@ -1853,7 +2000,7 @@ Standard `OTEL_*` env vars (see `ops/observability/.env.example`). Most useful:
   - `//src/main/scala/com/gridgame/client:client`
   - `//src/main/scala/com/gridgame/client:client_windows`
   - `//src/main/scala/com/gridgame/client:projectile_gallery` (dev tool, not shipped)
-  - `//src/main/scala/com/gridgame/client:render_bench`, `:ui_bench` (dev tools, not shipped)
+  - `//src/main/scala/com/gridgame/client:render_bench`, `:ui_bench`, `:render_audit` (dev tools, not shipped)
   - `//src/main/scala/com/gridgame/common:common`
   - `//src/main/scala/com/gridgame/mapeditor`
   - `//src/main/scala/com/gridgame/mapeditor:mapeditor_windows`
@@ -1883,6 +2030,10 @@ suites mirror the source tree:
   a Teams one has no opening divider over it unless the test asks (`opening = true`).
   `LobbyFlowTest` and `SessionTest` go in through `GameServer.handleIncomingPacket` and the real
   TCP handler (signed packets) instead.
+- `client/render`, `client/gl` — the camera (`CameraTest`: the isometric mapping, the pixel grid,
+  whether the view has run off the map) and the light pool (`LightPoolTest`). `TileTest`, in
+  `common/model`, also holds the tileset to what the renderer assumes: a flat tile is exactly
+  its diamond, a block covers its whole footprint.
 - `client/` — `ClientTestKit.scala`: `TestClient` is a `GameClient` whose packets go to a
   capture (`GameClient.packetSink`) and which is handed the server's with `processPacket`.
   The screen tests (`LobbyRoomScreenTest`, `ScoreboardScreenTest`, `CharacterSelectionPanelTest`)

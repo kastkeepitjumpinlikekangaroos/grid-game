@@ -31,8 +31,19 @@ class GameCamera {
     shakeSeed = System.nanoTime()
   }
 
-  /** Update camera position with smooth interpolation. Results available via camOffX/camOffY. */
-  def update(targetX: Double, targetY: Double, deltaSec: Double, canvasW: Double, canvasH: Double): Unit = {
+  /**
+   * Update camera position with smooth interpolation. Results available via camOffX/camOffY.
+   *
+   * `pixelsPerUnit` is how many pixels of the target the world is rendered into one unit covers;
+   * when it is given, the offsets are rounded to whole pixels of it. The terrain is pixel art
+   * sampled nearest-neighbour at a scale that isn't a whole number (80 texels onto 64 or 128
+   * pixels), so at a sub-pixel offset which texels get doubled or dropped depends on the offset:
+   * with the camera gliding between pixels, the detail on every tile crawled whenever anyone
+   * moved. On the pixel grid each tile is sampled the same way wherever it is on screen. Entities
+   * still move smoothly; they are drawn at their own positions.
+   */
+  def update(targetX: Double, targetY: Double, deltaSec: Double, canvasW: Double, canvasH: Double,
+             pixelsPerUnit: Double = 0.0): Unit = {
     if (visualX.isNaN) {
       visualX = targetX
       visualY = targetY
@@ -60,6 +71,11 @@ class GameCamera {
       // Exponential decay
       shakeIntensity *= Math.exp(-12.0 * deltaSec)
       if (shakeIntensity < 0.3) shakeIntensity = 0.0
+    }
+
+    if (pixelsPerUnit > 0.0) {
+      _camOffX = Math.round(_camOffX * pixelsPerUnit) / pixelsPerUnit
+      _camOffY = Math.round(_camOffY * pixelsPerUnit) / pixelsPerUnit
     }
   }
 

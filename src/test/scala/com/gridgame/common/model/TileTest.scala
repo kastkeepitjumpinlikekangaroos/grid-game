@@ -108,4 +108,28 @@ class TileTest {
       }
     }
   }
+
+  /** How far a texel's centre lies from the middle of its cell's diamond: 1 on the diamond's edge. */
+  private def diamondDistance(x: Int, y: Int): Double =
+    Math.abs(x + 0.5 - CellW / 2) / (CellW / 2) + Math.abs(y + 0.5 - 92) / 20.0
+
+  @Test def aFlatTileIsExactlyItsDiamond(): Unit = {
+    // The game draws ground and pools as exact diamonds with blending off (GLTileRenderer.drawDiamond):
+    // a hole inside one would show whatever was drawn before it, and art outside one is cut away.
+    // The pixel-art edge is a staircase either side of the true edge, hence the margin.
+    for (t <- Tile.all if (t.form eq TileForm.Ground) || (t.form eq TileForm.Pool); f <- 0 until 4;
+         y <- 0 until CellH; x <- 0 until CellW) {
+      val d = diamondDistance(x, y)
+      if (d <= 0.94) assertEquals(s"${t.name} frame $f is solid at ($x, $y)", 255, alpha(t, f, x, y))
+      if (d >= 1.06) assertEquals(s"${t.name} frame $f draws nothing at ($x, $y)", 0, alpha(t, f, x, y))
+    }
+  }
+
+  @Test def aBlockCoversItsWholeFootprint(): Unit = {
+    // Mid-map the game draws no background at all, since every cell's ground or block covers it; a
+    // gap in a block's footprint would show black
+    for (t <- Tile.all if t.form eq TileForm.Block; f <- 0 until 4; y <- 0 until CellH; x <- 0 until CellW) {
+      if (diamondDistance(x, y) <= 0.97) assertEquals(s"${t.name} frame $f covers ($x, $y)", 255, alpha(t, f, x, y))
+    }
+  }
 }

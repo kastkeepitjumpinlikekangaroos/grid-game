@@ -22,13 +22,24 @@ import scala.collection.mutable
  * Draw text as textured quads via [[SpriteBatch]]. The public API
  * (charHeight, drawText*, measureWidth) is unchanged from the previous ASCII-only
  * renderer, so existing call sites are untouched.
+ *
+ * `pixelScale` is how many framebuffer pixels a unit of the projection the text is drawn with
+ * covers — 2 for the HUD on a HiDPI screen. Glyphs are rasterized at `fontSize * pixelScale`
+ * pixels and drawn back at `fontSize` units, so they land on the screen one texel to a pixel.
+ * Rasterized at `fontSize` and magnified, every piece of text on a HiDPI screen came out soft.
+ * All sizes and metrics are in units, whatever the scale. Every draw also takes a `scale`, for
+ * text drawn with another projection (the world's, which is zoomed) or animated in size.
  */
-class GLFontRenderer(val fontSize: Int) {
+class GLFontRenderer(val fontSize: Int, val pixelScale: Float = 1f) {
   import GLFontRenderer._
+
+  private val rasterSize: Int = Math.max(1, Math.round(fontSize * pixelScale))
+  /** Units per rasterized pixel. */
+  private val unit: Float = fontSize.toFloat / rasterSize
 
   // Font fallback chain derived to this size. First font that canDisplay a
   // code point wins for that glyph.
-  private val fonts: Array[Font] = fontChain.map(_.deriveFont(Font.BOLD, fontSize.toFloat))
+  private val fonts: Array[Font] = fontChain.map(_.deriveFont(Font.BOLD, rasterSize.toFloat))
 
   // Shared graphics used only for measuring metrics.
   private val metricsG: Graphics2D = {
@@ -40,9 +51,13 @@ class GLFontRenderer(val fontSize: Int) {
   // Common baseline + line box sized to the tallest font in the chain so mixed
   // Latin/CJK text shares a baseline and nothing clips.
   private val ascent: Int = metricsByFont.map(_.getAscent).max
-  val charHeight: Int = metricsByFont.map(_.getHeight).max + 2
+  private val rasterCharHeight: Int = metricsByFont.map(_.getHeight).max + 2
+  /** Height of a line, in units. */
+  val charHeight: Int = Math.round(rasterCharHeight * unit)
+  private val lineH: Float = rasterCharHeight * unit
 
-  private final class Glyph(val region: TextureRegion, val advance: Int, val width: Int)
+  /** A glyph's place in the atlas, and its advance and width in units. */
+  private final class Glyph(val region: TextureRegion, val advance: Float, val width: Float)
 
   // Looked up once per character drawn, so the lookup must not allocate: Latin-1 (nearly
   // all HUD text) sits in a flat table, and everything else in a LongMap, which takes the
@@ -79,7 +94,7 @@ class GLFontRenderer(val fontSize: Int) {
     val (font, fm) = pickFont(cp)
     val advance = math.max(0, fm.charWidth(cp))
     val gw = math.max(1, advance)
-    val gh = charHeight
+    val gh = rasterCharHeight
 
     // Rasterize the single glyph to a transparent ARGB tile.
     val img = new BufferedImage(gw, gh, BufferedImage.TYPE_INT_ARGB)
@@ -101,7 +116,7 @@ class GLFontRenderer(val fontSize: Int) {
     penX += gw + Pad
     rowH = math.max(rowH, gh)
 
-    new Glyph(region, advance, gw)
+    new Glyph(region, advance * unit, gw * unit)
   }
 
   private def uploadGlyph(page: GLTexture, x: Int, y: Int, img: BufferedImage): Unit = {
@@ -147,35 +162,49 @@ class GLFontRenderer(val fontSize: Int) {
 
   /** Draw text using a SpriteBatch. Returns the total width drawn. */
   def drawText(batch: SpriteBatch, text: String, x: Float, y: Float,
-               r: Float = 1f, g: Float = 1f, b: Float = 1f, a: Float = 1f): Float = {
+               r: Float = 1f, g: Float = 1f, b: Float = 1f, a: Float = 1f, scale: Float = 1f): Float = {
     var cx = x
     var i = 0
-    val h = charHeight.toFloat
+    val h = lineH * scale
     while (i < text.length) {
       val cp = text.codePointAt(i)
       i += Character.charCount(cp)
       val gl = glyph(cp)
-      if (gl.advance > 0) batch.draw(gl.region, cx, y, gl.width.toFloat, h, r, g, b, a)
-      cx += gl.advance
+      if (gl.advance > 0) batch.draw(gl.region, cx, y, gl.width * scale, h, r, g, b, a)
+      cx += gl.advance * scale
     }
     cx - x
   }
 
   /** Draw text with a dark drop shadow for readability. */
   def drawTextShadow(batch: SpriteBatch, text: String, x: Float, y: Float,
-                     r: Float = 1f, g: Float = 1f, b: Float = 1f, a: Float = 1f): Float = {
-    val offset = Math.max(1f, fontSize / 16f)
-    drawText(batch, text, x + offset, y + offset, 0f, 0f, 0f, a * 0.6f)
-    drawText(batch, text, x, y, r, g, b, a)
+                     r: Float = 1f, g: Float = 1f, b: Float = 1f, a: Float = 1f, scale: Float = 1f): Float = {
+    val offset = Math.max(1f, fontSize / 16f) * scale
+    drawText(batch, text, x + offset, y + offset, 0f, 0f, 0f, a * 0.6f, scale)
+    drawText(batch, text, x, y, r, g, b, a, scale)
   }
 
   /** Draw outlined text (text with dark outline for strong readability).
    * Single-pass: iterates string once, drawing 5 quads per glyph (4 outline + 1 foreground). */
   def drawTextOutlined(batch: SpriteBatch, text: String, x: Float, y: Float,
-                       r: Float = 1f, g: Float = 1f, b: Float = 1f, a: Float = 1f): Float = {
-    val o = Math.max(1f, fontSize / 24f)
-    val oa = a * 0.7f
-    val ch = charHeight.toFloat
+                       r: Float = 1f, g: Float = 1f, b: Float = 1f, a: Float = 1f, scale: Float = 1f): Float =
+    outlined(batch, text, x, y, r, g, b, a, scale, Math.max(1f, fontSize / 24f) * scale, a * 0.7f, 4)
+
+  /**
+   * Text with a heavy outline — eight copies round it rather than four, twice as far out and
+   * darker — for text that floats over the world itself, where it can land on snow as easily
+   * as on shadow. A damage number in the four-copy outline, pale yellow on a snowfield, all but
+   * disappeared.
+   */
+  def drawTextOutlinedHeavy(batch: SpriteBatch, text: String, x: Float, y: Float,
+                            r: Float, g: Float, b: Float, a: Float, scale: Float = 1f): Float =
+    outlined(batch, text, x, y, r, g, b, a, scale, Math.max(1.5f, fontSize * 0.075f) * scale, a * 0.9f, 8)
+
+  private def outlined(batch: SpriteBatch, text: String, x: Float, y: Float,
+                       r: Float, g: Float, b: Float, a: Float, scale: Float,
+                       o: Float, oa: Float, copies: Int): Float = {
+    val ch = lineH * scale
+    val d = o * 0.7071f
     var cx = x
     var i = 0
     while (i < text.length) {
@@ -184,20 +213,26 @@ class GLFontRenderer(val fontSize: Int) {
       val gl = glyph(cp)
       if (gl.advance > 0) {
         val region = gl.region
-        val wF = gl.width.toFloat
+        val wF = gl.width * scale
         batch.draw(region, cx - o, y, wF, ch, 0f, 0f, 0f, oa)
         batch.draw(region, cx + o, y, wF, ch, 0f, 0f, 0f, oa)
         batch.draw(region, cx, y - o, wF, ch, 0f, 0f, 0f, oa)
         batch.draw(region, cx, y + o, wF, ch, 0f, 0f, 0f, oa)
+        if (copies > 4) {
+          batch.draw(region, cx - d, y - d, wF, ch, 0f, 0f, 0f, oa)
+          batch.draw(region, cx + d, y - d, wF, ch, 0f, 0f, 0f, oa)
+          batch.draw(region, cx - d, y + d, wF, ch, 0f, 0f, 0f, oa)
+          batch.draw(region, cx + d, y + d, wF, ch, 0f, 0f, 0f, oa)
+        }
         batch.draw(region, cx, y, wF, ch, r, g, b, a)
       }
-      cx += gl.advance
+      cx += gl.advance * scale
     }
     cx - x
   }
 
-  /** Measure the width of a string in pixels. */
-  def measureWidth(text: String): Float = {
+  /** Measure the width of a string, in units. */
+  def measureWidth(text: String, scale: Float = 1f): Float = {
     var w = 0f
     var i = 0
     while (i < text.length) {
@@ -205,7 +240,7 @@ class GLFontRenderer(val fontSize: Int) {
       i += Character.charCount(cp)
       w += glyph(cp).advance
     }
-    w
+    w * scale
   }
 
   def dispose(): Unit = pages.foreach(_.dispose())

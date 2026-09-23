@@ -11,6 +11,16 @@ import org.lwjgl.BufferUtils
  *
  * Pipeline: Scene FBO → Bloom extract → Blur H → Blur V → Composite (scene + bloom + vignette + overlay)
  */
+object PostProcessor {
+  /**
+   * Dev check: `GRIDGAME_HOLECHECK=1` clears the scene to magenta instead of black, so any pixel
+   * the terrain leaves uncovered shows. The ground is drawn as exact diamonds with no blending and
+   * the background is skipped whenever the world fills the screen, both of which rely on the
+   * terrain covering every pixel inside the world.
+   */
+  private[gl] val HoleCheck: Boolean = System.getenv("GRIDGAME_HOLECHECK") != null
+}
+
 class PostProcessor(var width: Int, var height: Int) {
   // FBOs (bloom at half resolution for efficiency). They stay allocated even when a
   // quality tier turns bloom off — together they are under a fifth of a screen, and the
@@ -98,7 +108,7 @@ class PostProcessor(var width: Int, var height: Int) {
   def beginScene(): Unit = {
     sceneFBO.bindAsTarget()
     glViewport(0, 0, width, height)
-    glClearColor(0f, 0f, 0f, 1f)
+    if (PostProcessor.HoleCheck) glClearColor(1f, 0f, 1f, 1f) else glClearColor(0f, 0f, 0f, 1f)
     glClear(GL_COLOR_BUFFER_BIT)
   }
 

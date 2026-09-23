@@ -149,6 +149,9 @@ object ShaderProgram {
       |}""".stripMargin
 
   // ── Gaussian blur (single-pass, direction via uniform) ──
+  // The same nine-tap kernel as before in five fetches: each pair of neighbouring taps is one
+  // bilinear fetch placed between them in proportion to their weights (the targets are
+  // GL_LINEAR), which the hardware blends for free. Four fewer fetches a pixel, in two passes.
   val BLUR_FRAG: String =
     """#version 330 core
       |in vec2 vTexCoord;
@@ -156,15 +159,11 @@ object ShaderProgram {
       |uniform vec2 uDirection; // (1/w, 0) or (0, 1/h)
       |out vec4 FragColor;
       |void main() {
-      |  vec4 result = vec4(0.0);
-      |  float weights[5] = float[](0.227027, 0.1945946, 0.1216216, 0.054054, 0.016216);
-      |  result += texture(uTexture, vTexCoord) * weights[0];
-      |  for (int i = 1; i < 5; i++) {
-      |    vec2 off = uDirection * float(i);
-      |    result += texture(uTexture, vTexCoord + off) * weights[i];
-      |    result += texture(uTexture, vTexCoord - off) * weights[i];
-      |  }
-      |  FragColor = result;
+      |  vec2 o1 = uDirection * 1.3846154;
+      |  vec2 o2 = uDirection * 3.2307692;
+      |  FragColor = texture(uTexture, vTexCoord) * 0.2270270
+      |    + (texture(uTexture, vTexCoord + o1) + texture(uTexture, vTexCoord - o1)) * 0.3162162
+      |    + (texture(uTexture, vTexCoord + o2) + texture(uTexture, vTexCoord - o2)) * 0.0702703;
       |}""".stripMargin
 
   // ── Bloom composite + vignette + lighting + chromatic aberration + distortion ──
@@ -263,9 +262,13 @@ object ShaderProgram {
       |  // Slight saturation boost for vibrancy
       |  float postLuma = dot(color, vec3(0.299, 0.587, 0.114));
       |  color = mix(vec3(postLuma), color, 0.96);
-      |  // Film grain: per-pixel noise
+      |  // Film grain: per-pixel noise. Hashed from the pixel and a frame index that wraps, without
+      |  // sin(): uTime counts frames, and sin() of a number that large loses its precision on a GPU
+      |  // within minutes, so the grain turned into bands and blocks the longer a match ran.
       |  if (uGrain > 0.0) {
-      |    float grain = fract(sin(dot(vTexCoord * uTime, vec2(12.9898, 78.233))) * 43758.5453);
+      |    vec3 p3 = fract(vec3(gl_FragCoord.xyx + mod(uTime, 97.0) * vec3(13.1, 7.7, 13.1)) * 0.1031);
+      |    p3 += dot(p3, p3.yzx + 33.33);
+      |    float grain = fract((p3.x + p3.y) * p3.z);
       |    color += (grain - 0.5) * 0.015;
       |  }
       |  // Soft vignette using smoothstep for gradual falloff

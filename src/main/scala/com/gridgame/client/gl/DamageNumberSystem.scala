@@ -26,7 +26,7 @@ class DamageNumberSystem {
   private var _activeCount = 0
   private var _spawnSeq = 0
 
-  /** Set the fonts used for text width measurement (called once from renderer init). */
+  /** Set the fonts numbers are drawn and measured in (by the renderer, whenever it makes them). */
   private var _font: GLFontRenderer = _
   private var _fontLarge: GLFontRenderer = _
   def setFont(font: GLFontRenderer): Unit = { _font = font }
@@ -89,8 +89,12 @@ class DamageNumberSystem {
     }
   }
 
-  /** Render all active damage numbers with scale pop, color by amount, and parabolic arc. */
-  def render(font: GLFontRenderer, fontLarge: GLFontRenderer, spriteBatch: SpriteBatch, camOffX: Double, camOffY: Double,
+  /**
+   * Render all active damage numbers with scale pop, color by amount, and parabolic arc. Drawn with
+   * the world's projection, over the finished frame (GLGameRenderer), in the fonts [[setFont]] and
+   * [[setFontLarge]] gave: scaled to 14 world units high, or 22 for a big hit.
+   */
+  def render(spriteBatch: SpriteBatch,
              worldToScreenX: (Double, Double) => Double,
              worldToScreenY: (Double, Double) => Double): Unit = {
     var i = 0
@@ -106,7 +110,6 @@ class DamageNumberSystem {
         val sy = worldToScreenY(worldX(i).toDouble, worldY(i).toDouble).toFloat - rise - 20f
 
         val text = cachedText(i)
-        val textW = cachedTextW(i)
         val dmg = damage(i)
 
         // Color by damage amount: high=orange-red, medium=yellow, low=white
@@ -115,21 +118,22 @@ class DamageNumberSystem {
         val dg = if (dmg >= 25) 0.25f else if (dmg >= 10) 0.85f else 1f
         val db = if (dmg >= 25) 0.15f else if (dmg >= 10) 0.2f else 1f
 
-        // Scale pop: 1.5x -> 1.0x over first 0.2s with ease-out-back
+        // Scale pop: 1.5x -> 1.0x over first 0.2s with ease-out-back. It used to move the text
+        // as though it had grown without growing it
         val popDuration = 0.2f
-        val scale = if (age(i) < popDuration) {
+        val pop = if (age(i) < popDuration) {
           val pt = age(i) / popDuration
           val overshoot = 1.70158f
           val eased = 1f + (overshoot + 1f) * Math.pow(pt - 1, 3).toFloat + overshoot * Math.pow(pt - 1, 2).toFloat
           1.5f - 0.5f * eased
         } else 1.0f
 
-        val scaledW = textW * scale
-        val drawX = sx - scaledW / 2f
-
         // Use large font for big hits (dmg >= 25)
-        val drawFont = if (useLargeFont(i)) fontLarge else font
-        drawFont.drawTextOutlined(spriteBatch, text, drawX, sy, dr, dg, db, alpha)
+        val big = useLargeFont(i)
+        val drawFont = if (big) _fontLarge else _font
+        val scale = pop * (if (big) 22f else 14f) / drawFont.fontSize
+        val drawX = sx - cachedTextW(i) * scale / 2f
+        drawFont.drawTextOutlinedHeavy(spriteBatch, text, drawX, sy, dr, dg, db, alpha, scale)
       }
       i += 1
     }

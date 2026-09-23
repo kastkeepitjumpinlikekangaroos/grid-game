@@ -387,6 +387,7 @@ class RenderBenchApp extends Application {
         println(f"  GC:                  $gcN collections, $gcT ms total during the run")
         println(f"  heap:                ${heap.getUsed / 1048576.0}%.1f MB live after GC, ${heap.getCommitted / 1048576.0}%.1f MB committed")
         println(s"  $fp")
+        if (GpuProfiler.enabled) println(GpuProfiler.report())
         renderer.dispose()
         window.destroy()
         GLFWManager.terminate()
