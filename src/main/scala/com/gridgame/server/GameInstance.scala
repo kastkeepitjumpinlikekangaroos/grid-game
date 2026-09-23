@@ -17,7 +17,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   val registry = new ClientRegistry()
   val teamAssignments = new java.util.concurrent.ConcurrentHashMap[UUID, Byte]()
   var gameMode: Byte = 0 // 0=FFA, 1=Teams
-  val projectileManager = new ProjectileManager(registry, isTeammate)
+  val projectileManager = new ProjectileManager(registry, isTeammate, () => divider)
   val itemManager = new ItemManager()
   val trapManager = new TrapManager(registry, isTeammate)
   val killTracker = new KillTracker()
@@ -64,7 +64,90 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   private[server] def begin(): Unit = {
     if (world == null) loadWorld()
     startTime = System.currentTimeMillis()
+    // The opening (MatchOpening): Teams spends it with the two halves walled off from each other,
+    // a free-for-all with everyone's abilities holstered. The wall hangs off the world, so every
+    // walkability check in the game refuses its cells while it stands.
+    // Practice is for trying a character out against passive bots, so it opens with nothing held
+    // back: holding its fire for thirty seconds is the one thing an opening must not do there
+    openingRules = if (isPractice) 0.toByte else MatchOpening.rulesFor(gameMode)
+    openingEndsAt = if (openingRules == 0) 0L else startTime + Constants.MATCH_OPENING_MS
+    openingAnnounced = false
+    openingEndAnnounced = false
+    if (MatchOpening.has(openingRules, MatchOpening.DIVIDER) && world != null) {
+      world.divider = TeamDivider.raise(world, openingEndsAt)
+    }
     running = true
+  }
+
+  // ── The opening of the match ─────────────────────────────────────────────
+
+  private var openingAnnounced = false
+  private var openingEndAnnounced = false
+  private var openingRules: Byte = 0
+  /** When the opening ends, on the server's clock. */
+  private[server] var openingEndsAt: Long = 0L
+
+  /** The wall between the two halves of the map, while it stands. Null in a free-for-all, and
+    * once it has come down. */
+  def divider: TeamDivider = if (world == null) null else world.divider
+
+  def inOpening: Boolean = System.currentTimeMillis() < openingEndsAt
+
+  /** Is nobody allowed to attack? The opening of a free-for-all is a ceasefire: no shot, no
+    * charge, no burst and no ability, so everyone gets the same half minute to find their feet
+    * and pick their ground. */
+  def attacksLocked: Boolean =
+    MatchOpening.has(openingRules, MatchOpening.NO_ATTACKS) && inOpening
+
+  /** Put the opening behind us with nothing left to say about it: the matches the test kit drives
+    * are already under way. */
+  private[server] def skipOpening(): Unit = {
+    openingEndsAt = 0L
+    openingAnnounced = true
+    openingEndAnnounced = true
+    if (world != null) world.divider = null
+  }
+
+  private def openingPacket(msLeft: Int): GameEventPacket =
+    new GameEventPacket(server.getNextSequenceNumber, new UUID(0L, 0L), Packet.getCurrentTimestamp,
+      GameEvent.MATCH_OPENING, gameId, 0, 0.toShort, 0.toShort, null, 0.toByte, 0.toShort, 0.toShort,
+      0.toByte, msLeft, openingRules)
+
+  /**
+   * Every client runs the opening on its own clock, from the time left it is told: it is announced
+   * once when the match begins and once when it is over, both over TCP. The wall is taken off the
+   * world here as well as announced, so the rest of the match pays nothing for it.
+   */
+  private[server] def syncOpening(): Unit = {
+    if (openingRules == 0) return // practice: there is no opening to tell anyone about
+    val now = System.currentTimeMillis()
+    if (now < openingEndsAt) {
+      if (!openingAnnounced) {
+        openingAnnounced = true
+        broadcastToInstance(openingPacket((openingEndsAt - now).toInt))
+      }
+    } else if (!openingEndAnnounced) {
+      openingEndAnnounced = true
+      if (world != null) world.divider = null
+      broadcastToInstance(openingPacket(0))
+    }
+  }
+
+  /** A client joining during the opening hears about it too. */
+  private[server] def sendOpeningTo(player: Player): Unit = {
+    val left = openingEndsAt - System.currentTimeMillis()
+    if (left > 0L) server.sendPacketToPlayer(openingPacket(left.toInt), player)
+  }
+
+  /**
+   * Where a player of this team starts a life. Each team keeps one half of the map for the whole
+   * of a team match (TeamDivider), so a death puts them back with their team rather than wherever
+   * there happened to be room.
+   */
+  private[server] def spawnFor(teamId: Byte, occupied: Set[(Int, Int)]): Position = {
+    val side = if (gameMode == 1) TeamDivider.sideOfTeam(teamId) else 0
+    if (side == 0) world.getValidSpawnPoint(occupied)
+    else world.getValidSpawnPoint(occupied, (x, y) => TeamDivider.sideOf(world, x, y) == side)
   }
 
   def start(): Unit = {
@@ -183,6 +266,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     if (!running || world == null) return
     val tickStart = System.nanoTime()
 
+    syncOpening()
     val events = projectileManager.tick(world)
     events.foreach {
       case ProjectileMoved(projectile) =>
@@ -200,7 +284,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         if (target != null) broadcastBuffered(stateUpdate(target))
 
         // Life-steal on killing blow
-        ProjectileDef.get(projectile.projectileType).onHitEffect.foreach {
+        ProjectileDef.get(projectile.projectileType).onHitEffects.foreach {
           case LifeSteal(healPercent) => lifeSteal(projectile, healPercent)
           case _ => // no life-steal
         }
@@ -215,7 +299,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         val target = registry.get(targetId)
         if (target != null && !target.isDead) {
           // Apply type-specific on-hit effects from ProjectileDef (skip dead targets)
-          ProjectileDef.get(projectile.projectileType).onHitEffect.foreach {
+          ProjectileDef.get(projectile.projectileType).onHitEffects.foreach {
             case PullToOwner => pullToOwner(projectile, target)
 
             case Freeze(durationMs) =>
@@ -253,10 +337,6 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
 
             case LifeSteal(healPercent) =>
               lifeSteal(projectile, healPercent)
-              // Bat Swarm also applies a brief freeze
-              if (projectile.projectileType == ProjectileType.BAT_SWARM && target.tryFreeze(600)) {
-                holdByServer(target)
-              }
 
             case Burn(totalDamage, durationMs, tickMs) =>
               target.applyBurn(totalDamage, durationMs, tickMs, projectile.ownerId)
@@ -330,7 +410,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
           // Harvest never healed him and the Cyborg's Overclock boosted nobody.
           val pDef = ProjectileDef.get(projectile.projectileType)
           var heldHere = held
-          pDef.onHitEffect.foreach {
+          pDef.onHitEffects.foreach {
             case Freeze(durationMs) => if (aoeTarget.tryFreeze(durationMs)) heldHere = true
             case Stun(durationMs) => if (aoeTarget.tryStun(durationMs)) heldHere = true
             case Root(durationMs) => if (aoeTarget.tryRoot(durationMs)) heldHere = true
@@ -363,7 +443,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         val aoeKillTarget = registry.get(targetId)
         if (aoeKillTarget != null) broadcastBuffered(stateUpdate(aoeKillTarget))
 
-        ProjectileDef.get(projectile.projectileType).onHitEffect.foreach {
+        ProjectileDef.get(projectile.projectileType).onHitEffects.foreach {
           case LifeSteal(healPercent) => lifeSteal(projectile, healPercent, damage)
           case _ => // no life-steal
         }
@@ -619,6 +699,17 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     if (!p.isSlowed) 0 else Math.max(1, Math.min(100, Math.round(p.getSlowMultiplier * 100f)))
 
   /**
+   * How long this player's raised barrier has left, in ms. Every client draws it on that timer,
+   * as its holder's own client does, rather than on a lease renewed by whichever of the holder's
+   * updates reach them: a gap in those — a hitch in the holder's render loop, which is what
+   * streams them, a burst of lost datagrams, a run the server refused — used to take the barrier
+   * off every other screen for the rest of its life while it was still up and still stopping shots.
+   */
+  private def barrierMsLeft(p: Player): Int =
+    if (!p.hasBarrier) 0
+    else Math.max(1L, Math.min(65535L, p.getBarrierUntil - System.currentTimeMillis())).toInt
+
+  /**
    * A player as the server has them, for everyone to be told: position, health, every status
    * flag, character, team, and how many times the server has moved them. Every update the
    * server sends about a player goes through here; each used to be built by hand, and several
@@ -641,7 +732,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
       playerFlags2(p),
       // Which way a raised barrier faces, so every client turns it as its holder does
       if (p.hasBarrier) PlayerUpdatePacket.encodeAimAngle(p.getBarrierAngle) else 0,
-      slowPercent(p)
+      slowPercent(p),
+      barrierMsLeft(p)
     )
 
   /**
@@ -713,13 +805,17 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
           // Broadcast updated health. No regen on a tick a DoT took a bite out of them. The update
           // for a poison's last tick goes out without the flag: that is how clients hear it is over.
           broadcastToInstance(stateUpdate(player))
-        } else if (player.isPoisoned) {
-          // No regen while a poison lasts, between its ticks as much as on them
+        } else if (player.isBurning || player.isPoisoned) {
+          // No regen while a burn or a poison lasts, between its ticks as much as on them. A burn
+          // used to hold it off only on the ticks it bit, and regen healed most of it back between.
           player.resetRegenAccumulator()
         } else if (player.getHealth < player.getMaxHealth) {
-          // --- Health Regen (only when no DoT ticked, no poison, and not at full health) ---
+          // --- Health Regen (only when no DoT is running, and not at full health) ---
+          // A share of the character's own max health, so a 150 HP bruiser and a 60 HP caster
+          // both take 50s to come back from nothing. It used to be 3.0 - (maxHp - 70) * 0.04 a
+          // second, which healed the frailest fastest and stopped altogether from 145 HP.
           val maxHp = player.getMaxHealth
-          val regenPerSec = 3.0 - (maxHp - 70) * (2.0 / 50.0)
+          val regenPerSec = maxHp * Constants.REGEN_SHARE_PER_SEC
           player.addRegenAccumulator(regenPerSec * 0.2) // 200ms tick
           val accum = player.getRegenAccumulator
           if (accum >= 1.0) {
@@ -790,7 +886,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
         set.toSet
       }
       handler.resetAttacks(playerId)
-      val sp = world.getValidSpawnPoint(occupied)
+      val sp = spawnFor(player.getTeamId, occupied)
       // Placed inside the lock, so a respawn at the same moment sees this spawn as taken. It is
       // a server move: anything the client sent from its last life is stale.
       placeByServer(player, sp)
@@ -917,7 +1013,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
    * never when it matters.
    */
   private def applyCastSelfBuff(projectile: Projectile): Unit =
-    ProjectileDef.get(projectile.projectileType).onHitEffect match {
+    ProjectileDef.get(projectile.projectileType).onHitEffects.collectFirst { case b: SpeedBoost => b } match {
       case Some(SpeedBoost(durationMs)) =>
         val owner = registry.get(projectile.ownerId)
         if (owner != null && !owner.isDead && castsAsSlam(owner, projectile.projectileType)) {

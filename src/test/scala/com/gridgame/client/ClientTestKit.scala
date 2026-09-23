@@ -21,7 +21,7 @@ import scala.jdk.CollectionConverters._
  * A GameClient with no network: what it sends is kept in `sent`, and the server's packets are
  * handed to it with [[receive]], as its packet thread would.
  */
-class TestClient(world: WorldData = WorldData.createEmpty(60, 60), val name: String = "me") {
+class TestClient(val world: WorldData = WorldData.createEmpty(60, 60), val name: String = "me") {
   private val outbox = mutable.Buffer[Packet]()
   val client = new GameClient("localhost", 0, world, name)
   client.packetSink = p => outbox.synchronized { outbox += p }
@@ -53,14 +53,26 @@ class TestClient(world: WorldData = WorldData.createEmpty(60, 60), val name: Str
     receive(new GameEventPacket(nextSeq(), who, Packet.getCurrentTimestamp, event, 7.toShort, remaining,
       kills.toShort, deaths.toShort, target, rank.toByte, spawn._1.toShort, spawn._2.toShort, team))
 
+  /** The server's word on the match's opening (MatchOpening): how long it has left — 0, it is
+    * over — and what it does while it lasts. */
+  def opening(msLeft: Int, rules: Byte = MatchOpening.DIVIDER): Unit =
+    receive(new GameEventPacket(nextSeq(), new UUID(0, 0), Packet.getCurrentTimestamp, GameEvent.MATCH_OPENING,
+      7.toShort, 0, 0.toShort, 0.toShort, null, 0.toByte, 0.toShort, 0.toShort, 0.toByte, msLeft, rules))
+
   def join(who: UUID, x: Int, y: Int, name: String = "them", charId: Byte = 0, team: Byte = 0, health: Int = 100): Unit =
     receive(new PlayerJoinPacket(nextSeq(), who, Packet.getCurrentTimestamp, new Position(x, y), 0xFF00AA00, name,
       health, charId, team))
 
   def update(who: UUID, x: Int, y: Int, health: Int = 100, flags: Int = 0, serverMoves: Int = 0,
-             charId: Byte = 0, flags2: Int = 0, slowPercent: Int = 0, aimAngle: Double = 0.0): Unit =
-    receive(new PlayerUpdatePacket(nextSeq(), who, Packet.getCurrentTimestamp, new Position(x, y), 0xFF00AA00,
-      health, 0, flags, charId, 0.toByte, serverMoves, flags2, PlayerUpdatePacket.encodeAimAngle(aimAngle), slowPercent))
+             charId: Byte = 0, flags2: Int = 0, slowPercent: Int = 0, aimAngle: Double = 0.0,
+             barrierMs: Int = 0, seq: Int = -1): Unit =
+    receive(new PlayerUpdatePacket(if (seq >= 0) seq else nextSeq(), who, Packet.getCurrentTimestamp,
+      new Position(x, y), 0xFF00AA00, health, 0, flags, charId, 0.toByte, serverMoves, flags2,
+      PlayerUpdatePacket.encodeAimAngle(aimAngle), slowPercent, barrierMs))
+
+  /** The sequence number the server's next packet would carry, for a test that needs to deliver
+    * two of them out of order. */
+  def peekSeq: Int = serverSeq + 1
 
   def projectile(action: Byte, projectileId: Int, owner: UUID, x: Float = 10f, y: Float = 10f, target: UUID = null,
                  pType: Byte = ProjectileType.ARROW): Unit =

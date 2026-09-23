@@ -2,6 +2,7 @@ package com.gridgame.common.protocol
 
 import com.gridgame.common.Constants
 import com.gridgame.common.WorldRegistry
+import com.gridgame.common.model.MatchOpening
 import com.gridgame.common.model.Position
 import com.gridgame.common.model.ProjectileType
 import com.gridgame.common.model.TrapDef
@@ -46,13 +47,26 @@ class PacketRoundTripTest {
 
   @Test def playerUpdateKeepsTheSecondFlagByteAimAndSlowStrength(): Unit = {
     val p = trip(new PlayerUpdatePacket(78, id, 1234, new Position(4, 9), 0, 100, 0, 0x84,
-      1.toByte, 0.toByte, 5, 0x07, 40000, 30))
+      1.toByte, 0.toByte, 5, 0x07, 40000, 30, 3500))
     assertEquals("stunned, poisoned and a barrier", 0x07, p.getEffectFlags2)
     assertEquals(40000, p.getAimAngle)
     assertEquals("a Slow(_, 0.3f) reaches the client as 30%", 30, p.getSlowPercent)
+    assertEquals("and how long the barrier has left", 3500, p.getBarrierMs)
     // The first flag byte is untouched by the second
     assertEquals(0x84, p.getEffectFlags)
     assertEquals(5, p.getServerMoves)
+  }
+
+  @Test def aBarriersTimeLeftSurvivesTheWholeRange(): Unit = {
+    for (ms <- Seq(0, 1, 600, 3500, 14000, 65535)) {
+      val p = trip(new PlayerUpdatePacket(1, id, 0, new Position(5, 5), 0, 100, 0, 0, 0.toByte,
+        0.toByte, 0, 0x04, 0, 0, ms))
+      assertEquals(s"$ms ms left", ms, p.getBarrierMs)
+    }
+    // Longer than the field holds is capped rather than wrapped to nothing
+    val capped = trip(new PlayerUpdatePacket(1, id, 0, new Position(5, 5), 0, 100, 0, 0, 0.toByte,
+      0.toByte, 0, 0x04, 0, 0, 70000))
+    assertEquals(65535, capped.getBarrierMs)
   }
 
   @Test def eachSecondaryStatusFlagSurvivesOnItsOwn(): Unit = {
@@ -250,6 +264,16 @@ class PacketRoundTripTest {
     assertEquals(2.toByte, p.getTeamId)
     assertNull(trip(new GameEventPacket(5, id, GameEvent.TIME_SYNC, 1.toShort, 10, 0.toShort, 0.toShort,
       null, 0.toByte, 0.toShort, 0.toShort)).getTargetId)
+    // The match's opening says how long it has left, in milliseconds, and what it does
+    val opening = trip(new GameEventPacket(6, id, 0, GameEvent.MATCH_OPENING, 9.toShort, 0, 0.toShort,
+      0.toShort, null, 0.toByte, 0.toShort, 0.toShort, 0.toByte, 29970, MatchOpening.DIVIDER))
+    assertEquals(GameEvent.MATCH_OPENING, opening.getEventType)
+    assertEquals(29970, opening.getOpeningMs)
+    assertEquals(MatchOpening.DIVIDER, opening.getOpeningRules)
+    val over = trip(new GameEventPacket(7, id, 0, GameEvent.MATCH_OPENING, 9.toShort, 0, 0.toShort,
+      0.toShort, null, 0.toByte, 0.toShort, 0.toShort, 0.toByte, 0, MatchOpening.NO_ATTACKS))
+    assertEquals(0, over.getOpeningMs)
+    assertEquals(MatchOpening.NO_ATTACKS, over.getOpeningRules)
   }
 
   @Test def authRequestKeepsCredentialsUpToTheirFields(): Unit = {

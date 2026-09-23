@@ -45,8 +45,13 @@ object ServerTestKit {
  * One match, driven by hand: nothing runs on its own, the test calls the ticks. Players get a TCP
  * channel and a UDP address of their own, and everything the server sends them is kept, per
  * player, to be read back with [[tcpSent]] and [[udpSent]].
+ *
+ * The match is under way: its opening — a wall down the middle of the map in Teams, holstered
+ * abilities in a free-for-all ([[com.gridgame.common.model.MatchOpening]]) — is over unless the
+ * test asks for it with `opening = true`.
  */
-class TestMatch(val world: WorldData = WorldData.createEmpty(60, 60), gameMode: Byte = 0) {
+class TestMatch(val world: WorldData = WorldData.createEmpty(60, 60), gameMode: Byte = 0,
+                opening: Boolean = false, practice: Boolean = false) {
   import ServerTestKit._
 
   val server: GameServer = ServerTestKit.server
@@ -57,7 +62,9 @@ class TestMatch(val world: WorldData = WorldData.createEmpty(60, 60), gameMode: 
     val gi = new GameInstance(freshGameId(), "", 5, server)
     gi.world = world
     gi.gameMode = gameMode
+    gi.isPractice = practice
     gi.begin()
+    if (!opening) gi.skipOpening()
     gi
   }
 

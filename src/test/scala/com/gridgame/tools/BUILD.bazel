@@ -1,0 +1,13 @@
+load("@rules_scala//scala:scala.bzl", "scala_junit_test")
+
+scala_junit_test(
+    name = "docs_roster_test",
+    srcs = ["DocsRosterTest.scala"],
+    data = ["//docs:website"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/tools:docs_roster",
+        "@maven//:junit_junit",
+    ],
+)

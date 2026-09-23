@@ -21,6 +21,16 @@ scala_junit_test(
 )
 
 scala_junit_test(
+    name = "team_divider_test",
+    srcs = ["TeamDividerTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
     name = "team_assignment_test",
     srcs = ["TeamAssignmentTest.scala"],
     suffixes = ["Test"],
@@ -135,6 +145,26 @@ scala_junit_test(
 scala_junit_test(
     name = "barrier_test",
     srcs = ["BarrierTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "roster_balance_test",
+    srcs = ["RosterBalanceTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "melee_kit_test",
+    srcs = ["MeleeKitTest.scala"],
     suffixes = ["Test"],
     deps = [
         "//src/main/scala/com/gridgame/common",

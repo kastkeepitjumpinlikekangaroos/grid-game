@@ -95,12 +95,12 @@ class PacketValidatorTest {
     assertEquals(100.0, Movement.baseStepIntervalMs(0.5f), 0.0)
   }
 
-  /** A Gladiator takes one step to start the validator's clock, waits `gapMs`, then covers
+  /** A Soldier takes one step to start the validator's clock, waits `gapMs`, then covers
     * `cells` more: does the validator let the second update through? */
   private def walk(validator: PacketValidator, cells: Int, gapMs: Long): Boolean = {
     val world = WorldData.createEmpty(60, 60)
     val p = new Player(UUID.randomUUID(), "walker", new Position(20, 20), 0)
-    p.setCharacterId(CharacterId.Gladiator.id)
+    p.setCharacterId(CharacterId.Soldier.id)
     def at(seq: Int, x: Int) = new PlayerUpdatePacket(seq, p.getId, 0, new Position(x, 20), 0, 100, 0, 0,
       p.getCharacterId, 0.toByte, 0)
     assertTrue("the first step", validator.validateMovement(at(1, 21), p, world))
@@ -115,17 +115,17 @@ class PacketValidatorTest {
     // allow a cell per MOVE_RATE_LIMIT_MS whoever was walking.
     val twiceAsQuick = new PacketValidator(id => CharacterDef.get(id).copy(moveSpeed = 2.0f))
     assertTrue("a character twice as quick", walk(twiceAsQuick, 10, 110))
-    assertFalse("the Gladiator at the roster's 1.0", walk(new PacketValidator(), 10, 110))
+    assertFalse("the Soldier at a ranged character's 1.0", walk(new PacketValidator(), 10, 110))
   }
 
   @Test def aOneSpeedCharacterIsStillRefusedBeyondTheAllowance(): Unit = {
     val m = new TestMatch()
-    val player = m.join(CharacterId.Gladiator, 20, 20) // a Gladiator walks at 1.0, as all of them do
+    val player = m.join(CharacterId.Soldier, 20, 20) // a Soldier walks at 1.0, as every ranged character does
     // Two updates a measurable gap apart: the first only starts the clock
     assertTrue(m.move(player, 21, 20, gapMs = 5))
     assertTrue("a step is fine", m.move(player, 22, 20, gapMs = 5))
     // A jump of 40 cells in a few milliseconds is beyond 2x + 2 however it is sliced, and the
-    // Gladiator has neither a blink nor a dash to excuse it
+    // Soldier has neither a blink nor a dash to excuse it
     assertFalse("a 40-cell jump", m.move(player, 22, 60, gapMs = 5))
     assertEquals((22, 20), m.at(player))
   }

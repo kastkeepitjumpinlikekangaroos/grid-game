@@ -4,6 +4,7 @@ import com.gridgame.common.model.Barrier
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Projectile
 import com.gridgame.common.model.ProjectileDef
+import com.gridgame.common.model.TeamDivider
 import com.gridgame.common.model.WorldData
 import com.gridgame.common.protocol.ProjectileAction
 import com.gridgame.common.protocol.ProjectilePacket
@@ -26,7 +27,8 @@ case class ProjectileAoEHit(projectile: Projectile, targetId: UUID, damage: Int,
 case class ProjectileAoEKill(projectile: Projectile, targetId: UUID, damage: Int) extends ProjectileEvent
 case class ProjectileDespawned(projectile: Projectile) extends ProjectileEvent
 case class ProjectileAoE(projectile: Projectile) extends ProjectileEvent
-// Stopped by barrierOwner's raised barrier, where it met it (the projectile's position)
+// Stopped by barrierOwner's raised barrier, where it met it (the projectile's position).
+// A null owner is the opening divider between the teams, which belongs to nobody.
 case class ProjectileBlocked(projectile: Projectile, barrierOwner: UUID) extends ProjectileEvent
 
 /** Where a holder's barrier was on the tick it was last snapshotted. One per holder, reused. */
@@ -38,7 +40,8 @@ private final class BarrierPose {
   var tick = 0L
 }
 
-class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Boolean = (_, _) => false) {
+class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Boolean = (_, _) => false,
+                       dividerOf: () => TeamDivider = () => null) {
   private val projectiles = new ConcurrentHashMap[Int, Projectile]()
   private val nextId = new AtomicInteger(1)
   // Per-player active projectile count (avoids O(n) iteration on every spawn)
@@ -91,6 +94,44 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
   // A stopped projectile is left this far short of the barrier, on the side it came from: its
   // blast, if it has one, is then clearly in front of the barrier rather than on the line
   private val BARRIER_STANDOFF = 0.05f
+
+  // The opening divider as of this tick, or null: read once, since it is the same wall for every
+  // projectile and every blast in the tick (ProjectileManager's own thread, like the grid).
+  private var tickDivider: TeamDivider = null
+
+  /** Is the opening divider between (x, y) and the player? Nothing reaches through it — a hit
+   *  radius reaches a cell and a half past the wall, and a blast several. */
+  private def dividerBetween(x: Float, y: Float, player: Player): Boolean = {
+    val d = tickDivider
+    if (d == null) return false
+    val pos = player.getPosition
+    d.crosses(x, y, pos.getX.toFloat, pos.getY.toFloat)
+  }
+
+  /**
+   * Stop the projectile where the path from (ax, ay) to (bx, by) met the opening divider, a hair
+   * short of it, and say so. Returns whether it did. Everything is stopped by it — an ally's shot,
+   * the caster's own and a type that flies over walls — because for these thirty seconds the two
+   * halves of the map simply cannot touch each other.
+   */
+  private def stopOnDivider(projectile: Projectile, pDef: ProjectileDef, ax: Float, ay: Float,
+                            bx: Float, by: Float, events: ArrayBuffer[ProjectileEvent],
+                            toRemove: ArrayBuffer[Int]): Boolean = {
+    val d = tickDivider
+    if (d == null) return false
+    val hit = d.crossing(ax, ay, bx, by)
+    if (hit < 0f) return false
+    val px = bx - ax
+    val py = by - ay
+    val len = Math.sqrt(px * px + py * py).toFloat
+    val back = if (len > 1e-6f) BARRIER_STANDOFF / len else 0f
+    val t = Math.max(0f, hit - back)
+    projectile.updatePosition(ax + px * t, ay + py * t, projectile.dx, projectile.dy)
+    toRemove += projectile.id
+    if (pDef.isExplosive) events += ProjectileAoE(projectile)
+    else events += ProjectileBlocked(projectile, null)
+    true
+  }
 
   private def rebuildBarriers(allPlayers: java.util.Collection[Player]): Unit = {
     tickCount += 1
@@ -177,6 +218,7 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
    * projectile tick's thread (GameInstance's event handling).
    */
   def shelteredFromBlast(ownerId: UUID, x: Float, y: Float, player: Player): Boolean = {
+    if (dividerBetween(x, y, player)) return true
     val mask = barriersAgainst(ownerId, passesThroughWalls = false, bodies = false)
     mask != 0L && shelteredBy(mask, x, y, player)
   }
@@ -352,6 +394,7 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
 
     rebuildGrid(registry.getPlayerValues)
     rebuildBarriers(registry.getPlayerValues)
+    tickDivider = { val d = dividerOf(); if (d != null && d.up) d else null }
 
     projectiles.values().asScala.foreach { projectile =>
       val owner = registry.get(projectile.ownerId)
@@ -363,14 +406,16 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
 
       val fresh = !projectile.hasFlown
       projectile.markFlown()
-      if (barriers != 0L) {
-        resolved =
-          if (fresh) {
-            // It was spawned a cell out from where it was fired: an enemy pressed up against a
-            // barrier would otherwise start their shot on the far side of it
-            stopOnPath(projectile, pDef, barriers, projectile.getX - projectile.dx, projectile.getY - projectile.dy,
-              projectile.getX, projectile.getY, events, toRemove)
-          } else sweptByBarrier(projectile, pDef, barriers, events, toRemove)
+      if (fresh) {
+        // It was spawned a cell out from where it was fired: an enemy pressed up against a
+        // barrier (or the divider) would otherwise start their shot on the far side of it
+        val fromX = projectile.getX - projectile.dx
+        val fromY = projectile.getY - projectile.dy
+        resolved = stopOnDivider(projectile, pDef, fromX, fromY, projectile.getX, projectile.getY, events, toRemove) ||
+          (barriers != 0L && stopOnPath(projectile, pDef, barriers, fromX, fromY,
+            projectile.getX, projectile.getY, events, toRemove))
+      } else if (barriers != 0L) {
+        resolved = sweptByBarrier(projectile, pDef, barriers, events, toRemove)
       }
 
       // Sub-step movement so projectiles can't skip over non-walkable tiles.
@@ -387,7 +432,10 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
           projectile.moveStep(fraction)
 
           val maxRange = pDef.effectiveMaxRange(projectile.chargeLevel)
-          if (barriers != 0L && stopOnPath(projectile, pDef, barriers, fromX, fromY, projectile.getX, projectile.getY,
+          if (stopOnDivider(projectile, pDef, fromX, fromY, projectile.getX, projectile.getY, events, toRemove)) {
+            // The wall between the two halves: nothing at all crosses it while it is up
+            resolved = true
+          } else if (barriers != 0L && stopOnPath(projectile, pDef, barriers, fromX, fromY, projectile.getX, projectile.getY,
               events, toRemove)) {
             // Met a barrier on the way: checked first, since it stood somewhere along this step and
             // everything below is judged where the step ended
@@ -441,7 +489,8 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
               // Not through a barrier: a hit radius reaches past one two cells out, so without this
               // a shot hit its holder, or whoever sheltered beside them, before it reached it
               if (projectile.hitsPlayer(player) && !isTeammate(projectile.ownerId, player.getId) &&
-                  (barriers == 0L || !shelteredBy(barriers, projectile.getX, projectile.getY, player))) {
+                  (barriers == 0L || !shelteredBy(barriers, projectile.getX, projectile.getY, player)) &&
+                  !dividerBetween(projectile.getX, projectile.getY, player)) {
                 hitPlayer = player
               }
             }
@@ -524,6 +573,7 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
     barrierCount = 0
     java.util.Arrays.fill(barrierOwner.asInstanceOf[Array[AnyRef]], null)
     barrierPoses.clear()
+    tickDivider = null
   }
 
   /** Visit every projectile in flight without building a collection. Safe from any thread; a
@@ -555,7 +605,8 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
           (excludeId == null || !player.getId.equals(excludeId)) &&
           !isTeammate(projectile.ownerId, player.getId) &&
           Projectile.withinPlayer(px, py, player, radius) &&
-          (shelter == 0L || !shelteredBy(shelter, px, py, player))) {
+          (shelter == 0L || !shelteredBy(shelter, px, py, player)) &&
+          !dividerBetween(px, py, player)) {
         val killed = player.damage(damage)
         if (killed) {
           events += ProjectileAoEKill(projectile, player.getId, damage)

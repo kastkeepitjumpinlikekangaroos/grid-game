@@ -4,6 +4,7 @@ import com.gridgame.client.ClientState
 import com.gridgame.client.GameClient
 import com.gridgame.common.Constants
 import com.gridgame.common.model.ItemType
+import com.gridgame.common.model.Movement
 import com.gridgame.common.protocol.ChatScope
 
 import org.lwjgl.glfw.GLFW._
@@ -191,7 +192,9 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
 
     if (dx != 0 || dy != 0) {
       client.movePlayer(dx, dy)
-      lastMoveTime = now
+      // Counted from when the step fell due, not from this frame, or at 60 fps a melee
+      // character's 53ms step would wait for the fourth frame and walk at 67ms (Movement)
+      lastMoveTime = Movement.nextStepFrom(lastMoveTime + effectiveRate, now, effectiveRate)
     }
   }
 }

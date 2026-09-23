@@ -139,6 +139,29 @@ class CombatTest {
     assertTrue(s"healed to ${p.getHealth}", p.getHealth > 50 && p.getHealth < p.getMaxHealth)
   }
 
+  @Test def everyoneRegeneratesTheSameShareOfTheirHealth(): Unit = {
+    // 2% of their own max health a second, whoever they are. It was 3.0 - (max - 70) * 0.04 a
+    // second: the frailest healed fastest, and from 145 HP, where the melee band tops out,
+    // nobody healed at all.
+    val bruiser = m.join(CharacterId.Golem, 20, 30)
+    val caster = m.join(CharacterId.Wizard, 40, 30)
+    assertTrue("the top of the band", bruiser.getMaxHealth >= 145)
+    assertTrue("the bottom of it", caster.getMaxHealth <= 65)
+    for (p <- Seq(bruiser, caster)) p.setHealth(p.getMaxHealth / 2)
+    for (_ <- 0 until 51) m.instance.tickPlayers() // 10.2s of 200ms ticks
+    for (p <- Seq(bruiser, caster)) {
+      assertEquals(s"${p.getName} back a fifth of ${p.getMaxHealth}", p.getMaxHealth / 2 + p.getMaxHealth / 5,
+        p.getHealth)
+    }
+  }
+
+  @Test def regenStopsAtFullHealth(): Unit = {
+    val p = m.join(CharacterId.Golem, 30, 30)
+    p.setHealth(p.getMaxHealth - 1)
+    for (_ <- 0 until 25) m.instance.tickPlayers()
+    assertEquals(p.getMaxHealth, p.getHealth)
+  }
+
   // --- Blasts and slams: centred on where they happen ---
 
   @Test def aBlastIsCentredWhereItGoesOff(): Unit = {

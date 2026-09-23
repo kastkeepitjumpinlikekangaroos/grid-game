@@ -1,4 +1,4 @@
-load("@rules_scala//scala:scala.bzl", "scala_binary")
+load("@rules_scala//scala:scala.bzl", "scala_binary", "scala_library")
 
 # Dev tool for regenerating the English game-content i18n catalog. Not shipped.
 scala_binary(
@@ -9,4 +9,20 @@ scala_binary(
         "//src/main/scala/com/gridgame/common",
         "@maven//:com_google_code_gson_gson",
     ],
+)
+
+# The website's character cards, written from the roster (also read by the test that keeps them so)
+scala_library(
+    name = "docs_roster",
+    srcs = ["DocsRoster.scala"],
+    visibility = ["//src/test:__subpackages__"],
+    deps = ["//src/main/scala/com/gridgame/common"],
+)
+
+# Dev tool for rewriting those cards in docs/index.html. Not shipped.
+scala_binary(
+    name = "gendocs",
+    srcs = ["GenDocsRoster.scala"],
+    main_class = "com.gridgame.tools.GenDocsRoster",
+    deps = [":docs_roster"],
 )

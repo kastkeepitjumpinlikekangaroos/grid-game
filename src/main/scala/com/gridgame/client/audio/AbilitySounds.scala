@@ -8,9 +8,9 @@ import com.gridgame.common.model.{CharacterId, ProjectileType}
   *
   *  1. `overrides` — keyed on (character, projectile type). A handful of
   *     projectile types are shared by characters whose fantasies have nothing in
-  *     common: `TREMOR_SLAM` is a barbarian splitting the earth AND a wolf's
-  *     howl AND a banshee's wail; `FIREBALL` is a wizard's fireball AND a chef's
-  *     flambé AND an alchemist's thrown potion. Keying only on the projectile
+  *     common: `TREMOR_SLAM` is a beetle's slam AND a banshee's wail AND a harpy's
+  *     shriek; `FIREBALL` is a wizard's fireball AND an alchemist's thrown
+  *     potion AND an astronomer's meteor. Keying only on the projectile
   *     makes half the roster sound like somebody else, so those cases name a
   *     sound per character.
   *  2. `byType` — the projectile type's own sound, which covers everything else.
@@ -180,6 +180,34 @@ object AbilitySounds {
   set("atk_punch", ProjectileType.FIST)
   set("atk_charge_fist", ProjectileType.CHARGE_FIST)
 
+  // ── Plan 5a: the melee and skirmisher kits' own types ───────────────────
+  // Each gets the sound its character had on the shared type it left, so moving a kit onto a
+  // type of its own changes nothing anyone hears
+  set("atk_shield_bash", ProjectileType.SHOCKWAVE)
+  set("atk_ice_quake", ProjectileType.ICE_QUAKE)
+  set("atk_howl", ProjectileType.HOWL, ProjectileType.FERAL_ROAR)
+  set("atk_quake_slam", ProjectileType.EARTHSPLITTER)
+  set("atk_raise_dead", ProjectileType.GRASPING_DEAD)
+  set("atk_death_bolt", ProjectileType.DEATH_GRIP)
+  set("atk_grab", ProjectileType.TALON_GRAB)
+  set("atk_venom_spit", ProjectileType.PARALYTIC_STING)
+  set("atk_hammer_throw", ProjectileType.HAMMER_THROW)
+  set("atk_rope_throw", ProjectileType.MEAT_HOOK)
+  set("atk_flambe", ProjectileType.FLAMBE)
+  set("atk_holy_bolt", ProjectileType.HOLY_NOVA)
+  set("atk_axe_throw", ProjectileType.AXE_SPIN)
+  set("atk_poison_dart", ProjectileType.VENOM_DART)
+  set("atk_shuriken", ProjectileType.TOXIC_SHURIKEN)
+  set("atk_fenrir_rend", ProjectileType.BLOOD_FRENZY, ProjectileType.FENRIR_CLAW)
+  set("atk_punch", ProjectileType.FLURRY)
+  set("atk_giant_boulder", ProjectileType.ROOTING_BOULDER)
+  set("atk_ember_shot", ProjectileType.EMBER_FAN)
+  set("atk_ghoul_rake", ProjectileType.GHOUL_CLAW)
+  set("atk_shark_rush", ProjectileType.SHARK_CLAW)
+  set("atk_ice_chunk", ProjectileType.ICE_BOULDER)
+  set("atk_cursed_blade", ProjectileType.DRAIN_BLADE)
+  set("atk_deathknight_blade", ProjectileType.CHILL_BLADE)
+
   // ── per-character overrides ─────────────────────────────────────────────
   // Same projectile, different character, different sound — because the
   // character is what the player thinks they are playing.
@@ -191,7 +219,6 @@ object AbilitySounds {
   only("atk_ground_pound", CharacterId.Gorilla, ProjectileType.SEISMIC_SLAM)
 
   only("atk_demon_fire", CharacterId.Warlock, ProjectileType.FIREBALL)      // something alive inside it
-  only("atk_flambe", CharacterId.Chef, ProjectileType.FIREBALL)             // a pan going up
   only("atk_meteor", CharacterId.Astronomer, ProjectileType.FIREBALL)
   only("atk_flask_shatter", CharacterId.Alchemist, ProjectileType.FIREBALL) // a thrown potion
 
@@ -202,16 +229,12 @@ object AbilitySounds {
   only("atk_hypnotic_melody", CharacterId.Musician, ProjectileType.CHARM)
 
   only("atk_venom_spit", CharacterId.Serpent, ProjectileType.POISON_DART)
-  only("atk_venom_spit", CharacterId.Scorpion, ProjectileType.POISON_DART)
-  only("atk_shark_rush", CharacterId.Shark, ProjectileType.CLAW_SWIPE)      // water, then teeth
 
   // TREMOR_SLAM is the game's most overloaded projectile: it is the ground
-  // ability for ten characters who share nothing.
-  only("atk_howl", CharacterId.Wolf, ProjectileType.TREMOR_SLAM)
+  // ability for six characters who share nothing (the melee kits have their own
+  // since Plan 5a).
   only("atk_wail_shriek", CharacterId.Banshee, ProjectileType.TREMOR_SLAM)
   only("atk_harpy_screech", CharacterId.Harpy, ProjectileType.TREMOR_SLAM)
-  only("atk_shield_bash", CharacterId.Crusader, ProjectileType.TREMOR_SLAM)
-  only("atk_ice_quake", CharacterId.Avalanche, ProjectileType.TREMOR_SLAM)
   only("atk_shadow_burst", CharacterId.Shadowfiend, ProjectileType.TREMOR_SLAM)
   only("atk_nano_burst", CharacterId.Nanoswarm, ProjectileType.TREMOR_SLAM)
 
@@ -223,14 +246,10 @@ object AbilitySounds {
   only("atk_ape_throw", CharacterId.Gorilla, ProjectileType.BOULDER)
   only("atk_stone_fist", CharacterId.Golem, ProjectileType.BOULDER)
   only("atk_shell_charge", CharacterId.Beetle, ProjectileType.BOULDER)
-  only("atk_ice_chunk", CharacterId.Avalanche, ProjectileType.BOULDER)
   only("atk_giant_boulder", CharacterId.Cyclops, ProjectileType.THROWN_BOULDER)
-  only("atk_giant_boulder", CharacterId.Cyclops, ProjectileType.BOULDER)
 
   only("atk_bear_maul", CharacterId.Bear, ProjectileType.CLAW_SWIPE)
   only("atk_mantis_scythe", CharacterId.Mantis, ProjectileType.CLAW_SWIPE)
-  only("atk_fenrir_rend", CharacterId.Fenrir, ProjectileType.CLAW_SWIPE)
-  only("atk_ghoul_rake", CharacterId.Ghoul, ProjectileType.CLAW_SWIPE)
 
   only("atk_hawk_dive", CharacterId.Hawk, ProjectileType.TALON)
   only("atk_griffin_rake", CharacterId.Griffin, ProjectileType.TALON)
@@ -241,7 +260,6 @@ object AbilitySounds {
 
   only("atk_warlock_bolt", CharacterId.Warlock, ProjectileType.DEATH_BOLT)
   only("atk_anubis_bolt", CharacterId.Anubis, ProjectileType.DEATH_BOLT)
-  only("atk_deathknight_blade", CharacterId.Deathknight, ProjectileType.CURSED_BLADE)
   only("atk_poltergeist_hurl", CharacterId.Poltergeist, ProjectileType.SOUL_BOLT_HEAVY)
   only("atk_poltergeist_hurl", CharacterId.Poltergeist, ProjectileType.CHARM)
   only("atk_djinn_bolt", CharacterId.Djinn, ProjectileType.MYSTIC_BOLT)

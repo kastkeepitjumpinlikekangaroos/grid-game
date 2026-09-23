@@ -176,15 +176,16 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     }
   }
 
-  def validateHealth(health: Int): Boolean = {
-    health >= 0 && health <= Constants.MAX_HEALTH
-  }
-
   def validateChargeLevel(chargeLevel: Int): Boolean = {
     chargeLevel >= 0 && chargeLevel <= 100
   }
 
-  def validateMovement(packet: PlayerUpdatePacket, player: Player, world: WorldData): Boolean = {
+  /**
+   * @param attacksLocked the opening of a free-for-all holds everyone's fire (MatchOpening), so a
+   *                       jump no walk could have made isn't a blink or a dash either
+   */
+  def validateMovement(packet: PlayerUpdatePacket, player: Player, world: WorldData,
+                       attacksLocked: Boolean = false): Boolean = {
     val pos = packet.getPosition
     val x = pos.getX
     val y = pos.getY
@@ -201,6 +202,18 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
       System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} moved to non-walkable tile ($x, $y)")
       Metrics.validationFailed.add(1L, Attrs.VfMovementWalkable)
       return false
+    }
+
+    // The opening divider between the teams, which a phase doesn't pass either. Checked against
+    // where the player is rather than against the target cell alone, so a dash or a blink can't
+    // jump the wall the way a step can't walk through it.
+    val divider = world.divider
+    if (divider != null) {
+      val from = player.getPosition
+      if (divider.stops(from.getX, from.getY, x, y)) {
+        Metrics.validationFailed.add(1L, Attrs.VfMovementWalkable)
+        return false
+      }
     }
 
     // Speed check
@@ -224,7 +237,7 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
           // Allow teleport/dash abilities: check if this player's character has TeleportCast or DashBuff
           // on either Q or E ability, and the jump is within the ability's reach
           val abilities = if (charDef != null) Seq(charDef.qAbility, charDef.eAbility) else Seq.empty
-          val isAbilityMovement = abilities.exists { ability =>
+          val isAbilityMovement = !attacksLocked && abilities.exists { ability =>
             ability.castBehavior match {
               case TeleportCast(maxDistance) => Teleport.withinReach(dx, dy, maxDistance)
               case DashBuff(maxDistance, _, _) => Teleport.withinReach(dx, dy, maxDistance)

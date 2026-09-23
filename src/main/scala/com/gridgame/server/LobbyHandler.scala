@@ -282,7 +282,9 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     lobby.players.asScala.foreach { pid =>
       val p = server.getConnectedPlayer(pid)
       if (p != null) {
-        val spawnPoint = instance.world.getValidSpawnPoint(occupiedSpawns)
+        // In Teams, each team starts in its own half of the map (TeamDivider)
+        val playerTeamId = instance.teamAssignments.getOrDefault(pid, 0.toByte)
+        val spawnPoint = instance.spawnFor(playerTeamId, occupiedSpawns)
         occupiedSpawns += ((spawnPoint.getX, spawnPoint.getY))
         val charId = lobby.getCharacter(pid)
         val charDef = com.gridgame.common.model.CharacterDef.get(charId)
@@ -292,7 +294,6 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
         if (p.getUdpAddress != null) {
           instancePlayer.setUdpAddress(p.getUdpAddress)
         }
-        val playerTeamId = instance.teamAssignments.getOrDefault(pid, 0.toByte)
         instancePlayer.setTeamId(playerTeamId)
         instance.registry.add(instancePlayer)
         instance.killTracker.registerPlayer(pid)
@@ -302,13 +303,13 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     // Register bots from the lobby's BotManager
     val botController = new BotController(instance, lobby.isPractice)
     lobby.botManager.getBots.foreach { botSlot =>
-      val spawnPoint = instance.world.getValidSpawnPoint(occupiedSpawns)
+      val botTeamId = instance.teamAssignments.getOrDefault(botSlot.id, 0.toByte)
+      val spawnPoint = instance.spawnFor(botTeamId, occupiedSpawns)
       occupiedSpawns += ((spawnPoint.getX, spawnPoint.getY))
       val charDef = com.gridgame.common.model.CharacterDef.get(botSlot.characterId)
       val colorRGB = Player.generateColorFromUUID(botSlot.id)
       val botPlayer = new Player(botSlot.id, botSlot.name, spawnPoint, colorRGB, charDef.maxHealth, charDef.maxHealth)
       botPlayer.setCharacterId(botSlot.characterId)
-      val botTeamId = instance.teamAssignments.getOrDefault(botSlot.id, 0.toByte)
       botPlayer.setTeamId(botTeamId)
       instance.registry.add(botPlayer)
       instance.killTracker.registerPlayer(botSlot.id)

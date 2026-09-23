@@ -130,7 +130,34 @@ object AbilityPreviewRenderer {
     ProjectileType.GRAB        -> (Color.web("#554422"), Color.web("#776644"), Color.web("#998866")),
     ProjectileType.JAW         -> (Color.web("#556677"), Color.web("#778899"), Color.web("#99aabb")),
     ProjectileType.TONGUE      -> (Color.web("#cc3344"), Color.web("#ee5566"), Color.web("#ff8899")),
-    ProjectileType.ACID_FLASK  -> (Color.web("#228833"), Color.web("#44aa55"), Color.web("#66cc77"))
+    ProjectileType.ACID_FLASK  -> (Color.web("#228833"), Color.web("#44aa55"), Color.web("#66cc77")),
+    // Plan 5a: melee and skirmisher kits
+    ProjectileType.SHOCKWAVE       -> (Color.web("#aa9944"), Color.web("#ddcc66"), Color.web("#ffee99")),
+    ProjectileType.ICE_QUAKE       -> (Color.web("#4477aa"), Color.web("#77aadd"), Color.web("#bbddff")),
+    ProjectileType.HOWL            -> (Color.web("#667788"), Color.web("#99aabb"), Color.web("#ccddee")),
+    ProjectileType.FERAL_ROAR      -> (Color.web("#aa6622"), Color.web("#dd9944"), Color.web("#ffcc77")),
+    ProjectileType.EARTHSPLITTER   -> (Color.web("#776644"), Color.web("#998866"), Color.web("#bbaa88")),
+    ProjectileType.GRASPING_DEAD   -> (Color.web("#888066"), Color.web("#bbb088"), Color.web("#ddd6bb")),
+    ProjectileType.DEATH_GRIP      -> (Color.web("#443366"), Color.web("#665588"), Color.web("#9977bb")),
+    ProjectileType.TALON_GRAB      -> (Color.web("#886633"), Color.web("#bb8844"), Color.web("#ddaa66")),
+    ProjectileType.PARALYTIC_STING -> (Color.web("#447733"), Color.web("#66aa44"), Color.web("#aaee77")),
+    ProjectileType.HAMMER_THROW    -> (Color.web("#666677"), Color.web("#9999aa"), Color.web("#ccccdd")),
+    ProjectileType.MEAT_HOOK       -> (Color.web("#777777"), Color.web("#aaaaaa"), Color.web("#dddddd")),
+    ProjectileType.FLAMBE          -> (Color.web("#cc4400"), Color.web("#ff7711"), Color.web("#ffcc44")),
+    ProjectileType.HOLY_NOVA       -> (Color.web("#bbaa44"), Color.web("#ddcc55"), Color.web("#ffee77")),
+    ProjectileType.AXE_SPIN        -> (Color.web("#aa7744"), Color.web("#cc9955"), Color.web("#eebb77")),
+    ProjectileType.VENOM_DART      -> (Color.web("#447733"), Color.web("#66aa44"), Color.web("#88dd66")),
+    ProjectileType.TOXIC_SHURIKEN  -> (Color.web("#335533"), Color.web("#558855"), Color.web("#88bb77")),
+    ProjectileType.BLOOD_FRENZY    -> (Color.web("#882222"), Color.web("#aa4433"), Color.web("#dd6655")),
+    ProjectileType.FLURRY          -> (Color.web("#aa8866"), Color.web("#ccaa88"), Color.web("#eeccaa")),
+    ProjectileType.ROOTING_BOULDER -> (Color.web("#886644"), Color.web("#aa8855"), Color.web("#ccaa77")),
+    ProjectileType.EMBER_FAN       -> (Color.web("#cc5500"), Color.web("#ff7700"), Color.web("#ffbb44")),
+    ProjectileType.FENRIR_CLAW     -> (Color.web("#882233"), Color.web("#aa4444"), Color.web("#cc7766")),
+    ProjectileType.GHOUL_CLAW      -> (Color.web("#556644"), Color.web("#778855"), Color.web("#99aa77")),
+    ProjectileType.SHARK_CLAW      -> (Color.web("#445577"), Color.web("#667799"), Color.web("#99aabb")),
+    ProjectileType.ICE_BOULDER     -> (Color.web("#5577aa"), Color.web("#7799cc"), Color.web("#99bbee")),
+    ProjectileType.DRAIN_BLADE     -> (Color.web("#662244"), Color.web("#884466"), Color.web("#aa6688")),
+    ProjectileType.CHILL_BLADE     -> (Color.web("#445577"), Color.web("#667799"), Color.web("#99aacc"))
   )
 
   private def getColors(projType: Byte): (Color, Color, Color) =
@@ -266,7 +293,34 @@ object AbilityPreviewRenderer {
     ProjectileType.GRAB        -> Tendril,
     ProjectileType.JAW         -> Tendril,
     ProjectileType.TONGUE      -> Tendril,
-    ProjectileType.ACID_FLASK  -> Mine
+    ProjectileType.ACID_FLASK  -> Mine,
+    // Plan 5a: melee and skirmisher kits
+    ProjectileType.SHOCKWAVE       -> Cloud,
+    ProjectileType.ICE_QUAKE       -> Cloud,
+    ProjectileType.HOWL            -> Cloud,
+    ProjectileType.FERAL_ROAR      -> Cloud,
+    ProjectileType.EARTHSPLITTER   -> Beam,
+    ProjectileType.GRASPING_DEAD   -> Tendril,
+    ProjectileType.DEATH_GRIP      -> Tendril,
+    ProjectileType.TALON_GRAB      -> Tendril,
+    ProjectileType.PARALYTIC_STING -> Dart,
+    ProjectileType.HAMMER_THROW    -> Spinner,
+    ProjectileType.MEAT_HOOK       -> Chain,
+    ProjectileType.FLAMBE          -> Orb,
+    ProjectileType.HOLY_NOVA       -> Orb,
+    ProjectileType.AXE_SPIN        -> Spinner,
+    ProjectileType.VENOM_DART      -> Dart,
+    ProjectileType.TOXIC_SHURIKEN  -> Spinner,
+    ProjectileType.BLOOD_FRENZY    -> Dart,
+    ProjectileType.FLURRY          -> Spinner,
+    ProjectileType.ROOTING_BOULDER -> Orb,
+    ProjectileType.EMBER_FAN       -> Dart,
+    ProjectileType.FENRIR_CLAW     -> Dart,
+    ProjectileType.GHOUL_CLAW      -> Dart,
+    ProjectileType.SHARK_CLAW      -> Dart,
+    ProjectileType.ICE_BOULDER     -> Orb,
+    ProjectileType.DRAIN_BLADE     -> Dart,
+    ProjectileType.CHILL_BLADE     -> Dart
   )
 
   private def getShape(projType: Byte): ShapeCategory =

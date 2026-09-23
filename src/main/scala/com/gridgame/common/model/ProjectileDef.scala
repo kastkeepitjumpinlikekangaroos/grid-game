@@ -48,6 +48,9 @@ case class ProjectileDef(
     passesThroughPlayers: Boolean = false,
     passesThroughWalls: Boolean = false,
     onHitEffect: Option[OnHitEffect] = None,
+    // More effects on the same hit, after onHitEffect: a dart that poisons and slows, a horn that
+    // knocks back and stuns. Applied in order, direct hits and blasts alike (onHitEffects)
+    alsoOnHit: Seq[OnHitEffect] = Nil,
     aoeOnHit: Option[AoESplashConfig] = None,
     aoeOnMaxRange: Option[AoESplashConfig] = None,
     explosionConfig: Option[ExplosionConfig] = None,
@@ -81,6 +84,9 @@ case class ProjectileDef(
     }
 
   def isExplosive: Boolean = explosionConfig.isDefined
+
+  /** Everything a hit does to its target, in order: onHitEffect, then alsoOnHit. */
+  val onHitEffects: Seq[OnHitEffect] = onHitEffect.toSeq ++ alsoOnHit
 
   /** After hitting `hits` players, does it fly on? `pierceCount` is how many players it passes
     * through, so it is used up by hit number pierceCount + 1. */

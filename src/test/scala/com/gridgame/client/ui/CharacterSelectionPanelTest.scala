@@ -49,6 +49,18 @@ class CharacterSelectionPanelTest {
     } finally p.stop()
   }
 
+  @Test def theDetailsSayTheRoleTheHealthAndThePace(): Unit = Fx {
+    val (p, root) = panel()
+    try {
+      Fx.click(cells(root)("Barbarian"))
+      assertTrue(Fx.labels(root).contains("Melee  ·  145 HP  ·  Slow"))
+      Fx.click(cells(root)("Golem"))
+      assertTrue(Fx.labels(root).contains("Skirmisher  ·  150 HP  ·  Medium speed"))
+      Fx.click(cells(root)("Wizard"))
+      assertTrue(Fx.labels(root).contains("Ranged  ·  60 HP  ·  Fast"))
+    } finally p.stop()
+  }
+
   @Test def everyCharacterIsInExactlyOneCategory(): Unit = Fx {
     // Adding a character without a category would leave it findable only under "All"
     val (p, root) = panel()

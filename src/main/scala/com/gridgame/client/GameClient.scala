@@ -108,9 +108,29 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   private val BARRIER_STREAM_MS = 100L
   private val BARRIER_TURN_STREAM_MS = 50L
   private val BARRIER_TURN_RAD = 0.035f
-  // A remote barrier is renewed by every update that has it up, which its holder streams while it
-  // is: if they stop coming, it goes down on its own this long after the last
-  private val REMOTE_BARRIER_RENEW_MS = 600L
+  // Someone else's barrier runs on its own timer, as ours does: every update that has one up says
+  // how long it has left (PlayerUpdatePacket byte [53-54]), so losing, delaying or refusing a run
+  // of their updates doesn't take it off our screen while it is still up. Only used when an update
+  // says a barrier is up without saying how long for.
+  private val REMOTE_BARRIER_FALLBACK_MS = 600L
+  // The newest update we have taken a barrier from, per player. A datagram that overtakes another
+  // — one sent before the barrier went up, or before it was turned — must not undo what a newer
+  // one said: remote updates are otherwise applied in the order they arrive.
+  private val barrierUpdateSeq = new ConcurrentHashMap[UUID, Integer]()
+
+  // The opening of the match (MatchOpening): the server says how long it has left and what it
+  // does while it lasts, and we run it on our own clock, which is always a little behind the
+  // server's — the word took a trip down the wire to get here — so ours never ends before theirs
+  // does. A Teams match's wall hangs off our copy of the world, so every walkability check on
+  // this side refuses its cells exactly as the server's does: a step, a blink, a star, a throw.
+  private val openingEndsAt: AtomicLong = new AtomicLong(0)
+  @volatile private var openingRules: Byte = 0
+  // Shots stopped on the wall, for the flash where each struck: a ring of slots in world coordinates
+  val DIVIDER_IMPACT_SLOTS = 12
+  private val dividerImpactX = new Array[Float](DIVIDER_IMPACT_SLOTS)
+  private val dividerImpactY = new Array[Float](DIVIDER_IMPACT_SLOTS)
+  private val dividerImpactTime = new Array[Long](DIVIDER_IMPACT_SLOTS)
+  private var dividerImpactNext = 0
 
   // Shots stopped on barriers, for the ripple where each struck: a ring of slots, overwritten
   // oldest first. `across` is where along the barrier it struck (Barrier.acrossOf), so the
@@ -508,14 +528,21 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     val targetX = Math.max(0, Math.min(world.width - 1, current.getX + dx))
     val targetY = Math.max(0, Math.min(world.height - 1, current.getY + dy))
 
-    if (isPhased || world.isWalkable(targetX, targetY)) {
+    // The opening divider stops a phase as surely as a wall stops a walk, and neither can be
+    // crossed: the server refuses a step over it, so taking one here would only rubber-band us
+    val divider = world.divider
+    def canStand(tx: Int, ty: Int): Boolean =
+      (isPhased || world.isWalkable(tx, ty)) &&
+        (divider == null || !divider.stops(current.getX, current.getY, tx, ty))
+
+    if (canStand(targetX, targetY)) {
       finalX = targetX
       finalY = targetY
     } else if (dx != 0 && dy != 0) {
       // Diagonal blocked — try sliding along each axis
-      if (world.isWalkable(targetX, current.getY)) {
+      if (canStand(targetX, current.getY)) {
         finalX = targetX
-      } else if (world.isWalkable(current.getX, targetY)) {
+      } else if (canStand(current.getX, targetY)) {
         finalY = targetY
       }
     }
@@ -690,7 +717,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     val now = System.currentTimeMillis()
     if (now < barrierUntil.get()) {
       barrierUntil.set(now)
-      sendPositionUpdate(localPosition.get())
+      // Twice, as running out is announced twice: everyone else now holds it until the time the
+      // server gave it, so a single lost datagram would leave them a barrier that isn't there.
+      val pos = localPosition.get()
+      sendPositionUpdate(pos)
+      sendPositionUpdate(pos)
     }
   }
 
@@ -699,6 +730,23 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     barrierUntil.set(0)
     barrierRaisedAt.set(0)
     barrierAnnounced = false
+    barrierUpdateSeq.clear()
+  }
+
+  /** How long a barrier this update says is up has left. An update that doesn't say falls back to
+    * a short lease, so one is never taken to be already over. */
+  private def remoteBarrierMs(packet: PlayerUpdatePacket): Long = {
+    val left = packet.getBarrierMs
+    if (left > 0) left.toLong else REMOTE_BARRIER_FALLBACK_MS
+  }
+
+  /** Is this the newest word we have had on that player's barrier? Records it if so. */
+  private def barrierWordIsNew(playerId: UUID, seq: Int): Boolean = {
+    val last = barrierUpdateSeq.get(playerId)
+    // Circular comparison, as the server's own sequence checks are: the numbers wrap at 2^31
+    if (last != null && ((seq - last.intValue()) & 0x7FFFFFFF) >= 0x40000000) return false
+    barrierUpdateSeq.put(playerId, Integer.valueOf(seq))
+    true
   }
 
   /** A shot stopped on `holder`'s barrier at (x, y): kept for the ripple, as where along the
@@ -724,6 +772,73 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     }
   }
 
+  // ── The opening of the match ─────────────────────────────────────────────
+
+  /** The wall between the two halves of the map while a Teams match opens, or null. It may have
+    * run out: the renderer sinks it into the ground over its last moments, and nothing is held
+    * by it once it has. */
+  def divider: TeamDivider = { val w = currentWorld.get(); if (w == null) null else w.divider }
+
+  /** How long the opening has left on our clock, 0 once it is over. */
+  def openingMsLeft: Long = Math.max(0L, openingEndsAt.get() - System.currentTimeMillis())
+
+  /** When the opening ends (or ended), on our clock: what the HUD counts down to. */
+  def openingEndsAtMs: Long = openingEndsAt.get()
+
+  /** What this match's opening does, for as long as it lasts ([[MatchOpening]]). Kept after it
+    * ends, so the HUD knows which opening it is seeing out. */
+  def openingRulesNow: Byte = openingRules
+
+  /** Are we holding our fire — the opening of a free-for-all? Nothing attacks: not the primary,
+    * not a charge, not the burst, not an ability. The server would refuse any of them anyway. */
+  def attacksLocked: Boolean =
+    MatchOpening.has(openingRules, MatchOpening.NO_ATTACKS) && openingMsLeft > 0L
+
+  /** The server's word on the opening: how long it has left (0 — it is over now) and what it
+    * does while it lasts. */
+  private def setOpening(msLeft: Int, rules: Byte): Unit = {
+    val now = System.currentTimeMillis()
+    openingRules = rules
+    val wasOn = openingEndsAt.getAndSet(if (msLeft > 0) now + msLeft else now) > now
+    installDivider()
+    if (msLeft > 0 && !wasOn && MatchOpening.has(rules, MatchOpening.DIVIDER)) AudioManager.playBarrierUp()
+  }
+
+  /** Put the Teams wall on the world. Called from both sides of the race between the world
+    * arriving and the server's word about the opening, since either can come first. */
+  private def installDivider(): Unit = {
+    val world = currentWorld.get()
+    val ends = openingEndsAt.get()
+    if (world == null || ends == 0L || !MatchOpening.has(openingRules, MatchOpening.DIVIDER)) return
+    val d = world.divider
+    if (d == null || d.endsAt != ends) world.divider = TeamDivider.raise(world, ends)
+  }
+
+  /** A new match: no opening until this one's is announced. */
+  private def clearOpening(): Unit = {
+    openingEndsAt.set(0)
+    openingRules = 0
+    val world = currentWorld.get()
+    if (world != null) world.divider = null
+    java.util.Arrays.fill(dividerImpactTime, 0L)
+  }
+
+  /** A shot stopped on the divider at (x, y): kept for the flash where it struck. */
+  private[client] def recordDividerImpact(x: Float, y: Float, now: Long): Unit = {
+    dividerImpactX.synchronized {
+      val i = dividerImpactNext
+      dividerImpactX(i) = x
+      dividerImpactY(i) = y
+      dividerImpactTime(i) = now
+      dividerImpactNext = (i + 1) % DIVIDER_IMPACT_SLOTS
+    }
+  }
+
+  /** Slot `i` of the divider impacts: where a shot struck it, and when (0 if the slot is unused). */
+  def getDividerImpactX(i: Int): Float = dividerImpactX(i)
+  def getDividerImpactY(i: Int): Float = dividerImpactY(i)
+  def getDividerImpactTime(i: Int): Long = dividerImpactTime(i)
+
   /** Slot `i` of the barrier impacts: whose barrier it struck, where along it, and when (0 if the
     * slot has never been used). Read by the renderer; a slot being overwritten mid-read only
     * misplaces one ripple for a frame. */
@@ -741,6 +856,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   def startCharging(): Unit = {
     if (isFrozen) return
+    // No charging up through the ceasefire either: a bar that fills and then fires nothing is
+    // worse than a button that does nothing
+    if (attacksLocked) return
     isCharging = true
     chargingStartTime.set(System.currentTimeMillis())
   }
@@ -773,6 +891,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   def shootToward(dx: Float, dy: Float, chargeLevel: Int = 0): Unit = {
     if (isDead || isPhased || isFrozen) return
+    if (attacksLocked) return // the opening ceasefire of a free-for-all (MatchOpening)
     if (isPracticeMode) practiceShots += 1
     dropBarrier()
 
@@ -809,6 +928,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     * is: pressing it rooted the player and fired nothing. */
   def shootAllDirections(): Unit = {
     if (isDead || isPhased || isFrozen) return
+    if (attacksLocked) return // it is the primary in eight directions, so the ceasefire holds it too
     dropBarrier()
 
     val pos = localPosition.get()
@@ -827,6 +947,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   def shootAbility(slot: Int): Unit = {
     if (isDead || isFrozen) return
+    // Held by a free-for-all's opening ceasefire (MatchOpening). Refused here rather than sent
+    // and refused, so the cooldown isn't spent on a cast the server was never going to allow.
+    if (attacksLocked) return
 
     val charDef = getSelectedCharacterDef
     val (abilityDef, lastAbilityTime, attackSlot) = slot match {
@@ -1344,6 +1467,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         leaveConfirmUntil = 0L
         serverMovesSeen = 0
         clearBarrier()
+        clearOpening()
         killCount = 0
         deathCount = 0
         // Reset practice stats but keep isPracticeMode flag
@@ -1484,6 +1608,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       case GameEvent.TIME_SYNC =>
         gameTimeSyncRemaining = packet.getRemainingSeconds
         gameTimeSyncTimestamp = System.currentTimeMillis()
+
+      case GameEvent.MATCH_OPENING =>
+        setOpening(packet.getOpeningMs, packet.getOpeningRules)
 
       case GameEvent.GAME_OVER =>
         scoreboard.clear()
@@ -1792,6 +1919,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     deathCount = 0
     gameTimeSyncRemaining = 0
     gameTimeSyncTimestamp = 0L
+    clearOpening()
     scoreboard.clear()
     killFeed.clear()
     chatMessages.clear()
@@ -2021,7 +2149,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           blocked.updatePosition(packet.getX, packet.getY, blocked.dx, blocked.dy)
           fadingProjectiles.put(projectileId, new FadingProjectile(blocked, now, false, 0))
         }
-        recordBarrierImpact(packet.getTargetId, packet.getX, packet.getY, now)
+        // A barrier's holder, or nobody at all — the divider between the teams
+        if (packet.getTargetId != null) recordBarrierImpact(packet.getTargetId, packet.getX, packet.getY, now)
+        else recordDividerImpact(packet.getX, packet.getY, now)
         AudioManager.playBarrierBlock(distanceFromLocal(packet.getX, packet.getY), panFromLocal(packet.getX, packet.getY))
 
       case _ =>
@@ -2280,14 +2410,17 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       } else {
         player.clearPoison()
       }
-      // A barrier is turned, and kept up, by every update that has it up (its holder streams them
-      // while it is), and dropped by one that doesn't: it fades out from then
-      if ((flags2 & 0x04) != 0) {
-        if (!player.hasBarrier) player.setBarrierRaisedAt(now)
-        player.setBarrierUntil(now + REMOTE_BARRIER_RENEW_MS)
-        player.setBarrierAngle(packet.aimAngleRadians.toFloat)
-      } else {
-        player.dropBarrier()
+      // A barrier lasts as long as the update that carries it says it has left, and is turned by
+      // every update that has it up; one without it drops it, and it fades out from then. Only
+      // the newest update about it counts, so a datagram that overtakes another can't undo it.
+      if (barrierWordIsNew(playerId, packet.getSequenceNumber)) {
+        if ((flags2 & 0x04) != 0) {
+          if (!player.hasBarrier) player.setBarrierRaisedAt(now)
+          player.setBarrierUntil(now + remoteBarrierMs(packet))
+          player.setBarrierAngle(packet.aimAngleRadians.toFloat)
+        } else {
+          player.dropBarrier()
+        }
       }
 
       // Record death animation when player newly dies
@@ -2317,8 +2450,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
       val flags2 = packet.getEffectFlags2
       if ((flags2 & 0x01) != 0) player.setStunnedUntil(System.currentTimeMillis() + 5000)
       if ((flags2 & 0x02) != 0) player.applyPoison(0, 1000, 1000, null)
-      if ((flags2 & 0x04) != 0) player.raiseBarrier(System.currentTimeMillis(), REMOTE_BARRIER_RENEW_MS.toInt,
-        packet.aimAngleRadians.toFloat)
+      if ((flags2 & 0x04) != 0) {
+        barrierWordIsNew(playerId, packet.getSequenceNumber)
+        player.raiseBarrier(System.currentTimeMillis(), remoteBarrierMs(packet).toInt,
+          packet.aimAngleRadians.toFloat)
+      }
       players.put(playerId, player)
     }
   }
@@ -2326,6 +2462,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   private def handlePlayerLeave(packet: PlayerLeavePacket): Unit = {
     val playerId = packet.getPlayerId
     val player = players.remove(playerId)
+    barrierUpdateSeq.remove(playerId)
     playerHitTimes.remove(playerId)
     playerHitColors.remove(playerId)
     playerHitDx.remove(playerId)
@@ -2531,6 +2668,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   def setWorld(world: WorldData): Unit = {
     currentWorld.set(world)
+    // The divider may have been announced before the world it stands on arrived, or after
+    installDivider()
     // Somewhere in the new world until the server's join echo, which follows the world on the
     // same connection, says where it placed us. Kept to ourselves: sent, the server took it as
     // our position (see the PLAYER_JOIN case in processPacket).

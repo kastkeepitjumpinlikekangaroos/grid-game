@@ -133,7 +133,7 @@ class BarrierTest {
 
   @Test def aSlamInFrontOfItDoesNotReachBehindIt(): Unit = {
     val holder = m.join(CharacterId.Crusader, 20, 30)
-    val slammer = m.join(CharacterId.Barbarian, 25, 30)
+    val slammer = m.join(CharacterId.Beetle, 25, 30)
     val aside = m.join(CharacterId.Gladiator, 25, 34)
     raise(m, holder)
     m.tickUntilGone(m.launch(slammer, ProjectileType.TREMOR_SLAM, 0f, 0f))
@@ -210,6 +210,18 @@ class BarrierTest {
 
   // --- Up, and down ---
 
+  @Test def everyoneIsToldHowLongItHasLeft(): Unit = {
+    // Its holder's client streams the updates that carry it, and those can stop for longer than
+    // a lease — a hitch in its render loop, a burst of lost datagrams, a run the server refused.
+    // Everyone runs the barrier's own timer instead, so a gap can't take it off their screens.
+    val holder = m.join(CharacterId.Crusader, 20, 30)
+    raise(m, holder)
+    val left = m.instance.stateUpdate(holder).getBarrierMs
+    assertTrue(s"the Bulwark's 3.5s, less what has passed: $left", left > 3000 && left <= 3500)
+    holder.dropBarrier()
+    assertEquals("and nothing once it is down", 0, m.instance.stateUpdate(holder).getBarrierMs)
+  }
+
   @Test def itLastsItsTimeAndThenComesDown(): Unit = {
     val holder = m.join(CharacterId.Crusader, 20, 30)
     val enemy = m.join(CharacterId.Soldier, 30, 30)
@@ -237,9 +249,9 @@ class BarrierTest {
   }
 
   @Test def aCharacterWithoutOneCannotClaimOne(): Unit = {
-    val gladiator = m.join(CharacterId.Gladiator, 20, 30)
-    raise(m, gladiator)
-    assertFalse(gladiator.hasBarrier)
+    val soldier = m.join(CharacterId.Soldier, 20, 30)
+    raise(m, soldier)
+    assertFalse(soldier.hasBarrier)
   }
 
   @Test def firingDropsIt(): Unit = {
@@ -255,7 +267,7 @@ class BarrierTest {
   @Test def castingDropsIt(): Unit = {
     val holder = m.join(CharacterId.Crusader, 20, 30)
     raise(m, holder)
-    assertEquals(1, m.fire(holder, AttackSlot.E, ProjectileType.TREMOR_SLAM, Seq((0f, 0f))).size)
+    assertEquals(1, m.fire(holder, AttackSlot.E, ProjectileType.SHOCKWAVE, Seq((0f, 0f))).size)
     assertFalse(holder.hasBarrier)
   }
 
@@ -276,6 +288,19 @@ class BarrierTest {
       soldier.setPosition(new Position(bot.getPosition.getX + 3, bot.getPosition.getY))
       bots.tick()
       assertFalse(bot.hasBarrier)
+    } finally bots.stop()
+  }
+
+  @Test def aBotRaisesItAgainstABoulderThrowerThatOutrangesIt(): Unit = {
+    // A skirmisher: 8 cells of boulder against 5 of blade. Judged as ranged by a reach of 10 or
+    // more, it never counted, and the barrier stayed down while the boulders came in
+    val bot = m.join(CharacterId.Crusader, 20, 30)
+    m.join(CharacterId.Golem, 27, 30)
+    val bots = new BotController(m.instance)
+    try {
+      bots.addBotId(bot.getId)
+      bots.tick()
+      assertTrue(bot.hasBarrier)
     } finally bots.stop()
   }
 

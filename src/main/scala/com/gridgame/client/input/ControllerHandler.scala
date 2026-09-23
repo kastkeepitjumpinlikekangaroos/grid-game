@@ -4,6 +4,7 @@ import com.gridgame.client.GameClient
 import com.gridgame.client.gl.GLFWManager
 import com.gridgame.common.Constants
 import com.gridgame.common.model.ItemType
+import com.gridgame.common.model.Movement
 import com.gridgame.common.model.ProjectileDef
 
 import org.lwjgl.BufferUtils
@@ -302,7 +303,8 @@ class ControllerHandler(client: GameClient) {
 
     client.setMovementInputActive(true)
     client.movePlayer(dx, dy)
-    lastMoveTime = now
+    // Counted from when the step fell due, not from this frame, as the keyboard does (Movement)
+    lastMoveTime = Movement.nextStepFrom(lastMoveTime + effectiveRate, now, effectiveRate)
   }
 
   private def processAiming(): Unit = {

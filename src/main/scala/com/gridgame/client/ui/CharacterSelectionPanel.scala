@@ -60,6 +60,8 @@ class CharacterSelectionPanel(
   // Detail panel elements
   private var detailPreviewCanvas: Canvas = _
   private var detailNameLabel: Label = _
+  // Role, health and pace: "Melee  ·  145 HP  ·  Slow"
+  private var detailRoleLabel: Label = _
   private var detailDescLabel: Label = _
 
   // Ability row elements
@@ -198,6 +200,10 @@ class CharacterSelectionPanel(
     detailNameLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 17))
     detailNameLabel.setTextFill(Color.web("#4a9eff"))
 
+    detailRoleLabel = new Label("")
+    detailRoleLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 12))
+    detailRoleLabel.setTextFill(Color.web("#8899aa"))
+
     detailDescLabel = new Label("")
     detailDescLabel.setFont(Font.font("Exo 2", 13))
     detailDescLabel.setTextFill(Color.web("#aabbcc"))
@@ -222,7 +228,7 @@ class CharacterSelectionPanel(
     descCard.setPadding(new Insets(10, 14, 10, 14))
     descCard.setStyle(cardBgSubtle)
 
-    val previewBox = new VBox(6, detailPreviewCanvas, detailNameLabel)
+    val previewBox = new VBox(6, detailPreviewCanvas, detailNameLabel, detailRoleLabel)
     previewBox.setAlignment(Pos.CENTER)
 
     val detailsPanel = new VBox(12, previewBox, descCard, abilitiesCard)
@@ -455,6 +461,7 @@ class CharacterSelectionPanel(
   private def updateDetailPanel(): Unit = {
     val charDef = CharacterDef.get(getSelectedId())
     detailNameLabel.setText(I18n.characterName(charDef))
+    detailRoleLabel.setText(CharacterSelectionPanel.roleLine(charDef))
     detailDescLabel.setText(I18n.characterDesc(charDef))
     animTick = 0
     dirIndex = 0
@@ -609,7 +616,7 @@ class CharacterSelectionPanel(
     stats.append(speedStr)
 
     // Special effects
-    pDef.onHitEffect.foreach {
+    pDef.onHitEffects.foreach {
       case PullToOwner => stats.append("  Pull")
       case Freeze(dur) => stats.append(s"  Freeze ${seconds(dur)}")
       case Stun(dur) => stats.append(s"  Stun ${seconds(dur)}")
@@ -663,4 +670,19 @@ class CharacterSelectionPanel(
       charDef.eAbility.projectileType, charDef.eAbility.castBehavior,
       animTick, eRow.canvas.getWidth, eRow.canvas.getHeight)
   }
+}
+
+object CharacterSelectionPanel {
+  /** What the character is for and the two numbers their role sets: "Melee  ·  145 HP  ·  Slow". */
+  def roleLine(d: CharacterDef): String =
+    Seq(Messages.t(d.role.name), Messages.t("{0} HP", d.maxHealth.toString), paceName(d.moveSpeed))
+      .mkString("  \u00b7  ")
+
+  /** A walking pace in words, against the roster's: ranged characters (the base rate) are the
+    * quick ones, skirmishers a little slower, melee slowest. The roles are only a few percent
+    * apart, so a word per pace says more than a number nobody can compare. */
+  def paceName(moveSpeed: Float): String =
+    if (moveSpeed >= 0.99f) Messages.t("Fast")
+    else if (moveSpeed >= 0.955f) Messages.t("Medium speed")
+    else Messages.t("Slow")
 }

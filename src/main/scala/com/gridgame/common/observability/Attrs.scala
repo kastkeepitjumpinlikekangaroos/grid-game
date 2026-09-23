@@ -97,6 +97,8 @@ object Attrs {
   val VfCharacter: Attributes = kind("character")
   val VfWorldMissing: Attributes = kind("world_missing")
   val VfTrapPlacement: Attributes = kind("trap_placement")
+  // A cast during the opening of a free-for-all, when abilities are holstered (MatchOpening)
+  val VfOpening: Attributes = kind("match_opening")
 
   // ---------- Auth outcomes ----------
   val AuthLoginSuccess: Attributes = Attributes.of(Action, "login", Outcome, "success")

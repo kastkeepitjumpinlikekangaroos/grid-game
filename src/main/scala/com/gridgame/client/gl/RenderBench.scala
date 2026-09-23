@@ -1,7 +1,9 @@
 package com.gridgame.client.gl
 
 import com.gridgame.client.GameClient
+import com.gridgame.common.Constants
 import com.gridgame.common.model._
+import com.gridgame.common.protocol.{GameEvent, GameEventPacket, Packet}
 import com.gridgame.common.world.WorldLoader
 
 import javafx.animation.AnimationTimer
@@ -21,6 +23,8 @@ import scala.jdk.CollectionConverters._
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --players=24 --projectiles=300 --quality=low
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --barriers   # some players hold barriers
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --traps      # traps on the ground
+ *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --divider    # a Teams match's opening wall
+ *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --ceasefire  # a free-for-all's opening ceasefire
  *
  * Drives the real GLGameRenderer the way the client does — a GLFW window at the client's
  * size, frames driven by a JavaFX AnimationTimer on the FX thread — over a fabricated
@@ -128,6 +132,31 @@ class RenderBenchApp extends Application {
     // default for the same reason as the two above.
     val withTraps = args.contains("--traps")
     val nTraps = if (withTraps) argOf(args, "traps").map(_.toInt).getOrElse(30) else 0
+    // The opening of a match (MatchOpening), which is otherwise only the first thirty seconds of
+    // a real one: --divider raises the wall a Teams match opens with, with shots striking it, and
+    // --ceasefire holds everyone's fire the way a free-for-all's opening does. Both are told to
+    // the client exactly as the server tells it, so the countdown under the clock runs; the wall
+    // is then stood a few cells from the local player rather than down the middle of the map,
+    // since what there is to look at is the wall itself. `=<seconds>` shortens the opening, which
+    // is how to watch it end.
+    val withDivider = args.exists(a => a == "--divider" || a.startsWith("--divider="))
+    val withLock = args.exists(a => a == "--ceasefire" || a.startsWith("--ceasefire="))
+    if (withDivider || withLock) {
+      val flag = if (withDivider) "divider" else "ceasefire"
+      val ms = argOf(args, flag).map(_.toDouble).map(secs => (secs * 1000).toInt)
+        .getOrElse(Constants.MATCH_OPENING_MS)
+      val rules = if (withDivider) MatchOpening.DIVIDER else MatchOpening.NO_ATTACKS
+      client.processPacket(new GameEventPacket(1, new UUID(0L, 0L), Packet.getCurrentTimestamp,
+        GameEvent.MATCH_OPENING, 0.toShort, 0, 0.toShort, 0.toShort, null, 0.toByte, 0.toShort,
+        0.toShort, 0.toByte, ms, rules))
+      if (withDivider) {
+        val raised = client.divider
+        world.divider = new TeamDivider(raised.axisX, home.getX + 5, raised.endsAt)
+      }
+      // The countdown under the match clock is part of what there is to look at, and the top of
+      // the HUD is only drawn in a match
+      client.clientState = com.gridgame.client.ClientState.PLAYING
+    }
     val players = (0 until nPlayers).map { i =>
       val id = UUID.randomUUID()
       val p = new Player(id, s"Bot$i", walkableNear(home.getX, home.getY, 10), Player.generateColorFromUUID(id), 100)
@@ -261,6 +290,13 @@ class RenderBenchApp extends Application {
         client.getTraps.put(id, new Trap(id, if (id % 2 == 0) client.getLocalPlayerId else trapOwner,
           0.toByte, pos.getX, pos.getY, tType, now, now + TrapDef.get(tType).armDelayMs,
           now + TrapDef.get(tType).lifetimeMs))
+      }
+
+      // Shots stopping on the divider, so its flash is in the frame too
+      if (withDivider && frame % 25 == 0) {
+        val d = world.divider
+        val along = home.getY + rng.nextInt(11) - 5
+        client.recordDividerImpact(d.at.toFloat, along.toFloat, now)
       }
 
       // A death and a teleport somewhere every couple of seconds

@@ -26,7 +26,12 @@ class PlayerUpdatePacket(
     val aimAngle: Int = 0,
     // The speed multiplier while slowed, 0-100, so the client steps at the rate the slow that
     // landed actually calls for instead of a flat half.
-    val slowPercent: Int = 0
+    val slowPercent: Int = 0,
+    // Server -> the rest of the match: how long this player's raised barrier has left, in ms.
+    // Everyone draws it on that timer rather than on a lease renewed by whichever updates
+    // happen to arrive, so a hitch in the holder's client can't take it off other screens.
+    // 0 when none is up, and on the client's own updates: how long one lasts is the server's.
+    val barrierMs: Int = 0
 ) extends Packet(PacketType.PLAYER_UPDATE, sequenceNumber, playerId, timestamp) {
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int) = {
@@ -73,6 +78,9 @@ class PlayerUpdatePacket(
   def aimAngleRadians: Double = PlayerUpdatePacket.decodeAimAngle(aimAngle)
 
   def getSlowPercent: Int = slowPercent
+
+  /** How long the raised barrier has left, in ms (0: none, or the sender doesn't say). */
+  def getBarrierMs: Int = barrierMs
 
   override def serialize(): Array[Byte] = {
     val buffer = SerializeUtil.acquireBuffer()
@@ -126,8 +134,11 @@ class PlayerUpdatePacket(
     // [52] Slow multiplier as a percentage (0-100)
     buffer.put(slowPercent.toByte)
 
-    // [53-63] Reserved (11 bytes) - fill with zeros
-    buffer.put(new Array[Byte](11))
+    // [53-54] How long a raised barrier has left, in ms (capped at 65535)
+    buffer.putShort((Math.max(0, Math.min(65535, barrierMs)) & 0xFFFF).toShort)
+
+    // [55-63] Reserved (9 bytes) - fill with zeros
+    buffer.put(new Array[Byte](9))
 
     buffer.array().clone()
   }

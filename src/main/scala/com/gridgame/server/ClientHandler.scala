@@ -95,6 +95,14 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       return false
     }
 
+    // Nobody attacks during a free-for-all's opening ceasefire (MatchOpening) — the primary and
+    // its burst as much as an ability. Judged before the fire-rate clock, so a refused attack
+    // costs no cooldown.
+    if (instance != null && instance.attacksLocked) {
+      Metrics.validationFailed.add(1L, Attrs.VfOpening)
+      return false
+    }
+
     if (!validator.validateProjectileSpawn(packet, player)) {
       Metrics.validationFailed.add(1L, Attrs.VfProjectileFireRate)
       return false
@@ -161,6 +169,8 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
 
     // The dead, the held and the phased cast nothing
     if (player.isDead || player.isFrozen || player.isPhased) return refuse("dead, held or phased")
+    // Nor does anyone during a free-for-all's opening ceasefire (MatchOpening)
+    if (instance.attacksLocked) return refuse("the opening ceasefire")
 
     val charDef = CharacterDef.get(player.getCharacterId)
     val slot = packet.getAttackSlot
@@ -230,10 +240,12 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       // Validate rejoin position — only accept if in-bounds and walkable
       val rejoinPos = packet.getPosition
       val world = if (instance != null) instance.world else server.getWorld
+      val here = existing.getPosition
       if (world != null && rejoinPos.getX >= 0 && rejoinPos.getX < world.width &&
-          rejoinPos.getY >= 0 && rejoinPos.getY < world.height && world.isWalkable(rejoinPos.getX, rejoinPos.getY)) {
+          rejoinPos.getY >= 0 && rejoinPos.getY < world.height && world.isWalkable(rejoinPos.getX, rejoinPos.getY) &&
+          (world.divider == null || !world.divider.stops(here.getX, here.getY, rejoinPos.getX, rejoinPos.getY))) {
         existing.setPosition(rejoinPos)
-      } // else keep server-side position (prevents teleport-on-rejoin)
+      } // else keep server-side position (prevents teleport-on-rejoin, and a rejoin across the divider)
       existing.setColorRGB(packet.getColorRGB)
       existing.setName(packet.getPlayerName)
       existing.setHealth(existing.getMaxHealth)
@@ -249,7 +261,10 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       else server.sendModifiedTiles(existing)
       // Its state, with the count of server moves: a client that has lost count of them (a
       // restarted one starts from zero) picks it up, or all its updates would be taken as stale
-      if (instance != null) instance.sendStateToPlayer(existing)
+      if (instance != null) {
+        instance.sendStateToPlayer(existing)
+        instance.sendOpeningTo(existing)
+      }
 
       true
     } else {
@@ -263,9 +278,15 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       // Validate new player join position against world bounds and walkability
       val joinPos = packet.getPosition
       val world = if (instance != null) instance.world else server.getWorld
+      // A joiner claiming a cell in the other team's half is put in their own (the divider), as
+      // one claiming a wall is put on a spawn point
+      val sideOk = world == null || world.divider == null ||
+        world.divider.side(joinPos.getX, joinPos.getY) == com.gridgame.common.model.TeamDivider.sideOfTeam(packet.getTeamId)
       val validPos = if (world != null && joinPos.getX >= 0 && joinPos.getX < world.width &&
-          joinPos.getY >= 0 && joinPos.getY < world.height && world.isWalkable(joinPos.getX, joinPos.getY)) {
+          joinPos.getY >= 0 && joinPos.getY < world.height && world.isWalkable(joinPos.getX, joinPos.getY) && sideOk) {
         joinPos
+      } else if (instance != null && world != null) {
+        instance.spawnFor(packet.getTeamId, Set.empty)
       } else if (world != null) {
         world.getRandomSpawnPoint
       } else {
@@ -284,8 +305,10 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       sendExistingItems(player)
       if (instance != null) instance.sendTrapsTo(player)
       sendInventoryContents(playerId, player)
-      if (instance != null) instance.sendModifiedTiles(player)
-      else server.sendModifiedTiles(player)
+      if (instance != null) {
+        instance.sendModifiedTiles(player)
+        instance.sendOpeningTo(player)
+      } else server.sendModifiedTiles(player)
 
       true
     }
@@ -325,7 +348,8 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
         // checked: the first one sent with the flag can already be inside one
         if ((packet.getEffectFlags & 0x08) != 0) activatePhase(player)
         updateBarrier(player, packet)
-        if (world != null && !validator.validateMovement(packet, player, world)) {
+        if (world != null && !validator.validateMovement(packet, player, world,
+            instance != null && instance.attacksLocked)) {
           Metrics.validationFailed.add(1L, Attrs.VfMovementSpeed)
           refused = true
           false
@@ -392,6 +416,8 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
    */
   private def activatePhase(player: Player): Unit = {
     if (player.isPhased) return
+    // A phase and a dash are abilities like any other: held by a free-for-all's opening ceasefire
+    if (instance != null && instance.attacksLocked) return
     val charDef = CharacterDef.get(player.getCharacterId)
     val grants = Seq(charDef.qAbility, charDef.eAbility).flatMap { ability =>
       ability.castBehavior match {
@@ -422,7 +448,8 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     if (player.hasBarrier) {
       if (raised) player.setBarrierAngle(packet.aimAngleRadians.toFloat)
       else player.dropBarrier()
-    } else if (raised && !player.isDead && !player.isFrozen && !player.isPhased) {
+    } else if (raised && !player.isDead && !player.isFrozen && !player.isPhased &&
+               (instance == null || !instance.attacksLocked)) {
       val charDef = CharacterDef.get(player.getCharacterId)
       Seq(charDef.qAbility, charDef.eAbility).collectFirst {
         case a if a.castBehavior.isInstanceOf[BarrierCast] => (a.castBehavior.asInstanceOf[BarrierCast].durationMs, a.cooldownMs)
@@ -628,9 +655,15 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     }
 
     // Distance check: fence must be placed near the player
-    val fdx = Math.abs(targetX - player.getPosition.getX)
-    val fdy = Math.abs(targetY - player.getPosition.getY)
+    val from = player.getPosition
+    val fdx = Math.abs(targetX - from.getX)
+    val fdy = Math.abs(targetY - from.getY)
     if (fdx + fdy > Constants.FENCE_MAX_DISTANCE) return false
+
+    // Nor over the opening divider: for those thirty seconds nothing of yours reaches the other
+    // half, a fence included — and this one would still be standing there when the wall drops
+    val divider = w.divider
+    if (divider != null && divider.stops(from.getX, from.getY, targetX, targetY)) return false
 
     // Determine the perpendicular offsets based on player facing direction
     val (perpDx, perpDy) = player.getDirection match {

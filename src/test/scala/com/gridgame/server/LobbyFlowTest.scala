@@ -54,6 +54,37 @@ class LobbyFlowTest {
 
   @After def endMatches(): Unit = started.foreach(server.endGame)
 
+  // --- Teams ---
+
+  @Test def aTeamsMatchStartsWithEachTeamInItsOwnHalf(): Unit = {
+    val host = new Client("host")
+    host.lobbyAction(LobbyAction.CREATE)
+    val guest = new Client("guest")
+    guest.lobbyAction(LobbyAction.JOIN, lobbyId = host.lobby.id)
+    host.lobbyAction(LobbyAction.CONFIG_UPDATE, gameMode = 1, teamSize = 2)
+    assertEquals("a Teams lobby", 1.toByte, host.lobby.gameMode)
+    val gi = start(host)
+
+    assertEquals(1, gi.gameMode)
+    assertNotNull("the opening divider stands between them", gi.divider)
+    Seq(host, guest).foreach { c =>
+      val p = gi.registry.get(c.id)
+      assertTrue(s"${c.name} is on a team", p.getTeamId != 0)
+      val pos = p.getPosition
+      assertEquals(s"${c.name} (team ${p.getTeamId}) started at $pos",
+        TeamDivider.sideOfTeam(p.getTeamId), TeamDivider.sideOf(gi.world, pos.getX, pos.getY))
+    }
+    assertNotEquals("and the two teams are apart",
+      gi.registry.get(host.id).getTeamId, gi.registry.get(guest.id).getTeamId)
+  }
+
+  @Test def aFreeForAllStartsWithoutOne(): Unit = {
+    val host = new Client("host")
+    host.lobbyAction(LobbyAction.CREATE)
+    val gi = start(host)
+    assertNull(gi.divider)
+  }
+
   // --- Characters ---
 
   @Test def theCharacterPickedBeforeCreatingIsTheOnePlayed(): Unit = {
@@ -65,7 +96,8 @@ class LobbyFlowTest {
     val gi = start(host)
     val p = gi.registry.get(host.id)
     assertEquals(CharacterId.Wizard.id, p.getCharacterId)
-    // ...so the Wizard's shots are the Wizard's
+    // ...so the Wizard's shots are the Wizard's, once the opening ceasefire is over (MatchOpening)
+    gi.skipOpening()
     val before = gi.projectileManager.size
     gi.handler.processPacket(ProjectilePacket.spawnRequest(nextSeq(), host.id, p.getPosition.getX.toFloat,
       p.getPosition.getY.toFloat, 0, 1f, 0f, 0.toByte, CharacterDef.get(CharacterId.Wizard).primaryProjectileType,

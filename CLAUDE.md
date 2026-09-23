@@ -50,6 +50,8 @@ bazel run //src/main/scala/com/gridgame/client:render_bench   # a busy match, no
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --effects  # ... with status effects on
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --barriers # ... with barriers raised
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --traps    # ... with traps on the ground
+bazel run //src/main/scala/com/gridgame/client:render_bench -- --divider  # ... with a Teams match's opening wall
+bazel run //src/main/scala/com/gridgame/client:render_bench -- --ceasefire # ... with a free-for-all's opening ceasefire
 bazel run //src/main/scala/com/gridgame/client:ui_bench       # the JavaFX menus
 ```
 
@@ -176,6 +178,8 @@ src/main/scala/com/gridgame/
 │   │                           # 10 on-hit effects, charge/distance damage scaling
 │   │                           # 5 item types (Gem, Heart, Star, Shield, Fence)
 │   │                           # Trap, TrapDef (5 kinds), TrapPlacement
+│   │                           # MatchOpening (what a match's first 30s does), TeamDivider
+│   │                           # (the halves of a Teams map, and the wall between them)
 │   ├── protocol/               # Network packets (18 packet types), PacketSigner (HMAC-SHA256)
 │   ├── observability/          # OpenTelemetry facade (Telemetry, Metrics, Attrs, Tracing, Log)
 │   │                           # Pre-built instruments + cached Attributes for hot paths
@@ -201,7 +205,8 @@ src/main/scala/com/gridgame/
     │                           # EditorTileRenderer
 
 src/test/scala/com/gridgame/   # Tests (see Testing): common/ (model, protocol, world),
-                                # server/ (matches driven by hand), client/ (GameClient, screens)
+                                # server/ (matches driven by hand), client/ (GameClient, screens),
+                                # tools/ (the website's character cards)
 worlds/                         # World definition files (16 JSON maps)
 sprites/                        # Sprite assets (tiles.png + 112 character PNGs)
 scripts/                        # Asset generation scripts (29 Python scripts)
@@ -222,8 +227,8 @@ When a match starts, `ClientMain.showGameScene()` hides the JavaFX Stage and cre
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `GLGameRenderer.scala` | ~5850 | Main renderer: tiles, players, projectiles, items, status effects, HUD, aim arrow, backgrounds, death/teleport/explosion animations |
-| `GLProjectileRenderers.scala` | ~5900 | All 150 projectile type renderers (15 pattern factories + 33 specialized renderers + the local-frame silhouette system) |
+| `GLGameRenderer.scala` | ~6050 | Main renderer: tiles, players, projectiles, items, status effects, barriers, the team divider, HUD, aim arrow, backgrounds, death/teleport/explosion animations |
+| `GLProjectileRenderers.scala` | ~5930 | All 176 projectile type renderers (15 pattern factories + 33 specialized renderers + the local-frame silhouette system) |
 | `ShapeBatch.scala` | ~630 | Batched colored 2D primitives: fillRect, fillOval, fillOvalSoft, fillPolygon (**convex only**), fillFan (star-shaped outline, fanned from an explicit centre — stars, sunbursts, faceted hulls), fillRibbon (a band given as an outer run plus the inner run reversed — crescent blades), fillArcBand (ring segment with an alpha ramp — gauges, crescents, shockwaves), fillStarFlare (4-point glint), strokeLine, strokeLineSoft, strokeArc, strokeOval, strokePolygon. Supports additive blend mode toggle, plus an alpha multiplier and a scale-about-pivot applied to every vertex (`setAlphaMultiplier` / `setScaleAbout`; reset by `begin`). |
 | `SpriteBatch.scala` | ~200 | Batched textured quads with per-vertex tint/alpha. Flushes on texture change. |
 | `ShaderProgram.scala` | ~190 | GLSL shader compilation + embedded shader source: ColorShader (pos+color), TextureShader (pos+texcoord+color), BloomExtract, GaussianBlur, Composite (bloom+vignette+overlay) |
@@ -278,7 +283,7 @@ position stores were the largest single cost of building a busy frame. Every pri
 reserve its vertices with `ensureCapacity` before writing them; `vertex` only has a backstop.
 
 ### Projectile Rendering System
-All 150 projectile types are registered in `GLProjectileRenderers.registry` (`Map[Byte, Renderer]`, flattened into `_rendererLUT` for O(1) lookup with no `Option` allocation). Projectiles use **standard alpha blending** for solid, visible shapes — the bloom post-processor provides natural glow on bright elements.
+All 176 projectile types are registered in `GLProjectileRenderers.registry` (`Map[Byte, Renderer]`, flattened into `_rendererLUT` for O(1) lookup with no `Option` allocation). Projectiles use **standard alpha blending** for solid, visible shapes — the bloom post-processor provides natural glow on bright elements.
 
 `Renderer` is a single-method trait, `apply(proj, sx, sy, sb, tick)`, not a
 `(Projectile, Float, Float, ShapeBatch, Int) => Unit`: `scala.Function5` isn't specialized,
@@ -598,7 +603,9 @@ could move these numbers should be checked with them rather than guessed at:
 # scene has none of — off by default so the numbers below stay comparable. --barriers has
 # every fourth player hold a barrier up, turning and being struck, half of them allies, and
 # --traps scatters 30 traps of every kind, half ours and half an enemy's, some arming, some
-# going off.
+# going off. --divider raises the wall a Teams match opens with, beside the local player, and
+# --ceasefire holds every attack the way a free-for-all's opening does (=<seconds> on either to
+# watch it end).
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --quality=low
 
 # The JavaFX menus: the character select screen, then a match start (stage hidden), a second
@@ -1054,6 +1061,82 @@ Characters are defined across 8 categories in `CharacterId.scala` and `Character
 | Mythological | 87-101 | 15 | Minotaur, Medusa, Cerberus, Centaur, Kraken, Sphinx, Cyclops, Harpy, Griffin, Anubis, Yokai, Golem, Djinn, Fenrir, Chimera |
 | Specialist | 102-111 | 10 | Alchemist, Puppeteer, Gambler, Blacksmith, Pirate, Chef, Musician, Astronomer, Runesmith, Shapeshifter |
 
+### Roles, health and pace
+Every character names a `role: CombatRole` (`common/model/CombatRole.scala`), and the role sets
+the two numbers that trade range for staying power. Whoever has to get into range gets the
+health to survive getting there. Whoever can hit from range walks a little quicker, so a ranged
+character can kite a melee one (walk away, shooting back) for as long as both only walk. A melee
+character closes the gap with its abilities or an item, not its feet.
+
+| Role | Primary reach | Characters | Health | `moveSpeed` | Step |
+|---|---|---|---|---|---|
+| `Ranged` | 12 or more | 75 | 60-80 | 1.0 | 50ms, 20 cells/s |
+| `Skirmisher` | 7-10 | 7 | 105-150 | 0.97 | 52ms, 19.2 cells/s |
+| `Melee` | 6 cells or less | 30 | 105-150 | 0.94 | 53ms, 18.9 cells/s |
+
+- **The role is named on each character, not worked out.** `CombatRole.forRange` is the rule
+  (reach measured fully charged), with one exception: the Monk, whose 6-cell punch reaches 10
+  charged, is melee. `RosterBalanceTest` checks every character against the rule and its list of
+  exceptions.
+- **Skirmishers** are the boulder throwers (Earthshaker, Avalanche, Beetle, Gorilla, Golem,
+  Cyclops) plus Ember: melee health, a pace between the two.
+- **Health keeps each character's place within its class.** It was mapped from the old values
+  (ranged `60 + (old - 65) * 20/60`, melee and skirmishers `105 + (old - 65) * 45/65`, rounded to
+  5), then the glass cannons (Wizard, Railgunner, Astronomer, Cleric, Pilot) were set at the
+  ranged floor and the Minotaur at the melee ceiling. The toughest ranged character (80) stays at
+  least 20 below the frailest fighter (105). `RosterBalanceTest` pins the bands, that gap and the
+  order of the paces.
+- **Only just quicker:** walking straight away, a ranged character opens about a cell a second on
+  a melee one. Played over the network: a Soldier walking away from a Berserker and shooting back
+  went 20.1 cells a second to its 19.1, opened the gap from 8 cells to 12 and killed it in 3.9s
+  without being swung at. From 8-9 cells, the Gladiator's rope pulled the Soldier in and the
+  Hawk's Dive Bomb teleport landed beside it; each killed it inside 1.4s. `RosterBalanceTest` keeps
+  the gap between half a cell and two cells a second.
+- **Every melee and skirmisher kit has a way in, or is an anchor** (Plan 5a). A way in is a
+  teleport; a phase, which walks at twice the pace; a pull, stun, root or slow on a projectile fast
+  enough to land on someone walking away from 8 cells; or a dash that gains 6 cells over walking.
+  The Crusader, Golem, Beetle and Avalanche are **anchors** instead: a barrier or a big hold, with
+  a team to do the chasing. `MeleeKitTest` checks both, and that every kit has crowd control.
+  - A player's `DashBuff` moves `maxDistance` cells over `durationMs` while the runner keeps
+    walking, so it gains only `maxDistance - 18.9 * durationMs / 1000` cells over walking. Melee
+    dashes were 300-500ms and gained 2-5; they are now 150ms (the Minotaur's 14 cells 200ms), and
+    the 8-cell ones 10 cells: 7 to 10 cells each. A shorter dash is a shorter invulnerable phase
+    too. Bots dash at once (`BotController` sets their position), so it never short-changed them.
+    Ranged dashes are escapes and were left as they were.
+  - A projectile flies `33 x speedMultiplier` cells a second, so on a runner walking straight
+    away it lands from at most `maxRange x (1 - 0.6 / speedMultiplier) + hitRadius + 1` cells: a
+    0.85 rope from 10, a 0.9 closer of 18 cells from 8, a 0.7 bolt from 5, and a 0.6 axe (a
+    runner's own speed) only inside its hit radius. That formula is for a runner moving smoothly,
+    and one moves in one-cell steps: a 16-cell closer at 0.9, which it put at 8.1, missed from 8
+    at 3 phases of the step in 20, and the play test's Hammer Throw missed from 8 over the network.
+    The 16-cell pulls and holds are 0.95. `MeleeKitsTest` walks a runner away from every
+    projectile way in at 20 phases of its step and checks each lands from 8, and that the Death
+    Bolt the Death Grip replaced never could.
+  - Played over the network (Plan 5a), a Soldier walking away from 8 cells and shooting back was
+    caught by the Berserker's Rage Charge, the Chef's Meat Hook, the Vampire's Mist Form, and the
+    Blacksmith's, Death Knight's, Paladin's and Scorpion's throws, and was dead 1.2-3.2s after
+    each. A dash stops at the cursor, so it is aimed past the runner: aimed at them, the Rage
+    Charge covered 8 of its 10 cells and left the Berserker 4 cells back, out of its axe's reach.
+  - A primary never holds (no stun, freeze or root): it fires twice a second, and each hold grants
+    1.5s of CC immunity, which turns the kit's own holds away. A slow grants none.
+- **Regen doesn't work against it:** 2% of the character's own max health a second
+  (`Constants.REGEN_SHARE_PER_SEC`), so everyone takes 50s to come back from nothing, and none
+  while a burn or a poison lasts. It used to be `3.0 - (max - 70) * 0.04` a second, which healed
+  the frailest fastest and nobody at all from 145 HP.
+- **Bots play their role** (`BotController.moveSmart`): a ranged bot keeps its distance and backs
+  off, a melee bot closes in, and a skirmisher closes to half its throw and circles there without
+  backing off. A ranged bot strafes at mid range rather than walking straight away, so a melee
+  bot still catches one now and then. A phase doubles a bot's pace as it does a player's; a melee
+  or skirmisher bot casts one to close on a target out of its reach (the Vampire's Mist Form), a
+  ranged bot only to get away from someone within 5 cells.
+- **Shown** under the name on the character select screen ("Melee · 145 HP · Slow",
+  `CharacterSelectionPanel.roleLine`) and on the website's cards, which a tool writes from the
+  roster (see *Website*). The grid's "Melee" and "Ranged" tabs are the older playstyle
+  categories, not the role.
+- A few roles read against their character's fantasy. The Magma Knight and the Valkyrie are
+  ranged, and so kite. Ember, a tiny fire sprite, is a skirmisher with bruiser health. They follow
+  the rule until their kits change.
+
 ### Cast Behaviors
 Each ability uses one of these cast behaviors (defined in `CharacterDef.scala`):
 - `StandardProjectile` — fires a projectile toward the cursor
@@ -1069,7 +1152,8 @@ Each ability uses one of these cast behaviors (defined in `CharacterDef.scala`):
 
 ### Movement speed
 `CharacterDef.moveSpeed` multiplies the base walking rate of 20 cells a second
-(`Constants.MOVE_RATE_LIMIT_MS`, 50ms a cell). It is 1.0 for every character today.
+(`Constants.MOVE_RATE_LIMIT_MS`, 50ms a cell). Each character's is its role's pace
+(`CombatRole.speed`, see *Roles, health and pace*): 1.0 ranged, 0.97 skirmisher, 0.94 melee.
 
 `common/model/Movement.scala` holds the one rule that turns it into a step interval, and
 everything that moves a player or checks a move reads it: `GLKeyboardHandler` and
@@ -1086,6 +1170,17 @@ the "slowed" bit used to cross the wire, so every slow was a flat half whatever 
 `PlayerUpdatePacket` byte [52] now carries the strength with it. `MovementTest` pins the
 arithmetic, and that at a speed of 1.0 it is exactly what the handlers computed before.
 
+**A step's wait counts from when the last step fell due, not from the frame that took it**
+(`Movement.nextStepFrom`). The input handlers step on 60 fps frames and the bots on a 100ms tick,
+and counting from the frame rounded every interval up to whole frames. That turned the roles'
+few-percent gap into a quarter: a melee character's 53ms step waited for the fourth frame and
+walked at 67ms, to a ranged character's 50ms. A 25ms phase walked at 33ms. A 50ms step lost a
+whole frame whenever the third came a millisecond early, about one step in eight at ±3ms of frame
+jitter. And a bot's 104ms or 106ms step waited for the second tick after its last, at half its
+pace. Now the handlers carry the remainder (a step a whole interval late is a fresh start, so
+nothing builds up while the keys are up), and a bot takes up to two steps a tick (a speed boost
+brings a step under the tick). `MovementTest` and `BotMovementTest` pin it.
+
 ### Projectile System
 Projectiles are defined in `ProjectileDef.scala` with extensive customization:
 - **Charge scaling** — speed, damage, and range scale with charge level
@@ -1101,7 +1196,15 @@ Projectiles are defined in `ProjectileDef.scala` with extensive customization:
 - **Pass-through** — can ignore players or walls
 
 ### On-Hit Effects
-12 effect types applied when projectiles hit players:
+12 effect types applied when projectiles hit players. A def carries one in `onHitEffect` and any
+more in `alsoOnHit` (a dart that poisons and slows, a horn that knocks back and stuns): everything
+reads `ProjectileDef.onHitEffects`, both in order, direct hits and blasts alike. The Vampire's Bat
+Swarm freeze used to be a special case in `GameInstance`; it is an effect in its def now.
+
+**An explosion deals its blast and nothing else.** A def that `explodesOnPlayerHit` goes straight to
+its `explosionConfig` blast, which applies no on-hit effect, so the Inferno's Inferno Blast and the
+Pilot's Napalm Strike have never burned anyone. A splash (`aoeOnHit`, `aoeOnMaxRange`) does apply
+them to everyone it catches, which is why the Chef's Flambé is a splash.
 - `Freeze(durationMs)`, `Stun(durationMs)`, `Root(durationMs)`, `Slow(durationMs, multiplier)`
 - `Burn(totalDamage, durationMs, tickMs)`, `Poison(totalDamage, durationMs, tickMs)`
 - `Push(distance)`, `PullToOwner`, `VortexPull(radius, pullStrength)`
@@ -1129,9 +1232,10 @@ while poisoned, between its ticks as well as on them.
 It times out on the clock (`isBurning` is `now < burnUntil`) and schedules each tick from when
 the last one actually landed, so on a 200ms server tick every bite is late, the last falls after
 the deadline, and the per-tick split truncates: the roster's burns deal 60-80% of their totals
-(`Burn(15, 3000, 750)` does 9, `Burn(12, 3000, 750)` 9, `Burn(20, 4000, 800)` 16). It also only
-holds regen off on the ticks it bites. Tune burns by what they deal, or move them onto the
-poison's rules and retune.
+(`Burn(15, 3000, 750)` does 9, `Burn(12, 3000, 750)` 9, `Burn(20, 4000, 800)` 16). Tune burns
+by what they deal, or move them onto the poison's rules and retune. Regen is off for as long as
+a burn lasts, as for a poison. It used to be off only on the ticks the burn bit, and at a melee
+character's 3 HP a second regen healed most of a burn back between bites.
 
 **A blast carries the same on-hit effect a direct hit would.** The `ProjectileAoEHit` case used
 to apply only the holds and the burn and drop the rest, so no slam could push or pull, the
@@ -1144,7 +1248,9 @@ not anyone is standing in it.
 
 ### Barriers
 `BarrierCast` raises a shield wall carried in front of its caster and turned to face their aim:
-the Crusader's Bulwark (3.5s, a 12s cooldown counted from the raise). It is called a barrier in
+the Crusader's Bulwark (3.5s, a 12s cooldown counted from the raise), the Gladiator's Scutum, the
+Paladin's Aegis and the Beetle's Carapace (3s each) and the Golem's Stone Wall (3.5s, 14s). It is
+called a barrier in
 code because the Shield *item* (key 4, five seconds of invulnerability, `Player.hasShield`,
 flag 0x01) already has the name; the player-facing ability can still say shield.
 
@@ -1176,9 +1282,16 @@ flag 0x01) already has the name; the player-facing ability can still say shield.
   turns the barrier with every update, and drops it on an update without the bit and on any spawn
   it accepts from the holder. Firing the primary, the burst shot or any ability drops it; the
   client drops it first and says so before the shot is sent. Death drops it (`Player.damage`),
-  and a respawn resets it. The client's own barrier follows its own timer, as a phase does;
-  another player's is kept up by the updates that carry it (each renews it for 600ms) and fades
-  out from the first one that doesn't.
+  and a respawn resets it. Every client runs the barrier on its own timer: ours from the cast,
+  as a phase does, and everyone else's from the time left that each update carrying it reports
+  (bytes [53-54]), dropping it on an update that doesn't. An update older than the newest one it
+  has taken a barrier from is ignored, since datagrams overtake each other. A remote barrier used
+  to be a 600ms lease renewed by those updates, which its holder's client streams **from its
+  render loop** — so a hitch there longer than the lease (a GC pause, a resize, an alt-tab on the
+  weak machine this targets), a burst of lost datagrams, or a run of updates the server refused
+  after a knockback took a barrier that was still up, and still stopping shots, off every other
+  screen for the rest of its life. Dropping one early is announced twice, as running out is,
+  because nobody else's copy expires on its own any more.
 - **Drawn** by `GLGameRenderer.drawBarriers`, after the flying projectiles: a translucent sheet
   22px tall along the polyline and a glowing strip on the ground under it, blue for ours and our
   allies', red for everyone else's. It grows out of the ground as it goes up, sinks and fades as
@@ -1186,17 +1299,19 @@ flag 0x01) already has the name; the player-facing ability can still say shield.
   barrier it struck (`GameClient.getBarrierImpact*`), so it moves with a barrier that is carried
   on. The strip is what shows a barrier aimed straight left or right, whose sheet this projection
   sees edge-on.
-- **Bots** raise it against a ranged target that can reach them and that they can't yet reach,
-  or against a shot coming in; face the target and close in while it is up; and drop it to fire or
+- **Bots** raise it against a target who shoots from further off than a blade (a ranged
+  character or a skirmisher), who can reach them and whom they can't yet reach, or against a
+  shot coming in; face the target and close in while it is up; and drop it to fire or
   cast.
 
 `BarrierTest` (in `common/model` for the shape, and in `server`), `GameClientBarrierTest` and
 `PacketRoundTripTest` pin all of this.
 
 ### Traps
-`TrapCast` throws a trap onto the ground, where it waits for an enemy to walk into it. Four
-abilities are one: the Warden's Snare Mine and the Blacksmith's Anvil Trap (bear traps), the
-Sentinel's Deploy Mine (a mine) and the Runesmith's Rune Trap (a fire rune).
+`TrapCast` throws a trap onto the ground, where it waits for an enemy to walk into it. Five
+abilities are one: the Warden's Snare Mine, the Blacksmith's Anvil Trap and the Gravedigger's Open
+Grave (bear traps), the Sentinel's Deploy Mine (a mine) and the Runesmith's Rune Trap (a fire
+rune).
 
 - **One registry.** `common/model/Trap.scala` holds `TrapDef` — what a trap does — and `TrapKind`
   — what it looks like, kept apart so two traps that do different things can share a look. Five
@@ -1259,6 +1374,102 @@ Sentinel's Deploy Mine (a mine) and the Runesmith's Rune Trap (a fire rune).
 ### Item Types
 5 item types (defined in `ItemType.scala`): Gem, Heart, Star, Shield, Fence
 
+## The opening of a match
+
+A match's first `Constants.MATCH_OPENING_MS` (30s) is not played quite the way the rest of it is,
+and each mode spends it its own way: a Teams match walls the two halves off from each other, a
+free-for-all holds everyone's fire. `common/model/MatchOpening.scala` names the two rules
+(`DIVIDER`, `NO_ATTACKS`) and which mode gets which; the server sends the set, and each side acts
+on the rules it recognises rather than working them out from the mode.
+
+**Both sides run it on their own clocks.** The server announces it once when the match begins and
+once when it is over — `GameEvent.MATCH_OPENING`, carrying the milliseconds left in
+`GameEventPacket` bytes [48-51] and the rules in [52] — and tells anyone joining during it
+(`GameInstance.sendOpeningTo`). A client's copy always outlives the server's by the trip down the
+wire, so it never lets through something the server would refuse and rubber-band.
+`GameInstance.syncOpening` drives both announcements from the projectile tick, and takes the wall
+off the world as it announces the end, so the rest of the match pays nothing for it. Under the
+match clock a countdown runs and a beat of FIGHT! marks the end
+(`GLGameRenderer.drawOpeningCountdown`) — the same words either way, since behind a wall or
+holding your fire, the battle starts when the countdown does.
+
+### Teams: a half of the map each, and a wall between them
+
+A Teams match is played in two halves of the map, one per team, and opens with a wall between
+them: nothing at all crosses the line, so each side can gather, pick its ground and say something
+to each other before anyone can shoot anyone.
+- **One line, worked out from the map.** `common/model/TeamDivider.scala` splits the world down
+  the middle of its longer axis (x for a square map, which every map in `worlds/` is), so both
+  sides derive the same geometry from the world they loaded and no shape is ever sent. Team 1
+  takes the low half, team 2 the high one (`sideOfTeam`), and every spawn — the match's first and
+  every respawn after it — comes out of that team's own half (`GameInstance.spawnFor`, through the
+  cell filter on `WorldData.getValidSpawnPoint`). A half with nowhere to put anyone falls back to
+  the whole map rather than to the middle of it.
+- **The wall is a hole in the world's walkability.** A raised divider hangs off
+  `WorldData.divider`, and `isWalkable` refuses the cells it stands on while it is up. That is what
+  makes a step, a dash, a blink, a knockback, a trap throw, a bot's path and a spawn point all
+  refuse it without any of them knowing it is there. It is not terrain — the tiles are untouched,
+  and `isTileWalkable`, which is what a projectile is stopped by, ignores it.
+- **What ignores walls is held by hand.** A star jumps over whatever lies between
+  (`Teleport.starTarget` / `isValidStarTarget`), a phase walks through walls
+  (`PacketValidator.validateMovement`), and a `passesThroughWalls` projectile flies over them.
+  Each is turned back by the side rule — `allowsMove`: not into the wall, and not onto its far
+  side — or by the crossing test, so nothing gets over what a walk cannot get through.
+- **Nothing crosses it in flight either.** `ProjectileManager` reads the divider once a tick and
+  stops any projectile whose sub-step crosses the line, a hair short of it, the way a barrier does:
+  `ProjectileAction.BLOCKED` with **no** target, since this wall is nobody's. An explosive goes off
+  there instead. A hit radius reaches a cell and a half past the line and a blast several, so a
+  direct hit or a blast whose line to its victim crosses the divider is cut too (`dividerBetween`),
+  exactly as a held barrier shelters whoever stands behind it.
+- **It is the same wall for everyone**, allies included: for thirty seconds the two halves cannot
+  touch each other at all.
+- **Bots** ignore anyone on the far side (`findNearestPlayer`) — they can neither reach nor hit
+  them, and would spend the opening walking into the wall shooting it. Their paths already avoid
+  the cells it stands on.
+- **Drawn** by `GLGameRenderer.drawTeamDivider`, after the flying projectiles and the held
+  barriers: a sheet of amber light standing on the ground along the line — amber because blue and
+  red are somebody's barrier — clipped to the stretch the screen can see, in the projection's own
+  axes. A hard line along its top and a glow where it meets the ground, with ribs standing in it:
+  two bright parallel edges with an even fill between them read as a road, not a wall. It beats
+  through its last three seconds, flashes where a shot strikes it, and sinks into the ground as it
+  drops.
+
+### Free-for-all: a ceasefire
+
+There are no sides to keep apart, so a free-for-all spends its opening holding everyone's fire:
+for those thirty seconds nobody can attack at all — no shot, no charge, no burst, no ability — and
+everyone gets the same half minute to find their feet and pick their ground.
+
+- **Every attack is held**, whatever it is: a projectile of any kind
+  (`ClientHandler.handleProjectileUpdate` refuses every spawn, before the fire-rate clock, so a
+  refused attack costs no cooldown), a trap (`handleTrapUpdate` refuses it and says so, so the
+  client gives the cooldown back), a phase or a dash (`activatePhase`), a barrier
+  (`updateBarrier`), and a blink's jump — `PacketValidator.validateMovement` drops its
+  ability-movement exception, so a jump no walk could have made is refused like any other.
+- **What isn't held**: walking, and items. A star is an item, not an attack.
+- **The client holds it first**, at the four doors an attack leaves by — `shootToward`,
+  `shootAllDirections`, `shootAbility` and `startCharging`, the last because a charge bar that
+  fills and then fires nothing is worse than a button that does nothing. Refusing here spends no
+  cooldown, and no burst-shot root, on an attack the server was never going to allow.
+- **The two ability slots are shuttered** with a padlock and the seconds left, the icon behind
+  dimmed: a held slot is not a cooldown, and nothing it does will start one.
+- **Bots hold their fire too** (`BotController.tickBot`): a bot spends the opening walking and
+  looking for a target, and shooting at nothing.
+- **Practice has no opening at all** (`GameInstance.begin` reads `isPractice`): it is where a
+  player goes to try a character out, and holding its fire for thirty seconds is the one thing an
+  opening must not do there. A ranked duel is a free-for-all of two, and holds fire like any other.
+
+### Both
+
+- **Look at either** with `bazel run //src/main/scala/com/gridgame/client:render_bench -- --divider`
+  or `-- --ceasefire` (`=<seconds>` on either to watch it end), which is the loop for the HUD and
+  the wall, since a real opening needs a match and lasts thirty seconds of it. The wall is stood
+  beside the local player rather than down the middle of the map.
+- `TeamDividerTest` (in `common/model` for the geometry and what the world refuses it, and in
+  `server` for the match), `CeasefireTest`, `GameClientOpeningTest`, `LobbyFlowTest` and
+  `PacketRoundTripTest` pin all of this. `TestMatch` opens with the opening only when a test asks
+  for it (`opening = true`): a match driven by hand is one already under way.
+
 ## Network Protocol
 
 80-byte packets (64-byte payload + 16-byte HMAC-SHA256) over TLS-encrypted TCP (reliable) and HMAC-signed UDP (fast updates), using Netty. Byte order: BIG_ENDIAN.
@@ -1270,7 +1481,7 @@ Sentinel's Deploy Mine (a mine) and the Runesmith's Rune Trap (a fire rune).
 1. **TLS 1.3 for TCP** — All TCP traffic encrypted via Netty `SslHandler`. Server generates a self-signed certificate at startup using `keytool` with a random password and restrictive temp directory permissions (`rwx------`). Explicit cipher suites: `TLS_AES_256_GCM_SHA384`, `TLS_CHACHA20_POLY1305_SHA256`. Client trusts all certs (game server, not web).
 2. **HMAC Packet Signing** — After auth, server issues a 32-byte session token. All subsequent packets (TCP and UDP) carry a 16-byte truncated HMAC-SHA256. Packets with invalid HMAC are dropped silently. UDP packets without a valid session token are dropped entirely (no unsigned UDP fallback).
 3. **Rate Limiting** — Per-client: 60 UDP/s, 20 TCP/s. Per-IP: 5 connections/min, 5 auth failures before 30s cooldown. Per-channel: connection closed after 5 auth failures (`MAX_AUTH_FAILURES_PER_CHANNEL`). Race-free auth tracking via `computeIfAbsent`. Stale entries cleaned up every 5s.
-4. **Server-Side Validation** — Movement validated against world bounds, walkability, and speed limits (`PacketValidator.maxCellsIn`: 2x the character's own rate, from `CharacterDef.moveSpeed` through `Movement`, + 2 cells tolerance, Long arithmetic to prevent overflow; updates in the same millisecond are checked too). Position updates older (by sequence number) than the newest position already applied are dropped, since positions are absolute. Teleports go through `common/model/Teleport.scala` on both sides: the client picks a star's or blink's landing cell with it and the server checks with it, because a teleport the client shows and the server refuses snaps the player back. A star is applied by its TCP item packet, not by letting a UDP jump through; a refused one comes back as `ItemAction.USE_REJECTED`. Projectile spawn validated against player position (max 3 cells), velocity (NaN/Inf rejection, magnitude <= sqrt(2)), charge level (0-100), and the attack that fired it: a spawn request names its `AttackSlot` (primary, Q, E, or the burst shot — the primary along `AttackSlot.BurstDirections`, 8 a cast on `BURST_SHOT_COOLDOWN_MS` — carried in the unused projectile-ID field), its type must be that attack's, and each attack has its own clock — a new cast after 80% of that attack's cooldown (`SHOOT_COOLDOWN_MS` for the primary), at most its own projectile count per cast (3 for a gem-boosted primary, a fan's count). **Don't go back to inferring the attack from the projectile type**: many characters fire one type from two attacks (Bear's Maul is eight of its primary's claws), and judged as a primary burst the ring was cut to the three projectiles the fan sends first, straight behind the caster. `AbilityCastValidationTest` pins this across the roster. Health values validated against `MAX_HEALTH`.
+4. **Server-Side Validation** — Movement validated against world bounds, walkability, and speed limits (`PacketValidator.maxCellsIn`: 2x the character's own rate, from `CharacterDef.moveSpeed` through `Movement`, + 2 cells tolerance, Long arithmetic to prevent overflow; updates in the same millisecond are checked too). Position updates older (by sequence number) than the newest position already applied are dropped, since positions are absolute. Teleports go through `common/model/Teleport.scala` on both sides: the client picks a star's or blink's landing cell with it and the server checks with it, because a teleport the client shows and the server refuses snaps the player back. A star is applied by its TCP item packet, not by letting a UDP jump through; a refused one comes back as `ItemAction.USE_REJECTED`. Projectile spawn validated against player position (max 3 cells), velocity (NaN/Inf rejection, magnitude <= sqrt(2)), charge level (0-100), and the attack that fired it: a spawn request names its `AttackSlot` (primary, Q, E, or the burst shot — the primary along `AttackSlot.BurstDirections`, 8 a cast on `BURST_SHOT_COOLDOWN_MS` — carried in the unused projectile-ID field), its type must be that attack's, and each attack has its own clock — a new cast after 80% of that attack's cooldown (`SHOOT_COOLDOWN_MS` for the primary), at most its own projectile count per cast (3 for a gem-boosted primary, a fan's count). **Don't go back to inferring the attack from the projectile type**: many characters fire one type from two attacks (Bear's Maul is eight of its primary's claws), and judged as a primary burst the ring was cut to the three projectiles the fan sends first, straight behind the caster. `AbilityCastValidationTest` pins this across the roster. Health is the server's own: the health a client reports is never read.
 5. **Auth Hardening** — Constant-time hash comparison (`MessageDigest.isEqual`), dummy hash on username-not-found (prevents timing enumeration), password minimum 6 characters.
 6. **Replay Protection** — `PacketValidator` tracks sequence numbers per player with a sliding window bitmap (`SEQUENCE_WINDOW_SIZE = 256`) for UDP out-of-order tolerance. TCP enforces strictly increasing sequence numbers. Duplicate/replayed packets are rejected. Issuing a session token resets the player's sequence tracking (`resetSequences`): the new session's client counts from zero, and when a re-login closed a channel the server still had open, the old session's numbers used to stay and every packet of the new one was dropped as a replay. `SessionTest` pins it.
 7. **UDP Source Validation** — Server records each player's TCP connection IP (`playerTcpAddresses`). UDP packets are only accepted if the sender IP matches the player's TCP IP, preventing UDP source spoofing.
@@ -1341,12 +1552,14 @@ Its payload:
 | [49] | effect flags 2: bit 0 stunned, bit 1 poisoned, bit 2 barrier up, bits 3-7 free |
 | [50-51] | aim angle, `angle / 2pi * 65536` (`PlayerUpdatePacket.encodeAimAngle`) |
 | [52] | slow strength as a percentage (0-100): how fast the player moves while slowed |
-| [53-63] | reserved, zero |
+| [53-54] | how long a raised barrier has left, in ms (server -> everyone; 0 otherwise) |
+| [55-63] | reserved, zero |
 
 A stunned player has both 0x04 and flags2 bit 0 set: the freeze bit is what holds them, the
-stun bit only says what to draw. Byte [49] bit 2 is a raised barrier and bytes [50-51] the way
-it faces (see *Barriers*): a client sends its aim there while its barrier is up, and the server
-writes the barrier's facing. Both are 0 otherwise.
+stun bit only says what to draw. Byte [49] bit 2 is a raised barrier, bytes [50-51] the way
+it faces and [53-54] how long it has left (see *Barriers*): a client sends its aim there while
+its barrier is up, and the server writes the barrier's facing and its remaining time. All are 0
+otherwise.
 
 ### Packet Types (18 total)
 
@@ -1361,7 +1574,7 @@ writes the barrier's facing. Both are 0 otherwise.
 | 0x07 | ITEM_UPDATE       | TCP       | Item spawns/pickups            |
 | 0x08 | TILE_UPDATE       | TCP       | Tile changes                   |
 | 0x09 | LOBBY_ACTION      | TCP       | Lobby operations               |
-| 0x0A | GAME_EVENT        | TCP       | Kill/death events              |
+| 0x0A | GAME_EVENT        | TCP       | Kills, the clock, the match's opening |
 | 0x0B | AUTH_REQUEST      | TCP       | Login/register                 |
 | 0x0C | AUTH_RESPONSE     | TCP       | Auth result                    |
 | 0x0D | MATCH_HISTORY     | TCP       | Game statistics                |
@@ -1455,14 +1668,23 @@ Client                              Server
 
 ### Adding a New Character
 1. Add `CharacterId` entry in `CharacterId.scala` (next available ID byte)
-2. Define `ProjectileDef` entries for the character's projectiles in `CharacterDef.scala`
-3. Register projectile defs in `ProjectileDef.register()`
-4. Create `CharacterDef` val with abilities, stats, and sprite sheet path
+2. Define `ProjectileDef` entries for the character's projectiles. `CharacterDef`'s initializer
+   builds its defs and all 112 characters in one JVM method, and it is at the 64KB a method may
+   be ("Method too large: CharacterDef$.<clinit>"), so new defs go in a builder beside it, as
+   Plan 5a's do in `MeleeKitProjectiles.build(base)`, which copies a variant from `base(type)`
+3. Register them: `CharacterDef` calls `ProjectileDef.register(...)` on its own and then on each
+   builder's, in that order, so a builder finds every type it copies
+4. Create `CharacterDef` val with abilities, stats, and sprite sheet path. Give it the `role` its
+   primary's reach reads as (`CombatRole.forRange`), a `maxHealth` in that role's band and a
+   `moveSpeed` of the role's pace (`Melee.speed`, `Skirmisher.speed`; ranged keeps the default
+   1.0). `RosterBalanceTest` checks all three.
 5. Add to `byId` map and `all` sequence in `CharacterDef`
 6. Generate sprite sheet — either:
    - Create dedicated script: `scripts/generate_<name>.py` (uses `sprite_base.py`)
    - Or add to `scripts/generate_all_new_characters.py` batch generator
 7. Run the script to produce `sprites/<name>.png`
+8. Add its card to `docs/index.html` and run
+   `bazel run //src/main/scala/com/gridgame/tools:gendocs` to write its role and health
 
 ### Adding New World Layer Type
 1. Add case in `WorldLoader.parseLayer()` match statement
@@ -1557,8 +1779,10 @@ suites mirror the source tree:
   `GameInstance` that is begun but never started (`GameInstance.begin`), so the test calls
   `tickProjectiles` / `tickPlayers` / `respawn` itself; every player gets an `EmbeddedChannel` for
   TCP and a UDP address on a channel attached with `GameServer.attachUdpChannel`, and
-  `tcpSent` / `udpSent` decode what each was sent. `LobbyFlowTest` and `SessionTest` go in
-  through `GameServer.handleIncomingPacket` and the real TCP handler (signed packets) instead.
+  `tcpSent` / `udpSent` decode what each was sent. A `TestMatch` is a match already under way, so
+  a Teams one has no opening divider over it unless the test asks (`opening = true`).
+  `LobbyFlowTest` and `SessionTest` go in through `GameServer.handleIncomingPacket` and the real
+  TCP handler (signed packets) instead.
 - `client/` — `ClientTestKit.scala`: `TestClient` is a `GameClient` whose packets go to a
   capture (`GameClient.packetSink`) and which is handed the server's with `processPacket`.
   The screen tests (`LobbyRoomScreenTest`, `ScoreboardScreenTest`, `CharacterSelectionPanelTest`)
@@ -1568,11 +1792,24 @@ suites mirror the source tree:
   to `CharacterDef`: the catalog wins over the code (`I18n.tOr`), so renaming an ability in
   `CharacterDef` alone leaves the old name on every screen, silently. Regenerate the entries
   with `bazel run //src/main/scala/com/gridgame/tools:gencontent 2>/dev/null`.
+- The kits: `MeleeKitTest` (common) holds the melee and skirmisher kits to crowd control, a way
+  in on a runner or a place on the list of anchors, and primaries that never hold;
+  `MeleeKitsTest` (server) lands each new effect and combination, and walks a runner away from
+  every closer.
+- The opening of a match: `TeamDividerTest` in `common/model` (the halves, and what the world
+  itself then refuses — a step, a blink, a star, a trap throw) and in `server` (spawns, shots,
+  blasts and steps against the wall, and the two announcements); `CeasefireTest` for a
+  free-for-all's opening, one case per attack and cast behaviour, players and bots alike;
+  `GameClientOpeningTest` for the client's copy of either; and `LobbyFlowTest` for a real Teams
+  match starting with each team in its own half.
+- `tools/` — `DocsRosterTest` does the same for the website: every character card's role and
+  health must be what the roster says (see *Website*).
 
 **Effects nothing in the roster has yet** (a stun, a poison, a slam that pushes or pulls) are
 pinned with `ProjectileDef`s registered by the test itself, on ids the game doesn't use — see
 `TestEffects` at the foot of `OnHitEffectsTest`. Each test file gets its own JVM, so a test-only
-registration can't leak into another suite. `TrapDef.register` is the same door for a trap the
+registration can't leak into another suite. Bots are walked on a clock of the test's own
+(`BotController.tick(now)`), so `BotMovementTest` covers ten seconds of their pace in no time. `TrapDef.register` is the same door for a trap the
 roster hasn't got — a poison short enough for a test to sit through (`TestTraps` in `TrapTest`).
 A character the roster doesn't have (one quicker
 than any in it) goes through `PacketValidator`'s `characterOf` parameter instead — see
@@ -1585,7 +1822,10 @@ When a test fixes a bug, check it fails with the bug put back.
 Static landing page served from the `docs/` directory on `main` via GitHub Pages.
 
 ### Files
-- `docs/index.html` — Single-page site (hero, features, characters, controls, download)
+- `docs/index.html` — Single-page site (hero, features, characters, controls, download). Each
+  character card's pill ("Melee &middot; 145 HP") is written from the roster by
+  `bazel run //src/main/scala/com/gridgame/tools:gendocs` (`tools/DocsRoster`). Run it after any
+  change to a role or a health; `DocsRosterTest` fails until you do.
 - `docs/style.css` — Dark theme stylesheet
 - `docs/script.js` — Smooth scroll for nav anchors
 - `docs/BUILD.bazel` — Bazel filegroup target

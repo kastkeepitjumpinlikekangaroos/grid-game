@@ -277,8 +277,8 @@ class OnHitEffectsTest {
   }
 
   @Test def nobodyRegeneratesWhilePoisoned(): Unit = {
-    // Between its ticks as well as on them. A burn only holds regen off on the ticks it bites,
-    // so a poison built the same way healed its victim back up between them.
+    // Between its ticks as well as on them. A burn used to hold regen off only on the ticks it
+    // bit, so a poison built the same way healed its victim back up between them.
     val poisoner = m.join(CharacterId.PlagueDoctor, 10, 30)
     val target = m.join(CharacterId.Gladiator, 15, 30)
     target.setHealth(50)
@@ -288,6 +288,21 @@ class OnHitEffectsTest {
     target.clearPoison()
     for (_ <- 0 until 25) m.instance.tickPlayers()
     assertTrue("and regen resumes once it is gone", target.getHealth > 50)
+  }
+
+  @Test def nobodyRegeneratesWhileBurning(): Unit = {
+    // Between its bites as well as on them, as with a poison. A burn held regen off only on the
+    // ticks it bit, and regen now runs at up to 3 HP a second: a 150 HP bruiser would have healed
+    // most of a burn back while it burned.
+    val burner = m.join(CharacterId.Pyromancer, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 15, 30)
+    target.setHealth(50)
+    target.applyBurn(10, 5000, 2500, burner.getId) // nothing due for 2.5s
+    for (_ <- 0 until 10) m.instance.tickPlayers() // 2s of 200ms ticks
+    assertEquals("not a point back", 50, target.getHealth)
+    target.clearBurn()
+    for (_ <- 0 until 10) m.instance.tickPlayers()
+    assertTrue("and regen resumes once it is out", target.getHealth > 50)
   }
 
   @Test def aPoisonAndABurnRunAtOnce(): Unit = {

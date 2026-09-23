@@ -57,4 +57,24 @@ object Movement {
     // failing test years later.
     Math.max(1, Math.round(base * factor).toInt)
   }
+
+  /**
+   * Where the wait for the next step counts from, after a step that fell due at `due` was taken
+   * at `now`.
+   *
+   * A step is only ever taken on a frame (60 a second) or a bot's tick (10 a second), so it waits
+   * for the first one after it falls due. Counting the next wait from that frame, as the input
+   * handlers and the bots used to, rounds every interval up to whole frames: at 60 fps a melee
+   * character's 53ms step always waited for the fourth frame and walked at 67ms, a quarter slower
+   * than a ranged character's 50ms rather than the few percent it is meant to be; a 50ms step lost
+   * a whole frame whenever the third came a millisecond early; and a bot's 106ms step waited for
+   * the second tick after its last, at half its pace. Counted from when the step fell due, each
+   * keeps its own pace.
+   *
+   * A step taken `freshAfterMs` or more after it fell due is a fresh start (the keys were up, the
+   * player was held, a frame hitched) and counts from `now`, so no steps are saved up. The input
+   * handlers allow an interval: a frame, even at 30 fps, is never that late on a key held down.
+   */
+  def nextStepFrom(due: Long, now: Long, freshAfterMs: Long): Long =
+    if (now - due < freshAfterMs) due else now
 }

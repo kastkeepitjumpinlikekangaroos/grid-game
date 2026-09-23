@@ -171,13 +171,14 @@ object PacketSerializer {
         } else {
           null
         }
-        buffer.get(new Array[Byte](5)) // reserved
+        val openingMs = buffer.getInt()
+        val openingRules = buffer.get()
         val rank = buffer.get()
         val spawnX = buffer.getShort()
         val spawnY = buffer.getShort()
         val teamId = buffer.get()
         new GameEventPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, eventType, gameId,
-          remainingSeconds, kills, deaths, targetId, rank, spawnX, spawnY, teamId)
+          remainingSeconds, kills, deaths, targetId, rank, spawnX, spawnY, teamId, openingMs, openingRules)
 
       case PacketType.CHAT_MESSAGE =>
         val scope = buffer.get()
@@ -260,16 +261,17 @@ object PacketSerializer {
             val characterId = payload(6)
             val updateTeamId = payload(7)
             val serverMoves = ByteBuffer.wrap(payload, 8, 4).order(ByteOrder.BIG_ENDIAN).getInt
-            // payload byte 12 is absolute [49], 13-14 is [50-51], 15 is [52]
+            // payload byte 12 is absolute [49], 13-14 is [50-51], 15 is [52], 16-17 is [53-54]
             val effectFlags2 = payload(12) & 0xFF
             val aimAngle = ByteBuffer.wrap(payload, 13, 2).order(ByteOrder.BIG_ENDIAN).getShort & 0xFFFF
             val slowPercent = payload(15) & 0xFF
+            val barrierMs = ByteBuffer.wrap(payload, 16, 2).order(ByteOrder.BIG_ENDIAN).getShort & 0xFFFF
             val updatePosition = try {
               new Position(x, y)
             } catch {
               case _: IllegalArgumentException => new Position(0, 0)
             }
-            new PlayerUpdatePacket(sequenceNumber, playerId, timestamp, updatePosition, colorRGB, health, chargeLevel, effectFlags, characterId, updateTeamId, serverMoves, effectFlags2, aimAngle, slowPercent)
+            new PlayerUpdatePacket(sequenceNumber, playerId, timestamp, updatePosition, colorRGB, health, chargeLevel, effectFlags, characterId, updateTeamId, serverMoves, effectFlags2, aimAngle, slowPercent, barrierMs)
 
           case PacketType.PLAYER_LEAVE =>
             new PlayerLeavePacket(sequenceNumber, playerId, timestamp)

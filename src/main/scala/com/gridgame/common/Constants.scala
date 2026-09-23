@@ -45,6 +45,9 @@ object Constants {
 
   // Health configuration
   val MAX_HEALTH: Int = 100
+  // Health regenerates at this share of the character's own max health a second, so everyone
+  // takes the same 50s to come back from nothing (GameInstance.tickPlayers)
+  val REGEN_SHARE_PER_SEC: Double = 0.02
   val HEALTH_BAR_WIDTH_PX: Int = 44
   val HEALTH_BAR_HEIGHT_PX: Int = 6
   val HEALTH_BAR_OFFSET_Y: Int = 5
@@ -89,6 +92,11 @@ object Constants {
   // Duel configuration
   val DUEL_GAME_DURATION_MIN: Int = 3
   val DUEL_MAX_PLAYERS: Int = 2
+
+  // How long a match's opening lasts, when it is not played quite the way the rest of it is:
+  // Teams spends it with a wall down the middle of the map (common/model/TeamDivider.scala) and
+  // a free-for-all with everyone's abilities holstered (common/model/MatchOpening.scala)
+  val MATCH_OPENING_MS: Int = 30000
 
   // Ranked Teams configuration
   val TEAMS_GAME_DURATION_MIN: Int = 5

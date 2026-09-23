@@ -173,6 +173,35 @@ object ProjectileType {
   val ARROW_LIGHT: Byte = -109       // 147
   val HOLY_BOLT_HEAVY: Byte = -108   // 148
   val VENOM_BOLT_LIGHT: Byte = -107  // 149
+
+  // Plan 5a: the melee and skirmisher kits (variants reuse their base type's renderer)
+  val SHOCKWAVE: Byte = -106          // 150: Crusader's Shield Bash: a knockback slam
+  val ICE_QUAKE: Byte = -105          // 151: Avalanche's Ice Quake: a freezing slam
+  val HOWL: Byte = -104               // 152: Wolf's Howl: a wide slowing slam
+  val FERAL_ROAR: Byte = -103         // 153: Shapeshifter's Feral Roar: a slowing slam
+  val EARTHSPLITTER: Byte = -102      // 154: Barbarian's travelling fissure: roots
+  val GRASPING_DEAD: Byte = -101      // 155: Gravedigger's grasping hands: roots
+  val DEATH_GRIP: Byte = -100         // 156: Death Knight's pull
+  val TALON_GRAB: Byte = -99          // 157: Griffin's pull
+  val PARALYTIC_STING: Byte = -98     // 158: Scorpion's stun
+  val HAMMER_THROW: Byte = -97        // 159: Blacksmith's one heavy hammer: stuns
+  val MEAT_HOOK: Byte = -96           // 160: Chef's pull
+  val FLAMBE: Byte = -95              // 161: Chef's short-range exploding burn
+  val HOLY_NOVA: Byte = -94           // 162: Paladin's Holy Nova bolts: HOLY_BOLT that stuns
+  val AXE_SPIN: Byte = -93            // 163: Berserker's Axe Spin: AXE that slows
+  val VENOM_DART: Byte = -92          // 164: Assassin's Poison Dart: poisons and slows
+  val TOXIC_SHURIKEN: Byte = -91      // 165: Rogue's Knife Spray: poisons and slows
+  val BLOOD_FRENZY: Byte = -90        // 166: Fenrir's Blood Frenzy: drains and slows
+  val FLURRY: Byte = -89              // 167: Monk's Flurry: FIST that stuns
+  val ROOTING_BOULDER: Byte = -88     // 168: Cyclops' Boulder Fan: BOULDER that roots
+  val EMBER_FAN: Byte = -87           // 169: Ember's Ember Fan: burns and slows
+  // Plan 5a: primaries given an identity of their own
+  val FENRIR_CLAW: Byte = -86         // 170: CLAW_SWIPE that drains
+  val GHOUL_CLAW: Byte = -85          // 171: CLAW_SWIPE that slows
+  val SHARK_CLAW: Byte = -84          // 172: CLAW_SWIPE that bleeds (a poison)
+  val ICE_BOULDER: Byte = -83         // 173: Avalanche's BOULDER: slows
+  val DRAIN_BLADE: Byte = -82         // 174: Revenant's CURSED_BLADE: drains
+  val CHILL_BLADE: Byte = -81         // 175: Death Knight's CURSED_BLADE: slows
 }
 
 class Projectile(
@@ -254,8 +283,8 @@ class Projectile(
     // (behind us on each axis) is walkable
     val fromX = if (_dx > 0) curX - 1 else if (_dx < 0) curX + 1 else curX
     val fromY = if (_dy > 0) curY - 1 else if (_dy < 0) curY + 1 else curY
-    val hitX = fromX != curX && world.isWalkable(fromX, curY)
-    val hitY = fromY != curY && world.isWalkable(curX, fromY)
+    val hitX = fromX != curX && world.isTileWalkable(fromX, curY)
+    val hitY = fromY != curY && world.isTileWalkable(curX, fromY)
 
     if (hitX && hitY) {
       // Corner: reverse both
@@ -313,8 +342,10 @@ class Projectile(
     cellX < 0 || cellX >= world.width || cellY < 0 || cellY >= world.height
   }
 
+  /** Terrain only: the opening divider between the teams is not a wall, and is judged on its own
+    * line by ProjectileManager so that a type flying over walls is stopped by it too. */
   def hitsNonWalkable(world: WorldData): Boolean = {
-    !world.isWalkable(getCellX, getCellY)
+    !world.isTileWalkable(getCellX, getCellY)
   }
 
   def hitsFence(world: WorldData): Boolean = {

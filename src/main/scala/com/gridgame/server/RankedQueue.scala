@@ -417,7 +417,9 @@ class RankedQueue(server: GameServer) {
       connected.foreach { entry =>
         val p = server.getConnectedPlayer(entry.playerId)
         if (p != null) {
-          val spawnPoint = instance.world.getValidSpawnPoint(occupiedSpawns)
+          // Each team starts in its own half of the map (TeamDivider)
+          val playerTeamId = instance.teamAssignments.getOrDefault(entry.playerId, 0.toByte)
+          val spawnPoint = instance.spawnFor(playerTeamId, occupiedSpawns)
           occupiedSpawns += ((spawnPoint.getX, spawnPoint.getY))
           val charDef = com.gridgame.common.model.CharacterDef.get(entry.characterId)
           val instancePlayer = new Player(entry.playerId, p.getName, spawnPoint, p.getColorRGB, charDef.maxHealth, charDef.maxHealth)
@@ -426,7 +428,6 @@ class RankedQueue(server: GameServer) {
           if (p.getUdpAddress != null) {
             instancePlayer.setUdpAddress(p.getUdpAddress)
           }
-          val playerTeamId = instance.teamAssignments.getOrDefault(entry.playerId, 0.toByte)
           instancePlayer.setTeamId(playerTeamId)
           instance.registry.add(instancePlayer)
           instance.killTracker.registerPlayer(entry.playerId)
@@ -435,13 +436,13 @@ class RankedQueue(server: GameServer) {
 
       // Register bots in the instance
       lobby.botManager.getBots.foreach { botSlot =>
-        val spawnPoint = instance.world.getValidSpawnPoint(occupiedSpawns)
+        val botTeamId = instance.teamAssignments.getOrDefault(botSlot.id, 0.toByte)
+        val spawnPoint = instance.spawnFor(botTeamId, occupiedSpawns)
         occupiedSpawns += ((spawnPoint.getX, spawnPoint.getY))
         val charDef = com.gridgame.common.model.CharacterDef.get(botSlot.characterId)
         val colorRGB = Player.generateColorFromUUID(botSlot.id)
         val botPlayer = new Player(botSlot.id, botSlot.name, spawnPoint, colorRGB, charDef.maxHealth, charDef.maxHealth)
         botPlayer.setCharacterId(botSlot.characterId)
-        val botTeamId = instance.teamAssignments.getOrDefault(botSlot.id, 0.toByte)
         botPlayer.setTeamId(botTeamId)
         instance.registry.add(botPlayer)
         instance.killTracker.registerPlayer(botSlot.id)
@@ -619,7 +620,7 @@ class RankedQueue(server: GameServer) {
       connected.foreach { entry =>
         val p = server.getConnectedPlayer(entry.playerId)
         if (p != null) {
-          val spawnPoint = instance.world.getValidSpawnPoint(occupiedSpawns)
+          val spawnPoint = instance.spawnFor(0.toByte, occupiedSpawns)
           occupiedSpawns += ((spawnPoint.getX, spawnPoint.getY))
           val charDef = com.gridgame.common.model.CharacterDef.get(entry.characterId)
           val instancePlayer = new Player(entry.playerId, p.getName, spawnPoint, p.getColorRGB, charDef.maxHealth, charDef.maxHealth)
@@ -638,7 +639,7 @@ class RankedQueue(server: GameServer) {
       val botsNeeded = Constants.RANKED_FFA_MAX_PLAYERS - connected.size
       for (_ <- 1 to botsNeeded) {
         val botSlot = lobby.botManager.addBot()
-        val spawnPoint = instance.world.getValidSpawnPoint(occupiedSpawns)
+        val spawnPoint = instance.spawnFor(0.toByte, occupiedSpawns)
         occupiedSpawns += ((spawnPoint.getX, spawnPoint.getY))
         val charDef = com.gridgame.common.model.CharacterDef.get(botSlot.characterId)
         val colorRGB = Player.generateColorFromUUID(botSlot.id)
@@ -821,7 +822,7 @@ class RankedQueue(server: GameServer) {
       connected.foreach { entry =>
         val p = server.getConnectedPlayer(entry.playerId)
         if (p != null) {
-          val spawnPoint = instance.world.getValidSpawnPoint(occupiedSpawns)
+          val spawnPoint = instance.spawnFor(0.toByte, occupiedSpawns)
           occupiedSpawns += ((spawnPoint.getX, spawnPoint.getY))
           val charDef = com.gridgame.common.model.CharacterDef.get(entry.characterId)
           val instancePlayer = new Player(entry.playerId, p.getName, spawnPoint, p.getColorRGB, charDef.maxHealth, charDef.maxHealth)

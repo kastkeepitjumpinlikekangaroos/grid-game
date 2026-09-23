@@ -3788,7 +3788,7 @@ object GLProjectileRenderers {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  //  REGISTRY (all 150 types)
+  //  REGISTRY (all 176 types)
   // ═══════════════════════════════════════════════════════════════
 
   private val registry: Map[Byte, Renderer] = Map(
@@ -3960,7 +3960,36 @@ object GLProjectileRenderers {
     ProjectileType.ARROW_HEAVY       -> flyingShaft(SHF_ARROW, 0.95f, 0.72f, 0.32f, 27f),
     ProjectileType.ARROW_LIGHT       -> flyingShaft(SHF_ARROW, 0.95f, 0.72f, 0.32f, 24f),
     ProjectileType.HOLY_BOLT_HEAVY   -> asRenderer(drawHolyBolt),
-    ProjectileType.VENOM_BOLT_LIGHT  -> asRenderer(drawVenomBolt)
+    ProjectileType.VENOM_BOLT_LIGHT  -> asRenderer(drawVenomBolt),
+
+    // ── Plan 5a: melee and skirmisher kits (150-169), on existing looks ──
+    ProjectileType.SHOCKWAVE       -> aoeRing(AOE_SONIC, 1f, 0.90f, 0.55f, 44f),
+    ProjectileType.ICE_QUAKE       -> aoeRing(AOE_QUAKE, 0.62f, 0.85f, 1f, 46f),
+    ProjectileType.HOWL            -> aoeRing(AOE_SONIC, 0.72f, 0.78f, 0.90f, 60f),
+    ProjectileType.FERAL_ROAR      -> aoeRing(AOE_SONIC, 0.95f, 0.62f, 0.25f, 44f),
+    ProjectileType.EARTHSPLITTER   -> wave(WAV_IMPACT, 0.62f, 0.48f, 0.28f, 34f),
+    ProjectileType.GRASPING_DEAD   -> graspingClaw(CLAW_TENTACLE, 0.80f, 0.76f, 0.64f, 30f),
+    ProjectileType.DEATH_GRIP      -> graspingClaw(CLAW_TENTACLE, 0.42f, 0.18f, 0.58f, 30f),
+    ProjectileType.TALON_GRAB      -> (drawGrabPaw _),
+    ProjectileType.PARALYTIC_STING -> asRenderer(drawStinger),
+    ProjectileType.HAMMER_THROW    -> lobbed(LOB_HAMMER, 0.60f, 0.62f, 0.70f, 30f),
+    ProjectileType.MEAT_HOOK       -> chainProj(CHN_ROPE, 0.80f, 0.80f, 0.84f, 6f),
+    ProjectileType.FLAMBE          -> energyBolt(1f, 0.55f, 0.15f, 22f, ORB_FIRE),
+    ProjectileType.HOLY_NOVA       -> asRenderer(drawHolyBolt),
+    ProjectileType.AXE_SPIN        -> bladeSpinner(WPN_AXE, 0.78f, 0.70f, 0.55f, 30f),
+    ProjectileType.VENOM_DART      -> flyingShaft(SHF_DART, 0.4f, 0.9f, 0.35f, 26f),
+    ProjectileType.TOXIC_SHURIKEN  -> shuriken(0.45f, 0.78f, 0.40f, 30f),
+    ProjectileType.BLOOD_FRENZY    -> asRenderer(drawClawSwipe),
+    ProjectileType.FLURRY          -> fistProj(0.75f, 0.6f, 0.45f, 28f),
+    ProjectileType.ROOTING_BOULDER -> asRenderer((proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int) => drawBoulder(proj, sx, sy, sb, tick, 24f)),
+    ProjectileType.EMBER_FAN       -> energyBolt(1f, 0.55f, 0.15f, 18f, ORB_FIRE),
+    // ── Plan 5a: primaries with an identity of their own (170-175), the base type's look ──
+    ProjectileType.FENRIR_CLAW     -> asRenderer(drawClawSwipe),
+    ProjectileType.GHOUL_CLAW      -> asRenderer(drawClawSwipe),
+    ProjectileType.SHARK_CLAW      -> asRenderer(drawClawSwipe),
+    ProjectileType.ICE_BOULDER     -> asRenderer((proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int) => drawBoulder(proj, sx, sy, sb, tick, 24f)),
+    ProjectileType.DRAIN_BLADE     -> bladeSpinner(WPN_CURSED, 0.90f, 0.18f, 0.28f, 30f),
+    ProjectileType.CHILL_BLADE     -> bladeSpinner(WPN_CURSED, 0.90f, 0.18f, 0.28f, 30f)
   )
 
   // Flat lookup table for O(1) renderer access without Option allocation.

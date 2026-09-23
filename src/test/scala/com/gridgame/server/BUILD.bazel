@@ -43,6 +43,30 @@ scala_library(
 )
 
 scala_junit_test(
+    name = "ceasefire_test",
+    srcs = ["CeasefireTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        ":server_test_kit",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "team_divider_test",
+    srcs = ["TeamDividerTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        ":server_test_kit",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
     name = "combat_test",
     srcs = ["CombatTest.scala"],
     suffixes = ["Test"],
@@ -261,6 +285,30 @@ scala_junit_test(
         "@maven//:io_netty_netty_buffer",
         "@maven//:io_netty_netty_common",
         "@maven//:io_netty_netty_transport",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "bot_movement_test",
+    srcs = ["BotMovementTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        ":server_test_kit",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "melee_kits_test",
+    srcs = ["MeleeKitsTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        ":server_test_kit",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
         "@maven//:junit_junit",
     ],
 )

@@ -11,6 +11,11 @@ object GameEvent {
   val SCORE_ENTRY: Byte = 3
   val SCORE_END: Byte = 4
   val RESPAWN: Byte = 5
+  /** How long the match's opening has left, in `openingMs` (0 — it is over), and what it does
+    * while it lasts, in `openingRules` (MatchOpening: a wall down the middle of the map in Teams,
+    * no ability casts in a free-for-all). Sent when a match begins, when the opening ends, and to
+    * anyone joining during it. */
+  val MATCH_OPENING: Byte = 6
 }
 
 /**
@@ -19,8 +24,8 @@ object GameEvent {
  * [0] type=0x0A, [1-4] seq, [5-20] playerUUID (killer/subject),
  * [21] eventType, [22-23] gameId (short), [24-27] remainingSeconds (int),
  * [28-29] kills (short), [30-31] deaths (short),
- * [32-47] targetUUID (victim), [48-52] reserved, [53] rank, [54-55] spawnX (short),
- * [56-57] spawnY (short), [58-63] reserved
+ * [32-47] targetUUID (victim), [48-51] openingMs (int), [52] openingRules, [53] rank,
+ * [54-55] spawnX (short), [56-57] spawnY (short), [58] teamId, [59-63] reserved
  */
 class GameEventPacket(
     sequenceNumber: Int,
@@ -35,7 +40,9 @@ class GameEventPacket(
     val rank: Byte = 0,
     val spawnX: Short = 0,
     val spawnY: Short = 0,
-    val teamId: Byte = 0
+    val teamId: Byte = 0,
+    val openingMs: Int = 0,
+    val openingRules: Byte = 0
 ) extends Packet(PacketType.GAME_EVENT, sequenceNumber, playerId, timestamp) {
 
 
@@ -63,6 +70,9 @@ class GameEventPacket(
   def getSpawnX: Short = spawnX
   def getSpawnY: Short = spawnY
   def getTeamId: Byte = teamId
+  /** MATCH_OPENING: how long the opening has left, in milliseconds, and what it does. */
+  def getOpeningMs: Int = openingMs
+  def getOpeningRules: Byte = openingRules
 
   override def serialize(): Array[Byte] = {
     val buffer = SerializeUtil.acquireBuffer()
@@ -101,8 +111,11 @@ class GameEventPacket(
       buffer.putLong(0L)
     }
 
-    // [48-52] Reserved (5 bytes)
-    buffer.put(new Array[Byte](5))
+    // [48-51] Opening milliseconds left (MATCH_OPENING)
+    buffer.putInt(openingMs)
+
+    // [52] What the opening does (MatchOpening's rules)
+    buffer.put(openingRules)
 
     // [53] Rank
     buffer.put(rank)

@@ -31,7 +31,7 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
 
   private val TICK_INTERVAL_MS = 100L
   // Bots take a step every other one a player of the same character would (Movement), so their
-  // 100ms at speed 1.0 is the player's 50ms doubled.
+  // 100ms at speed 1.0 is the player's 50ms doubled, and a melee bot's 106ms its 53ms.
   private val BOT_MOVE_INTERVAL_MS = 100L
   private val SHOOT_COOLDOWN_MIN_MS = 700L
   private val SHOOT_COOLDOWN_MAX_MS = 1100L
@@ -64,7 +64,7 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     lastShotTime.put(id, 0L)
     lastQAbilityTime.put(id, 0L)
     lastEAbilityTime.put(id, 0L)
-    // Stagger initial move times so bots don't all move on the same tick
+    // When its last step fell due, staggered so bots don't all step on the same ticks
     lastMoveTime.put(id, System.currentTimeMillis() - scala.util.Random.nextInt(BOT_MOVE_INTERVAL_MS.toInt))
     lastTargetDist.put(id, java.lang.Float.valueOf(Float.MaxValue))
     botShootCooldown.put(id, SHOOT_COOLDOWN_MIN_MS + scala.util.Random.nextLong(SHOOT_COOLDOWN_MAX_MS - SHOOT_COOLDOWN_MIN_MS))
@@ -124,7 +124,11 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
   private def packCoord(x: Int, y: Int): Long = (x.toLong << 32) | (y.toLong & 0xFFFFFFFFL)
 
   /** One pass over every bot. Runs every TICK_INTERVAL_MS once started; tests call it themselves. */
-  private[server] def tick(): Unit = {
+  private[server] def tick(): Unit = tick(System.currentTimeMillis())
+
+  /** One pass on the caller's clock, which is what the bots step by: a test can walk them at
+    * their pace a tick at a time without waiting for it. */
+  private[server] def tick(now: Long): Unit = {
     val tickStart = System.nanoTime()
     try {
       if (!instance.isRunning || instance.world == null) return
@@ -140,7 +144,6 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
         }
       }
 
-      val now = System.currentTimeMillis()
       tickNow = now
       botIds.asScala.foreach { botId =>
         val bot = instance.registry.get(botId)
@@ -180,44 +183,55 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
       broadcastBotPosition(bot)
     }
 
-    // Movement gated by per-bot move timer
-    val canMove = !bot.isRooted && {
-      val lastMove = lastMoveTime.getOrDefault(bot.getId, 0L)
-      // Twice a player's interval for the same character and state. Bots never charge, and a
-      // phase has never made one quicker, so neither is passed in.
+    val posBefore = bot.getPosition
+    if (!bot.isRooted) {
+      // Twice a player's interval for the same character and state. Bots never charge; a phase
+      // doubles their pace as it does a player's, which is what makes a melee bot's phase a way in.
       val moveInterval = 2L * Movement.stepIntervalMs(
         CharacterDef.get(bot.getCharacterId).moveSpeed,
-        charging = false, chargeLevel = 0, phased = false,
+        charging = false, chargeLevel = 0, phased = bot.isPhased,
         speedBoost = bot.hasSpeedBoost, slowed = bot.isSlowed, slowMultiplier = bot.getSlowMultiplier)
-      now - lastMove >= moveInterval
-    }
-
-    val posBefore = bot.getPosition
-    if (canMove) {
-      // The cell the target stands on: a trap under them is no reason to break off the chase
-      if (target != null) {
-        val tp = target.getPosition
-        chaseX = tp.getX; chaseY = tp.getY
-      } else {
-        chaseX = Int.MinValue; chaseY = Int.MinValue
+      // When the bot's last step fell due. Counted from there rather than from this tick: counted
+      // from the tick, as it was, a 104ms or 106ms step waited for the second tick after the last
+      // and walked at half its pace. Up to two a tick, for the steps a speed boost brings under
+      // the tick's 100ms
+      var due = lastMoveTime.getOrDefault(bot.getId, 0L)
+      var steps = 0
+      while (steps < 2 && now - due >= moveInterval) {
+        stepBot(bot, target)
+        due = Movement.nextStepFrom(due + moveInterval, now, TICK_INTERVAL_MS)
+        steps += 1
       }
-      // Behind a barrier, a bot closes in whatever its range: that is what the barrier is for
-      if (target != null && bot.hasBarrier) {
-        moveToward(bot, target)
-      } else if (target != null) {
-        moveSmart(bot, target)
-      } else {
-        wander(bot)
-      }
-      lastMoveTime.put(bot.getId, now)
+      lastMoveTime.put(bot.getId, due)
     }
     // A step tells the clients where the barrier faces. Standing still it has to be said anyway:
     // so they see it turn, and because their copy of it lapses when updates stop coming
     if (bot.hasBarrier && (bot.getPosition eq posBefore)) broadcastBotPosition(bot)
 
-    if (target != null) {
+    // A bot holds its fire through a free-for-all's opening ceasefire as a player does
+    // (MatchOpening): it walks and it looks for a target, and it shoots at nothing.
+    if (target != null && !instance.attacksLocked) {
       tryUseAbilities(bot, target)
       tryShoot(bot, target, now)
+    }
+  }
+
+  /** One step: after the target, or a wander with nobody to chase. */
+  private def stepBot(bot: Player, target: Player): Unit = {
+    // The cell the target stands on: a trap under them is no reason to break off the chase
+    if (target != null) {
+      val tp = target.getPosition
+      chaseX = tp.getX; chaseY = tp.getY
+    } else {
+      chaseX = Int.MinValue; chaseY = Int.MinValue
+    }
+    // Behind a barrier, a bot closes in whatever its range: that is what the barrier is for
+    if (target != null && bot.hasBarrier) {
+      moveToward(bot, target)
+    } else if (target != null) {
+      moveSmart(bot, target)
+    } else {
+      wander(bot)
     }
   }
 
@@ -275,14 +289,17 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     ProjectileDef.get(charDef.primaryProjectileType).maxRange
   }
 
-  private def isRanged(charId: Byte): Boolean = {
-    getMaxRange(charId) >= 10
-  }
+  private def roleOf(charId: Byte): CombatRole = CharacterDef.get(charId).role
 
-  private def getPreferredRange(charId: Byte): Float = {
-    val maxRange = getMaxRange(charId)
-    if (isRanged(charId)) maxRange * 0.6f
-    else 1.5f
+  /** Keeps its distance, backing off from anyone who closes in. Only the ranged do: melee has to
+    * close in, and a skirmisher's bruiser health is there so it can stand its ground. */
+  private def isRanged(charId: Byte): Boolean = roleOf(charId) == CombatRole.Ranged
+
+  private def getPreferredRange(charId: Byte): Float = roleOf(charId) match {
+    case CombatRole.Ranged => getMaxRange(charId) * 0.6f
+    // Halfway into its throw, where a boulder is hard to sidestep
+    case CombatRole.Skirmisher => getMaxRange(charId) * 0.5f
+    case CombatRole.Melee => 1.5f
   }
 
   private def moveSmart(bot: Player, target: Player): Unit = {
@@ -290,6 +307,7 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     val targetPos = target.getPosition
     val dist = distanceBetween(botPos, targetPos)
     val preferredRange = getPreferredRange(bot.getCharacterId)
+    val role = roleOf(bot.getCharacterId)
     val ranged = isRanged(bot.getCharacterId)
 
     if (dist < 0.01f) {
@@ -301,10 +319,11 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
       else moveAway(bot, target)
     } else if (dist > preferredRange * 1.3f) {
       moveToward(bot, target)
-    } else if (ranged) {
-      strafe(bot, target)
-    } else {
+    } else if (role == CombatRole.Melee) {
       moveToward(bot, target)
+    } else {
+      // In range: the ranged and skirmishers circle there
+      strafe(bot, target)
     }
   }
 
@@ -615,8 +634,13 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
     // the projectile manager's spatial grid, which belongs to the projectile tick's thread and is
     // rebuilt in place every 30ms, so from this thread it was read mid-rebuild.
     val botPos = bot.getPosition
+    // Nobody on the far side of the opening divider is worth chasing: a bot can neither reach
+    // them nor hit them, and would spend the opening walking into the wall shooting it
+    val divider = instance.divider
+    val side = if (divider != null && divider.up) divider.side(botPos.getX, botPos.getY) else 0
     instance.registry.forEachPlayer { player =>
-      if (!player.isDead && !player.getId.equals(bot.getId) && !instance.isTeammate(bot.getId, player.getId)) {
+      if (!player.isDead && !player.getId.equals(bot.getId) && !instance.isTeammate(bot.getId, player.getId) &&
+          (side == 0 || divider.side(player.getPosition.getX, player.getPosition.getY) == side)) {
         val dist = distanceBetween(botPos, player.getPosition)
         if (dist < nearestDist) {
           nearestDist = dist
@@ -780,7 +804,11 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
         true
 
       case PhaseShiftBuff(durationMs) =>
-        if (dist > 5) return false
+        // A ranged bot's phase gets it away from someone who has closed in. A melee or skirmisher
+        // bot's is its way in: twice the pace and untouchable, toward a target out of its reach.
+        val wayIn = roleOf(bot.getCharacterId) != CombatRole.Ranged
+        if (wayIn && (dist <= getMaxRange(bot.getCharacterId) || dist > 14)) return false
+        if (!wayIn && dist > 5) return false
         lowerBarrier(bot)
         bot.setPhasedUntil(System.currentTimeMillis() + durationMs)
         broadcastBotPosition(bot)
@@ -848,11 +876,13 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
         }
 
       case BarrierCast(durationMs) =>
-        // Up against someone ranged who can shoot it from where they are, while it still has
-        // ground to close (in its own range it is about to attack, which would drop it), or
-        // against a shot on its way in
-        val underFire = (isRanged(target.getCharacterId) && dist <= getMaxRange(target.getCharacterId) &&
-          dist > getMaxRange(bot.getCharacterId)) || incomingShot(bot)
+        // Up against someone who shoots from further off than a blade (a skirmisher's boulders
+        // as well as a ranged character's shots) and can shoot it from where they are, while it
+        // still has ground to close (in its own range it is about to attack, which would drop
+        // it), or against a shot on its way in
+        val underFire = (roleOf(target.getCharacterId) != CombatRole.Melee &&
+          dist <= getMaxRange(target.getCharacterId) && dist > getMaxRange(bot.getCharacterId)) ||
+          incomingShot(bot)
         if (!underFire) return false
         bot.raiseBarrier(System.currentTimeMillis(), durationMs, Math.atan2(ndy, ndx).toFloat)
         barrierShown.add(bot.getId)

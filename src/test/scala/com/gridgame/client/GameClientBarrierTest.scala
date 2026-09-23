@@ -116,6 +116,48 @@ class GameClientBarrierTest {
     assertTrue("and fades out from now", System.currentTimeMillis() - p.getBarrierUntil < 1000)
   }
 
+  @Test def anotherPlayersLastsAsLongAsTheServerSaysWithoutFurtherUpdates(): Unit = {
+    // It used to be a 600ms lease, renewed only by the updates its holder's client streams from
+    // its render loop. A gap longer than that — a hitch on their machine, a burst of lost
+    // datagrams, a run of updates the server refused after a knockback — took a barrier that was
+    // still up, and still stopping shots, off every other screen for the rest of its life.
+    t.startMatch(spawn = (5, 5))
+    val holder = UUID.randomUUID()
+    t.join(holder, 30, 30, charId = CharacterId.Crusader.id)
+    t.update(holder, 30, 30, flags2 = BARRIER, aimAngle = 1.0, barrierMs = 3200,
+      charId = CharacterId.Crusader.id)
+    val p = c.getPlayers.get(holder)
+    assertTrue(p.hasBarrier)
+    val left = p.getBarrierUntil - System.currentTimeMillis()
+    assertTrue(s"it holds for the 3.2s it was given, not for one lease: $left", left > 2500)
+  }
+
+  @Test def aDatagramThatOvertakesAnotherCannotDropIt(): Unit = {
+    // Updates about everyone else are applied as they arrive. One sent before the barrier went
+    // up, delivered after it, used to drop it until the next one its holder streamed.
+    t.startMatch(spawn = (5, 5))
+    val holder = UUID.randomUUID()
+    t.join(holder, 30, 30, charId = CharacterId.Crusader.id)
+    val older = t.peekSeq
+    t.update(holder, 30, 30, flags2 = BARRIER, aimAngle = 1.0, barrierMs = 3000,
+      charId = CharacterId.Crusader.id, seq = older + 5)
+    assertTrue(c.getPlayers.get(holder).hasBarrier)
+    t.update(holder, 30, 30, charId = CharacterId.Crusader.id, seq = older) // sent before the raise
+    assertTrue("the older word about it counts for nothing", c.getPlayers.get(holder).hasBarrier)
+    t.update(holder, 30, 30, charId = CharacterId.Crusader.id, seq = older + 6) // and a newer one
+    assertFalse("which a newer one still does", c.getPlayers.get(holder).hasBarrier)
+  }
+
+  @Test def droppingOursIsSaidTwice(): Unit = {
+    // Everyone else holds it to the time the server gave it, so one lost "it is down" would
+    // leave them a barrier that isn't there.
+    crusader()
+    c.shootAbility(0)
+    t.clearSent()
+    c.shootToward(1f, 0f)
+    assertEquals("both say it is down", 2, t.sentUpdates.count(u => !up(u)))
+  }
+
   @Test def oneWeFirstHearOfUpIsUp(): Unit = {
     t.startMatch(spawn = (5, 5))
     val holder = UUID.randomUUID()

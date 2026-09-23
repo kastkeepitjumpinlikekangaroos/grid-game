@@ -14,6 +14,9 @@ object Teleport {
    * Star item: the farthest cell toward the aim point that can be stood on, at most
    * STAR_MAX_DISTANCE (Manhattan) from (fromX, fromY). Aiming past the range, off the map or
    * into a wall lands short along the same line. None when that leaves nowhere to go.
+   *
+   * A star jumps over whatever lies between, so unlike a blink it has to be told about the
+   * opening divider by hand: it lands short of it rather than on the far side of it.
    */
   def starTarget(world: WorldData, fromX: Int, fromY: Int, aimX: Double, aimY: Double): Option[Position] = {
     val range = Constants.STAR_MAX_DISTANCE
@@ -26,13 +29,14 @@ object Teleport {
     // Back along the line from its far end in half-cell steps: the first cell that is walkable
     // and in range is the farthest one
     val steps = Math.ceil(Math.max(Math.abs(ex), Math.abs(ey)) * 2).toInt
+    val divider = world.divider
     var i = steps
     while (i > 0) {
       val t = i.toDouble / steps
       val x = Math.round(fromX + ex * t).toInt
       val y = Math.round(fromY + ey * t).toInt
       if ((x != fromX || y != fromY) && Math.abs(x - fromX) + Math.abs(y - fromY) <= range &&
-          world.isWalkable(x, y)) {
+          world.isWalkable(x, y) && (divider == null || !divider.stops(fromX, fromY, x, y))) {
         return Some(new Position(x, y))
       }
       i -= 1
@@ -41,10 +45,13 @@ object Teleport {
   }
 
   /** Server side: may a player the server has at (fromX, fromY) star to (x, y)? */
-  def isValidStarTarget(world: WorldData, fromX: Int, fromY: Int, x: Int, y: Int): Boolean =
+  def isValidStarTarget(world: WorldData, fromX: Int, fromY: Int, x: Int, y: Int): Boolean = {
+    val divider = world.divider
     world.isWalkable(x, y) &&
       Math.abs(x.toLong - fromX) + Math.abs(y.toLong - fromY) <=
-        Constants.STAR_MAX_DISTANCE + Constants.TELEPORT_RANGE_TOLERANCE
+        Constants.STAR_MAX_DISTANCE + Constants.TELEPORT_RANGE_TOLERANCE &&
+      (divider == null || !divider.stops(fromX, fromY, x, y))
+  }
 
   /**
    * Blink (TeleportCast): step along the unit vector (dirX, dirY) up to maxDistance cells,

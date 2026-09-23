@@ -73,4 +73,69 @@ class MovementTest {
     assertTrue(step(moveSpeed = 0f) > 0)
     assertTrue(step(moveSpeed = -1f) > 0)
   }
+
+  // --- The step clock: a step can only be taken on a frame, but the pace is the interval's ---
+
+  /**
+   * Steps taken holding a key down for `ms`, on a game loop of `fps` whose clock reads whole
+   * milliseconds, as an input handler takes them. With `carry` off, each wait counts from the frame
+   * the last step was taken on, as the handlers used to.
+   */
+  private def stepsOnFrames(intervalMs: Int, ms: Int, fps: Double = 60.0, carry: Boolean = true): Int = {
+    var last = -1000000L
+    var steps = 0
+    var frame = 0
+    while (frame * 1000.0 / fps < ms) {
+      val now = (frame * 1000.0 / fps).toLong
+      if (now - last >= intervalMs) {
+        steps += 1
+        last = if (carry) Movement.nextStepFrom(last + intervalMs, now, intervalMs) else now
+      }
+      frame += 1
+    }
+    steps
+  }
+
+  @Test def at60FpsEachIntervalKeepsItsOwnPace(): Unit = {
+    // Nine seconds: the first step at once, then one every interval
+    assertEquals("ranged", 180, stepsOnFrames(50, 9000))
+    assertEquals("skirmisher", 173, stepsOnFrames(52, 9000))
+    assertEquals("melee", 170, stepsOnFrames(53, 9000))
+    assertEquals("phased", 360, stepsOnFrames(25, 9000))
+    assertEquals("a 40% slow", 72, stepsOnFrames(125, 9000))
+  }
+
+  @Test def countedFromTheFrameEveryIntervalRoundedUpToWholeFrames(): Unit = {
+    // Which would have made the paces a few milliseconds apart a quarter apart: a 52ms and a 53ms
+    // step both waited for the fourth frame and walked at 67ms, to a 50ms step's three frames
+    assertEquals(135, stepsOnFrames(53, 9000, carry = false))
+    assertEquals(135, stepsOnFrames(52, 9000, carry = false))
+    assertEquals(180, stepsOnFrames(50, 9000, carry = false))
+    // and a phase, meant to be twice the pace, was one and a half
+    assertEquals(270, stepsOnFrames(25, 9000, carry = false))
+  }
+
+  @Test def at30FpsThePacesStillHold(): Unit = {
+    assertEquals("ranged", 180, stepsOnFrames(50, 9000, fps = 30))
+    assertEquals("skirmisher", 173, stepsOnFrames(52, 9000, fps = 30))
+    assertEquals("melee", 170, stepsOnFrames(53, 9000, fps = 30))
+  }
+
+  @Test def aStepLongAfterItFellDueStartsAfresh(): Unit = {
+    // Late by less than the slack: counted from when it fell due
+    assertEquals(100L, Movement.nextStepFrom(due = 100, now = 130, freshAfterMs = 50))
+    // By the slack or more (the key was up, the player held): from now, so nothing is saved up
+    assertEquals(150L, Movement.nextStepFrom(due = 100, now = 150, freshAfterMs = 50))
+    assertEquals(5000L, Movement.nextStepFrom(due = 100, now = 5000, freshAfterMs = 50))
+  }
+
+  @Test def aKeyPressedAgainAfterAPauseDoesNotCatchUp(): Unit = {
+    // Walk ten steps, let go for a second, walk again: the steps not taken while the key was up
+    // are not owed, and the next one comes a whole interval after the first step back
+    var last = 0L
+    for (i <- 1 to 10) last = Movement.nextStepFrom(last + 53, i * 53L, 53)
+    assertEquals(530L, last)
+    val back = 530L + 1000L
+    assertEquals(back, Movement.nextStepFrom(last + 53, back, 53))
+  }
 }

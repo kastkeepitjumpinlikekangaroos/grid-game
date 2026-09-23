@@ -740,6 +740,9 @@ class GLGameRenderer(val client: GameClient) {
     // === Raised barriers: walls of light standing on the ground in front of their holders ===
     drawBarriers()
 
+    // === The wall between the two teams while a team match opens ===
+    drawTeamDivider(uMin, uMax, vMin, vMax)
+
     // === Deferred health bars + names (batched to reduce batch switches) ===
     flushDeferredBars()
 
@@ -2868,12 +2871,14 @@ class GLGameRenderer(val client: GameClient) {
       case ProjectileType.FIREBALL | ProjectileType.FLAME_BOLT | ProjectileType.FLAME_BOLT_HEAVY |
            ProjectileType.FLAME_BOLT_LIGHT | ProjectileType.MAGMA_BALL | ProjectileType.ERUPTION |
            ProjectileType.INFERNO_BLAST | ProjectileType.EMBER_SHOT | ProjectileType.NAPALM_STRIKE |
-           ProjectileType.FLAME_WAVE | ProjectileType.FLAME_TRAIL =>
+           ProjectileType.FLAME_WAVE | ProjectileType.FLAME_TRAIL | ProjectileType.FLAMBE |
+           ProjectileType.EMBER_FAN =>
         lightSystem.addLight(sx, sy, 80f, 1.0f, 0.4f, 0.05f, 0.25f)
 
       // Ice types: cool blue-white glow
       case ProjectileType.ICE_BEAM | ProjectileType.FROST_SHARD | ProjectileType.FROST_SHARD_LIGHT |
-           ProjectileType.FROST_TRAP | ProjectileType.GLACIER_SPIKE | ProjectileType.AVALANCHE_CRUSH =>
+           ProjectileType.FROST_TRAP | ProjectileType.GLACIER_SPIKE | ProjectileType.AVALANCHE_CRUSH |
+           ProjectileType.ICE_QUAKE | ProjectileType.ICE_BOULDER =>
         lightSystem.addLight(sx, sy, 60f, 0.4f, 0.7f, 1.0f, 0.18f)
 
       // Lightning types: bright white-blue with flicker
@@ -2885,19 +2890,22 @@ class GLGameRenderer(val client: GameClient) {
       // Shadow/dark types: deep purple glow
       case ProjectileType.SHADOW_BOLT | ProjectileType.SHADOW_HAUNT | ProjectileType.DEATH_BOLT |
            ProjectileType.CURSE | ProjectileType.SOUL_BOLT | ProjectileType.SOUL_BOLT_HEAVY |
-           ProjectileType.HAUNT | ProjectileType.SOUL_DRAIN | ProjectileType.SOUL_HARVEST =>
+           ProjectileType.HAUNT | ProjectileType.SOUL_DRAIN | ProjectileType.SOUL_HARVEST |
+           ProjectileType.DEATH_GRIP | ProjectileType.DRAIN_BLADE | ProjectileType.CHILL_BLADE =>
         lightSystem.addLight(sx, sy, 65f, 0.4f, 0.1f, 0.6f, 0.15f)
 
       // Holy/light types: warm golden glow
       case ProjectileType.HOLY_BOLT | ProjectileType.HOLY_BOLT_HEAVY | ProjectileType.HOLY_BLADE |
-           ProjectileType.SMITE | ProjectileType.STAR_BOLT =>
+           ProjectileType.SMITE | ProjectileType.STAR_BOLT | ProjectileType.HOLY_NOVA |
+           ProjectileType.SHOCKWAVE =>
         lightSystem.addLight(sx, sy, 75f, 1.0f, 0.9f, 0.5f, 0.22f)
 
       // Poison/venom: sickly green glow
       case ProjectileType.VENOM_BOLT | ProjectileType.VENOM_BOLT_LIGHT | ProjectileType.POISON_DART |
            ProjectileType.POISON_ARROW | ProjectileType.PLAGUE_BOLT | ProjectileType.MIASMA |
            ProjectileType.BLIGHT_BOMB | ProjectileType.ACID_BOMB | ProjectileType.ACID_FLASK |
-           ProjectileType.ACID_SPRAY | ProjectileType.POISON_CLOUD =>
+           ProjectileType.ACID_SPRAY | ProjectileType.POISON_CLOUD | ProjectileType.VENOM_DART |
+           ProjectileType.TOXIC_SHURIKEN | ProjectileType.PARALYTIC_STING =>
         lightSystem.addLight(sx, sy, 55f, 0.3f, 0.8f, 0.15f, 0.15f)
 
       // Water types: ocean blue glow
@@ -3207,6 +3215,225 @@ class GLGameRenderer(val client: GameClient) {
       j += 1
     }
     shapeBatch.strokePolygon(_barRingXs, _barRingYs, n, 0.6f + 1.6f * fadeOut, r, g, b, 0.9f * fadeOut)
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  TEAM DIVIDER
+  // ═══════════════════════════════════════════════════════════════════
+
+  private val DIVIDER_HEIGHT_PX = 52f
+  private val DIVIDER_RAISE_MS = 700f
+  private val DIVIDER_FADE_MS = 900f
+  private val DIVIDER_IMPACT_MS = 420f
+  // Half the width of the strip it glows in along the ground, and how often a rib of light
+  // stands in it, both in cells
+  private val DIVIDER_FOOT_CELLS = 0.42f
+  private val DIVIDER_RIB_CELLS = 1.0f
+  // The sheet is cut into pieces this long so the light in it can travel along its length
+  private val DIVIDER_CHUNK_CELLS = 5f
+  // The last seconds before it drops, when the whole wall beats
+  private val DIVIDER_WARN_MS = 3000f
+  private val _divQuadXs = new Array[Float](4)
+  private val _divQuadYs = new Array[Float](4)
+
+  /**
+   * The wall between the two teams while a match opens ([[TeamDivider]]), drawn after the entity
+   * pass like a held barrier: a sheet of amber light standing on the ground the whole way across
+   * the map, on the one line the server will not let anything cross.
+   *
+   * Only the part of the line the screen can see is drawn, clipped in the projection's own axes
+   * against the same bounds the tiles are culled with — the line itself is straight in world
+   * space, so it is straight on screen and one quad covers a whole stretch of it.
+   */
+  private def drawTeamDivider(uMin: Double, uMax: Double, vMin: Double, vMax: Double): Unit = {
+    val d = client.divider
+    if (d == null) return
+    val world = client.getWorld
+    if (world == null) return
+    val now = _frameTimeMs
+    val raisedAt = d.endsAt - Constants.MATCH_OPENING_MS
+    val raise = clamp((now - raisedAt) / DIVIDER_RAISE_MS)
+    val fade = if (now < d.endsAt) 1f else clamp(1f - (now - d.endsAt) / DIVIDER_FADE_MS)
+    val vis = (1f - (1f - raise) * (1f - raise)) * fade
+    if (vis <= 0.01f) return
+
+    // The visible stretch of the line, in the axes the tiles are culled in (u = wx - wy is
+    // screen x, v = wx + wy is screen y): along a column x = at, a point is (at, t)
+    val at = d.at.toFloat
+    val lo = if (d.axisX) Math.max(at - uMax, vMin - at) else Math.max(uMin + at, vMin - at)
+    val hi = if (d.axisX) Math.min(at - uMin, vMax - at) else Math.min(uMax + at, vMax - at)
+    val span = (if (d.axisX) world.height else world.width) - 1
+    val tLo = Math.max(-0.5, lo).toFloat
+    val tHi = Math.min(span + 0.5, hi).toFloat
+    if (tHi - tLo <= 0.01f) return
+
+    // Amber: a starting gate, not somebody's shield (those are blue and red)
+    val warn = if (d.endsAt - now < DIVIDER_WARN_MS && now < d.endsAt) {
+      val beat = (Math.sin(now * 0.012).toFloat + 1f) * 0.5f
+      0.35f * beat
+    } else 0f
+    val cr = 1f; val cg = 0.70f + 0.1f * warn; val cb = 0.16f
+    val lr = 1f; val lg = 0.92f; val lb = 0.55f
+    val h = DIVIDER_HEIGHT_PX * (0.12f + 0.88f * vis)
+
+    beginShapes()
+    shapeBatch.setAlphaMultiplier(vis)
+
+    // Where a shot struck it lately: a flash on the sheet, and the whole wall picks up the glow
+    var flare = 0f
+    var k = 0
+    while (k < client.DIVIDER_IMPACT_SLOTS) {
+      val struck = client.getDividerImpactTime(k)
+      val age = now - struck
+      if (struck > 0L && age >= 0L && age < DIVIDER_IMPACT_MS) {
+        val t = if (d.axisX) client.getDividerImpactY(k) else client.getDividerImpactX(k)
+        if (t >= tLo && t <= tHi) {
+          val fadeOut = 1f - age / DIVIDER_IMPACT_MS
+          flare = Math.max(flare, fadeOut * 0.6f)
+          val fx = dividerScreenX(d, at, t)
+          val fy = dividerScreenY(d, at, t) - h * 0.5f
+          shapeBatch.fillOval(fx, fy, 5f + 14f * (1f - fadeOut), h * 0.45f, lr, lg, lb, 0.5f * fadeOut * fadeOut, 12)
+          shapeBatch.strokeOval(fx, fy, 6f + 26f * (1f - fadeOut), h * (0.25f + 0.3f * (1f - fadeOut)),
+            1.4f, lr, lg, lb, 0.8f * fadeOut, 14)
+        }
+      }
+      k += 1
+    }
+
+    // A light every few chunks, so the wall throws its colour onto the ground beside it
+    val chunks = Math.ceil((tHi - tLo) / DIVIDER_CHUNK_CELLS).toInt
+    val step = (tHi - tLo) / chunks
+    val climb = ((now % 1600L) / 1600f)
+    var i = 0
+    while (i < chunks) {
+      val t0 = tLo + step * i
+      val t1 = t0 + step
+      val x0 = dividerScreenX(d, at, t0); val y0 = dividerScreenY(d, at, t0)
+      val x1 = dividerScreenX(d, at, t1); val y1 = dividerScreenY(d, at, t1)
+
+      // Its footprint on the ground: a strip in the ground plane, which is what still shows the
+      // wall where the sheet is seen edge on
+      val nx = if (d.axisX) DIVIDER_FOOT_CELLS else 0f
+      val ny = if (d.axisX) 0f else DIVIDER_FOOT_CELLS
+      val ax = if (d.axisX) at else t0; val ay = if (d.axisX) t0 else at
+      val bx = if (d.axisX) at else t1; val by = if (d.axisX) t1 else at
+      _divQuadXs(0) = worldToScreenX(ax + nx, ay + ny).toFloat; _divQuadYs(0) = worldToScreenY(ax + nx, ay + ny).toFloat
+      _divQuadXs(1) = worldToScreenX(bx + nx, by + ny).toFloat; _divQuadYs(1) = worldToScreenY(bx + nx, by + ny).toFloat
+      _divQuadXs(2) = worldToScreenX(bx - nx, by - ny).toFloat; _divQuadYs(2) = worldToScreenY(bx - nx, by - ny).toFloat
+      _divQuadXs(3) = worldToScreenX(ax - nx, ay - ny).toFloat; _divQuadYs(3) = worldToScreenY(ax - nx, ay - ny).toFloat
+      shapeBatch.fillPolygon(_divQuadXs, _divQuadYs, 4, cr, cg, cb, 0.20f + 0.18f * (warn + flare))
+
+      // The sheet: four bands rising off the ground, so it is dense where it stands and thins
+      // out toward its top — one flat quad up the whole height reads as a ribbon, not a wall
+      val lift = 0.065f + 0.05f * (warn + flare)
+      dividerBand(x0, y0, x1, y1, 0f, h, cr, cg, cb, lift)
+      dividerBand(x0, y0, x1, y1, 0f, h * 0.70f, cr, cg, cb, lift)
+      dividerBand(x0, y0, x1, y1, 0f, h * 0.40f, cr, cg, cb, lift)
+      dividerBand(x0, y0, x1, y1, 0f, h * 0.15f, cr, cg, cb, lift)
+      val wave = (i.toFloat / chunks + climb) % 1f
+      if (wave < 0.18f) dividerBand(x0, y0, x1, y1, 0f, h, lr, lg, lb, 0.10f * (1f - wave / 0.18f))
+
+      // A hard line along its top and a glow where it meets the ground, not a line at both: two
+      // bright parallel edges with an even fill between them is a road, not a wall
+      shapeBatch.strokeLineSoft(x0, y0, x1, y1, 6f, cr, cg, cb, 0.22f + 0.25f * (warn + flare))
+      shapeBatch.strokeLineSoft(x0, y0 - h, x1, y1 - h, 5f, cr, cg, cb, 0.30f + 0.3f * (warn + flare))
+      shapeBatch.strokeLine(x0, y0 - h, x1, y1 - h, 2.1f, lr, lg, lb, 0.95f)
+
+      if ((i & 1) == 0) {
+        lightSystem.addLight((x0 + x1) * 0.5f, (y0 + y1) * 0.5f - h * 0.5f, 70f, cr, cg, cb,
+          (0.10f + 0.10f * (warn + flare)) * vis)
+      }
+      i += 1
+    }
+
+    // Ribs standing in the sheet, drifting along it. They are what makes the eye read a surface
+    // standing up out of the ground rather than light lying on it.
+    val drift = ((now % 3000L) / 3000f) * DIVIDER_RIB_CELLS
+    var t = Math.ceil((tLo - drift) / DIVIDER_RIB_CELLS).toFloat * DIVIDER_RIB_CELLS + drift
+    while (t < tHi) {
+      val sx = dividerScreenX(d, at, t)
+      val sy = dividerScreenY(d, at, t)
+      shapeBatch.strokeLine(sx, sy, sx, sy - h * 0.92f, 1.4f, lr, lg, lb, 0.30f + 0.2f * warn)
+      shapeBatch.strokeLine(sx, sy - h * 0.92f, sx, sy - h, 2.4f, lr, lg, lb, 0.5f + 0.3f * warn)
+      t += DIVIDER_RIB_CELLS
+    }
+
+    shapeBatch.setAlphaMultiplier(1f)
+  }
+
+  // How long the word that the opening is over stays up
+  private val DIVIDER_GO_MS = 1400L
+  private var _cachedOpeningSecs = -1
+  private var _cachedOpeningStr = ""
+
+  /**
+   * Under the match clock while the match opens ([[MatchOpening]]): how long is left of it, and a
+   * beat of FIGHT! when it ends. It says the same thing whichever opening it is — behind a wall or
+   * holding your fire, the battle starts when the countdown does. The bar empties as it runs out.
+   */
+  private def drawOpeningCountdown(screenW: Int): Unit = {
+    val rules = client.openingRulesNow
+    if (rules == 0) return
+    val now = _frameTimeMs
+    val left = client.openingMsLeft
+    val since = now - client.openingEndsAtMs
+    val counting = left > 0L
+    if (!counting && (since < 0L || since > DIVIDER_GO_MS)) return
+
+    // The same words either way: behind a wall or holding your fire, the battle starts when the
+    // countdown does
+    if (counting) {
+      val secs = ((left + 999L) / 1000L).toInt
+      if (secs != _cachedOpeningSecs) {
+        _cachedOpeningSecs = secs
+        _cachedOpeningStr = Messages.t("Battle begins in {0}", secs)
+      }
+    } else if (_cachedOpeningSecs != 0) {
+      _cachedOpeningSecs = 0
+      _cachedOpeningStr = Messages.t("FIGHT!")
+    }
+    val text = _cachedOpeningStr
+    val go = if (counting) 0f else clamp(1f - since / DIVIDER_GO_MS.toFloat)
+    val beat = if (counting && left < DIVIDER_WARN_MS) (Math.sin(now * 0.012).toFloat + 1f) * 0.5f else 0f
+
+    val textW = fontMedium.measureWidth(text)
+    val w = textW + 36f
+    val hgt = 26f
+    val x = (screenW / 2f - w / 2f)
+    val y = 42f
+
+    beginShapes()
+    shapeBatch.fillRoundedRectGradient(x, y, w, hgt, 7f,
+      0.20f + 0.18f * (beat + go), 0.11f, 0.01f, 0.72f,
+      0.10f + 0.10f * (beat + go), 0.05f, 0.01f, 0.62f)
+    shapeBatch.strokeRect(x, y, w, hgt, 1f, 1f, 0.72f + 0.2f * go, 0.2f, 0.35f + 0.4f * (beat + go))
+    if (counting) {
+      // What is left of the opening, emptying left to right
+      val frac = clamp(left.toFloat / Constants.MATCH_OPENING_MS)
+      shapeBatch.fillRect(x + 6f, y + hgt - 5f, (w - 12f) * frac, 2f, 1f, 0.72f, 0.2f, 0.75f)
+      shapeBatch.fillRect(x + 6f, y + hgt - 5f, w - 12f, 2f, 1f, 0.72f, 0.2f, 0.15f)
+    }
+
+    beginSprites()
+    val ty = y + (hgt - fontMedium.charHeight) / 2f
+    fontMedium.drawTextOutlined(spriteBatch, text, screenW / 2f - textW / 2f, ty,
+      1f, 0.85f - 0.15f * beat, 0.45f + 0.3f * go)
+  }
+
+  @inline private def dividerScreenX(d: TeamDivider, at: Float, t: Float): Float =
+    (if (d.axisX) worldToScreenX(at, t) else worldToScreenX(t, at)).toFloat
+
+  @inline private def dividerScreenY(d: TeamDivider, at: Float, t: Float): Float =
+    (if (d.axisX) worldToScreenY(at, t) else worldToScreenY(t, at)).toFloat
+
+  /** One piece of the divider's sheet, from (x0, y0)-(x1, y1) on the ground, `lo` to `hi` px up. */
+  private def dividerBand(x0: Float, y0: Float, x1: Float, y1: Float, lo: Float, hi: Float,
+                          r: Float, g: Float, b: Float, a: Float): Unit = {
+    _divQuadXs(0) = x0; _divQuadYs(0) = y0 - lo
+    _divQuadXs(1) = x1; _divQuadYs(1) = y1 - lo
+    _divQuadXs(2) = x1; _divQuadYs(2) = y1 - hi
+    _divQuadXs(3) = x0; _divQuadYs(3) = y0 - hi
+    shapeBatch.fillPolygon(_divQuadXs, _divQuadYs, 4, r, g, b, a)
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -4806,6 +5033,10 @@ class GLGameRenderer(val client: GameClient) {
 
     val now = _frameTimeMs
     val abilityGap = 12f
+    // Held by a free-for-all's opening ceasefire (MatchOpening): the slots say so, and say for
+    // how long, since nothing anyone presses attacks until it is over
+    val locked = client.attacksLocked
+    val lockSecs = if (locked) ((client.openingMsLeft + 999L) / 1000L).toInt else 0
     beginShapes()
     var i = 0
     while (i < numAbilities) {
@@ -4829,11 +5060,23 @@ class GLGameRenderer(val client: GameClient) {
 
       // Ability icon inside the slot
       val cx = slotX + slotSize / 2; val cy = startY + slotSize / 2
-      val iconAlpha = if (onCooldown) 0.35f else 0.9f
+      val iconAlpha = if (locked) 0.18f else if (onCooldown) 0.35f else 0.9f
       drawAbilityIcon(aDef.castBehavior, cx, cy, 17f, ar, ag, ab, iconAlpha)
 
+      if (locked) {
+        // Shuttered, with a padlock over it: this is not a cooldown, and nothing will start it
+        shapeBatch.fillRoundedRect(slotX, startY, slotSize, slotSize, 5f, 0.02f, 0.02f, 0.05f, 0.62f)
+        val lr = 1f; val lg = 0.78f; val lb = 0.3f
+        val bodyW = 13f; val bodyH = 10f
+        shapeBatch.strokeArc(cx, cy - 7f, 4.2f, 4.6f, Math.PI.toFloat, Math.PI.toFloat, 1.8f, lr, lg, lb, 0.9f, 10)
+        shapeBatch.fillRoundedRect(cx - bodyW / 2, cy - 7f, bodyW, bodyH, 2f, lr, lg, lb, 0.85f)
+        shapeBatch.fillOval(cx, cy - 2.4f, 1.5f, 1.6f, 0.1f, 0.06f, 0.02f, 0.9f, 6)
+      }
+
       // Cooldown overlay — radial sweep (clock-wipe from 12 o'clock)
-      if (onCooldown) {
+      if (locked) {
+        // nothing: a holstered slot is shuttered, not counting down its own cooldown
+      } else if (onCooldown) {
         val sweepAngle = cooldownFrac * Math.PI.toFloat * 2f
         val radius = slotSize * 0.72f
         val startAngle = -Math.PI.toFloat / 2f
@@ -4870,10 +5113,16 @@ class GLGameRenderer(val client: GameClient) {
       val slotX = inventoryStartX - (numAbilities - i) * (slotSize + slotGap) - abilityGap
       val ar = _abilityR(i); val ag = _abilityG(i); val ab = _abilityB(i)
       val onCooldown = (if (i == 0) qCooldown else eCooldown) > 0.001f
-      val ka = if (onCooldown) 0.5f else 1f
+      val ka = if (locked) 0.35f else if (onCooldown) 0.5f else 1f
       fontSmall.drawTextOutlined(spriteBatch, aDef.keybind,
         slotX + slotSize - fontSmall.measureWidth(aDef.keybind) - 3, startY + slotSize - fontSmall.charHeight - 1,
         ar * ka, ag * ka, ab * ka, ka)
+      if (locked) {
+        // How long they stay holstered, under the padlock
+        val secs = lockSecs.toString
+        fontSmall.drawTextOutlined(spriteBatch, secs, slotX + slotSize / 2 - fontSmall.measureWidth(secs) / 2,
+          startY + slotSize / 2 + 5f, 1f, 0.82f, 0.4f, 0.95f)
+      }
       aDef.castBehavior match {
         case TrapCast(trapType, _) =>
           val tDef = TrapDef.get(trapType)
@@ -5283,6 +5532,8 @@ class GLGameRenderer(val client: GameClient) {
         fontMedium.drawTextOutlined(spriteBatch, timerText, timerTextX, timerTextY)
       }
     }
+
+    drawOpeningCountdown(screenW)
 
     // Kill feed — collect entries first (needed before shapes pass)
     val now = _frameTimeMs
