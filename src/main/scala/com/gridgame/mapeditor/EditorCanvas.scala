@@ -1,6 +1,7 @@
 package com.gridgame.mapeditor
 
 import com.gridgame.common.Constants
+import com.gridgame.common.model.{Tile, TileForm}
 import javafx.scene.canvas.{Canvas, GraphicsContext}
 import javafx.scene.paint.Color
 import javafx.scene.input.{MouseButton, MouseEvent, ScrollEvent}
@@ -211,25 +212,34 @@ class EditorCanvas(state: EditorState, undoManager: UndoManager, statusBar: Stat
     val scaledHH = HH * state.zoom
     val scaledCellH = cellH * state.zoom
 
-    // Phase 1: Walkable (ground) tiles
+    // The same two passes and the same variants as the game (GLGameRenderer), so a map looks
+    // here the way it will in a match: first everything flat — ground, pools, and the ground
+    // each prop stands in — then blocks and props, back to front.
+    def variant(wx: Int, wy: Int): Int = ((wx * 7 + wy * 13) & 0x7FFFFFFF) % 4
+
+    // Phase 1: ground, pools, and the ground under props
     for (wy <- startY to endY; wx <- startX to endX) {
-      val tile = world.getTile(wx, wy)
-      if (tile.walkable) {
+      val cellTile = world.getTile(wx, wy)
+      val tile =
+        if (cellTile.form == TileForm.Prop) Tile.groundUnder(world, wx, wy)
+        else if (cellTile.form == TileForm.Block) null
+        else cellTile
+      if (tile != null) {
         val sx = worldToScreenX(wx, wy)
         val sy = worldToScreenY(wx, wy)
-        val img = EditorTileRenderer.getTileImage(tile.id)
+        val img = EditorTileRenderer.getTileImage(tile.id, if (tile.form == TileForm.Ground) variant(wx, wy) else 0)
         gc.drawImage(img, sx - scaledHW, sy - (scaledCellH - scaledHH),
           Constants.TILE_CELL_WIDTH * state.zoom, scaledCellH)
       }
     }
 
-    // Phase 2: Elevated (non-walkable) tiles
+    // Phase 2: blocks and props
     for (wy <- startY to endY; wx <- startX to endX) {
       val tile = world.getTile(wx, wy)
-      if (!tile.walkable) {
+      if (tile.form == TileForm.Block || tile.form == TileForm.Prop) {
         val sx = worldToScreenX(wx, wy)
         val sy = worldToScreenY(wx, wy)
-        val img = EditorTileRenderer.getTileImage(tile.id)
+        val img = EditorTileRenderer.getTileImage(tile.id, if (tile.form == TileForm.Prop) variant(wx, wy) else 0)
         gc.drawImage(img, sx - scaledHW, sy - (scaledCellH - scaledHH),
           Constants.TILE_CELL_WIDTH * state.zoom, scaledCellH)
       }

@@ -2,7 +2,7 @@ package com.gridgame.common.world
 
 import com.gridgame.common.Constants
 import com.gridgame.common.WorldRegistry
-import com.gridgame.common.model.WorldData
+import com.gridgame.common.model.{TeamDivider, WorldData}
 import org.junit.Assert._
 import org.junit.Test
 
@@ -49,6 +49,29 @@ class WorldMapsTest {
       }
       val walkable = (for (y <- 0 until w.height; x <- 0 until w.width if w.isWalkable(x, y)) yield 1).sum
       assertEquals(s"$f: open cells reachable from the first spawn", walkable, seen.size)
+    }
+  }
+
+  @Test def bothTeamsHaveSpawnPointsInTheirOwnHalf(): Unit = {
+    // A Teams match spawns each team in its own half of the map (TeamDivider)
+    for ((f, w) <- worlds) {
+      val sides = w.spawnPoints.map(p => TeamDivider.sideOf(w, p.getX, p.getY))
+      assertTrue(s"$f: team 1's half", sides.contains(-1))
+      assertTrue(s"$f: team 2's half", sides.contains(1))
+    }
+  }
+
+  @Test def theGeneratedMapsAreMirrorImagesAcrossTheDivider(): Unit = {
+    // scripts/generate_maps.py builds these symmetric about the divider's line, so a Teams match
+    // on one is the same match from either side. (The older maps predate it: they are centred
+    // half a cell off the line.)
+    for ((f, w) <- worlds if Set("the_meadow.json", "the_lagoon.json", "the_snowglobe.json")(f)) {
+      val line = TeamDivider.line(w)
+      for (y <- 0 until w.height; x <- 0 until w.width if 2 * line - x < w.width)
+        assertSame(s"$f ($x,$y)", w.getTile(x, y), w.getTile(2 * line - x, y))
+      val sides = w.spawnPoints.map(p => TeamDivider.sideOf(w, p.getX, p.getY))
+      assertEquals(s"$f: as many spawn points each side", sides.count(_ < 0), sides.count(_ > 0))
+      assertFalse(s"$f: none on the line", sides.contains(0))
     }
   }
 

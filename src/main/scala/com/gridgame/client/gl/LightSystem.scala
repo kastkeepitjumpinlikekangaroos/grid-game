@@ -27,6 +27,9 @@ class LightSystem(var width: Int, var height: Int) {
   // Ambient light level (set per background type)
   var ambientLevel: Float = 0.35f
 
+  /** Scales every light added: 1 on the dark maps, lower on a bright one (set per background). */
+  var gain: Float = 1f
+
   // Cache tracking — skip renderLightMap when nothing changed
   private var _lastAmbient: Float = -1f
   private var _lastLightCount: Int = -1
@@ -46,7 +49,7 @@ class LightSystem(var width: Int, var height: Int) {
     lcr(idx) = r
     lcg(idx) = g
     lcb(idx) = b
-    li(idx) = intensity
+    li(idx) = intensity * gain
     lightCount += 1
   }
 
@@ -56,7 +59,9 @@ class LightSystem(var width: Int, var height: Int) {
       case "space"     => 0.38f
       case "cityscape" => 0.45f
       case "ocean"     => 0.50f
-      case "sky"       => 0.60f
+      case "sky"       => 0.625f // x1.6 in the composite: exactly the art's own brightness
+      case "snow"      => 0.625f
+      case "sea"       => 0.625f
       case "desert"    => 0.58f
       case _           => 0.48f
     }

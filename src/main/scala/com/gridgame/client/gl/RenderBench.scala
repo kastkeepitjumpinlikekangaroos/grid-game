@@ -25,6 +25,8 @@ import scala.jdk.CollectionConverters._
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --traps      # traps on the ground
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --divider    # a Teams match's opening wall
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --ceasefire  # a free-for-all's opening ceasefire
+ *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --map=the_meadow.json --at=60,16
+ *                                                                  # another map, standing on one cell of it
  *
  * Drives the real GLGameRenderer the way the client does — a GLFW window at the client's
  * size, frames driven by a JavaFX AnimationTimer on the FX thread — over a fabricated
@@ -100,7 +102,14 @@ class RenderBenchApp extends Application {
     if (args.contains("--novsync")) glfwSwapInterval(0)
     window.show()
 
-    val world = WorldLoader.load("worlds/" + mapFile)
+    // --at=x,y stands the local player on that cell (it must be open ground), for looking at one
+    // part of a map: the client puts us on one of the world's spawn points, so give it only that one
+    val loaded = WorldLoader.load("worlds/" + mapFile)
+    val world = argOf(args, "at").map(_.split(",").map(_.trim.toInt)) match {
+      case Some(Array(x, y)) =>
+        new WorldData(loaded.name, loaded.width, loaded.height, loaded.tiles, Seq(new Position(x, y)), loaded.background)
+      case _ => loaded
+    }
     val client = new GameClient("localhost", 0, world, "Bench")
     val renderer = new GLGameRenderer(client)
     val rng = new java.util.Random(42)

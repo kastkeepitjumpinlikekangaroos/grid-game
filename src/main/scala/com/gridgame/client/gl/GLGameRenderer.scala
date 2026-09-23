@@ -185,7 +185,7 @@ class GLGameRenderer(val client: GameClient) {
   private var _reflectionRegion: TextureRegion = _
   private var _reflectionSourceRegion: TextureRegion = _
   // Cached background type ID (avoids per-frame string matching in 3 places)
-  private var _bgType: Byte = 0 // 0=sky, 1=cityscape, 2=space, 3=desert, 4=ocean
+  private var _bgType: Byte = 0 // 0=sky, 1=cityscape, 2=space, 3=desert, 4=ocean, 5=snow, 6=sea
 
   // Deferred kill feed entries (batch backgrounds in shapes, then text in sprites)
   private val MAX_FEED_ENTRIES = 10
@@ -540,9 +540,24 @@ class GLGameRenderer(val client: GameClient) {
     if (bg ne _cachedBackground) {
       _cachedBackground = bg
       _bgType = bg match {
-        case "sky" => 0; case "cityscape" => 1; case "space" => 2; case "desert" => 3; case "ocean" => 4; case _ => 0
+        case "sky" => 0; case "cityscape" => 1; case "space" => 2; case "desert" => 3; case "ocean" => 4
+        case "snow" => 5; case "sea" => 6; case _ => 0
       }
       lightSystem.setAmbientForBackground(bg)
+      // The bright maps show their art's own colours. ACES lifts mid-tones and pulls highlights
+      // down, which a dark map wants and a meadow doesn't (it came out pastel), and at the dark
+      // maps' threshold sunlit sand and snow bloomed into a haze over everything; here only
+      // what really glows blooms.
+      val bright = _bgType == 0 || _bgType == 5 || _bgType == 6
+      postProcessor.toneMap = if (bright) 0f else 1f
+      postProcessor.bloomThreshold = if (bright) 0.97f else 0.80f
+      postProcessor.bloomStrength = if (bright) 0.16f else 0.22f
+      // and a lighter vignette, which greys a snowfield's edges
+      postProcessor.vignetteStrength = if (bright) 0.12f else 0.25f
+      // In daylight a warm pool of light round every player reads as a spotlight on the grass;
+      // explosions still flash
+      lightSystem.gain = if (bright) 0.35f else 1f
+      weatherParticles.clear()
     }
 
     // Update damage numbers
@@ -622,7 +637,9 @@ class GLGameRenderer(val client: GameClient) {
     )
 
     // === Phase 1: Ground tiles ===
-    // Use fixed position-based variant (no tileFrame) so ground doesn't animate
+    // Everything that lies flat (TileForm): walkable ground, pools of water or lava, and the
+    // ground each prop stands in, which its sprite leaves showing round it. Ground and props'
+    // ground use a fixed variant per position so they don't animate; a pool cycles its frames.
     val numTileFrames = GLTileRenderer.getNumFrames
     beginSprites()
     var wy = startY
@@ -631,12 +648,19 @@ class GLGameRenderer(val client: GameClient) {
       val hiX = rowHi(wy, 0)
       var wx = loX
       while (wx <= hiX) {
-        val tile = world.getTile(wx, wy)
-        if (tile.walkable) {
+        val cellTile = world.getTile(wx, wy)
+        val form = cellTile.form
+        val tile =
+          if ((form eq TileForm.Ground) || (form eq TileForm.Pool)) cellTile
+          else if (form eq TileForm.Prop) Tile.groundUnder(world, wx, wy)
+          else null
+        if (tile != null) {
           val tid = tile.id
           val sx = worldToScreenX(wx, wy).toFloat
           val sy = worldToScreenY(wx, wy).toFloat
-          val variantFrame = ((wx * 7 + wy * 13) & 0x7FFFFFFF) % numTileFrames
+          val variantFrame =
+            if (form eq TileForm.Pool) (tileFrame + wx * 7 + wy * 13) % numTileFrames
+            else ((wx * 7 + wy * 13) & 0x7FFFFFFF) % numTileFrames
           // Trimmed cell: identical pixels, but the empty rows above the diamond aren't
           // rasterized. Ground covers the screen, so this is the frame's largest fill saving.
           val region = GLTileRenderer.getTrimmedRegion(tid, variantFrame)
@@ -644,8 +668,10 @@ class GLGameRenderer(val client: GameClient) {
             val top = GLTileRenderer.getTrimTopPx(tid, variantFrame)
             spriteBatch.draw(region, sx - HW, sy - (cellH - HH) + top, tileW, tileCellH - top)
           }
-          // Collect special tiles for overlay pass
-          if (tid == 1 || tid == 7 || tid == 9 || tid == 10 || tid == 15 || tid == 18 || tid == 24) {
+          // Collect special tiles for overlay pass. Not water or ice: their tiles animate and
+          // shine on their own, and the glints, ripples and frost needles drawn over them turned a
+          // sea into static and a frozen pond into flocks of white birds.
+          if (tid == 10 || tid == 15 || tid == 18 || tid == 24) {
             if (_specialTileCount < overlayBudget) {
               _specialTileWX(_specialTileCount) = wx
               _specialTileWY(_specialTileCount) = wy
@@ -681,6 +707,7 @@ class GLGameRenderer(val client: GameClient) {
     drawAimArrow()
 
     // === Elevated tile edge shadows (batched in one shapes pass — more efficient than per-tile) ===
+    // Blocks only: a pool lies flat, and a prop carries its own round shadow in its sprite.
     beginShapes()
     wy = startY
     while (wy <= endY) {
@@ -688,7 +715,7 @@ class GLGameRenderer(val client: GameClient) {
       val hiX = rowHi(wy, 0)
       var wx = loX
       while (wx <= hiX) {
-        if (!world.getTile(wx, wy).walkable) {
+        if (world.getTile(wx, wy).form eq TileForm.Block) {
           drawElevatedTileShadow(wx, wy, world)
         }
         wx += 1
@@ -709,8 +736,12 @@ class GLGameRenderer(val client: GameClient) {
       while (wx <= hiX) {
         if (wx >= tileLoX && wx <= tileHiX) {
           val tile = world.getTile(wx, wy)
-          if (!tile.walkable) {
-            val variantFrame = (tileFrame + wx * 7 + wy * 13) % numTileFrames
+          val form = tile.form
+          if ((form eq TileForm.Block) || (form eq TileForm.Prop)) {
+            // A block's frames are an animation; a prop's are four variants, picked by position
+            val variantFrame =
+              if (form eq TileForm.Prop) ((wx * 7 + wy * 13) & 0x7FFFFFFF) % numTileFrames
+              else (tileFrame + wx * 7 + wy * 13) % numTileFrames
             val region = GLTileRenderer.getTrimmedRegion(tile.id, variantFrame)
             if (region != null) {
               beginSprites()
@@ -762,6 +793,12 @@ class GLGameRenderer(val client: GameClient) {
     spawnGameplayParticles(dt)
     beginShapes()
     combatParticles.render(shapeBatch)
+
+    // === Falling snow, in front of everything, over a snowy map ===
+    if (_bgType == 5) {
+      spawnWeatherParticles(world.background, dt)
+      weatherParticles.render(shapeBatch)
+    }
 
     // === Damage number detection ===
     detectDamageNumbers()
@@ -878,70 +915,234 @@ class GLGameRenderer(val client: GameClient) {
       case 2 => drawSpaceBg()
       case 3 => drawDesertBg()
       case 4 => drawOceanBg()
+      case 5 => drawSnowBg()
+      case 6 => drawSeaBg()
       case _ => drawSkyBg()
     }
   }
 
-  private def drawSkyBg(): Unit = {
-    val w = canvasW.toFloat; val h = canvasH.toFloat
-    val bands = 12
+  // Ridges of hills for the bright backgrounds, as a ribbon: the ridge left to right, then the
+  // bottom of the screen right to left (ShapeBatch.fillRibbon). A heightfield polygon fanned from
+  // one corner (fillPolygon) mis-triangulates wherever a slope faces away from that corner.
+  private val HILL_PTS = 41
+  private val _hillXs = new Array[Float](HILL_PTS * 2)
+  private val _hillYs = new Array[Float](HILL_PTS * 2)
+
+  private def skyGradient(w: Float, h: Float, r0: Float, g0: Float, b0: Float, r1: Float, g1: Float, b1: Float): Unit = {
+    val bands = 14
     var i = 0
     while (i < bands) {
-      val t = i.toFloat / bands
-      val r = 0.35f + t * 0.15f
-      val g = 0.55f + t * 0.15f
-      val b = 0.92f - t * 0.15f
-      val y0 = h * t
-      val bandH = h / bands + 1
-      shapeBatch.fillRect(0, y0, w, bandH, r, g, b, 1f)
+      val t = i.toFloat / (bands - 1)
+      shapeBatch.fillRect(0, h * i / bands, w, h / bands + 1,
+        r0 + (r1 - r0) * t, g0 + (g1 - g0) * t, b0 + (b1 - b0) * t, 1f)
       i += 1
     }
-    // Far mountain silhouette (0.01x parallax)
-    val mpx = (camOffX * 0.01).toFloat
-    val mountainBaseY = h * 0.65f
-    var mi = 0
-    while (mi < 40) {
-      val mx = -20f + mi * (w + 40) / 40f + mpx
-      val mh = (Math.sin(mi * 0.4 + 1.3) * h * 0.06 + Math.sin(mi * 0.15 + 0.7) * h * 0.04).toFloat
-      val my = mountainBaseY - Math.abs(mh)
-      if (mi > 0) {
-        val prevX = -20f + (mi - 1) * (w + 40) / 40f + mpx
-        val prevH = (Math.sin((mi - 1) * 0.4 + 1.3) * h * 0.06 + Math.sin((mi - 1) * 0.15 + 0.7) * h * 0.04).toFloat
-        val prevY = mountainBaseY - Math.abs(prevH)
-        // Fill triangle from prev point to current to base
-        shapeBatch.fillRect(prevX, Math.min(prevY, my), mx - prevX + 1, mountainBaseY - Math.min(prevY, my), 0.25f, 0.35f, 0.55f, 0.25f)
-      }
-      mi += 1
-    }
-    // Clouds
-    val px = (camOffX * 0.03).toFloat
-    val py = (camOffY * 0.02).toFloat
-    drawCloudLayer(w, px, py, 0.10f, 0.15f, 1.6f, 0.18f, 6)
-    drawCloudLayer(w, px, py, 0.20f, 0.3f, 1.2f, 0.25f, 8)
-    drawCloudLayer(w, px, py, 0.05f, 0.5f, 1.0f, 0.35f, 7)
   }
 
-  private def drawCloudLayer(w: Float, px: Float, py: Float, yFrac: Float, speed: Float, scale: Float, alpha: Float, count: Int): Unit = {
-    val h = canvasH.toFloat
+  /** Height of a ridge at point i of HILL_PTS: round humps, as MapleStory draws its hills. */
+  private def ridgeY(i: Int, baseY: Float, amp: Float, seed: Int, sharp: Boolean): Float = {
+    val a = i * 0.34 + seed * 1.7
+    val hump = if (sharp) Math.abs(Math.sin(a)) * 0.7 + Math.abs(Math.sin(a * 2.3 + 1.1)) * 0.3
+               else 0.55 + 0.3 * Math.sin(a) + 0.15 * Math.sin(a * 2.7 + seed)
+    (baseY - amp * hump).toFloat
+  }
+
+  /** One ridge of hills across the screen, with an outline along its top. `lift` raises the
+    * outline pass above the fill, 0 for none. */
+  private def drawHills(w: Float, h: Float, yFrac: Float, ampFrac: Float, parallax: Float, seed: Int,
+                        r: Float, g: Float, b: Float, lr: Float, lg: Float, lb: Float, lift: Float,
+                        sharp: Boolean = false): Unit = {
+    val step = (w + 80f) / (HILL_PTS - 1)
+    val shift = ((parallax % step) + step) % step
+    val baseY = h * yFrac; val amp = h * ampFrac
+    val first = Math.floor(parallax / step).toInt
+    var pass = if (lift > 0f) 0 else 1
+    while (pass < 2) {
+      val up = if (pass == 0) lift else 0f
+      var i = 0
+      while (i < HILL_PTS) {
+        _hillXs(i) = -40f + i * step - shift
+        _hillYs(i) = ridgeY(i + first, baseY, amp, seed, sharp) - up
+        _hillXs(HILL_PTS * 2 - 1 - i) = _hillXs(i)
+        _hillYs(HILL_PTS * 2 - 1 - i) = h + 4f
+        i += 1
+      }
+      if (pass == 0) shapeBatch.fillRibbon(_hillXs, _hillYs, HILL_PTS * 2, lr, lg, lb, 1f)
+      else shapeBatch.fillRibbon(_hillXs, _hillYs, HILL_PTS * 2, r, g, b, 1f)
+      pass += 1
+    }
+  }
+
+  /** A fat round tree standing on ridge point i, for the hills behind the meadow. */
+  private def drawHillTree(w: Float, h: Float, yFrac: Float, ampFrac: Float, parallax: Float, seed: Int,
+                           every: Int, size: Float): Unit = {
+    val step = (w + 80f) / (HILL_PTS - 1)
+    val shift = ((parallax % step) + step) % step
+    val first = Math.floor(parallax / step).toInt
+    var i = 1
+    while (i < HILL_PTS - 1) {
+      if (((i + first) % every + every) % every == 0) {
+        val x = -40f + i * step - shift
+        val y = ridgeY(i + first, h * yFrac, h * ampFrac, seed, sharp = false) + size * 0.4f
+        shapeBatch.fillRect(x - size * 0.12f, y - size * 0.9f, size * 0.24f, size * 0.9f, 0.45f, 0.30f, 0.20f, 1f)
+        shapeBatch.fillOval(x, y - size * 1.25f, size * 0.78f, size * 0.7f, 0.22f, 0.45f, 0.26f, 1f, 16)
+        shapeBatch.fillOval(x, y - size * 1.25f, size * 0.68f, size * 0.6f, 0.38f, 0.70f, 0.34f, 1f, 16)
+        shapeBatch.fillOval(x - size * 0.16f, y - size * 1.42f, size * 0.36f, size * 0.3f, 0.50f, 0.80f, 0.42f, 1f, 12)
+      }
+      i += 1
+    }
+  }
+
+  /** A pine standing on ridge point i, for the hills behind the snowfield: three tiers, snow on each. */
+  private def drawHillPine(w: Float, h: Float, yFrac: Float, ampFrac: Float, parallax: Float, seed: Int,
+                           every: Int, size: Float): Unit = {
+    val step = (w + 80f) / (HILL_PTS - 1)
+    val shift = ((parallax % step) + step) % step
+    val first = Math.floor(parallax / step).toInt
+    var i = 1
+    while (i < HILL_PTS - 1) {
+      if (((i + first) % every + every) % every == 0) {
+        val x = -40f + i * step - shift
+        val y = ridgeY(i + first, h * yFrac, h * ampFrac, seed, sharp = false) + size * 0.3f
+        var k = 0
+        while (k < 3) {
+          val base = y - k * size * 0.55f
+          val half = size * (0.62f - k * 0.14f)
+          _fxXs(0) = x;        _fxYs(0) = base - size * 0.8f
+          _fxXs(1) = x + half; _fxYs(1) = base
+          _fxXs(2) = x - half; _fxYs(2) = base
+          shapeBatch.fillPolygon(_fxXs, _fxYs, 3, 0.30f, 0.50f, 0.55f, 1f)
+          _fxXs(1) = x + half * 0.45f; _fxYs(1) = base - size * 0.45f
+          _fxXs(2) = x - half * 0.45f; _fxYs(2) = base - size * 0.45f
+          shapeBatch.fillPolygon(_fxXs, _fxYs, 3, 0.93f, 0.96f, 1f, 1f)
+          k += 1
+        }
+      }
+      i += 1
+    }
+  }
+
+  // A cloud's lobes: offset from its centre and radius, in multiples of its size
+  private val CLOUD_LOBES = 5
+  private val _cloudOX = Array(-0.95f, -0.38f, 0.30f, 0.92f, 0.0f)
+  private val _cloudOY = Array(0.12f, -0.22f, -0.30f, 0.08f, 0.18f)
+  private val _cloudR = Array(0.52f, 0.72f, 0.68f, 0.50f, 0.80f)
+
+  /** A MapleStory cloud: fat round lobes, a pale shade on its underside, a blue outline. */
+  private def drawCelCloud(cx: Float, cy: Float, s: Float, lr: Float, lg: Float, lb: Float,
+                           sr: Float, sg: Float, sb: Float, br: Float, bg: Float, bb: Float): Unit = {
+    var pass = 0
+    while (pass < 3) {
+      var k = 0
+      while (k < CLOUD_LOBES) {
+        val x = cx + _cloudOX(k) * s; val y = cy + _cloudOY(k) * s; val rr = _cloudR(k) * s
+        pass match {
+          case 0 => shapeBatch.fillOval(x, y, rr + 1.6f, rr * 0.82f + 1.6f, lr, lg, lb, 1f, 20)
+          case 1 => shapeBatch.fillOval(x, y, rr, rr * 0.82f, sr, sg, sb, 1f, 20)
+          case _ => shapeBatch.fillOval(x - rr * 0.1f, y - rr * 0.16f, rr * 0.9f, rr * 0.74f, br, bg, bb, 1f, 20)
+        }
+        k += 1
+      }
+      pass += 1
+    }
+  }
+
+  /** Clouds drifting across a band of the sky, `count` of them, wrapping round the screen. */
+  private def drawCloudBand(w: Float, h: Float, yFrac: Float, speed: Float, parallax: Float, scale: Float,
+                            count: Int, seed: Int, snowy: Boolean): Unit = {
+    val span = w + 240f
     var i = 0
     while (i < count) {
-      val seed = java.lang.Float.floatToIntBits(yFrac) + i * 73
-      val baseX = hash(seed).toFloat * w * 1.5f - w * 0.25f
-      val baseY = h * yFrac + hash(seed + 1).toFloat * h * 0.25f
-      val drift = ((animationTick * speed + px * (1f + yFrac)) % (w + 300)) - 150
-      val cx = ((baseX + drift) % (w + 300)) - 150
-      val cy = baseY + py * (0.5f + yFrac) + Math.sin(animationTick * 0.01 + i).toFloat * 3
-      drawCloud(cx, cy, scale, alpha)
+      val baseX = hash(seed + i * 17).toFloat * span
+      val x = (((baseX + animationTick * speed + parallax) % span) + span) % span - 120f
+      val y = h * yFrac + (hash(seed + i * 17 + 5).toFloat - 0.5f) * h * 0.12f
+      val s = scale * (0.75f + hash(seed + i * 17 + 9).toFloat * 0.5f)
+      if (snowy) drawCelCloud(x, y, s, 0.62f, 0.68f, 0.84f, 0.86f, 0.89f, 0.96f, 0.97f, 0.98f, 1f)
+      else drawCelCloud(x, y, s, 0.50f, 0.68f, 0.92f, 0.82f, 0.90f, 1f, 1f, 1f, 1f)
       i += 1
     }
   }
 
-  private def drawCloud(cx: Float, cy: Float, scale: Float, alpha: Float): Unit = {
-    val s = 30 * scale
-    shapeBatch.fillOval(cx, cy - s * 0.15f, s * 1.5f, s * 0.35f, 1f, 1f, 1f, alpha)
-    shapeBatch.fillOval(cx + s * 0.1f, cy - s * 0.3f, s * 0.9f, s * 0.4f, 1f, 1f, 1f, alpha)
-    shapeBatch.fillOval(cx + s * 0.5f, cy - s * 0.25f, s * 0.7f, s * 0.35f, 1f, 1f, 1f, alpha)
-    shapeBatch.fillOval(cx - s * 0.35f, cy - s * 0.075f, s * 1.25f, s * 0.25f, 1f, 1f, 1f, alpha)
+  /** MapleStory's sky: bright blue paling toward the horizon, fat outlined clouds, and rolling
+    * green hills with round trees on them. Behind the Meadow, and any map that names no background. */
+  private def drawSkyBg(): Unit = {
+    val w = canvasW.toFloat; val h = canvasH.toFloat
+    skyGradient(w, h, 0.38f, 0.68f, 1f, 0.80f, 0.93f, 1f)
+    val px = (camOffX * 0.02).toFloat
+    drawCloudBand(w, h, 0.16f, 0.05f, px * 0.3f, 26f, 4, 311, snowy = false)
+    // a far range, blue with distance, then nearer green hills with trees along them
+    drawHills(w, h, 0.64f, 0.10f, px * 0.5f, 7, 0.60f, 0.78f, 0.90f, 0f, 0f, 0f, 0f, sharp = true)
+    drawHillTree(w, h, 0.76f, 0.06f, px, 3, 4, 11f)
+    drawHills(w, h, 0.76f, 0.06f, px, 3, 0.52f, 0.80f, 0.42f, 0.30f, 0.56f, 0.30f, 1.5f)
+    drawHills(w, h, 0.88f, 0.05f, px * 1.6f, 13, 0.46f, 0.74f, 0.36f, 0.27f, 0.50f, 0.26f, 1.5f)
+    drawCloudBand(w, h, 0.34f, 0.11f, px * 0.6f, 20f, 3, 733, snowy = false)
+  }
+
+  /** Open sea to a far horizon under MapleStory's sky, with a couple of islands on it, for the
+    * Lagoon: its sea runs to the edge of the world, and the sky's green hills beyond that read as
+    * the sea stopping at a field. The water below the horizon matches the deep water tiles. */
+  private def drawSeaBg(): Unit = {
+    val w = canvasW.toFloat; val h = canvasH.toFloat
+    val horizon = h * 0.36f
+    // sky, down to the horizon
+    val bands = 8
+    var i = 0
+    while (i < bands) {
+      val t = i.toFloat / (bands - 1)
+      shapeBatch.fillRect(0, horizon * i / bands, w, horizon / bands + 1,
+        0.38f + 0.44f * t, 0.68f + 0.25f * t, 1f, 1f)
+      i += 1
+    }
+    val px = (camOffX * 0.02).toFloat
+    drawCloudBand(w, h, 0.12f, 0.05f, px * 0.3f, 22f, 4, 919, snowy = false)
+    // sea, pale at the horizon and deepening toward the viewer
+    i = 0
+    while (i < bands) {
+      val t = i.toFloat / (bands - 1)
+      val y0 = horizon + (h - horizon) * i / bands
+      shapeBatch.fillRect(0, y0, w, (h - horizon) / bands + 1,
+        0.48f - 0.30f * t, 0.76f - 0.26f * t, 0.94f - 0.10f * t, 1f)
+      i += 1
+    }
+    // two islands on the horizon: a green hump with a palm on it
+    var k = 0
+    while (k < 2) {
+      val span = w + 400f
+      val ix = (((hash(907 + k * 31).toFloat * span + px * 0.4f) % span) + span) % span - 200f
+      val iw = 46f + k * 30f
+      shapeBatch.fillOval(ix, horizon + 1f, iw + 1.5f, 11f + k * 4f + 1.5f, 0.28f, 0.52f, 0.30f, 1f, 24)
+      shapeBatch.fillOval(ix, horizon + 1f, iw, 11f + k * 4f, 0.46f, 0.76f, 0.38f, 1f, 24)
+      shapeBatch.fillRect(ix - iw - 2f, horizon, iw * 2f + 4f, 16f, 0.46f, 0.74f, 0.92f, 1f)
+      shapeBatch.fillOval(ix, horizon + 1.5f, iw, 3f, 0.95f, 0.90f, 0.72f, 1f, 20)
+      shapeBatch.strokeLine(ix + 4f, horizon - 9f - k * 3f, ix + 8f, horizon - 22f - k * 3f, 1.6f, 0.52f, 0.36f, 0.24f, 1f)
+      shapeBatch.fillOval(ix + 8f, horizon - 23f - k * 3f, 7f, 3f, 0.30f, 0.62f, 0.32f, 1f, 12)
+      k += 1
+    }
+    // light on the water: short strokes drifting along, thicker toward the viewer
+    i = 0
+    while (i < 36) {
+      val t = hash(1301 + i * 7).toFloat
+      val y = horizon + 6f + (h - horizon - 6f) * t * t
+      val len = 5f + t * 14f
+      val span = w + 60f
+      val x = (((hash(1302 + i * 7).toFloat * span + animationTick * (0.05f + t * 0.12f) + px * (0.5f + t)) % span) + span) % span - 30f
+      val a = 0.35f + 0.35f * Math.sin(animationTick * 0.03 + i).toFloat
+      shapeBatch.strokeLine(x, y, x + len, y, 1f + t * 1.4f, 0.85f, 0.95f, 1f, a)
+      i += 1
+    }
+  }
+
+  /** A winter sky over snowy hills with firs on them, for the Snowglobe. Snow falls in front of
+    * the world as well (spawnSnowParticle). */
+  private def drawSnowBg(): Unit = {
+    val w = canvasW.toFloat; val h = canvasH.toFloat
+    skyGradient(w, h, 0.58f, 0.70f, 0.93f, 0.90f, 0.94f, 1f)
+    val px = (camOffX * 0.02).toFloat
+    drawCloudBand(w, h, 0.18f, 0.04f, px * 0.3f, 24f, 4, 511, snowy = true)
+    drawHills(w, h, 0.62f, 0.14f, px * 0.5f, 5, 0.80f, 0.86f, 0.97f, 0.62f, 0.70f, 0.88f, 1.2f, sharp = true)
+    drawHillPine(w, h, 0.76f, 0.06f, px, 9, 3, 13f)
+    drawHills(w, h, 0.76f, 0.06f, px, 9, 0.95f, 0.97f, 1f, 0.66f, 0.74f, 0.90f, 1.5f)
+    drawHills(w, h, 0.88f, 0.05f, px * 1.6f, 17, 0.90f, 0.93f, 0.99f, 0.64f, 0.72f, 0.88f, 1.5f)
   }
 
   private def drawCityscapeBg(): Unit = {
@@ -2951,14 +3152,14 @@ class GLGameRenderer(val client: GameClient) {
   private var _flyingCount = 0
 
   /** Height of the surface at a world point in virtual px: the top face of an elevated tile
-   *  (wall, tree, mountain), 0 on flat ground and off the map. Lets a flier's shadow ride up
-   *  onto the wall it is crossing. */
+   *  (wall, tree, mountain), 0 on flat ground and pools and off the map. Lets a flier's shadow
+   *  ride up onto the wall it is crossing. */
   private def surfaceLift(wx: Double, wy: Double): Float = {
     val world = client.getWorld
     val cx = Math.floor(wx + 0.5).toInt; val cy = Math.floor(wy + 0.5).toInt
     if (cx < 0 || cy < 0 || cx >= world.width || cy >= world.height) return 0f
     val tile = world.getTile(cx, cy)
-    if (tile.walkable) 0f
+    if (tile.walkable || (tile.form eq TileForm.Pool)) 0f
     else Math.max(0f, tileCellH - 2f * HH - GLTileRenderer.getTrimTopPx(tile.id, 0))
   }
 
@@ -6398,6 +6599,7 @@ class GLGameRenderer(val client: GameClient) {
   private def spawnWeatherParticles(background: String, dt: Float): Unit = {
     val w = canvasW.toFloat; val h = canvasH.toFloat
     val rate = (_bgType: @scala.annotation.switch) match {
+      case 5 => 26f * RenderQuality.particleScale  // snow: flakes falling in front of everything
       case 0 => 12f  // sky: gentle leaf/pollen drift
       case 4 => 20f  // ocean: spray mist
       case 2 => 4f   // space: drifting dust motes
@@ -6409,6 +6611,7 @@ class GLGameRenderer(val client: GameClient) {
     while (weatherSpawnAccum >= 1f) {
       weatherSpawnAccum -= 1f
       (_bgType: @scala.annotation.switch) match {
+        case 5 => spawnSnowParticle(w, h)
         case 0 => spawnSkyParticle(w, h)
         case 4 => spawnOceanParticle(w, h)
         case 2 => spawnSpaceParticle(w, h)
@@ -6417,6 +6620,20 @@ class GLGameRenderer(val client: GameClient) {
         case _ => spawnSkyParticle(w, h)
       }
     }
+  }
+
+  private def spawnSnowParticle(w: Float, h: Float): Unit = {
+    // A flake anywhere on screen, so a snowfall is already falling when the match starts, drifting
+    // down and a little sideways; small flakes are the far ones, slower and fainter
+    val near = rng.nextFloat()
+    weatherParticles.emit(
+      rng.nextFloat() * (w + 60f) - 30f, rng.nextFloat() * h * 0.9f - 10f,
+      -4f + rng.nextFloat() * 10f, 9f + near * 16f,
+      plife = 3.5f + rng.nextFloat() * 3f,
+      pr = 0.94f, pg = 0.97f, pb = 1f, palpha = 0.6f + near * 0.4f,
+      psize = 1f + near * 1.8f,
+      shrink = false, soft = true
+    )
   }
 
   private def spawnSkyParticle(w: Float, h: Float): Unit = {

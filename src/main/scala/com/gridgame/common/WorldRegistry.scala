@@ -5,7 +5,10 @@ object WorldRegistry {
     "the_cell.json",
     "the_hive.json",
     "the_nexus.json",
-    "the_colony.json"
+    "the_colony.json",
+    "the_meadow.json",
+    "the_lagoon.json",
+    "the_snowglobe.json"
   )
 
   def getFilename(index: Int): String = {

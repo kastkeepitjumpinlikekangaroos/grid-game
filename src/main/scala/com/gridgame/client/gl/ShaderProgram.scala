@@ -188,9 +188,17 @@ object ShaderProgram {
       |uniform float uSharpen;    // quality tier: 0 disables the unsharp mask
       |uniform float uGrain;      // quality tier: 0 disables film grain
       |uniform float uWideBloom;  // weight of the quarter-res bloom (0 disables it)
+      |uniform float uToneMap;    // 1 = ACES (the dark maps), 0 = the art's own colours, highlights rolled off
       |// ACES filmic tone mapping
       |vec3 acesToneMap(vec3 x) {
       |  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+      |}
+      |// Colours as authored up to 0.8, then rolled off toward 1 instead of clipping. ACES lifts
+      |// mid-tones and pulls highlights down, which a dark map wants and a bright one doesn't:
+      |// it turns a meadow's grass to pastel.
+      |vec3 softClip(vec3 x) {
+      |  vec3 over = max(x - 0.8, 0.0);
+      |  return min(x, vec3(0.8)) + 0.2 * (1.0 - exp(-over * 5.0));
       |}
       |out vec4 FragColor;
       |void main() {
@@ -247,8 +255,11 @@ object ShaderProgram {
       |  float contrastLuma = dot(color, vec3(0.299, 0.587, 0.114));
       |  float boosted = smoothstep(0.0, 1.0, contrastLuma);
       |  color *= (boosted / max(contrastLuma, 0.001)) * 0.15 + 0.85;
-      |  // ACES filmic tone mapping — cinematic highlight rolloff
-      |  color = acesToneMap(color);
+      |  // ACES filmic tone mapping — cinematic highlight rolloff (a bright map skips it). Branch on
+      |  // the uniform rather than always mixing: every pixel would pay for both curves.
+      |  if (uToneMap >= 1.0) color = acesToneMap(color);
+      |  else if (uToneMap <= 0.0) color = softClip(color);
+      |  else color = mix(softClip(color), acesToneMap(color), uToneMap);
       |  // Slight saturation boost for vibrancy
       |  float postLuma = dot(color, vec3(0.299, 0.587, 0.114));
       |  color = mix(vec3(postLuma), color, 0.96);

@@ -49,6 +49,9 @@ class PostProcessor(var width: Int, var height: Int) {
   var bloomThreshold: Float = 0.80f
   var bloomStrength: Float = 0.22f
   var vignetteStrength: Float = 0.25f
+  /** How much of the ACES curve the composite applies: 1 (the default) for the dark maps, low
+    * for a bright one, whose colours it would wash out. Set per background (GLGameRenderer). */
+  var toneMap: Float = 1f
   var animationTime: Float = 0f
   var overlayR: Float = 0f
   var overlayG: Float = 0f
@@ -175,6 +178,7 @@ class PostProcessor(var width: Int, var height: Int) {
     compositeShader.setUniform1f("uSharpen", if (RenderQuality.sharpen) 1f else 0f)
     compositeShader.setUniform1f("uGrain", if (RenderQuality.grain) 1f else 0f)
     compositeShader.setUniform1f("uVignetteStrength", vignetteStrength)
+    compositeShader.setUniform1f("uToneMap", toneMap)
     compositeShader.setUniform4f("uOverlayColor", overlayR, overlayG, overlayB, overlayA)
     compositeShader.setUniform1f("uTime", animationTime)
     // Dynamic lighting

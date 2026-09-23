@@ -52,7 +52,13 @@ bazel run //src/main/scala/com/gridgame/client:render_bench -- --barriers # ... 
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --traps    # ... with traps on the ground
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --divider  # ... with a Teams match's opening wall
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --ceasefire # ... with a free-for-all's opening ceasefire
+bazel run //src/main/scala/com/gridgame/client:render_bench -- --map=the_meadow.json --at=60,17 # another map, from one cell of it
 bazel run //src/main/scala/com/gridgame/client:ui_bench       # the JavaFX menus
+
+# Terrain: the tileset, the gallery to judge it in, and the generated maps (see Asset Generation)
+python3 scripts/generate_tiles.py                  # -> sprites/tiles.png (needs Pillow)
+python3 scripts/tile_gallery.py /tmp/tilegallery   # contact sheet, tiled fields, little scenes
+python3 scripts/generate_maps.py                   # -> worlds/the_meadow.json, the_lagoon.json, the_snowglobe.json
 ```
 
 ### macOS: proper app name/icon in Dock & Cmd+Tab
@@ -173,7 +179,8 @@ the jpackage step itself needs a Windows box.
 src/main/scala/com/gridgame/
 ├── common/                     # Shared code between client and server
 │   ├── model/                  # Data models (Player, Tile, CharacterDef, Item, Projectile, etc.)
-│   │                           # 112 characters, 34 tiles, 8 cast behaviors, projectile defs
+│   │                           # 112 characters, 42 tiles (4 forms: ground, pool, block, prop),
+│   │                           # 8 cast behaviors, projectile defs
 │   │                           # ProjectileDef (pierce, boomerang, ricochet, AoE, explosions)
 │   │                           # 10 on-hit effects, charge/distance damage scaling
 │   │                           # 5 item types (Gem, Heart, Star, Shield, Fence)
@@ -207,9 +214,9 @@ src/main/scala/com/gridgame/
 src/test/scala/com/gridgame/   # Tests (see Testing): common/ (model, protocol, world),
                                 # server/ (matches driven by hand), client/ (GameClient, screens),
                                 # tools/ (the website's character cards)
-worlds/                         # World definition files (16 JSON maps)
+worlds/                         # World definition files (7 JSON maps; 3 from scripts/generate_maps.py)
 sprites/                        # Sprite assets (tiles.png + 112 character PNGs)
-scripts/                        # Asset generation scripts (29 Python scripts)
+scripts/                        # Asset generation scripts (31 Python scripts)
 docs/                           # GitHub Pages landing site
 ops/observability/              # Local docker-compose stack
                                 # OTel Collector, Prometheus, Tempo, Loki, Grafana
@@ -489,12 +496,26 @@ before that pass: an orbit ring drawn as two arcs is cheaper than the swinging t
 soft-stroke cloud it replaced.)
 
 ### Post-Processing
-Settings in `PostProcessor`: `bloomThreshold`, `bloomStrength`, `vignetteStrength`. Bloom
-FBOs run at half resolution, plus a quarter-res pair for the wide glow. Composite shader
+Settings in `PostProcessor`: `bloomThreshold`, `bloomStrength`, `vignetteStrength`, `toneMap`.
+Bloom FBOs run at half resolution, plus a quarter-res pair for the wide glow. Composite shader
 uses screen blending for bloom and smoothstep vignette, and gates its optional work on
 `uSharpen` / `uGrain` / `uWideBloom` so the quality tiers can drop it without a second
 shader. The four-tap unsharp mask is the composite's most expensive part — four extra
 full-resolution texture fetches per pixel.
+
+**A bright map is graded differently from a dark one.** The composite's ACES curve lifts
+mid-tones and pulls highlights down. That is what keeps the space maps legible, and it turned a
+meadow pastel: authored grass (0.50, 0.81, 0.31) came out (0.62, 0.76, 0.45). So `GLGameRenderer`
+sets the grade whenever the world's background changes, and for `sky`, `sea` and `snow`:
+- `toneMap` 0: the art's own colours, only rolled off above 0.8 (`softClip`) instead of clipped.
+  The shader branches on the uniform rather than mixing both curves for every pixel.
+- bloom only above 0.97 luma, at 0.16 strength. At the dark maps' 0.8, sunlit sand and snow
+  bloomed and screen-blended a haze over the whole frame.
+- vignette 0.12, since 0.25 greys a snowfield's edges.
+- `LightSystem.gain` 0.35 and an ambient of 0.625, which the composite's x1.6 makes exactly 1. In
+  daylight the warm pool of light round every player reads as a spotlight on the grass.
+  Explosions still flash.
+The dark backgrounds (`space`, `cityscape`, `desert`, `ocean`) keep the old settings.
 
 ### Graphics quality tiers (`RenderQuality`)
 
@@ -523,6 +544,16 @@ pool (see Client Memory & Performance). It must be set before JavaFX starts, whi
 auto — which only steps down mid-match — can't do it.
 
 ### Key Design Decisions
+- **A tile's form decides how it is drawn** (`TileForm` in `Tile.scala`). Walkable *ground* and
+  flat *pools* (water, lava) are drawn in the ground pass. *Blocks* (walls, cliffs, the void) and
+  *props* (trees, rocks, bushes, snowmen) are drawn in depth order with the players. A prop's
+  sprite leaves the ground round it showing, and the ground pass lays under it whatever it is
+  standing in (`Tile.groundUnder`: its own `ground` if a neighbour is that, else the first
+  walkable neighbour, else its own). So one palm serves a beach and a meadow, and a tree deep in
+  a forest still has grass under it. Only blocks cast the edge shadows; a prop carries its own
+  round shadow. Water used to be a raised 14px block, which read as an aquarium, not a pond.
+  Frames mean different things per form: ground and props have four variants picked by
+  position, pools and blocks four animation frames. The map editor draws the same passes.
 - **Tiles are culled against the visible diamond, not its bounding box** — the screen rect
   maps to a diamond in world space, whose AABB holds ~2.7x as many cells as are on screen.
   `render` computes bounds in the projection's own axes (`u = wx - wy`, `v = wx + wy`) and
@@ -679,14 +710,77 @@ Sprites are pre-rendered images loaded at runtime.
 ### Tile Sprites
 ```bash
 # Requires Pillow: pip install Pillow
-python3 scripts/generate_tiles.py
+python3 scripts/generate_tiles.py                  # -> sprites/tiles.png
+python3 scripts/tile_gallery.py /tmp/tilegallery   # look at it
+python3 scripts/tile_gallery.py /tmp/tilegallery --map worlds/the_meadow.json --at 60,52
 ```
 
-- **Input**: Tile definitions hardcoded in the script (colors from `Tile.scala`, elevations per tile)
-- **Output**: `sprites/tiles.png` (40x56px per cell, 34 tiles total)
-- Flat (walkable) tiles: diamond at bottom 20px, upper area transparent
-- Elevated (non-walkable) tiles: top diamond + left/right side faces, bottom-aligned
-- If you add a new tile type to `Tile.scala`, also add its entry to the `TILES` list in this script and regenerate
+- **Output**: `sprites/tiles.png`, one 80x112 cell per tile id across (2x the 40x56 display
+  cell) and four rows down, 42 tiles. The diamond a tile stands on is centred at (40, 92).
+- **The rows depend on the tile's form** (`TileForm`, mirrored in the script's `TILES`): four
+  variants for ground and props, four animation frames for pools and moving blocks, one frame
+  four times for a block that doesn't move.
+- **Drawn in MapleStory's style with the characters' own kit**: `sprite_base`'s `cel`, `blob`,
+  `ink`, `shade` and `lit`, supersampled 4x and resampled down. Flat cel fills, one hard shadow
+  tone away from the upper-left light, outlines in a dark version of each part's hue. Round trees,
+  fat spotted mushrooms, a scalloped grass lip over brown soil on a cliff.
+- Three rules specific to terrain, all from how the renderer tiles it:
+  - **Ground and pools are seamless.** They are cut to the same hard-edged diamond the tileset
+    has always used, so neighbours meet exactly. Nothing on them is outlined or shaded toward an
+    edge, because any mark that touches the edge of one tile shows up as a grid across a field
+    of them. Details sit in the middle.
+  - **A block only inks its bottom edge.** Its top meets its neighbours' and its side faces are
+    covered by the block in front, so a line anywhere else draws a seam between every pair of
+    blocks in a wall. What is on a side face shows only on the outside of a mass of blocks, which
+    is exactly where a cliff's grass lip belongs.
+  - **Walkable ground stays quiet.** It covers most of the screen and everything has to read on
+    it. The first pass sprinkled little flowers and light flecks on every grass tile, and in game
+    the meadow read as confetti.
+- Props can be drawn bigger than they are authored (`PROP_SCALE`, through `PropDraw`), which scales
+  about the prop's foot but leaves line weights alone.
+- Water and ice have no tile overlay in `GLGameRenderer.drawTileOverlays`: the tiles animate and
+  shine on their own. The old glints, ripples and frost needles had never actually been drawn,
+  because they were collected only for walkable tiles. Once pools were drawn with the ground they
+  turned a sea into static and a frozen pond into flocks of white birds. Lava keeps its overlay.
+- **Judge a change in the gallery, then in the game.** `tile_gallery.py` writes a contact sheet,
+  each tile as a patch in a field (seams and grids show up here), little scenes with characters
+  in them for scale, and optionally a window of a real map. The engine's grade still changes
+  everything, so finish with `render_bench -- --map=... --at=x,y --screenshot=out.png`.
+- `TileTest` checks the atlas has a column for every tile and draws each as its form says (a
+  ground tile covers its diamond, a prop leaves its ground showing).
+
+### Maps
+Seven maps in `WorldRegistry` (display names come from the file names): four space arenas,
+**The Cell, The Hive, The Nexus, The Colony** (circuit floor, starfield void, obsidian border,
+slime blocks for cover), and three bright ones, **The Meadow, The Lagoon, The Snowglobe**.
+
+Every map has the same shape, because it plays well: a round arena of about 0.39x the world's
+width in radius, in a square world, closed off by terrain nobody can cross, with cover in rings,
+arcs and blocks over 3-8% of the arena. The bright three are generated by
+`scripts/generate_maps.py` and differ in what they are made of:
+
+| Map | Size, arena | Ground | Cover | Beyond the arena |
+|---|---|---|---|---|
+| The Meadow | 120, r 46 | grass, flower patches, dirt paths (a wheel round a pond) | fairy rings of trees with mushrooms inside, giant mushrooms, grass-topped cliff outcrops, hedges, rocks | a forest behind a flowering hedge; `sky` |
+| The Lagoon | 130, r 50 | sandy beach round grassy middle, boardwalks out from a bridged pool | palm groves, rock pools rimmed with coral, a ring of broken columns, rocks | shallows, then deep sea; `sea` |
+| The Snowglobe | 100, r 38 | snow, a frozen pond with a fir in the middle, icy patches | snowmen round the pond, snow forts (short ice walls facing the middle), L-shaped ice blocks, pine groves | a pine forest; `snow` |
+
+- **Symmetric under all eight of the square's symmetries.** Every decision about a cell is made
+  from its offset to the centre with the signs dropped and the axes sorted. That makes a Teams
+  match the same match from either half (the divider is the centre column), and
+  `WorldMapsTest` checks the three are mirror images across it. The four older maps are centred
+  half a cell off the divider's line, so they are only nearly symmetric.
+- **Checked before writing**, as `WorldMapsTest` checks every registered map: spawn points on open
+  ground with open ground on all four sides, none on the divider's column, as many in each half,
+  and all open ground one region. Spawns come from slots in one eighth of the arena, mirrored
+  into the other seven. `--preview <dir>` draws each map top-down.
+- **Backgrounds.** `sky` is MapleStory's: blue paling to the horizon, fat outlined clouds, rolling
+  hills with round trees on them. `sea` is open water to a horizon with islands on it: the
+  Lagoon's sea runs to the edge of the world, and the sky's green hills behind it read as the
+  sea stopping at a field. `snow` is winter hills with firs, with snow falling in front of the
+  world. That is the only weather drawn: `spawnWeatherParticles` had never been called.
+  `space`, `cityscape`, `desert` and `ocean` are as they were. See Post-Processing for how the
+  bright backgrounds are graded.
 
 ### Application Icon
 ```bash
@@ -1639,11 +1733,17 @@ Client                              Server
 ## Common Modifications
 
 ### Adding a New Tile Type
-1. Add case object to `Tile.scala` with id, name, walkable, color
-2. Add to `Tile.all` sequence
-3. Add entry to `TILES` list in `scripts/generate_tiles.py` (with color and elevation)
-4. Run `python3 scripts/generate_tiles.py` to regenerate `sprites/tiles.png`
-5. Use in world JSON files
+1. Add case object to `Tile.scala` with the next id (an id is its atlas column, so no gaps),
+   name, walkable, color. A non-walkable tile that isn't a block overrides `form` (`Pool` or
+   `Prop`), and a prop names the `ground` it grows out of.
+2. Add to `Tile.all` sequence, and bump the count in `WorldDataTest`
+3. Write its draw function in `scripts/generate_tiles.py` and add it to `TILES` with its form. A
+   block also needs `BLOCK_HEIGHTS` (and `ANIMATED_BLOCKS` if its frames move). A small prop can
+   be enlarged with `PROP_SCALE`. A prop whose ground isn't grass goes in `tile_gallery.py`'s
+   `PROP_GROUND`.
+4. Run `python3 scripts/generate_tiles.py`, then look at it with `scripts/tile_gallery.py` and in
+   the render bench (`TileTest` fails until the atlas has the new column)
+5. Use in world JSON files (the map editor's palette lists every tile)
 
 ### Adding a New Packet Type
 1. Add to `PacketType.scala` (new case object with unique ID, specify `tcp = true/false`)

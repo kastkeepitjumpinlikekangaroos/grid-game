@@ -171,3 +171,14 @@ scala_junit_test(
         "@maven//:junit_junit",
     ],
 )
+
+scala_junit_test(
+    name = "tile_test",
+    srcs = ["TileTest.scala"],
+    data = ["//sprites:sprite_files"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+)
