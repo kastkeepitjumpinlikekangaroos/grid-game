@@ -26,6 +26,8 @@ import java.util.concurrent.atomic.AtomicInteger
 private final class AttackClock {
   /** When its latest cast started (0: never). Groups the projectiles one press sends. */
   var castAt = 0L
+  /** When the cast before it started (0: none): what a charged shot is timed from. */
+  var prevCastAt = 0L
   /** Projectiles that cast has fired. */
   var fired = 0
   /** Where its cooldown counts from: castAt, moved back by on-hit reductions. Kept apart from
@@ -45,14 +47,21 @@ object PacketValidator {
   /** One clock per AttackSlot: primary, Q, E and the burst shot. */
   private val SLOT_COUNT = 4
 
+  /** Slack on how long a charged shot can have been held, for the two packets it is timed between
+    * taking different times to arrive. */
+  private val CHARGE_SLACK_MS = 250L
+
   /**
    * The furthest a character of this speed could honestly have walked in `deltaMs`: twice what
    * their own step interval allows (Movement), plus two cells of grace for a client whose
    * updates bunched up. A quicker character is allowed to be quicker; the tolerance is not a
    * flat number of cells that a fast character would eat into and a slow one would never reach.
    */
-  def maxCellsIn(deltaMs: Long, moveSpeed: Float): Long =
-    ((deltaMs.toDouble / Movement.baseStepIntervalMs(moveSpeed)) * 2 + 2).toLong
+  def maxCellsIn(deltaMs: Long, moveSpeed: Float, phased: Boolean = false): Long = {
+    val interval =
+      if (phased) Movement.phasedStepIntervalMs(moveSpeed) else Movement.baseStepIntervalMs(moveSpeed)
+    ((deltaMs.toDouble / interval) * 2 + 2).toLong
+  }
 
   /** Projectiles one cast of the ability sends. Dashes, blinks and buffs send none. */
   private def projectilesPerCast(ability: AbilityDef): Int = ability.castBehavior match {
@@ -85,6 +94,8 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
   private val lastUdpSequence = new ConcurrentHashMap[UUID, AtomicInteger]()
   // Sliding window bitmap for UDP out-of-order tolerance
   private val sequenceWindow = new ConcurrentHashMap[UUID, Array[Long]]()
+  // When each player's current life began (a respawn), for the charge of its first shot
+  private val lifeStartedAt = new ConcurrentHashMap[UUID, java.lang.Long]()
 
   /** Circular comparison in 31-bit sequence space. Returns true if seqNum is ahead of last. */
   private def isNewerSequence(seqNum: Int, last: Int): Boolean = {
@@ -229,28 +240,30 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
       val dy = y - oldPos.getY
       val distance = Math.abs(dx.toLong) + Math.abs(dy.toLong) // Long arithmetic to prevent overflow
 
-      // Skip speed check for phased/dashing players
-      if (!player.isPhased) {
-        val charDef = characterOf(player.getCharacterId)
-        val expectedMaxCells = maxCellsIn(deltaMs, if (charDef != null) charDef.moveSpeed else 1.0f)
-        if (distance > expectedMaxCells) {
-          // Allow teleport/dash abilities: check if this player's character has TeleportCast or DashBuff
-          // on either Q or E ability, and the jump is within the ability's reach
-          val abilities = if (charDef != null) Seq(charDef.qAbility, charDef.eAbility) else Seq.empty
-          val isAbilityMovement = !attacksLocked && abilities.exists { ability =>
-            ability.castBehavior match {
-              case TeleportCast(maxDistance) => Teleport.withinReach(dx, dy, maxDistance)
-              case DashBuff(maxDistance, _, _) => Teleport.withinReach(dx, dy, maxDistance)
-              case _ => false
-            }
+      // A phased player (a phase shift, or a dash) walks at twice their pace and through walls,
+      // but not at any speed. The check used to be skipped for them altogether, and for as long
+      // as a phase lasted — five seconds, for the Wraith — a client could put its player anywhere
+      // on the map. A dash, much quicker than a phased walk, has its reach below.
+      val charDef = characterOf(player.getCharacterId)
+      val expectedMaxCells = maxCellsIn(deltaMs, if (charDef != null) charDef.moveSpeed else 1.0f,
+        phased = player.isPhased)
+      if (distance > expectedMaxCells) {
+        // Allow teleport/dash abilities: check if this player's character has TeleportCast or DashBuff
+        // on either Q or E ability, and the jump is within the ability's reach
+        val abilities = if (charDef != null) Seq(charDef.qAbility, charDef.eAbility) else Seq.empty
+        val isAbilityMovement = !attacksLocked && abilities.exists { ability =>
+          ability.castBehavior match {
+            case TeleportCast(maxDistance) => Teleport.withinReach(dx, dy, maxDistance)
+            case DashBuff(maxDistance, _, _) => Teleport.withinReach(dx, dy, maxDistance)
+            case _ => false
           }
-          // A star needs no exception here: its item packet moves the player (ClientHandler),
-          // so the client's next update starts from the new cell
-          if (!isAbilityMovement) {
-            System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} speed hack detected: moved $distance cells in ${deltaMs}ms")
-            Metrics.validationFailed.add(1L, Attrs.VfMovementSpeed)
-            return false
-          }
+        }
+        // A star needs no exception here: its item packet moves the player (ClientHandler),
+        // so the client's next update starts from the new cell
+        if (!isAbilityMovement) {
+          System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} speed hack detected: moved $distance cells in ${deltaMs}ms")
+          Metrics.validationFailed.add(1L, Attrs.VfMovementSpeed)
+          return false
         }
       }
     }
@@ -282,7 +295,10 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
    * last life's cooldown refusing abilities the player could see were ready — silently for a
    * projectile, and as a refused placement for a trap.
    */
-  def resetAttackClocks(playerId: UUID): Unit = attackClocks.remove(playerId)
+  def resetAttackClocks(playerId: UUID): Unit = {
+    attackClocks.remove(playerId)
+    lifeStartedAt.put(playerId, java.lang.Long.valueOf(System.currentTimeMillis()))
+  }
 
   /** A new session: its client counts packets from zero again. Packets from the old session
     * can't be replayed into it, since they are signed with the old session's token. */
@@ -345,6 +361,7 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
         clock.fired += 1
         true
       } else if (now - clock.cooldownFrom >= (cooldownMs * 0.8).toLong) {
+        clock.prevCastAt = clock.castAt
         clock.castAt = now
         clock.cooldownFrom = now
         clock.fired = 1
@@ -355,6 +372,27 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
       System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} attack $slot fired too fast")
     }
     accepted
+  }
+
+  /**
+   * How charged a projectile the attack in `slot` just fired can be: what the client asked for, up
+   * to what it has had time to charge. Only the primary charges, and only from when it could:
+   * since the attack's last cast (a charge begins once its cooldown is over) or since this life
+   * began. The charge was taken as the client said, 0 to 100, so a client could fire full charges
+   * at the primary's fire rate — five to ten times its damage, twice a second — without the four
+   * seconds of holding a charge takes. Call it after [[validateProjectileSpawn]] accepted the shot.
+   */
+  def chargeAllowed(playerId: UUID, slot: Int, requested: Int): Int = {
+    if (slot != AttackSlot.PRIMARY) return 0
+    val clocks = attackClocks.get(playerId)
+    val lastCast = if (clocks != null) clocks(slot).synchronized(clocks(slot).prevCastAt) else 0L
+    val lifeStart = lifeStartedAt.get(playerId)
+    val since = Math.max(lastCast, if (lifeStart != null) lifeStart.longValue() else 0L)
+    // Nothing to time it from: the first shot of the match, which an opening always holds off
+    // for far longer than a charge takes
+    if (since <= 0L) return requested
+    val held = System.currentTimeMillis() - since + CHARGE_SLACK_MS
+    Math.max(0, Math.min(requested, (held * 100 / Constants.CHARGE_MAX_MS).toInt))
   }
 
   /**
@@ -407,11 +445,13 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     lastUdpSequence.remove(playerId)
     sequenceWindow.remove(playerId)
     movementFence.remove(playerId)
+    lifeStartedAt.remove(playerId)
   }
 
   /** Remove entries for players no longer in the connected set (safety net for leaked state). */
   def cleanupStale(connectedPlayerIds: java.util.Set[UUID]): Unit = {
-    val maps: Seq[ConcurrentHashMap[UUID, _]] = Seq(lastUpdateTime, attackClocks, lastTcpSequence, lastUdpSequence, sequenceWindow, movementFence)
+    val maps: Seq[ConcurrentHashMap[UUID, _]] = Seq(lastUpdateTime, attackClocks, lastTcpSequence, lastUdpSequence,
+      sequenceWindow, movementFence, lifeStartedAt)
     maps.foreach { map =>
       val iter = map.keySet().iterator()
       while (iter.hasNext) {

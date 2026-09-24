@@ -11,17 +11,19 @@ import scala.jdk.CollectionConverters._
 class LobbyManager {
   private val lobbies = new ConcurrentHashMap[Short, Lobby]()
   private val playerLobby = new ConcurrentHashMap[UUID, Short]()
-  private val nextId = new AtomicInteger(1)
+  private[server] val nextId = new AtomicInteger(1)
 
   def createLobby(hostId: UUID, name: String, mapIndex: Int, durationMinutes: Int, maxPlayers: Int): Lobby = {
     if (lobbies.size() >= Constants.MAX_LOBBIES) return null
     var id: Short = 0
     var attempts = 0
+    // Never 0, which the wire and the client take for no lobby at all: numbers wrap at 32768, and
+    // the players of a lobby numbered 0 had their character picks go nowhere
     do {
       id = (nextId.getAndIncrement() & 0x7FFF).toShort
       attempts += 1
       if (attempts > 32768) return null
-    } while (lobbies.containsKey(id))
+    } while (id == 0 || lobbies.containsKey(id))
     val lobby = new Lobby(id, hostId, name, mapIndex, durationMinutes, maxPlayers)
     lobby.addPlayer(hostId)
     lobbies.put(id, lobby)

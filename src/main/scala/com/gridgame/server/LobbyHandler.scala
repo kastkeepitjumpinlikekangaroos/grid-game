@@ -88,6 +88,7 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     val lobby = lobbyManager.createLobby(playerId, name, mapIndex, duration, maxPlayers)
     if (lobby == null) { sendFailure(player, LobbyFailure.SERVER_FULL); return }
     lastCreateTime.put(playerId, now)
+    leftForALobby(playerId)
     takeCharacter(lobby, playerId, packet.getCharacterId)
 
     // Send JOINED response to creator
@@ -116,6 +117,7 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
       sendFailure(player, if (target.status == LobbyStatus.WAITING) LobbyFailure.LOBBY_FULL else LobbyFailure.NOT_JOINABLE)
       return
     }
+    leftForALobby(playerId)
     val picked = takeCharacter(lobby, playerId, packet.getCharacterId)
 
     // Send JOINED to the new player
@@ -165,6 +167,14 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     // The others see the joiner's pick, as they would had it been picked in the room
     if (picked) broadcastCharacterSelect(lobby, playerId, packet.getCharacterId)
   }
+
+  /**
+   * A player who has gone into a lobby is no longer waiting for a ranked match. Queueing is refused
+   * to anyone in a lobby, but a lobby could be made or joined from the queue, and the matchmaker
+   * then took the player into its match's lobby and left them behind in the other as a member who
+   * would never come back.
+   */
+  private def leftForALobby(playerId: UUID): Unit = server.rankedQueue.removePlayer(playerId)
 
   /**
    * The character a player arrives with. CREATE and JOIN carry the one the client has selected,
@@ -524,6 +534,7 @@ class LobbyHandler(server: GameServer, lobbyManager: LobbyManager) {
     val lobby = lobbyManager.createLobby(playerId, "Practice", mapIndex, 30, 32)
     if (lobby == null) { sendFailure(player, LobbyFailure.SERVER_FULL); return }
     lastCreateTime.put(playerId, now)
+    leftForALobby(playerId)
     lobby.matchType = 5
 
     // Set the player's selected character

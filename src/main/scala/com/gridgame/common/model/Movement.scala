@@ -34,6 +34,10 @@ object Movement {
   def baseStepIntervalMs(moveSpeed: Float): Double =
     BASE_STEP_MS / Math.max(0.1, moveSpeed.toDouble)
 
+  /** The interval this character steps at while phased: the quickest they can walk. */
+  def phasedStepIntervalMs(moveSpeed: Float): Double =
+    baseStepIntervalMs(moveSpeed) * PHASED_FACTOR
+
   /**
    * The interval between steps for a character of `moveSpeed` in this state. Charging wins over
    * a phase, a phase over a boost, a boost over a slow — the order the input handlers have

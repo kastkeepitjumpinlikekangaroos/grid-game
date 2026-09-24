@@ -1,5 +1,6 @@
 package com.gridgame.server
 
+import com.gridgame.common.model.Position
 import com.gridgame.common.protocol._
 import io.netty.buffer.ByteBuf
 import org.junit.Assert._
@@ -45,6 +46,21 @@ class AuthFlowTest {
     val again = reply(AuthAction.SIGNUP, name, "secret1")
     assertFalse(again.getSuccess)
     assertEquals(AuthRules.UsernameTaken, again.getMessage)
+  }
+
+  @Test def playersGoByTheNameTheyLoggedInWith(): Unit = {
+    // The name was whatever the client's join said, so anyone could appear in a lobby, on a name
+    // plate or in chat as anyone else — another player, a bot — or with a name full of the
+    // invisible and right-to-left characters a lobby's name is cleaned of
+    val name = s"named$suffix"
+    val ch = new PeerChannel()
+    server.handleIncomingPacket(new AuthRequestPacket(0, AuthAction.SIGNUP, name, "secret1"), ch, null)
+    val ok = Iterator.continually(ch.readOutbound[ByteBuf]()).takeWhile(_ != null).map(decode)
+      .collect { case r: AuthResponsePacket => r }.toSeq
+    assertTrue(ok.head.getSuccess)
+    val id = ok.head.getAssignedUUID
+    server.handleIncomingPacket(new PlayerJoinPacket(1, id, new Position(1, 1), 0, "Bot 1"), ch, null)
+    assertEquals(name, server.getConnectedPlayer(id).getName)
   }
 
   @Test def aLoginWithTheWrongPasswordIsRefused(): Unit = {

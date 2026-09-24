@@ -53,6 +53,7 @@ bazel run //src/main/scala/com/gridgame/client:render_bench -- --traps    # ... 
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --divider  # ... with a Teams match's opening wall
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --ceasefire # ... with a free-for-all's opening ceasefire
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --map=the_meadow.json --at=60,17 # another map, from one cell of it
+bazel run //src/main/scala/com/gridgame/client:render_bench -- --types=LIGHTNING,SOUL_BOLT  # only these projectile types in flight
 GRIDGAME_GPU_PROFILE=1 bazel run //src/main/scala/com/gridgame/client:render_bench  # ... with fragments and GPU time per phase
 bazel run //src/main/scala/com/gridgame/client:ui_bench       # the JavaFX menus
 
@@ -240,8 +241,8 @@ When a match starts, `ClientMain.showGameScene()` hides the JavaFX Stage and cre
 | File | Lines | Purpose |
 |------|-------|---------|
 | `GLGameRenderer.scala` | ~7200 | Main renderer: tiles, players, projectiles, items, status effects, barriers, the team divider, the overlay over the finished world (name plates, health bars, damage numbers), HUD, aim arrow, backgrounds, death/teleport/explosion animations |
-| `GLProjectileRenderers.scala` | ~6040 | All 176 projectile type renderers (15 pattern factories + 33 specialized renderers + the local-frame silhouette system) |
-| `ShapeBatch.scala` | ~800 | Batched colored 2D primitives: fillRect, fillOval, fillOvalSoft, fillPolygon (**convex only**), fillFan (star-shaped outline, fanned from an explicit centre — stars, sunbursts, faceted hulls), fillRibbon (a band given as an outer run plus the inner run reversed — crescent blades), fillArcBand (ring segment with an alpha ramp — gauges, crescents, shockwaves), fillStarFlare (4-point glint), fillRoundedRect(Gradient), strokeLine, strokeLineSoft, and the joined strokes — strokeArc, strokeOval, strokePolygon, strokeRect, strokeRoundedRect, strokePolyline, strokePolylineTapered (see *Strokes are one band*). Oval segment counts follow the oval's size on screen (`pixelsPerUnit`, set per pass). Supports additive blend mode toggle, plus an alpha multiplier and a scale-about-pivot applied to every vertex (`setAlphaMultiplier` / `setScaleAbout`; reset by `begin`). |
+| `GLProjectileRenderers.scala` | ~6860 | All 176 projectile type renderers (15 pattern factories + 32 specialized renderers + the local-frame silhouette system), the orbs' shared anatomy, the tethers that tie a pull to its thrower, and the electricity |
+| `ShapeBatch.scala` | ~800 | Batched colored 2D primitives: fillRect, fillOval, fillOvalSoft, fillPolygon (**convex only**), fillFan (star-shaped outline, fanned from an explicit centre — stars, sunbursts, faceted hulls), fillRibbon (a band given as an outer run plus the inner run reversed — crescent blades), fillArcBand (ring segment with an alpha ramp — gauges, crescents, shockwaves), fillStarFlare (4-point glint), fillRoundedRect(Gradient), strokeLine, strokeLineSoft, and the joined strokes — strokeArc, strokeOval, strokePolygon, strokeRect, strokeRoundedRect, strokePolyline, strokePolylineTapered, strokePolylineVar (a width and an alpha of its own at every point — a limb, a comet tail, a bolt's channel) (see *Strokes are one band*). Oval segment counts follow the oval's size on screen (`pixelsPerUnit`, set per pass). Supports additive blend mode toggle, plus an alpha multiplier and a scale-about-pivot applied to every vertex (`setAlphaMultiplier` / `setScaleAbout`; reset by `begin`). |
 | `SpriteBatch.scala` | ~250 | Batched textured quads with per-vertex tint/alpha, and `drawQuad` for any four corners (the ground's diamonds). Flushes on texture change. `setBlending(false)` for opaque geometry. |
 | `ShaderProgram.scala` | ~190 | GLSL shader compilation + embedded shader source: ColorShader (pos+color), TextureShader (pos+texcoord+color), BloomExtract, GaussianBlur, Composite (bloom+vignette+overlay) |
 | `PostProcessor.scala` | ~240 | Post-processing FBO pipeline: Scene FBO → Bloom extract (half-res) → Blur H → Blur V → quarter-res pair → Composite. `GRIDGAME_HOLECHECK=1` clears the scene to magenta, so any pixel the terrain leaves uncovered shows. |
@@ -389,19 +390,76 @@ so no wall block can slice through them. Their shadow goes down *in* the depth p
 surface below: `surfaceLift` raises it onto the top face of an elevated tile, so the shadow
 climbs over the wall the projectile clears. Their particle trails spawn at the same height.
 
+#### Orbs: a lit sphere, a comet tail, and a shape outside both
+
+Nearly thirty characters' primaries are an `energyBolt`, so the orb is the thing seen most in
+a match. Every style shares one anatomy: `cometTail` (a band of light as wide as the orb where it
+leaves it, narrowing to a wisp — and straight, since a tail swung side to side behind a round
+head is a tadpole), a modest glow, `orbBody` (an inked rim, the colour at full strength at the
+edge lightening to a hot core that breathes: it glows from inside), and `shedMotes` off its back.
+A style is whatever it adds *outside* that sphere.
+
+What it replaced, and why, since each was tried: the whole orb pulsed between 100% and 30% alpha
+three times a second (a strobe, and on pale ground its dim frames weren't there); a dozen white
+specks orbited *inside* the body and read as dirt on a flat disc; `orbBody`'s first pass, lit
+from outside with a hard specular spot and a rim light, made every orb a glass marble (and put a
+smile under the soul bolt's eye sockets); and a halo 3.2 times its size tinted the ground for no
+read, about 0.7 million fragments an orb at 4K. Measured back to back against the old renderer
+(`render_bench --types=`, 150 of them at 4480x2404), the orbs' depth pass went from 106 to 73
+million fragments and frame building from 8.5 to 7.0 ms; the tethered grabs cost what the
+free-flying ones did, and the whole roster's mix is 5% fewer fragments at the same CPU.
+
+#### Pulls are tied to whoever is pulling (tethers)
+
+A grab that flies free reads as a glove somebody threw — the Bear's and Gorilla's was a brown
+mitten on an empty box-shaped cuff, and seven characters shared a knot with three sausage fingers.
+Every pull is drawn tied back to its thrower: the Kraken's and the Spaceman's tentacle (suckers down its underside,
+a tip curling round what it caught), the Druid's, Thornweaver's and Treant's vine (thorns raked
+back, leaves, a tendril), a leash of spirit to the Bear's and Gorilla's paw print and the
+Griffin's talon, a spectral chain to the Death Knight's sickle hook, a rope to the Gladiator's
+grapple and the Chef's meat hook. `GLGameRenderer.anchorToThrower` says where the thrower stands
+(`setAnchor`, looked up only for `wantsAnchor` types: our camera position, or anyone else's
+smoothed one), and without one (they died, or a dev tool has no players) the tether runs back to
+`Projectile.originX/Y`. `layTether` lays it out — bowed, swaying slowly, and cut off at the
+projectile's range so a thrower who has blinked away doesn't drag it across the screen —
+`shapeTether` gives it a width per point, `strokeTether` strokes it in layers with
+`strokePolylineVar`. The head is still at the hitbox; the tether only trails it. The Grasping
+Dead isn't a pull and isn't tethered: skeletal hands claw up out of graves along its path, on
+points fixed to the ground, the one at the head reaching and the ones behind sinking back.
+
+#### Electricity is fixed to the ground
+
+A bolt's channel stays where it was drawn. Its kinks are keyed on points fixed to the ground
+along the flight line (`along = x·ux + y·uy`), so as the head flies on it carves the channel
+and leaves it standing behind it, fading. A kink every other node alternates sides by an uneven
+amount (`kink`: the lightning-bolt zigzag, never more than ~55° off the line, so no mitre
+folds), the nodes between are knocked aside by a crackle re-struck twenty times a second, forks
+flash off it forward and out, and the head is a ball of light with arcs crackling all round it.
+Thunder Strike is a storm cloud rolling over the target spot and striking it fifteen times a
+second, onto the hitbox.
+
+The bolt it replaced was a zigzag built relative to the head and re-rolled whole every three
+frames, with kinks up to 23px either side of segments 7px long: a sawtooth stick carried along
+by the head, jumping to a new shape twenty times a second, every hairpin mitred into a needle,
+three prongs out ahead of the head like the legs of a bug. Two tries on the way that don't work:
+a smooth meander is a worm, and kinks small beside the stroke's width are a noodle.
+
 **15 pattern factories** (configurable colour + size, most also taking a `kind`):
-- `energyBolt(r, g, b, size, style)` — glowing orb. `style` picks an **outer** silhouette,
-  named by the `ORB_*` constants: `ORB_PLAIN` (leading crescent), `ORB_FIRE` (tapered
-  tongues), `ORB_RUNE` (flat glyph rings), `ORB_ORBIT` (a tilted, precessing ring the orb
-  passes through, with motes riding it), `ORB_CLOUD` (lumpy inked lobes, body unstroked),
-  `ORB_ASTRAL` (`ORB_ORBIT` plus a corona and a four-point glint — the Astronomer),
-  `ORB_SPIRIT` (`ORB_ORBIT` plus a wraith's sockets and a fraying hem). The outer shape is
-  what distinguishes bolts; inner detail is invisible at the size a projectile is actually
-  displayed. **Whatever the style draws has to stand outside the body** — everything in the
-  `style match` is drawn *behind* the 0.90 x 0.68 sz orb, so a feature inside that ellipse
-  is painted over and the bolt comes out plain. That is what happened to the rune ring (at
-  0.88 x 0.64 sz) and to the cloud lobes (the body's own colour at half alpha, behind an
-  inked ellipse): four bolts each, all reading as featureless eggs.
+- `energyBolt(r, g, b, size, style)` — glowing orb (see *Orbs* above). `style` picks what
+  stands outside the sphere, named by the `ORB_*` constants: `ORB_PLAIN` (the bare orb),
+  `ORB_FIRE` (a flame teardrop with tongues peeling off its edges), `ORB_RUNE` (a magic circle
+  in the ground plane, the orb inside it), `ORB_ORBIT` (a tilted, precessing ring the orb passes
+  through, with motes riding it), `ORB_HEART` (a heart beating lub-dub — charms),
+  `ORB_ASTRAL` (a five-point star in an orbit of stars — the Astronomer), `ORB_SPIRIT` (a thin
+  ghostly orb with wisps peeling off it), `ORB_TOXIC` (bubbles bursting on it, drops falling),
+  `ORB_SWARM` (nanites on orbits of their own round a small core), `ORB_SAND` (arms of grit
+  whirling out past its rim, grains shed), `ORB_MUD` (a lumpy wet glob flinging drops, with no
+  light at all) and `ORB_SHOCK` (arcs crackling off it). The outer shape is what distinguishes
+  bolts; inner detail is invisible at the size a projectile is actually displayed. **Whatever
+  the style draws has to stand outside the body** — a feature inside the 0.90 x 0.68 sz ellipse
+  is painted over and the bolt comes out plain. That is what happened to the old rune ring (at
+  0.88 x 0.64 sz) and cloud lobes (the body's own colour at half alpha, behind an inked
+  ellipse): four bolts each, all reading as featureless eggs.
 - `laserBolt(kind, …)` — blaster bolt: a short capsule, round at the hitbox and drawn to a
   point behind, with a dissolving afterglow. Kinds: plain, prismatic fringes (Photon),
   rings of force pulsing off the head (Cyclops).
@@ -409,8 +467,8 @@ climbs over the wall the projectile clears. Their particle trails spawn at the s
   behind it (Railgunner).
 - `siphonVortex(kind, …)` — drain abilities as a travelling whirlpool, motes spiralling
   *into* a dark core: blood sheds drips, life drain beats a heart, soul drain stares back.
-- `graspingClaw(kind, …)` — grab-and-pull as three talons curling shut around a knot:
-  thorny vine with leaves (vine whip, root pull) or suckered tentacles.
+- `tether(kind, …)` — a pull tied back to its thrower (see *Pulls are tied to whoever is
+  pulling*): tentacle, vine, spirit paw, spirit talon, death hook on a chain.
 - `gorgonEye(petrify)` — Medusa's gaze as a blinking almond eye with a slit pupil, ringed
   by crumbling stone.
 - `bladeSpinner(kind, …)` — thrown weapon tumbling end over end (axe, bone axe, katana,
@@ -429,16 +487,16 @@ climbs over the wall the projectile clears. Their particle trails spawn at the s
 - `wave(kind, …)` — crescent sweep built from a real arc band whose centre is solved in
   the ellipse's own parameter space so it stays square to the travel direction at every
   heading. Kinds: wind, sand, sonic, flame, acid, impact, water.
-- `chainProj(kind, …)` — thrown restraint: a grappling hook with rope paying out behind
-  it only as far as the throw has travelled; a tumbling manacle trailing swinging links;
-  a loop of links spinning around a padlock.
+- `chainProj(kind, …)` — thrown restraint: a grappling hook (or, `CHN_HOOK`, a single meat
+  hook) on a twisted rope running all the way back to the thrower's hand; a tumbling manacle
+  trailing swinging links; a loop of links spinning around a padlock.
 - `bulletProj`, `fistProj` — small fast round; gauntleted punch.
 
-**33 specialized `draw*` renderers** for one-off projectiles: fireball (spiral fire arms),
-lightning (`lightningBolt(r, g, b)` — colour is a parameter so a storm reads yellow and a
-tesla coil reads arc-cyan), frost comet (ice beam), grab paw, bandage wad, tongue lash,
-boulder (faceted tumbling hull), shark jaw, bat swarm, shadow bolt, inferno blast, geyser,
-wail, raise dead, and more.
+**32 specialized `draw*` renderers** for one-off projectiles: lightning (`lightningBolt(r, g,
+b, heavy)` — colour is a parameter so a storm reads yellow and a tesla coil reads arc-cyan;
+`heavy` is chain lightning's thicker bolt), thunder strike, grasping dead, frost comet (ice
+beam), bandage wad, tongue lash, boulder (faceted tumbling hull), shark jaw, bat swarm, shadow
+bolt, inferno blast, geyser, wail, raise dead, and more. The fireball is an `ORB_FIRE` orb.
 
 **Things to watch when editing this file:**
 - **Kind constants must be defined above `registry`.** `registry` is a `val` built while
@@ -473,7 +531,13 @@ wail, raise dead, and more.
   Acid Spray at 4 strong pixels per 1000 on sand, and 32 once inked round and filled denser.
 - **Never flicker a whole projectile toward zero.** `sin(phase * 8)` lands on an unrelated value
   every frame, so a flicker between 0 and 1 is a strobe, and on a dim frame on pale ground the
-  shot isn't there. Flicker the core; keep the body up.
+  shot isn't there. Flicker the core; keep the body up. A slow pulse is no better: every orb,
+  the fireball and the inferno blast throbbed down to 20-30% three times a second.
+- **The client never flies a projectile.** It only moves one to where the server says
+  (`updatePosition`), so `getDistanceTraveled` is 0 in a match. The gallery, the bench and the
+  audit fly theirs with `moveStep`, so none of them shows it: the rope measured itself by it,
+  and in a real match no rope was ever drawn. Measure from `Projectile.originX/Y`, or key
+  things to the ground as the electricity does.
 - A block literal on the line after an expression is parsed as an *argument* to it
   (`val n = 9` followed by `{ … }` becomes `9 { … }`). Use a plain `var`/`while` at
   statement level rather than a `{ … }` wrapper.
@@ -495,7 +559,13 @@ To add a new projectile renderer:
 ```bash
 bazel run //src/main/scala/com/gridgame/client:projectile_gallery -- out/dir
 bazel run //src/main/scala/com/gridgame/client:projectile_gallery -- out/dir --bench
+bazel run //src/main/scala/com/gridgame/client:projectile_gallery -- out/dir --focus=LIGHTNING,TENTACLE
 ```
+
+`--focus=` writes one `focus_<NAME>.png` per type instead: four headings across (right, left,
+up, down on screen) and four moments down, the projectile further along each row. It is the
+loop for anything drawn along or behind the flight path — a tail, a tether, a bolt's channel —
+which the contact sheets only ever show flying one way.
 
 Renders every registered projectile type into contact-sheet PNGs (10 pages x 4 animation
 ticks) plus an `index.txt` naming each cell. It also writes `impacts_NN.png` (projectiles sinking
@@ -709,6 +779,15 @@ auto — which only steps down mid-match — can't do it.
   Recognisable objects are now authored as convex `Part` silhouettes in a local frame and
   stamped per frame (see *Projectile Rendering System*), and the family factories take a
   `kind`. Colour differentiates within a family; shape differentiates between them.
+- **A pull is tied to whoever is pulling** — tentacles, vines, leashes, chains and ropes run from
+  the hitbox back to the thrower (see *Pulls are tied to whoever is pulling*). A grab flying free
+  was a glove somebody threw.
+- **A bolt's channel is fixed to the ground** — its kinks stay where they were drawn as the head
+  flies on (see *Electricity is fixed to the ground*); built relative to the head and re-rolled
+  every few frames, it was a sawtooth stick jumping about.
+- **An orb glows from inside and streams a comet tail** — the colour strongest at its rim,
+  lightening to a hot core, and a tail as wide as it is (see *Orbs*). Lit from outside it was a
+  glass marble; pulsing its alpha, a strobe.
 - **A projectile's head sits on its hitbox** — nothing is drawn ahead of `(sx, sy)`; trails,
   tethers and wakes stream out behind it and fade (`fadeLine`). Beams, tethers, lightning,
   the rocket and the jaw used to run a line several tiles ahead of the hitbox to a disc,
@@ -1711,6 +1790,21 @@ everyone gets the same half minute to find their feet and pick their ground.
   `PacketRoundTripTest` pin all of this. `TestMatch` opens with the opening only when a test asks
   for it (`opening = true`): a match driven by hand is one already under way.
 
+## The end of a match
+
+A match ends the moment its time is up: `GameInstance.start` schedules `endMatch` for its deadline.
+The 10-second `TIME_SYNC`s only report the time left, and every client counts down from the last
+one. The match clock (`getRemainingSeconds`, `isTimeUp`) is `System.nanoTime`, the clock that
+executor counts on, never the wall clock.
+
+It used to be the wall clock, and the syncs used to end the match, the first to find the time up.
+The sync due at the deadline comes round only a few milliseconds after it, and macOS's `timed`
+corrects the wall clock by 5-80 ms, backwards as often as forwards, about every 25 minutes. When the
+clock went back further than that margin during a match, the sync found a second left, and the match
+ran on for another ten seconds with every countdown at 0:00. That was about one match in ten on the
+dev machine. `EndGameTest` pins both halves, and a match can be made shorter for a test with
+`durationMs`.
+
 ## Network Protocol
 
 80-byte packets (64-byte payload + 16-byte HMAC-SHA256) over TLS-encrypted TCP (reliable) and HMAC-signed UDP (fast updates), using Netty. Byte order: BIG_ENDIAN.
@@ -1720,14 +1814,14 @@ everyone gets the same half minute to find their feet and pick their ground.
 9 layers of security protect the networking stack:
 
 1. **TLS 1.3 for TCP** — All TCP traffic encrypted via Netty `SslHandler`. Server generates a self-signed certificate at startup using `keytool` with a random password and restrictive temp directory permissions (`rwx------`). Explicit cipher suites: `TLS_AES_256_GCM_SHA384`, `TLS_CHACHA20_POLY1305_SHA256`. Client trusts all certs (game server, not web).
-2. **HMAC Packet Signing** — After auth, server issues a 32-byte session token. All subsequent packets (TCP and UDP) carry a 16-byte truncated HMAC-SHA256. Packets with invalid HMAC are dropped silently. UDP packets without a valid session token are dropped entirely (no unsigned UDP fallback).
-3. **Rate Limiting** — Per-client: 60 UDP/s, 20 TCP/s. Per-IP: 5 connections/min, 5 auth failures before 30s cooldown. Per-channel: connection closed after 5 auth failures (`MAX_AUTH_FAILURES_PER_CHANNEL`). Race-free auth tracking via `computeIfAbsent`. Stale entries cleaned up every 5s.
-4. **Server-Side Validation** — Movement validated against world bounds, walkability, and speed limits (`PacketValidator.maxCellsIn`: 2x the character's own rate, from `CharacterDef.moveSpeed` through `Movement`, + 2 cells tolerance, Long arithmetic to prevent overflow; updates in the same millisecond are checked too). Position updates older (by sequence number) than the newest position already applied are dropped, since positions are absolute. Teleports go through `common/model/Teleport.scala` on both sides: the client picks a star's or blink's landing cell with it and the server checks with it, because a teleport the client shows and the server refuses snaps the player back. A star is applied by its TCP item packet, not by letting a UDP jump through; a refused one comes back as `ItemAction.USE_REJECTED`. Projectile spawn validated against player position (max 3 cells), velocity (NaN/Inf rejection, magnitude <= sqrt(2)), charge level (0-100), and the attack that fired it: a spawn request names its `AttackSlot` (primary, Q, E, or the burst shot — the primary along `AttackSlot.BurstDirections`, 8 a cast on `BURST_SHOT_COOLDOWN_MS` — carried in the unused projectile-ID field), its type must be that attack's, and each attack has its own clock — a new cast after 80% of that attack's cooldown (`SHOOT_COOLDOWN_MS` for the primary), at most its own projectile count per cast (3 for a gem-boosted primary, a fan's count). **Don't go back to inferring the attack from the projectile type**: many characters fire one type from two attacks (Bear's Maul is eight of its primary's claws), and judged as a primary burst the ring was cut to the three projectiles the fan sends first, straight behind the caster. `AbilityCastValidationTest` pins this across the roster. Health is the server's own: the health a client reports is never read.
+2. **HMAC Packet Signing** — After auth, server issues a 32-byte session token. All subsequent packets (TCP and UDP) carry a 16-byte truncated HMAC-SHA256. Packets with invalid HMAC are dropped silently. UDP packets without a valid session token are dropped entirely (no unsigned UDP fallback). **A signature proves who sent a packet, not who it names**: a TCP packet naming anyone but the player its channel logged in as is dropped in `GameServerTcpHandler` before that player's rate budget or replay window is touched. Checked later, as it was, one logged-in client could spend another's budget, or send one packet numbered far ahead in their count and make every packet they sent afterwards look like a replay. The client's handlers take nothing unsigned once it holds a token (its UDP handler doesn't look at the sender, so the signature is all there is). `NetworkHandlerTest` and `ClientNetworkTest` pin both ends.
+3. **Rate Limiting** — Per-client: 240 UDP/s, 40 TCP/s, 5 chat lines/s (`RateLimiter`'s companion object holds every limit). Per-IP: 5 connections/min, 5 auth failures before 30s cooldown. Per-channel: 5 auth requests/s before login, and the connection closed after 5 auth failures (`MAX_AUTH_FAILURES_PER_CHANNEL`). A datagram counts against a player's budget only once its signature checks out, since its source address is whatever its sender writes into it: charged first, a flood of forged datagrams in a player's name spent their budget and their real updates were dropped. Race-free auth tracking via `computeIfAbsent`. Stale entries cleaned up every 5s. `RateLimiterTest`.
+4. **Server-Side Validation** — Movement validated against world bounds, walkability, and speed limits (`PacketValidator.maxCellsIn`: 2x the character's own rate, from `CharacterDef.moveSpeed` through `Movement`, + 2 cells tolerance, Long arithmetic to prevent overflow; updates in the same millisecond are checked too). A phased player walks through walls but is checked at their phased pace (twice their own, `Movement.phasedStepIntervalMs`), with a dash's reach on top: the check used to be skipped for them, and for as long as a phase lasted a client could put its player anywhere. Position updates older (by sequence number) than the newest position already applied are dropped, since positions are absolute, and so is every update from a player who is dead (see *Position authority*). Teleports go through `common/model/Teleport.scala` on both sides: the client picks a star's or blink's landing cell with it and the server checks with it, because a teleport the client shows and the server refuses snaps the player back. A star is applied by its TCP item packet, not by letting a UDP jump through; a refused one comes back as `ItemAction.USE_REJECTED`. Projectile spawn validated against player position (max 3 cells); the shooter (nobody dead, held or phased fires — a phase's last 250ms excepted, since the client's ends a trip across the wire before the server's); the heading, which is only a direction (NaN/Inf rejected, anything shorter than half a unit refused, the rest normalised, and a ground slam's zeroed so it lands on its caster — taken as a velocity, (1, 1) flew 41% faster and (0, 0) never moved, so it never reached its range and lay where it was fired for the rest of the match); the charge level (0-100, and for the primary no more than the time since that attack's last cast, or since the respawn, allows: `PacketValidator.chargeAllowed`; every other attack is uncharged. Taken as the client said, a client could fire full charges at the primary's fire rate); and the attack that fired it: a spawn request names its `AttackSlot` (primary, Q, E, or the burst shot — the primary along `AttackSlot.BurstDirections`, 8 a cast on `BURST_SHOT_COOLDOWN_MS` — carried in the unused projectile-ID field), its type must be that attack's, and each attack has its own clock — a new cast after 80% of that attack's cooldown (`SHOOT_COOLDOWN_MS` for the primary), at most its own projectile count per cast (3 for a gem-boosted primary, a fan's count). **Don't go back to inferring the attack from the projectile type**: many characters fire one type from two attacks (Bear's Maul is eight of its primary's claws), and judged as a primary burst the ring was cut to the three projectiles the fan sends first, straight behind the caster. `AbilityCastValidationTest` pins this across the roster. Health is the server's own: the health a client reports is never read.
 5. **Auth Hardening** — Constant-time hash comparison (`MessageDigest.isEqual`), dummy hash on username-not-found (prevents timing enumeration), password minimum 6 characters.
-6. **Replay Protection** — `PacketValidator` tracks sequence numbers per player with a sliding window bitmap (`SEQUENCE_WINDOW_SIZE = 256`) for UDP out-of-order tolerance. TCP enforces strictly increasing sequence numbers. Duplicate/replayed packets are rejected. Issuing a session token resets the player's sequence tracking (`resetSequences`): the new session's client counts from zero, and when a re-login closed a channel the server still had open, the old session's numbers used to stay and every packet of the new one was dropped as a replay. `SessionTest` pins it.
-7. **UDP Source Validation** — Server records each player's TCP connection IP (`playerTcpAddresses`). UDP packets are only accepted if the sender IP matches the player's TCP IP, preventing UDP source spoofing.
+6. **Replay Protection** — `PacketValidator` tracks sequence numbers per player with a sliding window bitmap (`SEQUENCE_WINDOW_SIZE = 1024`) for UDP out-of-order tolerance. TCP enforces strictly increasing sequence numbers. Duplicate/replayed packets are rejected. Issuing a session token resets the player's sequence tracking (`resetSequences`): the new session's client counts from zero, and when a re-login closed a channel the server still had open, the old session's numbers used to stay and every packet of the new one was dropped as a replay. `SessionTest` pins it.
+7. **UDP Source Validation** — Server records each player's TCP connection IP (`playerTcpAddresses`). UDP packets are only accepted if the sender IP matches the player's TCP IP. It is a cheap first filter, not proof: a source address can be forged, which is why the rate limit waits for the signature (3).
 8. **Session Token Expiration** — Tokens expire after `SESSION_TOKEN_LIFETIME_MS` (1 hour). The cleanup loop removes expired tokens and closes the player's TCP channel, forcing re-authentication.
-9. **Client Disconnect Recovery** — `NetworkThread` uses Netty `IdleStateHandler` for read timeout detection (`CLIENT_TIMEOUT_MS`). On disconnect, a callback notifies `GameClient` which clears game state and can transition the UI back to the login screen. Incoming packet queue is bounded (`INCOMING_QUEUE_CAPACITY = 2048`) to prevent memory exhaustion. Sequence numbers reset on reconnect.
+9. **Client Disconnect Recovery** — `NetworkThread` uses Netty `IdleStateHandler` for read timeout detection (`CLIENT_TIMEOUT_MS`). On disconnect, a callback notifies `GameClient` which clears game state and can transition the UI back to the login screen. Incoming packet queue is bounded (`INCOMING_QUEUE_CAPACITY = 8192`) to prevent memory exhaustion. Sequence numbers reset on reconnect.
 
 ### Position authority
 
@@ -1757,8 +1851,47 @@ a correction — made with `GameInstance.moveByServer` / `holdByServer`, which c
 - A match starts where the server placed each player: the client takes its spawn from its own
   `PLAYER_JOIN` echo and sends nothing from `setWorld`. Picking one itself used to put players
   on the same spawn and show everyone teleporting at the start.
+- **The dead don't move.** A client goes on sending steps until it hears it has died; the server
+  ignores every update from a dead player (`ClientHandler.handlePlayerUpdate`). Taken, the body
+  walked on across everyone's screens and picked up whatever it passed, which the respawn then
+  threw away. The respawn is a server move, so nothing sent from the last life counts after it.
+- **A hold holds against every way of moving.** While a root or freeze lasts the server applies no
+  step, blink or dash, and refuses a star; the client doesn't blink or dash while rooted, or use a
+  star while held, and neither do bots. The client used to blink anyway: it showed the jump, the
+  server kept the player where they were and said nothing, and the two disagreed until its later
+  steps were refused.
 
-`PositionAuthorityTest`, `OnHitEffectsTest` and `GameClientPositionTest` pin all of this.
+`PositionAuthorityTest`, `OnHitEffectsTest`, `PhaseShiftTest`, `TeleportValidationTest` and
+`GameClientPositionTest` pin all of this.
+
+### Sessions, reconnects and names
+
+- **A join from a player the match already has is a rejoin, and takes nothing from the join**
+  (`ClientHandler.handlePlayerJoin`): the player's connection is rebound, and the client is sent
+  the match — everyone in it with their teams, items, traps, its own state, the opening — but
+  where the player is and how much health they have stay the server's. It used to put them
+  wherever the join said and heal them to full: a teleport and a heal, a revival for the dead,
+  whenever a client sent a join. **A join never puts anyone into a running match**
+  (`GameServer.handleGlobalConnect` only routes one to a match that has the player): a client that
+  sent `PLAYER_LEAVE` and then `PLAYER_JOIN` came back fresh, wherever it said, as any character.
+- **One session an account.** A login while the server still holds another connection open for
+  that account closes it and ends that session as a disconnect would (`GameServer.
+  leaveEverything`): out of the ranked queue, its lobby, and its match. It used to close the
+  channel alone, and the player stayed in the match — a target standing still — and in the lobby,
+  so every lobby the new session tried was refused as "already in a lobby" until the match ended.
+- **A player goes by the name they logged in with** (`GameServer.accountNames`), not by the name
+  in their join, which let anyone appear in a lobby or in chat as anyone else.
+- **Lobby 0 is no lobby** — on the wire and in the client — so `LobbyManager` never hands it out
+  when its numbers wrap at 32768.
+- **Entering a lobby leaves the ranked queue**, and the matchmaker leaves out anyone it finds in
+  a lobby (it works from a snapshot): a player queued while in a lobby was taken into the ranked
+  match and left behind in the other as a member who would never come back.
+- The client ignores an update about a player who has left the match (`GameClient.
+  departedPlayers`): updates come over UDP and the leave over TCP, and one arriving after the
+  leave brought them back as a player called "Player" who never went away.
+
+`ReconnectTest`, `AuthFlowTest`, `LobbyManagerTest`, `RankedQueueTest` and `GameClientMatchTest`
+pin these.
 
 ### Packet Format
 
@@ -2029,7 +2162,16 @@ suites mirror the source tree:
   `tcpSent` / `udpSent` decode what each was sent. A `TestMatch` is a match already under way, so
   a Teams one has no opening divider over it unless the test asks (`opening = true`).
   `LobbyFlowTest` and `SessionTest` go in through `GameServer.handleIncomingPacket` and the real
-  TCP handler (signed packets) instead.
+  TCP handler (signed packets) instead. `TestSession` is a logged-in client on that real handler
+  (a session token, the address it logged in from, signed and numbered packets, and what it was
+  sent), and `TestMatch.seat` puts a few of them in a match through an in-game lobby.
+- The network: `NetworkHandlerTest` feeds the TCP and UDP handlers what a broken or hostile client
+  could send (another player's name, the wrong key, garbage, forged datagrams, replays);
+  `RateLimiterTest`; `ReconnectTest` for rejoins, logins over a live connection and disconnects;
+  `ChatTest` for who hears what; `RankedQueueTest` for matchmaking, run by hand on a clock of the
+  test's own (`RankedQueue.checkQueue(now)`), so a minute's wait takes no time; and
+  `SpawnRequestTest` for what the server takes from a spawn request (heading, charge, who may
+  fire). On the client, `ClientNetworkTest` feeds its handlers through an `EmbeddedChannel`.
 - `client/render`, `client/gl` — the camera (`CameraTest`: the isometric mapping, the pixel grid,
   whether the view has run off the map) and the light pool (`LightPoolTest`). `TileTest`, in
   `common/model`, also holds the tileset to what the renderer assumes: a flat tile is exactly

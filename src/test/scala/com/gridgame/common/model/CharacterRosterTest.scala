@@ -43,6 +43,19 @@ class CharacterRosterTest {
     }
   }
 
+  @Test def everyProjectileFliesOrEndsWhereItIsCast(): Unit = {
+    // A projectile that neither moves nor has a range of nothing never reaches the end of its
+    // range: it sits where it was cast for the rest of the match, hitting whoever walks into it
+    for (c <- all) {
+      val fired = c.primaryProjectileType +: Seq(c.qAbility, c.eAbility).filter(firesProjectiles).map(_.projectileType)
+      for (t <- fired; charge <- Seq(0, 1, 50, 100)) {
+        val d = ProjectileDef.get(t)
+        assertTrue(s"${c.displayName}'s ${d.name} at charge $charge",
+          d.effectiveSpeed(charge) > 0f || d.effectiveMaxRange(charge) <= 0.0)
+      }
+    }
+  }
+
   @Test def abilitiesHaveSensibleNumbers(): Unit = {
     for (c <- all; a <- Seq(c.qAbility, c.eAbility)) {
       val name = s"${c.displayName} ${a.name}"

@@ -27,6 +27,8 @@ import scala.jdk.CollectionConverters._
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --ceasefire  # a free-for-all's opening ceasefire
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --map=the_meadow.json --at=60,16
  *                                                                  # another map, standing on one cell of it
+ *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --types=LIGHTNING,SOUL_BOLT
+ *                                                                  # only these projectile types in flight
  *
  * Drives the real GLGameRenderer the way the client does — a GLFW window at the client's
  * size, frames driven by a JavaFX AnimationTimer on the FX thread — over a fabricated
@@ -212,8 +214,17 @@ class RenderBenchApp extends Application {
         placed + TrapDef.get(trapTypes(i % trapTypes.length)).armDelayMs, placed + life))
     }
 
-    // Projectiles: cycle through every registered type so every renderer gets exercised
-    val types = (0 until 256).map(_.toByte).filter(t => GLProjectileRenderers.getRenderer(t) != null).toArray
+    // Projectiles: cycle through every registered type so every renderer gets exercised, or
+    // through only the ones named by --types=LIGHTNING,SOUL_BOLT,... so a change to a few
+    // renderers isn't diluted across all 176 of them
+    val named = ProjectileType.getClass.getDeclaredMethods
+      .filter(m => m.getParameterCount == 0 && m.getReturnType == java.lang.Byte.TYPE)
+      .map(m => m.getName -> m.invoke(ProjectileType).asInstanceOf[java.lang.Byte].byteValue()).toMap
+    val types = argOf(args, "types") match {
+      case Some(list) => list.split(",").map(_.trim).filter(_.nonEmpty).map(n =>
+        named.getOrElse(n, throw new IllegalArgumentException(s"no projectile type named $n")))
+      case None => (0 until 256).map(_.toByte).filter(t => GLProjectileRenderers.getRenderer(t) != null).toArray
+    }
     var nextProjId = 1
     var typeCursor = 0
     def spawnProjectile(): Unit = {

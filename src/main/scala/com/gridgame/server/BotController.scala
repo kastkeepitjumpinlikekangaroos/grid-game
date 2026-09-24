@@ -815,7 +815,8 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
         true
 
       case DashBuff(maxDistance, durationMs, _) =>
-        if (dist < 3 || dist > maxDistance + 5) return false
+        // A root holds a bot where it is, as it holds a player against a step, a dash and a blink
+        if (bot.isRooted || dist < 3 || dist > maxDistance + 5) return false
         lowerBarrier(bot)
         val clampedDist = Math.min(dist, maxDistance.toFloat)
         val world = instance.world
@@ -845,7 +846,7 @@ class BotController(instance: GameInstance, isPractice: Boolean = false) {
         true
 
       case TeleportCast(maxDistance) =>
-        if (dist < 4 || dist > maxDistance + 8) return false
+        if (bot.isRooted || dist < 4 || dist > maxDistance + 8) return false
         lowerBarrier(bot)
         val clampedDist = Math.min(dist, maxDistance.toFloat).toInt
         // A player's blink, stopping before the first wall rather than coming out beyond it

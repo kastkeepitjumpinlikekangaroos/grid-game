@@ -1,5 +1,6 @@
 package com.gridgame.server
 
+import com.gridgame.common.Constants
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 import org.junit.Assert._
@@ -79,6 +80,64 @@ class PhaseShiftTest {
     phasedStep(wraith, 11, 10)
     assertTrue(wraith.isPhased)
     assertEquals((11, 10), m.at(wraith))
+  }
+
+  // --- How far a phase goes ---
+
+  @Test def aPhaseIsNoLicenceToTeleport(): Unit = {
+    // Phased, the speed check was skipped altogether: for as long as the phase lasted (five
+    // seconds, for the Wraith) a client could put the player anywhere on the map
+    val wraith = m.join(CharacterId.Wraith, 10, 10)
+    assertTrue(m.move(wraith, 10, 10, flags = 0x08))
+    assertTrue(wraith.isPhased)
+    // Ninety cells: more than even a phased walk covers in the second this could take to run
+    assertFalse(m.move(wraith, 55, 55, flags = 0x08))
+    assertEquals((10, 10), m.at(wraith))
+  }
+
+  @Test def aPhasedPlayerWalksAtTwiceTheirPace(): Unit = {
+    // Eight cells in 100ms is more than walking allows (six) and within a phase's twice (ten)
+    val wraith = m.join(CharacterId.Wraith, 10, 10)
+    assertTrue(m.move(wraith, 10, 10, flags = 0x08))
+    assertTrue(m.move(wraith, 18, 10, flags = 0x08, gapMs = 100))
+    assertEquals((18, 10), m.at(wraith))
+  }
+
+  /** A character with a dash, and how far it goes. */
+  private val (dasher, dashCells) = CharacterDef.all.iterator.flatMap { d =>
+    Seq(d.qAbility, d.eAbility).collectFirst { case a if a.castBehavior.isInstanceOf[DashBuff] =>
+      (d.id, a.castBehavior.asInstanceOf[DashBuff].maxDistance)
+    }
+  }.next()
+
+  @Test def aDashStillCoversItsDistance(): Unit = {
+    // A dash is a phase too, and much quicker than a phased walk: it keeps the reach it had
+    val p = m.join(dasher, 10, 10)
+    assertTrue(m.move(p, 10, 10, flags = 0x08))
+    assertTrue(p.isPhased)
+    assertTrue(m.move(p, 10 + dashCells, 10, flags = 0x08))
+    assertEquals((10 + dashCells, 10), m.at(p))
+  }
+
+  @Test def aDashGoesNoFurtherThanItReaches(): Unit = {
+    val p = m.join(dasher, 10, 10)
+    assertTrue(m.move(p, 10, 10, flags = 0x08))
+    // Well past its reach, and more than a phased walk covers in the second this could take to run
+    val far = 10 + 35
+    assertTrue(Math.hypot(far - 10, far - 10) > dashCells + Constants.TELEPORT_RANGE_TOLERANCE)
+    assertFalse(m.move(p, far, far, flags = 0x08))
+    assertEquals((10, 10), m.at(p))
+  }
+
+  @Test def aPhaseStillGoesThroughWalls(): Unit = {
+    val wraith = m.join(CharacterId.Wraith, 10, 10)
+    m.world.setTile(11, 10, Tile.Wall)
+    m.world.setTile(12, 10, Tile.Wall)
+    assertTrue(m.move(wraith, 10, 10, flags = 0x08))
+    assertTrue(m.move(wraith, 11, 10, flags = 0x08))
+    assertTrue(m.move(wraith, 12, 10, flags = 0x08))
+    assertTrue(m.move(wraith, 13, 10, flags = 0x08))
+    assertEquals((13, 10), m.at(wraith))
   }
 
   @Test def aCharacterWithoutAPhaseCannotClaimOne(): Unit = {

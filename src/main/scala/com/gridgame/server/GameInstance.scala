@@ -40,7 +40,16 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   private var timerSyncExecutor: ScheduledExecutorService = _
   private var playerTickExecutor: ScheduledExecutorService = _
   private var respawnExecutor: ScheduledExecutorService = _
-  private var startTime: Long = 0L
+  /**
+   * The match clock, on System.nanoTime: the clock the executor that ends the match counts on, so
+   * the end comes round exactly when the time is up. The wall clock is no good for it. The system
+   * sets it by a few tens of milliseconds, back as often as forward, every 25 minutes or so (timed,
+   * on macOS), and the executor never sees it.
+   */
+  private var startNanos: Long = 0L
+  private var endsAtNanos: Long = 0L
+  /** How long the match lasts: its minutes, unless a test wants a shorter one. */
+  private[server] var durationMs: Long = durationMinutes * 60000L
   @volatile private var running = false
   private val spawnLock = new Object()
 
@@ -63,14 +72,15 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     * drive it; tests call this alone and run the ticks themselves. */
   private[server] def begin(): Unit = {
     if (world == null) loadWorld()
-    startTime = System.currentTimeMillis()
+    startNanos = System.nanoTime()
+    endsAtNanos = startNanos + durationMs * 1000000L
     // The opening (MatchOpening): Teams spends it with the two halves walled off from each other,
     // a free-for-all with everyone's abilities holstered. The wall hangs off the world, so every
     // walkability check in the game refuses its cells while it stands.
     // Practice is for trying a character out against passive bots, so it opens with nothing held
     // back: holding its fire for thirty seconds is the one thing an opening must not do there
     openingRules = if (isPractice) 0.toByte else MatchOpening.rulesFor(gameMode)
-    openingEndsAt = if (openingRules == 0) 0L else startTime + Constants.MATCH_OPENING_MS
+    openingEndsAt = if (openingRules == 0) 0L else System.currentTimeMillis() + Constants.MATCH_OPENING_MS
     openingAnnounced = false
     openingEndAnnounced = false
     if (MatchOpening.has(openingRules, MatchOpening.DIVIDER) && world != null) {
@@ -200,6 +210,11 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
       Constants.TIME_SYNC_INTERVAL_S.toLong,
       TimeUnit.SECONDS
     )
+    timerSyncExecutor.schedule(
+      safeRunnable("endMatch")(endMatch()),
+      endsAtNanos - System.nanoTime(),
+      TimeUnit.NANOSECONDS
+    )
 
     Metrics.matchesStarted.add(1L, io.opentelemetry.api.common.Attributes.builder()
       .putAll(Attrs.modeOf(gameMode))
@@ -228,15 +243,15 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     println(s"GameInstance[$gameId]: Stopped")
   }
 
+  /** Rounded up: a countdown shows the second that is running out, and reads 0 once the time is up. */
   def getRemainingSeconds: Int = {
-    val elapsed = (System.currentTimeMillis() - startTime) / 1000
-    val total = durationMinutes * 60
-    Math.max(0, (total - elapsed).toInt)
+    val left = endsAtNanos - System.nanoTime()
+    if (left <= 0L) 0 else ((left + 999999999L) / 1000000000L).toInt
   }
 
-  def getElapsedSeconds: Int = ((System.currentTimeMillis() - startTime) / 1000).toInt
+  def getElapsedSeconds: Int = ((System.nanoTime() - startNanos) / 1000000000L).toInt
 
-  def isTimeUp: Boolean = getRemainingSeconds <= 0
+  def isTimeUp: Boolean = System.nanoTime() - endsAtNanos >= 0L
 
   def isRunning: Boolean = running
 
@@ -311,7 +326,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
             case TeleportOwnerBehind(distance, freezeDurationMs) =>
               if (target.tryFreeze(freezeDurationMs)) holdByServer(target)
               val owner = registry.get(projectile.ownerId)
-              if (owner != null) {
+              // The shot can outlive its owner, and the dead go nowhere
+              if (owner != null && !owner.isDead) {
                 val targetPos = target.getPosition
                 val (bdx, bdy) = target.getDirection match {
                   case Direction.Up    => (0, 1)
@@ -939,14 +955,17 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     if (spawned) flushAllInstancePlayers()
   }
 
-  private def syncTimer(): Unit = {
-    if (!running) return
-    val tickStart = System.nanoTime()
+  /**
+   * The end of the match, scheduled for the moment its time is up. The syncs below used to end it,
+   * the first to find the time up, and the one due at the deadline comes round only a few
+   * milliseconds after it: with the wall clock set back further than that during the match, it
+   * found a second left, and the match ran on for another ten with every countdown at 0:00.
+   */
+  private def endMatch(): Unit = if (running) server.endGame(gameId)
 
-    if (isTimeUp) {
-      server.endGame(gameId)
-      return
-    }
+  private def syncTimer(): Unit = {
+    if (!running || isTimeUp) return
+    val tickStart = System.nanoTime()
 
     val zeroUUID = new UUID(0L, 0L)
     val packet = new GameEventPacket(

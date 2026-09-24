@@ -964,6 +964,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     val now = System.currentTimeMillis()
     if (now - lastAbilityTime.get() < abilityDef.cooldownMs) return
 
+    // Rooted, we attack but go nowhere: the server applies no step, blink or dash while a root
+    // lasts, and says nothing when a rooted client blinks anyway — so ours showed the blink, and
+    // the server had us where we were. Refused here, the cooldown isn't spent on it.
+    abilityDef.castBehavior match {
+      case _: DashBuff | _: TeleportCast if isRooted => return
+      case _ =>
+    }
+
     // A trap has to have somewhere to land. With nowhere — aimed into a wall from inside one —
     // nothing is cast and the cooldown is not spent, so the cell is picked before anything else
     // happens. The server picks it the same way (TrapPlacement), from its own copy of where we
@@ -1002,12 +1010,16 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           swoopStartX = pos.getX.toFloat
           swoopStartY = pos.getY.toFloat
           val world = currentWorld.get()
+          // Not over the opening divider: the dash takes the farthest open cell along its line,
+          // the far side of the wall is open ground, and the server refuses every step there
+          val divider = world.divider
           var bestX = swoopStartX
           var bestY = swoopStartY
           for (step <- 1 to clampedDist.toInt) {
             val testX = Math.max(0, Math.min(world.width - 1, (swoopStartX + ndx * step).toInt))
             val testY = Math.max(0, Math.min(world.height - 1, (swoopStartY + ndy * step).toInt))
-            if (world.isWalkable(testX, testY)) {
+            if (world.isWalkable(testX, testY) &&
+                (divider == null || !divider.stops(pos.getX, pos.getY, testX, testY))) {
               bestX = testX.toFloat
               bestY = testY.toFloat
             }
@@ -2312,6 +2324,8 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     player.setCharacterId(packet.getCharacterId)
     player.setTeamId(packet.getTeamId)
     players.put(player.getId, player)
+    // In the match, whatever we last heard: their updates count again
+    departedPlayers.remove(player.getId)
 
     println(s"GameClient: Player joined - ${player.getId.toString.substring(0, 8)} ('${player.getName}') at ${player.getPosition} with health ${player.getHealth} team=${packet.getTeamId}")
   }
@@ -2434,6 +2448,10 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         ))
       }
     } else {
+      // Someone who has left the match. Updates come over UDP and the leave over TCP, so one sent
+      // before the leave can arrive after it; taken, it brought them back as a player called
+      // "Player" standing where they left, for good, since no second leave would come for them.
+      if (departedPlayers.containsKey(playerId)) return
       player = new Player(playerId, "Player", packet.getPosition, packet.getColorRGB, packet.getHealth)
       player.setCharacterId(packet.getCharacterId)
       player.setChargeLevel(packet.getChargeLevel)
@@ -2482,9 +2500,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     }
 
     // A star lands on the cell the server will check it against (Teleport), so it can't show a
-    // teleport the server then undoes. Nowhere to go keeps the star.
+    // teleport the server then undoes. Nowhere to go keeps the star, and so does being held: a
+    // freeze or a root keeps us where we are, a star's jump as much as a step.
     var starTarget: Position = null
     if (itemTypeId == ItemType.Star.id) {
+      if (isFrozen || isRooted) return
       val pos = localPosition.get()
       starTarget = Teleport.starTarget(currentWorld.get(), pos.getX, pos.getY, mouseWorldX, mouseWorldY).orNull
       if (starTarget == null) {

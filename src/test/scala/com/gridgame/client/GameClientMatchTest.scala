@@ -136,6 +136,30 @@ class GameClientMatchTest {
     assertTrue(Teleport.isValidStarTarget(WorldData.createEmpty(60, 60), 10, 10, use.getX, use.getY))
   }
 
+  @Test def aPlayerWhoLeftStaysGoneWhenALateUpdateAboutThemArrives(): Unit = {
+    // Updates come over UDP and a leave over TCP, so one sent before the leave can arrive after
+    // it. It used to bring them back: a player called "Player", standing where they left, for the
+    // rest of the match, since no second leave would ever come for them
+    t.startMatch(spawn = (5, 5))
+    val other = UUID.randomUUID()
+    t.join(other, 9, 9)
+    t.leave(other)
+    t.update(other, 10, 9)
+    assertFalse(c.getPlayers.containsKey(other))
+    assertTrue("still listed as having left", c.playerLeftMatch(other))
+  }
+
+  @Test def aPlayerTheServerSaysIsBackIsBack(): Unit = {
+    t.startMatch(spawn = (5, 5))
+    val other = UUID.randomUUID()
+    t.join(other, 9, 9)
+    t.leave(other)
+    t.join(other, 12, 9)
+    t.update(other, 13, 9)
+    assertEquals(new Position(13, 9), c.getPlayers.get(other).getPosition)
+    assertFalse(c.playerLeftMatch(other))
+  }
+
   @Test def theTimerCountsDownFromTheServersClock(): Unit = {
     t.startMatch(spawn = (5, 5))
     t.gameEvent(GameEvent.TIME_SYNC, remaining = 95)

@@ -218,19 +218,29 @@ class RankedQueue(server: GameServer) {
     }
   }
 
-  private def checkQueue(): Unit = {
+  /**
+   * Is this queued player still free to be put in a match: connected, and in no lobby? Entering a
+   * lobby takes a player out of the queue (LobbyHandler), but the matchmaker works from a snapshot,
+   * and a player it took from one lobby into another was left behind in the first as a member who
+   * would never come back, holding a seat and — as its host — the lobby itself.
+   */
+  private def stillWaiting(e: QueueEntry): Boolean =
+    server.getConnectedPlayer(e.playerId) != null && server.lobbyManager.getPlayerLobby(e.playerId) == null
+
+  /** One matchmaking pass. Runs every five seconds once started; tests call it themselves, on a
+    * clock of their own, so a minute's wait takes no time. */
+  private[server] def checkQueue(now: Long = System.currentTimeMillis()): Unit = {
     try {
-      checkFfaQueue()
-      checkDuelQueue()
-      checkTeamsQueue()
+      checkFfaQueue(now)
+      checkDuelQueue(now)
+      checkTeamsQueue(now)
     } catch {
       case e: Exception =>
         System.err.println(s"RankedQueue: Error in checkQueue: ${e.getMessage}")
     }
   }
 
-  private def checkFfaQueue(): Unit = {
-    val now = System.currentTimeMillis()
+  private def checkFfaQueue(now: Long): Unit = {
     val snapshot = queue.asScala.toSeq
     val queueSize = snapshot.size
 
@@ -252,8 +262,7 @@ class RankedQueue(server: GameServer) {
     }
   }
 
-  private def checkDuelQueue(): Unit = {
-    val now = System.currentTimeMillis()
+  private def checkDuelQueue(now: Long): Unit = {
     val snapshot = duelQueue.asScala.toSeq
 
     if (snapshot.size >= 2) {
@@ -292,8 +301,7 @@ class RankedQueue(server: GameServer) {
     }
   }
 
-  private def checkTeamsQueue(): Unit = {
-    val now = System.currentTimeMillis()
+  private def checkTeamsQueue(now: Long): Unit = {
     val snapshot = teamsQueue.asScala.toSeq
     val queueSize = snapshot.size
 
@@ -318,8 +326,8 @@ class RankedQueue(server: GameServer) {
   }
 
   private def startTeamsMatch(entries: Seq[QueueEntry]): Unit = {
-    // Filter to entries whose players are still connected — drop the rest.
-    val connected = entries.filter(e => server.getConnectedPlayer(e.playerId) != null)
+    // Only those still waiting — connected, and in no lobby. The rest are dropped.
+    val connected = entries.filter(stillWaiting)
 
     // Remove all entries from the teams queue up front; restore `connected` on failure.
     entries.foreach { entry =>
@@ -536,8 +544,8 @@ class RankedQueue(server: GameServer) {
   }
 
   private def startRankedMatch(entries: Seq[QueueEntry]): Unit = {
-    // Filter to entries whose players are still connected — drop the rest.
-    val connected = entries.filter(e => server.getConnectedPlayer(e.playerId) != null)
+    // Only those still waiting — connected, and in no lobby. The rest are dropped.
+    val connected = entries.filter(stillWaiting)
 
     // Remove all entries (connected + disconnected) from the queue up front;
     // we'll restore `connected` if anything fails before the match actually starts.
@@ -735,8 +743,8 @@ class RankedQueue(server: GameServer) {
   }
 
   private def startDuelMatch(entries: Seq[QueueEntry]): Unit = {
-    // Filter to entries whose players are still connected — drop the rest.
-    val connected = entries.filter(e => server.getConnectedPlayer(e.playerId) != null)
+    // Only those still waiting — connected, and in no lobby. The rest are dropped.
+    val connected = entries.filter(stillWaiting)
 
     // Remove all entries from the duel queue up front; restore `connected` on failure.
     entries.foreach { entry =>

@@ -5,6 +5,7 @@ import com.gridgame.common.model.BarrierCast
 import com.gridgame.common.model.CharacterDef
 import com.gridgame.common.model.DashBuff
 import com.gridgame.common.model.Direction
+import com.gridgame.common.model.GroundSlam
 import com.gridgame.common.model.ItemType
 import com.gridgame.common.model.PhaseShiftBuff
 import com.gridgame.common.model.Player
@@ -80,7 +81,16 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       return false
     }
 
-    // Validate projectile velocity: reject NaN, Infinite, or excessive magnitude
+    // Phased, a player is untouchable and fires nothing: their client fires nothing while phased,
+    // and the server already takes no trap and no barrier from them. A phase's last moments are
+    // let through, since the client's ends a trip across the wire before the server's does and
+    // its first shot after it can land here in them.
+    if (player.getPhasedUntil - System.currentTimeMillis() > PHASED_SHOT_GRACE_MS) {
+      Metrics.validationFailed.add(1L, Attrs.VfProjectileFireRate)
+      return false
+    }
+
+    // Validate projectile velocity: reject NaN or Infinite
     val pdx = packet.getDx
     val pdy = packet.getDy
     if (java.lang.Float.isNaN(pdx) || java.lang.Float.isNaN(pdy) ||
@@ -89,11 +99,21 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       Metrics.validationFailed.add(1L, Attrs.VfProjectileVelocity)
       return false
     }
-    if (pdx * pdx + pdy * pdy > 2.0f) {
-      System.err.println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} projectile velocity too large")
-      Metrics.validationFailed.add(1L, Attrs.VfProjectileVelocity)
-      return false
-    }
+    // The heading only says which way: a projectile flies at its own def's speed. Taken as a
+    // velocity, (1, 1) flew 41% faster than it should, and (0, 0) never moved at all — it never
+    // reached the end of its range either, so it sat where it was fired for the rest of the match,
+    // hitting whoever walked into it. A slam is thrown down on its caster, whatever it is sent with.
+    val (headingX, headingY) =
+      if (castsSlam(player, packet.getAttackSlot)) (0f, 0f)
+      else {
+        val len = Math.sqrt(pdx * pdx + pdy * pdy).toFloat
+        if (len < MIN_HEADING) {
+          System.err.println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} projectile has no heading")
+          Metrics.validationFailed.add(1L, Attrs.VfProjectileVelocity)
+          return false
+        }
+        (pdx / len, pdy / len)
+      }
 
     // Nobody attacks during a free-for-all's opening ceasefire (MatchOpening) — the primary and
     // its burst as much as an ability. Judged before the fire-rate clock, so a refused attack
@@ -115,15 +135,16 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
       broadcastState(player)
     }
 
-    // Spawn projectile at player's position with velocity from packet
+    // Spawn projectile at player's position along the heading from the packet, charged as far as
+    // the time the player has had allows
     val projectile = projectileManager.spawnProjectile(
       playerId,
       packet.getX.toInt,
       packet.getY.toInt,
-      packet.getDx,
-      packet.getDy,
+      headingX,
+      headingY,
       packet.getColorRGB,
-      packet.getChargeLevel,
+      validator.chargeAllowed(playerId, packet.getAttackSlot, packet.getChargeLevel),
       packet.getProjectileType
     )
 
@@ -137,6 +158,23 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     }
 
     false // Don't auto-broadcast; we handled it
+  }
+
+  /** How long before a phase ends a shot is let through anyway (see handleProjectileUpdate). */
+  private val PHASED_SHOT_GRACE_MS = 250L
+
+  /** A heading shorter than this says no direction at all. The client sends unit headings. */
+  private val MIN_HEADING = 0.5f
+
+  /** Does the attack in this slot throw its projectile down on the caster as a ground slam? */
+  private def castsSlam(player: Player, slot: Int): Boolean = {
+    val charDef = CharacterDef.get(player.getCharacterId)
+    val ability = slot match {
+      case AttackSlot.Q => charDef.qAbility
+      case AttackSlot.E => charDef.eAbility
+      case _ => null
+    }
+    ability != null && ability.castBehavior.isInstanceOf[GroundSlam]
   }
 
   /**
@@ -237,19 +275,11 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     if (registry.contains(playerId)) {
       println(s"Player rejoining: $playerId")
       val existing = registry.get(playerId)
-      // Validate rejoin position — only accept if in-bounds and walkable
-      val rejoinPos = packet.getPosition
-      val world = if (instance != null) instance.world else server.getWorld
-      val here = existing.getPosition
-      if (world != null && rejoinPos.getX >= 0 && rejoinPos.getX < world.width &&
-          rejoinPos.getY >= 0 && rejoinPos.getY < world.height && world.isWalkable(rejoinPos.getX, rejoinPos.getY) &&
-          (world.divider == null || !world.divider.stops(here.getX, here.getY, rejoinPos.getX, rejoinPos.getY))) {
-        existing.setPosition(rejoinPos)
-      } // else keep server-side position (prevents teleport-on-rejoin, and a rejoin across the divider)
-      existing.setColorRGB(packet.getColorRGB)
-      existing.setName(packet.getPlayerName)
-      existing.setHealth(existing.getMaxHealth)
-      existing.setTcpChannel(tcpChannel)
+      // A client that has just (re)connected knows nothing of the match, so nothing it says about
+      // itself is taken: where the player is and how much health they have stay the server's, and
+      // it is told both below. It used to be put wherever it said and healed to full — a teleport
+      // and a heal, a revival for the dead, whenever a client cared to send a join.
+      registry.rebind(existing, tcpChannel)
       existing.updateHeartbeat()
 
       // Send existing players, items, and tile modifications to rejoining player
@@ -336,7 +366,13 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     var steppedFromX = -1
     var steppedFromY = -1
     val accepted = player.synchronized {
-      if (packet.getServerMoves != player.getServerMoves) {
+      if (player.isDead) {
+        // A client goes on sending steps until it hears it has died. Taken, the body walked on
+        // across everyone else's screens, picking up whatever it passed — which the respawn then
+        // threw away, gone from the ground for everyone. The respawn is a server move, so nothing
+        // sent from this life is taken after it either.
+        false
+      } else if (packet.getServerMoves != player.getServerMoves) {
         // Sent before the client knew the server had moved it (a pull, a knockback, a respawn):
         // it would only drag the player back to where they were
         false
@@ -620,7 +656,11 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     if (w == null) return false
     val moved = player.synchronized {
       val pos = player.getPosition
-      if (validator.isStaleMovement(player.getId, seqNum)) {
+      if (player.isFrozen || player.isRooted) {
+        // A freeze or a root holds the player where the server has them — a step, a blink and a
+        // dash are all held by it, and a star was the one way out
+        false
+      } else if (validator.isStaleMovement(player.getId, seqNum)) {
         // An update the client sent after using the star is already applied, so it's past here
         true
       } else if (!Teleport.isValidStarTarget(w, pos.getX, pos.getY, targetX, targetY)) {
@@ -701,6 +741,8 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
     import scala.jdk.CollectionConverters._
     registry.getAll.asScala.foreach { existing =>
       if (!existing.getId.equals(joiningPlayerId)) {
+        // With their team: sent without it, every other player came back to a rejoining client
+        // as team 0, allies drawn as enemies, until each of them next moved
         val packet = new PlayerJoinPacket(
           server.getNextSequenceNumber,
           existing.getId,
@@ -708,7 +750,8 @@ class ClientHandler(registry: ClientRegistry, server: GameServer, projectileMana
           existing.getColorRGB,
           existing.getName,
           existing.getHealth,
-          existing.getCharacterId
+          existing.getCharacterId,
+          existing.getTeamId
         )
         server.sendPacketToPlayer(packet, joiningPlayer)
       }

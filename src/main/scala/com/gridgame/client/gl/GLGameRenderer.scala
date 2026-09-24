@@ -3115,8 +3115,23 @@ class GLGameRenderer(val client: GameClient) {
       if (_flyingCount < _flying.length) { _flying(_flyingCount) = proj; _flyingCount += 1 }
     } else {
       // Reuse plr/plg/plb from intToRGB call above (same proj.colorRGB)
+      anchorToThrower(proj)
       GLProjectileRenderers.draw(proj, sx, sy, shapeBatch, animationTick, plr, plg, plb)
     }
+  }
+
+  /** A pull is drawn tied back to whoever threw it (GLProjectileRenderers' TETHERS): tell it where
+    * they are standing, as they are drawn — the camera's position for us, the smoothed one for
+    * anyone else. Looked up only for the types that are tethered. */
+  private def anchorToThrower(proj: Projectile): Unit = {
+    if (!GLProjectileRenderers.wantsAnchor(proj.projectileType)) { GLProjectileRenderers.clearAnchor(); return }
+    val owner = proj.ownerId
+    if (owner != null && owner.equals(client.getLocalPlayerId)) {
+      if (client.getIsDead) GLProjectileRenderers.clearAnchor()
+      else GLProjectileRenderers.setAnchor(camera.visualX.toFloat, camera.visualY.toFloat)
+    } else if (owner != null && entityCollector.getRemoteVisualPos(owner)) {
+      GLProjectileRenderers.setAnchor(entityCollector.lastRVX.toFloat, entityCollector.lastRVY.toFloat)
+    } else GLProjectileRenderers.clearAnchor()
   }
 
   /** A projectile's light: its own colour, charge-reactive and distance-boosted, and a second one
@@ -3238,6 +3253,7 @@ class GLGameRenderer(val client: GameClient) {
       val sx = worldToScreenX(px, py).toFloat
       val sy = worldToScreenY(px, py).toFloat - GLProjectileRenderers.flyLift(proj, animationTick)
       intToRGB(proj.colorRGB)
+      anchorToThrower(proj)
       GLProjectileRenderers.draw(proj, sx, sy, shapeBatch, animationTick, _rgb_r, _rgb_g, _rgb_b)
       i += 1
     }
@@ -3257,6 +3273,7 @@ class GLGameRenderer(val client: GameClient) {
     val sy = worldToScreenY(px, py).toFloat - lift
     intToRGB(proj.colorRGB)
     beginShapes()
+    anchorToThrower(proj)
     GLProjectileRenderers.drawAbsorbed(proj, sx, sy, shapeBatch, animationTick, Math.max(0f, t),
       fp.hitTerrain, fp.tileColor, _rgb_r, _rgb_g, _rgb_b)
   }

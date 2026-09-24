@@ -4,9 +4,11 @@ import com.gridgame.common.Constants
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 import io.netty.buffer.ByteBuf
+import io.netty.buffer.Unpooled
 import io.netty.channel.embedded.EmbeddedChannel
 import io.netty.channel.socket.DatagramPacket
 
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.SocketAddress
 import java.util.UUID
@@ -38,6 +40,48 @@ object ServerTestKit {
   class PeerChannel(host: String = "127.0.0.1") extends EmbeddedChannel() {
     private val peer = new InetSocketAddress(host, freshPort())
     override protected def remoteAddress0(): SocketAddress = peer
+  }
+
+  /**
+   * A client that has logged in: its TCP channel runs the server's real handler, and it holds a
+   * session token and the address it logged in from, as a login leaves them. What it sends goes
+   * in through that handler, signed and numbered as a real client's is.
+   */
+  class TestSession(val playerId: UUID = UUID.randomUUID()) {
+    val channel = new PeerChannel()
+    channel.pipeline().addLast(new GameServerTcpHandler(server))
+    val token: Array[Byte] = server.generateSessionToken(playerId, channel)
+    server.playerTcpAddresses.put(playerId, InetAddress.getByName("127.0.0.1"))
+    private var seq = 0
+
+    def nextSeq(): Int = { seq += 1; seq }
+
+    /** Send over TCP as the client does: its own count, signed with its token. */
+    def send(make: Int => Packet): Unit = sendSigned(make(nextSeq()), token)
+
+    def sendSigned(p: Packet, key: Array[Byte]): Unit =
+      channel.writeInbound(Unpooled.wrappedBuffer(PacketSigner.sign(p.serialize(), key)))
+
+    /** The join every client sends as soon as it has logged in. */
+    def join(name: String = "p"): Unit =
+      send(n => new PlayerJoinPacket(n, playerId, new Position(1, 1), 0xFF00FF00, name))
+
+    def lobbyAction(action: Byte, lobbyId: Short = 0): Unit =
+      send(n => new LobbyActionPacket(n, playerId, Packet.getCurrentTimestamp, action, lobbyId, 0.toByte,
+        5.toByte, 0.toByte, 8.toByte, 0.toByte, "mine"))
+
+    def createLobby(): Unit = lobbyAction(LobbyAction.CREATE)
+
+    def queueRanked(mode: Byte, charId: Byte = 0): Unit =
+      send(n => new RankedQueuePacket(n, playerId, RankedQueueAction.QUEUE_JOIN, charId, mode))
+
+    /** What the server wrote to this client since the last call. */
+    def received(): Seq[Packet] = {
+      channel.runPendingTasks()
+      Iterator.continually(channel.readOutbound[ByteBuf]()).takeWhile(_ != null).map(decode).toSeq
+    }
+
+    def lobby: Lobby = server.lobbyManager.getPlayerLobby(playerId)
   }
 }
 
@@ -204,6 +248,32 @@ class TestMatch(val world: WorldData = WorldData.createEmpty(60, 60), gameMode: 
       new PlayerJoinPacket(seq, p.getId, Packet.getCurrentTimestamp, pos, p.getColorRGB, p.getName,
         p.getHealth, p.getCharacterId, p.getTeamId),
       tcp(p.getId), null)
+  }
+
+  /**
+   * Put these logged-in players into this match, as starting a lobby does: members of an in-game
+   * lobby (the first its host), each registered in the match on their own connection, at a cell of
+   * their own. With `teams`, the lobby plays Teams and each is dealt the team given for them.
+   */
+  def seat(sessions: Seq[ServerTestKit.TestSession], teams: Seq[Byte] = Nil): Lobby = {
+    val lobby = server.lobbyManager.createLobby(sessions.head.playerId, "match", 0, 5, 8)
+    sessions.tail.foreach { s => lobby.addPlayer(s.playerId); server.lobbyManager.setPlayerLobby(s.playerId, lobby.id) }
+    if (teams.nonEmpty) lobby.gameMode = 1
+    lobby.gameInstance = instance
+    lobby.status = LobbyStatus.IN_GAME
+    sessions.zipWithIndex.foreach { case (s, i) =>
+      val p = new Player(s.playerId, s"p$i", new Position(10 + 5 * i, 10), 0xFF00FF00)
+      p.setCharacterId(CharacterId.Gladiator.id)
+      p.setHealth(p.getMaxHealth)
+      p.setTcpChannel(s.channel)
+      if (teams.nonEmpty) {
+        p.setTeamId(teams(i))
+        instance.teamAssignments.put(s.playerId, teams(i))
+      }
+      instance.registry.add(p)
+      instance.killTracker.registerPlayer(s.playerId)
+    }
+    lobby
   }
 
   def trapEvents(packets: Seq[Packet], action: Byte): Seq[TrapPacket] =

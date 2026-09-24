@@ -51,6 +51,24 @@ class GameClientOpeningTest {
     assertEquals("a diagonal into it slides along it", (MID - 1, 31), t.at)
   }
 
+  @Test def aDashStopsShortOfIt(): Unit = {
+    // A dash took the farthest open cell along its line, and the far side of the wall is open
+    // ground: the client dashed over it, the server refused every step past it, and the player
+    // snapped back
+    val (dasher, slot, reach) = CharacterDef.all.iterator.flatMap { d =>
+      Seq((0, d.qAbility), (1, d.eAbility)).collectFirst { case (s, a) if a.castBehavior.isInstanceOf[DashBuff] =>
+        (d.id.id, s, a.castBehavior.asInstanceOf[DashBuff].maxDistance)
+      }
+    }.next()
+    c.selectedCharacterId = dasher
+    t.startMatch(spawn = (MID - 3, 30), team = 1)
+    t.opening(30000)
+    c.setMouseWorldPosition((MID + reach).toDouble, 30.0)
+    c.shootAbility(slot)
+    assertTrue("it dashed", c.isSwooping)
+    assertEquals("to the last cell on our side", MID - 1f, c.getSwoopTargetX, 0f)
+  }
+
   @Test def itComesDownWhenTheServerSaysSo(): Unit = {
     t.startMatch(spawn = (MID - 1, 30), team = 1)
     t.opening(30000)

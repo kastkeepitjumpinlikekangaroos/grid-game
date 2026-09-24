@@ -22,6 +22,12 @@ import javax.imageio.ImageIO
  * Each cell draws one projectile over three terrain bands (dark stone, grass, sand),
  * because a projectile that reads well on one ground can vanish on another. Frames are
  * emitted at several animation ticks so motion-driven shapes can be judged too.
+ *
+ *   ... -- out/dir --focus=LIGHTNING,SOUL_BOLT
+ *
+ * writes focus_<NAME>.png instead: one sheet per type, four headings across and four moments
+ * down, which is the loop for anything drawn along or behind its flight path (tails, tethers,
+ * a bolt's channel) — the contact sheets only ever fly one way.
  */
 object ProjectileGallery {
 
@@ -65,12 +71,31 @@ object ProjectileGallery {
 
     val colorShader = new ShaderProgram(ShaderProgram.COLOR_VERT, ShaderProgram.COLOR_FRAG)
     val sb = new ShapeBatch(colorShader)
+    // The scene target's pixels per unit, as GLGameRenderer sets it: ovals take their segment
+    // counts from it, and left at 1 every curve in the sheet was cruder than in the game
+    sb.pixelsPerUnit = Zoom
     val post = new PostProcessor(W, H)
     post.bloomThreshold = 0.80f
     post.bloomStrength = 0.22f
     post.vignetteStrength = 0f
 
     val types = allTypes
+
+    args.find(_.startsWith("--focus=")).foreach { a =>
+      val byName = types.toMap
+      a.substring("--focus=".length).split(",").map(_.trim).filter(_.nonEmpty).foreach { n =>
+        byName.get(n) match {
+          case Some(id) =>
+            renderFocus(sb, post, id)
+            ImageIO.write(readback(), "png", new File(outDir, s"focus_$n.png"))
+          case None => System.err.println(s"no projectile type named $n")
+        }
+      }
+      println(s"wrote focus sheets to ${outDir.getAbsolutePath}")
+      glfwDestroyWindow(win)
+      glfwTerminate()
+      return
+    }
     val pages = (types.size + PerPage - 1) / PerPage
     val ticks = Seq(0, 9, 18, 27)
 
@@ -148,6 +173,55 @@ object ProjectileGallery {
       else GLProjectileRenderers.drawGeneric(p, sx, sy, sb, tick, 0.55f, 0.7f, 0.95f)
       i += 1
     }
+    sb.end()
+    post.endScene(W, H)
+  }
+
+  // Screen-cardinal headings in world space (right, left, up, down on screen), and how far the
+  // projectile has flown down each row of a focus sheet, with the tick it is drawn at
+  private val FocusHeadings = Array((0.7071f, -0.7071f), (-0.7071f, 0.7071f), (-0.7071f, -0.7071f), (0.7071f, 0.7071f))
+  private val FocusFlown = Array(1.5f, 3f, 4.5f, 6f)
+  private val FocusTicks = Array(0, 7, 14, 21)
+
+  /**
+   * One type four ways: columns fly right, left, up and down the screen, rows have flown further
+   * at later ticks. Each cell is clipped to itself, since a tail or a tether can run further
+   * than a cell, and the head is set off toward where it is heading so what trails it has room.
+   */
+  private def renderFocus(sb: ShapeBatch, post: PostProcessor, id: Byte): Unit = {
+    post.animationTime = 0f
+    post.beginScene()
+    sb.begin(Matrix4.orthographic(0f, W / Zoom, H / Zoom, 0f))
+    var cell = 0
+    while (cell < PerPage) {
+      drawGround(sb, ((cell % Cols) * CellW).toFloat, ((cell / Cols) * CellH).toFloat)
+      cell += 1
+    }
+    sb.flush()
+    glEnable(GL_SCISSOR_TEST)
+    var row = 0
+    while (row < Rows) {
+      var col = 0
+      while (col < Cols) {
+        val (hx, hy) = FocusHeadings(col)
+        val p = new Projectile(row * 11 + col * 3 + 5, UUID.randomUUID(), 10f, 10f, hx, hy, 0x88AAFF, 0, id)
+        var guard = 0
+        while (p.getDistanceTraveled < FocusFlown(row) && guard < 200) { p.moveStep(0.25f); guard += 1 }
+        // Head set off from the middle toward its heading, by half the screen length it has flown
+        val fx = (p.getX - 10f) - (p.getY - 10f); val fy = (p.getX - 10f) + (p.getY - 10f)
+        val sx = col * CellW + CellW * 0.5f + fx * 10f
+        val sy = row * CellH + CellH * 0.55f + fy * 5f
+        glScissor(Math.round(col * CellW * Zoom), Math.round(H - (row + 1) * CellH * Zoom),
+          Math.round(CellW * Zoom), Math.round(CellH * Zoom))
+        val r = GLProjectileRenderers.getRenderer(id)
+        if (r != null) r(p, sx, sy, sb, FocusTicks(row))
+        else GLProjectileRenderers.drawGeneric(p, sx, sy, sb, FocusTicks(row), 0.55f, 0.7f, 0.95f)
+        sb.flush()
+        col += 1
+      }
+      row += 1
+    }
+    glDisable(GL_SCISSOR_TEST)
     sb.end()
     post.endScene(W, H)
   }

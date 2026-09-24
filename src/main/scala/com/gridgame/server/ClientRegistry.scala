@@ -23,6 +23,16 @@ class ClientRegistry {
     if (isNew) Metrics.characterPlayed.add(1L, Attrs.character(player.getCharacterId))
   }
 
+  /** The player's client has come back on another connection: it is theirs now, so a disconnect of
+    * it takes them out, and the old one is forgotten. */
+  def rebind(player: Player, channel: Channel): Unit = {
+    if (channel == null) return
+    val old = player.getTcpChannel
+    if (old != null) channelToPlayer.remove(old.asInstanceOf[Channel], player.getId)
+    player.setTcpChannel(channel)
+    channelToPlayer.put(channel, player.getId)
+  }
+
   def remove(playerId: UUID): Unit = {
     val player = players.remove(playerId)
     if (player != null) {

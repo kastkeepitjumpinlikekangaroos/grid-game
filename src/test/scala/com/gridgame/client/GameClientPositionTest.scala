@@ -85,6 +85,58 @@ class GameClientPositionTest {
     assertEquals((10, 10), t.at)
   }
 
+  // --- Held: a root lets us attack, but moves us nowhere ---
+
+  @Test def rootedWeDoNotBlink(): Unit = {
+    // The server applies no step, blink or dash while a root lasts, and said nothing when a rooted
+    // client blinked anyway: the client showed the blink, and the server had it where it was
+    c.selectedCharacterId = CharacterId.Wizard.id // E: blink 6
+    t.startMatch(spawn = (10, 10))
+    t.update(t.id, 10, 10, flags = 0x40)
+    t.clearSent()
+    c.setMouseWorldPosition(25.0, 10.0)
+    c.shootAbility(1)
+    assertEquals((10, 10), t.at)
+    assertEquals("and it isn't spent", 0f, c.getECooldownFraction, 0.001f)
+    assertTrue(t.sentUpdates.isEmpty)
+  }
+
+  @Test def rootedWeDoNotDash(): Unit = {
+    val (dasher, slot) = CharacterDef.all.iterator.flatMap { d =>
+      Seq((0, d.qAbility), (1, d.eAbility)).collectFirst { case (s, a) if a.castBehavior.isInstanceOf[DashBuff] => (d.id.id, s) }
+    }.next()
+    c.selectedCharacterId = dasher
+    t.startMatch(spawn = (10, 10))
+    t.update(t.id, 10, 10, flags = 0x40)
+    c.setMouseWorldPosition(25.0, 10.0)
+    c.shootAbility(slot)
+    assertFalse(c.isSwooping)
+    assertEquals((10, 10), t.at)
+  }
+
+  @Test def rootedWeStillAttack(): Unit = {
+    c.selectedCharacterId = CharacterId.Soldier.id
+    t.startMatch(spawn = (10, 10))
+    t.update(t.id, 10, 10, flags = 0x40)
+    t.clearSent()
+    c.shootToward(1f, 0f)
+    assertEquals(1, t.sentSpawns.size)
+  }
+
+  @Test def heldWeKeepOurStar(): Unit = {
+    t.startMatch(spawn = (10, 10))
+    t.item(com.gridgame.common.protocol.ItemAction.INVENTORY, 9, ItemType.Star)
+    t.clearSent()
+    for (flags <- Seq(0x40, 0x04)) { // rooted, then frozen
+      t.update(t.id, 10, 10, flags = flags)
+      c.setMouseWorldPosition(20.0, 10.0)
+      c.useItem(ItemType.Star.id)
+      assertEquals((10, 10), t.at)
+      assertEquals(1, c.getItemCount(ItemType.Star.id))
+    }
+    assertTrue("nothing asked of the server", t.sent.isEmpty)
+  }
+
   @Test def wallsStopUsAndDiagonalsSlideAlongThem(): Unit = {
     val world = WorldData.createEmpty(30, 30)
     world.setTile(11, 10, Tile.Wall)

@@ -661,12 +661,22 @@ class ShapeBatch(val shader: ShaderProgram) {
     polyStroke(xs, ys, n, closed = false, w0, w1, r, g, b, a0, a1)
   }
 
+  /** An open polyline with its own width `ws(i)` and alpha `as(i)` at every point — a limb
+    * that swells and narrows, a rope that fades in from the hand that holds it — still one
+    * mitred band. A linear taper can only describe a cone. */
+  def strokePolylineVar(xs: Array[Float], ys: Array[Float], ws: Array[Float], as: Array[Float], n: Int,
+                        r: Float, g: Float, b: Float): Unit = {
+    if (n < 2) return
+    polyStroke(xs, ys, n, closed = false, 0f, 0f, r, g, b, 0f, 0f, ws, as)
+  }
+
   // Per-point mitre offsets for polyStroke, grown as needed
   private var _mitX = new Array[Float](32)
   private var _mitY = new Array[Float](32)
 
   private def polyStroke(xs: Array[Float], ys: Array[Float], n: Int, closed: Boolean,
-                         w0: Float, w1: Float, r: Float, g: Float, b: Float, a0: Float, a1: Float): Unit = {
+                         w0: Float, w1: Float, r: Float, g: Float, b: Float, a0: Float, a1: Float,
+                         ws: Array[Float] = null, as: Array[Float] = null): Unit = {
     if (_mitX.length < n) { _mitX = new Array[Float](n * 2); _mitY = new Array[Float](n * 2) }
     val last = n - 1
     val invLast = 1f / last
@@ -690,7 +700,7 @@ class ShapeBatch(val shader: ShaderProgram) {
       }
       if (!hasIn) { inX = outX; inY = outY }
       if (!hasOut) { outX = inX; outY = inY }
-      val hw = 0.5f * (if (closed) w0 else w0 + (w1 - w0) * i * invLast)
+      val hw = 0.5f * (if (ws != null) ws(i) else if (closed) w0 else w0 + (w1 - w0) * i * invLast)
       var mx = inX + outX; var my = inY + outY
       val ml = Math.sqrt(mx * mx + my * my).toFloat
       if (ml < 1e-4f) { mx = outX; my = outY } // a full turn back: square it off
@@ -708,8 +718,8 @@ class ShapeBatch(val shader: ShaderProgram) {
     i = 0
     while (i < segs) {
       val j = if (i == last) 0 else i + 1
-      val ai = if (closed) a0 else a0 + (a1 - a0) * i * invLast
-      val aj = if (closed) a0 else a0 + (a1 - a0) * j * invLast
+      val ai = if (as != null) as(i) else if (closed) a0 else a0 + (a1 - a0) * i * invLast
+      val aj = if (as != null) as(j) else if (closed) a0 else a0 + (a1 - a0) * j * invLast
       bandQuad(xs(i) - _mitX(i), ys(i) - _mitY(i), xs(i) + _mitX(i), ys(i) + _mitY(i),
         xs(j) - _mitX(j), ys(j) - _mitY(j), xs(j) + _mitX(j), ys(j) + _mitY(j), r, g, b, ai, aj)
       i += 1

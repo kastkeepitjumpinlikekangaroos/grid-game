@@ -8,7 +8,28 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
+object RateLimiter {
+  /** Datagrams a second from one player: steps, charging and barrier updates, shots. */
+  val MAX_UDP_PER_SECOND = 240
+  /** TCP packets a second from one player. */
+  val MAX_TCP_PER_SECOND = 40
+  /** Auth requests a second on a connection that hasn't logged in. */
+  val MAX_PRE_AUTH_PER_SECOND = 5
+  /** Chat lines a second from one player. */
+  val MAX_CHAT_PER_SECOND = 5
+  /** New connections a minute from one address. */
+  val MAX_CONNECTIONS_PER_MINUTE = 5
+  /** Failed logins from one address before it has to wait. */
+  val MAX_AUTH_FAILURES = 5
+  /** The first wait, doubling for each further batch of failures... */
+  val BASE_COOLDOWN_MS = 30000L
+  /** ...up to an hour. */
+  val MAX_COOLDOWN_MS = 3600000L
+}
+
 class RateLimiter {
+  import RateLimiter._
+
   // Per-client packet rate limiting (sliding window)
   private val udpCounts = new ConcurrentHashMap[UUID, WindowCounter]()
   private val tcpCounts = new ConcurrentHashMap[UUID, WindowCounter]()
@@ -22,14 +43,6 @@ class RateLimiter {
 
   // Per-channel rate limiting for pre-auth packets (before player ID is known)
   private val channelCounts = new ConcurrentHashMap[Channel, WindowCounter]()
-  private val MAX_PRE_AUTH_PER_SECOND = 5
-
-  private val MAX_UDP_PER_SECOND = 240
-  private val MAX_TCP_PER_SECOND = 40
-  private val MAX_CONNECTIONS_PER_MINUTE = 5
-  private val MAX_AUTH_FAILURES = 5
-  private val BASE_COOLDOWN_MS = 30000L  // 30s base, doubles each batch of failures
-  private val MAX_COOLDOWN_MS = 3600000L // 1 hour cap
 
   def allowPacket(clientId: UUID, isUdp: Boolean): Boolean = {
     if (isUdp) {
@@ -53,7 +66,7 @@ class RateLimiter {
 
   def allowChat(clientId: UUID): Boolean = {
     val counter = chatCounts.computeIfAbsent(clientId, _ => new WindowCounter())
-    counter.allowAndIncrement(5, 1000L)
+    counter.allowAndIncrement(MAX_CHAT_PER_SECOND, 1000L)
   }
 
   def allowConnection(address: InetAddress): Boolean = {

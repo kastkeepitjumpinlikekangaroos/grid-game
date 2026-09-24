@@ -218,6 +218,13 @@ class Projectile(
 
   private var distanceTraveled: Float = 0f
 
+  /** Where this copy of it started: on the client, where it was fired from (its SPAWN) or first
+    * seen (a MOVE that overtook the SPAWN). The client never flies a projectile itself — it only
+    * moves it to where the server says — so `distanceTraveled` stays 0 there; a renderer that
+    * needs to know how far one has come, or where a rope runs back to, measures from here. */
+  val originX: Float = x
+  val originY: Float = y
+
   val speedMultiplier: Float = ProjectileDef.get(projectileType).effectiveSpeed(chargeLevel)
 
   // Pierce tracking: set of player IDs already hit (prevents double-hits)

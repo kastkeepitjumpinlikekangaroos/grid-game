@@ -105,6 +105,24 @@ class BotMovementTest {
     } finally bots.stop()
   }
 
+  @Test def aRootedBotNeitherBlinksNorDashes(): Unit = {
+    // A root holds a player against every way of moving, a blink and a dash as much as a step; a
+    // bot moved itself for either, root or no root
+    val dasher = CharacterDef.all.find(d => Seq(d.qAbility, d.eAbility).exists(_.castBehavior.isInstanceOf[DashBuff])).get.id
+    for (character <- Seq(CharacterId.Wizard, dasher)) { // the Wizard's E is a blink
+      val m = new TestMatch(WorldData.createEmpty(80, 20))
+      val bot = m.join(character, 10, 10)
+      m.join(CharacterId.Spaceman, 20, 10)
+      val bots = new BotController(m.instance)
+      try {
+        bots.addBotId(bot.getId)
+        assertTrue(bot.tryRoot(5000))
+        bots.tick(later)
+        assertEquals(s"$character stays put", (10, 10), m.at(bot))
+      } finally bots.stop()
+    }
+  }
+
   @Test def meleeClosesInRangedBacksOffAndASkirmisherHoldsItsGround(): Unit = {
     assertTrue("melee closes in", distanceAfterAStep(CharacterId.Barbarian) < 1.5)
     assertTrue("ranged backs off", distanceAfterAStep(CharacterId.Soldier) > 2.5)

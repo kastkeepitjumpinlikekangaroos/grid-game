@@ -85,6 +85,39 @@ class PositionAuthorityTest {
     assertEquals((10, 10), m.at(p))
   }
 
+  @Test def theDeadDoNotMove(): Unit = {
+    // A client goes on sending steps until it hears it has died. They were taken: the body walked
+    // on across everyone else's screens
+    val p = m.join(CharacterId.Gladiator, 10, 10)
+    assertTrue(m.move(p, 10, 10))
+    p.damage(p.getHealth)
+    m.clearSent()
+    assertFalse(m.move(p, 11, 10))
+    assertEquals((10, 10), m.at(p))
+    assertTrue("and nobody is told it moved", m.updatesAbout(m.udpSent(p), p).isEmpty)
+  }
+
+  @Test def theDeadPickNothingUp(): Unit = {
+    // ...and picked up whatever they walked past, which the respawn then threw away: an item
+    // gone from the ground for everyone
+    val p = m.join(CharacterId.Gladiator, 10, 10)
+    val heart = new Item(9001, 11, 10, ItemType.Heart)
+    m.instance.itemManager.place(heart)
+    p.damage(p.getHealth)
+    m.move(p, 10, 10)
+    assertTrue("still on the ground", m.instance.itemManager.getAll.exists(_.id == heart.id))
+    assertFalse(m.hasItem(p, heart))
+  }
+
+  @Test def theRespawnedWalkOnFromTheirSpawn(): Unit = {
+    val p = m.join(CharacterId.Gladiator, 10, 10)
+    p.damage(p.getHealth)
+    m.instance.respawn(p.getId)
+    val (x, y) = m.at(p)
+    assertTrue(m.move(p, x + 1, y))
+    assertEquals((x + 1, y), m.at(p))
+  }
+
   @Test def aRejoinTellsTheClientTheCountSoFar(): Unit = {
     // A restarted client counts from zero; the server may be on 3
     val p = m.join(CharacterId.Gladiator, 10, 10)
@@ -94,6 +127,7 @@ class PositionAuthorityTest {
       "p", 100, p.getCharacterId), p.getTcpChannel.asInstanceOf[io.netty.channel.Channel], null)
     val told = serverMovesToldOverTcp(p)
     assertEquals(3, told.last.getServerMoves)
-    assertEquals(new Position(12, 10), told.last.getPosition)
+    // Where the server has it, not the cell the join claimed (ReconnectTest)
+    assertEquals(new Position(10, 10), told.last.getPosition)
   }
 }

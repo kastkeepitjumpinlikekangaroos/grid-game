@@ -52,3 +52,16 @@ AUDIO_OFF = {"GRIDGAME_AUDIO": "off"}
     ("lobby_room_screen_test", "LobbyRoomScreenTest.scala"),
     ("scoreboard_screen_test", "ScoreboardScreenTest.scala"),
 ]]
+
+# The client's network handlers, fed through an EmbeddedChannel
+scala_junit_test(
+    name = "client_network_test",
+    srcs = ["ClientNetworkTest.scala"],
+    env = AUDIO_OFF,
+    suffixes = ["Test"],
+    deps = CLIENT_TEST_DEPS + [
+        "@maven//:io_netty_netty_buffer",
+        "@maven//:io_netty_netty_common",
+        "@maven//:io_netty_netty_transport",
+    ],
+)

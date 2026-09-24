@@ -214,6 +214,22 @@ class TeleportValidationTest {
   }
 
   @Test
+  def aStarDoesNotBreakAHold(): Unit = {
+    // A root or a freeze holds a player where the server has them: a step, a blink and a dash are
+    // all held by it, and a star was the one way out
+    val rooted = join(CharacterId.Spaceman, 10, 10, seq = 1)
+    assertTrue(rooted.tryRoot(3000))
+    val star = useStar(rooted, 2, 20, 10)
+    assertEquals(new Position(10, 10), rooted.getPosition)
+    assertTrue("given back", instance.itemManager.getInventory(rooted.getId).exists(_.id == star.id))
+
+    val frozen = join(CharacterId.Spaceman, 30, 30, seq = 3)
+    assertTrue(frozen.tryFreeze(3000))
+    useStar(frozen, 4, 40, 30)
+    assertEquals(new Position(30, 30), frozen.getPosition)
+  }
+
+  @Test
   def aRejoinStartsTheSequenceAfresh(): Unit = {
     val p = join(CharacterId.Spaceman, 10, 10, seq = 500)
     assertTrue(move(p, 501, 11, 10))

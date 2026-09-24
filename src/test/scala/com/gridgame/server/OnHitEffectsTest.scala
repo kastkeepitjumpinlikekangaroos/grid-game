@@ -163,6 +163,18 @@ class OnHitEffectsTest {
     assertEquals((17, 28), m.at(wraith))
   }
 
+  @Test def aHauntFromTheDeadMovesNobody(): Unit = {
+    // The shot outlives its owner; the body used to be carried behind the target all the same
+    val wraith = m.join(CharacterId.Wraith, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 15, 30)
+    val haunt = m.launch(wraith, ProjectileType.SHADOW_HAUNT, 1f, 0f)
+    wraith.damage(wraith.getHealth)
+    m.tickUntilGone(haunt)
+    assertTrue("it still lands", target.getHealth < target.getMaxHealth)
+    assertEquals((10, 30), m.at(wraith))
+    assertEquals(0, wraith.getServerMoves)
+  }
+
   @Test def aBurnRemembersWhoLitIt(): Unit = {
     val pyro = m.join(CharacterId.Pyromancer, 10, 30)
     val target = m.join(CharacterId.Gladiator, 15, 30)
