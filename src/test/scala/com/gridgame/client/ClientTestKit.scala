@@ -76,10 +76,29 @@ class TestClient(val world: WorldData = WorldData.createEmpty(60, 60), val name:
     * two of them out of order. */
   def peekSeq: Int = serverSeq + 1
 
+  // The server's projectile tick: each projectile packet is from a later one than the last, unless
+  // the test says which
+  private var projectileTick = 100
+
+  /** A projectile packet from the server, from server tick `tick` (by default the one after the
+    * last packet's), about a projectile heading (dx, dy). */
   def projectile(action: Byte, projectileId: Int, owner: UUID, x: Float = 10f, y: Float = 10f, target: UUID = null,
-                 pType: Byte = ProjectileType.ARROW): Unit =
-    receive(new ProjectilePacket(nextSeq(), owner, Packet.getCurrentTimestamp, x, y, 0xFF112233, projectileId,
-      1f, 0f, action, target, 0.toByte, pType))
+                 pType: Byte = ProjectileType.ARROW, tick: Int = -1, dx: Float = 1f, dy: Float = 0f): Unit = {
+    projectileTick = if (tick >= 0) tick else projectileTick + 1
+    receive(new ProjectilePacket(nextSeq(), owner, projectileTick, x, y, 0xFF112233, projectileId,
+      dx, dy, action, target, 0.toByte, pType))
+  }
+
+  // The clock projectile packets are stamped with as they arrive and projectiles are flown by: the
+  // test's own
+  var nanos: Long = 1000000000L
+  client.nanoClock = () => nanos
+
+  /** Let `ms` pass, then draw a frame: every projectile flown to where it is now. */
+  def frame(ms: Double): Unit = {
+    nanos += (ms * 1e6).toLong
+    client.flyProjectiles(nanos, ms / 1000.0)
+  }
 
   def trap(action: Byte, trapId: Int, trapType: Byte = TrapType.BEAR_TRAP, who: UUID = id,
            x: Int = 5, y: Int = 5, team: Byte = 0, victim: UUID = null): Unit =

@@ -219,9 +219,9 @@ class Projectile(
   private var distanceTraveled: Float = 0f
 
   /** Where this copy of it started: on the client, where it was fired from (its SPAWN) or first
-    * seen (a MOVE that overtook the SPAWN). The client never flies a projectile itself — it only
-    * moves it to where the server says — so `distanceTraveled` stays 0 there; a renderer that
-    * needs to know how far one has come, or where a rope runs back to, measures from here. */
+    * seen (a MOVE that overtook the SPAWN). A rope with nobody left to run back to runs back to
+    * here. The client flies its copies between the server's positions (NetProjectile), which also
+    * keeps `distanceTraveled` as the server counts it. */
   val originX: Float = x
   val originY: Float = y
 
@@ -267,6 +267,9 @@ class Projectile(
   def remainingBounces: Int = _remainingBounces
 
   def resetDistanceTraveled(): Unit = { distanceTraveled = 0f }
+
+  /** The client's copy is flown by the client (NetProjectile), which sets how far it has come. */
+  def setDistanceTraveled(d: Float): Unit = { distanceTraveled = d }
 
   def hasFlown: Boolean = _flown
 
@@ -369,7 +372,8 @@ class Projectile(
     Projectile.withinPlayer(x, y, player, pDef.hitRadius)
   }
 
-  /** Update position and velocity in-place (used by client for MOVE packets to avoid allocation). */
+  /** Update position and heading in place. The client's copy is put where it is drawn this way,
+    * every frame (NetProjectile.fly), and where it stopped once it has. */
   def updatePosition(newX: Float, newY: Float, newDx: Float, newDy: Float): Unit = {
     x = newX
     y = newY

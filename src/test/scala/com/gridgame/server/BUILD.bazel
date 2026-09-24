@@ -42,6 +42,19 @@ scala_library(
     ],
 )
 
+# What tick each projectile packet says it is from, which clients fly projectiles by
+scala_junit_test(
+    name = "projectile_ticks_test",
+    srcs = ["ProjectileTicksTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        ":server_test_kit",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:junit_junit",
+    ],
+)
+
 scala_junit_test(
     name = "ceasefire_test",
     srcs = ["CeasefireTest.scala"],

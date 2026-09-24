@@ -1,6 +1,6 @@
 package com.gridgame.client
 
-import com.gridgame.client.render.{FadingProjectile, TerrainImpact}
+import com.gridgame.client.render.{FadingProjectile, FlightBlockers, NetProjectile, ProjectileTimeline, TerrainImpact}
 import com.gridgame.client.audio.AudioManager
 import com.gridgame.client.i18n.{I18n, Messages}
 import com.gridgame.common.Constants
@@ -195,6 +195,13 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   // expired entries.
   private val fadingProjectiles: ConcurrentHashMap[Int, FadingProjectile] = new ConcurrentHashMap()
 
+  // Which of the server's projectile ticks it is now: projectiles are flown between their packets
+  // on it (NetProjectile, flyProjectiles)
+  private val projectileTimeline = new ProjectileTimeline
+  // The clock projectile packets are stamped with as they arrive, and the renderer flies them by.
+  // A test's own, in a test
+  @volatile private[client] var nanoClock: () => Long = () => System.nanoTime()
+
   // Movement interpolation for smooth camera following
   @volatile private var moveInterpFromX: Double = 0.0
   @volatile private var moveInterpFromY: Double = 0.0
@@ -362,6 +369,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     // Clear game state
     players.clear()
     projectiles.clear()
+    projectileTimeline.reset()
     fadingProjectiles.clear()
     items.clear()
     traps.clear()
@@ -1499,6 +1507,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         players.clear()
         departedPlayers.clear()
         projectiles.clear()
+        projectileTimeline.reset()
         fadingProjectiles.clear()
         items.clear()
         traps.clear()
@@ -1937,6 +1946,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     chatMessages.clear()
     players.clear()
     projectiles.clear()
+    projectileTimeline.reset()
     fadingProjectiles.clear()
     items.clear()
     traps.clear()
@@ -2018,24 +2028,134 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     if (p != null) p.getCharacterId else -1
   }
 
+  /** A projectile as the server first told us of it: fired (its SPAWN), or already in flight (a
+    * MOVE that overtook the SPAWN, or came instead of a lost one). */
+  private def netProjectile(packet: ProjectilePacket, spawn: Boolean, now: Long): NetProjectile =
+    new NetProjectile(packet.getProjectileId, packet.getPlayerId, packet.getX, packet.getY,
+      packet.getDx, packet.getDy, packet.getColorRGB, packet.getChargeLevel, packet.getProjectileType,
+      packet.getTick, spawn, projectileStepsOf(packet.getPlayerId), getWorld, now)
+
+  /** How many times a tick the server moves this player's projectiles: twice while they have a gem. */
+  private def projectileStepsOf(ownerId: UUID): Int = {
+    val boosted =
+      if (ownerId.equals(localPlayerId)) hasGemBoost
+      else { val p = players.get(ownerId); p != null && p.hasGemBoost }
+    if (boosted) 2 else 1
+  }
+
+  /** The server's news of one of the projectiles it is flying. */
+  private def heardOf(projectile: Projectile, packet: ProjectilePacket, now: Long): Unit = projectile match {
+    case np: NetProjectile =>
+      np.heard(packet.getTick, packet.getX, packet.getY, packet.getDx, packet.getDy, spawn = false,
+        projectileStepsOf(packet.getPlayerId), getWorld, now)
+    case p => p.updatePosition(packet.getX, packet.getY, packet.getDx, packet.getDy)
+  }
+
+  /** It stopped at (x, y), and is drawn there while it fades. */
+  private def stopProjectile(projectile: Projectile, x: Float, y: Float): Unit = projectile match {
+    case np: NetProjectile => np.stopAt(x, y)
+    case p => p.updatePosition(x, y, p.dx, p.dy)
+  }
+
+  /**
+   * Fly every projectile to where it is now, between the server's ticks (NetProjectile): the
+   * renderer calls this once a frame, before it draws any. A projectile nothing has been heard of
+   * for a while was ended by a packet that was lost on the way — every packet about projectiles
+   * is a datagram — and fades out where it is, where it used to stay frozen for the rest of the
+   * match. Not marked as removed, so if it was only the news that stalled, its next move brings it
+   * back.
+   */
+  def flyProjectiles(nowNanos: Long, deltaSec: Double): Unit = {
+    if (projectiles.isEmpty) return
+    val t = projectileTimeline.tickAt(nowNanos)
+    val decay = Math.exp(-deltaSec * 1000.0 / NetProjectile.SMOOTH_MS).toFloat
+    gatherBarriers()
+    val blockers = if (flyBarrierCount > 0) barrierBlockers else null
+    val it = projectiles.values().iterator()
+    while (it.hasNext) {
+      it.next() match {
+        case np: NetProjectile =>
+          if (np.fly(t, decay, nowNanos, blockers) == NetProjectile.EXPIRED && projectiles.remove(np.id, np))
+            fadingProjectiles.put(np.id, new FadingProjectile(np, System.currentTimeMillis(), false, 0))
+        case _ => // one a dev tool flies itself
+      }
+    }
+  }
+
+  // The barriers up this frame, as the server stops shots on them: whose, where they stand, which
+  // way it faces, and their team. A shot isn't flown through one that stops it, any more than into
+  // a wall: it waits on its face for the BLOCKED that puts it there. Render thread only.
+  private val MAX_FLY_BARRIERS = 32
+  private val flyBarrierHolder = new Array[UUID](MAX_FLY_BARRIERS)
+  private val flyBarrierX = new Array[Float](MAX_FLY_BARRIERS)
+  private val flyBarrierY = new Array[Float](MAX_FLY_BARRIERS)
+  private val flyBarrierCos = new Array[Float](MAX_FLY_BARRIERS)
+  private val flyBarrierSin = new Array[Float](MAX_FLY_BARRIERS)
+  private val flyBarrierTeam = new Array[Byte](MAX_FLY_BARRIERS)
+  private var flyBarrierCount = 0
+
+  private def gatherBarriers(): Unit = {
+    var n = 0
+    // Ours faces where we aim, as it is drawn; a phased holder's is as insubstantial as they are
+    if (hasBarrier && !isDead && !isPhased) {
+      val pos = localPosition.get()
+      n = noteFlyBarrier(n, localPlayerId, pos.getX, pos.getY, getAimAngle, localTeamId)
+    }
+    val it = players.values().iterator()
+    while (it.hasNext && n < MAX_FLY_BARRIERS) {
+      val p = it.next()
+      if (p.hasBarrier && !p.isDead && !p.isPhased) {
+        val pos = p.getPosition
+        n = noteFlyBarrier(n, p.getId, pos.getX, pos.getY, p.getBarrierAngle, p.getTeamId)
+      }
+    }
+    var i = n
+    while (i < flyBarrierCount) { flyBarrierHolder(i) = null; i += 1 }
+    flyBarrierCount = n
+  }
+
+  private def noteFlyBarrier(n: Int, holder: UUID, x: Int, y: Int, angle: Float, team: Byte): Int = {
+    if (n >= MAX_FLY_BARRIERS) return n
+    flyBarrierHolder(n) = holder
+    flyBarrierX(n) = x.toFloat; flyBarrierY(n) = y.toFloat
+    flyBarrierCos(n) = Math.cos(angle).toFloat; flyBarrierSin(n) = Math.sin(angle).toFloat
+    flyBarrierTeam(n) = team
+    n + 1
+  }
+
+  /** A player's team as this client knows it: 0 is nobody's, and nobody is a teammate of theirs. */
+  private def teamOf(id: UUID): Byte =
+    if (id.equals(localPlayerId)) localTeamId
+    else { val p = players.get(id); if (p != null) p.getTeamId else 0 }
+
+  // What the server stops on a barrier: an enemy's shot — not the holder's own, not a teammate's
+  private val barrierBlockers = new FlightBlockers {
+    def blockedAt(owner: UUID, ax: Float, ay: Float, bx: Float, by: Float): Float = {
+      val ownerTeam = teamOf(owner)
+      var best = -1f
+      var i = 0
+      while (i < flyBarrierCount) {
+        if (!flyBarrierHolder(i).equals(owner) && !(ownerTeam != 0 && ownerTeam == flyBarrierTeam(i))) {
+          val c = Barrier.crossing(flyBarrierX(i), flyBarrierY(i), flyBarrierCos(i), flyBarrierSin(i), ax, ay, bx, by)
+          if (c >= 0f && (best < 0f || c < best)) best = c
+        }
+        i += 1
+      }
+      best
+    }
+  }
+
   private def handleProjectileUpdate(packet: ProjectilePacket): Unit = {
     val projectileId = packet.getProjectileId
+    val now = nanoClock()
 
     packet.getAction match {
       case ProjectileAction.SPAWN =>
         recentlyRemovedProjectiles.remove(projectileId)
-        val projectile = new Projectile(
-          projectileId,
-          packet.getPlayerId,
-          packet.getX,
-          packet.getY,
-          packet.getDx,
-          packet.getDy,
-          packet.getColorRGB,
-          packet.getChargeLevel,
-          packet.getProjectileType
-        )
-        projectiles.put(projectileId, projectile)
+        projectileTimeline.heardSpawn(packet.getTick, now)
+        // A MOVE that overtook it has put the projectile further on already
+        if (projectiles.get(projectileId) == null)
+          projectiles.put(projectileId, netProjectile(packet, spawn = true, now))
         AudioManager.playAttack(packet.getProjectileType, characterIdOf(packet.getPlayerId),
           distanceFromLocal(packet.getX, packet.getY), panFromLocal(packet.getX, packet.getY))
         // Periodic cleanup: evict oldest entries to prevent unbounded growth
@@ -2051,28 +2171,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         }
 
       case ProjectileAction.MOVE =>
+        projectileTimeline.heard(packet.getTick, now)
         val projectile = projectiles.get(projectileId)
         if (projectile == null) {
-          // Only create if we haven't seen this projectile despawn/hit already
-          // (UDP MOVE packets can arrive after TCP HIT/DESPAWN)
-          if (!recentlyRemovedProjectiles.contains(projectileId)) {
-            val newProjectile = new Projectile(
-              projectileId,
-              packet.getPlayerId,
-              packet.getX,
-              packet.getY,
-              packet.getDx,
-              packet.getDy,
-              packet.getColorRGB,
-              packet.getChargeLevel,
-              packet.getProjectileType
-            )
-            projectiles.put(projectileId, newProjectile)
-          }
-        } else {
-          // Update in-place to avoid allocation
-          projectile.updatePosition(packet.getX, packet.getY, packet.getDx, packet.getDy)
-        }
+          // Only create if we haven't seen this projectile hit or stop already: every projectile
+          // packet is a datagram, and a MOVE can arrive after the HIT or DESPAWN that ended it
+          if (!recentlyRemovedProjectiles.contains(projectileId))
+            projectiles.put(projectileId, netProjectile(packet, spawn = false, now))
+        } else heardOf(projectile, packet, now)
 
       case ProjectileAction.HIT | ProjectileAction.PIERCE =>
         // A pierce passed through the target and keeps flying, so the projectile stays (its
@@ -2136,7 +2242,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           ))
         } else if (despawned != null) {
           // Stop it where it struck and let it sink into the surface there
-          despawned.updatePosition(impact.x, impact.y, despawned.dx, despawned.dy)
+          stopProjectile(despawned, impact.x, impact.y)
           fadingProjectiles.put(projectileId,
             new FadingProjectile(despawned, System.currentTimeMillis(), impact.hitTerrain, impact.tileColor))
         }
@@ -2156,14 +2262,14 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         // up), and the barrier ripples there
         val blocked = projectiles.remove(projectileId)
         recentlyRemovedProjectiles.add(projectileId)
-        val now = System.currentTimeMillis()
+        val nowMs = System.currentTimeMillis()
         if (blocked != null) {
-          blocked.updatePosition(packet.getX, packet.getY, blocked.dx, blocked.dy)
-          fadingProjectiles.put(projectileId, new FadingProjectile(blocked, now, false, 0))
+          stopProjectile(blocked, packet.getX, packet.getY)
+          fadingProjectiles.put(projectileId, new FadingProjectile(blocked, nowMs, false, 0))
         }
         // A barrier's holder, or nobody at all — the divider between the teams
-        if (packet.getTargetId != null) recordBarrierImpact(packet.getTargetId, packet.getX, packet.getY, now)
-        else recordDividerImpact(packet.getX, packet.getY, now)
+        if (packet.getTargetId != null) recordBarrierImpact(packet.getTargetId, packet.getX, packet.getY, nowMs)
+        else recordDividerImpact(packet.getX, packet.getY, nowMs)
         AudioManager.playBarrierBlock(distanceFromLocal(packet.getX, packet.getY), panFromLocal(packet.getX, packet.getY))
 
       case _ =>

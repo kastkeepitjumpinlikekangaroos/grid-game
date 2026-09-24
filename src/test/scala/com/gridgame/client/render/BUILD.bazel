@@ -10,3 +10,13 @@ scala_junit_test(
         "@maven//:junit_junit",
     ],
 )
+
+scala_junit_test(
+    name = "remote_motion_test",
+    srcs = ["RemoteMotionTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "@maven//:junit_junit",
+    ],
+)

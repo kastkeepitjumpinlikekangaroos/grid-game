@@ -136,6 +136,13 @@ class PacketRoundTripTest {
     }
   }
 
+  @Test def aProjectileSaysWhichServerTickItIsFrom(): Unit = {
+    // The client flies projectiles between their positions on the server's own timeline
+    val p = trip(new ProjectilePacket(9, id, 1234567, 3f, 4f, 0, 44, 1f, 0f, ProjectileAction.MOVE, null,
+      0.toByte, ProjectileType.ARROW))
+    assertEquals(1234567, p.getTick)
+  }
+
   @Test def aBlockedProjectileSaysWhereItStoppedAndWhoseBarrierItWas(): Unit = {
     val p = trip(new ProjectilePacket(9, id, 22.05f, 30f, 0, 44, -1f, 0f, ProjectileAction.BLOCKED, other))
     assertEquals(ProjectileAction.BLOCKED, p.getAction)

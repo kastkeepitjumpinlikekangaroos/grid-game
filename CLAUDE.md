@@ -265,6 +265,8 @@ When a match starts, `ClientMain.showGameScene()` hides the JavaFX Stage and cre
 | `GameCamera.scala` | Holds visualX/Y, smooth lerp, screen shake, zoom. Provides camera offsets, on the render target's pixel grid when it is told the grid. |
 | `IsometricTransform.scala` | `worldToScreen(wx,wy,cam)`, `screenToWorld(sx,sy,cam,zoom)`, `viewInsideWorld` (is the whole screen over the map?) |
 | `EntityCollector.scala` | Collects items/projectiles/players by grid cell for depth-sorted rendering. Cells are a flat grid over the visible window, each a linked list of pooled entries (`takeCell` / `takeRemaining`) — no map, no boxed keys, no allocation per frame |
+| `RemoteMotion.scala` | Where another player is drawn: walked along the cells the server has put them on, at their measured pace, never past the newest. See *Other players are walked along the cells they were heard on* |
+| `NetProjectile.scala` | The client's copy of a projectile in a match, flown between the server's ticks; `ProjectileTimeline` (which server tick it is now) and `FlightBlockers` (the barriers in its way). See *Flown between the server's ticks* |
 
 ### Rendering Pipeline
 ```
@@ -357,6 +359,50 @@ two problems:
   literally slithered.
 - **It lied about the hitbox.** The disc that read as the projectile's head arrived 100–150px
   before the damage did.
+
+#### Flown between the server's ticks
+
+The server moves every projectile once a tick (`PROJECTILE_SPEED_MS`, 30ms) and sends a MOVE for
+each, and the client used to draw each one where the newest MOVE put it. At 60 fps that is a
+projectile standing still in 45% of frames and moving nearly twice its step in the rest (72-78%
+still at 120 and 144 fps), and on Wi-Fi a late packet bunched two ticks into one frame: jumps of
+135px. The eye follows a moving object, so a stop-and-jump cadence reads as stutter however good
+the art is. Now the client flies them (`client/render/NetProjectile.scala`):
+- **Every projectile packet says which tick it is from** (`ProjectilePacket.getTick`, carried in
+  the timestamp field; `GameInstance.projectileTick`). A MOVE is where the projectile is at the end
+  of its tick; a SPAWN's position holds until the tick after the one it carries.
+- **`ProjectileTimeline` says which tick it is now.** `arrival - tick × 30ms` is the same for
+  every MOVE but for its time on the way, and the least of them over the last two seconds puts
+  each tick where its quickest news arrives. A projectile is its newest position flown on at its
+  speed for the ticks since, so a straight flight is drawn exactly as the server flies it, and a
+  late packet only confirms what was already drawn. When the estimate moves, the renderer follows
+  it at a tenth of real time instead of jumping.
+- **What can't be foreseen is smoothed, not jumped to.** A bounce, a boomerang's turn, a gem
+  doubling its speed (two moves in a straight line show it) arrive as a correction that dies away
+  over ~40ms (`SMOOTH_MS`). A shot seen fired leaves from where it was fired and catches up.
+- **It is never flown past where it will stop**: the face of the terrain ahead, found along the
+  half-cell sub-steps the server will take (the face `TerrainImpact.resolve` puts its DESPAWN on),
+  the end of its range (the end of the sub-step that reaches it), the divider, or a raised
+  barrier that stops its owner's shots (`FlightBlockers`, gathered each frame). So it fades where
+  it was last drawn. It does fly on toward a player it is about to hit, by up to a tick: a hit
+  radius reaches well past the body, and the hit removes it.
+- **No more than four ticks ahead of its news** (`MAX_AHEAD`), and nothing heard of it for ten
+  ticks (`EXPIRE_NS`) means it has gone: it fades out where it is. Every projectile packet is a
+  datagram, and one lost HIT or DESPAWN used to leave the projectile frozen in the air for the rest
+  of the match. A MOVE older than the one it has is dropped, since datagrams overtake each other.
+- **`getX`/`getY`, the heading, `getDistanceTraveled` and `isReturning` are what is drawn**,
+  written once a frame by the render thread (`GameClient.flyProjectiles`, called from
+  `GLGameRenderer.render` before anything reads a projectile) under the projectile's lock; the
+  packet thread only says what the server said (`heard`) or where it stopped (`stopAt`).
+  `getDistanceTraveled` is the server's count, so the lifetime effects (the burn-out at the end of
+  its range, trails that grow, the boomerang's way back) now run in a match as in the gallery.
+
+Measured end to end — the real server flying shots, its packets delivered to the real client over
+a simulated network, frames at the display's rate — motion went from 45-81% of frames still to
+none, and past a shot's first few frames (its launch catching up) from half of all frames jumping
+to none more than 1.5x its step: a mean error of 0.2-0.8% of a step on LAN, internet, Wi-Fi and an
+80ms link losing 5%. Flying 150 projectiles costs about 1.3us a frame. `ProjectileFlightTest`
+pins the client and `ProjectileTicksTest` the server's ticks.
 
 #### Terrain: stopped by it, or flying over it
 
@@ -533,11 +579,12 @@ bolt, inferno blast, geyser, wail, raise dead, and more. The fireball is an `ORB
   every frame, so a flicker between 0 and 1 is a strobe, and on a dim frame on pale ground the
   shot isn't there. Flicker the core; keep the body up. A slow pulse is no better: every orb,
   the fireball and the inferno blast throbbed down to 20-30% three times a second.
-- **The client never flies a projectile.** It only moves one to where the server says
-  (`updatePosition`), so `getDistanceTraveled` is 0 in a match. The gallery, the bench and the
-  audit fly theirs with `moveStep`, so none of them shows it: the rope measured itself by it,
-  and in a real match no rope was ever drawn. Measure from `Projectile.originX/Y`, or key
-  things to the ground as the electricity does.
+- **In a match the client flies its projectiles** (`NetProjectile`, see *Flown between the
+  server's ticks*): `getX`/`getY` is where one is drawn this frame and `getDistanceTraveled` how
+  far it has come as the server counts it, as in the gallery, the bench and the audit, which fly
+  theirs with `moveStep`. It used to be moved only to where the server said, so the distance was
+  0 in a match: the rope measured itself by it, and in a real match no rope was ever drawn. Where
+  it started is `Projectile.originX/Y`, the rope's end when nobody is left to hold it.
 - A block literal on the line after an expression is parsed as an *argument* to it
   (`val n = 9` followed by `{ … }` becomes `9 { … }`). Use a plain `var`/`while` at
   statement level rather than a `{ … }` wrapper.
@@ -805,6 +852,24 @@ auto — which only steps down mid-match — can't do it.
   of it is a tadpole swimming, and which five characters' primaries all shared. Those bolts
   now sit inside a tilted ring they pass through (`ORB_ORBIT`), which reads as an orbit
   precisely *because* the orb occludes half of it.
+- **Other players are walked along the cells they were heard on** (`RemoteMotion`, one per player
+  in `EntityCollector`). Every cell the server puts them on is a waypoint; the drawn player walks
+  from one to the next at the pace the last quarter second of them came in at (measured, so a
+  bot's slower walk, a slow and a boost come out right), keeping about 0.8 of a cell behind the
+  newest so a step that arrives a little late finds it still walking. Further behind than walking
+  leaves it (a dash), it catches up; a move of more than 4.5 cells between two updates (a blink, a
+  respawn) is drawn at once. It is never drawn past the newest cell, and it is sorted into the
+  depth order of the cell it is drawn in. It used to guess a velocity from the time between the
+  last two changes it saw and run them on at it for up to 75ms after the news stopped, through
+  whatever was in the way: two updates a frame apart read as 55 cells a second, and a dash (a cell
+  a frame, 60 cells a second) ran the drawn player up to four cells past where it ended, into the
+  tree that ended it, before pulling them back. Measured in a live match, a dashing player was
+  drawn ahead of where the server had them in 18% of frames, up to 3 cells; now in none.
+  `RemoteMotionTest` pins it; six of its seven cases fail on the old smoothing.
+- **Projectiles are flown between the server's ticks** — on the server's own tick timeline, at
+  their own speed, never past where they will stop (see *Flown between the server's ticks*). Drawn
+  where the newest packet put them, they stood still in half the frames at 60 fps and jumped in
+  the rest.
 - **Projectile collision uses the drawn tile extents** — `Projectile.getCellX/Y` is
   `floor(x + 0.5)` because tiles are drawn centred on integer coordinates. Truncating put
   walls and map edges half a tile off their sprites, which is what made projectiles glitch
@@ -1969,6 +2034,12 @@ A `PROJECTILE_UPDATE` carries one of these `ProjectileAction`s:
 | 4 PIERCE | hit targetId and flies on |
 | 5 BLOCKED | stopped on targetId's barrier, at x, y |
 
+Every projectile packet from the server carries, in its timestamp field [33-36], the projectile
+tick it went out on (`ProjectilePacket.getTick`; 30ms apart, counting from 1 in each match). A
+MOVE is where the projectile is at the end of its tick; a SPAWN's position holds until the tick
+after the one it carries. The client flies projectiles by it (see *Flown between the server's
+ticks*).
+
 A `TRAP_UPDATE` carries one of these `TrapAction`s. The packet's own player id is the trap's
 owner; its layout is in `TrapPacket`.
 
@@ -2172,8 +2243,16 @@ suites mirror the source tree:
   test's own (`RankedQueue.checkQueue(now)`), so a minute's wait takes no time; and
   `SpawnRequestTest` for what the server takes from a spawn request (heading, charge, who may
   fire). On the client, `ClientNetworkTest` feeds its handlers through an `EmbeddedChannel`.
+- Projectiles in flight: `ProjectileTicksTest` (server) pins the tick every projectile packet
+  carries. `ProjectileFlightTest` (client) sends shots as the server flies and stamps them, over a
+  network with latency, jitter and loss, and draws frames at 60 fps on the test's own clock
+  (`TestClient.nanos`, which projectile packets are stamped with as they arrive): every frame's
+  step, a late packet changing nothing, the stops (a wall's face, the end of range, the divider, a
+  barrier), and the fade of a shot whose end was lost.
 - `client/render`, `client/gl` — the camera (`CameraTest`: the isometric mapping, the pixel grid,
-  whether the view has run off the map) and the light pool (`LightPoolTest`). `TileTest`, in
+  whether the view has run off the map), the light pool (`LightPoolTest`), and how other players
+  are drawn (`RemoteMotionTest`: an even pace under jitter, never past where they stopped or a dash
+  ended, corners turned where they were heard turning, jumps drawn at once). `TileTest`, in
   `common/model`, also holds the tileset to what the renderer assumes: a flat tile is exactly
   its diamond, a block covers its whole footprint.
 - `client/` — `ClientTestKit.scala`: `TestClient` is a `GameClient` whose packets go to a

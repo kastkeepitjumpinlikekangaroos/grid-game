@@ -259,10 +259,22 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   private val playerTickAttrs = Attrs.tickPhase("player")
   private val timerTickAttrs = Attrs.tickPhase("timer")
 
+  /**
+   * The projectile tick running now, or last run: 1 for the first. Every projectile packet carries
+   * it (ProjectilePacket.getTick), so a client can put each position on the server's own timeline
+   * and fly the projectile between them (NetProjectile). A MOVE is sent at the end of its tick; a
+   * SPAWN, whenever the shot was fired, carries the tick before the one that first moves it.
+   * Written by the projectile tick only.
+   */
+  @volatile private var projectileTick = 0
+
+  private[server] def getProjectileTick: Int = projectileTick
+
   private def projectilePacket(projectile: Projectile, action: Byte, targetId: UUID = null): ProjectilePacket =
     new ProjectilePacket(
       server.getNextSequenceNumber,
       projectile.ownerId,
+      projectileTick,
       projectile.getX, projectile.getY,
       projectile.colorRGB,
       projectile.id,
@@ -280,6 +292,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   private[server] def tickProjectiles(): Unit = {
     if (!running || world == null) return
     val tickStart = System.nanoTime()
+    projectileTick += 1
 
     syncOpening()
     val events = projectileManager.tick(world)

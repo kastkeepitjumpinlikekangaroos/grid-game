@@ -557,6 +557,9 @@ class GLGameRenderer(val client: GameClient) {
 
     // Use interpolated position for smooth camera tracking between grid tiles
     client.updateVisualPosition()
+    // and every projectile flown to where it is now, between the server's ticks, before anything
+    // this frame reads where one is
+    client.flyProjectiles(client.nanoClock(), deltaSec)
     val visualPosX = client.visualPosX
     val visualPosY = client.visualPosY
 

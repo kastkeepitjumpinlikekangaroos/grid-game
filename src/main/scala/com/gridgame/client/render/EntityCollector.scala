@@ -18,9 +18,9 @@ import java.util.UUID
 class EntityCollector {
   import EntityCollector._
 
-  // Remote player visual interpolation state — uses java.util.HashMap to avoid
-  // Scala Option wrapping on get(), and reusable double[2] arrays to avoid Tuple2 allocation.
-  val remoteVisualPositions: java.util.HashMap[UUID, Array[Double]] = new java.util.HashMap()
+  // Where each other player is drawn (RemoteMotion). A java.util.HashMap to avoid Scala Option
+  // wrapping on get().
+  val remoteVisualPositions: java.util.HashMap[UUID, RemoteMotion] = new java.util.HashMap()
 
   // Mutable output fields for getRemoteVisualPos — avoids tuple allocation on lookup
   private var _rvx: Double = 0.0
@@ -30,10 +30,10 @@ class EntityCollector {
 
   /** Look up remote visual position. Returns true if found, result in lastRVX/lastRVY. */
   def getRemoteVisualPos(pid: UUID): Boolean = {
-    val arr = remoteVisualPositions.get(pid)
-    if (arr != null) {
-      _rvx = arr(0)
-      _rvy = arr(1)
+    val motion = remoteVisualPositions.get(pid)
+    if (motion != null) {
+      _rvx = motion.x
+      _rvy = motion.y
       true
     } else false
   }
@@ -179,80 +179,22 @@ class EntityCollector {
       }
     }
 
-    // Remote players (with visual interpolation + velocity extrapolation) — use Java iterator directly
-    // Per-player array layout: [visualX, visualY, lastDiscreteX, lastDiscreteY, velX, velY, lastUpdateTimeMs]
-    val remoteLerp = 1.0 - Math.exp(-18.0 * deltaSec)
-    val nowMs = System.currentTimeMillis().toDouble
+    // Remote players, each walked along the cells the server has put them on (RemoteMotion). One
+    // is sorted into the depth order of the cell it is drawn in, not the one it was last heard on,
+    // which mid-dash can be cells ahead of where it is drawn.
+    val nowNanos = System.nanoTime()
     val playerIter = client.getPlayers.values().iterator()
     while (playerIter.hasNext) {
       val player = playerIter.next()
-      if (!player.isDead) {
+      val pid = player.getId
+      if (player.isDead) remoteVisualPositions.remove(pid) // back where they respawn, not walked there
+      else {
         val pos = player.getPosition
-        val pid = player.getId
-        val posX = pos.getX.toDouble
-        val posY = pos.getY.toDouble
-        val existing = remoteVisualPositions.get(pid)
-
-        var rvx: Double = posX
-        var rvy: Double = posY
-
-        if (existing != null) {
-          val lastDiscX = existing(2)
-          val lastDiscY = existing(3)
-
-          // Detect position change (new server update arrived)
-          if (posX != lastDiscX || posY != lastDiscY) {
-            val dtSec = (nowMs - existing(6)) / 1000.0
-            val dx = posX - lastDiscX
-            val dy = posY - lastDiscY
-
-            if (Math.abs(dx) + Math.abs(dy) > 3 || dtSec <= 0.001) {
-              // Teleport: snap visual position, zero velocity
-              existing(0) = posX
-              existing(1) = posY
-              existing(4) = 0.0
-              existing(5) = 0.0
-            } else {
-              // Compute velocity from consecutive position updates
-              existing(4) = dx / dtSec
-              existing(5) = dy / dtSec
-            }
-            existing(2) = posX
-            existing(3) = posY
-            existing(6) = nowMs
-          }
-
-          // Extrapolate target position to bridge packet gaps, then fade back when idle.
-          // This predicts where the player likely is during UDP packet loss,
-          // preventing the visual snap that occurs when the next packet arrives.
-          val msSinceUpdate = nowMs - existing(6)
-          val MaxExtrapMs = 75.0 // ~1.5 packet intervals at 50ms move rate
-          val extrapSec = if (msSinceUpdate <= MaxExtrapMs) {
-            msSinceUpdate / 1000.0
-          } else {
-            // Fade extrapolation back to zero over the next interval to avoid overshoot when player stops
-            val fade = Math.max(0.0, 1.0 - (msSinceUpdate - MaxExtrapMs) / MaxExtrapMs)
-            (MaxExtrapMs / 1000.0) * fade
-          }
-          val targetX = existing(2) + existing(4) * extrapSec
-          val targetY = existing(3) + existing(5) * extrapSec
-
-          // Exponential smooth toward extrapolated target
-          val prevX = existing(0)
-          val prevY = existing(1)
-          val nx = prevX + (targetX - prevX) * remoteLerp
-          val ny = prevY + (targetY - prevY) * remoteLerp
-
-          // Snap to discrete position when close and extrapolation has faded
-          rvx = if (extrapSec < 0.001 && Math.abs(nx - posX) < 0.01) posX else nx
-          rvy = if (extrapSec < 0.001 && Math.abs(ny - posY) < 0.01) posY else ny
-
-          existing(0) = rvx
-          existing(1) = rvy
-        } else {
-          remoteVisualPositions.put(pid, Array(posX, posY, posX, posY, 0.0, 0.0, nowMs))
-        }
-        addEntity(pos.getX, pos.getY, acquireEntry().setPlayer(player, rvx, rvy))
+        var motion = remoteVisualPositions.get(pid)
+        if (motion == null) { motion = new RemoteMotion; remoteVisualPositions.put(pid, motion) }
+        motion.update(pos.getX, pos.getY, nowNanos, deltaSec)
+        addEntity(Math.round(motion.x).toInt, Math.round(motion.y).toInt,
+          acquireEntry().setPlayer(player, motion.x, motion.y))
       }
     }
 

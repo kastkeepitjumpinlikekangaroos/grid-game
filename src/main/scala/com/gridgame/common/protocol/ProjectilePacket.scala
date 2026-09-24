@@ -87,6 +87,12 @@ class ProjectilePacket(
 
   def getProjectileId: Int = projectileId
 
+  /** From the server: the projectile tick it was sent on, carried in the timestamp field. A MOVE
+    * is the projectile's position at the end of that tick; a SPAWN's position holds until the
+    * tick after it, which is the first to move it. Ticks are Constants.PROJECTILE_SPEED_MS apart
+    * and count from 1 in each match. */
+  def getTick: Int = timestamp
+
   /** In a client's SPAWN request, the [[AttackSlot]] that fired it. */
   def getAttackSlot: Int = projectileId
 
@@ -130,7 +136,7 @@ class ProjectilePacket(
     // [29-32] Color RGB
     buffer.putInt(colorRGB)
 
-    // [33-36] Timestamp
+    // [33-36] Timestamp: from the server, the projectile tick it was sent on (getTick)
     buffer.putInt(timestamp)
 
     // Payload [37-63] (27 bytes)

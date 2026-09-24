@@ -27,7 +27,9 @@ object TerrainImpact {
    *  Matches Projectile.getCellX, which the server's collision uses. */
   @inline def cellOf(v: Float): Int = Math.floor(v + 0.5f).toInt
 
-  private def blocks(world: WorldData, cx: Int, cy: Int, passesWalls: Boolean): Boolean =
+  /** Does the cell stop a projectile? Terrain it can't cross, the map's edge, and for one that
+    * flies over walls a fence — what the server's collision stops it on. */
+  private[render] def blocks(world: WorldData, cx: Int, cy: Int, passesWalls: Boolean): Boolean =
     cx < 0 || cy < 0 || cx >= world.width || cy >= world.height || {
       val t = world.getTile(cx, cy)
       !t.walkable && (!passesWalls || t == Tile.Fence)
