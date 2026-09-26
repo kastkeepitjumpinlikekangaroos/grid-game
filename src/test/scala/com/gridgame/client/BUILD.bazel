@@ -44,6 +44,7 @@ AUDIO_OFF = {"GRIDGAME_AUDIO": "off"}
     ("game_client_match_test", "GameClientMatchTest.scala"),
     ("game_client_position_test", "GameClientPositionTest.scala"),
     ("game_client_combat_test", "GameClientCombatTest.scala"),
+    ("game_client_blast_test", "GameClientBlastTest.scala"),
     ("game_client_status_test", "GameClientStatusTest.scala"),
     ("game_client_barrier_test", "GameClientBarrierTest.scala"),
     ("game_client_trap_test", "GameClientTrapTest.scala"),

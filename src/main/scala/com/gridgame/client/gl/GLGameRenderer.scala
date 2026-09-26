@@ -769,6 +769,10 @@ class GLGameRenderer(val client: GameClient) {
     // === Traps: flat decals on the ground, so walls in front of them cover them in phase 2 ===
     drawTraps()
 
+    // === Blasts: what they leave on the ground, under the players standing in them ===
+    collectBlasts()
+    drawBlasts(GLBlastRenderers.GROUND)
+
     // === Aim arrow ===
     drawAimArrow()
 
@@ -857,8 +861,7 @@ class GLGameRenderer(val client: GameClient) {
     // === Overlay animations ===
     drawDeathAnimations()
     drawTeleportAnimations()
-    drawExplosionAnimations()
-    drawAoeSplashAnimations()
+    drawBlasts(GLBlastRenderers.AIR)
 
     gpuMark("effects")
 
@@ -4620,453 +4623,104 @@ class GLGameRenderer(val client: GameClient) {
     shapeBatch.setAdditiveBlend(false)
   }
 
-  private def drawExplosionAnimations(): Unit = {
+  // ── Blasts: every explosion and splash, drawn as whoever threw it (GLBlastRenderers) ──
+  // Gathered once a frame into flat arrays, then drawn in two layers (collectBlasts), and read
+  // again for their lights and the air they shake.
+  private val MAX_BLASTS = 48
+  private var _blN = 0
+  private val _blStyle = new Array[Int](MAX_BLASTS)
+  private val _blSX = new Array[Float](MAX_BLASTS)
+  private val _blSY = new Array[Float](MAX_BLASTS)
+  private val _blWX = new Array[Float](MAX_BLASTS)
+  private val _blWY = new Array[Float](MAX_BLASTS)
+  private val _blW = new Array[Float](MAX_BLASTS)
+  private val _blH = new Array[Float](MAX_BLASTS)
+  private val _blT = new Array[Float](MAX_BLASTS)
+  private val _blMs = new Array[Float](MAX_BLASTS)
+  private val _blSeed = new Array[Int](MAX_BLASTS)
+  private val _blCR = new Array[Float](MAX_BLASTS)
+  private val _blCG = new Array[Float](MAX_BLASTS)
+  private val _blCB = new Array[Float](MAX_BLASTS)
+  private val _blOrder = new Array[Int](MAX_BLASTS)
+  private var _blDetail = 1f
+
+  /**
+   * The blasts going off this frame: the finished ones dropped, the rest placed on screen and
+   * sorted far to near, those wholly off it left out. A blast that has just gone off near us
+   * shakes the camera, once.
+   */
+  private def collectBlasts(): Unit = {
+    _blN = 0
+    val map = client.getBlasts
+    if (map.isEmpty) return
     val now = _frameTimeMs
-    val EXPLOSION_DURATION = 1400L
-    val iter = client.getExplosionAnimations.entrySet().iterator()
+    val lvx = client.visualPosX; val lvy = client.visualPosY
+    val iter = map.values().iterator()
     while (iter.hasNext) {
-      val entry = iter.next()
-      val data = entry.getValue
-      val timestamp = data(0)
-      if (now - timestamp > EXPLOSION_DURATION) {
-        iter.remove()
-      } else {
-        val wx = data(1).toDouble / 1000.0; val wy = data(2).toDouble / 1000.0
-        val colorRGB = data(3).toInt
-        val blastRadius = if (data.length > 4) data(4).toFloat / 1000f else 3f
+      val d = iter.next()
+      val style =
+        if (d(GameClient.BLAST_TRAP) != 0L) GLBlastRenderers.trapStyle(d(GameClient.BLAST_TYPE).toByte)
+        else GLBlastRenderers.styleOf(d(GameClient.BLAST_CHAR).toByte, d(GameClient.BLAST_TYPE).toByte)
+      val dur = GLBlastRenderers.durationMs(style)
+      val elapsed = now - d(GameClient.BLAST_TIME)
+      if (elapsed >= dur) iter.remove()
+      else if (elapsed >= 0L) {
+        val wx = d(GameClient.BLAST_X) / 1000.0; val wy = d(GameClient.BLAST_Y) / 1000.0
+        val radius = d(GameClient.BLAST_RADIUS) / 1000f
+        val heavy = GLBlastRenderers.heaviness(style)
+        // Close by and just gone off: the ground shakes under us, once
+        if (heavy >= 0.8f && d(GameClient.BLAST_SEEN) == 0L) {
+          d(GameClient.BLAST_SEEN) = 1L
+          val ddx = wx - lvx; val ddy = wy - lvy
+          val dist = Math.sqrt(ddx * ddx + ddy * ddy)
+          if (elapsed < 250L && dist < 6.0) camera.addShake(heavy * (2.0 + radius * 0.5) * (1.0 - dist / 6.0))
+        }
         val sx = worldToScreenX(wx, wy).toFloat
         val sy = worldToScreenY(wx, wy).toFloat
-        val elapsed = (now - timestamp).toFloat
-        val progress = elapsed / EXPLOSION_DURATION
-        intToRGB(colorRGB)
-        val er = _rgb_r; val eg = _rgb_g; val eb = _rgb_b
-
-        // Screen-space blast radius (isometric: wider horizontally)
-        val blastW = blastRadius * HW
-        val blastH = blastRadius * HH
-        val seed = entry.getKey.toLong
-
-        beginShapes()
-
-        // ── Phase 1: 4-layer bright flash (0-15%) ──
-        if (progress < 0.15f) {
-          val flashP = progress / 0.15f
-          val flashScale = 0.3f + flashP * 0.7f
-          val flashAlpha = 0.9f * (1f - flashP)
-          shapeBatch.setAdditiveBlend(true)
-          // Layer 1: Huge white outer glow (80px equivalent)
-          shapeBatch.fillOvalSoft(sx, sy, blastW * flashScale * 1.4f, blastH * flashScale * 1.4f,
-            1f, 1f, 0.97f, flashAlpha * 0.4f, 0f, 22);
-          // Layer 2: Colored glow (60px equivalent)
-          shapeBatch.fillOvalSoft(sx, sy, blastW * flashScale * 1.0f, blastH * flashScale * 1.0f,
-            bright(er), bright(eg), bright(eb), flashAlpha * 0.65f, 0f, 20);
-          // Layer 3: Bright core (40px equivalent)
-          shapeBatch.fillOval(sx, sy, blastW * flashScale * 0.6f, blastH * flashScale * 0.6f,
-            1f, 1f, 0.95f, flashAlpha * 0.85f, 16);
-          // Layer 4: White-hot center (15px equivalent)
-          shapeBatch.fillOval(sx, sy, blastW * flashScale * 0.2f, blastH * flashScale * 0.2f,
-            1f, 1f, 1f, flashAlpha, 12)
-          // Screen-wide subtle flash overlay
-          if (flashP < 0.4f) {
-            val overlayAlpha = 0.08f * (1f - flashP / 0.4f)
-            shapeBatch.fillRect(sx - 400f, sy - 300f, 800f, 600f, 1f, 1f, 0.95f, overlayAlpha)
-          }
-          shapeBatch.setAdditiveBlend(false)
-        }
-
-        // ── Phase 2: Expanding fireball with outline and fire tongues (0-50%) ──
-        if (progress < 0.5f) {
-          val fireP = progress / 0.5f
-          val fireAlpha = 0.85f * (1f - fireP * 0.7f)
-          val fireScale = 0.2f + fireP * 0.8f
-          val fireW = blastW * fireScale
-          val fireH = blastH * fireScale
-
-          // Outer fire glow
-          shapeBatch.fillOvalSoft(sx, sy, fireW * 1.3f, fireH * 1.3f,
-            er, eg * 0.5f, eb * 0.2f, fireAlpha * 0.4f, 0f, 18)
-
-          // Dark cartoon outline ring around fireball
-          shapeBatch.strokeOval(sx, sy, fireW * 0.75f, fireH * 0.75f, 4f * (1f - fireP * 0.4f),
-            0.06f, 0.02f, 0.02f, fireAlpha * 0.7f, 20)
-
-          // Core fireball
-          shapeBatch.fillOval(sx, sy, fireW * 0.7f, fireH * 0.7f,
-            er, eg, eb, fireAlpha, 16)
-
-          // 8 fire tongue licks radiating outward
-          shapeBatch.setAdditiveBlend(true)
-          var t = 0
-          while (t < 8) {
-            val tongueAngle = t * (Math.PI / 4.0) + fireP * 2.5 + seed * 0.3
-            val tongueLen = fireW * 0.5f * (0.6f + 0.4f * Math.sin(tongueAngle * 3 + animationTick * 0.2).toFloat)
-            val tBaseX = sx + (fireW * 0.55f * Math.cos(tongueAngle)).toFloat
-            val tBaseY = sy + (fireH * 0.55f * Math.sin(tongueAngle)).toFloat
-            val tTipX = sx + ((fireW * 0.55f + tongueLen) * Math.cos(tongueAngle)).toFloat
-            val tTipY = sy + ((fireH * 0.55f + tongueLen) * Math.sin(tongueAngle)).toFloat
-            shapeBatch.strokeLineSoft(tBaseX, tBaseY, tTipX, tTipY, 4f * (1f - fireP * 0.5f),
-              er, bright(eg), eb * 0.3f, fireAlpha * 0.6f)
-            t += 1
-          }
-          shapeBatch.setAdditiveBlend(false)
-
-          // Inner swirling detail
-          val swirlAngle = _animTickF * 0.12
-          val swirlR = fireW * 0.3f
-          val swirlX = sx + (swirlR * Math.cos(swirlAngle)).toFloat
-          val swirlY = sy + (swirlR * 0.5f * Math.sin(swirlAngle)).toFloat
-          shapeBatch.fillOval(swirlX, swirlY, fireW * 0.15f, fireH * 0.15f,
-            bright(er), bright(eg), bright(eb), fireAlpha * 0.7f, 10)
-
-          // Hot center
-          shapeBatch.fillOval(sx, sy, fireW * 0.35f, fireH * 0.35f,
-            bright(er), bright(eg), bright(eb), fireAlpha * 0.9f, 12)
-        }
-
-        // ── Phase 3: Dual shockwave rings with dark outlines + ground distortion (10-80%) ──
-        if (progress > 0.1f && progress < 0.8f) {
-          val ringP = (progress - 0.1f) / 0.7f
-          val ringScale = 0.3f + ringP * 0.7f
-          val ringAlpha = 0.8f * (1f - ringP)
-          val ringW = blastW * ringScale * 1.1f
-          val ringH = blastH * ringScale * 1.1f
-          val thickness = 3.5f * (1f - ringP * 0.5f)
-
-          // Ground distortion — dark oval beneath expanding
-          shapeBatch.fillOval(sx, sy + 3f, ringW * 0.9f, ringH * 0.4f,
-            0.05f, 0.03f, 0.03f, ringAlpha * 0.3f, 20)
-
-          // Primary ring — dark outline
-          shapeBatch.strokeOval(sx, sy, ringW + 2f, ringH + 1f, thickness + 2f,
-            0.05f, 0.02f, 0.02f, ringAlpha * 0.6f, 28);
-          // Primary ring — colored body
-          shapeBatch.strokeOval(sx, sy, ringW, ringH, thickness, er, eg, eb, ringAlpha, 28)
-
-          // Second ring (delayed by 10%)
-          if (progress > 0.2f && progress < 0.75f) {
-            val ring2P = (progress - 0.2f) / 0.55f
-            val ring2Scale = 0.2f + ring2P * 0.8f
-            val ring2Alpha = 0.6f * (1f - ring2P)
-            val ring2W = blastW * ring2Scale * 1.0f
-            val ring2H = blastH * ring2Scale * 1.0f
-            // Dark outline
-            shapeBatch.strokeOval(sx, sy, ring2W + 1.5f, ring2H + 0.75f, 2.5f,
-              0.05f, 0.02f, 0.02f, ring2Alpha * 0.5f, 28);
-            // Bright body
-            shapeBatch.strokeOval(sx, sy, ring2W, ring2H, 1.8f,
-              bright(er), bright(eg), bright(eb), ring2Alpha, 28)
-          }
-        }
-
-        // ── Phase 4: 18 debris particles with outlines + trails + 6 rising embers (15-100%) ──
-        if (progress > 0.15f) {
-          val debrisP = (progress - 0.15f) / 0.85f
-          // 18 debris particles in 3 size tiers
-          var i = 0
-          while (i < 18) {
-            val tier = i % 3 // 0=large, 1=medium, 2=small
-            val angle = i.toDouble * Math.PI * 2 / 18 + seed * 0.7
-            val speed = 0.5f + (((i * 7 + seed * 3) % 10) / 10f) * 0.7f
-            val dist = debrisP * speed
-            val dx = sx + (Math.cos(angle) * dist * blastW * 1.2f).toFloat
-            val dy = sy + (Math.sin(angle) * dist * blastH * 1.2f).toFloat - debrisP * debrisP * 18f
-            val debrisAlpha = 0.75f * (1f - debrisP)
-            val sz = if (tier == 0) 4f * (1f - debrisP * 0.5f)
-                     else if (tier == 1) 3f * (1f - debrisP * 0.5f)
-                     else 2f * (1f - debrisP * 0.6f)
-
-            if (debrisAlpha > 0.05f) {
-              // 2-segment trail behind debris
-              val td1 = dist * 0.75f
-              val td1X = sx + (Math.cos(angle) * td1 * blastW * 1.2f).toFloat
-              val td1Y = sy + (Math.sin(angle) * td1 * blastH * 1.2f).toFloat - (debrisP * 0.75f) * (debrisP * 0.75f) * 18f
-              shapeBatch.fillOval(td1X, td1Y, sz * 0.5f, sz * 0.35f, er, eg * 0.5f, eb * 0.2f, debrisAlpha * 0.3f, 4);
-              val td2 = dist * 0.5f
-              val td2X = sx + (Math.cos(angle) * td2 * blastW * 1.2f).toFloat
-              val td2Y = sy + (Math.sin(angle) * td2 * blastH * 1.2f).toFloat - (debrisP * 0.5f) * (debrisP * 0.5f) * 18f
-              shapeBatch.fillOval(td2X, td2Y, sz * 0.3f, sz * 0.2f, er, eg * 0.4f, eb * 0.15f, debrisAlpha * 0.15f, 4)
-
-              // Dark outline
-              shapeBatch.fillOval(dx, dy, sz + 1f, sz * 0.7f + 0.7f, 0.05f, 0.02f, 0.02f, debrisAlpha * 0.5f, 6);
-              // Debris body
-              shapeBatch.fillOval(dx, dy, sz, sz * 0.7f, er, eg * 0.6f, eb * 0.3f, debrisAlpha, 6)
-            }
-            i += 1
-          }
-
-          // 6 ember particles that rise and drift
-          shapeBatch.setAdditiveBlend(true)
-          var e = 0
-          while (e < 6) {
-            val eAngle = e * (Math.PI / 3.0) + seed * 1.1
-            val eDrift = (Math.sin(eAngle + debrisP * 4) * 12f).toFloat
-            val eRise = debrisP * debrisP * 40f
-            val ex = sx + eDrift + (e * 4f - 12f)
-            val ey = sy - eRise - e * 3f
-            val eAlpha = 0.6f * (1f - debrisP)
-            val eSz = 2f * (1f - debrisP * 0.4f)
-            if (eAlpha > 0.03f) {
-              shapeBatch.fillOval(ex, ey, eSz, eSz * 1.3f,
-                1f, bright(eg) * 0.8f, eb * 0.2f, eAlpha, 6);
-              // Ember trail
-              shapeBatch.fillOval(ex, ey + eSz * 2f, eSz * 0.4f, eSz * 0.8f,
-                er, eg * 0.5f, eb * 0.1f, eAlpha * 0.3f, 4)
-            }
-            e += 1
-          }
-          shapeBatch.setAdditiveBlend(false)
-        }
-
-        // ── Phase 5: 4 smoke puffs drifting upward with dark outlines (30-100%) ──
-        if (progress > 0.3f) {
-          val smokeP = (progress - 0.3f) / 0.7f
-          var s = 0
-          while (s < 4) {
-            val sDelay = s * 0.08f
-            val sP = Math.max(0f, (smokeP - sDelay) / (1f - sDelay))
-            if (sP > 0f) {
-              val sFade = 1f - sP
-              val smokeAlpha = 0.25f * sFade
-              val smokeScale = 0.4f + sP * 0.6f
-              // Each puff at slightly different position
-              val sOffX = (s * 7f - 10.5f) * smokeScale
-              val sOffY = -sP * (14f + s * 4f)
-              val smkW = blastW * smokeScale * (0.6f + s * 0.08f)
-              val smkH = blastH * smokeScale * (0.45f + s * 0.06f)
-              if (smokeAlpha > 0.02f) {
-                // Dark outline ring
-                shapeBatch.strokeOval(sx + sOffX, sy + sOffY, smkW + 1.5f, smkH + 1f, 2f,
-                  0.08f, 0.06f, 0.05f, smokeAlpha * 0.6f, 14);
-                // Smoke puff body
-                shapeBatch.fillOvalSoft(sx + sOffX, sy + sOffY, smkW, smkH,
-                  0.25f, 0.22f, 0.2f, smokeAlpha, 0f, 14)
-              }
-            }
-            s += 1
-          }
-        }
-
-        // ── Phase 6: Ground scorch mark (40-100%) ──
-        if (progress > 0.4f) {
-          val scorchP = (progress - 0.4f) / 0.6f
-          val scorchAlpha = 0.35f * (1f - scorchP * 0.6f) // fades slowly, persists
-          val scorchScale = 0.5f + scorchP * 0.2f
-          if (scorchAlpha > 0.02f) {
-            shapeBatch.fillOval(sx, sy + 2f, blastW * scorchScale, blastH * scorchScale * 0.5f,
-              0.06f, 0.03f, 0.03f, scorchAlpha, 18)
-          }
+        val w = GLBlastRenderers.footprintW(radius)
+        val h = GLBlastRenderers.footprintH(radius)
+        // On screen with room round it: what flies off a blast lands past its edge, and what
+        // rises (a geyser, a bolt out of the sky) stands well above it
+        if (_blN < MAX_BLASTS && sx + w * 1.3f > 0f && sx - w * 1.3f < canvasW &&
+            sy + h * 1.3f > 0f && sy - h * 1.3f - 260f < canvasH) {
+          val i = _blN
+          _blStyle(i) = style
+          _blSX(i) = sx; _blSY(i) = sy; _blWX(i) = wx.toFloat; _blWY(i) = wy.toFloat
+          _blW(i) = w; _blH(i) = h
+          _blT(i) = elapsed.toFloat / dur
+          _blMs(i) = elapsed.toFloat
+          _blSeed(i) = d(GameClient.BLAST_SEED).toInt
+          intToRGB(d(GameClient.BLAST_COLOR).toInt)
+          _blCR(i) = _rgb_r; _blCG(i) = _rgb_g; _blCB(i) = _rgb_b
+          // Far to near, so a nearer blast draws over a further one
+          var j = i
+          while (j > 0 && _blSY(_blOrder(j - 1)) > sy) { _blOrder(j) = _blOrder(j - 1); j -= 1 }
+          _blOrder(j) = i
+          _blN += 1
         }
       }
     }
+    // A crowd of blasts draws fewer of the small things each: what distinguishes them — their
+    // shapes, their glyphs — is kept whole
+    val tier = (RenderQuality.tier: @scala.annotation.switch) match {
+      case RenderQuality.HIGH => 1f
+      case RenderQuality.MEDIUM => 0.85f
+      case _ => 0.65f
+    }
+    _blDetail = tier * Math.max(0.5f, Math.min(1f, 8f / Math.max(1, _blN)))
   }
 
-  private def drawAoeSplashAnimations(): Unit = {
-    val now = _frameTimeMs
-    val AOE_DURATION = 1200L
-    val iter = client.getAoeSplashAnimations.entrySet().iterator()
-    while (iter.hasNext) {
-      val entry = iter.next()
-      val data = entry.getValue
-      val timestamp = data(0)
-      if (now - timestamp > AOE_DURATION) {
-        iter.remove()
-      } else {
-        val wx = data(1).toDouble / 1000.0; val wy = data(2).toDouble / 1000.0
-        val colorRGB = data(3).toInt
-        val aoeRadius = if (data.length > 4) data(4).toFloat / 1000f else 3f
-        val sx = worldToScreenX(wx, wy).toFloat
-        val sy = worldToScreenY(wx, wy).toFloat
-        val elapsed = (now - timestamp).toFloat
-        val progress = elapsed / AOE_DURATION
-        intToRGB(colorRGB)
-        val ar = _rgb_r; val ag = _rgb_g; val ab = _rgb_b
-        val seed = entry.getKey.toLong
-
-        val aoeW = aoeRadius * HW
-        val aoeH = aoeRadius * HH
-
-        // Dynamic light — bright flash that fades
-        val lightInt = if (progress < 0.15f) 0.4f else 0.4f * (1f - progress)
-        lightSystem.addLight(sx, sy, aoeW * 1.5f, ar, ag, ab, Math.max(0f, lightInt))
-
-        beginShapes()
-
-        // Full-area ground highlight — colored zone showing AoE radius (0-100%)
-        val zoneAlpha = if (progress < 0.1f) progress / 0.1f * 0.35f
-                        else 0.35f * (1f - (progress - 0.1f) / 0.9f)
-        if (zoneAlpha > 0.02f) {
-          shapeBatch.fillOval(sx, sy, aoeW, aoeH, ar * 0.5f, ag * 0.5f, ab * 0.5f, zoneAlpha, 24)
-        }
-
-        // Bright center impact flash (0-25%) — 3-layer
-        if (progress < 0.25f) {
-          val flashP = progress / 0.25f
-          val flashAlpha = 0.9f * (1f - flashP)
-          val flashScale = 0.2f + flashP * 0.6f
-          shapeBatch.setAdditiveBlend(true)
-          // Layer 1: Wide outer glow
-          shapeBatch.fillOvalSoft(sx, sy, aoeW * flashScale * 1.2f, aoeH * flashScale * 1.2f,
-            bright(ar), bright(ag), bright(ab), flashAlpha * 0.4f, 0f, 22);
-          // Layer 2: Colored glow
-          shapeBatch.fillOvalSoft(sx, sy, aoeW * flashScale * 0.8f, aoeH * flashScale * 0.8f,
-            bright(ar), bright(ag), bright(ab), flashAlpha * 0.6f, 0f, 20);
-          // Layer 3: White-hot core
-          shapeBatch.fillOval(sx, sy, aoeW * flashScale * 0.4f, aoeH * flashScale * 0.4f,
-            1f, 1f, 0.95f, flashAlpha, 16)
-          shapeBatch.setAdditiveBlend(false)
-        }
-
-        // Bold shockwave ring with dark outline (0-60%)
-        if (progress < 0.6f) {
-          val swP = progress / 0.6f
-          val swFade = 1f - swP
-          val swScale = 0.1f + swP * 0.9f
-          val swW = aoeW * swScale
-          val swH = aoeH * swScale
-          val swThick = 4f * (1f - swP * 0.4f)
-          // Dark outline
-          shapeBatch.strokeOval(sx, sy, swW + 2f, swH + 1f, swThick + 2f,
-            0.05f, 0.02f, 0.02f, 0.6f * swFade, 28);
-          // Colored body
-          shapeBatch.strokeOval(sx, sy, swW, swH, swThick,
-            ar, ag, ab, 0.8f * swFade, 28);
-          // Bright inner edge
-          shapeBatch.setAdditiveBlend(true)
-          shapeBatch.strokeOval(sx, sy, swW - 1f, swH - 0.5f, 1.5f,
-            bright(ar), bright(ag), bright(ab), 0.5f * swFade, 28)
-          shapeBatch.setAdditiveBlend(false)
-        }
-
-        // Bold expanding ring waves (4 rings with stagger + dark outlines)
-        var ring = 0
-        while (ring < 4) {
-          val ringDelay = ring * 0.1f
-          val ringP = Math.max(0f, (progress - ringDelay) / (0.8f - ringDelay))
-          if (ringP > 0f && ringP < 1f) {
-            val ringScale = 0.05f + ringP * 0.95f
-            val ringAlpha = 0.9f * (1f - ringP) / (ring * 0.5f + 1f)
-            val rw = aoeW * ringScale
-            val rh = aoeH * ringScale
-            val thickness = (4f - ring * 0.7f) * (1f - ringP * 0.3f)
-            // Dark outline on each ring
-            shapeBatch.strokeOval(sx, sy, rw + 1f, rh + 0.5f, thickness + 1.5f,
-              0.04f, 0.02f, 0.02f, ringAlpha * 0.4f, 28);
-            shapeBatch.strokeOval(sx, sy, rw, rh, thickness, ar, ag, ab, ringAlpha, 28)
-          }
-          ring += 1
-        }
-
-        // Outer boundary ring — shows exact AoE radius (5-90%)
-        if (progress > 0.05f && progress < 0.9f) {
-          val boundP = if (progress < 0.15f) (progress - 0.05f) / 0.1f else 1f
-          val boundFade = if (progress > 0.7f) (0.9f - progress) / 0.2f else 1f
-          val boundAlpha = 0.7f * boundP * boundFade
-          shapeBatch.strokeOval(sx, sy, aoeW, aoeH, 2.5f, bright(ar), bright(ag), bright(ab), boundAlpha, 32)
-        }
-
-        // Ground scorch mark (fades slowly)
-        if (progress > 0.15f) {
-          val scorchP = (progress - 0.15f) / 0.85f
-          val scorchAlpha = 0.4f * (1f - scorchP)
-          shapeBatch.fillOval(sx, sy, aoeW * 0.65f, aoeH * 0.65f,
-            ar * 0.3f, ag * 0.3f, ab * 0.3f, scorchAlpha, 16)
-        }
-
-        // Ground impact crack lines (0-50%) — 8 lines radiating from center
-        if (progress < 0.5f) {
-          val crackP = progress / 0.5f
-          val crackFade = 1f - crackP
-          var c = 0
-          while (c < 8) {
-            val cAngle = c * (Math.PI / 4.0) + seed * 0.5
-            val crackLen = aoeW * (0.2f + crackP * 0.5f)
-            val outerX = sx + (crackLen * Math.cos(cAngle)).toFloat
-            val outerY = sy + (crackLen * 0.5 * Math.sin(cAngle)).toFloat
-            // Dark crack line
-            shapeBatch.strokeLine(sx, sy, outerX, outerY, 2.5f * crackFade,
-              0.06f, 0.03f, 0.06f, 0.5f * crackFade);
-            // Bright edge
-            shapeBatch.strokeLine(sx, sy, outerX, outerY, 1f * crackFade,
-              bright(ar), bright(ag), bright(ab), 0.4f * crackFade)
-            c += 1
-          }
-        }
-
-        // Radial line burst from center (0-50%)
-        if (progress < 0.5f) {
-          val burstP = progress / 0.5f
-          val numLines = 12
-          val burstAlpha = 0.7f * (1f - burstP)
-          val innerDist = burstP * 0.3f
-          val outerDist = 0.3f + burstP * 0.7f
-          var i = 0
-          while (i < numLines) {
-            val angle = i.toDouble * Math.PI * 2 / numLines + seed * 0.9
-            val ix = sx + (Math.cos(angle) * aoeW * innerDist).toFloat
-            val iy = sy + (Math.sin(angle) * aoeH * innerDist).toFloat
-            val ox = sx + (Math.cos(angle) * aoeW * outerDist).toFloat
-            val oy = sy + (Math.sin(angle) * aoeH * outerDist).toFloat
-            shapeBatch.strokeLine(ix, iy, ox, oy, 2f, bright(ar), bright(ag), bright(ab), burstAlpha)
-            i += 1
-          }
-        }
-
-        // Sparkle particles around perimeter with outlines (16 particles)
-        if (progress > 0.05f && progress < 0.8f) {
-          val sparkP = (progress - 0.05f) / 0.75f
-          val numSparks = 16
-          var i = 0
-          while (i < numSparks) {
-            val angle = i.toDouble * Math.PI * 2 / numSparks + seed * 1.3
-            val dist = 0.4f + sparkP * 0.6f
-            val px = sx + (Math.cos(angle) * aoeW * dist).toFloat
-            val py = sy + (Math.sin(angle) * aoeH * dist).toFloat
-            val sparkAlpha = 0.8f * (1f - sparkP)
-            val sparkSz = 3.5f * (1f - sparkP * 0.3f)
-            if (sparkAlpha > 0.03f) {
-              // Dark outline
-              shapeBatch.fillOval(px, py, sparkSz + 1f, sparkSz * 0.7f + 0.7f,
-                0.04f, 0.02f, 0.02f, sparkAlpha * 0.4f, 6);
-              // Bright particle body
-              shapeBatch.fillOval(px, py, sparkSz, sparkSz * 0.7f,
-                bright(ar), bright(ag), bright(ab), sparkAlpha, 6)
-            }
-            i += 1
-          }
-        }
-
-        // Sparkle stars (8 stars that pop and fade)
-        shapeBatch.setAdditiveBlend(true)
-        var s = 0
-        while (s < 8) {
-          val sDelay = s * 0.08f
-          val sLife = progress - sDelay
-          if (sLife > 0f && sLife < 0.4f) {
-            val sP = sLife / 0.4f
-            val sFade = if (sP < 0.25f) sP / 0.25f else (1f - sP) / 0.75f
-            val sAngle = s * (Math.PI * 2.0 / 8) + seed * 1.7
-            val sDist = aoeW * (0.3f + s * 0.08f)
-            val starX = sx + (sDist * Math.cos(sAngle)).toFloat
-            val starY = sy + (sDist * 0.5 * Math.sin(sAngle)).toFloat
-            val starSz = 4f * sFade
-            if (sFade > 0.02f) {
-              // 4-pointed star (two crossed lines)
-              shapeBatch.strokeLine(starX - starSz, starY, starX + starSz, starY,
-                1.5f, 1f, 1f, 1f, 0.7f * sFade);
-              shapeBatch.strokeLine(starX, starY - starSz, starX, starY + starSz,
-                1.5f, 1f, 1f, 1f, 0.7f * sFade);
-              // Diagonal cross
-              val dSz = starSz * 0.6f
-              shapeBatch.strokeLine(starX - dSz, starY - dSz, starX + dSz, starY + dSz,
-                1f, bright(ar), bright(ag), bright(ab), 0.5f * sFade);
-              shapeBatch.strokeLine(starX - dSz, starY + dSz, starX + dSz, starY - dSz,
-                1f, bright(ar), bright(ag), bright(ab), 0.5f * sFade)
-            }
-          }
-          s += 1
-        }
-        shapeBatch.setAdditiveBlend(false)
-      }
+  /** One layer of every blast this frame: GROUND in the ground pass, under whoever stands in
+    * them and the walls in front of them; AIR over everything. */
+  private def drawBlasts(layer: Int): Unit = {
+    if (_blN == 0) return
+    beginShapes()
+    var j = 0
+    while (j < _blN) {
+      val i = _blOrder(j)
+      GLBlastRenderers.draw(shapeBatch, _blStyle(i), layer, _blSX(i), _blSY(i), _blW(i), _blH(i),
+        _blT(i), _blMs(i), _blSeed(i), _blDetail, _blCR(i), _blCG(i), _blCB(i))
+      j += 1
     }
   }
 
@@ -6558,28 +6212,27 @@ class GLGameRenderer(val client: GameClient) {
       lightSystem.addLight(psx, psy, 65f, 1f, 0.85f, 0.65f, 0.10f)
     }
 
-    // Explosion lights
-    val now = _frameTimeMs
-    val expIter = client.getExplosionAnimations.values().iterator()
-    while (expIter.hasNext) {
-      val data = expIter.next()
-      val timestamp = data(0)
-      val elapsed = now - timestamp
-      if (elapsed < 1400) {
-        val wx = data(1).toDouble / 1000.0; val wy = data(2).toDouble / 1000.0
-        val colorRGB = data(3).toInt
-        intToRGB(colorRGB)
-        val er = _rgb_r; val eg = _rgb_g; val eb = _rgb_b
-        val exsx = worldToScreenX(wx, wy).toFloat
-        val exsy = worldToScreenY(wx, wy).toFloat
-        val decay = Math.max(0f, 1f - elapsed.toFloat / 1400f)
-        lightSystem.addLight(exsx, exsy, 180f * decay, er, eg, eb, 0.6f * decay)
-        // Brief secondary white flash for the first 200ms of explosion
-        if (elapsed < 200) {
-          val flashIntensity = 1f - elapsed.toFloat / 200f
-          lightSystem.addLight(exsx, exsy, 140f * flashIntensity, 1f, 1f, 1f, 0.5f * flashIntensity)
+    // Blasts light up what is round them, in their own colour, dying away as they do; a heavy
+    // one flashes white as it goes off
+    var b = 0
+    while (b < _blN) {
+      val st = _blStyle(b)
+      val li = GLBlastRenderers.lightStrength(st)
+      if (li > 0f) {
+        val t = _blT(b)
+        val decay = (1f - t) * (1f - t)
+        val generic = st == GLBlastRenderers.S_GENERIC
+        val lr = if (generic) _blCR(b) else GLBlastRenderers.lightR(st)
+        val lg = if (generic) _blCG(b) else GLBlastRenderers.lightG(st)
+        val lb = if (generic) _blCB(b) else GLBlastRenderers.lightB(st)
+        lightSystem.addLight(_blSX(b), _blSY(b) - _blH(b) * 0.3f, _blW(b) * 1.5f * (0.6f + 0.4f * decay),
+          lr, lg, lb, li * decay)
+        if (_blMs(b) < 180f && GLBlastRenderers.heaviness(st) > 0f) {
+          val flash = 1f - _blMs(b) / 180f
+          lightSystem.addLight(_blSX(b), _blSY(b), _blW(b) * 1.2f * flash, 1f, 1f, 1f, 0.5f * flash)
         }
       }
+      b += 1
     }
   }
 
@@ -6638,34 +6291,25 @@ class GLGameRenderer(val client: GameClient) {
   // ═══════════════════════════════════════════════════════════════════
 
   private def updateExplosionDistortion(): Unit = {
-    val now = _frameTimeMs
     var bestStrength = 0f
     var bestCX = 0.5f
     var bestCY = 0.5f
-
-    val expIter = client.getExplosionAnimations.values().iterator()
-    while (expIter.hasNext) {
-      val data = expIter.next()
-      val timestamp = data(0)
-      val elapsed = now - timestamp
-      if (elapsed < 600) { // distortion only in first 600ms
-        val wx = data(1).toDouble / 1000.0; val wy = data(2).toDouble / 1000.0
-        val exsx = worldToScreenX(wx, wy)
-        val exsy = worldToScreenY(wx, wy)
-
-        // Convert to UV space (0-1) for the shader, whose v runs up the screen: without the flip
-        // an explosion above the player rippled the screen below them
-        val uvX = (exsx / canvasW).toFloat
-        val uvY = (1.0 - exsy / canvasH).toFloat
-
-        // Check proximity to local player (use cached visual position)
-        val lvx = client.visualPosX; val lvy = client.visualPosY
-        val dx = wx - lvx; val dy = wy - lvy
+    val lvx = client.visualPosX; val lvy = client.visualPosY
+    var b = 0
+    while (b < _blN) {
+      val heavy = GLBlastRenderers.heaviness(_blStyle(b))
+      val elapsed = _blMs(b)
+      if (heavy > 0f && elapsed < 600f) { // the air shakes for its first 600ms
+        // In UV space (0-1) for the shader, whose v runs up the screen: without the flip an
+        // explosion above the player rippled the screen below them
+        val uvX = _blSX(b) / canvasW.toFloat
+        val uvY = 1f - _blSY(b) / canvasH.toFloat
+        val dx = _blWX(b) - lvx; val dy = _blWY(b) - lvy
         val dist = Math.sqrt(dx * dx + dy * dy)
-        if (dist < 8) { // only distort if within 8 tiles
+        if (dist < 8) { // only within 8 tiles of us
           val proximity = Math.max(0, 1.0 - dist / 8.0).toFloat
-          val timeDecay = Math.max(0f, 1f - elapsed.toFloat / 600f)
-          val strength = 0.008f * proximity * timeDecay
+          val timeDecay = Math.max(0f, 1f - elapsed / 600f)
+          val strength = 0.008f * heavy * proximity * timeDecay
           if (strength > bestStrength) {
             bestStrength = strength
             bestCX = uvX
@@ -6673,6 +6317,7 @@ class GLGameRenderer(val client: GameClient) {
           }
         }
       }
+      b += 1
     }
 
     postProcessor.distortionStrength = bestStrength

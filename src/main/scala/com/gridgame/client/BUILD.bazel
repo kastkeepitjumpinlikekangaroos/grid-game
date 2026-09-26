@@ -171,6 +171,7 @@ scala_binary(
     name = "projectile_gallery",
     main_class = "com.gridgame.client.gl.ProjectileGallery",
     srcs = [
+        "gl/GLBlastRenderers.scala",
         "gl/GLFWManager.scala",
         "gl/GLProjectileRenderers.scala",
         "gl/GLTexture.scala",

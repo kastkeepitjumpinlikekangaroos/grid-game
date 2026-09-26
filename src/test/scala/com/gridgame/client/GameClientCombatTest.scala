@@ -57,7 +57,7 @@ class GameClientCombatTest {
     t.projectile(ProjectileAction.SPAWN, 53, shooter, pType = ProjectileType.GRENADE)
     t.projectile(ProjectileAction.DESPAWN, 53, shooter, x = 30f, y = 30f, pType = ProjectileType.GRENADE)
     assertNull(c.getProjectiles.get(53))
-    assertNotNull(c.getExplosionAnimations.get(53))
+    assertEquals("and goes off", 1, c.getBlasts.size)
   }
 
   @Test def aShotStoppedByTerrainFadesWhereItStruck(): Unit = {

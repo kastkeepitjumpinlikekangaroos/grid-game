@@ -29,6 +29,8 @@ import scala.jdk.CollectionConverters._
  *                                                                  # another map, standing on one cell of it
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --types=LIGHTNING,SOUL_BOLT
  *                                                                  # only these projectile types in flight
+ *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --blasts=12
+ *                                                                  # every character's blasts going off round us
  *
  * Drives the real GLGameRenderer the way the client does — a GLFW window at the client's
  * size, frames driven by a JavaFX AnimationTimer on the FX thread — over a fabricated
@@ -225,6 +227,29 @@ class RenderBenchApp extends Application {
         named.getOrElse(n, throw new IllegalArgumentException(s"no projectile type named $n")))
       case None => (0 until 256).map(_.toByte).filter(t => GLProjectileRenderers.getRenderer(t) != null).toArray
     }
+    // --blasts=N keeps about N blasts going off round us, every character's in turn (each thrown
+    // by its own character, so each is drawn as it is in a match). Off by default, like the rest.
+    val blastTarget = argOf(args, "blasts").map(_.toInt).getOrElse(if (args.contains("--blasts")) 12 else 0)
+    val blastRoster: Array[(Byte, Byte, Float)] = CharacterDef.all.flatMap { c =>
+      Seq(c.primaryProjectileType, c.qAbility.projectileType, c.eAbility.projectileType).flatMap { t =>
+        if (t >= -4 && t < 0) None
+        else {
+          val d = ProjectileDef.get(t)
+          d.aoeOnHit.map(_.radius).orElse(d.explosionConfig.map(_.blastRadius)).orElse(d.aoeOnMaxRange.map(_.radius))
+            .map(r => (c.id.id, t, r))
+        }
+      }
+    }.distinct.toArray
+    var blastCursor = 0
+    var nextBlastKey = 1L
+    def blastNear(now: Long): Unit = {
+      val (who, t, r) = blastRoster(blastCursor % blastRoster.length); blastCursor += 1
+      val at = walkableNear(home.getX, home.getY, 9)
+      client.blast(nextBlastKey, at.getX + rng.nextFloat() - 0.5f, at.getY + rng.nextFloat() - 0.5f,
+        0xFF8899FF, r, t, who, trap = false)
+      nextBlastKey += 1
+    }
+
     var nextProjId = 1
     var typeCursor = 0
     def spawnProjectile(): Unit = {
@@ -251,11 +276,13 @@ class RenderBenchApp extends Application {
         if (p.getDistanceTraveled > pDef.maxRange || p.isOutOfBounds(world)) {
           it.remove()
           retired += 1
-          if (pDef.isExplosive)
-            client.getExplosionAnimations.put(p.id, Array(now, (p.getX * 1000).toLong, (p.getY * 1000).toLong,
-              p.colorRGB.toLong, 3000L))
-          pDef.aoeOnMaxRange.foreach(aoe => client.getAoeSplashAnimations.put(p.id + 1000000, Array(now,
-            (p.getX * 1000).toLong, (p.getY * 1000).toLong, p.colorRGB.toLong, (aoe.radius * 1000).toLong)))
+          // Going off at the end of its range, as it does in a match
+          if (pDef.isExplosive || pDef.aoeOnMaxRange.isDefined) {
+            val r = Math.max(pDef.explosionConfig.map(_.blastRadius).getOrElse(0f), pDef.aoeOnMaxRange.map(_.radius).getOrElse(0f))
+            val shooter = client.getPlayers.get(p.ownerId)
+            client.blast(GameClient.blastKey(p.id, frame), p.getX, p.getY, p.colorRGB, r, p.projectileType,
+              if (shooter != null) shooter.getCharacterId else -1, trap = false)
+          }
         }
       }
       var i = 0
@@ -318,6 +345,9 @@ class RenderBenchApp extends Application {
         val along = home.getY + rng.nextInt(11) - 5
         client.recordDividerImpact(d.at.toFloat, along.toFloat, now)
       }
+
+      // Blasts going off round us, one every so often so that about blastTarget are going at once
+      if (blastTarget > 0 && frame % Math.max(1, 72 / blastTarget) == 0) blastNear(now)
 
       // A death and a teleport somewhere every couple of seconds
       if (frame % 120 == 0) {
@@ -389,7 +419,7 @@ class RenderBenchApp extends Application {
         println(f"render bench: ${window.fbWidth}x${window.fbHeight} fb (${window.width}x${window.height} window), " +
           f"quality ${RenderQuality.tierName}, $nPlayers players, ${client.getProjectiles.size} projectiles, " +
           f"${if (withEffects) "status effects, " else ""}${if (withBarriers) "barriers, " else ""}" +
-          f"${if (withTraps) s"$nTraps traps, " else ""}$n frames")
+          f"${if (withTraps) s"$nTraps traps, " else ""}${if (blastTarget > 0) s"~$blastTarget blasts, " else ""}$n frames")
         println(f"  frame build (wall):  mean ${mean(cpuNs)}%.2f ms, p50 ${pct(cpuNs, 0.5)}%.2f, p99 ${pct(cpuNs, 0.99)}%.2f, max ${pct(cpuNs, 1.0)}%.2f")
         println(f"  frame build (CPU):   mean ${mean(threadCpuNs)}%.2f ms, p50 ${pct(threadCpuNs, 0.5)}%.2f, p99 ${pct(threadCpuNs, 0.99)}%.2f  (render thread CPU time)")
         println(f"  frame done (GPU):    mean ${mean(gpuNs)}%.2f ms, p50 ${pct(gpuNs, 0.5)}%.2f, p99 ${pct(gpuNs, 0.99)}%.2f, max ${pct(gpuNs, 1.0)}%.2f")

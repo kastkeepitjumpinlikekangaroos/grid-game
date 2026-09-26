@@ -41,13 +41,28 @@ final case class MatchHistoryEntry(matchId: Int, mapIndex: Int, durationMinutes:
                                    kills: Int, deaths: Int, rank: Int, totalPlayers: Int, matchType: Int)
 
 object GameClient {
-  /** A trap's blast goes into the same animation map a projectile's does, keyed past every id the
-    * server hands out (positive 31-bit) so the two can never land on each other. */
-  val TRAP_EXPLOSION_IDS: Int = 0x40000000
+  /** A blast is keyed by the projectile that set it off and the server tick it went off on. The
+    * HIT on whoever a splash struck and the HITs on everyone it caught all come in that one tick,
+    * so they are one blast; a piercing splash that goes off again later is another. */
+  def blastKey(projectileId: Int, tick: Int): Long = (projectileId.toLong << 32) | (tick & 0xFFFFFFFFL)
+  /** A trap's blasts are keyed past every projectile's. */
+  val TRAP_BLAST_KEYS: Long = 1L << 62
+
+  // A blast's fields, in its array (getBlasts)
+  final val BLAST_TIME = 0    // when it went off, currentTimeMillis
+  final val BLAST_X = 1       // where, world x * 1000
+  final val BLAST_Y = 2       // world y * 1000
+  final val BLAST_COLOR = 3   // the thrower's colour (ARGB)
+  final val BLAST_RADIUS = 4  // how far it reaches, cells * 1000
+  final val BLAST_TYPE = 5    // the projectile type that set it off, or the trap's type
+  final val BLAST_CHAR = 6    // the thrower's character (a CharacterId's id), -1 unknown
+  final val BLAST_TRAP = 7    // 1 when a trap set it off
+  final val BLAST_SEED = 8    // what tells it from the blast beside it
+  final val BLAST_SEEN = 9    // set by the renderer once it has shaken the camera for it
 }
 
 class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, var playerName: String = "Player") {
-  import GameClient.TRAP_EXPLOSION_IDS
+  import GameClient.{blastKey, TRAP_BLAST_KEYS}
   private var networkThread: NetworkThread = _
 
   private var localPlayerId: UUID = UUID.randomUUID()
@@ -182,12 +197,13 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   // Teleport animation tracking: (timestamp, oldX, oldY, newX, newY, colorRGB)
   private val teleportAnimations: ConcurrentHashMap[UUID, Array[Long]] = new ConcurrentHashMap()
 
-  // Explosion animation tracking: projectileId -> (timestamp, worldX*1000, worldY*1000, colorRGB, blastRadius*1000)
-  private val explosionAnimations: ConcurrentHashMap[Int, Array[Long]] = new ConcurrentHashMap()
+  // Blasts going off: every explosion and splash, drawn as whoever threw it (GLBlastRenderers).
+  // blastKey -> the fields at GameClient.BLAST_*. One map for both: a slam used to put an
+  // explosion in one and a splash in another, and was drawn as both at once.
+  private val blasts: ConcurrentHashMap[Long, Array[Long]] = new ConcurrentHashMap()
 
   // A trap going off: trapId -> (timestamp, worldX*1000, worldY*1000, trapType). A mine's blast
-  // goes through explosionAnimations instead, keyed past every projectile id so the two can't
-  // collide (TRAP_EXPLOSION_IDS).
+  // goes through `blasts` instead, keyed past every projectile's (TRAP_BLAST_KEYS).
   private val trapEffects: ConcurrentHashMap[Int, Array[Long]] = new ConcurrentHashMap()
 
   // Projectiles stopped by terrain or the end of their range: kept for TerrainImpact.FADE_MS
@@ -210,9 +226,6 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
   @volatile private var moveInterpStartTime: Long = 0L
   @volatile private var moveInterpDurationMs: Long = Constants.MOVE_RATE_LIMIT_MS
   @volatile private var prevMoveTimestamp: Long = 0L
-
-  // AoE splash animation tracking: projectileId -> (timestamp, worldX*1000, worldY*1000, colorRGB, aoeRadius*1000)
-  private val aoeSplashAnimations: ConcurrentHashMap[Int, Array[Long]] = new ConcurrentHashMap()
 
   // Track recently removed projectile IDs to prevent UDP MOVE packets from resurrecting them
   private val recentlyRemovedProjectiles: java.util.Set[Int] =
@@ -380,8 +393,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     scoreboard.clear()
     deathAnimations.clear()
     teleportAnimations.clear()
-    explosionAnimations.clear()
-    aoeSplashAnimations.clear()
+    blasts.clear()
     playerHitTimes.clear()
     playerHitColors.clear()
     playerHitDx.clear()
@@ -1515,8 +1527,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         inventory.clear()
         deathAnimations.clear()
         teleportAnimations.clear()
-        explosionAnimations.clear()
-        aoeSplashAnimations.clear()
+        blasts.clear()
         playerHitTimes.clear()
         playerHitColors.clear()
         playerHitDx.clear()
@@ -1959,8 +1970,7 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     lobbyMembers.clear()
     deathAnimations.clear()
     teleportAnimations.clear()
-    explosionAnimations.clear()
-    aoeSplashAnimations.clear()
+    blasts.clear()
     playerHitTimes.clear()
     playerHitColors.clear()
     playerHitDx.clear()
@@ -2207,16 +2217,12 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
             distanceFromLocal(packet.getX, packet.getY), panFromLocal(packet.getX, packet.getY))
         }
 
-        // AoE splash visual on hit
+        // A splash goes off where it struck. The HITs on everyone it caught come in the same tick
+        // and are the same blast.
         val hitPDef = ProjectileDef.get(hitPType)
         hitPDef.aoeOnHit.foreach { aoe =>
-          aoeSplashAnimations.put(projectileId, Array(
-            System.currentTimeMillis(),
-            (packet.getX * 1000).toLong,
-            (packet.getY * 1000).toLong,
-            packet.getColorRGB.toLong,
-            (aoe.radius * 1000).toLong
-          ))
+          blast(blastKey(projectileId, packet.getTick), packet.getX, packet.getY, packet.getColorRGB,
+            aoe.radius, hitPType, characterIdOf(packet.getPlayerId), trap = false)
         }
 
       case ProjectileAction.DESPAWN =>
@@ -2229,32 +2235,33 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
         // the wall, so walk back to the face before showing anything there.
         val impact = TerrainImpact.resolve(getWorld, packet.getX, packet.getY,
           packet.getDx, packet.getDy, pDef.passesThroughWalls)
+        val owner = if (despawned != null) despawned.ownerId else packet.getPlayerId
         if (pDef.isExplosive) {
-          AudioManager.playExplosion(
-            distanceFromLocal(impact.x, impact.y), panFromLocal(impact.x, impact.y))
-          val blastRadius = pDef.explosionConfig.map(_.blastRadius).getOrElse(3f)
-          explosionAnimations.put(projectileId, Array(
-            System.currentTimeMillis(),
-            (impact.x * 1000).toLong,
-            (impact.y * 1000).toLong,
-            colorRGB.toLong,
-            (blastRadius * 1000).toLong
-          ))
-        } else if (despawned != null) {
-          // Stop it where it struck and let it sink into the surface there
-          stopProjectile(despawned, impact.x, impact.y)
-          fadingProjectiles.put(projectileId,
-            new FadingProjectile(despawned, System.currentTimeMillis(), impact.hitTerrain, impact.tileColor))
-        }
-        // AoE splash visual on max range
-        pDef.aoeOnMaxRange.foreach { aoe =>
-          aoeSplashAnimations.put(projectileId + 1000000, Array(
-            System.currentTimeMillis(),
-            (packet.getX * 1000).toLong,
-            (packet.getY * 1000).toLong,
-            colorRGB.toLong,
-            (aoe.radius * 1000).toLong
-          ))
+          // An explosive always goes off, wherever it stopped: at the end of its range, on a wall
+          // or at the edge of the map. One blast, the size of whichever of its blast and its
+          // splash reaches further (a slam has both, the same).
+          val radius = Math.max(pDef.explosionConfig.map(_.blastRadius).getOrElse(3f),
+            pDef.aoeOnMaxRange.map(_.radius).getOrElse(0f))
+          blast(blastKey(projectileId, packet.getTick), impact.x, impact.y, colorRGB, radius, pType,
+            characterIdOf(owner), trap = false)
+          // A bang only for one that deals its blast. A slam's, a web's and the ink's explosion is
+          // there only to be drawn, and their own sound played when they were cast: a Wolf's howl
+          // went off as a grenade.
+          if (pDef.explosionConfig.exists(e => e.centerDamage > 0 || e.edgeDamage > 0))
+            AudioManager.playExplosion(distanceFromLocal(impact.x, impact.y), panFromLocal(impact.x, impact.y))
+        } else {
+          if (despawned != null) {
+            // Stop it where it struck and let it sink into the surface there
+            stopProjectile(despawned, impact.x, impact.y)
+            fadingProjectiles.put(projectileId,
+              new FadingProjectile(despawned, System.currentTimeMillis(), impact.hitTerrain, impact.tileColor))
+          }
+          // A splash at the end of its range. The server doesn't set one off when the terrain
+          // stopped it first, so neither is one drawn there.
+          if (!impact.hitTerrain) pDef.aoeOnMaxRange.foreach { aoe =>
+            blast(blastKey(projectileId, packet.getTick), impact.x, impact.y, colorRGB, aoe.radius, pType,
+              characterIdOf(owner), trap = false)
+          }
         }
 
       case ProjectileAction.BLOCKED =>
@@ -2358,10 +2365,9 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
           val dist = distanceFromLocal(wx, wy)
           val pan = panFromLocal(wx, wy)
           tDef.explosion match {
-            case Some(blast) =>
-              explosionAnimations.put(TRAP_EXPLOSION_IDS + trapId, Array(now,
-                (wx * 1000).toLong, (wy * 1000).toLong, tDef.colorRGB.toLong,
-                (blast.blastRadius * 1000).toLong))
+            case Some(boom) =>
+              blast(TRAP_BLAST_KEYS | (trapId & 0xFFFFFFFFL), wx, wy, tDef.colorRGB, boom.blastRadius,
+                trapType, characterIdOf(packet.getPlayerId), trap = true)
               AudioManager.playExplosion(dist, pan)
             case None =>
               trapEffects.put(trapId, Array(now, (wx * 1000).toLong, (wy * 1000).toLong, trapType.toLong))
@@ -2768,7 +2774,17 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
 
   def getTeleportAnimations: ConcurrentHashMap[UUID, Array[Long]] = teleportAnimations
 
-  def getExplosionAnimations: ConcurrentHashMap[Int, Array[Long]] = explosionAnimations
+  /** Blasts going off, for the renderer: blastKey -> the fields at GameClient.BLAST_*. */
+  def getBlasts: ConcurrentHashMap[Long, Array[Long]] = blasts
+
+  /** A blast going off at (x, y): an explosion or a splash of `radius` cells, set off by a
+    * projectile of `pType` (or a trap of that type) thrown by a `charId`. The first under a key
+    * is the one drawn. */
+  private[client] def blast(key: Long, x: Float, y: Float, colorRGB: Int, radius: Float, pType: Byte, charId: Byte,
+                            trap: Boolean): Unit =
+    blasts.putIfAbsent(key, Array(System.currentTimeMillis(), (x * 1000).toLong, (y * 1000).toLong,
+      colorRGB.toLong, (radius * 1000).toLong, pType.toLong, charId.toLong, if (trap) 1L else 0L,
+      ((key ^ (key >>> 29)) * 0x9E3779B97F4A7C15L) >>> 40, 0L))
 
   def getTraps: ConcurrentHashMap[Int, Trap] = traps
 
@@ -2787,7 +2803,6 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
     while (iter.hasNext) if (iter.next().ownerId.equals(localPlayerId)) n += 1
     n
   }
-  def getAoeSplashAnimations: ConcurrentHashMap[Int, Array[Long]] = aoeSplashAnimations
   def getFadingProjectiles: ConcurrentHashMap[Int, FadingProjectile] = fadingProjectiles
 
   def getWorld: WorldData = currentWorld.get()

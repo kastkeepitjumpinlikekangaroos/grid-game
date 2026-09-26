@@ -4368,7 +4368,7 @@ object GLProjectileRenderers {
 
   /** One of the dead: a mound of turned earth with a skeletal hand and forearm `rise` of the way
    *  up out of it, leaning `lean` (screen x per unit of height), fingers open by `open`. */
-  private def deadHand(sb: ShapeBatch, x: Float, y: Float, rise: Float, lean: Float, open: Float,
+  private[gl] def deadHand(sb: ShapeBatch, x: Float, y: Float, rise: Float, lean: Float, open: Float,
                        a: Float, s: Float): Unit = {
     if (a <= 0.01f) return
     sb.fillOval(x, y + 1f, 9f * s + 1.6f, 3.8f * s + 1.6f, 0.1f, 0.07f, 0.04f, 0.85f * a, 12)
