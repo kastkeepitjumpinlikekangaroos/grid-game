@@ -316,32 +316,16 @@ class LobbyHandler(host: LobbyHost, lobbyManager: LobbyManager, rankedQueue: Ran
     val rawMapIndex = packet.getMapIndex.toInt & 0xFF
     lobby.mapIndex = if (rawMapIndex >= 0 && rawMapIndex < com.gridgame.common.WorldRegistry.size) rawMapIndex else 0
     lobby.durationMinutes = Math.max(1, Math.min(30, if (packet.getDurationMinutes <= 0) Constants.DEFAULT_GAME_DURATION_MIN else packet.getDurationMinutes.toInt))
-    // Teams go up to 4v4. A team size too small for the humans already here would leave a
-    // lopsided match, so it grows to fit them; more humans than 4v4 holds can't play Teams.
-    val requestedSize = Math.max(2, Math.min(4, packet.getTeamSize.toInt))
-    val minTeamSize = (lobby.players.size + 1) / 2
-    val teamsFit = minTeamSize <= 4
-    lobby.gameMode = if (packet.getGameMode == 1 && teamsFit) 1 else 0
-    lobby.teamSize = if (teamsFit) Math.max(requestedSize, minTeamSize) else requestedSize
-
-    // Auto-adjust maxPlayers for Teams mode
-    if (lobby.gameMode == 1) {
-      lobby.maxPlayers = lobby.teamSize * 2
-      // Remove excess bots and notify clients
-      while (lobby.playerCount > lobby.maxPlayers && lobby.botManager.botCount > 0) {
-        val removed = lobby.botManager.removeLastBot()
-        removed.foreach { botSlot =>
-          val leftPacket = new LobbyActionPacket(
-            host.outbox.nextSeq(), botSlot.id, LobbyAction.PLAYER_LEFT, lobby.id,
-            lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
-            lobby.playerCount.toByte, lobby.maxPlayers.toByte,
-            lobby.status, botSlot.name
-          )
-          broadcastToLobby(lobby, leftPacket, null)
-        }
-      }
-    } else {
-      lobby.maxPlayers = Constants.MAX_LOBBY_PLAYERS
+    // Teams go up to 4v4, fitted to the humans here, with no seats past both teams': the bots
+    // that no longer fit are dropped, and everyone told
+    lobby.configure(packet.getGameMode, packet.getTeamSize.toInt).foreach { botSlot =>
+      val leftPacket = new LobbyActionPacket(
+        host.outbox.nextSeq(), botSlot.id, LobbyAction.PLAYER_LEFT, lobby.id,
+        lobby.mapIndex.toByte, lobby.durationMinutes.toByte,
+        lobby.playerCount.toByte, lobby.maxPlayers.toByte,
+        lobby.status, botSlot.name
+      )
+      broadcastToLobby(lobby, leftPacket, null)
     }
 
     // Broadcast config update to all lobby members
@@ -360,9 +344,10 @@ class LobbyHandler(host: LobbyHost, lobbyManager: LobbyManager, rankedQueue: Ran
     if (lobby == null || !lobby.isHost(playerId)) return
     if (lobby.status != LobbyStatus.WAITING) return
 
-    if (lobby.playerCount >= lobby.maxPlayers) return
+    val added = lobby.addBot()
+    if (added.isEmpty) return // the lobby is full
 
-    val botSlot = lobby.botManager.addBot()
+    val botSlot = added.get
     Metrics.botsAdded.add(1L, io.opentelemetry.api.common.Attributes.empty())
     println(s"LobbyHandler: Bot '${botSlot.name}' added to lobby ${lobby.id}")
 

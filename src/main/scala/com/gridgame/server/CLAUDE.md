@@ -46,7 +46,8 @@ match's bots), `LobbyHost` (what the lobbies need). `GameServer` implements them
 - **bots/** — `BotController` (one match's bots, on a 100ms tick of their own), in traits:
   `BotTargeting`, `BotNavigation` (paths, and a bot's role-driven spacing), `BotItems`, `BotCombat`.
   `BotManager` holds a lobby's bot slots (each a name and a random character) until its match starts.
-- **lobby/** — `Lobby`, `LobbyManager` (their CRUD), `LobbyHandler` (lobby actions),
+- **lobby/** — `Lobby` (its seats are taken and resized under its lock: a join, a bot, a switch to
+  Teams, the match starting), `LobbyManager` (their CRUD), `LobbyHandler` (lobby actions),
   `RankedQueue` (matchmaking for every ranked mode), `MatchLauncher` (starting a lobby's match the
   same way for a casual lobby, practice and ranked).
 - **.** — `GameServer` (the parts put together, and routing), `ChatRelay`, `MatchEnd` (the end of a

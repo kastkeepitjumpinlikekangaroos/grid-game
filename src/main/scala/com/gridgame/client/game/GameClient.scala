@@ -109,13 +109,15 @@ class GameClient(private[game] val serverHost: String, private[game] val serverP
   // ── What is forgotten when ────────────────────────────────────────────────
 
   /** The server says a match is starting (LobbyAction.GAME_STARTING): nothing of the last one
-    * carries over. */
+    * carries over, and we start it on a new life. The last match's cooldowns, effects and dash
+    * used to come with us: an ability cast as it ended was still cooling down, and a freeze still
+    * held us. */
   private[game] def matchStarting(): Unit = {
     clientState = ClientState.PLAYING
     forgetMatch()
+    newLife()
     // Each match counts its own server moves
     serverMovesSeen = 0
-    clearBarrier()
     beginScoring()
     localHealth.set(getSelectedCharacterMaxHealth)
     if (gameStartingListener != null) gameStartingListener()
@@ -145,12 +147,14 @@ class GameClient(private[game] val serverHost: String, private[game] val serverP
     isRespawning = false
   }
 
-  /** What a death takes away, at a respawn, a rejoin or the connection dropping: every effect on
-    * us, our items, our barrier and our cooldowns. */
+  /** What a death takes away, at a respawn, a rejoin or the connection dropping, and what a new
+    * match starts without: every effect on us, our items, our barrier, our cooldowns and a charge,
+    * and a dash or a burst's standstill under way. */
   private[game] def newLife(): Unit = {
     clearEffects()
     loseItems()
     clearBarrier()
-    resetCooldowns()
+    resetAttacks()
+    stopMoving()
   }
 }

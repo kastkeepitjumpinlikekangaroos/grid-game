@@ -133,6 +133,12 @@ OpenTelemetry Java SDK 1.42.1 + autoconfigure + OTLP exporter + JVM runtime metr
 OpenTelemetry jars are exported by `common/observability`, so everything that depends on `//…/common`
 has them. `server_lib` and `client_lib` are every library of each, for the tests.
 
+JavaFX is a jar per platform (classes and natives), and a library only compiles against it (`JAVAFX`
+is `neverlink`): a binary runs with the platform's jars it names itself (`MAC_NATIVES`,
+`WINDOWS_NATIVES`, `JAVAFX_MAC`… in `third_party/jvm.bzl`), so a new binary on a JavaFX library must
+name them, and `client_lib` has the build machine's (`HOST_NATIVES`) for the tests. That is what
+keeps a Windows build made on a Mac to the Windows jars.
+
 Build targets: `//src/main/scala/com/gridgame/server:server`, `//…/client:client`,
 `//…/client:client_windows`, the dev tools in `//…/client` (`projectile_gallery`, `render_bench`,
 `ui_bench`, `render_audit`, `golden_frames`), `//src/main/scala/com/gridgame/mapeditor` and

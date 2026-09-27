@@ -1,5 +1,5 @@
 load("@rules_scala//scala:scala.bzl", "scala_binary", "scala_library")
-load("//third_party:jvm.bzl", "GSON", "JAVAFX")
+load("//third_party:jvm.bzl", "GSON", "JAVAFX", "JAVAFX_MAC", "JAVAFX_WINDOWS")
 
 # The map editor: its own app, sharing only common (the model and the world loader) with the game.
 scala_library(
@@ -16,22 +16,12 @@ scala_binary(
         "-Xdock:name='Grid Game Map Editor'",
         "-Dapple.awt.application.name='Grid Game Map Editor'",
     ],
-    deps = [
-        ":mapeditor_lib",
-        "@maven//:org_openjfx_javafx_base_mac_aarch64",
-        "@maven//:org_openjfx_javafx_controls_mac_aarch64",
-        "@maven//:org_openjfx_javafx_graphics_mac_aarch64",
-    ],
+    deps = [":mapeditor_lib"] + JAVAFX_MAC,
 )
 
 scala_binary(
     name = "mapeditor_windows",
     main_class = "com.gridgame.mapeditor.Main",
     resources = ["//sprites:sprite_files"],
-    deps = [
-        ":mapeditor_lib",
-        "@maven//:org_openjfx_javafx_base_win",
-        "@maven//:org_openjfx_javafx_controls_win",
-        "@maven//:org_openjfx_javafx_graphics_win",
-    ],
+    deps = [":mapeditor_lib"] + JAVAFX_WINDOWS,
 )

@@ -36,8 +36,7 @@ class LobbyManager {
   def joinLobby(playerId: UUID, lobbyId: Short): Lobby = {
     val lobby = lobbies.get(lobbyId)
     if (lobby == null) return null
-    if (lobby.status != LobbyStatus.WAITING) return null
-    if (!lobby.addPlayer(playerId)) return null
+    if (!lobby.addPlayer(playerId)) return null // full, or its match has started
     playerLobby.put(playerId, lobbyId)
     println(s"LobbyManager: Player ${playerId.toString.substring(0, 8)} joined lobby $lobbyId")
     lobby

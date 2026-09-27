@@ -1,6 +1,6 @@
 load("@rules_scala//scala:scala.bzl", "scala_binary", "scala_library")
 load(":jars.bzl", "CLIENT", "RESOURCES")
-load("//third_party:jvm.bzl", "JAVAFX", "LWJGL", "LWJGL_MAC_NATIVES", "MAC_NATIVES", "WINDOWS_NATIVES")
+load("//third_party:jvm.bzl", "HOST_NATIVES", "JAVAFX", "LWJGL", "MAC_NATIVES", "WINDOWS_NATIVES")
 
 # The client. Each package under here is a library of its own and depends only on the ones above it
 # in this list (see CLAUDE.md here):
@@ -14,7 +14,8 @@ load("//third_party:jvm.bzl", "JAVAFX", "LWJGL", "LWJGL_MAC_NATIVES", "MAC_NATIV
 #   ui, ui/screens     the menus' widgets, then the screens              (game)
 #   .                  ClientMain and the match's window, which put it all together
 #
-# The binaries add each platform's native libraries; client_lib is all of it, for the tests.
+# The libraries only compile against JavaFX. Each binary adds its platform's JavaFX and LWJGL
+# natives; client_lib, which is all of it for the tests, adds the build machine's.
 
 scala_library(
     name = "app",
@@ -54,7 +55,7 @@ scala_library(
         "//src/main/scala/com/gridgame/client/ui",
         "//src/main/scala/com/gridgame/client/ui/screens",
     ] + JAVAFX + LWJGL,
-    runtime_deps = LWJGL_MAC_NATIVES,
+    runtime_deps = HOST_NATIVES,
 )
 
 scala_binary(

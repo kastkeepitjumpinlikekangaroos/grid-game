@@ -42,6 +42,57 @@ class GameClientMatchTest {
     assertFalse(c.getIsDead)
   }
 
+  @Test def aMatchStartsOnANewLife(): Unit = {
+    // What the last match ended with came into the next: an ability cast as it ended still cooling
+    // down, a freeze still holding us, a gem still tripling our shots
+    c.selectedCharacterId = CharacterId.Soldier.id
+    t.startMatch(spawn = (5, 5))
+    c.setMouseWorldPosition(30.0, 20.0)
+    c.shootAbility(1)
+    t.item(ItemAction.INVENTORY, 1, ItemType.Gem)
+    c.useItem(ItemType.Gem.id)
+    t.update(t.id, 5, 5, flags = 0x04 | 0x40) // frozen and rooted
+    assertTrue(c.getECooldownRemaining > 0 && c.isFrozen && c.isRooted && c.hasGemBoost)
+    t.startMatch(spawn = (6, 6))
+    assertEquals(0f, c.getECooldownRemaining, 0f)
+    assertFalse(c.isFrozen)
+    assertFalse(c.isRooted)
+    assertFalse(c.hasGemBoost)
+  }
+
+  @Test def aChargeOrADashTheLastMatchEndedInEndsWithIt(): Unit = {
+    // Its window is gone before the button comes up or the dash is over. The charge went on at
+    // full strength, and at a charge's pace; the dash finished on the next match's first frame,
+    // putting us where it had been going in the last one
+    val (dasher, slot) = CharacterDef.all.iterator.flatMap { d =>
+      Seq((0, d.qAbility), (1, d.eAbility)).collectFirst { case (s, a) if a.castBehavior.isInstanceOf[DashBuff] => (d.id.id, s) }
+    }.next()
+    c.selectedCharacterId = dasher
+    t.startMatch(spawn = (5, 5))
+    c.startCharging()
+    c.setMouseWorldPosition(15.0, 5.0)
+    c.shootAbility(slot)
+    assertTrue(c.isCharging && c.isSwooping)
+    t.startMatch(spawn = (40, 40))
+    assertFalse("still charging", c.isCharging)
+    assertFalse("still dashing", c.isSwooping)
+    c.tickSwoop() // what the input handlers do each frame
+    assertEquals((40, 40), t.at)
+  }
+
+  @Test def weAreDrawnAtTheNewMatchsSpawn(): Unit = {
+    // Drawn between the last two cells we stepped to, over the time between those steps: a step
+    // after a pause at the end of a match had us drawn, and the camera on us, in the last match's
+    // place until we walked
+    t.startMatch(spawn = (5, 5))
+    c.movePlayer(1, 0)
+    Thread.sleep(250)
+    c.movePlayer(1, 0)
+    t.startMatch(spawn = (40, 40))
+    c.updateVisualPosition()
+    assertEquals((40.0, 40.0), (c.visualPosX, c.visualPosY))
+  }
+
   @Test def aKillIsCountedAndReachesTheFeed(): Unit = {
     t.startMatch(spawn = (5, 5))
     val victim = UUID.randomUUID()

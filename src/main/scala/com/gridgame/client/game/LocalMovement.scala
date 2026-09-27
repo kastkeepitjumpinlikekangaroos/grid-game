@@ -109,6 +109,17 @@ trait LocalMovement { this: GameClient =>
     System.currentTimeMillis() < movementBlockedUntil.get()
   }
 
+  /** A new life stands where it was put: no dash under way (one the last match ended in finished
+    * on the first frame of the next, and put us at its end), no burst's standstill, and no step of
+    * the last life's to be drawn walking along. */
+  private[game] def stopMoving(): Unit = {
+    swoopingUntil.set(0)
+    movementBlockedUntil.set(0)
+    moveInterpStartTime = 0L
+    moveInterpDurationMs = Constants.MOVE_RATE_LIMIT_MS
+    prevMoveTimestamp = 0L
+  }
+
   def setMovementInputActive(active: Boolean): Unit = { movementInputActive = active }
 
   def getIsMoving: Boolean = movementInputActive || System.currentTimeMillis() - lastMoveTime.get() < 200

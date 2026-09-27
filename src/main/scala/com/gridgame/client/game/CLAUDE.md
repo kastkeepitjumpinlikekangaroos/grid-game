@@ -31,11 +31,17 @@ trait in its own file, with the packets that update it and the actions that use 
 ## What is forgotten when
 
 `GameClient` decides it, in one place, from the traits' own `forget*` methods: `matchStarting`
-(the server's GAME_STARTING: nothing of the last match carries over), `returnToLobbyBrowser`,
-`forgetMatch` (everything about the match we were in), and `newLife` (what a death takes away: the
-effects on us, our items, our barrier, our cooldowns — at a respawn, a rejoin, or the connection
-dropping). New state in a trait belongs in that trait's `forget*`, so it goes when everything else
-of its kind does.
+(the server's GAME_STARTING: nothing of the last match carries over, and it is a new life),
+`returnToLobbyBrowser`, `forgetMatch` (everything about the match we were in), and `newLife` (what a
+death takes away: the effects on us, our items, our barrier, our cooldowns and a charge, a dash or a
+burst's standstill under way — at a respawn, a rejoin, a new match, or the connection dropping). New
+state in a trait belongs in that trait's `forget*`, so it goes when everything else of its kind
+does.
+
+The lobby room's count is its roster's size (`Lobby.currentLobbyPlayerCount`), and its settings are
+what JOINED and CONFIG_UPDATE say: the server sends each change from the thread of whoever made it,
+so two made at once can arrive in either order, and the count or the seats another packet carries
+can be older than what we already know.
 
 The player's own position is theirs to move and the server's to check (design/networking.md,
 *Position authority*): `handleOwnUpdate` takes a position only from a server move it hasn't seen.

@@ -18,7 +18,8 @@ devtools             the benches, the render audit, the golden frames, the proje
 ```
 
 The binaries (`client`, `client_windows`, the dev tools) sit on the libraries and add each
-platform's native jars; `client_lib` is every library, for the tests.
+platform's JavaFX and native jars, which the libraries only compile against; `client_lib` is every
+library, with the build machine's jars, for the tests.
 
 ## The two windows
 
@@ -99,7 +100,7 @@ The script builds the target's `_deploy.jar` (already carries `sprites/`, `world
 
 The `_windows` Bazel targets (`client_windows`, `mapeditor_windows`) cross-build fine
 from any OS — Bazel just packages the Windows-native LWJGL/JavaFX jars onto the
-classpath. But turning that into a real `.exe` (bundled JRE, no separate Java install
+classpath, and only those (see *Bazel* in the root CLAUDE.md). But turning that into a real `.exe` (bundled JRE, no separate Java install
 needed, our icon baked into the executable, optional Start Menu installer) requires
 `jpackage`, and **jpackage does not cross-compile** — it must run ON Windows, since it
 links a native Windows launcher against the local JDK's runtime image. This can't be

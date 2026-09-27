@@ -8,6 +8,7 @@ import com.gridgame.common.protocol._
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import scala.jdk.CollectionConverters._
 
 /** Someone in the current lobby, human or bot. */
 final case class LobbyMember(id: UUID, name: String)
@@ -25,7 +26,8 @@ trait Lobby { this: GameClient =>
   @volatile var currentLobbyName: String = ""
   @volatile var currentLobbyMapIndex: Int = 0
   @volatile var currentLobbyDuration: Int = Constants.DEFAULT_GAME_DURATION_MIN
-  @volatile var currentLobbyPlayerCount: Int = 0
+  // Like every setting, the seats are what JOINED and CONFIG_UPDATE say: the other lobby packets
+  // carry them as they were when sent, which can be before a change we have already heard of
   @volatile var currentLobbyMaxPlayers: Int = Constants.MAX_LOBBY_PLAYERS
   @volatile var isLobbyHost: Boolean = false
   @volatile var currentLobbyGameMode: Byte = 0  // 0=FFA, 1=Teams
@@ -40,6 +42,14 @@ trait Lobby { this: GameClient =>
 
   // In server order: humans as they joined, bots as they were added (see previewTeams).
   val lobbyMembers: CopyOnWriteArrayList[LobbyMember] = new CopyOnWriteArrayList[LobbyMember]()
+
+  /** How many are in the lobby, bots included: the roster's size. Every lobby packet carries the
+    * server's count as well, but two changes made at once can reach us in either order — each is
+    * sent from the thread of whoever made it, and Netty writes what a connection's own thread sends
+    * at once, ahead of anything other threads have queued for it — so the count that arrives last
+    * can be the older one: a host adding a bot as a player joined was left showing one fewer. The
+    * roster is a set of who joined and who left, and comes out the same in any order. */
+  def currentLobbyPlayerCount: Int = lobbyMembers.size
 
   @volatile var lobbyActionFailedListener: Byte => Unit = _
   @volatile var lobbyListListener: () => Unit = _
@@ -69,7 +79,6 @@ trait Lobby { this: GameClient =>
         currentLobbyName = packet.getLobbyName
         currentLobbyMapIndex = packet.getMapIndex & 0xFF
         currentLobbyDuration = packet.getDurationMinutes & 0xFF
-        currentLobbyPlayerCount = packet.getPlayerCount & 0xFF
         currentLobbyMaxPlayers = packet.getMaxPlayers & 0xFF
         currentLobbyGameMode = packet.getGameMode
         currentLobbyTeamSize = packet.getTeamSize & 0xFF
@@ -82,27 +91,22 @@ trait Lobby { this: GameClient =>
       case LobbyAction.MEMBER =>
         // The roster a joiner is sent, in server order and including themselves: re-adding
         // at the end moves us from the front, where JOINED put us, to our real place.
-        currentLobbyPlayerCount = packet.getPlayerCount & 0xFF
         val memberId = packet.getPlayerId
         lobbyMembers.removeIf(_.id == memberId)
         lobbyMembers.add(LobbyMember(memberId, packet.getLobbyName))
         fire(lobbyUpdatedListener)
 
       case LobbyAction.PLAYER_JOINED =>
-        currentLobbyPlayerCount = packet.getPlayerCount & 0xFF
-        currentLobbyMaxPlayers = packet.getMaxPlayers & 0xFF
         val memberName = packet.getLobbyName
         val memberId = packet.getPlayerId
-        lobbyMembers.removeIf(_.id == memberId)
-        lobbyMembers.add(LobbyMember(memberId, memberName))
+        // Someone who joined as we did can be in the roster we were sent already, and keeps their
+        // place in it: moved to the end, they would be previewed on the wrong team
+        if (!lobbyMembers.asScala.exists(_.id == memberId)) lobbyMembers.add(LobbyMember(memberId, memberName))
         addLobbySystemMessage(Messages.t("{0} joined the lobby", memberName))
         fire(lobbyUpdatedListener)
 
       case LobbyAction.PLAYER_LEFT =>
-        currentLobbyPlayerCount = packet.getPlayerCount & 0xFF
-        currentLobbyMaxPlayers = packet.getMaxPlayers & 0xFF
         val leftId = packet.getPlayerId
-        import scala.jdk.CollectionConverters._
         val leftName = Option(packet.getLobbyName).filter(_.nonEmpty)
           .orElse(lobbyMembers.asScala.find(_.id == leftId).map(_.name))
           .getOrElse("?")
@@ -115,8 +119,7 @@ trait Lobby { this: GameClient =>
         currentLobbyDuration = packet.getDurationMinutes & 0xFF
         currentLobbyGameMode = packet.getGameMode
         currentLobbyTeamSize = packet.getTeamSize & 0xFF
-        // Switching to Teams caps the lobby (and may drop bots), so the counts change too.
-        currentLobbyPlayerCount = packet.getPlayerCount & 0xFF
+        // Switching to Teams caps the lobby. The bots that no longer fit come as PLAYER_LEFTs.
         currentLobbyMaxPlayers = packet.getMaxPlayers & 0xFF
         fire(lobbyUpdatedListener)
 
@@ -153,7 +156,6 @@ trait Lobby { this: GameClient =>
   /** The lobby roster with the team each member will play on, as `TeamAssignment` deals them
     * when the match starts: humans in join order, then bots in the order they were added. */
   def previewTeams: Seq[(LobbyMember, Byte)] = {
-    import scala.jdk.CollectionConverters._
     val members = lobbyMembers.asScala.toVector
     val (bots, humans) = members.partition(m => TeamAssignment.isBot(m.id))
     val byId = members.map(m => m.id -> m).toMap

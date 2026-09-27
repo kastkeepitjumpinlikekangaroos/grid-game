@@ -5,18 +5,26 @@ bazel_dep(name = "rules_jvm_external", version = "6.6")
 bazel_dep(name = "rules_scala", version = "7.0.0")
 
 maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
+
+# JavaFX is a jar per platform, each with the classes and that platform's natives (the plain
+# artifacts are empty). Their POM makes every one of them depend on the jar for the machine doing
+# the build, so each is listed here with the rest of JavaFX excluded: without that, a Windows build
+# made on a Mac carried the Mac jars, ahead of its own on the classpath (third_party/jvm.bzl).
+JAVAFX_ONLY_ITSELF = [
+    "org.openjfx:javafx-base",
+    "org.openjfx:javafx-controls",
+    "org.openjfx:javafx-graphics",
+]
+
+maven.artifact(artifact = "javafx-base", classifier = "mac-aarch64", exclusions = JAVAFX_ONLY_ITSELF, group = "org.openjfx", version = "21.0.1")
+maven.artifact(artifact = "javafx-controls", classifier = "mac-aarch64", exclusions = JAVAFX_ONLY_ITSELF, group = "org.openjfx", version = "21.0.1")
+maven.artifact(artifact = "javafx-graphics", classifier = "mac-aarch64", exclusions = JAVAFX_ONLY_ITSELF, group = "org.openjfx", version = "21.0.1")
+maven.artifact(artifact = "javafx-base", classifier = "win", exclusions = JAVAFX_ONLY_ITSELF, group = "org.openjfx", version = "21.0.1")
+maven.artifact(artifact = "javafx-controls", classifier = "win", exclusions = JAVAFX_ONLY_ITSELF, group = "org.openjfx", version = "21.0.1")
+maven.artifact(artifact = "javafx-graphics", classifier = "win", exclusions = JAVAFX_ONLY_ITSELF, group = "org.openjfx", version = "21.0.1")
+
 maven.install(
     artifacts = [
-        "org.openjfx:javafx-base:21.0.1",
-        "org.openjfx:javafx-controls:21.0.1",
-        "org.openjfx:javafx-fxml:21.0.1",
-        "org.openjfx:javafx-graphics:21.0.1",
-        "org.openjfx:javafx-media:21.0.1",
-        "org.openjfx:javafx-web:21.0.1",
-        # Windows JavaFX native libraries for cross-platform builds
-        "org.openjfx:javafx-base:jar:win:21.0.1",
-        "org.openjfx:javafx-controls:jar:win:21.0.1",
-        "org.openjfx:javafx-graphics:jar:win:21.0.1",
         "com.google.guava:guava:32.1.3-jre",
         "com.google.code.gson:gson:2.10.1",
         "io.netty:netty-buffer:4.1.104.Final",

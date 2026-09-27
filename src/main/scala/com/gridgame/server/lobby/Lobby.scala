@@ -1,6 +1,7 @@
 package com.gridgame.server.lobby
 
-import com.gridgame.server.bots.BotManager
+import com.gridgame.common.Constants
+import com.gridgame.server.bots.{BotManager, BotSlot}
 import com.gridgame.server.game.GameInstance
 
 import java.util.UUID
@@ -31,12 +32,47 @@ class Lobby(
   @volatile var teamSize: Int = 2   // 2, 3, or 4
   @volatile var matchType: Byte = 0 // 0=Casual FFA, 1=Casual Teams, 2=Ranked FFA, 3=Ranked Duel, 4=Ranked Teams
 
+  // Seats are taken and resized under the lobby's lock (addPlayer, addBot, configure, and the
+  // match starting in LobbyHandler.handleStart), each looking at the seats and changing them in one
+  // step: a join and a bot the host added at the same moment each saw the last seat free, and both
+  // took it. Giving one up needs no look first (removePlayer, BotManager.removeLastBot).
+
   def addPlayer(playerId: UUID): Boolean = this.synchronized {
+    // A lobby whose match has started takes nobody: its players have been dealt their places
+    if (status != LobbyStatus.WAITING) return false
     // Bots hold seats too: counting only humans let a 2v2 lobby of host + 3 bots take a fifth player.
     if (playerCount >= maxPlayers) return false
     if (players.contains(playerId)) return false
     players.add(playerId)
     true
+  }
+
+  /** A bot in the next free seat, or none when there isn't one. */
+  def addBot(): Option[BotSlot] = this.synchronized {
+    if (playerCount >= maxPlayers) None else Some(botManager.addBot())
+  }
+
+  /**
+   * The host's mode: a free-for-all, or Teams of the size asked for (2 to 4 a side) fitted to the
+   * humans here. A size too small for them grows to fit, and more humans than 4v4 holds can't play
+   * Teams. Teams has seats for both teams and no more, so the bots that no longer fit go, the last
+   * added first; they are returned.
+   */
+  def configure(requestedMode: Byte, requestedTeamSize: Int): Seq[BotSlot] = this.synchronized {
+    val requestedSize = Math.max(2, Math.min(4, requestedTeamSize))
+    val minTeamSize = (players.size + 1) / 2
+    val teamsFit = minTeamSize <= 4
+    gameMode = if (requestedMode == 1 && teamsFit) 1 else 0
+    teamSize = if (teamsFit) Math.max(requestedSize, minTeamSize) else requestedSize
+    if (gameMode == 1) {
+      maxPlayers = teamSize * 2
+      val dropped = Seq.newBuilder[BotSlot]
+      while (playerCount > maxPlayers && botManager.botCount > 0) botManager.removeLastBot().foreach(dropped += _)
+      dropped.result()
+    } else {
+      maxPlayers = Constants.MAX_LOBBY_PLAYERS
+      Nil
+    }
   }
 
   def removePlayer(playerId: UUID): Boolean = {

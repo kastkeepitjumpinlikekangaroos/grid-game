@@ -1,1 +1,17 @@
 # third_party/jvm.bzl: the Maven jars (installed by MODULE.bazel), grouped for the BUILD files.
+
+load("@rules_java//java:defs.bzl", "java_library")
+
+# JavaFX to compile against, and only that (neverlink): which platform's jars a program runs with is
+# its binary's to say (JAVAFX_MAC, JAVAFX_WINDOWS in jvm.bzl). The API is the same in each, so the
+# Mac ones serve every build.
+java_library(
+    name = "javafx",
+    neverlink = True,
+    visibility = ["//visibility:public"],
+    exports = [
+        "@maven//:org_openjfx_javafx_base_mac_aarch64",
+        "@maven//:org_openjfx_javafx_controls_mac_aarch64",
+        "@maven//:org_openjfx_javafx_graphics_mac_aarch64",
+    ],
+)

@@ -31,7 +31,6 @@ trait Ranked { this: GameClient =>
         currentLobbyName = packet.getLobbyName
         currentLobbyMapIndex = packet.getMapIndex & 0xFF
         currentLobbyDuration = packet.getDurationMinutes & 0xFF
-        currentLobbyPlayerCount = packet.getPlayerCount & 0xFF
         currentLobbyMaxPlayers = packet.getMaxPlayers & 0xFF
         // Set both ways: a Teams value left over from an earlier lobby made an FFA or duel
         // scoreboard group everyone under one team.

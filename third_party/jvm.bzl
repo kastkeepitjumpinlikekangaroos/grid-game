@@ -1,25 +1,11 @@
 """The Maven jars the game's libraries compile against, grouped, and what its binaries run with on
 each platform (MODULE.bazel installs them)."""
 
-# JavaFX's API. The plain artifacts are empty: the classes are in each platform's own jars, which
-# are what the libraries compile against. On a Windows machine coursier resolves only the Windows
-# ones, so they are picked by the OS; a Mac cross-building client_windows compiles against its own.
-JAVAFX = [
-    "@maven//:org_openjfx_javafx_base",
-    "@maven//:org_openjfx_javafx_controls",
-    "@maven//:org_openjfx_javafx_graphics",
-] + select({
-    "@bazel_tools//src/conditions:windows": [
-        "@maven//:org_openjfx_javafx_base_win",
-        "@maven//:org_openjfx_javafx_controls_win",
-        "@maven//:org_openjfx_javafx_graphics_win",
-    ],
-    "//conditions:default": [
-        "@maven//:org_openjfx_javafx_base_mac_aarch64",
-        "@maven//:org_openjfx_javafx_controls_mac_aarch64",
-        "@maven//:org_openjfx_javafx_graphics_mac_aarch64",
-    ],
-})
+# JavaFX's API, which a library only compiles against: JavaFX is a jar per platform (its classes
+# and that platform's natives), and a program runs with the ones its binary names, from below. When
+# the libraries carried a platform's jars themselves, every binary got the build machine's: a
+# Windows build made on a Mac shipped the Mac jars, ahead of its own on the classpath.
+JAVAFX = ["//third_party:javafx"]
 
 LWJGL = [
     "@maven//:org_lwjgl_lwjgl",
@@ -38,7 +24,19 @@ NETTY = [
     "@maven//:io_netty_netty_transport",
 ]
 
-# The native libraries a binary runs with, per platform
+# What a binary runs with, per platform: JavaFX, and LWJGL's native libraries
+JAVAFX_MAC = [
+    "@maven//:org_openjfx_javafx_base_mac_aarch64",
+    "@maven//:org_openjfx_javafx_controls_mac_aarch64",
+    "@maven//:org_openjfx_javafx_graphics_mac_aarch64",
+]
+
+JAVAFX_WINDOWS = [
+    "@maven//:org_openjfx_javafx_base_win",
+    "@maven//:org_openjfx_javafx_controls_win",
+    "@maven//:org_openjfx_javafx_graphics_win",
+]
+
 LWJGL_MAC_NATIVES = [
     "@maven//:org_lwjgl_lwjgl_natives_macos_arm64",
     "@maven//:org_lwjgl_lwjgl_glfw_natives_macos_arm64",
@@ -46,18 +44,19 @@ LWJGL_MAC_NATIVES = [
     "@maven//:org_lwjgl_lwjgl_stb_natives_macos_arm64",
 ]
 
-MAC_NATIVES = [
-    "@maven//:org_openjfx_javafx_base_mac_aarch64",
-    "@maven//:org_openjfx_javafx_controls_mac_aarch64",
-    "@maven//:org_openjfx_javafx_graphics_mac_aarch64",
-] + LWJGL_MAC_NATIVES
-
-WINDOWS_NATIVES = [
-    "@maven//:org_openjfx_javafx_base_win",
-    "@maven//:org_openjfx_javafx_controls_win",
-    "@maven//:org_openjfx_javafx_graphics_win",
+LWJGL_WINDOWS_NATIVES = [
     "@maven//:org_lwjgl_lwjgl_natives_windows",
     "@maven//:org_lwjgl_lwjgl_glfw_natives_windows",
     "@maven//:org_lwjgl_lwjgl_opengl_natives_windows",
     "@maven//:org_lwjgl_lwjgl_stb_natives_windows",
 ]
+
+MAC_NATIVES = JAVAFX_MAC + LWJGL_MAC_NATIVES
+
+WINDOWS_NATIVES = JAVAFX_WINDOWS + LWJGL_WINDOWS_NATIVES
+
+# The machine doing the build's: what the tests run with
+HOST_NATIVES = select({
+    "@bazel_tools//src/conditions:windows": WINDOWS_NATIVES,
+    "//conditions:default": MAC_NATIVES,
+})

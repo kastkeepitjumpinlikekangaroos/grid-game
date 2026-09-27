@@ -91,8 +91,39 @@ class GameClientLobbyTest {
   @Test def aSettingsChangeUpdatesTheRoom(): Unit = {
     t.lobby(LobbyAction.JOINED, lobbyId = 7)
     t.lobby(LobbyAction.CONFIG_UPDATE, gameMode = 1, teamSize = 3, players = 4, maxPlayers = 6)
-    assertEquals((1, 3, 4, 6), (c.currentLobbyGameMode.toInt, c.currentLobbyTeamSize, c.currentLobbyPlayerCount,
-      c.currentLobbyMaxPlayers))
+    assertEquals((1, 3, 6), (c.currentLobbyGameMode.toInt, c.currentLobbyTeamSize, c.currentLobbyMaxPlayers))
+  }
+
+  // --- Two changes at once: the server sends each from the thread of whoever made it, so they can
+  // reach us in either order ---
+
+  @Test def theCountIsTheRostersWhateverOrderTheNewsComesIn(): Unit = {
+    // We host; a player joins as we add a bot. Each is sent with the count it left the lobby at,
+    // and the bot's (3) came first: taken from the last to arrive, the count said 2
+    t.lobby(LobbyAction.JOINED, lobbyId = 7, players = 1)
+    t.lobby(LobbyAction.PLAYER_JOINED, who = new UUID(0, 42), name = "Bot 42", players = 3)
+    t.lobby(LobbyAction.PLAYER_JOINED, who = UUID.randomUUID(), name = "guest", players = 2)
+    assertEquals(3, c.currentLobbyPlayerCount)
+  }
+
+  @Test def aSettingsChangeIsNotUndoneByNewsSentBeforeIt(): Unit = {
+    // The switch to 2v2 arrived before the join sent just ahead of it, which still said 8 seats
+    t.lobby(LobbyAction.JOINED, lobbyId = 7, maxPlayers = 8)
+    t.lobby(LobbyAction.CONFIG_UPDATE, gameMode = 1, teamSize = 2, maxPlayers = 4)
+    t.lobby(LobbyAction.PLAYER_JOINED, who = UUID.randomUUID(), name = "guest", players = 2, maxPlayers = 8)
+    assertEquals(4, c.currentLobbyMaxPlayers)
+  }
+
+  @Test def someoneInTheRosterWeWereSentKeepsTheirPlaceWhenTheirJoinComes(): Unit = {
+    // They joined just before us: in the roster, and then announced. Moved to the end, they were
+    // shown on the other team
+    val host = UUID.randomUUID()
+    val other = UUID.randomUUID()
+    t.lobby(LobbyAction.JOINED, lobbyId = 7, gameMode = 1)
+    Seq(host -> "host", other -> "other", t.id -> t.name).foreach { case (id, n) => t.lobby(LobbyAction.MEMBER, who = id, name = n) }
+    t.lobby(LobbyAction.PLAYER_JOINED, who = other, name = "other")
+    assertEquals(Seq("host", "other", t.name), c.lobbyMembers.asScala.map(_.name))
+    assertEquals(3, c.currentLobbyPlayerCount)
   }
 
   @Test def aClosedLobbySendsUsBackToTheBrowser(): Unit = {

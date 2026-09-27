@@ -289,10 +289,13 @@ trait Attacks { this: GameClient =>
   def getLastCastDirX: Float = lastCastDirX
   def getLastCastDirY: Float = lastCastDirY
 
-  /** A new life: every ability ready. */
-  private[game] def resetCooldowns(): Unit = {
+  /** A new life: every ability ready, and nothing charging. A charge held as the last match ended
+    * — its window gone before the button came up — went on into the next at full strength, walking
+    * at a charge's pace. */
+  private[game] def resetAttacks(): Unit = {
     lastQAbilityTime.set(0)
     lastEAbilityTime.set(0)
+    isCharging = false
   }
 
   def getQCooldownFraction: Float = {
