@@ -73,7 +73,7 @@ class NetworkHandlerTest {
 
   @Test def nothingButALoginIsTakenBeforeOne(): Unit = {
     val ch = new PeerChannel()
-    ch.pipeline().addLast(new GameServerTcpHandler(server))
+    ch.pipeline().addLast(server.tcpHandler())
     val id = UUID.randomUUID()
     val payload = new PlayerJoinPacket(1, id, new Position(1, 1), 0, "p").serialize()
     val unsigned = new Array[Byte](Constants.PACKET_SIZE)
@@ -91,7 +91,7 @@ class NetworkHandlerTest {
 
   @Test def anExpiredSessionIsClosed(): Unit = {
     val s = new TestSession()
-    server.tokenCreationTime.put(s.playerId, System.currentTimeMillis() - Constants.SESSION_TOKEN_LIFETIME_MS - 1000)
+    server.sessions.tokenCreationTime.put(s.playerId, System.currentTimeMillis() - Constants.SESSION_TOKEN_LIFETIME_MS - 1000)
     s.join()
     assertNull("nothing from it is handled", server.getConnectedPlayer(s.playerId))
     assertFalse("and it has to log in again", s.channel.isOpen)
@@ -112,7 +112,7 @@ class NetworkHandlerTest {
 
   // --- UDP ---
 
-  private val udp = new EmbeddedChannel(new GameServerUdpHandler(server))
+  private val udp = new EmbeddedChannel(server.udpHandler())
   private val serverAddress = new InetSocketAddress("127.0.0.1", Constants.SERVER_PORT)
 
   private def datagram(bytes: Array[Byte], from: InetSocketAddress): Unit =
@@ -163,7 +163,7 @@ class NetworkHandlerTest {
     val s = new TestSession()
     s.join()
     s.received()
-    server.sessionTokens.remove(s.playerId)
+    server.sessions.sessionTokens.remove(s.playerId)
     datagram(heartbeat(s, s.nextSeq()), from())
     assertNull(server.getConnectedPlayer(s.playerId).getUdpAddress)
     assertEquals(0, echoes(s))

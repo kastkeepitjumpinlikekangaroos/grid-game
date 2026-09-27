@@ -20,6 +20,7 @@ import javafx.scene.layout.VBox
 import javafx.scene.paint.Color
 import javafx.scene.text.Font
 import javafx.scene.text.FontWeight
+import com.gridgame.client.ui.Theme.{cardBgSubtle, sectionHeaderStyle}
 
 /**
  * Shared character selection panel used in both lobby and ranked queue screens.
@@ -91,8 +92,6 @@ class CharacterSelectionPanel(
   // Category tab buttons
   private var categoryButtons = Map.empty[String, Label]
 
-  private val sectionHeaderStyle = "-fx-text-fill: #99aabb; -fx-font-size: 13; -fx-font-weight: bold;"
-  private val cardBgSubtle = "-fx-background-color: #1c1c34; -fx-background-radius: 12; -fx-border-color: rgba(255,255,255,0.05); -fx-border-radius: 12; -fx-border-width: 1; -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.3), 12, 0, 0, 4);"
 
   private val cellBaseStyle = "-fx-background-color: #1c1c34; -fx-background-radius: 8; -fx-border-color: rgba(255,255,255,0.08); -fx-border-radius: 8; -fx-border-width: 1; -fx-cursor: hand;"
   private val cellHoverStyle = "-fx-background-color: #1c1c34; -fx-background-radius: 8; -fx-border-color: rgba(74, 158, 255, 0.3); -fx-border-radius: 8; -fx-border-width: 1; -fx-cursor: hand;"

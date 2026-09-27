@@ -1,5 +1,6 @@
 package com.gridgame.server
 
+import com.gridgame.server.net.RateLimiter
 import io.netty.channel.embedded.EmbeddedChannel
 import org.junit.Assert._
 import org.junit.Test

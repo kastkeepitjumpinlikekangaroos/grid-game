@@ -1,0 +1,18 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+load("//src/main/scala/com/gridgame/client:jars.bzl", "CLIENT")
+load("//third_party:jvm.bzl", "LWJGL")
+
+# The painters of the HUD, drawn over everything in screen pixels (see GLGameRenderer).
+scala_library(
+    name = "hud",
+    srcs = glob(["*.scala"]),
+    visibility = CLIENT,
+    deps = [
+        "//src/main/scala/com/gridgame/client/game",
+        "//src/main/scala/com/gridgame/client/gl",
+        "//src/main/scala/com/gridgame/client/i18n",
+        "//src/main/scala/com/gridgame/client/render:core",
+        "//src/main/scala/com/gridgame/client/render/world",
+        "//src/main/scala/com/gridgame/common",
+    ] + LWJGL,
+)

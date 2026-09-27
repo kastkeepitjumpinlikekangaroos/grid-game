@@ -1,0 +1,13 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+
+# The bots: seats in a lobby (BotManager), and the players they are in a match (BotController).
+scala_library(
+    name = "bots",
+    srcs = glob(["*.scala"]),
+    visibility = ["//src/main/scala/com/gridgame/server:__subpackages__", "//src/test/scala/com/gridgame/server:__pkg__"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server/game",
+        "//src/main/scala/com/gridgame/server/net",
+    ],
+)

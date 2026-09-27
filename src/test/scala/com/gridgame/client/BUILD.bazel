@@ -1,4 +1,5 @@
 load("@rules_scala//scala:scala.bzl", "scala_junit_test", "scala_library")
+load("//third_party:jvm.bzl", "NETTY")
 
 # A GameClient with no network (its packets captured) and a JavaFX helper, for the tests here
 scala_library(
@@ -9,12 +10,6 @@ scala_library(
     deps = [
         "//src/main/scala/com/gridgame/client:client_lib",
         "//src/main/scala/com/gridgame/common",
-        "@maven//:org_openjfx_javafx_base",
-        "@maven//:org_openjfx_javafx_controls",
-        "@maven//:org_openjfx_javafx_graphics",
-        "@maven//:org_openjfx_javafx_base_mac_aarch64",
-        "@maven//:org_openjfx_javafx_controls_mac_aarch64",
-        "@maven//:org_openjfx_javafx_graphics_mac_aarch64",
     ],
 )
 
@@ -23,12 +18,6 @@ CLIENT_TEST_DEPS = [
     "//src/main/scala/com/gridgame/client:client_lib",
     "//src/main/scala/com/gridgame/common",
     "@maven//:junit_junit",
-    "@maven//:org_openjfx_javafx_base",
-    "@maven//:org_openjfx_javafx_controls",
-    "@maven//:org_openjfx_javafx_graphics",
-    "@maven//:org_openjfx_javafx_base_mac_aarch64",
-    "@maven//:org_openjfx_javafx_controls_mac_aarch64",
-    "@maven//:org_openjfx_javafx_graphics_mac_aarch64",
 ]
 
 # No sound device in a test: every AudioManager call is a no-op
@@ -61,9 +50,5 @@ scala_junit_test(
     srcs = ["ClientNetworkTest.scala"],
     env = AUDIO_OFF,
     suffixes = ["Test"],
-    deps = CLIENT_TEST_DEPS + [
-        "@maven//:io_netty_netty_buffer",
-        "@maven//:io_netty_netty_common",
-        "@maven//:io_netty_netty_transport",
-    ],
+    deps = CLIENT_TEST_DEPS + NETTY,
 )

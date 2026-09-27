@@ -6,6 +6,7 @@ import org.junit.Assert._
 import org.junit.Test
 
 import java.util.UUID
+import com.gridgame.client.game.ClientState
 
 /** A match as the client lives it: the start, deaths and respawns, items, and the end. */
 class GameClientMatchTest {

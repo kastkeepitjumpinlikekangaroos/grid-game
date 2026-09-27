@@ -1,6 +1,6 @@
 package com.gridgame.client
 
-import com.gridgame.client.GameClient._
+import com.gridgame.client.game.GameClient._
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 import org.junit.Assert._

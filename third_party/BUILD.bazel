@@ -1,0 +1,1 @@
+# third_party/jvm.bzl: the Maven jars (installed by MODULE.bazel), grouped for the BUILD files.

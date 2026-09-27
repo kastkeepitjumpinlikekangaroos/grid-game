@@ -1,5 +1,8 @@
 package com.gridgame.server
 
+import com.gridgame.server.game.GameInstance
+import com.gridgame.server.bots.BotManager
+import com.gridgame.server.lobby.{Lobby, LobbyStatus}
 import com.gridgame.common.Constants
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._

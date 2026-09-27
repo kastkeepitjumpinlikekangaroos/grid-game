@@ -1,0 +1,10 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+
+# The game's state and rules as both sides know them, and the roster (roster/). See CLAUDE.md here.
+scala_library(
+    name = "model",
+    srcs = glob(["**/*.scala"]),
+    visibility = ["//visibility:public"],
+    exports = ["//src/main/scala/com/gridgame/common:core"],
+    deps = ["//src/main/scala/com/gridgame/common:core"],
+)

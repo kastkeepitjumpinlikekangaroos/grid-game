@@ -1,0 +1,15 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+load("//third_party:jvm.bzl", "NETTY")
+
+# Logins, profiles and the leaderboard, over the account database (SQLite).
+scala_library(
+    name = "account",
+    srcs = glob(["*.scala"]),
+    visibility = ["//src/main/scala/com/gridgame/server:__subpackages__", "//src/test/scala/com/gridgame/server:__pkg__"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server/net",
+        "@maven//:org_mindrot_jbcrypt",
+        "@maven//:org_xerial_sqlite_jdbc",
+    ] + NETTY,
+)

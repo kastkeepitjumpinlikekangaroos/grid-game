@@ -1,0 +1,15 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+load("//third_party:jvm.bzl", "NETTY")
+
+# Lobbies, ranked matchmaking, and starting a lobby's match.
+scala_library(
+    name = "lobby",
+    srcs = glob(["*.scala"]),
+    visibility = ["//src/main/scala/com/gridgame/server:__subpackages__", "//src/test/scala/com/gridgame/server:__pkg__"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server/bots",
+        "//src/main/scala/com/gridgame/server/game",
+        "//src/main/scala/com/gridgame/server/net",
+    ] + NETTY,
+)

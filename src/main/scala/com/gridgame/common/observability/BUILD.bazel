@@ -1,0 +1,36 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+
+# OpenTelemetry, grouped so dependents get all of it through this library
+OTEL_DEPS = [
+    "@maven//:io_opentelemetry_opentelemetry_api",
+    "@maven//:io_opentelemetry_opentelemetry_context",
+    "@maven//:io_opentelemetry_opentelemetry_sdk",
+    "@maven//:io_opentelemetry_opentelemetry_sdk_common",
+    "@maven//:io_opentelemetry_opentelemetry_sdk_metrics",
+    "@maven//:io_opentelemetry_opentelemetry_sdk_trace",
+    "@maven//:io_opentelemetry_opentelemetry_sdk_logs",
+    "@maven//:io_opentelemetry_opentelemetry_sdk_extension_autoconfigure",
+    "@maven//:io_opentelemetry_opentelemetry_sdk_extension_autoconfigure_spi",
+    "@maven//:io_opentelemetry_opentelemetry_exporter_otlp",
+    "@maven//:io_opentelemetry_opentelemetry_exporter_otlp_common",
+    "@maven//:io_opentelemetry_opentelemetry_exporter_common",
+    "@maven//:io_opentelemetry_opentelemetry_exporter_sender_okhttp",
+    "@maven//:io_opentelemetry_opentelemetry_exporter_logging",
+    "@maven//:io_opentelemetry_semconv_opentelemetry_semconv",
+    "@maven//:io_opentelemetry_instrumentation_opentelemetry_runtime_telemetry_java17",
+    "@maven//:io_opentelemetry_instrumentation_opentelemetry_instrumentation_api",
+]
+
+# Telemetry: the game's metrics, the attributes they are labelled with, traces and logs. It knows the
+# game's vocabulary (characters, projectile and packet types), so it sits above model and protocol.
+# See CLAUDE.md here.
+scala_library(
+    name = "observability",
+    srcs = glob(["*.scala"]),
+    visibility = ["//visibility:public"],
+    exports = OTEL_DEPS,
+    deps = [
+        "//src/main/scala/com/gridgame/common/model",
+        "//src/main/scala/com/gridgame/common/protocol",
+    ] + OTEL_DEPS,
+)

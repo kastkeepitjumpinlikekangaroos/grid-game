@@ -32,7 +32,7 @@ class GameClientCombatTest {
     assertTrue("the hit is shown", c.getPlayerHitTime(target) > 0)
     t.projectile(ProjectileAction.MOVE, 50, shooter, x = 14f)
     assertEquals("and flown on from its moves", 14f,
-      c.getProjectiles.get(50).asInstanceOf[com.gridgame.client.render.NetProjectile].heardX, 0f)
+      c.getProjectiles.get(50).asInstanceOf[com.gridgame.client.game.NetProjectile].heardX, 0f)
   }
 
   @Test def aHitEndsAProjectileAndALateMoveCannotBringItBack(): Unit = {

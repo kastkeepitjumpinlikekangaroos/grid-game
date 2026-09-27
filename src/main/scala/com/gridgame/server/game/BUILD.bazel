@@ -1,0 +1,13 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+load("//third_party:jvm.bzl", "NETTY")
+
+# One running match: its players, projectiles, items and traps, its clock and its opening.
+scala_library(
+    name = "game",
+    srcs = glob(["*.scala"]),
+    visibility = ["//src/main/scala/com/gridgame/server:__subpackages__", "//src/test/scala/com/gridgame/server:__pkg__"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server/net",
+    ] + NETTY,
+)

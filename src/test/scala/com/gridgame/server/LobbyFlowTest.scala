@@ -1,5 +1,7 @@
 package com.gridgame.server
 
+import com.gridgame.server.game.GameInstance
+import com.gridgame.server.lobby.{Lobby, LobbyStatus}
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 import io.netty.buffer.ByteBuf
@@ -24,7 +26,7 @@ class LobbyFlowTest {
   private class Client(val name: String) {
     val id: UUID = UUID.randomUUID()
     val channel = new EmbeddedChannel()
-    server.channelToPlayer.put(channel, id) // as a login binds it
+    server.sessions.channelToPlayer.put(channel, id) // as a login binds it
     send(new PlayerJoinPacket(nextSeq(), id, new Position(1, 1), 0xFF3366CC, name))
 
     def send(p: Packet): Unit = server.handleIncomingPacket(p, channel, null)

@@ -89,91 +89,45 @@ Each character has unique abilities using cast behaviors: StandardProjectile, Ph
 
 ```
 src/main/scala/com/gridgame/
-  common/            # Shared models, protocol (16 packet types), world loader
-    model/           # Player, Tile (34), CharacterDef (112), ProjectileDef, Item, Projectile
-    protocol/        # 16 packet types, serialization, HMAC signing (PacketSigner)
-    world/           # WorldLoader (JSON map parsing, 7 layer types)
+  common/            # Shared by server, client and tools
+    model/           # The rules as data: characters (roster/), projectiles, effects, tiles, the world
+    protocol/        # 18 packet types, serialization, HMAC signing (PacketSigner)
+    world/           # WorldLoader (JSON maps)
     observability/   # OpenTelemetry facade (Telemetry, Metrics, Attrs, Tracing, Log)
-  server/            # Game server, lobbies, auth, bots, projectiles, items, ranked queue
-                     # TLS (TlsProvider), rate limiting (RateLimiter), validation (PacketValidator)
-  client/            # Client entry point (ClientMain, GameClient, NetworkThread)
-    gl/              # OpenGL renderer (see Rendering Architecture below)
-    render/          # Shared render utilities (camera, isometric transform, entity collection)
-    ui/              # JavaFX UI screens (TileRenderer, BackgroundRenderer, CharacterSelectionPanel)
-    input/           # GLFW input (GLKeyboardHandler, GLMouseHandler, ControllerHandler)
-  mapeditor/         # Standalone map editor (12 source files)
-worlds/              # 16 JSON map definitions
+  server/            # net/ (sockets, TLS, sessions), account/, game/ (a match), bots/, lobby/
+  client/            # ClientMain (JavaFX app) and MatchWindow (the match's GLFW window)
+    game/            # GameClient: the client's side of the game
+    gl/              # OpenGL primitives (batches, shaders, fonts, post-processing)
+    render/          # The renderer: GLGameRenderer and its painters (world/, hud/),
+                     # projectile renderers (projectiles/) and explosions (blasts/)
+    ui/              # JavaFX theme and widgets; ui/screens/ has a class per screen
+    input/, audio/, net/, i18n/, devtools/
+  mapeditor/         # Standalone map editor
+  tools/             # Website roster cards, i18n content catalog
+worlds/              # JSON maps
 sprites/             # Tile sheet + 112 character sprite sheets
-scripts/             # Python sprite generators (14 scripts)
+scripts/             # Python asset generators (tiles, maps, sprites, sounds, icons)
+design/              # Feature design docs
 docs/                # GitHub Pages landing site
 ops/observability/   # docker-compose stack (Collector, Prometheus, Tempo, Loki, Grafana)
-                     # with auto-provisioned Grafana dashboards and datasources
 ```
+
+Each package is its own Bazel library and depends only on the layers below it. How each part works,
+and why, is documented next to the code: start at [CLAUDE.md](CLAUDE.md), which indexes every
+module doc and the feature docs in `design/`.
 
 ## Rendering Architecture
 
 The game uses a dual-window approach: JavaFX for UI screens (login, lobby, character selection, scoreboard) and a GLFW window with OpenGL 3.3 for in-game rendering. When a match starts, the JavaFX stage hides and a GLFW window opens; when the match ends, the GLFW window is destroyed and JavaFX resumes.
 
-### OpenGL Renderer (`client/gl/`)
-
-| File | Purpose |
-|------|---------|
-| `GLWindow.scala` | GLFW window lifecycle (create, show, destroy, resize) |
-| `GLFWManager.scala` | Singleton ensuring GLFW is initialized once (shared with ControllerHandler) |
-| `GLGameRenderer.scala` | Main game renderer (~1500 lines) — tiles, players, projectiles, items, status effects, HUD, aim arrow, backgrounds |
-| `GLProjectileRenderers.scala` | All 112 projectile type renderers (~1150 lines) with 8 pattern factories and 19 specialized renderers |
-| `ShapeBatch.scala` | Batched colored 2D primitives (fillRect, fillOval, fillOvalSoft, fillPolygon, strokeLine, etc.) |
-| `SpriteBatch.scala` | Batched textured quads with per-vertex tint/alpha |
-| `ShaderProgram.scala` | GLSL shader compilation/linking + embedded shader source (color, texture, bloom, blur, composite) |
-| `PostProcessor.scala` | Post-processing FBO pipeline: bloom extract, Gaussian blur, composite with vignette and damage overlay |
-| `GLTexture.scala` | PNG loading via STB image, FBO creation for render-to-texture |
-| `GLTileRenderer.scala` | Loads tile sprite sheet as GL texture, provides texture regions per tile ID + frame |
-| `GLSpriteGenerator.scala` | Loads character sprite sheets as GL textures |
-| `GLFontRenderer.scala` | AWT-based font rasterization to GL texture atlas, supports outlined text with drop shadows |
-| `Matrix4.scala` | Orthographic projection matrix for 2D rendering |
-| `TextureRegion.scala` | UV sub-region of a texture atlas |
-
-### Rendering Pipeline
-
-```
-1. PostProcessor.beginScene()     -- bind scene FBO
-2. GLGameRenderer.render()        -- all game drawing into FBO
-   a. Background (sky, cityscape, space, desert, ocean)
-   b. Tiles (ground + elevated, depth-sorted)
-   c. Items (bobbing, glow, sparkles)
-   d. Players (sprites, shadows, health bars, names)
-   e. Projectiles (112 types via GLProjectileRenderers)
-   f. Status effects (shields, burns, freezes, etc.)
-   g. Aim arrow + charge effects
-   h. Death/teleport/explosion animations
-   i. HUD overlay (abilities, inventory, kill feed)
-3. PostProcessor.endScene()       -- bloom extract → blur → composite + vignette
-```
-
-### Projectile Rendering System
-
-All 112 projectile types are mapped in `GLProjectileRenderers`. Projectiles use standard alpha blending for solid, visible shapes. The bloom post-processor provides natural glow on bright elements.
-
-**8 pattern factories** cover common projectile shapes with per-type color and size:
-- `energyBolt` — round glowing orb with orbiting sparkles and trail
-- `beamProj` — thick directional beam with bright core
-- `spinner` — rotating multi-armed star (axes, shurikens, katanas)
-- `physProj` — arrow/dart with prominent head and fletching
-- `lobbed` — arcing sphere with ground shadow and bounce feel
-- `aoeRing` — expanding concentric rings with pulsing glow
-- `chainProj` — zigzag lightning bolt segments
-- `wave` — wide crescent sweep
-
-**19 specialized renderers** handle unique projectiles: fireball (spiral fire arms), lightning (forking bolts), tidal wave (cresting water), boulder (tumbling rock), shark jaw (animated teeth), bat swarm, shadow bolt (void tendrils), inferno blast (fire vortex), and more.
-
-### Post-Processing
-
-The `PostProcessor` applies screen-wide effects after all game rendering:
-- **Bloom**: Extracts bright pixels at half resolution, applies two-pass Gaussian blur, composites back with screen blending
-- **Vignette**: Subtle edge darkening via smoothstep falloff
-- **Damage overlay**: Red flash when the player takes a hit
-
-Settings: `bloomThreshold=0.88`, `bloomStrength=0.12`, `vignetteStrength=0.08` (tuned for subtle enhancement).
+`GLGameRenderer` draws each frame pass by pass — the background where the map ends, the ground as
+opaque diamonds, traps and blasts on the ground, then blocks, items, projectiles and players
+interleaved by depth, then barriers, glows, animations and particles — into a scene target, which
+the post-processor composites (bloom, light map, grade, vignette). Name plates, health bars, damage
+numbers and the HUD are drawn over the finished frame at full resolution. Each part of the frame is a
+painter of its own (`client/render/world`, `client/render/hud`); every projectile type and every
+explosion has its own look (`client/render/projectiles`, `client/render/blasts`). See
+[client/render/CLAUDE.md](src/main/scala/com/gridgame/client/render/CLAUDE.md).
 
 ## Observability
 

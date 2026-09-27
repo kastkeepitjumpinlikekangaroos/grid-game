@@ -1,90 +1,70 @@
 package com.gridgame.server
 
 import com.gridgame.common.Constants
-import com.gridgame.common.model.Direction
-import com.gridgame.common.model.Item
-import com.gridgame.common.model.MatchResults
 import com.gridgame.common.model.Player
-import com.gridgame.common.model.PlayerResult
-import com.gridgame.common.model.Projectile
-import com.gridgame.common.model.WorldData
 import com.gridgame.common.observability.Attrs
 import com.gridgame.common.observability.Metrics
 import com.gridgame.common.observability.Telemetry
-import com.gridgame.common.observability.Tracing
 import com.gridgame.common.protocol._
-import io.netty.bootstrap.Bootstrap
-import io.netty.bootstrap.ServerBootstrap
-import io.netty.buffer.Unpooled
-import io.netty.channel._
-import io.netty.channel.WriteBufferWaterMark
-import io.netty.channel.nio.NioEventLoopGroup
-import io.netty.channel.socket.DatagramPacket
-import io.netty.channel.socket.SocketChannel
-import io.netty.channel.socket.nio.NioDatagramChannel
-import io.netty.channel.socket.nio.NioServerSocketChannel
-import io.netty.handler.codec.LengthFieldBasedFrameDecoder
-import io.netty.handler.codec.LengthFieldPrepender
+import com.gridgame.server.account.{AccountQueries, AuthDatabase, AuthService}
+import com.gridgame.server.game.GameInstance
+import com.gridgame.server.lobby._
+import com.gridgame.server.net._
+import io.netty.channel.Channel
 
-import java.net.InetAddress
 import java.net.InetSocketAddress
-import java.security.SecureRandom
 import java.util.UUID
-import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 import scala.jdk.CollectionConverters._
 
-class GameServer(port: Int, val worldFile: String = "") {
+/**
+ * The server: its parts put together, and where every packet that passes the network's checks is
+ * sent on to the part that handles it.
+ *
+ *  - net:     sockets, sessions, replay and rate limits, and the Outbox everything is sent through
+ *  - account: logins, profiles and the leaderboard, over the account database
+ *  - lobby:   lobbies, ranked matchmaking, and starting a lobby's match (MatchLauncher)
+ *  - game:    one running match (GameInstance), which a lobby holds; bots play in one
+ *
+ * What spans them lives here: the players who are connected at all, a player joining, leaving or
+ * going quiet, chat (ChatRelay) and the end of a match (MatchEnd).
+ */
+class GameServer(port: Int) extends PacketRouter with LobbyHost {
   // Global state: all connected players regardless of lobby/game
   private val connectedPlayers = new ConcurrentHashMap[UUID, Player]()
-  // Channel -> UUID mapping for disconnect handling
-  private[server] val channelToPlayer = new ConcurrentHashMap[Channel, UUID]()
 
   val rateLimiter = new RateLimiter()
-  val sessionTokens = new ConcurrentHashMap[UUID, Array[Byte]]()
-  val channelToToken = new ConcurrentHashMap[Channel, Array[Byte]]()
-  private val secureRandom = new SecureRandom()
+  val replayGuard = new ReplayGuard()
+  val sessions = new Sessions(rateLimiter, replayGuard)
+  val outbox = new Outbox(sessions)
 
-  // UDP source address validation: maps player UUID -> TCP connection IP
-  val playerTcpAddresses = new ConcurrentHashMap[UUID, InetAddress]()
-  // Session token creation times for expiration
-  val tokenCreationTime = new ConcurrentHashMap[UUID, java.lang.Long]()
-  // Per-channel auth failure tracking
-  val channelAuthFailures = new ConcurrentHashMap[Channel, AtomicInteger]()
-  // The name each logged-in player logged in with: the one they go by (see handleGlobalConnect)
-  private val accountNames = new ConcurrentHashMap[UUID, String]()
-  // Per-player rate limiting for expensive queries, one budget per kind
-  private val lastHistoryQueryTime = new ConcurrentHashMap[UUID, java.lang.Long]()
-  private val lastLeaderboardQueryTime = new ConcurrentHashMap[UUID, java.lang.Long]()
-  // Per-channel malformed packet tracking (disconnect after too many)
-  private[server] val malformedPacketCounts = new ConcurrentHashMap[Channel, AtomicInteger]()
-  private[server] val MAX_MALFORMED_PACKETS = 3
-
-  val packetValidator = new PacketValidator()
   val authDatabase = new AuthDatabase()
+  private val auth = new AuthService(authDatabase, sessions, rateLimiter, outbox)
+  private val accountQueries = new AccountQueries(authDatabase, outbox, id => connectedPlayers.containsKey(id))
+
   val lobbyManager = new LobbyManager()
-  val lobbyHandler = new LobbyHandler(this, lobbyManager)
-  val rankedQueue = new RankedQueue(this)
+  private val launcher = new MatchLauncher(this)
+  val rankedQueue = new RankedQueue(this, lobbyManager, launcher)
+  val lobbyHandler = new LobbyHandler(this, lobbyManager, rankedQueue, launcher)
   private val gameInstances = new ConcurrentHashMap[Short, GameInstance]()
+  private val chat = new ChatRelay(lobbyManager, rateLimiter, outbox, getConnectedPlayer)
+  private val matchEnd = new MatchEnd(lobbyManager, authDatabase, outbox, getConnectedPlayer, unregisterGameInstance)
 
   private val cleanupExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
-  private val sequenceNumber = new AtomicInteger(0)
-  @volatile private var running = false
 
-  // Netty components
-  private val sslCtx = TlsProvider.serverContext()
+  private val network = new ServerNetwork(port, TlsProvider.serverContext(), () => tcpHandler(), () => udpHandler(), outbox)
 
-  private var bossGroup: NioEventLoopGroup = _
-  private var workerGroup: NioEventLoopGroup = _
-  private var tcpServerChannel: Channel = _
-  @volatile private var udpChannel: Channel = _
+  // A login that replaces a session the server still holds open ends that session as leaving would
+  sessions.onSessionReplaced = playerId => leaveEverything(playerId, connectedPlayers.get(playerId))
 
-  /** The channel UDP packets are sent from. start() binds the real one; tests attach their own
-    * to see what each player is sent. */
-  private[server] def attachUdpChannel(ch: Channel): Unit = udpChannel = ch
+  /** The handler each TCP connection's pipeline ends in. */
+  private[server] def tcpHandler(): TcpHandler = new TcpHandler(sessions, rateLimiter, replayGuard, this)
+
+  /** The handler of the UDP socket. */
+  private[server] def udpHandler(): UdpHandler = new UdpHandler(sessions, rateLimiter, replayGuard, this)
 
   // Async gauges — read these atomically on each metric scrape
   private val meter = Telemetry.meter("com.gridgame.server")
@@ -114,51 +94,12 @@ class GameServer(port: Int, val worldFile: String = "") {
     .setUnit("{session}")
     .ofLongs()
     .buildWithCallback { obs =>
-      obs.record(sessionTokens.size().toLong, io.opentelemetry.api.common.Attributes.empty())
+      obs.record(sessions.sessionTokens.size().toLong, io.opentelemetry.api.common.Attributes.empty())
     }
 
   def start(): Unit = {
-    running = true
-
     println(s"Game server starting on port $port (lobby mode)")
-
-    // Start Netty
-    bossGroup = new NioEventLoopGroup(1)
-    workerGroup = new NioEventLoopGroup()
-
-    val server = this
-
-    // TCP Server
-    val tcpBootstrap = new ServerBootstrap()
-    tcpBootstrap.group(bossGroup, workerGroup)
-      .channel(classOf[NioServerSocketChannel])
-      .childHandler(new ChannelInitializer[SocketChannel] {
-        override def initChannel(ch: SocketChannel): Unit = {
-          ch.pipeline()
-            .addLast(sslCtx.newHandler(ch.alloc()))
-            .addLast(new LengthFieldBasedFrameDecoder(Constants.PACKET_SIZE + 2, 0, 2, 0, 2))
-            .addLast(new LengthFieldPrepender(2))
-            .addLast(new GameServerTcpHandler(server))
-        }
-      })
-      .option[java.lang.Integer](ChannelOption.SO_BACKLOG, 128)
-      .childOption[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
-      .childOption[java.lang.Boolean](ChannelOption.TCP_NODELAY, true)
-      .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, new WriteBufferWaterMark(64 * 1024, 256 * 1024))
-
-    tcpServerChannel = tcpBootstrap.bind(port).sync().channel()
-    println(s"TCP server listening on port $port")
-
-    // UDP Server
-    val udpBootstrap = new Bootstrap()
-    udpBootstrap.group(workerGroup)
-      .channel(classOf[NioDatagramChannel])
-      .option[java.lang.Integer](ChannelOption.SO_SNDBUF, 1024 * 1024)
-      .option[java.lang.Integer](ChannelOption.SO_RCVBUF, 1024 * 1024)
-      .handler(new GameServerUdpHandler(server))
-
-    udpChannel = udpBootstrap.bind(port).sync().channel()
-    println(s"UDP server listening on port $port")
+    network.bind()
 
     // Schedule cleanup
     cleanupExecutor.scheduleAtFixedRate(
@@ -177,144 +118,8 @@ class GameServer(port: Int, val worldFile: String = "") {
     println(s"Game server started on port $port")
 
     // Block until TCP server channel closes
-    tcpServerChannel.closeFuture().sync()
+    network.awaitClose()
   }
-
-  /** Send a packet to a specific player, using the correct transport based on packet type. */
-  def sendPacketToPlayer(packet: Packet, player: Player): Unit = {
-    val token = sessionTokens.get(player.getId)
-    val pktAttrs = Attrs.packet(packet.getType)
-    if (packet.getType.tcp) {
-      val raw = player.getTcpChannel
-      if (raw != null) {
-        val ch = raw.asInstanceOf[Channel]
-        if (ch.isActive) {
-          val payload = packet.serialize()
-          val data = if (token != null) PacketSigner.sign(payload, token) else padToPacketSize(payload)
-          ch.writeAndFlush(Unpooled.wrappedBuffer(data))
-          Metrics.packetsSent.add(1L, pktAttrs)
-          Metrics.bandwidthBytes.add(data.length.toLong, Attrs.DirOut)
-        }
-      }
-    } else {
-      val addr = player.getUdpAddress
-      if (addr != null && udpChannel != null) {
-        val payload = packet.serialize()
-        val data = if (token != null) PacketSigner.sign(payload, token) else padToPacketSize(payload)
-        val dgram = new DatagramPacket(Unpooled.wrappedBuffer(data), addr)
-        udpChannel.writeAndFlush(dgram)
-        Metrics.packetsSent.add(1L, pktAttrs)
-        Metrics.bandwidthBytes.add(data.length.toLong, Attrs.DirOut)
-      }
-    }
-  }
-
-  /** Send a packet directly over a specific TCP channel (used for initial join responses). */
-  def sendPacketViaChannel(packet: Packet, channel: Channel): Unit = {
-    if (channel != null && channel.isActive) {
-      val payload = packet.serialize()
-      val token = channelToToken.get(channel)
-      val data = if (token != null) PacketSigner.sign(payload, token) else padToPacketSize(payload)
-      channel.writeAndFlush(Unpooled.wrappedBuffer(data))
-      Metrics.packetsSent.add(1L, Attrs.packet(packet.getType))
-      Metrics.bandwidthBytes.add(data.length.toLong, Attrs.DirOut)
-    }
-  }
-
-  /** Broadcast a packet to all connected players (lobby-wide). */
-  def broadcastToAllPlayers(packet: Packet): Unit = {
-    val data = packet.serialize()
-    var fanout = 0
-    connectedPlayers.values().asScala.foreach { player =>
-      sendRawToPlayer(data, packet.getType.tcp, player)
-      fanout += 1
-    }
-    Metrics.broadcastFanout.record(fanout.toLong, Attrs.packet(packet.getType))
-  }
-
-  /** Resolve the {type, transport} attribute set for a serialized payload's first byte.
-   *  Returns the UNKNOWN sentinel if the byte doesn't match a known packet type. */
-  private def rawSendAttrs(data: Array[Byte], isTcp: Boolean): io.opentelemetry.api.common.Attributes = {
-    if (data.length == 0) return if (isTcp) Attrs.UnknownPacket else Attrs.UnknownPacketUdp
-    try Attrs.packet(PacketType.fromId(data(0)))
-    catch { case _: Throwable => if (isTcp) Attrs.UnknownPacket else Attrs.UnknownPacketUdp }
-  }
-
-  /** Send pre-serialized packet bytes to a player. Serialization is done once by the caller. */
-  def sendRawToPlayer(data: Array[Byte], isTcp: Boolean, player: Player): Unit = {
-    val token = sessionTokens.get(player.getId)
-    val signed = if (token != null) PacketSigner.sign(data, token) else padToPacketSize(data)
-    val pktAttrs = rawSendAttrs(data, isTcp)
-    if (isTcp) {
-      val raw = player.getTcpChannel
-      if (raw != null) {
-        val ch = raw.asInstanceOf[Channel]
-        if (ch.isActive) {
-          ch.writeAndFlush(Unpooled.wrappedBuffer(signed))
-          Metrics.packetsSent.add(1L, pktAttrs)
-          Metrics.bandwidthBytes.add(signed.length.toLong, Attrs.DirOut)
-        }
-      }
-    } else {
-      val addr = player.getUdpAddress
-      if (addr != null && udpChannel != null) {
-        val dgram = new DatagramPacket(Unpooled.wrappedBuffer(signed), addr)
-        udpChannel.writeAndFlush(dgram)
-        Metrics.packetsSent.add(1L, pktAttrs)
-        Metrics.bandwidthBytes.add(signed.length.toLong, Attrs.DirOut)
-      }
-    }
-  }
-
-  /** Buffered send: write without flushing. Call flushPlayer() or flushUdpChannel() after a batch. */
-  def sendRawToPlayerBuffered(data: Array[Byte], isTcp: Boolean, player: Player): Unit = {
-    val token = sessionTokens.get(player.getId)
-    val signed = if (token != null) PacketSigner.sign(data, token) else padToPacketSize(data)
-    val pktAttrs = rawSendAttrs(data, isTcp)
-    if (isTcp) {
-      val raw = player.getTcpChannel
-      if (raw != null) {
-        val ch = raw.asInstanceOf[Channel]
-        if (ch.isActive) {
-          ch.write(Unpooled.wrappedBuffer(signed))
-          Metrics.packetsSent.add(1L, pktAttrs)
-          Metrics.bandwidthBytes.add(signed.length.toLong, Attrs.DirOut)
-        }
-      }
-    } else {
-      val addr = player.getUdpAddress
-      if (addr != null && udpChannel != null) {
-        val dgram = new DatagramPacket(Unpooled.wrappedBuffer(signed), addr)
-        udpChannel.write(dgram)
-        Metrics.packetsSent.add(1L, pktAttrs)
-        Metrics.bandwidthBytes.add(signed.length.toLong, Attrs.DirOut)
-      }
-    }
-  }
-
-  /** Flush a player's TCP channel after buffered writes. */
-  def flushPlayer(player: Player): Unit = {
-    val raw = player.getTcpChannel
-    if (raw != null) {
-      val ch = raw.asInstanceOf[Channel]
-      if (ch.isActive) ch.flush()
-    }
-  }
-
-  /** Flush the server UDP channel after buffered writes. */
-  def flushUdpChannel(): Unit = {
-    if (udpChannel != null) udpChannel.flush()
-  }
-
-  /** Pad a 64-byte payload to 80 bytes (for pre-auth packets without HMAC). */
-  private def padToPacketSize(payload: Array[Byte]): Array[Byte] = {
-    if (payload.length == Constants.PACKET_SIZE) return payload
-    val padded = new Array[Byte](Constants.PACKET_SIZE)
-    System.arraycopy(payload, 0, padded, 0, Math.min(payload.length, Constants.PACKET_PAYLOAD_SIZE))
-    padded
-  }
-
-  def getNextSequenceNumber: Int = sequenceNumber.getAndIncrement() & 0x7FFFFFFF
 
   def getConnectedPlayer(playerId: UUID): Player = connectedPlayers.get(playerId)
 
@@ -324,29 +129,6 @@ class GameServer(port: Int, val worldFile: String = "") {
 
   def registerGameInstance(lobbyId: Short, instance: GameInstance): Unit = {
     gameInstances.put(lobbyId, instance)
-  }
-
-  /** Unused in lobby mode but kept for backwards-compat with ClientHandler */
-  def getWorld: WorldData = null
-
-  def broadcastPlayerUpdate(packet: PlayerUpdatePacket): Unit = {
-    // This should not be called in lobby mode; instance handles it
-  }
-
-  def broadcastTileUpdate(playerId: UUID, x: Int, y: Int, tileId: Int): Unit = {
-    // This should not be called in lobby mode; instance handles it
-  }
-
-  def sendModifiedTiles(player: Player): Unit = {
-    // No-op in lobby mode; instance handles it
-  }
-
-  def broadcastProjectileSpawn(projectile: Projectile): Unit = {
-    // No-op in lobby mode; instance handles it
-  }
-
-  def broadcastItemPickup(item: Item, playerId: UUID): Unit = {
-    // No-op in lobby mode; instance handles it
   }
 
   /** Handle an incoming packet from a TCP or UDP handler. */
@@ -363,7 +145,7 @@ class GameServer(port: Int, val worldFile: String = "") {
 
       // For non-auth TCP packets, verify the packet's UUID matches the authenticated channel identity
       if (packet.getType != PacketType.AUTH_REQUEST && tcpCh != null) {
-        val authenticatedId = channelToPlayer.get(tcpCh)
+        val authenticatedId = sessions.channelToPlayer.get(tcpCh)
         if (authenticatedId == null) {
           // channelToPlayer is set during generateSessionToken — if missing, channel hasn't authenticated
           System.err.println(s"TCP: Packet from unauthenticated channel (no channelToPlayer binding)")
@@ -379,19 +161,19 @@ class GameServer(port: Int, val worldFile: String = "") {
 
       packet.getType match {
         case PacketType.AUTH_REQUEST =>
-          handleAuthRequest(packet.asInstanceOf[AuthRequestPacket], tcpCh)
+          auth.handle(packet.asInstanceOf[AuthRequestPacket], tcpCh)
 
         case PacketType.MATCH_HISTORY =>
-          handleMatchHistoryRequest(packet.asInstanceOf[MatchHistoryPacket], tcpCh)
+          accountQueries.handleMatchHistoryRequest(packet.asInstanceOf[MatchHistoryPacket], tcpCh)
 
         case PacketType.LEADERBOARD =>
-          handleLeaderboardRequest(packet.asInstanceOf[LeaderboardPacket], tcpCh)
+          accountQueries.handleLeaderboardRequest(packet.asInstanceOf[LeaderboardPacket], tcpCh)
 
         case PacketType.RANKED_QUEUE =>
           handleRankedQueue(packet.asInstanceOf[RankedQueuePacket])
 
         case PacketType.CHAT_MESSAGE =>
-          handleChatMessage(packet.asInstanceOf[ChatMessagePacket])
+          chat.handle(packet.asInstanceOf[ChatMessagePacket])
 
         case PacketType.LOBBY_ACTION =>
           val lobbyPacket = packet.asInstanceOf[LobbyActionPacket]
@@ -448,7 +230,7 @@ class GameServer(port: Int, val worldFile: String = "") {
     val existingPlayer = connectedPlayers.get(playerId)
     // A player goes by the name they logged in with, not whatever their join says: taken from the
     // join, anyone could appear in a lobby, on a name plate or in chat as anyone else
-    val loggedInAs = accountNames.get(playerId)
+    val loggedInAs = sessions.accountNames.get(playerId)
     val name = if (loggedInAs != null) loggedInAs else packet.getPlayerName
 
     if (existingPlayer != null) {
@@ -463,7 +245,7 @@ class GameServer(port: Int, val worldFile: String = "") {
     }
 
     if (tcpCh != null) {
-      channelToPlayer.put(tcpCh, playerId)
+      sessions.channelToPlayer.put(tcpCh, playerId)
     }
 
     Metrics.connectionsOpened.add(1L, Attrs.ConnTcpOpen)
@@ -486,165 +268,10 @@ class GameServer(port: Int, val worldFile: String = "") {
     rankedQueue.removePlayer(playerId)
     if (player != null && lobbyManager.getPlayerLobby(playerId) != null) {
       lobbyHandler.processLobbyAction(
-        new LobbyActionPacket(getNextSequenceNumber, playerId, LobbyAction.LEAVE),
+        new LobbyActionPacket(outbox.nextSeq(), playerId, LobbyAction.LEAVE),
         player
       )
     }
-  }
-
-  private def handleAuthRequest(packet: AuthRequestPacket, tcpCh: Channel): Unit = Tracing.span("auth.request", io.opentelemetry.api.common.Attributes.of(Attrs.Action, if (packet.getAction == AuthAction.SIGNUP) "signup" else "login")) {
-    val username = packet.getUsername
-    val password = packet.getPassword
-    val isSignup = packet.getAction == AuthAction.SIGNUP
-    val startNs = System.nanoTime()
-
-    // Rate limit auth attempts
-    val remoteAddr = tcpCh.remoteAddress().asInstanceOf[InetSocketAddress].getAddress
-    if (!rateLimiter.allowAuthAttempt(remoteAddr)) {
-      println(s"Auth: Rate limited - $remoteAddr")
-      Metrics.authAttempts.add(1L, if (isSignup) Attrs.AuthSignupRateLimited else Attrs.AuthLoginRateLimited)
-      Metrics.rateLimitTriggered.add(1L, Attrs.RlAuth)
-      val response = new AuthResponsePacket(getNextSequenceNumber, false, null, AuthRules.TooManyAttempts)
-      sendPacketViaChannel(response, tcpCh)
-      return
-    }
-
-    if (isSignup) {
-      if (!AuthRules.isValidUsername(username)) {
-        // register() refuses these too, and it used to be reported as "Username taken"
-        println(s"Auth: Signup failed - '$username' (invalid username)")
-        recordChannelAuthFailure(tcpCh)
-        Metrics.authAttempts.add(1L, Attrs.AuthSignupFail)
-        sendPacketViaChannel(new AuthResponsePacket(getNextSequenceNumber, false, null, AuthRules.InvalidUsername), tcpCh)
-        return
-      }
-      if (password.length < AuthRules.MinPasswordLength) {
-        println(s"Auth: Signup failed - '$username' (password too short)")
-        recordChannelAuthFailure(tcpCh)
-        Metrics.authAttempts.add(1L, Attrs.AuthSignupFail)
-        val response = new AuthResponsePacket(getNextSequenceNumber, false, null, AuthRules.PasswordTooShort)
-        sendPacketViaChannel(response, tcpCh)
-        return
-      }
-      val registered = authDatabase.register(username, password)
-      if (registered) {
-        val uuid = authDatabase.getOrCreateUUID(username)
-        println(s"Auth: New account registered - '$username' (${uuid.toString.substring(0, 8)})")
-        playerTcpAddresses.put(uuid, remoteAddr)
-        accountNames.put(uuid, username)
-        val token = generateSessionToken(uuid, tcpCh)
-        Metrics.authAttempts.add(1L, Attrs.AuthSignupSuccess)
-        // Token first: the client acts on a successful AUTH_RESPONSE by sending packets that
-        // must be signed, so it has to hold the token by then.
-        val tokenPacket = new SessionTokenPacket(getNextSequenceNumber, uuid, token)
-        sendPacketViaChannel(tokenPacket, tcpCh)
-        val response = new AuthResponsePacket(getNextSequenceNumber, true, uuid, AuthRules.AccountCreated)
-        sendPacketViaChannel(response, tcpCh)
-      } else {
-        println(s"Auth: Signup failed - '$username' (already exists)")
-        recordChannelAuthFailure(tcpCh)
-        Metrics.authAttempts.add(1L, Attrs.AuthSignupFail)
-        val response = new AuthResponsePacket(getNextSequenceNumber, false, null, AuthRules.UsernameTaken)
-        sendPacketViaChannel(response, tcpCh)
-      }
-    } else {
-      val authenticated = authDatabase.authenticate(username, password)
-      if (authenticated) {
-        rateLimiter.clearAuthFailures(remoteAddr)
-        val uuid = authDatabase.getOrCreateUUID(username)
-        println(s"Auth: Login successful - '$username' (${uuid.toString.substring(0, 8)})")
-        playerTcpAddresses.put(uuid, remoteAddr)
-        accountNames.put(uuid, username)
-        val token = generateSessionToken(uuid, tcpCh)
-        Metrics.authAttempts.add(1L, Attrs.AuthLoginSuccess)
-        // Token first, as for signup
-        val tokenPacket = new SessionTokenPacket(getNextSequenceNumber, uuid, token)
-        sendPacketViaChannel(tokenPacket, tcpCh)
-        val response = new AuthResponsePacket(getNextSequenceNumber, true, uuid, AuthRules.LoginSuccessful)
-        sendPacketViaChannel(response, tcpCh)
-      } else {
-        rateLimiter.recordAuthFailure(remoteAddr)
-        recordChannelAuthFailure(tcpCh)
-        println(s"Auth: Login failed - '$username' (invalid credentials)")
-        Metrics.authAttempts.add(1L, Attrs.AuthLoginFail)
-        val response = new AuthResponsePacket(getNextSequenceNumber, false, null, AuthRules.InvalidCredentials)
-        sendPacketViaChannel(response, tcpCh)
-      }
-    }
-    Metrics.authDuration.record((System.nanoTime() - startNs) / 1e6, io.opentelemetry.api.common.Attributes.of(Attrs.Action, if (isSignup) "signup" else "login"))
-  }
-
-  private def handleMatchHistoryRequest(packet: MatchHistoryPacket, tcpCh: Channel): Unit = {
-    if (packet.getAction != MatchHistoryAction.QUERY) return
-
-    val playerId = packet.getPlayerId
-    val player = connectedPlayers.get(playerId)
-    if (player == null) return
-
-    if (!allowExpensiveQuery(lastHistoryQueryTime, playerId)) return
-
-    // Send stats. Use oldElo = elo here so the client knows there's no ELO
-    // change to display (this is a profile query, not a post-match push).
-    val (totalKills, totalDeaths, matchesPlayed, wins, elo) = authDatabase.getPlayerStats(playerId)
-    val statsPacket = new MatchHistoryPacket(
-      getNextSequenceNumber, playerId, Packet.getCurrentTimestamp, MatchHistoryAction.STATS,
-      totalKills = totalKills, totalDeaths = totalDeaths,
-      matchesPlayed = matchesPlayed, wins = wins, elo = elo.toShort, oldElo = elo.toShort
-    )
-    sendPacketViaChannel(statsPacket, tcpCh)
-
-    // Send history entries
-    val history = authDatabase.getMatchHistory(playerId)
-    history.foreach { case (matchId, mapIndex, durationMin, playedAt, kills, deaths, rank, playerCount, matchType) =>
-      val entryPacket = new MatchHistoryPacket(
-        getNextSequenceNumber, playerId, Packet.getCurrentTimestamp, MatchHistoryAction.ENTRY,
-        matchId.toInt, mapIndex.toByte, durationMin.toByte, (playedAt / 1000).toInt,
-        kills.toShort, deaths.toShort, rank.toByte, playerCount.toByte,
-        matchType = matchType.toByte
-      )
-      sendPacketViaChannel(entryPacket, tcpCh)
-    }
-
-    // Send end marker
-    val endPacket = new MatchHistoryPacket(getNextSequenceNumber, playerId, MatchHistoryAction.END)
-    sendPacketViaChannel(endPacket, tcpCh)
-  }
-
-  private val QUERY_RATE_LIMIT_MS = 10000L // 10 seconds between expensive queries
-
-  /** Each query kind has its own budget, and only an answered query spends it. Sharing one
-    * timestamp (and restamping it on every rejected request) meant opening the leaderboard
-    * within 10s of the profile, or clicking either twice, got no reply at all. */
-  private def allowExpensiveQuery(lastTimes: ConcurrentHashMap[UUID, java.lang.Long], playerId: UUID): Boolean = {
-    val now = System.currentTimeMillis()
-    val lastTime = lastTimes.get(playerId)
-    if (lastTime != null && now - lastTime < QUERY_RATE_LIMIT_MS) return false
-    lastTimes.put(playerId, now)
-    true
-  }
-
-  private def handleLeaderboardRequest(packet: LeaderboardPacket, tcpCh: Channel): Unit = {
-    if (packet.getAction != LeaderboardAction.QUERY) return
-
-    val playerId = packet.getPlayerId
-    val player = connectedPlayers.get(playerId)
-    if (player == null) return
-
-    if (!allowExpensiveQuery(lastLeaderboardQueryTime, playerId)) return
-
-    val leaderboard = authDatabase.getLeaderboard()
-    var rank: Int = 1
-    leaderboard.foreach { case (username, elo, wins, matchesPlayed) =>
-      val entryPacket = new LeaderboardPacket(
-        getNextSequenceNumber, playerId, Packet.getCurrentTimestamp, LeaderboardAction.ENTRY,
-        rank.toByte, elo.toShort, wins, matchesPlayed, username
-      )
-      sendPacketViaChannel(entryPacket, tcpCh)
-      rank += 1
-    }
-
-    val endPacket = new LeaderboardPacket(getNextSequenceNumber, playerId, LeaderboardAction.END)
-    sendPacketViaChannel(endPacket, tcpCh)
   }
 
   private def handleRankedQueue(packet: RankedQueuePacket): Unit = {
@@ -657,7 +284,7 @@ class GameServer(port: Int, val worldFile: String = "") {
         // Block queuing while in a casual lobby/game
         val currentLobby = lobbyManager.getPlayerLobby(playerId)
         if (currentLobby != null && currentLobby.status != LobbyStatus.FINISHED) return
-        val elo = getPlayerElo(playerId)
+        val elo = authDatabase.getEloByUUID(playerId)
         rankedQueue.addPlayer(playerId, packet.getCharacterId, elo, packet.getMode)
 
       case RankedQueueAction.QUEUE_LEAVE =>
@@ -670,71 +297,6 @@ class GameServer(port: Int, val worldFile: String = "") {
     }
   }
 
-  private def handleChatMessage(packet: ChatMessagePacket): Unit = {
-    val playerId = packet.getPlayerId
-    val player = connectedPlayers.get(playerId)
-    if (player == null) return
-
-    if (!rateLimiter.allowChat(playerId)) {
-      Metrics.rateLimitTriggered.add(1L, Attrs.RlChat)
-      return
-    }
-
-    // Sanitize: strip control chars, trim, reject empty
-    val sanitized = packet.getMessage.filter(c => c >= 32 && c < 127).trim
-    if (sanitized.isEmpty) return
-
-    Metrics.chatMessages.add(1L, packet.getScope match {
-      case ChatScope.LOBBY => Attrs.ChatLobby
-      case ChatScope.GAME => Attrs.ChatGame
-      case ChatScope.TEAM => Attrs.ChatTeam
-      case _ => Attrs.ChatLobby
-    })
-
-    val lobby = lobbyManager.getPlayerLobby(playerId)
-    if (lobby == null) return
-
-    val broadcastPacket = new ChatMessagePacket(
-      getNextSequenceNumber, playerId, Packet.getCurrentTimestamp,
-      packet.getScope, sanitized
-    )
-
-    packet.getScope match {
-      case ChatScope.LOBBY if lobby.status == LobbyStatus.WAITING =>
-        val data = broadcastPacket.serialize()
-        lobby.players.forEach { pid =>
-          val p = connectedPlayers.get(pid)
-          if (p != null) sendRawToPlayer(data, true, p)
-        }
-
-      case ChatScope.GAME if lobby.status == LobbyStatus.IN_GAME && lobby.gameInstance != null =>
-        lobby.gameInstance.broadcastToInstance(broadcastPacket)
-
-      case ChatScope.TEAM if lobby.status == LobbyStatus.IN_GAME && lobby.gameInstance != null && lobby.gameMode == 1 =>
-        val instance = lobby.gameInstance
-        val senderTeam: java.lang.Byte = instance.teamAssignments.get(playerId)
-        if (senderTeam != null) {
-          val data = broadcastPacket.serialize()
-          instance.registry.getAll.asScala.foreach { p =>
-            val pTeam: java.lang.Byte = instance.teamAssignments.get(p.getId)
-            if (pTeam != null && pTeam.byteValue() == senderTeam.byteValue()) {
-              sendRawToPlayer(data, true, p)
-            }
-          }
-        }
-
-      case _ => // Invalid scope for current state, ignore
-    }
-  }
-
-  def getPlayerElo(playerId: UUID): Int = {
-    authDatabase.getEloByUUID(playerId)
-  }
-
-  def getPlayerUsername(playerId: UUID): String = {
-    authDatabase.getUsernameByUUID(playerId)
-  }
-
   private def handleGlobalHeartbeat(packet: Packet, udpSender: InetSocketAddress): Unit = {
     val playerId = packet.getPlayerId
     val player = connectedPlayers.get(playerId)
@@ -742,23 +304,13 @@ class GameServer(port: Int, val worldFile: String = "") {
       player.updateHeartbeat()
       if (udpSender != null) {
         // Only update UDP address if sender IP matches the TCP connection IP
-        val expectedAddr = playerTcpAddresses.get(playerId)
+        val expectedAddr = sessions.playerTcpAddresses.get(playerId)
         if (expectedAddr != null && udpSender.getAddress.equals(expectedAddr)) {
           player.setUdpAddress(udpSender)
         }
       }
       // Echo heartbeat back over TCP to keep client's TCP read timeout alive
-      val tcpCh = player.getTcpChannel
-      if (tcpCh != null) {
-        val ch = tcpCh.asInstanceOf[Channel]
-        if (ch.isActive) {
-          val response = new HeartbeatPacket(getNextSequenceNumber, playerId)
-          val payload = response.serialize()
-          val token = sessionTokens.get(playerId)
-          val data = if (token != null) PacketSigner.sign(payload, token) else padToPacketSize(payload)
-          ch.writeAndFlush(Unpooled.wrappedBuffer(data))
-        }
-      }
+      outbox.sendOverTcp(player)(new HeartbeatPacket(outbox.nextSeq(), playerId))
       // Also update in the game instance if they're in one
       val lobby = lobbyManager.getPlayerLobby(playerId)
       if (lobby != null && lobby.gameInstance != null) {
@@ -766,7 +318,7 @@ class GameServer(port: Int, val worldFile: String = "") {
         if (instancePlayer != null) {
           instancePlayer.updateHeartbeat()
           if (udpSender != null) {
-            val instanceExpectedAddr = playerTcpAddresses.get(playerId)
+            val instanceExpectedAddr = sessions.playerTcpAddresses.get(playerId)
             if (instanceExpectedAddr != null && udpSender.getAddress.equals(instanceExpectedAddr)) {
               instancePlayer.setUdpAddress(udpSender)
             }
@@ -776,86 +328,12 @@ class GameServer(port: Int, val worldFile: String = "") {
     }
   }
 
-  private def recordChannelAuthFailure(tcpCh: Channel): Unit = {
-    val counter = channelAuthFailures.computeIfAbsent(tcpCh, _ => new AtomicInteger(0))
-    if (counter.incrementAndGet() >= Constants.MAX_AUTH_FAILURES_PER_CHANNEL) {
-      System.err.println(s"Auth: Too many failures on channel, closing: ${tcpCh.remoteAddress()}")
-      tcpCh.close()
-    }
-  }
-
-  // Per-player locks for session token generation (UUIDs are not interned, so can't synchronize on them directly)
-  private val playerLocks = new ConcurrentHashMap[UUID, AnyRef]()
-
-  private[server] def generateSessionToken(playerId: UUID, tcpCh: Channel): Array[Byte] = {
-    val lock = playerLocks.computeIfAbsent(playerId, _ => new AnyRef)
-    lock.synchronized {
-      generateSessionTokenImpl(playerId, tcpCh)
-    }
-  }
-
-  private def generateSessionTokenImpl(playerId: UUID, tcpCh: Channel): Array[Byte] = {
-    // Invalidate any existing session for this player (prevents stale channel reuse)
-    val oldToken = sessionTokens.get(playerId)
-    if (oldToken != null) {
-      // Find and close the old channel that held the previous token
-      import scala.jdk.CollectionConverters._
-      channelToToken.entrySet().asScala.find { e =>
-        java.util.Arrays.equals(e.getValue, oldToken)
-      }.foreach { e =>
-        val oldChannel = e.getKey
-        if (oldChannel != tcpCh) {
-          channelToToken.remove(oldChannel)
-          channelToPlayer.remove(oldChannel)
-          channelAuthFailures.remove(oldChannel)
-          malformedPacketCounts.remove(oldChannel)
-          rateLimiter.removeChannel(oldChannel)
-          oldChannel.close()
-          // The old session ends here as a disconnect would have ended it, since its channel's
-          // own disconnect will no longer find the player. It used to end with the channel alone:
-          // the player stayed in their match (a target standing still for the rest of it) and in
-          // their lobby, so every lobby the new session tried to make or join was refused as
-          // "already in a lobby" until that match was over. A new login starts in the browser.
-          leaveEverything(playerId, connectedPlayers.get(playerId))
-          System.err.println(s"Auth: Closed stale session for ${playerId.toString.substring(0, 8)} on old channel")
-        }
-      }
-    }
-
-    // The new session's client counts its packets from zero. When the old channel was still
-    // open here, closing it above doesn't clear the old session's sequence numbers (its
-    // disconnect no longer finds the player), and every packet of the new session was taken for
-    // a replay until its count passed the old one's: logged in, and nothing worked.
-    packetValidator.resetSequences(playerId)
-
-    val token = new Array[Byte](32)
-    secureRandom.nextBytes(token)
-    sessionTokens.put(playerId, token)
-    tokenCreationTime.put(playerId, System.currentTimeMillis())
-    if (tcpCh != null) {
-      channelToToken.put(tcpCh, token)
-      // Bind channel to player UUID immediately so identity check works from the first packet
-      channelToPlayer.put(tcpCh, playerId)
-    }
-    token
-  }
-
-
   def handleDisconnect(channel: Channel): Unit = {
-    channelToToken.remove(channel)
-    channelAuthFailures.remove(channel)
-    malformedPacketCounts.remove(channel)
-    rateLimiter.removeChannel(channel)
     Metrics.connectionsClosed.add(1L, Attrs.ConnTcpClose)
-    val playerId = channelToPlayer.remove(channel)
+    val playerId = sessions.channelClosed(channel)
     if (playerId != null) {
-      sessionTokens.remove(playerId)
-      tokenCreationTime.remove(playerId)
-      playerTcpAddresses.remove(playerId)
-      accountNames.remove(playerId)
-      lastHistoryQueryTime.remove(playerId)
-      lastLeaderboardQueryTime.remove(playerId)
-      packetValidator.removePlayer(playerId)
+      sessions.endSession(playerId)
+      accountQueries.forget(playerId)
       lobbyHandler.cleanupPlayer(playerId)
       val player = connectedPlayers.remove(playerId)
       if (player != null) {
@@ -872,7 +350,7 @@ class GameServer(port: Int, val worldFile: String = "") {
             gi.handler.handleDisconnect(channel)
           }
           lobbyHandler.processLobbyAction(
-            new LobbyActionPacket(getNextSequenceNumber, playerId, LobbyAction.LEAVE),
+            new LobbyActionPacket(outbox.nextSeq(), playerId, LobbyAction.LEAVE),
             player
           )
         }
@@ -880,122 +358,8 @@ class GameServer(port: Int, val worldFile: String = "") {
     }
   }
 
-  def endGame(lobbyId: Short): Unit = {
-    val lobby = lobbyManager.getLobby(lobbyId)
-    if (lobby == null) return
-
-    val instance = lobby.gameInstance
-    if (instance == null) return
-
-    // The match timer and a player ending their practice session can both get here; only
-    // the first may end the match, or it is scored and saved twice.
-    lobby.synchronized {
-      if (lobby.status == LobbyStatus.FINISHED) return
-      lobby.status = LobbyStatus.FINISHED
-    }
-
-    // Practice can end early, so time the match rather than trusting its configured length.
-    val playedSeconds = instance.getElapsedSeconds
-    val modeAttrs = io.opentelemetry.api.common.Attributes.builder()
-      .putAll(Attrs.modeOf(instance.gameMode))
-      .putAll(Attrs.matchTypeOf(lobby.matchType))
-      .build()
-    Metrics.matchesFinished.add(1L, modeAttrs)
-    Metrics.matchDuration.record(playedSeconds.toDouble, modeAttrs)
-
-    // Snapshot the teams before stop() clears them. Reading them afterwards put every
-    // player on "team 0", one team, so a Teams scoreboard ranked everybody #1.
-    val teams: Map[UUID, Byte] = instance.teamAssignments.asScala.toMap
-
-    // Stop the instance (shutdownNow() interrupts worker threads including the
-    // current thread when called from the match's own timer, endMatch). Clear the
-    // interrupt flag so subsequent JDBC operations in saveMatch aren't disrupted.
-    instance.stop()
-    Thread.interrupted()
-
-    // Broadcast GAME_OVER
-    val zeroUUID = new UUID(0L, 0L)
-    val gameOverPacket = new GameEventPacket(
-      getNextSequenceNumber, zeroUUID, GameEvent.GAME_OVER, lobbyId,
-      0, 0.toShort, 0.toShort, null, 0.toByte, 0.toShort, 0.toShort
-    )
-    instance.broadcastToInstance(gameOverPacket)
-
-    // Send SCORE_ENTRY for each player. In Teams mode every member carries their team's
-    // place; players who left mid-match are still scored.
-    val scoreboard = instance.killTracker.getScoreboard
-    val results =
-      if (instance.gameMode == 1) MatchResults.rankTeams(scoreboard, pid => teams.getOrElse(pid, 0.toByte))
-      else MatchResults.rankFfa(scoreboard)
-    results.foreach { r =>
-      val scorePacket = new GameEventPacket(
-        getNextSequenceNumber, r.playerId, GameEvent.SCORE_ENTRY, lobbyId,
-        0, r.kills.toShort, r.deaths.toShort, null, r.rank.toByte, 0.toShort, 0.toShort, r.teamId
-      )
-      instance.broadcastToInstance(scorePacket)
-    }
-
-    // Persist match results (exclude bots). The player count includes the bots, since
-    // ranks were placed among them: "#3 of 1" is what counting only humans produced.
-    val humanResults = results.filterNot(r => BotManager.isBotUUID(r.playerId))
-    val playedMinutes = Math.max(1, Math.round(playedSeconds / 60.0).toInt)
-    authDatabase.saveMatch(lobby.mapIndex, playedMinutes,
-      humanResults.map(r => (r.playerId, r.kills, r.deaths, r.rank.toByte)), lobby.matchType, results.size)
-
-    // Update ELO for ranked matches (exclude bots) and push fresh stats to each
-    // human so the post-match scoreboard can show the ELO delta without forcing
-    // the client to manually re-query match history.
-    if (lobby.isRanked && humanResults.size >= 2) {
-      val eloDeltas = updateRankedElo(humanResults)
-      eloDeltas.foreach { case (uuid, (oldElo, newElo)) =>
-        val player = connectedPlayers.get(uuid)
-        if (player != null) {
-          val (totalKills, totalDeaths, matchesPlayed, wins, _) = authDatabase.getPlayerStats(uuid)
-          val statsPacket = new MatchHistoryPacket(
-            getNextSequenceNumber, uuid, Packet.getCurrentTimestamp,
-            MatchHistoryAction.STATS,
-            totalKills = totalKills, totalDeaths = totalDeaths,
-            matchesPlayed = matchesPlayed, wins = wins,
-            elo = newElo.toShort, oldElo = oldElo.toShort
-          )
-          sendPacketToPlayer(statsPacket, player)
-        }
-      }
-    }
-
-    // Send SCORE_END
-    val scoreEndPacket = new GameEventPacket(
-      getNextSequenceNumber, zeroUUID, GameEvent.SCORE_END, lobbyId,
-      0, 0.toShort, 0.toShort, null, 0.toByte, 0.toShort, 0.toShort
-    )
-    instance.broadcastToInstance(scoreEndPacket)
-
-    // Clean up
-    gameInstances.remove(lobbyId)
-    lobbyManager.removeLobby(lobbyId)
-
-    println(s"Game ended for lobby $lobbyId")
-  }
-
-  /**
-   * Apply ELO updates for a finished ranked match.
-   * Returns a map of playerId -> (oldElo, newElo) so callers can notify clients.
-   * Returns an empty map if the match had fewer than 2 humans.
-   */
-  private def updateRankedElo(results: Seq[PlayerResult]): Map[UUID, (Int, Int)] = {
-    if (results.size < 2) return Map.empty
-
-    val changes = MatchResults.eloChanges(results.map(r => (r, authDatabase.getEloByUUID(r.playerId))))
-    changes.foreach { case (uuid, (oldElo, newElo)) =>
-      val username = authDatabase.getUsernameByUUID(uuid)
-      if (username != null) {
-        authDatabase.updateElo(username, newElo)
-        println(s"RankedELO: ${username} $oldElo -> $newElo (delta=${newElo - oldElo})")
-      }
-      Metrics.eloDelta.record((newElo - oldElo).toDouble, io.opentelemetry.api.common.Attributes.empty())
-    }
-    changes
-  }
+  /** A lobby's match is over (its time is up, or its practice was left): see MatchEnd. */
+  def endGame(lobbyId: Short): Unit = matchEnd.endGame(lobbyId)
 
   private def cleanup(): Unit = {
     val now = System.currentTimeMillis()
@@ -1007,22 +371,17 @@ class GameServer(port: Int, val worldFile: String = "") {
         connectedPlayers.remove(playerId)
 
         // Clean up session state (fixes leak)
-        sessionTokens.remove(playerId)
-        tokenCreationTime.remove(playerId)
-        playerTcpAddresses.remove(playerId)
-        accountNames.remove(playerId)
-        lastHistoryQueryTime.remove(playerId)
-        lastLeaderboardQueryTime.remove(playerId)
-        packetValidator.removePlayer(playerId)
-        playerLocks.remove(playerId)
+        sessions.endSession(playerId)
+        accountQueries.forget(playerId)
+        sessions.playerLocks.remove(playerId)
 
-        // Close TCP channel to force re-auth
+        // Close TCP channel to force re-auth. Its disconnect forgets the rest of what the channel had.
         val raw = player.getTcpChannel
         if (raw != null) {
           val ch = raw.asInstanceOf[Channel]
-          channelToToken.remove(ch)
-          channelAuthFailures.remove(ch)
-          channelToPlayer.remove(ch)
+          sessions.channelToToken.remove(ch)
+          sessions.channelAuthFailures.remove(ch)
+          sessions.channelToPlayer.remove(ch)
           if (ch.isOpen) ch.close()
         }
 
@@ -1034,40 +393,13 @@ class GameServer(port: Int, val worldFile: String = "") {
       }
     }
 
-    // Expire stale session tokens (acquire per-player lock to avoid racing with generateSessionToken)
-    val tokenIter = tokenCreationTime.entrySet().iterator()
-    while (tokenIter.hasNext) {
-      val entry = tokenIter.next()
-      if (now - entry.getValue > Constants.SESSION_TOKEN_LIFETIME_MS) {
-        val playerId = entry.getKey
-        val lock = playerLocks.computeIfAbsent(playerId, _ => new AnyRef)
-        lock.synchronized {
-          // Re-check creation time under lock — a concurrent generateSessionToken may have refreshed it
-          val currentCreation = tokenCreationTime.get(playerId)
-          if (currentCreation != null && now - currentCreation > Constants.SESSION_TOKEN_LIFETIME_MS) {
-            tokenCreationTime.remove(playerId)
-            sessionTokens.remove(playerId)
-            playerTcpAddresses.remove(playerId)
-            Metrics.sessionsExpired.add(1L, io.opentelemetry.api.common.Attributes.empty())
-
-            // Close TCP channel to force re-auth
-            val player = connectedPlayers.get(playerId)
-            if (player != null) {
-              val raw = player.getTcpChannel
-              if (raw != null) {
-                val ch = raw.asInstanceOf[Channel]
-                channelToToken.remove(ch)
-                if (ch.isOpen) ch.close()
-              }
-            }
-            println(s"Session token expired: ${playerId.toString.substring(0, 8)}")
-          }
-        }
-      }
-    }
+    sessions.expireStaleTokens(now, playerId => {
+      val player = connectedPlayers.get(playerId)
+      if (player == null || player.getTcpChannel == null) null else player.getTcpChannel.asInstanceOf[Channel]
+    })
 
     rateLimiter.cleanup()
-    packetValidator.cleanupStale(connectedPlayers.keySet())
+    replayGuard.cleanupStale(connectedPlayers.keySet())
 
     if (connectedPlayers.size() > 0) {
       println(s"Server stats: ${connectedPlayers.size()} players connected, ${lobbyManager.getActiveLobbies.size} active lobbies")
@@ -1076,7 +408,6 @@ class GameServer(port: Int, val worldFile: String = "") {
 
   def stop(): Unit = {
     println("Stopping server...")
-    running = false
 
     cleanupExecutor.shutdown()
     rankedQueue.stop()
@@ -1095,234 +426,8 @@ class GameServer(port: Int, val worldFile: String = "") {
     }
 
     authDatabase.close()
-
-    if (tcpServerChannel != null) tcpServerChannel.close().sync()
-    if (udpChannel != null) udpChannel.close().sync()
-    if (bossGroup != null) bossGroup.shutdownGracefully()
-    if (workerGroup != null) workerGroup.shutdownGracefully()
+    network.stop()
 
     println("Server stopped.")
-  }
-
-  def getPlayerCount: Int = connectedPlayers.size()
-}
-
-/** Netty handler for incoming TCP connections. */
-class GameServerTcpHandler(server: GameServer) extends SimpleChannelInboundHandler[io.netty.buffer.ByteBuf] {
-
-  override def channelActive(ctx: ChannelHandlerContext): Unit = {
-    val remoteAddr = ctx.channel().remoteAddress().asInstanceOf[InetSocketAddress].getAddress
-    if (!server.rateLimiter.allowConnection(remoteAddr)) {
-      System.err.println(s"TCP: Connection rate limit exceeded for $remoteAddr, closing")
-      Metrics.rateLimitTriggered.add(1L, Attrs.RlConnection)
-      Metrics.connectionsClosed.add(1L, Attrs.ConnTcpRejectedRateLimit)
-      ctx.close()
-      return
-    }
-    super.channelActive(ctx)
-  }
-
-  override def channelRead0(ctx: ChannelHandlerContext, msg: io.netty.buffer.ByteBuf): Unit = {
-    if (msg.readableBytes() < Constants.PACKET_SIZE) {
-      Metrics.packetsDropped.add(1L, Attrs.ReasonTooShort)
-      return
-    }
-
-    val data = new Array[Byte](Constants.PACKET_SIZE)
-    msg.readBytes(data)
-    Metrics.bandwidthBytes.add(data.length.toLong, Attrs.DirIn)
-
-    try {
-      // Peek at packet type byte
-      val packetTypeId = data(0)
-      // Who this channel logged in as (null before a login)
-      var channelPlayer: UUID = null
-      val payload = if (packetTypeId == PacketType.AUTH_REQUEST.id) {
-        // AUTH_REQUEST has no session token yet — extract first 64 bytes
-        val p = new Array[Byte](Constants.PACKET_PAYLOAD_SIZE)
-        System.arraycopy(data, 0, p, 0, Constants.PACKET_PAYLOAD_SIZE)
-        p
-      } else {
-        // Look up session token via channel
-        val token = server.channelToToken.get(ctx.channel())
-        if (token != null) {
-          // Inline token expiry check for TCP
-          val chPlayerId = server.channelToPlayer.get(ctx.channel())
-          if (chPlayerId != null) {
-            val createdAt = server.tokenCreationTime.get(chPlayerId)
-            if (createdAt != null && System.currentTimeMillis() - createdAt > Constants.SESSION_TOKEN_LIFETIME_MS) {
-              System.err.println("TCP: Session token expired, closing channel")
-              Metrics.packetsDropped.add(1L, Attrs.ReasonExpired)
-              ctx.close()
-              return
-            }
-          }
-          val verified = PacketSigner.verify(data, token)
-          if (verified == null) {
-            System.err.println("TCP: HMAC verification failed, dropping packet")
-            Metrics.packetsDropped.add(1L, Attrs.ReasonHmacFail)
-            Metrics.hmacFailures.add(1L, io.opentelemetry.api.common.Attributes.of(Attrs.Transport, "tcp"))
-            return
-          }
-          channelPlayer = chPlayerId
-          verified
-        } else {
-          // No token yet (pre-auth) — ONLY allow AUTH_REQUEST
-          // All other packet types require authentication
-          System.err.println(s"TCP: Non-auth packet on pre-auth channel (type=$packetTypeId), dropping")
-          Metrics.packetsDropped.add(1L, Attrs.ReasonNoToken)
-          return
-        }
-      }
-      val packet = PacketSerializer.deserialize(payload)
-      // Rate limit packets
-      if (packetTypeId == PacketType.AUTH_REQUEST.id) {
-        // Pre-auth: rate limit by channel (no player ID available yet)
-        if (!server.rateLimiter.allowPreAuthPacket(ctx.channel())) {
-          Metrics.rateLimitTriggered.add(1L, Attrs.RlPreAuth)
-          Metrics.packetsDropped.add(1L, Attrs.ReasonRateLimit)
-          return
-        }
-      } else {
-        // A packet naming anyone but the player this channel logged in as is dropped before any
-        // of that player's state is touched. The signature only proves who sent it, not who it
-        // names: checked after the rate limit and the replay window, as it was, a packet in a
-        // victim's name spent the victim's budget, and one numbered far ahead of the victim's
-        // count made every packet they sent afterwards look like a replay.
-        if (channelPlayer == null || !channelPlayer.equals(packet.getPlayerId)) {
-          System.err.println(s"TCP: Packet names a player other than the channel's, dropping")
-          Metrics.packetsDropped.add(1L, Attrs.ReasonUuidMismatch)
-          return
-        }
-        if (!server.rateLimiter.allowPacket(channelPlayer, false)) {
-          Metrics.rateLimitTriggered.add(1L, Attrs.RlTcp)
-          Metrics.packetsDropped.add(1L, Attrs.ReasonRateLimit)
-          return
-        }
-        // Replay protection: reject duplicate/out-of-order TCP sequence numbers
-        if (!server.packetValidator.validateSequence(channelPlayer, packet.getSequenceNumber, isUdp = false)) {
-          Metrics.replayRejected.add(1L, io.opentelemetry.api.common.Attributes.of(Attrs.Transport, "tcp"))
-          Metrics.packetsDropped.add(1L, Attrs.ReasonReplay)
-          return
-        }
-      }
-      server.handleIncomingPacket(packet, ctx.channel(), null)
-    } catch {
-      case e: Exception =>
-        val msg = if (e.getMessage != null) e.getMessage else e.getClass.getSimpleName
-        System.err.println(s"TCP: Invalid packet received: $msg")
-        Metrics.packetDeserializeFailures.add(1L, io.opentelemetry.api.common.Attributes.of(Attrs.Transport, "tcp"))
-        Metrics.packetsDropped.add(1L, Attrs.ReasonMalformed)
-        // Track malformed packets per channel and disconnect on excessive errors
-        val ch = ctx.channel()
-        val counter = server.malformedPacketCounts.computeIfAbsent(ch, _ => new AtomicInteger(0))
-        if (counter.incrementAndGet() >= server.MAX_MALFORMED_PACKETS) {
-          System.err.println(s"TCP: Too many malformed packets, closing: ${ch.remoteAddress()}")
-          Metrics.rateLimitTriggered.add(1L, Attrs.RlMalformed)
-          ch.close()
-        }
-    }
-  }
-
-  override def channelInactive(ctx: ChannelHandlerContext): Unit = {
-    server.handleDisconnect(ctx.channel())
-    super.channelInactive(ctx)
-  }
-
-  override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
-    val msg = if (cause.getMessage != null) cause.getMessage else cause.getClass.getSimpleName
-    System.err.println(s"TCP handler error: $msg")
-    ctx.close()
-  }
-}
-
-/** Netty handler for incoming UDP packets. */
-class GameServerUdpHandler(server: GameServer) extends SimpleChannelInboundHandler[DatagramPacket] {
-
-  override def channelRead0(ctx: ChannelHandlerContext, msg: DatagramPacket): Unit = {
-    val buf = msg.content()
-    if (buf.readableBytes() < Constants.PACKET_SIZE) {
-      Metrics.packetsDropped.add(1L, Attrs.ReasonTooShort)
-      return
-    }
-
-    val data = new Array[Byte](Constants.PACKET_SIZE)
-    buf.readBytes(data)
-    Metrics.bandwidthBytes.add(data.length.toLong, Attrs.DirIn)
-
-    try {
-      // Extract UUID from bytes [5-20] to look up session token
-      val uuidBuf = java.nio.ByteBuffer.wrap(data, 5, 16).order(java.nio.ByteOrder.BIG_ENDIAN)
-      val msb = uuidBuf.getLong()
-      val lsb = uuidBuf.getLong()
-      val playerId = new UUID(msb, lsb)
-      val token = server.sessionTokens.get(playerId)
-
-      // Require HMAC for all UDP packets (no pre-auth UDP allowed)
-      if (token == null) {
-        Metrics.packetsDropped.add(1L, Attrs.ReasonNoToken)
-        return
-      }
-
-      // Inline token expiry check (don't wait for cleanup loop)
-      val createdAt = server.tokenCreationTime.get(playerId)
-      if (createdAt != null && System.currentTimeMillis() - createdAt > Constants.SESSION_TOKEN_LIFETIME_MS) {
-        Metrics.packetsDropped.add(1L, Attrs.ReasonExpired)
-        return
-      }
-
-      // Validate UDP source IP matches TCP connection IP (cheap check before expensive HMAC)
-      val expectedAddr = server.playerTcpAddresses.get(playerId)
-      if (expectedAddr == null) {
-        // No TCP address registered yet — reject UDP until TCP handshake completes
-        Metrics.packetsDropped.add(1L, Attrs.ReasonUnauthenticated)
-        return
-      }
-      val senderAddr = msg.sender().getAddress
-      if (!senderAddr.equals(expectedAddr)) {
-        System.err.println(s"UDP: Source IP mismatch for ${playerId.toString.substring(0, 8)}, dropping")
-        Metrics.packetsDropped.add(1L, Attrs.ReasonUdpSpoof)
-        return
-      }
-
-      // The signature before the rate limit. A player's UUID is no secret, and a datagram's
-      // source address is whatever its sender writes into it (or shared, behind one NAT), so the
-      // address check above doesn't make a datagram theirs; only their session's signature does.
-      // Rate limited first, a flood of unsigned datagrams in a player's name spent their budget
-      // and their own position updates were dropped.
-      val verified = PacketSigner.verify(data, token)
-      if (verified == null) {
-        System.err.println("UDP: HMAC verification failed, dropping packet")
-        Metrics.packetsDropped.add(1L, Attrs.ReasonHmacFail)
-        Metrics.hmacFailures.add(1L, io.opentelemetry.api.common.Attributes.of(Attrs.Transport, "udp"))
-        return
-      }
-
-      if (!server.rateLimiter.allowPacket(playerId, true)) {
-        Metrics.rateLimitTriggered.add(1L, Attrs.RlUdp)
-        Metrics.packetsDropped.add(1L, Attrs.ReasonRateLimit)
-        return
-      }
-      val payload = verified
-      val packet = PacketSerializer.deserialize(payload)
-      // Replay protection: reject duplicate/out-of-order UDP sequence numbers
-      if (!server.packetValidator.validateSequence(playerId, packet.getSequenceNumber, isUdp = true)) {
-        Metrics.replayRejected.add(1L, io.opentelemetry.api.common.Attributes.of(Attrs.Transport, "udp"))
-        Metrics.packetsDropped.add(1L, Attrs.ReasonReplay)
-        return
-      }
-      server.handleIncomingPacket(packet, null, msg.sender())
-    } catch {
-      case e: Exception =>
-        val emsg = if (e.getMessage != null) e.getMessage else e.getClass.getSimpleName
-        System.err.println(s"UDP: Invalid packet received: $emsg")
-        Metrics.packetDeserializeFailures.add(1L, io.opentelemetry.api.common.Attributes.of(Attrs.Transport, "udp"))
-        Metrics.packetsDropped.add(1L, Attrs.ReasonMalformed)
-    }
-  }
-
-  override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
-    val msg = if (cause.getMessage != null) cause.getMessage else cause.getClass.getSimpleName
-    System.err.println(s"UDP handler error: $msg")
   }
 }

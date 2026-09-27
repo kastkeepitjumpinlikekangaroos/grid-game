@@ -16,6 +16,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
+import com.gridgame.client.game.GameClient
 
 /**
  * A GameClient with no network: what it sends is kept in `sent`, and the server's packets are

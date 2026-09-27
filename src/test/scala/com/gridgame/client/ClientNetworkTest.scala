@@ -12,6 +12,8 @@ import org.junit.Test
 import java.net.InetSocketAddress
 import java.util.UUID
 import scala.collection.mutable
+import com.gridgame.client.game.GameClient
+import com.gridgame.client.net.{ClientTcpHandler, ClientUdpHandler, NetworkThread}
 
 /**
  * The client's two doors. Once logged in, every packet from the server is signed with the
@@ -23,9 +25,9 @@ class ClientNetworkTest {
   private val client = new GameClient("localhost", 0, WorldData.createEmpty(60, 60)) {
     override def enqueuePacket(packet: Packet): Unit = heard.synchronized(heard += packet)
   }
-  private val net = new NetworkThread(client, "localhost", 0)
-  private val tcp = new EmbeddedChannel(new ClientTcpHandler(client, net))
-  private val udp = new EmbeddedChannel(new ClientUdpHandler(client, net))
+  private val net = new NetworkThread("localhost", 0, client.enqueuePacket, () => client.sendHeartbeat())
+  private val tcp = new EmbeddedChannel(new ClientTcpHandler(client.enqueuePacket, net))
+  private val udp = new EmbeddedChannel(new ClientUdpHandler(client.enqueuePacket, net))
   private val token = Array.tabulate[Byte](32)(i => (i * 7 + 1).toByte)
   private val me = UUID.randomUUID()
 

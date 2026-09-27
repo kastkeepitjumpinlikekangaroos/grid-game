@@ -13,6 +13,7 @@ import org.junit.Assert._
 import org.junit.Test
 
 import java.util.UUID
+import com.gridgame.client.game.ClientState
 
 /** The lobby room screen, built from a GameClient in a lobby and clicked like a player would. */
 class LobbyRoomScreenTest {

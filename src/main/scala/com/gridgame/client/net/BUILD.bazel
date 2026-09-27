@@ -1,0 +1,11 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+load("//src/main/scala/com/gridgame/client:jars.bzl", "CLIENT")
+load("//third_party:jvm.bzl", "NETTY")
+
+# The connection to the server: TLS over TCP, signed datagrams over UDP.
+scala_library(
+    name = "net",
+    srcs = glob(["*.scala"]),
+    visibility = CLIENT,
+    deps = ["//src/main/scala/com/gridgame/common"] + NETTY,
+)

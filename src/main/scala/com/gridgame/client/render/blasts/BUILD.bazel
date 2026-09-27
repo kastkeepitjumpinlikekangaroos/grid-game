@@ -1,0 +1,14 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+load("//src/main/scala/com/gridgame/client:jars.bzl", "CLIENT")
+
+# How every explosion and splash is drawn, as its thrower's (GLBlastRenderers).
+scala_library(
+    name = "blasts",
+    srcs = glob(["*.scala"]),
+    visibility = CLIENT,
+    deps = [
+        "//src/main/scala/com/gridgame/client/gl",
+        "//src/main/scala/com/gridgame/client/render/projectiles",
+        "//src/main/scala/com/gridgame/common",
+    ],
+)

@@ -1,0 +1,11 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+load("//src/main/scala/com/gridgame/client:jars.bzl", "CLIENT")
+load("//third_party:jvm.bzl", "GSON")
+
+# The UI's text in every language (i18n/messages_*.json).
+scala_library(
+    name = "i18n",
+    srcs = glob(["*.scala"]),
+    visibility = CLIENT,
+    deps = ["//src/main/scala/com/gridgame/common"] + GSON,
+)

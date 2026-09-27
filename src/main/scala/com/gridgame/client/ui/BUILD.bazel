@@ -1,0 +1,15 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+load("//src/main/scala/com/gridgame/client:jars.bzl", "CLIENT")
+load("//third_party:jvm.bzl", "JAVAFX")
+
+# The menus' look and widgets: the Theme, the character panel and its previews, sprite sheets.
+scala_library(
+    name = "ui",
+    srcs = glob(["*.scala"]),
+    visibility = CLIENT,
+    deps = [
+        "//src/main/scala/com/gridgame/client/audio",
+        "//src/main/scala/com/gridgame/client/i18n",
+        "//src/main/scala/com/gridgame/common",
+    ] + JAVAFX,
+)

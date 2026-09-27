@@ -1,6 +1,5 @@
 package com.gridgame.client
 
-import com.gridgame.client.render.NetProjectile
 import com.gridgame.common.Constants
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
@@ -9,6 +8,7 @@ import org.junit.Test
 
 import java.util.UUID
 import scala.collection.mutable
+import com.gridgame.client.game.NetProjectile
 
 /**
  * How the client flies a projectile between the server's ticks (NetProjectile). The server moves

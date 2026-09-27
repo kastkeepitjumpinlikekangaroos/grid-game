@@ -18,7 +18,9 @@ import sys
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 SOUNDS = os.path.join(ROOT, "src/main/scala/com/gridgame/client/audio/AbilitySounds.scala")
-CHARS = os.path.join(ROOT, "src/main/scala/com/gridgame/common/model/CharacterDef.scala")
+# The roster, a file per category, in id order (Roster.scala)
+ROSTER = os.path.join(ROOT, "src/main/scala/com/gridgame/common/model/roster")
+CATEGORIES = ("Originals", "Elementals", "Undead", "Medieval", "SciFi", "Beasts", "Mythological", "Specialists")
 
 
 def load_tables():
@@ -33,7 +35,7 @@ def load_tables():
 
 
 def load_characters():
-    src = open(CHARS).read()
+    src = "".join(open(os.path.join(ROSTER, c + ".scala")).read() for c in CATEGORIES)
     out = []
     for _, body in re.findall(r"val (\w+): CharacterDef = CharacterDef\((.*?)\n  \)\n", src, re.S):
         cid = re.search(r"id = CharacterId\.(\w+)", body).group(1)

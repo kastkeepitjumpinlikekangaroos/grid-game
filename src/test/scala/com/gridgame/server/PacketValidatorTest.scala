@@ -1,5 +1,7 @@
 package com.gridgame.server
 
+import com.gridgame.server.game.PacketValidator
+import com.gridgame.server.net.ReplayGuard
 import com.gridgame.common.Constants
 import com.gridgame.common.model.CharacterDef
 import com.gridgame.common.model.CharacterId
@@ -13,13 +15,14 @@ import org.junit.Test
 
 import java.util.UUID
 
-/** Replay protection and the movement speed check. */
+/** Replay protection (ReplayGuard) and the movement speed check (PacketValidator). */
 class PacketValidatorTest {
   private val v = new PacketValidator()
+  private val replay = new ReplayGuard()
   private val id = UUID.randomUUID()
 
-  private def udp(seq: Int): Boolean = v.validateSequence(id, seq, isUdp = true)
-  private def tcp(seq: Int): Boolean = v.validateSequence(id, seq, isUdp = false)
+  private def udp(seq: Int): Boolean = replay.validateSequence(id, seq, isUdp = true)
+  private def tcp(seq: Int): Boolean = replay.validateSequence(id, seq, isUdp = false)
 
   @Test def tcpMustAlwaysMoveForward(): Unit = {
     assertTrue(tcp(1))
@@ -63,7 +66,7 @@ class PacketValidatorTest {
   @Test def aNewSessionCountsAfresh(): Unit = {
     assertTrue(tcp(300))
     assertTrue(udp(300))
-    v.resetSequences(id)
+    replay.resetSequences(id)
     assertTrue(tcp(1))
     assertTrue(udp(1))
   }
@@ -71,7 +74,7 @@ class PacketValidatorTest {
   @Test def playersAreCountedApart(): Unit = {
     val other = UUID.randomUUID()
     assertTrue(tcp(100))
-    assertTrue(v.validateSequence(other, 1, isUdp = false))
+    assertTrue(replay.validateSequence(other, 1, isUdp = false))
   }
 
   // --- The speed check ---

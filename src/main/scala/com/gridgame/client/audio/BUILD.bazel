@@ -1,0 +1,10 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+load("//src/main/scala/com/gridgame/client:jars.bzl", "CLIENT")
+
+# Sound: the software mixer, and which sound every attack makes.
+scala_library(
+    name = "audio",
+    srcs = glob(["*.scala"]),
+    visibility = CLIENT,
+    deps = ["//src/main/scala/com/gridgame/common"],
+)

@@ -1,0 +1,36 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+load("//src/main/scala/com/gridgame/client:jars.bzl", "CLIENT")
+
+# The game's renderer, in three layers (see CLAUDE.md here):
+#
+#   core    what every painter shares: RenderContext, the camera, the isometric transform, the
+#           entity collector, other players' motion, tiles, sprites, particles, damage numbers
+#   world/, hud/    the painters                                         (core)
+#   render  GLGameRenderer, drawing a frame pass by pass                (core, world, hud)
+scala_library(
+    name = "core",
+    srcs = glob(["*.scala"], exclude = ["GLGameRenderer.scala"]),
+    visibility = CLIENT,
+    deps = [
+        "//src/main/scala/com/gridgame/client/game",
+        "//src/main/scala/com/gridgame/client/gl",
+        "//src/main/scala/com/gridgame/common",
+    ],
+)
+
+scala_library(
+    name = "render",
+    srcs = ["GLGameRenderer.scala"],
+    visibility = CLIENT,
+    exports = [":core"],
+    deps = [
+        ":core",
+        "//src/main/scala/com/gridgame/client/game",
+        "//src/main/scala/com/gridgame/client/gl",
+        "//src/main/scala/com/gridgame/client/i18n",
+        "//src/main/scala/com/gridgame/client/render/blasts",
+        "//src/main/scala/com/gridgame/client/render/hud",
+        "//src/main/scala/com/gridgame/client/render/world",
+        "//src/main/scala/com/gridgame/common",
+    ],
+)

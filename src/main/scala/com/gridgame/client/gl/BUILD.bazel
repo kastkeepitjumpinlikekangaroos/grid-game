@@ -1,0 +1,12 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+load("//src/main/scala/com/gridgame/client:jars.bzl", "CLIENT")
+load("//third_party:jvm.bzl", "LWJGL")
+
+# OpenGL and GLFW, knowing nothing of the game: the batches, shaders, textures, fonts, the window,
+# the post-processor, the light map, the quality tiers.
+scala_library(
+    name = "gl",
+    srcs = glob(["*.scala"]),
+    visibility = CLIENT,
+    deps = LWJGL,
+)

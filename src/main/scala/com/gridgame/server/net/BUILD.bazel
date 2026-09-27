@@ -1,0 +1,10 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+load("//third_party:jvm.bzl", "NETTY")
+
+# Sockets, sessions, replay and rate limits, and the Outbox every packet is sent through.
+scala_library(
+    name = "net",
+    srcs = glob(["*.scala"]),
+    visibility = ["//src/main/scala/com/gridgame/server:__subpackages__", "//src/test/scala/com/gridgame/server:__pkg__"],
+    deps = ["//src/main/scala/com/gridgame/common"] + NETTY,
+)

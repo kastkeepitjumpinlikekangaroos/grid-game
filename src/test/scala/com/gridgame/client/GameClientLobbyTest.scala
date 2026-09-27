@@ -7,6 +7,7 @@ import org.junit.Test
 
 import java.util.UUID
 import scala.jdk.CollectionConverters._
+import com.gridgame.client.game.ClientState
 
 /** The lobby screens' model: lists, rooms, rosters, and what the client asks of the server. */
 class GameClientLobbyTest {

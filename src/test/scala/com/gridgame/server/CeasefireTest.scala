@@ -1,5 +1,6 @@
 package com.gridgame.server
 
+import com.gridgame.server.bots.BotController
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 import org.junit.Assert._

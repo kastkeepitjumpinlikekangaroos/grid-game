@@ -6,7 +6,7 @@ import com.gridgame.common.Constants
  * Camera state for the game view: smooth-lerped position, screen shake, zoom.
  * Shared between the JavaFX and OpenGL renderers.
  */
-class GameCamera {
+class GameCamera(clock: FrameClock = FrameClock.System) {
   private val HW = Constants.ISO_HALF_W
   private val HH = Constants.ISO_HALF_H
 
@@ -28,7 +28,7 @@ class GameCamera {
   /** Trigger screen shake. Intensity is in pixels, decays exponentially. */
   def addShake(intensity: Double): Unit = {
     shakeIntensity = Math.min(shakeIntensity + intensity, 18.0) // cap total shake
-    shakeSeed = System.nanoTime()
+    shakeSeed = clock.nowNanos()
   }
 
   /**

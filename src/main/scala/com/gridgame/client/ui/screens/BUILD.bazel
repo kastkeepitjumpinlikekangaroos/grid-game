@@ -1,0 +1,17 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+load("//src/main/scala/com/gridgame/client:jars.bzl", "CLIENT")
+load("//third_party:jvm.bzl", "JAVAFX")
+
+# The menus, a screen each, and the navigation between them (Screens).
+scala_library(
+    name = "screens",
+    srcs = glob(["*.scala"]),
+    visibility = CLIENT,
+    deps = [
+        "//src/main/scala/com/gridgame/client/audio",
+        "//src/main/scala/com/gridgame/client/game",
+        "//src/main/scala/com/gridgame/client/i18n",
+        "//src/main/scala/com/gridgame/client/ui",
+        "//src/main/scala/com/gridgame/common",
+    ] + JAVAFX,
+)

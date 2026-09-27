@@ -1,5 +1,6 @@
 package com.gridgame.server
 
+import com.gridgame.server.net.Sessions
 import com.gridgame.common.model.Position
 import com.gridgame.common.protocol._
 import io.netty.buffer.Unpooled
@@ -17,8 +18,8 @@ class SessionTest {
 
   private class Session(val playerId: UUID) {
     val channel = new PeerChannel()
-    channel.pipeline().addLast(new GameServerTcpHandler(server))
-    val token: Array[Byte] = server.generateSessionToken(playerId, channel) // as a login does
+    channel.pipeline().addLast(server.tcpHandler())
+    val token: Array[Byte] = server.sessions.generateSessionToken(playerId, channel) // as a login does
     private var seq = 0
 
     /** Send a packet as this session's client does: its own count, signed with its token. */

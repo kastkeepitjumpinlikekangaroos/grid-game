@@ -39,7 +39,7 @@ object UiActivity {
   def touch(): Unit = lastInputMs = System.currentTimeMillis()
 
   /** As if the idle period had already run out (UiMemoryBench). */
-  private[ui] def markIdle(): Unit = lastInputMs = 0L
+  private[client] def markIdle(): Unit = lastInputMs = 0L
 
   /** True when menu animations should hold still. */
   def idle: Boolean = {

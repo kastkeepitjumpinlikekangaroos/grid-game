@@ -1,28 +1,41 @@
 load("@rules_scala//scala:scala.bzl", "scala_binary", "scala_library")
+load("//third_party:jvm.bzl", "NETTY")
 
-SERVER_DEPS = [
-    "//src/main/scala/com/gridgame/common",
-    "@maven//:io_netty_netty_buffer",
-    "@maven//:io_netty_netty_codec",
-    "@maven//:io_netty_netty_common",
-    "@maven//:io_netty_netty_handler",
-    "@maven//:io_netty_netty_transport",
-    "@maven//:org_xerial_sqlite_jdbc",
-    "@maven//:org_mindrot_jbcrypt",
-]
+# The server. Each package under here is a library of its own, and depends only on the ones below it
+# (see CLAUDE.md here):
+#
+#   net      sockets, sessions, replay and rate limits, the Outbox
+#   account  logins, profiles, the leaderboard           (net)
+#   game     one running match                           (net)
+#   bots     the bots playing in a match                 (game)
+#   lobby    lobbies, matchmaking, starting a match      (game, bots)
+#   .        GameServer, which puts them together        (all of them)
+#
+# server_lib is all of it, for the tests.
+scala_library(
+    name = "server_lib",
+    srcs = glob(["*.scala"]),
+    visibility = ["//src/test/scala/com/gridgame/server:__pkg__"],
+    exports = [
+        "//src/main/scala/com/gridgame/server/account",
+        "//src/main/scala/com/gridgame/server/bots",
+        "//src/main/scala/com/gridgame/server/game",
+        "//src/main/scala/com/gridgame/server/lobby",
+        "//src/main/scala/com/gridgame/server/net",
+    ],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server/account",
+        "//src/main/scala/com/gridgame/server/bots",
+        "//src/main/scala/com/gridgame/server/game",
+        "//src/main/scala/com/gridgame/server/lobby",
+        "//src/main/scala/com/gridgame/server/net",
+    ] + NETTY,
+)
 
 scala_binary(
     name = "server",
     main_class = "com.gridgame.server.ServerMain",
-    srcs = glob(["**/*.scala"]),
     resources = ["//worlds:world_files"],
-    deps = SERVER_DEPS,
-)
-
-# The same sources as a library, so tests can drive ClientHandler and PacketValidator directly.
-scala_library(
-    name = "server_lib",
-    srcs = glob(["**/*.scala"]),
-    visibility = ["//src/test/scala/com/gridgame/server:__pkg__"],
-    deps = SERVER_DEPS,
+    deps = [":server_lib"],
 )

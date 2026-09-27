@@ -1,0 +1,16 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+load("//src/main/scala/com/gridgame/client:jars.bzl", "CLIENT")
+load("//third_party:jvm.bzl", "LWJGL")
+
+# The keyboard, the mouse and a controller, in a match.
+scala_library(
+    name = "input",
+    srcs = glob(["*.scala"]),
+    visibility = CLIENT,
+    deps = [
+        "//src/main/scala/com/gridgame/client/game",
+        "//src/main/scala/com/gridgame/client/gl",
+        "//src/main/scala/com/gridgame/client/render:core",
+        "//src/main/scala/com/gridgame/common",
+    ] + LWJGL,
+)

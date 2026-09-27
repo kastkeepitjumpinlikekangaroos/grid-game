@@ -1,0 +1,16 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+load("//src/main/scala/com/gridgame/client:jars.bzl", "CLIENT")
+load("//third_party:jvm.bzl", "JAVAFX")
+
+# GameClient: the client's side of the game, and the projectiles it flies between the server's ticks.
+scala_library(
+    name = "game",
+    srcs = glob(["*.scala"]),
+    visibility = CLIENT,
+    deps = [
+        "//src/main/scala/com/gridgame/client/audio",
+        "//src/main/scala/com/gridgame/client/i18n",
+        "//src/main/scala/com/gridgame/client/net",
+        "//src/main/scala/com/gridgame/common",
+    ] + JAVAFX,
+)

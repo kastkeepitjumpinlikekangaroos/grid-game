@@ -1,6 +1,6 @@
 package com.gridgame.client.gl
 
-import com.gridgame.client.gl.GLBlastRenderers._
+import com.gridgame.client.render.blasts.GLBlastRenderers._
 import com.gridgame.common.Constants
 import com.gridgame.common.model._
 import org.junit.Assert._

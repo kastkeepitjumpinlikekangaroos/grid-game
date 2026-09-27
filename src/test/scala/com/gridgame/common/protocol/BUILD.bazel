@@ -1,31 +1,16 @@
 load("@rules_scala//scala:scala.bzl", "scala_junit_test")
 
-scala_junit_test(
-    name = "packet_round_trip_test",
-    srcs = ["PacketRoundTripTest.scala"],
+# One target per file, so each test runs in a JVM of its own
+[scala_junit_test(
+    name = name,
+    srcs = [src],
     suffixes = ["Test"],
     deps = [
         "//src/main/scala/com/gridgame/common",
         "@maven//:junit_junit",
     ],
-)
-
-scala_junit_test(
-    name = "packet_signer_test",
-    srcs = ["PacketSignerTest.scala"],
-    suffixes = ["Test"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:junit_junit",
-    ],
-)
-
-scala_junit_test(
-    name = "auth_rules_test",
-    srcs = ["AuthRulesTest.scala"],
-    suffixes = ["Test"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:junit_junit",
-    ],
-)
+) for (name, src) in [
+    ("packet_round_trip_test", "PacketRoundTripTest.scala"),
+    ("packet_signer_test", "PacketSignerTest.scala"),
+    ("auth_rules_test", "AuthRulesTest.scala"),
+]]

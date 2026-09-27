@@ -1,6 +1,6 @@
 package com.gridgame.tools
 
-import com.gridgame.common.model.CharacterDef
+import com.gridgame.common.model.{CharacterDef, CharacterId}
 import org.junit.Assert._
 import org.junit.Test
 
@@ -31,12 +31,12 @@ class DocsRosterTest {
   }
 
   @Test def aPillSaysTheRoleAndTheHealth(): Unit = {
-    assertEquals("Melee &middot; 145 HP", DocsRoster.pill(CharacterDef.BarbarianChar))
-    assertEquals("Ranged &middot; 60 HP", DocsRoster.pill(CharacterDef.Wizard))
+    assertEquals("Melee &middot; 145 HP", DocsRoster.pill(CharacterDef.get(CharacterId.Barbarian)))
+    assertEquals("Ranged &middot; 60 HP", DocsRoster.pill(CharacterDef.get(CharacterId.Wizard)))
   }
 
   @Test def rewritingChangesOnlyThePills(): Unit = {
-    val stale = html.replace(DocsRoster.pill(CharacterDef.Wizard), "70 HP")
+    val stale = html.replace(DocsRoster.pill(CharacterDef.get(CharacterId.Wizard)), "70 HP")
     assertNotEquals(html, stale)
     assertEquals(html, DocsRoster.rewrite(stale))
   }

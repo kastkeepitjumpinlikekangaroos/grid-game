@@ -1,6 +1,5 @@
 package com.gridgame.client.input
 
-import com.gridgame.client.GameClient
 import com.gridgame.client.gl.GLFWManager
 import com.gridgame.common.Constants
 import com.gridgame.common.model.ItemType
@@ -15,6 +14,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
 import java.nio.ByteBuffer
+import com.gridgame.client.game.GameClient
 
 class ControllerHandler(client: GameClient) {
   private val DEADZONE = 0.25f

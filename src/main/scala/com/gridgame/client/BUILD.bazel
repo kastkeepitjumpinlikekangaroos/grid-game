@@ -1,37 +1,66 @@
 load("@rules_scala//scala:scala.bzl", "scala_binary", "scala_library")
+load(":jars.bzl", "CLIENT", "RESOURCES")
+load("//third_party:jvm.bzl", "JAVAFX", "LWJGL", "LWJGL_MAC_NATIVES", "MAC_NATIVES", "WINDOWS_NATIVES")
 
-CLIENT_RESOURCES = ["//worlds:world_files", "//sprites:sprite_files", "//fonts:font_files", "//i18n:i18n_files", "//sounds:sound_files"]
+# The client. Each package under here is a library of its own and depends only on the ones above it
+# in this list (see CLAUDE.md here):
+#
+#   gl                 OpenGL and GLFW primitives
+#   audio, i18n, net   sound, the UI's text, the connection
+#   game               GameClient: the client's side of the game        (audio, i18n, net)
+#   render/projectiles, render/blasts                                     (gl)
+#   render             the renderer: core, then the painters (world, hud), then GLGameRenderer
+#   input              keyboard, mouse, controller                       (game, gl, render)
+#   ui, ui/screens     the menus' widgets, then the screens              (game)
+#   .                  ClientMain and the match's window, which put it all together
+#
+# The binaries add each platform's native libraries; client_lib is all of it, for the tests.
 
-CLIENT_DEPS = [
-    "//src/main/scala/com/gridgame/common",
-    "@maven//:com_google_code_gson_gson",
-    "@maven//:io_netty_netty_buffer",
-    "@maven//:io_netty_netty_codec",
-    "@maven//:io_netty_netty_common",
-    "@maven//:io_netty_netty_handler",
-    "@maven//:io_netty_netty_transport",
-    "@maven//:org_openjfx_javafx_base",
-    "@maven//:org_openjfx_javafx_controls",
-    "@maven//:org_openjfx_javafx_fxml",
-    "@maven//:org_openjfx_javafx_graphics",
-    "@maven//:org_openjfx_javafx_base_mac_aarch64",
-    "@maven//:org_openjfx_javafx_controls_mac_aarch64",
-    "@maven//:org_openjfx_javafx_graphics_mac_aarch64",
-    "@maven//:org_lwjgl_lwjgl",
-    "@maven//:org_lwjgl_lwjgl_glfw",
-    "@maven//:org_lwjgl_lwjgl_opengl",
-    "@maven//:org_lwjgl_lwjgl_stb",
-    "@maven//:org_lwjgl_lwjgl_natives_macos_arm64",
-    "@maven//:org_lwjgl_lwjgl_glfw_natives_macos_arm64",
-    "@maven//:org_lwjgl_lwjgl_opengl_natives_macos_arm64",
-    "@maven//:org_lwjgl_lwjgl_stb_natives_macos_arm64",
-]
+scala_library(
+    name = "app",
+    srcs = glob(["*.scala"]),
+    visibility = CLIENT,
+    deps = [
+        "//src/main/scala/com/gridgame/client/audio",
+        "//src/main/scala/com/gridgame/client/game",
+        "//src/main/scala/com/gridgame/client/gl",
+        "//src/main/scala/com/gridgame/client/i18n",
+        "//src/main/scala/com/gridgame/client/input",
+        "//src/main/scala/com/gridgame/client/render",
+        "//src/main/scala/com/gridgame/client/ui",
+        "//src/main/scala/com/gridgame/client/ui/screens",
+        "//src/main/scala/com/gridgame/common",
+    ] + JAVAFX + LWJGL,
+)
+
+# Every client library, for the tests to drive GameClient and the screens directly.
+scala_library(
+    name = "client_lib",
+    resources = RESOURCES,
+    visibility = ["//src/test/scala/com/gridgame/client:__subpackages__"],
+    exports = [
+        ":app",
+        "//src/main/scala/com/gridgame/client/audio",
+        "//src/main/scala/com/gridgame/client/game",
+        "//src/main/scala/com/gridgame/client/gl",
+        "//src/main/scala/com/gridgame/client/i18n",
+        "//src/main/scala/com/gridgame/client/input",
+        "//src/main/scala/com/gridgame/client/net",
+        "//src/main/scala/com/gridgame/client/render",
+        "//src/main/scala/com/gridgame/client/render/blasts",
+        "//src/main/scala/com/gridgame/client/render/hud",
+        "//src/main/scala/com/gridgame/client/render/projectiles",
+        "//src/main/scala/com/gridgame/client/render/world",
+        "//src/main/scala/com/gridgame/client/ui",
+        "//src/main/scala/com/gridgame/client/ui/screens",
+    ] + JAVAFX + LWJGL,
+    runtime_deps = LWJGL_MAC_NATIVES,
+)
 
 scala_binary(
     name = "client",
     main_class = "com.gridgame.client.Main",
-    srcs = glob(["**/*.scala"]),
-    resources = CLIENT_RESOURCES,
+    resources = RESOURCES,
     # Heap: start small and stop at 768MB rather than the JVM's default of a quarter of RAM.
     # The live set is well under 100MB; the rest of the heap tuning (giving memory back when
     # idle) is set at runtime in ClientMain.tuneHeap so it also applies to java -jar.
@@ -43,156 +72,59 @@ scala_binary(
         "-Xms64m",
         "-Xmx768m",
     ],
-    deps = CLIENT_DEPS,
-)
-
-# The same sources as a library, so tests can drive GameClient and the UI code directly.
-scala_library(
-    name = "client_lib",
-    srcs = glob(["**/*.scala"]),
-    resources = CLIENT_RESOURCES,
-    visibility = ["//src/test/scala/com/gridgame/client:__subpackages__"],
-    deps = CLIENT_DEPS,
+    deps = [":app"] + MAC_NATIVES,
 )
 
 scala_binary(
     name = "client_windows",
     main_class = "com.gridgame.client.Main",
-    srcs = glob(["**/*.scala"]),
-    resources = ["//worlds:world_files", "//sprites:sprite_files", "//fonts:font_files", "//i18n:i18n_files", "//sounds:sound_files"],
+    resources = RESOURCES,
     jvm_flags = ["-Xms64m", "-Xmx768m"],  # see the client target
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:com_google_code_gson_gson",
-        "@maven//:io_netty_netty_buffer",
-        "@maven//:io_netty_netty_codec",
-        "@maven//:io_netty_netty_common",
-        "@maven//:io_netty_netty_handler",
-        "@maven//:io_netty_netty_transport",
-        "@maven//:org_openjfx_javafx_base",
-        "@maven//:org_openjfx_javafx_controls",
-        "@maven//:org_openjfx_javafx_fxml",
-        "@maven//:org_openjfx_javafx_graphics",
-        "@maven//:org_openjfx_javafx_base_win",
-        "@maven//:org_openjfx_javafx_controls_win",
-        "@maven//:org_openjfx_javafx_graphics_win",
-        "@maven//:org_lwjgl_lwjgl",
-        "@maven//:org_lwjgl_lwjgl_glfw",
-        "@maven//:org_lwjgl_lwjgl_opengl",
-        "@maven//:org_lwjgl_lwjgl_stb",
-        "@maven//:org_lwjgl_lwjgl_natives_windows",
-        "@maven//:org_lwjgl_lwjgl_glfw_natives_windows",
-        "@maven//:org_lwjgl_lwjgl_opengl_natives_windows",
-        "@maven//:org_lwjgl_lwjgl_stb_natives_windows",
-    ],
+    deps = [":app"] + WINDOWS_NATIVES,
 )
 
 # Dev tool: memory and CPU of the JavaFX menus (character select, the hidden stage during a
 # match). Not shipped. See UiMemoryBench.
 scala_binary(
     name = "ui_bench",
-    main_class = "com.gridgame.client.ui.UiMemoryBench",
-    srcs = glob(["**/*.scala"]),
-    resources = ["//worlds:world_files", "//sprites:sprite_files", "//fonts:font_files", "//i18n:i18n_files", "//sounds:sound_files"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:com_google_code_gson_gson",
-        "@maven//:io_netty_netty_buffer",
-        "@maven//:io_netty_netty_codec",
-        "@maven//:io_netty_netty_common",
-        "@maven//:io_netty_netty_handler",
-        "@maven//:io_netty_netty_transport",
-        "@maven//:org_openjfx_javafx_base",
-        "@maven//:org_openjfx_javafx_controls",
-        "@maven//:org_openjfx_javafx_fxml",
-        "@maven//:org_openjfx_javafx_graphics",
-        "@maven//:org_openjfx_javafx_base_mac_aarch64",
-        "@maven//:org_openjfx_javafx_controls_mac_aarch64",
-        "@maven//:org_openjfx_javafx_graphics_mac_aarch64",
-        "@maven//:org_lwjgl_lwjgl",
-        "@maven//:org_lwjgl_lwjgl_glfw",
-        "@maven//:org_lwjgl_lwjgl_opengl",
-        "@maven//:org_lwjgl_lwjgl_stb",
-        "@maven//:org_lwjgl_lwjgl_natives_macos_arm64",
-        "@maven//:org_lwjgl_lwjgl_glfw_natives_macos_arm64",
-        "@maven//:org_lwjgl_lwjgl_opengl_natives_macos_arm64",
-        "@maven//:org_lwjgl_lwjgl_stb_natives_macos_arm64",
-    ],
+    main_class = "com.gridgame.client.devtools.UiMemoryBench",
+    resources = RESOURCES,
+    deps = ["//src/main/scala/com/gridgame/client/devtools"] + MAC_NATIVES,
 )
 
 # Dev tool: frame time, allocation rate and footprint of a busy match, with no server.
 # Not shipped. See RenderBench.
 scala_binary(
     name = "render_bench",
-    main_class = "com.gridgame.client.gl.RenderBench",
-    srcs = glob(["**/*.scala"]),
-    resources = ["//worlds:world_files", "//sprites:sprite_files", "//fonts:font_files", "//i18n:i18n_files", "//sounds:sound_files"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:com_google_code_gson_gson",
-        "@maven//:io_netty_netty_buffer",
-        "@maven//:io_netty_netty_codec",
-        "@maven//:io_netty_netty_common",
-        "@maven//:io_netty_netty_handler",
-        "@maven//:io_netty_netty_transport",
-        "@maven//:org_openjfx_javafx_base",
-        "@maven//:org_openjfx_javafx_controls",
-        "@maven//:org_openjfx_javafx_fxml",
-        "@maven//:org_openjfx_javafx_graphics",
-        "@maven//:org_openjfx_javafx_base_mac_aarch64",
-        "@maven//:org_openjfx_javafx_controls_mac_aarch64",
-        "@maven//:org_openjfx_javafx_graphics_mac_aarch64",
-        "@maven//:org_lwjgl_lwjgl",
-        "@maven//:org_lwjgl_lwjgl_glfw",
-        "@maven//:org_lwjgl_lwjgl_opengl",
-        "@maven//:org_lwjgl_lwjgl_stb",
-        "@maven//:org_lwjgl_lwjgl_natives_macos_arm64",
-        "@maven//:org_lwjgl_lwjgl_glfw_natives_macos_arm64",
-        "@maven//:org_lwjgl_lwjgl_opengl_natives_macos_arm64",
-        "@maven//:org_lwjgl_lwjgl_stb_natives_macos_arm64",
-    ],
+    main_class = "com.gridgame.client.devtools.RenderBench",
+    resources = RESOURCES,
+    deps = ["//src/main/scala/com/gridgame/client/devtools"] + MAC_NATIVES,
 )
 
 # Dev tool: every character and projectile over every map's ground, through the real renderer,
 # in pairs with and without them, for scripts/render_audit.py to measure. Not shipped. See RenderAudit.
 scala_binary(
     name = "render_audit",
-    main_class = "com.gridgame.client.gl.RenderAudit",
-    srcs = glob(["**/*.scala"]),
-    resources = ["//worlds:world_files", "//sprites:sprite_files", "//fonts:font_files", "//i18n:i18n_files", "//sounds:sound_files"],
-    deps = CLIENT_DEPS,
+    main_class = "com.gridgame.client.devtools.RenderAudit",
+    resources = RESOURCES,
+    deps = ["//src/main/scala/com/gridgame/client/devtools"] + MAC_NATIVES,
 )
 
-# Dev tool: renders every projectile type to contact-sheet PNGs for visual review.
-# Not shipped. `srcs` names the handful of GL files the gallery needs instead of globbing
-# the whole client, so projectile art work never waits on unrelated client code that
-# happens to be mid-edit.
+# Dev tool: renders every projectile type to contact-sheet PNGs for visual review. Not shipped.
+# It builds from the GL primitives and the projectile and blast renderers alone.
 scala_binary(
     name = "projectile_gallery",
-    main_class = "com.gridgame.client.gl.ProjectileGallery",
-    srcs = [
-        "gl/GLBlastRenderers.scala",
-        "gl/GLFWManager.scala",
-        "gl/GLProjectileRenderers.scala",
-        "gl/GLTexture.scala",
-        "gl/Matrix4.scala",
-        "gl/PostProcessor.scala",
-        "gl/ProjectileGallery.scala",
-        "gl/RenderQuality.scala",
-        "gl/ShaderProgram.scala",
-        "gl/ShapeBatch.scala",
-        "gl/TextureRegion.scala",
-    ],
+    main_class = "com.gridgame.client.devtools.ProjectileGallery",
     jvm_flags = ["-XstartOnFirstThread", "-Djava.awt.headless=true"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:org_lwjgl_lwjgl",
-        "@maven//:org_lwjgl_lwjgl_glfw",
-        "@maven//:org_lwjgl_lwjgl_opengl",
-        "@maven//:org_lwjgl_lwjgl_stb",
-        "@maven//:org_lwjgl_lwjgl_natives_macos_arm64",
-        "@maven//:org_lwjgl_lwjgl_glfw_natives_macos_arm64",
-        "@maven//:org_lwjgl_lwjgl_opengl_natives_macos_arm64",
-        "@maven//:org_lwjgl_lwjgl_stb_natives_macos_arm64",
-    ],
+    deps = ["//src/main/scala/com/gridgame/client/devtools:gallery"] + MAC_NATIVES,
+)
+
+# Dev tool: fixed scenes drawn by the real renderer on a stopped clock, to compare two builds of the
+# renderer pixel for pixel. Not shipped. See GoldenFrames.
+scala_binary(
+    name = "golden_frames",
+    main_class = "com.gridgame.client.devtools.GoldenFrames",
+    resources = RESOURCES,
+    jvm_flags = ["-XstartOnFirstThread", "-Djava.awt.headless=true"],
+    deps = ["//src/main/scala/com/gridgame/client/devtools"] + MAC_NATIVES,
 )

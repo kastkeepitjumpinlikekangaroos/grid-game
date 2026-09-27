@@ -1,0 +1,13 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+load("//src/main/scala/com/gridgame/client:jars.bzl", "CLIENT")
+
+# How every projectile type is drawn (GLProjectileRenderers).
+scala_library(
+    name = "projectiles",
+    srcs = glob(["*.scala"]),
+    visibility = CLIENT,
+    deps = [
+        "//src/main/scala/com/gridgame/client/gl",
+        "//src/main/scala/com/gridgame/common",
+    ],
+)

@@ -1,184 +1,33 @@
 load("@rules_scala//scala:scala.bzl", "scala_junit_test")
 
-scala_junit_test(
-    name = "position_test",
-    srcs = ["PositionTest.scala"],
+# One target per file, so each test runs in a JVM of its own
+[scala_junit_test(
+    name = name,
+    srcs = [src],
+    data = data,
     suffixes = ["Test"],
     deps = [
         "//src/main/scala/com/gridgame/common",
         "@maven//:junit_junit",
     ],
-)
-
-scala_junit_test(
-    name = "match_results_test",
-    srcs = ["MatchResultsTest.scala"],
-    suffixes = ["Test"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:junit_junit",
-    ],
-)
-
-scala_junit_test(
-    name = "team_divider_test",
-    srcs = ["TeamDividerTest.scala"],
-    suffixes = ["Test"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:junit_junit",
-    ],
-)
-
-scala_junit_test(
-    name = "team_assignment_test",
-    srcs = ["TeamAssignmentTest.scala"],
-    suffixes = ["Test"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:junit_junit",
-    ],
-)
-
-scala_junit_test(
-    name = "projectile_terrain_test",
-    srcs = ["ProjectileTerrainTest.scala"],
-    suffixes = ["Test"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:junit_junit",
-    ],
-)
-
-scala_junit_test(
-    name = "fan_projectile_test",
-    srcs = ["FanProjectileTest.scala"],
-    suffixes = ["Test"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:junit_junit",
-    ],
-)
-
-scala_junit_test(
-    name = "movement_test",
-    srcs = ["MovementTest.scala"],
-    suffixes = ["Test"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:junit_junit",
-    ],
-)
-
-scala_junit_test(
-    name = "teleport_test",
-    srcs = ["TeleportTest.scala"],
-    suffixes = ["Test"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:junit_junit",
-    ],
-)
-
-# Alone in its JVM: it checks the first projectile lookup, before anything touches CharacterDef
-scala_junit_test(
-    name = "projectile_def_registry_test",
-    srcs = ["ProjectileDefRegistryTest.scala"],
-    suffixes = ["Test"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:junit_junit",
-    ],
-)
-
-scala_junit_test(
-    name = "projectile_hit_test",
-    srcs = ["ProjectileHitTest.scala"],
-    suffixes = ["Test"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:junit_junit",
-    ],
-)
-
-scala_junit_test(
-    name = "player_test",
-    srcs = ["PlayerTest.scala"],
-    suffixes = ["Test"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:junit_junit",
-    ],
-)
-
-scala_junit_test(
-    name = "knockback_test",
-    srcs = ["KnockbackTest.scala"],
-    suffixes = ["Test"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:junit_junit",
-    ],
-)
-
-scala_junit_test(
-    name = "character_roster_test",
-    srcs = ["CharacterRosterTest.scala"],
-    data = ["//sprites:sprite_files"],
-    suffixes = ["Test"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:junit_junit",
-    ],
-)
-
-scala_junit_test(
-    name = "world_data_test",
-    srcs = ["WorldDataTest.scala"],
-    suffixes = ["Test"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:junit_junit",
-    ],
-)
-
-scala_junit_test(
-    name = "barrier_test",
-    srcs = ["BarrierTest.scala"],
-    suffixes = ["Test"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:junit_junit",
-    ],
-)
-
-scala_junit_test(
-    name = "roster_balance_test",
-    srcs = ["RosterBalanceTest.scala"],
-    suffixes = ["Test"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:junit_junit",
-    ],
-)
-
-scala_junit_test(
-    name = "melee_kit_test",
-    srcs = ["MeleeKitTest.scala"],
-    suffixes = ["Test"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:junit_junit",
-    ],
-)
-
-scala_junit_test(
-    name = "tile_test",
-    srcs = ["TileTest.scala"],
-    data = ["//sprites:sprite_files"],
-    suffixes = ["Test"],
-    deps = [
-        "//src/main/scala/com/gridgame/common",
-        "@maven//:junit_junit",
-    ],
-)
+) for (name, src, data) in [
+    ("position_test", "PositionTest.scala", []),
+    ("match_results_test", "MatchResultsTest.scala", []),
+    ("team_divider_test", "TeamDividerTest.scala", []),
+    ("team_assignment_test", "TeamAssignmentTest.scala", []),
+    ("projectile_terrain_test", "ProjectileTerrainTest.scala", []),
+    ("fan_projectile_test", "FanProjectileTest.scala", []),
+    ("movement_test", "MovementTest.scala", []),
+    ("teleport_test", "TeleportTest.scala", []),
+    # Alone in its JVM: it checks the first projectile lookup, before anything touches CharacterDef
+    ("projectile_def_registry_test", "ProjectileDefRegistryTest.scala", []),
+    ("projectile_hit_test", "ProjectileHitTest.scala", []),
+    ("player_test", "PlayerTest.scala", []),
+    ("knockback_test", "KnockbackTest.scala", []),
+    ("character_roster_test", "CharacterRosterTest.scala", ["//sprites:sprite_files"]),
+    ("world_data_test", "WorldDataTest.scala", []),
+    ("barrier_test", "BarrierTest.scala", []),
+    ("roster_balance_test", "RosterBalanceTest.scala", []),
+    ("melee_kit_test", "MeleeKitTest.scala", []),
+    ("tile_test", "TileTest.scala", ["//sprites:sprite_files"]),
+]]

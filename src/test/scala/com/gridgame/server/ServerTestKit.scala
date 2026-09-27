@@ -1,5 +1,7 @@
 package com.gridgame.server
 
+import com.gridgame.server.game.GameInstance
+import com.gridgame.server.lobby.{Lobby, LobbyStatus}
 import com.gridgame.common.Constants
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
@@ -49,9 +51,9 @@ object ServerTestKit {
    */
   class TestSession(val playerId: UUID = UUID.randomUUID()) {
     val channel = new PeerChannel()
-    channel.pipeline().addLast(new GameServerTcpHandler(server))
-    val token: Array[Byte] = server.generateSessionToken(playerId, channel)
-    server.playerTcpAddresses.put(playerId, InetAddress.getByName("127.0.0.1"))
+    channel.pipeline().addLast(server.tcpHandler())
+    val token: Array[Byte] = server.sessions.generateSessionToken(playerId, channel)
+    server.sessions.playerTcpAddresses.put(playerId, InetAddress.getByName("127.0.0.1"))
     private var seq = 0
 
     def nextSeq(): Int = { seq += 1; seq }
@@ -100,7 +102,7 @@ class TestMatch(val world: WorldData = WorldData.createEmpty(60, 60), gameMode: 
 
   val server: GameServer = ServerTestKit.server
   private val udp = new EmbeddedChannel()
-  server.attachUdpChannel(udp)
+  server.outbox.attachUdpChannel(udp)
 
   val instance: GameInstance = {
     val gi = new GameInstance(freshGameId(), "", 5, server)

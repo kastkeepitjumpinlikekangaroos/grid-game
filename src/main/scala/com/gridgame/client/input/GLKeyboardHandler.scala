@@ -1,7 +1,5 @@
 package com.gridgame.client.input
 
-import com.gridgame.client.ClientState
-import com.gridgame.client.GameClient
 import com.gridgame.common.Constants
 import com.gridgame.common.model.ItemType
 import com.gridgame.common.model.Movement
@@ -11,6 +9,7 @@ import org.lwjgl.glfw.GLFW._
 import org.lwjgl.glfw.GLFWKeyCallback
 
 import scala.collection.mutable
+import com.gridgame.client.game.{ClientState, GameClient}
 
 /**
  * GLFW keyboard handler. Mirrors KeyboardHandler logic but uses GLFW key codes.

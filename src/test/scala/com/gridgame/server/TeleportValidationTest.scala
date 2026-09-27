@@ -1,5 +1,6 @@
 package com.gridgame.server
 
+import com.gridgame.server.game.{ClientHandler, GameInstance}
 import com.gridgame.common.Constants
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._

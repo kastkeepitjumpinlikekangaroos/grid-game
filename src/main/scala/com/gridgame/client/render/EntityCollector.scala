@@ -1,9 +1,9 @@
 package com.gridgame.client.render
 
-import com.gridgame.client.GameClient
 import com.gridgame.common.model.{Item, Player, Projectile}
 
 import java.util.UUID
+import com.gridgame.client.game.{FadingProjectile, GameClient, TerrainImpact}
 
 /**
  * Collects game entities (items, projectiles, players) by grid cell for depth-sorted rendering.
@@ -15,7 +15,7 @@ import java.util.UUID
  * allocated. Each cell holds a singly linked list of pooled entries, so a frame allocates
  * nothing once the pool has grown to the busiest frame seen.
  */
-class EntityCollector {
+class EntityCollector(clock: FrameClock = FrameClock.System) {
   import EntityCollector._
 
   // Where each other player is drawn (RemoteMotion). A java.util.HashMap to avoid Scala Option
@@ -165,7 +165,7 @@ class EntityCollector {
 
     // Projectiles that have been stopped, fading where they stopped. This is the one place
     // that walks them every frame, so expired ones are dropped here.
-    val fadeNow = System.currentTimeMillis()
+    val fadeNow = clock.nowMs()
     val fadeIter = client.getFadingProjectiles.values().iterator()
     while (fadeIter.hasNext) {
       val fp = fadeIter.next()
@@ -182,7 +182,7 @@ class EntityCollector {
     // Remote players, each walked along the cells the server has put them on (RemoteMotion). One
     // is sorted into the depth order of the cell it is drawn in, not the one it was last heard on,
     // which mid-dash can be cells ahead of where it is drawn.
-    val nowNanos = System.nanoTime()
+    val nowNanos = clock.nowNanos()
     val playerIter = client.getPlayers.values().iterator()
     while (playerIter.hasNext) {
       val player = playerIter.next()

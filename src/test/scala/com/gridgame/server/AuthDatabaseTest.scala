@@ -1,5 +1,6 @@
 package com.gridgame.server
 
+import com.gridgame.server.account.AuthDatabase
 import org.junit.After
 import org.junit.Assert._
 import org.junit.Test

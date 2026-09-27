@@ -1,5 +1,6 @@
 package com.gridgame.server
 
+import com.gridgame.server.lobby.{Lobby, LobbyManager, LobbyStatus}
 import com.gridgame.common.Constants
 import org.junit.Assert._
 import org.junit.Test

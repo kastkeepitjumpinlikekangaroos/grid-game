@@ -1,0 +1,33 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+load("//src/main/scala/com/gridgame/client:jars.bzl", "CLIENT")
+load("//third_party:jvm.bzl", "JAVAFX", "LWJGL")
+
+# Dev tools, not shipped: the benches, the render audit, the golden frames. Their binaries are in
+# the client package (//src/main/scala/com/gridgame/client:render_bench and so on).
+scala_library(
+    name = "devtools",
+    srcs = glob(["*.scala"], exclude = ["ProjectileGallery.scala"]),
+    visibility = CLIENT,
+    deps = [
+        "//src/main/scala/com/gridgame/client/game",
+        "//src/main/scala/com/gridgame/client/gl",
+        "//src/main/scala/com/gridgame/client/render",
+        "//src/main/scala/com/gridgame/client/render/projectiles",
+        "//src/main/scala/com/gridgame/client/ui",
+        "//src/main/scala/com/gridgame/common",
+    ] + JAVAFX + LWJGL,
+)
+
+# The projectile gallery on its own: it needs only the GL primitives and the projectile and blast
+# renderers, so projectile art work never waits on unrelated client code that is mid-edit.
+scala_library(
+    name = "gallery",
+    srcs = ["ProjectileGallery.scala"],
+    visibility = CLIENT,
+    deps = [
+        "//src/main/scala/com/gridgame/client/gl",
+        "//src/main/scala/com/gridgame/client/render/blasts",
+        "//src/main/scala/com/gridgame/client/render/projectiles",
+        "//src/main/scala/com/gridgame/common",
+    ] + LWJGL,
+)

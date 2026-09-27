@@ -1,11 +1,11 @@
 package com.gridgame.client.input
 
-import com.gridgame.client.GameClient
 import com.gridgame.client.render.{GameCamera, IsometricTransform}
 import com.gridgame.common.Constants
 import com.gridgame.common.model.ProjectileDef
 
 import org.lwjgl.glfw.GLFW._
+import com.gridgame.client.game.GameClient
 
 /**
  * GLFW mouse handler. Mirrors MouseHandler logic but uses GLFW callbacks.
