@@ -30,6 +30,26 @@ class AbilitySoundsTest {
       assertNotNull(AbilitySounds.forAttack(t.toByte))
   }
 
+  @Test def everyExplosiveThatDealsItsBlastGoesOffFromAFile(): Unit = {
+    for (t <- -128 to 127 if ProjectileDef.get(t.toByte).id == t.toByte) {
+      val d = ProjectileDef.get(t.toByte)
+      if (d.explosionConfig.exists(e => e.centerDamage > 0 || e.edgeDamage > 0)) {
+        val s = AbilitySounds.forBlast(t.toByte)
+        assertTrue(s"${d.name} -> $s", exists(s))
+      }
+    }
+  }
+
+  @Test def aFireAMudBombAndAFlaskDoNotGoOffAsAGrenade(): Unit = {
+    // Every damaging explosion used to be the one frag grenade
+    import com.gridgame.common.model.ProjectileType._
+    val frag = AbilitySounds.forBlast(GRENADE)
+    assertEquals(AbilitySounds.FragBlast, frag)
+    for (t <- Seq(INFERNO_BLAST, NAPALM_STRIKE, ERUPTION, MUD_BOMB, ACID_FLASK, BLIGHT_BOMB, MIASMA))
+      assertNotEquals(s"type $t", frag, AbilitySounds.forBlast(t))
+    assertNotEquals(AbilitySounds.forBlast(MUD_BOMB), AbilitySounds.forBlast(INFERNO_BLAST))
+  }
+
   @Test def aCharacterOverrideBeatsTheSharedSound(): Unit = {
     // A wolf's howl and a barbarian's slam share a projectile type, but not a sound
     val shared = AbilitySounds.forAttack(com.gridgame.common.model.ProjectileType.SONIC_WAVE)

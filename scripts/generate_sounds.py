@@ -20,11 +20,19 @@ pitch jitter driving a vocal tract whose formants MOVE. Both are implemented
 below (`modal`, `MATERIALS`, `cry`, `tract`) and every impact/voice in the game
 goes through them.
 
+And a projectile is not a note. It is made of something — a flame is
+combustion, a frost shard fracture, a toxic orb liquid, a ghost breath — and it
+is built from that (`grains`, `bubbles`, `sizzle`, `squelch`, `breath`, ...).
+A pitched layer that starts instantly and decays exponentially is, to the ear,
+a struck object, and with inharmonic partials it is a tin can: that is what
+thirty primaries here used to be. `scripts/sound_audit.py` measures it.
+
 Layout:
 
     oscillators/envelopes -> filters (causal biquads + zero-phase FFT) ->
-    shaping/space -> modal synthesis -> vocal synthesis -> air/whoosh ->
-    master chain -> family engines -> one-off sounds -> music -> driver
+    shaping/space -> modal synthesis -> vocal synthesis -> air/fire/water ->
+    what things are made of -> master chain -> family engines -> one-off
+    sounds -> detonations -> music -> driver
 
 Generators produce mono. Every sound then goes through the shared `master()`
 chain, exactly like a real sound-design session:
@@ -42,8 +50,10 @@ Pitched material is tuned to A minor so it agrees with the music instead of
 clashing with it. Output is 16-bit stereo WAV.
 
 Run after adding a new ProjectileType/archetype, the same way
-scripts/generate_tiles.py is rerun after adding a tile. Takes ~2-4 minutes
+scripts/generate_tiles.py is rerun after adding a tile. Takes ~25 seconds
 (the time-varying filters, modal banks and dynamics run sample-by-sample).
+Output is deterministic (every random source is seeded by name), so a rerun
+changes only the sounds whose code changed.
 """
 import numpy as np
 import os
@@ -343,6 +353,7 @@ VOWELS = {
     "ee": (270, 2290, 3010),
     "aw": (570, 840, 2410),
     "er": (490, 1350, 1690),
+    "oh": (500, 850, 2500),
 }
 
 
@@ -685,6 +696,295 @@ def zap_arc(dur, lo=500, hi=9000, q=9.0, steps=90, name="arc"):
     cut = np.repeat(rng.uniform(lo, hi, steps), max(1, n // steps + 1))[:n]
     cut = np.pad(cut, (0, max(0, n - len(cut))), mode="edge")
     return svf(noise(dur, name + "n"), lowpass(cut, 320, order=1), q=q, mode="bp")
+
+
+# ─────────────────────────── what things are made of ───────────────────────────
+# The layers a projectile is built from when it is a THING rather than a note:
+# a flame is combustion, a frost shard is fracture, a toxic orb is liquid, a
+# ghost is breath. Every one of these is noise-excited or harmonic. None of them
+# is a pitched tone with an instant attack and an exponential decay, because
+# that envelope on a pitched sound is, to the ear, a struck object — and a
+# struck object with inharmonic partials is a tin can, which is what thirty
+# primaries in this file used to be (see `bolt`).
+
+def grains(dur, rate=40.0, band=(900, 7000), length=(0.0006, 0.004), q=(0.7, 1.6),
+           level=(0.25, 1.0), density=None, name="gr"):
+    """A Poisson cloud of very short noise grains — fire pops, ice fracturing,
+    sparks, twigs snapping, gravel. Each grain is a millisecond or two of noise in
+    its own band; the ear hears the cloud as combustion or fracture according to
+    the band and the rate, never as a pitch.
+
+    `density` (points for seg_env) shapes the rate over the sound, so a crackle
+    can burst at ignition and thin out as it flies."""
+    n = n_of(dur)
+    out = np.zeros(n)
+    rng = np.random.default_rng(seed_of(name))
+    dens = seg_env(density, dur) if density is not None else np.ones(n)
+    # thin a uniform Poisson stream by the density envelope
+    t = 0.0
+    while True:
+        t += rng.exponential(1.0 / max(rate, 1e-3))
+        if t >= dur:
+            break
+        if rng.uniform() > dens[min(n - 1, int(t * SR))]:
+            continue
+        gd = rng.uniform(*length)
+        lo = np.exp(rng.uniform(np.log(band[0]), np.log(band[1])))
+        g = noise(gd + 0.002, name + str(rng.integers(1 << 30)))
+        g = bandpass(g, lo / rng.uniform(*q), lo * rng.uniform(*q)) if len(g) > 16 else g
+        g = g[:n_of(gd)] * (np.linspace(1.0, 0.0, n_of(gd)) ** 1.5)
+        at(out, t, g * rng.uniform(*level))
+    peak = np.max(np.abs(out))
+    return out / peak if peak > 1e-9 else out
+
+
+def dust(dur, name="dst"):
+    """Dry grit on the air — sand, a spade's earth, an old tomb: pink noise held
+    in the low mids and falling away."""
+    return bandpass(pink(dur, name), 200, 1700) * exp_env(dur, attack=0.004, decay=6.0)
+
+
+def bubbles(dur, count=8, f=(260, 900), rise=(1.5, 3.0), size=(0.018, 0.05), span=(0.0, 0.9),
+            name="bub"):
+    """Bubbles forming and bursting: each one a sine whose pitch rises as it
+    closes (the Minnaert resonance of a shrinking cavity). That upward chirp is the
+    cue the ear takes as liquid — a bubble whose pitch fell would be a raindrop on
+    a drum, and one that held its pitch would be a bell."""
+    n = n_of(dur)
+    out = np.zeros(n)
+    rng = np.random.default_rng(seed_of(name))
+    for _ in range(count):
+        t0 = rng.uniform(dur * span[0], dur * span[1])
+        bd = rng.uniform(*size)
+        f0 = np.exp(rng.uniform(np.log(f[0]), np.log(f[1])))
+        b = sine(seg_env([(0.0, f0), (1.0, f0 * rng.uniform(*rise))], bd), bd)
+        at(out, t0, b * exp_env(bd, attack=0.002, decay=7.0) * rng.uniform(0.35, 1.0))
+    peak = np.max(np.abs(out))
+    return out / peak if peak > 1e-9 else out
+
+
+def sizzle(dur, band=(2600, 9000), crackle=0.6, name="szl"):
+    """Frying: a hiss bed broken up by tiny spits. Acid on stone, molten rock in
+    air, a lit fuse. The spits are what separate it from wind."""
+    n = n_of(dur)
+    bed = bandpass(noise(dur, name + "b"), band[0], band[1])
+    flut = lowpass(np.abs(noise(dur, name + "f")), 40, order=1)
+    bed *= 0.45 + 1.4 * flut / (np.max(flut) + 1e-9)
+    spits = grains(dur, rate=90, band=(band[0] * 0.8, band[1]), length=(0.0004, 0.0025),
+                   name=name + "s")
+    out = bed / (np.max(np.abs(bed)) + 1e-9) * 0.55 + spits * crackle
+    return out / (np.max(np.abs(out)) + 1e-9)
+
+
+def squelch(dur, f=(1300, 220), q=3.2, lumps=4, name="sq"):
+    """A wet, sticky mass moving: low noise through a resonance that sweeps down
+    (the 'shlorp'), with a few gluey pops where it pulls apart. Mud, flesh, slime."""
+    n = n_of(dur)
+    body = svf(pink(dur, name + "b"), seg_env([(0.0, f[0]), (0.35, f[0] * 0.55), (1.0, f[1])], dur),
+               q=q, mode="bp")
+    body *= seg_env([(0.0, 0.0), (0.05, 1.0), (0.4, 0.6), (1.0, 0.0)], dur)
+    pops = bubbles(dur, count=lumps, f=(120, 380), rise=(1.3, 2.2), size=(0.02, 0.05),
+                   span=(0.08, 0.8), name=name + "p")
+    out = mixdown(body / (np.max(np.abs(body)) + 1e-9), pops * 0.45)
+    return saturate(out, 1.6)
+
+
+def breath(dur, vowels, band=(300, 6000), name="br"):
+    """A whisper: noise through a moving vocal tract, no voice at all. Ghosts,
+    curses, a djinn's smoke. Formants over noise read as a mouth; the same noise
+    through a plain filter reads as wind."""
+    src = bandpass(pink(dur, name + "n"), band[0], band[1])
+    return tract(src, vowels, dur, q=(8.0, 7.0, 6.0), gains=(1.0, 0.8, 0.5), name=name)
+
+
+def choir(freqs, dur, vowels=((0.0, "ah"), (1.0, "oh")), vib=5.2, breath_=0.45, depth=0.015, name="cho"):
+    """A few voices singing a chord: harmonic sources (glottal pulses) through a
+    moving tract, each with its own vibrato and a slow swell. Holy light is sung,
+    not struck — a bell under every holy bolt is the steeple-sized tin can."""
+    keys = list(vowels)
+    out = np.zeros(n_of(dur))
+    rng = np.random.default_rng(seed_of(name))
+    for i, f in enumerate(freqs):
+        ph = rng.uniform(0, 2 * np.pi)
+        vr = vib * rng.uniform(0.9, 1.1)
+        f_env = f * (1.0 + depth * np.sin(2 * np.pi * vr * t_axis(dur) + ph))
+        src = glottal(f_env, dur, open_q=0.62, jitter=0.012, shimmer=0.08, name=name + str(i))
+        v = tract(src, keys, dur, breath=breath_, name=name + "t" + str(i))
+        out += v * (1.0 / (1.0 + 0.35 * i))
+    return out / (np.max(np.abs(out)) + 1e-9)
+
+
+def glow(f0, dur, voices=3, detune=0.011, cut=(5.5, 1.7), q=1.3, attack=0.012, decay=5.0,
+         settle=1.06, vib=(5.5, 0.004), name="glw"):
+    """The tonal heart of a magic bolt: detuned saws — every partial harmonic, so
+    there is nothing to clang — opening fast and dimming through a sweeping
+    lowpass as the bolt leaves. The attack is never shorter than ~6ms: a pitched
+    tone that starts instantly and falls away exponentially is a struck object,
+    whatever it was meant to be."""
+    n = n_of(dur)
+    rng = np.random.default_rng(seed_of(name))
+    tt = t_axis(dur)
+    pitch = seg_env([(0.0, f0 * settle), (min(0.4, 0.05 / dur), f0), (1.0, f0 * 0.985)], dur)
+    out = np.zeros(n)
+    for v in range(voices):
+        off = (v - (voices - 1) / 2.0) * detune
+        wob = 1.0 + vib[1] * np.sin(2 * np.pi * vib[0] * rng.uniform(0.85, 1.15) * tt + rng.uniform(0, 6.3))
+        ph = np.cumsum(as_array(pitch * (1.0 + off) * wob, n)) / SR + rng.uniform()
+        out += 2.0 * (ph % 1.0) - 1.0
+    out /= voices
+    out = svf(out, seg_env([(0.0, f0 * cut[0]), (0.3, f0 * (cut[0] + cut[1]) * 0.5), (1.0, f0 * cut[1])], dur),
+              q=q)
+    a = min(0.9, max(0.006, attack) / dur)
+    env = seg_env([(0.0, 0.0), (a, 1.0), (1.0, 1.0)], dur) * np.exp(-decay * tt)
+    return out * env / (np.max(np.abs(out * env)) + 1e-9)
+
+
+def pluck(f0, dur, t60=0.6, bright=0.55, pick=0.3, name="pk"):
+    """Karplus-Strong: a burst of noise circulating in a delay line one period
+    long, averaged a little on every pass. Every partial is an exact harmonic and
+    the high ones die first, which is precisely what a string is and what a
+    struck bar or a can is not. Bowstrings, lutes, harps, puppet strings."""
+    n = n_of(dur)
+    L = max(2, int(round(SR / f0)))
+    rng = np.random.default_rng(seed_of(name))
+    exc = rng.uniform(-1.0, 1.0, L)
+    # brightness: how hard it was plucked (a soft excitation is a darker string)
+    k = max(1, int((1.0 - bright) * 8))
+    exc = np.convolve(exc, np.ones(k) / k, mode="same")
+    # pick position: a comb on the excitation, as plucking a third of the way along
+    # removes every third harmonic
+    d = max(1, int(pick * L))
+    exc = exc - np.roll(exc, d)
+    g = 0.001 ** (1.0 / max(1.0, t60 * f0))
+    y = np.zeros(n + 1)
+    y[1:min(n, L) + 1] = exc[:min(n, L)]
+    a = 0.5 * g
+    for start in range(L + 1, n + 1, L):
+        end = min(n + 1, start + L)
+        idx = np.arange(start, end)
+        y[idx] += a * (y[idx - L] + y[idx - L - 1])
+    out = y[1:]
+    return out / (np.max(np.abs(out)) + 1e-9)
+
+
+def rattle(dur, count=26, band=(2400, 9000), q=9.0, cluster=0.7, name="rat"):
+    """Links of a chain catching each other: dozens of clinks, each a few
+    milliseconds of noise through a narrow band at its own random pitch. Short
+    and many, it is a chain; long and few, it is a bucket — which is what three
+    tuned iron strikes used to be."""
+    n = n_of(dur)
+    out = np.zeros(n)
+    rng = np.random.default_rng(seed_of(name))
+    t = rng.uniform(0.0, 0.01)
+    for _ in range(count):
+        gd = rng.uniform(0.003, 0.009)
+        f = np.exp(rng.uniform(np.log(band[0]), np.log(band[1])))
+        g = res_bp(noise(gd + 0.004, name + str(rng.integers(1 << 30))), f, q=q)[:n_of(gd)]
+        g *= exp_env(gd, attack=0.0003, decay=5.0)
+        at(out, t, g * rng.uniform(0.3, 1.0))
+        # links come in clusters as the chain snakes: short gaps inside, longer between
+        t += rng.exponential(dur / count * (0.35 if rng.uniform() < cluster else 1.6))
+        if t >= dur:
+            break
+    peak = np.max(np.abs(out))
+    return out / peak if peak > 1e-9 else out
+
+
+def rip(dur, rate=(160.0, 40.0), band=(400, 3800), name="rip"):
+    """Tearing: a run of micro-bursts that slows as the tear finishes — cloth,
+    hide, flesh parting under a claw. The run is the whole cue; a claw that only
+    whooshes has missed."""
+    n = n_of(dur)
+    out = np.zeros(n)
+    rng = np.random.default_rng(seed_of(name))
+    rt = seg_env([(0.0, rate[0]), (1.0, rate[1])], dur)
+    t = 0.0
+    while t < dur:
+        i = min(n - 1, int(t * SR))
+        gd = rng.uniform(0.0015, 0.006)
+        g = bandpass(noise(gd + 0.003, name + str(rng.integers(1 << 30))), band[0], band[1])[:n_of(gd)]
+        g *= np.linspace(1.0, 0.1, len(g))
+        at(out, t, g * rng.uniform(0.4, 1.0) * (1.0 - 0.6 * t / dur))
+        t += rng.uniform(0.5, 1.5) / rt[i]
+    peak = np.max(np.abs(out))
+    return out / peak if peak > 1e-9 else out
+
+
+def crack(dur=0.03, name="crk"):
+    """A whip or a sonic crack: an N-wave (a sharp pressure spike and its
+    rebound, under a millisecond each) with a spray of broadband noise. Louder and
+    shorter than any contact, and it has no body at all."""
+    n = n_of(dur)
+    out = np.zeros(n)
+    w = n_of(0.0007)
+    out[:w] = np.linspace(1.0, -1.0, w)
+    out[w:2 * w] = np.linspace(-1.0, 0.0, w)
+    spray = highpass(noise(dur, name), 1500) * (np.linspace(1.0, 0.0, n) ** 3.0)
+    out = out * 0.9 + spray / (np.max(np.abs(spray)) + 1e-9) * 0.6
+    return out / (np.max(np.abs(out)) + 1e-9)
+
+
+def buzz(dur, rate=190.0, band=(1200, 6500), bugs=4, name="bz"):
+    """A swarm: several wingbeat buzzes, each noise gated at its own rate a little
+    apart from the others, so they beat. Insects, nanites, flies over a corpse."""
+    n = n_of(dur)
+    out = np.zeros(n)
+    rng = np.random.default_rng(seed_of(name))
+    tt = t_axis(dur)
+    for b in range(bugs):
+        r = rate * rng.uniform(0.8, 1.25)
+        drift = 1.0 + 0.06 * np.sin(2 * np.pi * rng.uniform(1.5, 4.0) * tt + rng.uniform(0, 6.3))
+        gate = (0.5 + 0.5 * np.sin(2 * np.pi * np.cumsum(np.full(n, r) * drift) / SR)) ** 3
+        src = bandpass(noise(dur, name + str(b)), band[0] * rng.uniform(0.8, 1.2), band[1])
+        out += src * gate * rng.uniform(0.5, 1.0)
+    return out / (np.max(np.abs(out)) + 1e-9)
+
+
+def scrape(dur, lo=2600, hi=6200, bands=3, q=5.0, name="scr"):
+    """An edge sliding along an edge — the 'shing' of a drawn blade. Continuous
+    noise through a few resonances that GLIDE as the contact point moves. It is
+    the gliding that makes it steel on steel: the same peaks held still, excited
+    once, are a struck bar."""
+    n = n_of(dur)
+    out = np.zeros(n)
+    rng = np.random.default_rng(seed_of(name))
+    src = noise(dur, name + "n")
+    for b in range(bands):
+        f0 = lo * rng.uniform(0.9, 1.3) * (1.0 + 0.5 * b)
+        f1 = min(hi * (1.0 + 0.3 * b), 12000.0)
+        out += svf(src, seg_env([(0.0, f0), (1.0, f1)], dur), q=q, mode="bp") * (1.0 / (1 + b))
+    out *= seg_env([(0.0, 0.0), (0.12, 1.0), (0.5, 0.6), (1.0, 0.0)], dur)
+    return out / (np.max(np.abs(out)) + 1e-9)
+
+
+def heartbeat(gap=0.13, dur=0.34, f0=58.0, name="hb"):
+    """Lub-dub: two soft, low thuds, the second quieter. No overtones, no click."""
+    out = np.zeros(n_of(dur))
+    at(out, 0.0, thud(f0, 0.16, drive=1.3, name=name + "1"))
+    at(out, gap, thud(f0 * 0.9, 0.16, drive=1.3, name=name + "2") * 0.62)
+    return out
+
+
+def whump(dur=0.2, f=(210.0, 55.0), name="wh"):
+    """A pressure bloom — gas catching, a mass of air shoved aside, a cloud going
+    up. Low-passed noise with a falling cutoff and a sine under it for the push."""
+    n = n_of(dur)
+    body = svf(pink(dur, name + "p"), seg_env([(0.0, f[0] * 6), (0.25, f[0] * 2.4), (1.0, f[1] * 2)], dur),
+               q=0.9, mode="lp")
+    body *= exp_env(dur, attack=0.004, decay=5.5)
+    push = sine(seg_env([(0.0, f[0]), (1.0, f[1])], dur), dur) * exp_env(dur, attack=0.004, decay=6.5)
+    out = body / (np.max(np.abs(body)) + 1e-9) + saturate(push, 1.6) * 0.7
+    return out / (np.max(np.abs(out)) + 1e-9)
+
+
+def flange(x, lo_ms=0.5, hi_ms=5.0, depth=0.8, rise=True):
+    """A comb whose teeth sweep: the phasing 'jet' of energy streaking past. The
+    teeth never stand still, so it never settles into the fixed resonances a
+    static comb (or a can) has."""
+    n = len(x)
+    d = seg_env([(0.0, hi_ms if not rise else lo_ms), (1.0, lo_ms if not rise else hi_ms)], n / SR)
+    idx = np.arange(n, dtype=float)
+    return x + depth * np.interp(idx - d * 0.001 * SR, idx, x)
 
 
 # ─────────────────────────── shaping & space ───────────────────────────
@@ -1163,259 +1463,644 @@ def save_wav(name, signal, level=0.85, trim=True, clas="bolt", shape=None, **mas
 # reason every character sprite goes through sprite_base.generate_character.
 
 
-def _texture(kind, dur, name):
-    """The character layer of an attack: quiet, high, and the thing that says
-    'fire' or 'bone' or 'circuitry'. Deliberately never the loudest layer —
-    the old set put its identity in the 2-5kHz band at full level, which is
-    both fatiguing and, once four players are firing, indistinguishable."""
-    if kind == "soft":
-        return bandpass(pink(dur, name), 600, 2800) * exp_env(dur, attack=0.002, decay=9.0)
-    if kind == "fizz":
-        return highpass(noise(dur, name), 2200) * exp_env(dur, attack=0.001, decay=15.0)
-    if kind == "grit":
-        return saturate(bandpass(pink(dur, name), 180, 1400), 3.0) * exp_env(dur, decay=8.0)
-    if kind == "crystal":
-        return sparkle(dur, 2600, 9000, count=9, name=name) * 0.9
-    if kind == "wet":
-        w = bandpass(pink(dur, name), 300, 2400) * exp_env(dur, decay=7.0)
-        return mixdown(w, water(dur * 0.7, size=2.2, bubbles=5, foam=0.15, name=name + "w") * 0.5)
-    if kind == "spark":
-        return zap_arc(dur, 900, 7000, q=8, steps=34, name=name) * exp_env(dur, decay=11.0)
-    if kind == "dust":
-        return bandpass(pink(dur, name), 200, 1700) * exp_env(dur, attack=0.004, decay=6.0)
-    if kind == "void":
-        v = lowpass(pink(dur, name), 900)
-        return v * (np.linspace(0.0, 1.0, n_of(dur)) ** 2.4)
-    if kind == "paper":
-        p = bandpass(noise(dur, name), 900, 4200) * exp_env(dur, attack=0.001, decay=18.0)
-        return p * tremolo(n_of(dur), 42, 0.5, shape="pulse")
-    if kind == "bone":
-        return modal("bone", 620, dur, damp=1.6, name=name) * 0.5
-    if kind == "none":
-        return np.zeros(n_of(dur))
-    raise ValueError(kind)
+def norm(x):
+    """Scale to a peak of 1 (silence stays silence)."""
+    x = np.asarray(x, dtype=float)
+    peak = np.max(np.abs(x)) if len(x) else 0.0
+    return x / peak if peak > 1e-9 else x
 
 
-#            f0    rise fall ratio index      decay lp          tex        tex_g drive sub   tail
+# ── what each bolt is made of ──
+# A bolt used to be one FM note per school of magic: a pitched tone with
+# inharmonic sidebands, a 1.5ms attack and an exponential decay. However the
+# ratio and the filter were set, that is the acoustic definition of a struck
+# metal object, and thirty primaries came out as the same tin can at thirty
+# pitches — a flame bolt was 96% ringing partials. Now a bolt is its element:
+# fire is combustion, ice is fracture, poison is liquid, a ghost is breath.
+# Only the abstract schools (arcane, runes, stars, the dark) keep a tone, and it
+# is `glow`: harmonic, and swelled in rather than struck.
+
+def _b_fire(f0, dur, name):
+    """Combustion: the whump of it catching, a roar with flame-licks in it, and
+    pops. The band rides a little with f0, so a heavier flame is darker."""
+    k = (f0 / 220.0) ** 0.5
+    ign = whump(min(0.2, dur * 0.5), f=(170 * k, 55), name=name + "ig")
+    roar = svf(pink(dur, name + "r"), seg_env([(0.0, 900 * k), (0.12, 2500 * k), (1.0, 700 * k)], dur),
+               q=1.3, mode="bp")
+    lick = lowpass(np.abs(pink(dur, name + "l")), 22, order=1)
+    roar *= 0.4 + 1.6 * lick / (np.max(lick) + 1e-9)
+    roar *= seg_env([(0.0, 0.0), (0.04, 1.0), (0.35, 0.55), (1.0, 0.0)], dur)
+    low = lowpass(pink(dur, name + "lo"), 320) * seg_env([(0.0, 0.0), (0.05, 1.0), (1.0, 0.0)], dur)
+    pops = grains(dur, rate=55, band=(800, 6000), length=(0.0005, 0.003),
+                  density=[(0.0, 1.0), (0.3, 0.7), (1.0, 0.15)], name=name + "p")
+    return mixdown(pad_to(ign, dur) * 0.75, norm(roar) * 0.8, norm(low) * 0.45, pops * 0.4)
+
+
+def _b_ember(f0, dur, name):
+    """A spark more than a flame: a quick flick of fire and a spray of bright
+    crackle off it."""
+    flick = svf(pink(dur, name + "f"), seg_env([(0.0, 1400), (0.1, 3400), (1.0, 1200)], dur), q=1.4, mode="bp")
+    flick *= exp_env(dur, attack=0.006, decay=6.5)
+    sparks = grains(dur, rate=120, band=(1800, 9000), length=(0.0003, 0.0018),
+                    density=[(0.0, 1.0), (0.25, 0.8), (1.0, 0.1)], name=name + "s")
+    ign = whump(0.12, f=(230, 85), name=name + "ig")
+    return mixdown(norm(flick) * 0.75, sparks * 0.5, pad_to(ign, dur) * 0.5)
+
+
+def _b_molten(f0, dur, name):
+    """A glob of lava: the heavy shove of it leaving, a low roar, and the rock
+    itself — thick bubbles bursting and spitting in the air."""
+    ign = whump(min(0.24, dur * 0.55), f=(140, 45), name=name + "ig")
+    roar = svf(pink(dur, name + "r"), seg_env([(0.0, 500), (0.15, 1500), (1.0, 420)], dur), q=1.2, mode="bp")
+    roar *= seg_env([(0.0, 0.0), (0.05, 1.0), (1.0, 0.0)], dur)
+    blorp = bubbles(dur, count=6, f=(90, 240), rise=(1.3, 2.0), size=(0.03, 0.07), span=(0.05, 0.75),
+                    name=name + "b")
+    hiss = sizzle(dur, band=(2200, 7500), crackle=0.5, name=name + "z")
+    hiss *= seg_env([(0.0, 0.3), (0.2, 1.0), (1.0, 0.0)], dur)
+    return mixdown(pad_to(ign, dur) * 0.8, norm(roar) * 0.6, blorp * 0.6, hiss * 0.3)
+
+
+def _b_ice(f0, dur, name):
+    """A shard of ice: it cracks into being, whistles as it goes, and trails a
+    cold hiss. The fracture is a cloud of tiny bright grains, not a struck bar."""
+    form = grains(dur, rate=260, band=(2400, 11000), length=(0.0003, 0.0016),
+                  density=[(0.0, 1.0), (0.12, 0.6), (0.4, 0.08), (1.0, 0.0)], name=name + "c")
+    whistle = air(dur, band=(1500, 5200), q=2.2, arc=1.7, turb=0.25, edge=0.12, body=0.35, name=name + "a")
+    frost = highpass(noise(dur, name + "h"), 4500) * seg_env([(0.0, 0.0), (0.15, 1.0), (1.0, 0.0)], dur)
+    glint = sparkle(dur, 5000, 12000, count=5, name=name + "g")
+    return mixdown(form * 0.7, norm(whistle) * 0.6, norm(frost) * 0.22, glint * 0.35)
+
+
+def _b_poison(f0, dur, name):
+    """Something toxic and liquid: a wet gulp as it leaves, bubbles bursting on
+    it, and gas hissing off."""
+    gulp = svf(pink(0.14, name + "g"), seg_env([(0.0, 1100), (1.0, 280)], 0.14), q=3.0, mode="bp")
+    gulp *= seg_env([(0.0, 0.0), (0.1, 1.0), (1.0, 0.0)], 0.14)
+    bub = bubbles(dur, count=10, f=(260, 900), span=(0.05, 0.85), name=name + "b")
+    hiss = gas(dur, band=(700, 4200), fizz=0.35, name=name + "h")
+    return mixdown(pad_to(norm(gulp), dur) * 0.7, bub * 0.55, norm(hiss) * 0.35)
+
+
+def _b_acid(f0, dur, name):
+    """Spat venom: the 'ptt' of it leaving a mouth, a hiss, and the sizzle of it
+    eating whatever it touches."""
+    spit = bandpass(noise(0.05, name + "s"), 900, 5200) * exp_env(0.05, attack=0.0008, decay=11.0)
+    hiss = bandpass(noise(dur, name + "h"), 3600, 9000)
+    hiss *= seg_env([(0.0, 0.0), (0.08, 1.0), (0.5, 0.4), (1.0, 0.0)], dur)
+    fry = sizzle(dur, band=(2400, 8500), crackle=0.7, name=name + "z")
+    fry *= seg_env([(0.0, 0.0), (0.15, 1.0), (1.0, 0.0)], dur)
+    drip = bubbles(dur, count=4, f=(500, 1300), span=(0.15, 0.8), name=name + "d")
+    return mixdown(pad_to(norm(spit), dur) * 0.8, norm(hiss) * 0.3, fry * 0.4, drip * 0.3)
+
+
+def _b_mud(f0, dur, name):
+    """A glob of mud: a heavy wet shlorp, clods pulling apart, and a dull push."""
+    body = squelch(dur, f=(1000, 170), q=3.4, lumps=5, name=name + "q")
+    push = whump(min(0.22, dur * 0.55), f=(130, 48), name=name + "w")
+    return mixdown(body * 0.85, pad_to(push, dur) * 0.7)
+
+
+def _b_sand(f0, dur, name):
+    """A fistful of grit: a hiss of grains, whirled."""
+    grit = grains(dur, rate=900, band=(1100, 7500), length=(0.0002, 0.0012),
+                  density=[(0.0, 1.0), (0.2, 0.75), (1.0, 0.05)], name=name + "g")
+    whirl = air(dur, band=(400, 2600), q=1.6, arc=1.3, turb=0.7, body=0.6, name=name + "a")
+    whirl *= tremolo(n_of(dur), 9.0, 0.45)
+    push = whump(0.16, f=(160, 55), name=name + "w")
+    return mixdown(grit * 0.6, norm(whirl) * 0.6, pad_to(push, dur) * 0.45)
+
+
+def _b_arcane(f0, dur, name):
+    """Raw magic: a harmonic glow that swells in and dims as it leaves, streaking
+    past through a sweeping comb, with motes of light thrown off it."""
+    core = glow(f0, dur, voices=3, detune=0.012, cut=(6.0, 1.8), attack=0.012, decay=6.0, name=name + "c")
+    streak = flange(air(dur, band=(600, 4200), q=1.5, arc=1.4, turb=0.3, body=0.4, name=name + "a"), rise=False)
+    motes = sparkle(dur, 3500, 11000, count=12, name=name + "m")
+    return mixdown(core * 0.4, norm(streak) * 0.6, motes * 0.45)
+
+
+def _b_mystic(f0, dur, name):
+    """A spirit's breath through a bamboo flute: a breathy, wavering tone with the
+    chiff of the breath starting it, and a whisper under it. Eastern, not arcane."""
+    tone = glow(f0, dur, voices=2, detune=0.005, cut=(3.2, 1.4), q=1.1, attack=0.035, decay=4.5,
+                settle=0.97, vib=(5.0, 0.012), name=name + "t")
+    br = bandpass(pink(dur, name + "b"), f0 * 1.5, f0 * 9)
+    br *= seg_env([(0.0, 0.0), (0.04, 1.0), (0.3, 0.45), (1.0, 0.0)], dur)
+    chiff = bandpass(noise(0.03, name + "c"), 1800, 7000) * exp_env(0.03, attack=0.002, decay=8.0)
+    whisper = breath(dur, [(0.0, "ee"), (0.5, "uh"), (1.0, "oo")], name=name + "w")
+    whisper *= seg_env([(0.0, 0.0), (0.2, 1.0), (1.0, 0.0)], dur)
+    return mixdown(tone * 0.3, norm(br) * 0.6, pad_to(chiff, dur) * 0.45, whisper * 0.3)
+
+
+def _b_rune(f0, dur, name):
+    """A carved rune firing: a deep thrum with stone grit in it."""
+    thrum = glow(f0, dur, voices=3, detune=0.007, cut=(4.5, 1.6), q=1.6, attack=0.014, decay=5.0,
+                 vib=(7.0, 0.003), name=name + "t")
+    grit = grains(dur, rate=140, band=(350, 2800), length=(0.0008, 0.004),
+                  density=[(0.0, 1.0), (0.25, 0.4), (1.0, 0.05)], name=name + "g")
+    shine = sparkle(dur, 2800, 8000, count=6, name=name + "s")
+    streak = air(dur, band=(400, 2200), q=1.4, arc=1.3, turb=0.4, body=0.6, name=name + "a")
+    return mixdown(thrum * 0.42, grit * 0.45, shine * 0.25, norm(streak) * 0.5)
+
+
+def _b_star(f0, dur, name):
+    """Starlight: a spray of twinkles over a soft glassy shimmer, swept like dust."""
+    twinkle = sparkle(dur, 2600, 10000, count=24, name=name + "t")
+    shimmer = glow(f0, dur, voices=4, detune=0.009, cut=(9.0, 3.5), q=1.0, attack=0.03, decay=6.0,
+                   vib=(6.0, 0.004), name=name + "s")
+    dust = air(dur, band=(1200, 6000), q=1.3, arc=1.5, turb=0.35, body=0.2, name=name + "d")
+    return mixdown(twinkle * 0.65, shimmer * 0.16, norm(dust) * 0.5)
+
+
+def _b_soul(f0, dur, name):
+    """A ghost: breath through a mouth that is not there, and a faint moan in it."""
+    whoo = breath(dur, [(0.0, "oo"), (0.45, "uh"), (1.0, "oo")], band=(220, 4200), name=name + "b")
+    whoo *= seg_env([(0.0, 0.0), (0.08, 1.0), (0.6, 0.6), (1.0, 0.0)], dur)
+    moan = cry(dur, [(0.0, f0 * 2.0), (0.3, f0 * 2.4), (1.0, f0 * 1.7)], [(0.0, "oo"), (1.0, "uh")],
+               breath=0.85, jitter=0.04, open_q=0.4,
+               amp_keys=((0.0, 0.0), (0.18, 0.9), (0.7, 0.6), (1.0, 0.0)), name=name + "m")
+    drift = air(dur, band=(300, 2400), q=1.3, arc=1.1, turb=0.6, body=0.5, name=name + "a")
+    return mixdown(whoo * 0.75, moan * 0.35, norm(drift) * 0.35)
+
+
+def _b_dark(f0, dur, name):
+    """Necrotic energy: a low growl moving through the air, whispers riding it,
+    and a dark hum at its core."""
+    n = n_of(dur)
+    growl = svf(pink(dur, name + "g"), seg_env([(0.0, 1100), (0.3, 600), (1.0, 240)], dur), q=1.8, mode="bp")
+    growl *= 0.55 + 0.45 * np.sin(2 * np.pi * 38.0 * t_axis(dur))     # the rasp in it
+    growl *= seg_env([(0.0, 0.0), (0.05, 1.0), (0.5, 0.6), (1.0, 0.0)], dur)
+    whisper = breath(dur, [(0.0, "ee"), (0.4, "ah"), (1.0, "uh")], name=name + "w")
+    whisper *= seg_env([(0.0, 0.0), (0.15, 1.0), (1.0, 0.0)], dur)
+    core = glow(f0, dur, voices=3, detune=0.018, cut=(3.2, 1.2), q=1.4, attack=0.012, decay=5.5,
+                name=name + "c")
+    return mixdown(norm(growl) * 0.7, whisper * 0.3, core * 0.4)
+
+
+def _b_leech(f0, dur, name):
+    """Life being drawn out: the dark bolt with a wet pull and a heartbeat in it."""
+    base = _b_dark(f0, dur, name)
+    suck = svf(pink(dur, name + "s"), seg_env([(0.0, 300), (1.0, 1400)], dur), q=3.0, mode="bp")
+    suck *= np.linspace(0.0, 1.0, n_of(dur)) ** 1.5 * seg_env([(0.0, 1.0), (0.85, 1.0), (1.0, 0.0)], dur)
+    beat = heartbeat(0.12, min(dur, 0.34), f0=55.0, name=name + "h")
+    return mixdown(base * 0.8, norm(suck) * 0.3, pad_to(beat, dur) * 0.55)
+
+
+def _b_neutral(f0, dur, name):
+    """The Spaceman's blaster: a 'pew' — a bright harmonic tone dropping fast,
+    with a burst of noise on the trigger. The drop is over in 90ms: a launch, not
+    a slide whistle."""
+    n = n_of(dur)
+    pitch = seg_env([(0.0, f0 * 5.0), (min(0.5, 0.09 / dur), f0 * 1.15), (1.0, f0 * 0.7)], dur)
+    ph = np.cumsum(as_array(pitch, n)) / SR
+    tone = 0.7 * np.sin(2 * np.pi * ph) + 0.3 * (2.0 * (ph % 1.0) - 1.0)
+    tone = svf(tone, seg_env([(0.0, 9000), (0.3, 3000), (1.0, 1200)], dur), q=1.2)
+    tone *= seg_env([(0.0, 0.0), (min(0.2, 0.004 / dur), 1.0), (1.0, 1.0)], dur) * np.exp(-16.0 * t_axis(dur))
+    zap = bandpass(noise(0.04, name + "z"), 1500, 7000) * exp_env(0.04, attack=0.0008, decay=9.0)
+    return mixdown(norm(tone) * 0.8, pad_to(zap, dur) * 0.4)
+
+
+def _b_charm(f0, dur, name):
+    """A love charm: a heart beating, and a harp running up to it."""
+    beat = heartbeat(0.11, min(dur, 0.3), f0=62.0, name=name + "h")
+    harp = np.zeros(n_of(dur))
+    for i, m in enumerate((0, 3, 7, 12)):
+        f = f0 * 2 ** (m / 12.0)
+        at(harp, 0.02 + i * 0.03, pluck(f, dur, t60=0.5, bright=0.6, name=name + "p%d" % i) * (0.8 - 0.1 * i))
+    motes = sparkle(dur, 4000, 11000, count=9, name=name + "m")
+    return mixdown(pad_to(beat, dur) * 0.6, norm(harp) * 0.55, motes * 0.35)
+
+
+def _b_nano(f0, dur, name):
+    """A swarm of machines: a thin, beating buzz and the ticking of a thousand
+    tiny parts."""
+    sw = buzz(dur, rate=210, band=(2200, 8000), bugs=5, name=name + "b")
+    sw *= seg_env([(0.0, 0.0), (0.05, 1.0), (0.5, 0.6), (1.0, 0.0)], dur)
+    ticks = grains(dur, rate=260, band=(3500, 11000), length=(0.0002, 0.0007),
+                   density=[(0.0, 1.0), (0.4, 0.6), (1.0, 0.1)], name=name + "t")
+    chirp = square(seg_env([(0.0, 2600), (1.0, 1300)], 0.035), 0.035, duty=0.3)
+    chirp = bitcrush(chirp, bits=4, hold=4) * exp_env(0.035, attack=0.001, decay=6.0)
+    return mixdown(sw * 0.6, ticks * 0.4, pad_to(chirp, dur) * 0.25)
+
+
+def _b_electric(f0, dur, name):
+    """A sting of current: an arc jumping, a crackle of sparks and the snap of
+    the discharge, over the buzz of the charge."""
+    arc = zap_arc(dur, 900, 8000, q=7, steps=max(20, int(80 * dur / 0.3)), name=name + "a")
+    arc *= exp_env(dur, attack=0.001, decay=7.0)
+    sparks = grains(dur, rate=160, band=(2000, 9500), length=(0.0002, 0.001),
+                    density=[(0.0, 1.0), (0.3, 0.5), (1.0, 0.05)], name=name + "s")
+    snap = crack(0.02, name=name + "c")
+    hum = lowpass(square(120.0, dur, duty=0.5), 1600) * exp_env(dur, attack=0.004, decay=10.0)
+    return mixdown(norm(arc) * 0.65, sparks * 0.4, pad_to(snap, dur) * 0.55, norm(hum) * 0.15)
+
+
+#           identity       f0  thump  flight  band           click  tail        drive
 BOLT_VOICES = {
-    "neutral":  dict(f0=196, rise=1.30, fall=0.94, ratio=2.0,  index=(4.5, 0.4), decay=9.0,  lp=(3400, 1.0), tex="soft",    tex_g=.26, drive=1.2, sub=.55, tail=(.30, .13)),
-    "arcane":   dict(f0=262, rise=1.42, fall=0.95, ratio=1.41, index=(6.0, 0.9), decay=8.0,  lp=(4600, 1.4), tex="crystal", tex_g=.30, drive=1.1, sub=.42, tail=(.55, .22)),
-    "mystic":   dict(f0=175, rise=1.26, fall=0.96, ratio=3.02, index=(3.4, 0.8), decay=7.0,  lp=(3800, 1.6), tex="crystal", tex_g=.22, drive=1.1, sub=.48, tail=(.65, .24)),
-    "rune":     dict(f0=147, rise=1.28, fall=0.93, ratio=1.99, index=(5.0, 1.2), decay=8.5,  lp=(2900, 1.2), tex="dust",    tex_g=.30, drive=1.6, sub=.62, tail=(.45, .20)),
-    "star":     dict(f0=330, rise=1.38, fall=0.96, ratio=5.02, index=(2.6, 0.4), decay=7.0,  lp=(6200, 1.1), tex="crystal", tex_g=.34, drive=1.1, sub=.30, tail=(.70, .26)),
-    "soul":     dict(f0=131, rise=1.24, fall=0.94, ratio=1.73, index=(5.5, 1.1), decay=6.5,  lp=(2100, 1.0), tex="void",    tex_g=.28, drive=1.5, sub=.66, tail=(.70, .26)),
-    "dark":     dict(f0=110, rise=1.22, fall=0.92, ratio=1.73, index=(6.5, 1.3), decay=7.5,  lp=(1700, 1.0), tex="grit",    tex_g=.30, drive=1.9, sub=.72, tail=(.55, .22)),
-    "dust":     dict(f0=123, rise=1.20, fall=0.93, ratio=2.41, index=(5.0, 0.9), decay=8.5,  lp=(2000, 0.9), tex="dust",    tex_g=.38, drive=1.6, sub=.60, tail=(.40, .18)),
-    "fire":     dict(f0=165, rise=1.30, fall=0.94, ratio=2.73, index=(7.0, 1.4), decay=7.5,  lp=(3000, 1.1), tex="fizz",    tex_g=.24, drive=2, sub=.58, tail=(.35, .16)),
-    "molten":   dict(f0=98,  rise=1.20, fall=0.91, ratio=1.26, index=(8.0, 1.8), decay=6.0,  lp=(1500, 1.0), tex="grit",    tex_g=.34, drive=2.3, sub=.80, tail=(.45, .20)),
-    "ice":      dict(f0=294, rise=1.36, fall=0.96, ratio=2.01, index=(3.0, 0.5), decay=9.0,  lp=(5200, 1.3), tex="crystal", tex_g=.32, drive=1.1, sub=.36, tail=(.55, .22)),
-    "poison":   dict(f0=147, rise=1.24, fall=0.92, ratio=3.31, index=(5.5, 1.0), decay=8.0,  lp=(2400, 1.1), tex="wet",     tex_g=.34, drive=1.6, sub=.55, tail=(.38, .17)),
-    "acid":     dict(f0=185, rise=1.26, fall=0.93, ratio=3.71, index=(5.0, 0.8), decay=9.0,  lp=(2800, 1.2), tex="wet",     tex_g=.38, drive=1.7, sub=.48, tail=(.34, .16)),
-    "mud":      dict(f0=87,  rise=1.18, fall=0.90, ratio=1.26, index=(7.0, 1.6), decay=10.0, lp=(1100, 0.9), tex="wet",     tex_g=.44, drive=1.9, sub=.72, tail=(.28, .13)),
-    "sand":     dict(f0=131, rise=1.22, fall=0.92, ratio=2.31, index=(5.0, 1.0), decay=10.0, lp=(2600, 0.9), tex="dust",    tex_g=.46, drive=1.5, sub=.50, tail=(.32, .15)),
-    "tech":     dict(f0=220, rise=1.46, fall=0.95, ratio=4.00, index=(3.0, 0.2), decay=11.0, lp=(5000, 1.6), tex="spark",   tex_g=.26, drive=1.1, sub=.40, tail=(.26, .12)),
-    "nano":     dict(f0=247, rise=1.32, fall=0.96, ratio=6.11, index=(2.4, 0.3), decay=12.0, lp=(5800, 1.5), tex="fizz",    tex_g=.30, drive=1.1, sub=.34, tail=(.30, .14)),
-    "electric": dict(f0=175, rise=1.38, fall=0.94, ratio=2.99, index=(4.0, 0.5), decay=10.0, lp=(4200, 1.4), tex="spark",   tex_g=.36, drive=1.4, sub=.46, tail=(.34, .16)),
-    "charm":    dict(f0=349, rise=1.28, fall=0.97, ratio=2.00, index=(2.2, 0.3), decay=6.0,  lp=(5400, 1.0), tex="crystal", tex_g=.30, drive=1.1, sub=.28, tail=(.80, .28)),
-    "holy":     dict(f0=262, rise=1.20, fall=0.97, ratio=2.00, index=(2.0, 0.3), decay=5.0,  lp=(5000, 1.0), tex="crystal", tex_g=.26, drive=1.1, sub=.40, tail=(.90, .30)),
-    "void":     dict(f0=73,  rise=1.16, fall=0.90, ratio=1.33, index=(8.0, 2.0), decay=5.0,  lp=(1200, 1.0), tex="void",    tex_g=.34, drive=2, sub=.85, tail=(.90, .30)),
-    "paper":    dict(f0=294, rise=1.28, fall=0.96, ratio=4.71, index=(2.0, 0.3), decay=14.0, lp=(4400, 1.0), tex="paper",   tex_g=.50, drive=1.1, sub=.22, tail=(.24, .11)),
+    "neutral":  dict(make=_b_neutral,  f0=196, thump=.45, fly=.15, band=(700, 3600),  click=.30, tail=(.30, .13), drive=1.2),
+    "arcane":   dict(make=_b_arcane,   f0=262, thump=.38, fly=.00, band=(600, 4000),  click=.12, tail=(.55, .22), drive=1.1),
+    "mystic":   dict(make=_b_mystic,   f0=175, thump=.30, fly=.25, band=(500, 3000),  click=.00, tail=(.65, .24), drive=1.1),
+    "rune":     dict(make=_b_rune,     f0=147, thump=.50, fly=.00, band=(400, 2400),  click=.12, tail=(.45, .20), drive=1.3),
+    "star":     dict(make=_b_star,     f0=330, thump=.28, fly=.00, band=(900, 5000),  click=.10, tail=(.70, .26), drive=1.1),
+    "soul":     dict(make=_b_soul,     f0=131, thump=.30, fly=.00, band=(300, 2400),  click=.00, tail=(.70, .26), drive=1.2),
+    "dark":     dict(make=_b_dark,     f0=110, thump=.60, fly=.20, band=(250, 1800),  click=.08, tail=(.55, .22), drive=1.5),
+    "leech":    dict(make=_b_leech,    f0=131, thump=.35, fly=.15, band=(250, 1800),  click=.05, tail=(.50, .20), drive=1.4),
+    "fire":     dict(make=_b_fire,     f0=165, thump=.45, fly=.20, band=(300, 2200),  click=.00, tail=(.35, .16), drive=1.6),
+    "ember":    dict(make=_b_ember,    f0=330, thump=.30, fly=.15, band=(600, 3600),  click=.00, tail=(.30, .14), drive=1.4),
+    "molten":   dict(make=_b_molten,   f0=98,  thump=.65, fly=.15, band=(250, 1600),  click=.00, tail=(.45, .20), drive=1.7),
+    "ice":      dict(make=_b_ice,      f0=294, thump=.30, fly=.00, band=(1500, 5200), click=.20, tail=(.55, .22), drive=1.1),
+    "poison":   dict(make=_b_poison,   f0=147, thump=.40, fly=.20, band=(300, 1800),  click=.00, tail=(.38, .17), drive=1.4),
+    "acid":     dict(make=_b_acid,     f0=185, thump=.35, fly=.20, band=(400, 2400),  click=.00, tail=(.34, .16), drive=1.4),
+    "mud":      dict(make=_b_mud,      f0=87,  thump=.50, fly=.10, band=(200, 1400),  click=.00, tail=(.28, .13), drive=1.5),
+    "sand":     dict(make=_b_sand,     f0=131, thump=.35, fly=.00, band=(400, 2600),  click=.00, tail=(.32, .15), drive=1.3),
+    "charm":    dict(make=_b_charm,    f0=349, thump=.20, fly=.20, band=(900, 4500),  click=.00, tail=(.80, .28), drive=1.05),
+    "nano":     dict(make=_b_nano,     f0=247, thump=.30, fly=.20, band=(1200, 5500), click=.20, tail=(.30, .14), drive=1.1),
+    "electric": dict(make=_b_electric, f0=175, thump=.35, fly=.00, band=(900, 5000),  click=.00, tail=(.34, .16), drive=1.3),
 }
 
 
-def bolt(voice, f0=None, dur=0.40, name="bolt", tex_g=None, extra=None):
-    """A cast projectile leaving the caster.
+def bolt(voice, f0=None, dur=0.40, name="bolt", extra=None):
+    """A ball of something leaving the caster. What it is made of comes from its
+    voice (above); what every bolt shares is here: the air it moves, the weight
+    of the launch, and the room.
 
-    Structure is deliberately upside-down from where this file started: the
-    fundamental sits at 90-350Hz with a short sub under it (weight), and the
-    timbre that identifies the school of magic rides ON TOP at roughly -12dB.
-    Bolts built the other way round — all identity, no body — are the "thin,
-    beepy" sound the old set had, and they vanish the moment anything else
-    is playing."""
+    The weight is a short low push under the launch. Without it a bolt has no
+    physical size and reads as a UI blip; with a PITCHED body instead of a push
+    (which is what the FM core was) it reads as a struck object."""
     p = BOLT_VOICES[voice]
     f0 = p["f0"] if f0 is None else f0
-    n = n_of(dur)
-
-    # The launch drop is FAST and SMALL. Sliding a harmonic stack down an
-    # octave over the whole sound is a slide whistle — the cartoon "boing" —
-    # and with every bolt in the game doing it, the whole set collapses into
-    # one "pew" with different filters on it. A real launch is a brief pitch
-    # settle in the first few tens of milliseconds, then a steady note.
-    pitch = seg_env([(0.0, f0 * p["rise"]), (0.035, f0 * 1.02), (0.14, f0),
-                     (1.0, f0 * p["fall"])], dur)
-    index = seg_env([(0.0, p["index"][0]), (0.10, p["index"][0] * 0.42), (1.0, p["index"][1])], dur)
-    core = fm(pitch, p["ratio"], index, dur) * exp_env(dur, attack=0.0015, decay=p["decay"])
-    core = eq(core, "lp", p["lp"][0], q=p["lp"][1])
-
-    # weight: a fast low thump under the launch. Without it a bolt has no
-    # physical size and reads as a UI beep.
+    out = norm(fit(p["make"](f0, dur, name + voice), n_of(dur)))
+    if p["fly"] > 0:
+        fl = air(dur, band=p["band"], q=1.6, arc=1.4, turb=0.4, body=0.6, name=name + "fl")
+        out = out + norm(fl) * p["fly"]
     bd = min(0.16, dur * 0.55)
-    low = sine(seg_env([(0.0, f0 * 0.62), (1.0, f0 * 0.34)], bd), bd) * exp_env(bd, attack=0.001, decay=8.0)
-    low = saturate(low, 1.8) * p["sub"]
-
-    tex = _texture(p["tex"], dur, name + "tex") * (p["tex_g"] if tex_g is None else tex_g)
-    lead = click(0.005, fc=1600 + 2200 * min(1.0, f0 / 260.0), name=name + "cl", shape=1.3)
-
-    out = mixdown(core * 0.9, tex, pad_to(low, dur))
+    push = sine(seg_env([(0.0, 150.0), (1.0, 58.0)], bd), bd) * exp_env(bd, attack=0.002, decay=8.0)
+    out = mixdown(out, pad_to(saturate(push, 1.8) * p["thump"], dur))
+    if p["click"] > 0:
+        lead = click(0.004, fc=2200, name=name + "cl", shape=1.3)
+        out[:len(lead)] += lead * p["click"]
     out = saturate(out, p["drive"])
-    out[:len(lead)] += lead * 0.45
     if extra is not None:
         out = mixdown(out, pad_to(extra, len(out) / SR))
     return reverb(out, decay=p["tail"][0], damp=5600, mix=p["tail"][1], name="bolt", predelay=0.004)
 
 
-BEAM_VOICES = {
-    "ice":     dict(base=330, ratio=2.01, idx=(3.0, 0.8), sweep=(7000, 2600), q=6, band=(2200, 7000), mix=0.45, drive=1.1, rv=(0.5, 0.24)),
-    "drain":   dict(base=110, ratio=1.49, idx=(6.0, 2.0), sweep=(2000, 380), q=6, band=(90, 1200), mix=0.42, drive=1.9, rv=(0.7, 0.28), fall=True),
-    "vine":    dict(base=98,  ratio=3.11, idx=(6.5, 1.5), sweep=(2200, 620), q=4, band=(150, 1900), mix=0.5, drive=1.7, rv=(0.4, 0.20)),
-    "laser":   dict(base=440, ratio=1.0,  idx=(2.0, 0.4), sweep=(8000, 3200), q=8, band=(3000, 9000), mix=0.30, drive=1.4, rv=(0.28, 0.15)),
-    "railgun": dict(base=73,  ratio=2.5,  idx=(9.0, 1.0), sweep=(7000, 700), q=7, band=(900, 9000), mix=0.48, drive=2.5, rv=(0.8, 0.28)),
-    "stone":   dict(base=110, ratio=1.87, idx=(8.0, 3.0), sweep=(1700, 430), q=3, band=(240, 2400), mix=0.62, drive=2, rv=(0.55, 0.24)),
-    "whip":    dict(base=196, ratio=2.66, idx=(6.0, 0.6), sweep=(6000, 1200), q=5, band=(900, 6500), mix=0.55, drive=1.9, rv=(0.32, 0.17), crack=True),
-    "gravity": dict(base=49,  ratio=1.33, idx=(10.0, 2.5), sweep=(1000, 220), q=5, band=(40, 620), mix=0.36, drive=2.2, rv=(1.0, 0.30)),
-    "eye":     dict(base=87,  ratio=1.62, idx=(7.0, 1.6), sweep=(3200, 800), q=5, band=(300, 3600), mix=0.44, drive=2, rv=(0.7, 0.26)),
-}
+# ── beams, and the things that used to be voiced as one ──
+# There was a `beam` engine: an FM note plus a saw an octave down, held, through a
+# sweeping filter. Of the ten things it voiced only the Railgunner's shot is
+# anything like a beam on screen. The laser is a blaster bolt a hand long; the
+# ice beam is a comet of frost; the drains are travelling whirlpools; the vine,
+# the gaze and the bandages are a vine, an eye and a wad of linen. As held synth
+# notes they were ten organ chords, and the ice beam and the whip were two of the
+# worst tin cans in the set. Each is now what it is drawn as.
+
+def blaster(dur=0.28, top=2600.0, bottom=420.0, buzz_hz=70.0, grit=0.5, name="blst"):
+    """A blaster bolt: a hard, bright 'tchew'. The pitch falls a couple of
+    octaves in 70ms — a discharge, over before it can be heard as a note — with a
+    buzz ring-modulated into it and a spit of noise on the trigger."""
+    n = n_of(dur)
+    tt = t_axis(dur)
+    drop = min(0.5, 0.07 / dur)
+    pitch = seg_env([(0.0, top), (drop, bottom * 1.25), (1.0, bottom * 0.62)], dur)
+    ph = np.cumsum(as_array(pitch, n)) / SR
+    tone = 0.55 * (2.0 * (ph % 1.0) - 1.0) + 0.45 * np.sign(np.sin(2 * np.pi * ph))
+    tone *= 0.6 + 0.4 * np.sin(2 * np.pi * buzz_hz * tt)
+    tone = svf(tone, seg_env([(0.0, 9000), (drop, 4200), (1.0, 1600)], dur), q=1.3)
+    tone *= seg_env([(0.0, 0.0), (min(0.2, 0.003 / dur), 1.0), (1.0, 1.0)], dur) * np.exp(-17.0 * tt)
+    spit = zap_arc(0.06, 1500, 9000, q=6, steps=14, name=name + "z") * exp_env(0.06, attack=0.0005, decay=6.0)
+    return mixdown(norm(tone) * 0.8, pad_to(norm(spit), dur) * 0.35 * grit * 2)
 
 
-BEAM_TEXTURE = {
-    # what each beam throws off while it is being held — the layer that says
-    # which beam it is. A sweep and a cutoff alone leave ten held synth notes.
-    "ice":     lambda d, n: sparkle(d, 3000, 11000, count=int(26 * d), name=n) * 0.55,
-    "laser":   lambda d, n: sine(seg_env([(0.0, 5200.0), (1.0, 4600.0)], d), d)
-                            * ad_env(d, attack=0.01, hold=0.5, curve=1.2) * 0.10,
-    "railgun": lambda d, n: zap_arc(d, 500, 9000, q=6, steps=int(70 * d), name=n)
-                            * seg_env([(0.0, 1.0), (0.3, 0.3), (1.0, 0.0)], d) * 0.5,
-    "drain":   lambda d, n: (lambda nn: bandpass(pink(d, n), 150, 1800)
-                             * tremolo(nn, 7.5, 0.75) * 0.6)(n_of(d)),
-    "vine":    lambda d, n: debris(d, count=int(22 * d), band=(180, 2200),
-                                   decay=(18.0, 40.0), name=n) * 0.5,
-    "stone":   lambda d, n: saturate(bandpass(pink(d, n), 140, 1500), 3.2)
-                            * ad_env(d, attack=0.02, hold=0.5, curve=1.3) * 0.55,
-    "whip":    lambda d, n: debris(d * 0.5, count=5, band=(900, 6000),
-                                   decay=(26.0, 60.0), name=n) * 0.45,
-    "gravity": lambda d, n: sine(seg_env([(0.0, 34.0), (0.5, 21.0), (1.0, 27.0)], d), d)
-                            * swell_env(d, 1.2) * 0.5,
-    "eye":     lambda d, n: cry(d, [(0.0, 96.0), (0.5, 128.0), (1.0, 88.0)],
-                                [(0.0, "aw"), (0.5, "uh"), (1.0, "oo")], growl=0.55,
-                                breath=0.3, name=n) * 0.42,
-}
+def gen_laser_bolt():
+    """Android, Photon: a blaster bolt, not a held beam."""
+    dur = 0.28
+    out = blaster(dur, top=2800.0, bottom=440.0, name="lsr")
+    return reverb(saturate(out, 1.5), decay=0.3, damp=6000, mix=0.14, name="lsr", predelay=0.003)
 
 
-def beam(voice, dur=0.52, name="beam"):
-    """A channelled beam. The identity is in the sweep of the filter, the noise
-    band riding it, and `BEAM_TEXTURE` — a beam with a static filter sounds like
-    a held synth note, which is what a laser is not."""
-    p = BEAM_VOICES[voice]
-    base = p["base"]
-    if p.get("fall"):
-        pitch = seg_env([(0.0, base * 3.0), (0.25, base * 1.4), (1.0, base * 0.62)], dur)
-    else:
-        pitch = seg_env([(0.0, base * 0.58), (0.07, base * 1.12), (0.35, base), (1.0, base * 0.94)], dur)
-    lfo = 1.0 + 0.016 * np.sin(2 * np.pi * 6.5 * t_axis(dur))
-    index = seg_env([(0.0, p["idx"][0]), (0.2, p["idx"][0] * 0.5), (1.0, p["idx"][1])], dur)
+def gen_ice_beam():
+    """A frost comet (Spaceman, Cryomancer): a blast of freezing air howling out,
+    ice forming along it in a crackle that runs its whole length, and the cold
+    weight of it arriving."""
+    dur = 0.6
+    howl = air(dur, band=(700, 3600), q=1.8, arc=0.9, turb=0.6, edge=0.04, body=0.6, name="ibw")
+    howl *= seg_env([(0.0, 0.0), (0.1, 1.0), (0.7, 0.8), (1.0, 0.0)], dur)
+    freeze = grains(dur, rate=260, band=(2200, 10500), length=(0.0003, 0.002),
+                    density=[(0.0, 0.3), (0.1, 1.0), (0.75, 0.8), (1.0, 0.0)], name="ibc")
+    crunch = grains(dur, rate=45, band=(700, 3200), length=(0.002, 0.007),
+                    density=[(0.0, 0.0), (0.2, 1.0), (1.0, 0.2)], name="ibk")
+    frost = highpass(noise(dur, "ibh"), 5200) * swell_env(dur, 1.2)
+    weight = whump(0.3, f=(110.0, 40.0), name="ibd")
+    glint = sparkle(dur, 4500, 12000, count=12, name="ibs")
+    out = mixdown(norm(howl) * 0.6, freeze * 0.45, crunch * 0.35, norm(frost) * 0.18,
+                  pad_to(weight, dur) * 0.55, glint * 0.3)
+    return reverb(saturate(out, 1.4), decay=0.6, damp=5600, mix=0.24, name="ib", predelay=0.006)
 
-    body = fm(pitch * lfo, p["ratio"], index, dur)
-    body += 0.32 * saw(pitch * 0.501, dur)
-    body *= ad_env(dur, attack=0.014, hold=0.42, curve=1.4)
-    body = svf(body, seg_env([(0.0, p["sweep"][0]), (0.3, p["sweep"][1] * 1.5), (1.0, p["sweep"][1])], dur), q=p["q"])
 
-    tex = bandpass(pink(dur, name + "t"), *p["band"]) * ad_env(dur, attack=0.01, hold=0.5, curve=1.2)
-    out = saturate(mixdown(body * (1 - p["mix"] * 0.5), tex * p["mix"]), p["drive"])
-    out = mixdown(out, fit(BEAM_TEXTURE[voice](dur, name + "bt"), len(out)))
+def _siphon(dur, name):
+    """A travelling whirlpool: air spiralling round a core (a band that circles
+    and pulses), and a suction rising as it draws everything in."""
+    n = n_of(dur)
+    rate = seg_env([(0.0, 5.0), (1.0, 9.0)], dur)
+    turn = np.sin(2 * np.pi * np.cumsum(rate) / SR)
+    swirl = svf(pink(dur, name + "s"), 900 + 500 * turn, q=2.2, mode="bp") * (0.6 + 0.4 * turn)
+    swirl *= seg_env([(0.0, 0.0), (0.15, 1.0), (0.8, 0.8), (1.0, 0.0)], dur)
+    suck = svf(pink(dur, name + "k"), seg_env([(0.0, 3200), (1.0, 280)], dur), q=2.4, mode="bp")
+    suck *= np.linspace(0.2, 1.0, n) ** 1.6 * seg_env([(0.0, 1.0), (0.88, 1.0), (1.0, 0.0)], dur)
+    return mixdown(norm(swirl) * 0.6, norm(suck) * 0.5)
 
-    if p.get("crack"):
-        cr = click(0.018, fc=2600, name=name + "c", shape=1.6)
-        out[:len(cr)] += cr * 1.1
-    out = chorus(out, rate=1.1, depth_ms=5.0, voices=2, mix=0.26, name="beam" + name)
-    return reverb(out, decay=p["rv"][0], damp=5600, mix=p["rv"][1], name="beam", predelay=0.005)
+
+def gen_soul_drain():
+    """The Lich draining a soul: the whirlpool, and the soul in it — a thin voice
+    drawn out of someone, whispering as it goes."""
+    dur = 0.6
+    base = _siphon(dur, "sdr")
+    voice = cry(dur, [(0.0, 420.0), (0.5, 520.0), (1.0, 300.0)], [(0.0, "ee"), (0.5, "ah"), (1.0, "oo")],
+                breath=0.8, jitter=0.04, open_q=0.4,
+                amp_keys=((0.0, 0.0), (0.3, 0.8), (0.8, 0.6), (1.0, 0.0)), name="sdv")
+    whisper = breath(dur, [(0.0, "oo"), (0.5, "ee"), (1.0, "uh")], name="sdw")
+    out = mixdown(base * 0.8, voice * 0.3, whisper * 0.3)
+    return reverb(saturate(out, 1.4), decay=0.8, damp=4200, mix=0.26, name="sd", predelay=0.01)
+
+
+def gen_life_drain():
+    """Blood and life drawn out (Revenant, and the blood siphon): the whirlpool,
+    wet, with a heart labouring in it."""
+    dur = 0.6
+    base = _siphon(dur, "ldr")
+    wet = squelch(dur, f=(700, 1600), q=2.6, lumps=5, name="ldq")
+    beat = heartbeat(0.13, 0.3, f0=56.0, name="ldh1")
+    beats = np.zeros(n_of(dur))
+    at(beats, 0.02, beat)
+    at(beats, 0.3, beat * 0.8)
+    out = mixdown(base * 0.75, wet * 0.3, beats * 0.7)
+    return reverb(saturate(out, 1.5), decay=0.6, damp=3800, mix=0.22, name="ld", predelay=0.008)
+
+
+def gen_vine_lash():
+    """A vine lashing out and catching (Thornweaver, Druid, Treant): a whippy
+    swish, the crack at its end, leaves thrashing, and the green wood of it
+    creaking as it takes the strain."""
+    dur = 0.5
+    swish = air(0.26, band=(500, 3200), q=2.2, arc=2.0, turb=0.3, body=0.6, name="vls")
+    leaves = grains(dur, rate=140, band=(1500, 7000), length=(0.001, 0.005), level=(0.2, 0.7),
+                    density=[(0.0, 0.6), (0.2, 1.0), (1.0, 0.1)], name="vll")
+    snap = crack(0.025, name="vlk")
+    strain = creak(0.22, rate=(35.0, 80.0), body=(240.0, 540.0), q=3.5, name="vlc")
+    out = np.zeros(n_of(dur))
+    at(out, 0.0, norm(swish) * 0.6)
+    at(out, 0.0, leaves * 0.35)
+    at(out, 0.2, snap * 0.55)
+    at(out, 0.22, strain * 0.5)
+    return reverb(saturate(out, 1.6), decay=0.4, damp=5000, mix=0.18, name="vl", predelay=0.004)
+
+
+def gen_stone_gaze():
+    """Medusa's gaze (Petrify, Stone Gaze): the snakes in her hair hissing, and
+    the grinding crackle of flesh turning to stone under it."""
+    dur = 0.6
+    n = n_of(dur)
+    hiss = np.zeros(n)
+    rng = np.random.default_rng(seed_of("sgz"))
+    for i in range(3):
+        h = bandpass(noise(dur, "sgh%d" % i), 3200 + 700 * i, 9000)
+        h *= seg_env([(0.0, 0.0), (rng.uniform(0.05, 0.2), 1.0), (rng.uniform(0.5, 0.8), 0.7), (1.0, 0.0)], dur)
+        hiss += h * rng.uniform(0.6, 1.0)
+    turn = grains(dur, rate=180, band=(300, 3200), length=(0.002, 0.008),
+                  density=[(0.0, 0.0), (0.2, 0.6), (0.7, 1.0), (1.0, 0.3)], name="sgg")
+    grind = saturate(svf(pink(dur, "sgr"), seg_env([(0.0, 300), (1.0, 900)], dur), q=1.8, mode="bp"), 2.6)
+    grind *= seg_env([(0.0, 0.0), (0.3, 0.6), (0.8, 1.0), (1.0, 0.0)], dur)
+    out = mixdown(norm(hiss) * 0.45, turn * 0.5, norm(grind) * 0.45)
+    return reverb(saturate(out, 1.5), decay=0.7, damp=3800, mix=0.24, name="sg", predelay=0.008)
+
+
+def gen_bandage_whip():
+    """The Mummy's bandage: old linen unwinding in a run of flaps, the snap as it
+    goes taut, and dust coming off it."""
+    dur = 0.5
+    flap = rip(dur * 0.7, rate=(70.0, 24.0), band=(300, 3200), name="bwf")
+    swish = air(0.3, band=(400, 2600), q=2.0, arc=1.8, turb=0.5, body=0.6, name="bws")
+    snap = crack(0.022, name="bwk")
+    dust = grains(dur, rate=160, band=(900, 5000), length=(0.0008, 0.003), level=(0.1, 0.4),
+                  density=[(0.0, 0.2), (0.4, 1.0), (1.0, 0.0)], name="bwd")
+    out = np.zeros(n_of(dur))
+    at(out, 0.0, norm(swish) * 0.5)
+    at(out, 0.0, flap * 0.55)
+    at(out, dur * 0.52, snap * 0.5)
+    at(out, dur * 0.52, pad_to(thud(120, 0.1, drive=1.4, name="bwt"), 0.1) * 0.35)
+    out += dust * 0.25
+    return reverb(saturate(out, 1.6), decay=0.45, damp=4200, mix=0.2, name="bw", predelay=0.004)
+
+
+def gen_gravity_lance():
+    """The Voidwalker's lance: space pulled in behind it as it goes — a deep
+    throb, a suction that rises, and a dark streak of air."""
+    dur = 0.6
+    n = n_of(dur)
+    throb = sine(seg_env([(0.0, 62.0), (1.0, 44.0)], dur), dur)
+    throb *= (0.5 + 0.5 * np.sin(2 * np.pi * np.cumsum(seg_env([(0.0, 6.0), (1.0, 12.0)], dur)) / SR)) ** 1.5
+    throb *= seg_env([(0.0, 0.0), (0.08, 1.0), (0.8, 0.8), (1.0, 0.0)], dur)
+    suck = svf(pink(dur, "glk"), seg_env([(0.0, 3600), (1.0, 220)], dur), q=2.6, mode="bp")
+    suck *= np.linspace(0.25, 1.0, n) ** 1.8
+    streak = flange(air(dur, band=(250, 1800), q=1.6, arc=1.4, turb=0.4, body=0.8, name="gla"), 0.6, 7.0)
+    out = mixdown(saturate(throb, 2.0) * 0.6, norm(suck) * 0.45, norm(streak) * 0.45)
+    return reverb(saturate(out, 1.7), decay=1.0, damp=3000, mix=0.28, name="gl", predelay=0.01, size=1.3)
+
+
+def gen_eye_beam():
+    """The Cyclops' eye: a searing beam — the sizzle of what it burns, rings of
+    force throbbing off it, and the giant's growl behind it."""
+    dur = 0.62
+    n = n_of(dur)
+    sear = sizzle(dur, band=(1800, 8000), crackle=0.8, name="eys")
+    sear *= seg_env([(0.0, 0.0), (0.06, 1.0), (0.8, 0.8), (1.0, 0.0)], dur)
+    roar = svf(pink(dur, "eyr"), seg_env([(0.0, 800), (0.3, 1800), (1.0, 600)], dur), q=1.4, mode="bp")
+    rings = 0.45 + 0.55 * (0.5 + 0.5 * np.sin(2 * np.pi * 11.0 * t_axis(dur))) ** 2
+    roar *= rings * seg_env([(0.0, 0.0), (0.05, 1.0), (1.0, 0.0)], dur)
+    growl = cry(dur * 0.8, [(0.0, 96.0), (0.5, 128.0), (1.0, 88.0)], [(0.0, "aw"), (0.5, "uh"), (1.0, "oo")],
+                growl=0.6, breath=0.3, name="eyv")
+    push = whump(0.25, f=(120.0, 45.0), name="eyw")
+    out = mixdown(sear * 0.45, norm(roar) * 0.55, pad_to(growl, dur) * 0.35, pad_to(push, dur) * 0.5)
+    return reverb(saturate(out, 1.8), decay=0.7, damp=4200, mix=0.24, name="ey", predelay=0.008)
+
+
+def gen_railgun():
+    """The Railgunner's shot: the coils dumping at once — a crack like the air
+    splitting, a deep punch, the slug's thin scream going away and the coil rings
+    stuttering off the muzzle."""
+    dur = 0.8
+    n = n_of(dur)
+    snap = crack(0.035, name="rgk")
+    punch = mixdown(thud(64, 0.4, drive=2.2, name="rgt"), whump(0.3, f=(160.0, 40.0), name="rgw") * 0.7)
+    slug_d = 0.35
+    slug = sine(seg_env([(0.0, 7400.0), (1.0, 2600.0)], slug_d), slug_d) * exp_env(slug_d, attack=0.001, decay=5.0)
+    rings = zap_arc(dur, 700, 9000, q=7, steps=int(90 * dur), name="rgz")
+    rings *= (0.5 + 0.5 * np.sin(2 * np.pi * np.cumsum(seg_env([(0.0, 26.0), (1.0, 9.0)], dur)) / SR)) ** 2
+    rings *= exp_env(dur, attack=0.001, decay=4.0)
+    out = np.zeros(n)
+    at(out, 0.0, snap)
+    at(out, 0.0, norm(punch) * 0.8)
+    at(out, 0.005, slug * 0.12)
+    at(out, 0.01, norm(rings) * 0.35)
+    return reverb(saturate(out, 2.0), decay=1.0, damp=3600, mix=0.28, name="rg", predelay=0.01, size=1.4)
+
+
+def gen_sniper_shot():
+    """The Railgunner's primary: a smaller slug — the crack, a zip of the round
+    leaving, and one short stutter of the coils."""
+    dur = 0.4
+    n = n_of(dur)
+    shot = gun("light", 0.3, name="snp")
+    zip_d = 0.12
+    zip_ = svf(noise(zip_d, "snz"), seg_env([(0.0, 7000.0), (1.0, 1800.0)], zip_d), q=3.0, mode="bp")
+    zip_ *= exp_env(zip_d, attack=0.001, decay=5.0)
+    coil = zap_arc(0.18, 900, 8000, q=7, steps=20, name="snc")
+    coil *= (0.5 + 0.5 * np.sin(2 * np.pi * 30.0 * t_axis(0.18))) ** 2 * exp_env(0.18, attack=0.001, decay=6.0)
+    out = np.zeros(n)
+    at(out, 0.0, shot * 0.85)
+    at(out, 0.006, norm(zip_) * 0.4)
+    at(out, 0.01, norm(coil) * 0.25)
+    return out
 
 
 SWING_VOICES = {
-    #          band          q   edge  mat      f0    ring  grit  drive tail
-    "steel":  dict(band=(900, 4200),  q=6.5, edge=.16, mat="blade", f0=1150, ring=.40, grit=.16, drive=1.4, tail=(.30, .14)),
-    "katana": dict(band=(1100, 5000), q=7.5, edge=.22, mat="blade", f0=1480, ring=.46, grit=.10, drive=1.2, tail=(.34, .15)),
-    "heavy":  dict(band=(500, 2600),  q=5.0, edge=.08, mat="iron",  f0=380,  ring=.36, grit=.28, drive=1.6, tail=(.32, .15)),
-    "claw":   dict(band=(600, 3100),  q=5.0, edge=.05, mat="chitin", f0=720, ring=.30, grit=.48, drive=1.7, tail=(.26, .13), modal=.15),
-    "talon":  dict(band=(1000, 4400), q=6.0, edge=.09, mat="chitin", f0=1250, ring=.32, grit=.40, drive=1.5, tail=(.24, .12), modal=.15),
-    "scythe": dict(band=(520, 2800),  q=5.0, edge=.16, mat="blade", f0=620,  ring=.34, grit=.20, drive=1.5, tail=(.50, .20)),
-    "holy":   dict(band=(950, 4000),  q=5.5, edge=.14, mat="bell",  f0=523,  ring=.42, grit=.06, drive=1.1, tail=(.75, .24)),
-    "cursed": dict(band=(360, 2100),  q=4.5, edge=.11, mat="iron",  f0=260,  ring=.36, grit=.34, drive=1.9, tail=(.65, .23)),
-    "bone":   dict(band=(480, 2700),  q=5.0, edge=.06, mat="bone",  f0=520,  ring=.40, grit=.34, drive=1.6, tail=(.30, .14), modal=.55),
-    "wet":    dict(band=(300, 1900),  q=3.6, edge=.03, mat="flesh", f0=180,  ring=.38, grit=.50, drive=1.8, tail=(.26, .13), modal=.2),
+    #          band           q    edge-tone  what the edge does            tail
+    "steel":  dict(band=(900, 4200),  q=2.6, edge=.10, cut="scrape", cut_g=.30, grit=.14, drive=1.3, tail=(.30, .14)),
+    "katana": dict(band=(1100, 5000), q=2.8, edge=.14, cut="scrape", cut_g=.38, grit=.08, drive=1.2, tail=(.34, .15)),
+    "heavy":  dict(band=(500, 2600),  q=2.4, edge=.05, cut="thud",   cut_g=.40, grit=.26, drive=1.5, tail=(.32, .15)),
+    "claw":   dict(band=(600, 3100),  q=2.4, edge=.03, cut="rip",    cut_g=.55, grit=.40, drive=1.6, tail=(.26, .13)),
+    "talon":  dict(band=(1000, 4400), q=2.6, edge=.05, cut="rip",    cut_g=.45, grit=.30, drive=1.4, tail=(.24, .12)),
+    "scythe": dict(band=(520, 2800),  q=2.4, edge=.10, cut="scrape", cut_g=.22, grit=.18, drive=1.4, tail=(.50, .20)),
+    "holy":   dict(band=(950, 4000),  q=2.4, edge=.08, cut="shine",  cut_g=.35, grit=.05, drive=1.1, tail=(.75, .24)),
+    "cursed": dict(band=(360, 2100),  q=2.2, edge=.06, cut="whisper", cut_g=.35, grit=.30, drive=1.7, tail=(.65, .23)),
+    "bone":   dict(band=(480, 2700),  q=2.4, edge=.04, cut="clack",  cut_g=.45, grit=.30, drive=1.5, tail=(.30, .14)),
+    "wet":    dict(band=(300, 1900),  q=2.0, edge=.02, cut="slap",   cut_g=.55, grit=.45, drive=1.7, tail=(.26, .13)),
 }
+
+
+def _edge(kind, dur, name):
+    """What the edge does as it connects: a blade SCRAPES (steel sliding on steel,
+    its resonances gliding), a claw RIPS, a maw SLAPS wet, bone CLACKS. The old
+    swing rang the weapon's material here instead, and a claw that rings is a
+    fork dropped on a tin plate."""
+    if kind == "scrape":
+        return scrape(dur, lo=2400, hi=6400, bands=3, q=4.5, name=name)
+    if kind == "rip":
+        return rip(dur, rate=(190.0, 45.0), band=(500, 4200), name=name)
+    if kind == "slap":
+        return mixdown(squelch(dur, f=(1400, 300), q=2.6, lumps=2, name=name) * 0.8,
+                       rip(dur * 0.7, rate=(140.0, 40.0), band=(300, 2400), name=name + "r") * 0.5)
+    if kind == "clack":
+        return grains(dur, rate=70, band=(600, 2600), length=(0.002, 0.006), q=(0.8, 1.3),
+                      density=[(0.0, 1.0), (0.3, 0.5), (1.0, 0.0)], name=name)
+    if kind == "shine":
+        return mixdown(sparkle(dur, 3000, 9000, count=10, name=name) * 0.9,
+                       scrape(dur, lo=2800, hi=7000, bands=2, q=4.0, name=name + "s") * 0.4)
+    if kind == "whisper":
+        return breath(dur, [(0.0, "ee"), (0.5, "ah"), (1.0, "oo")], name=name)
+    if kind == "thud":
+        return thud(110, dur, drive=1.8, name=name)
+    raise ValueError(kind)
 
 
 def swing(voice, dur=0.34, name="sw"):
     """An edge moving through air and connecting.
 
-    Three layers the old slash sounds were missing: the resonance traces a
-    doppler arc rather than sitting still, a faint edge tone rides its peak
-    (the whistle a real blade makes), and the weapon's own material rings
-    briefly after the cut, which is what separates steel from bone from claw."""
+    The resonance traces a doppler arc rather than sitting still, a faint edge
+    tone rides its peak (the whistle a real blade makes), and at the cut the edge
+    does whatever edges of its kind do — see `_edge`."""
     p = SWING_VOICES[voice]
-    n = n_of(dur)
     rush = air(dur, band=p["band"], q=p["q"], arc=1.5, turb=0.35, edge=p["edge"], body=0.7, name=name + "a")
     # peaks where the edge passes, then gets out of the way — a swing that
     # sustains for its whole length reads as wind, not as a cut
     rush *= seg_env([(0.0, 0.04), (0.34, 1.0), (0.5, 0.45), (1.0, 0.0)], dur) ** 1.25
     grit = saturate(bandpass(pink(dur, name + "g"), 160, 1200), 3.0) * exp_env(dur, decay=9.0) * p["grit"]
-    cut_t = dur * 0.42
-    ring = strike(p["mat"], p["f0"], dur * 0.55, hardness=0.85, damp=1.4, name=name + "r",
-                  ring=MATERIALS[p["mat"]]["ring"] * p.get("modal", 1.0)) * p["ring"]
-    out = mixdown(rush * 0.85, grit)
-    at(out, cut_t, ring)
+    cut_t = dur * 0.36
+    cut = norm(_edge(p["cut"], dur * 0.5, name + "e")) * p["cut_g"]
+    out = mixdown(norm(rush) * 0.85, grit)
+    at(out, cut_t, cut)
     out = saturate(out, p["drive"])
     return reverb(out, decay=p["tail"][0], damp=6200, mix=p["tail"][1], name="sw", predelay=0.004)
 
 
 THROWN_VOICES = {
-    #          mat      f0    rate  band          mass  grit  tail
-    "axe":    dict(mat="iron",  f0=300, rate=7.0, band=(420, 2400), mass=.70, grit=.24, tail=(.36, .16)),
-    "hammer": dict(mat="iron",  f0=190, rate=5.0, band=(280, 1700), mass=.95, grit=.28, tail=(.42, .18)),
-    "bone":   dict(mat="bone",  f0=430, rate=8.5, band=(460, 2700), mass=.50, grit=.32, tail=(.32, .15)),
-    "shuriken": dict(mat="blade", f0=1500, rate=13.0, band=(1100, 5000), mass=.22, grit=.12, tail=(.22, .11)),
-    "knife":  dict(mat="blade", f0=1050, rate=10.0, band=(850, 4000), mass=.30, grit=.14, tail=(.24, .12)),
-    "card":   dict(mat="wood",  f0=900, rate=11.0, band=(600, 3000), mass=.14, grit=.08, tail=(.18, .09)),
-    "cursed": dict(mat="iron",  f0=230, rate=6.0, band=(230, 1600), mass=.75, grit=.36, tail=(.60, .23)),
-    "holy":   dict(mat="bell",  f0=523, rate=7.5, band=(700, 3600), mass=.55, grit=.08, tail=(.75, .25)),
-    "shovel": dict(mat="steel", f0=260, rate=5.5, band=(260, 1900), mass=.80, grit=.48, tail=(.38, .17)),
-    "head":   dict(mat="flesh", f0=120, rate=4.0, band=(160, 1200), mass=1.0, grit=.52, tail=(.36, .16)),
+    #          rotations/s  band           air it shoves  mass  grit  what it carries       tail
+    "axe":    dict(rate=7.0,  band=(380, 2300),  body=.85, mass=.70, grit=.24, detail=None,      tail=(.36, .16)),
+    "hammer": dict(rate=5.0,  band=(260, 1700),  body=.90, mass=.95, grit=.28, detail=None,      tail=(.42, .18)),
+    "bone":   dict(rate=8.5,  band=(460, 2700),  body=.55, mass=.45, grit=.20, detail="clatter", tail=(.32, .15)),
+    "shuriken": dict(rate=15.0, band=(1300, 5600), body=.25, mass=.18, grit=.06, detail="shing", tail=(.22, .11)),
+    "knife":  dict(rate=10.0, band=(900, 4200),  body=.30, mass=.25, grit=.10, detail="shing",   tail=(.24, .12)),
+    "card":   dict(rate=11.0, band=(1100, 5200), body=.05, mass=.00, grit=.00, detail="flick",   tail=(.18, .09)),
+    "cursed": dict(rate=6.0,  band=(230, 1600),  body=.85, mass=.75, grit=.34, detail="whisper", tail=(.60, .23)),
+    "holy":   dict(rate=7.5,  band=(700, 3600),  body=.60, mass=.55, grit=.06, detail="shine",   tail=(.75, .25)),
+    "shovel": dict(rate=5.5,  band=(260, 1900),  body=.85, mass=.80, grit=.30, detail="dirt",    tail=(.38, .17)),
+    "head":   dict(rate=4.0,  band=(160, 1200),  body=1.0, mass=1.0, grit=.40, detail="snort",   tail=(.36, .16)),
 }
+
+
+def _carried(kind, dur, name):
+    """What a thrown thing brings with it besides its own tumble."""
+    if kind == "clatter":
+        # a skeleton's bone: dry and hollow, knocking on itself as it leaves
+        return grains(dur, rate=55, band=(700, 2800), length=(0.002, 0.006), q=(0.8, 1.2),
+                      density=[(0.0, 1.0), (0.2, 0.6), (0.6, 0.1), (1.0, 0.0)], name=name)
+    if kind == "shing":
+        # the thin blade leaving the fingers: a short scrape, gone in a blink
+        s = scrape(min(dur, 0.09), lo=3200, hi=7600, bands=2, q=4.0, name=name)
+        return pad_to(s, dur)
+    if kind == "flick":
+        # a card snapped off the top of the deck, then paper riding the air
+        snap = bandpass(noise(0.012, name + "s"), 1800, 8000) * exp_env(0.012, attack=0.0004, decay=5.0)
+        flutter = bandpass(noise(dur, name + "f"), 1100, 5200) * tremolo(n_of(dur), 46, 0.8, shape="pulse")
+        flutter *= seg_env([(0.0, 0.0), (0.1, 1.0), (1.0, 0.0)], dur)
+        return mixdown(pad_to(norm(snap), dur), norm(flutter) * 0.45)
+    if kind == "whisper":
+        return breath(dur, [(0.0, "ee"), (0.4, "ah"), (1.0, "oo")], name=name) * \
+            seg_env([(0.0, 0.0), (0.2, 1.0), (1.0, 0.2)], dur)
+    if kind == "shine":
+        return mixdown(sparkle(dur, 3000, 10000, count=12, name=name),
+                       choir((N["A4"], N["E5"]), dur, vowels=((0.0, "ah"), (1.0, "oh")), name=name + "c") * 0.18 *
+                       seg_env([(0.0, 0.0), (0.25, 1.0), (1.0, 0.0)], dur))
+    if kind == "dirt":
+        # the spadeful of earth coming off it
+        return grains(dur, rate=160, band=(250, 2200), length=(0.002, 0.008), q=(0.7, 1.4),
+                      density=[(0.0, 0.2), (0.15, 1.0), (0.6, 0.4), (1.0, 0.0)], name=name)
+    if kind == "snort":
+        snort = bandpass(pink(0.2, name + "n"), 250, 2400) * seg_env([(0.0, 0.0), (0.1, 1.0), (1.0, 0.0)], 0.2)
+        return pad_to(norm(snort), dur)
+    raise ValueError(kind)
 
 
 def thrown(voice, dur=0.44, name="th"):
     """A weapon tumbling end over end.
 
-    The tumble is the identity: one air pulse per rotation, with the object's
-    material ringing on each pass. A thrown axe that is one continuous whoosh
-    is indistinguishable from a thrown anything — this is the audio equivalent
-    of the silhouette work in GLProjectileRenderers."""
+    The tumble is the identity: one air pulse per rotation, the rate set by the
+    object's size. It is AIR, not impacts — nothing is struck when a weapon
+    leaves a hand. This used to ring the weapon's material once on release,
+    which with the tumble on top was a bucket kicked down the stairs."""
     p = THROWN_VOICES[voice]
     n = n_of(dur)
-    # The tumble is AIR, not repeated impacts: an object turning over in flight
-    # chops the airflow, it does not strike anything. Ringing the material once
-    # per rotation — which is what this used to do — is the exact sound of
-    # somebody banging a bucket at 7Hz.
-    spin = tremolo(n, p["rate"], depth=0.62, shape="sine")
-    spin = lowpass(spin, 90, order=1)
-    rush = air(dur, band=p["band"], q=4.0, arc=1.1, turb=0.3, body=0.85, name=name + "a") * spin
+    # peaked, not sinusoidal: each rotation is one edge coming round past the ear
+    spin = (0.5 + 0.5 * np.sin(2 * np.pi * p["rate"] * t_axis(dur) - np.pi / 2)) ** 2.2
+    spin = 0.18 + 0.82 * lowpass(spin, 120, order=1)
+    rush = air(dur, band=p["band"], q=2.2, arc=1.1, turb=0.3, body=p["body"], name=name + "a") * spin
     grit = saturate(bandpass(pink(dur, name + "g"), 130, 1100), 2.4) * spin * swell_env(dur, 1.0) * p["grit"]
-    # the weapon rings ONCE, as it leaves the hand
-    release = strike(p["mat"], p["f0"], 0.2, hardness=0.85, damp=1.3, name=name + "r",
-                     ring=MATERIALS[p["mat"]]["ring"] * 0.7) * 0.5
-    mass = sine(seg_env([(0.0, 175), (1.0, 58)], 0.16), 0.16) * exp_env(0.16, decay=6.0) * p["mass"]
-    out = mixdown(rush * 0.85, grit, pad_to(release, dur), pad_to(saturate(mass, 2.0), dur))
-    return reverb(saturate(out, 2.0), decay=p["tail"][0], damp=6000, mix=p["tail"][1],
+    # the arm: a short low push as it is let go
+    mass = sine(seg_env([(0.0, 160), (1.0, 55)], 0.16), 0.16) * exp_env(0.16, decay=6.0) * p["mass"]
+    layers = [norm(rush) * 0.85, grit, pad_to(saturate(mass, 2.0), dur)]
+    if p["detail"] is not None:
+        layers.append(norm(fit(_carried(p["detail"], dur, name + "d"), n)) * 0.45)
+    return reverb(saturate(mixdown(*layers), 1.9), decay=p["tail"][0], damp=6000, mix=p["tail"][1],
                   name="th", predelay=0.004)
 
 
 SHAFT_VOICES = {
-    #           release           band          q   flut  mass  hiss  tail
-    "arrow":  dict(rel="string", band=(900, 3800), q=6.0, flut=.20, mass=.55, hiss=.07, tail=(.26, .12)),
-    "spear":  dict(rel="grunt",  band=(380, 2100), q=4.5, flut=.06, mass=.95, hiss=.03, tail=(.32, .15)),
-    "thorn":  dict(rel="snap",   band=(700, 3000), q=5.5, flut=.10, mass=.45, hiss=.05, tail=(.22, .11)),
-    "dart":   dict(rel="puff",   band=(800, 3400), q=6.0, flut=.06, mass=.34, hiss=.10, tail=(.20, .10)),
-    "spike":  dict(rel="snap",   band=(1000, 4000), q=6.5, flut=.08, mass=.60, hiss=.08, tail=(.30, .14)),
+    #           release           band          q    flut  mass  hiss  tail
+    "arrow":  dict(rel="string", band=(900, 3800),  q=2.6, flut=.20, mass=.55, hiss=.07, tail=(.26, .12)),
+    "spear":  dict(rel="grunt",  band=(380, 2100),  q=2.2, flut=.06, mass=.95, hiss=.03, tail=(.32, .15)),
+    "thorn":  dict(rel="snap",   band=(700, 3000),  q=2.4, flut=.10, mass=.45, hiss=.05, tail=(.22, .11)),
+    "dart":   dict(rel="puff",   band=(800, 3400),  q=2.6, flut=.06, mass=.34, hiss=.10, tail=(.20, .10)),
+    "spike":  dict(rel="crackle", band=(1000, 4000), q=2.6, flut=.08, mass=.60, hiss=.08, tail=(.30, .14)),
 }
 
 
@@ -1426,77 +2111,142 @@ def shaft(voice, dur=0.30, name="sh"):
     p = SHAFT_VOICES[voice]
     n = n_of(dur)
     if p["rel"] == "string":
-        rel = modal("wood", 210, 0.1, damp=2.4, name=name + "s") * 0.8
-        rel = mixdown(rel, click(0.004, fc=1800, name=name + "sc") * 0.6)
+        # a bowstring is a STRING: a low, harmonic thrum that dies in a moment,
+        # and the slap of it on the bracer. (It was a struck block of wood.)
+        rel = pluck(98.0, 0.16, t60=0.11, bright=0.7, pick=0.12, name=name + "s") * 0.9
+        rel *= exp_env(0.16, attack=0.001, decay=4.0)
+        rel = mixdown(rel, click(0.004, fc=1800, name=name + "sc") * 0.5)
     elif p["rel"] == "grunt":
         rel = cry(0.14, [(0, 150), (1.0, 96)], [(0, "uh"), (1.0, "aw")], growl=0.25, breath=0.5,
-                  amp_keys=((0, 0), (0.1, 1.0), (1.0, 0.0)), name=name + "g") * 0.55
+                  amp_keys=((0, 0), (0.1, 1.0), (1.0, 0.0)), name=name + "g") * 0.4
     elif p["rel"] == "puff":
         rel = highpass(pink(0.07, name + "p"), 1800) * exp_env(0.07, attack=0.002, decay=9.0) * 0.9
+    elif p["rel"] == "crackle":
+        rel = grains(0.08, rate=500, band=(2500, 10000), length=(0.0003, 0.0014),
+                     density=[(0.0, 1.0), (1.0, 0.0)], name=name + "ck") * 0.8
     else:
-        rel = click(0.006, fc=2400, name=name + "sn", shape=1.2) * 0.9
+        # a thorn snapped off: a dry woody crack with a little knock in it
+        rel = mixdown(click(0.006, fc=2400, name=name + "sn", shape=1.2) * 0.8,
+                      bandpass(noise(0.03, name + "sk"), 500, 2200) * exp_env(0.03, attack=0.0005, decay=9.0) * 0.5)
     fly = air(dur, band=p["band"], q=p["q"], arc=1.8, turb=0.2, edge=0.1, body=0.8, name=name + "a")
     fly *= exp_env(dur, attack=0.004, decay=5.0)
     flut = bandpass(noise(dur, name + "f"), 1400, 5000) * tremolo(n, 17, 0.75, shape="pulse")
     flut *= swell_env(dur, 1.4) * p["flut"]
     mass = sine(seg_env([(0.0, 190), (1.0, 62)], 0.14), 0.14) * exp_env(0.14, decay=6.5) * p["mass"]
     hiss = bandpass(pink(dur, name + "h"), 2600, 8000) * swell_env(dur, 2.0) * p["hiss"]
-    out = mixdown(fly * 0.75, flut, hiss, pad_to(saturate(mass, 2.0), dur))
-    out[:len(rel)] += rel
+    out = mixdown(norm(fly) * 0.75, flut, hiss, pad_to(saturate(mass, 2.0), dur))
+    out[:len(rel)] += rel[:n]
     return reverb(saturate(out, 1.9), decay=p["tail"][0], damp=6400, mix=p["tail"][1],
                   name="sh", predelay=0.003)
 
 
 LOB_VOICES = {
-    #           mat      f0    size  wet   deb  fizz  tail
-    "grenade": dict(mat="steel", f0=190, size=.85, wet=.0,  deb=.35, fizz=.10, tail=(.55, .22)),
-    "mine":    dict(mat="steel", f0=340, size=.35, wet=.0,  deb=.10, fizz=.25, tail=(.35, .16)),
-    "flask":   dict(mat="glass", f0=880, size=.45, wet=.55, deb=.45, fizz=.55, tail=(.45, .20)),
-    "mud":     dict(mat="earth", f0=110, size=.70, wet=.85, deb=.20, fizz=.05, tail=(.30, .14)),
-    "anvil":   dict(mat="iron",  f0=155, size=1.0, wet=.0,  deb=.25, fizz=.0,  tail=(.75, .26)),
-    "rock":    dict(mat="stone", f0=130, size=.95, wet=.0,  deb=.55, fizz=.0,  tail=(.55, .22)),
-    "ink":     dict(mat="flesh", f0=95,  size=.60, wet=1.0, deb=.10, fizz=.25, tail=(.32, .15)),
-    "rune":    dict(mat="stone", f0=330, size=.45, wet=.0,  deb=.12, fizz=.30, tail=(.70, .26)),
-    "cannon":  dict(mat="iron",  f0=98,  size=1.0, wet=.0,  deb=.40, fizz=.0,  tail=(.85, .28)),
+    #           what it carries up        what lands (only where nothing else will)  heave  tail
+    "grenade": dict(carry="pin",    land=None,    heave=.70, tail=(.45, .18)),
+    "bomb":    dict(carry="fuse",   land=None,    heave=.60, tail=(.40, .17)),
+    "mine":    dict(carry="arm",    land="thunk", heave=.40, tail=(.35, .16)),
+    "flask":   dict(carry="potion", land=None,    heave=.45, tail=(.40, .18)),
+    "mud":     dict(carry="glop",   land=None,    heave=.60, tail=(.30, .14)),
+    "anvil":   dict(carry=None,     land="anvil", heave=.95, tail=(.60, .22)),
+    "ink":     dict(carry="squirt", land="splat", heave=.40, tail=(.32, .15)),
+    "rune":    dict(carry="glow",   land="rune",  heave=.35, tail=(.70, .26)),
 }
 
 
+def _lob_carry(kind, dur, name):
+    """What goes up with it."""
+    if kind == "pin":
+        # the pin drawn and the spoon flicking off: two small clicks of light
+        # metal, not a struck plate
+        pin = rattle(0.05, count=3, band=(3000, 7000), q=12.0, cluster=1.0, name=name + "p")
+        spoon = scrape(0.07, lo=3600, hi=6800, bands=2, q=4.0, name=name + "s") * 0.5
+        out = np.zeros(n_of(dur))
+        at(out, 0.0, pin)
+        at(out, 0.05, spoon)
+        return out
+    if kind == "fuse":
+        # a cartoon bomb's lit fuse, sputtering all the way up
+        f = sizzle(dur, band=(2600, 8500), crackle=0.9, name=name + "f")
+        return f * seg_env([(0.0, 0.0), (0.03, 1.0), (0.8, 0.8), (1.0, 0.0)], dur)
+    if kind == "potion":
+        # the cork out, then liquid slopping about inside the glass
+        pop_d = 0.03
+        pop = sine(seg_env([(0.0, 520.0), (1.0, 240.0)], pop_d), pop_d) * exp_env(pop_d, attack=0.0008, decay=5.0)
+        pop = mixdown(pop, click(0.003, fc=1500, name=name + "c") * 0.6)
+        slosh = bubbles(dur, count=6, f=(220, 700), size=(0.025, 0.06), span=(0.1, 0.8), name=name + "b")
+        wet = svf(pink(dur, name + "w"), seg_env([(0.0, 600), (0.5, 1400), (1.0, 500)], dur), q=2.0, mode="bp")
+        wet *= seg_env([(0.0, 0.0), (0.2, 1.0), (1.0, 0.0)], dur)
+        return mixdown(pad_to(norm(pop), dur), slosh * 0.55, norm(wet) * 0.3)
+    if kind == "glop":
+        return squelch(min(dur, 0.3), f=(900, 180), q=3.2, lumps=4, name=name)
+    if kind == "squirt":
+        jet = svf(pink(0.18, name + "j"), seg_env([(0.0, 3000), (1.0, 700)], 0.18), q=2.2, mode="bp")
+        jet *= exp_env(0.18, attack=0.004, decay=5.0)
+        return mixdown(norm(jet), squelch(0.2, f=(1200, 300), q=2.8, lumps=3, name=name + "q") * 0.6)
+    if kind == "arm":
+        return mixdown(click(0.005, fc=2600, name=name + "a") * 0.8,
+                       pad_to(grains(0.06, rate=90, band=(1500, 5000), length=(0.001, 0.003),
+                                     name=name + "g") * 0.4, 0.06))
+    if kind == "glow":
+        # a glyph catching light as it goes: a soft sizzle and a low bloom
+        return mixdown(sizzle(dur, band=(1800, 7000), crackle=0.6, name=name + "z") *
+                       seg_env([(0.0, 0.0), (0.2, 1.0), (1.0, 0.2)], dur) * 0.6,
+                       pad_to(whump(0.2, f=(160.0, 60.0), name=name + "w") * 0.5, dur))
+    raise ValueError(kind)
+
+
+def _lob_land(kind, dur, name):
+    """What it does when it comes down, for the ones nothing else voices."""
+    if kind == "splat":
+        return mixdown(water(dur, size=1.2, bubbles=10, foam=0.8, name=name + "w"),
+                       squelch(dur * 0.8, f=(700, 140), q=3.0, lumps=4, name=name + "q") * 0.7)
+    if kind == "thunk":
+        return mixdown(thud(90, dur, drive=1.6, name=name + "t"),
+                       grains(dur * 0.5, rate=120, band=(200, 1600), length=(0.002, 0.006), name=name + "e") * 0.4)
+    if kind == "anvil":
+        # tons of iron on dirt: the body is the thud and the dust; the metal is a
+        # dull, heavily damped clunk under it, not a note
+        return mixdown(thud(62, dur, drive=2.0, name=name + "t"),
+                       strike("steel", 140, dur * 0.6, hardness=0.8, damp=3.2, name=name + "s", ring=0.1) * 0.6,
+                       debris(dur, count=10, band=(200, 2000), name=name + "d") * 0.5)
+    if kind == "rune":
+        return mixdown(thud(80, dur, drive=1.5, name=name + "t"),
+                       sparkle(dur, 2400, 8000, count=10, name=name + "s") * 0.5)
+    raise ValueError(kind)
+
+
 def lobbed(voice, dur=0.66, name="lob"):
-    """An object thrown on an arc and landing. The arc is short and quiet; the
-    landing is the sound. `mat` decides what it lands as."""
+    """An object thrown up on an arc. What is heard is the throw — the arm, and
+    whatever the object does on the way up (a pin, a fuse, a potion's cork) —
+    and, only where nothing else in the game sounds when it comes down, the
+    landing. A bomb's detonation is its blast (`explosion.wav`), played when it
+    actually goes off: these used to land a third of a second after the throw,
+    while the bomb was still visibly in the air, and then explode again."""
     p = LOB_VOICES[voice]
-    arc_d = dur * 0.5
-    arc = air(arc_d, band=(400, 2400), q=5.0, arc=1.6, turb=0.3, name=name + "arc") * 0.45
-    imp_t = dur * 0.5
-    imp_d = dur - imp_t
-    land = strike(p["mat"], p["f0"], imp_d, hardness=0.9, damp=1.0, name=name + "l")
-    sub = sine(seg_env([(0.0, 130 * p["size"]), (1.0, 38 * p["size"])], min(0.26, imp_d)),
-               min(0.26, imp_d)) * exp_env(min(0.26, imp_d), decay=6.0)
-    layers = [land * 0.9, pad_to(saturate(sub, 2.4) * p["size"], imp_d)]
-    if p["wet"] > 0:
-        layers.append(water(imp_d * 0.8, size=1.6, bubbles=6, foam=0.5, name=name + "w") * p["wet"] * 0.7)
-    if p["deb"] > 0:
-        layers.append(debris(imp_d, count=int(13 * p["deb"]) + 3,
-                             band=(400, 4000) if p["mat"] != "glass" else (1800, 9000),
-                             wet=p["wet"] * 0.5, name=name + "d") * p["deb"] * 0.6)
-    if p["fizz"] > 0:
-        layers.append(gas(imp_d * 0.9, band=(700, 6000), fizz=0.8, name=name + "f") * p["fizz"] * 0.5)
-    impact = saturate(mixdown(*layers), 2.2)
     out = np.zeros(n_of(dur))
-    out[:len(arc)] += arc
-    at(out, imp_t, impact)
-    return reverb(out, decay=p["tail"][0], damp=4600, mix=p["tail"][1], name="lob", predelay=0.006)
+    arm = air(min(dur, 0.3), band=(350, 2200), q=2.0, arc=1.6, turb=0.3, body=0.8, name=name + "arc")
+    at(out, 0.0, norm(arm) * 0.5)
+    heave = sine(seg_env([(0.0, 150), (1.0, 55)], 0.14), 0.14) * exp_env(0.14, decay=6.0)
+    at(out, 0.0, saturate(heave, 2.0) * p["heave"])
+    if p["carry"] is not None:
+        at(out, 0.0, norm(fit(_lob_carry(p["carry"], dur, name + "c"), n_of(dur))) * 0.6)
+    if p["land"] is not None:
+        at(out, dur * 0.5, norm(_lob_land(p["land"], dur * 0.5, name + "l")) * 0.9)
+    return reverb(saturate(out, 1.8), decay=p["tail"][0], damp=4600, mix=p["tail"][1], name="lob",
+                  predelay=0.006)
 
 
 SLAM_VOICES = {
-    #            mat      f0   sub  deb   rumble crack tail       size
-    "earth":   dict(mat="earth", f0=78,  sub=1.0, deb=.85, rum=.9, crk=.4, tail=(1.0, .26), size=1.3, damp=1.0),
-    "stone":   dict(mat="stone", f0=95,  sub=.95, deb=1.0, rum=.8, crk=.6, tail=(.95, .26), size=1.25, damp=1.0),
-    "ice":     dict(mat="ice",   f0=210, sub=.75, deb=.75, rum=.6, crk=1.0, tail=(1.0, .28), size=1.2, damp=1.4),
-    "metal":   dict(mat="steel", f0=140, sub=.70, deb=.35, rum=.4, crk=.6, tail=(.85, .26), size=1.0, damp=2.0),
-    "shield":  dict(mat="iron",  f0=190, sub=.60, deb=.25, rum=.3, crk=.6, tail=(.80, .25), size=1.0, damp=2.2),
-    "flesh":   dict(mat="flesh", f0=70,  sub=1.0, deb=.45, rum=.85, crk=.2, tail=(.75, .24), size=1.15, damp=1.0),
-    "dark":    dict(mat="flesh", f0=62,  sub=1.0, deb=.30, rum=1.0, crk=.2, tail=(1.2, .30), size=1.4, damp=0.9),
+    #            mat      f0   sub  deb   rumble crack tail       size  damp  ring
+    "earth":   dict(mat="earth", f0=78,  sub=1.0, deb=.85, rum=.9, crk=.4, tail=(1.0, .26), size=1.3, damp=1.0, ring=None),
+    "stone":   dict(mat="stone", f0=95,  sub=.95, deb=1.0, rum=.8, crk=.6, tail=(.95, .26), size=1.25, damp=1.0, ring=None),
+    "ice":     dict(mat="ice",   f0=210, sub=.75, deb=.75, rum=.6, crk=1.0, tail=(1.0, .28), size=1.2, damp=1.4, ring=.12),
+    # a mech fist and a shield are metal, but a heavy one struck into the ground or
+    # a body: the thud and the scatter carry it, the metal is a short dull clunk
+    "metal":   dict(mat="steel", f0=140, sub=.70, deb=.35, rum=.4, crk=.6, tail=(.85, .26), size=1.0, damp=2.6, ring=.10),
+    "shield":  dict(mat="steel", f0=170, sub=.60, deb=.25, rum=.3, crk=.6, tail=(.80, .25), size=1.0, damp=3.0, ring=.08),
+    "flesh":   dict(mat="flesh", f0=70,  sub=1.0, deb=.45, rum=.85, crk=.2, tail=(.75, .24), size=1.15, damp=1.0, ring=None),
+    "dark":    dict(mat="flesh", f0=62,  sub=1.0, deb=.30, rum=1.0, crk=.2, tail=(1.2, .30), size=1.4, damp=0.9, ring=None),
 }
 
 
@@ -1507,8 +2257,8 @@ def slam(voice, dur=0.9, name="slam"):
     generator, so a druid growing roots and a barbarian splitting the earth both
     detonated. A slam is contact + material + displaced debris + rumble."""
     p = SLAM_VOICES[voice]
-    n = n_of(dur)
-    hit = strike(p["mat"], p["f0"], dur * 0.75, hardness=1.0, damp=0.85 * p["damp"], name=name + "h")
+    hit = strike(p["mat"], p["f0"], dur * 0.75, hardness=1.0, damp=0.85 * p["damp"], name=name + "h",
+                 ring=p["ring"])
     sub = sine(seg_env([(0.0, 88), (0.2, 46), (1.0, 26)], dur * 0.6), dur * 0.6)
     sub *= exp_env(dur * 0.6, attack=0.003, decay=3.4)
     rum = lowpass(pink(dur, name + "r"), 240, order=1) * ad_env(dur, attack=0.02, hold=0.35, curve=1.4)
@@ -1525,17 +2275,61 @@ def slam(voice, dur=0.9, name="slam"):
 
 
 BURST_VOICES = {
-    #            kind    band            low   grain  tone         tail
-    "gas":     dict(kind="gas",  band=(400, 5200), low=.35, grain=.15, tone=None,        tail=(.85, .26)),
-    "spore":   dict(kind="gas",  band=(300, 3400), low=.45, grain=.40, tone=None,        tail=(.95, .28)),
-    "root":    dict(kind="wood", band=(180, 2400), low=.70, grain=.85, tone=(110, 3.0),  tail=(.80, .25)),
-    "thorn":   dict(kind="wood", band=(400, 4200), low=.50, grain=.95, tone=(160, 4.0),  tail=(.70, .24)),
-    "vortex":  dict(kind="suck", band=(120, 3600), low=.85, grain=.20, tone=(58, 1.6),   tail=(1.1, .30)),
-    "soul":    dict(kind="suck", band=(260, 4200), low=.55, grain=.10, tone=(147, 1.4),  tail=(1.3, .32)),
-    "water":   dict(kind="water", band=(300, 4600), low=.70, grain=.30, tone=None,       tail=(.85, .26)),
-    "surge":   dict(kind="elec", band=(600, 8000), low=.45, grain=.25, tone=(220, 2.4),  tail=(.70, .24)),
-    "swarm":   dict(kind="swarm", band=(900, 7000), low=.35, grain=.60, tone=None,       tail=(.65, .22)),
+    #            kind    band            low   grain  what rides it   tail
+    "gas":     dict(kind="gas",  band=(400, 5200), low=.35, grain=.15, voice=None,     tail=(.85, .26)),
+    "spore":   dict(kind="gas",  band=(300, 3400), low=.45, grain=.40, voice=None,     tail=(.95, .28)),
+    "root":    dict(kind="wood", band=(180, 2400), low=.70, grain=.85, voice="creak",  tail=(.80, .25)),
+    "thorn":   dict(kind="wood", band=(400, 4200), low=.50, grain=.95, voice="creak",  tail=(.70, .24)),
+    "vortex":  dict(kind="suck", band=(120, 3600), low=.85, grain=.20, voice="whirl",  tail=(1.1, .30)),
+    "soul":    dict(kind="suck", band=(260, 4200), low=.55, grain=.10, voice="moan",   tail=(1.3, .32)),
+    "water":   dict(kind="water", band=(300, 4600), low=.70, grain=.30, voice=None,    tail=(.85, .26)),
+    "surge":   dict(kind="elec", band=(600, 8000), low=.45, grain=.25, voice="hum",    tail=(.70, .24)),
+    "swarm":   dict(kind="swarm", band=(900, 7000), low=.35, grain=.60, voice=None,    tail=(.65, .22)),
 }
+
+
+def creak(dur, rate=(45.0, 110.0), body=(350.0, 750.0), q=4.0, name="ck"):
+    """Wood — or a root, or a rope — under strain: stick-slip friction. A train
+    of tiny slips whose rate is the low pitch you hear, each ringing the body of
+    the wood. It groans; it never rings."""
+    n = n_of(dur)
+    rng = np.random.default_rng(seed_of(name))
+    rt = seg_env([(0.0, rate[0]), (0.6, (rate[0] + rate[1]) * 0.55), (1.0, rate[1])], dur)
+    imp = np.zeros(n)
+    t = 0.0
+    while True:
+        i = int(t * SR)
+        if i >= n:
+            break
+        imp[i] = rng.uniform(0.4, 1.0)
+        t += rng.uniform(0.8, 1.2) / rt[i]
+    out = res_bp(imp, body[0], q) + res_bp(imp, body[1], q) * 0.6
+    out *= seg_env([(0.0, 0.0), (0.1, 1.0), (0.75, 0.8), (1.0, 0.0)], dur)
+    return norm(out)
+
+
+def _burst_voice(kind, dur, name):
+    if kind == "creak":
+        return creak(dur, rate=(38.0, 95.0), body=(260.0, 620.0), q=3.5, name=name)
+    if kind == "whirl":
+        # the vortex spinning up: a low band turning faster and faster
+        n = n_of(dur)
+        spin = np.sin(2 * np.pi * np.cumsum(seg_env([(0.0, 3.0), (1.0, 11.0)], dur)) / SR)
+        w = svf(pink(dur, name + "w"), seg_env([(0.0, 900), (1.0, 300)], dur), q=1.6, mode="bp")
+        return norm(w * (0.55 + 0.45 * spin) * np.linspace(0.3, 1.0, n))
+    if kind == "moan":
+        out = np.zeros(n_of(dur))
+        rng = np.random.default_rng(seed_of(name))
+        for i in range(3):
+            f = rng.uniform(150, 260)
+            v = cry(dur * 0.8, [(0.0, f), (0.5, f * 1.3), (1.0, f * 0.8)], [(0.0, "oo"), (1.0, "uh")],
+                    breath=0.75, jitter=0.04, open_q=0.4,
+                    amp_keys=((0.0, 0.0), (0.3, 0.9), (1.0, 0.0)), name=name + str(i))
+            at(out, rng.uniform(0.0, dur * 0.2), v * rng.uniform(0.5, 1.0))
+        return norm(out)
+    if kind == "hum":
+        return lowpass(square(120.0, dur, duty=0.5), 1400) * swell_env(dur, 1.2)
+    raise ValueError(kind)
 
 
 def burst(voice, dur=0.8, name="bst"):
@@ -1555,26 +2349,24 @@ def burst(voice, dur=0.8, name="bst"):
     elif k == "suck":
         # reversed swell: energy pulled inward, then the collapse
         core = svf(pink(dur, name + "s"), seg_env([(0.0, p["band"][1]), (1.0, p["band"][0])], dur),
-                   q=5, mode="bp")
+                   q=2.5, mode="bp")
         core *= np.linspace(0.15, 1.0, n) ** 2.0
     elif k == "swarm":
-        core = bandpass(pink(dur, name + "sw"), *p["band"]) * tremolo(n, 47, 0.8, shape="pulse")
-        core *= swell_env(dur, 1.1)
+        core = buzz(dur, rate=150, band=p["band"], bugs=6, name=name + "sw") * swell_env(dur, 1.1)
     else:  # wood: fibres tearing and splitting
         core = saturate(bandpass(pink(dur, name + "wd"), *p["band"]), 2.6)
         core *= seg_env([(0.0, 0.2), (0.15, 1.0), (0.6, 0.5), (1.0, 0.0)], dur)
     # splintering wood, snapping fibre, scattering shell — filtered grains, not
     # a chord of resonators
-    grains = debris(dur, count=int(22 * p["grain"]) + 3,
-                    band=(200, 2400) if k == "wood" else (700, 5600),
-                    decay=(14.0, 34.0), spread=(0.0, 0.75), name=name + "gr") * 0.5
+    scatter = debris(dur, count=int(22 * p["grain"]) + 3,
+                     band=(200, 2400) if k == "wood" else (700, 5600),
+                     decay=(14.0, 34.0), spread=(0.0, 0.75), name=name + "gr") * 0.5
     low = sine(seg_env([(0.0, 96), (1.0, 40)], dur * 0.7), dur * 0.7) * exp_env(dur * 0.7, decay=3.6)
-    layers = [core * 0.85, grains * p["grain"], pad_to(saturate(low, 2.2) * p["low"], dur)]
-    if p["tone"] is not None:
-        tf, td = p["tone"]
-        tone = fm(seg_env([(0.0, tf * 1.6), (1.0, tf * 0.8)], dur), 1.41,
-                  seg_env([(0.0, 7.0), (1.0, 1.5)], dur), dur)
-        layers.append(tone * exp_env(dur, attack=0.01, decay=td) * 0.5)
+    layers = [norm(core) * 0.85, scatter * p["grain"], pad_to(saturate(low, 2.2) * p["low"], dur)]
+    if p["voice"] is not None:
+        # what used to ride here was an FM tone at an inharmonic ratio: roots
+        # growing out of the ground came with a gong in them
+        layers.append(norm(fit(_burst_voice(p["voice"], dur, name + "v"), n)) * 0.45)
     out = saturate(mixdown(*layers), 1.9)
     return reverb(out, decay=p["tail"][0], damp=4200, mix=p["tail"][1], name="bst",
                   predelay=0.008, size=1.2)
@@ -1645,56 +2437,64 @@ def gun(voice, dur=0.34, name="gun"):
                   name="gun", predelay=0.008, size=p["size"])
 
 
-CHAIN_VOICES = {
-    "iron":   dict(mat="iron", f0=1450, hits=3, decay=0.66, rasp=.9, ring=.20, tail=(.38, .16)),
-    "rope":   dict(mat="wood", f0=420,  hits=3, decay=0.80, rasp=1.2, ring=.08, tail=(.28, .13)),
-    "string": dict(mat="wood", f0=900,  hits=3, decay=0.68, rasp=.95, ring=.14, tail=(.32, .15)),
-}
-
-
 def chain(voice, dur=0.42, name="ch"):
-    """Links or fibres, each catching the next. The falling pitch across the
-    hits is what makes it read as a chain paying out rather than a rattle."""
-    p = CHAIN_VOICES[voice]
-    n = n_of(dur) + n_of(0.16)
-    out = np.zeros(n)
-    for i in range(p["hits"]):
-        f = p["f0"] * (p["decay"] ** i) + 180
-        g = strike(p["mat"], f, 0.09, hardness=0.95 - 0.08 * i, damp=2.6, name=name + str(i),
-                   ring=p["ring"])
-        at(out, i * (dur * 0.68 / p["hits"]), g, 1.0 - i * 0.11)
-    # the rattle between the links carries the sound; the links themselves only
-    # tint it
-    rasp = bandpass(pink(dur, name + "r"), 400, 3600) * swell_env(dur, 1.2) * p["rasp"] * 0.55
-    rasp = mixdown(rasp, debris(dur * 0.8, count=9, band=(700, 5200), decay=(20.0, 44.0),
-                                spread=(0.0, 0.8), name=name + "rt") * p["rasp"] * 0.45)
-    out[:len(rasp)] += rasp
-    return reverb(saturate(out, 2.2), decay=p["tail"][0], damp=6200, mix=p["tail"][1],
-                  name="ch", predelay=0.004)
+    """Something long thrown to catch someone and haul them in.
+
+    iron   a chain: the whoosh of the throw, then dozens of links clinking —
+           each a few milliseconds, each its own pitch — and the heavy catch of
+           the shackle at the end
+    rope   a rope: a lasso's whirl, fibres rustling, and the creak and snap of
+           it pulling taut
+    string a puppeteer's string: plucked, and plucked again tighter as it bites
+
+    This used to be three tuned strikes of iron (or of wood, for the rope and
+    the string) — a bucket for the chain, a woodblock for the rope."""
+    n = n_of(dur)
+    out = np.zeros(n + n_of(0.16))
+    if voice == "iron":
+        throw = air(dur, band=(500, 2600), q=2.0, arc=1.4, turb=0.35, body=0.7, name=name + "a")
+        links = rattle(dur * 0.8, count=38, band=(2000, 8200), q=10.0, cluster=0.7, name=name + "l")
+        links *= seg_env([(0.0, 1.0), (0.5, 0.75), (1.0, 0.25)], dur * 0.8)
+        catch = mixdown(thud(100, 0.14, drive=1.6, name=name + "t"),
+                        rattle(0.09, count=9, band=(1700, 6500), q=9.0, cluster=1.0, name=name + "c") * 0.7)
+        heft = thud(125, 0.16, drive=1.5, name=name + "h")
+        at(out, 0.0, norm(throw) * 0.55)
+        at(out, 0.0, heft * 0.45)
+        at(out, 0.02, links * 0.6)
+        at(out, dur * 0.62, norm(catch) * 0.6)
+        tail = (0.38, 0.16)
+    elif voice == "rope":
+        whirl = air(dur, band=(300, 1800), q=1.6, arc=1.2, turb=0.5, body=0.8, name=name + "a")
+        whirl *= 0.55 + 0.45 * np.sin(2 * np.pi * 5.5 * t_axis(dur))
+        rustle = grains(dur, rate=110, band=(700, 3800), length=(0.001, 0.004), level=(0.1, 0.5),
+                        density=[(0.0, 1.0), (0.6, 0.6), (1.0, 0.1)], name=name + "r")
+        taut = mixdown(crack(0.02, name=name + "k") * 0.5, thud(130, 0.12, drive=1.5, name=name + "t") * 0.6,
+                       pad_to(creak(0.13, rate=(70.0, 150.0), body=(480.0, 1050.0), q=4.0, name=name + "c") * 0.5, 0.12))
+        at(out, 0.0, norm(whirl) * 0.6)
+        at(out, 0.0, rustle * 0.35)
+        at(out, dur * 0.58, norm(taut) * 0.65)
+        tail = (0.28, 0.13)
+    else:
+        whip = air(dur, band=(1400, 6000), q=2.0, arc=1.8, turb=0.2, body=0.2, name=name + "a")
+        first = pluck(N["E4"], dur, t60=0.3, bright=0.8, pick=0.15, name=name + "p1")
+        tight = pluck(N["B4"], dur * 0.7, t60=0.22, bright=0.9, pick=0.12, name=name + "p2")
+        at(out, 0.0, norm(whip) * 0.4)
+        at(out, 0.0, first * 0.55)
+        at(out, dur * 0.3, tight * 0.4)
+        tail = (0.32, 0.15)
+    return reverb(saturate(out, 1.8), decay=tail[0], damp=6200, mix=tail[1], name="ch", predelay=0.004)
 
 
-CHIME_VOICES = {
-    #           f0     mat     damp  strike shim  choir tail
-    "holy":   dict(f0=523.25, mat="bell", damp=9.0, stk=.95, shim=.40, choir=.18, tail=(.65, .22)),
-    "smite":  dict(f0=392.00, mat="bell", damp=3.4, stk=.95, shim=.45, choir=.30, tail=(1.0, .28)),
-    "rune":   dict(f0=220.00, mat="stone", damp=1.4, stk=.75, shim=.22, choir=.18, tail=(.8, .26)),
-}
-
-
-def chime(voice, dur=0.7, name="chm"):
-    """A struck resonant object used as magic. Short — the old holy bolt rang
-    for 2.2 seconds, so a cleric firing twice a second built a chord cluster
-    that never resolved."""
-    p = CHIME_VOICES[voice]
-    body = modal(p["mat"], p["f0"], dur, damp=p["damp"], name=name)
-    stk = click(0.008, fc=3200, name=name + "s", shape=1.6) * p["stk"]
-    shim = sparkle(dur, 4000, 12000, count=10, name=name + "sp") * p["shim"]
-    ch = fm(p["f0"] * 0.5, 2.0, seg_env([(0.0, 1.2), (1.0, 0.2)], dur), dur)
-    ch = chorus(ch * swell_env(dur, 1.5) * p["choir"] * 0.5, rate=0.5, depth_ms=9, voices=3,
-                mix=0.5, name=name + "c")
-    out = mixdown(body * 0.75, shim, ch)
-    out[:len(stk)] += stk
-    return reverb(out, decay=p["tail"][0], damp=7000, mix=p["tail"][1], name="chm", predelay=0.01)
+def radiance(dur, notes=None, name="rad"):
+    """Holy light: a choir swelling on an open fifth, a shimmer over it and a warm
+    push of air. Sung, never struck — every holy ability here used to be a bell,
+    and a cleric firing twice a second was a steeple full of tin cans."""
+    notes = notes or (N["A3"], N["E4"], N["A4"])
+    ch = choir(notes, dur, vowels=((0.0, "ah"), (1.0, "oh")), name=name + "c")
+    ch *= seg_env([(0.0, 0.0), (0.22, 1.0), (0.6, 0.7), (1.0, 0.0)], dur)
+    shim = sparkle(dur, 3500, 11000, count=18, name=name + "s")
+    breeze = flange(air(dur, band=(700, 4200), q=1.6, arc=1.2, turb=0.3, body=0.5, name=name + "a"), rise=False)
+    return mixdown(ch * 0.32, shim * 0.5, norm(breeze) * 0.5)
 
 
 def elec(dur=0.5, size=1.0, colour=(600, 9000), forks=1, name="el"):
@@ -1723,8 +2523,12 @@ def machine(dur=0.45, servo=(300, 900), clank=1.0, whine=0.4, name="mch"):
     sv = saw(seg_env([(0.0, servo[0]), (0.5, servo[1]), (1.0, servo[0] * 0.8)], dur), dur)
     sv = res_lp(sv, 1800, q=3.0) * ad_env(dur, attack=0.01, hold=0.4, curve=1.3) * 0.4
     wh = sine(seg_env([(0.0, 2400), (1.0, 3600)], dur), dur) * swell_env(dur, 2.0) * whine * 0.16
-    ck = mixdown(strike("steel", 620, 0.11, hardness=1.0, damp=2.4, name=name + "k1") * 0.8,
-                 pad_to(thud(150, 0.16, drive=1.6, name=name + "k2") * 0.6, 0.11))
+    # a joint locking: a dull thunk and the rattle of a mechanism, not a plate
+    # being struck (which is what the steel strike here used to be)
+    ck = mixdown(thud(150, 0.16, drive=1.6, name=name + "k2") * 0.7,
+                 pad_to(grains(0.06, rate=180, band=(1200, 6000), length=(0.001, 0.004),
+                               density=[(0.0, 1.0), (1.0, 0.0)], name=name + "k1") * 0.45, 0.16),
+                 pad_to(click(0.004, fc=2200, name=name + "k3") * 0.5, 0.16))
     out = mixdown(sv, wh)
     at(out, dur * 0.25, ck * clank)
     return reverb(saturate(out, 2.0), decay=0.45, damp=5000, mix=0.2, name="mch", predelay=0.005)
@@ -1755,6 +2559,89 @@ def gen_explosion(dur=1.1, size=1.0, name="boom"):
     return reverb(out, decay=1.3 * size, damp=3200, mix=0.32, name="boom", predelay=0.014, size=1.5)
 
 
+# ── detonations: what an explosive sounds like when it actually goes off ──
+# `explosion` is a frag grenade, and it used to be every damaging explosion in
+# the game: a napalm strike, a mud bomb and an acid flask all went off as the
+# same bang. AbilitySounds.forBlast picks one of these by what blew up.
+
+def gen_blast_fire(dur=1.1, name="bfr"):
+    """A fire explosion — napalm, an inferno going up. Not a bang but a WHOOMPH:
+    a deep bloom of pressure, flame roaring up out of it, and the crackle of
+    what it set burning."""
+    bloom = whump(0.5, f=(105.0, 30.0), name=name + "w")
+    roar = fire(dur * 0.9, low=80, roar=1.3, crackles=40, name=name + "f")
+    rush = svf(pink(dur, name + "r"), seg_env([(0.0, 300), (0.06, 2600), (0.5, 900), (1.0, 300)], dur),
+               q=1.0, mode="bp") * exp_env(dur, attack=0.008, decay=3.5)
+    burn = grains(dur, rate=70, band=(900, 6000), length=(0.0005, 0.003),
+                  density=[(0.0, 0.2), (0.2, 1.0), (1.0, 0.3)], name=name + "c")
+    out = mixdown(pad_to(bloom, dur) * 0.9, norm(roar) * 0.7, norm(rush) * 0.6, burn * 0.3)
+    return reverb(saturate(out, 1.7), decay=1.2, damp=3200, mix=0.3, name="bfr", predelay=0.012, size=1.5)
+
+
+def gen_blast_magma(dur=1.1, name="bmg"):
+    """The ground splitting and spitting molten rock: a hard crack, the rock
+    thrown up, fire roaring out, and lava bursting in thick bubbles."""
+    split = slam("stone", 0.5, name=name + "s")
+    roar = fire(dur * 0.8, low=70, roar=1.1, crackles=26, name=name + "f")
+    lava = bubbles(dur, count=9, f=(80, 260), rise=(1.3, 2.1), size=(0.03, 0.08), span=(0.1, 0.8),
+                   name=name + "b")
+    out = np.zeros(n_of(dur))
+    at(out, 0.0, split * 0.9)
+    at(out, 0.03, norm(roar) * 0.6)
+    at(out, 0.08, lava * 0.45)
+    return reverb(saturate(out, 1.7), decay=1.1, damp=3000, mix=0.28, name="bmg", predelay=0.012, size=1.4)
+
+
+def gen_blast_toxic(dur=1.0, name="btx"):
+    """A toxic bomb bursting — the Plague Doctor's: a wet pop as the vessel gives,
+    a cloud hissing out of it, and it bubbling where it lands."""
+    pop = mixdown(whump(0.22, f=(180.0, 60.0), name=name + "w"),
+                  water(0.2, size=1.4, bubbles=6, foam=0.7, name=name + "p") * 0.6)
+    cloud = gas(dur, band=(300, 4200), fizz=0.6, pitchfall=False, name=name + "g")
+    cloud *= seg_env([(0.0, 0.0), (0.08, 1.0), (0.5, 0.7), (1.0, 0.0)], dur)
+    bub = bubbles(dur, count=14, f=(200, 800), span=(0.1, 0.85), name=name + "b")
+    out = mixdown(pad_to(norm(pop), dur) * 0.9, norm(cloud) * 0.55, bub * 0.35)
+    return reverb(saturate(out, 1.6), decay=1.0, damp=3400, mix=0.28, name="btx", predelay=0.01, size=1.3)
+
+
+def gen_blast_acid(dur=0.9, name="bac"):
+    """An acid flask breaking: glass shattering into a spray of shards, the
+    splash, and the acid eating in with a hiss."""
+    shards = rattle(0.3, count=46, band=(2800, 10500), q=12.0, cluster=0.5, name=name + "g")
+    shards *= seg_env([(0.0, 1.0), (0.3, 0.6), (1.0, 0.0)], 0.3)
+    splash = water(0.45, size=1.0, bubbles=14, foam=0.9, name=name + "w")
+    bite = sizzle(dur, band=(2200, 8500), crackle=0.8, name=name + "z")
+    bite *= seg_env([(0.0, 0.0), (0.12, 1.0), (1.0, 0.0)], dur)
+    thump = whump(0.2, f=(150.0, 55.0), name=name + "t")
+    out = mixdown(pad_to(shards, dur) * 0.6, pad_to(splash, dur) * 0.6, bite * 0.35, pad_to(thump, dur) * 0.6)
+    return reverb(saturate(out, 1.6), decay=0.9, damp=4200, mix=0.26, name="bac", predelay=0.01, size=1.2)
+
+
+def gen_blast_mud(dur=0.9, name="bmd"):
+    """A mud bomb landing: one great wet SPLAT, clods of it thrown about and
+    slapping down, and the dull weight of it."""
+    splat = mixdown(squelch(0.4, f=(900, 140), q=3.0, lumps=6, name=name + "q"),
+                    water(0.35, size=0.8, bubbles=8, foam=0.6, name=name + "w") * 0.6)
+    weight = thud(58, 0.4, drive=2.0, name=name + "t")
+    clods = grains(dur, rate=40, band=(200, 1600), length=(0.004, 0.012), q=(0.8, 1.5),
+                   density=[(0.0, 0.0), (0.12, 1.0), (0.7, 0.4), (1.0, 0.0)], name=name + "c")
+    out = mixdown(pad_to(norm(splat), dur) * 0.9, pad_to(weight, dur) * 0.8, clods * 0.4)
+    return reverb(saturate(out, 1.8), decay=0.8, damp=3000, mix=0.24, name="bmd", predelay=0.01, size=1.2)
+
+
+def gen_blast_cluster(dur=1.1, name="bcl"):
+    """A cluster bomb opening: not one blast but a string of small ones, walking
+    across the ground."""
+    out = np.zeros(n_of(dur))
+    rng = np.random.default_rng(seed_of(name))
+    t = 0.0
+    for i in range(5):
+        at(out, t, gen_explosion(dur=0.55, size=0.55 + 0.08 * rng.uniform(), name=name + str(i)),
+           rng.uniform(0.55, 0.9) * (1.0 - 0.08 * i))
+        t += rng.uniform(0.06, 0.11)
+    return saturate(out, 1.5)
+
+
 def gen_fireball():
     """Wizard / Pyromancer: a mass of fire leaving the hand."""
     dur = 0.62
@@ -1778,18 +2665,19 @@ def gen_demon_fire():
 
 
 def gen_flambe():
-    """Chef: gas ignition — the whump of a pan going up, not a fireball."""
+    """Chef: gas ignition — the whump of a pan going up, not a fireball. The
+    igniter ticks first: dry clicks, not the three struck steel partials they
+    used to be."""
     dur = 0.46
     tick = np.zeros(n_of(dur))
     for i in range(3):
-        at(tick, 0.005 + i * 0.022, strike("steel", 2600, 0.03, hardness=1.0, damp=3.0,
-                                           name="fl" + str(i)) * (0.5 - 0.12 * i))
-    whump = gas(0.3, band=(200, 3600), fizz=0.35, name="flw")
-    whump *= seg_env([(0.0, 0.0), (0.04, 1.0), (1.0, 0.0)], 0.3)
+        at(tick, 0.005 + i * 0.022, click(0.004, fc=2600, name="fl" + str(i), shape=1.2) * (0.55 - 0.12 * i))
+    whump_ = gas(0.3, band=(200, 3600), fizz=0.35, name="flw")
+    whump_ *= seg_env([(0.0, 0.0), (0.04, 1.0), (1.0, 0.0)], 0.3)
     body = fire(dur * 0.8, low=95, roar=0.7, crackles=10, name="flf") * 0.7
     low = sine(seg_env([(0.0, 120), (1.0, 44)], 0.2), 0.2) * exp_env(0.2, decay=6.0) * 0.7
     out = np.zeros(n_of(dur))
-    at(out, 0.07, whump * 1.1)
+    at(out, 0.07, whump_ * 1.1)
     at(out, 0.07, pad_to(saturate(low, 2.2), dur - 0.07))
     at(out, 0.09, body)
     out += tick
@@ -1832,35 +2720,58 @@ def gen_eruption():
 
 
 def gen_napalm():
-    """Pilot: something is dropped, then a wall of fire blooms."""
+    """Pilot: the strike being called in — a jet tearing over and the whistle of
+    what it dropped falling. The fire is the blast, when it lands."""
     dur = 0.95
-    whistle = air(0.34, band=(900, 2600), q=11, arc=2.0, turb=0.1, edge=0.5, name="npw") * 0.5
-    bloom = fire(dur * 0.65, low=95, roar=1.15, crackles=28, name="npf")
-    thump = sine(seg_env([(0.0, 110), (1.0, 36)], 0.26), 0.26) * exp_env(0.26, decay=5.0)
+    n = n_of(dur)
+    jet = svf(pink(dur, "npj"), seg_env([(0.0, 700), (0.35, 3200), (1.0, 500)], dur), q=1.2, mode="bp")
+    jet = mixdown(jet, lowpass(pink(dur, "npl"), 260) * 1.5)
+    jet *= seg_env([(0.0, 0.0), (0.3, 1.0), (0.55, 0.7), (1.0, 0.0)], dur) ** 1.3
+    whistle = sine(seg_env([(0.0, 1900.0), (1.0, 900.0)], 0.5), 0.5)
+    whistle *= seg_env([(0.0, 0.0), (0.3, 1.0), (1.0, 0.2)], 0.5) * 0.18
+    out = norm(jet) * 0.8
+    at(out, 0.4, whistle)
+    return reverb(saturate(out, 1.8), decay=0.9, damp=3600, mix=0.26, name="np", predelay=0.01, size=1.4)
+
+
+def gen_cannon_fire():
+    """Pirate: the cannon going off — the fuse catching, the roar of black powder
+    and the smoke — and the ball's whistle leaving. It used to be the ball
+    landing, a third of a second after the throw."""
+    dur = 0.9
     out = np.zeros(n_of(dur))
-    out[:len(whistle)] += whistle
-    at(out, 0.3, bloom * 0.95)
-    at(out, 0.3, saturate(thump, 2.4) * 0.85)
-    return reverb(saturate(out, 1.8), decay=0.9, damp=3600, mix=0.26, name="np", predelay=0.01)
+    fuse = sizzle(0.07, band=(2800, 8500), crackle=0.9, name="cnf")
+    at(out, 0.0, fuse * 0.3)
+    at(out, 0.06, gun("cannon", 0.7, name="cng"))
+    whistle = svf(noise(0.3, "cnw"), seg_env([(0.0, 2400.0), (1.0, 1300.0)], 0.3), q=3.0, mode="bp")
+    at(out, 0.1, norm(whistle) * exp_env(0.3, attack=0.02, decay=4.0) * 0.15)
+    return out
 
 
 def gen_cluster_bomb():
-    """Bombardier: one launch, several separate detonations."""
-    dur = 1.1
+    """Bombardier: the launcher's deep thoonk and a canister of bomblets
+    rattling inside it as it goes up. The detonations are its blasts, played as
+    they go off; this used to set off five explosions of its own at the throw."""
+    dur = 0.7
     out = np.zeros(n_of(dur))
-    at(out, 0.0, lobbed("grenade", 0.34, name="cbl") * 0.55)
-    rng = np.random.default_rng(seed_of("cluster"))
-    for i in range(5):
-        t0 = 0.3 + i * rng.uniform(0.055, 0.11)
-        at(out, t0, gen_explosion(dur=0.5, size=0.5 + 0.12 * i, name="cb%d" % i),
-           rng.uniform(0.45, 0.8))
-    return saturate(out, 1.6)
+    thoonk = mixdown(thud(72, 0.3, drive=2.0, name="cbt"), whump(0.25, f=(140.0, 45.0), name="cbw") * 0.7)
+    gasp = svf(pink(0.2, "cbg"), seg_env([(0.0, 2400), (1.0, 600)], 0.2), q=1.4, mode="bp")
+    gasp *= exp_env(0.2, attack=0.002, decay=5.0)
+    bomblets = rattle(0.5, count=22, band=(900, 4200), q=6.0, cluster=0.6, name="cbr")
+    arc = air(0.5, band=(350, 2200), q=2.0, arc=1.6, turb=0.3, body=0.8, name="cba")
+    at(out, 0.0, norm(thoonk))
+    at(out, 0.0, norm(gasp) * 0.45)
+    at(out, 0.04, bomblets * 0.35)
+    at(out, 0.02, norm(arc) * 0.4)
+    return reverb(saturate(out, 1.8), decay=0.7, damp=4000, mix=0.22, name="cb", predelay=0.008)
 
 
 def gen_rocket():
+    """A rocket leaving the tube: the ignition's pop and flare, the thrust roar,
+    and the scream of the motor going away."""
     dur = 0.7
     ignite = mixdown(click(0.02, fc=1800, name="rki", shape=1.2) * 0.8,
-                     strike("steel", 900, 0.08, hardness=1.0, damp=2.4, name="rkc") * 0.4)
+                     whump(0.12, f=(220.0, 80.0), name="rkw") * 0.6)
     thrust = svf(pink(dur, "rkt"), seg_env([(0.0, 500), (0.3, 2000), (1.0, 1100)], dur), q=2.2)
     thrust *= ad_env(dur, attack=0.025, hold=0.5, curve=1.3)
     dop = fm(seg_env([(0.0, 260), (1.0, 760)], dur), 2.0, seg_env([(0.0, 6), (1.0, 1.5)], dur), dur)
@@ -2005,16 +2916,17 @@ def gen_banshee_cry():
 
 
 def gen_bull_bellow():
-    """Minotaur: chest, nostrils and horn — deliberately short. A sustained
-    low tone here is a foghorn, which is what this used to be."""
+    """Minotaur: chest, nostrils and a hoof striking the ground — deliberately
+    short. A sustained low tone here is a foghorn, which is what this used to be."""
     dur = 0.62
     v = cry(dur, [(0.0, 88), (0.2, 132), (0.6, 118), (1.0, 74)],
             [(0.0, "aw"), (0.4, "ah"), (1.0, "aw")],
             growl=0.55, breath=0.3, jitter=0.02, open_q=0.7,
             amp_keys=((0.0, 0.0), (0.08, 1.0), (0.65, 0.85), (1.0, 0.0)), name="bull")
     snort = bandpass(noise(0.16, "snrt"), 200, 2200) * exp_env(0.16, attack=0.004, decay=8.0) * 0.4
-    horn = strike("bone", 320, 0.3, hardness=0.7, damp=1.4, name="hrn") * 0.35
-    out = mixdown(saturate(v, 2.4) * 0.9, pad_to(snort, dur), pad_to(horn, dur))
+    hoof = mixdown(thud(85, 0.2, drive=1.8, name="hrn"),
+                   pad_to(grains(0.12, rate=140, band=(250, 1800), length=(0.002, 0.006), name="hrd") * 0.4, 0.2))
+    out = mixdown(saturate(v, 2.4) * 0.9, pad_to(snort, dur), pad_to(hoof * 0.45, dur))
     return reverb(out, decay=0.85, damp=3000, mix=0.28, name="bull", predelay=0.012, size=1.3)
 
 
@@ -2063,33 +2975,50 @@ def gen_bat_swarm():
 
 
 def gen_blood_fang():
-    dur = 0.34
-    snap = strike("bone", 340, 0.1, hardness=1.0, damp=1.6, name="bfs")
-    flesh = strike("flesh", 130, 0.18, hardness=0.9, damp=1.0, name="bff") * 0.85
-    slurp = fm(seg_env([(0.0, 190), (1.0, 470)], dur), 1.26, seg_env([(0.0, 6), (1.0, 1.5)], dur), dur)
-    slurp *= seg_env([(0.0, 0.0), (0.4, 0.6), (1.0, 0.0)], dur) * 0.4
-    wet = water(dur * 0.7, size=2.4, bubbles=5, foam=0.2, name="bfw") * 0.35
-    out = mixdown(pad_to(snap, dur), pad_to(flesh, dur), slurp, pad_to(wet, dur))
-    return reverb(saturate(out, 2.4), decay=0.4, damp=3800, mix=0.2, name="bf")
+    """Vampire: fangs sinking in, and the draw of blood through them."""
+    dur = 0.36
+    out = np.zeros(n_of(dur))
+    # the bite: a dry snap of teeth, a crunch, the soft give of flesh
+    snap = mixdown(click(0.005, fc=2200, name="bfk") * 0.9,
+                   bandpass(noise(0.03, "bfn"), 600, 3500) * exp_env(0.03, attack=0.0005, decay=8.0) * 0.6)
+    crunch = grains(0.07, rate=260, band=(500, 3000), length=(0.001, 0.004), name="bfc")
+    flesh = thud(120, 0.14, drive=1.8, name="bft")
+    # the slurp: suction rising, wet
+    slurp = squelch(0.22, f=(500, 1400), q=3.0, lumps=4, name="bfq")
+    at(out, 0.0, snap)
+    at(out, 0.003, crunch * 0.5)
+    at(out, 0.0, flesh * 0.6)
+    at(out, 0.1, slurp * 0.55)
+    return reverb(saturate(out, 2.2), decay=0.4, damp=3800, mix=0.2, name="bf")
 
 
 def gen_devour():
+    """Ghoul: a growl, and a bite that takes a mouthful."""
     dur = 0.5
     growl = gen_roar(f0=88, dur=dur, growl=0.75, name="dev") * 0.75
-    chomp = mixdown(strike("bone", 300, 0.12, hardness=1.0, damp=1.5, name="dvc"),
-                    strike("flesh", 110, 0.2, hardness=1.0, damp=0.9, name="dvf") * 0.9)
+    chomp = mixdown(click(0.005, fc=1900, name="dvk") * 0.9, thud(105, 0.18, drive=1.9, name="dvt") * 0.9,
+                    pad_to(grains(0.09, rate=240, band=(400, 2600), length=(0.001, 0.005), name="dvc") * 0.5, 0.18),
+                    pad_to(squelch(0.16, f=(900, 250), q=3.0, lumps=3, name="dvq") * 0.5, 0.18))
     out = pad_to(growl, dur)
     at(out, 0.015, chomp * 0.9)
     return reverb(saturate(out, 2.2), decay=0.5, damp=3400, mix=0.22, name="dev", predelay=0.006)
 
 
 def gen_jaw_chomp():
+    """Jaws snapping shut: teeth meeting (a hard dry clack, no ring), bone
+    crunching under them, and the wet of the mouth."""
     dur = 0.3
-    snap = strike("bone", 420, 0.09, hardness=1.0, damp=1.8, name="jw1")
-    crunch = strike("bone", 180, 0.16, hardness=0.9, damp=1.2, name="jw2") * 0.8
-    flesh = strike("flesh", 105, 0.14, hardness=0.85, damp=1.0, name="jw3") * 0.7
-    out = mixdown(pad_to(snap, dur), pad_to(crunch, dur), pad_to(flesh, dur))
-    return reverb(saturate(out, 2.6), decay=0.35, damp=4000, mix=0.2, name="jw")
+    out = np.zeros(n_of(dur))
+    clack = mixdown(click(0.006, fc=1600, name="jw1", shape=1.1),
+                    bandpass(noise(0.025, "jw1n"), 700, 3200) * exp_env(0.025, attack=0.0004, decay=9.0) * 0.7)
+    crunch = grains(0.1, rate=300, band=(350, 2400), length=(0.001, 0.005), name="jw2")
+    body = thud(95, 0.16, drive=2.0, name="jw3")
+    wet = squelch(0.14, f=(1100, 300), q=2.8, lumps=2, name="jw4")
+    at(out, 0.0, norm(clack) * 0.9)
+    at(out, 0.004, crunch * 0.55)
+    at(out, 0.0, body * 0.75)
+    at(out, 0.03, wet * 0.35)
+    return reverb(saturate(out, 2.4), decay=0.35, damp=4000, mix=0.2, name="jw")
 
 
 def gen_shark_rush():
@@ -2159,11 +3088,12 @@ def gen_venom_spit():
 
 
 def gen_stinger():
-    """Scorpion: chitin, then a hard puncture. No buzz — the old one read as a kazoo."""
+    """Scorpion: the tail cocking (a dry chitin tick), a hard puncture, and venom
+    going in. Chitin is dry: it clicks and scrapes, it does not ring."""
     dur = 0.28
-    lift = strike("chitin", 1400, 0.07, hardness=0.9, damp=2.4, name="st1") * 0.55
-    stab = mixdown(strike("chitin", 620, 0.12, hardness=1.0, damp=1.4, name="st2"),
-                   strike("flesh", 150, 0.1, hardness=1.0, damp=1.2, name="st3") * 0.6)
+    lift = _scrape(0.06, (2000, 8000), 0.8, "st1")
+    stab = mixdown(click(0.005, fc=2000, name="st2", shape=1.1) * 0.9,
+                   thud(130, 0.1, drive=1.8, name="st3") * 0.7)
     venom = gas(0.14, band=(1200, 7000), fizz=0.8, name="st4") * 0.3
     out = np.zeros(n_of(dur))
     out[:len(lift)] += lift
@@ -2219,34 +3149,38 @@ def gen_curse_hex():
 
 
 def gen_void_bolt():
-    """Sound is pulled in, then something collapses."""
-    dur = 0.6
-    swell = svf(pink(dur * 0.55, "void"), seg_env([(0.0, 320), (1.0, 4600)], dur * 0.55), q=6, mode="bp")
-    swell *= np.linspace(0, 1, n_of(dur * 0.55)) ** 2.4
-    collapse = fm(seg_env([(0.0, 1250), (1.0, 38)], dur * 0.45), 1.73,
-                  seg_env([(0.0, 3), (1.0, 11)], dur * 0.45), dur * 0.45)
-    collapse *= exp_env(dur * 0.45, attack=0.002, decay=3.6)
-    sub = sine(seg_env([(0.0, 66), (1.0, 27)], 0.3), 0.3) * exp_env(0.3, decay=4.0)
-    out = np.zeros(n_of(dur))
-    out[:len(swell)] += swell * 0.5
-    at(out, dur * 0.5, saturate(collapse, 2.6) * 0.9)
-    at(out, dur * 0.5, saturate(sub, 2.2) * 0.8)
-    return reverb(out, decay=1.2, damp=2600, mix=0.32, name="void", predelay=0.012, size=1.4)
+    """Voidwalker: sound is pulled in, then something collapses — a suction
+    rising into it, a deep drop as it goes, and a dark streak warping past. (Its
+    collapse was an FM glide at an inharmonic ratio, 0.6s of it, twice a second.)"""
+    dur = 0.46
+    n = n_of(dur)
+    pull_d = 0.14
+    pull = svf(pink(pull_d, "void"), seg_env([(0.0, 400), (1.0, 4200)], pull_d), q=2.4, mode="bp")
+    pull *= np.linspace(0.0, 1.0, n_of(pull_d)) ** 2.4
+    drop = sine(seg_env([(0.0, 190.0), (0.3, 70.0), (1.0, 36.0)], 0.32), 0.32)
+    drop = saturate(drop * exp_env(0.32, attack=0.004, decay=4.2), 2.0)
+    streak = flange(air(dur - pull_d, band=(250, 2000), q=1.6, arc=1.2, turb=0.5, body=0.7, name="vds"),
+                    0.5, 6.5, rise=False)
+    out = np.zeros(n)
+    at(out, 0.0, norm(pull) * 0.5)
+    at(out, pull_d - 0.01, drop * 0.85)
+    at(out, pull_d - 0.02, norm(streak) * 0.5)
+    return reverb(saturate(out, 1.8), decay=1.0, damp=2600, mix=0.3, name="void", predelay=0.012, size=1.4)
 
 
 def gen_gravity_ball():
-    """Collapse then rebound, ring-modulated so it never settles on a pitch."""
-    dur = 0.75
-    pitch = seg_env([(0.0, 480), (0.42, 44), (0.72, 160), (1.0, 62)], dur)
-    body = fm(pitch, 1.33, seg_env([(0.0, 4), (0.5, 11), (1.0, 3)], dur), dur)
-    ring = np.sin(2 * np.pi * np.cumsum(as_array(pitch * 0.37, n_of(dur))) / SR)
-    body = body * (0.65 + 0.35 * ring)
-    body *= seg_env([(0.0, 0.0), (0.08, 1.0), (0.65, 0.75), (1.0, 0.0)], dur)
-    sub = sine(seg_env([(0.0, 82), (1.0, 28)], dur), dur) * swell_env(dur, 1.2) * 0.6
-    pull = svf(pink(dur, "grav"), seg_env([(0.0, 1800), (0.5, 260), (1.0, 800)], dur), q=6, mode="bp")
-    pull *= swell_env(dur, 1.5) * 0.28
-    return reverb(saturate(mixdown(body * 0.8, sub, pull), 2.0), decay=1.2, damp=2800,
-                  mix=0.30, name="grav", predelay=0.01, size=1.3)
+    """Graviton: a knot of gravity — a deep throb bending as space warps round
+    it, and the air falling into it."""
+    dur = 0.5
+    n = n_of(dur)
+    bend = seg_env([(0.0, 96.0), (0.35, 52.0), (0.7, 70.0), (1.0, 46.0)], dur)
+    throb = sine(bend, dur) * (0.55 + 0.45 * np.sin(2 * np.pi * 9.0 * t_axis(dur)))
+    throb = saturate(throb * seg_env([(0.0, 0.0), (0.05, 1.0), (0.6, 0.7), (1.0, 0.0)], dur), 2.2)
+    fall = svf(pink(dur, "grav"), seg_env([(0.0, 3400), (0.5, 500), (1.0, 900)], dur), q=2.0, mode="bp")
+    fall *= swell_env(dur, 1.3)
+    warp = flange(air(dur, band=(300, 2200), q=1.5, arc=1.3, turb=0.4, body=0.6, name="grw"), 0.4, 5.0)
+    out = mixdown(throb * 0.7, norm(fall) * 0.4, norm(warp) * 0.4)
+    return reverb(saturate(out, 1.8), decay=1.0, damp=2800, mix=0.28, name="grav", predelay=0.01, size=1.3)
 
 
 def gen_vortex_pull():
@@ -2334,15 +3268,18 @@ def gen_nano_burst():
 
 
 def gen_shadow_bolt():
+    """Shade, Mantis: a shard of shadow — a dark streak of air, a low growl moving
+    in it, and a breath. (Its body was an FM tone at an inharmonic ratio: the
+    darkest bolt in the game rang like a pan.)"""
     dur = 0.45
-    whoosh = svf(pink(dur, "shad"), seg_env([(0.0, 2000), (0.4, 760), (1.0, 260)], dur), q=4, mode="bp")
+    whoosh = svf(pink(dur, "shad"), seg_env([(0.0, 2000), (0.4, 760), (1.0, 260)], dur), q=2.2, mode="bp")
     whoosh *= exp_env(dur, attack=0.008, decay=5.0)
-    body = fm(seg_env([(0.0, 220), (1.0, 78)], dur), 1.73, seg_env([(0.0, 9), (1.0, 2.5)], dur), dur)
-    body *= exp_env(dur, attack=0.004, decay=4.5) * 0.75
-    breath = cry(dur * 0.7, [(0.0, 130), (1.0, 88)], [(0.0, "oo"), (1.0, "uh")], breath=0.9,
-                 jitter=0.04, amp_keys=((0.0, 0.0), (0.2, 0.6), (1.0, 0.0)), name="shb") * 0.28
-    out = mixdown(whoosh * 0.6, saturate(body, 2.6), pad_to(breath, dur))
-    return reverb(out, decay=0.85, damp=2800, mix=0.30, name="shad", predelay=0.01)
+    body = _b_dark(98.0, dur, "shbd")
+    breath_ = cry(dur * 0.7, [(0.0, 130), (1.0, 88)], [(0.0, "oo"), (1.0, "uh")], breath=0.9,
+                  jitter=0.04, amp_keys=((0.0, 0.0), (0.2, 0.6), (1.0, 0.0)), name="shb") * 0.28
+    push = whump(0.2, f=(150.0, 50.0), name="shw")
+    out = mixdown(norm(whoosh) * 0.55, body * 0.7, pad_to(breath_, dur), pad_to(push, dur) * 0.5)
+    return reverb(saturate(out, 1.8), decay=0.85, damp=2800, mix=0.30, name="shad", predelay=0.01)
 
 
 def gen_echo_bolt():
@@ -2360,17 +3297,21 @@ def gen_echo_bolt():
 
 
 def gen_hypnotic_melody():
-    """Musician: three notes of an A-minor arpeggio on a soft mallet. This is
-    the one place in the game a melodic figure belongs — it is the ability."""
+    """Musician: three notes of an A-minor arpeggio on a lyre, doubled by a
+    breathy flute, with the echo of it hanging. This is the one place in the game
+    a melodic figure belongs — it is the ability. (It was played on church bells.)"""
     dur = 0.7
     out = np.zeros(n_of(dur))
     for i, m in enumerate((69, 72, 76)):  # A C E
         f = 440.0 * (2.0 ** ((m - 69) / 12.0))
-        note = modal("bell", f, 0.42, damp=2.0, name="hm%d" % i)
-        note = mixdown(note, sine(f * 2, 0.42) * exp_env(0.42, attack=0.004, decay=5.0) * 0.18)
-        at(out, i * 0.075, note * (0.9 - 0.12 * i))
-    shimmer = sparkle(dur, 3500, 10000, count=8, name="hms") * 0.3
-    return reverb(mixdown(out * 0.8, shimmer), decay=1.0, damp=7000, mix=0.30, name="hm",
+        note = pluck(f, 0.5, t60=0.7, bright=0.5, pick=0.2, name="hm%d" % i)
+        flute = glow(f, 0.4, voices=2, detune=0.004, cut=(2.4, 1.3), q=0.9, attack=0.05, decay=3.5,
+                     settle=1.0, vib=(5.0, 0.01), name="hmf%d" % i)
+        note = mixdown(note * 0.8, flute * 0.3)
+        at(out, i * 0.09, note * (0.9 - 0.1 * i))
+    out = delay_fx(out, 0.14, feedback=0.3, mix=0.25, taps=3)
+    shimmer = sparkle(dur, 3500, 10000, count=8, name="hms") * 0.25
+    return reverb(mixdown(norm(out) * 0.8, shimmer), decay=1.0, damp=7000, mix=0.30, name="hm",
                   predelay=0.01)
 
 
@@ -2445,6 +3386,36 @@ def gen_reap():
                   mix=0.28, name="rp", predelay=0.012)
 
 
+def gen_holy_bolt():
+    """Cleric: a mote of holy light — sung on an open fifth, with a warm push of
+    air behind it. It was a bell and a struck steel plate."""
+    dur = 0.36
+    body = radiance(dur, notes=(N["A3"], N["E4"], N["A4"]), name="hb")
+    push = sine(seg_env([(0.0, 175), (1.0, 96)], 0.11), 0.11) * exp_env(0.11, decay=8.0)
+    return reverb(mixdown(body, pad_to(push * 0.45, dur)), decay=0.6, damp=7000, mix=0.2, name="hb",
+                  predelay=0.008)
+
+
+def gen_smite():
+    """Cleric's Smite: a pillar of light slamming down — the rush of it falling,
+    a choir crying out as it lands, the deep blow of it, and light spraying off.
+    (It was two bells, a struck plate and a slam of steel: fired five at a time
+    by Divine Judgment, a belfry falling down the stairs.)"""
+    dur = 0.75
+    out = np.zeros(n_of(dur))
+    fall = air(0.16, band=(900, 5200), q=1.8, arc=2.4, turb=0.3, body=0.4, name="smf")
+    fall *= np.linspace(0.3, 1.0, n_of(0.16)) ** 2
+    stab = choir((N["A3"], N["E4"], N["A4"], N["E5"]), 0.5, vowels=((0.0, "ah"), (1.0, "aw")), name="smc")
+    stab *= seg_env([(0.0, 0.0), (0.03, 1.0), (0.3, 0.55), (1.0, 0.0)], 0.5)
+    blow = mixdown(thud(66, 0.4, drive=2.0, name="smt"), whump(0.3, f=(150.0, 40.0), name="smw") * 0.8)
+    spray = sparkle(0.6, 3000, 12000, count=26, name="sms")
+    at(out, 0.0, norm(fall) * 0.4)
+    at(out, 0.12, stab * 0.55)
+    at(out, 0.12, norm(blow) * 0.8)
+    at(out, 0.13, spray * 0.45)
+    return reverb(saturate(out, 1.6), decay=1.0, damp=6400, mix=0.26, name="sm", predelay=0.012, size=1.3)
+
+
 # ═══════════════════════════ character voices ═══════════════════════════
 # Where several characters share a projectile type, the base sound is whichever
 # of them the projectile was named for, and everyone else gets a voice here.
@@ -2499,16 +3470,22 @@ def gen_stone_fist():
 
 
 def gen_shell_charge():
-    """Beetle: carapace, not knuckles."""
+    """Beetle: carapace, not knuckles — the shell clacking as it goes, and the
+    heavy thud of it."""
     return _with(gen_boulder_rumble() * 0.5, _scrape(0.3, (900, 5200), 0.55, "besc"),
-                 pad_to(strike("chitin", 260, 0.26, hardness=1.0, name="bec") * 0.7, 0.4))
+                 pad_to(mixdown(thud(95, 0.26, drive=1.9, name="bec") * 0.8,
+                                pad_to(click(0.006, fc=1500, name="beck") * 0.6, 0.26)), 0.4))
 
 
 def gen_ice_chunk():
-    """Avalanche throws ice, not rock."""
+    """Avalanche throws ice, not rock: the rumble of the mass and ice cracking
+    and crunching through it."""
     return _with(gen_boulder_rumble() * 0.45,
-                 pad_to(strike("ice", 420, 0.34, hardness=1.0, damp=1.1, name="avi") * 0.85, 0.5),
-                 debris(0.5, count=14, band=(900, 7000), decay=(12.0, 30.0), name="avd") * 0.4)
+                 pad_to(mixdown(crack(0.02, name="avk") * 0.6,
+                                grains(0.34, rate=120, band=(700, 4200), length=(0.002, 0.008),
+                                       density=[(0.0, 1.0), (0.4, 0.5), (1.0, 0.1)], name="avi")), 0.5) * 0.6,
+                 grains(0.5, rate=240, band=(2400, 10000), length=(0.0003, 0.0018),
+                        density=[(0.0, 1.0), (0.3, 0.4), (1.0, 0.0)], name="avd") * 0.4)
 
 
 # — clawed beasts ——————————————————————————————————————————————
@@ -2520,7 +3497,7 @@ def gen_bear_maul():
 def gen_mantis_scythe():
     """Two chitin blades, faster than anything with fur."""
     return _with(swing("talon", 0.26, name="mas") * 0.9, _scrape(0.2, (2000, 9000), 0.42, "masc"),
-                 pad_to(strike("chitin", 1600, 0.14, hardness=1.0, damp=2.0, name="mac") * 0.5, 0.26))
+                 pad_to(click(0.005, fc=2600, name="mac") * 0.5, 0.26))
 
 
 def gen_fenrir_rend():
@@ -2583,16 +3560,20 @@ def gen_warlock_bolt():
 
 
 def gen_anubis_bolt():
-    """Egyptian: a struck bronze sistrum and desert grit over the death bolt."""
+    """Egyptian: a shaken sistrum — a rattle of loose metal discs, which is what
+    one is — and desert grit over the death bolt."""
     return _with(bolt("dark", 130.81, dur=0.44, name="anb") * 0.85,
-                 pad_to(modal("bell", 784.0, 0.3, damp=7.0, name="ansi") * 0.3, 0.44),
-                 _texture("dust", 0.4, "andust") * 0.3)
+                 pad_to(rattle(0.26, count=18, band=(2600, 8000), q=8.0, cluster=0.8, name="ansi") * 0.35, 0.44),
+                 dust(0.4, "andust") * 0.3)
 
 
 def gen_deathknight_blade():
-    """Plate armour moving with the swing."""
+    """Death Knight's chill blade: the cursed blade's tumble, plate armour moving
+    with the throw, and frost coming off the steel."""
     return _with(thrown("cursed", 0.46, name="dkb") * 0.9,
-                 pad_to(debris(0.3, count=8, band=(1200, 6000), decay=(30.0, 60.0), name="dkp") * 0.3, 0.46))
+                 pad_to(debris(0.3, count=8, band=(1200, 6000), decay=(30.0, 60.0), name="dkp") * 0.3, 0.46),
+                 grains(0.46, rate=160, band=(2600, 10000), length=(0.0003, 0.0015),
+                        density=[(0.0, 0.5), (0.3, 1.0), (1.0, 0.0)], name="dkf") * 0.25)
 
 
 def gen_poltergeist_hurl():
@@ -2604,25 +3585,33 @@ def gen_poltergeist_hurl():
 
 
 def gen_djinn_bolt():
-    """Smoke and struck brass."""
-    return _with(bolt("mystic", 220.0, dur=0.44, name="djb") * 0.85,
-                 pad_to(modal("bell", 587.33, 0.32, damp=5.5, name="djbr") * 0.34, 0.44),
-                 gas(0.4, band=(300, 3400), fizz=0.3, name="djg") * 0.3)
+    """A djinn's magic: smoke curling off it, a breathy reed-like call, and the
+    shimmer of a mirage."""
+    dur = 0.46
+    smoke = gas(dur, band=(300, 3400), fizz=0.3, pitchfall=False, name="djg")
+    return _with(bolt("mystic", 220.0, dur=0.44, name="djb") * 0.8,
+                 norm(smoke) * 0.35,
+                 sparkle(dur, 3000, 9000, count=10, name="djs") * 0.3)
 
 
 # — tech ————————————————————————————————————————————————
 def gen_photon_beam():
-    return _with(beam("laser", 0.5, name="pho") * 0.85,
-                 sparkle(0.5, 5000, 14000, count=14, name="phos") * 0.42,
-                 pad_to(modal("glass", 1760.0, 0.3, damp=4.0, name="phog") * 0.28, 0.5))
+    """Photon: a blaster bolt split through a prism — the bolt, a spray of light
+    off it and a second, higher bolt a hair behind."""
+    dur = 0.34
+    out = np.zeros(n_of(dur))
+    at(out, 0.0, blaster(0.3, top=3200.0, bottom=520.0, name="pho1") * 0.8)
+    at(out, 0.012, blaster(0.28, top=4800.0, bottom=880.0, buzz_hz=95.0, name="pho2") * 0.35)
+    out = mixdown(out, sparkle(dur, 5000, 14000, count=16, name="phos") * 0.4)
+    return reverb(saturate(out, 1.4), decay=0.5, damp=6400, mix=0.18, name="pho", predelay=0.004)
 
 
 def gen_turret_laser():
-    """Sentinel: a mounted weapon — servo, then the shot."""
+    """Sentinel: a mounted weapon — the servo slewing, then the bolt."""
     dur = 0.44
     out = np.zeros(n_of(dur))
     at(out, 0.0, machine(0.16, servo=(420, 900), clank=0.35, whine=0.5, name="tur") * 0.45)
-    at(out, 0.08, beam("laser", 0.34, name="turb") * 0.9)
+    at(out, 0.08, blaster(0.3, top=2400.0, bottom=390.0, buzz_hz=60.0, name="turb") * 0.9)
     return out
 
 
@@ -2644,21 +3633,32 @@ def gen_tesla_arc():
 
 
 def gen_time_bolt():
-    """Chronomancer: the same discharge heard slightly out of order."""
+    """Chronomancer: a clock's tick-tock, and the discharge heard slightly out of
+    order — its tail arriving before it does."""
     dur = 0.55
     core = elec(0.34, size=0.7, colour=(700, 9000), forks=2, name="tmb")
     rev = core[::-1] * np.linspace(0.0, 1.0, len(core)) ** 2.4 * 0.45
     out = np.zeros(n_of(dur))
+    tick = mixdown(click(0.004, fc=3200, name="tmt"),
+                   bandpass(noise(0.012, "tmtn"), 2400, 7000) * exp_env(0.012, attack=0.0003, decay=6.0) * 0.6)
+    tock = mixdown(click(0.005, fc=1400, name="tmk"),
+                   bandpass(noise(0.016, "tmkn"), 900, 3200) * exp_env(0.016, attack=0.0003, decay=6.0) * 0.6)
+    at(out, 0.0, norm(tick) * 0.5)
+    at(out, 0.09, norm(tock) * 0.45)
     at(out, 0.0, rev)
     at(out, 0.16, core * 0.9)
     wob = sine(seg_env([(0.0, 330.0), (0.5, 196.0), (1.0, 262.0)], dur), dur)
-    return _with(out, wob * swell_env(dur, 1.6) * 0.22)
+    return _with(out, wob * swell_env(dur, 1.6) * 0.18)
 
 
 # — the rest ————————————————————————————————————————————
 def gen_glacier_shard():
+    """Glacier: a heavier shard than the Cryomancer's — ice fracturing as it
+    breaks off, crunching, with a cold weight behind it."""
     return _with(bolt("ice", 196.0, dur=0.46, name="gls") * 0.85,
-                 pad_to(strike("ice", 620, 0.32, hardness=1.0, damp=1.0, name="glc") * 0.6, 0.46))
+                 pad_to(grains(0.2, rate=90, band=(700, 3600), length=(0.002, 0.007),
+                               density=[(0.0, 1.0), (1.0, 0.1)], name="glc") * 0.5, 0.46),
+                 pad_to(whump(0.2, f=(120.0, 45.0), name="glw") * 0.4, 0.46))
 
 
 def gen_medusa_spit():
@@ -2678,28 +3678,34 @@ def gen_hydra_spit():
 
 
 def gen_treant_bark():
+    """Treant: a thorny shard of bark torn off and flung — the wood splitting,
+    a creak, and the dust of it."""
     return _with(shaft("thorn", 0.34, name="trb") * 0.85,
-                 pad_to(strike("wood", 220, 0.24, hardness=0.9, name="trw") * 0.55, 0.34),
-                 _texture("dust", 0.3, "trd") * 0.25)
+                 pad_to(mixdown(creak(0.16, rate=(50.0, 120.0), body=(300.0, 700.0), q=3.5, name="trc") * 0.6,
+                                grains(0.1, rate=160, band=(400, 2400), length=(0.002, 0.006), name="trw") * 0.5),
+                        0.34) * 0.6,
+                 dust(0.3, "trd") * 0.25)
 
 
 def gen_inquisitor_bolt():
-    """Zeal, not grace: the bell is struck harder and there is iron in it."""
-    return _with(chime("holy", 0.3) * 0.8,
-                 pad_to(strike("iron", 420, 0.22, hardness=1.0, damp=2.2, name="inqi") * 0.45, 0.3),
-                 pad_to(thud(140, 0.16, drive=1.7, name="inqt") * 0.45, 0.3))
+    """Zeal, not grace: holy fire — a hard choir stab over flame, with a crack
+    of judgement at the front. (It had an iron bell in it.)"""
+    dur = 0.34
+    ch = choir((N["A3"], N["E4"]), dur, vowels=((0.0, "ah"), (1.0, "aw")), name="inqc")
+    ch *= seg_env([(0.0, 0.0), (0.04, 1.0), (0.35, 0.6), (1.0, 0.0)], dur)
+    flame = _b_fire(196.0, dur, "inqf")
+    out = mixdown(ch * 0.3, flame * 0.7, pad_to(crack(0.02, name="inqk") * 0.35, dur),
+                  pad_to(thud(140, 0.16, drive=1.7, name="inqt") * 0.4, dur))
+    return reverb(saturate(out, 1.6), decay=0.5, damp=4800, mix=0.2, name="inq", predelay=0.006)
 
 
 def gen_lute_chord():
-    """Bard: a plucked chord, which is what a bard attacks with."""
+    """Bard: a strummed chord — plucked strings, every partial harmonic."""
     dur = 0.5
     out = np.zeros(n_of(dur))
     for i, f in enumerate((220.0, 261.63, 329.63, 440.0)):   # Am
-        pluck = mixdown(strike("wood", f, 0.34, hardness=0.9, damp=0.6, name="lut%d" % i) * 0.5,
-                        sine(f, 0.36) * exp_env(0.36, attack=0.002, decay=6.0) * 0.55,
-                        sine(f * 2, 0.3) * exp_env(0.3, attack=0.002, decay=9.0) * 0.2)
-        at(out, i * 0.014, pluck * (0.9 - 0.1 * i))
-    return _with(out, wavefront("sonic", 0.4, name="lutw") * 0.3)
+        at(out, i * 0.014, pluck(f, dur, t60=0.55, bright=0.6, pick=0.22, name="lut%d" % i) * (0.9 - 0.1 * i))
+    return _with(norm(out), wavefront("sonic", 0.4, name="lutw") * 0.3)
 
 
 def gen_song_wave():
@@ -2715,13 +3721,15 @@ def gen_song_wave():
 
 
 def gen_sphinx_riddle():
-    """A question you cannot answer, not a blast."""
+    """A question you cannot answer, not a blast: a whisper, a breathy reed and
+    the shimmer of the desert air."""
     dur = 0.6
     whisper = cry(dur, [(0.0, 210), (0.45, 300), (1.0, 190)],
                   [(0.0, "oo"), (0.35, "ee"), (0.7, "ah"), (1.0, "oo")],
                   breath=0.9, jitter=0.04, open_q=0.35,
                   amp_keys=((0.0, 0.0), (0.2, 0.7), (0.7, 0.55), (1.0, 0.0)), name="sph")
-    return _with(chime("holy", 0.4) * 0.45, whisper * 0.5,
+    reed = _b_mystic(N["D4"], dur, "sphm")
+    return _with(reed * 0.5, whisper * 0.55,
                  pad_to(sparkle(0.5, 2600, 8000, count=9, name="sphs") * 0.3, dur))
 
 
@@ -3282,7 +4290,7 @@ def gen_battle_theme():
 # Everything pitched is tuned to A minor, the key of both music tracks, so a
 # firefight stays harmonically coherent instead of sounding like an argument.
 N = dict(F2=87.31, A2=110.00, C3=130.81, D3=146.83, E3=164.81, F3=174.61, G3=196.00,
-         A3=220.00, C4=261.63, D4=293.66, E4=329.63, F4=349.23, G4=392.00, A4=440.00,
+         A3=220.00, C4=261.63, D4=293.66, E4=329.63, F4=349.23, G4=392.00, A4=440.00, B4=493.88,
          C5=523.25, D5=587.33, E5=659.25, G5=783.99, A5=880.00, C6=1046.50, E6=1318.51)
 
 # Master presets. `level` gives the mix real dynamics — a thrown card is not as
@@ -3320,56 +4328,54 @@ def _sounds():
     A(("atk_normal_bolt", lambda: bolt("neutral", N["A3"]), 0.50, "bolt", BOLT_M))
     A(("atk_arcane_bolt", lambda: bolt("arcane", N["E4"]), 0.56, "bolt", BOLT_M))
     A(("atk_mystic_bolt", lambda: bolt("mystic", N["D4"]), 0.56, "bolt", BOLT_M))
-    A(("atk_rune_bolt", lambda: bolt("rune", N["A2"]), 0.58, "bolt", BOLT_M))
+    A(("atk_rune_bolt", lambda: bolt("rune", N["A2"]), 0.49, "bolt", BOLT_M))
     A(("atk_star_bolt", lambda: bolt("star", N["A4"]), 0.52, "bolt", dict(BOLT_M, **BRIGHT)))
     A(("atk_soul_bolt", lambda: bolt("soul", N["C3"]), 0.56, "bolt", BOLT_M))
     A(("atk_haunt_bolt", lambda: bolt("soul", N["A2"], dur=0.46), 0.60, "bolt", GHOST))
     A(("atk_death_bolt", lambda: bolt("dark", N["A2"]), 0.62, "bolt", BOLT_M))
-    A(("atk_leech_bolt", lambda: bolt("dark", N["C3"], dur=0.42), 0.58, "bolt", BOLT_M))
-    A(("atk_plague_bolt", lambda: bolt("poison", N["E3"]), 0.56, "bolt", BOLT_M))
+    A(("atk_leech_bolt", lambda: bolt("leech", N["C3"], dur=0.42), 0.58, "bolt", BOLT_M))
+    A(("atk_plague_bolt", lambda: bolt("poison", N["E3"]), 0.47, "bolt", BOLT_M))
     A(("atk_venom_bolt", lambda: bolt("acid", N["G3"]), 0.56, "bolt", BOLT_M))
     A(("atk_flame_bolt", lambda: bolt("fire", N["A3"]), 0.58, "bolt", BOLT_M))
-    A(("atk_ember_shot", lambda: bolt("fire", N["E4"], dur=0.30), 0.52, "bolt", TIGHT))
+    A(("atk_ember_shot", lambda: bolt("ember", N["E4"], dur=0.30), 0.68, "bolt", TIGHT))
     A(("atk_magma_ball", lambda: bolt("molten", N["F2"]), 0.66, "bolt", dict(BOLT_M, sub=(40, 0.42))))
-    A(("atk_frost_shard", lambda: bolt("ice", N["E4"], extra=strike(
-        "ice", 1480, 0.3, hardness=0.9, damp=1.8, name="fsx") * 0.45), 0.56, "bolt", dict(BOLT_M, **BRIGHT)))
-    A(("atk_mud_glob", lambda: bolt("mud", N["F2"]), 0.58, "bolt", BOLT_M))
+    A(("atk_frost_shard", lambda: bolt("ice", N["E4"]), 0.70, "bolt", dict(BOLT_M, **BRIGHT)))
+    A(("atk_mud_glob", lambda: bolt("mud", N["F2"]), 0.45, "bolt", BOLT_M))
     A(("atk_sand_shot", lambda: bolt("sand", N["C3"]), 0.54, "bolt", BOLT_M))
     A(("atk_charm_bolt", lambda: bolt("charm", N["E5"]), 0.50, "bolt", dict(BOLT_M, tail=(0.7, 0.22), **BRIGHT)))
     A(("atk_nano_bolt", lambda: bolt("nano", N["A4"]), 0.48, "bolt", dict(TIGHT, **BRIGHT)))
-    A(("atk_sting", lambda: bolt("electric", N["E4"], dur=0.30), 0.50, "bolt", dict(TIGHT, **BRIGHT)))
+    A(("atk_sting", lambda: bolt("electric", N["E4"], dur=0.30), 0.60, "bolt", dict(TIGHT, **BRIGHT)))
     A(("atk_shadow_bolt", gen_shadow_bolt, 0.62, "ability", dict(WIDE, tail=(1.0, 0.22))))
-    A(("atk_void_bolt", gen_void_bolt, 0.70, "ability", dict(width=1.0, transient=0.7, sub=(32, 0.7),
-                                                             pingpong=(0.14, 0.34, 0.2), tail=(1.2, 0.26))))
-    A(("atk_gravity_ball", gen_gravity_ball, 0.70, "ability", dict(width=0.95, transient=0.7,
-                                                                   sub=(30, 0.58), tail=(1.2, 0.26))))
+    A(("atk_void_bolt", gen_void_bolt, 0.70, "melee", dict(width=1.0, transient=0.7, sub=(32, 0.6),
+                                                           pingpong=(0.14, 0.3, 0.16), tail=(1.0, 0.24))))
+    A(("atk_gravity_ball", gen_gravity_ball, 0.68, "melee", dict(width=0.95, transient=0.8,
+                                                                 sub=(30, 0.5), tail=(1.0, 0.24))))
     A(("atk_data_bolt", gen_data_bolt, 0.50, "tiny", dict(TIGHT, pingpong=(0.055, 0.24, 0.16), **BRIGHT)))
     A(("atk_virus_glitch", gen_virus_glitch, 0.58, "bolt", dict(width=0.9, transient=1.5, tail=(0.3, 0.12))))
     A(("atk_echo_bolt", gen_echo_bolt, 0.60, "ability", dict(GHOST, pingpong=(0.13, 0.3, 0.2))))
     A(("atk_curse_hex", gen_curse_hex, 0.62, "ability", dict(GHOST, pingpong=(0.11, 0.36, 0.22))))
-    A(("atk_holy_bolt", lambda: mixdown(
-        chime("holy", 0.34), pad_to(strike("steel", 780, 0.18, hardness=1.0, damp=2.2, name="hbs") * 0.4, 0.34),
-        pad_to(sine(seg_env([(0.0, 175), (1.0, 96)], 0.11), 0.11) * exp_env(0.11, decay=8.0) * 0.5, 0.34)),
-       0.62, "melee", dict(width=0.75, transient=1.4, comp=(0.32, 2.4), tail=(0.6, 0.18), **BRIGHT)))
-    A(("atk_smite", lambda: mixdown(chime("smite", 0.7) * 1.3, pad_to(slam("metal", 0.4, name="smt") * 0.3, 0.7),
-                                    pad_to(sparkle(0.55, 4000, 12000, count=14, name="smts") * 0.5, 0.7),
-                                    pad_to(strike("bell", 1046.5, 0.5, hardness=1.0, damp=2.0, name="smb") * 0.5, 0.7)),
-       0.72, "ability", dict(BIG, sub=(50, 0.3), comp=(0.32, 2.4), **BRIGHT)))
+    A(("atk_holy_bolt", gen_holy_bolt, 0.62, "melee", dict(width=0.75, transient=1.1, comp=(0.32, 2.4),
+                                                             tail=(0.6, 0.18), **BRIGHT)))
+    A(("atk_smite", gen_smite, 0.72, "ability", dict(BIG, sub=(50, 0.3), comp=(0.32, 2.4), **BRIGHT)))
     A(("atk_hypnotic_melody", gen_hypnotic_melody, 0.58, "ability", dict(WIDE, tail=(1.2, 0.26))))
 
-    # ── beams ──
-    for v, lvl in (("ice", 0.58), ("laser", 0.56), ("railgun", 0.82), ("drain", 0.60),
-                   ("vine", 0.56), ("stone", 0.62), ("whip", 0.58), ("gravity", 0.68), ("eye", 0.70)):
-        sub = (42, 0.5) if v in ("railgun", "gravity", "eye") else None
-        # the cyclops' beam is named for the eye, not for the family
-        nm = "atk_eye_beam" if v == "eye" else "atk_beam_" + v
-        kw = dict(width=0.75, transient=0.9, sub=sub, tail=(0.6, 0.18))
-        if v in ("ice", "laser"):
-            kw.update(BRIGHT)
-        A((nm, (lambda vv: lambda: beam(vv))(v), lvl, "ability", kw))
-    A(("atk_sniper_beam", lambda: mixdown(gun("light", 0.3, name="snp") * 0.85,
-                                          pad_to(beam("laser", 0.34, name="snb") * 0.5, 0.34)),
-       0.72, "ability", dict(width=0.5, transient=1.8, comp=(0.18, 5.0), tail=(0.5, 0.16))))
+    # ── the "beams": each voiced as what it is drawn as (see `blaster`) ──
+    A(("atk_beam_laser", gen_laser_bolt, 0.74, "bolt", dict(TIGHT, **BRIGHT)))
+    A(("atk_beam_ice", gen_ice_beam, 0.58, "ability", dict(width=0.8, transient=1.0, tail=(0.6, 0.18), **BRIGHT)))
+    A(("atk_beam_railgun", gen_railgun, 0.82, "heavy", dict(width=0.8, transient=1.6, sub=(40, 0.5),
+                                                            comp=(0.2, 4.0), tail=(0.9, 0.22))))
+    A(("atk_beam_drain", gen_soul_drain, 0.60, "ability", dict(width=0.9, transient=0.7, tail=(0.8, 0.22))))
+    A(("atk_life_drain", gen_life_drain, 0.60, "ability", dict(width=0.8, transient=0.9, sub=(44, 0.3),
+                                                               tail=(0.6, 0.18))))
+    A(("atk_beam_vine", gen_vine_lash, 0.80, "melee", dict(width=0.75, transient=1.4, tail=(0.4, 0.14))))
+    A(("atk_beam_stone", gen_stone_gaze, 0.62, "ability", dict(width=0.9, transient=0.8, tail=(0.7, 0.2))))
+    A(("atk_beam_whip", gen_bandage_whip, 0.80, "melee", dict(width=0.75, transient=1.3, tail=(0.45, 0.15))))
+    A(("atk_beam_gravity", gen_gravity_lance, 0.68, "ability", dict(width=0.95, transient=0.7, sub=(36, 0.5),
+                                                                    tail=(1.0, 0.24))))
+    A(("atk_eye_beam", gen_eye_beam, 0.70, "ability", dict(width=0.85, transient=1.0, sub=(42, 0.45),
+                                                           tail=(0.7, 0.2))))
+    A(("atk_sniper_beam", gen_sniper_shot, 0.72, "ability", dict(width=0.5, transient=1.8, comp=(0.18, 5.0),
+                                                                  tail=(0.5, 0.16))))
 
     # ── thrown weapons: the tumble rate and the material are the identity ──
     A(("atk_axe_throw", lambda: thrown("axe"), 0.62, "melee", SWEEP))
@@ -3421,19 +4427,20 @@ def _sounds():
                                                               pan=(-0.3, 0.8), tail=(0.7, 0.2))))
 
     # ── lobbed / traps ──
-    A(("atk_grenade_lob", lambda: lobbed("grenade"), 0.68, "ability", dict(BIG, sub=(44, 0.42))))
-    A(("atk_cannonball", lambda: lobbed("cannon", 0.8), 0.84, "heavy", HEAVY))
+    A(("atk_grenade_lob", lambda: lobbed("grenade", 0.45), 0.60, "melee", dict(BIG, sub=(44, 0.42))))
+    A(("atk_comic_bomb", lambda: lobbed("bomb", 0.5), 0.58, "melee", dict(BIG, sub=(44, 0.36))))
+    A(("atk_cannonball", gen_cannon_fire, 0.84, "heavy", dict(HEAVY, comp=(0.2, 4.0))))
     A(("atk_mine_deploy", lambda: lobbed("mine", 0.45), 0.56, "melee", dict(TIGHT, width=0.6)))
     A(("atk_anvil_trap", lambda: lobbed("anvil", 0.75), 0.76, "ability", dict(BIG, sub=(40, 0.5))))
-    A(("atk_rune_trap", lambda: mixdown(lobbed("rune", 0.55), pad_to(chime("rune", 0.5) * 0.45, 0.55)),
-       0.62, "ability", dict(WIDE, tail=(0.9, 0.22))))
+    A(("atk_rune_trap", lambda: lobbed("rune", 0.55), 0.62, "ability", dict(WIDE, tail=(0.9, 0.22))))
     A(("atk_flask_shatter", lambda: lobbed("flask", 0.6), 0.66, "ability", dict(BIG, sub=(48, 0.4), **BRIGHT)))
     A(("atk_mud_bomb", lambda: lobbed("mud", 0.55), 0.62, "ability", dict(BIG, sub=(40, 0.48))))
     A(("atk_blight_bomb", lambda: mixdown(lobbed("flask", 0.55, name="bb"),
-                                          pad_to(burst("spore", 0.6, name="bbs") * 0.7, 0.6)),
-       0.68, "ability", dict(BIG, sub=(42, 0.5))))
+                                          pad_to(gas(0.5, band=(900, 6000), fizz=0.9, name="bbs") * 0.35, 0.55)),
+       0.66, "ability", dict(BIG, sub=(42, 0.45))))
     A(("atk_frost_trap", lambda: mixdown(lobbed("mine", 0.4, name="ft"),
-                                         pad_to(strike("ice", 900, 0.35, hardness=1.0, damp=1.2, name="ftx") * 0.7, 0.45)),
+                                         pad_to(grains(0.3, rate=260, band=(2400, 10000), length=(0.0003, 0.0016),
+                                                       density=[(0.0, 1.0), (1.0, 0.0)], name="ftx") * 0.5, 0.45)),
        0.60, "ability", dict(WIDE, tail=(0.8, 0.2), **BRIGHT)))
     A(("atk_ink_snare", gen_ink_snare, 0.64, "ability", dict(BIG, sub=(40, 0.42))))
     A(("atk_cluster_bomb", gen_cluster_bomb, 0.86, "heavy", HEAVY))
@@ -3488,7 +4495,7 @@ def _sounds():
     A(("atk_puppet_string", lambda: chain("string"), 0.54, "melee", dict(width=0.75, transient=1.5, tail=(0.4, 0.16))))
 
     # ── creatures ──
-    A(("atk_jaw_chomp", gen_jaw_chomp, 0.66, "melee", PUNCHY))
+    A(("atk_jaw_chomp", gen_jaw_chomp, 0.53, "melee", PUNCHY))
     A(("atk_devour_bite", gen_devour, 0.70, "ability", dict(PUNCHY, sub=(42, 0.48))))
     A(("atk_blood_fang", gen_blood_fang, 0.64, "melee", PUNCHY))
     A(("atk_bat_swarm", gen_bat_swarm, 0.62, "ability", dict(width=1.0, transient=0.8, pan=(-0.8, 0.6))))
@@ -3540,8 +4547,8 @@ def _sounds():
     A(("atk_deathknight_blade", gen_deathknight_blade, 0.66, "melee", dict(SWEEP, tail=(0.7, 0.22))))
     A(("atk_poltergeist_hurl", gen_poltergeist_hurl, 0.60, "melee", dict(width=0.85, transient=1.5, tail=(0.6, 0.2))))
     A(("atk_djinn_bolt", gen_djinn_bolt, 0.58, "bolt", dict(BOLT_M, tail=(0.75, 0.24))))
-    A(("atk_photon_beam", gen_photon_beam, 0.58, "ability", dict(width=0.8, transient=1.0, tail=(0.7, 0.22), **BRIGHT)))
-    A(("atk_turret_laser", gen_turret_laser, 0.58, "ability", dict(width=0.65, transient=1.2, tail=(0.5, 0.16))))
+    A(("atk_photon_beam", gen_photon_beam, 0.73, "bolt", dict(width=0.8, transient=1.2, tail=(0.5, 0.18), **BRIGHT)))
+    A(("atk_turret_laser", gen_turret_laser, 0.58, "melee", dict(width=0.65, transient=1.2, tail=(0.5, 0.16))))
     A(("atk_mech_gun", gen_mech_gun, 0.80, "ability", dict(width=0.6, transient=1.7, sub=(44, 0.5),
                                                             comp=(0.2, 4.0), tail=(0.6, 0.18))))
     A(("atk_tesla_arc", gen_tesla_arc, 0.72, "ability", dict(width=0.9, transient=1.5, tail=(0.7, 0.2), **SPARK)))
@@ -3550,7 +4557,7 @@ def _sounds():
     A(("atk_glacier_shard", gen_glacier_shard, 0.60, "bolt", dict(BOLT_M, **BRIGHT)))
     A(("atk_medusa_spit", gen_medusa_spit, 0.58, "bolt", BOLT_M))
     A(("atk_hydra_spit", gen_hydra_spit, 0.60, "melee", BOLT_M))
-    A(("atk_treant_bark", gen_treant_bark, 0.56, "melee", FLY))
+    A(("atk_treant_bark", gen_treant_bark, 0.45, "melee", FLY))
     A(("atk_inquisitor_bolt", gen_inquisitor_bolt, 0.56, "melee", dict(width=0.7, transient=1.5, tail=(0.55, 0.18))))
     A(("atk_lute_chord", gen_lute_chord, 0.58, "melee", dict(width=0.8, transient=1.2, tail=(0.7, 0.22))))
     A(("atk_song_wave", gen_song_wave, 0.60, "ability", dict(width=0.85, transient=0.9, tail=(0.8, 0.24))))
@@ -3573,12 +4580,12 @@ def _burst_fire():
 # a gas cloud blooms. These get the `drone` contour instead of their class's,
 # so the shape guarantee does not flatten the one thing they are for.
 SUSTAINED = {
-    "atk_beam_ice", "atk_beam_laser", "atk_beam_railgun", "atk_beam_drain", "atk_beam_vine",
-    "atk_beam_stone", "atk_beam_whip", "atk_beam_gravity", "atk_eye_beam", "atk_photon_beam",
+    "atk_beam_ice", "atk_beam_drain", "atk_life_drain", "atk_beam_stone", "atk_beam_gravity",
+    "atk_eye_beam",
     "atk_howl", "atk_wail_shriek", "atk_banshee_cry", "atk_harpy_screech", "atk_raise_dead",
     "atk_bull_bellow", "atk_sphinx_riddle", "atk_hypnotic_melody", "atk_song_wave",
     "atk_lute_chord", "atk_soul_harvest", "atk_vortex_pull", "atk_miasma", "atk_poison_cloud",
-    "atk_curse_hex", "atk_gravity_ball", "atk_void_bolt", "atk_overclock", "atk_time_bolt",
+    "atk_curse_hex", "atk_overclock", "atk_time_bolt",
     "atk_tidal_wave", "atk_geyser_burst", "atk_inferno_blast", "atk_rocket_launch",
     "atk_echo_bolt", "atk_haunt_bolt",
     "spawn",
@@ -3599,6 +4606,19 @@ EVENTS = [
                                                      tail=(0.5, 0.16))),
     ("explosion", lambda: gen_explosion(dur=1.2, size=1.1), 0.92, "heavy",
      dict(width=1.0, transient=1.2, sub=(34, 0.6), comp=(0.16, 5.0), tail=(1.5, 0.26))),
+    # each explosive's own detonation (AbilitySounds.forBlast); `explosion` is the frag's
+    ("blast_fire", gen_blast_fire, 0.90, "heavy", dict(width=1.0, transient=0.9, sub=(32, 0.6),
+                                                        comp=(0.2, 4.0), tail=(1.4, 0.26))),
+    ("blast_magma", gen_blast_magma, 0.90, "heavy", dict(width=1.0, transient=1.1, sub=(32, 0.6),
+                                                          comp=(0.2, 4.0), tail=(1.4, 0.26))),
+    ("blast_toxic", gen_blast_toxic, 0.84, "heavy", dict(width=1.0, transient=0.9, sub=(38, 0.45),
+                                                          comp=(0.22, 3.6), tail=(1.2, 0.26))),
+    ("blast_acid", gen_blast_acid, 0.84, "heavy", dict(width=1.0, transient=1.2, sub=(40, 0.4),
+                                                        comp=(0.22, 3.6), tail=(1.0, 0.24), **BRIGHT)),
+    ("blast_mud", gen_blast_mud, 0.86, "heavy", dict(width=0.95, transient=1.2, sub=(36, 0.55),
+                                                      comp=(0.2, 4.0), tail=(0.9, 0.22))),
+    ("blast_cluster", gen_blast_cluster, 0.90, "heavy", dict(width=1.0, transient=1.2, sub=(34, 0.5),
+                                                              comp=(0.16, 5.0), tail=(1.4, 0.26))),
     ("dash", gen_dash, 0.58, "melee", dict(width=0.8, transient=1.3, pan=(-0.6, 0.6), tail=(0.4, 0.14))),
     ("teleport", gen_teleport, 0.62, "ability", dict(width=0.9, transient=1.2,
                                                      pingpong=(0.07, 0.3, 0.22), tail=(0.9, 0.22))),
@@ -3632,9 +4652,9 @@ def _check_scala_mapping(generated):
     if not os.path.exists(scala):
         return
     import re
-    named = set(re.findall(r'"(atk_[a-z0-9_]+)"', open(scala).read()))
+    named = set(re.findall(r'"((?:atk|blast)_[a-z0-9_]+)"', open(scala).read()))
     missing = sorted(named - generated)
-    unused = sorted(n for n in generated if n.startswith("atk_") and n not in named)
+    unused = sorted(n for n in generated if n.startswith(("atk_", "blast_")) and n not in named)
     if missing:
         raise SystemExit("AbilitySounds.scala names sounds that are not generated: "
                          + ", ".join(missing))

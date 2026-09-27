@@ -225,7 +225,7 @@ src/test/scala/com/gridgame/   # Tests (see Testing): common/ (model, protocol, 
                                 # tools/ (the website's character cards)
 worlds/                         # World definition files (7 JSON maps; 3 from scripts/generate_maps.py)
 sprites/                        # Sprite assets (tiles.png + 112 character PNGs)
-scripts/                        # Asset generation scripts (31 Python scripts)
+scripts/                        # Asset generation scripts (32 Python scripts)
 docs/                           # GitHub Pages landing site
 ops/observability/              # Local docker-compose stack
                                 # OTel Collector, Prometheus, Tempo, Loki, Grafana
@@ -1339,11 +1339,14 @@ generated.
 
 ```bash
 # Requires numpy: pip install numpy
-python3 scripts/generate_sounds.py   # -> sounds/*.wav (188 files, ~23s)
+python3 scripts/generate_sounds.py   # -> sounds/*.wav (196 files, ~25s)
 
 # Look at what you just made — the contact sheet is the review loop (see below).
 # Needs Pillow as well as numpy: pip install numpy Pillow
 python3 scripts/sound_gallery.py /tmp/sndgallery
+
+# Does anything ring like struck metal that shouldn't? (see *Measuring it*; numpy only)
+python3 scripts/sound_audit.py --check
 ```
 
 `scripts/generate_sounds.py` is a sound-design toolkit, not tone+noise bursts. Alongside
@@ -1351,13 +1354,24 @@ FM (`fm`), a time-varying resonant state-variable filter (`svf`), fast static re
 filters (`res_lp`/`res_bp`), causal RBJ biquads (`eq`, used wherever a transient or the
 master EQ is involved — the zero-phase FFT filters pre-ring, which puts a ghost tick
 before a click), `saturate`, `bitcrush`, convolution `reverb`, `delay_fx` and `chorus`,
-three engines carry most of the character:
+four engines carry most of the character:
 
+- **What things are made of** — the layers a projectile is built from when it is a thing
+  rather than a note, all noise-excited or harmonic: `grains` (a Poisson cloud of
+  millisecond noise grains: fire pops, ice fracturing, sparks, gravel), `bubbles` (sines
+  rising as they close — the cue for liquid), `sizzle` (frying: acid, lava, a fuse),
+  `squelch` (mud, flesh), `breath` (a whisper: formants over noise), `choir` (voices on a
+  chord), `glow` (detuned saws swelled in through a falling lowpass — the only tone a magic
+  bolt gets), `pluck` (Karplus-Strong: a string, every partial harmonic), `rattle` (chain
+  links: dozens of few-millisecond clinks), `rip` (tearing), `crack` (a whip's N-wave),
+  `buzz` (a swarm), `scrape` (a blade's gliding "shing"), `creak` (wood under strain),
+  `heartbeat`, `whump` (a pressure bloom) and `flange` (a sweeping comb: energy streaking).
 - **`modal` + `MATERIALS`** — a struck object rings at frequency ratios fixed by its
   shape, each partial decaying at its own rate. Those two tables *are* the difference
-  between iron, wood, bone, stone, ice, glass, chitin and flesh; no amount of filtering
-  noise gets there. Every impact goes through `strike` (= `modal` + the bright edge of
-  the contact).
+  between iron, wood, bone, stone, ice, glass, chitin and flesh. It is for things that
+  really are struck — a trap's jaws, a slam's contact, the spawn and death bells — and
+  through `strike` (= `modal` + the bright edge of the contact) it used to be under
+  nearly everything, which is where the tin cans came from (see the fourth rule below).
 - **`cry`/`glottal`/`tract`** — source-filter voice synthesis: a glottal pulse train with
   jitter and shimmer through formants that *move*. Every howl, screech, wail, bellow,
   roar and death exhale in the game comes out of this one throat and differs by pitch
@@ -1367,11 +1381,16 @@ three engines carry most of the character:
   standing in for the mass of air displaced. Without that body a swing is 100% 2-5kHz
   hiss.
 
-Attacks are then assembled by thirteen family engines (`bolt`, `beam`, `swing`, `thrown`,
-`shaft`, `lobbed`, `slam`, `burst`, `wavefront`, `gun`, `chain`, `chime`, `elec`,
-`machine`) plus ~40 one-offs. Keeping families as engines rather than 120 bespoke
-functions is what lets one quality change reach the whole roster, the same reason every
-sprite goes through `sprite_base.generate_character`.
+Attacks are then assembled by family engines (`bolt`, `swing`, `thrown`, `shaft`,
+`lobbed`, `slam`, `burst`, `wavefront`, `gun`, `chain`, `elec`, `machine`, and `blaster`
+and `radiance` for lasers and holy light) plus ~60 one-offs. Keeping families as engines
+rather than 150 bespoke functions is what lets one quality change reach the whole roster,
+the same reason every sprite goes through `sprite_base.generate_character`. `bolt` is a
+table of voices, one per element (`_b_fire`, `_b_ice`, `_b_poison`, `_b_soul`, …), under a
+shared flight, weight and room. There is no `beam` engine any more: of the ten things it
+voiced as a held FM-and-saw note only the railgun is anything like a beam on screen, so
+each is now what the renderer draws — a blaster bolt, a comet of frost, a travelling
+whirlpool, a vine, Medusa's gaze, a wad of bandages, a void lance, a searing eye.
 
 Generators output mono; every sound then goes through the shared `master()` chain —
 `transient_shape` → `compress` → `sub_boost` → `presence_dip` → `air_tame` → `stereoize`
@@ -1392,16 +1411,25 @@ Three rules the earlier version of this file broke, and why they matter:
   tiring inside a minute — more than any individual sound, that was what made the old
   set shrill. Median 2-5kHz energy fraction is now 0.03 (it was 0.17, with a long tail
   up to 0.76).
-- **Identity goes in the body, not on top.** A bolt's fundamental sits at 90-350Hz with a
-  short sub under it, and the timbre that names the school of magic rides on top at about
-  −12dB. Built the other way round — all identity, no body — bolts read as UI beeps and
-  vanish the moment anything else plays.
+- **Identity goes in the body, not on top.** A bolt has a short low push under its launch,
+  and what names it rides over that. Built the other way round — all identity, no body —
+  bolts read as UI beeps and vanish the moment anything else plays.
+- **A projectile sounds like what it is made of.** A fire bolt is combustion (a whump,
+  a flickering roar, pops), a frost shard fracture (a cloud of bright grains, a thin
+  whistle, a cold hiss), a toxic orb liquid (bubbles, a gulp, gas), a ghost breath. Every
+  bolt used to be one FM note per school of magic — a pitched tone with inharmonic
+  sidebands, a 1.5ms attack and an exponential decay — and however the ratio and filter
+  were set, **a pitched layer that starts instantly and dies away exponentially is, to the
+  ear, a struck object; with inharmonic partials it is a tin can.** The flame bolt was 96%
+  ringing partials. `sound_audit.py` flagged 28 sounds; it flags none now. A magic school
+  with no material (arcane, runes, stars, the dark) gets `glow`: harmonic, swelled in over
+  at least 6ms, and never the loudest layer.
 
 #### Judging a change: the spectrogram gallery
 
 `scripts/sound_gallery.py` renders every sound as a log-frequency spectrogram
 with a dB envelope strip underneath, 24 to a contact sheet. It exists for the
-same reason `projectile_gallery` does — 188 assets cannot be judged one at a
+same reason `projectile_gallery` does — 196 assets cannot be judged one at a
 time, and the faults that matter are the ones visible when they sit side by
 side. **Run it after any change here.** What to look for:
 
@@ -1430,15 +1458,36 @@ Three faults found exactly this way, after the numbers said the set was fine:
   shelf at 9kHz, with `BRIGHT`/`SPARK` for the sounds that have earned their
   top end (ice, glass, sparkle, electricity, the hitmarker).
 
+#### Measuring it: the clang audit
+
+`scripts/sound_audit.py` measures the tin can directly, for every sound, because a spectrogram
+only shows it to someone who is looking and the numbers anyone normally checks (level, length,
+band) never show it at all. It finds the spectral peaks that keep ringing in one place for 80ms
+or more after the onset (noise never does, a glide never stays put), keeps the *struck* ones
+(dying away from a peak near their start, rather than swelling or holding as a voice does), and
+scores `clang` = the share of the sound that is struck partials, weighted up when they are
+inharmonic and when they sit in the 400Hz-5kHz band a can rings in. A voice rings but is not
+struck, a string or a chord is struck but harmonic, so both score low. `--check` exits 1 if
+anything over the limit is not in `MEANT_TO_RING` (the lyre melody, the harp charm, the howl,
+the hitmarker, the spawn and death bells). Run it after any change here, with the gallery.
+
 **The clang rule.** A modal bank is a *colour under* an impact, never the impact itself.
-Four ways to turn the whole game into someone hitting a metal bucket, all of which this
-file has done at some point:
+Ways to turn the whole game into someone hitting a metal bucket, all of which this file has
+done at some point:
 
 - letting the partials lead — `MATERIALS["ring"]` is 0.14-0.55 for everything except
   `bell` for exactly this reason, and the decay rates are weapon rates, not the
   instrument rates a physical-modelling paper gives you;
 - ringing a material once per rotation in `thrown()`, which is *literally* banging on
-  metal at 7Hz. The tumble is air being chopped; the weapon rings once, on release;
+  metal at 7Hz. The tumble is air being chopped;
+- ringing it at all when nothing is struck: a weapon leaving a hand makes no metal sound,
+  so `thrown()` is air, the arm's push and whatever the object carries (a bone's clatter, a
+  card's flick and flutter, a cursed blade's whisper), and a swing's cut is what its edge
+  *does* (`_edge`: a blade scrapes, a claw rips, a maw slaps) — the old swing rang the
+  weapon's material, and a claw that rings is a fork dropped on a tin plate;
+- a pitched layer with a struck envelope standing in for an element — the FM bolt above,
+  a steel strike for holy light, a wood block for a rope or a playing card, an iron bell
+  for a sistrum (which is a rattle);
 - building a debris scatter out of `strike()` — a dozen tuned resonators inside half a
   second. `debris()` exists for this: each grain is its own short filtered noise burst;
 - a high-Q resonance riding on noise (`air(q=…)` is capped at 3.0). Narrow resonance on
@@ -1481,8 +1530,18 @@ a global `tanh` on the master bus (it costs several dB of crest on *every* sound
   (a pod bursting), `trap_ignite.wav` (a rune catching). A mine's blast is `explosion.wav`.
 - `sounds/hit_taken.wav` (you were hit), `sounds/hit_dealt.wav` (hitmarker — bright and
   high-mid so it cuts through), `sounds/hit_other.wav` (someone else was hit, duller and
-  distance-attenuated), `sounds/explosion.wav` (an explosive going off — only one that deals
-  damage: a slam's explosion is only drawn, see *Blasts*).
+  distance-attenuated).
+- **An explosive goes off as itself** — only one that deals damage: a slam's explosion is only
+  drawn, see *Blasts*. `AbilitySounds.forBlast` picks the detonation by what blew up:
+  `blast_fire` (napalm, the Inferno Blast: a whoomph of pressure and roaring flame, not a
+  bang), `blast_magma` (the Eruption), `blast_toxic` (Miasma, the Blight Bomb), `blast_acid`
+  (a flask shattering), `blast_mud`, `blast_cluster` (a string of small bangs), and
+  `explosion.wav`, the frag, for grenades, rockets and mines. They all used to be the frag.
+- **A thrown bomb's own sound is the throw.** `lobbed()` is the arm and whatever goes up with
+  it — a grenade's pin and spoon, a cartoon bomb's sputtering fuse (the Bombardier's,
+  `atk_comic_bomb`), a potion's cork and slosh — and its landing only where nothing else
+  sounds when it comes down (the ink). It used to land a third of a second after the throw,
+  while the bomb was still visibly in the air, and then explode again.
 - `sounds/music_menu.wav` (calm, loops through JavaFX UI screens) and
   `sounds/music_battle.wav` (faster/more intense, loops during a match).
 - `client/audio/AudioManager.scala` **mixes in software onto a single
@@ -1501,7 +1560,16 @@ a global `tanh` on the master bus (it costs several dB of crest on *every* sound
 
   Voices are capped at `MAX_VOICES` (24); when they are all busy the trigger is
   dropped, which is correct since the mix is already saturated. Idle mixer cost is
-  ~1% of a core. `AudioManager.preload()` decodes every sound on a background thread
+  ~1% of a core.
+
+  **A fan is one sound, not eight** (`VoicePool.trigger`). A fan fires every projectile in
+  one tick and each arrives as its own spawn, so an eight-way fan (Bone Storm, Wild Card,
+  Holy Nova) started eight copies of one file on the same sample: at the onset they summed
+  to eight times its level — past what the output's soft clip rounds off, so it hard-clipped
+  — and took a third of the voices. Within 40ms of the first copy, and panned the same way
+  (two players firing one attack at once are still two sounds), one more plays 6-18ms late
+  (so the two onsets don't add), and every further copy lifts the first by 15%, to +5dB at
+  most. `VoicePoolTest` pins it. `AudioManager.preload()` decodes every sound on a background thread
   at startup so no WAV parsing or disk I/O lands mid-match.
 - **Pitch and pan are applied per voice in the mixer**, not via `AudioFormat` tricks
   or `BALANCE`/`PAN` controls: `±7%` playback-rate jitter (`PITCH_SPREAD`, via
@@ -1513,7 +1581,9 @@ a global `tanh` on the master bus (it costs several dB of crest on *every* sound
   `hit_taken`/`hit_dealt` are deliberately left centred — they are about you, not
   about a location in the arena.
 - If you add a new `ProjectileType`, add a matching entry to `AbilitySounds.scala`
-  (falls back to `atk_normal_bolt` if omitted). If you add a wholly new sound
+  (falls back to `atk_normal_bolt` if omitted), and if it explodes with damage, a
+  `blast(...)` line for its detonation (it falls back to the frag; `AbilitySoundsTest`
+  checks every damaging explosive has a file). If you add a wholly new sound
   archetype, add an entry to the `_sounds()` table in `scripts/generate_sounds.py`
   and rerun it — the script cross-checks itself against `AbilitySounds.scala` and
   fails if that file names a sound it does not generate, so the two cannot drift.
@@ -2362,6 +2432,10 @@ suites mirror the source tree:
   to `CharacterDef`: the catalog wins over the code (`I18n.tOr`), so renaming an ability in
   `CharacterDef` alone leaves the old name on every screen, silently. Regenerate the entries
   with `bazel run //src/main/scala/com/gridgame/tools:gencontent 2>/dev/null`.
+- `client/audio` — `AbilitySoundsTest` (every attack, and every explosive that deals its blast,
+  sounds from a file that exists; a fire, a mud bomb and a flask don't go off as the frag) and
+  `VoicePoolTest` (what a fan's burst of one sound does in the mixer). The sounds themselves are
+  judged with `scripts/sound_audit.py --check` and the gallery (see *Sound Effects & Music*).
 - The kits: `MeleeKitTest` (common) holds the melee and skirmisher kits to crowd control, a way
   in on a runner or a place on the list of anchors, and primaries that never hold;
   `MeleeKitsTest` (server) lands each new effect and combination, and walks a runner away from

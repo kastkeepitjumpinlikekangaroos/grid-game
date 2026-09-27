@@ -2246,9 +2246,11 @@ class GameClient(serverHost: String, serverPort: Int, initialWorld: WorldData, v
             characterIdOf(owner), trap = false)
           // A bang only for one that deals its blast. A slam's, a web's and the ink's explosion is
           // there only to be drawn, and their own sound played when they were cast: a Wolf's howl
-          // went off as a grenade.
+          // went off as a grenade. The bang is the explosive's own: napalm's is fire, a mud bomb's
+          // a splat.
           if (pDef.explosionConfig.exists(e => e.centerDamage > 0 || e.edgeDamage > 0))
-            AudioManager.playExplosion(distanceFromLocal(impact.x, impact.y), panFromLocal(impact.x, impact.y))
+            AudioManager.playBlast(pType, characterIdOf(owner),
+              distanceFromLocal(impact.x, impact.y), panFromLocal(impact.x, impact.y))
         } else {
           if (despawned != null) {
             // Stop it where it struck and let it sink into the surface there

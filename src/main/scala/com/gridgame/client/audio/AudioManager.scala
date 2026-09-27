@@ -40,24 +40,8 @@ object AudioManager {
   private val OUTPUT_FORMAT =
     new AudioFormat(AudioFormat.Encoding.PCM_SIGNED, SAMPLE_RATE, 16, CHANNELS, CHANNELS * 2, SAMPLE_RATE, false)
 
-  /** Decoded, ready-to-mix interleaved stereo samples. */
-  private final class Sound(val samples: Array[Short]) {
-    val frames: Int = samples.length / CHANNELS
-  }
-
-  /** One playing sound. Mutated only under `voiceLock`. */
-  private final class Voice {
-    var sound: Sound = null
-    var pos: Double = 0.0
-    var rate: Double = 1.0
-    var gainL: Float = 0f
-    var gainR: Float = 0f
-    var loop: Boolean = false
-    var active: Boolean = false
-  }
-
   private val voiceLock = new Object
-  private val voices: Array[Voice] = Array.fill(MAX_VOICES)(new Voice)
+  private val voices = new VoicePool(MAX_VOICES) // sound effects; see VoicePool.trigger
   private val musicVoice = new Voice
 
   private val soundCache = new ConcurrentHashMap[String, Sound]()
@@ -100,14 +84,7 @@ object AudioManager {
     catch { case _: Throwable => () }
     if (m) {
       voiceLock.synchronized {
-        var i = 0
-        while (i < MAX_VOICES) {
-          val v = voices(i)
-          v.active = false
-          v.sound = null
-          v.pos = 0.0
-          i += 1
-        }
+        voices.stopAll()
         musicVoice.active = false
         musicVoice.sound = null
       }
@@ -170,6 +147,12 @@ object AudioManager {
   /** Two other players traded a hit nearby. */
   def playHitOther(distanceInCells: Float, pan: Float): Unit =
     playSfx("hit_other", volumeAtDistance(distanceInCells), PITCH_SPREAD, pan)
+
+  /** An explosive going off: its own detonation (a fire's whoomph, a mud bomb's splat), or the
+    * frag's bang for anything without one (see `AbilitySounds.forBlast`). */
+  def playBlast(projectileType: Byte, characterId: Byte, distanceInCells: Float, pan: Float): Unit =
+    playSfx(AbilitySounds.forBlast(projectileType, characterId), volumeAtDistance(distanceInCells),
+      PITCH_SPREAD, pan)
 
   def playExplosion(distanceInCells: Float, pan: Float): Unit =
     playSfx("explosion", volumeAtDistance(distanceInCells), PITCH_SPREAD, pan)
@@ -240,23 +223,10 @@ object AudioManager {
     val gl = (Math.cos(angle) * volume * 1.35).toFloat
     val gr = (Math.sin(angle) * volume * 1.35).toFloat
 
+    // a second copy of a sound just started comes in 6-18ms behind it (see VoicePool.trigger)
+    val late = ((6 + rng.nextInt(13)) * SAMPLE_RATE / 1000f).toInt
     voiceLock.synchronized {
-      var i = 0
-      while (i < MAX_VOICES) {
-        val v = voices(i)
-        if (!v.active) {
-          v.sound = sound
-          v.pos = 0.0
-          v.rate = rate
-          v.gainL = gl
-          v.gainR = gr
-          v.loop = false
-          v.active = true
-          return
-        }
-        i += 1
-      }
-      // All voices busy — dropping is correct here, the mix is already saturated.
+      voices.trigger(sound, rate, gl, gr, System.nanoTime(), late)
     }
   }
 
@@ -314,12 +284,8 @@ object AudioManager {
       try {
         java.util.Arrays.fill(mix, 0f)
         voiceLock.synchronized {
-          var i = 0
-          while (i < MAX_VOICES) {
-            mixVoice(voices(i), mix)
-            i += 1
-          }
-          mixVoice(musicVoice, mix)
+          voices.mixInto(mix, CHUNK_FRAMES)
+          VoicePool.mixVoice(musicVoice, mix, CHUNK_FRAMES)
         }
         var i = 0
         while (i < mix.length) {
@@ -340,43 +306,6 @@ object AudioManager {
         case _: Exception => return
       }
     }
-  }
-
-  /** Mixes one voice into the buffer with linear-interpolated resampling. */
-  private def mixVoice(v: Voice, mix: Array[Float]): Unit = {
-    if (!v.active || v.sound == null) return
-    val s = v.sound.samples
-    val frames = v.sound.frames
-    var pos = v.pos
-    val rate = v.rate
-    val gl = v.gainL
-    val gr = v.gainR
-    var i = 0
-    while (i < CHUNK_FRAMES) {
-      if (pos >= frames - 1) {
-        if (v.loop) pos -= (frames - 1)
-        else {
-          v.active = false
-          v.sound = null
-          v.pos = 0.0
-          return
-        }
-      }
-      val idx = pos.toInt
-      val frac = (pos - idx).toFloat
-      val j = idx * CHANNELS
-      val l0 = s(j).toFloat
-      val r0 = s(j + 1).toFloat
-      val l1 = s(j + CHANNELS).toFloat
-      val r1 = s(j + CHANNELS + 1).toFloat
-      val ls = (l0 + (l1 - l0) * frac) / 32768f
-      val rs = (r0 + (r1 - r0) * frac) / 32768f
-      mix(i * CHANNELS) += ls * gl
-      mix(i * CHANNELS + 1) += rs * gr
-      pos += rate
-      i += 1
-    }
-    v.pos = pos
   }
 
   // ── loading ─────────────────────────────────────────────────────────────
