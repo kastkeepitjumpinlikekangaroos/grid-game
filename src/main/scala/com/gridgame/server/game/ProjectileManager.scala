@@ -198,7 +198,7 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
         resolved = sweptByBarrier(projectile, pDef, barriers, events, toRemove)
       }
 
-      // Sub-step movement so projectiles can't skip over non-walkable tiles.
+      // Sub-step movement so projectiles can't skip over terrain that stops them.
       val movePerTick = math.sqrt(projectile.dx * projectile.dx + projectile.dy * projectile.dy).toFloat * projectile.speedMultiplier
       val subSteps = math.ceil(movePerTick / 0.5f).toInt.max(1)
       val fraction = 1.0f / subSteps
@@ -249,7 +249,7 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
               events += ProjectileDespawned(projectile)
             }
             resolved = true
-          } else if (projectile.hitsNonWalkable(world) && (!pDef.passesThroughWalls || projectile.hitsFence(world))) {
+          } else if (projectile.hitsTerrain(world) && (!pDef.passesThroughWalls || projectile.hitsFence(world))) {
             // Ricochet: bounce off walls instead of despawning
             if (projectile.remainingBounces > 0 && !projectile.hitsFence(world)) {
               projectile.ricochet(world)

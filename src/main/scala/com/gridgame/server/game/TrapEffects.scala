@@ -100,21 +100,29 @@ trait TrapEffects { this: GameInstance =>
   }
 
   /** Does a barrier stand between a trap's blast at (x, y) and this player? The same rule
-    * ProjectileManager applies to a projectile's blast, read off the holders themselves. */
+    * ProjectileManager applies to a projectile's blast. */
   private def shelteredFromTrap(ownerId: UUID, x: Float, y: Float, player: Player): Boolean = {
     val pos = player.getPosition
-    val px = pos.getX.toFloat
-    val py = pos.getY.toFloat
-    var sheltered = false
+    barrierAcross(ownerId, x, y, pos.getX.toFloat, pos.getY.toFloat)
+  }
+
+  /**
+   * Does a raised barrier that stops what `ownerId` sends stand across the straight way from
+   * (ax, ay) to (bx, by) — met from its front, as a shot meets one? Anyone's but their own and
+   * their allies'. What shelters a player from a trap's blast, and what stops a thrown trap as a
+   * wall does. Read off the holders themselves rather than the projectile tick's snapshot, so any
+   * thread can ask: a trap goes off on whichever one stepped on it, a throw comes in on the
+   * network's, and a bot's on the bots'.
+   */
+  private[server] def barrierAcross(ownerId: UUID, ax: Float, ay: Float, bx: Float, by: Float): Boolean = {
+    var across = false
     registry.forEachPlayer { holder =>
-      if (!sheltered && holder.hasBarrier && !holder.isDead && !holder.isPhased &&
+      if (!across && holder.hasBarrier && !holder.isDead && !holder.isPhased &&
           !holder.getId.equals(ownerId) && !isTeammate(ownerId, holder.getId)) {
         val hp = holder.getPosition
-        if (Barrier.crosses(hp.getX.toFloat, hp.getY.toFloat, holder.getBarrierAngle, x, y, px, py)) {
-          sheltered = true
-        }
+        if (Barrier.crosses(hp.getX.toFloat, hp.getY.toFloat, holder.getBarrierAngle, ax, ay, bx, by)) across = true
       }
     }
-    sheltered
+    across
   }
 }

@@ -50,6 +50,27 @@ class GameClientTrapTest {
     assertEquals((22, 20), (placements.head.getX, placements.head.getY))
   }
 
+  @Test def aimingPastAnEnemysBarrierStopsItShortOfTheBarrier(): Unit = {
+    // An enemy at (28, 20) holding a barrier up facing us: its middle stands at 26, and a throw
+    // stops at it as at a wall, where the server will take it
+    warden(aimX = 26, aimY = 20)
+    t.join(other, 28, 20, charId = CharacterId.Crusader.id)
+    t.update(other, 28, 20, flags2 = 0x04, aimAngle = Math.PI, barrierMs = 3000, charId = CharacterId.Crusader.id)
+    c.shootAbility(1)
+    assertEquals((25, 20), (placements.head.getX, placements.head.getY))
+  }
+
+  @Test def anAlliesBarrierDoesNotStopIt(): Unit = {
+    c.selectedCharacterId = CharacterId.Warden.id
+    t.startMatch(spawn = (20, 20), team = 1)
+    c.setMouseWorldPosition(26, 20)
+    t.join(other, 28, 20, charId = CharacterId.Crusader.id, team = 1)
+    t.update(other, 28, 20, flags2 = 0x04, aimAngle = Math.PI, barrierMs = 3000, charId = CharacterId.Crusader.id)
+    t.clearSent()
+    c.shootAbility(1)
+    assertEquals((26, 20), (placements.head.getX, placements.head.getY))
+  }
+
   @Test def aCastWithNowhereToPutItSendsNothingAndKeepsTheCooldown(): Unit = {
     // Nowhere at all: standing inside a wall, aiming at their own feet. Anything else lands
     // somewhere, if only at the caster's own feet — so this is the one case that must not

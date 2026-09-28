@@ -6,7 +6,7 @@ load("//third_party:jvm.bzl", "JAVAFX", "LWJGL")
 # the client package (//src/main/scala/com/gridgame/client:render_bench and so on).
 scala_library(
     name = "devtools",
-    srcs = glob(["*.scala"], exclude = ["ProjectileGallery.scala"]),
+    srcs = glob(["*.scala"], exclude = ["ProjectileGallery.scala", "UiGallery.scala"]),
     visibility = CLIENT,
     deps = [
         "//src/main/scala/com/gridgame/client/game",
@@ -30,4 +30,19 @@ scala_library(
         "//src/main/scala/com/gridgame/client/render/projectiles",
         "//src/main/scala/com/gridgame/common",
     ] + LWJGL,
+)
+
+# The menus' gallery: every screen built by the app itself, so it depends on all of it.
+scala_library(
+    name = "ui_gallery",
+    srcs = ["UiGallery.scala"],
+    visibility = CLIENT,
+    deps = [
+        "//src/main/scala/com/gridgame/client:app",
+        "//src/main/scala/com/gridgame/client/game",
+        "//src/main/scala/com/gridgame/client/i18n",
+        "//src/main/scala/com/gridgame/client/ui",
+        "//src/main/scala/com/gridgame/client/ui/screens",
+        "//src/main/scala/com/gridgame/common",
+    ] + JAVAFX,
 )

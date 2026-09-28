@@ -16,16 +16,18 @@ object AbilityPreviewRenderer {
    * For non-projectile abilities (PhaseShift, Dash, Teleport), renders themed effects.
    * For FanProjectile, renders multiple paths.
    */
+  // A dark window, as MapleStory's skill windows are, so the shots' glows read as they do in a match
+  private val windowFill = Color.web("#1b2d4b")
+  private val windowEdge = Color.web("#2f4a74")
+
   def render(gc: GraphicsContext, projectileType: Byte, castBehavior: CastBehavior,
              animTick: Int, canvasWidth: Double, canvasHeight: Double): Unit = {
-    // Dark background
-    gc.setFill(Color.web("#111124"))
-    gc.fillRect(0, 0, canvasWidth, canvasHeight)
-
-    // Subtle border
-    gc.setStroke(Color.web("#2a2a44"))
+    gc.clearRect(0, 0, canvasWidth, canvasHeight)
+    gc.setFill(windowFill)
+    gc.fillRoundRect(0, 0, canvasWidth, canvasHeight, 16, 16)
+    gc.setStroke(windowEdge)
     gc.setLineWidth(1)
-    gc.strokeRect(0.5, 0.5, canvasWidth - 1, canvasHeight - 1)
+    gc.strokeRoundRect(0.5, 0.5, canvasWidth - 1, canvasHeight - 1, 15, 15)
 
     castBehavior match {
       case PhaseShiftBuff(_) =>

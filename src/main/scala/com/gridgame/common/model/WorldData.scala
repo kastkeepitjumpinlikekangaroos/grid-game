@@ -25,10 +25,14 @@ class WorldData(
     }
   }
 
-  /** The terrain alone, with no divider standing over it — what a projectile is stopped by. The
-    * divider is not terrain: it stops shots on its own line, and stops the ones that fly over
-    * walls as surely as the rest ([[TeamDivider]], ProjectileManager). */
+  /** The terrain alone, with no divider standing over it. */
   def isTileWalkable(x: Int, y: Int): Boolean = getTile(x, y).walkable
+
+  /** Does the terrain at (x, y) stop a projectile ([[Tile.stopsProjectiles]]: all of it nobody
+    * can walk on but water)? Off the map it does. The divider is not terrain: it stops shots on
+    * its own line, and stops the ones that fly over walls as surely as the rest ([[TeamDivider]],
+    * ProjectileManager). */
+  def stopsProjectile(x: Int, y: Int): Boolean = getTile(x, y).stopsProjectiles
 
   def isWalkable(x: Int, y: Int): Boolean = {
     val d = divider

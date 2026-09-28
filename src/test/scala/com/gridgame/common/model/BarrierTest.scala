@@ -72,6 +72,18 @@ class BarrierTest {
     }
   }
 
+  @Test def aThrowStopsShortOfItAsOfAWall(): Unit = {
+    // A trap thrown at a holder standing at (28, 10), facing back along the throw: the barrier's
+    // middle is at 26, so the throw lands on 25 rather than the cell under the cursor
+    val world = WorldData.createEmpty(40, 20)
+    def barrier(x: Int, y: Int): Boolean = Barrier.crosses(28, 10, Math.PI.toFloat, 20, 10, x.toFloat, y.toFloat)
+    assertEquals(Some(new Position(26, 10)), TrapPlacement.target(world, 20, 10, 26.0, 10.0, 6))
+    assertEquals(Some(new Position(25, 10)), TrapPlacement.target(world, 20, 10, 26.0, 10.0, 6, barrier))
+    // Turned away, its back is to the throw, which goes over it as a shot out through it does
+    def turned(x: Int, y: Int): Boolean = Barrier.crosses(28, 10, East, 20, 10, x.toFloat, y.toFloat)
+    assertEquals(Some(new Position(26, 10)), TrapPlacement.target(world, 20, 10, 26.0, 10.0, 6, turned))
+  }
+
   @Test def itIsTheShapeThePlanAsksFor(): Unit = {
     assertEquals(2.0f, Barrier.DISTANCE, 0f)
     assertEquals(6.0f, Barrier.WIDTH, 0f)

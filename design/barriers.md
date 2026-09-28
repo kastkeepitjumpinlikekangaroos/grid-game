@@ -9,11 +9,17 @@ flag 0x01) already has the name; the player-facing ability can still say shield.
   draws it from it. It is one-sided: only a path that crosses its front (heading in, toward the
   holder) meets it, so the holder's own shots go out through it and an enemy who gets inside the
   arc is past it.
-- **What it stops**: enemy projectile bodies. Not the holder's own, not a teammate's
-  (`GameInstance.isTeammate`; in FFA everyone else is an enemy), and never a
+- **What it stops**: whatever an enemy sends at it that a wall would stop. Not the holder's own,
+  not a teammate's (`GameInstance.isTeammate`; in FFA everyone else is an enemy), and never a
   `passesThroughWalls` type. A stopped projectile halts where it met the barrier and is sent as
   `ProjectileAction.BLOCKED`; an explosive goes off there instead, as against a wall, and pierce,
-  ricochet and boomerang types simply stop.
+  ricochet and boomerang types simply stop. A thrown trap stops at it as at a wall, landing short
+  of it (`TrapPlacement.target`'s `barrierBefore`, from `GameInstance.barrierAcross` on the server
+  and the bots and `Barriers.enemyBarrierAcross` on the client), and the server refuses a placement
+  across one. Every projectile type in the roster that doesn't fly over walls is fired at one in
+  `BarrierTest.everythingThatDoesNotFlyOverWallsIsStopped`. What gets past it gets past it by
+  geometry: from behind, round an end, or from an enemy who has walked inside the arc (walking is
+  never stopped); and a shot already inside the arc when it goes up is past it too.
 - **Who it shelters**: nobody can be hit through it, because the line from the projectile to
   them has to be clear. That is required, not a nicety: hit radii (1.8 to 3.5 cells) reach past
   a barrier standing 2 cells out, so without it a shot hit the holder, or whoever was beside
@@ -30,7 +36,12 @@ flag 0x01) already has the name; the player-facing ability can still say shield.
   while it turns, from both input handlers) and says when it has run out. The server
   (`ClientHandler.updateBarrier`) honours a raise at 80% of the cooldown since the last raise,
   turns the barrier with every update, and drops it on an update without the bit and on any spawn
-  it accepts from the holder. Firing the primary, the burst shot or any ability drops it; the
+  or trap it accepts from the holder. Only the newest update's word on it counts
+  (`PacketValidator.takeBarrierWord`): the fence that keeps old positions out moves only on a
+  position the server accepted, so an update sent just before a raise and overtaken by it on the
+  way used to be taken after it whenever the raise's own position was refused — and dropped the
+  barrier, which the cooldown then kept down while its holder saw it up and took shots through
+  it. Firing the primary, the burst shot or any ability drops it; the
   client drops it first and says so before the shot is sent. Death drops it (`Player.damage`),
   and a respawn resets it. Every client runs the barrier on its own timer: ours from the cast,
   as a phase does, and everyone else's from the time left that each update carrying it reports
@@ -49,10 +60,15 @@ flag 0x01) already has the name; the player-facing ability can still say shield.
   barrier it struck (`GameClient.getBarrierImpact*`), so it moves with a barrier that is carried
   on. The strip is what shows a barrier aimed straight left or right, whose sheet this projection
   sees edge-on.
-- **Bots** raise it against a target who shoots from further off than a blade (a ranged
-  character or a skirmisher), who can reach them and whom they can't yet reach, or against a
-  shot coming in; face the target and close in while it is up; and drop it to fire or
-  cast.
+- **Bots** raise it only while they can't strike their target — out of their primary's reach, or
+  with terrain between them — and only against what it will stop: a target who shoots from
+  further off than a blade (a ranged character or a skirmisher) with shots that don't fly over
+  walls, from within reach and with nothing solid between them, or such a shot coming at its
+  front and still out beyond it. While it is up they face the target, close in, and hold every
+  attack and cast until they can strike (`BotCombat.canStrike`: in reach, a clear line of fire);
+  then they drop it and attack. They used to drop it for anything in range: a bot stopped by a
+  wall with its target just beyond threw at the wall, and a Gladiator threw its 25-cell rope the
+  tick its barrier went up, taking it straight back down.
 
-`BarrierTest` (in `common/model` for the shape, and in `server`), `GameClientBarrierTest` and
-`PacketRoundTripTest` pin all of this.
+`BarrierTest` (in `common/model` for the shape and a throw's landing, and in `server`),
+`GameClientBarrierTest`, `GameClientTrapTest` and `PacketRoundTripTest` pin all of this.

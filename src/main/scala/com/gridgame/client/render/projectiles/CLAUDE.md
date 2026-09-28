@@ -95,7 +95,7 @@ back along the heading to the wall face, stops the projectile there, and keeps i
 in the depth pass, so walls in front still cover it, and it is dropped once expired.
 `GLProjectileRenderers.drawAbsorbed` draws it shrinking toward the impact point while it fades,
 with a contact flash, a ring across the face and chips kicked back in the colour of the tile it
-struck (`Tile.color`: grey off stone, spray off water, dust at the map edge). Explosives still
+struck (`Tile.color`: grey off stone, green off a tree, dust at the map edge). Explosives still
 explode, now centred on the face. A despawn at the end of range in open ground fades the same
 way, without the puff.
 

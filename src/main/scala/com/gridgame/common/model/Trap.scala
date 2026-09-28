@@ -144,15 +144,24 @@ final class Trap(
  * Where a thrown trap lands. The client picks the cell with this and the server checks it with
  * this, so a placement the client shows is one the server takes — the same reason [[Teleport]]
  * exists for blinks and stars.
+ *
+ * A throw is stopped by what stops a shot that doesn't fly through walls: terrain, and the front
+ * of an enemy's raised barrier ([[Barrier]]). Which barriers stand in whose way is the caller's to
+ * say (`barrierBefore`): the server knows them from its players, the client from what it has heard.
  */
 object TrapPlacement {
+  /** No barrier in the way of any cell: a throw stopped by terrain alone. */
+  val NoBarriers: (Int, Int) => Boolean = (_, _) => false
+
   /**
    * The cell a trap thrown from (fromX, fromY) toward (aimX, aimY) lands on: as far along that
    * line as the aim asks for, at most `maxRange` cells, stopping before the first cell it can't
-   * lie on. None when there is nowhere to put it (the thrower is somehow standing in a wall).
+   * lie on, or can't reach for a barrier in the way (`barrierBefore(x, y)`: does one stand across
+   * the throw from here to that cell?). None when there is nowhere to put it (the thrower is
+   * somehow standing in a wall).
    */
   def target(world: WorldData, fromX: Int, fromY: Int, aimX: Double, aimY: Double,
-             maxRange: Int): Option[Position] = {
+             maxRange: Int, barrierBefore: (Int, Int) => Boolean = NoBarriers): Option[Position] = {
     val here = if (world.isWalkable(fromX, fromY)) Some(new Position(fromX, fromY)) else None
     val dx = aimX - fromX
     val dy = aimY - fromY
@@ -170,7 +179,7 @@ object TrapPlacement {
       val t = Math.min(reach, i.toDouble)
       val x = Math.round(fromX + ux * t).toInt
       val y = Math.round(fromY + uy * t).toInt
-      if (!world.isWalkable(x, y)) return best
+      if (!world.isWalkable(x, y) || barrierBefore(x, y)) return best
       best = Some(new Position(x, y))
       i += 1
     }

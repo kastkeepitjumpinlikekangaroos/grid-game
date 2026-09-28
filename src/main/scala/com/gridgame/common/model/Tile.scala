@@ -6,6 +6,10 @@ sealed trait Tile {
   def walkable: Boolean
   def color: Int // ARGB color for rendering
 
+  /** Whether a projectile is stopped by the tile: everything nobody can walk on stops one, but
+    * water, which a shot flies over as it does over the ground. */
+  def stopsProjectiles: Boolean = !walkable
+
   /** How the tile stands on the map, which is how it is drawn — see [[TileForm]]. */
   def form: TileForm = if (walkable) TileForm.Ground else TileForm.Block
 
@@ -15,9 +19,9 @@ sealed trait Tile {
 }
 
 /**
- * How a tile stands on the map. The server only cares whether a tile can be walked on; this is
- * for everything that draws the world (the game, the map editor), and it decides the pass a tile
- * is drawn in and what is drawn under it.
+ * How a tile stands on the map. The server only cares whether a tile can be walked on and whether
+ * it stops a projectile; this is for everything that draws the world (the game, the map editor),
+ * and it decides the pass a tile is drawn in and what is drawn under it.
  */
 sealed abstract class TileForm
 
@@ -52,6 +56,7 @@ object Tile {
     val name = "water"
     val walkable = false
     override val form: TileForm = TileForm.Pool
+    override val stopsProjectiles: Boolean = false
     val color = 0xFF4ABAF0 // Bright blue
   }
 
@@ -97,6 +102,7 @@ object Tile {
     val name = "deep_water"
     val walkable = false
     override val form: TileForm = TileForm.Pool
+    override val stopsProjectiles: Boolean = false
     val color = 0xFF2E80D6 // Deep blue
   }
 

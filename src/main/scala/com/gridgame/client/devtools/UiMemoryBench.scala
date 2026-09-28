@@ -3,7 +3,7 @@ package com.gridgame.client.devtools
 import javafx.animation.{AnimationTimer, KeyFrame, Timeline}
 import javafx.application.{Application, Platform}
 import javafx.scene.Scene
-import javafx.scene.control.{Label, ScrollPane}
+import javafx.scene.control.Label
 import javafx.scene.layout.{StackPane, VBox}
 import javafx.scene.paint.Color
 import javafx.scene.shape.Rectangle
@@ -11,7 +11,7 @@ import javafx.stage.{Screen, Stage}
 import javafx.util.Duration
 
 import java.lang.management.ManagementFactory
-import com.gridgame.client.ui.{CharacterSelectionPanel, SpriteGenerator, UiActivity, ViewportCache}
+import com.gridgame.client.ui.{CharacterSelectionPanel, SpriteGenerator, Theme, UiActivity, Widgets}
 
 /**
  * Dev tool: what the menus cost while the player is sitting in them. Not shipped — run with
@@ -41,15 +41,11 @@ class UiMemoryBenchApp extends Application {
   private var lastCpuNs = 0L
   private var lastWallNs = 0L
 
+  /** The character panel on a page as the lobby screens frame it: the sky, the top bar, the card. */
   private def lobbyScene(): Scene = {
     panel = new CharacterSelectionPanel(() => selected, id => selected = id)
-    val root = new VBox(panel.createPanel())
-    root.setStyle("-fx-background-color: #1a1a2e;")
-    val scroll = new ScrollPane(root)
-    scroll.setFitToWidth(true)
-    scroll.setStyle("-fx-background-color: #1a1a2e; -fx-border-color: transparent;")
-    ViewportCache.disable(scroll) // as the lobby screens do
-    new Scene(scroll)
+    val (root, _) = Widgets.page(Widgets.topBar(Seq(Widgets.brand(null)), Nil), new VBox(panel.createPanel()), 1560)
+    Theme.newScene(root)
   }
 
   private def emptyAnimScene(every: Int): Scene = {
@@ -109,6 +105,7 @@ class UiMemoryBenchApp extends Application {
   }
 
   override def start(stage: Stage): Unit = {
+    Theme.loadFonts()
     val raw = getParameters.getRaw
     def flag(name: String): Option[String] =
       raw.toArray.map(_.toString).find(_.startsWith(name + "=")).map(_.drop(name.length + 1))
@@ -138,6 +135,7 @@ class UiMemoryBenchApp extends Application {
       (8.0, () => report("character select")),
       (8.1, () => {
         panel.stop()
+        panel = null // as switchScreen lets the screen go: nothing of it is held through the match
         // What showGameScene does to the JavaFX side when the GLFW window takes over
         if (!raw.contains("--keep-scene")) {
           stage.setScene(new Scene(new StackPane(), Color.BLACK))

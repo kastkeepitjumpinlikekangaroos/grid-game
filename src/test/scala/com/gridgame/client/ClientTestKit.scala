@@ -155,7 +155,17 @@ object Fx {
     case n => Seq(n)
   }
 
-  def labels(root: Node): Seq[String] = all(root).collect { case l: javafx.scene.control.Labeled if l.getText != null => l.getText }
+  /** The text on the screen: every label and button, and every text node that isn't one's own
+    * (a title drawn with an outline is text nodes). */
+  def labels(root: Node): Seq[String] = all(root).collect {
+    case l: javafx.scene.control.Labeled if l.getText != null => l.getText
+    case t: javafx.scene.text.Text if t.getClass == classOf[javafx.scene.text.Text] && t.getText != null => t.getText
+  }
+
+  /** The text of the labels carrying a style class, in order. */
+  def labelsOf(root: Node, styleClass: String): Seq[String] = all(root).collect {
+    case l: javafx.scene.control.Labeled if l.getStyleClass.contains(styleClass) => l.getText
+  }
 
   def click(node: Node): Unit =
     Event.fireEvent(node, new MouseEvent(MouseEvent.MOUSE_CLICKED, 0, 0, 0, 0, MouseButton.PRIMARY, 1,

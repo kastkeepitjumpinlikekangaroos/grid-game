@@ -12,7 +12,7 @@ final class FadingProjectile(val proj: Projectile, val startMs: Long, val hitTer
  * Where a despawned projectile actually met the terrain.
  *
  * The server removes a projectile on the first movement sub-step that lands in a blocking
- * cell (a non-walkable tile, a fence for wall-passers, or off the map), so the position in
+ * cell (terrain that stops it, a fence for wall-passers, or off the map), so the position in
  * the DESPAWN packet can sit up to half a cell INSIDE the wall. Drawing the stop there puts
  * the projectile in the wall's own draw slot, over the block's face. Walking back along the
  * heading to the last clear point puts it on the face instead.
@@ -27,12 +27,13 @@ object TerrainImpact {
    *  Matches Projectile.getCellX, which the server's collision uses. */
   @inline def cellOf(v: Float): Int = Math.floor(v + 0.5f).toInt
 
-  /** Does the cell stop a projectile? Terrain it can't cross, the map's edge, and for one that
-    * flies over walls a fence — what the server's collision stops it on. */
+  /** Does the cell stop a projectile? Terrain it can't cross (not water: Tile.stopsProjectiles),
+    * the map's edge, and for one that flies over walls a fence — what the server's collision
+    * stops it on. */
   private[game] def blocks(world: WorldData, cx: Int, cy: Int, passesWalls: Boolean): Boolean =
     cx < 0 || cy < 0 || cx >= world.width || cy >= world.height || {
       val t = world.getTile(cx, cy)
-      !t.walkable && (!passesWalls || t == Tile.Fence)
+      t.stopsProjectiles && (!passesWalls || t == Tile.Fence)
     }
 
   def resolve(world: WorldData, x: Float, y: Float, dx: Float, dy: Float, passesWalls: Boolean): Impact = {

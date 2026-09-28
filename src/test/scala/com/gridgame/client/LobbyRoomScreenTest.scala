@@ -7,7 +7,6 @@ import javafx.scene.control.Button
 import javafx.scene.control.ComboBox
 import javafx.scene.control.Label
 import javafx.scene.layout.StackPane
-import javafx.scene.layout.VBox
 import javafx.stage.Stage
 import org.junit.Assert._
 import org.junit.Test
@@ -46,7 +45,7 @@ class LobbyRoomScreenTest {
     inLobby(asHost = false)
     val shown = texts(room())
     assertTrue(shown.contains("Friday Night"))
-    for (n <- Seq("  host", "  me (you)", "  other", "  Bot 777")) assertTrue(s"'$n' in $shown", shown.contains(n))
+    for (n <- Seq("host", "me (you)", "other", "Bot 777")) assertTrue(s"'$n' in $shown", shown.contains(n))
   }
 
   @Test def pickingACharacterInTheRoomTellsTheServer(): Unit = {
@@ -68,11 +67,11 @@ class LobbyRoomScreenTest {
   @Test def teamsAreShownAsTheMatchWillDealThem(): Unit = {
     inLobby(asHost = false, gameMode = 1)
     val stage = room()
+    // Each team is a block headed by its name, holding its members
     val columns = Fx {
       Fx.all(stage.getScene.getRoot).collect {
-        case col: VBox if !col.getChildren.isEmpty && col.getChildren.get(0).isInstanceOf[Label] &&
-          col.getChildren.get(0).asInstanceOf[Label].getText.startsWith("Team ") =>
-          col.getChildren.get(0).asInstanceOf[Label].getText -> Fx.labels(col).tail.map(_.trim)
+        case name: Label if name.getStyleClass.contains("team-name") =>
+          name.getText -> Fx.labelsOf(name.getParent.getParent, "member-name")
       }.toMap
     }
     // Humans in join order, then bots, dealt round-robin
@@ -118,7 +117,17 @@ class LobbyRoomScreenTest {
     Fx(button(stage, "Leave").get.fire())
     assertTrue(t.sentLobbyActions.exists(_.getAction == LobbyAction.LEAVE))
     assertEquals(ClientState.LOBBY_BROWSER, t.client.clientState)
-    assertTrue(texts(stage).contains("Lobby Browser"))
+    assertTrue(texts(stage).contains("Open lobbies"))
+  }
+
+  @Test def goingElsewhereFromTheTopBarLeavesTheLobby(): Unit = {
+    inLobby(asHost = false)
+    val stage = room()
+    t.clearSent()
+    Fx(button(stage, "Leaderboard").get.fire())
+    assertTrue(t.sentLobbyActions.exists(_.getAction == LobbyAction.LEAVE))
+    assertEquals(ClientState.LOBBY_BROWSER, t.client.clientState)
+    assertTrue(texts(stage).contains("The highest-rated players on this server."))
   }
 
   @Test def theRoomFollowsTheServer(): Unit = {
@@ -128,7 +137,7 @@ class LobbyRoomScreenTest {
     t.lobby(LobbyAction.PLAYER_JOINED, who = late, name = "latecomer", players = 5)
     Fx(()) // let the update the listener posted run
     Fx(())
-    assertTrue(texts(stage).contains("  latecomer"))
-    assertTrue(texts(stage).contains("Players: 5/8"))
+    assertTrue(texts(stage).contains("latecomer"))
+    assertTrue(texts(stage).contains("5/8"))
   }
 }

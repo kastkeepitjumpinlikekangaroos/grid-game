@@ -27,16 +27,16 @@ class ProjectileTerrainTest {
   def stopsAtTheDrawnFaceHeadingTowardTheCamera(): Unit = {
     // Heading +x into a wall at (4, 3), whose drawn face is at x = 3.5
     val world = worldWithWall(4, 3)
-    assertFalse(proj(3.45f, 3f, 1f, 0f).hitsNonWalkable(world))
-    assertTrue(proj(3.55f, 3f, 1f, 0f).hitsNonWalkable(world))
+    assertFalse(proj(3.45f, 3f, 1f, 0f).hitsTerrain(world))
+    assertTrue(proj(3.55f, 3f, 1f, 0f).hitsTerrain(world))
   }
 
   @Test
   def reachesTheDrawnFaceHeadingAwayFromTheCamera(): Unit = {
     // Heading -x into a wall at (2, 3), whose drawn face is at x = 2.5
     val world = worldWithWall(2, 3)
-    assertFalse(proj(2.55f, 3f, -1f, 0f).hitsNonWalkable(world))
-    assertTrue(proj(2.45f, 3f, -1f, 0f).hitsNonWalkable(world))
+    assertFalse(proj(2.55f, 3f, -1f, 0f).hitsTerrain(world))
+    assertTrue(proj(2.45f, 3f, -1f, 0f).hitsTerrain(world))
   }
 
   @Test
@@ -53,9 +53,35 @@ class ProjectileTerrainTest {
     CharacterDef.all // registers every ProjectileDef, including the shard's bounce count
     val world = worldWithWall(4, 3)
     val p = proj(3.6f, 3f, 1f, 0f, ProjectileType.RICOCHET_SHARD)
-    assertTrue(p.hitsNonWalkable(world))
+    assertTrue(p.hitsTerrain(world))
     assertTrue(p.ricochet(world))
-    assertFalse("snapped back out of the wall", p.hitsNonWalkable(world))
+    assertFalse("snapped back out of the wall", p.hitsTerrain(world))
     assertEquals(3.49f, p.getX, 1e-4f)
+  }
+
+  @Test
+  def aShotFliesOverWaterAndIsStoppedByEverythingElseNobodyCanWalkOn(): Unit = {
+    for (tile <- Tile.all) {
+      val world = WorldData.createEmpty(8, 8)
+      world.setTile(4, 3, tile)
+      val water = tile == Tile.Water || tile == Tile.DeepWater
+      assertEquals(tile.name, !tile.walkable && !water, proj(4f, 3f, 1f, 0f).hitsTerrain(world))
+    }
+  }
+
+  @Test
+  def aRicochetOffAWallStandingInWaterTurnsOffItsFace(): Unit = {
+    // A wall down x = 4 with water in front of it. The shard came in over the water, so that is
+    // the side of the face it struck; taken for closed, the water made the bounce a corner's, and
+    // the shard reversed where it stood, half a cell inside the wall
+    val world = WorldData.createEmpty(8, 8)
+    for (y <- 0 until 8) { world.setTile(4, y, Tile.Wall); world.setTile(3, y, Tile.Water) }
+    val s = (1.0 / Math.sqrt(2.0)).toFloat
+    val p = proj(3.6f, 3f, s, s, ProjectileType.RICOCHET_SHARD)
+    assertTrue(p.hitsTerrain(world))
+    assertTrue(p.ricochet(world))
+    assertEquals("snapped back onto the water side of the face", 3.49f, p.getX, 1e-4f)
+    assertFalse(p.hitsTerrain(world))
+    assertTrue("turned off the face, not straight back", p.dx < 0f && p.dy > 0f)
   }
 }

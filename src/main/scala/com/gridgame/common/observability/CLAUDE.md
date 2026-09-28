@@ -27,6 +27,11 @@ All four backends + Grafana are docker-composed in `ops/observability/`. Default
 - **`Metrics.characterPlayed` is incremented from `ClientRegistry.add`**, not from `ClientHandler.handlePlayerJoin`. Real human joins go through `LobbyHandler.handleStart` / `RankedQueue.start*Match` (which call `registry.add` directly), not through the `PLAYER_JOIN` packet path — only client *rejoins* during an active match hit `handlePlayerJoin`. Putting the counter at the registry chokepoint covers all join paths, including bots.
 - **Async gauges live on the owning class**, registered in its constructor with `Meter.gaugeBuilder(...).buildWithCallback { obs => obs.record(state.size(), Attrs.Empty) }`. See `ProjectileManager`, `ItemManager`, `BotController`, `GameServer`, `RankedQueue` for examples.
 - **`gridgame.kills` is labeled with `killer_character × victim_character × projectile_type`**. With 112 characters × 112 × 112 projectile types that's high theoretical cardinality but Prometheus handles it fine because most combos never occur. If this gets out of hand, drop one of the dimensions.
+- **`gridgame.client.spawn_requests` is counted by `client/game/PendingSpawns`, not where the
+  request is sent.** A request is answered by the first packet about a new projectile of ours
+  (its SPAWN, or its first MOVE if that was lost), and unanswered after a second without one,
+  whether lost or refused. What is fired as the player dies is dropped uncounted
+  (client/game/CLAUDE.md, *Spawn requests the server never answers*).
 - **Network metrics are wire-only.** Bot-fired projectiles bypass the network entirely, so `gridgame.packets.received{type="PROJECTILE_UPDATE"}` shows just human activity. For total game-event rates use the server-authoritative counters like `gridgame.projectiles.spawned`.
 
 ## Configuration

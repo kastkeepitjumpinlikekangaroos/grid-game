@@ -1,0 +1,680 @@
+/*
+ * The menus' look: a MapleStory sky behind clean white cards, chunky cel-shaded buttons, one
+ * rounded typeface. Every screen's scene carries this sheet (Theme.newScene); a screen gives its
+ * nodes these classes rather than styling them inline. See ui/CLAUDE.md.
+ *
+ * Two JavaFX rules shape how it is written:
+ *  - A rule here outranks what code sets (setTextFill, setFont), and so does anything Modena
+ *    derives from a colour looked up here or inherits from .root's font. So text colours and fonts
+ *    are set by class, or inline where they vary (an inline style outranks the sheet); never with
+ *    setTextFill or setFont.
+ *  - Depth is layered backgrounds, not -fx-effect: a shadow or blur renders the node off screen
+ *    on every repaint, and the menus repaint the whole window at up to 30 fps (the character
+ *    previews). The lip under a card or a button is a second background inset above the first.
+ */
+
+.root {
+    /* The palette. Ink is a dark navy, never black, as the sprites' outlines are dark versions
+       of their own colour. */
+    -maple-ink: #1c3558;
+    -maple-body: #3a5476;
+    -maple-muted: #5e7899;
+    -maple-faint: #9ab0c9;
+    -maple-line: #dbe7f5;
+    -maple-edge: #bcd2ec;
+    -maple-lip: #cadcf1;
+    -maple-tint: #f1f7ff;
+    -maple-tint-2: #e4f0fd;
+    -maple-sky: #2f8ff5;
+    -maple-sky-deep: #1d68c9;
+    -maple-leaf: #2f9b45;
+    -maple-berry: #dc3f57;
+    -maple-gold: #c98400;
+    -maple-violet: #7a55d6;
+
+    /* Modena's own lookups, so the controls it draws come out in the palette */
+    -fx-font-family: "Nunito";
+    -fx-font-size: 14px;
+    -fx-text-background-color: -maple-body;
+    -fx-text-inner-color: -maple-ink;
+    -fx-accent: -maple-sky;
+    -fx-focus-color: -maple-sky;
+    -fx-faint-focus-color: transparent;
+}
+
+/* ── The page ───────────────────────────────────────────────────────────── */
+
+.page {
+    -fx-background-color: linear-gradient(to bottom, #56aefc 0%, #8cc9fd 45%, #cbe9ff 78%, #e4f5ff 100%);
+}
+
+.scroll-pane,
+.scroll-pane > .viewport,
+.scroll-pane > .corner {
+    -fx-background-color: transparent;
+}
+.scroll-pane {
+    -fx-padding: 0;
+    -fx-background-insets: 0;
+}
+
+.scroll-bar {
+    -fx-background-color: transparent;
+    -fx-padding: 2;
+}
+.scroll-bar:vertical { -fx-pref-width: 12; }
+.scroll-bar:horizontal { -fx-pref-height: 12; }
+.scroll-bar > .thumb {
+    -fx-background-color: rgba(28, 53, 88, 0.22);
+    -fx-background-insets: 0;
+    -fx-background-radius: 999;
+}
+.scroll-bar > .thumb:hover,
+.scroll-bar > .thumb:pressed {
+    -fx-background-color: rgba(28, 53, 88, 0.38);
+}
+.scroll-bar > .track,
+.scroll-bar > .track-background {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+}
+.scroll-bar > .increment-button,
+.scroll-bar > .decrement-button {
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+}
+.scroll-bar > .increment-button > .increment-arrow,
+.scroll-bar > .decrement-button > .decrement-arrow {
+    -fx-shape: " ";
+    -fx-padding: 0;
+}
+
+/* ── The top bar ────────────────────────────────────────────────────────── */
+
+.topbar {
+    -fx-background-color: -maple-line, rgba(255, 255, 255, 0.96);
+    -fx-background-insets: 0, 0 0 1 0;
+    -fx-padding: 10 28 10 24;
+    -fx-spacing: 6;
+    -fx-alignment: center-left;
+}
+.brand-name {
+    -fx-font-family: "Nunito Black";
+    -fx-font-size: 20px;
+    -fx-text-fill: -maple-ink;
+}
+.nav-tab {
+    -fx-background-color: transparent;
+    -fx-background-radius: 999;
+    -fx-padding: 8 16;
+    -fx-font-family: "Nunito ExtraBold";
+    -fx-font-size: 14px;
+    -fx-text-fill: -maple-muted;
+    -fx-cursor: hand;
+}
+.nav-tab:hover {
+    -fx-background-color: -maple-tint;
+    -fx-text-fill: -maple-ink;
+}
+.nav-tab:focus-visible {
+    -fx-border-color: rgba(47, 143, 245, 0.55);
+    -fx-border-width: 2;
+    -fx-border-radius: 999;
+}
+.nav-tab-active,
+.nav-tab-active:hover {
+    -fx-background-color: -maple-tint-2;
+    -fx-text-fill: -maple-sky-deep;
+}
+.user-chip {
+    -fx-background-color: transparent;
+    -fx-background-radius: 999;
+    -fx-padding: 4 12 4 4;
+    -fx-spacing: 8;
+    -fx-alignment: center-left;
+    -fx-cursor: hand;
+}
+.user-chip:hover,
+.user-chip-active {
+    -fx-background-color: -maple-tint;
+}
+.user-name {
+    -fx-font-family: "Nunito ExtraBold";
+    -fx-font-size: 14px;
+    -fx-text-fill: -maple-ink;
+}
+
+/* ── Type ───────────────────────────────────────────────────────────────── */
+
+.h1 {
+    -fx-font-family: "Nunito Black";
+    -fx-font-size: 30px;
+    -fx-text-fill: -maple-ink;
+}
+.h2 {
+    -fx-font-family: "Nunito Black";
+    -fx-font-size: 19px;
+    -fx-text-fill: -maple-ink;
+}
+.h3 {
+    -fx-font-family: "Nunito ExtraBold";
+    -fx-font-size: 15px;
+    -fx-text-fill: -maple-ink;
+}
+.lead {
+    -fx-font-size: 15px;
+    -fx-text-fill: -maple-body;
+}
+.lead-on-sky {
+    -fx-font-family: "Nunito ExtraBold";
+    -fx-font-size: 15px;
+    -fx-text-fill: #1f4f86;
+}
+.body { -fx-text-fill: -maple-body; }
+.muted {
+    -fx-font-size: 13px;
+    -fx-text-fill: -maple-muted;
+}
+.small {
+    -fx-font-size: 12px;
+    -fx-text-fill: -maple-muted;
+}
+.eyebrow {
+    -fx-font-family: "Nunito ExtraBold";
+    -fx-font-size: 12px;
+    -fx-text-fill: -maple-muted;
+}
+.strong {
+    -fx-font-family: "Nunito ExtraBold";
+    -fx-text-fill: -maple-ink;
+}
+.number {
+    -fx-font-family: "Nunito Black";
+    -fx-font-size: 16px;
+    -fx-text-fill: -maple-ink;
+}
+
+/* A white tag on the sky, under the login screen's title */
+.hero-pill {
+    -fx-background-color: rgba(28, 53, 88, 0.16), white;
+    -fx-background-insets: 0, 0 0 3 0;
+    -fx-background-radius: 999;
+    -fx-padding: 5 16 8 16;
+    -fx-font-family: "Nunito ExtraBold";
+    -fx-font-size: 14px;
+    -fx-text-fill: -maple-ink;
+}
+
+/* Status lines under a form: what is happening, and what went wrong */
+.status { -fx-font-family: "Nunito"; -fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: -maple-muted; }
+.status-error { -fx-text-fill: -maple-berry; }
+.status-warn { -fx-text-fill: #b86e00; }
+.status-ok { -fx-text-fill: -maple-leaf; }
+
+/* ── Surfaces ───────────────────────────────────────────────────────────── */
+
+/* A white card sitting on the sky: an edge all round, thicker underneath */
+.card {
+    -fx-background-color: -maple-edge, white;
+    -fx-background-insets: 0, 1 1 4 1;
+    -fx-background-radius: 20, 19;
+    -fx-padding: 20 22 24 22;
+}
+.card-tight { -fx-padding: 14 14 18 14; }
+.card-header {
+    -fx-spacing: 10;
+    -fx-alignment: center-left;
+}
+/* A small card on the sky beside a page's heading (the ranked rating) */
+.badge-card {
+    -fx-background-color: -maple-edge, white;
+    -fx-background-insets: 0, 1 1 4 1;
+    -fx-background-radius: 16, 15;
+    -fx-padding: 8 20 12 14;
+}
+/* A quiet panel inside a card */
+.inset {
+    -fx-background-color: -maple-tint;
+    -fx-background-radius: 14;
+    -fx-padding: 12 14;
+}
+.divider {
+    -fx-background-color: -maple-line;
+    -fx-min-height: 1;
+    -fx-pref-height: 1;
+    -fx-max-height: 1;
+}
+
+/* A notice across the top of a page: why the player is here, or what just went wrong */
+.notice {
+    -fx-background-color: #bcd8fb, #eef6ff;
+    -fx-background-insets: 0, 1 1 3 1;
+    -fx-background-radius: 14, 13;
+    -fx-padding: 11 16 13 16;
+    -fx-font-family: "Nunito"; -fx-font-weight: bold;
+    -fx-text-fill: #1d4f94;
+}
+.notice-error {
+    -fx-background-color: #f3bcc6, #fff1f3;
+    -fx-text-fill: #a8233a;
+}
+
+/* ── Buttons: a flat face with a hard highlight, an ink outline, and a lip ── */
+
+.btn {
+    -fx-font-family: "Nunito ExtraBold";
+    -fx-font-size: 14px;
+    -fx-padding: 8 18 12 18;
+    -fx-background-radius: 14, 12, 12;
+    -fx-background-insets: 0, 2, 2 2 6 2;
+    -fx-cursor: hand;
+    -fx-alignment: center;
+    -fx-graphic-text-gap: 8;
+}
+.btn:pressed {
+    -fx-background-insets: 0, 2, 5 2 3 2;
+    -fx-padding: 11 18 9 18;
+}
+.btn:focus-visible {
+    -fx-border-color: rgba(47, 143, 245, 0.55);
+    -fx-border-width: 3;
+    -fx-border-insets: -5;
+    -fx-border-radius: 18;
+}
+.btn:disabled {
+    -fx-opacity: 0.5;
+}
+.btn-lg {
+    -fx-font-size: 16px;
+    -fx-padding: 11 24 15 24;
+}
+.btn-lg:pressed { -fx-padding: 14 24 12 24; }
+.btn-sm {
+    -fx-font-size: 13px;
+    -fx-padding: 5 12 9 12;
+    -fx-background-radius: 11, 9, 9;
+}
+.btn-sm:pressed { -fx-padding: 8 12 6 12; }
+
+/* The one thing a screen is for: MapleStory's yellow */
+.btn-sun {
+    -fx-background-color: #b87400, #e69a00, linear-gradient(to bottom, #ffdb63 0%, #ffdb63 46%, #ffc629 46%, #ffc629 100%);
+    -fx-text-fill: #5a3300;
+}
+.btn-sun:hover {
+    -fx-background-color: #b87400, #e69a00, linear-gradient(to bottom, #ffe37f 0%, #ffe37f 46%, #ffcf45 46%, #ffcf45 100%);
+}
+.btn-sky {
+    -fx-background-color: #1453a3, #1b62c2, linear-gradient(to bottom, #4aa3ff 0%, #4aa3ff 46%, #2f8ff5 46%, #2f8ff5 100%);
+    -fx-text-fill: white;
+}
+.btn-sky:hover {
+    -fx-background-color: #1453a3, #1b62c2, linear-gradient(to bottom, #62b0ff 0%, #62b0ff 46%, #4299f7 46%, #4299f7 100%);
+}
+.btn-leaf {
+    -fx-background-color: #1d6b2c, #247f35, linear-gradient(to bottom, #4fc163 0%, #4fc163 46%, #35a84b 46%, #35a84b 100%);
+    -fx-text-fill: white;
+}
+.btn-leaf:hover {
+    -fx-background-color: #1d6b2c, #247f35, linear-gradient(to bottom, #62cc75 0%, #62cc75 46%, #42b458 46%, #42b458 100%);
+}
+.btn-berry {
+    -fx-background-color: #92223a, #b52c47, linear-gradient(to bottom, #f5677c 0%, #f5677c 46%, #e44b62 46%, #e44b62 100%);
+    -fx-text-fill: white;
+}
+.btn-berry:hover {
+    -fx-background-color: #92223a, #b52c47, linear-gradient(to bottom, #f87c8f 0%, #f87c8f 46%, #ea5c72 46%, #ea5c72 100%);
+}
+.btn-plain {
+    -fx-background-color: #a9c3e3, #c8daf0, linear-gradient(to bottom, #ffffff 0%, #ffffff 46%, #f4f8fd 46%, #f4f8fd 100%);
+    -fx-text-fill: -maple-ink;
+}
+.btn-plain:hover {
+    -fx-background-color: #8fb2df, #c0d5ef, linear-gradient(to bottom, #ffffff 0%, #ffffff 46%, #eaf3fe 46%, #eaf3fe 100%);
+}
+/* Text only, for the smallest actions (a link, an icon) */
+.btn-ghost {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-background-radius: 10;
+    -fx-padding: 6 10;
+    -fx-text-fill: -maple-sky-deep;
+}
+.btn-ghost:hover {
+    -fx-background-color: -maple-tint;
+}
+.btn-ghost:pressed {
+    -fx-background-insets: 0;
+    -fx-padding: 7 10 5 10;
+    -fx-background-color: -maple-tint-2;
+}
+.btn-icon {
+    -fx-padding: 8;
+    -fx-background-radius: 999;
+}
+.btn-icon:pressed { -fx-padding: 9 8 7 8; }
+
+/* ── Fields ─────────────────────────────────────────────────────────────── */
+
+.text-field,
+.password-field {
+    -fx-background-color: -maple-edge, white;
+    -fx-background-insets: 0, 2;
+    -fx-background-radius: 12, 10;
+    -fx-padding: 10 14;
+    -fx-font-size: 14px;
+    -fx-text-fill: -maple-ink;
+    -fx-prompt-text-fill: -maple-faint;
+    -fx-highlight-fill: #bfe0ff;
+    -fx-highlight-text-fill: -maple-ink;
+}
+.text-field:hover,
+.password-field:hover {
+    -fx-background-color: #a6c3e6, white;
+}
+.text-field:focused,
+.password-field:focused {
+    -fx-background-color: rgba(47, 143, 245, 0.22), -maple-sky, white;
+    -fx-background-insets: -3, 0, 2;
+    -fx-background-radius: 15, 12, 10;
+    -fx-prompt-text-fill: -maple-faint;
+}
+.search-field { -fx-padding: 9 14 9 36; }
+.field-label {
+    -fx-font-family: "Nunito ExtraBold";
+    -fx-font-size: 13px;
+    -fx-text-fill: -maple-ink;
+}
+
+.combo-box {
+    -fx-background-color: -maple-edge, white;
+    -fx-background-insets: 0, 2;
+    -fx-background-radius: 12, 10;
+    -fx-padding: 2 4 2 4;
+    -fx-cursor: hand;
+}
+.combo-box:hover {
+    -fx-background-color: #a6c3e6, #f8fbff;
+}
+.combo-box:focused,
+.combo-box:showing {
+    -fx-background-color: rgba(47, 143, 245, 0.22), -maple-sky, white;
+    -fx-background-insets: -3, 0, 2;
+    -fx-background-radius: 15, 12, 10;
+}
+.combo-box > .list-cell {
+    -fx-background-color: transparent;
+    -fx-padding: 7 8;
+    -fx-font-family: "Nunito"; -fx-font-weight: bold;
+    -fx-font-size: 14px;
+    -fx-text-fill: -maple-ink;
+}
+.combo-box > .arrow-button {
+    -fx-background-color: transparent;
+    -fx-padding: 0 10 0 6;
+}
+.combo-box > .arrow-button > .arrow {
+    -fx-background-color: -maple-muted;
+    -fx-shape: "M0 0 L10 0 L5 6 Z";
+    -fx-padding: 3 5;
+}
+.combo-box-popup > .list-view {
+    -fx-background-color: -maple-edge, white;
+    -fx-background-insets: 0, 1;
+    -fx-background-radius: 12, 11;
+    -fx-padding: 6;
+    -fx-effect: dropshadow(gaussian, rgba(28, 53, 88, 0.22), 16, 0, 0, 6);
+}
+.combo-box-popup > .list-view > .virtual-flow > .clipped-container > .sheet > .list-cell {
+    -fx-background-color: white;
+    -fx-background-radius: 8;
+    -fx-padding: 8 12;
+    -fx-font-family: "Nunito"; -fx-font-weight: bold;
+    -fx-text-fill: -maple-ink;
+}
+.combo-box-popup > .list-view > .virtual-flow > .clipped-container > .sheet > .list-cell:hover {
+    -fx-background-color: -maple-tint;
+}
+.combo-box-popup > .list-view > .virtual-flow > .clipped-container > .sheet > .list-cell:selected {
+    -fx-background-color: -maple-sky;
+    -fx-text-fill: white;
+}
+
+.tooltip {
+    -fx-background-color: #1c3558;
+    -fx-background-radius: 8;
+    -fx-padding: 6 10;
+    -fx-font-size: 12px;
+    -fx-text-fill: white;
+}
+
+/* ── Chips, badges, keycaps ─────────────────────────────────────────────── */
+
+.chip {
+    -fx-font-family: "Nunito ExtraBold";
+    -fx-font-size: 12px;
+    -fx-padding: 3 10;
+    -fx-background-radius: 999;
+    -fx-background-color: -maple-tint-2;
+    -fx-text-fill: -maple-body;
+    -fx-graphic-text-gap: 5;
+}
+.chip-sky { -fx-background-color: #dcecff; -fx-text-fill: -maple-sky-deep; }
+.chip-leaf { -fx-background-color: #daf3de; -fx-text-fill: #237a36; }
+.chip-berry { -fx-background-color: #fde0e5; -fx-text-fill: #b9293f; }
+.chip-gold { -fx-background-color: #fff0c7; -fx-text-fill: #8a5a00; }
+.chip-violet { -fx-background-color: #ece5fd; -fx-text-fill: #5a3cb0; }
+.chip-grey { -fx-background-color: #e9eef5; -fx-text-fill: -maple-muted; }
+
+/* A setting the host can change, drawn as the chip it is for everyone else (the lobby room) */
+.combo-box.chip-select {
+    -fx-background-color: #dcecff;
+    -fx-background-insets: 0;
+    -fx-background-radius: 999;
+    -fx-padding: 0 2 0 2;
+}
+.combo-box.chip-select:hover { -fx-background-color: #c9e1ff; }
+.combo-box.chip-select:focused,
+.combo-box.chip-select:showing {
+    -fx-background-color: rgba(47, 143, 245, 0.45), #dcecff;
+    -fx-background-insets: -2, 0;
+    -fx-background-radius: 999;
+}
+.combo-box.chip-select > .list-cell {
+    -fx-font-family: "Nunito ExtraBold";
+    -fx-font-size: 12px;
+    -fx-text-fill: -maple-sky-deep;
+    -fx-padding: 3 2 3 9;
+}
+.combo-box.chip-select > .arrow-button { -fx-padding: 0 9 0 5; }
+.combo-box.chip-select > .arrow-button > .arrow {
+    -fx-background-color: -maple-sky-deep;
+    -fx-padding: 2 4;
+}
+.combo-box.chip-select-violet { -fx-background-color: #ece5fd; }
+.combo-box.chip-select-violet:hover { -fx-background-color: #e0d5fb; }
+.combo-box.chip-select-violet > .list-cell { -fx-text-fill: #5a3cb0; }
+.combo-box.chip-select-violet > .arrow-button > .arrow { -fx-background-color: #5a3cb0; }
+.combo-box.chip-select-grey { -fx-background-color: #e9eef5; }
+.combo-box.chip-select-grey:hover { -fx-background-color: #dde5ef; }
+.combo-box.chip-select-grey > .list-cell { -fx-text-fill: -maple-muted; }
+.combo-box.chip-select-grey > .arrow-button > .arrow { -fx-background-color: -maple-muted; }
+
+/* A key on the keyboard, for the ability that is on it */
+.keycap {
+    -fx-background-color: #aec6e4, white;
+    -fx-background-insets: 0, 1 1 3 1;
+    -fx-background-radius: 7, 6;
+    -fx-padding: 2 7 5 7;
+    -fx-font-family: "Nunito Black";
+    -fx-font-size: 11px;
+    -fx-text-fill: -maple-ink;
+    -fx-min-width: 26;
+    -fx-alignment: center;
+}
+
+.avatar-initial {
+    -fx-font-family: "Nunito Black";
+    -fx-text-fill: white;
+}
+
+/* ── Lists and tables ───────────────────────────────────────────────────── */
+
+.row {
+    -fx-padding: 10 14;
+    -fx-spacing: 14;
+    -fx-alignment: center-left;
+    -fx-background-radius: 14;
+}
+.row-hover:hover { -fx-background-color: -maple-tint; }
+.row-self { -fx-background-color: #e6f1ff; }
+.row-self:hover { -fx-background-color: #dcecff; }
+.table-head {
+    -fx-padding: 0 14 6 14;
+    -fx-spacing: 14;
+    -fx-alignment: center-left;
+}
+.medal {
+    -fx-font-family: "Nunito Black";
+    -fx-font-size: 13px;
+    -fx-alignment: center;
+    -fx-min-width: 30;
+    -fx-min-height: 30;
+    -fx-max-width: 30;
+    -fx-max-height: 30;
+    -fx-background-radius: 999;
+    -fx-background-color: #e9eef5;
+    -fx-text-fill: -maple-muted;
+}
+.medal-1 { -fx-background-color: #c98a00, #ffd34d; -fx-background-insets: 0, 2; -fx-text-fill: #6b4400; }
+.medal-2 { -fx-background-color: #8d9db3, #e3e9f1; -fx-background-insets: 0, 2; -fx-text-fill: #46566d; }
+.medal-3 { -fx-background-color: #a8612b, #f2b27c; -fx-background-insets: 0, 2; -fx-text-fill: #663312; }
+
+.stat-tile {
+    -fx-background-color: -maple-tint;
+    -fx-background-radius: 16;
+    -fx-padding: 14 16 16 16;
+    -fx-spacing: 2;
+}
+.stat-value {
+    -fx-font-family: "Nunito Black";
+    -fx-font-size: 28px;
+    -fx-text-fill: -maple-ink;
+}
+.stat-label {
+    -fx-font-family: "Nunito ExtraBold";
+    -fx-font-size: 12px;
+    -fx-text-fill: -maple-muted;
+}
+
+/* ── Choices ────────────────────────────────────────────────────────────── */
+
+/* A choice drawn as a card: an outline that turns sky blue when it is the one chosen */
+.option {
+    -fx-background-color: -maple-edge, white;
+    -fx-background-insets: 0, 1 1 3 1;
+    -fx-background-radius: 16, 15;
+    -fx-padding: 12 14 14 14;
+    -fx-spacing: 12;
+    -fx-alignment: center-left;
+    -fx-cursor: hand;
+}
+.option:hover { -fx-background-color: #9dbfe6, #f8fbff; }
+.option-selected,
+.option-selected:hover {
+    -fx-background-color: -maple-sky, #eef6ff;
+    -fx-background-insets: 0, 2 2 4 2;
+}
+.option:disabled { -fx-opacity: 0.55; }
+
+.filter-chip {
+    -fx-background-color: #e8f1fc;
+    -fx-background-radius: 999;
+    -fx-padding: 5 12;
+    -fx-font-family: "Nunito ExtraBold";
+    -fx-font-size: 12px;
+    -fx-text-fill: -maple-muted;
+    -fx-cursor: hand;
+}
+.filter-chip:hover {
+    -fx-background-color: #d9e9fb;
+    -fx-text-fill: -maple-ink;
+}
+.filter-chip-active,
+.filter-chip-active:hover {
+    -fx-background-color: -maple-sky;
+    -fx-text-fill: white;
+}
+
+/* ── The character panel ────────────────────────────────────────────────── */
+
+.char-cell {
+    -fx-background-color: #d5e4f5, white;
+    -fx-background-insets: 0, 1 1 3 1;
+    -fx-background-radius: 14, 13;
+    -fx-padding: 4 2 6 2;
+    -fx-cursor: hand;
+}
+.char-cell:hover { -fx-background-color: #95bdea, #f6faff; }
+.char-cell-selected,
+.char-cell-selected:hover {
+    -fx-background-color: -maple-sky, #e8f3ff;
+    -fx-background-insets: 0, 2 2 4 2;
+}
+.char-name {
+    -fx-font-family: "Nunito ExtraBold";
+    -fx-font-size: 11px;
+    -fx-text-fill: -maple-ink;
+}
+/* The sky the chosen character stands in, on a patch of grass */
+.hero-stage {
+    -fx-background-color: linear-gradient(to bottom, #7cc2ff 0%, #bfe4ff 70%, #dff2ff 100%);
+    -fx-background-radius: 18;
+}
+.char-title {
+    -fx-font-family: "Nunito Black";
+    -fx-font-size: 22px;
+    -fx-text-fill: -maple-ink;
+}
+.ability-name {
+    -fx-font-family: "Nunito ExtraBold";
+    -fx-font-size: 14px;
+    -fx-text-fill: -maple-ink;
+}
+
+/* Someone in the lobby: their avatar and name */
+.member {
+    -fx-background-color: -maple-tint;
+    -fx-background-radius: 999;
+    -fx-padding: 3 12 3 3;
+    -fx-spacing: 8;
+    -fx-alignment: center-left;
+}
+.member-self { -fx-background-color: #dcecff; }
+.member-name {
+    -fx-font-family: "Nunito"; -fx-font-weight: bold;
+    -fx-font-size: 13px;
+    -fx-text-fill: -maple-ink;
+}
+.team-name {
+    -fx-font-family: "Nunito ExtraBold";
+    -fx-font-size: 14px;
+}
+
+/* ── Chat ───────────────────────────────────────────────────────────────── */
+
+.chat-log {
+    -fx-background-color: -maple-tint;
+    -fx-background-radius: 14;
+}
+.chat-name { -fx-font-family: "Nunito ExtraBold"; -fx-font-size: 13px; }
+.chat-text { -fx-font-size: 13px; -fx-fill: -maple-body; }
+.chat-system { -fx-font-size: 12px; -fx-fill: -maple-muted; }
+
+/* ── Colour utilities: last, so they win over any class above that sets a text colour ── */
+
+.text-sky { -fx-text-fill: -maple-sky-deep; }
+.text-leaf { -fx-text-fill: -maple-leaf; }
+.text-berry { -fx-text-fill: -maple-berry; }
+.text-gold { -fx-text-fill: -maple-gold; }
+.text-faint { -fx-text-fill: -maple-faint; }

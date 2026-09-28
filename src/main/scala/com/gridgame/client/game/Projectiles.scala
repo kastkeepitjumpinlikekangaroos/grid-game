@@ -91,6 +91,8 @@ trait Projectiles { this: GameClient =>
   private[game] def handleProjectileUpdate(packet: ProjectilePacket): Unit = {
     val projectileId = packet.getProjectileId
     val now = nanoClock()
+    // One of ours: the first we hear of it, whatever it says, answers a spawn request
+    if (packet.getPlayerId.equals(localPlayerId)) pendingSpawns.heard(projectileId, packet.getProjectileType, now)
 
     packet.getAction match {
       case ProjectileAction.SPAWN =>
@@ -221,6 +223,8 @@ trait Projectiles { this: GameClient =>
     projectileTimeline.reset()
     fadingProjectiles.clear()
     recentlyRemovedProjectiles.clear()
+    // The next match numbers its projectiles from the start again
+    pendingSpawns.forgetMatch(nanoClock())
   }
 
   def getProjectiles: ConcurrentHashMap[Int, Projectile] = projectiles

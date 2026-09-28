@@ -178,6 +178,23 @@ trait Barriers { this: GameClient =>
   def getBarrierImpactAcross(i: Int): Float = barrierImpactAcross(i)
   def getBarrierImpactTime(i: Int): Long = barrierImpactTime(i)
 
+  // ── In a throw's way ────────────────────────────────────────────────────
+
+  /** Does an enemy's raised barrier stand across the straight way from (ax, ay) to (bx, by), met
+    * from its front? What stops a trap we throw, as a wall does; the server asks the same of its
+    * own players (GameInstance.barrierAcross). Ours and our allies' stop nothing of ours. */
+  private[game] def enemyBarrierAcross(ax: Float, ay: Float, bx: Float, by: Float): Boolean = {
+    val it = players.values().iterator()
+    while (it.hasNext) {
+      val p = it.next()
+      if (p.hasBarrier && !p.isDead && !p.isPhased && !(localTeamId != 0 && p.getTeamId == localTeamId)) {
+        val pos = p.getPosition
+        if (Barrier.crosses(pos.getX.toFloat, pos.getY.toFloat, p.getBarrierAngle, ax, ay, bx, by)) return true
+      }
+    }
+    false
+  }
+
   // ── In a projectile's way ───────────────────────────────────────────────
 
   // The barriers up this frame, as the server stops shots on them: whose, where they stand, which

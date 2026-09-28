@@ -212,6 +212,18 @@ class ProjectileFlightTest {
     assertEquals("and fades where it was last drawn", face, fading.proj.getX, 1e-3f)
   }
 
+  @Test def itIsFlownOnOverWater(): Unit = {
+    // A river across its way, shallows either side of deep water. A shot flies over water, so it
+    // isn't held at the water's edge the way it is at a wall's face
+    val world = WorldData.createEmpty(80, 40)
+    for (y <- 0 until 40; x <- 15 to 17) world.setTile(x, y, if (x == 16) Tile.DeepWater else Tile.Water)
+    val t = match_(world)
+    val sent = warmUp ++ shot(7, 2000, 5f, 20f, 1f, 0f, 1f, lastTick = 83)
+    val drawn = play(t, sent, 7, fromMs = 2250, toMs = 2480, jitter = jittery)
+    steps(drawn).foreach(step => assertEquals("a cell a tick, every frame", (FRAME / TICK).toFloat, step, 0.005f))
+    assertTrue("across to the far bank", drawn.flatten.map(_._1).max > 18f)
+  }
+
   @Test def itIsNeverFlownPastTheEndOfItsRange(): Unit = {
     val t = match_()
     // A bullet goes 18 cells: 17 moves, and the server stops it at the end of the next tick's

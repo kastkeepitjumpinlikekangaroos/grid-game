@@ -45,6 +45,22 @@ class CombatTest {
     assertEquals("stopped in the wall's cell", 15, Math.floor(despawn.head.getX + 0.5f).toInt)
   }
 
+  @Test def aShotFliesOverWater(): Unit = {
+    val shooter = m.join(CharacterId.Soldier, 5, 30)
+    val target = m.join(CharacterId.Gladiator, 16, 30)
+    // A river down the map between them: shallows either side of deep water
+    for (y <- 0 until m.world.height) {
+      m.world.setTile(10, y, Tile.Water)
+      m.world.setTile(11, y, Tile.DeepWater)
+      m.world.setTile(12, y, Tile.Water)
+    }
+    val bullet = m.launch(shooter, ProjectileType.BULLET, 1f, 0f)
+    m.clearSent()
+    m.tickUntilGone(bullet)
+    assertTrue("hit on the far bank", target.getHealth < target.getMaxHealth)
+    assertEquals(Seq((target.getId, ProjectileAction.HIT)), hitsOn(m.udpSent(shooter)))
+  }
+
   @Test def aBoomerangComesBack(): Unit = {
     val gladiator = m.join(CharacterId.Gladiator, 10, 30)
     val axe = m.launch(gladiator, ProjectileType.AXE, 1f, 0f)

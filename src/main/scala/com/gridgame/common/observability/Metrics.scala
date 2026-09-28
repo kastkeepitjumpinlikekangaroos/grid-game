@@ -342,6 +342,12 @@ object Metrics {
     .setUnit("{err}")
     .build()
 
+  val clientSpawnRequests: LongCounter = meter
+    .counterBuilder("gridgame.client.spawn_requests")
+    .setDescription("Projectiles the client asked the server for, by attack slot: answered, or unanswered within a second (lost on the way, or refused)")
+    .setUnit("{projectile}")
+    .build()
+
   // ===== Helpers =====
 
   /** Idempotent increment that handles both pre-attribute and raw paths. */

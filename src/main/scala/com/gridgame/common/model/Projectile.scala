@@ -88,18 +88,18 @@ class Projectile(
     val curY = getCellY
 
     // Determine which wall was hit by checking which adjacent cell
-    // (behind us on each axis) is walkable
+    // (behind us on each axis) is open to it — ground, or water it flew over
     val fromX = if (_dx > 0) curX - 1 else if (_dx < 0) curX + 1 else curX
     val fromY = if (_dy > 0) curY - 1 else if (_dy < 0) curY + 1 else curY
-    val hitX = fromX != curX && world.isTileWalkable(fromX, curY)
-    val hitY = fromY != curY && world.isTileWalkable(curX, fromY)
+    val hitX = fromX != curX && !world.stopsProjectile(fromX, curY)
+    val hitY = fromY != curY && !world.stopsProjectile(curX, fromY)
 
     if (hitX && hitY) {
       // Corner: reverse both
       _dx = -_dx
       _dy = -_dy
     } else if (hitX) {
-      // Snap back to the walkable side of the vertical wall (its faces are at curX +/- 0.5)
+      // Snap back to the open side of the vertical wall (its faces are at curX +/- 0.5)
       if (_dx > 0) x = curX.toFloat - 0.51f
       else x = curX.toFloat + 0.51f
       // 90° turn away from vertical wall
@@ -111,7 +111,7 @@ class Projectile(
         _dx = oldDy; _dy = -oldDx
       }
     } else if (hitY) {
-      // Snap back to the walkable side of the horizontal wall (its faces are at curY +/- 0.5)
+      // Snap back to the open side of the horizontal wall (its faces are at curY +/- 0.5)
       if (_dy > 0) y = curY.toFloat - 0.51f
       else y = curY.toFloat + 0.51f
       // 90° turn away from horizontal wall
@@ -150,10 +150,12 @@ class Projectile(
     cellX < 0 || cellX >= world.width || cellY < 0 || cellY >= world.height
   }
 
-  /** Terrain only: the opening divider between the teams is not a wall, and is judged on its own
-    * line by ProjectileManager so that a type flying over walls is stopped by it too. */
-  def hitsNonWalkable(world: WorldData): Boolean = {
-    !world.isTileWalkable(getCellX, getCellY)
+  /** Is it in terrain that stops a shot — anything nobody can walk on but water, which it flies
+    * over ([[Tile.stopsProjectiles]])? Terrain only: the opening divider between the teams is not
+    * a wall, and is judged on its own line by ProjectileManager so that a type flying over walls
+    * is stopped by it too. */
+  def hitsTerrain(world: WorldData): Boolean = {
+    world.stopsProjectile(getCellX, getCellY)
   }
 
   def hitsFence(world: WorldData): Boolean = {

@@ -87,6 +87,12 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
   // star's item packet. Positions are absolute, so an update sent before that one can only drag
   // the player back to where they were (a reordered datagram, or a step sent just before a star).
   private val movementFence = new ConcurrentHashMap[UUID, java.lang.Integer]()
+  // Sequence number of the newest update whose barrier word (up or not, and which way it faces)
+  // was taken for each player. The movement fence can't stand in for it: that one moves only on a
+  // position the server accepted, so an update sent before a raise and held up on the way got past
+  // it whenever the raise's own position had been refused, and dropped the barrier — which the
+  // cooldown then kept down for the rest of its life, while its holder's client showed it up.
+  private val barrierFence = new ConcurrentHashMap[UUID, java.lang.Integer]()
 
   // When each player's current life began (a respawn), for the charge of its first shot
   private val lifeStartedAt = new ConcurrentHashMap[UUID, java.lang.Long]()
@@ -191,7 +197,21 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
   }
 
   /** A (re)join places the player afresh, and a new session restarts its sequence numbers. */
-  def resetMovementFence(playerId: UUID): Unit = movementFence.remove(playerId)
+  def resetMovementFence(playerId: UUID): Unit = {
+    movementFence.remove(playerId)
+    barrierFence.remove(playerId)
+  }
+
+  /** Is update `seqNum` newer than every one whose barrier word was taken for the player? Records
+    * it if so. Callers hold the player's lock, which is what makes the check-and-take atomic. */
+  def takeBarrierWord(playerId: UUID, seqNum: Int): Boolean = {
+    val fence = barrierFence.get(playerId)
+    if (fence != null && !ReplayGuard.isNewer(seqNum, fence.intValue())) false
+    else {
+      barrierFence.put(playerId, Integer.valueOf(seqNum))
+      true
+    }
+  }
 
   /**
    * A new life starts with every attack ready. The client already clears its own cooldowns on
@@ -338,6 +358,7 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     lastUpdateTime.remove(playerId)
     attackClocks.remove(playerId)
     movementFence.remove(playerId)
+    barrierFence.remove(playerId)
     lifeStartedAt.remove(playerId)
   }
 

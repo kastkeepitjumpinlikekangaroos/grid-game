@@ -148,9 +148,15 @@ trait StepRequests { this: ClientHandler =>
    * faces (the aim angle). A raise is honoured if the character has a barrier and it is off
    * cooldown: 80% of it since the last raise, the tolerance every other attack gets, counted from
    * the raise because a barrier can drop early. While it is up every update turns it, and one
-   * without the bit drops it. Stale and reordered updates never get here, so an old one can't.
+   * without the bit drops it.
+   *
+   * Only the newest word counts ([[PacketValidator.takeBarrierWord]]). The movement fence that
+   * keeps stale positions out moves only on an accepted position, so without this an update sent
+   * just before a raise, arriving after the raise's own refused update, dropped the barrier on the
+   * server — and the cooldown kept it from going up again — while its holder saw it up.
    */
   private def updateBarrier(player: Player, packet: PlayerUpdatePacket): Unit = {
+    if (!validator.takeBarrierWord(player.getId, packet.getSequenceNumber)) return
     val raised = (packet.getEffectFlags2 & 0x04) != 0
     if (player.hasBarrier) {
       if (raised) player.setBarrierAngle(packet.aimAngleRadians.toFloat)

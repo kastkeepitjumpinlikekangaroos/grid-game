@@ -2,7 +2,7 @@ package com.gridgame.client
 
 import com.gridgame.client.audio.AudioManager
 import com.gridgame.client.gl.GLFWManager
-import com.gridgame.client.ui.UiActivity
+import com.gridgame.client.ui.{Theme, UiActivity}
 import com.gridgame.client.i18n.Messages
 import com.gridgame.common.Constants
 import com.gridgame.common.model.WorldData
@@ -12,8 +12,6 @@ import javafx.application.Platform
 import javafx.scene.control.Button
 import javafx.scene.control.Label
 import javafx.scene.image.Image
-import javafx.scene.paint.Color
-import javafx.scene.text.Font
 import javafx.stage.Screen
 import javafx.stage.Stage
 import com.gridgame.client.game.GameClient
@@ -71,12 +69,7 @@ class ClientMain extends Application with Screens {
   private[client] def showGameScene(stage: Stage): Unit = matchWindow.open(stage)
 
   override def start(primaryStage: Stage): Unit = {
-    // Load bundled fonts for JavaFX: Exo 2 for Latin UI, Noto Sans SC/KR so CJK
-    // UI text renders (JavaFX resolves the family names registered here).
-    Seq("/fonts/Exo2-Bold.ttf", "/fonts/NotoSansSC-i18n.ttf", "/fonts/NotoSansKR-i18n.ttf").foreach { p =>
-      val s = getClass.getResourceAsStream(p)
-      if (s != null) { Font.loadFont(s, 16); s.close() }
-    }
+    Theme.loadFonts()
 
     // Initialize internationalization (restores the persisted language) and make
     // a language change rebuild the current (login) screen in the new language.
@@ -158,8 +151,7 @@ class ClientMain extends Application with Screens {
             c.requestMatchHistory()
             showLobbyBrowser(stage)
           } else {
-            statusLabel.setTextFill(Color.web("#e84057"))
-            statusLabel.setText(message)
+            Theme.showStatus(statusLabel, message, Theme.Tone.Error)
             actionButton.setDisable(false)
           }
         })
@@ -185,8 +177,8 @@ class ClientMain extends Application with Screens {
           if (attempt > 1) {
             val shownAttempt = attempt
             Platform.runLater(() => {
-              statusLabel.setTextFill(Color.web("#c8aa6e"))
-              statusLabel.setText(Messages.t("Retrying connection ({0}/{1})...", shownAttempt.toString, maxRetries.toString))
+              Theme.showStatus(statusLabel, Messages.t("Retrying connection ({0}/{1})...", shownAttempt.toString, maxRetries.toString),
+                Theme.Tone.Warn)
             })
             Thread.sleep(retryDelayMs)
             // Create a fresh client for the retry
@@ -197,8 +189,8 @@ class ClientMain extends Application with Screens {
           // Posted before the request goes out, so a fast rejection can't be overwritten
           // by "Logging in..." and leave it showing next to a re-enabled button.
           Platform.runLater(() => {
-            statusLabel.setTextFill(Color.web("#8899bb"))
-            statusLabel.setText(if (isSignup) Messages.t("Creating account...") else Messages.t("Logging in..."))
+            Theme.showStatus(statusLabel, if (isSignup) Messages.t("Creating account...") else Messages.t("Logging in..."),
+              Theme.Tone.Info)
           })
           client.sendAuthRequest(username, password, isSignup)
         } catch {
@@ -206,8 +198,7 @@ class ClientMain extends Application with Screens {
           case e: Exception =>
             if (attempt >= maxRetries) {
               Platform.runLater(() => {
-                statusLabel.setTextFill(Color.web("#e84057"))
-                statusLabel.setText(Messages.t("Could not connect to the server ({0})", e.getMessage))
+                Theme.showStatus(statusLabel, Messages.t("Could not connect to the server ({0})", e.getMessage), Theme.Tone.Error)
                 actionButton.setDisable(false)
               })
             }

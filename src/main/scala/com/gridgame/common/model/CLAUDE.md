@@ -36,7 +36,8 @@ match-flow.md (the opening). This file is how the package is put together.
 ## Adding a New Tile Type
 1. Add case object to `Tile.scala` with the next id (an id is its atlas column, so no gaps),
    name, walkable, color. A non-walkable tile that isn't a block overrides `form` (`Pool` or
-   `Prop`), and a prop names the `ground` it grows out of.
+   `Prop`), and a prop names the `ground` it grows out of. A non-walkable tile stops projectiles
+   unless it overrides `stopsProjectiles` (water does: shots fly over it).
 2. Add to `Tile.all` sequence, and bump the count in `WorldDataTest`
 3. Write its draw function in `scripts/generate_tiles.py` and add it to `TILES` with its form. A
    block also needs `BLOCK_HEIGHTS` (and `ANIMATED_BLOCKS` if its frames move). A small prop can

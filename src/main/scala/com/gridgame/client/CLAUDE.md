@@ -54,8 +54,9 @@ could move these numbers should be checked with them rather than guessed at:
 # watch it end).
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --quality=low
 
-# The JavaFX menus: the character select screen, then a match start (stage hidden), a second
-# visit, and the same screen idle — live/committed heap, CPU, footprint for each phase.
+# The JavaFX menus: the character select screen (the panel on a page as the lobby screens frame
+# it: the sky, the top bar), then a match start (stage hidden), a second visit, and the same
+# screen idle — live/committed heap, CPU, footprint for each phase.
 bazel run //src/main/scala/com/gridgame/client:ui_bench
 ```
 

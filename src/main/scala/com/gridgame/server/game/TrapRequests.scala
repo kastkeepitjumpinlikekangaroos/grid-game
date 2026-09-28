@@ -14,8 +14,9 @@ trait TrapRequests { this: ClientHandler =>
    * A client throwing one of its traps onto the ground. Everything the placement rests on is
    * checked here — that the player can cast at all, that the attack they name really throws this
    * trap and is off cooldown, and that the cell is one [[TrapPlacement]] would have reached from
-   * where the server has them — because a trap the client shows and the server refuses is a long
-   * cooldown spent on nothing. A refusal is sent back so the client gives that cooldown up again.
+   * where the server has them, no wall and no enemy's barrier in the way — because a trap the
+   * client shows and the server refuses is a long cooldown spent on nothing. A refusal is sent
+   * back so the client gives that cooldown up again.
    *
    * The order matters: everything that can be judged without touching the clock is judged first,
    * so only a genuine race (someone else's trap landing on the cell in between) can spend a cast
@@ -61,6 +62,10 @@ trait TrapRequests { this: ClientHandler =>
     val pos = player.getPosition
     if (!TrapPlacement.isValidTarget(world, pos.getX, pos.getY, packet.getX, packet.getY, cast.maxRange)) {
       return refuse(s"(${packet.getX},${packet.getY}) is out of reach of (${pos.getX},${pos.getY})")
+    }
+    // An enemy's raised barrier stops a throw as a wall does (TrapPlacement.target lands it short)
+    if (instance.barrierAcross(playerId, pos.getX.toFloat, pos.getY.toFloat, packet.getX.toFloat, packet.getY.toFloat)) {
+      return refuse(s"a barrier stands between (${pos.getX},${pos.getY}) and (${packet.getX},${packet.getY})")
     }
     if (instance.trapManager.trapAt(packet.getX, packet.getY) != null) return refuse("a trap is already there")
     if (!validator.validateCast(playerId, slot, ability.cooldownMs)) return refuse("cast too soon")

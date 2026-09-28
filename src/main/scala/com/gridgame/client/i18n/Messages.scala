@@ -68,6 +68,11 @@ object Messages {
     applyLocale(tag, persist = true, notify = true)
   }
 
+  /** Use a language for this run only, neither saved nor announced: for the dev tools, which
+    * must not change the player's own setting. */
+  private[client] def useForThisRun(tag: String): Unit =
+    if (supported.exists(_.tag == tag)) applyLocale(tag, persist = false, notify = false)
+
   private def applyLocale(tag: String, persist: Boolean, notify: Boolean): Unit = {
     active = if (tag == "en") english else load(tag).getOrElse(Map.empty)
     activeTag = tag

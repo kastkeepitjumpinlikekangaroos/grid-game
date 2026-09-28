@@ -97,6 +97,46 @@ class BarrierTest {
     }
   }
 
+  @Test def everythingThatDoesNotFlyOverWallsIsStopped(): Unit = {
+    // Every projectile in the game, fired at the front of a barrier from close in and from further
+    // off, in the open and with walls about the holder (one behind them, one beside them, one
+    // between them and their barrier): neither the holder nor a teammate behind them is touched —
+    // no damage, no hold, no slow, no burn, no poison, no push or pull — by anything that doesn't
+    // fly over walls. (What does fly over them flies over a barrier too, above.)
+    val types = (Byte.MinValue.toInt to Byte.MaxValue.toInt).map(_.toByte)
+      .map(ProjectileDef.get).filter(d => !d.passesThroughWalls).distinctBy(_.id)
+    assertTrue(s"the whole roster's projectiles: ${types.size}", types.size > 100)
+    val layouts: Seq[(String, WorldData => Unit)] = Seq(
+      ("open ground", _ => ()),
+      ("a wall behind", w => for (y <- 26 to 34) w.setTile(27, y, Tile.Wall)),
+      ("a wall beside", w => for (x <- 25 to 35) w.setTile(x, 27, Tile.Wall)),
+      ("a wall in front", w => for (y <- 27 to 33) w.setTile(31, y, Tile.Wall)))
+    val through = for {
+      pDef <- types
+      (layout, build) <- layouts
+      (dx, dy) <- Seq((3, 0), (5, 1), (9, 0))
+      touched <- {
+        val w = WorldData.createEmpty(60, 60)
+        build(w)
+        val t = new TestMatch(world = w, gameMode = 1)
+        val holder = t.join(CharacterId.Crusader, 30, 30, team = 1)
+        val ally = t.join(CharacterId.Wizard, 29, 30, team = 1)
+        val enemy = t.join(CharacterId.Soldier, 30 + dx, 30 + dy, team = 2)
+        raise(t, holder, Math.atan2(dy, dx))
+        val len = Math.sqrt(dx * dx + dy * dy).toFloat
+        t.tickUntilGone(t.launch(enemy, pDef.id, -dx / len, -dy / len))
+        t.tick(3)
+        def untouched(p: Player, at: (Int, Int)): Boolean = unhurt(p) && !p.isFrozen && !p.isRooted &&
+          !p.isSlowed && !p.isBurning && !p.isPoisoned && t.at(p) == at
+        val hit = Seq((holder, (30, 30), "the holder"), (ally, (29, 30), "a teammate behind them"))
+          .collect { case (p, at, who) if !untouched(p, at) => s"${pDef.name} from ($dx, $dy), $layout: $who" }
+        t.instance.projectileManager.close()
+        hit
+      }
+    } yield touched
+    assertEquals("", through.mkString("\n"))
+  }
+
   // --- Who it shelters ---
 
   @Test def aTeammateBesideTheHolderIsSheltered(): Unit = {
@@ -140,6 +180,29 @@ class BarrierTest {
     m.tickUntilGone(m.launch(slammer, ProjectileType.TREMOR_SLAM, 0f, 0f))
     assertTrue("behind the barrier, 5 cells into a 6-cell slam", unhurt(holder))
     assertFalse("out to the side of it", unhurt(aside))
+  }
+
+  @Test def aThrownTrapStopsAtItAsAtAWall(): Unit = {
+    // A throw stops at a wall, so a trap can't be dropped on the far side of one; and at a barrier,
+    // so it can't be dropped behind one, where its holder and whoever they shelter stand
+    val holder = m.join(CharacterId.Crusader, 20, 30)
+    val warden = m.join(CharacterId.Warden, 26, 30)
+    raise(m, holder)
+    assertNull("behind it", m.placeTrap(warden, AttackSlot.E, TrapType.BEAR_TRAP, 21, 30))
+    assertEquals("the throw lands short of it, where the server takes it", Some(new Position(23, 30)),
+      TrapPlacement.target(m.world, 26, 30, 21.0, 30.0, 6,
+        (x, y) => m.instance.barrierAcross(warden.getId, 26f, 30f, x.toFloat, y.toFloat)))
+    assertNotNull("in front of it", m.placeTrap(warden, AttackSlot.E, TrapType.BEAR_TRAP, 23, 30))
+  }
+
+  @Test def aTrapThrownFromBehindItOrByAnAllyGoesOver(): Unit = {
+    val t = new TestMatch(gameMode = 1)
+    val holder = t.join(CharacterId.Crusader, 20, 30, team = 1)
+    val ally = t.join(CharacterId.Warden, 26, 31, team = 1)
+    val enemyBehind = t.join(CharacterId.Warden, 15, 30, team = 2)
+    raise(t, holder)
+    assertNotNull("an ally's, out through its front", t.placeTrap(ally, AttackSlot.E, TrapType.BEAR_TRAP, 21, 31))
+    assertNotNull("an enemy's from behind, as a shot from behind", t.placeTrap(enemyBehind, AttackSlot.E, TrapType.BEAR_TRAP, 19, 30))
   }
 
   @Test def aPhasedHoldersBarrierIsAsInsubstantialAsThey(): Unit = {
@@ -249,6 +312,25 @@ class BarrierTest {
     assertTrue(holder.hasBarrier)
   }
 
+  @Test def anUpdateOvertakenOnTheWayCannotTakeItDown(): Unit = {
+    // Datagrams overtake each other. The movement fence drops an update older than the last
+    // position taken, but a position refused doesn't move it: when the raise came in on an update
+    // whose position was refused, the one sent just before it — without the barrier — arriving
+    // after it, took the barrier down, and the cooldown kept it down while its holder saw it up
+    val holder = m.join(CharacterId.Crusader, 20, 30)
+    m.move(holder, 20, 30)
+    def update(seq: Int, x: Int, flags2: Int): Boolean = m.instance.handler.processPacket(
+      new PlayerUpdatePacket(seq, holder.getId, Packet.getCurrentTimestamp, new Position(x, 30), holder.getColorRGB,
+        holder.getHealth, 0, 0, holder.getCharacterId, holder.getTeamId, holder.getServerMoves, flags2,
+        PlayerUpdatePacket.encodeAimAngle(East)), null, holder.getUdpAddress)
+    assertFalse("a position no walk reaches is refused", update(1001, 34, BARRIER))
+    assertTrue("but the barrier it carries goes up", holder.hasBarrier)
+    assertTrue("the update sent before it, arriving after it, is taken", update(1000, 20, 0))
+    assertTrue("but not its word on the barrier", holder.hasBarrier)
+    update(1002, 20, 0)
+    assertFalse("a newer one's still counts", holder.hasBarrier)
+  }
+
   @Test def aCharacterWithoutOneCannotClaimOne(): Unit = {
     val soldier = m.join(CharacterId.Soldier, 20, 30)
     raise(m, soldier)
@@ -313,6 +395,82 @@ class BarrierTest {
       bots.addBotId(bot.getId)
       bots.tick()
       assertFalse(bot.hasBarrier)
+    } finally bots.stop()
+  }
+
+  @Test def aBotDoesNotRaiseItAgainstSomeoneWhoCannotShootItThroughAWall(): Unit = {
+    val t = new TestMatch()
+    for (y <- 24 to 36) t.world.setTile(26, y, Tile.Wall)
+    val bot = t.join(CharacterId.Crusader, 20, 30)
+    t.join(CharacterId.Soldier, 32, 30) // a gun in range, but the wall is in the way
+    val bots = new BotController(t.instance)
+    try {
+      bots.addBotId(bot.getId)
+      bots.tick()
+      assertFalse(bot.hasBarrier)
+    } finally bots.stop()
+  }
+
+  @Test def aBotDoesNotRaiseItAgainstShotsThatFlyThroughIt(): Unit = {
+    val bot = m.join(CharacterId.Crusader, 20, 30)
+    m.join(CharacterId.Wizard, 32, 30) // arcane bolts fly over walls, and over barriers
+    val bots = new BotController(m.instance)
+    try {
+      bots.addBotId(bot.getId)
+      bots.tick()
+      assertFalse(bot.hasBarrier)
+    } finally bots.stop()
+  }
+
+  @Test def aBotDoesNotCastItsBarrierAwayAsSoonAsItIsUp(): Unit = {
+    // The Gladiator's rope reaches 25 cells, and was thrown the moment the barrier went up — which
+    // took the barrier straight down again, spent for nothing
+    val bot = m.join(CharacterId.Gladiator, 20, 30)
+    m.join(CharacterId.Soldier, 32, 30)
+    val bots = new BotController(m.instance)
+    try {
+      bots.addBotId(bot.getId)
+      bots.tick()
+      assertTrue(bot.hasBarrier)
+      assertTrue("nothing thrown", m.instance.projectileManager.getAll.forall(_.ownerId != bot.getId))
+    } finally bots.stop()
+  }
+
+  @Test def aBotHoldsItUpRatherThanThrowAtAWall(): Unit = {
+    // Stopped by a wall with its target just beyond it, in its axe's reach, a bot used to drop its
+    // barrier and throw at the wall
+    val t = new TestMatch()
+    for (y <- 25 to 35) t.world.setTile(22, y, Tile.Wall)
+    val bot = t.join(CharacterId.Gladiator, 20, 30)
+    val soldier = t.join(CharacterId.Soldier, 20, 42) // 12 cells down the open side of the wall
+    val bots = new BotController(t.instance)
+    try {
+      bots.addBotId(bot.getId)
+      bots.tick()
+      assertTrue(bot.hasBarrier)
+      soldier.setPosition(new Position(24, 30)) // 4 cells off, the wall between them
+      bots.tick()
+      assertTrue("still up", bot.hasBarrier)
+      assertTrue("and nothing thrown at the wall", t.instance.projectileManager.getAll.forall(_.ownerId != bot.getId))
+      // In the open and in reach, it drops it to strike
+      soldier.setPosition(new Position(bot.getPosition.getX, bot.getPosition.getY + 3))
+      bots.tick()
+      assertFalse(bot.hasBarrier)
+      assertTrue(t.instance.projectileManager.getAll.exists(_.ownerId == bot.getId))
+    } finally bots.stop()
+  }
+
+  @Test def aBotsTrapStopsAtABarrier(): Unit = {
+    val holder = m.join(CharacterId.Crusader, 20, 30)
+    val warden = m.join(CharacterId.Warden, 26, 30)
+    raise(m, holder)
+    val bots = new BotController(m.instance)
+    try {
+      bots.addBotId(warden.getId)
+      bots.tick()
+      val traps = m.instance.trapManager.getAll
+      assertEquals("it lays one for the holder coming in", 1, traps.size)
+      assertTrue(s"in front of the barrier, not under the holder: (${traps.head.x}, ${traps.head.y})", traps.head.x >= 23)
     } finally bots.stop()
   }
 

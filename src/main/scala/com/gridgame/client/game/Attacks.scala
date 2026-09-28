@@ -32,6 +32,9 @@ trait Attacks { this: GameClient =>
   private val chargingStartTime: AtomicLong = new AtomicLong(0)
   private val lastChargingUpdateTime: AtomicLong = new AtomicLong(0)
 
+  // Every projectile we ask the server for, until it answers (telemetry)
+  private[client] val pendingSpawns = new PendingSpawns()
+
   // ── Aim ─────────────────────────────────────────────────────────────────
 
   def setMouseWorldPosition(x: Double, y: Double): Unit = {
@@ -75,6 +78,13 @@ trait Attacks { this: GameClient =>
   }
 
   // ── Charging, firing, casting ───────────────────────────────────────────
+
+  /** Ask the server for a projectile: one datagram, watched until the server's word of the
+    * projectile comes back (PendingSpawns). */
+  private def requestSpawn(request: ProjectilePacket): Unit = {
+    send(request)
+    pendingSpawns.requested(request.getProjectileType, request.getAttackSlot, nanoClock())
+  }
 
   def sendChargingUpdate(): Unit = {
     val now = System.currentTimeMillis()
@@ -139,13 +149,13 @@ trait Attacks { this: GameClient =>
         val sin = Math.sin(theta).toFloat
         val rdx = dx * cos - dy * sin
         val rdy = dx * sin + dy * cos
-        send(ProjectilePacket.spawnRequest(
+        requestSpawn(ProjectilePacket.spawnRequest(
           sequenceNumber.getAndIncrement(), localPlayerId,
           pos.getX.toFloat, pos.getY.toFloat, localColorRGB, rdx, rdy,
           chargeByte, primaryType, AttackSlot.PRIMARY))
       }
     } else {
-      send(ProjectilePacket.spawnRequest(
+      requestSpawn(ProjectilePacket.spawnRequest(
         sequenceNumber.getAndIncrement(), localPlayerId,
         pos.getX.toFloat, pos.getY.toFloat, localColorRGB, dx, dy,
         chargeByte, primaryType, AttackSlot.PRIMARY))
@@ -168,7 +178,7 @@ trait Attacks { this: GameClient =>
 
     val primaryType = getSelectedCharacterDef.primaryProjectileType
     AttackSlot.BurstDirections.foreach { case (dx, dy) =>
-      send(ProjectilePacket.spawnRequest(
+      requestSpawn(ProjectilePacket.spawnRequest(
         sequenceNumber.getAndIncrement(), localPlayerId,
         pos.getX.toFloat, pos.getY.toFloat, localColorRGB, dx, dy,
         0.toByte, primaryType, AttackSlot.BURST))
@@ -205,11 +215,13 @@ trait Attacks { this: GameClient =>
     // A trap has to have somewhere to land. With nowhere — aimed into a wall from inside one —
     // nothing is cast and the cooldown is not spent, so the cell is picked before anything else
     // happens. The server picks it the same way (TrapPlacement), from its own copy of where we
-    // are, so a placement we show is one it takes.
+    // are, so a placement we show is one it takes. An enemy's barrier stops the throw as a wall
+    // does (Barriers.enemyBarrierAcross).
     val trapCell = abilityDef.castBehavior match {
       case TrapCast(_, range) =>
         val pos = localPosition.get()
-        val cell = TrapPlacement.target(currentWorld.get(), pos.getX, pos.getY, mouseWorldX, mouseWorldY, range)
+        val cell = TrapPlacement.target(currentWorld.get(), pos.getX, pos.getY, mouseWorldX, mouseWorldY, range,
+          (x, y) => enemyBarrierAcross(pos.getX.toFloat, pos.getY.toFloat, x.toFloat, y.toFloat))
         if (cell.isEmpty) return
         cell
       case _ => None
@@ -254,7 +266,7 @@ trait Attacks { this: GameClient =>
           val sin = Math.sin(theta).toFloat
           val rdx = ndx * cos - ndy * sin
           val rdy = ndx * sin + ndy * cos
-          send(ProjectilePacket.spawnRequest(
+          requestSpawn(ProjectilePacket.spawnRequest(
             sequenceNumber.getAndIncrement(), localPlayerId,
             pos.getX.toFloat, pos.getY.toFloat, localColorRGB, rdx, rdy,
             0.toByte, abilityDef.projectileType, attackSlot))
@@ -262,7 +274,7 @@ trait Attacks { this: GameClient =>
 
       case GroundSlam(_) =>
         val pos = localPosition.get()
-        send(ProjectilePacket.spawnRequest(
+        requestSpawn(ProjectilePacket.spawnRequest(
           sequenceNumber.getAndIncrement(), localPlayerId,
           pos.getX.toFloat, pos.getY.toFloat, localColorRGB, 0.0f, 0.0f,
           0.toByte, abilityDef.projectileType, attackSlot))
@@ -276,7 +288,7 @@ trait Attacks { this: GameClient =>
       case StandardProjectile =>
         val pos = localPosition.get()
         val (ndx, ndy) = getAimDirection
-        send(ProjectilePacket.spawnRequest(
+        requestSpawn(ProjectilePacket.spawnRequest(
           sequenceNumber.getAndIncrement(), localPlayerId,
           pos.getX.toFloat, pos.getY.toFloat, localColorRGB, ndx, ndy,
           0.toByte, abilityDef.projectileType, attackSlot))
@@ -289,13 +301,14 @@ trait Attacks { this: GameClient =>
   def getLastCastDirX: Float = lastCastDirX
   def getLastCastDirY: Float = lastCastDirY
 
-  /** A new life: every ability ready, and nothing charging. A charge held as the last match ended
-    * — its window gone before the button came up — went on into the next at full strength, walking
-    * at a charge's pace. */
+  /** A new life: every ability ready, nothing charging, and nothing waiting on the server. A charge
+    * held as the last match ended — its window gone before the button came up — went on into the
+    * next at full strength, walking at a charge's pace. */
   private[game] def resetAttacks(): Unit = {
     lastQAbilityTime.set(0)
     lastEAbilityTime.set(0)
     isCharging = false
+    pendingSpawns.dropWaiting(nanoClock())
   }
 
   def getQCooldownFraction: Float = {

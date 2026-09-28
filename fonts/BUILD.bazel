@@ -1,5 +1,6 @@
+# The fonts and their licences (the Nunito files are SIL OFL 1.1, which travels with them)
 filegroup(
     name = "font_files",
-    srcs = glob(["*.ttf"]),
+    srcs = glob(["*.ttf", "OFL-*.txt"]),
     visibility = ["//visibility:public"],
 )

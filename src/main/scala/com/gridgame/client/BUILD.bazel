@@ -93,6 +93,15 @@ scala_binary(
     deps = ["//src/main/scala/com/gridgame/client/devtools"] + MAC_NATIVES,
 )
 
+# Dev tool: every menu screen in the states a player sees it in, drawn to PNGs without showing a
+# window. Not shipped. See UiGallery.
+scala_binary(
+    name = "ui_gallery",
+    main_class = "com.gridgame.client.devtools.UiGallery",
+    resources = RESOURCES,
+    deps = ["//src/main/scala/com/gridgame/client/devtools:ui_gallery"] + MAC_NATIVES,
+)
+
 # Dev tool: frame time, allocation rate and footprint of a busy match, with no server.
 # Not shipped. See RenderBench.
 scala_binary(

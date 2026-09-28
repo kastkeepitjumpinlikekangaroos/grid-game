@@ -1,26 +1,19 @@
 package com.gridgame.client.ui.screens
 
-import com.gridgame.client.ui.{CharacterSelectionPanel, ViewportCache}
+import com.gridgame.client.ui.{CharacterSelectionPanel, Icons}
 import com.gridgame.client.i18n.Messages
 import com.gridgame.common.protocol.RankedQueueMode
 
 import javafx.animation.AnimationTimer
 import javafx.application.Platform
-import javafx.geometry.Insets
 import javafx.geometry.Pos
 import javafx.scene.control.Button
-import javafx.scene.control.ScrollPane
-import javafx.scene.control.Label
-import javafx.scene.layout.HBox
-import javafx.scene.layout.Priority
-import javafx.scene.layout.Region
-import javafx.scene.layout.VBox
+import javafx.scene.layout.{HBox, Priority, Region, VBox}
 import javafx.scene.paint.Color
-import javafx.scene.text.Font
-import javafx.scene.text.FontWeight
 import javafx.stage.Stage
 
 import com.gridgame.client.ui.Theme._
+import com.gridgame.client.ui.Widgets._
 
 /** The ranked queue: the mode, the character to queue as, and the wait until a match is found. */
 private[client] final class RankedQueueScreen(app: Screens) {
@@ -28,135 +21,50 @@ private[client] final class RankedQueueScreen(app: Screens) {
 
   def show(stage: Stage): Unit = {
     switchScreen()
-    val root = new VBox(0)
-    root.setAlignment(Pos.TOP_CENTER)
-    root.setStyle(darkBg)
 
-    // Header
-    val headerBox = new VBox(8)
-    headerBox.setAlignment(Pos.CENTER)
-    headerBox.setPadding(new Insets(28, 24, 16, 24))
-
-    val titleRow = new HBox(16)
-    titleRow.setAlignment(Pos.CENTER)
-
-    val queueTitle = new Label(Messages.t("Ranked Queue"))
-    queueTitle.setFont(Font.font("Exo 2", FontWeight.BOLD, 28))
-    queueTitle.setTextFill(Color.WHITE)
-    queueTitle.setStyle("-fx-effect: dropshadow(gaussian, rgba(255, 215, 0, 0.3), 12, 0, 0, 0);")
-
-    // ELO badge
-    val eloLabel = new Label(s"ELO: ${client.rankedElo}")
-    eloLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 18))
-    eloLabel.setTextFill(Color.web("#ffd700"))
-    eloLabel.setStyle("-fx-background-color: rgba(255, 215, 0, 0.08); -fx-padding: 6 20; -fx-background-radius: 20; -fx-border-color: rgba(255, 215, 0, 0.2); -fx-border-radius: 20; -fx-border-width: 1;")
-
-    titleRow.getChildren.addAll(queueTitle, eloLabel)
-
-    val headerLine = new Region()
-    headerLine.setMinHeight(2)
-    headerLine.setMaxHeight(2)
-    headerLine.setMaxWidth(60)
-    headerLine.setStyle("-fx-background-color: linear-gradient(to right, transparent, #ffd700, transparent); -fx-background-radius: 1;")
-
-    headerBox.getChildren.addAll(titleRow, headerLine)
-
-    // Two-panel content
-    val mainContent = new HBox(24)
-    mainContent.setPadding(new Insets(0, 28, 24, 28))
-    VBox.setVgrow(mainContent, Priority.ALWAYS)
-
-    // Left panel (~40%): mode selection, find match, queue status, back button
-    val leftPanel = new VBox(14)
-    leftPanel.setMinWidth(360)
-    leftPanel.setPrefWidth(420)
-
-    val modeCard = new VBox(14)
-    modeCard.setPadding(new Insets(20, 28, 20, 28))
-    modeCard.setStyle(cardBg)
-    modeCard.setAlignment(Pos.CENTER)
-
-    val modeLabel = new Label(Messages.t("SELECT MODE"))
-    modeLabel.setStyle(sectionHeaderStyle)
+    // The player's rating, as a badge at the right of the heading
+    val eloValue = text(client.rankedElo.toString, "stat-value", "text-gold")
+    val badge = row(10, Icons.node(Icons.Trophy, 28, Palette.Gold), new VBox(-2, eloValue, text(Messages.t("Rating"), "stat-label")))
+    badge.getStyleClass.add("badge-card")
 
     var selectedMode: Byte = RankedQueueMode.FFA
 
-    val modeButtonActiveStyle = "-fx-background-color: linear-gradient(to bottom, #5aadff, #3a8eef); -fx-text-fill: white; -fx-font-size: 14; -fx-font-weight: bold; -fx-padding: 14 28; -fx-background-radius: 10; -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(74, 158, 255, 0.5), 16, 0, 0, 3); -fx-border-color: #6db8ff; -fx-border-radius: 10; -fx-border-width: 2;"
-    val modeButtonInactiveStyle = "-fx-background-color: rgba(255,255,255,0.06); -fx-text-fill: #8899aa; -fx-font-size: 14; -fx-font-weight: bold; -fx-padding: 14 28; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.1); -fx-border-radius: 10; -fx-border-width: 1;"
-    val modeButtonInactiveHoverStyle = "-fx-background-color: rgba(255,255,255,0.12); -fx-text-fill: #ccdde8; -fx-font-size: 14; -fx-font-weight: bold; -fx-padding: 14 28; -fx-background-radius: 10; -fx-cursor: hand; -fx-border-color: rgba(255,255,255,0.2); -fx-border-radius: 10; -fx-border-width: 1;"
-
-    val ffaBtn = new Button(Messages.t("FFA (8 Players)"))
-    ffaBtn.setStyle(modeButtonActiveStyle)
-    ffaBtn.setMaxWidth(Double.MaxValue)
-
-    val duelBtn = new Button(Messages.t("1v1 Duel"))
-    duelBtn.setStyle(modeButtonInactiveStyle)
-    duelBtn.setMaxWidth(Double.MaxValue)
-
-    val teamsBtn = new Button(Messages.t("Teams (3v3)"))
-    teamsBtn.setStyle(modeButtonInactiveStyle)
-    teamsBtn.setMaxWidth(Double.MaxValue)
-
-    val allModeButtons = Seq(ffaBtn, duelBtn, teamsBtn)
-
-    def updateModeButtons(): Unit = {
-      allModeButtons.foreach { btn =>
-        val isActive = (btn == ffaBtn && selectedMode == RankedQueueMode.FFA) ||
-          (btn == duelBtn && selectedMode == RankedQueueMode.DUEL) ||
-          (btn == teamsBtn && selectedMode == RankedQueueMode.TEAMS)
-        if (isActive) {
-          btn.setStyle(modeButtonActiveStyle)
-          btn.setOnMouseEntered(null)
-          btn.setOnMouseExited(null)
-        } else {
-          btn.setStyle(modeButtonInactiveStyle)
-          btn.setOnMouseEntered(_ => btn.setStyle(modeButtonInactiveHoverStyle))
-          btn.setOnMouseExited(_ => btn.setStyle(modeButtonInactiveStyle))
-        }
-      }
+    /** A mode to queue for, as a card to pick: an icon, its name and a line about it. */
+    def option(mode: Byte, icon: Icons.Icon, title: String, blurb: String): Button = {
+      val b = new Button()
+      b.getStyleClass.add("option")
+      val words = new VBox(1, text(title, "h3"), small(blurb))
+      b.setGraphic(row(12, Icons.node(icon, 22, Palette.Sky), words))
+      b.setMaxWidth(Double.MaxValue)
+      b.setAlignment(Pos.CENTER_LEFT)
+      b.setUserData(java.lang.Byte.valueOf(mode))
+      b
     }
+    val options = Seq(
+      option(RankedQueueMode.FFA, Icons.Users, Messages.t("FFA (8 Players)"), Messages.t("Everyone for themselves")),
+      option(RankedQueueMode.DUEL, Icons.Sword, Messages.t("1v1 Duel"), Messages.t("Just you and one rival")),
+      option(RankedQueueMode.TEAMS, Icons.Crown, Messages.t("Teams (3v3)"), Messages.t("Three on three")))
+    def updateModeButtons(): Unit = options.foreach { b =>
+      b.getStyleClass.remove("option-selected")
+      if (b.getUserData == java.lang.Byte.valueOf(selectedMode)) b.getStyleClass.add("option-selected")
+    }
+    options.foreach(b => b.setOnAction(_ => {
+      selectedMode = b.getUserData.asInstanceOf[java.lang.Byte].byteValue()
+      updateModeButtons()
+    }))
     updateModeButtons()
 
-    ffaBtn.setOnAction(_ => {
-      selectedMode = RankedQueueMode.FFA
-      updateModeButtons()
-    })
-
-    duelBtn.setOnAction(_ => {
-      selectedMode = RankedQueueMode.DUEL
-      updateModeButtons()
-    })
-
-    teamsBtn.setOnAction(_ => {
-      selectedMode = RankedQueueMode.TEAMS
-      updateModeButtons()
-    })
-
-    // Stack mode buttons vertically for left panel
-    val modeButtonsCol = new VBox(10, ffaBtn, duelBtn, teamsBtn)
-
-    // Queue status elements (initially hidden)
-    val queueSizeLabel = new Label(Messages.t("Players in queue: {0}", "1"))
-    queueSizeLabel.setFont(Font.font("Exo 2", 14))
-    queueSizeLabel.setTextFill(Color.web("#aabbcc"))
-    queueSizeLabel.setVisible(false)
-    queueSizeLabel.setManaged(false)
-
-    val waitTimeLabel = new Label(Messages.t("Wait time: {0}s", "0"))
-    waitTimeLabel.setFont(Font.font("Exo 2", 14))
-    waitTimeLabel.setTextFill(Color.web("#aabbcc"))
-    waitTimeLabel.setVisible(false)
-    waitTimeLabel.setManaged(false)
-
-    val searchingLabel = new Label("")
-    searchingLabel.setFont(Font.font("Exo 2", FontWeight.BOLD, 14))
-    searchingLabel.setTextFill(Color.web("#4a9eff"))
-    searchingLabel.setVisible(false)
-    searchingLabel.setManaged(false)
-
-    val searchSeparator = createSeparator()
-    searchSeparator.setVisible(false)
-    searchSeparator.setManaged(false)
+    // While searching: how many are queued and for how long, and the way out
+    val searchingLabel = text("", "h3", "text-sky")
+    val queueSizeLabel = chip(Messages.t("Players in queue: {0}", "1"), "sky", Icons.Users, Palette.Sky)
+    val waitTimeLabel = chip(Messages.t("Wait time: {0}s", "0"), "grey", Icons.Clock, Palette.Muted)
+    val leaveQueueBtn = button(Messages.t("Leave Queue"), "plain")
+    leaveQueueBtn.setMaxWidth(Double.MaxValue)
+    val queueFacts = new javafx.scene.layout.FlowPane(6, 6, queueSizeLabel, waitTimeLabel)
+    val searchingBox = new VBox(12, searchingLabel, queueFacts, leaveQueueBtn)
+    searchingBox.getStyleClass.add("inset")
+    searchingBox.setVisible(false)
+    searchingBox.setManaged(false)
 
     // Animated dots for searching
     var dotTick = 0
@@ -177,87 +85,66 @@ private[client] final class RankedQueueScreen(app: Screens) {
     }
     dotTimer.start()
 
-    // Find Match button
-    val findMatchBtn = new Button(Messages.t("Find Match"))
-    addHoverEffect(findMatchBtn, buttonGreenStyle, buttonGreenHoverStyle)
-    findMatchBtn.setFont(Font.font("Exo 2", FontWeight.BOLD, 15))
+    val findMatchBtn = button(Messages.t("Find Match"), "sun", "lg")
+    findMatchBtn.setGraphic(Icons.node(Icons.Play, 16, Color.web("#5a3300")))
     findMatchBtn.setMaxWidth(Double.MaxValue)
 
-    modeCard.getChildren.addAll(modeLabel, modeButtonsCol, findMatchBtn, searchingLabel, searchSeparator, queueSizeLabel, waitTimeLabel)
+    val modeCard = card(cardHeader(Messages.t("Pick a mode")), new VBox(8, options: _*), findMatchBtn, searchingBox)
+    modeCard.setMinWidth(340)
+    modeCard.setPrefWidth(340)
+    modeCard.setMaxWidth(340)
+    modeCard.setMaxHeight(Region.USE_PREF_SIZE)
 
-    // Character selection panel (declared before leaveBtn so it can reference it)
+    // Character selection panel
     val charPanel = new CharacterSelectionPanel(
       () => client.selectedCharacterId,
       id => client.changeRankedCharacter(id)
     )
     val charSection = charPanel.createPanel()
+    HBox.setHgrow(charSection, Priority.ALWAYS)
     stopCurrentScreen = () => { charPanel.stop(); dotTimer.stop() }
 
-    // Back / Leave queue button
-    val leaveBtn = new Button(Messages.t("Back"))
-    addHoverEffect(leaveBtn, buttonRedStyle, buttonRedHoverStyle)
-    leaveBtn.setMaxWidth(Double.MaxValue)
-    leaveBtn.setOnAction(_ => {
-      if (isSearching) {
-        client.leaveRankedQueue()
-      }
-      showLobbyBrowser(stage)
+    // Leaving the page leaves the queue
+    val leave = () => if (isSearching) client.leaveRankedQueue()
+    leaveQueueBtn.setOnAction(_ => {
+      leave()
+      showRankedQueue(stage)
     })
 
-    // Find Match button action
     findMatchBtn.setOnAction(_ => {
       isSearching = true
       client.queueRanked(selectedMode)
-
-      // Disable mode buttons and Find Match
-      ffaBtn.setDisable(true)
-      duelBtn.setDisable(true)
-      teamsBtn.setDisable(true)
+      options.foreach(b => b.setDisable(!b.getStyleClass.contains("option-selected")))
+      options.foreach(b => b.setMouseTransparent(true))
       findMatchBtn.setVisible(false)
       findMatchBtn.setManaged(false)
-
-      // Show searching UI
-      searchingLabel.setVisible(true)
-      searchingLabel.setManaged(true)
-      searchSeparator.setVisible(true)
-      searchSeparator.setManaged(true)
-      queueSizeLabel.setVisible(true)
-      queueSizeLabel.setManaged(true)
-      waitTimeLabel.setVisible(true)
-      waitTimeLabel.setManaged(true)
-
-      leaveBtn.setText(Messages.t("Leave Queue"))
+      searchingBox.setVisible(true)
+      searchingBox.setManaged(true)
     })
 
-    leftPanel.getChildren.addAll(modeCard, leaveBtn)
+    val columns = new HBox(24, modeCard, charSection)
+    columns.setAlignment(Pos.TOP_LEFT)
+    val body = new VBox(20,
+      Chrome.heading(Messages.t("Ranked Queue"), Messages.t("Every ranked match moves your rating up or down."), badge),
+      columns)
 
-    // Right panel (~60%): character selection grid
-    val rightPanel = new VBox(0)
-    HBox.setHgrow(rightPanel, Priority.ALWAYS)
-    rightPanel.getChildren.add(charSection)
-
-    mainContent.getChildren.addAll(leftPanel, rightPanel)
-
-    root.getChildren.addAll(headerBox, mainContent)
-
-    val scrollPane = new ScrollPane(root)
-    scrollPane.setFitToWidth(true)
-    scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER)
-    scrollPane.setStyle("-fx-background-color: #1a1a2e; -fx-border-color: transparent;")
-    ViewportCache.disable(scrollPane) // the character panel inside animates
+    val page = Chrome.page(app, stage, Chrome.Tab.Ranked, body, leave, maxWidth = 1560)
 
     // Wire up queue status listener
     client.rankedQueueListener = () => {
       Platform.runLater(() => {
         queueSizeLabel.setText(Messages.t("Players in queue: {0}", client.rankedQueueSize.toString))
         waitTimeLabel.setText(Messages.t("Wait time: {0}s", client.rankedQueueWaitTime.toString))
-        eloLabel.setText(s"ELO: ${client.rankedElo}")
+        eloValue.setText(client.rankedElo.toString)
       })
     }
 
     // The rating is only known once stats arrive; until then the badge showed the default 1000.
     client.matchHistoryListener = () => {
-      Platform.runLater(() => eloLabel.setText(s"ELO: ${client.rankedElo}"))
+      Platform.runLater(() => {
+        eloValue.setText(client.rankedElo.toString)
+        page.refreshUser()
+      })
     }
     client.requestMatchHistory()
 
@@ -277,7 +164,6 @@ private[client] final class RankedQueueScreen(app: Screens) {
       Platform.runLater(() => showLobbyBrowser(stage))
     }
 
-    val scene = newScene(scrollPane)
-    stage.setScene(scene)
+    page.show(stage)
   }
 }

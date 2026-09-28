@@ -21,8 +21,8 @@ trait in its own file, with the packets that update it and the actions that use 
 | `WorldState` | the map: the server names it, the UI loads it (`setWorld`) |
 | `LocalPlayer` | us: character, position, health, death and respawn, the effects on us; `sendPositionUpdate`; the server's word on us (`handleOwnUpdate`) |
 | `LocalMovement` | steps, dashes, blinks, stars, and where we are drawn between steps |
-| `Attacks` | aiming, charging, firing, casting, cooldowns |
-| `Barriers` | ours raised and streamed; everyone else's from their updates; ripples; what stops a shot in flight (design/barriers.md) |
+| `Attacks` | aiming, charging, firing, casting, cooldowns; which projectiles we asked for the server answered (`PendingSpawns`, below) |
+| `Barriers` | ours raised and streamed; everyone else's from their updates; ripples; what stops a shot in flight or a trap we throw (design/barriers.md) |
 | `OtherPlayers` | everyone else in the match |
 | `Projectiles` | the projectiles in flight, flown between the server's ticks (below) |
 | `Items`, `Traps` | items on the ground and our inventory; traps on the ground and going off |
@@ -89,6 +89,31 @@ none, and past a shot's first few frames (its launch catching up) from half of a
 to none more than 1.5x its step: a mean error of 0.2-0.8% of a step on LAN, internet, Wi-Fi and an
 80ms link losing 5%. Flying 150 projectiles costs about 1.3us a frame. `ProjectileFlightTest`
 pins the client and `ProjectileTicksTest` the server's ticks.
+
+## Spawn requests the server never answers
+
+Every projectile we fire is asked of the server in one datagram, sent once. The server refuses one
+without a word, so a request lost on the way, or refused, comes to nothing, its cooldown spent.
+`PendingSpawns` counts how often, as `gridgame.client.spawn_requests` (`slot` primary, q, e or
+burst; `outcome` answered or unanswered; the *Casts* row of the client dashboard). It is telemetry
+only: nothing in the game reads it, it allocates nothing, and none of it runs per frame.
+- **The answer is the first packet about a projectile of ours we hadn't heard of**, whatever it
+  says: its SPAWN, or its first MOVE or its end when the SPAWN was lost, since the shot flew all the
+  same. It answers the oldest request still waiting for that projectile type (the primary and the
+  burst shot fire the same type, so between those two a count can land on the other's slot; the
+  totals are right). Later packets about it answer nothing: the ids of our last 128 are kept, over
+  four times the 30 the server lets a player have in flight.
+- **Unanswered is no answer within a second**: lost on the way there, refused
+  (`gridgame.validation.failed` on the server says which refusals), or answered only by packets
+  that were all lost. It is counted the next time the client fires, hears of a projectile of its
+  own, dies, or leaves the match.
+- **What we fired as we died, or as the match ended, is dropped uncounted**: the server refuses it
+  for that, not for anything the network did. A new match forgets the ids too, since the server
+  numbers its projectiles from the start again.
+- It only leaves the machine when client telemetry is on (`--telemetry` or `GRIDGAME_TELEMETRY=1`),
+  for the collector the `OTEL_*` environment names (localhost by default).
+
+`GameClientSpawnRequestsTest` pins all of this.
 
 ## Design decision
 

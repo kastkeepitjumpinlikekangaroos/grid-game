@@ -73,6 +73,33 @@
       "gridPos": {"h": 8, "w": 24, "x": 0, "y": 18},
       "id": 12,
       "targets": [{"expr": "sum(rate(gridgame_client_reconnects_total[5m])) * 300", "legendFormat": "reconnects"}]
+    },
+    {
+      "type": "row",
+      "title": "Casts",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 26},
+      "id": 102,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Projectiles asked for that the server never answered (lost or refused)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 27},
+      "id": 20,
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0}},
+      "targets": [
+        {"expr": "sum(rate(gridgame_client_spawn_requests_total{outcome=\"unanswered\"}[5m])) / sum(rate(gridgame_client_spawn_requests_total[5m]))", "legendFormat": "all"},
+        {"expr": "sum by (slot) (rate(gridgame_client_spawn_requests_total{outcome=\"unanswered\"}[5m])) / sum by (slot) (rate(gridgame_client_spawn_requests_total[5m]))", "legendFormat": "{{slot}}"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Projectiles asked for per sec, by outcome",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 27},
+      "id": 21,
+      "targets": [{"expr": "sum by (outcome) (rate(gridgame_client_spawn_requests_total[1m]))", "legendFormat": "{{outcome}}"}]
     }
   ],
   "refresh": "5s",

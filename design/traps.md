@@ -13,8 +13,9 @@ rune).
 - **Where it lands.** `TrapPlacement.target` walks from the caster toward the cursor, at most the
   ability's range (6 cells), and stops before the first cell a trap can't lie on: the client picks
   the cell with it and the server checks with `isValidTarget`, the same reason `Teleport` exists
-  for blinks and stars. A throw can't be dropped past a wall. No cell at all means no cast and no
-  cooldown spent.
+  for blinks and stars. A throw can't be dropped past a wall, nor across the front of an enemy's
+  raised barrier, which stops it as a wall does (design/barriers.md): it lands short. No cell at
+  all means no cast and no cooldown spent.
 - **Arming and lasting.** It arms 800ms after it lands and lies there 25s. A player keeps three;
   a fourth takes their oldest away. One trap to a cell.
 - **What sets it off.** An enemy — not the owner, not a teammate — within `triggerRadius` (1.0
@@ -36,7 +37,7 @@ rune).
   threads find the same one, exactly one springs it.
 - **Placing one** goes over TCP as a `TRAP_UPDATE` carrying its `AttackSlot`. `ClientHandler`
   checks the player can cast, that the attack really throws that trap, that the cell is in reach
-  with a clear path, that the cell is free, and the cooldown — through
+  with a clear path and no enemy's barrier across it, that the cell is free, and the cooldown — through
   `PacketValidator.validateCast`, on the same per-slot clock a shot uses. Anything judged without
   the clock is judged first, so only a genuine race can spend a cast and still be refused. A
   refusal comes back as `REJECTED` and the client gives the cooldown back, ready again in 400ms

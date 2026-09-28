@@ -2,6 +2,7 @@ package com.gridgame.common.observability
 
 import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.api.common.Attributes
+import com.gridgame.common.protocol.AttackSlot
 import com.gridgame.common.protocol.PacketType
 
 import java.util.concurrent.ConcurrentHashMap
@@ -23,6 +24,7 @@ object Attrs {
   val Direction: AttributeKey[String] = AttributeKey.stringKey("direction")
   val Reason: AttributeKey[String] = AttributeKey.stringKey("reason")
   val Outcome: AttributeKey[String] = AttributeKey.stringKey("outcome")
+  val Slot: AttributeKey[String] = AttributeKey.stringKey("slot")
   val Action: AttributeKey[String] = AttributeKey.stringKey("action")
   val Mode: AttributeKey[String] = AttributeKey.stringKey("mode")
   val MatchType: AttributeKey[String] = AttributeKey.stringKey("match_type")
@@ -198,6 +200,15 @@ object Attrs {
   val ItemSpawn: Attributes = Attributes.of(Action, "spawn")
   val ItemPickup: Attributes = Attributes.of(Action, "pickup")
   val ItemUse: Attributes = Attributes.of(Action, "use")
+
+  // ---------- The client's spawn requests: attack slot x whether the server answered ----------
+  private val slotNames = Array("primary", "q", "e", "burst") // AttackSlot's order
+  private val spawnAnswered = slotNames.map(s => Attributes.of(Slot, s, Outcome, "answered"))
+  private val spawnUnanswered = slotNames.map(s => Attributes.of(Slot, s, Outcome, "unanswered"))
+  def spawnRequest(slot: Int, answered: Boolean): Attributes = {
+    val i = if (slot >= AttackSlot.PRIMARY && slot <= AttackSlot.BURST) slot else AttackSlot.PRIMARY
+    if (answered) spawnAnswered(i) else spawnUnanswered(i)
+  }
 
   // ---------- Cause of death ----------
   val CauseProjectile: Attributes = Attributes.of(Cause, "projectile")

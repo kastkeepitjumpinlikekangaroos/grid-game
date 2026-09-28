@@ -196,6 +196,8 @@ trait LocalPlayer { this: GameClient =>
       isRespawning = true
       // The server dropped it with the killing blow; there is nothing to tell it
       clearBarrier()
+      // And refuses whatever we fired after it: not lost, so not counted as lost
+      pendingSpawns.dropWaiting(nanoClock())
       localDeathTime.set(System.currentTimeMillis())
       println("GameClient: You have died! Auto-respawning in 3s...")
     }

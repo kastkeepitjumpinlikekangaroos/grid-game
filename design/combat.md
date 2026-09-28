@@ -83,6 +83,19 @@ not anyone is standing in it.
   (`Projectile.withinPlayer` / `distanceToPlayer`). Measured from `(x + 0.5, y + 0.5)`, a shot
   from one side connected a cell sooner than from the other, and a ground slam reached a cell
   further south-east of its caster than north-west. `CombatTest` pins it.
+- **Water doesn't stop a shot.** Everything nobody can walk on stops a projectile — walls,
+  cliffs, trees, rocks, lava — but water, shallow or deep, which it flies over as it does over
+  the ground (`Tile.stopsProjectiles`, `WorldData.stopsProjectile`). A river or a pond used to be
+  a wall to every shot but the wall-passers'. The server (`Projectile.hitsTerrain`, and
+  `Projectile.ricochet` for which face of a wall standing in water a shot struck), the client
+  (`TerrainImpact.blocks`, which `NetProjectile` flies up to and a DESPAWN walks back from) and
+  the bots (`BotCombat.lineOfFire`, whether a shot would reach its target) ask the same question,
+  cell for cell: were they to differ, the client would hold a shot at the water's edge that the
+  server flies on from, and a bot would hold its fire across water. Nobody can stand on water all
+  the same, so a push or a vortex stops at its edge (`Teleport.slide`), and so does a thrown
+  trap, which is not a projectile. A pull to the thrower (a hook, a whip, a tongue) is the one
+  thing that carries a player across: it lands its catch on the thrower's own cell whatever lies
+  between, as Reap's always has through walls.
 
 ## Item Types
 5 item types (defined in `ItemType.scala`): Gem, Heart, Star, Shield, Fence

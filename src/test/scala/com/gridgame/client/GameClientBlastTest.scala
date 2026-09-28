@@ -91,6 +91,18 @@ class GameClientBlastTest {
     assertEquals(4000L, blasts.head(BLAST_RADIUS))
   }
 
+  @Test def aSplashAtTheEndOfItsRangeGoesOffOverWater(): Unit = {
+    // Water doesn't stop a shot, so one whose range runs out over it has not struck terrain
+    world.setTile(12, 40, Tile.Water)
+    t.startMatch(spawn = (5, 5))
+    val tide = UUID.randomUUID()
+    t.join(tide, 20, 20, charId = CharacterId.Tidecaller.id)
+    t.projectile(ProjectileAction.SPAWN, 65, tide, x = 10f, y = 40f, pType = ProjectileType.GEYSER)
+    t.projectile(ProjectileAction.DESPAWN, 65, tide, x = 12f, y = 40f, pType = ProjectileType.GEYSER)
+    assertEquals(1, blasts.size)
+    assertEquals(12000L, blasts.head(BLAST_X))
+  }
+
   @Test def aThrowerWeDoNotKnowIsRecordedAsUnknown(): Unit = {
     t.startMatch(spawn = (5, 5))
     val stranger = UUID.randomUUID()

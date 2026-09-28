@@ -35,7 +35,7 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   network with latency, jitter and loss, and draws frames at 60 fps on the test's own clock
   (`TestClient.nanos`, which projectile packets are stamped with as they arrive): every frame's
   step, a late packet changing nothing, the stops (a wall's face, the end of range, the divider, a
-  barrier), and the fade of a shot whose end was lost.
+  barrier — and none at water's edge), and the fade of a shot whose end was lost.
 - `client/render`, `client/gl` — the camera (`CameraTest`: the isometric mapping, the pixel grid,
   whether the view has run off the map), the light pool (`LightPoolTest`), and how other players
   are drawn (`RemoteMotionTest`: an even pace under jitter, never past where they stopped or a dash
@@ -51,7 +51,10 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   save a language to the player's own settings. `GameClientBlastTest` is what the client records
   of a blast: one per explosion or splash (a slam is one, not an explosion and a splash; the HITs of
   everyone a splash caught are the same one), who threw it, and none where the terrain stopped a
-  splash that goes off only at the end of its range. `ContentCatalogTest` ties `i18n/messages_en.json`
+  splash that goes off only at the end of its range. `GameClientSpawnRequestsTest` is which of our
+  spawn requests the server answered (`PendingSpawns`): by the first packet about the projectile,
+  whatever it says, for the attack that asked for its type, and none counted as lost for dying.
+  `ContentCatalogTest` ties `i18n/messages_en.json`
   to `CharacterDef`: the catalog wins over the code (`I18n.tOr`), so renaming an ability in
   `CharacterDef` alone leaves the old name on every screen, silently. Regenerate the entries
   with `bazel run //src/main/scala/com/gridgame/tools:gencontent 2>/dev/null`.
