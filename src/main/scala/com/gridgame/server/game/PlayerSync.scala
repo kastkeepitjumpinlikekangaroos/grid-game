@@ -43,10 +43,10 @@ trait PlayerSync { this: GameInstance =>
 
   /**
    * A player as the server has them, for everyone to be told: position, health, every status
-   * flag, character, team, and how many times the server has moved them. Every update the
-   * server sends about a player goes through here; each used to be built by hand, and several
-   * carried a few of the flags, so a burning, rooted or slowed player's effects blinked off on
-   * other screens whenever one of those went out.
+   * flag, character, team, how many times the server has moved them and how many of those moves
+   * were knockbacks. Every update the server sends about a player goes through here; each used
+   * to be built by hand, and several carried a few of the flags, so a burning, rooted or slowed
+   * player's effects blinked off on other screens whenever one of those went out.
    */
   private[server] def stateUpdate(p: Player): PlayerUpdatePacket =
     new PlayerUpdatePacket(
@@ -65,7 +65,8 @@ trait PlayerSync { this: GameInstance =>
       // Which way a raised barrier faces, so every client turns it as its holder does
       if (p.hasBarrier) PlayerUpdatePacket.encodeAimAngle(p.getBarrierAngle) else 0,
       slowPercent(p),
-      barrierMsLeft(p)
+      barrierMsLeft(p),
+      p.getKnockbacks
     )
 
   /**
@@ -97,7 +98,8 @@ trait PlayerSync { this: GameInstance =>
   }
 
   /** Knock a player `cells` straight back from (fromX, fromY), stopping at the first wall rather
-    * than coming out on its far side. */
+    * than coming out on its far side. Counted as a knockback as well as a server move, so every
+    * client draws the move as a shove (Player.getKnockbacks). */
   private[game] def pushFrom(p: Player, fromX: Float, fromY: Float, cells: Float): Unit = {
     val pos = p.getPosition
     val pdx = pos.getX - fromX
@@ -105,7 +107,10 @@ trait PlayerSync { this: GameInstance =>
     val dist = Math.sqrt(pdx * pdx + pdy * pdy)
     if (dist <= 0.01) return
     val dest = Teleport.slide(world, pos.getX, pos.getY, pdx / dist, pdy / dist, cells.toInt)
-    if (dest != pos) moveByServer(p, dest)
+    if (dest != pos) {
+      p.recordKnockback()
+      moveByServer(p, dest)
+    }
   }
 
   /** Drag a player onto the cell the projectile's owner is standing on. */

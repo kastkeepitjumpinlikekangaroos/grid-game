@@ -52,6 +52,9 @@ trait LocalPlayer { this: GameClient =>
   // corrections. Sent with every position; the server drops positions sent before a move we
   // hadn't seen yet. Reset each match, since each match counts its own.
   @volatile private[game] var serverMovesSeen: Int = 0
+  // And how many of them were knockbacks (Player.getKnockbacks): a move one made is slid, not
+  // jumped (KnockbackSlide). Reset with it.
+  @volatile private[game] var knockbacksSeen: Int = 0
 
   def getSelectedCharacterDef: CharacterDef = CharacterDef.get(selectedCharacterId)
 
@@ -188,7 +191,10 @@ trait LocalPlayer { this: GameClient =>
     if (updatePacket.getServerMoves - serverMovesSeen > 0) {
       serverMovesSeen = updatePacket.getServerMoves
       swoopingUntil.set(0) // the server's move ends a dash
-      localPosition.set(updatePacket.getPosition)
+      // A knockback among the moves: we are slid to where it put us, not jumped there
+      val knockedBack = updatePacket.getKnockbacks > knockbacksSeen
+      if (knockedBack) knockbacksSeen = updatePacket.getKnockbacks
+      placedByServer(updatePacket.getPosition, knockedBack)
     }
 
     if (serverHealth <= 0 && !isDead) {

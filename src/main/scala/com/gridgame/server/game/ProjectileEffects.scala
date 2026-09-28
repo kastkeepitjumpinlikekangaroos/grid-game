@@ -102,12 +102,16 @@ trait ProjectileEffects { this: GameInstance =>
             }
 
           case Push(pushDistance) =>
-            // Straight back from whoever fired it
-            val pushOwner = registry.get(projectile.ownerId)
-            if (pushOwner != null) {
-              val from = pushOwner.getPosition
-              pushFrom(target, from.getX.toFloat, from.getY.toFloat, pushDistance)
-            }
+            // Straight back from where it was fired, once a cast: the rest of a fan is the same
+            // wave (Cast)
+            val cast = projectile.cast
+            if (cast == null) {
+              val pushOwner = registry.get(projectile.ownerId)
+              if (pushOwner != null) {
+                val from = pushOwner.getPosition
+                pushFrom(target, from.getX.toFloat, from.getY.toFloat, pushDistance)
+              }
+            } else if (cast.push(target.getId)) pushFrom(target, cast.fromX, cast.fromY, pushDistance)
 
           case LifeSteal(healPercent) =>
             lifeSteal(projectile, healPercent)
@@ -196,7 +200,11 @@ trait ProjectileEffects { this: GameInstance =>
             // It passes through players, so it never lands a direct hit: skipped here like the
             // other positional effects, its pull never happened at all.
             pullToward(aoeTarget, projectile.getX, projectile.getY, radius, pullStrength)
-          case Push(pushDistance) => pushFrom(aoeTarget, projectile.getX, projectile.getY, pushDistance)
+          case Push(pushDistance) =>
+            // Out from where it went off, once a cast
+            val cast = projectile.cast
+            if (cast == null || cast.push(aoeTarget.getId))
+              pushFrom(aoeTarget, projectile.getX, projectile.getY, pushDistance)
           case PullToOwner => pullToOwner(projectile, aoeTarget)
           case LifeSteal(healPercent) =>
             // Once per victim, off what the blast took from them: the projectile's own damage

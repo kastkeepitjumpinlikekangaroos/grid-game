@@ -53,7 +53,10 @@ private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierP
     }
     lastRemotePositions.put(playerId, pos)
     val movUntil = remoteMovingUntil.get(playerId)
-    val isMoving = movUntil != null && now < movUntil.longValue()
+    // A knockback sliding them is a shove, not a walk: no stride, dust or afterimage
+    val motion = entityCollector.remoteVisualPositions.get(playerId)
+    val shoved = motion != null && motion.isSliding
+    val isMoving = !shoved && movUntil != null && now < movUntil.longValue()
 
     val animSpeed = if (player.getChargeLevel > 0) {
       val chargePct = player.getChargeLevel / 100.0

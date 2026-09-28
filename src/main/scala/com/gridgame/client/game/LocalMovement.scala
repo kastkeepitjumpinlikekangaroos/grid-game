@@ -110,14 +110,23 @@ trait LocalMovement { this: GameClient =>
   }
 
   /** A new life stands where it was put: no dash under way (one the last match ended in finished
-    * on the first frame of the next, and put us at its end), no burst's standstill, and no step of
-    * the last life's to be drawn walking along. */
+    * on the first frame of the next, and put us at its end), no burst's standstill, and no step or
+    * knockback of the last life's to be drawn moving along. */
   private[game] def stopMoving(): Unit = {
     swoopingUntil.set(0)
     movementBlockedUntil.set(0)
     moveInterpStartTime = 0L
     moveInterpDurationMs = Constants.MOVE_RATE_LIMIT_MS
     prevMoveTimestamp = 0L
+    knockSliding = false
+    drawnYet = false
+  }
+
+  /** The server has put us at `pos` (a server move we hadn't taken: LocalPlayer.handleOwnUpdate),
+    * by a knockback or otherwise. Told together, so no frame sees the one without the other. */
+  private[game] def placedByServer(pos: Position, knockedBack: Boolean): Unit = placedLock.synchronized {
+    localPosition.set(pos)
+    if (knockedBack) knocksHeard += 1
   }
 
   def setMovementInputActive(active: Boolean): Unit = { movementInputActive = active }
@@ -227,6 +236,7 @@ trait LocalMovement { this: GameClient =>
   private[game] def teleportTo(target: Position): Unit = {
     val oldPos = localPosition.get()
     localPosition.set(target)
+    knockSliding = false
     val now = System.currentTimeMillis()
     lastMoveTime.set(now)
 
@@ -266,6 +276,8 @@ trait LocalMovement { this: GameClient =>
 
     val newPos = new Position(x, y)
     localPosition.set(newPos)
+    // Gone from wherever a knockback was still sliding us
+    knockSliding = false
     val now = System.currentTimeMillis()
     lastMoveTime.set(now)
     // Send twice for UDP redundancy (blink is a single critical event)
@@ -291,23 +303,63 @@ trait LocalMovement { this: GameClient =>
   def visualPosX: Double = _visualPosX
   def visualPosY: Double = _visualPosY
 
-  /** Call once per frame to update visualPosX/visualPosY. */
+  // Knockbacks the server has put us somewhere by (placedByServer, the packet thread), and how
+  // many of them the render thread has started sliding us for
+  private val placedLock = new Object
+  private var knocksHeard = 0
+  private var knocksDrawn = 0
+  // The slide under way (render thread): when it began on the client's clock (nanoClock), how
+  // long it takes, and how far from where the knockback put us it started (KnockbackSlide)
+  private var knockSliding = false
+  private var knockAtNanos = 0L
+  private var knockMs = 0.0
+  private var knockFromX = 0.0
+  private var knockFromY = 0.0
+  // Whether visualPosX/Y says where we were drawn yet this life, for a slide to start from
+  private var drawnYet = false
+
+  /** Call once per frame to update visualPosX/visualPosY: where we are, or between it and the cell
+    * we are stepping from, and sliding in from where a knockback caught us. */
   def updateVisualPosition(): Unit = {
-    val pos = localPosition.get()
-    if (moveInterpStartTime == 0L) {
-      _visualPosX = pos.getX.toDouble
-      _visualPosY = pos.getY.toDouble
-      return
+    var pos: Position = null
+    var knocks = 0
+    placedLock.synchronized {
+      pos = localPosition.get()
+      knocks = knocksHeard
     }
-    val now = System.currentTimeMillis()
-    val elapsed = now - moveInterpStartTime
-    if (elapsed >= moveInterpDurationMs) {
+    val nowNanos = nanoClock()
+    if (knocks != knocksDrawn) {
+      knocksDrawn = knocks
+      // From where we were drawn to where it put us, slid there rather than jumped, and the step
+      // we were drawn taking is over
+      if (drawnYet) {
+        knockFromX = _visualPosX - pos.getX
+        knockFromY = _visualPosY - pos.getY
+        knockMs = KnockbackSlide.durationMs(Math.hypot(knockFromX, knockFromY))
+        knockAtNanos = nowNanos
+        knockSliding = true
+      }
+      moveInterpStartTime = 0L
+    }
+    drawnYet = true
+
+    val elapsed = System.currentTimeMillis() - moveInterpStartTime
+    if (moveInterpStartTime == 0L || elapsed >= moveInterpDurationMs) {
       _visualPosX = pos.getX.toDouble
       _visualPosY = pos.getY.toDouble
     } else {
       val t = elapsed.toDouble / moveInterpDurationMs
       _visualPosX = moveInterpFromX + (moveInterpToX - moveInterpFromX) * t
       _visualPosY = moveInterpFromY + (moveInterpToY - moveInterpFromY) * t
+    }
+
+    if (knockSliding) {
+      val left = KnockbackSlide.remaining((nowNanos - knockAtNanos) / 1e6, knockMs)
+      if (left <= 0.0) knockSliding = false
+      else {
+        _visualPosX += knockFromX * left
+        _visualPosY += knockFromY * left
+      }
     }
   }
 }

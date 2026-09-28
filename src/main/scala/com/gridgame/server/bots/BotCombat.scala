@@ -143,6 +143,8 @@ trait BotCombat { this: BotController =>
 
       case fan @ FanProjectile(count, _) =>
         if (dist > ability.maxRange) return false
+        // One cast, as a player's fan is: it pushes whoever it reaches once
+        val cast = new Cast(botPos.getX.toFloat, botPos.getY.toFloat)
         for (i <- 0 until count) {
           val theta = fan.angleOf(i)
           val cos = Math.cos(theta).toFloat
@@ -151,7 +153,7 @@ trait BotCombat { this: BotController =>
           val rdy = ndx * sin + ndy * cos
           val projectile = instance.projectileManager.spawnProjectile(
             bot.getId, botPos.getX, botPos.getY,
-            rdx, rdy, bot.getColorRGB, 0, ability.projectileType
+            rdx, rdy, bot.getColorRGB, 0, ability.projectileType, cast
           )
           if (projectile != null) instance.broadcastProjectileSpawn(projectile)
         }

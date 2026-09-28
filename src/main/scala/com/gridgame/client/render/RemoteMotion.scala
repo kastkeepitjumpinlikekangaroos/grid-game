@@ -1,5 +1,7 @@
 package com.gridgame.client.render
 
+import com.gridgame.client.game.KnockbackSlide
+
 /**
  * Where another player is drawn: walked along the cells the server has put them on, at the pace
  * they have been moving, and never past the newest.
@@ -17,14 +19,28 @@ package com.gridgame.client.render
  * come out right. It keeps about [[LAG_CELLS]] behind the newest cell, a few percent quicker when
  * further back and slower when closer, so a step that arrives a little late finds it still
  * walking rather than stood waiting. Further behind than walking leaves it (a dash), it
- * catches up. A move no step makes is a jump, drawn at once.
+ * catches up. A move no step makes is a jump, drawn at once — except a knockback, which the
+ * server counts for every client to see (Player.getKnockbacks): that is slid, from wherever the
+ * player was drawn to where it put them (KnockbackSlide), and the walk goes on from there.
  */
 final class RemoteMotion {
   import RemoteMotion._
 
-  /** Where it is drawn this frame. */
+  /** Where it is drawn this frame: along the walk, and what is left of a knockback's slide. */
   var x = 0.0
   var y = 0.0
+
+  // Where the walk along the cells heard has got to
+  private var walkX = 0.0
+  private var walkY = 0.0
+  // Knockbacks heard (the player's count), and the slide the latest set going: how far from the
+  // cell it put them it started, when, and for how long
+  private var knocks = 0
+  private var sliding = false
+  private var slideX = 0.0
+  private var slideY = 0.0
+  private var slideAt = 0L
+  private var slideMs = 0.0
 
   // Cells heard and not yet reached, oldest first (a ring)
   private val wayX = new Array[Int](WAYPOINTS)
@@ -45,12 +61,35 @@ final class RemoteMotion {
   /** The pace it is walked at, in cells a second. */
   def cellsPerSecond: Double = pace
 
+  /** Is a knockback sliding them as of the last update? Shoved, not walking. */
+  def isSliding: Boolean = sliding
+
   /** The server has them on cell (cx, cy) as of `nowNanos`: walk the drawn player on by `dtSec`. */
-  def update(cx: Int, cy: Int, nowNanos: Long, dtSec: Double): Unit = {
+  def update(cx: Int, cy: Int, nowNanos: Long, dtSec: Double): Unit = update(cx, cy, knocks, nowNanos, dtSec)
+
+  /** The same, with how many knockbacks they have been heard taking: a new one since the last
+    * frame means the move to (cx, cy) was one. */
+  def update(cx: Int, cy: Int, knockbacks: Int, nowNanos: Long, dtSec: Double): Unit = {
     if (!started) {
       started = true
+      knocks = knockbacks
       jumpTo(cx, cy)
+      place(nowNanos)
       return
+    }
+    if (knockbacks != knocks) {
+      knocks = knockbacks
+      if (cx != lastX || cy != lastY) {
+        // Slid from where they are drawn to where it put them, and walked on from there
+        val fromX = x; val fromY = y
+        jumpTo(cx, cy)
+        sliding = true
+        slideX = fromX - cx; slideY = fromY - cy
+        slideAt = nowNanos
+        slideMs = KnockbackSlide.durationMs(Math.hypot(slideX, slideY))
+        place(nowNanos)
+        return
+      }
     }
     if (cx != lastX || cy != lastY) {
       val hop = Math.hypot(cx - lastX, cy - lastY)
@@ -65,20 +104,32 @@ final class RemoteMotion {
       }
     }
     walk(dtSec)
+    place(nowNanos)
   }
 
-  /** A move no step makes — a blink, a respawn, a long knockback: drawn there at once. */
+  /** Where it is drawn: where the walk has got to, and what is left of a knockback's slide. */
+  private def place(nowNanos: Long): Unit = {
+    x = walkX; y = walkY
+    if (sliding) {
+      val left = KnockbackSlide.remaining((nowNanos - slideAt) / 1e6, slideMs)
+      if (left <= 0.0) sliding = false
+      else { x += slideX * left; y += slideY * left }
+    }
+  }
+
+  /** A move no step makes — a blink, a respawn, a pull: drawn there at once. */
   private def jumpTo(cx: Int, cy: Int): Unit = {
-    x = cx; y = cy
+    walkX = cx; walkY = cy
     lastX = cx; lastY = cy
     wayCount = 0
     hopCount = 0
+    sliding = false
   }
 
-  /** How far from where it is drawn to the newest cell, along the cells between. */
+  /** How far from where the walk has got to to the newest cell, along the cells between. */
   private def behind: Double = {
     var d = 0.0
-    var px = x; var py = y
+    var px = walkX; var py = walkY
     var i = 0
     while (i < wayCount) {
       val s = (wayHead + i) % WAYPOINTS
@@ -127,15 +178,15 @@ final class RemoteMotion {
     var budget = Math.max(eased, catchUp) * dtSec
     while (budget > 0.0 && wayCount > 0) {
       val tx = wayX(wayHead); val ty = wayY(wayHead)
-      val dx = tx - x; val dy = ty - y
+      val dx = tx - walkX; val dy = ty - walkY
       val d = Math.hypot(dx, dy)
       if (d <= budget) {
-        x = tx; y = ty
+        walkX = tx; walkY = ty
         budget -= d
         wayHead = (wayHead + 1) % WAYPOINTS
         wayCount -= 1
       } else {
-        x += dx / d * budget; y += dy / d * budget
+        walkX += dx / d * budget; walkY += dy / d * budget
         budget = 0.0
       }
     }

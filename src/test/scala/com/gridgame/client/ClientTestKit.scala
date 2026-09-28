@@ -68,10 +68,10 @@ class TestClient(val world: WorldData = WorldData.createEmpty(60, 60), val name:
 
   def update(who: UUID, x: Int, y: Int, health: Int = 100, flags: Int = 0, serverMoves: Int = 0,
              charId: Byte = 0, flags2: Int = 0, slowPercent: Int = 0, aimAngle: Double = 0.0,
-             barrierMs: Int = 0, seq: Int = -1): Unit =
+             barrierMs: Int = 0, seq: Int = -1, knockbacks: Int = 0): Unit =
     receive(new PlayerUpdatePacket(if (seq >= 0) seq else nextSeq(), who, Packet.getCurrentTimestamp,
       new Position(x, y), 0xFF00AA00, health, 0, flags, charId, 0.toByte, serverMoves, flags2,
-      PlayerUpdatePacket.encodeAimAngle(aimAngle), slowPercent, barrierMs))
+      PlayerUpdatePacket.encodeAimAngle(aimAngle), slowPercent, barrierMs, knockbacks))
 
   /** The sequence number the server's next packet would carry, for a test that needs to deliver
     * two of them out of order. */

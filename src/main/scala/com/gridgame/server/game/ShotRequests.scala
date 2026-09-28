@@ -79,16 +79,19 @@ trait ShotRequests { this: ClientHandler =>
     // A raised barrier stays up: its holder's own shots go out through it (design/barriers.md)
 
     // Spawn projectile at player's position along the heading from the packet, charged as far as
-    // the time the player has had allows
+    // the time the player has had allows, as one more of its cast's (a fan is one cast)
+    val fromX = packet.getX.toInt
+    val fromY = packet.getY.toInt
     val projectile = projectileManager.spawnProjectile(
       playerId,
-      packet.getX.toInt,
-      packet.getY.toInt,
+      fromX,
+      fromY,
       headingX,
       headingY,
       packet.getColorRGB,
       validator.chargeAllowed(playerId, packet.getAttackSlot, packet.getChargeLevel),
-      packet.getProjectileType
+      packet.getProjectileType,
+      validator.castFor(playerId, packet.getAttackSlot, fromX.toFloat, fromY.toFloat)
     )
 
     if (projectile == null) return false // Per-player projectile cap reached

@@ -40,7 +40,8 @@ Its payload:
 | [50-51] | aim angle, `angle / 2pi * 65536` (`PlayerUpdatePacket.encodeAimAngle`) |
 | [52] | slow strength as a percentage (0-100): how fast the player moves while slowed |
 | [53-54] | how long a raised barrier has left, in ms (server -> everyone; 0 otherwise) |
-| [55-63] | reserved, zero |
+| [55-58] | knockbacks: how many of the server moves were pushes (server -> everyone; 0 from a client), so a client draws the move a new one made as a shove |
+| [59-63] | reserved, zero |
 
 A stunned player has both 0x04 and flags2 bit 0 set: the freeze bit is what holds them, the
 stun bit only says what to draw. Byte [49] bit 2 is a raised barrier, bytes [50-51] the way

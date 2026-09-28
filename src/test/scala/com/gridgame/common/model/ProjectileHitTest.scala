@@ -87,6 +87,45 @@ class ProjectileHitTest {
     assertFalse("no pierce: stopped by the first", ProjectileDef.get(ProjectileType.BULLET).piercesAfter(1))
   }
 
+  // --- A wave (ProjectileDef.hitCentreBehind) ---
+
+  /** A Tidal Wave that has come `traveled` cells east, its leading edge at (x, y). */
+  private def wave(x: Float, y: Float, traveled: Float): Projectile = {
+    val p = shot(x, y, 1f, 0f, ProjectileType.TIDAL_WAVE)
+    p.setDistanceTraveled(traveled)
+    p
+  }
+
+  @Test def aWaveStrikesWhereItsWaterIs(): Unit = {
+    // Drawn as a crescent trailing back from its leading edge, which is where the projectile is:
+    // a circle round that edge struck a player 1.8 cells ahead of the water
+    val d = ProjectileDef.get(ProjectileType.TIDAL_WAVE)
+    val reachAhead = d.hitRadius - d.hitCentreBehind
+    val target = player(20, 20)
+    assertTrue("up to its edge", wave(20f - reachAhead + 0.01f, 20f, 5f).hitsPlayer(target))
+    assertFalse("not ahead of it", wave(20f - reachAhead - 0.01f, 20f, 5f).hitsPlayer(target))
+    assertTrue("a bullet there, a circle round its point, still does",
+      shot(20f - reachAhead - 0.01f, 20f, 1f, 0f).hitsPlayer(target))
+  }
+
+  @Test def aWaveStrikesAsFarToTheSideAsItDid(): Unit = {
+    // As wide as its circle, where its crescent's horns trail behind the leading edge
+    val d = ProjectileDef.get(ProjectileType.TIDAL_WAVE)
+    val side = d.hitRadius - 0.01f
+    val target = player(20, 20)
+    assertTrue(wave(20f + d.hitCentreBehind, 20f - side, 5f).hitsPlayer(target))
+    assertFalse(wave(20f + d.hitCentreBehind, 20f - d.hitRadius - 0.01f, 5f).hitsPlayer(target))
+  }
+
+  @Test def aWaveStrikesNobodyBesideOrBehindItsCaster(): Unit = {
+    // Thrown east by a caster at (10, 20), it is spawned a cell out and first checked a sub-step
+    // further, at (11.5, 20), and its circle never trails back past there: round the spawn, or
+    // further back, it caught players standing beside and behind the caster, never struck before
+    for ((x, y) <- Seq((10, 21), (10, 19), (9, 20)); traveled <- Seq(0.5f, 1f, 1.5f, 2f))
+      assertFalse(s"($x, $y), $traveled cells out", wave(11f + traveled, 20f, traveled).hitsPlayer(player(x, y)))
+    assertTrue("while one ahead of it is", wave(11.5f, 20f, 0.5f).hitsPlayer(player(12, 21)))
+  }
+
   @Test def withinPlayerAndDistanceToPlayerAgree(): Unit = {
     val target = player(30, 40)
     assertEquals(5f, Projectile.distanceToPlayer(33f, 44f, target), 1e-5f)

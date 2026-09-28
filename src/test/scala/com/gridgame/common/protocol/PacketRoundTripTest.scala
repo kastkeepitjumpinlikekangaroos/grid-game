@@ -57,6 +57,18 @@ class PacketRoundTripTest {
     assertEquals(5, p.getServerMoves)
   }
 
+  @Test def theKnockbackCountSurvivesTheTrip(): Unit = {
+    // What tells a client a move was a shove, to draw it as one: in the bytes after the barrier's
+    for (n <- Seq(0, 1, 7, 70000, Int.MaxValue)) {
+      val p = trip(new PlayerUpdatePacket(1, id, 0, new Position(5, 5), 0, 100, 0, 0x84, 0.toByte,
+        0.toByte, 9, 0x07, 40000, 30, 3500, n))
+      assertEquals(s"$n knockbacks", n, p.getKnockbacks)
+      assertEquals("the barrier's time before it", 3500, p.getBarrierMs)
+      assertEquals(9, p.getServerMoves)
+      assertEquals(0x07, p.getEffectFlags2)
+    }
+  }
+
   @Test def aBarriersTimeLeftSurvivesTheWholeRange(): Unit = {
     for (ms <- Seq(0, 1, 600, 3500, 14000, 65535)) {
       val p = trip(new PlayerUpdatePacket(1, id, 0, new Position(5, 5), 0, 100, 0, 0, 0.toByte,

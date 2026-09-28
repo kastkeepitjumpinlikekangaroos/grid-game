@@ -31,7 +31,11 @@ class PlayerUpdatePacket(
     // Everyone draws it on that timer rather than on a lease renewed by whichever updates
     // happen to arrive, so a hitch in the holder's client can't take it off other screens.
     // 0 when none is up, and on the client's own updates: how long one lasts is the server's.
-    val barrierMs: Int = 0
+    val barrierMs: Int = 0,
+    // Server -> everyone: how many of the server's moves of this player were knockbacks
+    // (Player.getKnockbacks), so a client can draw the move a new one made as a shove rather than
+    // a teleport. 0 on the client's own updates.
+    val knockbacks: Int = 0
 ) extends Packet(PacketType.PLAYER_UPDATE, sequenceNumber, playerId, timestamp) {
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int) = {
@@ -81,6 +85,9 @@ class PlayerUpdatePacket(
 
   /** How long the raised barrier has left, in ms (0: none, or the sender doesn't say). */
   def getBarrierMs: Int = barrierMs
+
+  /** How many times the server has knocked the player back (0 from a client). */
+  def getKnockbacks: Int = knockbacks
 
   override def serialize(): Array[Byte] = {
     val buffer = SerializeUtil.acquireBuffer()
@@ -137,8 +144,11 @@ class PlayerUpdatePacket(
     // [53-54] How long a raised barrier has left, in ms (capped at 65535)
     buffer.putShort((Math.max(0, Math.min(65535, barrierMs)) & 0xFFFF).toShort)
 
-    // [55-63] Reserved (9 bytes) - fill with zeros
-    buffer.put(new Array[Byte](9))
+    // [55-58] Knockbacks
+    buffer.putInt(knockbacks)
+
+    // [59-63] Reserved (5 bytes) - fill with zeros
+    buffer.put(new Array[Byte](5))
 
     buffer.array().clone()
   }

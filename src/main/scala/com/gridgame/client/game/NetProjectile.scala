@@ -46,7 +46,7 @@ final class NetProjectile(pid: Int, owner: UUID, x0: Float, y0: Float, dirX0: Fl
   private val seenFired = spawned
   // The server flies it in sub-steps of at most half a cell and judges each where it ends: the
   // end of its range, a boomerang's turn and a wall all fall at the end of one
-  private val sub = speedMultiplier / Math.max(1, Math.ceil(speedMultiplier / 0.5f).toInt)
+  private val sub = speedMultiplier / Math.max(1, Math.ceil(speedMultiplier / Projectile.MAX_SUB_STEP).toInt)
 
   // What the server has said (packet thread, under the lock): its newest position, the tick it is
   // from, and how it is moving

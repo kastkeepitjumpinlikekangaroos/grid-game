@@ -39,7 +39,7 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
 - `client/render`, `client/gl` — the camera (`CameraTest`: the isometric mapping, the pixel grid,
   whether the view has run off the map), the light pool (`LightPoolTest`), and how other players
   are drawn (`RemoteMotionTest`: an even pace under jitter, never past where they stopped or a dash
-  ended, corners turned where they were heard turning, jumps drawn at once). `TileTest`, in
+  ended, corners turned where they were heard turning, jumps drawn at once, knockbacks slid). `TileTest`, in
   `common/model`, also holds the tileset to what the renderer assumes: a flat tile is exactly
   its diamond, a block covers its whole footprint. `BlastStyleTest` holds the blasts to the roster:
   every attack that blasts has a look of its own, and no two characters share one.
@@ -54,6 +54,8 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   splash that goes off only at the end of its range. `GameClientSpawnRequestsTest` is which of our
   spawn requests the server answered (`PendingSpawns`): by the first packet about the projectile,
   whatever it says, for the attack that asked for its type, and none counted as lost for dying.
+  `GameClientKnockbackTest` is how a knockback is shown: ours slid on the test's clock
+  (`TestClient.nanos`), everyone else's neither a teleport nor a turn.
   `ContentCatalogTest` ties `i18n/messages_en.json`
   to `CharacterDef`: the catalog wins over the code (`I18n.tOr`), so renaming an ability in
   `CharacterDef` alone leaves the old name on every screen, silently. Regenerate the entries

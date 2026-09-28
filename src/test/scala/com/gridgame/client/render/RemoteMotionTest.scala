@@ -9,7 +9,9 @@ import scala.collection.mutable
  * Where another player is drawn (RemoteMotion): walked along the cells the server puts them on,
  * never past the newest. It used to run them on at a velocity guessed from the last two updates
  * for 75ms after the news stopped, so anyone moving fast — a dash most of all — was drawn cells
- * past where they stopped, through the wall that stopped them, and pulled back.
+ * past where they stopped, through the wall that stopped them, and pulled back. A knockback is
+ * slid instead, from wherever they are drawn to where it put them: a short push used to be walked
+ * there, and a long one jumped.
  */
 class RemoteMotionTest {
   private val FRAME = 1000.0 / 60
@@ -105,6 +107,122 @@ class RemoteMotionTest {
     val after = drawn.filter(_._1 >= 300.0)
     assertEquals(30.0, after.head._2, 1e-9)
     assertEquals(30.0, after.head._3, 1e-9)
+  }
+
+  // --- Knockbacks ---
+
+  /** A player drawn a frame at a time: `update` hears them on (cx, cy), knocked back `knocks` times. */
+  private final class Watched {
+    val m = new RemoteMotion
+    private var nanos = 0L
+    def frame(cx: Int, cy: Int, knocks: Int): Double = {
+      nanos += (FRAME * 1e6).toLong
+      m.update(cx, cy, knocks, nanos, FRAME / 1000)
+      m.x
+    }
+  }
+
+  @Test def aKnockbackIsSlidFromWhereTheyAreDrawnToWhereItPutThem(): Unit = {
+    val w = new Watched
+    w.frame(10, 10, 0)
+    w.frame(10, 10, 0)
+    // A Gust: five cells east, which as a move was more than a step and was drawn at once
+    assertEquals("drawn where it caught them", 10.0, w.frame(15, 10, 1), 1e-9)
+    assertTrue(w.m.isSliding)
+    var last = w.m.x
+    val s = (0 until 30).map { _ =>
+      val x = w.frame(15, 10, 1)
+      val step = x - last
+      last = x
+      step
+    }
+    assertEquals(15.0, last, 1e-9)
+    assertFalse(w.m.isSliding)
+    val moving = s.filter(_ > 1e-9)
+    assertTrue("only ever toward it", s.forall(_ >= 0))
+    assertTrue(s"over several frames: $s", moving.size >= 6)
+    assertTrue("fastest first, slowing to a stop", moving.head >= moving.last)
+    assertTrue(s"never a jump: $s", moving.max < 1.5)
+    assertEquals("straight along its line", 10.0, w.m.y, 1e-9)
+  }
+
+  @Test def aKnockbackTakesAsLongWhateverPaceTheyWalk(): Unit = {
+    // Three cells, which as a move was walked, at the pace they had been walking: a bot, stepping
+    // half as often as a player, was shoved half as fast
+    def framesToLand(stepMs: Double): Int = {
+      val w = new Watched
+      var t = 0.0
+      var x = 10
+      while (t < 600) {
+        t += FRAME
+        if (t >= (x - 9) * stepMs) x += 1
+        w.frame(x, 10, 0)
+      }
+      for (_ <- 0 until 30) w.frame(x, 10, 0)
+      w.frame(x + 3, 10, 1)
+      var n = 0
+      while (w.m.x < x + 3 - 1e-9 && n < 200) {
+        w.frame(x + 3, 10, 1)
+        n += 1
+      }
+      n
+    }
+    assertEquals(framesToLand(50), framesToLand(100))
+  }
+
+  @Test def aKnockbackMidWalkStartsFromWhereTheyAreDrawn(): Unit = {
+    // Drawn a little behind the newest cell while walking: the slide starts from there, not from
+    // the cell, so there is no jump at its start
+    val w = new Watched
+    var t = 0.0
+    var x = 10
+    var drawn = w.frame(x, 10, 0)
+    while (t < 500) {
+      t += FRAME
+      if (t >= (x - 9) * 50.0) x += 1
+      drawn = w.frame(x, 10, 0)
+    }
+    assertTrue("walking a little behind the newest cell", drawn < x)
+    val knocked = w.frame(x + 3, 10, 1)
+    assertEquals("the slide starts where they were drawn", drawn, knocked, 20.0 * FRAME / 1000 + 1e-9)
+  }
+
+  @Test def theWalkGoesOnFromWhereTheKnockbackPutThem(): Unit = {
+    val w = new Watched
+    w.frame(10, 10, 0)
+    w.frame(13, 10, 1)
+    // They walk on east as soon as they land, a cell every 50ms
+    var cx = 13
+    var prev = w.m.x
+    for (i <- 1 to 40) {
+      if (i % 3 == 0 && cx < 20) cx += 1
+      val x = w.frame(cx, 10, 1)
+      assertTrue(s"never back the way it came: $prev to $x", x >= prev - 1e-9)
+      assertTrue(s"never past the newest cell: $x", x <= cx + 1e-9)
+      prev = x
+    }
+    assertEquals(20.0, w.frame(20, 10, 1), 0.9)
+  }
+
+  @Test def theNextMoveAfterASlideIsAStepAgain(): Unit = {
+    // The count they were heard with is the knockback already slid: a move without a new one walks
+    val w = new Watched
+    w.frame(10, 10, 0)
+    w.frame(13, 10, 1)
+    for (_ <- 0 until 30) w.frame(13, 10, 1)
+    assertEquals(13.0, w.m.x, 1e-9)
+    w.frame(14, 10, 1)
+    assertFalse(w.m.isSliding)
+  }
+
+  @Test def aJumpDuringASlideIsStillDrawnAtOnce(): Unit = {
+    // A blink out of the slide: at the blink's end at once
+    val w = new Watched
+    w.frame(10, 10, 0)
+    w.frame(15, 10, 1)
+    w.frame(15, 10, 1)
+    assertEquals(30.0, w.frame(30, 30, 1), 1e-9)
+    assertFalse(w.m.isSliding)
   }
 
   @Test def aBurstOfUpdatesIsNotASprint(): Unit = {

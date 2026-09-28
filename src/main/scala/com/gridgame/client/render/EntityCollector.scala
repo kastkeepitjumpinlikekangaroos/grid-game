@@ -192,7 +192,7 @@ class EntityCollector(clock: FrameClock = FrameClock.System) {
         val pos = player.getPosition
         var motion = remoteVisualPositions.get(pid)
         if (motion == null) { motion = new RemoteMotion; remoteVisualPositions.put(pid, motion) }
-        motion.update(pos.getX, pos.getY, nowNanos, deltaSec)
+        motion.update(pos.getX, pos.getY, player.getKnockbacks, nowNanos, deltaSec)
         addEntity(Math.round(motion.x).toInt, Math.round(motion.y).toInt,
           acquireEntry().setPlayer(player, motion.x, motion.y))
       }

@@ -36,6 +36,8 @@ class Projectile(
   // Whether the server has flown it yet. It is spawned a cell out from where it was fired, and
   // its first tick checks that hop as well, so it can't start on the far side of a barrier.
   private var _flown: Boolean = false
+  // The cast it was fired in, with the rest of a fan (server side; see Cast)
+  @volatile private var _cast: Cast = _
 
   def dx: Float = _dx
   def dy: Float = _dy
@@ -72,6 +74,12 @@ class Projectile(
   def hasFlown: Boolean = _flown
 
   def markFlown(): Unit = { _flown = true }
+
+  /** The cast it was fired in (server side): null on the client, and on the server only for a
+    * projectile made without ProjectileManager.spawnProjectile. */
+  def cast: Cast = _cast
+
+  def setCast(c: Cast): Unit = { _cast = c }
 
   /** Reverse direction (for boomerang). */
   def reverseDirection(): Unit = {
@@ -167,9 +175,19 @@ class Projectile(
     if (_hitPlayers.contains(player.getId)) return false
     // Killed earlier this tick: a body doesn't stop the next shot
     if (player.isDead) return false
+    // Pushed by this cast already: the rest of a fan flies through them, rather than catching
+    // them up where the push left them and hitting them again
+    val c = _cast
+    if (c != null && c.hasPushed(player.getId)) return false
     val pDef = ProjectileDef.get(projectileType)
     if (pDef.passesThroughPlayers) return false
-    Projectile.withinPlayer(x, y, player, pDef.hitRadius)
+    // A wave's circle trails its leading edge (ProjectileDef.hitCentreBehind), though never back
+    // past where it is first checked, a sub-step out from its spawn: round the spawn itself it
+    // caught players standing beside its caster, whom a circle round its edge never reached
+    val behind = Math.min(pDef.hitCentreBehind, Math.max(0f, distanceTraveled - Projectile.MAX_SUB_STEP))
+    if (behind > 0f && _speed > 0f)
+      Projectile.withinPlayer(x - _dx / _speed * behind, y - _dy / _speed * behind, player, pDef.hitRadius)
+    else Projectile.withinPlayer(x, y, player, pDef.hitRadius)
   }
 
   /** Update position and heading in place. The client's copy is put where it is drawn this way,
@@ -187,7 +205,41 @@ class Projectile(
   }
 }
 
+/**
+ * One press of an attack and every projectile it fired: one for most attacks, five for a fan, eight
+ * for a ring. What its projectiles do to a player is counted per cast, not per projectile, where a
+ * fan is one wave: **a cast pushes a player once**, however many of its projectiles reach them, and
+ * the rest of it then flies through them. Each projectile used to push on its own, straight on from
+ * wherever the last push had left the player, so a fan of waves fired from close in threw its
+ * victim anything from three cells to fifteen in the same tick, depending on how many of them
+ * overlapped where they stood, and a fan of gusts up to twenty-five.
+ *
+ * `fromX`/`fromY` is where the cast was fired from, which a push drives its victims straight away
+ * from: from wherever its caster had walked to by the time it landed, the same wave pushed its
+ * victims one way or another. Server side, like the rest of a match's rules.
+ */
+final class Cast(val fromX: Float, val fromY: Float) {
+  // Whom it has pushed, made at its first push: most casts never push anyone
+  private var pushed: java.util.HashSet[UUID] = _
+
+  /** Has this cast pushed the player? */
+  def hasPushed(playerId: UUID): Boolean = synchronized {
+    pushed != null && pushed.contains(playerId)
+  }
+
+  /** The cast pushes this player: true the first time, false if it already has. */
+  def push(playerId: UUID): Boolean = synchronized {
+    if (pushed == null) pushed = new java.util.HashSet[UUID]()
+    pushed.add(playerId)
+  }
+}
+
 object Projectile {
+  /** The furthest a projectile moves between two looks at what it has hit: the server flies each
+    * tick in sub-steps no longer (ProjectileManager), and the client finds walls along the same
+    * ones (NetProjectile). */
+  val MAX_SUB_STEP = 0.5f
+
   /**
    * Is the point (x, y) within `radius` of the player? A player stands at the centre of their
    * cell, (x, y) exactly, which is where they are drawn and where their shots start; tiles are

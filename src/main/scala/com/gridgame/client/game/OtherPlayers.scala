@@ -69,10 +69,16 @@ trait OtherPlayers { this: GameClient =>
       val dx = newPos.getX - oldPos.getX
       val dy = newPos.getY - oldPos.getY
 
+      // Knocked back since the last word on them: the renderer slides them to where the server
+      // put them (RemoteMotion, by this count), so it is neither a teleport nor a turn to walk
+      // off the way they were thrown. A long push used to show as both.
+      val knockedBack = packet.getKnockbacks > player.getKnockbacks
+      if (knockedBack) player.setKnockbacks(packet.getKnockbacks)
+
       // Detect teleport: large position jump (Manhattan distance > 3).
       // Skip if the player was dead — a respawn also resets position to an
       // unrelated point on the map and would otherwise be misread as a cast.
-      if (wasAlive && Math.abs(dx) + Math.abs(dy) > 3) {
+      if (wasAlive && !knockedBack && Math.abs(dx) + Math.abs(dy) > 3) {
         teleportAnimations.put(playerId, Array(
           System.currentTimeMillis(),
           oldPos.getX.toLong, oldPos.getY.toLong,
@@ -81,7 +87,7 @@ trait OtherPlayers { this: GameClient =>
         ))
       }
 
-      if (dx != 0 || dy != 0) {
+      if (!knockedBack && (dx != 0 || dy != 0)) {
         player.setDirection(Direction.fromMovement(dx, dy))
       }
       player.setPosition(newPos)
@@ -172,6 +178,7 @@ trait OtherPlayers { this: GameClient =>
       player = new Player(playerId, "Player", packet.getPosition, packet.getColorRGB, packet.getHealth)
       player.setCharacterId(packet.getCharacterId)
       player.setChargeLevel(packet.getChargeLevel)
+      player.setKnockbacks(packet.getKnockbacks)
       val flags = packet.getEffectFlags
       if ((flags & 0x01) != 0) player.setShieldUntil(System.currentTimeMillis() + 1000)
       if ((flags & 0x02) != 0) player.setGemBoostUntil(System.currentTimeMillis() + 1000)

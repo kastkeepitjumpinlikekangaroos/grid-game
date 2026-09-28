@@ -157,6 +157,22 @@ class Player(
     serverMoves
   }
 
+  // How many of those moves were knockbacks (a Push), counted the same way and sent with every
+  // update about the player, so each client can tell a shove from a teleport and draw it as one.
+  // On a client, the count the server's latest word on this player carried.
+  @volatile private var knockbacks: Int = 0
+
+  def getKnockbacks: Int = knockbacks
+
+  /** Server side: the server is knocking this player back. Returns the new count. */
+  def recordKnockback(): Int = synchronized {
+    knockbacks += 1
+    knockbacks
+  }
+
+  /** Client side: the count the server's word on this player carried. */
+  def setKnockbacks(n: Int): Unit = { knockbacks = n }
+
   def getShieldUntil: Long = shieldUntil
 
   def setShieldUntil(until: Long): Unit = {

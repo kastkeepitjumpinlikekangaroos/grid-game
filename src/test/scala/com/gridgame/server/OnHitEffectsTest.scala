@@ -63,6 +63,133 @@ class OnHitEffectsTest {
     assertEquals((19, 30), m.at(target))
   }
 
+  /** The Tidecaller's Tidal Wave as a client fires it: five waves, one spawn request each, from
+    * the Q slot, fanned round (dx, dy). */
+  private def tidalWave(tidecaller: Player, dx: Float, dy: Float): Seq[Projectile] = {
+    val fan = CharacterDef.get(CharacterId.Tidecaller.id).qAbility.castBehavior.asInstanceOf[FanProjectile]
+    val headings = (0 until fan.count).map { i =>
+      val th = fan.angleOf(i)
+      ((dx * Math.cos(th) - dy * Math.sin(th)).toFloat, (dx * Math.sin(th) + dy * Math.cos(th)).toFloat)
+    }
+    m.fire(tidecaller, AttackSlot.Q, ProjectileType.TIDAL_WAVE, headings)
+  }
+
+  /** How many of the projectiles in `packets` struck the player. */
+  private def hitsOn(packets: Seq[Packet], p: Player): Int =
+    (m.projectileEvents(packets, ProjectileAction.HIT) ++ m.projectileEvents(packets, ProjectileAction.PIERCE))
+      .count(_.getTargetId == p.getId)
+
+  @Test def aFanPushesWhoeverItCatchesOnce(): Unit = {
+    // Each wave used to push on its own from wherever the last had left the target: close in, the
+    // five overlap, and the target was thrown fifteen cells in one tick
+    val tidecaller = m.join(CharacterId.Tidecaller, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 12, 30)
+    m.clearSent()
+    val waves = tidalWave(tidecaller, 1f, 0f)
+    assertEquals(5, waves.size)
+    waves.foreach(w => m.tickUntilGone(w))
+    assertEquals("all five waves struck", 5, hitsOn(m.udpSent(tidecaller), target))
+    assertEquals("and threw them three cells, once", (15, 30), m.at(target))
+    assertEquals(1, target.getKnockbacks)
+    assertEquals("each dealt its damage", target.getMaxHealth - 5 * 10, target.getHealth)
+  }
+
+  @Test def theRestOfACastFliesThroughWhoItPushed(): Unit = {
+    // Two waves of one cast along one line, the second a few ticks behind the first: the push
+    // carries the target on down the line, where the second catches them up. It used to strike
+    // them there, for its damage but no push; they have had their wave
+    val tidecaller = m.join(CharacterId.Tidecaller, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 14, 30)
+    val cast = new Cast(10f, 30f)
+    def wave(): Projectile = {
+      val p = m.instance.projectileManager.spawnProjectile(tidecaller.getId, 10, 30, 1f, 0f,
+        tidecaller.getColorRGB, 0, ProjectileType.TIDAL_WAVE, cast)
+      m.instance.broadcastProjectileSpawn(p)
+      p
+    }
+    val first = wave()
+    m.tick(4)
+    val second = wave()
+    m.tickUntilGone(first)
+    m.tickUntilGone(second)
+    assertEquals((17, 30), m.at(target))
+    assertEquals("struck by the first alone", target.getMaxHealth - 10, target.getHealth)
+  }
+
+  @Test def eachCastPushesAgain(): Unit = {
+    val tidecaller = m.join(CharacterId.Tidecaller, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 14, 30)
+    shoot(tidecaller, ProjectileType.TIDAL_WAVE)
+    assertEquals((17, 30), m.at(target))
+    shoot(tidecaller, ProjectileType.TIDAL_WAVE)
+    assertEquals((20, 30), m.at(target))
+    assertEquals(2, target.getKnockbacks)
+  }
+
+  @Test def aPushDrivesStraightAwayFromWhereItWasFired(): Unit = {
+    // Pushed away from wherever its caster had walked to by the time it landed, a wave thrown
+    // along the row pushed its target up the column when the caster had stepped round below them
+    val tidecaller = m.join(CharacterId.Tidecaller, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 16, 30)
+    val wave = m.launch(tidecaller, ProjectileType.TIDAL_WAVE, 1f, 0f)
+    tidecaller.setPosition(new Position(16, 36))
+    m.tickUntilGone(wave)
+    assertEquals("on along the throw", (19, 30), m.at(target))
+  }
+
+  @Test def aWaveStrikesWhereItsWaterIs(): Unit = {
+    // Its circle round the crescent's leading edge struck a target 1.8 cells ahead of the water,
+    // which was pushed off before the wave had reached them
+    val tidecaller = m.join(CharacterId.Tidecaller, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 18, 30)
+    val wave = m.launch(tidecaller, ProjectileType.TIDAL_WAVE, 1f, 0f)
+    var ticks = 0
+    while (m.at(target) == ((18, 30)) && ticks < 100) {
+      m.tick()
+      ticks += 1
+    }
+    assertEquals("pushed", (21, 30), m.at(target))
+    // Where the projectile was when it struck: its leading edge, which the crescent is drawn behind
+    val hit = m.projectileEvents(m.udpSent(tidecaller), ProjectileAction.HIT).find(_.getTargetId == target.getId).get
+    val ahead = 18 - hit.getX
+    val d = ProjectileDef.get(ProjectileType.TIDAL_WAVE)
+    assertTrue(s"the target was $ahead cells ahead of the water", ahead <= d.hitRadius - d.hitCentreBehind + 1e-4f)
+    assertTrue(ahead > 0f)
+  }
+
+  @Test def everyoneIsToldAPushWasAKnockback(): Unit = {
+    val tidecaller = m.join(CharacterId.Tidecaller, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 15, 30)
+    val watcher = m.join(CharacterId.Gladiator, 10, 40)
+    m.clearSent()
+    shoot(tidecaller, ProjectileType.TIDAL_WAVE)
+    assertEquals("the target, with the move", 1, movesToldOverTcp(target).last.getKnockbacks)
+    assertEquals("and everyone else", 1, m.updatesAbout(m.udpSent(watcher), target).last.getKnockbacks)
+  }
+
+  @Test def aKnockbackThatStunsIsStillToldAsOne(): Unit = {
+    // The Minotaur's Horn Toss pushes and then stuns, a server move of its own: what everyone
+    // hears after it has two server moves, and still the knockback, so it is drawn as one
+    val minotaur = m.join(CharacterId.Minotaur, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 15, 30)
+    val watcher = m.join(CharacterId.Gladiator, 10, 40)
+    m.clearSent()
+    shoot(minotaur, ProjectileType.HEAD_THROW)
+    assertTrue(target.isStunned)
+    val heard = m.updatesAbout(m.udpSent(watcher), target).last
+    assertEquals(2, heard.getServerMoves)
+    assertEquals(1, heard.getKnockbacks)
+    assertEquals((17, 30), (heard.getPosition.getX, heard.getPosition.getY))
+  }
+
+  @Test def aPullIsNotAKnockback(): Unit = {
+    val grabber = m.join(CharacterId.Gorilla, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 20, 30)
+    shoot(grabber, ProjectileType.GRAB)
+    assertEquals(1, target.getServerMoves)
+    assertEquals(0, target.getKnockbacks)
+  }
+
   // --- Pulls ---
 
   @Test def aGrabPullsTheTargetToTheOwner(): Unit = {

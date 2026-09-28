@@ -26,8 +26,10 @@ match-flow.md (the opening). This file is how the package is put together.
 ## The rest
 
 - `Player` — a player's state as the server holds it (health, position, effect timers, a barrier,
-  server moves) and as the client mirrors it for everyone else.
-- `Projectile` — one in flight: its movement step, collision cells, ricochet, distance travelled.
+  server moves and how many were knockbacks) and as the client mirrors it for everyone else.
+- `Projectile` — one in flight: its movement step, collision cells, ricochet, distance travelled,
+  and the `Cast` it was fired in (every projectile one press of an attack fired, which pushes a
+  player once however many of them strike).
 - `WorldData`, `Tile` (with `TileForm`: ground, pool, block, prop), `TeamDivider`, `MatchOpening`.
 - `Movement` (the one rule that turns a character's pace into a step interval), `Teleport` (the
   landing cell of a star or a blink, picked the same way on both sides), `TrapPlacement`,

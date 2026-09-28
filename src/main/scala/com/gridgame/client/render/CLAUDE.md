@@ -43,7 +43,7 @@ frame (see *Performance*).
 | `GameCamera.scala` | Holds visualX/Y, smooth lerp, screen shake, zoom. Provides camera offsets, on the render target's pixel grid when it is told the grid. |
 | `IsometricTransform.scala` | `worldToScreen(wx,wy,cam)`, `screenToWorld(sx,sy,cam,zoom)`, `viewInsideWorld` (is the whole screen over the map?) |
 | `EntityCollector.scala` | Collects items/projectiles/players by grid cell for depth-sorted rendering. Cells are a flat grid over the visible window, each a linked list of pooled entries (`takeCell` / `takeRemaining`) — no map, no boxed keys, no allocation per frame |
-| `RemoteMotion.scala` | Where another player is drawn: walked along the cells the server has put them on, at their measured pace, never past the newest. See *Other players are walked along the cells they were heard on* |
+| `RemoteMotion.scala` | Where another player is drawn: walked along the cells the server has put them on, at their measured pace, never past the newest, and slid by a knockback. See *Other players are walked along the cells they were heard on* |
 | `GLTileRenderer.scala` | Loads `sprites/tiles.png` as a GL texture (transparent texels padded with their neighbours' colour); returns full or transparent-margin-trimmed TextureRegion per tile ID + frame, and `drawDiamond` draws a flat tile as exactly its diamond |
 | `GLSpriteGenerator.scala` | Packs character sprite sheets into one growable, mipmapped GL atlas |
 | `ParticleSystem.scala`, `DamageNumberSystem.scala` | pooled particles and damage numbers |
@@ -148,6 +148,17 @@ HUD                               -- drawn after the composite, always at full r
   tree that ended it, before pulling them back. Measured in a live match, a dashing player was
   drawn ahead of where the server had them in 18% of frames, up to 3 cells; now in none.
   `RemoteMotionTest` pins it; six of its seven cases fail on the old smoothing.
+- **A knockback is slid, not walked or jumped.** A push is a server move the server also counts as
+  a knockback (design/combat.md), and a new count in a player's updates makes `RemoteMotion` slide
+  them from where they are drawn to where it put them: out faster than anyone runs and slowing to
+  a stop (`KnockbackSlide`, ~200ms for 3 cells, the same whatever pace they had been walking at),
+  with the walk going on from its end. `PlayerPainter` holds their stride while it lasts (a shove
+  is not a walk), and they are neither turned to face the way they were thrown nor shown
+  teleporting (`OtherPlayers`). A short push used to be walked there at their own pace (a bot's
+  at half a player's), a long one jumped, with a teleport's flash; the local player blinked
+  there, and the camera glided after. Filmed through the real server tick, two clients and this
+  renderer, the victim moved 9 cells in one frame under a Tidal Wave from three cells and 25 under
+  a fan of gusts; now 3 and 5 cells over 9 and 11 frames, never more than a cell a frame.
 
 ## Grading
 

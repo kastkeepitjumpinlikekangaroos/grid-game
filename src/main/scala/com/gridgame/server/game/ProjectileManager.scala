@@ -1,5 +1,6 @@
 package com.gridgame.server.game
 
+import com.gridgame.common.model.Cast
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Projectile
 import com.gridgame.common.model.ProjectileDef
@@ -153,7 +154,11 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
 
   private val MAX_PROJECTILES_PER_PLAYER = 30
 
-  def spawnProjectile(ownerId: UUID, x: Int, y: Int, dx: Float, dy: Float, colorRGB: Int, chargeLevel: Int = 0, projectileType: Byte = com.gridgame.common.model.ProjectileType.NORMAL): Projectile = {
+  /** A projectile fired from (x, y) along (dx, dy). `cast` is the cast it is one of, which a fan's
+    * projectiles share (see Cast); without one it is a cast of its own. */
+  def spawnProjectile(ownerId: UUID, x: Int, y: Int, dx: Float, dy: Float, colorRGB: Int, chargeLevel: Int = 0,
+                      projectileType: Byte = com.gridgame.common.model.ProjectileType.NORMAL,
+                      cast: Cast = null): Projectile = {
     // Enforce per-player active projectile cap to prevent memory exhaustion (O(1) check)
     val counter = playerProjectileCount.computeIfAbsent(ownerId, _ => new AtomicInteger(0))
     if (counter.get() >= MAX_PROJECTILES_PER_PLAYER) return null
@@ -163,6 +168,7 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
     val spawnX = x.toFloat + dx
     val spawnY = y.toFloat + dy
     val projectile = new Projectile(id, ownerId, spawnX, spawnY, dx, dy, colorRGB, chargeLevel, projectileType)
+    projectile.setCast(if (cast != null) cast else new Cast(x.toFloat, y.toFloat))
     projectiles.put(id, projectile)
     counter.incrementAndGet()
     projectile
@@ -200,7 +206,7 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
 
       // Sub-step movement so projectiles can't skip over terrain that stops them.
       val movePerTick = math.sqrt(projectile.dx * projectile.dx + projectile.dy * projectile.dy).toFloat * projectile.speedMultiplier
-      val subSteps = math.ceil(movePerTick / 0.5f).toInt.max(1)
+      val subSteps = math.ceil(movePerTick / Projectile.MAX_SUB_STEP).toInt.max(1)
       val fraction = 1.0f / subSteps
 
       var step = 0

@@ -71,6 +71,25 @@ needs one target to land behind, not a crowd. A slam whose on-hit effect is a `S
 self-buff, so it lands on the caster at cast time (`GameInstance.applyCastSelfBuff`) whether or
 not anyone is standing in it.
 
+**A push lands once a cast, and is drawn as a shove.** Everything one press of an attack fires is
+one `Cast` (in `Projectile.scala`: a fan's five waves, which the client sends as five spawn
+requests and `PacketValidator.castFor` groups, as bots' fans are grouped where they fire them). A
+cast pushes a player once, however many of its projectiles strike them, straight away from where
+it was fired (a blast's push, out from where it went off), and the rest of it then flies through
+them. Each projectile used to push on its own, from wherever the last push had left the player and
+from wherever its caster had walked to since: close in, where a fan's waves overlap, the Tidal Wave
+threw a player 3, 6, 9 or 15 cells in a single tick and a fan of gusts up to 25, where now they
+push 3 and 5 wherever the player stands (2.8 to 3.6 and 4.5 to 5.7 where the push runs across the
+grid at an angle). The damage
+is as it was: every projectile that strikes before the push deals its own. The server counts each
+push as a knockback as well as a server move (`Player.recordKnockback`, carried in every update
+about the player), and every client draws the move as a slide from where it drew them, off the
+mark faster than anyone runs and slowing to a stop over ~200ms (`KnockbackSlide`; see
+design/networking.md). Drawn where the server put them, a pushed player vanished and reappeared
+cells away, turned to face the way they were thrown, and on other screens most pushes played a
+teleport's flash (it plays for any jump of more than three cells along the grid's rows and
+columns). `OnHitEffectsTest`, `GameClientKnockbackTest`, `RemoteMotionTest`.
+
 ## Where a hit lands
 
 - **Projectile collision uses the drawn tile extents** — `Projectile.getCellX/Y` is
@@ -83,6 +102,16 @@ not anyone is standing in it.
   (`Projectile.withinPlayer` / `distanceToPlayer`). Measured from `(x + 0.5, y + 0.5)`, a shot
   from one side connected a cell sooner than from the other, and a ground slam reached a cell
   further south-east of its caster than north-west. `CombatTest` pins it.
+- **A wave strikes where its water is.** The Tidal Wave and the Gust are drawn as crescents
+  trailing back from their leading edge, which is where the projectile is, so a hit circle round
+  that edge struck a player up to 1.8 cells ahead of the water, and pushed them away before it had
+  visibly reached them. Their circle trails the edge (`ProjectileDef.hitCentreBehind`: 1.0 for the
+  wave, 1.2 for the gust, whose sub-steps are shorter), though never back past the first place it
+  is checked, a sub-step out from its spawn, where it would catch players beside its caster. So it
+  reaches 0.6-0.8 of a cell ahead of the water and as wide as it did, and each flies a cell
+  further than it did: over every cell round its caster, straight and diagonal, the Tidal Wave,
+  the Wind Fan, the Wind Wall, the Gust Fan and the Gust strike exactly the players they struck
+  before, only when the water reaches them. `ProjectileHitTest`, `OnHitEffectsTest`.
 - **Water doesn't stop a shot.** Everything nobody can walk on stops a projectile — walls,
   cliffs, trees, rocks, lava — but water, shallow or deep, which it flies over as it does over
   the ground (`Tile.stopsProjectiles`, `WorldData.stopsProjectile`). A river or a pond used to be

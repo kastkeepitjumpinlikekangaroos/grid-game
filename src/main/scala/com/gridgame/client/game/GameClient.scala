@@ -116,8 +116,9 @@ class GameClient(private[game] val serverHost: String, private[game] val serverP
     clientState = ClientState.PLAYING
     forgetMatch()
     newLife()
-    // Each match counts its own server moves
+    // Each match counts its own server moves, and knockbacks
     serverMovesSeen = 0
+    knockbacksSeen = 0
     beginScoring()
     localHealth.set(getSelectedCharacterMaxHealth)
     if (gameStartingListener != null) gameStartingListener()

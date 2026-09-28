@@ -27,6 +27,11 @@ case class ProjectileDef(
     maxRange: Int,
     chargeRangeScaling: Option[ChargeScaling] = None,
     hitRadius: Float = 1.8f,
+    // How far behind the projectile its hit circle is centred, once it has flown far enough
+    // (Projectile.hitsPlayer). A wave is drawn as a crescent trailing back from its leading edge,
+    // which is where the projectile is, so a circle round that edge struck players 1.8 cells ahead
+    // of the water
+    hitCentreBehind: Float = 0f,
     passesThroughPlayers: Boolean = false,
     passesThroughWalls: Boolean = false,
     onHitEffect: Option[OnHitEffect] = None,

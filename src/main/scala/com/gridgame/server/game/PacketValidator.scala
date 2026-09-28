@@ -4,6 +4,7 @@ import com.gridgame.server.net.ReplayGuard
 
 import com.gridgame.common.Constants
 import com.gridgame.common.model.AbilityDef
+import com.gridgame.common.model.Cast
 import com.gridgame.common.model.CharacterDef
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.DashBuff
@@ -34,6 +35,8 @@ private final class AttackClock {
   /** Where its cooldown counts from: castAt, moved back by on-hit reductions. Kept apart from
     * castAt so a hit landing mid-cast doesn't cut the rest of that cast off. */
   var cooldownFrom = 0L
+  /** The projectiles that cast has spawned, as one Cast: made with its first. */
+  var cast: Cast = _
 }
 
 object PacketValidator {
@@ -281,6 +284,7 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
         clock.castAt = now
         clock.cooldownFrom = now
         clock.fired = 1
+        clock.cast = null
         true
       } else false
     }
@@ -288,6 +292,21 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
       System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} attack $slot fired too fast")
     }
     accepted
+  }
+
+  /**
+   * The cast a projectile the attack in `slot` just fired belongs to: the one its cast's first
+   * projectile opened, so the rest of a fan joins it (see Cast), fired from (fromX, fromY). Call it
+   * after [[validateProjectileSpawn]] accepted the shot.
+   */
+  def castFor(playerId: UUID, slot: Int, fromX: Float, fromY: Float): Cast = {
+    val clocks = attackClocks.get(playerId)
+    if (clocks == null || slot < 0 || slot >= SLOT_COUNT) return new Cast(fromX, fromY)
+    val clock = clocks(slot)
+    clock.synchronized {
+      if (clock.cast == null) clock.cast = new Cast(fromX, fromY)
+      clock.cast
+    }
   }
 
   /**

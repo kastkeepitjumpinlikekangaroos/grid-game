@@ -40,6 +40,14 @@ a correction — made with `GameInstance.moveByServer` / `holdByServer`, which c
 - A lone refused step says nothing (it is usually a race the server catches up with, like a step
   overtaking its star), but refusals that go on for 250ms get the client corrected, at most every
   500ms: it no longer takes positions from ordinary updates, so nothing else would tell it.
+- **A knockback is counted apart as well** (`Player.recordKnockback`, bytes [55-58]), so every
+  client can tell a push from a teleport, a pull or a correction and draw it as a shove: the
+  player slides from where they were drawn to where the server put them (`KnockbackSlide`; ours
+  in `LocalMovement.updateVisualPosition`, everyone else in `RemoteMotion`). Only the drawing: the
+  player is where the server put them from the update on, and is hit and shoots from there. A
+  count and not a flag, because a push is often followed in the same hit by a server move of
+  another kind (the Horn Toss's stun holds its target where the push left them), and the update
+  everyone hears after both still says a knockback happened.
 - What the rest of the match is told about a player is the server's view (`GameInstance.
   stateUpdate`): position where the server holds it, all eight status flags, character, team.
   Relaying the client's claim with four flags showed rooted players walking and blinked a
@@ -57,8 +65,8 @@ a correction — made with `GameInstance.moveByServer` / `holdByServer`, which c
   server kept the player where they were and said nothing, and the two disagreed until its later
   steps were refused.
 
-`PositionAuthorityTest`, `OnHitEffectsTest`, `PhaseShiftTest`, `TeleportValidationTest` and
-`GameClientPositionTest` pin all of this.
+`PositionAuthorityTest`, `OnHitEffectsTest`, `PhaseShiftTest`, `TeleportValidationTest`,
+`GameClientPositionTest` and `GameClientKnockbackTest` pin all of this.
 
 ## Sessions, reconnects and names
 

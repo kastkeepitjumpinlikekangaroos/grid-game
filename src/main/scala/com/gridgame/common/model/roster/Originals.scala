@@ -64,9 +64,13 @@ private[model] object Originals {
     chargeRangeScaling = Some(ChargeScaling(10f, 20f)),
     aoeOnHit = Some(AoESplashConfig(3.0f, 10))
   )
+  // The two pushes drawn as waves strike where their water or wind is (hitCentreBehind), and fly a
+  // cell further, so each strikes exactly the cells round its caster it did when its circle was
+  // round the leading edge (the Gust's trails further back, its sub-steps being shorter)
   val TidalWaveDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.TIDAL_WAVE, name = "Tidal Wave",
-    speedMultiplier = 0.5f, damage = 10, maxRange = 12,
+    speedMultiplier = 0.5f, damage = 10, maxRange = 13,
+    hitCentreBehind = 1.0f,
     onHitEffect = Some(Push(3.0f))
   )
   val GeyserDef: ProjectileDef = ProjectileDef(
@@ -99,7 +103,8 @@ private[model] object Originals {
   )
   val GustDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.GUST, name = "Gust",
-    speedMultiplier = 0.8f, damage = 10, maxRange = 6,
+    speedMultiplier = 0.8f, damage = 10, maxRange = 7,
+    hitCentreBehind = 1.2f,
     onHitEffect = Some(Push(5.0f))
   )
   val ShurikenDef: ProjectileDef = ProjectileDef(
