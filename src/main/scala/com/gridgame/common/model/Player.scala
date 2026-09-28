@@ -61,8 +61,10 @@ class Player(
   private var slowMultiplier: Float = 1.0f
 
   // Barrier state (BarrierCast): a shield wall carried in front, facing barrierAngle (world
-  // radians). Up until barrierUntil; dropping it early moves that to the moment it dropped, which
-  // is what a client fades it out from. The cooldown counts from the raise, so that is kept apart.
+  // radians). Up until barrierUntil, its whole time whatever its holder does: only a death, or
+  // its holder's client saying its own timer has run out, drops it sooner, moving that to the
+  // moment it dropped, which is what a client fades it out from. The cooldown counts from the
+  // raise, so that is kept apart.
   @volatile private var barrierRaisedAt: Long = 0
   @volatile private var barrierUntil: Long = 0
   @volatile private var barrierAngle: Float = 0f

@@ -1,7 +1,9 @@
 # Barriers
 `BarrierCast` raises a shield wall carried in front of its caster and turned to face their aim:
 the Crusader's Bulwark (3.5s, a 12s cooldown counted from the raise), the Gladiator's Scutum, the
-Paladin's Aegis and the Beetle's Carapace (3s each) and the Golem's Stone Wall (3.5s, 14s). It is called a barrier in code because the Shield *item* (key 4, five seconds of invulnerability, `Player.hasShield`,
+Paladin's Aegis and the Beetle's Carapace (3s each) and the Golem's Stone Wall (3.5s, 14s). It
+stays up for that whole time whatever its holder does, and only their death takes it down sooner.
+It is called a barrier in code because the Shield *item* (key 4, five seconds of invulnerability, `Player.hasShield`,
 flag 0x01) already has the name; the player-facing ability can still say shield.
 
 - **One shape.** `common/model/Barrier.scala` is a polyline of three segments, 2.0 cells out
@@ -31,28 +33,32 @@ flag 0x01) already has the name; the player-facing ability can still say shield.
   the Crusader is for, let the shots through. A shot's first tick also checks the one-cell hop
   from where it was fired to where `spawnProjectile` put it, so an enemy pressed up against the
   barrier can't start a shot on its far side.
+- **Up for its whole time.** Nothing its holder does takes it down: the primary, the burst shot
+  and their other ability go out through it, and a trap or an item leaves it up too. Only death
+  drops it early (`Player.damage`), and a respawn resets it. It used to drop at the first attack
+  or cast, on the client and again on the server, so a Gladiator who raised the Scutum and swung
+  the axe or threw the rope had it for a moment rather than three seconds.
 - **Up and down.** The client raises it by sending effect flags 2 bit 2 with the aim angle,
   keeps its facing streamed while it is up (`GameClient.streamBarrier`: every 100ms, every 50ms
-  while it turns, from both input handlers) and says when it has run out. The server
-  (`ClientHandler.updateBarrier`) honours a raise at 80% of the cooldown since the last raise,
-  turns the barrier with every update, and drops it on an update without the bit and on any spawn
-  or trap it accepts from the holder. Only the newest update's word on it counts
-  (`PacketValidator.takeBarrierWord`): the fence that keeps old positions out moves only on a
-  position the server accepted, so an update sent just before a raise and overtaken by it on the
-  way used to be taken after it whenever the raise's own position was refused — and dropped the
-  barrier, which the cooldown then kept down while its holder saw it up and took shots through
-  it. Firing the primary, the burst shot or any ability drops it; the
-  client drops it first and says so before the shot is sent. Death drops it (`Player.damage`),
-  and a respawn resets it. Every client runs the barrier on its own timer: ours from the cast,
-  as a phase does, and everyone else's from the time left that each update carrying it reports
-  (bytes [53-54]), dropping it on an update that doesn't. An update older than the newest one it
-  has taken a barrier from is ignored, since datagrams overtake each other. A remote barrier used
-  to be a 600ms lease renewed by those updates, which its holder's client streams **from its
-  render loop** — so a hitch there longer than the lease (a GC pause, a resize, an alt-tab on the
-  weak machine this targets), a burst of lost datagrams, or a run of updates the server refused
-  after a knockback took a barrier that was still up, and still stopping shots, off every other
-  screen for the rest of its life. Dropping one early is announced twice, as running out is,
-  because nobody else's copy expires on its own any more.
+  while it turns, from both input handlers) and says when its own timer, started at the cast, has
+  run out: an update without the bit, sent twice, the only time a living holder's client sends
+  one. The server (`ClientHandler.updateBarrier`) honours a raise at 80% of the cooldown since the
+  last raise, turns the barrier with every update, and ends it on an update without the bit, so
+  one it only took from a later update (the raise lost, or refused while the holder was held)
+  ends with the barrier its holder sees rather than a whole barrier's time after it. Only the
+  newest update's word on it counts (`PacketValidator.takeBarrierWord`): the fence that keeps old
+  positions out moves only on a position the server accepted, so an update sent just before a
+  raise and overtaken by it on the way used to be taken after it whenever the raise's own position
+  was refused — and dropped the barrier, which the cooldown then kept down while its holder saw it
+  up and took shots through it. Every client runs the barrier on its own timer: ours from the
+  cast, as a phase does, and everyone else's from the time left that each update carrying it
+  reports (bytes [53-54]), dropping it on an update that doesn't. An update older than the newest
+  one it has taken a barrier from is ignored, since datagrams overtake each other. A remote
+  barrier used to be a 600ms lease renewed by those updates, which its holder's client streams
+  **from its render loop** — so a hitch there longer than the lease (a GC pause, a resize, an
+  alt-tab on the weak machine this targets), a burst of lost datagrams, or a run of updates the
+  server refused after a knockback took a barrier that was still up, and still stopping shots, off
+  every other screen for the rest of its life.
 - **Drawn** by `BarrierPainter.draw`, after the flying projectiles: a translucent sheet
   22px tall along the polyline and a glowing strip on the ground under it, blue for ours and our
   allies', red for everyone else's. It grows out of the ground as it goes up, sinks and fades as
@@ -60,15 +66,12 @@ flag 0x01) already has the name; the player-facing ability can still say shield.
   barrier it struck (`GameClient.getBarrierImpact*`), so it moves with a barrier that is carried
   on. The strip is what shows a barrier aimed straight left or right, whose sheet this projection
   sees edge-on.
-- **Bots** raise it only while they can't strike their target — out of their primary's reach, or
-  with terrain between them — and only against what it will stop: a target who shoots from
-  further off than a blade (a ranged character or a skirmisher) with shots that don't fly over
-  walls, from within reach and with nothing solid between them, or such a shot coming at its
-  front and still out beyond it. While it is up they face the target, close in, and hold every
-  attack and cast until they can strike (`BotCombat.canStrike`: in reach, a clear line of fire);
-  then they drop it and attack. They used to drop it for anything in range: a bot stopped by a
-  wall with its target just beyond threw at the wall, and a Gladiator threw its 25-cell rope the
-  tick its barrier went up, taking it straight back down.
+- **Bots** raise it against what it will stop: a target who shoots from further off than a blade
+  (a ranged character or a skirmisher) with shots that don't fly over walls, from within reach and
+  with nothing solid between them, or such a shot coming at its front and still out beyond it —
+  whether or not they can strike back from where they stand, since it stays up while they do.
+  While it is up they face the target and close in, and attack and cast through it as they
+  otherwise would (`BotCombat`).
 
 `BarrierTest` (in `common/model` for the shape and a throw's landing, and in `server`),
 `GameClientBarrierTest`, `GameClientTrapTest` and `PacketRoundTripTest` pin all of this.

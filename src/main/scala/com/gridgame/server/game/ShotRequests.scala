@@ -76,12 +76,7 @@ trait ShotRequests { this: ClientHandler =>
       return false
     }
 
-    // Firing anything drops a raised barrier. The client drops it first and says so, but that
-    // update and this spawn race each other over UDP, so the spawn drops it too.
-    if (player.hasBarrier) {
-      player.dropBarrier()
-      broadcastState(player)
-    }
+    // A raised barrier stays up: its holder's own shots go out through it (design/barriers.md)
 
     // Spawn projectile at player's position along the heading from the packet, charged as far as
     // the time the player has had allows

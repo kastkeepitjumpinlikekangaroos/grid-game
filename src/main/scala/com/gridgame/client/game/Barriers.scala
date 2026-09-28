@@ -8,15 +8,15 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Barriers (BarrierCast; see Barriers in the gameplay docs). Ours is raised by an ability, faces
- * wherever we aim, and is streamed to the server while it is up ([[streamBarrier]]); firing or
- * casting anything drops it. Everyone else's runs on its own timer from what their updates say.
- * Shots stopped on one ripple where they struck, and a shot in flight is never flown through one
- * that would stop it ([[barriersInFlight]]).
+ * Barriers (BarrierCast; see design/barriers.md). Ours is raised by an ability, faces wherever we
+ * aim, and is streamed to the server while it is up ([[streamBarrier]]); it stays up for the
+ * ability's whole time, whatever we fire or cast through it. Everyone else's runs on its own timer
+ * from what their updates say. Shots stopped on one ripple where they struck, and a shot in flight
+ * is never flown through one that would stop it ([[barriersInFlight]]).
  */
 trait Barriers { this: GameClient =>
-  // Our barrier: up until barrierUntil. Dropping it early moves barrierUntil to the moment it
-  // dropped, which is what the renderer fades it out from.
+  // Our barrier: up until barrierUntil, the ability's whole time from the cast. Nothing we do
+  // takes it down sooner; only a death, or a new life, clears it (clearBarrier).
   private val barrierUntil: AtomicLong = new AtomicLong(0)
   private val barrierRaisedAt: AtomicLong = new AtomicLong(0)
   // When we last told the server where it faces, and what we said; and whether the last update we
@@ -86,20 +86,6 @@ trait Barriers { this: GameClient =>
   private def angleBetween(a: Float, b: Float): Float = {
     val d = Math.abs(a - b) % (2 * Math.PI).toFloat
     if (d > Math.PI) (2 * Math.PI).toFloat - d else d
-  }
-
-  /** Firing or casting anything drops our barrier: it goes down, and the server hears so, before
-    * the shot is sent. */
-  private[game] def dropBarrier(): Unit = {
-    val now = System.currentTimeMillis()
-    if (now < barrierUntil.get()) {
-      barrierUntil.set(now)
-      // Twice, as running out is announced twice: everyone else now holds it until the time the
-      // server gave it, so a single lost datagram would leave them a barrier that isn't there.
-      val pos = localPosition.get()
-      sendPositionUpdate(pos)
-      sendPositionUpdate(pos)
-    }
   }
 
   /** A new life or a new match: no barrier, and nothing left to announce about the last one. */

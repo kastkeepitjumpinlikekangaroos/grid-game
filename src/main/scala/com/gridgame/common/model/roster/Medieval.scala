@@ -57,7 +57,7 @@ private[model] object Medieval {
     id = CharacterId.Paladin, displayName = "Paladin",
     description = "A holy knight who raises an aegis against enemy fire and stuns everyone near with a holy nova.",
     spriteSheet = "sprites/paladin.png",
-    qAbility = AbilityDef(name = "Aegis", description = "Raises a shield of holy light that stops enemy shots until you attack.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -3, keybind = "Q", castBehavior = BarrierCast(3000)),
+    qAbility = AbilityDef(name = "Aegis", description = "Raises a shield of holy light that stops enemy shots, even while you attack.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -3, keybind = "Q", castBehavior = BarrierCast(3000)),
     eAbility = AbilityDef(name = "Holy Nova", description = "Unleashes holy bolts in all directions that stun for 0.5s.", cooldownMs = 16000, maxRange = 16, damage = 20, projectileType = ProjectileType.HOLY_NOVA, keybind = "E", castBehavior = FanProjectile(8, 2 * Math.PI)),
     primaryProjectileType = ProjectileType.HOLY_BLADE, role = Melee, maxHealth = 145, moveSpeed = Melee.speed
   )
@@ -84,7 +84,7 @@ private[model] object Medieval {
     id = CharacterId.Crusader, displayName = "Crusader",
     description = "A melee-focused shield warrior who walls off enemy fire and bashes enemies away.",
     spriteSheet = "sprites/crusader.png",
-    qAbility = AbilityDef(name = "Bulwark", description = "Raises a shield wall that stops enemy shots until you attack.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -3, keybind = "Q", castBehavior = BarrierCast(3500)),
+    qAbility = AbilityDef(name = "Bulwark", description = "Raises a shield wall that stops enemy shots, even while you attack.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -3, keybind = "Q", castBehavior = BarrierCast(3500)),
     eAbility = AbilityDef(name = "Shield Bash", description = "Bashes all nearby enemies, pushing them back.", cooldownMs = 10000, maxRange = 0, damage = 20, projectileType = ProjectileType.SHOCKWAVE, keybind = "E", castBehavior = GroundSlam(5.0f)),
     primaryProjectileType = ProjectileType.HOLY_BLADE, role = Melee, maxHealth = 135, moveSpeed = Melee.speed
   )

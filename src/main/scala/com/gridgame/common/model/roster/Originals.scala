@@ -205,7 +205,7 @@ private[model] object Originals {
     spriteSheet = "sprites/gladiator.png",
     qAbility = AbilityDef(
       name = "Scutum",
-      description = "Locks a tower shield in front of you that stops enemy shots until you attack.",
+      description = "Locks a tower shield in front of you that stops enemy shots, even while you attack.",
       cooldownMs = 12000, maxRange = 0, damage = 0,
       projectileType = -3, keybind = "Q",
       castBehavior = BarrierCast(3000)

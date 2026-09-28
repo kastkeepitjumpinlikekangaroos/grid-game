@@ -147,8 +147,11 @@ trait StepRequests { this: ClientHandler =>
    * The client says whether the player's barrier is up (effect flags 2, bit 2) and which way it
    * faces (the aim angle). A raise is honoured if the character has a barrier and it is off
    * cooldown: 80% of it since the last raise, the tolerance every other attack gets, counted from
-   * the raise because a barrier can drop early. While it is up every update turns it, and one
-   * without the bit drops it.
+   * the raise. While it is up every update turns it, and one without the bit ends it: its holder's
+   * client stops sending the bit when its own timer, started at the cast, runs out, and nothing
+   * else takes it down there. So a raise the server only took from a later update (the first was
+   * lost, or came while the player was still held) ends with the barrier its holder sees, not
+   * a raise's length after it. Firing, casting and placing traps leave it up.
    *
    * Only the newest word counts ([[PacketValidator.takeBarrierWord]]). The movement fence that
    * keeps stale positions out moves only on an accepted position, so without this an update sent

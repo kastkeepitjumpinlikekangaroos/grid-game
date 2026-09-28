@@ -74,12 +74,6 @@ trait TrapRequests { this: ClientHandler =>
       cast.trapType, System.currentTimeMillis())
     if (placed == null) return refuse("a trap landed there first")
 
-    // Casting anything drops a raised barrier, as firing does
-    if (player.hasBarrier) {
-      player.dropBarrier()
-      broadcastState(player)
-    }
-
     // A fourth trap takes their oldest away
     placed.removed.foreach(instance.broadcastTrap(_, TrapAction.REMOVE))
     instance.broadcastTrap(placed.trap, TrapAction.SPAWN)

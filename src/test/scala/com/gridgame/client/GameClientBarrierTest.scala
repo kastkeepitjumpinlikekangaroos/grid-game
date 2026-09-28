@@ -7,7 +7,7 @@ import org.junit.Test
 
 import java.util.UUID
 
-/** A barrier as the client raises, turns and drops it, and as it is told about everyone else's. */
+/** A barrier as the client raises and turns it, and as it is told about everyone else's. */
 class GameClientBarrierTest {
   private val t = new TestClient()
   private val c = t.client
@@ -50,24 +50,27 @@ class GameClientBarrierTest {
     assertTrue(up(t.sentUpdates.last))
   }
 
-  @Test def firingDropsItBeforeTheShotGoes(): Unit = {
-    crusader()
+  @Test def itLastsItsWholeTimeWhateverWeFireOrCast(): Unit = {
+    // A Gladiator raising the Scutum and fighting on behind it: the axe, the burst and the rope.
+    // Each of them used to drop it, so it was gone a moment after it went up.
+    c.selectedCharacterId = CharacterId.Gladiator.id
+    t.startMatch(spawn = (20, 20))
+    c.setMouseWorldPosition(25, 20)
     c.shootAbility(0)
+    val until = c.getBarrierUntil
+    assertEquals("the Scutum's 3s", c.getBarrierRaisedAt + 3000, until)
     t.clearSent()
     c.shootToward(1f, 0f)
-    assertFalse(c.hasBarrier)
-    val sent = t.sent
-    val drop = sent.indexWhere { case u: PlayerUpdatePacket => !up(u); case _ => false }
-    val shot = sent.indexWhere { case p: ProjectilePacket => p.getAction == ProjectileAction.SPAWN; case _ => false }
-    assertTrue("down, then the shot", drop >= 0 && shot > drop)
-  }
-
-  @Test def castingDropsItToo(): Unit = {
-    crusader()
-    c.shootAbility(0)
-    c.shootAbility(1) // Shield Bash
-    assertFalse(c.hasBarrier)
-    assertEquals(1, t.sentSpawns.size)
+    c.shootAllDirections()
+    c.shootAbility(1)
+    assertEquals("the axe, the eight of the burst and the rope all went", 10, t.sentSpawns.size)
+    assertTrue(c.hasBarrier)
+    assertEquals("and it comes down when it always would", until, c.getBarrierUntil)
+    assertTrue("nothing told the server it is down", t.sentUpdates.forall(up))
+    // Still streamed as up, so the server and everyone else keep it too
+    Thread.sleep(110)
+    c.streamBarrier()
+    assertTrue(t.sentUpdates.nonEmpty && t.sentUpdates.forall(up))
   }
 
   @Test def whenItRunsOutEveryoneIsTold(): Unit = {
@@ -146,16 +149,6 @@ class GameClientBarrierTest {
     assertTrue("the older word about it counts for nothing", c.getPlayers.get(holder).hasBarrier)
     t.update(holder, 30, 30, charId = CharacterId.Crusader.id, seq = older + 6) // and a newer one
     assertFalse("which a newer one still does", c.getPlayers.get(holder).hasBarrier)
-  }
-
-  @Test def droppingOursIsSaidTwice(): Unit = {
-    // Everyone else holds it to the time the server gave it, so one lost "it is down" would
-    // leave them a barrier that isn't there.
-    crusader()
-    c.shootAbility(0)
-    t.clearSent()
-    c.shootToward(1f, 0f)
-    assertEquals("both say it is down", 2, t.sentUpdates.count(u => !up(u)))
   }
 
   @Test def oneWeFirstHearOfUpIsUp(): Unit = {

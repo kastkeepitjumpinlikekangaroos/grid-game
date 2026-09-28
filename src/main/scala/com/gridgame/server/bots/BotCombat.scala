@@ -8,7 +8,8 @@ import java.util.UUID
 
 /** A bot fighting: its primary at its target (with a little aim wobble), its Q and E when they fit —
   * a slam in reach, a closer from further off, a trap for someone coming in, a barrier against
-  * shots it would stop — and its barrier held up facing the target until it can strike. */
+  * shots it would stop — and its barrier, once up, faced at the target for its whole time while
+  * it goes on attacking through it. */
 trait BotCombat { this: BotController =>
   /** Turn the bot's raised barrier to face the target. */
   private[bots] def faceBarrier(bot: Player, target: Player): Unit = {
@@ -17,15 +18,6 @@ trait BotCombat { this: BotController =>
     val dx = tp.getX - bp.getX
     val dy = tp.getY - bp.getY
     if (dx != 0 || dy != 0) bot.setBarrierAngle(Math.atan2(dy, dx).toFloat)
-  }
-
-  /** Drop the bot's barrier before it fires or casts anything, as a player's does. */
-  private def lowerBarrier(bot: Player): Unit = {
-    if (bot.hasBarrier) {
-      bot.dropBarrier()
-      barrierShown.remove(bot.getId)
-      broadcastBotPosition(bot)
-    }
   }
 
   /**
@@ -46,15 +38,6 @@ trait BotCombat { this: BotController =>
       i += 1
     }
     true
-  }
-
-  /** Can the bot strike its target from where it stands: in its primary's reach, with nothing solid
-    * between them? What it lowers a raised barrier for, and nothing short of it. */
-  private[bots] def canStrike(bot: Player, target: Player, dist: Float): Boolean = {
-    val primary = CharacterDef.get(bot.getCharacterId).primaryProjectileType
-    val bp = bot.getPosition
-    val tp = target.getPosition
-    dist <= getMaxRange(bot.getCharacterId) && lineOfFire(bp.getX, bp.getY, tp.getX, tp.getY, primary)
   }
 
   /** Can `shooter` hit the bot from where they stand with shots a barrier stops: someone who shoots
@@ -112,21 +95,15 @@ trait BotCombat { this: BotController =>
     // Read and rolled forward once a tick, so both abilities see the same answer
     val closing = isClosing(bot.getId, dist)
 
-    // Behind a raised barrier a bot casts nothing until it can strike (holdsFire). Asked once a
-    // tick, and only if a barrier is up: a Q that raises one holds the E after it
-    lazy val strike = canStrike(bot, target, dist)
-    def holdsFire(ability: AbilityDef): Boolean =
-      bot.hasBarrier && !ability.castBehavior.isInstanceOf[BarrierCast] && !strike
-
     val lastQ = lastQAbilityTime.getOrDefault(bot.getId, 0L)
-    if (now - lastQ >= charDef.qAbility.cooldownMs && !holdsFire(charDef.qAbility)) {
+    if (now - lastQ >= charDef.qAbility.cooldownMs) {
       if (tryFireAbility(bot, target, charDef.qAbility, dist, closing)) {
         lastQAbilityTime.put(bot.getId, now)
       }
     }
 
     val lastE = lastEAbilityTime.getOrDefault(bot.getId, 0L)
-    if (now - lastE >= charDef.eAbility.cooldownMs && !holdsFire(charDef.eAbility)) {
+    if (now - lastE >= charDef.eAbility.cooldownMs) {
       if (tryFireAbility(bot, target, charDef.eAbility, dist, closing)) {
         lastEAbilityTime.put(bot.getId, now)
       }
@@ -157,7 +134,6 @@ trait BotCombat { this: BotController =>
     ability.castBehavior match {
       case StandardProjectile =>
         if (dist > ability.maxRange) return false
-        lowerBarrier(bot)
         val projectile = instance.projectileManager.spawnProjectile(
           bot.getId, botPos.getX, botPos.getY,
           ndx, ndy, bot.getColorRGB, 0, ability.projectileType
@@ -167,7 +143,6 @@ trait BotCombat { this: BotController =>
 
       case fan @ FanProjectile(count, _) =>
         if (dist > ability.maxRange) return false
-        lowerBarrier(bot)
         for (i <- 0 until count) {
           val theta = fan.angleOf(i)
           val cos = Math.cos(theta).toFloat
@@ -188,7 +163,6 @@ trait BotCombat { this: BotController =>
         val wayIn = roleOf(bot.getCharacterId) != CombatRole.Ranged
         if (wayIn && (dist <= getMaxRange(bot.getCharacterId) || dist > 14)) return false
         if (!wayIn && dist > 5) return false
-        lowerBarrier(bot)
         bot.setPhasedUntil(System.currentTimeMillis() + durationMs)
         broadcastBotPosition(bot)
         true
@@ -196,7 +170,6 @@ trait BotCombat { this: BotController =>
       case DashBuff(maxDistance, durationMs, _) =>
         // A root holds a bot where it is, as it holds a player against a step, a dash and a blink
         if (bot.isRooted || dist < 3 || dist > maxDistance + 5) return false
-        lowerBarrier(bot)
         val clampedDist = Math.min(dist, maxDistance.toFloat)
         val world = instance.world
         var bestX = botPos.getX
@@ -216,7 +189,6 @@ trait BotCombat { this: BotController =>
 
       case GroundSlam(radius) =>
         if (dist > radius) return false
-        lowerBarrier(bot)
         val projectile = instance.projectileManager.spawnProjectile(
           bot.getId, botPos.getX, botPos.getY,
           0.0f, 0.0f, bot.getColorRGB, 0, ability.projectileType
@@ -226,7 +198,6 @@ trait BotCombat { this: BotController =>
 
       case TeleportCast(maxDistance) =>
         if (bot.isRooted || dist < 4 || dist > maxDistance + 8) return false
-        lowerBarrier(bot)
         val clampedDist = Math.min(dist, maxDistance.toFloat).toInt
         // A player's blink, stopping before the first wall rather than coming out beyond it
         bot.setPosition(Teleport.blinkTarget(instance.world, botPos.getX, botPos.getY, ndx, ndy, clampedDist))
@@ -243,7 +214,6 @@ trait BotCombat { this: BotController =>
           (x, y) => instance.barrierAcross(bot.getId, botPos2.getX.toFloat, botPos2.getY.toFloat, x.toFloat, y.toFloat))
         cell match {
           case Some(at) if instance.trapManager.trapAt(at.getX, at.getY) == null =>
-            lowerBarrier(bot)
             val placed = instance.trapManager.place(bot.getId, bot.getTeamId, at.getX, at.getY,
               trapType, System.currentTimeMillis())
             if (placed == null) false
@@ -257,11 +227,10 @@ trait BotCombat { this: BotController =>
         }
 
       case BarrierCast(durationMs) =>
-        // Up only while the bot can't strike its target — out of its reach, or behind terrain.
-        // Able to, it attacks, and that drops a barrier: raised then, it came straight down again.
-        if (bot.hasBarrier || canStrike(bot, target, dist)) return false
-        // And only against what it will stop: a target who can shoot the bot from where they
-        // stand with shots that don't fly through walls, or such a shot coming at its front
+        // Only against what it will stop: a target who can shoot the bot from where they stand
+        // with shots that don't fly through walls, or such a shot coming at its front. It stays
+        // up for its whole time while the bot goes on attacking, so in reach or not, it goes up.
+        if (bot.hasBarrier) return false
         val facing = Math.atan2(ndy, ndx).toFloat
         val underFire = firesStoppableShotsAt(target, bot, dist) ||
           incomingShot(bot, Math.cos(facing).toFloat, Math.sin(facing).toFloat)
@@ -279,16 +248,11 @@ trait BotCombat { this: BotController =>
     val maxRange = getMaxRange(bot.getCharacterId)
     if (dist > maxRange) return
 
-    // Behind a barrier, it holds its fire until the shot can land. It used to throw at a target
-    // behind a wall as readily as at one in the open, dropping the barrier to hit the wall.
-    if (bot.hasBarrier && !canStrike(bot, target, dist)) return
-
     val lastShot = lastShotTime.getOrDefault(bot.getId, 0L)
     val cooldown = botShootCooldown.getOrDefault(bot.getId, SHOOT_COOLDOWN_MIN_MS)
     if (now - lastShot < cooldown) return
 
     lastShotTime.put(bot.getId, now)
-    lowerBarrier(bot)
     // Randomize next cooldown slightly
     botShootCooldown.put(bot.getId, SHOOT_COOLDOWN_MIN_MS + scala.util.Random.nextLong(SHOOT_COOLDOWN_MAX_MS - SHOOT_COOLDOWN_MIN_MS))
 

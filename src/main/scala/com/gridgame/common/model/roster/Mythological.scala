@@ -149,7 +149,7 @@ private[model] object Mythological {
     id = CharacterId.Golem, displayName = "Golem",
     description = "An immovable stone fortress that raises walls and roots anyone who comes close.",
     spriteSheet = "sprites/golem.png",
-    qAbility = AbilityDef(name = "Stone Wall", description = "Raises a wall of stone that stops enemy shots until you attack.", cooldownMs = 14000, maxRange = 0, damage = 0, projectileType = -3, keybind = "Q", castBehavior = BarrierCast(3500)),
+    qAbility = AbilityDef(name = "Stone Wall", description = "Raises a wall of stone that stops enemy shots, even while you attack.", cooldownMs = 14000, maxRange = 0, damage = 0, projectileType = -3, keybind = "Q", castBehavior = BarrierCast(3500)),
     eAbility = AbilityDef(name = "Tremor Slam", description = "Slams the ground, rooting nearby enemies.", cooldownMs = 20000, maxRange = 0, damage = 30, projectileType = ProjectileType.TREMOR_SLAM, keybind = "E", castBehavior = GroundSlam(6.0f)),
     primaryProjectileType = ProjectileType.BOULDER, role = Skirmisher, maxHealth = 150, moveSpeed = Skirmisher.speed
   )

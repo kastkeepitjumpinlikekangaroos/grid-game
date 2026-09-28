@@ -126,7 +126,7 @@ private[model] object Beasts {
     id = CharacterId.Beetle, displayName = "Beetle",
     description = "An armored tank that shields in its shell and slams the ground.",
     spriteSheet = "sprites/beetle.png",
-    qAbility = AbilityDef(name = "Carapace", description = "Braces your shell into a wall that stops enemy shots until you attack.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -3, keybind = "Q", castBehavior = BarrierCast(3000)),
+    qAbility = AbilityDef(name = "Carapace", description = "Braces your shell into a wall that stops enemy shots, even while you attack.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -3, keybind = "Q", castBehavior = BarrierCast(3000)),
     eAbility = AbilityDef(name = "Tremor Slam", description = "Slams the ground, rooting nearby enemies.", cooldownMs = 14000, maxRange = 0, damage = 30, projectileType = ProjectileType.TREMOR_SLAM, keybind = "E", castBehavior = GroundSlam(6.0f)),
     primaryProjectileType = ProjectileType.BOULDER, role = Skirmisher, maxHealth = 145, moveSpeed = Skirmisher.speed
   )

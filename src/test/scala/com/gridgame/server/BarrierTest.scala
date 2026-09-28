@@ -302,7 +302,7 @@ class BarrierTest {
   @Test def aRaiseBeforeTheCooldownIsIgnored(): Unit = {
     val holder = m.join(CharacterId.Crusader, 20, 30)
     raise(m, holder)
-    m.move(holder, 20, 30) // down early
+    m.move(holder, 20, 30) // its client's word that it is down
     assertFalse(holder.hasBarrier)
     raise(m, holder)
     assertFalse("the cooldown counts from the raise", holder.hasBarrier)
@@ -337,26 +337,35 @@ class BarrierTest {
     assertFalse(soldier.hasBarrier)
   }
 
-  @Test def firingDropsIt(): Unit = {
-    val holder = m.join(CharacterId.Crusader, 20, 30)
-    val watcher = m.join(CharacterId.Gladiator, 40, 40)
+  @Test def itLastsItsWholeTimeWhateverItsHolderFiresOrCasts(): Unit = {
+    // A Gladiator behind the Scutum, striking with the axe out through it and throwing the rope.
+    // Each used to drop it, so it was gone a moment after it went up.
+    val holder = m.join(CharacterId.Gladiator, 20, 30)
+    val enemy = m.join(CharacterId.Soldier, 30, 30)
     raise(m, holder)
+    val until = holder.getBarrierUntil
+    assertEquals("the Scutum's 3s", holder.getBarrierRaisedAt + 3000, until)
     m.clearSent()
-    assertEquals(1, m.fire(holder, AttackSlot.PRIMARY, ProjectileType.HOLY_BLADE, Seq((1f, 0f))).size)
-    assertFalse(holder.hasBarrier)
-    assertTrue("and everyone is told", m.updatesAbout(m.udpSent(watcher), holder).exists(u => (u.getEffectFlags2 & BARRIER) == 0))
+    assertEquals(1, m.fire(holder, AttackSlot.PRIMARY, ProjectileType.AXE, Seq((1f, 0f))).size)
+    assertEquals(1, m.fire(holder, AttackSlot.E, ProjectileType.ROPE, Seq((0f, -1f))).size)
+    assertTrue(holder.hasBarrier)
+    assertEquals("it comes down when it always would", until, holder.getBarrierUntil)
+    assertTrue("nobody is told it is down",
+      m.updatesAbout(m.udpSent(enemy), holder).forall(u => (u.getEffectFlags2 & BARRIER) != 0))
+    m.tickUntilGone(m.launch(enemy, ProjectileType.BULLET, -1f, 0f))
+    assertTrue("and it still stops their shots", unhurt(holder))
   }
 
-  @Test def castingDropsIt(): Unit = {
+  @Test def aSlamCastBehindItLeavesItUp(): Unit = {
     val holder = m.join(CharacterId.Crusader, 20, 30)
     raise(m, holder)
     assertEquals(1, m.fire(holder, AttackSlot.E, ProjectileType.SHOCKWAVE, Seq((0f, 0f))).size)
-    assertFalse(holder.hasBarrier)
+    assertTrue(holder.hasBarrier)
   }
 
   // --- Bots ---
 
-  @Test def aBotRaisesItAgainstAGunItCannotReachAndDropsItToAttack(): Unit = {
+  @Test def aBotRaisesItAgainstAGunAndStrikesThroughIt(): Unit = {
     val bot = m.join(CharacterId.Crusader, 20, 30)
     val soldier = m.join(CharacterId.Soldier, 32, 30) // 12 cells: in a bullet's range, out of a blade's
     val bots = new BotController(m.instance)
@@ -367,10 +376,24 @@ class BarrierTest {
       assertEquals("facing the soldier", 0.0, bot.getBarrierAngle, 0.15)
       m.tickUntilGone(m.launch(soldier, ProjectileType.BULLET, -1f, 0f))
       assertTrue("and it stops their shots", unhurt(bot))
-      // Close enough to strike, it drops it to
+      // Close enough to strike, it strikes, and the barrier stays up
       soldier.setPosition(new Position(bot.getPosition.getX + 3, bot.getPosition.getY))
       bots.tick()
-      assertFalse(bot.hasBarrier)
+      assertTrue("struck", m.instance.projectileManager.getAll.exists(_.ownerId == bot.getId))
+      assertTrue("still up", bot.hasBarrier)
+    } finally bots.stop()
+  }
+
+  @Test def aBotInReachOfAGunRaisesItToo(): Unit = {
+    // It used to leave it down whenever it could strike, since striking would have dropped it
+    val bot = m.join(CharacterId.Crusader, 20, 30)
+    m.join(CharacterId.Soldier, 23, 30)
+    val bots = new BotController(m.instance)
+    try {
+      bots.addBotId(bot.getId)
+      bots.tick()
+      assertTrue(bot.hasBarrier)
+      assertTrue("and strikes behind it", m.instance.projectileManager.getAll.exists(_.ownerId == bot.getId))
     } finally bots.stop()
   }
 
@@ -422,9 +445,9 @@ class BarrierTest {
     } finally bots.stop()
   }
 
-  @Test def aBotDoesNotCastItsBarrierAwayAsSoonAsItIsUp(): Unit = {
-    // The Gladiator's rope reaches 25 cells, and was thrown the moment the barrier went up — which
-    // took the barrier straight down again, spent for nothing
+  @Test def aBotThrowsItsRopeWithItsBarrierUp(): Unit = {
+    // The Gladiator's rope reaches 25 cells. Thrown the tick the barrier went up, it used to take
+    // the barrier straight down again; it goes out through it now, and the barrier stays up
     val bot = m.join(CharacterId.Gladiator, 20, 30)
     m.join(CharacterId.Soldier, 32, 30)
     val bots = new BotController(m.instance)
@@ -432,31 +455,8 @@ class BarrierTest {
       bots.addBotId(bot.getId)
       bots.tick()
       assertTrue(bot.hasBarrier)
-      assertTrue("nothing thrown", m.instance.projectileManager.getAll.forall(_.ownerId != bot.getId))
-    } finally bots.stop()
-  }
-
-  @Test def aBotHoldsItUpRatherThanThrowAtAWall(): Unit = {
-    // Stopped by a wall with its target just beyond it, in its axe's reach, a bot used to drop its
-    // barrier and throw at the wall
-    val t = new TestMatch()
-    for (y <- 25 to 35) t.world.setTile(22, y, Tile.Wall)
-    val bot = t.join(CharacterId.Gladiator, 20, 30)
-    val soldier = t.join(CharacterId.Soldier, 20, 42) // 12 cells down the open side of the wall
-    val bots = new BotController(t.instance)
-    try {
-      bots.addBotId(bot.getId)
-      bots.tick()
-      assertTrue(bot.hasBarrier)
-      soldier.setPosition(new Position(24, 30)) // 4 cells off, the wall between them
-      bots.tick()
-      assertTrue("still up", bot.hasBarrier)
-      assertTrue("and nothing thrown at the wall", t.instance.projectileManager.getAll.forall(_.ownerId != bot.getId))
-      // In the open and in reach, it drops it to strike
-      soldier.setPosition(new Position(bot.getPosition.getX, bot.getPosition.getY + 3))
-      bots.tick()
-      assertFalse(bot.hasBarrier)
-      assertTrue(t.instance.projectileManager.getAll.exists(_.ownerId == bot.getId))
+      assertTrue("the rope thrown", m.instance.projectileManager.getAll
+        .exists(p => p.ownerId == bot.getId && p.projectileType == ProjectileType.ROPE))
     } finally bots.stop()
   }
 

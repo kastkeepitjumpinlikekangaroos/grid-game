@@ -133,7 +133,6 @@ trait Attacks { this: GameClient =>
     if (isDead || isPhased || isFrozen) return
     if (attacksLocked) return // the opening ceasefire of a free-for-all (MatchOpening)
     if (isPracticeMode) practiceShots += 1
-    dropBarrier()
 
     val pos = localPosition.get()
     val chargeByte = Math.min(100, Math.max(0, chargeLevel)).toByte
@@ -169,7 +168,6 @@ trait Attacks { this: GameClient =>
   def shootAllDirections(): Unit = {
     if (isDead || isPhased || isFrozen) return
     if (attacksLocked) return // it is the primary in eight directions, so the ceasefire holds it too
-    dropBarrier()
 
     val pos = localPosition.get()
 
@@ -228,8 +226,6 @@ trait Attacks { this: GameClient =>
     }
 
     lastAbilityTime.set(now)
-    // Casting anything drops a raised barrier. (Raising one can't: it is on cooldown while up.)
-    dropBarrier()
 
     // Track cast flash direction
     val (castDx, castDy) = getAimDirection
