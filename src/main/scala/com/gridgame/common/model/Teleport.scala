@@ -75,11 +75,26 @@ object Teleport {
 
   /**
    * Knockback and vortex pulls: the same straight walk as a blink, up to `cells` along
-   * (dirX, dirY), stopping before the first cell that can't be stood on. They used to take the
-   * farthest open cell along the line whatever lay between, which carried players through walls.
+   * (dirX, dirY), stopping before the first cell that can't be stood on, and before a diagonal
+   * step past a wall's corner, as a step stops (WorldData.cornersOpen). A push is drawn sliding
+   * over the ground, and one that cut a corner slid the player through the wall; a blink is a
+   * jump, and may still pass one. They used to take the farthest open cell along the line
+   * whatever lay between, which carried players through walls.
    */
-  def slide(world: WorldData, fromX: Int, fromY: Int, dirX: Double, dirY: Double, cells: Int): Position =
-    blinkTarget(world, fromX, fromY, dirX, dirY, cells)
+  def slide(world: WorldData, fromX: Int, fromY: Int, dirX: Double, dirY: Double, cells: Int): Position = {
+    var bestX = fromX
+    var bestY = fromY
+    var step = 1
+    while (step <= cells) {
+      val x = Math.max(0, Math.min(world.width - 1, Math.round(fromX + dirX * step).toInt))
+      val y = Math.max(0, Math.min(world.height - 1, Math.round(fromY + dirY * step).toInt))
+      if (!world.isWalkable(x, y) || !world.cornersOpen(bestX, bestY, x - bestX, y - bestY)) return new Position(bestX, bestY)
+      bestX = x
+      bestY = y
+      step += 1
+    }
+    new Position(bestX, bestY)
+  }
 
   /**
    * Server side: is a jump of (dx, dy) within reach of a blink or dash of range maxDistance?

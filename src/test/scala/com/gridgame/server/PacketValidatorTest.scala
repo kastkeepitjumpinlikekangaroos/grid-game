@@ -8,6 +8,7 @@ import com.gridgame.common.model.CharacterId
 import com.gridgame.common.model.Movement
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
+import com.gridgame.common.model.Tile
 import com.gridgame.common.model.WorldData
 import com.gridgame.common.protocol.PlayerUpdatePacket
 import org.junit.Assert._
@@ -119,6 +120,21 @@ class PacketValidatorTest {
     val twiceAsQuick = new PacketValidator(id => CharacterDef.get(id).copy(moveSpeed = 2.0f))
     assertTrue("a character twice as quick", walk(twiceAsQuick, 10, 110))
     assertFalse("the Soldier at a ranged character's 1.0", walk(new PacketValidator(), 10, 110))
+  }
+
+  @Test def aDiagonalStepPastAWallsCornerIsRefused(): Unit = {
+    // As the client and the bots take one: between open cells only
+    val world = WorldData.createEmpty(60, 60)
+    world.setTile(21, 20, Tile.Wall)
+    val p = new Player(UUID.randomUUID(), "walker", new Position(20, 20), 0)
+    p.setCharacterId(CharacterId.Soldier.id)
+    def to(seq: Int, x: Int, y: Int) = new PlayerUpdatePacket(seq, p.getId, 0, new Position(x, y), 0, 100, 0, 0,
+      p.getCharacterId, 0.toByte, 0)
+    val v = new PacketValidator()
+    assertFalse("past the wall's corner", v.validateMovement(to(1, 21, 21), p, world))
+    assertTrue("the other way, past none", v.validateMovement(to(2, 19, 21), p, world))
+    p.setPhasedUntil(System.currentTimeMillis() + 5000)
+    assertTrue("phased, through it", v.validateMovement(to(3, 21, 21), p, world))
   }
 
   @Test def aOneSpeedCharacterIsStillRefusedBeyondTheAllowance(): Unit = {

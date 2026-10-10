@@ -11,9 +11,10 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
 
 - `common/` — the model, the wire protocol (every packet round-trips in `PacketRoundTripTest`),
   telemetry's exporters giving up on a collector and trying it again (`ExportGiveUpGateTest`),
-  the roster's data (`CharacterRosterTest`), and the maps (`WorldMapsTest`: spawns on open
-  ground, all open ground one region). `ProjectileDefRegistryTest` must be the first thing in its
-  JVM to look a projectile up, which is why it is a target, and a single test, of its own.
+  the roster's data (`CharacterRosterTest`, every sprite sheet within its tile too), and the maps
+  (`WorldMapsTest`: spawns on open ground, all open ground one region). `ProjectileDefRegistryTest`
+  must be the first thing in its JVM to look a projectile up, which is why it is a target, and a
+  single test, of its own.
 - `server/` — matches driven by hand through `ServerTestKit.scala`: `TestMatch` builds a
   `GameInstance` that is begun but never started (`GameInstance.begin`), so the test calls
   `tickProjectiles` / `tickPlayers` / `respawn` itself; every player gets an `EmbeddedChannel` for
@@ -43,7 +44,10 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
 - `client/render`, `client/gl` — the camera (`CameraTest`: the isometric mapping, the pixel grid,
   whether the view has run off the map), the light pool (`LightPoolTest`), and how other players
   are drawn (`RemoteMotionTest`: an even pace under jitter, never past where they stopped or a dash
-  ended, corners turned where they were heard turning, jumps drawn at once, knockbacks slid), and
+  ended, corners turned where they were heard turning, jumps drawn at once, knockbacks slid), the
+  depth pass's order (`DepthOrderTest`: us sorted where we are drawn, not on the cell we stand on;
+  a diagonal's entities back to front; every wall a sprite overlaps on the right side of it all
+  along every step; the diagonal walk visiting exactly the cells on screen), and
   where a charged shot's aim lane stops (`AimLaneTest`: where the shot would, at a wall's face or the
   map's edge, over water but not lava, at only a fence for a shot that flies over walls), and the
   mouse's pointer (`CursorTest`: its picture whole at every pixel scale, the dot on the hotspot, put
@@ -94,8 +98,8 @@ pinned with `ProjectileDef`s registered by the test itself, on ids the game does
 `TestEffects` at the foot of `OnHitEffectsTest`. Each test file gets its own JVM, so a test-only
 registration can't leak into another suite. Bots are walked on a clock of the test's own
 (`BotController.tick(now)`), so `BotMovementTest` covers ten seconds of their pace in no time, and
-`BotPathingTest` walks them round walls on every map (the maps are its `data`), in a free-for-all's
-opening so they hold their fire. `TrapDef.register` is the same door for a trap the
+`BotPathingTest` walks them round walls on every map (the maps are its `data`), never past a wall's
+corner, in a free-for-all's opening so they hold their fire. `TrapDef.register` is the same door for a trap the
 roster hasn't got — a poison short enough for a test to sit through (`TestTraps` in `TrapTest`).
 A character the roster doesn't have (one quicker
 than any in it) goes through `PacketValidator`'s `characterOf` parameter instead — see

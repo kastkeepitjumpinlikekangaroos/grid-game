@@ -59,21 +59,23 @@ trait LocalMovement { this: GameClient =>
     val targetX = Math.max(0, Math.min(world.width - 1, current.getX + dx))
     val targetY = Math.max(0, Math.min(world.height - 1, current.getY + dy))
 
-    // The opening divider stops a phase as surely as a wall stops a walk, and neither can be
-    // crossed: the server refuses a step over it, so taking one here would only rubber-band us
+    // A wall stops a walk, its corner too: a diagonal step goes between open cells only
+    // (WorldData.canStep), as the server and the bots step. The opening divider stops a phase as
+    // surely as a wall stops a walk, and neither can be crossed: the server refuses a step over it,
+    // so taking one here would only rubber-band us
     val divider = world.divider
-    def canStand(tx: Int, ty: Int): Boolean =
-      (isPhased || world.isWalkable(tx, ty)) &&
+    def canStep(tx: Int, ty: Int): Boolean =
+      (isPhased || world.canStep(current.getX, current.getY, tx - current.getX, ty - current.getY)) &&
         (divider == null || !divider.stops(current.getX, current.getY, tx, ty))
 
-    if (canStand(targetX, targetY)) {
+    if (canStep(targetX, targetY)) {
       finalX = targetX
       finalY = targetY
     } else if (dx != 0 && dy != 0) {
-      // Diagonal blocked — try sliding along each axis
-      if (canStand(targetX, current.getY)) {
+      // Diagonal blocked, or past a wall's corner — slide along whichever axis is open
+      if (canStep(targetX, current.getY)) {
         finalX = targetX
-      } else if (canStand(current.getX, targetY)) {
+      } else if (canStep(current.getX, targetY)) {
         finalY = targetY
       }
     }
@@ -87,9 +89,15 @@ trait LocalMovement { this: GameClient =>
       moveInterpFromY = current.getY.toDouble
       moveInterpToX = finalX.toDouble
       moveInterpToY = finalY.toDouble
-      if (prevMoveTimestamp > 0) {
-        moveInterpDurationMs = Math.max(16, now - prevMoveTimestamp)
-      }
+      // We glide to the new cell over the time until the next step: the gap since the last one,
+      // which is the pace while a key is held. A step after standing still has no such gap, and
+      // glides over the step's own interval (twice it for a pure left or right, as the input
+      // handlers wait twice as long for one). It used to glide over the whole time stood still: a
+      // tap after a few seconds slid one cell over those seconds, the camera with it.
+      val interval = moveStepIntervalMs.toLong * (if (dx != 0 && dy != 0 && dx != dy) 2 else 1)
+      val gap = now - prevMoveTimestamp
+      // A gap of two intervals is a fresh start, as it is to the input handlers (Movement.nextStepFrom)
+      moveInterpDurationMs = if (prevMoveTimestamp == 0L || gap >= 2 * interval) interval else Math.max(16L, gap)
       prevMoveTimestamp = now
       moveInterpStartTime = now
 

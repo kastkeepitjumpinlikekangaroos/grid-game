@@ -1,9 +1,11 @@
 package com.gridgame.common.model
 
+import com.gridgame.common.Constants
 import org.junit.Assert._
 import org.junit.Test
 
 import java.io.File
+import javax.imageio.ImageIO
 
 /**
  * The roster is data, 112 characters of it, and the game trusts it everywhere: the server
@@ -119,6 +121,31 @@ class CharacterRosterTest {
   @Test def everySpriteSheetIsThere(): Unit = {
     // Bundled from sprites/ (a data dependency of this test)
     for (c <- all) assertTrue(c.spriteSheet, new File(c.spriteSheet).isFile)
+  }
+
+  @Test def everyCharacterFitsInsideItsTile(): Unit = {
+    // The renderer puts a sprite in front of a wall or behind it as one no wider than its tile
+    // (client/render/CLAUDE.md, *Everything is sorted where it is drawn*): whatever reaches past
+    // the tile lies over the corner of a wall level with it. The Chameleon's tongue reached 22
+    // units out, at the 48 a sprite is drawn at, on a tile 20 either side of its middle.
+    val frame = Constants.SPRITE_SIZE_PX
+    val scale = Constants.PLAYER_DISPLAY_SIZE_PX.toDouble / frame
+    for (c <- all) {
+      val sheet = ImageIO.read(new File(c.spriteSheet))
+      val argb = sheet.getRGB(0, 0, sheet.getWidth, sheet.getHeight, null, 0, sheet.getWidth)
+      var widest = 0
+      var i = 0
+      while (i < argb.length) {
+        // Anything more than faintly there: the antialiased fringe is not the sprite
+        if ((argb(i) >>> 24) > 32) {
+          val x = (i % sheet.getWidth) % frame
+          widest = Math.max(widest, Math.max(frame / 2 - x, x + 1 - frame / 2))
+        }
+        i += 1
+      }
+      assertTrue(s"${c.spriteSheet} reaches ${widest * scale} either side",
+        widest * scale <= Constants.ISO_HALF_W)
+    }
   }
 
   @Test def keybindsAreQAndE(): Unit = {

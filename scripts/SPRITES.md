@@ -19,6 +19,12 @@ Each sprite sheet contains 4 directions x 4 animation frames. Frame 0 of each ro
 pose (the renderer shows it whenever a player stands still), so the walk is stand / stride / stand /
 stride.
 
+**A character stays inside its tile**: nothing in any frame more than 26.6 of the 64 authoring units
+either side of the frame's middle, which is 20 of the 48 it is drawn at, a tile's half-width. The
+renderer puts a sprite in front of a wall or behind it as one no wider than its tile, so whatever
+reaches past it lies over the corner of a wall level with it, as the Chameleon's tongue did until it
+was drawn shorter. `CharacterRosterTest` checks every sheet.
+
 **Every script goes through `sprite_base.generate_character`** — the individual
 ones only own their `draw_<name>` function, they do not run their own render
 loop. That single chokepoint is what lets a rendering change apply to all 112

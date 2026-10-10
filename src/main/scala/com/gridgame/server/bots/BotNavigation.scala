@@ -77,12 +77,13 @@ trait BotNavigation { this: BotController =>
     }
   }
 
-  /** Move bot one step. Returns true if moved. */
+  /** Move bot one step, a diagonal one only between open cells (WorldData.cornersOpen), as a
+    * player steps. Returns true if moved. */
   private def applyStep(bot: Player, dx: Int, dy: Int): Boolean = {
     val botPos = bot.getPosition
     val nx = botPos.getX + dx
     val ny = botPos.getY + dy
-    if (canMoveTo(nx, ny, bot.getId)) {
+    if (canMoveTo(nx, ny, bot.getId) && instance.world.cornersOpen(botPos.getX, botPos.getY, dx, dy)) {
       bot.setPosition(new Position(nx, ny))
       bot.setDirection(Direction.fromMovement(dx, dy))
       stepped(botPos.getX, botPos.getY, nx, ny)
@@ -108,16 +109,18 @@ trait BotNavigation { this: BotController =>
   }
 
   /** Is the straight way from (x, y) to (tx, ty) open — every cell of it one a bot can stand on,
-    * the diagonal steps first, as [[stepStraight]] takes it? Someone standing on it is no matter:
-    * a step onto them goes round. */
+    * and no wall's corner cut on the way, the diagonal steps first, as [[stepStraight]] takes it?
+    * Someone standing on it is no matter: a step onto them goes round. */
   private def straightWayOpen(botId: UUID, x: Int, y: Int, tx: Int, ty: Int): Boolean = {
     val world = instance.world
     var cx = x
     var cy = y
     while (cx != tx || cy != ty) {
-      cx += Integer.signum(tx - cx)
-      cy += Integer.signum(ty - cy)
-      if (!world.isWalkable(cx, cy) || trapBlocks(cx, cy, botId)) return false
+      val sx = Integer.signum(tx - cx)
+      val sy = Integer.signum(ty - cy)
+      if (!world.canStep(cx, cy, sx, sy) || trapBlocks(cx + sx, cy + sy, botId)) return false
+      cx += sx
+      cy += sy
     }
     true
   }
@@ -329,7 +332,7 @@ trait BotNavigation { this: BotController =>
     val y = bot.getPosition.getY
     var k = 2
     while (k <= BACK_OFF_ROOM) {
-      if (!world.isWalkable(x + dx * k, y + dy * k) || trapBlocks(x + dx * k, y + dy * k, bot.getId)) return false
+      if (!world.canStep(x + dx * (k - 1), y + dy * (k - 1), dx, dy) || trapBlocks(x + dx * k, y + dy * k, bot.getId)) return false
       k += 1
     }
     strafeTo(bot, target, dx, dy)

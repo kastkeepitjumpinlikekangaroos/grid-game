@@ -30,11 +30,12 @@ private[bots] final class BotRoute {
  * The searches behind a bot's steps (BotNavigation), on the match's grid: the way to a cell round
  * whatever stands between (A*), and a look round the bot a few steps out (breadth first).
  *
- * A bot steps to any of the eight cells round it, and a step takes as long whichever it is, so a
- * way is measured in steps; a diagonal costs a hair more than a straight step, so that of the
- * shortest ways the straightest is taken. In the way: every cell nobody can stand on (the opening's
- * divider too), an enemy's armed trap, and anyone standing near the bot (further off, they will
- * have moved by the time it gets there).
+ * A bot steps to any of the eight cells round it, a diagonal one only between open cells
+ * (WorldData.cornersOpen, as a player steps), and a step takes as long whichever it is, so a way is
+ * measured in steps; a diagonal costs a hair more than a straight step, so that of the shortest ways
+ * the straightest is taken. In the way: every cell nobody can stand on (the opening's divider too),
+ * an enemy's armed trap, and anyone standing near the bot (further off, they will have moved by the
+ * time it gets there).
  *
  * The scratch arrays are the world's size and are reused from one search to the next: a match's
  * bots have a thread of their own. A cell is marked as seen by a search with that search's number,
@@ -115,14 +116,14 @@ trait BotPaths { this: BotController =>
   private[bots] def standsAt(x: Int, y: Int): Boolean =
     x >= 0 && y >= 0 && x < gridW && y < gridH && standing(y * gridW + x) == standingMark
 
-  /** Is every cell round (x, y) one nobody can stand on, or one somebody stands on? */
+  /** Is every cell round (x, y) one nobody can stand on or step to, or one somebody stands on? */
   private[bots] def surrounded(x: Int, y: Int): Boolean = {
     val world = instance.world
     var d = 0
     while (d < 8) {
       val nx = x + STEP_X(d)
       val ny = y + STEP_Y(d)
-      if (world.isWalkable(nx, ny) && !standsAt(nx, ny)) return false
+      if (world.canStep(x, y, STEP_X(d), STEP_Y(d)) && !standsAt(nx, ny)) return false
       d += 1
     }
     true
@@ -192,7 +193,8 @@ trait BotPaths { this: BotController =>
             val ny = cy + STEP_Y(d)
             if (nx >= 0 && ny >= 0 && nx < w && ny < gridH) {
               val n = ny * w + nx
-              if (closedIn(n) != id && (n == goal || (world.isWalkable(nx, ny) && !trapBlocks(nx, ny, botId) &&
+              if (closedIn(n) != id && (d < 4 || world.cornersOpen(cx, cy, STEP_X(d), STEP_Y(d))) &&
+                  (n == goal || (world.isWalkable(nx, ny) && !trapBlocks(nx, ny, botId) &&
                   !(standsAt(nx, ny) && (crowded || Math.max(Math.abs(nx - sx), Math.abs(ny - sy)) <= CROWD_CELLS))))) {
                 val g = here + (if (d < 4) STEP else DIAGONAL)
                 if (seenIn(n) != id || g < cost(n)) {
@@ -258,7 +260,8 @@ trait BotPaths { this: BotController =>
           val ny = cy + STEP_Y(d)
           if (nx >= 0 && ny >= 0 && nx < w && ny < gridH) {
             val n = ny * w + nx
-            if (seenIn(n) != id && world.isWalkable(nx, ny) && !trapBlocks(nx, ny, botId) && !standsAt(nx, ny)) {
+            if (seenIn(n) != id && world.canStep(cx, cy, STEP_X(d), STEP_Y(d)) && !trapBlocks(nx, ny, botId) &&
+                !standsAt(nx, ny)) {
               seenIn(n) = id
               cost(n) = depth + 1
               cameFrom(n) = c

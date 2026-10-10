@@ -149,6 +149,40 @@ class GameClientPositionTest {
     assertEquals((10, 11), w.at)
   }
 
+  @Test def aDiagonalStepGoesRoundAWallsCornerNotThroughIt(): Unit = {
+    // Cutting the corner, our sprite stood in the wall for half the step, on every screen
+    val world = WorldData.createEmpty(30, 30)
+    world.setTile(11, 10, Tile.Wall)
+    val w = new TestClient(world)
+    w.startMatch(spawn = (10, 10))
+    w.client.movePlayer(1, 1)
+    assertEquals("along the open side", (10, 11), w.at)
+    w.client.movePlayer(1, 1)
+    assertEquals("and on past it", (11, 12), w.at)
+  }
+
+  @Test def betweenTwoBlocksTouchingAtACornerThereIsNoWay(): Unit = {
+    val world = WorldData.createEmpty(30, 30)
+    world.setTile(11, 10, Tile.Wall)
+    world.setTile(10, 11, Tile.Rock)
+    val w = new TestClient(world)
+    w.startMatch(spawn = (10, 10))
+    w.client.movePlayer(1, 1)
+    assertEquals((10, 10), w.at)
+    assertTrue("nothing to tell the server", w.sentUpdates.isEmpty)
+  }
+
+  @Test def aStepAfterStandingStillGlidesOverAStepNotTheWait(): Unit = {
+    // A tap after a few seconds stood still glided one cell over those seconds, the camera with it
+    t.startMatch(spawn = (10, 10))
+    c.movePlayer(1, 0)
+    Thread.sleep(400)
+    c.movePlayer(1, 0)
+    Thread.sleep(3L * c.moveStepIntervalMs)
+    c.updateVisualPosition()
+    assertEquals("there a step's glide later", 12.0, c.visualPosX, 1e-9)
+  }
+
   @Test def aBlinkStopsBeforeAWall(): Unit = {
     val world = WorldData.createEmpty(30, 30)
     world.setTile(14, 10, Tile.Wall)

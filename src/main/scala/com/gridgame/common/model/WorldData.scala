@@ -43,6 +43,23 @@ class WorldData(
     isWalkable(pos.getX, pos.getY)
   }
 
+  /**
+   * May one step from (fromX, fromY) to the cell (dx, dy) away, one of the eight round it? Onto a
+   * cell one can stand on, and, for a diagonal step, between two that are open too
+   * ([[cornersOpen]]). Steps, the bots' ways round walls, and pushes and pulls all go by it.
+   */
+  def canStep(fromX: Int, fromY: Int, dx: Int, dy: Int): Boolean =
+    isWalkable(fromX + dx, fromY + dy) && cornersOpen(fromX, fromY, dx, dy)
+
+  /**
+   * A diagonal step from (fromX, fromY) by (dx, dy) passes the corner the two cells beside it
+   * share: are both of them open? A straight step passes none. A step that cut a wall's corner
+   * had the player's sprite in the wall for half of it, on every screen, and one between two
+   * blocks touching at a corner went through a wall that looks whole.
+   */
+  def cornersOpen(fromX: Int, fromY: Int, dx: Int, dy: Int): Boolean =
+    dx == 0 || dy == 0 || (isWalkable(fromX + dx, fromY) && isWalkable(fromX, fromY + dy))
+
   def setTile(x: Int, y: Int, tile: Tile): Boolean = {
     if (x >= 0 && x < width && y >= 0 && y < height) {
       tiles(y)(x) = tile

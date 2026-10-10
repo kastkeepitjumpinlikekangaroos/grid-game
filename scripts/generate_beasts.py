@@ -1050,9 +1050,12 @@ def draw_chameleon(draw, ox, oy, direction, frame):
         stroke(draw, [(hx + d * 5.0, hy + 4.2), (hx + d * 8.6, hy + 3.4)], 0.6, shade(col, 1.8))
         Ell(hx - d * 2.6, hy + 3.0, 1.4, 1.1).draw(draw, fill=spot)
         if frame == 2:
-            # the tongue, snapping out
-            stroke(draw, [(hx + d * 8.6, hy + 3.6), (hx + d * 16.0, hy + 2.4)], 1.0, (240, 110, 140))
-            cel(draw, Ell(hx + d * 16.6, hy + 2.4, 2.0, 2.0), (240, 110, 140), sh=None, lw=0.5)
+            # the tongue, snapping out to the edge of the tile and no further: the renderer puts a
+            # sprite in front of or behind a wall as one no wider than its tile (client/render/
+            # CLAUDE.md, *Everything is sorted where it is drawn*), and out at 16.6 it lay over the
+            # corner of a wall beside it
+            stroke(draw, [(hx + d * 8.6, hy + 3.6), (hx + d * 13.2, hy + 2.6)], 1.0, (240, 110, 140))
+            cel(draw, Ell(hx + d * 13.8, hy + 2.6, 1.8, 1.8), (240, 110, 140), sh=None, lw=0.5)
         return
     # head-on / from behind: a big head on a squat body, legs splayed like a frog's
     for s in (-1, 1):

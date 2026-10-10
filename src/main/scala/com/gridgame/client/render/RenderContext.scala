@@ -63,9 +63,12 @@ private[render] final class RenderContext(val client: GameClient, clock: FrameCl
   val tileCellH = Constants.TILE_CELL_HEIGHT.toFloat // 56
 
   // ── The cells on screen ──
-  // Rows viewStartY..viewEndY; in each row, the cells whose diamond is on screen, which run from
-  // rowLo(wy, 0) to rowHi(wy, 0) — or `pad` cells further for the entities, which hang above their
-  // own cell. In the projection's own axes, u = wx - wy across and v = wx + wy down.
+  // In the projection's own axes, u = wx - wy across and v = wx + wy down. A cell is on screen
+  // when its u and v are in [uMin, uMax] and [vMin, vMax], which allow for a block rising above its
+  // diamond. The window viewStartX..viewEndX x viewStartY..viewEndY is the box round them, clamped
+  // to the world, and a few cells wider for the entities, which hang above their own cell. The
+  // ground is walked a row at a time (rowLo, rowHi), the depth pass a diagonal at a time (diagLo,
+  // diagHi).
   var viewStartX = 0
   var viewEndX = 0
   var viewStartY = 0
@@ -80,11 +83,22 @@ private[render] final class RenderContext(val client: GameClient, clock: FrameCl
     viewUMin = uMin; viewUMax = uMax; viewVMin = vMin; viewVMax = vMax
   }
 
-  // Per-row x bounds: wx - wy in [uMin, uMax] and wx + wy in [vMin, vMax].
-  @inline def rowLo(wy: Int, pad: Int): Int =
-    Math.max(viewStartX, Math.max(wy + viewUMin, viewVMin - wy).floor.toInt - pad)
-  @inline def rowHi(wy: Int, pad: Int): Int =
-    Math.min(viewEndX, Math.min(wy + viewUMax, viewVMax - wy).ceil.toInt + pad)
+  // Row wy's cells on screen, from rowLo(wy) to rowHi(wy): wx - wy in [uMin, uMax] and
+  // wx + wy in [vMin, vMax].
+  @inline def rowLo(wy: Int): Int =
+    Math.max(viewStartX, Math.max(wy + viewUMin, viewVMin - wy).floor.toInt)
+  @inline def rowHi(wy: Int): Int =
+    Math.min(viewEndX, Math.min(wy + viewUMax, viewVMax - wy).ceil.toInt)
+
+  // Diagonal v's cells (wx, v - wx) on screen, from diagLo(v) to diagHi(v): 2wx - v in
+  // [uMin, uMax], and none (lo > hi) on a diagonal above the screen or below it. Exactly those:
+  // rounded in, since a cell is on screen only if its u and v are inside the bounds.
+  @inline def diagLo(v: Int): Int =
+    if (v < viewVMin.ceil || v > viewVMax.floor) Int.MaxValue
+    else Math.max(Math.max(viewStartX, v - viewEndY), ((v + viewUMin) * 0.5).ceil.toInt)
+  @inline def diagHi(v: Int): Int =
+    if (v < viewVMin.ceil || v > viewVMax.floor) Int.MinValue
+    else Math.min(Math.min(viewEndX, v - viewStartY), ((v + viewUMax) * 0.5).floor.toInt)
 
   // ── Batch management ──
   // Track active batch to avoid redundant begin/end pairs.

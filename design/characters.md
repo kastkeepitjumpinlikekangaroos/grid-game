@@ -94,7 +94,9 @@ character closes the gap with its abilities or an item, not its feet.
   ranged bot only to get away from someone within 5 cells.
   - **Round walls** (`BotNavigation`, searching with `BotPaths`): a bot walks straight at its
     target while the straight way there is open, and otherwise along the shortest way round, found
-    by an A* search of the whole map and kept until the target moves off its end. A ranged bot or a
+    by an A* search of the whole map and kept until the target moves off its end; either way it
+    steps diagonally only between open cells, as a player does (*A diagonal step goes between open
+    cells only*, below). A ranged bot or a
     skirmisher with no clear shot (its primary would hit a wall) goes to the nearest cell it has
     one from, at its range, rather than circling behind the wall, and circling, it turns back where
     its shot would be blocked. Backing off with a wall behind it, it takes the way that gets it
@@ -241,6 +243,26 @@ jitter. And a bot's 104ms or 106ms step waited for the second tick after its las
 pace. Now the handlers carry the remainder (a step a whole interval late is a fresh start, so
 nothing builds up while the keys are up), and a bot takes up to two steps a tick (a speed boost
 brings a step under the tick). `MovementTest` and `BotMovementTest` pin it.
+
+**A diagonal step goes between open cells only** (`WorldData.canStep`, `cornersOpen`). One of W, A,
+S or D alone steps diagonally across the world, and a step used to need only its own cell open: past
+a wall's corner the player's sprite stood in the wall for half the step, on every screen, and
+between two blocks touching at a corner it went through a wall that looks whole. A diagonal step now
+needs both cells beside it open too, and one that hasn't them slides along whichever side is open,
+as a step into a wall always did. It is one rule wherever a player walks: the client's steps
+(`LocalMovement.movePlayer`), the server's check of a single step (`PacketValidator`; of a few
+bunched into one update it knows the ends, not the way), the bots' steps and every search for a
+way (`BotNavigation`, `BotPaths`), and pushes and pulls (`Teleport.slide`), which are drawn sliding
+over the ground. A blink is a jump and may still pass a corner, and a phase walks through walls,
+corners and all. `WorldDataTest`, `GameClientPositionTest`, `PacketValidatorTest` and
+`KnockbackTest` pin it, and `BotPathingTest` checks every step its bots take on every map.
+
+**A step glides over the time until the next one** (`LocalMovement.movePlayer`): we are drawn
+sliding from the cell we left to the one we stepped onto over the gap since the step before, which
+is the pace while a key is held. A step after standing still has no such gap and glides over its
+own interval (twice it for a pure left or right): it used to glide over the whole time stood still,
+so a tap after a few seconds slid one cell over those seconds, the camera with it.
+`GameClientPositionTest` pins it.
 
 ## Adding a new character
 

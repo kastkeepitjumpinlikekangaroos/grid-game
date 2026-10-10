@@ -27,7 +27,7 @@ class BotPathingTest {
   private val STEPS_Y = Array(0, 0, 1, -1, 1, -1, 1, -1)
 
   /** The fewest steps a bot can take from `from` to every cell, onto any of the eight round it at
-    * each step (-1 where it can't get to). */
+    * each step, a diagonal one between open cells only (WorldData.canStep; -1 where it can't get to). */
   private def fewestSteps(w: WorldData, from: (Int, Int)): Array[Int] = {
     val dist = Array.fill(w.width * w.height)(-1)
     val queue = new java.util.ArrayDeque[Int]()
@@ -40,7 +40,7 @@ class BotPathingTest {
       for (d <- 0 until 8) {
         val nx = x + STEPS_X(d)
         val ny = y + STEPS_Y(d)
-        if (w.isWalkable(nx, ny) && dist(ny * w.width + nx) < 0) {
+        if (w.canStep(x, y, STEPS_X(d), STEPS_Y(d)) && dist(ny * w.width + nx) < 0) {
           dist(ny * w.width + nx) = dist(c) + 1
           queue.add(ny * w.width + nx)
         }
@@ -59,7 +59,8 @@ class BotPathingTest {
   }
 
   /** Ticks until a bot of `character` at `from` stands beside someone standing still at `to`, or
-    * -1 if it doesn't within `maxTicks`. */
+    * -1 if it doesn't within `maxTicks`. Every diagonal step it takes on the way passes between
+    * open cells, as a player's must: cutting a wall's corner stood it in the wall for half a step. */
   private def ticksToReach(world: WorldData, character: CharacterId, from: (Int, Int), to: (Int, Int),
                            maxTicks: Int, botId: UUID = new UUID(0L, 901)): Int = {
     val m = new TestMatch(world, opening = true)
@@ -74,6 +75,12 @@ class BotPathingTest {
         val p = bot.getPosition
         if (Math.max(Math.abs(p.getX - to._1), Math.abs(p.getY - to._2)) <= 1) return k
         bots.tick(start + 100L * k)
+        // Unhurried, a bot takes a step a tick at most, so a diagonal move is one step
+        val q = bot.getPosition
+        val (sx, sy) = (q.getX - p.getX, q.getY - p.getY)
+        if (Math.abs(sx) == 1 && Math.abs(sy) == 1 && !bot.isPhased && !bot.hasSpeedBoost)
+          assertTrue(s"from (${p.getX}, ${p.getY}) to (${q.getX}, ${q.getY}) past a wall's corner",
+            world.cornersOpen(p.getX, p.getY, sx, sy))
         k += 1
         if (k % 50 == 0) m.clearSent()
       }

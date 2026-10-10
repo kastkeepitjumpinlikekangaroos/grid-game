@@ -418,8 +418,8 @@ private[render] final class TerrainPainter(ctx: RenderContext) {
     spriteBatch.setBlending(false)
     var wy = viewStartY
     while (wy <= viewEndY) {
-      val loX = rowLo(wy, 0)
-      val hiX = rowHi(wy, 0)
+      val loX = rowLo(wy)
+      val hiX = rowHi(wy)
       var wx = loX
       while (wx <= hiX) {
         val cellTile = world.getTile(wx, wy)
@@ -473,8 +473,8 @@ private[render] final class TerrainPainter(ctx: RenderContext) {
     beginShapes()
     var wy = viewStartY
     while (wy <= viewEndY) {
-      val loX = rowLo(wy, 0)
-      val hiX = rowHi(wy, 0)
+      val loX = rowLo(wy)
+      val hiX = rowHi(wy)
       var wx = loX
       while (wx <= hiX) {
         if (world.getTile(wx, wy).form eq TileForm.Block) {

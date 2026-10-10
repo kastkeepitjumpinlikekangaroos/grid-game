@@ -17,7 +17,7 @@ scene target and then over the finished frame. Three Bazel libraries, each on th
 |---|---|
 | `world/BackgroundPainter` | the sky, sea, city, desert, space or snow behind the map, cached in a target of its own |
 | `world/TerrainPainter` | the ground (every flat tile as an opaque diamond), animated tile overlays, water reflections, block shadows, and each block or prop in the depth pass |
-| `world/PlayerPainter` | players (everyone else where RemoteMotion has them, and us): shadow, sprite, the effects on them; notes their barriers, glows and name plates for later passes; their lights |
+| `world/PlayerPainter` | players (everyone else where RemoteMotion has them, and us): sprite and the effects on them in the depth pass, their shadows and our ring on the ground before it (`drawGroundMarks`); notes their barriers, glows and name plates for later passes; their lights |
 | `world/StatusEffectPainter` | frost, stun stars, poison, roots, a slow, a speed boost, a shield bubble |
 | `world/GlowEffectPainter` | the glowing effects (a gem, a charge, a phase, a burn, a hit's flash, a cast's flash), deferred to one additive pass |
 | `world/ItemPainter` | items on the ground, their glows, pickup sparkles; the item shapes the HUD's inventory uses |
@@ -43,7 +43,7 @@ frame (see *Performance*).
 |------|---------|
 | `GameCamera.scala` | Holds visualX/Y, smooth lerp, screen shake, zoom. Provides camera offsets, on the render target's pixel grid when it is told the grid. |
 | `IsometricTransform.scala` | `worldToScreen(wx,wy,cam)`, `screenToWorld(sx,sy,cam,zoom)`, `viewInsideWorld` (is the whole screen over the map?) |
-| `EntityCollector.scala` | Collects items/projectiles/players by grid cell for depth-sorted rendering. Cells are a flat grid over the visible window, each a linked list of pooled entries (`takeCell` / `takeRemaining`) — no map, no boxed keys, no allocation per frame |
+| `EntityCollector.scala` | Collects items/projectiles/players for the depth pass by the diagonal of the map they are drawn on (`diagonalOf`: `floor(x + y)`), each where it is drawn, us where the camera draws us. Diagonals are a flat array over the visible window, each a linked list of pooled entries back to front (`takeDiagonal` / `takeRemaining`) — no map, no boxed keys, no allocation per frame. See *Everything is sorted where it is drawn* |
 | `RemoteMotion.scala` | Where another player is drawn: walked along the cells the server has put them on, at their measured pace, never past the newest, and slid by a knockback. See *Other players are walked along the cells they were heard on* |
 | `GLTileRenderer.scala` | Loads `sprites/tiles.png` as a GL texture (transparent texels padded with their neighbours' colour); returns full or transparent-margin-trimmed TextureRegion per tile ID + frame, and `drawDiamond` draws a flat tile as exactly its diamond |
 | `GLSpriteGenerator.scala` | Packs character sprite sheets into one growable, mipmapped GL atlas |
@@ -56,7 +56,9 @@ PostProcessor.beginScene()        -- bind scene FBO (sized by the quality tier)
 GLGameRenderer.render()           -- all game drawing into scene FBO
   Background (only if the screen runs off the map) → Ground (opaque diamonds) →
   tile overlays, reflections → Traps → Blasts' ground layer → the aim lane → block shadows →
-  depth pass (blocks and props, items, projectiles, players with their effects) →
+  the players' shadows and our ring →
+  depth pass (a diagonal of the map at a time, far to near: its blocks and props, then the
+  items, projectiles and players with their effects standing on it, back to front) →
   flying projectiles → Barriers → the opening's wall → deferred glows →
   deaths, teleports → Blasts' air layer → particles
 PostProcessor.endScene()          -- bloom extract → blur H → blur V →
@@ -80,12 +82,55 @@ GLGameRenderer.drawCursor()       -- the pointer, last, where the mouse is as th
   round shadow. Water used to be a raised 14px block, which read as an aquarium, not a pond.
   Frames mean different things per form: ground and props have four variants picked by
   position, pools and blocks four animation frames. The map editor draws the same passes.
+- **Everything is sorted where it is drawn, diagonal by diagonal** (`EntityCollector`, the depth
+  pass in `GLGameRenderer.render`). The blocks and props are drawn a diagonal of the map at a time
+  (`v = wx + wy`, how far down the screen), far to near, and after each diagonal's blocks
+  everything standing on it, back to front: whatever is drawn at (x, y) goes after every block on
+  diagonal `floor(x + y)` and before every block on the next. A block on a later diagonal is
+  nearer than anything on an earlier one wherever the two overlap, so that is right for anyone
+  anywhere between two cells, with a sprite narrower than a tile (the widest sheet reaches 19.5
+  units either side of the feet at 48, a tile 20; only the chameleon's, 22, is wider).
+  - It was walked a row at a time, each entity on the cell it was rounded to and us on the cell
+    we stand on, which is the one we are stepping into or were pushed to. We are drawn where the
+    camera is, a step's glide and the camera's ease behind that (~1.2 cells as we walk, up to 1.7,
+    several in a knockback's slide), so a wall in front of where we were drawn but in an earlier
+    row was drawn under us, and we stood on its top; one behind us in a later row was drawn over
+    us. And for anyone between two rows with a wall on either side no cell in row order was right
+    (stepping from (x, y) to (x, y+1), the wall on (x+1, y) needs drawing after them and the one on
+    (x-1, y+1) before them, and rows put (x+1, y) first). Modelled over walks in every direction
+    beside the walls and props of all seven maps (a wall a 36-unit cube, the sprite a 27x41
+    billboard), we were drawn over a wall by 25 pixels or more in 2.4% of the frames a wall
+    overlapped us, up to 513 of the sprite's ~1100, and under one behind us in 3.2%, up to 1017;
+    anyone else, rounded, in 0.5% and 0.7%; now in none. Shots are sorted the same way, so a big
+    one behind a tree is no longer drawn over it.
+  - The players' shadows (56 units across) and our ring (68) are wider than a tile. Drawn with the
+    sprite, in its place among the walls, they lay over the foot of a wall beside or behind the
+    player, and the diagonal order alone would have laid them on a wall level with us on our left,
+    which rows happened to draw after us. They are drawn with the ground instead
+    (`PlayerPainter.drawGroundMarks`, after the blocks' shadows), so a wall covers its part of them
+    as it covers a trap.
+  - What no order could draw right is gone from the game instead. A diagonal step (one of W, A, S
+    or D alone takes one) may no longer cut a wall's corner (design/characters.md, *A diagonal step
+    goes between open cells*): the sprite stood in the wall on both sides of the corner for half the
+    step. And no sprite is wider than its tile: the Chameleon's tongue reached 22 units out, and
+    `CharacterRosterTest` holds every sheet within 20. Still drawn over the whole depth pass on
+    purpose: barriers, glows, deaths and teleports, name plates. A sprite swelling on a hit (18%,
+    fading over half a second) reaches a few units past its tile while it lasts.
+  - `DepthOrderTest` pins it, and fails with us sorted on our cell or anyone rounded to one; the
+    golden frames `colony_knocked_by_pillar` (drawn beside the Colony's pillar, standing past it)
+    and `cell_beside_wall` hold it. Measured back to back on the render bench (the Colony and the
+    Hive, High, 16 players, 150 shots), it costs nothing: a frame as quick to build within the
+    bench's noise (3.4-4.4 ms either way), and 2.6KB allocated a frame either way over 3600 frames
+    on the Colony (900-frame runs differ by a tenth or two of a KB from run to run, a one-off
+    spread over the frames, not a cost of each).
 - **Tiles are culled against the visible diamond, not its bounding box** — the screen rect
   maps to a diamond in world space, whose AABB holds ~2.7x as many cells as are on screen.
   `render` computes bounds in the projection's own axes (`u = wx - wy`, `v = wx + wy`) and
-  clips each row exactly; verified against brute force over 400 camera positions with zero
-  tiles missed and 6% overdraw. Entity cells walk a few rows further (`entPad`) because a
-  player sprite and its name plate hang above their own cell.
+  clips each row (the ground: `rowLo`/`rowHi`, verified against brute force over 400 camera
+  positions with zero tiles missed and 6% overdraw) or diagonal (the depth pass: `diagLo`/`diagHi`,
+  rounded in, so exactly the cells on screen; `DepthOrderTest` checks it against brute force over
+  400 camera positions and screen shapes). The depth pass walks a few diagonals further for the
+  entities (`entPad`), because a player sprite and its name plate hang above their own cell.
 - **The ground is drawn as opaque diamonds** (`GLTileRenderer.drawDiamond`) — every ground and
   pool tile is exactly its diamond, so the ground pass draws each tile as a quad through the four
   corners, with blending off, and covers every pixel once. Drawn as the cell's bounding rect it
@@ -142,8 +187,8 @@ GLGameRenderer.drawCursor()       -- the pointer, last, where the mouse is as th
   bot's slower walk, a slow and a boost come out right), keeping about 0.8 of a cell behind the
   newest so a step that arrives a little late finds it still walking. Further behind than walking
   leaves it (a dash), it catches up; a move of more than 4.5 cells between two updates (a blink, a
-  respawn) is drawn at once. It is never drawn past the newest cell, and it is sorted into the
-  depth order of the cell it is drawn in. It used to guess a velocity from the time between the
+  respawn) is drawn at once. It is never drawn past the newest cell, and it is sorted where it is
+  drawn (*Everything is sorted where it is drawn*). It used to guess a velocity from the time between the
   last two changes it saw and run them on at it for up to 75ms after the news stopped, through
   whatever was in the way: two updates a frame apart read as 55 cells a second, and a dash (a cell
   a frame, 60 cells a second) ran the drawn player up to four cells past where it ended, into the
@@ -241,9 +286,10 @@ The dark backgrounds (`space`, `cityscape`, `desert`, `ocean`) keep the old sett
 ### In game: the render thread allocates next to nothing
 A busy frame allocated 167KB (10MB/s) and now allocates ~3.5KB, with no GC during a
 15-second bench run where there were nine. What it took, and what to keep that way:
-- `EntityCollector` is a flat grid of linked lists, not a `Map[Long, ArrayBuffer]` — the
-  boxed cell key looked up for every visible cell was two thirds of all allocation, and
-  cells the renderer removed from the map never returned their buffers to the pool.
+- `EntityCollector` is a flat array of linked lists (by diagonal now, by cell then), not a
+  `Map[Long, ArrayBuffer]` — the boxed cell key looked up for every visible cell was two thirds
+  of all allocation, and cells the renderer removed from the map never returned their buffers to
+  the pool.
 - `GLProjectileRenderers.Renderer` is a trait, not a `Function5` (which boxes its floats).
 - Batches map and write through raw addresses (see Batch Management).
 - `GLFontRenderer` looks glyphs up in a flat Latin-1 table / `LongMap` — a
@@ -320,7 +366,7 @@ bazel run //src/main/scala/com/gridgame/client:golden_frames -- /tmp/golden --sc
 ```
 
 Fixed scenes — players, projectiles, blasts, barriers, traps, the divider, the HUD, the edges of the
-maps, a charged shot's aim, the pointer — drawn by the real GLGameRenderer on a stopped clock (`FrameClock`) with its randomness seeded
+maps, a charged shot's aim, the pointer, walls in front of and beside us — drawn by the real GLGameRenderer on a stopped clock (`FrameClock`) with its randomness seeded
 (`seedRandom`), so the same build draws the same pixels every time. It is the check for a change to
 the renderer that is meant to change nothing: write the frames from both builds and compare them
 byte for byte (`cmp`). A change that is meant to show must be judged by eye, in the galleries and in

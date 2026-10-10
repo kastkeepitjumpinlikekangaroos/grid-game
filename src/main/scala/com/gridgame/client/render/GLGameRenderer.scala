@@ -17,10 +17,11 @@ import com.gridgame.common.model._
  *  1. The background, only where the screen runs off the map (BackgroundPainter)
  *  2. The ground: every flat tile as an opaque diamond, then its animated overlays and reflections
  *     (TerrainPainter), the traps lying on it (TrapPainter), the blasts' ground layer
- *     (BlastPainter) and the aim arrow (AimArrowPainter)
- *  3. The depth pass: blocks and props, and the entities standing among them, row by row, far to
- *     near — players (PlayerPainter, StatusEffectPainter), items (ItemPainter), projectiles
- *     (ProjectilePainter)
+ *     (BlastPainter), the aim arrow (AimArrowPainter), the blocks' shadows, and the players'
+ *     shadows and our ring (PlayerPainter.drawGroundMarks)
+ *  3. The depth pass: blocks and props, and the entities standing among them, a diagonal of the
+ *     map at a time, far to near, each where it is drawn (EntityCollector) — players
+ *     (PlayerPainter, StatusEffectPainter), items (ItemPainter), projectiles (ProjectilePainter)
  *  4. Over the terrain: flying projectiles, raised barriers (BarrierPainter), the opening's wall
  *     (OpeningPainter), the glowing effects deferred from the depth pass (GlowEffectPainter),
  *     deaths and teleports (DeathAndTeleportPainter), the blasts' air layer, particles
@@ -247,7 +248,7 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
 
     terrain.beginFrame()
 
-    // === Collect entities by cell ===
+    // === Collect entities by the diagonal they are drawn on ===
     items.beginFrame()
     overlay.beginFrame()
     glows.beginFrame()
@@ -287,23 +288,32 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
 
     gpuMark("block shadows")
 
+    // === The players' shadows and our ring: on the ground, so a wall in front covers them ===
+    players.drawGroundMarks()
+
+    gpuMark("ground marks")
+
     // === Phase 2: Elevated tiles + entities interleaved by depth ===
-    var wy = startY
-    while (wy <= endY) {
-      // Tiles stop at the visible diamond; entity cells run a few further so a sprite
-      // standing just off the bottom edge still draws (and still draws in depth order).
-      val tileLoX = rowLo(wy, 0)
-      val tileHiX = rowHi(wy, 0)
-      val loX = rowLo(wy, entPad)
-      val hiX = rowHi(wy, entPad)
-      var wx = loX
+    // A diagonal of the map at a time (v = wx + wy, how far down the screen), far to near: its
+    // blocks and props, then everything standing on it, back to front (render/CLAUDE.md,
+    // *Everything is sorted where it is drawn*). A block on a later diagonal is nearer than
+    // anything on an earlier one wherever the two overlap, so one drawn between two cells comes
+    // after the blocks behind its feet and before those in front of them. Walked by rows, there
+    // was no such place for one between two rows with a wall on either side. Tiles stop at the
+    // visible diamond; the diagonals run on over the entities' wider window, so a sprite standing
+    // just off the bottom edge still draws, in order.
+    var v = startX + startY
+    val lastV = endX + endY
+    while (v <= lastV) {
+      var wx = diagLo(v)
+      val hiX = diagHi(v)
       while (wx <= hiX) {
-        if (wx >= tileLoX && wx <= tileHiX) terrain.drawBlock(world, wx, wy)
-        val cellEntries = entityCollector.takeCell(wx, wy)
-        if (cellEntries != null) dispatchEntries(cellEntries, localVX, localVY)
+        terrain.drawBlock(world, wx, v - wx)
         wx += 1
       }
-      wy += 1
+      val standing = entityCollector.takeDiagonal(v)
+      if (standing != null) dispatchEntries(standing, localVX, localVY)
+      v += 1
     }
     // Any entities outside visible range
     var leftover = entityCollector.takeRemaining()
@@ -483,11 +493,13 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
     weatherParticles.clear()
   }
 
-  /** Draw one cell's entities; `head` is the first, the rest follow through `next`. */
-  private def dispatchEntries(head: EntityCollector.MutableCellEntry, localVX: Double, localVY: Double): Unit = {
-    // Fast path for single-entity cells (no reordering needed)
-    if (head.next == null) {
-      val entry = head
+  /** Draw one diagonal's entities, back to front: `head` is the furthest, the rest follow through
+    * `next`. In that order rather than shapes first and players after, as the entities of one cell
+    * were: a diagonal runs right across the screen, and a shot just in front of someone would go
+    * under them. */
+  private def dispatchEntries(head: EntityCollector.Entry, localVX: Double, localVY: Double): Unit = {
+    var entry = head
+    while (entry != null) {
       entry.entryType match {
         case EntityCollector.TYPE_ITEM => items.draw(entry.ref.asInstanceOf[Item])
         case EntityCollector.TYPE_PROJECTILE => projectiles.draw(entry.ref.asInstanceOf[Projectile])
@@ -496,30 +508,6 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
         case EntityCollector.TYPE_LOCAL_PLAYER => players.drawLocal(localVX, localVY)
         case EntityCollector.TYPE_LOCAL_DEATH => // handled by drawDeaths
         case _ =>
-      }
-      return
-    }
-    // Two-pass dispatch: shape-only entities first (items, projectiles), then
-    // sprite entities (players). Reduces batch switches from up to N per cell to at most 1.
-    // Pass 1: items and projectiles (shape-based)
-    var entry = head
-    while (entry != null) {
-      entry.entryType match {
-        case EntityCollector.TYPE_ITEM => items.draw(entry.ref.asInstanceOf[Item])
-        case EntityCollector.TYPE_PROJECTILE => projectiles.draw(entry.ref.asInstanceOf[Projectile])
-        case EntityCollector.TYPE_FADING_PROJECTILE => projectiles.drawFading(entry.ref.asInstanceOf[FadingProjectile])
-        case _ => // skip players in this pass
-      }
-      entry = entry.next
-    }
-    // Pass 2: players (shape shadow + sprite body)
-    entry = head
-    while (entry != null) {
-      entry.entryType match {
-        case EntityCollector.TYPE_PLAYER => players.drawPlayer(entry.ref.asInstanceOf[Player], entry.vx, entry.vy)
-        case EntityCollector.TYPE_LOCAL_PLAYER => players.drawLocal(localVX, localVY)
-        case EntityCollector.TYPE_LOCAL_DEATH => // handled by drawDeaths
-        case _ => // skip items/projectiles in this pass
       }
       entry = entry.next
     }

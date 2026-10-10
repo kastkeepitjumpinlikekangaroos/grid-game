@@ -13,6 +13,20 @@ class WorldDataTest {
     assertFalse("setTile off the map changes nothing", w.setTile(10, 10, Tile.Grass))
   }
 
+  @Test def aDiagonalStepGoesBetweenOpenCellsOnly(): Unit = {
+    val w = WorldData.createEmpty(20, 20)
+    assertTrue("in the open", w.canStep(10, 10, 1, 1))
+    w.setTile(11, 10, Tile.Wall)
+    assertFalse("past a wall's corner", w.canStep(10, 10, 1, 1))
+    assertFalse("the same corner from the other side", w.canStep(11, 11, -1, -1))
+    assertTrue("a straight step beside it", w.canStep(10, 10, 0, 1))
+    assertTrue("a diagonal the other way", w.canStep(10, 10, -1, 1))
+    w.setTile(10, 11, Tile.Rock)
+    assertFalse("between two blocks touching at a corner", w.canStep(11, 11, -1, -1))
+    assertFalse("onto a wall", w.canStep(10, 10, 1, 0))
+    assertTrue("a straight step passes no corner", w.cornersOpen(10, 10, 1, 0))
+  }
+
   @Test def spawnsAreKeptApartWhenTheMapAllows(): Unit = {
     val w = new WorldData("w", 120, 120, Array.fill(120, 120)(Tile.Grass: Tile),
       Seq(new Position(10, 10), new Position(12, 10), new Position(100, 100)))

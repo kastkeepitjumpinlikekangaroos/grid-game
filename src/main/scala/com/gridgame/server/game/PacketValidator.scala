@@ -128,6 +128,20 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
       return false
     }
 
+    // A diagonal step goes between open cells only (WorldData.cornersOpen), as the client and the
+    // bots take one: past a wall's corner, or between two blocks touching at one, is through the
+    // wall. A phase walks through walls, and their corners with them. Only a single step can be
+    // judged so: of a few bunched into one update, the server knows the ends and not the way.
+    if (!player.isPhased) {
+      val from = player.getPosition
+      val sdx = x - from.getX
+      val sdy = y - from.getY
+      if (Math.abs(sdx) == 1 && Math.abs(sdy) == 1 && !world.cornersOpen(from.getX, from.getY, sdx, sdy)) {
+        Metrics.validationFailed.add(1L, Attrs.VfMovementWalkable)
+        return false
+      }
+    }
+
     // The opening divider between the teams, which a phase doesn't pass either. Checked against
     // where the player is rather than against the target cell alone, so a dash or a blink can't
     // jump the wall the way a step can't walk through it.

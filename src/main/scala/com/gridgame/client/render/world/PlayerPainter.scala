@@ -9,9 +9,9 @@ import java.util.UUID
 
 /**
  * Players: everyone else walked along the cells they were heard on (RemoteMotion), and us, each as
- * a shadow, a sprite, the effects on them, and the name plate and health bar that are drawn over the
- * finished frame (WorldOverlayPainter). A raised barrier is noted for BarrierPainter; a dash leaves a
- * trail of after-images.
+ * a sprite and the effects on them, standing on a shadow drawn with the ground (drawGroundMarks),
+ * and the name plate and health bar that are drawn over the finished frame (WorldOverlayPainter). A
+ * raised barrier is noted for BarrierPainter; a dash leaves a trail of after-images.
  */
 private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierPainter, effects: StatusEffectPainter,
                                           glows: GlowEffectPainter, overlay: WorldOverlayPainter) {
@@ -35,6 +35,44 @@ private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierP
     shapeBatch.fillOvalSoft(sx, sy, 14f, 6f, 0.01f, 0.005f, 0.03f, 0.45f, 0.12f, 12)
     // Subtle bright ring for visibility on dark terrain
     shapeBatch.strokeOval(sx, sy, 24f, 10f, 1f, 0.7f, 0.7f, 0.8f, 0.12f, 14)
+  }
+
+  @inline private def onScreen(sx: Double, sy: Double): Boolean =
+    sx > -60 && sx < canvasW + 60 && sy > -60 && sy < canvasH + 60
+
+  /**
+   * What lies on the ground under the players, drawn with the ground before the depth pass:
+   * everyone's shadow where they are drawn, and our gold ring. Both are wider than a tile (the
+   * shadow 56 units across, the ring 68 to a tile's 40). Drawn with the sprite, in its place among
+   * the walls, they lay over the foot of a wall beside or behind the player; on the ground, a wall
+   * in front covers its part of them, as it covers a trap.
+   */
+  def drawGroundMarks(): Unit = {
+    beginShapes()
+    // Everyone else the depth pass will draw, where RemoteMotion has them (EntityCollector)
+    var i = 0
+    while (i < entityCollector.standing) {
+      val wx = entityCollector.standingX(i); val wy = entityCollector.standingY(i)
+      val sx = worldToScreenX(wx, wy)
+      val sy = worldToScreenY(wx, wy)
+      if (onScreen(sx, sy)) drawShadow(sx, sy)
+      i += 1
+    }
+    // Us, where the camera draws us, under a pulsing gold ring and its soft glow
+    if (!client.getIsDead) {
+      val screenX = worldToScreenX(camera.visualX, camera.visualY)
+      val screenY = worldToScreenY(camera.visualX, camera.visualY)
+      val sx = screenX.toFloat + 2f
+      val sy = screenY.toFloat + 1f
+      val pulse = (0.45f + 0.20f * Math.sin(animTickF * 0.08).toFloat)
+      // Soft glow under feet
+      shapeBatch.fillOvalSoft(sx, sy, 34f, 14f, 1f, 0.85f, 0.3f, (0.08f + 0.06f * pulse), 0f, 16)
+      // Outer bright ring
+      shapeBatch.strokeOval(sx, sy, 30f, 12f, 1.5f, 1f, 0.85f, 0.3f, pulse, 16)
+      // Inner tighter ring
+      shapeBatch.strokeOval(sx, sy, 26f, 10f, 0.8f, 1f, 0.85f, 0.3f, pulse * 0.6f, 14)
+      drawShadow(screenX, screenY)
+    }
   }
 
   def drawPlayer(player: Player, wx: Double, wy: Double): Unit = {
@@ -90,7 +128,7 @@ private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierP
     barriers.note(playerId, wx, wy, player.getBarrierAngle, player.getBarrierRaisedAt, player.getBarrierUntil,
       client.localTeamId != 0 && player.getTeamId == client.localTeamId)
 
-    drawShadow(screenX, screenY)
+    // Their shadow is on the ground already (drawGroundMarks)
 
     // Remote player footstep dust (sparse, distance-culled)
     val dustDx = wx - camera.visualX; val dustDy = wy - camera.visualY
@@ -198,21 +236,7 @@ private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierP
     // Dash afterimage
     if (client.isSwooping) drawSwoopTrail(wx, wy, displaySz)
 
-    // Local player ground indicator — pulsing gold ring + soft glow
-    {
-      val sx = screenX.toFloat + 2f
-      val sy = screenY.toFloat + 1f
-      val pulse = (0.45f + 0.20f * Math.sin(animTickF * 0.08).toFloat)
-      beginShapes()
-      // Soft glow under feet
-      shapeBatch.fillOvalSoft(sx, sy, 34f, 14f, 1f, 0.85f, 0.3f, (0.08f + 0.06f * pulse), 0f, 16)
-      // Outer bright ring
-      shapeBatch.strokeOval(sx, sy, 30f, 12f, 1.5f, 1f, 0.85f, 0.3f, pulse, 16)
-      // Inner tighter ring
-      shapeBatch.strokeOval(sx, sy, 26f, 10f, 0.8f, 1f, 0.85f, 0.3f, pulse * 0.6f, 14)
-    }
-
-    drawShadow(screenX, screenY)
+    // Our ring and shadow are on the ground already (drawGroundMarks)
 
     val animSpeed = if (client.isCharging) {
       (FRAMES_PER_STEP * (1.0 + client.getChargeLevel / 100.0 * 4.0)).toInt
