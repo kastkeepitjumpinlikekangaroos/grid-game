@@ -10,11 +10,12 @@ the terrain or sinking into what stopped it. The renderers themselves are in a f
 | `Silhouettes` | the local-frame `Part` system for objects with a real-world shape |
 | `Orbs` | `energyBolt` and its `ORB_*` styles |
 | `Blades`, `Shafts`, `Lobbed`, `Chains` | thrown weapons, point-first shafts, lobbed objects, restraints |
-| `AoeRings`, `Waves` | ground blasts, crescent sweeps |
+| `AoeRings` | ground blasts |
 | `Missiles`, `Bolts`, `Beams` | bullets, fists, rockets; laser bolts, rail slugs, siphons, the gorgon eye; beam-like one-offs |
 | `Tethers`, `Grabs` | pulls tied to their thrower; grabs and hands |
 | `Electricity` | lightning and thunder |
-| `Heavies`, `Undead`, `Bites` | boulders and the heavy one-offs; the undead's; jaws, fangs, talons, swarms |
+| `Heavies`, `Undead`, `Bites` | boulders and the heavy one-offs; the undead's; jaws, fangs, talons, swarms, the Wolf's spirit |
+| `Songs`, `Winds`, `Surges` | one character's own look for an attack (see *A projectile is drawn as its thrower's*): sound — the Bard's, the Musician's, the Sphinx's, the Harpy's, the Banshee's; wind — the Windwalker's, the Cloudrunner's, the Hawk's, the Raptor's; what surges along the ground — the Tidecaller's, the Sandstorm's, the Inferno's, the Scorpion's, the Barbarian's |
 
 The renderer (client/render, `ProjectilePainter`) calls in with each projectile's hitbox in screen
 space.
@@ -26,6 +27,40 @@ All 176 projectile types are registered in `GLProjectileRenderers.registry` (`Ma
 so calling one boxed both coordinates and the tick — three allocations per projectile per
 frame. Factory lambdas (`(proj, sx, sy, sb, tick) => …` returned as a `Renderer`) convert to
 it directly; a method in the registry goes through `asRenderer(drawX)`, not `(drawX _)`.
+
+## A projectile is drawn as its thrower's
+
+`GLProjectileRenderers.draw` picks a renderer by who threw the projectile as well as by its type:
+`getRenderer(proj.ownerCharacterId, proj.projectileType)` is the thrower's own look for the type
+where it has one (`only(character, type, renderer)`, a row of 256 characters for each type that has
+any), and otherwise the type's, from the registry. The type's own look, for a thrower nobody knows,
+is always one of its throwers' looks. The client says whose a projectile is when it first hears of
+it: `NetProjectile` is built with `characterIdOf(owner)` into `Projectile.ownerCharacterId` (-1 when
+the thrower isn't known yet; the server never sets it). It is the same shape as the blasts'
+`styleOf` and the sounds' tables. `ProjectileLookTest` holds the table to the roster, and
+`ProjectileThrowerTest` that a projectile the server tells us of knows whose it is.
+
+Eleven types thrown by fifteen characters used to be one renderer, `wave(kind, …)`: a crescent,
+the same lilac, grey or orange arc whether it was a Bard's song, a Musician's riff, a Sphinx's
+riddle, a Windwalker's blade, a Hawk's gust or a Barbarian splitting the earth — cheap, and saying
+nothing about who threw it. Three characters fire a SONIC_WAVE, four a GUST and two a WIND_BLADE,
+so a look per type couldn't fix it. Each is now drawn as its thrower's: the Bard's quaver on a
+ribbon of stave, the Musician's hot-pink beamed quavers over the waveform they leave hanging, the
+Sphinx's Eye of Horus, the Harpy's volley of razor feathers, the Banshee's own keening face with
+her hair streaming behind; the Windwalker's pinwheel of wind trailing her ribbon and her curls of
+wind carrying leaves, the Cloudrunner's cloudlet on its contrails and billow of cloud, the Hawk's
+whirlwind with its feathers spiralling up it, the Raptor's eagle of wind; the Tidecaller's ridge
+of water, the Sandstorm's rolling dust, the Inferno's living flame (a small one of itself), the
+Scorpion's squirt of acid, the Barbarian's fissure with rock bursting up at its head, and the
+Wolf's spirit lunging with its jaws open. A gust and the tidal wave still carry their bulk behind
+the hitbox, where they strike (`ProjectileDef.hitCentreBehind`, design/combat.md).
+
+The dev tools draw them the same way: the gallery's sheets end with every character's own look
+(`TYPE@Character`, also for `--focus=`), the render bench throws each projectile as one of the
+characters who throw its type in turn, and the render audit shoots every character's own look too.
+Measured back to back (`render_bench --types=` the eleven, 150 of them at 4480x2404, High), the
+new looks cost what the crescents did: frame building 5.21 → 5.16 ms, 90.6 → 89.5 million
+fragments a frame, allocation unchanged.
 
 ## Silhouettes: how a projectile says whose ability it is
 
@@ -162,7 +197,7 @@ by the head, jumping to a new shape twenty times a second, every hairpin mitred 
 three prongs out ahead of the head like the legs of a bug. Two tries on the way that don't work:
 a smooth meander is a worm, and kinks small beside the stroke's width are a noodle.
 
-**15 pattern factories** (configurable colour + size, most also taking a `kind`):
+**14 pattern factories** (configurable colour + size, most also taking a `kind`):
 - `energyBolt(r, g, b, size, style)` — glowing orb (see *Orbs* above). `style` picks what
   stands outside the sphere, named by the `ORB_*` constants: `ORB_PLAIN` (the bare orb),
   `ORB_FIRE` (a flame teardrop with tongues peeling off its edges), `ORB_RUNE` (a magic circle
@@ -202,9 +237,6 @@ a smooth meander is a worm, and kinks small beside the stroke's width are a nood
 - `aoeRing(kind, …)` — ground blast as filled shockwave bands over a darkened scorch.
   `kind` picks what it throws off: quake rubble, water, spores, flame, pressure rings,
   inward-falling motes, roots.
-- `wave(kind, …)` — crescent sweep built from a real arc band whose centre is solved in
-  the ellipse's own parameter space so it stays square to the travel direction at every
-  heading. Kinds: wind, sand, sonic, flame, acid, impact, water.
 - `chainProj(kind, …)` — thrown restraint: a grappling hook (or, `CHN_HOOK`, a single meat
   hook) on a twisted rope running all the way back to the thrower's hand; a tumbling manacle
   trailing swinging links; a loop of links spinning around a padlock.
@@ -215,6 +247,8 @@ b, heavy)` — colour is a parameter so a storm reads yellow and a tesla coil re
 `heavy` is chain lightning's thicker bolt), thunder strike, grasping dead, frost comet (ice
 beam), bandage wad, tongue lash, boulder (faceted tumbling hull), shark jaw, bat swarm, shadow
 bolt, inferno blast, geyser, wail, raise dead, and more. The fireball is an `ORB_FIRE` orb.
+And **17 characters' own looks** (`Songs`, `Winds`, `Surges`, and the Wolf's in `Bites`), each a
+`draw*` of its own, listed in *A projectile is drawn as its thrower's*.
 
 **Things to watch when editing these files:**
 - **Kind constants are `final val`s** (compile-time constants, in the family object that uses
@@ -241,6 +275,16 @@ bolt, inferno blast, geyser, wail, raise dead, and more. The fireball is an `ORB
   `strokeLine` quads overlaps itself on the outside of every bend, and with any alpha below 1
   each overlap blends twice: the lightning bolts came out as chains of translucent rectangles.
   `strokePolyline` / `strokePolylineTapered` mitre the joins (see *Strokes are one band*).
+- **Something standing up off the ground needs depth, not only height.** The Tidecaller's wave was
+  first a wall — a band across its path standing straight up the screen — and a wave crossing the
+  screen, whose width runs up the screen, came out a sliver. It is now a profile (a long back
+  slope, a steep face) swept across its width in the world and projected (`Surges.drawBreakingWave`),
+  drawn far side first, and holds its shape at every heading. Check a modelled shape in all four
+  columns of `--focus=`.
+- **A band of a modelled surface folds into a dart at some heading**, and a dart fanned from the
+  wrong corner fills outside itself. Draw each band as two triangles split along the diagonal
+  inside it (`Surges.waveQuad`); `GRIDGAME_POLYCHECK=1` over the focus sheets finds the ones that
+  fold.
 - **Ink the whole silhouette, not only its leading edge.** A pale shape reads on sand and snow
   only by its outline. The wave crescents were inked along the front alone, with a body at
   35-45% alpha, and all eleven waves faded into the ground behind their front; the audit had
@@ -273,6 +317,9 @@ To add a new projectile renderer:
 
 ## Design decisions
 
+- **A projectile is drawn as its thrower's** — a type thrown by characters with nothing in common
+  gets a look per character (see *A projectile is drawn as its thrower's*). Eleven types drawn as
+  one crescent in fifteen characters' hands said nothing about any of them.
 - **A projectile's silhouette carries its identity, not its palette** — the pattern
   factories used to describe shapes in polar form (a radius per vertex) or as a stroked
   line from the caster, so a whole family came out identical: every melee weapon was the
@@ -315,12 +362,14 @@ To add a new projectile renderer:
 bazel run //src/main/scala/com/gridgame/client:projectile_gallery -- out/dir
 bazel run //src/main/scala/com/gridgame/client:projectile_gallery -- out/dir --bench
 bazel run //src/main/scala/com/gridgame/client:projectile_gallery -- out/dir --focus=LIGHTNING,TENTACLE
+bazel run //src/main/scala/com/gridgame/client:projectile_gallery -- out/dir --focus=SONIC_WAVE@Musician
 ```
 
 `--focus=` writes one `focus_<NAME>.png` per type instead: four headings across (right, left,
 up, down on screen) and four moments down, the projectile further along each row. It is the
 loop for anything drawn along or behind the flight path — a tail, a tether, a bolt's channel —
-which the contact sheets only ever show flying one way.
+which the contact sheets only ever show flying one way. A character's own look for a type is
+named `TYPE@Character`; the contact sheets draw every type's own look, then every character's.
 
 Renders every registered projectile type into contact-sheet PNGs (10 pages x 4 animation
 ticks) plus an `index.txt` naming each cell. It also writes `impacts_NN.png` (projectiles sinking

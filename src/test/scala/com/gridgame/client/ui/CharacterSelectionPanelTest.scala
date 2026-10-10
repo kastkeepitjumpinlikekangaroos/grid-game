@@ -53,9 +53,9 @@ class CharacterSelectionPanelTest {
     val (p, root) = panel()
     try {
       Fx.click(cells(root)("Barbarian"))
-      assertTrue(Fx.labels(root).contains("Melee  ·  145 HP  ·  Slow"))
+      assertTrue(Fx.labels(root).contains("Melee  ·  130 HP  ·  Slow"))
       Fx.click(cells(root)("Golem"))
-      assertTrue(Fx.labels(root).contains("Skirmisher  ·  150 HP  ·  Medium speed"))
+      assertTrue(Fx.labels(root).contains("Skirmisher  ·  135 HP  ·  Medium speed"))
       Fx.click(cells(root)("Wizard"))
       assertTrue(Fx.labels(root).contains("Ranged  ·  60 HP  ·  Fast"))
     } finally p.stop()

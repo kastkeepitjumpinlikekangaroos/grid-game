@@ -19,8 +19,8 @@ private[model] object Roster {
       SciFi.projectiles ++ Beasts.projectiles ++ Mythological.projectiles ++ Specialists.projectiles ++
       Retired.projectiles
 
-  /** The variants: another type's numbers and look with effects of their own, made from `base`,
-    * which must already hold every definition above. */
+  /** The variants: another type's flight and look, with effects and a damage of their own, made
+    * from `base`, which must already hold every definition above. */
   def variants(base: Byte => ProjectileDef): Seq[ProjectileDef] =
     Originals.variants(base) ++ Elementals.variants(base) ++ Undead.variants(base) ++
       Medieval.variants(base) ++ Beasts.variants(base) ++ Mythological.variants(base)

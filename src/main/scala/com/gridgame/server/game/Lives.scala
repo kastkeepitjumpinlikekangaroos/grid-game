@@ -23,12 +23,7 @@ trait Lives { this: GameInstance =>
     if (killerId != null) {
       killTracker.recordKill(killerId, victimId)
       val killer = registry.get(killerId)
-      val victim = registry.get(victimId)
-      Metrics.kills.add(1L, Attrs.killCombo(
-        if (killer != null) killer.getCharacterId else 0,
-        if (victim != null) victim.getCharacterId else 0,
-        projectileType
-      ))
+      Metrics.kills.add(1L, Attrs.killCombo(if (killer != null) killer.getCharacterId else 0, projectileType))
       Metrics.deaths.add(1L, cause)
       broadcastToInstance(new GameEventPacket(
         outbox.nextSeq(),

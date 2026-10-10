@@ -4,7 +4,6 @@ import com.gridgame.common.Constants
 import com.gridgame.common.observability.Attrs
 import com.gridgame.common.observability.Metrics
 import com.gridgame.common.protocol.PacketSerializer
-import com.gridgame.common.protocol.PacketSigner
 import com.gridgame.common.protocol.PacketType
 import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.SimpleChannelInboundHandler
@@ -43,7 +42,8 @@ class UdpHandler(sessions: Sessions, rateLimiter: RateLimiter, replay: ReplayGua
       }
 
       // Inline token expiry check (don't wait for cleanup loop)
-      if (sessions.isExpired(playerId, System.currentTimeMillis())) {
+      val now = System.currentTimeMillis()
+      if (sessions.isExpired(playerId, now)) {
         Metrics.packetsDropped.add(1L, Attrs.ReasonExpired)
         return
       }
@@ -66,8 +66,9 @@ class UdpHandler(sessions: Sessions, rateLimiter: RateLimiter, replay: ReplayGua
       // source address is whatever its sender writes into it (or shared, behind one NAT), so the
       // address check above doesn't make a datagram theirs; only their session's signature does.
       // Rate limited first, a flood of unsigned datagrams in a player's name spent their budget
-      // and their own position updates were dropped.
-      val verified = PacketSigner.verify(data, token)
+      // and their own position updates were dropped. Their session's token, or one it is being
+      // renewed with or has just retired.
+      val verified = sessions.verify(playerId, data, token, now)
       if (verified == null) {
         System.err.println("UDP: HMAC verification failed, dropping packet")
         Metrics.packetsDropped.add(1L, Attrs.ReasonHmacFail)

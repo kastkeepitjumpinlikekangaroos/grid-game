@@ -63,7 +63,7 @@ class CombatTest {
 
   @Test def aBoomerangComesBack(): Unit = {
     val gladiator = m.join(CharacterId.Gladiator, 10, 30)
-    val axe = m.launch(gladiator, ProjectileType.AXE, 1f, 0f)
+    val axe = m.launch(gladiator, ProjectileType.ARENA_AXE, 1f, 0f)
     m.clearSent()
     m.tickUntilGone(axe)
     val moves = m.projectileEvents(m.udpSent(gladiator), ProjectileAction.MOVE).filter(_.getProjectileId == axe.id)
@@ -160,7 +160,7 @@ class CombatTest {
     // 2% of their own max health a second, whoever they are. It was 3.0 - (max - 70) * 0.04 a
     // second: the frailest healed fastest, and from 145 HP, where the melee band tops out,
     // nobody healed at all.
-    val bruiser = m.join(CharacterId.Golem, 20, 30)
+    val bruiser = m.join(CharacterId.Crusader, 20, 30)
     val caster = m.join(CharacterId.Wizard, 40, 30)
     assertTrue("the top of the band", bruiser.getMaxHealth >= 145)
     assertTrue("the bottom of it", caster.getMaxHealth <= 65)
@@ -182,20 +182,31 @@ class CombatTest {
   // --- Blasts and slams: centred on where they happen ---
 
   @Test def aBlastIsCentredWhereItGoesOff(): Unit = {
-    // A grenade flies 12 cells through players and goes off: from (11, 30), at (23, 30)
-    val bomber = m.join(CharacterId.Soldier, 10, 30)
-    val atCentre = m.join(CharacterId.Gladiator, 23, 30)
-    val twoPast = m.join(CharacterId.Gladiator, 25, 30)
-    val twoShort = m.join(CharacterId.Gladiator, 21, 30)
-    val outside = m.join(CharacterId.Gladiator, 27, 30)
-    val grenade = m.launch(bomber, ProjectileType.GRENADE, 1f, 0f)
-    m.tickUntilGone(grenade)
+    // An eruption flies 16 cells through players and goes off: from (11, 30), at (27, 30)
+    val caster = m.join(CharacterId.MagmaKnight, 10, 30)
+    val atCentre = m.join(CharacterId.Gladiator, 27, 30)
+    val twoPast = m.join(CharacterId.Gladiator, 29, 30)
+    val twoShort = m.join(CharacterId.Gladiator, 25, 30)
+    val outside = m.join(CharacterId.Gladiator, 31, 30)
+    m.tickUntilGone(m.launch(caster, ProjectileType.ERUPTION, 1f, 0f))
     def lost(p: Player) = p.getMaxHealth - p.getHealth
-    assertEquals("full damage at the centre", 40, lost(atCentre))
+    assertEquals("full damage at the centre",
+      ProjectileDef.get(ProjectileType.ERUPTION).explosionConfig.get.centerDamage, lost(atCentre))
     assertTrue("less two cells out", lost(twoPast) < lost(atCentre) && lost(twoPast) > 0)
-    // Measured from the corner of the victim's cell, the far side took 14 and the near side 24
+    // Measured from the corner of the victim's cell, the far side took less than the near side
     assertEquals("the same two cells out either side", lost(twoPast), lost(twoShort))
     assertEquals("none past the radius", 0, lost(outside))
+  }
+
+  @Test def aGrenadeGoesOffOnTheFirstEnemyItReaches(): Unit = {
+    // It used to fly through players and go off only at the end of its 12 cells, here beside the
+    // one behind: thrown at anyone nearer than about 9 cells, it burst out of reach behind them
+    val bomber = m.join(CharacterId.Bombardier, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 16, 30)
+    val behind = m.join(CharacterId.Gladiator, 23, 30)
+    m.tickUntilGone(m.launch(bomber, ProjectileType.GRENADE, 1f, 0f))
+    assertTrue("the target is caught", target.getHealth < target.getMaxHealth)
+    assertEquals("nobody past it", behind.getMaxHealth, behind.getHealth)
   }
 
   @Test def aGroundSlamReachesAsFarOnEverySide(): Unit = {

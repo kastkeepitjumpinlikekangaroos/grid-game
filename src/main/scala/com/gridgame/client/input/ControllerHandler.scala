@@ -36,6 +36,10 @@ class ControllerHandler(client: GameClient) {
   // Trigger state for edge detection (triggers are axes, not buttons)
   private var prevRightTrigger: Float = -1.0f
 
+  // Whether the right stick aimed this frame: the aim is the stick's then, not the mouse's
+  private var _stickAiming = false
+  def stickAiming: Boolean = _stickAiming
+
   // Whether the gamepad was auto-mapped (Y-axis needs inversion on auto-mapped controllers)
   private var autoMapped = false
 
@@ -181,6 +185,7 @@ class ControllerHandler(client: GameClient) {
   }
 
   def update(): Unit = {
+    _stickAiming = false
     if (!initialized) return
 
     // Note: glfwPollEvents() is called by the game loop — not needed here
@@ -332,6 +337,7 @@ class ControllerHandler(client: GameClient) {
     val aimX = playerPos.getX + normDx * AIM_DISTANCE
     val aimY = playerPos.getY + normDy * AIM_DISTANCE
     client.setMouseWorldPosition(aimX, aimY)
+    _stickAiming = true
   }
 
   private def processShooting(): Unit = {

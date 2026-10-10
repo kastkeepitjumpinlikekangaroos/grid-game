@@ -10,13 +10,14 @@ import com.gridgame.common.protocol._
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import scala.jdk.CollectionConverters._
+import scala.util.control.NonFatal
 
 /** What a player does in the lobby browser and in a lobby room: make, join, leave and configure a
   * lobby, pick a character, add bots, start the match — and practice, a lobby of one with bots. */
 class LobbyHandler(host: LobbyHost, lobbyManager: LobbyManager, rankedQueue: RankedQueue, launcher: MatchLauncher) {
-  private val lastListRequestTime = new ConcurrentHashMap[UUID, java.lang.Long]()
+  private[server] val lastListRequestTime = new ConcurrentHashMap[UUID, java.lang.Long]()
   private val LIST_REQUEST_COOLDOWN_MS = 2000L
-  private val lastCreateTime = new ConcurrentHashMap[UUID, java.lang.Long]()
+  private[server] val lastCreateTime = new ConcurrentHashMap[UUID, java.lang.Long]()
   private val CREATE_COOLDOWN_MS = 3000L
 
   def processLobbyAction(packet: LobbyActionPacket, player: Player): Unit = {
@@ -265,7 +266,15 @@ class LobbyHandler(host: LobbyHost, lobbyManager: LobbyManager, rankedQueue: Ran
       lobby.status = LobbyStatus.IN_GAME
     }
 
-    val instance = launcher.launch(lobby)
+    val instance = try launcher.launch(lobby) catch {
+      case NonFatal(e) =>
+        // The match never got going (the launcher has stopped what it started). Left as it was, the
+        // lobby stayed "in game" with no match for good, its players stuck in it and its slot gone.
+        System.err.println(s"LobbyHandler: Game for lobby ${lobby.id} failed to start: $e")
+        broadcastToLobby(lobby, new LobbyActionPacket(host.outbox.nextSeq(), playerId, LobbyAction.LOBBY_CLOSED, lobby.id), null)
+        lobbyManager.removeLobby(lobby.id)
+        return
+    }
 
     println(s"LobbyHandler: Game started for lobby ${lobby.id} on map ${WorldRegistry.getFilename(lobby.mapIndex)} (${instance.worldFile})")
   }

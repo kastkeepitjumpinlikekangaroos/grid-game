@@ -12,14 +12,52 @@ the GPU profiler.
 | `SpriteBatch.scala` | Batched textured quads with per-vertex tint/alpha, and `drawQuad` for any four corners (the ground's diamonds). Flushes on texture change. `setBlending(false)` for opaque geometry. |
 | `ShaderProgram.scala` | GLSL shader compilation + embedded shader source: ColorShader (pos+color), TextureShader (pos+texcoord+color), BloomExtract, GaussianBlur, Composite (bloom+vignette+overlay) |
 | `PostProcessor.scala` | Post-processing FBO pipeline: Scene FBO → Bloom extract (half-res) → Blur H → Blur V → quarter-res pair → Composite. `GRIDGAME_HOLECHECK=1` clears the scene to magenta, so any pixel the terrain leaves uncovered shows. |
-| `GLTexture.scala` | PNG loading via STB image → GL texture (`loadInspected` lets the caller measure or amend the pixels before upload). FBO creation for render-to-texture. `padTransparent` (colour into transparent texels, cell by cell) and mipmapped atlases. |
-| `GLFontRenderer.scala` | AWT-based font rasterization → GL texture atlas. Rasterized at the display's pixel density (`pixelScale`) so text is sharp on HiDPI screens; metrics and sizes in units; every draw takes a `scale`. Outlined text with drop shadows, and a heavy eight-copy outline for text over the world. Three sizes (14/22/44). |
-| `GLWindow.scala` | GLFW window create/show/destroy/resize |
-| `GLFWManager.scala` | Singleton `ensureInitialized()` shared by ControllerHandler and GLWindow |
+| `GLTexture.scala` | PNG loading via STB image → GL texture (`loadInspected` lets the caller measure or amend the pixels before upload). FBO creation for render-to-texture. `padTransparent` (colour into transparent texels, cell by cell) and mipmapped atlases. `fromArgb` makes one of an AWT picture's pixels (the pointer's). |
+| `GLFontRenderer.scala` | AWT-based font rasterization → GL texture atlas. Rasterized at the display's pixel density (`pixelScale`) so text is sharp on HiDPI screens; metrics and sizes in units; every draw takes a `scale`. Outlined text with drop shadows, and a heavy eight-copy outline for text over the world. Three sizes (14/22/44). `digitsCentredOn` places a number in a box by its digits' ink (see *Rules*). |
+| `GLWindow.scala` | GLFW window create/show/resize, and its end: `retire` (hidden for good) then `GLWindow.destroySettled` once macOS has finished with it, or `destroy` at once for a window macOS can't still be using (see *A window macOS may still be using is retired*); a blank system cursor over it for a game that draws its own pointer (`hideSystemCursor`, not `GLFW_CURSOR_HIDDEN`: see render/CLAUDE.md, *The pointer is ours*), and whether the mouse is over it with the focus, and where (`readPointer`) |
+| `GLFWManager.scala` | Singleton `ensureInitialized()` shared by ControllerHandler and GLWindow; `terminate` leaves GLFW to the process's exit while a retired window is still waiting |
 | `LightSystem.scala` | The dynamic light map (quarter-res soft blobs, multiplied in by the composite) and `LightPool`, which keeps a busy frame's strongest lights |
 | `GpuProfiler.scala` | Dev tool: fragments shaded and GPU time per frame phase, with `GRIDGAME_GPU_PROFILE=1` |
 | `Matrix4.scala` | Orthographic projection matrix |
 | `TextureRegion.scala` | Case class for (texture, u, v, u2, v2) sub-regions |
+
+## A window macOS may still be using is retired
+
+`glfwDestroyWindow` frees GLFW's record of a window while AppKit can still hold the NSWindow and
+GLFW's view in it: measured, both lived on 50-200ms after it returned, windowed, in F11's full
+screen and in macOS's own. GLFW's view reads that record whenever AppKit asks it anything
+(`-[GLFWContentView isOpaque]` is `[window->ns.object isOpaque]`). In macOS's own full screen (the
+green button, ⌃⌘F) AppKit is still taking the window out of it when `glfwDestroyWindow` returns,
+and redraws the view on the way: a Core Animation commit asked the view whether it was opaque, and
+the client crashed in `objc_msgSend` at the end of a match (2026-10-09). So a match's window is
+never destroyed at once (`MatchWindow`):
+
+- `GLWindow.retire` takes it off the screen, so the menus come straight back. It puts the
+  system's arrow back first; in GLFW's own full screen (F11) it turns auto-iconify off, or losing
+  the focus as it hides would minimise it into the Dock, and leaves that full screen once hidden, so
+  a display mode GLFW changed is put back while the record still exists. On macOS it then closes
+  the NSWindow, as `glfwDestroyWindow` would, with `releasedWhenClosed` off so it stays alive for
+  GLFW, which still needs it and only ever releases it by closing it; `destroy` releases it after
+  `glfwDestroyWindow`. Hidden alone, a window stays in macOS's own full screen, its Space with it,
+  for good; taken out with `toggleFullScreen:`, AppKit puts it back on the screen, over the menus,
+  as the animation ends. Closed, the Space goes and nothing comes back.
+- `GLWindow.destroySettled`, every quarter second from `MatchWindow`, destroys it once it is out of
+  macOS's own full screen (asked of AppKit, `styleMask`: GLFW has no word for that full screen) and
+  has been off the screen two seconds; AppKit dropped its own references to it 0.2-0.7s after the
+  close. It also puts back away any retired window AppKit has shown again, which it does to one
+  closed while it was still going into its full screen: the Space goes, the window stays on screen.
+- `GLFWManager.terminate` leaves GLFW to the process's exit while one is still waiting, since
+  `glfwTerminate` destroys every window there is.
+
+It was rare because macOS 26 zeroes a freed block: the view mostly read nil and nothing happened,
+and it crashed when the block had been handed out again first, here to the scoreboard being built
+in the same moment. Under `MallocZeroOnFree=0 MallocScribble=1` freed memory reads `0x55…` instead,
+and every stale read crashes. A throwaway harness that opened a `GLWindow` from JavaFX, put it in a
+full screen and closed it as `MatchWindow` does, run that way: destroyed at once, a window in
+macOS's own full screen crashed at the first close in 6 runs of 6; retired, 22 closes in 22
+survived: 17 in macOS's own full screen (4 with a new match opened 0.3s after the last, 5 closed
+while it was still going into it), 3 in F11's and 2 in a window. No Space was left behind, and no
+window came back but the one AppKit shows again mid-transition, put away within 0.3s.
 
 ## Batch Management
 `RenderContext` has `beginShapes()` / `beginSprites()` / `endAll()`, which every painter draws through, to minimize state transitions. Only one batch (shape or sprite) is active at a time; calling `beginShapes()` while the sprite batch is active will end the sprite batch first, and vice versa.
@@ -46,6 +84,11 @@ reserve its vertices with `ensureCapacity` before writing them; `vertex` only ha
 - **Fonts are rasterized at the display's pixel density** (`GLFontRenderer`'s `pixelScale`,
   made again if the window moves to another screen): rasterized at 1x and magnified, all text
   on a HiDPI screen — the HUD included — was soft.
+- **A number in a box is placed by its ink, not by its line** (`GLFontRenderer.digitsCentredOn`).
+  Every font in the chain draws on the tallest one's baseline, Noto's, so a line is much taller
+  than Exo 2's digits and they sit low in it: at 44, 7 units lower than Exo 2 alone would put
+  them, in a line 66 tall. The K/D counts, drawn a fixed 18 below the top of their 56-unit
+  panel, hung half out of its bottom.
 - **Strokes are one band** — `strokeOval`, `strokeArc`, `strokePolygon`, `strokeRect`,
   `strokeRoundedRect` and `strokePolyline(Tapered)` build one strip whose neighbouring segments
   share their edges (ovals as a band between an inner and an outer ellipse, polygons and

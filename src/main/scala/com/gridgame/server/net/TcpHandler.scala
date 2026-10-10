@@ -11,6 +11,7 @@ import io.netty.channel.SimpleChannelInboundHandler
 
 import java.util.UUID
 import java.net.InetSocketAddress
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 /** Netty handler for incoming TCP connections. */
@@ -26,6 +27,18 @@ class TcpHandler(sessions: Sessions, rateLimiter: RateLimiter, replay: ReplayGua
       ctx.close()
       return
     }
+    // The client logs in as soon as it has connected. A connection that hasn't within
+    // LOGIN_DEADLINE_MS is closed: nothing else ever closed one that stayed quiet, and it held its
+    // socket for as long as it liked.
+    ctx.executor().schedule(new Runnable {
+      def run(): Unit = {
+        val ch = ctx.channel()
+        if (ch.isOpen && !sessions.channelToToken.containsKey(ch)) {
+          System.err.println(s"TCP: No login within ${Constants.LOGIN_DEADLINE_MS / 1000}s from ${ch.remoteAddress()}, closing")
+          ctx.close()
+        }
+      }
+    }, Constants.LOGIN_DEADLINE_MS, TimeUnit.MILLISECONDS)
     super.channelActive(ctx)
   }
 
@@ -54,16 +67,18 @@ class TcpHandler(sessions: Sessions, rateLimiter: RateLimiter, replay: ReplayGua
         val token = sessions.channelToToken.get(ctx.channel())
         if (token != null) {
           // Inline token expiry check for TCP
+          val now = System.currentTimeMillis()
           val chPlayerId = sessions.channelToPlayer.get(ctx.channel())
           if (chPlayerId != null) {
-            if (sessions.isExpired(chPlayerId, System.currentTimeMillis())) {
+            if (sessions.isExpired(chPlayerId, now)) {
               System.err.println("TCP: Session token expired, closing channel")
               Metrics.packetsDropped.add(1L, Attrs.ReasonExpired)
               ctx.close()
               return
             }
           }
-          val verified = PacketSigner.verify(data, token)
+          // The channel's token, or one its session is being renewed with or has just retired
+          val verified = if (chPlayerId != null) sessions.verify(chPlayerId, data, token, now) else PacketSigner.verify(data, token)
           if (verified == null) {
             System.err.println("TCP: HMAC verification failed, dropping packet")
             Metrics.packetsDropped.add(1L, Attrs.ReasonHmacFail)

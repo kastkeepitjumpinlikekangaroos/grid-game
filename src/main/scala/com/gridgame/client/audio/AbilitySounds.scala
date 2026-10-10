@@ -93,11 +93,11 @@ object AbilitySounds {
   set("atk_eye_beam", ProjectileType.EYE_BEAM)
 
   // ── thrown weapons ──────────────────────────────────────────────────────
-  set("atk_axe_throw", ProjectileType.AXE)
+  set("atk_axe_throw", ProjectileType.AXE, ProjectileType.ARENA_AXE)
   set("atk_hammer_throw", ProjectileType.HAMMER)
   set("atk_bone_throw", ProjectileType.BONE_AXE, ProjectileType.BONE_THROW,
     ProjectileType.BONE_BOOMERANG)
-  set("atk_shuriken", ProjectileType.SHURIKEN)
+  set("atk_shuriken", ProjectileType.SHURIKEN, ProjectileType.THROWING_STAR)
   set("atk_knife_throw", ProjectileType.KNIFE)
   set("atk_card_throw", ProjectileType.CARD)
   set("atk_cursed_blade", ProjectileType.CURSED_BLADE)
@@ -261,7 +261,8 @@ object AbilitySounds {
   only("atk_giant_boulder", CharacterId.Cyclops, ProjectileType.THROWN_BOULDER)
 
   only("atk_bear_maul", CharacterId.Bear, ProjectileType.CLAW_SWIPE)
-  only("atk_mantis_scythe", CharacterId.Mantis, ProjectileType.CLAW_SWIPE)
+  set("atk_bear_maul", ProjectileType.MAUL)
+  set("atk_mantis_scythe", ProjectileType.MANTIS_SCYTHE)
 
   only("atk_hawk_dive", CharacterId.Hawk, ProjectileType.TALON)
   only("atk_griffin_rake", CharacterId.Griffin, ProjectileType.TALON)

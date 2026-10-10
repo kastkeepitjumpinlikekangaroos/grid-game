@@ -88,4 +88,39 @@ class ClientNetworkTest {
     overTcp(signed(update(7)))
     assertEquals(1, heard.size)
   }
+
+  // --- An hour in: the server renews the session's token (server/net/Sessions) ---
+
+  private val renewed = Array.tabulate[Byte](32)(i => (i * 13 + 5).toByte)
+
+  @Test def aRenewedTokenIsTakenUpBeforeThePacketsBehindIt(): Unit = {
+    // Taken up on the packet thread, as it was, it came after the packets behind it had been
+    // checked, and those signed with it were dropped
+    net.sessionToken = token
+    overTcp(signed(new SessionTokenPacket(2, me, renewed)))
+    overTcp(signed(update(3), renewed))
+    overUdp(signed(update(4), renewed))
+    assertEquals(3, heard.size)
+    assertArrayEquals("what we send is signed with it from now on", renewed, net.sessionToken)
+  }
+
+  @Test def theTokenARenewalReplacedIsTakenForAWhile(): Unit = {
+    // The server goes on signing with the old one until it has heard us use the new one
+    var now = 0L
+    val clocked = new NetworkThread("localhost", 0, client.enqueuePacket, () => (), () => now)
+    val tcp2 = new EmbeddedChannel(new ClientTcpHandler(client.enqueuePacket, clocked))
+    val udp2 = new EmbeddedChannel(new ClientUdpHandler(client.enqueuePacket, clocked))
+    def udpIn(bytes: Array[Byte]): Unit =
+      udp2.writeInbound(new DatagramPacket(Unpooled.wrappedBuffer(bytes),
+        new InetSocketAddress("127.0.0.1", 40000), new InetSocketAddress("127.0.0.1", Constants.SERVER_PORT)))
+    clocked.sessionToken = token
+    tcp2.writeInbound(Unpooled.wrappedBuffer(signed(new SessionTokenPacket(2, me, renewed))))
+    udpIn(signed(update(3)))
+    assertEquals(2, heard.size)
+    now += Constants.SESSION_RENEWAL_WINDOW_MS * 1000000L + 1
+    udpIn(signed(update(4)))
+    assertEquals("and not for ever", 2, heard.size)
+    udpIn(signed(update(5), renewed))
+    assertEquals(3, heard.size)
+  }
 }

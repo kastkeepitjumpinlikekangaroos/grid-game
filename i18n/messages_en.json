@@ -527,7 +527,7 @@
   "char.5.e.desc": "Fired explosive that detonates on impact with splash damage.",
   "char.5.e.name": "Rocket",
   "char.5.name": "Soldier",
-  "char.5.q.desc": "Thrown explosive that passes through players and detonates at range.",
+  "char.5.q.desc": "Thrown explosive that detonates on the first enemy it reaches, or at range.",
   "char.5.q.name": "Grenade",
   "char.50.desc": "A stealthy fighter who fans shurikens and shadow steps away.",
   "char.50.e.desc": "Teleports through shadows to cursor.",

@@ -19,11 +19,14 @@ import com.gridgame.client.game.ClientState
 import com.gridgame.client.render.GLGameRenderer
 import com.gridgame.client.ui.screens.Screens
 
+import java.util.concurrent.{CompletableFuture, TimeUnit}
+
 /**
  * The match's window. When a match starts the JavaFX stage is hidden and a GLFW window takes over:
  * the renderer draws into it from a loop on the FX thread (which on macOS is also the thread GLFW
  * and OpenGL must run on), and its keyboard, mouse and controller drive the client. When the match
- * ends it is destroyed and the stage comes back, on the scoreboard or the lobby browser.
+ * ends it is hidden and the stage comes back, on the scoreboard or the lobby browser; the window is
+ * destroyed once macOS has finished with it (GLWindow.retire).
  */
 private[client] final class MatchWindow(app: Screens) {
   import app._
@@ -55,6 +58,8 @@ private[client] final class MatchWindow(app: Screens) {
     val bounds = Screen.getPrimary.getVisualBounds
     glWindow = new GLWindow("Grid Game", bounds.getWidth.toInt, bounds.getHeight.toInt)
     glWindow.create()
+    // The renderer draws the pointer: the system's was lost in a fight (CursorPainter)
+    glWindow.hideSystemCursor()
 
     // Set up GLFW input handlers
     val glKeyHandler = new GLKeyboardHandler(client)
@@ -113,7 +118,7 @@ private[client] final class MatchWindow(app: Screens) {
             renderLoop.stop()
             glRenderer.dispose()
             glRenderer = null
-            glWindow.destroy()
+            retire(glWindow)
             glWindow = null
             Platform.runLater(() => {
               Platform.setImplicitExit(true)
@@ -128,6 +133,11 @@ private[client] final class MatchWindow(app: Screens) {
           // Refresh mouse world position after camera update so next frame's
           // input callbacks use accurate coordinates even if the mouse is stationary
           glMouseHandler.refreshWorldPosition()
+          // The pointer, over everything, where the mouse is now: only over this window while it has
+          // the focus (elsewhere the system's shows), and not while a controller's stick is aiming,
+          // when where the mouse rests means nothing
+          if (glWindow.readPointer() && !controllerHandler.stickAiming)
+            glRenderer.drawCursor(glWindow.pointerX, glWindow.pointerY, glWindow.fbWidth, glWindow.width, glWindow.height)
           glWindow.swapBuffers()
         } catch {
           case e: Exception =>
@@ -137,7 +147,7 @@ private[client] final class MatchWindow(app: Screens) {
               io.opentelemetry.api.common.Attributes.of(com.gridgame.common.observability.Attrs.Kind, "render_loop"))
             renderLoop.stop()
             if (glRenderer != null) { glRenderer.dispose(); glRenderer = null }
-            if (glWindow != null) { glWindow.destroy(); glWindow = null }
+            if (glWindow != null) { retire(glWindow); glWindow = null }
             Platform.runLater(() => {
               Platform.setImplicitExit(true)
               AudioManager.stopMusic()
@@ -186,11 +196,22 @@ private[client] final class MatchWindow(app: Screens) {
     renderLoop = null
     client.gameOverListener = null
     if (glRenderer != null) { glRenderer.dispose(); glRenderer = null }
-    if (glWindow != null) { glWindow.destroy(); glWindow = null }
+    if (glWindow != null) { retire(glWindow); glWindow = null }
     Platform.setImplicitExit(true)
     AudioManager.playMenuMusic()
     stage.show()
   }
+
+  /** The window off the screen now, and destroyed once macOS has finished with it (GLWindow.retire),
+    * which is looked at every quarter second, on the FX thread GLFW must be called from. */
+  private def retire(window: GLWindow): Unit = {
+    window.retire()
+    destroyRetiredWhenSettled()
+  }
+
+  private def destroyRetiredWhenSettled(): Unit =
+    CompletableFuture.delayedExecutor(250, TimeUnit.MILLISECONDS).execute(() =>
+      Platform.runLater(() => if (!GLWindow.destroySettled()) destroyRetiredWhenSettled()))
 
   /** Esc-Esc in a match. */
   private def leaveMatch(stage: Stage): Unit = {
@@ -243,11 +264,13 @@ private[client] final class MatchWindow(app: Screens) {
     }
   }
 
-  /** The app is shutting down: whatever of a match is still up goes with it. */
+  /** The app is shutting down: whatever of a match is still up goes with it. Its window is only
+    * retired: GLFWManager.terminate destroys it if macOS has finished with it, and otherwise leaves
+    * it to the process's exit. */
   def dispose(): Unit = {
     if (renderLoop != null) renderLoop.stop()
     if (glRenderer != null) glRenderer.dispose()
-    if (glWindow != null) glWindow.destroy()
+    if (glWindow != null) glWindow.retire()
     if (controllerHandler != null) controllerHandler.cleanup()
   }
 }

@@ -7,6 +7,7 @@ import com.gridgame.common.protocol.Packet
 import com.gridgame.common.protocol.PacketSerializer
 import com.gridgame.common.protocol.PacketSigner
 import com.gridgame.common.protocol.PacketType
+import com.gridgame.common.protocol.SessionTokenPacket
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
 import io.netty.channel._
@@ -34,17 +35,51 @@ import java.util.concurrent.TimeUnit
  * signature once there is a session (sessionToken); what passes goes to `onPacket`, on a Netty
  * thread.
  *
+ * The server renews a session's token while it lasts (server/net/Sessions): it sends the new one,
+ * signed with the old, and goes on signing with the old until it hears us use the new one. So a
+ * token is taken up the moment it is read ([[takeSessionToken]]), and the one it replaces is still
+ * taken for SESSION_RENEWAL_WINDOW_MS.
+ *
  * @param onPacket       a packet from the server, checked
  * @param onHeartbeatDue time to send the server a heartbeat
+ * @param nanoClock      the clock the old token's time is kept on (a test's own, in a test)
  */
-class NetworkThread(serverHost: String, serverPort: Int, onPacket: Packet => Unit, onHeartbeatDue: () => Unit)
+class NetworkThread(serverHost: String, serverPort: Int, onPacket: Packet => Unit, onHeartbeatDue: () => Unit,
+                    nanoClock: () => Long = () => System.nanoTime())
     extends Thread("NetworkThread") {
   private val heartbeatExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
   private val ready = new CountDownLatch(1)
   @volatile private var connectError: Throwable = _
   @volatile private var running = false
   @volatile var sessionToken: Array[Byte] = _
+  // The token the session's last renewal replaced, and until when it is still taken
+  @volatile private var retiredToken: Array[Byte] = _
+  @volatile private var retiredUntilNs = 0L
   @volatile var disconnectCallback: Runnable = _
+
+  /**
+   * A session token from the server: the login's, or a renewal's. Taken up by the handler that
+   * read it, before the packets behind it: left to the packet thread, the server's next packets,
+   * signed with it, could be checked before it was and dropped. The token it replaces is still taken.
+   */
+  def takeSessionToken(token: Array[Byte]): Unit = {
+    val old = sessionToken
+    if (old != null && !java.util.Arrays.equals(old, token)) {
+      // Put by before the new token goes in: a handler that reads the new one finds the old by it
+      retiredUntilNs = nanoClock() + Constants.SESSION_RENEWAL_WINDOW_MS * 1000000L
+      retiredToken = old
+    }
+    sessionToken = token
+  }
+
+  /** The payload of a packet the session signed (with `token`, its token as read by the caller, or
+    * for a while after a renewal the one before), or null. */
+  private[net] def verify(data: Array[Byte], token: Array[Byte]): Array[Byte] = {
+    val payload = PacketSigner.verify(data, token)
+    if (payload != null) return payload
+    val retired = retiredToken
+    if (retired != null && nanoClock() - retiredUntilNs < 0) PacketSigner.verify(data, retired) else null
+  }
 
   private var eventLoopGroup: NioEventLoopGroup = _
   private var tcpChannel: Channel = _
@@ -209,7 +244,7 @@ class ClientTcpHandler(onPacket: Packet => Unit, networkThread: NetworkThread) e
     try {
       val token = networkThread.sessionToken
       val payload = if (token != null) {
-        val verified = PacketSigner.verify(data, token)
+        val verified = networkThread.verify(data, token)
         if (verified == null) {
           System.err.println("ClientTcpHandler: HMAC verification failed, dropping packet")
           return
@@ -222,6 +257,11 @@ class ClientTcpHandler(onPacket: Packet => Unit, networkThread: NetworkThread) e
         p
       }
       val packet = PacketSerializer.deserialize(payload)
+      packet match {
+        // Taken up here, before the packets behind it are read: they are signed with it
+        case t: SessionTokenPacket => networkThread.takeSessionToken(t.getSessionToken)
+        case _ =>
+      }
       Metrics.clientPacketsReceived.add(1L, Attrs.packet(packet.getType))
       onPacket(packet)
     } catch {
@@ -270,7 +310,7 @@ class ClientUdpHandler(onPacket: Packet => Unit, networkThread: NetworkThread) e
     try {
       val token = networkThread.sessionToken
       val payload = if (token != null) {
-        val verified = PacketSigner.verify(data, token)
+        val verified = networkThread.verify(data, token)
         if (verified == null) {
           System.err.println("ClientUdpHandler: HMAC verification failed, dropping packet")
           return

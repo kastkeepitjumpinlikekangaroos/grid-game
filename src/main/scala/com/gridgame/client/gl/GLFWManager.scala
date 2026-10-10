@@ -23,9 +23,11 @@ object GLFWManager {
   def isInitialized: Boolean = initialized
 
   def terminate(): Unit = {
-    if (initialized) {
-      glfwTerminate()
-      initialized = false
-    }
+    if (!initialized) return
+    // glfwTerminate destroys every window still open, and would free one macOS hasn't finished
+    // with under AppKit (GLWindow.retire): the process's exit takes those, and GLFW, instead
+    if (!GLWindow.destroySettled()) return
+    glfwTerminate()
+    initialized = false
   }
 }

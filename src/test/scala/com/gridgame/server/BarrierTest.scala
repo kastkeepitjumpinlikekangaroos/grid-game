@@ -47,7 +47,7 @@ class BarrierTest {
     val enemy = m.join(CharacterId.Soldier, 10, 30)
     raise(m, holder)
     m.tickUntilGone(m.launch(enemy, ProjectileType.BULLET, 1f, 0f))
-    assertEquals(holder.getMaxHealth - 20, holder.getHealth)
+    assertEquals(holder.getMaxHealth - ProjectileDef.get(ProjectileType.BULLET).damage, holder.getHealth)
   }
 
   @Test def theHoldersOwnShotsPass(): Unit = {
@@ -253,11 +253,11 @@ class BarrierTest {
     raise(m, holder, East)
     // Facing +x, a shot coming up from +y takes them in the side
     m.tickUntilGone(m.launch(enemy, ProjectileType.BULLET, 0f, -1f))
-    assertEquals(holder.getMaxHealth - 20, holder.getHealth)
+    assertEquals(holder.getMaxHealth - ProjectileDef.get(ProjectileType.BULLET).damage, holder.getHealth)
     // Turned to face it, the next one is stopped
     raise(m, holder, Math.PI / 2)
     m.tickUntilGone(m.launch(enemy, ProjectileType.BULLET, 0f, -1f))
-    assertEquals(holder.getMaxHealth - 20, holder.getHealth)
+    assertEquals(holder.getMaxHealth - ProjectileDef.get(ProjectileType.BULLET).damage, holder.getHealth)
   }
 
   @Test def everyoneIsToldOfItAndWhichWayItFaces(): Unit = {
@@ -295,7 +295,7 @@ class BarrierTest {
     Thread.sleep(70)
     assertFalse(holder.hasBarrier)
     m.tickUntilGone(m.launch(enemy, ProjectileType.BULLET, -1f, 0f))
-    assertEquals(holder.getMaxHealth - 20, holder.getHealth)
+    assertEquals(holder.getMaxHealth - ProjectileDef.get(ProjectileType.BULLET).damage, holder.getHealth)
     assertEquals(0, m.instance.stateUpdate(holder).getEffectFlags2 & BARRIER)
   }
 
@@ -346,7 +346,7 @@ class BarrierTest {
     val until = holder.getBarrierUntil
     assertEquals("the Scutum's 3s", holder.getBarrierRaisedAt + 3000, until)
     m.clearSent()
-    assertEquals(1, m.fire(holder, AttackSlot.PRIMARY, ProjectileType.AXE, Seq((1f, 0f))).size)
+    assertEquals(1, m.fire(holder, AttackSlot.PRIMARY, ProjectileType.ARENA_AXE, Seq((1f, 0f))).size)
     assertEquals(1, m.fire(holder, AttackSlot.E, ProjectileType.ROPE, Seq((0f, -1f))).size)
     assertTrue(holder.hasBarrier)
     assertEquals("it comes down when it always would", until, holder.getBarrierUntil)

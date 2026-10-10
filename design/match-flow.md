@@ -115,3 +115,15 @@ clock went back further than that margin during a match, the sync found a second
 ran on for another ten seconds with every countdown at 0:00. That was about one match in ten on the
 dev machine. `EndGameTest` pins both halves, and a match can be made shorter for a test with
 `durationMs`.
+
+**The match comes down whatever happens while it is scored.** `MatchEnd.endGame` scores it, saves
+it and updates ratings in a `try`, and in its `finally` sends `SCORE_END` (which takes every client
+to the scoreboard), unregisters the match and removes its lobby. A database error there — another
+connection holding the database's lock past its 3s busy timeout, as a second server sharing
+`game_accounts.db` or a sqlite3 shell could — used to stop it halfway: the lobby and its stopped match
+stayed for good, its players on a frozen match with no scoreboard and refused "already in a lobby"
+until they left it, and the lobby counted against `MAX_LOBBIES` until a restart — a hundred of them
+and nobody could make a lobby, practice or play ranked. The results are lost then, not the server.
+A match that fails to start leaves nothing behind either: `MatchLauncher.launch` stops and
+unregisters what it had started before it rethrows, and `LobbyHandler.handleStart` closes the lobby
+(`LOBBY_CLOSED`). `EndGameTest` and `LobbyFlowTest` pin both.

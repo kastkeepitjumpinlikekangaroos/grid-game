@@ -118,8 +118,9 @@ class TestMatch(val world: WorldData = WorldData.createEmpty(60, 60), gameMode: 
   private val udpInbox = mutable.Map[InetSocketAddress, mutable.Buffer[Packet]]()
   private var seq = 0
 
-  def join(character: CharacterId, x: Int, y: Int, team: Byte = 0): Player = {
-    val p = new Player(UUID.randomUUID(), character.name, new Position(x, y), 0xFF336699)
+  /** A player at (x, y); a bot with a bot's id (`new UUID(0L, n)`, TeamAssignment.isBot). */
+  def join(character: CharacterId, x: Int, y: Int, team: Byte = 0, id: UUID = UUID.randomUUID()): Player = {
+    val p = new Player(id, character.name, new Position(x, y), 0xFF336699)
     p.setCharacterId(character.id)
     p.setHealth(p.getMaxHealth)
     p.setTeamId(team)

@@ -26,11 +26,15 @@ import com.gridgame.client.render.projectiles.GLProjectileRenderers
  * because a projectile that reads well on one ground can vanish on another. Frames are
  * emitted at several animation ticks so motion-driven shapes can be judged too.
  *
- *   ... -- out/dir --focus=LIGHTNING,SOUL_BOLT
+ *   ... -- out/dir --focus=LIGHTNING,SOUL_BOLT,SONIC_WAVE@Musician
  *
  * writes focus_<NAME>.png instead: one sheet per type, four headings across and four moments
  * down, which is the loop for anything drawn along or behind its flight path (tails, tethers,
  * a bolt's channel) — the contact sheets only ever fly one way.
+ *
+ * A type several characters throw is drawn as each one's (GLProjectileRenderers.getRenderer with
+ * the thrower). The sheets draw every type's own look, then every character's own look for a type
+ * it throws, named TYPE@Character (in index.txt too, and for --focus=).
  *
  *   ... -- out/dir --blasts
  *   ... -- out/dir --blasts=WAIL,SEISMIC
@@ -63,6 +67,25 @@ object ProjectileGallery {
     m.sortBy { case (_, id) => id & 0xFF }.toSeq
   }
 
+  /** One look to draw: a type, and who throws it (-1: the type's own look, as for a thrower nobody
+    * knows). */
+  private final case class Look(name: String, id: Byte, who: Byte)
+
+  /** Every type's own look, then every character's own look for a type it throws, where it has one
+    * other than the type's: TYPE@Character. */
+  private def allLooks(types: Seq[(String, Byte)]): Seq[Look] = {
+    val nameOf = types.map { case (n, id) => id -> n }.toMap
+    val theirs = CharacterDef.all.flatMap { c =>
+      Seq(c.primaryProjectileType, c.qAbility.projectileType, c.eAbility.projectileType).distinct
+        .filter { t =>
+          val r = GLProjectileRenderers.getRenderer(c.id.id, t)
+          !(t >= -4 && t < 0) && r != null && (r ne GLProjectileRenderers.getRenderer(t))
+        }
+        .map(t => Look(s"${nameOf(t)}@${c.displayName}", t, c.id.id))
+    }
+    types.map { case (n, id) => Look(n, id, -1) } ++ theirs
+  }
+
   def main(args: Array[String]): Unit = {
     val outDir = new File(if (args.nonEmpty) args(0) else "gallery")
     outDir.mkdirs()
@@ -91,15 +114,15 @@ object ProjectileGallery {
     post.vignetteStrength = 0f
 
     val types = allTypes
+    val looks = allLooks(types)
 
     args.find(_.startsWith("--focus=")).foreach { a =>
-      val byName = types.toMap
       a.substring("--focus=".length).split(",").map(_.trim).filter(_.nonEmpty).foreach { n =>
-        byName.get(n) match {
-          case Some(id) =>
-            renderFocus(sb, post, id)
-            ImageIO.write(readback(), "png", new File(outDir, s"focus_$n.png"))
-          case None => System.err.println(s"no projectile type named $n")
+        looks.find(_.name.equalsIgnoreCase(n)) match {
+          case Some(look) =>
+            renderFocus(sb, post, look)
+            ImageIO.write(readback(), "png", new File(outDir, s"focus_${look.name}.png"))
+          case None => System.err.println(s"no projectile type or look named $n")
         }
       }
       println(s"wrote focus sheets to ${outDir.getAbsolutePath}")
@@ -116,20 +139,20 @@ object ProjectileGallery {
       glfwTerminate()
       return
     }
-    val pages = (types.size + PerPage - 1) / PerPage
+    val pages = (looks.size + PerPage - 1) / PerPage
     val ticks = Seq(0, 9, 18, 27)
 
     if (args.length > 1 && args(1) == "--bench") {
       // Cost of one screen's worth of projectiles, so an art change can be checked
       // against the frame budget rather than guessed at.
-      val slice = types.slice(0, PerPage)
+      val slice = looks.slice(0, PerPage)
       var w = 0; while (w < 40) { renderPage(sb, post, slice, w); w += 1 }
       org.lwjgl.opengl.GL11.glFinish()
       val t0 = System.nanoTime()
       var i2 = 0; while (i2 < 200) { renderPage(sb, post, slice, i2); i2 += 1 }
       org.lwjgl.opengl.GL11.glFinish()
       val full = (System.nanoTime() - t0) / 200.0 / 1e6
-      val empty = Seq.empty[(String, Byte)]
+      val empty = Seq.empty[Look]
       var w2 = 0; while (w2 < 40) { renderPage(sb, post, empty, w2); w2 += 1 }
       org.lwjgl.opengl.GL11.glFinish()
       val t1 = System.nanoTime()
@@ -141,9 +164,9 @@ object ProjectileGallery {
 
     val index = new StringBuilder
     for (page <- 0 until pages) {
-      val slice = types.slice(page * PerPage, (page + 1) * PerPage)
-      slice.zipWithIndex.foreach { case ((n, id), i) =>
-        index.append(s"$page ${i / Cols} ${i % Cols} $n ${id & 0xFF}\n")
+      val slice = looks.slice(page * PerPage, (page + 1) * PerPage)
+      slice.zipWithIndex.foreach { case (look, i) =>
+        index.append(s"$page ${i / Cols} ${i % Cols} ${look.name} ${look.id & 0xFF}\n")
       }
       for (t <- ticks) {
         renderPage(sb, post, slice, t)
@@ -154,13 +177,14 @@ object ProjectileGallery {
     java.nio.file.Files.write(new File(outDir, "index.txt").toPath, index.toString.getBytes("UTF-8"))
     renderImpacts(sb, post, types, outDir)
     renderFlyers(sb, post, types, outDir)
-    println(s"wrote ${pages * ticks.size} sheets for ${types.size} types to ${outDir.getAbsolutePath}")
+    println(s"wrote ${pages * ticks.size} sheets for ${types.size} types and ${looks.size - types.size} " +
+      s"characters' own looks to ${outDir.getAbsolutePath}")
     glfwDestroyWindow(win)
     glfwTerminate()
   }
 
   private def renderPage(sb: ShapeBatch, post: PostProcessor,
-                         slice: Seq[(String, Byte)], tick: Int): Unit = {
+                         slice: Seq[Look], tick: Int): Unit = {
     post.animationTime = tick * 0.016f
     post.beginScene()
     val proj = Matrix4.orthographic(0f, W / Zoom, H / Zoom, 0f)
@@ -179,7 +203,7 @@ object ProjectileGallery {
 
     i = 0
     while (i < slice.size) {
-      val (_, id) = slice(i)
+      val look = slice(i)
       val cx = (i % Cols) * CellW
       val cy = (i / Cols) * CellH
       // Origin sits right-of-centre: every projectile's head is at its hitbox and
@@ -187,8 +211,8 @@ object ProjectileGallery {
       // the room is needed.
       val sx = cx + CellW * 0.62f
       val sy = cy + CellH * 0.55f
-      val p = makeProjectile(id, i)
-      val r = GLProjectileRenderers.getRenderer(id)
+      val p = makeProjectile(look.id, i, look.who)
+      val r = GLProjectileRenderers.getRenderer(look.who, look.id)
       if (r != null) r(p, sx, sy, sb, tick)
       else GLProjectileRenderers.drawGeneric(p, sx, sy, sb, tick, 0.55f, 0.7f, 0.95f)
       i += 1
@@ -208,7 +232,8 @@ object ProjectileGallery {
    * at later ticks. Each cell is clipped to itself, since a tail or a tether can run further
    * than a cell, and the head is set off toward where it is heading so what trails it has room.
    */
-  private def renderFocus(sb: ShapeBatch, post: PostProcessor, id: Byte): Unit = {
+  private def renderFocus(sb: ShapeBatch, post: PostProcessor, look: Look): Unit = {
+    val id = look.id
     post.animationTime = 0f
     post.beginScene()
     sb.begin(Matrix4.orthographic(0f, W / Zoom, H / Zoom, 0f))
@@ -224,7 +249,7 @@ object ProjectileGallery {
       var col = 0
       while (col < Cols) {
         val (hx, hy) = FocusHeadings(col)
-        val p = new Projectile(row * 11 + col * 3 + 5, UUID.randomUUID(), 10f, 10f, hx, hy, 0x88AAFF, 0, id)
+        val p = new Projectile(row * 11 + col * 3 + 5, UUID.randomUUID(), 10f, 10f, hx, hy, 0x88AAFF, 0, id, look.who)
         var guard = 0
         while (p.getDistanceTraveled < FocusFlown(row) && guard < 200) { p.moveStep(0.25f); guard += 1 }
         // Head set off from the middle toward its heading, by half the screen length it has flown
@@ -233,7 +258,7 @@ object ProjectileGallery {
         val sy = row * CellH + CellH * 0.55f + fy * 5f
         glScissor(Math.round(col * CellW * Zoom), Math.round(H - (row + 1) * CellH * Zoom),
           Math.round(CellW * Zoom), Math.round(CellH * Zoom))
-        val r = GLProjectileRenderers.getRenderer(id)
+        val r = GLProjectileRenderers.getRenderer(look.who, id)
         if (r != null) r(p, sx, sy, sb, FocusTicks(row))
         else GLProjectileRenderers.drawGeneric(p, sx, sy, sb, FocusTicks(row), 0.55f, 0.7f, 0.95f)
         sb.flush()
@@ -375,8 +400,8 @@ object ProjectileGallery {
   private val _polyYs = new Array[Float](8)
 
   /** A projectile travelling right-and-down (screen-right in the isometric projection). */
-  private def makeProjectile(id: Byte, seed: Int): Projectile = {
-    val p = new Projectile(seed * 7 + 3, UUID.randomUUID(), 10f, 10f, 1f, 0f, 0x88AAFF, 0, id)
+  private def makeProjectile(id: Byte, seed: Int, who: Byte = -1): Projectile = {
+    val p = new Projectile(seed * 7 + 3, UUID.randomUUID(), 10f, 10f, 1f, 0f, 0x88AAFF, 0, id, who)
     // A third of the way into this type's own range, not a fixed six steps. Six steps put
     // every short-range projectile — a talon, a fang, a punch are all maxRange 3-4 — past
     // its end of range, so the cell showed it dissipating at 30% alpha and 130% scale,

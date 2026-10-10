@@ -74,6 +74,22 @@ object GLTexture {
     fromBytes(bytes, nearest, inspect)
   }
 
+  /** A texture of `w` x `h` pixels given as ARGB ints, row by row from the top (an AWT image's
+    * `getRGB`), with straight alpha, as the batches blend. */
+  def fromArgb(argb: Array[Int], w: Int, h: Int, nearest: Boolean = false): GLTexture = {
+    val buf = BufferUtils.createByteBuffer(w * h * 4)
+    var i = 0
+    while (i < w * h) {
+      val p = argb(i)
+      buf.put(((p >> 16) & 0xFF).toByte).put(((p >> 8) & 0xFF).toByte).put((p & 0xFF).toByte).put(((p >>> 24) & 0xFF).toByte)
+      i += 1
+    }
+    buf.flip()
+    val tex = createEmpty(w, h, nearest)
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, buf)
+    tex
+  }
+
   /** Create a 1x1 solid white pixel texture (useful for tinted sprite drawing). */
   def createWhitePixel(): GLTexture = {
     val texId = glGenTextures()

@@ -28,9 +28,9 @@ case class ProjectileDef(
     chargeRangeScaling: Option[ChargeScaling] = None,
     hitRadius: Float = 1.8f,
     // How far behind the projectile its hit circle is centred, once it has flown far enough
-    // (Projectile.hitsPlayer). A wave is drawn as a crescent trailing back from its leading edge,
-    // which is where the projectile is, so a circle round that edge struck players 1.8 cells ahead
-    // of the water
+    // (Projectile.hitsPlayer). A wave or a gust is drawn trailing back from its leading edge, which
+    // is where the projectile is, so a circle round that edge struck players 1.8 cells ahead of the
+    // water
     hitCentreBehind: Float = 0f,
     passesThroughPlayers: Boolean = false,
     passesThroughWalls: Boolean = false,
@@ -104,8 +104,8 @@ object ProjectileDef {
     name = "Normal",
     speedMultiplier = 0.8f, // not used directly — charge scaling overrides
     chargeSpeedScaling = Some(ChargeScaling(0.8f, 2.0f)),
-    damage = 10,
-    chargeDamageScaling = Some(ChargeScaling(10f, 100f)),
+    damage = 17,
+    chargeDamageScaling = Some(ChargeScaling(17f, 100f)),
     maxRange = 15,
     chargeRangeScaling = Some(ChargeScaling(15f, 30f))
   )

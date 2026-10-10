@@ -148,15 +148,23 @@ private[render] final class MatchInfoPainter(ctx: RenderContext, opening: Openin
       }
     }
 
-    // K/D display — styled panel top-left
+    // K/D display — styled panel top-left. Each half is an icon with its count beside it, both centred
+    // on the panel's middle, and is as wide as its count needs. The counts used to be drawn 18 below
+    // the panel's top, which in the large font's tall line left their lower half hanging out of the
+    // panel, and a second digit ran over the divider into the skull, or out of the panel's side.
     val kc = client.killCount; val dc = client.deathCount
     if (kc != _cachedKills || dc != _cachedDeaths) {
       _cachedKills = kc; _cachedDeaths = dc
       _cachedKillStr = kc.toString
       _cachedDeathStr = dc.toString
     }
-    val kdPanelX = 10f; val kdPanelY = 10f
-    val kdPanelW = 130f; val kdPanelH = 56f
+    val kdPanelX = 10f; val kdPanelY = 10f; val kdPanelH = 56f
+    val kdMidY = kdPanelY + kdPanelH / 2
+    val kdCountX = 29f // a count's start from its half's left edge, clear of the icon
+    val kdKillW = Math.max(65f, Math.ceil(kdCountX + fontLarge.measureWidth(_cachedKillStr) + 8f).toFloat)
+    val kdDeathW = Math.max(65f, Math.ceil(kdCountX + fontLarge.measureWidth(_cachedDeathStr) + 8f).toFloat)
+    val kdPanelW = kdKillW + kdDeathW
+    val kdDividerX = kdPanelX + kdKillW
     beginShapes()
     shapeBatch.fillRoundedRectGradient(kdPanelX, kdPanelY, kdPanelW, kdPanelH, 8f,
       0.08f, 0.08f, 0.14f, 0.75f,
@@ -166,9 +174,9 @@ private[render] final class MatchInfoPainter(ctx: RenderContext, opening: Openin
     // Subtle border for definition
     shapeBatch.strokeRect(kdPanelX, kdPanelY, kdPanelW, kdPanelH, 1f, 0.3f, 0.3f, 0.4f, 0.25f)
     // Divider line
-    shapeBatch.strokeLine(kdPanelX + kdPanelW / 2, kdPanelY + 6, kdPanelX + kdPanelW / 2, kdPanelY + kdPanelH - 6, 1f, 0.3f, 0.3f, 0.4f, 0.4f)
+    shapeBatch.strokeLine(kdDividerX, kdPanelY + 6, kdDividerX, kdPanelY + kdPanelH - 6, 1f, 0.3f, 0.3f, 0.4f, 0.4f)
     // Crossed swords icon (kills) — detailed blades with guard and pommel
-    val swordCX = kdPanelX + 16f; val swordCY = kdPanelY + 15f
+    val swordCX = kdPanelX + 16f; val swordCY = kdMidY
     // Left sword blade (top-left to bottom-right)
     shapeBatch.strokeLine(swordCX - 5.5f, swordCY - 6.5f, swordCX + 5.5f, swordCY + 6.5f, 2f, 0.55f, 0.95f, 0.55f, 0.9f)
     shapeBatch.strokeLine(swordCX - 5f, swordCY - 6f, swordCX + 4f, swordCY + 5f, 1f, 0.75f, 1f, 0.75f, 0.4f) // blade highlight
@@ -187,7 +195,7 @@ private[render] final class MatchInfoPainter(ctx: RenderContext, opening: Openin
     shapeBatch.fillOval(swordCX + 6f, swordCY - 7f, 1.2f, 1.2f, 0.8f, 1f, 0.8f, 0.7f, 4)
 
     // Skull icon (deaths) — detailed skull with jaw, cracks, and crossbones
-    val skullCX = kdPanelX + kdPanelW / 2 + 16f; val skullCY = kdPanelY + 13f
+    val skullCX = kdDividerX + 16f; val skullCY = kdMidY
     // Crossbones behind skull
     shapeBatch.strokeLine(skullCX - 7f, skullCY + 5f, skullCX + 7f, skullCY - 1f, 1.5f, 0.7f, 0.18f, 0.18f, 0.5f)
     shapeBatch.strokeLine(skullCX + 7f, skullCY + 5f, skullCX - 7f, skullCY - 1f, 1.5f, 0.7f, 0.18f, 0.18f, 0.5f)
@@ -232,10 +240,11 @@ private[render] final class MatchInfoPainter(ctx: RenderContext, opening: Openin
     ; fi += 1 } }
 
     beginSprites()
+    val kdCountY = fontLarge.digitsCentredOn(kdMidY)
     // Kill count in green (large font for readability)
-    fontLarge.drawTextOutlined(spriteBatch, _cachedKillStr, kdPanelX + 29f, kdPanelY + 18f, 0.4f, 1f, 0.4f)
+    fontLarge.drawTextOutlined(spriteBatch, _cachedKillStr, kdPanelX + kdCountX, kdCountY, 0.4f, 1f, 0.4f)
     // Death count in red (large font for readability)
-    fontLarge.drawTextOutlined(spriteBatch, _cachedDeathStr, kdPanelX + kdPanelW / 2 + 29f, kdPanelY + 18f, 1f, 0.4f, 0.4f)
+    fontLarge.drawTextOutlined(spriteBatch, _cachedDeathStr, kdDividerX + kdCountX, kdCountY, 1f, 0.4f, 0.4f)
 
     // Kill feed text
     { var fi = 0; while (fi < _feedCount) {

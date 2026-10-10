@@ -47,6 +47,8 @@ scala_library(
     ("trap_test", "TrapTest.scala", []),
     ("barrier_test", "BarrierTest.scala", []),
     ("bot_movement_test", "BotMovementTest.scala", []),
+    # Walks bots round the walls of every map, so it reads the maps
+    ("bot_pathing_test", "BotPathingTest.scala", ["//worlds:world_files"]),
     ("melee_kits_test", "MeleeKitsTest.scala", []),
     ("network_handler_test", "NetworkHandlerTest.scala", []),
     ("reconnect_test", "ReconnectTest.scala", []),

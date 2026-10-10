@@ -34,6 +34,7 @@ import com.gridgame.client.render.projectiles.GLProjectileRenderers
  *                                                                  # only these projectile types in flight
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --blasts=12
  *                                                                  # every character's blasts going off round us
+ *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --aim        # us charging a shot, its lane drawn
  *
  * Drives the real GLGameRenderer the way the client does — a GLFW window at the client's
  * size, frames driven by a JavaFX AnimationTimer on the FX thread — over a fabricated
@@ -173,6 +174,14 @@ class RenderBenchApp extends Application {
       // the HUD is only drawn in a match
       client.clientState = com.gridgame.client.game.ClientState.PLAYING
     }
+    // --aim has us charge a shot all through the run, as the Tidecaller, starting it again every five
+    // seconds and turning the aim slowly round, so the lane on the ground (AimArrowPainter) is drawn
+    // growing and full, running free and stopped by walls. Off by default, like the rest.
+    val withAim = args.contains("--aim")
+    if (withAim) {
+      client.selectedCharacterId = CharacterId.Tidecaller.id
+      client.packetSink = _ => ()
+    }
     val players = (0 until nPlayers).map { i =>
       val id = UUID.randomUUID()
       val p = new Player(id, s"Bot$i", walkableNear(home.getX, home.getY, 10), Player.generateColorFromUUID(id), 100)
@@ -253,15 +262,22 @@ class RenderBenchApp extends Application {
       nextBlastKey += 1
     }
 
+    // Each projectile thrown by a character who throws its type, each of them in turn, so a type
+    // several characters throw is drawn as each one's (GLProjectileRenderers), as in a match
+    val throwers: Map[Byte, Array[Byte]] = CharacterDef.all.flatMap { c =>
+      Seq(c.primaryProjectileType, c.qAbility.projectileType, c.eAbility.projectileType).distinct.map(t => t -> c.id.id)
+    }.groupBy(_._1).map { case (t, cs) => t -> cs.map(_._2).toArray }
     var nextProjId = 1
     var typeCursor = 0
     def spawnProjectile(): Unit = {
       val shooter = players(rng.nextInt(players.length))
       val sp = shooter.getPosition
       val ang = rng.nextDouble() * Math.PI * 2
-      val t = types(typeCursor % types.length); typeCursor += 1
+      val t = types(typeCursor % types.length)
+      val who = throwers.get(t).map(cs => cs((typeCursor / types.length) % cs.length)).getOrElse(-1.toByte)
+      typeCursor += 1
       val p = new Projectile(nextProjId, shooter.getId, sp.getX + 0.5f, sp.getY + 0.5f,
-        Math.cos(ang).toFloat, Math.sin(ang).toFloat, shooter.getColorRGB, rng.nextInt(100), t)
+        Math.cos(ang).toFloat, Math.sin(ang).toFloat, shooter.getColorRGB, rng.nextInt(100), t, who)
       client.getProjectiles.put(nextProjId, p)
       nextProjId += 1
     }
@@ -349,6 +365,13 @@ class RenderBenchApp extends Application {
         client.recordDividerImpact(d.at.toFloat, along.toFloat, now)
       }
 
+      // Our charge: begun again every 300 frames (it fills in 240), aimed a little further round each frame
+      if (withAim) {
+        if (frame % 300 == 0) { client.isCharging = false; client.startCharging() }
+        val a = frame * 0.004
+        client.setMouseWorldPosition(home.getX + 6 * Math.cos(a), home.getY + 6 * Math.sin(a))
+      }
+
       // Blasts going off round us, one every so often so that about blastTarget are going at once
       if (blastTarget > 0 && frame % Math.max(1, 72 / blastTarget) == 0) blastNear(now)
 
@@ -393,6 +416,10 @@ class RenderBenchApp extends Application {
         val c0 = threads.getCurrentThreadCpuTime
         val t0 = System.nanoTime()
         renderer.render(dt, window.fbWidth, window.fbHeight, window.width, window.height)
+        // and the pointer over it, as MatchWindow draws it: circling the middle of the screen
+        val turn = frame * 0.02
+        renderer.drawCursor(window.width * (0.5 + 0.25 * Math.cos(turn)), window.height * (0.5 + 0.25 * Math.sin(turn)),
+          window.fbWidth, window.width, window.height)
         val t1 = System.nanoTime()
         val c1 = threads.getCurrentThreadCpuTime
         glFinish()
@@ -422,7 +449,8 @@ class RenderBenchApp extends Application {
         println(f"render bench: ${window.fbWidth}x${window.fbHeight} fb (${window.width}x${window.height} window), " +
           f"quality ${RenderQuality.tierName}, $nPlayers players, ${client.getProjectiles.size} projectiles, " +
           f"${if (withEffects) "status effects, " else ""}${if (withBarriers) "barriers, " else ""}" +
-          f"${if (withTraps) s"$nTraps traps, " else ""}${if (blastTarget > 0) s"~$blastTarget blasts, " else ""}$n frames")
+          f"${if (withTraps) s"$nTraps traps, " else ""}${if (blastTarget > 0) s"~$blastTarget blasts, " else ""}" +
+          f"${if (withAim) "aiming, " else ""}$n frames")
         println(f"  frame build (wall):  mean ${mean(cpuNs)}%.2f ms, p50 ${pct(cpuNs, 0.5)}%.2f, p99 ${pct(cpuNs, 0.99)}%.2f, max ${pct(cpuNs, 1.0)}%.2f")
         println(f"  frame build (CPU):   mean ${mean(threadCpuNs)}%.2f ms, p50 ${pct(threadCpuNs, 0.5)}%.2f, p99 ${pct(threadCpuNs, 0.99)}%.2f  (render thread CPU time)")
         println(f"  frame done (GPU):    mean ${mean(gpuNs)}%.2f ms, p50 ${pct(gpuNs, 0.5)}%.2f, p99 ${pct(gpuNs, 0.99)}%.2f, max ${pct(gpuNs, 1.0)}%.2f")

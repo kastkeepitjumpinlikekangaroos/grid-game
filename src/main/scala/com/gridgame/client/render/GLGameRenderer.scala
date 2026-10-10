@@ -28,6 +28,7 @@ import com.gridgame.common.model._
  *  5. The post-processing composite: bloom, the light map, the grade, the vignette
  *  6. Over the finished frame, at the display's full resolution: name plates, health bars and
  *     damage numbers (WorldOverlayPainter), then the HUD (HudPainter)
+ *  7. Last, in a call of its own ([[drawCursor]]): the mouse's pointer (CursorPainter)
  */
 class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.System) {
   private val ctx = new RenderContext(client, clock)
@@ -55,6 +56,7 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
   private val practice = new PracticePainter(ctx)
   private val hud = new HudPainter(ctx, abilityBar, chat, matchInfo, practice, items)
   private val deathScreens = new DeathScreenPainter(ctx)
+  private val cursor = new CursorPainter(ctx)
 
   /** The camera, which the mouse handler reads to turn the cursor into a world position. */
   def camera: GameCamera = ctx.camera
@@ -444,6 +446,17 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
     GpuProfiler.endFrame()
   }
 
+  /** The mouse's pointer, over the frame [[render]] has just drawn — HUD, death screen and all — with
+    * its hotspot at (x, y) in the window's units, as GLFW gives the cursor's position (CursorPainter).
+    * Its own call, after the frame, so that it can be drawn where the mouse is as late as possible,
+    * and not at all when the mouse is somewhere else. */
+  def drawCursor(x: Double, y: Double, fbWidth: Int, windowWidth: Int, windowHeight: Int): Unit = {
+    if (!initialized || fbWidth <= 0 || windowWidth <= 0 || windowHeight <= 0) return
+    projection = Matrix4.orthographic(0f, windowWidth.toFloat, windowHeight.toFloat, 0f)
+    cursor.draw(x.toFloat, y.toFloat, fbWidth.toFloat / windowWidth)
+    endAll()
+  }
+
   /** The grade for a map's background, set whenever the background changes. */
   private def setGrade(bg: String): Unit = {
     bgType = bg match {
@@ -536,6 +549,7 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
       postProcessor.dispose()
       lightSystem.dispose()
       backgrounds.dispose()
+      cursor.dispose()
       GLTileRenderer.dispose()
       GLSpriteGenerator.clearCache()
       initialized = false

@@ -26,14 +26,16 @@ library, with the build machine's jars, for the tests.
 When a match starts, `MatchWindow.open` hides the JavaFX stage and creates a GLFW window with an
 OpenGL context. The game loop runs as a JavaFX `AnimationTimer` (it fires on the main thread, which
 on macOS both GLFW and OpenGL require): it polls GLFW's events, updates the input handlers and the
-controller, and has the renderer draw a frame. On game over the GLFW window is destroyed and the
-JavaFX stage shown again, on the scoreboard (or the lobby browser if the match was left).
-Everything the renderer reads of the game is the `GameClient`'s, which the packet thread writes
-(game/CLAUDE.md).
+controller, and has the renderer draw a frame. On game over the GLFW window is hidden and the
+JavaFX stage shown again, on the scoreboard (or the lobby browser if the match was left); the
+window is destroyed a couple of seconds later, once macOS has finished with it (`GLWindow.retire`:
+destroyed straight away in macOS's own full screen, it crashed the client). Everything the renderer
+reads of the game is the `GameClient`'s, which the packet thread writes (game/CLAUDE.md).
 
-- **GLFW window swap** — hiding JavaFX Stage and creating a GLFW window avoids FBO→WritableImage pixel-copy overhead. Both use Cocoa NSWindows on macOS and coexist safely.
+- **GLFW window swap** — hiding JavaFX Stage and creating a GLFW window avoids FBO→WritableImage pixel-copy overhead. Both use Cocoa NSWindows on macOS and coexist safely, as long as the GLFW one is never destroyed while AppKit is still busy with it (gl/CLAUDE.md, *A window macOS may still be using is retired*).
 - **AnimationTimer game loop** — fires on the FX Application Thread (main thread on macOS), which is required for both GLFW and OpenGL calls. No threading complexity.
 - **JavaFX UI retained** — Login, lobby, character selection, and scoreboard remain in JavaFX. Only in-game rendering uses OpenGL.
+- **The match draws its own pointer** — over the GLFW window the system's is hidden and the renderer draws a crosshair after each frame, where the mouse is, while the window has the focus (render/CLAUDE.md, *The pointer is ours*). The menus keep the system's.
 
 ## Memory and performance
 
@@ -41,7 +43,8 @@ The target is an old machine with little RAM. Two dev tools measure it, and any 
 could move these numbers should be checked with them rather than guessed at:
 
 ```bash
-# A busy match (16 players, 150 projectiles of every type, deaths, explosions) through the
+# A busy match (16 players, 150 projectiles of every type, each thrown by a character who
+# throws it, deaths, explosions) through the
 # real GLGameRenderer in a real window, no server: frame CPU/GPU time, bytes allocated per
 # frame on the render thread, GC count, process footprint. --quality=, --players=,
 # --projectiles=, --w= --h=, --screenshot=out.png. --effects puts a status effect on every
@@ -51,7 +54,9 @@ could move these numbers should be checked with them rather than guessed at:
 # --traps scatters 30 traps of every kind, half ours and half an enemy's, some arming, some
 # going off. --divider raises the wall a Teams match opens with, beside the local player, and
 # --ceasefire holds every attack the way a free-for-all's opening does (=<seconds> on either to
-# watch it end).
+# watch it end). --aim has us charge a shot all through the run (as the Tidecaller, begun again
+# every five seconds, the aim turning), so its lane on the ground is in the frame. The pointer is
+# drawn over every frame, circling the screen, as the match's window draws it.
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --quality=low
 
 # The JavaFX menus: the character select screen (the panel on a page as the lobby screens frame

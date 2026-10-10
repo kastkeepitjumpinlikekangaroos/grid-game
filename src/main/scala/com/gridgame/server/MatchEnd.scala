@@ -6,18 +6,20 @@ import com.gridgame.common.model.PlayerResult
 import com.gridgame.common.observability.Attrs
 import com.gridgame.common.observability.Metrics
 import com.gridgame.common.protocol._
-import com.gridgame.server.account.AuthDatabase
+import com.gridgame.server.account.{AuthDatabase, MatchRow}
 import com.gridgame.server.bots.BotManager
 import com.gridgame.server.lobby.{LobbyManager, LobbyStatus}
 import com.gridgame.server.net.Outbox
 
 import java.util.UUID
 import scala.jdk.CollectionConverters._
+import scala.util.control.NonFatal
 
 /**
  * The end of a match, whether its time ran out or its practice session was left: the match
  * stopped, everyone sent the final standings (GAME_OVER, a SCORE_ENTRY each, SCORE_END), the
- * humans' results saved, a ranked match's ratings updated, and the lobby taken down.
+ * results saved with everyone's character, a ranked match's ratings updated, and the lobby taken
+ * down.
  */
 final class MatchEnd(lobbyManager: LobbyManager, authDatabase: AuthDatabase, outbox: Outbox,
                      connectedPlayer: UUID => Player, unregisterMatch: Short => Unit) {
@@ -54,68 +56,79 @@ final class MatchEnd(lobbyManager: LobbyManager, authDatabase: AuthDatabase, out
     instance.stop()
     Thread.interrupted()
 
-    // Broadcast GAME_OVER
     val zeroUUID = new UUID(0L, 0L)
-    val gameOverPacket = new GameEventPacket(
-      outbox.nextSeq(), zeroUUID, GameEvent.GAME_OVER, lobbyId,
-      0, 0.toShort, 0.toShort, null, 0.toByte, 0.toShort, 0.toShort
-    )
-    instance.broadcastToInstance(gameOverPacket)
-
-    // Send SCORE_ENTRY for each player. In Teams mode every member carries their team's
-    // place; players who left mid-match are still scored.
-    val scoreboard = instance.killTracker.getScoreboard
-    val results =
-      if (instance.gameMode == 1) MatchResults.rankTeams(scoreboard, pid => teams.getOrElse(pid, 0.toByte))
-      else MatchResults.rankFfa(scoreboard)
-    results.foreach { r =>
-      val scorePacket = new GameEventPacket(
-        outbox.nextSeq(), r.playerId, GameEvent.SCORE_ENTRY, lobbyId,
-        0, r.kills.toShort, r.deaths.toShort, null, r.rank.toByte, 0.toShort, 0.toShort, r.teamId
+    try {
+      // Broadcast GAME_OVER
+      val gameOverPacket = new GameEventPacket(
+        outbox.nextSeq(), zeroUUID, GameEvent.GAME_OVER, lobbyId,
+        0, 0.toShort, 0.toShort, null, 0.toByte, 0.toShort, 0.toShort
       )
-      instance.broadcastToInstance(scorePacket)
-    }
+      instance.broadcastToInstance(gameOverPacket)
 
-    // Persist match results (exclude bots). The player count includes the bots, since
-    // ranks were placed among them: "#3 of 1" is what counting only humans produced.
-    val humanResults = results.filterNot(r => BotManager.isBotUUID(r.playerId))
-    val playedMinutes = Math.max(1, Math.round(playedSeconds / 60.0).toInt)
-    authDatabase.saveMatch(lobby.mapIndex, playedMinutes,
-      humanResults.map(r => (r.playerId, r.kills, r.deaths, r.rank.toByte)), lobby.matchType, results.size)
+      // Send SCORE_ENTRY for each player. In Teams mode every member carries their team's
+      // place; players who left mid-match are still scored.
+      val scoreboard = instance.killTracker.getScoreboard
+      val results =
+        if (instance.gameMode == 1) MatchResults.rankTeams(scoreboard, pid => teams.getOrElse(pid, 0.toByte))
+        else MatchResults.rankFfa(scoreboard)
+      results.foreach { r =>
+        val scorePacket = new GameEventPacket(
+          outbox.nextSeq(), r.playerId, GameEvent.SCORE_ENTRY, lobbyId,
+          0, r.kills.toShort, r.deaths.toShort, null, r.rank.toByte, 0.toShort, 0.toShort, r.teamId
+        )
+        instance.broadcastToInstance(scorePacket)
+      }
 
-    // Update ELO for ranked matches (exclude bots) and push fresh stats to each
-    // human so the post-match scoreboard can show the ELO delta without forcing
-    // the client to manually re-query match history.
-    if (lobby.isRanked && humanResults.size >= 2) {
-      val eloDeltas = updateRankedElo(humanResults)
-      eloDeltas.foreach { case (uuid, (oldElo, newElo)) =>
-        val player = connectedPlayer(uuid)
-        if (player != null) {
-          val (totalKills, totalDeaths, matchesPlayed, wins, _) = authDatabase.getPlayerStats(uuid)
-          val statsPacket = new MatchHistoryPacket(
-            outbox.nextSeq(), uuid, Packet.getCurrentTimestamp,
-            MatchHistoryAction.STATS,
-            totalKills = totalKills, totalDeaths = totalDeaths,
-            matchesPlayed = matchesPlayed, wins = wins,
-            elo = newElo.toShort, oldElo = oldElo.toShort
-          )
-          outbox.send(statsPacket, player)
+      // Persist match results: everyone's row with the character they played, the bots' flagged as
+      // bots, so which characters win can be read from the table. A practice session's bots are
+      // passive targets and left out. The player count includes the bots, since ranks were placed
+      // among them: "#3 of 1" is what counting only humans produced.
+      val humanResults = results.filterNot(r => BotManager.isBotUUID(r.playerId))
+      val recorded = if (lobby.isPractice) humanResults else results
+      val playedMinutes = Math.max(1, Math.round(playedSeconds / 60.0).toInt)
+      authDatabase.saveMatch(lobby.mapIndex, playedMinutes,
+        recorded.map(r => MatchRow(r.playerId, r.kills, r.deaths, r.rank, instance.registry.characterOf(r.playerId),
+          BotManager.isBotUUID(r.playerId))), lobby.matchType, results.size)
+
+      // Update ELO for ranked matches (exclude bots) and push fresh stats to each
+      // human so the post-match scoreboard can show the ELO delta without forcing
+      // the client to manually re-query match history.
+      if (lobby.isRanked && humanResults.size >= 2) {
+        val eloDeltas = updateRankedElo(humanResults)
+        eloDeltas.foreach { case (uuid, (oldElo, newElo)) =>
+          val player = connectedPlayer(uuid)
+          if (player != null) {
+            val (totalKills, totalDeaths, matchesPlayed, wins, _) = authDatabase.getPlayerStats(uuid)
+            val statsPacket = new MatchHistoryPacket(
+              outbox.nextSeq(), uuid, Packet.getCurrentTimestamp,
+              MatchHistoryAction.STATS,
+              totalKills = totalKills, totalDeaths = totalDeaths,
+              matchesPlayed = matchesPlayed, wins = wins,
+              elo = newElo.toShort, oldElo = oldElo.toShort
+            )
+            outbox.send(statsPacket, player)
+          }
         }
       }
+    } catch {
+      case NonFatal(e) =>
+        System.err.println(s"MatchEnd: Lobby $lobbyId's results weren't all recorded: $e")
+    } finally {
+      // The match comes down whatever happened above. A database error there (another connection
+      // holding its lock, say) used to stop it here: the lobby and its match stayed for good, its
+      // players on a frozen match with no scoreboard and refused "already in a lobby", and the
+      // lobby counted against MAX_LOBBIES until the server restarted.
+      unregisterMatch(lobbyId)
+      lobbyManager.removeLobby(lobbyId)
+
+      val scoreEndPacket = new GameEventPacket(
+        outbox.nextSeq(), zeroUUID, GameEvent.SCORE_END, lobbyId,
+        0, 0.toShort, 0.toShort, null, 0.toByte, 0.toShort, 0.toShort
+      )
+      instance.broadcastToInstance(scoreEndPacket)
+
+      println(s"Game ended for lobby $lobbyId")
     }
-
-    // Send SCORE_END
-    val scoreEndPacket = new GameEventPacket(
-      outbox.nextSeq(), zeroUUID, GameEvent.SCORE_END, lobbyId,
-      0, 0.toShort, 0.toShort, null, 0.toByte, 0.toShort, 0.toShort
-    )
-    instance.broadcastToInstance(scoreEndPacket)
-
-    // Clean up
-    unregisterMatch(lobbyId)
-    lobbyManager.removeLobby(lobbyId)
-
-    println(s"Game ended for lobby $lobbyId")
   }
 
   /**

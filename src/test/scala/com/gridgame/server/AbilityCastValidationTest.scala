@@ -164,7 +164,7 @@ class AbilityCastValidationTest {
   def aCastCannotFireMoreThanTheAbilityDoes(): Unit = {
     val p = join(CharacterId.Bear)
     val ring = headingsOf(p, AttackSlot.E)
-    assertEquals(8, send(p, AttackSlot.E, ProjectileType.CLAW_SWIPE, ring :+ 0.0).size)
+    assertEquals(8, send(p, AttackSlot.E, ProjectileType.MAUL, ring :+ 0.0).size)
   }
 
   @Test

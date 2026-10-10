@@ -31,7 +31,7 @@ class DocsRosterTest {
   }
 
   @Test def aPillSaysTheRoleAndTheHealth(): Unit = {
-    assertEquals("Melee &middot; 145 HP", DocsRoster.pill(CharacterDef.get(CharacterId.Barbarian)))
+    assertEquals("Melee &middot; 130 HP", DocsRoster.pill(CharacterDef.get(CharacterId.Barbarian)))
     assertEquals("Ranged &middot; 60 HP", DocsRoster.pill(CharacterDef.get(CharacterId.Wizard)))
   }
 

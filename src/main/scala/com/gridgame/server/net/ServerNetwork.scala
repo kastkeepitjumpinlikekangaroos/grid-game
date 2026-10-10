@@ -16,11 +16,16 @@ import io.netty.handler.ssl.SslContext
  * The server's sockets: TLS over TCP for everything that must arrive, and one UDP socket for what
  * can be lost, both on `port`. Each TCP connection gets a pipeline of TLS, length framing and a
  * [[TcpHandler]]; the UDP socket a [[UdpHandler]], and it is what [[Outbox]] sends datagrams from.
+ *
+ * The UDP socket has an event loop of its own. On one of the TCP connections' loops, as it was, it
+ * waited behind whatever one of those connections was doing — a login's password hash, a database
+ * query — and every player's steps and shots stopped for that long.
  */
 final class ServerNetwork(port: Int, sslCtx: SslContext, newTcpHandler: () => TcpHandler,
                           newUdpHandler: () => UdpHandler, outbox: Outbox) {
   private var bossGroup: NioEventLoopGroup = _
   private var workerGroup: NioEventLoopGroup = _
+  private var udpGroup: NioEventLoopGroup = _
   private var tcpServerChannel: Channel = _
   @volatile private var udpChannel: Channel = _
 
@@ -28,6 +33,7 @@ final class ServerNetwork(port: Int, sslCtx: SslContext, newTcpHandler: () => Tc
   def bind(): Unit = {
     bossGroup = new NioEventLoopGroup(1)
     workerGroup = new NioEventLoopGroup()
+    udpGroup = new NioEventLoopGroup(1)
 
     // TCP Server
     val tcpBootstrap = new ServerBootstrap()
@@ -52,7 +58,7 @@ final class ServerNetwork(port: Int, sslCtx: SslContext, newTcpHandler: () => Tc
 
     // UDP Server
     val udpBootstrap = new Bootstrap()
-    udpBootstrap.group(workerGroup)
+    udpBootstrap.group(udpGroup)
       .channel(classOf[NioDatagramChannel])
       .option[java.lang.Integer](ChannelOption.SO_SNDBUF, 1024 * 1024)
       .option[java.lang.Integer](ChannelOption.SO_RCVBUF, 1024 * 1024)
@@ -71,5 +77,6 @@ final class ServerNetwork(port: Int, sslCtx: SslContext, newTcpHandler: () => Tc
     if (udpChannel != null) udpChannel.close().sync()
     if (bossGroup != null) bossGroup.shutdownGracefully()
     if (workerGroup != null) workerGroup.shutdownGracefully()
+    if (udpGroup != null) udpGroup.shutdownGracefully()
   }
 }

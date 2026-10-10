@@ -36,7 +36,6 @@ object Attrs {
   val Status: AttributeKey[String] = AttributeKey.stringKey("status")
   val Character: AttributeKey[String] = AttributeKey.stringKey("character")
   val KillerCharacter: AttributeKey[String] = AttributeKey.stringKey("killer_character")
-  val VictimCharacter: AttributeKey[String] = AttributeKey.stringKey("victim_character")
   val ProjectileType: AttributeKey[String] = AttributeKey.stringKey("projectile_type")
   val ItemType: AttributeKey[String] = AttributeKey.stringKey("item_type")
   val TrapType: AttributeKey[String] = AttributeKey.stringKey("trap_type")
@@ -185,12 +184,14 @@ object Attrs {
   def trapType(id: Byte): Attributes =
     trapCache.computeIfAbsent(id, b => Attributes.of(TrapType, trapTypeName(b)))
 
-  private val killCache = new ConcurrentHashMap[(Byte, Byte, Byte), Attributes]()
-  def killCombo(killerCharId: Byte, victimCharId: Byte, projType: Byte): Attributes = {
-    killCache.computeIfAbsent((killerCharId, victimCharId, projType), _ =>
+  // Who killed, and with what: a few hundred combinations. With the victim's character as well, as
+  // it was, they ran to tens of thousands, and once a long-running server had seen 2000 of them the
+  // SDK put every new one in an overflow series with no labels at all (its cap per metric).
+  private val killCache = new ConcurrentHashMap[(Byte, Byte), Attributes]()
+  def killCombo(killerCharId: Byte, projType: Byte): Attributes = {
+    killCache.computeIfAbsent((killerCharId, projType), _ =>
       Attributes.of(
         KillerCharacter, characterName(killerCharId),
-        VictimCharacter, characterName(victimCharId),
         ProjectileType, projectileTypeName(projType)
       )
     )

@@ -27,9 +27,11 @@ trait Attacks { this: GameClient =>
   @volatile private var lastCastDirX: Float = 0f
   @volatile private var lastCastDirY: Float = 0f
 
-  // Charge shot state
+  // Charge shot state. The charge is timed on the client's clock (nanoClock), which only runs
+  // forward: on the wall clock, which the OS slews and now and then steps, a charge could jump or
+  // read below nothing, and the golden frames couldn't hold one still to draw it
   @volatile var isCharging: Boolean = false
-  private val chargingStartTime: AtomicLong = new AtomicLong(0)
+  private val chargingSince: AtomicLong = new AtomicLong(0)
   private val lastChargingUpdateTime: AtomicLong = new AtomicLong(0)
 
   // Every projectile we ask the server for, until it answers (telemetry)
@@ -99,8 +101,8 @@ trait Attacks { this: GameClient =>
     // No charging up through the ceasefire either: a bar that fills and then fires nothing is
     // worse than a button that does nothing
     if (attacksLocked) return
+    chargingSince.set(nanoClock())
     isCharging = true
-    chargingStartTime.set(System.currentTimeMillis())
   }
 
   def cancelCharging(): Unit = {
@@ -111,8 +113,8 @@ trait Attacks { this: GameClient =>
 
   def getChargeLevel: Int = {
     if (!isCharging) return 0
-    val elapsed = System.currentTimeMillis() - chargingStartTime.get()
-    Math.min(100, (elapsed * 100 / Constants.CHARGE_MAX_MS).toInt)
+    val elapsedMs = (nanoClock() - chargingSince.get()) / 1000000L
+    Math.max(0, Math.min(100, (elapsedMs * 100 / Constants.CHARGE_MAX_MS).toInt))
   }
 
   def shoot(): Unit = {

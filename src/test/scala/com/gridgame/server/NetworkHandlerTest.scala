@@ -90,11 +90,43 @@ class NetworkHandlerTest {
   }
 
   @Test def anExpiredSessionIsClosed(): Unit = {
+    // Past its token's lifetime and the time it had to switch to the renewal's (SessionTest)
     val s = new TestSession()
-    server.sessions.tokenCreationTime.put(s.playerId, System.currentTimeMillis() - Constants.SESSION_TOKEN_LIFETIME_MS - 1000)
+    server.sessions.tokenCreationTime.put(s.playerId, System.currentTimeMillis() -
+      Constants.SESSION_TOKEN_LIFETIME_MS - Constants.SESSION_RENEWAL_WINDOW_MS - 1000)
     s.join()
     assertNull("nothing from it is handled", server.getConnectedPlayer(s.playerId))
     assertFalse("and it has to log in again", s.channel.isOpen)
+  }
+
+  @Test def aSessionJustPastItsTokensLifetimeIsStillTaken(): Unit = {
+    // Its renewal is on the way (SessionTest): it used to be closed here, an hour in, mid-match
+    val s = new TestSession()
+    server.sessions.tokenCreationTime.put(s.playerId, System.currentTimeMillis() - Constants.SESSION_TOKEN_LIFETIME_MS - 1000)
+    s.join()
+    assertNotNull(server.getConnectedPlayer(s.playerId))
+    assertTrue(s.channel.isOpen)
+  }
+
+  @Test def aConnectionThatNeverLogsInIsClosed(): Unit = {
+    // Nothing else closed one that stayed quiet: it held its socket for as long as it liked
+    val ch = new PeerChannel("127.0.0.31")
+    ch.pipeline().addLast(server.tcpHandler())
+    ch.pipeline().fireChannelActive()
+    ch.advanceTimeBy(Constants.LOGIN_DEADLINE_MS - 1000, java.util.concurrent.TimeUnit.MILLISECONDS)
+    ch.runScheduledPendingTasks()
+    assertTrue(ch.isOpen)
+    ch.advanceTimeBy(2000, java.util.concurrent.TimeUnit.MILLISECONDS)
+    ch.runScheduledPendingTasks()
+    assertFalse(ch.isOpen)
+  }
+
+  @Test def aConnectionThatLoggedInIsKept(): Unit = {
+    val s = new TestSession()
+    s.channel.pipeline().fireChannelActive()
+    s.channel.advanceTimeBy(Constants.LOGIN_DEADLINE_MS + 1000, java.util.concurrent.TimeUnit.MILLISECONDS)
+    s.channel.runScheduledPendingTasks()
+    assertTrue(s.channel.isOpen)
   }
 
   @Test def aChannelSendingGarbageIsClosedOnItsThirdPacket(): Unit = {
@@ -190,6 +222,16 @@ class NetworkHandlerTest {
     datagram(second, addr)
     datagram(first, addr)
     assertEquals(2, echoes(s))
+  }
+
+  @Test def aDatagramSignedWithTheSessionsRenewedTokenIsTaken(): Unit = {
+    val s = new TestSession()
+    s.join()
+    server.sessions.tokenCreationTime.put(s.playerId, System.currentTimeMillis() - Constants.SESSION_TOKEN_LIFETIME_MS - 1000)
+    server.renewSessions(System.currentTimeMillis())
+    val fresh = s.received().collectFirst { case t: SessionTokenPacket => t.getSessionToken }.get
+    datagram(heartbeat(s, s.nextSeq(), fresh), from())
+    assertEquals("taken, and answered", 1, echoes(s))
   }
 
   @Test def whatMustComeOverTcpIsNotTakenFromUdp(): Unit = {

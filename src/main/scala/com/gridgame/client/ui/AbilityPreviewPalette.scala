@@ -154,7 +154,11 @@ private[ui] object AbilityPreviewPalette {
     ProjectileType.SHARK_CLAW      -> (Color.web("#445577"), Color.web("#667799"), Color.web("#99aabb")),
     ProjectileType.ICE_BOULDER     -> (Color.web("#5577aa"), Color.web("#7799cc"), Color.web("#99bbee")),
     ProjectileType.DRAIN_BLADE     -> (Color.web("#662244"), Color.web("#884466"), Color.web("#aa6688")),
-    ProjectileType.CHILL_BLADE     -> (Color.web("#445577"), Color.web("#667799"), Color.web("#99aacc"))
+    ProjectileType.CHILL_BLADE     -> (Color.web("#445577"), Color.web("#667799"), Color.web("#99aacc")),
+    ProjectileType.MAUL            -> (Color.web("#884433"), Color.web("#aa6644"), Color.web("#cc8866")),
+    ProjectileType.ARENA_AXE       -> (Color.web("#aa7744"), Color.web("#cc9955"), Color.web("#eebb77")),
+    ProjectileType.THROWING_STAR   -> (Color.web("#443366"), Color.web("#665588"), Color.web("#9988bb")),
+    ProjectileType.MANTIS_SCYTHE   -> (Color.web("#884433"), Color.web("#aa6644"), Color.web("#cc8866"))
   )
 
   def getColors(projType: Byte): (Color, Color, Color) =
@@ -317,7 +321,11 @@ private[ui] object AbilityPreviewPalette {
     ProjectileType.SHARK_CLAW      -> Dart,
     ProjectileType.ICE_BOULDER     -> Orb,
     ProjectileType.DRAIN_BLADE     -> Dart,
-    ProjectileType.CHILL_BLADE     -> Dart
+    ProjectileType.CHILL_BLADE     -> Dart,
+    ProjectileType.MAUL            -> Dart,
+    ProjectileType.ARENA_AXE       -> Spinner,
+    ProjectileType.THROWING_STAR   -> Spinner,
+    ProjectileType.MANTIS_SCYTHE   -> Dart
   )
 
   def getShape(projType: Byte): ShapeCategory =

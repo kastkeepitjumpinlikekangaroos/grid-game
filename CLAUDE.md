@@ -33,7 +33,7 @@ The dev tools (none of them shipped) and where their docs are:
 | Tool | Run | What it is for |
 |---|---|---|
 | projectile gallery | `bazel run //src/main/scala/com/gridgame/client:projectile_gallery -- /tmp/gallery` (`--focus=`, `--blasts`) | every projectile and blast drawn on contact sheets: [projectiles](src/main/scala/com/gridgame/client/render/projectiles/CLAUDE.md), [blasts](src/main/scala/com/gridgame/client/render/blasts/CLAUDE.md) |
-| render bench | `bazel run //src/main/scala/com/gridgame/client:render_bench` (`--effects`, `--barriers`, `--traps`, `--divider`, `--ceasefire`, `--blasts`, `--map= --at=`, `--types=`) | frame time, allocation and footprint of a busy match: [client](src/main/scala/com/gridgame/client/CLAUDE.md) |
+| render bench | `bazel run //src/main/scala/com/gridgame/client:render_bench` (`--effects`, `--barriers`, `--traps`, `--divider`, `--ceasefire`, `--blasts`, `--aim`, `--map= --at=`, `--types=`) | frame time, allocation and footprint of a busy match: [client](src/main/scala/com/gridgame/client/CLAUDE.md) |
 | ui bench | `bazel run //src/main/scala/com/gridgame/client:ui_bench` | the JavaFX menus' memory and CPU: [client](src/main/scala/com/gridgame/client/CLAUDE.md) |
 | ui gallery | `bazel run //src/main/scala/com/gridgame/client:ui_gallery -- /tmp/ui` (`--scale=2`, `--lang=`, `--only=`) | every menu screen drawn to a PNG, in the states a player sees it in: [menus](src/main/scala/com/gridgame/client/ui/CLAUDE.md) |
 | render audit | `bazel run //src/main/scala/com/gridgame/client:render_audit -- --out=/tmp/audit`, then `python3 scripts/render_audit.py /tmp/audit` | can everything be seen on every map: [renderer](src/main/scala/com/gridgame/client/render/CLAUDE.md) |
@@ -89,7 +89,7 @@ ops/observability/   the local OpenTelemetry → Prometheus/Tempo/Loki/Grafana s
 
 | Area | Doc |
 |---|---|
-| Characters, roles, health and pace, cast behaviors, movement; adding a character | [design/characters.md](design/characters.md) |
+| Characters, roles, health and pace, balance against bots, cast behaviors, movement; adding a character | [design/characters.md](design/characters.md) |
 | Projectiles, on-hit effects, splashes and explosions, items, how hits are measured | [design/combat.md](design/combat.md) |
 | Barriers (the shield wall abilities) | [design/barriers.md](design/barriers.md) |
 | Traps; adding a trap | [design/traps.md](design/traps.md) |
@@ -102,7 +102,7 @@ ops/observability/   the local OpenTelemetry → Prometheus/Tempo/Loki/Grafana s
 | The server: its packages, GameServer, a match, bots, lobbies | [server/CLAUDE.md](src/main/scala/com/gridgame/server/CLAUDE.md) |
 | The client: its layers, its two windows, memory and performance, packaging the apps | [client/CLAUDE.md](src/main/scala/com/gridgame/client/CLAUDE.md) |
 | GameClient: the client's state, what resets when, projectiles flown between the server's ticks | [client/game/CLAUDE.md](src/main/scala/com/gridgame/client/game/CLAUDE.md) |
-| The renderer: the frame, the painters, terrain, players, lights, the audit | [client/render/CLAUDE.md](src/main/scala/com/gridgame/client/render/CLAUDE.md) |
+| The renderer: the frame, the painters, terrain, players, lights, the pointer, the audit | [client/render/CLAUDE.md](src/main/scala/com/gridgame/client/render/CLAUDE.md) |
 | How projectiles are drawn | [client/render/projectiles/CLAUDE.md](src/main/scala/com/gridgame/client/render/projectiles/CLAUDE.md) |
 | How explosions and splashes are drawn | [client/render/blasts/CLAUDE.md](src/main/scala/com/gridgame/client/render/blasts/CLAUDE.md) |
 | OpenGL primitives: batches, strokes, fonts, post-processing, quality tiers | [client/gl/CLAUDE.md](src/main/scala/com/gridgame/client/gl/CLAUDE.md) |

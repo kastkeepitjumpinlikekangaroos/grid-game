@@ -11,7 +11,11 @@ class Projectile(
     private var _dy: Float,
     val colorRGB: Int,
     val chargeLevel: Int = 0,
-    val projectileType: Byte = ProjectileType.NORMAL
+    val projectileType: Byte = ProjectileType.NORMAL,
+    // The character its owner is playing, as far as whoever made this copy knows (-1: not known).
+    // The client draws a projectile as its thrower's: a Musician's sonic wave and a Bard's are not
+    // the same thing (GLProjectileRenderers). The server has no use for it and leaves it unset.
+    val ownerCharacterId: Byte = -1
 ) {
 
   private var distanceTraveled: Float = 0f

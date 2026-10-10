@@ -1,6 +1,7 @@
 package com.gridgame.client.devtools
 
-import com.gridgame.client.render.FrameClock
+import com.gridgame.client.render.{FrameClock, IsometricTransform}
+import com.gridgame.common.Constants
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 import com.gridgame.common.world.WorldLoader
@@ -50,9 +51,11 @@ object GoldenFrames {
   }
 
   /** One picture: a map, where the local player stands, and what is going on round them.
-    * `background` draws the map under another sky than its own. */
+    * `background` draws the map under another sky than its own; `character` is who we play; `cursor`
+    * draws the mouse's pointer where we aim, as the match's window does over every frame. */
   final case class Scene(name: String, map: String, at: (Int, Int), build: Stage => Unit,
-                         background: Option[String] = None)
+                         background: Option[String] = None, character: CharacterId = CharacterId.Wizard,
+                         cursor: Boolean = false)
 
   /** What a scene is built on. */
   final class Stage(val client: GameClient, val world: WorldData, val home: (Int, Int)) {
@@ -89,10 +92,27 @@ object GoldenFrames {
         health, 0, flags, client.selectedCharacterId, client.localTeamId, 0, flags2, 0, slowPercent))
     }
 
+    /** The server pushing us to (x, y), as a knockback does: we are slid there from where we were
+      * drawn (LocalMovement), and with the client's clock held at [[T]] the slide stays at its start,
+      * so we are drawn where it caught us while we stand where it put us. */
+    def knockedTo(x: Int, y: Int): Unit =
+      client.processPacket(new PlayerUpdatePacket(nextSeq(), me, Packet.getCurrentTimestamp, new Position(x, y),
+        0xFF00AA00, characterId = client.selectedCharacterId, teamId = client.localTeamId, serverMoves = 1,
+        knockbacks = 1))
+
     def timer(remainingSeconds: Int): Unit =
       client.processPacket(new GameEventPacket(nextSeq(), new UUID(0L, 0L), Packet.getCurrentTimestamp,
         GameEvent.TIME_SYNC, 7.toShort, remainingSeconds, 0.toShort, 0.toShort, null, 0.toByte, 0.toShort,
         0.toShort, 0.toByte))
+
+    /** Charging our shot, begun `ms` before the captured frame, aimed at world (x, y). The charge is
+      * timed on the client's clock (nanoClock), which the frames hold at [[T]]. */
+    def charge(ms: Long, x: Double, y: Double): Unit = {
+      client.nanoClock = () => (T - ms) * 1000000L
+      client.startCharging()
+      client.nanoClock = () => T * 1000000L
+      client.setMouseWorldPosition(x, y)
+    }
 
     def inventory(itemType: ItemType, n: Int): Unit =
       (0 until n).foreach { k =>
@@ -308,6 +328,24 @@ object GoldenFrames {
     Scene("edge_cityscape", "the_cell.json", (4, 30), s => edgeScene(s), background = Some("cityscape")),
     Scene("edge_desert", "the_cell.json", (4, 30), s => edgeScene(s), background = Some("desert")),
     Scene("edge_ocean", "the_cell.json", (4, 30), s => edgeScene(s), background = Some("ocean")),
+    // Charging a shot: its lane on a dark map's open floor, lit, landing short of where a full charge
+    // would (the Monk's, short enough to be on screen whole); and on snow at full, stopped by trees
+    Scene("hive_charging", "the_hive.json", (66, 84), s => {
+      val (hx, hy) = s.home
+      s.charge(2000L, hx + 1.5, hy + 6.0)
+    }, character = CharacterId.Monk),
+    Scene("snowglobe_charged", "the_snowglobe.json", (50, 14), s => {
+      val (hx, hy) = s.home
+      s.charge(5000L, hx + 1.5, hy + 6.0)
+    }, character = CharacterId.Tidecaller),
+    // Walls in front of and beside us. Knocked two cells along the Colony's pillar (x 149-151,
+    // y 149-151): drawn where the push caught us, beside it and behind its front face, while we
+    // stand where it put us, past it. And at rest with a wall at our side: our ring and shadow lie
+    // on the ground, so the wall covers the part of them behind it
+    Scene("colony_knocked_by_pillar", "the_colony.json", (148, 150), s => {
+      s.afterFirstFrame = () => s.knockedTo(148, 152)
+    }),
+    Scene("cell_beside_wall", "the_cell.json", (41, 21), s => ()),
     Scene("practice_chat", "the_meadow.json", (60, 30), s => {
       everything(s, withEffects = false)
       val c = s.client
@@ -320,6 +358,18 @@ object GoldenFrames {
     })
   )
 
+  /** The mouse's pointer where we aim: over the thick of the Hive's firefight, and over the snow's. */
+  private val cursorScenes: Seq[Scene] = {
+    def like(name: String, as: String, aim: Option[(Double, Double)]): Scene = {
+      val base = scenes.find(_.name == name).get
+      base.copy(name = as, cursor = true, build = s => {
+        base.build(s)
+        aim.foreach { case (dx, dy) => s.client.setMouseWorldPosition(s.home._1 + dx, s.home._2 + dy) }
+      })
+    }
+    Seq(like("hive_firefight", "hive_cursor", None), like("snowglobe", "snowglobe_cursor", Some((3.0, 2.0))))
+  }
+
   def main(args: Array[String]): Unit = {
     val rest = RenderQuality.configure(if (args.exists(_.startsWith("--quality="))) args else args :+ "--quality=high")
     val outDir = new File(rest.headOption.getOrElse("golden"))
@@ -330,7 +380,7 @@ object GoldenFrames {
     val window = new GLWindow("Golden frames", W, H)
     window.create()
 
-    scenes.filter(sc => only.forall(_.contains(sc.name))).foreach { scene =>
+    (scenes ++ cursorScenes).filter(sc => only.forall(_.contains(sc.name))).foreach { scene =>
       val loaded = WorldLoader.load("worlds/" + scene.map)
       val home = if (scene.at != ((0, 0))) scene.at else (loaded.spawnPoints.head.getX, loaded.spawnPoints.head.getY)
       val world = new WorldData(loaded.name, loaded.width, loaded.height, loaded.tiles, Seq(new Position(home._1, home._2)),
@@ -338,12 +388,12 @@ object GoldenFrames {
       val client = new GameClient("localhost", 0, world, "Golden")
       client.packetSink = _ => ()
       client.completeAuthAndJoin(new UUID(0L, 999L), "Golden")
-      client.selectedCharacterId = CharacterId.Wizard.id
+      client.selectedCharacterId = scene.character.id
       client.clientState = ClientState.PLAYING
       client.setWorld(world)
       client.processPacket(new PlayerJoinPacket(1, client.getLocalPlayerId, Packet.getCurrentTimestamp,
-        new Position(home._1, home._2), 0xFF00AA00, "Golden", CharacterDef.get(CharacterId.Wizard.id).maxHealth,
-        CharacterId.Wizard.id, client.localTeamId))
+        new Position(home._1, home._2), 0xFF00AA00, "Golden", CharacterDef.get(scene.character.id).maxHealth,
+        scene.character.id, client.localTeamId))
       client.nanoClock = () => T * 1000000L
       val stage = new Stage(client, world, home)
       scene.build(stage)
@@ -357,6 +407,15 @@ object GoldenFrames {
         clock.ms = T - (WarmupFrames - f) * FrameGapMs
         stage.beforeFrame()
         renderer.render(1.0 / 60, window.fbWidth, window.fbHeight, window.width, window.height)
+        if (scene.cursor) {
+          // Where the aim is on the window: the world's screen position is in the zoomed world's units
+          val cam = renderer.camera
+          val zoom = Constants.CAMERA_ZOOM
+          renderer.drawCursor(
+            IsometricTransform.worldToScreenX(client.getMouseWorldX, client.getMouseWorldY, cam.camOffX) * zoom,
+            IsometricTransform.worldToScreenY(client.getMouseWorldX, client.getMouseWorldY, cam.camOffY) * zoom,
+            window.fbWidth, window.width, window.height)
+        }
         if (f == 0) stage.afterFirstFrame()
         if (f == WarmupFrames) save(new File(outDir, scene.name + ".png"), window.fbWidth, window.fbHeight)
         window.swapBuffers()

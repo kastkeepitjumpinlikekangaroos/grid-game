@@ -29,8 +29,8 @@ object TerrainImpact {
 
   /** Does the cell stop a projectile? Terrain it can't cross (not water: Tile.stopsProjectiles),
     * the map's edge, and for one that flies over walls a fence — what the server's collision
-    * stops it on. */
-  private[game] def blocks(world: WorldData, cx: Int, cy: Int, passesWalls: Boolean): Boolean =
+    * stops it on. The aim lane stops where this says too (AimArrowPainter). */
+  private[client] def blocks(world: WorldData, cx: Int, cy: Int, passesWalls: Boolean): Boolean =
     cx < 0 || cy < 0 || cx >= world.width || cy >= world.height || {
       val t = world.getTile(cx, cy)
       t.stopsProjectiles && (!passesWalls || t == Tile.Fence)

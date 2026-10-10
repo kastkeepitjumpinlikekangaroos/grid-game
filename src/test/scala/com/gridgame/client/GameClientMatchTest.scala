@@ -1,5 +1,6 @@
 package com.gridgame.client
 
+import com.gridgame.common.Constants
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 import org.junit.Assert._
@@ -78,6 +79,21 @@ class GameClientMatchTest {
     assertFalse("still dashing", c.isSwooping)
     c.tickSwoop() // what the input handlers do each frame
     assertEquals((40, 40), t.at)
+  }
+
+  @Test def aChargeBuildsOnTheClientsOwnClock(): Unit = {
+    // It was timed on the wall clock, which the OS slews and now and then steps: a charge could jump,
+    // or read below nothing. On nanoClock it only runs forward, and the golden frames can hold one
+    c.selectedCharacterId = CharacterId.Tidecaller.id
+    t.startMatch(spawn = (5, 5))
+    c.startCharging()
+    assertEquals(0, c.getChargeLevel)
+    t.nanos += Constants.CHARGE_MAX_MS * 1000000L / 4
+    assertEquals(25, c.getChargeLevel)
+    t.nanos += Constants.CHARGE_MAX_MS * 1000000L
+    assertEquals("full, and no more", 100, c.getChargeLevel)
+    t.nanos -= Constants.CHARGE_MAX_MS * 3000000L
+    assertEquals("never below nothing", 0, c.getChargeLevel)
   }
 
   @Test def weAreDrawnAtTheNewMatchsSpawn(): Unit = {

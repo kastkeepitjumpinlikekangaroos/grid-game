@@ -146,6 +146,24 @@ class LobbyFlowTest {
     assertEquals(Seq(LobbyFailure.LOBBY_FULL), failed.map(_.getLobbyStatus))
   }
 
+  @Test def aMatchThatFailsToStartLeavesNothingBehind(): Unit = {
+    // Thrown partway through, a launch left its match registered on the server and on the lobby
+    // (its ticks running, had it got as far as starting them), and the lobby "in game" for good
+    val host = new Client("host")
+    host.lobbyAction(LobbyAction.CREATE)
+    host.lobbyAction(LobbyAction.ADD_BOT)
+    val lobby = host.lobby
+    lobby.status = LobbyStatus.IN_GAME
+    // A match without bots can't seat this lobby's bot: it fails after the match is registered
+    try {
+      new com.gridgame.server.lobby.MatchLauncher(server).launch(lobby, withBots = false)
+      fail("the launch should have failed")
+    } catch { case _: IllegalArgumentException => }
+    assertNull(lobby.gameInstance)
+    assertFalse("the server has forgotten it", server.gameInstances.containsKey(lobby.id))
+    server.lobbyManager.removeLobby(lobby.id)
+  }
+
   @Test def aPlayerCannotBeInTwoLobbies(): Unit = {
     val a = new Client("a")
     a.lobbyAction(LobbyAction.CREATE)

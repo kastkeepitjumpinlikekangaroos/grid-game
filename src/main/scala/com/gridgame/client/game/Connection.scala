@@ -102,11 +102,11 @@ trait Connection { this: GameClient =>
       authResponseListener(packet.getSuccess, packet.getAssignedUUID, packet.getMessage)
     }
 
-  /** The token every packet is signed with from now on. */
-  private[game] def takeSessionToken(packet: SessionTokenPacket): Unit = {
-    networkThread.sessionToken = packet.getSessionToken
+  /** The token every packet is signed with from now on: the login's, or a renewal's an hour on.
+    * The network thread has taken it up already, as it read it (NetworkThread.takeSessionToken):
+    * setting it again here, later, could put back one a later renewal had replaced. */
+  private[game] def takeSessionToken(packet: SessionTokenPacket): Unit =
     println("GameClient: Session token received")
-  }
 
   def completeAuthAndJoin(assignedUUID: UUID, username: String): Unit = {
     localPlayerId = assignedUUID

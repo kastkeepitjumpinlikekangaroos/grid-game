@@ -1,22 +1,29 @@
 package com.gridgame.client.gl
 
 import org.lwjgl.glfw.GLFW._
-import org.lwjgl.glfw.{GLFWErrorCallback, GLFWImage}
+import org.lwjgl.glfw.{GLFWErrorCallback, GLFWImage, GLFWNativeCocoa}
 import org.lwjgl.opengl.GL
 import org.lwjgl.opengl.GL11._
 import org.lwjgl.stb.STBImage._
-import org.lwjgl.system.MemoryStack
+import org.lwjgl.system.{JNI, MemoryStack, Platform}
 import org.lwjgl.system.MemoryUtil.NULL
+import org.lwjgl.system.macosx.ObjCRuntime
 import org.lwjgl.BufferUtils
 
 import java.io.{File, FileInputStream, InputStream}
+import scala.collection.mutable
 
 /**
  * Manages a GLFW window with an OpenGL 3.3 core context for game rendering.
- * Created when entering the game scene, destroyed when leaving.
+ * Created when a match starts; when it ends, retired (off the screen at once) and destroyed once
+ * macOS has finished with it (see [[retire]]).
  */
 class GLWindow(title: String, initialWidth: Int, initialHeight: Int) {
   private var window: Long = NULL
+  // When retire took the window off the screen for good (System.nanoTime), or 0
+  private var retiredNs: Long = 0L
+  // The NSWindow retire closed ahead of GLFW, which destroy has to release (macOS only)
+  private var closedNsWindow: Long = NULL
   private var _width: Int = initialWidth
   private var _height: Int = initialHeight
   private var _fbWidth: Int = initialWidth
@@ -29,6 +36,14 @@ class GLWindow(title: String, initialWidth: Int, initialHeight: Int) {
   def fbHeight: Int = _fbHeight
   def handle: Long = window
   def isValid: Boolean = window != NULL
+
+  // The system's pointer while a game draws its own (hideSystemCursor), and where the mouse was
+  // when readPointer last looked
+  private var blankCursor: Long = NULL
+  private val pointerXs = new Array[Double](1)
+  private val pointerYs = new Array[Double](1)
+  def pointerX: Double = pointerXs(0)
+  def pointerY: Double = pointerYs(0)
 
   def create(): Unit = {
     GLFWManager.ensureInitialized()
@@ -131,6 +146,39 @@ class GLWindow(title: String, initialWidth: Int, initialHeight: Int) {
     getClass.getClassLoader.getResourceAsStream(relativePath)
   }
 
+  /**
+   * No system pointer over this window's content, for a game that draws its own: a cursor with
+   * nothing in it, which the system shows only while the mouse is over the content of this window,
+   * and puts its own back anywhere else (the title bar, another window). Not GLFW_CURSOR_HIDDEN:
+   * on macOS that hides the pointer for the whole app (`[NSCursor hide]`) until the mouse leaves the
+   * window, so a window closed under the mouse could take the pointer from the menus too.
+   */
+  def hideSystemCursor(): Unit = {
+    if (window == NULL || blankCursor != NULL) return
+    val stack = MemoryStack.stackPush()
+    try {
+      // Every pixel transparent but the hotspot's, whose alpha is 1/255: Windows takes a cursor with
+      // no alpha anywhere as one without an alpha channel and draws its mask instead, a black square
+      val pixels = stack.calloc(16 * 16 * 4)
+      pixels.put(3, 1.toByte)
+      val image = GLFWImage.malloc(stack)
+      image.set(16, 16, pixels)
+      blankCursor = glfwCreateCursor(image, 0, 0)
+    } finally {
+      stack.pop()
+    }
+    if (blankCursor != NULL) glfwSetCursor(window, blankCursor)
+  }
+
+  /** Whether the mouse is over this window's content while the window has the focus, reading where it
+    * is now into [[pointerX]] / [[pointerY]] (window units, as the cursor callbacks give it). Anywhere
+    * else, or with another window in front, the system's pointer is the one that shows. */
+  def readPointer(): Boolean = {
+    if (window == NULL || glfwGetWindowAttrib(window, GLFW_FOCUSED) != GLFW_TRUE) return false
+    glfwGetCursorPos(window, pointerXs, pointerYs)
+    GLWindow.overContent(pointerXs(0), pointerYs(0), _width, _height)
+  }
+
   def show(): Unit = {
     if (window != NULL) glfwShowWindow(window)
   }
@@ -166,10 +214,125 @@ class GLWindow(title: String, initialWidth: Int, initialHeight: Int) {
     }
   }
 
+  /**
+   * Take the window off the screen for good, to be destroyed once macOS has finished with it
+   * ([[GLWindow.destroySettled]]) rather than now. glfwDestroyWindow frees GLFW's record of the
+   * window while AppKit can still hold the NSWindow and GLFW's view in it (a frame or more, longer
+   * through a transition), and that view reads the record whenever AppKit asks it anything. In
+   * macOS's own full screen (the green button), AppKit is still taking the window out of it when
+   * glfwDestroyWindow returns, and redraws the view on the way: the game crashed at the end of a
+   * match, `-[GLFWContentView isOpaque]` reading the freed record. Taken off the screen now and
+   * destroyed later, the record is still there for anything AppKit asks.
+   */
+  def retire(): Unit = {
+    if (window == NULL || retiredNs != 0L) return
+    // The system's arrow back first, as destroy does, while the window is still under the mouse
+    if (blankCursor != NULL) glfwSetCursor(window, NULL)
+    // A window in GLFW's own full screen (F11) minimises itself when it loses the focus, which
+    // hiding it would make it do
+    glfwSetWindowAttrib(window, GLFW_AUTO_ICONIFY, GLFW_FALSE)
+    putAway()
+    GLWindow.retired += this
+  }
+
+  /** Off the screen and out of either full screen, and the time a retired window waits started. */
+  private def putAway(): Unit = {
+    glfwHideWindow(window)
+    // GLFW's own full screen (F11) is left hidden, so a display mode GLFW changed for it is back
+    // well before the window goes
+    if (glfwGetWindowMonitor(window) != NULL)
+      glfwSetWindowMonitor(window, NULL, 0, 0, initialWidth, initialHeight, GLFW_DONT_CARE)
+    // Hidden is not enough in macOS's own full screen: a hidden window stays in it, Space and all.
+    // Taken out of it (toggleFullScreen) the window is put back on screen as the animation ends,
+    // over the menus. Closed, as glfwDestroyWindow does it, AppKit takes the Space down and nothing
+    // comes back; it is kept alive for GLFW, which counts on closing it to release it (see destroy).
+    if (Platform.get() == Platform.MACOSX) {
+      closedNsWindow = GLFWNativeCocoa.glfwGetCocoaWindow(window)
+      GLWindow.Cocoa.closeKeeping(closedNsWindow)
+    }
+    retiredNs = System.nanoTime()
+  }
+
+  /** A retired window AppKit has put back on the screen, off it again. It does that to a window
+    * closed in the middle of going into its full screen: the Space goes, the window stays. */
+  private def keepOffScreen(): Unit =
+    if (window != NULL && glfwGetWindowAttrib(window, GLFW_VISIBLE) == GLFW_TRUE) putAway()
+
+  /** Whether macOS has finished with a retired window, so it can be destroyed: out of macOS's own
+    * full screen, and off the screen long enough for what putting it away set going in AppKit to be
+    * over (its references to the window were dropped 0.2-0.7s after the close, measured). */
+  def settled: Boolean =
+    retiredNs != 0L && System.nanoTime() - retiredNs >= GLWindow.SettleNs && !inMacFullScreen
+
+  /** Whether macOS has the window in its own full screen, or is still taking it out. GLFW has no
+    * word for that full screen (only for its own), so AppKit is asked. */
+  private def inMacFullScreen: Boolean =
+    window != NULL && Platform.get() == Platform.MACOSX &&
+      GLWindow.Cocoa.inFullScreen(GLFWNativeCocoa.glfwGetCocoaWindow(window))
+
+  /** Free the window now. One macOS may still be using, a match's, is retired instead. */
   def destroy(): Unit = {
     if (window != NULL) {
+      // The system's arrow back first, so a window closed under the mouse doesn't leave the blank
+      // cursor showing until the mouse next moves. A retired window did that as it hid: the menus
+      // may want a pointer of their own there by now.
+      if (blankCursor != NULL && retiredNs == 0L) glfwSetCursor(window, NULL)
       glfwDestroyWindow(window)
       window = NULL
     }
+    // Retire closed it with the release turned off, so GLFW's close released nothing: its reference
+    // to the window it made is ours to drop
+    if (closedNsWindow != NULL) {
+      GLWindow.Cocoa.release(closedNsWindow)
+      closedNsWindow = NULL
+    }
+    if (blankCursor != NULL) {
+      glfwDestroyCursor(blankCursor)
+      blankCursor = NULL
+    }
+    GLWindow.retired -= this
   }
+}
+
+object GLWindow {
+  /** The least a retired window stays before it is destroyed, whatever else says it could go. */
+  private val SettleNs = 2_000_000_000L
+
+  // Retired windows not destroyed yet. Like every GLFW call, used on the main thread only.
+  private val retired = mutable.ArrayBuffer.empty[GLWindow]
+
+  /** Destroy every retired window macOS has finished with ([[GLWindow.retire]]), putting back off
+    * the screen any AppKit has shown again, and say whether any are left: call it again later
+    * until none are. */
+  def destroySettled(): Boolean = {
+    retired.foreach(_.keepOffScreen())
+    retired.filter(_.settled).foreach(_.destroy())
+    retired.isEmpty
+  }
+
+  /** AppKit, through the Objective-C runtime. macOS only. */
+  private object Cocoa {
+    private lazy val msgSend = ObjCRuntime.getLibrary.getFunctionAddress("objc_msgSend")
+    private lazy val objcRelease = ObjCRuntime.getLibrary.getFunctionAddress("objc_release")
+    private val NSWindowStyleMaskFullScreen = 1L << 14
+
+    def inFullScreen(nsWindow: Long): Boolean =
+      nsWindow != NULL &&
+        (JNI.invokePPP(nsWindow, ObjCRuntime.sel_getUid("styleMask"), msgSend) & NSWindowStyleMaskFullScreen) != 0
+
+    /** Close an NSWindow without the release closing does by default: glfwDestroyWindow still uses
+      * the window GLFW made, and releases it only by closing it again, which now releases nothing,
+      * so GLWindow.destroy releases it after. */
+    def closeKeeping(nsWindow: Long): Unit = {
+      JNI.invokePPPV(nsWindow, ObjCRuntime.sel_getUid("setReleasedWhenClosed:"), 0L, msgSend)
+      JNI.invokePPV(nsWindow, ObjCRuntime.sel_getUid("close"), msgSend)
+    }
+
+    def release(o: Long): Unit = JNI.invokePV(o, objcRelease)
+  }
+
+  /** Whether a cursor position (window units, from the content's top-left) is over a content area
+    * `width` x `height`: GLFW reports positions outside it too, over the title bar or past an edge. */
+  def overContent(x: Double, y: Double, width: Int, height: Int): Boolean =
+    x >= 0 && y >= 0 && x < width && y < height
 }

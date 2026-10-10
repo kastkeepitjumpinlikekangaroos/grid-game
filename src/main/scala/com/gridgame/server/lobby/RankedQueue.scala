@@ -200,8 +200,9 @@ class RankedQueue(host: LobbyHost, lobbyManager: LobbyManager, launcher: MatchLa
       checkDuelQueue(now)
       checkFullOrWaited(teams, now)
     } catch {
-      case e: Exception =>
-        System.err.println(s"RankedQueue: Error in checkQueue: ${e.getMessage}")
+      // An Error too: one escaping the periodic task cancels it, and with it all matchmaking
+      case e: Throwable =>
+        System.err.println(s"RankedQueue: Error in checkQueue: $e")
     }
   }
 

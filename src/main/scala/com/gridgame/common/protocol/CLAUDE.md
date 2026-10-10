@@ -68,7 +68,7 @@ otherwise.
 | 0x0D | MATCH_HISTORY     | TCP       | Game statistics                |
 | 0x0E | RANKED_QUEUE      | TCP       | Ranked matchmaking             |
 | 0x0F | LEADERBOARD       | TCP       | Rankings                       |
-| 0x10 | SESSION_TOKEN     | TCP       | Session token delivery (post-auth) |
+| 0x10 | SESSION_TOKEN     | TCP       | Session token delivery (post-auth, and its renewal an hour in, signed with the token it replaces) |
 | 0x11 | CHAT_MESSAGE      | TCP       | Lobby and match chat           |
 | 0x12 | TRAP_UPDATE       | TCP       | Traps placed, sprung, removed  |
 
@@ -108,8 +108,8 @@ Client                              Server
    │═══ TLS 1.3 Handshake ═══════════│  (encrypted TCP channel)
    │                                   │
    │──── AUTH_REQUEST ────────────────>│  (login/register, no HMAC yet)
-   │<─── AUTH_RESPONSE ───────────────│
-   │<─── SESSION_TOKEN ───────────────│  (32-byte token for HMAC signing)
+   │<─── SESSION_TOKEN ───────────────│  (32-byte token for HMAC signing; first, so the
+   │<─── AUTH_RESPONSE ───────────────│   client holds it before it acts on the answer)
    │                                   │
    │  ── all packets HMAC-signed ──   │
    │                                   │
@@ -128,6 +128,8 @@ Client                              Server
    │                                   │
    │──── HEARTBEAT (every 3s) ───────>│  (rate limited)
    │                                   │
+   │<─── SESSION_TOKEN ───────────────│  (an hour in: the renewal, signed with the old
+   │                                   │   token; the server switches on our first use of it)
 ```
 
 ## Adding a New Packet Type

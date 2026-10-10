@@ -11,7 +11,7 @@ scene target and then over the finished frame. Three Bazel libraries, each on th
   one part of the frame. A painter imports the context (`import ctx._`) and names any other painter
   it uses in its constructor, so what it depends on is in its first line.
 - **GLGameRenderer** — makes the painters, sets up each frame, and runs the passes in order. Its
-  public API is small: `render`, `camera`, `resetVisualPosition`, `dispose`, `seedRandom`.
+  public API is small: `render`, `drawCursor`, `camera`, `resetVisualPosition`, `dispose`, `seedRandom`.
 
 | Painter | Draws |
 |---|---|
@@ -25,13 +25,14 @@ scene target and then over the finished frame. Three Bazel libraries, each on th
 | `world/BarrierPainter` | raised barriers (design/barriers.md) |
 | `world/OpeningPainter` | the Teams wall, and the opening's countdown for the HUD (design/match-flow.md) |
 | `world/TrapPainter` | traps on the ground and going off (design/traps.md) |
-| `world/AimArrowPainter` | the arrow toward the cursor |
+| `world/AimArrowPainter` | a charged shot's aim: the lane on the ground to where it lands or what stops it (*A charged shot's aim is a lane on the ground*) |
 | `world/DeathAndTeleportPainter` | deaths and teleports |
 | `world/BlastPainter` | the frame's blasts, in their two layers, their lights and the air they shake (render/blasts) |
 | `world/WorldOverlayPainter` | name plates, health bars and damage numbers, over the finished frame |
 | `world/ParticleSpawner` | what the frame throws into the particle systems: weather, footsteps, trails, sparks, bursts |
 | `hud/HudPainter` | the HUD: the bottom bar (inventory, charge bar), the leave prompt, and the parts below |
 | `hud/AbilityBarPainter`, `MatchInfoPainter`, `ChatPainter`, `PracticePainter`, `DeathScreenPainter` | the ability slots, the clock and kills and kill feed, chat, practice's tallies, the respawn countdown and game over screen |
+| `hud/CursorPainter` | the mouse's pointer, a crosshair over everything, drawn by `drawCursor` after the frame (*The pointer is ours*) |
 
 The painters are all one render thread's: nothing in them is synchronized, and none allocates per
 frame (see *Performance*).
@@ -54,7 +55,7 @@ frame (see *Performance*).
 PostProcessor.beginScene()        -- bind scene FBO (sized by the quality tier)
 GLGameRenderer.render()           -- all game drawing into scene FBO
   Background (only if the screen runs off the map) → Ground (opaque diamonds) →
-  tile overlays, reflections → Traps → Blasts' ground layer → Aim arrow → block shadows →
+  tile overlays, reflections → Traps → Blasts' ground layer → the aim lane → block shadows →
   depth pass (blocks and props, items, projectiles, players with their effects) →
   flying projectiles → Barriers → the opening's wall → deferred glows →
   deaths, teleports → Blasts' air layer → particles
@@ -64,6 +65,7 @@ PostProcessor.endScene()          -- bloom extract → blur H → blur V →
 World overlay                     -- name plates, health bars, damage numbers: world
                                      positions, drawn after the composite at full resolution
 HUD                               -- drawn after the composite, always at full resolution
+GLGameRenderer.drawCursor()       -- the pointer, last, where the mouse is as the frame is done
 ```
 
 ## Design decisions
@@ -159,6 +161,64 @@ HUD                               -- drawn after the composite, always at full r
   there, and the camera glided after. Filmed through the real server tick, two clients and this
   renderer, the victim moved 9 cells in one frame under a Tidal Wave from three cells and 25 under
   a fan of gusts; now 3 and 5 cells over 9 and 11 frames, never more than a cell a frame.
+- **A charged shot's aim is a lane on the ground** (`AimArrowPainter`, while we charge a primary
+  that scales with charge). It runs from our feet to where the shot would land if we let go now,
+  with chevrons running out along it, faster as the charge builds; a ring lies where it lands, and
+  dots go on to where a full charge would carry it, so the charge reads as distance. It stops where
+  the shot would, at the first thing that stops one in flight (`AimArrowPainter.stopAlong` asks
+  `TerrainImpact.blocks`: walls, props and the map's edge, never water, and only a fence for a shot
+  that flies over walls), with a bar across it at the face. It is in the charge gauge's gold, deep
+  while it builds and bright at full, when a ripple breathes off the ring as the gauge's does round
+  our feet; not the gauge's white-hot, which on snow left only the ink. Every line is inked, so it
+  reads on sand and snow, and on a dark map weak lights 1.2 cells apart light the ground it runs
+  over: away from our own light the light map dimmed the gold to khaki, and lights further apart
+  glowed in beads. The chevrons and the ripple run on the frame's clock. It replaced a translucent
+  "cylinder" that read as a glitch: a slab 3.6 cells wide over a darker body, both in the player's
+  random colour mixed with a green-to-red heat ramp (a grey-olive smear on the Hive's teal floor, a
+  dirt track on snow); a spine of 14 separate quads whose width stepped at each; half-rings on one
+  side of it only, of 8 separate translucent strokes each (every joint blended twice), racing along
+  it at two lengths a second on the frame count, so twice that at 120 Hz; the whole throbbing twice
+  a second; and it ran through walls, under a wall's top and out of its far side, promising a hit
+  on whoever stood behind it. Measured with the render bench's `--aim` (4480x2404, High), the pass
+  it is drawn in shades 0.10 million fragments a frame where it shaded 0.32, the light map 0.02
+  million more, and a frame costs the same to build within the bench's noise, allocating nothing
+  more. `AimLaneTest` pins where it stops; the golden frames `hive_charging` and
+  `snowglobe_charged` hold it.
+- **The pointer is ours** (`hud/CursorPainter`). Over the match's window the system's arrow is
+  hidden and the renderer draws a crosshair where the mouse is, last, over everything, the HUD
+  included: the arrow, small and thin, was lost in a fight among the blasts, sparks and name plates.
+  It is a gold ring with four white ticks crossing it and a white dot on the hotspot, 40 units
+  across (macOS's arrow is 10 by 17), every line inked and the whole casting a soft shadow: the
+  ink carries it over snow, sand and a blast's white heart, the white and the gold over the dark
+  maps. Tried over the golden frames' firefights on four grounds at 1x and 2x, a white crosshair
+  the size of the arrow read as one more name plate (white on dark ink is what a plate is), and a
+  cross with no ring was lost among the sparks; the gold ring is on no plate or panel and stayed
+  easy to find on every ground. It is drawn from a picture made once with Java2D at the display's
+  pixel density and put down a texel to a pixel: the shape batch's shapes have hard edges, which
+  make a ring a staircase at 1x, and this is the one thing the eye is always on. The picture is an
+  odd number of pixels across at 1x, so the hotspot is a pixel's centre and a 3-unit line covers
+  three whole pixels, and even at 2x, where the hotspot is a corner (`artSize`, `cornerPx`).
+  - It is drawn by a call of its own after the frame (`GLGameRenderer.drawCursor`, from
+    `MatchWindow`), where the mouse is as the frame is finished (`GLWindow.readPointer`) rather than
+    where it was when the frame began. A pointer the game draws is still a frame or so behind the
+    hand, where the system's is moved by the window server; every game that draws its own crosshair
+    pays that, and the aim and the way we face are that far behind anyway, so the crosshair is on
+    what we are aiming at.
+  - It is only drawn over the window's content while the window has the focus: over the title bar,
+    another window, or with another app in front, the system's pointer is showing and ours would be a
+    second one. Nor while a controller's right stick aims (`ControllerHandler.stickAiming`): the aim
+    is the stick's then, and a crosshair where the mouse rests would lie about it.
+  - The system's is hidden by a blank cursor on the window (`GLWindow.hideSystemCursor`), not
+    `GLFW_CURSOR_HIDDEN`: on macOS GLFW hides that for the whole app (`[NSCursor hide]`) and shows it
+    again only when the mouse leaves the window, so a match window closed under the mouse, which is
+    every game over, would leave the menus with no pointer. A cursor set on a window is that
+    window's alone, and `GLWindow.retire` puts the arrow back before it hides the window.
+  - Measured with the render bench (the Hive, 16 players, 150 projectiles, back to back), it costs
+    nothing that shows: a frame took 4.5 and 5.0 ms to build without it and 4.5 and 5.3 with it,
+    within the bench's noise, and allocated 3.6-3.8KB either way (the picture is made once, at the
+    first frame). `CursorTest` holds the picture (whole at every scale, the dot on the hotspot, put
+    down on whole pixels) and where it is ours; the golden frames `hive_cursor` and
+    `snowglobe_cursor` hold it where we aim, and the render bench draws it circling the screen.
 
 ## Grading
 
@@ -231,6 +291,8 @@ The gallery judges a projectile over three flat bands under the dark maps' grade
 the whole roster and every projectile over every map's real ground — each walkable tile
 covering 2% of its open ground, and each pool covering 2% of it — through the real
 `GLGameRenderer`: the map's own background, grade, lighting, name plates, at the player's size.
+A projectile is shot as every type's own look and then as every character's own look for a type
+it throws (`TYPE@Character`, render/projectiles: *A projectile is drawn as its thrower's*).
 A map whose ground and sky an earlier one already had (the four space arenas) is shot once.
 Every picture is taken twice, as rendered and with what is judged taken out (a character keeps
 its shadow, light and name plate and loses only its sprite; a projectile goes altogether), so
@@ -258,7 +320,7 @@ bazel run //src/main/scala/com/gridgame/client:golden_frames -- /tmp/golden --sc
 ```
 
 Fixed scenes — players, projectiles, blasts, barriers, traps, the divider, the HUD, the edges of the
-maps — drawn by the real GLGameRenderer on a stopped clock (`FrameClock`) with its randomness seeded
+maps, a charged shot's aim, the pointer — drawn by the real GLGameRenderer on a stopped clock (`FrameClock`) with its randomness seeded
 (`seedRandom`), so the same build draws the same pixels every time. It is the check for a change to
 the renderer that is meant to change nothing: write the frames from both builds and compare them
 byte for byte (`cmp`). A change that is meant to show must be judged by eye, in the galleries and in

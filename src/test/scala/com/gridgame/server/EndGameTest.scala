@@ -1,5 +1,6 @@
 package com.gridgame.server
 
+import com.gridgame.server.account.AuthDatabase
 import com.gridgame.server.game.GameInstance
 import com.gridgame.server.lobby.{Lobby, LobbyStatus}
 import com.gridgame.common.model._
@@ -69,6 +70,59 @@ class EndGameTest {
     server.endGame(lobby.id)
     val entries = scoreboard(m.tcpSent(a)).filter(_.getEventType == GameEvent.SCORE_ENTRY)
     assertEquals(Seq(b.getId, a.getId), entries.map(_.getPlayerId))
+  }
+
+  @Test def aDatabaseErrorAtTheEndStillTakesTheMatchDown(): Unit = {
+    // As when another connection holds the database's lock: the ratings can't be read. Thrown out of
+    // the end of the match, it left the lobby and its match behind for good, its players on a frozen
+    // match with no scoreboard, refused "already in a lobby", and a lobby slot gone until a restart.
+    val file = java.io.File.createTempFile("gridgame-end", ".db")
+    val failing = new AuthDatabase(file.getAbsolutePath) {
+      override def getEloByUUID(playerUUID: UUID): Int =
+        throw new java.sql.SQLException("[SQLITE_BUSY] The database file is locked (database is locked)")
+    }
+    val unregistered = scala.collection.mutable.Buffer[Short]()
+    val matchEnd = new MatchEnd(server.lobbyManager, failing, server.outbox, server.getConnectedPlayer, id => unregistered += id)
+    try {
+      val a = m.join(CharacterId.Gladiator, 10, 10)
+      val b = m.join(CharacterId.Wizard, 20, 20)
+      val lobby = lobbyFor(a, b)
+      lobby.isRanked = true
+      m.instance.killTracker.recordKill(a.getId, b.getId)
+      m.clearSent()
+      matchEnd.endGame(lobby.id)
+      assertNull("the lobby is gone", server.lobbyManager.getLobby(lobby.id))
+      assertEquals("and its match", Seq(lobby.id), unregistered.toSeq)
+      for (p <- Seq(a, b)) {
+        assertNull("free to make or join another", server.lobbyManager.getPlayerLobby(p.getId))
+        assertEquals("on to the scoreboard", GameEvent.SCORE_END, scoreboard(m.tcpSent(p)).last.getEventType)
+      }
+    } finally { failing.close(); file.delete() }
+  }
+
+  @Test def everyonesCharacterIsSavedBotsAndLeaversIncluded(): Unit = {
+    val a = m.join(CharacterId.Gladiator, 10, 10)
+    val bot = m.join(CharacterId.Barbarian, 20, 20, id = new UUID(0L, 9001L))
+    val leaver = m.join(CharacterId.Wizard, 30, 30)
+    val lobby = lobbyFor(a, leaver)
+    m.instance.killTracker.recordKill(bot.getId, a.getId)
+    m.instance.handler.removePlayer(leaver.getId)
+    server.endGame(lobby.id)
+    val db = server.authDatabase
+    val saved = db.getMatchRows(db.getMatchHistory(a.getId).head._1).map(r => (r.playerId, r.characterId, r.bot))
+    assertEquals(Set((a.getId, Some(CharacterId.Gladiator.id), false), (bot.getId, Some(CharacterId.Barbarian.id), true),
+      (leaver.getId, Some(CharacterId.Wizard.id), false)), saved.toSet)
+  }
+
+  @Test def aPracticeSessionsBotsAreNotSaved(): Unit = {
+    // They are passive targets: topping them is no record, and neither are they
+    val a = m.join(CharacterId.Gladiator, 10, 10)
+    m.join(CharacterId.Barbarian, 20, 20, id = new UUID(0L, 9002L))
+    val lobby = lobbyFor(a)
+    lobby.matchType = AuthDatabase.PracticeMatchType.toByte
+    server.endGame(lobby.id)
+    val db = server.authDatabase
+    assertEquals(Seq(a.getId), db.getMatchRows(db.getMatchHistory(a.getId).head._1).map(_.playerId))
   }
 
   /**

@@ -13,8 +13,12 @@ import scala.jdk.CollectionConverters._
 class ClientRegistry {
   private val players = new ConcurrentHashMap[UUID, Player]()
   private val channelToPlayer = new ConcurrentHashMap[Channel, UUID]()
+  // The character each player who has left was playing: a leaver is still scored at the end of
+  // the match (MatchEnd), and saved with the character they played
+  private val departed = new ConcurrentHashMap[UUID, java.lang.Byte]()
 
   def add(player: Player): Unit = {
+    departed.remove(player.getId)
     val isNew = players.put(player.getId, player) == null
     val ch = player.getTcpChannel
     if (ch != null) channelToPlayer.put(ch.asInstanceOf[Channel], player.getId)
@@ -36,6 +40,7 @@ class ClientRegistry {
   def remove(playerId: UUID): Unit = {
     val player = players.remove(playerId)
     if (player != null) {
+      departed.put(playerId, player.getCharacterId)
       val ch = player.getTcpChannel
       if (ch != null) channelToPlayer.remove(ch.asInstanceOf[Channel])
     }
@@ -43,6 +48,12 @@ class ClientRegistry {
 
   def get(playerId: UUID): Player = {
     players.get(playerId)
+  }
+
+  /** The character the player is playing, or was when they left; None for someone never here. */
+  def characterOf(playerId: UUID): Option[Byte] = {
+    val player = players.get(playerId)
+    if (player != null) Some(player.getCharacterId) else Option(departed.get(playerId)).map(_.byteValue)
   }
 
   /** Returns a snapshot copy of all players. Use only when a genuine snapshot is needed. */
@@ -74,5 +85,6 @@ class ClientRegistry {
 
   def clear(): Unit = {
     players.clear()
+    departed.clear()
   }
 }

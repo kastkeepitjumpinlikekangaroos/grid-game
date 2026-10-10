@@ -1,6 +1,6 @@
 package com.gridgame.client.render.projectiles
 
-import com.gridgame.common.model.{Projectile, ProjectileDef, ProjectileType}
+import com.gridgame.common.model.{CharacterId, Projectile, ProjectileDef, ProjectileType}
 import com.gridgame.client.gl.ShapeBatch
 import ProjectileKit._
 import AoeRings._
@@ -16,16 +16,19 @@ import Lobbed._
 import Missiles._
 import Orbs._
 import Shafts._
+import Songs._
+import Surges._
 import Tethers._
 import Undead._
-import Waves._
+import Winds._
 
 /**
  * How every projectile type is drawn: the registry below maps each type to a renderer, most of them
- * made by a family's factory with a colour, a size and a kind, the rest one-offs. The families, a
- * file each in this package, are Orbs, Blades, Shafts, Lobbed, AoeRings, Chains, Missiles, Waves,
- * Bolts, Beams, Tethers, Grabs, Electricity, Heavies, Undead and Bites; what they share is in
- * ProjectileKit and Silhouettes.
+ * made by a family's factory with a colour, a size and a kind, the rest one-offs; a type several
+ * characters throw can be drawn as each one's (`only`, [[getRenderer]] with the thrower). The
+ * families, a file each in this package, are Orbs, Blades, Shafts, Lobbed, AoeRings, Chains,
+ * Missiles, Bolts, Beams, Tethers, Grabs, Electricity, Heavies, Undead, Bites, Songs, Winds and
+ * Surges; what they share is in ProjectileKit and Silhouettes.
  *
  * A renderer is handed the projectile's hitbox in screen space and draws the thing that hits there,
  * anything elongated trailing behind it. Standard alpha blending: the bloom supplies the glow.
@@ -46,6 +49,20 @@ object GLProjectileRenderers {
   /** Look up renderer by projectile type. Returns null if none registered. No Option allocation. */
   def getRenderer(pType: Byte): Renderer = _rendererLUT(pType & 0xFF)
 
+  /** The renderer for a projectile of `pType` thrown by character `charId` (a CharacterId's id, or
+    * -1 when nobody knows who threw it): the thrower's own look for the type, else the type's.
+    * Null if the type has none. No Option allocation. */
+  def getRenderer(charId: Byte, pType: Byte): Renderer = {
+    if (charId >= 0) {
+      val own = _byChar(pType & 0xFF)
+      if (own != null) {
+        val r = own(charId & 0xFF)
+        if (r != null) return r
+      }
+    }
+    _rendererLUT(pType & 0xFF)
+  }
+
   // ── Where the thrower of a pull stands, for its tether (see Tethers) ──
 
   def setAnchor(wx: Float, wy: Float): Unit = Tethers.setAnchor(wx, wy)
@@ -57,10 +74,10 @@ object GLProjectileRenderers {
   private[render] def deadHand(sb: ShapeBatch, x: Float, y: Float, rise: Float, lean: Float, open: Float,
                                a: Float, s: Float): Unit = Grabs.deadHand(sb, x, y, rise, lean, open, a, s)
 
-  /** Draw a projectile with its registered renderer, or the generic fallback. */
+  /** Draw a projectile with its thrower's renderer for its type, or the generic fallback. */
   def draw(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int,
            r: Float, g: Float, b: Float): Unit = {
-    val rend = getRenderer(proj.projectileType)
+    val rend = getRenderer(proj.ownerCharacterId, proj.projectileType)
     if (rend != null) rend(proj, sx, sy, sb, tick) else drawGeneric(proj, sx, sy, sb, tick, r, g, b)
   }
 
@@ -269,13 +286,13 @@ object GLProjectileRenderers {
     ProjectileType.ARCANE_BOLT  -> energyBolt(0.65f, 0.3f, 0.95f, 22f, ORB_RUNE),
     ProjectileType.FIREBALL     -> energyBolt(1f, 0.46f, 0.08f, 28f, ORB_FIRE),
     ProjectileType.SPLASH       -> aoeRing(AOE_WATER, 0.32f, 0.62f, 1f, 46f),
-    ProjectileType.TIDAL_WAVE   -> wave(WAV_WATER, 0.35f, 0.66f, 1f, 40f),
+    ProjectileType.TIDAL_WAVE   -> asRenderer(drawBreakingWave),
     ProjectileType.GEYSER       -> asRenderer(drawGeyser),
     ProjectileType.BULLET       -> bulletProj(0.75f, 0.7f, 0.55f),
     ProjectileType.GRENADE      -> lobbed(LOB_BOMB, 0.95f, 0.62f, 0.25f, 17f),
     ProjectileType.ROCKET       -> asRenderer(drawRocket),
     ProjectileType.TALON        -> asRenderer(drawTalon),
-    ProjectileType.GUST         -> wave(WAV_WIND, 0.82f, 0.92f, 1f, 33f),
+    ProjectileType.GUST         -> asRenderer(drawWindSwirl),
     ProjectileType.SHURIKEN     -> shuriken(0.72f, 0.74f, 0.82f, 30f),
     ProjectileType.POISON_DART  -> flyingShaft(SHF_DART, 0.4f, 0.9f, 0.35f, 26f),
     ProjectileType.CHAIN_BOLT   -> chainProj(CHN_SHACKLE, 0.62f, 0.64f, 0.72f, 5.5f),
@@ -298,12 +315,12 @@ object GLProjectileRenderers {
     ProjectileType.THUNDER_STRIKE -> asRenderer(drawThunderStrike),
     ProjectileType.BOULDER      -> asRenderer((proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int) => drawBoulder(proj, sx, sy, sb, tick, 24f)),
     ProjectileType.SEISMIC_SLAM -> aoeRing(AOE_QUAKE, 0.68f, 0.50f, 0.28f, 50f),
-    ProjectileType.WIND_BLADE   -> wave(WAV_WIND, 0.78f, 0.96f, 1f, 31f),
+    ProjectileType.WIND_BLADE   -> asRenderer(drawWindPinwheel),
     ProjectileType.MAGMA_BALL   -> energyBolt(1f, 0.45f, 0.05f, 24f, ORB_FIRE),
     ProjectileType.ERUPTION     -> aoeRing(AOE_FIRE, 1f, 0.45f, 0.05f, 46f),
     ProjectileType.FROST_TRAP   -> lobbed(LOB_ICE, 0.62f, 0.85f, 1f, 17f),
     ProjectileType.SAND_SHOT    -> energyBolt(0.9f, 0.75f, 0.4f, 18f, ORB_SAND),
-    ProjectileType.SAND_BLAST   -> wave(WAV_SAND, 0.88f, 0.76f, 0.42f, 30f),
+    ProjectileType.SAND_BLAST   -> asRenderer(drawDustCloud),
     ProjectileType.THORN        -> flyingShaft(SHF_THORN, 0.42f, 0.75f, 0.28f, 26f),
     ProjectileType.VINE_WHIP    -> tether(TETH_VINE, 0.30f, 0.62f, 0.20f),
     ProjectileType.THORN_WALL   -> aoeRing(AOE_NATURE, 0.30f, 0.62f, 0.18f, 34f),
@@ -338,7 +355,7 @@ object GLProjectileRenderers {
     ProjectileType.HOLY_BOLT    -> asRenderer(drawHolyBolt),
     ProjectileType.ARROW        -> flyingShaft(SHF_ARROW, 0.95f, 0.72f, 0.32f, 25f),
     ProjectileType.POISON_ARROW -> flyingShaft(SHF_PARROW, 0.4f, 0.9f, 0.32f, 25f),
-    ProjectileType.SONIC_WAVE   -> wave(WAV_SONIC, 0.78f, 0.58f, 0.97f, 33f),
+    ProjectileType.SONIC_WAVE   -> asRenderer(drawLuteNote),
     ProjectileType.SONIC_BOOM   -> aoeRing(AOE_SONIC, 0.78f, 0.58f, 0.97f, 50f),
     ProjectileType.FIST         -> fistProj(0.75f, 0.6f, 0.45f, 28f),
     ProjectileType.SMITE        -> asRenderer(drawHolyBolt),
@@ -390,16 +407,16 @@ object GLProjectileRenderers {
     ProjectileType.VORTEX_BOMB     -> aoeRing(AOE_VOID, 0.55f, 0.25f, 0.85f, 42f),
     ProjectileType.CHAIN_LIGHTNING_FORK -> lightningBolt(1f, 0.92f, 0.42f, heavy = true),
     ProjectileType.SNIPER_BEAM     -> railSlug(0.40f, 0.70f, 1f, 11f),
-    ProjectileType.MOMENTUM_STRIKE -> wave(WAV_IMPACT, 0.97f, 0.62f, 0.22f, 30f),
+    ProjectileType.MOMENTUM_STRIKE -> asRenderer(drawSpiritWolf),
     ProjectileType.LEECH_BOLT      -> energyBolt(0.88f, 0.09f, 0.20f, 22f, ORB_ORBIT),
     ProjectileType.RICOCHET_SHARD  -> flyingShaft(SHF_ICE, 0.62f, 0.90f, 1f, 21f),
-    ProjectileType.FLAME_WAVE      -> wave(WAV_FLAME, 1f, 0.5f, 0.1f, 35f),
+    ProjectileType.FLAME_WAVE      -> asRenderer(drawLivingFlame),
     ProjectileType.POISON_CLOUD    -> aoeRing(AOE_TOXIC, 0.36f, 0.80f, 0.24f, 46f),
     ProjectileType.BONE_BOOMERANG  -> bladeSpinner(WPN_BONE, 0.94f, 0.92f, 0.84f, 24f, 0.34),
     ProjectileType.GRAVITY_LANCE   -> flyingShaft(SHF_LANCE, 0.55f, 0.25f, 0.85f, 26f),
     ProjectileType.SHADOW_HAUNT    -> asRenderer(drawVoidBolt),
     ProjectileType.CHARGE_FIST     -> fistProj(0.85f, 0.65f, 0.35f, 28f),
-    ProjectileType.ACID_SPRAY      -> wave(WAV_ACID, 0.35f, 0.9f, 0.32f, 29f),
+    ProjectileType.ACID_SPRAY      -> asRenderer(drawAcidSpray),
     ProjectileType.ECHO_BOLT       -> energyBolt(0.45f, 0.55f, 1f, 20f, ORB_RUNE),
     ProjectileType.FLAME_TRAIL     -> energyBolt(1f, 0.6f, 0.15f, 22f, ORB_FIRE),
     ProjectileType.STAR_BOLT       -> energyBolt(1f, 0.78f, 0.22f, 22f, ORB_ASTRAL),
@@ -410,15 +427,16 @@ object GLProjectileRenderers {
     ProjectileType.THROWN_BOULDER  -> asRenderer((proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int) => drawBoulder(proj, sx, sy, sb, tick, 28f)),
     ProjectileType.EYE_BEAM        -> laserBolt(BOLT_EYE, 1f, 0.35f, 0.15f, 42f, 11f),
 
-    // ── DPS balance variants (same visual as base type) ──
+    // ── DPS balance variants (the base type's look, but for the Banshee's and the Harpy's sonic
+    // waves: each variant is only one character's, so it is drawn as theirs) ──
     ProjectileType.SOUL_BOLT_HEAVY   -> energyBolt(0.30f, 0.84f, 0.82f, 20f, ORB_SPIRIT),
     ProjectileType.FROST_SHARD_LIGHT -> flyingShaft(SHF_ICE, 0.55f, 0.85f, 1f, 20f),
     ProjectileType.FLAME_BOLT_HEAVY  -> energyBolt(1f, 0.5f, 0.1f, 20f, ORB_FIRE),
     ProjectileType.FLAME_BOLT_LIGHT  -> energyBolt(1f, 0.5f, 0.1f, 20f, ORB_FIRE),
     ProjectileType.BULLET_HEAVY      -> bulletProj(0.75f, 0.7f, 0.55f),
     ProjectileType.BULLET_LIGHT      -> bulletProj(0.75f, 0.7f, 0.55f),
-    ProjectileType.SONIC_WAVE_HEAVY  -> wave(WAV_SONIC, 0.78f, 0.58f, 0.97f, 35f),
-    ProjectileType.SONIC_WAVE_MED    -> wave(WAV_SONIC, 0.78f, 0.58f, 0.97f, 33f),
+    ProjectileType.SONIC_WAVE_HEAVY  -> asRenderer(drawKeeningGhost),
+    ProjectileType.SONIC_WAVE_MED    -> asRenderer(drawScreechFeather),
     ProjectileType.THORN_LIGHT       -> flyingShaft(SHF_THORN, 0.42f, 0.75f, 0.28f, 24f),
     ProjectileType.LASER_HEAVY       -> laserBolt(BOLT_PRISM, 1f, 0.9f, 0.55f, 44f, 10f),
     ProjectileType.LASER_LIGHT       -> laserBolt(BOLT_LASER, 0.3f, 0.95f, 0.9f, 34f, 7.5f),
@@ -432,7 +450,7 @@ object GLProjectileRenderers {
     ProjectileType.ICE_QUAKE       -> aoeRing(AOE_QUAKE, 0.62f, 0.85f, 1f, 46f),
     ProjectileType.HOWL            -> aoeRing(AOE_SONIC, 0.72f, 0.78f, 0.90f, 60f),
     ProjectileType.FERAL_ROAR      -> aoeRing(AOE_SONIC, 0.95f, 0.62f, 0.25f, 44f),
-    ProjectileType.EARTHSPLITTER   -> wave(WAV_IMPACT, 0.62f, 0.48f, 0.28f, 34f),
+    ProjectileType.EARTHSPLITTER   -> asRenderer(drawFissure),
     ProjectileType.GRASPING_DEAD   -> asRenderer(drawGraspingDead),
     ProjectileType.DEATH_GRIP      -> tether(TETH_DEATH, 0.46f, 0.2f, 0.64f),
     ProjectileType.TALON_GRAB      -> tether(TETH_TALON, 1f, 0.8f, 0.34f),
@@ -454,7 +472,12 @@ object GLProjectileRenderers {
     ProjectileType.SHARK_CLAW      -> asRenderer(drawClawSwipe),
     ProjectileType.ICE_BOULDER     -> asRenderer((proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int) => drawBoulder(proj, sx, sy, sb, tick, 24f)),
     ProjectileType.DRAIN_BLADE     -> bladeSpinner(WPN_CURSED, 0.90f, 0.18f, 0.28f, 30f),
-    ProjectileType.CHILL_BLADE     -> bladeSpinner(WPN_CURSED, 0.90f, 0.18f, 0.28f, 30f)
+    ProjectileType.CHILL_BLADE     -> bladeSpinner(WPN_CURSED, 0.90f, 0.18f, 0.28f, 30f),
+    // Of their own for their numbers, drawn as the type they were made from
+    ProjectileType.MAUL            -> asRenderer(drawClawSwipe),
+    ProjectileType.ARENA_AXE       -> bladeSpinner(WPN_AXE, 0.78f, 0.70f, 0.55f, 30f),
+    ProjectileType.THROWING_STAR   -> shuriken(0.72f, 0.74f, 0.82f, 30f),
+    ProjectileType.MANTIS_SCYTHE   -> asRenderer(drawClawSwipe)
   )
 
   // Flat lookup table for O(1) renderer access without Option allocation.
@@ -468,6 +491,27 @@ object GLProjectileRenderers {
     }
     lut
   }
+
+  // ── One type, several fantasies ──
+  // A type thrown by characters who have nothing in common is drawn as each one's, as its blast and
+  // its sound are (GLBlastRenderers.styleOf, AbilitySounds). The registry holds a type's look for a
+  // thrower nobody knows, which is always one of its throwers' own; this holds the rest, a row of
+  // 256 characters for each type that has any. The Bard, the Musician and the Sphinx all fire a
+  // SONIC_WAVE, and four characters a GUST: every one of them used to be the same crescent.
+  private val _byChar = new Array[Array[Renderer]](256)
+
+  private def only(who: CharacterId, t: Byte, r: Renderer): Unit = {
+    var row = _byChar(t & 0xFF)
+    if (row == null) { row = new Array[Renderer](256); _byChar(t & 0xFF) = row }
+    row(who.id & 0xFF) = r
+  }
+
+  only(CharacterId.Musician, ProjectileType.SONIC_WAVE, asRenderer(drawPowerChord))
+  only(CharacterId.Sphinx, ProjectileType.SONIC_WAVE, asRenderer(drawRiddleEye))
+  only(CharacterId.Cloudrunner, ProjectileType.WIND_BLADE, asRenderer(drawCloudlet))
+  only(CharacterId.Cloudrunner, ProjectileType.GUST, asRenderer(drawCloudPuff))
+  only(CharacterId.Hawk, ProjectileType.GUST, asRenderer(drawFeatherGust))
+  only(CharacterId.Raptor, ProjectileType.GUST, asRenderer(drawSpiritEagle))
 
   // ═══════════════════════════════════════════════════════════════
   //  SPECIALIZED RENDERERS

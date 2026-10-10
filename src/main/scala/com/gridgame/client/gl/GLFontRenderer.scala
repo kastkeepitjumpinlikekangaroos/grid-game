@@ -3,6 +3,7 @@ package com.gridgame.client.gl
 import org.lwjgl.opengl.GL11._
 import org.lwjgl.BufferUtils
 
+import java.awt.font.FontRenderContext
 import java.awt.image.BufferedImage
 import java.awt.{Color, Font, FontMetrics, Graphics2D, RenderingHints}
 import scala.collection.mutable
@@ -55,6 +56,22 @@ class GLFontRenderer(val fontSize: Int, val pixelScale: Float = 1f) {
   /** Height of a line, in units. */
   val charHeight: Int = Math.round(rasterCharHeight * unit)
   private val lineH: Float = rasterCharHeight * unit
+
+  // Where the digits are inked, in units below the top of a line, measured with the hints they are
+  // rasterized with
+  private val digitInk =
+    pickFont('0')._1.createGlyphVector(new FontRenderContext(null, true, true), "0123456789").getVisualBounds
+  private val digitTop: Float = ((ascent + digitInk.getMinY) * unit).toFloat
+  private val digitBottom: Float = ((ascent + digitInk.getMaxY) * unit).toFloat
+
+  /**
+   * Where to draw a line of digits so that their ink is centred on `y`, on a whole pixel so they stay
+   * as sharp as they were rasterized. For a number that must sit inside a box: the line is much taller
+   * than the digits, and they sit low in it, since every font in the chain shares the tallest one's
+   * baseline — Noto's, which at 44 is 7 units below where Exo 2 alone would put its own.
+   */
+  def digitsCentredOn(y: Float): Float =
+    Math.round((y - (digitTop + digitBottom) / 2) * pixelScale) / pixelScale
 
   /** A glyph's place in the atlas, and its advance and width in units. */
   private final class Glyph(val region: TextureRegion, val advance: Float, val width: Float)

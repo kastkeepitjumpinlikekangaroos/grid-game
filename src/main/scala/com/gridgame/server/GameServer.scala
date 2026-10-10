@@ -49,7 +49,7 @@ class GameServer(port: Int) extends PacketRouter with LobbyHost {
   private val launcher = new MatchLauncher(this)
   val rankedQueue = new RankedQueue(this, lobbyManager, launcher)
   val lobbyHandler = new LobbyHandler(this, lobbyManager, rankedQueue, launcher)
-  private val gameInstances = new ConcurrentHashMap[Short, GameInstance]()
+  private[server] val gameInstances = new ConcurrentHashMap[Short, GameInstance]()
   private val chat = new ChatRelay(lobbyManager, rateLimiter, outbox, getConnectedPlayer)
   private val matchEnd = new MatchEnd(lobbyManager, authDatabase, outbox, getConnectedPlayer, unregisterGameInstance)
 
@@ -101,12 +101,13 @@ class GameServer(port: Int) extends PacketRouter with LobbyHost {
     println(s"Game server starting on port $port (lobby mode)")
     network.bind()
 
-    // Schedule cleanup
+    // Schedule cleanup. Anything thrown is caught, an Error too: one escaping a periodic task
+    // cancels it for good, and with it every timeout, session renewal and rate-limit sweep.
     cleanupExecutor.scheduleAtFixedRate(
       new Runnable { def run(): Unit = {
         try { cleanup() } catch {
-          case e: Exception =>
-            System.err.println(s"Cleanup loop error (will retry): ${e.getMessage}")
+          case e: Throwable =>
+            System.err.println(s"Cleanup loop error (will retry): $e")
         }
       }},
       5, 5, TimeUnit.SECONDS
@@ -361,8 +362,9 @@ class GameServer(port: Int) extends PacketRouter with LobbyHost {
   /** A lobby's match is over (its time is up, or its practice was left): see MatchEnd. */
   def endGame(lobbyId: Short): Unit = matchEnd.endGame(lobbyId)
 
-  private def cleanup(): Unit = {
-    val now = System.currentTimeMillis()
+  /** One pass of the cleanup loop, every five seconds: players gone quiet, sessions past their
+    * token's lifetime, stale rate-limit and replay state. */
+  private[server] def cleanup(now: Long = System.currentTimeMillis()): Unit = {
     val timeout = Constants.CLIENT_TIMEOUT_MS
 
     connectedPlayers.values().asScala.foreach { player =>
@@ -370,10 +372,11 @@ class GameServer(port: Int) extends PacketRouter with LobbyHost {
         val playerId = player.getId
         connectedPlayers.remove(playerId)
 
-        // Clean up session state (fixes leak)
+        // Clean up session state (fixes leak). Everything a disconnect forgets, as the channel's
+        // own disconnect won't find the player once its binding goes below.
         sessions.endSession(playerId)
         accountQueries.forget(playerId)
-        sessions.playerLocks.remove(playerId)
+        lobbyHandler.cleanupPlayer(playerId)
 
         // Close TCP channel to force re-auth. Its disconnect forgets the rest of what the channel had.
         val raw = player.getTcpChannel
@@ -393,10 +396,7 @@ class GameServer(port: Int) extends PacketRouter with LobbyHost {
       }
     }
 
-    sessions.expireStaleTokens(now, playerId => {
-      val player = connectedPlayers.get(playerId)
-      if (player == null || player.getTcpChannel == null) null else player.getTcpChannel.asInstanceOf[Channel]
-    })
+    renewSessions(now)
 
     rateLimiter.cleanup()
     replayGuard.cleanupStale(connectedPlayers.keySet())
@@ -405,6 +405,17 @@ class GameServer(port: Int) extends PacketRouter with LobbyHost {
       println(s"Server stats: ${connectedPlayers.size()} players connected, ${lobbyManager.getActiveLobbies.size} active lobbies")
     }
   }
+
+  /** Sessions past their token's lifetime: one whose player is still connected is sent a new token
+    * (signed with the old, which goes on signing until the client is heard using the new one), any
+    * other ends (Sessions.renewTokens). */
+  private[server] def renewSessions(now: Long): Unit =
+    sessions.renewTokens(now,
+      playerId => {
+        val player = connectedPlayers.get(playerId)
+        if (player == null || player.getTcpChannel == null) null else player.getTcpChannel.asInstanceOf[Channel]
+      },
+      (playerId, channel, token) => outbox.sendVia(new SessionTokenPacket(outbox.nextSeq(), playerId, token), channel))
 
   def stop(): Unit = {
     println("Stopping server...")

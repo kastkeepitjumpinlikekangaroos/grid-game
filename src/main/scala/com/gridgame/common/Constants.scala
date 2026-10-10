@@ -107,7 +107,14 @@ object Constants {
   val MAX_INVENTORY_SIZE: Int = 10                      // Max items per player
 
   // Security configuration
-  val SESSION_TOKEN_LIFETIME_MS: Long = 3600000L       // 1 hour
+  val SESSION_TOKEN_LIFETIME_MS: Long = 3600000L       // 1 hour, then the session is given a new token
+  // How long past its lifetime a token is still taken, for its client to switch to the new one;
+  // a session that hasn't by then is closed
+  val SESSION_RENEWAL_WINDOW_MS: Long = 60000L
+  // How long the server still takes a token after its client switched to the new one: packets the
+  // client signed just before may still be on the way
+  val RETIRED_TOKEN_GRACE_MS: Long = 10000L
+  val LOGIN_DEADLINE_MS: Long = 15000L                  // A connection that hasn't logged in by then is closed
   val SEQUENCE_WINDOW_SIZE: Int = 1024                   // UDP out-of-order tolerance
   val INCOMING_QUEUE_CAPACITY: Int = 8192               // Client packet queue bound
   val MAX_AUTH_FAILURES_PER_CHANNEL: Int = 5            // Close connection after N failures

@@ -15,7 +15,7 @@ private[model] object Originals {
 
   val TentacleDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.TENTACLE, name = "Tentacle",
-    speedMultiplier = 0.9f, damage = 5, maxRange = 15,
+    speedMultiplier = 0.9f, damage = 15, maxRange = 15,
     onHitEffect = Some(PullToOwner)
   )
   val IceBeamDef: ProjectileDef = ProjectileDef(
@@ -25,7 +25,7 @@ private[model] object Originals {
   )
   val AxeDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.AXE, name = "Axe",
-    speedMultiplier = 0.6f, damage = 33, maxRange = 5,
+    speedMultiplier = 0.6f, damage = 24, maxRange = 5,
     hitRadius = 2.5f, boomerang = true
   )
   val RopeDef: ProjectileDef = ProjectileDef(
@@ -35,7 +35,7 @@ private[model] object Originals {
   )
   val SoulBoltDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.SOUL_BOLT, name = "Soul Bolt",
-    speedMultiplier = 0.65f, damage = 15, maxRange = 15,
+    speedMultiplier = 0.65f, damage = 19, maxRange = 15,
     passesThroughWalls = true, pierceCount = 1
   )
   val HauntDef: ProjectileDef = ProjectileDef(
@@ -46,7 +46,7 @@ private[model] object Originals {
   )
   val ArcaneBoltDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.ARCANE_BOLT, name = "Arcane Bolt",
-    speedMultiplier = 0.85f, damage = 18, maxRange = 25,
+    speedMultiplier = 0.85f, damage = 11, maxRange = 25,
     passesThroughWalls = true,
     chargeSpeedScaling = Some(ChargeScaling(0.6f, 1.2f)),
     chargeDamageScaling = Some(ChargeScaling(8f, 40f)),
@@ -54,7 +54,7 @@ private[model] object Originals {
   )
   val FireballDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.FIREBALL, name = "Fireball",
-    speedMultiplier = 0.4f, damage = 45, maxRange = 18
+    speedMultiplier = 0.4f, damage = 39, maxRange = 18
   )
   val SplashDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.SPLASH, name = "Splash",
@@ -82,23 +82,26 @@ private[model] object Originals {
   )
   val BulletDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.BULLET, name = "Bullet",
-    speedMultiplier = 1.0f, damage = 20, maxRange = 18
+    speedMultiplier = 1.0f, damage = 16, maxRange = 18
   )
+  // Goes off on the first enemy it reaches, or at the end of its 12 cells. It used to fly through
+  // players and go off only at the end, so thrown at anyone nearer than about 9 cells it burst
+  // behind them: the Bombardier's primary averaged 3 damage a throw in bot free-for-alls
   val GrenadeDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.GRENADE, name = "Grenade",
-    speedMultiplier = 0.5f, damage = 40, maxRange = 12,
-    passesThroughPlayers = true,
-    explosionConfig = Some(ExplosionConfig(40, 10, 3.0f))
+    speedMultiplier = 0.5f, damage = 47, maxRange = 12,
+    explodesOnPlayerHit = true,
+    explosionConfig = Some(ExplosionConfig(47, 12, 3.0f))
   )
   val RocketDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.ROCKET, name = "Rocket",
-    speedMultiplier = 0.55f, damage = 35, maxRange = 20,
+    speedMultiplier = 0.55f, damage = 52, maxRange = 20,
     explodesOnPlayerHit = true,
-    explosionConfig = Some(ExplosionConfig(35, 10, 2.5f))
+    explosionConfig = Some(ExplosionConfig(52, 15, 2.5f))
   )
   val TalonDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.TALON, name = "Talon",
-    speedMultiplier = 0.7f, damage = 28, maxRange = 4,
+    speedMultiplier = 0.7f, damage = 30, maxRange = 4,
     hitRadius = 2.2f
   )
   val GustDef: ProjectileDef = ProjectileDef(
@@ -109,22 +112,22 @@ private[model] object Originals {
   )
   val ShurikenDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.SHURIKEN, name = "Shuriken",
-    speedMultiplier = 0.95f, damage = 24, maxRange = 6,
+    speedMultiplier = 0.95f, damage = 19, maxRange = 6,
     hitRadius = 2.2f
   )
   val ChainBoltDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.CHAIN_BOLT, name = "Chain Bolt",
-    speedMultiplier = 0.7f, damage = 10, maxRange = 14,
+    speedMultiplier = 0.7f, damage = 20, maxRange = 14,
     onHitEffect = Some(Freeze(200))
   )
   val LockdownChainDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.LOCKDOWN_CHAIN, name = "Lockdown Chain",
-    speedMultiplier = 0.6f, damage = 8, maxRange = 12,
+    speedMultiplier = 0.6f, damage = 5, maxRange = 12,
     onHitEffect = Some(Freeze(700))
   )
   val KatanaDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.KATANA, name = "Katana",
-    speedMultiplier = 0.7f, damage = 30, maxRange = 4,
+    speedMultiplier = 0.7f, damage = 24, maxRange = 4,
     hitRadius = 2.2f
   )
   val SwordWaveDef: ProjectileDef = ProjectileDef(
@@ -135,15 +138,15 @@ private[model] object Originals {
   )
   val PlagueBoltDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.PLAGUE_BOLT, name = "Plague Bolt",
-    speedMultiplier = 0.55f, damage = 14, maxRange = 16,
-    aoeOnHit = Some(AoESplashConfig(2.5f, 8))
+    speedMultiplier = 0.55f, damage = 22, maxRange = 16,
+    aoeOnHit = Some(AoESplashConfig(2.5f, 13))
   )
   val MiasmaDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.MIASMA, name = "Miasma",
-    speedMultiplier = 0.45f, damage = 12, maxRange = 14,
+    speedMultiplier = 0.45f, damage = 13, maxRange = 14,
     hitRadius = 2.8f,
     explodesOnPlayerHit = true,
-    explosionConfig = Some(ExplosionConfig(25, 8, 5.0f))
+    explosionConfig = Some(ExplosionConfig(27, 9, 5.0f))
   )
   val BlightBombDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.BLIGHT_BOMB, name = "Blight Bomb",
@@ -174,10 +177,14 @@ private[model] object Originals {
     BatSwarmDef
   )
 
-  /** Plan 5a's variants: another type's numbers and look, with an effect of their own. Made from
-    * the registered base, so Roster makes them once every base is registered. */
+  /** Plan 5a's variants: another type's flight and look, with an effect and a damage of their own
+    * where they differ from it (the balance passes set each one's damage for its thrower). Made
+    * from the registered base, so Roster makes them once every base is registered. */
   def variants(base: Byte => ProjectileDef): Seq[ProjectileDef] = Seq(
-    base(ProjectileType.POISON_DART).copy(id = ProjectileType.VENOM_DART, name = "Venom Dart", alsoOnHit = Seq(Poison(15, 3000, 750)))
+    base(ProjectileType.POISON_DART).copy(id = ProjectileType.VENOM_DART, name = "Venom Dart", damage = 15, alsoOnHit = Seq(Poison(15, 3000, 750))),
+    // Of their own, so their numbers can differ from the others who throw the base
+    base(ProjectileType.AXE).copy(id = ProjectileType.ARENA_AXE, name = "Arena Axe", damage = 30),
+    base(ProjectileType.SHURIKEN).copy(id = ProjectileType.THROWING_STAR, name = "Throwing Star", damage = 28)
   )
 
   // ── Characters ──
@@ -190,7 +197,7 @@ private[model] object Originals {
     qAbility = AbilityDef(
       name = "Tentacle",
       description = "Shoots a tentacle that pulls enemies closer.",
-      cooldownMs = 5000, maxRange = 15, damage = 5,
+      cooldownMs = 5000, maxRange = 15, damage = 15,
       projectileType = ProjectileType.TENTACLE, keybind = "Q"
     ),
     eAbility = AbilityDef(
@@ -200,7 +207,7 @@ private[model] object Originals {
       projectileType = ProjectileType.ICE_BEAM, keybind = "E"
     ),
     primaryProjectileType = ProjectileType.NORMAL,
-    role = Ranged, maxHealth = 70
+    role = Ranged, maxHealth = 80
   )
 
   val Gladiator: CharacterDef = CharacterDef(
@@ -221,8 +228,8 @@ private[model] object Originals {
       cooldownMs = 20000, maxRange = 25, damage = 5,
       projectileType = ProjectileType.ROPE, keybind = "E"
     ),
-    primaryProjectileType = ProjectileType.AXE,
-    role = Melee, maxHealth = 130, moveSpeed = Melee.speed
+    primaryProjectileType = ProjectileType.ARENA_AXE,
+    role = Melee, maxHealth = 125, moveSpeed = Melee.speed
   )
 
   val Wraith: CharacterDef = CharacterDef(
@@ -244,7 +251,7 @@ private[model] object Originals {
       projectileType = ProjectileType.HAUNT, keybind = "E"
     ),
     primaryProjectileType = ProjectileType.SOUL_BOLT,
-    role = Ranged, maxHealth = 70
+    role = Ranged, maxHealth = 75
   )
 
   val Wizard: CharacterDef = CharacterDef(
@@ -255,7 +262,7 @@ private[model] object Originals {
     qAbility = AbilityDef(
       name = "Fireball",
       description = "Launches a slow but devastating fireball that deals massive damage.",
-      cooldownMs = 5000, maxRange = 18, damage = 45,
+      cooldownMs = 5000, maxRange = 18, damage = 39,
       projectileType = ProjectileType.FIREBALL, keybind = "Q"
     ),
     eAbility = AbilityDef(
@@ -298,18 +305,18 @@ private[model] object Originals {
     spriteSheet = "sprites/soldier.png",
     qAbility = AbilityDef(
       name = "Grenade",
-      description = "Thrown explosive that passes through players and detonates at range.",
-      cooldownMs = 10000, maxRange = 12, damage = 40,
+      description = "Thrown explosive that detonates on the first enemy it reaches, or at range.",
+      cooldownMs = 10000, maxRange = 12, damage = 47,
       projectileType = ProjectileType.GRENADE, keybind = "Q"
     ),
     eAbility = AbilityDef(
       name = "Rocket",
       description = "Fired explosive that detonates on impact with splash damage.",
-      cooldownMs = 12000, maxRange = 20, damage = 35,
+      cooldownMs = 12000, maxRange = 20, damage = 52,
       projectileType = ProjectileType.ROCKET, keybind = "E"
     ),
     primaryProjectileType = ProjectileType.BULLET,
-    role = Ranged, maxHealth = 70
+    role = Ranged, maxHealth = 65
   )
 
   val Raptor: CharacterDef = CharacterDef(
@@ -352,8 +359,8 @@ private[model] object Originals {
       projectileType = -1, keybind = "E",
       castBehavior = PhaseShiftBuff(3000)
     ),
-    primaryProjectileType = ProjectileType.SHURIKEN,
-    role = Melee, maxHealth = 120, moveSpeed = Melee.speed
+    primaryProjectileType = ProjectileType.THROWING_STAR,
+    role = Melee, maxHealth = 130, moveSpeed = Melee.speed
   )
 
   val Warden: CharacterDef = CharacterDef(
@@ -364,7 +371,7 @@ private[model] object Originals {
     qAbility = AbilityDef(
       name = "Lockdown",
       description = "Fires 3 chains in a fan that freeze enemies for 0.7s on hit.",
-      cooldownMs = 8000, maxRange = 12, damage = 8,
+      cooldownMs = 8000, maxRange = 12, damage = 5,
       projectileType = ProjectileType.LOCKDOWN_CHAIN, keybind = "Q",
       castBehavior = FanProjectile(3, Math.toRadians(40))
     ),
@@ -376,7 +383,7 @@ private[model] object Originals {
       castBehavior = TrapCast(TrapType.BEAR_TRAP, 6)
     ),
     primaryProjectileType = ProjectileType.CHAIN_BOLT,
-    role = Ranged, maxHealth = 75
+    role = Ranged, maxHealth = 80
   )
 
   val Samurai: CharacterDef = CharacterDef(
@@ -399,7 +406,7 @@ private[model] object Originals {
       castBehavior = FanProjectile(8, 2 * Math.PI)
     ),
     primaryProjectileType = ProjectileType.KATANA,
-    role = Melee, maxHealth = 135, moveSpeed = Melee.speed
+    role = Melee, maxHealth = 120, moveSpeed = Melee.speed
   )
 
   val PlagueDoctor: CharacterDef = CharacterDef(
@@ -410,7 +417,7 @@ private[model] object Originals {
     qAbility = AbilityDef(
       name = "Miasma",
       description = "Toxic cloud that explodes on contact or at max range in a massive toxic blast.",
-      cooldownMs = 8000, maxRange = 14, damage = 12,
+      cooldownMs = 8000, maxRange = 14, damage = 13,
       projectileType = ProjectileType.MIASMA, keybind = "Q"
     ),
     eAbility = AbilityDef(
@@ -420,7 +427,7 @@ private[model] object Originals {
       projectileType = ProjectileType.BLIGHT_BOMB, keybind = "E"
     ),
     primaryProjectileType = ProjectileType.PLAGUE_BOLT,
-    role = Ranged, maxHealth = 70
+    role = Ranged, maxHealth = 80
   )
 
   val Vampire: CharacterDef = CharacterDef(

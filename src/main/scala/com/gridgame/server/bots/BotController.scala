@@ -17,11 +17,11 @@ import scala.jdk.CollectionConverters._
 /**
  * The bots of one match, on a tick of their own (every 100ms): each picks a target, steps, uses
  * items and fights as the character it is playing, through the same match a player's client talks
- * to. Its parts, a file each: BotTargeting, BotNavigation, BotItems, BotCombat. Practice bots only
- * wander.
+ * to. Its parts, a file each: BotTargeting, BotNavigation (and BotPaths, the searches it steps by),
+ * BotItems, BotCombat. Practice bots only wander.
  */
 class BotController(private[bots] val instance: GameInstance, isPractice: Boolean = false)
-    extends MatchBots with BotTargeting with BotNavigation with BotItems with BotCombat {
+    extends MatchBots with BotTargeting with BotNavigation with BotPaths with BotItems with BotCombat {
   private val botIds = new java.util.concurrent.CopyOnWriteArrayList[UUID]()
   private[bots] val lastShotTime = new ConcurrentHashMap[UUID, Long]()
   private[bots] val lastQAbilityTime = new ConcurrentHashMap[UUID, Long]()
@@ -35,6 +35,8 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
   private[bots] val barrierShown = ConcurrentHashMap.newKeySet[UUID]()
   // How far each bot's target was on the tick before, so a trap is laid for someone coming in
   private[bots] val lastTargetDist = new ConcurrentHashMap[UUID, java.lang.Float]()
+  // The way each bot is following round whatever is between it and its target (BotNavigation)
+  private[bots] val routes = new ConcurrentHashMap[UUID, BotRoute]()
   private var executor: ScheduledExecutorService = _
 
   private val TICK_INTERVAL_MS = 100L
@@ -58,15 +60,6 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
     (1, 1), (1, -1), (-1, 1), (-1, -1)
   )
 
-  // Occupancy set rebuilt once per tick — O(1) tile occupancy checks instead of O(n)
-  private[bots] val occupiedTiles = new java.util.HashSet[Long]()
-  // Maps packed coords to player UUID for excludeId handling
-  private[bots] val occupiedTileOwners = new java.util.HashMap[Long, UUID]()
-
-  // Pre-allocated BFS structures reused between calls (bot executor is single-threaded)
-  private[bots] val bfsVisited = new java.util.HashSet[Long]()
-  private[bots] val bfsQueue = new java.util.ArrayDeque[(Int, Int, Int, Int)]()
-
   def addBotId(id: UUID): Unit = {
     botIds.add(id)
     lastShotTime.put(id, 0L)
@@ -77,6 +70,7 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
     lastTargetDist.put(id, java.lang.Float.valueOf(Float.MaxValue))
     botShootCooldown.put(id, SHOOT_COOLDOWN_MIN_MS + scala.util.Random.nextLong(SHOOT_COOLDOWN_MAX_MS - SHOOT_COOLDOWN_MIN_MS))
     strafeDirection.put(id, if (scala.util.Random.nextBoolean()) 1 else -1)
+    routes.put(id, new BotRoute)
   }
 
   // Async gauge for active bots
@@ -106,10 +100,14 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
     if (executor != null) {
       executor.shutdown()
       executor.shutdownNow()
+      // A tick under way finishes first: it reads the tables and the scratch arrays let go below
+      try executor.awaitTermination(1, TimeUnit.SECONDS)
+      catch { case _: InterruptedException => Thread.currentThread().interrupt() }
     }
     // Unregister the gauge callback and drop per-bot tables; otherwise the gauge keeps
     // reporting the final bot count after the match ends, and across matches the
-    // callbacks accumulate.
+    // callbacks accumulate. The lobby keeps its last match until the next, so the search
+    // arrays (BotPaths) go too.
     try botsActiveGauge.close() catch { case _: Throwable => () }
     botIds.clear()
     lastShotTime.clear()
@@ -122,14 +120,10 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
     strafeDirection.clear()
     barrierShown.clear()
     lastTargetDist.clear()
-    occupiedTiles.clear()
-    occupiedTileOwners.clear()
-    bfsVisited.clear()
-    bfsQueue.clear()
+    routes.clear()
+    releaseGrid()
     println("BotController: Stopped")
   }
-
-  private[bots] def packCoord(x: Int, y: Int): Long = (x.toLong << 32) | (y.toLong & 0xFFFFFFFFL)
 
   /** One pass over every bot. Runs every TICK_INTERVAL_MS once started; tests call it themselves. */
   private[server] def tick(): Unit = tick(System.currentTimeMillis())
@@ -141,16 +135,9 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
     try {
       if (!instance.isRunning || instance.world == null) return
 
-      // Rebuild occupancy set once per tick
-      occupiedTiles.clear()
-      occupiedTileOwners.clear()
-      instance.registry.forEachPlayer { p =>
-        if (!p.isDead) {
-          val key = packCoord(p.getPosition.getX, p.getPosition.getY)
-          occupiedTiles.add(key)
-          occupiedTileOwners.put(key, p.getId)
-        }
-      }
+      // Where everyone stands, once a tick (each bot's step keeps it up to date after)
+      gridFor(instance.world)
+      markStanding()
 
       tickNow = now
       botIds.asScala.foreach { botId =>
@@ -163,8 +150,9 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
         }
       }
     } catch {
-      case e: Exception =>
-        System.err.println(s"BotController: Error in tick: ${e.getMessage}")
+      // An Error too: one escaping the periodic task cancels it, and the bots stood still
+      case e: Throwable =>
+        System.err.println(s"BotController: Error in tick: $e")
     } finally {
       Metrics.tickDuration.record((System.nanoTime() - tickStart) / 1e6, botTickAttrs)
     }
@@ -246,8 +234,6 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
   // --- Target selection with hysteresis ---
 
   // --- Range-based movement ---
-
-  // --- BFS pathfinding (bounded to avoid expensive searches) ---
 
   // --- Item pickup and usage ---
 

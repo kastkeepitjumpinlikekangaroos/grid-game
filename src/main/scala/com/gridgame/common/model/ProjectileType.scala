@@ -207,4 +207,10 @@ object ProjectileType {
   val ICE_BOULDER: Byte = -83         // 173: Avalanche's BOULDER: slows
   val DRAIN_BLADE: Byte = -82         // 174: Revenant's CURSED_BLADE: drains
   val CHILL_BLADE: Byte = -81         // 175: Death Knight's CURSED_BLADE: slows
+  // Attacks of their own for a character whose primary or ability others throw too, so its
+  // numbers can differ from theirs
+  val MAUL: Byte = -80                // 176: Bear's Maul: CLAW_SWIPE of his own
+  val ARENA_AXE: Byte = -79           // 177: Gladiator's AXE
+  val THROWING_STAR: Byte = -78       // 178: Assassin's SHURIKEN
+  val MANTIS_SCYTHE: Byte = -77       // 179: Mantis' CLAW_SWIPE
 }

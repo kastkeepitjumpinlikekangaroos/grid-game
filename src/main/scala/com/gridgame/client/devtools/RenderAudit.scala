@@ -70,6 +70,16 @@ class RenderAuditApp extends Application {
     val characters = CharacterDef.all.map(_.id.id.toInt).toIndexedSeq
     val projectileTypes = (0 until 256).map(_.toByte)
       .filter(t => GLProjectileRenderers.getRenderer(t) != null).map(_ & 0xFF).toIndexedSeq
+    // And every character's own look for a type it throws, where it has one other than the type's
+    // (GLProjectileRenderers.getRenderer with the thrower): shot as ids from 256 up
+    val looks: IndexedSeq[(Byte, Byte)] = CharacterDef.all.flatMap { c =>
+      Seq(c.primaryProjectileType, c.qAbility.projectileType, c.eAbility.projectileType).distinct.filter { t =>
+        val r = GLProjectileRenderers.getRenderer(c.id.id, t)
+        !(t >= -4 && t < 0) && r != null && (r ne GLProjectileRenderers.getRenderer(t))
+      }.map(t => (t, c.id.id))
+    }.toIndexedSeq
+    val projectileIds = projectileTypes ++ looks.indices.map(256 + _)
+    def lookOf(id: Int): (Byte, Byte) = if (id >= 256) looks(id - 256) else (id.toByte, -1.toByte)
 
     // A field is a ground under a sky: maps that share both (the four space arenas are all circuit
     // under stars) are shot once, under the first of them
@@ -83,7 +93,7 @@ class RenderAuditApp extends Application {
         characters.grouped(slotList.size).zipWithIndex.map { case (ids, i) => Shot(map, world.background, g, "char", ids, i) }
       } else Nil
       val p = if (what("projectiles")) (grounds ++ pools).flatMap { g =>
-        projectileTypes.grouped(slotList.size).zipWithIndex.map { case (ids, i) => Shot(map, world.background, g, "proj", ids, i) }
+        projectileIds.grouped(slotList.size).zipWithIndex.map { case (ids, i) => Shot(map, world.background, g, "proj", ids, i) }
       } else Nil
       println(s"$map (${world.background}): ground ${grounds.map(_.name).mkString(", ")}; pools ${pools.map(_.name).mkString(", ")}" +
         (if (grounds.size + pools.size < allGrounds.size + allPools.size) " (the rest shot under an earlier map)" else ""))
@@ -132,13 +142,13 @@ class RenderAuditApp extends Application {
           p.setHealth(p.getMaxHealth)
           client.getPlayers.put(pid, p)
         } else if (!hidden) {
-          val t = id.toByte
+          val (t, who) = lookOf(id)
           val dist = ProjectileDef.get(t).effectiveMaxRange(0).toFloat * 0.35f
           // Travelling screen right-and-down, a third of the way into its range, landing on the slot
-          val proj = new Projectile(id + 1, new UUID(0xA0D17L, 999L), cx.toFloat, cy.toFloat, 1f, 0f, 0x88AAFF, 0, t)
+          val proj = new Projectile(id + 1, new UUID(0xA0D17L, 999L), cx.toFloat, cy.toFloat, 1f, 0f, 0x88AAFF, 0, t, who)
           var guard = 0
           while (proj.getDistanceTraveled < dist && guard < 64) { proj.moveStep(1f); guard += 1 }
-          val back = new Projectile(id + 1, proj.ownerId, cx - (proj.getX - cx), cy - (proj.getY - cy), 1f, 0f, 0x88AAFF, 0, t)
+          val back = new Projectile(id + 1, proj.ownerId, cx - (proj.getX - cx), cy - (proj.getY - cy), 1f, 0f, 0x88AAFF, 0, t, who)
           guard = 0
           while (back.getDistanceTraveled < dist && guard < 64) { back.moveStep(1f); guard += 1 }
           client.getProjectiles.put(id + 1, back)
@@ -177,6 +187,7 @@ class RenderAuditApp extends Application {
           saveFrame(new File(out, base + "_b.png"), window.fbWidth, window.fbHeight)
           rects(s).foreach { case (id, (x0, y0, x1, y1)) =>
             val name = if (s.kind == "char") CharacterDef.get(id.toByte).id.name
+                       else if (id >= 256) s"${ProjectileAudit.nameOf(lookOf(id)._1)}@${CharacterDef.get(lookOf(id)._2).displayName}"
                        else ProjectileAudit.nameOf(id.toByte)
             index.println(s"$base,${s.map.stripSuffix(".json")},${s.background},${s.ground.name},${s.kind},$id,$name,$x0,$y0,$x1,$y1")
           }

@@ -100,11 +100,12 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   def start(): Unit = {
     begin()
 
-    // Helper: wrap a Runnable in try-catch so ScheduledExecutorService doesn't silently die
+    // Helper: wrap a Runnable in try-catch so ScheduledExecutorService doesn't silently die. An
+    // Error too: one escaping a periodic task cancels it for good, and the match stood still
     def safeRunnable(name: String)(body: => Unit): Runnable = new Runnable {
       def run(): Unit = try { body } catch {
-        case e: Exception =>
-          System.err.println(s"GameInstance[$gameId] $name error: ${e.getMessage}")
+        case e: Throwable =>
+          System.err.println(s"GameInstance[$gameId] $name error: $e")
       }
     }
 

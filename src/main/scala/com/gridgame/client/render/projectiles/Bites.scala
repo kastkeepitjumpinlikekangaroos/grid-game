@@ -8,7 +8,7 @@ import Lobbed._
 
 /** Jaws, claws and stings, closing on the hitbox with the foot, the gum or the tail trailing behind:
   * the shark's jaw, the raptor's talon, the vampire's fang, the scorpion's stinger, the minotaur's
-  * horn and the claw swipe. */
+  * horn, the claw swipe, and the Wolf's spirit lunging with its jaws open. */
 private[render] object Bites {
   /** Jaw — predatory chomping shark jaws with smooth silhouette, bite animation, teeth, eyes, wake */
   private[projectiles] def drawJaw(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
@@ -591,5 +591,138 @@ private[render] object Bites {
 
     drawChargeCrackle(sx, sy, 22f * ds, 0.9f, 0.2f, 0.15f, p, sb, phase, proj.chargeLevel)
     drawReturnGhosts(sx, sy, 22f * ds, dr, dg, db, p, sb, proj)
+  }
+
+  // ── The Wolf ──
+  // A wolf's head in profile, +x its nose, +y down its face, in units of about half its length:
+  // skull, snout, the lower jaw on its hinge, an ear, and tufts of mane streaming back. Parts convex.
+  private val WOLF_SKULL_X = Array(0.42f, -0.08f, -0.55f, -0.72f, -0.55f, 0.1f, 0.42f)
+  private val WOLF_SKULL_Y = Array(-0.44f, -0.6f, -0.5f, -0.1f, 0.3f, 0.36f, 0.12f)
+  private val WOLF_SNOUT_X = Array(1.3f, 1.08f, 0.35f, 0.2f, 0.9f)
+  private val WOLF_SNOUT_Y = Array(-0.06f, -0.3f, -0.44f, -0.1f, 0.04f)
+  private val WOLF_JAW_X = Array(0.22f, 1.02f, 0.96f, 0.26f)
+  private val WOLF_JAW_Y = Array(0.02f, 0.1f, 0.24f, 0.3f)
+  private val WOLF_EAR_X = Array(-0.1f, -0.34f, -0.58f)
+  private val WOLF_EAR_Y = Array(-0.52f, -1.12f, -0.46f)
+  private val WOLF_MANE_X = Array(-0.45f, -1.35f, -0.7f, -0.62f, -1.55f, -0.66f, -0.5f, -1.25f, -0.2f)
+  private val WOLF_MANE_Y = Array(-0.48f, -0.78f, -0.12f, -0.14f, 0.02f, 0.26f, 0.22f, 0.62f, 0.34f)
+  private final val WOLF_HINGE_X = 0.22f
+  private final val WOLF_HINGE_Y = 0.08f
+
+  private val _wlX = new Array[Float](8)
+  private val _wlY = new Array[Float](8)
+  // The wolf's frame: its local origin on screen, along it and across it (flipped when it runs
+  // left, so its ear stays up), and how far its jaw has dropped
+  private var _wox = 0f; private var _woy = 0f
+  private var _wfx = 1f; private var _wfy = 0f; private var _wqx = 0f; private var _wqy = 1f
+  private var _wjc = 1f; private var _wjs = 0f
+
+  /** A part of the wolf into _wlX/_wlY: points `from` to `from + n` of (xs, ys), swung about the
+    * jaw's hinge when `jaw`. */
+  private def wolfPts(xs: Array[Float], ys: Array[Float], from: Int, n: Int, jaw: Boolean): Unit = {
+    var i = 0
+    while (i < n) {
+      var lx = xs(from + i); var ly = ys(from + i)
+      if (jaw) {
+        val hx = lx - WOLF_HINGE_X; val hy = ly - WOLF_HINGE_Y
+        lx = WOLF_HINGE_X + hx * _wjc - hy * _wjs; ly = WOLF_HINGE_Y + hx * _wjs + hy * _wjc
+      }
+      _wlX(i) = _wox + lx * _wfx + ly * _wqx; _wlY(i) = _woy + lx * _wfy + ly * _wqy
+      i += 1
+    }
+  }
+
+  private def wolfPart(sb: ShapeBatch, xs: Array[Float], ys: Array[Float], from: Int, n: Int, jaw: Boolean,
+                       ink: Boolean, r: Float, g: Float, b: Float, a: Float): Unit = {
+    wolfPts(xs, ys, from, n, jaw)
+    if (ink) sb.strokePolygon(_wlX, _wlY, n, 2.4f, 0.07f, 0.09f, 0.24f, 0.85f * a)
+    else sb.fillPolygon(_wlX, _wlY, n, r, g, b, a)
+  }
+
+  /**
+   * The Wolf's momentum strike: the wolf's spirit lunging, a steel-blue head in profile with its jaws
+   * opening as it leaps and snapping shut as it reaches the end, its nose on the hitbox, its gold
+   * eye fixed ahead, its mane streaming back into wisps of spirit where a body would be.
+   */
+  private[projectiles] def drawSpiritWolf(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
+    val phase = (tick + proj.id * 23) * 0.4
+    computeAllDynamics(proj, 0.78f, 0.86f, 1f, phase)
+    val a = dynAlpha
+    val ds = Math.min(dynScale, 1.3f)
+    screenDir(proj)
+    val ndx = _sdx; val ndy = _sdy
+    val flip = if (ndx < -0.05f) -1f else 1f
+    val s = 13.5f * ds
+    _wox = sx - ndx * 1.3f * s; _woy = sy - ndy * 1.3f * s
+    _wfx = ndx * s; _wfy = ndy * s
+    _wqx = -ndy * s * 0.9f * flip; _wqy = ndx * s * 0.9f * flip
+    // The jaw drops as it leaps and snaps shut as it arrives
+    val open = 0.12f + 0.5f * Math.sin(Math.min(1f, _lifePct * 1.15f) * Math.PI).toFloat
+    _wjc = Math.cos(open).toFloat; _wjs = Math.sin(open).toFloat
+
+    // Wisps of spirit streaming back off the mane, and the speed of the lunge
+    var w = 0
+    while (w < 3) {
+      val mi = w * 3 + 1
+      val bx = _wox + WOLF_MANE_X(mi) * _wfx + WOLF_MANE_Y(mi) * _wqx
+      val by = _woy + WOLF_MANE_X(mi) * _wfy + WOLF_MANE_Y(mi) * _wqy
+      var i = 0
+      while (i < 6) {
+        val t = i / 5f
+        val sway = Math.sin(phase * 1.5 - t * 4.0 + w * 1.9).toFloat * 3.5f * ds * t
+        _pvX(i) = bx - ndx * t * 34f * ds - ndy * sway; _pvY(i) = by - ndy * t * 34f * ds + ndx * sway
+        _pvW(i) = (6f * (1f - t) + 0.5f) * ds; _pvA(i) = 0.75f * a * (1f - t)
+        i += 1
+      }
+      sb.strokePolylineVar(_pvX, _pvY, _pvW, _pvA, 6, 0.66f, 0.76f, 0.95f)
+      w += 1
+    }
+    var side = -1
+    while (side <= 1) {
+      val ox = -ndy * side * 10f * ds; val oy = ndx * side * 10f * ds
+      fadeLine(sb, sx - ndx * 14f * ds + ox, sy - ndy * 14f * ds + oy, sx - ndx * 50f * ds + ox, sy - ndy * 50f * ds + oy,
+        2.4f * ds, 1f, 1f, 1f, 0.5f * a, 4)
+      side += 2
+    }
+    sb.fillOvalSoft(sx - ndx * 12f * ds, sy - ndy * 12f * ds, 28f * ds * dynGlow, 22f * ds * dynGlow, 0.7f, 0.82f, 1f,
+      0.26f * a, 0f, 16)
+
+    // Ink round the whole head, then its parts: mane, ear, skull, jaw, snout
+    var pass = 0
+    while (pass < 2) {
+      val ink = pass == 0
+      var m = 0
+      while (m < 3) { wolfPart(sb, WOLF_MANE_X, WOLF_MANE_Y, m * 3, 3, jaw = false, ink, 0.9f, 0.95f, 1f, 0.88f * a); m += 1 }
+      wolfPart(sb, WOLF_EAR_X, WOLF_EAR_Y, 0, 3, jaw = false, ink, 0.44f, 0.53f, 0.76f, 0.95f * a)
+      wolfPart(sb, WOLF_SKULL_X, WOLF_SKULL_Y, 0, 7, jaw = false, ink, 0.58f, 0.68f, 0.9f, 0.95f * a)
+      wolfPart(sb, WOLF_JAW_X, WOLF_JAW_Y, 0, 4, jaw = true, ink, 0.66f, 0.75f, 0.94f, 0.95f * a)
+      wolfPart(sb, WOLF_SNOUT_X, WOLF_SNOUT_Y, 0, 5, jaw = false, ink, 0.76f, 0.84f, 0.98f, 0.95f * a)
+      pass += 1
+    }
+    // Fangs, top and bottom
+    _wlX(0) = 0.98f; _wlY(0) = 0.02f; _wlX(1) = 0.91f; _wlY(1) = 0.2f; _wlX(2) = 0.84f; _wlY(2) = 0.02f
+    _wlX(3) = 0.88f; _wlY(3) = 0.1f; _wlX(4) = 0.82f; _wlY(4) = -0.06f; _wlX(5) = 0.76f; _wlY(5) = 0.1f
+    var f = 0
+    while (f < 2) {
+      var i = 0
+      while (i < 3) {
+        var lx = _wlX(f * 3 + i); var ly = _wlY(f * 3 + i)
+        if (f == 1) {
+          val hx = lx - WOLF_HINGE_X; val hy = ly - WOLF_HINGE_Y
+          lx = WOLF_HINGE_X + hx * _wjc - hy * _wjs; ly = WOLF_HINGE_Y + hx * _wjs + hy * _wjc
+        }
+        _polyXs3(i) = _wox + lx * _wfx + ly * _wqx; _polyYs3(i) = _woy + lx * _wfy + ly * _wqy
+        i += 1
+      }
+      sb.fillPolygon(_polyXs3, _polyYs3, 3, 1f, 1f, 1f, a)
+      f += 1
+    }
+    // The nose, and the eye, gold, fixed ahead
+    sb.fillOval(_wox + 1.24f * _wfx - 0.1f * _wqx, _woy + 1.24f * _wfy - 0.1f * _wqy, 2.4f * ds, 2f * ds,
+      0.07f, 0.09f, 0.24f, a, 8)
+    val ex = _wox + 0.3f * _wfx - 0.28f * _wqx; val ey = _woy + 0.3f * _wfy - 0.28f * _wqy
+    sb.fillOval(ex, ey, 3f * ds, 2.3f * ds, 0.07f, 0.09f, 0.24f, 0.9f * a, 10)
+    sb.fillOval(ex, ey, 2.2f * ds, 1.6f * ds, 1f, 0.82f, 0.22f, a, 10)
+    sb.fillOval(ex + ndx * 0.5f * ds, ey + ndy * 0.5f * ds, 0.9f * ds, 1.3f * ds, 0.1f, 0.05f, 0.02f, a, 8)
   }
 }

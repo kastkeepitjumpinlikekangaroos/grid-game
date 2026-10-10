@@ -14,7 +14,10 @@ match-flow.md (the opening). This file is how the package is put together.
   (`Originals` … `Specialists`, and `Retired` for definitions no character throws any more).
   `Roster` gathers them. Initializing `CharacterDef` registers every `ProjectileDef`: each category's
   definitions first, then the variants (`Roster.variants`), which copy their base's numbers from the
-  registry.
+  registry and set an effect or a damage of their own. Some exist only so their thrower's damage can
+  differ from the others who throw the base (the Maul, the Arena Axe, the Throwing Star, the Mantis
+  Scythe; see design/characters.md, *Balance*); a new one needs its look, preview and sound (the
+  base's) in `GLProjectileRenderers`, `AbilityPreviewPalette` and `AbilitySounds`.
 - **Projectiles** — `ProjectileDef` (what a type does; `ProjectileType` names the ids,
   `OnHitEffect.scala` the effects) is a registry filled by `CharacterDef`; `ProjectileDef.get`
   makes sure `CharacterDef` has initialized, so the first lookup anywhere finds every type.

@@ -21,7 +21,7 @@ trait in its own file, with the packets that update it and the actions that use 
 | `WorldState` | the map: the server names it, the UI loads it (`setWorld`) |
 | `LocalPlayer` | us: character, position, health, death and respawn, the effects on us; `sendPositionUpdate`; the server's word on us (`handleOwnUpdate`) |
 | `LocalMovement` | steps, dashes, blinks, stars, and where we are drawn between steps and slid by a knockback (`KnockbackSlide`) |
-| `Attacks` | aiming, charging, firing, casting, cooldowns; which projectiles we asked for the server answered (`PendingSpawns`, below) |
+| `Attacks` | aiming, charging (timed on `nanoClock`, as the golden frames hold it), firing, casting, cooldowns; which projectiles we asked for the server answered (`PendingSpawns`, below) |
 | `Barriers` | ours raised and streamed; everyone else's from their updates; ripples; what stops a shot in flight or a trap we throw (design/barriers.md) |
 | `OtherPlayers` | everyone else in the match |
 | `Projectiles` | the projectiles in flight, flown between the server's ticks (below) |

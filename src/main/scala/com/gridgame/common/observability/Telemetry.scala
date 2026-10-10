@@ -19,6 +19,7 @@ import io.opentelemetry.sdk.trace.export.SpanExporter
 
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.function.BiFunction
 
 /**
@@ -30,8 +31,9 @@ import java.util.function.BiFunction
  *   - If autoconfigure fails for any reason, falls back to no-op and logs to stderr —
  *     game must not crash because telemetry isn't reachable.
  *   - If the collector is unreachable, each exporter attempts to connect a bounded number
- *     of times (one export interval apart) and then gives up silently for the rest of the
- *     run, instead of logging an exporter stack trace on every export forever.
+ *     of times (one export interval apart) and then drops its signals quietly, trying the
+ *     collector again once a minute, instead of logging an exporter stack trace on every
+ *     export forever. When the collector is back, exports resume.
  *   - `shutdown()` flushes pending batches and is safe to call during JVM shutdown.
  *
  * Service identity is set via `OTEL_SERVICE_NAME` / `OTEL_RESOURCE_ATTRIBUTES`, with
@@ -78,7 +80,8 @@ object Telemetry {
     // Also the reconnect cadence when the collector is down: the exporter wrappers below
     // collapse OTLP's own retry to a single attempt per export, so the periodic reader's
     // interval is the only thing pacing attempts — this is the "10s between attempts" the
-    // give-up logic relies on. MaxExportFailures attempts, one interval apart, then quiet.
+    // give-up logic relies on. MaxExportFailures attempts, one interval apart, then quiet but
+    // for one attempt every ExportRetryMs.
     setDefault("OTEL_METRIC_EXPORT_INTERVAL", "10000")
     setDefault("OTEL_BSP_SCHEDULE_DELAY", "1000")
     setDefault("OTEL_BLRP_SCHEDULE_DELAY", "1000")
@@ -125,19 +128,20 @@ object Telemetry {
       // multi-attempt retry (which the SDK floors at 2 attempts) to a single effective
       // attempt per export, leaving the periodic reader's export interval as the only thing
       // pacing reconnection. ExportGiveUpGate then trips after MaxExportFailures consecutive
-      // failures and drops signals silently thereafter. Net effect for metrics: try to
-      // connect MaxExportFailures times, ~10s apart, then give up quietly for this run.
+      // failures and drops signals silently, letting one export through every ExportRetryMs to
+      // see whether the collector is back. Net effect for metrics: try to connect
+      // MaxExportFailures times, ~10s apart, then once a minute until it answers.
       val metricCustomizer = new BiFunction[MetricExporter, ConfigProperties, MetricExporter] {
         override def apply(exp: MetricExporter, cfg: ConfigProperties): MetricExporter =
-          new GiveUpMetricExporter(collapseRetry(exp), new ExportGiveUpGate("metrics", MaxExportFailures))
+          new GiveUpMetricExporter(collapseRetry(exp), new ExportGiveUpGate("metrics", MaxExportFailures, ExportRetryMs))
       }
       val spanCustomizer = new BiFunction[SpanExporter, ConfigProperties, SpanExporter] {
         override def apply(exp: SpanExporter, cfg: ConfigProperties): SpanExporter =
-          new GiveUpSpanExporter(collapseRetry(exp), new ExportGiveUpGate("traces", MaxExportFailures))
+          new GiveUpSpanExporter(collapseRetry(exp), new ExportGiveUpGate("traces", MaxExportFailures, ExportRetryMs))
       }
       val logCustomizer = new BiFunction[LogRecordExporter, ConfigProperties, LogRecordExporter] {
         override def apply(exp: LogRecordExporter, cfg: ConfigProperties): LogRecordExporter =
-          new GiveUpLogRecordExporter(collapseRetry(exp), new ExportGiveUpGate("logs", MaxExportFailures))
+          new GiveUpLogRecordExporter(collapseRetry(exp), new ExportGiveUpGate("logs", MaxExportFailures, ExportRetryMs))
       }
       val auto = AutoConfiguredOpenTelemetrySdk.builder()
         .setResultAsGlobal()
@@ -195,17 +199,23 @@ object Telemetry {
     b.build()
   }
 
-  // --- Give up on a persistently-unreachable collector -------------------------------
+  // --- Give up on an unreachable collector, and try it again now and then -------------
   //
   // Without this, OTLP exporters retry on every export interval forever, and each failed
   // export logs a full SEVERE stack trace via OTel's ThrottlingLogger. When the collector
   // simply isn't running (the common local-dev case) that's pure noise. We bound it: after
-  // MaxExportFailures consecutive failures an exporter "gives up" for the rest of the run
-  // and drops its signals silently. Attempts are spaced by the periodic reader's export
-  // interval (OTEL_METRIC_EXPORT_INTERVAL, 10s) — see init().
+  // MaxExportFailures consecutive failures an exporter drops its signals silently, letting
+  // one export through every ExportRetryMs to see whether the collector is back. Attempts
+  // are spaced by the periodic reader's export interval (OTEL_METRIC_EXPORT_INTERVAL, 10s)
+  // — see init().
 
-  /** Consecutive failed exports before an exporter gives up for the rest of the run. */
+  /** Consecutive failed exports before an exporter stops trying on every export. */
   private val MaxExportFailures = 3
+
+  /** How often an exporter that stopped tries the collector again. It used to be never: traces
+    * and logs export every second, so a collector restart of a few seconds ended them for the
+    * rest of the server's run, and metrics after thirty. */
+  private val ExportRetryMs = 60000L
 
   /**
    * OTLP's built-in retry can't be turned off (the SDK floors maxAttempts at 2 and uses
@@ -242,14 +252,26 @@ object Telemetry {
   /**
    * Consecutive-failure circuit breaker shared by the exporter wrappers. A success resets
    * the count, so a briefly-flaky-but-reachable collector never trips it; only a sustained
-   * outage does. Once tripped it stays tripped for the life of the process. Failure results
-   * complete on the exporter's own thread, so the counters are atomic.
+   * outage does. Tripped, it lets one export through every `retryAfterMs` ([[allow]]), and
+   * the first that succeeds closes it again. Results complete on the exporter's own thread,
+   * so its state is atomic. `nowMs` is the clock, a test's own in a test.
    */
-  private final class ExportGiveUpGate(signal: String, maxFailures: Int) {
+  private[observability] final class ExportGiveUpGate(signal: String, maxFailures: Int, retryAfterMs: Long,
+                                                      nowMs: () => Long = () => System.nanoTime() / 1000000L) {
     private val failures = new AtomicInteger(0)
-    private val trip = new AtomicBoolean(false)
+    // When the gate tripped, or its last try at the collector failed; -1 while it hasn't tripped
+    private val openedAt = new AtomicLong(-1L)
+    // An export let through to try the collector, not yet back
+    private val trying = new AtomicBoolean(false)
 
-    def tripped: Boolean = trip.get()
+    def tripped: Boolean = openedAt.get() >= 0
+
+    /** Should this export go to the collector? Every one until the gate trips; then one every
+      * `retryAfterMs`, to see whether the collector is back. */
+    def allow(): Boolean = {
+      val opened = openedAt.get()
+      opened < 0 || (nowMs() - opened >= retryAfterMs && trying.compareAndSet(false, true))
+    }
 
     /** Record the delegate's result; returns it unchanged for the caller to hand back. */
     def track(result: CompletableResultCode): CompletableResultCode = {
@@ -257,27 +279,33 @@ object Telemetry {
         override def run(): Unit = {
           if (result.isSuccess) {
             failures.set(0)
-          } else if (failures.incrementAndGet() >= maxFailures && trip.compareAndSet(false, true)) {
+            if (openedAt.getAndSet(-1L) >= 0) {
+              System.err.println(s"[telemetry] OTLP $signal export reached the collector again — resuming")
+            }
+          } else if (openedAt.get() >= 0) {
+            openedAt.set(nowMs()) // still unreachable: wait another interval
+          } else if (failures.incrementAndGet() >= maxFailures && openedAt.compareAndSet(-1L, nowMs())) {
             System.err.println(
               s"[telemetry] OTLP $signal export failed $maxFailures times (collector unreachable) — " +
-                s"giving up for this run; further $signal are dropped silently. Restart with the " +
-                s"collector reachable to re-enable telemetry.")
+                s"dropping $signal quietly, and trying the collector again every ${retryAfterMs / 1000}s.")
           }
+          trying.set(false)
         }
       })
       result
     }
   }
 
-  // Transparent decorators: once the gate has tripped, export()/flush() short-circuit to
-  // success without touching the network (no connection attempt, no ThrottlingLogger).
+  // Transparent decorators: while the gate is tripped, export()/flush() short-circuit to
+  // success without touching the network (no connection attempt, no ThrottlingLogger),
+  // but for the export the gate lets through now and then to try the collector again.
   // Everything else — including metric temporality/aggregation/memory-mode selection and
   // shutdown — delegates unchanged so the exporter behaves identically while reachable.
 
   private final class GiveUpMetricExporter(delegate: MetricExporter, gate: ExportGiveUpGate)
       extends MetricExporter {
     def export(metrics: java.util.Collection[io.opentelemetry.sdk.metrics.data.MetricData]): CompletableResultCode =
-      if (gate.tripped) CompletableResultCode.ofSuccess() else gate.track(delegate.export(metrics))
+      if (!gate.allow()) CompletableResultCode.ofSuccess() else gate.track(delegate.export(metrics))
     def flush(): CompletableResultCode =
       if (gate.tripped) CompletableResultCode.ofSuccess() else delegate.flush()
     def shutdown(): CompletableResultCode = delegate.shutdown()
@@ -291,7 +319,7 @@ object Telemetry {
   private final class GiveUpSpanExporter(delegate: SpanExporter, gate: ExportGiveUpGate)
       extends SpanExporter {
     def export(spans: java.util.Collection[io.opentelemetry.sdk.trace.data.SpanData]): CompletableResultCode =
-      if (gate.tripped) CompletableResultCode.ofSuccess() else gate.track(delegate.export(spans))
+      if (!gate.allow()) CompletableResultCode.ofSuccess() else gate.track(delegate.export(spans))
     def flush(): CompletableResultCode =
       if (gate.tripped) CompletableResultCode.ofSuccess() else delegate.flush()
     def shutdown(): CompletableResultCode = delegate.shutdown()
@@ -300,7 +328,7 @@ object Telemetry {
   private final class GiveUpLogRecordExporter(delegate: LogRecordExporter, gate: ExportGiveUpGate)
       extends LogRecordExporter {
     def export(logs: java.util.Collection[io.opentelemetry.sdk.logs.data.LogRecordData]): CompletableResultCode =
-      if (gate.tripped) CompletableResultCode.ofSuccess() else gate.track(delegate.export(logs))
+      if (!gate.allow()) CompletableResultCode.ofSuccess() else gate.track(delegate.export(logs))
     def flush(): CompletableResultCode =
       if (gate.tripped) CompletableResultCode.ofSuccess() else delegate.flush()
     def shutdown(): CompletableResultCode = delegate.shutdown()

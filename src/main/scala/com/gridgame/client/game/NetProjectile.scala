@@ -35,8 +35,8 @@ import java.util.UUID
  */
 final class NetProjectile(pid: Int, owner: UUID, x0: Float, y0: Float, dirX0: Float, dirY0: Float,
                           color: Int, charge: Int, pType: Byte, tick0: Int, spawned: Boolean, steps0: Int,
-                          world0: WorldData, heardAt: Long)
-  extends Projectile(pid, owner, x0, y0, dirX0, dirY0, color, charge, pType) {
+                          world0: WorldData, heardAt: Long, ownerCharacter: Byte = -1)
+  extends Projectile(pid, owner, x0, y0, dirX0, dirY0, color, charge, pType, ownerCharacter) {
 
   import NetProjectile._
 

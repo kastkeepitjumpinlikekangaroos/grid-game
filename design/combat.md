@@ -102,8 +102,9 @@ columns). `OnHitEffectsTest`, `GameClientKnockbackTest`, `RemoteMotionTest`.
   (`Projectile.withinPlayer` / `distanceToPlayer`). Measured from `(x + 0.5, y + 0.5)`, a shot
   from one side connected a cell sooner than from the other, and a ground slam reached a cell
   further south-east of its caster than north-west. `CombatTest` pins it.
-- **A wave strikes where its water is.** The Tidal Wave and the Gust are drawn as crescents
-  trailing back from their leading edge, which is where the projectile is, so a hit circle round
+- **A wave strikes where its water is.** The Tidal Wave and the Gust are drawn with their bulk
+  trailing back from their leading edge (the wave's ridge of water, a gust's curls, cloud, whirlwind
+  or eagle of wind, client/render/projectiles), which is where the projectile is, so a hit circle round
   that edge struck a player up to 1.8 cells ahead of the water, and pushed them away before it had
   visibly reached them. Their circle trails the edge (`ProjectileDef.hitCentreBehind`: 1.0 for the
   wave, 1.2 for the gust, whose sub-steps are shorter), though never back past the first place it

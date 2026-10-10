@@ -20,3 +20,25 @@ scala_junit_test(
         "@maven//:junit_junit",
     ],
 )
+
+scala_junit_test(
+    name = "aim_lane_test",
+    srcs = ["AimLaneTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
+    name = "cursor_test",
+    srcs = ["CursorTest.scala"],
+    suffixes = ["Test"],
+    jvm_flags = ["-Djava.awt.headless=true"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "@maven//:junit_junit",
+    ],
+)

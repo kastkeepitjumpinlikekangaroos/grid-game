@@ -6,10 +6,31 @@ import java.util.UUID
 
 /**
  * Where a bot steps: toward its target, away from it or round it at its role's range, or a wander
- * with nobody to chase, round walls (a short BFS), other players and armed enemy traps. A bot steps
- * at twice a player's interval for the same character and state (Movement).
+ * with nobody to chase, round walls, water, other players and armed enemy traps. A bot steps at
+ * twice a player's interval for the same character and state (Movement).
+ *
+ * Closing in, a bot walks straight at its goal while the straight way there is open, and otherwise
+ * along a way round whatever is in it (BotPaths), kept until the goal moves off its end or the bot
+ * is moved off it. A bot that fights from range and has no clear shot at its target goes to the
+ * nearest cell with one, at its range, rather than circling behind a wall. Backing off with a wall
+ * at its back, it goes whichever way takes it furthest, and cornered, it circles out. Circling, it
+ * turns back at a wall, or where its shot would be blocked.
  */
 trait BotNavigation { this: BotController =>
+  /** How far round a ranged bot or a skirmisher looks for a cell with a clear shot. */
+  private val SHOT_SEARCH_STEPS = 10
+  /** How far round a bot backing off with a wall at its back looks for the way out. */
+  private val BACK_OFF_STEPS = 8
+  /** Cells of open ground behind a bot that let it back straight off. */
+  private val BACK_OFF_ROOM = 3
+  /** Steps in a row a bot waits for someone in its way before it goes round them. */
+  private val WAITS_BEFORE_GOING_ROUND = 3
+  /** After a search that found no way to its goal, how long before another, unless the goal has
+    * moved further than [[RETRY_DRIFT]]: someone fenced in can't be reached any more often by
+    * searching the whole map for them on every step. */
+  private val RETRY_MS = 1000L
+  private val RETRY_DRIFT = 4
+
   private[bots] def moveSmart(bot: Player, target: Player): Unit = {
     val botPos = bot.getPosition
     val targetPos = target.getPosition
@@ -20,6 +41,9 @@ trait BotNavigation { this: BotController =>
 
     if (dist < 0.01f) {
       moveRandom(bot)
+    } else if (role != CombatRole.Melee && dist <= preferredRange * 1.3f + SHOT_SEARCH_STEPS && !clearShot(bot, target)) {
+      // Nothing to hit from here: out from behind the wall, to where there is, at its range
+      seekShot(bot, target, preferredRange, ranged)
     } else if (ranged && dist < preferredRange * 0.5f) {
       moveAway(bot, target)
     } else if (ranged && dist < preferredRange * 0.8f) {
@@ -48,66 +72,9 @@ trait BotNavigation { this: BotController =>
     var i = 0
     while (i < ALL_DIRS.length) {
       val (ddx, ddy) = ALL_DIRS((start + i) % ALL_DIRS.length)
-      if (canMoveTo(botPos.getX + ddx, botPos.getY + ddy, bot.getId)) {
-        bot.setPosition(new Position(botPos.getX + ddx, botPos.getY + ddy))
-        bot.setDirection(Direction.fromMovement(ddx, ddy))
-        broadcastBotPosition(bot)
-        return
-      }
+      if (applyStep(bot, ddx, ddy)) return
       i += 1
     }
-  }
-
-  private val BFS_MAX_CELLS = 600 // max cells to explore (~25 cell radius)
-  private val BFS_DIRS = Array((1, 0), (-1, 0), (0, 1), (0, -1))
-
-  /** BFS from (fromX,fromY) toward (toX,toY). Returns the first step, or None if unreachable. */
-  private def bfsNextStep(fromX: Int, fromY: Int, toX: Int, toY: Int, botId: UUID): Option[(Int, Int)] = {
-    if (fromX == toX && fromY == toY) return None
-
-    val world = instance.world
-    // Reuse pre-allocated structures (bot executor is single-threaded)
-    val visited = bfsVisited; visited.clear()
-    val queue = bfsQueue; queue.clear()
-
-    val startKey = packCoord(fromX, fromY)
-    visited.add(startKey)
-
-    // Seed with walkable neighbors
-    for ((ddx, ddy) <- BFS_DIRS) {
-      val nx = fromX + ddx
-      val ny = fromY + ddy
-      val key = packCoord(nx, ny)
-      if (!visited.contains(key) && nx >= 0 && nx < world.width && ny >= 0 && ny < world.height &&
-          world.isWalkable(nx, ny) && !trapBlocks(nx, ny, botId)) {
-        visited.add(key)
-        if (nx == toX && ny == toY) return Some((ddx, ddy))
-        if (!isTileOccupied(nx, ny, botId)) {
-          queue.add((nx, ny, ddx, ddy))
-        }
-      }
-    }
-
-    var explored = 0
-    while (!queue.isEmpty && explored < BFS_MAX_CELLS) {
-      val (cx, cy, firstDx, firstDy) = queue.poll()
-      explored += 1
-
-      for ((ddx, ddy) <- BFS_DIRS) {
-        val nx = cx + ddx
-        val ny = cy + ddy
-        val key = packCoord(nx, ny)
-        if (!visited.contains(key) && nx >= 0 && nx < world.width && ny >= 0 && ny < world.height &&
-            world.isWalkable(nx, ny) && !trapBlocks(nx, ny, botId)) {
-          visited.add(key)
-          if (nx == toX && ny == toY) return Some((firstDx, firstDy))
-          if (!isTileOccupied(nx, ny, botId)) {
-            queue.add((nx, ny, firstDx, firstDy))
-          }
-        }
-      }
-    }
-    None
   }
 
   /** Move bot one step. Returns true if moved. */
@@ -118,44 +85,182 @@ trait BotNavigation { this: BotController =>
     if (canMoveTo(nx, ny, bot.getId)) {
       bot.setPosition(new Position(nx, ny))
       bot.setDirection(Direction.fromMovement(dx, dy))
+      stepped(botPos.getX, botPos.getY, nx, ny)
       broadcastBotPosition(bot)
       true
     } else false
   }
 
-  /** Try direct move toward (tx,ty), falling back to BFS if blocked. */
-  private def moveTowardPoint(bot: Player, tx: Int, ty: Int): Unit = {
-    val botPos = bot.getPosition
-    val dx = tx - botPos.getX
-    val dy = ty - botPos.getY
+  /** A step onto `cell`, one of the eight round the bot. */
+  private def stepTo(bot: Player, cell: Int): Boolean =
+    applyStep(bot, cell % gridW - bot.getPosition.getX, cell / gridW - bot.getPosition.getY)
+
+  /** Straight at (dx, dy) away: the diagonal, else the longer axis, else the shorter. */
+  private def stepStraight(bot: Player, dx: Int, dy: Int): Boolean = {
     val sdx = Integer.signum(dx)
     val sdy = Integer.signum(dy)
-
-    if (sdx == 0 && sdy == 0) return
-
-    // Fast path: try direct moves first
-    if (sdx != 0 && sdy != 0 && applyStep(bot, sdx, sdy)) return
+    if (sdx != 0 && sdy != 0 && applyStep(bot, sdx, sdy)) return true
     if (Math.abs(dx) >= Math.abs(dy)) {
-      if (sdx != 0 && applyStep(bot, sdx, 0)) return
-      if (sdy != 0 && applyStep(bot, 0, sdy)) return
+      (sdx != 0 && applyStep(bot, sdx, 0)) || (sdy != 0 && applyStep(bot, 0, sdy))
     } else {
-      if (sdy != 0 && applyStep(bot, 0, sdy)) return
-      if (sdx != 0 && applyStep(bot, sdx, 0)) return
-    }
-
-    // Direct path blocked - use BFS to navigate around walls
-    bfsNextStep(botPos.getX, botPos.getY, tx, ty, bot.getId).foreach { case (bfsDx, bfsDy) =>
-      applyStep(bot, bfsDx, bfsDy)
+      (sdy != 0 && applyStep(bot, 0, sdy)) || (sdx != 0 && applyStep(bot, sdx, 0))
     }
   }
 
-  /** Strafe perpendicular to the target (orbit around them). */
+  /** Is the straight way from (x, y) to (tx, ty) open — every cell of it one a bot can stand on,
+    * the diagonal steps first, as [[stepStraight]] takes it? Someone standing on it is no matter:
+    * a step onto them goes round. */
+  private def straightWayOpen(botId: UUID, x: Int, y: Int, tx: Int, ty: Int): Boolean = {
+    val world = instance.world
+    var cx = x
+    var cy = y
+    while (cx != tx || cy != ty) {
+      cx += Integer.signum(tx - cx)
+      cy += Integer.signum(ty - cy)
+      if (!world.isWalkable(cx, cy) || trapBlocks(cx, cy, botId)) return false
+    }
+    true
+  }
+
+  /**
+   * A step toward (tx, ty): straight while the straight way is open, else along the way round. The
+   * way is found again when the goal has moved off its end by more than a sixth of what is left of
+   * it, when the bot is not where it left it, and when it runs into something new (a fence, a trap
+   * thrown down). Someone standing on it is gone round, onto a cell beside the one after; after a
+   * few steps waiting for someone who doesn't move, on the straight way or the way round, a way is
+   * found round everybody. A goal nobody could stand on (someone phased in a wall) is the open cell
+   * nearest it; one with no way to it is looked for again only now and then, and meanwhile the bot
+   * goes as near as it can.
+   */
+  private def moveTowardPoint(bot: Player, tx: Int, ty: Int): Unit = {
+    val botPos = bot.getPosition
+    val x = botPos.getX
+    val y = botPos.getY
+    if (x == tx && y == ty) return
+    val route = routes.get(bot.getId)
+    if (route.waits < WAITS_BEFORE_GOING_ROUND && straightWayOpen(bot.getId, x, y, tx, ty)) {
+      route.clear()
+      // A way there after all, whatever the last search found
+      route.reachesGoal = true
+      if (stepStraight(bot, tx - x, ty - y)) route.waits = 0
+      else if (Math.max(Math.abs(tx - x), Math.abs(ty - y)) > 1) route.waits += 1
+      return
+    }
+
+    val goal = nearestOpen(tx, ty)
+    if (goal < 0) return
+    val gx = goal % gridW
+    val gy = goal / gridW
+    val here = y * gridW + x
+    if (goal == here) return
+    // Someone on every side of the goal, and the bot one of the crowd: as near as it can get. A
+    // search would find no way through them, and look over the whole map to be sure of it
+    if (Math.max(Math.abs(gx - x), Math.abs(gy - y)) <= CROWD_CELLS + 1 && surrounded(gx, gy)) return
+    val drift = Math.max(Math.abs(route.goalX - gx), Math.abs(route.goalY - gy))
+    if (route.from != here || route.remaining == 0 || drift > Math.max(1, route.remaining / 6)) {
+      if (!route.reachesGoal && drift <= RETRY_DRIFT && tickNow - route.searchedAt < RETRY_MS) {
+        // No way there a moment ago: on along what it found, if the bot is still on it
+        if (route.from != here || route.remaining == 0) return
+      } else if (!findWay(bot.getId, x, y, gx, gy, route, crowded = route.waits >= WAITS_BEFORE_GOING_ROUND)) return
+    }
+    val next = route.cells(route.next)
+    val nx = next % gridW
+    val ny = next / gridW
+    if (stepTo(bot, next)) {
+      route.next += 1
+      route.from = next
+      route.waits = 0
+    } else if (next == goal) {
+      // Beside the goal, which someone stands on: there
+    } else if (standsAt(nx, ny)) {
+      if (!goRound(bot, route)) {
+        route.waits += 1
+        if (route.waits >= WAITS_BEFORE_GOING_ROUND) route.clear()
+      }
+    } else {
+      // Something new in the way: find it again next step
+      route.clear()
+    }
+  }
+
+  /** Someone stands on the route's next cell: a step onto a cell beside the one after it, if one
+    * is free, and on along the route from there. */
+  private def goRound(bot: Player, route: BotRoute): Boolean = {
+    if (route.remaining < 2) return false
+    val after = route.cells(route.next + 1)
+    val ax = after % gridW
+    val ay = after / gridW
+    val bx = bot.getPosition.getX
+    val by = bot.getPosition.getY
+    var d = 0
+    while (d < 8) {
+      val cx = bx + STEP_X(d)
+      val cy = by + STEP_Y(d)
+      if (Math.max(Math.abs(cx - ax), Math.abs(cy - ay)) <= 1 && applyStep(bot, STEP_X(d), STEP_Y(d))) {
+        val cell = cy * gridW + cx
+        route.next += 1
+        if (cell == after) route.next += 1
+        route.from = cell
+        route.waits = 0
+        return true
+      }
+      d += 1
+    }
+    false
+  }
+
+  /** Could the bot hit the target from where it stands, with nothing solid in the way of its
+    * primary? */
+  private def clearShot(bot: Player, target: Player): Boolean = {
+    val bp = bot.getPosition
+    val tp = target.getPosition
+    lineOfFire(bp.getX, bp.getY, tp.getX, tp.getY, CharacterDef.get(bot.getCharacterId).primaryProjectileType)
+  }
+
+  /** A ranged bot or a skirmisher with no clear shot: a step toward the nearest cell it could hit
+    * the target from, no nearer than it lets anyone come (a skirmisher lets them close) and no
+    * further than it fights from. None near: a step toward the target. */
+  private def seekShot(bot: Player, target: Player, preferredRange: Float, ranged: Boolean): Unit = {
+    val nearest = if (ranged) preferredRange * 0.5f else 0f
+    val furthest = Math.min(preferredRange * 1.3f, getMaxRange(bot.getCharacterId).toFloat)
+    val bp = bot.getPosition
+    val tp = target.getPosition
+    val tx = tp.getX
+    val ty = tp.getY
+    val primary = CharacterDef.get(bot.getCharacterId).primaryProjectileType
+    val n = lookAround(bot.getId, bp.getX, bp.getY, SHOT_SEARCH_STEPS, (2 * SHOT_SEARCH_STEPS + 1) * (2 * SHOT_SEARCH_STEPS + 1))
+    var i = 1
+    while (i < n) {
+      val c = reached(i)
+      val cx = c % gridW
+      val cy = c / gridW
+      val dx = (cx - tx).toFloat
+      val dy = (cy - ty).toFloat
+      val d = Math.sqrt(dx * dx + dy * dy).toFloat
+      if (d >= nearest && d <= furthest && lineOfFire(cx, cy, tx, ty, primary)) {
+        stepTo(bot, firstStepTo(c))
+        return
+      }
+      i += 1
+    }
+    moveToward(bot, target)
+  }
+
+  /** Strafe perpendicular to the target (orbit around them), turning back at a wall or where the
+    * shot would be blocked. */
   private def strafe(bot: Player, target: Player): Unit = {
+    val dir = strafeDirection.getOrDefault(bot.getId, 1)
+    if (strafeStep(bot, target, dir)) return
+    // That way is shut: round the other way, from this step on
+    strafeDirection.put(bot.getId, -dir)
+    strafeStep(bot, target, -dir)
+  }
+
+  private def strafeStep(bot: Player, target: Player, dir: Int): Boolean = {
     val botPos = bot.getPosition
     val targetPos = target.getPosition
     val dx = (targetPos.getX - botPos.getX).toFloat
     val dy = (targetPos.getY - botPos.getY).toFloat
-    val dir = strafeDirection.getOrDefault(bot.getId, 1)
 
     val perpX = -dy * dir
     val perpY = dx * dir
@@ -164,26 +269,26 @@ trait BotNavigation { this: BotController =>
 
     if (sdx == 0 && sdy == 0) {
       moveRandom(bot)
-      return
+      return true
     }
 
-    // Try strafe direction, then components, then flip
-    if (applyStep(bot, sdx, sdy)) return
-    if (sdx != 0 && applyStep(bot, sdx, 0)) return
-    if (sdy != 0 && applyStep(bot, 0, sdy)) return
-
-    // Blocked on all direct strafe attempts - use BFS to a strafe target point
-    val strafeTargetX = botPos.getX + sdx * 3
-    val strafeTargetY = botPos.getY + sdy * 3
-    val bfsMoved = bfsNextStep(botPos.getX, botPos.getY, strafeTargetX, strafeTargetY, bot.getId)
-      .exists { case (bfsDx, bfsDy) => applyStep(bot, bfsDx, bfsDy) }
-
-    if (!bfsMoved) {
-      // Still stuck - flip strafe direction for next time
-      strafeDirection.put(bot.getId, -dir)
-    }
+    // The strafe direction, then its components
+    strafeTo(bot, target, sdx, sdy) || (sdx != 0 && strafeTo(bot, target, sdx, 0)) ||
+      (sdy != 0 && strafeTo(bot, target, 0, sdy))
   }
 
+  /** A step, if it doesn't take the bot out of its shot. */
+  private def strafeTo(bot: Player, target: Player, dx: Int, dy: Int): Boolean = {
+    val nx = bot.getPosition.getX + dx
+    val ny = bot.getPosition.getY + dy
+    val tp = target.getPosition
+    lineOfFire(nx, ny, tp.getX, tp.getY, CharacterDef.get(bot.getCharacterId).primaryProjectileType) &&
+      applyStep(bot, dx, dy)
+  }
+
+  /** Back off from the target: straight away while there is room behind and the shot stays clear,
+    * else whichever way takes the bot furthest from it, round the wall at its back, with a shot from
+    * there if any has one; cornered, it circles out. */
   private def moveAway(bot: Player, target: Player): Unit = {
     val botPos = bot.getPosition
     val targetPos = target.getPosition
@@ -203,49 +308,85 @@ trait BotNavigation { this: BotController =>
       }
     } else (sdx, sdy)
 
-    // Try direct away (diagonal, then axes)
-    if (fdx != 0 && fdy != 0 && applyStep(bot, fdx, fdy)) return
+    // Straight away (diagonal, then axes), where there is room behind
+    if (fdx != 0 && fdy != 0 && backOff(bot, target, fdx, fdy)) return
     if (Math.abs(dx) >= Math.abs(dy)) {
-      if (fdx != 0 && applyStep(bot, fdx, 0)) return
-      if (fdy != 0 && applyStep(bot, 0, fdy)) return
+      if (fdx != 0 && backOff(bot, target, fdx, 0)) return
+      if (fdy != 0 && backOff(bot, target, 0, fdy)) return
     } else {
-      if (fdy != 0 && applyStep(bot, 0, fdy)) return
-      if (fdx != 0 && applyStep(bot, fdx, 0)) return
+      if (fdy != 0 && backOff(bot, target, 0, fdy)) return
+      if (fdx != 0 && backOff(bot, target, fdx, 0)) return
     }
 
-    // Direct away blocked - BFS to a point away from target
-    val awayX = botPos.getX + fdx * 8
-    val awayY = botPos.getY + fdy * 8
-    // Clamp the away target to world bounds
+    if (!stepFurthestFrom(bot, target)) strafe(bot, target)
+  }
+
+  /** A step back along (dx, dy), if there is open ground behind it to go on backing off over and
+    * the target can still be shot from it. */
+  private def backOff(bot: Player, target: Player, dx: Int, dy: Int): Boolean = {
     val world = instance.world
-    val clampedX = Math.max(0, Math.min(world.width - 1, awayX))
-    val clampedY = Math.max(0, Math.min(world.height - 1, awayY))
-    bfsNextStep(botPos.getX, botPos.getY, clampedX, clampedY, bot.getId).foreach { case (bfsDx, bfsDy) =>
-      applyStep(bot, bfsDx, bfsDy)
+    val x = bot.getPosition.getX
+    val y = bot.getPosition.getY
+    var k = 2
+    while (k <= BACK_OFF_ROOM) {
+      if (!world.isWalkable(x + dx * k, y + dy * k) || trapBlocks(x + dx * k, y + dy * k, bot.getId)) return false
+      k += 1
     }
+    strafeTo(bot, target, dx, dy)
+  }
+
+  /** A step toward the cell a few steps round that is furthest from the target, if it is a cell
+    * further off than the bot stands now, on a way that never takes it nearer the target than it
+    * is: backing off round a wall, not past whoever it is backing off from. Of those, the furthest
+    * the bot could shoot the target from, if any. */
+  private def stepFurthestFrom(bot: Player, target: Player): Boolean = {
+    val bp = bot.getPosition
+    val tx = target.getPosition.getX
+    val ty = target.getPosition.getY
+    val now = distanceBetween(bp, target.getPosition)
+    val n = lookAround(bot.getId, bp.getX, bp.getY, BACK_OFF_STEPS, (2 * BACK_OFF_STEPS + 1) * (2 * BACK_OFF_STEPS + 1))
+    // The nearest each cell's way comes to the target; a cell's way is its parent's and one step,
+    // and the parent comes first in the order the look round reached them
+    val nearestOnWay = perCell
+    nearestOnWay(reached(0)) = now
+    val primary = CharacterDef.get(bot.getCharacterId).primaryProjectileType
+    var best = -1
+    var bestDist = now + 1f
+    var bestShot = -1
+    var bestShotDist = now + 1f
+    var i = 1
+    while (i < n) {
+      val c = reached(i)
+      val cx = c % gridW
+      val cy = c / gridW
+      val dx = (cx - tx).toFloat
+      val dy = (cy - ty).toFloat
+      val d = Math.sqrt(dx * dx + dy * dy).toFloat
+      val onWay = Math.min(nearestOnWay(cellBefore(c)), d)
+      nearestOnWay(c) = onWay
+      if (onWay >= now - 0.5f) {
+        if (d > bestDist) { bestDist = d; best = c }
+        if (d > bestShotDist && lineOfFire(cx, cy, tx, ty, primary)) { bestShotDist = d; bestShot = c }
+      }
+      i += 1
+    }
+    val to = if (bestShot >= 0) bestShot else best
+    to >= 0 && stepTo(bot, firstStepTo(to))
   }
 
   private[bots] def moveToward(bot: Player, target: Player): Unit = {
     moveTowardPoint(bot, target.getPosition.getX, target.getPosition.getY)
   }
 
-  private def isTileOccupied(x: Int, y: Int, excludeId: UUID): Boolean = {
-    val key = packCoord(x, y)
-    if (!occupiedTiles.contains(key)) return false
-    // Check if the occupant is the excluded bot
-    val owner = occupiedTileOwners.get(key)
-    owner != null && !owner.equals(excludeId)
-  }
-
   private def canMoveTo(x: Int, y: Int, botId: UUID): Boolean = {
     val world = instance.world
     x >= 0 && x < world.width && y >= 0 && y < world.height &&
-      world.isWalkable(x, y) && !isTileOccupied(x, y, botId) && !trapBlocks(x, y, botId)
+      world.isWalkable(x, y) && !standsAt(x, y) && !trapBlocks(x, y, botId)
   }
 
   /** Would an enemy's armed trap catch a bot stepping onto (x, y)? */
-  private def trapBlocks(x: Int, y: Int, botId: UUID): Boolean = {
-    // The usual case, and the BFS asks this of every cell it reaches
+  private[bots] def trapBlocks(x: Int, y: Int, botId: UUID): Boolean = {
+    // The usual case, and the searches ask this of every cell they reach
     if (instance.trapManager.size == 0) return false
     if (x == chaseX && y == chaseY) return false
     val trap = instance.trapManager.trapAt(x, y)

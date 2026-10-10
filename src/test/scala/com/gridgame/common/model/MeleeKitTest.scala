@@ -113,8 +113,9 @@ class MeleeKitTest {
     }
   }
 
-  @Test def aVariantKeepsItsBaseTypesNumbers(): Unit = {
-    // Same flight, reach and damage as the type it copies, so the look and sound it borrows fit it
+  @Test def aVariantKeepsItsBaseTypesFlightAndReach(): Unit = {
+    // Same flight and reach as the type it copies, so the look and sound it borrows fit it. Neither
+    // depends on the damage, which a variant may set for itself (the Axe Spin's 22 to the Axe's 33)
     val variants = Seq(
       ProjectileType.AXE_SPIN -> ProjectileType.AXE, ProjectileType.VENOM_DART -> ProjectileType.POISON_DART,
       ProjectileType.TOXIC_SHURIKEN -> ProjectileType.SHURIKEN, ProjectileType.BLOOD_FRENZY -> ProjectileType.CLAW_SWIPE,
@@ -122,12 +123,14 @@ class MeleeKitTest {
       ProjectileType.EMBER_FAN -> ProjectileType.EMBER_SHOT, ProjectileType.FENRIR_CLAW -> ProjectileType.CLAW_SWIPE,
       ProjectileType.GHOUL_CLAW -> ProjectileType.CLAW_SWIPE, ProjectileType.SHARK_CLAW -> ProjectileType.CLAW_SWIPE,
       ProjectileType.ICE_BOULDER -> ProjectileType.BOULDER, ProjectileType.DRAIN_BLADE -> ProjectileType.CURSED_BLADE,
-      ProjectileType.CHILL_BLADE -> ProjectileType.CURSED_BLADE)
+      ProjectileType.CHILL_BLADE -> ProjectileType.CURSED_BLADE, ProjectileType.MAUL -> ProjectileType.CLAW_SWIPE,
+      ProjectileType.ARENA_AXE -> ProjectileType.AXE, ProjectileType.THROWING_STAR -> ProjectileType.SHURIKEN,
+      ProjectileType.MANTIS_SCYTHE -> ProjectileType.CLAW_SWIPE)
     for ((v, b) <- variants) {
       val (vd, bd) = (ProjectileDef.get(v), ProjectileDef.get(b))
       assertEquals(vd.name, v, vd.id)
-      assertEquals(vd.name, (bd.speedMultiplier, bd.maxRange, bd.damage, bd.hitRadius),
-        (vd.speedMultiplier, vd.maxRange, vd.damage, vd.hitRadius))
+      assertEquals(vd.name, (bd.speedMultiplier, bd.maxRange, bd.hitRadius),
+        (vd.speedMultiplier, vd.maxRange, vd.hitRadius))
     }
   }
 

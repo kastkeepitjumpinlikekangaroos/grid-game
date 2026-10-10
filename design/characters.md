@@ -42,12 +42,13 @@ character closes the gap with its abilities or an item, not its feet.
   exceptions.
 - **Skirmishers** are the boulder throwers (Earthshaker, Avalanche, Beetle, Gorilla, Golem,
   Cyclops) plus Ember: melee health, a pace between the two.
-- **Health keeps each character's place within its class.** It was mapped from the old values
-  (ranged `60 + (old - 65) * 20/60`, melee and skirmishers `105 + (old - 65) * 45/65`, rounded to
-  5), then the glass cannons (Wizard, Railgunner, Astronomer, Cleric, Pilot) were set at the
-  ranged floor and the Minotaur at the melee ceiling. The toughest ranged character (80) stays at
-  least 20 below the frailest fighter (105). `RosterBalanceTest` pins the bands, that gap and the
-  order of the paces.
+- **Health is set within its role's band.** It was first mapped from the old values (ranged
+  `60 + (old - 65) * 20/60`, melee and skirmishers `105 + (old - 65) * 45/65`, rounded to 5), with
+  the glass cannons (Wizard, Railgunner, Astronomer, Cleric, Pilot) at the ranged floor, where they
+  still are. The balance pass of 2026-09-28 then moved it as one of its levers, by at most 15 for a
+  fighter and 10 for a ranged character (*Balance in free-for-alls against bots*). The toughest
+  ranged character (80) stays at least 20 below the frailest fighter (105). `RosterBalanceTest`
+  pins the bands, that gap and the order of the paces.
 - **Only just quicker:** walking straight away, a ranged character opens about a cell a second on
   a melee one. Played over the network: a Soldier walking away from a Berserker and shooting back
   went 20.1 cells a second to its 19.1, opened the gap from 8 cells to 12 and killed it in 3.9s
@@ -91,6 +92,24 @@ character closes the gap with its abilities or an item, not its feet.
   bot still catches one now and then. A phase doubles a bot's pace as it does a player's; a melee
   or skirmisher bot casts one to close on a target out of its reach (the Vampire's Mist Form), a
   ranged bot only to get away from someone within 5 cells.
+  - **Round walls** (`BotNavigation`, searching with `BotPaths`): a bot walks straight at its
+    target while the straight way there is open, and otherwise along the shortest way round, found
+    by an A* search of the whole map and kept until the target moves off its end. A ranged bot or a
+    skirmisher with no clear shot (its primary would hit a wall) goes to the nearest cell it has
+    one from, at its range, rather than circling behind the wall, and circling, it turns back where
+    its shot would be blocked. Backing off with a wall behind it, it takes the way that gets it
+    furthest without passing the target; cornered, it circles out. Someone it can't get to (phased
+    inside a wall, fenced in, or with other players on every side) it goes as near to as it can
+    and waits there, looking for a way again only now and then: searched for on every step, eight
+    bots after someone in the Colony's wall took 6ms a tick.
+  - Bots used to walk straight at the target and search only when a step was blocked, 600 cells
+    at most: the next straight step undid the way round, and they paced two cells at the wall for
+    good, or stood there when the target was further off than the search reached. In matches of 12
+    bots, three minutes on each map, that was 8.5% of their time stuck in free-for-alls (42% on the
+    Colony, where targets are far apart) and 6.4% in Teams, and none now, with a quarter to a third
+    more kills a minute. The
+    balance passes of 2026-09-28 (*Balance in free-for-alls against bots*) were measured with the
+    old walking. `BotPathingTest` walks bots round walls on every map.
 - **Shown** under the name on the character select screen ("Melee · 145 HP · Slow",
   `CharacterSelectionPanel.roleLine`) and on the website's cards, which a tool writes from the
   roster (see *Website*). The grid's "Melee" and "Ranged" tabs are the older playstyle
@@ -98,6 +117,86 @@ character closes the gap with its abilities or an item, not its feet.
 - A few roles read against their character's fantasy. The Magma Knight and the Valkyrie are
   ranged, and so kite. Ember, a tiny fire sprite, is a skirmisher with bruiser health. They follow
   the rule until their kits change.
+
+## Balance in free-for-alls against bots
+Until 2026-09-28 the match database couldn't show it: `match_results` kept only the humans' rows,
+without their characters. It keeps every player's character now, and the bots' rows (`is_bot`), so
+real matches can be read (see server/CLAUDE.md):
+
+```sql
+SELECT character_id, COUNT(*) AS played, SUM(rank = 1) AS won, SUM(kills) * 1.0 / SUM(deaths) AS kd
+FROM match_results JOIN matches USING (match_id)
+WHERE match_type = 0 AND character_id IS NOT NULL GROUP BY character_id ORDER BY kd DESC;
+```
+
+Before that, balance was measured in simulated free-for-alls of bots on the server's own code
+(`GameInstance`, `BotController`), run headless at real speed: five minutes each on the Cell, the
+Colony, the Meadow and the Lagoon, every kill and every point of damage booked to the attack that
+dealt it. A free-for-all is ranked on kills, so what was steered is each character's mean finishing
+place, and with it the share of its matches it wins.
+
+- **Bots don't play the roles the same way.** A melee bot closes in; a ranged bot keeps to 60% of its
+  reach and backs off, but strafes rather than kites, and lands 44% of its primaries to a melee bot's
+  85%. So in a mixed free-for-all the fighters (melee and skirmishers, a third of the roster) take
+  nearly every first place: 237 of 241 in the first measurement, and leading the bots' aim didn't
+  change it. The role numbers are set for a player who kites (*Roles, health and pace*), and were
+  left as they are. Each character is compared only with those it's fairly matched against:
+  - a **ranged** character against the other ranged ones, in free-for-alls of 12-13 ranged bots;
+  - a **fighter** by its place among the fighters of ordinary mixed free-for-alls of 14 (about five
+    of them a match), since every fighter bot closes in the same way. A melee-only pool was tried
+    first and dropped: its rankings didn't carry over to mixed matches (r = -0.03), where a fighter
+    has to walk in through ranged fire and its health counts for more.
+- **The first pass (2026-09-28)** tuned the outliers of the mixed free-for-all: the Barbarian (145 HP,
+  Triple Axe 12s, Earthsplitter 25), the Berserker (145 HP, Axe Spin 33), Ember (Ember Fan 4s), the
+  Cyclops (Thrown Boulder 38); and made the Grenade go off on the first enemy it reaches, not only at
+  the end of its 12 cells. The same characters kept winning.
+- **The second pass (2026-09-28) tuned every character**, in twelve rounds of simulation of 300-600
+  matches each. Each round moved every character's damage (all its projectiles' numbers: the hit,
+  burns and poisons, splashes, blasts, distance scaling), its health and its abilities' cooldowns
+  toward the middle of its pool, by a least-squares fit of how far each moves its place (measured:
+  10% more damage is 13% more kills a minute; health is worth 0.86 of damage). A projectile several
+  characters throw has one number for all of them. Health moved at most 15 for a fighter and 10 for a
+  ranged character, inside the band, so no character's toughness turned into another's. Four attacks
+  that were shared by characters at opposite ends became types of their own, looking and sounding as
+  their base does: the Bear's Maul (`MAUL`), the Gladiator's Arena Axe (`ARENA_AXE`, the Berserker
+  and the Barbarian throw the `AXE`), the Assassin's Throwing Star (`THROWING_STAR`, the Rogue throws
+  the `SHURIKEN`) and the Mantis' scythe (`MANTIS_SCYTHE`).
+
+  Measured on the built code over the same line-ups before and after:
+
+  | | Win share spread (sd) | Luck alone | Best record |
+  |---|---|---|---|
+  | Ranged, against each other (180 matches) | 15.4 → 4.7 points | 5.0 | 80% → 23% (Railgunner, now in the middle) |
+  | Fighters in mixed matches (280) | 21.6 → 8.4 points | 7.0 | 80% → 43% (Berserker 80% → 23%) |
+
+  A fair share is 8% of its matches for a ranged character against ranged ones, and about 22% for a
+  fighter in a mixed match. Before: the Berserker won 80%, the Barbarian 66%, the Rogue 63%, the
+  Minotaur 60%, Ember 46%, and four fighters none; the Railgunner won 80% of the ranged ones, the
+  Photon 60%, the Valkyrie 53%, and 43 ranged characters none. What is left is mostly luck: a
+  character's mean place now spreads 1.2 (fighters) and 1.4 (ranged) times as much as luck alone
+  would spread it, where it was 4 and 6 times.
+- **What moved, and why.** Reach decides a fight between ranged bots: whoever reaches further
+  shoots first and backs off. The long reachers keep their reach and lose damage: the Railgunner's
+  Sniper Beam 5-80 → 2-34 by distance, the Photon's Laser Heavy 22 → 11, the Pilot's Bullet Heavy
+  24 → 14, the Ranger's Arrow Heavy 22 → 12, the Cleric's Holy Bolt Heavy 24 → 15, the Wizard's
+  Arcane Bolt 18 → 11, the Valkyrie's Spear 10-60 → 6-38. Short reach and slow shots gain it: Sand
+  Shot 16 → 27, Plague Bolt 14 → 22, Thorn 18 → 25, Magma Ball 15 → 22, the Spaceman's shot 10 → 17
+  (a full charge still 100). Among the fighters the brawlers who won most lose damage and health (the
+  Berserker 135 → 120 HP and Axe 33 → 24, the Barbarian's Axe 33 → 24, the Minotaur 150 → 135 HP
+  and Horn 33 → 26, the Blacksmith 145 → 130 HP and Hammer 33 → 27), and those who never won gain
+  them (the Shapeshifter 130 → 145 HP and Fist 22 → 28, the Death Knight, the Scorpion, the Chef,
+  the Crusader, the Assassin, the Mantis). Every character's numbers are in its category file.
+- **What bots can't tell:**
+  - Ember and the Spaceman were left weaker than the middle against bots (46% → 6% of its mixed
+    matches for Ember): Ember's 10-cell shots and phase, and the Spaceman's charged shot, are a
+    player's strength, which bots don't use.
+  - A player fires a primary every 0.5s, a bot every 0.7-1.1s, so a primary counts for more in a
+    player's hands than here, and an ability for less.
+  - Bots walk at half a player's pace, so a slow shot lands on them more often than on a player: the
+    boulders and the slow ranged shots read stronger here than they will against people.
+  - A bot raises a barrier (Gladiator, Paladin, Crusader, Beetle, Golem) only against ranged shots.
+  - In a free-for-all of fighters alone, with no ranged characters in it, reach still wins: the
+    skirmishers take most of them (the Cyclops 48%). It was balanced for mixed matches.
 
 ## Cast Behaviors
 Each ability uses one of these cast behaviors (defined in `CharacterDef.scala`):
@@ -148,7 +247,8 @@ brings a step under the tick). `MovementTest` and `BotMovementTest` pin it.
 1. Add a `CharacterId` entry in `CharacterId.scala` (next available ID byte).
 2. Define `ProjectileDef`s for the projectiles it is the first to throw in its category's file in
    `common/model/roster/`, in that file's `projectiles`. A variant of an existing type (another
-   type's numbers and look, with effects of its own) goes in the file's `variants(base)`, copied
+   type's flight, reach and look, with effects, and if need be a damage, of its own:
+   `MeleeKitTest`) goes in the file's `variants(base)`, copied
    from `base(type)`: `CharacterDef` registers every category's definitions first and then the
    variants (`Roster.projectiles`, `Roster.variants`), so a variant finds every type it copies.
    A definition that no character throws any more goes in `Retired.scala`.

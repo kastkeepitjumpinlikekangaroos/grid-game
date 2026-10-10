@@ -36,11 +36,13 @@ trait Projectiles { this: GameClient =>
     java.util.Collections.newSetFromMap(new ConcurrentHashMap[Int, java.lang.Boolean]())
 
   /** A projectile as the server first told us of it: fired (its SPAWN), or already in flight (a
-    * MOVE that overtook the SPAWN, or came instead of a lost one). */
+    * MOVE that overtook the SPAWN, or came instead of a lost one). It is drawn as its thrower's, so
+    * it is told whose it is. */
   private def netProjectile(packet: ProjectilePacket, spawn: Boolean, now: Long): NetProjectile =
     new NetProjectile(packet.getProjectileId, packet.getPlayerId, packet.getX, packet.getY,
       packet.getDx, packet.getDy, packet.getColorRGB, packet.getChargeLevel, packet.getProjectileType,
-      packet.getTick, spawn, projectileStepsOf(packet.getPlayerId), getWorld, now)
+      packet.getTick, spawn, projectileStepsOf(packet.getPlayerId), getWorld, now,
+      characterIdOf(packet.getPlayerId))
 
   /** How many times a tick the server moves this player's projectiles: twice while they have a gem. */
   private def projectileStepsOf(ownerId: UUID): Int = {

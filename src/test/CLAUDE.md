@@ -10,6 +10,7 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
 `data` it reads). The suites mirror the source tree:
 
 - `common/` — the model, the wire protocol (every packet round-trips in `PacketRoundTripTest`),
+  telemetry's exporters giving up on a collector and trying it again (`ExportGiveUpGateTest`),
   the roster's data (`CharacterRosterTest`), and the maps (`WorldMapsTest`: spawns on open
   ground, all open ground one region). `ProjectileDefRegistryTest` must be the first thing in its
   JVM to look a projectile up, which is why it is a target, and a single test, of its own.
@@ -24,7 +25,10 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   (a session token, the address it logged in from, signed and numbered packets, and what it was
   sent), and `TestMatch.seat` puts a few of them in a match through an in-game lobby.
 - The network: `NetworkHandlerTest` feeds the TCP and UDP handlers what a broken or hostile client
-  could send (another player's name, the wrong key, garbage, forged datagrams, replays);
+  could send (another player's name, the wrong key, garbage, forged datagrams, replays, a connection
+  that never logs in, on the channel's own clock: `EmbeddedChannel.advanceTimeBy`);
+  `SessionTest` renews a session an hour in (its token aged by hand, then `GameServer.renewSessions`)
+  and reads what the server wrote still signed, to see which token signed it;
   `RateLimiterTest`; `ReconnectTest` for rejoins, logins over a live connection and disconnects;
   `ChatTest` for who hears what; `RankedQueueTest` for matchmaking, run by hand on a clock of the
   test's own (`RankedQueue.checkQueue(now)`), so a minute's wait takes no time; and
@@ -39,10 +43,18 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
 - `client/render`, `client/gl` — the camera (`CameraTest`: the isometric mapping, the pixel grid,
   whether the view has run off the map), the light pool (`LightPoolTest`), and how other players
   are drawn (`RemoteMotionTest`: an even pace under jitter, never past where they stopped or a dash
-  ended, corners turned where they were heard turning, jumps drawn at once, knockbacks slid). `TileTest`, in
+  ended, corners turned where they were heard turning, jumps drawn at once, knockbacks slid), and
+  where a charged shot's aim lane stops (`AimLaneTest`: where the shot would, at a wall's face or the
+  map's edge, over water but not lava, at only a fence for a shot that flies over walls), and the
+  mouse's pointer (`CursorTest`: its picture whole at every pixel scale, the dot on the hotspot, put
+  down on whole pixels, and only over the window's content). `TileTest`, in
   `common/model`, also holds the tileset to what the renderer assumes: a flat tile is exactly
   its diamond, a block covers its whole footprint. `BlastStyleTest` holds the blasts to the roster:
   every attack that blasts has a look of its own, and no two characters share one.
+  `ProjectileLookTest` does the same for projectiles drawn as their thrower's: every attack in the
+  roster is drawn, everyone who threw the old crescent has a look no one else has, and a type's own
+  look (for a thrower nobody knows) is one of its throwers'. `ProjectileThrowerTest`, in `client/`,
+  is the other end: a projectile the server tells us of knows who threw it.
 - `client/` — `ClientTestKit.scala`: `TestClient` is a `GameClient` whose packets go to a
   capture (`GameClient.packetSink`) and which is handed the server's with `processPacket`.
   The screen tests (`LobbyRoomScreenTest`, `ScoreboardScreenTest`, `CharacterSelectionPanelTest`)
@@ -81,7 +93,9 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
 pinned with `ProjectileDef`s registered by the test itself, on ids the game doesn't use — see
 `TestEffects` at the foot of `OnHitEffectsTest`. Each test file gets its own JVM, so a test-only
 registration can't leak into another suite. Bots are walked on a clock of the test's own
-(`BotController.tick(now)`), so `BotMovementTest` covers ten seconds of their pace in no time. `TrapDef.register` is the same door for a trap the
+(`BotController.tick(now)`), so `BotMovementTest` covers ten seconds of their pace in no time, and
+`BotPathingTest` walks them round walls on every map (the maps are its `data`), in a free-for-all's
+opening so they hold their fire. `TrapDef.register` is the same door for a trap the
 roster hasn't got — a poison short enough for a test to sit through (`TestTraps` in `TrapTest`).
 A character the roster doesn't have (one quicker
 than any in it) goes through `PacketValidator`'s `characterOf` parameter instead — see
