@@ -38,6 +38,15 @@ trait ShotRequests { this: ClientHandler =>
       return false
     }
 
+    // Where it was fired from: a NaN compares false with everything, so it passed the check that
+    // it is within three cells of the shooter (PacketValidator), and its whole-cell position came
+    // out as 0, a shot from the corner of the map
+    if (!java.lang.Float.isFinite(packet.getX) || !java.lang.Float.isFinite(packet.getY)) {
+      System.err.println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} projectile position NaN/Inf")
+      Metrics.validationFailed.add(1L, Attrs.VfProjectilePosition)
+      return false
+    }
+
     // Validate projectile velocity: reject NaN or Infinite
     val pdx = packet.getDx
     val pdy = packet.getDy

@@ -13,7 +13,7 @@ Server  ──OTLP gRPC──►  OTel Collector  ──►  Prometheus  ──�
                                         ──►  Loki (logs)
 ```
 
-All four backends + Grafana are docker-composed in `ops/observability/`. Defaults target `localhost:4317`; falls back to a no-op SDK if init fails so the game runs identically with or without the stack up.
+All four backends + Grafana are docker-composed in `ops/observability/`. Defaults target `localhost:4317`; falls back to a no-op SDK if init fails so the game runs identically with or without the stack up. The game looks for the collector once, as it starts, and never again: bring the stack up before the server (or an opted-in client), or restart the game after it (common/observability/CLAUDE.md).
 
 ## Backend stack gotchas (resolved during integration — read before changing collector config)
 

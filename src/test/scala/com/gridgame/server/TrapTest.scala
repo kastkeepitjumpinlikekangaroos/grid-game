@@ -57,8 +57,20 @@ class TrapTest {
   @Test def aPlacementThroughAWallIsRefused(): Unit = {
     // The throw stops at the first wall, so a trap can't be dropped on the far side of one
     val w = warden(20, 30)
-    m.world.setTile(22, 30, Tile.Wall)
+    for (y <- 29 to 31) m.world.setTile(22, y, Tile.Wall)
     assertNull(m.placeTrap(w, E, BEAR, 25, 30))
+  }
+
+  @Test def aThrowFromAStepAheadOfWhereTheServerHasThemIsTaken(): Unit = {
+    // The client throws from where it has the player, a step ahead of the server's copy while that
+    // step's update is on its way. From (21, 31) the way to (25, 30) is clear; from (20, 30), where
+    // the server still has them, it crosses the pillar at (22, 30)'s corner. Refused, the trap the
+    // player saw land never had, in 1-6% of the throws made walking about the real maps.
+    val w = warden(20, 30)
+    m.world.setTile(22, 30, Tile.Wall)
+    assertFalse(TrapPlacement.isValidTarget(m.world, 20, 30, 25, 30, 6))
+    assertTrue(TrapPlacement.isValidTarget(m.world, 21, 31, 25, 30, 6))
+    assertNotNull(m.placeTrap(w, E, BEAR, 25, 30))
   }
 
   @Test def aPlacementOntoAnotherTrapIsRefused(): Unit = {
@@ -217,7 +229,10 @@ class TrapTest {
     val w = warden(20, 30)
     val enemy = victim(20, 40)
     val trap = m.armedTrap(w, 24, 40, BEAR)
-    assertTrue(m.move(enemy, 27, 40, gapMs = 90))
+    // The last update the server had from them, where they stood; the next arrives most of a
+    // fifth of a second later, its predecessors lost
+    assertTrue(m.move(enemy, 20, 40))
+    assertTrue(m.move(enemy, 27, 40, gapMs = 180))
     assertFalse("they went over it", onGround(trap))
     assertFalse(unhurt(enemy))
   }

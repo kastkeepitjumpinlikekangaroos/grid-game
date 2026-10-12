@@ -44,13 +44,30 @@ AUDIO_OFF = {"GRIDGAME_AUDIO": "off"}
     ("projectile_flight_test", "ProjectileFlightTest.scala"),
     ("projectile_thrower_test", "ProjectileThrowerTest.scala"),
     ("lobby_room_screen_test", "LobbyRoomScreenTest.scala"),
+    # The login screen: the form and Remember me, the saved login's card, another account
+    ("welcome_screen_test", "WelcomeScreenTest.scala"),
+    # Logging in with a refresh token, and out: what the client sends, and the order it hears in
+    ("game_client_login_test", "GameClientLoginTest.scala"),
+    # The app logging in and staying logged in: what it keeps, when it logs back in by itself
+    ("client_login_flow_test", "ClientLoginFlowTest.scala"),
     ("scoreboard_screen_test", "ScoreboardScreenTest.scala"),
+    # Thousands of server packets at random, the player acting and frames drawn between: nothing throws
+    ("client_packet_fuzz_test", "ClientPacketFuzzTest.scala"),
 ]]
 
 # The client's network handlers, fed through an EmbeddedChannel
 scala_junit_test(
     name = "client_network_test",
     srcs = ["ClientNetworkTest.scala"],
+    env = AUDIO_OFF,
+    suffixes = ["Test"],
+    deps = CLIENT_TEST_DEPS + NETTY,
+)
+
+# The client holding a server to the identity it met there before: real TLS over loopback
+scala_junit_test(
+    name = "server_pinning_test",
+    srcs = ["ServerPinningTest.scala"],
     env = AUDIO_OFF,
     suffixes = ["Test"],
     deps = CLIENT_TEST_DEPS + NETTY,

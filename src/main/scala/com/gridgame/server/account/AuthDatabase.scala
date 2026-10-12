@@ -163,8 +163,149 @@ class AuthDatabase(dbPath: String = AuthDatabase.resolveDbPath()) {
     stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_match_results_player ON match_results(player_uuid)")
     stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_match_results_match ON match_results(match_id)")
     stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_accounts_elo ON accounts(elo DESC, username)")
+
+    // Refresh tokens (RefreshTokens): a row a token, by its hash; never the token itself. A family is
+    // a password login and every token exchanged since; `account_name` is the name it logged in by
+    stmt.executeUpdate(
+      """CREATE TABLE IF NOT EXISTS refresh_tokens(
+        |  token_hash TEXT PRIMARY KEY,
+        |  family_id TEXT NOT NULL,
+        |  account_uuid TEXT NOT NULL,
+        |  account_name TEXT NOT NULL,
+        |  issued_at INTEGER NOT NULL,
+        |  expires_at INTEGER NOT NULL,
+        |  state INTEGER NOT NULL
+        |)""".stripMargin
+    )
+    stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_refresh_tokens_family ON refresh_tokens(family_id)")
+    stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_refresh_tokens_account ON refresh_tokens(account_uuid)")
+    stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expiry ON refresh_tokens(expires_at)")
     println(s"AuthDatabase: Initialized ($dbPath)")
   }
+
+  /** `body` as one transaction, under the lock: all of it or none of it. */
+  private def transaction[T](body: => T): T = dbLock.synchronized {
+    connection.setAutoCommit(false)
+    try {
+      val out = body
+      connection.commit()
+      out
+    } catch {
+      case e: Throwable =>
+        try connection.rollback() catch { case _: Exception => }
+        throw e
+    } finally connection.setAutoCommit(true)
+  }
+
+  private def update(sql: String, args: Any*): Int = statement(sql) { stmt =>
+    args.zipWithIndex.foreach {
+      case (s: String, i) => stmt.setString(i + 1, s)
+      case (n: Int, i) => stmt.setInt(i + 1, n)
+      case (n: Long, i) => stmt.setLong(i + 1, n)
+      case (other, _) => throw new IllegalArgumentException(s"Unsupported SQL argument: $other")
+    }
+    stmt.executeUpdate()
+  }
+
+  // ── Refresh tokens ─────────────────────────────────────────────────────
+
+  /**
+   * A new family for a password login (or a signup), and its first token. An account keeps at most
+   * MaxFamiliesPerAccount: past that, the family used longest ago goes.
+   */
+  def issueRefreshToken(accountId: UUID, accountName: String, now: Long): RefreshGrant = timed("refresh_issue") {
+    val grant = RefreshGrant(RefreshTokens.newToken(), RefreshTokens.newFamilyId(), now + RefreshTokens.LifetimeMs)
+    transaction {
+      insertRefreshToken(grant, accountId.toString, accountName, now)
+      update(
+        """DELETE FROM refresh_tokens WHERE account_uuid = ? AND family_id NOT IN (
+          |  SELECT family_id FROM refresh_tokens WHERE account_uuid = ?
+          |  GROUP BY family_id ORDER BY MAX(issued_at) DESC LIMIT ?)""".stripMargin,
+        accountId.toString, accountId.toString, RefreshTokens.MaxFamiliesPerAccount)
+    }
+    grant
+  }
+
+  /**
+   * A client logging in with a refresh token. The family's current token, or one exchanged for a
+   * newer one the client never had (its reply was lost), is exchanged for the next: the one before
+   * it is taken no more. One whose exchange was confirmed has been copied: the family is revoked.
+   */
+  def redeemRefreshToken(token: Array[Byte], now: Long): Redemption = timed("refresh_redeem") {
+    val hash = RefreshTokens.hash(token)
+    transaction {
+      val found = statement("SELECT family_id, account_uuid, account_name, expires_at, state FROM refresh_tokens WHERE token_hash = ?") { stmt =>
+        stmt.setString(1, hash)
+        rows(stmt)(rs => (rs.getString(1), rs.getString(2), rs.getString(3), rs.getLong(4), rs.getInt(5))).headOption
+      }
+      found match {
+        case None => Redemption.Refused
+        case Some((family, _, _, expiresAt, _)) if expiresAt <= now =>
+          update("DELETE FROM refresh_tokens WHERE family_id = ?", family)
+          Redemption.Refused
+        case Some((family, _, _, _, state)) if state == RefreshTokens.Used =>
+          update("DELETE FROM refresh_tokens WHERE family_id = ?", family)
+          Redemption.Reused(family)
+        case Some((family, account, name, expiresAt, state)) =>
+          if (state == RefreshTokens.Current) {
+            // It came, so whatever was exchanged for it was had: those are used now
+            update("UPDATE refresh_tokens SET state = ? WHERE family_id = ? AND state = ?",
+              RefreshTokens.Used, family, RefreshTokens.Exchanged)
+            update("UPDATE refresh_tokens SET state = ? WHERE token_hash = ?", RefreshTokens.Exchanged, hash)
+          } else {
+            // Exchanged before, and the client never had the answer: what it was exchanged for is dead
+            update("UPDATE refresh_tokens SET state = ? WHERE family_id = ? AND state = ?",
+              RefreshTokens.Used, family, RefreshTokens.Current)
+          }
+          val next = RefreshGrant(RefreshTokens.newToken(), family, expiresAt)
+          insertRefreshToken(next, account, name, now)
+          pruneUsedRefreshTokens(family)
+          Redemption.Granted(next, UUID.fromString(account), name)
+      }
+    }
+  }
+
+  /** The client has been heard on the session its last exchange started, so it has the token it
+    * was given: the one it gave up is used, and taken no more. */
+  def confirmRefreshExchange(familyId: String): Unit = timed("refresh_confirm") {
+    transaction {
+      update("UPDATE refresh_tokens SET state = ? WHERE family_id = ? AND state = ?",
+        RefreshTokens.Used, familyId, RefreshTokens.Exchanged)
+      pruneUsedRefreshTokens(familyId)
+    }
+  }
+
+  /** Revoke the family `token` belongs to, whatever state the token is in: a logout. Returns the
+    * family's id, or null if the token is nobody's. */
+  def revokeRefreshFamily(token: Array[Byte]): String = timed("refresh_revoke") {
+    val hash = RefreshTokens.hash(token)
+    transaction {
+      val family = statement("SELECT family_id FROM refresh_tokens WHERE token_hash = ?") { stmt =>
+        stmt.setString(1, hash)
+        rows(stmt)(_.getString(1)).headOption.orNull
+      }
+      if (family != null) update("DELETE FROM refresh_tokens WHERE family_id = ?", family)
+      family
+    }
+  }
+
+  /** Forget the families that have run out. Returns how many tokens went. */
+  def purgeExpiredRefreshTokens(now: Long): Int = timed("refresh_purge") { dbLock.synchronized {
+    update("DELETE FROM refresh_tokens WHERE expires_at <= ?", now)
+  } }
+
+  /** A family's used tokens past the newest UsedKeptPerFamily go: one older than that coming back
+    * is refused rather than known for a copy. */
+  private def pruneUsedRefreshTokens(familyId: String): Unit =
+    update(
+      """DELETE FROM refresh_tokens WHERE family_id = ? AND state = ? AND token_hash NOT IN (
+        |  SELECT token_hash FROM refresh_tokens WHERE family_id = ? AND state = ?
+        |  ORDER BY issued_at DESC LIMIT ?)""".stripMargin,
+      familyId, RefreshTokens.Used, familyId, RefreshTokens.Used, RefreshTokens.UsedKeptPerFamily)
+
+  private def insertRefreshToken(grant: RefreshGrant, accountId: String, accountName: String, now: Long): Unit =
+    update("INSERT INTO refresh_tokens(token_hash, family_id, account_uuid, account_name, issued_at, expires_at, state) VALUES(?, ?, ?, ?, ?, ?, ?)",
+      RefreshTokens.hash(grant.token), grant.familyId, accountId, accountName, now, grant.expiresAt, RefreshTokens.Current)
 
   def register(username: String, password: String): Boolean = timed("register") {
     if (username == null || username.isEmpty || password == null || password.isEmpty) {

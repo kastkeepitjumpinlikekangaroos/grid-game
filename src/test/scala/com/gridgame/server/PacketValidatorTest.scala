@@ -137,6 +137,23 @@ class PacketValidatorTest {
     assertTrue("phased, through it", v.validateMovement(to(3, 21, 21), p, world))
   }
 
+  @Test def aPlayersFirstUpdateInAMatchIsCheckedToo(): Unit = {
+    // Nothing had started the clock, so the first update was let through unchecked: a client's
+    // first could put its player anywhere on the map, once a match. It is judged from where the
+    // server put them, as though no time had passed: a step, or two bunched by a lost datagram.
+    val m = new TestMatch()
+    val jumper = m.join(CharacterId.Soldier, 10, 10)
+    Thread.sleep(50) // however long they stood at the spawn first
+    assertFalse("40 cells off", m.move(jumper, 50, 50))
+    assertEquals((10, 10), m.at(jumper))
+    val walker = m.join(CharacterId.Soldier, 20, 20)
+    assertTrue("a step", m.move(walker, 21, 20))
+    val lagged = m.join(CharacterId.Soldier, 30, 20)
+    assertTrue("two steps, the first lost on the way", m.move(lagged, 32, 20))
+    val blinker = m.join(CharacterId.Wizard, 40, 20)
+    assertTrue("a blink is still a blink", m.move(blinker, 46, 20))
+  }
+
   @Test def aOneSpeedCharacterIsStillRefusedBeyondTheAllowance(): Unit = {
     val m = new TestMatch()
     val player = m.join(CharacterId.Soldier, 20, 20) // a Soldier walks at 1.0, as every ranged character does

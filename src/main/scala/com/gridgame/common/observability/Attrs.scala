@@ -108,6 +108,13 @@ object Attrs {
   val AuthSignupSuccess: Attributes = Attributes.of(Action, "signup", Outcome, "success")
   val AuthSignupFail: Attributes = Attributes.of(Action, "signup", Outcome, "fail")
   val AuthSignupRateLimited: Attributes = Attributes.of(Action, "signup", Outcome, "rate_limited")
+  // Logging in again with a refresh token (server/account/RefreshTokens); "reused" is a token that
+  // came back after it was exchanged, which ends its login
+  val AuthRefreshSuccess: Attributes = Attributes.of(Action, "refresh", Outcome, "success")
+  val AuthRefreshFail: Attributes = Attributes.of(Action, "refresh", Outcome, "fail")
+  val AuthRefreshRateLimited: Attributes = Attributes.of(Action, "refresh", Outcome, "rate_limited")
+  val AuthRefreshReused: Attributes = Attributes.of(Action, "refresh", Outcome, "reused")
+  val AuthLogout: Attributes = Attributes.of(Action, "logout", Outcome, "success")
 
   // ---------- Connection events ----------
   val ConnTcpOpen: Attributes = Attributes.of(Transport, "tcp", Action, "open")

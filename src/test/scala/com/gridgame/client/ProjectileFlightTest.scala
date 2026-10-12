@@ -212,6 +212,26 @@ class ProjectileFlightTest {
     assertEquals("and fades where it was last drawn", face, fading.proj.getX, 1e-3f)
   }
 
+  @Test def aShotFiredIntoAFenceItsShooterStandsAgainstIsNotFlownThroughIt(): Unit = {
+    // A shot starts a cell out from its shooter, in the fence's cell here, and the server stops it
+    // there before it moves it. Flown on from its SPAWN a half-cell sub-step at a time, the first of
+    // them already in the next cell, it was drawn going through the fence until the DESPAWN came,
+    // as the server, which looked at it the same way, had flown it on for its whole range.
+    val world = WorldData.createEmpty(80, 40)
+    world.setTile(15, 20, Tile.Fence)
+    val t = match_(world)
+    // Fired east from (14, 20) in tick 66, and stopped where it was put by tick 67, whose DESPAWN is
+    // held up on the way
+    val sent = warmUp ++ shot(7, 2000, 15f, 20f, 1f, 0f, 1f, lastTick = 66) :+ stop(7, 67, 15f, 20f, 1f, 0f)
+    val despawn = sent.size - 1
+    val drawn = play(t, sent, 7, fromMs = 2000, toMs = 2300, jitter = i => if (i == despawn) 120.0 else 0.0).flatten
+    assertTrue("it was drawn while the news of its end was on the way", drawn.size >= 5)
+    drawn.foreach { case (x, _) => assertTrue(s"drawn at $x, past the fence", x <= 15.5f) }
+    val fading = t.client.getFadingProjectiles.get(7)
+    assertNotNull(fading)
+    assertTrue("and fades on the fence's near face", fading.proj.getX <= 14.5f)
+  }
+
   @Test def itIsFlownOnOverWater(): Unit = {
     // A river across its way, shallows either side of deep water. A shot flies over water, so it
     // isn't held at the water's edge the way it is at a wall's face

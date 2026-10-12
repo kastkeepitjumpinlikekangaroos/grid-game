@@ -1,6 +1,7 @@
 # common/protocol
 
-The wire: every packet's layout, serialization (`PacketSerializer`) and signing (`PacketSigner`). What
+The wire: every packet's layout, serialization (`PacketSerializer`) and signing (`PacketSigner`), and
+how a server's TLS identity is written (`ServerIdentity`). What
 the server trusts of a packet, who owns a player's position and what a session is are in
 design/networking.md.
 
@@ -21,6 +22,17 @@ design/networking.md.
 ```
 
 Serialization uses `Constants.PACKET_PAYLOAD_SIZE` (64 bytes). Transport uses `Constants.PACKET_SIZE` (80 bytes). The HMAC is an outer layer — `PacketSigner.sign()` wraps a 64-byte payload into an 80-byte signed packet, and `PacketSigner.verify()` unwraps it back.
+
+Text travels in fixed fields (a name in 21 bytes, a lobby's in 24, a chat line in 42), as UTF-8,
+zero-padded, read up to the first zero. What doesn't fit is cut at the last whole character
+(`SerializeUtil.putText`): cut at a byte count, a character of two or three bytes was cut in half
+and read at the far end as "�". The login's username and password are the exception, still cut at
+a byte count: the account database holds every password by that cut, and a username is ASCII.
+
+Whatever bytes arrive are read as a packet or refused with an `IllegalArgumentException`, which the
+handlers count as malformed and drop; nothing else may come out of `deserialize`. A packet once read
+is the same packet written and read again. `PacketFuzzTest` throws hundreds of thousands of random
+payloads at both, and every packet's fields round-trip in `PacketRoundTripTest`.
 
 `PLAYER_UPDATE` is the packet with the most in it, and the one new fields keep being found for.
 Its payload:
@@ -49,7 +61,7 @@ it faces and [53-54] how long it has left (see *Barriers*): a client sends its a
 its barrier is up, and the server writes the barrier's facing and its remaining time. All are 0
 otherwise.
 
-## Packet Types (18 total)
+## Packet Types (20 total)
 
 | ID   | Name              | Transport | Description                    |
 |------|-------------------|-----------|--------------------------------|
@@ -63,7 +75,7 @@ otherwise.
 | 0x08 | TILE_UPDATE       | TCP       | Tile changes                   |
 | 0x09 | LOBBY_ACTION      | TCP       | Lobby operations               |
 | 0x0A | GAME_EVENT        | TCP       | Kills, the clock, the match's opening |
-| 0x0B | AUTH_REQUEST      | TCP       | Login/register                 |
+| 0x0B | AUTH_REQUEST      | TCP       | Login/register, a refresh login, a logout (below) |
 | 0x0C | AUTH_RESPONSE     | TCP       | Auth result                    |
 | 0x0D | MATCH_HISTORY     | TCP       | Game statistics                |
 | 0x0E | RANKED_QUEUE      | TCP       | Ranked matchmaking             |
@@ -71,6 +83,18 @@ otherwise.
 | 0x10 | SESSION_TOKEN     | TCP       | Session token delivery (post-auth, and its renewal an hour in, signed with the token it replaces) |
 | 0x11 | CHAT_MESSAGE      | TCP       | Lobby and match chat           |
 | 0x12 | TRAP_UPDATE       | TCP       | Traps placed, sprung, removed  |
+| 0x13 | REFRESH_TOKEN     | TCP       | The login's refresh token (server -> client): [21-52] the token, [53-60] when its login runs out (epoch ms) |
+| 0x14 | SESSION_END       | TCP       | Why the server is closing the session (server -> client): [21] REPLACED (logged in elsewhere) or REVOKED (logged out) |
+
+An `AUTH_REQUEST` carries one of these `AuthAction`s. The server takes it without checking a
+signature: there is no session yet, or (a LOGOUT) the token it carries is the proof. TLS is what
+keeps it private.
+
+| Action | Bytes | Meaning |
+|---|---|---|
+| 0 LOGIN, 1 SIGNUP | [22-41] username, [42-61] password | log in with a password, or make the account |
+| 2 REFRESH | [22-53] refresh token | log in with the token an earlier login was given (design/networking.md, *Staying logged in*) |
+| 3 LOGOUT | [22-53] refresh token | end the token's login: no reply, and every session of it is closed |
 
 A `PROJECTILE_UPDATE` carries one of these `ProjectileAction`s:
 
@@ -105,11 +129,14 @@ owner; its layout is in `TrapPacket`.
 ```
 Client                              Server
    │                                   │
-   │═══ TLS 1.3 Handshake ═══════════│  (encrypted TCP channel)
+   │═══ TLS 1.3 Handshake ═══════════│  (encrypted TCP channel; the server's key must be
+   │                                   │   the one pinned for its host and port, or nothing
+   │                                   │   more is sent: design/networking.md, layer 1)
    │                                   │
-   │──── AUTH_REQUEST ────────────────>│  (login/register, no HMAC yet)
+   │──── AUTH_REQUEST ────────────────>│  (login/register, or a refresh token; no HMAC yet)
    │<─── SESSION_TOKEN ───────────────│  (32-byte token for HMAC signing; first, so the
-   │<─── AUTH_RESPONSE ───────────────│   client holds it before it acts on the answer)
+   │<─── REFRESH_TOKEN ───────────────│   client holds it before it acts on the answer; the
+   │<─── AUTH_RESPONSE ───────────────│   refresh token after it, signed with it)
    │                                   │
    │  ── all packets HMAC-signed ──   │
    │                                   │
@@ -130,7 +157,13 @@ Client                              Server
    │                                   │
    │<─── SESSION_TOKEN ───────────────│  (an hour in: the renewal, signed with the old
    │                                   │   token; the server switches on our first use of it)
+   │                                   │
+   │<─── SESSION_END ─────────────────│  (logged in elsewhere, or logged out: then closed)
 ```
+
+A client whose connection dropped logs in again on a new one with its refresh token
+(AUTH_REQUEST REFRESH): the same replies, a new refresh token among them, and its first packet
+after them (the join) confirms the exchange (design/networking.md, *Staying logged in*).
 
 ## Adding a New Packet Type
 1. Add a case object to `PacketType.scala` with the next unique ID, and `tcp = true/false`

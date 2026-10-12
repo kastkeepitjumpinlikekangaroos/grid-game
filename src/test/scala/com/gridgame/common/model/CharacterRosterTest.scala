@@ -88,6 +88,44 @@ class CharacterRosterTest {
       c.moveSpeed >= 0.5f && c.moveSpeed <= 2.0f))
   }
 
+  @Test def everyHitAndEveryTrapHasSensibleNumbers(): Unit = {
+    // What the server does with each without asking: a burn's damage divided by its ticks
+    // (Player.applyBurn: a tick of 0 is an ArithmeticException on the projectile tick, every hit),
+    // a slow's multiplier taken as a pace, a blast's damage falling from its centre to its edge
+    def effect(name: String, e: OnHitEffect): Unit = e match {
+      case Freeze(ms) => assertTrue(name, ms > 0)
+      case Stun(ms) => assertTrue(name, ms > 0)
+      case Root(ms) => assertTrue(name, ms > 0)
+      case Slow(ms, m) => assertTrue(s"$name: $ms ms at $m", ms > 0 && m > 0f && m < 1f)
+      case Burn(total, ms, tick) => assertTrue(s"$name: $total over $ms every $tick", total > 0 && tick > 0 && ms >= tick)
+      case Poison(total, ms, tick) => assertTrue(s"$name: $total over $ms every $tick", total > 0 && tick > 0 && ms >= tick)
+      case Push(d) => assertTrue(name, d >= 1f)
+      case VortexPull(r, s) => assertTrue(name, r > 0f && s > 0f)
+      case LifeSteal(pct) => assertTrue(name, pct > 0 && pct <= 100)
+      case SpeedBoost(ms) => assertTrue(name, ms > 0)
+      case TeleportOwnerBehind(d, ms) => assertTrue(name, d > 0 && ms >= 0)
+      case PullToOwner =>
+    }
+    val thrown = all.flatMap(c => Seq(c.primaryProjectileType, c.qAbility.projectileType, c.eAbility.projectileType))
+      .filter(_ >= 0).distinct
+    for (t <- thrown) {
+      val d = ProjectileDef.get(t)
+      val name = d.name
+      assertTrue(s"$name hit radius", d.hitRadius > 0f)
+      assertTrue(s"$name numbers", d.damage >= 0 && d.maxRange >= 0 && d.speedMultiplier >= 0f && d.pierceCount >= 0 &&
+        d.ricochetCount >= 0 && d.hitCentreBehind >= 0f)
+      d.onHitEffects.foreach(effect(name, _))
+      (d.aoeOnHit.toSeq ++ d.aoeOnMaxRange).foreach(a => assertTrue(s"$name splash", a.radius > 0f && a.damage >= 0))
+      d.explosionConfig.foreach(x => assertTrue(s"$name blast", x.blastRadius > 0f && x.centerDamage >= x.edgeDamage && x.edgeDamage >= 0))
+    }
+    for (trap <- TrapDef.all) {
+      assertTrue(trap.name, trap.triggerRadius > 0f && trap.armDelayMs >= 0 && trap.lifetimeMs > trap.armDelayMs &&
+        trap.maxActive > 0 && trap.damage >= 0)
+      trap.effects.foreach(effect(trap.name, _))
+      trap.explosion.foreach(x => assertTrue(s"${trap.name} blast", x.blastRadius > 0f && x.centerDamage >= x.edgeDamage))
+    }
+  }
+
   @Test def aBarrierFiresNothing(): Unit = {
     // It is raised by the player's update, not by a spawn: a spawn claiming it is refused, and its
     // projectile type is -3, which nothing is registered as

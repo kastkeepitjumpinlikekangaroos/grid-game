@@ -11,7 +11,7 @@ trait in its own file, with the packets that update it and the actions that use 
 
 | Trait | What it holds and does |
 |---|---|
-| `Connection` | connecting, logging in, the session token, the heartbeat, the packet thread, `send` (a test points it at `packetSink`) |
+| `Connection` | connecting, logging in (with a password or a refresh token) and out, the session token, each refresh token handed to the app as it arrives (`refreshTokenListener`, before the answer behind it), why the server ended the session (`sessionEndReason`), the heartbeat, the packet thread (each batch it takes off the queue through `processAll`, where a packet that throws, or whose listener does, costs only itself), `send` (a test points it at `packetSink`) |
 | `Lobby` | the lobby browser's list, the lobby we are in (settings, members, their characters), lobby actions |
 | `Chat` | lobby and match chat |
 | `Ranked` | the ranked queue |
@@ -25,7 +25,7 @@ trait in its own file, with the packets that update it and the actions that use 
 | `Barriers` | ours raised and streamed; everyone else's from their updates; ripples; what stops a shot in flight or a trap we throw (design/barriers.md) |
 | `OtherPlayers` | everyone else in the match |
 | `Projectiles` | the projectiles in flight, flown between the server's ticks (below) |
-| `Items`, `Traps` | items on the ground and our inventory; traps on the ground and going off |
+| `Items`, `Traps` | items on the ground (a SPAWN after its PICKUP dropped) and our inventory, full or not; traps on the ground and going off |
 | `EventAnimations` | what the renderer shows of an event for a moment: hits, deaths, teleports, blasts |
 
 ## What is forgotten when
@@ -111,7 +111,8 @@ only: nothing in the game reads it, it allocates nothing, and none of it runs pe
   for that, not for anything the network did. A new match forgets the ids too, since the server
   numbers its projectiles from the start again.
 - It only leaves the machine when client telemetry is on (`--telemetry` or `GRIDGAME_TELEMETRY=1`),
-  for the collector the `OTEL_*` environment names (localhost by default).
+  for the collector the `OTEL_*` environment names (localhost by default), and that collector
+  answered when the client started (it is looked for once: common/observability/CLAUDE.md).
 
 `GameClientSpawnRequestsTest` pins all of this.
 

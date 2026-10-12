@@ -13,30 +13,30 @@ import com.gridgame.common.model.CombatRole.{Melee, Ranged, Skirmisher}
 private[model] object Undead {
   // ── Projectiles ──
 
-  val DeathBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.DEATH_BOLT, name = "Death Bolt", speedMultiplier = 0.7f, damage = 13, maxRange = 16, passesThroughWalls = true, pierceCount = 1)
-  val RaiseDeadDef: ProjectileDef = ProjectileDef(id = ProjectileType.RAISE_DEAD, name = "Raise Dead", speedMultiplier = 0.5f, damage = 20, maxRange = 14, aoeOnHit = Some(AoESplashConfig(3.0f, 12)))
+  val DeathBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.DEATH_BOLT, name = "Death Bolt", speedMultiplier = 0.7f, damage = 28, maxRange = 16, passesThroughWalls = true, pierceCount = 1)
+  val RaiseDeadDef: ProjectileDef = ProjectileDef(id = ProjectileType.RAISE_DEAD, name = "Raise Dead", speedMultiplier = 0.5f, damage = 32, maxRange = 14, aoeOnHit = Some(AoESplashConfig(3.0f, 19)))
   val BoneAxeDef: ProjectileDef = ProjectileDef(id = ProjectileType.BONE_AXE, name = "Bone Axe", speedMultiplier = 0.6f, damage = 24, maxRange = 5, hitRadius = 2.5f)
   val BoneThrowDef: ProjectileDef = ProjectileDef(id = ProjectileType.BONE_THROW, name = "Bone Throw", speedMultiplier = 0.8f, damage = 20, maxRange = 16, boomerang = true)
-  val SoulDrainDef: ProjectileDef = ProjectileDef(id = ProjectileType.SOUL_DRAIN, name = "Soul Drain", speedMultiplier = 0.6f, damage = 25, maxRange = 14, onHitEffect = Some(LifeSteal(40)))
-  val DevourDef: ProjectileDef = ProjectileDef(id = ProjectileType.DEVOUR, name = "Devour", speedMultiplier = 0.5f, damage = 30, maxRange = 6, onHitEffect = Some(LifeSteal(50)), alsoOnHit = Seq(Root(1000)))
-  val ScytheDef: ProjectileDef = ProjectileDef(id = ProjectileType.SCYTHE, name = "Scythe", speedMultiplier = 0.65f, damage = 25, maxRange = 5, hitRadius = 2.5f)
+  val SoulDrainDef: ProjectileDef = ProjectileDef(id = ProjectileType.SOUL_DRAIN, name = "Soul Drain", speedMultiplier = 0.6f, damage = 44, maxRange = 14, onHitEffect = Some(LifeSteal(40)))
+  val DevourDef: ProjectileDef = ProjectileDef(id = ProjectileType.DEVOUR, name = "Devour", speedMultiplier = 0.5f, damage = 31, maxRange = 6, onHitEffect = Some(LifeSteal(50)), alsoOnHit = Seq(Root(1000)))
+  val ScytheDef: ProjectileDef = ProjectileDef(id = ProjectileType.SCYTHE, name = "Scythe", speedMultiplier = 0.65f, damage = 24, maxRange = 5, hitRadius = 2.5f)
   val ReapDef: ProjectileDef = ProjectileDef(id = ProjectileType.REAP, name = "Reap", speedMultiplier = 0.9f, damage = 35, maxRange = 10, passesThroughWalls = true, hitRadius = 2.8f, onHitEffect = Some(PullToOwner))
-  val ShadowBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.SHADOW_BOLT, name = "Shadow Bolt", speedMultiplier = 0.8f, damage = 14, maxRange = 16, passesThroughWalls = true, ricochetCount = 2)
+  val ShadowBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.SHADOW_BOLT, name = "Shadow Bolt", speedMultiplier = 0.8f, damage = 24, maxRange = 16, passesThroughWalls = true, ricochetCount = 2)
   val CursedBladeDef: ProjectileDef = ProjectileDef(id = ProjectileType.CURSED_BLADE, name = "Cursed Blade", speedMultiplier = 0.7f, damage = 22, maxRange = 5, hitRadius = 2.2f)
   val LifeDrainDef: ProjectileDef = ProjectileDef(id = ProjectileType.LIFE_DRAIN, name = "Life Drain", speedMultiplier = 0.6f, damage = 20, maxRange = 14, onHitEffect = Some(LifeSteal(35)), alsoOnHit = Seq(Slow(2000, 0.6f)))
-  val ShovelDef: ProjectileDef = ProjectileDef(id = ProjectileType.SHOVEL, name = "Shovel", speedMultiplier = 0.6f, damage = 32, maxRange = 4, hitRadius = 2.2f, boomerang = true)
-  val BandageWhipDef: ProjectileDef = ProjectileDef(id = ProjectileType.BANDAGE_WHIP, name = "Bandage Whip", speedMultiplier = 0.75f, damage = 10, maxRange = 16, onHitEffect = Some(PullToOwner))
-  val CurseDef: ProjectileDef = ProjectileDef(id = ProjectileType.CURSE, name = "Curse", speedMultiplier = 0.5f, damage = 17, maxRange = 12, onHitEffect = Some(Burn(13, 3000, 750)))
-  val CharmDef: ProjectileDef = ProjectileDef(id = ProjectileType.CHARM, name = "Charm", speedMultiplier = 0.6f, damage = 19, maxRange = 14, onHitEffect = Some(Slow(3000, 0.3f)))
+  val ShovelDef: ProjectileDef = ProjectileDef(id = ProjectileType.SHOVEL, name = "Shovel", speedMultiplier = 0.6f, damage = 33, maxRange = 4, hitRadius = 2.2f, boomerang = true)
+  val BandageWhipDef: ProjectileDef = ProjectileDef(id = ProjectileType.BANDAGE_WHIP, name = "Bandage Whip", speedMultiplier = 0.75f, damage = 16, maxRange = 16, onHitEffect = Some(PullToOwner))
+  val CurseDef: ProjectileDef = ProjectileDef(id = ProjectileType.CURSE, name = "Curse", speedMultiplier = 0.5f, damage = 32, maxRange = 12, onHitEffect = Some(Burn(25, 3000, 750)))
+  val CharmDef: ProjectileDef = ProjectileDef(id = ProjectileType.CHARM, name = "Charm", speedMultiplier = 0.6f, damage = 36, maxRange = 14, onHitEffect = Some(Slow(3000, 0.3f)))
   val TremorSlamDef: ProjectileDef = ProjectileDef(id = ProjectileType.TREMOR_SLAM, name = "Tremor Slam", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(6.0f, 21, rootDurationMs = 1500)), explosionConfig = Some(ExplosionConfig(0, 0, 6.0f)))
   val BoomerangBladeDef: ProjectileDef = ProjectileDef(id = ProjectileType.BOOMERANG_BLADE, name = "Boomerang Blade", speedMultiplier = 0.7f, damage = 28, maxRange = 12, hitRadius = 2.2f, boomerang = true, pierceCount = 1, onHitEffect = Some(Slow(1500, 0.6f)))
-  val LeechBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.LEECH_BOLT, name = "Leech Bolt", speedMultiplier = 0.7f, damage = 18, maxRange = 16, pierceCount = 1, onHitEffect = Some(LifeSteal(30)))
+  val LeechBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.LEECH_BOLT, name = "Leech Bolt", speedMultiplier = 0.7f, damage = 31, maxRange = 16, pierceCount = 1, onHitEffect = Some(LifeSteal(30)))
   val BoneBoomerangDef: ProjectileDef = ProjectileDef(id = ProjectileType.BONE_BOOMERANG, name = "Bone Boomerang", speedMultiplier = 0.95f, damage = 25, maxRange = 16, boomerang = true, aoeOnHit = Some(AoESplashConfig(2.5f, 10)), onHitEffect = Some(Slow(2000, 0.6f)))
-  val ShadowHauntDef: ProjectileDef = ProjectileDef(id = ProjectileType.SHADOW_HAUNT, name = "Shadow Haunt", speedMultiplier = 0.55f, damage = 25, maxRange = 14, passesThroughWalls = true, onHitEffect = Some(TeleportOwnerBehind(2, 1500)))
-  val EchoBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.ECHO_BOLT, name = "Echo Bolt", speedMultiplier = 0.6f, damage = 16, maxRange = 18, ricochetCount = 2, aoeOnHit = Some(AoESplashConfig(2.5f, 8)))
-  val SoulHarvestDef: ProjectileDef = ProjectileDef(id = ProjectileType.SOUL_HARVEST, name = "Soul Harvest", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(6.0f, 25)), onHitEffect = Some(LifeSteal(30)), explosionConfig = Some(ExplosionConfig(0, 0, 6.0f)))
-  val SoulBoltHeavyDef: ProjectileDef = ProjectileDef(id = ProjectileType.SOUL_BOLT_HEAVY, name = "Soul Bolt Heavy", speedMultiplier = 0.65f, damage = 17, maxRange = 15, passesThroughWalls = true, pierceCount = 1)
-  val SonicWaveHeavyDef: ProjectileDef = ProjectileDef(id = ProjectileType.SONIC_WAVE_HEAVY, name = "Sonic Wave Heavy", speedMultiplier = 0.7f, damage = 16, maxRange = 14, passesThroughWalls = true, pierceCount = 1)
+  val ShadowHauntDef: ProjectileDef = ProjectileDef(id = ProjectileType.SHADOW_HAUNT, name = "Shadow Haunt", speedMultiplier = 0.55f, damage = 31, maxRange = 14, passesThroughWalls = true, onHitEffect = Some(TeleportOwnerBehind(2, 1500)))
+  val EchoBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.ECHO_BOLT, name = "Echo Bolt", speedMultiplier = 0.6f, damage = 28, maxRange = 18, ricochetCount = 2, aoeOnHit = Some(AoESplashConfig(2.5f, 14)))
+  val SoulHarvestDef: ProjectileDef = ProjectileDef(id = ProjectileType.SOUL_HARVEST, name = "Soul Harvest", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(6.0f, 40)), onHitEffect = Some(LifeSteal(30)), explosionConfig = Some(ExplosionConfig(0, 0, 6.0f)))
+  val SoulBoltHeavyDef: ProjectileDef = ProjectileDef(id = ProjectileType.SOUL_BOLT_HEAVY, name = "Soul Bolt Heavy", speedMultiplier = 0.65f, damage = 30, maxRange = 15, passesThroughWalls = true, pierceCount = 1)
+  val SonicWaveHeavyDef: ProjectileDef = ProjectileDef(id = ProjectileType.SONIC_WAVE_HEAVY, name = "Sonic Wave Heavy", speedMultiplier = 0.7f, damage = 32, maxRange = 14, passesThroughWalls = true, pierceCount = 1)
   // A closer (Plan 5a): lands on a ranged character walking away from 8 cells, wherever they are
   // in their step (MeleeKitsTest). See common/model/CLAUDE.md, "Melee kits"
   val GraspingDeadDef: ProjectileDef = ProjectileDef(id = ProjectileType.GRASPING_DEAD, name = "Grasping Dead", speedMultiplier = 0.95f, damage = 15, maxRange = 16, onHitEffect = Some(Root(1000)))
@@ -57,9 +57,9 @@ private[model] object Undead {
   def variants(base: Byte => ProjectileDef): Seq[ProjectileDef] = Seq(
     // A primary with an identity of its own (Plan 5a): a slow at most, never a hold. Primaries fire
     // twice a second, and a hold grants 1.5s of CC immunity that would turn the kit's own holds away
-    base(ProjectileType.CLAW_SWIPE).copy(id = ProjectileType.GHOUL_CLAW, name = "Ghoul Claw", damage = 25, onHitEffect = Some(Slow(1000, 0.7f))),
+    base(ProjectileType.CLAW_SWIPE).copy(id = ProjectileType.GHOUL_CLAW, name = "Ghoul Claw", damage = 26, onHitEffect = Some(Slow(1000, 0.7f))),
     base(ProjectileType.CURSED_BLADE).copy(id = ProjectileType.DRAIN_BLADE, name = "Drain Blade", damage = 24, onHitEffect = Some(LifeSteal(20))),
-    base(ProjectileType.CURSED_BLADE).copy(id = ProjectileType.CHILL_BLADE, name = "Chill Blade", damage = 26, onHitEffect = Some(Slow(1000, 0.7f)))
+    base(ProjectileType.CURSED_BLADE).copy(id = ProjectileType.CHILL_BLADE, name = "Chill Blade", damage = 27, onHitEffect = Some(Slow(1000, 0.7f)))
   )
 
   // ── Characters ──
@@ -68,8 +68,8 @@ private[model] object Undead {
     id = CharacterId.Necromancer, displayName = "Necromancer",
     description = "A dark sorcerer who commands death, raises the dead, and harvests souls.",
     spriteSheet = "sprites/necromancer.png",
-    qAbility = AbilityDef(name = "Raise Dead", description = "Summons a burst of necrotic energy.", cooldownMs = 8000, maxRange = 14, damage = 20, projectileType = ProjectileType.RAISE_DEAD, keybind = "Q"),
-    eAbility = AbilityDef(name = "Soul Harvest", description = "Harvests souls in a wide AoE, healing from damage dealt.", cooldownMs = 14000, maxRange = 0, damage = 25, projectileType = ProjectileType.SOUL_HARVEST, keybind = "E", castBehavior = GroundSlam(6.0f)),
+    qAbility = AbilityDef(name = "Raise Dead", description = "Summons a burst of necrotic energy.", cooldownMs = 8000, maxRange = 14, damage = 32, projectileType = ProjectileType.RAISE_DEAD, keybind = "Q"),
+    eAbility = AbilityDef(name = "Soul Harvest", description = "Harvests souls in a wide AoE, healing from damage dealt.", cooldownMs = 14000, maxRange = 0, damage = 40, projectileType = ProjectileType.SOUL_HARVEST, keybind = "E", castBehavior = GroundSlam(6.0f)),
     primaryProjectileType = ProjectileType.DEATH_BOLT, role = Ranged, maxHealth = 65
   )
 
@@ -86,7 +86,7 @@ private[model] object Undead {
     id = CharacterId.Banshee, displayName = "Banshee",
     description = "A sonic disruptor whose echoing bolts ricochet and wail freezes all nearby.",
     spriteSheet = "sprites/banshee.png",
-    qAbility = AbilityDef(name = "Echo Bolt", description = "A ricocheting sonic bolt that splashes AoE on each bounce.", cooldownMs = 6000, maxRange = 18, damage = 16, projectileType = ProjectileType.ECHO_BOLT, keybind = "Q"),
+    qAbility = AbilityDef(name = "Echo Bolt", description = "A ricocheting sonic bolt that splashes AoE on each bounce.", cooldownMs = 6000, maxRange = 18, damage = 28, projectileType = ProjectileType.ECHO_BOLT, keybind = "Q"),
     eAbility = AbilityDef(name = "Banshee Wail", description = "Screams, freezing all nearby enemies.", cooldownMs = 14000, maxRange = 0, damage = 15, projectileType = ProjectileType.TREMOR_SLAM, keybind = "E", castBehavior = GroundSlam(5.0f)),
     primaryProjectileType = ProjectileType.SONIC_WAVE_HEAVY, role = Ranged, maxHealth = 60
   )
@@ -96,7 +96,7 @@ private[model] object Undead {
     description = "A dark sustain mage with life-leeching bolts, frost shards, and soul drain.",
     spriteSheet = "sprites/lich.png",
     qAbility = AbilityDef(name = "Frost Shard", description = "Fires a freezing ice shard.", cooldownMs = 5000, maxRange = 18, damage = 16, projectileType = ProjectileType.FROST_SHARD, keybind = "Q"),
-    eAbility = AbilityDef(name = "Soul Drain", description = "Drains the soul, healing for 40% of damage.", cooldownMs = 10000, maxRange = 14, damage = 25, projectileType = ProjectileType.SOUL_DRAIN, keybind = "E"),
+    eAbility = AbilityDef(name = "Soul Drain", description = "Drains the soul, healing for 40% of damage.", cooldownMs = 10000, maxRange = 14, damage = 44, projectileType = ProjectileType.SOUL_DRAIN, keybind = "E"),
     primaryProjectileType = ProjectileType.LEECH_BOLT, role = Ranged, maxHealth = 75
   )
 
@@ -105,7 +105,7 @@ private[model] object Undead {
     description = "A feral undead that lunges at prey and devours them for health.",
     spriteSheet = "sprites/ghoul.png",
     qAbility = AbilityDef(name = "Lunge", description = "Dashes at the target.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = DashBuff(10, 150, 20)),
-    eAbility = AbilityDef(name = "Devour", description = "Bites an enemy, healing for 50% of damage and rooting them for 1s.", cooldownMs = 10000, maxRange = 6, damage = 30, projectileType = ProjectileType.DEVOUR, keybind = "E"),
+    eAbility = AbilityDef(name = "Devour", description = "Bites an enemy, healing for 50% of damage and rooting them for 1s.", cooldownMs = 10000, maxRange = 6, damage = 31, projectileType = ProjectileType.DEVOUR, keybind = "E"),
     primaryProjectileType = ProjectileType.GHOUL_CLAW, role = Melee, maxHealth = 140, moveSpeed = Melee.speed
   )
 
@@ -158,7 +158,7 @@ private[model] object Undead {
     id = CharacterId.Phantom, displayName = "Phantom",
     description = "An assassin ghost that teleports behind targets and blinks away.",
     spriteSheet = "sprites/phantom.png",
-    qAbility = AbilityDef(name = "Shadow Haunt", description = "Ghost bolt that teleports you behind the target on hit.", cooldownMs = 10000, maxRange = 14, damage = 25, projectileType = ProjectileType.SHADOW_HAUNT, keybind = "Q"),
+    qAbility = AbilityDef(name = "Shadow Haunt", description = "Ghost bolt that teleports you behind the target on hit.", cooldownMs = 10000, maxRange = 14, damage = 31, projectileType = ProjectileType.SHADOW_HAUNT, keybind = "Q"),
     eAbility = AbilityDef(name = "Phase Out", description = "Teleports through the spirit realm.", cooldownMs = 12000, maxRange = 10, damage = 0, projectileType = -2, keybind = "E", castBehavior = TeleportCast(10)),
     primaryProjectileType = ProjectileType.SOUL_BOLT_HEAVY, role = Ranged, maxHealth = 60
   )
@@ -167,8 +167,8 @@ private[model] object Undead {
     id = CharacterId.Mummy, displayName = "Mummy",
     description = "An ancient wrapped horror that pulls with bandages and curses foes.",
     spriteSheet = "sprites/mummy.png",
-    qAbility = AbilityDef(name = "Bandage Whip", description = "Wraps bandages around an enemy and pulls them.", cooldownMs = 8000, maxRange = 16, damage = 10, projectileType = ProjectileType.BANDAGE_WHIP, keybind = "Q"),
-    eAbility = AbilityDef(name = "Curse", description = "Ancient curse that burns over time.", cooldownMs = 12000, maxRange = 12, damage = 17, projectileType = ProjectileType.CURSE, keybind = "E"),
+    qAbility = AbilityDef(name = "Bandage Whip", description = "Wraps bandages around an enemy and pulls them.", cooldownMs = 8000, maxRange = 16, damage = 16, projectileType = ProjectileType.BANDAGE_WHIP, keybind = "Q"),
+    eAbility = AbilityDef(name = "Curse", description = "Ancient curse that burns over time.", cooldownMs = 12000, maxRange = 12, damage = 32, projectileType = ProjectileType.CURSE, keybind = "E"),
     primaryProjectileType = ProjectileType.SAND_SHOT, role = Ranged, maxHealth = 70
   )
 
@@ -186,7 +186,7 @@ private[model] object Undead {
     description = "A dark AoE demon with shadow burst slam and void pull.",
     spriteSheet = "sprites/shadowfiend.png",
     qAbility = AbilityDef(name = "Shadow Burst", description = "Slams shadow energy into the ground, burning nearby enemies.", cooldownMs = 10000, maxRange = 0, damage = 20, projectileType = ProjectileType.TREMOR_SLAM, keybind = "Q", castBehavior = GroundSlam(5.0f)),
-    eAbility = AbilityDef(name = "Void Pull", description = "Creates a vortex that pulls enemies in.", cooldownMs = 14000, maxRange = 14, damage = 20, projectileType = ProjectileType.VORTEX_BOMB, keybind = "E"),
+    eAbility = AbilityDef(name = "Void Pull", description = "Creates a vortex that pulls enemies in.", cooldownMs = 14000, maxRange = 14, damage = 40, projectileType = ProjectileType.VORTEX_BOMB, keybind = "E"),
     primaryProjectileType = ProjectileType.DEATH_BOLT, role = Ranged, maxHealth = 80
   )
 
@@ -194,7 +194,7 @@ private[model] object Undead {
     id = CharacterId.Poltergeist, displayName = "Poltergeist",
     description = "A mischievous trickster that charms foes and blinks unpredictably.",
     spriteSheet = "sprites/poltergeist.png",
-    qAbility = AbilityDef(name = "Possession", description = "Charm that heavily slows.", cooldownMs = 6000, maxRange = 14, damage = 19, projectileType = ProjectileType.CHARM, keybind = "Q"),
+    qAbility = AbilityDef(name = "Possession", description = "Charm that heavily slows.", cooldownMs = 6000, maxRange = 14, damage = 36, projectileType = ProjectileType.CHARM, keybind = "Q"),
     eAbility = AbilityDef(name = "Blink", description = "Teleports to cursor.", cooldownMs = 10000, maxRange = 10, damage = 0, projectileType = -2, keybind = "E", castBehavior = TeleportCast(10)),
     primaryProjectileType = ProjectileType.SOUL_BOLT_HEAVY, role = Ranged, maxHealth = 65
   )

@@ -113,6 +113,30 @@ columns). `OnHitEffectsTest`, `GameClientKnockbackTest`, `RemoteMotionTest`.
   further than it did: over every cell round its caster, straight and diagonal, the Tidal Wave,
   the Wind Fan, the Wind Wall, the Gust Fan and the Gust strike exactly the players they struck
   before, only when the water reaches them. `ProjectileHitTest`, `OnHitEffectsTest`.
+- **A wall shelters whoever stands behind it.** A hit radius (1.8 to 3.5 cells) reaches past a
+  wall right in front of a player, so a shot drawn stopping at a fence hit whoever stood behind it:
+  from a cell behind, 26 of the roster's 48 single-target shots did. A direct hit now needs the
+  straight way from the projectile to the player clear of terrain that stops that projectile
+  (`ProjectileManager.terrainBetween`, looked along in quarter cells: the rule a barrier's shelter
+  keeps), so only a fence stands in the way of what flies over walls, and someone standing in a
+  fence put down on them is still hit from outside it (neither end's own cell counts). Splashes,
+  slams and blasts still reach through walls, as before. `CombatTest.nobodyIsHitThroughAWall`.
+- **A shot is stopped by a wall right in front of its shooter.** A shot starts a cell out from where
+  it was fired, and its sub-steps were judged only where each ended, so a step of exactly half a
+  cell (a speed of 0.5 or 1.0 a tick) carried it from that first cell straight into the next: fired
+  east or south, fifteen types flew through a fence or a one-cell wall their shooter stood against,
+  for their whole range, while the aim lane and the bots' line of fire had them stop there. The
+  first tick now judges the cell it was put in, as every sub-step's end is
+  (`ProjectileManager.stopsWhereItIs`), and the client's flight does the same from a SPAWN
+  (`NetProjectile`). A slam, which doesn't fly, still goes off where it lies.
+  `CombatTest.aShotStopsAtAWallItsShooterStandsAgainst` fires every type in every direction at
+  one, and `ProjectileFlightTest` holds the client to it.
+- **A shot strikes the nearest of those it reaches.** A radius often takes in two players at once
+  (point blank, one behind the other), and the shot struck whichever the projectile tick's grid
+  listed last: fired east, the one in front was passed through untouched and the one behind hit.
+  `CombatTest.aShotStrikesTheNearestOfThoseItReaches`. That grid (`PlayerGrid`, squares of 4 cells) only shows a shot the squares round it, which is as
+  far as any shot may reach, its hit radius counted from the centre a wave trails
+  (`hitCentreBehind`): `PlayerGridTest` holds it to the roster's furthest.
 - **Water doesn't stop a shot.** Everything nobody can walk on stops a projectile — walls,
   cliffs, trees, rocks, lava — but water, shallow or deep, which it flies over as it does over
   the ground (`Tile.stopsProjectiles`, `WorldData.stopsProjectile`). A river or a pond used to be
@@ -132,3 +156,35 @@ columns). `OnHitEffectsTest`, `GameClientKnockbackTest`, `RemoteMotionTest`.
 
 What each does is `ItemType` and GameInstance (the server applies it); the client uses one
 (GameClient's Items: a star's jump is picked with `Teleport` so the server agrees with it).
+
+- **An item is picked up within reach, while there is room.** It is a player's once they are
+  within two cells of it (`ITEM_PICKUP_RADIUS`, from their cell to its cell, as
+  `ItemManager.checkPickup` measures) and carry fewer than ten (`MAX_INVENTORY_SIZE`, every kind
+  together). The server checks on every step it accepts and on every projectile tick
+  (`GameInstance.pickUpItemsInReach`). Only a step used to: an item that appeared beside someone
+  standing still lay there until they moved, and so did one they had had no room for after they
+  used an item to make some. Bots pick up on their own tick (`BotItems`), practice's passive ones
+  never. A full inventory leaves the item where it lies, and the HUD says so (`HudPainter`): how
+  many we carry beside the slots ("7/10", amber at ten) and, while an item is within reach,
+  "Inventory full: use an item to make room". Nothing said it, and an item a full player stood on
+  looked like an item that couldn't be picked up — the cap is reached in a minute or two of
+  picking up without using.
+- **A respawn is alive only at its spawn** (`Lives.respawn` heals last). Healed first, the player
+  stood alive where they died until placed, and the tick could hand them an item lying there, into
+  the inventory the respawn was clearing.
+- **No client hears of an item's pickup before it hears of the item.** The server sends an item's
+  SPAWN and its PICKUP from different threads, and the spawner used to put an item on the ground
+  before sending its SPAWN. A pickup in between (a bot's tick, a step, the projectile tick) sent
+  its PICKUP first, and a client that heard them in that order kept the item on its ground for
+  good, where nobody, with room for it or not, could pick it up: a crowded free-for-all on the
+  Cell, its bots standing by wherever items appear, showed one. It is less rare than the
+  microseconds between the two make it sound, as the spawner's minute is a multiple of the bots'
+  tick and of the projectile tick: one falls the same few milliseconds after every batch, all
+  match. Now the spawner sends the SPAWN and only then puts the item down
+  (`ItemManager.randomItem`, `GameInstance.spawnItemBatch`), and the client still drops a SPAWN
+  for an item it has seen picked up (GameClient's Items), as a joiner's catch-up can be overtaken
+  the same way. With the spawner held up between the two for 50ms on a crowded Cell, the old code
+  left 12 such items on a client's ground in three minutes, and either fix alone none.
+
+`ItemTest`, `RespawnTest` and `GameClientMatchTest` pin these, and the golden frame
+`meadow_inventory_full` holds what the HUD shows of a full inventory.

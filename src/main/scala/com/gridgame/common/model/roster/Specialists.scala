@@ -13,18 +13,18 @@ import com.gridgame.common.model.CombatRole.{Melee, Ranged, Skirmisher}
 private[model] object Specialists {
   // ── Projectiles ──
 
-  val FistDef: ProjectileDef = ProjectileDef(id = ProjectileType.FIST, name = "Fist", speedMultiplier = 0.8f, damage = 28, maxRange = 4, hitRadius = 2.2f, boomerang = true)
-  val KnifeDef: ProjectileDef = ProjectileDef(id = ProjectileType.KNIFE, name = "Knife", speedMultiplier = 0.95f, damage = 22, maxRange = 6, hitRadius = 2.2f)
-  val HammerDef: ProjectileDef = ProjectileDef(id = ProjectileType.HAMMER, name = "Hammer", speedMultiplier = 0.6f, damage = 27, maxRange = 5, hitRadius = 2.5f)
-  val AcidFlaskDef: ProjectileDef = ProjectileDef(id = ProjectileType.ACID_FLASK, name = "Acid Flask", speedMultiplier = 0.4f, damage = 20, maxRange = 14, passesThroughPlayers = true, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(20, 8, 3.0f)))
-  val StarBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.STAR_BOLT, name = "Star Bolt", speedMultiplier = 0.8f, damage = 14, maxRange = 22, chargeSpeedScaling = Some(ChargeScaling(0.6f, 1.1f)), chargeDamageScaling = Some(ChargeScaling(10f, 35f)), chargeRangeScaling = Some(ChargeScaling(14f, 28f)), distanceDamageScaling = Some(DistanceDamageScaling(7, 41, 22)))
-  val RuneBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.RUNE_BOLT, name = "Rune Bolt", speedMultiplier = 0.75f, damage = 13, maxRange = 18, ricochetCount = 2)
+  val FistDef: ProjectileDef = ProjectileDef(id = ProjectileType.FIST, name = "Fist", speedMultiplier = 0.8f, damage = 29, maxRange = 4, hitRadius = 2.2f, boomerang = true)
+  val KnifeDef: ProjectileDef = ProjectileDef(id = ProjectileType.KNIFE, name = "Knife", speedMultiplier = 0.95f, damage = 21, maxRange = 6, hitRadius = 2.2f)
+  val HammerDef: ProjectileDef = ProjectileDef(id = ProjectileType.HAMMER, name = "Hammer", speedMultiplier = 0.6f, damage = 28, maxRange = 5, hitRadius = 2.5f)
+  val AcidFlaskDef: ProjectileDef = ProjectileDef(id = ProjectileType.ACID_FLASK, name = "Acid Flask", speedMultiplier = 0.4f, damage = 38, maxRange = 14, passesThroughPlayers = true, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(38, 15, 3.0f)))
+  val StarBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.STAR_BOLT, name = "Star Bolt", speedMultiplier = 0.8f, damage = 34, maxRange = 22, chargeSpeedScaling = Some(ChargeScaling(0.6f, 1.1f)), chargeDamageScaling = Some(ChargeScaling(24f, 35f)), chargeRangeScaling = Some(ChargeScaling(14f, 28f)), distanceDamageScaling = Some(DistanceDamageScaling(17, 55, 22)))
+  val RuneBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.RUNE_BOLT, name = "Rune Bolt", speedMultiplier = 0.75f, damage = 24, maxRange = 18, ricochetCount = 2)
   // A slam (Plan 5a): a bot casts it when its target is inside the ability's GroundSlam radius,
   // so that radius and the AoE radius here are kept in step
   val FeralRoarDef: ProjectileDef = ProjectileDef(id = ProjectileType.FERAL_ROAR, name = "Feral Roar", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(5.0f, 15)), onHitEffect = Some(Slow(2000, 0.5f)), explosionConfig = Some(ExplosionConfig(0, 0, 5.0f)))
   // A closer (Plan 5a): lands on a ranged character walking away from 8 cells, wherever they are
   // in their step (MeleeKitsTest). See common/model/CLAUDE.md, "Melee kits"
-  val HammerThrowDef: ProjectileDef = ProjectileDef(id = ProjectileType.HAMMER_THROW, name = "Hammer Throw", speedMultiplier = 0.95f, damage = 30, maxRange = 16, hitRadius = 2.2f, onHitEffect = Some(Stun(800)))
+  val HammerThrowDef: ProjectileDef = ProjectileDef(id = ProjectileType.HAMMER_THROW, name = "Hammer Throw", speedMultiplier = 0.95f, damage = 31, maxRange = 16, hitRadius = 2.2f, onHitEffect = Some(Stun(800)))
   val MeatHookDef: ProjectileDef = ProjectileDef(id = ProjectileType.MEAT_HOOK, name = "Meat Hook", speedMultiplier = 0.9f, damage = 10, maxRange = 18, onHitEffect = Some(PullToOwner))
   // A splash rather than an explosion: an explosion deals its blast and nothing else, so its
   // on-hit burn would never land (Plan 5a)
@@ -41,8 +41,8 @@ private[model] object Specialists {
     id = CharacterId.Alchemist, displayName = "Alchemist",
     description = "A potion-brewing expert with explosive and corrosive concoctions.",
     spriteSheet = "sprites/alchemist.png",
-    qAbility = AbilityDef(name = "Explosive Potion", description = "Hurls an explosive potion.", cooldownMs = 6000, maxRange = 18, damage = 39, projectileType = ProjectileType.FIREBALL, keybind = "Q"),
-    eAbility = AbilityDef(name = "Acid Flask", description = "Throws acid that explodes and slows.", cooldownMs = 10000, maxRange = 14, damage = 20, projectileType = ProjectileType.ACID_FLASK, keybind = "E"),
+    qAbility = AbilityDef(name = "Explosive Potion", description = "Hurls an explosive potion.", cooldownMs = 6000, maxRange = 18, damage = 55, projectileType = ProjectileType.FIREBALL, keybind = "Q"),
+    eAbility = AbilityDef(name = "Acid Flask", description = "Throws acid that explodes and slows.", cooldownMs = 10000, maxRange = 14, damage = 38, projectileType = ProjectileType.ACID_FLASK, keybind = "E"),
     primaryProjectileType = ProjectileType.PLAGUE_BOLT, role = Ranged, maxHealth = 70
   )
 
@@ -51,7 +51,7 @@ private[model] object Specialists {
     description = "A string master who controls enemies with chains and pulls.",
     spriteSheet = "sprites/puppeteer.png",
     qAbility = AbilityDef(name = "Puppet String", description = "Pulls an enemy with string.", cooldownMs = 8000, maxRange = 25, damage = 5, projectileType = ProjectileType.ROPE, keybind = "Q"),
-    eAbility = AbilityDef(name = "String Web", description = "Fires 3 strings in a fan.", cooldownMs = 10000, maxRange = 14, damage = 20, projectileType = ProjectileType.CHAIN_BOLT, keybind = "E", castBehavior = FanProjectile(3, Math.toRadians(30))),
+    eAbility = AbilityDef(name = "String Web", description = "Fires 3 strings in a fan.", cooldownMs = 10000, maxRange = 14, damage = 37, projectileType = ProjectileType.CHAIN_BOLT, keybind = "E", castBehavior = FanProjectile(3, Math.toRadians(30))),
     primaryProjectileType = ProjectileType.CHAIN_BOLT, role = Ranged, maxHealth = 65
   )
 
@@ -68,7 +68,7 @@ private[model] object Specialists {
     id = CharacterId.Blacksmith, displayName = "Blacksmith",
     description = "A forge master who hurls hammers and lays traps from the anvil.",
     spriteSheet = "sprites/blacksmith.png",
-    qAbility = AbilityDef(name = "Hammer Throw", description = "Hurls one heavy hammer that stuns for 0.8s.", cooldownMs = 12000, maxRange = 16, damage = 30, projectileType = ProjectileType.HAMMER_THROW, keybind = "Q"),
+    qAbility = AbilityDef(name = "Hammer Throw", description = "Hurls one heavy hammer that stuns for 0.8s.", cooldownMs = 12000, maxRange = 16, damage = 31, projectileType = ProjectileType.HAMMER_THROW, keybind = "Q"),
     eAbility = AbilityDef(name = "Anvil Trap", description = "Sets a forged trap that arms in a moment and stuns the first enemy over it for 2s.", cooldownMs = 12000, maxRange = 6, damage = 10, projectileType = -4, keybind = "E", castBehavior = TrapCast(TrapType.BEAR_TRAP, 6)),
     primaryProjectileType = ProjectileType.HAMMER, role = Melee, maxHealth = 130, moveSpeed = Melee.speed
   )
@@ -78,7 +78,7 @@ private[model] object Specialists {
     description = "A swashbuckler with pistol, grapple, and cannonball.",
     spriteSheet = "sprites/pirate.png",
     qAbility = AbilityDef(name = "Grapple", description = "Pulls enemy with rope.", cooldownMs = 8000, maxRange = 25, damage = 5, projectileType = ProjectileType.ROPE, keybind = "Q"),
-    eAbility = AbilityDef(name = "Cannonball", description = "Fires an explosive cannonball.", cooldownMs = 10000, maxRange = 12, damage = 47, projectileType = ProjectileType.GRENADE, keybind = "E"),
+    eAbility = AbilityDef(name = "Cannonball", description = "Fires an explosive cannonball.", cooldownMs = 10000, maxRange = 12, damage = 55, projectileType = ProjectileType.GRENADE, keybind = "E"),
     primaryProjectileType = ProjectileType.BULLET, role = Ranged, maxHealth = 75
   )
 
@@ -95,8 +95,8 @@ private[model] object Specialists {
     id = CharacterId.Musician, displayName = "Musician",
     description = "A hypnotic performer who mesmerizes foes and blasts them away with sonic booms.",
     spriteSheet = "sprites/musician.png",
-    qAbility = AbilityDef(name = "Hypnotic Melody", description = "Mesmerizing song that heavily slows for 3 seconds.", cooldownMs = 9000, maxRange = 14, damage = 19, projectileType = ProjectileType.CHARM, keybind = "Q"),
-    eAbility = AbilityDef(name = "Sonic Boom", description = "Blast that pushes enemies back.", cooldownMs = 9000, maxRange = 8, damage = 12, projectileType = ProjectileType.SONIC_BOOM, keybind = "E"),
+    qAbility = AbilityDef(name = "Hypnotic Melody", description = "Mesmerizing song that heavily slows for 3 seconds.", cooldownMs = 9000, maxRange = 14, damage = 36, projectileType = ProjectileType.CHARM, keybind = "Q"),
+    eAbility = AbilityDef(name = "Sonic Boom", description = "Blast that pushes enemies back.", cooldownMs = 9000, maxRange = 8, damage = 28, projectileType = ProjectileType.SONIC_BOOM, keybind = "E"),
     primaryProjectileType = ProjectileType.SONIC_WAVE, role = Ranged, maxHealth = 80
   )
 
@@ -104,7 +104,7 @@ private[model] object Specialists {
     id = CharacterId.Astronomer, displayName = "Astronomer",
     description = "A stargazer whose star bolts scale with charge and distance.",
     spriteSheet = "sprites/astronomer.png",
-    qAbility = AbilityDef(name = "Meteor", description = "Summons a devastating meteor.", cooldownMs = 6000, maxRange = 18, damage = 39, projectileType = ProjectileType.FIREBALL, keybind = "Q"),
+    qAbility = AbilityDef(name = "Meteor", description = "Summons a devastating meteor.", cooldownMs = 6000, maxRange = 18, damage = 55, projectileType = ProjectileType.FIREBALL, keybind = "Q"),
     eAbility = AbilityDef(name = "Astral Project", description = "Teleports through the stars.", cooldownMs = 12000, maxRange = 8, damage = 0, projectileType = -2, keybind = "E", castBehavior = TeleportCast(8)),
     primaryProjectileType = ProjectileType.STAR_BOLT, role = Ranged, maxHealth = 60
   )
@@ -113,7 +113,7 @@ private[model] object Specialists {
     id = CharacterId.Runesmith, displayName = "Runesmith",
     description = "A trap specialist whose ricocheting rune bolts bounce off walls.",
     spriteSheet = "sprites/runesmith.png",
-    qAbility = AbilityDef(name = "Rune Burst", description = "Fires 5 rune bolts in a fan.", cooldownMs = 8000, maxRange = 18, damage = 13, projectileType = ProjectileType.RUNE_BOLT, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(60))),
+    qAbility = AbilityDef(name = "Rune Burst", description = "Fires 5 rune bolts in a fan.", cooldownMs = 8000, maxRange = 18, damage = 24, projectileType = ProjectileType.RUNE_BOLT, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(60))),
     eAbility = AbilityDef(name = "Rune Trap", description = "Burns a rune into the ground that sets the first enemy over it alight for 40 over 5s.", cooldownMs = 12000, maxRange = 6, damage = 40, projectileType = -4, keybind = "E", castBehavior = TrapCast(TrapType.FIRE_RUNE, 6)),
     primaryProjectileType = ProjectileType.RUNE_BOLT, role = Ranged, maxHealth = 65
   )

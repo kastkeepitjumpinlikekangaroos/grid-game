@@ -59,8 +59,10 @@ trait TrapRequests { this: ClientHandler =>
       return refuse(s"attack $slot throws no trap of type ${packet.getTrapType}")
     }
 
+    // From where the server has them, or a step on: the client threw from where it has them, a
+    // step ahead while that step is on its way
     val pos = player.getPosition
-    if (!TrapPlacement.isValidTarget(world, pos.getX, pos.getY, packet.getX, packet.getY, cast.maxRange)) {
+    if (!TrapPlacement.isValidTargetNear(world, pos.getX, pos.getY, packet.getX, packet.getY, cast.maxRange)) {
       return refuse(s"(${packet.getX},${packet.getY}) is out of reach of (${pos.getX},${pos.getY})")
     }
     // An enemy's raised barrier stops a throw as a wall does (TrapPlacement.target lands it short)

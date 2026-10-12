@@ -2,7 +2,6 @@ package com.gridgame.common.protocol
 
 import com.gridgame.common.Constants
 
-import java.nio.charset.StandardCharsets
 import java.util.UUID
 
 object LobbyAction {
@@ -127,10 +126,7 @@ class LobbyActionPacket(
     buffer.put(lobbyStatus)
 
     // [29-52] Lobby Name (24 bytes)
-    val nameBytes = lobbyName.getBytes(StandardCharsets.UTF_8)
-    val nameLen = Math.min(nameBytes.length, Constants.MAX_LOBBY_NAME_LEN)
-    buffer.put(nameBytes, 0, nameLen)
-    buffer.put(new Array[Byte](Constants.MAX_LOBBY_NAME_LEN - nameLen))
+    SerializeUtil.putText(buffer, lobbyName, Constants.MAX_LOBBY_NAME_LEN)
 
     // [53] Character ID
     buffer.put(characterId)

@@ -21,11 +21,13 @@ object PacketType {
   case object SESSION_TOKEN extends PacketType(0x10.toByte, true)
   case object CHAT_MESSAGE extends PacketType(0x11.toByte, true)
   case object TRAP_UPDATE extends PacketType(0x12.toByte, true)
+  case object REFRESH_TOKEN extends PacketType(0x13.toByte, true)
+  case object SESSION_END extends PacketType(0x14.toByte, true)
 
-  // O(1) lookup array indexed by packet type ID (IDs range 0x01-0x12)
+  // O(1) lookup array indexed by packet type ID (IDs range 0x01-0x14)
   private val lookupTable: Array[PacketType] = {
-    val table = new Array[PacketType](0x13) // 19 entries, index 0 unused
-    val all = Array(PLAYER_JOIN, PLAYER_UPDATE, PLAYER_LEAVE, WORLD_INFO, HEARTBEAT, PROJECTILE_UPDATE, ITEM_UPDATE, TILE_UPDATE, LOBBY_ACTION, GAME_EVENT, AUTH_REQUEST, AUTH_RESPONSE, MATCH_HISTORY, RANKED_QUEUE, LEADERBOARD, SESSION_TOKEN, CHAT_MESSAGE, TRAP_UPDATE)
+    val table = new Array[PacketType](0x15) // 21 entries, index 0 unused
+    val all = Array(PLAYER_JOIN, PLAYER_UPDATE, PLAYER_LEAVE, WORLD_INFO, HEARTBEAT, PROJECTILE_UPDATE, ITEM_UPDATE, TILE_UPDATE, LOBBY_ACTION, GAME_EVENT, AUTH_REQUEST, AUTH_RESPONSE, MATCH_HISTORY, RANKED_QUEUE, LEADERBOARD, SESSION_TOKEN, CHAT_MESSAGE, TRAP_UPDATE, REFRESH_TOKEN, SESSION_END)
     all.foreach(pt => table(pt.id & 0xFF) = pt)
     table
   }

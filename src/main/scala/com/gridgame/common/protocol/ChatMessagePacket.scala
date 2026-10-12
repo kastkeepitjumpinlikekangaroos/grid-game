@@ -4,7 +4,6 @@ import com.gridgame.common.Constants
 
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.nio.charset.StandardCharsets
 import java.util.UUID
 
 object ChatScope {
@@ -42,12 +41,7 @@ class ChatMessagePacket(
     buffer.put(scope)
 
     // [22-63] Message (42 bytes UTF-8, null-padded)
-    val msgBytes = message.getBytes(StandardCharsets.UTF_8)
-    val msgLen = Math.min(msgBytes.length, Constants.MAX_CHAT_MESSAGE_LEN)
-    buffer.put(msgBytes, 0, msgLen)
-    if (msgLen < Constants.MAX_CHAT_MESSAGE_LEN) {
-      buffer.put(new Array[Byte](Constants.MAX_CHAT_MESSAGE_LEN - msgLen))
-    }
+    SerializeUtil.putText(buffer, message, Constants.MAX_CHAT_MESSAGE_LEN)
 
     buffer.array()
   }

@@ -27,6 +27,8 @@ Grafana opens with anonymous admin access. Dashboards are pre-provisioned under 
 - **Grid Game — JVM Runtime** — heap, GC, threads
 
 Start the server in another terminal and the dashboards will populate within ~10 seconds.
+Start it after the stack: the server looks for the collector once, as it starts, and if
+nothing answers it runs with telemetry off until it is restarted (it says so in one line).
 
 ```bash
 bazel run //src/main/scala/com/gridgame/server:server
@@ -106,6 +108,9 @@ phase. Stdout-via-docker still works as the lowest-friction option.
   ports externally without TLS + auth.
 
 ## Disabling telemetry
+
+Without the stack running, telemetry is off anyway (the server finds no collector at
+startup and never tries again). To turn it off even with the stack up:
 
 ```bash
 # Server (still runs, just emits to no-op SDK):

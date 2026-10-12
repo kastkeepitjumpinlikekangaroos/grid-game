@@ -104,8 +104,8 @@ object ProjectileDef {
     name = "Normal",
     speedMultiplier = 0.8f, // not used directly — charge scaling overrides
     chargeSpeedScaling = Some(ChargeScaling(0.8f, 2.0f)),
-    damage = 17,
-    chargeDamageScaling = Some(ChargeScaling(17f, 100f)),
+    damage = 32,
+    chargeDamageScaling = Some(ChargeScaling(32f, 100f)),
     maxRange = 15,
     chargeRangeScaling = Some(ChargeScaling(15f, 30f))
   )

@@ -40,15 +40,22 @@ object PacketSerializer {
         // Buffer is at byte 21 (after standard header: type + seq + UUID)
         // [21] Action
         val action = buffer.get()
-        // [22-41] Username (20 bytes)
-        val usernameBytes = new Array[Byte](20)
-        buffer.get(usernameBytes)
-        val username = extractString(usernameBytes)
-        // [42-61] Password (20 bytes)
-        val passwordBytes = new Array[Byte](20)
-        buffer.get(passwordBytes)
-        val password = extractString(passwordBytes)
-        new AuthRequestPacket(sequenceNumber, Packet.getCurrentTimestamp, action, username, password)
+        if (AuthAction.carriesToken(action)) {
+          // [22-53] Refresh token (32 bytes)
+          val token = new Array[Byte](Constants.REFRESH_TOKEN_SIZE)
+          buffer.get(token)
+          new AuthRequestPacket(sequenceNumber, Packet.getCurrentTimestamp, action, "", "", token)
+        } else {
+          // [22-41] Username (20 bytes)
+          val usernameBytes = new Array[Byte](20)
+          buffer.get(usernameBytes)
+          val username = extractString(usernameBytes)
+          // [42-61] Password (20 bytes)
+          val passwordBytes = new Array[Byte](20)
+          buffer.get(passwordBytes)
+          val password = extractString(passwordBytes)
+          new AuthRequestPacket(sequenceNumber, Packet.getCurrentTimestamp, action, username, password)
+        }
 
       case PacketType.AUTH_RESPONSE =>
         // Buffer is at byte 21 (after standard header: type + seq + UUID)
@@ -118,6 +125,17 @@ object PacketSerializer {
         val tokenBytes = new Array[Byte](32)
         buffer.get(tokenBytes)
         new SessionTokenPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, tokenBytes)
+
+      case PacketType.REFRESH_TOKEN =>
+        // [21-52] Refresh token, [53-60] its login's expiry (epoch ms)
+        val token = new Array[Byte](Constants.REFRESH_TOKEN_SIZE)
+        buffer.get(token)
+        val expiresAt = buffer.getLong()
+        new RefreshTokenPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, token, expiresAt)
+
+      case PacketType.SESSION_END =>
+        // [21] Reason
+        new SessionEndPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, buffer.get())
 
       case PacketType.RANKED_QUEUE =>
         val action = buffer.get()

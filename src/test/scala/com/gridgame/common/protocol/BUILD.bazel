@@ -13,4 +13,8 @@ load("@rules_scala//scala:scala.bzl", "scala_junit_test")
     ("packet_round_trip_test", "PacketRoundTripTest.scala"),
     ("packet_signer_test", "PacketSignerTest.scala"),
     ("auth_rules_test", "AuthRulesTest.scala"),
+    # How a server's identity (its TLS key) is written, by the server and by the clients that pin it
+    ("server_identity_test", "ServerIdentityTest.scala"),
+    # Whatever bytes arrive: read as a packet or refused as malformed, and a packet read is the same written back
+    ("packet_fuzz_test", "PacketFuzzTest.scala"),
 ]]

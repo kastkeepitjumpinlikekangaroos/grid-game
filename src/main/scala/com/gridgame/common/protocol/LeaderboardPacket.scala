@@ -2,7 +2,6 @@ package com.gridgame.common.protocol
 
 import com.gridgame.common.Constants
 
-import java.nio.charset.StandardCharsets
 import java.util.UUID
 
 object LeaderboardAction {
@@ -72,10 +71,7 @@ class LeaderboardPacket(
         buffer.putInt(wins)           // [25-28]
         buffer.putInt(matchesPlayed)  // [29-32]
         // [33-52] username (20 bytes)
-        val nameBytes = username.getBytes(StandardCharsets.UTF_8)
-        val namePadded = new Array[Byte](20)
-        System.arraycopy(nameBytes, 0, namePadded, 0, Math.min(nameBytes.length, 20))
-        buffer.put(namePadded)
+        SerializeUtil.putText(buffer, username, 20)
         buffer.put(new Array[Byte](11)) // [53-63] reserved
 
       case _ => // QUERY or END

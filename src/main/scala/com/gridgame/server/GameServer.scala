@@ -55,10 +55,22 @@ class GameServer(port: Int) extends PacketRouter with LobbyHost {
 
   private val cleanupExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
 
-  private val network = new ServerNetwork(port, TlsProvider.serverContext(), () => tcpHandler(), () => udpHandler(), outbox)
+  // Who this server is to its players' clients, from one start to the next: they pin its key
+  val identity: TlsProvider.Identity = TlsProvider.load()
+  private val network = new ServerNetwork(port, identity.context, () => tcpHandler(), () => udpHandler(), outbox)
 
   // A login that replaces a session the server still holds open ends that session as leaving would
   sessions.onSessionReplaced = playerId => leaveEverything(playerId, connectedPlayers.get(playerId))
+  // A session the server ends on purpose is told why, signed with its own token, before it is closed
+  sessions.tellSessionEnded = (channel, playerId, reason) =>
+    outbox.sendVia(new SessionEndPacket(outbox.nextSeq(), playerId, reason), channel)
+  // A refresh token's exchange is confirmed once its client is heard on the session it started
+  sessions.onExchangeConfirmed = family =>
+    try authDatabase.confirmRefreshExchange(family)
+    catch { case e: Exception => System.err.println(s"Auth: Could not confirm a refresh token's exchange: ${e.getMessage}") }
+
+  // When expired refresh tokens were last cleared out of the database (the cleanup loop, hourly)
+  @volatile private var refreshTokensPurgedAt = 0L
 
   /** The handler each TCP connection's pipeline ends in. */
   private[server] def tcpHandler(): TcpHandler = new TcpHandler(sessions, rateLimiter, replayGuard, this)
@@ -99,6 +111,9 @@ class GameServer(port: Int) extends PacketRouter with LobbyHost {
 
   def start(): Unit = {
     println(s"Game server starting on port $port (lobby mode)")
+    // Players' clients check this the second time they connect, and every time after: publish it,
+    // so a player can tell it from an impostor's the first time too
+    println(s"Server identity: ${identity.fingerprint} (${identity.file})")
     network.bind()
 
     // Schedule cleanup. Anything thrown is caught, an Error too: one escaping a periodic task
@@ -363,7 +378,7 @@ class GameServer(port: Int) extends PacketRouter with LobbyHost {
   def endGame(lobbyId: Short): Unit = matchEnd.endGame(lobbyId)
 
   /** One pass of the cleanup loop, every five seconds: players gone quiet, sessions past their
-    * token's lifetime, stale rate-limit and replay state. */
+    * token's lifetime, stale rate-limit and replay state, and (hourly) refresh tokens run out. */
   private[server] def cleanup(now: Long = System.currentTimeMillis()): Unit = {
     val timeout = Constants.CLIENT_TIMEOUT_MS
 
@@ -397,6 +412,17 @@ class GameServer(port: Int) extends PacketRouter with LobbyHost {
     }
 
     renewSessions(now)
+
+    if (now - refreshTokensPurgedAt >= GameServer.RefreshPurgeIntervalMs) {
+      refreshTokensPurgedAt = now
+      // Caught here, or a database error would skip the rest of the pass
+      try {
+        val purged = authDatabase.purgeExpiredRefreshTokens(now)
+        if (purged > 0) println(s"Auth: Deleted $purged refresh tokens of logins that ran out")
+      } catch {
+        case e: Exception => System.err.println(s"Auth: Could not delete expired refresh tokens: ${e.getMessage}")
+      }
+    }
 
     rateLimiter.cleanup()
     replayGuard.cleanupStale(connectedPlayers.keySet())
@@ -441,4 +467,9 @@ class GameServer(port: Int) extends PacketRouter with LobbyHost {
 
     println("Server stopped.")
   }
+}
+
+object GameServer {
+  /** How often the cleanup loop deletes the refresh tokens of logins that have run out. */
+  val RefreshPurgeIntervalMs: Long = 3600000L
 }

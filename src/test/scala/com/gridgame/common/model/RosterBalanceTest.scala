@@ -79,6 +79,49 @@ class RosterBalanceTest {
       toughestRanged.maxHealth + 20 <= frailestFighter.maxHealth)
   }
 
+  // --- Damage ---
+
+  /** No uncharged hit deals more than this, below the frailest character's health. */
+  private val MaxHit = 55
+
+  private def fires(a: AbilityDef): Boolean = a.castBehavior match {
+    case StandardProjectile | FanProjectile(_, _) | GroundSlam(_) => true
+    case _ => false
+  }
+
+  /** Every attack a character makes: its primary, and its Q and E where they throw something. */
+  private def attacks(c: CharacterDef): Seq[ProjectileDef] =
+    (Seq(c.primaryProjectileType) ++ Seq(c.qAbility, c.eAbility).filter(fires).map(_.projectileType))
+      .map(ProjectileDef.get)
+
+  /** The most one hit of it can take off anyone without a charge: the shot at the far end of a
+    * range it gains damage over, its splash, the centre of its blast. */
+  private def biggestHit(p: ProjectileDef): Int = {
+    val shot = p.distanceDamageScaling.map(d => Math.max(d.baseDamage, d.maxDamage)).getOrElse(p.damage)
+    (Seq(shot) ++ p.aoeOnHit.map(_.damage) ++ p.aoeOnMaxRange.map(_.damage) ++ p.explosionConfig.map(_.centerDamage)).max
+  }
+
+  @Test def noUnchargedHitKillsAnyoneAtFullHealth(): Unit = {
+    // Ranged characters hit hard to make up for their health (design/characters.md), but nobody at
+    // full health dies to a single blow. A full charge, a player's skill shot, may.
+    val frailest = all.map(_.maxHealth).min
+    assertTrue(s"$MaxHit below the frailest character's $frailest", MaxHit < frailest)
+    for (c <- all; p <- attacks(c))
+      assertTrue(s"${c.displayName}'s ${p.name}: ${biggestHit(p)}", biggestHit(p) <= MaxHit)
+    for (t <- TrapDef.all) {
+      val hit = (Seq(t.damage) ++ t.explosion.map(_.centerDamage)).max
+      assertTrue(s"${t.name}: $hit", hit <= MaxHit)
+    }
+  }
+
+  @Test def aBlastHurtsMostAtItsCentre(): Unit = {
+    // Its edge within three quarters of its centre: where the cap stopped a blast's centre, its
+    // edge was let rise instead, but not into a blast as hard everywhere
+    val blasts = all.flatMap(attacks).flatMap(_.explosionConfig) ++ TrapDef.all.flatMap(_.explosion)
+    for (e <- blasts)
+      assertTrue(s"$e", e.edgeDamage <= Math.round(e.centerDamage * 0.75f))
+  }
+
   // --- Pace ---
 
   @Test def theRangedOutpaceSkirmishersWhoOutpaceMelee(): Unit = {

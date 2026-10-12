@@ -41,6 +41,7 @@ scala_library(
         "//src/main/scala/com/gridgame/client:app",
         "//src/main/scala/com/gridgame/client/game",
         "//src/main/scala/com/gridgame/client/i18n",
+        "//src/main/scala/com/gridgame/client/net",
         "//src/main/scala/com/gridgame/client/ui",
         "//src/main/scala/com/gridgame/client/ui/screens",
         "//src/main/scala/com/gridgame/common",

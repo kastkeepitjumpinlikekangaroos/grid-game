@@ -27,7 +27,8 @@ are the first to throw in its file in `common/model/roster/` (`Originals.scala` 
 Every character names a `role: CombatRole` (`common/model/CombatRole.scala`), and the role sets
 the two numbers that trade range for staying power. Whoever has to get into range gets the
 health to survive getting there. Whoever can hit from range walks a little quicker, so a ranged
-character can kite a melee one (walk away, shooting back) for as long as both only walk. A melee
+character can kite a melee one (walk away, shooting back) for as long as both only walk, and hits
+harder, to make up for the health it hasn't got (*Damage makes up for health*, below). A melee
 character closes the gap with its abilities or an item, not its feet.
 
 | Role | Primary reach | Characters | Health | `moveSpeed` | Step |
@@ -46,9 +47,27 @@ character closes the gap with its abilities or an item, not its feet.
   `60 + (old - 65) * 20/60`, melee and skirmishers `105 + (old - 65) * 45/65`, rounded to 5), with
   the glass cannons (Wizard, Railgunner, Astronomer, Cleric, Pilot) at the ranged floor, where they
   still are. The balance pass of 2026-09-28 then moved it as one of its levers, by at most 15 for a
-  fighter and 10 for a ranged character (*Balance in free-for-alls against bots*). The toughest
+  fighter and 10 for a ranged character, and the third took 5 from the Griffin (*Balance in
+  free-for-alls against bots*). The toughest
   ranged character (80) stays at least 20 below the frailest fighter (105). `RosterBalanceTest`
   pins the bands, that gap and the order of the paces.
+- **Damage makes up for health.** Since the balance pass of 2026-10-12 a ranged character's attacks
+  deal on average 1.78 times what they did (1.38 to 2.05 from one character to the next), and a
+  fighter's what they did: in matches of bots, where nobody kites, that is what puts the two roles
+  level (*Balance in free-for-alls against bots*, the third pass). Before it a ranged character won
+  none of its mixed free-for-alls to a fighter's 22% (a fair share is 7%) and traded kills at 0.75
+  to their 1.49, and in Teams every ranged character a team had more than the other cost it 18
+  points of its chance to win. A player who kites, which bots don't, gets more out of a ranged
+  character than that.
+  - **No uncharged hit deals more than 55**, less than the frailest character's health (60), so
+    nobody at full health dies to a single blow; a full charge, a player's skill shot, still may.
+    Where the multiplier would have taken a hit past it (the Rocket, the Grenade, the Fireball,
+    the Eruption, the Inferno Blast, the Cluster Bomb, the Gravity Well, the far end of the Spear,
+    the Sniper Beam, the Star Bolt and the Gravity Lance, the Mine) the hit stops at 55, and a
+    blast's edge rose instead, to at most three quarters of its centre. That edge is most of what
+    the blast does to whoever set it off: a shot that goes off on reaching someone does so a cell
+    and a half or so from them, so the Grenade that went off on its target for about 29 now deals
+    about 48. `RosterBalanceTest` holds every attack and trap to both rules.
 - **Only just quicker:** walking straight away, a ranged character opens about a cell a second on
   a melee one. Played over the network: a Soldier walking away from a Berserker and shooting back
   went 20.1 cells a second to its 19.1, opened the gap from 8 cells to 12 and killed it in 3.9s
@@ -131,18 +150,20 @@ FROM match_results JOIN matches USING (match_id)
 WHERE match_type = 0 AND character_id IS NOT NULL GROUP BY character_id ORDER BY kd DESC;
 ```
 
-Before that, balance was measured in simulated free-for-alls of bots on the server's own code
-(`GameInstance`, `BotController`), run headless at real speed: five minutes each on the Cell, the
-Colony, the Meadow and the Lagoon, every kill and every point of damage booked to the attack that
-dealt it. A free-for-all is ranked on kills, so what was steered is each character's mean finishing
-place, and with it the share of its matches it wins.
+Balance is measured in simulated matches of bots on the server's own code (`GameInstance`,
+`BotController`), run headless at real speed: five minutes each, on the Cell, the Colony, the Meadow
+and the Lagoon for the first two passes and on all seven maps for the third, every kill and every
+point of damage booked to the attack that dealt it. A free-for-all is ranked on kills, so what is
+steered is each character's finishing place (the third pass by way of its kills a minute, which
+decide it), and with it the share of its matches it wins.
 
 - **Bots don't play the roles the same way.** A melee bot closes in; a ranged bot keeps to 60% of its
   reach and backs off, but strafes rather than kites, and lands 44% of its primaries to a melee bot's
   85%. So in a mixed free-for-all the fighters (melee and skirmishers, a third of the roster) take
   nearly every first place: 237 of 241 in the first measurement, and leading the bots' aim didn't
-  change it. The role numbers are set for a player who kites (*Roles, health and pace*), and were
-  left as they are. Each character is compared only with those it's fairly matched against:
+  change it. The first two passes left the role numbers as they were, set for a player who kites
+  (*Roles, health and pace*); the third made up the difference in damage (*Damage makes up for
+  health*). Each character is compared only with those it's fairly matched against:
   - a **ranged** character against the other ranged ones, in free-for-alls of 12-13 ranged bots;
   - a **fighter** by its place among the fighters of ordinary mixed free-for-alls of 14 (about five
     of them a match), since every fighter bot closes in the same way. A melee-only pool was tried
@@ -188,10 +209,67 @@ place, and with it the share of its matches it wins.
   and Horn 33 → 26, the Blacksmith 145 → 130 HP and Hammer 33 → 27), and those who never won gain
   them (the Shapeshifter 130 → 145 HP and Fist 22 → 28, the Death Knight, the Scorpion, the Chef,
   the Crusader, the Assassin, the Mantis). Every character's numbers are in its category file.
+- **The third pass (2026-10-12)** was for the ranged characters, still underpowered: it raised
+  their damage until the two roles were level in bot matches, then balanced each role's characters
+  among themselves again, on damage alone (health and cooldowns are as they were, but for the
+  Griffin's: *What is left*). Everything was measured afresh, as the bots' walking had been rebuilt
+  since the second pass (*Round walls*: a quarter to a third more kills a minute, and ranged bots
+  that go looking for a clear shot), and so had where a shot strikes (never through a wall, and the
+  nearest of those it reaches: design/combat.md).
+  - *The roles.* Mixed free-for-alls with every ranged character's damage multiplied by 1.25 to 2
+    put the roles level at about 1.78. The ranged characters' average was held there, and the
+    fighters' at 1, while the numbers moved underneath.
+  - *Within each role*, eight rounds of 360-480 matches in each pool (the ranged against each other,
+    a fighter by its place among the fighters of mixed matches, as before), each moving every
+    projectile's and trap's damage numbers by a least-squares fit of how far each moves its
+    throwers' kills a minute. At the new damage, 10% more of it is about 13% more kills, for either
+    role (it was 12% for a ranged character and 11% for a fighter, measured by giving every attack a
+    random 20% more or less). The damage itself reordered the ranged characters: slows and holds
+    count for less when a target dies in three hits instead of five, and reach and piercing for
+    more, so standings measured at the old damage foretold the new ones poorly, and only matches
+    played at the new damage were used. A pull of every attack toward the roles' multiplier kept the
+    fit from loading a character's whole correction onto a small ability of its own (a 12-damage
+    push was heading for 49), and shared projectiles move for all their throwers, which is what
+    leaves the last few points (*What is left*).
+  - Measured on the built code, over the same line-ups before and after:
+
+    | | Before | After |
+    |---|---|---|
+    | Mixed free-for-alls (480): first places, ranged / fighters (a fair share is 7.1%) | 0.0% / 21.8% | 7.9% / 6.0% |
+    | the same: kills per death, ranged / fighters | 0.75 / 1.49 | 1.01 / 0.97 |
+    | the same: the ranged characters' share of the kills (they are 67% of the players) | 50% | 66% |
+    | Teams (320): a team's chance to win, for each ranged character more than the other team | -18 points | +2 (within noise) |
+    | Ranged against ranged (480): win share spread, sd (luck alone: 3.0) | 4.4 points | 3.2 points |
+    | Fighters in mixed matches (480): win share spread, sd (luck alone: 5.3) | 9.0 points | 5.8 points |
+
+  - *What moved.* The ranged characters who gained least (×1.38 to 1.52) are those whose biggest
+    hits met the cap, who were also among the strongest: the Bombardier (Grenade blast 47-12 →
+    55-41), the Astronomer (Star Bolt 7-41 → 17-55 by distance), the Railgunner (Sniper Beam 2-34 →
+    3-50) and the Valkyrie (Spear 6-38 → 12-55). Those who gained most (×1.95 to 2.05) were the
+    weakest: the four who throw the Death Bolt (13 → 28: the Necromancer, the Shadowfiend, the
+    Warlock, Anubis), the Chameleon (Poison Dart 21 → 42), the Bard and the Musician (Sonic Wave 14
+    → 27), the Inferno and the Harpy (Sonic Wave Med 18 → 37). Most primaries took about the 1.78:
+    Bullet 16 → 29, Sand Shot 27 → 47, Frost Shard 17 → 30, Wind Blade 18 → 34, Charm 19 → 36. The
+    six attacks both roles throw (the Gust, the Rope, the Tremor Slam, the Seismic Root, the Seismic
+    Slam, the Shadow Haunt) took no part in the multiplier and moved only with the fit (the Gust 10
+    → 7, the Shadow Haunt 25 → 31). The Mine went 45-15 → 55-27 and the Fire Rune's burn 40 → 71;
+    the Bear Trap, which fighters lay too, is still 10. The fighters moved ×0.85 to 1.16: the
+    Vampire most (Blood Fang 25 → 30, from 2% of its mixed matches won to 25-32%), the Rogue least
+    (Shuriken 19 → 16), and the boulder throwers a little down (Boulder 30 → 27).
+  - *What is left.* The Griffin, whose Talon the Raptor and the Hawk throw too, came out on top
+    of the fighters, and its damage couldn't come down without theirs: its health did instead,
+    120 → 115, which took it from 39% of its mixed matches won to 22% (a fair share). Otherwise a
+    character or two in each pool is a few points of kills a minute from the middle, its attacks
+    shared with others on the other side of it (the Magma Knight, whose Magma Ball the Cerberus
+    throws); a variant of its own, as the second pass made four, would free it.
 - **What bots can't tell:**
-  - Ember and the Spaceman were left weaker than the middle against bots (46% → 6% of its mixed
-    matches for Ember): Ember's 10-cell shots and phase, and the Spaceman's charged shot, are a
-    player's strength, which bots don't use.
+  - Ember and the Spaceman are left weaker than the middle against bots (46% → 6% of its mixed
+    matches for Ember in the second pass; the third aimed them at 8% and 5% fewer kills a minute
+    than the middle of their pools): Ember's 10-cell shots and phase, and the Spaceman's charged
+    shot, are a player's strength, which bots don't use.
+  - A player kites, walking away and shooting back; a bot strafes. The roles are level among
+    bots, so in a player's hands a ranged character is the stronger of the two, which its pace
+    was there for in the first place (*Roles, health and pace*).
   - A player fires a primary every 0.5s, a bot every 0.7-1.1s, so a primary counts for more in a
     player's hands than here, and an ability for less.
   - Bots walk at half a player's pace, so a slow shot lands on them more often than on a player: the

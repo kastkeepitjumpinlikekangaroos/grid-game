@@ -218,29 +218,49 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     // A player who walked onto one between ticks has already sprung it (ClientHandler); this
     // catches everyone standing on one, bots and players the server itself moved included.
     applyTrapEvents(trapManager.tick(System.currentTimeMillis()))
+    pickUpItemsInReach()
     // Flush all buffered writes at end of tick
     flushAllInstancePlayers()
     Metrics.tickDuration.record((System.nanoTime() - tickStart) / 1e6, projectileTickAttrs)
   }
 
-  private def spawnItemBatch(count: Int): Unit = {
+  /**
+   * Every player within reach of an item takes it, once they have room for it (ItemManager holds
+   * them to ten). A step takes what it reaches at once (ClientHandler), but nothing else was ever
+   * checked: an item that appeared beside someone standing still stayed on the ground, and so did
+   * one that had found them full after they used an item to make room, until they next stepped.
+   * Bots pick up on their own tick (BotItems), and practice's passive ones not at all.
+   */
+  private def pickUpItemsInReach(): Unit =
+    registry.forEachPlayer { p =>
+      if (!p.isDead && !TeamAssignment.isBot(p.getId)) {
+        val pos = p.getPosition
+        val taken = itemManager.checkPickup(p.getId, pos.getX, pos.getY)
+        if (taken.isDefined) broadcastItemPickup(taken.get.item, p.getId)
+      }
+    }
+
+  private[server] def spawnItemBatch(count: Int): Unit = {
     if (!running || world == null) return
     val zeroUUID = new UUID(0L, 0L)
     var spawned = false
     var i = 0
     while (i < count) {
-      itemManager.spawnRandomItem(world).foreach { event =>
+      itemManager.randomItem(world).foreach { item =>
         val packet = new ItemPacket(
           outbox.nextSeq(),
           zeroUUID,
-          event.item.x, event.item.y,
-          event.item.itemType.id,
-          event.item.id,
+          item.x, item.y,
+          item.itemType.id,
+          item.id,
           ItemAction.SPAWN
         )
         broadcastBuffered(packet)
+        // On the ground only now, with its SPAWN written to every channel: a PICKUP for it is
+        // written after, so no client can hear of its pickup before it hears it is there
+        itemManager.place(item)
         spawned = true
-        Metrics.itemsSpawned.add(1L, Attrs.itemTypeAttrs(event.item.itemType.id))
+        Metrics.itemsSpawned.add(1L, Attrs.itemTypeAttrs(item.itemType.id))
       }
       i += 1
     }

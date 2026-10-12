@@ -3,6 +3,7 @@ package com.gridgame.server.net
 import com.gridgame.common.Constants
 import com.gridgame.common.observability.Metrics
 import com.gridgame.common.protocol.PacketSigner
+import com.gridgame.common.protocol.SessionEndReason
 import io.netty.channel.Channel
 
 import java.net.InetAddress
@@ -23,6 +24,11 @@ import java.util.concurrent.atomic.AtomicInteger
  * after that, for what it signed just before it switched. A client that hasn't switched within
  * SESSION_RENEWAL_WINDOW_MS is cut off. Ending every session once its token was an hour old, as was
  * done, threw players out to the login screen in the middle of a match.
+ *
+ * A session also knows the refresh-token family its login belongs to (account/RefreshTokens), so
+ * a logout or a copied token can end it, and a session started by exchanging a refresh token
+ * confirms the exchange when its client is first heard on it ([[heardFrom]]). A session ended by
+ * the server on purpose is told why first (SESSION_END): logged in elsewhere, or logged out.
  *
  * @param rateLimiter  forgets a channel whose session a new login replaced
  * @param replay       restarts a player's packet numbering when they get a new session
@@ -46,6 +52,11 @@ final class Sessions(rateLimiter: RateLimiter, replay: ReplayGuard) {
   val channelAuthFailures = new ConcurrentHashMap[Channel, AtomicInteger]()
   // The name each logged-in player logged in with: the one they go by (GameServer.handleGlobalConnect)
   private[server] val accountNames = new ConcurrentHashMap[UUID, String]()
+  // The refresh-token family each session's login belongs to
+  private[server] val refreshFamilies = new ConcurrentHashMap[UUID, String]()
+  // Sessions started by exchanging a refresh token whose client hasn't been heard on them yet: the
+  // exchange is confirmed when it is (heardFrom)
+  private[server] val unconfirmedExchanges = new ConcurrentHashMap[UUID, String]()
   // Per-channel malformed packet tracking (disconnect after too many)
   private[server] val malformedPacketCounts = new ConcurrentHashMap[Channel, AtomicInteger]()
   private[server] val MAX_MALFORMED_PACKETS = 3
@@ -59,6 +70,14 @@ final class Sessions(rateLimiter: RateLimiter, replay: ReplayGuard) {
   /** What to do when a login replaces a session the server still holds open: set by the server,
     * which takes the old session out of whatever it was in. */
   @volatile private[server] var onSessionReplaced: UUID => Unit = _ => ()
+
+  /** Tell a client why the server is ending its session (SESSION_END), on the channel about to be
+    * closed: set by the server, which sends it through the Outbox, signed with the channel's token. */
+  @volatile private[server] var tellSessionEnded: (Channel, UUID, Byte) => Unit = (_, _, _) => ()
+
+  /** A refresh-token exchange's client was heard on the session it started (the family's id): set
+    * by the server, which confirms it in the account database. */
+  @volatile private[server] var onExchangeConfirmed: String => Unit = _ => ()
 
   /** Has this player's session outlived its token, and the time it had to switch to a new one? */
   def isExpired(playerId: UUID, now: Long): Boolean = {
@@ -110,9 +129,18 @@ final class Sessions(rateLimiter: RateLimiter, replay: ReplayGuard) {
     }
   }
 
-  private[server] def generateSessionToken(playerId: UUID, tcpCh: Channel): Array[Byte] =
+  /**
+   * A new session for a login on `tcpCh`, replacing any the player has. `family` is the
+   * refresh-token family the login belongs to (null if it has none); `exchanged` says the login
+   * exchanged one of its tokens, which is confirmed when the client is first heard on the session.
+   */
+  private[server] def generateSessionToken(playerId: UUID, tcpCh: Channel, family: String = null,
+                                           exchanged: Boolean = false): Array[Byte] =
     lockOf(playerId).synchronized {
-      generateSessionTokenImpl(playerId, tcpCh)
+      val token = generateSessionTokenImpl(playerId, tcpCh)
+      if (family != null) refreshFamilies.put(playerId, family) else refreshFamilies.remove(playerId)
+      if (family != null && exchanged) unconfirmedExchanges.put(playerId, family) else unconfirmedExchanges.remove(playerId)
+      token
     }
 
   private def generateSessionTokenImpl(playerId: UUID, tcpCh: Channel): Array[Byte] = {
@@ -126,6 +154,9 @@ final class Sessions(rateLimiter: RateLimiter, replay: ReplayGuard) {
       }.foreach { e =>
         val oldChannel = e.getKey
         if (oldChannel != tcpCh) {
+          // Told first, signed with the token it still has: its client doesn't log back in by
+          // itself, or two clients of one account would take it from each other for ever
+          tellSessionEnded(oldChannel, playerId, SessionEndReason.REPLACED)
           channelToToken.remove(oldChannel)
           channelToPlayer.remove(oldChannel)
           channelAuthFailures.remove(oldChannel)
@@ -169,6 +200,28 @@ final class Sessions(rateLimiter: RateLimiter, replay: ReplayGuard) {
     token
   }
 
+  /** A packet from `playerId`'s client, checked, on their session's channel. The first after a
+    * login that exchanged a refresh token confirms the exchange: the client has the new token. */
+  private[server] def heardFrom(playerId: UUID): Unit =
+    if (!unconfirmedExchanges.isEmpty) {
+      val family = unconfirmedExchanges.remove(playerId)
+      if (family != null) onExchangeConfirmed(family)
+    }
+
+  /**
+   * The refresh-token family's login is over (a logout, or a copied token used): every session of
+   * it is told so (SESSION_END, REVOKED) and closed. Their channels' disconnects end the rest.
+   */
+  private[server] def endFamily(family: String): Unit = {
+    channelToPlayer.forEach { (ch: Channel, id: UUID) =>
+      if (family.equals(refreshFamilies.get(id))) {
+        tellSessionEnded(ch, id, SessionEndReason.REVOKED)
+        channelToToken.remove(ch)
+        if (ch.isOpen) ch.close()
+      }
+    }
+  }
+
   /** A TCP channel closed: forget what was kept about it. Returns the player it had logged in as,
     * or null. */
   private[server] def channelClosed(ch: Channel): UUID = {
@@ -188,6 +241,8 @@ final class Sessions(rateLimiter: RateLimiter, replay: ReplayGuard) {
     accountNames.remove(playerId)
     renewals.remove(playerId)
     retiredTokens.remove(playerId)
+    refreshFamilies.remove(playerId)
+    unconfirmedExchanges.remove(playerId)
     replay.removePlayer(playerId)
   }
 
@@ -233,6 +288,8 @@ final class Sessions(rateLimiter: RateLimiter, replay: ReplayGuard) {
     playerTcpAddresses.remove(playerId)
     renewals.remove(playerId)
     retiredTokens.remove(playerId)
+    refreshFamilies.remove(playerId)
+    unconfirmedExchanges.remove(playerId)
     Metrics.sessionsExpired.add(1L, io.opentelemetry.api.common.Attributes.empty())
     // Every channel it logged in on. Only a player who had joined used to have theirs closed: a
     // client that logged in and never joined kept its connection, and the server went on taking

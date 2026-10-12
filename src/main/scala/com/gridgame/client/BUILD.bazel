@@ -27,6 +27,7 @@ scala_library(
         "//src/main/scala/com/gridgame/client/gl",
         "//src/main/scala/com/gridgame/client/i18n",
         "//src/main/scala/com/gridgame/client/input",
+        "//src/main/scala/com/gridgame/client/net",
         "//src/main/scala/com/gridgame/client/render",
         "//src/main/scala/com/gridgame/client/ui",
         "//src/main/scala/com/gridgame/client/ui/screens",

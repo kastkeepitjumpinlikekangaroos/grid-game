@@ -3,7 +3,6 @@ package com.gridgame.common.protocol
 import com.gridgame.common.Constants
 import com.gridgame.common.model.Position
 
-import java.nio.charset.StandardCharsets
 import java.util.UUID
 
 class PlayerJoinPacket(
@@ -74,11 +73,7 @@ class PlayerJoinPacket(
     buffer.putInt(timestamp)
 
     // [37-57] Player name (max 21 bytes)
-    val nameBytes = _playerName.getBytes(StandardCharsets.UTF_8)
-    val nameLength = Math.min(nameBytes.length, 21)
-    buffer.put(nameBytes, 0, nameLength)
-    // Fill remaining name bytes with zeros
-    buffer.put(new Array[Byte](21 - nameLength))
+    SerializeUtil.putText(buffer, _playerName, 21)
 
     // [58] Team ID
     buffer.put(teamId)

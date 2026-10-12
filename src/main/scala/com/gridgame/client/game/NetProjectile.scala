@@ -141,7 +141,10 @@ final class NetProjectile(pid: Int, owner: UUID, x0: Float, y0: Float, dirX0: Fl
     if (world != null) {
       val passes = pDef.passesThroughWalls
       val n = Math.ceil(reach / sub).toInt
-      var i = 1
+      // From the cell a SPAWN put it in, which the server's first tick looks at before it moves it:
+      // a sub-step of half a cell from there is already in the next cell, so a wall right in front
+      // of its shooter was flown through
+      var i = if (nSpawn) 0 else 1
       var struck = false
       while (i <= n && !struck) {
         var d = sub * i

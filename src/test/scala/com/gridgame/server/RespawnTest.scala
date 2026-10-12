@@ -42,6 +42,29 @@ class RespawnTest {
     assertEquals("nothing left to tell anyone", 0, m.instance.playerFlags(p))
   }
 
+  @Test def aRespawningPlayerIsNeverAliveWhereTheyDied(): Unit = {
+    // The respawn healed first and moved the player to their spawn after: for that moment they
+    // stood alive where they died, where the projectile tick, which hands items to the living
+    // within reach, could hand them one lying there — into the inventory the respawn was clearing
+    val world = new WorldData("w", 60, 60, Array.fill(60, 60)(Tile.Grass: Tile), Seq(new Position(50, 50)))
+    val one = new TestMatch(world)
+    var aliveWhereTheyDied = false
+    val p = new Player(java.util.UUID.randomUUID(), "p", new Position(10, 10), 0xFF336699) {
+      override def setHealth(h: Int): Unit = { super.setHealth(h); look() }
+      override def setPosition(pos: Position): Unit = { super.setPosition(pos); look() }
+      private def look(): Unit =
+        if (!isDead && getPosition.getX == 10 && getPosition.getY == 10) aliveWhereTheyDied = true
+    }
+    p.setCharacterId(CharacterId.Gladiator.id)
+    p.setHealth(0)
+    one.instance.registry.add(p)
+    one.instance.killTracker.registerPlayer(p.getId)
+    one.instance.respawn(p.getId)
+    assertEquals((50, 50), one.at(p))
+    assertEquals(p.getMaxHealth, p.getHealth)
+    assertFalse(aliveWhereTheyDied)
+  }
+
   @Test def aRespawnIsAtAFreeSpawnPoint(): Unit = {
     val world = new WorldData("w", 100, 100, Array.fill(100, 100)(Tile.Grass: Tile),
       Seq(new Position(5, 5), new Position(90, 90)))

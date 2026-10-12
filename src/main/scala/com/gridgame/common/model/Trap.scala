@@ -60,7 +60,7 @@ object TrapDef {
 
   val Mine: TrapDef = TrapDef(
     id = TrapType.MINE, name = "Mine", kind = TrapKind.MINE, colorRGB = 0xFFD05030,
-    explosion = Some(ExplosionConfig(45, 15, 3.0f))
+    explosion = Some(ExplosionConfig(55, 27, 3.0f))
   )
 
   val PoisonPod: TrapDef = TrapDef(
@@ -70,7 +70,7 @@ object TrapDef {
 
   val FireRune: TrapDef = TrapDef(
     id = TrapType.FIRE_RUNE, name = "Fire Rune", kind = TrapKind.RUNE, colorRGB = 0xFFFF7722,
-    effects = Seq(Burn(40, 5000, 500))
+    effects = Seq(Burn(71, 5000, 500))
   )
 
   val Snare: TrapDef = TrapDef(
@@ -179,7 +179,11 @@ object TrapPlacement {
       val t = Math.min(reach, i.toDouble)
       val x = Math.round(fromX + ux * t).toInt
       val y = Math.round(fromY + uy * t).toInt
-      if (!world.isWalkable(x, y) || barrierBefore(x, y)) return best
+      // Nor one the straight way to which crosses a wall, which is how the server judges the cell
+      // (isValidTarget). Walked a whole cell at a time along the aim, a throw hopped the corner of
+      // a wall the straight line to where it landed crosses, and the server refused one throw in
+      // twelve over cluttered ground: a trap the player saw land, refused
+      if (!world.isWalkable(x, y) || barrierBefore(x, y) || !pathIsClear(world, fromX, fromY, x, y)) return best
       best = Some(new Position(x, y))
       i += 1
     }
@@ -198,6 +202,29 @@ object TrapPlacement {
     world.isWalkable(x, y) &&
       Teleport.withinReach(x - fromX, y - fromY, maxRange) &&
       pathIsClear(world, fromX, fromY, x, y)
+
+  /**
+   * Server side: [[isValidTarget]] from where the server has the thrower, or from a step on from
+   * there. The client throws from where it has the player, which is a step ahead of the server's
+   * copy while that step's update is still on its way, and the straight way to a cell past the
+   * corner of a wall can be clear from one and cross the wall from the other: from a step behind,
+   * the server refused 1-6% of the throws the client made on the real maps (most on the Lagoon and
+   * the Snowglobe). The range already allows for the step ([[Teleport.withinReach]]).
+   */
+  def isValidTargetNear(world: WorldData, fromX: Int, fromY: Int, x: Int, y: Int, maxRange: Int): Boolean = {
+    if (isValidTarget(world, fromX, fromY, x, y, maxRange)) return true
+    var sx = -1
+    while (sx <= 1) {
+      var sy = -1
+      while (sy <= 1) {
+        if ((sx != 0 || sy != 0) && world.canStep(fromX, fromY, sx, sy) &&
+            isValidTarget(world, fromX + sx, fromY + sy, x, y, maxRange)) return true
+        sy += 1
+      }
+      sx += 1
+    }
+    false
+  }
 
   /** Is every cell on the straight line from (fromX, fromY) to (x, y) one a throw passes over? */
   private def pathIsClear(world: WorldData, fromX: Int, fromY: Int, x: Int, y: Int): Boolean = {

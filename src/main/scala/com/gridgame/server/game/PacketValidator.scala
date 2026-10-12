@@ -157,41 +157,42 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     // Speed check
     val now = System.currentTimeMillis()
     val lastTime: java.lang.Long = lastUpdateTime.put(packet.getPlayerId, now)
-    if (lastTime != null) {
-      // Updates handled in the same millisecond are checked too. Skipping them let the second of
-      // any pair go anywhere: it quietly waved through refused teleports (the client sends those
-      // twice), and any jump a modified client cared to send twice.
-      val deltaMs = Math.max(0L, now - lastTime.longValue())
-      val oldPos = player.getPosition
-      val dx = x - oldPos.getX
-      val dy = y - oldPos.getY
-      val distance = Math.abs(dx.toLong) + Math.abs(dy.toLong) // Long arithmetic to prevent overflow
+    // A player's first update in a match is checked too, from the cell the server put them on as
+    // though no time had passed: a step, or a couple bunched by a lost datagram. It used to be
+    // let through unchecked, and a client's first update could put its player anywhere on the map.
+    // Updates handled in the same millisecond are checked too. Skipping them let the second of
+    // any pair go anywhere: it quietly waved through refused teleports (the client sends those
+    // twice), and any jump a modified client cared to send twice.
+    val deltaMs = if (lastTime == null) 0L else Math.max(0L, now - lastTime.longValue())
+    val oldPos = player.getPosition
+    val dx = x - oldPos.getX
+    val dy = y - oldPos.getY
+    val distance = Math.abs(dx.toLong) + Math.abs(dy.toLong) // Long arithmetic to prevent overflow
 
-      // A phased player (a phase shift, or a dash) walks at twice their pace and through walls,
-      // but not at any speed. The check used to be skipped for them altogether, and for as long
-      // as a phase lasted — five seconds, for the Wraith — a client could put its player anywhere
-      // on the map. A dash, much quicker than a phased walk, has its reach below.
-      val charDef = characterOf(player.getCharacterId)
-      val expectedMaxCells = maxCellsIn(deltaMs, if (charDef != null) charDef.moveSpeed else 1.0f,
-        phased = player.isPhased)
-      if (distance > expectedMaxCells) {
-        // Allow teleport/dash abilities: check if this player's character has TeleportCast or DashBuff
-        // on either Q or E ability, and the jump is within the ability's reach
-        val abilities = if (charDef != null) Seq(charDef.qAbility, charDef.eAbility) else Seq.empty
-        val isAbilityMovement = !attacksLocked && abilities.exists { ability =>
-          ability.castBehavior match {
-            case TeleportCast(maxDistance) => Teleport.withinReach(dx, dy, maxDistance)
-            case DashBuff(maxDistance, _, _) => Teleport.withinReach(dx, dy, maxDistance)
-            case _ => false
-          }
+    // A phased player (a phase shift, or a dash) walks at twice their pace and through walls,
+    // but not at any speed. The check used to be skipped for them altogether, and for as long
+    // as a phase lasted — five seconds, for the Wraith — a client could put its player anywhere
+    // on the map. A dash, much quicker than a phased walk, has its reach below.
+    val charDef = characterOf(player.getCharacterId)
+    val expectedMaxCells = maxCellsIn(deltaMs, if (charDef != null) charDef.moveSpeed else 1.0f,
+      phased = player.isPhased)
+    if (distance > expectedMaxCells) {
+      // Allow teleport/dash abilities: check if this player's character has TeleportCast or DashBuff
+      // on either Q or E ability, and the jump is within the ability's reach
+      val abilities = if (charDef != null) Seq(charDef.qAbility, charDef.eAbility) else Seq.empty
+      val isAbilityMovement = !attacksLocked && abilities.exists { ability =>
+        ability.castBehavior match {
+          case TeleportCast(maxDistance) => Teleport.withinReach(dx, dy, maxDistance)
+          case DashBuff(maxDistance, _, _) => Teleport.withinReach(dx, dy, maxDistance)
+          case _ => false
         }
-        // A star needs no exception here: its item packet moves the player (ClientHandler),
-        // so the client's next update starts from the new cell
-        if (!isAbilityMovement) {
-          System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} speed hack detected: moved $distance cells in ${deltaMs}ms")
-          Metrics.validationFailed.add(1L, Attrs.VfMovementSpeed)
-          return false
-        }
+      }
+      // A star needs no exception here: its item packet moves the player (ClientHandler),
+      // so the client's next update starts from the new cell
+      if (!isAbilityMovement) {
+        System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} speed hack detected: moved $distance cells in ${deltaMs}ms")
+        Metrics.validationFailed.add(1L, Attrs.VfMovementSpeed)
+        return false
       }
     }
 

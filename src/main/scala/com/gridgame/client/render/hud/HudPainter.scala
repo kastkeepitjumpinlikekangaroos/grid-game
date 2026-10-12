@@ -2,6 +2,7 @@ package com.gridgame.client.render
 package hud
 
 import com.gridgame.client.i18n.Messages
+import com.gridgame.common.Constants
 import com.gridgame.common.model._
 
 import com.gridgame.client.render.world.ItemPainter
@@ -24,6 +25,8 @@ private[render] final class HudPainter(ctx: RenderContext, abilityBar: AbilityBa
   // Cached inventory slot counts — avoids double getItemCount calls and per-frame toString
   private val _cachedSlotCounts = new Array[Int](5) // one per inventory slot
   private val _cachedSlotCountStrs = new Array[String](5)
+  // How many we carry of the most the server lets us, beside the slots ("7/10")
+  private var _cachedTotal = -1; private var _cachedTotalStr = ""
 
   def draw(screenW: Int, screenH: Int): Unit = {
     // Dark backing panel behind the entire bottom HUD bar
@@ -36,6 +39,7 @@ private[render] final class HudPainter(ctx: RenderContext, abilityBar: AbilityBa
     shapeBatch.strokeLine(0f, screenH - hudBarH, screenW.toFloat, screenH - hudBarH, 1f, 1f, 1f, 1f, 0.06f)
 
     renderInventory(screenW, screenH)
+    renderInventoryFull(screenW, screenH, hudBarH)
     abilityBar.draw(screenW, screenH)
     renderChargeBar(screenW, screenH)
     matchInfo.draw(screenW, screenH)
@@ -69,6 +73,7 @@ private[render] final class HudPainter(ctx: RenderContext, abilityBar: AbilityBa
     val startY = screenH - slotSize - 14f
 
     // Compute and cache slot counts once per frame
+    var total = 0
     var i = 0
     while (i < inventorySlotTypes.length) {
       val count = client.getItemCount(inventorySlotTypes(i)._1.id)
@@ -76,7 +81,12 @@ private[render] final class HudPainter(ctx: RenderContext, abilityBar: AbilityBa
         _cachedSlotCounts(i) = count
         _cachedSlotCountStrs(i) = if (count > 0) count.toString else null
       }
+      total += count
       i += 1
+    }
+    if (total != _cachedTotal) {
+      _cachedTotal = total
+      _cachedTotalStr = s"$total/${Constants.MAX_INVENTORY_SIZE}"
     }
 
     // Draw all slot backgrounds + icons (shapes)
@@ -129,6 +139,32 @@ private[render] final class HudPainter(ctx: RenderContext, abilityBar: AbilityBa
         if (count > 0) 0.9f else 0.43f, if (count > 0) 0.9f else 0.43f, if (count > 0) 0.9f else 0.47f, 1f)
       i += 1
     }
+
+    // How many we carry of the most the server lets us: past it, it leaves items on the ground
+    if (total > 0) {
+      val full = total >= Constants.MAX_INVENTORY_SIZE
+      fontSmall.drawText(spriteBatch, _cachedTotalStr, startX + totalW + 12f,
+        startY + (slotSize - fontSmall.charHeight) / 2f,
+        if (full) 1f else 0.75f, if (full) 0.72f else 0.75f, if (full) 0.25f else 0.8f, if (full) 1f else 0.8f)
+    }
+  }
+
+  /** Said while an item lies within our reach that the server won't give us because we carry as
+    * many as it allows (Items.isInventoryFull): it stays on the ground until we use one of ours.
+    * Nothing said it, and a full inventory looked like an item that couldn't be picked up. */
+  private def renderInventoryFull(screenW: Int, screenH: Int, hudBarH: Float): Unit = {
+    if (_cachedTotal < Constants.MAX_INVENTORY_SIZE || client.getIsDead || !client.itemWithinReach) return
+    val text = Messages.t("Inventory full: use an item to make room")
+    val textW = fontMedium.measureWidth(text)
+    val boxW = textW + 36f
+    val boxH = 36f
+    val boxX = screenW / 2f - boxW / 2f
+    val boxY = screenH - hudBarH - boxH - 14f
+    beginShapes()
+    shapeBatch.fillRoundedRect(boxX, boxY, boxW, boxH, 8f, 0.10f, 0.07f, 0.02f, 0.85f)
+    shapeBatch.strokeRect(boxX, boxY, boxW, boxH, 1f, 1f, 0.72f, 0.25f, 0.6f)
+    beginSprites()
+    fontMedium.drawTextOutlined(spriteBatch, text, screenW / 2f - textW / 2f, boxY + (boxH - fontMedium.charHeight) / 2f, 1f, 0.85f, 0.55f)
   }
 
   private def renderChargeBar(screenW: Int, screenH: Int): Unit = {

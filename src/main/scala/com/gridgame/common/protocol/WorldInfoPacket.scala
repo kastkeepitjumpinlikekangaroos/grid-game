@@ -2,7 +2,6 @@ package com.gridgame.common.protocol
 
 import com.gridgame.common.Constants
 
-import java.nio.charset.StandardCharsets
 import java.util.UUID
 
 class WorldInfoPacket(
@@ -45,11 +44,7 @@ class WorldInfoPacket(
     buffer.putInt(timestamp)
 
     // [37-63] World file name (max 27 bytes)
-    val worldBytes = _worldFile.getBytes(StandardCharsets.UTF_8)
-    val worldLength = Math.min(worldBytes.length, 27)
-    buffer.put(worldBytes, 0, worldLength)
-    // Fill remaining bytes with zeros
-    buffer.put(new Array[Byte](27 - worldLength))
+    SerializeUtil.putText(buffer, _worldFile, 27)
 
     buffer.array().clone()
   }

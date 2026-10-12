@@ -11,9 +11,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import scala.jdk.CollectionConverters._
 import scala.util.Random
 
-sealed trait ItemEvent
-case class ItemSpawned(item: Item) extends ItemEvent
-case class ItemPickedUp(item: Item, playerId: UUID) extends ItemEvent
+case class ItemPickedUp(item: Item, playerId: UUID)
 
 class ItemManager {
   private val items = new ConcurrentHashMap[Int, Item]()
@@ -56,13 +54,22 @@ class ItemManager {
     }
   }
 
-  /** Put an item on the ground where it says it is. */
+  /** Put an item on the ground where it says it is: from here on it can be picked up. */
   private[server] def place(item: Item): Unit = {
     items.put(item.id, item)
     addToGrid(item)
   }
 
-  def spawnRandomItem(world: WorldData): Option[ItemSpawned] = {
+  /**
+   * A new item on a random open cell of `world`, not yet on the ground: the caller tells everyone
+   * it is there (its SPAWN), and only then [[place]]s it. Placed first, a pickup made while the
+   * SPAWN was still going out could send its PICKUP ahead of it, and a client that heard them in
+   * that order kept the item on its ground for good, where nobody could pick it up. That was no
+   * rare coincidence: the spawner runs every minute, a multiple of the bots' tick and of the
+   * projectile tick, so a tick falls the same few milliseconds after every batch all match.
+   * None while the world already holds `maxWorldItems`.
+   */
+  def randomItem(world: WorldData): Option[Item] = {
     if (items.size() >= maxWorldItems) return None
     // Try to find a random walkable tile
     val maxAttempts = 100
@@ -73,19 +80,22 @@ class ItemManager {
       if (world.isWalkable(x, y)) {
         val id = nextId.getAndIncrement() & 0x7FFFFFFF
         val itemType = ItemType.spawnable(random.nextInt(ItemType.spawnable.size))
-        val item = new Item(id, x, y, itemType)
-        items.put(id, item)
-        addToGrid(item)
-        return Some(ItemSpawned(item))
+        return Some(new Item(id, x, y, itemType))
       }
       attempt += 1
     }
     None
   }
 
+  /** Give the player an item within ITEM_PICKUP_RADIUS of (x, y), if they have room for it. */
   def checkPickup(playerId: UUID, x: Int, y: Int): Option[ItemPickedUp] = {
     val playerInv = inventories.computeIfAbsent(playerId, _ => new ConcurrentHashMap[Int, Item]())
+    // Asked from more than one thread for the same player (their steps, the projectile tick), so
+    // whether there is room and taking an item are one step: two at once could take an eleventh
+    playerInv.synchronized { pickUp(playerId, playerInv, x, y) }
+  }
 
+  private def pickUp(playerId: UUID, playerInv: ConcurrentHashMap[Int, Item], x: Int, y: Int): Option[ItemPickedUp] = {
     // Enforce inventory size limit
     if (playerInv.size() >= Constants.MAX_INVENTORY_SIZE) return None
 

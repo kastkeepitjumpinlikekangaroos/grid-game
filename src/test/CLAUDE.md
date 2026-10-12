@@ -9,8 +9,11 @@ Each test file is its own `scala_junit_test` target, so each runs in a JVM of it
 file is a line in the list in its directory's BUILD.bazel (its target name, its file, and any
 `data` it reads). The suites mirror the source tree:
 
-- `common/` — the model, the wire protocol (every packet round-trips in `PacketRoundTripTest`),
-  telemetry's exporters giving up on a collector and trying it again (`ExportGiveUpGateTest`),
+- `common/` — the model, the wire protocol (every packet round-trips in `PacketRoundTripTest`; a
+  server's identity is written as SSH writes a host key's in `ServerIdentityTest`),
+  telemetry looking for the collector once at startup (`CollectorProbeTest`, and
+  `TelemetryWithoutCollectorTest` / `TelemetryWithCollectorTest`, a JVM each since `init` takes
+  effect once) and its exporters giving up for good on one that goes away (`ExportGiveUpGateTest`),
   the roster's data (`CharacterRosterTest`, every sprite sheet within its tile too), and the maps
   (`WorldMapsTest`: spawns on open ground, all open ground one region). `ProjectileDefRegistryTest`
   must be the first thing in its JVM to look a projectile up, which is why it is a target, and a
@@ -31,10 +34,21 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   `SessionTest` renews a session an hour in (its token aged by hand, then `GameServer.renewSessions`)
   and reads what the server wrote still signed, to see which token signed it;
   `RateLimiterTest`; `ReconnectTest` for rejoins, logins over a live connection and disconnects;
+  `RefreshTokensTest` for refresh tokens in a database of its own (exchanged once, a copy that comes
+  back ending its family, a lost reply's retry, a month from the password, hashes only) and
+  `StayLoggedInTest` for staying logged in through the real TCP handler, each test's connections
+  from addresses of their own (`127.0.x.y`) so the failed logins one counts don't hold up another;
+  `TlsProviderTest` for the server's identity (made once, kept, the same at every start);
   `ChatTest` for who hears what; `RankedQueueTest` for matchmaking, run by hand on a clock of the
   test's own (`RankedQueue.checkQueue(now)`), so a minute's wait takes no time; and
   `SpawnRequestTest` for what the server takes from a spawn request (heading, charge, who may
-  fire). On the client, `ClientNetworkTest` feeds its handlers through an `EmbeddedChannel`.
+  fire). On the client, `ClientNetworkTest` feeds its handlers through an `EmbeddedChannel`,
+  `GameClientLoginTest` is a refresh login and a logout as the client sends and hears them,
+  `LoginStoreTest` and `KnownServersTest` (client/net) are "Remember me"'s file and the servers met,
+  in a folder of the test's own, `ServerPinningTest` holds real TLS handshakes over loopback to the
+  key met first (keys made by keytool; a refused server gets no byte of the login, however eager
+  the client), and `ClientLoginFlowTest` is the app logging in and staying logged in, on clients
+  that connect nowhere (`ClientMain.newGameClient` and `retryWaitMs` are its seams).
 - Projectiles in flight: `ProjectileTicksTest` (server) pins the tick every projectile packet
   carries. `ProjectileFlightTest` (client) sends shots as the server flies and stamps them, over a
   network with latency, jitter and loss, and draws frames at 60 fps on the test's own clock
@@ -61,10 +75,12 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   is the other end: a projectile the server tells us of knows who threw it.
 - `client/` — `ClientTestKit.scala`: `TestClient` is a `GameClient` whose packets go to a
   capture (`GameClient.packetSink`) and which is handed the server's with `processPacket`.
-  The screen tests (`LobbyRoomScreenTest`, `ScoreboardScreenTest`, `CharacterSelectionPanelTest`)
-  build the real JavaFX screens, never shown, on the FX thread via `Fx { ... }`, and click
-  them. They set `GRIDGAME_AUDIO=off`, and they must not call `Messages.setLocale`, which would
-  save a language to the player's own settings. `GameClientBlastTest` is what the client records
+  The screen tests (`LobbyRoomScreenTest`, `ScoreboardScreenTest`, `CharacterSelectionPanelTest`,
+  `WelcomeScreenTest`) build the real JavaFX screens, never shown, on the FX thread via `Fx { ... }`,
+  and click them. They set `GRIDGAME_AUDIO=off`, and they must not call `Messages.setLocale`, which
+  would save a language to the player's own settings, nor log in through the app, which would keep
+  a login in the player's own "Remember me" file: `WelcomeScreenTest`'s app only notes down what the
+  screen asks of it. `GameClientBlastTest` is what the client records
   of a blast: one per explosion or splash (a slam is one, not an explosion and a splash; the HITs of
   everyone a splash caught are the same one), who threw it, and none where the terrain stopped a
   splash that goes off only at the end of its range. `GameClientSpawnRequestsTest` is which of our
@@ -92,6 +108,49 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   match starting with each team in its own half.
 - `tools/` — `DocsRosterTest` does the same for the website: every character card's role and
   health must be what the roster says (see *Website*).
+
+## Fuzz and property suites
+
+Seeded random runs, with the rules checked after every step. A failure names its seed and step
+and lists the actions that led to it; each run prints a tally of what it got up to (shots taken,
+deaths, matches started, packets from inside a match), so a run whose every request was refused
+shows as one. A server fuzz run throws stdout away and keeps stderr (`ServerTestKit.quietly`,
+`captureStderr`; Scala's `println` goes by `Console.out`, not `System.out`, so both are swapped):
+the server says something about nearly everything it is sent, and stderr is where it reports what
+it caught and carried on from (a tick's error, a bot's), which fails the run.
+
+- `MatchFuzzTest` (server): a `TestMatch` of six players, and two bots in some runs, on cluttered
+  ground: thousands of requests — steps, jumps, shots from every attack (some from nowhere, of the
+  wrong type, or with no heading), traps, items, rejoins, leaving — between its ticks, respawns and
+  time passing (cooldowns cleared and effects worn off by hand: every rule runs on the wall clock),
+  in a free-for-all, Teams, both openings and practice. Nothing throws; health stays in bounds;
+  everyone stays on the map; nobody is moved onto a cell they can't stand on unless phased; the
+  dead and the held aren't moved by their own client; an item is on the ground or in one inventory,
+  ten at most; thirty shots in flight at most, every one taken leaving from within reach of its
+  shooter; a trap to a cell; every death scored once. It found the NaN spawn on its own.
+- `HostileClientFuzzTest` (server): logged-in `TestSession`s sending every packet type with its
+  fields at random, mostly straight into `GameServer.handleIncomingPacket` (whatever throws reaches
+  the test) and the rest signed through the real TCP and UDP handlers; lobbies, practice and ranked
+  matches start along the way and run on their own threads. The lobbies hang together after every
+  packet: one lobby or none, which counts them; a waiting lobby keeps its host and no more seats
+  taken than it has; nobody queued for ranked from inside one; every match a lobby in a game's.
+- `BotMatchSoakTest` (server): a real match of eight bots on every map at once, free-for-all and
+  Teams, started by `MatchLauncher` with the opening skipped, sampled every 25ms for eight seconds,
+  then ended and scored through `MatchEnd`.
+- `ClientPacketFuzzTest` (client): server packets at random into a `TestClient` in a match, while
+  its player acts and frames are flown, a new match starting whenever one ends. Nothing it hears
+  may throw (`GameClient.processAll` loses only the packet that does).
+- `PacketFuzzTest` (common/protocol): any 64 bytes are read as a packet or refused as malformed,
+  and a packet read is the same written and read again; signatures over random and tampered bytes.
+- `ReplayGuardModelTest` (server): long streams of packet numbers (late, twice, lost, gaps, across
+  the 31-bit wrap) against a model of what the window promises.
+- `PlacementAgreementTest` (common/model): what the client picks for a trap, a blink or a shove,
+  the server takes — on cluttered ground and every map, from where the client is and a step behind.
+- `PlayerGridTest` (server, in package `server.game` for `PlayerGrid`): the projectile tick's grid
+  shows a shot everyone the roster's furthest reach covers, and a blast everyone in its radius.
+
+To extend one, give its run another action and say what rule it must keep; keep a target under
+about ten seconds.
 
 **Effects nothing in the roster has yet** (a stun, a poison, a slam that pushes or pulls) are
 pinned with `ProjectileDef`s registered by the test itself, on ids the game doesn't use — see

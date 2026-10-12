@@ -72,6 +72,90 @@ class CombatTest {
     assertTrue("out first", moves.head.getDx > 0 && moves.last.getDx < 0)
   }
 
+  /** Every type an attack in the roster throws. */
+  private val thrown: Seq[Byte] = CharacterDef.all
+    .flatMap(c => Seq(c.primaryProjectileType, c.qAbility.projectileType, c.eAbility.projectileType))
+    .filter(_ >= 0).distinct
+
+  @Test def aShotStopsAtAWallItsShooterStandsAgainst(): Unit = {
+    // A shot starts a cell out from its shooter, and the sub-steps it flies in were only looked at
+    // where each ended: from that first cell, a step of exactly half a cell (a speed of 0.5 or 1.0
+    // a tick) put it straight into the next one. So fired east or south, fifteen of the roster's
+    // types flew through a fence, or a wall a cell thick, that their shooter stood against — the
+    // Sniper Beam for 29 cells — while the aim lane and the bots' line of fire had them stop there.
+    val directions = Seq((1f, 0f), (0f, 1f), (-1f, 0f), (0f, -1f), (0.7071068f, 0.7071068f),
+      (-0.7071068f, 0.7071068f), (0.7071068f, -0.7071068f), (-0.7071068f, -0.7071068f))
+    val failures = scala.collection.mutable.Buffer[String]()
+    for (t <- thrown; tile <- Seq(Tile.Fence, Tile.Wall)) {
+      val d = ProjectileDef.get(t)
+      val flies = d.speedMultiplier > 0f || d.chargeSpeedScaling.isDefined
+      if (flies && (tile == Tile.Fence || !d.passesThroughWalls)) {
+        val charges = if (d.chargeSpeedScaling.isDefined) Seq(0, 25, 50, 75, 100) else Seq(0)
+        val m = new TestMatch()
+        val shooter = m.join(CharacterId.Soldier, 30, 30)
+        for ((dx, dy) <- directions; charge <- charges) {
+          val (wx, wy) = (30 + Math.round(dx), 30 + Math.round(dy))
+          m.world.setTile(wx, wy, tile)
+          val shot = m.instance.projectileManager.spawnProjectile(shooter.getId, 30, 30, dx, dy,
+            shooter.getColorRGB, charge, t)
+          // How far into the wall's cell, along the shot's own line, it ever got: no further than
+          // the cell's far edge (half a cell past it, along a row; to its far corner diagonally)
+          val farEdge = if (dx != 0f && dy != 0f) 1.5f * Math.sqrt(2).toFloat else 1.5f
+          var furthest = 0f
+          var ticks = 0
+          while (m.instance.projectileManager.getProjectile(shot.id) != null && ticks < 400) {
+            m.tick()
+            ticks += 1
+            furthest = Math.max(furthest, (shot.getX - 30) * dx + (shot.getY - 30) * dy)
+          }
+          if (furthest > farEdge + 0.01f)
+            failures += s"${d.name} (speed ${d.effectiveSpeed(charge)}) along ($dx, $dy) through a $tile: $furthest"
+          m.world.setTile(wx, wy, Tile.Grass)
+        }
+      }
+    }
+    assertTrue(failures.mkString("\n"), failures.isEmpty)
+  }
+
+  @Test def nobodyIsHitThroughAWall(): Unit = {
+    // A hit radius (1.8 to 3.5 cells) reaches past a wall right in front of a player. A shot drawn
+    // stopping at a fence hit whoever stood behind it: from a cell behind, 26 of the roster's
+    // 48 single-target shots did. Like a barrier (BarrierTest), a wall shelters whoever is behind it.
+    val failures = scala.collection.mutable.Buffer[String]()
+    for (t <- thrown; behind <- 1 to 2) {
+      val d = ProjectileDef.get(t)
+      if (d.speedMultiplier > 0f && !d.passesThroughWalls && !d.passesThroughPlayers && !d.isExplosive &&
+          d.aoeOnHit.isEmpty && d.aoeOnMaxRange.isEmpty && d.maxRange >= 8) {
+        val m = new TestMatch()
+        val shooter = m.join(CharacterId.Soldier, 20, 30)
+        for (y <- 0 until m.world.height) m.world.setTile(25, y, Tile.Fence)
+        val sheltered = m.join(CharacterId.Gladiator, 25 + behind, 30)
+        m.tickUntilGone(m.launch(shooter, t, 1f, 0f))
+        if (sheltered.getHealth < sheltered.getMaxHealth) failures += s"${d.name} from $behind behind the fence"
+      }
+    }
+    assertTrue(failures.mkString("\n"), failures.isEmpty)
+  }
+
+  @Test def aWallDoesNotShelterAnyoneFromWhatFliesThroughIt(): Unit = {
+    // The Reaper's scythe passes through walls, and its reach (2.8) with it
+    val reaper = m.join(CharacterId.Reaper, 20, 30)
+    for (y <- 0 until m.world.height) m.world.setTile(25, y, Tile.Wall)
+    val behind = m.join(CharacterId.Gladiator, 26, 30)
+    m.tickUntilGone(m.launch(reaper, ProjectileType.REAP, 1f, 0f))
+    assertTrue(behind.getHealth < behind.getMaxHealth)
+  }
+
+  @Test def someoneStandingInAFencePutDownOnThemIsStillHit(): Unit = {
+    // A fence can go down on an occupied cell. Its own cell is no shelter to whoever stands in it,
+    // or a fence dropped on yourself would make you unhittable
+    val shooter = m.join(CharacterId.Soldier, 20, 30)
+    val boxedIn = m.join(CharacterId.Gladiator, 26, 30)
+    m.world.setTile(26, 30, Tile.Fence)
+    m.tickUntilGone(m.launch(shooter, ProjectileType.BULLET, 1f, 0f))
+    assertTrue(boxedIn.getHealth < boxedIn.getMaxHealth)
+  }
+
   // --- Pierce ---
 
   @Test def aPiercingShotPassesThroughOnePlayerAndStopsAtTheNext(): Unit = {
@@ -90,6 +174,21 @@ class CombatTest {
     assertEquals("the second hit used it up", full, c.getHealth)
     // Everyone is told the first hit was a pierce, so their client keeps drawing the arrow
     assertEquals(Seq((a.getId, ProjectileAction.PIERCE), (b.getId, ProjectileAction.HIT)), hitsOn(m.udpSent(c)))
+  }
+
+  @Test def aShotStrikesTheNearestOfThoseItReaches(): Unit = {
+    // A hit radius takes in two players one behind the other the moment a shot leaves its shooter.
+    // It struck whichever the grid listed last: fired east, the one in front was passed through
+    // untouched and the one behind them hit
+    for ((from, near, far, dx) <- Seq((5, 7, 8, 1f), (10, 8, 7, -1f), (20, 22, 23, 1f), (30, 28, 27, -1f))) {
+      val m = new TestMatch()
+      val shooter = m.join(CharacterId.Soldier, from, 30)
+      val inFront = m.join(CharacterId.Gladiator, near, 30)
+      val behind = m.join(CharacterId.Gladiator, far, 30)
+      m.tickUntilGone(m.launch(shooter, ProjectileType.BULLET, dx, 0f))
+      assertTrue(s"fired from $from: the one in front, at $near", inFront.getHealth < inFront.getMaxHealth)
+      assertEquals(s"fired from $from: not the one behind, at $far", behind.getMaxHealth, behind.getHealth)
+    }
   }
 
   @Test def aShotWithoutPierceStopsAtTheFirstPlayer(): Unit = {

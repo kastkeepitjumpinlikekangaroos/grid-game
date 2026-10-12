@@ -74,6 +74,8 @@ class OnHitEffectsTest {
     m.fire(tidecaller, AttackSlot.Q, ProjectileType.TIDAL_WAVE, headings)
   }
 
+  private def waveDamage: Int = ProjectileDef.get(ProjectileType.TIDAL_WAVE).damage
+
   /** How many of the projectiles in `packets` struck the player. */
   private def hitsOn(packets: Seq[Packet], p: Player): Int =
     (m.projectileEvents(packets, ProjectileAction.HIT) ++ m.projectileEvents(packets, ProjectileAction.PIERCE))
@@ -91,7 +93,7 @@ class OnHitEffectsTest {
     assertEquals("all five waves struck", 5, hitsOn(m.udpSent(tidecaller), target))
     assertEquals("and threw them three cells, once", (15, 30), m.at(target))
     assertEquals(1, target.getKnockbacks)
-    assertEquals("each dealt its damage", target.getMaxHealth - 5 * 10, target.getHealth)
+    assertEquals("each dealt its damage", target.getMaxHealth - 5 * waveDamage, target.getHealth)
   }
 
   @Test def theRestOfACastFliesThroughWhoItPushed(): Unit = {
@@ -113,7 +115,7 @@ class OnHitEffectsTest {
     m.tickUntilGone(first)
     m.tickUntilGone(second)
     assertEquals((17, 30), m.at(target))
-    assertEquals("struck by the first alone", target.getMaxHealth - 10, target.getHealth)
+    assertEquals("struck by the first alone", target.getMaxHealth - waveDamage, target.getHealth)
   }
 
   @Test def eachCastPushesAgain(): Unit = {

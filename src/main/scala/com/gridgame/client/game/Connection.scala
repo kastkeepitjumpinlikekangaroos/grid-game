@@ -1,6 +1,6 @@
 package com.gridgame.client.game
 
-import com.gridgame.client.net.NetworkThread
+import com.gridgame.client.net.{KnownServers, NetworkThread}
 import com.gridgame.common.Constants
 import com.gridgame.common.model._
 import com.gridgame.common.observability.Metrics
@@ -14,10 +14,14 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * The connection to the server: connecting and logging in, the session token, the heartbeat, and
- * the packet thread, which takes the server's packets off the network thread's queue and hands
- * each to [[GameClient.processPacket]]. Everything the client sends goes through [[send]], which
- * a test points somewhere else ([[packetSink]]).
+ * The connection to the server: connecting and logging in (with a password, or with a refresh
+ * token), the session token, the heartbeat, and the packet thread, which takes the server's packets
+ * off the network thread's queue and hands each to [[GameClient.processPacket]]. Everything the
+ * client sends goes through [[send]], which a test points somewhere else ([[packetSink]]).
+ *
+ * What to do with a refresh token is the app's (ClientMain: kept for as long as the client runs, and
+ * on disk if the player asked to be remembered); it is handed each one as it arrives
+ * ([[refreshTokenListener]]).
  */
 trait Connection { this: GameClient =>
   private var networkThread: NetworkThread = _
@@ -26,6 +30,11 @@ trait Connection { this: GameClient =>
 
   // Where outgoing packets go: the network thread, or a test capturing them
   @volatile private[client] var packetSink: Packet => Unit = _
+
+  /** The servers met before and their identities, which a server is held to before anything is sent
+    * (NetworkThread): the app gives its clients the player's own; any other client keeps its own
+    * in memory, so a dev tool never adds to the player's. */
+  @volatile var knownServers: KnownServers = KnownServers.inMemory()
 
   private[game] def send(packet: Packet): Unit = {
     val sink = packetSink
@@ -37,6 +46,10 @@ trait Connection { this: GameClient =>
   private var packetProcessor: Thread = _
 
   @volatile var authResponseListener: (Boolean, UUID, String) => Unit = _
+  /** A refresh token from the server, and when its login runs out (epoch ms): called on the packet
+    * thread, before the AUTH_RESPONSE behind it is handled, so the token is kept by the time the
+    * client acts on the answer and is first heard on the session (which gives up the old one). */
+  @volatile var refreshTokenListener: (Array[Byte], Long) => Unit = _
   // Disconnect listener (e.g. for UI to show reconnection message)
   @volatile var disconnectListener: () => Unit = _
 
@@ -44,7 +57,8 @@ trait Connection { this: GameClient =>
     try {
       sequenceNumber.set(0)
       disconnected.set(false)
-      networkThread = new NetworkThread(serverHost, serverPort, enqueuePacket, () => sendHeartbeat())
+      networkThread = new NetworkThread(serverHost, serverPort, enqueuePacket, () => sendHeartbeat(),
+        knownServers = knownServers)
       running = true
 
       // Wire disconnect callback from network thread
@@ -97,10 +111,31 @@ trait Connection { this: GameClient =>
     send(packet)
   }
 
+  /** Log in with the refresh token an earlier login was given, instead of a password. */
+  def sendRefreshLogin(refreshToken: Array[Byte]): Unit =
+    send(new AuthRequestPacket(sequenceNumber.getAndIncrement(), AuthAction.REFRESH, refreshToken))
+
+  /** End the login a refresh token belongs to, on the server: the token logs nobody in again, and the
+    * server closes every session of it, this one too. Nothing comes back. */
+  def sendLogout(refreshToken: Array[Byte]): Unit =
+    if (packetSink != null || networkThread != null) {
+      send(new AuthRequestPacket(sequenceNumber.getAndIncrement(), AuthAction.LOGOUT, refreshToken))
+    }
+
   private[game] def handleAuthResponse(packet: AuthResponsePacket): Unit =
     if (authResponseListener != null) {
       authResponseListener(packet.getSuccess, packet.getAssignedUUID, packet.getMessage)
     }
+
+  private[game] def handleRefreshToken(packet: RefreshTokenPacket): Unit = {
+    val listener = refreshTokenListener
+    if (listener != null) listener(packet.getRefreshToken, packet.getExpiresAt)
+  }
+
+  /** Why the server ended the session, if it said (SessionEndReason): read once the connection has
+    * dropped, to tell being logged in elsewhere or logged out from losing the connection. */
+  def sessionEndReason: Byte =
+    if (networkThread == null) SessionEndReason.NONE else networkThread.sessionEndReason
 
   /** The token every packet is signed with from now on: the login's, or a renewal's an hour on.
     * The network thread has taken it up already, as it read it (NetworkThread.takeSessionToken):
@@ -161,6 +196,28 @@ trait Connection { this: GameClient =>
     }
   }
 
+  /**
+   * Hand a batch of the server's packets to processPacket, in order: the packet thread takes them
+   * off the queue as many at a time as have arrived. One that throws, or whose listener throws, is
+   * reported and the rest of the batch still handled. It used to be caught for the batch, which
+   * lost every packet queued behind it — and a match arrives as one batch (its start, the world,
+   * where everyone is, the items, the opening), so a screen's listener throwing as it began left
+   * us where the last match had us and everyone else unseen. One must not kill the thread either:
+   * every screen after it would stop hearing the server.
+   */
+  private[client] def processAll(batch: java.util.List[Packet]): Unit = {
+    var i = 0
+    while (i < batch.size()) {
+      try processPacket(batch.get(i))
+      catch {
+        case scala.util.control.NonFatal(e) =>
+          System.err.println(s"GameClient: Error processing packet - $e")
+          e.printStackTrace()
+      }
+      i += 1
+    }
+  }
+
   private def startPacketProcessor(): Unit = {
     val processor = new Thread(new Runnable {
       private val drainBuffer = new java.util.ArrayList[Packet](64)
@@ -168,23 +225,13 @@ trait Connection { this: GameClient =>
         while (running) {
           try {
             // Block for first packet, then drain all available
-            val first = incomingPackets.take()
-            processPacket(first)
             drainBuffer.clear()
+            drainBuffer.add(incomingPackets.take())
             incomingPackets.drainTo(drainBuffer)
-            var i = 0
-            while (i < drainBuffer.size()) {
-              processPacket(drainBuffer.get(i))
-              i += 1
-            }
+            processAll(drainBuffer)
           } catch {
             case _: InterruptedException =>
               return
-            case scala.util.control.NonFatal(e) =>
-              // One bad packet or listener must not kill this thread; every screen after it
-              // would stop responding to the server.
-              System.err.println(s"GameClient: Error processing packet - $e")
-              e.printStackTrace()
           }
         }
       }

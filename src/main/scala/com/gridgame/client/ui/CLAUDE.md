@@ -2,7 +2,9 @@
 
 The menus, in JavaFX. `ClientMain` (in client/) is the app: it starts up, switches screens
 (`switchScreen`, which stops the last screen's animations and drops the client listeners it set),
-connects, and shuts down. Each screen is a class in `screens/` with a `show(stage)`, and reaches the
+connects, logs in and stays logged in (the saved login, design/networking.md, *Staying logged
+in*), and shuts down. It shows the stage once, as it starts; no screen shows it, so a screen test
+opens no window. Each screen is a class in `screens/` with a `show(stage)`, and reaches the
 app only through `screens/Screens` — the client, `switchScreen`, the hook that stops it
 (`stopCurrentScreen`) and every other screen's `show`. `ClientMain` implements it, so a screen test
 can drive a real screen through `app.showLobbyRoom(stage)` and the like.
@@ -28,6 +30,14 @@ can drive a real screen through `app.showLobbyRoom(stage)` and the like.
   few whole sheets that animate.
 - **UiActivity** — whether anybody is using the window (animations hold still when not).
 - **ViewportCache**, **LoginForm**.
+
+`screens/WelcomeScreen` is the login screen: the form (with "Remember me", and the last login's name
+and server filled in) or, when the app holds a saved login, its card instead — who, on which
+server, "Continue as ...", which the app presses for the player as it starts with a remembered
+login and once the connection has dropped, and "Use another account". A server that isn't the one
+met at its address before gets a card of its own (`showServerChanged`): nothing was sent, both
+identities to compare, Back (the default) or "Trust the new identity". The profile has Log out.
+A tick box is styled as a field is (`.check-box` in theme.css).
 
 `screens/Chrome` frames every screen after login the way a web site's pages share a header: the sky
 and a top bar with the game's name, a tab per place to go (Lobbies, Practice, Ranked,

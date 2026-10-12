@@ -44,6 +44,8 @@ private[client] object Icons {
   val Play = Icon("M7 4l13 8-13 8z", filled = true)
   val MapPin = Icon("M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z M9 10a3 3 0 1 0 6 0a3 3 0 1 0-6 0")
   val Chat = Icon("M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z")
+  val LogOut = Icon("M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9")
+  val Alert = Icon("M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z M12 9v4 M12 17h.01")
 
   /** An icon `size` pixels square in `colour`: stroked, or filled if it is a solid shape. */
   def node(icon: Icon, size: Double, colour: Color): Group = {

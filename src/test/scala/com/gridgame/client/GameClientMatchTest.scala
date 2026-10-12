@@ -24,6 +24,21 @@ class GameClientMatchTest {
     assertEquals(ClientState.PLAYING, c.clientState)
   }
 
+  @Test def aListenerThatThrowsAsTheMatchStartsCostsNoneOfTheMatch(): Unit = {
+    // A match arrives as one batch on the packet thread: its start, then where everyone is. The
+    // batch was caught as a whole, so a screen's listener throwing at the start lost the rest of
+    // it: we stayed where the last match had us, and nobody else was there.
+    c.gameStartingListener = () => throw new IllegalStateException("a screen's listener, broken")
+    val other = UUID.randomUUID()
+    c.processAll(java.util.List.of[Packet](
+      new LobbyActionPacket(1, t.id, Packet.getCurrentTimestamp, LobbyAction.GAME_STARTING, 7.toShort),
+      new PlayerJoinPacket(2, t.id, Packet.getCurrentTimestamp, new Position(12, 34), 0xFF00AA00, "me", 100, 0.toByte, 0.toByte),
+      new PlayerJoinPacket(3, other, Packet.getCurrentTimestamp, new Position(40, 40), 0xFF00AA00, "them", 100, 0.toByte, 0.toByte)))
+    assertEquals(ClientState.PLAYING, c.clientState)
+    assertEquals("placed where the server put us", (12, 34), t.at)
+    assertTrue("and everyone else is there", c.getPlayers.containsKey(other))
+  }
+
   @Test def ourTeamComesFromOurJoin(): Unit = {
     t.startMatch(spawn = (5, 5), team = 2)
     assertEquals(2.toByte, c.localTeamId)
@@ -180,6 +195,38 @@ class GameClientMatchTest {
     assertEquals(1, c.getItemCount(ItemType.Gem.id))
     assertEquals(0, c.getItemCount(ItemType.Heart.id))
     assertTrue("both are gone from the ground", c.getItems.isEmpty)
+  }
+
+  @Test def anItemPickedUpBeforeWeHeardOfItStaysOffTheGround(): Unit = {
+    // The server sends an item's appearance and its pickup from different threads, and a pickup
+    // made the moment it appeared can reach us first: the SPAWN after it left an item on the
+    // ground for the rest of the match that the server no longer had, and nobody could pick up
+    t.startMatch(spawn = (5, 5))
+    t.item(ItemAction.PICKUP, 7, ItemType.Star, who = UUID.randomUUID())
+    t.item(ItemAction.SPAWN, 7, ItemType.Star)
+    assertTrue(c.getItems.isEmpty)
+    // The next match numbers its items from 1 again
+    t.startMatch(spawn = (6, 6))
+    t.item(ItemAction.SPAWN, 7, ItemType.Star)
+    assertEquals(1, c.getItems.size)
+  }
+
+  @Test def aFullInventoryIsToldFromAnItemWithinReach(): Unit = {
+    // The server hands over items within ITEM_PICKUP_RADIUS of our cell while we carry fewer than
+    // MAX_INVENTORY_SIZE, and leaves them on the ground after. The HUD says so from these.
+    t.startMatch(spawn = (5, 5))
+    for (k <- 0 until Constants.MAX_INVENTORY_SIZE - 1) t.item(ItemAction.INVENTORY, 100 + k, ItemType.Heart)
+    t.item(ItemAction.SPAWN, 1, ItemType.Gem, x = 7, y = 6) // just out of reach
+    assertFalse(c.isInventoryFull)
+    assertFalse(c.itemWithinReach)
+    t.item(ItemAction.SPAWN, 2, ItemType.Gem, x = 7, y = 5) // two cells: in reach
+    assertTrue(c.itemWithinReach)
+    t.item(ItemAction.INVENTORY, 199, ItemType.Heart)
+    assertTrue(c.isInventoryFull)
+    t.item(ItemAction.PICKUP, 2, ItemType.Gem, who = UUID.randomUUID())
+    assertFalse(c.itemWithinReach)
+    c.useItem(ItemType.Heart.id)
+    assertFalse("room for one", c.isInventoryFull)
   }
 
   @Test def aRefusedStarIsGivenBackAndPutsUsBack(): Unit = {

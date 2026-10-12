@@ -53,7 +53,6 @@ trait Lives { this: GameInstance =>
     val player = registry.get(playerId)
     if (player == null) return
     val spawnPoint = spawnLock.synchronized {
-      player.setHealth(player.getMaxHealth)
       player.setDirection(Direction.Down)
       player.clearBurn()
       player.clearPoison()
@@ -89,6 +88,11 @@ trait Lives { this: GameInstance =>
       // Placed inside the lock, so a respawn at the same moment sees this spawn as taken. It is
       // a server move: anything the client sent from its last life is stale.
       placeByServer(player, sp)
+      // Alive only now, at the spawn and with nothing carried. The projectile tick hands items to
+      // the living within reach of them (pickUpItemsInReach), and healed first, the player was
+      // alive where they died until placed: an item lying there could go into the inventory just
+      // cleared, or be taken before the clear and thrown away with it, gone from the ground.
+      player.setHealth(player.getMaxHealth)
       sp
     }
 

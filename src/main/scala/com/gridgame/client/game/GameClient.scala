@@ -80,6 +80,7 @@ class GameClient(private[game] val serverHost: String, private[game] val serverP
     cleanupHitTimes()
     packet.getType match {
       case PacketType.SESSION_TOKEN => takeSessionToken(packet.asInstanceOf[SessionTokenPacket])
+      case PacketType.REFRESH_TOKEN => handleRefreshToken(packet.asInstanceOf[RefreshTokenPacket])
       case PacketType.AUTH_RESPONSE => handleAuthResponse(packet.asInstanceOf[AuthResponsePacket])
       case PacketType.HEARTBEAT => handleHeartbeatEcho()
       case PacketType.LEADERBOARD => handleLeaderboard(packet.asInstanceOf[LeaderboardPacket])

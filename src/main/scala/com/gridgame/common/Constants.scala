@@ -115,6 +115,7 @@ object Constants {
   // client signed just before may still be on the way
   val RETIRED_TOKEN_GRACE_MS: Long = 10000L
   val LOGIN_DEADLINE_MS: Long = 15000L                  // A connection that hasn't logged in by then is closed
+  val REFRESH_TOKEN_SIZE: Int = 32                      // Bytes in a refresh token (design/networking.md, *Staying logged in*)
   val SEQUENCE_WINDOW_SIZE: Int = 1024                   // UDP out-of-order tolerance
   val INCOMING_QUEUE_CAPACITY: Int = 8192               // Client packet queue bound
   val MAX_AUTH_FAILURES_PER_CHANNEL: Int = 5            // Close connection after N failures

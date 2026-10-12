@@ -15,17 +15,17 @@ private[model] object Originals {
 
   val TentacleDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.TENTACLE, name = "Tentacle",
-    speedMultiplier = 0.9f, damage = 15, maxRange = 15,
+    speedMultiplier = 0.9f, damage = 28, maxRange = 15,
     onHitEffect = Some(PullToOwner)
   )
   val IceBeamDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.ICE_BEAM, name = "Ice Beam",
-    speedMultiplier = 0.3f, damage = 5, maxRange = 20,
+    speedMultiplier = 0.3f, damage = 7, maxRange = 20,
     onHitEffect = Some(Freeze(3000))
   )
   val AxeDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.AXE, name = "Axe",
-    speedMultiplier = 0.6f, damage = 24, maxRange = 5,
+    speedMultiplier = 0.6f, damage = 23, maxRange = 5,
     hitRadius = 2.5f, boomerang = true
   )
   val RopeDef: ProjectileDef = ProjectileDef(
@@ -35,128 +35,128 @@ private[model] object Originals {
   )
   val SoulBoltDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.SOUL_BOLT, name = "Soul Bolt",
-    speedMultiplier = 0.65f, damage = 19, maxRange = 15,
+    speedMultiplier = 0.65f, damage = 35, maxRange = 15,
     passesThroughWalls = true, pierceCount = 1
   )
   val HauntDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.HAUNT, name = "Haunt",
-    speedMultiplier = 0.5f, damage = 30, maxRange = 15,
+    speedMultiplier = 0.5f, damage = 53, maxRange = 15,
     passesThroughWalls = true,
     onHitEffect = Some(TeleportOwnerBehind(2, 2000))
   )
   val ArcaneBoltDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.ARCANE_BOLT, name = "Arcane Bolt",
-    speedMultiplier = 0.85f, damage = 11, maxRange = 25,
+    speedMultiplier = 0.85f, damage = 21, maxRange = 25,
     passesThroughWalls = true,
     chargeSpeedScaling = Some(ChargeScaling(0.6f, 1.2f)),
-    chargeDamageScaling = Some(ChargeScaling(8f, 40f)),
+    chargeDamageScaling = Some(ChargeScaling(15f, 40f)),
     chargeRangeScaling = Some(ChargeScaling(15f, 30f))
   )
   val FireballDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.FIREBALL, name = "Fireball",
-    speedMultiplier = 0.4f, damage = 39, maxRange = 18
+    speedMultiplier = 0.4f, damage = 55, maxRange = 18
   )
   val SplashDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.SPLASH, name = "Splash",
-    speedMultiplier = 0.65f, damage = 20, maxRange = 15,
+    speedMultiplier = 0.65f, damage = 32, maxRange = 15,
     chargeSpeedScaling = Some(ChargeScaling(0.5f, 1.0f)),
-    chargeDamageScaling = Some(ChargeScaling(10f, 35f)),
+    chargeDamageScaling = Some(ChargeScaling(16f, 35f)),
     chargeRangeScaling = Some(ChargeScaling(10f, 20f)),
-    aoeOnHit = Some(AoESplashConfig(3.0f, 10))
+    aoeOnHit = Some(AoESplashConfig(3.0f, 16))
   )
   // The two pushes drawn as waves strike where their water or wind is (hitCentreBehind), and fly a
   // cell further, so each strikes exactly the cells round its caster it did when its circle was
   // round the leading edge (the Gust's trails further back, its sub-steps being shorter)
   val TidalWaveDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.TIDAL_WAVE, name = "Tidal Wave",
-    speedMultiplier = 0.5f, damage = 10, maxRange = 13,
+    speedMultiplier = 0.5f, damage = 18, maxRange = 13,
     hitCentreBehind = 1.0f,
     onHitEffect = Some(Push(3.0f))
   )
   val GeyserDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.GEYSER, name = "Geyser",
-    speedMultiplier = 0.6f, damage = 25, maxRange = 18,
+    speedMultiplier = 0.6f, damage = 43, maxRange = 18,
     hitRadius = 3.5f,
-    aoeOnHit = Some(AoESplashConfig(4.0f, 25)),
-    aoeOnMaxRange = Some(AoESplashConfig(4.0f, 25))
+    aoeOnHit = Some(AoESplashConfig(4.0f, 43)),
+    aoeOnMaxRange = Some(AoESplashConfig(4.0f, 43))
   )
   val BulletDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.BULLET, name = "Bullet",
-    speedMultiplier = 1.0f, damage = 16, maxRange = 18
+    speedMultiplier = 1.0f, damage = 29, maxRange = 18
   )
   // Goes off on the first enemy it reaches, or at the end of its 12 cells. It used to fly through
   // players and go off only at the end, so thrown at anyone nearer than about 9 cells it burst
   // behind them: the Bombardier's primary averaged 3 damage a throw in bot free-for-alls
   val GrenadeDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.GRENADE, name = "Grenade",
-    speedMultiplier = 0.5f, damage = 47, maxRange = 12,
+    speedMultiplier = 0.5f, damage = 55, maxRange = 12,
     explodesOnPlayerHit = true,
-    explosionConfig = Some(ExplosionConfig(47, 12, 3.0f))
+    explosionConfig = Some(ExplosionConfig(55, 41, 3.0f))
   )
   val RocketDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.ROCKET, name = "Rocket",
-    speedMultiplier = 0.55f, damage = 52, maxRange = 20,
+    speedMultiplier = 0.55f, damage = 55, maxRange = 20,
     explodesOnPlayerHit = true,
-    explosionConfig = Some(ExplosionConfig(52, 15, 2.5f))
+    explosionConfig = Some(ExplosionConfig(55, 40, 2.5f))
   )
   val TalonDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.TALON, name = "Talon",
-    speedMultiplier = 0.7f, damage = 30, maxRange = 4,
+    speedMultiplier = 0.7f, damage = 33, maxRange = 4,
     hitRadius = 2.2f
   )
   val GustDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.GUST, name = "Gust",
-    speedMultiplier = 0.8f, damage = 10, maxRange = 7,
+    speedMultiplier = 0.8f, damage = 7, maxRange = 7,
     hitCentreBehind = 1.2f,
     onHitEffect = Some(Push(5.0f))
   )
   val ShurikenDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.SHURIKEN, name = "Shuriken",
-    speedMultiplier = 0.95f, damage = 19, maxRange = 6,
+    speedMultiplier = 0.95f, damage = 16, maxRange = 6,
     hitRadius = 2.2f
   )
   val ChainBoltDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.CHAIN_BOLT, name = "Chain Bolt",
-    speedMultiplier = 0.7f, damage = 20, maxRange = 14,
+    speedMultiplier = 0.7f, damage = 37, maxRange = 14,
     onHitEffect = Some(Freeze(200))
   )
   val LockdownChainDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.LOCKDOWN_CHAIN, name = "Lockdown Chain",
-    speedMultiplier = 0.6f, damage = 5, maxRange = 12,
+    speedMultiplier = 0.6f, damage = 9, maxRange = 12,
     onHitEffect = Some(Freeze(700))
   )
   val KatanaDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.KATANA, name = "Katana",
-    speedMultiplier = 0.7f, damage = 24, maxRange = 4,
+    speedMultiplier = 0.7f, damage = 26, maxRange = 4,
     hitRadius = 2.2f
   )
   val SwordWaveDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.SWORD_WAVE, name = "Sword Wave",
-    speedMultiplier = 0.6f, damage = 20, maxRange = 5,
+    speedMultiplier = 0.6f, damage = 21, maxRange = 5,
     hitRadius = 1.8f,
     onHitEffect = Some(Stun(500))
   )
   val PlagueBoltDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.PLAGUE_BOLT, name = "Plague Bolt",
-    speedMultiplier = 0.55f, damage = 22, maxRange = 16,
-    aoeOnHit = Some(AoESplashConfig(2.5f, 13))
+    speedMultiplier = 0.55f, damage = 41, maxRange = 16,
+    aoeOnHit = Some(AoESplashConfig(2.5f, 24))
   )
   val MiasmaDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.MIASMA, name = "Miasma",
-    speedMultiplier = 0.45f, damage = 13, maxRange = 14,
+    speedMultiplier = 0.45f, damage = 17, maxRange = 14,
     hitRadius = 2.8f,
     explodesOnPlayerHit = true,
-    explosionConfig = Some(ExplosionConfig(27, 9, 5.0f))
+    explosionConfig = Some(ExplosionConfig(36, 12, 5.0f))
   )
   val BlightBombDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.BLIGHT_BOMB, name = "Blight Bomb",
-    speedMultiplier = 0.5f, damage = 25, maxRange = 15,
+    speedMultiplier = 0.5f, damage = 37, maxRange = 15,
     explodesOnPlayerHit = true,
-    explosionConfig = Some(ExplosionConfig(30, 12, 4.0f))
+    explosionConfig = Some(ExplosionConfig(45, 18, 4.0f))
   )
   val BloodFangDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.BLOOD_FANG, name = "Blood Fang",
-    speedMultiplier = 0.7f, damage = 25, maxRange = 3,
+    speedMultiplier = 0.7f, damage = 30, maxRange = 3,
     hitRadius = 2.2f,
     onHitEffect = Some(LifeSteal(50))
   )
@@ -183,8 +183,8 @@ private[model] object Originals {
   def variants(base: Byte => ProjectileDef): Seq[ProjectileDef] = Seq(
     base(ProjectileType.POISON_DART).copy(id = ProjectileType.VENOM_DART, name = "Venom Dart", damage = 15, alsoOnHit = Seq(Poison(15, 3000, 750))),
     // Of their own, so their numbers can differ from the others who throw the base
-    base(ProjectileType.AXE).copy(id = ProjectileType.ARENA_AXE, name = "Arena Axe", damage = 30),
-    base(ProjectileType.SHURIKEN).copy(id = ProjectileType.THROWING_STAR, name = "Throwing Star", damage = 28)
+    base(ProjectileType.AXE).copy(id = ProjectileType.ARENA_AXE, name = "Arena Axe", damage = 29),
+    base(ProjectileType.SHURIKEN).copy(id = ProjectileType.THROWING_STAR, name = "Throwing Star", damage = 29)
   )
 
   // ── Characters ──
@@ -197,13 +197,13 @@ private[model] object Originals {
     qAbility = AbilityDef(
       name = "Tentacle",
       description = "Shoots a tentacle that pulls enemies closer.",
-      cooldownMs = 5000, maxRange = 15, damage = 15,
+      cooldownMs = 5000, maxRange = 15, damage = 28,
       projectileType = ProjectileType.TENTACLE, keybind = "Q"
     ),
     eAbility = AbilityDef(
       name = "Ice Beam",
       description = "Fires a freezing beam that immobilizes enemies.",
-      cooldownMs = 5000, maxRange = 20, damage = 5,
+      cooldownMs = 5000, maxRange = 20, damage = 7,
       projectileType = ProjectileType.ICE_BEAM, keybind = "E"
     ),
     primaryProjectileType = ProjectileType.NORMAL,
@@ -247,7 +247,7 @@ private[model] object Originals {
     eAbility = AbilityDef(
       name = "Haunt",
       description = "Slow spectral bolt that teleports you behind the target on hit.",
-      cooldownMs = 15000, maxRange = 15, damage = 30,
+      cooldownMs = 15000, maxRange = 15, damage = 53,
       projectileType = ProjectileType.HAUNT, keybind = "E"
     ),
     primaryProjectileType = ProjectileType.SOUL_BOLT,
@@ -262,7 +262,7 @@ private[model] object Originals {
     qAbility = AbilityDef(
       name = "Fireball",
       description = "Launches a slow but devastating fireball that deals massive damage.",
-      cooldownMs = 5000, maxRange = 18, damage = 39,
+      cooldownMs = 5000, maxRange = 18, damage = 55,
       projectileType = ProjectileType.FIREBALL, keybind = "Q"
     ),
     eAbility = AbilityDef(
@@ -284,14 +284,14 @@ private[model] object Originals {
     qAbility = AbilityDef(
       name = "Tidal Wave",
       description = "Fires 5 projectiles in a fan that push enemies back.",
-      cooldownMs = 8000, maxRange = 12, damage = 10,
+      cooldownMs = 8000, maxRange = 12, damage = 18,
       projectileType = ProjectileType.TIDAL_WAVE, keybind = "Q",
       castBehavior = FanProjectile(5, Math.toRadians(60))
     ),
     eAbility = AbilityDef(
       name = "Geyser",
       description = "Erupts on hit or at max range, damaging all nearby.",
-      cooldownMs = 12000, maxRange = 18, damage = 25,
+      cooldownMs = 12000, maxRange = 18, damage = 43,
       projectileType = ProjectileType.GEYSER, keybind = "E"
     ),
     primaryProjectileType = ProjectileType.SPLASH,
@@ -306,13 +306,13 @@ private[model] object Originals {
     qAbility = AbilityDef(
       name = "Grenade",
       description = "Thrown explosive that detonates on the first enemy it reaches, or at range.",
-      cooldownMs = 10000, maxRange = 12, damage = 47,
+      cooldownMs = 10000, maxRange = 12, damage = 55,
       projectileType = ProjectileType.GRENADE, keybind = "Q"
     ),
     eAbility = AbilityDef(
       name = "Rocket",
       description = "Fired explosive that detonates on impact with splash damage.",
-      cooldownMs = 12000, maxRange = 20, damage = 52,
+      cooldownMs = 12000, maxRange = 20, damage = 55,
       projectileType = ProjectileType.ROCKET, keybind = "E"
     ),
     primaryProjectileType = ProjectileType.BULLET,
@@ -334,7 +334,7 @@ private[model] object Originals {
     eAbility = AbilityDef(
       name = "Gust",
       description = "Wind blast that pushes enemies away from you.",
-      cooldownMs = 8000, maxRange = 6, damage = 10,
+      cooldownMs = 8000, maxRange = 6, damage = 7,
       projectileType = ProjectileType.GUST, keybind = "E"
     ),
     primaryProjectileType = ProjectileType.TALON,
@@ -371,7 +371,7 @@ private[model] object Originals {
     qAbility = AbilityDef(
       name = "Lockdown",
       description = "Fires 3 chains in a fan that freeze enemies for 0.7s on hit.",
-      cooldownMs = 8000, maxRange = 12, damage = 5,
+      cooldownMs = 8000, maxRange = 12, damage = 9,
       projectileType = ProjectileType.LOCKDOWN_CHAIN, keybind = "Q",
       castBehavior = FanProjectile(3, Math.toRadians(40))
     ),
@@ -401,7 +401,7 @@ private[model] object Originals {
     eAbility = AbilityDef(
       name = "Whirlwind",
       description = "Unleash 8 sword waves in a full circle around you that stun for 0.5s.",
-      cooldownMs = 12000, maxRange = 5, damage = 20,
+      cooldownMs = 12000, maxRange = 5, damage = 21,
       projectileType = ProjectileType.SWORD_WAVE, keybind = "E",
       castBehavior = FanProjectile(8, 2 * Math.PI)
     ),
@@ -417,13 +417,13 @@ private[model] object Originals {
     qAbility = AbilityDef(
       name = "Miasma",
       description = "Toxic cloud that explodes on contact or at max range in a massive toxic blast.",
-      cooldownMs = 8000, maxRange = 14, damage = 13,
+      cooldownMs = 8000, maxRange = 14, damage = 17,
       projectileType = ProjectileType.MIASMA, keybind = "Q"
     ),
     eAbility = AbilityDef(
       name = "Blight Bomb",
       description = "Volatile vial that explodes on contact or at max range in a massive toxic blast.",
-      cooldownMs = 14000, maxRange = 15, damage = 25,
+      cooldownMs = 14000, maxRange = 15, damage = 37,
       projectileType = ProjectileType.BLIGHT_BOMB, keybind = "E"
     ),
     primaryProjectileType = ProjectileType.PLAGUE_BOLT,

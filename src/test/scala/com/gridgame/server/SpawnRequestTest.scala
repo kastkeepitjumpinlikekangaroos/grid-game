@@ -174,6 +174,23 @@ class SpawnRequestTest {
     assertEquals(before, m.instance.projectileManager.size)
   }
 
+  @Test def aShotFromNowhereIsRefusedAndCostsNothing(): Unit = {
+    // A NaN compares false with everything, so a spawn request from (NaN, NaN) passed the check
+    // that it is within three cells of its shooter, and was fired from the corner of the map
+    val soldier = m.join(CharacterId.Soldier, 30, 30)
+    def request(x: Float, y: Float): Unit =
+      m.instance.handler.processPacket(PacketSerializer.deserialize(ProjectilePacket.spawnRequest(1, soldier.getId,
+        x, y, soldier.getColorRGB, 1f, 0f, 0.toByte, primary(soldier), AttackSlot.PRIMARY).serialize()), null, null)
+    for ((x, y) <- Seq((Float.NaN, Float.NaN), (Float.NaN, 30f), (30f, Float.NaN),
+                       (Float.PositiveInfinity, 30f), (30f, Float.NegativeInfinity))) {
+      request(x, y)
+      assertEquals(s"a shot from ($x, $y)", 0, m.instance.projectileManager.size)
+    }
+    val shot = m.fire(soldier, AttackSlot.PRIMARY, primary(soldier), Seq((1f, 0f)))
+    assertEquals("the next real shot isn't held back by them", 1, shot.size)
+    assertEquals("and it leaves its shooter", 31f, shot.head.getX, 0f)
+  }
+
   @Test def aChargeOutOfRangeIsRefused(): Unit = {
     val soldier = m.join(CharacterId.Soldier, 20, 20)
     val before = m.instance.projectileManager.size

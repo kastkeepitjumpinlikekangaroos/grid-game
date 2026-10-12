@@ -15,6 +15,8 @@ MODULE.bazel.lock
 
 # Auth database
 game_accounts.db
+# The server's TLS identity: its private key (server/net/TlsProvider), made where it first runs
+server_identity.p12
 
 # Generated macOS .app bundles (scripts/build_macos_app.sh)
 /dist

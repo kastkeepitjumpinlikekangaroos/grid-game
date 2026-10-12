@@ -107,7 +107,7 @@ object Metrics {
 
   val authAttempts: LongCounter = meter
     .counterBuilder("gridgame.auth.attempts")
-    .setDescription("Auth attempts (login + signup)")
+    .setDescription("Auth attempts (login, signup, refresh-token login, logout)")
     .setUnit("{attempt}")
     .build()
 

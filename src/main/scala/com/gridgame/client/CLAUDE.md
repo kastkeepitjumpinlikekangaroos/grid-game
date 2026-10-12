@@ -6,7 +6,9 @@ depends only on the ones above it (BUILD.bazel here):
 
 ```
 gl                   OpenGL and GLFW primitives, knowing nothing of the game        (gl/CLAUDE.md)
-audio, i18n, net     sound (audio/CLAUDE.md), the UI's text, the connection to the server
+audio, i18n, net     sound (audio/CLAUDE.md), the UI's text, the connection to the server (held
+                     to the identity met there before: KnownServers, PinnedTrustManager) and
+                     where "Remember me" keeps a login (LoginStore)
 game                 GameClient: everything the client knows and does in a session  (game/CLAUDE.md)
 render/projectiles   how every projectile type is drawn                    (render/projectiles/CLAUDE.md)
 render/blasts        how every explosion and splash is drawn               (render/blasts/CLAUDE.md)
@@ -14,7 +16,8 @@ render               the renderer: core, the painters (world/, hud/), GLGameRend
 input                keyboard, mouse, controller
 ui, ui/screens       the menus' theme and widgets, and a class per screen   (ui/CLAUDE.md)
 devtools             the benches, the render audit, the golden frames, the projectile gallery
-.                    ClientMain (the JavaFX app) and MatchWindow (the match's window)
+.                    ClientMain (the JavaFX app, which also logs in and stays logged in:
+                     design/networking.md, *Staying logged in*) and MatchWindow (the match's window)
 ```
 
 The binaries (`client`, `client_windows`, the dev tools) sit on the libraries and add each

@@ -11,10 +11,18 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * Items: those lying on the ground, the ones we carry (a queue per kind), and using one — a star's
  * jump, a gem's doubled fire, a shield, a heart, a fence. The server says what we picked up, and
- * gives an item back when it refuses its use (ItemAction.USE_REJECTED).
+ * gives an item back when it refuses its use (ItemAction.USE_REJECTED). It hands us whatever lies
+ * within our reach while we carry fewer than Constants.MAX_INVENTORY_SIZE; full, it leaves it on
+ * the ground, and the HUD says so ([[isInventoryFull]], [[itemWithinReach]]).
  */
 trait Items { this: GameClient =>
   private val items: ConcurrentHashMap[Int, Item] = new ConcurrentHashMap()
+  // Every item picked up this match. The server sends an item's appearance and its pickup from
+  // different threads, and a pickup can overtake the SPAWN it follows: its spawner sends the SPAWN
+  // before anyone can pick the item up now, but a joiner's catch-up can still be overtaken. A
+  // SPAWN arriving after its PICKUP put the item on our ground for good, where nobody could pick
+  // it up (design/combat.md, *Item Types*). A match never numbers two items alike.
+  private val pickedUp: java.util.Set[Integer] = ConcurrentHashMap.newKeySet[Integer]()
   private val inventory: ConcurrentHashMap[Byte, ConcurrentLinkedDeque[Item]] = new ConcurrentHashMap()
   // What a gem and a shield do for us, until
   private val fastProjectilesUntil: AtomicLong = new AtomicLong(0)
@@ -27,6 +35,7 @@ trait Items { this: GameClient =>
   /** No match: nothing on the ground, nothing carried. */
   private[game] def forgetItems(): Unit = {
     items.clear()
+    pickedUp.clear()
     inventory.clear()
   }
 
@@ -40,10 +49,12 @@ trait Items { this: GameClient =>
   private[game] def handleItemUpdate(packet: ItemPacket): Unit = {
     packet.getAction match {
       case ItemAction.SPAWN =>
-        val item = new Item(packet.getItemId, packet.getX, packet.getY, packet.getItemType)
-        items.put(packet.getItemId, item)
+        if (!pickedUp.contains(packet.getItemId)) {
+          items.put(packet.getItemId, new Item(packet.getItemId, packet.getX, packet.getY, packet.getItemType))
+        }
 
       case ItemAction.PICKUP =>
+        pickedUp.add(packet.getItemId)
         items.remove(packet.getItemId)
         if (packet.getPlayerId.equals(localPlayerId)) {
           val item = new Item(packet.getItemId, packet.getX, packet.getY, packet.getItemType)
@@ -149,6 +160,25 @@ trait Items { this: GameClient =>
     val iter = inventory.values().iterator()
     while (iter.hasNext) sum += iter.next().size()
     sum
+  }
+
+  /** Do we carry as many items as the server lets anyone (Constants.MAX_INVENTORY_SIZE)? Then it
+    * gives us nothing more until we use one. */
+  def isInventoryFull: Boolean = getInventoryCount >= Constants.MAX_INVENTORY_SIZE
+
+  /** Does an item lie within our reach, measured as the server measures it (ItemManager: within
+    * Constants.ITEM_PICKUP_RADIUS of our cell)? With room for it, it is on its way to us. */
+  def itemWithinReach: Boolean = {
+    val pos = localPosition.get()
+    val reach = Constants.ITEM_PICKUP_RADIUS * Constants.ITEM_PICKUP_RADIUS
+    val iter = items.values().iterator()
+    while (iter.hasNext) {
+      val item = iter.next()
+      val dx = item.getCellX - pos.getX
+      val dy = item.getCellY - pos.getY
+      if (dx * dx + dy * dy <= reach) return true
+    }
+    false
   }
 
 }

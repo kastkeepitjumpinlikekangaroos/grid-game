@@ -17,7 +17,8 @@ bazel build //...                                              # everything
 bazel test //src/test/...                                      # every test (see src/test/CLAUDE.md)
 bazel test //src/test/scala/com/gridgame/server:combat_test    # one test
 
-bazel run //src/main/scala/com/gridgame/server:server          # the server (-- 25566 for another port)
+bazel run //src/main/scala/com/gridgame/server:server          # the server (-- 25566 for another port; its
+                                                               # identity, server_identity.p12, beside game_accounts.db)
 bazel run //src/main/scala/com/gridgame/client:client          # the client (the login screen asks for host/port)
 bazel run //src/main/scala/com/gridgame/mapeditor              # the map editor
 
@@ -25,7 +26,9 @@ OTEL_SDK_DISABLED=true bazel run //src/main/scala/com/gridgame/server:server  # 
 GRIDGAME_TELEMETRY=1 bazel run //src/main/scala/com/gridgame/client:client    # client with telemetry (or -- --telemetry)
 bazel run //src/main/scala/com/gridgame/client:client -- --quality=low        # low|medium|high|auto (default auto; F7 in game)
 GRIDGAME_AUDIO=off bazel run //src/main/scala/com/gridgame/client:client      # no sound at all
-cd ops/observability && docker compose up -d                                  # Grafana at http://localhost:3000
+GRIDGAME_LOGIN_FILE=/tmp/second bazel run //src/main/scala/com/gridgame/client:client  # "Remember me" kept elsewhere (a second client)
+cd ops/observability && docker compose up -d                                  # Grafana at http://localhost:3000 (start it before
+                                                                              # the server: the collector is looked for once, at startup)
 ```
 
 The dev tools (none of them shipped) and where their docs are:
@@ -52,7 +55,7 @@ src/main/scala/com/gridgame/
 │   ├── (core)     Constants, WorldRegistry
 │   ├── model/     the game's rules as data and plain logic: characters (roster/), projectiles,
 │   │              effects, players, tiles, the world, barriers, traps, movement, teleports
-│   ├── protocol/  the wire: 18 packet types, signing
+│   ├── protocol/  the wire: 20 packet types, signing
 │   ├── world/     WorldLoader (JSON maps)
 │   └── observability/  the OpenTelemetry facade
 ├── server/        (common)
@@ -94,7 +97,7 @@ ops/observability/   the local OpenTelemetry → Prometheus/Tempo/Loki/Grafana s
 | Barriers (the shield wall abilities) | [design/barriers.md](design/barriers.md) |
 | Traps; adding a trap | [design/traps.md](design/traps.md) |
 | A match's opening (the Teams wall, the free-for-all ceasefire) and its end | [design/match-flow.md](design/match-flow.md) |
-| Networking: security layers, who owns positions, sessions and reconnects | [design/networking.md](design/networking.md) |
+| Networking: security layers (the server's pinned identity), who owns positions, sessions and reconnects, staying logged in (refresh tokens, Remember me) | [design/networking.md](design/networking.md) |
 | The model (`common/model`): registries, tiles, the world; adding a tile or a map layer | [common/model/CLAUDE.md](src/main/scala/com/gridgame/common/model/CLAUDE.md) |
 | The wire protocol: packet layouts, actions, connection flow; adding a packet type | [common/protocol/CLAUDE.md](src/main/scala/com/gridgame/common/protocol/CLAUDE.md) |
 | Telemetry in code; adding a metric | [common/observability/CLAUDE.md](src/main/scala/com/gridgame/common/observability/CLAUDE.md) |

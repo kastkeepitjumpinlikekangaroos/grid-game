@@ -5,6 +5,7 @@ import com.gridgame.common.model.Player
 import com.gridgame.common.model.Projectile
 import com.gridgame.common.model.ProjectileDef
 import com.gridgame.common.model.TeamDivider
+import com.gridgame.common.model.Tile
 import com.gridgame.common.model.WorldData
 
 import java.util.UUID
@@ -135,6 +136,58 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
     true
   }
 
+  /**
+   * Does terrain that would stop this projectile stand between it at (x, y) and the player? A hit
+   * radius reaches 1.8 to 3.5 cells, past a wall right in front of a player, so a shot that stopped
+   * at a fence — drawn stopping there — hit whoever stood behind it: from a cell behind, 26 of the
+   * roster's 48 single-target shots did. The same rule a barrier's shelter keeps
+   * (BarrierSnapshot.shelters): the straight way from the shot to the player has to be clear. It is
+   * looked along in quarter cells, every cell but the two ends': the projectile's is open or it
+   * would have stopped, and someone standing in a fence put down on them is still hit from outside
+   * it.
+   */
+  private def terrainBetween(world: WorldData, pDef: ProjectileDef, x: Float, y: Float, player: Player): Boolean = {
+    val pos = player.getPosition
+    val dx = pos.getX - x
+    val dy = pos.getY - y
+    val n = Math.ceil(Math.sqrt(dx * dx + dy * dy) / ProjectileManager.SIGHT_STEP).toInt
+    val fromCx = Math.floor(x + 0.5f).toInt
+    val fromCy = Math.floor(y + 0.5f).toInt
+    var i = 1
+    while (i < n) {
+      val t = i.toFloat / n
+      val cx = Math.floor(x + dx * t + 0.5f).toInt
+      val cy = Math.floor(y + dy * t + 0.5f).toInt
+      if ((cx != fromCx || cy != fromCy) && (cx != pos.getX || cy != pos.getY) &&
+          world.stopsProjectile(cx, cy) && (!pDef.passesThroughWalls || world.getTile(cx, cy) == Tile.Fence)) return true
+      i += 1
+    }
+    false
+  }
+
+  /** Is the projectile off the map, or in terrain that stops it: anything nobody can walk on but
+    * water, and for a type that flies over walls only a fence? */
+  private def stoppedHere(projectile: Projectile, pDef: ProjectileDef, world: WorldData): Boolean =
+    projectile.isOutOfBounds(world) ||
+      (projectile.hitsTerrain(world) && (!pDef.passesThroughWalls || projectile.hitsFence(world)))
+
+  /** Resolve a projectile where it is, if that is off the map or in terrain that stops it: it ends
+    * there, an explosive going off, unless it ricochets off a wall and flies on. Returns whether it
+    * ended. */
+  private def stopsWhereItIs(projectile: Projectile, pDef: ProjectileDef, world: WorldData,
+                             events: ArrayBuffer[ProjectileEvent], toRemove: ArrayBuffer[Int]): Boolean = {
+    if (!stoppedHere(projectile, pDef, world)) return false
+    if (!projectile.isOutOfBounds(world) && projectile.remainingBounces > 0 && !projectile.hitsFence(world)) {
+      // Ricochet: bounce off walls instead of despawning
+      projectile.ricochet(world)
+      false
+    } else {
+      toRemove += projectile.id
+      events += (if (pDef.isExplosive) ProjectileAoE(projectile) else ProjectileDespawned(projectile))
+      true
+    }
+  }
+
   /** A barrier that moved or turned since the last tick can have been carried onto the projectile,
     * which hasn't moved yet this tick: if one was, it stops on the barrier's face. Returns whether
     * it stopped. */
@@ -190,6 +243,11 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
       // The raised barriers this projectile can't pass
       val barriers = raisedBarriers.against(projectile.ownerId, pDef.passesThroughWalls, bodies = true)
 
+      // Sub-step movement so projectiles can't skip over terrain that stops them.
+      val movePerTick = math.sqrt(projectile.dx * projectile.dx + projectile.dy * projectile.dy).toFloat * projectile.speedMultiplier
+      val subSteps = math.ceil(movePerTick / Projectile.MAX_SUB_STEP).toInt.max(1)
+      val fraction = 1.0f / subSteps
+
       val fresh = !projectile.hasFlown
       projectile.markFlown()
       if (fresh) {
@@ -200,14 +258,15 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
         resolved = stopOnDivider(projectile, pDef, fromX, fromY, projectile.getX, projectile.getY, events, toRemove) ||
           (barriers != 0L && stopOnPath(projectile, pDef, barriers, fromX, fromY,
             projectile.getX, projectile.getY, events, toRemove))
+        // ...and the cell it was put in, which no sub-step below looks at. A sub-step of exactly
+        // half a cell carried it from there straight into the next, so a shot of 0.5 or 1.0 a
+        // tick fired east or south flew through a one-cell wall (a fence) its shooter stood
+        // against, for its whole range — while the aim lane and the bots' line of fire stopped it.
+        // Not one that doesn't fly: a slam is put down on its caster and goes off where it lies
+        if (!resolved && movePerTick > 0f) resolved = stopsWhereItIs(projectile, pDef, world, events, toRemove)
       } else if (barriers != 0L) {
         resolved = sweptByBarrier(projectile, pDef, barriers, events, toRemove)
       }
-
-      // Sub-step movement so projectiles can't skip over terrain that stops them.
-      val movePerTick = math.sqrt(projectile.dx * projectile.dx + projectile.dy * projectile.dy).toFloat * projectile.speedMultiplier
-      val subSteps = math.ceil(movePerTick / Projectile.MAX_SUB_STEP).toInt.max(1)
-      val fraction = 1.0f / subSteps
 
       var step = 0
       while (step < steps && !resolved) {
@@ -247,37 +306,30 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
               }
               resolved = true
             }
-          } else if (projectile.isOutOfBounds(world)) {
-            toRemove += projectile.id
-            if (pDef.isExplosive) {
-              events += ProjectileAoE(projectile)
-            } else {
-              events += ProjectileDespawned(projectile)
-            }
-            resolved = true
-          } else if (projectile.hitsTerrain(world) && (!pDef.passesThroughWalls || projectile.hitsFence(world))) {
-            // Ricochet: bounce off walls instead of despawning
-            if (projectile.remainingBounces > 0 && !projectile.hitsFence(world)) {
-              projectile.ricochet(world)
-              // Don't resolve — projectile continues
-            } else {
-              toRemove += projectile.id
-              if (pDef.isExplosive) {
-                events += ProjectileAoE(projectile)
-              } else {
-                events += ProjectileDespawned(projectile)
-              }
-              resolved = true
-            }
+          } else if (stoppedHere(projectile, pDef, world)) {
+            resolved = stopsWhereItIs(projectile, pDef, world, events, toRemove)
           } else {
+            // The nearest of those it reaches. It was whichever the grid happened to list last: fired
+            // east at someone a cell or two away, with someone else just behind them, the shot went
+            // through the first untouched and struck the second
             var hitPlayer: Player = null
+            var hitDistSq = Float.MaxValue
             grid.forEachNearby(projectile.getX, projectile.getY) { player =>
               // Not through a barrier: a hit radius reaches past one two cells out, so without this
-              // a shot hit its holder, or whoever sheltered beside them, before it reached it
+              // a shot hit its holder, or whoever sheltered beside them, before it reached it.
+              // Nor through a wall, for the same reason (terrainBetween)
               if (projectile.hitsPlayer(player) && !isTeammate(projectile.ownerId, player.getId) &&
                   (barriers == 0L || !raisedBarriers.shelters(barriers, projectile.getX, projectile.getY, player)) &&
-                  !dividerBetween(projectile.getX, projectile.getY, player)) {
-                hitPlayer = player
+                  !dividerBetween(projectile.getX, projectile.getY, player) &&
+                  !terrainBetween(world, pDef, projectile.getX, projectile.getY, player)) {
+                val pos = player.getPosition
+                val ddx = pos.getX - projectile.getX
+                val ddy = pos.getY - projectile.getY
+                val distSq = ddx * ddx + ddy * ddy
+                if (distSq < hitDistSq) {
+                  hitDistSq = distSq
+                  hitPlayer = player
+                }
               }
             }
 
@@ -401,4 +453,10 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
     }
     events.toSeq
   }
+}
+
+object ProjectileManager {
+  /** How far apart the way from a projectile to a player it reaches is looked along for a wall
+    * between them (terrainBetween): a quarter cell, so the corner of one isn't stepped over. */
+  private val SIGHT_STEP = 0.25
 }

@@ -30,4 +30,6 @@ load("@rules_scala//scala:scala.bzl", "scala_junit_test")
     ("roster_balance_test", "RosterBalanceTest.scala", []),
     ("melee_kit_test", "MeleeKitTest.scala", []),
     ("tile_test", "TileTest.scala", ["//sprites:sprite_files"]),
+    # What the client picks for a trap, a blink or a shove, the server takes: random ground and every map
+    ("placement_agreement_test", "PlacementAgreementTest.scala", ["//worlds:world_files"]),
 ]]

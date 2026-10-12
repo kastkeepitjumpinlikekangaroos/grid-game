@@ -138,6 +138,7 @@ class TeamDividerTest {
     val b = m.join(CharacterId.Soldier, MID + 3, 30, team = 2)
     expireDivider()
     m.tick()
+    assertTrue(m.move(a, MID - 3, 30))
     assertTrue(m.move(a, MID, 30, gapMs = 60))
     m.tickUntilGone(m.launch(a, ProjectileType.BULLET, 1f, 0f))
     assertFalse(unhurt(b))

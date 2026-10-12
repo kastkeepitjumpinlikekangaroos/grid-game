@@ -7,6 +7,8 @@ import com.gridgame.common.protocol.Packet
 import com.gridgame.common.protocol.PacketSerializer
 import com.gridgame.common.protocol.PacketSigner
 import com.gridgame.common.protocol.PacketType
+import com.gridgame.common.protocol.SessionEndPacket
+import com.gridgame.common.protocol.SessionEndReason
 import com.gridgame.common.protocol.SessionTokenPacket
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
@@ -19,7 +21,7 @@ import io.netty.channel.socket.nio.NioSocketChannel
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder
 import io.netty.handler.codec.LengthFieldPrepender
 import io.netty.handler.ssl.SslContextBuilder
-import io.netty.handler.ssl.util.InsecureTrustManagerFactory
+import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateEvent
 import io.netty.handler.timeout.IdleStateHandler
 
@@ -38,14 +40,23 @@ import java.util.concurrent.TimeUnit
  * The server renews a session's token while it lasts (server/net/Sessions): it sends the new one,
  * signed with the old, and goes on signing with the old until it hears us use the new one. So a
  * token is taken up the moment it is read ([[takeSessionToken]]), and the one it replaces is still
- * taken for SESSION_RENEWAL_WINDOW_MS.
+ * taken for SESSION_RENEWAL_WINDOW_MS. Why the server ended the session, when it says
+ * (SESSION_END), is read here too, as it arrives ([[sessionEndReason]]).
+ *
+ * The server proves who it is before anything is sent (design/networking.md, layer 1): its TLS key
+ * has to be the one `knownServers` has pinned for its host and port (PinnedTrustManager), and the
+ * connection isn't ready until the handshake is through. A server met for the first time is pinned
+ * then; one that shows another key is refused, and [[waitForReady]] throws
+ * ServerIdentityChangedException.
  *
  * @param onPacket       a packet from the server, checked
  * @param onHeartbeatDue time to send the server a heartbeat
  * @param nanoClock      the clock the old token's time is kept on (a test's own, in a test)
+ * @param knownServers   the servers met before, and their identities
  */
 class NetworkThread(serverHost: String, serverPort: Int, onPacket: Packet => Unit, onHeartbeatDue: () => Unit,
-                    nanoClock: () => Long = () => System.nanoTime())
+                    nanoClock: () => Long = () => System.nanoTime(),
+                    knownServers: KnownServers = KnownServers.inMemory())
     extends Thread("NetworkThread") {
   private val heartbeatExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
   private val ready = new CountDownLatch(1)
@@ -56,6 +67,12 @@ class NetworkThread(serverHost: String, serverPort: Int, onPacket: Packet => Uni
   @volatile private var retiredToken: Array[Byte] = _
   @volatile private var retiredUntilNs = 0L
   @volatile var disconnectCallback: Runnable = _
+  // Ready, so a drop from here on is a connection lost; before, connecting failed, and waitForReady says so
+  @volatile private var established = false
+  /** Why the server ended the session (SessionEndReason), if it said before it closed the connection.
+    * Read as it arrives: the disconnect right behind it stops the packet thread, which may never get
+    * to it. */
+  @volatile var sessionEndReason: Byte = SessionEndReason.NONE
 
   /**
    * A session token from the server: the login's, or a renewal's. Taken up by the handler that
@@ -88,17 +105,36 @@ class NetworkThread(serverHost: String, serverPort: Int, onPacket: Packet => Uni
 
   setDaemon(true)
 
-  /** Blocks until both channels are up; throws if connecting failed. */
+  /** Blocks until both channels are up and the server has proved who it is; throws if connecting
+    * failed, ServerIdentityChangedException if it isn't the server met there before. */
   def waitForReady(): Unit = {
     ready.await()
-    val err = connectError
-    if (err != null) throw new java.io.IOException(s"Could not connect to $serverHost:$serverPort: ${err.getMessage}", err)
+    connectError match {
+      case null =>
+      case changed: ServerIdentityChangedException => throw changed
+      case err => throw new java.io.IOException(s"Could not connect to $serverHost:$serverPort: ${err.getMessage}", err)
+    }
   }
+
+  /** The TCP connection closed: a connection lost, if it was ever ready. */
+  private[net] def connectionClosed(): Unit =
+    if (established) {
+      val cb = disconnectCallback
+      if (cb != null) cb.run()
+    }
 
   override def run(): Unit = {
     try {
       eventLoopGroup = new NioEventLoopGroup()
       running = true
+
+      // The server's identity, checked in the handshake against the one pinned for it, if any
+      val known = knownServers.identityOf(serverHost, serverPort)
+      val trust = new PinnedTrustManager(serverHost, serverPort, known)
+      val sslCtx = SslContextBuilder.forClient()
+        .trustManager(trust)
+        .protocols("TLSv1.3")
+        .build()
 
       // TCP connection
       val tcpBootstrap = new Bootstrap()
@@ -108,10 +144,6 @@ class NetworkThread(serverHost: String, serverPort: Int, onPacket: Packet => Uni
         .option[java.lang.Integer](ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000)
         .handler(new ChannelInitializer[SocketChannel] {
           override def initChannel(ch: SocketChannel): Unit = {
-            val sslCtx = SslContextBuilder.forClient()
-              .trustManager(InsecureTrustManagerFactory.INSTANCE)
-              .protocols("TLSv1.3")
-              .build()
             ch.pipeline()
               .addLast(sslCtx.newHandler(ch.alloc(), serverHost, serverPort))
               .addLast(new IdleStateHandler(Constants.CLIENT_TIMEOUT_MS, 0, 0, TimeUnit.MILLISECONDS))
@@ -122,7 +154,19 @@ class NetworkThread(serverHost: String, serverPort: Int, onPacket: Packet => Uni
         })
 
       tcpChannel = tcpBootstrap.connect(serverAddress).sync().channel()
-      println(s"NetworkThread: TCP connected to $serverHost:$serverPort")
+      // Nothing goes out until the server has shown it is the one met here before. (Netty holds
+      // what is written before then, and drops it if the handshake fails: this makes it explicit,
+      // and lets a refusal be told from a connection that failed.)
+      val handshake = tcpChannel.pipeline().get(classOf[SslHandler]).handshakeFuture()
+      if (!handshake.await(NetworkThread.HandshakeTimeoutMs, TimeUnit.MILLISECONDS))
+        throw new java.io.IOException("The TLS handshake took too long")
+      if (!handshake.isSuccess) {
+        val cause = handshake.cause()
+        throw NetworkThread.identityChange(cause).getOrElse(new java.io.IOException(s"TLS handshake failed: ${cause.getMessage}", cause))
+      }
+      // Met for the first time: the server to expect here from now on
+      if (known.isEmpty && trust.seen != null) knownServers.trust(serverHost, serverPort, trust.seen)
+      println(s"NetworkThread: TCP connected to $serverHost:$serverPort (server ${trust.seen})")
 
       // UDP channel (connected mode to server)
       val udpBootstrap = new Bootstrap()
@@ -133,6 +177,7 @@ class NetworkThread(serverHost: String, serverPort: Int, onPacket: Packet => Uni
       udpChannel = udpBootstrap.bind(0).sync().channel()
       println(s"NetworkThread: UDP bound on local port")
 
+      established = true
       ready.countDown()
 
       // Start heartbeat scheduler
@@ -229,6 +274,15 @@ class NetworkThread(serverHost: String, serverPort: Int, onPacket: Packet => Uni
   }
 }
 
+object NetworkThread {
+  /** How long the server has to prove who it is. */
+  val HandshakeTimeoutMs = 10000L
+
+  /** The server's identity having changed, if that is what stopped the handshake. */
+  private[net] def identityChange(t: Throwable): Option[ServerIdentityChangedException] =
+    Iterator.iterate(t)(_.getCause).takeWhile(_ != null).take(16).collectFirst { case e: ServerIdentityChangedException => e }
+}
+
 /** Handles TCP packets from the server. */
 class ClientTcpHandler(onPacket: Packet => Unit, networkThread: NetworkThread) extends SimpleChannelInboundHandler[io.netty.buffer.ByteBuf] {
   // Reuse read buffer — safe because handler runs on a single Netty event loop thread
@@ -260,6 +314,8 @@ class ClientTcpHandler(onPacket: Packet => Unit, networkThread: NetworkThread) e
       packet match {
         // Taken up here, before the packets behind it are read: they are signed with it
         case t: SessionTokenPacket => networkThread.takeSessionToken(t.getSessionToken)
+        // Here too, before the disconnect behind it
+        case e: SessionEndPacket => networkThread.sessionEndReason = e.getReason
         case _ =>
       }
       Metrics.clientPacketsReceived.add(1L, Attrs.packet(packet.getType))
@@ -283,8 +339,7 @@ class ClientTcpHandler(onPacket: Packet => Unit, networkThread: NetworkThread) e
 
   override def channelInactive(ctx: ChannelHandlerContext): Unit = {
     println("ClientTcpHandler: Server connection lost")
-    val cb = networkThread.disconnectCallback
-    if (cb != null) cb.run()
+    networkThread.connectionClosed()
     super.channelInactive(ctx)
   }
 

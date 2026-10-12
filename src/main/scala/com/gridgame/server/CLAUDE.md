@@ -22,10 +22,18 @@ match's bots), `LobbyHost` (what the lobbies need). `GameServer` implements them
 - **net/** — `ServerNetwork` (the sockets: TLS + length framing + `TcpHandler` per connection, one
   `UdpHandler`; a connection that hasn't logged in within 15s is closed), `Sessions` (tokens, renewed
   an hour in rather than ended — design/networking.md, layer 8 — the channel and address each logged
-  in on, auth failures; its locks are striped, as a lock per player was kept after they left),
-  `ReplayGuard` (packet numbering), `RateLimiter`, `TlsProvider`, and `Outbox`, through which every
+  in on, the refresh-token family its login belongs to and whether the exchange that started it is
+  confirmed yet (`heardFrom`), telling a session the server ends why (SESSION_END), auth failures;
+  its locks are striped, as a lock per player was kept after they left),
+  `ReplayGuard` (packet numbering), `RateLimiter`, `TlsProvider` (the server's TLS identity, made
+  once and kept beside the account database as `server_identity.p12`, so its players' clients can
+  pin it: design/networking.md, layer 1), and `Outbox`, through which every
   packet the server sends goes: over the transport its type names, signed with the player's token.
-- **account/** — `AuthService` (log in or sign up; a good login gets its token before the answer),
+- **account/** — `AuthService` (log in or sign up, log in again with a refresh token, log out; a
+  good login gets its session's token, then its refresh token, before the answer), `RefreshTokens`
+  (staying logged in: a month from the password, exchanged on every use, a copy that comes back
+  ending its family; their table, of hashes only, is in `AuthDatabase` — design/networking.md,
+  *Staying logged in*),
   `AccountQueries` (a profile, the leaderboard: ENTRY... END), `AuthDatabase` (every statement
   closed whether or not its query throws; `match_results`, which grows by a row for every player of
   every match, bots included, is only read through its indexes, by player and by match — its scans
@@ -63,14 +71,16 @@ match's bots), `LobbyHost` (what the lobbies need). `GameServer` implements them
   `RankedQueue` (matchmaking for every ranked mode), `MatchLauncher` (starting a lobby's match the
   same way for a casual lobby, practice and ranked; one that fails to start leaves nothing running).
 - **.** — `GameServer` (the parts put together, and routing, and the cleanup loop every 5s: players
-  gone quiet, sessions to renew, stale rate-limit and replay state), `ChatRelay`, `MatchEnd` (the end of a
+  gone quiet, sessions to renew, stale rate-limit and replay state, and hourly the refresh tokens
+  of logins that ran out), `ChatRelay`, `MatchEnd` (the end of a
   match: standings, saved results, ratings; the match comes down even if saving them fails —
   design/match-flow.md), `ServerMain`.
 
 ## Threads and ticks
 
 A match runs on its own scheduled executors: the projectile tick every `PROJECTILE_SPEED_MS` (30ms,
-`GameInstance.tickProjectiles`, which also ticks the traps), the player tick every 200ms
+`GameInstance.tickProjectiles`, which also ticks the traps and hands each player the items within
+their reach: design/combat.md, *Item Types*), the player tick every 200ms
 (`Vitals.tickPlayers`), the item spawner, a `TIME_SYNC` every 10 seconds, and the respawns; the match ends when its
 deadline fires (`GameInstance.endMatch`, see design/match-flow.md). Packets arrive on Netty's threads
 and are handled there (`ClientHandler`). The UDP socket has an event loop of its own: on one of the TCP

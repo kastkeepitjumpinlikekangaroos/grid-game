@@ -306,7 +306,8 @@ class PacketRoundTripTest {
     // The message field is 23 bytes. "Password must be 6+ chars" didn't fit, and the login
     // screen showed "Password must be 6+ cha".
     val replies = Seq(AuthRules.PasswordTooShort, AuthRules.InvalidUsername, AuthRules.UsernameTaken,
-      AuthRules.InvalidCredentials, AuthRules.TooManyAttempts, AuthRules.AccountCreated, AuthRules.LoginSuccessful)
+      AuthRules.InvalidCredentials, AuthRules.TooManyAttempts, AuthRules.AccountCreated, AuthRules.LoginSuccessful,
+      AuthRules.LoginExpired, AuthRules.TryAgainLater)
     for (msg <- replies) {
       assertTrue(s"'$msg' is ${msg.getBytes(StandardCharsets.UTF_8).length} bytes",
         msg.getBytes(StandardCharsets.UTF_8).length <= 23)
@@ -360,6 +361,47 @@ class PacketRoundTripTest {
     assertEquals((6.toByte, 6.toByte), (p.getPlayerCount, p.getMaxPlayers))
     assertEquals("Ranked Teams", p.getLobbyName)
     assertEquals(RankedQueueMode.TEAMS, p.getMode)
+  }
+
+  @Test def aRefreshLoginOrALogoutCarriesItsWholeToken(): Unit = {
+    val token = Array.tabulate[Byte](Constants.REFRESH_TOKEN_SIZE)(i => (255 - i * 9).toByte)
+    for (action <- Seq(AuthAction.REFRESH, AuthAction.LOGOUT)) {
+      val p = trip(new AuthRequestPacket(3, action, token))
+      assertEquals(action, p.getAction)
+      assertArrayEquals(token, p.getRefreshToken)
+      assertEquals("", p.getUsername)
+      assertEquals("", p.getPassword)
+    }
+    assertNull("a login carries no token", trip(new AuthRequestPacket(0, AuthAction.LOGIN, "bob", "secret1")).getRefreshToken)
+  }
+
+  @Test def aRefreshTokenKeepsItsBytesAndWhenItRunsOut(): Unit = {
+    val token = Array.tabulate[Byte](Constants.REFRESH_TOKEN_SIZE)(i => (i * 11 - 7).toByte)
+    val expiresAt = 1793000000123L
+    val p = trip(new RefreshTokenPacket(4, id, token, expiresAt))
+    assertEquals(id, p.getPlayerId)
+    assertArrayEquals(token, p.getRefreshToken)
+    assertEquals(expiresAt, p.getExpiresAt)
+  }
+
+  @Test def aSessionEndSaysWhy(): Unit =
+    for (reason <- Seq(SessionEndReason.REPLACED, SessionEndReason.REVOKED)) {
+      val p = trip(new SessionEndPacket(5, id, reason))
+      assertEquals(reason, p.getReason)
+      assertEquals(id, p.getPlayerId)
+    }
+
+  @Test def nothingSecretGoesIntoALogLine(): Unit = {
+    // A packet printed in a log, or in a test's failure, must not show what logs a player in
+    val token = Array.tabulate[Byte](Constants.REFRESH_TOKEN_SIZE)(i => (i + 65).toByte) // "ABC...", readable if printed
+    val printed = Seq(new AuthRequestPacket(1, AuthAction.LOGIN, "bob", "hunter22").toString,
+      new AuthRequestPacket(2, AuthAction.REFRESH, token).toString,
+      new RefreshTokenPacket(3, id, token, 0L).toString)
+    for (line <- printed) {
+      assertFalse(line, line.contains("hunter22"))
+      assertFalse(line, line.contains(new String(token, StandardCharsets.US_ASCII).take(8)))
+      assertFalse(line, line.contains(java.util.Base64.getEncoder.encodeToString(token).take(8)))
+    }
   }
 
   @Test def sessionTokenKeepsAll32Bytes(): Unit = {

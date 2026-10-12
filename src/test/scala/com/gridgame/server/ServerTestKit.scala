@@ -28,6 +28,28 @@ object ServerTestKit {
   def freshPort(): Int = nextPort.incrementAndGet()
   def freshGameId(): Short = nextGameId.incrementAndGet().toShort
 
+  /** Run `body` with what it prints to System.out thrown away: the server says something about
+    * nearly everything it is sent, which a test sending it thousands of things doesn't want. */
+  def quietly[T](body: => T): T = {
+    // Scala's println writes to Console.out, which is taken from System.out once, as Console starts:
+    // started inside, it would print nowhere for good, and swapping System.out alone misses it
+    val old = Console.out
+    val nothing = new java.io.PrintStream(java.io.OutputStream.nullOutputStream())
+    System.setOut(nothing)
+    try Console.withOut(nothing)(body) finally System.setOut(old)
+  }
+
+  /** Run `body` keeping what it prints to System.err, and return that: where the server reports
+    * what it refuses, and what it caught and carried on from (a tick's error, a bot's). */
+  def captureStderr(body: => Unit): String = {
+    val old = Console.err
+    val buf = new java.io.ByteArrayOutputStream()
+    val kept = new java.io.PrintStream(buf, true)
+    System.setErr(kept)
+    try Console.withErr(kept)(body) finally System.setErr(old)
+    buf.toString
+  }
+
   /** Decode what the server wrote: 80 bytes, the payload first (unsigned, as no test player has
     * a session token). */
   def decode(buf: ByteBuf): Packet = {
@@ -38,10 +60,23 @@ object ServerTestKit {
   }
 
   /** An EmbeddedChannel whose far end looks like a real TCP peer, for code that asks the channel
-    * for the client's address. */
+    * for the client's address.
+    *
+    * Safe to share with a real match's threads, which write to their players' channels as they
+    * tick. An EmbeddedChannel is one thread's: its event loop runs every write on whoever calls
+    * it, and writes from the ticks and the test at once broke its outbound buffer (null promises,
+    * buffers released twice) and closed it. A real server's channels hand every write to their
+    * own event loop. */
   class PeerChannel(host: String = "127.0.0.1") extends EmbeddedChannel() {
     private val peer = new InetSocketAddress(host, freshPort())
     override protected def remoteAddress0(): SocketAddress = peer
+
+    override def writeAndFlush(msg: AnyRef): io.netty.channel.ChannelFuture = synchronized(super.writeAndFlush(msg))
+    override def write(msg: AnyRef): io.netty.channel.ChannelFuture = synchronized(super.write(msg))
+    override def flush(): io.netty.channel.Channel = synchronized(super.flush())
+    override def writeInbound(msgs: AnyRef*): Boolean = synchronized(super.writeInbound(msgs: _*))
+    override def readOutbound[T](): T = synchronized(super.readOutbound[T]())
+    override def runPendingTasks(): Unit = synchronized(super.runPendingTasks())
   }
 
   /**
@@ -78,7 +113,7 @@ object ServerTestKit {
       send(n => new RankedQueuePacket(n, playerId, RankedQueueAction.QUEUE_JOIN, charId, mode))
 
     /** What the server wrote to this client since the last call. */
-    def received(): Seq[Packet] = {
+    def received(): Seq[Packet] = channel.synchronized {
       channel.runPendingTasks()
       Iterator.continually(channel.readOutbound[ByteBuf]()).takeWhile(_ != null).map(decode).toSeq
     }

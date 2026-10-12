@@ -386,6 +386,52 @@
     -fx-text-fill: -maple-ink;
 }
 
+/* A server's identity (its key's fingerprint), to compare character by character */
+.fingerprint {
+    -fx-font-family: "Monospaced";
+    -fx-font-size: 11px;
+    -fx-text-fill: -maple-ink;
+    -fx-background-color: -maple-tint;
+    -fx-background-radius: 10;
+    -fx-padding: 8 10;
+}
+
+/* A tick box ("Remember me"): a field's white face and edge, sky blue with a white tick when on */
+.check-box {
+    -fx-font-family: "Nunito"; -fx-font-weight: bold;
+    -fx-font-size: 14px;
+    -fx-text-fill: -maple-body;
+    -fx-label-padding: 0 0 0 10;
+    -fx-cursor: hand;
+}
+.check-box > .box {
+    -fx-background-color: -maple-edge, white;
+    -fx-background-insets: 0, 2;
+    -fx-background-radius: 7, 5;
+    -fx-padding: 4;
+}
+.check-box:hover > .box {
+    -fx-background-color: #a6c3e6, white;
+}
+.check-box > .box > .mark {
+    -fx-background-color: transparent;
+    -fx-padding: 6;
+}
+.check-box:selected > .box {
+    -fx-background-color: -maple-sky-deep, -maple-sky;
+}
+.check-box:selected > .box > .mark {
+    -fx-background-color: white;
+}
+.check-box:focus-visible > .box {
+    -fx-background-color: rgba(47, 143, 245, 0.22), -maple-sky, white;
+    -fx-background-insets: -3, 0, 2;
+    -fx-background-radius: 10, 7, 5;
+}
+.check-box:selected:focus-visible > .box {
+    -fx-background-color: rgba(47, 143, 245, 0.22), -maple-sky-deep, -maple-sky;
+}
+
 .combo-box {
     -fx-background-color: -maple-edge, white;
     -fx-background-insets: 0, 2;

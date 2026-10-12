@@ -126,6 +126,9 @@ class TcpHandler(sessions: Sessions, rateLimiter: RateLimiter, replay: ReplayGua
           Metrics.packetsDropped.add(1L, Attrs.ReasonReplay)
           return
         }
+        // Signed with the session's token, so the client had the login's reply: a refresh token it
+        // exchanged for this session is given up for good. Its first packet is its join, over TCP.
+        sessions.heardFrom(channelPlayer)
       }
       router.handleIncomingPacket(packet, ctx.channel(), null)
     } catch {
@@ -152,7 +155,14 @@ class TcpHandler(sessions: Sessions, rateLimiter: RateLimiter, replay: ReplayGua
 
   override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
     val msg = if (cause.getMessage != null) cause.getMessage else cause.getClass.getSimpleName
-    System.err.println(s"TCP handler error: $msg")
+    if (msg.contains("certificate_unknown")) {
+      // What a client says when this server isn't the one it met at this address before
+      System.err.println(s"TLS: A client at ${ctx.channel().remoteAddress()} refused this server's identity: it met " +
+        "another one here before. If the server was set up again (a new server_identity.p12), its players are " +
+        "asked to trust the new one.")
+    } else {
+      System.err.println(s"TCP handler error: $msg")
+    }
     ctx.close()
   }
 }

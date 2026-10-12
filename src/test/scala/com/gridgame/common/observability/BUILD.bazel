@@ -10,5 +10,9 @@ load("@rules_scala//scala:scala.bzl", "scala_junit_test")
         "@maven//:junit_junit",
     ],
 ) for (name, src) in [
+    ("collector_probe_test", "CollectorProbeTest.scala"),
     ("export_give_up_gate_test", "ExportGiveUpGateTest.scala"),
+    # Telemetry.init takes effect once per JVM: a target each
+    ("telemetry_with_collector_test", "TelemetryWithCollectorTest.scala"),
+    ("telemetry_without_collector_test", "TelemetryWithoutCollectorTest.scala"),
 ]]

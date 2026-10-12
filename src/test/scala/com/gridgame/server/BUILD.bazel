@@ -42,6 +42,12 @@ scala_library(
     ("packet_validator_test", "PacketValidatorTest.scala", []),
     ("auth_database_test", "AuthDatabaseTest.scala", []),
     ("auth_flow_test", "AuthFlowTest.scala", []),
+    # Refresh tokens in the account database: exchanged on every use, a copy ends its family
+    ("refresh_tokens_test", "RefreshTokensTest.scala", []),
+    # Staying logged in through the real TCP handler: refresh logins, logouts, sessions told why they ended
+    ("stay_logged_in_test", "StayLoggedInTest.scala", []),
+    # The server's TLS identity: made once, kept, the same server at every start
+    ("tls_provider_test", "TlsProviderTest.scala", []),
     ("end_game_test", "EndGameTest.scala", []),
     ("lobby_flow_test", "LobbyFlowTest.scala", ["//worlds:world_files"]),
     ("trap_test", "TrapTest.scala", []),
@@ -57,4 +63,14 @@ scala_library(
     ("chat_test", "ChatTest.scala", []),
     ("rate_limiter_test", "RateLimiterTest.scala", []),
     ("lobby_manager_test", "LobbyManagerTest.scala", []),
+    # Thousands of random requests from a match's players, between its ticks, with its rules checked after each
+    ("match_fuzz_test", "MatchFuzzTest.scala", []),
+    # Replay protection over long random runs of packet numbers, against a model of what it promises
+    ("replay_guard_model_test", "ReplayGuardModelTest.scala", []),
+    # Logged-in clients sending anything at all, real matches running meanwhile; it starts them, so it reads the maps
+    ("hostile_client_fuzz_test", "HostileClientFuzzTest.scala", ["//worlds:world_files"]),
+    # Real matches of bots on every map at once, on their own threads, with the rules sampled as they play
+    ("bot_match_soak_test", "BotMatchSoakTest.scala", ["//worlds:world_files"]),
+    # The projectile tick's grid shows a shot or a blast everyone it can reach, at the roster's own furthest reach
+    ("player_grid_test", "PlayerGridTest.scala", []),
 ]]

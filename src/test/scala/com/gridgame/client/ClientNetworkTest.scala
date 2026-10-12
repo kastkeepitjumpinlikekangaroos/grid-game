@@ -89,6 +89,24 @@ class ClientNetworkTest {
     assertEquals(1, heard.size)
   }
 
+  // --- Why the server ended the session (SESSION_END) ---
+
+  @Test def whyTheServerEndedTheSessionIsReadAsItArrives(): Unit = {
+    // On the packet thread it would be too late: the disconnect right behind it stops that thread,
+    // and the client couldn't tell being logged in elsewhere from losing the connection
+    net.sessionToken = token
+    assertEquals(SessionEndReason.NONE, net.sessionEndReason)
+    overTcp(signed(new SessionEndPacket(9, me, SessionEndReason.REPLACED)))
+    assertEquals(SessionEndReason.REPLACED, net.sessionEndReason)
+  }
+
+  @Test def aSessionEndTheSessionDidNotSignIsIgnored(): Unit = {
+    net.sessionToken = token
+    overTcp(unsigned(new SessionEndPacket(9, me, SessionEndReason.REVOKED)))
+    overTcp(signed(new SessionEndPacket(10, me, SessionEndReason.REVOKED), new Array[Byte](32)))
+    assertEquals(SessionEndReason.NONE, net.sessionEndReason)
+  }
+
   // --- An hour in: the server renews the session's token (server/net/Sessions) ---
 
   private val renewed = Array.tabulate[Byte](32)(i => (i * 13 + 5).toByte)

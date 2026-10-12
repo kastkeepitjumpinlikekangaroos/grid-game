@@ -16,6 +16,18 @@ rune).
   for blinks and stars. A throw can't be dropped past a wall, nor across the front of an enemy's
   raised barrier, which stops it as a wall does (design/barriers.md): it lands short. No cell at
   all means no cast and no cooldown spent.
+  - **The client only picks a cell the server takes.** `target` stops before a cell the straight
+    way to which crosses a wall, which is how `isValidTarget` judges it (half-cell steps along the
+    line to the cell). It used to walk the aim a whole cell at a time, and a throw past a wall's
+    corner landed on a cell whose straight line crossed it: one throw in twelve was refused over
+    cluttered ground, from the very cell the client threw from.
+  - **And the server takes it from a step behind** (`isValidTargetNear`: from where it has the
+    thrower, or a step on from there). The client throws from where it has the player, a step ahead
+    of the server's copy while that step's update is on its way, and from a step behind the server
+    refused 1-6% of the throws made walking about the real maps (most on the Lagoon and the
+    Snowglobe). The range already allowed for the step (`Teleport.withinReach`).
+  - `PlacementAgreementTest` throws thousands at random over cluttered ground and every map, the
+    server where the client is and a step behind.
 - **Arming and lasting.** It arms 800ms after it lands and lies there 25s. A player keeps three;
   a fourth takes their oldest away. One trap to a cell.
 - **What sets it off.** An enemy — not the owner, not a teammate — within `triggerRadius` (1.0

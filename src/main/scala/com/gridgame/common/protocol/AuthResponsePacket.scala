@@ -2,7 +2,6 @@ package com.gridgame.common.protocol
 
 import com.gridgame.common.Constants
 
-import java.nio.charset.StandardCharsets
 import java.util.UUID
 
 class AuthResponsePacket(
@@ -47,10 +46,7 @@ class AuthResponsePacket(
     }
 
     // [38-60] Message string (23 bytes)
-    val msgBytes = message.getBytes(StandardCharsets.UTF_8)
-    val msgLen = Math.min(msgBytes.length, 23)
-    buffer.put(msgBytes, 0, msgLen)
-    buffer.put(new Array[Byte](23 - msgLen))
+    SerializeUtil.putText(buffer, message, 23)
 
     // [61-63] Reserved
     buffer.put(new Array[Byte](3))

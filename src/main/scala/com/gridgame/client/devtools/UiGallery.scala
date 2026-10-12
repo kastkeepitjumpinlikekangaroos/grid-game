@@ -3,7 +3,9 @@ package com.gridgame.client.devtools
 import com.gridgame.client.ClientMain
 import com.gridgame.client.game.GameClient
 import com.gridgame.client.i18n.Messages
+import com.gridgame.client.net.{SavedLogin, ServerIdentityChangedException}
 import com.gridgame.client.ui.{MapPreview, Theme, Widgets}
+import com.gridgame.client.ui.screens.LastLogin
 import com.gridgame.common.model.{CharacterId, Position, WorldData}
 import com.gridgame.common.protocol._
 
@@ -80,12 +82,32 @@ class UiGalleryApp extends Application {
   // ── The shots ──────────────────────────────────────────────────────────
 
   private val me = "MapleMage"
+  // A login kept from the last time, on a server of its own (it is never logged in with here)
+  private def savedLogin = SavedLogin("play.gridgame.gg", 25565, me, new Array[Byte](32), Long.MaxValue)
 
   private def shots: Seq[(String, File => Unit)] = Seq(
     "01_login" -> (f => shoot(f, (app, s) => app.showWelcomeScreen(s, ""))),
     "02_signup" -> (f => shoot(f, (app, s) => app.showWelcomeScreen(s, ""),
       click = root => buttons(root).find(_.getText == Messages.t("Create an account")).foreach(_.fire()))),
     "03_login_notice" -> (f => shoot(f, (app, s) => app.showWelcomeScreen(s, Messages.t("Disconnected from the server")))),
+    // A login kept from the last time: its card, as the client starts or once it has been taken over
+    "03b_login_saved" -> (f => shoot(f, (app, s) => {
+      app.savedLogin = savedLogin
+      app.showWelcomeScreen(s, "")
+    })),
+    "03c_login_saved_elsewhere" -> (f => shoot(f, (app, s) => {
+      app.savedLogin = savedLogin
+      app.showWelcomeScreen(s, Messages.t("Your account logged in somewhere else"))
+    })),
+    // The server isn't the one met at its address before: nothing sent, both identities shown
+    "03e_login_server_changed" -> (f => shoot(f, (app, s) => app.showServerChanged(s,
+      new ServerIdentityChangedException("play.gridgame.gg", 25565,
+        "SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s", "SHA256:q7Lw0bE3fYxN2kTzR9cVmH4sJpA6gD1uWo8iKyF5tCe")))),
+    // The form after a saved login ran out: where it was, with "Remember me" ticked
+    "03d_login_expired" -> (f => shoot(f, (app, s) => {
+      app.lastLogin = LastLogin(savedLogin.host, savedLogin.port, me)
+      app.showWelcomeScreen(s, Messages.t("Your login has expired. Please log in again."))
+    }, click = root => all(root).collect { case b: javafx.scene.control.CheckBox => b }.foreach(_.setSelected(true)))),
     "04_lobbies" -> (f => shoot(f, (app, s) => {
       app.showLobbyBrowser(s, "")
       lobbyList(app.client)

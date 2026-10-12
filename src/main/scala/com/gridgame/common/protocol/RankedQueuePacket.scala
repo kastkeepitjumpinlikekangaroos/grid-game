@@ -2,7 +2,6 @@ package com.gridgame.common.protocol
 
 import com.gridgame.common.Constants
 
-import java.nio.charset.StandardCharsets
 import java.util.UUID
 
 object RankedQueueAction {
@@ -124,10 +123,7 @@ class RankedQueuePacket(
     buffer.put(maxPlayers)
 
     // [36-59] Lobby Name (24 bytes)
-    val nameBytes = lobbyName.getBytes(StandardCharsets.UTF_8)
-    val nameLen = Math.min(nameBytes.length, Constants.MAX_LOBBY_NAME_LEN)
-    buffer.put(nameBytes, 0, nameLen)
-    buffer.put(new Array[Byte](Constants.MAX_LOBBY_NAME_LEN - nameLen))
+    SerializeUtil.putText(buffer, lobbyName, Constants.MAX_LOBBY_NAME_LEN)
 
     // [60] Mode
     buffer.put(mode)

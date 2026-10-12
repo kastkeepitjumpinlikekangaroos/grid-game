@@ -1,0 +1,23 @@
+load("@rules_scala//scala:scala.bzl", "scala_junit_test")
+
+# Where "Remember me" keeps a login, in a folder of the test's own
+scala_junit_test(
+    name = "login_store_test",
+    srcs = ["LoginStoreTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+# The servers a client has met, and the identity each showed
+scala_junit_test(
+    name = "known_servers_test",
+    srcs = ["KnownServersTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "@maven//:junit_junit",
+    ],
+)

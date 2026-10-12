@@ -346,6 +346,17 @@ object GoldenFrames {
       s.afterFirstFrame = () => s.knockedTo(148, 152)
     }),
     Scene("cell_beside_wall", "the_cell.json", (41, 21), s => ()),
+    // Carrying all we may with an item at our feet: the count beside the inventory in amber, and
+    // above the bar the notice that the item stays on the ground until we use one of ours
+    Scene("meadow_inventory_full", "the_meadow.json", (60, 30), s => {
+      s.inventory(ItemType.Heart, 4)
+      s.inventory(ItemType.Star, 2)
+      s.inventory(ItemType.Gem, 2)
+      s.inventory(ItemType.Shield, 1)
+      s.inventory(ItemType.Fence, 1)
+      val (hx, hy) = s.home
+      s.client.getItems.put(1, new Item(1, hx + 1, hy, ItemType.Gem))
+    }),
     Scene("practice_chat", "the_meadow.json", (60, 30), s => {
       everything(s, withEffects = false)
       val c = s.client
