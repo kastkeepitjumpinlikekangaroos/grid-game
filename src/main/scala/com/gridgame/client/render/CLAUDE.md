@@ -21,7 +21,7 @@ scene target and then over the finished frame. Three Bazel libraries, each on th
 | `world/StatusEffectPainter` | frost, stun stars, poison, roots, a slow, a speed boost, a shield bubble |
 | `world/GlowEffectPainter` | the glowing effects (a gem, a charge, a phase, a burn, a hit's flash, a cast's flash), deferred to one additive pass |
 | `world/ItemPainter` | items on the ground, their glows, pickup sparkles; the item shapes the HUD's inventory uses |
-| `world/ProjectilePainter` | projectiles through GLProjectileRenderers: their lights, wall-passers lifted over the terrain, stopped ones fading |
+| `world/ProjectilePainter` | projectiles through GLProjectileRenderers: their lights (in their look's own colour where it has one, `glowOf`, else the thrower's), wall-passers lifted over the terrain, stopped ones fading |
 | `world/BarrierPainter` | raised barriers (design/barriers.md) |
 | `world/OpeningPainter` | the Teams wall, and the opening's countdown for the HUD (design/match-flow.md) |
 | `world/TrapPainter` | traps on the ground and going off (design/traps.md) |
@@ -29,7 +29,7 @@ scene target and then over the finished frame. Three Bazel libraries, each on th
 | `world/DeathAndTeleportPainter` | deaths and teleports |
 | `world/BlastPainter` | the frame's blasts, in their two layers, their lights and the air they shake (render/blasts) |
 | `world/WorldOverlayPainter` | name plates, health bars and damage numbers, over the finished frame |
-| `world/ParticleSpawner` | what the frame throws into the particle systems: weather, footsteps, trails, sparks, bursts |
+| `world/ParticleSpawner` | what the frame throws into the particle systems: weather, footsteps, trails (a projectile's embers in its look's colour, as its light), sparks, bursts |
 | `hud/HudPainter` | the HUD: the bottom bar (inventory and how full it is, charge bar), the leave prompt, the notice that we are too full to pick up the item within reach (design/combat.md, *Item Types*), and the parts below |
 | `hud/AbilityBarPainter`, `MatchInfoPainter`, `ChatPainter`, `PracticePainter`, `DeathScreenPainter` | the ability slots, the clock and kills and kill feed, chat, practice's tallies, the respawn countdown and game over screen |
 | `hud/CursorPainter` | the mouse's pointer, a crosshair over everything, drawn by `drawCursor` after the frame (*The pointer is ours*) |

@@ -22,3 +22,15 @@ scala_junit_test(
         "@maven//:junit_junit",
     ],
 )
+
+# A click on a closed drop-down opens it, whatever closed it last
+scala_junit_test(
+    name = "drop_downs_test",
+    srcs = ["DropDownsTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "//src/test/scala/com/gridgame/client:client_test_kit",
+        "@maven//:junit_junit",
+    ],
+)

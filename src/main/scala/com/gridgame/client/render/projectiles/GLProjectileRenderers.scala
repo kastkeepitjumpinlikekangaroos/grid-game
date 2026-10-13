@@ -4,22 +4,31 @@ import com.gridgame.common.model.{CharacterId, Projectile, ProjectileDef, Projec
 import com.gridgame.client.gl.ShapeBatch
 import ProjectileKit._
 import AoeRings._
+import Arsenal._
 import Beams._
 import Bites._
 import Blades._
+import Booms._
 import Bolts._
 import Chains._
+import Critters._
 import Electricity._
+import Elements._
 import Grabs._
 import Heavies._
 import Lobbed._
 import Missiles._
+import Necromancy._
 import Orbs._
+import Relics._
 import Shafts._
 import Songs._
+import Spirits._
 import Surges._
 import Tethers._
 import Undead._
+import Venoms._
+import Vortices._
 import Winds._
 
 /**
@@ -275,20 +284,20 @@ object GLProjectileRenderers {
 
   private val registry: Map[Byte, Renderer] = Map(
     // ── Original (0-30) ──
-    ProjectileType.NORMAL       -> asRenderer(drawNormal),
+    ProjectileType.NORMAL       -> asRenderer(drawRayZap),
     ProjectileType.TENTACLE     -> tether(TETH_TENTACLE, 0.24f, 0.74f, 0.44f),
     ProjectileType.ICE_BEAM     -> (drawFrostComet _),
     ProjectileType.AXE          -> bladeSpinner(WPN_AXE, 0.78f, 0.70f, 0.55f, 30f),
     ProjectileType.ROPE         -> chainProj(CHN_ROPE, 0.72f, 0.54f, 0.30f, 6f),
     ProjectileType.SPEAR        -> flyingShaft(SHF_SPEAR, 0.95f, 0.82f, 0.42f, 28f),
-    ProjectileType.SOUL_BOLT    -> energyBolt(0.30f, 0.84f, 0.82f, 20f, ORB_SPIRIT),
+    ProjectileType.SOUL_BOLT    -> asRenderer(drawWraithHood),
     ProjectileType.HAUNT        -> energyBolt(0.5f, 0.7f, 0.95f, 24f, ORB_SPIRIT),
     ProjectileType.ARCANE_BOLT  -> energyBolt(0.65f, 0.3f, 0.95f, 22f, ORB_RUNE),
     ProjectileType.FIREBALL     -> energyBolt(1f, 0.46f, 0.08f, 28f, ORB_FIRE),
-    ProjectileType.SPLASH       -> aoeRing(AOE_WATER, 0.32f, 0.62f, 1f, 46f),
+    ProjectileType.SPLASH       -> asRenderer(drawWaterTrident),
     ProjectileType.TIDAL_WAVE   -> asRenderer(drawBreakingWave),
     ProjectileType.GEYSER       -> asRenderer(drawGeyser),
-    ProjectileType.BULLET       -> bulletProj(0.75f, 0.7f, 0.55f),
+    ProjectileType.BULLET       -> asRenderer(drawRifleTracer),
     ProjectileType.GRENADE      -> lobbed(LOB_BOMB, 0.95f, 0.62f, 0.25f, 17f),
     ProjectileType.ROCKET       -> asRenderer(drawRocket),
     ProjectileType.TALON        -> asRenderer(drawTalon),
@@ -301,7 +310,7 @@ object GLProjectileRenderers {
     ProjectileType.KATANA       -> bladeSpinner(WPN_KATANA, 0.78f, 0.84f, 0.95f, 32f),
     ProjectileType.SWORD_WAVE   -> asRenderer(drawSwordWave),
     ProjectileType.PLAGUE_BOLT  -> energyBolt(0.52f, 0.82f, 0.12f, 20f, ORB_TOXIC),
-    ProjectileType.MIASMA       -> aoeRing(AOE_TOXIC, 0.42f, 0.72f, 0.18f, 42f),
+    ProjectileType.MIASMA       -> asRenderer(drawMiasmaSkull),
     ProjectileType.BLIGHT_BOMB  -> lobbed(LOB_FLASK, 0.45f, 0.8f, 0.2f, 17f),
     ProjectileType.BLOOD_FANG   -> asRenderer(drawBloodFang),
     ProjectileType.BLOOD_SIPHON -> siphonVortex(SIPH_BLOOD, 0.88f, 0.12f, 0.14f, 19f),
@@ -314,17 +323,17 @@ object GLProjectileRenderers {
     ProjectileType.CHAIN_LIGHTNING -> lightningBolt(0.95f, 0.85f, 0.35f, heavy = true),
     ProjectileType.THUNDER_STRIKE -> asRenderer(drawThunderStrike),
     ProjectileType.BOULDER      -> asRenderer((proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int) => drawBoulder(proj, sx, sy, sb, tick, 24f)),
-    ProjectileType.SEISMIC_SLAM -> aoeRing(AOE_QUAKE, 0.68f, 0.50f, 0.28f, 50f),
+    ProjectileType.SEISMIC_SLAM -> asRenderer(drawRocketFist),
     ProjectileType.WIND_BLADE   -> asRenderer(drawWindPinwheel),
     ProjectileType.MAGMA_BALL   -> energyBolt(1f, 0.45f, 0.05f, 24f, ORB_FIRE),
     ProjectileType.ERUPTION     -> aoeRing(AOE_FIRE, 1f, 0.45f, 0.05f, 46f),
     ProjectileType.FROST_TRAP   -> lobbed(LOB_ICE, 0.62f, 0.85f, 1f, 17f),
-    ProjectileType.SAND_SHOT    -> energyBolt(0.9f, 0.75f, 0.4f, 18f, ORB_SAND),
+    ProjectileType.SAND_SHOT    -> asRenderer(drawSandBlade),
     ProjectileType.SAND_BLAST   -> asRenderer(drawDustCloud),
     ProjectileType.THORN        -> flyingShaft(SHF_THORN, 0.42f, 0.75f, 0.28f, 26f),
     ProjectileType.VINE_WHIP    -> tether(TETH_VINE, 0.30f, 0.62f, 0.20f),
     ProjectileType.THORN_WALL   -> aoeRing(AOE_NATURE, 0.30f, 0.62f, 0.18f, 34f),
-    ProjectileType.INFERNO_BLAST -> asRenderer(drawInfernoBlast),
+    ProjectileType.INFERNO_BLAST -> asRenderer(drawFireWheel),
     ProjectileType.GLACIER_SPIKE -> flyingShaft(SHF_ICE, 0.60f, 0.88f, 1f, 27f),
     ProjectileType.MUD_GLOB     -> energyBolt(0.4f, 0.3f, 0.15f, 22f, ORB_MUD),
     ProjectileType.MUD_BOMB     -> lobbed(LOB_GLOB, 0.40f, 0.30f, 0.14f, 18f),
@@ -337,18 +346,18 @@ object GLProjectileRenderers {
     ProjectileType.BONE_AXE     -> bladeSpinner(WPN_BONE_AXE, 0.94f, 0.92f, 0.84f, 30f),
     ProjectileType.BONE_THROW   -> bladeSpinner(WPN_BONE, 0.94f, 0.92f, 0.84f, 24f, 0.38),
     ProjectileType.WAIL         -> asRenderer(drawWail),
-    ProjectileType.SOUL_DRAIN   -> siphonVortex(SIPH_SOUL, 0.40f, 0.95f, 0.55f, 19f),
+    ProjectileType.SOUL_DRAIN   -> asRenderer(drawPhylactery),
     ProjectileType.CLAW_SWIPE   -> asRenderer(drawClawSwipe),
     ProjectileType.DEVOUR       -> asRenderer(drawDevour),
     ProjectileType.SCYTHE       -> asRenderer(drawScythe),
     ProjectileType.REAP         -> asRenderer(drawReap),
-    ProjectileType.SHADOW_BOLT  -> asRenderer(drawShadowBolt),
+    ProjectileType.SHADOW_BOLT  -> asRenderer(drawShadeGrin),
     ProjectileType.CURSED_BLADE -> bladeSpinner(WPN_CURSED, 0.90f, 0.18f, 0.28f, 30f),
-    ProjectileType.LIFE_DRAIN   -> siphonVortex(SIPH_LIFE, 0.80f, 0.14f, 0.30f, 19f),
+    ProjectileType.LIFE_DRAIN   -> asRenderer(drawRevenantHelm),
     ProjectileType.SHOVEL       -> lobbed(LOB_SHOVEL, 0.62f, 0.64f, 0.62f, 26f),
     ProjectileType.HEAD_THROW   -> lobbed(LOB_HORN, 0.86f, 0.80f, 0.68f, 22f),
-    ProjectileType.BANDAGE_WHIP -> (drawBandageWad _),
-    ProjectileType.CURSE        -> asRenderer(drawCurse),
+    ProjectileType.BANDAGE_WHIP -> tether(TETH_BANDAGE, 0.93f, 0.88f, 0.74f),
+    ProjectileType.CURSE        -> asRenderer(drawDeathMask),
 
     // ── Medieval/Fantasy (70-79) ──
     ProjectileType.HOLY_BLADE   -> bladeSpinner(WPN_SWORD, 1f, 0.92f, 0.45f, 31f),
@@ -356,7 +365,7 @@ object GLProjectileRenderers {
     ProjectileType.ARROW        -> flyingShaft(SHF_ARROW, 0.95f, 0.72f, 0.32f, 25f),
     ProjectileType.POISON_ARROW -> flyingShaft(SHF_PARROW, 0.4f, 0.9f, 0.32f, 25f),
     ProjectileType.SONIC_WAVE   -> asRenderer(drawLuteNote),
-    ProjectileType.SONIC_BOOM   -> aoeRing(AOE_SONIC, 0.78f, 0.58f, 0.97f, 50f),
+    ProjectileType.SONIC_BOOM   -> asRenderer(drawLyre),
     ProjectileType.FIST         -> fistProj(0.75f, 0.6f, 0.45f, 28f),
     ProjectileType.SMITE        -> asRenderer(drawHolyBolt),
     ProjectileType.CHARM        -> energyBolt(1f, 0.38f, 0.62f, 18f, ORB_HEART),
@@ -366,7 +375,7 @@ object GLProjectileRenderers {
     ProjectileType.DATA_BOLT    -> asRenderer((proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int) => drawDataBolt(proj, sx, sy, sb, tick, isVirus = false)),
     ProjectileType.VIRUS        -> asRenderer((proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int) => drawDataBolt(proj, sx, sy, sb, tick, isVirus = true)),
     ProjectileType.LASER        -> laserBolt(BOLT_LASER, 1f, 0.25f, 0.2f, 40f, 9f),
-    ProjectileType.GRAVITY_BALL -> asRenderer(drawGravityBall),
+    ProjectileType.GRAVITY_BALL -> asRenderer(drawGravityCubes),
     ProjectileType.GRAVITY_WELL -> asRenderer(drawGravityBall),
     ProjectileType.TESLA_COIL   -> lightningBolt(0.35f, 0.85f, 1f),
     ProjectileType.NANO_BOLT    -> energyBolt(0.25f, 0.85f, 0.65f, 16f, ORB_SWARM),
@@ -375,8 +384,8 @@ object GLProjectileRenderers {
     ProjectileType.CLUSTER_BOMB -> lobbed(LOB_BOMB, 0.9f, 0.66f, 0.3f, 19f),
 
     // ── Nature/Beast (90-93) ──
-    ProjectileType.VENOM_BOLT   -> asRenderer(drawVenomBolt),
-    ProjectileType.WEB_SHOT     -> asRenderer(drawWebShot),
+    ProjectileType.VENOM_BOLT   -> asRenderer(drawVenomSnake),
+    ProjectileType.WEB_SHOT     -> asRenderer(drawSpiderWeb),
     ProjectileType.STINGER      -> asRenderer(drawStinger),
     ProjectileType.ACID_BOMB    -> asRenderer(drawVenomBolt),
 
@@ -392,35 +401,35 @@ object GLProjectileRenderers {
 
     // ── Character-specific (102-111) ──
     ProjectileType.KNIFE        -> bladeSpinner(WPN_KNIFE, 0.84f, 0.86f, 0.92f, 25f, 0.36),
-    ProjectileType.STING        -> energyBolt(0.45f, 0.9f, 1f, 16f, ORB_SHOCK),
+    ProjectileType.STING        -> asRenderer(drawBabyJelly),
     ProjectileType.HAMMER       -> lobbed(LOB_HAMMER, 0.60f, 0.62f, 0.70f, 27f),
     ProjectileType.HORN         -> asRenderer(drawHorn),
-    ProjectileType.MYSTIC_BOLT  -> energyBolt(0.92f, 0.26f, 0.70f, 20f, ORB_RUNE),
+    ProjectileType.MYSTIC_BOLT  -> asRenderer(drawFoxfire),
     ProjectileType.PETRIFY      -> gorgonEye(petrify = true),
     ProjectileType.GRAB         -> tether(TETH_PAW, 0.98f, 0.64f, 0.26f),
     ProjectileType.JAW          -> asRenderer(drawJaw),
-    ProjectileType.TONGUE       -> (drawTongueLash _),
-    ProjectileType.ACID_FLASK   -> asRenderer(drawVenomBolt),
+    ProjectileType.TONGUE       -> tether(TETH_TONGUE, 0.95f, 0.45f, 0.58f),
+    ProjectileType.ACID_FLASK   -> asRenderer(drawAcidFlask),
 
     // ── Roster audit: new differentiation projectiles (112+) ──
     ProjectileType.BOOMERANG_BLADE -> bladeSpinner(WPN_CURSED, 0.90f, 0.18f, 0.28f, 30f),
-    ProjectileType.VORTEX_BOMB     -> aoeRing(AOE_VOID, 0.55f, 0.25f, 0.85f, 42f),
+    ProjectileType.VORTEX_BOMB     -> asRenderer(drawBlackHole),
     ProjectileType.CHAIN_LIGHTNING_FORK -> lightningBolt(1f, 0.92f, 0.42f, heavy = true),
     ProjectileType.SNIPER_BEAM     -> railSlug(0.40f, 0.70f, 1f, 11f),
     ProjectileType.MOMENTUM_STRIKE -> asRenderer(drawSpiritWolf),
-    ProjectileType.LEECH_BOLT      -> energyBolt(0.88f, 0.09f, 0.20f, 22f, ORB_ORBIT),
+    ProjectileType.LEECH_BOLT      -> asRenderer(drawLichHand),
     ProjectileType.RICOCHET_SHARD  -> flyingShaft(SHF_ICE, 0.62f, 0.90f, 1f, 21f),
     ProjectileType.FLAME_WAVE      -> asRenderer(drawLivingFlame),
-    ProjectileType.POISON_CLOUD    -> aoeRing(AOE_TOXIC, 0.36f, 0.80f, 0.24f, 46f),
+    ProjectileType.POISON_CLOUD    -> asRenderer(drawSwampGas),
     ProjectileType.BONE_BOOMERANG  -> bladeSpinner(WPN_BONE, 0.94f, 0.92f, 0.84f, 24f, 0.34),
     ProjectileType.GRAVITY_LANCE   -> flyingShaft(SHF_LANCE, 0.55f, 0.25f, 0.85f, 26f),
-    ProjectileType.SHADOW_HAUNT    -> asRenderer(drawVoidBolt),
+    ProjectileType.SHADOW_HAUNT    -> asRenderer(drawPhantomMask),
     ProjectileType.CHARGE_FIST     -> fistProj(0.85f, 0.65f, 0.35f, 28f),
     ProjectileType.ACID_SPRAY      -> asRenderer(drawAcidSpray),
-    ProjectileType.ECHO_BOLT       -> energyBolt(0.45f, 0.55f, 1f, 20f, ORB_RUNE),
+    ProjectileType.ECHO_BOLT       -> asRenderer(drawBansheeTear),
     ProjectileType.FLAME_TRAIL     -> energyBolt(1f, 0.6f, 0.15f, 22f, ORB_FIRE),
     ProjectileType.STAR_BOLT       -> energyBolt(1f, 0.78f, 0.22f, 22f, ORB_ASTRAL),
-    ProjectileType.RUNE_BOLT       -> energyBolt(0.32f, 0.58f, 0.98f, 18f, ORB_RUNE),
+    ProjectileType.RUNE_BOLT       -> asRenderer(drawRunestone),
     ProjectileType.SOUL_HARVEST    -> aoeRing(AOE_VOID, 0.34f, 0.90f, 0.40f, 42f),
     ProjectileType.OVERCLOCK_BEAM  -> aoeRing(AOE_SONIC, 0.22f, 0.95f, 0.75f, 40f),
     ProjectileType.NAPALM_STRIKE   -> lobbed(LOB_BOMB, 1f, 0.5f, 0.12f, 20f),
@@ -429,11 +438,11 @@ object GLProjectileRenderers {
 
     // ── DPS balance variants (the base type's look, but for the Banshee's and the Harpy's sonic
     // waves: each variant is only one character's, so it is drawn as theirs) ──
-    ProjectileType.SOUL_BOLT_HEAVY   -> energyBolt(0.30f, 0.84f, 0.82f, 20f, ORB_SPIRIT),
+    ProjectileType.SOUL_BOLT_HEAVY   -> asRenderer(drawPhantomBlade),
     ProjectileType.FROST_SHARD_LIGHT -> flyingShaft(SHF_ICE, 0.55f, 0.85f, 1f, 20f),
     ProjectileType.FLAME_BOLT_HEAVY  -> energyBolt(1f, 0.5f, 0.1f, 20f, ORB_FIRE),
     ProjectileType.FLAME_BOLT_LIGHT  -> energyBolt(1f, 0.5f, 0.1f, 20f, ORB_FIRE),
-    ProjectileType.BULLET_HEAVY      -> bulletProj(0.75f, 0.7f, 0.55f),
+    ProjectileType.BULLET_HEAVY      -> asRenderer(drawTwinTracers),
     ProjectileType.BULLET_LIGHT      -> bulletProj(0.75f, 0.7f, 0.55f),
     ProjectileType.SONIC_WAVE_HEAVY  -> asRenderer(drawKeeningGhost),
     ProjectileType.SONIC_WAVE_MED    -> asRenderer(drawScreechFeather),
@@ -443,7 +452,7 @@ object GLProjectileRenderers {
     ProjectileType.ARROW_HEAVY       -> flyingShaft(SHF_ARROW, 0.95f, 0.72f, 0.32f, 27f),
     ProjectileType.ARROW_LIGHT       -> flyingShaft(SHF_ARROW, 0.95f, 0.72f, 0.32f, 24f),
     ProjectileType.HOLY_BOLT_HEAVY   -> asRenderer(drawHolyBolt),
-    ProjectileType.VENOM_BOLT_LIGHT  -> asRenderer(drawVenomBolt),
+    ProjectileType.VENOM_BOLT_LIGHT  -> asRenderer(drawVenomBraid),
 
     // ── Plan 5a: melee and skirmisher kits (150-169), on existing looks ──
     ProjectileType.SHOCKWAVE       -> aoeRing(AOE_SONIC, 1f, 0.90f, 0.55f, 44f),
@@ -500,11 +509,39 @@ object GLProjectileRenderers {
   // SONIC_WAVE, and four characters a GUST: every one of them used to be the same crescent.
   private val _byChar = new Array[Array[Renderer]](256)
 
-  private def only(who: CharacterId, t: Byte, r: Renderer): Unit = {
+  // ── The colour a look lights the ground with and sheds its embers in ──
+  // A projectile's light and the embers trailing it were its thrower's player colour, which is
+  // random, plus a second light by its element: on a dark map a Necromancer's green skull could
+  // light the ground pink and Anubis's golden ankh purple. A character's own look says its colour
+  // here (0xRRGGBB); -1, for every look that doesn't, keeps the thrower's.
+  private val _glowLUT: Array[Int] = Array.fill(256)(-1)
+  private val _glowByChar = new Array[Array[Int]](256)
+
+  /** The colour (0xRRGGBB) a projectile of `pType` thrown by `charId` lights the ground with and sheds
+    * its embers in: its look's own, or -1 where the look has none of its own (the thrower's colour).
+    * It follows [[getRenderer]]: the thrower's look for the type where they have one, else the type's. */
+  def glowOf(charId: Byte, pType: Byte): Int = {
+    if (charId >= 0) {
+      val own = _byChar(pType & 0xFF)
+      if (own != null && own(charId & 0xFF) != null) {
+        val g = _glowByChar(pType & 0xFF)
+        return if (g == null) -1 else g(charId & 0xFF)
+      }
+    }
+    _glowLUT(pType & 0xFF)
+  }
+
+  private def only(who: CharacterId, t: Byte, r: Renderer, glow: Int = -1): Unit = {
     var row = _byChar(t & 0xFF)
     if (row == null) { row = new Array[Renderer](256); _byChar(t & 0xFF) = row }
     row(who.id & 0xFF) = r
+    var g = _glowByChar(t & 0xFF)
+    if (g == null) { g = Array.fill(256)(-1); _glowByChar(t & 0xFF) = g }
+    g(who.id & 0xFF) = glow
   }
+
+  /** The colour of a type's own look (the registry's), for a look that has one. */
+  private def glow(t: Byte, rgb: Int): Unit = _glowLUT(t & 0xFF) = rgb
 
   only(CharacterId.Musician, ProjectileType.SONIC_WAVE, asRenderer(drawPowerChord))
   only(CharacterId.Sphinx, ProjectileType.SONIC_WAVE, asRenderer(drawRiddleEye))
@@ -512,6 +549,71 @@ object GLProjectileRenderers {
   only(CharacterId.Cloudrunner, ProjectileType.GUST, asRenderer(drawCloudPuff))
   only(CharacterId.Hawk, ProjectileType.GUST, asRenderer(drawFeatherGust))
   only(CharacterId.Raptor, ProjectileType.GUST, asRenderer(drawSpiritEagle))
+
+  // ── Ghosts (Spirits) ──
+  glow(ProjectileType.SOUL_BOLT, 0x3FC9BC)        // the Wraith's teal
+  glow(ProjectileType.SOUL_BOLT_HEAVY, 0x8FB4FF)  // the Phantom's pale blue
+  glow(ProjectileType.SHADOW_HAUNT, 0x8FB4FF)
+  glow(ProjectileType.ECHO_BOLT, 0xC8C4FF)        // the Banshee's silver-lilac
+  glow(ProjectileType.SHADOW_BOLT, 0x9A5CFF)      // the Shade's lilac
+  only(CharacterId.Poltergeist, ProjectileType.SOUL_BOLT_HEAVY, asRenderer(drawPoltergeistThrow), 0xB4B0FF)
+
+  // ── The undead and the damned (Necromancy) ──
+  glow(ProjectileType.LIFE_DRAIN, 0x4FE6F2)       // the Revenant's soul-fire
+  glow(ProjectileType.LEECH_BOLT, 0x63D9FF)       // the Lich's cyan, all three
+  glow(ProjectileType.SOUL_DRAIN, 0x63D9FF)
+  only(CharacterId.Lich, ProjectileType.FROST_SHARD, asRenderer(drawGraveIce), 0x63D9FF)
+  only(CharacterId.Necromancer, ProjectileType.DEATH_BOLT, asRenderer(drawGreenFlameSkull), 0x5CF26B)
+  only(CharacterId.Shadowfiend, ProjectileType.DEATH_BOLT, asRenderer(drawFiendEye), 0xF25CB4)
+
+  // ── Relics ──
+  glow(ProjectileType.CURSE, 0x5CF27A)            // the Mummy's curse, green in a mask of gold
+  glow(ProjectileType.MYSTIC_BOLT, 0x4F8CFF)      // the Yokai's foxfire
+  glow(ProjectileType.ACID_FLASK, 0x7CF240)
+  glow(ProjectileType.RUNE_BOLT, 0x4FD9FF)        // the Runesmith's runes
+  only(CharacterId.Mummy, ProjectileType.SAND_SHOT, asRenderer(drawScarab), 0xE6C25A)
+  only(CharacterId.Anubis, ProjectileType.DEATH_BOLT, asRenderer(drawAnkh), 0xF2C24F)
+  only(CharacterId.Anubis, ProjectileType.CURSE, asRenderer(drawJackalSpirit), 0xF2B84F)
+  only(CharacterId.Yokai, ProjectileType.CURSE, asRenderer(drawOfuda), 0xFF5A4F)
+  only(CharacterId.Djinn, ProjectileType.MYSTIC_BOLT, asRenderer(drawGenieLamp), 0x8C80FF)
+  only(CharacterId.Alchemist, ProjectileType.FIREBALL, asRenderer(drawExplosivePotion), 0xFF8C2E)
+
+  // ── Poison (Venoms) ──
+  glow(ProjectileType.MIASMA, 0x9CC23F)           // the Plague Doctor's sickly fog
+  glow(ProjectileType.VENOM_BOLT, 0x5CD94F)       // the Serpent's green
+  glow(ProjectileType.VENOM_BOLT_LIGHT, 0x8CF24F) // the Hydra's, all three
+  glow(ProjectileType.POISON_CLOUD, 0x5CC28C)
+  only(CharacterId.PlagueDoctor, ProjectileType.PLAGUE_BOLT, asRenderer(drawFlyBlownGlob), 0xB4C23F)
+  only(CharacterId.Hydra, ProjectileType.VENOM_BOLT, asRenderer(drawHydraHead), 0x8CF24F)
+  only(CharacterId.Chimera, ProjectileType.VENOM_BOLT, asRenderer(drawFireVenomHelix), 0xE6A53F)
+  only(CharacterId.Medusa, ProjectileType.VENOM_BOLT, asRenderer(drawOuroboros), 0x6FD96B)
+
+  // ── Guns and machines (Arsenal) ──
+  glow(ProjectileType.NORMAL, 0x4FE6FF)           // the Spaceman's plasma, not the player's colour
+  glow(ProjectileType.BULLET, 0xFF4F2E)           // the Soldier's red tracer
+  glow(ProjectileType.BULLET_HEAVY, 0xFFD23F)     // the Pilot's yellow ones
+  glow(ProjectileType.SEISMIC_SLAM, 0xFF9C3F)     // the rocket under the Mech Pilot's fist
+  glow(ProjectileType.GRAVITY_BALL, 0xA56BFF)     // the Graviton's violet
+  only(CharacterId.Pirate, ProjectileType.BULLET, asRenderer(drawMusketBall), 0xFFA54F)
+  only(CharacterId.Pilot, ProjectileType.BULLET, asRenderer(drawBiplane), 0xFF6B4F)
+
+  // ── The elementalists (Elements) and the vortex bomb's three (Vortices) ──
+  glow(ProjectileType.SPLASH, 0x4FA0FF)           // the Tidecaller's water
+  glow(ProjectileType.SAND_SHOT, 0xE6C27A)        // the Sandstorm's sand
+  glow(ProjectileType.INFERNO_BLAST, 0xFF7A1F)
+  glow(ProjectileType.VORTEX_BOMB, 0xC77AFF)      // the Graviton's black hole
+  only(CharacterId.Inferno, ProjectileType.VORTEX_BOMB, asRenderer(drawFireTornado), 0xFF7A1F)
+  only(CharacterId.Shadowfiend, ProjectileType.VORTEX_BOMB, asRenderer(drawVoidMaw), 0xF25CB4)
+
+  // ── The beasts (Critters), the sonic boom (Booms) and the two pulls that are now tied (Tethers) ──
+  glow(ProjectileType.STING, 0xFF8CE0)            // the Jellyfish's pink
+  glow(ProjectileType.WEB_SHOT, 0xF2F2EB)
+  glow(ProjectileType.SONIC_BOOM, 0xFFD966)       // the Bard's gold
+  glow(ProjectileType.TONGUE, 0xFF7396)
+  glow(ProjectileType.BANDAGE_WHIP, 0xEDE0BD)
+  only(CharacterId.Mantis, ProjectileType.SHADOW_HAUNT, asRenderer(drawMantisStrike), 0x7AE64F)
+  only(CharacterId.Gorilla, ProjectileType.SEISMIC_SLAM, asRenderer(drawGroundPound), 0xC29C5C)
+  only(CharacterId.Musician, ProjectileType.SONIC_BOOM, asRenderer(drawGuitarPick), 0xFF5CB4)
 
   // ═══════════════════════════════════════════════════════════════
   //  SPECIALIZED RENDERERS

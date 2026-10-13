@@ -24,9 +24,7 @@ private[render] object Orbs {
   final val ORB_SPIRIT = 6   // a soul: wisps streaming off it, a skull's sockets in it
   final val ORB_TOXIC  = 7   // bubbling, dripping plague
   final val ORB_SWARM  = 8   // a cloud of nanites round a small core
-  final val ORB_SAND   = 9   // a ball of whirling sand shedding grains
   final val ORB_MUD    = 10  // a wet glob of mud flinging drops, with no glow at all
-  final val ORB_SHOCK  = 11  // a plasma ball crackling with arcs
 
   /**
    * Half of a ring orbiting an orb, plus the motes riding that half. `front` picks the half
@@ -169,10 +167,6 @@ private[render] object Orbs {
       // ── What streams out behind it ──
       style match {
         case ORB_MUD => mudTrail(sb, sx, sy, ndx, ndy, sz, p, tick, proj.id)
-        case ORB_SAND =>
-          cometTail(sb, sx, sy, ndx, ndy, tailLen * 1.05f, across * 1.05f, dr, dg, db, 0.3f * p)
-          cometTail(sb, sx, sy, ndx, ndy, tailLen * 0.7f, across * 0.5f, lr, lg, lb, 0.45f * p)
-          sandGrains(sb, sx, sy, ndx, ndy, sz, tailLen, p, tick, proj.id)
         case ORB_SWARM =>
           cometTail(sb, sx, sy, ndx, ndy, tailLen * 0.9f, across * 0.9f, dr, dg, db, 0.22f * p)
           naniteStream(sb, sx, sy, ndx, ndy, sz, tailLen, dr, dg, db, p, tick, proj.id)
@@ -189,8 +183,7 @@ private[render] object Orbs {
 
       // ── Glow: modest, and none on mud ──
       if (style != ORB_MUD)
-        sb.fillOvalSoft(sx, sy, rx * 1.75f * dynGlow, ry * 1.85f * dynGlow, dr, dg, db,
-          (if (style == ORB_SAND) 0.18f else 0.3f) * p, 0f, 16)
+        sb.fillOvalSoft(sx, sy, rx * 1.75f * dynGlow, ry * 1.85f * dynGlow, dr, dg, db, 0.3f * p, 0f, 16)
 
       // ── Behind the body ──
       val orbits = style == ORB_ORBIT || style == ORB_ASTRAL
@@ -253,27 +246,14 @@ private[render] object Orbs {
             sb.fillOval(dx2, dy2, ds2, ds2 * 1.35f, dr, dg, db, 0.95f * (1f - t) * p, 8)
             d += 1
           }
-        case ORB_SAND => sandSwirl(sb, sx, sy, rx, ry, dr, dg, db, p, phase)
         case ORB_SWARM => nanites(sb, sx, sy, rx, front = true, dr, dg, db, p, phase)
-        case ORB_SHOCK =>
-          // Arcs crackling off the ball, re-struck twenty times a second
-          val epoch = (tick + proj.id * 5) / 3
-          var a = 0
-          while (a < 4) {
-            val ang = a * (Math.PI / 2) + hash2(proj.id * 71 + a, epoch) * 0.7
-            val al = rx * (1.55f + 0.4f * hash2(proj.id * 73 + a, epoch))
-            val ca2 = Math.cos(ang).toFloat; val sa2 = Math.sin(ang).toFloat
-            sparkArc(sb, sx + ca2 * rx * 0.55f, sy + sa2 * ry * 0.55f, sx + ca2 * al, sy + sa2 * al * 0.8f, 4,
-              rx * 0.3f, proj.id * 13 + epoch * 7 + a, 3f, lr, lg, lb, p)
-            a += 1
-          }
         case _ => ()
       }
       if (orbits)
         orbitHalf(sb, sx, sy, ringA, ringB, ringSpin, front = true, 3, style == ORB_ASTRAL, dr, dg, db, p)
 
-      // Specks shed off its back — not off mud, sand or the swarm, which shed their own
-      if (style != ORB_MUD && style != ORB_SAND && style != ORB_SWARM)
+      // Specks shed off its back — not off mud or the swarm, which shed their own
+      if (style != ORB_MUD && style != ORB_SWARM)
         shedMotes(sb, sx, sy, ndx, ndy, rx, 3, lr, lg, lb, p, tick, proj.id)
       if (style == ORB_HEART) {
         // A pair of glints twinkling round the heart
@@ -492,45 +472,6 @@ private[render] object Orbs {
           mix(r, 1f, 0.4f), mix(g, 1f, 0.4f), mix(b, 1f, 0.3f), 0.8f * (1f - pt) * p, 10)
       }
       k += 1
-    }
-  }
-
-  /** Sand: three arms of darker grit spiralling out of the middle and past the rim, whirling.
-   *  Concentric bands, the first try, read as the rings of a coin. */
-  private def sandSwirl(sb: ShapeBatch, sx: Float, sy: Float, rx: Float, ry: Float,
-                        r: Float, g: Float, b: Float, p: Float, phase: Double): Unit = {
-    var k = 0
-    while (k < 3) {
-      val a0 = phase * 1.9 + k * (Math.PI * 2 / 3)
-      var i = 0
-      while (i < 5) {
-        val t = i / 4f
-        val a = a0 + t * 2.0
-        val rad = 0.15f + 0.97f * t
-        _pvX(i) = sx + Math.cos(a).toFloat * rx * rad
-        _pvY(i) = sy + Math.sin(a).toFloat * ry * rad
-        _pvW(i) = rx * (0.24f - 0.17f * t)
-        _pvA(i) = 0.85f * p * (1f - 0.3f * t)
-        i += 1
-      }
-      sb.strokePolylineVar(_pvX, _pvY, _pvW, _pvA, 5, r * 0.58f, g * 0.46f, b * 0.3f)
-      k += 1
-    }
-  }
-
-  /** Sand: grains streaming off the back and spreading out, darker than the dust they fly in. */
-  private def sandGrains(sb: ShapeBatch, sx: Float, sy: Float, ndx: Float, ndy: Float, sz: Float,
-                         tailLen: Float, p: Float, tick: Int, id: Int): Unit = {
-    val px = -ndy; val py = ndx
-    var i = 0
-    while (i < 8) {
-      val t = ((tick * 0.06 + i * 0.125 + id * 0.31) % 1.0).toFloat
-      val lat = hash2(id, i) * sz * (0.3f + 0.7f * t)
-      val gx = sx - ndx * (sz * 0.6f + t * tailLen) + px * lat
-      val gy = sy - ndy * (sz * 0.6f + t * tailLen) + py * lat + t * t * 6f
-      val gs = 1.2f + (1f - t) * 1.4f
-      sb.fillRect(gx - gs * 0.5f, gy - gs * 0.5f, gs, gs, 0.45f, 0.34f, 0.18f, 0.9f * (1f - t) * p)
-      i += 1
     }
   }
 

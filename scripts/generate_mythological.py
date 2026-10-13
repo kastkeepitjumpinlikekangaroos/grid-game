@@ -19,7 +19,7 @@ from sprite_base import (
     crystal, draw_paw, eye_pair, flame, flame_pts, gem, generate_character, hand_at, head_face,
     head_skull, ink, leaf, lit, mix, ms_eye, ms_mouth, quad_legs, rig, rig_arms, rig_belt, rig_cape,
     rig_hair, rig_hand, rig_head, rig_hood, rig_legs, rig_robe, rig_torso, rot_pts, shade, sparkle,
-    spear, star, stroke, xform, arm_pts, face_anchor,
+    spear, star, stroke, xform, arm_pts, face_anchor, bez, clipped, EYE_WHITE,
 )
 
 VOID = (34, 26, 40)
@@ -475,65 +475,162 @@ def draw_sphinx(draw, ox, oy, direction, frame):
 
 
 # ===================================================================
-# CYCLOPS (93) -- one enormous eye, a horn, tusks, a spiked club
+# CYCLOPS (93) -- one enormous eye under a single bushy brow, a stubby
+# horn, an underbite with two tusks, a spotted pelt and a big club
+# resting on its shoulder
 # ===================================================================
 
-CYC_SKIN = (190, 178, 138)
-CYC_FUR = (128, 92, 60)
-CYC_IRIS = (60, 150, 90)
+CYC_SKIN = (238, 180, 132)
+CYC_PELT = (236, 168, 76)
+CYC_SPOT = (138, 84, 44)
+CYC_IRIS = (40, 150, 206)
+CYC_BROW = (92, 56, 40)
+CYC_HORN = (242, 232, 208)
+CYC_CLUB = (172, 112, 64)
+
+
+def _spots(draw, shape, pts, k=1.0):
+    def paint(l):
+        for (x, y) in pts:
+            Ell(x, y, 1.1 * k, 0.9 * k).draw(l, fill=CYC_SPOT)
+    clipped(draw, shape, paint)
+
+
+def _cyclops_eye(draw, x, y, rx, ry, look):
+    """The one great eye: a white nearly filled by a blue iris, two
+    catchlights, and a heavy lid sagging over the top of it -- no lash flick,
+    which on an eye with no partner reads as a wink."""
+    Ell(x, y, rx, ry).draw(draw, fill=EYE_WHITE)
+    ix = x + look * rx * 0.22
+    cel(draw, Ell(ix, y + ry * 0.12, rx * 0.66, ry * 0.7), CYC_IRIS, sh=None, line=False)
+    Ell(ix, y - ry * 0.06, rx * 0.46, ry * 0.42).draw(draw, fill=shade(CYC_IRIS, 2.8))
+    Ell(ix + rx * 0.06, y + ry * 0.46, rx * 0.36, ry * 0.18).draw(draw, fill=lit(CYC_IRIS, 1.4))
+    Ell(ix - rx * 0.26, y - ry * 0.22, rx * 0.2, ry * 0.2).draw(draw, fill=(255, 255, 255))
+    Ell(ix + rx * 0.28, y + ry * 0.3, rx * 0.09, ry * 0.09).draw(draw, fill=(255, 255, 255))
+    lid_y = y - ry * 0.34
+    lid = Poly(arc_pts(x, y, rx + 0.4, ry + 0.5, 180, 360, 16) + [(x + rx + 0.4, lid_y + 0.6), (x, lid_y + 1.0), (x - rx - 0.4, lid_y + 0.6)])
+    cel(draw, lid, CYC_SKIN, sh=None, line=False)
+    stroke(draw, [(x - rx - 0.3, lid_y + 0.9), (x, lid_y + 1.2), (x + rx + 0.3, lid_y + 0.9)], 1.0, (90, 48, 44))
+    Ell(x, y, rx, ry).draw(draw, fill=None, outline=(90, 48, 44), width=0.8)
+
+
+def _club(draw, x0, y0, x1, y1, near=True):
+    """A caveman's club: a grip widening to a knobbly head, a knot or two."""
+    col = CYC_CLUB if near else shade(CYC_CLUB, 0.5)
+    ang = math.atan2(y1 - y0, x1 - x0)
+    ux, uy = math.cos(ang), math.sin(ang)
+    px, py = -uy, ux
+    cel(draw, Limb([(x0, y0), (x0 + (x1 - x0) * 0.6, y0 + (y1 - y0) * 0.6), (x1, y1)], [1.3, 2.4, 3.6]), col, sh=(0.6, 0.0))
+    head = [Ell(x1, y1, 4.4, 4.4), Ell(x1 + px * 3.2 - ux * 1.6, y1 + py * 3.2 - uy * 1.6, 2.0, 2.0),
+            Ell(x1 - px * 3.4 - ux * 0.4, y1 - py * 3.4 - uy * 0.4, 1.9, 1.9), Ell(x1 + ux * 3.0, y1 + uy * 3.0, 2.4, 2.4)]
+    blob(draw, head, col, sh=(0.8, 0.8))
+    if near:
+        for (u, v) in ((-1.0, 1.0), (1.6, -1.4)):
+            cel(draw, Ell(x1 + ux * u + px * v, y1 + uy * u + py * v, 0.9, 0.7), shade(col, 1.2), sh=None, line=False)
+        stroke(draw, [(x1 - ux * 2.6 - px * 1.6, y1 - uy * 2.6 - py * 1.6), (x1 - ux * 0.6 - px * 2.8, y1 - uy * 0.6 - py * 2.8)], 0.5,
+               lit(col, 1.2))
 
 
 def draw_cyclops(draw, ox, oy, direction, frame):
-    r = rig(ox, oy, direction, frame, build=1.36, head=1.02)
+    r = rig(ox, oy, direction, frame, build=1.32, head=1.04)
     d = r.d
-    cl_side = _hold_side(r)
-    if d:
-        rig_arms(r, draw, CYC_SKIN, CYC_SKIN, layer="far")
-    rig_legs(r, draw, CYC_SKIN, CYC_FUR, bare=True, width=1.14)
-    rig_torso(r, draw, CYC_SKIN)
     cx = r.cx
-    if not r.back:
-        cel(draw, Ell(cx + d * 2.0 - 2.6, r.sh_y + 2.4, 2.8, 2.0), shade(CYC_SKIN, 0.5), sh=None, line=False)
-        cel(draw, Ell(cx + d * 2.0 + 2.6, r.sh_y + 2.4, 2.8, 2.0), shade(CYC_SKIN, 0.5), sh=None, line=False)
-    # fur loincloth and a shoulder strap
-    cel(draw, Poly([(cx - r.hip_w - 0.6, r.waist_y + 0.6), (cx + r.hip_w + 0.6, r.waist_y + 0.6), (cx + r.hip_w + 1.6, r.hip_y + 3.2),
-                    (cx + 2.0, r.hip_y + 2.2), (cx, r.hip_y + 3.8), (cx - 2.0, r.hip_y + 2.2), (cx - r.hip_w - 1.6, r.hip_y + 3.2)]) if not d else
-        Poly([(cx - 5.0, r.waist_y + 0.6), (cx + 5.4, r.waist_y + 0.6), (cx + 6.0, r.hip_y + 3.2), (cx - 6.0, r.hip_y + 3.4)]), CYC_FUR, sh=(0.8, 0.6))
-    if not r.back:
-        stroke(draw, [(cx - r.sh_w + 1.0 + d, r.sh_y - 1.4), (cx + r.hip_w - 1.0 + d, r.waist_y + 0.6)], 1.2, CYC_FUR)
-    rig_arms(r, draw, CYC_SKIN, CYC_SKIN, layer="near", hands=False)
-    head_skull(r, draw, CYC_SKIN, ears=False)
+    cl_side = _hold_side(r)
     hx, hy, rx, ry = r.hx, r.head_cy, r.head_rx, r.head_ry
-    # a stubby horn
-    hb = (hx - d * 1.0, hy - ry + 1.4)
-    cel(draw, Poly([(hb[0] - 2.0, hb[1] + 1.0), (hb[0] - d * 1.0 + 0.4, hb[1] - 5.0), (hb[0] + 2.0, hb[1] + 1.0)]), (236, 226, 204), sh=(0.3, 0.4))
+    # the club rests on the shoulder: the grip in a hand at the chest, the
+    # knobbly end up behind the shoulder
+    lift, reach = 5.4, 0.2
+    h = hand_at(r, cl_side, reach, lift)
+    if d:
+        top = (h[0] - d * 13.6, h[1] - 17.0)
+    else:
+        top = (h[0] + cl_side * 5.2, h[1] - 20.6)
+    if r.front:
+        _club(draw, h[0] - cl_side * 0.4, h[1] + 2.4, top[0], top[1])
+    if d:
+        rig_arms(r, draw, CYC_SKIN, CYC_SKIN, layer="far", cuff=shade(LEATHER, 0.4))
+    # legs, bare feet
+    rig_legs(r, draw, CYC_SKIN, CYC_SKIN, bare=True, width=1.12)
+    rig_torso(r, draw, CYC_SKIN)
     if not r.back:
-        # the one great eye
-        ex = hx + d * 4.0
-        ey = hy + 0.6
-        w = 8.4 if not d else 6.4
-        ms_eye(draw, ex, ey, w, 9.0, CYC_IRIS, (float(d), 0.0), "sharp", skin=CYC_SKIN, side=1)
-        cel(draw, Poly([(ex - w * 0.7, ey - 5.6), (ex, ey - 6.6), (ex + w * 0.7, ey - 5.6), (ex + w * 0.6, ey - 4.6), (ex - w * 0.6, ey - 4.6)]),
-            shade(CYC_SKIN, 1.6), sh=None, line=False)
-        # underbite and tusks
-        mx = hx + d * 5.0
-        my = hy + 7.2
-        stroke(draw, [(mx - 3.6, my), (mx, my + 0.8), (mx + 3.6, my)], 0.8, shade(CYC_SKIN, 2.4))
+        # a round belly
+        cel(draw, Ell(cx + d * 2.2, r.waist_y - 0.6, 5.6 if not d else 4.0, 4.6), lit(CYC_SKIN, 0.5), sh=None, line=False)
+        stroke(draw, [(cx + d * 2.8 - 0.6, r.waist_y + 0.6), (cx + d * 2.8 + 0.6, r.waist_y + 0.6)], 0.5, shade(CYC_SKIN, 1.6))
+    # the pelt: over one shoulder and round the waist, spotted like a leopard
+    if d:
+        sash = Poly([(cx - d * 3.6, r.sh_y - 2.6), (cx + d * 1.6, r.sh_y - 2.6), (cx + d * 5.4, r.waist_y - 0.6), (cx + d * 4.6, r.waist_y + 1.4),
+                     (cx - d * 4.6, r.waist_y + 1.0)])
+    else:
+        s = -cl_side if not r.back else cl_side
+        sash = Poly([(cx + s * (r.sh_w - 0.6), r.sh_y - 2.6), (cx + s * (r.sh_w - 4.6), r.sh_y - 2.8), (cx - s * 4.6, r.waist_y - 0.6),
+                     (cx - s * (r.hip_w + 0.6), r.waist_y + 0.4), (cx - s * (r.hip_w + 0.2), r.waist_y + 2.0), (cx + s * (r.hip_w - 0.6), r.waist_y + 0.6),
+                     (cx + s * (r.sh_w + 0.6), r.sh_y + 1.6)])
+    cel(draw, sash, CYC_PELT, sh=(0.8, 0.6))
+    _spots(draw, sash, [(cx + u, r.sh_y + v) for (u, v) in ((-5.0, 0.6), (-2.0, 3.2), (1.4, 5.6), (4.6, 2.4), (-3.6, 6.4), (2.6, 0.0))])
+    hem = r.hip_y + 3.4
+    if d:
+        kilt = Poly([(cx - 5.4, r.waist_y + 0.8), (cx + 5.6, r.waist_y + 0.8), (cx + 6.4, hem - 0.6), (cx + 3.4, hem + 0.6), (cx + 0.6, hem - 0.8),
+                     (cx - 2.4, hem + 0.6), (cx - 6.2, hem - 0.4)])
+    else:
+        kilt = Poly([(cx - r.hip_w - 0.6, r.waist_y + 0.8), (cx + r.hip_w + 0.6, r.waist_y + 0.8), (cx + r.hip_w + 1.6, hem - 0.6),
+                     (cx + 5.0, hem + 0.8), (cx + 2.0, hem - 0.6), (cx - 0.8, hem + 1.0), (cx - 3.8, hem - 0.4), (cx - 6.6, hem + 0.8),
+                     (cx - r.hip_w - 1.6, hem - 0.4)])
+    cel(draw, kilt, CYC_PELT, sh=(1.0, 0.6))
+    _spots(draw, kilt, [(cx + u, r.waist_y + v) for (u, v) in ((-6.0, 3.0), (-2.4, 5.6), (1.2, 3.0), (4.8, 5.4), (7.4, 2.4))])
+    stroke(draw, [(cx - (r.hip_w + 0.6 if not d else 5.4), r.waist_y + 0.9), (cx + (r.hip_w + 0.6 if not d else 5.6), r.waist_y + 0.9)],
+           1.1, (120, 84, 56))
+    rig_arms(r, draw, CYC_SKIN, CYC_SKIN, layer="near", hands=False, cuff=shade(LEATHER, 0.4),
+             sides=tuple(sd for sd in _sides(r) if sd != cl_side))
+    # the arm that carries the club, raised to the chest
+    s_, e_, w_, _ = arm_pts(r, cl_side, reach, lift)
+    aw = 2.2 * 1.3
+    cel(draw, Limb([s_, e_, w_], [aw, aw * 0.9, aw * 0.82]), CYC_SKIN, sh=(0.8, 0.4))
+    cel(draw, Ell(w_[0], w_[1] + 0.2, aw * 0.95, 1.0), shade(LEATHER, 0.4), sh=None)
+    # big ears, a stubby horn
+    if not d:
+        for s in (-1, 1):
+            cel(draw, Ell(hx + s * (rx + 0.4), hy + 1.6, 3.0, 3.8), CYC_SKIN, sh=(0.5, 0.5))
+            if not r.back:
+                Ell(hx + s * (rx + 0.6), hy + 1.8, 1.4, 2.2).draw(draw, fill=shade(CYC_SKIN, 1.2))
+    if d and not r.back:
+        _club(draw, h[0] + d * 0.2, h[1] + 2.4, top[0], top[1])
+    head_skull(r, draw, CYC_SKIN, ears=False)
+    if d:
+        # the ear well back from the eye: a round one beside it reads as a
+        # second eye, which a cyclops cannot have
+        ex_ = hx - d * 7.2
+        cel(draw, Ell(ex_, hy + 2.2, 2.6, 3.4), CYC_SKIN, sh=(0.4, 0.4))
+        clipped(draw, Ell(ex_, hy + 2.2, 2.6, 3.4), lambda l: Ell(ex_ - d * 1.0, hy + 2.4, 1.6, 2.4).draw(l, fill=shade(CYC_SKIN, 1.3)))
+    hb = (hx - d * 1.4, hy - ry + 1.6)
+    horn = Limb([(hb[0], hb[1] + 1.6), (hb[0] - d * 0.6, hb[1] - 2.4), (hb[0] - d * 2.2 + 0.4, hb[1] - 5.4)], [2.6, 1.8, 0.4])
+    cel(draw, horn, CYC_HORN, sh=(0.4, 0.4))
+    stroke(draw, [(hb[0] - 1.6, hb[1] - 0.4), (hb[0] + 1.6, hb[1] - 0.8)], 0.45, shade(CYC_HORN, 1.4))
+    if not r.back:
+        # the one great eye, under a single bushy brow
+        ex = hx + d * 4.2
+        ey = hy + 0.4
+        w = 10.6 if not d else 7.0
+        _cyclops_eye(draw, ex, ey, w / 2.0, 5.4, float(d))
+        # one bushy brow, knitted down in the middle
+        bw = w * 0.6
+        cel(draw, Limb([(ex - bw - 1.2, ey - 7.6), (ex - bw * 0.4, ey - 7.4), (ex, ey - 6.2), (ex + bw * 0.4, ey - 7.4),
+                        (ex + bw + 1.2, ey - 7.6)], [1.1, 1.5, 1.4, 1.5, 1.1]), CYC_BROW, sh=None, lw=0.6)
+        for s in ((-1, 1) if not d else (-d,)):
+            Ell(hx + s * 8.2 + d * 1.6, hy + 5.6, 2.0, 1.0).draw(draw, fill=mix(CYC_SKIN, (255, 110, 110), 0.4))
+        # an underbite, two tusks up out of it
+        mx, my = hx + d * 5.2, hy + 7.8
+        mw = 5.0 if not d else 3.2
+        Poly([(mx - mw, my - 0.4)] + bez((mx - mw * 0.4, my + 1.0), (mx, my + 1.2), (mx + mw, my - 0.4), 3)[1:] +
+             [(mx + mw * 0.8, my + 1.4), (mx, my + 2.2), (mx - mw * 0.8, my + 1.4)]).draw(draw, fill=(130, 54, 52))
         for s in ((-1, 1) if not d else (d,)):
-            tx = mx + s * 2.6 if not d else mx + d * 2.0
-            cel(draw, Poly([(tx - 0.9, my + 0.4), (tx + 0.9, my + 0.4), (tx + (0.2 * s if not d else 0), my - 2.6)]), TOOTH, sh=None, lw=0.5)
-    # a spiked club
-    h = hand_at(r, cl_side)
-    ang = -90 + (cl_side * 22 if not d else d * 34)
-    shaft = xform([(-2.0, 0.0), (14.0, 0.0)], h[0], h[1], ang)
-    cel(draw, Limb(shaft, [1.4, 3.0]), WOOD, sh=(0.6, 0.0))
-    for t in (8.0, 11.0, 13.4):
-        for sgn in (-1, 1):
-            p = xform([(t, sgn * (1.6 + t * 0.1))], h[0], h[1], ang)[0]
-            q = xform([(t + 0.4, sgn * (3.6 + t * 0.12))], h[0], h[1], ang)[0]
-            Poly([p, q, xform([(t + 1.4, sgn * (1.6 + t * 0.1))], h[0], h[1], ang)[0]]).draw(draw, fill=(214, 216, 226))
+            tx = mx + s * mw * 0.66 if not d else mx + d * mw * 0.5
+            cel(draw, Poly([(tx - 1.1, my + 1.4), (tx + 1.1, my + 1.4), (tx + s * 0.4, my - 2.2)]), TOOTH, sh=None, lw=0.55)
+    if r.back:
+        hh = hand_at(r, cl_side, reach, lift)
+        _club(draw, hh[0] - cl_side * 0.4, hh[1] + 2.4, hh[0] + cl_side * 5.2, hh[1] - 20.6)
     for side in _sides(r):
-        rig_hand(r, draw, side, CYC_SKIN)
+        rig_hand(r, draw, side, CYC_SKIN, reach=reach if side == cl_side else 0.0, lift=lift if side == cl_side else 0.0,
+                 hand_r=2.6)
 
 
 # ===================================================================

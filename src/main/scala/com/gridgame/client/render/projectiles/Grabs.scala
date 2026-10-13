@@ -6,7 +6,8 @@ import ProjectileKit._
 import Silhouettes._
 
 /** Grabs that aren't tethered: the Grasping Dead's hands clawing up out of the ground along its path
-  * (deadHand is the blasts' too), the Mummy's bandage wad and the Chameleon's tongue. */
+  * (deadHand is the blasts' too). The Mummy's bandage and the Chameleon's tongue pull, so they are
+  * tethers now (Tethers). */
 private[render] object Grabs {
   // The hands of the grasping dead, sorted far to near before they are drawn
   private val _ghX = new Array[Float](6)
@@ -152,120 +153,5 @@ private[render] object Grabs {
       else sb.fillOval(wx, wy, 3.2f * s, 2.6f * s, br, bg, bb, a, 10)
       pass += 1
     }
-  }
-
-  /** Mummy's bandage whip as a spinning wad of grave-wrappings with two short ends flapping
-   *  behind and a curse glinting through a gap in the wrap. */
-  private[projectiles] def drawBandageWad(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
-    val phase = (tick + proj.id * 21) * 0.3
-    computeAllDynamics(proj, 0.88f, 0.82f, 0.64f, phase)
-    val p = (0.9f + 0.1f * Math.sin(phase * _stPulseMult).toFloat) * dynAlpha
-    val ds = Math.min(dynScale, 1.3f)
-    val s = 15.5f * ds
-    screenDir(proj)
-    val ndx = _sdx; val ndy = _sdy
-    val px = -ndy; val py = ndx
-
-    // Two short loose ends folding as they flap — wide and fading, cloth rather than rope
-    var strip = 0
-    while (strip < 2) {
-      val side = if (strip == 0) 1f else -1f
-      var x0 = sx - ndx * s * 0.6f + px * side * s * 0.3f
-      var y0 = sy - ndy * s * 0.6f + py * side * s * 0.3f
-      var j = 1
-      while (j <= 4) {
-        val t = j / 4f
-        val fold = Math.sin(phase * 2.6 + j * 1.3 + strip * 2).toFloat * s * 0.35f * t
-        val x1 = sx - ndx * s * (0.6f + t * 1.7f) + px * (side * s * (0.3f + t * 0.45f) + fold)
-        val y1 = sy - ndy * s * (0.6f + t * 1.7f) + py * (side * s * (0.3f + t * 0.45f) + fold)
-        val w = s * 0.5f * (1f - t * 0.3f)
-        val a = 1f - t * 0.75f
-        sb.strokeLine(x0, y0, x1, y1, w + 2.6f, 0.2f, 0.16f, 0.1f, 0.6f * a * p)
-        sb.strokeLine(x0, y0, x1, y1, w, 0.86f, 0.80f, 0.64f, a * p)
-        x0 = x1; y0 = y1
-        j += 1
-      }
-      strip += 1
-    }
-    var d = 0
-    while (d < 4) {
-      val t = ((tick * 0.05 + d * 0.25 + proj.id * 0.13) % 1.0).toFloat
-      sb.fillOval(sx - ndx * t * s * 2.4f + Math.sin(d * 2.1 + phase).toFloat * s * 0.4f,
-        sy - ndy * t * s * 2.4f + t * t * 12f, 2f * ds, 1.6f * ds, 0.78f, 0.68f, 0.46f, 0.6f * (1f - t) * p, 5)
-      d += 1
-    }
-    sb.fillOvalSoft(sx, sy, s * 2f * dynGlow, s * 1.7f * dynGlow, 0.5f, 0.9f, 0.4f, 0.18f * p, 0f, 14)
-    sb.fillOval(sx, sy, s + 1.8f, s * 0.8f + 1.8f, 0.14f, 0.11f, 0.07f, 0.85f * p, 16)
-    sb.fillOval(sx, sy, s, s * 0.8f, 0.88f, 0.82f, 0.64f, 0.98f * p, 16)
-    // Wrap bands: chords across the bundle at a turning angle
-    val rot = phase * 0.8
-    val ca = Math.cos(rot).toFloat; val sa = Math.sin(rot).toFloat
-    var k = 0
-    while (k < 4) {
-      val off = -0.66f + k * 0.44f
-      val half = Math.sqrt(1.0 - off * off).toFloat * 0.92f
-      val ux0 = -ca * half - sa * off; val uy0 = -sa * half + ca * off
-      val ux1 = ca * half - sa * off; val uy1 = sa * half + ca * off
-      sb.strokeLine(sx + ux0 * s, sy + uy0 * s * 0.8f, sx + ux1 * s, sy + uy1 * s * 0.8f, 2.2f,
-        0.60f, 0.54f, 0.40f, 0.9f * p)
-      k += 1
-    }
-    sb.fillOval(sx - s * 0.32f, sy - s * 0.3f, s * 0.3f, s * 0.18f, 1f, 1f, 0.95f, 0.45f * p, 8)
-    // A curse glinting through a gap in the wrap
-    val glow = 0.6f + 0.4f * Math.sin(phase * 2).toFloat
-    sb.fillOval(sx - s * 0.2f, sy + s * 0.02f, s * 0.1f, s * 0.07f, 0.45f, 1f, 0.4f, 0.9f * glow * p, 6)
-    sb.fillOval(sx + s * 0.16f, sy + s * 0.02f, s * 0.1f, s * 0.07f, 0.45f, 1f, 0.4f, 0.9f * glow * p, 6)
-    drawChargeCrackle(sx, sy, s, 0.88f, 0.82f, 0.64f, p, sb, phase, proj.chargeLevel)
-  }
-
-  /** Chameleon tongue: a sticky club at the hitbox on a short, thick, matte root that bends
-   *  once and dissolves behind it — a lash, where the whip-beam was a long shiny tube with a
-   *  ball on the end. */
-  private[projectiles] def drawTongueLash(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
-    val phase = (tick + proj.id * 25) * 0.35
-    computeAllDynamics(proj, 0.92f, 0.42f, 0.48f, phase)
-    val p = (0.92f + 0.08f * Math.sin(phase * _stPulseMult).toFloat) * dynAlpha
-    val ds = Math.min(dynScale, 1.3f)
-    screenDir(proj)
-    val ndx = _sdx; val ndy = _sdy
-    val px = -ndy; val py = ndx
-    val L = 22f * ds
-    val bend = Math.sin(phase * 0.8).toFloat * L * 0.18f
-    val segs = 5
-    var pass = 0
-    while (pass < 3) {
-      var j = 0
-      while (j < segs) {
-        val t0 = j.toFloat / segs; val t1 = (j + 1).toFloat / segs
-        val o0 = bend * 4f * t0 * (1f - t0); val o1 = bend * 4f * t1 * (1f - t1)
-        val x0 = sx - ndx * L * t0 + px * o0; val y0 = sy - ndy * L * t0 + py * o0
-        val x1 = sx - ndx * L * t1 + px * o1; val y1 = sy - ndy * L * t1 + py * o1
-        val w = 12f * ds * (1f - t0 * 0.5f)
-        val a = if (t0 < 0.4f) 1f else 1f - (t0 - 0.4f) / 0.6f * 0.85f
-        pass match {
-          case 0 => sb.strokeLine(x0, y0, x1, y1, w + 2.8f, 0.28f, 0.06f, 0.10f, 0.75f * a * p)
-          case 1 => sb.strokeLine(x0, y0, x1, y1, w, 0.90f, 0.42f, 0.50f, 0.97f * a * p)
-          case _ => sb.strokeLine(x0, y0, x1, y1, w * 0.18f, 0.62f, 0.20f, 0.28f, 0.8f * a * p)
-        }
-        j += 1
-      }
-      pass += 1
-    }
-    val cx = sx + ndx * 2f * ds; val cy = sy + ndy * 2f * ds
-    sb.fillOval(cx, cy, 11.5f * ds + 1.6f, 9.5f * ds + 1.6f, 0.28f, 0.06f, 0.10f, 0.85f * p, 14)
-    sb.fillOval(cx, cy, 11.5f * ds, 9.5f * ds, 0.92f, 0.44f, 0.52f, 0.98f * p, 14)
-    sb.fillOval(cx + ndx * 4.5f * ds, cy + ndy * 4.5f * ds, 6f * ds, 4.6f * ds, 0.70f, 0.20f, 0.30f, 0.9f * p, 10)
-    sb.fillOval(cx - 3f * ds, cy - 3f * ds, 3.4f * ds, 2.4f * ds, 1f, 1f, 1f, 0.6f * p, 8)
-    // Saliva flung off the club
-    var d = 0
-    while (d < 4) {
-      val t = ((tick * 0.06 + d * 0.25 + proj.id * 0.13) % 1.0).toFloat
-      val a = Math.atan2(ndy, ndx) + Math.PI + (d - 1.5) * 0.7
-      val dist = 8f * ds + t * 14f * ds
-      sb.fillOval(cx + Math.cos(a).toFloat * dist, cy + Math.sin(a).toFloat * dist * 0.7f + t * t * 10f,
-        2.4f * ds * (1f - t * 0.4f), 2.8f * ds * (1f - t * 0.4f), 0.88f, 0.95f, 1f, 0.75f * (1f - t) * p, 6)
-      d += 1
-    }
-    drawChargeCrackle(sx, sy, 12f * ds, 0.92f, 0.42f, 0.48f, p, sb, phase, proj.chargeLevel)
   }
 }

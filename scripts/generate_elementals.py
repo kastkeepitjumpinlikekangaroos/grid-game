@@ -18,7 +18,7 @@ from sprite_base import (
     Ell, Limb, Poly, RRect, arc_pts, blade, blob, bolt, cel, cloud, crystal, flame, flame_pts,
     generate_character, hand_at, head_face, head_skull, ink, leaf, lit, mix, ms_eye, ms_mouth,
     rig, rig_arms, rig_belt, rig_cape, rig_hair, rig_hand, rig_head, rig_hood, rig_legs, rig_robe,
-    rig_torso, shade, sparkle, star, stroke, xform, arm_pts, face_anchor,
+    rig_torso, shade, sparkle, star, stroke, xform, arm_pts, face_anchor, bez, creature_setup, clipped, rot_pts,
 )
 
 
@@ -650,146 +650,289 @@ def draw_inferno(draw, ox, oy, direction, frame):
 
 
 # ===================================================================
-# GLACIER (23) -- a crystal ice golem
+# GLACIER (23) -- a chunky ice golem: a rounded block of a head with snow
+# lying on it, crystals growing out of one shoulder, big eyes, a glowing
+# core, and faceted fists
 # ===================================================================
 
-GL_ICE = (170, 220, 246)
-GL_DEEP = (104, 164, 222)
-GL_SNOW = (246, 250, 255)
-GL_EYE = (120, 250, 255)
+GL_ICE = (176, 226, 250)
+GL_DEEP = (104, 166, 226)
+GL_SNOW = (248, 251, 255)
+GL_CORE = (110, 238, 255)
+GL_IRIS = (44, 98, 182)
+GL_SHARD = (150, 228, 255)
+GL_SNOW_LINE = (128, 168, 220)
 
 
-def _block(draw, pts, color=GL_ICE):
-    cel(draw, Poly(pts), color, sh=(1.0, 1.0), hi=(0.6, 0.6), tone=shade(color, 1.1))
+def _squircle(cx, cy, rx, ry, n=2.8, steps=36):
+    """A rounded square: the soft-cornered block an ice cube is in a cartoon."""
+    pts = []
+    for i in range(steps):
+        a = 2 * math.pi * i / steps
+        c, s = math.cos(a), math.sin(a)
+        pts.append((cx + rx * math.copysign(abs(c) ** (2.0 / n), c), cy + ry * math.copysign(abs(s) ** (2.0 / n), s)))
+    return Poly(pts)
 
 
-def _facets(cx, cy, rx, ry, n=11, jitter=(1.0, 0.93, 1.05, 0.97)):
+def _ice(draw, shape, color=GL_ICE):
+    """Ice in flat cel tones: a shadow side and a pale facet toward the light."""
+    cel(draw, shape, color, sh=(1.2, 1.2), hi=(0.7, 0.7), tone=shade(color, 1.1))
+
+
+def _gem_facet(cx, cy, rx, ry, n=8, rot=22.5):
+    """A faceted lump, a chunk of ice or a cut gem: an n-sided polygon."""
     pts = []
     for i in range(n):
-        a = math.radians(i * 360.0 / n - 90)
-        k = jitter[i % len(jitter)]
-        pts.append((cx + rx * k * math.cos(a), cy + ry * k * math.sin(a)))
-    return pts
+        a = math.radians(rot + i * 360.0 / n)
+        pts.append((cx + rx * math.cos(a), cy + ry * math.sin(a)))
+    return Poly(pts)
+
+
+def _shine(draw, x, y, k=1.0):
+    """The two white streaks across the corner of an ice cube in a cartoon."""
+    stroke(draw, [(x, y + 3.0 * k), (x + 3.0 * k, y)], 1.1 * k, GL_SNOW)
+    stroke(draw, [(x + 0.6 * k, y + 5.6 * k), (x + 1.6 * k, y + 4.6 * k)], 0.9 * k, GL_SNOW)
+
+
+def _snow(draw, lumps):
+    """Snow lying on ice: one soft mass, lined in a pale blue rather than the
+    ice's deep one, so it reads as a cap on the thing and not a band round it."""
+    blob(draw, lumps, GL_SNOW, sh=(0.0, 0.9), tone=(214, 230, 250), line_color=GL_SNOW_LINE, lw=0.8)
 
 
 def draw_glacier(draw, ox, oy, direction, frame):
-    bob = [0, -1, 0, -1][frame]
-    ph = [0, 1, 0, -1][frame]
-    base = oy + 54 + bob
-    cx = ox + 32
-    d = {DOWN: 0, UP: 0, LEFT: -1, RIGHT: 1}[direction]
-    back = direction == UP
-    bcx, bcy = cx - d * 0.8, base - 19.0
-    rx, ry = (13.4, 13.8) if not d else (11.8, 13.8)
+    d, back, base, cx, ph = creature_setup(ox, oy, direction, frame)
+    hx, hy = cx + d * 2.6, base - 32.6
+    hrx, hry = 11.4 if not d else 10.6, 9.8
+
+    # crystals grow out of his right shoulder and snow lies on his left: the
+    # crystals are on the camera's left head-on, its right from behind, and
+    # nearest the camera walking right
+    xs = 1 if back else -1
+
+    def cluster(near):
+        col = GL_SHARD if near else shade(GL_SHARD, 0.5)
+        if d:
+            sx, sy = cx - d * 2.6, base - 26.0
+            spec = ((0.0, 0.0, -90 - d * 26, 12.0, 5.4), (-d * 3.2, 1.6, -90 - d * 60, 8.4, 4.4), (d * 2.0, 0.8, -84 + d * 4, 7.0, 3.6))
+        else:
+            sx, sy = cx + xs * 10.2, base - 25.6
+            spec = ((0.0, 0.0, -90 + xs * 22, 12.0, 5.4), (xs * 3.0, 1.8, -90 + xs * 56, 8.4, 4.4), (-xs * 2.6, 0.4, -86, 7.0, 3.6))
+        for (u, v, a, ln, w) in spec:
+            crystal(draw, sx + u, sy + v, a, ln, w, color=col)
+
+    if not back and d <= 0:
+        cluster(not d)
     # stubby legs
-    for side in ((-1, 1) if not d else (-d, d)):
-        near = (not d) or side == d
-        fwd = ph * side if not d else (ph if near else -ph)
-        lx = cx + (side * 5.4 if not d else d * fwd * 3.0)
-        ly = base - (1.2 if fwd < 0 and not d else 0)
-        _block(draw, [(lx - 3.6, ly - 7.0), (lx + 3.6, ly - 7.0), (lx + 4.0, ly), (lx - 4.0, ly)],
-               GL_DEEP if near else shade(GL_DEEP, 0.6))
-    # a crest of crystals along the top of the body (drawn first: the body hides the roots)
-    crest = ((200, 6.4), (228, 9.4), (256, 11.6), (284, 10.0), (312, 8.0), (338, 5.6)) if not d else \
-        [((180 + a if d > 0 else 360 - a), ln) for (a, ln) in ((10, 6.0), (36, 9.4), (62, 11.4), (88, 9.0), (112, 6.4))]
-    for (a, ln) in crest:
-        x = bcx + math.cos(math.radians(a)) * rx * 0.72
-        y = bcy + math.sin(math.radians(a)) * ry * 0.72
-        crystal(draw, x, y, a, ln + 3.0, 4.6 if ln > 8 else 3.8, color=GL_ICE)
-    # the far fist behind the body in profile
-    def fist(side, near):
-        fwd = -ph * side if not d else (-ph if near else ph)
-        fx = bcx + (side * (rx + 1.6) if not d else d * (fwd * 3.4 + (2.0 if near else -2.0)))
-        fy = base - 11.0 - fwd * 0.8
+    for s in ((-1, 1) if not d else (-d, d)):
+        near = not d or s == d
+        fwd = ph * s if not d else (ph if near else -ph)
+        lx = cx + (s * 5.6 if not d else d * fwd * 3.0 + s * 0.8)
+        ly = base - (1.0 if fwd < 0 and not d else 0.0)
+        _ice(draw, RRect(lx - 3.8, ly - 8.0, lx + 3.8, ly + 0.4, 2.0), GL_DEEP if near else shade(GL_DEEP, 0.6))
+
+    def arm(s, near):
         col = GL_ICE if near else shade(GL_ICE, 0.6)
-        _block(draw, _facets(fx, fy, 4.6, 4.4, 8, (1.0, 0.9, 1.06, 0.95)), col)
+        fwd = -ph * s if not d else (-ph if near else ph)
+        sx = cx + (s * 11.6 if not d else -d * 1.4 + s * 0.4)
+        sy = base - (22.4 if not d else 20.4)
+        fx = sx + (s * 2.8 if not d else d * (fwd * 3.6 + 0.6))
+        fy = base - 12.2 - fwd * 0.8
+        cel(draw, Limb([(sx, sy), (fx, fy)], [3.0, 2.6]), shade(col, 0.4), sh=(0.6, 0.0))
+        _ice(draw, _gem_facet(sx, sy, 4.6, 4.0), col)
+        if near and not d and s == -xs:
+            _snow(draw, [Ell(sx + 0.2, sy - 2.8, 4.0, 1.8), Ell(sx - 1.4, sy - 3.8, 2.0, 1.6), Ell(sx + 1.6, sy - 3.4, 1.8, 1.4)])
+        _ice(draw, _gem_facet(fx, fy, 5.4, 5.0, 8, 0.0), col)
         if near:
-            stroke(draw, [(fx - 1.8, fy - 1.0), (fx + 0.6, fy + 1.6)], 0.5, GL_DEEP)
+            _shine(draw, fx - 3.6, fy - 3.4, 0.6)
+        if near and not back:
+            for k in ((-1.8, 0.2, 2.2) if not d else (d * 0.4, d * 2.4)):
+                stroke(draw, [(fx + k, fy + 1.0), (fx + k * 0.8, fy + 3.6)], 0.55, GL_DEEP)
+
     if d:
-        fist(-d, False)
-    body = Poly(_facets(bcx, bcy, rx, ry))
-    cel(draw, body, GL_ICE, sh=(1.8, 1.6), hi=(1.0, 1.0), tone=shade(GL_ICE, 1.1),
-        regions=[(Poly([(bcx - rx * 0.7, bcy - ry * 0.5), (bcx - rx * 0.2, bcy - ry * 0.86), (bcx + rx * 0.02, bcy - ry * 0.4),
-                        (bcx - rx * 0.5, bcy - ry * 0.1)]), lit(GL_ICE, 1.0))])
-    stroke(draw, [(bcx + rx * 0.3 + d * 2, bcy + ry * 0.1), (bcx + rx * 0.05 + d * 2, bcy + ry * 0.55), (bcx + rx * 0.34 + d * 2, bcy + ry * 0.8)],
-           0.6, GL_DEEP)
+        arm(-d, False)
+    # the body: a chunky block of ice with a glowing core
+    bw = 10.0 if not d else 10.2
+    bx = cx - d * 0.6
+    by0, by1 = base - 26.0, base - 6.6
+    body = Poly([(bx - bw + 1.0, by0), (bx + bw - 1.0, by0), (bx + bw + 1.0, by0 + 3.0), (bx + bw - 0.4, by1 - 2.0),
+                 (bx + bw - 2.6, by1), (bx - bw + 2.6, by1), (bx - bw + 0.4, by1 - 2.0), (bx - bw - 1.0, by0 + 3.0)])
+    _ice(draw, body, GL_ICE)
     if not back:
-        # a face in the ice: two cold glowing eyes and a frosty grimace
-        fx0 = bcx + d * 4.2
-        for side, ex in (((-1, fx0 - 4.4), (1, fx0 + 4.4)) if not d else ((d, fx0 + d * 2.4), (-d, fx0 - d * 3.0))):
-            w = 1.0 if not d or side == d else 0.62
-            Poly([(ex - side * 2.6 * w, bcy - 4.4), (ex + side * 2.2 * w, bcy - 5.4), (ex + side * 2.4 * w, bcy - 3.0),
-                  (ex - side * 1.8 * w, bcy - 2.4)]).draw(draw, fill=GL_DEEP)
-            Poly([(ex - side * 2.0 * w, bcy - 4.2), (ex + side * 1.8 * w, bcy - 5.0), (ex + side * 1.9 * w, bcy - 3.3),
-                  (ex - side * 1.4 * w, bcy - 2.9)]).draw(draw, fill=GL_EYE)
-            Ell(ex, bcy - 3.9, 0.6 * w, 0.5).draw(draw, fill=(255, 255, 255))
-        mx = fx0 + d * 0.8
-        Poly([(mx - 3.0, bcy + 1.0), (mx + 3.0, bcy + 1.0), (mx + 2.0, bcy + 3.0), (mx - 2.0, bcy + 3.0)]).draw(
-            draw, fill=shade(GL_DEEP, 1.6))
-        for k in (-1.6, 0.0, 1.6):
-            Poly([(mx + k - 0.6, bcy + 1.0), (mx + k + 0.6, bcy + 1.0), (mx + k, bcy + 2.4)]).draw(draw, fill=GL_SNOW)
-    for side in ((-1, 1) if not d else (d,)):
-        fist(side, True)
+        kx, ky = cx + d * 5.6, base - 16.6
+        glow = GL_CORE if frame % 2 == 0 else lit(GL_CORE, 0.6)
+        cel(draw, _gem_facet(kx, ky, 3.2 if not d else 2.3, 3.4, 6, 0.0), glow, sh=None, line_color=GL_DEEP, lw=0.8)
+        sparkle(draw, kx - 0.6, ky - 0.8, 1.7, (255, 255, 255))
+    else:
+        stroke(draw, [(cx - 3.4, base - 22.0), (cx - 0.4, base - 17.0), (cx - 2.0, base - 12.0)], 0.6, GL_DEEP)
+    if d > 0 or back:
+        cluster(True)
+    # the head: a rounded block of ice with snow lying on it
+    _ice(draw, _squircle(hx, hy, hrx, hry), GL_ICE)
+    k = -d * 1.2
+    _snow(draw, [Ell(hx + k + 0.6, hy - hry + 0.8, 7.4 if not d else 6.4, 2.6), Ell(hx + k - 2.6, hy - hry - 0.6, 3.6, 2.6),
+                 Ell(hx + k + 2.6, hy - hry - 1.2, 3.8, 2.8), Ell(hx + k - 5.6, hy - hry + 2.0, 1.4, 1.8),
+                 Ell(hx + k + 6.4, hy - hry + 2.2, 1.3, 1.6), Ell(hx + k + 0.8, hy - hry + 2.6, 1.4, 1.6)])
+    if back:
+        stroke(draw, [(hx + 3.0, hy + 1.0), (hx + 5.0, hy + 4.0), (hx + 3.6, hy + 6.4)], 0.6, GL_DEEP)
+    else:
+        _shine(draw, hx - hrx + 1.8, hy - 3.4, 0.8)
+        ey = hy + 1.6
+        if d:
+            fx0 = hx + d * 2.6
+            ms_eye(draw, fx0 + d * 5.6, ey, 3.0, 5.0, GL_IRIS, (float(d), 0.0), "sharp", skin=GL_ICE, side=d, lash=(30, 60, 120))
+            ms_eye(draw, fx0, ey, 4.2, 5.6, GL_IRIS, (float(d), 0.0), "sharp", skin=GL_ICE, side=-d, lash=(30, 60, 120))
+            Ell(fx0 - d * 2.4, hy + 5.4, 1.8, 0.9).draw(draw, fill=mix(GL_ICE, (255, 150, 180), 0.4))
+        else:
+            for s in (-1, 1):
+                ms_eye(draw, hx + s * 4.6, ey, 4.4, 5.8, GL_IRIS, (0.0, 0.0), "sharp", skin=GL_ICE, side=s, lash=(30, 60, 120))
+                Ell(hx + s * 8.0, hy + 5.4, 1.9, 0.9).draw(draw, fill=mix(GL_ICE, (255, 150, 180), 0.4))
+        ms_mouth(draw, hx + d * 6.4, hy + 6.8, "o" if frame % 2 else "set", GL_ICE, 0.9)
+    for s in ((-1, 1) if not d else (d,)):
+        arm(s, True)
 
 
 # ===================================================================
-# MUDSLINGER (24) -- a swamp goblin under a lily-pad hat
+# MUDSLINGER (24) -- a swamp frog-kid: eyes bulging up in front of a
+# lily-pad hat with a lotus on it, a wide grin, mud-spattered dungarees,
+# webbed feet and a dripping mud ball
 # ===================================================================
 
-MUD_SKIN = (126, 158, 84)
-MUD = (132, 94, 62)
-MUD_PAD = (84, 162, 74)
-MUD_LOTUS = (255, 170, 206)
+MUD_SKIN = (124, 194, 88)
+MUD_BELLY = (214, 232, 150)
+MUD = (138, 96, 60)
+MUD_WET = (104, 70, 48)
+MUD_DUNG = (86, 128, 178)
+MUD_PAD = (70, 160, 76)
+MUD_LOTUS = (255, 168, 204)
+
+
+def _splat(draw, x, y, k, color=MUD_WET):
+    """A splash of wet mud with a drip or two."""
+    blob(draw, [Ell(x, y, 1.5 * k, 1.1 * k), Ell(x + 1.2 * k, y + 0.9 * k, 0.6 * k, 0.8 * k),
+                Ell(x - 1.1 * k, y + 0.5 * k, 0.5 * k, 0.6 * k)], color, sh=None, line=False)
+
+
+def _lily_pad(draw, x, y, rx, ry, notch, tilt):
+    """A lily pad worn as a hat, seen from a little above and tipped at an
+    angle: a flat round leaf with the V cut out of its near edge that makes
+    it a lily pad and not a plate. `notch` is the cut's angle (90 = nearest
+    the camera), `tilt` the hat's in degrees."""
+    pts = arc_pts(x, y, rx, ry, notch + 16, notch + 344, 34) + [(x + math.cos(math.radians(notch)) * rx * 0.12, y)]
+    pad = Poly(rot_pts(pts, x, y, tilt))
+    cel(draw, pad, MUD_PAD, sh=(0.0, 1.2), hi=(0.0, -0.7), hi_tone=lit(MUD_PAD, 1.2))
+    for a in (notch + 120, notch + 180, notch + 240):
+        vein = [(x, y), (x + math.cos(math.radians(a)) * rx * 0.72, y + math.sin(math.radians(a)) * ry * 0.72)]
+        stroke(draw, rot_pts(vein, x, y, tilt), 0.4, lit(MUD_PAD, 0.8))
+
+
+def _lotus(draw, x, y, k=1.0):
+    for a in (-160, -125, -90, -55, -20):
+        r = math.radians(a)
+        tip = (x + math.cos(r) * 3.6 * k, y + math.sin(r) * 3.4 * k)
+        side = (math.cos(r + 1.57) * 1.2 * k, math.sin(r + 1.57) * 1.2 * k)
+        cel(draw, Poly([(x + side[0] * 0.6, y + 0.8 + side[1] * 0.6), (x + side[0] + (tip[0] - x) * 0.5, y + side[1] + (tip[1] - y) * 0.5),
+                        tip, (x - side[0] + (tip[0] - x) * 0.5, y - side[1] + (tip[1] - y) * 0.5),
+                        (x - side[0] * 0.6, y + 0.8 - side[1] * 0.6)]),
+            MUD_LOTUS if a in (-125, -55) else lit(MUD_LOTUS, 0.6), sh=None, lw=0.55)
+    cel(draw, Ell(x, y + 0.2, 1.2 * k, 0.9 * k), (255, 224, 100), sh=None, lw=0.5)
 
 
 def draw_mudslinger(draw, ox, oy, direction, frame):
-    r = rig(ox, oy, direction, frame, build=1.06, head=1.02)
+    r = rig(ox, oy, direction, frame, build=1.02, head=1.0)
     d = r.d
     ball_side = _hold_side(r)
-    if d:
-        rig_arms(r, draw, MUD_SKIN, MUD_SKIN, layer="far")
-    rig_legs(r, draw, MUD_SKIN, MUD, bare=True)
-    rig_torso(r, draw, MUD)
     cx = r.cx
-    # mud splashes on the vest
-    if not r.back:
-        for (u, v, k) in ((-3.0, 1.4, 1.2), (2.6, 4.0, 1.5), (-1.0, 6.4, 1.0)):
-            blob(draw, [Ell(cx + u + d * 1.4, r.sh_y + v, k * 1.4, k), Ell(cx + u + d * 1.4 + k, r.sh_y + v + k * 0.8, k * 0.6, k * 0.8)],
-                 shade(MUD, 1.2), sh=None, line=False)
-    rig_belt(r, draw, shade(MUD, 1.6), buckle=MUD_PAD)
-    rig_arms(r, draw, MUD_SKIN, MUD_SKIN, layer="near", hands=False)
-    head_skull(r, draw, MUD_SKIN, ears=False)
     hx, hy, rx, ry = r.hx, r.head_cy, r.head_rx, r.head_ry
+    if d:
+        rig_arms(r, draw, MUD_SKIN, MUD_SKIN, layer="far", hands=False)
+    # webbed feet on frog legs
+    for side in ((-1, 1) if not d else (-d, d)):
+        near = r.near(side)
+        col = MUD_SKIN if near else shade(MUD_SKIN, 0.6)
+        hx0, hy0 = r.hip(side)
+        fx, fy = r.foot(side)
+        cel(draw, Limb([(hx0, hy0), (fx, fy - 1.0)], [2.6, 2.2]), col, sh=(0.9, 0.0))
+        if d:
+            foot = Poly([(fx - d * 1.6, fy - 1.6), (fx + d * 3.6, fy - 0.4), (fx + d * 4.4, fy + 1.2), (fx + d * 2.2, fy + 0.6),
+                         (fx + d * 1.4, fy + 1.4), (fx - d * 1.8, fy + 1.2)])
+        else:
+            foot = Poly([(fx - 3.4, fy + 1.2), (fx - 3.0, fy - 0.4), (fx - 1.2, fy - 1.6), (fx + 1.2, fy - 1.6), (fx + 3.0, fy - 0.4),
+                         (fx + 3.4, fy + 1.2), (fx + 1.7, fy + 0.6), (fx, fy + 1.4), (fx - 1.7, fy + 0.6)])
+        cel(draw, foot, col, sh=(0.0, 0.6))
+    # dungarees: a bib and straps over a pale frog belly
+    rig_torso(r, draw, MUD_BELLY if r.front else MUD_SKIN)
     if not r.back:
-        # frog eyes bulging above the head line, and a wide grin
-        e1, e2, ey, mx, my = face_anchor(r)
-        for side, ex in (((-1, e1), (1, e2)) if not d else ((-d, e1), (d, e2))):
-            w = 1.0 if (not d or side == -d) else 0.72
-            cel(draw, Ell(ex, ey - 2.6, 3.4 * w, 3.2), MUD_SKIN, sh=(0.4, 0.4))
-            ms_eye(draw, ex, ey - 2.2, 4.0 * w, 4.4, (230, 180, 40), (float(d), 0.0), "bright", skin=MUD_SKIN, side=side)
-        mw = 5.0 if not d else 3.4
-        mxc = hx + d * 5.6
-        stroke(draw, [(mxc - mw, my - 0.6), (mxc - mw * 0.4, my + 0.8), (mxc + mw * 0.4, my + 0.8), (mxc + mw, my - 0.6)],
-               0.8, shade(MUD_SKIN, 2.4))
-        Poly([(mxc + 1.0, my + 0.5), (mxc + 2.0, my + 0.4), (mxc + 1.5, my + 1.8)]).draw(draw, fill=(250, 248, 236))
-    # lily pad hat with a lotus
-    pad = Ell(hx - d * 0.6, hy - ry + 2.8, rx + 3.6, 3.6)
-    cel(draw, pad, MUD_PAD, sh=(0.0, 1.0))
-    stroke(draw, [(hx - 8.0, hy - ry + 2.6), (hx + 8.0, hy - ry + 2.6)], 0.5, shade(MUD_PAD, 1.4))
-    lx, ly = hx + (4.0 if not d else -d * 2.0), hy - ry + 0.6
-    for a in range(-150, -20, 26):
-        cel(draw, Poly([(lx, ly + 1.0), (lx + math.cos(math.radians(a - 12)) * 2.2, ly + math.sin(math.radians(a - 12)) * 2.2),
-                        (lx + math.cos(math.radians(a)) * 4.0, ly + math.sin(math.radians(a)) * 4.0),
-                        (lx + math.cos(math.radians(a + 12)) * 2.2, ly + math.sin(math.radians(a + 12)) * 2.2)]),
-            MUD_LOTUS, sh=None, lw=0.6)
-    cel(draw, Ell(lx, ly, 1.2, 1.0), (255, 226, 110), sh=None, lw=0.5)
+        bx = cx + d * 2.4
+        bib = Poly([(bx - 4.6, r.sh_y + 1.6), (bx + 4.6, r.sh_y + 1.6), (bx + 5.2, r.waist_y + 1.0), (bx - 5.2, r.waist_y + 1.0)]) if not d else \
+            Poly([(bx - d * 1.4, r.sh_y + 1.6), (bx + d * 2.2, r.sh_y + 1.0), (bx + d * 2.8, r.waist_y + 1.0), (bx - d * 2.4, r.waist_y + 1.0)])
+        cel(draw, bib, MUD_DUNG, sh=(0.8, 0.0))
+        if not d:
+            cel(draw, RRect(bx - 2.0, r.sh_y + 4.0, bx + 2.0, r.sh_y + 6.6, 0.6), shade(MUD_DUNG, 0.6), sh=None, lw=0.6)
+    pants = r.hip_y + 2.6
+    if d:
+        legs = Poly([(cx - 4.6, r.waist_y + 0.4), (cx + 4.8, r.waist_y + 0.4), (cx + 5.4, pants), (cx - 5.2, pants)])
+    else:
+        legs = Poly([(cx - r.hip_w - 0.2, r.waist_y + 0.4), (cx + r.hip_w + 0.2, r.waist_y + 0.4), (cx + r.hip_w + 0.8, pants),
+                     (cx + 0.8, pants), (cx, pants - 1.6), (cx - 0.8, pants), (cx - r.hip_w - 0.8, pants)])
+    cel(draw, legs, MUD_DUNG, sh=(1.0, 0.6))
+    if not d:
+        for s in (-1, 1):
+            stroke(draw, [(cx + s * 4.4, r.sh_y + 1.8), (cx + s * 5.0, r.sh_y - 1.8)], 1.3, shade(MUD_DUNG, 0.8))
+    if r.back:
+        for s in (-1, 1):
+            stroke(draw, [(cx + s * 4.6, r.sh_y - 1.6), (cx - s * 3.6, r.waist_y + 0.6)], 1.3, shade(MUD_DUNG, 0.8))
+    if d:
+        stroke(draw, [(cx + d * 3.6, r.sh_y + 1.8), (cx - d * 1.0, r.sh_y - 2.0)], 1.3, shade(MUD_DUNG, 0.8))
+    # mud: splashed up the legs and the bib
+    for (u, v, k) in ((-3.4, r.hip_y + 1.0, 1.0), (3.0, r.waist_y + 2.4, 0.8), (-1.2, r.sh_y + 7.2, 0.7)):
+        if not r.back or v > r.waist_y:
+            _splat(draw, cx + u + d * 1.0, v, k)
+    rig_arms(r, draw, MUD_SKIN, MUD_SKIN, layer="near", hands=False)
+    # the head: wide and flat, a frog's
+    hat_y = hy - ry + 1.4
+    _lily_pad(draw, hx - d * 1.6, hat_y, rx + 2.4, 3.8, 112 if not d else 90 + d * 30, -7 if not d else d * 6)
+    if not r.back:
+        _lotus(draw, hx + (5.6 if not d else -d * 4.6), hat_y - 1.2)
+    head = Ell(hx, hy + 0.8, rx + 0.6, ry - 0.4)
+    my = face_anchor(r)[4]
+    domes = ((-1, hx - 5.8), (1, hx + 5.8)) if not d else ((-d, hx + d * 1.0), (d, hx + d * 7.4))
+
+    def bulges():
+        # eyes bulging up over the brow (from behind, two bumps on the crown)
+        for side, ex in domes:
+            far = d and side == d
+            w = 0.74 if far else 1.0
+            dy = hy - 7.4
+            cel(draw, Ell(ex, dy, 4.6 * w, 4.2), MUD_SKIN if not far else shade(MUD_SKIN, 0.3), sh=(0.5, 0.6))
+            if not r.back:
+                ms_eye(draw, ex, dy + 0.4, 5.4 * w, 6.2, (64, 44, 30), (float(d), 0.0), "bright", skin=MUD_SKIN,
+                       side=side if not d else -side, lash=(40, 70, 30))
+
+    if r.back:
+        bulges()
+    cel(draw, head, MUD_SKIN, sh=(0.9, 0.8))
+    if not r.back:
+        cel(draw, Ell(hx + d * 2.6, hy + 6.0, rx * 0.7 if not d else rx * 0.56, 3.6), MUD_BELLY, sh=None, line=False)
+        bulges()
+    if r.back:
+        _lotus(draw, hx + 5.0, hat_y - 1.2)
+    else:
+        # a frog's grin from cheek to cheek
+        mw = 7.0 if not d else 4.6
+        mxc = hx + d * 5.4
+        stroke(draw, [(mxc - mw, my - 2.6), (mxc - mw * 0.5, my - 0.6), (mxc, my - 0.2), (mxc + mw * 0.5, my - 0.6), (mxc + mw, my - 2.6)],
+               0.85, shade(MUD_SKIN, 2.6))
+        Ell(mxc + mw * 0.36, my + 0.2, 1.2, 1.0).draw(draw, fill=(232, 98, 118))
+        for s in ((-1, 1) if not d else (-d,)):
+            Ell(mxc + s * (mw + 0.6) - d * 0.6, my - 3.6, 1.8, 0.9).draw(draw, fill=(240, 150, 140))
     for side in _sides(r):
-        h = rig_hand(r, draw, side, MUD_SKIN)
+        h = rig_hand(r, draw, side, MUD_SKIN, reach=0.3 if side == ball_side else 0.0)
         if side == ball_side and not r.back:
-            bx, by = h[0] + (1.6 if not d else d * 2.0), h[1] - 3.4
-            blob(draw, [Ell(bx, by, 3.4, 3.2), Ell(bx - 1.6, by + 2.6, 1.0, 1.6), Ell(bx + 1.8, by + 2.2, 0.8, 1.4)],
-                 MUD, sh=(0.8, 0.8))
-            Ell(bx - 1.2, by - 1.2, 0.8, 0.7).draw(draw, fill=lit(MUD, 1.2))
+            bx, by = h[0] + (1.6 if not d else d * 2.2), h[1] - 3.4
+            blob(draw, [Ell(bx, by, 3.6, 3.4), Ell(bx - 1.8, by + 2.8, 1.0, 1.8), Ell(bx + 1.6, by + 2.6, 0.8, 1.5),
+                        Ell(bx - 1.8, by + 4.6, 0.8, 0.8)], MUD, sh=(0.9, 0.9), tone=MUD_WET)
+            Ell(bx - 1.2, by - 1.3, 1.0, 0.8).draw(draw, fill=lit(MUD, 1.4))
 
 
 # ===================================================================
@@ -837,76 +980,115 @@ def draw_ember(draw, ox, oy, direction, frame):
 
 
 # ===================================================================
-# AVALANCHE (26) -- a yeti
+# AVALANCHE (26) -- a big fluffy yeti: a sky-blue face, a toothy grin,
+# little horns, and blue hands and feet out of a snowdrift of fur
 # ===================================================================
 
-YETI_FUR = (242, 246, 252)
-YETI_SH = (200, 214, 238)
-YETI_FACE = (132, 184, 230)
-YETI_HORN = (214, 206, 190)
+YETI_FUR = (244, 247, 253)
+YETI_SH = (198, 212, 238)
+YETI_FACE = (112, 172, 232)
+YETI_HORN = (238, 226, 196)
+YETI_MOUTH = (96, 38, 78)
+
+
+def _fluff(cx, cy, rx, ry, tuft=2.4, a0=0.0, a1=360.0, step=30.0, k=0.92):
+    """An ellipse with a ring of tufts round it: fur's scalloped edge, all one
+    mass once it goes through `blob`."""
+    parts = [Ell(cx, cy, rx, ry)]
+    a = a0
+    while a < a1 - 0.1:
+        r = math.radians(a)
+        parts.append(Ell(cx + math.cos(r) * rx * k, cy + math.sin(r) * ry * k, tuft, tuft))
+        a += step
+    return parts
 
 
 def draw_avalanche(draw, ox, oy, direction, frame):
-    bob = [0, -1, 0, -1][frame]
-    ph = [0, 1, 0, -1][frame]
-    base = oy + 54 + bob
-    cx = ox + 32
-    d = {DOWN: 0, UP: 0, LEFT: -1, RIGHT: 1}[direction]
-    back = direction == UP
-    # legs
-    for side in ((-1, 1) if not d else (-d, d)):
-        near = (not d) or side == d
-        fwd = ph * side if not d else (ph if near else -ph)
-        lx = cx + (side * 5.4 if not d else d * fwd * 3.2)
-        ly = base - (1.2 if fwd < 0 and not d else 0)
+    d, back, base, cx, ph = creature_setup(ox, oy, direction, frame)
+    hx, hy = cx + d * 3.2, base - 31.0
+    bw = 13.0 if not d else 12.0
+
+    # feet: big and blue, under the fur
+    for s in ((-1, 1) if not d else (-d, d)):
+        near = not d or s == d
+        fwd = ph * s if not d else (ph if near else -ph)
+        lx = cx + (s * 6.0 if not d else d * fwd * 3.4 + s * 1.0)
+        ly = base - (1.0 if fwd < 0 and not d else 0.0)
         col = YETI_FUR if near else shade(YETI_FUR, 0.6)
-        blob(draw, [Ell(lx, ly - 5.0, 4.0, 5.2)], col, sh=(0.8, 0.8), tone=YETI_SH)
-        cel(draw, Ell(lx + d * 1.0, ly - 0.8, 3.8, 1.8), YETI_FACE if near else shade(YETI_FACE, 0.6), sh=None)
-    # body: a shaggy mass
-    by = base - 17.0
-    w = 11.6 if not d else 9.6
-    parts = [Ell(cx, by, w, 11.0), Ell(cx - w * 0.7, by + 7.0, 3.6, 3.2), Ell(cx, by + 9.4, 4.4, 3.0),
-             Ell(cx + w * 0.7, by + 7.0, 3.6, 3.2)]
-    blob(draw, parts, YETI_FUR, sh=(1.6, 1.4), tone=YETI_SH)
-    if not back:
-        cel(draw, Ell(cx + d * 2.0, by + 2.0, w * 0.52, 6.4), YETI_SH, sh=None, line=False)
-    # arms: long and heavy, knuckles low
-    for side in ((-1, 1) if not d else (-d, d)):
-        near = (not d) or side == d
-        fwd = -ph * side if not d else (-ph if near else ph)
-        sx = cx + (side * (w - 1.0) if not d else side * 0.6)
-        fx = sx + (side * 4.4 if not d else d * fwd * 3.4)
-        fy = base - 7.0 - fwd * 0.8
+        blob(draw, [Ell(lx, ly - 5.4, 4.2, 4.6)], col, sh=(0.8, 0.8), tone=YETI_SH)
+        cel(draw, Ell(lx + d * 1.4, ly - 1.2, 4.4 if not d else 4.8, 2.0), YETI_FACE if near else shade(YETI_FACE, 0.6),
+            sh=(0.0, 0.7))
+
+    def arm(s, near):
         col = YETI_FUR if near else shade(YETI_FUR, 0.6)
-        blob(draw, [Limb([(sx, by - 6.0), ((sx + fx) / 2 + (side if not d else 0) * 1.4, by + 1.0), (fx, fy - 3.0)],
-                         [4.0, 3.6, 3.2])], col, sh=(1.0, 0.8), tone=YETI_SH)
-        cel(draw, Ell(fx, fy, 3.4, 2.8), YETI_FACE if near else shade(YETI_FACE, 0.6), sh=(0.6, 0.6))
-        for k in (-1.4, 0.0, 1.4):
-            Poly([(fx + k - 0.5, fy + 2.0), (fx + k + 0.5, fy + 2.0), (fx + k, fy + 3.4)]).draw(draw, fill=(250, 250, 244))
+        fwd = -ph * s if not d else (-ph if near else ph)
+        sx = cx + (s * (bw - 2.0) if not d else d * 0.4 + s * 0.6)
+        sy = base - 22.0
+        fx = sx + (s * 4.6 if not d else d * (fwd * 4.2 + 2.4))
+        fy = base - 8.6 - fwd * 0.8
+        mid = ((sx + fx) / 2.0 + (s * 1.6 if not d else 0.0), (sy + fy) / 2.0)
+        blob(draw, [Limb([(sx, sy), mid, (fx, fy - 2.6)], [4.4, 4.0, 3.6])] +
+             [Ell(mid[0] + (s * 3.4 if not d else -d * 3.0), mid[1] + 1.0, 1.8, 1.8)],
+             col, sh=(1.0, 0.8), tone=YETI_SH)
+        hand = YETI_FACE if near else shade(YETI_FACE, 0.6)
+        cel(draw, Ell(fx, fy, 3.6, 3.0), hand, sh=(0.6, 0.6))
         if near:
-            crystal(draw, sx + (side * 1.4 if not d else 0), by + 3.0, 90, 3.4, 1.6, color=(206, 240, 255))
-    # head: sunk into the shoulders, horns, a blue face with a big mouth
-    hx, hy = cx + d * 3.0, base - 30.0
-    for s in ((-1, 1) if not d else (-d,)):
-        hb = (hx + s * 7.4, hy - 4.0) if not d else (hx - d * 4.0, hy - 6.0)
-        tip = (hb[0] + (s * 5.0 if not d else -d * 5.4), hb[1] - 4.4)
-        cel(draw, Limb([hb, ((hb[0] + tip[0]) / 2 + (s if not d else -d) * 1.4, hb[1] - 1.0), tip], [1.9, 1.4, 0.4]),
-            YETI_HORN, sh=(0.4, 0.4))
-    blob(draw, [Ell(hx, hy, 10.0, 8.6), Ell(hx - 6.0, hy - 5.4, 3.0, 2.6), Ell(hx, hy - 7.4, 3.6, 2.8),
-                Ell(hx + 6.0, hy - 5.4, 3.0, 2.6)], YETI_FUR, sh=(1.2, 1.0), tone=YETI_SH)
-    if back:
-        return
-    fx0 = hx + d * 2.4
-    cel(draw, Ell(fx0, hy + 1.6, 7.0 if not d else 5.6, 6.0), YETI_FACE, sh=(0.8, 0.8))
-    for side, ex in (((-1, fx0 - 3.0), (1, fx0 + 3.0)) if not d else ((d, fx0 + d * 2.0), (-d, fx0 - d * 2.0))):
-        w = 1.0 if not d or side == d else 0.7
-        ms_eye(draw, ex, hy - 0.2, 3.2 * w, 3.8, (40, 70, 120), (float(d), 0.0), "sharp", skin=YETI_FACE,
-               side=side if not d else -side, lash=(30, 50, 90))
-    mx = fx0 + d * 1.0
-    Poly([(mx - 3.6, hy + 3.6), (mx + 3.6, hy + 3.6), (mx + 2.4, hy + 6.4), (mx - 2.4, hy + 6.4)]).draw(draw, fill=(60, 40, 70))
-    for s in (-1, 1):
-        Poly([(mx + s * 2.6 - 0.7, hy + 3.6), (mx + s * 2.6 + 0.7, hy + 3.6), (mx + s * 2.4, hy + 5.6)]).draw(
-            draw, fill=(252, 252, 246))
+            for k in ((-1.5, 0.0, 1.5) if not d else (d * 0.2, d * 1.8)):
+                Poly([(fx + k - 0.55, fy + 2.0), (fx + k + 0.55, fy + 2.0), (fx + k + (d * 0.4), fy + 3.6)]).draw(
+                    draw, fill=(252, 252, 246))
+
+    if d:
+        arm(-d, False)
+    # the body: a drift of white fur
+    by = base - 16.4
+    blob(draw, _fluff(cx - d * 0.6, by, bw, 11.0, 2.6, 15.0, 165.0, 25.0) + [Ell(cx - d * 0.6, by - 2.0, bw, 10.0)],
+         YETI_FUR, sh=(1.6, 1.4), tone=YETI_SH)
+    if not back:
+        # the shadow of the head on the chest, fringed like the fur
+        bx0 = cx + d * 2.4
+        blob(draw, [Ell(bx0, by - 7.6, bw * 0.62 if not d else 5.6, 3.6)] +
+             [Ell(bx0 + u, by - 4.4 + (0.8 if i % 2 else 0.0), 1.8, 1.8) for i, u in enumerate((-5.6, -2.8, 0.0, 2.8, 5.6) if not d else (-3.6, -1.0, 1.6, 4.2))],
+             mix(YETI_FUR, YETI_SH, 0.6), sh=None, line=False)
+    else:
+        blob(draw, [Ell(cx, base - 8.0, 2.4, 2.2)], YETI_FUR, sh=(0.4, 0.4), tone=YETI_SH)
+    # horns, curling out from under the fur on top of the head
+    for s in ((-1, 1) if not d else (-d, d)):
+        near = not d or s == -d
+        hb = (hx + s * 7.6, hy - 6.4) if not d else (hx + s * 3.4 - d * 1.2, hy - 8.0)
+        pts = [hb, (hb[0] + s * 3.4, hb[1] - 1.6), (hb[0] + s * 5.0, hb[1] - 4.6), (hb[0] + s * 4.0, hb[1] - 7.2)]
+        cel(draw, Limb(pts, [2.2, 1.8, 1.2, 0.3]), YETI_HORN if near else shade(YETI_HORN, 0.6), sh=(0.4, 0.5))
+    # the head: a round mass of fur, a tuft on top
+    hrx = 11.0 if not d else 10.2
+    blob(draw, _fluff(hx, hy, hrx, 9.6, 2.2, 0.0, 360.0, 30.0) +
+         [Ell(hx - d * 1.0 - 1.6, hy - 10.4, 2.6, 2.6), Ell(hx - d * 1.0 + 1.4, hy - 11.2, 2.4, 2.8)],
+         YETI_FUR, sh=(1.2, 1.0), tone=YETI_SH)
+    if not back:
+        # a sky-blue face
+        fx0 = hx + d * 3.2
+        fw = 7.8 if not d else 6.0
+        cel(draw, Poly(arc_pts(fx0, hy + 1.4, fw, 6.8, 0, 360, 32)[:-1]), YETI_FACE, sh=(0.8, 0.8))
+        # bangs of fur over the brow
+        blob(draw, [Ell(fx0 - fw * 0.55, hy - 4.6, 3.0, 2.4), Ell(fx0, hy - 5.2, 3.2, 2.6), Ell(fx0 + fw * 0.55, hy - 4.6, 3.0, 2.4)],
+             YETI_FUR, sh=(0.0, 0.8), tone=YETI_SH)
+        ey = hy + 0.8
+        if d:
+            ms_eye(draw, fx0 + d * 3.0, ey, 2.8, 4.4, (40, 66, 120), (float(d), 0.0), "bright", skin=YETI_FACE, side=d, lash=(30, 44, 90))
+            ms_eye(draw, fx0 - d * 1.2, ey, 3.6, 4.8, (40, 66, 120), (float(d), 0.0), "bright", skin=YETI_FACE, side=-d, lash=(30, 44, 90))
+        else:
+            for s in (-1, 1):
+                ms_eye(draw, fx0 + s * 3.4, ey, 3.8, 5.0, (40, 66, 120), (0.0, 0.0), "bright", skin=YETI_FACE, side=s, lash=(30, 44, 90))
+        # a big grin with two fangs
+        mx, my = fx0 + d * 1.6, hy + 4.4
+        mw = 3.8 if not d else 2.8
+        Poly([(mx - mw, my), (mx + mw, my)] + arc_pts(mx, my, mw, 3.2, 0, 180, 12)[1:-1]).draw(draw, fill=YETI_MOUTH)
+        Ell(mx + d * 0.6, my + 2.2, mw * 0.55, 0.9).draw(draw, fill=(238, 110, 140))
+        for s in ((-1, 1) if not d else (d,)):
+            tx = mx + s * mw * 0.5 if not d else mx + d * mw * 0.4
+            Poly([(tx - 0.8, my - 0.1), (tx + 0.8, my - 0.1), (tx, my + 1.9)]).draw(draw, fill=(252, 252, 246))
+        for s in ((-1, 1) if not d else (-d,)):
+            Ell(fx0 + s * (fw - 1.4), hy + 3.6, 1.6, 0.8).draw(draw, fill=mix(YETI_FACE, (255, 140, 170), 0.45))
+    for s in ((-1, 1) if not d else (d,)):
+        arm(s, True)
 
 
 ELEMENTAL_DRAW_FUNCTIONS = {

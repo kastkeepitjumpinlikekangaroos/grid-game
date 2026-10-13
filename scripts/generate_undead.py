@@ -21,7 +21,7 @@ from sprite_base import (
     Ell, Limb, Poly, RRect, arc_pts, blade, blob, cel, cloud, flame, flame_pts, gem,
     generate_character, hand_at, head_face, head_skull, hood_opening, ink, lit, mix, ms_eye,
     ms_mouth, rig, rig_arms, rig_belt, rig_cape, rig_hair, rig_hand, rig_head, rig_hood, rig_legs,
-    rig_robe, rig_torso, shade, sparkle, star, stroke, xform, arm_pts, face_anchor,
+    rig_robe, rig_torso, shade, sparkle, star, stroke, xform, arm_pts, face_anchor, bez,
 )
 
 BONE = (240, 234, 214)
@@ -336,64 +336,150 @@ def draw_lich(draw, ox, oy, direction, frame):
 
 
 # ===================================================================
-# GHOUL (31) -- hunched, grey-green, a mouthful of jagged teeth
+# GHOUL (31) -- hunched and lanky, grey-green, two mismatched bulging
+# eyes, a grin full of jagged teeth with the tongue lolling out, ragged
+# ears, a stitched scalp and patched rags
 # ===================================================================
 
-GH_SKIN = (150, 176, 140)
-GH_RAGS = (116, 92, 76)
-GH_GLOW = (255, 72, 60)
+GH_SKIN = (158, 190, 164)
+GH_RAGS = (112, 88, 128)
+GH_PATCH = (196, 156, 96)
+GH_HAIR = (78, 70, 96)
+GH_SCLERA = (252, 246, 186)
+GH_PUPIL = (222, 40, 46)
+GH_MOUTH = (82, 24, 44)
+GH_TONGUE = (196, 96, 150)
+
+
+def _ghoul_eye(draw, x, y, rx, ry, look):
+    """A bulging, staring eye: no iris, a pale yellow ball with a pinprick of
+    red, and a bruise of a bag under it."""
+    Ell(x, y + ry * 0.62, rx * 1.02, ry * 0.5).draw(draw, fill=shade(GH_SKIN, 2.0))
+    cel(draw, Ell(x, y, rx, ry), GH_SCLERA, sh=(0.0, 0.6), line_color=(64, 50, 70), lw=0.7)
+    px = x + look * rx * 0.3
+    Ell(px, y + 0.3, rx * 0.3, ry * 0.3).draw(draw, fill=GH_PUPIL)
+    Ell(px - rx * 0.4, y - ry * 0.42, 0.75, 0.75).draw(draw, fill=(255, 255, 255))
+
+
+def _claws(draw, h, d, col, near):
+    """A big hand with three long claws."""
+    cel(draw, Ell(h[0], h[1], 2.6, 2.4), col, sh=(0.5, 0.5))
+    for k in ((-1, 0, 1) if not d else (0, 1)):
+        x = h[0] + (k * 1.4 if not d else d * (0.6 + k * 1.2))
+        Poly([(x - 0.55, h[1] + 1.4), (x + 0.55, h[1] + 1.4), (x + (k * 0.4 if not d else d * 0.8), h[1] + 3.6)]).draw(
+            draw, fill=(244, 240, 222) if near else (200, 196, 182))
 
 
 def draw_ghoul(draw, ox, oy, direction, frame):
-    r = rig(ox, oy, direction, frame, build=1.08, head=0.96)
+    r = rig(ox, oy, direction, frame, build=1.0, head=1.0)
     d = r.d
-    # hunched: the head hangs lower and further forward
-    r.head_cy += 2.4
-    r.hx += d * 2.4
-    if d:
-        rig_arms(r, draw, GH_SKIN, GH_SKIN, layer="far", reach=0.4, hands=False)
-    rig_legs(r, draw, GH_SKIN, GH_SKIN, bare=True)
-    rig_torso(r, draw, GH_RAGS)
     cx = r.cx
-    # torn hem
-    if not d:
-        Poly([(cx - r.hip_w, r.hip_y + 0.4), (cx - 3.0, r.hip_y + 3.0), (cx - 1.0, r.hip_y + 0.8), (cx + 2.0, r.hip_y + 3.4),
-              (cx + r.hip_w, r.hip_y + 0.4)]).draw(draw, fill=GH_RAGS)
-        stroke(draw, [(cx - 3.0, r.sh_y + 2.0), (cx - 1.0, r.sh_y + 4.0)], 0.6, shade(GH_RAGS, 1.4))
-    rig_arms(r, draw, GH_SKIN, GH_SKIN, layer="near", reach=0.4, hands=False)
-    # long clawed hands
-    for side in ((-1, 1) if not d else (-d, d)):
-        h = hand_at(r, side, 0.4)
-        col = GH_SKIN if r.near(side) else shade(GH_SKIN, 0.6)
-        cel(draw, Ell(h[0], h[1], 2.4, 2.2), col, sh=(0.5, 0.5))
-        for k in (-1, 0, 1):
-            x = h[0] + k * 1.3 + d * 0.6
-            Poly([(x - 0.5, h[1] + 1.2), (x + 0.5, h[1] + 1.2), (x + k * 0.3 + d * 0.6, h[1] + 3.8)]).draw(draw, fill=(240, 236, 220))
-    head_skull(r, draw, GH_SKIN, ears=False)
-    hx, hy, rx = r.hx, r.head_cy, r.head_rx
-    # ragged ears
+    # hunched: the head hangs low and pushed forward, over a hump of a back
+    r.head_cy += 3.0
+    r.hx += d * 2.8
+    hx, hy, rx, ry = r.hx, r.head_cy, r.head_rx, r.head_ry
+    if d:
+        rig_arms(r, draw, GH_SKIN, GH_SKIN, layer="far", reach=0.5, hands=False)
+        h = hand_at(r, -d, 0.5)
+        _claws(draw, h, d, shade(GH_SKIN, 0.6), False)
+    # skinny legs in ragged shorts, big bare feet
+    rig_legs(r, draw, GH_SKIN, GH_SKIN, bare=True, width=0.82)
+    shorts_y = r.hip_y + 2.6
+    if d:
+        shorts = Poly([(cx - 4.6, r.waist_y), (cx + 4.8, r.waist_y), (cx + 5.2, shorts_y), (cx + 3.0, shorts_y - 1.4), (cx + 1.0, shorts_y + 0.4),
+                       (cx - 1.4, shorts_y - 1.2), (cx - 5.0, shorts_y)])
+    else:
+        shorts = Poly([(cx - r.hip_w, r.waist_y), (cx + r.hip_w, r.waist_y), (cx + r.hip_w + 0.6, shorts_y), (cx + 4.6, shorts_y - 1.4),
+                       (cx + 2.6, shorts_y + 0.2), (cx + 0.6, shorts_y - 2.0), (cx - 1.6, shorts_y), (cx - 3.6, shorts_y - 1.2),
+                       (cx - 5.4, shorts_y + 0.4), (cx - r.hip_w - 0.6, shorts_y - 0.4)])
+    cel(draw, shorts, shade(GH_RAGS, 0.9), sh=(1.0, 0.0))
+    # the shirt: torn rags with a patch, a hump of a back in profile
+    top = r.sh_y - 2.4
+    bot = r.hip_y - 0.4
+    if d:
+        shirt = Poly([(cx + d * 3.4, top + 0.6), (cx + d * 5.0, top + 2.6), (cx + d * 5.2, bot), (cx + d * 3.0, bot - 1.6), (cx + d * 1.0, bot + 0.6),
+                      (cx - d * 1.4, bot - 1.0), (cx - d * 4.8, bot)] + bez((cx - d * 5.6, r.sh_y + 2.0), (cx - d * 7.4, top - 1.6), (cx - d * 1.0, top - 1.4), 5))
+    else:
+        w = r.sh_w
+        shirt = Poly([(cx - w + 1.6, top), (cx + w - 1.6, top), (cx + w + 0.2, top + 1.4), (cx + r.hip_w + 0.4, bot - 0.6),
+                      (cx + 4.8, bot + 1.6), (cx + 2.8, bot - 0.8), (cx + 0.4, bot + 1.8), (cx - 2.0, bot - 0.6), (cx - 4.4, bot + 1.4),
+                      (cx - r.hip_w - 0.4, bot - 0.6), (cx - w - 0.2, top + 1.4)])
+    cel(draw, shirt, GH_RAGS, sh=(1.4, 0.8), regions=[(Ell(hx, top + 0.6, rx * 0.6, 2.4), shade(GH_RAGS))])
+    if not r.back:
+        px, py = cx + d * 2.0 - (2.6 if not d else 0.0), r.waist_y - 2.4
+        cel(draw, Poly([(px - 1.9, py - 1.7), (px + 1.8, py - 2.0), (px + 2.1, py + 1.6), (px - 1.6, py + 1.9)]), GH_PATCH, sh=None, lw=0.6)
+        for k in (-1.0, 0.4):
+            stroke(draw, [(px + k - 0.4, py - 2.6), (px + k + 0.4, py - 1.2)], 0.4, shade(GH_PATCH, 2.0))
+        stroke(draw, [(cx + d * 2.0 + 3.0, r.sh_y + 1.0), (cx + d * 2.0 + 4.2, r.sh_y + 3.6)], 0.6, shade(GH_RAGS, 1.6))
+    else:
+        cel(draw, Poly([(cx + 1.0, r.sh_y + 1.0), (cx + 4.4, r.sh_y + 0.6), (cx + 4.6, r.sh_y + 4.0), (cx + 1.2, r.sh_y + 4.2)]), GH_PATCH,
+            sh=None, lw=0.6)
+    # a rope belt
+    stroke(draw, [(cx - (r.hip_w if not d else 4.8), r.waist_y + 0.2), (cx + (r.hip_w if not d else 5.0), r.waist_y + 0.2)], 1.2, (190, 160, 110))
+    # long arms reaching forward, big clawed hands
+    rig_arms(r, draw, GH_SKIN, GH_SKIN, layer="near", reach=0.5, hands=False)
+    for side in ((-1, 1) if not d else (d,)):
+        _claws(draw, hand_at(r, side, 0.5), d, GH_SKIN, True)
+    # ragged ears, behind the head head-on
     for s in ((-1, 1) if not d else (-d,)):
-        ex = hx + s * (rx - 0.4) if not d else hx - d * 3.0
-        cel(draw, Poly([(ex, hy - 1.0), (ex + (s * 3.4 if not d else -d * 3.0), hy - 3.4), (ex + (s * 1.4 if not d else -d * 1.0), hy + 2.6)]),
-            GH_SKIN, sh=(0.3, 0.3))
+        if d:
+            ex = hx - d * 3.0
+            ear = Poly([(ex + d * 1.0, hy - 1.0), (ex - d * 4.6, hy - 5.4), (ex - d * 3.4, hy - 2.6), (ex - d * 5.2, hy - 1.0),
+                        (ex - d * 2.2, hy + 2.6), (ex + d * 1.2, hy + 3.4)])
+        else:
+            ex = hx + s * (rx - 1.4)
+            ear = Poly([(ex, hy - 2.4), (ex + s * 6.6, hy - 6.0), (ex + s * 5.0, hy - 3.0), (ex + s * 6.8, hy - 1.6),
+                        (ex + s * 3.4, hy + 1.6), (ex, hy + 3.0)])
+        cel(draw, ear, GH_SKIN, sh=(0.4, 0.4))
+        if not r.back:
+            stroke(draw, [(ex + (s if not d else -d) * 1.2, hy + 0.2), (ex + (s if not d else -d) * 3.8, hy - 3.0)], 0.5, shade(GH_SKIN, 1.4))
+    head_skull(r, draw, GH_SKIN, ears=False)
+    # a stitched scar across the scalp
+    if d:
+        scar = [(hx - d * 6.0, hy - 6.4), (hx - d * 0.6, hy - 8.6), (hx + d * 4.0, hy - 8.0)]
+    elif r.back:
+        scar = [(hx - 6.0, hy - 5.0), (hx - 1.0, hy - 7.0), (hx + 4.0, hy - 6.2)]
+    else:
+        scar = [(hx + 1.4, hy - 9.8), (hx + 4.6, hy - 7.2), (hx + 6.6, hy - 6.0)]
+    stroke(draw, scar, 0.55, shade(GH_SKIN, 2.4))
+    for i in range(len(scar) - 1):
+        (x0, y0), (x1, y1) = scar[i], scar[i + 1]
+        mx_, my_ = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+        ln = math.hypot(x1 - x0, y1 - y0) or 1.0
+        nx, ny = -(y1 - y0) / ln, (x1 - x0) / ln
+        stroke(draw, [(mx_ - nx * 1.1, my_ - ny * 1.1), (mx_ + nx * 1.1, my_ + ny * 1.1)], 0.45, shade(GH_SKIN, 2.4))
     if not r.back:
         e1, e2, ey, mx, my = face_anchor(r)
-        for side, ex in (((-1, e1), (1, e2)) if not d else ((-d, e1), (d, e2))):
-            w = 1.0 if not d or side == -d else 0.7
-            Ell(ex, ey, 2.4 * w, 2.4).draw(draw, fill=VOID)
-            Ell(ex, ey + 0.2, 1.1 * w, 1.1).draw(draw, fill=GH_GLOW)
-            Ell(ex - 0.3, ey - 0.3, 0.45, 0.45).draw(draw, fill=(255, 255, 255))
-        # a wide jagged mouth
-        mcx = hx + d * 5.0
-        mw = 5.4 if not d else 3.6
-        Poly([(mcx - mw, my - 1.4), (mcx + mw, my - 1.4), (mcx + mw * 0.7, my + 1.8), (mcx - mw * 0.7, my + 1.8)]).draw(draw, fill=(90, 30, 40))
-        n = 5 if not d else 3
+        look = float(d)
+        if d:
+            _ghoul_eye(draw, e2, ey - 0.4, 2.2, 3.4, look)
+            _ghoul_eye(draw, e1, ey, 3.4, 4.0, look)
+        else:
+            _ghoul_eye(draw, e1 - 0.2, ey - 0.6, 3.6, 4.2, 0.2)
+            _ghoul_eye(draw, e2 + 0.2, ey + 0.2, 2.8, 3.2, -0.3)
+        # a grin full of jagged teeth, the tongue lolling out of one corner
+        mcx = hx + d * 4.6
+        my += 0.4
+        mw = 5.2 if not d else 3.6
+        grin = [(mcx - mw, my - 1.6)] + bez((mcx - mw * 0.4, my - 0.6), (mcx, my - 0.4), (mcx + mw, my - 1.6), 3)[1:] + \
+            bez((mcx + mw * 0.8, my + 1.6), (mcx, my + 3.6), (mcx - mw * 0.8, my + 1.6), 4)
+        Poly(grin).draw(draw, fill=GH_MOUTH)
+        tx = mcx + (mw * 0.55 if not d else d * mw * 0.3)
+        cel(draw, Limb([(tx, my + 0.6), (tx + 0.6, my + 2.6), (tx + 0.2, my + 4.4)], [1.3, 1.2, 1.0]), GH_TONGUE, sh=None, lw=0.5)
+        n = 4 if not d else 3
         for i in range(n):
-            tx = mcx - mw + (2 * mw) * (i + 0.5) / n
-            Poly([(tx - 0.8, my - 1.4), (tx + 0.8, my - 1.4), (tx, my + 0.4)]).draw(draw, fill=(246, 240, 222))
-    # a few lank strands
-    rig_hair(r, draw, (84, 96, 80), dict(vol=0.9, fringe=((-0.5, 3.4), (0.3, 4.4)), sweep=0.6, side=4.0, back=6.0,
-                                           spikes=(4, 1.6)), skin=GH_SKIN)
+            t = (i + 0.5) / n
+            x = mcx - mw * 0.9 + mw * 1.8 * t
+            y = my - 1.4 + 0.6 * abs(t - 0.5) * 2.0
+            Poly([(x - 0.9, y - 0.2), (x + 0.9, y - 0.2), (x + 0.2 * (1 if i % 2 else -1), y + 1.9)]).draw(draw, fill=(250, 246, 226))
+        for x in ((mcx - mw * 0.4, mcx + mw * 0.2) if not d else (mcx - d * mw * 0.2,)):
+            Poly([(x - 0.8, my + 2.6), (x + 0.8, my + 2.6), (x, my + 1.0)]).draw(draw, fill=(250, 246, 226))
+    # a few lank strands of hair
+    tuft = [(-2.6, -10.0, -5.6, -14.0), (-0.4, -10.8, -1.4, -15.4), (2.0, -10.4, 3.4, -14.6)]
+    for (u0, v0, u1, v1) in tuft:
+        x0 = hx + (u0 if not d else -d * 1.0 + u0 * 0.6)
+        x1 = hx + (u1 if not d else -d * 2.4 + u1 * 0.6)
+        cel(draw, Limb([(x0, hy + v0), ((x0 + x1) / 2.0 + 0.8, hy + (v0 + v1) / 2.0), (x1, hy + v1)], [1.2, 0.9, 0.4]), GH_HAIR, sh=None, lw=0.6)
 
 
 # ===================================================================

@@ -5,12 +5,10 @@ import ProjectileKit._
 import Silhouettes._
 
 /** Ground blasts as they travel (aoeRing): filled shockwave bands over a darkened scorch, each kind
-  * throwing off its own debris — rubble, water, spores, flame, pressure rings, motes, roots. */
+  * throwing off its own debris — rubble, flame, pressure rings, motes, roots. */
 private[render] object AoeRings {
   // ── Blast flavours for `aoeRing` ──
   final val AOE_QUAKE = 0
-  final val AOE_WATER = 1
-  final val AOE_TOXIC = 2
   final val AOE_FIRE = 3
   final val AOE_SONIC = 4
   final val AOE_VOID = 5
@@ -22,8 +20,8 @@ private[render] object AoeRings {
    * The rings used to be hairline strokes at low alpha, which on grass came out as a
    * barely-visible ripple — the same ripple for a tidal splash, a plague cloud, an
    * eruption and a gravity vortex. They are now filled bands over a darkened ground
-   * scorch, and `kind` chooses what the blast throws off: rubble, water, spores, flame,
-   * pressure rings, inward-falling motes, or roots.
+   * scorch, and `kind` chooses what the blast throws off: rubble, flame, pressure rings,
+   * inward-falling motes, or roots.
    */
   private[projectiles] def aoeRing(kind: Int, r: Float, g: Float, b: Float, maxR: Float = 50f): Renderer =
     (proj, sx, sy, sb, tick) => {
@@ -80,35 +78,6 @@ private[render] object AoeRings {
             _polyXs3(1) = dx2 + sz2 * 0.3f; _polyYs3(1) = dy2 - sz2 * 0.8f
             _polyXs3(2) = dx2 + sz2; _polyYs3(2) = dy2 + sz2 * 0.4f
             sb.fillPolygon(_polyXs3, _polyYs3, 3, dark(r), dark(g), dark(b), 0.75f * (1f - t) * p)
-            d += 1
-          }
-        case AOE_WATER =>
-          // Droplets thrown up and falling back, over a rippled surface
-          var i = 1; while (i <= 4) {
-            val rr = mR * (0.18f * i) + ((phase * 4) % 10).toFloat
-            sb.strokeOval(sx, sy, rr, rr * flat, 1.4f, bright(r), bright(g), bright(b), 0.30f * p, 18)
-            i += 1
-          }
-          var d = 0; while (d < 12) {
-            val t = ((phase * 0.36 + d * 0.083) % 1.0).toFloat
-            val ang = d * Math.PI * 2 / 12 + proj.id * 0.3
-            val dist = 10f + t * mR * 0.85f
-            val rise = Math.sin(t * Math.PI).toFloat * 30f
-            sb.fillOval(sx + Math.cos(ang).toFloat * dist, sy + Math.sin(ang).toFloat * dist * flat - rise,
-              3.4f * (1f - t * 0.4f), 4.6f * (1f - t * 0.4f), bright(r), bright(g), bright(b), 0.8f * (1f - t) * p, 7)
-            d += 1
-          }
-        case AOE_TOXIC =>
-          // Spore puffs boiling upward out of the cloud
-          var d = 0; while (d < 10) {
-            val t = ((phase * 0.22 + d * 0.1) % 1.0).toFloat
-            val ang = d * 2.39f + proj.id * 0.4f
-            val dist = mR * (0.2f + 0.55f * t)
-            val bx = sx + Math.cos(ang).toFloat * dist
-            val by = sy + Math.sin(ang).toFloat * dist * flat - t * 26f
-            val bs = 7f + t * 12f
-            sb.fillOvalSoft(bx, by, bs, bs * 0.8f, dr, dg, db, 0.38f * (1f - t) * p, 0f, 10)
-            sb.strokeOval(bx, by, bs * 0.6f, bs * 0.48f, 1.4f, bright(r), bright(g), bright(b), 0.28f * (1f - t) * p, 8)
             d += 1
           }
         case AOE_FIRE =>

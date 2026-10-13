@@ -82,6 +82,7 @@ private[client] object Theme {
   def newScene(root: Parent): Scene = {
     val scene = new Scene(root, Palette.SkyTop)
     scene.getStylesheets.add(stylesheet)
+    DropDowns.install(scene)
     scene
   }
 

@@ -305,6 +305,14 @@ def arc_pts(cx, cy, rx, ry, a0, a1, n=None):
             for i in range(n + 1)]
 
 
+def bez(p0, p1, p2, n=6):
+    """Points along a quadratic curve from p0 to p2, pulled toward p1: a
+    hairline, a collar's edge, a lock's curl. Includes both ends."""
+    return [((1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * p1[0] + t * t * p2[0],
+             (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * p1[1] + t * t * p2[1])
+            for t in (i / float(n) for i in range(n + 1))]
+
+
 class Poly(object):
     __slots__ = ("pts",)
 

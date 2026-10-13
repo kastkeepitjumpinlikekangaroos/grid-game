@@ -29,6 +29,11 @@ can drive a real screen through `app.showLobbyRoom(stage)` and the like.
 - **SpriteGenerator** — character sprites for the menus: portraits (one frame, cut once) and the
   few whole sheets that animate.
 - **UiActivity** — whether anybody is using the window (animations hold still when not).
+- **DropDowns** — every click on a closed drop-down opens it. JavaFX 21's combo box decides open or
+  close on the release by a flag that flips whenever its list closes by itself with the mouse over
+  the box (another app in front, a click outside the window, Escape); the next click then closed
+  the closed list and did nothing to see. `Theme.newScene` installs it on every menu scene, so a
+  new combo box needs nothing; the map editor's dialog isn't a menu scene and doesn't have it.
 - **ViewportCache**, **LoginForm**.
 
 `screens/WelcomeScreen` is the login screen: the form (with "Remember me", and the last login's name

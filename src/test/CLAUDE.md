@@ -71,7 +71,9 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   every attack that blasts has a look of its own, and no two characters share one.
   `ProjectileLookTest` does the same for projectiles drawn as their thrower's: every attack in the
   roster is drawn, everyone who threw the old crescent has a look no one else has, and a type's own
-  look (for a thrower nobody knows) is one of its throwers'. `ProjectileThrowerTest`, in `client/`,
+  look (for a thrower nobody knows) is one of its throwers'; the fifty-one attacks that were orbs,
+  rings and blobs each have a look and a light colour of their own (`glowOf`), no one who shares
+  their type draws it the same way, and the tongue and the bandage are tied to their throwers. `ProjectileThrowerTest`, in `client/`,
   is the other end: a projectile the server tells us of knows who threw it.
 - `client/` — `ClientTestKit.scala`: `TestClient` is a `GameClient` whose packets go to a
   capture (`GameClient.packetSink`) and which is handed the server's with `processPacket`.
@@ -86,6 +88,8 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   splash that goes off only at the end of its range. `GameClientSpawnRequestsTest` is which of our
   spawn requests the server answered (`PendingSpawns`): by the first packet about the projectile,
   whatever it says, for the attack that asked for its type, and none counted as lost for dying.
+  `ui/DropDownsTest` is a click on a closed drop-down opening it after its list closed by itself
+  under the mouse, and a click on an open one still closing it.
   `GameClientKnockbackTest` is how a knockback is shown: ours slid on the test's clock
   (`TestClient.nanos`), everyone else's neither a teleport nor a turn.
   `ContentCatalogTest` ties `i18n/messages_en.json`

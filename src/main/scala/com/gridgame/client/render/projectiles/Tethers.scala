@@ -28,7 +28,8 @@ private[render] object Tethers {
   private val _tethered: Array[Boolean] = {
     val a = new Array[Boolean](256)
     for (t <- Seq(ProjectileType.TENTACLE, ProjectileType.VINE_WHIP, ProjectileType.GRAB, ProjectileType.TALON_GRAB,
-      ProjectileType.DEATH_GRIP, ProjectileType.ROPE, ProjectileType.MEAT_HOOK)) a(t & 0xFF) = true
+      ProjectileType.DEATH_GRIP, ProjectileType.ROPE, ProjectileType.MEAT_HOOK, ProjectileType.TONGUE,
+      ProjectileType.BANDAGE_WHIP)) a(t & 0xFF) = true
     a
   }
 
@@ -37,6 +38,8 @@ private[render] object Tethers {
   final val TETH_PAW = 2     // a spirit paw on a leash (bear hug, primate grab)
   final val TETH_TALON = 3   // a spirit talon on a leash (the griffin)
   final val TETH_DEATH = 4   // a sickle hook on a spectral chain (death grip)
+  final val TETH_TONGUE = 5  // the Chameleon's tongue, its sticky tip on what it caught
+  final val TETH_BANDAGE = 6 // the Mummy's bandage, twisting, wrapped round what it caught
   private val TETHER_MAX = 40
   private[projectiles] val _tX = new Array[Float](TETHER_MAX)   // points from the head (0) back to the thrower
   private[projectiles] val _tY = new Array[Float](TETHER_MAX)
@@ -174,6 +177,8 @@ private[render] object Tethers {
         case TETH_DEATH =>
           deathChain(sb, proj, sx, sy, ds, dr, dg, db, p, phase, tick)
           deathHook(sb, sx, sy, ndx, ndy, ds, dr, dg, db, p, phase)
+        case TETH_TONGUE => chameleonTongue(sb, proj, sx, sy, ndx, ndy, ds, p, phase, tick)
+        case TETH_BANDAGE => mummyBandage(sb, proj, sx, sy, ndx, ndy, ds, p, phase, tick)
         case _ =>
           spiritLeash(sb, proj, sx, sy, ds, dr, dg, db, p, phase, tick)
           if (kind == TETH_TALON) talonHead(sb, sx, sy, ndx, ndy, ds, dr, dg, db, p, grip)
@@ -479,5 +484,96 @@ private[render] object Tethers {
     dirPoint(-0.95f, 0f, sx, sy, ndx, ndy, s)
     sb.strokeOval(_ptX, _ptY, s * 0.16f, s * 0.14f, 2.6f * ds, 0.08f, 0.03f, 0.12f, 0.95f * p, 10)
     sb.strokeOval(_ptX, _ptY, s * 0.16f, s * 0.14f, 1.3f * ds, 0.55f, 0.46f, 0.7f, p, 10)
+  }
+
+  /**
+   * The Chameleon's tongue lash: its tongue, shot out of its mouth and still attached — pink and glossy,
+   * a groove down it, lit along its top, thicker where it leaves the Chameleon — with the sticky club of
+   * its tip on what it has caught, strands of spit hanging off it. It was a pink ball flying free.
+   */
+  private def chameleonTongue(sb: ShapeBatch, proj: Projectile, sx: Float, sy: Float, ndx: Float, ndy: Float,
+                              ds: Float, p: Float, phase: Double, tick: Int): Unit = {
+    if (layTether(proj, sx, sy, phase, 8f * ds, 5f * ds, 0f)) {
+      shapeTether(4.2f * ds, 7f * ds, 0.7f, p, 0.1f)
+      strokeTether(sb, 1f, 2.6f, 0.92f, 0.35f, 0.05f, 0.12f, 0f)
+      strokeTether(sb, 1f, 0f, 1f, 0.95f, 0.45f, 0.58f, 0f)
+      strokeTether(sb, 0.16f, 0f, 0.8f, 0.72f, 0.22f, 0.36f, 0.04f)
+      strokeTether(sb, 0.22f, 0f, 0.75f, 1f, 0.82f, 0.88f, -0.28f)
+    }
+    // The sticky club of its tip, glossy and dripping
+    val R = 7f * ds
+    sb.fillOval(sx, sy, R + 2.4f, R * 0.88f + 2.4f, 0.35f, 0.05f, 0.12f, 0.94f * p, 18)
+    sb.fillOval(sx, sy, R, R * 0.88f, 0.95f, 0.42f, 0.56f, p, 18)
+    sb.fillOvalSoft(sx + R * 0.15f, sy + R * 0.3f, R * 0.75f, R * 0.5f, 0.72f, 0.2f, 0.36f, 0.6f * p, 0f, 12)
+    sb.fillOval(sx - R * 0.38f, sy - R * 0.36f, R * 0.3f, R * 0.2f, 1f, 1f, 1f, 0.95f * p, 8)
+    sb.fillOval(sx + R * 0.2f, sy - R * 0.5f, R * 0.12f, R * 0.09f, 1f, 1f, 1f, 0.85f * p, 6)
+    var d = 0
+    while (d < 2) {
+      val t = ((tick * 0.04 + d * 0.5 + proj.id * 0.27) % 1.0).toFloat
+      val dx0 = sx + (d * 2 - 1) * R * 0.45f - ndx * t * 6f * ds; val dy0 = sy + R * 0.7f + t * 8f * ds
+      sb.strokeLine(sx + (d * 2 - 1) * R * 0.45f, sy + R * 0.6f, dx0, dy0, 1f, 1f, 0.75f, 0.85f, 0.7f * p * (1f - t))
+      sb.fillOval(dx0, dy0, 1.5f * ds, 1.9f * ds, 1f, 0.75f, 0.85f, 0.85f * p * (1f - t), 6)
+      d += 1
+    }
+  }
+
+  /**
+   * The Mummy's bandage whip: a strip of its own grave linen paid out from the Mummy, twisting as it
+   * goes so it shows its face and its darker back by turns, stained and fraying, its end wrapped round
+   * what it has caught in a loop with the loose end flapping. It was a ball of bandage flying free.
+   */
+  private def mummyBandage(sb: ShapeBatch, proj: Projectile, sx: Float, sy: Float, ndx: Float, ndy: Float,
+                           ds: Float, p: Float, phase: Double, tick: Int): Unit = {
+    if (layTether(proj, sx, sy, phase, 6f * ds, 16f * ds, 6f * ds)) {
+      shapeTether(8.6f * ds, 9.6f * ds, 1f, p, 0.1f)
+      // Twisting: as wide as it is where it faces us, edge-on where it turns
+      var i = 0
+      while (i < _tN) {
+        val c = Math.cos(_tT(i) * _tLen / 15f + phase * 0.8).toFloat
+        _tW(i) = _tW(i) * (0.28f + 0.72f * Math.abs(c))
+        _pvX(i) = _tX(i); _pvY(i) = _tY(i)
+        i += 1
+      }
+      i = 0
+      while (i < _tN) { _pvW(i) = _tW(i) + 3.4f; _pvA(i) = 0.95f * _tA(i); i += 1 }
+      sb.strokePolylineVar(_pvX, _pvY, _pvW, _pvA, _tN, 0.15f, 0.09f, 0.04f)
+      // Its face and its back, each where it shows
+      var face = 0
+      while (face < 2) {
+        i = 0
+        while (i < _tN) {
+          val c = Math.cos(_tT(i) * _tLen / 15f + phase * 0.8).toFloat
+          _pvW(i) = _tW(i); _pvA(i) = if ((c >= 0f) == (face == 0)) _tA(i) else 0f
+          i += 1
+        }
+        if (face == 0) sb.strokePolylineVar(_pvX, _pvY, _pvW, _pvA, _tN, 0.93f, 0.88f, 0.74f)
+        else sb.strokePolylineVar(_pvX, _pvY, _pvW, _pvA, _tN, 0.72f, 0.64f, 0.48f)
+        face += 1
+      }
+      // A stitch down its middle, stains, threads fraying off its edges
+      i = 0
+      while (i < _tN) { _pvW(i) = 0.8f * ds; _pvA(i) = 0.55f * _tA(i); i += 1 }
+      sb.strokePolylineVar(_pvX, _pvY, _pvW, _pvA, _tN, 0.6f, 0.52f, 0.36f)
+      i = 2
+      while (i < _tN - 2) {
+        val h = ((proj.id * 7 + i * 13) & 7)
+        if (h < 3) sb.fillOval(_tX(i), _tY(i), _tW(i) * 0.3f + 0.6f, _tW(i) * 0.2f + 0.5f, 0.55f, 0.42f, 0.22f, 0.7f * _tA(i), 8)
+        else if (h == 5) sb.strokeLine(_tX(i) + _tNX(i) * _tW(i) * 0.45f, _tY(i) + _tNY(i) * _tW(i) * 0.45f,
+          _tX(i) + _tNX(i) * (_tW(i) * 0.45f + 3.5f * ds), _tY(i) + _tNY(i) * (_tW(i) * 0.45f + 3.5f * ds) + 1.5f * ds,
+          0.9f, 0.9f, 0.85f, 0.7f, 0.85f * _tA(i))
+        i += 1
+      }
+    }
+    // Its end, wrapped round what it caught, the loose end flapping
+    val lr = 7.4f * ds
+    sb.strokeOval(sx, sy, lr, lr * 0.62f, 4.6f * ds + 2.4f, 0.22f, 0.15f, 0.07f, 0.92f * p, 18)
+    sb.strokeOval(sx, sy, lr, lr * 0.62f, 4.6f * ds, 0.93f, 0.88f, 0.74f, p, 18)
+    sb.strokeArc(sx, sy, lr, lr * 0.62f, 0.3f, 2.4f, 1.4f * ds, 0.72f, 0.64f, 0.48f, p, 8)
+    val flap = Math.sin(phase * 2.6).toFloat
+    _pvX(0) = sx + lr; _pvY(0) = sy
+    _pvX(1) = sx + lr + 5f * ds; _pvY(1) = sy + 3f * ds + flap * 2f * ds
+    _pvX(2) = sx + lr + 9f * ds; _pvY(2) = sy + 4f * ds + flap * 4f * ds
+    sb.strokePolylineTapered(_pvX, _pvY, 3, 4f * ds + 2.4f, 1.8f * ds + 2f, 0.22f, 0.15f, 0.07f, 0.9f * p, 0.9f * p)
+    sb.strokePolylineTapered(_pvX, _pvY, 3, 4f * ds, 1.8f * ds, 0.93f, 0.88f, 0.74f, p, p)
   }
 }

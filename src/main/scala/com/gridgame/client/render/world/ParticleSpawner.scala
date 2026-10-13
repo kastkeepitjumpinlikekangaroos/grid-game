@@ -214,7 +214,9 @@ private[render] final class ParticleSpawner(ctx: RenderContext) {
         val sy = worldToScreenY(proj.getX, proj.getY).toFloat -
           (if (ProjectileDef.get(proj.projectileType).passesThroughWalls)
             GLProjectileRenderers.flyLift(proj, animationTick) else 0f)
-        intToRGB(proj.colorRGB)
+        // Its look's own colour where it has one (GLProjectileRenderers.glowOf), else its thrower's
+        val glow = GLProjectileRenderers.glowOf(proj.ownerCharacterId, proj.projectileType)
+        intToRGB(if (glow >= 0) glow else proj.colorRGB)
         val pr = _rgb_r; val pg = _rgb_g; val pb = _rgb_b
         // Particle alpha and size scale with charge
         val chgAlpha = 0.30f + chargeT * 0.25f

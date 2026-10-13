@@ -18,7 +18,7 @@ from sprite_base import (
     Ell, Limb, Poly, RRect, arc_pts, blade, blob, bow, cel, flame, gem, generate_character, hand_at,
     head_face, head_skull, ink, leaf, lit, mix, ms_eye, ms_mouth, rig, rig_arms, rig_belt, rig_cape,
     rig_hair, rig_hand, rig_head, rig_hood, rig_legs, rig_robe, rig_torso, round_shield, shade,
-    sparkle, spear, star, stroke, xform, arm_pts, face_anchor,
+    sparkle, spear, star, stroke, xform, arm_pts, face_anchor, torso_shape, ms_brow, LASH, clipped,
 )
 
 
@@ -746,68 +746,203 @@ def draw_enchantress(draw, ox, oy, direction, frame):
 
 
 # ===================================================================
-# JESTER (53) -- a two-pointed belled hat, motley, a fan of cards
+# JESTER (53) -- a floppy three-pointed cap with a bell on every point,
+# a wink and a grin, a pointed collar, red and purple motley, curly
+# shoes, and a fan of playing cards
 # ===================================================================
 
-JES_RED = (224, 54, 64)
-JES_GREEN = (70, 170, 90)
-JES_GOLD = (252, 212, 70)
+JES_RED = (228, 52, 76)
+JES_PURPLE = (128, 78, 200)
+JES_GOLD = (252, 206, 72)
+JES_HAIR = (156, 92, 56)
+CARD = (252, 252, 250)
+
+
+def _bell(draw, x, y, k=1.0):
+    cel(draw, Ell(x, y, 1.8 * k, 1.7 * k), JES_GOLD, sh=(0.4, 0.4), hi=(0.3, 0.3), lw=0.7)
+    stroke(draw, [(x - 0.9 * k, y + 0.5 * k), (x + 0.9 * k, y + 0.5 * k)], 0.4, shade(JES_GOLD, 2.2))
+
+
+def _cap(r, draw, frame):
+    """The cap and bells: a snug two-tone cap down to a gold band at the brow,
+    with three fat floppy points, a bell swinging from each."""
+    hx, hy, rx, ry, d = r.hx, r.head_cy, r.head_rx, r.head_ry, r.d
+    wob = [0.0, 1.0, 0.0, -1.0][frame]
+    band_y = hy - 2.6
+    near_col, far_col = (JES_RED, JES_PURPLE) if d > 0 else (JES_PURPLE, JES_RED)
+    if d:
+        # a point trailing behind and one standing up and flopping back
+        k = -d
+        points = [
+            ([(hx + k * 4.0, hy - 6.6), (hx + k * 11.0, hy - 9.6 + wob * 0.6), (hx + k * 16.0, hy - 6.6 + wob), (hx + k * 17.2, hy - 1.6 + wob)],
+             far_col),
+            ([(hx - k * 1.0, hy - 9.6), (hx + k * 1.0, hy - 14.4), (hx + k * 6.0, hy - 16.2 - wob * 0.4), (hx + k * 9.8, hy - 13.0)], JES_GOLD),
+        ]
+    else:
+        points = [
+            ([(hx - 5.4, hy - 7.4), (hx - 11.6, hy - 11.6 - wob * 0.6), (hx - 17.0, hy - 9.4 - wob), (hx - 18.4, hy - 3.6 - wob)], JES_RED),
+            ([(hx + 5.4, hy - 7.4), (hx + 11.6, hy - 11.6 + wob * 0.6), (hx + 17.0, hy - 9.4 + wob), (hx + 18.4, hy - 3.6 + wob)], JES_PURPLE),
+            ([(hx - 0.4, hy - 9.4), (hx + 0.4, hy - 14.4), (hx - 3.4, hy - 16.6), (hx - 7.8, hy - 15.0 + wob * 0.4)], JES_GOLD),
+        ]
+        if r.back:
+            points = [(pts, JES_PURPLE if col == JES_RED else JES_RED if col == JES_PURPLE else col) for (pts, col) in points]
+    for pts, col in points:
+        cel(draw, Limb(pts, [4.0, 3.4, 2.2, 0.6]), col, sh=(0.9, 0.9))
+    cap = arc_pts(hx - d * 0.4, hy - 1.0, rx + 1.2, ry + 0.6, 180, 360, 26)
+    shape = Poly(cap + [(hx + rx + 1.2, band_y), (hx - rx - 1.2, band_y)])
+    if d:
+        cel(draw, shape, near_col, sh=(1.2, 0.8))
+    else:
+        left, right = (JES_RED, JES_PURPLE) if not r.back else (JES_PURPLE, JES_RED)
+        cel(draw, shape, left, sh=(1.2, 0.8), regions=[(Poly([(hx, hy - 30), (hx + 30, hy - 30), (hx + 30, hy), (hx, hy)]), right)])
+    # the gold band, with diamonds on it
+    band = RRect(hx - rx - 1.2, band_y - 1.6, hx + rx + 1.2, band_y + 1.0, 1.0)
+    cel(draw, band, JES_GOLD, sh=(0.0, 0.5))
+    if not r.back:
+        for u in ((-6.0, 0.0, 6.0) if not d else (d * 2.0, d * 7.6)):
+            x = hx + u
+            cel(draw, Poly([(x, band_y - 1.5), (x + 1.0, band_y - 0.3), (x, band_y + 0.9), (x - 1.0, band_y - 0.3)]),
+                JES_RED if abs(u) < 1 or u * (d or 1) > 4 else JES_PURPLE, sh=None, lw=0.4)
+    for pts, col in points:
+        _bell(draw, pts[-1][0], pts[-1][1] + 1.6)
+
+
+def _shoe(r, draw, side, color, near):
+    fx, fy = r.foot(side)
+    col = color if near else shade(color, 0.5)
+    t = side if not r.d else r.d
+    toe = (fx + t * 4.8, fy - 2.6)
+    shape = Poly([(fx - t * 2.4, fy + 1.3), (fx - t * 2.6, fy - 0.6), (fx - t * 1.2, fy - 2.0), (fx + t * 1.4, fy - 1.6),
+                  (fx + t * 3.6, fy - 1.0), toe, (fx + t * 4.4, fy - 0.2), (fx + t * 2.6, fy + 1.3)])
+    cel(draw, shape, col, sh=(0.0, 0.7))
+    if near:
+        cel(draw, Ell(toe[0], toe[1] - 0.6, 1.1, 1.0), JES_GOLD, sh=None, lw=0.5)
+
+
+def _collar(r, draw):
+    """Five floppy points round the neck, red and purple by turns, a gold
+    bobble on each."""
+    cx, d = r.cx, r.d
+    y = r.sh_y - 1.4
+    if d:
+        angles = (40, 90, 140)
+        ccx = cx + d * 1.2
+        sx = 0.7
+    else:
+        angles = (8, 48, 90, 132, 172)
+        ccx = cx
+        sx = 1.0
+    for i, a in enumerate(angles):
+        ra = math.radians(a)
+        tip = (ccx + math.cos(ra) * 8.4 * sx, y + math.sin(ra) * 4.6 + 1.0)
+        l = (ccx + math.cos(ra - 0.42) * 3.6 * sx, y + math.sin(ra - 0.42) * 2.0)
+        rr = (ccx + math.cos(ra + 0.42) * 3.6 * sx, y + math.sin(ra + 0.42) * 2.0)
+        col = (JES_RED, JES_PURPLE)[i % 2] if not r.back else (JES_PURPLE, JES_RED)[i % 2]
+        cel(draw, Poly([l, tip, rr, (ccx, y - 0.6)]), col, sh=(0.0, 0.5), lw=0.7)
+        cel(draw, Ell(tip[0], tip[1] + 0.4, 0.9, 0.9), JES_GOLD, sh=None, lw=0.45)
+
+
+def _cards(draw, h, d):
+    """A fan of three playing cards, big enough to read."""
+    spread = (-34, -6, 22) if not d else (-28, 0, 28)
+    base_ang = -90 + (0 if not d else d * 26)
+    for j, a in enumerate(spread):
+        ang = base_ang + a
+        c = xform([(4.6, 0.0)], h[0], h[1] - 0.6, ang)[0]
+        card = Poly(xform([(-2.4, -1.7), (2.4, -1.7), (2.4, 1.7), (-2.4, 1.7)], c[0], c[1], ang + 90))
+        cel(draw, card, CARD, sh=None, lw=0.6)
+        pip = JES_RED if j != 1 else (52, 44, 70)
+        px, py = c
+        if j == 1:
+            Ell(px, py - 0.3, 0.9, 0.9).draw(draw, fill=pip)
+            Poly([(px - 0.4, py + 0.2), (px + 0.4, py + 0.2), (px, py + 1.3)]).draw(draw, fill=pip)
+        else:
+            Poly([(px, py - 1.2), (px + 0.85, py), (px, py + 1.2), (px - 0.85, py)]).draw(draw, fill=pip)
 
 
 def draw_jester(draw, ox, oy, direction, frame):
-    r = rig(ox, oy, direction, frame, build=0.94)
+    r = rig(ox, oy, direction, frame, build=0.94, head=0.98)
     d = r.d
     hs = _hold_side(r)
-    if d:
-        rig_arms(r, draw, JES_GREEN, (250, 250, 250), layer="far")
-    for side in ((-1, 1) if not d else (-d, d)):
-        rig_legs(r, draw, JES_RED if side < 0 else JES_GREEN, JES_GOLD, sides=(side,))
-    rig_torso(r, draw, JES_RED)
     cx = r.cx
-    # diamond motley
+    if d:
+        rig_arms(r, draw, JES_PURPLE, (250, 250, 250), layer="far", cuff=JES_GOLD)
+    # motley, which keeps to its side of him as he turns: his right half red
+    # and his left purple, each leg the other colour from the half above it
+    near_col = JES_RED if d > 0 else JES_PURPLE
+    for side in ((-1, 1) if not d else (-d, d)):
+        if d:
+            col = (JES_PURPLE if d > 0 else JES_RED) if side == d else (JES_RED if d > 0 else JES_PURPLE)
+        else:
+            col = (JES_PURPLE if side < 0 else JES_RED) if not r.back else (JES_RED if side < 0 else JES_PURPLE)
+        rig_legs(r, draw, col, col, sides=(side,), width=0.9, bare=True)
+        _shoe(r, draw, side, col, r.near(side))
+    left, right = (JES_RED, JES_PURPLE) if not r.back else (JES_PURPLE, JES_RED)
+    shape = torso_shape(r, None, r.hip_y + 1.6)
+    if d:
+        cel(draw, shape, near_col, sh=(1.5, 0.9), regions=[(Ell(r.hx, shape.pts[0][1] + 0.4, r.head_rx * 0.62, 2.3), shade(near_col))])
+    else:
+        cel(draw, shape, left, sh=(1.5, 0.9),
+            regions=[(Poly([(cx, 0), (cx + 30, 0), (cx + 30, 64), (cx, 64)]), right),
+                     (Ell(r.hx, shape.pts[0][1] + 0.4, r.head_rx * 0.62, 2.3), shade(left))])
+    # a zigzag hem, and gold buttons down the front
+    hem_y = r.hip_y + 1.6
+    if not d:
+        for i in range(5):
+            x = cx - r.hip_w + (2 * r.hip_w) * (i + 0.5) / 5.0
+            cel(draw, Poly([(x - 1.4, hem_y - 0.6), (x + 1.4, hem_y - 0.6), (x, hem_y + 1.6)]),
+                (left if x < cx else right) if i != 2 else JES_GOLD, sh=None, lw=0.5)
+    if r.front:
+        for y in (r.sh_y + 2.6, r.sh_y + 5.6):
+            cel(draw, Ell(cx, y, 0.9, 0.9), JES_GOLD, sh=None, lw=0.45)
+    rig_belt(r, draw, JES_GOLD, buckle=JES_RED, y=r.waist_y + 0.6)
+    rig_arms(r, draw, JES_PURPLE, (250, 250, 250), layer="near", hands=False, cuff=JES_GOLD)
+    _collar(r, draw)
+    # no ear in profile: beside the wink it reads as a monocle
+    head_skull(r, draw, SKIN, ears=not d)
+    hx, hy = r.hx, r.head_cy
     if not r.back:
-        for (u, v, col) in ((-2.6, 1.6, JES_GREEN), (2.6, 1.6, JES_GOLD), (0.0, 5.0, JES_GREEN), (-2.6, 8.4, JES_GOLD), (2.6, 8.4, JES_GREEN)):
-            x = cx + u + d * 1.6
-            y = r.sh_y + v
-            cel(draw, Poly([(x, y - 1.8), (x + 1.6, y), (x, y + 1.8), (x - 1.6, y)]), col, sh=None, lw=0.5)
-    rig_belt(r, draw, JES_GOLD, buckle=JES_RED)
-    rig_arms(r, draw, JES_GREEN, (250, 250, 250), layer="near", hands=False)
-    # a ruff collar
-    n = 7 if not d else 5
-    for i in range(n):
-        t = i / float(n - 1) - 0.5
-        cel(draw, Ell(cx + t * (13.0 if not d else 9.0), r.sh_y - 2.2 + abs(t) * 0.8, 2.0, 1.6), (250, 250, 252), sh=None, lw=0.6)
-    head_skull(r, draw, SKIN)
-    hx, hy, rx, ry = r.hx, r.head_cy, r.head_rx, r.head_ry
-    if not r.back:
-        head_face(r, draw, SKIN, iris=(160, 60, 60), mood="bright", mouth="grin", brows=True)
-        e1, e2, ey, _, _ = face_anchor(r)
-        cel(draw, Poly([(e2, ey + 3.0), (e2 + 0.8, ey + 4.4), (e2, ey + 5.8), (e2 - 0.8, ey + 4.4)]), (60, 60, 150), sh=None, line=False)
-    rig_hair(r, draw, (120, 70, 50), "short", hat=True, skin=SKIN)
-    # the hat: two floppy horns with bells
-    wob = [0.0, 1.0, 0.0, -1.0][frame]
-    cap = arc_pts(hx - d * 0.4, hy - 1.2, rx + 1.4, ry + 0.4, 180, 360, 24)
-    for s, col in ((-1, JES_RED), (1, JES_GREEN)):
-        if d and s == d:
-            continue
-        base = (hx + s * 5.0, hy - ry + 1.0) if not d else (hx - d * 2.0, hy - ry)
-        k = s if not d else -d
-        pts = [base, (base[0] + k * 6.0, base[1] - 5.0 + wob * k), (base[0] + k * 12.0, base[1] - 2.0 + wob * k), (base[0] + k * 13.4, base[1] + 3.4)]
-        cel(draw, Limb(pts, [4.4, 3.4, 2.0, 0.6]), col, sh=(0.8, 0.8))
-        bx, by = pts[-1]
-        cel(draw, Ell(bx, by + 1.2, 1.7, 1.7), JES_GOLD, sh=(0.4, 0.4))
-    cel(draw, Poly(cap + [(hx + rx + 1.4, hy - 2.0), (hx - rx - 1.4, hy - 2.0)]), JES_RED if d <= 0 else JES_GREEN, sh=(1.2, 0.8),
-        regions=[(Poly([(hx, hy - 20), (hx + 20, hy - 20), (hx + 20, hy), (hx, hy)]), JES_GREEN)] if not d else ())
-    stroke(draw, [(hx - rx - 1.0, hy - 2.4), (hx + rx + 1.0, hy - 2.4)], 1.4, JES_GOLD)
+        e1, e2, ey, mx, my = face_anchor(r)
+        k = r.head_rx / 12.4
+        # a wink: the eye nearer the cards stays open
+        if d:
+            ms_eye(draw, e2, ey, 3.0 * k, 5.2 * k, (110, 60, 150), r.eye_look(), "bright", skin=SKIN, side=d)
+            ms_eye(draw, e1, ey, 4.2 * k, 5.6 * k, (110, 60, 150), r.eye_look(), "closed", skin=SKIN, side=-d)
+            Ell(e1 - d * 1.6, ey + 3.4, 1.8, 0.8).draw(draw, fill=mix(SKIN, (255, 128, 128), 0.4))
+            ms_mouth(draw, mx, my, "grin", SKIN, 0.8)
+        else:
+            ms_eye(draw, e1, ey, 4.2 * k, 5.6 * k, (110, 60, 150), (0.0, 0.0), "closed", skin=SKIN, side=-1)
+            ms_eye(draw, e2, ey, 4.2 * k, 5.6 * k, (110, 60, 150), (0.0, 0.0), "bright", skin=SKIN, side=1)
+            for s in (-1, 1):
+                Ell(hx + s * 7.4 * k, ey + 3.4, 1.9, 0.85).draw(draw, fill=mix(SKIN, (255, 128, 128), 0.4))
+            ms_brow(draw, e1, ey - 4.2, 3.4, mix(LASH, SKIN, 0.25), -0.4, -1)
+            ms_brow(draw, e2, ey - 4.6, 3.4, mix(LASH, SKIN, 0.25), 0.0, 1)
+            ms_mouth(draw, mx, my, "grin", SKIN)
+            # a painted diamond under the open eye
+            cel(draw, Poly([(e2, ey + 3.6), (e2 + 0.9, ey + 4.9), (e2, ey + 6.2), (e2 - 0.9, ey + 4.9)]), JES_PURPLE, sh=None, line=False)
+        # curls of hair out from under the cap
+        if d:
+            blob(draw, [Ell(hx - d * 7.8, hy - 1.0, 3.8, 2.6), Ell(hx - d * 9.6, hy + 1.6, 2.2, 2.2), Ell(hx - d * 5.6, hy + 0.2, 1.8, 2.0)],
+                 JES_HAIR, sh=(0.4, 0.4))
+        else:
+            for s in (-1, 1):
+                bx = hx + s * (r.head_rx - 0.6)
+                blob(draw, [Ell(bx, hy - 0.6, 2.0, 2.4), Ell(bx + s * 1.0, hy + 1.6, 1.4, 1.8)], JES_HAIR, sh=(0.4, 0.4))
+    else:
+        # short hair under the cap, curling at the nape
+        rx_, ry_ = r.head_rx, r.head_ry
+        nape = [(hx + rx_ + 1.0, hy - 3.0)]
+        for i in range(7):
+            t = i / 6.0
+            nape.append((hx + rx_ - 0.6 - (2 * rx_ - 1.2) * t, hy + 5.6 + (1.4 if i % 2 else 0.0) - abs(t - 0.5) * 2.0))
+        nape.append((hx - rx_ - 1.0, hy - 3.0))
+        hair = Poly(nape)
+        clipped(draw, Ell(hx, hy, rx_, ry_), lambda l: cel(l, hair, JES_HAIR, sh=(0.8, 0.8)))
+    _cap(r, draw, frame)
     for side in _sides(r):
-        h = rig_hand(r, draw, side, (250, 250, 250))
+        h = rig_hand(r, draw, side, (250, 250, 250), reach=0.3 if side == hs else 0.0)
         if side == hs and not r.back:
-            for j, a in enumerate((-40, -15, 10)):
-                ang = -90 + a + (0 if not d else d * 20)
-                c = xform([(4.4, 0.0)], h[0], h[1] - 1.0, ang)[0]
-                card = Poly(xform([(-2.2, -1.6), (2.2, -1.6), (2.2, 1.6), (-2.2, 1.6)], c[0], c[1], ang + 90))
-                cel(draw, card, (252, 252, 252), sh=None, lw=0.6)
-                Ell(c[0], c[1], 0.7, 0.7).draw(draw, fill=JES_RED if j % 2 == 0 else (40, 40, 50))
+            _cards(draw, h, d)
 
 
 # ===================================================================

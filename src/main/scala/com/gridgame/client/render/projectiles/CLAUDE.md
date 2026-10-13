@@ -11,11 +11,16 @@ the terrain or sinking into what stopped it. The renderers themselves are in a f
 | `Orbs` | `energyBolt` and its `ORB_*` styles |
 | `Blades`, `Shafts`, `Lobbed`, `Chains` | thrown weapons, point-first shafts, lobbed objects, restraints |
 | `AoeRings` | ground blasts |
-| `Missiles`, `Bolts`, `Beams` | bullets, fists, rockets; laser bolts, rail slugs, siphons, the gorgon eye; beam-like one-offs |
-| `Tethers`, `Grabs` | pulls tied to their thrower; grabs and hands |
+| `Missiles`, `Bolts`, `Beams` | bullets, fists; magic bolts with a shape of their own (void, gravity, data, holy light, the web trap's web, the acid bomb's venom); laser bolts, rail slugs, the blood siphon, the gorgon eye, beam-like one-offs |
+| `Tethers`, `Grabs` | pulls tied to their thrower (the Chameleon's tongue and the Mummy's bandage among them); the Grasping Dead's hands |
 | `Electricity` | lightning and thunder |
-| `Heavies`, `Undead`, `Bites` | boulders and the heavy one-offs; the undead's; jaws, fangs, talons, swarms, the Wolf's spirit |
+| `Heavies`, `Undead`, `Bites` | the rocket, boulders, the geyser, the sword wave; the undead's; jaws, fangs, talons, swarms, the Wolf's spirit |
 | `Songs`, `Winds`, `Surges` | one character's own look for an attack (see *A projectile is drawn as its thrower's*): sound — the Bard's, the Musician's, the Sphinx's, the Harpy's, the Banshee's; wind — the Windwalker's, the Cloudrunner's, the Hawk's, the Raptor's; what surges along the ground — the Tidecaller's, the Sandstorm's, the Inferno's, the Scorpion's, the Barbarian's |
+| `Spirits`, `Necromancy` | the ghosts' own: the Wraith's hood, the Phantom's ghost-blade and half-mask, the Poltergeist's crockery, the Banshee's tear, the Shade's grin; the undead's: the Revenant's helm, the Necromancer's skull, the Lich's hand, grave-ice and phylactery, the Shadowfiend's winged eye |
+| `Relics`, `Venoms` | things with a shape of their own: the Mummy's scarab and death mask, Anubis's ankh and jackal, the Yokai's foxfire and ofuda, the Djinn's lamp, the Runesmith's runestones, the Alchemist's flasks; poison: the Plague Doctor's fly-blown glob and skull of miasma, the Serpent's snake, the Hydra's braid, head and swamp gas, the Chimera's fire-and-venom, Medusa's ouroboros |
+| `Arsenal`, `Elements`, `Vortices` | guns and machines: the Soldier's tracer, the Pirate's musket ball, the Pilot's twin tracers and biplane, the Spaceman's ray-gun zap, the Mech Pilot's rocket fist, the Graviton's cubes; the Tidecaller's trident, the Sandstorm's sand blade, the Inferno's wheel of fire; the vortex bomb three ways — the Graviton's black hole, the Inferno's fire tornado, the Shadowfiend's maw |
+| `Critters`, `Booms` | the Jellyfish's jellyfish, the Spider's web, the Mantis's strike, the Gorilla's ground pound; the sonic boom two ways — the Bard's lyre, the Musician's pick |
+| `Glyphs` | what the characters' own looks are drawn with: a frame to author a shape in (turned, mirrored, squashed into the ground plane), inked outlines, trails in layers, flame tongues |
 
 The renderer (client/render, `ProjectilePainter`) calls in with each projectile's hitbox in screen
 space.
@@ -61,6 +66,49 @@ characters who throw its type in turn, and the render audit shoots every charact
 Measured back to back (`render_bench --types=` the eleven, 150 of them at 4480x2404, High), the
 new looks cost what the crescents did: frame building 5.21 → 5.16 ms, 90.6 → 89.5 million
 fragments a frame, allocation unchanged.
+
+The orbs and the rings went the same way. Fifty-one attacks of thirty-six characters were an orb
+(the Lich's red one, the Djinn's and the Yokai's pink ones, purple for the Necromancer, the
+Shadowfiend and Anubis alike), a ring on the ground in a colour (every vortex bomb and sonic boom, the
+seismic slam, the miasma, the poison cloud, the Tidecaller's splash), someone else's blob (four venom
+spitters' green blob, three curses' purple ball), or the same slug with a muzzle flash for every gun.
+Each is now its thrower's own, out of what the character is: the Wraith's soul a little wraith of
+itself, the Phantom's ghost-blade and half-mask, the Poltergeist's crockery (a teacup, a plate, a book, a fork, by
+the projectile's id, so a volley is a cupboard emptied), the Lich's bony hand, grave-ice and
+phylactery in its navy, gold and cyan, the Necromancer's skull from her staff in its green fire, the
+Mummy's scarab and pharaoh's death mask, Anubis's ankh and jackal, the Yokai's foxfire and paper
+talismans, the Djinn's lamp, the Runesmith's runestones each with a rune of its own, the Alchemist's
+flasks, the Plague Doctor's fly-blown glob and a skull of fog, the Serpent's snake of venom, the
+Hydra's braid of three spits, its head and its swamp gas, the Chimera's fire and venom twisted
+together, Medusa's ouroboros, the Soldier's red tracer, the Pirate's musket ball in powder smoke, the
+Pilot's twin tracers and the biplane of his strafing run, the Spaceman's ray-gun zap, the Mech Pilot's
+rocket fist, the Graviton's cubes and black hole, the Inferno's wheel of fire with its face in the hub
+and its fire tornado, the Shadowfiend's winged eye and toothed maw, the Tidecaller's trident, the
+Sandstorm's sand blade, the Jellyfish's jellyfish, the Spider's web with the spider riding it, the
+Mantis's strike, the Gorilla's ground pound with its knuckles printed behind it, the Bard's lyre and
+the Musician's pick. A type only one character throws has its look in the registry; a shared one has
+the others' in `only`, and its registry look is still one of its throwers'.
+
+**A look carries its own colour.** A projectile's light and the embers it sheds were its thrower's
+player colour, which is random, and a second light by its element: on a dark map the Necromancer's
+green skull could light the ground pink, and Anubis's gold ankh purple. A look says its colour where
+it is registered (`glow(type, rgb)`, or `only`'s last argument), `GLProjectileRenderers.glowOf(who,
+type)` follows `getRenderer`, and `ProjectilePainter` and `ParticleSpawner` light it and trail its
+embers in that colour, both lights; a look with none (-1, every older one) keeps the thrower's.
+`ProjectileLookTest` holds each of the fifty-one to a look and a colour of its own, and every
+character who shares a type with one of them to a different look.
+
+Measured back to back against the build before (`render_bench --types=` the 34 types, 150 of them
+on the Meadow at `--at=60,16`, 4480x2404, High, five interleaved pairs), the new looks are cheaper:
+frame building 6.6 → 5.3 ms, GPU 21.6 → 18.7 ms, 126.7 → 105.2 million fragments a frame (the depth
+pass they are drawn in, 63.5 → 43.4), and allocation unchanged (3.4 and 3.3 KB a frame over 3,600
+frames). Over every type, after a 1,800-frame warm-up: 9.86 → 9.46 ms and 107.4 → 106.0 million
+fragments, 2.5 KB a frame both. With the bench's default 300-frame warm-up, a run of every type
+shows one-off slow frames instead: a character's own look first drawn mid-run loads its family's
+object and runs interpreted until the JIT has compiled it. The render audit has none of the new
+looks among its 24 weakest reads, but only after the pale ones were given a deeper body or heavier
+ink: the Banshee's tear read 17.8 on snow (now 85), the Poltergeist's crockery 24 (now 48), the
+tracers 19 on planks (now 22-27).
 
 ## Silhouettes: how a projectile says whose ability it is
 
@@ -145,8 +193,8 @@ climbs over the wall the projectile clears. Their particle trails spawn at the s
 
 ## Orbs: a lit sphere, a comet tail, and a shape outside both
 
-Nearly thirty characters' primaries are an `energyBolt`, so the orb is the thing seen most in
-a match. Every style shares one anatomy: `cometTail` (a band of light as wide as the orb where it
+About fifteen characters' primaries are an `energyBolt` (nearly thirty were, before the
+characters' own looks above), so the orb is still a thing seen often in a match. Every style shares one anatomy: `cometTail` (a band of light as wide as the orb where it
 leaves it, narrowing to a wisp — and straight, since a tail swung side to side behind a round
 head is a tadpole), a modest glow, `orbBody` (an inked rim, the colour at full strength at the
 edge lightening to a hot core that breathes: it glows from inside), and `shedMotes` off its back.
@@ -170,7 +218,9 @@ Every pull is drawn tied back to its thrower: the Kraken's and the Spaceman's te
 a tip curling round what it caught), the Druid's, Thornweaver's and Treant's vine (thorns raked
 back, leaves, a tendril), a leash of spirit to the Bear's and Gorilla's paw print and the
 Griffin's talon, a spectral chain to the Death Knight's sickle hook, a rope to the Gladiator's
-grapple and the Chef's meat hook. `ProjectilePainter.anchorToThrower` says where the thrower stands
+grapple and the Chef's meat hook, the Chameleon's own tongue with its sticky tip, and the Mummy's
+bandage, twisting to show its stained face and its back by turns, wrapped round what it caught (the
+last two were a pink ball and a ball of bandage, flying free). `ProjectilePainter.anchorToThrower` says where the thrower stands
 (`setAnchor`, looked up only for `wantsAnchor` types: our camera position, or anyone else's
 smoothed one), and without one (they died, or a dev tool has no players) the tether runs back to
 `Projectile.originX/Y`. `layTether` lays it out — bowed, swaying slowly, and cut off at the
@@ -205,9 +255,9 @@ a smooth meander is a worm, and kinks small beside the stroke's width are a nood
   through, with motes riding it), `ORB_HEART` (a heart beating lub-dub — charms),
   `ORB_ASTRAL` (a five-point star in an orbit of stars — the Astronomer), `ORB_SPIRIT` (a thin
   ghostly orb with wisps peeling off it), `ORB_TOXIC` (bubbles bursting on it, drops falling),
-  `ORB_SWARM` (nanites on orbits of their own round a small core), `ORB_SAND` (arms of grit
-  whirling out past its rim, grains shed), `ORB_MUD` (a lumpy wet glob flinging drops, with no
-  light at all) and `ORB_SHOCK` (arcs crackling off it). The outer shape is what distinguishes
+  `ORB_SWARM` (nanites on orbits of their own round a small core) and `ORB_MUD` (a lumpy wet glob
+  flinging drops, with no light at all). (`ORB_SAND` and `ORB_SHOCK` went with the Sandstorm's,
+  the Mummy's and the Jellyfish's orbs.) The outer shape is what distinguishes
   bolts; inner detail is invisible at the size a projectile is actually displayed. **Whatever
   the style draws has to stand outside the body** — a feature inside the 0.90 x 0.68 sz ellipse
   is painted over and the bolt comes out plain. That is what happened to the old rune ring (at
@@ -218,10 +268,12 @@ a smooth meander is a worm, and kinks small beside the stroke's width are a nood
   rings of force pulsing off the head (Cyclops).
 - `railSlug(…)` — a dense dart shedding electromagnetic coil rings that widen and fade
   behind it (Railgunner).
-- `siphonVortex(kind, …)` — drain abilities as a travelling whirlpool, motes spiralling
-  *into* a dark core: blood sheds drips, life drain beats a heart, soul drain stares back.
+- `siphonVortex(kind, …)` — the Vampire's blood siphon as a travelling whirlpool, motes spiralling
+  *into* a dark core, blood dripping off it. (The life and soul drains it also drew are the
+  Revenant's helm and the Lich's phylactery now.)
 - `tether(kind, …)` — a pull tied back to its thrower (see *Pulls are tied to whoever is
-  pulling*): tentacle, vine, spirit paw, spirit talon, death hook on a chain.
+  pulling*): tentacle, vine, spirit paw, spirit talon, death hook on a chain, the Chameleon's
+  tongue, the Mummy's bandage.
 - `gorgonEye(petrify)` — Medusa's gaze as a blinking almond eye with a slit pupil, ringed
   by crumbling stone.
 - `bladeSpinner(kind, …)` — thrown weapon tumbling end over end (axe, bone axe, katana,
@@ -235,20 +287,33 @@ a smooth meander is a worm, and kinks small beside the stroke's width are a nood
 - `lobbed(kind, …)` — object on an arc (bomb, flask, shovel, hammer, horn, spiked mine,
   ice chunk, mud glob) with landing shadow, target ring and bounce.
 - `aoeRing(kind, …)` — ground blast as filled shockwave bands over a darkened scorch.
-  `kind` picks what it throws off: quake rubble, water, spores, flame, pressure rings,
-  inward-falling motes, roots.
+  `kind` picks what it throws off: quake rubble, flame, pressure rings, inward-falling motes,
+  roots.
 - `chainProj(kind, …)` — thrown restraint: a grappling hook (or, `CHN_HOOK`, a single meat
   hook) on a twisted rope running all the way back to the thrower's hand; a tumbling manacle
   trailing swinging links; a loop of links spinning around a padlock.
 - `bulletProj`, `fistProj` — small fast round; gauntleted punch.
 
-**32 specialized `draw*` renderers** for one-off projectiles: lightning (`lightningBolt(r, g,
+**Specialized `draw*` renderers** for one-off projectiles: lightning (`lightningBolt(r, g,
 b, heavy)` — colour is a parameter so a storm reads yellow and a tesla coil reads arc-cyan;
 `heavy` is chain lightning's thicker bolt), thunder strike, grasping dead, frost comet (ice
-beam), bandage wad, tongue lash, boulder (faceted tumbling hull), shark jaw, bat swarm, shadow
-bolt, inferno blast, geyser, wail, raise dead, and more. The fireball is an `ORB_FIRE` orb.
-And **17 characters' own looks** (`Songs`, `Winds`, `Surges`, and the Wolf's in `Bites`), each a
-`draw*` of its own, listed in *A projectile is drawn as its thrower's*.
+beam), boulder (faceted tumbling hull), shark jaw, bat swarm, geyser, wail, raise dead, and
+more. The fireball is an `ORB_FIRE` orb. And **68 characters' own looks**, each a `draw*` of its
+own: 17 from the crescents (`Songs`, `Winds`, `Surges`, and the Wolf's in `Bites`) and 51 from the
+orbs and rings (`Spirits`, `Necromancy`, `Relics`, `Venoms`, `Arsenal`, `Elements`, `Vortices`,
+`Critters`, `Booms`, and two tethers), listed in *A projectile is drawn as its thrower's*.
+
+**The characters' own looks are drawn in a frame** (`Glyphs`): a shape is authored once in glyph
+units about its own centre, and `frame` stamps it — turned, mirrored, scaled, and squashed up the
+screen for a thing lying in the ground plane (the Sandstorm's blade spinning flat). `faceFrame`
+turns a thing with a front (a head in profile, a lamp) the way it flies but mirrors it rather than
+turning it upside down when it flies left, leaning it at most a little toward a heading up or down
+the screen; `headingFrame` points a thing (a dagger, a bullet, a scarab) exactly along it, its point
+on the hitbox. Every shape is inked before it is filled, and a shape in convex pieces is inked as one
+(`inkAll` then `fillAll`). Trails are laid once (`trailPts`) and stroked in layers (`trailLayer`:
+ink, colour, a lit fold shifted across it with `trailShift`). A thing standing up off the ground
+with a real depth to it — a cube, the Pilot's biplane — is turned in 3D or drawn over its own shadow
+on the ground, where it strikes.
 
 **Things to watch when editing these files:**
 - **Kind constants are `final val`s** (compile-time constants, in the family object that uses
@@ -319,7 +384,10 @@ To add a new projectile renderer:
 
 - **A projectile is drawn as its thrower's** — a type thrown by characters with nothing in common
   gets a look per character (see *A projectile is drawn as its thrower's*). Eleven types drawn as
-  one crescent in fifteen characters' hands said nothing about any of them.
+  one crescent in fifteen characters' hands said nothing about any of them, and an orb in a colour
+  that was nobody's said less.
+- **A look lights the ground in its own colour** — not the thrower's random player colour, which
+  put a pink pool under a green skull (see *A look carries its own colour*).
 - **A projectile's silhouette carries its identity, not its palette** — the pattern
   factories used to describe shapes in polar form (a radius per vertex) or as a stroked
   line from the caster, so a whole family came out identical: every melee weapon was the

@@ -79,6 +79,7 @@ its tip.
 |---|---|
 | `cel(draw, shape, color, sh=, hi=, regions=)` | fill flat, lay the shadow band (`sh` is how far the lit face shifts toward the light), optional highlight rim, extra `(shape, colour)` regions clipped to the shape, then the ink line on top |
 | `blob(draw, shapes, color)` | the union of several shapes as **one** cel-shaded mass with one outline — beards, clouds, fur ruffs, foliage, smoke. Drawing overlapping ellipses one by one inks a line across every seam |
+| `bez(p0, p1, p2, n)` | points along a curve from `p0` to `p2` pulled toward `p1`, for an edge that has to bend where an arc won't do — a widow's peak, a collar's wing, a grin |
 | `draw.sub()` / `draw.merge(layer, clip=)` | a transparent layer in the same coordinate space; drawing `fill=CLEAR` on it erases. How hoods cut their face opening and how `cel` cuts a shadow band |
 | `shade(c)`, `lit(c)`, `ink(c)`, `mix(a, b, t)` | one cel step darker (hue-shifted toward violet, not toward mud), one step lighter, the line colour, a blend |
 | `Fixed(r, g, b)` | an outline colour used exactly as given, never re-inked from the fill |
@@ -130,6 +131,20 @@ Things learned the hard way, all of which the gallery caught:
   (white head, brown body), the Hawk a slate-blue falcon with a barred chest, the Griffin a gold
   eagle-lion, the Phoenix a bird made of fire.
 - **`rig(bob=)` takes the bob for this frame**, a number, not the per-frame list.
+- **The kit's profile ear is a ring, and a ring by an eye reads as an eye.** Beside the
+  Cyclops's one eye it was a second one, beside the Jester's wink a monocle: leave the ear off
+  in profile, or draw it as a C well back from the face.
+- **A lash flick on an eye with no partner reads as a wink.** The Cyclops's eye is drawn by
+  hand, with a heavy lid and no flick.
+- **White lined in the kit's ink reads as hair.** Snow heaped on the Glacier's head came out a
+  white wig, and a band of it round the crown a headband. Snow lies on top, in lumps, lined in a
+  pale blue (`_snow`).
+- **A palette says things the shapes don't.** The Jester in red and green motley was a
+  Christmas elf at 77px whatever its hat did; in red and purple it is a jester.
+- **Characters drawn as a pair of halves keep each half on its own side as they turn.** The
+  Jester's right half is red head-on (the camera's left), from behind (the camera's right) and
+  walking right, where his right side is the near one; a profile drawn the same colour both ways
+  swaps colours as he turns round.
 
 ## Rendering pipeline (`sprite_base.py`)
 

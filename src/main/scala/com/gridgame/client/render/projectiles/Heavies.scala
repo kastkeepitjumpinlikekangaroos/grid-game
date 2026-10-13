@@ -5,8 +5,7 @@ import com.gridgame.client.gl.ShapeBatch
 import ProjectileKit._
 import Silhouettes._
 
-/** Big things with weight: the rocket, the tumbling boulder, the geyser, the sword wave and the
-  * inferno blast. */
+/** Big things with weight: the rocket, the tumbling boulder, the geyser and the sword wave. */
 private[render] object Heavies {
   /** Rocket: nose on the hitbox, body, fins and exhaust trailing behind it. It used to start
    *  at the hitbox and extend five world units forward, so the warhead arrived long before
@@ -445,62 +444,4 @@ private[render] object Heavies {
   private val _swInnerYs = new Array[Float](13)
   private val _swCrescXs = new Array[Float](26)
   private val _swCrescYs = new Array[Float](26)
-
-  /** Inferno Blast — CARTOONISH: massive fire vortex with bold spirals and sparkle stars */
-  private[projectiles] def drawInfernoBlast(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
-    val phase = (tick + proj.id * 23) * 0.4
-    computeAllDynamics(proj, 1f, 0.4f, 0.02f, phase)
-    // Steady (see energyBolt): it used to throb down to 20% alpha three times a second
-    val p = (0.9 + 0.1 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
-    val ds = dynScale
-    val bc = _chgBright
-    val r = 45f * ds
-
-    // Heat halo. 3x the 45px vortex radius put a 135px wash over an already
-    // large effect; 2x plus the clamped dynGlow still reads as furnace heat.
-    sb.fillOvalSoft(sx, sy, r * 2f * dynGlow, r * 1.6f * dynGlow, 1f, 0.2f, 0f, 0.28f * p, 0f, 20)
-
-    // 5 spinning fire spirals — bigger and bolder
-    var arm = 0; while (arm < 5) {
-      val segs2 = 12
-      var i = 0; while (i < segs2) {
-        val t = i.toFloat / segs2
-        val spiralAngle = phase * 2.5 + t * Math.PI * 2.5 + arm * Math.PI * 2 / 5
-        val spiralR = r * t
-        val px = sx + Math.cos(spiralAngle).toFloat * spiralR
-        val py = sy + Math.sin(spiralAngle).toFloat * spiralR * 0.5f
-        val s = 8f + t * 10f
-        // Dark outline
-        sb.fillOval(px, py, s + 2f, (s + 2f) * 0.65f, 0.15f, 0.02f, 0f, 0.4f * (1f - t * 0.3f) * p, 8)
-        sb.fillOval(px, py, s, s * 0.65f, 1f, Math.max(0f, 0.55f * (1f - t)), 0f, 0.65f * (1f - t * 0.35f) * p, 8)
-      ; i += 1 }
-    ; arm += 1 }
-
-    // Fire core — bigger with bold outline
-    sb.strokeOval(sx, sy, r * 0.52f, r * 0.4f, outlineW(r * 0.52f), 0.15f, 0.02f, 0f, 0.75f * p, 16)
-    sb.fillOval(sx, sy, r * 0.5f, r * 0.38f, 0.95f, 0.4f, 0.02f, 0.9f * p, 16)
-    sb.fillOval(sx, sy, r * 0.3f, r * 0.23f, 1f, 0.65f, 0.08f, 0.95f * p, 14)
-    // Cartoon highlight
-    sb.fillOval(sx + KEY_LIGHT_X * 8f * ds, sy + KEY_LIGHT_Y * 5f * ds, 6f * ds, 4f * ds, 1f, 1f, 0.8f, 0.4f * p, 8)
-    sb.fillOval(sx, sy, 8f * ds, 6.5f * ds, 1f, 1f, mix(0.7f, 1f, bc), 0.95f * p, 10)
-
-    // More embers — bigger
-    var i = 0; while (i < 12) {
-      val angle = phase * 1.5 + i * Math.PI / 6
-      val fl = r + Math.sin(phase * 3 + i * 2).toFloat * 16 * ds
-      sb.fillOval(sx + Math.cos(angle).toFloat * fl,
-        sy + Math.sin(angle).toFloat * fl * 0.5f - Math.abs(Math.sin(phase * 4 + i)).toFloat * 10 * ds,
-        6f * ds, 4.5f * ds, 1f, 0.5f, 0f, 0.55f * p, 8)
-    ; i += 1 }
-
-    // Sparkle stars orbiting
-    { var i = 0; while (i < 4) {
-      val starAngle = phase * 0.8 + i * Math.PI / 2
-      val starDist = r * 0.7f
-      val starX = sx + Math.cos(starAngle).toFloat * starDist
-      val starY = sy + Math.sin(starAngle).toFloat * starDist * 0.5f
-      drawSparkleStar(starX, starY, 6f * ds, 1f, 0.9f, 0.4f, 0.4f * p, sb, phase * 2 + i)
-    ; i += 1 } }
-    drawChargeCrackle(sx, sy, r * 0.5f, 1f, 0.4f, 0.02f, p, sb, phase, proj.chargeLevel)
-  }
 }

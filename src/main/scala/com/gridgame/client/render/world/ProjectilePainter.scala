@@ -20,10 +20,12 @@ private[render] final class ProjectilePainter(ctx: RenderContext) {
     val sx = worldToScreenX(px, py).toFloat
     val sy = worldToScreenY(px, py).toFloat
 
-    // Dynamic projectile lighting — charge-reactive, distance-boosted
-    intToRGB(proj.colorRGB)
+    // Dynamic projectile lighting — charge-reactive, distance-boosted — in its look's own colour
+    // where it has one (GLProjectileRenderers.glowOf), else its thrower's
+    val glow = GLProjectileRenderers.glowOf(proj.ownerCharacterId, proj.projectileType)
+    intToRGB(if (glow >= 0) glow else proj.colorRGB)
     val plr = _rgb_r; val plg = _rgb_g; val plb = _rgb_b
-    if (projectileLights) addProjectileLights(proj, sx, sy, plr, plg, plb)
+    if (projectileLights) addProjectileLights(proj, sx, sy, plr, plg, plb, glow >= 0)
 
     beginShapes()
     if (ProjectileDef.get(proj.projectileType).passesThroughWalls) {
@@ -55,8 +57,9 @@ private[render] final class ProjectilePainter(ctx: RenderContext) {
   }
 
   /** A projectile's light: its own colour, charge-reactive and distance-boosted, and a second one
-    * in the colour of its element. */
-  private def addProjectileLights(proj: Projectile, sx: Float, sy: Float, plr: Float, plg: Float, plb: Float): Unit = {
+    * in the colour of its element — or, for a look with a colour of its own (`own`), in that. */
+  private def addProjectileLights(proj: Projectile, sx: Float, sy: Float, plr: Float, plg: Float, plb: Float,
+                                  own: Boolean): Unit = {
     val chargeT = proj.chargeLevel / 100f
     // Charge whitening for light color
     val lr = Math.min(1f, plr + chargeT * (1f - plr) * 0.35f)
@@ -75,6 +78,10 @@ private[render] final class ProjectilePainter(ctx: RenderContext) {
       lightIntensity *= 0.8f + 0.2f * Math.sin(animationTick * 0.5).toFloat
     }
     lightSystem.addLight(sx, sy, lightRadius, lr, lg, lb, lightIntensity)
+
+    // A look with its own colour is lit in it: a Necromancer's green skull doesn't cast the dark
+    // types' purple
+    if (own) { lightSystem.addLight(sx, sy, 70f, plr, plg, plb, 0.18f); return }
 
     // Element-type-specific secondary lighting overlay
     proj.projectileType match {
@@ -144,6 +151,12 @@ private[render] final class ProjectilePainter(ctx: RenderContext) {
     }
   }
 
+  /** Its look's own colour into _rgb_r/g/b, else its thrower's: what a stopped one flashes in. */
+  private def glowOrThrowers(proj: Projectile): Unit = {
+    val glow = GLProjectileRenderers.glowOf(proj.ownerCharacterId, proj.projectileType)
+    intToRGB(if (glow >= 0) glow else proj.colorRGB)
+  }
+
   // Wall-passing projectiles gathered during the depth pass; their bodies are drawn after it
   private val _flying = new Array[Projectile](256)
   private var _flyingCount = 0
@@ -172,7 +185,7 @@ private[render] final class ProjectilePainter(ctx: RenderContext) {
       val px = proj.getX.toDouble; val py = proj.getY.toDouble
       val sx = worldToScreenX(px, py).toFloat
       val sy = worldToScreenY(px, py).toFloat - GLProjectileRenderers.flyLift(proj, animationTick)
-      intToRGB(proj.colorRGB)
+      glowOrThrowers(proj)
       anchorToThrower(proj)
       GLProjectileRenderers.draw(proj, sx, sy, shapeBatch, animationTick, _rgb_r, _rgb_g, _rgb_b)
       i += 1
@@ -191,7 +204,7 @@ private[render] final class ProjectilePainter(ctx: RenderContext) {
       GLProjectileRenderers.flyLift(proj, animationTick) else 0f
     val sx = worldToScreenX(px, py).toFloat
     val sy = worldToScreenY(px, py).toFloat - lift
-    intToRGB(proj.colorRGB)
+    glowOrThrowers(proj)
     beginShapes()
     anchorToThrower(proj)
     GLProjectileRenderers.drawAbsorbed(proj, sx, sy, shapeBatch, animationTick, Math.max(0f, t),

@@ -293,13 +293,11 @@ private[render] object Beams {
 
   // ── Drain vortices ──
   final val SIPH_BLOOD = 0
-  final val SIPH_LIFE = 1
-  final val SIPH_SOUL = 2
 
-  /** Drain abilities as a travelling whirlpool: motes spiral INTO a dark core, which is what a
-   *  siphon is. The old drain beam — a tube with beads streaming along it — was the purest
-   *  case of a shiny snake in the roster. Blood sheds drips, life beats a heart in the dark,
-   *  a soul drain stares back. */
+  /** A drain as a travelling whirlpool: motes spiral INTO a dark core, which is what a siphon is,
+   *  and blood drips off it. The old drain beam — a tube with beads streaming along it — was the
+   *  purest case of a shiny snake in the roster. (The Lich's soul drain and the Revenant's life
+   *  drain, which were the other two kinds, are drawn as theirs: Necromancy.) */
   private[projectiles] def siphonVortex(kind: Int, r: Float, g: Float, b: Float, size: Float = 15f): Renderer =
     (proj, sx, sy, sb, tick) => {
       val phase = (tick + proj.id * 33) * 0.35
@@ -310,16 +308,13 @@ private[render] object Beams {
       val R = size * ds
       screenDir(proj)
       val ndx = _sdx; val ndy = _sdy
-      val soul = kind == SIPH_SOUL
 
       var i = 0
       while (i < 5) {
         val t = ((tick * 0.04 + i * 0.2 + proj.id * 0.21) % 1.0).toFloat
         val tx = sx - ndx * t * R * 3f + Math.sin(i * 2.3 + phase).toFloat * R * 0.4f
-        val ty = sy - ndy * t * R * 3f + (if (soul) -t * 18f else t * t * 16f)
-        if (soul) sb.fillOvalSoft(tx, ty, R * 0.45f * (1f - t * 0.4f), R * 0.55f * (1f - t * 0.4f),
-          dr, dg, db, 0.45f * (1f - t) * p, 0f, 10)
-        else sb.fillOval(tx, ty, R * 0.16f, R * 0.22f, dr * 0.85f, dg * 0.6f, db * 0.6f, 0.8f * (1f - t) * p, 8)
+        val ty = sy - ndy * t * R * 3f + t * t * 16f
+        sb.fillOval(tx, ty, R * 0.16f, R * 0.22f, dr * 0.85f, dg * 0.6f, db * 0.6f, 0.8f * (1f - t) * p, 8)
         i += 1
       }
       sb.fillOvalSoft(sx, sy, R * 2.1f * dynGlow, R * 1.7f * dynGlow, dr, dg, db, 0.34f * p, 0f, 16)
@@ -359,23 +354,7 @@ private[render] object Beams {
       // Core: a hole ringed in the drain's colour
       sb.fillOval(sx, sy, R * 0.56f, R * 0.48f, dr, dg, db, 0.92f * p, 14)
       sb.fillOval(sx, sy, R * 0.44f, R * 0.37f, 0.04f, 0.01f, 0.03f, 0.96f * p, 14)
-      kind match {
-        case SIPH_SOUL =>
-          sb.fillOval(sx - R * 0.15f, sy - R * 0.05f, R * 0.08f, R * 0.11f, bright(r), bright(g), bright(b), 0.95f * p, 6)
-          sb.fillOval(sx + R * 0.15f, sy - R * 0.05f, R * 0.08f, R * 0.11f, bright(r), bright(g), bright(b), 0.95f * p, 6)
-          sb.fillOval(sx, sy + R * 0.16f, R * 0.06f, R * 0.04f, bright(r), bright(g), bright(b), 0.7f * p, 6)
-        case SIPH_LIFE =>
-          val beat = 0.8f + 0.2f * Math.abs(Math.sin(phase * 2.4).toFloat)
-          val hs = R * 0.26f * beat
-          sb.fillOval(sx - hs * 0.5f, sy - hs * 0.2f, hs * 0.58f, hs * 0.58f, dr, dg * 0.6f, db * 0.7f, 0.95f * p, 8)
-          sb.fillOval(sx + hs * 0.5f, sy - hs * 0.2f, hs * 0.58f, hs * 0.58f, dr, dg * 0.6f, db * 0.7f, 0.95f * p, 8)
-          _polyXs3(0) = sx - hs * 1.05f; _polyYs3(0) = sy - hs * 0.05f
-          _polyXs3(1) = sx + hs * 1.05f; _polyYs3(1) = sy - hs * 0.05f
-          _polyXs3(2) = sx; _polyYs3(2) = sy + hs * 1.05f
-          sb.fillPolygon(_polyXs3, _polyYs3, 3, dr, dg * 0.6f, db * 0.7f, 0.95f * p)
-        case _ =>
-          sb.fillOval(sx, sy + R * 0.02f, R * 0.13f, R * 0.17f, dr, dg * 0.5f, db * 0.5f, 0.9f * p, 8)
-      }
+      sb.fillOval(sx, sy + R * 0.02f, R * 0.13f, R * 0.17f, dr, dg * 0.5f, db * 0.5f, 0.9f * p, 8)
       sb.strokeOval(sx, sy, R * 0.56f, R * 0.48f, 2f, bright(r), bright(g), bright(b), 0.8f * p, 14)
       drawChargeCrackle(sx, sy, R, r, g, b, p, sb, phase, proj.chargeLevel)
     }
