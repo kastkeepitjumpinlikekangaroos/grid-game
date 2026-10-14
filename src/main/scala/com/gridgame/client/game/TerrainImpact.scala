@@ -1,12 +1,41 @@
 package com.gridgame.client.game
 
-import com.gridgame.common.model.{Projectile, Tile, WorldData}
+import com.gridgame.common.model.{Projectile, ProjectileDef, PullToOwner, Tile, WorldData}
+
+import java.util.UUID
 
 /** A projectile that has been stopped, kept on screen for a moment where it stopped so it
  *  can be seen to be absorbed rather than blinking out. `hitTerrain` is false when it simply
- *  ran out of range; `tileColor` is the ARGB colour of what it struck (0 at the map edge). */
+ *  ran out of range; `tileColor` is the ARGB colour of what it struck (0 at the map edge).
+ *
+ *  A pull (a hook, a tongue, a tentacle) is reeled back in to its thrower instead: empty-handed
+ *  when it missed, and holding on to the player it `caught` while it drags them in. It stays
+ *  `lifeMs`. */
 final class FadingProjectile(val proj: Projectile, val startMs: Long, val hitTerrain: Boolean,
-                             val tileColor: Int)
+                             val tileColor: Int, val caught: UUID = null,
+                             val lifeMs: Long = TerrainImpact.FADE_MS)
+
+object FadingProjectile {
+  /** How long a pull that missed takes to be reeled back in to its thrower: no longer than a stopped
+    * shot is kept (TerrainImpact.FADE_MS), so a miss needs no lifetime of its own. */
+  val RETRACT_MS = 240L
+  /** How long a pull that caught someone holds on to them: the server puts them on the thrower's
+    * cell at once and every client slides them there (KnockbackSlide, under 300ms), its head on
+    * them all the way. Then whatever is left of it is reeled in, as a miss's is. */
+  val HOLD_MS = 340L
+
+  /** Does a projectile of this type pull what it hits to its thrower? */
+  def isPull(pType: Byte): Boolean = ProjectileDef.get(pType).onHitEffect.contains(PullToOwner)
+
+  /** One that stopped, `hitTerrain` or at the end of its range: a shot sinks into what stopped it, and
+    * a pull tied to its thrower is reeled back in, in less time than that (RETRACT_MS). */
+  def stopped(proj: Projectile, now: Long, hitTerrain: Boolean, tileColor: Int): FadingProjectile =
+    new FadingProjectile(proj, now, hitTerrain, tileColor)
+
+  /** A pull that caught `target`: held on to while they are dragged in, then reeled back. */
+  def caught(proj: Projectile, now: Long, target: UUID): FadingProjectile =
+    new FadingProjectile(proj, now, false, 0, target, HOLD_MS + RETRACT_MS)
+}
 
 /**
  * Where a despawned projectile actually met the terrain.

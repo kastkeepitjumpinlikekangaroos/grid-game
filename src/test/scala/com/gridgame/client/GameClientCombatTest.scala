@@ -60,6 +60,40 @@ class GameClientCombatTest {
     assertEquals("and goes off", 1, c.getBlasts.size)
   }
 
+  @Test def aPullThatCatchesSomeoneHoldsOnToThemWhileTheyAreDraggedIn(): Unit = {
+    // A hook, a tongue, a tentacle: it is drawn on whoever it caught while the server's pull slides them
+    // to the thrower, then reeled in. It used to vanish at the hit, its rope with it
+    t.startMatch(spawn = (5, 5))
+    val shooter = UUID.randomUUID()
+    val caught = UUID.randomUUID()
+    t.projectile(ProjectileAction.SPAWN, 55, shooter, pType = ProjectileType.ROPE)
+    t.projectile(ProjectileAction.HIT, 55, shooter, x = 14f, target = caught, pType = ProjectileType.ROPE)
+    assertNull(c.getProjectiles.get(55))
+    val held = c.getFadingProjectiles.get(55)
+    assertNotNull("kept to be reeled in", held)
+    assertEquals("holding whoever it caught", caught, held.caught)
+    assertEquals(game.FadingProjectile.HOLD_MS + game.FadingProjectile.RETRACT_MS, held.lifeMs)
+    assertEquals("where it caught them", 14f, held.proj.getX, 0f)
+  }
+
+  @Test def aShotThatHitsSomeoneIsGoneAtTheHit(): Unit = {
+    t.startMatch(spawn = (5, 5))
+    val shooter = UUID.randomUUID()
+    t.projectile(ProjectileAction.SPAWN, 56, shooter, pType = ProjectileType.BULLET)
+    t.projectile(ProjectileAction.HIT, 56, shooter, target = UUID.randomUUID(), pType = ProjectileType.BULLET)
+    assertNull(c.getFadingProjectiles.get(56))
+  }
+
+  @Test def aPullThatMissesIsKeptToBeReeledIn(): Unit = {
+    t.startMatch(spawn = (5, 5))
+    val shooter = UUID.randomUUID()
+    t.projectile(ProjectileAction.SPAWN, 57, shooter, pType = ProjectileType.TONGUE)
+    t.projectile(ProjectileAction.DESPAWN, 57, shooter, x = 12f, y = 10f, pType = ProjectileType.TONGUE)
+    val reeled = c.getFadingProjectiles.get(57)
+    assertNotNull(reeled)
+    assertNull("empty-handed", reeled.caught)
+  }
+
   @Test def aShotStoppedByTerrainFadesWhereItStruck(): Unit = {
     t.startMatch(spawn = (5, 5))
     val shooter = UUID.randomUUID()

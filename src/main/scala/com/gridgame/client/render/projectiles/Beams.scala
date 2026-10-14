@@ -38,23 +38,31 @@ private[render] object Beams {
       val hR = mix(bright(r), 1f, hw); val hG = mix(bright(g), 1f, hw); val hB = mix(bright(b), 1f, hw)
 
       fadeLine(sb, bx, by, bx - ndx * L * 0.9f, by - ndy * L * 0.9f, w * 1.1f, dr, dg, db, 0.42f * p, 5)
-      sb.strokeLineSoft(bx, by, sx, sy, w * 3.2f * dynGlow, dr, dg, db, 0.26f * p)
-      sb.fillOvalSoft(sx, sy, w * 2.3f * dynGlow, w * 2.3f * dynGlow, dr, dg, db, 0.36f * p, 0f, 12)
+      // Its glow, soft all round: from its middle out to the head and back to the tail, narrowing and
+      // fading both ways. One soft stroke the bolt's length had square ends, a glowing brick round it
+      val mx = (sx + bx) * 0.5f; val my = (sy + by) * 0.5f
+      fadeLine(sb, mx, my, sx + ndx * w * 0.8f, sy + ndy * w * 0.8f, w * 2.6f * dynGlow, dr, dg, db, 0.3f * p, 4)
+      fadeLine(sb, mx, my, bx, by, w * 2.6f * dynGlow, dr, dg, db, 0.3f * p, 4)
+      sb.fillOvalSoft(sx, sy, w * 2.1f * dynGlow, w * 2.1f * dynGlow, dr, dg, db, 0.34f * p, 0f, 12)
 
       if (kind == BOLT_PRISM) {
-        // Light splitting as it travels: red and blue fringes either side of the bolt
-        val sh = w * 0.42f
-        sb.strokeLineSoft(bx + px * sh, by + py * sh, sx + px * sh, sy + py * sh, w * 0.9f, 1f, 0.3f, 0.35f, 0.42f * p)
-        sb.strokeLineSoft(bx - px * sh, by - py * sh, sx - px * sh, sy - py * sh, w * 0.9f, 0.3f, 0.5f, 1f, 0.42f * p)
+        // Light splitting as it travels: red and blue fringes either side of the bolt, peeling off
+        // behind it and fading — they used to be two soft strokes with square ends, a striped brick
+        val sh = w * 0.62f
+        fadeLine(sb, sx + px * sh * 0.4f, sy + py * sh * 0.4f, bx + px * sh - ndx * L * 0.35f, by + py * sh - ndy * L * 0.35f,
+          w * 1.05f, 1f, 0.3f, 0.35f, 0.85f * p, 5)
+        fadeLine(sb, sx - px * sh * 0.4f, sy - py * sh * 0.4f, bx - px * sh - ndx * L * 0.35f, by - py * sh - ndy * L * 0.35f,
+          w * 1.05f, 0.3f, 0.5f, 1f, 0.85f * p, 5)
       }
 
-      // Dark rim around the front so the bolt keeps its shape against pale ground
-      sb.fillOval(sx, sy, w * 0.5f + 1.3f, w * 0.5f + 1.3f, outline(r), outline(g), outline(b), 0.5f * p, 12)
+      // Inked all round, so the bolt keeps its shape against pale ground: at under half strength, the
+      // Photon's cream bolt was all but gone on sand once its glow no longer filled a brick round it
+      sb.fillOval(sx, sy, w * 0.5f + 1.5f, w * 0.5f + 1.5f, outline(r), outline(g), outline(b), 0.85f * p, 12)
       _polyXs4(0) = sx + px * w * 0.5f; _polyYs4(0) = sy + py * w * 0.5f
       _polyXs4(1) = bx + px * w * 0.12f; _polyYs4(1) = by + py * w * 0.12f
       _polyXs4(2) = bx - px * w * 0.12f; _polyYs4(2) = by - py * w * 0.12f
       _polyXs4(3) = sx - px * w * 0.5f; _polyYs4(3) = sy - py * w * 0.5f
-      sb.strokePolygon(_polyXs4, _polyYs4, 4, 2.2f, outline(r), outline(g), outline(b), 0.4f * p)
+      sb.strokePolygon(_polyXs4, _polyYs4, 4, 2.4f, outline(r), outline(g), outline(b), 0.8f * p)
       sb.fillPolygon(_polyXs4, _polyYs4, 4, dr, dg, db, 0.94f * p)
       sb.fillOval(sx, sy, w * 0.5f, w * 0.5f, dr, dg, db, 0.94f * p, 12)
       // White-hot core, stopping short of the tail

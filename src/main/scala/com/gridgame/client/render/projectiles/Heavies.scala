@@ -7,205 +7,206 @@ import Silhouettes._
 
 /** Big things with weight: the rocket, the tumbling boulder, the geyser and the sword wave. */
 private[render] object Heavies {
-  /** Rocket: nose on the hitbox, body, fins and exhaust trailing behind it. It used to start
-   *  at the hitbox and extend five world units forward, so the warhead arrived long before
-   *  the explosion did. */
+  // ── The rocket ──
+  // Side on, +x its nose and +y down its side, in units of about an eighth of its length: the body,
+  // the nose cone, a band round it, two fins and the nozzle. Each part convex.
+  private val ROCKET_BODY = Array(-6.2f, -0.85f, -1.8f, -0.85f, -1.8f, 0.85f, -6.2f, 0.85f)
+  private val ROCKET_NOSE = Array(-1.8f, -0.85f, -0.9f, -0.66f, -0.3f, -0.3f, 0f, 0f, -0.3f, 0.3f, -0.9f, 0.66f, -1.8f, 0.85f)
+  private val ROCKET_BAND = Array(-3.7f, -0.86f, -3.05f, -0.86f, -3.05f, 0.86f, -3.7f, 0.86f)
+  private val ROCKET_FIN_A = Array(-4.5f, -0.8f, -5.9f, -2.05f, -6.6f, -2.05f, -6.25f, -0.8f)
+  private val ROCKET_FIN_B = Array(-4.5f, 0.8f, -5.9f, 2.05f, -6.6f, 2.05f, -6.25f, 0.8f)
+  private val ROCKET_NOZZLE = Array(-6.15f, -0.6f, -6.8f, -0.78f, -6.8f, 0.78f, -6.15f, 0.6f)
+  private val ROCKET_PARTS = Array(ROCKET_FIN_A, ROCKET_FIN_B, ROCKET_NOZZLE, ROCKET_BODY, ROCKET_NOSE, ROCKET_BAND)
+
+  /**
+   * Rocket: nose on the hitbox, a red warhead and fins on a steel body with a yellow band, flame
+   * roaring out of its nozzle and smoke billowing behind. Inked and solid: the old one's body was three
+   * strokes and its alpha pulsed down to 0.6, so the ground showed through a wireframe of a rocket. (It
+   * used to start at the hitbox and extend five world units forward, so the warhead arrived long before
+   * the explosion did.)
+   */
   private[projectiles] def drawRocket(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
     val phase = (tick + proj.id * 29) * 0.35
     computeAllDynamics(proj, 0.45f, 0.47f, 0.35f, phase)
-    val p = (0.8f + 0.2f * Math.sin(phase * _stPulseMult).toFloat) * dynAlpha
+    val a = dynAlpha
     val ds = Math.min(dynScale, 1.3f)
     screenDir(proj)
-    val nx = _sdx; val ny = _sdy
-    val perpX = -ny; val perpY = nx
-    val noseLen = 16f * ds; val bodyLen = 40f * ds
-    val baseX = sx - nx * noseLen; val baseY = sy - ny * noseLen
-    val tailX = baseX - nx * bodyLen; val tailY = baseY - ny * bodyLen
-    val dx = baseX - tailX; val dy = baseY - tailY
+    val ndx = _sdx; val ndy = _sdy
+    val k = 7.6f * ds
+    Glyphs.headingFrame(sx, sy, ndx, ndy, k)
+    @inline def gx(lx: Float, ly: Float): Float = Glyphs.fx(lx, ly)
+    @inline def gy(lx: Float, ly: Float): Float = Glyphs.fy(lx, ly)
 
-    sb.fillOvalSoft(tailX - nx * 8f * ds, tailY - ny * 8f * ds, 24f * ds * dynGlow, 19f * ds * dynGlow,
-      1f, 0.5f, 0.1f, 0.4f * p, 0f, 14)
+    // Smoke billowing out behind, rising and spreading as it goes
     var i = 0
-    while (i < 10) {
-      val t = ((tick * 0.09 + i * 0.1 + proj.id * 0.07) % 1.0).toFloat
-      val fx = tailX - nx * t * 34f * ds + perpX * Math.sin(phase * 3 + i * 1.5).toFloat * (4f + t * 16f) * 0.35f
-      val fy = tailY - ny * t * 34f * ds + perpY * Math.sin(phase * 3 + i * 1.5).toFloat * (4f + t * 16f) * 0.35f
-      val green = Math.max(0f, 0.9f - t * 0.5f)
-      sb.fillOval(fx, fy, 5f + t * 6f, 4f + t * 5f, 1f, green, Math.max(0f, 0.3f - t * 0.2f), 0.65f * (1f - t), 8)
+    while (i < 7) {
+      val t = Glyphs.loop(tick, 0.045, i / 7.0 + proj.id * 0.09)
+      val wob = Math.sin(phase * 0.8 + i * 1.3).toFloat * (0.3f + t * 1.4f)
+      val px = gx(-7.2f - t * 9f, wob); val py = gy(-7.2f - t * 9f, wob) - t * 10f * ds
+      val puff = (3.5f + t * 9f) * ds
+      val g = 0.62f + t * 0.16f
+      sb.fillOval(px, py, puff + 1.2f, puff * 0.82f + 1.2f, 0.25f, 0.24f, 0.24f, 0.32f * (1f - t) * a, 10)
+      sb.fillOval(px, py, puff, puff * 0.82f, g, g, g * 0.98f, 0.62f * (1f - t) * a, 10)
       i += 1
     }
-    i = 0
-    while (i < 6) {
-      val t = ((tick * 0.04 + i * 0.167 + proj.id * 0.09) % 1.0).toFloat
-      val smX = tailX - nx * t * 50f * ds + perpX * Math.sin(phase * 0.8 + i * 1.3).toFloat * (6f + t * 12f)
-      val smY = tailY - ny * t * 50f * ds + perpY * Math.sin(phase * 0.8 + i * 1.3).toFloat * (6f + t * 12f) - t * 12f
-      val gray = 0.6f + t * 0.1f
-      val puff = 6f + t * 10f
-      sb.strokeOval(smX, smY, puff + 1f, (puff + 1f) * 0.85f, 1.5f, 0.3f, 0.3f, 0.3f, 0.2f * (1f - t), 10)
-      sb.fillOval(smX, smY, puff, puff * 0.85f, gray, gray, gray, 0.35f * (1f - t), 10)
-      i += 1
+    // The flame: an outer tongue, a hotter one inside it and a white heart, flickering
+    val flick = 0.85f + 0.15f * Math.sin(phase * 4.1).toFloat + 0.08f * hash2(tick / 2, proj.id)
+    var layer = 0
+    while (layer < 3) {
+      val len = (if (layer == 0) 3.6f else if (layer == 1) 2.5f else 1.4f) * k * flick
+      val w = (if (layer == 0) 1.5f else if (layer == 1) 1.0f else 0.55f) * k
+      Glyphs.flameTongue(gx(-6.75f, 0f), gy(-6.75f, 0f), -ndx, -ndy, len, w,
+        Math.sin(phase * 2.3 + layer).toFloat * 0.25f * k, a)
+      if (layer == 0) sb.strokePolylineVar(_pvX, _pvY, _pvW, _pvA, 5, 0.95f, 0.36f, 0.08f)
+      else if (layer == 1) sb.strokePolylineVar(_pvX, _pvY, _pvW, _pvA, 5, 1f, 0.78f, 0.2f)
+      else sb.strokePolylineVar(_pvX, _pvY, _pvW, _pvA, 5, 1f, 0.98f, 0.85f)
+      layer += 1
     }
-    sb.strokeLine(tailX, tailY, baseX, baseY, 16f * ds, 0.1f, 0.1f, 0.08f, 0.85f * p)
-    sb.strokeLine(tailX, tailY, baseX, baseY, 13f * ds, 0.4f, 0.42f, 0.3f, 0.95f * p)
-    sb.strokeLine(tailX, tailY, baseX, baseY, 6f * ds, 0.55f, 0.58f, 0.45f, 0.65f * p)
-    val bandX = tailX + dx * 0.55f; val bandY = tailY + dy * 0.55f
-    sb.strokeLine(bandX - dx * 0.07f, bandY - dy * 0.07f, bandX + dx * 0.07f, bandY + dy * 0.07f,
-      16f * ds, 0.15f, 0.02f, 0.01f, 0.7f * p)
-    sb.strokeLine(bandX - dx * 0.07f, bandY - dy * 0.07f, bandX + dx * 0.07f, bandY + dy * 0.07f,
-      14f * ds, 0.95f, 0.2f, 0.1f, 0.85f * p)
-    var f = -1
-    while (f <= 1) {
-      _polyXs3(0) = tailX + nx * 8f * ds; _polyYs3(0) = tailY + ny * 8f * ds
-      _polyXs3(1) = tailX - nx * 4f * ds + perpX * f * 11f * ds; _polyYs3(1) = tailY - ny * 4f * ds + perpY * f * 11f * ds
-      _polyXs3(2) = tailX - nx * 10f * ds; _polyYs3(2) = tailY - ny * 10f * ds
-      sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.45f, 0.48f, 0.35f, 0.9f * p)
-      sb.strokePolygon(_polyXs3, _polyYs3, 3, 2f, 0.15f, 0.15f, 0.12f, 0.7f * p)
-      f += 2
+    // Ink round all of it, then each part
+    var q = 0
+    while (q < ROCKET_PARTS.length) {
+      val n = Glyphs.pts(ROCKET_PARTS(q))
+      sb.strokePolygon(Glyphs._gx, Glyphs._gy, n, 2.6f, 0.08f, 0.07f, 0.09f, 0.95f * a)
+      q += 1
     }
-    _polyXs3(0) = sx; _polyXs3(1) = baseX + perpX * 8f * ds; _polyXs3(2) = baseX - perpX * 8f * ds
-    _polyYs3(0) = sy; _polyYs3(1) = baseY + perpY * 8f * ds; _polyYs3(2) = baseY - perpY * 8f * ds
-    sb.fillPolygon(_polyXs3, _polyYs3, 3, 0.7f, 0.7f, 0.65f, 0.95f * p)
-    sb.strokePolygon(_polyXs3, _polyYs3, 3, 2.5f, 0.15f, 0.15f, 0.12f, 0.8f * p)
-    sb.fillOval(baseX + nx * 6f * ds + KEY_LIGHT_X * 3f * ds, baseY + ny * 6f * ds + KEY_LIGHT_Y * 3f * ds,
-      4f * ds, 3f * ds, 1f, 1f, 1f, 0.35f * p, 6)
-    drawChargeCrackle(sx, sy, 16f * ds, 0.9f, 0.5f, 0.2f, p, sb, phase, proj.chargeLevel)
+    q = 0
+    while (q < ROCKET_PARTS.length) {
+      val part = ROCKET_PARTS(q)
+      val n = Glyphs.pts(part)
+      if (part eq ROCKET_BODY) sb.fillPolygon(Glyphs._gx, Glyphs._gy, n, 0.72f, 0.75f, 0.8f, a)
+      else if (part eq ROCKET_BAND) sb.fillPolygon(Glyphs._gx, Glyphs._gy, n, 1f, 0.82f, 0.22f, a)
+      else if (part eq ROCKET_NOZZLE) sb.fillPolygon(Glyphs._gx, Glyphs._gy, n, 0.3f, 0.3f, 0.34f, a)
+      else sb.fillPolygon(Glyphs._gx, Glyphs._gy, n, 0.86f, 0.2f, 0.16f, a)
+      q += 1
+    }
+    // Lit along its top, shaded along its bottom, and the warhead's shine
+    Glyphs.gLine(sb, -6f, -0.42f, -1.9f, -0.42f, 0.34f, 1f, 1f, 1f, 0.55f * a)
+    Glyphs.gLine(sb, -6f, 0.5f, -1.9f, 0.5f, 0.3f, 0.36f, 0.38f, 0.44f, 0.5f * a)
+    Glyphs.gLine(sb, -1.55f, -0.4f, -0.55f, -0.25f, 0.22f, 1f, 0.75f, 0.7f, 0.7f * a)
+    drawChargeCrackle(sx, sy, 16f * ds, 0.9f, 0.5f, 0.2f, a, sb, phase, proj.chargeLevel)
   }
 
-  /** Boulder — tumbling rock with weight, layered shading, cracks, dust, and debris chips */
-  private[projectiles] def drawBoulder(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int, r: Float): Unit = {
+  // A rock's outline: eight corners, each this much of its radius out, so it is lumpy but never
+  // notched (a corner pulled in further than about 0.75 of its neighbours makes a dent, and a hull
+  // of dents is a crumpled star)
+  private val ROCK_R = Array(1f, 0.86f, 0.95f, 0.82f, 0.98f, 0.88f, 0.93f, 0.84f)
+
+  /**
+   * Boulder: a rock tumbling end over end along the ground, bouncing, with its shadow under it and
+   * dust kicked up behind — lit from the upper left, shaded on its far side, a crack or two across
+   * it. `ice` for the Avalanche's, pale blue and glinting; `roots` for the Cyclops's rooting boulder,
+   * roots trailing off it. It used to be fanned from a hull whose corners swung between half and the
+   * whole of its radius, with eight cracks radiating from its middle and highlights spinning round
+   * it: a crumpled star, not a rock.
+   */
+  private[projectiles] def drawBoulder(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int, r: Float,
+                                       ice: Boolean = false, roots: Boolean = false): Unit = {
     val phase = (tick + proj.id * 19) * 0.3
     computeAllDynamics(proj, 0.4f, 0.32f, 0.2f, phase)
-    val p = (0.85 + 0.15 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
+    val a = dynAlpha
     val bounceRaw = Math.sin(phase * 1.5).toFloat
-    val bounce = (Math.abs(bounceRaw) * 10f).toFloat
-    val bounceContact = Math.abs(bounceRaw)
-    val ds = dynScale
+    val bounce = Math.abs(bounceRaw) * 9f
+    val ds = Math.min(dynScale, 1.3f)
     val rr = r * ds
     screenDir(proj)
     val ndx = _sdx; val ndy = _sdy
-    val spin = phase * 2.5
-    val hlX = Math.cos(spin).toFloat; val hlY = Math.sin(spin).toFloat
+    // Rolling the way it flies, about once a second
+    val rot = (tick + proj.id * 19) * 0.1 * (if (ndx < 0f) -1 else 1)
+    val cy = sy - bounce
+    // Palette: base, shade, lit face, glint, ink
+    val br = if (ice) 0.6f else 0.55f; val bg = if (ice) 0.8f else 0.49f; val bb = if (ice) 0.94f else 0.41f
+    val dr = if (ice) 0.3f else 0.31f; val dg = if (ice) 0.48f else 0.26f; val db = if (ice) 0.7f else 0.21f
+    val lr = if (ice) 0.84f else 0.7f; val lg = if (ice) 0.95f else 0.64f; val lb = if (ice) 1f else 0.55f
+    val ir = if (ice) 0.08f else 0.12f; val ig = if (ice) 0.16f else 0.09f; val ib = if (ice) 0.3f else 0.06f
 
-    // Speed lines
-    drawSpeedLines(sx, sy, ndx, ndy, 0.45f, 0.38f, 0.25f, 0.25f * p, sb, 6, rr * 1.5f)
-
-    // Ribbon trail of dust
-    drawRibbonTrail(sx, sy, ndx, ndy, 0.55f, 0.48f, 0.35f, 0.3f * p, sb, tick, proj.id, 8, 45f * ds * dynTrail, 10f * ds, 2f)
-
-    // Massive ground impact shockwave ring near bounce contact
-    if (bounceContact < 0.18f) {
-      val impactT = 1f - bounceContact / 0.18f
-      val impactAlpha = impactT * 0.55f * p
-      val impactR = rr * (1.5f + (1f - impactT) * 0.8f)
-      // Outer shockwave flash
-      sb.strokeOval(sx, sy + rr * 0.38f, impactR * 1.2f, impactR * 0.35f, 4f * impactT,
-        0.7f, 0.6f, 0.4f, impactAlpha * 0.5f, 14)
-      // Inner impact ring
-      sb.strokeOval(sx, sy + rr * 0.38f, impactR, impactR * 0.3f, 2.5f,
-        0.5f, 0.42f, 0.3f, impactAlpha, 12)
-      // Ground scorch mark
-      sb.fillOval(sx, sy + rr * 0.38f, impactR * 0.9f, impactR * 0.25f,
-        0.22f, 0.18f, 0.1f, impactAlpha * 0.35f, 12)
-      // Spark burst at bounce impact
-      drawSparkBurst(sx, sy + rr * 0.35f, 0.8f, 0.65f, 0.35f, impactAlpha * 0.7f, sb, tick, proj.id, 6, rr * 1.2f)
+    // Dust kicked up behind it
+    var i = 0
+    while (i < 7) {
+      val t = Glyphs.loop(tick, 0.05, i / 7.0 + proj.id * 0.11)
+      val dx = sx - ndx * (rr * 0.8f + t * rr * 2.4f) + Math.sin(phase + i * 2).toFloat * 4f * ds
+      val dy = sy + rr * 0.3f - ndy * (rr * 0.8f + t * rr * 2.4f) - t * 8f * ds
+      val s = (4f + t * 10f) * ds
+      val g = if (ice) 0.9f else 0.6f + t * 0.12f
+      sb.fillOval(dx, dy, s, s * 0.6f, g, g * (if (ice) 1f else 0.88f), g * (if (ice) 1f else 0.72f), 0.4f * (1f - t) * a, 10)
+      i += 1
     }
-
-    // Large dynamic shadow — bigger with bounce height
-    val shadowScale = 1f + bounce * 0.04f
-    val shadowAlpha = Math.max(0.1f, 0.42f - bounce * 0.015f)
-    sb.fillOval(sx, sy + rr * 0.38f, rr * 1.4f * shadowScale, rr * 0.38f * shadowScale,
-      0f, 0f, 0f, shadowAlpha, 16)
-    sb.fillOval(sx, sy + rr * 0.38f, rr * 1f * shadowScale, rr * 0.25f * shadowScale,
-      0f, 0f, 0f, shadowAlpha * 0.4f, 14)
-
-    // Faceted stone hull. The vertex radii come from a fixed per-index pattern so the
-    // silhouette is lumpy but stable as it tumbles — re-randomising per frame makes the
-    // rock boil.
-    val hullN = 9
-    var hv = 0
-    while (hv < hullN) {
-      val a = spin * 0.6 + hv * (Math.PI * 2 / hullN)
-      val jag = 0.80f + 0.26f * Math.sin(hv * 2.399f).toFloat
-      _shpXs(hv) = sx + Math.cos(a).toFloat * rr * 1.05f * jag
-      _shpYs(hv) = sy - bounce + Math.sin(a).toFloat * rr * 0.92f * jag
-      hv += 1
+    // A thump of dust where it lands
+    if (Math.abs(bounceRaw) < 0.2f) {
+      val impactT = 1f - Math.abs(bounceRaw) / 0.2f
+      sb.strokeOval(sx, sy + rr * 0.36f, rr * (1.3f + 0.4f * (1f - impactT)), rr * 0.36f, 2.5f * impactT,
+        if (ice) 0.85f else 0.62f, if (ice) 0.92f else 0.54f, if (ice) 1f else 0.4f, 0.45f * impactT * a, 16)
     }
-    sb.strokePolygon(_shpXs, _shpYs, hullN, 4.5f, 0.10f, 0.06f, 0.02f, 0.9f * p)
-    // Fanned from the centre the vertex radii were measured from: the jagged hull is
-    // non-convex, so fanning from vertex 0 cuts its own corners off.
-    sb.fillFan(sx, sy - bounce, _shpXs, _shpYs, hullN, 0.42f, 0.34f, 0.22f, 0.97f * p)
-    // Facet edges from the hull corners toward the centre — what makes it read as carved
-    hv = 0
-    while (hv < hullN) {
-      sb.strokeLine(_shpXs(hv), _shpYs(hv), sx + (_shpXs(hv) - sx) * 0.25f,
-        sy - bounce + (_shpYs(hv) - sy + bounce) * 0.25f, 1.6f, 0.26f, 0.20f, 0.12f, 0.45f * p)
-      hv += 1
+    // Its shadow, smaller the higher it bounces
+    val sh = 1f - bounce * 0.025f
+    sb.fillOval(sx, sy + rr * 0.36f, rr * 1.15f * sh, rr * 0.36f * sh, 0f, 0f, 0f, 0.38f * a, 16)
+
+    // The rock: corners turned by its roll
+    val n = 8
+    var v = 0
+    while (v < n) {
+      val an = rot + v * (Math.PI * 2 / n)
+      _shpXs(v) = sx + Math.cos(an).toFloat * rr * ROCK_R(v)
+      _shpYs(v) = cy + Math.sin(an).toFloat * rr * 0.9f * ROCK_R(v)
+      v += 1
     }
-    // Rotating shadow face (bottom half follows spin)
-    sb.fillOval(sx - hlX * rr * 0.12f, sy - bounce + rr * 0.18f + hlY * rr * 0.08f,
-      rr * 0.85f, rr * 0.55f, 0.22f, 0.17f, 0.1f, 0.45f * p, 14)
-    // Rotating highlight face
-    sb.fillOval(sx + hlX * rr * 0.18f, sy - bounce + hlY * rr * 0.12f - rr * 0.15f,
-      rr * 0.6f, rr * 0.48f, 0.58f, 0.5f, 0.36f, 0.6f * p, 12)
-    // Top specular glint (rotating)
-    sb.fillOval(sx + hlX * rr * 0.15f - rr * 0.08f, sy - bounce - rr * 0.32f + hlY * rr * 0.08f,
-      rr * 0.3f, rr * 0.22f, 0.72f, 0.63f, 0.48f, 0.5f * p, 8)
-    sb.fillOval(sx + hlX * rr * 0.1f - rr * 0.05f, sy - bounce - rr * 0.38f + hlY * rr * 0.05f,
-      rr * 0.15f, rr * 0.1f, 0.85f, 0.78f, 0.6f, 0.35f * p, 6)
+    if (roots) {
+      // Roots trailing off it, swinging as it rolls
+      var k = 0
+      while (k < 3) {
+        val c = (k * 3 + 1) % n
+        val x0 = _shpXs(c); val y0 = _shpYs(c)
+        val sway = Math.sin(phase * 1.2 + k * 2).toFloat
+        _pvX(0) = x0; _pvY(0) = y0
+        _pvX(1) = x0 - ndx * rr * 0.45f + sway * rr * 0.12f; _pvY(1) = y0 - ndy * rr * 0.45f + rr * 0.18f
+        _pvX(2) = x0 - ndx * rr * 0.85f + sway * rr * 0.28f; _pvY(2) = y0 - ndy * rr * 0.85f + rr * 0.42f
+        sb.strokePolylineTapered(_pvX, _pvY, 3, 4.6f * ds, 2.4f, 0.1f, 0.14f, 0.05f, 0.92f * a, 0.8f * a)
+        sb.strokePolylineTapered(_pvX, _pvY, 3, 2.6f * ds, 0.8f, 0.36f, 0.52f, 0.2f, a, a)
+        k += 1
+      }
+    }
+    sb.strokePolygon(_shpXs, _shpYs, n, 3.4f, ir, ig, ib, 0.95f * a)
+    // Its shade: the whole rock in it, then the lit rock over it, nudged toward the light, so a rim of
+    // shade is left on its far side
+    sb.fillFan(sx, cy, _shpXs, _shpYs, n, dr, dg, db, a)
+    rockFacet(sb, sx, cy, n, 0.9f, -0.07f * rr, -0.08f * rr, br, bg, bb, a)
+    // Its lit face, toward the upper left, and a glint on it
+    rockFacet(sb, sx, cy, n, 0.55f, -0.2f * rr, -0.24f * rr, lr, lg, lb, a)
+    sb.fillOval(sx - 0.34f * rr, cy - 0.38f * rr, rr * 0.16f, rr * 0.11f, 1f, 1f, if (ice) 1f else 0.9f, 0.75f * a, 8)
+    // Cracks across it, turned with it
+    var c = 0
+    while (c < 2) {
+      val v0 = (c * 4 + proj.id) % n
+      val x0 = _shpXs(v0); val y0 = _shpYs(v0)
+      val mx = sx + (x0 - sx) * 0.35f + (if (c == 0) 0.12f else -0.1f) * rr
+      val my = cy + (y0 - cy) * 0.35f + 0.06f * rr
+      val ex = sx + (x0 - sx) * 0.05f; val ey = cy + (y0 - cy) * 0.05f + 0.12f * rr
+      _pvX(0) = x0 + (sx - x0) * 0.08f; _pvY(0) = y0 + (cy - y0) * 0.08f
+      _pvX(1) = mx; _pvY(1) = my
+      _pvX(2) = ex; _pvY(2) = ey
+      sb.strokePolylineTapered(_pvX, _pvY, 3, 2.2f * ds, 0.6f, ir, ig, ib, 0.75f * a, 0.4f * a)
+      c += 1
+    }
+    if (ice) {
+      // Frost glinting on it
+      sb.fillStarFlare(sx + 0.3f * rr, cy - 0.28f * rr, rr * 0.4f, 1.8f, (phase * 0.4).toFloat, 0.5f, 1f, 1f, 1f,
+        (0.55f + 0.35f * Math.sin(phase * 1.7).toFloat) * a)
+    }
+    drawChargeCrackle(sx, cy, rr, 0.4f, 0.32f, 0.2f, a, sb, phase, proj.chargeLevel)
+    drawReturnGhosts(sx, cy, rr, 0.4f, 0.32f, 0.2f, a, sb, proj)
+  }
 
-    // 8 deep crack lines with depth shading and bright edges
-    var cr = 0; while (cr < 8) {
-      val cAngle = spin * 0.3 + cr * Math.PI * 2 / 8 + proj.id * 0.7
-      val cLen = rr * (0.35f + Math.sin(phase * 0.4 + cr * 2.3).toFloat * 0.22f)
-      val cStartX = sx + Math.cos(cAngle).toFloat * rr * 0.08f
-      val cStartY = sy - bounce + Math.sin(cAngle).toFloat * rr * 0.06f
-      val cEndX = sx + Math.cos(cAngle).toFloat * cLen
-      val cEndY = sy - bounce + Math.sin(cAngle).toFloat * cLen * 0.7f
-      // Dark crack depth
-      sb.strokeLine(cStartX, cStartY, cEndX, cEndY, 2.5f, 0.12f, 0.08f, 0.03f, 0.55f * p)
-      // Lighter bright edge highlight
-      sb.strokeLine(cStartX + 0.6f, cStartY + 0.6f, cEndX + 0.6f, cEndY + 0.6f,
-        1f, 0.55f, 0.47f, 0.35f, 0.3f * p)
-      // Crack fork at end
-      val fAngle = cAngle + 0.5 + Math.sin(phase * 0.3 + cr) * 0.3
-      val fLen = cLen * 0.3f
-      sb.strokeLine(cEndX, cEndY, cEndX + Math.cos(fAngle).toFloat * fLen,
-        cEndY + Math.sin(fAngle).toFloat * fLen * 0.6f, 1.5f, 0.15f, 0.1f, 0.05f, 0.35f * p)
-    ; cr += 1 }
-
-    // Dense 12-particle dust cloud trail
-    var i = 0; while (i < 12) {
-      val t = ((tick * 0.055 + i * 0.083 + proj.id * 0.11) % 1.0).toFloat
-      val s = (5f + t * 12f) * ds
-      val dustX = sx - ndx * t * rr * 2.2f + Math.sin(phase + i * 2).toFloat * 8f * ds
-      val dustY = sy - ndy * t * rr * 1.6f + t * 14f * ds
-      val gray = 0.52f + t * 0.15f
-      // Dust puff outline
-      sb.strokeOval(dustX, dustY, s + 1f, (s + 1f) * 0.6f, 1f, 0.35f, 0.3f, 0.2f, 0.15f * (1f - t) * p, 8)
-      // Dust puff body
-      sb.fillOval(dustX, dustY, s, s * 0.6f, gray, gray * 0.85f, gray * 0.65f, 0.4f * (1f - t) * p, 8)
-    ; i += 1 }
-
-    // 8 flying debris chips with varying sizes
-    { var i = 0; while (i < 8) {
-      val chipPhase = ((phase * 0.7 + i * 0.125 + proj.id * 0.17) % 1.0).toFloat
-      val chipAngle = phase * 3.5 + i * Math.PI * 2 / 8
-      val chipDist = rr * (0.65f + chipPhase * 1.4f)
-      val chipX = sx + Math.cos(chipAngle).toFloat * chipDist
-      val chipY = sy - bounce * (1f - chipPhase) + Math.sin(chipAngle).toFloat * chipDist * 0.4f + chipPhase * chipPhase * 22f
-      val chipSz = (2f + (1f - chipPhase) * (3f + (i % 3).toFloat * 1.5f)) * ds
-      val chipSpin = phase * 5 + i * 2.3
-      val chipStrX = 1f + Math.sin(chipSpin).toFloat * 0.3f
-      // Chip outline
-      sb.fillOval(chipX, chipY, chipSz * chipStrX + 0.8f, chipSz * 0.85f + 0.8f,
-        0.18f, 0.14f, 0.08f, 0.35f * (1f - chipPhase) * p, 5)
-      // Chip body
-      sb.fillOval(chipX, chipY, chipSz * chipStrX, chipSz * 0.8f,
-        0.5f + (i % 3).toFloat * 0.05f, 0.42f, 0.28f, 0.55f * (1f - chipPhase) * p, 5)
-    ; i += 1 } }
-
-    drawChargeCrackle(sx, sy - bounce, rr, 0.4f, 0.32f, 0.2f, p, sb, phase, proj.chargeLevel)
-    drawReturnGhosts(sx, sy - bounce, rr, 0.4f, 0.32f, 0.2f, p, sb, proj)
+  // A facet of the rock: its outline scaled `k` about (cx, cy) and moved by (ox, oy)
+  private val _rfX = new Array[Float](8)
+  private val _rfY = new Array[Float](8)
+  private def rockFacet(sb: ShapeBatch, cx: Float, cy: Float, n: Int, k: Float, ox: Float, oy: Float,
+                        r: Float, g: Float, b: Float, a: Float): Unit = {
+    var v = 0
+    while (v < n) {
+      _rfX(v) = cx + (_shpXs(v) - cx) * k + ox
+      _rfY(v) = cy + (_shpYs(v) - cy) * k + oy
+      v += 1
+    }
+    sb.fillFan(cx + ox, cy + oy, _rfX, _rfY, n, r, g, b, a)
   }
 
   /** Geyser — MASSIVE towering water eruption with dense layering, mist halo, foam crown, spray arcs */

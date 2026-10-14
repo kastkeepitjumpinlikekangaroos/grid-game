@@ -3,7 +3,7 @@ package com.gridgame.client.render
 import com.gridgame.common.model.{Item, Player, Projectile}
 
 import java.util.UUID
-import com.gridgame.client.game.{FadingProjectile, GameClient, TerrainImpact}
+import com.gridgame.client.game.{FadingProjectile, GameClient}
 
 /**
  * Collects game entities (items, projectiles, players) for the depth pass, by the diagonal of the
@@ -209,15 +209,31 @@ class EntityCollector(clock: FrameClock = FrameClock.System) {
       if (inWindow(px, py)) addEntity(px, py, acquireEntry().setProjectile(proj))
     }
 
-    // Projectiles that have been stopped, fading where they stopped. This is the one place
-    // that walks them every frame, so expired ones are dropped here.
+    // Where we are drawn this frame (the camera's position): where we are sorted, below
+    val lx = if (localVisualX.isNaN) client.getLocalPosition.getX.toDouble else localVisualX
+    val ly = if (localVisualY.isNaN) client.getLocalPosition.getY.toDouble else localVisualY
+
+    // Projectiles that have been stopped, fading where they stopped, and pulls being reeled in. This
+    // is the one place that walks them every frame, so expired ones are dropped here. A pull that
+    // caught someone is drawn holding on to them as they are dragged in, so it is sorted with them, a
+    // shade nearer, in front of whoever it holds (where they were drawn last frame: they are walked
+    // below, and a frame's difference is nothing to the order)
     val fadeNow = clock.nowMs()
+    val localId = client.getLocalPlayerId
     val fadeIter = client.getFadingProjectiles.values().iterator()
     while (fadeIter.hasNext) {
       val fp = fadeIter.next()
-      if (fadeNow - fp.startMs > TerrainImpact.FADE_MS) fadeIter.remove()
+      if (fadeNow - fp.startMs > fp.lifeMs) fadeIter.remove()
       else {
-        val px = fp.proj.getX.toDouble; val py = fp.proj.getY.toDouble
+        var px = fp.proj.getX.toDouble; var py = fp.proj.getY.toDouble
+        val caught = fp.caught
+        if (caught != null) {
+          if (caught.equals(localId)) { px = lx + 0.01; py = ly + 0.01 }
+          else {
+            val held = remoteVisualPositions.get(caught)
+            if (held != null) { px = held.x + 0.01; py = held.y + 0.01 }
+          }
+        }
         if (inWindow(px, py)) addEntity(px, py, acquireEntry().setFadingProjectile(fp))
       }
     }
@@ -256,8 +272,6 @@ class EntityCollector(clock: FrameClock = FrameClock.System) {
     // pushed to; we are drawn a step's glide and the camera's ease behind it (a cell and more as
     // we walk, several in a knockback's slide), and a wall between the two went on the wrong side
     // of us: we were drawn over one in front of us, or under one behind.
-    val lx = if (localVisualX.isNaN) client.getLocalPosition.getX.toDouble else localVisualX
-    val ly = if (localVisualY.isNaN) client.getLocalPosition.getY.toDouble else localVisualY
     if (localDeathAnimActive) {
       addEntity(lx, ly, acquireEntry().setLocalDeath())
     } else if (!client.getIsDead) {

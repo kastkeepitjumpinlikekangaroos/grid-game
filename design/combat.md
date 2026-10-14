@@ -90,6 +90,14 @@ cells away, turned to face the way they were thrown, and on other screens most p
 teleport's flash (it plays for any jump of more than three cells along the grid's rows and
 columns). `OnHitEffectsTest`, `GameClientKnockbackTest`, `RemoteMotionTest`.
 
+**A pull to the thrower is drawn as a drag.** `PullToOwner` (a hook, a rope, a tongue, a tentacle,
+a grab) puts its catch on the thrower's own cell at once, and the server counts that as a knockback
+too (`PlayerSync.pullToOwner`), so every client slides the catch in along the pull as it slides a
+shove, where it used to jump them there with a teleport's flash. The projectile is drawn holding on
+to them all the way in and is then reeled back to its thrower, and one that misses is reeled back
+empty-handed (client/render/projectiles/CLAUDE.md, *Pulls are tied to whoever is pulling*).
+`OnHitEffectsTest.everyoneIsToldAPullWasAKnockback`.
+
 ## Where a hit lands
 
 - **Projectile collision uses the drawn tile extents** — `Projectile.getCellX/Y` is

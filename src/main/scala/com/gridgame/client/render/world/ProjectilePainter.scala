@@ -194,11 +194,15 @@ private[render] final class ProjectilePainter(ctx: RenderContext) {
   }
 
   /** A projectile that has just been stopped: drawn where it stopped, sinking into the
-   *  surface and fading, with a puff off whatever it struck (TerrainImpact.FADE_MS long). */
+   *  surface and fading, with a puff off whatever it struck (TerrainImpact.FADE_MS long). A pull
+   *  tied to its thrower is reeled back in to them instead (`drawReeled`). */
   def drawFading(fp: FadingProjectile): Unit = {
+    val proj = fp.proj
+    if (GLProjectileRenderers.wantsAnchor(proj.projectileType)) { drawReeled(fp); return }
+    // A hit is gone where it struck, as any is: a pull that flies free of its thrower too
+    if (fp.caught != null) return
     val t = (frameTimeMs - fp.startMs).toFloat / TerrainImpact.FADE_MS
     if (t >= 1f) return
-    val proj = fp.proj
     val px = proj.getX.toDouble; val py = proj.getY.toDouble
     val lift = if (ProjectileDef.get(proj.projectileType).passesThroughWalls)
       GLProjectileRenderers.flyLift(proj, animationTick) else 0f
@@ -209,5 +213,63 @@ private[render] final class ProjectilePainter(ctx: RenderContext) {
     anchorToThrower(proj)
     GLProjectileRenderers.drawAbsorbed(proj, sx, sy, shapeBatch, animationTick, Math.max(0f, t),
       fp.hitTerrain, fp.tileColor, _rgb_r, _rgb_g, _rgb_b)
+  }
+
+  /**
+   * A pull tied to its thrower, stopped: reeled back in to them. One that missed — at the end of its
+   * reach, on a wall or a barrier — comes straight back, picking up speed, into their hands (a wall
+   * it struck still throws off its puff). One that caught someone holds on to them while they are
+   * slid in (KnockbackSlide), its head on them all the way, then is reeled in from wherever they are,
+   * which is nowhere once they are in the thrower's hands. It used to shrink toward where it stopped
+   * and fade, so its rope or limb came loose from the thrower and slid off after it, and a catch let
+   * go of at once, the catch jumping to the thrower with a teleport's flash.
+   */
+  private def drawReeled(fp: FadingProjectile): Unit = {
+    val proj = fp.proj
+    val ms = (frameTimeMs - fp.startMs).toFloat
+    glowOrThrowers(proj)
+    anchorToThrower(proj)
+    val ax = if (GLProjectileRenderers.hasAnchor) GLProjectileRenderers.anchorX else proj.originX
+    val ay = if (GLProjectileRenderers.hasAnchor) GLProjectileRenderers.anchorY else proj.originY
+    var hx = proj.getX; var hy = proj.getY
+    var hold = 0f
+    if (fp.caught != null) {
+      hold = FadingProjectile.HOLD_MS.toFloat
+      if (drawnAt(fp.caught)) { hx = _heldX; hy = _heldY }
+    }
+    val back = Math.max(0f, Math.min(1f, (ms - hold) / FadingProjectile.RETRACT_MS))
+    val e = back * back
+    hx += (ax - hx) * e; hy += (ay - hy) * e
+    val dx = ax - hx; val dy = ay - hy
+    if (dx * dx + dy * dy > 0.36f) {
+      beginShapes()
+      GLProjectileRenderers.setHead(hx, hy, fp.caught != null)
+      GLProjectileRenderers.draw(proj, worldToScreenX(hx, hy).toFloat, worldToScreenY(hx, hy).toFloat, shapeBatch,
+        animationTick, _rgb_r, _rgb_g, _rgb_b)
+      GLProjectileRenderers.clearHead()
+    }
+    if (fp.hitTerrain) {
+      val px = proj.getX.toDouble; val py = proj.getY.toDouble
+      beginShapes()
+      GLProjectileRenderers.drawImpactPuff(proj, worldToScreenX(px, py).toFloat, worldToScreenY(px, py).toFloat,
+        shapeBatch, ms / TerrainImpact.FADE_MS, fp.tileColor, _rgb_r, _rgb_g, _rgb_b)
+    }
+  }
+
+  // Where the player a pull caught is drawn, from drawnAt
+  private var _heldX = 0f
+  private var _heldY = 0f
+
+  /** Where player `id` is drawn this frame, into (_heldX, _heldY): us where the camera has us,
+    * anyone else where RemoteMotion has walked or slid them. False if they aren't drawn. */
+  private def drawnAt(id: java.util.UUID): Boolean = {
+    if (id.equals(client.getLocalPlayerId)) {
+      if (client.getIsDead) return false
+      _heldX = camera.visualX.toFloat; _heldY = camera.visualY.toFloat
+      true
+    } else if (entityCollector.getRemoteVisualPos(id)) {
+      _heldX = entityCollector.lastRVX.toFloat; _heldY = entityCollector.lastRVY.toFloat
+      true
+    } else false
   }
 }

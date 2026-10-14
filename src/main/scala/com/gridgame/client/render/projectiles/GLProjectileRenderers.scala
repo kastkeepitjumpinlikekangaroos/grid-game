@@ -78,6 +78,14 @@ object GLProjectileRenderers {
   def clearAnchor(): Unit = Tethers.clearAnchor()
   /** Is this type drawn tied to its thrower, so the renderer should say where they stand? */
   def wantsAnchor(pType: Byte): Boolean = Tethers.wantsAnchor(pType)
+  /** Where the last anchor set has the thrower, if one is set. */
+  def hasAnchor: Boolean = Tethers.hasAnchor
+  def anchorX: Float = Tethers.anchorX
+  def anchorY: Float = Tethers.anchorY
+  /** The next tether is drawn with its head at world (wx, wy) rather than where its projectile is,
+    * `holding` what it caught: reeled back in to its thrower. */
+  def setHead(wx: Float, wy: Float, holding: Boolean): Unit = Tethers.setHead(wx, wy, holding)
+  def clearHead(): Unit = Tethers.clearHead()
 
   /** A skeletal hand clawing up out of the ground: the Grasping Dead's, and a blast's. */
   private[render] def deadHand(sb: ShapeBatch, x: Float, y: Float, rise: Float, lean: Float, open: Float,
@@ -131,7 +139,14 @@ object GLProjectileRenderers {
       draw(proj, sx, sy, sb, tick, r, g, b)
       sb.resetModifiers()
     }
-    if (!hitTerrain) return
+    if (hitTerrain) drawImpactPuff(proj, sx, sy, sb, t, tileColor, r, g, b)
+  }
+
+  /** What a projectile throws off the terrain it struck, `t` 0 to 1 through it: a flash flattened
+    * against the face, a ring spreading across it, and chips kicked back in the tile's colour. */
+  def drawImpactPuff(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, t: Float, tileColor: Int,
+                     r: Float, g: Float, b: Float): Unit = {
+    if (t >= 1f) return
     val tr = if (tileColor == 0) 0.55f else ((tileColor >> 16) & 0xFF) / 255f
     val tg = if (tileColor == 0) 0.56f else ((tileColor >> 8) & 0xFF) / 255f
     val tb = if (tileColor == 0) 0.62f else (tileColor & 0xFF) / 255f
@@ -272,11 +287,12 @@ object GLProjectileRenderers {
   // the Bear, the Gorilla and the Griffin, and a round knot with three sausage fingers for the
   // Kraken, the Spaceman, the Druid, the Thornweaver, the Treant, the Death Knight and the
   // Gravedigger. Every pull is drawn tied back to its thrower instead: a tentacle out of the
-  // Kraken, a vine out of the Druid, a leash of spirit out of the Bear, a chain out of the Death
-  // Knight, a rope out of the Gladiator's hand. GLGameRenderer says where the thrower is standing
+  // Kraken, a vine out of the Druid, an arm out of the Bear, a chain out of the Death Knight, a
+  // lasso out of the Gladiator's hand. ProjectilePainter says where the thrower is standing
   // (setAnchor); when it can't — they have died, or it is a dev tool with no players in it — the
   // tether runs back to where the projectile started (Projectile.originX/Y). The thing that hits
   // is still at (sx, sy); the tether only trails it, so it never arrives before the damage does.
+  // Stopped, it is reeled back in along its tether (setHead), holding whoever it caught.
 
   // ═══════════════════════════════════════════════════════════════
   //  REGISTRY (all 176 types)
@@ -300,7 +316,7 @@ object GLProjectileRenderers {
     ProjectileType.BULLET       -> asRenderer(drawRifleTracer),
     ProjectileType.GRENADE      -> lobbed(LOB_BOMB, 0.95f, 0.62f, 0.25f, 17f),
     ProjectileType.ROCKET       -> asRenderer(drawRocket),
-    ProjectileType.TALON        -> asRenderer(drawTalon),
+    ProjectileType.TALON        -> talonKick(0.40f, 0.26f, 0.14f, 0.68f, 0.5f, 0.32f, 1f, 0.86f, 0.5f),
     ProjectileType.GUST         -> asRenderer(drawWindSwirl),
     ProjectileType.SHURIKEN     -> shuriken(0.72f, 0.74f, 0.82f, 30f),
     ProjectileType.POISON_DART  -> flyingShaft(SHF_DART, 0.4f, 0.9f, 0.35f, 26f),
@@ -347,7 +363,7 @@ object GLProjectileRenderers {
     ProjectileType.BONE_THROW   -> bladeSpinner(WPN_BONE, 0.94f, 0.92f, 0.84f, 24f, 0.38),
     ProjectileType.WAIL         -> asRenderer(drawWail),
     ProjectileType.SOUL_DRAIN   -> asRenderer(drawPhylactery),
-    ProjectileType.CLAW_SWIPE   -> asRenderer(drawClawSwipe),
+    ProjectileType.CLAW_SWIPE   -> clawRake(3, false, 0f, 11.5f, 0.6f, 0.78f, 1f, 1f, 1f, 1f, 0.06f, 0.1f, 0.22f, RAKE_SPARKS),
     ProjectileType.DEVOUR       -> asRenderer(drawDevour),
     ProjectileType.SCYTHE       -> asRenderer(drawScythe),
     ProjectileType.REAP         -> asRenderer(drawReap),
@@ -386,13 +402,13 @@ object GLProjectileRenderers {
     // ── Nature/Beast (90-93) ──
     ProjectileType.VENOM_BOLT   -> asRenderer(drawVenomSnake),
     ProjectileType.WEB_SHOT     -> asRenderer(drawSpiderWeb),
-    ProjectileType.STINGER      -> asRenderer(drawStinger),
+    ProjectileType.STINGER      -> scorpionSting(0.45f, 0.95f, 0.22f, paralytic = false),
     ProjectileType.ACID_BOMB    -> asRenderer(drawVenomBolt),
 
     // ── AoE Root (94-101) ──
     ProjectileType.SEISMIC_ROOT -> aoeRing(AOE_QUAKE, 0.62f, 0.48f, 0.28f, 38f),
     ProjectileType.ROOT_GROWTH  -> aoeRing(AOE_NATURE, 0.30f, 0.66f, 0.18f, 36f),
-    ProjectileType.WEB_TRAP     -> asRenderer(drawWebShot),
+    ProjectileType.WEB_TRAP     -> asRenderer(drawWebTrap),
     ProjectileType.TREMOR_SLAM  -> aoeRing(AOE_QUAKE, 0.62f, 0.48f, 0.28f, 46f),
     ProjectileType.ENTANGLE     -> aoeRing(AOE_NATURE, 0.26f, 0.60f, 0.18f, 36f),
     ProjectileType.STONE_GAZE   -> gorgonEye(petrify = false),
@@ -407,7 +423,7 @@ object GLProjectileRenderers {
     ProjectileType.MYSTIC_BOLT  -> asRenderer(drawFoxfire),
     ProjectileType.PETRIFY      -> gorgonEye(petrify = true),
     ProjectileType.GRAB         -> tether(TETH_PAW, 0.98f, 0.64f, 0.26f),
-    ProjectileType.JAW          -> asRenderer(drawJaw),
+    ProjectileType.JAW          -> tether(TETH_SHARK, 0.4f, 0.62f, 0.95f),
     ProjectileType.TONGUE       -> tether(TETH_TONGUE, 0.95f, 0.45f, 0.58f),
     ProjectileType.ACID_FLASK   -> asRenderer(drawAcidFlask),
 
@@ -463,7 +479,7 @@ object GLProjectileRenderers {
     ProjectileType.GRASPING_DEAD   -> asRenderer(drawGraspingDead),
     ProjectileType.DEATH_GRIP      -> tether(TETH_DEATH, 0.46f, 0.2f, 0.64f),
     ProjectileType.TALON_GRAB      -> tether(TETH_TALON, 1f, 0.8f, 0.34f),
-    ProjectileType.PARALYTIC_STING -> asRenderer(drawStinger),
+    ProjectileType.PARALYTIC_STING -> scorpionSting(1f, 0.88f, 0.3f, paralytic = true),
     ProjectileType.HAMMER_THROW    -> lobbed(LOB_HAMMER, 0.60f, 0.62f, 0.70f, 30f),
     ProjectileType.MEAT_HOOK       -> chainProj(CHN_HOOK, 0.80f, 0.80f, 0.84f, 6f),
     ProjectileType.FLAMBE          -> energyBolt(1f, 0.55f, 0.15f, 22f, ORB_FIRE),
@@ -471,22 +487,23 @@ object GLProjectileRenderers {
     ProjectileType.AXE_SPIN        -> bladeSpinner(WPN_AXE, 0.78f, 0.70f, 0.55f, 30f),
     ProjectileType.VENOM_DART      -> flyingShaft(SHF_DART, 0.4f, 0.9f, 0.35f, 26f),
     ProjectileType.TOXIC_SHURIKEN  -> shuriken(0.45f, 0.78f, 0.40f, 30f),
-    ProjectileType.BLOOD_FRENZY    -> asRenderer(drawClawSwipe),
+    ProjectileType.BLOOD_FRENZY    -> clawRake(2, true, 0f, 12.5f, 0.92f, 0.12f, 0.16f, 1f, 0.7f, 0.6f, 0.12f, 0.01f, 0.02f, RAKE_BLOOD),
     ProjectileType.FLURRY          -> fistProj(0.75f, 0.6f, 0.45f, 28f),
-    ProjectileType.ROOTING_BOULDER -> asRenderer((proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int) => drawBoulder(proj, sx, sy, sb, tick, 24f)),
+    ProjectileType.ROOTING_BOULDER -> asRenderer((proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int) => drawBoulder(proj, sx, sy, sb, tick, 24f, roots = true)),
     ProjectileType.EMBER_FAN       -> energyBolt(1f, 0.55f, 0.15f, 18f, ORB_FIRE),
-    // ── Plan 5a: primaries with an identity of their own (170-175), the base type's look ──
-    ProjectileType.FENRIR_CLAW     -> asRenderer(drawClawSwipe),
-    ProjectileType.GHOUL_CLAW      -> asRenderer(drawClawSwipe),
-    ProjectileType.SHARK_CLAW      -> asRenderer(drawClawSwipe),
-    ProjectileType.ICE_BOULDER     -> asRenderer((proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int) => drawBoulder(proj, sx, sy, sb, tick, 24f)),
-    ProjectileType.DRAIN_BLADE     -> bladeSpinner(WPN_CURSED, 0.90f, 0.18f, 0.28f, 30f),
-    ProjectileType.CHILL_BLADE     -> bladeSpinner(WPN_CURSED, 0.90f, 0.18f, 0.28f, 30f),
-    // Of their own for their numbers, drawn as the type they were made from
-    ProjectileType.MAUL            -> asRenderer(drawClawSwipe),
+    // ── Plan 5a: primaries with an identity of their own (170-175): the base type's look, in its
+    // thrower's colours ──
+    ProjectileType.FENRIR_CLAW     -> clawRake(3, false, 0f, 12f, 0.88f, 0.14f, 0.14f, 1f, 0.78f, 0.62f, 0.1f, 0.01f, 0.02f, RAKE_BLOOD),
+    ProjectileType.GHOUL_CLAW      -> clawRake(3, false, 0.06f, 11.5f, 0.55f, 0.88f, 0.3f, 0.92f, 1f, 0.72f, 0.08f, 0.16f, 0.04f, RAKE_ICHOR),
+    ProjectileType.SHARK_CLAW      -> clawRake(3, false, 0f, 11.5f, 0.38f, 0.68f, 0.98f, 0.95f, 1f, 1f, 0.04f, 0.12f, 0.26f, RAKE_SPRAY),
+    ProjectileType.ICE_BOULDER     -> asRenderer((proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int) => drawBoulder(proj, sx, sy, sb, tick, 24f, ice = true)),
+    ProjectileType.DRAIN_BLADE     -> bladeSpinner(WPN_CURSED, 0.3f, 0.9f, 0.95f, 30f),
+    ProjectileType.CHILL_BLADE     -> bladeSpinner(WPN_CURSED, 0.66f, 0.56f, 1f, 30f),
+    // Of their own for their numbers, drawn as the type they were made from (the Maul a heavier rake)
+    ProjectileType.MAUL            -> clawRake(4, false, 0f, 14f, 0.98f, 0.5f, 0.22f, 1f, 0.92f, 0.75f, 0.25f, 0.08f, 0.02f, RAKE_DUST),
     ProjectileType.ARENA_AXE       -> bladeSpinner(WPN_AXE, 0.78f, 0.70f, 0.55f, 30f),
     ProjectileType.THROWING_STAR   -> shuriken(0.72f, 0.74f, 0.82f, 30f),
-    ProjectileType.MANTIS_SCYTHE   -> asRenderer(drawClawSwipe)
+    ProjectileType.MANTIS_SCYTHE   -> clawRake(1, true, 0f, 13f, 0.5f, 0.88f, 0.32f, 0.92f, 1f, 0.8f, 0.06f, 0.18f, 0.04f, RAKE_SPARKS)
   )
 
   // Flat lookup table for O(1) renderer access without Option allocation.
@@ -549,6 +566,35 @@ object GLProjectileRenderers {
   only(CharacterId.Cloudrunner, ProjectileType.GUST, asRenderer(drawCloudPuff))
   only(CharacterId.Hawk, ProjectileType.GUST, asRenderer(drawFeatherGust))
   only(CharacterId.Raptor, ProjectileType.GUST, asRenderer(drawSpiritEagle))
+
+  // ── Birds of prey: each one's kick in its own feathers (Bites) ──
+  glow(ProjectileType.TALON, 0xFFDB8C)            // the Raptor's
+  only(CharacterId.Hawk, ProjectileType.TALON, talonKick(0.42f, 0.5f, 0.64f, 0.9f, 0.86f, 0.74f, 0.75f, 0.88f, 1f), 0xBFE0FF)
+  only(CharacterId.Griffin, ProjectileType.TALON, talonKick(0.92f, 0.7f, 0.26f, 1f, 0.9f, 0.6f, 1f, 0.8f, 0.35f), 0xFFCC59)
+
+  // ── Pulls, each tied to its own thrower (Tethers) ──
+  only(CharacterId.Kraken, ProjectileType.TENTACLE, tether(TETH_KRAKEN, 0.2f, 0.27f, 0.62f), 0x6B8CFF)
+  only(CharacterId.Gorilla, ProjectileType.GRAB, tether(TETH_HAND, 0.3f, 0.3f, 0.34f), 0xB8B8C8)
+  only(CharacterId.Thornweaver, ProjectileType.VINE_WHIP, tether(TETH_BLOSSOM, 0.30f, 0.62f, 0.20f), 0xFF9ECC)
+  only(CharacterId.Gladiator, ProjectileType.ROPE, chainProj(CHN_LASSO, 0.72f, 0.54f, 0.30f), 0xD9B880)
+  only(CharacterId.Puppeteer, ProjectileType.ROPE, chainProj(CHN_STRING, 0.8f, 0.6f, 1f), 0xB880FF)
+  glow(ProjectileType.GRAB, 0xD9A066)             // the Bear's
+  glow(ProjectileType.TALON_GRAB, 0xFFCC59)
+  glow(ProjectileType.JAW, 0x66A8FF)
+
+  // ── Claw marks, each in its own colour (Bites) ──
+  glow(ProjectileType.CLAW_SWIPE, 0x9CC8FF)       // the Wolf's ice
+  only(CharacterId.Bear, ProjectileType.CLAW_SWIPE,
+    clawRake(3, false, 0f, 12f, 0.95f, 0.62f, 0.3f, 1f, 0.95f, 0.82f, 0.22f, 0.1f, 0.03f, RAKE_DUST), 0xF29E4C)
+  glow(ProjectileType.MAUL, 0xFA8038)
+  glow(ProjectileType.FENRIR_CLAW, 0xE0242A)
+  glow(ProjectileType.BLOOD_FRENZY, 0xEB1F29)
+  glow(ProjectileType.GHOUL_CLAW, 0x8CE04C)
+  glow(ProjectileType.SHARK_CLAW, 0x61AEFA)
+  glow(ProjectileType.MANTIS_SCYTHE, 0x80E052)
+  // The two primaries made from the Dullahan's cursed blade, each in its own thrower's colour
+  glow(ProjectileType.DRAIN_BLADE, 0x4FE6F2)      // the Revenant's soul-fire
+  glow(ProjectileType.CHILL_BLADE, 0xA88FFF)      // the Death Knight's violet
 
   // ── Ghosts (Spirits) ──
   glow(ProjectileType.SOUL_BOLT, 0x3FC9BC)        // the Wraith's teal

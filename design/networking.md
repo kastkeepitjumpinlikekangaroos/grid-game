@@ -43,8 +43,8 @@ a correction — made with `GameInstance.moveByServer` / `holdByServer`, which c
   overtaking its star), but refusals that go on for 250ms get the client corrected, at most every
   500ms: it no longer takes positions from ordinary updates, so nothing else would tell it.
 - **A knockback is counted apart as well** (`Player.recordKnockback`, bytes [55-58]), so every
-  client can tell a push from a teleport, a pull or a correction and draw it as a shove: the
-  player slides from where they were drawn to where the server put them (`KnockbackSlide`; ours
+  client can tell a push or a pull to the thrower from a teleport or a correction and draw it as a
+  shove or a drag: the player slides from where they were drawn to where the server put them (`KnockbackSlide`; ours
   in `LocalMovement.updateVisualPosition`, everyone else in `RemoteMotion`). Only the drawing: the
   player is where the server put them from the update on, and is hit and shoots from there. A
   count and not a flag, because a push is often followed in the same hit by a server move of

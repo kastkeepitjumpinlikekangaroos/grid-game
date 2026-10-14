@@ -84,7 +84,7 @@ trait Projectiles { this: GameClient =>
       it.next() match {
         case np: NetProjectile =>
           if (np.fly(t, decay, nowNanos, blockers) == NetProjectile.EXPIRED && projectiles.remove(np.id, np))
-            fadingProjectiles.put(np.id, new FadingProjectile(np, System.currentTimeMillis(), false, 0))
+            fadingProjectiles.put(np.id, FadingProjectile.stopped(np, System.currentTimeMillis(), false, 0))
         case _ => // one a dev tool flies itself
       }
     }
@@ -130,12 +130,17 @@ trait Projectiles { this: GameClient =>
       case ProjectileAction.HIT | ProjectileAction.PIERCE =>
         // A pierce passed through the target and keeps flying, so the projectile stays (its
         // MOVEs keep coming). Dropped here, it vanished at its first hit.
-        if (packet.getAction == ProjectileAction.HIT) {
-          projectiles.remove(projectileId)
-          recentlyRemovedProjectiles.add(projectileId)
-        }
         val hitPType = packet.getProjectileType
         val targetId = packet.getTargetId
+        if (packet.getAction == ProjectileAction.HIT) {
+          val hit = projectiles.remove(projectileId)
+          recentlyRemovedProjectiles.add(projectileId)
+          // A pull holds on to what it caught while it drags them in to its thrower
+          if (hit != null && targetId != null && FadingProjectile.isPull(hit.projectileType)) {
+            stopProjectile(hit, packet.getX, packet.getY)
+            fadingProjectiles.put(projectileId, FadingProjectile.caught(hit, System.currentTimeMillis(), targetId))
+          }
+        }
         if (targetId != null) {
           recordHit(targetId, packet.getColorRGB, packet.getDx, packet.getDy, hitPType, System.currentTimeMillis())
 
@@ -189,7 +194,7 @@ trait Projectiles { this: GameClient =>
             // Stop it where it struck and let it sink into the surface there
             stopProjectile(despawned, impact.x, impact.y)
             fadingProjectiles.put(projectileId,
-              new FadingProjectile(despawned, System.currentTimeMillis(), impact.hitTerrain, impact.tileColor))
+              FadingProjectile.stopped(despawned, System.currentTimeMillis(), impact.hitTerrain, impact.tileColor))
           }
           // A splash at the end of its range. The server doesn't set one off when the terrain
           // stopped it first, so neither is one drawn there.
@@ -207,7 +212,7 @@ trait Projectiles { this: GameClient =>
         val nowMs = System.currentTimeMillis()
         if (blocked != null) {
           stopProjectile(blocked, packet.getX, packet.getY)
-          fadingProjectiles.put(projectileId, new FadingProjectile(blocked, nowMs, false, 0))
+          fadingProjectiles.put(projectileId, FadingProjectile.stopped(blocked, nowMs, false, 0))
         }
         // A barrier's holder, or nobody at all — the divider between the teams
         if (packet.getTargetId != null) recordBarrierImpact(packet.getTargetId, packet.getX, packet.getY, nowMs)

@@ -184,12 +184,18 @@ class OnHitEffectsTest {
     assertEquals((17, 30), (heard.getPosition.getX, heard.getPosition.getY))
   }
 
-  @Test def aPullIsNotAKnockback(): Unit = {
+  @Test def everyoneIsToldAPullWasAKnockback(): Unit = {
+    // So every client slides the catch in along the pull, as it does a shove; a jump of ten cells
+    // was drawn as a teleport, with its flash
     val grabber = m.join(CharacterId.Gorilla, 10, 30)
     val target = m.join(CharacterId.Gladiator, 20, 30)
+    val watcher = m.join(CharacterId.Gladiator, 10, 40)
+    m.clearSent()
     shoot(grabber, ProjectileType.GRAB)
     assertEquals(1, target.getServerMoves)
-    assertEquals(0, target.getKnockbacks)
+    assertEquals(1, target.getKnockbacks)
+    assertEquals("the target, with the move", 1, movesToldOverTcp(target).last.getKnockbacks)
+    assertEquals("and everyone else", 1, m.updatesAbout(m.udpSent(watcher), target).last.getKnockbacks)
   }
 
   // --- Pulls ---

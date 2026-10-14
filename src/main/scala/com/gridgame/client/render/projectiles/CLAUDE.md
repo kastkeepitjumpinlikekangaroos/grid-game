@@ -9,17 +9,17 @@ the terrain or sinking into what stopped it. The renderers themselves are in a f
 | `ProjectileKit` | what every renderer shares: the maths, `fadeLine`, glows, trails, ink |
 | `Silhouettes` | the local-frame `Part` system for objects with a real-world shape |
 | `Orbs` | `energyBolt` and its `ORB_*` styles |
-| `Blades`, `Shafts`, `Lobbed`, `Chains` | thrown weapons, point-first shafts, lobbed objects, restraints |
+| `Blades`, `Shafts`, `Lobbed`, `Chains` | thrown weapons, point-first shafts, lobbed objects, restraints, and the pulls on a rope or a chain: the Pirate's grappling hook, the Gladiator's lasso, the Puppeteer's strings, the Chef's meat hook |
 | `AoeRings` | ground blasts |
-| `Missiles`, `Bolts`, `Beams` | bullets, fists; magic bolts with a shape of their own (void, gravity, data, holy light, the web trap's web, the acid bomb's venom); laser bolts, rail slugs, the blood siphon, the gorgon eye, beam-like one-offs |
-| `Tethers`, `Grabs` | pulls tied to their thrower (the Chameleon's tongue and the Mummy's bandage among them); the Grasping Dead's hands |
+| `Missiles`, `Bolts`, `Beams` | bullets, fists; magic bolts with a shape of their own (void, gravity, data, holy light, the acid bomb's venom); laser bolts, rail slugs, the blood siphon, the gorgon eye, beam-like one-offs |
+| `Tethers`, `Grabs` | pulls tied to their thrower and reeled back in: the tentacles, the vines, the Bear's and the Gorilla's arms, the Griffin's leash of feathers, the Death Knight's chain, the Chameleon's tongue, the Mummy's bandage, the Shark on its surge; the Grasping Dead's hands |
 | `Electricity` | lightning and thunder |
-| `Heavies`, `Undead`, `Bites` | the rocket, boulders, the geyser, the sword wave; the undead's; jaws, fangs, talons, swarms, the Wolf's spirit |
+| `Heavies`, `Undead`, `Bites` | the rocket, the boulders (rock, ice, rooting), the geyser, the sword wave; the undead's; the birds' kicks (`birdFoot`), claw marks, the Vampire's bite, the Scorpion's sting, the Shark lunging, the Minotaur's horn, the Wolf's spirit |
 | `Songs`, `Winds`, `Surges` | one character's own look for an attack (see *A projectile is drawn as its thrower's*): sound — the Bard's, the Musician's, the Sphinx's, the Harpy's, the Banshee's; wind — the Windwalker's, the Cloudrunner's, the Hawk's, the Raptor's; what surges along the ground — the Tidecaller's, the Sandstorm's, the Inferno's, the Scorpion's, the Barbarian's |
 | `Spirits`, `Necromancy` | the ghosts' own: the Wraith's hood, the Phantom's ghost-blade and half-mask, the Poltergeist's crockery, the Banshee's tear, the Shade's grin; the undead's: the Revenant's helm, the Necromancer's skull, the Lich's hand, grave-ice and phylactery, the Shadowfiend's winged eye |
 | `Relics`, `Venoms` | things with a shape of their own: the Mummy's scarab and death mask, Anubis's ankh and jackal, the Yokai's foxfire and ofuda, the Djinn's lamp, the Runesmith's runestones, the Alchemist's flasks; poison: the Plague Doctor's fly-blown glob and skull of miasma, the Serpent's snake, the Hydra's braid, head and swamp gas, the Chimera's fire-and-venom, Medusa's ouroboros |
 | `Arsenal`, `Elements`, `Vortices` | guns and machines: the Soldier's tracer, the Pirate's musket ball, the Pilot's twin tracers and biplane, the Spaceman's ray-gun zap, the Mech Pilot's rocket fist, the Graviton's cubes; the Tidecaller's trident, the Sandstorm's sand blade, the Inferno's wheel of fire; the vortex bomb three ways — the Graviton's black hole, the Inferno's fire tornado, the Shadowfiend's maw |
-| `Critters`, `Booms` | the Jellyfish's jellyfish, the Spider's web, the Mantis's strike, the Gorilla's ground pound; the sonic boom two ways — the Bard's lyre, the Musician's pick |
+| `Critters`, `Booms` | the Jellyfish's jellyfish, the Spider's web and its web trap, the Mantis's strike, the Gorilla's ground pound; the sonic boom two ways — the Bard's lyre, the Musician's pick |
 | `Glyphs` | what the characters' own looks are drawn with: a frame to author a shape in (turned, mirrored, squashed into the ground plane), inked outlines, trails in layers, flame tongues |
 
 The renderer (client/render, `ProjectilePainter`) calls in with each projectile's hitbox in screen
@@ -88,6 +88,12 @@ Sandstorm's sand blade, the Jellyfish's jellyfish, the Spider's web with the spi
 Mantis's strike, the Gorilla's ground pound with its knuckles printed behind it, the Bard's lyre and
 the Musician's pick. A type only one character throws has its look in the registry; a shared one has
 the others' in `only`, and its registry look is still one of its throwers'.
+
+The pulls and the short strikes went the same way (see *Pulls are tied to whoever is pulling* and
+*Kicks, claws, bites and stings*): eight characters drew someone else's — the Kraken the Spaceman's
+green tentacle, the Gorilla the Bear's paw, the Thornweaver the Druid's vine, the Gladiator and the
+Puppeteer the Pirate's grappling hook, the Hawk and the Griffin the Raptor's kick, the Bear the
+Wolf's claws — and each has its own now.
 
 **A look carries its own colour.** A projectile's light and the embers it sheds were its thrower's
 player colour, which is random, and a second light by its element: on a dark map the Necromancer's
@@ -214,21 +220,94 @@ free-flying ones did, and the whole roster's mix is 5% fewer fragments at the sa
 
 A grab that flies free reads as a glove somebody threw — the Bear's and Gorilla's was a brown
 mitten on an empty box-shaped cuff, and seven characters shared a knot with three sausage fingers.
-Every pull is drawn tied back to its thrower: the Kraken's and the Spaceman's tentacle (suckers down its underside,
-a tip curling round what it caught), the Druid's, Thornweaver's and Treant's vine (thorns raked
-back, leaves, a tendril), a leash of spirit to the Bear's and Gorilla's paw print and the
-Griffin's talon, a spectral chain to the Death Knight's sickle hook, a rope to the Gladiator's
-grapple and the Chef's meat hook, the Chameleon's own tongue with its sticky tip, and the Mummy's
-bandage, twisting to show its stained face and its back by turns, wrapped round what it caught (the
-last two were a pink ball and a ball of bandage, flying free). `ProjectilePainter.anchorToThrower` says where the thrower stands
-(`setAnchor`, looked up only for `wantsAnchor` types: our camera position, or anyone else's
-smoothed one), and without one (they died, or a dev tool has no players) the tether runs back to
-`Projectile.originX/Y`. `layTether` lays it out — bowed, swaying slowly, and cut off at the
-projectile's range so a thrower who has blinked away doesn't drag it across the screen —
-`shapeTether` gives it a width per point, `strokeTether` strokes it in layers with
-`strokePolylineVar`. The head is still at the hitbox; the tether only trails it. The Grasping
-Dead isn't a pull and isn't tethered: skeletal hands claw up out of graves along its path, on
-points fixed to the ground, the one at the head reaching and the ones behind sinking back.
+Every pull is drawn tied back to its thrower, out of what the thrower is: the Spaceman's green
+tentacle and the Kraken's own, navy and spotted white (suckers down the underside toward the camera,
+a tip curling round what it caught); the Druid's and the Treant's thorned vine, and the
+Thornweaver's in flower; the Bear's furred arm reaching out with its paw open and claws out, and the
+Gorilla's black one with its hand open; the Griffin's leash of golden feathers to an eagle's foot
+(its kick's, `Bites.birdFoot`); a spectral chain to the Death Knight's sickle hook; the Pirate's
+grappling hook on a rope, the Gladiator's lasso, the Puppeteer's three strings ending in finger
+rings and the Chef's butcher's hook on a steel chain (`Chains`); the Chameleon's tongue with its
+sticky pad; the Mummy's bandage, twisting to show its stained face and its back by turns, wrapped
+round what it caught; and the Shark itself lunging out of a surge of water that runs back to it.
+`ProjectilePainter.anchorToThrower` says where the thrower stands (`setAnchor`, looked up only for
+`wantsAnchor` types: our camera position, or anyone else's smoothed one), and without one (they
+died, or a dev tool has no players) the tether runs back to `Projectile.originX/Y`. `layTether`
+lays it out — bowed, swaying slowly, a wave or two rippling out along it, cut off at the
+projectile's range so a thrower who has blinked away doesn't drag it across the screen, and tied on
+behind a head that is longer than its hitbox (a wrist behind a paw, a thigh behind a foot, the
+Shark's tail) — `shapeTether` gives it a width per point, fading into the thrower's hand over a
+fixed length, and `strokeTether` strokes it in layers with `strokePolylineVar`. The head is still at
+the hitbox; the tether only trails it. The Grasping Dead isn't a pull and isn't tethered: skeletal
+hands claw up out of graves along its path, on points fixed to the ground, the one at the head
+reaching and the ones behind sinking back. Neither is the Graviton's gravity ball, nor the Reaper's
+swing, which pull but which nothing holds.
+
+**A pull is reeled back in.** What a pull did at its end used to be a shot's. From 85% of its reach
+it took the shot's burn-out (`dynAlpha` to 0.3, `dynScale` to 1.3), so at full stretch a tentacle
+was a swollen ghost of itself. Stopped, it shrank toward where it stopped and faded with everything
+else stopped (`drawAbsorbed`), so its rope came loose from the thrower's hand and slid off after it.
+And a hit dropped it at once while the catch jumped to the thrower with a teleport's flash. Now a
+tether is as solid at full stretch as anywhere, and when it stops the client keeps it
+(`FadingProjectile`) and `ProjectilePainter.drawReeled` reels it in along its tether: one that
+missed — at the end of its reach, on a wall (which still throws off its puff) or a barrier — comes
+straight back into the thrower's hands, picking up speed (`RETRACT_MS`, 240 ms); one that caught
+someone (`FadingProjectile.caught`, from its HIT) holds on to them with its grip shut (`setHead`'s
+`holding`) while the server's pull — a knockback now (design/combat.md) — slides them in
+(`KnockbackSlide`, under 300 ms), sorted just in front of them so it is drawn over them, and is then
+reeled in from wherever they are (`HOLD_MS`, 340 ms). `GameClientCombatTest` and `ProjectileLookTest`
+pin which are kept and which are tied; the in-game look was judged through the real renderer, the
+thrower, the catch and a bystander on the Meadow, in six headings, in flight, missing and reeling.
+
+## Kicks, claws, bites and stings
+
+The short strikes were balls with sticks on. Every bird's kick (the Raptor's, the Hawk's, the
+Griffin's) was a brown ball with three white sticks springing off it, red at their ends: a
+matchstick, not a foot. Every claw (the Wolf's, the Bear's and its Maul, Fenrir's two, the Ghoul's,
+the Shark's, the Mantis's) was four straight red bars side by side, uniformly thick: a bundle of
+dynamite. The Vampire's bite was a red ball with two fangs on it, a drawing pin, and the Scorpion's
+sting a stick with a green arrowhead run out ahead of its hitbox. Now:
+- `talonKick` — a bird of prey's foot side on (`birdFoot`): its feathered thigh, the scaled leg,
+  three toes forward and the hind toe back, a black talon hooking off each, all meeting on the
+  hitbox; struck out wide as it leaves and clenching shut over the end of its reach, a rush of air
+  and a feather or two shaken loose behind it. The Raptor's in brown, the Hawk's slate blue, the
+  Griffin's gold, each lit in its own colour.
+- `clawRake` — `n` slashes pointed at both ends and widest in the middle, slanting across the way
+  they fly side by side (`///`), swept out one after another as the swipe begins; inked, a white-hot
+  core in the claw's colour; or two sets crossed in an X (Fenrir's frenzy, the Mantis's scythe).
+  Each in its own colour with what it tears off streaming back: the Wolf's ice-blue with sparks, the
+  Bear's amber with dust and fur, Fenrir's red with blood, the Ghoul's ragged green with ichor, the
+  Shark's blue with spray.
+- The Vampire's bite: its jaws side on, snapping shut on the hitbox over the end of its reach,
+  crimson gums, two long fangs among its teeth, a dark mouth, blood flicked off behind.
+- `scorpionSting` — the Scorpion's tail side on, arched over, one armoured length with its joints
+  and its lit back, the venom bulb and a hooked black stinger onto the hitbox, venom beading on it;
+  the paralytic one crackling with sparks.
+
+**Solid things are drawn solid.** The rocket's body was three strokes, its alpha pulsing down to
+0.64: the ground showed through a wireframe of a rocket. It is a cartoon rocket now, a red warhead
+and fins on a steel body with a yellow band, inked, flame roaring out of its nozzle and smoke
+billowing behind. The boulder (the Beetle's, the Gorilla's, the Golem's, the Earthshaker's and the
+Cyclops's primary, the Cyclops's rooting one and the Avalanche's ice one) was fanned from a hull
+whose corners swung between half and the whole of its radius, with eight cracks radiating from its
+middle and highlights spinning round it: a crumpled star. It is a lumpy rock now (`ROCK_R`: no
+corner pulled in far enough to dent it), rolling about once a second, lit from the upper left and
+shaded on its far side, a crack or two across it, bouncing on its shadow; the Avalanche's pale blue
+ice, glinting, and the rooting one trailing roots. The laser bolts (the Android's, the Photon's,
+the Sentinel's, the Cyclops's eye beam) wore a glowing brick: their glow, and the Photon's prismatic
+fringes, were soft strokes the bolt's length, with square ends. The Revenant's drain blade and the
+Death Knight's chill blade, made from the Dullahan's cursed blade, were its red; they are in their
+throwers' own colours. And the Spider's web trap, a white blob with twelve spokes tipped with knobs —
+a germ — is a sticky net now, flung open over the ground and spreading as it flies, beaded with glue.
+
+Measured back to back against the build before (`render_bench --types=` the 32 changed types, 150 in
+flight on the Meadow at `--at=60,16`, 4480x2404, High, six interleaved pairs after a 1,800-frame
+warm-up), the new looks are cheaper to fill: 96.8 → 89.4 million fragments a frame (the depth pass
+43.8 → 36.3), GPU 18.0 → 17.4 ms, frame building 6.0 ms either way (runs of one build spread
+5.4-6.4), 3.4 KB a frame allocated either way and no GC. The render audit scores the claw marks, the
+stinger and the lasers lower than before on pale ground (its `strong` counts the big soft glows they
+lost) but they read by their ink, judged on its sheets; the kicks, the fang, the grabs and the vines
+score higher.
 
 ## Electricity is fixed to the ground
 
@@ -247,7 +326,7 @@ by the head, jumping to a new shape twenty times a second, every hairpin mitred 
 three prongs out ahead of the head like the legs of a bug. Two tries on the way that don't work:
 a smooth meander is a worm, and kinks small beside the stroke's width are a noodle.
 
-**14 pattern factories** (configurable colour + size, most also taking a `kind`):
+**17 pattern factories** (configurable colour + size, most also taking a `kind`):
 - `energyBolt(r, g, b, size, style)` — glowing orb (see *Orbs* above). `style` picks what
   stands outside the sphere, named by the `ORB_*` constants: `ORB_PLAIN` (the bare orb),
   `ORB_FIRE` (a flame teardrop with tongues peeling off its edges), `ORB_RUNE` (a magic circle
@@ -272,8 +351,9 @@ a smooth meander is a worm, and kinks small beside the stroke's width are a nood
   *into* a dark core, blood dripping off it. (The life and soul drains it also drew are the
   Revenant's helm and the Lich's phylactery now.)
 - `tether(kind, …)` — a pull tied back to its thrower (see *Pulls are tied to whoever is
-  pulling*): tentacle, vine, spirit paw, spirit talon, death hook on a chain, the Chameleon's
-  tongue, the Mummy's bandage.
+  pulling*): the tentacle (and the Kraken's), the vine (and the Thornweaver's in flower), the
+  Bear's and the Gorilla's arms, the Griffin's leash of feathers to its talons, the death hook on a
+  chain, the Chameleon's tongue, the Mummy's bandage, the Shark on its surge.
 - `gorgonEye(petrify)` — Medusa's gaze as a blinking almond eye with a slit pupil, ringed
   by crumbling stone.
 - `bladeSpinner(kind, …)` — thrown weapon tumbling end over end (axe, bone axe, katana,
@@ -289,19 +369,24 @@ a smooth meander is a worm, and kinks small beside the stroke's width are a nood
 - `aoeRing(kind, …)` — ground blast as filled shockwave bands over a darkened scorch.
   `kind` picks what it throws off: quake rubble, flame, pressure rings, inward-falling motes,
   roots.
-- `chainProj(kind, …)` — thrown restraint: a grappling hook (or, `CHN_HOOK`, a single meat
-  hook) on a twisted rope running all the way back to the thrower's hand; a tumbling manacle
-  trailing swinging links; a loop of links spinning around a padlock.
+- `chainProj(kind, …)` — thrown restraint: a pull on a rope or a chain all the way back to the
+  thrower's hand — a grappling hook (`CHN_ROPE`), a lasso (`CHN_LASSO`), puppet strings
+  (`CHN_STRING`), a butcher's hook on a chain (`CHN_HOOK`); a tumbling manacle trailing swinging
+  links; a loop of links spinning around a padlock.
+- `talonKick(…)`, `clawRake(n, cross, …)`, `scorpionSting(…)` — a bird's foot kicking, claw
+  marks, the Scorpion's tail striking (see *Kicks, claws, bites and stings*).
 - `bulletProj`, `fistProj` — small fast round; gauntleted punch.
 
 **Specialized `draw*` renderers** for one-off projectiles: lightning (`lightningBolt(r, g,
 b, heavy)` — colour is a parameter so a storm reads yellow and a tesla coil reads arc-cyan;
 `heavy` is chain lightning's thicker bolt), thunder strike, grasping dead, frost comet (ice
-beam), boulder (faceted tumbling hull), shark jaw, bat swarm, geyser, wail, raise dead, and
-more. The fireball is an `ORB_FIRE` orb. And **68 characters' own looks**, each a `draw*` of its
-own: 17 from the crescents (`Songs`, `Winds`, `Surges`, and the Wolf's in `Bites`) and 51 from the
-orbs and rings (`Spirits`, `Necromancy`, `Relics`, `Venoms`, `Arsenal`, `Elements`, `Vortices`,
-`Critters`, `Booms`, and two tethers), listed in *A projectile is drawn as its thrower's*.
+beam), boulder (a rock rolling and bouncing on its shadow; of ice, and rooting), the rocket, the
+Vampire's bite, bat swarm, geyser, wail, raise dead, and more. The fireball is an `ORB_FIRE` orb.
+And **76 characters' own looks**: 17 from the crescents (`Songs`, `Winds`, `Surges`, and the Wolf's
+in `Bites`) and 51 from the orbs and rings (`Spirits`, `Necromancy`, `Relics`, `Venoms`, `Arsenal`,
+`Elements`, `Vortices`, `Critters`, `Booms`, and two tethers), each a `draw*` of its own, listed in
+*A projectile is drawn as its thrower's*; and 8 for a pull or a strike they shared (`tether`,
+`chainProj`, `talonKick`, `clawRake` in their colours and kinds).
 
 **The characters' own looks are drawn in a frame** (`Glyphs`): a shape is authored once in glyph
 units about its own centre, and `frame` stamps it — turned, mirrored, scaled, and squashed up the
@@ -354,6 +439,20 @@ on the ground, where it strikes.
   only by its outline. The wave crescents were inked along the front alone, with a body at
   35-45% alpha, and all eleven waves faded into the ground behind their front; the audit had
   Acid Spray at 4 strong pixels per 1000 on sand, and 32 once inked round and filled denser.
+- **A soft stroke has square ends.** `strokeLineSoft` is soft across its width only: as a glow along
+  a bolt it is a glowing brick, and the laser bolts all wore one. A glow along something is a
+  `fadeLine` from its middle out each way, which narrows and fades at both ends.
+- **A solid thing is filled and inked, at full alpha.** A rocket's body built of strokes under a
+  pulsing alpha showed the ground through it, a wireframe; the shot's dynamics (`dynAlpha`) are the
+  only thing that should take an object's alpha down.
+- **A hull of corners is lumpy, not notched.** A corner pulled in further than about three
+  quarters of its neighbours' radius dents the outline, and a hull of dents is a crumpled star,
+  whatever it is shaded as (the old boulder).
+- **Curved slashes standing up across the way they fly are `)))`** — the sign for sound. Claw
+  marks slant (`///`) and curve only a little.
+- **A pull is not a shot at its end.** A tether takes none of the burn-out at the end of its reach
+  and none of `drawAbsorbed`'s shrink: it is reeled back in (see *Pulls are tied to whoever is
+  pulling*).
 - **Never flicker a whole projectile toward zero.** `sin(phase * 8)` lands on an unrelated value
   every frame, so a flicker between 0 and 1 is a strobe, and on a dim frame on pale ground the
   shot isn't there. Flicker the core; keep the body up. A slow pulse is no better: every orb,
@@ -396,9 +495,10 @@ To add a new projectile renderer:
   Recognisable objects are now authored as convex `Part` silhouettes in a local frame and
   stamped per frame (see *Projectile Rendering System*), and the family factories take a
   `kind`. Colour differentiates within a family; shape differentiates between them.
-- **A pull is tied to whoever is pulling** — tentacles, vines, leashes, chains and ropes run from
-  the hitbox back to the thrower (see *Pulls are tied to whoever is pulling*). A grab flying free
-  was a glove somebody threw.
+- **A pull is tied to whoever is pulling** — tentacles, vines, arms, leashes, chains and ropes run
+  from the hitbox back to the thrower (see *Pulls are tied to whoever is pulling*), and are reeled
+  back in to them, holding whoever they caught. A grab flying free was a glove somebody threw, and
+  one that faded where it stopped came loose from its thrower's hand.
 - **A bolt's channel is fixed to the ground** — its kinks stay where they were drawn as the head
   flies on (see *Electricity is fixed to the ground*); built relative to the head and re-rolled
   every few frames, it was a sawtooth stick jumping about.

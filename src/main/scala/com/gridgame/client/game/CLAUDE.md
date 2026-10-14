@@ -24,7 +24,7 @@ trait in its own file, with the packets that update it and the actions that use 
 | `Attacks` | aiming, charging (timed on `nanoClock`, as the golden frames hold it), firing, casting, cooldowns; which projectiles we asked for the server answered (`PendingSpawns`, below) |
 | `Barriers` | ours raised and streamed; everyone else's from their updates; ripples; what stops a shot in flight or a trap we throw (design/barriers.md) |
 | `OtherPlayers` | everyone else in the match |
-| `Projectiles` | the projectiles in flight, flown between the server's ticks (below) |
+| `Projectiles` | the projectiles in flight, flown between the server's ticks (below), and each one stopped kept a moment to fade where it stopped (`FadingProjectile`) — a pull to its thrower to be reeled back in, holding whoever it hit (`FadingProjectile.caught`) |
 | `Items`, `Traps` | items on the ground (a SPAWN after its PICKUP dropped) and our inventory, full or not; traps on the ground and going off |
 | `EventAnimations` | what the renderer shows of an event for a moment: hits, deaths, teleports, blasts |
 

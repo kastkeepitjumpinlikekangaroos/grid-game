@@ -128,6 +128,79 @@ private[render] object Critters {
   }
 
   /**
+   * The Spider's web trap: a sticky net flung open, lying over the ground and spreading as it flies to
+   * where it will settle — spokes and rings of silk, inked so they read on snow, beaded with glue, a few
+   * threads trailing back to the Spider. It used to be a white blob with twelve spokes tipped with knobs:
+   * a germ, not a web.
+   */
+  private[projectiles] def drawWebTrap(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
+    val phase = (tick + proj.id * 29) * 0.3
+    computeAllDynamics(proj, 0.95f, 0.95f, 0.92f, phase)
+    val a = dynAlpha
+    screenDir(proj)
+    val ndx = _sdx; val ndy = _sdy
+    // Bunched as it leaves, spread wide as it reaches where it lands
+    val open = 0.55f + 0.45f * Math.min(1f, _lifePct * 1.6f)
+    val k = 2f * open
+    val cy = sy - 3f
+
+    // Threads trailing back to the Spider
+    var t = 0
+    while (t < 3) {
+      val off = (t - 1) * 7f
+      val x0 = sx - ndy * off; val y0 = cy + ndx * off * 0.5f
+      fadeLine(sb, x0, y0, x0 - ndx * 44f, y0 - ndy * 44f, 2.6f, 0.2f, 0.18f, 0.25f, 0.35f * a, 4)
+      fadeLine(sb, x0, y0, x0 - ndx * 44f, y0 - ndy * 44f, 1.2f, 0.97f, 0.97f, 0.95f, 0.8f * a, 4)
+      t += 1
+    }
+    // Its shadow on the ground under it
+    sb.fillOval(sx, sy + 4f, 17f * k, 8f * k, 0f, 0f, 0f, 0.18f * a, 16)
+    // The net, lying in the ground plane, turning slowly
+    frame(sx, cy, (phase * 0.12).toFloat, k, 1f, 0.55f)
+    var pass = 0
+    while (pass < 2) {
+      val w = if (pass == 0) 2.8f else 1.3f
+      val r = if (pass == 0) 0.2f else 0.97f; val g = if (pass == 0) 0.16f else 0.97f; val b = if (pass == 0) 0.26f else 0.95f
+      val al = if (pass == 0) 0.6f * a else 0.95f * a
+      var sp = 0
+      while (sp < WEB_SPOKES) {
+        val th = sp * (2 * Math.PI / WEB_SPOKES) + 0.2
+        val len = 16f + 2.5f * hash2(proj.id, sp)
+        gLine(sb, 0f, 0f, Math.cos(th).toFloat * len, Math.sin(th).toFloat * len, w * 0.55f, r, g, b, al)
+        sp += 1
+      }
+      var ring = 0
+      while (ring < 4) {
+        val m = webRing(3.8f + ring * 3.9f, 0.84f)
+        var q = 0
+        while (q < m) {
+          val lx = _web(q * 2); val ly = _web(q * 2 + 1)
+          val c = Math.cos(0.2).toFloat; val sn = Math.sin(0.2).toFloat
+          _gx(q) = fx(lx * c - ly * sn, lx * sn + ly * c); _gy(q) = fy(lx * c - ly * sn, lx * sn + ly * c)
+          q += 1
+        }
+        sb.strokePolygon(_gx, _gy, m, w * k * 0.42f, r, g, b, al)
+        ring += 1
+      }
+      pass += 1
+    }
+    // Beads of glue along its threads
+    var d = 0
+    while (d < 7) {
+      val sp = (hash01(proj.id + 11, d) * 7.99f).toInt
+      val rr = 4f + (d % 4) * 3.9f
+      val th = sp * (2 * Math.PI / WEB_SPOKES) + 0.2
+      val lx = Math.cos(th).toFloat * rr; val ly = Math.sin(th).toFloat * rr
+      gDot(sb, lx, ly, 1.2f, 1.2f, 0.32f, 0.3f, 0.2f, 0.6f * a, 6)
+      gDot(sb, lx, ly, 0.95f, 0.95f, 0.98f, 0.94f, 0.62f, a, 6)
+      d += 1
+    }
+    // The knot at its hub
+    gDot(sb, 0f, 0f, 2f, 2f, 0.2f, 0.16f, 0.26f, 0.7f * a, 8)
+    gDot(sb, 0f, 0f, 1.4f, 1.4f, 0.98f, 0.98f, 0.96f, a, 8)
+  }
+
+  /**
    * The Spider's web shot: a web, spun and flung — spokes and rings of silk, dew on it, turning slowly as
    * it flies, a dragline paying out behind it — with the little spider riding at its hub, purple and black
    * with the red mark on its back, as the Spider has.

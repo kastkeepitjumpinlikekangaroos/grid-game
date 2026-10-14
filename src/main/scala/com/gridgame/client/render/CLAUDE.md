@@ -21,7 +21,7 @@ scene target and then over the finished frame. Three Bazel libraries, each on th
 | `world/StatusEffectPainter` | frost, stun stars, poison, roots, a slow, a speed boost, a shield bubble |
 | `world/GlowEffectPainter` | the glowing effects (a gem, a charge, a phase, a burn, a hit's flash, a cast's flash), deferred to one additive pass |
 | `world/ItemPainter` | items on the ground, their glows, pickup sparkles; the item shapes the HUD's inventory uses |
-| `world/ProjectilePainter` | projectiles through GLProjectileRenderers: their lights (in their look's own colour where it has one, `glowOf`, else the thrower's), wall-passers lifted over the terrain, stopped ones fading |
+| `world/ProjectilePainter` | projectiles through GLProjectileRenderers: their lights (in their look's own colour where it has one, `glowOf`, else the thrower's), wall-passers lifted over the terrain, stopped ones fading, pulls reeled back in to their throwers (`drawReeled`: render/projectiles, *Pulls are tied to whoever is pulling*) |
 | `world/BarrierPainter` | raised barriers (design/barriers.md) |
 | `world/OpeningPainter` | the Teams wall, and the opening's countdown for the HUD (design/match-flow.md) |
 | `world/TrapPainter` | traps on the ground and going off (design/traps.md) |

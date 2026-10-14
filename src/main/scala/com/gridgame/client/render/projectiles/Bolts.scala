@@ -7,7 +7,7 @@ import Silhouettes._
 import Orbs._
 
 /** Magic bolts with a shape of their own, rather than an orb's style: the void, gravity, data, holy
-  * light, a web (the web trap's) and venom (the acid bomb's). */
+  * light and venom (the acid bomb's). */
 private[render] object Bolts {
   /** Void Bolt - swirling dark vortex with reality-distortion ripple rings */
   private[projectiles] def drawVoidBolt(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
@@ -374,103 +374,6 @@ private[render] object Bolts {
   // Holy star: 6-point star (12 vertices)
   private val _holyXs = new Array[Float](12)
   private val _holyYs = new Array[Float](12)
-
-  /** Web Shot — glossy silk web ball with dense mesh, spiral threads, and sticky drip trail */
-  private[projectiles] def drawWebShot(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
-    val phase = (tick + proj.id * 29) * 0.3
-    computeAllDynamics(proj, 0.92f, 0.92f, 0.88f, phase)
-    val p = (0.85 + 0.15 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
-    screenDir(proj)
-    val ndx = _sdx; val ndy = _sdy
-    val ds = 1.3f * dynScale
-    val strandCount = 12
-
-    // A comet tail of its light and a halo no wider than it needs (see energyBolt): speed lines,
-    // a ribbon of soft strokes and two halos, one pulsing out to 70 units, were a smear and a fill cost
-    cometTail(sb, sx, sy, ndx, ndy, 40f * ds * dynTrail, 22f * ds, 0.92f, 0.92f, 0.88f, 0.35f * p)
-    sb.fillOvalSoft(sx, sy, 24f * ds * dynGlow, 19f * ds * dynGlow, 0.97f, 0.97f, 1f, 0.3f * p, 0f, 18)
-
-    // 12 thick radial silk strands with 3-layer rendering
-    var strand = 0; while (strand < strandCount) {
-      val sAngle = phase * 0.15 + strand * Math.PI * 2 / strandCount
-      val sLen = (26f + Math.sin(phase * 1.5 + strand * 1.3).toFloat * 7f) * ds
-      val waveOff = Math.sin(phase * 2.5 + strand * 0.9).toFloat * 5f * ds
-      val perpAngle = sAngle + Math.PI / 2
-      val endX = sx + Math.cos(sAngle).toFloat * sLen + Math.cos(perpAngle).toFloat * waveOff
-      val endY = sy + Math.sin(sAngle).toFloat * sLen * 0.6f + Math.sin(perpAngle).toFloat * waveOff * 0.4f
-      // 4px dark outline stroke
-      sb.strokeLine(sx, sy, endX, endY, 4f * ds, 0.18f, 0.18f, 0.15f, 0.55f * p)
-      // 2.5px white silk body
-      sb.strokeLine(sx, sy, endX, endY, 2.5f * ds, 0.92f, 0.92f, 0.88f, 0.8f * p)
-      // 1px glossy highlight center
-      sb.strokeLine(sx, sy, endX, endY, 1f * ds, 1f, 1f, 0.98f, 0.55f * p)
-      // Knot node at strand tip with outline
-      sb.strokeOval(endX, endY, 3.5f * ds, 3f * ds, 1.5f, 0.2f, 0.2f, 0.18f, 0.4f * p, 6)
-      sb.fillOval(endX, endY, 3f * ds, 2.5f * ds, 0.9f, 0.9f, 0.86f, 0.7f * p, 6)
-      sb.fillOval(endX - 0.5f * ds, endY - 0.5f * ds, 1.5f * ds, 1.2f * ds, 1f, 1f, 0.98f, 0.35f * p, 4)
-
-      // 3 concentric connecting thread rings between strands
-      val nextAngle = phase * 0.15 + ((strand + 1) % strandCount) * Math.PI * 2.0 / strandCount
-      val nextLen = (26f + Math.sin(phase * 1.5 + ((strand + 1) % strandCount) * 1.3).toFloat * 7f) * ds
-      val nextWave = Math.sin(phase * 2.5 + ((strand + 1) % strandCount) * 0.9).toFloat * 5f * ds
-      val nextPerpAngle = nextAngle + Math.PI / 2
-      var ring = 0; while (ring < 3) {
-        val midT = 0.3f + ring * 0.2f
-        val mx0 = sx + Math.cos(sAngle).toFloat * sLen * midT + Math.cos(perpAngle).toFloat * waveOff * midT
-        val my0 = sy + Math.sin(sAngle).toFloat * sLen * 0.6f * midT + Math.sin(perpAngle).toFloat * waveOff * 0.4f * midT
-        val mx1 = sx + Math.cos(nextAngle).toFloat * nextLen * midT + Math.cos(nextPerpAngle).toFloat * nextWave * midT
-        val my1 = sy + Math.sin(nextAngle).toFloat * nextLen * 0.6f * midT + Math.sin(nextPerpAngle).toFloat * nextWave * 0.4f * midT
-        // Thread outline
-        sb.strokeLine(mx0, my0, mx1, my1, 2f * ds, 0.18f, 0.18f, 0.15f, 0.3f * p)
-        // Thread silk
-        sb.strokeLine(mx0, my0, mx1, my1, 1f * ds, 0.9f, 0.9f, 0.87f, 0.5f * p)
-        // Thread glossy core
-        sb.strokeLine(mx0, my0, mx1, my1, 0.4f * ds, 1f, 1f, 0.98f, 0.25f * p)
-      ; ring += 1 }
-    ; strand += 1 }
-
-    // Bold dark outlined central knot (3.5px outline stroke) with multi-layer fill
-    sb.strokeOval(sx, sy, 12f * ds, 9.5f * ds, 3.5f, 0.15f, 0.15f, 0.12f, 0.85f * p, 14)
-    sb.fillOval(sx, sy, 11f * ds, 8.5f * ds, 0.88f, 0.88f, 0.84f, 0.95f * p, 14)
-    sb.fillOval(sx, sy, 7f * ds, 5.5f * ds, 0.94f, 0.94f, 0.9f, 0.8f * p, 12)
-    // Cartoon highlight
-    sb.fillOval(sx - 2.5f * ds, sy - 2.5f * ds, 5f * ds, 3.5f * ds, 1f, 1f, 0.98f, 0.5f * p, 8)
-    // White-hot center
-    sb.fillOval(sx, sy, 4.5f * ds, 3.5f * ds, 1f, 1f, 0.96f, 0.85f * p, 8)
-    sb.fillOval(sx, sy, 2f * ds, 1.5f * ds, 1f, 1f, 1f, 0.95f * p, 6)
-
-    // 10 sticky drip particles with stretch strings and highlights
-    var i = 0; while (i < 10) {
-      val t = ((tick * 0.05 + i * 0.1 + proj.id * 0.13) % 1.0).toFloat
-      val dripX = sx - ndx * t * 45f * dynTrail + Math.sin(phase + i * 2.1).toFloat * 6f * ds
-      val dripY = sy - ndy * t * 45f * dynTrail + t * t * 20f
-      val dripSz = (3.5f + (1f - t) * 4f) * ds
-      // Stretch string connecting drip to web — outlined
-      val stringAlpha = 0.3f * (1f - t) * p
-      val anchorX = sx - ndx * t * 22f; val anchorY = sy - ndy * t * 22f
-      sb.strokeLine(anchorX, anchorY, dripX, dripY, 1.2f, 0.2f, 0.2f, 0.18f, stringAlpha * 0.6f)
-      sb.strokeLine(anchorX, anchorY, dripX, dripY, 0.6f, 0.88f, 0.88f, 0.85f, stringAlpha)
-      // Drip droplet with outline
-      sb.strokeOval(dripX, dripY, dripSz + 0.5f, dripSz * 1.5f + 0.5f, 1f, 0.2f, 0.2f, 0.18f, 0.3f * (1f - t) * p, 6)
-      sb.fillOval(dripX, dripY, dripSz, dripSz * 1.5f, 0.9f, 0.9f, 0.87f, 0.55f * (1f - t) * p, 6)
-      // Glossy highlight on drip
-      sb.fillOval(dripX - dripSz * 0.2f, dripY - dripSz * 0.35f, dripSz * 0.4f, dripSz * 0.3f, 1f, 1f, 0.98f, 0.4f * (1f - t) * p, 4)
-    ; i += 1 }
-
-    // 6 sparkle stars popping around
-    { var i = 0; while (i < 6) {
-      val starPhase = ((phase * 0.45 + i * 0.167) % 1.0).toFloat
-      val starAngle = phase * 1.3 + i * Math.PI * 2 / 6
-      val starDist = (14f + starPhase * 18f) * ds
-      val starX = sx + Math.cos(starAngle).toFloat * starDist
-      val starY = sy + Math.sin(starAngle).toFloat * starDist * 0.55f
-      drawSparkleStar(starX, starY, 5f * (1f - starPhase * 0.5f) * ds,
-        1f, 1f, 0.95f, 0.5f * (1f - starPhase) * p, sb, phase * 2 + i)
-    ; i += 1 } }
-
-    drawChargeCrackle(sx, sy, 22f * ds, 0.92f, 0.92f, 0.88f, p, sb, phase, proj.chargeLevel)
-    drawReturnGhosts(sx, sy, 22f * ds, 0.92f, 0.92f, 0.88f, p, sb, proj)
-  }
 
   /** Venom Bolt - dripping toxic blob with bubbles */
   private[projectiles] def drawVenomBolt(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {

@@ -113,12 +113,17 @@ trait PlayerSync { this: GameInstance =>
     }
   }
 
-  /** Drag a player onto the cell the projectile's owner is standing on. */
+  /** Drag a player onto the cell the projectile's owner is standing on. Counted as a knockback as
+    * well as a server move, so every client slides them in along the pull (KnockbackSlide) rather
+    * than jumping them there with a teleport's flash, as a pull used to be drawn. */
   private[game] def pullToOwner(projectile: Projectile, p: Player): Unit = {
     val owner = registry.get(projectile.ownerId)
     if (owner == null) return
     val ownerPos = owner.getPosition
-    if (world.isWalkable(ownerPos.getX, ownerPos.getY) && ownerPos != p.getPosition) moveByServer(p, ownerPos)
+    if (world.isWalkable(ownerPos.getX, ownerPos.getY) && ownerPos != p.getPosition) {
+      p.recordKnockback()
+      moveByServer(p, ownerPos)
+    }
   }
 
   /** Pull a player up to `strength` cells toward (vx, vy), if they are within `radius` of it,

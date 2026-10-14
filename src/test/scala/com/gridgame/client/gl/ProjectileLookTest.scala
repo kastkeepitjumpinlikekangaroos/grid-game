@@ -99,6 +99,31 @@ class ProjectileLookTest {
     assertTrue(wantsAnchor(ProjectileType.BANDAGE_WHIP))
   }
 
+  @Test def everyPullToTheThrowerIsTiedToThem(): Unit = {
+    // A pull is drawn on a rope, a limb or a surge back to whoever threw it, and reeled in along it. The
+    // two that aren't are a ball of gravity and a scythe's swing, which nothing holds
+    val untied = Set(ProjectileType.GRAVITY_BALL, ProjectileType.REAP)
+    val pulls = attacks.map(_._2).distinct.filter(t => ProjectileDef.get(t).onHitEffect.contains(PullToOwner))
+    assertTrue(pulls.size >= 10)
+    pulls.filterNot(untied).foreach(t => assertTrue(s"type $t pulls but is drawn flying free", wantsAnchor(t)))
+  }
+
+  @Test def aSharedPullOrStrikeIsDrawnAsEachThrowersOwn(): Unit = {
+    import CharacterId._
+    import ProjectileType._
+    // Each was one look in every thrower's hands: the Kraken's tentacle the Spaceman's green, the Gorilla's
+    // grab the Bear's paw, the Gladiator's and the Puppeteer's the Pirate's grappling hook, every bird's
+    // kick the same brown ball with three sticks, and the Bear's claws the Wolf's
+    val shared = Seq(
+      TENTACLE -> Seq(Spaceman, Kraken), GRAB -> Seq(Bear, Gorilla), VINE_WHIP -> Seq(Druid, Thornweaver),
+      ROPE -> Seq(Pirate, Gladiator, Puppeteer), TALON -> Seq(Raptor, Hawk, Griffin), CLAW_SWIPE -> Seq(Wolf, Bear))
+    shared.foreach { case (t, who) =>
+      who.foreach(c => assertTrue(s"${c.name} doesn't throw type $t", attacks.exists { case (d, u) => d.id == c && u == t }))
+      for (a <- who; b <- who if a != b)
+        assertNotSame(s"${a.name} and ${b.name} draw type $t alike", getRenderer(a.id, t), getRenderer(b.id, t))
+    }
+  }
+
   @Test def aThrowerWithNoLookOfTheirOwnGetsTheTypes(): Unit = {
     val sonic = ProjectileType.SONIC_WAVE
     assertSame(getRenderer(sonic), getRenderer(-1.toByte, sonic))
