@@ -32,7 +32,11 @@ scala_library(
     ("ceasefire_test", "CeasefireTest.scala", []),
     ("team_divider_test", "TeamDividerTest.scala", []),
     ("combat_test", "CombatTest.scala", []),
+    # Every slam strikes exactly the ring a client draws it with while it is held to aim
+    ("slam_reach_test", "SlamReachTest.scala", []),
     ("on_hit_effects_test", "OnHitEffectsTest.scala", []),
+    # What the volleys became, landed in a match: slams, splashes, pierces, bounces, hastes, traps
+    ("kit_rework_test", "KitReworkTest.scala", []),
     ("position_authority_test", "PositionAuthorityTest.scala", []),
     ("respawn_test", "RespawnTest.scala", []),
     ("player_relay_test", "PlayerRelayTest.scala", []),

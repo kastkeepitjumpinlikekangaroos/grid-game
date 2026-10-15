@@ -23,7 +23,7 @@ private[client] final class AccountScreen(app: Screens) {
     // Who: the avatar the top bar shows, big, and the rating
     val rating = chip("", "gold", Icons.Star, Palette.Gold)
     // Ends the login on the server too, so a remembered one logs nobody in again
-    val logOutButton = button(Messages.t("Log out"), "plain", Icons.LogOut, Palette.Ink)
+    val logOutButton = button(Messages.t("Log out"), "plain", Icons.LogOut, Palette.Text)
     logOutButton.setOnAction(_ => logOut(stage))
     val who = row(18, avatar(client.playerName, 68),
       new VBox(6, h1(client.playerName), row(10, rating, text(Messages.t("Practice sessions don't count toward stats."), "lead-on-sky"))),

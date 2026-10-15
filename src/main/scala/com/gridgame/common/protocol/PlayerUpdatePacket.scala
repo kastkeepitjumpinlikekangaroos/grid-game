@@ -35,7 +35,12 @@ class PlayerUpdatePacket(
     // Server -> everyone: how many of the server's moves of this player were knockbacks
     // (Player.getKnockbacks), so a client can draw the move a new one made as a shove rather than
     // a teleport. 0 on the client's own updates.
-    val knockbacks: Int = 0
+    val knockbacks: Int = 0,
+    // Server -> everyone: how long this player's speed boost has left, in ms (0 when none, and on
+    // the client's own updates). The boosted player's own client walks by it: with the flag alone
+    // it gave itself a second of boost per update that carried it, and a player at full health,
+    // who hears nothing between casts, walked a 4s boost for one
+    val speedBoostMs: Int = 0
 ) extends Packet(PacketType.PLAYER_UPDATE, sequenceNumber, playerId, timestamp) {
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int) = {
@@ -88,6 +93,9 @@ class PlayerUpdatePacket(
 
   /** How many times the server has knocked the player back (0 from a client). */
   def getKnockbacks: Int = knockbacks
+
+  /** How long the player's speed boost has left, in ms (0: none, or the sender doesn't say). */
+  def getSpeedBoostMs: Int = speedBoostMs
 
   override def serialize(): Array[Byte] = {
     val buffer = SerializeUtil.acquireBuffer()
@@ -147,8 +155,11 @@ class PlayerUpdatePacket(
     // [55-58] Knockbacks
     buffer.putInt(knockbacks)
 
-    // [59-63] Reserved (5 bytes) - fill with zeros
-    buffer.put(new Array[Byte](5))
+    // [59-60] How long a speed boost has left, in ms (capped at 65535)
+    buffer.putShort((Math.max(0, Math.min(65535, speedBoostMs)) & 0xFFFF).toShort)
+
+    // [61-63] Reserved (3 bytes) - fill with zeros
+    buffer.put(new Array[Byte](3))
 
     buffer.array().clone()
   }

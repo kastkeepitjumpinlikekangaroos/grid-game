@@ -15,7 +15,7 @@ the terrain or sinking into what stopped it. The renderers themselves are in a f
 | `Tethers`, `Grabs` | pulls tied to their thrower and reeled back in: the tentacles, the vines, the Bear's and the Gorilla's arms, the Griffin's leash of feathers, the Death Knight's chain, the Chameleon's tongue, the Mummy's bandage, the Shark on its surge; the Grasping Dead's hands |
 | `Electricity` | lightning and thunder |
 | `Heavies`, `Undead`, `Bites` | the rocket, the boulders (rock, ice, rooting), the geyser, the sword wave; the undead's; the birds' kicks (`birdFoot`), claw marks, the Vampire's bite, the Scorpion's sting, the Shark lunging, the Minotaur's horn, the Wolf's spirit |
-| `Songs`, `Winds`, `Surges` | one character's own look for an attack (see *A projectile is drawn as its thrower's*): sound — the Bard's, the Musician's, the Sphinx's, the Harpy's, the Banshee's; wind — the Windwalker's, the Cloudrunner's, the Hawk's, the Raptor's; what surges along the ground — the Tidecaller's, the Sandstorm's, the Inferno's, the Scorpion's, the Barbarian's |
+| `Songs`, `Winds`, `Surges` | one character's own look for an attack (see *A projectile is drawn as its thrower's*): sound — the Bard's, the Musician's, the Sphinx's, the Harpy's, the Banshee's; wind — the Windwalker's, the Cloudrunner's, the Raptor's; what surges along the ground — the Tidecaller's, the Sandstorm's, the Inferno's, the Scorpion's, the Barbarian's |
 | `Spirits`, `Necromancy` | the ghosts' own: the Wraith's hood, the Phantom's ghost-blade and half-mask, the Poltergeist's crockery, the Banshee's tear, the Shade's grin; the undead's: the Revenant's helm, the Necromancer's skull, the Lich's hand, grave-ice and phylactery, the Shadowfiend's winged eye |
 | `Relics`, `Venoms` | things with a shape of their own: the Mummy's scarab and death mask, Anubis's ankh and jackal, the Yokai's foxfire and ofuda, the Djinn's lamp, the Runesmith's runestones, the Alchemist's flasks; poison: the Plague Doctor's fly-blown glob and skull of miasma, the Serpent's snake, the Hydra's braid, head and swamp gas, the Chimera's fire-and-venom, Medusa's ouroboros |
 | `Arsenal`, `Elements`, `Vortices` | guns and machines: the Soldier's tracer, the Pirate's musket ball, the Pilot's twin tracers and biplane, the Spaceman's ray-gun zap, the Mech Pilot's rocket fist, the Graviton's cubes; the Tidecaller's trident, the Sandstorm's sand blade, the Inferno's wheel of fire; the vortex bomb three ways — the Graviton's black hole, the Inferno's fire tornado, the Shadowfiend's maw |
@@ -25,7 +25,7 @@ the terrain or sinking into what stopped it. The renderers themselves are in a f
 The renderer (client/render, `ProjectilePainter`) calls in with each projectile's hitbox in screen
 space.
 
-All 176 projectile types are registered in `GLProjectileRenderers.registry` (`Map[Byte, Renderer]`, flattened into `_rendererLUT` for O(1) lookup with no `Option` allocation). Projectiles use **standard alpha blending** for solid, visible shapes — the bloom post-processor provides natural glow on bright elements.
+Every projectile type is registered in `GLProjectileRenderers.registry` (`Map[Byte, Renderer]`, flattened into `_rendererLUT` for O(1) lookup with no `Option` allocation). Projectiles use **standard alpha blending** for solid, visible shapes — the bloom post-processor provides natural glow on bright elements.
 
 `Renderer` is a single-method trait, `apply(proj, sx, sy, sb, tick)`, not a
 `(Projectile, Float, Float, ShapeBatch, Int) => Unit`: `scala.Function5` isn't specialized,
@@ -59,6 +59,17 @@ of water, the Sandstorm's rolling dust, the Inferno's living flame (a small one 
 Scorpion's squirt of acid, the Barbarian's fissure with rock bursting up at its head, and the
 Wolf's spirit lunging with its jaws open. A gust and the tidal wave still carry their bulk behind
 the hitbox, where they strike (`ProjectileDef.hitCentreBehind`, design/combat.md).
+
+When the volleys went (design/characters.md, *No volleys of more than three*), the attacks that
+replaced them were drawn with the looks their throwers already had: the Windwalker's Gale is her
+curls of wind, the Cloudrunner's Hailstorm its billow of cloud, the Bard's Lullaby and the Sphinx's
+Riddle their own sonic waves, the Shade's Shadow Bind its grin, the Yokai's Binding Talisman its
+ofuda, the Chimera's Serpent Strike its fire and venom, the Puppeteer's Marionette its strings, the
+Poltergeist's Fling its crockery, the Djinn's Whirlwind its lamp, the Hawk's Pin Down its kick. The
+Raptor's eagle is the Gust's own look now, the one thrower it has left, and the Hawk's whirlwind of
+feathers went with its Wind Wall. The Tidal Wave and the Sword Wave are each one wide projectile
+where a fan or a ring of them was, and are drawn as wide as they strike: the wave across its
+`hitRadius` less the half cell a body adds, the crescent's arc by `hitRadius / 1.8`.
 
 The dev tools draw them the same way: the gallery's sheets end with every character's own look
 (`TYPE@Character`, also for `--focus=`), the render bench throws each projectile as one of the

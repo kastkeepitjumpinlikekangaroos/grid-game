@@ -5,7 +5,7 @@ predicts and draws them) and the bots. Nothing here does I/O or knows about a ma
 
 What the rules are is written up by feature in `design/`: characters.md (the roster, roles, cast
 behaviors, movement), combat.md (projectiles, on-hit effects, items), barriers.md, traps.md,
-match-flow.md (the opening). This file is how the package is put together.
+match-flow.md (the opening, and who wins). This file is how the package is put together.
 
 ## The registries
 
@@ -16,7 +16,8 @@ match-flow.md (the opening). This file is how the package is put together.
   definitions first, then the variants (`Roster.variants`), which copy their base's numbers from the
   registry and set an effect or a damage of their own. Some exist only so their thrower's damage can
   differ from the others who throw the base (the Maul, the Arena Axe, the Throwing Star, the Mantis
-  Scythe; see design/characters.md, *Balance*); a new one needs its look, preview and sound (the
+  Scythe; see design/characters.md, *Balance*; and the Gambler's Card Heavy and the Puppeteer's Chain
+  Bolt Heavy, *No volleys of more than three*); a new one needs its look, preview and sound (the
   base's) in `GLProjectileRenderers`, `AbilityPreviewPalette` and `AbilitySounds`.
 - **Projectiles** — `ProjectileDef` (what a type does; `ProjectileType` names the ids,
   `OnHitEffect.scala` the effects) is a registry filled by `CharacterDef`; `ProjectileDef.get`

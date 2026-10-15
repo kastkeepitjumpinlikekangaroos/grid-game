@@ -280,18 +280,19 @@ object PacketSerializer {
             val updateTeamId = payload(7)
             val serverMoves = ByteBuffer.wrap(payload, 8, 4).order(ByteOrder.BIG_ENDIAN).getInt
             // payload byte 12 is absolute [49], 13-14 is [50-51], 15 is [52], 16-17 is [53-54],
-            // 18-21 is [55-58]
+            // 18-21 is [55-58], 22-23 is [59-60]
             val effectFlags2 = payload(12) & 0xFF
             val aimAngle = ByteBuffer.wrap(payload, 13, 2).order(ByteOrder.BIG_ENDIAN).getShort & 0xFFFF
             val slowPercent = payload(15) & 0xFF
             val barrierMs = ByteBuffer.wrap(payload, 16, 2).order(ByteOrder.BIG_ENDIAN).getShort & 0xFFFF
             val knockbacks = ByteBuffer.wrap(payload, 18, 4).order(ByteOrder.BIG_ENDIAN).getInt
+            val speedBoostMs = ByteBuffer.wrap(payload, 22, 2).order(ByteOrder.BIG_ENDIAN).getShort & 0xFFFF
             val updatePosition = try {
               new Position(x, y)
             } catch {
               case _: IllegalArgumentException => new Position(0, 0)
             }
-            new PlayerUpdatePacket(sequenceNumber, playerId, timestamp, updatePosition, colorRGB, health, chargeLevel, effectFlags, characterId, updateTeamId, serverMoves, effectFlags2, aimAngle, slowPercent, barrierMs, knockbacks)
+            new PlayerUpdatePacket(sequenceNumber, playerId, timestamp, updatePosition, colorRGB, health, chargeLevel, effectFlags, characterId, updateTeamId, serverMoves, effectFlags2, aimAngle, slowPercent, barrierMs, knockbacks, speedBoostMs)
 
           case PacketType.PLAYER_LEAVE =>
             new PlayerLeavePacket(sequenceNumber, playerId, timestamp)

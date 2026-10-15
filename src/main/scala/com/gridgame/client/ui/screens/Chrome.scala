@@ -2,7 +2,7 @@ package com.gridgame.client.ui.screens
 
 import com.gridgame.client.audio.AudioManager
 import com.gridgame.client.i18n.Messages
-import com.gridgame.client.ui.{Icons, SkyBackdrop, Theme, Widgets}
+import com.gridgame.client.ui.{Icons, Theme, Widgets, WorldBackdrop}
 import com.gridgame.client.ui.Theme.Palette
 
 import javafx.scene.Node
@@ -12,7 +12,7 @@ import javafx.stage.Stage
 
 /**
  * What frames every screen once the player is logged in, as a web site's pages share their header:
- * the sky, and a bar across the top with the game's name, a tab for each place to go (the lobbies,
+ * the world behind it, and a bar across the top with the game's name, a tab for each place to go (the lobbies,
  * practice, ranked, the leaderboard), the sound switch, and the player's own chip, which opens
  * their profile. A screen hands it its body and says which tab it is.
  */
@@ -70,6 +70,7 @@ private[client] object Chrome {
     refresh()
     val user = new HBox(Widgets.avatar(client.playerName, 32), Widgets.text(client.playerName, "user-name"), rating)
     user.getStyleClass.add("user-chip")
+    user.setMaxHeight(Region.USE_PREF_SIZE) // a pill in the bar, not the bar's height
     if (active == Tab.Profile) user.getStyleClass.add("user-chip-active")
     user.setOnMouseClicked(_ => go(Tab.Profile, () => showAccountView(stage))())
     javafx.scene.control.Tooltip.install(user, new javafx.scene.control.Tooltip(Messages.t("Profile")))
@@ -81,10 +82,10 @@ private[client] object Chrome {
     new Page(root, column, () => refresh())
   }
 
-  /** The page before login: the sky and a bar with the game's name, and whatever `right` holds. */
-  def loggedOut(body: Region, right: Seq[Node], sky: SkyBackdrop): Page = {
+  /** The page before login: the world and a bar with the game's name, and whatever `right` holds. */
+  def loggedOut(body: Region, right: Seq[Node], backdrop: WorldBackdrop): Page = {
     val bar = Widgets.topBar(Seq(Widgets.brand(null)), right)
-    val (root, column) = Widgets.page(bar, body, 1200, sky)
+    val (root, column) = Widgets.page(bar, body, 1200, backdrop)
     new Page(root, column, () => ())
   }
 

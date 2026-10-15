@@ -17,8 +17,8 @@ private[model] object Specialists {
   val KnifeDef: ProjectileDef = ProjectileDef(id = ProjectileType.KNIFE, name = "Knife", speedMultiplier = 0.95f, damage = 21, maxRange = 6, hitRadius = 2.2f)
   val HammerDef: ProjectileDef = ProjectileDef(id = ProjectileType.HAMMER, name = "Hammer", speedMultiplier = 0.6f, damage = 28, maxRange = 5, hitRadius = 2.5f)
   val AcidFlaskDef: ProjectileDef = ProjectileDef(id = ProjectileType.ACID_FLASK, name = "Acid Flask", speedMultiplier = 0.4f, damage = 38, maxRange = 14, passesThroughPlayers = true, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(38, 15, 3.0f)))
-  val StarBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.STAR_BOLT, name = "Star Bolt", speedMultiplier = 0.8f, damage = 34, maxRange = 22, chargeSpeedScaling = Some(ChargeScaling(0.6f, 1.1f)), chargeDamageScaling = Some(ChargeScaling(24f, 35f)), chargeRangeScaling = Some(ChargeScaling(14f, 28f)), distanceDamageScaling = Some(DistanceDamageScaling(17, 55, 22)))
-  val RuneBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.RUNE_BOLT, name = "Rune Bolt", speedMultiplier = 0.75f, damage = 24, maxRange = 18, ricochetCount = 2)
+  val StarBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.STAR_BOLT, name = "Star Bolt", speedMultiplier = 0.8f, damage = 31, maxRange = 22, chargeSpeedScaling = Some(ChargeScaling(0.6f, 1.1f)), chargeDamageScaling = Some(ChargeScaling(22f, 35f)), chargeRangeScaling = Some(ChargeScaling(14f, 28f)), distanceDamageScaling = Some(DistanceDamageScaling(15, 50, 22)))
+  val RuneBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.RUNE_BOLT, name = "Rune Bolt", speedMultiplier = 0.75f, damage = 33, maxRange = 18, ricochetCount = 2)
   // A slam (Plan 5a): a bot casts it when its target is inside the ability's GroundSlam radius,
   // so that radius and the AoE radius here are kept in step
   val FeralRoarDef: ProjectileDef = ProjectileDef(id = ProjectileType.FERAL_ROAR, name = "Feral Roar", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(5.0f, 15)), onHitEffect = Some(Slow(2000, 0.5f)), explosionConfig = Some(ExplosionConfig(0, 0, 5.0f)))
@@ -29,10 +29,34 @@ private[model] object Specialists {
   // A splash rather than an explosion: an explosion deals its blast and nothing else, so its
   // on-hit burn would never land (Plan 5a)
   val FlambeDef: ProjectileDef = ProjectileDef(id = ProjectileType.FLAMBE, name = "Flambe", speedMultiplier = 0.7f, damage = 20, maxRange = 6, aoeOnHit = Some(AoESplashConfig(2.5f, 15)), aoeOnMaxRange = Some(AoESplashConfig(2.5f, 15)), onHitEffect = Some(Burn(20, 3000, 750)))
+  // What the volleys became (design/characters.md, *No volleys of more than three*).
+  // The Gambler's Lucky Streak: a haste and nothing else, cast as the Cyborg's Overclock is
+  // (GameInstance.applyCastSelfBuff), so it goes off the moment its key goes down
+  val LuckyStreakDef: ProjectileDef = ProjectileDef(id = ProjectileType.LUCKY_STREAK, name = "Lucky Streak", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(3.0f, 0)), onHitEffect = Some(SpeedBoost(3000)), explosionConfig = Some(ExplosionConfig(0, 0, 3.0f)))
+  // The Astronomer's Meteor, in place of the fireball four others threw: a falling star whose
+  // impact knocks everyone near it back. A splash, so the push reaches all of them, out from where
+  // it came down; the one it struck is pushed straight back by the hit itself
+  val MeteorDef: ProjectileDef = ProjectileDef(id = ProjectileType.METEOR, name = "Meteor", speedMultiplier = 0.45f, damage = 35, maxRange = 18, hitRadius = 2.0f, onHitEffect = Some(Push(2.5f)), aoeOnHit = Some(AoESplashConfig(3.0f, 28)), aoeOnMaxRange = Some(AoESplashConfig(3.0f, 28)))
 
   val projectiles: Seq[ProjectileDef] = Seq(
     FistDef, KnifeDef, HammerDef, AcidFlaskDef, StarBoltDef,
-    RuneBoltDef, FeralRoarDef, HammerThrowDef, MeatHookDef, FlambeDef
+    RuneBoltDef, FeralRoarDef, HammerThrowDef, MeatHookDef, FlambeDef,
+    LuckyStreakDef, MeteorDef
+  )
+
+  /** Variants: another type's flight and look, with effects and a damage of their own. Made from
+    * the registered base, so Roster makes them once every base is registered. */
+  def variants(base: Byte => ProjectileDef): Seq[ProjectileDef] = Seq(
+    // The Puppeteer's Marionette: strings that jerk whoever they reach still, where it threw a fan
+    // of three of its chain bolts
+    base(ProjectileType.CHAIN_BOLT).copy(id = ProjectileType.MARIONETTE, name = "Marionette", damage = 26, speedMultiplier = 0.8f, onHitEffect = Some(Stun(900))),
+    // The Gambler's Wild Card: one card that keeps bouncing off the walls and stuns whoever it
+    // finds, where it flung eight in a ring
+    base(ProjectileType.CARD).copy(id = ProjectileType.WILD_CARD, name = "Wild Card", damage = 31, maxRange = 18, ricochetCount = 4, onHitEffect = Some(Stun(800))),
+    // The Gambler's and the Puppeteer's own primaries, so they can hit harder than the Jester's
+    // card and the Warden's chain bolt: the volleys they threw were a third of what they dealt
+    base(ProjectileType.CARD).copy(id = ProjectileType.CARD_HEAVY, name = "Card Heavy", damage = 33),
+    base(ProjectileType.CHAIN_BOLT).copy(id = ProjectileType.CHAIN_BOLT_HEAVY, name = "Chain Bolt Heavy", damage = 40)
   )
 
   // ── Characters ──
@@ -48,20 +72,20 @@ private[model] object Specialists {
 
   val Puppeteer: CharacterDef = CharacterDef(
     id = CharacterId.Puppeteer, displayName = "Puppeteer",
-    description = "A string master who controls enemies with chains and pulls.",
+    description = "A string master who reels enemies in and jerks them still on their strings.",
     spriteSheet = "sprites/puppeteer.png",
     qAbility = AbilityDef(name = "Puppet String", description = "Pulls an enemy with string.", cooldownMs = 8000, maxRange = 25, damage = 5, projectileType = ProjectileType.ROPE, keybind = "Q"),
-    eAbility = AbilityDef(name = "String Web", description = "Fires 3 strings in a fan.", cooldownMs = 10000, maxRange = 14, damage = 37, projectileType = ProjectileType.CHAIN_BOLT, keybind = "E", castBehavior = FanProjectile(3, Math.toRadians(30))),
-    primaryProjectileType = ProjectileType.CHAIN_BOLT, role = Ranged, maxHealth = 65
+    eAbility = AbilityDef(name = "Marionette", description = "Snares the first enemy it reaches in strings and jerks them still: stunned for 0.9s.", cooldownMs = 11000, maxRange = 14, damage = 26, projectileType = ProjectileType.MARIONETTE, keybind = "E"),
+    primaryProjectileType = ProjectileType.CHAIN_BOLT_HEAVY, role = Ranged, maxHealth = 75
   )
 
   val Gambler: CharacterDef = CharacterDef(
     id = CharacterId.Gambler, displayName = "Gambler",
-    description = "A chaotic risk-taker who flings cards in fans and wild card circles.",
+    description = "A chaotic risk-taker who rides a lucky streak and flings a wild card off every wall.",
     spriteSheet = "sprites/gambler.png",
-    qAbility = AbilityDef(name = "Card Fan", description = "Throws 5 cards in a fan.", cooldownMs = 10000, maxRange = 14, damage = 16, projectileType = ProjectileType.CARD, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(45))),
-    eAbility = AbilityDef(name = "Wild Card", description = "Flings 8 cards in all directions.", cooldownMs = 10000, maxRange = 14, damage = 16, projectileType = ProjectileType.CARD, keybind = "E", castBehavior = FanProjectile(8, 2 * Math.PI)),
-    primaryProjectileType = ProjectileType.CARD, role = Ranged, maxHealth = 60
+    qAbility = AbilityDef(name = "Lucky Streak", description = "Deals yourself a lucky hand: 40% faster for 3s.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = ProjectileType.LUCKY_STREAK, keybind = "Q", castBehavior = GroundSlam(3.0f)),
+    eAbility = AbilityDef(name = "Wild Card", description = "Flicks a card that bounces off walls up to 4 times and stuns the first enemy it hits for 0.8s.", cooldownMs = 10000, maxRange = 18, damage = 31, projectileType = ProjectileType.WILD_CARD, keybind = "E"),
+    primaryProjectileType = ProjectileType.CARD_HEAVY, role = Ranged, maxHealth = 60
   )
 
   val Blacksmith: CharacterDef = CharacterDef(
@@ -102,18 +126,18 @@ private[model] object Specialists {
 
   val Astronomer: CharacterDef = CharacterDef(
     id = CharacterId.Astronomer, displayName = "Astronomer",
-    description = "A stargazer whose star bolts scale with charge and distance.",
+    description = "A stargazer whose star bolts scale with charge and distance, and who calls down meteors.",
     spriteSheet = "sprites/astronomer.png",
-    qAbility = AbilityDef(name = "Meteor", description = "Summons a devastating meteor.", cooldownMs = 6000, maxRange = 18, damage = 55, projectileType = ProjectileType.FIREBALL, keybind = "Q"),
+    qAbility = AbilityDef(name = "Meteor", description = "Calls down a falling star whose impact knocks everyone within 3 cells back.", cooldownMs = 8000, maxRange = 18, damage = 35, projectileType = ProjectileType.METEOR, keybind = "Q"),
     eAbility = AbilityDef(name = "Astral Project", description = "Teleports through the stars.", cooldownMs = 12000, maxRange = 8, damage = 0, projectileType = -2, keybind = "E", castBehavior = TeleportCast(8)),
     primaryProjectileType = ProjectileType.STAR_BOLT, role = Ranged, maxHealth = 60
   )
 
   val Runesmith: CharacterDef = CharacterDef(
     id = CharacterId.Runesmith, displayName = "Runesmith",
-    description = "A trap specialist whose ricocheting rune bolts bounce off walls.",
+    description = "A trap specialist who carves runes of binding and of fire, and whose rune bolts bounce off walls.",
     spriteSheet = "sprites/runesmith.png",
-    qAbility = AbilityDef(name = "Rune Burst", description = "Fires 5 rune bolts in a fan.", cooldownMs = 8000, maxRange = 18, damage = 24, projectileType = ProjectileType.RUNE_BOLT, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(60))),
+    qAbility = AbilityDef(name = "Binding Rune", description = "Carves a rune into the ground that is ready in a moment and roots the first enemy over it for 1.5s.", cooldownMs = 12000, maxRange = 6, damage = 15, projectileType = -4, keybind = "Q", castBehavior = TrapCast(TrapType.BINDING_RUNE, 6)),
     eAbility = AbilityDef(name = "Rune Trap", description = "Burns a rune into the ground that sets the first enemy over it alight for 40 over 5s.", cooldownMs = 12000, maxRange = 6, damage = 40, projectileType = -4, keybind = "E", castBehavior = TrapCast(TrapType.FIRE_RUNE, 6)),
     primaryProjectileType = ProjectileType.RUNE_BOLT, role = Ranged, maxHealth = 65
   )

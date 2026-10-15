@@ -16,9 +16,11 @@ object AbilityCastValidationTest {
 
 /**
  * Attacks fed to the server's ClientHandler as the client sends them. The server used to work out
- * which attack fired a projectile from its type, and many characters fire one type from two
- * attacks: Bear's Maul, eight of the claws it swipes with, was taken for a gem-boosted primary shot
- * and cut to its first three claws, which the fan sent from straight behind the bear.
+ * which attack fired a projectile from its type, and characters fire one type from two attacks:
+ * Bear's Maul, then a ring of eight of the claws it swipes with, was taken for a gem-boosted primary
+ * shot and cut to its first three claws, which the fan sent from straight behind the bear. No
+ * volley is more than three since (design/characters.md), and the Jester's Card Fan is three of
+ * the cards it throws.
  */
 class AbilityCastValidationTest {
   import AbilityCastValidationTest.server
@@ -86,17 +88,18 @@ class AbilityCastValidationTest {
     }.sorted
 
   @Test
-  def bearsMaulSurroundsTheBearWithOneClawOnTheCursor(): Unit = {
+  def theJestersCardFanFansOutRoundTheCursor(): Unit = {
+    // Three of its primary's cards: taken for a gem boost's three, they would all be the shot's
     val aim = (0.6f, 0.8f)
-    val claws = fire(join(CharacterId.Bear), AttackSlot.E, aim)
-    assertEquals(Seq(0L, 45L, 90L, 135L, 180L, 225L, 270L, 315L), degreesOff(aim, claws))
+    val cards = fire(join(CharacterId.Jester), AttackSlot.Q, aim)
+    assertEquals(Seq(0L, 15L, 345L), degreesOff(aim, cards))
   }
 
   @Test
-  def fenrirsBloodFrenzySurroundsFenrirWithOneBiteOnTheCursor(): Unit = {
+  def theVampiresBatsFanOutRoundTheCursor(): Unit = {
     val aim = (-1f, 0f)
-    val bites = fire(join(CharacterId.Fenrir), AttackSlot.E, aim)
-    assertEquals(Seq(0L, 45L, 90L, 135L, 180L, 225L, 270L, 315L), degreesOff(aim, bites))
+    val bats = fire(join(CharacterId.Vampire), AttackSlot.E, aim)
+    assertEquals(Seq(0L, 25L, 335L), degreesOff(aim, bats))
   }
 
   @Test
@@ -113,31 +116,31 @@ class AbilityCastValidationTest {
 
   @Test
   def anAbilityRightAfterAPrimaryShotOfTheSameTypeLandsInFull(): Unit = {
-    // Each of these fires a ring of its primary's projectile. Straight after a primary shot, the
-    // server used to count the ring as more of that shot and let two of its projectiles through.
-    for (c <- Seq(CharacterId.Bear, CharacterId.Fenrir, CharacterId.Berserker, CharacterId.Glitcher,
-                  CharacterId.Cryomancer, CharacterId.Windwalker, CharacterId.Jellyfish, CharacterId.Gambler)) {
-      val p = join(c)
-      assertEquals(c.name, 1, fire(p, AttackSlot.PRIMARY).size)
+    // Each of these fires its primary's projectile from Q as well. Straight after a primary shot,
+    // the server used to count the cast as more of that shot and let only part of it through.
+    val sharing = CharacterDef.all.filter(c => c.qAbility.projectileType == c.primaryProjectileType)
+    assertEquals(Set(CharacterId.Enchantress, CharacterId.Jester), sharing.map(_.id).toSet)
+    for (c <- sharing) {
+      val p = join(c.id)
+      assertEquals(c.displayName, 1, fire(p, AttackSlot.PRIMARY).size)
       Thread.sleep(PRESS_GAP_MS)
-      val slot = if (charDef(p).eAbility.projectileType == charDef(p).primaryProjectileType) AttackSlot.E else AttackSlot.Q
-      assertEquals(c.name, headingsOf(p, slot).size, fire(p, slot).size)
+      assertEquals(c.displayName, headingsOf(p, AttackSlot.Q).size, fire(p, AttackSlot.Q).size)
     }
   }
 
   @Test
   def aPrimaryShotRightAfterTheAbilityIsNotDropped(): Unit = {
-    val p = join(CharacterId.Bear)
-    assertEquals(8, fire(p, AttackSlot.E).size)
+    val p = join(CharacterId.Jester)
+    assertEquals(3, fire(p, AttackSlot.Q).size)
     Thread.sleep(PRESS_GAP_MS)
     assertEquals(1, fire(p, AttackSlot.PRIMARY).size)
   }
 
   @Test
-  def twoAbilitiesFiringTheSameTypeLandBackToBack(): Unit = {
-    // Paladin, Cleric, Photon and Gambler fire one type from both Q and E. Both used to run on Q's
-    // cooldown, so whichever came second lost its first projectile — all of it, for a single bolt.
-    for (c <- Seq(CharacterId.Paladin, CharacterId.Cleric, CharacterId.Photon, CharacterId.Gambler);
+  def twoAbilitiesLandBackToBack(): Unit = {
+    // Each on its own clock. They used to share Q's when they fired one type, so whichever came
+    // second lost its first projectile — all of it, for a single bolt
+    for (c <- Seq(CharacterId.Cleric, CharacterId.Soldier, CharacterId.Photon, CharacterId.Gambler);
          (first, second) <- Seq((AttackSlot.Q, AttackSlot.E), (AttackSlot.E, AttackSlot.Q))) {
       val p = join(c)
       assertEquals(c.name, headingsOf(p, first).size, fire(p, first).size)
@@ -148,29 +151,29 @@ class AbilityCastValidationTest {
 
   @Test
   def aHitLandingMidCastDoesNotCutTheCastShort(): Unit = {
-    // Bone Storm's type is its own, so this is only about the hit
-    val p = join(CharacterId.SkeletonKing)
-    val ring = headingsOf(p, AttackSlot.E)
-    val first = send(p, AttackSlot.E, ProjectileType.BONE_THROW, ring.take(4))
-    // A bone lands on someone before the rest of the ring has been handled
-    instance.handler.notifyAbilityHit(p.getId, ProjectileType.BONE_THROW, p.getCharacterId)
-    val rest = send(p, AttackSlot.E, ProjectileType.BONE_THROW, ring.drop(4))
-    assertEquals(8, first.size + rest.size)
+    // Bat Swarm's type is its own, so this is only about the hit
+    val p = join(CharacterId.Vampire)
+    val fan = headingsOf(p, AttackSlot.E)
+    val first = send(p, AttackSlot.E, ProjectileType.BAT_SWARM, fan.take(1))
+    // A bat lands on someone before the rest of the fan has been handled
+    instance.handler.notifyAbilityHit(p.getId, ProjectileType.BAT_SWARM, p.getCharacterId)
+    val rest = send(p, AttackSlot.E, ProjectileType.BAT_SWARM, fan.drop(1))
+    assertEquals(3, first.size + rest.size)
   }
 
   // --- What the server still refuses ---
 
   @Test
   def aCastCannotFireMoreThanTheAbilityDoes(): Unit = {
-    val p = join(CharacterId.Bear)
-    val ring = headingsOf(p, AttackSlot.E)
-    assertEquals(8, send(p, AttackSlot.E, ProjectileType.MAUL, ring :+ 0.0).size)
+    val p = join(CharacterId.Vampire)
+    val fan = headingsOf(p, AttackSlot.E)
+    assertEquals(3, send(p, AttackSlot.E, ProjectileType.BAT_SWARM, fan :+ 0.0).size)
   }
 
   @Test
   def anAbilityCannotBeRecastInsideItsCooldown(): Unit = {
-    val p = join(CharacterId.Bear)
-    assertEquals(8, fire(p, AttackSlot.E).size)
+    val p = join(CharacterId.Vampire)
+    assertEquals(3, fire(p, AttackSlot.E).size)
     Thread.sleep(PRESS_GAP_MS)
     assertEquals(0, fire(p, AttackSlot.E).size)
   }

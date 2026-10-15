@@ -12,6 +12,7 @@ import Fire._
 import Holy._
 import Ice._
 import Inward._
+import Luck._
 import Liquids._
 import Nanites._
 import Nature._
@@ -22,7 +23,7 @@ import Water._
 /**
  * The blasts: every explosion and splash a projectile, a slam or a mine sets off, drawn as the
  * thrower's own. A blast is picked by who threw it as well as by what they threw
- * ([[styleOf]]): six characters slam a TREMOR_SLAM and four throw a GRENADE, and the Banshee's
+ * ([[styleOf]]): five characters slam a TREMOR_SLAM and four throw a GRENADE, and the Banshee's
  * wail, the Golem's quake and the Nanoswarm's swarm have nothing in common but that. Every one
  * used to be one of two generic animations — a fireball, or a set of rings — tinted with the
  * player's random colour, and a slam was both at once: a Wolf's howl went off as a grenade.
@@ -134,7 +135,18 @@ object GLBlastRenderers {
   final val S_NANO_SPLASH = 65  // Nanoswarm's bolt: nanites scattering
   final val S_NANO_BURST = 66   // Nanoswarm's explosion: a swarm flung out over a hex grid
   final val S_PETRIFY = 67      // Medusa: an eye opening, and a wave of stone
-  final val STYLE_COUNT = 68
+  // What the volleys became (design/characters.md, *No volleys of more than three*)
+  final val S_COMBUST = 68      // Pyromancer's Combust: a ring of flame racing out, sparks, his haste's streaks
+  final val S_HAIL = 69         // Cloudrunner's Hailstorm: a storm cloud breaking, hailstones, a frost ring
+  final val S_JUDGMENT = 70     // Cleric's Divine Judgment: a crown of beams round a golden glyph
+  final val S_REPULSE = 71      // Graviton's Repulse: violet rings shoving out, its cubes flung away
+  final val S_JELLY_SHOCK = 72  // Jellyfish's Electric Burst: pink arcs and a crackling rim
+  final val S_LUCKY = 73        // Gambler's Lucky Streak: cards and coins flung up, a gold ring
+  final val S_AXE_WHIRL = 74    // Berserker's Axe Spin: axe-cut arcs whirling round, dust and chips
+  final val S_MAUL = 75         // Bear's Maul: claw marks raked all round, dust and fur
+  final val S_FRENZY = 76       // Fenrir's Blood Frenzy: red slashes and blood drawn up to him
+  final val S_METEOR = 77       // Astronomer's Meteor: a crater, glowing cracks, rubble and stars
+  final val STYLE_COUNT = 78
 
   private val _name = new Array[String](STYLE_COUNT)
   private val _dur = new Array[Int](STYLE_COUNT)
@@ -220,6 +232,16 @@ object GLBlastRenderers {
   style(S_NANO_SPLASH, "nano splash", 700, 0.3f, 1f, 0.8f, 0.3f)
   style(S_NANO_BURST, "nano burst", 1250, 0.3f, 1f, 0.8f, 0.45f, 0.6f)
   style(S_PETRIFY, "petrify", 1350, 0.7f, 1f, 0.4f, 0.45f, 0.6f)
+  style(S_COMBUST, "combust", 1050, 1f, 0.55f, 0.18f, 0.6f, 0.5f)
+  style(S_HAIL, "hail", 1250, 0.7f, 0.88f, 1f, 0.3f, 0.4f)
+  style(S_JUDGMENT, "judgment", 1200, 1f, 0.9f, 0.55f, 0.8f, 0.6f)
+  style(S_REPULSE, "repulse", 1050, 0.65f, 0.45f, 1f, 0.5f, 1f)
+  style(S_JELLY_SHOCK, "jelly shock", 900, 1f, 0.55f, 0.88f, 0.6f)
+  style(S_LUCKY, "lucky", 1000, 1f, 0.84f, 0.35f, 0.4f)
+  style(S_AXE_WHIRL, "axe whirl", 950, 1f, 0.8f, 0.55f, 0.15f, 0.8f)
+  style(S_MAUL, "maul", 950, 1f, 0.66f, 0.35f, 0.15f, 0.8f)
+  style(S_FRENZY, "frenzy", 1050, 1f, 0.2f, 0.2f, 0.35f, 0.6f)
+  style(S_METEOR, "meteor", 1350, 1f, 0.66f, 0.3f, 0.7f, 1f)
 
   // ── Who throws what ────────────────────────────────────────────────
   // By projectile type, then by (character, projectile type) for a type thrown by characters
@@ -279,6 +301,21 @@ object GLBlastRenderers {
   byType(S_ROAR, ProjectileType.FERAL_ROAR)
   byType(S_NANO_SPLASH, ProjectileType.NANO_BOLT)
   byType(S_PETRIFY, ProjectileType.STONE_GAZE)
+  // What the volleys became; the frost traps nobody lays any more lent the Frost Nova their frost
+  byType(S_FROST, ProjectileType.FROST_NOVA)
+  byType(S_COMBUST, ProjectileType.COMBUST)
+  byType(S_HAIL, ProjectileType.HAILSTORM)
+  byType(S_JUDGMENT, ProjectileType.DIVINE_JUDGMENT)
+  byType(S_REPULSE, ProjectileType.REPULSE)
+  byType(S_JELLY_SHOCK, ProjectileType.SHOCK_BURST)
+  byType(S_LUCKY, ProjectileType.LUCKY_STREAK)
+  byType(S_AXE_WHIRL, ProjectileType.AXE_SPIN)
+  byType(S_MAUL, ProjectileType.MAUL)
+  byType(S_FRENZY, ProjectileType.BLOOD_FRENZY)
+  byType(S_METEOR, ProjectileType.METEOR)
+  // The Beetle's quake of dirt and chitin goes with it to its Horn Flip; a Tremor Slam is now only
+  // ever the Golem's or one of the four who slam it as something else
+  byType(S_TREMOR, ProjectileType.HORN_FLIP)
 
   // One type, several fantasies
   only(S_BOMB, CharacterId.Bombardier, ProjectileType.GRENADE)
@@ -344,18 +381,19 @@ object GLBlastRenderers {
       case S_FRAG | S_ROCKET | S_BOMB | S_CLUSTER | S_BOMB_ROCKET | S_PLASMA | S_EMP | S_CANNON |
            S_NAPALM | S_INFERNO | S_ERUPTION | S_MINE => explosion(styleId)
       case S_MAGMA | S_HELLFIRE => lava(styleId)
-      case S_FLAMBE | S_PHOENIX => flame(styleId)
+      case S_FLAMBE | S_PHOENIX | S_COMBUST => flame(styleId)
       case S_PLAGUE | S_ALCHEMY | S_BLIGHT | S_ACID_FLASK | S_ACID_SPRAY | S_MUD | S_INK => liquid(styleId)
       case S_MIASMA | S_VENOM_CLOUD => gas(styleId)
       case S_SPLASH | S_GEYSER => water(styleId)
-      case S_STORM | S_THUNDER | S_TESLA | S_TESLA_FORK | S_OVERCLOCK => electric(styleId)
-      case S_SEISMIC | S_TREMOR | S_GOLEM | S_POUND | S_MECH | S_SCALES => earth(styleId)
-      case S_ICE_QUAKE | S_AVALANCHE | S_FROST => ice(styleId)
+      case S_STORM | S_THUNDER | S_TESLA | S_TESLA_FORK | S_OVERCLOCK | S_JELLY_SHOCK => electric(styleId)
+      case S_SEISMIC | S_TREMOR | S_GOLEM | S_POUND | S_MECH | S_SCALES | S_AXE_WHIRL | S_METEOR => earth(styleId)
+      case S_ICE_QUAKE | S_AVALANCHE | S_FROST | S_HAIL => ice(styleId)
       case S_THORNS | S_LEAVES | S_SPLINTERS | S_ENTANGLE | S_ROOTS | S_WEB => nature(styleId)
-      case S_SOUL_HARVEST | S_RAISE_DEAD | S_BONES | S_ECHO | S_WAIL | S_SHADOW_BURST => dark(styleId)
-      case S_VOID_PULL | S_GRAVITY | S_FIRE_VORTEX | S_TEMPORAL => inward(styleId)
-      case S_SMITE | S_SHIELD_BASH => holy(styleId)
-      case S_LUTE | S_BASS | S_HOWL | S_ROAR | S_SHRIEK => sonic(styleId)
+      case S_SOUL_HARVEST | S_RAISE_DEAD | S_BONES | S_ECHO | S_WAIL | S_SHADOW_BURST | S_FRENZY => dark(styleId)
+      case S_VOID_PULL | S_GRAVITY | S_FIRE_VORTEX | S_TEMPORAL | S_REPULSE => inward(styleId)
+      case S_SMITE | S_SHIELD_BASH | S_JUDGMENT => holy(styleId)
+      case S_LUTE | S_BASS | S_HOWL | S_ROAR | S_SHRIEK | S_MAUL => sonic(styleId)
+      case S_LUCKY => luck()
       case S_NANO_SPLASH | S_NANO_BURST => nano(styleId)
       case S_PETRIFY => petrify()
       case _ => generic()

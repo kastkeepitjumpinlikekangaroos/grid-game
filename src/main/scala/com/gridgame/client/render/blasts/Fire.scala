@@ -67,7 +67,20 @@ private[blasts] object Fire {
   }
 
   private[blasts] def flame(st: Int): Unit = {
-    if (st == S_FLAMBE) {
+    if (st == S_COMBUST) {
+      // The Pyromancer going up in flame: a ring of fire racing out over everyone near, flames
+      // licking up behind it, and the streaks of the haste he leaves it at
+      scorch(0.62f, 0.14f, 0.05f, 0.02f, 0.4f)
+      shockRing(0f, 0.3f, 8f, 1f, 0.5f, 0.12f, 0.95f)
+      shockRing(0.05f, 0.36f, 3.6f, 1f, 0.85f, 0.4f, 0.8f)
+      flames(10, 0.66f, 0.06f, scatter = false, 20f, 4.6f, 0.03f, 0.16f, 0.38f,
+        1f, 0.42f, 0.08f, 1f, 0.88f, 0.42f, 1)
+      streaks(10, 0.02f, 0.32f, 0.18f, 1f, 0.32f, 2.6f, 1f, 0.72f, 0.28f, 0.85f, 2)
+      if (layer != AIR) return
+      flash(0.08f, 0.62f, 1f, 0.62f, 0.22f)
+      debris(D_SPARK, 12, 0f, 0.45f, 1f, 30f, 2.2f, 1f, 0.7f, 0.25f, 1)
+      motes(12, 0.05f, 0.9f, 0.7f, 60f, 1.6f, 1f, 0.6f, 0.2f, 1f, 2)
+    } else if (st == S_FLAMBE) {
       scorch(0.45f, 0.06f, 0.06f, 0.12f, 0.35f)
       // Blue-footed flames round the pan, orange at their tips
       flames(9, 0.45f, 0.05f, scatter = false, 24f, 5f, 0f, 0f, 0.3f,

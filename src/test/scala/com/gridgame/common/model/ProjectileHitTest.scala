@@ -117,13 +117,18 @@ class ProjectileHitTest {
     assertFalse(wave(20f + d.hitCentreBehind, 20f - d.hitRadius - 0.01f, 5f).hitsPlayer(target))
   }
 
-  @Test def aWaveStrikesNobodyBesideOrBehindItsCaster(): Unit = {
+  @Test def aWaveStrikesNobodyBehindItsCaster(): Unit = {
     // Thrown east by a caster at (10, 20), it is spawned a cell out and first checked a sub-step
     // further, at (11.5, 20), and its circle never trails back past there: round the spawn, or
-    // further back, it caught players standing beside and behind the caster, never struck before
-    for ((x, y) <- Seq((10, 21), (10, 19), (9, 20)); traveled <- Seq(0.5f, 1f, 1.5f, 2f))
+    // further back, it caught players standing behind the caster. Since it became one great wave
+    // (2.4 cells either side, as wide as the middle three of the fan of five it was) it does reach
+    // the cells either side of its caster, as that fan's outer waves did, but no further
+    val radius = ProjectileDef.get(ProjectileType.TIDAL_WAVE).hitRadius
+    assertEquals(2.4f, radius, 1e-6f)
+    for ((x, y) <- Seq((10, 22), (10, 18), (9, 20), (9, 21), (9, 19)); traveled <- Seq(0.5f, 1f, 1.5f, 2f))
       assertFalse(s"($x, $y), $traveled cells out", wave(11f + traveled, 20f, traveled).hitsPlayer(player(x, y)))
-    assertTrue("while one ahead of it is", wave(11.5f, 20f, 0.5f).hitsPlayer(player(12, 21)))
+    assertTrue("while one beside it is", wave(11.5f, 20f, 0.5f).hitsPlayer(player(10, 21)))
+    assertTrue("and one ahead of it", wave(11.5f, 20f, 0.5f).hitsPlayer(player(12, 22)))
   }
 
   @Test def withinPlayerAndDistanceToPlayerAgree(): Unit = {

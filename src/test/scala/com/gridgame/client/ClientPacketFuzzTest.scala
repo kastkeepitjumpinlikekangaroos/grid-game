@@ -122,16 +122,41 @@ class ClientPacketFuzzTest {
       case _ => new WorldInfoPacket(nextSeq(), "the_cell.json")
     }
 
-    /** What the player does: walk, aim, fire, cast, use what they carry, raise a barrier. */
-    private def act(): Unit = rnd.nextInt(9) match {
+    /** What the player does: walk, aim, fire, cast, use what they carry, raise a barrier, take an
+      * ability up to aim it and click it off or put it away, hold the primary down and let it go, and
+      * look at where an aimed one would go. */
+    private def act(): Unit = rnd.nextInt(13) match {
       case 0 | 1 => note("walks"); client.movePlayer(rnd.nextInt(3) - 1, rnd.nextInt(3) - 1)
       case 2 => note("aims and fires"); client.setMouseWorldPosition(coord(), coord()); client.shoot()
       case 3 => note("fires toward"); client.shootToward(rnd.nextFloat() * 2 - 1, rnd.nextFloat() * 2 - 1, rnd.nextInt(101))
-      case 4 => note("casts"); client.setMouseWorldPosition(coord(), coord()); client.shootAbility(rnd.nextInt(2) + 1)
+      case 4 => note("casts"); client.setMouseWorldPosition(coord(), coord()); client.shootAbility(rnd.nextInt(2))
       case 5 => note("bursts"); client.shootAllDirections()
       case 6 => note("uses an item"); client.setMouseWorldPosition(coord(), coord()); client.useItem((1 + rnd.nextInt(5)).toByte)
       case 7 => note("charges"); if (rnd.nextBoolean()) client.startCharging() else client.cancelCharging()
-      case _ => note("dashes on, streams its barrier"); client.tickSwoop(); client.streamBarrier()
+      case 8 => note("dashes on, streams its barrier"); client.tickSwoop(); client.streamBarrier()
+      case 9 =>
+        note("presses Q or E"); client.setMouseWorldPosition(coord(), coord())
+        client.pressAbility(rnd.nextInt(2))
+      case 10 =>
+        // The primary button: down (casting what is aimed, or holding the primary) or up
+        client.setMouseWorldPosition(coord(), coord())
+        if (rnd.nextBoolean()) { note("clicks down"); client.pressPrimary() }
+        else { note("lets the button up"); client.releasePrimary() }
+      case 11 => note("puts away what it aims"); client.cancelAims()
+      case _ =>
+        // What the renderer and the HUD read of an attack being aimed, every frame it is
+        note("looks at where its aimed attack would go")
+        client.aimingSlot; client.aimedAbility; client.aimedForMs(rnd.nextInt(3)); client.primaryReady
+        val d = client.getSelectedCharacterDef
+        Seq(d.qAbility, d.eAbility).zipWithIndex.foreach { case (a, i) =>
+          client.abilityReady(i)
+          a.castBehavior match {
+            case DashBuff(max, _, _) => client.dashLanding(max)
+            case TeleportCast(max) => client.blinkLanding(max)
+            case TrapCast(_, range) => client.trapLanding(range)
+            case _ =>
+          }
+        }
     }
 
     def play(steps: Int): Unit = {

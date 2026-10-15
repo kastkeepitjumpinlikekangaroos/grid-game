@@ -41,6 +41,8 @@ AUDIO_OFF = {"GRIDGAME_AUDIO": "off"}
     ("game_client_lobby_test", "GameClientLobbyTest.scala"),
     ("game_client_spawn_requests_test", "GameClientSpawnRequestsTest.scala"),
     ("game_client_knockback_test", "GameClientKnockbackTest.scala"),
+    # Casting mode: Q or E aimed and cast by a click, what goes off at once, and what is shown is cast
+    ("game_client_aim_test", "GameClientAimTest.scala"),
     ("projectile_flight_test", "ProjectileFlightTest.scala"),
     ("projectile_thrower_test", "ProjectileThrowerTest.scala"),
     ("lobby_room_screen_test", "LobbyRoomScreenTest.scala"),

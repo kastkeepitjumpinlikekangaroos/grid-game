@@ -5,7 +5,8 @@ import GLBlastRenderers._
 import BlastKit._
 import Pieces._
 
-/** The dark: souls streaming in, the dead raised, bones, the banshee's wail and echo, a shadow burst. */
+/** The dark: souls streaming in, the dead raised, bones, the banshee's wail and echo, a shadow burst,
+  * and Fenrir's blood frenzy. */
 private[blasts] object Dark {
   /** A soul, or a spirit: a pale head (two dark eyes if `eyes`) and a straight tail of light
     * streaming away behind it, opposite (dx, dy). */
@@ -165,6 +166,37 @@ private[blasts] object Dark {
           }
           i += 1
         }
+      case S_FRENZY =>
+        // Fenrir savaging everything round him: red slashes torn across the ground in a ring, blood
+        // flung off them, and the life drained rising to him
+        scorch(0.55f, 0.3f, 0.02f, 0.04f, 0.35f)
+        shockRing(0f, 0.3f, 7f, 0.92f, 0.12f, 0.16f, 0.9f)
+        if (layer == GROUND) {
+          var i = 0
+          while (i < 7) {
+            val th = (i + 0.4f * hash(seed, 1850 + i)) * TWO_PI / 7
+            val grow = easeOut3(seg(T, 0.01f + 0.025f * i, 0.12f + 0.025f * i))
+            val a = tail(T, 0.55f)
+            if (grow > 0.02f && a > 0.01f) {
+              val c = cosf(th); val s = sinf(th)
+              val nx = -s; val ny = c
+              var j = -1
+              while (j <= 1) {
+                val off = j * 0.06f
+                _xs(0) = gx(c, 0.3f) + nx * off * W; _ys(0) = gy(s, 0.3f) + ny * off * H
+                _xs(1) = gx(c, 0.3f + 0.55f * grow) + nx * off * W * 0.6f; _ys(1) = gy(s, 0.3f + 0.55f * grow) + ny * off * H * 0.6f
+                sb.strokePolylineTapered(_xs, _ys, 2, 4.2f * k + 2.2f, 0.8f, 0.22f, 0.02f, 0.03f, 0.7f * a, 0.3f * a)
+                sb.strokePolylineTapered(_xs, _ys, 2, 4.2f * k, 0.5f, 0.92f, 0.12f, 0.16f, a, 0.5f * a)
+                j += 1
+              }
+            }
+            i += 1
+          }
+        }
+        if (layer != AIR) return
+        flash(0.07f, 0.45f, 1f, 0.22f, 0.2f)
+        debris(D_DROP, 14, 0f, 0.7f, 0.9f, 30f, 2.4f, 0.85f, 0.06f, 0.1f, 1, shadow = true)
+        motes(12, 0.12f, 0.95f, 0.65f, 44f, 1.5f, 1f, 0.28f, 0.26f, 1f, 2)
       case _ => // S_SHADOW_BURST
         scorch(0.72f, 0.06f, 0.02f, 0.1f, 0.6f)
         if (layer == GROUND) {

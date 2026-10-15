@@ -4,7 +4,8 @@ import GLBlastRenderers._
 import BlastKit._
 import Pieces._
 
-/** Things that pull inward: vortices, gravity, implosions — and the Chronomancer's clock running backwards. */
+/** Things that pull inward: vortices, gravity, implosions — the Chronomancer's clock running backwards,
+  * and gravity turned inside out, the Graviton's Repulse. */
 private[blasts] object Inward {
   /** Spiral arms turning in over the ground, `arms` of them, tightening as the blast goes on. */
   private def spiralArms(arms: Int, t0: Float, t1: Float, spin: Float, twist: Float, w: Float,
@@ -144,6 +145,25 @@ private[blasts] object Inward {
 
   private[blasts] def inward(st: Int): Unit = {
     (st: @scala.annotation.switch) match {
+      case S_REPULSE =>
+        // Gravity turned inside out: violet rings shoving out one after another over a lensed rim,
+        // the Graviton's cubes thrown off, and streaks of everything driven away from the middle
+        scorch(0.5f, 0.12f, 0.06f, 0.24f, 0.35f)
+        shockRing(0f, 0.3f, 10f, 0.6f, 0.4f, 1f, 0.95f)
+        shockRing(0.06f, 0.38f, 5f, 0.82f, 0.66f, 1f, 0.85f)
+        shockRing(0.12f, 0.46f, 3f, 0.95f, 0.9f, 1f, 0.7f)
+        streaks(12, 0.02f, 0.36f, 0.15f, 1.05f, 0.35f, 3f, 0.72f, 0.55f, 1f, 0.9f, 1)
+        if (layer == GROUND) {
+          val la = life(T, 0.04f, 0.4f)
+          if (la > 0.01f) {
+            sb.strokeOval(cx, cy, W * 0.24f, H * 0.24f, 2.4f * k + 2.4f, 0.12f, 0.06f, 0.25f, 0.5f * la, 20)
+            sb.strokeOval(cx, cy, W * 0.24f, H * 0.24f, 2.4f * k, 0.85f, 0.75f, 1f, la, 20)
+          }
+        }
+        if (layer != AIR) return
+        flash(0.08f, 0.55f, 0.72f, 0.5f, 1f)
+        debris(D_SQUARE, 10, 0f, 0.7f, 1f, 30f, 2.6f, 0.65f, 0.42f, 1f, 1)
+        debris(D_SPARK, 8, 0f, 0.35f, 1f, 16f, 2f, 0.75f, 0.6f, 1f, 2)
       case S_GRAVITY =>
         spiralArms(4, 0.02f, 0.72f, 2.2f, 2.4f, 4f, 0.55f, 0.42f, 1f, 0.9f)
         closingRings(3, 0.02f, 0.7f, 2.6f, 0.62f, 0.5f, 1f, 0.9f)

@@ -15,8 +15,10 @@ private[model] object Undead {
 
   val DeathBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.DEATH_BOLT, name = "Death Bolt", speedMultiplier = 0.7f, damage = 28, maxRange = 16, passesThroughWalls = true, pierceCount = 1)
   val RaiseDeadDef: ProjectileDef = ProjectileDef(id = ProjectileType.RAISE_DEAD, name = "Raise Dead", speedMultiplier = 0.5f, damage = 32, maxRange = 14, aoeOnHit = Some(AoESplashConfig(3.0f, 19)))
-  val BoneAxeDef: ProjectileDef = ProjectileDef(id = ProjectileType.BONE_AXE, name = "Bone Axe", speedMultiplier = 0.6f, damage = 24, maxRange = 5, hitRadius = 2.5f)
-  val BoneThrowDef: ProjectileDef = ProjectileDef(id = ProjectileType.BONE_THROW, name = "Bone Throw", speedMultiplier = 0.8f, damage = 20, maxRange = 16, boomerang = true)
+  val BoneAxeDef: ProjectileDef = ProjectileDef(id = ProjectileType.BONE_AXE, name = "Bone Axe", speedMultiplier = 0.6f, damage = 28, maxRange = 5, hitRadius = 2.5f)
+  // The Skeleton King's Bone Cage: one bone that springs a cage round whoever it reaches. It was a
+  // ring of eight boomerang bones (Bone Storm)
+  val BoneThrowDef: ProjectileDef = ProjectileDef(id = ProjectileType.BONE_THROW, name = "Bone Throw", speedMultiplier = 0.9f, damage = 20, maxRange = 14, onHitEffect = Some(Root(1500)))
   val SoulDrainDef: ProjectileDef = ProjectileDef(id = ProjectileType.SOUL_DRAIN, name = "Soul Drain", speedMultiplier = 0.6f, damage = 44, maxRange = 14, onHitEffect = Some(LifeSteal(40)))
   val DevourDef: ProjectileDef = ProjectileDef(id = ProjectileType.DEVOUR, name = "Devour", speedMultiplier = 0.5f, damage = 31, maxRange = 6, onHitEffect = Some(LifeSteal(50)), alsoOnHit = Seq(Root(1000)))
   val ScytheDef: ProjectileDef = ProjectileDef(id = ProjectileType.SCYTHE, name = "Scythe", speedMultiplier = 0.65f, damage = 24, maxRange = 5, hitRadius = 2.5f)
@@ -41,6 +43,9 @@ private[model] object Undead {
   // in their step (MeleeKitsTest). See common/model/CLAUDE.md, "Melee kits"
   val GraspingDeadDef: ProjectileDef = ProjectileDef(id = ProjectileType.GRASPING_DEAD, name = "Grasping Dead", speedMultiplier = 0.95f, damage = 15, maxRange = 16, onHitEffect = Some(Root(1000)))
   val DeathGripDef: ProjectileDef = ProjectileDef(id = ProjectileType.DEATH_GRIP, name = "Death Grip", speedMultiplier = 0.95f, damage = 10, maxRange = 16, onHitEffect = Some(PullToOwner))
+  // The Poltergeist's Fling, in place of the charm three others threw: a keepsake hurled hard
+  // enough to knock whoever it strikes back
+  val FlingDef: ProjectileDef = ProjectileDef(id = ProjectileType.FLING, name = "Fling", speedMultiplier = 0.75f, damage = 32, maxRange = 14, onHitEffect = Some(Push(3.5f)))
 
   val projectiles: Seq[ProjectileDef] = Seq(
     DeathBoltDef, RaiseDeadDef, BoneAxeDef, BoneThrowDef, SoulDrainDef,
@@ -48,7 +53,7 @@ private[model] object Undead {
     LifeDrainDef, ShovelDef, BandageWhipDef, CurseDef, CharmDef,
     TremorSlamDef, BoomerangBladeDef, LeechBoltDef, BoneBoomerangDef, ShadowHauntDef,
     EchoBoltDef, SoulHarvestDef, SoulBoltHeavyDef, SonicWaveHeavyDef, GraspingDeadDef,
-    DeathGripDef
+    DeathGripDef, FlingDef
   )
 
   /** Plan 5a's variants: another type's flight and look, with an effect and a damage of their own
@@ -59,7 +64,10 @@ private[model] object Undead {
     // twice a second, and a hold grants 1.5s of CC immunity that would turn the kit's own holds away
     base(ProjectileType.CLAW_SWIPE).copy(id = ProjectileType.GHOUL_CLAW, name = "Ghoul Claw", damage = 26, onHitEffect = Some(Slow(1000, 0.7f))),
     base(ProjectileType.CURSED_BLADE).copy(id = ProjectileType.DRAIN_BLADE, name = "Drain Blade", damage = 24, onHitEffect = Some(LifeSteal(20))),
-    base(ProjectileType.CURSED_BLADE).copy(id = ProjectileType.CHILL_BLADE, name = "Chill Blade", damage = 27, onHitEffect = Some(Slow(1000, 0.7f)))
+    base(ProjectileType.CURSED_BLADE).copy(id = ProjectileType.CHILL_BLADE, name = "Chill Blade", damage = 27, onHitEffect = Some(Slow(1000, 0.7f))),
+    // One shadow bolt that roots, in place of the Shade's fan of three plain ones. It bounces off
+    // walls rather than flying through them, as the Shade's own bolts are said to
+    base(ProjectileType.SHADOW_BOLT).copy(id = ProjectileType.SHADOW_BIND, name = "Shadow Bind", damage = 18, passesThroughWalls = false, onHitEffect = Some(Root(1500)))
   )
 
   // ── Characters ──
@@ -75,10 +83,10 @@ private[model] object Undead {
 
   val SkeletonKing: CharacterDef = CharacterDef(
     id = CharacterId.SkeletonKing, displayName = "Skeleton King",
-    description = "An undead monarch wielding bone axes and boomerang bones with AoE splash.",
+    description = "An undead monarch wielding bone axes, a boomerang bone and a cage of bones.",
     spriteSheet = "sprites/skeletonking.png",
     qAbility = AbilityDef(name = "Bone Boomerang", description = "Hurls a bone that returns, splashing and slowing on hit.", cooldownMs = 10000, maxRange = 16, damage = 25, projectileType = ProjectileType.BONE_BOOMERANG, keybind = "Q"),
-    eAbility = AbilityDef(name = "Bone Storm", description = "Unleashes bones in all directions.", cooldownMs = 12000, maxRange = 16, damage = 20, projectileType = ProjectileType.BONE_THROW, keybind = "E", castBehavior = FanProjectile(8, 2 * Math.PI)),
+    eAbility = AbilityDef(name = "Bone Cage", description = "Hurls a bone that springs a cage of bones round the first enemy it reaches, rooting them for 1.5s.", cooldownMs = 12000, maxRange = 14, damage = 20, projectileType = ProjectileType.BONE_THROW, keybind = "E"),
     primaryProjectileType = ProjectileType.BONE_AXE, role = Melee, maxHealth = 125, moveSpeed = Melee.speed
   )
 
@@ -120,9 +128,9 @@ private[model] object Undead {
 
   val Shade: CharacterDef = CharacterDef(
     id = CharacterId.Shade, displayName = "Shade",
-    description = "A ricochet specialist whose shadow bolts bounce off walls and can shadow step.",
+    description = "A shadow that binds foes with a bolt bounced off the walls, and steps through the shadows.",
     spriteSheet = "sprites/shade.png",
-    qAbility = AbilityDef(name = "Shadow Ricochet Fan", description = "Fires 3 ricocheting shadow bolts.", cooldownMs = 10000, maxRange = 16, damage = 15, projectileType = ProjectileType.SHADOW_BOLT, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(30))),
+    qAbility = AbilityDef(name = "Shadow Bind", description = "A shadow bolt that bounces off walls twice and roots the first enemy it reaches for 1.5s.", cooldownMs = 10000, maxRange = 16, damage = 18, projectileType = ProjectileType.SHADOW_BIND, keybind = "Q"),
     eAbility = AbilityDef(name = "Shadow Step", description = "Teleports through the shadows.", cooldownMs = 12000, maxRange = 8, damage = 0, projectileType = -2, keybind = "E", castBehavior = TeleportCast(8)),
     primaryProjectileType = ProjectileType.SHADOW_BOLT, role = Ranged, maxHealth = 60
   )
@@ -192,9 +200,9 @@ private[model] object Undead {
 
   val Poltergeist: CharacterDef = CharacterDef(
     id = CharacterId.Poltergeist, displayName = "Poltergeist",
-    description = "A mischievous trickster that charms foes and blinks unpredictably.",
+    description = "A mischievous trickster that flings the furniture at foes and blinks unpredictably.",
     spriteSheet = "sprites/poltergeist.png",
-    qAbility = AbilityDef(name = "Possession", description = "Charm that heavily slows.", cooldownMs = 6000, maxRange = 14, damage = 36, projectileType = ProjectileType.CHARM, keybind = "Q"),
+    qAbility = AbilityDef(name = "Fling", description = "Hurls a keepsake hard enough to knock the first enemy it strikes back 3.5 cells.", cooldownMs = 8000, maxRange = 14, damage = 32, projectileType = ProjectileType.FLING, keybind = "Q"),
     eAbility = AbilityDef(name = "Blink", description = "Teleports to cursor.", cooldownMs = 10000, maxRange = 10, damage = 0, projectileType = -2, keybind = "E", castBehavior = TeleportCast(10)),
     primaryProjectileType = ProjectileType.SOUL_BOLT_HEAVY, role = Ranged, maxHealth = 65
   )

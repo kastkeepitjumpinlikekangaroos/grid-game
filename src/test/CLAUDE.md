@@ -92,11 +92,23 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   spawn requests the server answered (`PendingSpawns`): by the first packet about the projectile,
   whatever it says, for the attack that asked for its type, and none counted as lost for dying.
   `ui/DropDownsTest` is a click on a closed drop-down opening it after its list closed by itself
-  under the mouse, and a click on an open one still closing it.
+  under the mouse, and a click on an open one still closing it. `ui/MapArtTest` is the maps drawn
+  for the menus: where a map's matches are played (what its spawns can walk to), the whole map
+  drawn and nothing off it, the base under its near edges only, a window drawing its own cells.
   `GameClientCombatTest` is what the client keeps of a projectile the server ends: a shot gone at its
   hit, one stopped by the terrain fading where it struck, and a pull kept to be reeled in, holding
   whoever it caught. `GameClientKnockbackTest` is how a knockback is shown: ours slid on the test's clock
-  (`TestClient.nanos`), everyone else's neither a teleport nor a turn.
+  (`TestClient.nanos`), everyone else's neither a teleport nor a turn. `GameClientAimTest` is
+  casting mode (design/characters.md, *Casting mode*): Q or E taken up by its key and cast by the
+  next click toward the aim of that moment, which fires no primary as it comes up; nothing taken up
+  on its cooldown; a click that can't cast it (a ceasefire, a root under a dash, a trap with nowhere
+  to land) spending nothing and leaving it aimed; the other key taking over; every slam, a phase and
+  a barrier going off as their key goes down; the right button, the chat and the focus putting it
+  away; click, Q, click, E, click casting all three; the primary held and fired as its button comes
+  up, charges and all; and what the renderer is shown of an aimed dash, blink and throw is where the
+  cast then puts us or the trap. It drives the real `GLKeyboardHandler` and `GLMouseHandler` too,
+  headless. `SlamReachTest` (server) holds every slam in the roster to what the model says it
+  reaches: an enemy whose cell is within `AbilityDef.slamRadius` is hit, and nobody past it.
   `ContentCatalogTest` ties `i18n/messages_en.json`
   to `CharacterDef`: the catalog wins over the code (`I18n.tOr`), so renaming an ability in
   `CharacterDef` alone leaves the old name on every screen, silently. Regenerate the entries
@@ -108,7 +120,11 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
 - The kits: `MeleeKitTest` (common) holds the melee and skirmisher kits to crowd control, a way
   in on a runner or a place on the list of anchors, and primaries that never hold;
   `MeleeKitsTest` (server) lands each new effect and combination, and walks a runner away from
-  every closer.
+  every closer. `KitTest` (common) holds every kit to no volley of more than three, a volley only
+  on the characters listed with why, no two kits alike, one phase or dash a kit and which slams
+  haste their casters; `KitReworkTest` (server) lands each of the volleys' replacements in a match
+  (slams, splashes, shots through and off walls, the hastes and how long they are told to last,
+  the two new traps, the ice wall), and `BotMovementTest` the bots' getaways and hastes.
 - The opening of a match: `TeamDividerTest` in `common/model` (the halves, and what the world
   itself then refuses — a step, a blink, a star, a trap throw) and in `server` (spawns, shots,
   blasts and steps against the wall, and the two announcements); `CeasefireTest` for a
@@ -147,8 +163,10 @@ it caught and carried on from (a tick's error, a bot's), which fails the run.
   Teams, started by `MatchLauncher` with the opening skipped, sampled every 25ms for eight seconds,
   then ended and scored through `MatchEnd`.
 - `ClientPacketFuzzTest` (client): server packets at random into a `TestClient` in a match, while
-  its player acts and frames are flown, a new match starting whenever one ends. Nothing it hears
-  may throw (`GameClient.processAll` loses only the packet that does).
+  its player acts (abilities taken up, clicked off and put away among it, the primary held and let
+  go, and what the renderer reads of where an aimed one would go) and frames are flown, a new match
+  starting whenever one ends. Nothing it hears may throw (`GameClient.processAll` loses only the
+  packet that does).
 - `PacketFuzzTest` (common/protocol): any 64 bytes are read as a packet or refused as malformed,
   and a packet read is the same written and read again; signatures over random and tampered bytes.
 - `ReplayGuardModelTest` (server): long streams of packet numbers (late, twice, lost, gaps, across

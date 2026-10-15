@@ -41,6 +41,7 @@ private[client] object Icons {
   val Target = Icon("M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0 M6 12a6 6 0 1 0 12 0a6 6 0 1 0-12 0 " +
     "M10 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0")
   val Check = Icon("M20 6L9 17l-5-5")
+  val ArrowRight = Icon("M5 12h14 M13 6l6 6-6 6")
   val Play = Icon("M7 4l13 8-13 8z", filled = true)
   val MapPin = Icon("M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z M9 10a3 3 0 1 0 6 0a3 3 0 1 0-6 0")
   val Chat = Icon("M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z")

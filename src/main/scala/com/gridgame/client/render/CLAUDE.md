@@ -24,14 +24,14 @@ scene target and then over the finished frame. Three Bazel libraries, each on th
 | `world/ProjectilePainter` | projectiles through GLProjectileRenderers: their lights (in their look's own colour where it has one, `glowOf`, else the thrower's), wall-passers lifted over the terrain, stopped ones fading, pulls reeled back in to their throwers (`drawReeled`: render/projectiles, *Pulls are tied to whoever is pulling*) |
 | `world/BarrierPainter` | raised barriers (design/barriers.md) |
 | `world/OpeningPainter` | the Teams wall, and the opening's countdown for the HUD (design/match-flow.md) |
-| `world/TrapPainter` | traps on the ground and going off (design/traps.md) |
-| `world/AimArrowPainter` | a charged shot's aim: the lane on the ground to where it lands or what stops it (*A charged shot's aim is a lane on the ground*) |
+| `world/TrapPainter` | traps on the ground and going off (design/traps.md): inked on a seat of darker ground, ours sending a ring over the ground they watch, a glint now and then on every one (*A trap reads on every ground*) |
+| `world/AimArrowPainter` | our attack's aim while we aim it: a charged shot's lane on the ground to where it lands or what stops it (*A charged shot's aim is a lane on the ground*), and any other attack being aimed, a shot, a fan, a dash, a blink or a trap, where it will go (*An aimed attack shows where it will go*) |
 | `world/DeathAndTeleportPainter` | deaths and teleports |
 | `world/BlastPainter` | the frame's blasts, in their two layers, their lights and the air they shake (render/blasts) |
 | `world/WorldOverlayPainter` | name plates, health bars and damage numbers, over the finished frame |
 | `world/ParticleSpawner` | what the frame throws into the particle systems: weather, footsteps, trails (a projectile's embers in its look's colour, as its light), sparks, bursts |
 | `hud/HudPainter` | the HUD: the bottom bar (inventory and how full it is, charge bar), the leave prompt, the notice that we are too full to pick up the item within reach (design/combat.md, *Item Types*), and the parts below |
-| `hud/AbilityBarPainter`, `MatchInfoPainter`, `ChatPainter`, `PracticePainter`, `DeathScreenPainter` | the ability slots, the clock and kills and kill feed, chat, practice's tallies, the respawn countdown and game over screen |
+| `hud/AbilityBarPainter`, `MatchInfoPainter`, `ChatPainter`, `PracticePainter`, `DeathScreenPainter` | the ability slots (the one being aimed ringed: *An aimed attack shows where it will go*), the clock and kills and kill feed, chat, practice's tallies, the respawn countdown and game over screen |
 | `hud/CursorPainter` | the mouse's pointer, a crosshair over everything, drawn by `drawCursor` after the frame (*The pointer is ours*) |
 
 The painters are all one render thread's: nothing in them is synchronized, and none allocates per
@@ -55,7 +55,7 @@ frame (see *Performance*).
 PostProcessor.beginScene()        -- bind scene FBO (sized by the quality tier)
 GLGameRenderer.render()           -- all game drawing into scene FBO
   Background (only if the screen runs off the map) → Ground (opaque diamonds) →
-  tile overlays, reflections → Traps → Blasts' ground layer → the aim lane → block shadows →
+  tile overlays, reflections → Traps → Blasts' ground layer → our aim → block shadows →
   the players' shadows and our ring →
   depth pass (a diagonal of the map at a time, far to near: its blocks and props, then the
   items, projectiles and players with their effects standing on it, back to front) →
@@ -171,6 +171,25 @@ GLGameRenderer.drawCursor()       -- the pointer, last, where the mouse is as th
 - **In daylight a shot carries no light** (`RenderContext.projectileLights`, off for `sky`, `sea` and
   `snow`): its pool only brightened the sand or snow round it toward white, washing out the pale
   projectiles in exactly the place they were hardest to see.
+- **A trap reads on every ground** (`world/TrapPainter`; design/traps.md, *Drawn*). Each kind fills
+  most of its cell (32 units of its 40), inked in a dark version of its own colour on a seat of
+  darker ground, with something bright on it: white teeth, a yellow-and-black hazard band, a
+  glowing split, a white-hot or pale glyph, silk. The ink and the seat carry it over snow and sand,
+  the bright part over the dark floors, and on a dark map a rune, a pod and a lit diode light the
+  ground round them. Something on each moves, on the frame's clock and each trap in its own time:
+  ours and our allies' send a ring out over the ground they watch as they arm and every three
+  seconds after, and every armed trap catches a glint now and then, which is how an enemy's (drawn
+  at half strength) is found. The glows and glints of all of them go into one additive pass after
+  the traps, so the blend switches once a frame, not once a trap. They were flat decals 24 units
+  across in their own colour: the snare's pale web was gone on snow and ice, the bear trap's tan in
+  sand and paths, and an enemy's, at 30%, was nothing at all on most ground. Judged with the render
+  audit's traps (*Readability audit*): the weakest ground for one of ours went from 0 strong (the
+  snare on snow; 27-46 for the other kinds) to 47 (89-110 for the others), and for an enemy's from
+  0 for five kinds of six to 38-99. Measured with the render bench's `--traps` back to back (the
+  Hive, High, 16 players, 150 projectiles, 30 traps on screen), a frame takes as long to build
+  within the bench's noise (1.7-2.4 ms against 1.8-2.0), allocates nothing more (3.1-4.2KB a frame
+  either way, no GC), and the pass the traps are drawn in shades about half a million fragments
+  more of the frame's 70 million. Every golden frame with no trap in it is byte for byte as it was.
 - **The character atlas is mipmapped** (two levels, 128px frames down to 32) and its sheets are
   padded like the tiles. A frame is drawn at 77px at High on an ordinary screen and 42px at Low;
   minified that far without a mip chain, bilinear filtering skips texels, and the one-texel
@@ -229,6 +248,35 @@ GLGameRenderer.drawCursor()       -- the pointer, last, where the mouse is as th
   million more, and a frame costs the same to build within the bench's noise, allocating nothing
   more. `AimLaneTest` pins where it stops; the golden frames `hive_charging` and
   `snowglobe_charged` hold it.
+- **An aimed attack shows where it will go** (`AimArrowPainter.drawHeld`). Q or E is aimed from its
+  key to the click that casts it, and the primary while its button is held (design/characters.md,
+  *Casting mode*), and while one is its aim lies on the ground, worked out by what the cast itself
+  will do, so it can't promise what the cast won't: a shot is the charge's lane to the end of its
+  range or what stops it (`stopAlong`), a ring where it lands or a bar at the wall (none for one that
+  bounces off it), and the ring of the blast it sets off there, wherever it stops for an explosive
+  and only at the end of its range for a splash that goes off there; a fan is a spoke for each of its
+  projectiles, each to where it stops, and an arc at their reach; a dash is the lane to where it ends
+  (`GameClient.dashLanding`, over whatever lies between, as a dash is phased) inside a thin ring of
+  how far it can go, since it stops at the cursor; a blink is dots to where it lands (`blinkLanding`:
+  its whole range, short of the first cell it can't land on); a trap is where it lands
+  (`trapLanding`) and the ground it watches there, inside the ring of how far it can be thrown. A
+  gem's two side shots are spokes beside the primary's lane. A slam goes off as its key goes down,
+  so has no aim. It is the charge's gold, as a charge part way up, while the click (or, for the
+  primary, letting go) would set it off, and a dimmer stone grey while it wouldn't (the primary's
+  half second, a ceasefire, a hold, a root under a dash or a blink), with white lights rather than
+  gold. An ability's shows as its key goes down and fades in over 90ms; the primary's only once held
+  60ms, so a click shows nothing. The HUD rings the ability's slot in the same gold or grey
+  (`hud/AbilityBarPainter`), so which ability the next click casts can be read off the HUD too. The
+  aim is drawn in the ground pass, where the charge's lane is, so a wall or a tree in front of it
+  covers it, and lit as that is on a dark map. `GameClientAimTest` holds what is shown to what is
+  cast, and the golden frames `meadow_aim_blast`, `hive_aim_fan`, `colony_aim_dash`,
+  `snowglobe_aim_blink`, `cell_aim_trap`, `meadow_aim_primary` and `colony_aim_ceasefire` (grey) how
+  each looks, aimed by the first character in the roster with one (`devtools/HeldAims`, so a scene
+  survives a kit changing). Casting mode changed those of an ability in its slot's ring alone, and
+  every other frame not by a byte. Measured with the render bench's `--hold=` back to back (the Hive, High, 16 players, 150
+  projectiles), a frame costs the same to build within the bench's noise (1.6-3.0 ms a frame with
+  and without), allocates nothing more (3.6-4.3KB a frame either way, no GC), and the pass it is
+  drawn in shades a tenth of a million fragments more at most.
 - **The pointer is ours** (`hud/CursorPainter`). Over the match's window the system's arrow is
   hidden and the renderer draws a crosshair where the mouse is, last, over everything, the HUD
   included: the arrow, small and thin, was lost in a fight among the blasts, sparks and name plates.
@@ -330,24 +378,27 @@ back to back, and repeat them.
 ```bash
 bazel run //src/main/scala/com/gridgame/client:render_audit -- --out=/tmp/audit
 bazel run //src/main/scala/com/gridgame/client:render_audit -- --out=/tmp/audit --maps=the_snowglobe --what=projectiles
+bazel run //src/main/scala/com/gridgame/client:render_audit -- --out=/tmp/audit --what=traps
 python3 scripts/render_audit.py /tmp/audit     # report.txt and worst_*.png (needs numpy and Pillow)
 ```
 
 The gallery judges a projectile over three flat bands under the dark maps' grade. This judges
-the whole roster and every projectile over every map's real ground — each walkable tile
-covering 2% of its open ground, and each pool covering 2% of it — through the real
-`GLGameRenderer`: the map's own background, grade, lighting, name plates, at the player's size.
-A projectile is shot as every type's own look and then as every character's own look for a type
-it throws (`TYPE@Character`, render/projectiles: *A projectile is drawn as its thrower's*).
-A map whose ground and sky an earlier one already had (the four space arenas) is shot once.
-Every picture is taken twice, as rendered and with what is judged taken out (a character keeps
-its shadow, light and name plate and loses only its sprite; a projectile goes altogether), so
-the difference between the two is exactly what it adds to the frame. The script measures that
-difference as CIE76 colour difference in Lab: for characters, `edge` (the upper quartile over
-the silhouette's outer 6px, which is what separates a figure from the ground); for
-projectiles, `strong` (pixels per 1000 of its box differing by more than 20, what reads at a
-glance). It writes the worst of each, and the worst on each map, as contact sheets beside the
-same ground without them.
+the whole roster, every projectile and every kind of trap over every map's real ground — each
+walkable tile covering 2% of its open ground, and each pool covering 2% of it (no trap lies on a
+pool) — through the real `GLGameRenderer`: the map's own background, grade, lighting, name plates,
+at the player's size. A projectile is shot as every type's own look and then as every character's
+own look for a type it throws (`TYPE@Character`, render/projectiles: *A projectile is drawn as its
+thrower's*); a trap as ours and as an enemy's, armed. A map whose ground and sky an earlier one
+already had (the four space arenas) is shot once. Every picture is taken twice, as rendered and
+with what is judged taken out (a character keeps its shadow, light and name plate and loses only
+its sprite; a projectile or a trap goes altogether), so the difference between the two is exactly
+what it adds to the frame. The script measures that difference as CIE76 colour difference in Lab:
+for characters, `edge` (the upper quartile over the silhouette's outer 6px, which is what
+separates a figure from the ground); for projectiles and traps, `strong` (pixels per 1000 of its
+box differing by more than 20, what reads at a glance; a trap's box is its cell and the next), with
+each trap's weakest ground listed. `edge` means little for a trap that lights the ground round it,
+since its whole box differs. It writes the worst of each, and the worst on each map, as contact
+sheets beside the same ground without them.
 
 Measured at High (2026-09-23): every character's edge is at least 23 on the space maps'
 circuit (Windwalker, Mudslinger, Serpent and Nanoswarm, teal and green on a teal floor, are the
@@ -355,7 +406,8 @@ lowest, still readable by their contour) and at least 39 on every bright ground.
 projectiles on bright ground were down to 0.6-4 strong: the lightning family and the eleven
 wave crescents, pale, translucent, and in lightning's case strobing. After inking the waves
 round and joining the lightning's strokes, the lowest on any ground is 8 (the Sniper Beam, a
-small inked dart on snow) and the 10th percentile on snow went from 18 to 30.
+small inked dart on snow) and the 10th percentile on snow went from 18 to 30. Traps, measured
+2026-10-14: *A trap reads on every ground*.
 
 ## Golden frames (dev tool)
 
@@ -366,7 +418,7 @@ bazel run //src/main/scala/com/gridgame/client:golden_frames -- /tmp/golden --sc
 ```
 
 Fixed scenes — players, projectiles, blasts, barriers, traps, the divider, the HUD, the edges of the
-maps, a charged shot's aim, the pointer, walls in front of and beside us — drawn by the real GLGameRenderer on a stopped clock (`FrameClock`) with its randomness seeded
+maps, a charged shot's aim, every kind of attack being aimed, the pointer, walls in front of and beside us — drawn by the real GLGameRenderer on a stopped clock (`FrameClock`) with its randomness seeded
 (`seedRandom`), so the same build draws the same pixels every time. It is the check for a change to
 the renderer that is meant to change nothing: write the frames from both builds and compare them
 byte for byte (`cmp`). A change that is meant to show must be judged by eye, in the galleries and in

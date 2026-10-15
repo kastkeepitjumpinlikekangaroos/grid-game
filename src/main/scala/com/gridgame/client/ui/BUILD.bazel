@@ -2,8 +2,8 @@ load("@rules_scala//scala:scala.bzl", "scala_library")
 load("//src/main/scala/com/gridgame/client:jars.bzl", "CLIENT")
 load("//third_party:jvm.bzl", "JAVAFX")
 
-# The menus' look and widgets: the Theme and its stylesheet, the widgets and the sky behind every
-# screen, the character panel and its previews, sprite sheets.
+# The menus' look and widgets: the Theme and its stylesheet, the widgets and the world behind every
+# screen, the maps drawn for the menus, the character panel and its previews, sprite sheets.
 scala_library(
     name = "ui",
     srcs = glob(["*.scala"]),

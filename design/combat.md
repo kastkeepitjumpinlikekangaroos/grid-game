@@ -69,11 +69,21 @@ Overclock boosted nobody. Life steal off a blast heals by the splash damage the 
 because a slam's own `effectiveDamage` is 0. `TeleportOwnerBehind` stays direct-hit only: it
 needs one target to land behind, not a crowd. A slam whose on-hit effect is a `SpeedBoost` is a
 self-buff, so it lands on the caster at cast time (`GameInstance.applyCastSelfBuff`) whether or
-not anyone is standing in it.
+not anyone is standing in it: every self-haste in the roster is one (design/characters.md, *No
+volleys of more than three*).
+
+**A speed boost lasts as long as the server says.** Every update about a boosted player carries
+how long the boost has left (`PlayerUpdatePacket` bytes [59-60]), and the player's own client
+walks it for that long; the one that starts it goes to them over TCP as well. Only the flag used to
+cross the wire, and each client took it as a second's boost, re-armed by the next update to carry
+it: a player at full health hears none between a cast and the next hit, so the Cyborg's 4s
+Overclock was walked for one, and the Wolf's 2s Claw Swipe boost for half of it. A haste of our
+own is walked from its cast (`LocalPlayer.hasteCast`). `GameClientStatusTest`, `KitReworkTest`.
 
 **A push lands once a cast, and is drawn as a shove.** Everything one press of an attack fires is
-one `Cast` (in `Projectile.scala`: a fan's five waves, which the client sends as five spawn
-requests and `PacketValidator.castFor` groups, as bots' fans are grouped where they fire them). A
+one `Cast` (in `Projectile.scala`: a fan's projectiles, which the client sends as a spawn
+request each and `PacketValidator.castFor` groups, as bots' fans are grouped where they fire them;
+the Tidal Wave was a fan of five waves until it became one great one). A
 cast pushes a player once, however many of its projectiles strike them, straight away from where
 it was fired (a blast's push, out from where it went off), and the rest of it then flies through
 them. Each projectile used to push on its own, from wherever the last push had left the player and
@@ -119,8 +129,10 @@ empty-handed (client/render/projectiles/CLAUDE.md, *Pulls are tied to whoever is
   is checked, a sub-step out from its spawn, where it would catch players beside its caster. So it
   reaches 0.6-0.8 of a cell ahead of the water and as wide as it did, and each flies a cell
   further than it did: over every cell round its caster, straight and diagonal, the Tidal Wave,
-  the Wind Fan, the Wind Wall, the Gust Fan and the Gust strike exactly the players they struck
-  before, only when the water reaches them. `ProjectileHitTest`, `OnHitEffectsTest`.
+  the fans of gusts there were then and the Gust struck exactly the players they struck before,
+  only when the water reached them. The Tidal Wave is wider since (2.4 cells either side, one great
+  wave for the fan of five): it reaches the cells beside its caster, as that fan's outer waves did,
+  but none behind. `ProjectileHitTest`, `OnHitEffectsTest`.
 - **A wall shelters whoever stands behind it.** A hit radius (1.8 to 3.5 cells) reaches past a
   wall right in front of a player, so a shot drawn stopping at a fence hit whoever stood behind it:
   from a cell behind, 26 of the roster's 48 single-target shots did. A direct hit now needs the

@@ -8,4 +8,7 @@ class ScoreEntry(
     val deaths: Int,
     val rank: Int,
     val teamId: Int = 0
-)
+) {
+  /** What the place was decided on (MatchResults.score). */
+  def score: Int = MatchResults.score(kills, deaths)
+}

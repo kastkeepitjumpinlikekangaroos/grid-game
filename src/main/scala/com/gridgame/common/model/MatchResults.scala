@@ -4,15 +4,21 @@ import java.util.UUID
 
 /** One player's final line in a finished match. `rank` is the finishing place; in a Teams
   * match it is the team's place, shared by every member of the team. */
-final case class PlayerResult(playerId: UUID, kills: Int, deaths: Int, rank: Int, teamId: Byte = 0)
+final case class PlayerResult(playerId: UUID, kills: Int, deaths: Int, rank: Int, teamId: Byte = 0) {
+  def score: Int = MatchResults.score(kills, deaths)
+}
 
 /** Final standings and rating changes for a finished match. Pure, so the server's
   * end-of-match path and the tests run exactly the same code. */
 object MatchResults {
 
-  /** Better line first: more kills, then fewer deaths. */
+  /** What every mode of match is won on: kills less deaths, so a death costs as much as a kill
+    * earns. Ranked on kills alone, dying cost nothing but the seconds before the respawn. */
+  def score(kills: Int, deaths: Int): Int = kills - deaths
+
+  /** Better line first: the higher score, then more kills. */
   private val byPerformance: Ordering[PlayerResult] =
-    Ordering.by((r: PlayerResult) => (-r.kills, r.deaths))
+    Ordering.by((r: PlayerResult) => (-r.score, -r.kills))
 
   /** FFA places from `(playerId, kills, deaths)`. Identical lines share a place and the
     * next place is skipped (1, 2, 2, 4): which of two tied players the scoreboard lists
@@ -26,15 +32,17 @@ object MatchResults {
     }
   }
 
-  /** Teams places. A team places by its members' total kills, and teams with equal totals
-    * share the place, so a drawn match is rank 1 for everyone. Rows come back grouped by
+  /** Teams places. A team places by its members' scores added up, and teams with equal totals
+    * share the place, so a drawn match is rank 1 for everyone. Nobody can hurt a teammate or
+    * themselves, so every death on one side is a kill for the other, and a team's score is its
+    * kills less the other team's: the same order its kills alone give. Rows come back grouped by
     * team, best team first, each team's members best first. */
   def rankTeams(scores: Seq[(UUID, Int, Int)], teamOf: UUID => Byte): Seq[PlayerResult] = {
     val rows = scores.map { case (id, k, d) => PlayerResult(id, k, d, 0, teamOf(id)) }
-    val totals = rows.groupBy(_.teamId).map { case (team, members) => team -> members.map(_.kills).sum }
+    val totals = rows.groupBy(_.teamId).map { case (team, members) => team -> members.map(_.score).sum }
     def teamRank(team: Byte): Int = 1 + totals.count(_._2 > totals(team))
     rows.map(r => r.copy(rank = teamRank(r.teamId)))
-      .sortBy(r => (r.rank, r.teamId, -r.kills, r.deaths))
+      .sortBy(r => (r.rank, r.teamId, -r.score, -r.kills))
   }
 
   /** Rating changes for the rated players of a match, as `playerId -> (oldElo, newElo)`.

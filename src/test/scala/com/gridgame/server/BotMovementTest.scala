@@ -108,12 +108,13 @@ class BotMovementTest {
 
   @Test def aRootedBotNeitherBlinksNorDashes(): Unit = {
     // A root holds a player against every way of moving, a blink and a dash as much as a step; a
-    // bot moved itself for either, root or no root
+    // bot moved itself for either, root or no root. Four cells off is near enough for a ranged bot
+    // to blink away and far enough for a fighter to dash in
     val dasher = CharacterDef.all.find(d => Seq(d.qAbility, d.eAbility).exists(_.castBehavior.isInstanceOf[DashBuff])).get.id
     for (character <- Seq(CharacterId.Wizard, dasher)) { // the Wizard's E is a blink
       val m = new TestMatch(WorldData.createEmpty(80, 20))
       val bot = m.join(character, 10, 10)
-      m.join(CharacterId.Spaceman, 20, 10)
+      m.join(CharacterId.Spaceman, 14, 10)
       val bots = new BotController(m.instance)
       try {
         bots.addBotId(bot.getId)
@@ -122,6 +123,62 @@ class BotMovementTest {
         assertEquals(s"$character stays put", (10, 10), m.at(bot))
       } finally bots.stop()
     }
+  }
+
+  /** One tick of a bot of `character` at (40, 10) with a target `dist` cells east of it, standing
+    * still; the bot's distance from the target after it. */
+  private def afterATickWithATargetAt(character: CharacterId, dist: Int,
+                                      target: CharacterId = CharacterId.Gladiator): (Player, Double) = {
+    val m = new TestMatch(WorldData.createEmpty(80, 20))
+    val bot = m.join(character, 40, 10)
+    m.join(target, 40 + dist, 10)
+    val bots = new BotController(m.instance)
+    try {
+      bots.addBotId(bot.getId)
+      bots.tick(later)
+      val dx = bot.getPosition.getX - (40 + dist)
+      val dy = bot.getPosition.getY - 10
+      (bot, Math.sqrt(dx * dx + dy * dy))
+    } finally bots.stop()
+  }
+
+  @Test def aRangedBotBlinksAwayFromSomeoneOnTopOfIt(): Unit = {
+    // The Mudslinger's Bog Hop: a getaway, as a ranged bot's phase is. It used to blink a ranged bot
+    // into whoever it was fighting
+    val (_, after) = afterATickWithATargetAt(CharacterId.Mudslinger, 2)
+    assertTrue(s"$after cells off", after >= 6)
+  }
+
+  @Test def aRangedBotKeepsItsBlinkWhileNobodyIsNear(): Unit = {
+    val (_, after) = afterATickWithATargetAt(CharacterId.Mudslinger, 12)
+    assertTrue(s"$after cells off", after >= 10 && after <= 14)
+  }
+
+  @Test def aRangedBotDashesAwayAndAFighterDashesIn(): Unit = {
+    // The Mech Pilot's Jump Jets carry it off; the Berserker's Rage Charge carries him on
+    val (_, away) = afterATickWithATargetAt(CharacterId.MechPilot, 2)
+    assertTrue(s"the Mech Pilot is $away cells off", away >= 6)
+    val (_, in) = afterATickWithATargetAt(CharacterId.Berserker, 10)
+    assertTrue(s"the Berserker is $in cells off", in <= 4)
+  }
+
+  @Test def aFighterLeapsOnATargetOutOfReach(): Unit = {
+    val (_, in) = afterATickWithATargetAt(CharacterId.Barbarian, 10)
+    assertTrue(s"$in cells off", in <= 4)
+  }
+
+  @Test def aRangedBotRunsOnAHasteFromSomeoneNear(): Unit = {
+    // The Gambler's Lucky Streak is nothing but a haste: cast to get away, not when nobody is near
+    val (near, _) = afterATickWithATargetAt(CharacterId.Gambler, 3)
+    assertTrue("near: hasted", near.hasSpeedBoost)
+    val (far, _) = afterATickWithATargetAt(CharacterId.Gambler, 12)
+    assertFalse("far: kept", far.hasSpeedBoost)
+  }
+
+  @Test def aSlamThatAlsoHastesIsCastWithItsTargetInIt(): Unit = {
+    // The Berserker's Axe Spin slows whoever is in it, so it waits for them to be in it
+    val (inIt, _) = afterATickWithATargetAt(CharacterId.Berserker, 2)
+    assertTrue(inIt.hasSpeedBoost)
   }
 
   @Test def meleeClosesInRangedBacksOffAndASkirmisherHoldsItsGround(): Unit = {

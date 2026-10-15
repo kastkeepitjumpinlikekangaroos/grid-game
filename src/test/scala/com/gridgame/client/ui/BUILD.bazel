@@ -34,3 +34,17 @@ scala_junit_test(
         "@maven//:junit_junit",
     ],
 )
+
+# The maps drawn for the menus from the game's tile art: the play area, the whole map and nothing
+# off it, the base under the near edges, a window drawing its own cells only
+scala_junit_test(
+    name = "map_art_test",
+    srcs = ["MapArtTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "//src/main/scala/com/gridgame/common",
+        "//src/test/scala/com/gridgame/client:client_test_kit",
+        "@maven//:junit_junit",
+    ],
+)

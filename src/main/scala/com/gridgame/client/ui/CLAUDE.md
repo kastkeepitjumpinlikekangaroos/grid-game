@@ -9,19 +9,30 @@ app only through `screens/Screens` — the client, `switchScreen`, the hook that
 (`stopCurrentScreen`) and every other screen's `show`. `ClientMain` implements it, so a screen test
 can drive a real screen through `app.showLobbyRoom(stage)` and the like.
 
-- **theme.css** — the look, nearly all of it: the palette, type scale, cards, buttons, fields,
-  chips, tables, the character panel. A screen gives its nodes the sheet's classes.
+- **theme.css** — the look, nearly all of it: the palette, type scale, glass cards, buttons,
+  fields, chips, tables, the character panel, the shade over the world. A screen gives its nodes
+  the sheet's classes.
 - **Theme** — the rest of the look as code sees it: the fonts (`loadFonts`, `Fonts`), the palette
   for what code draws (`Palette`), putting a page on the stage (`newScene`, `showPage`), status lines
   (`showStatus` with a `Tone`), `steppedLoop`, the lobby settings every form offers.
-- **Widgets** — the parts every screen is built from: text in the type scale, buttons, cards,
-  chips, keycaps, medals, avatars, stat tiles, tables (`Col`, `tableHead`, `tableRow`), fields,
-  MapleStory's outlined titles (`displayTitle`), and the page itself (`page`, `topBar`, `brand`).
-- **SkyBackdrop** — the sky behind every screen: clouds, hills, trees, and characters stood on them.
-- **Icons** — line icons, as SVG paths. **MapPreview** — the maps from above, cached, always
-  whole: a frame of another shape than the (square) map is filled out in the colour of the map's
-  outer band, so it reads as the map going on. It used to crop to fill its frame, which cut off
-  half of a square map in the lobby form's wide preview.
+- **Widgets** — the parts every screen is built from: text in the type scale (an `eyebrow` in
+  capitals, which a sheet can't set), buttons, cards, chips, keycaps, medals, avatars, stat tiles,
+  tables (`Col`, `tableHead`, `tableRow`), fields, the lettered titles (`displayTitle`), and the
+  page itself (`page`, `topBar`, `brand`).
+- **WorldBackdrop** — the world behind every screen: the middle of the Meadow as the match draws
+  it, softened, under the sheet's shade; the login screen's characters stand along its bottom.
+- **MapArt** — a map drawn as the match draws it, on the CPU into an image: TerrainPainter's
+  passes over the tile atlas (`sprites/tiles.png`) in the match's projection — the ground with the
+  shadows blocks cast, then blocks and props a diagonal at a time, far to near — for any window of
+  its cells, optionally standing on a slab of its own ground. Small pictures are filtered, not
+  picked: the atlas is halved four times over and each pixel averages a grid of samples.
+- **MapPreview** — the maps for the menus, as models of themselves on a dark stage: where its
+  matches are played (every cell its spawn points can walk to, `MapArt.playArea`) and a rim of its
+  border. Drawn once per size shown, at twice it, on a thread of its own, and kept to 12MB. Also
+  `patch`, a few cells of grass for a character to stand on. The whole arena, always: the lobby
+  form once cut a square map to fill its wide frame, which hid half of it; the border (a forest,
+  the sea, the void) is scenery, and shown whole it left the arena small.
+- **Icons** — line icons, as SVG paths.
 - **CharacterSelectionPanel** — the character picker (grid, filter, search, the picked character in
   detail), with **AbilityPreviewRenderer** (the animated ability previews; each projectile type's
   colours and preview shape are **AbilityPreviewPalette**'s). Its role line ("Melee · 145 HP ·
@@ -44,22 +55,29 @@ met at its address before gets a card of its own (`showServerChanged`): nothing 
 identities to compare, Back (the default) or "Trust the new identity". The profile has Log out.
 A tick box is styled as a field is (`.check-box` in theme.css).
 
-`screens/Chrome` frames every screen after login the way a web site's pages share a header: the sky
-and a top bar with the game's name, a tab per place to go (Lobbies, Practice, Ranked,
+`screens/Chrome` frames every screen after login the way a web site's pages share a header: the
+world behind it and a top bar with the game's name, a tab per place to go (Lobbies, Practice, Ranked,
 Leaderboard), the sound switch and the player's chip (their profile). A screen hands `Chrome.page`
 its body and its tab, and a `leave` for what going elsewhere must undo — the lobby room leaves the
 lobby, the ranked queue leaves the queue, the scoreboard goes back to the browser.
 
-## The look: MapleStory's, as a clean web page
+## The look: dark glass over the game's own world
 
-Clean and simple like a modern web site, with the feel of the characters and projectiles, which
-are drawn in MapleStory's style: a bright sky with fat outlined clouds and round green hills (the
-same sky the Meadow is played under, BackgroundPainter), white cards on it, one rounded typeface
-(Nunito, OFL, in `fonts/`), and chunky buttons — a flat face with one hard highlight band, an
-outline in a dark version of its own colour, and a lip under it that a press closes. Ink is a dark
-navy, never black, as the sprites' outlines are. The yellow button is the one thing a screen is for
-(log in, create, start, find a match). Titles that matter (the game's name, "Victory!") are
-lettered as MapleStory letters its own: a fat outline and a hard shadow (`displayTitle`).
+The menus look as the match's HUD does — dark translucent panels in Exo 2 over a bright cartoon
+world — and leave the colour to the art. Behind every page is the Meadow as the match draws it
+(WorldBackdrop), dimmed most along the top and the bottom so the page reads over it; everything on
+it is navy glass with a hairline of light round its edge, brightest along the top. Text is a cool
+white and greys of it. Two accents: the HUD's gold for the one thing a screen is for (log in,
+create, start, find a match) and for what is picked, and a sky blue for links, focus and the
+other actions. One typeface, Exo 2 (OFL, in `fonts/`, the HUD's own), in seven weights; the titles
+that matter (the game's name, "Victory!") are lettered in its black italic with an outline and a
+hard shadow (`displayTitle`). Buttons are lit from above, with a darker lip a press closes. Maps
+are shown as models of themselves (MapPreview), and the picked character stands on a patch of the
+Meadow's grass drawn the same way.
+
+It replaced a look that read as a children's web site — a cartoon sky with outlined clouds and
+green hills, white cards, Nunito, chunky cel buttons — when the player found it cheap; the map
+previews were a pixel per tile in each tile's flat colour.
 
 Judge a change with the gallery, which draws every screen in the states a player sees it in,
 without a server:
@@ -70,8 +88,9 @@ bazel run //src/main/scala/com/gridgame/client:ui_gallery -- /tmp/ui --scale=2  
 bazel run //src/main/scala/com/gridgame/client:ui_gallery -- /tmp/ui --lang=ko --only=07_room_host_teams
 ```
 
-`16_map_previews` is every map's preview at each size the menus draw one; a new map's has to read
-as the whole map at all three.
+`16_map_previews` is every map's preview at each size the menus draw one (the lobby form's, a lobby
+row's, the lobby room's); a new map's arena has to read at all three. The arena is found from the
+map's spawn points: a map whose spawns can't walk to all of it shows only what they can.
 
 1440x900 is a small laptop's window, and the pages are laid out for it: the lobby room fits it
 without scrolling, for the host too (the match's settings are drop-down chips in its heading, not
@@ -98,13 +117,16 @@ the screens follow:
   steps a second and the three ability previews run at 30 fps, on the same pulses. `steppedLoop`
   (Theme) runs any looping decoration at 12 fps. All of it holds still while the window is in
   the background or has had no input for 30s (`UiActivity`).
-- **Depth is layered backgrounds, not effects.** A card's edge and the lip under it, a button's
-  outline and lip, a field's focus ring: each is a background inset under the next. An
-  `-fx-effect` (a shadow, a glow) renders its node off screen on every repaint; the old dark menus
-  had a blurred shadow on every card and button. The only one left is the combo box popup's.
-- **The sky never moves and draws cheaply.** It is ellipses (clouds, hills, tree crowns), which
-  JavaFX fills with a shader rather than rasterising a path, built again only when the window's
-  size changes; it is clipped to the window and asks the page for no room.
+- **Depth is layered backgrounds and borders, not effects.** A button's lip, a field's focus ring,
+  a card's edge of light: each is a background inset under the next, or a border. An `-fx-effect`
+  (a shadow, a glow) renders its node off screen on every repaint; the first dark menus had a
+  blurred shadow on every card and button. The only one left is the combo box popup's. Glass
+  is translucent, and a translucent layer shows every layer under it, so a glass surface's edge is
+  a border rather than a layer beneath it.
+- **The world behind never moves and draws cheaply.** It is one picture, 1280x800 (4MB), drawn
+  on the map-art thread as the client starts (and again after a match, which drops it) and shared
+  by every screen: scaled to cover the window under one region of gradients, it is a single
+  textured quad to repaint. It is clipped to the window and asks the page for no room.
 - **No per-frame images.** `SpriteGenerator` keeps portraits — one 128px frame per character,
   cut once on a thread of its own, 64KB each, 7MB for the roster — and at most four whole sheets,
   for what animates, drawn a frame at a time through an ImageView's viewport. The grid used to
@@ -112,8 +134,10 @@ the screens follow:
   second); before that it kept 16 `WritableImage`s per character forever: 117MB of heap and 1792
   GPU textures. A sprite drawn at its frame's own size (the picked character, the login screen's)
   is drawn unsmoothed: exactly doubled on a Retina display, one for one on any other.
-- **Map previews are read once** (`MapPreview`): drawing one parses the map's file, which the lobby
-  list used to do for every row every time the list refreshed.
+- **Maps are read once and drawn once a size** (`MapPreview`), off the FX thread: a picture is
+  the map's tens of thousands of cells drawn on the CPU, and the lobby list used to parse every
+  row's map file each time the list refreshed. The pictures are kept to 12MB, the least lately
+  shown dropped first; a lobby row's is 70KB, the lobby form's 0.9MB.
 - **`ViewportCache.disable` on any `ScrollPane` around animated content** — every page's, since
   `Widgets.page` puts each page in one. ScrollPane's skin caches its viewport as a bitmap; around
   canvases that animate, every frame re-renders the whole viewport into a texture as big as the
@@ -121,7 +145,9 @@ the screens follow:
 - **Screens don't outlive themselves.** `switchScreen` unregisters the listeners that update
   a screen's controls (they held the whole scene graph, and the lobby chat kept rebuilding
   off screen through the next match), and `showGameScene` swaps the hidden stage's scene
-  for an empty one and drops the sprite cache, so none of the menus stay resident in a match.
+  for an empty one and drops the sprite cache, the maps' pictures and the world behind
+  (`MatchWindow.open`), so none of the menus stay resident in a match. MapArt lets the tile art
+  (8MB with its halvings) go whenever its thread runs out of pictures to draw.
 
 What none of this fixes: a visible JavaFX window on macOS builds up a pool of about 15
 window-sized IOSurfaces as it keeps presenting — ~650MB on a 5K display, ~120MB at 1080p —

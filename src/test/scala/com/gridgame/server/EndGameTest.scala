@@ -49,6 +49,30 @@ class EndGameTest {
     assertFalse(m.instance.isRunning)
   }
 
+  @Test def theMatchIsWonOnKillsLessDeaths(): Unit = {
+    // a has the most kills but died as often (3 - 3); c killed fewer and died less (2 - 1)
+    val a = m.join(CharacterId.Gladiator, 10, 10)
+    val b = m.join(CharacterId.Wizard, 20, 20)
+    val c = m.join(CharacterId.Soldier, 30, 30)
+    val lobby = lobbyFor(a, b, c)
+    val kt = m.instance.killTracker
+    kt.recordKill(a.getId, b.getId)
+    kt.recordKill(a.getId, b.getId)
+    kt.recordKill(a.getId, c.getId)
+    kt.recordKill(b.getId, a.getId)
+    kt.recordKill(c.getId, a.getId)
+    kt.recordKill(c.getId, a.getId)
+    m.clearSent()
+    server.endGame(lobby.id)
+    val entries = scoreboard(m.tcpSent(a)).filter(_.getEventType == GameEvent.SCORE_ENTRY)
+      .map(e => (e.getPlayerId, e.getKills.toInt, e.getDeaths.toInt, e.getRank.toInt))
+    assertEquals(Seq((c.getId, 2, 1, 1), (a.getId, 3, 3, 2), (b.getId, 1, 2, 3)), entries)
+    // And the win is c's: what the profile and the leaderboard count
+    val db = server.authDatabase
+    assertEquals(1, db.getPlayerStats(c.getId)._4)
+    assertEquals(0, db.getPlayerStats(a.getId)._4)
+  }
+
   @Test def aMatchEndsOnce(): Unit = {
     // The timer and a practice player leaving can both end it; it must be scored once
     val a = m.join(CharacterId.Gladiator, 10, 10)

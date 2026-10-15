@@ -116,6 +116,8 @@ private[blasts] object Pieces {
   final val D_HEX = 11      // a hexagonal fragment of something built
   final val D_BLOCK = 12    // a chunky block of stone
   final val D_FLECK = 13    // a tiny speck (spice, grit), no ink
+  final val D_CARD = 14     // a playing card: white, inked, a pip of the colour it is given
+  final val D_COIN = 15     // a gold coin, a lit rim on its upper side
 
   /**
    * `n` pieces flung out from the middle over [t0, t1] of the blast's life, each on its own
@@ -260,6 +262,18 @@ private[blasts] object Pieces {
         place(4, x, y, sz, c, s)
         sb.fillPolygon(_xs, _ys, 4, r, g, b, a)
         sb.fillOval(x, y, sz * 0.3f, sz * 0.3f, lit(r), lit(g), lit(b), a, 6)
+      case D_CARD =>
+        _xs(0) = -0.7f; _ys(0) = -1f; _xs(1) = 0.7f; _ys(1) = -1f; _xs(2) = 0.7f; _ys(2) = 1f; _xs(3) = -0.7f; _ys(3) = 1f
+        place(4, x, y, sz, c, s)
+        sb.strokePolygon(_xs, _ys, 4, 1.6f, 0.18f, 0.14f, 0.2f, 0.85f * a)
+        sb.fillPolygon(_xs, _ys, 4, 0.97f, 0.96f, 0.92f, a)
+        sb.fillOval(x, y, sz * 0.32f, sz * 0.32f, r, g, b, a, 6)
+      case D_COIN =>
+        // Turning as it flies: its width with the spin, never quite edge-on
+        val wd = sz * (0.35f + 0.65f * Math.abs(c))
+        sb.fillOval(x, y, wd + 1.2f, sz + 1.2f, ink(r), ink(g), ink(b), 0.9f * a, 10)
+        sb.fillOval(x, y, wd, sz, r, g, b, a, 10)
+        sb.fillOval(x, y - sz * 0.3f, wd * 0.6f, sz * 0.35f, lit(r), lit(g), lit(b), a, 8)
       case D_HEX =>
         sb.fillOval(x, y, sz + 1.2f, sz * 0.8f + 1.2f, ink(r), ink(g), ink(b), 0.85f * a, 6)
         sb.fillOval(x, y, sz, sz * 0.8f, r, g, b, a, 6)

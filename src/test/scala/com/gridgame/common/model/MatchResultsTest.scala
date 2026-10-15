@@ -13,9 +13,25 @@ class MatchResultsTest {
     results.map(r => r.playerId -> r.rank).toMap
 
   @Test
-  def ffaRanksByKillsThenDeaths(): Unit = {
-    val results = MatchResults.rankFfa(Seq((id(1), 5, 3), (id(2), 9, 1), (id(3), 5, 1)))
-    assertEquals(Seq(id(2), id(3), id(1)), results.map(_.playerId))
+  def aMatchIsWonOnKillsLessDeaths(): Unit = {
+    // The most kills is not the win: 3 kills for no deaths beats 10 kills for 8 deaths
+    val results = MatchResults.rankFfa(Seq((id(1), 10, 8), (id(2), 3, 0), (id(3), 6, 6)))
+    assertEquals(Seq(id(2), id(1), id(3)), results.map(_.playerId))
+    assertEquals(Seq(1, 2, 3), results.map(_.rank))
+    assertEquals(Seq(3, 2, 0), results.map(_.score))
+  }
+
+  @Test
+  def aDeathCostsWhatAKillEarns(): Unit = {
+    // One more kill and one more death leave the line where it was, whatever its kills
+    assertEquals(MatchResults.score(4, 1), MatchResults.score(5, 2))
+    assertEquals(-3, MatchResults.score(0, 3))
+  }
+
+  @Test
+  def ffaLevelOnScoreGoesToMoreKills(): Unit = {
+    val results = MatchResults.rankFfa(Seq((id(1), 5, 3), (id(2), 4, 0), (id(3), 9, 5)))
+    assertEquals(Seq(id(3), id(2), id(1)), results.map(_.playerId))
     assertEquals(Seq(1, 2, 3), results.map(_.rank))
   }
 
@@ -26,21 +42,30 @@ class MatchResultsTest {
   }
 
   @Test
-  def teamsRankByTeamTotalKills(): Unit = {
-    // The reported screenshot: 6 players split 3v3. Team 2 has 19+16+4 = 39, team 1 has 17+9+9 = 35.
+  def teamsRankByTheirMembersScoresAddedUp(): Unit = {
+    // The reported screenshot: 6 players split 3v3. Team 2 has 39 kills and 37 deaths (+2), team 1
+    // 35 and 37 (-2). Each team's members are listed by their own score: 16-7 above 19-12.
     val scores = Seq((id(1), 19, 12), (id(2), 17, 9), (id(3), 16, 7), (id(4), 9, 11), (id(5), 9, 17), (id(6), 4, 18))
     val teamOf = Map(id(1) -> 2.toByte, id(2) -> 1.toByte, id(3) -> 2.toByte, id(4) -> 1.toByte, id(5) -> 1.toByte, id(6) -> 2.toByte)
     val results = MatchResults.rankTeams(scores, teamOf)
 
-    assertEquals(Seq(id(1), id(3), id(6), id(2), id(4), id(5)), results.map(_.playerId))
+    assertEquals(Seq(id(3), id(1), id(6), id(2), id(4), id(5)), results.map(_.playerId))
     assertEquals(Seq(1, 1, 1, 2, 2, 2), results.map(_.rank))
     assertEquals(Seq(2, 2, 2, 1, 1, 1).map(_.toByte), results.map(_.teamId))
   }
 
   @Test
+  def aTeamsDeathsCountAgainstIt(): Unit = {
+    // More kills, and more deaths still: 10 - 9 loses to 8 - 2
+    val teamOf = Map(id(1) -> 1.toByte, id(2) -> 1.toByte, id(3) -> 2.toByte)
+    val results = MatchResults.rankTeams(Seq((id(1), 6, 4), (id(2), 4, 5), (id(3), 8, 2)), teamOf)
+    assertEquals(Map(id(3) -> 1, id(1) -> 2, id(2) -> 2), ranks(results))
+  }
+
+  @Test
   def teamsDrawIsFirstPlaceForEveryone(): Unit = {
     val teamOf = Map(id(1) -> 1.toByte, id(2) -> 2.toByte)
-    val results = MatchResults.rankTeams(Seq((id(1), 7, 2), (id(2), 7, 5)), teamOf)
+    val results = MatchResults.rankTeams(Seq((id(1), 7, 5), (id(2), 5, 3)), teamOf)
     assertEquals(Seq(1, 1), results.map(_.rank))
   }
 

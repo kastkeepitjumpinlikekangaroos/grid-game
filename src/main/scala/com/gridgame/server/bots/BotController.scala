@@ -53,6 +53,12 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
   private[bots] val INCOMING_SHOT_CELLS = 6f
   // ...that would pass within this of it
   private[bots] val INCOMING_SHOT_MISS_CELLS = 2f
+  // A ranged bot gets away (a blink, a dash, a haste, as a phase) from a target this close
+  private[bots] val GET_AWAY_CELLS = 5f
+  // ...and a getaway that would carry it less far than this isn't worth its cooldown
+  private[bots] val GET_AWAY_MIN_CELLS = 3
+  // A fighter hastes after a target no further off than this
+  private[bots] val HASTE_CHASE_CELLS = 16f
 
   // 8 cardinal + diagonal directions for obstacle avoidance
   private[bots] val ALL_DIRS = Array(

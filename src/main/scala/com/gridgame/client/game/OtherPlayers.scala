@@ -130,7 +130,9 @@ trait OtherPlayers { this: GameClient =>
         player.clearBurn()
       }
       if ((flags & 0x20) != 0) {
-        if (now >= player.getSpeedBoostUntil) player.setSpeedBoostUntil(now + 1000)
+        // The server's updates say how long it has left; the player's own, relayed, only that it is on
+        if (packet.getSpeedBoostMs > 0) player.setSpeedBoostUntil(now + packet.getSpeedBoostMs)
+        else if (now >= player.getSpeedBoostUntil) player.setSpeedBoostUntil(now + 1000)
       } else {
         player.setSpeedBoostUntil(0)
       }
@@ -185,7 +187,8 @@ trait OtherPlayers { this: GameClient =>
       if ((flags & 0x04) != 0) player.setFrozenUntil(System.currentTimeMillis() + 5000)
       if ((flags & 0x08) != 0) player.setPhasedUntil(System.currentTimeMillis() + 1000)
       if ((flags & 0x10) != 0) player.applyBurn(0, 1000, 1000, null)
-      if ((flags & 0x20) != 0) player.setSpeedBoostUntil(System.currentTimeMillis() + 1000)
+      if ((flags & 0x20) != 0) player.setSpeedBoostUntil(System.currentTimeMillis() +
+        (if (packet.getSpeedBoostMs > 0) packet.getSpeedBoostMs else 1000))
       if ((flags & 0x40) != 0) player.setRootedUntil(System.currentTimeMillis() + 3000)
       if ((flags & 0x80) != 0) player.setSlowedUntil(System.currentTimeMillis() + 3000)
       if (packet.getSlowPercent > 0) player.setSlowMultiplier(packet.getSlowPercent / 100f)

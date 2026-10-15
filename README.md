@@ -50,11 +50,12 @@ cd ops/observability && docker compose up -d
 |-----|--------|
 | WASD | Move |
 | Mouse | Aim direction |
-| Left Click / Space | Shoot |
-| Shift+Space | Burst shot (charged) |
-| Q | Ability 1 |
-| E | Ability 2 |
-| Hold Space | Charge shot |
+| Left Click | Primary attack: hold to aim (or charge), release to fire. With an ability aimed, click to cast it |
+| Q | Ability 1: aim it, then click to cast (slams, phases and barriers go off at once) |
+| E | Ability 2: aim it, then click to cast (slams, phases and barriers go off at once) |
+| Right Click | Put away the ability being aimed, or the attack being held |
+| Shift+Space | Burst shot (all 8 directions) |
+| 1-5 | Use items (Heart, Star, Gem, Shield, Fence) |
 | F11 | Toggle fullscreen |
 
 ## Characters

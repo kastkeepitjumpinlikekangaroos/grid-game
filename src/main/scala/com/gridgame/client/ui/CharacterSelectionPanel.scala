@@ -17,8 +17,8 @@ import javafx.scene.shape.Ellipse
 /**
  * The character picker every screen that picks a character uses (lobby, practice, ranked): a card
  * with the roster as a grid of portraits, filtered by playstyle or searched by name, and the picked
- * character in detail — walking round on a patch of grass, their role, and each ability with a
- * preview of it in flight.
+ * character in detail — walking round on a patch of the Meadow's grass, their role, and each
+ * ability with a preview of it in flight.
  *
  * The grid holds still: a cell is a portrait (SpriteGenerator), and only the one under the mouse
  * walks. Every frame the menus change costs a repaint of the whole window (ui/CLAUDE.md), so the
@@ -202,7 +202,7 @@ class CharacterSelectionPanel(
     view.setSmooth(true)
     // A little shadow for them to stand on
     val shadow = new Ellipse(PortraitPx * 0.2, PortraitPx * 0.05)
-    shadow.setFill(Color.rgb(28, 53, 88, 0.14))
+    shadow.setFill(Color.rgb(0, 0, 0, 0.32))
     StackPane.setAlignment(shadow, Pos.BOTTOM_CENTER)
     StackPane.setMargin(shadow, new Insets(0, 0, PortraitPx * 0.1, 0))
     val sprite = new StackPane(shadow, view)
@@ -306,20 +306,20 @@ class CharacterSelectionPanel(
     // for one on any other, where smoothing it up to some other size blurred it
     heroView.setSmooth(false)
 
-    // A patch of grass on a little sky, drawn as the hills behind the menus are
-    val stageH = 150.0
-    val mound = new StackPane()
-    val edge = new Ellipse(96, 22); edge.setFill(Color.web("#4f9c3c"))
-    val grass = new Ellipse(94, 20); grass.setFill(Color.web("#86cf5e")); grass.setTranslateY(2.5)
-    val lit = new Ellipse(70, 11); lit.setFill(Color.web("#9bdc72")); lit.setTranslateY(-3)
-    val shadow = new Ellipse(30, 7); shadow.setFill(Color.rgb(30, 80, 30, 0.35)); shadow.setTranslateY(-2)
-    mound.getChildren.addAll(edge, grass, lit, shadow)
-    mound.setMaxSize(200, 48)
-    StackPane.setAlignment(mound, Pos.BOTTOM_CENTER)
-    StackPane.setMargin(mound, new Insets(0, 0, 14, 0))
+    // A patch of the Meadow's grass under a light, drawn as the maps are, with them on its middle
+    val stageH = 172.0
+    val patchW = 172.0; val patchH = 98.0; val patchBottom = 8.0
+    val ground = MapPreview.patch(3, patchW, patchH)
+    StackPane.setAlignment(ground, Pos.BOTTOM_CENTER)
+    StackPane.setMargin(ground, new Insets(0, 0, patchBottom, 0))
+    val shadow = new Ellipse(26, 7); shadow.setFill(Color.rgb(0, 30, 0, 0.32))
+    val feet = patchBottom + patchH * (1 - MapPreview.PatchFeet)
+    StackPane.setAlignment(shadow, Pos.BOTTOM_CENTER)
+    StackPane.setMargin(shadow, new Insets(0, 0, feet - 7, 0))
+    // A sprite frame's feet sit about 85% of the way down it
     StackPane.setAlignment(heroView, Pos.BOTTOM_CENTER)
-    StackPane.setMargin(heroView, new Insets(0, 0, 14 + 25 - HeroPx * 0.16, 0))
-    val stage = new StackPane(mound, heroView)
+    StackPane.setMargin(heroView, new Insets(0, 0, feet - HeroPx * 0.15, 0))
+    val stage = new StackPane(ground, shadow, heroView)
     stage.getStyleClass.add("hero-stage")
     stage.setMinHeight(stageH); stage.setPrefHeight(stageH); stage.setMaxHeight(stageH)
 

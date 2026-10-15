@@ -1,7 +1,7 @@
 package com.gridgame.client.ui.screens
 
 import com.gridgame.client.audio.AudioManager
-import com.gridgame.client.ui.{Icons, LoginForm, SkyBackdrop, SpriteGenerator}
+import com.gridgame.client.ui.{Icons, LoginForm, SpriteGenerator, WorldBackdrop}
 import com.gridgame.client.i18n.Messages
 import com.gridgame.client.net.{SavedLogin, ServerIdentityChangedException}
 import com.gridgame.common.Constants
@@ -64,13 +64,13 @@ private[client] final class WelcomeScreen(app: Screens) {
       ask, new VBox(10, back, trust)))
   }
 
-  /** The page: the game's name over `form`, on the sky. */
+  /** The page: the game's name over `form`, on the world. */
   private def present(stage: Stage, form: VBox): Unit = {
-    // The game's name, lettered as MapleStory letters its own
+    // The game's name, lettered in the HUD's gold
     val gold = new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE,
-      new Stop(0, Color.web("#fff6b8")), new Stop(0.5, Color.web("#ffd84a")), new Stop(1, Color.web("#ffb31f")))
-    val title = displayTitle("Grid Game", 78, gold, Color.web("#1c3558"))
-    val tagline = text(Messages.t("Multiplayer Arena") + "  ·  v1.0", "hero-pill")
+      new Stop(0, Color.web("#fff4b8")), new Stop(0.45, Color.web("#ffd447")), new Stop(1, Color.web("#f5a01a")))
+    val title = displayTitle("GRID GAME", 84, gold, Color.web("#140c02"))
+    val tagline = text(Messages.t("Multiplayer Arena").toUpperCase(Messages.currentLocale) + "   ·   v1.0", "hero-pill")
 
     form.setMaxWidth(420)
     form.setPadding(new Insets(26, 30, 26, 30))
@@ -96,14 +96,14 @@ private[client] final class WelcomeScreen(app: Screens) {
     val body = new VBox(8, title, tagline, spacer(14), form)
     body.setAlignment(Pos.TOP_CENTER)
 
-    // A few of the roster out on the hills, turned toward the middle
-    val sky = new SkyBackdrop()
-    Seq((0.06, CharacterId.Gladiator, Direction.Right), (0.15, CharacterId.Wizard, Direction.Right),
-      (0.85, CharacterId.Tidecaller, Direction.Left), (0.94, CharacterId.Samurai, Direction.Left)).foreach {
-      case (x, who, facing) => sky.stand(SpriteGenerator.portraitView(who.id, facing, 128), x, 128)
+    // A few of the roster in the corners, each on a patch of the Meadow, turned toward the middle
+    val world = new WorldBackdrop(open = true)
+    Seq((0.07, CharacterId.Gladiator, Direction.Right), (0.17, CharacterId.Wizard, Direction.Right),
+      (0.83, CharacterId.Tidecaller, Direction.Left), (0.93, CharacterId.Samurai, Direction.Left)).foreach {
+      case (x, who, facing) => world.stand(SpriteGenerator.portraitView(who.id, facing, 128), x, 128)
     }
 
-    val page = Chrome.loggedOut(body, Seq(language, Chrome.soundToggle()), sky)
+    val page = Chrome.loggedOut(body, Seq(language, Chrome.soundToggle()), world)
     page.show(stage)
     AudioManager.playMenuMusic()
     // Decode every sound now, on a background thread, so no WAV parsing or disk

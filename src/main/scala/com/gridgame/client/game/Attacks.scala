@@ -6,14 +6,24 @@ import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicLongArray
 
 /**
  * Our attacks: where we aim, charging the primary, firing it (and the burst along all eight
  * directions), and casting the Q and E abilities, each on its own cooldown. A shot is only asked
  * of the server (ProjectilePacket.spawnRequest): the projectile is drawn when the server's SPAWN
  * comes back (Projectiles). Nothing attacks while we are held, phased or in a ceasefire.
+ *
+ * Q and E are aimed, then cast with a click (design/characters.md, *Casting mode*): the key puts
+ * the ability in our hands, the renderer lays where it will go on the ground (AimArrowPainter) while
+ * we walk and aim, and the primary button casts it toward the aim of that moment. An ability with
+ * nothing to aim, a slam round us among them, goes off as its key goes down
+ * ([[Attacks.goesOffOnPress]]). The primary is held to aim, and goes off as its button comes up. The
+ * right mouse button puts away whatever is aimed or held without it going off ([[cancelAims]]).
  */
 trait Attacks { this: GameClient =>
+  import Attacks._
+
   // Where the cursor is, in world coordinates: what we aim at
   @volatile private[game] var mouseWorldX: Double = 0.0
   @volatile private[game] var mouseWorldY: Double = 0.0
@@ -21,6 +31,20 @@ trait Attacks { this: GameClient =>
   // When each ability was last cast (its cooldown runs from then)
   private[game] val lastQAbilityTime: AtomicLong = new AtomicLong(0)
   private[game] val lastEAbilityTime: AtomicLong = new AtomicLong(0)
+
+  // The attacks being aimed, by AttackSlot: the primary held down, and Q or E since its key went
+  // down (only one of the two at a time): since when on the client's clock (nanoClock), or NOT_HELD.
+  // The render thread presses, casts and draws them; a new life puts them away from the packet thread
+  private val heldSince: AtomicLongArray = {
+    val a = new AtomicLongArray(HELD_SLOTS)
+    var s = 0
+    while (s < HELD_SLOTS) { a.set(s, NOT_HELD); s += 1 }
+    a
+  }
+
+  // When the primary last went off, on the client's clock: the next waits SHOOT_COOLDOWN_MS. The
+  // mouse and the controller each kept their own, on the wall clock
+  private val lastPrimaryShot: AtomicLong = new AtomicLong(NOT_HELD)
 
   // The flash of the last cast, for the renderer: when, and which way
   private val lastCastTime: AtomicLong = new AtomicLong(0)
@@ -77,6 +101,177 @@ trait Attacks { this: GameClient =>
         case Direction.Right => (1.0f, 0.0f)
       }
     }
+  }
+
+  // ── Casting mode, and the primary held ──────────────────────────────────
+
+  /** The primary button went down. With Q or E being aimed ([[pressAbility]]) the click casts it,
+    * toward the aim of this moment, and is nothing more: the primary doesn't go off as the button
+    * comes up. A cast that couldn't go off now ([[abilityReady]], or a trap with nowhere to land)
+    * casts nothing and spends nothing, and the ability stays aimed for the next click. With nothing
+    * aimed it is the primary: one that charges begins its charge (pressed inside its cooldown, as
+    * before, nothing happens); any other is held to aim, whatever its cooldown, and goes off when the
+    * button comes up ([[releasePrimary]]) if the cooldown has run by then. */
+  def pressPrimary(): Unit = {
+    if (isDead) return
+    val aimed = aimedAbility
+    if (aimed >= 0) {
+      if (shootAbility(aimed)) letGo(attackSlotOf(aimed))
+    } else if (primaryCharges) {
+      // Held as it charges, so the renderer can tell it from a Q or E pressed before or after it
+      if (primaryCooledDown) { startCharging(); if (isCharging) hold(AttackSlot.PRIMARY) }
+    } else hold(AttackSlot.PRIMARY)
+  }
+
+  /** The primary button came up: the shot held goes off toward the aim, charged as far as it was. A
+    * click that cast an ability held nothing, so nothing goes off. */
+  def releasePrimary(): Unit = {
+    if (isCharging) {
+      letGo(AttackSlot.PRIMARY)
+      if (isDead) { cancelCharging(); return }
+      val level = getChargeLevel
+      cancelCharging()
+      lastPrimaryShot.set(nanoClock())
+      fireAtAim(level)
+    } else if (letGo(AttackSlot.PRIMARY) && !primaryCharges && !isDead && primaryCooledDown) {
+      // (A primary that charges only ever goes off charged: let go of without a charge, nothing)
+      lastPrimaryShot.set(nanoClock())
+      fireAtAim(0)
+    }
+  }
+
+  /** Q's or E's key went down (slot 0 or 1). An ability with nothing to aim
+    * ([[Attacks.goesOffOnPress]]) goes off now. Any other is taken up to be aimed if its cooldown has
+    * run (on its cooldown the key does nothing, and a click is the primary's): we walk and aim as
+    * ever, the renderer shows where it will go, and the next press of the primary button casts it
+    * ([[pressPrimary]]). One ability is aimed at a time, so the other's key takes over from it; the
+    * same key again leaves it as it is. The key coming up does nothing. */
+  def pressAbility(slot: Int): Unit = {
+    if (isDead) return
+    val ability = abilityIn(slot)
+    if (ability == null) return
+    if (goesOffOnPress(ability)) shootAbility(slot)
+    else if (abilityCooledDown(slot, ability)) {
+      letGo(attackSlotOf(1 - slot))
+      if (heldSince.get(attackSlotOf(slot)) == NOT_HELD) hold(attackSlotOf(slot))
+    }
+  }
+
+  /** Put away everything aimed or held without any of it going off, a charge included: the right
+    * mouse button, the chat opening, the window losing the focus. Nothing is cast, so no cooldown is
+    * spent. */
+  def cancelAims(): Unit = {
+    letGoOfAll()
+    if (isCharging) cancelCharging()
+  }
+
+  /** The ability being aimed, waiting for the click that casts it: 0 (Q), 1 (E), or -1. */
+  def aimedAbility: Int =
+    if (heldSince.get(AttackSlot.Q) != NOT_HELD) 0 else if (heldSince.get(AttackSlot.E) != NOT_HELD) 1 else -1
+
+  /** The attack the renderer shows the aim of (an AttackSlot): the last pressed of those being aimed,
+    * or -1. */
+  def aimingSlot: Int = {
+    var best = -1
+    var bestAt = 0L
+    var s = 0
+    while (s < HELD_SLOTS) {
+      val at = heldSince.get(s)
+      if (at != NOT_HELD && (best < 0 || at - bestAt > 0)) { best = s; bestAt = at }
+      s += 1
+    }
+    best
+  }
+
+  /** How long the attack in this AttackSlot has been aimed (the primary held, Q or E since its key went
+    * down), in ms on the client's clock; -1 if it isn't. */
+  def aimedForMs(slot: Int): Long = {
+    val at = if (slot >= 0 && slot < HELD_SLOTS) heldSince.get(slot) else NOT_HELD
+    if (at == NOT_HELD) -1L else Math.max(0L, (nanoClock() - at) / 1000000L)
+  }
+
+  /** Would the primary go off if its button came up now? The renderer draws its aim brighter when it
+    * would. What [[shootToward]] refuses, and the primary's cooldown. */
+  def primaryReady: Boolean =
+    !isDead && !isPhased && !isFrozen && !attacksLocked && primaryCooledDown
+
+  /** Would the ability in slot 0 (Q) or 1 (E) go off now? Not while we are dead, held, phased or in a
+    * ceasefire, nor before its cooldown has run, nor a dash or a blink while rooted. A trap needs
+    * somewhere to land besides ([[trapLanding]]), which this doesn't look for. The renderer draws the
+    * aim of the ability being aimed brighter when it would. */
+  def abilityReady(slot: Int): Boolean = {
+    // Held by a free-for-all's opening ceasefire (MatchOpening): refused here rather than sent and
+    // refused, so the cooldown isn't spent on a cast the server was never going to allow
+    if (isDead || isFrozen || attacksLocked) return false
+    val ability = abilityIn(slot)
+    if (ability == null) return false
+    // Can't use abilities while phased (except Phase Shift itself is already activated)
+    if (isPhased) return false
+    if (!abilityCooledDown(slot, ability)) return false
+    // Rooted, we attack but go nowhere: the server applies no step, blink or dash while a root
+    // lasts, and says nothing when a rooted client blinks anyway — so ours showed the blink, and
+    // the server had us where we were. Refused here, the cooldown isn't spent on it.
+    ability.castBehavior match {
+      case _: DashBuff | _: TeleportCast if isRooted => false
+      case _ => true
+    }
+  }
+
+  /**
+   * Where a trap thrown now, at most `range` cells toward the aim, would land; None with nowhere to
+   * put it (aimed into a wall from inside one). The server picks the cell the same way
+   * (TrapPlacement), from its own copy of where we are, so a placement we show is one it takes. An
+   * enemy's barrier stops the throw as a wall does (Barriers.enemyBarrierAcross). The throw and its
+   * aim both ask this, so the aim shows where it lands.
+   */
+  def trapLanding(range: Int): Option[Position] = {
+    val pos = localPosition.get()
+    TrapPlacement.target(currentWorld.get(), pos.getX, pos.getY, mouseWorldX, mouseWorldY, range,
+      (x, y) => enemyBarrierAcross(pos.getX.toFloat, pos.getY.toFloat, x.toFloat, y.toFloat))
+  }
+
+  private def abilityCooledDown(slot: Int, ability: AbilityDef): Boolean = {
+    val last = if (slot == 0) lastQAbilityTime else lastEAbilityTime
+    System.currentTimeMillis() - last.get() >= ability.cooldownMs
+  }
+
+  private def primaryCharges: Boolean =
+    ProjectileDef.get(getSelectedCharacterDef.primaryProjectileType).chargeSpeedScaling.isDefined
+
+  private def primaryCooledDown: Boolean = {
+    val last = lastPrimaryShot.get()
+    last == NOT_HELD || nanoClock() - last >= Constants.SHOOT_COOLDOWN_MS * 1000000L
+  }
+
+  /** The primary toward the aim; nothing with the aim on us. */
+  private def fireAtAim(chargeLevel: Int): Unit = {
+    val pos = localPosition.get()
+    val deltaX = mouseWorldX - pos.getX
+    val deltaY = mouseWorldY - pos.getY
+    val magnitude = Math.sqrt(deltaX * deltaX + deltaY * deltaY)
+    if (magnitude < 0.001) return
+    shootToward((deltaX / magnitude).toFloat, (deltaY / magnitude).toFloat, chargeLevel)
+  }
+
+  private def abilityIn(slot: Int): AbilityDef = slot match {
+    case 0 => getSelectedCharacterDef.qAbility
+    case 1 => getSelectedCharacterDef.eAbility
+    case _ => null
+  }
+
+  private def attackSlotOf(slot: Int): Int = if (slot == 0) AttackSlot.Q else AttackSlot.E
+
+  private def hold(attackSlot: Int): Unit = {
+    val now = nanoClock()
+    heldSince.set(attackSlot, if (now == NOT_HELD) now + 1 else now)
+  }
+
+  /** Was the attack in this AttackSlot aimed? It isn't now. */
+  private def letGo(attackSlot: Int): Boolean = heldSince.getAndSet(attackSlot, NOT_HELD) != NOT_HELD
+
+  private def letGoOfAll(): Unit = {
+    var s = 0
+    while (s < HELD_SLOTS) { heldSince.set(s, NOT_HELD); s += 1 }
   }
 
   // ── Charging, firing, casting ───────────────────────────────────────────
@@ -185,44 +380,22 @@ trait Attacks { this: GameClient =>
     }
   }
 
-  def shootAbility(slot: Int): Unit = {
-    if (isDead || isFrozen) return
-    // Held by a free-for-all's opening ceasefire (MatchOpening). Refused here rather than sent
-    // and refused, so the cooldown isn't spent on a cast the server was never going to allow.
-    if (attacksLocked) return
-
-    val charDef = getSelectedCharacterDef
-    val (abilityDef, lastAbilityTime, attackSlot) = slot match {
-      case 0 => (charDef.qAbility, lastQAbilityTime, AttackSlot.Q)
-      case 1 => (charDef.eAbility, lastEAbilityTime, AttackSlot.E)
-      case _ => return
-    }
-
-    // Can't use abilities while phased (except Phase Shift itself is already activated)
-    if (isPhased) return
-
+  /** Cast the ability in slot 0 (Q) or 1 (E) now, toward the aim, if it is ready ([[abilityReady]]);
+    * whether it was cast. The input handlers have it aimed first ([[pressAbility]], [[pressPrimary]]). */
+  def shootAbility(slot: Int): Boolean = {
+    if (!abilityReady(slot)) return false
+    val abilityDef = abilityIn(slot)
+    val (lastAbilityTime, attackSlot) =
+      if (slot == 0) (lastQAbilityTime, AttackSlot.Q) else (lastEAbilityTime, AttackSlot.E)
     val now = System.currentTimeMillis()
-    if (now - lastAbilityTime.get() < abilityDef.cooldownMs) return
-
-    // Rooted, we attack but go nowhere: the server applies no step, blink or dash while a root
-    // lasts, and says nothing when a rooted client blinks anyway — so ours showed the blink, and
-    // the server had us where we were. Refused here, the cooldown isn't spent on it.
-    abilityDef.castBehavior match {
-      case _: DashBuff | _: TeleportCast if isRooted => return
-      case _ =>
-    }
 
     // A trap has to have somewhere to land. With nowhere — aimed into a wall from inside one —
     // nothing is cast and the cooldown is not spent, so the cell is picked before anything else
-    // happens. The server picks it the same way (TrapPlacement), from its own copy of where we
-    // are, so a placement we show is one it takes. An enemy's barrier stops the throw as a wall
-    // does (Barriers.enemyBarrierAcross).
+    // happens ([[trapLanding]]).
     val trapCell = abilityDef.castBehavior match {
       case TrapCast(_, range) =>
-        val pos = localPosition.get()
-        val cell = TrapPlacement.target(currentWorld.get(), pos.getX, pos.getY, mouseWorldX, mouseWorldY, range,
-          (x, y) => enemyBarrierAcross(pos.getX.toFloat, pos.getY.toFloat, x.toFloat, y.toFloat))
-        if (cell.isEmpty) return
+        val cell = trapLanding(range)
+        if (cell.isEmpty) return false
         cell
       case _ => None
     }
@@ -276,6 +449,12 @@ trait Attacks { this: GameClient =>
           sequenceNumber.getAndIncrement(), localPlayerId,
           pos.getX.toFloat, pos.getY.toFloat, localColorRGB, 0.0f, 0.0f,
           0.toByte, abilityDef.projectileType, attackSlot))
+        // A slam that speeds its caster up does it as it is cast (the server's applyCastSelfBuff):
+        // we walk at its pace from now rather than a round trip later
+        ProjectileDef.get(abilityDef.projectileType).onHitEffects.foreach {
+          case SpeedBoost(durationMs) => hasteCast(durationMs)
+          case _ =>
+        }
 
       case TrapCast(trapType, _) =>
         val cell = trapCell.get
@@ -291,6 +470,7 @@ trait Attacks { this: GameClient =>
           pos.getX.toFloat, pos.getY.toFloat, localColorRGB, ndx, ndy,
           0.toByte, abilityDef.projectileType, attackSlot))
     }
+    true
   }
 
   // ── Cooldowns ───────────────────────────────────────────────────────────
@@ -299,13 +479,16 @@ trait Attacks { this: GameClient =>
   def getLastCastDirX: Float = lastCastDirX
   def getLastCastDirY: Float = lastCastDirY
 
-  /** A new life: every ability ready, nothing charging, and nothing waiting on the server. A charge
-    * held as the last match ended — its window gone before the button came up — went on into the
-    * next at full strength, walking at a charge's pace. */
+  /** A new life: every attack ready, nothing charging, held or aimed, and nothing waiting on the
+    * server. A charge held as the last match ended — its window gone before the button came up —
+    * went on into the next at full strength, walking at a charge's pace. */
   private[game] def resetAttacks(): Unit = {
     lastQAbilityTime.set(0)
     lastEAbilityTime.set(0)
+    lastPrimaryShot.set(NOT_HELD)
     isCharging = false
+    // Nor an attack held or aimed as we died: the first click after the respawn would have set it off
+    letGoOfAll()
     pendingSpawns.dropWaiting(nanoClock())
   }
 
@@ -355,4 +538,25 @@ trait Attacks { this: GameClient =>
 
   private[game] def refundAbility(lastCast: AtomicLong, cooldownMs: Int): Unit =
     lastCast.set(System.currentTimeMillis() - Math.max(0, cooldownMs - REFUND_RETRY_MS))
+}
+
+object Attacks {
+  /** The attacks that can be aimed, by AttackSlot: PRIMARY, Q and E. */
+  private val HELD_SLOTS = 3
+
+  /** Not aimed (heldSince), never fired (lastPrimaryShot). */
+  private val NOT_HELD = Long.MinValue
+
+  /**
+   * Does this ability go off as its key goes down, rather than being aimed and cast with a click?
+   * Only one with nothing to aim: a slam, which reaches all round us whichever way we aim; a phase,
+   * which goes nowhere; a barrier, which turns with the aim the whole time it is up, so is aimed after
+   * it goes up; and a fan that goes all the way round. Everything else goes somewhere (a shot, a fan, a
+   * dash, a blink, a trap thrown), and is aimed first, so where it will go can be shown.
+   */
+  def goesOffOnPress(ability: AbilityDef): Boolean = ability.castBehavior match {
+    case _: GroundSlam | _: PhaseShiftBuff | _: BarrierCast => true
+    case fan: FanProjectile => fan.isFullCircle
+    case _ => false
+  }
 }

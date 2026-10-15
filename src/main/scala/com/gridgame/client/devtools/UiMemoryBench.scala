@@ -11,7 +11,7 @@ import javafx.stage.{Screen, Stage}
 import javafx.util.Duration
 
 import java.lang.management.ManagementFactory
-import com.gridgame.client.ui.{CharacterSelectionPanel, SpriteGenerator, Theme, UiActivity, Widgets}
+import com.gridgame.client.ui.{CharacterSelectionPanel, MapPreview, SpriteGenerator, Theme, UiActivity, Widgets, WorldBackdrop}
 
 /**
  * Dev tool: what the menus cost while the player is sitting in them. Not shipped — run with
@@ -41,7 +41,7 @@ class UiMemoryBenchApp extends Application {
   private var lastCpuNs = 0L
   private var lastWallNs = 0L
 
-  /** The character panel on a page as the lobby screens frame it: the sky, the top bar, the card. */
+  /** The character panel on a page as the lobby screens frame it: the world behind, the top bar, the card. */
   private def lobbyScene(): Scene = {
     panel = new CharacterSelectionPanel(() => selected, id => selected = id)
     val (root, _) = Widgets.page(Widgets.topBar(Seq(Widgets.brand(null)), Nil), new VBox(panel.createPanel()), 1560)
@@ -140,6 +140,8 @@ class UiMemoryBenchApp extends Application {
         if (!raw.contains("--keep-scene")) {
           stage.setScene(new Scene(new StackPane(), Color.BLACK))
           SpriteGenerator.clearCache()
+          MapPreview.clearCache()
+          WorldBackdrop.clearCache()
         }
         Platform.setImplicitExit(false)
         stage.hide()

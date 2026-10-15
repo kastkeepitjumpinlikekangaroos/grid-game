@@ -37,6 +37,9 @@ trait LocalPlayer { this: GameClient =>
   private[game] val phasedUntil: AtomicLong = new AtomicLong(0)
   private val burningUntil: AtomicLong = new AtomicLong(0)
   private val speedBoostUntil: AtomicLong = new AtomicLong(0)
+  // When we last cast a haste of our own (hasteCast): the server's updates sent before it heard of
+  // the cast still arrive without the boost for a round trip, and mustn't take it back off us
+  private val hasteCastAt: AtomicLong = new AtomicLong(0)
   private val rootedUntil: AtomicLong = new AtomicLong(0)
   private val slowedUntil: AtomicLong = new AtomicLong(0)
   // A stun is a freeze the client draws differently, so it comes with the frozen flag set too
@@ -46,6 +49,9 @@ trait LocalPlayer { this: GameClient =>
   // our pace; every slow used to be a flat half whatever its def said, which is what we assume
   // until the server tells us.
   private val DEFAULT_SLOW_MULTIPLIER = 0.5f
+  // How long after casting a haste an update without the boost is taken to have been sent before the
+  // server heard of it: a round trip and then some
+  private val HASTE_PREDICTION_MS = 600L
   @volatile private[game] var slowMultiplier: Float = DEFAULT_SLOW_MULTIPLIER
 
   // Server moves we have taken (Player.getServerMoves): pulls, knockbacks, respawns, freezes,
@@ -78,12 +84,25 @@ trait LocalPlayer { this: GameClient =>
   def isPoisoned: Boolean = System.currentTimeMillis() < poisonedUntil.get()
   def getSlowMultiplier: Float = slowMultiplier
 
+  /**
+   * We cast a haste of our own (a ground slam whose projectile speeds its caster up): we walk at its
+   * pace from now, as a phase starts at our cast, rather than a round trip later when the server's
+   * word of it comes back. The server's own boost (bytes [59-60] of its updates) takes over when it
+   * does, and a cast it refused ends with the next update after the round trip.
+   */
+  private[game] def hasteCast(durationMs: Int): Unit = {
+    val now = System.currentTimeMillis()
+    hasteCastAt.set(now)
+    if (now + durationMs > speedBoostUntil.get()) speedBoostUntil.set(now + durationMs)
+  }
+
   /** None of the effects on us any more (a new life), and nothing of the death before it. */
   private[game] def clearEffects(): Unit = {
     frozenUntil.set(0)
     phasedUntil.set(0)
     burningUntil.set(0)
     speedBoostUntil.set(0)
+    hasteCastAt.set(0)
     rootedUntil.set(0)
     slowedUntil.set(0)
     stunnedUntil.set(0)
@@ -150,8 +169,14 @@ trait LocalPlayer { this: GameClient =>
       burningUntil.set(0)
     }
     if ((flags & 0x20) != 0) {
-      if (now >= speedBoostUntil.get()) speedBoostUntil.set(now + 1000)
-    } else {
+      // For as long as the server says it has left. Only the flag used to come, and it was taken
+      // as a second's boost re-armed by the next update to carry it, which at full health might
+      // be the next hit: a 4s boost walked for one
+      val left = updatePacket.getSpeedBoostMs
+      if (left > 0) speedBoostUntil.set(now + left)
+      else if (now >= speedBoostUntil.get()) speedBoostUntil.set(now + 1000)
+    } else if (now - hasteCastAt.get() >= HASTE_PREDICTION_MS) {
+      // An update sent before the server heard of a haste we have just cast says we have none
       speedBoostUntil.set(0)
     }
     if ((flags & 0x40) != 0) {

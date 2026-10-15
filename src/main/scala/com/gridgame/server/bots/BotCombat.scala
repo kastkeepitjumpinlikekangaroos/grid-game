@@ -170,27 +170,42 @@ trait BotCombat { this: BotController =>
         true
 
       case DashBuff(maxDistance, durationMs, _) =>
-        // A root holds a bot where it is, as it holds a player against a step, a dash and a blink
-        if (bot.isRooted || dist < 3 || dist > maxDistance + 5) return false
-        val clampedDist = Math.min(dist, maxDistance.toFloat)
+        // A root holds a bot where it is, as it holds a player against a step, a dash and a blink.
+        // A fighter's dash is its way in, toward a target out of reach; a ranged bot's is a way
+        // out, as its phase is, away from one who has closed in
+        if (bot.isRooted) return false
+        val away = roleOf(bot.getCharacterId) == CombatRole.Ranged
+        if (away && dist > GET_AWAY_CELLS) return false
+        if (!away && (dist < 3 || dist > maxDistance + 5)) return false
+        val (hx, hy) = if (away) (-ndx, -ndy) else (ndx, ndy)
+        val clampedDist = if (away) maxDistance.toFloat else Math.min(dist, maxDistance.toFloat)
         val world = instance.world
         var bestX = botPos.getX
         var bestY = botPos.getY
         for (step <- 1 to clampedDist.toInt) {
-          val testX = Math.max(0, Math.min(world.width - 1, (botPos.getX + ndx * step).toInt))
-          val testY = Math.max(0, Math.min(world.height - 1, (botPos.getY + ndy * step).toInt))
+          val testX = Math.max(0, Math.min(world.width - 1, (botPos.getX + hx * step).toInt))
+          val testY = Math.max(0, Math.min(world.height - 1, (botPos.getY + hy * step).toInt))
           if (world.isWalkable(testX, testY)) {
             bestX = testX
             bestY = testY
           }
         }
+        if (away && Math.abs(bestX - botPos.getX) + Math.abs(bestY - botPos.getY) < GET_AWAY_MIN_CELLS) return false
         bot.setPosition(new Position(bestX, bestY))
         bot.setPhasedUntil(System.currentTimeMillis() + durationMs)
         broadcastBotPosition(bot)
         true
 
       case GroundSlam(radius) =>
-        if (dist > radius) return false
+        // A slam is cast with the target inside it. One that only speeds the bot up (a haste) has
+        // nobody to catch: a ranged bot runs on it from someone who has closed in, and a fighter
+        // runs a target down on it
+        val slam = ProjectileDef.get(ability.projectileType)
+        val wanted =
+          if (!slam.onlyHastesCaster) dist <= radius
+          else if (roleOf(bot.getCharacterId) == CombatRole.Ranged) dist <= GET_AWAY_CELLS
+          else dist > getMaxRange(bot.getCharacterId) && dist <= HASTE_CHASE_CELLS
+        if (!wanted) return false
         val projectile = instance.projectileManager.spawnProjectile(
           bot.getId, botPos.getX, botPos.getY,
           0.0f, 0.0f, bot.getColorRGB, 0, ability.projectileType
@@ -199,10 +214,20 @@ trait BotCombat { this: BotController =>
         true
 
       case TeleportCast(maxDistance) =>
-        if (bot.isRooted || dist < 4 || dist > maxDistance + 8) return false
-        val clampedDist = Math.min(dist, maxDistance.toFloat).toInt
+        // Toward a target out of reach for a fighter; for a ranged bot, away from one who has
+        // closed in, as with a dash
+        if (bot.isRooted) return false
+        val away = roleOf(bot.getCharacterId) == CombatRole.Ranged
+        if (away && dist > GET_AWAY_CELLS) return false
+        if (!away && (dist < 4 || dist > maxDistance + 8)) return false
         // A player's blink, stopping before the first wall rather than coming out beyond it
-        bot.setPosition(Teleport.blinkTarget(instance.world, botPos.getX, botPos.getY, ndx, ndy, clampedDist))
+        val landing =
+          if (away) Teleport.blinkTarget(instance.world, botPos.getX, botPos.getY, -ndx, -ndy, maxDistance)
+          else Teleport.blinkTarget(instance.world, botPos.getX, botPos.getY, ndx, ndy,
+            Math.min(dist, maxDistance.toFloat).toInt)
+        if (away && Math.abs(landing.getX - botPos.getX) + Math.abs(landing.getY - botPos.getY) < GET_AWAY_MIN_CELLS)
+          return false
+        bot.setPosition(landing)
         broadcastBotPosition(bot)
         true
 

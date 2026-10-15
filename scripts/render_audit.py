@@ -17,6 +17,8 @@ projectile adds to the frame:
   `body` is the median over the whole silhouette. Under ~15 the figure is hard to pick out.
 - projectiles: `strong` is how many pixels (per 1000 of its box) differ from the ground by more
   than 20, i.e. what still reads at a glance; `edge` as for characters.
+- traps: `strong` as for projectiles, over a box the size of its cell and the next (every kind,
+  ours and an enemy's, armed), with a table of each trap's weakest ground.
 
 Writes `report.txt` and contact sheets of the worst cases (`worst_*.png`, each cell the shot as
 rendered beside the same ground without it) into the audit directory.
@@ -141,11 +143,12 @@ def main():
     for r in rows:
         by_kind[r["kind"]].append(r)
 
-    for kind, key in (("char", "edge"), ("proj", "strong")):
+    labels = {"char": "characters", "proj": "projectiles", "trap": "traps"}
+    for kind, key in (("char", "edge"), ("proj", "strong"), ("trap", "strong")):
         rs = by_kind.get(kind, [])
         if not rs:
             continue
-        label = "characters" if kind == "char" else "projectiles"
+        label = labels[kind]
         lines.append(f"== {label}: {len(rs)} measurements ==")
         per_ground = defaultdict(list)
         for r in rs:
@@ -154,6 +157,18 @@ def main():
             v = np.array(vals)
             lines.append(f"  {m:14s} {g:10s} {key} median {np.median(v):6.1f}  p10 {np.percentile(v, 10):6.1f}"
                          f"  min {v.min():6.1f}")
+        if kind == "trap":
+            # Few enough to show whole: every trap's weakest and median ground
+            lines.append(f"  per trap ({key}, edge):")
+            per_trap = defaultdict(list)
+            for r in rs:
+                per_trap[r["name"]].append(r)
+            for name, tr in sorted(per_trap.items()):
+                lo = min(tr, key=lambda r: r[key])
+                lines.append(f"    {name:22s} {key} median {np.median([r[key] for r in tr]):6.1f}"
+                             f"  min {lo[key]:6.1f} ({lo['map']} {lo['ground']})"
+                             f"  edge median {np.median([r['edge'] for r in tr]):5.1f}"
+                             f"  min {min(r['edge'] for r in tr):5.1f}")
         worst = sorted(rs, key=lambda r: r[key])[:worst_n]
         lines.append(f"  worst by {key}:")
         for r in worst:

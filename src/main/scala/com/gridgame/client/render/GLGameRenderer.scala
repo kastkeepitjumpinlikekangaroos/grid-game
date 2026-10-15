@@ -17,8 +17,8 @@ import com.gridgame.common.model._
  *  1. The background, only where the screen runs off the map (BackgroundPainter)
  *  2. The ground: every flat tile as an opaque diamond, then its animated overlays and reflections
  *     (TerrainPainter), the traps lying on it (TrapPainter), the blasts' ground layer
- *     (BlastPainter), the aim arrow (AimArrowPainter), the blocks' shadows, and the players'
- *     shadows and our ring (PlayerPainter.drawGroundMarks)
+ *     (BlastPainter), our aim (AimArrowPainter: a charge's lane, or an attack held to aim), the
+ *     blocks' shadows, and the players' shadows and our ring (PlayerPainter.drawGroundMarks)
  *  3. The depth pass: blocks and props, and the entities standing among them, a diagonal of the
  *     map at a time, far to near, each where it is drawn (EntityCollector) — players
  *     (PlayerPainter, StatusEffectPainter), items (ItemPainter), projectiles (ProjectilePainter)

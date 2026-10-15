@@ -41,7 +41,7 @@ private[client] final class LobbyRoomScreen(app: Screens) {
     var previewedMap = -1
     def showPreview(): Unit = if (client.currentLobbyMapIndex != previewedMap) {
       previewedMap = client.currentLobbyMapIndex
-      preview.getChildren.setAll(MapPreview.view(previewedMap, 80, 80, 14))
+      preview.getChildren.setAll(MapPreview.view(previewedMap, 136, 76, 12))
     }
     showPreview()
 
@@ -73,7 +73,7 @@ private[client] final class LobbyRoomScreen(app: Screens) {
     if (!client.isLobbyHost) {
       // Everything a guest could read of the settings is in the heading; what is left is to wait
       val waitingLabel = text(Messages.t("Waiting for host to start..."), "lead-on-sky")
-      headingRight.getChildren.add(0, row(8, Icons.node(Icons.Clock, 18, Palette.Ink), waitingLabel))
+      headingRight.getChildren.add(0, row(8, Icons.node(Icons.Clock, 18, Palette.Text), waitingLabel))
     } else {
       // The host sets the match up in the heading itself: its chips are drop-downs
       val mapCombo = settingChip(new ComboBox[String](FXCollections.observableArrayList(WorldRegistry.displayNames: _*)),
@@ -106,15 +106,15 @@ private[client] final class LobbyRoomScreen(app: Screens) {
       }
 
       val startBtn = button(Messages.t("Start Game"), "sun", "lg")
-      startBtn.setGraphic(Icons.node(Icons.Play, 16, javafx.scene.paint.Color.web("#5a3300")))
+      startBtn.setGraphic(Icons.node(Icons.Play, 16, Palette.OnGold))
       startBtn.setOnAction(_ => client.startGame())
       headingRight.getChildren.add(startBtn)
 
       val addBotBtn = button(Messages.t("Add Bot"), "plain", "sm")
-      addBotBtn.setGraphic(Icons.node(Icons.Plus, 14, Palette.Ink))
+      addBotBtn.setGraphic(Icons.node(Icons.Plus, 14, Palette.Text))
       addBotBtn.setOnAction(_ => client.addBot())
       val removeBotBtn = button(Messages.t("Remove Bot"), "plain", "sm")
-      removeBotBtn.setGraphic(Icons.node(Icons.Minus, 14, Palette.Ink))
+      removeBotBtn.setGraphic(Icons.node(Icons.Minus, 14, Palette.Text))
       removeBotBtn.setOnAction(_ => client.removeBot())
       botButtons.getChildren.addAll(addBotBtn, removeBotBtn)
 
@@ -123,7 +123,7 @@ private[client] final class LobbyRoomScreen(app: Screens) {
       mapCombo.setOnAction(_ => {
         sendConfigUpdate()
         previewedMap = mapCombo.getSelectionModel.getSelectedIndex
-        preview.getChildren.setAll(MapPreview.view(previewedMap, 80, 80, 14))
+        preview.getChildren.setAll(MapPreview.view(previewedMap, 136, 76, 12))
       })
       durationCombo.setOnAction(_ => sendConfigUpdate())
       gameModeCombo.setOnAction(_ => {

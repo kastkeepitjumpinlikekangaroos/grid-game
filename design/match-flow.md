@@ -1,7 +1,7 @@
 # A match's opening and its end
 
-How a match begins (the first thirty seconds: a Teams match's wall, a free-for-all's ceasefire) and
-how it ends. The server runs both (GameInstance: `Opening.scala` and the match clock in
+How a match begins (the first thirty seconds: a Teams match's wall, a free-for-all's ceasefire),
+how it ends, and who wins it. The server runs both (GameInstance: `Opening.scala` and the match clock in
 `GameInstance.scala`); the client keeps its own copy of the opening (GameClient's `Opening.scala`) and
 draws it (`OpeningPainter`).
 
@@ -127,3 +127,32 @@ and nobody could make a lobby, practice or play ranked. The results are lost the
 A match that fails to start leaves nothing behind either: `MatchLauncher.launch` stops and
 unregisters what it had started before it rethrows, and `LobbyHandler.handleStart` closes the lobby
 (`LOBBY_CLOSED`). `EndGameTest` and `LobbyFlowTest` pin both.
+
+## Who wins
+
+Every mode is won on the same score: a player's kills less their deaths (`MatchResults.score`), so
+a death costs as much as a kill earns. Until 2026-10-14 a match was ranked on kills alone, and dying
+cost nothing but the seconds before the respawn: whoever threw themselves at everyone finished
+above someone who killed nearly as often and hardly died. `MatchEnd` places everyone through
+`MatchResults` when the time is up, and all that follows from a place follows the score: the
+scoreboard, the wins a profile and the leaderboard count (matches finished first), and a ranked
+match's rating (each player's place against each opponent's).
+
+- **A free-for-all** (casual, ranked, and the ranked duel, a free-for-all of two) places each
+  player on their score, then on their kills: of two players level on score, the one who killed
+  more, and so died more, is ahead. Identical lines share a place and the next one is skipped
+  (1, 2, 2, 4). A duel comes out as it did on kills, since each player's deaths are the other's
+  kills. Practice is ranked the same way; its targets never shoot back.
+- **Teams** places a team on its members' scores added up, and teams level on it share first
+  place: a draw. Nobody can hurt a teammate or themselves, and every death has a killer, so every
+  death on one side is a kill for the other, and a team's score is its kills less the other team's:
+  the same result as the kill race, which is how the scoreboard puts it ("Team 1 (Blue) wins
+  15 – 11", a kills chip on each team). A team's members are listed by their own scores.
+- **The scoreboard** (`ScoreboardScreen`) shows each player's score after their kills and deaths,
+  signed (+5, 0, −3), so a place can be read off the table: nine kills for six deaths place below
+  seven for two. The server sends kills, deaths and the place (`SCORE_ENTRY`) and the client works
+  the score out itself (`ScoreEntry.score`), so the wire is as it was. Matches saved before the
+  change keep the places they were given.
+- `MatchResultsTest` pins the rule, `EndGameTest` a match scored and saved on it (the win is the
+  player with fewer kills and fewer deaths), and `ScoreboardScreenTest` the column and the order of
+  a team's rows.

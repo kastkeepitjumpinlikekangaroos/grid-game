@@ -1,6 +1,6 @@
 package com.gridgame.client.render.projectiles
 
-import com.gridgame.common.model.Projectile
+import com.gridgame.common.model.{Projectile, ProjectileDef}
 import com.gridgame.client.gl.ShapeBatch
 import ProjectileKit._
 import Silhouettes._
@@ -342,7 +342,9 @@ private[render] object Heavies {
     val ds = dynScale
     screenDir(proj)
     val ndx = _sdx; val ndy = _sdy
-    val arcR = 34f * ds
+    // As wide as it cuts: 34 for the 1.8 cells either side the ring of eight struck, wider for the
+    // one Crescent Cut it is now
+    val arcR = 34f * ds * ProjectileDef.get(proj.projectileType).hitRadius / 1.8f
     val segs = 12
     val baseAngle = Math.atan2(ndy, ndx)
 

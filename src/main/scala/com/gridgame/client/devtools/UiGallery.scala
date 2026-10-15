@@ -4,9 +4,9 @@ import com.gridgame.client.ClientMain
 import com.gridgame.client.game.GameClient
 import com.gridgame.client.i18n.Messages
 import com.gridgame.client.net.{SavedLogin, ServerIdentityChangedException}
-import com.gridgame.client.ui.{MapPreview, Theme, Widgets}
+import com.gridgame.client.ui.{MapPreview, Theme, Widgets, WorldBackdrop}
 import com.gridgame.client.ui.screens.LastLogin
-import com.gridgame.common.model.{CharacterId, Position, WorldData}
+import com.gridgame.common.model.{CharacterId, MatchResults, Position, WorldData}
 import com.gridgame.common.protocol._
 
 import javafx.application.{Application, Platform}
@@ -68,6 +68,9 @@ class UiGalleryApp extends Application {
     // so the time they wait for (a fade, sprite sheets loading) passes with the FX thread free.
     new Thread(() => {
       try {
+        // The world behind every screen, drawn before the first shot is taken
+        fx(WorldBackdrop.prepare())
+        MapPreview.settle()
         for ((name, shot) <- shots if only.forall(_.contains(name))) {
           val file = new File(outDir, s"$name.png")
           shot(file)
@@ -168,8 +171,8 @@ class UiGalleryApp extends Application {
     import javafx.scene.layout.{FlowPane, VBox}
     val all = new FlowPane(24, 24)
     for (i <- 0 until com.gridgame.common.WorldRegistry.size) {
-      val sizes = new javafx.scene.layout.HBox(12, MapPreview.view(i, 320, 200, 14), MapPreview.view(i, 58, 58, 10),
-        MapPreview.view(i, 80, 80, 14))
+      val sizes = new javafx.scene.layout.HBox(12, MapPreview.view(i, 320, 180, 14), MapPreview.view(i, 104, 58, 10),
+        MapPreview.view(i, 136, 76, 12))
       sizes.setAlignment(javafx.geometry.Pos.TOP_LEFT)
       all.getChildren.add(new VBox(8, Widgets.h3(com.gridgame.common.WorldRegistry.getDisplayName(i)), sizes))
     }
@@ -261,22 +264,24 @@ class UiGalleryApp extends Application {
       c.processPacket(new PlayerJoinPacket(seq(), who, Packet.getCurrentTimestamp, new Position(5, 5), 0xFF00AA00,
         name, 100, charId, team))
     val myTeam: Byte = if (teams) 2 else 0
+    val teamOf: Map[UUID, Byte] = ((id -> myTeam) +: others.zipWithIndex.map { case ((who, _, _), i) =>
+      who -> (if (teams) (1 + i % 2).toByte else 0.toByte) }).toMap
     join(id, me, c.selectedCharacterId, myTeam)
-    others.zipWithIndex.foreach { case ((who, n, ch), i) => join(who, n, ch, if (teams) (1 + i % 2).toByte else 0) }
+    others.foreach { case (who, n, ch) => join(who, n, ch, teamOf(who)) }
     def event(e: Byte, who: UUID = new UUID(0, 0), kills: Int = 0, deaths: Int = 0, rank: Int = 0, team: Int = 0): Unit =
       c.processPacket(new GameEventPacket(seq(), who, Packet.getCurrentTimestamp, e, 7.toShort, 0, kills.toShort,
         deaths.toShort, null, rank.toByte, 0.toShort, 0.toShort, team.toByte))
     event(GameEvent.GAME_OVER)
-    if (teams) {
-      val rows = (id, 4, 5, 2, 2) +: others.zipWithIndex.map { case ((who, _, _), i) => (who, 7 - i, 2 + i, if (i % 2 == 0) 1 else 2, 1 + i % 2) }
-      rows.foreach { case (who, k, d, rank, team) => event(GameEvent.SCORE_ENTRY, who, k, d, rank, team) }
-    } else {
-      val scores = if (won) Seq(9, 7, 5, 5, 2, 1) else Seq(6, 9, 5, 4, 2, 1)
-      val all = id +: others.map(_._1)
-      all.zip(scores).sortBy(-_._2).zipWithIndex.foreach { case ((who, k), i) =>
-        event(GameEvent.SCORE_ENTRY, who, k, 2 + i, i + 1, 0)
-      }
-    }
+    // Kills and deaths a match could end on (every kill somebody's death; practice's targets never
+    // shoot back), ours first, placed and sent as the server places and sends them
+    val lines =
+      if (teams) Seq((4, 5), (7, 6), (6, 6), (5, 2), (1, 4), (3, 3))
+      else if (c.isPracticeMode) Seq((9, 0), (0, 2), (0, 2), (0, 2), (0, 2), (0, 1))
+      else if (won) Seq((7, 2), (9, 6), (5, 3), (5, 5), (2, 6), (1, 7))
+      else Seq((6, 6), (9, 3), (7, 5), (4, 4), (2, 6), (1, 5))
+    val scores = (id +: others.map(_._1)).zip(lines).map { case (who, (k, d)) => (who, k, d) }
+    val results = if (teams) MatchResults.rankTeams(scores, teamOf) else MatchResults.rankFfa(scores)
+    results.foreach(r => event(GameEvent.SCORE_ENTRY, r.playerId, r.kills, r.deaths, r.rank, r.teamId))
     if (ranked) c.processPacket(new MatchHistoryPacket(seq(), id, 0, MatchHistoryAction.STATS, elo = 1284, oldElo = 1261))
     event(GameEvent.SCORE_END)
   }
@@ -333,6 +338,8 @@ class UiGalleryApp extends Application {
     fx(scene.getRoot.snapshot(null, null))
     Thread.sleep(800)
     fx(scene.getRoot.snapshot(null, null))
+    // The maps' pictures, drawn on a thread of their own
+    MapPreview.settle()
     Thread.sleep(400)
     fx {
       val params = new SnapshotParameters()

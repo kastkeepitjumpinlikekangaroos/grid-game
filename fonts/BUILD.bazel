@@ -1,4 +1,5 @@
-# The fonts and their licences (the Nunito files are SIL OFL 1.1, which travels with them)
+# The fonts and their licences: Exo 2 (the menus' and the match's) is SIL OFL 1.1, which travels with it,
+# and the Noto Sans subsets are the Chinese and Korean text's
 filegroup(
     name = "font_files",
     srcs = glob(["*.ttf", "OFL-*.txt"]),

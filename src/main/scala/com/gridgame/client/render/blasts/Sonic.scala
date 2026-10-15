@@ -4,7 +4,8 @@ import GLBlastRenderers._
 import BlastKit._
 import Pieces._
 
-/** Sound: rings of it — a lute, a bass, a howl with its moon, a roar's claw marks, a shriek. */
+/** Sound: rings of it — a lute, a bass, a howl with its moon, a roar's claw marks, a shriek — and
+  * the Bear's maul, the claw marks without the roar. */
 private[blasts] object Sonic {
   /** A ring of `n` teeth, the points `depth` of the radius out past the notches. */
   private def jaggedRing(q: Float, n: Int, depth: Float, w: Float, r: Float, g: Float, b: Float, a: Float): Unit = {
@@ -161,6 +162,19 @@ private[blasts] object Sonic {
         if (layer != AIR) return
         flash(0.07f, 0.4f, 1f, 0.7f, 0.4f, 0.6f)
         debris(D_LEAF, 10, 0f, 0.85f, 0.9f, 36f, 2.6f, 0.72f, 0.45f, 0.22f, 1)
+      case S_MAUL =>
+        // The Bear raking its claws all round it: six sets of claw marks torn into the ground, one
+        // after another, a ring of dust and tufts of fur
+        var i = 0
+        while (i < 6) {
+          clawMarks((i + 0.3f) * TWO_PI / 6 + hash(seed, 2700) * 0.4f, 0.52f, 36f, 0.02f + 0.03f * i, 0.95f)
+          i += 1
+        }
+        shockRing(0f, 0.3f, 6f, 0.98f, 0.62f, 0.3f, 0.8f)
+        if (layer != AIR) return
+        flash(0.06f, 0.4f, 1f, 0.66f, 0.36f)
+        puffs(8, 0.05f, 0.85f, 0.7f, 12f, 12f, 22f, 0.72f, 0.58f, 0.42f, 0.5f, 1, outward = 0.2f, flat = 0.56f, inkK = 0.4f)
+        debris(D_FLECK, 12, 0f, 0.7f, 0.85f, 30f, 2.6f, 0.55f, 0.36f, 0.2f, 2)
       case _ => // S_SHRIEK
         soundRings(4, 5, 0f, 0.75f, 1f, 4.6f, 0.82f, 0.74f, 1f, 0.95f)
         streaks(12, 0.02f, 0.5f, 0.2f, 1.05f, 0.3f, 3.2f, 0.9f, 0.88f, 1f, 0.9f, 1)

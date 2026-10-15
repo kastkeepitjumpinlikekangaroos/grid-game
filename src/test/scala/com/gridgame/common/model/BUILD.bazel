@@ -29,6 +29,8 @@ load("@rules_scala//scala:scala.bzl", "scala_junit_test")
     ("barrier_test", "BarrierTest.scala", []),
     ("roster_balance_test", "RosterBalanceTest.scala", []),
     ("melee_kit_test", "MeleeKitTest.scala", []),
+    # Every kit: no volley of more than three, and only where it is the character's; no two alike
+    ("kit_test", "KitTest.scala", []),
     ("tile_test", "TileTest.scala", ["//sprites:sprite_files"]),
     # What the client picks for a trap, a blink or a shove, the server takes: random ground and every map
     ("placement_agreement_test", "PlacementAgreementTest.scala", ["//worlds:world_files"]),

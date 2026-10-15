@@ -24,6 +24,10 @@ class ScoreboardScreenTest {
   /** The places the rows show, top to bottom. */
   private def places(root: javafx.scene.Node): Seq[String] = Fx(Fx.labelsOf(root, "medal"))
 
+  /** The scores the rows show, top to bottom: a row's numbers are its kills, deaths and score. */
+  private def scores(root: javafx.scene.Node): Seq[String] =
+    Fx(Fx.labelsOf(root, "number")).grouped(3).map(_.last).toSeq
+
   private def scoreboard(elo: Option[(Int, Int)], rows: (UUID, Int, Int, Int, Byte)*): javafx.scene.Node = {
     t.gameEvent(GameEvent.GAME_OVER)
     rows.foreach { case (who, kills, deaths, rank, team) =>
@@ -72,17 +76,32 @@ class ScoreboardScreenTest {
     assertEquals(Seq("1", "1", "3"), places(root))
   }
 
+  @Test def eachRowShowsItsScore(): Unit = {
+    match2()
+    // Placed by the server on kills less deaths: 3 - 0 above 6 - 5
+    val root = scoreboard(None, (t.id, 3, 0, 1, 0), (a, 6, 5, 2, 0), (b, 1, 4, 3, 0))
+    assertTrue(Fx(Fx.labels(root)).contains("SCORE"))
+    assertEquals(Seq("+3", "+1", "−3"), scores(root))
+  }
+
+  @Test def aTeamsMembersAreListedByScore(): Unit = {
+    match2()
+    // A team shares its place, so the screen orders its rows itself: 5 - 2 above 7 - 6
+    val root = scoreboard(None, (a, 7, 6, 1, 1), (b, 5, 2, 1, 1), (t.id, 8, 12, 2, 2))
+    assertEquals(Seq("+3", "+1", "−4"), scores(root))
+  }
+
   @Test def theLosingTeamSeesDefeatAndTheScore(): Unit = {
     match2()
-    val shown = finish((a, 7, 1, 1, 1), (t.id, 2, 3, 2, 2), (b, 1, 4, 2, 2))
+    val shown = finish((a, 7, 3, 1, 1), (t.id, 2, 3, 2, 2), (b, 1, 4, 2, 2))
     assertTrue(shown.contains("Defeat"))
     assertTrue(shown.contains("Team 1 (Blue) wins 7 – 3"))
     assertTrue(shown.contains("WINNER"))
   }
 
-  @Test def teamsLevelOnKillsDraw(): Unit = {
+  @Test def teamsLevelOnScoreDraw(): Unit = {
     match2()
-    val shown = finish((a, 4, 1, 1, 1), (t.id, 2, 3, 1, 2), (b, 2, 4, 1, 2))
+    val shown = finish((a, 4, 4, 1, 1), (t.id, 2, 1, 1, 2), (b, 2, 3, 1, 2))
     assertTrue(shown.contains("Draw"))
     assertTrue(shown.contains("Tied at 4 – 4"))
     assertFalse(shown.contains("WINNER"))

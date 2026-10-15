@@ -4,7 +4,7 @@ package hud
 import com.gridgame.common.model._
 
 /** The two ability slots: each one's icon, its cooldown sweeping round, a flash when it is ready
-  * again, a trap ability's count, and a ceasefire's padlock. */
+  * again, a trap ability's count, a ceasefire's padlock, and a rim round the one being aimed. */
 private[render] final class AbilityBarPainter(ctx: RenderContext) {
   import ctx._
 
@@ -31,6 +31,9 @@ private[render] final class AbilityBarPainter(ctx: RenderContext) {
   private val _sweepXs = new Array[Float](34)
   private val _sweepYs = new Array[Float](34)
 
+  // How far outside its slot the rim of the ability being aimed runs
+  private val AIM_RIM_OUT = 2.5f
+
   def draw(screenW: Int, screenH: Int): Unit = {
     val slotSize = 54f; val slotGap = 8f
     val invSlotSize = 54f; val invSlotGap = 8f; val invNumSlots = 5
@@ -49,6 +52,7 @@ private[render] final class AbilityBarPainter(ctx: RenderContext) {
     // how long, since nothing anyone presses attacks until it is over
     val locked = client.attacksLocked
     val lockSecs = if (locked) ((client.openingMsLeft + 999L) / 1000L).toInt else 0
+    val aimed = client.aimedAbility
     beginShapes()
     var i = 0
     while (i < numAbilities) {
@@ -113,6 +117,16 @@ private[render] final class AbilityBarPainter(ctx: RenderContext) {
           shapeBatch.fillRoundedRect(slotX, startY, slotSize, slotSize, 5f, ar, ag, ab, flashAlpha)
           shapeBatch.setAdditiveBlend(false)
         }
+      }
+
+      // Being aimed, waiting for the click that casts it (design/characters.md, *Casting mode*): ringed
+      // in the gold of its aim on the ground, or in that aim's grey while it couldn't go off
+      if (aimed == i) {
+        val ready = client.abilityReady(i)
+        val rr = if (ready) 1f else 0.86f; val rg = 0.85f; val rb = if (ready) 0.51f else 0.82f
+        val x = slotX - AIM_RIM_OUT; val y = startY - AIM_RIM_OUT; val s = slotSize + 2f * AIM_RIM_OUT
+        shapeBatch.strokeRoundedRect(x, y, s, s, 7f, 4.6f, 0.08f, 0.05f, 0.02f, 0.7f)
+        shapeBatch.strokeRoundedRect(x, y, s, s, 7f, 2.4f, rr, rg, rb, 1f)
       }
       i += 1
     }

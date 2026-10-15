@@ -28,10 +28,13 @@ private[client] final class ScoreboardScreen(app: Screens) {
     val teamMode = entries.exists(_.teamId != 0)
 
     val rows: Vector[ScoreEntry] =
-      if (teamMode) entries.sortBy(e => (e.rank, e.teamId, -e.kills, e.deaths))
-      else entries.sortBy(e => (e.rank, -e.kills, e.deaths))
+      if (teamMode) entries.sortBy(e => (e.rank, e.teamId, -e.score, -e.kills))
+      else entries.sortBy(e => (e.rank, -e.score, -e.kills))
     val localEntry = entries.find(_.playerId.equals(localId))
     val teamRanks: Map[Int, Int] = entries.groupBy(_.teamId).map { case (team, members) => team -> members.head.rank }
+    // A team places on its members' scores added up, which is its kills less the other team's
+    // (every death on one side is a kill for the other), so a Teams result reads as the kill
+    // race it comes to: "Team 1 wins 12 – 8"
     val teamKills: Map[Int, Int] = entries.groupBy(_.teamId).map { case (team, members) => team -> members.map(_.kills).sum }
     val isDraw = teamMode && teamRanks.size > 1 && teamRanks.values.forall(_ == 1)
 
@@ -43,18 +46,18 @@ private[client] final class ScoreboardScreen(app: Screens) {
 
     def gradient(top: String, mid: String, bottom: String) = new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE,
       new Stop(0, Color.web(top)), new Stop(0.5, Color.web(mid)), new Stop(1, Color.web(bottom)))
-    val gold = gradient("#fff6b8", "#ffd84a", "#ffb31f")
-    val sky = gradient("#ffffff", "#e3f1ff", "#b9dcff")
-    val leaf = gradient("#effff0", "#b8f0a8", "#72d35c")
-    val dusk = gradient("#fdfbff", "#dfe6f2", "#aab8cf")
-    val ink = Color.web("#1c3558")
+    val gold = gradient("#fff4b8", "#ffd447", "#f5a01a")
+    val sky = gradient("#ffffff", "#cfe9ff", "#6fc0ff")
+    val leaf = gradient("#f0fff4", "#a9f2c2", "#45d27e")
+    val dusk = gradient("#f6f8fd", "#c9d2e6", "#8b97b5")
+    val ink = Color.web("#060a1a")
 
     // Headline: the player's own result, which is what they came to this screen for
     val title =
-      if (isPractice) displayTitle(Messages.t("Practice Complete"), 58, leaf, Color.web("#1d5a2a"))
+      if (isPractice) displayTitle(Messages.t("Practice Complete"), 58, leaf, Color.web("#03200e"))
       else localEntry match {
         case Some(_) if isDraw => displayTitle(Messages.t("Draw"), 64, sky, ink)
-        case Some(e) if e.rank == 1 => displayTitle(Messages.t("Victory!"), 72, gold, Color.web("#6b3d00"))
+        case Some(e) if e.rank == 1 => displayTitle(Messages.t("Victory!"), 76, gold, Color.web("#140c02"))
         case Some(_) if teamMode => displayTitle(Messages.t("Defeat"), 64, dusk, ink)
         case _ => displayTitle(Messages.t("Game Over"), 64, sky, ink)
       }
@@ -87,7 +90,8 @@ private[client] final class ScoreboardScreen(app: Screens) {
       val change = row(14,
         Icons.node(Icons.Trophy, 26, Palette.Gold),
         new VBox(0, eyebrow(Messages.t("RANKED ELO")),
-          row(10, text(oldElo.toString, "number", "text-faint"), text("→", "muted"), text(newElo.toString, "stat-value", "text-gold"))),
+          row(10, text(oldElo.toString, "number", "text-faint"), Icons.node(Icons.ArrowRight, 16, Palette.Muted),
+            text(newElo.toString, "stat-value", "text-gold"))),
         grow(), chip(deltaText, tone))
       val eloCard = card(change)
       eloCard.getStyleClass.add("card-tight")
@@ -96,8 +100,12 @@ private[client] final class ScoreboardScreen(app: Screens) {
       body.getChildren.add(eloCard)
     }
 
+    // The score is what the places are decided on: kills less deaths
     val cols = Seq(Col(Messages.t("RANK"), 70), Col(Messages.t("PLAYER"), 0),
-      Col(Messages.t("KILLS"), 90, Pos.CENTER_RIGHT), Col(Messages.t("DEATHS"), 90, Pos.CENTER_RIGHT))
+      Col(Messages.t("KILLS"), 90, Pos.CENTER_RIGHT), Col(Messages.t("DEATHS"), 90, Pos.CENTER_RIGHT),
+      Col(Messages.t("SCORE"), 90, Pos.CENTER_RIGHT))
+    // Signed, since it goes below nothing: +4, 0, −2 (a minus sign, as wide as the plus)
+    def signed(n: Int): String = if (n > 0) s"+$n" else if (n < 0) s"−${-n}" else "0"
     val table = new VBox(4, tableHead(cols))
 
     var lastTeamId = -1
@@ -145,7 +153,7 @@ private[client] final class ScoreboardScreen(app: Screens) {
       val who = row(12, portrait, names)
 
       val r = tableRow(cols, Seq(place, who, text(entry.kills.toString, "number", "text-leaf"),
-        text(entry.deaths.toString, "number", "text-berry")))
+        text(entry.deaths.toString, "number", "text-berry"), text(signed(entry.score), "number")))
       if (isLocal) r.getStyleClass.add("row-self")
       table.getChildren.add(r)
     }

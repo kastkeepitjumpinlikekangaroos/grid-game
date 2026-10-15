@@ -99,7 +99,7 @@ object AbilitySounds {
     ProjectileType.BONE_BOOMERANG)
   set("atk_shuriken", ProjectileType.SHURIKEN, ProjectileType.THROWING_STAR)
   set("atk_knife_throw", ProjectileType.KNIFE)
-  set("atk_card_throw", ProjectileType.CARD)
+  set("atk_card_throw", ProjectileType.CARD, ProjectileType.CARD_HEAVY)
   set("atk_cursed_blade", ProjectileType.CURSED_BLADE)
   set("atk_holy_blade", ProjectileType.HOLY_BLADE)
   set("atk_boomerang_blade", ProjectileType.BOOMERANG_BLADE)
@@ -165,6 +165,7 @@ object AbilitySounds {
 
   // ── chains and ropes ────────────────────────────────────────────────────
   set("atk_chain_bolt", ProjectileType.CHAIN_BOLT, ProjectileType.LOCKDOWN_CHAIN)
+  set("atk_puppet_string", ProjectileType.CHAIN_BOLT_HEAVY) // the Puppeteer's, its strings' sound
   set("atk_rope_throw", ProjectileType.ROPE)
 
   // ── weather ─────────────────────────────────────────────────────────────
@@ -219,32 +220,57 @@ object AbilitySounds {
   set("atk_cursed_blade", ProjectileType.DRAIN_BLADE)
   set("atk_deathknight_blade", ProjectileType.CHILL_BLADE)
 
+  // ── What the volleys became (design/characters.md, *No volleys of more than three*) ──
+  // A variant sounds as the type it was made from does in its thrower's hands; a slam or a new
+  // attack takes the sound nearest what it is
+  set("atk_flambe", ProjectileType.COMBUST)                // a gout of flame
+  set("atk_frost_trap", ProjectileType.FROST_NOVA)
+  set("atk_wind_wave", ProjectileType.GALE)
+  set("atk_ice_spike", ProjectileType.FROSTBITE)
+  set("atk_thunder_strike", ProjectileType.HAILSTORM)      // a storm breaking
+  set("atk_shadow_bolt", ProjectileType.SHADOW_BIND)
+  set("atk_lute_chord", ProjectileType.LULLABY)            // the Bard's lute
+  set("atk_smite", ProjectileType.DIVINE_JUDGMENT)
+  set("atk_spear_thrust", ProjectileType.PINNING_SPEAR)
+  set("atk_chain_bolt", ProjectileType.SHACKLES)
+  set("atk_tesla_arc", ProjectileType.ION_SHOT)            // a charged zap
+  set("atk_gravity_ball", ProjectileType.REPULSE)
+  set("atk_virus_glitch", ProjectileType.LAG_SPIKE)
+  set("atk_hawk_dive", ProjectileType.PIN_DOWN)            // the Hawk's talons
+  set("atk_chain_lightning", ProjectileType.SHOCK_BURST)
+  set("atk_sphinx_riddle", ProjectileType.RIDDLE)
+  set("atk_curse_hex", ProjectileType.BINDING_TALISMAN)
+  set("atk_venom_spit", ProjectileType.SERPENT_STRIKE)
+  set("atk_puppet_string", ProjectileType.MARIONETTE)
+  set("atk_card_throw", ProjectileType.LUCKY_STREAK, ProjectileType.WILD_CARD)
+  set("atk_demon_fire", ProjectileType.DEATH_COIL)         // something alive inside it
+  set("atk_meteor", ProjectileType.METEOR)
+  set("atk_poltergeist_hurl", ProjectileType.FLING)
+  set("atk_vortex_pull", ProjectileType.WHIRLWIND)
+  set("atk_quake_slam", ProjectileType.HORN_FLIP)          // the Beetle's slam, as it sounded
+
   // ── per-character overrides ─────────────────────────────────────────────
   // Same projectile, different character, different sound — because the
   // character is what the player thinks they are playing.
   only("atk_flintlock", CharacterId.Pirate, ProjectileType.BULLET)          // black powder, not a rifle
   only("atk_cannonball", CharacterId.Pirate, ProjectileType.GRENADE)
   only("atk_comic_bomb", CharacterId.Bombardier, ProjectileType.GRENADE)   // a lit fuse, not a pin
-  only("atk_suppress_fire", CharacterId.MechPilot, ProjectileType.LOCKDOWN_CHAIN)
   only("atk_suppress_fire", CharacterId.Sentinel, ProjectileType.LOCKDOWN_CHAIN)
   only("atk_mech_slam", CharacterId.MechPilot, ProjectileType.SEISMIC_SLAM) // hydraulics, not earth
   only("atk_ground_pound", CharacterId.Gorilla, ProjectileType.SEISMIC_SLAM)
 
-  only("atk_demon_fire", CharacterId.Warlock, ProjectileType.FIREBALL)      // something alive inside it
-  only("atk_meteor", CharacterId.Astronomer, ProjectileType.FIREBALL)
   only("atk_flask_shatter", CharacterId.Alchemist, ProjectileType.FIREBALL) // a thrown potion
 
   only("atk_anvil_trap", CharacterId.Blacksmith, ProjectileType.SNARE_MINE)
   only("atk_rune_trap", CharacterId.Runesmith, ProjectileType.SNARE_MINE)
   only("atk_puppet_string", CharacterId.Puppeteer, ProjectileType.ROPE)
-  only("atk_puppet_string", CharacterId.Puppeteer, ProjectileType.CHAIN_BOLT)
   only("atk_hypnotic_melody", CharacterId.Musician, ProjectileType.CHARM)
 
   only("atk_venom_spit", CharacterId.Serpent, ProjectileType.POISON_DART)
 
   // TREMOR_SLAM is the game's most overloaded projectile: it is the ground
-  // ability for six characters who share nothing (the melee kits have their own
-  // since Plan 5a).
+  // ability for five characters who share nothing (the melee kits have their own
+  // since Plan 5a, and the Beetle's is its Horn Flip).
   only("atk_wail_shriek", CharacterId.Banshee, ProjectileType.TREMOR_SLAM)
   only("atk_harpy_screech", CharacterId.Harpy, ProjectileType.TREMOR_SLAM)
   only("atk_shadow_burst", CharacterId.Shadowfiend, ProjectileType.TREMOR_SLAM)
@@ -274,9 +300,7 @@ object AbilitySounds {
   only("atk_warlock_bolt", CharacterId.Warlock, ProjectileType.DEATH_BOLT)
   only("atk_anubis_bolt", CharacterId.Anubis, ProjectileType.DEATH_BOLT)
   only("atk_poltergeist_hurl", CharacterId.Poltergeist, ProjectileType.SOUL_BOLT_HEAVY)
-  only("atk_poltergeist_hurl", CharacterId.Poltergeist, ProjectileType.CHARM)
   only("atk_djinn_bolt", CharacterId.Djinn, ProjectileType.MYSTIC_BOLT)
-  only("atk_djinn_bolt", CharacterId.Djinn, ProjectileType.CHARM)
 
   only("atk_photon_beam", CharacterId.Photon, ProjectileType.LASER_HEAVY)
   only("atk_turret_laser", CharacterId.Sentinel, ProjectileType.LASER_LIGHT)
@@ -296,7 +320,6 @@ object AbilitySounds {
   only("atk_lute_chord", CharacterId.Bard, ProjectileType.SONIC_WAVE)
   only("atk_song_wave", CharacterId.Musician, ProjectileType.SONIC_WAVE)
   only("atk_sphinx_riddle", CharacterId.Sphinx, ProjectileType.CHARM)
-  only("atk_sphinx_riddle", CharacterId.Sphinx, ProjectileType.SONIC_WAVE)
   only("atk_shift_strike", CharacterId.Shapeshifter, ProjectileType.FIST)
 
   // ── detonations ─────────────────────────────────────────────────────────

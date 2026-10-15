@@ -71,6 +71,8 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
     isChatMode = true
     client.isChatOpen = true
     pressedKeys.clear()
+    // Typing isn't attacking: whatever was aimed or held is put away without going off
+    client.cancelAims()
     chatInputBuffer.clear()
     client.chatInputText = ""
   }
@@ -107,6 +109,9 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
   def clearAllKeys(): Unit = {
     pressedKeys.clear()
     client.setMovementInputActive(false)
+    // A key or button let go of in another window never comes up in this one, and the click that
+    // brings this one back is no cast of what was aimed before it went
+    client.cancelAims()
     if (isChatMode) exitChatMode()
   }
 
@@ -156,10 +161,12 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
     if (itemTypeId >= 0) client.useItem(itemTypeId)
   }
 
+  /** Q and E going down: taken up to be aimed, and cast by the next click, or cast now with nothing
+    * to aim (Attacks). Their coming up does nothing. */
   private def processAbilities(key: Int): Unit = {
     key match {
-      case GLFW_KEY_Q => client.shootAbility(0)
-      case GLFW_KEY_E => client.shootAbility(1)
+      case GLFW_KEY_Q => client.pressAbility(0)
+      case GLFW_KEY_E => client.pressAbility(1)
       case _ =>
     }
   }

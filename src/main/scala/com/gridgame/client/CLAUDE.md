@@ -58,13 +58,15 @@ could move these numbers should be checked with them rather than guessed at:
 # going off. --divider raises the wall a Teams match opens with, beside the local player, and
 # --ceasefire holds every attack the way a free-for-all's opening does (=<seconds> on either to
 # watch it end). --aim has us charge a shot all through the run (as the Tidecaller, begun again
-# every five seconds, the aim turning), so its lane on the ground is in the frame. The pointer is
+# every five seconds, the aim turning), so its lane on the ground is in the frame, and --hold=<kind>
+# has us aim an attack of that kind (the primary held, or a shot, blast, fan, dash, blink or trap
+# taken up and never cast, as the first character with one), its aim turning round us. The pointer is
 # drawn over every frame, circling the screen, as the match's window draws it.
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --quality=low
 
 # The JavaFX menus: the character select screen (the panel on a page as the lobby screens frame
-# it: the sky, the top bar), then a match start (stage hidden), a second visit, and the same
-# screen idle — live/committed heap, CPU, footprint for each phase.
+# it: the world behind it, the top bar), then a match start (stage hidden), a second visit, and
+# the same screen idle — live/committed heap, CPU, footprint for each phase.
 bazel run //src/main/scala/com/gridgame/client:ui_bench
 ```
 

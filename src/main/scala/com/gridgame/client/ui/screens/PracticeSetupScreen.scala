@@ -7,7 +7,6 @@ import javafx.application.Platform
 import javafx.geometry.Pos
 import javafx.scene.Node
 import javafx.scene.layout.{HBox, Priority, Region, VBox}
-import javafx.scene.paint.Color
 import javafx.stage.Stage
 
 import com.gridgame.client.ui.Theme._
@@ -31,7 +30,7 @@ private[client] final class PracticeSetupScreen(app: Screens) {
     escKeys.setMinWidth(Region.USE_PREF_SIZE)
 
     val startBtn = button(Messages.t("Start Practice"), "sun", "lg")
-    startBtn.setGraphic(Icons.node(Icons.Play, 16, Color.web("#5a3300")))
+    startBtn.setGraphic(Icons.node(Icons.Play, 16, Palette.OnGold))
     startBtn.setMaxWidth(Double.MaxValue)
 
     val statusLabel = text("", "status")

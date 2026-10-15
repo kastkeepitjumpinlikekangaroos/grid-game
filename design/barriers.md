@@ -1,7 +1,9 @@
 # Barriers
 `BarrierCast` raises a shield wall carried in front of its caster and turned to face their aim:
 the Crusader's Bulwark (3.5s, a 12s cooldown counted from the raise), the Gladiator's Scutum, the
-Paladin's Aegis and the Beetle's Carapace (3s each) and the Golem's Stone Wall (3.5s, 14s). It
+Paladin's Aegis and the Beetle's Carapace (3s each), the Golem's Stone Wall (3.5s, 14s), and the
+Glacier's Ice Wall (3s, 14s), the one ranged character's, which was a fan of five frost shards by
+that name until the volleys went (design/characters.md). It
 stays up for that whole time whatever its holder does, and only their death takes it down sooner.
 It is called a barrier in code because the Shield *item* (key 4, five seconds of invulnerability, `Player.hasShield`,
 flag 0x01) already has the name; the player-facing ability can still say shield.

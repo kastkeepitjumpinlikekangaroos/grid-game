@@ -63,15 +63,18 @@ class OnHitEffectsTest {
     assertEquals((19, 30), m.at(target))
   }
 
-  /** The Tidecaller's Tidal Wave as a client fires it: five waves, one spawn request each, from
-    * the Q slot, fanned round (dx, dy). */
-  private def tidalWave(tidecaller: Player, dx: Float, dy: Float): Seq[Projectile] = {
-    val fan = CharacterDef.get(CharacterId.Tidecaller.id).qAbility.castBehavior.asInstanceOf[FanProjectile]
-    val headings = (0 until fan.count).map { i =>
-      val th = fan.angleOf(i)
-      ((dx * Math.cos(th) - dy * Math.sin(th)).toFloat, (dx * Math.sin(th) + dy * Math.cos(th)).toFloat)
+  /** Three waves of one cast, fanned 15 degrees apart round (1, 0): a fan as one press fires it
+    * (the Tidal Wave was a fan of five until the volleys went; no fan in the roster pushes now,
+    * but whatever one cast fires still pushes a player once). */
+  private def fanOfWaves(tidecaller: Player): Seq[Projectile] = {
+    val cast = new Cast(10f, 30f)
+    Seq(-15.0, 0.0, 15.0).map { deg =>
+      val th = Math.toRadians(deg)
+      val p = m.instance.projectileManager.spawnProjectile(tidecaller.getId, 10, 30,
+        Math.cos(th).toFloat, Math.sin(th).toFloat, tidecaller.getColorRGB, 0, ProjectileType.TIDAL_WAVE, cast)
+      m.instance.broadcastProjectileSpawn(p)
+      p
     }
-    m.fire(tidecaller, AttackSlot.Q, ProjectileType.TIDAL_WAVE, headings)
   }
 
   private def waveDamage: Int = ProjectileDef.get(ProjectileType.TIDAL_WAVE).damage
@@ -83,17 +86,35 @@ class OnHitEffectsTest {
 
   @Test def aFanPushesWhoeverItCatchesOnce(): Unit = {
     // Each wave used to push on its own from wherever the last had left the target: close in, the
-    // five overlap, and the target was thrown fifteen cells in one tick
+    // waves overlap, and the target was thrown fifteen cells in one tick
     val tidecaller = m.join(CharacterId.Tidecaller, 10, 30)
     val target = m.join(CharacterId.Gladiator, 12, 30)
     m.clearSent()
-    val waves = tidalWave(tidecaller, 1f, 0f)
-    assertEquals(5, waves.size)
+    val waves = fanOfWaves(tidecaller)
     waves.foreach(w => m.tickUntilGone(w))
-    assertEquals("all five waves struck", 5, hitsOn(m.udpSent(tidecaller), target))
+    assertEquals("all three waves struck", 3, hitsOn(m.udpSent(tidecaller), target))
     assertEquals("and threw them three cells, once", (15, 30), m.at(target))
     assertEquals(1, target.getKnockbacks)
-    assertEquals("each dealt its damage", target.getMaxHealth - 5 * waveDamage, target.getHealth)
+    assertEquals("each dealt its damage", target.getMaxHealth - 3 * waveDamage, target.getHealth)
+  }
+
+  @Test def theTidalWaveRollsOnThroughEveryoneInItsWay(): Unit = {
+    // One great wave since the volleys went: it passes through the first three it strikes, pushing
+    // each of them back once and dealing its damage to each
+    val tidecaller = m.join(CharacterId.Tidecaller, 10, 30)
+    val first = m.join(CharacterId.Gladiator, 13, 30)
+    val second = m.join(CharacterId.Gladiator, 18, 31)
+    m.clearSent()
+    val wave = m.launch(tidecaller, ProjectileType.TIDAL_WAVE, 1f, 0f)
+    m.tickUntilGone(wave)
+    assertEquals((16, 30), m.at(first))
+    assertEquals((21, 31), m.at(second))
+    for (p <- Seq(first, second)) {
+      assertEquals(1, p.getKnockbacks)
+      assertEquals(p.getMaxHealth - waveDamage, p.getHealth)
+    }
+    assertEquals("both were passed through", 2,
+      m.projectileEvents(m.udpSent(tidecaller), ProjectileAction.PIERCE).size)
   }
 
   @Test def theRestOfACastFliesThroughWhoItPushed(): Unit = {
@@ -151,8 +172,9 @@ class OnHitEffectsTest {
       ticks += 1
     }
     assertEquals("pushed", (21, 30), m.at(target))
-    // Where the projectile was when it struck: its leading edge, which the crescent is drawn behind
-    val hit = m.projectileEvents(m.udpSent(tidecaller), ProjectileAction.HIT).find(_.getTargetId == target.getId).get
+    // Where the projectile was when it struck: its leading edge, which the crescent is drawn behind.
+    // It rolls on through whoever it strikes, so the strike is a PIERCE
+    val hit = m.projectileEvents(m.udpSent(tidecaller), ProjectileAction.PIERCE).find(_.getTargetId == target.getId).get
     val ahead = 18 - hit.getX
     val d = ProjectileDef.get(ProjectileType.TIDAL_WAVE)
     assertTrue(s"the target was $ahead cells ahead of the water", ahead <= d.hitRadius - d.hitCentreBehind + 1e-4f)

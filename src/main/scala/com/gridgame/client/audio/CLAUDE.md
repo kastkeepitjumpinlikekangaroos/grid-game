@@ -6,8 +6,8 @@ are designed and judged is scripts/SOUNDS.md.
 
 ## What plays when
 
-- `sounds/atk_*.wav` — one sound per attack archetype. `AbilitySounds.scala` maps all 150
-  `ProjectileType` ids onto them, mirroring the many-to-one grouping already used by
+- `sounds/atk_*.wav` — one sound per attack archetype. `AbilitySounds.scala` maps every
+  `ProjectileType` id onto them, mirroring the many-to-one grouping already used by
   `GLProjectileRenderers.registry` (types that share a renderer usually share a sound),
   **plus a per-character override table**. A handful of projectile types are shared by
   characters with nothing in common — `TREMOR_SLAM` is a barbarian splitting the earth

@@ -29,10 +29,11 @@ class KillTracker {
     if (counter != null) counter.get() else 0
   }
 
-  /** Returns (playerId, kills, deaths) sorted by kills descending. */
+  /** Returns (playerId, kills, deaths) for everyone in the match, leavers too, in no order:
+    * MatchResults places them. */
   def getScoreboard: Seq[(UUID, Int, Int)] = {
     kills.keySet().asScala.toSeq.map { playerId =>
       (playerId, getKills(playerId), getDeaths(playerId))
-    }.sortBy(-_._2)
+    }
   }
 }

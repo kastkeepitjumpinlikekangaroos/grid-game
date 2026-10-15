@@ -1,6 +1,6 @@
 package com.gridgame.client.render.projectiles
 
-import com.gridgame.common.model.Projectile
+import com.gridgame.common.model.{Projectile, ProjectileDef}
 import com.gridgame.client.gl.ShapeBatch
 import ProjectileKit._
 
@@ -100,7 +100,11 @@ private[render] object Surges {
     val ndx = ex / el; val ndy = ey / el
     val rise = Math.min(1f, 0.3f + _lifePct * 7f)
     val H = 24f * ds * rise
-    val W = 1.3f * ds; val B = 0.5f * ds; val D = 1.2f * ds
+    // As wide as it strikes: its hit radius but for the half a cell a player's body adds (1.3 world
+    // units across either side for the 1.8 it struck with as a fan of five; 1.9 for the one great
+    // wave it is now)
+    val W = (ProjectileDef.get(proj.projectileType).hitRadius - 0.5f) * ds
+    val B = 0.5f * ds; val D = 1.2f * ds
 
     var j = 0
     while (j < WAVE_J) {

@@ -42,6 +42,16 @@ trait PlayerSync { this: GameInstance =>
     else Math.max(1L, Math.min(65535L, p.getBarrierUntil - System.currentTimeMillis())).toInt
 
   /**
+   * How long this player's speed boost has left, in ms, so their own client walks it for as long
+   * as it lasts. The flag alone gave a client a second of it per update that carried one, and a
+   * player at full health hears no update between a cast and the next hit: the Cyborg's 4s
+   * Overclock walked for one.
+   */
+  private def speedBoostMsLeft(p: Player): Int =
+    if (!p.hasSpeedBoost) 0
+    else Math.max(1L, Math.min(65535L, p.getSpeedBoostUntil - System.currentTimeMillis())).toInt
+
+  /**
    * A player as the server has them, for everyone to be told: position, health, every status
    * flag, character, team, how many times the server has moved them and how many of those moves
    * were knockbacks. Every update the server sends about a player goes through here; each used
@@ -66,7 +76,8 @@ trait PlayerSync { this: GameInstance =>
       if (p.hasBarrier) PlayerUpdatePacket.encodeAimAngle(p.getBarrierAngle) else 0,
       slowPercent(p),
       barrierMsLeft(p),
-      p.getKnockbacks
+      p.getKnockbacks,
+      speedBoostMsLeft(p)
     )
 
   /**

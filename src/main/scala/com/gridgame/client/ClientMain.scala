@@ -3,7 +3,7 @@ package com.gridgame.client
 import com.gridgame.client.audio.AudioManager
 import com.gridgame.client.gl.GLFWManager
 import com.gridgame.client.net.{KnownServers, LoginStore, SavedLogin, ServerIdentityChangedException}
-import com.gridgame.client.ui.{Theme, UiActivity}
+import com.gridgame.client.ui.{Theme, UiActivity, WorldBackdrop}
 import com.gridgame.client.i18n.Messages
 import com.gridgame.common.Constants
 import com.gridgame.common.model.WorldData
@@ -111,6 +111,8 @@ class ClientMain extends Application with Screens {
 
   override def start(primaryStage: Stage): Unit = {
     Theme.loadFonts()
+    // The world behind every screen takes a moment to draw: start it now, on its own thread
+    WorldBackdrop.prepare()
 
     // Initialize internationalization (restores the persisted language) and make
     // a language change rebuild the current (login) screen in the new language.

@@ -23,5 +23,6 @@ private[model] object Roster {
     * from `base`, which must already hold every definition above. */
   def variants(base: Byte => ProjectileDef): Seq[ProjectileDef] =
     Originals.variants(base) ++ Elementals.variants(base) ++ Undead.variants(base) ++
-      Medieval.variants(base) ++ Beasts.variants(base) ++ Mythological.variants(base)
+      Medieval.variants(base) ++ SciFi.variants(base) ++ Beasts.variants(base) ++
+      Mythological.variants(base) ++ Specialists.variants(base)
 }

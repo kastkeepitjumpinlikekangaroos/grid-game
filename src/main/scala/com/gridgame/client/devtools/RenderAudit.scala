@@ -22,19 +22,21 @@ import com.gridgame.client.render.projectiles.GLProjectileRenderers
  *
  *   bazel run //src/main/scala/com/gridgame/client:render_audit -- --out=/tmp/audit
  *   bazel run //src/main/scala/com/gridgame/client:render_audit -- --out=/tmp/audit --maps=the_snowglobe --what=projectiles
+ *   bazel run //src/main/scala/com/gridgame/client:render_audit -- --out=/tmp/audit --what=traps
  *   python3 scripts/render_audit.py /tmp/audit          # rank the worst, write contact sheets
  *
  * For every map it takes the ground a match is played on (every walkable tile covering at least
  * 2% of the arena, plus the pools a shot flies over), lays a field of each, and stands the whole
- * roster on it, then flies every projectile type over it, through the real GLGameRenderer: the
- * map's own background, grade, lighting and post-processing, at the size the player sees. Every
- * shot is taken twice, once as it is and once with what is being judged taken out — characters
- * keep their shadow, light and name plate and lose only their sprite — so the difference between
- * the two is exactly what that sprite or projectile adds to the frame. `scripts/render_audit.py`
- * turns those pairs into contrast figures and contact sheets of the worst cases.
+ * roster on it, then flies every projectile type over it, and lays every kind of trap on it (ours
+ * and an enemy's, armed), through the real GLGameRenderer: the map's own background, grade,
+ * lighting and post-processing, at the size the player sees. Every shot is taken twice, once as it
+ * is and once with what is being judged taken out — characters keep their shadow, light and name
+ * plate and lose only their sprite — so the difference between the two is exactly what that
+ * sprite, projectile or trap adds to the frame. `scripts/render_audit.py` turns those pairs into
+ * contrast figures and contact sheets of the worst cases.
  *
  * This is the loop for anything that could change how readable a character or an ability is:
- * sprite art, projectile art, tiles, backgrounds, the grade.
+ * sprite art, projectile art, trap art, tiles, backgrounds, the grade.
  */
 object RenderAudit {
   def main(args: Array[String]): Unit = {
@@ -47,7 +49,7 @@ class RenderAuditApp extends Application {
   private def argOf(args: Seq[String], name: String): Option[String] =
     args.find(_.startsWith(s"--$name=")).map(_.substring(name.length + 3))
 
-  /** One picture to take: a field of `ground` on `map`, with these characters or projectiles on it. */
+  /** One picture to take: a field of `ground` on `map`, with these characters, projectiles or traps on it. */
   private case class Shot(map: String, background: String, ground: Tile, kind: String, ids: Seq[Int], index: Int)
 
   override def start(stage: Stage): Unit = {
@@ -56,7 +58,7 @@ class RenderAuditApp extends Application {
     out.mkdirs()
     val maps = argOf(args, "maps").map(_.split(",").map(m => if (m.endsWith(".json")) m else m + ".json").toSeq)
       .getOrElse(WorldRegistry.displayNames.indices.map(WorldRegistry.getFilename))
-    val what = argOf(args, "what").map(_.split(",").toSet).getOrElse(Set("characters", "projectiles"))
+    val what = argOf(args, "what").map(_.split(",").toSet).getOrElse(Set("characters", "projectiles", "traps"))
     val w = argOf(args, "w").map(_.toInt).getOrElse(1280)
     val h = argOf(args, "h").map(_.toInt).getOrElse(720)
 
@@ -80,6 +82,10 @@ class RenderAuditApp extends Application {
     }.toIndexedSeq
     val projectileIds = projectileTypes ++ looks.indices.map(256 + _)
     def lookOf(id: Int): (Byte, Byte) = if (id >= 256) looks(id - 256) else (id.toByte, -1.toByte)
+    // Every trap twice, armed: ours (an even id), drawn plainly, and an enemy's (odd), drawn faintly
+    val trapIds = TrapDef.all.indices.flatMap(i => Seq(2 * i, 2 * i + 1))
+    def trapOf(id: Int): (TrapDef, Boolean) = (TrapDef.all(id / 2), id % 2 == 0)
+    val enemy = new UUID(0xA0D17L, 998L)
 
     // A field is a ground under a sky: maps that share both (the four space arenas are all circuit
     // under stars) are shot once, under the first of them
@@ -95,9 +101,13 @@ class RenderAuditApp extends Application {
       val p = if (what("projectiles")) (grounds ++ pools).flatMap { g =>
         projectileIds.grouped(slotList.size).zipWithIndex.map { case (ids, i) => Shot(map, world.background, g, "proj", ids, i) }
       } else Nil
+      // A trap lies only on ground a player can walk on
+      val tr = if (what("traps")) grounds.flatMap { g =>
+        trapIds.grouped(slotList.size).zipWithIndex.map { case (ids, i) => Shot(map, world.background, g, "trap", ids, i) }
+      } else Nil
       println(s"$map (${world.background}): ground ${grounds.map(_.name).mkString(", ")}; pools ${pools.map(_.name).mkString(", ")}" +
         (if (grounds.size + pools.size < allGrounds.size + allPools.size) " (the rest shot under an earlier map)" else ""))
-      c ++ p
+      c ++ p ++ tr
     }
     println(s"${shots.size} shots, two renders each")
 
@@ -125,13 +135,23 @@ class RenderAuditApp extends Application {
       }
       client.getPlayers.clear()
       client.getProjectiles.clear()
+      client.getTraps.clear()
       // A match holds a lobby's worth of characters; the whole roster overflows the atlas, so
       // start each shot with an empty one (safe here, between frames)
       if (!hidden) GLSpriteGenerator.clearCache()
       val home = client.getLocalPosition
       s.ids.zip(slotList).foreach { case (id, (a, b)) =>
         val cx = home.getX + a + b; val cy = home.getY + b - a
-        if (s.kind == "char") {
+        if (s.kind == "trap") {
+          // Armed a while ago and with a long time to go, so neither its arming ring nor its fade
+          // is in the picture. Hidden: no trap at all
+          if (!hidden) {
+            val (d, ours) = trapOf(id)
+            val placed = System.currentTimeMillis() - 5000L
+            client.getTraps.put(id, new Trap(id, if (ours) client.getLocalPlayerId else enemy, 0.toByte, cx, cy,
+              d.id, placed, placed + d.armDelayMs, placed + 3600000L))
+          }
+        } else if (s.kind == "char") {
           // Hidden: a stranger in the same colour (so the same light) with an id that has no
           // sprite sheet, so everything but the sprite is still drawn. A fresh id, not the same
           // player changed: a player whose health moved would get a damage number.
@@ -166,7 +186,8 @@ class RenderAuditApp extends Application {
         val r = if (s.kind == "char") {
           val sz = Constants.PLAYER_DISPLAY_SIZE_PX * 1.05f * k
           (sx - sz / 2, sy - sz, sx + sz / 2, sy + 2 * k)
-        } else (sx - 58 * k, sy - 48 * k, sx + 58 * k, sy + 48 * k)
+        } else if (s.kind == "trap") (sx - 36 * k, sy - 28 * k, sx + 36 * k, sy + 18 * k) // its cell and the next
+        else (sx - 58 * k, sy - 48 * k, sx + 58 * k, sy + 48 * k)
         (id, (r._1.toInt, r._2.toInt, r._3.toInt, r._4.toInt))
       }
     }
@@ -187,7 +208,8 @@ class RenderAuditApp extends Application {
           saveFrame(new File(out, base + "_b.png"), window.fbWidth, window.fbHeight)
           rects(s).foreach { case (id, (x0, y0, x1, y1)) =>
             val name = if (s.kind == "char") CharacterDef.get(id.toByte).id.name
-                       else if (id >= 256) s"${ProjectileAudit.nameOf(lookOf(id)._1)}@${CharacterDef.get(lookOf(id)._2).displayName}"
+                       else if (s.kind == "trap") { val (d, ours) = trapOf(id); d.name.replace(' ', '_') + (if (ours) "" else "(enemy)") }
+                       else if (id >= 256)s"${ProjectileAudit.nameOf(lookOf(id)._1)}@${CharacterDef.get(lookOf(id)._2).displayName}"
                        else ProjectileAudit.nameOf(id.toByte)
             index.println(s"$base,${s.map.stripSuffix(".json")},${s.background},${s.ground.name},${s.kind},$id,$name,$x0,$y0,$x1,$y1")
           }

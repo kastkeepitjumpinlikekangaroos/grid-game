@@ -82,6 +82,49 @@ private[blasts] object Earth {
 
   private[blasts] def earth(st: Int): Unit = {
     (st: @scala.annotation.switch) match {
+      case S_AXE_WHIRL =>
+        // The Berserker's axes whirled round him: their cuts sweeping the ground in a ring, the dirt
+        // they throw up, and the streaks of the haste he spins on at
+        scorch(0.5f, 0.3f, 0.22f, 0.12f, 0.3f)
+        shockRing(0f, 0.3f, 6f, 0.85f, 0.75f, 0.6f, 0.85f)
+        if (layer == GROUND) {
+          val p = seg(T, 0f, 0.5f)
+          if (p > 0f && p < 1f) {
+            val a = (1f - smooth(p)) * Math.min(1f, p * 8f)
+            val spin = hash(seed, 1500) * PI + easeOut(p) * PI * 1.6f
+            var i = 0
+            while (i < 3) {
+              val rr = 0.55f + 0.14f * i
+              val st0 = spin + i * TWO_PI / 3
+              sb.strokeArc(cx, cy, W * rr, H * rr, st0, 1.7f, 5.2f * k + 2.4f, 0.2f, 0.16f, 0.12f, 0.6f * a, 14)
+              sb.strokeArc(cx, cy, W * rr, H * rr, st0, 1.7f, 5.2f * k, 0.86f, 0.84f, 0.8f, a, 14)
+              sb.strokeArc(cx, cy, W * rr, H * rr, st0 + 0.6f, 1.0f, 1.8f * k, 1f, 1f, 1f, 0.9f * a, 8)
+              i += 1
+            }
+          }
+        }
+        streaks(10, 0.02f, 0.34f, 0.25f, 1.05f, 0.3f, 2.6f, 0.9f, 0.8f, 0.62f, 0.8f, 3)
+        if (layer != AIR) return
+        puffs(8, 0.05f, 0.85f, 0.75f, 10f, 12f, 22f, 0.7f, 0.6f, 0.45f, 0.45f, 1, outward = 0.2f, flat = 0.56f, inkK = 0.4f)
+        debris(D_CHIP, 10, 0.01f, 0.7f, 0.95f, 30f, 2.8f, 0.5f, 0.42f, 0.34f, 2, shadow = true)
+      case S_METEOR =>
+        // The Astronomer's falling star come down: a crater with a raised rim, cracks glowing out of
+        // it, rubble thrown up, and stars glittering in the dust
+        scorch(0.5f, 0.2f, 0.12f, 0.08f, 0.6f)
+        if (layer == GROUND) {
+          val ra = Math.min(1f, T * 10f) * tail(T, 0.6f)
+          sb.strokeOval(cx, cy, W * 0.42f, H * 0.42f, 6f * k + 2.4f, 0.14f, 0.08f, 0.05f, 0.6f * ra, 22)
+          sb.strokeOval(cx, cy, W * 0.42f, H * 0.42f, 6f * k, 0.5f, 0.36f, 0.24f, 0.85f * ra, 22)
+          sb.fillOvalSoft(cx, cy, W * 0.3f, H * 0.3f, 1f, 0.55f, 0.2f, 0.5f * ra * tail(T, 0.35f), 0f, 18)
+        }
+        cracks(8, 0.85f, 0.02f, 0.12f, 3.8f, 0.14f, 0.1f, 0.06f, 0.8f, 1f, 0.62f, 0.22f, 0.85f)
+        shockRing(0f, 0.3f, 9f, 1f, 0.72f, 0.32f, 0.9f)
+        if (layer != AIR) return
+        flash(0.1f, 0.8f, 1f, 0.78f, 0.4f)
+        debris(D_CHIP, 12, 0f, 0.8f, 0.95f, 50f, 3.4f, 0.45f, 0.3f, 0.2f, 1, shadow = true)
+        debris(D_SPARK, 12, 0f, 0.4f, 1f, 40f, 2.4f, 1f, 0.75f, 0.3f, 2)
+        glints(8, 0.03f, 0.75f, 0.9f, 40f, 11f, 1f, 0.9f, 0.55f, 1f)
+        puffs(5, 0.1f, 0.95f, 0.3f, 34f, 10f, 20f, 0.45f, 0.4f, 0.38f, 0.55f, 3, lift = 4f)
       case S_SEISMIC =>
         cracks(10, 0.95f, 0.02f, 0.15f, 4.2f, 0.12f, 0.1f, 0.08f, 0.75f)
         scorch(0.55f, 0.3f, 0.24f, 0.16f, 0.3f)

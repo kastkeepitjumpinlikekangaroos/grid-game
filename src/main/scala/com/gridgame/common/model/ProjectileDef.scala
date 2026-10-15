@@ -75,6 +75,20 @@ case class ProjectileDef(
   /** Everything a hit does to its target, in order: onHitEffect, then alsoOnHit. */
   val onHitEffects: Seq[OnHitEffect] = onHitEffect.toSeq ++ alsoOnHit
 
+  /** Does it speed up whoever threw it (a SpeedBoost)? A travelling one does on the hit; one cast
+    * as a ground slam as it is cast, whether or not anyone is in it (GameInstance's
+    * applyCastSelfBuff), which is how every self-haste in the roster is made. */
+  def hastesCaster: Boolean = onHitEffects.exists(_.isInstanceOf[SpeedBoost])
+
+  /** A haste and nothing else: no damage and no effect on anyone it reaches, only its thrower sped
+    * up (the Cyborg's Overclock). Cast as a slam, there is nothing in it to aim or to keep anyone
+    * in, so it goes off at once, and a bot casts it for where it wants to go, not who is near. */
+  def onlyHastesCaster: Boolean =
+    hastesCaster && damage == 0 && onHitEffects.forall(_.isInstanceOf[SpeedBoost]) && aoeOnHit.isEmpty &&
+      aoeOnMaxRange.forall(a => a.damage == 0 && a.freezeDurationMs == 0 && a.rootDurationMs == 0 &&
+        a.stunDurationMs == 0) &&
+      explosionConfig.forall(x => x.centerDamage == 0 && x.edgeDamage == 0)
+
   /** After hitting `hits` players, does it fly on? `pierceCount` is how many players it passes
     * through, so it is used up by hit number pierceCount + 1. */
   def piercesAfter(hits: Int): Boolean = hits <= pierceCount

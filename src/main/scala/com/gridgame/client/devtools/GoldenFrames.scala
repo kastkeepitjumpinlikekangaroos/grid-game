@@ -114,6 +114,28 @@ object GoldenFrames {
       client.setMouseWorldPosition(x, y)
     }
 
+    /** Aiming the attack in `slot` (an AttackSlot): the primary held down, or Q or E taken up, pressed
+      * `ms` before the captured frame, aimed at world (x, y). Timed on the client's clock, as a charge
+      * is. */
+    def hold(slot: Int, ms: Long, x: Double, y: Double): Unit = {
+      client.setMouseWorldPosition(x, y)
+      client.nanoClock = () => (T - ms) * 1000000L
+      HeldAims.press(client, slot)
+      client.nanoClock = () => T * 1000000L
+    }
+
+    /** An open cell about `d` cells from home, toward the angle `a` (radians in the world) as near as
+      * the map allows. */
+    def openAt(d: Double, a: Double): (Int, Int) = {
+      val (hx, hy) = home
+      open.minBy { case (x, y) =>
+        val dx = x - hx; val dy = y - hy
+        val off = Math.abs(Math.sqrt(dx * dx + dy * dy) - d)
+        val turn = Math.abs(Math.IEEEremainder(Math.atan2(dy, dx) - a, 2 * Math.PI))
+        off + turn * d * 0.5
+      }
+    }
+
     def inventory(itemType: ItemType, n: Int): Unit =
       (0 until n).foreach { k =>
         client.processPacket(new ItemPacket(nextSeq(), me, 0, 0, itemType.id, 5000 + itemType.id * 10 + k,
@@ -256,6 +278,17 @@ object GoldenFrames {
     }
   }
 
+  /** Aiming an attack of `kind` (HeldAims) at (dx, dy) from home, taken up 400ms before the frame,
+    * as the first character in the roster with one. */
+  private def aimScene(name: String, map: String, at: (Int, Int), kind: String, aim: (Double, Double),
+                       extra: Stage => Unit = _ => ()): Scene = {
+    val (who, slot) = HeldAims.holder(kind)
+    Scene(name, map, at, s => {
+      extra(s)
+      s.hold(slot, 400L, s.home._1 + aim._1, s.home._2 + aim._2)
+    }, character = who)
+  }
+
   /** Looking out over the edge of the map, with a player and a shot or two in front of it. */
   private def edgeScene(s: Stage): Unit = {
     val (hx, hy) = s.home
@@ -338,6 +371,24 @@ object GoldenFrames {
       val (hx, hy) = s.home
       s.charge(5000L, hx + 1.5, hy + 6.0)
     }, character = CharacterId.Tidecaller),
+    // Attacks being aimed (AimArrowPainter.drawHeld), each as the first character with one: a shot
+    // that blasts where it lands, on the Meadow; a fan on the Hive's dark floor; a dash over the
+    // Colony's pillar; a blink toward the trees on snow, which stops short of them; a trap thrown
+    // beside the Cell's wall; a primary held; and a shot aimed through a free-for-all's ceasefire, grey
+    aimScene("meadow_aim_blast", "the_meadow.json", (60, 30), "blast", (6.0, -1.0)),
+    aimScene("hive_aim_fan", "the_hive.json", (66, 84), "fan", (4.0, -4.0)),
+    aimScene("colony_aim_dash", "the_colony.json", (146, 150), "dash", (8.0, 0.5)),
+    aimScene("snowglobe_aim_blink", "the_snowglobe.json", (50, 14), "blink", (1.5, 6.0)),
+    aimScene("cell_aim_trap", "the_cell.json", (41, 21), "trap", (2.0, 4.0)),
+    aimScene("meadow_aim_primary", "the_meadow.json", (60, 17), "primary", (5.0, 2.0)),
+    aimScene("colony_aim_ceasefire", "the_colony.json", (0, 0), "shot", (3.0, 4.0), s => {
+      s.beforeFrame = () => {
+        s.timer(240)
+        s.client.processPacket(new GameEventPacket(s.nextSeq(), new UUID(0L, 0L), Packet.getCurrentTimestamp,
+          GameEvent.MATCH_OPENING, 7.toShort, 0, 0.toShort, 0.toShort, null, 0.toByte, 0.toShort, 0.toShort,
+          0.toByte, 3600000, MatchOpening.NO_ATTACKS))
+      }
+    }),
     // Walls in front of and beside us. Knocked two cells along the Colony's pillar (x 149-151,
     // y 149-151): drawn where the push caught us, beside it and behind its front face, while we
     // stand where it put us, past it. And at rest with a wall at our side: our ring and shadow lie

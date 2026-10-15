@@ -69,6 +69,22 @@ class PacketRoundTripTest {
     }
   }
 
+  @Test def aSpeedBoostsTimeLeftSurvivesTheTripBesideTheKnockbacks(): Unit = {
+    // In the bytes after the knockbacks, which it must leave as they were
+    for (ms <- Seq(0, 1, 1500, 4000, 65535)) {
+      val p = trip(new PlayerUpdatePacket(1, id, 0, new Position(5, 5), 0, 100, 0, 0x20, 0.toByte,
+        0.toByte, 3, 0, 0, 0, 2500, Int.MaxValue, ms))
+      assertEquals(s"$ms ms of boost left", ms, p.getSpeedBoostMs)
+      assertEquals("the knockbacks before it", Int.MaxValue, p.getKnockbacks)
+      assertEquals("and the barrier's time", 2500, p.getBarrierMs)
+      assertEquals(0x20, p.getEffectFlags)
+    }
+    // Longer than the field holds is capped rather than wrapped to nothing
+    val capped = trip(new PlayerUpdatePacket(1, id, 0, new Position(5, 5), 0, 100, 0, 0x20, 0.toByte,
+      0.toByte, 0, 0, 0, 0, 0, 0, 70000))
+    assertEquals(65535, capped.getSpeedBoostMs)
+  }
+
   @Test def aBarriersTimeLeftSurvivesTheWholeRange(): Unit = {
     for (ms <- Seq(0, 1, 600, 3500, 14000, 65535)) {
       val p = trip(new PlayerUpdatePacket(1, id, 0, new Position(5, 5), 0, 100, 0, 0, 0.toByte,

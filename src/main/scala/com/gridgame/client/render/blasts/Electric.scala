@@ -113,6 +113,18 @@ private[blasts] object Electric {
         sparkBall(0.38f, 6f, 0.45f, 0.85f, 1f)
         arcBurst(5, 0.95f, 0.5f, 70f, 3.8f, 0.45f, 0.85f, 1f, 1)
         debris(D_SPARK, 10, 0f, 0.35f, 1f, 18f, 2f, 0.5f, 0.9f, 1f, 1)
+      case S_JELLY_SHOCK =>
+        // The Jellyfish discharging: pink arcs out of a glowing bell of light, crackling round the
+        // edge of everyone it caught
+        scar(6, 0.7f, 1f, 0.55f, 0.88f, 0.8f)
+        shockRing(0f, 0.28f, 4f, 1f, 0.55f, 0.88f, 1f)
+        shockRing(0.07f, 0.36f, 3f, 1f, 0.78f, 0.95f, 0.85f)
+        if (layer != AIR) return
+        flash(0.08f, 0.55f, 1f, 0.6f, 0.9f)
+        sparkBall(0.35f, 6f, 1f, 0.55f, 0.88f)
+        arcBurst(7, 0.95f, 0.5f, 60f, 3.6f, 1f, 0.6f, 0.9f, 1)
+        rimArcs(8, 0.05f, 0.5f, 70f, 1f, 0.72f, 0.95f)
+        debris(D_SPARK, 10, 0f, 0.35f, 1f, 16f, 2f, 1f, 0.6f, 0.9f, 1)
       case S_TESLA_FORK =>
         scar(5, 0.7f, 0.55f, 0.9f, 1f, 0.85f)
         shockRing(0f, 0.3f, 3.4f, 0.6f, 0.92f, 1f, 0.95f)

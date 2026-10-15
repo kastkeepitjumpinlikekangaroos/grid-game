@@ -1,15 +1,20 @@
 # Traps
-`TrapCast` throws a trap onto the ground, where it waits for an enemy to walk into it. Five
+`TrapCast` throws a trap onto the ground, where it waits for an enemy to walk into it. Seven
 abilities are one: the Warden's Snare Mine, the Blacksmith's Anvil Trap and the Gravedigger's Open
-Grave (bear traps), the Sentinel's Deploy Mine (a mine) and the Runesmith's Rune Trap (a fire
-rune).
+Grave (bear traps), the Sentinel's Deploy Mine (a mine), the Runesmith's Rune Trap (a fire rune)
+and Binding Rune, and the Spider's Web Trap (a snare). The last two came with the volleys going
+(design/characters.md, *No volleys of more than three*): the Runesmith lays two kinds now, as the
+trap specialist it is said to be, and the Spider's web, thrown to burst where it landed, is a web
+spun across the ground for a hunter to blunder into.
 
 - **One registry.** `common/model/Trap.scala` holds `TrapDef` — what a trap does — and `TrapKind`
-  — what it looks like, kept apart so two traps that do different things can share a look. Five
-  are defined: a bear trap (10 damage and a 2s stun), a mine (a 45/15 blast over 3 cells), a
-  poison pod (48 over 6s, and a slow), a fire rune (a 40 burn over 5s) and a snare (a 2s root;
-  Plan 5b gives it to the Spider). Unlike `ProjectileDef`, the registry is filled by its own
-  initializer, so nothing can look a trap up before it is there.
+  — what it looks like, kept apart so two traps that do different things can share a look. Six
+  are defined: a bear trap (10 damage and a 2s stun), a mine (a 55/27 blast over 3 cells), a
+  poison pod (48 over 6s, and a slow; nobody lays it yet), a fire rune (a 71 burn over 5s), a
+  snare (a 2s root: the Spider's) and a binding rune (15 damage and a 1.5s root: the
+  Runesmith's, a rune that goes up in violet where the fire rune goes up in flame). Unlike
+  `ProjectileDef`, the registry is filled by its own initializer, so nothing can look a trap up
+  before it is there.
 - **Where it lands.** `TrapPlacement.target` walks from the caster toward the cursor, at most the
   ability's range (6 cells), and stops before the first cell a trap can't lie on: the client picks
   the cell with it and the server checks with `isValidTarget`, the same reason `Teleport` exists
@@ -60,16 +65,28 @@ rune).
   Without it the server spent the rest of the last life's cooldown refusing abilities the player
   could see were ready — silently for a projectile, and as a refused placement for a trap.
 - **Everyone is sent every trap**, joiners and rejoiners included. The owner and their allies see
-  it plainly; everyone else sees it at 30% alpha — findable if you look, which is the point of
-  looking. A player leaving takes their traps with them.
+  it plainly; everyone else sees it at half strength, with a glint catching on it every few
+  seconds: findable on any ground if you look, which is the point of looking, and never taken for
+  one of ours. It was 30% of a trap that was faint at full strength, and an enemy's web on snow,
+  rune on a path or bear trap on the circuit floor was not there at all (render/CLAUDE.md, *A trap
+  reads on every ground*). A player leaving takes their traps with them.
 - **Drawn** by `TrapPainter.draw` in the ground pass, so a wall in front of one covers it
-  in the depth pass that follows, with nothing asked of `EntityCollector`. Per kind: a bear trap's
-  jaws, a mine with a blinking diode, a spore pod, a burning rune, a web. A ring closes on one
-  that is still arming, and it fades over its last 800ms. A trap going off is a flash, a ring and
-  something of its own (jaws snapping, spores rising, flame standing up, strands whipping back); a
-  mine's blast goes into the client's blasts, keyed past `GameClient.TRAP_BLAST_KEYS` so a trap
-  and a projectile can never collide, and is drawn as a mine's (`GLBlastRenderers.trapStyle`). The
-  ability slot carries the count ("2/3").
+  in the depth pass that follows, with nothing asked of `EntityCollector`. Every kind fills most of
+  its cell, inked in a dark version of its own colour on a seat of darker ground, with something
+  bright on it, so it reads on every map. Per kind: a bear trap's jaws open in a ring of white
+  teeth round a rust-red plate, a spring either side; a mine's squat casing, a yellow-and-black
+  hazard band round it and a diode that blinks; a spore pod breathing on its slick, spores rising
+  off it; a rune's circle, its marks turning round a glyph, flames licking round a fire rune's rim
+  and violet motes rising off the Binding Rune, which turns the other way round a lattice glyph; a
+  web of silk over its own shadow, dew on it. Ours and our allies' send a ring out over the ground
+  they watch (`triggerRadius`) as they arm and every three seconds after, and every armed trap
+  catches a glint now and then (a mine's is its blink). A ring closes on one that is still arming,
+  and it fades over its last 800ms. A trap going off is a flash, a ring out over the ground it
+  watched and something of its own (the jaws snapping shut tooth to tooth, spores rising, the rune
+  going up in licks of its flame, strands whipping back); a mine's blast goes into the client's
+  blasts, keyed past `GameClient.TRAP_BLAST_KEYS` so a trap and a projectile can never collide, and
+  is drawn as a mine's (`GLBlastRenderers.trapStyle`). The character panel's preview draws the same
+  traps (`AbilityPreviewRenderer.drawTrapTop`). The ability slot carries the count ("2/3").
 - **Bots** lay one for a target within 8 cells that is closing in, and treat armed enemy traps as
   cells to walk round — in `canMoveTo` and in the BFS — unless their target is standing on one.
 - **Sounds**: `trap_place`, `trap_snap`, `trap_poison`, `trap_ignite`; a mine reuses `explosion`.
@@ -82,7 +99,10 @@ rune).
    `TrapKind` or add one.
 2. If it is a new kind, draw it: a `case` in `TrapPainter.drawTrap` and one in
    `drawTrapEffect` for it going off, plus `AbilityPreviewRenderer.drawTrapTop` for the character
-   panel. Convex polygons only (`GRIDGAME_POLYCHECK=1`), and no per-frame allocation.
+   panel. Ink it and give it something bright, as the others are, and judge it on every map's
+   ground, ours and an enemy's, with the render audit (`render_audit -- --what=traps`, then
+   `scripts/render_audit.py`). Convex polygons only (`GRIDGAME_POLYCHECK=1`), and no per-frame
+   allocation.
 3. Give an ability `castBehavior = TrapCast(TrapType.X, range)` with `projectileType = -4` and
    `maxRange` equal to the cast's range (`CharacterRosterTest` checks both).
 4. Update `i18n/messages_en.json` (`char.<id>.e.name`/`.desc` — `ContentCatalogTest` enforces it)

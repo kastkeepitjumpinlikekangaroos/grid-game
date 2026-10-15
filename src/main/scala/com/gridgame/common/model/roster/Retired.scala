@@ -30,9 +30,11 @@ private[model] object Retired {
   val TeslaCoilDef: ProjectileDef = ProjectileDef(id = ProjectileType.TESLA_COIL, name = "Tesla Coil", speedMultiplier = 0.5f, damage = 20, maxRange = 10, aoeOnHit = Some(AoESplashConfig(3.0f, 12, freezeDurationMs = 500)), ricochetCount = 3)
   val AcidBombDef: ProjectileDef = ProjectileDef(id = ProjectileType.ACID_BOMB, name = "Acid Bomb", speedMultiplier = 0.5f, damage = 25, maxRange = 14, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(25, 10, 3.0f)))
   val GravityLockDef: ProjectileDef = ProjectileDef(id = ProjectileType.GRAVITY_LOCK, name = "Gravity Lock", speedMultiplier = 0.4f, damage = 0, maxRange = 12, passesThroughPlayers = true, aoeOnMaxRange = Some(AoESplashConfig(6.0f, 15, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 6.0f)))
+  // The Spider's web, thrown to burst at the end of its range; its Web Trap is a trap now (Snare)
+  val WebTrapDef: ProjectileDef = ProjectileDef(id = ProjectileType.WEB_TRAP, name = "Web Trap", speedMultiplier = 0.5f, damage = 0, maxRange = 14, passesThroughPlayers = true, aoeOnMaxRange = Some(AoESplashConfig(5.0f, 14, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 5.0f)))
 
   val projectiles: Seq[ProjectileDef] = Seq(
     SnareMineDef, BloodSiphonDef, FrostTrapDef, ThornWallDef, GlacierSpikeDef,
-    WailDef, TeslaCoilDef, AcidBombDef, GravityLockDef
+    WailDef, TeslaCoilDef, AcidBombDef, GravityLockDef, WebTrapDef
   )
 }

@@ -1,82 +1,171 @@
 package com.gridgame.client.ui
 
 import com.gridgame.common.WorldRegistry
+import com.gridgame.common.model.{Tile, WorldData}
 import com.gridgame.common.world.WorldLoader
 
+import javafx.application.Platform
 import javafx.scene.Node
-import javafx.scene.image.{Image, ImageView, WritableImage}
+import javafx.scene.image.{Image, ImageView}
 import javafx.scene.layout.StackPane
-import javafx.scene.paint.Color
 import javafx.scene.shape.Rectangle
 
+import java.util.concurrent.{LinkedBlockingQueue, ThreadPoolExecutor, TimeUnit}
+
 /**
- * The maps seen from above, a pixel per tile in each tile's colour, for the menus (the lobby
- * list, the lobby form, the lobby room). Each map is read once: drawing one parses its file,
- * which the lobby list used to do for every row every time the list refreshed.
+ * The maps for the menus (the lobby list, the lobby form, the lobby room): where a match on the
+ * map is played and a rim of its border round that (the forest, the sea, the void), drawn as the
+ * match draws it, seen from high above and standing on a slab of its own ground like a model of
+ * it, on a dark stage (MapArt). All of the arena, always: the lobby form once cut a square map to
+ * fill a wide frame, which hid half of it.
+ *
+ * A picture is drawn for each size it is shown at, at twice that size for a Retina display, on a
+ * thread of its own, and handed over on the FX thread: the frame shows its stage until then. The
+ * big ones are kept for the last few maps shown; each map is read from its file once.
  */
 private[client] object MapPreview {
-  /** A map's picture, and the colour its outer band reads as (its forest, sea or void). */
-  private final case class Picture(image: Image, edge: Color)
+  // On the FX thread: the pictures drawn, by what and how big, and who is waiting for one
+  private val pictures = new java.util.LinkedHashMap[String, Image](16, 0.75f, true)
+  private val waiting = new java.util.HashMap[String, java.util.ArrayList[Image => Unit]]()
+  /** 12MB of pictures: the lobby form's are 0.9MB each, a lobby row's 0.07MB. */
+  private val MaxPixels = 3_000_000L
+  private var pixels = 0L
+  // Bumped by clearCache: a picture asked for before it is dropped as it lands
+  private var generation = 0
 
-  private val pictures = new java.util.HashMap[Integer, Picture]()
-
-  private def picture(mapIndex: Int): Picture = {
-    val key = Integer.valueOf(mapIndex)
-    if (!pictures.containsKey(key)) {
-      val p = try {
-        val world = WorldLoader.load("worlds/" + WorldRegistry.getFilename(mapIndex))
-        val out = new WritableImage(world.width, world.height)
-        val px = out.getPixelWriter
-        for (y <- 0 until world.height; x <- 0 until world.width) px.setArgb(x, y, 0xFF000000 | world.getTile(x, y).color)
-        // What a frame of another shape leaves over is filled with the colour the map's outer band
-        // reads as from a distance, leaving out the rim round its very edge (the space maps'
-        // obsidian): the band's own colour where one colour is most of it (a void, open sea),
-        // and the average of it where it is many (a forest)
-        val rim = 2
-        val band = Math.max(rim + 2, Math.round(world.width * 0.06).toInt)
-        val reader = out.getPixelReader
-        val counts = scala.collection.mutable.HashMap.empty[Int, Int]
-        var r, g, b, n = 0L
-        for (y <- rim until world.height - rim; x <- rim until world.width - rim
-             if x < band || y < band || x >= world.width - band || y >= world.height - band) {
-          val argb = reader.getArgb(x, y)
-          counts(argb) = counts.getOrElse(argb, 0) + 1
-          r += (argb >> 16) & 0xFF; g += (argb >> 8) & 0xFF; b += argb & 0xFF; n += 1
-        }
-        val (commonest, count) = counts.maxBy(_._2)
-        val edge =
-          if (count * 2 >= n) Color.rgb((commonest >> 16) & 0xFF, (commonest >> 8) & 0xFF, commonest & 0xFF)
-          else Color.rgb((r / n).toInt, (g / n).toInt, (b / n).toInt)
-        Picture(out, edge)
-      } catch { case _: Exception => null }
-      pictures.put(key, p)
+  // On the painter's thread: each map, read once
+  private val worlds = new java.util.HashMap[Integer, WorldData]()
+  // One thread, which lets the tile art go whenever it runs out of pictures to draw
+  private lazy val painter: ThreadPoolExecutor =
+    new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS, new LinkedBlockingQueue[Runnable](), { (r: Runnable) =>
+      val t = new Thread(r, "map-art")
+      t.setDaemon(true)
+      t
+    }) {
+      override def afterExecute(r: Runnable, t: Throwable): Unit = if (getQueue.isEmpty) MapArt.release()
     }
-    pictures.get(key)
+
+  /** How deep the slab under a map is, as a share of how tall the map is drawn. */
+  private val BaseShare = 0.035
+  /** How much of a map's border is shown round where its matches are played, as a share of that. */
+  private val Rim = 0.06
+
+  /** Drop every picture (they are drawn again when next shown), and any being drawn as it lands.
+    * Called when a match starts: nothing on the JavaFX side is shown while the game window is up,
+    * and the pictures are up to 12MB. */
+  def clearCache(): Unit = {
+    generation += 1
+    pictures.clear()
+    waiting.clear()
+    pixels = 0
+  }
+
+  /** Run `task` on the thread the pictures are drawn on (WorldBackdrop's is drawn there too). */
+  def paint(task: Runnable): Unit = painter.execute(task)
+
+  /** Wait, off the FX thread, until every picture asked for so far is drawn: for the gallery. Each
+    * is handed over on the FX thread after, in the order asked. */
+  def settle(): Unit = painter.submit(new Runnable { def run(): Unit = () }).get(60, TimeUnit.SECONDS)
+
+  private def world(mapIndex: Int): WorldData = {
+    val key = Integer.valueOf(mapIndex)
+    var w = worlds.get(key)
+    if (w == null) {
+      w = try WorldLoader.load("worlds/" + WorldRegistry.getFilename(mapIndex)) catch { case _: Exception => null }
+      if (w != null) worlds.put(key, w)
+    }
+    w
+  }
+
+  /** The picture `key` names, `pw` x `ph` pixels, for `ready` on the FX thread: at once if it is
+    * drawn, else once `draw` has drawn it on the painter's thread (null if it can't be). */
+  private def picture(key: String, pw: Int, ph: Int, draw: () => Array[Int])(ready: Image => Unit): Unit = {
+    val done = pictures.get(key)
+    if (done != null) { ready(done); return }
+    val queued = waiting.get(key)
+    if (queued != null) { queued.add(ready); return }
+    val list = new java.util.ArrayList[Image => Unit]()
+    list.add(ready)
+    waiting.put(key, list)
+    val gen = generation
+    painter.execute { () =>
+      val img: Image =
+        try { val px = draw(); if (px == null) null else MapArt.image(px, pw, ph) }
+        catch { case e: Exception => e.printStackTrace(); null }
+      Platform.runLater { () =>
+        val callbacks = if (gen == generation) waiting.remove(key) else null
+        if (img != null && gen == generation) {
+          pictures.put(key, img)
+          pixels += pw.toLong * ph
+          // The least lately shown go first, never the one just drawn
+          val it = pictures.entrySet().iterator()
+          while (pixels > MaxPixels && it.hasNext) {
+            val e = it.next()
+            if (e.getKey != key) {
+              pixels -= (e.getValue.getWidth * e.getValue.getHeight).toLong
+              it.remove()
+            }
+          }
+          if (callbacks != null) callbacks.forEach(_(img))
+        }
+      }
+    }
   }
 
   /**
-   * The whole map in a `w` x `h` frame with rounded corners. A frame of another shape than the
-   * map's is filled out with the colour of the map's own edge, so it reads as the map going on.
-   * Drawn up large its tiles stay square pixels; drawn down small it is smoothed.
+   * The map in a `w` x `h` frame with rounded corners, on the stage the sheet gives `.map-frame`;
+   * drawn in as soon as its picture is ready.
    */
   def view(mapIndex: Int, w: Double, h: Double, radius: Double = 12): Node = {
     val frame = new StackPane()
+    frame.getStyleClass.add("map-frame")
+    frame.setStyle(s"-fx-background-radius: $radius;")
     frame.setMinSize(w, h); frame.setPrefSize(w, h); frame.setMaxSize(w, h)
-    val p = picture(mapIndex)
-    val fill = if (p != null) Theme.hex(p.edge) else "#cfe1f4"
-    frame.setStyle(s"-fx-background-color: $fill; -fx-background-radius: $radius;")
-    if (p != null) {
-      val view = new ImageView(p.image)
-      // All of it, as big as the frame allows
-      val scale = Math.min(w / p.image.getWidth, h / p.image.getHeight)
-      view.setFitWidth(p.image.getWidth * scale)
-      view.setFitHeight(p.image.getHeight * scale)
-      view.setSmooth(scale < 1)
-      frame.getChildren.add(view)
-      val clip = new Rectangle(w, h)
-      clip.setArcWidth(radius * 2); clip.setArcHeight(radius * 2)
-      frame.setClip(clip)
-    }
+    val clip = new Rectangle(w, h)
+    clip.setArcWidth(radius * 2); clip.setArcHeight(radius * 2)
+    frame.setClip(clip)
+    val view = new ImageView()
+    view.setFitWidth(w); view.setFitHeight(h)
+    view.setSmooth(true)
+    frame.getChildren.add(view)
+    val pw = Math.ceil(w * 2).toInt; val ph = Math.ceil(h * 2).toInt
+    picture(s"map$mapIndex:${pw}x$ph", pw, ph, () => {
+      val wd = world(mapIndex)
+      if (wd == null) null
+      else {
+        val win = MapArt.playArea(wd, Rim)
+        val (_, top, _, bottom) = MapArt.bounds(win)
+        val base = (bottom - top) * BaseShare
+        // Small pictures get more samples a pixel: the cost is in the pixels, and they have few
+        val px = MapArt.draw(wd, win, pw, ph, MapArt.fit(win, pw, ph, 0.05, base), if (pw * ph < 120_000) 3 else 2, base)
+        MapArt.light(px, pw, ph)
+        px
+      }
+    })(view.setImage)
     frame
+  }
+
+  /** How far down a [[patch]]'s box its middle cell's centre is, where a character's feet go. */
+  val PatchFeet = 0.44
+
+  /**
+   * A patch of the Meadow's grass `cells` square on its slab, drawn as the maps are, for a
+   * character to stand on: as big as fits a `w` x `h` box (about 1.75 to 1), in the middle of it.
+   */
+  def patch(cells: Int, w: Double, h: Double): ImageView = {
+    val view = new ImageView()
+    view.setFitWidth(w); view.setFitHeight(h)
+    view.setSmooth(true)
+    view.setMouseTransparent(true)
+    val pw = Math.ceil(w * 2).toInt; val ph = Math.ceil(h * 2).toInt
+    picture(s"patch$cells:${pw}x$ph", pw, ph, () => {
+      // Grass with a flower here and there, as the Meadow's is
+      val tiles = Array.tabulate[Tile](cells, cells)((y, x) => if ((x * 5 + y * 3) % 7 == 3) Tile.Flowers else Tile.Grass)
+      val wd = new WorldData("patch", cells, cells, tiles, Seq.empty, "sky")
+      val win = MapArt.whole(wd)
+      val base = 9.0
+      MapArt.draw(wd, win, pw, ph, MapArt.fit(win, pw, ph, 0.02, base, rise = 0), 3, base)
+    })(view.setImage)
+    view
   }
 }

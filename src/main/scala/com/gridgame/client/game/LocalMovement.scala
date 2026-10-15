@@ -143,41 +143,59 @@ trait LocalMovement { this: GameClient =>
 
   // ── Dashes ──────────────────────────────────────────────────────────────
 
-  /** A dash toward the cursor, phased while it lasts: to the farthest open cell along the line,
-    * at most `maxDistance` cells, over `durationMs`. [[tickSwoop]] carries us along it. */
+  /** A dash toward the cursor, phased while it lasts: to where [[dashLanding]] says, over
+    * `durationMs`. [[tickSwoop]] carries us along it. */
   private[game] def dash(maxDistance: Int, durationMs: Int, now: Long): Unit = {
     val pos = localPosition.get()
-    val dx = (mouseWorldX - pos.getX).toFloat
-    val dy = (mouseWorldY - pos.getY).toFloat
-    val dist = Math.sqrt(dx * dx + dy * dy).toFloat
-    val clampedDist = Math.min(dist, maxDistance.toFloat)
-    if (clampedDist > 0.5f) {
-      val ndx = dx / dist
-      val ndy = dy / dist
+    val landing = dashLanding(pos, maxDistance)
+    if (landing != null) {
       swoopStartX = pos.getX.toFloat
       swoopStartY = pos.getY.toFloat
-      val world = currentWorld.get()
-      // Not over the opening divider: the dash takes the farthest open cell along its line,
-      // the far side of the wall is open ground, and the server refuses every step there
-      val divider = world.divider
-      var bestX = swoopStartX
-      var bestY = swoopStartY
-      for (step <- 1 to clampedDist.toInt) {
-        val testX = Math.max(0, Math.min(world.width - 1, (swoopStartX + ndx * step).toInt))
-        val testY = Math.max(0, Math.min(world.height - 1, (swoopStartY + ndy * step).toInt))
-        if (world.isWalkable(testX, testY) &&
-            (divider == null || !divider.stops(pos.getX, pos.getY, testX, testY))) {
-          bestX = testX.toFloat
-          bestY = testY.toFloat
-        }
-      }
-      swoopTargetX = bestX
-      swoopTargetY = bestY
+      swoopTargetX = landing.getX.toFloat
+      swoopTargetY = landing.getY.toFloat
       swoopStartTime.set(now)
       swoopingUntil.set(now + durationMs)
       phasedUntil.set(now + durationMs)
       sendPositionUpdate(localPosition.get())
     }
+  }
+
+  /**
+   * Where a dash toward the cursor would end: the farthest open cell along the line to it, at most
+   * `maxDistance` cells, passing over whatever lies between (a dash is phased); where we are if
+   * nothing along it is open. Null when the cursor is within half a cell of us, which goes nowhere.
+   * The dash and its aim (AimArrowPainter) both ask this, so the aim shows where it ends.
+   */
+  private[client] def dashLanding(maxDistance: Int): Position = dashLanding(localPosition.get(), maxDistance)
+
+  private def dashLanding(pos: Position, maxDistance: Int): Position = {
+    val dx = (mouseWorldX - pos.getX).toFloat
+    val dy = (mouseWorldY - pos.getY).toFloat
+    val dist = Math.sqrt(dx * dx + dy * dy).toFloat
+    val clampedDist = Math.min(dist, maxDistance.toFloat)
+    if (clampedDist <= 0.5f) return null
+    val ndx = dx / dist
+    val ndy = dy / dist
+    val startX = pos.getX.toFloat
+    val startY = pos.getY.toFloat
+    val world = currentWorld.get()
+    // Not over the opening divider: the dash takes the farthest open cell along its line,
+    // the far side of the wall is open ground, and the server refuses every step there
+    val divider = world.divider
+    var bestX = pos.getX
+    var bestY = pos.getY
+    var step = 1
+    while (step <= clampedDist.toInt) {
+      val testX = Math.max(0, Math.min(world.width - 1, (startX + ndx * step).toInt))
+      val testY = Math.max(0, Math.min(world.height - 1, (startY + ndy * step).toInt))
+      if (world.isWalkable(testX, testY) &&
+          (divider == null || !divider.stops(pos.getX, pos.getY, testX, testY))) {
+        bestX = testX
+        bestY = testY
+      }
+      step += 1
+    }
+    new Position(bestX, bestY)
   }
 
   def isSwooping: Boolean = swoopingUntil.get() > 0
@@ -261,22 +279,32 @@ trait LocalMovement { this: GameClient =>
 
   private[game] def performBlink(maxDistance: Int): Unit = {
     val oldPos = localPosition.get()
-    val dx = (mouseWorldX - oldPos.getX).toFloat
-    val dy = (mouseWorldY - oldPos.getY).toFloat
-    val len = Math.sqrt(dx * dx + dy * dy).toFloat
-    val (ndx, ndy) = if (len > 0.01f) (dx / len, dy / len) else {
-      val dir = localDirection.get()
-      dir match {
-        case Direction.Up    => (0.0f, -1.0f)
-        case Direction.Down  => (0.0f, 1.0f)
-        case Direction.Left  => (-1.0f, 0.0f)
-        case Direction.Right => (1.0f, 0.0f)
-      }
-    }
-
-    // Walk cell-by-cell up to the blink's range, stopping before the first non-walkable cell
-    val dest = Teleport.blinkTarget(currentWorld.get(), oldPos.getX, oldPos.getY, ndx, ndy, maxDistance)
+    val dest = blinkLanding(oldPos, maxDistance)
     blinkTo(oldPos, dest.getX, dest.getY)
+  }
+
+  /**
+   * Where a blink would land: its whole range toward the aim however near the cursor is (the way we
+   * face with the cursor on us), walked a cell at a time and stopping before the first cell that
+   * can't be stood on (Teleport.blinkTarget); where we are if the first one can't. The blink and its
+   * aim (AimArrowPainter) both ask this, so the aim shows where it lands.
+   */
+  private[client] def blinkLanding(maxDistance: Int): Position = blinkLanding(localPosition.get(), maxDistance)
+
+  private def blinkLanding(pos: Position, maxDistance: Int): Position = {
+    val dx = (mouseWorldX - pos.getX).toFloat
+    val dy = (mouseWorldY - pos.getY).toFloat
+    val len = Math.sqrt(dx * dx + dy * dy).toFloat
+    var ndx = 0f
+    var ndy = 0f
+    if (len > 0.01f) { ndx = dx / len; ndy = dy / len }
+    else localDirection.get() match {
+      case Direction.Up    => ndy = -1f
+      case Direction.Down  => ndy = 1f
+      case Direction.Left  => ndx = -1f
+      case Direction.Right => ndx = 1f
+    }
+    Teleport.blinkTarget(currentWorld.get(), pos.getX, pos.getY, ndx, ndy, maxDistance)
   }
 
   private def blinkTo(oldPos: Position, x: Int, y: Int): Unit = {

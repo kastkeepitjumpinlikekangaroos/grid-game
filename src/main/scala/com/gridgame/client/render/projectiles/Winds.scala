@@ -7,9 +7,9 @@ import Silhouettes._
 
 /**
  * Wind, drawn as whoever raised it: the Windwalker's wind blade a pinwheel of three swept blades
- * trailing her teal ribbon, and her gust a flurry of curling wind carrying leaves; the Cloudrunner's
- * a cloudlet streaking on its contrails and a billow of cloud; the Hawk's a whirlwind with its
- * feathers spiralling up it; the Raptor's an eagle of wind diving. All six were one pale crescent.
+ * trailing her teal ribbon, and her gale a flurry of curling wind carrying leaves; the Cloudrunner's
+ * a cloudlet streaking on its contrails, and its hailstorm a billow of cloud; the Raptor's gust an
+ * eagle of wind diving. All of them were one pale crescent.
  *
  * A gust strikes where its wind is, a cell behind its front (ProjectileDef.hitCentreBehind), so
  * every gust carries its bulk behind the hitbox and only its leading edge on it.
@@ -342,94 +342,6 @@ private[render] object Winds {
     curlFrame(cx, cy, ndx, ndy)
     curl(sb, 4f * ds, 14f * ds, 4.8f * ds, 20f * ds, 2.6f * ds, 1f, 1f, 1f, 0.2f, 0.28f, 0.46f, 0.95f * a)
     curl(sb, 1f * ds, -15f * ds, 4.4f * ds, 18f * ds, 2.4f * ds, 1f, 1f, 1f, 0.2f, 0.28f, 0.46f, 0.9f * a)
-  }
-
-  // ── The Hawk ──
-
-  /**
-   * The Hawk's gust: a whirlwind, a funnel of slate-tinted wind standing on the ground behind the hitbox and
-   * leaning back from the way it goes, its rings turning, with four of the Hawk's slate feathers
-   * spiralling up it and dust kicked up round its foot. The feathers behind the funnel go before
-   * its wind, the ones in front after. (A ring of feathers lying on the ground, tried first, was a
-   * wreath.)
-   */
-  private[projectiles] def drawFeatherGust(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
-    val phase = (tick + proj.id * 53) * 0.35
-    computeAllDynamics(proj, 0.86f, 0.93f, 1f, phase)
-    val a = dynAlpha
-    val ds = Math.min(dynScale, 1.3f)
-    screenDir(proj)
-    val ndx = _sdx; val ndy = _sdy
-    val px = -ndy; val py = ndx
-    val bx = sx - ndx * 11f * ds; val by = sy - ndy * 11f * ds
-    val H = 34f * ds
-    val lean = 7f * ds
-    val spin = phase * 0.9
-
-    // Streaks trailing its foot, and a breath of air round it
-    var side = -1
-    while (side <= 1) {
-      fadeLine(sb, bx - ndx * 8f * ds + px * side * 8f * ds, by - ndy * 8f * ds + py * side * 8f * ds,
-        bx - ndx * 38f * ds + px * side * 10f * ds, by - ndy * 38f * ds + py * side * 10f * ds,
-        2.4f * ds, 0.9f, 0.95f, 1f, 0.5f * a, 4)
-      side += 2
-    }
-    sb.fillOvalSoft(bx - ndx * lean * 0.5f, by - H * 0.5f, 20f * ds * dynGlow, 26f * ds * dynGlow, 0.8f, 0.88f, 1f,
-      0.22f * a, 0f, 16)
-    // Dust round its foot
-    var d = 0
-    while (d < 5) {
-      val ang = spin * 1.3 + d * 1.26
-      val rr = (9f + 3f * Math.sin(phase + d).toFloat) * ds
-      sb.fillOval(bx + Math.cos(ang).toFloat * rr, by + Math.sin(ang).toFloat * rr * 0.4f,
-        2.2f * ds, 1.8f * ds, 0.62f, 0.56f, 0.48f, 0.6f * a, 6)
-      d += 1
-    }
-
-    var pass = 0
-    while (pass < 3) {
-      if (pass == 1) {
-        // The funnel: a body of wind, then rings widening up it, each a lit arc across its front
-        // over an inked one, the back of each ring fainter, all turning
-        _wx(0) = bx - 3.5f * ds; _wy(0) = by
-        _wx(1) = bx + 3.5f * ds; _wy(1) = by
-        _wx(2) = bx - ndx * lean + 15f * ds; _wy(2) = by - H
-        _wx(3) = bx - ndx * lean - 15f * ds; _wy(3) = by - H
-        sb.fillPolygon(_wx, _wy, 4, 0.46f, 0.58f, 0.82f, 0.5f * a)
-        var k = 0
-        while (k < 5) {
-          val t = k / 4f
-          val rcx = bx - ndx * lean * t; val rcy = by - H * t
-          val rr = mix(3.5f, 15f, t * t * 0.5f + t * 0.5f) * ds
-          val st = (spin * (1.6f - t * 0.5f) + k * 0.9f).toFloat
-          sb.strokeArc(rcx, rcy, rr, rr * 0.34f, st + 3.14f, 2.4f, 2.2f, 0.42f, 0.54f, 0.78f, 0.6f * a, 10)
-          sb.strokeArc(rcx, rcy, rr, rr * 0.34f, st, 2.6f, 5.8f, 0.08f, 0.12f, 0.26f, 0.8f * a, 10)
-          sb.strokeArc(rcx, rcy, rr, rr * 0.34f, st, 2.6f, 3.4f, 0.62f, 0.73f, 0.93f, a, 10)
-          sb.strokeArc(rcx, rcy, rr, rr * 0.34f, st + 0.5f, 1.2f, 1.2f, 1f, 1f, 1f, 0.85f * a, 6)
-          k += 1
-        }
-      } else {
-        // Feathers spiralling up it: the far half of their turn before the wind, the near half after
-        var f = 0
-        while (f < 4) {
-          val up = ((tick * 0.012 + f * 0.25 + proj.id * 0.13) % 1.0).toFloat
-          val ang = spin * 1.2 + f * (Math.PI / 2)
-          val sa = Math.sin(ang).toFloat
-          if ((sa >= 0f) == (pass == 2)) {
-            val ca = Math.cos(ang).toFloat
-            val rr = mix(6f, 17f, up) * ds
-            val fxp = bx - ndx * lean * up + ca * rr; val fyp = by - H * up + sa * rr * 0.34f
-            val tumble = phase * 1.4 + f * 1.3
-            val roll = 0.5f + 0.5f * Math.abs(Math.cos(tumble).toFloat)
-            val fade = Math.min(1f, (1f - up) * 4f) * Math.min(1f, up * 6f)
-            Songs.feather(sb, fxp, fyp, -sa, ca * 0.6f, 6.4f * ds, 5.6f * ds * roll,
-              0.40f, 0.50f, 0.70f, 0.94f, 0.9f, 0.78f, 0.95f * a * fade)
-          }
-          f += 1
-        }
-      }
-      pass += 1
-    }
   }
 
   // ── The Raptor ──

@@ -122,7 +122,7 @@ object SpriteGenerator {
     new Rectangle2D((frame % framesPerDirection) * frameSize.toDouble, rowOf(direction) * frameSize.toDouble,
       frameSize, frameSize)
 
-  private def resolveResourceUrl(relativePath: String): String = {
+  private[ui] def resolveResourceUrl(relativePath: String): String = {
     val direct = new File(relativePath)
     if (direct.exists()) return direct.toURI.toString
 

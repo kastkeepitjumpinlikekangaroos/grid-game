@@ -24,7 +24,7 @@ private[client] final class LobbyBrowserScreen(app: Screens) {
   def show(stage: Stage, notice: String = ""): Unit = {
     switchScreen()
 
-    val refreshBtn = button(Messages.t("Refresh"), "plain", Icons.Refresh, Palette.Ink)
+    val refreshBtn = button(Messages.t("Refresh"), "plain", Icons.Refresh, Palette.Text)
     val status = Chrome.notice()
     if (notice.nonEmpty) Chrome.showNotice(status, notice, error = false)
 
@@ -47,7 +47,7 @@ private[client] final class LobbyBrowserScreen(app: Screens) {
     mapCombo.setMaxWidth(Double.MaxValue)
     val durationCombo = makeDurationCombo(Constants.DEFAULT_GAME_DURATION_MIN)
     val preview = new VBox()
-    def showPreview(): Unit = preview.getChildren.setAll(MapPreview.view(mapCombo.getSelectionModel.getSelectedIndex, 320, 200, 14))
+    def showPreview(): Unit = preview.getChildren.setAll(MapPreview.view(mapCombo.getSelectionModel.getSelectedIndex, 320, 180, 14))
     showPreview()
     mapCombo.setOnAction(_ => showPreview())
 
@@ -114,7 +114,7 @@ private[client] final class LobbyBrowserScreen(app: Screens) {
       joinBtn.setDisable(busy || !joinable(info))
       joinBtn.setOnAction(_ => join(info))
       joinButtons :+= (joinBtn -> info)
-      val r = row(14, MapPreview.view(info.mapIndex, 58, 58, 10), words, grow(), mode, state, players, joinBtn)
+      val r = row(14, MapPreview.view(info.mapIndex, 104, 58, 10), words, grow(), mode, state, players, joinBtn)
       r.getStyleClass.addAll("row", "row-hover")
       r.setOnMouseClicked(e => if (e.getClickCount == 2) join(info))
       r

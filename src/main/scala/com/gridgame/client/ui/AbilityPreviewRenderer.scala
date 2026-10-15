@@ -3,6 +3,7 @@ package com.gridgame.client.ui
 import com.gridgame.common.model._
 import javafx.scene.canvas.GraphicsContext
 import javafx.scene.paint.Color
+import javafx.scene.shape.{ArcType, StrokeLineCap}
 
 /**
  * Renders animated ability preview canvases for the character selection screen.
@@ -16,9 +17,10 @@ object AbilityPreviewRenderer {
    * For non-projectile abilities (PhaseShift, Dash, Teleport), renders themed effects.
    * For FanProjectile, renders multiple paths.
    */
-  // A dark window, as MapleStory's skill windows are, so the shots' glows read as they do in a match
-  private val windowFill = Color.web("#1b2d4b")
-  private val windowEdge = Color.web("#2f4a74")
+  // A dark window, darker than the glass round it, so the shots' glows read as they do in a match
+  private val windowFill = Color.web("#0a1029")
+  private val windowEdge = Color.rgb(255, 255, 255, 0.09)
+  private val laneColour = Color.rgb(255, 255, 255, 0.10)
 
   def render(gc: GraphicsContext, projectileType: Byte, castBehavior: CastBehavior,
              animTick: Int, canvasWidth: Double, canvasHeight: Double): Unit = {
@@ -28,6 +30,14 @@ object AbilityPreviewRenderer {
     gc.setStroke(windowEdge)
     gc.setLineWidth(1)
     gc.strokeRoundRect(0.5, 0.5, canvasWidth - 1, canvasHeight - 1, 15, 15)
+    // The lane it runs along, from where it is cast: faint, so the window reads as a range even
+    // in the moment between two casts
+    gc.setStroke(laneColour)
+    gc.setLineDashes(2, 6)
+    gc.strokeLine(16, canvasHeight / 2, canvasWidth - 16, canvasHeight / 2)
+    gc.setLineDashes()
+    gc.setFill(laneColour)
+    gc.fillOval(13, canvasHeight / 2 - 3, 6, 6)
 
     castBehavior match {
       case PhaseShiftBuff(_) =>
@@ -89,11 +99,18 @@ object AbilityPreviewRenderer {
       if (landed < 26) {
         // Arming: a ring closing on it, and it is not live until it has
         val f = landed / 26.0
-        val rad = 22 - 11 * f
+        val rad = 27 - 12 * f
         gc.setStroke(Color.color(col.getRed, col.getGreen, col.getBlue, 0.25 + 0.55 * f))
-        gc.setLineWidth(1.3)
-        gc.strokeOval(toX - rad, cy - rad * 0.45, rad * 2, rad * 0.9)
+        ring(gc, toX, cy, rad, rad * 0.5, 1.3)
       } else if (landed < 62) {
+        // Armed: a ring runs out over the ground it watches, as one of ours does in a match
+        // (TrapPainter), and something walks into it
+        if (landed < 40) {
+          val f = (landed - 26) / 14.0
+          val rad = 16 + 10 * (1 - (1 - f) * (1 - f))
+          gc.setStroke(Color.color(col.getRed, col.getGreen, col.getBlue, 0.8 * (1 - f)))
+          ring(gc, toX, cy, rad, rad * 0.5, 1.4)
+        }
         // Live, and something walking into it
         val f = (landed - 26) / 36.0
         val px = w * 0.06 + (toX - w * 0.06) * f
@@ -115,65 +132,231 @@ object AbilityPreviewRenderer {
     }
   }
 
-  /** The trap itself, seen from above: jaws, a mine, a pod, a rune or a web. */
+  /**
+   * The trap itself, seen from above, as a match draws it (TrapPainter): jaws, a mine, a pod, a rune
+   * or a web, inked in a dark version of its own colour, with something bright on it.
+   */
   private def drawTrapTop(gc: GraphicsContext, tDef: TrapDef, col: Color, cx: Double, cy: Double,
                           phase: Double, snapped: Boolean): Unit = {
-    val dark = col.deriveColor(0, 1, 0.45, 1)
+    val ink = Color.color(col.getRed * 0.16 + 0.02, col.getGreen * 0.16 + 0.02, col.getBlue * 0.16 + 0.03)
+    val lit = Color.color(lighter(col.getRed), lighter(col.getGreen), lighter(col.getBlue))
+    gc.setLineCap(StrokeLineCap.BUTT)
     tDef.kind match {
       case TrapKind.MINE =>
-        gc.setFill(dark)
-        gc.fillOval(cx - 11, cy - 4, 22, 11)
-        gc.setFill(col)
-        gc.fillOval(cx - 11, cy - 8, 22, 11)
-        gc.setStroke(Color.color(1, 0.75, 0.4, 0.8))
-        gc.setLineWidth(1.4)
-        gc.strokeOval(cx - 7, cy - 6, 14, 7)
-        val blink = if ((phase * 40).toInt % 12 < 3) 1.0 else 0.2
-        gc.setFill(Color.color(1, 0.35, 0.25, blink))
-        gc.fillOval(cx - 2, cy - 7, 4, 3)
+        // A squat casing, a hazard band round its top, a diode blinking on its cap
+        val top = cy - 2
+        gc.setFill(ink)
+        oval(gc, cx, cy + 1.3, 11.6, 6)
+        gc.fillRect(cx - 11.6, top, 23.2, cy + 1.3 - top)
+        oval(gc, cx, top, 11.6, 6)
+        gc.setFill(shade(col, 0.42))
+        oval(gc, cx, cy + 1.3, 10.4, 5)
+        gc.fillRect(cx - 10.4, top, 20.8, cy + 1.3 - top)
+        gc.setFill(shade(col, 0.85))
+        oval(gc, cx, top, 10.4, 5)
+        gc.setStroke(Color.color(0.1, 0.08, 0.07))
+        band(gc, cx, top, 7.4, 3.6, 2.9, 0, 360)
+        gc.setStroke(Color.color(1, 0.8, 0.14))
+        for (k <- 0 until 6) band(gc, cx, top, 7.4, 3.6, 2.9, k * 60 + 15, 30)
+        gc.setFill(ink)
+        oval(gc, cx, top - 0.5, 4.7, 2.5)
+        gc.setFill(Color.color(0.5, 0.5, 0.54))
+        oval(gc, cx, top - 0.5, 3.9, 1.9)
+        val blink = (phase * 40).toInt % 12 < 3
+        if (blink) {
+          gc.setFill(Color.color(1, 0.3, 0.2, 0.35))
+          oval(gc, cx, top - 1.1, 7, 4.2)
+        }
+        gc.setFill(if (blink) Color.color(1, 0.42, 0.3) else Color.color(0.45, 0.08, 0.06))
+        oval(gc, cx, top - 1.1, 1.5, 1.1)
 
       case TrapKind.POD =>
-        gc.setFill(dark)
-        gc.fillOval(cx - 11, cy - 6, 22, 13)
+        // A swollen sac breathing on its slick, a glowing split at its top, spores rising off it
+        val s = 1 + 0.05 * Math.sin(phase * 0.6)
+        gc.setFill(Color.color(ink.getRed, ink.getGreen, ink.getBlue, 0.6))
+        oval(gc, cx, cy + 1.2, 14.4, 7)
+        gc.setFill(ink)
+        oval(gc, cx - 5.6, cy + 0.5, 6.7 * s, 4.7 * s)
+        oval(gc, cx + 5.8, cy + 0.7, 6.5 * s, 4.5 * s)
+        oval(gc, cx, cy - 2, 10.4 * s, 7.2 * s)
+        gc.setFill(shade(col, 0.6))
+        oval(gc, cx - 5.6, cy + 0.5, 5.6 * s, 3.7 * s)
+        oval(gc, cx + 5.8, cy + 0.7, 5.4 * s, 3.5 * s)
+        gc.setFill(shade(col, 0.72))
+        oval(gc, cx, cy - 2, 9.4 * s, 6.2 * s)
         gc.setFill(col)
-        gc.fillOval(cx - 7, cy - 9, 14, 9)
-        gc.setFill(Color.color(col.getRed, col.getGreen, col.getBlue, 0.25))
-        gc.fillOval(cx - 13, cy - 13, 26, 16)
+        oval(gc, cx - 1.4, cy - 3.2, 7 * s, 4.4 * s)
+        gc.setFill(ink)
+        oval(gc, cx + 0.5, cy - 2 - 4.4 * s, 3.8, 1.9)
+        gc.setFill(Color.color(0.86, 1, 0.38))
+        oval(gc, cx + 0.5, cy - 2 - 4.4 * s, 2.8, 1.2)
+        for (k <- 0 until 3) {
+          val q = (phase * 0.35 + k / 3.0) % 1.0
+          gc.setFill(Color.color(0.85, 1, 0.45, 1 - q))
+          oval(gc, cx + 0.5 + (k - 1) * 2.2 + 2 * Math.sin(q * 7 + k * 2.1), cy - 8 - 10 * q, 1.1, 1)
+        }
 
       case TrapKind.RUNE =>
-        gc.setFill(Color.color(0.05, 0.03, 0.02, 0.6))
-        gc.fillOval(cx - 15, cy - 7, 30, 14)
-        val flick = 0.65 + 0.35 * Math.sin(phase * 1.6)
+        // A magic circle burnt into the ground, its marks turning, a glyph at its heart: flames
+        // round a fire rune, motes rising off any other, turning the other way
+        val fire = tDef.id == TrapType.FIRE_RUNE
+        val flick = 0.78 + 0.22 * Math.sin(phase * 1.6)
+        val hi = if (fire) Color.color(1, 0.9, 0.55) else lit
+        gc.setFill(Color.color(ink.getRed * 0.4, ink.getGreen * 0.4, ink.getBlue * 0.4, 0.75))
+        oval(gc, cx, cy + 0.5, 16.6, 8.3)
+        gc.setFill(Color.color(col.getRed, col.getGreen, col.getBlue, 0.22 * flick))
+        oval(gc, cx, cy, 14.4, 7.2)
+        gc.setStroke(ink)
+        ring(gc, cx, cy, 12.2, 6.1, 3.2)
         gc.setStroke(Color.color(col.getRed, col.getGreen, col.getBlue, flick))
-        gc.setLineWidth(1.6)
-        gc.strokeOval(cx - 12, cy - 6, 24, 12)
-        gc.strokeLine(cx - 6, cy - 2, cx + 6, cy + 2)
-        gc.strokeLine(cx + 6, cy - 2, cx - 6, cy + 2)
-        gc.strokeLine(cx, cy - 4, cx, cy + 4)
+        ring(gc, cx, cy, 12.2, 6.1, 1.8)
+        val turn = (if (fire) 1 else -1) * phase * 8
+        for (k <- 0 until 6) {
+          gc.setStroke(ink)
+          band(gc, cx, cy, 9, 4.5, 3, turn + k * 60 - 2, 28)
+          gc.setStroke(hi)
+          band(gc, cx, cy, 9, 4.5, 1.6, turn + k * 60, 24)
+        }
+        gc.setStroke(ink)
+        ring(gc, cx, cy, 6.7, 3.3, 2.5)
+        gc.setStroke(col)
+        ring(gc, cx, cy, 6.7, 3.3, 1.2)
+        if (fire) {
+          glyphLine(gc, ink, hi, cx - 4, cy - 1.5, cx + 4, cy + 1.5)
+          glyphLine(gc, ink, hi, cx + 4, cy - 1.5, cx - 4, cy + 1.5)
+          glyphLine(gc, ink, hi, cx, cy - 2.7, cx, cy + 2.7)
+          for (k <- 0 until 6) {
+            val a = turn * Math.PI / 360 + k * Math.PI / 3 + 0.3
+            val h = 3.1 + 2.3 * (0.5 + 0.5 * Math.sin(phase * 1.3 + k * 1.9))
+            val bx = cx + 12.2 * Math.cos(a); val by = cy + 6.1 * Math.sin(a)
+            lick(gc, bx, by, 2.1, h, Color.color(0.88, 0.26, 0.05, 0.95))
+            lick(gc, bx, by + 0.1, 1.4, h * 0.72, Color.color(1, 0.6, 0.12))
+            lick(gc, bx, by + 0.2, 0.8, h * 0.42, Color.color(1, 0.93, 0.6))
+          }
+        } else {
+          _px(0) = cx; _py(0) = cy - 2.6
+          _px(1) = cx + 4.7; _py(1) = cy
+          _px(2) = cx; _py(2) = cy + 2.6
+          _px(3) = cx - 4.7; _py(3) = cy
+          gc.setStroke(ink); gc.setLineWidth(2.5); gc.strokePolygon(_px, _py, 4)
+          gc.setStroke(hi); gc.setLineWidth(1.2); gc.strokePolygon(_px, _py, 4)
+          for (k <- 0 until 3) {
+            val q = (phase * 0.3 + k / 3.0) % 1.0
+            val a = k * Math.PI * 2 / 3 + 0.6
+            val mx = cx + 7.2 * Math.cos(a); val my = cy + 3.6 * Math.sin(a) - 11 * q
+            gc.setFill(Color.color(hi.getRed, hi.getGreen, hi.getBlue, 1 - q))
+            _px(0) = mx; _py(0) = my - 2
+            _px(1) = mx + 1.4; _py(1) = my
+            _px(2) = mx; _py(2) = my + 2
+            _px(3) = mx - 1.4; _py(3) = my
+            gc.fillPolygon(_px, _py, 4)
+          }
+        }
 
       case TrapKind.WEB =>
-        gc.setStroke(Color.color(col.getRed, col.getGreen, col.getBlue, 0.7))
-        gc.setLineWidth(1)
-        for (i <- 0 until 8) {
-          val a = Math.PI * 2 * i / 8
-          gc.strokeLine(cx, cy, cx + Math.cos(a) * 14, cy + Math.sin(a) * 7)
+        // Silk over its own shadow, eight spokes and a spiral, dew on it
+        val shadow = Color.color(0.07, 0.07, 0.11, 0.62)
+        var j = 0
+        while (j < WebSpiral) {
+          val f = 0.2 + 0.68 * j / (WebSpiral - 1)
+          val a = 0.2 + j * Math.PI / 4
+          _px(j) = cx + 14.4 * f * Math.cos(a); _py(j) = cy + 7.2 * f * Math.sin(a)
+          j += 1
         }
-        gc.strokeOval(cx - 7, cy - 3.5, 14, 7)
-        gc.strokeOval(cx - 13, cy - 6.5, 26, 13)
+        for (pass <- 0 until 2) {
+          gc.setStroke(if (pass == 0) shadow else lit)
+          gc.setLineWidth(if (pass == 0) 2.1 else 0.95)
+          for (k <- 0 until 8) {
+            val a = 0.2 + k * Math.PI / 4
+            gc.strokeLine(cx, cy, cx + 14.4 * Math.cos(a), cy + 7.2 * Math.sin(a))
+          }
+          gc.setLineWidth(if (pass == 0) 1.9 else 0.85)
+          gc.strokePolyline(_px, _py, WebSpiral)
+        }
+        gc.setFill(shadow)
+        oval(gc, cx, cy, 2.7, 1.7)
+        gc.setFill(lit)
+        oval(gc, cx, cy, 2, 1.2)
+        for (d <- WebDew) {
+          gc.setFill(shadow)
+          oval(gc, _px(d), _py(d), 1.6, 1.25)
+          gc.setFill(Color.color(0.72, 0.88, 1))
+          oval(gc, _px(d), _py(d), 1.1, 0.85)
+        }
 
       case _ =>
-        // Jaws: open around the plate, shut once it has sprung
-        val open = if (snapped) 0.0 else 4.0
-        gc.setFill(dark)
-        gc.fillOval(cx - 12, cy - 5, 24, 11)
+        // Jaws: open round the plate in a ring of teeth, a spring either side; once sprung, shut
+        // in a bar across it
+        val open = if (snapped) 0.25 else 1.0
+        gc.setFill(ink)
+        oval(gc, cx - 12.8, cy + 0.4, 5, 2.9)
+        oval(gc, cx + 12.8, cy + 0.4, 5, 2.9)
+        gc.setFill(shade(col, 0.55))
+        oval(gc, cx - 12.8, cy + 0.4, 3.9, 1.9)
+        oval(gc, cx + 12.8, cy + 0.4, 3.9, 1.9)
+        gc.setFill(ink)
+        oval(gc, cx, cy, 12.3, 6.3 * open + 0.8)
         gc.setStroke(col)
-        gc.setLineWidth(3)
-        gc.strokeArc(cx - 13, cy - 7 - open, 26, 14, 20, 140, javafx.scene.shape.ArcType.OPEN)
-        gc.strokeArc(cx - 13, cy - 7 + open, 26, 14, 200, 140, javafx.scene.shape.ArcType.OPEN)
-        gc.setFill(col.deriveColor(0, 1, 1.3, 1))
-        gc.fillOval(cx - 4, cy - 2, 8, 4)
+        band(gc, cx, cy, 9.5, 4.7 * open, 3.4, 0, 180)
+        gc.setStroke(shade(col, 0.7))
+        band(gc, cx, cy, 9.5, 4.7 * open, 3.4, 180, 180)
+        gc.setFill(Color.color(0.96, 0.96, 0.98))
+        for (k <- 0 until 10) {
+          val a = Math.PI * 2 * (k + 0.5) / 10
+          oval(gc, cx + 7 * Math.cos(a), cy + 3.4 * open * Math.sin(a), 1.1, 0.9)
+        }
+        if (!snapped) {
+          gc.setFill(ink)
+          oval(gc, cx, cy + 0.2, 4.4, 2.3)
+          gc.setFill(Color.color(0.78, 0.3, 0.18))
+          oval(gc, cx, cy + 0.2, 3.6, 1.7)
+        }
     }
+    gc.setLineCap(StrokeLineCap.SQUARE)
   }
+
+  // Scratch for the traps' polygons and the web's spiral, which has a point on each of its eight
+  // spokes for three and a quarter turns
+  private val WebSpiral = 27
+  private val WebDew = Array(7, 14, 20)
+  private val _px = new Array[Double](WebSpiral)
+  private val _py = new Array[Double](WebSpiral)
+
+  private def oval(gc: GraphicsContext, x: Double, y: Double, rx: Double, ry: Double): Unit =
+    gc.fillOval(x - rx, y - ry, rx * 2, ry * 2)
+
+  private def ring(gc: GraphicsContext, x: Double, y: Double, rx: Double, ry: Double, w: Double): Unit = {
+    gc.setLineWidth(w)
+    gc.strokeOval(x - rx, y - ry, rx * 2, ry * 2)
+  }
+
+  /** A band `w` wide along the ellipse (rx, ry) round (x, y), from `start` degrees for `extent`,
+    * counter-clockwise on screen from three o'clock. */
+  private def band(gc: GraphicsContext, x: Double, y: Double, rx: Double, ry: Double, w: Double,
+                   start: Double, extent: Double): Unit = {
+    gc.setLineWidth(w)
+    gc.strokeArc(x - rx, y - ry, rx * 2, ry * 2, start, extent, ArcType.OPEN)
+  }
+
+  private def glyphLine(gc: GraphicsContext, ink: Color, hi: Color, x0: Double, y0: Double, x1: Double, y1: Double): Unit = {
+    gc.setStroke(ink); gc.setLineWidth(2.6); gc.strokeLine(x0, y0, x1, y1)
+    gc.setStroke(hi); gc.setLineWidth(1.2); gc.strokeLine(x0, y0, x1, y1)
+  }
+
+  /** A lick of flame standing up from (bx, by), `half` either side at its foot, `h` tall. */
+  private def lick(gc: GraphicsContext, bx: Double, by: Double, half: Double, h: Double, c: Color): Unit = {
+    _px(0) = bx - half; _py(0) = by - 0.2 * h
+    _px(1) = bx - 0.55 * half; _py(1) = by + 0.45 * half
+    _px(2) = bx + 0.55 * half; _py(2) = by + 0.45 * half
+    _px(3) = bx + half; _py(3) = by - 0.2 * h
+    _px(4) = bx; _py(4) = by - h
+    gc.setFill(c)
+    gc.fillPolygon(_px, _py, 5)
+  }
+
+  private def shade(c: Color, k: Double): Color = Color.color(c.getRed * k, c.getGreen * k, c.getBlue * k)
+
+  private def lighter(c: Double): Double = c + (1 - c) * 0.55
 
   private def trapColor(tDef: TrapDef): Color =
     Color.rgb((tDef.colorRGB >> 16) & 0xFF, (tDef.colorRGB >> 8) & 0xFF, tDef.colorRGB & 0xFF)

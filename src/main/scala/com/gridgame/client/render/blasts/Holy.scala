@@ -4,8 +4,23 @@ import GLBlastRenderers._
 import BlastKit._
 import Pieces._
 
-/** Holy light: a smite's sunburst and the Crusader's shield emblem. */
+/** Holy light: a smite's sunburst, the Cleric's judgment and the Crusader's shield emblem. */
 private[blasts] object Holy {
+  /** A beam of light driven down onto (x, y), `bw` half-wide, `a` its strength: a soft glow round
+    * a bright shaft with a white core, inked down its sides. */
+  private def lightBeam(x: Float, y: Float, bw: Float, a: Float): Unit = {
+    if (a <= 0.01f) return
+    val top = y - 260f * k
+    val ht = y - top
+    sb.fillRectGradient(x - bw * 2f, top, bw * 4f, ht,
+      1f, 0.9f, 0.55f, 0f, 1f, 0.9f, 0.55f, 0f, 1f, 0.9f, 0.55f, 0.35f * a, 1f, 0.9f, 0.55f, 0.35f * a)
+    sb.fillRectGradient(x - bw, top, bw * 2f, ht,
+      1f, 0.92f, 0.6f, 0.2f * a, 1f, 0.92f, 0.6f, 0.2f * a, 1f, 0.92f, 0.6f, 0.95f * a, 1f, 0.92f, 0.6f, 0.95f * a)
+    sb.fillRect(x - bw * 0.36f, top, bw * 0.72f, ht, 1f, 1f, 0.96f, a)
+    sb.strokeLine(x - bw, top, x - bw, y, 1.4f, 0.8f, 0.55f, 0.15f, 0.7f * a)
+    sb.strokeLine(x + bw, top, x + bw, y, 1.4f, 0.8f, 0.55f, 0.15f, 0.7f * a)
+  }
+
   /** A sunburst on the ground: a ring, rays out of it, and a cross in the middle. */
   private def sunburst(a: Float): Unit = {
     if (layer != GROUND || a <= 0.01f) return
@@ -66,22 +81,31 @@ private[blasts] object Holy {
       if (layer != AIR) return
       // The beam of light driven down onto it
       val bp = seg(T, 0f, 0.45f)
-      if (bp < 1f) {
-        val a = 1f - smooth(bp)
-        val bw = W * 0.13f * (1f - 0.55f * bp)
-        val top = cy - 260f * k
-        val ht = cy - top
-        sb.fillRectGradient(cx - bw * 2f, top, bw * 4f, ht,
-          1f, 0.9f, 0.55f, 0f, 1f, 0.9f, 0.55f, 0f, 1f, 0.9f, 0.55f, 0.35f * a, 1f, 0.9f, 0.55f, 0.35f * a)
-        sb.fillRectGradient(cx - bw, top, bw * 2f, ht,
-          1f, 0.92f, 0.6f, 0.2f * a, 1f, 0.92f, 0.6f, 0.2f * a, 1f, 0.92f, 0.6f, 0.95f * a, 1f, 0.92f, 0.6f, 0.95f * a)
-        sb.fillRect(cx - bw * 0.36f, top, bw * 0.72f, ht, 1f, 1f, 0.96f, a)
-        sb.strokeLine(cx - bw, top, cx - bw, cy, 1.4f, 0.8f, 0.55f, 0.15f, 0.7f * a)
-        sb.strokeLine(cx + bw, top, cx + bw, cy, 1.4f, 0.8f, 0.55f, 0.15f, 0.7f * a)
-      }
+      if (bp < 1f) lightBeam(cx, cy, W * 0.13f * (1f - 0.55f * bp), 1f - smooth(bp))
       flash(0.1f, 0.6f, 1f, 0.95f, 0.7f)
       debris(D_FEATHER, 5, 0.05f, 1f, 0.8f, 60f, 3.4f, 1f, 0.97f, 0.88f, 1)
       glints(6, 0.05f, 0.8f, 0.8f, 30f, 10f, 1f, 0.95f, 0.6f, 1f)
+    } else if (st == S_JUDGMENT) {
+      // The Cleric's judgment: a golden glyph burnt round everyone it caught, and a crown of beams
+      // driven down round its edge one after another, where a smite is one beam on one target
+      scorch(0.7f, 1f, 0.95f, 0.75f, 0.22f, 0.5f)
+      runeCircle(0.82f, 12, T * 0.5f, 3f, 1f, 0.86f, 0.4f, 0.9f * life(T, 0.06f, 0.6f))
+      shockRing(0f, 0.36f, 8f, 1f, 0.9f, 0.5f, 0.9f)
+      if (layer != AIR) return
+      var i = 0
+      while (i < 5) {
+        val th = (i + 0.25f) * TWO_PI / 5 + hash(seed, 2250) * 0.6f
+        val t0 = 0.03f * i
+        val bp = seg(T, t0, t0 + 0.4f)
+        if (bp > 0f && bp < 1f) {
+          val bx = gx(cosf(th), 0.62f); val by = gy(sinf(th), 0.62f)
+          lightBeam(bx, by, W * 0.06f * (1f - 0.5f * bp), (1f - smooth(bp)) * Math.min(1f, bp * 12f))
+        }
+        i += 1
+      }
+      flash(0.1f, 0.75f, 1f, 0.95f, 0.7f)
+      glints(8, 0.05f, 0.8f, 0.9f, 34f, 10f, 1f, 0.95f, 0.6f, 1f)
+      motes(10, 0.08f, 0.95f, 0.8f, 50f, 1.5f, 1f, 0.9f, 0.5f, 1f, 2)
     } else {
       // S_SHIELD_BASH: a golden ring driving everyone back, and the Crusader's shield
       shockRing(0f, 0.45f, 12f, 1f, 0.82f, 0.35f, 0.95f)

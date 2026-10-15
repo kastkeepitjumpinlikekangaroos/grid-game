@@ -73,7 +73,7 @@ match's bots), `LobbyHost` (what the lobbies need). `GameServer` implements them
 - **.** — `GameServer` (the parts put together, and routing, and the cleanup loop every 5s: players
   gone quiet, sessions to renew, stale rate-limit and replay state, and hourly the refresh tokens
   of logins that ran out), `ChatRelay`, `MatchEnd` (the end of a
-  match: standings, saved results, ratings; the match comes down even if saving them fails —
+  match: standings, on kills less deaths, saved results, ratings; the match comes down even if saving them fails —
   design/match-flow.md), `ServerMain`.
 
 ## Threads and ticks

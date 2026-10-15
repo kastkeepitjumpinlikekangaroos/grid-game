@@ -15,8 +15,8 @@ import javafx.util.Duration
 /**
  * The menus' look as code sees it. Nearly all of it is the stylesheet every screen's scene
  * carries (theme.css): a screen gives its nodes the sheet's classes, and Widgets builds the
- * common ones. What is here is the rest: the fonts, the palette for what is drawn in code (the
- * sky, map previews, canvases), and the few behaviours every screen shares — putting a page on
+ * common ones. What is here is the rest: the fonts, the palette for what is drawn in code (icons,
+ * avatars, canvases), and the few behaviours every screen shares — putting a page on
  * the stage, a status line, a stepped animation loop, the settings every lobby form offers.
  * Stateless: a screen imports it (`import Theme._`).
  */
@@ -24,19 +24,21 @@ private[client] object Theme {
 
   // ── Fonts ──────────────────────────────────────────────────────────────
 
-  /** Nunito, a rounded sans, in four weights. The sheet names them: "Nunito" is Regular and Bold
-    * (by weight), "Nunito ExtraBold" and "Nunito Black" are families of their own, because JavaFX
-    * only tells regular from bold within a family. Chinese and Korean text falls back to the
-    * bundled Noto Sans SC / KR. */
+  /** Exo 2, the match's own face (its HUD is set in it), in seven weights. The sheet names them:
+    * "Exo 2" is Regular and Bold (by weight), and Medium, SemiBold, ExtraBold and Black are
+    * families of their own, because JavaFX only tells regular from bold within a family; Black
+    * has an italic, for display titles. Chinese and Korean text falls back to the bundled Noto Sans
+    * SC / KR. */
   object Fonts {
-    val Black = "Nunito Black"
+    val Display = "Exo 2 Black"
   }
 
-  /** Register the bundled fonts with JavaFX, before any screen is built. (Exo 2 is the match's
-    * font, loaded by the GL renderer itself.) */
+  /** Register the bundled fonts with JavaFX, before any screen is built. (The match's renderer
+    * loads its own Exo 2 Bold.) */
   def loadFonts(): Unit =
-    Seq("/fonts/Nunito-Regular.ttf", "/fonts/Nunito-Bold.ttf", "/fonts/Nunito-ExtraBold.ttf",
-      "/fonts/Nunito-Black.ttf", "/fonts/NotoSansSC-i18n.ttf", "/fonts/NotoSansKR-i18n.ttf").foreach { p =>
+    Seq("/fonts/Exo2-Regular.ttf", "/fonts/Exo2-Medium.ttf", "/fonts/Exo2-SemiBold.ttf", "/fonts/Exo2-Bold.ttf",
+      "/fonts/Exo2-ExtraBold.ttf", "/fonts/Exo2-Black.ttf", "/fonts/Exo2-BlackItalic.ttf",
+      "/fonts/NotoSansSC-i18n.ttf", "/fonts/NotoSansKR-i18n.ttf").foreach { p =>
       val s = getClass.getResourceAsStream(p)
       if (s != null) try Font.loadFont(s, 14) finally s.close()
     }
@@ -45,27 +47,31 @@ private[client] object Theme {
 
   /** The sheet's palette, for what code draws itself. Keep in step with theme.css's `.root`. */
   object Palette {
-    val Ink: Color = Color.web("#1c3558")
-    val Muted: Color = Color.web("#5e7899")
-    val Sky: Color = Color.web("#2f8ff5")
-    val Gold: Color = Color.web("#e0a100")
-    val Leaf: Color = Color.web("#2f9b45")
-    val Berry: Color = Color.web("#dc3f57")
-    /** The sky's colour at the top of the window: the scene's fill, seen before the sheet applies. */
-    val SkyTop: Color = Color.web("#56aefc")
+    /** Text, and an icon beside it, on glass. */
+    val Text: Color = Color.web("#eef2ff")
+    val Muted: Color = Color.web("#8b96bb")
+    val Faint: Color = Color.web("#5d688d")
+    val Sky: Color = Color.web("#4db8ff")
+    val Gold: Color = Color.web("#ffc93f")
+    val Leaf: Color = Color.web("#4ad882")
+    val Berry: Color = Color.web("#ff5d75")
+    /** An icon on the gold button. */
+    val OnGold: Color = Color.web("#2a1800")
+    /** The night behind every page: the scene's fill, seen before the world behind it is drawn. */
+    val Night: Color = Color.web("#080c1e")
 
-    /** The teams, as the match colours them, dark enough to read as text on white. */
+    /** The teams, as the match colours them, bright enough to read as text on the night. */
     def team(team: Int): Color = team match {
-      case 1 => Color.web("#2f7fef")
-      case 2 => Color.web("#e0455a")
-      case 3 => Color.web("#2f9b45")
-      case 4 => Color.web("#c98400")
+      case 1 => Color.web("#4f9dff")
+      case 2 => Color.web("#ff5d70")
+      case 3 => Color.web("#4ad882")
+      case 4 => Color.web("#ffc93f")
       case _ => Muted
     }
 
     /** A player's colour, from their name: the same everywhere they appear (avatar, chat). */
     def forName(name: String): Color = {
-      val colours = Array("#2f8ff5", "#e0455a", "#2f9b45", "#c98400", "#7a55d6", "#e0701f", "#1d9e9e", "#d14e9a")
+      val colours = Array("#3f8cff", "#ef4d68", "#25ad62", "#e09a12", "#8a68f2", "#ee7426", "#14aaa6", "#de53a4")
       Color.web(colours(Math.floorMod(name.toLowerCase.hashCode, colours.length)))
     }
   }
@@ -80,7 +86,7 @@ private[client] object Theme {
   lazy val stylesheet: String = getClass.getResource("theme.css").toExternalForm
 
   def newScene(root: Parent): Scene = {
-    val scene = new Scene(root, Palette.SkyTop)
+    val scene = new Scene(root, Palette.Night)
     scene.getStylesheets.add(stylesheet)
     DropDowns.install(scene)
     scene
@@ -88,8 +94,8 @@ private[client] object Theme {
 
   /**
    * Put a page on the stage, its `body` fading and rising into place the way a web page's content
-   * does when it changes: the sky and the top bar are the same on every page, so only what is new
-   * moves. `body` is null for a page with nothing to bring in.
+   * does when it changes: the world behind it and the top bar are the same on every page, so only
+   * what is new moves. `body` is null for a page with nothing to bring in.
    */
   def showPage(stage: Stage, root: Parent, body: Node): Unit = {
     stage.setScene(newScene(root))

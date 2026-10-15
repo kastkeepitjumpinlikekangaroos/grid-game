@@ -1,5 +1,6 @@
 package com.gridgame.client.ui
 
+import com.gridgame.client.i18n.Messages
 import com.gridgame.client.ui.Theme.{Fonts, Palette}
 
 import javafx.geometry.{Insets, Pos}
@@ -12,9 +13,9 @@ import javafx.scene.text.Text
 
 /**
  * The widgets every screen is built from, each a node carrying theme.css's classes: text in the
- * type scale, buttons, cards, chips, fields, avatars, stat tiles, MapleStory's outlined titles,
- * and the page every screen sits on — the sky, a bar across the top, a column of content. A
- * screen imports them (`import Widgets._`).
+ * type scale, buttons, cards, chips, fields, avatars, stat tiles, the lettered display titles,
+ * and the page every screen sits on — the world behind it, a bar across the top, a column of
+ * content. A screen imports them (`import Widgets._`).
  */
 private[client] object Widgets {
 
@@ -30,7 +31,8 @@ private[client] object Widgets {
   def h3(s: String): Label = text(s, "h3")
   def muted(s: String): Label = text(s, "muted")
   def small(s: String): Label = text(s, "small")
-  def eyebrow(s: String): Label = text(s, "eyebrow")
+  /** A heading over a column or a figure, in capitals (JavaFX's sheets can't set a case). */
+  def eyebrow(s: String): Label = text(s.toUpperCase(Messages.currentLocale), "eyebrow")
 
   /** Text that wraps at its container's width. */
   def para(s: String, classes: String*): Label = {
@@ -41,26 +43,27 @@ private[client] object Widgets {
   }
 
   /**
-   * A title as MapleStory letters its own: a fat outline in `ink` round a `face` fill, and the
-   * same shape in `ink` dropped under it for a hard shadow. For the one title a screen has.
+   * A title lettered as a game's own: Exo 2's black italic, a `face` fill inside an outline of
+   * `ink`, and the same shape in `ink` dropped under it for a hard shadow. For the one title a
+   * screen has (the game's name, "Victory!").
    */
   def displayTitle(s: String, size: Double, face: Paint, ink: Color): StackPane = {
     def layer(fill: Paint, cls: String): Text = {
       val t = new Text(s)
       // Inline: the sheet's font on .root outranks one set from code (see theme.css)
-      t.setStyle(s"-fx-font-family: '${Fonts.Black}'; -fx-font-size: ${size}px;")
+      t.setStyle(s"-fx-font-family: '${Fonts.Display}'; -fx-font-style: italic; -fx-font-size: ${size}px;")
       t.setFill(fill)
       t.setStroke(ink)
-      t.setStrokeWidth(Math.max(3, size * 0.085))
+      t.setStrokeWidth(Math.max(2, size * 0.055))
       t.setStrokeType(StrokeType.OUTSIDE)
       t.setStrokeLineJoin(StrokeLineJoin.ROUND)
       t.getStyleClass.add(cls)
       t
     }
     val shadow = layer(ink, "display-shadow")
-    shadow.setTranslateY(Math.max(3, size * 0.07))
+    shadow.setTranslateY(Math.max(3, size * 0.075))
     val title = new StackPane(shadow, layer(face, "display-face"))
-    title.setPadding(new Insets(size * 0.08, size * 0.1, size * 0.14, size * 0.1))
+    title.setPadding(new Insets(size * 0.06, size * 0.12, size * 0.14, size * 0.08))
     title
   }
 
@@ -135,7 +138,7 @@ private[client] object Widgets {
 
   /** What a list says when it has nothing in it. */
   def emptyState(message: String, icon: Icons.Icon): VBox = {
-    val v = new VBox(10, Icons.node(icon, 32, Color.web("#9ab0c9")), muted(message))
+    val v = new VBox(10, Icons.node(icon, 32, Palette.Faint), muted(message))
     v.setAlignment(Pos.CENTER)
     v.setPadding(new Insets(36, 16, 36, 16))
     v
@@ -168,7 +171,7 @@ private[client] object Widgets {
 
   /** A player's avatar: the first letter of their name on their colour, or a robot for a bot. */
   def avatar(name: String, size: Double, bot: Boolean = false): StackPane = {
-    val disc = new Circle(size / 2, if (bot) Color.web("#8aa0bb") else Palette.forName(name))
+    val disc = new Circle(size / 2, if (bot) Color.web("#4a5578") else Palette.forName(name))
     val face: Node =
       if (bot) Icons.node(Icons.Bot, size * 0.58, Color.WHITE)
       else {
@@ -257,12 +260,12 @@ private[client] object Widgets {
   // ── The page ───────────────────────────────────────────────────────────
 
   /**
-   * A screen: the sky, `topBar` across the top, and `body` under it in a centred column at most
-   * `maxWidth` wide, scrolling when it is taller than the window. Returns the root, and the part
-   * that changes from page to page (for Theme.showPage to bring in). `sky` is the backdrop, for a
-   * screen that stands characters on it.
+   * A screen: the world behind it, `topBar` across the top, and `body` under it in a centred column
+   * at most `maxWidth` wide, scrolling when it is taller than the window. Returns the root, and the
+   * part that changes from page to page (for Theme.showPage to bring in). `backdrop` is the world,
+   * for a screen that shows more of it or stands characters on it.
    */
-  def page(topBar: Node, body: Region, maxWidth: Double, sky: SkyBackdrop = new SkyBackdrop()): (StackPane, Node) = {
+  def page(topBar: Node, body: Region, maxWidth: Double, backdrop: WorldBackdrop = new WorldBackdrop()): (StackPane, Node) = {
     body.setMaxWidth(maxWidth)
     val column = new StackPane(body)
     StackPane.setAlignment(body, Pos.TOP_CENTER)
@@ -276,7 +279,7 @@ private[client] object Widgets {
     ViewportCache.disable(scroll) // pages with the character panel animate inside it
     val frame = new VBox(topBar, scroll)
     VBox.setVgrow(scroll, Priority.ALWAYS)
-    val root = new StackPane(sky, frame)
+    val root = new StackPane(backdrop, frame)
     root.getStyleClass.add("page")
     (root, column)
   }
@@ -296,7 +299,8 @@ private[client] object Widgets {
   def brand(onClick: () => Unit): HBox = {
     val mascot = SpriteGenerator.portraitView(com.gridgame.common.model.CharacterId.Wizard.id,
       com.gridgame.common.model.Direction.Down, 40)
-    val name = text("Grid Game", "brand-name")
+    val name = new HBox(5, text("GRID", "brand-name"), text("GAME", "brand-name", "brand-accent"))
+    name.setAlignment(Pos.CENTER_LEFT)
     val b = new HBox(6, mascot, name)
     b.setAlignment(Pos.CENTER_LEFT)
     b.setPadding(new Insets(0, 18, 0, 0))

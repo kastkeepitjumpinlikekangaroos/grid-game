@@ -4,7 +4,6 @@ import com.gridgame.client.gl.GLFWManager
 import com.gridgame.common.Constants
 import com.gridgame.common.model.ItemType
 import com.gridgame.common.model.Movement
-import com.gridgame.common.model.ProjectileDef
 
 import org.lwjgl.BufferUtils
 import org.lwjgl.glfw.GLFW._
@@ -29,7 +28,6 @@ class ControllerHandler(client: GameClient) {
 
   // Timing
   private var lastMoveTime: Long = 0
-  private var lastShootTime: Long = 0
   private var lastBurstTime: Long = 0
   private var lastScanTime: Long = 0
 
@@ -46,11 +44,6 @@ class ControllerHandler(client: GameClient) {
   // Diagnostic: log mapped gamepad axis values for first few seconds
   private var diagFrames: Int = 0
   private var lastDiagTime: Long = 0
-
-  private def canCharge: Boolean = {
-    val pt = client.getSelectedCharacterDef.primaryProjectileType
-    ProjectileDef.get(pt).chargeSpeedScaling.isDefined
-  }
 
   def init(): Unit = {
     try {
@@ -340,55 +333,26 @@ class ControllerHandler(client: GameClient) {
     _stickAiming = true
   }
 
+  /** The right trigger is the mouse's left button: it casts the Q or E being aimed as it goes down,
+    * and is otherwise the primary, held to aim (or to charge) and fired as it comes up (Attacks). */
   private def processShooting(): Unit = {
     val trigger = state.axes(GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER)
     val triggerPressed = trigger > 0.5f
     val triggerWasPressed = prevRightTrigger > 0.5f
 
-    // Edge detect: trigger just pressed
-    if (triggerPressed && !triggerWasPressed) {
-      val now = System.currentTimeMillis()
-      if (now - lastShootTime < Constants.SHOOT_COOLDOWN_MS) return
-
-      if (canCharge) {
-        client.startCharging()
-      } else {
-        lastShootTime = now
-        fireTowardAim(0)
-      }
-    }
-
-    // Edge detect: trigger just released
-    if (!triggerPressed && triggerWasPressed) {
-      if (client.isCharging) {
-        val chargeLevel = client.getChargeLevel
-        client.cancelCharging()
-        lastShootTime = System.currentTimeMillis()
-        fireTowardAim(chargeLevel)
-      }
-    }
+    if (triggerPressed && !triggerWasPressed) client.pressPrimary()
+    if (!triggerPressed && triggerWasPressed) client.releasePrimary()
   }
 
-  private def fireTowardAim(chargeLevel: Int): Unit = {
-    val playerPos = client.getLocalPosition
-    val deltaX = client.getMouseWorldX - playerPos.getX
-    val deltaY = client.getMouseWorldY - playerPos.getY
-    val magnitude = Math.sqrt(deltaX * deltaX + deltaY * deltaY)
-    if (magnitude < 0.001) return
-    val dx = (deltaX / magnitude).toFloat
-    val dy = (deltaY / magnitude).toFloat
-    client.shootToward(dx, dy, chargeLevel)
-  }
-
+  /** A and B are Q and E: taken up to be aimed and cast by the right trigger, or cast at once with
+    * nothing to aim (Attacks). The left bumper is the mouse's right button: it puts away whatever is
+    * aimed or held. */
   private def processAbilities(): Unit = {
     // A button -> Q ability (slot 0)
-    if (justPressed(GLFW_GAMEPAD_BUTTON_A)) {
-      client.shootAbility(0)
-    }
+    if (justPressed(GLFW_GAMEPAD_BUTTON_A)) client.pressAbility(0)
     // B button -> E ability (slot 1)
-    if (justPressed(GLFW_GAMEPAD_BUTTON_B)) {
-      client.shootAbility(1)
-    }
+    if (justPressed(GLFW_GAMEPAD_BUTTON_B)) client.pressAbility(1)
+    if (justPressed(GLFW_GAMEPAD_BUTTON_LEFT_BUMPER)) client.cancelAims()
     // X button -> burst shot
     if (justPressed(GLFW_GAMEPAD_BUTTON_X)) {
       val now = System.currentTimeMillis()

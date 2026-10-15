@@ -254,6 +254,9 @@ trait ProjectileEffects { this: GameInstance =>
         if (owner != null && !owner.isDead && castsAsSlam(owner, projectile.projectileType)) {
           owner.setSpeedBoostUntil(System.currentTimeMillis() + durationMs)
           broadcastToInstance(stateUpdate(owner))
+          // And to the caster over TCP: their client walks the boost by what the server says of
+          // it, and the update above is a datagram
+          sendStateToPlayer(owner)
         }
       case _ => // a travelling projectile buffs on the hit, as before
     }
@@ -275,6 +278,7 @@ trait ProjectileEffects { this: GameInstance =>
     if (owner != null && !owner.isDead) {
       owner.setSpeedBoostUntil(System.currentTimeMillis() + durationMs)
       broadcastBuffered(stateUpdate(owner))
+      sendStateToPlayer(owner) // reliably, as a cast's boost is (applyCastSelfBuff)
     }
   }
 

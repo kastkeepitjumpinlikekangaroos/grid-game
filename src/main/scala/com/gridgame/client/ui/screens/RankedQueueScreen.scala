@@ -9,7 +9,6 @@ import javafx.application.Platform
 import javafx.geometry.Pos
 import javafx.scene.control.Button
 import javafx.scene.layout.{HBox, Priority, Region, VBox}
-import javafx.scene.paint.Color
 import javafx.stage.Stage
 
 import com.gridgame.client.ui.Theme._
@@ -86,7 +85,7 @@ private[client] final class RankedQueueScreen(app: Screens) {
     dotTimer.start()
 
     val findMatchBtn = button(Messages.t("Find Match"), "sun", "lg")
-    findMatchBtn.setGraphic(Icons.node(Icons.Play, 16, Color.web("#5a3300")))
+    findMatchBtn.setGraphic(Icons.node(Icons.Play, 16, Palette.OnGold))
     findMatchBtn.setMaxWidth(Double.MaxValue)
 
     val modeCard = card(cardHeader(Messages.t("Pick a mode")), new VBox(8, options: _*), findMatchBtn, searchingBox)

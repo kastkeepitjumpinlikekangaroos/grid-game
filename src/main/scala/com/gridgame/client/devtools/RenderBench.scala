@@ -35,6 +35,8 @@ import com.gridgame.client.render.projectiles.GLProjectileRenderers
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --blasts=12
  *                                                                  # every character's blasts going off round us
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --aim        # us charging a shot, its lane drawn
+ *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --hold=fan   # us aiming a fan, its aim drawn
+ *                                                                  # (primary, shot, blast, fan, dash, blink, trap)
  *
  * Drives the real GLGameRenderer the way the client does — a GLFW window at the client's
  * size, frames driven by a JavaFX AnimationTimer on the FX thread — over a fabricated
@@ -180,6 +182,16 @@ class RenderBenchApp extends Application {
     val withAim = args.contains("--aim")
     if (withAim) {
       client.selectedCharacterId = CharacterId.Tidecaller.id
+      client.packetSink = _ => ()
+    }
+    // --hold=<kind> has us aim an attack of that kind all through the run (the primary held, or a shot,
+    // blast, fan, dash, blink or trap taken up and never cast, as the first character in the roster
+    // with one: HeldAims),
+    // the aim turning slowly round, so its aim on the ground (AimArrowPainter.drawHeld) is drawn,
+    // running free and stopped by walls. Off by default, like the rest.
+    val held = argOf(args, "hold").map(HeldAims.holder)
+    held.foreach { case (who, _) =>
+      client.selectedCharacterId = who.id
       client.packetSink = _ => ()
     }
     val players = (0 until nPlayers).map { i =>
@@ -371,6 +383,12 @@ class RenderBenchApp extends Application {
         val a = frame * 0.004
         client.setMouseWorldPosition(home.getX + 6 * Math.cos(a), home.getY + 6 * Math.sin(a))
       }
+      // The attack we aim: pressed once and never let go or cast, aimed a little further round each frame
+      held.foreach { case (_, slot) =>
+        if (client.aimingSlot < 0) HeldAims.press(client, slot)
+        val a = frame * 0.004
+        client.setMouseWorldPosition(home.getX + 7 * Math.cos(a), home.getY + 7 * Math.sin(a))
+      }
 
       // Blasts going off round us, one every so often so that about blastTarget are going at once
       if (blastTarget > 0 && frame % Math.max(1, 72 / blastTarget) == 0) blastNear(now)
@@ -450,7 +468,8 @@ class RenderBenchApp extends Application {
           f"quality ${RenderQuality.tierName}, $nPlayers players, ${client.getProjectiles.size} projectiles, " +
           f"${if (withEffects) "status effects, " else ""}${if (withBarriers) "barriers, " else ""}" +
           f"${if (withTraps) s"$nTraps traps, " else ""}${if (blastTarget > 0) s"~$blastTarget blasts, " else ""}" +
-          f"${if (withAim) "aiming, " else ""}$n frames")
+          f"${if (withAim) "aiming, " else ""}${held.fold("")(h => s"holding ${CharacterDef.get(h._1).displayName}'s attack, ")}" +
+          f"$n frames")
         println(f"  frame build (wall):  mean ${mean(cpuNs)}%.2f ms, p50 ${pct(cpuNs, 0.5)}%.2f, p99 ${pct(cpuNs, 0.99)}%.2f, max ${pct(cpuNs, 1.0)}%.2f")
         println(f"  frame build (CPU):   mean ${mean(threadCpuNs)}%.2f ms, p50 ${pct(threadCpuNs, 0.5)}%.2f, p99 ${pct(threadCpuNs, 0.99)}%.2f  (render thread CPU time)")
         println(f"  frame done (GPU):    mean ${mean(gpuNs)}%.2f ms, p50 ${pct(gpuNs, 0.5)}%.2f, p99 ${pct(gpuNs, 0.99)}%.2f, max ${pct(gpuNs, 1.0)}%.2f")

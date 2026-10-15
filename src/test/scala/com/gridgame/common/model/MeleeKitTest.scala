@@ -115,17 +115,19 @@ class MeleeKitTest {
 
   @Test def aVariantKeepsItsBaseTypesFlightAndReach(): Unit = {
     // Same flight and reach as the type it copies, so the look and sound it borrows fit it. Neither
-    // depends on the damage, which a variant may set for itself (the Axe Spin's 22 to the Axe's 33)
+    // depends on the damage, which a variant may set for itself (the Arena Axe's 29 to the Axe's
+    // 23). The Axe Spin, the Maul and the Blood Frenzy were rings of eight thrown variants; they are
+    // slams of their own now
     val variants = Seq(
-      ProjectileType.AXE_SPIN -> ProjectileType.AXE, ProjectileType.VENOM_DART -> ProjectileType.POISON_DART,
-      ProjectileType.TOXIC_SHURIKEN -> ProjectileType.SHURIKEN, ProjectileType.BLOOD_FRENZY -> ProjectileType.CLAW_SWIPE,
+      ProjectileType.VENOM_DART -> ProjectileType.POISON_DART,
+      ProjectileType.TOXIC_SHURIKEN -> ProjectileType.SHURIKEN,
       ProjectileType.FLURRY -> ProjectileType.FIST, ProjectileType.ROOTING_BOULDER -> ProjectileType.BOULDER,
       ProjectileType.EMBER_FAN -> ProjectileType.EMBER_SHOT, ProjectileType.FENRIR_CLAW -> ProjectileType.CLAW_SWIPE,
       ProjectileType.GHOUL_CLAW -> ProjectileType.CLAW_SWIPE, ProjectileType.SHARK_CLAW -> ProjectileType.CLAW_SWIPE,
       ProjectileType.ICE_BOULDER -> ProjectileType.BOULDER, ProjectileType.DRAIN_BLADE -> ProjectileType.CURSED_BLADE,
-      ProjectileType.CHILL_BLADE -> ProjectileType.CURSED_BLADE, ProjectileType.MAUL -> ProjectileType.CLAW_SWIPE,
+      ProjectileType.CHILL_BLADE -> ProjectileType.CURSED_BLADE,
       ProjectileType.ARENA_AXE -> ProjectileType.AXE, ProjectileType.THROWING_STAR -> ProjectileType.SHURIKEN,
-      ProjectileType.MANTIS_SCYTHE -> ProjectileType.CLAW_SWIPE)
+      ProjectileType.MANTIS_SCYTHE -> ProjectileType.CLAW_SWIPE, ProjectileType.PIN_DOWN -> ProjectileType.TALON)
     for ((v, b) <- variants) {
       val (vd, bd) = (ProjectileDef.get(v), ProjectileDef.get(b))
       assertEquals(vd.name, v, vd.id)

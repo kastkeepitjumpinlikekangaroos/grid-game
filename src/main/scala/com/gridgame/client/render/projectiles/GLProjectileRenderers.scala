@@ -295,7 +295,7 @@ object GLProjectileRenderers {
   // Stopped, it is reeled back in along its tether (setHead), holding whoever it caught.
 
   // ═══════════════════════════════════════════════════════════════
-  //  REGISTRY (all 176 types)
+  //  REGISTRY (every type)
   // ═══════════════════════════════════════════════════════════════
 
   private val registry: Map[Byte, Renderer] = Map(
@@ -317,7 +317,7 @@ object GLProjectileRenderers {
     ProjectileType.GRENADE      -> lobbed(LOB_BOMB, 0.95f, 0.62f, 0.25f, 17f),
     ProjectileType.ROCKET       -> asRenderer(drawRocket),
     ProjectileType.TALON        -> talonKick(0.40f, 0.26f, 0.14f, 0.68f, 0.5f, 0.32f, 1f, 0.86f, 0.5f),
-    ProjectileType.GUST         -> asRenderer(drawWindSwirl),
+    ProjectileType.GUST         -> asRenderer(drawSpiritEagle),  // the Raptor's, its one thrower
     ProjectileType.SHURIKEN     -> shuriken(0.72f, 0.74f, 0.82f, 30f),
     ProjectileType.POISON_DART  -> flyingShaft(SHF_DART, 0.4f, 0.9f, 0.35f, 26f),
     ProjectileType.CHAIN_BOLT   -> chainProj(CHN_SHACKLE, 0.62f, 0.64f, 0.72f, 5.5f),
@@ -499,11 +499,46 @@ object GLProjectileRenderers {
     ProjectileType.ICE_BOULDER     -> asRenderer((proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int) => drawBoulder(proj, sx, sy, sb, tick, 24f, ice = true)),
     ProjectileType.DRAIN_BLADE     -> bladeSpinner(WPN_CURSED, 0.3f, 0.9f, 0.95f, 30f),
     ProjectileType.CHILL_BLADE     -> bladeSpinner(WPN_CURSED, 0.66f, 0.56f, 1f, 30f),
-    // Of their own for their numbers, drawn as the type they were made from (the Maul a heavier rake)
-    ProjectileType.MAUL            -> clawRake(4, false, 0f, 14f, 0.98f, 0.5f, 0.22f, 1f, 0.92f, 0.75f, 0.25f, 0.08f, 0.02f, RAKE_DUST),
+    // Of their own for their numbers, drawn as the type they were made from
     ProjectileType.ARENA_AXE       -> bladeSpinner(WPN_AXE, 0.78f, 0.70f, 0.55f, 30f),
     ProjectileType.THROWING_STAR   -> shuriken(0.72f, 0.74f, 0.82f, 30f),
-    ProjectileType.MANTIS_SCYTHE   -> clawRake(1, true, 0f, 13f, 0.5f, 0.88f, 0.32f, 0.92f, 1f, 0.8f, 0.06f, 0.18f, 0.04f, RAKE_SPARKS)
+    ProjectileType.MANTIS_SCYTHE   -> clawRake(1, true, 0f, 13f, 0.5f, 0.88f, 0.32f, 0.92f, 1f, 0.8f, 0.06f, 0.18f, 0.04f, RAKE_SPARKS),
+    ProjectileType.CARD_HEAVY      -> bladeSpinner(WPN_CARD, 0.92f, 0.25f, 0.32f, 26f, 0.22),
+    ProjectileType.CHAIN_BOLT_HEAVY -> chainProj(CHN_SHACKLE, 0.62f, 0.64f, 0.72f, 5.5f),
+
+    // ── What the volleys became (design/characters.md, *No volleys of more than three*) ──
+    // The slams are a ring for the moment they are on the ground; what is seen of them is their
+    // blast (render/blasts), and the three that were rings of eight thrown things are slams now
+    ProjectileType.AXE_SPIN        -> aoeRing(AOE_QUAKE, 0.78f, 0.70f, 0.55f, 44f),
+    ProjectileType.MAUL            -> aoeRing(AOE_QUAKE, 0.98f, 0.5f, 0.22f, 40f),
+    ProjectileType.BLOOD_FRENZY    -> aoeRing(AOE_VOID, 0.92f, 0.12f, 0.16f, 40f),
+    ProjectileType.COMBUST         -> aoeRing(AOE_FIRE, 1f, 0.5f, 0.12f, 36f),
+    ProjectileType.FROST_NOVA      -> aoeRing(AOE_QUAKE, 0.6f, 0.88f, 1f, 46f),
+    ProjectileType.REPULSE         -> aoeRing(AOE_VOID, 0.65f, 0.42f, 1f, 46f),
+    ProjectileType.SHOCK_BURST     -> aoeRing(AOE_SONIC, 1f, 0.55f, 0.88f, 40f),
+    ProjectileType.LUCKY_STREAK    -> aoeRing(AOE_SONIC, 1f, 0.84f, 0.3f, 34f),
+    ProjectileType.HORN_FLIP       -> aoeRing(AOE_QUAKE, 0.62f, 0.48f, 0.28f, 44f),
+    // The rest are variants drawn as their thrower draws the type they were made from
+    ProjectileType.GALE            -> asRenderer(drawWindSwirl),
+    ProjectileType.FROSTBITE       -> flyingShaft(SHF_ICE, 0.55f, 0.85f, 1f, 22f),
+    ProjectileType.HAILSTORM       -> asRenderer(drawCloudPuff),
+    ProjectileType.SHADOW_BIND     -> asRenderer(drawShadeGrin),
+    ProjectileType.LULLABY         -> asRenderer(drawLuteNote),
+    ProjectileType.DIVINE_JUDGMENT -> asRenderer(drawHolyBolt),
+    ProjectileType.PINNING_SPEAR   -> flyingShaft(SHF_SPEAR, 0.95f, 0.82f, 0.42f, 28f),
+    ProjectileType.SHACKLES        -> chainProj(CHN_LOCK, 0.52f, 0.54f, 0.62f, 6f),
+    ProjectileType.ION_SHOT        -> laserBolt(BOLT_LASER, 0.35f, 0.82f, 1f, 40f, 9f),
+    ProjectileType.LAG_SPIKE       -> asRenderer((proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int) => drawDataBolt(proj, sx, sy, sb, tick, isVirus = false)),
+    ProjectileType.PIN_DOWN        -> talonKick(0.42f, 0.5f, 0.64f, 0.9f, 0.86f, 0.74f, 0.75f, 0.88f, 1f),
+    ProjectileType.RIDDLE          -> asRenderer(drawRiddleEye),
+    ProjectileType.BINDING_TALISMAN -> asRenderer(drawOfuda),
+    ProjectileType.SERPENT_STRIKE  -> asRenderer(drawFireVenomHelix),
+    ProjectileType.MARIONETTE      -> chainProj(CHN_STRING, 0.8f, 0.6f, 1f),
+    ProjectileType.WILD_CARD       -> bladeSpinner(WPN_CARD, 0.95f, 0.78f, 0.25f, 28f, 0.22),
+    ProjectileType.DEATH_COIL      -> energyBolt(0.45f, 0.85f, 0.35f, 24f, ORB_SPIRIT),
+    ProjectileType.METEOR          -> energyBolt(1f, 0.55f, 0.2f, 30f, ORB_ASTRAL),
+    ProjectileType.FLING           -> asRenderer(drawPoltergeistThrow),
+    ProjectileType.WHIRLWIND       -> asRenderer(drawGenieLamp)
   )
 
   // Flat lookup table for O(1) renderer access without Option allocation.
@@ -561,11 +596,7 @@ object GLProjectileRenderers {
   private def glow(t: Byte, rgb: Int): Unit = _glowLUT(t & 0xFF) = rgb
 
   only(CharacterId.Musician, ProjectileType.SONIC_WAVE, asRenderer(drawPowerChord))
-  only(CharacterId.Sphinx, ProjectileType.SONIC_WAVE, asRenderer(drawRiddleEye))
   only(CharacterId.Cloudrunner, ProjectileType.WIND_BLADE, asRenderer(drawCloudlet))
-  only(CharacterId.Cloudrunner, ProjectileType.GUST, asRenderer(drawCloudPuff))
-  only(CharacterId.Hawk, ProjectileType.GUST, asRenderer(drawFeatherGust))
-  only(CharacterId.Raptor, ProjectileType.GUST, asRenderer(drawSpiritEagle))
 
   // ── Birds of prey: each one's kick in its own feathers (Bites) ──
   glow(ProjectileType.TALON, 0xFFDB8C)            // the Raptor's
@@ -620,7 +651,6 @@ object GLProjectileRenderers {
   only(CharacterId.Mummy, ProjectileType.SAND_SHOT, asRenderer(drawScarab), 0xE6C25A)
   only(CharacterId.Anubis, ProjectileType.DEATH_BOLT, asRenderer(drawAnkh), 0xF2C24F)
   only(CharacterId.Anubis, ProjectileType.CURSE, asRenderer(drawJackalSpirit), 0xF2B84F)
-  only(CharacterId.Yokai, ProjectileType.CURSE, asRenderer(drawOfuda), 0xFF5A4F)
   only(CharacterId.Djinn, ProjectileType.MYSTIC_BOLT, asRenderer(drawGenieLamp), 0x8C80FF)
   only(CharacterId.Alchemist, ProjectileType.FIREBALL, asRenderer(drawExplosivePotion), 0xFF8C2E)
 
@@ -631,7 +661,6 @@ object GLProjectileRenderers {
   glow(ProjectileType.POISON_CLOUD, 0x5CC28C)
   only(CharacterId.PlagueDoctor, ProjectileType.PLAGUE_BOLT, asRenderer(drawFlyBlownGlob), 0xB4C23F)
   only(CharacterId.Hydra, ProjectileType.VENOM_BOLT, asRenderer(drawHydraHead), 0x8CF24F)
-  only(CharacterId.Chimera, ProjectileType.VENOM_BOLT, asRenderer(drawFireVenomHelix), 0xE6A53F)
   only(CharacterId.Medusa, ProjectileType.VENOM_BOLT, asRenderer(drawOuroboros), 0x6FD96B)
 
   // ── Guns and machines (Arsenal) ──
@@ -660,6 +689,19 @@ object GLProjectileRenderers {
   only(CharacterId.Mantis, ProjectileType.SHADOW_HAUNT, asRenderer(drawMantisStrike), 0x7AE64F)
   only(CharacterId.Gorilla, ProjectileType.SEISMIC_SLAM, asRenderer(drawGroundPound), 0xC29C5C)
   only(CharacterId.Musician, ProjectileType.SONIC_BOOM, asRenderer(drawGuitarPick), 0xFF5CB4)
+
+  // ── What the volleys became: each in the colour of the look it was made from ──
+  glow(ProjectileType.SHADOW_BIND, 0x9A5CFF)      // the Shade's lilac
+  glow(ProjectileType.PIN_DOWN, 0xBFE0FF)         // the Hawk's kick
+  glow(ProjectileType.BINDING_TALISMAN, 0xFF5A4F) // the Yokai's ofuda
+  glow(ProjectileType.SERPENT_STRIKE, 0xE6A53F)   // the Chimera's fire and venom
+  glow(ProjectileType.MARIONETTE, 0xB880FF)       // the Puppeteer's strings
+  glow(ProjectileType.FLING, 0xB4B0FF)            // the Poltergeist's crockery
+  glow(ProjectileType.WHIRLWIND, 0x8C80FF)        // the Djinn's lamp
+  glow(ProjectileType.ION_SHOT, 0x59D1FF)
+  glow(ProjectileType.DEATH_COIL, 0x73D959)
+  glow(ProjectileType.METEOR, 0xFF8C33)
+  glow(ProjectileType.WILD_CARD, 0xF2C740)
 
   // ═══════════════════════════════════════════════════════════════
   //  SPECIALIZED RENDERERS

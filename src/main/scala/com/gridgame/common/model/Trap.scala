@@ -27,6 +27,7 @@ object TrapType {
   val POISON_POD: Byte = 3
   val FIRE_RUNE: Byte = 4
   val SNARE: Byte = 5
+  val BINDING_RUNE: Byte = 6
 }
 
 /**
@@ -78,7 +79,13 @@ object TrapDef {
     effects = Seq(Root(2000))
   )
 
-  val all: Seq[TrapDef] = Seq(BearTrap, Mine, PoisonPod, FireRune, Snare)
+  // The Runesmith's second rune: a glyph of violet arcane fire that holds whoever crosses it
+  val BindingRune: TrapDef = TrapDef(
+    id = TrapType.BINDING_RUNE, name = "Binding Rune", kind = TrapKind.RUNE, colorRGB = 0xFFA77BFF,
+    damage = 15, effects = Seq(Root(1500))
+  )
+
+  val all: Seq[TrapDef] = Seq(BearTrap, Mine, PoisonPod, FireRune, Snare, BindingRune)
 
   // Registered by this object's own initializer, so nothing can look a trap up before the
   // registry is filled — the trouble ProjectileDef has with CharacterDef can't arise here.

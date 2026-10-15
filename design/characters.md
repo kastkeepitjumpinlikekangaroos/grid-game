@@ -110,7 +110,8 @@ character closes the gap with its abilities or an item, not its feet.
   backing off. A ranged bot strafes at mid range rather than walking straight away, so a melee
   bot still catches one now and then. A phase doubles a bot's pace as it does a player's; a melee
   or skirmisher bot casts one to close on a target out of its reach (the Vampire's Mist Form), a
-  ranged bot only to get away from someone within 5 cells.
+  ranged bot only to get away from someone within 5 cells, and so with a blink, a dash and a haste
+  (*No volleys of more than three*).
   - **Round walls** (`BotNavigation`, searching with `BotPaths`): a bot walks straight at its
     target while the straight way there is open, and otherwise along the shortest way round, found
     by an A* search of the whole map and kept until the target moves off its end; either way it
@@ -153,9 +154,13 @@ WHERE match_type = 0 AND character_id IS NOT NULL GROUP BY character_id ORDER BY
 Balance is measured in simulated matches of bots on the server's own code (`GameInstance`,
 `BotController`), run headless at real speed: five minutes each, on the Cell, the Colony, the Meadow
 and the Lagoon for the first two passes and on all seven maps for the third, every kill and every
-point of damage booked to the attack that dealt it. A free-for-all is ranked on kills, so what is
-steered is each character's finishing place (the third pass by way of its kills a minute, which
-decide it), and with it the share of its matches it wins.
+point of damage booked to the attack that dealt it. A free-for-all was ranked on kills when these
+passes were made, so what was steered is each character's finishing place (the third pass by way
+of its kills a minute, which decided it), and with it the share of its matches it wins. Since
+2026-10-14 a match is won on kills less deaths (design/match-flow.md, *Who wins*), and a
+character's deaths count against it as much as its kills for it, which none of the passes weighed:
+one that trades a death for every kill now finishes in the middle, however many it trades. The
+next pass should steer the score.
 
 - **Bots don't play the roles the same way.** A melee bot closes in; a ranged bot keeps to 60% of its
   reach and backs off, but strafes rather than kites, and lands 44% of its primaries to a melee bot's
@@ -262,6 +267,9 @@ decide it), and with it the share of its matches it wins.
     character or two in each pool is a few points of kills a minute from the middle, its attacks
     shared with others on the other side of it (the Magma Knight, whose Magma Ball the Cerberus
     throws); a variant of its own, as the second pass made four, would free it.
+- **The volleys' replacements (2026-10-14)** were fitted back to the scores their characters had,
+  on kills less deaths, at the bots' pace and at a player's: *No volleys of more than three*, *What
+  the volleys dealt was given back*.
 - **What bots can't tell:**
   - Ember and the Spaceman are left weaker than the middle against bots (46% → 6% of its mixed
     matches for Ember in the second pass; the third aimed them at 8% and 5% fewer kills a minute
@@ -271,25 +279,166 @@ decide it), and with it the share of its matches it wins.
     bots, so in a player's hands a ranged character is the stronger of the two, which its pace
     was there for in the first place (*Roles, health and pace*).
   - A player fires a primary every 0.5s, a bot every 0.7-1.1s, so a primary counts for more in a
-    player's hands than here, and an ability for less.
+    player's hands than here, and an ability for less. Bots firing as often as a player (a
+    simulation's setting, not the game's) put the ranged characters 1.2 kills less deaths a match
+    above their score at the bots' pace and the fighters 2.4 below, on the kits before 2026-10-14
+    (1.6 and 3.2 on the kits since).
   - Bots walk at half a player's pace, so a slow shot lands on them more often than on a player: the
     boulders and the slow ranged shots read stronger here than they will against people.
   - A bot raises a barrier (Gladiator, Paladin, Crusader, Beetle, Golem) only against ranged shots.
   - In a free-for-all of fighters alone, with no ranged characters in it, reach still wins: the
     skirmishers take most of them (the Cyclops 48%). It was balanced for mixed matches.
 
+## No volleys of more than three
+A volley was the easy ability to give a character, and too many had one: fifty abilities of 47
+characters fired a fan, 33 of them five or eight at once (fourteen were rings of eight), and kits
+ran together, the Pyromancer's fan of five flame bolts much the Glacier's of five frost shards and
+the Photon's of five lasers. Since 2026-10-14 no volley is more than three
+(`FanProjectile.count`), and one is left only where firing several at once is what the character
+is; the rest became crowd control, hastes, blinks and the like, each out of the character's own
+fantasy. `KitTest` holds the cap, the list of volleys left, and that no two kits are alike.
+
+- **The volleys left**, each three at most: the Warden's chains flung wide, the Vampire's bats, Ember's
+  scattered embers, the Ranger's multishot, the Monk's flurry of blows (three, gone once they land:
+  the ring of eight came back like the fists it was made from), the Rogue's knives, the Jester's
+  hand of cards, the Photon's beam split by a prism, the Pilot's strafing guns, the Hydra's three
+  heads and Cerberus's three.
+- **One wave or one cut where the fan stood for one.** The Tidecaller's Tidal Wave is one great wave
+  now, 2.4 cells either side, rolling on through the first three it strikes and pushing each back
+  once; the Samurai's Whirlwind is the Crescent Cut, one wide cut that goes on through everyone in
+  its way and stuns each. Both are drawn as wide as they strike (their renderers scale with
+  `hitRadius`). The Cyclops hurls one huge boulder.
+- **The melee rings became slams** where they were a swing all round (the Berserker's Axe Spin, the
+  Bear's Maul, Fenrir's Blood Frenzy), with the effects they had, and a lance where they reached
+  far (the Paladin's Judgment, the Skeleton King's Bone Cage).
+- **What the rest became:**
+
+  | | Crowd control | A haste, a blink, a dash, a phase | Something else |
+  |---|---|---|---|
+  | Elementals | Frost Nova (Cryomancer), Frostbite, Hailstorm (Cloudrunner), Gale (Windwalker) | Combust (Pyromancer), Bog Hop (Mudslinger), Wind Form (Windwalker) | Ice Wall, a barrier (Glacier) |
+  | Undead | Bone Cage (Skeleton King), Shadow Bind (Shade), Fling (Poltergeist) | | |
+  | Medieval | Judgment (Paladin), Lullaby (Bard), Divine Judgment (Cleric), Pinning Spear (Valkyrie), Shackles (Inquisitor), Death Coil (Warlock) | Axe Spin (Berserker), Leap (Barbarian) | |
+  | Sci-fi | Ion Shot (Android), Repulse (Graviton), Lag Spike (Glitcher) | Jump Jets (Mech Pilot), Disperse (Nanoswarm), Light Speed (Photon) | |
+  | Beasts | Pin Down (Hawk), Electric Burst (Jellyfish), Maul (Bear) | Burrow (Spider), Ink Cloud (Kraken) | Web Trap, a snare (Spider) |
+  | Myth | Riddle (Sphinx), Binding Talisman (Yokai), Blood Frenzy (Fenrir), Serpent Strike (Chimera), Whirlwind (Djinn) | Pounce (Sphinx) | |
+  | Specialists | Marionette (Puppeteer), Wild Card (Gambler), Meteor (Astronomer) | Lucky Streak (Gambler) | Binding Rune, a trap (Runesmith) |
+
+  The Warlock, the Astronomer, the Poltergeist and the Djinn had no volley, but had kits that were
+  someone else's: three a fireball and a blink, three a charm and a blink. Each has an attack of its
+  own now, and the Wizard and the Enchantress keep theirs. The Beetle's kit was the Golem's to the
+  letter (a barrier and the same Tremor Slam), which `KitTest` found: its E is a Horn Flip, a slam
+  that throws back and stuns. Every changed character's description says what its kit now does.
+- **A haste is a ground slam that speeds its caster up** (its projectile carries a `SpeedBoost`), cast
+  as the Cyborg's Overclock always was: the server boosts the caster as it goes down, whoever is in it
+  (`GameInstance.applyCastSelfBuff`), and goes off as its key goes down, as every slam does (*Casting
+  mode*). Two are nothing else (the Overclock, the Gambler's Lucky Streak); two also burn or slow
+  whoever is near (the Pyromancer's Combust, the Berserker's Axe Spin); the Windwalker's Gale hastes
+  her when it lands.
+  A boost is 40% quicker steps (`Movement`). It never used to last as long as it said for the player
+  who had it: only the flag crossed the wire, their client took it as a second's boost, and a player
+  at full health hears no update between a cast and the next hit, so the Cyborg's 4s Overclock was
+  walked for one. Every update now carries how long the boost has left (`PlayerUpdatePacket` bytes
+  [59-60]), the caster is told over TCP as well as by datagram, and a haste of our own is walked from
+  its cast, as a phase is, while an update the server sent before it heard of the cast is ignored
+  for a round trip (`LocalPlayer.hasteCast`). `GameClientStatusTest`, `KitReworkTest`.
+- **Bots use them for what they are** (`BotCombat`): a fighter's dash or blink takes it in on a target
+  out of reach, a ranged bot's blink or dash takes it away from one within 5 cells, as its phase
+  already did (it used to blink a ranged bot into whoever it was fighting), and only if it would
+  carry it 3 cells or more. A haste that is nothing else is cast by a ranged bot to get away and by a
+  fighter to run a target down; one that also hurts, with its target in it. `BotMovementTest`.
+- **Every new attack lands in a match** as it says, slams, splashes, shots that go on through or off
+  the walls, the traps and the ice wall: `KitReworkTest`.
+- **What the volleys dealt was given back.** A volley was up to a third of what its thrower dealt
+  (the Spider's, the Nanoswarm's, the Gambler's, the Mudslinger's), so the reworked characters came
+  out weaker: in mixed free-for-alls of bots (*Balance in free-for-alls against bots*), 960 on the
+  line-ups the old kits played, they fell 2.3 kills less deaths a match on average (spread 3.2),
+  twelve of them by 4 to 9.5, and everyone else rose 1.6. The bots' getaways (above) lifted the ranged
+  characters with a blink or a dash 2 more, the Wizard 7. Rounds of 960 matches then fitted the
+  damage of these characters' attacks, and the health of those whose main attack someone untouched
+  throws too or had gone as far as it could, by least squares, as the balance passes did, aiming each
+  back at its old score, or nearer the middle where the rework had moved it toward the middle. 10% more damage
+  turned out to be 2.3 kills less deaths a match, not the 4 the fit first assumed. Measured on the
+  built code over the same line-ups, the reworked characters are 0.4 below their old scores at the
+  bots' pace and 0.1 above at a player's (spread 1.2 and 1.3; luck alone spreads 120 matches about
+  0.9), the rest of the roster 0.3 above and 0.1 below.
+  - *The bots' pace and a player's.* A bot fires its primary every 0.7-1.1s, a player every 0.5s
+    (*What bots can't tell*), and this moved damage out of abilities into primaries, which a player's
+    pace rewards. Fitted to the bots' pace alone, the reworked ranged characters came out 1.1 above
+    their old scores with the bots firing as often as a player (the Gambler, the Spider and the Shade
+    3-4), so the last step aimed at the mean of the two paces.
+  - *Primaries, for whoever lost a volley*: the Spider's Web Shot 24 → 34, the Nanoswarm's Nano Bolt
+    23 → 33, the Mudslinger's Mud Glob 33 → 46, the Runesmith's Rune Bolt 24 → 33, the Graviton's
+    Gravity Ball 37 → 45, the Axe 23 → 28 (the Berserker and the Barbarian), Fenrir's claw 23 → 29,
+    the Cleric's Holy Bolt Heavy 24 → 29, the Flame Bolt 18 → 23, the Laser 23 → 26, and a few points
+    for a dozen more. The Gambler's card and the Puppeteer's chain bolt, which the Jester and the
+    Warden throw too, are types of their own now, looking and sounding as their bases do
+    (`CARD_HEAVY` 33, `CHAIN_BOLT_HEAVY` 40). The replacements themselves moved little: the Maul 26 →
+    33, the Wild Card and the Marionette 24 and 20 → 31 and 26, the Frost Nova 18 → 23, the Combust
+    14 → 18; the Axe Spin 22 → 17 and the Death Coil 30 → 23 came down.
+  - *Health, where the main attack is shared or went as far as it could*: the Bard 60 → 70, the Puppeteer 65 → 75, the Sphinx 60
+    → 70, the Bear 130 → 145, the Windwalker 60 → 65, the Cryomancer, the Nanoswarm and the Mech Pilot
+    70 → 75, the Mudslinger 75 → 80; each within the 10 (15 for a fighter) a pass may move it.
+  - *Untouched characters* moved only where the getaways took them past the middle, or where they
+    throw an attack that moved: the Wizard's uncharged Arcane Bolt 15 → 12 (a full charge is still
+    40), the Centaur's Arrow Light 30 → 28, the Voidwalker's Void Bolt 30 → 26, the Serpent 75 → 70
+    HP; the Magma Ball 40 → 38 for the Magma Knight and Cerberus, whose Triple Blast is three of the
+    Pyromancer's Flame Bolts; the Spaceman's Tentacle, the Kraken's primary, 28 → 33.
+  - *What is left.* The Bard, whose Sonic Wave the Musician throws, stays 1.5 short with its health
+    up its 10. The fighters as a whole come out 0.4 kills less deaths a match below where they were
+    at the bots' pace and 1.2 at a player's: ranged bots now blink away from them.
+
 ## Cast Behaviors
 Each ability uses one of these cast behaviors (defined in `CharacterDef.scala`):
 - `StandardProjectile` — fires a projectile toward the cursor
 - `PhaseShiftBuff(durationMs)` — grants a temporary buff (e.g., ethereal form)
 - `DashBuff(maxDistance, durationMs, moveRateMs)` — dash movement ability
-- `TeleportCast(maxDistance)` — instant teleport to cursor position
-- `FanProjectile(count, fanAngle)` — fires multiple projectiles in a fan pattern
-- `GroundSlam(radius)` — AoE ground slam around the caster
+- `TeleportCast(maxDistance)` — a blink: its whole range toward the aim, however near the cursor
+  is, stopping short of the first cell it can't land on (`Teleport.blinkTarget`)
+- `FanProjectile(count, fanAngle)` — fires up to three projectiles in a fan (*No volleys of more
+  than three*)
+- `GroundSlam(radius)` — AoE ground slam around the caster. What it reaches is its projectile's
+  splash (`AbilityDef.slamRadius`): `radius` only tells bots when to cast it, and is a cell short of
+  the splash for five of the roster's slams
 - `BarrierCast(durationMs)` — raises a barrier in front of the caster (see *Barriers*); fires
   nothing, so its ability's projectile type is -3 (buffs and dashes carry -1, teleports -2)
 - `TrapCast(trapType, maxRange)` — throws a trap onto the ground (see *Traps*); fires nothing
   either, so its ability's projectile type is -4
+
+## Casting mode
+Q and E are aimed, then cast with a click (`Attacks`). The key takes the ability up: where it will
+go is laid on the ground (client/render/CLAUDE.md, *An aimed attack shows where it will go*) and its
+slot on the HUD is ringed in the same gold, while we walk and aim as ever. The next press of the left
+mouse button casts it toward the aim of that moment, and is nothing more: the primary doesn't go off
+as the button comes up. The key coming up does nothing. So a quick click, Q, click, E, click fires
+the primary and casts both, each on its own cooldown as before.
+- **What goes off as its key goes down** is what has nothing to aim (`Attacks.goesOffOnPress`): every
+  slam, the Earthshaker's Seismic Root as much as the Cyborg's Overclock, since it reaches all round
+  us whichever way we aim; a phase; a barrier, which turns with the aim the whole time it is up; and
+  a fan that goes all the way round (none in the roster now). It leaves an ability taken up as it was.
+  Everything else goes somewhere (a shot, a fan, a dash, a blink, a trap thrown) and is aimed first.
+- **On its cooldown the key takes nothing up**, so a click then is the primary's, which keeps its
+  half second between shots (`SHOOT_COOLDOWN_MS`). Taken up anyway, every click until the cooldown
+  ran would have done nothing at all.
+- **A click that can't cast it now casts nothing, spends nothing, and leaves it taken up**: held,
+  phased, in a free-for-all's ceasefire, a dash or a blink while rooted, a trap with nowhere to land.
+  Its aim and its rim are grey until it could go, and the click after that casts it.
+- **One ability is aimed at a time**: the other's key takes over from it, and the same key again
+  leaves it as it is.
+- **The right mouse button puts away** whatever is aimed or held, a charge included, without it going
+  off or spending a cooldown, as the chat opening and the window losing the focus do (so the click
+  that brings the window back casts nothing). A new life starts with nothing aimed.
+- **The primary is held to aim**: it goes off as its button comes up, toward the aim of that moment,
+  and while it is held a moment where it will go is laid on the ground. A primary that charges
+  charges as it always did, and the half second between two shots runs to the moment one goes off,
+  so a shot held through it and let go after it goes. A shot held as Q or E goes down still goes off
+  as the button comes up, the ability waiting for the next click; a click that casts an ability
+  starts no charge.
+- **On a pad** A and B are Q and E, the right trigger is the left mouse button and the left bumper the
+  right one.
+
+It is all the client's: the server takes a cast when it comes, and never knew when a key went down.
+`GameClientAimTest` pins it, through the real keyboard and mouse handlers too. It replaced holding Q
+or E down to aim and letting go to cast, under which every slam was held to aim as well.
 
 ## Movement speed
 `CharacterDef.moveSpeed` multiplies the base walking rate of 20 cells a second

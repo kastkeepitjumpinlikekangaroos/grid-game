@@ -42,4 +42,20 @@ case class AbilityDef(
     projectileType: Byte,
     keybind: String,
     castBehavior: CastBehavior = StandardProjectile
-)
+) {
+  /**
+   * How far round its caster a ground slam reaches, in cells, from the centre of the caster's cell
+   * to the centre of a victim's: the splash its projectile sets off where it is put down (its
+   * `aoeOnMaxRange`, since it has no range to fly), which is what the server hits, or for one with
+   * no splash its blast. Not the [[GroundSlam]]'s own radius, which only tells bots when to cast it
+   * and is a cell short of the splash for five of the roster's slams. 0 for anything else.
+   */
+  def slamRadius: Float = castBehavior match {
+    case GroundSlam(radius) =>
+      val d = ProjectileDef.get(projectileType)
+      if (d.aoeOnMaxRange.isDefined) d.aoeOnMaxRange.get.radius
+      else if (d.explosionConfig.isDefined) d.explosionConfig.get.blastRadius
+      else radius
+    case _ => 0f
+  }
+}

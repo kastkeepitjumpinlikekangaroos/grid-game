@@ -15,7 +15,7 @@ private[model] object Originals {
 
   val TentacleDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.TENTACLE, name = "Tentacle",
-    speedMultiplier = 0.9f, damage = 28, maxRange = 15,
+    speedMultiplier = 0.9f, damage = 33, maxRange = 15,
     onHitEffect = Some(PullToOwner)
   )
   val IceBeamDef: ProjectileDef = ProjectileDef(
@@ -25,7 +25,7 @@ private[model] object Originals {
   )
   val AxeDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.AXE, name = "Axe",
-    speedMultiplier = 0.6f, damage = 23, maxRange = 5,
+    speedMultiplier = 0.6f, damage = 28, maxRange = 5,
     hitRadius = 2.5f, boomerang = true
   )
   val RopeDef: ProjectileDef = ProjectileDef(
@@ -46,10 +46,10 @@ private[model] object Originals {
   )
   val ArcaneBoltDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.ARCANE_BOLT, name = "Arcane Bolt",
-    speedMultiplier = 0.85f, damage = 21, maxRange = 25,
+    speedMultiplier = 0.85f, damage = 17, maxRange = 25,
     passesThroughWalls = true,
     chargeSpeedScaling = Some(ChargeScaling(0.6f, 1.2f)),
-    chargeDamageScaling = Some(ChargeScaling(15f, 40f)),
+    chargeDamageScaling = Some(ChargeScaling(12f, 40f)),
     chargeRangeScaling = Some(ChargeScaling(15f, 30f))
   )
   val FireballDef: ProjectileDef = ProjectileDef(
@@ -58,19 +58,21 @@ private[model] object Originals {
   )
   val SplashDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.SPLASH, name = "Splash",
-    speedMultiplier = 0.65f, damage = 32, maxRange = 15,
+    speedMultiplier = 0.65f, damage = 36, maxRange = 15,
     chargeSpeedScaling = Some(ChargeScaling(0.5f, 1.0f)),
-    chargeDamageScaling = Some(ChargeScaling(16f, 35f)),
+    chargeDamageScaling = Some(ChargeScaling(18f, 35f)),
     chargeRangeScaling = Some(ChargeScaling(10f, 20f)),
-    aoeOnHit = Some(AoESplashConfig(3.0f, 16))
+    aoeOnHit = Some(AoESplashConfig(3.0f, 18))
   )
   // The two pushes drawn as waves strike where their water or wind is (hitCentreBehind), and fly a
   // cell further, so each strikes exactly the cells round its caster it did when its circle was
-  // round the leading edge (the Gust's trails further back, its sub-steps being shorter)
+  // round the leading edge (the Gust's trails further back, its sub-steps being shorter).
+  // One great wave since the volleys went (design/characters.md): as wide as the fan of five's
+  // middle three, rolling on through everyone in its way, each pushed once by the one cast
   val TidalWaveDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.TIDAL_WAVE, name = "Tidal Wave",
-    speedMultiplier = 0.5f, damage = 18, maxRange = 13,
-    hitCentreBehind = 1.0f,
+    speedMultiplier = 0.5f, damage = 24, maxRange = 13,
+    hitRadius = 2.4f, hitCentreBehind = 1.0f, pierceCount = 3,
     onHitEffect = Some(Push(3.0f))
   )
   val GeyserDef: ProjectileDef = ProjectileDef(
@@ -127,14 +129,16 @@ private[model] object Originals {
   )
   val KatanaDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.KATANA, name = "Katana",
-    speedMultiplier = 0.7f, damage = 26, maxRange = 4,
+    speedMultiplier = 0.7f, damage = 29, maxRange = 4,
     hitRadius = 2.2f
   )
+  // The Samurai's Crescent Cut: one wide cut that goes on through everyone in its way. It was a
+  // ring of eight of these, 5 cells out
   val SwordWaveDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.SWORD_WAVE, name = "Sword Wave",
-    speedMultiplier = 0.6f, damage = 21, maxRange = 5,
-    hitRadius = 1.8f,
-    onHitEffect = Some(Stun(500))
+    speedMultiplier = 0.7f, damage = 24, maxRange = 7,
+    hitRadius = 2.4f, pierceCount = 3,
+    onHitEffect = Some(Stun(600))
   )
   val PlagueBoltDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.PLAGUE_BOLT, name = "Plague Bolt",
@@ -156,13 +160,13 @@ private[model] object Originals {
   )
   val BloodFangDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.BLOOD_FANG, name = "Blood Fang",
-    speedMultiplier = 0.7f, damage = 30, maxRange = 3,
+    speedMultiplier = 0.7f, damage = 27, maxRange = 3,
     hitRadius = 2.2f,
     onHitEffect = Some(LifeSteal(50))
   )
   val BatSwarmDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.BAT_SWARM, name = "Bat Swarm",
-    speedMultiplier = 0.5f, damage = 15, maxRange = 7,
+    speedMultiplier = 0.5f, damage = 19, maxRange = 8,
     // The brief freeze used to be a special case in GameInstance, where nothing that reads defs
     // (the character panel, the roster tests) could see it
     onHitEffect = Some(LifeSteal(60)), alsoOnHit = Seq(Freeze(600))
@@ -197,7 +201,7 @@ private[model] object Originals {
     qAbility = AbilityDef(
       name = "Tentacle",
       description = "Shoots a tentacle that pulls enemies closer.",
-      cooldownMs = 5000, maxRange = 15, damage = 28,
+      cooldownMs = 5000, maxRange = 15, damage = 33,
       projectileType = ProjectileType.TENTACLE, keybind = "Q"
     ),
     eAbility = AbilityDef(
@@ -283,10 +287,9 @@ private[model] object Originals {
     spriteSheet = "sprites/tidecaller.png",
     qAbility = AbilityDef(
       name = "Tidal Wave",
-      description = "Fires 5 projectiles in a fan that push enemies back.",
-      cooldownMs = 8000, maxRange = 12, damage = 18,
-      projectileType = ProjectileType.TIDAL_WAVE, keybind = "Q",
-      castBehavior = FanProjectile(5, Math.toRadians(60))
+      description = "Sends one great wave rolling through everyone in its path, pushing each of them back.",
+      cooldownMs = 9000, maxRange = 13, damage = 24,
+      projectileType = ProjectileType.TIDAL_WAVE, keybind = "Q"
     ),
     eAbility = AbilityDef(
       name = "Geyser",
@@ -399,11 +402,10 @@ private[model] object Originals {
       castBehavior = DashBuff(10, 150, 20)
     ),
     eAbility = AbilityDef(
-      name = "Whirlwind",
-      description = "Unleash 8 sword waves in a full circle around you that stun for 0.5s.",
-      cooldownMs = 12000, maxRange = 5, damage = 21,
-      projectileType = ProjectileType.SWORD_WAVE, keybind = "E",
-      castBehavior = FanProjectile(8, 2 * Math.PI)
+      name = "Crescent Cut",
+      description = "One wide cut that goes on through everyone in its path, stunning each for 0.6s.",
+      cooldownMs = 12000, maxRange = 7, damage = 24,
+      projectileType = ProjectileType.SWORD_WAVE, keybind = "E"
     ),
     primaryProjectileType = ProjectileType.KATANA,
     role = Melee, maxHealth = 120, moveSpeed = Melee.speed
@@ -444,10 +446,10 @@ private[model] object Originals {
     ),
     eAbility = AbilityDef(
       name = "Bat Swarm",
-      description = "Releases 8 draining bats in all directions that heal you and briefly freeze enemies.",
-      cooldownMs = 14000, maxRange = 7, damage = 15,
+      description = "Releases 3 draining bats in a fan that heal you and briefly freeze enemies.",
+      cooldownMs = 12000, maxRange = 8, damage = 19,
       projectileType = ProjectileType.BAT_SWARM, keybind = "E",
-      castBehavior = FanProjectile(8, 2 * Math.PI)
+      castBehavior = FanProjectile(3, Math.toRadians(50))
     ),
     primaryProjectileType = ProjectileType.BLOOD_FANG,
     role = Melee, maxHealth = 120, moveSpeed = Melee.speed

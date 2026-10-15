@@ -16,11 +16,11 @@ private[model] object SciFi {
   val SeismicSlamDef: ProjectileDef = ProjectileDef(id = ProjectileType.SEISMIC_SLAM, name = "Seismic Slam", speedMultiplier = 0.5f, damage = 24, maxRange = 12, hitRadius = 2.8f, aoeOnHit = Some(AoESplashConfig(3.5f, 14)), aoeOnMaxRange = Some(AoESplashConfig(3.5f, 14)))
   val DataBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.DATA_BOLT, name = "Data Bolt", speedMultiplier = 0.85f, damage = 32, maxRange = 16, ricochetCount = 2)
   val VirusDef: ProjectileDef = ProjectileDef(id = ProjectileType.VIRUS, name = "Virus", speedMultiplier = 0.6f, damage = 22, maxRange = 14, onHitEffect = Some(Slow(3000, 0.4f)))
-  val LaserDef: ProjectileDef = ProjectileDef(id = ProjectileType.LASER, name = "Laser", speedMultiplier = 0.95f, damage = 23, maxRange = 20, ricochetCount = 1)
-  val GravityBallDef: ProjectileDef = ProjectileDef(id = ProjectileType.GRAVITY_BALL, name = "Gravity Ball", speedMultiplier = 0.6f, damage = 37, maxRange = 14, onHitEffect = Some(PullToOwner))
+  val LaserDef: ProjectileDef = ProjectileDef(id = ProjectileType.LASER, name = "Laser", speedMultiplier = 0.95f, damage = 26, maxRange = 20, ricochetCount = 1)
+  val GravityBallDef: ProjectileDef = ProjectileDef(id = ProjectileType.GRAVITY_BALL, name = "Gravity Ball", speedMultiplier = 0.6f, damage = 45, maxRange = 14, onHitEffect = Some(PullToOwner))
   val GravityWellDef: ProjectileDef = ProjectileDef(id = ProjectileType.GRAVITY_WELL, name = "Gravity Well", speedMultiplier = 0.4f, damage = 55, maxRange = 12, aoeOnHit = Some(AoESplashConfig(3.5f, 40, freezeDurationMs = 800)), onHitEffect = Some(VortexPull(4.0f, 3.0f)))
-  val NanoBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.NANO_BOLT, name = "Nano Bolt", speedMultiplier = 0.8f, damage = 23, maxRange = 16, aoeOnHit = Some(AoESplashConfig(2.0f, 13)))
-  val VoidBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.VOID_BOLT, name = "Void Bolt", speedMultiplier = 0.7f, damage = 30, maxRange = 18, passesThroughWalls = true)
+  val NanoBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.NANO_BOLT, name = "Nano Bolt", speedMultiplier = 0.8f, damage = 33, maxRange = 16, aoeOnHit = Some(AoESplashConfig(2.0f, 19)))
+  val VoidBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.VOID_BOLT, name = "Void Bolt", speedMultiplier = 0.7f, damage = 26, maxRange = 18, passesThroughWalls = true)
   val RailgunDef: ProjectileDef = ProjectileDef(id = ProjectileType.RAILGUN, name = "Railgun", speedMultiplier = 1.0f, damage = 43, maxRange = 25, passesThroughWalls = true, pierceCount = 3)
   val ClusterBombDef: ProjectileDef = ProjectileDef(id = ProjectileType.CLUSTER_BOMB, name = "Cluster Bomb", speedMultiplier = 0.4f, damage = 55, maxRange = 14, passesThroughPlayers = true, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(55, 26, 3.5f)))
   val ChainLightningForkDef: ProjectileDef = ProjectileDef(id = ProjectileType.CHAIN_LIGHTNING_FORK, name = "Chain Lightning Fork", speedMultiplier = 0.7f, damage = 33, maxRange = 16, ricochetCount = 3, pierceCount = 1, aoeOnHit = Some(AoESplashConfig(2.5f, 14)))
@@ -30,14 +30,28 @@ private[model] object SciFi {
   val NapalmStrikeDef: ProjectileDef = ProjectileDef(id = ProjectileType.NAPALM_STRIKE, name = "Napalm Strike", speedMultiplier = 0.45f, damage = 52, maxRange = 16, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(52, 17, 3.0f)), onHitEffect = Some(Burn(26, 4000, 800)))
   val BulletHeavyDef: ProjectileDef = ProjectileDef(id = ProjectileType.BULLET_HEAVY, name = "Bullet Heavy", speedMultiplier = 1.0f, damage = 21, maxRange = 18)
   val BulletLightDef: ProjectileDef = ProjectileDef(id = ProjectileType.BULLET_LIGHT, name = "Bullet Light", speedMultiplier = 1.0f, damage = 29, maxRange = 18)
-  val LaserHeavyDef: ProjectileDef = ProjectileDef(id = ProjectileType.LASER_HEAVY, name = "Laser Heavy", speedMultiplier = 0.95f, damage = 20, maxRange = 20, ricochetCount = 1)
+  val LaserHeavyDef: ProjectileDef = ProjectileDef(id = ProjectileType.LASER_HEAVY, name = "Laser Heavy", speedMultiplier = 0.95f, damage = 24, maxRange = 20, ricochetCount = 1)
   val LaserLightDef: ProjectileDef = ProjectileDef(id = ProjectileType.LASER_LIGHT, name = "Laser Light", speedMultiplier = 0.95f, damage = 29, maxRange = 20, ricochetCount = 1)
+  // What the volleys became (design/characters.md, *No volleys of more than three*). The Graviton's
+  // Repulse: gravity turned inside out round him, throwing everyone near back. A slam, so its
+  // GroundSlam radius and its AoE's are kept in step
+  val RepulseDef: ProjectileDef = ProjectileDef(id = ProjectileType.REPULSE, name = "Repulse", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(5.0f, 18)), onHitEffect = Some(Push(4.0f)), explosionConfig = Some(ExplosionConfig(0, 0, 5.0f)))
 
   val projectiles: Seq[ProjectileDef] = Seq(
     SeismicSlamDef, DataBoltDef, VirusDef, LaserDef, GravityBallDef,
     GravityWellDef, NanoBoltDef, VoidBoltDef, RailgunDef, ClusterBombDef,
     ChainLightningForkDef, SniperBeamDef, GravityLanceDef, OverclockBeamDef, NapalmStrikeDef,
-    BulletHeavyDef, BulletLightDef, LaserHeavyDef, LaserLightDef
+    BulletHeavyDef, BulletLightDef, LaserHeavyDef, LaserLightDef, RepulseDef
+  )
+
+  /** Variants: another type's flight and look, with effects and a damage of their own. Made from
+    * the registered base, so Roster makes them once every base is registered. */
+  def variants(base: Byte => ProjectileDef): Seq[ProjectileDef] = Seq(
+    // The Android's Ion Shot, one where it fired a fan of three lasers: it stuns, and still banks
+    // off a wall once
+    base(ProjectileType.LASER).copy(id = ProjectileType.ION_SHOT, name = "Ion Shot", damage = 20, onHitEffect = Some(Stun(800))),
+    // The Glitcher's Lag Spike, one where it threw eight data bolts in a ring
+    base(ProjectileType.DATA_BOLT).copy(id = ProjectileType.LAG_SPIKE, name = "Lag Spike", damage = 18, onHitEffect = Some(Stun(1000)))
   )
 
   // ── Characters ──
@@ -62,18 +76,18 @@ private[model] object SciFi {
 
   val MechPilot: CharacterDef = CharacterDef(
     id = CharacterId.MechPilot, displayName = "Mech Pilot",
-    description = "A heavy mech with minigun, suppression chains, and ground slam.",
+    description = "A heavy mech with a minigun, jump jets and a ground slam.",
     spriteSheet = "sprites/mechpilot.png",
-    qAbility = AbilityDef(name = "Suppress Fire", description = "Fires 3 lockdown chains in a fan.", cooldownMs = 9500, maxRange = 12, damage = 9, projectileType = ProjectileType.LOCKDOWN_CHAIN, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(40))),
+    qAbility = AbilityDef(name = "Jump Jets", description = "Fires the mech's jump jets, dashing 10 cells toward the cursor.", cooldownMs = 10000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = DashBuff(10, 200, 20)),
     eAbility = AbilityDef(name = "Mech Slam", description = "Slams mech fist into the ground with devastating AoE.", cooldownMs = 14500, maxRange = 12, damage = 24, projectileType = ProjectileType.SEISMIC_SLAM, keybind = "E"),
-    primaryProjectileType = ProjectileType.BULLET_LIGHT, role = Ranged, maxHealth = 70
+    primaryProjectileType = ProjectileType.BULLET_LIGHT, role = Ranged, maxHealth = 75
   )
 
   val Android: CharacterDef = CharacterDef(
     id = CharacterId.Android, displayName = "Android",
-    description = "A precision android with laser beams and jet dash.",
+    description = "A precision android with laser beams, a stunning ion shot and a jet dash.",
     spriteSheet = "sprites/android.png",
-    qAbility = AbilityDef(name = "Laser Fan", description = "Fires 3 lasers in a tight fan.", cooldownMs = 7000, maxRange = 20, damage = 23, projectileType = ProjectileType.LASER, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(20))),
+    qAbility = AbilityDef(name = "Ion Shot", description = "A charged ion bolt that banks off a wall once and stuns the first enemy it strikes for 0.8s.", cooldownMs = 10000, maxRange = 20, damage = 20, projectileType = ProjectileType.ION_SHOT, keybind = "Q"),
     eAbility = AbilityDef(name = "Jet Dash", description = "Quick jet-powered dash.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = DashBuff(8, 300, 15)),
     primaryProjectileType = ProjectileType.LASER, role = Ranged, maxHealth = 80
   )
@@ -89,9 +103,9 @@ private[model] object SciFi {
 
   val Graviton: CharacterDef = CharacterDef(
     id = CharacterId.Graviton, displayName = "Graviton",
-    description = "A gravity manipulator who pulls with fans and creates vortex traps.",
+    description = "A gravity manipulator who drags foes in, throws them back out, and creates vortex traps.",
     spriteSheet = "sprites/graviton.png",
-    qAbility = AbilityDef(name = "Gravity Fan", description = "Fires 5 gravity balls in a fan.", cooldownMs = 10000, maxRange = 14, damage = 37, projectileType = ProjectileType.GRAVITY_BALL, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(60))),
+    qAbility = AbilityDef(name = "Repulse", description = "Turns gravity inside out around you, throwing every enemy within 5 cells back 4.", cooldownMs = 12000, maxRange = 0, damage = 18, projectileType = ProjectileType.REPULSE, keybind = "Q", castBehavior = GroundSlam(5.0f)),
     eAbility = AbilityDef(name = "Vortex Bomb", description = "Creates a vortex that pulls enemies in and freezes.", cooldownMs = 14000, maxRange = 14, damage = 40, projectileType = ProjectileType.VORTEX_BOMB, keybind = "E"),
     primaryProjectileType = ProjectileType.GRAVITY_BALL, role = Ranged, maxHealth = 70
   )
@@ -107,11 +121,11 @@ private[model] object SciFi {
 
   val Nanoswarm: CharacterDef = CharacterDef(
     id = CharacterId.Nanoswarm, displayName = "Nanoswarm",
-    description = "A nanite cloud that fans nano bolts and explodes in a nano burst.",
+    description = "A nanite cloud that comes apart and reforms elsewhere, and explodes in a nano burst.",
     spriteSheet = "sprites/nanoswarm.png",
-    qAbility = AbilityDef(name = "Nano Fan", description = "Fires 5 nano bolts in a fan.", cooldownMs = 8000, maxRange = 16, damage = 23, projectileType = ProjectileType.NANO_BOLT, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(45))),
+    qAbility = AbilityDef(name = "Disperse", description = "Comes apart into a cloud of nanites and reforms up to 8 cells away.", cooldownMs = 11000, maxRange = 8, damage = 0, projectileType = -2, keybind = "Q", castBehavior = TeleportCast(8)),
     eAbility = AbilityDef(name = "Nano Explosion", description = "Detonates nanites in a burst, damaging all nearby.", cooldownMs = 12000, maxRange = 0, damage = 25, projectileType = ProjectileType.TREMOR_SLAM, keybind = "E", castBehavior = GroundSlam(5.0f)),
-    primaryProjectileType = ProjectileType.NANO_BOLT, role = Ranged, maxHealth = 70
+    primaryProjectileType = ProjectileType.NANO_BOLT, role = Ranged, maxHealth = 75
   )
 
   val Voidwalker: CharacterDef = CharacterDef(
@@ -125,10 +139,10 @@ private[model] object SciFi {
 
   val Photon: CharacterDef = CharacterDef(
     id = CharacterId.Photon, displayName = "Photon",
-    description = "A being of pure light with laser fans and prismatic explosions.",
+    description = "A being of pure light that travels at the speed of light and splits its beam through a prism.",
     spriteSheet = "sprites/photon.png",
-    qAbility = AbilityDef(name = "Light Spray", description = "Fires 5 lasers in a fan.", cooldownMs = 8000, maxRange = 20, damage = 23, projectileType = ProjectileType.LASER, keybind = "Q", castBehavior = FanProjectile(5, Math.toRadians(60))),
-    eAbility = AbilityDef(name = "Prismatic Burst", description = "Fires lasers in all directions.", cooldownMs = 10000, maxRange = 20, damage = 23, projectileType = ProjectileType.LASER, keybind = "E", castBehavior = FanProjectile(8, 2 * Math.PI)),
+    qAbility = AbilityDef(name = "Light Speed", description = "Moves at the speed of light, up to 10 cells toward the cursor in an instant.", cooldownMs = 12000, maxRange = 10, damage = 0, projectileType = -2, keybind = "Q", castBehavior = TeleportCast(10)),
+    eAbility = AbilityDef(name = "Prism", description = "Splits a beam into three that fan out and bank off walls.", cooldownMs = 10000, maxRange = 20, damage = 26, projectileType = ProjectileType.LASER, keybind = "E", castBehavior = FanProjectile(3, Math.toRadians(30))),
     primaryProjectileType = ProjectileType.LASER_HEAVY, role = Ranged, maxHealth = 60
   )
 
@@ -170,10 +184,10 @@ private[model] object SciFi {
 
   val Glitcher: CharacterDef = CharacterDef(
     id = CharacterId.Glitcher, displayName = "Glitcher",
-    description = "A reality glitch that blinks and fires data bursts.",
+    description = "A reality glitch that blinks about and freezes foes with a lag spike.",
     spriteSheet = "sprites/glitcher.png",
     qAbility = AbilityDef(name = "Glitch Blink", description = "Teleports through a glitch.", cooldownMs = 12000, maxRange = 6, damage = 0, projectileType = -2, keybind = "Q", castBehavior = TeleportCast(6)),
-    eAbility = AbilityDef(name = "Data Burst", description = "Fires data bolts in all directions.", cooldownMs = 10000, maxRange = 16, damage = 14, projectileType = ProjectileType.DATA_BOLT, keybind = "E", castBehavior = FanProjectile(8, 2 * Math.PI)),
+    eAbility = AbilityDef(name = "Lag Spike", description = "A corrupted packet that bounces off walls and stuns the first enemy it reaches for 1s.", cooldownMs = 11000, maxRange = 16, damage = 18, projectileType = ProjectileType.LAG_SPIKE, keybind = "E"),
     primaryProjectileType = ProjectileType.DATA_BOLT, role = Ranged, maxHealth = 60
   )
 

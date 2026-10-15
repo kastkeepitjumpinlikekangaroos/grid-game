@@ -36,7 +36,7 @@ The dev tools (none of them shipped) and where their docs are:
 | Tool | Run | What it is for |
 |---|---|---|
 | projectile gallery | `bazel run //src/main/scala/com/gridgame/client:projectile_gallery -- /tmp/gallery` (`--focus=`, `--blasts`) | every projectile and blast drawn on contact sheets: [projectiles](src/main/scala/com/gridgame/client/render/projectiles/CLAUDE.md), [blasts](src/main/scala/com/gridgame/client/render/blasts/CLAUDE.md) |
-| render bench | `bazel run //src/main/scala/com/gridgame/client:render_bench` (`--effects`, `--barriers`, `--traps`, `--divider`, `--ceasefire`, `--blasts`, `--aim`, `--map= --at=`, `--types=`) | frame time, allocation and footprint of a busy match: [client](src/main/scala/com/gridgame/client/CLAUDE.md) |
+| render bench | `bazel run //src/main/scala/com/gridgame/client:render_bench` (`--effects`, `--barriers`, `--traps`, `--divider`, `--ceasefire`, `--blasts`, `--aim`, `--hold=`, `--map= --at=`, `--types=`) | frame time, allocation and footprint of a busy match: [client](src/main/scala/com/gridgame/client/CLAUDE.md) |
 | ui bench | `bazel run //src/main/scala/com/gridgame/client:ui_bench` | the JavaFX menus' memory and CPU: [client](src/main/scala/com/gridgame/client/CLAUDE.md) |
 | ui gallery | `bazel run //src/main/scala/com/gridgame/client:ui_gallery -- /tmp/ui` (`--scale=2`, `--lang=`, `--only=`) | every menu screen drawn to a PNG, in the states a player sees it in: [menus](src/main/scala/com/gridgame/client/ui/CLAUDE.md) |
 | render audit | `bazel run //src/main/scala/com/gridgame/client:render_audit -- --out=/tmp/audit`, then `python3 scripts/render_audit.py /tmp/audit` | can everything be seen on every map: [renderer](src/main/scala/com/gridgame/client/render/CLAUDE.md) |
@@ -96,7 +96,7 @@ ops/observability/   the local OpenTelemetry → Prometheus/Tempo/Loki/Grafana s
 | Projectiles, on-hit effects, splashes and explosions, items, how hits are measured | [design/combat.md](design/combat.md) |
 | Barriers (the shield wall abilities) | [design/barriers.md](design/barriers.md) |
 | Traps; adding a trap | [design/traps.md](design/traps.md) |
-| A match's opening (the Teams wall, the free-for-all ceasefire) and its end | [design/match-flow.md](design/match-flow.md) |
+| A match's opening (the Teams wall, the free-for-all ceasefire), its end, and who wins (kills less deaths) | [design/match-flow.md](design/match-flow.md) |
 | Networking: security layers (the server's pinned identity), who owns positions, sessions and reconnects, staying logged in (refresh tokens, Remember me) | [design/networking.md](design/networking.md) |
 | The model (`common/model`): registries, tiles, the world; adding a tile or a map layer | [common/model/CLAUDE.md](src/main/scala/com/gridgame/common/model/CLAUDE.md) |
 | The wire protocol: packet layouts, actions, connection flow; adding a packet type | [common/protocol/CLAUDE.md](src/main/scala/com/gridgame/common/protocol/CLAUDE.md) |
@@ -109,7 +109,7 @@ ops/observability/   the local OpenTelemetry → Prometheus/Tempo/Loki/Grafana s
 | How projectiles are drawn | [client/render/projectiles/CLAUDE.md](src/main/scala/com/gridgame/client/render/projectiles/CLAUDE.md) |
 | How explosions and splashes are drawn | [client/render/blasts/CLAUDE.md](src/main/scala/com/gridgame/client/render/blasts/CLAUDE.md) |
 | OpenGL primitives: batches, strokes, fonts, post-processing, quality tiers | [client/gl/CLAUDE.md](src/main/scala/com/gridgame/client/gl/CLAUDE.md) |
-| The menus: screens, their look (the sky, the stylesheet), and why every repaint is expensive | [client/ui/CLAUDE.md](src/main/scala/com/gridgame/client/ui/CLAUDE.md) |
+| The menus: screens, their look (the world behind them, the stylesheet, the maps drawn as models), and why every repaint is expensive | [client/ui/CLAUDE.md](src/main/scala/com/gridgame/client/ui/CLAUDE.md) |
 | Sound at runtime: the mixer, which sound every attack makes | [client/audio/CLAUDE.md](src/main/scala/com/gridgame/client/audio/CLAUDE.md) |
 | Tests: the suites, the test kits, conventions | [src/test/CLAUDE.md](src/test/CLAUDE.md) |
 | Assets: tiles, maps, character sprites, sounds, icons | [scripts/CLAUDE.md](scripts/CLAUDE.md), then [scripts/SPRITES.md](scripts/SPRITES.md), [scripts/SOUNDS.md](scripts/SOUNDS.md) |

@@ -21,6 +21,9 @@ class ProjectileLookTest {
     ProjectileType.SAND_BLAST, ProjectileType.SONIC_WAVE, ProjectileType.SONIC_WAVE_HEAVY,
     ProjectileType.SONIC_WAVE_MED, ProjectileType.MOMENTUM_STRIKE, ProjectileType.FLAME_WAVE,
     ProjectileType.ACID_SPRAY, ProjectileType.EARTHSPLITTER)
+  // ...and the three made from them since the volleys went, drawn as the crescent their thrower
+  // drew: the Windwalker's Gale, the Bard's Lullaby, the Sphinx's Riddle
+  private val FromCrescents = Set(ProjectileType.GALE, ProjectileType.LULLABY, ProjectileType.RIDDLE)
 
   @Test def everyAttackInTheRosterIsDrawn(): Unit = {
     assertTrue(attacks.size > 200)
@@ -30,9 +33,11 @@ class ProjectileLookTest {
   }
 
   @Test def everyoneWhoThrewTheCrescentHasALookOfTheirOwn(): Unit = {
-    // Fifteen characters, the Windwalker and the Cloudrunner with two types each
-    val looks = attacks.filter { case (_, t) => Crescents(t) }
-    assertEquals("the characters who threw a crescent, and what", 17, looks.size)
+    // Fifteen characters threw one in seventeen attacks; four of those went with the volleys (the
+    // Windwalker's, the Cloudrunner's and the Hawk's gusts, the Sphinx's sonic waves) and three of
+    // their replacements are drawn as the crescent was
+    val looks = attacks.filter { case (_, t) => Crescents(t) || FromCrescents(t) }
+    assertEquals("the characters who threw a crescent, and what", 16, looks.size)
     for ((a, ta) <- looks; (b, tb) <- looks if a ne b)
       assertNotSame(s"${a.displayName}'s type $ta and ${b.displayName}'s type $tb are drawn alike",
         getRenderer(a.id.id, ta), getRenderer(b.id.id, tb))
@@ -62,7 +67,7 @@ class ProjectileLookTest {
       Pilot -> BULLET, Serpent -> VENOM_BOLT, Spider -> WEB_SHOT, Hydra -> VENOM_BOLT_LIGHT, Hydra -> VENOM_BOLT,
       Hydra -> POISON_CLOUD, Mantis -> SHADOW_HAUNT, Jellyfish -> STING, Gorilla -> SEISMIC_SLAM,
       Chameleon -> TONGUE, Medusa -> VENOM_BOLT, Anubis -> DEATH_BOLT, Anubis -> CURSE, Yokai -> MYSTIC_BOLT,
-      Yokai -> CURSE, Djinn -> MYSTIC_BOLT, Chimera -> VENOM_BOLT, Alchemist -> FIREBALL, Alchemist -> ACID_FLASK,
+      Yokai -> BINDING_TALISMAN, Djinn -> MYSTIC_BOLT, Chimera -> SERPENT_STRIKE, Alchemist -> FIREBALL, Alchemist -> ACID_FLASK,
       Pirate -> BULLET, Musician -> SONIC_BOOM, Runesmith -> RUNE_BOLT)
   }
 
@@ -130,7 +135,6 @@ class ProjectileLookTest {
     assertSame(getRenderer(sonic), getRenderer(CharacterId.Bard.id, sonic))
     assertSame(getRenderer(sonic), getRenderer(CharacterId.Gorilla.id, sonic))
     assertNotSame(getRenderer(sonic), getRenderer(CharacterId.Musician.id, sonic))
-    assertNotSame(getRenderer(sonic), getRenderer(CharacterId.Sphinx.id, sonic))
     // and a type nobody has a look of their own for is the type's, whoever throws it
     assertSame(getRenderer(ProjectileType.FIREBALL), getRenderer(CharacterId.Musician.id, ProjectileType.FIREBALL))
   }

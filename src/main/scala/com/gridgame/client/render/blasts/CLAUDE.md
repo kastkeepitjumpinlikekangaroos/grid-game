@@ -11,13 +11,14 @@ own sound.
 
 - **Picked by who threw it** (`styleOf(characterId, projectileType)`): a table by projectile type
   and a second by (character, type) for a type thrown by characters with nothing in common — the
-  same shape as `AbilitySounds`' two tables. Six characters slam a `TREMOR_SLAM` (the Banshee's
-  wail, the Shadowfiend's burst, the Nanoswarm's swarm, the Harpy's shriek, the Golem's quake, the
-  Beetle's tremor) and four throw a `GRENADE` (the Soldier's frag, the Bombardier's comic bomb, the
-  Railgunner's EMP, the Pirate's cannonball). The client records the thrower's character with each
-  blast (`GameClient.blast`, through `characterIdOf` when the packet arrives). `BlastStyleTest`
-  holds the roster to it: every attack that blasts has a style, and no two characters share one.
-- **68 styles, 16 engines.** An engine is a family's anatomy — the fireball every explosion shares,
+  same shape as `AbilitySounds`' two tables. Five characters slam a `TREMOR_SLAM` (the Banshee's
+  wail, the Shadowfiend's burst, the Nanoswarm's swarm, the Harpy's shriek, the Golem's quake; the
+  Beetle's tremor went with it to its Horn Flip) and four throw a `GRENADE` (the Soldier's frag, the
+  Bombardier's comic bomb, the Railgunner's EMP, the Pirate's cannonball). The client records the
+  thrower's character with each blast (`GameClient.blast`, through `characterIdOf` when the packet
+  arrives). `BlastStyleTest` holds the roster to it: every attack that blasts has a style, and no
+  two characters share one.
+- **78 styles, 17 engines.** An engine is a family's anatomy — the fireball every explosion shares,
   a liquid's splat and droplets, a quake's cracks and rubble, electricity's bolts and burnt scar —
   and a style is its thrower's palette and motif: a skull rises out of the Plague Doctor's miasma,
   souls stream in to the Necromancer, the Chronomancer's clock runs backwards, the Wolf's howl has
@@ -87,9 +88,21 @@ heaviness), who throws what (`byType`, `only`, `styleOf`, `trapStyle`), the foot
 which sends each style to its engine. `BlastKit` is the blast being drawn (where, how big, how far
 through its life, its seed and layer), its timing arithmetic and hashes; `Pieces` the building
 blocks the engines share (flashes, rings, scorches, cracks, debris, smoke, flames, spikes,
-tendrils, bolts, motes, splats). Each engine is a file: `Explosions`, `Fire`, `Liquids`, `Water`,
-`Electric`, `Earth`, `Ice`, `Nature`, `Dark`, `Inward`, `Holy`, `Sonic`, `Nanites`, `Stone`. The
-frame's blasts are gathered and drawn by `BlastPainter` (client/render/world).
+tendrils, bolts, motes, splats, and the cards and coins of luck). Each engine is a file:
+`Explosions`, `Fire`, `Liquids`, `Water`, `Electric`, `Earth`, `Ice`, `Nature`, `Dark`, `Inward`,
+`Holy`, `Sonic`, `Nanites`, `Stone`, `Luck`. The frame's blasts are gathered and drawn by
+`BlastPainter` (client/render/world).
+
+**The volleys' replacements** (design/characters.md, *No volleys of more than three*) set off ten
+blasts of their own, each its thrower's: the Pyromancer's Combust (a ring of fire racing out, its
+haste's streaks), the Cloudrunner's Hailstorm (a storm cloud breaking, hail hammering down onto a
+ring of frost), the Cleric's Divine Judgment (a crown of beams round a golden glyph), the Graviton's
+Repulse (violet rings shoving out), the Jellyfish's Electric Burst (pink arcs), the Gambler's Lucky
+Streak (cards and coins thrown up on a gold ring), the Berserker's Axe Spin (cuts whirling round),
+the Bear's Maul (claw marks raked all round), Fenrir's Blood Frenzy (red slashes, blood drawn up to
+him) and the Astronomer's Meteor (a crater, glowing cracks, rubble and stars). The Cryomancer's
+Frost Nova took the frost the retired frost traps went off in, with a ring racing out added; the
+smite's beam is shared with the judgment (`Holy.lightBeam`), pixel for pixel as it was.
 
 ## Design decision
 

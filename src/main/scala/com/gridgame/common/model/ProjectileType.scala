@@ -209,8 +209,42 @@ object ProjectileType {
   val CHILL_BLADE: Byte = -81         // 175: Death Knight's CURSED_BLADE: slows
   // Attacks of their own for a character whose primary or ability others throw too, so its
   // numbers can differ from theirs
-  val MAUL: Byte = -80                // 176: Bear's Maul: CLAW_SWIPE of his own
+  val MAUL: Byte = -80                // 176: Bear's Maul: a clawing slam
   val ARENA_AXE: Byte = -79           // 177: Gladiator's AXE
   val THROWING_STAR: Byte = -78       // 178: Assassin's SHURIKEN
   val MANTIS_SCYTHE: Byte = -77       // 179: Mantis' CLAW_SWIPE
+
+  // The volleys' replacements (design/characters.md, *No volleys of more than three*): crowd
+  // control, hastes and the like, on their throwers' looks where they are variants of a type
+  val COMBUST: Byte = -76             // 180: Pyromancer's Combust: a burning slam that hastes him
+  val FROST_NOVA: Byte = -75          // 181: Cryomancer's Frost Nova: a slowing slam
+  val GALE: Byte = -74                // 182: Windwalker's Gale: GUST that hastes her on the hit
+  val FROSTBITE: Byte = -73           // 183: Frostbite's Frostbite: FROST_SHARD that freezes
+  val HAILSTORM: Byte = -72           // 184: Cloudrunner's Hailstorm: a cloud bursting into freezing hail
+  val SHADOW_BIND: Byte = -71         // 185: Shade's Shadow Bind: SHADOW_BOLT that ricochets and roots
+  val LULLABY: Byte = -70             // 186: Bard's Lullaby: SONIC_WAVE that stuns
+  val DIVINE_JUDGMENT: Byte = -69     // 187: Cleric's Divine Judgment: a stunning burst of light
+  val PINNING_SPEAR: Byte = -68       // 188: Valkyrie's Pinning Spear: SPEAR that roots
+  val SHACKLES: Byte = -67            // 189: Inquisitor's Shackles: LOCKDOWN_CHAIN that roots two
+  val ION_SHOT: Byte = -66            // 190: Android's Ion Shot: LASER that stuns
+  val REPULSE: Byte = -65             // 191: Graviton's Repulse: a knockback slam
+  val LAG_SPIKE: Byte = -64           // 192: Glitcher's Lag Spike: DATA_BOLT that stuns
+  val PIN_DOWN: Byte = -63            // 193: Hawk's Pin Down: TALON that roots
+  val SHOCK_BURST: Byte = -62         // 194: Jellyfish's Electric Burst: a stunning slam
+  val RIDDLE: Byte = -61              // 195: Sphinx's Riddle: SONIC_WAVE that roots two
+  val BINDING_TALISMAN: Byte = -60    // 196: Yokai's Binding Talisman: CURSE that roots
+  val SERPENT_STRIKE: Byte = -59      // 197: Chimera's Serpent Strike: VENOM_BOLT that poisons
+  val MARIONETTE: Byte = -58          // 198: Puppeteer's Marionette: CHAIN_BOLT that stuns
+  val LUCKY_STREAK: Byte = -57        // 199: Gambler's Lucky Streak: a haste
+  val WILD_CARD: Byte = -56           // 200: Gambler's Wild Card: CARD that ricochets and stuns
+  val DEATH_COIL: Byte = -55          // 201: Warlock's Death Coil: a stunning bolt
+  val METEOR: Byte = -54              // 202: Astronomer's Meteor: a falling star whose impact knocks back
+  val FLING: Byte = -53               // 203: Poltergeist's Fling: a thrown keepsake that knocks back
+  val WHIRLWIND: Byte = -52           // 204: Djinn's Whirlwind: MYSTIC_BOLT that drags everyone near together
+  val HORN_FLIP: Byte = -51           // 205: Beetle's Horn Flip: a slam that throws back and stuns, where
+                                      //      it slammed the Golem's very Tremor Slam
+  // Of their own for their numbers, as the MAUL to the MANTIS_SCYTHE above: a primary whose thrower's
+  // volley went, and with it a third of what it dealt, while somebody else throws the same type
+  val CARD_HEAVY: Byte = -50          // 206: Gambler's CARD (the Jester's is still the CARD)
+  val CHAIN_BOLT_HEAVY: Byte = -49    // 207: Puppeteer's CHAIN_BOLT (the Warden's is still the CHAIN_BOLT)
 }

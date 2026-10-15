@@ -7,15 +7,17 @@ import org.junit.Test
 import java.util.UUID
 
 /**
- * Status effects as they arrive from the server: the second flag byte (stunned, poisoned) and
- * how hard the slow we are under is, which is what lets the client step at the rate the slow
- * that landed actually calls for.
+ * Status effects as they arrive from the server: the second flag byte (stunned, poisoned), how
+ * hard the slow we are under is, which is what lets the client step at the rate the slow that
+ * landed actually calls for, and how long a speed boost has left, and a haste of our own walked
+ * from its cast.
  */
 class GameClientStatusTest {
   private val t = new TestClient()
   private val c = t.client
 
   private val FROZEN = 0x04
+  private val BOOSTED = 0x20
   private val SLOWED = 0x80
   private val STUNNED2 = 0x01
   private val POISONED2 = 0x02
@@ -103,7 +105,53 @@ class GameClientStatusTest {
     assertEquals("nothing to report when not slowed", 0, t.sentUpdates.last.getSlowPercent)
   }
 
+  // --- A speed boost: as long as the server says it has left ---
+
+  @Test def aBoostLastsAsLongAsTheServerSaysItHasLeft(): Unit = {
+    // Bytes [59-60]. With the flag alone it was taken as a second's boost, re-armed only by the next
+    // update to carry it, which at full health is the next hit: a 4s Overclock walked for one
+    t.startMatch(spawn = (20, 20))
+    t.update(t.id, 20, 20, flags = BOOSTED, speedBoostMs = 3000)
+    Thread.sleep(1300)
+    assertTrue("1.3s into a 3s boost", c.hasSpeedBoost)
+    t.update(t.id, 20, 20)
+    assertFalse("over when the server says it is", c.hasSpeedBoost)
+  }
+
+  @Test def aHasteWeCastIsWalkedFromTheCast(): Unit = {
+    // The Gambler's Lucky Streak: our pace at once, as a phase is, not a round trip later
+    c.selectedCharacterId = CharacterId.Gambler.id
+    t.startMatch(spawn = (20, 20))
+    t.clearSent()
+    c.shootAbility(0)
+    assertEquals("cast", 1, t.sentSpawns.count(_.getProjectileType == ProjectileType.LUCKY_STREAK))
+    assertTrue(c.hasSpeedBoost)
+    // An update the server sent before it heard of the cast says we have none; it mustn't take it
+    t.update(t.id, 20, 20)
+    assertTrue("still ours", c.hasSpeedBoost)
+    // ...but past a round trip and then some, one without it means the server never gave it
+    Thread.sleep(700)
+    t.update(t.id, 20, 20)
+    assertFalse(c.hasSpeedBoost)
+  }
+
+  @Test def aSlamThatHastesNobodyIsNotPredicted(): Unit = {
+    // The Graviton's Repulse throws people about and speeds nobody up
+    c.selectedCharacterId = CharacterId.Graviton.id
+    t.startMatch(spawn = (20, 20))
+    c.shootAbility(0)
+    assertFalse(c.hasSpeedBoost)
+  }
+
   // --- Everyone else ---
+
+  @Test def anotherPlayersBoostLastsAsLongAsTheServerSays(): Unit = {
+    val them = UUID.randomUUID()
+    t.startMatch(spawn = (20, 20), others = Seq(them -> (25, 25)))
+    t.update(them, 25, 25, flags = BOOSTED, speedBoostMs = 2500)
+    Thread.sleep(1300)
+    assertTrue(c.getPlayers.get(them).hasSpeedBoost)
+  }
 
   @Test def theyReachOtherPlayersToo(): Unit = {
     val them = UUID.randomUUID()

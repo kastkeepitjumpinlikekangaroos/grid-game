@@ -52,6 +52,8 @@ private[client] final class MatchWindow(app: Screens) {
     // shows a new screen, so nothing needs this one again.
     stage.setScene(new Scene(new StackPane(), Color.BLACK))
     com.gridgame.client.ui.SpriteGenerator.clearCache()
+    com.gridgame.client.ui.MapPreview.clearCache()
+    com.gridgame.client.ui.WorldBackdrop.clearCache()
     stage.hide()
 
     // Create GLFW window
