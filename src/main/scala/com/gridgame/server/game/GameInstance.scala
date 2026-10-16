@@ -67,6 +67,13 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
    */
   private var startNanos: Long = 0L
   private var endsAtNanos: Long = 0L
+  /** When the match began, on the wall clock the attacks' cooldowns are timed on: R's first minute
+    * counts from here (`firstResetFrom`). A test sets it back to have R ready. */
+  @volatile private[server] var startedAtMs: Long = 0L
+  /** What everyone's first R waits its minute from (CooldownResetRequests, the bots): the match's
+    * start, so nobody has it before the fighting has gone on a while; but practice, where a player
+    * goes to try a character out, has it from the first moment. */
+  private[server] def firstResetFrom: Long = if (isPractice) 0L else startedAtMs
   /** How long the match lasts: its minutes, unless a test wants a shorter one. */
   private[server] var durationMs: Long = durationMinutes * 60000L
   @volatile private[game] var running = false
@@ -93,6 +100,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     if (world == null) loadWorld()
     startNanos = System.nanoTime()
     endsAtNanos = startNanos + durationMs * 1000000L
+    startedAtMs = System.currentTimeMillis()
     beginOpening()
     running = true
   }

@@ -102,7 +102,7 @@ class HostileClientFuzzTest {
     private def packet(s: TestSession): Packet = {
       seq += 1
       val id = anyId(s.playerId)
-      rnd.nextInt(20) match {
+      rnd.nextInt(21) match {
         case 0 | 1 | 2 | 3 =>
           val action = if (rnd.nextInt(8) == 0) b() else
             Seq(LobbyAction.CREATE, LobbyAction.JOIN, LobbyAction.LEAVE, LobbyAction.START, LobbyAction.LIST_REQUEST,
@@ -130,6 +130,8 @@ class HostileClientFuzzTest {
         case 16 => new TrapPacket(seq, id, cell(), cell(), rnd.nextInt(), if (rnd.nextBoolean()) TrapAction.PLACE else b(),
           b(8), b(3), rnd.nextInt(5), null)
         case 17 => new HeartbeatPacket(seq, id)
+        case 18 => new CooldownResetPacket(seq, id, Packet.getCurrentTimestamp,
+          if (rnd.nextBoolean()) CooldownResetAction.REQUEST else b(), rnd.nextInt())
         case _ =>
           // What only the server sends, sent to it
           rnd.nextInt(6) match {

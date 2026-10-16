@@ -345,13 +345,15 @@ class ControllerHandler(client: GameClient) {
   }
 
   /** A and B are Q and E: taken up to be aimed and cast by the right trigger, or cast at once with
-    * nothing to aim (Attacks). The left bumper is the mouse's right button: it puts away whatever is
-    * aimed or held. */
+    * nothing to aim (Attacks). Y is R, both ready again. The left bumper is the mouse's right button:
+    * it puts away whatever is aimed or held. */
   private def processAbilities(): Unit = {
     // A button -> Q ability (slot 0)
     if (justPressed(GLFW_GAMEPAD_BUTTON_A)) client.pressAbility(0)
     // B button -> E ability (slot 1)
     if (justPressed(GLFW_GAMEPAD_BUTTON_B)) client.pressAbility(1)
+    // Y button -> R, the cooldowns reset
+    if (justPressed(GLFW_GAMEPAD_BUTTON_Y)) client.pressReset()
     if (justPressed(GLFW_GAMEPAD_BUTTON_LEFT_BUMPER)) client.cancelAims()
     // X button -> burst shot
     if (justPressed(GLFW_GAMEPAD_BUTTON_X)) {

@@ -18,10 +18,10 @@ private[model] object Beasts {
     speedMultiplier = 0.75f, damage = 42, maxRange = 16,
     onHitEffect = Some(Slow(3000, 0.4f))
   )
-  val ClawSwipeDef: ProjectileDef = ProjectileDef(id = ProjectileType.CLAW_SWIPE, name = "Claw Swipe", speedMultiplier = 0.7f, damage = 24, maxRange = 4, hitRadius = 2.2f, onHitEffect = Some(SpeedBoost(2000)))
+  val ClawSwipeDef: ProjectileDef = ProjectileDef(id = ProjectileType.CLAW_SWIPE, name = "Claw Swipe", speedMultiplier = 0.7f, damage = 42, maxRange = 2, hitRadius = 2.2f, onHitEffect = Some(SpeedBoost(2000)))
   val VenomBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.VENOM_BOLT, name = "Venom Bolt", speedMultiplier = 0.75f, damage = 30, maxRange = 16, onHitEffect = Some(Slow(2000, 0.5f)))
   val WebShotDef: ProjectileDef = ProjectileDef(id = ProjectileType.WEB_SHOT, name = "Web Shot", speedMultiplier = 0.7f, damage = 34, maxRange = 14, onHitEffect = Some(Root(1500)))
-  val StingerDef: ProjectileDef = ProjectileDef(id = ProjectileType.STINGER, name = "Stinger", speedMultiplier = 0.7f, damage = 21, maxRange = 6, onHitEffect = Some(Poison(9, 2000, 500)))
+  val StingerDef: ProjectileDef = ProjectileDef(id = ProjectileType.STINGER, name = "Stinger", speedMultiplier = 0.7f, damage = 37, maxRange = 3, onHitEffect = Some(Poison(16, 2000, 500)))
   val RootGrowthDef: ProjectileDef = ProjectileDef(id = ProjectileType.ROOT_GROWTH, name = "Root Growth", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(8.0f, 18, rootDurationMs = 2500)), explosionConfig = Some(ExplosionConfig(0, 0, 8.0f)))
   val StingDef: ProjectileDef = ProjectileDef(id = ProjectileType.STING, name = "Sting", speedMultiplier = 0.7f, damage = 35, maxRange = 14, onHitEffect = Some(Slow(2000, 0.5f)))
   val GrabDef: ProjectileDef = ProjectileDef(id = ProjectileType.GRAB, name = "Grab", speedMultiplier = 0.9f, damage = 9, maxRange = 18, onHitEffect = Some(PullToOwner))
@@ -64,11 +64,13 @@ private[model] object Beasts {
   def variants(base: Byte => ProjectileDef): Seq[ProjectileDef] = Seq(
     // A primary with an identity of its own (Plan 5a): a slow at most, never a hold. Primaries fire
     // twice a second, and a hold grants 1.5s of CC immunity that would turn the kit's own holds away
-    base(ProjectileType.CLAW_SWIPE).copy(id = ProjectileType.SHARK_CLAW, name = "Shark Claw", damage = 29, onHitEffect = Some(Poison(10, 1500, 500))),
+    base(ProjectileType.CLAW_SWIPE).copy(id = ProjectileType.SHARK_CLAW, name = "Shark Claw", damage = 51, onHitEffect = Some(Poison(18, 1500, 500))),
     // Of its own, so its numbers can differ from the others who swipe the base
-    base(ProjectileType.CLAW_SWIPE).copy(id = ProjectileType.MANTIS_SCYTHE, name = "Mantis Scythe", damage = 27),
-    // The Hawk's Pin Down: its talons pinning its prey to the ground, where it fanned five gusts
-    base(ProjectileType.TALON).copy(id = ProjectileType.PIN_DOWN, name = "Pin Down", damage = 18, onHitEffect = Some(Root(1200)))
+    base(ProjectileType.CLAW_SWIPE).copy(id = ProjectileType.MANTIS_SCYTHE, name = "Mantis Scythe", damage = 47),
+    // The Hawk's Pin Down: its talons pinning its prey to the ground, where it fanned five gusts. An
+    // ability, so it reaches as far as the Talon did before the melee primaries were halved
+    // (design/characters.md, *Melee strikes short and hard*)
+    base(ProjectileType.TALON).copy(id = ProjectileType.PIN_DOWN, name = "Pin Down", damage = 18, maxRange = 4, onHitEffect = Some(Root(1200)))
   )
 
   // ── Characters ──
@@ -129,10 +131,10 @@ private[model] object Beasts {
 
   val Shark: CharacterDef = CharacterDef(
     id = CharacterId.Shark, displayName = "Shark",
-    description = "A ferocious ocean predator that drags prey close and dives through terrain.",
+    description = "A ferocious ocean predator that drags prey close and dives out of reach.",
     spriteSheet = "sprites/shark.png",
     qAbility = AbilityDef(name = "Jaw Drag", description = "Bites and pulls an enemy toward you.", cooldownMs = 8000, maxRange = 18, damage = 10, projectileType = ProjectileType.JAW, keybind = "Q"),
-    eAbility = AbilityDef(name = "Deep Dive", description = "Submerges and swims through terrain, immune.", cooldownMs = 14000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = PhaseShiftBuff(3000)),
+    eAbility = AbilityDef(name = "Deep Dive", description = "Submerges and swims off at twice the pace, immune.", cooldownMs = 14000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = PhaseShiftBuff(3000)),
     primaryProjectileType = ProjectileType.SHARK_CLAW, role = Melee, maxHealth = 140, moveSpeed = Melee.speed
   )
 

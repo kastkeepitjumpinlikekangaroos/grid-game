@@ -22,10 +22,12 @@ can drive a real screen through `app.showLobbyRoom(stage)` and the like.
 - **WorldBackdrop** — the world behind every screen: the middle of the Meadow as the match draws
   it, softened, under the sheet's shade; the login screen's characters stand along its bottom.
 - **MapArt** — a map drawn as the match draws it, on the CPU into an image: TerrainPainter's
-  passes over the tile atlas (`sprites/tiles.png`) in the match's projection — the ground with the
-  shadows blocks cast, then blocks and props a diagonal at a time, far to near — for any window of
-  its cells, optionally standing on a slab of its own ground. Small pictures are filtered, not
-  picked: the atlas is halved four times over and each pixel averages a grid of samples.
+  passes over the tile atlas (`sprites/tiles.png`) in the match's projection — the ground, with the
+  soft edge where two kinds of it meet (`GroundEdges.shade`, which the match's GroundEdgePainter is
+  in a shader) and the shadows blocks cast, then blocks and props a diagonal at a time, far to
+  near — for any window of its cells, optionally standing on a slab of its own ground. Small
+  pictures are filtered, not picked: the atlas is halved four times over and each pixel averages a
+  grid of samples.
 - **MapPreview** — the maps for the menus, as models of themselves on a dark stage: where its
   matches are played (every cell its spawn points can walk to, `MapArt.playArea`) and a rim of its
   border. Drawn once per size shown, at twice it, on a thread of its own, and kept to 12MB. Also

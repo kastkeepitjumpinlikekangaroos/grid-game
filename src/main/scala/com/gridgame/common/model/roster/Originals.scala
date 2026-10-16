@@ -25,7 +25,7 @@ private[model] object Originals {
   )
   val AxeDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.AXE, name = "Axe",
-    speedMultiplier = 0.6f, damage = 28, maxRange = 5,
+    speedMultiplier = 0.6f, damage = 49, maxRange = 3,
     hitRadius = 2.5f, boomerang = true
   )
   val RopeDef: ProjectileDef = ProjectileDef(
@@ -103,7 +103,7 @@ private[model] object Originals {
   )
   val TalonDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.TALON, name = "Talon",
-    speedMultiplier = 0.7f, damage = 33, maxRange = 4,
+    speedMultiplier = 0.7f, damage = 55, maxRange = 2,
     hitRadius = 2.2f
   )
   val GustDef: ProjectileDef = ProjectileDef(
@@ -114,7 +114,7 @@ private[model] object Originals {
   )
   val ShurikenDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.SHURIKEN, name = "Shuriken",
-    speedMultiplier = 0.95f, damage = 16, maxRange = 6,
+    speedMultiplier = 0.95f, damage = 28, maxRange = 3,
     hitRadius = 2.2f
   )
   val ChainBoltDef: ProjectileDef = ProjectileDef(
@@ -129,7 +129,7 @@ private[model] object Originals {
   )
   val KatanaDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.KATANA, name = "Katana",
-    speedMultiplier = 0.7f, damage = 29, maxRange = 4,
+    speedMultiplier = 0.7f, damage = 51, maxRange = 2,
     hitRadius = 2.2f
   )
   // The Samurai's Crescent Cut: one wide cut that goes on through everyone in its way. It was a
@@ -160,7 +160,7 @@ private[model] object Originals {
   )
   val BloodFangDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.BLOOD_FANG, name = "Blood Fang",
-    speedMultiplier = 0.7f, damage = 27, maxRange = 3,
+    speedMultiplier = 0.7f, damage = 47, maxRange = 2,
     hitRadius = 2.2f,
     onHitEffect = Some(LifeSteal(50))
   )
@@ -187,8 +187,8 @@ private[model] object Originals {
   def variants(base: Byte => ProjectileDef): Seq[ProjectileDef] = Seq(
     base(ProjectileType.POISON_DART).copy(id = ProjectileType.VENOM_DART, name = "Venom Dart", damage = 15, alsoOnHit = Seq(Poison(15, 3000, 750))),
     // Of their own, so their numbers can differ from the others who throw the base
-    base(ProjectileType.AXE).copy(id = ProjectileType.ARENA_AXE, name = "Arena Axe", damage = 29),
-    base(ProjectileType.SHURIKEN).copy(id = ProjectileType.THROWING_STAR, name = "Throwing Star", damage = 29)
+    base(ProjectileType.AXE).copy(id = ProjectileType.ARENA_AXE, name = "Arena Axe", damage = 51),
+    base(ProjectileType.SHURIKEN).copy(id = ProjectileType.THROWING_STAR, name = "Throwing Star", damage = 51)
   )
 
   // ── Characters ──
@@ -243,7 +243,7 @@ private[model] object Originals {
     spriteSheet = "sprites/wraith.png",
     qAbility = AbilityDef(
       name = "Phase Shift",
-      description = "Become ethereal: walk through walls, immune to damage, can't attack.",
+      description = "Become ethereal: immune to damage, moving at twice the pace, but can't attack.",
       cooldownMs = 12000, maxRange = 0, damage = 0,
       projectileType = -1, keybind = "Q",
       castBehavior = PhaseShiftBuff(5000)

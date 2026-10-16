@@ -26,6 +26,8 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
   private[bots] val lastShotTime = new ConcurrentHashMap[UUID, Long]()
   private[bots] val lastQAbilityTime = new ConcurrentHashMap[UUID, Long]()
   private[bots] val lastEAbilityTime = new ConcurrentHashMap[UUID, Long]()
+  // When each bot last pressed R (BotCombat.tryResetCooldowns); its first minute runs from the match's start
+  private[bots] val lastCooldownReset = new ConcurrentHashMap[UUID, Long]()
   private val lastMoveTime = new ConcurrentHashMap[UUID, Long]()
   private[bots] val botShootCooldown = new ConcurrentHashMap[UUID, Long]()
   private[bots] val currentTarget = new ConcurrentHashMap[UUID, UUID]()
@@ -59,6 +61,8 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
   private[bots] val GET_AWAY_MIN_CELLS = 3
   // A fighter hastes after a target no further off than this
   private[bots] val HASTE_CHASE_CELLS = 16f
+  // R is pressed only with at least this long still to go on each ability: the reset is worth a minute
+  private[bots] val RESET_MIN_LEFT_MS = 3000L
 
   // 8 cardinal + diagonal directions for obstacle avoidance
   private[bots] val ALL_DIRS = Array(
@@ -119,6 +123,7 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
     lastShotTime.clear()
     lastQAbilityTime.clear()
     lastEAbilityTime.clear()
+    lastCooldownReset.clear()
     lastMoveTime.clear()
     botShootCooldown.clear()
     currentTarget.clear()

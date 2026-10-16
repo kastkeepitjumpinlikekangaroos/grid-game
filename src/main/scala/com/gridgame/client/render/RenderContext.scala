@@ -51,6 +51,11 @@ private[render] final class RenderContext(val client: GameClient, clock: FrameCl
   var bgType: Byte = 0 // 0=sky, 1=cityscape, 2=space, 3=desert, 4=ocean, 5=snow, 6=sea
   // Whether projectiles light the ground round them: not in daylight (set with the grade)
   var projectileLights = true
+  // Whether our aim is the mouse's pointer, read into the world for this frame's camera
+  // (GLGameRenderer.onCamera): then it is drawn from where we are drawn toward it. Otherwise (a
+  // controller's stick, or a dev tool that sets the aim itself) it is the way from our cell to the
+  // aim point, as the cast takes it
+  var aimAtPointer = false
 
   // ── How long things last, and how big a tile is ──
   val FRAMES_PER_STEP = 5

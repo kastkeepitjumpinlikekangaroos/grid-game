@@ -130,4 +130,31 @@ class PositionAuthorityTest {
     // Where the server has it, not the cell the join claimed (ReconnectTest)
     assertEquals(new Position(10, 10), told.last.getPosition)
   }
+
+  @Test def anUpdateNeverCarriesAServerMovesCountWithThePositionFromBeforeIt(): Unit = {
+    // An update built while another thread moves the player. A server move writes the position and
+    // then counts it; the update read the position and then the count, so it could carry the old
+    // cell with the new count. The player's client took that for the move, and then ignored the
+    // update that really carried it, its count no longer new: it stood where the server no longer
+    // had it, every step refused, until a correction put it right.
+    var movedMidway = false
+    val p = new Player(java.util.UUID.randomUUID(), "p", new Position(10, 10), 0xFF336699) {
+      // The move lands just after the update has read the position
+      override def getPosition: Position = {
+        val pos = super.getPosition
+        if (!movedMidway && pos == new Position(10, 10)) {
+          movedMidway = true
+          m.instance.moveByServer(this, new Position(20, 10))
+        }
+        pos
+      }
+    }
+    p.setCharacterId(CharacterId.Gladiator.id)
+    m.instance.registry.add(p)
+    val told = m.instance.stateUpdate(p)
+    assertTrue("the move happened while it was built", movedMidway)
+    assertEquals(1, p.getServerMoves)
+    assertFalse(s"the move's count with the cell from before it: $told",
+      told.getServerMoves == 1 && told.getPosition == new Position(10, 10))
+  }
 }

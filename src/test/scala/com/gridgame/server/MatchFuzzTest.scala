@@ -19,7 +19,8 @@ import scala.jdk.CollectionConverters._
  *
  *  - nothing it is sent, and none of its ticks, throws (nor do its bots, whose tick swallows it)
  *  - health stays between 0 and the character's maximum, and everyone stays on the map
- *  - nobody is moved onto a cell they can't stand on, unless phased (a phase walks through walls)
+ *  - nobody is moved onto a cell they can't stand on unless dashing (a dash goes over walls; a
+ *    phase shift doesn't, and walked through them until 2026-10-14)
  *  - the dead, the frozen and the rooted are not moved by their own client
  *  - an item is on the ground or in one inventory, never both, never two; an inventory holds ten
  *  - a player has at most thirty projectiles in flight, each somewhere, and every shot the server
@@ -276,6 +277,16 @@ object MatchFuzzTest {
       m.rejoin(p)
     }
 
+    /** R: taken once its minute has run, which a run is too short for, so now and then the match is
+      * made a minute older (each player's first R goes; later ones wait on their own minute). */
+    private def pressR(p: Player): Unit = {
+      if (rnd.nextInt(3) == 0) { note("the match is a minute older"); instance.startedAtMs -= Constants.COOLDOWN_RESET_MS }
+      note(s"${p.getName} presses R")
+      val action = if (rnd.nextDouble() < 0.9) CooldownResetAction.REQUEST else (rnd.nextInt(256) - 128).toByte
+      send(p, new CooldownResetPacket(nextSeq(p), p.getId, action, rnd.nextInt()))
+      count("R pressed")
+    }
+
     private def leave(p: Player): Unit = {
       note(s"${p.getName} leaves")
       send(p, new PlayerLeavePacket(nextSeq(p), p.getId))
@@ -331,6 +342,13 @@ object MatchFuzzTest {
 
     private def deaths: Int = everyoneEver.map(id => instance.killTracker.getDeaths(id)).sum
 
+    /** Phased with a dash in the kit: dashing, over walls if need be (a kit has one phase or dash
+      * at most, KitTest). */
+    private def dashing(p: Player): Boolean = p.isPhased && {
+      val c = CharacterDef.get(p.getCharacterId)
+      Seq(c.qAbility, c.eAbility).exists(_.castBehavior.isInstanceOf[DashBuff])
+    }
+
     private def checkRules(before: Map[UUID, Seen], deathsBefore: Int, fencedBefore: Set[(Int, Int)],
                            actor: Player, ownMove: Boolean): Unit = {
       val fenced = instance.modifiedTiles.keySet().asScala.toSet -- fencedBefore
@@ -343,7 +361,7 @@ object MatchFuzzTest {
         before.get(p.getId).foreach { was =>
           check(p.getServerMoves >= was.moves, s"$name's server moves went from ${was.moves} to ${p.getServerMoves}")
           if (pos != was.pos) {
-            check(world.isWalkable(pos.getX, pos.getY) || p.isPhased || fenced.contains((pos.getX, pos.getY)),
+            check(world.isWalkable(pos.getX, pos.getY) || dashing(p) || fenced.contains((pos.getX, pos.getY)),
               s"$name moved from ${was.pos} onto $pos, where nobody can stand (${world.getTile(pos.getX, pos.getY)})")
             if (ownMove && (actor eq p)) {
               check(was.alive, s"$name, dead, moved from ${was.pos} to $pos by their own client")
@@ -412,6 +430,7 @@ object MatchFuzzTest {
             else if (r < 0.88) passTime()
             else if (r < 0.90) armedTrapNear(actor)
             else if (r < 0.95) tickBots()
+            else if (r < 0.96) pressR(actor)
             else everyone.find(_.isDead).foreach { d => note(s"${d.getName} respawns"); instance.respawn(d.getId); count("respawns") }
           } catch {
             case e: AssertionError => throw e

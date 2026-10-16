@@ -131,7 +131,8 @@ trait BotNavigation { this: BotController =>
    * it, when the bot is not where it left it, and when it runs into something new (a fence, a trap
    * thrown down). Someone standing on it is gone round, onto a cell beside the one after; after a
    * few steps waiting for someone who doesn't move, on the straight way or the way round, a way is
-   * found round everybody. A goal nobody could stand on (someone phased in a wall) is the open cell
+   * found round everybody. A goal nobody could stand on (someone dashing over a wall, or where a fence
+   * went up on them) is the open cell
    * nearest it; one with no way to it is looked for again only now and then, and meanwhile the bot
    * goes as near as it can.
    */

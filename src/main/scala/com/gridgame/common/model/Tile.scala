@@ -16,6 +16,14 @@ sealed trait Tile {
   /** For a [[TileForm.Prop]], the ground it grows out of when it isn't standing in any other
     * (see [[Tile.groundUnder]]). Meaningless for the other forms. */
   def ground: Tile = Tile.Grass
+
+  /** Whether its four atlas frames are an animation, cycled cell by cell (a pool's ripples, a moving
+    * block's), rather than four variants of it picked by position ([[variantAt]]). */
+  def animates: Boolean = form eq TileForm.Pool
+
+  /** Which of its four variants cell (x, y) shows, by where it is, so a field of it isn't one tile
+    * stamped over and over. */
+  def variantAt(x: Int, y: Int): Int = ((x * 7 + y * 13) & 0x7FFFFFFF) % 4
 }
 
 /**
@@ -167,20 +175,28 @@ object Tile {
     val id = 16
     val name = "circuit"
     val walkable = true
-    val color = 0xFF24726E // Circuit teal
+    val color = 0xFF24726E // Deck teal
+    /** Deck plating, plates two cells across: its variants are a plate's four quarters. */
+    override def variantAt(x: Int, y: Int): Int = (x & 1) + 2 * (y & 1)
   }
 
+  /** Open space below the edge of the space maps' arena: flat, nobody can stand there, and it stops
+    * a shot as a wall does. Its frames are four skies, picked by position, not an animation. */
   case object Void extends Tile {
     val id = 17
     val name = "void"
     val walkable = false
-    val color = 0xFF362A70 // Starry indigo
+    override val form: TileForm = TileForm.Pool
+    override def animates: Boolean = false
+    val color = 0xFF18143E // Deep space
   }
 
   case object Toxic extends Tile {
     val id = 18
     val name = "toxic"
     val walkable = false
+    override val form: TileForm = TileForm.Prop
+    override def ground: Tile = Circuit
     val color = 0xFF92E848 // Slime green
   }
 
@@ -188,6 +204,8 @@ object Tile {
     val id = 19
     val name = "plasma"
     val walkable = false
+    override val form: TileForm = TileForm.Prop
+    override def ground: Tile = Circuit
     val color = 0xFFFF68B6 // Hot pink
   }
 
@@ -257,6 +275,8 @@ object Tile {
     val id = 28
     val name = "obsidian"
     val walkable = false
+    override val form: TileForm = TileForm.Prop
+    override def ground: Tile = Circuit
     val color = 0xFF423868 // Volcanic glass
   }
 

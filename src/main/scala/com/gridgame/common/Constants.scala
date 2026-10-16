@@ -37,7 +37,11 @@ object Constants {
   val PACKET_PAYLOAD_SIZE: Int = 64
   val HMAC_SIZE: Int = 16
   val SERVER_PORT: Int = 25565
-  val HEARTBEAT_INTERVAL_MS: Int = 3000 // 3 seconds
+  // A heartbeat a second, so a connection is given up on (CLIENT_TIMEOUT_MS) only when ten in a row
+  // have gone unanswered. It is a datagram, and its echo (TCP) is all a quiet client hears: at one
+  // every 3s, three lost in a row timed both ends out, which on a link losing one datagram in ten
+  // happened about once an hour.
+  val HEARTBEAT_INTERVAL_MS: Int = 1000
   val CLIENT_TIMEOUT_MS: Int = 10000 // 10 seconds
 
   // Input configuration
@@ -61,6 +65,10 @@ object Constants {
   // Burst shot configuration (Shift+Space)
   val BURST_SHOT_MOVEMENT_BLOCK_MS: Int = 500  // Immobilized for 500ms after burst
   val BURST_SHOT_COOLDOWN_MS: Int = 1000       // Can burst once per second
+
+  // R: both abilities ready again at once, once a minute. Its first minute counts from the match's
+  // start, so nobody has it before the fighting has gone on a while (design/characters.md, *R*)
+  val COOLDOWN_RESET_MS: Int = 60000
 
   // Collision configuration
   val ITEM_PICKUP_RADIUS: Int = 2              // Pick up items within 2 cells

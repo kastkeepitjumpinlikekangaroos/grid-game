@@ -32,7 +32,8 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   could send (another player's name, the wrong key, garbage, forged datagrams, replays, a connection
   that never logs in, on the channel's own clock: `EmbeddedChannel.advanceTimeBy`);
   `SessionTest` renews a session an hour in (its token aged by hand, then `GameServer.renewSessions`)
-  and reads what the server wrote still signed, to see which token signed it;
+  and reads what the server wrote still signed, to see which token signed it, and keeps a player
+  connected on anything they send, not only their heartbeat (`GameServer.cleanup(now)`);
   `RateLimiterTest`; `ReconnectTest` for rejoins, logins over a live connection and disconnects;
   `RefreshTokensTest` for refresh tokens in a database of its own (exchanged once, a copy that comes
   back ending its family, a lost reply's retry, a month from the password, hashes only) and
@@ -63,7 +64,13 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   a diagonal's entities back to front; every wall a sprite overlaps on the right side of it all
   along every step; the diagonal walk visiting exactly the cells on screen), and
   where a charged shot's aim lane stops (`AimLaneTest`: where the shot would, at a wall's face or the
-  map's edge, over water but not lava, at only a fence for a shot that flies over walls), and the
+  map's edge, over water but not lava, at only a fence for a shot that flies over walls), where our
+  aim lies as we walk (`AimGeometryTest`, walking a step every three frames at 60 fps with the camera
+  following as the renderer's does and the pointer still: the aim from where we are drawn toward the
+  pointer, not turning as we step, where from our cell it swung degrees; a landing moving exactly
+  with us on open ground and on the cast's own cell standing, what a wall takes off it shown; a
+  controller's stick keeping its heading; and `AimGeometry.openLanding` the dash's, blink's and
+  throw's own answer aimed every way at every distance), and the
   mouse's pointer (`CursorTest`: its picture whole at every pixel scale, the dot on the hotspot, put
   down on whole pixels, and only over the window's content). `TileTest`, in
   `common/model`, also holds the tileset to what the renderer assumes: a flat tile is exactly
@@ -109,6 +116,17 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   cast then puts us or the trap. It drives the real `GLKeyboardHandler` and `GLMouseHandler` too,
   headless. `SlamReachTest` (server) holds every slam in the roster to what the model says it
   reaches: an enemy whose cell is within `AbilityDef.slamRadius` is hit, and nobody past it.
+  `GameClientResetTest` is R (design/characters.md, *R resets the cooldowns*): both abilities ready
+  from the press and the server asked once; nothing done or spent with nothing cooling down, nor by
+  the held, the phased, the dead or a ceasefire; what is aimed left aimed; R's minute from the
+  match's start (but none in practice, and a match after practice has it again), kept through a
+  death, begun again by a new match; one barrier at a time; and a refusal putting Q and E back but
+  for a cast the server would have taken anyway, R back when the server says or in a moment.
+  `CooldownResetTest` (server) is the other end: every clock a cast is held to cleared (a shot's, a
+  trap's, a phase's, a barrier's), R's own minute from the match's start (practice's taken at once)
+  and after each, 80% of it taken, kept through a death and a rejoin, refused to the held,
+  the phased (but in a phase's last moments), the dead and a ceasefire and said so with what is left,
+  and a bot pressing it once both its abilities are spent in a fight.
   `ContentCatalogTest` ties `i18n/messages_en.json`
   to `CharacterDef`: the catalog wins over the code (`I18n.tOr`), so renaming an ability in
   `CharacterDef` alone leaves the old name on every screen, silently. Regenerate the entries
@@ -146,10 +164,10 @@ it caught and carried on from (a tick's error, a bot's), which fails the run.
 
 - `MatchFuzzTest` (server): a `TestMatch` of six players, and two bots in some runs, on cluttered
   ground: thousands of requests — steps, jumps, shots from every attack (some from nowhere, of the
-  wrong type, or with no heading), traps, items, rejoins, leaving — between its ticks, respawns and
+  wrong type, or with no heading), traps, items, R, rejoins, leaving — between its ticks, respawns and
   time passing (cooldowns cleared and effects worn off by hand: every rule runs on the wall clock),
   in a free-for-all, Teams, both openings and practice. Nothing throws; health stays in bounds;
-  everyone stays on the map; nobody is moved onto a cell they can't stand on unless phased; the
+  everyone stays on the map; nobody is moved onto a cell they can't stand on unless dashing; the
   dead and the held aren't moved by their own client; an item is on the ground or in one inventory,
   ten at most; thirty shots in flight at most, every one taken leaving from within reach of its
   shooter; a trap to a cell; every death scored once. It found the NaN spawn on its own.

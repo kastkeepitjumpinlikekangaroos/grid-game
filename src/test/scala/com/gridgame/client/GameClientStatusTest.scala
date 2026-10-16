@@ -179,4 +179,83 @@ class GameClientStatusTest {
     assertTrue(p.isStunned)
     assertTrue(p.isPoisoned)
   }
+
+  // --- A hold, a root and a slow: as long as the server says they have left ---
+
+  private val ROOTED = 0x40
+
+  @Test def aHoldLetsUsGoWhenTheServerSaysItEnds(): Unit = {
+    // Bytes [61-63]. With the flags alone a hold was armed for 5s and lifted by the next update
+    // without it, which nothing sends when a hold ends: we were held until the server next said
+    // anything about us, a regeneration tick most of a second after a 400ms stun, or at full
+    // health nothing at all
+    t.startMatch(spawn = (20, 20))
+    t.update(t.id, 20, 20, flags = FROZEN, flags2 = STUNNED2, heldMs = 300)
+    assertTrue(c.isFrozen)
+    assertTrue(c.isStunned)
+    Thread.sleep(400)
+    assertFalse("let go with nothing more said", c.isFrozen)
+    assertFalse(c.isStunned)
+    c.setMouseWorldPosition(30.0, 20.0)
+    t.clearSent()
+    c.shootToward(1f, 0f)
+    assertEquals("and free to fire again", 1, t.sentSpawns.size)
+  }
+
+  @Test def aRootAndASlowEndWhenTheServerSaysTheyDo(): Unit = {
+    // A 2s snare at full health held us for the 3s the flag was armed for
+    t.startMatch(spawn = (20, 20))
+    t.update(t.id, 20, 20, flags = ROOTED | SLOWED, slowPercent = 50, rootedMs = 300, slowedMs = 500)
+    assertTrue(c.isRooted)
+    assertTrue(c.isSlowed)
+    Thread.sleep(400)
+    assertFalse("the root is over", c.isRooted)
+    assertTrue("the slow isn't yet", c.isSlowed)
+    t.clearSent()
+    c.movePlayer(1, 0)
+    assertEquals("free to walk", (21, 20), t.at)
+    Thread.sleep(200)
+    assertFalse(c.isSlowed)
+    assertEquals(50, c.moveStepIntervalMs)
+  }
+
+  @Test def everyUpdateSaysAgainHowLongItHasLeft(): Unit = {
+    // Not only the first: the flag used to arm its guess once, and the updates after it that still
+    // carried it changed nothing
+    t.startMatch(spawn = (20, 20))
+    t.update(t.id, 20, 20, flags = ROOTED, rootedMs = 2500)
+    assertTrue(c.isRooted)
+    t.update(t.id, 20, 20, flags = ROOTED, rootedMs = 200)
+    Thread.sleep(300)
+    assertFalse("over when the newest word says", c.isRooted)
+  }
+
+  @Test def aPhaseIsSaidAgainWhileItLasts(): Unit = {
+    // Its cast is one datagram: lost, a player standing still in their phase was never phased on
+    // the server, and was hit all through it while their client showed them untouchable
+    val (phaser, slot) = CharacterDef.all.iterator.flatMap { d =>
+      Seq((0, d.qAbility), (1, d.eAbility)).collectFirst { case (s, a) if a.castBehavior.isInstanceOf[PhaseShiftBuff] => (d.id.id, s) }
+    }.next()
+    c.selectedCharacterId = phaser
+    t.startMatch(spawn = (20, 20))
+    val keys = new com.gridgame.client.input.GLKeyboardHandler(c)
+    assertTrue(c.shootAbility(slot))
+    assertTrue(c.isPhased)
+    t.clearSent() // the cast's own update, as though it were lost
+    for (_ <- 0 until 16) { keys.update(); Thread.sleep(20) } // a third of a second of frames, standing still
+    val said = t.sentUpdates.filter(u => (u.getEffectFlags & 0x08) != 0)
+    assertTrue(s"said again while it lasts, not once: ${said.size}", said.size >= 2)
+    assertTrue("from where we stand", said.forall(_.getPosition == new Position(20, 20)))
+  }
+
+  @Test def anotherPlayersHoldAndSlowLastAsLongAsTheServerSays(): Unit = {
+    val them = UUID.randomUUID()
+    t.startMatch(spawn = (20, 20), others = Seq(them -> (25, 25)))
+    t.update(them, 25, 25, flags = FROZEN | ROOTED | SLOWED, flags2 = STUNNED2, slowPercent = 40,
+      heldMs = 300, rootedMs = 300, slowedMs = 300)
+    val p = c.getPlayers.get(them)
+    assertTrue(p.isFrozen && p.isStunned && p.isRooted && p.isSlowed)
+    Thread.sleep(400)
+    assertFalse("drawn free when they are", p.isFrozen || p.isStunned || p.isRooted || p.isSlowed)
+  }
 }

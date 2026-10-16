@@ -31,6 +31,20 @@ object GameClient {
   final val BLAST_TRAP = 7    // 1 when a trap set it off
   final val BLAST_SEED = 8    // what tells it from the blast beside it
   final val BLAST_SEEN = 9    // set by the renderer once it has shaken the camera for it
+
+  /** Was the server's packet `seq` numbered after its packet `last`? The server numbers everything
+    * it sends from one count, which wraps at 2^31: compared the way its own sequence checks are, so
+    * anything within 2^30 after `last` is newer, and anything else, `last` itself included, isn't. */
+  def isNewer(seq: Int, last: Int): Boolean =
+    seq != last && ((seq - last) & 0x7FFFFFFF) < 0x40000000
+
+  /**
+   * When an effect an update says is on ends (on the clock of `now`): as long from now as the update
+   * says it has left (PlayerUpdatePacket bytes [59-63]); from a sender that doesn't say, where it
+   * already ends while it runs, or a lease of `fallbackMs` that the next update renews.
+   */
+  def effectEnds(leftMs: Int, until: Long, now: Long, fallbackMs: Long): Long =
+    if (leftMs > 0) now + leftMs else if (now >= until) now + fallbackMs else until
 }
 
 /**
@@ -94,6 +108,7 @@ class GameClient(private[game] val serverHost: String, private[game] val serverP
       case PacketType.PROJECTILE_UPDATE => handleProjectileUpdate(packet.asInstanceOf[ProjectilePacket])
       case PacketType.ITEM_UPDATE => handleItemUpdate(packet.asInstanceOf[ItemPacket])
       case PacketType.TRAP_UPDATE => handleTrapUpdate(packet.asInstanceOf[TrapPacket])
+      case PacketType.COOLDOWN_RESET => handleCooldownReset(packet.asInstanceOf[CooldownResetPacket])
       // The server's word on a player: on us (LocalPlayer), or on anyone else (OtherPlayers)
       case PacketType.PLAYER_UPDATE =>
         val update = packet.asInstanceOf[PlayerUpdatePacket]
@@ -112,11 +127,12 @@ class GameClient(private[game] val serverHost: String, private[game] val serverP
   /** The server says a match is starting (LobbyAction.GAME_STARTING): nothing of the last one
     * carries over, and we start it on a new life. The last match's cooldowns, effects and dash
     * used to come with us: an ability cast as it ended was still cooling down, and a freeze still
-    * held us. */
+    * held us. R starts on its minute, as the server's does, or in practice ready. */
   private[game] def matchStarting(): Unit = {
     clientState = ClientState.PLAYING
     forgetMatch()
     newLife()
+    startResetCooldown()
     // Each match counts its own server moves, and knockbacks
     serverMovesSeen = 0
     knockbacksSeen = 0

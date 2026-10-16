@@ -80,6 +80,17 @@ it: a player at full health hears none between a cast and the next hit, so the C
 Overclock was walked for one, and the Wolf's 2s Claw Swipe boost for half of it. A haste of our
 own is walked from its cast (`LocalPlayer.hasteCast`). `GameClientStatusTest`, `KitReworkTest`.
 
+**A hold, a root and a slow last as long as the server says, too.** Every update about a player
+carries how long their freeze or stun, their root and their slow have left (`PlayerUpdatePacket`
+bytes [61-63], 20ms steps rounded up, 5.1s at most), and every client holds, roots and slows them
+for that long — their own client above all, which lets them go a trip down the wire after the
+server does, never before. Only the flags used to cross the wire: each client armed a guess when
+one first came (5s for a hold, 3s for a root or a slow) and lifted it at the next update without
+it, and nothing is sent when an effect runs out. So a player was held until the server next said
+anything about them: a regeneration tick, up to most of a second after a 400ms stun had ended,
+and at full health nothing at all, so a Snare's 2s root held its victim for 3.
+`GameClientStatusTest`, `OnHitEffectsTest`, `PacketRoundTripTest`.
+
 **A push lands once a cast, and is drawn as a shove.** Everything one press of an attack fires is
 one `Cast` (in `Projectile.scala`: a fan's projectiles, which the client sends as a spawn
 request each and `PacketValidator.castFor` groups, as bots' fans are grouped where they fire them;

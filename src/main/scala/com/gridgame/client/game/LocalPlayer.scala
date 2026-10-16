@@ -17,7 +17,9 @@ import java.util.concurrent.atomic.AtomicReference
  * when it is a server move we haven't taken yet (see Position authority in the server docs).
  */
 trait LocalPlayer { this: GameClient =>
-  private[game] var localPlayerId: UUID = UUID.randomUUID()
+  // Written as we log in (the FX thread), read by the packet thread, the render thread and the
+  // heartbeat's: a heartbeat under the id from before the login is one the server drops
+  @volatile private[game] var localPlayerId: UUID = UUID.randomUUID()
   private[game] var localColorRGB: Int = Player.generateColorFromUUID(localPlayerId)
   private[game] val localPosition: AtomicReference[Position] = new AtomicReference(
     initialWorld.getValidSpawnPoint()
@@ -150,16 +152,22 @@ trait LocalPlayer { this: GameClient =>
   }
 
   /** The server's word on us: our health and the effects on us, and a position only when it is
-    * a server move we haven't taken yet. */
+    * a server move we haven't taken yet. Only the newest word counts (OtherPlayers.newWordOn): an
+    * update that overtook another, or was overtaken by our death or respawn, is old news. */
   private[game] def handleOwnUpdate(updatePacket: PlayerUpdatePacket): Unit = {
+    if (!newWordOn(localPlayerId, updatePacket.getSequenceNumber)) return
     val serverHealth = updatePacket.getHealth
     localHealth.set(serverHealth)
 
-    // Handle effect flags from server — only set timer on OFF→ON transition
+    // Handle effect flags from server. A hold (a freeze or a stun), a root and a slow last as long
+    // as the update says they have left (bytes [61-63]): with the flag alone, armed for 5s or 3s
+    // when it first came and lifted by the next update without it, we were held until the server
+    // next happened to say anything about us — a regeneration tick, up to most of a second after
+    // a 400ms stun had ended, or at full health nothing at all, and a 2s snare held us for 3.
     val flags = updatePacket.getEffectFlags
     val now = System.currentTimeMillis()
     if ((flags & 0x04) != 0) {
-      if (now >= frozenUntil.get()) frozenUntil.set(now + 5000)
+      frozenUntil.set(GameClient.effectEnds(updatePacket.getHeldMs, frozenUntil.get(), now, 5000))
     } else {
       frozenUntil.set(0)
     }
@@ -180,12 +188,12 @@ trait LocalPlayer { this: GameClient =>
       speedBoostUntil.set(0)
     }
     if ((flags & 0x40) != 0) {
-      if (now >= rootedUntil.get()) rootedUntil.set(now + 3000)
+      rootedUntil.set(GameClient.effectEnds(updatePacket.getRootedMs, rootedUntil.get(), now, 3000))
     } else {
       rootedUntil.set(0)
     }
     if ((flags & 0x80) != 0) {
-      if (now >= slowedUntil.get()) slowedUntil.set(now + 3000)
+      slowedUntil.set(GameClient.effectEnds(updatePacket.getSlowedMs, slowedUntil.get(), now, 3000))
       // How hard: a slow only makes us step at its own rate if we know what that rate is
       if (updatePacket.getSlowPercent > 0) slowMultiplier = updatePacket.getSlowPercent / 100f
     } else {
@@ -195,7 +203,7 @@ trait LocalPlayer { this: GameClient =>
     // A stun comes with the frozen flag as well: this only says which of the two to draw
     val flags2 = updatePacket.getEffectFlags2
     if ((flags2 & 0x01) != 0) {
-      if (now >= stunnedUntil.get()) stunnedUntil.set(now + 5000)
+      stunnedUntil.set(GameClient.effectEnds(updatePacket.getHeldMs, stunnedUntil.get(), now, 5000))
     } else {
       stunnedUntil.set(0)
     }
@@ -222,7 +230,14 @@ trait LocalPlayer { this: GameClient =>
       placedByServer(updatePacket.getPosition, knockedBack)
     }
 
-    if (serverHealth <= 0 && !isDead) {
+    if (serverHealth <= 0) died()
+  }
+
+  /** We are dead: by an update that says so, or the server's word of the kill (GameEvent.KILL,
+    * OtherPlayers.heardKilled), whichever comes first. Until the respawn puts us back. */
+  private[game] def died(): Unit = {
+    localHealth.set(0)
+    if (!isDead) {
       isDead = true
       isRespawning = true
       // The server dropped it with the killing blow; there is nothing to tell it
@@ -234,12 +249,16 @@ trait LocalPlayer { this: GameClient =>
     }
   }
 
-  /** Our own join echo, at the start of a match: our team (it colours our health bar) and where
-    * the server placed us, which it picked to keep players apart. We used to keep a spawn setWorld
-    * had picked at random and send that instead, which the server took: two players could start
-    * on one spawn, and everyone saw each other teleport. */
+  /** Our own join echo, at the start of a match: our team (it colours our health bar), where the
+    * server placed us, which it picked to keep players apart, and the character it has us play. We
+    * used to keep a spawn setWorld had picked at random and send that instead, which the server
+    * took: two players could start on one spawn, and everyone saw each other teleport. And the
+    * character is the server's: one picked as the host started the match, or in the ranked queue as
+    * it found the match, reached it too late to count, and we played the match as the one picked —
+    * every shot and every cast refused as another character's, every step judged at another's pace. */
   private[game] def handleOwnJoin(join: PlayerJoinPacket): Unit = {
     localTeamId = join.getTeamId
+    if (CharacterDef.isValid(join.getCharacterId)) selectedCharacterId = join.getCharacterId
     localPosition.set(join.getPosition)
     localHealth.set(join.getHealth)
     AudioManager.playSpawn()

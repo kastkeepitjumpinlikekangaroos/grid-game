@@ -28,6 +28,10 @@ are designed and judged is scripts/SOUNDS.md.
   `sounds/phase_shift.wav`, `sounds/barrier_up.wav` — non-projectile events/cast behaviors.
   `sounds/barrier_block.wav` is a shot stopped on a barrier: a dull thud of energy with a
   short fizz and nothing that rings, since it plays for every shot anyone fires into one.
+  `sounds/cooldown_reset.wav` is R, heard only by whoever pressed it: a spin-up of air and a
+  climbing chirp landing on a harmonic chord swelled in over 50-70ms, so nothing in it is struck
+  (its clang is 0.097, beside the Smite's 0.100). `AbilitySoundsTest` checks every one of these
+  event sounds (`AudioManager.EVENT_SOUNDS`) has a file.
 - `sounds/trap_place.wav` (one set down — quiet and short, since everyone nearby hears it),
   and one per trap kind going off: `trap_snap.wav` (jaws, and a web closing), `trap_poison.wav`
   (a pod bursting), `trap_ignite.wav` (a rune catching). A mine's blast is `explosion.wav`.

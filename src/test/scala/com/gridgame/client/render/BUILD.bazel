@@ -33,6 +33,19 @@ scala_junit_test(
 )
 
 scala_junit_test(
+    name = "aim_geometry_test",
+    srcs = ["AimGeometryTest.scala"],
+    env = {"GRIDGAME_AUDIO": "off"},
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "//src/main/scala/com/gridgame/common",
+        "//src/test/scala/com/gridgame/client:client_test_kit",
+        "@maven//:junit_junit",
+    ],
+)
+
+scala_junit_test(
     name = "cursor_test",
     srcs = ["CursorTest.scala"],
     suffixes = ["Test"],

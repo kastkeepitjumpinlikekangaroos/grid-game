@@ -43,6 +43,8 @@ AUDIO_OFF = {"GRIDGAME_AUDIO": "off"}
     ("game_client_knockback_test", "GameClientKnockbackTest.scala"),
     # Casting mode: Q or E aimed and cast by a click, what goes off at once, and what is shown is cast
     ("game_client_aim_test", "GameClientAimTest.scala"),
+    # R: both abilities ready again from the press, its own minute from the match's start, a refusal undone
+    ("game_client_reset_test", "GameClientResetTest.scala"),
     ("projectile_flight_test", "ProjectileFlightTest.scala"),
     ("projectile_thrower_test", "ProjectileThrowerTest.scala"),
     ("lobby_room_screen_test", "LobbyRoomScreenTest.scala"),

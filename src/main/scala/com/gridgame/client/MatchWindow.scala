@@ -90,6 +90,15 @@ private[client] final class MatchWindow(app: Screens) {
     controllerHandler = new ControllerHandler(client)
     controllerHandler.init()
 
+    // The pointer read into the world as each frame's camera moves, before anything is drawn, so our
+    // aim is drawn where the pointer is on that frame's screen (render/CLAUDE.md, *An aim moves with
+    // us*); not while the controller's stick aims, which sets the aim itself
+    glRenderer.onCamera = () => {
+      val pointer = !controllerHandler.stickAiming
+      if (pointer) glMouseHandler.refreshWorldPosition()
+      pointer
+    }
+
     glWindow.show()
     AudioManager.playBattleMusic()
 
@@ -131,10 +140,8 @@ private[client] final class MatchWindow(app: Screens) {
             return
           }
 
+          // The frame, which reads the pointer into the world once it has moved the camera (onCamera)
           glRenderer.render(deltaSec, glWindow.fbWidth, glWindow.fbHeight, glWindow.width, glWindow.height)
-          // Refresh mouse world position after camera update so next frame's
-          // input callbacks use accurate coordinates even if the mouse is stationary
-          glMouseHandler.refreshWorldPosition()
           // The pointer, over everything, where the mouse is now: only over this window while it has
           // the focus (elsewhere the system's shows), and not while a controller's stick is aiming,
           // when where the mouse rests means nothing

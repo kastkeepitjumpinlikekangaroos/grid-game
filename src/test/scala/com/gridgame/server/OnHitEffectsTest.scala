@@ -292,6 +292,50 @@ class OnHitEffectsTest {
     assertEquals("a slow doesn't hold anyone", 0, target.getServerMoves)
   }
 
+  /** The newest update about `p` that `to` was sent, over either transport. */
+  private def lastToldAbout(to: Player, p: Player): PlayerUpdatePacket = {
+    val told = m.updatesAbout(m.sent(to), p)
+    assertTrue(s"${to.getName} was told of ${p.getName}", told.nonEmpty)
+    told.maxBy(_.getSequenceNumber)
+  }
+
+  @Test def everyoneIsToldHowLongAHoldARootAndASlowHaveLeft(): Unit = {
+    // Bytes [61-63]. The flags alone said that a player was held, not for how long, and their own
+    // client held them until the server next said anything about them: at full health nothing at
+    // all, and anyone else's next regeneration tick ended a 400ms stun up to most of a second late
+    val watcher = m.join(CharacterId.Gladiator, 40, 40) // in no shot's way
+    def toldOf(target: Player): Seq[PlayerUpdatePacket] = Seq(lastToldAbout(target, target), lastToldAbout(watcher, target))
+
+    val frozen = m.join(CharacterId.Gladiator, 15, 30)
+    m.clearSent()
+    shoot(m.join(CharacterId.Spaceman, 10, 30), ProjectileType.ICE_BEAM) // Freeze(3000)
+    for (told <- toldOf(frozen)) {
+      assertTrue(s"${told.getHeldMs}ms of a 3s freeze", told.getHeldMs > 2500 && told.getHeldMs <= 3000)
+      assertEquals("no root", 0, told.getRootedMs)
+      assertEquals("no slow", 0, told.getSlowedMs)
+    }
+
+    val rooted = m.join(CharacterId.Gladiator, 15, 10)
+    m.clearSent()
+    shoot(m.join(CharacterId.Spider, 10, 10), ProjectileType.WEB_SHOT) // Root(1500)
+    for (told <- toldOf(rooted)) {
+      assertTrue(s"${told.getRootedMs}ms of a 1.5s root", told.getRootedMs > 1000 && told.getRootedMs <= 1500)
+      assertEquals("no hold", 0, told.getHeldMs)
+    }
+
+    val slowed = m.join(CharacterId.Gladiator, 15, 50)
+    m.clearSent()
+    shoot(m.join(CharacterId.Enchantress, 10, 50), ProjectileType.CHARM) // Slow(3000, 0.3f)
+    for (told <- toldOf(slowed)) {
+      assertTrue(s"${told.getSlowedMs}ms of a 3s slow", told.getSlowedMs > 2500 && told.getSlowedMs <= 3000)
+      assertEquals("no hold", 0, told.getHeldMs)
+    }
+
+    // And once it is over, nothing is left of it: a client holds nobody on an old figure
+    frozen.setFrozenUntil(System.currentTimeMillis() - 1)
+    assertEquals(0, m.instance.stateUpdate(frozen).getHeldMs)
+  }
+
   // --- The shooter ---
 
   @Test def aLifeStealHealsTheShooter(): Unit = {

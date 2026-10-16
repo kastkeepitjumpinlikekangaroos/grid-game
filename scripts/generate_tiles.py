@@ -29,7 +29,9 @@ what makes the world look like it belongs to them:
 - Flat cel shading. Every surface is one flat colour with one hard-edged
   shadow tone on the side away from the light (upper left): the left face of a
   block is lit, the right face is in shade. No gradients, no noise.
-- Outlines in a dark version of the part's own hue (`ink`), never black.
+- Outlines in a dark version of the part's own hue (`ink`), never black. A
+  prop is inked PROP_INK times heavier than it is authored and ringed with the
+  characters' contour (`add_contour`), so it reads at their weight.
 - Bright, saturated, friendly: round trees, fat mushrooms, a grass lip hanging
   over brown soil on a cliff.
 
@@ -46,7 +48,10 @@ Three rules specific to terrain, all learned from how the renderer tiles it:
   Anything on a side face only shows on the outside of a mass of blocks --
   which is exactly where a cliff's grass lip belongs.
 - Walkable ground stays quiet. It covers most of the screen, and players and
-  projectiles have to read on top of it: low-contrast details, far apart.
+  projectiles have to read on top of it: low-contrast details, far apart, and
+  no crumbs of a pixel or two. A ground that grows is its own colour (its
+  Tile.color) to its edge: the renderer paints it over a neighbour where two
+  kinds of ground meet (GroundEdges).
 """
 
 import math
@@ -57,14 +62,17 @@ import sys
 from PIL import Image, ImageDraw
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from sprite_base import (CLEAR, Ell, Limb, Poly, RRect, ScaledDraw, arc_pts, blob, cel,  # noqa: E402
-                         ink, leaf, lit, mix, shade, sparkle, stroke, xform)
+from sprite_base import (CLEAR, Ell, Limb, Poly, RRect, ScaledDraw, add_contour, arc_pts, blob,  # noqa: E402
+                         cel, clipped, ink, leaf, lit, mix, shade, sparkle, stroke, xform)
 
 CELL_W, CELL_H = 80, 112
 HW, HH = 40, 20
 CX, BASE_Y = 40, 92
 FRAMES = 4
 SS = 4  # supersampling: every cell is drawn at 4x and resampled down
+# Props are inked this much heavier than they are authored (PropDraw), and ringed as the
+# characters are (add_contour), so a tree reads at the weight of the figure beside it
+PROP_INK = 1.35
 
 GROUND, POOL, BLOCK, PROP = "ground", "pool", "block", "prop"
 
@@ -96,6 +104,7 @@ GRAVEL = (206, 196, 178)
 METAL = (178, 192, 208)
 GLASS = (170, 228, 244)
 CIRCUIT = (36, 114, 110)
+VOID = (24, 20, 62)
 WATER = (74, 186, 240)
 DEEP = (46, 128, 214)
 LAVA = (255, 128, 40)
@@ -149,13 +158,17 @@ def face_quad(fn, s0, s1, t0, t1, h):
 
 
 class PropDraw(ScaledDraw):
-    """A ScaledDraw that also scales everything about a prop's foot (the middle of its
-    diamond) by k, so a prop can be drawn bigger without restating it. Line widths are
-    left alone, so every prop is inked at the same weight whatever its size."""
+    """A ScaledDraw for props: it scales everything about a prop's foot (the middle of its
+    diamond) by k, so a prop can be drawn bigger without restating it, and inks every
+    outline PROP_INK times heavier. Line widths don't scale with k, so every prop is inked
+    at the same weight whatever its size."""
 
     def __init__(self, draw, scale, image, k):
         ScaledDraw.__init__(self, draw, scale, image)
         self._k = k
+
+    def _w(self, width):
+        return max(1, int(round((width if width else 1) * self._s * PROP_INK)))
 
     def _m(self, x, y):
         return (CX + (x - CX) * self._k, BASE_Y + (y - BASE_Y) * self._k)
@@ -259,8 +272,22 @@ def flower(d, x, y, col, k=1.0, center=(255, 206, 80)):
     Ell(x, y, 0.9 * k, 0.75 * k).draw(d, fill=center)
 
 
+def bloom(d, x, y, col, k=1.0, center=(255, 206, 80)):
+    """A five-petal flower inked as the characters are: the petals one mass with one
+    outline, a round heart."""
+    petals = []
+    for i in range(5):
+        a = math.radians(-90 + i * 72)
+        petals.append(Ell(x + math.cos(a) * 1.6 * k, y + math.sin(a) * 1.2 * k, 1.3 * k, 1.05 * k))
+    blob(d, petals, col, sh=(0.3 * k, 0.3 * k), lw=0.5)
+    Ell(x, y, 0.8 * k, 0.65 * k).draw(d, fill=center)
+
+
 def pebble(d, x, y, rx, ry, col, line=True):
-    cel(d, Ell(x, y, rx, ry), col, sh=(rx * 0.3, ry * 0.45), line=line, lw=0.7)
+    """A stone: flat, a shadow side and a lit top. One lying in the ground goes uninked
+    (line=False): that small, inked, it read as a ring."""
+    cel(d, Ell(x, y, rx, ry), col, sh=(rx * 0.3, ry * 0.45), hi=(rx * 0.25, ry * 0.3), hi_tone=lit(col, 0.5),
+        line=line, lw=0.7)
 
 
 def twinkle(d, x, y, rad, col=(255, 255, 255)):
@@ -285,17 +312,12 @@ def ground_fill(d, col):
 def _grass(d, f, r, base=GRASS):
     ground_fill(d, base)
     dark = shade(base, 0.55)
-    light = lit(base, 0.6)
+    # Tufts only. A flower or a pale fleck on one variant sits at the same spot in every tile
+    # of it, and the renderer picks variants by position: in game they were a grid of dots
     n = (2, 2, 3, 2)[f]
     for (u, v) in scatter(r, n, gap=0.34):
         x, y = iso(u, v)
-        tuft(d, x, y, dark, r.uniform(0.9, 1.15))
-    if f in (0, 2):
-        x, y = iso(*scatter(r, 1)[0])
-        Ell(x, y, 1.6, 0.9).draw(d, fill=light)
-    if f == 1:
-        x, y = iso(*r.choice(((0.62, 0.36), (0.38, 0.6))))
-        flower(d, x, y, FLOWER_WHITE, 0.75, center=(255, 232, 140))
+        tuft(d, x, y, dark, r.uniform(0.95, 1.2))
 
 
 def _grass_tile(d, f, r):
@@ -310,23 +332,20 @@ def _flowers(d, f, r):
     for (u, v) in scatter(r, 2, gap=0.3):
         x, y = iso(u, v)
         tuft(d, x, y, dark, 0.9)
-    pts = scatter(r, 3, lo=0.22, hi=0.78, gap=0.3)
+    pts = scatter(r, (2, 2, 3, 2)[f], lo=0.25, hi=0.75, gap=0.36)
     for i, (u, v) in enumerate(pts):
         x, y = iso(u, v)
         # a pair of leaves under each flower
-        Ell(x - 2.4, y + 1.6, 2.4, 1.1).draw(d, fill=shade(GRASS, 0.9))
-        Ell(x + 2.4, y + 1.6, 2.4, 1.1).draw(d, fill=shade(GRASS, 0.9))
-        flower(d, x, y - 0.8, palettes[i % 3], r.uniform(1.3, 1.5))
+        Ell(x - 2.6, y + 1.8, 2.6, 1.2).draw(d, fill=shade(GRASS, 0.9))
+        Ell(x + 2.6, y + 1.8, 2.6, 1.2).draw(d, fill=shade(GRASS, 0.9))
+        bloom(d, x, y - 0.8, palettes[i % 3], r.uniform(1.35, 1.55))
 
 
 def _path(d, f, r):
     ground_fill(d, PATH)
-    for (u, v) in scatter(r, (3, 2, 3, 4)[f], gap=0.26):
+    for (u, v) in scatter(r, (2, 3, 2, 2)[f], gap=0.32):
         x, y = iso(u, v)
-        pebble(d, x, y, r.uniform(1.4, 2.3), r.uniform(0.9, 1.4), mix(PATH, (186, 150, 108), 0.6))
-    for (u, v) in scatter(r, 3, gap=0.2):
-        x, y = iso(u, v)
-        Ell(x, y, 1.1, 0.6).draw(d, fill=shade(PATH, 0.45))
+        pebble(d, x, y, r.uniform(1.9, 2.6), r.uniform(1.2, 1.6), mix(PATH, (186, 150, 108), 0.6), line=False)
     if f == 3:
         x, y = iso(0.45, 0.5)
         stroke(d, [(x - 5, y + 1), (x - 1, y - 0.5), (x + 4, y + 0.6)], 0.9, shade(PATH, 0.6))
@@ -334,12 +353,9 @@ def _path(d, f, r):
 
 def _dirt(d, f, r):
     ground_fill(d, DIRT)
-    for (u, v) in scatter(r, (3, 4, 2, 3)[f], gap=0.26):
+    for (u, v) in scatter(r, (3, 2, 2, 3)[f], gap=0.3):
         x, y = iso(u, v)
-        pebble(d, x, y, r.uniform(1.5, 2.5), r.uniform(1.0, 1.5), mix(DIRT, (150, 140, 132), 0.55))
-    for (u, v) in scatter(r, 4, gap=0.18):
-        x, y = iso(u, v)
-        Ell(x, y, 1.0, 0.55).draw(d, fill=shade(DIRT, 0.5))
+        pebble(d, x, y, r.uniform(1.8, 2.6), r.uniform(1.2, 1.6), mix(DIRT, (150, 140, 132), 0.55), line=False)
     if f == 2:
         x, y = iso(0.5, 0.45)
         stroke(d, [(x - 6, y), (x - 2, y - 1.2), (x + 1, y - 0.2), (x + 5, y - 1.4)], 1.0, shade(DIRT, 0.9))
@@ -352,9 +368,6 @@ def _sand(d, f, r):
         x, y = iso(u, v)
         pts = arc_pts(x, y + 3.5, 6.0, 3.0, 205, 335, 8)
         stroke(d, pts, 0.9, light)
-    for (u, v) in scatter(r, 4, gap=0.16):
-        x, y = iso(u, v)
-        Ell(x, y, 0.8, 0.5).draw(d, fill=shade(SAND, 0.45))
     if f == 1:
         x, y = iso(0.58, 0.42)
         _shell(d, x, y)
@@ -390,9 +403,6 @@ def _snow(d, f, r):
         x, y = iso(u, v)
         # a soft drift: a crescent of shade under a little mound
         Poly(arc_pts(x, y, 6.5, 2.6, 0, 180, 10) + arc_pts(x, y + 0.2, 6.5, 1.4, 180, 0, 10)).draw(d, fill=blue)
-    for (u, v) in scatter(r, 3, gap=0.2):
-        x, y = iso(u, v)
-        Ell(x, y, 0.9, 0.55).draw(d, fill=(222, 234, 252))
     if f in (1, 3):
         x, y = iso(*scatter(r, 1)[0])
         twinkle(d, x, y - 1, 2.2, (255, 255, 255))
@@ -455,26 +465,29 @@ def _cobble(d, f, r):
 
 
 def _planks(d, f, r):
-    """A boardwalk: four boards to a tile, running along world x, nailed at the ends."""
+    """A boardwalk: three wide boards to a tile, running along world x, a nail at each end.
+    Four thin ones read as pinstripes from a few tiles away."""
     gap = shade(PLANK, 1.6)
     ground_fill(d, gap)
     tones = (PLANK, mix(PLANK, (228, 178, 116), 0.7), mix(PLANK, (196, 142, 88), 0.7))
-    for j in range(4):
-        v0, v1 = j / 4.0 + 0.02, (j + 1) / 4.0 - 0.02
-        split = (None, 0.55, None, 0.4, 0.62, None, 0.3, None)[(j + f * 2) % 8]
-        spans = [(0.0, 1.0)] if split is None else [(0.0, split - 0.01), (split + 0.01, 1.0)]
+    for j in range(3):
+        v0, v1 = j / 3.0 + 0.025, (j + 1) / 3.0 - 0.025
+        split = (None, 0.55, None, 0.4, 0.62, None)[(j + f * 2) % 6]
+        spans = [(0.0, 1.0)] if split is None else [(0.0, split - 0.012), (split + 0.012, 1.0)]
         for n, (u0, u1) in enumerate(spans):
             col = tones[(j + n + f) % 3]
             Poly([iso(u0, v0), iso(u1, v0), iso(u1, v1), iso(u0, v1)]).draw(d, fill=col)
-            stroke(d, [iso(u0, v0 + 0.03), iso(u1, v0 + 0.03)], 0.6, lit(col, 0.6))
-            # grain
-            gx0 = u0 + (u1 - u0) * 0.25
-            stroke(d, [iso(gx0, (v0 + v1) / 2 + 0.02), iso(gx0 + (u1 - u0) * 0.35, (v0 + v1) / 2 + 0.02)],
-                   0.4, shade(col, 0.5))
-            for uu in (u0 + 0.06, u1 - 0.06):
+            # the board's lit edge and its shadow side, as the characters' parts have
+            stroke(d, [iso(u0, v0 + 0.035), iso(u1, v0 + 0.035)], 0.9, lit(col, 0.6))
+            stroke(d, [iso(u0, v1 - 0.03), iso(u1, v1 - 0.03)], 0.9, shade(col, 0.6))
+            if u1 - u0 > 0.5:
+                gx0 = u0 + (u1 - u0) * 0.3
+                stroke(d, [iso(gx0, (v0 + v1) / 2), iso(gx0 + (u1 - u0) * 0.3, (v0 + v1) / 2)], 0.5,
+                       shade(col, 0.4))
+            for uu in (u0 + 0.07, u1 - 0.07):
                 if 0.03 < uu < 0.97:
                     x, y = iso(uu, (v0 + v1) / 2)
-                    Ell(x, y, 0.7, 0.5).draw(d, fill=shade(col, 1.8))
+                    Ell(x, y, 0.8, 0.55).draw(d, fill=shade(col, 1.6))
 
 
 def _moss(d, f, r):
@@ -544,28 +557,81 @@ def _glass(d, f, r):
 
 
 def _circuit(d, f, r):
-    """The space maps' floor: a teal panel with bright traces and gold pads."""
+    """The space maps' floor: deck plating, plates two cells across. Its four variants are the four
+    quarters of a plate, which the renderer picks by where a cell is, (x & 1) + 2 (y & 1)
+    (Tile.panels), so every cell draws the whole plate and keeps its own quarter. Lit along its upper
+    edges and shaded along its lower ones as the characters' parts are, in a margin of the deck's own
+    colour, close in tone, so a floor of it reads as one surface. A plate a cell was a grid of tiles,
+    and the thin bright circuit traces before it read as static a few tiles away."""
     ground_fill(d, CIRCUIT)
-    trace = (70, 200, 170)
-    pad = (240, 202, 96)
-    g = 0.04
-    stroke(d, [iso(g, g), iso(1 - g, g)], 0.5, lit(CIRCUIT, 0.4))
-    routes = (
-        [(0.2, 0.5), (0.45, 0.5), (0.55, 0.35), (0.8, 0.35)],
-        [(0.5, 0.18), (0.5, 0.42), (0.68, 0.6), (0.68, 0.82)],
-        [(0.2, 0.3), (0.38, 0.3), (0.38, 0.7), (0.8, 0.7)],
-        [(0.3, 0.2), (0.3, 0.46), (0.7, 0.46), (0.7, 0.8)],
-    )
-    if f in (0, 2):
-        pts = [iso(u, v) for (u, v) in routes[f]]
-        stroke(d, pts, 0.9, mix(trace, CIRCUIT, 0.35))
-        for (x, y) in (pts[0], pts[-1]):
-            Ell(x, y, 1.6, 1.0).draw(d, fill=pad)
-            Ell(x, y, 0.7, 0.45).draw(d, fill=shade(pad, 1.4))
-    else:
-        x, y = iso(0.5, 0.5)
-        Poly([(x - 3, y), (x, y - 1.5), (x + 3, y), (x, y + 1.5)]).draw(d, fill=(28, 70, 72))
-        Ell(x + 7, y + 2, 1.1, 0.7).draw(d, fill=pad)
+    qx, qy = f & 1, f >> 1
+    plate_col = mix(CIRCUIT, (112, 214, 200), 0.16)
+    g = 0.05
+    plate = Poly(_rounded_quad(g - qx, 2 - g - qx, g - qy, 2 - g - qy, 0.3, n=6))
+    cel(d, plate, plate_col, sh=(2.0, 1.0), hi=(1.6, 0.8), hi_tone=lit(plate_col, 0.3), line=False)
+    # a rivet in each of the plate's corners, and a light at its middle
+    for (u, v) in ((0.22, 0.22), (1.78, 0.22), (1.78, 1.78), (0.22, 1.78)):
+        x, y = iso(u - qx, v - qy)
+        Ell(x, y, 1.2, 0.75).draw(d, fill=shade(plate_col, 0.7))
+        Ell(x - 0.3, y - 0.25, 0.55, 0.3).draw(d, fill=lit(plate_col, 0.6))
+    x, y = iso(1 - qx, 1 - qy)
+    cel(d, Ell(x, y, 4.2, 2.3), shade(plate_col, 0.6), sh=None, line=False)
+    cel(d, Ell(x, y - 0.3, 2.8, 1.5), (110, 228, 214), sh=(0.6, 0.3), lw=0.6)
+    Ell(x - 0.9, y - 0.9, 0.9, 0.45).draw(d, fill=(232, 255, 250))
+
+
+def _hull(pts):
+    """The convex hull of points, counterclockwise on the screen (y down)."""
+    pts = sorted(set(pts))
+    if len(pts) < 3:
+        return pts
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    lower, upper = [], []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return lower[:-1] + upper[:-1]
+
+
+def rounded_block(d, h, top_col, side_col, inset=0.08, rad=0.24, lw=1.2, top_hi=None):
+    """A block that stands in its cell as one object, as a prop does: a rounded square of the cell
+    raised `h` off the ground, its sides lit toward the light and shaded away from it, its top lit
+    along the back, inked all round. Returns the top's outline and the whole silhouette's, for what
+    goes on it."""
+    foot = _rounded_quad(inset, 1 - inset, inset, 1 - inset, rad, n=6)
+    top_pts = [(x, y - h) for (x, y) in foot]
+    hull = _hull(foot + top_pts)
+    sides = d.sub()
+    Poly(hull).draw(sides, fill=side_col)
+    # the right-hand side, turned from the light, a step darker
+    right = d.sub()
+    Poly([(CX, 0), (CELL_W, 0), (CELL_W, CELL_H), (CX, CELL_H)]).draw(right, fill=shade(side_col, 0.9))
+    sides.merge(right, clip=sides)
+    d.merge(sides)
+    cel(d, Poly(top_pts), top_col, sh=(1.6, 1.2), hi=(1.2, 0.8), hi_tone=top_hi or lit(top_col, 0.45),
+        line=False)
+    Poly(hull).draw(d, fill=None, outline=ink(side_col), width=lw)
+    Poly(top_pts).draw(d, fill=None, outline=ink(shade(side_col, 0.4)), width=lw * 0.8)
+    return top_pts, hull
+
+
+def _rounded_quad(u0, u1, v0, v1, rad, n=4):
+    """The points round the square [u0, u1] x [v0, v1] of a tile, its corners rounded off by `rad`
+    (in the tile's units), on the screen."""
+    pts = []
+    for (cu, cv, a0) in ((u1 - rad, v0 + rad, -90), (u1 - rad, v1 - rad, 0), (u0 + rad, v1 - rad, 90),
+                         (u0 + rad, v0 + rad, 180)):
+        for k in range(n + 1):
+            a = math.radians(a0 + 90.0 * k / n)
+            pts.append(iso(cu + math.cos(a) * rad, cv + math.sin(a) * rad))
+    return pts
 
 
 # ---------------------------------------------------------------------------
@@ -577,7 +643,7 @@ def _water_pool(d, f, r, base=WATER, crest=(172, 228, 255), n=3):
     for i, (u, v) in enumerate(scatter(r, n, lo=0.25, hi=0.75, gap=0.3)):
         drift = ((f + i) % 4) * 0.05 - 0.075
         x, y = iso(u + drift, v - drift)
-        wave(d, x, y, 9.0, crest, 1.1, 0.8)
+        wave(d, x, y, 10.0, crest, 1.5, 1.0)
     x, y = iso(0.62, 0.38)
     twinkle(d, x, y, (0.0, 2.0, 3.0, 1.4)[f])
 
@@ -738,89 +804,84 @@ def _basalt(d, f, r):
 
 
 def _obsidian(d, f, r):
-    """Volcanic glass: dark, with hard glassy reflections."""
-    h = 50
-    o = (66, 56, 104)
-    box(d, h, (84, 72, 132), o, shade(o, 1.3))
-    for (u0, v0, u1, v1) in ((0.2, 0.3, 0.55, 0.15), (0.45, 0.8, 0.8, 0.6)):
-        stroke(d, [iso(u0, v0, h), iso(u1, v1, h)], 1.1, (128, 112, 186))
-    for fn, tone in ((lface, 0.0), (rface, 1.3)):
-        face = o if tone == 0.0 else shade(o, tone)
-        glint = lit(face, 1.4)
-        a, b = fn(0.18, 0.2, h), fn(0.32, 0.2, h)
-        c, e = fn(0.12, 0.85, h), fn(0.02, 0.85, h)
-        Poly([a, b, c, e]).draw(d, fill=glint)
-        a, b = fn(0.62, 0.15, h), fn(0.68, 0.15, h)
-        c, e = fn(0.58, 0.7, h), fn(0.54, 0.7, h)
-        Poly([a, b, c, e]).draw(d, fill=glint)
-    base_line(d, (24, 18, 44))
+    """Volcanic glass, the space maps' tall cover: a rounded block of it standing in its cell as one
+    object, inked all round as a prop is, a broad band of shine across each face and a sheen on top,
+    as the characters' hair and armour are lit. Thin streaks of shine read as scratches."""
+    shadow(d, 40, 95, 24, 8)
+    o = (74, 62, 118)
+    h = 40
+    top_col = (98, 84, 152)
+    top, hull = rounded_block(d, h, top_col, o, top_hi=lit(top_col, 0.5))
+    # shine down the lit face and a glint on the shaded one, from the top to the ground, kept inside
+    # the block's line
+
+    def shine(layer):
+        for (s0, s1) in ((0.2, 0.3), (0.36, 0.4)):
+            x0, y0 = iso(s0, 1 - 0.08)
+            x1, y1 = iso(s1, 1 - 0.08)
+            Poly([(x0, y0 - h + 2), (x1, y1 - h + 2), (x1, y1), (x0, y0)]).draw(layer, fill=lit(o, 0.9))
+        x0, y0 = iso(1 - 0.08, 0.6)
+        x1, y1 = iso(1 - 0.08, 0.68)
+        Poly([(x0, y0 - h + 2), (x1, y1 - h + 2), (x1, y1), (x0, y0)]).draw(layer, fill=lit(shade(o, 0.9), 0.5))
+    clipped(d, Poly(hull), shine)
+    # the line again over the shine
+    Poly(hull).draw(d, fill=None, outline=ink(o), width=1.2)
+    x, y = iso(0.36, 0.36, h)
+    blob(d, [Ell(x - 3, y, 8, 2.4), Ell(x + 4, y - 0.5, 5, 1.7)], lit(top_col, 0.9), sh=None, line=False)
 
 
 def _void(d, f, r):
-    """The dark between the stars, as a block: flat indigo, stars that twinkle."""
-    h = 32
-    v = (54, 42, 112)
-    box(d, h, v, shade(v, 0.8), shade(v, 1.6))
-    rr = random.Random(1717)
-    stars = [(rr.uniform(0.15, 0.85), rr.uniform(0.15, 0.85)) for _ in range(5)]
-    for i, (u, w) in enumerate(stars):
-        x, y = iso(u, w, h)
-        phase = (f + i) % 4
-        if i % 2 == 0:
-            twinkle(d, x, y, (1.2, 2.2, 3.0, 2.0)[phase], (255, 250, 220) if i % 4 == 0 else (220, 226, 255))
-        else:
-            Ell(x, y, 0.9, 0.9).draw(d, fill=(200, 206, 255) if phase % 2 else (150, 150, 220))
-    for fn, tone in ((lface, 0.8), (rface, 1.6)):
-        for (s, t) in ((0.3, 0.4), (0.7, 0.7)):
-            x, y = fn(s, t, h)
-            Ell(x, y, 0.8, 0.8).draw(d, fill=(168, 170, 236) if (f % 2 == 0) == (s < 0.5) else (110, 104, 190))
-    base_line(d, (22, 16, 50))
+    """Open space below the edge of the space maps' arena: deep indigo, a few stars. Flat, as a pool
+    is: the floor (circuit) spills over it with a rim and a hull of its own where the two meet
+    (GroundEdges). Its four frames are four skies, picked by position, not an animation, so the
+    stars of a field of it don't stand in a lattice."""
+    ground_fill(d, VOID)
+    tones = ((236, 240, 255), (196, 210, 255), (255, 240, 200))
+    for i, (u, v) in enumerate(scatter(r, (4, 3, 5, 4)[f], lo=0.18, hi=0.82, gap=0.22)):
+        x, y = iso(u, v)
+        rad = r.uniform(0.55, 0.95)
+        Ell(x, y, rad, rad * 0.9).draw(d, fill=mix(tones[i % 3], VOID, r.uniform(0.15, 0.45)))
+    if f in (1, 3):
+        x, y = iso(*((0.4, 0.55) if f == 1 else (0.6, 0.4)))
+        sparkle(d, x, y, 2.6, (226, 234, 255))
+    if f == 2:
+        # a wisp of nebula, barely lighter than the dark
+        x, y = iso(0.5, 0.5)
+        blob(d, [Ell(x - 4, y, 9, 2.6), Ell(x + 5, y + 1, 7, 2.2)], mix(VOID, (92, 64, 160), 0.22), sh=None,
+             line=False)
 
 
 def _toxic(d, f, r):
-    """A block of green slime: glossy, bubbling, dripping over its edges."""
-    h = 16
+    """Slime, the space maps' low cover: a block of green jelly standing in its cell as one object,
+    rounded and inked all round as a prop is, glossy, a bubble or two caught inside. Cubes that filled
+    their cells met their neighbours in a staircase of seams; one jelly to a cell reads as a row of
+    them, as trees do."""
+    shadow(d, 40, 95, 23, 8)
     g = (146, 232, 72)
-    box(d, h, g, shade(g, 0.6), shade(g, 1.4))
-    # gloss
-    x, y = iso(0.32, 0.36, h)
-    Ell(x, y, 7.0, 2.4).draw(d, fill=lit(g, 1.2))
-    Ell(x + 5, y + 1.2, 1.4, 0.8).draw(d, fill=lit(g, 1.2))
-    # a bubble rising and popping
-    bx, by = iso(0.62, 0.58, h)
-    if f < 3:
-        rad = (1.3, 2.0, 2.7)[f]
-        Ell(bx, by, rad, rad * 0.8).draw(d, fill=None, outline=(236, 255, 200), width=0.7)
-        Ell(bx - rad * 0.35, by - rad * 0.35, rad * 0.3, rad * 0.25).draw(d, fill=(255, 255, 255))
-    else:
-        for a in range(0, 360, 72):
-            Ell(bx + math.cos(math.radians(a)) * 3.2, by + math.sin(math.radians(a)) * 1.5, 0.6, 0.5).draw(
-                d, fill=(236, 255, 200))
-    # drips over the edges
-    for fn, tone in ((lface, 0.6), (rface, 1.4)):
-        col = shade(g, tone - 0.35)
-        for (s, k) in ((0.25, 0.55), (0.62, 0.8)):
-            x0, y0 = fn(s - 0.07, 0.0, h)
-            x1, y1 = fn(s + 0.07, 0.0, h)
-            xm, ym = fn(s, k, h)
-            Poly([(x0, y0), (x1, y1)] + arc_pts(xm, ym - 1.2, 2.6, 2.2, 0, 180, 8)).draw(d, fill=col)
-    base_line(d, ink(shade(g, 1.4)))
+    h = 24
+    rounded_block(d, h, lit(g, 0.25), shade(g, 0.3), top_hi=lit(g, 0.9))
+    # the gloss across its top, as the characters' hair has, and bubbles in the jelly
+    x, y = iso(0.38, 0.4, h)
+    blob(d, [Ell(x - 3, y, 7, 2.0), Ell(x + 4, y - 0.4, 4, 1.5)], (236, 255, 210), sh=None, line=False)
+    for (u, v, t, k) in (((0.35, 0.75, 0.5, 1.0), (0.7, 0.62, 0.35, 0.7)), ((0.6, 0.78, 0.45, 0.9),),
+                         ((0.3, 0.7, 0.55, 0.8), (0.75, 0.55, 0.3, 1.0)), ((0.55, 0.8, 0.4, 1.1),))[f]:
+        x, y = iso(u, v)
+        y -= h * t
+        cel(d, Ell(x, y, 1.7 * k, 1.5 * k), lit(g, 0.6), sh=(0.4, 0.4), lw=0.5)
+        Ell(x - 0.5 * k, y - 0.5 * k, 0.55 * k, 0.45 * k).draw(d, fill=(255, 255, 255))
 
 
 def _plasma(d, f, r):
-    h = 24
+    """A plasma core: a rounded block of hot pink light on a dark socket, a swirl turning in it."""
+    shadow(d, 40, 95, 22, 8)
     p = (255, 104, 182)
-    box(d, h, p, shade(p, 0.7), shade(p, 1.5))
-    for i in range(2):
-        a0 = f * 90 + i * 180
-        x, y = iso(0.5, 0.5, h)
-        pts = [(x + math.cos(math.radians(a0 + k * 18)) * (2 + k * 1.1),
-                y + math.sin(math.radians(a0 + k * 18)) * (1 + k * 0.55)) for k in range(12)]
-        stroke(d, pts, 1.2, (255, 214, 236))
-    for fn, tone in ((lface, 0.7), (rface, 1.5)):
-        x, y = fn(0.5, 0.5, h)
-        wave(d, x, y, 12, lit(shade(p, tone), 0.6), 1.0, 1.4 if f % 2 else -1.4)
-    base_line(d, ink(shade(p, 1.5)))
+    rounded_block(d, 8, (92, 80, 140), (66, 56, 104), inset=0.06, rad=0.26)
+    rounded_block(d, 30, lit(p, 0.3), shade(p, 0.25), inset=0.18, rad=0.3, top_hi=lit(p, 0.9))
+    x, y = iso(0.5, 0.5, 30)
+    a0 = f * 90
+    pts = [(x + math.cos(math.radians(a0 + k * 22)) * (1.5 + k * 0.9),
+            y + math.sin(math.radians(a0 + k * 22)) * (0.75 + k * 0.45)) for k in range(11)]
+    stroke(d, pts, 1.3, (255, 226, 242))
 
 
 def _energy(d, f, r):
@@ -905,7 +966,7 @@ def _tree(d, f, r):
     parts = [Ell(x, y, rx, ry) for (x, y, rx, ry) in layouts[f]]
     hi = [(Ell(29, 30, 10, 7), lit(LEAF, 0.7)), (Ell(40, 18, 6, 4), lit(LEAF, 0.7)),
           (Ell(21, 48, 5, 4), lit(LEAF, 0.5))]
-    blob(d, parts, LEAF, sh=(4.0, 4.0), regions=hi, lw=1.3)
+    blob(d, parts, LEAF, sh=(4.0, 4.0), regions=hi, lw=1.3 * PROP_INK)
     _canopy_marks(d, [(47, 40, 5), (34, 48, 5), (55, 53, 4), (43, 26, 4)], shade(LEAF, 1.1))
     if f == 1:  # blossom
         for (x, y) in ((28, 38), (47, 28), (55, 45), (36, 55), (42, 40), (24, 51)):
@@ -927,7 +988,7 @@ def _bush(d, f, r):
     )
     col = mix(LEAF, (80, 176, 84), 0.5)
     parts = [Ell(x, y, rx, ry) for (x, y, rx, ry) in layouts[f]]
-    blob(d, parts, col, sh=(3.0, 3.0), regions=[(Ell(33, 70, 7, 4), lit(col, 0.6))], lw=1.2)
+    blob(d, parts, col, sh=(3.0, 3.0), regions=[(Ell(33, 70, 7, 4), lit(col, 0.6))], lw=1.2 * PROP_INK)
     _canopy_marks(d, [(45, 79, 4), (33, 83, 4)], shade(col, 1.0))
     if f == 0:
         for (x, y) in ((31, 75), (45, 70), (52, 81), (38, 84)):
@@ -1125,7 +1186,7 @@ def _coral(d, f, r):
     for b in branches:
         tx, ty = b[-1]
         parts.append(Ell(tx, ty, 3.4, 3.4))
-    blob(d, parts, col, sh=(1.6, 1.2), lw=1.1)
+    blob(d, parts, col, sh=(1.6, 1.2), lw=1.1 * PROP_INK)
     for b in branches:
         tx, ty = b[-1]
         Ell(tx - 1.0, ty - 1.0, 1.1, 1.0).draw(d, fill=lit(col, 0.8))
@@ -1155,7 +1216,7 @@ def _thorns(d, f, r):
     shadow(d, 40, 94, 20, 7)
     col = (82, 132, 70)
     parts = [Ell(40, 80, 19, 12), Ell(29, 78, 10, 9), Ell(51, 78, 10, 9), Ell(40, 70, 11, 9)]
-    blob(d, parts, col, sh=(3.0, 3.0), lw=1.2)
+    blob(d, parts, col, sh=(3.0, 3.0), lw=1.2 * PROP_INK)
     cane = (150, 96, 70)
     rr = random.Random(3100 + f)
     for k in range(4):
@@ -1193,9 +1254,9 @@ TILES = [
     (14, "glass", GROUND, _glass),
     (15, "energy_field", BLOCK, _energy),
     (16, "circuit", GROUND, _circuit),
-    (17, "void", BLOCK, _void),
-    (18, "toxic", BLOCK, _toxic),
-    (19, "plasma", BLOCK, _plasma),
+    (17, "void", POOL, _void),
+    (18, "toxic", PROP, _toxic),
+    (19, "plasma", PROP, _plasma),
     (20, "flowers", GROUND, _flowers),
     (21, "dirt", GROUND, _dirt),
     (22, "cobblestone", GROUND, _cobble),
@@ -1204,7 +1265,7 @@ TILES = [
     (25, "coral", PROP, _coral),
     (26, "ruins", PROP, _ruins),
     (27, "moss", GROUND, _moss),
-    (28, "obsidian", BLOCK, _obsidian),
+    (28, "obsidian", PROP, _obsidian),
     (29, "cliff", BLOCK, _cliff),
     (30, "ash", GROUND, _ash),
     (31, "thorns", PROP, _thorns),
@@ -1221,10 +1282,14 @@ TILES = [
 ]
 
 # Height of each block's top above the ground, in atlas pixels (twice display pixels).
-BLOCK_HEIGHTS = {4: 50, 11: 68, 12: 30, 15: 44, 17: 32, 18: 16, 19: 24, 28: 50, 29: 72, 32: 58, 41: 34}
+BLOCK_HEIGHTS = {4: 50, 11: 68, 12: 30, 15: 44, 29: 72, 32: 58, 41: 34}
 
 # Blocks whose four frames are an animation; every other block draws one frame four times.
-ANIMATED_BLOCKS = {15, 17, 18, 19}
+ANIMATED_BLOCKS = {15}
+
+# Pools whose four frames are variants picked by position, as the ground's are, not an animation
+# (Tile.animates in Tile.scala)
+STILL_POOLS = {17}
 
 
 # Props drawn bigger than they are authored, about their foot (PropDraw)
@@ -1233,12 +1298,12 @@ PROP_SCALE = {24: 1.25, 25: 1.3, 26: 1.2, 31: 1.25, 34: 1.3, 35: 1.45, 36: 1.1, 
 
 def render_cell(tid, form, fn, frame):
     img = Image.new("RGBA", (CELL_W * SS, CELL_H * SS), CLEAR)
-    if form == PROP and tid in PROP_SCALE:
-        d = PropDraw(ImageDraw.Draw(img), SS, img, PROP_SCALE[tid])
+    if form == PROP:
+        d = PropDraw(ImageDraw.Draw(img), SS, img, PROP_SCALE.get(tid, 1.0))
     else:
         d = ScaledDraw(ImageDraw.Draw(img), SS, img)
-    animated = form == POOL or (form == BLOCK and tid in ANIMATED_BLOCKS)
-    variant = frame if (form in (GROUND, PROP) or animated) else 0
+    animated = (form == POOL and tid not in STILL_POOLS) or (form == BLOCK and tid in ANIMATED_BLOCKS)
+    variant = frame if (form in (GROUND, PROP) or animated or tid in STILL_POOLS) else 0
     rng = random.Random(tid * 7919 + (0 if animated else variant))
     fn(d, variant, rng)
     cell = img.resize((CELL_W, CELL_H), Image.LANCZOS)
@@ -1246,6 +1311,9 @@ def render_cell(tid, form, fn, frame):
         cell.putalpha(hard_mask(0))
     elif form == BLOCK:
         cell.putalpha(hard_mask(BLOCK_HEIGHTS[tid]))
+    else:
+        # the characters' own finish: a ring a shade darker than the edge it borders
+        cell = add_contour(cell)
     return cell
 
 

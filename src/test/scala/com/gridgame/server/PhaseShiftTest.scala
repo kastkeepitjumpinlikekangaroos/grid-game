@@ -8,10 +8,11 @@ import org.junit.Assert._
 import org.junit.Test
 
 /**
- * A phase (a phase-shift ability, or a dash) makes the client's player untouchable and lets it
- * walk through walls; the server has to agree, or the player takes hits the client shows passing
- * through them and every step through a wall is refused. The client tells the server by setting
- * the phased flag on its updates, which arrive here through GameServer.
+ * A phase (a phase-shift ability, or a dash) makes the client's player untouchable and twice as
+ * quick; the server has to agree, or the player takes hits the client shows passing through them.
+ * The client tells the server by setting the phased flag on its updates, which arrive here through
+ * GameServer. Walls stop a phase shift as they stop a walk (it used to walk through them); a dash
+ * still goes over them.
  */
 class PhaseShiftTest {
   private val m = new TestMatch()
@@ -32,11 +33,13 @@ class PhaseShiftTest {
     lobby.status = LobbyStatus.IN_GAME
   }
 
-  private def phasedStep(p: Player, x: Int, y: Int): Unit = {
+  /** An update from the player's client, as the network delivers it: by default one saying it is
+    * phased. */
+  private def phasedStep(p: Player, x: Int, y: Int, flags: Int = 0x08): Unit = {
     seq += 1
     Thread.sleep(2)
     server.handleIncomingPacket(new PlayerUpdatePacket(seq, p.getId, Packet.getCurrentTimestamp, new Position(x, y),
-      p.getColorRGB, p.getHealth, 0, 0x08, p.getCharacterId, p.getTeamId, p.getServerMoves), null, p.getUdpAddress)
+      p.getColorRGB, p.getHealth, 0, flags, p.getCharacterId, p.getTeamId, p.getServerMoves), null, p.getUdpAddress)
   }
 
   @Test def theFirstPhaseIsHonoured(): Unit = {
@@ -72,15 +75,17 @@ class PhaseShiftTest {
   }
 
   @Test def aPhaseTakesEffectForTheUpdateThatAnnouncesIt(): Unit = {
-    // If that update already has the player inside a wall, it must be judged as phased: judged
-    // first and phased after, it was refused, and the phase never began
+    // If that update already carries the player at a phase's pace, it must be judged as phased:
+    // judged first and phased after, it was refused, and the phase never began
     val wraith = m.join(CharacterId.Wraith, 10, 10)
     val watcher = m.join(CharacterId.Gladiator, 40, 40)
     inGame(wraith, watcher)
-    m.world.setTile(11, 10, Tile.Wall)
-    phasedStep(wraith, 11, 10)
+    phasedStep(wraith, 10, 10, flags = 0) // not phased yet: starts the clock
+    Thread.sleep(100)
+    // Eight cells in 100ms is more than walking allows (six) and within a phase's twice (ten)
+    phasedStep(wraith, 18, 10)
     assertTrue(wraith.isPhased)
-    assertEquals((11, 10), m.at(wraith))
+    assertEquals((18, 10), m.at(wraith))
   }
 
   // --- How far a phase goes ---
@@ -130,15 +135,32 @@ class PhaseShiftTest {
     assertEquals((10, 10), m.at(p))
   }
 
-  @Test def aPhaseStillGoesThroughWalls(): Unit = {
+  @Test def aWallStopsAPhaseAsItStopsAWalk(): Unit = {
+    // Untouchable and twice as quick, a phase walked through walls as well, corners and all
     val wraith = m.join(CharacterId.Wraith, 10, 10)
     m.world.setTile(11, 10, Tile.Wall)
     m.world.setTile(12, 10, Tile.Wall)
     assertTrue(m.move(wraith, 10, 10, flags = 0x08))
-    assertTrue(m.move(wraith, 11, 10, flags = 0x08))
-    assertTrue(m.move(wraith, 12, 10, flags = 0x08))
-    assertTrue(m.move(wraith, 13, 10, flags = 0x08))
-    assertEquals((13, 10), m.at(wraith))
+    assertTrue(wraith.isPhased)
+    assertFalse("into the wall", m.move(wraith, 11, 10, flags = 0x08))
+    assertFalse("past its corner", m.move(wraith, 11, 11, flags = 0x08))
+    assertEquals((10, 10), m.at(wraith))
+    assertTrue("round it", m.move(wraith, 10, 11, flags = 0x08))
+    assertTrue(m.move(wraith, 11, 11, flags = 0x08))
+  }
+
+  @Test def aDashStillGoesOverWalls(): Unit = {
+    // Phased as a phase shift is, a dash goes on over whatever lies between, corners and all
+    val p = m.join(dasher, 10, 10)
+    m.world.setTile(11, 10, Tile.Wall)
+    m.world.setTile(12, 10, Tile.Wall)
+    assertTrue(m.move(p, 10, 10, flags = 0x08))
+    assertTrue(p.isPhased)
+    assertTrue(m.move(p, 11, 10, flags = 0x08))
+    assertTrue(m.move(p, 12, 10, flags = 0x08))
+    assertTrue(m.move(p, 13, 10, flags = 0x08))
+    assertTrue("past a wall's corner", m.move(p, 12, 11, flags = 0x08))
+    assertEquals((12, 11), m.at(p))
   }
 
   @Test def aCharacterWithoutAPhaseCannotClaimOne(): Unit = {

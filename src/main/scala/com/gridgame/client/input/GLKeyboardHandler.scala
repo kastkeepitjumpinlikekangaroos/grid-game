@@ -126,7 +126,10 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
       } else {
         processMovement()
       }
-      if (client.isCharging || client.hasShield || client.hasGemBoost) {
+      // Said again every 100ms while it lasts. A phase too: its cast is one datagram, and with it
+      // lost, a player standing still in their phase was never phased on the server — hit through
+      // it all, while their own client showed them untouchable and held their fire
+      if (client.isCharging || client.hasShield || client.hasGemBoost || client.isPhased) {
         client.sendChargingUpdate()
       }
     }
@@ -162,11 +165,12 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
   }
 
   /** Q and E going down: taken up to be aimed, and cast by the next click, or cast now with nothing
-    * to aim (Attacks). Their coming up does nothing. */
+    * to aim (Attacks). Their coming up does nothing. R has both ready again, once a minute. */
   private def processAbilities(key: Int): Unit = {
     key match {
       case GLFW_KEY_Q => client.pressAbility(0)
       case GLFW_KEY_E => client.pressAbility(1)
+      case GLFW_KEY_R => client.pressReset()
       case _ =>
     }
   }

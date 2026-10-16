@@ -92,7 +92,7 @@ class LightSystem(var width: Int, var height: Int) {
   /** Set ambient light based on background type. */
   def setAmbientForBackground(background: String): Unit = {
     ambientLevel = background match {
-      case "space"     => 0.38f
+      case "space"     => 0.55f // x1.6: the deck's own colours, a little dimmed
       case "cityscape" => 0.45f
       case "ocean"     => 0.50f
       case "sky"       => 0.625f // x1.6 in the composite: exactly the art's own brightness

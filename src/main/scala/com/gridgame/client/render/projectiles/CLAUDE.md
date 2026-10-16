@@ -557,7 +557,7 @@ isometric tiles banded dark stone / grass / sand, at `CAMERA_ZOOM`, with a 48-un
 footprint box for scale — a projectile that reads on one ground can disappear on another,
 and judging any of this at 1:1 flatters it by a third. Each cell advances the projectile to
 **35% of its own effective range**, not a fixed number of steps: at six steps every
-short-range type (a talon, a fang, a punch are all `maxRange` 3-4) was past its end of range
+short-range type (a talon, a fang, a punch fly 2-3 cells, `maxRange`) was past its end of range
 and drawn in its dissipation, at 30% alpha and 130% scale, which is not a state a player
 ever aims at. This is the loop to use for any
 projectile art change; it needs no server, no login and no match. Its target compiles only the

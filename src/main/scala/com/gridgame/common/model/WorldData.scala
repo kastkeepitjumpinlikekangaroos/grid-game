@@ -46,7 +46,8 @@ class WorldData(
   /**
    * May one step from (fromX, fromY) to the cell (dx, dy) away, one of the eight round it? Onto a
    * cell one can stand on, and, for a diagonal step, between two that are open too
-   * ([[cornersOpen]]). Steps, the bots' ways round walls, and pushes and pulls all go by it.
+   * ([[cornersOpen]]). Steps (phased ones too), the bots' ways round walls, and pushes and pulls all
+   * go by it.
    */
   def canStep(fromX: Int, fromY: Int, dx: Int, dy: Int): Boolean =
     isWalkable(fromX + dx, fromY + dy) && cornersOpen(fromX, fromY, dx, dy)

@@ -146,6 +146,127 @@ class GameClientMatchTest {
     assertEquals("Samurai", c.lastKillerCharacterName)
   }
 
+  // --- A death and a respawn reach every client by TCP (GameEvent), whatever the datagrams do ---
+
+  @Test def ourDeathReachesUsByTheKillAlone(): Unit = {
+    // The update that says our health is 0 is a datagram, and was all that told us: lost, we went
+    // on walking and shooting, every bit of it refused, until the respawn put us back at a spawn
+    t.startMatch(spawn = (5, 5))
+    val killer = UUID.randomUUID()
+    t.join(killer, 9, 9)
+    t.gameEvent(GameEvent.KILL, who = killer, target = t.id, kills = 1)
+    assertTrue("dead", c.getIsDead)
+    assertTrue("and waiting to respawn", c.isRespawning)
+    assertEquals(0, c.getLocalHealth)
+    assertTrue("the death shown", c.getLocalDeathTime > 0)
+    t.gameEvent(GameEvent.RESPAWN, who = t.id, spawn = (30, 30))
+    assertFalse(c.getIsDead)
+    assertEquals((30, 30), t.at)
+  }
+
+  @Test def anotherPlayersDeathReachesUsByTheKillAlone(): Unit = {
+    // Lost, their death update left them standing where they fell, alive, until they respawned
+    t.startMatch(spawn = (5, 5))
+    val victim = UUID.randomUUID()
+    t.join(victim, 9, 9)
+    t.gameEvent(GameEvent.KILL, who = t.id, target = victim, kills = 1)
+    assertTrue("dead on our screen", c.getPlayers.get(victim).isDead)
+    assertTrue("and seen dying", c.getDeathAnimations.containsKey(victim))
+  }
+
+  @Test def anotherPlayersRespawnReachesUsByTheRespawnAlone(): Unit = {
+    // Only the update after it said so, a datagram: lost, a player who respawned and stood still at
+    // full health stayed dead, and unseen, on our screen until something next happened to them
+    t.startMatch(spawn = (5, 5))
+    val them = UUID.randomUUID()
+    t.join(them, 9, 9, charId = CharacterId.Gladiator.id)
+    t.update(them, 9, 9, flags = 0x04 | 0x10 | 0x40, heldMs = 3000, rootedMs = 3000)
+    t.gameEvent(GameEvent.KILL, who = t.id, target = them, kills = 1)
+    t.gameEvent(GameEvent.RESPAWN, who = them, spawn = (40, 44))
+    val p = c.getPlayers.get(them)
+    assertFalse("back", p.isDead)
+    assertEquals(new Position(40, 44), p.getPosition)
+    assertEquals("whole", p.getMaxHealth, p.getHealth)
+    assertFalse("and nothing on them", p.isFrozen || p.isBurning || p.isRooted)
+  }
+
+  @Test def anUpdateSentBeforeAKillCannotStandTheDeadBackUp(): Unit = {
+    // Updates are datagrams and overtake each other: one sent just before the kill and delivered
+    // after it put the dead player back on their feet, where they fell, until they respawned
+    t.startMatch(spawn = (5, 5))
+    val victim = UUID.randomUUID()
+    t.join(victim, 9, 9)
+    val before = t.peekSeq
+    t.gameEvent(GameEvent.KILL, who = t.id, target = victim, kills = 1, seq = before + 5)
+    t.update(victim, 10, 9, health = 40, seq = before + 2)
+    assertTrue("still dead", c.getPlayers.get(victim).isDead)
+    // What came after the kill counts: their respawn's update
+    t.update(victim, 30, 30, health = 100, seq = before + 9)
+    assertFalse(c.getPlayers.get(victim).isDead)
+    assertEquals(new Position(30, 30), c.getPlayers.get(victim).getPosition)
+  }
+
+  @Test def aKillHeldUpBehindTheRespawnsUpdateKillsNobody(): Unit = {
+    // The other way round: the kill, by TCP, held up on the way, behind their respawn's datagram
+    t.startMatch(spawn = (5, 5))
+    val them = UUID.randomUUID()
+    t.join(them, 9, 9)
+    val before = t.peekSeq
+    t.update(them, 30, 30, health = 100, seq = before + 9)
+    t.gameEvent(GameEvent.KILL, who = t.id, target = them, kills = 1, seq = before + 5)
+    assertFalse("alive where they respawned", c.getPlayers.get(them).isDead)
+    assertEquals("but the kill still counts", 1, c.killCount)
+  }
+
+  @Test def anUpdateSentBeforeOurRespawnCannotKillUsAgain(): Unit = {
+    // The update saying we had died, delivered after the respawn, killed us again on our screen:
+    // dead for the rest of the match, as no second respawn would come for a death the server
+    // never had
+    t.startMatch(spawn = (5, 5))
+    val before = t.peekSeq
+    t.gameEvent(GameEvent.KILL, who = UUID.randomUUID(), target = t.id, kills = 1, seq = before + 5)
+    t.gameEvent(GameEvent.RESPAWN, who = t.id, spawn = (30, 30), seq = before + 7)
+    t.update(t.id, 5, 5, health = 0, seq = before + 4)
+    assertFalse("alive", c.getIsDead)
+    assertEquals(c.getSelectedCharacterMaxHealth, c.getLocalHealth)
+  }
+
+  @Test def anUpdateThatOvertookANewerOneIsOldNews(): Unit = {
+    // About anyone: the older one put them back where they had been, with the health and the
+    // effects they had then
+    t.startMatch(spawn = (5, 5))
+    val them = UUID.randomUUID()
+    t.join(them, 9, 9)
+    val before = t.peekSeq
+    t.update(them, 12, 9, health = 60, flags = 0x04, heldMs = 2000, seq = before + 3)
+    t.update(them, 10, 9, health = 100, seq = before + 1)
+    val p = c.getPlayers.get(them)
+    assertEquals(new Position(12, 9), p.getPosition)
+    assertEquals(60, p.getHealth)
+    assertTrue("still frozen", p.isFrozen)
+    // About us: a freeze that had just landed was lifted by an update sent before it
+    t.update(t.id, 5, 5, health = 50, flags = 0x04, heldMs = 2000, seq = before + 6)
+    t.update(t.id, 5, 5, health = 90, seq = before + 4)
+    assertTrue("held", c.isFrozen)
+    assertEquals(50, c.getLocalHealth)
+  }
+
+  @Test def wePlayTheCharacterTheServerHasUsPlay(): Unit = {
+    // A character picked as the host started the match, or in the ranked queue as it found the
+    // match, reached the server too late to count: we played the match as the one we had picked,
+    // and every shot and cast was refused as another character's
+    c.selectedCharacterId = CharacterId.Wizard.id
+    t.lobby(LobbyAction.GAME_STARTING)
+    c.setWorld(t.world)
+    t.join(t.id, 12, 12, charId = CharacterId.Samurai.id)
+    assertEquals(CharacterId.Samurai.id, c.selectedCharacterId)
+    assertEquals(CharacterDef.get(CharacterId.Samurai).maxHealth, c.getSelectedCharacterMaxHealth)
+    // Nor is one the server doesn't know taken from it
+    t.lobby(LobbyAction.GAME_STARTING)
+    t.join(t.id, 12, 12, charId = (-100).toByte)
+    assertEquals(CharacterId.Samurai.id, c.selectedCharacterId)
+  }
+
   @Test def aRespawnBringsUsBackWholeAtTheSpawn(): Unit = {
     t.startMatch(spawn = (5, 5))
     t.item(ItemAction.INVENTORY, 1, ItemType.Heart)

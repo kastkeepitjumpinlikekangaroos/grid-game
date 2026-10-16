@@ -1,5 +1,6 @@
 package com.gridgame.server.bots
 
+import com.gridgame.common.Constants
 import com.gridgame.common.model._
 import com.gridgame.common.observability.Attrs
 import com.gridgame.common.observability.Metrics
@@ -8,8 +9,8 @@ import java.util.UUID
 
 /** A bot fighting: its primary at its target (with a little aim wobble), its Q and E when they fit —
   * a slam in reach, a closer from further off, a trap for someone coming in, a barrier against
-  * shots it would stop — and its barrier, once up, faced at the target for its whole time while
-  * it goes on attacking through it. */
+  * shots it would stop — R to have both again once both are spent in a fight, and its barrier, once
+  * up, faced at the target for its whole time while it goes on attacking through it. */
 trait BotCombat { this: BotController =>
   /** Turn the bot's raised barrier to face the target. */
   private[bots] def faceBarrier(bot: Player, target: Player): Unit = {
@@ -95,6 +96,8 @@ trait BotCombat { this: BotController =>
     // Read and rolled forward once a tick, so both abilities see the same answer
     val closing = isClosing(bot.getId, dist)
 
+    tryResetCooldowns(bot, charDef, dist, now)
+
     val lastQ = lastQAbilityTime.getOrDefault(bot.getId, 0L)
     if (now - lastQ >= charDef.qAbility.cooldownMs) {
       if (tryFireAbility(bot, target, charDef.qAbility, dist, closing)) {
@@ -108,6 +111,23 @@ trait BotCombat { this: BotController =>
         lastEAbilityTime.put(bot.getId, now)
       }
     }
+  }
+
+  /**
+   * R, as a player has it (design/characters.md, *R resets the cooldowns*): once its own minute has
+   * run (for the first, from the match's start: GameInstance.firstResetFrom), a bot with both
+   * abilities spent, each with a few seconds still to go, and its target within reach of its
+   * primary has both ready again, to use this tick if they fit. A death doesn't give it back.
+   */
+  private def tryResetCooldowns(bot: Player, charDef: CharacterDef, dist: Float, now: Long): Unit = {
+    if (dist > getMaxRange(bot.getCharacterId)) return
+    val id = bot.getId
+    if (lastQAbilityTime.getOrDefault(id, 0L) + charDef.qAbility.cooldownMs - now < RESET_MIN_LEFT_MS) return
+    if (lastEAbilityTime.getOrDefault(id, 0L) + charDef.eAbility.cooldownMs - now < RESET_MIN_LEFT_MS) return
+    if (now - Math.max(instance.firstResetFrom, lastCooldownReset.getOrDefault(id, 0L)) < Constants.COOLDOWN_RESET_MS) return
+    lastCooldownReset.put(id, now)
+    lastQAbilityTime.put(id, 0L)
+    lastEAbilityTime.put(id, 0L)
   }
 
   /** Is this bot's target nearer than it was, and does it stay noted for next time? */

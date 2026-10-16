@@ -214,8 +214,9 @@ class EditorCanvas(state: EditorState, undoManager: UndoManager, statusBar: Stat
 
     // The same two passes and the same variants as the game (GLGameRenderer), so a map looks
     // here the way it will in a match: first everything flat — ground, pools, and the ground
-    // each prop stands in — then blocks and props, back to front.
-    def variant(wx: Int, wy: Int): Int = ((wx * 7 + wy * 13) & 0x7FFFFFFF) % 4
+    // each prop stands in — then blocks and props, back to front. A tile that animates shows its
+    // first frame.
+    def frame(tile: Tile, wx: Int, wy: Int): Int = if (tile.animates) 0 else tile.variantAt(wx, wy)
 
     // Phase 1: ground, pools, and the ground under props
     for (wy <- startY to endY; wx <- startX to endX) {
@@ -227,7 +228,7 @@ class EditorCanvas(state: EditorState, undoManager: UndoManager, statusBar: Stat
       if (tile != null) {
         val sx = worldToScreenX(wx, wy)
         val sy = worldToScreenY(wx, wy)
-        val img = EditorTileRenderer.getTileImage(tile.id, if (tile.form == TileForm.Ground) variant(wx, wy) else 0)
+        val img = EditorTileRenderer.getTileImage(tile.id, frame(tile, wx, wy))
         gc.drawImage(img, sx - scaledHW, sy - (scaledCellH - scaledHH),
           Constants.TILE_CELL_WIDTH * state.zoom, scaledCellH)
       }
@@ -239,7 +240,7 @@ class EditorCanvas(state: EditorState, undoManager: UndoManager, statusBar: Stat
       if (tile.form == TileForm.Block || tile.form == TileForm.Prop) {
         val sx = worldToScreenX(wx, wy)
         val sy = worldToScreenY(wx, wy)
-        val img = EditorTileRenderer.getTileImage(tile.id, if (tile.form == TileForm.Prop) variant(wx, wy) else 0)
+        val img = EditorTileRenderer.getTileImage(tile.id, if (tile.form == TileForm.Prop) tile.variantAt(wx, wy) else 0)
         gc.drawImage(img, sx - scaledHW, sy - (scaledCellH - scaledHH),
           Constants.TILE_CELL_WIDTH * state.zoom, scaledCellH)
       }

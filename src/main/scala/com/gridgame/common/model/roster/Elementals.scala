@@ -118,7 +118,7 @@ private[model] object Elementals {
     description = "A swift air elementalist who slices with wind, blows foes away and becomes the wind.",
     spriteSheet = "sprites/windwalker.png",
     qAbility = AbilityDef(name = "Gale", description = "A gale that blows the first enemy it reaches back 5 cells and puts the wind at your back: 40% faster for 1.5s.", cooldownMs = 8000, maxRange = 7, damage = 12, projectileType = ProjectileType.GALE, keybind = "Q"),
-    eAbility = AbilityDef(name = "Wind Form", description = "Becomes the wind for 2s: untouchable, through walls at twice the pace, but unable to attack.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = PhaseShiftBuff(2000)),
+    eAbility = AbilityDef(name = "Wind Form", description = "Becomes the wind for 2s: untouchable, at twice the pace, but unable to attack.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = PhaseShiftBuff(2000)),
     primaryProjectileType = ProjectileType.WIND_BLADE, role = Ranged, maxHealth = 65
   )
 

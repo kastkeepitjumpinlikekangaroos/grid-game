@@ -117,6 +117,8 @@ object AudioManager {
   def playTeleport(): Unit = playSfx("teleport", SFX_VOLUME, PITCH_SPREAD)
   def playPhaseShift(): Unit = playSfx("phase_shift", SFX_VOLUME)
   def playBarrierUp(): Unit = playSfx("barrier_up", SFX_VOLUME, PITCH_SPREAD)
+  /** R: both abilities ready again. */
+  def playCooldownReset(): Unit = playSfx("cooldown_reset", SFX_VOLUME)
 
   /** A trap being set down. Centred when it is ours (no distance to speak of), out there when
     * it is somebody else's — an enemy setting one nearby is a thing worth hearing. */
@@ -195,10 +197,11 @@ object AudioManager {
     t.start()
   }
 
-  private val EVENT_SOUNDS = Seq(
+  // Everything that isn't an attack (AbilitySoundsTest checks each has a file)
+  private[audio] val EVENT_SOUNDS = Seq(
     "spawn", "death", "hit_taken", "hit_dealt", "hit_other",
     "explosion", "dash", "teleport", "phase_shift", "barrier_up", "barrier_block",
-    "trap_place", "trap_snap", "trap_poison", "trap_ignite",
+    "trap_place", "trap_snap", "trap_poison", "trap_ignite", "cooldown_reset",
     "music_menu", "music_battle"
   )
 

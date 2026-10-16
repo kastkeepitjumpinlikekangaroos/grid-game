@@ -73,6 +73,14 @@ object PacketValidator {
     case StandardProjectile | GroundSlam(_) => 1
     case _ => 0
   }
+
+  /** Is this phased player dashing? A dash is phased while it lasts, as a phase shift is, and goes
+    * over walls, as a phase shift doesn't. A kit has one or the other at most (KitTest), and the
+    * phased flag is honoured by it (StepRequests.activatePhase), so a phased player whose kit has
+    * a dash is dashing. */
+  private def isDashing(player: Player, charDef: CharacterDef): Boolean =
+    player.isPhased && charDef != null &&
+      (charDef.qAbility.castBehavior.isInstanceOf[DashBuff] || charDef.eAbility.castBehavior.isInstanceOf[DashBuff])
 }
 
 /**
@@ -100,6 +108,10 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
   // When each player's current life began (a respawn), for the charge of its first shot
   private val lifeStartedAt = new ConcurrentHashMap[UUID, java.lang.Long]()
 
+  // When each player last reset their cooldowns (R), which its own cooldown runs from. A new life
+  // leaves it as it is: nobody has R back for dying
+  private val lastCooldownReset = new ConcurrentHashMap[UUID, java.lang.Long]()
+
   def validateChargeLevel(chargeLevel: Int): Boolean = {
     chargeLevel >= 0 && chargeLevel <= 100
   }
@@ -121,37 +133,37 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
       return false
     }
 
-    // Walkability check (skip for phased players)
-    if (!player.isPhased && !world.isWalkable(x, y)) {
+    // Nobody stands in a wall but someone dashing: a dash goes over whatever lies between. A phase
+    // shift walked through walls too; untouchable and quick, it is stopped by them now as anyone
+    // is (design/characters.md, *A phase stops at walls*)
+    val charDef = characterOf(player.getCharacterId)
+    val dashing = isDashing(player, charDef)
+    if (!dashing && !world.isWalkable(x, y)) {
       System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} moved to non-walkable tile ($x, $y)")
       Metrics.validationFailed.add(1L, Attrs.VfMovementWalkable)
       return false
     }
 
     // A diagonal step goes between open cells only (WorldData.cornersOpen), as the client and the
-    // bots take one: past a wall's corner, or between two blocks touching at one, is through the
-    // wall. A phase walks through walls, and their corners with them. Only a single step can be
+    // bots take one, phased or not; a dash goes over corners as it goes over walls. Past a wall's
+    // corner, or between two blocks touching at one, is through the wall. Only a single step can be
     // judged so: of a few bunched into one update, the server knows the ends and not the way.
-    if (!player.isPhased) {
-      val from = player.getPosition
-      val sdx = x - from.getX
-      val sdy = y - from.getY
-      if (Math.abs(sdx) == 1 && Math.abs(sdy) == 1 && !world.cornersOpen(from.getX, from.getY, sdx, sdy)) {
-        Metrics.validationFailed.add(1L, Attrs.VfMovementWalkable)
-        return false
-      }
+    val from = player.getPosition
+    val sdx = x - from.getX
+    val sdy = y - from.getY
+    if (!dashing && Math.abs(sdx) == 1 && Math.abs(sdy) == 1 &&
+        !world.cornersOpen(from.getX, from.getY, sdx, sdy)) {
+      Metrics.validationFailed.add(1L, Attrs.VfMovementWalkable)
+      return false
     }
 
-    // The opening divider between the teams, which a phase doesn't pass either. Checked against
-    // where the player is rather than against the target cell alone, so a dash or a blink can't
-    // jump the wall the way a step can't walk through it.
+    // The opening divider between the teams. Checked against where the player is rather than
+    // against the target cell alone, so a dash or a blink can't jump the wall the way a step can't
+    // walk through it.
     val divider = world.divider
-    if (divider != null) {
-      val from = player.getPosition
-      if (divider.stops(from.getX, from.getY, x, y)) {
-        Metrics.validationFailed.add(1L, Attrs.VfMovementWalkable)
-        return false
-      }
+    if (divider != null && divider.stops(from.getX, from.getY, x, y)) {
+      Metrics.validationFailed.add(1L, Attrs.VfMovementWalkable)
+      return false
     }
 
     // Speed check
@@ -169,11 +181,10 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     val dy = y - oldPos.getY
     val distance = Math.abs(dx.toLong) + Math.abs(dy.toLong) // Long arithmetic to prevent overflow
 
-    // A phased player (a phase shift, or a dash) walks at twice their pace and through walls,
-    // but not at any speed. The check used to be skipped for them altogether, and for as long
-    // as a phase lasted — five seconds, for the Wraith — a client could put its player anywhere
-    // on the map. A dash, much quicker than a phased walk, has its reach below.
-    val charDef = characterOf(player.getCharacterId)
+    // A phased player (a phase shift, or a dash) walks at twice their pace, but not at any speed.
+    // The check used to be skipped for them altogether, and for as long as a phase lasted — five
+    // seconds, for the Wraith — a client could put its player anywhere on the map. A dash, much
+    // quicker than a phased walk, has its reach below.
     val expectedMaxCells = maxCellsIn(deltaMs, if (charDef != null) charDef.moveSpeed else 1.0f,
       phased = player.isPhased)
     if (distance > expectedMaxCells) {
@@ -388,12 +399,49 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     }
   }
 
+  /**
+   * R (design/characters.md, *R resets the cooldowns*): has the player's reset its own cooldown
+   * behind it, 80% of it (the tolerance every attack gets) since their last reset, or since
+   * `firstFrom` for the first (GameInstance.firstResetFrom: the match's start, or never in
+   * practice)? If so it is taken, and the Q and E clocks are cleared, so the next cast of either, a
+   * shot or a trap, is judged as though neither had been cast. A phase's and a barrier's cooldowns
+   * are the player's own (CooldownResetRequests clears those).
+   */
+  def takeCooldownReset(playerId: UUID, firstFrom: Long): Boolean = {
+    val now = System.currentTimeMillis()
+    var taken = false
+    lastCooldownReset.compute(playerId, (_, last) => {
+      if (now - resetFrom(last, firstFrom) < (Constants.COOLDOWN_RESET_MS * 0.8).toLong) last
+      else { taken = true; java.lang.Long.valueOf(now) }
+    })
+    if (taken) {
+      val clocks = attackClocks.get(playerId)
+      if (clocks != null) {
+        clearCooldown(clocks(AttackSlot.Q))
+        clearCooldown(clocks(AttackSlot.E))
+      }
+    }
+    taken
+  }
+
+  /** How long before the player's next reset would be taken in full, as their client waits for it
+    * (ms; 0 if it could go now). */
+  def cooldownResetLeftMs(playerId: UUID, firstFrom: Long): Long =
+    Math.max(0L, resetFrom(lastCooldownReset.get(playerId), firstFrom) + Constants.COOLDOWN_RESET_MS -
+      System.currentTimeMillis())
+
+  private def resetFrom(last: java.lang.Long, firstFrom: Long): Long =
+    if (last == null) firstFrom else Math.max(firstFrom, last.longValue())
+
+  private def clearCooldown(clock: AttackClock): Unit = clock.synchronized { clock.cooldownFrom = 0L }
+
   def removePlayer(playerId: UUID): Unit = {
     lastUpdateTime.remove(playerId)
     attackClocks.remove(playerId)
     movementFence.remove(playerId)
     barrierFence.remove(playerId)
     lifeStartedAt.remove(playerId)
+    lastCooldownReset.remove(playerId)
   }
 
 }

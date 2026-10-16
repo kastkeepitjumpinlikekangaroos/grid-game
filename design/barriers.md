@@ -45,7 +45,9 @@ flag 0x01) already has the name; the player-facing ability can still say shield.
   while it turns, from both input handlers) and says when its own timer, started at the cast, has
   run out: an update without the bit, sent twice, the only time a living holder's client sends
   one. The server (`ClientHandler.updateBarrier`) honours a raise at 80% of the cooldown since the
-  last raise, turns the barrier with every update, and ends it on an update without the bit, so
+  last raise (R clears that, design/characters.md, *R resets the cooldowns*; a barrier still up
+  can't be raised again over itself, so R's is only for the next), turns the barrier with every
+  update, and ends it on an update without the bit, so
   one it only took from a later update (the raise lost, or refused while the holder was held)
   ends with the barrier its holder sees rather than a whole barrier's time after it. Only the
   newest update's word on it counts (`PacketValidator.takeBarrierWord`): the fence that keeps old
@@ -54,8 +56,9 @@ flag 0x01) already has the name; the player-facing ability can still say shield.
   was refused — and dropped the barrier, which the cooldown then kept down while its holder saw it
   up and took shots through it. Every client runs the barrier on its own timer: ours from the
   cast, as a phase does, and everyone else's from the time left that each update carrying it
-  reports (bytes [53-54]), dropping it on an update that doesn't. An update older than the newest
-  one it has taken a barrier from is ignored, since datagrams overtake each other. A remote
+  reports (bytes [53-54]), dropping it on an update that doesn't. An update about the holder older
+  than the newest word on them is ignored, barrier and all (`OtherPlayers.newWordOn`), since
+  datagrams overtake each other. A remote
   barrier used to be a 600ms lease renewed by those updates, which its holder's client streams
   **from its render loop** — so a hitch there longer than the lease (a GC pause, a resize, an
   alt-tab on the weak machine this targets), a burst of lost datagrams, or a run of updates the

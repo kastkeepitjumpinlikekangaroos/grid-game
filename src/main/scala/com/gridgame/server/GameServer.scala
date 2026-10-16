@@ -175,6 +175,15 @@ class GameServer(port: Int) extends PacketRouter with LobbyHost {
         }
       }
 
+      // Anything a player's client sends, signed with their session, says it is still there. Only
+      // its heartbeat used to, and that is a datagram: lose enough of them in a row and the cleanup
+      // loop took the player for gone — out of their match, their session ended — while every step
+      // and shot of theirs was still coming in.
+      if (packet.getType != PacketType.AUTH_REQUEST) {
+        val sender = connectedPlayers.get(packet.getPlayerId)
+        if (sender != null) sender.updateHeartbeat()
+      }
+
       packet.getType match {
         case PacketType.AUTH_REQUEST =>
           auth.handle(packet.asInstanceOf[AuthRequestPacket], tcpCh)

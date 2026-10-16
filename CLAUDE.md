@@ -55,7 +55,7 @@ src/main/scala/com/gridgame/
 │   ├── (core)     Constants, WorldRegistry
 │   ├── model/     the game's rules as data and plain logic: characters (roster/), projectiles,
 │   │              effects, players, tiles, the world, barriers, traps, movement, teleports
-│   ├── protocol/  the wire: 20 packet types, signing
+│   ├── protocol/  the wire: 21 packet types, signing
 │   ├── world/     WorldLoader (JSON maps)
 │   └── observability/  the OpenTelemetry facade
 ├── server/        (common)
@@ -92,7 +92,7 @@ ops/observability/   the local OpenTelemetry → Prometheus/Tempo/Loki/Grafana s
 
 | Area | Doc |
 |---|---|
-| Characters, roles, health and pace, balance against bots, cast behaviors, movement; adding a character | [design/characters.md](design/characters.md) |
+| Characters, roles, health and pace, balance against bots, cast behaviors, casting Q and E, R (both cooldowns reset, once a minute), movement; adding a character | [design/characters.md](design/characters.md) |
 | Projectiles, on-hit effects, splashes and explosions, items, how hits are measured | [design/combat.md](design/combat.md) |
 | Barriers (the shield wall abilities) | [design/barriers.md](design/barriers.md) |
 | Traps; adding a trap | [design/traps.md](design/traps.md) |

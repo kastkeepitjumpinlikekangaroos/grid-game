@@ -3,14 +3,29 @@ package com.gridgame.client.render
 import com.gridgame.common.Constants
 import com.gridgame.client.gl.{GLTexture, SpriteBatch, TextureRegion}
 
+
 /**
- * OpenGL tile renderer. Loads sprites/tiles.png as a GL texture
- * and provides TextureRegion per tile ID + animation frame.
- * Mirrors the functionality of ui/TileRenderer.scala for the GL pipeline.
+ * The tile atlas on the GPU: sprites/tiles.png as one texture, a TextureRegion per tile and frame
+ * (whole, or with the empty rows above its art trimmed off), and [[drawDiamond]] for the ground.
+ *
+ * It is filtered as the characters are, linearly and through two halvings, so the terrain's lines
+ * and outlines come out as smooth as theirs at any scale. Picked a texel per pixel, at the 80 texels
+ * to 64 or 128 pixels a cell is drawn at, every line was a staircase of doubled and dropped texels.
+ * Filtered, a pixel reads a little round its texel, so each cell is laid in a slot of its own with a
+ * gutter of its own border texels round it, and its transparent texels take the colour of the art
+ * beside them: a sample at the edge of a cell, or a halving of one, never reads the cell next to it in
+ * the atlas or the black a PNG leaves in a clear texel. Without them every corner of the ground's
+ * diamonds carried a dark dash.
  */
 object GLTileRenderer {
   private val cellW = Constants.TILE_ATLAS_CELL_W  // 80
   private val cellH = Constants.TILE_ATLAS_CELL_H  // 112
+  // Each cell's slot in the texture: the cell, and a gutter round it as wide as the halvings need
+  // (a texel of the last one)
+  private val MipLevels = 2
+  private val Gutter = 1 << MipLevels
+  private val slotW = cellW + 2 * Gutter
+  private val slotH = cellH + 2 * Gutter
 
   private var texture: GLTexture = _
   private var numTiles: Int = 0
@@ -39,7 +54,7 @@ object GLTileRenderer {
     try {
       // Row of the first non-transparent pixel in each (tile, frame) cell.
       var contentTop: Array[Array[Int]] = null
-      texture = GLTexture.loadInspected("sprites/tiles.png", nearest = true, (px, w, h) => {
+      texture = GLTexture.decode("sprites/tiles.png") { (px, w, h) =>
         val nt = (w / cellW).max(1)
         val nf = (h / cellH).max(1)
         contentTop = Array.ofDim[Int](nt, nf)
@@ -64,18 +79,53 @@ object GLTileRenderer {
           }
           id += 1
         }
-        // The ground is drawn as exact diamonds with blending off (drawDiamond), and a flat tile's
-        // pixel-art edge is a staircase crossing the diamond's true edge: the pixels just inside
-        // the edge sample texels just outside the staircase. Transparent, and black in the PNG
-        GLTexture.padTransparent(px, w, h, cellW, cellH, 2)
-      })
+        // Clear texels take the colour of the art beside them, as far as a halving reaches: the
+        // ground is drawn as exact diamonds with blending off, and a flat tile's edge is a staircase
+        // crossing the diamond's true edge, so the pixels just inside it read texels just outside
+        GLTexture.padTransparentRings(px, w, h, cellW, cellH, 2 * Gutter)
+        // Each cell into its slot, the gutter round it its own border texels again, and its halvings,
+        // a slot at a time: the slots line up with every halving, so a slot's are the atlas's there
+        val tex = GLTexture.allocate(nt * slotW, nf * slotH, MipLevels)
+        val levels = Array.tabulate(MipLevels + 1)(l => GLTexture.allocPixels((slotW >> l) * (slotH >> l) * 4))
+        try {
+          // in the decoded pixels' byte order, so a texel is copied as an int and comes out as it went in
+          levels(0).order(px.order())
+          var f = 0
+          while (f < nf) {
+            var t = 0
+            while (t < nt) {
+              val slot = levels(0)
+              var sy = 0
+              while (sy < slotH) {
+                val cy = Math.max(0, Math.min(cellH - 1, sy - Gutter))
+                var sx = 0
+                while (sx < slotW) {
+                  val cx = Math.max(0, Math.min(cellW - 1, sx - Gutter))
+                  slot.putInt((sy * slotW + sx) * 4, px.getInt(((f * cellH + cy) * w + t * cellW + cx) * 4))
+                  sx += 1
+                }
+                sy += 1
+              }
+              var l = 0
+              while (l <= MipLevels) {
+                if (l > 0) GLTexture.halve(levels(l - 1), slotW >> (l - 1), slotH >> (l - 1), levels(l))
+                GLTexture.upload(tex, l, (t * slotW) >> l, (f * slotH) >> l, slotW >> l, slotH >> l, levels(l))
+                l += 1
+              }
+              t += 1
+            }
+            f += 1
+          }
+        } finally levels.foreach(GLTexture.freePixels)
+        tex
+      }
       texelU = 1f / texture.width
       texelV = 1f / texture.height
-      numTiles = (texture.width / cellW).max(1)
-      numFrames = (texture.height / cellH).max(1)
+      numTiles = (texture.width / slotW).max(1)
+      numFrames = (texture.height / slotH).max(1)
       regions = Array.tabulate(numTiles) { id =>
         Array.tabulate(numFrames) { frame =>
-          texture.region(id * cellW, frame * cellH, cellW, cellH)
+          texture.region(id * slotW + Gutter, frame * slotH + Gutter, cellW, cellH)
         }
       }
       // Atlas cells are 2x the display cell, so an atlas row is half a display pixel.
@@ -83,7 +133,7 @@ object GLTileRenderer {
       trimmed = Array.tabulate(numTiles) { id =>
         Array.tabulate(numFrames) { frame =>
           val top = if (contentTop == null) 0 else contentTop(id)(frame)
-          texture.region(id * cellW, frame * cellH + top, cellW, cellH - top)
+          texture.region(id * slotW + Gutter, frame * slotH + Gutter + top, cellW, cellH - top)
         }
       }
       trimTopPx = Array.tabulate(numTiles) { id =>
@@ -117,8 +167,8 @@ object GLTileRenderer {
     if (numTiles == 0) return
     val id = if (tileId >= 0 && tileId < numTiles) tileId else 0
     val f = frame % numFrames
-    val u0 = id * cellW * texelU
-    val v0 = f * cellH * texelV
+    val u0 = (id * slotW + Gutter) * texelU
+    val v0 = (f * slotH + Gutter) * texelV
     batch.drawQuad(texture,
       xl, ym, u0, v0 + midRow * texelV,
       xc, yt, u0 + centerCol * texelU, v0 + topRow * texelV,

@@ -50,9 +50,9 @@ class TestClient(val world: WorldData = WorldData.createEmpty(60, 60), val name:
       players.toByte, maxPlayers.toByte, status, name, charId, gameMode, teamSize.toByte))
 
   def gameEvent(event: Byte, who: UUID = new UUID(0, 0), target: UUID = null, kills: Int = 0, deaths: Int = 0,
-                rank: Int = 0, spawn: (Int, Int) = (0, 0), team: Byte = 0, remaining: Int = 0): Unit =
-    receive(new GameEventPacket(nextSeq(), who, Packet.getCurrentTimestamp, event, 7.toShort, remaining,
-      kills.toShort, deaths.toShort, target, rank.toByte, spawn._1.toShort, spawn._2.toShort, team))
+                rank: Int = 0, spawn: (Int, Int) = (0, 0), team: Byte = 0, remaining: Int = 0, seq: Int = -1): Unit =
+    receive(new GameEventPacket(if (seq >= 0) seq else nextSeq(), who, Packet.getCurrentTimestamp, event, 7.toShort,
+      remaining, kills.toShort, deaths.toShort, target, rank.toByte, spawn._1.toShort, spawn._2.toShort, team))
 
   /** The server's word on the match's opening (MatchOpening): how long it has left — 0, it is
     * over — and what it does while it lasts. */
@@ -68,10 +68,12 @@ class TestClient(val world: WorldData = WorldData.createEmpty(60, 60), val name:
 
   def update(who: UUID, x: Int, y: Int, health: Int = 100, flags: Int = 0, serverMoves: Int = 0,
              charId: Byte = 0, flags2: Int = 0, slowPercent: Int = 0, aimAngle: Double = 0.0,
-             barrierMs: Int = 0, seq: Int = -1, knockbacks: Int = 0, speedBoostMs: Int = 0): Unit =
+             barrierMs: Int = 0, seq: Int = -1, knockbacks: Int = 0, speedBoostMs: Int = 0,
+             heldMs: Int = 0, rootedMs: Int = 0, slowedMs: Int = 0): Unit =
     receive(new PlayerUpdatePacket(if (seq >= 0) seq else nextSeq(), who, Packet.getCurrentTimestamp,
       new Position(x, y), 0xFF00AA00, health, 0, flags, charId, 0.toByte, serverMoves, flags2,
-      PlayerUpdatePacket.encodeAimAngle(aimAngle), slowPercent, barrierMs, knockbacks, speedBoostMs))
+      PlayerUpdatePacket.encodeAimAngle(aimAngle), slowPercent, barrierMs, knockbacks, speedBoostMs,
+      heldMs, rootedMs, slowedMs))
 
   /** The sequence number the server's next packet would carry, for a test that needs to deliver
     * two of them out of order. */

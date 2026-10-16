@@ -85,6 +85,32 @@ class PacketRoundTripTest {
     assertEquals(65535, capped.getSpeedBoostMs)
   }
 
+  @Test def howLongAHoldARootAndASlowHaveLeftSurviveTheTrip(): Unit = {
+    // Bytes [61-63], after the boost's, which they must leave as they were: 20ms steps each
+    for ((held, rooted, slowed) <- Seq((0, 0, 0), (20, 1500, 3000), (3000, 0, 5100), (5100, 20, 0))) {
+      val p = trip(new PlayerUpdatePacket(1, id, 0, new Position(5, 5), 0, 100, 0, 0xC4, 0.toByte,
+        0.toByte, 3, 0x01, 0, 30, 2500, Int.MaxValue, 65535, held, rooted, slowed))
+      assertEquals(s"$held ms held", held, p.getHeldMs)
+      assertEquals(s"$rooted ms rooted", rooted, p.getRootedMs)
+      assertEquals(s"$slowed ms slowed", slowed, p.getSlowedMs)
+      assertEquals("the boost's time before them", 65535, p.getSpeedBoostMs)
+      assertEquals(Int.MaxValue, p.getKnockbacks)
+      assertEquals(0xC4, p.getEffectFlags)
+    }
+    // Rounded up to a whole step, so the client it reaches never lets its player go first
+    val between = trip(new PlayerUpdatePacket(1, id, 0, new Position(5, 5), 0, 100, 0, 0x04, 0.toByte,
+      0.toByte, 0, 0, 0, 0, 0, 0, 0, 1, 1999, 2001))
+    assertEquals(20, between.getHeldMs)
+    assertEquals(2000, between.getRootedMs)
+    assertEquals(2020, between.getSlowedMs)
+    // Longer than a byte of steps holds is capped rather than wrapped to nothing
+    val capped = trip(new PlayerUpdatePacket(1, id, 0, new Position(5, 5), 0, 100, 0, 0x04, 0.toByte,
+      0.toByte, 0, 0, 0, 0, 0, 0, 0, 60000, Int.MaxValue, 5101))
+    assertEquals(PlayerUpdatePacket.MaxEffectMs, capped.getHeldMs)
+    assertEquals(PlayerUpdatePacket.MaxEffectMs, capped.getRootedMs)
+    assertEquals(PlayerUpdatePacket.MaxEffectMs, capped.getSlowedMs)
+  }
+
   @Test def aBarriersTimeLeftSurvivesTheWholeRange(): Unit = {
     for (ms <- Seq(0, 1, 600, 3500, 14000, 65535)) {
       val p = trip(new PlayerUpdatePacket(1, id, 0, new Position(5, 5), 0, 100, 0, 0, 0.toByte,
@@ -406,6 +432,19 @@ class PacketRoundTripTest {
       assertEquals(reason, p.getReason)
       assertEquals(id, p.getPlayerId)
     }
+
+  @Test def aCooldownResetSaysWhatItIsAndHowLongTheServerStillWants(): Unit = {
+    val asked = trip(new CooldownResetPacket(6, id, CooldownResetAction.REQUEST, 0))
+    assertEquals(PacketType.COOLDOWN_RESET, asked.getType)
+    assertTrue("a player's request goes over TCP", asked.getType.tcp)
+    assertEquals(CooldownResetAction.REQUEST, asked.getAction)
+    assertEquals(id, asked.getPlayerId)
+    for (left <- Seq(0, 1, 47250, Constants.COOLDOWN_RESET_MS)) {
+      val refused = trip(new CooldownResetPacket(7, id, CooldownResetAction.REJECTED, left))
+      assertEquals(CooldownResetAction.REJECTED, refused.getAction)
+      assertEquals(left, refused.getMsLeft)
+    }
+  }
 
   @Test def nothingSecretGoesIntoALogLine(): Unit = {
     // A packet printed in a log, or in a test's failure, must not show what logs a player in

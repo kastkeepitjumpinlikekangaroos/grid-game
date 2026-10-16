@@ -16,7 +16,7 @@ private[model] object Mythological {
   val HeadThrowDef: ProjectileDef = ProjectileDef(id = ProjectileType.HEAD_THROW, name = "Head Throw", speedMultiplier = 0.7f, damage = 25, maxRange = 16, onHitEffect = Some(Push(2.5f)), alsoOnHit = Seq(Stun(800)))
   val StoneGazeDef: ProjectileDef = ProjectileDef(id = ProjectileType.STONE_GAZE, name = "Stone Gaze", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(6.0f, 37, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 6.0f)))
   val InkSnareDef: ProjectileDef = ProjectileDef(id = ProjectileType.INK_SNARE, name = "Ink Snare", speedMultiplier = 0.5f, damage = 0, maxRange = 14, passesThroughPlayers = true, aoeOnMaxRange = Some(AoESplashConfig(5.0f, 21, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 5.0f)))
-  val HornDef: ProjectileDef = ProjectileDef(id = ProjectileType.HORN, name = "Horn", speedMultiplier = 0.6f, damage = 28, maxRange = 5, hitRadius = 2.5f)
+  val HornDef: ProjectileDef = ProjectileDef(id = ProjectileType.HORN, name = "Horn", speedMultiplier = 0.6f, damage = 49, maxRange = 3, hitRadius = 2.5f)
   val MysticBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.MYSTIC_BOLT, name = "Mystic Bolt", speedMultiplier = 0.75f, damage = 28, maxRange = 16, onHitEffect = Some(Burn(20, 3000, 750)))
   val PetrifyDef: ProjectileDef = ProjectileDef(id = ProjectileType.PETRIFY, name = "Petrify", speedMultiplier = 0.3f, damage = 11, maxRange = 20, onHitEffect = Some(Freeze(3000)))
   val ThrownBoulderDef: ProjectileDef = ProjectileDef(id = ProjectileType.THROWN_BOULDER, name = "Thrown Boulder", speedMultiplier = 0.3f, damage = 30, maxRange = 10, hitRadius = 3.0f)
@@ -46,7 +46,7 @@ private[model] object Mythological {
     base(ProjectileType.BOULDER).copy(id = ProjectileType.ROOTING_BOULDER, name = "Rooting Boulder", damage = 38, onHitEffect = Some(Root(1200))),
     // A primary with an identity of its own (Plan 5a): a slow at most, never a hold. Primaries fire
     // twice a second, and a hold grants 1.5s of CC immunity that would turn the kit's own holds away
-    base(ProjectileType.CLAW_SWIPE).copy(id = ProjectileType.FENRIR_CLAW, name = "Fenrir Claw", damage = 29, onHitEffect = Some(LifeSteal(25))),
+    base(ProjectileType.CLAW_SWIPE).copy(id = ProjectileType.FENRIR_CLAW, name = "Fenrir Claw", damage = 51, onHitEffect = Some(LifeSteal(25))),
     // The Sphinx's Riddle, one where it sent five sonic waves: through walls, it leaves the first two
     // who hear it rooted to the spot puzzling it out
     base(ProjectileType.SONIC_WAVE).copy(id = ProjectileType.RIDDLE, name = "Riddle", damage = 24, onHitEffect = Some(Root(1500))),
@@ -103,7 +103,7 @@ private[model] object Mythological {
     id = CharacterId.Kraken, displayName = "Kraken",
     description = "A sea monster with tentacle pulls, an ink snare, and a cloud of ink to vanish in.",
     spriteSheet = "sprites/kraken.png",
-    qAbility = AbilityDef(name = "Ink Cloud", description = "Vanishes in a cloud of ink for 2s: untouchable, through walls at twice the pace, but unable to attack.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = PhaseShiftBuff(2000)),
+    qAbility = AbilityDef(name = "Ink Cloud", description = "Vanishes in a cloud of ink for 2s: untouchable, at twice the pace, but unable to attack.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = PhaseShiftBuff(2000)),
     eAbility = AbilityDef(name = "Ink Snare", description = "Launches ink that roots enemies on landing.", cooldownMs = 12000, maxRange = 14, damage = 21, projectileType = ProjectileType.INK_SNARE, keybind = "E"),
     primaryProjectileType = ProjectileType.TENTACLE, role = Ranged, maxHealth = 80
   )

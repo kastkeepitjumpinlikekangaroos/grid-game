@@ -739,6 +739,242 @@ class ShapeBatch(val shader: ShaderProgram) {
     }
   }
 
+  // ── Smooth-edged shapes ─────────────────────────────────────────────────
+  // Every shape above has a hard edge, which a pixel either is inside of or isn't: a curve or a
+  // slanted line comes out a staircase, at Low (under a pixel a unit) a coarse one. These fade
+  // each edge out over one pixel of the target (pixelsPerUnit), centred on the edge, so a pixel the
+  // edge half covers is half covered: a ring, a slanted rim or a disc on the ground reads as drawn
+  // with a pen rather than cut out of the pixel grid (gl/CLAUDE.md, *Smooth edges*).
+
+  /** How far a smooth edge fades, in units: one pixel of the target. */
+  @inline private def featherWidth: Float = 1f / Math.max(0.25f, pixelsPerUnit)
+
+  /** Segments for a smooth oval of these radii: no chord strays a quarter of a pixel from the curve.
+    * A smooth edge shows a polygon's corners that a hard one's staircase hid: a dot drawn with
+    * curveSegments' eight was an octagon. Past the sine table's 64 they are turned round step by
+    * step ([[smoothOval]]). */
+  @inline private def smoothSegments(rx: Float, ry: Float): Int = {
+    val rPx = Math.max(Math.abs(rx), Math.abs(ry)) * pixelsPerUnit
+    // A chord's sagitta is r pi^2 / 2n^2, a quarter of a pixel for n = pi sqrt(2r)
+    Math.max(12, Math.min(MAX_SMOOTH_SEGMENTS, (Math.PI * Math.sqrt(2.0 * rPx)).toInt + 1))
+  }
+  private val MAX_SMOOTH_SEGMENTS = 256
+  // The directions round a smooth oval, worked out once a shape (smoothOval)
+  private val _ovC = new Array[Float](MAX_SMOOTH_SEGMENTS + 1)
+  private val _ovS = new Array[Float](MAX_SMOOTH_SEGMENTS + 1)
+
+  /** The n + 1 directions round a smooth oval of n segments into _ovC/_ovS, the last the first again
+    * so it closes exactly. */
+  private def smoothOval(n: Int): Unit = {
+    val step = 2.0 * Math.PI / n
+    val cs = Math.cos(step); val ss = Math.sin(step)
+    var c = 1.0; var s = 0.0
+    var i = 0
+    while (i < n) {
+      _ovC(i) = c.toFloat; _ovS(i) = s.toFloat
+      val c1 = c * cs - s * ss
+      s = s * cs + c * ss; c = c1
+      i += 1
+    }
+    _ovC(n) = 1f; _ovS(n) = 0f
+  }
+
+  /** Two triangles between two runs with an alpha at each corner: (i0, o0) at one end, (i1, o1) at
+    * the other. */
+  @inline private def quad4(ix0: Float, iy0: Float, ia0: Float, ox0: Float, oy0: Float, oa0: Float,
+                            ix1: Float, iy1: Float, ia1: Float, ox1: Float, oy1: Float, oa1: Float,
+                            r: Float, g: Float, b: Float): Unit = {
+    vertex(ix0, iy0, r, g, b, ia0); vertex(ox0, oy0, r, g, b, oa0); vertex(ox1, oy1, r, g, b, oa1)
+    vertex(ix0, iy0, r, g, b, ia0); vertex(ox1, oy1, r, g, b, oa1); vertex(ix1, iy1, r, g, b, ia1)
+  }
+
+  /** A filled oval whose edge fades out over a pixel. */
+  def fillOvalSmooth(cx: Float, cy: Float, rx: Float, ry: Float, r: Float, g: Float, b: Float, a: Float): Unit = {
+    val h = featherWidth * 0.5f
+    val n = smoothSegments(rx + h, ry + h)
+    smoothOval(n)
+    val irx = Math.max(0f, rx - h); val iry = Math.max(0f, ry - h)
+    val orx = rx + h; val ory = ry + h
+    ensureCapacity(n * 9)
+    var i = 0
+    while (i < n) {
+      val c0 = _ovC(i); val s0 = _ovS(i); val c1 = _ovC(i + 1); val s1 = _ovS(i + 1)
+      vertex(cx, cy, r, g, b, a)
+      vertex(cx + irx * c0, cy + iry * s0, r, g, b, a)
+      vertex(cx + irx * c1, cy + iry * s1, r, g, b, a)
+      quad4(cx + irx * c0, cy + iry * s0, a, cx + orx * c0, cy + ory * s0, 0f,
+        cx + irx * c1, cy + iry * s1, a, cx + orx * c1, cy + ory * s1, 0f, r, g, b)
+      i += 1
+    }
+  }
+
+  /** An oval's outline `lineWidth` across whose edges fade out over a pixel, inside and out. A line
+    * thinner than a pixel is drawn a pixel wide and as much fainter. */
+  def strokeOvalSmooth(cx: Float, cy: Float, rx: Float, ry: Float, lineWidth: Float,
+                       r: Float, g: Float, b: Float, a: Float): Unit = {
+    val f = featherWidth
+    val w = Math.max(lineWidth, f)
+    val ae = a * Math.min(1f, lineWidth / f)
+    val core = (w - f) * 0.5f
+    val out = (w + f) * 0.5f
+    val n = smoothSegments(rx + out, ry + out)
+    smoothOval(n)
+    ensureCapacity(n * 18)
+    var i = 0
+    while (i < n) {
+      ringBands(cx, cy, rx, ry, _ovC(i), _ovS(i), _ovC(i + 1), _ovS(i + 1), core, out, r, g, b, ae)
+      i += 1
+    }
+  }
+
+  /** The part of a ring of radii (rx, ry) between the directions (c0, s0) and (c1, s1): a band `core`
+    * either side of it at `a`, fading to nothing `out` either side. */
+  @inline private def ringBands(cx: Float, cy: Float, rx: Float, ry: Float, c0: Float, s0: Float,
+                                c1: Float, s1: Float, core: Float, out: Float,
+                                r: Float, g: Float, b: Float, a: Float): Unit = {
+    val ax0 = Math.max(0f, rx - out); val ay0 = Math.max(0f, ry - out)
+    val bx0 = Math.max(0f, rx - core); val by0 = Math.max(0f, ry - core)
+    val bx1 = rx + core; val by1 = ry + core
+    val ax1 = rx + out; val ay1 = ry + out
+    quad4(cx + ax0 * c0, cy + ay0 * s0, 0f, cx + bx0 * c0, cy + by0 * s0, a,
+      cx + ax0 * c1, cy + ay0 * s1, 0f, cx + bx0 * c1, cy + by0 * s1, a, r, g, b)
+    if (core > 0f)
+      quad4(cx + bx0 * c0, cy + by0 * s0, a, cx + bx1 * c0, cy + by1 * s0, a,
+        cx + bx0 * c1, cy + by0 * s1, a, cx + bx1 * c1, cy + by1 * s1, a, r, g, b)
+    quad4(cx + bx1 * c0, cy + by1 * s0, a, cx + ax1 * c0, cy + ay1 * s0, 0f,
+      cx + bx1 * c1, cy + by1 * s1, a, cx + ax1 * c1, cy + ay1 * s1, 0f, r, g, b)
+  }
+
+  // Per-point unit mitres for the smooth shapes (a normal's length is 1 / cos of half the turn
+  // there), and their alphas, grown as needed
+  private var _smX = new Array[Float](64)
+  private var _smY = new Array[Float](64)
+
+  /**
+   * The unit mitre at each of the first `n` points of a path into _smX/_smY: pointing out of a
+   * closed one (whichever way round it runs), and to the left of an open one (screen y down: the
+   * side (−dy, dx) of its way). Joins sharper than MITER_LIMIT are cut back, as polyStroke's are.
+   */
+  private def smoothMitres(xs: Array[Float], ys: Array[Float], n: Int, closed: Boolean): Unit = {
+    if (_smX.length < n) { _smX = new Array[Float](n * 2); _smY = new Array[Float](n * 2) }
+    // A closed path's normals point out of it: the left of its way is inside it when it runs
+    // with a positive area
+    var side = 1f
+    if (closed) {
+      var area = 0f
+      var i = 0
+      while (i < n) {
+        val j = if (i == n - 1) 0 else i + 1
+        area += xs(i) * ys(j) - xs(j) * ys(i)
+        i += 1
+      }
+      if (area > 0f) side = -1f
+    }
+    val last = n - 1
+    var i = 0
+    while (i < n) {
+      var inX = 0f; var inY = 0f; var outX = 0f; var outY = 0f
+      var hasIn = false; var hasOut = false
+      if (closed || i < last) {
+        val j = if (i == last) 0 else i + 1
+        val dx = xs(j) - xs(i); val dy = ys(j) - ys(i)
+        val len = Math.sqrt(dx * dx + dy * dy).toFloat
+        if (len > 1e-4f) { outX = -dy / len; outY = dx / len; hasOut = true }
+      }
+      if (closed || i > 0) {
+        val p = if (i == 0) last else i - 1
+        val dx = xs(i) - xs(p); val dy = ys(i) - ys(p)
+        val len = Math.sqrt(dx * dx + dy * dy).toFloat
+        if (len > 1e-4f) { inX = -dy / len; inY = dx / len; hasIn = true }
+      }
+      if (!hasIn) { inX = outX; inY = outY }
+      if (!hasOut) { outX = inX; outY = inY }
+      var mx = inX + outX; var my = inY + outY
+      val ml = Math.sqrt(mx * mx + my * my).toFloat
+      if (ml < 1e-4f) { mx = outX; my = outY }
+      else {
+        mx /= ml; my /= ml
+        val cosHalf = mx * outX + my * outY
+        val k = if (cosHalf > 1f / ShapeBatch.MITER_LIMIT) 1f / cosHalf else ShapeBatch.MITER_LIMIT
+        mx *= k; my *= k
+      }
+      _smX(i) = mx * side; _smY(i) = my * side
+      i += 1
+    }
+  }
+
+  /**
+   * A path through the first `n` points stroked `lineWidth` across, its edges fading out over a pixel
+   * either side, mitred at every bend; closed back to its first point, or open. `as` is an alpha for
+   * each point (null for none), times `a`; a line thinner than a pixel is drawn a pixel wide and as
+   * much fainter. `offset` moves the line off the path: out of a closed one, to the left of an open
+   * one — an outline just outside a rim, which a stroke on the rim itself would half cover.
+   */
+  def strokePathSmooth(xs: Array[Float], ys: Array[Float], as: Array[Float], n: Int, closed: Boolean,
+                       lineWidth: Float, offset: Float, r: Float, g: Float, b: Float, a: Float): Unit = {
+    if (n < 2) return
+    smoothMitres(xs, ys, n, closed)
+    val f = featherWidth
+    val w = Math.max(lineWidth, f)
+    val ae = a * Math.min(1f, lineWidth / f)
+    val c0 = offset - (w - f) * 0.5f; val c1 = offset + (w - f) * 0.5f
+    val o0 = offset - (w + f) * 0.5f; val o1 = offset + (w + f) * 0.5f
+    val segs = if (closed) n else n - 1
+    ensureCapacity(segs * 18)
+    var i = 0
+    while (i < segs) {
+      val j = if (i == n - 1) 0 else i + 1
+      val ai = if (as != null) as(i) * ae else ae
+      val aj = if (as != null) as(j) * ae else ae
+      val xi = xs(i); val yi = ys(i); val mxi = _smX(i); val myi = _smY(i)
+      val xj = xs(j); val yj = ys(j); val mxj = _smX(j); val myj = _smY(j)
+      quad4(xi + mxi * o0, yi + myi * o0, 0f, xi + mxi * c0, yi + myi * c0, ai,
+        xj + mxj * o0, yj + myj * o0, 0f, xj + mxj * c0, yj + myj * c0, aj, r, g, b)
+      if (c1 > c0)
+        quad4(xi + mxi * c0, yi + myi * c0, ai, xi + mxi * c1, yi + myi * c1, ai,
+          xj + mxj * c0, yj + myj * c0, aj, xj + mxj * c1, yj + myj * c1, aj, r, g, b)
+      quad4(xi + mxi * c1, yi + myi * c1, ai, xi + mxi * o1, yi + myi * o1, 0f,
+        xj + mxj * c1, yj + myj * c1, aj, xj + mxj * o1, yj + myj * o1, 0f, r, g, b)
+      i += 1
+    }
+  }
+
+  /**
+   * A band filled, laid out as [[fillRibbon]]'s is (an outer run of points, then the inner run
+   * reversed, so point i pairs with point n-1-i across it), its outline fading out over a pixel. `as`
+   * is an alpha for each point, times `a`, so a band can fade along its length: the fill is a quad
+   * across it between each pair and the next, never a fan, which would smear one point's alpha over
+   * the whole shape. Its outline is the closed path through all n points, which must not cross
+   * itself.
+   */
+  def fillRibbonSmooth(xs: Array[Float], ys: Array[Float], as: Array[Float], n: Int,
+                       r: Float, g: Float, b: Float, a: Float): Unit = {
+    if (n < 4) return
+    smoothMitres(xs, ys, n, closed = true)
+    val h = featherWidth * 0.5f
+    val half = n / 2
+    ensureCapacity((half - 1) * 6 + n * 6)
+    // Across the band, inside its outline by half the fade
+    var i = 0
+    while (i < half - 1) {
+      val oa = i; val ob = i + 1
+      val ia = n - 1 - i; val ib = n - 2 - i
+      quad4(xs(oa) - _smX(oa) * h, ys(oa) - _smY(oa) * h, as(oa) * a,
+        xs(ia) - _smX(ia) * h, ys(ia) - _smY(ia) * h, as(ia) * a,
+        xs(ob) - _smX(ob) * h, ys(ob) - _smY(ob) * h, as(ob) * a,
+        xs(ib) - _smX(ib) * h, ys(ib) - _smY(ib) * h, as(ib) * a, r, g, b)
+      i += 1
+    }
+    // and round its outline, from there out to half the fade outside it
+    i = 0
+    while (i < n) {
+      val j = if (i == n - 1) 0 else i + 1
+      quad4(xs(i) - _smX(i) * h, ys(i) - _smY(i) * h, as(i) * a, xs(i) + _smX(i) * h, ys(i) + _smY(i) * h, 0f,
+        xs(j) - _smX(j) * h, ys(j) - _smY(j) * h, as(j) * a, xs(j) + _smX(j) * h, ys(j) + _smY(j) * h, 0f, r, g, b)
+      i += 1
+    }
+  }
+
   def flush(): Unit = {
     if (vertexCount == 0) return
 

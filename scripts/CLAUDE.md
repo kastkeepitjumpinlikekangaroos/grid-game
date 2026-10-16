@@ -37,20 +37,42 @@ python3 scripts/tile_gallery.py /tmp/tilegallery --map worlds/the_meadow.json --
   `ink`, `shade` and `lit`, supersampled 4x and resampled down. Flat cel fills, one hard shadow
   tone away from the upper-left light, outlines in a dark version of each part's hue. Round trees,
   fat spotted mushrooms, a scalloped grass lip over brown soil on a cliff.
+- **A prop is finished as the characters are**: inked `PROP_INK` (1.35) times heavier than it is
+  authored, through `PropDraw`, and ringed with the characters' own contour (`add_contour`), so a
+  tree reads at the weight of the figure beside it. Inked lighter and unringed, beside sprites drawn
+  pixel for pixel (since the renderer filters the tiles as it does the characters), the terrain read
+  as cruder art than the characters standing on it.
 - Three rules specific to terrain, all from how the renderer tiles it:
   - **Ground and pools are seamless.** They are cut to the same hard-edged diamond the tileset
     has always used, so neighbours meet exactly. Nothing on them is outlined or shaded toward an
     edge, because any mark that touches the edge of one tile shows up as a grid across a field
-    of them. Details sit in the middle.
+    of them. Details sit in the middle. A ground that grows is its own flat colour, its tile's
+    `color`, all the way to its edge: where two kinds of it meet, the renderer draws one soft, inked
+    edge over the tiles' staircase and paints the higher ground's colour over its neighbour's corner
+    (`GroundEdges`; render/CLAUDE.md, *Where two kinds of ground meet*), so the tile must be that
+    colour there (`GroundEdgesTest` checks the atlas). This gallery doesn't draw those edges: judge
+    them in the game.
   - **A block only inks its bottom edge.** Its top meets its neighbours' and its side faces are
     covered by the block in front, so a line anywhere else draws a seam between every pair of
     blocks in a wall. What is on a side face shows only on the outside of a mass of blocks, which
     is exactly where a cliff's grass lip belongs.
   - **Walkable ground stays quiet.** It covers most of the screen and everything has to read on
     it. The first pass sprinkled little flowers and light flecks on every grass tile, and in game
-    the meadow read as confetti.
+    the meadow read as confetti. No crumbs either: specks of a pixel or two (on the path, the sand,
+    the snow) read as noise beside the characters' clean shapes; a few pebbles or ripples a tile do
+    the job. And a detail that one variant has alone sits at the same spot in every tile of it, which
+    the renderer picks by position: a lone white flower on a grass variant was a grid of dots.
 - Props can be drawn bigger than they are authored (`PROP_SCALE`, through `PropDraw`), which scales
-  about the prop's foot but leaves line weights alone.
+  about the prop's foot but leaves line weights alone, so every prop is inked at the same weight.
+- **The space maps' tiles** follow the same rules. The deck (`circuit`) is plates two cells across:
+  its four frames are a plate's four quarters, which the game picks by where a cell is
+  (`Tile.variantAt`), so every cell draws the whole plate and keeps its quarter; a plate a cell was a
+  grid of bathroom tiles, and the thin bright circuit traces before them read as static. Open space
+  (`void`) is a pool, flat, its four frames four skies picked by position rather than an animation
+  (`STILL_POOLS`, `Tile.animates`): animated, every cell showed the same stars and they stood in a
+  lattice. The deck meets it in a rim drawn by the game (`GroundEdges`). The cover (`toxic` jelly,
+  `obsidian` glass, `plasma` cores) is props, each cell one rounded object inked all round
+  (`rounded_block`): as blocks filling their cells they met in a staircase of seams.
 - Water and ice have no tile overlay in `TerrainPainter.drawOverlays`: the tiles animate and
   shine on their own. The old glints, ripples and frost needles had never actually been drawn,
   because they were collected only for walkable tiles. Once pools were drawn with the ground they
@@ -64,8 +86,9 @@ python3 scripts/tile_gallery.py /tmp/tilegallery --map worlds/the_meadow.json --
 
 ## Maps
 Seven maps in `WorldRegistry` (display names come from the file names): four space arenas,
-**The Cell, The Hive, The Nexus, The Colony** (circuit floor, starfield void, obsidian border,
-slime blocks for cover), and three bright ones, **The Meadow, The Lagoon, The Snowglobe**.
+**The Cell, The Hive, The Nexus, The Colony** (a deck of plates floating in open space, rimmed and
+glowing where it ends, volcanic glass round its edge and jelly and glass for cover), and three bright
+ones, **The Meadow, The Lagoon, The Snowglobe**.
 
 Every map has the same shape, because it plays well: a round arena of about 0.39x the world's
 width in radius, in a square world, closed off by terrain nobody can cross, with cover in rings,

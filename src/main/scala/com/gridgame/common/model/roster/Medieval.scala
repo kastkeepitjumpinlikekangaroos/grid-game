@@ -18,7 +18,7 @@ private[model] object Medieval {
     speedMultiplier = 0.7f, damage = 15, maxRange = 20,
     distanceDamageScaling = Some(DistanceDamageScaling(15, 55, 20))
   )
-  val HolyBladeDef: ProjectileDef = ProjectileDef(id = ProjectileType.HOLY_BLADE, name = "Holy Blade", speedMultiplier = 0.7f, damage = 23, maxRange = 5, hitRadius = 2.2f)
+  val HolyBladeDef: ProjectileDef = ProjectileDef(id = ProjectileType.HOLY_BLADE, name = "Holy Blade", speedMultiplier = 0.7f, damage = 40, maxRange = 3, hitRadius = 2.2f)
   val HolyBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.HOLY_BOLT, name = "Holy Bolt", speedMultiplier = 0.8f, damage = 30, maxRange = 16, pierceCount = 1)
   val ArrowDef: ProjectileDef = ProjectileDef(id = ProjectileType.ARROW, name = "Arrow", speedMultiplier = 0.95f, damage = 25, maxRange = 22, pierceCount = 1)
   val PoisonArrowDef: ProjectileDef = ProjectileDef(id = ProjectileType.POISON_ARROW, name = "Poison Arrow", speedMultiplier = 0.85f, damage = 20, maxRange = 20, onHitEffect = Some(Slow(2500, 0.5f)))
@@ -26,7 +26,7 @@ private[model] object Medieval {
   val SonicBoomDef: ProjectileDef = ProjectileDef(id = ProjectileType.SONIC_BOOM, name = "Sonic Boom", speedMultiplier = 0.5f, damage = 28, maxRange = 8, onHitEffect = Some(Push(4.0f)), aoeOnHit = Some(AoESplashConfig(3.0f, 21)))
   val SmiteDef: ProjectileDef = ProjectileDef(id = ProjectileType.SMITE, name = "Smite", speedMultiplier = 0.6f, damage = 39, maxRange = 14, aoeOnHit = Some(AoESplashConfig(3.0f, 19)))
   val CardDef: ProjectileDef = ProjectileDef(id = ProjectileType.CARD, name = "Card", speedMultiplier = 0.85f, damage = 24, maxRange = 14, ricochetCount = 2)
-  val ChargeFistDef: ProjectileDef = ProjectileDef(id = ProjectileType.CHARGE_FIST, name = "Charge Fist", speedMultiplier = 0.8f, damage = 19, maxRange = 6, hitRadius = 2.2f, chargeSpeedScaling = Some(ChargeScaling(0.6f, 1.1f)), chargeDamageScaling = Some(ChargeScaling(12f, 40f)), chargeRangeScaling = Some(ChargeScaling(4f, 10f)))
+  val ChargeFistDef: ProjectileDef = ProjectileDef(id = ProjectileType.CHARGE_FIST, name = "Charge Fist", speedMultiplier = 0.8f, damage = 33, maxRange = 3, hitRadius = 2.2f, chargeSpeedScaling = Some(ChargeScaling(0.6f, 1.1f)), chargeDamageScaling = Some(ChargeScaling(21f, 70f)), chargeRangeScaling = Some(ChargeScaling(2f, 5f)))
   val ArrowHeavyDef: ProjectileDef = ProjectileDef(id = ProjectileType.ARROW_HEAVY, name = "Arrow Heavy", speedMultiplier = 0.95f, damage = 21, maxRange = 22, pierceCount = 1)
   val HolyBoltHeavyDef: ProjectileDef = ProjectileDef(id = ProjectileType.HOLY_BOLT_HEAVY, name = "Holy Bolt Heavy", speedMultiplier = 0.8f, damage = 29, maxRange = 16, pierceCount = 1)
   // A slam (Plan 5a): a bot casts it when its target is inside the ability's GroundSlam radius,
@@ -61,9 +61,12 @@ private[model] object Medieval {
     // The Paladin's Judgment: one lance of light through the first two enemies, where Holy Nova was
     // eight bolts in a ring (the type keeps its old name)
     base(ProjectileType.HOLY_BOLT).copy(id = ProjectileType.HOLY_NOVA, name = "Judgment", damage = 27, speedMultiplier = 0.95f, onHitEffect = Some(Stun(600))),
-    base(ProjectileType.SHURIKEN).copy(id = ProjectileType.TOXIC_SHURIKEN, name = "Toxic Shuriken", damage = 18, onHitEffect = Some(Poison(8, 2000, 500)), alsoOnHit = Seq(Slow(1500, 0.6f))),
-    // Three blows in front of the Monk, gone once they land; eight in a ring came back to him
-    base(ProjectileType.FIST).copy(id = ProjectileType.FLURRY, name = "Flurry", damage = 22, boomerang = false, onHitEffect = Some(Stun(400))),
+    // The Rogue's Knife Spray. An ability, so it flies the 6 cells the Shuriken did before the melee
+    // primaries were halved (design/characters.md, *Melee strikes short and hard*)
+    base(ProjectileType.SHURIKEN).copy(id = ProjectileType.TOXIC_SHURIKEN, name = "Toxic Shuriken", damage = 18, maxRange = 6, onHitEffect = Some(Poison(8, 2000, 500)), alsoOnHit = Seq(Slow(1500, 0.6f))),
+    // Three blows in front of the Monk, gone once they land; eight in a ring came back to him. An
+    // ability, so they reach as far as the Fist did before the melee primaries were halved
+    base(ProjectileType.FIST).copy(id = ProjectileType.FLURRY, name = "Flurry", damage = 22, maxRange = 4, boomerang = false, onHitEffect = Some(Stun(400))),
     // The Bard's Lullaby: one slow, drifting note through walls that puts whoever it reaches to sleep
     base(ProjectileType.SONIC_WAVE).copy(id = ProjectileType.LULLABY, name = "Lullaby", damage = 19, speedMultiplier = 0.5f, pierceCount = 0, onHitEffect = Some(Stun(1000))),
     // The Valkyrie's Pinning Spear, one where she threw five: pins its target where it lands

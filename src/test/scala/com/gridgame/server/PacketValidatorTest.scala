@@ -133,8 +133,9 @@ class PacketValidatorTest {
     val v = new PacketValidator()
     assertFalse("past the wall's corner", v.validateMovement(to(1, 21, 21), p, world))
     assertTrue("the other way, past none", v.validateMovement(to(2, 19, 21), p, world))
+    // A phase walked through walls, and their corners with them
     p.setPhasedUntil(System.currentTimeMillis() + 5000)
-    assertTrue("phased, through it", v.validateMovement(to(3, 21, 21), p, world))
+    assertFalse("phased, past it as well", v.validateMovement(to(3, 21, 21), p, world))
   }
 
   @Test def aPlayersFirstUpdateInAMatchIsCheckedToo(): Unit = {

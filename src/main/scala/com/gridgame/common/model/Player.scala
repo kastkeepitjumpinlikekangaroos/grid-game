@@ -15,7 +15,9 @@ class Player(
   Objects.requireNonNull(id, "Player ID cannot be null")
   Objects.requireNonNull(position, "Position cannot be null")
 
-  private var lastUpdateTime: Long = System.currentTimeMillis()
+  // When the player's client was last heard from: written by the network's threads, read by the
+  // server's cleanup loop, which takes a player it hasn't heard from in CLIENT_TIMEOUT_MS for gone
+  @volatile private var lastUpdateTime: Long = System.currentTimeMillis()
   // Stored as AnyRef to avoid Netty dependency in common module; cast to Channel in server code
   private var tcpChannel: AnyRef = _
   private var udpAddress: InetSocketAddress = _

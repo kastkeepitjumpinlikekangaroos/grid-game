@@ -12,10 +12,10 @@ package com.gridgame.common.model
  * The wall itself is one straight line of cells — the column (or row) down the middle of the map —
  * and while it is up **it is a hole in the world's walkability**: a raised divider hangs off
  * [[WorldData.divider]], so every check that already asks the world whether a cell can be stood on
- * refuses it. That covers a step, a dash, a blink, a knockback, a trap throw, a bot's path and a
- * spawn point without any of them knowing the divider exists. What it does not cover is what
- * ignores walls — a phased player, a star's jump, a projectile that flies over terrain — so those
- * are checked against it by hand ([[allowsMove]], [[crossing]]).
+ * refuses it. That covers a step (phased or not), a blink, a knockback, a trap throw, a bot's path
+ * and a spawn point without any of them knowing the divider exists. What it does not cover is what
+ * goes over walls — a dash, a star's jump, a projectile that flies over terrain — so those are
+ * checked against it by hand ([[allowsMove]], [[crossing]]).
  *
  * The client runs the same wall on its own clock: the server says how long it has left, each side
  * works out the geometry from the world it loaded, and neither has to send the other a shape.
@@ -60,8 +60,8 @@ final class TeamDivider(val axisX: Boolean, val at: Int, val endsAt: Long) {
 
   /**
    * May a player at (fromX, fromY) end up at (toX, toY)? Not standing in the wall, and not on its
-   * far side — which is the whole rule, so a dash, a blink, a star or a phase through terrain
-   * can't do what a step can't. Someone the wall came up on top of may step off it either way.
+   * far side — which is the whole rule, so a dash, a blink or a star can't do what a step can't.
+   * Someone the wall came up on top of may step off it either way.
    */
   def allowsMove(fromX: Int, fromY: Int, toX: Int, toY: Int): Boolean = {
     val to = side(toX, toY)

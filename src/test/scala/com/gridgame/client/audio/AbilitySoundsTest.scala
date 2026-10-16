@@ -17,6 +17,12 @@ class AbilitySoundsTest {
   @Test def everySoundNamedHasAFile(): Unit =
     AbilitySounds.allSoundNames.foreach(s => assertTrue(s, exists(s)))
 
+  @Test def everyEventSoundHasAFileToo(): Unit = {
+    // A spawn, a death, a hit, a cast with no projectile, a trap, R, the music
+    assertTrue(AudioManager.EVENT_SOUNDS.contains("cooldown_reset"))
+    AudioManager.EVENT_SOUNDS.foreach(s => assertTrue(s, exists(s)))
+  }
+
   @Test def everyAttackOfEveryCharacterSoundsFromAFile(): Unit = {
     for (c <- CharacterDef.all; t <- Seq(c.primaryProjectileType, c.qAbility.projectileType, c.eAbility.projectileType)
          if t >= 0 || ProjectileDef.get(t).id == t) {

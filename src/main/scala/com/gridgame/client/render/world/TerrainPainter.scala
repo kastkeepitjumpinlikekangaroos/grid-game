@@ -209,39 +209,6 @@ private[render] final class TerrainPainter(ctx: RenderContext) {
           val tw = Math.sin(cp * 2.2f).toFloat
           if (tw > 0.5f) shapeBatch.fillStarFlare(sx, sy - 3f, 7f, 1.3f, cp, 0.5f, 1f, 1f, 1f, 0.3f * tw)
 
-        case 18 => // Toxic — bubbles surfacing and popping, sheen swirl, drifting spores
-          val tp = time * 0.06f + wx * 1.7f + wy * 2.1f
-          shapeBatch.fillOvalSoft(sx, sy, HW.toFloat * 0.7f, HH.toFloat * 0.5f, 0.2f, 0.9f, 0.1f,
-            (0.05f + 0.04f * Math.sin(tp)).toFloat, 0f, 10)
-          // Bubbles: rise, swell, then burst into a ring
-          var j = 0
-          while (j < 3) {
-            val bt = (time * 0.016f + tileHash(wx, wy, j + 1)) % 1f
-            val bx = sx + (tileHash(wx, wy, j + 5) - 0.5f) * 15f
-            val by = sy + (tileHash(wx, wy, j + 8) - 0.5f) * 6f
-            if (bt < 0.75f) {
-              val k = bt / 0.75f
-              val br = 1.2f + k * 3.2f
-              shapeBatch.strokeOval(bx, by - k * 2f, br, br * 0.75f, 1f, 0.5f, 1f, 0.35f, 0.24f, 8)
-              shapeBatch.fillOvalSoft(bx - br * 0.3f, by - k * 2f - br * 0.3f, br * 0.5f, br * 0.4f,
-                0.8f, 1f, 0.6f, 0.20f, 0f, 6)
-            } else {
-              val k = (bt - 0.75f) / 0.25f
-              val rr = 3.5f + k * 5f
-              shapeBatch.fillArcBand(bx, by - 1.5f, rr, rr * 0.5f, rr + 1.3f, (rr + 1.3f) * 0.5f,
-                0f, 6.2831853f, 6, 0.55f, 1f, 0.3f, 0.22f * (1f - k), 0.22f * (1f - k))
-            }
-            j += 1
-          }
-          // Spores drifting off the pool
-          j = 0
-          while (j < 2) {
-            val spT = (time * 0.01f + tileHash(wx, wy, j + 16)) % 1f
-            shapeBatch.fillDot(sx + Math.sin(tp * 0.7f + j * 2f).toFloat * 7f, sy - 2f - spT * 14f,
-              1.1f, 0.6f, 1f, 0.4f, 0.16f * (1f - spT))
-            j += 1
-          }
-
         case 15 => // EnergyField — forked arcs strung between anchor nodes over a hex glow
           val ep = time * 0.12f + wx * 2.1f + wy * 1.3f
           val flicker = if (Math.sin(ep * 3.0) > 0.2) 1f else 0.35f
@@ -431,8 +398,8 @@ private[render] final class TerrainPainter(ctx: RenderContext) {
         if (tile != null) {
           val tid = tile.id
           val variantFrame =
-            if (form eq TileForm.Pool) (tileFrame + wx * 7 + wy * 13) % numTileFrames
-            else ((wx * 7 + wy * 13) & 0x7FFFFFFF) % numTileFrames
+            if (tile.animates) (tileFrame + wx * 7 + wy * 13) % numTileFrames
+            else tile.variantAt(wx, wy) % numTileFrames
           // Corners from the integer lattice (u = wx - wy across, v = wx + wy down), so the corner
           // two neighbours share is the same float in both and they meet without a gap
           val u = wx - wy; val v = wx + wy
@@ -444,7 +411,7 @@ private[render] final class TerrainPainter(ctx: RenderContext) {
           // Collect special tiles for overlay pass. Not water or ice: their tiles animate and
           // shine on their own, and the glints, ripples and frost needles drawn over them turned a
           // sea into static and a frozen pond into flocks of white birds.
-          if (tid == 10 || tid == 15 || tid == 18 || tid == 24) {
+          if (tid == 10 || tid == 15 || tid == 24) {
             if (_specialTileCount < overlayBudget) {
               _specialTileWX(_specialTileCount) = wx
               _specialTileWY(_specialTileCount) = wy
@@ -494,7 +461,7 @@ private[render] final class TerrainPainter(ctx: RenderContext) {
     if ((form eq TileForm.Block) || (form eq TileForm.Prop)) {
       // A block's frames are an animation; a prop's are four variants, picked by position
       val variantFrame =
-        if (form eq TileForm.Prop) ((wx * 7 + wy * 13) & 0x7FFFFFFF) % numTileFrames
+        if (form eq TileForm.Prop) tile.variantAt(wx, wy) % numTileFrames
         else (tileFrame + wx * 7 + wy * 13) % numTileFrames
       val region = GLTileRenderer.getTrimmedRegion(tile.id, variantFrame)
       if (region != null) {

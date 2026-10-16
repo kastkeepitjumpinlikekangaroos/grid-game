@@ -38,9 +38,9 @@ character closes the gap with its abilities or an item, not its feet.
 | `Melee` | 6 cells or less | 30 | 105-150 | 0.94 | 53ms, 18.9 cells/s |
 
 - **The role is named on each character, not worked out.** `CombatRole.forRange` is the rule
-  (reach measured fully charged), with one exception: the Monk, whose 6-cell punch reaches 10
-  charged, is melee. `RosterBalanceTest` checks every character against the rule and its list of
-  exceptions.
+  (reach measured fully charged), and it has no exceptions now: the Monk was one, its 6-cell punch
+  reaching 10 charged, until the melee primaries were halved (*Melee strikes short and hard*).
+  `RosterBalanceTest` checks every character against the rule and its list of exceptions.
 - **Skirmishers** are the boulder throwers (Earthshaker, Avalanche, Beetle, Gorilla, Golem,
   Cyclops) plus Ember: melee health, a pace between the two.
 - **Health is set within its role's band.** It was first mapped from the old values (ranged
@@ -58,16 +58,19 @@ character closes the gap with its abilities or an item, not its feet.
   none of its mixed free-for-alls to a fighter's 22% (a fair share is 7%) and traded kills at 0.75
   to their 1.49, and in Teams every ranged character a team had more than the other cost it 18
   points of its chance to win. A player who kites, which bots don't, gets more out of a ranged
-  character than that.
+  character than that. Since 2026-10-15 a melee character's primary deals 1.75 times what it did,
+  for half its range, as the melee characters were weak in players' hands (*Melee strikes short and
+  hard*).
   - **No uncharged hit deals more than 55**, less than the frailest character's health (60), so
     nobody at full health dies to a single blow; a full charge, a player's skill shot, still may.
     Where the multiplier would have taken a hit past it (the Rocket, the Grenade, the Fireball,
     the Eruption, the Inferno Blast, the Cluster Bomb, the Gravity Well, the far end of the Spear,
-    the Sniper Beam, the Star Bolt and the Gravity Lance, the Mine) the hit stops at 55, and a
-    blast's edge rose instead, to at most three quarters of its centre. That edge is most of what
-    the blast does to whoever set it off: a shot that goes off on reaching someone does so a cell
-    and a half or so from them, so the Grenade that went off on its target for about 29 now deals
-    about 48. `RosterBalanceTest` holds every attack and trap to both rules.
+    the Sniper Beam, the Star Bolt and the Gravity Lance, the Mine, and of the melee primaries the
+    Talon and the Shovel) the hit stops at 55, and a blast's edge rose instead, to at most three
+    quarters of its centre. That edge is most of what the blast does to whoever set it off: a shot
+    that goes off on reaching someone does so a cell and a half or so from them, so the Grenade that
+    went off on its target for about 29 now deals about 48. `RosterBalanceTest` holds every attack
+    and trap to both rules.
 - **Only just quicker:** walking straight away, a ranged character opens about a cell a second on
   a melee one. Played over the network: a Soldier walking away from a Berserker and shooting back
   went 20.1 cells a second to its 19.1, opened the gap from 8 cells to 12 and killed it in 3.9s
@@ -120,8 +123,9 @@ character closes the gap with its abilities or an item, not its feet.
     skirmisher with no clear shot (its primary would hit a wall) goes to the nearest cell it has
     one from, at its range, rather than circling behind the wall, and circling, it turns back where
     its shot would be blocked. Backing off with a wall behind it, it takes the way that gets it
-    furthest without passing the target; cornered, it circles out. Someone it can't get to (phased
-    inside a wall, fenced in, or with other players on every side) it goes as near to as it can
+    furthest without passing the target; cornered, it circles out. Someone it can't get to (dashing
+    over a wall, where a fence went up on them, fenced in, or with other players on every side) it
+    goes as near to as it can
     and waits there, looking for a way again only now and then: searched for on every step, eight
     bots after someone in the Colony's wall took 6ms a tick.
   - Bots used to walk straight at the target and search only when a step was blocked, 600 cells
@@ -270,6 +274,9 @@ next pass should steer the score.
 - **The volleys' replacements (2026-10-14)** were fitted back to the scores their characters had,
   on kills less deaths, at the bots' pace and at a player's: *No volleys of more than three*, *What
   the volleys dealt was given back*.
+- **The melee primaries (2026-10-15)** were halved in range and given 1.75 times the damage for
+  players, not fitted to bots: *Melee strikes short and hard*. It took the skirmishers down about 3
+  kills less deaths a match, which nothing has made up yet.
 - **What bots can't tell:**
   - Ember and the Spaceman are left weaker than the middle against bots (46% → 6% of its mixed
     matches for Ember in the second pass; the third aimed them at 8% and 5% fewer kills a minute
@@ -387,11 +394,84 @@ fantasy. `KitTest` holds the cap, the list of volleys left, and that no two kits
     up its 10. The fighters as a whole come out 0.4 kills less deaths a match below where they were
     at the bots' pace and 1.2 at a player's: ranged bots now blink away from them.
 
+## Melee strikes short and hard
+The melee characters were weak in players' hands, and since 2026-10-15 each one's primary (the
+thirty whose role is `Melee`, not the skirmishers') reaches half as far as it did and hits 1.75 times
+as hard. Their abilities, health and pace are as they were.
+
+- **Why.** A player fires their primary every half second, a bot every 0.7-1.1s (*What bots can't
+  tell*), and in free-for-alls of bots firing as often as a player the melee characters came out 4.7
+  kills less deaths a match below even and won 0.8% of them (a fair share is 7.1%), the ranged 1.9
+  above. Part of that is the bots: a bot swings only at someone within the range its swing flies
+  (`BotCombat.tryShoot`), and a swing strikes well past that (below), so a player, who swings at
+  whoever it will strike, does better with one. With the melee bots swinging that way, the nearest
+  the simulation comes to a player with a melee character, they still came out 1.6 below even, to the
+  ranged 0.7 above.
+- **Half the range**, a half rounded up and never under 2 cells: the claws, the talons, the katana,
+  the Vampire's fang, the Shapeshifter's fist and the Gravedigger's shovel fly 2 cells (the fang flew
+  3, the rest 4); the blades, the axes, the scythe, the hammer and the horn 3 (5); the knives, the
+  throwing stars, the shuriken, the stinger and the Monk's punch 3 (6), and a charged punch 2 to 5 (4
+  to 10). A swing starts a cell out from its thrower and strikes anyone within its hit radius of it
+  (2.2 cells; the axes, the scythe, the hammer and the horn 2.5; the stinger 1.8), which is as it was,
+  so it reaches a cell, its range and its radius: 5.2 cells for a claw (it was 7.2), 6.2 for a blade
+  or a knife (8.2 and 9.2), 6.5 for an axe (8.5). On someone walking straight away it reaches about
+  as far as it did, since it never gained much on them over its range (`MeleeKitTest.reachOnARunner`):
+  3.5 cells for a claw where it was 3.8, 3.5 for an axe as before, 4.3 for a knife where it was 5.4.
+  A claw is in the air 86ms, where it was 170.
+- **1.75 times the damage**, a hit, a poison's total and a charged punch at both ends alike, each hit
+  stopping at 55 (*No uncharged hit deals more than 55*), as the Talon's and the Shovel's 33 do: the
+  Rogue's Shuriken 16 → 28, the Knife and the Stinger 21 → 37, the Cursed Blade 22 → 39, the Holy
+  Blade 23 → 40, the Claw Swipe, the Scythe and the Drain Blade 24 → 42, the Ghoul's claw 26 → 46, the
+  Vampire's fang, the Mantis's scythe and the Chill Blade 27 → 47, the Axe, the Bone Axe, the Hammer
+  and the Horn 28 → 49, the Katana, the Fist, the Arena Axe, the Throwing Star and Fenrir's and the
+  Shark's claws 29 → 51, the Talon and the Shovel 33 → 55; the Shark's poison 10 → 18 and the
+  Stinger's 9 → 16; the Monk's punch 19 → 33, and charged 12-40 → 21-70 (held four seconds: a skill
+  shot, which the cap leaves be). Every character's numbers are in its category file.
+- **The abilities are as they were**, ways in, holds and slams alike (*Every melee and skirmisher
+  kit has a way in, or is an anchor*). Three fly as a melee primary does, being copies of one, and
+  keep the reach they had, which their abilities say: the Hawk's Pin Down (the Talon's, 4 cells), the
+  Monk's Flurry (the Fist's, 4) and the Rogue's Knife Spray (the Shuriken's, 6). `MeleeKitTest`.
+- **The Monk is no exception to the role rule any more**: its punch reached 10 cells charged, a
+  skirmisher's reach, and reaches 5 (*Roles, health and pace*). `RosterBalanceTest` holds every
+  melee primary to 3 cells, 5 charged.
+- **The bots** swing as they did, at whoever is within the range their swing flies, now 2 or 3
+  cells; a melee bot casts its way in at anyone further off than that (it waited until 4 to 6), and
+  presses R only with its target that close (*R resets the cooldowns*).
+- **Measured** in free-for-alls of bots (*Balance in free-for-alls against bots*), 480 on the same
+  line-ups before and after, kills less deaths a match:
+
+  | Melee / ranged / skirmishers | Before | After |
+  |---|---|---|
+  | At the bots' pace | −1.3 / +0.4 / +0.7 | +0.4 / +0.1 / −2.8 |
+  | At a player's pace | −4.7 / +1.9 / −0.1 | −5.2 / +2.4 / −3.2 |
+  | At a player's pace, melee swinging at all it will strike | −1.6 / +0.7 / −0.5 | +2.8 / −0.7 / −4.2 |
+
+  So played as a player plays it, melee goes from 2.3 below the ranged to 3.5 above, before the
+  kiting a player does and a bot doesn't takes some of that back; the melee bots themselves, swinging
+  as they do, come out about where they were. On the built code over another 480 line-ups the melee
+  bots moved +1.5 at their pace and −0.4 at a player's, and the skirmishers −3.6 and −3.5. 1.5 times
+  the damage put melee level with the ranged at full reach and left the melee bots weaker than they
+  were (−7.2 at a player's pace); twice the damage gained little on 1.75 times, most hits meeting the
+  cap.
+- **What is left.**
+  - The skirmishers lose about 3 a match whichever way it is measured: they stand their ground at
+    half their throw, where a melee character now reaches them for 28 to 55 a blow.
+  - The melee characters are further apart than they were. Played at full reach their scores spread
+    4.9 a match (one standard deviation) where they spread 3.5, the Gladiator, the Crusader, the
+    Vampire and the Paladin near +11 and the Raptor, the Rogue, the Griffin, the Bear and the Hawk
+    between −3 and −5. A fit within the role, as the balance passes made, would close it.
+  - Bots that swung at all their swing will strike would make melee far stronger among bots: +7.0
+    at their own pace, where the ranged come out −2.5.
+
 ## Cast Behaviors
 Each ability uses one of these cast behaviors (defined in `CharacterDef.scala`):
 - `StandardProjectile` — fires a projectile toward the cursor
-- `PhaseShiftBuff(durationMs)` — grants a temporary buff (e.g., ethereal form)
-- `DashBuff(maxDistance, durationMs, moveRateMs)` — dash movement ability
+- `PhaseShiftBuff(durationMs)` — a phase: for `durationMs` untouchable (no shot, blast or trap
+  touches us, and nothing freezes, roots or slows us), at twice the pace, and unable to attack;
+  walls stop it as they stop a walk (*A phase stops at walls*)
+- `DashBuff(maxDistance, durationMs, moveRateMs)` — a dash: toward the aim, as far as the cursor and
+  `maxDistance` cells at most, over `durationMs`, phased while it lasts, and over whatever lies
+  between: it ends on the farthest open cell along its line (`LocalMovement.dashLanding`)
 - `TeleportCast(maxDistance)` — a blink: its whole range toward the aim, however near the cursor
   is, stopping short of the first cell it can't land on (`Teleport.blinkTarget`)
 - `FanProjectile(count, fanAngle)` — fires up to three projectiles in a fan (*No volleys of more
@@ -440,6 +520,54 @@ It is all the client's: the server takes a cast when it comes, and never knew wh
 `GameClientAimTest` pins it, through the real keyboard and mouse handlers too. It replaced holding Q
 or E down to aim and letting go to cast, under which every slam was held to aim as well.
 
+## R resets the cooldowns
+R has both abilities ready again at once (`Attacks.pressReset`), and then waits a minute of its own
+(`Constants.COOLDOWN_RESET_MS`) before it can be pressed again. Every match starts with R on that
+minute, so nobody has it until the fighting has gone on a while: after the thirty seconds of a
+free-for-all's ceasefire or of a Teams match's wall, the first R comes half a minute after the first
+shot could be fired. Practice, where a player goes to try a character out, starts with R ready
+instead, so it can be tried from the first moment (`GameInstance.firstResetFrom` on the server; the
+client's `Attacks.startResetCooldown` reads `isPracticeMode`); once pressed it waits its minute as
+anywhere. Since 2026-10-14; no character was retuned for it, on the assumption that it helps every
+kit alike, which play will tell.
+- **What it resets** is Q's and E's cooldowns, whatever they cast: a shot, a fan, a slam, a dash, a
+  blink, a phase, a barrier, a trap. Not the primary's half second, nor the burst shot's second.
+  Whatever is aimed stays aimed. A barrier already up stays up for the rest of its time, and can't be
+  raised again over itself, which its cooldown always used to see to: it can be once it is down.
+- **With nothing cooling down it does nothing**, and spends nothing, as Q or E on its cooldown takes
+  nothing up.
+- **Whoever couldn't cast can't press it**: the dead, the held, the phased, and everyone in a
+  free-for-all's ceasefire (which R's first minute outlasts anyway).
+- **A death doesn't give it back**, nor a rejoin: R's minute runs on through them, while a new life
+  has Q and E ready as it always has. A new match starts it on its minute again (practice, ready).
+- **Its slot is beside Q's and E's on the HUD** (`AbilityBarPainter`): a violet arrow going round, its
+  minute sweeping round the slot as their cooldowns do, with the seconds still to wait written over
+  it, since a minute is a slow sweep, and a flash as it comes ready. The sweep, all three slots', stops
+  at the slot's own edge: it was a circle wide enough to reach the corners, so it spilled a third of a
+  slot over the bar and onto the slot beside it, which a minute-long cooldown would have kept on screen.
+  On a pad, R is Y.
+- **The server judges it as it would a cast** (`CooldownResetRequests`; the packet is
+  `COOLDOWN_RESET`, common/protocol/CLAUDE.md). The client has the abilities ready from the press and
+  asks over TCP. The server takes it from someone who could cast now, once R's own minute has run (80%
+  of it, the tolerance every attack gets: `PacketValidator.takeCooldownReset`), counted from the
+  match's start for the first (`GameInstance.firstResetFrom`, which in practice has the first taken
+  at once) and from the last after that, and clears every clock it holds Q and E to: the shots' and
+  the traps' (`PacketValidator`), and a phase's and a barrier's, which are the player's own. A
+  refusal is said (REJECTED, with how long R still has to wait when that was why), and the client
+  puts Q and E back as they were before the press, but for a cast since that the server would have
+  taken anyway; R comes back when the server says, or in a moment, as a refused trap does.
+- **What can still go wrong**: R goes over TCP and a shot over UDP, so a shot cast in the same moment
+  as R, or while a lost R is being sent again (a round trip and a fifth of a second), can reach the
+  server first and be refused, as a lost shot is, its cooldown spent. A phase or a barrier, said in
+  every update while it lasts, is taken by the first after R arrives, and a trap goes over TCP
+  behind it.
+- **Bots press it too** (`BotCombat.tryResetCooldowns`), on the same minute: once both their abilities
+  are spent, with three seconds or more still to go on each, and their target within reach of their
+  primary, so the two go again at once.
+- `CooldownResetTest` (the server, bots included) and `GameClientResetTest` (the client, through the
+  real keyboard handler too) pin it, and `LobbyFlowTest` a real practice session's R ready at its
+  start; the golden frame `meadow_reset_cooling` holds its slot.
+
 ## Movement speed
 `CharacterDef.moveSpeed` multiplies the base walking rate of 20 cells a second
 (`Constants.MOVE_RATE_LIMIT_MS`, 50ms a cell). Each character's is its role's pace
@@ -480,9 +608,10 @@ as a step into a wall always did. It is one rule wherever a player walks: the cl
 (`LocalMovement.movePlayer`), the server's check of a single step (`PacketValidator`; of a few
 bunched into one update it knows the ends, not the way), the bots' steps and every search for a
 way (`BotNavigation`, `BotPaths`), and pushes and pulls (`Teleport.slide`), which are drawn sliding
-over the ground. A blink is a jump and may still pass a corner, and a phase walks through walls,
-corners and all. `WorldDataTest`, `GameClientPositionTest`, `PacketValidatorTest` and
-`KnockbackTest` pin it, and `BotPathingTest` checks every step its bots take on every map.
+over the ground. A phased step is a step like any other (*A phase stops at walls*). A blink is a
+jump and may still pass a corner, and a dash goes over walls, corners and all. `WorldDataTest`,
+`GameClientPositionTest`, `PacketValidatorTest` and `KnockbackTest` pin it, and `BotPathingTest`
+checks every step its bots take on every map.
 
 **A step glides over the time until the next one** (`LocalMovement.movePlayer`): we are drawn
 sliding from the cell we left to the one we stepped onto over the gap since the step before, which
@@ -490,6 +619,32 @@ is the pace while a key is held. A step after standing still has no such gap and
 own interval (twice it for a pure left or right): it used to glide over the whole time stood still,
 so a tap after a few seconds slid one cell over those seconds, the camera with it.
 `GameClientPositionTest` pins it.
+
+## A phase stops at walls
+A phase (`PhaseShiftBuff`: the Wraith's Phase Shift, the Vampire's Mist Form, the Kraken's Ink Cloud
+and ten more) makes its caster untouchable and twice as quick, and until 2026-10-14 it walked
+through walls as well, corners and all. Being untouchable and quick is what it is for, and walls
+stop it now as they stop a walk.
+- **A phased step is a step** (`WorldData.canStep`): onto open ground, diagonally only between open
+  cells, and sliding along a wall it is walked into. The client takes no other
+  (`LocalMovement.movePlayer`), and the server takes no update that puts someone phased on a cell
+  they can't stand on, nor a single diagonal step past a wall's corner
+  (`PacketValidator.validateMovement`; of a few steps bunched into one update it knows the ends and
+  not the way, as for anyone walking). A bot's phase never went through walls (`BotNavigation`).
+- **A dash still goes over walls.** It is phased while it lasts, as a phase is, and ends on the
+  farthest open cell along its line, whatever lies between, carried there through anything in the
+  way. The server tells the two apart by the kit, which has one phase or one dash at most
+  (`KitTest`): a phased player whose kit has a dash is dashing, and may be over a wall or its corner
+  (`PacketValidator.isDashing`).
+- **What else gets past a wall** is as it was: the star item, which jumps over whatever lies between
+  (`Teleport.starTarget`), and the shots that fly over walls (`passesThroughWalls`). A blink may pass
+  a wall's corner but stops short of the wall itself (`Teleport.blinkTarget`), as it has since
+  2026-09.
+- The descriptions that promised a way through walls (the Wraith's Phase Shift, the Windwalker's
+  Wind Form, the Kraken's Ink Cloud, and the Shark and its Deep Dive) say what the phase does now.
+- Bots and balance are untouched: a bot's phase always went round walls, and dashes are as they were.
+
+`PhaseShiftTest`, `PacketValidatorTest`, `GameClientPositionTest` and `MatchFuzzTest` pin it.
 
 ## Adding a new character
 

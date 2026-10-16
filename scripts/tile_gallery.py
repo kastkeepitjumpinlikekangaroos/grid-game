@@ -36,7 +36,7 @@ CW, CH = gt.CELL_W, gt.CELL_H
 FORMS = {tid: form for (tid, name, form, fn) in gt.TILES}
 NAMES = {tid: name for (tid, name, form, fn) in gt.TILES}
 # A prop's own ground (Tile.ground in Tile.scala); grass unless listed
-PROP_GROUND = {24: 3, 25: 2, 31: 21, 37: 2, 38: 8, 39: 8}
+PROP_GROUND = {18: 16, 19: 16, 24: 3, 25: 2, 28: 16, 31: 21, 37: 2, 38: 8, 39: 8}
 
 
 def _font(size):

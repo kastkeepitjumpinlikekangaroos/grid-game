@@ -52,8 +52,8 @@ trait BotPaths { this: BotController =>
   private val MAX_CLOSED_CROWDED = 2000
   /** Players standing this near the bot are in its way; further off they are not. */
   private[bots] val CROWD_CELLS = 2
-  /** How far round a cell nobody can stand on (someone phased, in a wall) its nearest open one is
-    * looked for. */
+  /** How far round a cell nobody can stand on (someone dashing over a wall, or where a fence went up
+    * on them) its nearest open one is looked for. */
   private val OPEN_GROUND_CELLS = 20
 
   // The eight steps, the four straight ones first
@@ -277,7 +277,8 @@ trait BotPaths { this: BotController =>
   }
 
   /** The open cell nearest (x, y): (x, y) itself if a bot could stand on it, else the nearest in the
-    * first ring round it that has one (someone phased can stand in a wall or on water), as far as
+    * first ring round it that has one (a dash goes over walls and water, and a fence can go up on
+    * someone), as far as
     * [[OPEN_GROUND_CELLS]] out; -1 if none. */
   private[bots] def nearestOpen(x: Int, y: Int): Int = {
     val world = instance.world

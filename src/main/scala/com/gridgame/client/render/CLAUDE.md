@@ -11,12 +11,15 @@ scene target and then over the finished frame. Three Bazel libraries, each on th
   one part of the frame. A painter imports the context (`import ctx._`) and names any other painter
   it uses in its constructor, so what it depends on is in its first line.
 - **GLGameRenderer** — makes the painters, sets up each frame, and runs the passes in order. Its
-  public API is small: `render`, `drawCursor`, `camera`, `resetVisualPosition`, `dispose`, `seedRandom`.
+  public API is small: `render`, `drawCursor`, `camera`, `onCamera` (where the match's window reads
+  the pointer into the world, once each frame's camera has moved), `resetVisualPosition`, `dispose`,
+  `seedRandom`.
 
 | Painter | Draws |
 |---|---|
 | `world/BackgroundPainter` | the sky, sea, city, desert, space or snow behind the map, cached in a target of its own |
 | `world/TerrainPainter` | the ground (every flat tile as an opaque diamond), animated tile overlays, water reflections, block shadows, and each block or prop in the depth pass |
+| `world/GroundEdgePainter` | one soft, inked edge wherever two kinds of natural ground meet, over the ground's diamonds (*Where two kinds of ground meet*) |
 | `world/PlayerPainter` | players (everyone else where RemoteMotion has them, and us): sprite and the effects on them in the depth pass, their shadows and our ring on the ground before it (`drawGroundMarks`); notes their barriers, glows and name plates for later passes; their lights |
 | `world/StatusEffectPainter` | frost, stun stars, poison, roots, a slow, a speed boost, a shield bubble |
 | `world/GlowEffectPainter` | the glowing effects (a gem, a charge, a phase, a burn, a hit's flash, a cast's flash), deferred to one additive pass |
@@ -25,13 +28,13 @@ scene target and then over the finished frame. Three Bazel libraries, each on th
 | `world/BarrierPainter` | raised barriers (design/barriers.md) |
 | `world/OpeningPainter` | the Teams wall, and the opening's countdown for the HUD (design/match-flow.md) |
 | `world/TrapPainter` | traps on the ground and going off (design/traps.md): inked on a seat of darker ground, ours sending a ring over the ground they watch, a glint now and then on every one (*A trap reads on every ground*) |
-| `world/AimArrowPainter` | our attack's aim while we aim it: a charged shot's lane on the ground to where it lands or what stops it (*A charged shot's aim is a lane on the ground*), and any other attack being aimed, a shot, a fan, a dash, a blink or a trap, where it will go (*An aimed attack shows where it will go*) |
+| `world/AimArrowPainter`, `world/AimGeometry` | our attack's aim while we aim it, in one hand (*An aim is drawn in one hand*): a charged shot's lane on the ground to where it lands or what stops it (*A charged shot's aim is a lane on the ground*), and any other attack being aimed, a shot, a fan, a dash, a blink or a trap, where it will go (*An aimed attack shows where it will go*); where it lies, which moves with us as our sprite does (`AimGeometry`: *An aim moves with us*) |
 | `world/DeathAndTeleportPainter` | deaths and teleports |
 | `world/BlastPainter` | the frame's blasts, in their two layers, their lights and the air they shake (render/blasts) |
 | `world/WorldOverlayPainter` | name plates, health bars and damage numbers, over the finished frame |
 | `world/ParticleSpawner` | what the frame throws into the particle systems: weather, footsteps, trails (a projectile's embers in its look's colour, as its light), sparks, bursts |
 | `hud/HudPainter` | the HUD: the bottom bar (inventory and how full it is, charge bar), the leave prompt, the notice that we are too full to pick up the item within reach (design/combat.md, *Item Types*), and the parts below |
-| `hud/AbilityBarPainter`, `MatchInfoPainter`, `ChatPainter`, `PracticePainter`, `DeathScreenPainter` | the ability slots (the one being aimed ringed: *An aimed attack shows where it will go*), the clock and kills and kill feed, chat, practice's tallies, the respawn countdown and game over screen |
+| `hud/AbilityBarPainter`, `MatchInfoPainter`, `ChatPainter`, `PracticePainter`, `DeathScreenPainter` | the ability slots (the one being aimed ringed: *An aimed attack shows where it will go*) and R's beside them, its seconds left over its sweep (design/characters.md, *R resets the cooldowns*), each cooldown swept inside its own slot; the clock and kills and kill feed, chat, practice's tallies, the respawn countdown and game over screen |
 | `hud/CursorPainter` | the mouse's pointer, a crosshair over everything, drawn by `drawCursor` after the frame (*The pointer is ours*) |
 
 The painters are all one render thread's: nothing in them is synchronized, and none allocates per
@@ -45,7 +48,7 @@ frame (see *Performance*).
 | `IsometricTransform.scala` | `worldToScreen(wx,wy,cam)`, `screenToWorld(sx,sy,cam,zoom)`, `viewInsideWorld` (is the whole screen over the map?) |
 | `EntityCollector.scala` | Collects items/projectiles/players for the depth pass by the diagonal of the map they are drawn on (`diagonalOf`: `floor(x + y)`), each where it is drawn, us where the camera draws us. Diagonals are a flat array over the visible window, each a linked list of pooled entries back to front (`takeDiagonal` / `takeRemaining`) — no map, no boxed keys, no allocation per frame. See *Everything is sorted where it is drawn* |
 | `RemoteMotion.scala` | Where another player is drawn: walked along the cells the server has put them on, at their measured pace, never past the newest, and slid by a knockback. See *Other players are walked along the cells they were heard on* |
-| `GLTileRenderer.scala` | Loads `sprites/tiles.png` as a GL texture (transparent texels padded with their neighbours' colour); returns full or transparent-margin-trimmed TextureRegion per tile ID + frame, and `drawDiamond` draws a flat tile as exactly its diamond |
+| `GLTileRenderer.scala` | Loads `sprites/tiles.png` as a GL texture, filtered and mipmapped, each cell in a slot with a gutter of its own border texels (*The terrain is filtered as the characters are*); returns full or transparent-margin-trimmed TextureRegion per tile ID + frame, and `drawDiamond` draws a flat tile as exactly its diamond |
 | `GLSpriteGenerator.scala` | Packs character sprite sheets into one growable, mipmapped GL atlas |
 | `ParticleSystem.scala`, `DamageNumberSystem.scala` | pooled particles and damage numbers |
 | `FrameClock.scala` | where the renderer reads the time: the system's, or GoldenFrames' stopped one |
@@ -55,7 +58,7 @@ frame (see *Performance*).
 PostProcessor.beginScene()        -- bind scene FBO (sized by the quality tier)
 GLGameRenderer.render()           -- all game drawing into scene FBO
   Background (only if the screen runs off the map) → Ground (opaque diamonds) →
-  tile overlays, reflections → Traps → Blasts' ground layer → our aim → block shadows →
+  the edges where two kinds of ground meet → tile overlays, reflections → Traps → Blasts' ground layer → our aim → block shadows →
   the players' shadows and our ring →
   depth pass (a diagonal of the map at a time, far to near: its blocks and props, then the
   items, projectiles and players with their effects standing on it, back to front) →
@@ -73,15 +76,58 @@ GLGameRenderer.drawCursor()       -- the pointer, last, where the mouse is as th
 ## Design decisions
 
 - **A tile's form decides how it is drawn** (`TileForm` in `Tile.scala`). Walkable *ground* and
-  flat *pools* (water, lava) are drawn in the ground pass. *Blocks* (walls, cliffs, the void) and
-  *props* (trees, rocks, bushes, snowmen) are drawn in depth order with the players. A prop's
+  flat *pools* (water, lava, the space maps' open space) are drawn in the ground pass. *Blocks*
+  (walls, cliffs, ice blocks) and *props* (trees, rocks, bushes, snowmen, the space maps' jelly, glass
+  and plasma) are drawn in depth order with the players. A prop's
   sprite leaves the ground round it showing, and the ground pass lays under it whatever it is
   standing in (`Tile.groundUnder`: its own `ground` if a neighbour is that, else the first
   walkable neighbour, else its own). So one palm serves a beach and a meadow, and a tree deep in
   a forest still has grass under it. Only blocks cast the edge shadows; a prop carries its own
   round shadow. Water used to be a raised 14px block, which read as an aquarium, not a pond.
   Frames mean different things per form: ground and props have four variants picked by
-  position, pools and blocks four animation frames. The map editor draws the same passes.
+  position (`Tile.variantAt`: the space maps' deck picks a quarter of a plate two cells across by
+  where a cell is), pools and blocks four animation frames, unless the tile doesn't animate
+  (`Tile.animates`: open space shows four skies by position, or its stars would stand in a lattice).
+  The map editor draws the same passes, but for the edges between kinds of ground.
+- **Where two kinds of ground meet** (`world/GroundEdgePainter`, `GroundEdges` in common/model,
+  which says which ground spills over which and how its edge looks). The tiles meet in a staircase
+  of diamonds, which a map makes of every curve and slope it draws: the Meadow's paths and pond,
+  the Lagoon's beaches, the Snowglobe's frozen pond, the round edge of every space arena. Over that,
+  every cell an edge passes through is drawn again, after the ground, by a shader. Grass, snow, sand,
+  path, dirt, ice, water, deep water, the space maps' deck and the open space round it each have a
+  layer, and at each pixel a bilinear blend of the cells' "this layer or higher", a value at each
+  cell's centre, says what shows there: the edge runs where it is one half, so a straight run of
+  cells keeps its edge on the cells' own edge, a corner is rounded, and a staircase turns into a
+  curve. The higher ground is inked along its edge as the characters are, and stands on a riser
+  where the edge faces the camera: a step of soil or snow, or, for the deck over open space, its
+  hull, nearly three times as tall (`GroundEdges.RiserHeights`). Water carries foam where anything
+  meets it, and space a glow that fades out from the deck's edge, the field that keeps the arena
+  in; a pixel showing the cell's own ground is left alone, so its tile shows through. Ground built in
+  pieces (boardwalks, flagstones, metal), lava and blocks take no part: a cell reads one as its own
+  ground, so they keep their straight edges. A tile has its layer's colour all the way to its edge
+  (`GroundEdgesTest` checks the atlas; the deck's plates, two cells across, are the one exception, a
+  shade off its margin), which is what lets the higher ground spill over a neighbour without a
+  seam.
+  - Everything a pixel reads is in its cell and the eight round it, the point a riser's height above
+    it included, so each cell's quad carries their nine layers in its colour and the shader reads no
+    texture; a pixel with nothing but its cell's own ground round it is let go at once, and a quarter
+    of a cell that is all such pixels isn't drawn. Read from a texture of the map's layers, nine
+    fetches a pixel over every cell an edge touched (a third of the screen round the Meadow's pond)
+    cost 2-3 ms of GPU a frame at 2560x1600. Now, on the render bench (the Meadow, 16 players, 150
+    projectiles, back to back with the build before), a frame takes as long to build on the CPU and
+    the GPU within the bench's noise and allocates nothing more; the GPU profiler puts 0.65 ms more
+    in the ground phase.
+  - `GroundEdges.shade` is the same thing on the CPU, line for line, for the menus' map pictures
+    (ui/MapArt); `GroundEdgesTest` holds it to one edge, the same drawn from either cell it passes
+    between, mirrored with the ground, never over the middle of a cell. A change to one is a change
+    to the other. Nothing is drawn at a cell's centre, so a player stands on what their cell is; a
+    riser and its foam come closest, hanging into a pool in a corner of higher ground.
+  - The layers are read from the map once, and again round any cell whose tile has changed (a fence
+    put down or gone), looked for among the cells on screen every frame.
+  - With the restyled tiles (scripts/CLAUDE.md, *Tile Sprites*), the render audit of the three bright
+    maps (2026-10-15) has characters, projectiles and traps reading as they did on every ground:
+    each median, 10th percentile and minimum within a point or two, but the boardwalk's lowest
+    projectile (22 to 20) and trap (91 to 84).
 - **Everything is sorted where it is drawn, diagonal by diagonal** (`EntityCollector`, the depth
   pass in `GLGameRenderer.render`). The blocks and props are drawn a diagonal of the map at a time
   (`v = wx + wy`, how far down the screen), far to near, and after each diagonal's blocks
@@ -137,9 +183,10 @@ GLGameRenderer.drawCursor()       -- the pointer, last, where the mouse is as th
   shaded and blended the whole screen twice, since each tile's transparent corners lie under its
   neighbours (7.4 → 3.7 million fragments a frame at 2560x1440). Neighbours meet exactly because
   their shared corners are computed from the integer lattice (`u = wx - wy`, `v = wx + wy`), so
-  they are the same floats. The pixel-art edge is a staircase either side of the true edge, so
-  the pixels just inside it sample texels just outside, which are transparent — and black in the
-  PNG: `GLTexture.padTransparent` gives those texels their neighbours' colour at load. `TileTest`
+  they are the same floats. The tile's edge in the PNG is a staircase either side of the true edge,
+  so the pixels just inside it sample texels just outside, which are transparent — and black in the
+  PNG: their neighbours' colour is given them at load (*The terrain is filtered as the characters
+  are*). `TileTest`
   checks every flat tile is its whole diamond and nothing outside it; `GRIDGAME_HOLECHECK=1`
   shows any gap in magenta. Blocks and props are still trimmed quads (`getTrimmedRegion` /
   `getTrimTopPx`), measured per cell at load, since they rise above their diamond.
@@ -154,11 +201,28 @@ GLGameRenderer.drawCursor()       -- the pointer, last, where the mouse is as th
   hills and trees hanging from the top of the screen, clouds along the bottom — wherever the edge
   of a map let it show.
 - **The camera sits on the pixel grid** (`GameCamera.update`'s `pixelsPerUnit`, the scene
-  target's pixels per unit). The terrain is pixel art sampled nearest-neighbour at a scale that
-  isn't a whole number (80 texels onto 64 or 128 pixels), so at a sub-pixel offset which texels
-  get doubled or dropped depends on the offset, and with the camera gliding between pixels every
-  tile's detail crawled whenever anyone moved. Entities still move smoothly: only the offset is
-  rounded, never their positions. The mouse reads the same offsets. `CameraTest` pins it.
+  target's pixels per unit). The terrain used to be sampled nearest-neighbour at a scale that isn't
+  a whole number (80 texels onto 64 or 128 pixels), so at a sub-pixel offset which texels got
+  doubled or dropped depended on the offset, and with the camera gliding between pixels every
+  tile's detail crawled whenever anyone moved. It is filtered now, but an offset on the grid keeps
+  the ground's diamonds' hard edges and the edge pass's lines steady. Entities still move smoothly:
+  only the offset is rounded, never their positions. The mouse reads the same offsets. `CameraTest`
+  pins it.
+- **The terrain is filtered as the characters are** (`GLTileRenderer`): linearly, through two
+  halvings. Picked a texel per pixel, every line and outline in the tile art was a staircase of
+  doubled and dropped texels beside the characters' smooth ones, which is most of why the terrain
+  read as cruder art than the characters standing on it. Filtered, a pixel reads a little round its
+  texel, so at load each atlas cell is laid in a slot of its own with a four-texel gutter of its own
+  border texels round it, and its clear texels take the colour of the art beside them, ring by ring
+  (`GLTexture.padTransparentRings`): a sample at the edge of a cell, or a halving of one, never
+  reads the next cell in the atlas or the black a PNG leaves in a clear texel. Without them every
+  corner of the ground's diamonds carried a dark dash. On the render bench (the Hive, and the Meadow
+  with the edge pass off) it costs nothing that shows. The texture is 9MB with its halvings (6MB
+  before), and the process's footprint is what it was: the texture is built a slot at a time, the
+  halvings made by `GLTexture.halve`, in three small buffers. Halved by the driver
+  (`glGenerateMipmap`) it took 11MB more graphics memory than it holds, and a 7MB copy of the
+  atlas, freed, stayed dirty in the process all match (macOS keeps a large freed block). It loads
+  in ~90ms at the start of a match.
 - **Name plates, health bars and damage numbers are drawn over the finished frame** — after
   the composite, at the display's full resolution, with the world's projection so each lands
   where it did. In the scene they were only as sharp as the scene (a third of the display's
@@ -225,58 +289,102 @@ GLGameRenderer.drawCursor()       -- the pointer, last, where the mouse is as th
   there, and the camera glided after. Filmed through the real server tick, two clients and this
   renderer, the victim moved 9 cells in one frame under a Tidal Wave from three cells and 25 under
   a fan of gusts; now 3 and 5 cells over 9 and 11 frames, never more than a cell a frame.
-- **A charged shot's aim is a lane on the ground** (`AimArrowPainter`, while we charge a primary
-  that scales with charge). It runs from our feet to where the shot would land if we let go now,
-  with chevrons running out along it, faster as the charge builds; a ring lies where it lands, and
-  dots go on to where a full charge would carry it, so the charge reads as distance. It stops where
-  the shot would, at the first thing that stops one in flight (`AimArrowPainter.stopAlong` asks
-  `TerrainImpact.blocks`: walls, props and the map's edge, never water, and only a fence for a shot
-  that flies over walls), with a bar across it at the face. It is in the charge gauge's gold, deep
-  while it builds and bright at full, when a ripple breathes off the ring as the gauge's does round
-  our feet; not the gauge's white-hot, which on snow left only the ink. Every line is inked, so it
-  reads on sand and snow, and on a dark map weak lights 1.2 cells apart light the ground it runs
-  over: away from our own light the light map dimmed the gold to khaki, and lights further apart
-  glowed in beads. The chevrons and the ripple run on the frame's clock. It replaced a translucent
-  "cylinder" that read as a glitch: a slab 3.6 cells wide over a darker body, both in the player's
-  random colour mixed with a green-to-red heat ramp (a grey-olive smear on the Hive's teal floor, a
-  dirt track on snow); a spine of 14 separate quads whose width stepped at each; half-rings on one
-  side of it only, of 8 separate translucent strokes each (every joint blended twice), racing along
-  it at two lengths a second on the frame count, so twice that at 120 Hz; the whole throbbing twice
-  a second; and it ran through walls, under a wall's top and out of its far side, promising a hit
-  on whoever stood behind it. Measured with the render bench's `--aim` (4480x2404, High), the pass
-  it is drawn in shades 0.10 million fragments a frame where it shaded 0.32, the light map 0.02
-  million more, and a frame costs the same to build within the bench's noise, allocating nothing
-  more. `AimLaneTest` pins where it stops; the golden frames `hive_charging` and
-  `snowglobe_charged` hold it.
-- **An aimed attack shows where it will go** (`AimArrowPainter.drawHeld`). Q or E is aimed from its
+- **An aim is drawn in one hand** (`AimArrowPainter`). Whatever is aimed, its aim is made of the
+  same few things: a sheet of translucent gold lying on the ground in the shape of what it shows (a
+  lane, a disc, a row of dots), rimmed in the HUD's gold (the aimed slot's rim: 1, 0.85, 0.51) with
+  a dark ink line just outside the rim, and every edge faded over a pixel (gl/CLAUDE.md, *Smooth
+  edges*). A lane is one band with rounded ends, fading in from just outside our ring, cut square at
+  whatever stops it, and a soft light runs out along it every 1.3 seconds (a dash's in 0.65, a
+  charge's quicker as it builds); a disc where something lands has a dot at its heart, and a lane
+  pointing at a disc stops a little short of it. The ink carries it over snow and sand and the gold
+  over grass and the dark floors: four palettes were put side by side over snow, sand, grass and the
+  Hive's teal, and the HUD's gold with a fill of (1, 0.78, 0.26) and the ink at 75% read on all four.
+  It replaced aims drawn in hard-edged strokes, which looked cut out of the pixel grid: a lane was
+  two pale cream rails with chevrons marching between them, crossing and doubling at every joint,
+  rings and ellipses were staircases, the dots octagons, a dash's lane ran on under its landing
+  ring, a gem's three shots were three lanes tangled into one another, and on snow and sand the
+  cream was only its thin ink. What each kind of aim shows is in the two bullets below, and where it
+  lies as we walk in *An aim moves with us*.
+- **A charged shot's aim is a lane on the ground** (while we charge a primary that scales with
+  charge): one lane on to where a full charge would carry the shot, filled as far as the charge would
+  carry it now and only a faint promise beyond, so the charge reads as distance, with a disc where it
+  would land now. It stops where the shot would, at the first thing that stops one in flight
+  (`AimArrowPainter.stopAlong` asks `TerrainImpact.blocks`: walls, props and the map's edge, never
+  water, and only a fence for a shot that flies over walls), cut square at the face. Its gold is deep
+  as it starts and bright at full, when a ripple breathes off the disc as the gauge's does round our
+  feet; never the gauge's white-hot, which on snow left only the ink. On a dark map weak lights 1.2
+  cells apart light the ground it runs over: away from our own light the light map dimmed the gold to
+  khaki, and lights further apart glowed in beads. Before the lane it was a translucent "cylinder"
+  that read as a glitch: a slab 3.6 cells wide over a darker body, both in the player's random colour
+  mixed with a green-to-red heat ramp (a grey-olive smear on the Hive's teal floor, a dirt track on
+  snow); a spine of 14 separate quads whose width stepped at each; half-rings on one side of it only,
+  racing along it on the frame count; the whole throbbing twice a second; and it ran through walls,
+  promising a hit on whoever stood behind one. `AimLaneTest` pins where it stops; the golden frames
+  `hive_charging` and `snowglobe_charged` hold it.
+- **An aimed attack shows where it will go** (`AimArrowPainter.drawAimed`). Q or E is aimed from its
   key to the click that casts it, and the primary while its button is held (design/characters.md,
   *Casting mode*), and while one is its aim lies on the ground, worked out by what the cast itself
-  will do, so it can't promise what the cast won't: a shot is the charge's lane to the end of its
-  range or what stops it (`stopAlong`), a ring where it lands or a bar at the wall (none for one that
-  bounces off it), and the ring of the blast it sets off there, wherever it stops for an explosive
-  and only at the end of its range for a splash that goes off there; a fan is a spoke for each of its
-  projectiles, each to where it stops, and an arc at their reach; a dash is the lane to where it ends
-  (`GameClient.dashLanding`, over whatever lies between, as a dash is phased) inside a thin ring of
-  how far it can go, since it stops at the cursor; a blink is dots to where it lands (`blinkLanding`:
-  its whole range, short of the first cell it can't land on); a trap is where it lands
-  (`trapLanding`) and the ground it watches there, inside the ring of how far it can be thrown. A
-  gem's two side shots are spokes beside the primary's lane. A slam goes off as its key goes down,
-  so has no aim. It is the charge's gold, as a charge part way up, while the click (or, for the
-  primary, letting go) would set it off, and a dimmer stone grey while it wouldn't (the primary's
-  half second, a ceasefire, a hold, a root under a dash or a blink), with white lights rather than
-  gold. An ability's shows as its key goes down and fades in over 90ms; the primary's only once held
-  60ms, so a click shows nothing. The HUD rings the ability's slot in the same gold or grey
-  (`hud/AbilityBarPainter`), so which ability the next click casts can be read off the HUD too. The
-  aim is drawn in the ground pass, where the charge's lane is, so a wall or a tree in front of it
-  covers it, and lit as that is on a dark map. `GameClientAimTest` holds what is shown to what is
-  cast, and the golden frames `meadow_aim_blast`, `hive_aim_fan`, `colony_aim_dash`,
-  `snowglobe_aim_blink`, `cell_aim_trap`, `meadow_aim_primary` and `colony_aim_ceasefire` (grey) how
-  each looks, aimed by the first character in the roster with one (`devtools/HeldAims`, so a scene
-  survives a kit changing). Casting mode changed those of an ability in its slot's ring alone, and
-  every other frame not by a byte. Measured with the render bench's `--hold=` back to back (the Hive, High, 16 players, 150
-  projectiles), a frame costs the same to build within the bench's noise (1.6-3.0 ms a frame with
-  and without), allocates nothing more (3.6-4.3KB a frame either way, no GC), and the pass it is
-  drawn in shades a tenth of a million fragments more at most.
+  will do, so it can't promise what the cast won't: a shot is a lane to the end of its range or what
+  stops it (`stopAlong`), rounded where it runs out and square at the face (rounded at a wall it
+  bounces off), with the disc of the blast it sets off, wherever it stops for an explosive and only
+  at the end of its range for a splash that goes off there; a gem's three shots, five degrees apart,
+  are one lane widening to take them in; a fan is a narrower lane for each of its projectiles, each to
+  where it stops, and an arc at their reach; a dash is the lane to a disc where it ends
+  (`GameClient.dashLanding`, over whatever lies between, as a dash goes), inside a thin ring of how
+  far it can go, since it stops at the cursor; a blink is dots to a disc where it lands
+  (`blinkLanding`: its whole range, short of the first cell it can't land on); a trap is dots to the
+  ground it watches where it lands (`trapLanding`), inside the ring of how far it can be thrown. A
+  slam goes off as its key goes down, so has no aim. It is gold while the click (or, for the primary,
+  letting go) would set it off, and a dimmer stone grey while it wouldn't (the primary's half second,
+  a ceasefire, a hold, a root under a dash or a blink), easing between the two over 70ms, with white
+  lights rather than gold. An ability's shows as its key goes down and fades in over 90ms; the
+  primary's only once held 60ms, so a click shows nothing. The HUD rings the ability's slot in the
+  same gold or grey (`hud/AbilityBarPainter`), so which ability the next click casts can be read off
+  the HUD too. The aim is drawn in the ground pass, so a wall or a tree in front of it covers it, and
+  lit as that is on a dark map. `GameClientAimTest` holds what is shown to what is cast, and the
+  golden frames `meadow_aim_blast`, `hive_aim_fan`, `colony_aim_dash`, `snowglobe_aim_blink`,
+  `cell_aim_trap`, `meadow_aim_primary`, `meadow_aim_gem` and `colony_aim_ceasefire` (grey) how each
+  looks, aimed by the first character in the roster with one (`devtools/HeldAims`, so a scene
+  survives a kit changing).
+- **An aim moves with us** (`world/AimGeometry`, which works out where it lies for the painter).
+  Our cell, which every cast starts from, runs up to a cell and a half ahead of where we are drawn
+  as we walk: a step puts us on the next cell at once (every 50ms at a ranged character's pace), the
+  sprite glides there over the step, and the camera follows the sprite. The aim was worked out from
+  our cell and drawn from the sprite, so it swung with every step, 20 times a second: filmed walking
+  with the pointer still and six cells off, a lane's angle on the screen sawed between 150.8 and
+  158.3 degrees in jumps of up to 5.7, while standing it pointed at 141.3, at the pointer; and a
+  dash's, blink's or throw's landing hopped a cell at a time. The pointer was read into the world
+  after each frame, with that frame's camera, too, so the aim drawn in the next was a frame of the
+  camera's travel behind the crosshair. Now:
+  - The pointer is read into the world as soon as each frame has moved the camera, before anything
+    is drawn (`GLGameRenderer.onCamera`, which `MatchWindow` points at
+    `GLMouseHandler.refreshWorldPosition`), and the aim runs from where we are drawn toward it, so
+    walking with the mouse still it stays put on the screen, as our sprite does: the same walk holds
+    the lane between 141.27 and 141.41 degrees, the camera's rounding to whole pixels. A cast still
+    goes from our cell toward the pointer, so a shot and its lane meet at the pointer.
+  - A landing is snapped to a cell as the cast snaps it, but from where we are drawn
+    (`AimGeometry.openLanding`: each cast's own rule with nothing in the way, in its own arithmetic),
+    and moved by whatever the terrain, the map's edge or a barrier takes off the cast's own landing.
+    On open ground it moves exactly as we do, and standing it is the very cell the cast puts us or
+    the trap on. What the terrain takes off is worked out from our cell, so it shifts as we step along
+    a wall, and is eased (60ms, or 35ms for a change of a cell and a half or more), as the snapped
+    landing is from cell to cell as the pointer sweeps it (35ms).
+  - A controller's stick aims a way from our cell (`ControllerHandler`: a point ten cells out), not a
+    point on the screen, so its aim keeps the stick's heading from where we are drawn
+    (`RenderContext.aimAtPointer` is false while the stick aims, and in the dev tools, which set the
+    aim point themselves and never walk).
+  `AimGeometryTest` walks us as the renderer would and holds all of it: the aim not turning, a
+  landing not moving on open ground and the cast's own cell standing, what a wall takes off shown,
+  the stick's heading, and `openLanding` to the casts aimed every way at every distance.
+  What it costs was measured back to back with the build before, alternating, in a copy of the
+  render bench drawn into a hidden window (the screen was locked, which the bench's own window, made
+  from the JavaFX thread, doesn't survive): the Hive, High, 2560x1440, 16 players, each kind of aim
+  turning slowly round us. A frame took as long to build within the noise (0.8-1.2 ms both ways, its
+  median jumping between two levels from run to run), allocated nothing more (1.7KB a frame, or 2.4KB
+  with a trap aimed, both builds), and the pass the aim is drawn in shaded about as many fragments:
+  0.05-0.16 million against 0.06-0.22, a fan's three lanes 0.11 against its spokes' 0.06, of the
+  frame's 15.5. A lane's stations are a quarter of a cell apart only where its fill changes along it
+  (as it fades in, round its light) and a cell and a half apart elsewhere, which halves its vertices.
 - **The pointer is ours** (`hud/CursorPainter`). Over the match's window the system's arrow is
   hidden and the renderer draws a crosshair where the mouse is, last, over everything, the HUD
   included: the arrow, small and thin, was lost in a fight among the blasts, sparks and name plates.
@@ -327,7 +435,11 @@ sets the grade whenever the world's background changes, and for `sky`, `sea` and
 - `LightSystem.gain` 0.35 and an ambient of 0.625, which the composite's x1.6 makes exactly 1. In
   daylight the warm pool of light round every player reads as a spotlight on the grass.
   Explosions still flash.
-The dark backgrounds (`space`, `cityscape`, `desert`, `ocean`) keep the old settings.
+`space` is a station's deck floating in the dark, and is graded nearly as the bright maps are:
+`toneMap` 0, bloom above 0.9 at 0.2 (shots and blasts still glow in the dark), vignette 0.16,
+`LightSystem.gain` 0.6 and an ambient of 0.55, the art a little dimmed so shots and players still
+light it. Under the old dark grade, ACES over the art at 60%, the deck and everyone on it came out
+murky. The other dark backgrounds (`cityscape`, `desert`, `ocean`) keep the old settings.
 
 ## Performance
 
@@ -417,8 +529,9 @@ bazel run //src/main/scala/com/gridgame/client:golden_frames -- /tmp/golden --qu
 bazel run //src/main/scala/com/gridgame/client:golden_frames -- /tmp/golden --scenes=meadow,snow
 ```
 
-Fixed scenes — players, projectiles, blasts, barriers, traps, the divider, the HUD, the edges of the
-maps, a charged shot's aim, every kind of attack being aimed, the pointer, walls in front of and beside us — drawn by the real GLGameRenderer on a stopped clock (`FrameClock`) with its randomness seeded
+Fixed scenes — players, projectiles, blasts, barriers, traps, the divider, the HUD (R cooling down
+among it), the edges of the maps, a charged shot's aim, every kind of attack being aimed, the pointer,
+walls in front of and beside us — drawn by the real GLGameRenderer on a stopped clock (`FrameClock`) with its randomness seeded
 (`seedRandom`), so the same build draws the same pixels every time. It is the check for a change to
 the renderer that is meant to change nothing: write the frames from both builds and compare them
 byte for byte (`cmp`). A change that is meant to show must be judged by eye, in the galleries and in

@@ -35,6 +35,12 @@ match-flow.md (the opening, and who wins). This file is how the package is put t
   and the `Cast` it was fired in (every projectile one press of an attack fired, which pushes a
   player once however many of them strike).
 - `WorldData`, `Tile` (with `TileForm`: ground, pool, block, prop), `TeamDivider`, `MatchOpening`.
+- `GroundEdges` — where two kinds of ground meet, which spills over which (a layer per ground that
+  meets its neighbours that way: the natural ones, and the space maps' deck over open space; ground
+  built in pieces, lava and blocks take none) and how the one soft, inked edge between them looks,
+  with `shade`, the edge at a point, which the menus' map pictures draw and the match's shader
+  follows line for line (client/render/CLAUDE.md, *Where two kinds of ground meet*). Nothing in it
+  is a rule of the game: a cell is walkable or not as its tile is.
 - `Movement` (the one rule that turns a character's pace into a step interval), `Teleport` (the
   landing cell of a star or a blink, picked the same way on both sides), `TrapPlacement`,
   `Barrier` (the shape both sides stop shots on and draw), `TeamAssignment`, `MatchResults`.
@@ -42,8 +48,12 @@ match-flow.md (the opening, and who wins). This file is how the package is put t
 ## Adding a New Tile Type
 1. Add case object to `Tile.scala` with the next id (an id is its atlas column, so no gaps),
    name, walkable, color. A non-walkable tile that isn't a block overrides `form` (`Pool` or
-   `Prop`), and a prop names the `ground` it grows out of. A non-walkable tile stops projectiles
-   unless it overrides `stopsProjectiles` (water does: shots fly over it).
+   `Prop`), and a prop names the `ground` it grows out of. A pool whose frames aren't an animation
+   overrides `animates`, and a tile whose variants aren't picked at random by position overrides
+   `variantAt`. A ground that should meet its neighbours in a soft edge (not one built in pieces)
+   gets a layer in `GroundEdges`, its `color` the one its tile is painted (`GroundEdgesTest` checks
+   the atlas), and its edge's look there. A non-walkable tile stops projectiles unless it overrides
+   `stopsProjectiles` (water does: shots fly over it).
 2. Add to `Tile.all` sequence, and bump the count in `WorldDataTest`
 3. Write its draw function in `scripts/generate_tiles.py` and add it to `TILES` with its form. A
    block also needs `BLOCK_HEIGHTS` (and `ANIMATED_BLOCKS` if its frames move). A small prop can

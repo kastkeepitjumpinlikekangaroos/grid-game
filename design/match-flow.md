@@ -42,10 +42,11 @@ to each other before anyone can shoot anyone.
   refuse it without any of them knowing it is there. It is not terrain — the tiles are untouched,
   and `isTileWalkable`, which is what a projectile is stopped by, ignores it.
 - **What ignores walls is held by hand.** A star jumps over whatever lies between
-  (`Teleport.starTarget` / `isValidStarTarget`), a phase walks through walls
+  (`Teleport.starTarget` / `isValidStarTarget`), a dash goes over walls
   (`PacketValidator.validateMovement`), and a `passesThroughWalls` projectile flies over them.
   Each is turned back by the side rule — `allowsMove`: not into the wall, and not onto its far
-  side — or by the crossing test, so nothing gets over what a walk cannot get through.
+  side — or by the crossing test, so nothing gets over what a walk cannot get through. A phase
+  shift walked through walls too, until 2026-10-14, and was held the same way.
 - **Nothing crosses it in flight either.** `ProjectileManager` reads the divider once a tick and
   stops any projectile whose sub-step crosses the line, a hair short of it, the way a barrier does:
   `ProjectileAction.BLOCKED` with **no** target, since this wall is nobody's. An explosive goes off
@@ -92,6 +93,10 @@ everyone gets the same half minute to find their feet and pick their ground.
 
 ### Both
 
+- **R is on its first minute all through it** (design/characters.md, *R resets the cooldowns*). That
+  minute counts from the match's start, opening and all, so whichever way a match opens, R comes half
+  a minute after the fighting can begin: by then everyone has been at each other a while. Practice,
+  with no opening, has no first minute either: R is ready from its start.
 - **Look at either** with `bazel run //src/main/scala/com/gridgame/client:render_bench -- --divider`
   or `-- --ceasefire` (`=<seconds>` on either to watch it end), which is the loop for the HUD and
   the wall, since a real opening needs a match and lasts thirty seconds of it. The wall is stood

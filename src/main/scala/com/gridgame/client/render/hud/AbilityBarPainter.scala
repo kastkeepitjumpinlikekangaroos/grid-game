@@ -3,14 +3,15 @@ package hud
 
 import com.gridgame.common.model._
 
-/** The two ability slots: each one's icon, its cooldown sweeping round, a flash when it is ready
-  * again, a trap ability's count, a ceasefire's padlock, and a rim round the one being aimed. */
+/** The two ability slots, and R's beside them: each one's icon, its cooldown sweeping round, a flash
+  * when it is ready again, a trap ability's count, a ceasefire's padlock, the seconds R has still to
+  * wait, and a rim round the one being aimed. */
 private[render] final class AbilityBarPainter(ctx: RenderContext) {
   import ctx._
 
-  // Cooldown ready flash tracking (Q=0, E=1)
-  private val prevCooldownReady = Array(true, true)
-  private val cooldownReadyFlashTime = Array(0L, 0L)
+  // Cooldown ready flash tracking (Q=0, E=1, R=2)
+  private val prevCooldownReady = Array(true, true, true)
+  private val cooldownReadyFlashTime = Array(0L, 0L, 0L)
 
   // Pre-allocated arrays for detailed HUD icons
   private val _iconXs = new Array[Float](12)
@@ -22,17 +23,24 @@ private[render] final class AbilityBarPainter(ctx: RenderContext) {
   private val _shieldIconX = Array(-0.6f, 0.6f, 0.6f, 0.38f, 0f, -0.38f, -0.6f)
   private val _shieldIconY = Array(-0.65f, -0.65f, -0.05f, 0.48f, 0.8f, 0.48f, -0.05f)
 
-  // Pre-unpacked ability colors (avoids Tuple3 allocation on each access)
-  private val _abilityR = Array(0.2f, 0.4f)
-  private val _abilityG = Array(0.8f, 0.7f)
-  private val _abilityB = Array(0.3f, 1f)
+  // Pre-unpacked slot colors (avoids Tuple3 allocation on each access): Q green, E blue, R violet
+  private val _abilityR = Array(0.2f, 0.4f, 0.78f)
+  private val _abilityG = Array(0.8f, 0.7f, 0.56f)
+  private val _abilityB = Array(0.3f, 1f, 1f)
 
-  // Pre-allocated arrays for cooldown sweep polygon
-  private val _sweepXs = new Array[Float](34)
-  private val _sweepYs = new Array[Float](34)
+  // Pre-allocated arrays for cooldown sweep polygon: its centre, and up to SWEEP_STEPS + 1 round it
+  private val SWEEP_STEPS = 64
+  private val _sweepXs = new Array[Float](SWEEP_STEPS + 2)
+  private val _sweepYs = new Array[Float](SWEEP_STEPS + 2)
+  // How round a slot's corners are
+  private val SLOT_CORNER = 5f
 
   // How far outside its slot the rim of the ability being aimed runs
   private val AIM_RIM_OUT = 2.5f
+
+  /** The slots along the bar, left to right: Q, E, then R. */
+  private val SLOTS = 3
+  private val RESET = 2
 
   def draw(screenW: Int, screenH: Int): Unit = {
     val slotSize = 54f; val slotGap = 8f
@@ -40,16 +48,19 @@ private[render] final class AbilityBarPainter(ctx: RenderContext) {
     val totalInvW = invNumSlots * invSlotSize + (invNumSlots - 1) * invSlotGap
     val inventoryStartX = (screenW - totalInvW) / 2f
     val startY = screenH - slotSize - 14f
+    val abilityGap = 12f
+    def slotXOf(i: Int): Float = inventoryStartX - (SLOTS - i) * (slotSize + slotGap) - abilityGap
 
     val charDef = client.getSelectedCharacterDef
     val qAbility = charDef.qAbility; val eAbility = charDef.eAbility
     val qCooldown = client.getQCooldownFraction; val eCooldown = client.getECooldownFraction
     val numAbilities = 2
+    val resetCooldown = client.getResetCooldownFraction
 
     val now = frameTimeMs
-    val abilityGap = 12f
     // Held by a free-for-all's opening ceasefire (MatchOpening): the slots say so, and say for
-    // how long, since nothing anyone presses attacks until it is over
+    // how long, since nothing anyone presses attacks until it is over. R's isn't: its own minute is
+    // running from the match's start, and its slot counts it down.
     val locked = client.attacksLocked
     val lockSecs = if (locked) ((client.openingMsLeft + 999L) / 1000L).toInt else 0
     val aimed = client.aimedAbility
@@ -59,20 +70,11 @@ private[render] final class AbilityBarPainter(ctx: RenderContext) {
       val aDef = if (i == 0) qAbility else eAbility
       val cooldownFrac = if (i == 0) qCooldown else eCooldown
       val ar = _abilityR(i); val ag = _abilityG(i); val ab = _abilityB(i)
-      val slotX = inventoryStartX - (numAbilities - i) * (slotSize + slotGap) - abilityGap
+      val slotX = slotXOf(i)
       val onCooldown = cooldownFrac > 0.001f
+      noteReady(i, !onCooldown, now)
 
-      // Detect cooldown-to-ready transition for flash
-      val isReady = !onCooldown
-      if (isReady && !prevCooldownReady(i)) {
-        cooldownReadyFlashTime(i) = now
-      }
-      prevCooldownReady(i) = isReady
-
-      // Slot background (glassmorphism) with bright border
-      shapeBatch.fillRoundedRect(slotX, startY, slotSize, slotSize, 5f, 0.08f, 0.08f, 0.14f, 0.75f)
-      shapeBatch.strokeRect(slotX, startY, slotSize, slotSize, 1f, ar * 0.5f, ag * 0.5f, ab * 0.5f, 0.4f)
-      shapeBatch.strokeLine(slotX + 4, startY, slotX + slotSize - 4, startY, 1f, 1f, 1f, 1f, 0.07f)
+      drawSlotBack(slotX, startY, slotSize, ar, ag, ab)
 
       // Ability icon inside the slot
       val cx = slotX + slotSize / 2; val cy = startY + slotSize / 2
@@ -93,30 +95,9 @@ private[render] final class AbilityBarPainter(ctx: RenderContext) {
       if (locked) {
         // nothing: a holstered slot is shuttered, not counting down its own cooldown
       } else if (onCooldown) {
-        val sweepAngle = cooldownFrac * Math.PI.toFloat * 2f
-        val radius = slotSize * 0.72f
-        val startAngle = -Math.PI.toFloat / 2f
-        val steps = Math.max(4, (cooldownFrac * 24).toInt)
-        _sweepXs(0) = cx; _sweepYs(0) = cy
-        var s = 0
-        while (s <= steps) {
-          val angle = startAngle + (s.toFloat / steps) * sweepAngle
-          _sweepXs(s + 1) = cx + Math.cos(angle).toFloat * radius
-          _sweepYs(s + 1) = cy + Math.sin(angle).toFloat * radius
-          s += 1
-        }
-        shapeBatch.fillPolygon(_sweepXs, _sweepYs, steps + 2, 0f, 0f, 0f, 0.55f)
-        // Muted border when on cooldown
+        drawSweep(cx, cy, slotSize, cooldownFrac)
       } else {
-        // No border stroke needed - glassmorphism panel is enough
-        // Ready flash pulse (300ms glow when cooldown completes)
-        val flashElapsed = now - cooldownReadyFlashTime(i)
-        if (flashElapsed < 300 && cooldownReadyFlashTime(i) > 0) {
-          val flashAlpha = (1f - flashElapsed / 300f) * 0.4f
-          shapeBatch.setAdditiveBlend(true)
-          shapeBatch.fillRoundedRect(slotX, startY, slotSize, slotSize, 5f, ar, ag, ab, flashAlpha)
-          shapeBatch.setAdditiveBlend(false)
-        }
+        drawReadyFlash(i, slotX, startY, slotSize, now, ar, ag, ab)
       }
 
       // Being aimed, waiting for the click that casts it (design/characters.md, *Casting mode*): ringed
@@ -131,12 +112,23 @@ private[render] final class AbilityBarPainter(ctx: RenderContext) {
       i += 1
     }
 
+    // R (design/characters.md, *R resets the cooldowns*): a slot like theirs, on its own minute
+    val resetX = slotXOf(RESET)
+    val resetOnCooldown = resetCooldown > 0.001f
+    noteReady(RESET, !resetOnCooldown, now)
+    val rr = _abilityR(RESET); val rg = _abilityG(RESET); val rb = _abilityB(RESET)
+    drawSlotBack(resetX, startY, slotSize, rr, rg, rb)
+    val rcx = resetX + slotSize / 2; val rcy = startY + slotSize / 2
+    drawResetIcon(rcx, rcy, 17f, rr, rg, rb, if (resetOnCooldown) 0.35f else 0.9f)
+    if (resetOnCooldown) drawSweep(rcx, rcy, slotSize, resetCooldown)
+    else drawReadyFlash(RESET, resetX, startY, slotSize, now, rr, rg, rb)
+
     // Key labels, and for a trap the count of ours on the ground
     beginSprites()
     i = 0
     while (i < numAbilities) {
       val aDef = if (i == 0) qAbility else eAbility
-      val slotX = inventoryStartX - (numAbilities - i) * (slotSize + slotGap) - abilityGap
+      val slotX = slotXOf(i)
       val ar = _abilityR(i); val ag = _abilityG(i); val ab = _abilityB(i)
       val onCooldown = (if (i == 0) qCooldown else eCooldown) > 0.001f
       val ka = if (locked) 0.35f else if (onCooldown) 0.5f else 1f
@@ -163,6 +155,118 @@ private[render] final class AbilityBarPainter(ctx: RenderContext) {
       }
       i += 1
     }
+    val rka = if (resetOnCooldown) 0.5f else 1f
+    fontSmall.drawTextOutlined(spriteBatch, ResetKey,
+      resetX + slotSize - fontSmall.measureWidth(ResetKey) - 3, startY + slotSize - fontSmall.charHeight - 1,
+      rr * rka, rg * rka, rb * rka, rka)
+    if (resetOnCooldown) {
+      // A minute is a slow sweep: the seconds left say it plainly
+      val secs = resetSecsText(Math.ceil(client.getResetCooldownRemaining).toInt)
+      fontMedium.drawTextOutlined(spriteBatch, secs, rcx - fontMedium.measureWidth(secs) / 2,
+        fontMedium.digitsCentredOn(rcy), 0.93f, 0.88f, 1f, 0.95f)
+    }
+  }
+
+  private val ResetKey = "R"
+
+  /** A slot's cooldown just ran out: it flashes as it comes ready. */
+  private def noteReady(slot: Int, isReady: Boolean, now: Long): Unit = {
+    if (isReady && !prevCooldownReady(slot)) cooldownReadyFlashTime(slot) = now
+    prevCooldownReady(slot) = isReady
+  }
+
+  /** Slot background (glassmorphism) with bright border. */
+  private def drawSlotBack(slotX: Float, startY: Float, slotSize: Float, ar: Float, ag: Float, ab: Float): Unit = {
+    shapeBatch.fillRoundedRect(slotX, startY, slotSize, slotSize, 5f, 0.08f, 0.08f, 0.14f, 0.75f)
+    shapeBatch.strokeRect(slotX, startY, slotSize, slotSize, 1f, ar * 0.5f, ag * 0.5f, ab * 0.5f, 0.4f)
+    shapeBatch.strokeLine(slotX + 4, startY, slotX + slotSize - 4, startY, 1f, 1f, 1f, 1f, 0.07f)
+  }
+
+  /**
+   * The cooldown still to run, darkened over the slot clockwise from 12 o'clock, out to the slot's own
+   * edge: a fan from its centre to its outline, the corners rounded as the slot's are. It was a circle
+   * wide enough to reach the corners, so past the middle of each side it spilled a third of a slot
+   * over the bar, and over the slot beside it.
+   */
+  private def drawSweep(cx: Float, cy: Float, slotSize: Float, cooldownFrac: Float): Unit = {
+    val half = slotSize / 2f
+    val inner = half - SLOT_CORNER
+    val sweepAngle = cooldownFrac * Math.PI.toFloat * 2f
+    val startAngle = -Math.PI.toFloat / 2f
+    val steps = Math.max(4, (cooldownFrac * SWEEP_STEPS).toInt)
+    _sweepXs(0) = cx; _sweepYs(0) = cy
+    var s = 0
+    while (s <= steps) {
+      val angle = startAngle + (s.toFloat / steps) * sweepAngle
+      val c = Math.cos(angle).toFloat; val sn = Math.sin(angle).toFloat
+      // Out along the angle to the square's edge...
+      val k = half / Math.max(Math.abs(c), Math.abs(sn))
+      var px = c * k; var py = sn * k
+      // ...or, where a corner rounds off, onto its round
+      if (Math.abs(px) > inner && Math.abs(py) > inner) {
+        val ox = Math.signum(px) * inner; val oy = Math.signum(py) * inner
+        val dx = px - ox; val dy = py - oy
+        val d = Math.sqrt(dx * dx + dy * dy).toFloat
+        px = ox + dx / d * SLOT_CORNER; py = oy + dy / d * SLOT_CORNER
+      }
+      _sweepXs(s + 1) = cx + px
+      _sweepYs(s + 1) = cy + py
+      s += 1
+    }
+    shapeBatch.fillPolygon(_sweepXs, _sweepYs, steps + 2, 0f, 0f, 0f, 0.55f)
+  }
+
+  /** Ready flash pulse (300ms glow when cooldown completes). No border stroke needed: the
+    * glassmorphism panel is enough. */
+  private def drawReadyFlash(slot: Int, slotX: Float, startY: Float, slotSize: Float, now: Long,
+                             ar: Float, ag: Float, ab: Float): Unit = {
+    val flashElapsed = now - cooldownReadyFlashTime(slot)
+    if (flashElapsed < 300 && cooldownReadyFlashTime(slot) > 0) {
+      val flashAlpha = (1f - flashElapsed / 300f) * 0.4f
+      shapeBatch.setAdditiveBlend(true)
+      shapeBatch.fillRoundedRect(slotX, startY, slotSize, slotSize, 5f, ar, ag, ab, flashAlpha)
+      shapeBatch.setAdditiveBlend(false)
+    }
+  }
+
+  // R's seconds left, rebuilt only when they change — the HUD is drawn every frame
+  private var _resetSecsText: String = ""
+  private var _resetSecs = -1
+
+  private def resetSecsText(secs: Int): String = {
+    if (secs != _resetSecs) {
+      _resetSecs = secs
+      _resetSecsText = secs.toString
+    }
+    _resetSecsText
+  }
+
+  /** R's icon: an arrow going round, clockwise, nearly all the way to where it began. */
+  private def drawResetIcon(cx: Float, cy: Float, sz: Float, r: Float, g: Float, b: Float, a: Float): Unit = {
+    val glow = (Math.sin(animTickF * 0.1) * 0.25 + 0.75).toFloat
+    shapeBatch.fillOvalSoft(cx, cy, sz * 0.95f, sz * 0.95f, r, g, b, a * 0.16f * glow, 0f, 16)
+    val rad = sz * 0.56f
+    // From just past twelve o'clock round to just short of it (screen angles: y runs down, so a
+    // growing angle turns clockwise)
+    val start = (-Math.PI / 2 + 0.6).toFloat
+    val sweep = (2 * Math.PI - 1.45).toFloat
+    shapeBatch.strokeArc(cx, cy, rad, rad, start, sweep, sz * 0.3f, r * 0.3f, g * 0.3f, b * 0.35f, a * 0.85f, 22)
+    shapeBatch.strokeArc(cx, cy, rad, rad, start, sweep, sz * 0.17f, r, g, b, a * 0.95f, 22)
+    // Lit along its upper left
+    shapeBatch.strokeArc(cx, cy, rad, rad, (Math.PI * 0.95).toFloat, 0.95f, sz * 0.05f,
+      clamp(r + 0.3f), clamp(g + 0.3f), clamp(b + 0.3f), a * 0.6f, 8)
+    // The head at its end, pointing on round: its tip ahead along the way the arc turns, its base
+    // across the band
+    val end = start + sweep
+    val nx = Math.cos(end).toFloat; val ny = Math.sin(end).toFloat
+    val tx = -ny; val ty = nx
+    val px = cx + rad * nx; val py = cy + rad * ny
+    val head = sz * 0.36f; val half = sz * 0.3f
+    _iconXs(0) = px + tx * head; _iconYs(0) = py + ty * head
+    _iconXs(1) = px + nx * half; _iconYs(1) = py + ny * half
+    _iconXs(2) = px - nx * half; _iconYs(2) = py - ny * half
+    shapeBatch.strokePolygon(_iconXs, _iconYs, 3, sz * 0.12f, r * 0.3f, g * 0.3f, b * 0.35f, a * 0.85f)
+    shapeBatch.fillPolygon(_iconXs, _iconYs, 3, r, g, b, a)
   }
 
   // "2/3" on a trap ability's slot, rebuilt only when it changes — the HUD is drawn every frame
@@ -370,7 +474,7 @@ private[render] final class AbilityBarPainter(ctx: RenderContext) {
   }
 
   def reset(): Unit = {
-    prevCooldownReady(0) = true; prevCooldownReady(1) = true
-    cooldownReadyFlashTime(0) = 0L; cooldownReadyFlashTime(1) = 0L
+    java.util.Arrays.fill(prevCooldownReady, true)
+    java.util.Arrays.fill(cooldownReadyFlashTime, 0L)
   }
 }

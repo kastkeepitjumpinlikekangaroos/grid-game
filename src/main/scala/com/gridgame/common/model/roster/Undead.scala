@@ -15,18 +15,18 @@ private[model] object Undead {
 
   val DeathBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.DEATH_BOLT, name = "Death Bolt", speedMultiplier = 0.7f, damage = 28, maxRange = 16, passesThroughWalls = true, pierceCount = 1)
   val RaiseDeadDef: ProjectileDef = ProjectileDef(id = ProjectileType.RAISE_DEAD, name = "Raise Dead", speedMultiplier = 0.5f, damage = 32, maxRange = 14, aoeOnHit = Some(AoESplashConfig(3.0f, 19)))
-  val BoneAxeDef: ProjectileDef = ProjectileDef(id = ProjectileType.BONE_AXE, name = "Bone Axe", speedMultiplier = 0.6f, damage = 28, maxRange = 5, hitRadius = 2.5f)
+  val BoneAxeDef: ProjectileDef = ProjectileDef(id = ProjectileType.BONE_AXE, name = "Bone Axe", speedMultiplier = 0.6f, damage = 49, maxRange = 3, hitRadius = 2.5f)
   // The Skeleton King's Bone Cage: one bone that springs a cage round whoever it reaches. It was a
   // ring of eight boomerang bones (Bone Storm)
   val BoneThrowDef: ProjectileDef = ProjectileDef(id = ProjectileType.BONE_THROW, name = "Bone Throw", speedMultiplier = 0.9f, damage = 20, maxRange = 14, onHitEffect = Some(Root(1500)))
   val SoulDrainDef: ProjectileDef = ProjectileDef(id = ProjectileType.SOUL_DRAIN, name = "Soul Drain", speedMultiplier = 0.6f, damage = 44, maxRange = 14, onHitEffect = Some(LifeSteal(40)))
   val DevourDef: ProjectileDef = ProjectileDef(id = ProjectileType.DEVOUR, name = "Devour", speedMultiplier = 0.5f, damage = 31, maxRange = 6, onHitEffect = Some(LifeSteal(50)), alsoOnHit = Seq(Root(1000)))
-  val ScytheDef: ProjectileDef = ProjectileDef(id = ProjectileType.SCYTHE, name = "Scythe", speedMultiplier = 0.65f, damage = 24, maxRange = 5, hitRadius = 2.5f)
+  val ScytheDef: ProjectileDef = ProjectileDef(id = ProjectileType.SCYTHE, name = "Scythe", speedMultiplier = 0.65f, damage = 42, maxRange = 3, hitRadius = 2.5f)
   val ReapDef: ProjectileDef = ProjectileDef(id = ProjectileType.REAP, name = "Reap", speedMultiplier = 0.9f, damage = 35, maxRange = 10, passesThroughWalls = true, hitRadius = 2.8f, onHitEffect = Some(PullToOwner))
   val ShadowBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.SHADOW_BOLT, name = "Shadow Bolt", speedMultiplier = 0.8f, damage = 24, maxRange = 16, passesThroughWalls = true, ricochetCount = 2)
-  val CursedBladeDef: ProjectileDef = ProjectileDef(id = ProjectileType.CURSED_BLADE, name = "Cursed Blade", speedMultiplier = 0.7f, damage = 22, maxRange = 5, hitRadius = 2.2f)
+  val CursedBladeDef: ProjectileDef = ProjectileDef(id = ProjectileType.CURSED_BLADE, name = "Cursed Blade", speedMultiplier = 0.7f, damage = 39, maxRange = 3, hitRadius = 2.2f)
   val LifeDrainDef: ProjectileDef = ProjectileDef(id = ProjectileType.LIFE_DRAIN, name = "Life Drain", speedMultiplier = 0.6f, damage = 20, maxRange = 14, onHitEffect = Some(LifeSteal(35)), alsoOnHit = Seq(Slow(2000, 0.6f)))
-  val ShovelDef: ProjectileDef = ProjectileDef(id = ProjectileType.SHOVEL, name = "Shovel", speedMultiplier = 0.6f, damage = 33, maxRange = 4, hitRadius = 2.2f, boomerang = true)
+  val ShovelDef: ProjectileDef = ProjectileDef(id = ProjectileType.SHOVEL, name = "Shovel", speedMultiplier = 0.6f, damage = 55, maxRange = 2, hitRadius = 2.2f, boomerang = true)
   val BandageWhipDef: ProjectileDef = ProjectileDef(id = ProjectileType.BANDAGE_WHIP, name = "Bandage Whip", speedMultiplier = 0.75f, damage = 16, maxRange = 16, onHitEffect = Some(PullToOwner))
   val CurseDef: ProjectileDef = ProjectileDef(id = ProjectileType.CURSE, name = "Curse", speedMultiplier = 0.5f, damage = 32, maxRange = 12, onHitEffect = Some(Burn(25, 3000, 750)))
   val CharmDef: ProjectileDef = ProjectileDef(id = ProjectileType.CHARM, name = "Charm", speedMultiplier = 0.6f, damage = 36, maxRange = 14, onHitEffect = Some(Slow(3000, 0.3f)))
@@ -62,9 +62,9 @@ private[model] object Undead {
   def variants(base: Byte => ProjectileDef): Seq[ProjectileDef] = Seq(
     // A primary with an identity of its own (Plan 5a): a slow at most, never a hold. Primaries fire
     // twice a second, and a hold grants 1.5s of CC immunity that would turn the kit's own holds away
-    base(ProjectileType.CLAW_SWIPE).copy(id = ProjectileType.GHOUL_CLAW, name = "Ghoul Claw", damage = 26, onHitEffect = Some(Slow(1000, 0.7f))),
-    base(ProjectileType.CURSED_BLADE).copy(id = ProjectileType.DRAIN_BLADE, name = "Drain Blade", damage = 24, onHitEffect = Some(LifeSteal(20))),
-    base(ProjectileType.CURSED_BLADE).copy(id = ProjectileType.CHILL_BLADE, name = "Chill Blade", damage = 27, onHitEffect = Some(Slow(1000, 0.7f))),
+    base(ProjectileType.CLAW_SWIPE).copy(id = ProjectileType.GHOUL_CLAW, name = "Ghoul Claw", damage = 46, onHitEffect = Some(Slow(1000, 0.7f))),
+    base(ProjectileType.CURSED_BLADE).copy(id = ProjectileType.DRAIN_BLADE, name = "Drain Blade", damage = 42, onHitEffect = Some(LifeSteal(20))),
+    base(ProjectileType.CURSED_BLADE).copy(id = ProjectileType.CHILL_BLADE, name = "Chill Blade", damage = 47, onHitEffect = Some(Slow(1000, 0.7f))),
     // One shadow bolt that roots, in place of the Shade's fan of three plain ones. It bounces off
     // walls rather than flying through them, as the Shade's own bolts are said to
     base(ProjectileType.SHADOW_BOLT).copy(id = ProjectileType.SHADOW_BIND, name = "Shadow Bind", damage = 18, passesThroughWalls = false, onHitEffect = Some(Root(1500)))

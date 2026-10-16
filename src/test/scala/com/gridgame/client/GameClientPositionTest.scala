@@ -193,4 +193,21 @@ class GameClientPositionTest {
     w.client.shootAbility(1)
     assertEquals((13, 10), w.at)
   }
+
+  // --- A phase: untouchable and twice as quick, and walls stop it ---
+
+  @Test def phasedAWallStillStopsUs(): Unit = {
+    // A phase walked through walls, corners and all
+    val world = WorldData.createEmpty(30, 30)
+    world.setTile(11, 10, Tile.Wall)
+    val w = new TestClient(world)
+    w.client.selectedCharacterId = CharacterId.Wraith.id // Q: Phase Shift
+    w.startMatch(spawn = (10, 10))
+    assertTrue(w.client.shootAbility(0))
+    assertTrue(w.client.isPhased)
+    w.client.movePlayer(1, 0)
+    assertEquals("into the wall", (10, 10), w.at)
+    w.client.movePlayer(1, -1)
+    assertEquals("past its corner: along the open side", (10, 9), w.at)
+  }
 }

@@ -173,8 +173,9 @@ class RenderBenchApp extends Application {
         world.divider = new TeamDivider(raised.axisX, home.getX + 5, raised.endsAt)
       }
       // The countdown under the match clock is part of what there is to look at, and the top of
-      // the HUD is only drawn in a match
+      // the HUD is only drawn in a match. R is on its first minute, as at a match's start
       client.clientState = com.gridgame.client.game.ClientState.PLAYING
+      client.startResetCooldown()
     }
     // --aim has us charge a shot all through the run, as the Tidecaller, starting it again every five
     // seconds and turning the aim slowly round, so the lane on the ground (AimArrowPainter) is drawn

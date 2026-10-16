@@ -3942,6 +3942,38 @@ def gen_barrier_up():
     return reverb(out, decay=0.55, damp=5000, mix=0.22, name="bu", predelay=0.01)
 
 
+def gen_cooldown_reset():
+    """R: both abilities ready again. A spin-up, air drawn in up a rising sweep and streaking as it
+    climbs, that lands on a settled harmonic chord with a glint on it: charged, never struck, so
+    nothing in it rings like metal. Short, as the casts it frees follow straight after it."""
+    dur = 0.55
+    n = n_of(dur)
+    rise_d = 0.2
+    # Air drawn in, the sweep climbing and the comb on it streaking the other way
+    rush = svf(pink(rise_d, "crr"), seg_env([(0.0, 520), (1.0, 3600)], rise_d), q=2.4, mode="bp")
+    rush *= np.linspace(0.0, 1.0, n_of(rise_d)) ** 1.6
+    rush = flange(rush, lo_ms=0.4, hi_ms=4.0, depth=0.7, rise=False)
+    # The spin-up itself: a harmonic chirp climbing an octave, swelled in
+    chirp = fm(seg_env([(0.0, 220.0), (1.0, 440.0)], rise_d), 2.0,
+               seg_env([(0.0, 1.4), (1.0, 2.8)], rise_d), rise_d)
+    chirp *= swell_env(rise_d, 1.8) * 0.3
+    # Landed: A, E and A an octave up, on pitch and each swelled in over 50-70ms (a chord that
+    # starts at once and dies away is a struck one), and a soft push of air under them
+    chord_d = dur - rise_d + 0.03
+    chord = mixdown(glow(440.0, chord_d, attack=0.05, decay=4.5, settle=1.0, name="crg1"),
+                    glow(659.25, chord_d, attack=0.06, decay=5.0, settle=1.0, name="crg2") * 0.7,
+                    glow(880.0, chord_d, attack=0.07, decay=5.5, settle=1.0, name="crg3") * 0.45)
+    seat = whump(0.12, f=(180.0, 90.0), name="crw")
+    glint = sparkle(0.24, 3500, 9000, count=6, rise=True, name="crs")
+    out = np.zeros(n)
+    out[:len(rush)] += rush * 0.5
+    out[:len(chirp)] += chirp
+    at(out, rise_d - 0.03, chord * 0.5)
+    at(out, rise_d - 0.03, seat * 0.35)
+    at(out, rise_d - 0.01, glint * 0.2)
+    return reverb(out, decay=0.6, damp=6000, mix=0.24, name="cr", predelay=0.01)
+
+
 def gen_trap_place():
     """A trap set down: the weight of it landing on earth, the catch taking, and the small click
     of the mechanism being armed. Deliberately quiet and short — the point of laying one is that
@@ -4637,6 +4669,9 @@ EVENTS = [
                                                            tail=(0.6, 0.18))),
     ("trap_ignite", gen_trap_ignite, 0.62, "ability", dict(width=0.75, transient=1.2,
                                                            tail=(0.7, 0.2))),
+    # R: both abilities ready again (heard only by whoever pressed it)
+    ("cooldown_reset", gen_cooldown_reset, 0.58, "ability", dict(width=0.9, transient=0.9,
+                                                                  tail=(0.7, 0.2))),
 ]
 
 

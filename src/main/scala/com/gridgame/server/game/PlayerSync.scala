@@ -52,33 +52,58 @@ trait PlayerSync { this: GameInstance =>
     else Math.max(1L, Math.min(65535L, p.getSpeedBoostUntil - System.currentTimeMillis())).toInt
 
   /**
-   * A player as the server has them, for everyone to be told: position, health, every status
-   * flag, character, team, how many times the server has moved them and how many of those moves
-   * were knockbacks. Every update the server sends about a player goes through here; each used
-   * to be built by hand, and several carried a few of the flags, so a burning, rooted or slowed
-   * player's effects blinked off on other screens whenever one of those went out.
+   * How long an effect running until `until` has left, in ms, for bytes [61-63] of an update (0 if
+   * it is over). Every client holds, roots and slows a player for as long as this says: with the
+   * flags alone, a client held its own player until the next update without them, which nothing
+   * sends when an effect ends.
    */
-  private[server] def stateUpdate(p: Player): PlayerUpdatePacket =
+  private def msLeft(until: Long, now: Long): Int =
+    if (until <= now) 0 else Math.min(until - now, PlayerUpdatePacket.MaxEffectMs.toLong).toInt
+
+  /**
+   * A player as the server has them, for everyone to be told: position, health, every status
+   * flag and how long each hold, root and slow has left, character, team, how many times the
+   * server has moved them and how many of those moves were knockbacks. Every update the server
+   * sends about a player goes through here; each used to be built by hand, and several carried a
+   * few of the flags, so a burning, rooted or slowed player's effects blinked off on other screens
+   * whenever one of those went out.
+   *
+   * The count of server moves is read before the position. A server move writes the position and
+   * then counts it (placeByServer), so read in that order the count is never newer than the
+   * position beside it. Read the other way, an update built while another thread moved the player
+   * could carry the old position with the new count, which their client took as the move, and then
+   * ignored the update that really carried it, its count no longer new: it stood where the server
+   * no longer had it, its steps refused, until a correction.
+   */
+  private[server] def stateUpdate(p: Player): PlayerUpdatePacket = {
+    val seq = outbox.nextSeq()
+    val serverMoves = p.getServerMoves
+    val position = p.getPosition
+    val now = System.currentTimeMillis()
     new PlayerUpdatePacket(
-      outbox.nextSeq(),
+      seq,
       p.getId,
       Packet.getCurrentTimestamp,
-      p.getPosition,
+      position,
       p.getColorRGB,
       p.getHealth,
       p.getChargeLevel,
       playerFlags(p),
       p.getCharacterId,
       p.getTeamId,
-      p.getServerMoves,
+      serverMoves,
       playerFlags2(p),
       // Which way a raised barrier faces, so every client turns it as its holder does
       if (p.hasBarrier) PlayerUpdatePacket.encodeAimAngle(p.getBarrierAngle) else 0,
       slowPercent(p),
       barrierMsLeft(p),
       p.getKnockbacks,
-      speedBoostMsLeft(p)
+      speedBoostMsLeft(p),
+      msLeft(p.getFrozenUntil, now),
+      msLeft(p.getRootedUntil, now),
+      msLeft(p.getSlowedUntil, now)
     )
+  }
 
   /**
    * Put a player somewhere their client didn't: a pull, a knockback, a respawn. The move is

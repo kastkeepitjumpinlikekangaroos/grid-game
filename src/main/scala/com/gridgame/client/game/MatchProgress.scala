@@ -8,8 +8,10 @@ import com.gridgame.common.protocol._
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * The match as a whole, as the server reports it (GameEvent): kills and deaths, the kill feed, the
- * match clock, the scoreboard at the end, practice's tallies, and leaving the match.
+ * The match as a whole, as the server reports it (GameEvent): kills and deaths — the death itself
+ * and the respawn after it, everyone's, which come by TCP and so always reach us (OtherPlayers) —
+ * the kill feed, the match clock, the scoreboard at the end, practice's tallies, and leaving the
+ * match.
  */
 trait MatchProgress { this: GameClient =>
   // Esc arms leaving the match until this time; a second Esc before then leaves.
@@ -67,6 +69,8 @@ trait MatchProgress { this: GameClient =>
       case GameEvent.KILL =>
         val killerId = packet.getPlayerId
         val victimId = packet.getTargetId
+        // The death itself, on our screen whatever became of the update that also says so
+        if (victimId != null) heardKilled(victimId, packet.getSequenceNumber)
 
         if (killerId.equals(localPlayerId)) {
           killCount = packet.getKills.toInt
@@ -143,7 +147,7 @@ trait MatchProgress { this: GameClient =>
         }
 
       case GameEvent.RESPAWN =>
-        if (packet.getPlayerId.equals(localPlayerId)) respawned(packet.getSpawnX.toInt, packet.getSpawnY.toInt)
+        heardRespawned(packet.getPlayerId, packet.getSpawnX.toInt, packet.getSpawnY.toInt, packet.getSequenceNumber)
 
       case _ =>
         println(s"GameClient: Unknown game event ${packet.getEventType}")

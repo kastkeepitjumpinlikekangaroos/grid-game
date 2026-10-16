@@ -5,6 +5,7 @@ import com.gridgame.common.Constants
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicLongArray
 
@@ -19,7 +20,8 @@ import java.util.concurrent.atomic.AtomicLongArray
  * we walk and aim, and the primary button casts it toward the aim of that moment. An ability with
  * nothing to aim, a slam round us among them, goes off as its key goes down
  * ([[Attacks.goesOffOnPress]]). The primary is held to aim, and goes off as its button comes up. The
- * right mouse button puts away whatever is aimed or held without it going off ([[cancelAims]]).
+ * right mouse button puts away whatever is aimed or held without it going off ([[cancelAims]]). R has
+ * both abilities ready again, once a minute ([[pressReset]]).
  */
 trait Attacks { this: GameClient =>
   import Attacks._
@@ -31,6 +33,17 @@ trait Attacks { this: GameClient =>
   // When each ability was last cast (its cooldown runs from then)
   private[game] val lastQAbilityTime: AtomicLong = new AtomicLong(0)
   private[game] val lastEAbilityTime: AtomicLong = new AtomicLong(0)
+
+  // R: when it was last pressed, or when the match began, on the client's clock (nanoClock); its own
+  // cooldown runs from then. NOT_HELD (ready) before any match, and as practice begins. A new life
+  // leaves it as it is
+  private val lastCooldownReset: AtomicLong = new AtomicLong(NOT_HELD)
+  // Q's and E's casts as they were before the last R, until the server has had its say: a refusal
+  // puts them back (handleCooldownReset). NOT_HELD: nothing waiting on it
+  private val qBeforeReset: AtomicLong = new AtomicLong(NOT_HELD)
+  private val eBeforeReset: AtomicLong = new AtomicLong(NOT_HELD)
+  // An R of ours this match the server may yet refuse (it says nothing when it takes one)
+  private val resetAsked: AtomicBoolean = new AtomicBoolean(false)
 
   // The attacks being aimed, by AttackSlot: the primary held down, and Q or E since its key went
   // down (only one of the two at a time): since when on the client's clock (nanoClock), or NOT_HELD.
@@ -196,9 +209,9 @@ trait Attacks { this: GameClient =>
     !isDead && !isPhased && !isFrozen && !attacksLocked && primaryCooledDown
 
   /** Would the ability in slot 0 (Q) or 1 (E) go off now? Not while we are dead, held, phased or in a
-    * ceasefire, nor before its cooldown has run, nor a dash or a blink while rooted. A trap needs
-    * somewhere to land besides ([[trapLanding]]), which this doesn't look for. The renderer draws the
-    * aim of the ability being aimed brighter when it would. */
+    * ceasefire, nor before its cooldown has run, nor a dash or a blink while rooted, nor a barrier
+    * while ours is still up. A trap needs somewhere to land besides ([[trapLanding]]), which this
+    * doesn't look for. The renderer draws the aim of the ability being aimed brighter when it would. */
   def abilityReady(slot: Int): Boolean = {
     // Held by a free-for-all's opening ceasefire (MatchOpening): refused here rather than sent and
     // refused, so the cooldown isn't spent on a cast the server was never going to allow
@@ -213,6 +226,9 @@ trait Attacks { this: GameClient =>
     // the server had us where we were. Refused here, the cooldown isn't spent on it.
     ability.castBehavior match {
       case _: DashBuff | _: TeleportCast if isRooted => false
+      // One barrier at a time. Its cooldown always outlasted it, but R (pressReset) can have it ready
+      // again while it is still up: raised again, ours would have run on past the server's
+      case _: BarrierCast if hasBarrier => false
       case _ => true
     }
   }
@@ -485,6 +501,9 @@ trait Attacks { this: GameClient =>
   private[game] def resetAttacks(): Unit = {
     lastQAbilityTime.set(0)
     lastEAbilityTime.set(0)
+    // A refusal of an R pressed in the last life puts nothing back into this one (R itself runs on)
+    qBeforeReset.set(NOT_HELD)
+    eBeforeReset.set(NOT_HELD)
     lastPrimaryShot.set(NOT_HELD)
     isCharging = false
     // Nor an attack held or aimed as we died: the first click after the respawn would have set it off
@@ -538,6 +557,94 @@ trait Attacks { this: GameClient =>
 
   private[game] def refundAbility(lastCast: AtomicLong, cooldownMs: Int): Unit =
     lastCast.set(System.currentTimeMillis() - Math.max(0, cooldownMs - REFUND_RETRY_MS))
+
+  // ── R: every ability ready again ────────────────────────────────────────
+
+  /**
+   * R went down (design/characters.md, *R resets the cooldowns*): both abilities are ready again at
+   * once, if R's own minute has run ([[resetReady]]) and one of them is cooling down. With nothing to
+   * reset it does nothing and spends nothing. Whatever is aimed stays aimed. The server is asked, and
+   * judges it as it would a cast: a refusal puts the cooldowns back as they were
+   * ([[handleCooldownReset]]).
+   */
+  def pressReset(): Unit = {
+    if (!resetReady) return
+    val charDef = getSelectedCharacterDef
+    if (abilityCooledDown(0, charDef.qAbility) && abilityCooledDown(1, charDef.eAbility)) return
+    qBeforeReset.set(lastQAbilityTime.get())
+    eBeforeReset.set(lastEAbilityTime.get())
+    lastQAbilityTime.set(0)
+    lastEAbilityTime.set(0)
+    lastCooldownReset.set(clockMark())
+    resetAsked.set(true)
+    send(new CooldownResetPacket(sequenceNumber.getAndIncrement(), localPlayerId, CooldownResetAction.REQUEST, 0))
+    AudioManager.playCooldownReset()
+  }
+
+  /** Would R reset the cooldowns now? Not while we are dead, held, phased or in a ceasefire, when no
+    * ability could be cast either, nor before its own minute has run: from the match's start, then
+    * from the last press. Whether there is anything to reset is [[pressReset]]'s to see. */
+  def resetReady: Boolean = !isDead && !isFrozen && !isPhased && !attacksLocked && resetCooledDown
+
+  /** How much of R's own cooldown is still to run, 1 (just pressed, or the match just begun) to 0. */
+  def getResetCooldownFraction: Float = {
+    val left = resetCooldownLeftMs
+    if (left <= 0L) 0f else left.toFloat / Constants.COOLDOWN_RESET_MS
+  }
+
+  /** R's own cooldown still to run, in seconds; 0 once it can be pressed. */
+  def getResetCooldownRemaining: Float = resetCooldownLeftMs / 1000f
+
+  private def resetCooledDown: Boolean = resetCooldownLeftMs <= 0L
+
+  private def resetCooldownLeftMs: Long = {
+    val last = lastCooldownReset.get()
+    if (last == NOT_HELD) 0L
+    else Math.min(Constants.COOLDOWN_RESET_MS.toLong,
+      Math.max(0L, Constants.COOLDOWN_RESET_MS - (nanoClock() - last) / 1000000L))
+  }
+
+  /** The match has begun (or a new one has): R's first minute runs from now, so nobody has it before
+    * the fighting has gone on a while. Practice, where a player goes to try a character out, has it
+    * ready from the start, as the server does (GameInstance.firstResetFrom). */
+  private[client] def startResetCooldown(): Unit = {
+    lastCooldownReset.set(if (isPracticeMode) NOT_HELD else clockMark())
+    resetAsked.set(false)
+    qBeforeReset.set(NOT_HELD)
+    eBeforeReset.set(NOT_HELD)
+  }
+
+  /**
+   * The server refused our R (CooldownResetPacket REJECTED): the cooldowns go back as the server has
+   * them. Q and E are put back as they were before it, but for a cast since that the server took
+   * anyway (one its own clock would have let through without the reset). R itself is ready when the
+   * server says its cooldown runs out, or, refused for anything else (we were held, or had just died),
+   * in a moment, as a refused trap is. A refusal of an R from the last match is nothing to this one.
+   */
+  private[game] def handleCooldownReset(packet: CooldownResetPacket): Unit = {
+    if (packet.getAction != CooldownResetAction.REJECTED || !packet.getPlayerId.equals(localPlayerId)) return
+    if (!resetAsked.getAndSet(false)) return
+    val left = if (packet.getMsLeft > 0) Math.min(packet.getMsLeft, Constants.COOLDOWN_RESET_MS) else REFUND_RETRY_MS
+    lastCooldownReset.set(clockMark() - (Constants.COOLDOWN_RESET_MS - left) * 1000000L)
+    val charDef = getSelectedCharacterDef
+    putBack(lastQAbilityTime, qBeforeReset.getAndSet(NOT_HELD), charDef.qAbility.cooldownMs)
+    putBack(lastEAbilityTime, eBeforeReset.getAndSet(NOT_HELD), charDef.eAbility.cooldownMs)
+    println(s"GameClient: Cooldown reset refused (${packet.getMsLeft}ms left on it)")
+  }
+
+  /** An ability's cast as it was before a refused reset: unless it has been cast since and the server
+    * would have taken that cast anyway (80% of the cooldown, as it judges one), when the new one stands. */
+  private def putBack(lastCast: AtomicLong, before: Long, cooldownMs: Int): Unit = {
+    if (before == NOT_HELD) return
+    val now = lastCast.get()
+    if (now == 0L || now - before < (cooldownMs * 0.8).toLong) lastCast.set(before)
+  }
+
+  /** Now on the client's clock, never mistaken for NOT_HELD. */
+  private def clockMark(): Long = {
+    val now = nanoClock()
+    if (now == NOT_HELD) now + 1 else now
+  }
 }
 
 object Attacks {

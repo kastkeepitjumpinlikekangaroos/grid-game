@@ -4,7 +4,6 @@ import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -33,10 +32,6 @@ trait Barriers { this: GameClient =>
   // of their updates doesn't take it off our screen while it is still up. Only used when an update
   // says a barrier is up without saying how long for.
   private val REMOTE_BARRIER_FALLBACK_MS = 600L
-  // The newest update we have taken a barrier from, per player. A datagram that overtakes another
-  // — one sent before the barrier went up, or before it was turned — must not undo what a newer
-  // one said: remote updates are otherwise applied in the order they arrive.
-  private val barrierUpdateSeq = new ConcurrentHashMap[UUID, Integer]()
 
   // Shots stopped on barriers, for the ripple where each struck: a ring of slots, overwritten
   // oldest first. `across` is where along the barrier it struck (Barrier.acrossOf), so the
@@ -93,43 +88,29 @@ trait Barriers { this: GameClient =>
     barrierUntil.set(0)
     barrierRaisedAt.set(0)
     barrierAnnounced = false
-    barrierUpdateSeq.clear()
   }
 
   // ── Everyone else's ─────────────────────────────────────────────────────
 
   /** An update about `player` (someone else): their barrier as it says. A barrier lasts as long as
     * the update that carries it says it has left, and is turned by every update that has it up; one
-    * without it drops it, and it fades out from then. Only the newest update about it counts, so a
-    * datagram that overtakes another can't undo it. */
+    * without it drops it, and it fades out from then. Only the newest update about a player reaches
+    * here (OtherPlayers.newWordOn), so a datagram sent before the barrier went up, or before it was
+    * turned, and delivered after, can't undo it. */
   private[game] def heardBarrierOf(player: Player, packet: PlayerUpdatePacket, now: Long): Unit =
-    if (barrierWordIsNew(player.getId, packet.getSequenceNumber)) {
-      if ((packet.getEffectFlags2 & 0x04) != 0) {
-        if (!player.hasBarrier) player.setBarrierRaisedAt(now)
-        player.setBarrierUntil(now + remoteBarrierMs(packet))
-        player.setBarrierAngle(packet.aimAngleRadians.toFloat)
-      } else {
-        player.dropBarrier()
-      }
+    if ((packet.getEffectFlags2 & 0x04) != 0) {
+      if (!player.hasBarrier) player.setBarrierRaisedAt(now)
+      player.setBarrierUntil(now + remoteBarrierMs(packet))
+      player.setBarrierAngle(packet.aimAngleRadians.toFloat)
+    } else {
+      player.dropBarrier()
     }
-
-  /** They left the match: nothing more to hear of their barrier. */
-  private[game] def forgetBarrierOf(playerId: UUID): Unit = barrierUpdateSeq.remove(playerId)
 
   /** How long a barrier this update says is up has left. An update that doesn't say falls back to
     * a short lease, so one is never taken to be already over. */
   private[game] def remoteBarrierMs(packet: PlayerUpdatePacket): Long = {
     val left = packet.getBarrierMs
     if (left > 0) left.toLong else REMOTE_BARRIER_FALLBACK_MS
-  }
-
-  /** Is this the newest word we have had on that player's barrier? Records it if so. */
-  private[game] def barrierWordIsNew(playerId: UUID, seq: Int): Boolean = {
-    val last = barrierUpdateSeq.get(playerId)
-    // Circular comparison, as the server's own sequence checks are: the numbers wrap at 2^31
-    if (last != null && ((seq - last.intValue()) & 0x7FFFFFFF) >= 0x40000000) return false
-    barrierUpdateSeq.put(playerId, Integer.valueOf(seq))
-    true
   }
 
   // ── Shots stopped on them ───────────────────────────────────────────────

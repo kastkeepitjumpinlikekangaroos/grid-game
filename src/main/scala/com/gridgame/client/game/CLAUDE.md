@@ -16,14 +16,14 @@ trait in its own file, with the packets that update it and the actions that use 
 | `Chat` | lobby and match chat |
 | `Ranked` | the ranked queue |
 | `Records` | the leaderboard, and our profile's stats and match history |
-| `MatchProgress` | the match as a whole: kills, the clock, the scoreboard, practice's tallies, leaving it |
+| `MatchProgress` | the match as a whole: kills (and the deaths and respawns they bring, everyone's, by TCP: `OtherPlayers.heardKilled`, `heardRespawned`), the clock, the scoreboard, practice's tallies, leaving it |
 | `Opening` | our copy of the match's opening: the Teams wall on our world, the ceasefire (design/match-flow.md) |
 | `WorldState` | the map: the server names it, the UI loads it (`setWorld`) |
-| `LocalPlayer` | us: character, position, health, death and respawn, the effects on us (a speed boost for as long as the server says it has left, and a haste we cast from its cast: `hasteCast`); `sendPositionUpdate`; the server's word on us (`handleOwnUpdate`) |
+| `LocalPlayer` | us: character (the one the server has us play, from our join echo), position, health, death (`died`, by an update or the KILL, whichever comes first) and respawn, the effects on us (a hold, a root, a slow and a speed boost for as long as the server says they have left, and a haste we cast from its cast: `hasteCast`); `sendPositionUpdate`; the server's word on us (`handleOwnUpdate`, the newest only) |
 | `LocalMovement` | steps, dashes, blinks, stars, and where we are drawn between steps and slid by a knockback (`KnockbackSlide`) |
-| `Attacks` | aiming: Q or E taken up by its key and cast by the next click, a slam, a phase or a barrier at once, the primary held and fired as its button comes up (design/characters.md, *Casting mode*; timed on `nanoClock`), charging (timed on `nanoClock`, as the golden frames hold it), firing, casting, cooldowns; which projectiles we asked for the server answered (`PendingSpawns`, below) |
+| `Attacks` | aiming: Q or E taken up by its key and cast by the next click, a slam, a phase or a barrier at once, the primary held and fired as its button comes up (design/characters.md, *Casting mode*; timed on `nanoClock`), charging (timed on `nanoClock`, as the golden frames hold it), firing, casting, cooldowns; R, both abilities ready again, on a minute of its own from the match's start (ready at once in practice) that a new life leaves be (*R resets the cooldowns*; on `nanoClock`), and a refusal of it undone; which projectiles we asked for the server answered (`PendingSpawns`, below) |
 | `Barriers` | ours raised and streamed; everyone else's from their updates; ripples; what stops a shot in flight or a trap we throw (design/barriers.md) |
-| `OtherPlayers` | everyone else in the match |
+| `OtherPlayers` | everyone else in the match: their updates, deaths and respawns; and the newest word on each player, us included (`newWordOn`), since the server numbers everything it sends from one count and datagrams overtake each other (design/networking.md, *Position authority*) |
 | `Projectiles` | the projectiles in flight, flown between the server's ticks (below), and each one stopped kept a moment to fade where it stopped (`FadingProjectile`) — a pull to its thrower to be reeled back in, holding whoever it hit (`FadingProjectile.caught`) |
 | `Items`, `Traps` | items on the ground (a SPAWN after its PICKUP dropped) and our inventory, full or not; traps on the ground and going off |
 | `EventAnimations` | what the renderer shows of an event for a moment: hits, deaths, teleports, blasts |
@@ -31,10 +31,12 @@ trait in its own file, with the packets that update it and the actions that use 
 ## What is forgotten when
 
 `GameClient` decides it, in one place, from the traits' own `forget*` methods: `matchStarting`
-(the server's GAME_STARTING: nothing of the last match carries over, and it is a new life),
+(the server's GAME_STARTING: nothing of the last match carries over, it is a new life, and R starts
+on its minute, or in practice ready),
 `returnToLobbyBrowser`, `forgetMatch` (everything about the match we were in), and `newLife` (what a
 death takes away: the effects on us, our items, our barrier, our cooldowns and a charge, a dash or a
-burst's standstill under way — at a respawn, a rejoin, a new match, or the connection dropping). New
+burst's standstill under way — at a respawn, a rejoin, a new match, or the connection dropping; not
+R's minute, which runs on). New
 state in a trait belongs in that trait's `forget*`, so it goes when everything else of its kind
 does.
 

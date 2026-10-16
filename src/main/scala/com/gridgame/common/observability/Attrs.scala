@@ -100,6 +100,8 @@ object Attrs {
   val VfTrapPlacement: Attributes = kind("trap_placement")
   // A cast during the opening of a free-for-all, when abilities are holstered (MatchOpening)
   val VfOpening: Attributes = kind("match_opening")
+  // R refused: too soon, or pressed by someone who couldn't cast (CooldownResetRequests)
+  val VfCooldownReset: Attributes = kind("cooldown_reset")
 
   // ---------- Auth outcomes ----------
   val AuthLoginSuccess: Attributes = Attributes.of(Action, "login", Outcome, "success")

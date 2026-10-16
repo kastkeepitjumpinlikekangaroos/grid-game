@@ -210,4 +210,30 @@ class SessionTest {
     assertNull("timed out", server.getConnectedPlayer(s.playerId))
     assertFalse(server.lobbyHandler.lastListRequestTime.containsKey(s.playerId))
   }
+
+  @Test def anythingAPlayerSendsSaysTheyAreStillThere(): Unit = {
+    // Only the heartbeat, a datagram, used to: lose enough of them in a row and the cleanup loop
+    // took a player who was playing for gone, every packet else of theirs still coming in
+    val s = new Session(UUID.randomUUID())
+    join(s)
+    val joinedAt = server.getConnectedPlayer(s.playerId).getLastUpdateTime
+    Thread.sleep(50)
+    s.send(n => new LobbyActionPacket(n, s.playerId, LobbyAction.LIST_REQUEST))
+    server.cleanup(joinedAt + Constants.CLIENT_TIMEOUT_MS + 25)
+    assertNotNull("a lobby request, over TCP", server.getConnectedPlayer(s.playerId))
+
+    // And a step, over UDP: in a match, the stream of them a player sends while they play
+    val heardAt = server.getConnectedPlayer(s.playerId).getLastUpdateTime
+    Thread.sleep(50)
+    server.handleIncomingPacket(new PlayerUpdatePacket(99, s.playerId, new Position(2, 1), 0xFF00FF00), null,
+      new java.net.InetSocketAddress("127.0.0.1", 40001))
+    server.cleanup(heardAt + Constants.CLIENT_TIMEOUT_MS + 25)
+    assertNotNull("a step, over UDP", server.getConnectedPlayer(s.playerId))
+  }
+
+  @Test def aConnectionOutlastsNineLostHeartbeatsInARow(): Unit = {
+    // A heartbeat is a datagram, and on a quiet connection its echo is all the client hears. At one
+    // every three seconds, three lost in a row timed both ends out
+    assertTrue(Constants.CLIENT_TIMEOUT_MS >= 10 * Constants.HEARTBEAT_INTERVAL_MS)
+  }
 }

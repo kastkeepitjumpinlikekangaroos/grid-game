@@ -14,7 +14,7 @@ import org.junit.Test
  */
 class PacketFuzzTest {
   private val rnd = new scala.util.Random(64)
-  private val types: Array[Byte] = Array.tabulate(0x14)(i => (i + 1).toByte)
+  private val types: Array[Byte] = Array.tabulate(0x15)(i => (i + 1).toByte)
 
   /** 64 bytes as anyone might send them: a real packet type mostly, and the rest at random, some of
     * it zeros, some of it all ones, and some of it the bytes a packet's fields expect. */

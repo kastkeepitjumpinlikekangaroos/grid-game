@@ -40,7 +40,16 @@ class PlayerUpdatePacket(
     // the client's own updates). The boosted player's own client walks by it: with the flag alone
     // it gave itself a second of boost per update that carried it, and a player at full health,
     // who hears nothing between casts, walked a 4s boost for one
-    val speedBoostMs: Int = 0
+    val speedBoostMs: Int = 0,
+    // Server -> everyone: how long this player's freeze or stun (the hold), root and slow have
+    // left, in ms (0 when none, and on the client's own updates), carried in 20ms steps
+    // (PlayerUpdatePacket.encodeEffectMs). The held player's own client is held for that long: with
+    // the flags alone it held itself until whichever update next came without them, which at full
+    // health nothing sends before its fallback (a 2s snare held for 3), and below it the next
+    // regeneration tick, up to most of a second after a 400ms stun had ended.
+    val heldMs: Int = 0,
+    val rootedMs: Int = 0,
+    val slowedMs: Int = 0
 ) extends Packet(PacketType.PLAYER_UPDATE, sequenceNumber, playerId, timestamp) {
 
   def this(sequenceNumber: Int, playerId: UUID, position: Position, colorRGB: Int) = {
@@ -96,6 +105,15 @@ class PlayerUpdatePacket(
 
   /** How long the player's speed boost has left, in ms (0: none, or the sender doesn't say). */
   def getSpeedBoostMs: Int = speedBoostMs
+
+  /** How long the player's freeze or stun has left, in ms (0: none, or the sender doesn't say). */
+  def getHeldMs: Int = heldMs
+
+  /** How long the player's root has left, in ms (0: none, or the sender doesn't say). */
+  def getRootedMs: Int = rootedMs
+
+  /** How long the player's slow has left, in ms (0: none, or the sender doesn't say). */
+  def getSlowedMs: Int = slowedMs
 
   override def serialize(): Array[Byte] = {
     val buffer = SerializeUtil.acquireBuffer()
@@ -158,8 +176,10 @@ class PlayerUpdatePacket(
     // [59-60] How long a speed boost has left, in ms (capped at 65535)
     buffer.putShort((Math.max(0, Math.min(65535, speedBoostMs)) & 0xFFFF).toShort)
 
-    // [61-63] Reserved (3 bytes) - fill with zeros
-    buffer.put(new Array[Byte](3))
+    // [61] How long a freeze or stun has left, [62] a root, [63] a slow: 20ms steps, rounded up
+    buffer.put(PlayerUpdatePacket.encodeEffectMs(heldMs).toByte)
+    buffer.put(PlayerUpdatePacket.encodeEffectMs(rootedMs).toByte)
+    buffer.put(PlayerUpdatePacket.encodeEffectMs(slowedMs).toByte)
 
     buffer.array().clone()
   }
@@ -179,4 +199,19 @@ object PlayerUpdatePacket {
 
   /** The inverse of [[encodeAimAngle]]: radians in [0, 2pi). */
   def decodeAimAngle(raw: Int): Double = (raw & 0xFFFF) * (2 * Math.PI) / 65536.0
+
+  /** The steps bytes [61-63] count a hold's, a root's and a slow's time left in, in ms. */
+  val EffectStepMs = 20
+
+  /** The longest time left those bytes can say: 255 steps, 5.1s. A longer effect is said to have
+    * that long, and the updates about the player after it say what is left by then. */
+  val MaxEffectMs: Int = 255 * EffectStepMs
+
+  /** A hold's, a root's or a slow's time left as one of bytes [61-63]: in whole steps, rounded up,
+    * so the client it reaches never lets its player go before the server does. 0 is none. */
+  def encodeEffectMs(ms: Int): Int =
+    if (ms <= 0) 0 else (Math.min(ms, MaxEffectMs) + EffectStepMs - 1) / EffectStepMs
+
+  /** The inverse of [[encodeEffectMs]], in ms. */
+  def decodeEffectMs(raw: Int): Int = (raw & 0xFF) * EffectStepMs
 }

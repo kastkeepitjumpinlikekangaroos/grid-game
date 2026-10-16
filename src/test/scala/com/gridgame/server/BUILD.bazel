@@ -30,6 +30,8 @@ scala_library(
     # What tick each projectile packet says it is from, which clients fly projectiles by
     ("projectile_ticks_test", "ProjectileTicksTest.scala", []),
     ("ceasefire_test", "CeasefireTest.scala", []),
+    # R: every ability's cooldown over at once, once a minute from the match's start, for players and bots
+    ("cooldown_reset_test", "CooldownResetTest.scala", []),
     ("team_divider_test", "TeamDividerTest.scala", []),
     ("combat_test", "CombatTest.scala", []),
     # Every slam strikes exactly the ring a client draws it with while it is held to aim

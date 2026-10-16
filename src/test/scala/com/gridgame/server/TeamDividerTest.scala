@@ -105,7 +105,8 @@ class TeamDividerTest {
 
   @Test def aPhaseDoesNotPassThroughItEither(): Unit = {
     val p = m.join(CharacterId.Wraith, MID - 1, 30, team = 1)
-    // Flags 0x08 is the client saying it has phased, which walks through walls
+    // Flags 0x08 is the client saying it has phased, which walks at twice the pace (and walked
+    // through walls once)
     assertFalse(m.move(p, MID + 1, 30, flags = 0x08, gapMs = 60))
     assertTrue(p.isPhased)
     assertEquals((MID - 1, 30), m.at(p))

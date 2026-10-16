@@ -4,8 +4,9 @@ package com.gridgame.common.model
  * What a character is for, read from how far their primary attack reaches: a melee fighter has
  * to close in, a ranged one wants distance, and a skirmisher — the boulder-throwing bruisers —
  * fights in between. Every character names its role outright (CharacterDef.role) rather than
- * having it worked out from the range, because the rule has exceptions: the Monk's fist is a
- * 6-cell punch that reaches 10 fully charged, and it is a melee character.
+ * having it worked out from the range, so that the rule can have exceptions: the Monk's fist was
+ * one, a 6-cell punch that reached 10 fully charged, until the melee primaries were halved
+ * (design/characters.md, *Melee strikes short and hard*).
  *
  * The role sets the two numbers that trade range for staying power:
  *  - health: ranged characters sit in `minHealth`..`maxHealth` 60-80, melee and skirmishers in

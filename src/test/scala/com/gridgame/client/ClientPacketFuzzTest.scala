@@ -118,14 +118,18 @@ class ClientPacketFuzzTest {
       case r if r < 92 => new HeartbeatPacket(nextSeq(), who())
       case r if r < 94 => new RankedQueuePacket(nextSeq(), who(), rnd.nextInt(6).toByte, b(), rnd.nextInt(3).toByte)
       case r if r < 96 => new MatchHistoryPacket(nextSeq(), who(), rnd.nextInt(5).toByte)
-      case r if r < 98 => new LeaderboardPacket(nextSeq(), who(), rnd.nextInt(4).toByte)
+      case r if r < 97 => new LeaderboardPacket(nextSeq(), who(), rnd.nextInt(4).toByte)
+      case r if r < 99 =>
+        // R refused, ours or anyone's, for its minute or for something else
+        new CooldownResetPacket(nextSeq(), who(), Packet.getCurrentTimestamp,
+          if (rnd.nextInt(10) == 0) b() else rnd.nextInt(2).toByte, rnd.nextInt(80000) - 5000)
       case _ => new WorldInfoPacket(nextSeq(), "the_cell.json")
     }
 
     /** What the player does: walk, aim, fire, cast, use what they carry, raise a barrier, take an
-      * ability up to aim it and click it off or put it away, hold the primary down and let it go, and
-      * look at where an aimed one would go. */
-    private def act(): Unit = rnd.nextInt(13) match {
+      * ability up to aim it and click it off or put it away, hold the primary down and let it go, press
+      * R, and look at where an aimed one would go and how long R has. */
+    private def act(): Unit = rnd.nextInt(14) match {
       case 0 | 1 => note("walks"); client.movePlayer(rnd.nextInt(3) - 1, rnd.nextInt(3) - 1)
       case 2 => note("aims and fires"); client.setMouseWorldPosition(coord(), coord()); client.shoot()
       case 3 => note("fires toward"); client.shootToward(rnd.nextFloat() * 2 - 1, rnd.nextFloat() * 2 - 1, rnd.nextInt(101))
@@ -143,10 +147,17 @@ class ClientPacketFuzzTest {
         if (rnd.nextBoolean()) { note("clicks down"); client.pressPrimary() }
         else { note("lets the button up"); client.releasePrimary() }
       case 11 => note("puts away what it aims"); client.cancelAims()
+      case 12 =>
+        // A run is a few seconds of play, so its minute is let run now and then, or R would never go
+        if (rnd.nextInt(3) == 0) { note("lets R's minute run"); t.nanos += Constants.COOLDOWN_RESET_MS * 1000000L }
+        note("presses R")
+        if (client.resetReady) tally("R pressed ready") += 1
+        client.pressReset()
       case _ =>
-        // What the renderer and the HUD read of an attack being aimed, every frame it is
+        // What the renderer and the HUD read of an attack being aimed, every frame it is, and of R
         note("looks at where its aimed attack would go")
         client.aimingSlot; client.aimedAbility; client.aimedForMs(rnd.nextInt(3)); client.primaryReady
+        client.resetReady; client.getResetCooldownFraction; client.getResetCooldownRemaining
         val d = client.getSelectedCharacterDef
         Seq(d.qAbility, d.eAbility).zipWithIndex.foreach { case (a, i) =>
           client.abilityReady(i)

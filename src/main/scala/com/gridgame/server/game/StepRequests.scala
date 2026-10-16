@@ -56,8 +56,8 @@ trait StepRequests { this: ClientHandler =>
         // Sent before a position already applied: it would only put the player back
         false
       } else {
-        // A phase lets the player through walls, so it takes effect before this very update is
-        // checked: the first one sent with the flag can already be inside one
+        // A phase takes effect before this very update is checked: the first one sent with the
+        // flag can already be a step at a phase's pace, or a dash's cell inside a wall
         if ((packet.getEffectFlags & 0x08) != 0) activatePhase(player)
         updateBarrier(player, packet)
         if (!validator.validateMovement(packet, player, world, instance.attacksLocked)) {
@@ -119,7 +119,7 @@ trait StepRequests { this: ClientHandler =>
    * attack gets. This used to count from when the last phase ended, at 90%, which a phase recast
    * as soon as it was ready never passed (Wraith: 5s phase, 12s cooldown, allowed after 15.8s),
    * so every second phase showed on the client and wasn't honoured: the player took hits, and
-   * walking through walls was refused.
+   * walking through walls, as a phase did then, was refused.
    */
   private def activatePhase(player: Player): Unit = {
     if (player.isPhased) return

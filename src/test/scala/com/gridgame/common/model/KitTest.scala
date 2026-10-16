@@ -58,7 +58,9 @@ class KitTest {
 
   @Test def aKitHasAtMostOnePhaseOrDash(): Unit = {
     // The server honours the phased flag by the first phase or dash in the kit
-    // (StepRequests.activatePhase): a second would be timed by the first's numbers
+    // (StepRequests.activatePhase): a second would be timed by the first's numbers. And it tells a
+    // dash, which goes over walls, from a phase shift, which doesn't, by which of them the kit has
+    // (PacketValidator)
     for (c <- all) {
       val n = abilities(c).count(_.castBehavior match {
         case PhaseShiftBuff(_) | DashBuff(_, _, _) => true

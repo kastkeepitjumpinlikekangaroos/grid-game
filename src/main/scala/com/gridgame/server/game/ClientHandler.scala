@@ -32,9 +32,11 @@ import java.util.UUID
  *  - ShotRequests   firing
  *  - TrapRequests   throwing traps
  *  - ItemRequests   using items
+ *  - CooldownResetRequests   R, every ability ready again
  */
 class ClientHandler(private[game] val instance: GameInstance, private[game] val validator: PacketValidator = new PacketValidator())
-    extends JoinRequests with StepRequests with ShotRequests with TrapRequests with ItemRequests {
+    extends JoinRequests with StepRequests with ShotRequests with TrapRequests with ItemRequests
+    with CooldownResetRequests {
   private[game] val registry = instance.registry
   private[game] val projectileManager = instance.projectileManager
   private[game] val itemManager = instance.itemManager
@@ -71,6 +73,9 @@ class ClientHandler(private[game] val instance: GameInstance, private[game] val 
 
       case PacketType.TRAP_UPDATE =>
         handleTrapUpdate(packet.asInstanceOf[TrapPacket])
+
+      case PacketType.COOLDOWN_RESET =>
+        handleCooldownReset(packet.asInstanceOf[CooldownResetPacket])
 
       case _ =>
         System.err.println(s"Unknown packet type: ${packet.getType}")

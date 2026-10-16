@@ -59,14 +59,11 @@ trait LocalMovement { this: GameClient =>
     val targetX = Math.max(0, Math.min(world.width - 1, current.getX + dx))
     val targetY = Math.max(0, Math.min(world.height - 1, current.getY + dy))
 
-    // A wall stops a walk, its corner too: a diagonal step goes between open cells only
-    // (WorldData.canStep), as the server and the bots step. The opening divider stops a phase as
-    // surely as a wall stops a walk, and neither can be crossed: the server refuses a step over it,
-    // so taking one here would only rubber-band us
-    val divider = world.divider
+    // A wall stops a walk, a phased one too, and its corner: a diagonal step goes between open cells
+    // only (WorldData.canStep), as the server and the bots step. The opening divider is a hole in
+    // the world's walkability while it is up (TeamDivider), so it stops a step as a wall does
     def canStep(tx: Int, ty: Int): Boolean =
-      (isPhased || world.canStep(current.getX, current.getY, tx - current.getX, ty - current.getY)) &&
-        (divider == null || !divider.stops(current.getX, current.getY, tx, ty))
+      world.canStep(current.getX, current.getY, tx - current.getX, ty - current.getY)
 
     if (canStep(targetX, targetY)) {
       finalX = targetX
@@ -162,7 +159,8 @@ trait LocalMovement { this: GameClient =>
 
   /**
    * Where a dash toward the cursor would end: the farthest open cell along the line to it, at most
-   * `maxDistance` cells, passing over whatever lies between (a dash is phased); where we are if
+   * `maxDistance` cells, passing over whatever lies between (a dash goes over walls, as a phase
+   * shift no longer does: design/characters.md, *A phase stops at walls*); where we are if
    * nothing along it is open. Null when the cursor is within half a cell of us, which goes nowhere.
    * The dash and its aim (AimArrowPainter) both ask this, so the aim shows where it ends.
    */

@@ -59,7 +59,9 @@ match's bots), `LobbyHost` (what the lobbies need). `GameServer` implements them
 
   What its players send it is `ClientHandler`'s to judge, against `PacketValidator` (movement,
   casts, sequence numbers), also a trait per kind of request: `JoinRequests`, `StepRequests`
-  (positions, phases, barriers), `ShotRequests`, `TrapRequests`, `ItemRequests`.
+  (positions, phases, barriers), `ShotRequests`, `TrapRequests`, `ItemRequests`,
+  `CooldownResetRequests` (R, on a minute of its own from the match's start, but ready at once in
+  practice: design/characters.md).
 - **bots/** — `BotController` (one match's bots, on a 100ms tick of their own), in traits:
   `BotTargeting`, `BotNavigation` (where each step goes: a bot's role-driven spacing, the way round
   walls, a clear shot; design/characters.md), `BotPaths` (the searches it steps by: A* to a cell, a

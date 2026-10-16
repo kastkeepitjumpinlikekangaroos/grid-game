@@ -53,6 +53,7 @@ cd ops/observability && docker compose up -d
 | Left Click | Primary attack: hold to aim (or charge), release to fire. With an ability aimed, click to cast it |
 | Q | Ability 1: aim it, then click to cast (slams, phases and barriers go off at once) |
 | E | Ability 2: aim it, then click to cast (slams, phases and barriers go off at once) |
+| R | Both abilities ready again, once a minute (the first minute counts from the match's start; in practice R is ready at once) |
 | Right Click | Put away the ability being aimed, or the attack being held |
 | Shift+Space | Burst shot (all 8 directions) |
 | 1-5 | Use items (Heart, Star, Gem, Shield, Fence) |

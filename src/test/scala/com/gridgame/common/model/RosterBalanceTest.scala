@@ -22,11 +22,10 @@ class RosterBalanceTest {
     Math.max(p.maxRange.toDouble, p.effectiveMaxRange(100))
   }
 
-  /** Characters whose role isn't the one their primary's reach reads as. */
-  private val exceptions: Map[CharacterId, CombatRole] = Map(
-    // A 6-cell punch that reaches 10 fully charged: a martial artist, not a skirmisher
-    CharacterId.Monk -> Melee
-  )
+  /** Characters whose role isn't the one their primary's reach reads as. The Monk was, a 6-cell
+    * punch that reached 10 fully charged, until the melee primaries were shortened
+    * (design/characters.md, *Melee strikes short and hard*): it reaches 5 charged now. */
+  private val exceptions: Map[CharacterId, CombatRole] = Map.empty
 
   @Test def everyCharacterHasARoleThatFollowsTheirReach(): Unit = {
     for (c <- all) {
@@ -55,6 +54,16 @@ class RosterBalanceTest {
     assertEquals(Skirmisher, CombatRole.forRange(10))
     assertEquals(Ranged, CombatRole.forRange(11))
     assertEquals(Ranged, CombatRole.forRange(28))
+  }
+
+  @Test def aMeleePrimaryStrikesShort(): Unit = {
+    // Half the reach it had, for hits about 1.75 times as hard (design/characters.md, *Melee
+    // strikes short and hard*): it flies 2 or 3 cells, and a charged punch 5
+    for (c <- ofRole(Melee)) {
+      val p = ProjectileDef.get(c.primaryProjectileType)
+      assertTrue(s"${c.displayName}'s ${p.name} flies ${p.maxRange} cells", p.maxRange <= 3)
+      assertTrue(s"${c.displayName}'s ${p.name} flies ${p.effectiveMaxRange(100)} cells charged", p.effectiveMaxRange(100) <= 5)
+    }
   }
 
   // --- Health ---

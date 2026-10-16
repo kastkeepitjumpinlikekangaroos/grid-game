@@ -115,24 +115,41 @@ class MeleeKitTest {
 
   @Test def aVariantKeepsItsBaseTypesFlightAndReach(): Unit = {
     // Same flight and reach as the type it copies, so the look and sound it borrows fit it. Neither
-    // depends on the damage, which a variant may set for itself (the Arena Axe's 29 to the Axe's
-    // 23). The Axe Spin, the Maul and the Blood Frenzy were rings of eight thrown variants; they are
+    // depends on the damage, which a variant may set for itself (the Arena Axe's 51 to the Axe's
+    // 49). The Axe Spin, the Maul and the Blood Frenzy were rings of eight thrown variants; they are
     // slams of their own now
     val variants = Seq(
-      ProjectileType.VENOM_DART -> ProjectileType.POISON_DART,
-      ProjectileType.TOXIC_SHURIKEN -> ProjectileType.SHURIKEN,
-      ProjectileType.FLURRY -> ProjectileType.FIST, ProjectileType.ROOTING_BOULDER -> ProjectileType.BOULDER,
+      ProjectileType.VENOM_DART -> ProjectileType.POISON_DART, ProjectileType.ROOTING_BOULDER -> ProjectileType.BOULDER,
       ProjectileType.EMBER_FAN -> ProjectileType.EMBER_SHOT, ProjectileType.FENRIR_CLAW -> ProjectileType.CLAW_SWIPE,
       ProjectileType.GHOUL_CLAW -> ProjectileType.CLAW_SWIPE, ProjectileType.SHARK_CLAW -> ProjectileType.CLAW_SWIPE,
       ProjectileType.ICE_BOULDER -> ProjectileType.BOULDER, ProjectileType.DRAIN_BLADE -> ProjectileType.CURSED_BLADE,
       ProjectileType.CHILL_BLADE -> ProjectileType.CURSED_BLADE,
       ProjectileType.ARENA_AXE -> ProjectileType.AXE, ProjectileType.THROWING_STAR -> ProjectileType.SHURIKEN,
-      ProjectileType.MANTIS_SCYTHE -> ProjectileType.CLAW_SWIPE, ProjectileType.PIN_DOWN -> ProjectileType.TALON)
+      ProjectileType.MANTIS_SCYTHE -> ProjectileType.CLAW_SWIPE)
     for ((v, b) <- variants) {
       val (vd, bd) = (ProjectileDef.get(v), ProjectileDef.get(b))
       assertEquals(vd.name, v, vd.id)
       assertEquals(vd.name, (bd.speedMultiplier, bd.maxRange, bd.hitRadius),
         (vd.speedMultiplier, vd.maxRange, vd.hitRadius))
+    }
+  }
+
+  @Test def anAbilityCopyingAMeleePrimaryKeepsItsReach(): Unit = {
+    // The melee primaries were cut to half their reach for much harder hits (design/characters.md,
+    // *Melee strikes short and hard*), and the abilities weren't: the three that copy one fly as it
+    // does, and as far as it did, which is the reach their abilities say
+    val copies = Seq(
+      (ProjectileType.FLURRY, ProjectileType.FIST, CharacterId.Monk),
+      (ProjectileType.PIN_DOWN, ProjectileType.TALON, CharacterId.Hawk),
+      (ProjectileType.TOXIC_SHURIKEN, ProjectileType.SHURIKEN, CharacterId.Rogue))
+    for ((v, b, thrower) <- copies) {
+      val (vd, bd) = (ProjectileDef.get(v), ProjectileDef.get(b))
+      val c = CharacterDef.get(thrower)
+      val ability = Seq(c.qAbility, c.eAbility).find(_.projectileType == v).get
+      assertEquals(vd.name, v, vd.id)
+      assertEquals(vd.name, (bd.speedMultiplier, bd.hitRadius), (vd.speedMultiplier, vd.hitRadius))
+      assertEquals(vd.name, ability.maxRange, vd.maxRange)
+      assertTrue(s"${vd.name} reaches further than the ${bd.name}", vd.maxRange > bd.maxRange)
     }
   }
 

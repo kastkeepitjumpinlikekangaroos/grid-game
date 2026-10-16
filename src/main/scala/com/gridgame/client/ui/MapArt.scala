@@ -1,15 +1,16 @@
 package com.gridgame.client.ui
 
 import com.gridgame.common.Constants
-import com.gridgame.common.model.{Tile, TileForm, WorldData}
+import com.gridgame.common.model.{GroundEdges, Tile, TileForm, WorldData}
 
 import javafx.scene.image.{Image, PixelFormat, WritableImage}
 
 /**
  * The maps drawn as a match draws them, for the menus: every cell from the game's own tile art
  * (sprites/tiles.png) in the match's isometric projection, TerrainPainter's passes done on the CPU
- * into an image — the ground (each prop with the ground it stands in under it, the shadows blocks
- * cast beside them), then the blocks and props a diagonal at a time, far to near. Seen from high
+ * into an image — the ground (each prop with the ground it stands in under it, the soft edge where two
+ * kinds of it meet, GroundEdges.shade, and the shadows blocks cast beside them), then the blocks and
+ * props a diagonal at a time, far to near. Seen from high
  * above, the whole map is a diamond; [[MapPreview]] stands it on a little base, and the page behind
  * every screen ([[WorldBackdrop]]) is a stretch of one seen closer.
  *
@@ -139,6 +140,15 @@ private[client] object MapArt {
     (Math.min(255, a) << 24) | (Math.min(255, r) << 16) | (Math.min(255, g) << 8) | Math.min(255, b)
   }
 
+  /** A ground edge (GroundEdges.shade: premultiplied, 0 to 1) over an opaque colour. */
+  @inline private def overEdge(e: Array[Double], c: Int): Int = {
+    val k = 1 - e(3)
+    val r = Math.min(255, (e(0) * 255 + ((c >> 16) & 0xFF) * k + 0.5).toInt)
+    val g = Math.min(255, (e(1) * 255 + ((c >> 8) & 0xFF) * k + 0.5).toInt)
+    val b = Math.min(255, (e(2) * 255 + (c & 0xFF) * k + 0.5).toInt)
+    0xFF000000 | (r << 16) | (g << 8) | b
+  }
+
   /** An opaque colour darkened by `k` (0 to 1) toward the near-black the match's shadows are. */
   @inline private def shade(c: Int, k: Double): Int = {
     val keep = 1 - k
@@ -236,13 +246,14 @@ private[client] object MapArt {
     for (y <- 0 until H; x <- 0 until W) {
       val i = y * W + x
       val t = world.getTile(x, y)
-      val variant = ((x * 7 + y * 13) & 0x7FFFFFFF) % a.frames
+      // a picture is a still: a tile that animates as it is at its own frame of the cycle
+      val variant = (if (t.animates) (x * 7 + y * 13) & 0x7FFFFFFF else t.variantAt(x, y)) % a.frames
       t.form match {
         case TileForm.Ground | TileForm.Pool =>
           form(i) = Flat; flatId(i) = t.id; flatFrame(i) = variant
         case TileForm.Prop =>
           val g = Tile.groundUnder(world, x, y)
-          form(i) = Raised; flatId(i) = g.id; flatFrame(i) = ((x * 7 + y * 13) & 0x7FFFFFFF) % a.frames
+          form(i) = Raised; flatId(i) = g.id; flatFrame(i) = g.variantAt(x, y) % a.frames
           raisedId(i) = t.id; raisedFrame(i) = variant
         case _ =>
           // A block covers its own diamond; under it, its own colour, for where its edge is soft
@@ -252,9 +263,15 @@ private[client] object MapArt {
       if (flatId(i) >= a.tiles) flatId(i) = 0
       if (raisedId(i) >= a.tiles) raisedId(i) = 0
     }
+    // Where two kinds of ground meet, as the match's GroundEdgePainter draws it
+    val layers = GroundEdges.layers(world)
+    val edged = new Array[Boolean](W * H)
+    for (y <- win.y0 to win.y1; x <- win.x0 to win.x1) edged(y * W + x) = GroundEdges.hasEdge(layers, W, H, x, y)
+    val edge = new Array[Double](4)
 
     val scale = view.scale
     val unitsPerSample = 1.0 / (scale * ss)
+    val samplesPerUnit = scale * ss
     val texelsPerSample = Tpu * unitsPerSample
     val level = Math.max(0, Math.min(Levels - 1, Math.round(Math.log(texelsPerSample) / Math.log(2)).toInt))
     val bw = w * ss
@@ -288,6 +305,10 @@ private[client] object MapArt {
             val dx = X - (cx - cy) * HW
             val dy = Y - (cx + cy) * HH
             var col = opaque(texel(a, level, id, f, (dx + HW) * Tpu, (dy + ArtTop) * Tpu), a.groundColour(id * a.frames + f))
+            if (edged(c)) {
+              GroundEdges.shade(layers, W, H, cx, cy, (u + v) * 0.5, (v - u) * 0.5, samplesPerUnit, edge)
+              if (edge(3) > 0) col = overEdge(edge, col)
+            }
             // The shadow a block casts on the ground beside it, below its two near edges
             if (!isBlock(c)) {
               if (dx <= 0 && cx > win.x0 && isBlock(c - 1) && dy + HH * (1 + dx / HW) < shadowDepth) col = shade(col, shadowK)

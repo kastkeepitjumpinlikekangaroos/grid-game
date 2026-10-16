@@ -6,7 +6,7 @@ generated.
 
 ```bash
 # Requires numpy: pip install numpy
-python3 scripts/generate_sounds.py   # -> sounds/*.wav (196 files, ~25s)
+python3 scripts/generate_sounds.py   # -> sounds/*.wav (197 files, ~25s)
 
 # Look at what you just made — the contact sheet is the review loop (see below).
 # Needs Pillow as well as numpy: pip install numpy Pillow
@@ -96,7 +96,7 @@ Three rules the earlier version of this file broke, and why they matter:
 
 `scripts/sound_gallery.py` renders every sound as a log-frequency spectrogram
 with a dB envelope strip underneath, 24 to a contact sheet. It exists for the
-same reason `projectile_gallery` does — 196 assets cannot be judged one at a
+same reason `projectile_gallery` does — 197 assets cannot be judged one at a
 time, and the faults that matter are the ones visible when they sit side by
 side. **Run it after any change here.** What to look for:
 

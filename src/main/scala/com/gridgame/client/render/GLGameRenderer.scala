@@ -15,10 +15,11 @@ import com.gridgame.common.model._
  * clock and size — is the RenderContext.
  *
  *  1. The background, only where the screen runs off the map (BackgroundPainter)
- *  2. The ground: every flat tile as an opaque diamond, then its animated overlays and reflections
- *     (TerrainPainter), the traps lying on it (TrapPainter), the blasts' ground layer
- *     (BlastPainter), our aim (AimArrowPainter: a charge's lane, or an attack held to aim), the
- *     blocks' shadows, and the players' shadows and our ring (PlayerPainter.drawGroundMarks)
+ *  2. The ground: every flat tile as an opaque diamond (TerrainPainter), a soft inked edge where
+ *     two kinds of it meet (GroundEdgePainter), then its animated overlays and reflections, the traps
+ *     lying on it (TrapPainter), the blasts' ground layer (BlastPainter), our aim (AimArrowPainter: a
+ *     charge's lane, or an attack held to aim), the blocks' shadows, and the players' shadows and our
+ *     ring (PlayerPainter.drawGroundMarks)
  *  3. The depth pass: blocks and props, and the entities standing among them, a diagonal of the
  *     map at a time, far to near, each where it is drawn (EntityCollector) — players
  *     (PlayerPainter, StatusEffectPainter), items (ItemPainter), projectiles (ProjectilePainter)
@@ -39,6 +40,7 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
   private val particles = new ParticleSpawner(ctx)
   private val backgrounds = new BackgroundPainter(ctx)
   private val terrain = new TerrainPainter(ctx)
+  private val groundEdges = new GroundEdgePainter(ctx)
   private val effects = new StatusEffectPainter(ctx)
   private val glows = new GlowEffectPainter(ctx)
   private val items = new ItemPainter(ctx)
@@ -61,6 +63,14 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
 
   /** The camera, which the mouse handler reads to turn the cursor into a world position. */
   def camera: GameCamera = ctx.camera
+
+  /** Run as soon as each frame has moved the camera, before anything is drawn: MatchWindow reads the
+    * mouse's pointer into the world there, for this frame's camera, and answers whether the aim is
+    * the pointer's (not while a controller's stick aims). Our aim is then drawn from where we are
+    * drawn toward the pointer as it is on this frame's screen, so it stays put on the screen as we
+    * walk (render/CLAUDE.md, *An aim moves with us*). Read after the frame, as it was, the pointer was
+    * a frame's camera travel behind where the aim was drawn. */
+  var onCamera: () => Boolean = () => false
 
   // Rendering infrastructure (initialized lazily on first render when GL context is current)
   private var initialized = false
@@ -179,6 +189,7 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
     camera.update(visualPosX, visualPosY, deltaSec, canvasW, canvasH, sceneW / canvasW)
     camOffX = camera.camOffX
     camOffY = camera.camOffY
+    aimAtPointer = onCamera()
 
     // Post-processing: render to FBO (only resize when dimensions actually change)
     if (sceneW != lastFbWidth || sceneH != lastFbHeight) {
@@ -261,8 +272,9 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
       startX, endX, startY, endY
     )
 
-    // === Phase 1: Ground tiles ===
+    // === Phase 1: Ground tiles, and one soft edge where two kinds of ground meet ===
     terrain.drawGround(world)
+    groundEdges.draw(world)
     gpuMark("ground")
 
     // === Animated tile overlays ===
@@ -479,14 +491,18 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
     // maps' threshold sunlit sand and snow bloomed into a haze over everything; here only
     // what really glows blooms.
     val bright = bgType == 0 || bgType == 5 || bgType == 6
-    postProcessor.toneMap = if (bright) 0f else 1f
-    postProcessor.bloomThreshold = if (bright) 0.97f else 0.80f
-    postProcessor.bloomStrength = if (bright) 0.16f else 0.22f
+    // Space is a station's deck floating in the dark, drawn as the bright maps are: its own colours,
+    // only a little dimmed, where shots and players still light it. Under the dark maps' grade (ACES,
+    // the art at 60%) the deck and everyone on it came out murky.
+    val space = bgType == 2
+    postProcessor.toneMap = if (bright || space) 0f else 1f
+    postProcessor.bloomThreshold = if (bright) 0.97f else if (space) 0.9f else 0.80f
+    postProcessor.bloomStrength = if (bright) 0.16f else if (space) 0.2f else 0.22f
     // and a lighter vignette, which greys a snowfield's edges
-    postProcessor.vignetteStrength = if (bright) 0.12f else 0.25f
+    postProcessor.vignetteStrength = if (bright) 0.12f else if (space) 0.16f else 0.25f
     // In daylight a warm pool of light round every player reads as a spotlight on the grass;
     // explosions still flash
-    lightSystem.gain = if (bright) 0.35f else 1f
+    lightSystem.gain = if (bright) 0.35f else if (space) 0.6f else 1f
     // and a shot carries no light at all: on sand or snow its pool only brightened the ground
     // round it toward white, washing out the pale ones (render_audit measured it)
     projectileLights = !bright
@@ -538,6 +554,7 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
       lightSystem.dispose()
       backgrounds.dispose()
       cursor.dispose()
+      groundEdges.dispose()
       GLTileRenderer.dispose()
       GLSpriteGenerator.clearCache()
       initialized = false

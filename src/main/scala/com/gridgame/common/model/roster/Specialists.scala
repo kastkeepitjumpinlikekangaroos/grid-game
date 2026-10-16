@@ -13,9 +13,9 @@ import com.gridgame.common.model.CombatRole.{Melee, Ranged, Skirmisher}
 private[model] object Specialists {
   // ── Projectiles ──
 
-  val FistDef: ProjectileDef = ProjectileDef(id = ProjectileType.FIST, name = "Fist", speedMultiplier = 0.8f, damage = 29, maxRange = 4, hitRadius = 2.2f, boomerang = true)
-  val KnifeDef: ProjectileDef = ProjectileDef(id = ProjectileType.KNIFE, name = "Knife", speedMultiplier = 0.95f, damage = 21, maxRange = 6, hitRadius = 2.2f)
-  val HammerDef: ProjectileDef = ProjectileDef(id = ProjectileType.HAMMER, name = "Hammer", speedMultiplier = 0.6f, damage = 28, maxRange = 5, hitRadius = 2.5f)
+  val FistDef: ProjectileDef = ProjectileDef(id = ProjectileType.FIST, name = "Fist", speedMultiplier = 0.8f, damage = 51, maxRange = 2, hitRadius = 2.2f, boomerang = true)
+  val KnifeDef: ProjectileDef = ProjectileDef(id = ProjectileType.KNIFE, name = "Knife", speedMultiplier = 0.95f, damage = 37, maxRange = 3, hitRadius = 2.2f)
+  val HammerDef: ProjectileDef = ProjectileDef(id = ProjectileType.HAMMER, name = "Hammer", speedMultiplier = 0.6f, damage = 49, maxRange = 3, hitRadius = 2.5f)
   val AcidFlaskDef: ProjectileDef = ProjectileDef(id = ProjectileType.ACID_FLASK, name = "Acid Flask", speedMultiplier = 0.4f, damage = 38, maxRange = 14, passesThroughPlayers = true, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(38, 15, 3.0f)))
   val StarBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.STAR_BOLT, name = "Star Bolt", speedMultiplier = 0.8f, damage = 31, maxRange = 22, chargeSpeedScaling = Some(ChargeScaling(0.6f, 1.1f)), chargeDamageScaling = Some(ChargeScaling(22f, 35f)), chargeRangeScaling = Some(ChargeScaling(14f, 28f)), distanceDamageScaling = Some(DistanceDamageScaling(15, 50, 22)))
   val RuneBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.RUNE_BOLT, name = "Rune Bolt", speedMultiplier = 0.75f, damage = 33, maxRange = 18, ricochetCount = 2)

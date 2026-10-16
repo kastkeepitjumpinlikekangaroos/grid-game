@@ -136,6 +136,22 @@ object GoldenFrames {
       }
     }
 
+    /** R pressed `ms` before the captured frame, its minute timed on the client's clock as a charge
+      * is. R does nothing with no ability cooling down, so one is cast first; R has it ready again. */
+    def resetPressed(ms: Long): Unit = {
+      client.nanoClock = () => (T - ms) * 1000000L
+      client.shootAbility(0)
+      client.pressReset()
+      client.nanoClock = () => T * 1000000L
+    }
+
+    /** The match began `ms` before the captured frame: R is on its first minute. */
+    def matchBegan(ms: Long): Unit = {
+      client.nanoClock = () => (T - ms) * 1000000L
+      client.startResetCooldown()
+      client.nanoClock = () => T * 1000000L
+    }
+
     def inventory(itemType: ItemType, n: Int): Unit =
       (0 until n).foreach { k =>
         client.processPacket(new ItemPacket(nextSeq(), me, 0, 0, itemType.id, 5000 + itemType.id * 10 + k,
@@ -338,6 +354,7 @@ object GoldenFrames {
     }),
     Scene("colony_ceasefire", "the_colony.json", (0, 0), s => {
       everything(s, withEffects = false)
+      s.matchBegan(12000L)
       s.beforeFrame = () => {
         s.timer(240)
         s.client.processPacket(new GameEventPacket(s.nextSeq(), new UUID(0L, 0L), Packet.getCurrentTimestamp,
@@ -381,7 +398,13 @@ object GoldenFrames {
     aimScene("snowglobe_aim_blink", "the_snowglobe.json", (50, 14), "blink", (1.5, 6.0)),
     aimScene("cell_aim_trap", "the_cell.json", (41, 21), "trap", (2.0, 4.0)),
     aimScene("meadow_aim_primary", "the_meadow.json", (60, 17), "primary", (5.0, 2.0)),
+    // The primary held with a gem's boost on, which fires three: a lane, and a narrower one either side
+    aimScene("meadow_aim_gem", "the_meadow.json", (60, 30), "primary", (5.0, -3.0), s => {
+      s.inventory(ItemType.Gem, 1)
+      s.client.useItem(ItemType.Gem.id)
+    }),
     aimScene("colony_aim_ceasefire", "the_colony.json", (0, 0), "shot", (3.0, 4.0), s => {
+      s.matchBegan(12000L)
       s.beforeFrame = () => {
         s.timer(240)
         s.client.processPacket(new GameEventPacket(s.nextSeq(), new UUID(0L, 0L), Packet.getCurrentTimestamp,
@@ -408,6 +431,9 @@ object GoldenFrames {
       val (hx, hy) = s.home
       s.client.getItems.put(1, new Item(1, hx + 1, hy, ItemType.Gem))
     }),
+    // R pressed 23 seconds ago (design/characters.md, *R resets the cooldowns*): its slot beside Q's
+    // and E's sweeping round its minute, with the seconds still to go
+    Scene("meadow_reset_cooling", "the_meadow.json", (60, 30), s => s.resetPressed(23000L)),
     Scene("practice_chat", "the_meadow.json", (60, 30), s => {
       everything(s, withEffects = false)
       val c = s.client

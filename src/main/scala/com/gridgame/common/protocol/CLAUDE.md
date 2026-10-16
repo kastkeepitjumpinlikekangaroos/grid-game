@@ -54,7 +54,13 @@ Its payload:
 | [53-54] | how long a raised barrier has left, in ms (server -> everyone; 0 otherwise) |
 | [55-58] | knockbacks: how many of the server moves were pushes (server -> everyone; 0 from a client), so a client draws the move a new one made as a shove |
 | [59-60] | how long a speed boost has left, in ms (server -> everyone; 0 otherwise): the boosted player's own client walks it for that long |
-| [61-63] | reserved, zero |
+| [61] | how long a freeze or stun (the hold) has left (server -> everyone; 0 otherwise), in 20ms steps rounded up, 5.1s at most (`PlayerUpdatePacket.encodeEffectMs`): every client holds the player for that long |
+| [62] | how long a root has left, the same way |
+| [63] | how long a slow has left, the same way |
+
+Every byte of it is in use. The server numbers everything it sends from one count
+(`Outbox.nextSeq`), so a client can tell the newer of two updates about a player, and takes only
+the newest word on each (design/networking.md, *Position authority*).
 
 A stunned player has both 0x04 and flags2 bit 0 set: the freeze bit is what holds them, the
 stun bit only says what to draw. Byte [49] bit 2 is a raised barrier, bytes [50-51] the way
@@ -62,7 +68,7 @@ it faces and [53-54] how long it has left (see *Barriers*): a client sends its a
 its barrier is up, and the server writes the barrier's facing and its remaining time. All are 0
 otherwise.
 
-## Packet Types (20 total)
+## Packet Types (21 total)
 
 | ID   | Name              | Transport | Description                    |
 |------|-------------------|-----------|--------------------------------|
@@ -86,6 +92,7 @@ otherwise.
 | 0x12 | TRAP_UPDATE       | TCP       | Traps placed, sprung, removed  |
 | 0x13 | REFRESH_TOKEN     | TCP       | The login's refresh token (server -> client): [21-52] the token, [53-60] when its login runs out (epoch ms) |
 | 0x14 | SESSION_END       | TCP       | Why the server is closing the session (server -> client): [21] REPLACED (logged in elsewhere) or REVOKED (logged out) |
+| 0x15 | COOLDOWN_RESET    | TCP       | R: a player's ability cooldowns reset (below) |
 
 An `AUTH_REQUEST` carries one of these `AuthAction`s. The server takes it without checking a
 signature: there is no session yet, or (a LOGOUT) the token it carries is the proof. TLS is what
@@ -125,6 +132,15 @@ owner; its layout is in `TrapPacket`.
 | 3 REMOVE | gone without going off: it ran out, its owner left, or a newer one pushed it off |
 | 4 REJECTED | the placement was refused; the placer's client gives the cooldown back |
 
+A `COOLDOWN_RESET` carries one of these `CooldownResetAction`s in byte [21] (design/characters.md,
+*R resets the cooldowns*). A reset the server takes says nothing back: the client had its abilities
+ready from the press.
+
+| Action | Meaning |
+|---|---|
+| 0 REQUEST | a client's R: reset my ability cooldowns |
+| 1 REJECTED | the server refused it (to that player only): [22-25] how long R's own minute still has, in ms, if that was why, 0 if it was anything else (dead, held, phased, the ceasefire); the client puts its cooldowns back |
+
 ## Connection Flow
 
 ```
@@ -154,7 +170,7 @@ Client                              Server
    │<─── ITEM_UPDATE ─────────────────│
    │<─── GAME_EVENT ──────────────────│
    │                                   │
-   │──── HEARTBEAT (every 3s) ───────>│  (rate limited)
+   │──── HEARTBEAT (every 1s) ───────>│  (rate limited; echoed over TCP)
    │                                   │
    │<─── SESSION_TOKEN ───────────────│  (an hour in: the renewal, signed with the old
    │                                   │   token; the server switches on our first use of it)

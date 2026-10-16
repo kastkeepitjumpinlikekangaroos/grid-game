@@ -252,6 +252,23 @@ class LobbyFlowTest {
     assertTrue(p.received().exists { case l: LobbyActionPacket => l.getAction == LobbyAction.GAME_STARTING; case _ => false })
   }
 
+  @Test def practiceHasRFromItsFirstMoment(): Unit = {
+    // A match holds R back its first minute; practice, where a player tries a character out, doesn't
+    // (design/characters.md, *R resets the cooldowns*)
+    val p = new Client("solo")
+    p.lobbyAction(LobbyAction.PRACTICE_START, charId = CharacterId.Soldier.id)
+    started += p.lobby.id
+    p.received()
+    def pressR(): Seq[CooldownResetPacket] = {
+      p.send(new CooldownResetPacket(nextSeq(), p.id, CooldownResetAction.REQUEST, 0))
+      p.received().collect { case r: CooldownResetPacket => r }
+    }
+    assertTrue("taken at once", pressR().isEmpty)
+    val again = pressR()
+    assertEquals("then on its minute", 1, again.size)
+    assertTrue(again.head.getMsLeft > com.gridgame.common.Constants.COOLDOWN_RESET_MS - 5000)
+  }
+
   @Test def aStartedMatchTellsEveryoneWhereEveryoneIs(): Unit = {
     val host = new Client("host")
     host.lobbyAction(LobbyAction.CREATE)
