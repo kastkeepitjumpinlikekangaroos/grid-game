@@ -131,6 +131,9 @@ class ClientMain extends Application with Screens {
     primaryStage.setY(bounds.getMinY)
     primaryStage.setWidth(bounds.getWidth)
     primaryStage.setHeight(bounds.getHeight)
+    // On Linux maximized as well, which every window manager there honours: given the screen's size
+    // alone, JavaFX's GTK window settled on 200x200 as it was shown under openbox (LXDE's, LXQt's)
+    if (ClientMain.isLinux) primaryStage.setMaximized(true)
 
     showFirstScreen(primaryStage)
     primaryStage.show()
@@ -158,8 +161,11 @@ class ClientMain extends Application with Screens {
     stage.getIcons.addAll(images: _*)
   }
 
-  /** Sets the macOS dock icon via the AWT Taskbar API (no-op on platforms without a taskbar/dock). */
+  /** Sets the macOS dock icon via the AWT Taskbar API. Only there: elsewhere it has no icon to set,
+    * and on Linux merely asking AWT about a taskbar starts its X11 toolkit, a thread and a
+    * connection to the display of its own, to answer no. */
   private def setDockIcon(): Unit = {
+    if (!ClientMain.isMac) return
     try {
       if (java.awt.Taskbar.isTaskbarSupported) {
         val taskbar = java.awt.Taskbar.getTaskbar
@@ -444,6 +450,10 @@ object ClientMain {
   /** Connections a reconnect tries before it gives up: about half a minute, for a server restarting. */
   private val ReconnectTries = 6
 
+  private val osName = System.getProperty("os.name", "").toLowerCase
+  private val isMac = osName.contains("mac")
+  private[client] val isLinux = osName.contains("linux")
+
   /**
    * Let the heap give memory back. The JVM's defaults suit a server: the heap grows to
    * whatever the busiest moment needed and keeps it, since HotSpot only shrinks after a
@@ -490,8 +500,9 @@ object ClientMain {
     // OS scale them up. Text is softer, but every menu repaint fills a quarter of the pixels,
     // and on macOS the pool of window surfaces JavaFX's layer builds up is a quarter the size
     // (at most ~165MB instead of ~650MB on a 5K display). It has to be decided before JavaFX
-    // starts, which is why auto — which only steps down once a match is running — can't.
-    if (!com.gridgame.client.gl.RenderQuality.isAuto &&
+    // starts, which is why auto — which only steps down once a match is running — can't. Not on
+    // Linux, where nothing scales a window up: on a desktop at 200% the menus came out half size.
+    if (!isLinux && !com.gridgame.client.gl.RenderQuality.isAuto &&
         com.gridgame.client.gl.RenderQuality.tier == com.gridgame.client.gl.RenderQuality.LOW &&
         System.getProperty("prism.allowhidpi") == null) {
       System.setProperty("prism.allowhidpi", "false")

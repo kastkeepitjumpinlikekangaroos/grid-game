@@ -1,5 +1,5 @@
 load("@rules_scala//scala:scala.bzl", "scala_binary", "scala_library")
-load("//third_party:jvm.bzl", "GSON", "JAVAFX", "JAVAFX_MAC", "JAVAFX_WINDOWS")
+load("//third_party:jvm.bzl", "GSON", "JAVAFX", "JAVAFX_HOST", "JAVAFX_LINUX", "JAVAFX_LINUX_ARM64", "JAVAFX_WINDOWS", "on_mac")
 
 # The map editor: its own app, sharing only common (the model and the world loader) with the game.
 scala_library(
@@ -8,15 +8,17 @@ scala_library(
     deps = ["//src/main/scala/com/gridgame/common"] + GSON + JAVAFX,
 )
 
+# The map editor for the machine doing the build (the Mac's is the one scripts/build_macos_app.sh
+# packages), then for each other system, built from any machine.
 scala_binary(
     name = "mapeditor",
     main_class = "com.gridgame.mapeditor.Main",
     resources = ["//sprites:sprite_files"],
-    jvm_flags = [
+    jvm_flags = on_mac([
         "-Xdock:name='Grid Game Map Editor'",
         "-Dapple.awt.application.name='Grid Game Map Editor'",
-    ],
-    deps = [":mapeditor_lib"] + JAVAFX_MAC,
+    ]),
+    deps = [":mapeditor_lib"] + JAVAFX_HOST,
 )
 
 scala_binary(
@@ -24,4 +26,18 @@ scala_binary(
     main_class = "com.gridgame.mapeditor.Main",
     resources = ["//sprites:sprite_files"],
     deps = [":mapeditor_lib"] + JAVAFX_WINDOWS,
+)
+
+scala_binary(
+    name = "mapeditor_linux",
+    main_class = "com.gridgame.mapeditor.Main",
+    resources = ["//sprites:sprite_files"],
+    deps = [":mapeditor_lib"] + JAVAFX_LINUX,
+)
+
+scala_binary(
+    name = "mapeditor_linux_arm64",
+    main_class = "com.gridgame.mapeditor.Main",
+    resources = ["//sprites:sprite_files"],
+    deps = [":mapeditor_lib"] + JAVAFX_LINUX_ARM64,
 )

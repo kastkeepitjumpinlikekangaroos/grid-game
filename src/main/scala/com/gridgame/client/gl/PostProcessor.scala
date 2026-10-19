@@ -209,7 +209,13 @@ class PostProcessor(var width: Int, var height: Int) {
     sceneFBO.bind(0)
     blurPongFBO.bind(1)
     bloomQPongFBO.bind(3)
+    // Every pixel is written whole (alpha 1), so blending would only read the display's pixels
+    // back to multiply them by zero: a read of the full-resolution framebuffer every frame, the
+    // largest single target the frame touches (at Low on a HiDPI screen this pass is two fifths
+    // of all the fragments). Off, the same pixels come out. The batches drawn after it turn it on.
+    glDisable(GL_BLEND)
     drawQuad()
+    glEnable(GL_BLEND)
   }
 
   /** Resize all FBOs when window size changes. */

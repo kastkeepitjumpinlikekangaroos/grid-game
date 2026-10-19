@@ -20,7 +20,10 @@ bazel test //src/test/scala/com/gridgame/server:combat_test    # one test
 bazel run //src/main/scala/com/gridgame/server:server          # the server (-- 25566 for another port; its
                                                                # identity, server_identity.p12, beside game_accounts.db)
 bazel run //src/main/scala/com/gridgame/client:client          # the client (the login screen asks for host/port)
-bazel run //src/main/scala/com/gridgame/mapeditor              # the map editor
+bazel run //src/main/scala/com/gridgame/mapeditor              # the map editor (both, like the dev tools, for
+                                                               # this machine: a Mac, Linux, Windows)
+scripts/build_linux_package.sh --arch x86_64 --deb             # the Linux app and .deb (Chromebooks too), from any
+                                                               # machine: client/CLAUDE.md, *Packaging the apps*
 
 OTEL_SDK_DISABLED=true bazel run //src/main/scala/com/gridgame/server:server  # server without telemetry
 GRIDGAME_TELEMETRY=1 bazel run //src/main/scala/com/gridgame/client:client    # client with telemetry (or -- --telemetry)
@@ -132,18 +135,24 @@ ops/observability/   the local OpenTelemetry → Prometheus/Tempo/Loki/Grafana s
 ## Bazel
 
 `rules_scala` with Scala 2.13.16, Bazel 7.4.1. Dependencies: JavaFX 21.0.1, Netty 4.1.104, Gson 2.10.1,
-SQLite JDBC 3.44.0, Guava 32.1.3, LWJGL 3.3.4 (glfw, opengl, stb + macOS ARM64 and Windows natives),
+SQLite JDBC 3.44.0, Guava 32.1.3, LWJGL 3.3.4 (glfw, opengl, stb + macOS ARM64, Windows, Linux x86_64 and
+Linux arm64 natives),
 OpenTelemetry Java SDK 1.42.1 + autoconfigure + OTLP exporter + JVM runtime metrics (2.8.0-alpha). The
 OpenTelemetry jars are exported by `common/observability`, so everything that depends on `//…/common`
 has them. `server_lib` and `client_lib` are every library of each, for the tests.
 
 JavaFX is a jar per platform (classes and natives), and a library only compiles against it (`JAVAFX`
 is `neverlink`): a binary runs with the platform's jars it names itself (`MAC_NATIVES`,
-`WINDOWS_NATIVES`, `JAVAFX_MAC`… in `third_party/jvm.bzl`), so a new binary on a JavaFX library must
-name them, and `client_lib` has the build machine's (`HOST_NATIVES`) for the tests. That is what
-keeps a Windows build made on a Mac to the Windows jars.
+`WINDOWS_NATIVES`, `LINUX_NATIVES`, `LINUX_ARM64_NATIVES`, `JAVAFX_MAC`… in `third_party/jvm.bzl`), so
+a new binary on a JavaFX library must name them. `client`, `mapeditor`, the dev tools and `client_lib`
+(for the tests) have the build machine's (`HOST_NATIVES`, `JAVAFX_HOST`), and a Mac's own JVM flags
+(`on_mac`: `-XstartOnFirstThread`, `-Xdock:name`, which any other system's java refuses to start
+with); the `_windows`, `_linux` and `_linux_arm64` binaries have their system's from any machine.
+That is what keeps a Windows build made on a Mac to the Windows jars. Linux is a binary per processor:
+JavaFX's Linux jars keep their natives at the top of the jar under the same names on both.
 
 Build targets: `//src/main/scala/com/gridgame/server:server`, `//…/client:client`,
-`//…/client:client_windows`, the dev tools in `//…/client` (`projectile_gallery`, `render_bench`,
-`ui_bench`, `ui_gallery`, `render_audit`, `golden_frames`), `//src/main/scala/com/gridgame/mapeditor` and
-`:mapeditor_windows`, `//docs:website`.
+`//…/client:client_windows`, `:client_linux`, `:client_linux_arm64`, the dev tools in `//…/client`
+(`projectile_gallery`, `render_bench`, `ui_bench`, `ui_gallery`, `render_audit`, `golden_frames`),
+`//src/main/scala/com/gridgame/mapeditor` and `:mapeditor_windows`, `:mapeditor_linux`,
+`:mapeditor_linux_arm64`, `//docs:website`.

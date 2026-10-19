@@ -6,7 +6,8 @@ whose tip flops over, on a brim wider than his shoulders. Under it, a cloud of
 white beard and bushy brows over big bright eyes, a little robe with bell
 sleeves and gold trim, and an oversized staff with a glowing orb.
 
-generate_icon.py draws the app icon from draw_wizard, so it tracks this.
+generate_icon.py draws the app icon from draw_wizard, and main() runs it
+after writing the sheet, so the icon is redrawn with him.
 """
 
 import os
@@ -202,6 +203,9 @@ def draw_wizard(draw, ox, oy, direction, frame):
 
 def main():
     generate_character("wizard", draw_func=draw_wizard)
+    # The app icon is the wizard (imported here: generate_icon imports this module)
+    import generate_icon
+    generate_icon.main()
 
 
 if __name__ == "__main__":

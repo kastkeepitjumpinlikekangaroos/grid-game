@@ -17,8 +17,21 @@ import scala.collection.mutable
  * Manages a GLFW window with an OpenGL 3.3 core context for game rendering.
  * Created when a match starts; when it ends, retired (off the screen at once) and destroyed once
  * macOS has finished with it (see [[retire]]).
+ *
+ * `windowClass` is the app the window belongs to on Linux (its X11 class, its Wayland app id),
+ * which a desktop groups windows by and finds their launcher with: an app whose other windows
+ * are JavaFX's gives the name JavaFX gives them, its Application's class. Empty, GLFW names the
+ * window after its title.
+ *
+ * `unitScale` is the screen's pixels a unit, where GLFW sizes the window and places the pointer in
+ * the screen's pixels (X11) and the desktop scales everything up (200% gives 2): the window is made
+ * that many pixels a unit, and its size and the pointer are given in units, as macOS gives points,
+ * so what is laid out in units comes out the size of the desktop's other windows, drawn at the
+ * screen's sharpness (gl/CLAUDE.md, *On Linux, GLFW runs on X11*). The initial size is in units too.
+ * 1 where GLFW gives units itself (macOS) or the desktop doesn't scale.
  */
-class GLWindow(title: String, initialWidth: Int, initialHeight: Int) {
+class GLWindow(title: String, initialWidth: Int, initialHeight: Int, windowClass: String = "",
+               val unitScale: Double = 1.0) {
   private var window: Long = NULL
   // When retire took the window off the screen for good (System.nanoTime), or 0
   private var retiredNs: Long = 0L
@@ -45,6 +58,8 @@ class GLWindow(title: String, initialWidth: Int, initialHeight: Int) {
   def pointerX: Double = pointerXs(0)
   def pointerY: Double = pointerYs(0)
 
+  private def pixels(units: Int): Int = Math.round(units * unitScale).toInt
+
   def create(): Unit = {
     GLFWManager.ensureInitialized()
 
@@ -55,16 +70,27 @@ class GLWindow(title: String, initialWidth: Int, initialHeight: Int) {
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE) // Required on macOS
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE) // Show after setup
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE)
+    // Nothing is drawn with a depth or stencil test (everything is in painter's order, and the
+    // world goes through targets of its own first), so the window has neither buffer. GLFW's
+    // default asks for both, and macOS gave it 32 bits of depth and 8 of stencil a pixel: 56MB of
+    // graphics memory at 4480x2520, held for the whole match (gl/CLAUDE.md, *The window has no
+    // depth or stencil buffer*).
+    glfwWindowHint(GLFW_DEPTH_BITS, 0)
+    glfwWindowHint(GLFW_STENCIL_BITS, 0)
+    // Linux only: what the window belongs to (see the class's comment)
+    glfwWindowHintString(GLFW_X11_CLASS_NAME, windowClass)
+    glfwWindowHintString(GLFW_X11_INSTANCE_NAME, windowClass)
+    glfwWindowHintString(GLFW_WAYLAND_APP_ID, windowClass)
 
-    window = glfwCreateWindow(initialWidth, initialHeight, title, NULL, NULL)
+    window = glfwCreateWindow(pixels(initialWidth), pixels(initialHeight), title, NULL, NULL)
     if (window == NULL) throw new RuntimeException("Failed to create GLFW window")
 
     setIcon(Seq("sprites/icon_wizard_256.png", "sprites/icon_wizard_128.png"))
 
     // Set up resize callback
     glfwSetWindowSizeCallback(window, (_, w, h) => {
-      _width = w
-      _height = h
+      _width = Math.round(w / unitScale).toInt
+      _height = Math.round(h / unitScale).toInt
     })
     glfwSetFramebufferSizeCallback(window, (_, w, h) => {
       _fbWidth = w
@@ -84,8 +110,8 @@ class GLWindow(title: String, initialWidth: Int, initialHeight: Int) {
     val vidMode = if (monitor != NULL) glfwGetVideoMode(monitor) else null
     if (vidMode != null) {
       glfwSetWindowPos(window,
-        (vidMode.width() - initialWidth) / 2,
-        (vidMode.height() - initialHeight) / 2)
+        (vidMode.width() - pixels(initialWidth)) / 2,
+        (vidMode.height() - pixels(initialHeight)) / 2)
     }
 
     makeContextCurrent()
@@ -176,8 +202,14 @@ class GLWindow(title: String, initialWidth: Int, initialHeight: Int) {
   def readPointer(): Boolean = {
     if (window == NULL || glfwGetWindowAttrib(window, GLFW_FOCUSED) != GLFW_TRUE) return false
     glfwGetCursorPos(window, pointerXs, pointerYs)
+    pointerXs(0) /= unitScale
+    pointerYs(0) /= unitScale
     GLWindow.overContent(pointerXs(0), pointerYs(0), _width, _height)
   }
+
+  /** `f` told where the pointer is whenever it moves over the window, in units. */
+  def onPointerMoved(f: (Double, Double) => Unit): Unit =
+    if (window != NULL) glfwSetCursorPosCallback(window, (_, x, y) => f(x / unitScale, y / unitScale))
 
   def show(): Unit = {
     if (window != NULL) glfwShowWindow(window)
@@ -206,8 +238,8 @@ class GLWindow(title: String, initialWidth: Int, initialHeight: Int) {
     if (fullscreen) {
       glfwSetWindowMonitor(window, monitor, 0, 0, vidMode.width(), vidMode.height(), vidMode.refreshRate())
     } else {
-      val w = initialWidth
-      val h = initialHeight
+      val w = pixels(initialWidth)
+      val h = pixels(initialHeight)
       val x = (vidMode.width() - w) / 2
       val y = (vidMode.height() - h) / 2
       glfwSetWindowMonitor(window, NULL, x, y, w, h, GLFW_DONT_CARE)

@@ -32,6 +32,8 @@ import com.gridgame.client.render.projectiles.GLProjectileRenderers
  *                                                                  # another map, standing on one cell of it
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --types=LIGHTNING,SOUL_BOLT
  *                                                                  # only these projectile types in flight
+ *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --travelling
+ *                                                                  # no ground slams, which pile up otherwise
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --blasts=12
  *                                                                  # every character's blasts going off round us
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --aim        # us charging a shot, its lane drawn
@@ -63,7 +65,10 @@ object RenderBench {
       def line(tag: String): String =
         out.linesIterator.find(_.contains(tag)).map(_.trim.split("\\s+").take(2).mkString(" ")).getOrElse("?")
       val total = out.linesIterator.find(_.contains("phys_footprint:")).map(_.split(":")(1).trim).getOrElse("?")
+      // The driver's own graphics memory (the window's buffers among it) is counted apart from the
+      // textures and buffers the game makes (IOAccelerator)
       s"footprint:           $total (graphics ${line("IOAccelerator (graphics)")}, " +
+        s"driver graphics ${line("Owned physical footprint (unmapped) (graphics)")}, " +
         s"VM_ALLOCATE ${line("untagged (VM_ALLOCATE)")}, IOSurface ${line("IOSurface")}, malloc ${line("MALLOC_SMALL")})"
     } catch { case e: Exception => s"footprint unavailable: ${e.getMessage}" }
   }
@@ -247,11 +252,15 @@ class RenderBenchApp extends Application {
     val named = ProjectileType.getClass.getDeclaredMethods
       .filter(m => m.getParameterCount == 0 && m.getReturnType == java.lang.Byte.TYPE)
       .map(m => m.getName -> m.invoke(ProjectileType).asInstanceOf[java.lang.Byte].byteValue()).toMap
-    val types = argOf(args, "types") match {
+    // --travelling leaves out the ground slams (speed 0, range 0), which go off at once in a match but
+    // are never retired here: without it, a few seconds in, 120 of the 150 are slams (render/CLAUDE.md,
+    // *The render bench's projectiles are mostly ground slams*). Off by default, like the rest.
+    val travelling = args.contains("--travelling")
+    val types = (argOf(args, "types") match {
       case Some(list) => list.split(",").map(_.trim).filter(_.nonEmpty).map(n =>
         named.getOrElse(n, throw new IllegalArgumentException(s"no projectile type named $n")))
       case None => (0 until 256).map(_.toByte).filter(t => GLProjectileRenderers.getRenderer(t) != null).toArray
-    }
+    }).filter(t => !travelling || (ProjectileDef.get(t).speedMultiplier > 0f && ProjectileDef.get(t).maxRange > 0))
     // --blasts=N keeps about N blasts going off round us, every character's in turn (each thrown
     // by its own character, so each is drawn as it is in a match). Off by default, like the rest.
     val blastTarget = argOf(args, "blasts").map(_.toInt).getOrElse(if (args.contains("--blasts")) 12 else 0)
@@ -466,7 +475,7 @@ class RenderBenchApp extends Application {
         System.gc(); System.gc()
         val heap = ManagementFactory.getMemoryMXBean.getHeapMemoryUsage
         println(f"render bench: ${window.fbWidth}x${window.fbHeight} fb (${window.width}x${window.height} window), " +
-          f"quality ${RenderQuality.tierName}, $nPlayers players, ${client.getProjectiles.size} projectiles, " +
+          f"quality ${RenderQuality.tierName}, $nPlayers players, ${client.getProjectiles.size} projectiles${if (travelling) " (travelling)" else ""}, " +
           f"${if (withEffects) "status effects, " else ""}${if (withBarriers) "barriers, " else ""}" +
           f"${if (withTraps) s"$nTraps traps, " else ""}${if (blastTarget > 0) s"~$blastTarget blasts, " else ""}" +
           f"${if (withAim) "aiming, " else ""}${held.fold("")(h => s"holding ${CharacterDef.get(h._1).displayName}'s attack, ")}" +

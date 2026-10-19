@@ -27,6 +27,24 @@ cd ops/observability && docker compose up -d
 # Then open http://localhost:3000 — pre-provisioned dashboards under "Grid Game"
 ```
 
+## Linux and Chromebooks
+
+The game runs on macOS, Windows and Linux (x86_64 and arm64), Chromebooks' Linux included; a match
+needs OpenGL 3.3. The commands above work on Linux as they do on a Mac. To package the game for
+Linux with a Java runtime of its own, so nothing needs installing first, from any machine (off Linux,
+Docker stands in for it):
+
+```bash
+scripts/build_linux_package.sh --arch x86_64 --deb   # -> dist/linux/: the app, a .tar.gz of it, and a .deb
+scripts/build_linux_package.sh --arch arm64 --deb    # the same for ARM
+```
+
+On a Chromebook, turn on Linux (Settings > About ChromeOS > Developers > Linux development
+environment), then double-click the `.deb` in the Files app and install it: Grid Game appears in the
+launcher. An ARM Chromebook takes the arm64 one (`dpkg --print-architecture` in its Terminal says
+which). On other Linux, `sudo apt install ./grid-game_*.deb` (Debian, Ubuntu and their relatives),
+or unpack the `.tar.gz` anywhere and run `Grid Game/bin/Grid Game`.
+
 ## Features
 
 - **112 Characters** - Across 8 categories (Original, Elemental, Undead/Dark, Medieval/Fantasy, Sci-Fi/Tech, Nature/Beast, Mythological, Specialist), each with unique primary attack, Q ability, and E ability

@@ -41,7 +41,7 @@ ICON="sprites/icon_wizard.icns"
 DEST="dist/macos"
 
 if [[ ! -f "$ICON" ]]; then
-  echo "Missing $ICON — run: python3 scripts/generate_icon.py && scripts/generate_icns.sh" >&2
+  echo "Missing $ICON — run: python3 scripts/generate_icon.py" >&2
   exit 1
 fi
 

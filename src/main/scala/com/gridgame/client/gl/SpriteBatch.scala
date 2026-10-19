@@ -4,6 +4,7 @@ import org.lwjgl.opengl.GL11._
 import org.lwjgl.opengl.GL15._
 import org.lwjgl.opengl.GL20._
 import org.lwjgl.opengl.GL30._
+import org.lwjgl.opengl.GL32.glDrawElementsBaseVertex
 import org.lwjgl.BufferUtils
 import org.lwjgl.system.MemoryUtil
 
@@ -16,13 +17,16 @@ object SpriteBatch {
 
 /**
  * Batched renderer for textured quads with per-vertex tint/alpha.
- * Vertices are position (vec2) + texcoord (vec2) + color (vec4) = 8 floats per vertex.
+ * Vertices are position (vec2) + texcoord (vec2) + color (vec4) = 8 floats per vertex, four a
+ * quad, drawn through one element buffer that splits every quad into the same two triangles.
  * Flushes automatically on texture change. Supports additive blending for glow effects.
  */
 class SpriteBatch(val shader: ShaderProgram) {
   private val VERTEX_SIZE = 8 // x, y, u, v, r, g, b, a
   private val VERTEX_BYTES = VERTEX_SIZE * 4L
   private val INITIAL_CAPACITY = 4096
+  // A flush's indices are 16 bits, counted from its first vertex (glDrawElementsBaseVertex)
+  private val MAX_CAPACITY = 65536
   private var capacity = INITIAL_CAPACITY
   // Staging memory, written through its raw address — see ShapeBatch.
   private var buffer: FloatBuffer = BufferUtils.createFloatBuffer(capacity * VERTEX_SIZE)
@@ -38,6 +42,10 @@ class SpriteBatch(val shader: ShaderProgram) {
 
   private val vao = glGenVertexArrays()
   private val vbo = glGenBuffers()
+  // Every quad is the triangles (0, 1, 2) and (0, 2, 3) of its four corners, in the order each draw
+  // writes them: one element buffer of that pattern, as long as the staging buffer, serves every
+  // flush, and a quad is four vertices rather than six
+  private val ibo = glGenBuffers()
 
   glBindVertexArray(vao)
   glBindBuffer(GL_ARRAY_BUFFER, vbo)
@@ -52,6 +60,25 @@ class SpriteBatch(val shader: ShaderProgram) {
   glVertexAttribPointer(2, 4, GL_FLOAT, false, VERTEX_SIZE * 4, 4 * 4L)
   glEnableVertexAttribArray(2)
   glBindVertexArray(0)
+  quadIndices(capacity)
+
+  /** The element buffer for `vertices` vertices' worth of quads (the binding is the VAO's). */
+  private def quadIndices(vertices: Int): Unit = {
+    val quads = vertices / 4
+    val idx = BufferUtils.createShortBuffer(quads * 6)
+    var q = 0
+    while (q < quads) {
+      val c = q * 4
+      idx.put(c.toShort).put((c + 1).toShort).put((c + 2).toShort)
+      idx.put(c.toShort).put((c + 2).toShort).put((c + 3).toShort)
+      q += 1
+    }
+    idx.flip()
+    glBindVertexArray(vao)
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo)
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx, GL_STATIC_DRAW)
+    glBindVertexArray(0)
+  }
 
   // Set texture sampler uniform once (it never changes)
   shader.use()
@@ -108,7 +135,7 @@ class SpriteBatch(val shader: ShaderProgram) {
       currentTexture = region.texture
       currentTexture.bind(0)
     }
-    ensureCapacity(6)
+    ensureCapacity(4)
     val u = region.u
     val v = region.v
     val u2 = region.u2
@@ -116,9 +143,6 @@ class SpriteBatch(val shader: ShaderProgram) {
 
     vertex(x, y, u, v, r, g, b, a)
     vertex(x + w, y, u2, v, r, g, b, a)
-    vertex(x + w, y + h, u2, v2, r, g, b, a)
-
-    vertex(x, y, u, v, r, g, b, a)
     vertex(x + w, y + h, u2, v2, r, g, b, a)
     vertex(x, y + h, u, v2, r, g, b, a)
   }
@@ -140,11 +164,9 @@ class SpriteBatch(val shader: ShaderProgram) {
       currentTexture = texture
       currentTexture.bind(0)
     }
-    ensureCapacity(6)
+    ensureCapacity(4)
     vertex(x0, y0, u0, v0, r, g, b, a)
     vertex(x1, y1, u1, v1, r, g, b, a)
-    vertex(x2, y2, u2, v2, r, g, b, a)
-    vertex(x0, y0, u0, v0, r, g, b, a)
     vertex(x2, y2, u2, v2, r, g, b, a)
     vertex(x3, y3, u3, v3, r, g, b, a)
   }
@@ -157,7 +179,7 @@ class SpriteBatch(val shader: ShaderProgram) {
       currentTexture = region.texture
       currentTexture.bind(0)
     }
-    ensureCapacity(6)
+    ensureCapacity(4)
     val cx = x + w * 0.5f
     val cy = y + h * 0.5f
     val cos = Math.cos(angle).toFloat
@@ -174,9 +196,6 @@ class SpriteBatch(val shader: ShaderProgram) {
 
     vertex(x0, y0, u, v, r, g, b, a)
     vertex(x1, y1, u2, v, r, g, b, a)
-    vertex(x2, y2, u2, v2, r, g, b, a)
-
-    vertex(x0, y0, u, v, r, g, b, a)
     vertex(x2, y2, u2, v2, r, g, b, a)
     vertex(x3, y3, u, v2, r, g, b, a)
   }
@@ -207,7 +226,7 @@ class SpriteBatch(val shader: ShaderProgram) {
       glBufferSubData(GL_ARRAY_BUFFER, byteOffset, buffer)
       buffer.clear()
     }
-    glDrawArrays(GL_TRIANGLES, ringOffset, vertexCount)
+    glDrawElementsBaseVertex(GL_TRIANGLES, vertexCount / 4 * 6, GL_UNSIGNED_SHORT, 0L, ringOffset)
     ringOffset += vertexCount
 
     glBindVertexArray(0)
@@ -218,6 +237,7 @@ class SpriteBatch(val shader: ShaderProgram) {
   def dispose(): Unit = {
     glDeleteVertexArrays(vao)
     glDeleteBuffers(vbo)
+    glDeleteBuffers(ibo)
     shader.dispose()
   }
 
@@ -238,13 +258,16 @@ class SpriteBatch(val shader: ShaderProgram) {
   }
 
   /** Replace the staging buffer with a larger one, keeping the vertices already in it. */
-  private def growStaging(newCapacity: Int): Unit = {
+  private def growStaging(newCapacity0: Int): Unit = {
+    val newCapacity = Math.min(MAX_CAPACITY, newCapacity0)
+    if (newCapacity <= vertexCount) throw new IllegalStateException(s"a flush holds at most $MAX_CAPACITY vertices")
     val grown = BufferUtils.createFloatBuffer(newCapacity * VERTEX_SIZE)
     val grownAddr = MemoryUtil.memAddress(grown)
     MemoryUtil.memCopy(bufferAddr, grownAddr, vertexCount * VERTEX_BYTES)
     buffer = grown
     bufferAddr = grownAddr
     capacity = newCapacity
+    quadIndices(capacity)
     if (ringVerts < capacity * SpriteBatch.RING_FRAMES) {
       ringVerts = capacity * SpriteBatch.RING_FRAMES
       ringOffset = 0

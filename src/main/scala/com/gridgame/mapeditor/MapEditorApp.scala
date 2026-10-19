@@ -54,6 +54,9 @@ class MapEditorApp extends Application {
     primaryStage.setY(bounds.getMinY)
     primaryStage.setWidth(bounds.getWidth)
     primaryStage.setHeight(bounds.getHeight)
+    // On Linux maximized as well, which every window manager there honours: given the screen's size
+    // alone, JavaFX's GTK window settled on 200x200 as it was shown under openbox (LXDE's, LXQt's)
+    if (MapEditorApp.osName.contains("linux")) primaryStage.setMaximized(true)
     primaryStage.show()
 
     // Initial UI state
@@ -88,8 +91,11 @@ class MapEditorApp extends Application {
     stage.getIcons.addAll(images: _*)
   }
 
-  /** Sets the macOS dock icon via the AWT Taskbar API (no-op on platforms without a taskbar/dock). */
+  /** Sets the macOS dock icon via the AWT Taskbar API. Only there: elsewhere it has no icon to set,
+    * and on Linux merely asking AWT about a taskbar starts its X11 toolkit, a thread and a
+    * connection to the display of its own, to answer no. */
   private def setDockIcon(): Unit = {
+    if (!MapEditorApp.osName.contains("mac")) return
     try {
       if (java.awt.Taskbar.isTaskbarSupported) {
         val taskbar = java.awt.Taskbar.getTaskbar
@@ -118,4 +124,8 @@ class MapEditorApp extends Application {
 
     getClass.getClassLoader.getResourceAsStream(relativePath)
   }
+}
+
+object MapEditorApp {
+  private val osName = System.getProperty("os.name", "").toLowerCase
 }

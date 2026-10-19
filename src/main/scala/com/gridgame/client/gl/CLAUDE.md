@@ -8,14 +8,14 @@ the GPU profiler.
 
 | File | Purpose |
 |------|---------|
-| `ShapeBatch.scala` | Batched colored 2D primitives: fillRect, fillOval, fillOvalSoft, fillPolygon (**convex only**), fillFan (star-shaped outline, fanned from an explicit centre — stars, sunbursts, faceted hulls), fillRibbon (a band given as an outer run plus the inner run reversed — crescent blades), fillArcBand (ring segment with an alpha ramp — gauges, crescents, shockwaves), fillStarFlare (4-point glint), fillRoundedRect(Gradient), strokeLine, strokeLineSoft, and the joined strokes — strokeArc, strokeOval, strokePolygon, strokeRect, strokeRoundedRect, strokePolyline, strokePolylineTapered, strokePolylineVar (a width and an alpha of its own at every point — a limb, a comet tail, a bolt's channel) (see *Strokes are one band*); and the smooth shapes, whose edges fade over a pixel — fillOvalSmooth, strokeOvalSmooth, strokePathSmooth (a path stroked, open or closed, an alpha at every point, offset to lie beside it), fillRibbonSmooth (fillRibbon's band with an alpha at every point) (see *Smooth edges*). Oval segment counts follow the oval's size on screen (`pixelsPerUnit`, set per pass). Supports additive blend mode toggle, plus an alpha multiplier and a scale-about-pivot applied to every vertex (`setAlphaMultiplier` / `setScaleAbout`; reset by `begin`). |
-| `SpriteBatch.scala` | Batched textured quads with per-vertex tint/alpha, and `drawQuad` for any four corners (the ground's diamonds), whose colour a batch made with a shader of its own can read as four numbers a quad (the ground's edges carry the layers round their cell in it). Flushes on texture change. `setBlending(false)` for opaque geometry. |
+| `ShapeBatch.scala` | Batched colored 2D primitives: fillRect, fillOval, fillOvalSoft, fillPolygon (**convex only**), fillFan (star-shaped outline, fanned from an explicit centre — stars, sunbursts, faceted hulls), fillRibbon (a band given as an outer run plus the inner run reversed — crescent blades), fillArcBand (ring segment with an alpha ramp — gauges, crescents, shockwaves), fillStarFlare (4-point glint), fillRoundedRect(Gradient), strokeLine, strokeLineSoft, and the joined strokes — strokeArc, strokeOval, strokePolygon, strokeRect, strokeRoundedRect, strokePolyline, strokePolylineTapered, strokePolylineVar (a width and an alpha of its own at every point — a limb, a comet tail, a bolt's channel) (see *Strokes are one band*); and the smooth shapes, whose edges fade over a pixel — fillOvalSmooth, strokeOvalSmooth, strokePathSmooth (a path stroked, open or closed, an alpha at every point, offset to lie beside it), fillRibbonSmooth (fillRibbon's band with an alpha at every point) (see *Smooth edges*). Oval segment counts follow the oval's size on screen (`pixelsPerUnit`, set per pass). Every shape writes each vertex once and its triangles as indices (see *A shape's vertices are shared*). Supports additive blend mode toggle, plus an alpha multiplier and a scale-about-pivot applied to every vertex (`setAlphaMultiplier` / `setScaleAbout`; reset by `begin`). |
+| `SpriteBatch.scala` | Batched textured quads with per-vertex tint/alpha, four vertices a quad and one element buffer for them all, and `drawQuad` for any four corners (the ground's diamonds), whose colour a batch made with a shader of its own can read as four numbers a quad (the ground's edges carry the layers round their cell in it). Flushes on texture change. `setBlending(false)` for opaque geometry. |
 | `ShaderProgram.scala` | GLSL shader compilation + embedded shader source: ColorShader (pos+color), TextureShader (pos+texcoord+color), BloomExtract, GaussianBlur, Composite (bloom+vignette+overlay) |
 | `PostProcessor.scala` | Post-processing FBO pipeline: Scene FBO → Bloom extract (half-res) → Blur H → Blur V → quarter-res pair → Composite. `GRIDGAME_HOLECHECK=1` clears the scene to magenta, so any pixel the terrain leaves uncovered shows. |
 | `GLTexture.scala` | PNG loading via STB image → GL texture (`loadInspected` lets the caller measure or amend the pixels before upload; `decode` hands them to a texture built out of them). FBO creation for render-to-texture. `padTransparent` (colour into transparent texels, cell by cell; `padTransparentRings` for many rings at once) and mipmapped atlases: `allocate`, `upload` and `halve` build one a piece at a time with halvings of its own, in small scratch buffers (`allocPixels`/`freePixels`), which the tile atlas needs (render/CLAUDE.md, *The terrain is filtered as the characters are*). `fromArgb` makes one of an AWT picture's pixels (the pointer's). |
 | `GLFontRenderer.scala` | AWT-based font rasterization → GL texture atlas. Rasterized at the display's pixel density (`pixelScale`) so text is sharp on HiDPI screens; metrics and sizes in units; every draw takes a `scale`. Outlined text with drop shadows, and a heavy eight-copy outline for text over the world. Three sizes (14/22/44). `digitsCentredOn` places a number in a box by its digits' ink (see *Rules*). |
-| `GLWindow.scala` | GLFW window create/show/resize, and its end: `retire` (hidden for good) then `GLWindow.destroySettled` once macOS has finished with it, or `destroy` at once for a window macOS can't still be using (see *A window macOS may still be using is retired*); a blank system cursor over it for a game that draws its own pointer (`hideSystemCursor`, not `GLFW_CURSOR_HIDDEN`: see render/CLAUDE.md, *The pointer is ours*), and whether the mouse is over it with the focus, and where (`readPointer`) |
-| `GLFWManager.scala` | Singleton `ensureInitialized()` shared by ControllerHandler and GLWindow; `terminate` leaves GLFW to the process's exit while a retired window is still waiting |
+| `GLWindow.scala` | GLFW window create/show/resize, and its end: `retire` (hidden for good) then `GLWindow.destroySettled` once macOS has finished with it, or `destroy` at once for a window macOS can't still be using (see *A window macOS may still be using is retired*); a blank system cursor over it for a game that draws its own pointer (`hideSystemCursor`, not `GLFW_CURSOR_HIDDEN`: see render/CLAUDE.md, *The pointer is ours*), and whether the mouse is over it with the focus, and where (`readPointer`, `onPointerMoved`); on Linux, the app it belongs to (`windowClass`) and the screen's pixels a unit (`unitScale`) (see *On Linux, GLFW runs on X11*) |
+| `GLFWManager.scala` | Singleton `ensureInitialized()` shared by ControllerHandler and GLWindow, which on Linux puts GLFW on X11; `terminate` leaves GLFW to the process's exit while a retired window is still waiting |
 | `LightSystem.scala` | The dynamic light map (quarter-res soft blobs, multiplied in by the composite) and `LightPool`, which keeps a busy frame's strongest lights |
 | `GpuProfiler.scala` | Dev tool: fragments shaded and GPU time per frame phase, with `GRIDGAME_GPU_PROFILE=1` |
 | `Matrix4.scala` | Orthographic projection matrix |
@@ -59,6 +59,46 @@ survived: 17 in macOS's own full screen (4 with a new match opened 0.3s after th
 while it was still going into it), 3 in F11's and 2 in a window. No Space was left behind, and no
 window came back but the one AppKit shows again mid-transition, put away within 0.3s.
 
+## On Linux, GLFW runs on X11
+
+LWJGL's GLFW (3.5 before release, in LWJGL 3.3.4) has both of Linux's display systems in it, and
+given the choice takes Wayland wherever there is one: GNOME and KDE now, a Chromebook's Linux.
+JavaFX's windows are always X11's, on a Wayland desktop through XWayland, so `GLFWManager` has GLFW
+use X11 too wherever there is an X display (`DISPLAY`), and only otherwise choose for itself. On
+Wayland GLFW can neither give a window its icon nor place it, and `GLWindow` does both (`setIcon`,
+the centring in `create`): each printed a GLFW error with a stack trace, in a probe doing as
+`GLWindow` does under weston with XWayland (2026-10-16). On X11 there both did their job, and the
+context (OpenGL 4.5 core, Mesa) was the same.
+
+Two things X11 leaves to the app, which macOS's GLFW does itself:
+
+- **Whose window it is.** A desktop groups windows, and finds their launcher, by their X11 class
+  (`WM_CLASS`; a Wayland app id). GLFW names a window after its title unless told, so `GLWindow`
+  takes a `windowClass`, and the client gives the name JavaFX gives the menus' windows
+  (client/CLAUDE.md, *On Linux*).
+- **How big a unit is.** On X11, GLFW sizes a window and places the pointer in the screen's pixels,
+  where a desktop scaled to 200% has every app draw twice the size. Given the size of the menus
+  in their units, the match's window filled a quarter of such a screen, and everything in it was
+  drawn half size. `unitScale` (the menus' scale, JavaFX's `Screen.getOutputScaleX`, on Linux) makes
+  the window that many pixels a unit and gives its size and the pointer in units, as macOS gives
+  points: the framebuffer is in pixels, so the renderer sees a HiDPI screen as on a Mac (fonts at
+  `fbWidth / width`, the quality tiers' `sceneScale`). With `GDK_SCALE=2` on a 3200x1800 screen
+  (Xvfb), the window then filled the screen, laid out as at 1600x900, its text sharp, its pointer
+  and aim where the mouse was. Windows sizes a window in pixels too, and likely has the same
+  trouble; `unitScale` is left at 1 there, unchecked.
+
+## The window has no depth or stencil buffer
+
+Nothing is drawn with a depth or a stencil test: the world is drawn in painter's order into the
+post-processor's targets, which have neither, and the window only takes the composite, the
+overlay over the world and the HUD. So `GLWindow.create` asks GLFW for neither buffer
+(`GLFW_DEPTH_BITS` and `GLFW_STENCIL_BITS` 0). GLFW's defaults ask for both, and macOS gave the
+window 32 bits of depth and 8 of stencil a pixel, held for the whole match: 18MB of graphics
+memory at 2560x1440, 56MB at 4480x2520. Measured with `footprint` on a match's frames at
+2560x1440, the driver's own graphics memory (`Owned physical footprint (unmapped) (graphics)`,
+which the render bench prints as `driver graphics`) went from 65 to 46MB; every golden frame is
+byte for byte what it was.
+
 ## Batch Management
 `RenderContext` has `beginShapes()` / `beginSprites()` / `endAll()`, which every painter draws through, to minimize state transitions. Only one batch (shape or sprite) is active at a time; calling `beginShapes()` while the sprite batch is active will end the sprite batch first, and vice versa.
 
@@ -77,7 +117,30 @@ which wraps every mapping in a new `ByteBuffer` because each flush maps a differ
 and write vertices with `MemoryUtil.memPutFloat` into their staging memory rather than
 `FloatBuffer.put`. That makes a primitive's cost its arithmetic: the puts' limit checks and
 position stores were the largest single cost of building a busy frame. Every primitive must
-reserve its vertices with `ensureCapacity` before writing them; `vertex` only has a backstop.
+reserve its vertices and indices with `ensureCapacity` before writing them; `vertex` and `tri`
+only have a backstop.
+
+**A shape's vertices are shared.** Every `ShapeBatch` primitive writes each of its vertices once
+and then its triangles as 16-bit indices into them, counted from the flush's first vertex
+(`glDrawElementsBaseVertex`), into a second ring beside the vertices' (mapped the same way): a fan
+of n triangles is n + 2 vertices where it was 3n, a band of n quads (a ring, a stroke, an arc) 2n + 2
+where it was 6n, a rect 4 where it was 6. A sprite is four vertices, its two triangles from one
+element buffer made once for every flush. The triangles are the ones drawn before, in the same
+order, from the same floats: a shared vertex is the same expression on the same inputs in every
+triangle that uses it (the closing point of an oval is still its own vertex, since the table's
+sin(2π) is -2.4e-16, not 0). So the frame is the same to the bit, which is what keeps this true:
+every golden frame at every tier, and the projectile gallery's sheets of every projectile and every
+blast, compared byte for byte with the build before. A new primitive keeps it so by writing its
+vertices in the order its triangles first use them and its triangles in the order it would have
+drawn them. `polyStroke` and `smoothMitres` work out each edge's normal once (`edgeNormals`) for
+the points at both its ends, which each used to work it out for themselves, to the same floats;
+the rounded rectangles' corners come from tables made once with the arithmetic each point used.
+Measured back to back on the Hive (High, 2560x1440, 16 players, 150 projectiles that travel,
+four alternating pairs): 259,000 shape vertices a frame became 112,000 and 11,000 sprite vertices
+7,300, and a frame took a fifth less CPU to build (mean 2.01 → 1.59 ms, median 1.81 → 1.38),
+allocating nothing more. Of the 130 or so draws a frame, about 75 are a switch between the shape
+and the sprite batch and 40 an additive toggle (a blast's sparks, mostly); each is a draw call,
+which on this machine is where the driver spends most of its time.
 
 ## Rules the primitives follow
 
@@ -144,6 +207,25 @@ full-resolution texture fetches per pixel. The film grain is hashed from the pix
 index that wraps: it used `sin()` of a value that grew every frame, and a GPU's `sin()` loses
 its precision on numbers that size within minutes, turning the grain into bands.
 
+The composite writes every pixel of the display whole (alpha 1), so it is drawn with blending
+off: on, the blend read every pixel of the display back only to multiply it by zero, the same
+pixels coming out. It is the largest target a frame touches, and at Low on a HiDPI screen,
+where the scene is a third of the display's pixels, the composite is two fifths of the frame's
+fragments (render bench, the Hive: 3.7 of 9.5 million).
+
+**The bloom carries a grey haze.** The bloom passes are drawn with blending on (every batch
+leaves it on) over targets cleared with whatever `glClearColor` was set last, which is the light
+map's ambient (`LightSystem.renderLightMap`). Where nothing is bright the extract writes nothing
+over that grey, so every bloom target is the ambient level all over with the bright parts on top,
+and the composite's screen blend (`bloom * strength * (1 - scene)`) lifts the whole frame about a
+tenth of the way to white: 0.625 × 0.16 on the bright maps, 0.55 × 0.2 on space, about 0.5 × 0.22
+on the dark ones. Read back after a frame (2026-10-15), the extract and both blurs were nowhere
+darker than 0.549 on the Hive and 0.624 on the Meadow, and on average within a hundredth of that.
+It is part of how every map looks now. Clearing the bloom targets to black, or drawing their
+passes without blending, would take it away and make the bloom only what is bright: a change to
+the look, to be judged by eye on every map, and not something to fix in passing. Until then the
+clears and the blending of the bloom passes stay as they are.
+
 ## Graphics quality tiers (`RenderQuality`)
 
 The renderer is fill-rate bound, so `RenderQuality` exists to keep it playable on a weak
@@ -171,4 +253,5 @@ Choosing Low outright (`--quality=low` / `GRIDGAME_QUALITY=low`, not auto) also 
 `prism.allowhidpi=false`, so the JavaFX menus draw at 1x on a HiDPI screen and the OS scales
 them up: softer text, a quarter of the pixels per repaint, and a quarter-size window surface
 pool (see Client Memory & Performance). It must be set before JavaFX starts, which is why
-auto — which only steps down mid-match — can't do it.
+auto — which only steps down mid-match — can't do it. Not on Linux: nothing scales an X11 window
+up, and on a desktop at 200% the menus came out half size.

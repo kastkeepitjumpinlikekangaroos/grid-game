@@ -346,7 +346,7 @@ kbd {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 24px;
-  max-width: 600px;
+  max-width: 900px;
   margin: 0 auto;
 }
 

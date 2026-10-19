@@ -58,7 +58,13 @@ private[client] final class MatchWindow(app: Screens) {
 
     // Create GLFW window
     val bounds = Screen.getPrimary.getVisualBounds
-    glWindow = new GLWindow("Grid Game", bounds.getWidth.toInt, bounds.getHeight.toInt)
+    // On Linux one app with the menus' windows, which JavaFX gives the Application's class name, so
+    // the desktop (a Chromebook's shelf among them) shows them under the one launcher and icon; and
+    // as many of the screen's pixels a unit as the menus are, which X11 leaves to the app (a desktop
+    // at 200%: the window filled a quarter of the screen, and everything in it was half the size)
+    val unitScale = if (ClientMain.isLinux) Screen.getPrimary.getOutputScaleX else 1.0
+    glWindow = new GLWindow("Grid Game", bounds.getWidth.toInt, bounds.getHeight.toInt,
+      windowClass = classOf[ClientMain].getName, unitScale = unitScale)
     glWindow.create()
     // The renderer draws the pointer: the system's was lost in a fight (CursorPainter)
     glWindow.hideSystemCursor()
@@ -79,7 +85,7 @@ private[client] final class MatchWindow(app: Screens) {
         }
       }
     })
-    org.lwjgl.glfw.GLFW.glfwSetCursorPosCallback(glWindow.handle, (_, x, y) => glMouseHandler.onCursorPos(x, y))
+    glWindow.onPointerMoved((x, y) => glMouseHandler.onCursorPos(x, y))
     org.lwjgl.glfw.GLFW.glfwSetMouseButtonCallback(glWindow.handle, (_, button, action, mods) => glMouseHandler.onMouseButton(button, action, mods))
 
     // Focus callback: clear keys when window loses focus

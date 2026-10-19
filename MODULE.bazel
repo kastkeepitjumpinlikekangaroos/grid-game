@@ -22,6 +22,12 @@ maven.artifact(artifact = "javafx-graphics", classifier = "mac-aarch64", exclusi
 maven.artifact(artifact = "javafx-base", classifier = "win", exclusions = JAVAFX_ONLY_ITSELF, group = "org.openjfx", version = "21.0.1")
 maven.artifact(artifact = "javafx-controls", classifier = "win", exclusions = JAVAFX_ONLY_ITSELF, group = "org.openjfx", version = "21.0.1")
 maven.artifact(artifact = "javafx-graphics", classifier = "win", exclusions = JAVAFX_ONLY_ITSELF, group = "org.openjfx", version = "21.0.1")
+maven.artifact(artifact = "javafx-base", classifier = "linux", exclusions = JAVAFX_ONLY_ITSELF, group = "org.openjfx", version = "21.0.1")
+maven.artifact(artifact = "javafx-controls", classifier = "linux", exclusions = JAVAFX_ONLY_ITSELF, group = "org.openjfx", version = "21.0.1")
+maven.artifact(artifact = "javafx-graphics", classifier = "linux", exclusions = JAVAFX_ONLY_ITSELF, group = "org.openjfx", version = "21.0.1")
+maven.artifact(artifact = "javafx-base", classifier = "linux-aarch64", exclusions = JAVAFX_ONLY_ITSELF, group = "org.openjfx", version = "21.0.1")
+maven.artifact(artifact = "javafx-controls", classifier = "linux-aarch64", exclusions = JAVAFX_ONLY_ITSELF, group = "org.openjfx", version = "21.0.1")
+maven.artifact(artifact = "javafx-graphics", classifier = "linux-aarch64", exclusions = JAVAFX_ONLY_ITSELF, group = "org.openjfx", version = "21.0.1")
 
 maven.install(
     artifacts = [
@@ -49,6 +55,15 @@ maven.install(
         "org.lwjgl:lwjgl-glfw:jar:natives-windows:3.3.4",
         "org.lwjgl:lwjgl-opengl:jar:natives-windows:3.3.4",
         "org.lwjgl:lwjgl-stb:jar:natives-windows:3.3.4",
+        # Linux LWJGL native libraries: x86_64, and arm64 (most ARM Chromebooks)
+        "org.lwjgl:lwjgl:jar:natives-linux:3.3.4",
+        "org.lwjgl:lwjgl-glfw:jar:natives-linux:3.3.4",
+        "org.lwjgl:lwjgl-opengl:jar:natives-linux:3.3.4",
+        "org.lwjgl:lwjgl-stb:jar:natives-linux:3.3.4",
+        "org.lwjgl:lwjgl:jar:natives-linux-arm64:3.3.4",
+        "org.lwjgl:lwjgl-glfw:jar:natives-linux-arm64:3.3.4",
+        "org.lwjgl:lwjgl-opengl:jar:natives-linux-arm64:3.3.4",
+        "org.lwjgl:lwjgl-stb:jar:natives-linux-arm64:3.3.4",
         # OpenTelemetry — observability (metrics, traces, logs)
         "io.opentelemetry:opentelemetry-api:1.42.1",
         "io.opentelemetry:opentelemetry-context:1.42.1",

@@ -485,6 +485,26 @@ vertex, and a four-times larger staging buffer (a busy frame flushed every few p
 Bench numbers drift 20% or more between runs on this machine as it warms: compare runs made
 back to back, and repeat them.
 
+### In game: the render bench's projectiles are mostly ground slams
+The render bench throws every projectile type in turn and retires each at the end of its range,
+but a ground slam (speed 0, range 0: Shield Bash's shockwave, Axe Spin, the Howl, Frost Nova and
+sixteen more) never travels past 0, so it is never retired. A few seconds in, 120 of the bench's
+150 projectiles are those twenty slams six deep, each an expanding `aoeRing`, and that is the scene
+every number above with 150 projectiles was measured on: a CPU profile of it was half `AoeRings`
+and the rings it strokes. In a match a slam goes off at once. With only the types that travel
+(2026-10-15, the Hive, High, 2560x1440) a frame took 1.6-2.0 ms to build where the default mix took
+2.2-3.3, and the shapes it drew were 259,000 vertices a frame where the slams made 345,000. Profile
+with a mix that travels (`--travelling`) before optimising for projectiles.
+
+### In game: what building a frame costs
+On that fair mix, after `ShapeBatch` came to share its vertices (gl/CLAUDE.md, *A shape's
+vertices are shared*), a frame builds in about 1.6 ms at High: projectiles are half of the
+render thread's Java time and blasts a seventh, their own geometry more than the primitives that
+draw it, and of the time in the driver most goes to the 130 or so draw calls a frame (a switch
+between the shape and the sprite batch, or an additive toggle, ends one) and the rest to copying
+the vertices. The GPU shades about 39 million fragments a frame: the depth pass 21, the post chain
+6.9, the ground 3.7, the light map 1.9.
+
 ## Readability audit (dev tool)
 
 ```bash

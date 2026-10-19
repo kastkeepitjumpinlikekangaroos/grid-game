@@ -1,6 +1,6 @@
 load("@rules_scala//scala:scala.bzl", "scala_binary", "scala_library")
 load(":jars.bzl", "CLIENT", "RESOURCES")
-load("//third_party:jvm.bzl", "HOST_NATIVES", "JAVAFX", "LWJGL", "MAC_NATIVES", "WINDOWS_NATIVES")
+load("//third_party:jvm.bzl", "HOST_NATIVES", "JAVAFX", "LINUX_ARM64_NATIVES", "LINUX_NATIVES", "LWJGL", "WINDOWS_NATIVES", "on_mac")
 
 # The client. Each package under here is a library of its own and depends only on the ones above it
 # in this list (see CLAUDE.md here):
@@ -15,7 +15,8 @@ load("//third_party:jvm.bzl", "HOST_NATIVES", "JAVAFX", "LWJGL", "MAC_NATIVES", 
 #   .                  ClientMain and the match's window, which put it all together
 #
 # The libraries only compile against JavaFX. Each binary adds its platform's JavaFX and LWJGL
-# natives; client_lib, which is all of it for the tests, adds the build machine's.
+# natives: `client`, the dev tools and client_lib (all of it, for the tests) the build machine's,
+# and client_windows, client_linux and client_linux_arm64 their own, from any machine.
 
 scala_library(
     name = "app",
@@ -59,6 +60,8 @@ scala_library(
     runtime_deps = HOST_NATIVES,
 )
 
+# The client for the machine doing the build (the Mac's is the one scripts/build_macos_app.sh
+# packages).
 scala_binary(
     name = "client",
     main_class = "com.gridgame.client.Main",
@@ -66,17 +69,21 @@ scala_binary(
     # Heap: start small and stop at 768MB rather than the JVM's default of a quarter of RAM.
     # The live set is well under 100MB; the rest of the heap tuning (giving memory back when
     # idle) is set at runtime in ClientMain.tuneHeap so it also applies to java -jar.
-    # Keep in step with the Java options in scripts/build_macos_app.sh and
-    # scripts/build_windows_exe.ps1, which is where the packaged apps get them.
-    jvm_flags = [
+    # Keep in step with the Java options in scripts/build_macos_app.sh,
+    # scripts/build_windows_exe.ps1 and scripts/build_linux_package.sh, which is where the
+    # packaged apps get them.
+    jvm_flags = on_mac([
         "-Xdock:name='Grid Game'",
         "-Dapple.awt.application.name='Grid Game'",
+    ]) + [
         "-Xms64m",
         "-Xmx768m",
     ],
-    deps = [":app"] + MAC_NATIVES,
+    deps = [":app"] + HOST_NATIVES,
 )
 
+# The client for each other system, built from any machine: what the Windows and Linux packages
+# and the release jars are made from.
 scala_binary(
     name = "client_windows",
     main_class = "com.gridgame.client.Main",
@@ -85,13 +92,30 @@ scala_binary(
     deps = [":app"] + WINDOWS_NATIVES,
 )
 
+scala_binary(
+    name = "client_linux",
+    main_class = "com.gridgame.client.Main",
+    resources = RESOURCES,
+    jvm_flags = ["-Xms64m", "-Xmx768m"],  # see the client target
+    deps = [":app"] + LINUX_NATIVES,
+)
+
+# Linux on arm64: ARM Chromebooks, among others
+scala_binary(
+    name = "client_linux_arm64",
+    main_class = "com.gridgame.client.Main",
+    resources = RESOURCES,
+    jvm_flags = ["-Xms64m", "-Xmx768m"],  # see the client target
+    deps = [":app"] + LINUX_ARM64_NATIVES,
+)
+
 # Dev tool: memory and CPU of the JavaFX menus (character select, the hidden stage during a
 # match). Not shipped. See UiMemoryBench.
 scala_binary(
     name = "ui_bench",
     main_class = "com.gridgame.client.devtools.UiMemoryBench",
     resources = RESOURCES,
-    deps = ["//src/main/scala/com/gridgame/client/devtools"] + MAC_NATIVES,
+    deps = ["//src/main/scala/com/gridgame/client/devtools"] + HOST_NATIVES,
 )
 
 # Dev tool: every menu screen in the states a player sees it in, drawn to PNGs without showing a
@@ -100,7 +124,7 @@ scala_binary(
     name = "ui_gallery",
     main_class = "com.gridgame.client.devtools.UiGallery",
     resources = RESOURCES,
-    deps = ["//src/main/scala/com/gridgame/client/devtools:ui_gallery"] + MAC_NATIVES,
+    deps = ["//src/main/scala/com/gridgame/client/devtools:ui_gallery"] + HOST_NATIVES,
 )
 
 # Dev tool: frame time, allocation rate and footprint of a busy match, with no server.
@@ -109,7 +133,7 @@ scala_binary(
     name = "render_bench",
     main_class = "com.gridgame.client.devtools.RenderBench",
     resources = RESOURCES,
-    deps = ["//src/main/scala/com/gridgame/client/devtools"] + MAC_NATIVES,
+    deps = ["//src/main/scala/com/gridgame/client/devtools"] + HOST_NATIVES,
 )
 
 # Dev tool: every character and projectile over every map's ground, through the real renderer,
@@ -118,7 +142,7 @@ scala_binary(
     name = "render_audit",
     main_class = "com.gridgame.client.devtools.RenderAudit",
     resources = RESOURCES,
-    deps = ["//src/main/scala/com/gridgame/client/devtools"] + MAC_NATIVES,
+    deps = ["//src/main/scala/com/gridgame/client/devtools"] + HOST_NATIVES,
 )
 
 # Dev tool: renders every projectile type to contact-sheet PNGs for visual review. Not shipped.
@@ -126,8 +150,8 @@ scala_binary(
 scala_binary(
     name = "projectile_gallery",
     main_class = "com.gridgame.client.devtools.ProjectileGallery",
-    jvm_flags = ["-XstartOnFirstThread", "-Djava.awt.headless=true"],
-    deps = ["//src/main/scala/com/gridgame/client/devtools:gallery"] + MAC_NATIVES,
+    jvm_flags = on_mac(["-XstartOnFirstThread"]) + ["-Djava.awt.headless=true"],
+    deps = ["//src/main/scala/com/gridgame/client/devtools:gallery"] + HOST_NATIVES,
 )
 
 # Dev tool: fixed scenes drawn by the real renderer on a stopped clock, to compare two builds of the
@@ -136,6 +160,6 @@ scala_binary(
     name = "golden_frames",
     main_class = "com.gridgame.client.devtools.GoldenFrames",
     resources = RESOURCES,
-    jvm_flags = ["-XstartOnFirstThread", "-Djava.awt.headless=true"],
-    deps = ["//src/main/scala/com/gridgame/client/devtools"] + MAC_NATIVES,
+    jvm_flags = on_mac(["-XstartOnFirstThread"]) + ["-Djava.awt.headless=true"],
+    deps = ["//src/main/scala/com/gridgame/client/devtools"] + HOST_NATIVES,
 )
