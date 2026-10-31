@@ -151,6 +151,17 @@ trait Items { this: GameClient =>
     }
   }
 
+  /** We used this item `agoMs` ago, as a recording says (the USE we sent): a replay's (devtools
+    * ReplaySession), never the game's. The server says nothing of a use it takes, so without this a
+    * replay's inventory only ever grew. Gone already (a copy of the same USE) is nothing. */
+  private[client] def replayItemUsed(itemTypeId: Byte, itemId: Int, agoMs: Long): Unit = {
+    val deque = inventory.get(itemTypeId)
+    if (deque == null || !deque.removeIf(_.id == itemId)) return
+    val at = System.currentTimeMillis() - agoMs
+    if (itemTypeId == ItemType.Gem.id) fastProjectilesUntil.set(at + Constants.GEM_DURATION_MS)
+    else if (itemTypeId == ItemType.Shield.id) shieldUntil.set(at + Constants.SHIELD_DURATION_MS)
+  }
+
   def getItems: ConcurrentHashMap[Int, Item] = items
 
   def getItemCount(itemTypeId: Byte): Int = {

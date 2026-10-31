@@ -262,7 +262,10 @@ bazel run //src/main/scala/com/gridgame/client:report_replay -- report.zip --fil
 
 It feeds the server's packets into a client that connects nowhere at the times the recording kept,
 stamped on its clock (`nanoClock`) so projectiles fly as they did, and puts the player where the
-recording's frames say they stood, were drawn and aimed (`GameClient.replayLocal`). In the window:
+recording's frames say they stood, were drawn and aimed (`GameClient.replayLocal`). What only the
+player's own game knew is put in from the recording too: Q's, E's and R's cooldowns from the state
+samples, a cast between two of them dated by the one after (`replayCooldowns`), and each item used, by
+the USE it sent, since the server says nothing of a use it takes (`replayItemUsed`). In the window:
 Space play/pause, Left/Right 5s back/on, comma/period a frame back/on (paused), [ and ] half/twice the
 speed, M the next mark, N the next noticed moment or incident, Home the start, S a PNG. Headless,
 `--at` writes one moment and `--film` a run of frames with a contact sheet (`--size=`, `--quality=`;

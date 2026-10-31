@@ -547,6 +547,19 @@ trait Attacks { this: GameClient =>
     if (remaining <= 0) 0.0f else remaining / 1000.0f
   }
 
+  /** How long Q, E and R had left to cool down, as a recording says: a replay's (devtools ReplaySession),
+    * never the game's, whose casts and presses are its own. */
+  private[client] def replayCooldowns(qLeftMs: Long, eLeftMs: Long, rLeftMs: Long): Unit = {
+    val charDef = getSelectedCharacterDef
+    val now = System.currentTimeMillis()
+    def cast(last: AtomicLong, cooldownMs: Int, left: Long): Unit =
+      last.set(if (left <= 0L) 0L else now - (cooldownMs - Math.min(left, cooldownMs.toLong)))
+    cast(lastQAbilityTime, charDef.qAbility.cooldownMs, qLeftMs)
+    cast(lastEAbilityTime, charDef.eAbility.cooldownMs, eLeftMs)
+    lastCooldownReset.set(if (rLeftMs <= 0L) NOT_HELD
+      else clockMark() - (Constants.COOLDOWN_RESET_MS - Math.min(rLeftMs, Constants.COOLDOWN_RESET_MS.toLong)) * 1000000L)
+  }
+
   private[game] def reduceAbilityCooldownOnHit(projectileType: Byte): Unit = {
     val charDef = getSelectedCharacterDef
     val now = System.currentTimeMillis()

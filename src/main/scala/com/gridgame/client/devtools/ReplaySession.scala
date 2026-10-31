@@ -5,7 +5,7 @@ import com.gridgame.common.Constants
 import com.gridgame.common.diagnostics.Recording
 import com.gridgame.common.diagnostics.Recording._
 import com.gridgame.common.model.WorldData
-import com.gridgame.common.protocol.{GameEvent, GameEventPacket, LobbyAction, LobbyActionPacket, PacketSerializer}
+import com.gridgame.common.protocol.{GameEvent, GameEventPacket, ItemAction, ItemPacket, LobbyAction, LobbyActionPacket, PacketSerializer}
 import com.gridgame.common.world.WorldLoader
 import com.google.gson.{JsonObject, JsonParser}
 
@@ -166,11 +166,21 @@ object ReplayRecording {
  * MATCH_OPENING, the same way), each told to the client again as the server would have at that moment.
  * The match's length comes from GAME_STARTING, as the lobby that the recording starts after had said.
  * Effects (a hold, a burn) are left as they come: exact played at 1x, a little long after a burst.
+ *
+ * Two things of ours only our own game knew, never the server's packets, are put in from the recording:
+ * how long Q, E and R had left to cool down (its state samples, at the time played to: `cooldownsAt`),
+ * and each item we used (the USE we sent: the server says nothing of a use it takes).
  */
 final class ReplaySession(val recording: ReplayRecording, worlds: String => WorldData = ReplaySession.loadWorld) {
   import ReplaySession._
 
   private val records = recording.records
+  // The state samples (four a second), for the cooldowns: when, and Q's, E's and R's ms left
+  private val states: Array[Array[Long]] = records.iterator
+    .filter(r => r.kind == State && r.payload.length >= StateRecord.Size)
+    .map(r => Array(r.timeMicros, int(r.payload, StateRecord.QLeftMs).toLong, int(r.payload, StateRecord.ELeftMs).toLong,
+      int(r.payload, StateRecord.RLeftMs).toLong))
+    .toArray
   // The client's clock (nanoClock): the recording's time, from a base that keeps it positive
   @volatile private var nowNanos: Long = BaseNanos
   private var next = 0
@@ -199,12 +209,41 @@ final class ReplaySession(val recording: ReplayRecording, worlds: String => Worl
   def advanceTo(t: Long): Unit = {
     val from = fedTo
     while (next < records.length && records(next).timeMicros <= t) {
-      feed(records(next))
+      feed(records(next), t)
       next += 1
     }
     if (t > fedTo) fedTo = t
     nowNanos = nanosAt(fedTo)
     if (fedTo - from > BurstMicros) settleClocks(fedTo)
+    // Every call, paused too: the client counts Q and E down on the wall clock
+    val c = _client
+    val q = cooldownsAt(fedTo, c.getSelectedCharacterDef.qAbility.cooldownMs, 1)
+    val e = cooldownsAt(fedTo, c.getSelectedCharacterDef.eAbility.cooldownMs, 2)
+    val r = cooldownsAt(fedTo, Constants.COOLDOWN_RESET_MS, 3)
+    c.replayCooldowns(q, e, r)
+  }
+
+  /**
+   * How long the cooldown in this column of `states` (1 Q, 2 E, 3 R) had left at `t`, ms. The sample
+   * before counted down to `t`; but a cast between two samples shows only in the one after, which says
+   * when it was (its time less what had run of the cooldown), so a cast is on the HUD as it was cast,
+   * not up to a quarter of a second later. Only a cast dated between the two samples is one: a cooldown
+   * a hit cut short (reduceAbilityCooldownOnHit) dates to before the sample before.
+   */
+  private[devtools] def cooldownsAt(t: Long, cooldownMs: Int, column: Int): Long = {
+    // The last sample at or before t
+    var lo = 0
+    var hi = states.length
+    while (lo < hi) { val mid = (lo + hi) >>> 1; if (states(mid)(0) <= t) lo = mid + 1 else hi = mid }
+    val after = if (lo < states.length) states(lo) else null
+    if (after != null) {
+      val left = after(column)
+      val castAt = after(0) - (cooldownMs - left) * 1000L
+      if (left > 0 && left <= cooldownMs && castAt <= t && (lo == 0 || castAt > states(lo - 1)(0)))
+        return left + (after(0) - t) / 1000L
+    }
+    if (lo == 0) 0L
+    else { val before = states(lo - 1); Math.max(0L, before(column) - (t - before(0)) / 1000L) }
   }
 
   /** After a burst, the match clock and the opening's countdown told again as they stood at `t`. */
@@ -253,7 +292,7 @@ final class ReplaySession(val recording: ReplayRecording, worlds: String => Worl
     c
   }
 
-  private def feed(r: Record): Unit = r.kind match {
+  private def feed(r: Record, to: Long): Unit = r.kind match {
     case PacketIn if (r.flags & FlagRedacted) == 0 && r.payload.length == com.gridgame.common.Constants.PACKET_PAYLOAD_SIZE =>
       nowNanos = nanosAt(r.timeMicros)
       try {
@@ -270,6 +309,13 @@ final class ReplaySession(val recording: ReplayRecording, worlds: String => Worl
         }
         _client.processPacket(p)
       } catch { case NonFatal(_) => _errors += 1 }
+    // An item we used, gone from what we carry (copies of the same USE are nothing)
+    case PacketOut if (r.flags & FlagRedacted) == 0 && r.payload.length == com.gridgame.common.Constants.PACKET_PAYLOAD_SIZE =>
+      try PacketSerializer.deserialize(r.payload) match {
+        case i: ItemPacket if i.getAction == ItemAction.USE && i.getPlayerId.equals(recording.playerId) =>
+          _client.replayItemUsed(i.getItemTypeId, i.getItemId, (to - r.timeMicros) / 1000L)
+        case _ =>
+      } catch { case NonFatal(_) => }
     case Frame if r.payload.length >= FrameRecord.Size =>
       val b = r.payload
       try {

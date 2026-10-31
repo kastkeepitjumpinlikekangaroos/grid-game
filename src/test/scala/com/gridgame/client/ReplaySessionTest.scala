@@ -3,7 +3,8 @@ package com.gridgame.client
 import com.gridgame.client.devtools.{ReplayRecording, ReplaySession}
 import com.gridgame.common.diagnostics.Recording
 import com.gridgame.common.diagnostics.Recording._
-import com.gridgame.common.model.{CharacterId, Position, ProjectileType}
+import com.gridgame.common.Constants
+import com.gridgame.common.model.{CharacterDef, CharacterId, ItemType, Position, ProjectileType}
 import com.gridgame.common.protocol._
 import org.junit.Assert._
 import org.junit.Test
@@ -18,7 +19,8 @@ import java.util.zip.{Deflater, ZipEntry, ZipOutputStream}
  * A problem report's recording played into a client that connects nowhere (devtools ReplaySession, what
  * the replay tool draws): fed to a time, the client knows exactly what the packets up to it said; we
  * stand and are drawn where the frames put us; a packet cut to its header (the player's own) is left
- * out; and going back to a time is the same as playing to it fresh.
+ * out; going back to a time is the same as playing to it fresh; and the cooldowns and the items we
+ * carried, which only our own game knew, are as the recording had them.
  */
 class ReplaySessionTest {
   private val me = UUID.fromString("0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0")
@@ -200,6 +202,72 @@ class ReplaySessionTest {
     s.seek(15000 * ms)
     assertEquals(165, s.client.gameTimeRemaining)
     assertEquals(15000.0, s.client.openingMsLeft.toDouble, 300.0)
+  }
+
+  /** A state sample: Q's, E's and R's ms left to cool down. */
+  private def state(at: Long, q: Int, e: Int, r: Int): Rec = {
+    val b = new Array[Byte](StateRecord.Size)
+    putInt(b, StateRecord.QLeftMs, q); putInt(b, StateRecord.ELeftMs, e); putInt(b, StateRecord.RLeftMs, r)
+    Rec(State, 0, at, b)
+  }
+
+  private def joined: Seq[Rec] = Seq(
+    in(0, new LobbyActionPacket(next(), them, Packet.getCurrentTimestamp, LobbyAction.GAME_STARTING, 7.toShort, 0.toByte,
+      3.toByte, 2.toByte, 8.toByte, 0.toByte, "Lobby", 0.toByte, 0.toByte, 2.toByte)),
+    in(1 * ms, new WorldInfoPacket(next(), Packet.getCurrentTimestamp, "the_cell.json")),
+    in(2 * ms, new PlayerJoinPacket(next(), me, Packet.getCurrentTimestamp, new Position(40, 40), 0xFF00AA00, "me", 100,
+      CharacterId.Wizard.id, 0.toByte)))
+
+  @Test def theCooldownsAreAsTheRecordingHadThem(): Unit = {
+    val qCd = CharacterDef.get(CharacterId.Wizard).qAbility.cooldownMs
+    val r = Constants.COOLDOWN_RESET_MS
+    // Samples a quarter of a second apart; Q cast at 600ms (the sample at 750 shows it), R pressed at 1100,
+    // and Q's cooldown halved by a hit before 1500
+    val records = joined ++ Seq(
+      state(250 * ms, 0, 0, r - 250), state(500 * ms, 0, 0, r - 500),
+      state(750 * ms, qCd - 150, 0, r - 750), state(1000 * ms, qCd - 400, 0, r - 1000),
+      state(1250 * ms, qCd - 650, 0, r - 150), state(1500 * ms, (qCd - 900) / 2, 0, r - 400),
+      frame(2000 * ms, (40, 40), (40f, 40f)))
+    val s = new ReplaySession(ReplayRecording.load(report(records)))
+    s.advanceTo(550 * ms)
+    assertEquals("Q ready before its cast", 0f, s.client.getQCooldownRemaining, 0.02f)
+    s.advanceTo(650 * ms)
+    assertEquals("cast at 600, not shown only from the sample at 750", (qCd - 50) / 1000f, s.client.getQCooldownRemaining, 0.02f)
+    s.advanceTo(900 * ms)
+    assertEquals((qCd - 300) / 1000f, s.client.getQCooldownRemaining, 0.02f)
+    assertEquals("R's minute from the start", (r - 900) / 1000f, s.client.getResetCooldownRemaining, 0.02f)
+    s.advanceTo(1200 * ms)
+    assertEquals("R pressed at 1100", (r - 100) / 1000f, s.client.getResetCooldownRemaining, 0.02f)
+    s.advanceTo(1400 * ms)
+    assertEquals("a cooldown a hit cut short is no cast", (qCd - 800) / 1000f, s.client.getQCooldownRemaining, 0.02f)
+    // Back again, in a burst
+    s.seek(700 * ms)
+    assertEquals((qCd - 100) / 1000f, s.client.getQCooldownRemaining, 0.02f)
+    assertEquals((r - 700) / 1000f, s.client.getResetCooldownRemaining, 0.02f)
+    assertEquals(0f, s.client.getECooldownRemaining, 0.02f)
+  }
+
+  @Test def anItemWeUsedLeavesWhatWeCarry(): Unit = {
+    def item(at: Long, kind: ItemType, id: Int, action: Byte, out: Boolean = false): Rec = {
+      val p = new ItemPacket(next(), me, 40, 40, kind.id, id, action)
+      if (out) Rec(PacketOut, FlagTcp, at, p.serialize()) else in(at, p)
+    }
+    val records = joined ++ Seq(
+      item(100 * ms, ItemType.Heart, 7, ItemAction.PICKUP), item(150 * ms, ItemType.Heart, 8, ItemAction.PICKUP),
+      item(200 * ms, ItemType.Shield, 9, ItemAction.PICKUP),
+      item(300 * ms, ItemType.Heart, 7, ItemAction.USE, out = true), item(301 * ms, ItemType.Heart, 7, ItemAction.USE, out = true),
+      item(400 * ms, ItemType.Shield, 9, ItemAction.USE, out = true),
+      frame(500 * ms, (40, 40), (40f, 40f)))
+    val s = new ReplaySession(ReplayRecording.load(report(records)))
+    s.advanceTo(250 * ms)
+    assertEquals(3, s.client.getInventoryCount)
+    s.advanceTo(350 * ms)
+    assertEquals("one heart used, its copy nothing", 1, s.client.getItemCount(ItemType.Heart.id))
+    s.advanceTo(450 * ms)
+    assertEquals(0, s.client.getItemCount(ItemType.Shield.id))
+    assertTrue("the shield we used is up", s.client.hasShield)
+    assertEquals(1, s.client.getInventoryCount)
+    assertEquals(0, s.packetErrors)
   }
 
   @Test def whatTheReportSaysOfItselfIsRead(): Unit = {

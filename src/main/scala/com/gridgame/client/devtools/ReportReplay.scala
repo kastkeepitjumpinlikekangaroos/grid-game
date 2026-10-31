@@ -210,9 +210,10 @@ object ReportReplay {
         }
         if (playing) {
           t = Math.min(recording.durationMicros, t + (dt / 1000L * speed).toLong)
-          session.advanceTo(t)
           if (t >= recording.durationMicros) playing = false
         }
+        // Paused too: the cooldowns on the HUD hold where the recording had them (ReplaySession)
+        session.advanceTo(t)
         draw(if (playing) dt / 1e9 * speed else 0.0)
         if (saveNext) {
           saveNext = false
