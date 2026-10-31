@@ -30,6 +30,7 @@ GRIDGAME_TELEMETRY=1 bazel run //src/main/scala/com/gridgame/client:client    # 
 bazel run //src/main/scala/com/gridgame/client:client -- --quality=low        # low|medium|high|auto (default auto; F7 in game)
 GRIDGAME_AUDIO=off bazel run //src/main/scala/com/gridgame/client:client      # no sound at all
 GRIDGAME_LOGIN_FILE=/tmp/second bazel run //src/main/scala/com/gridgame/client:client  # "Remember me" kept elsewhere (a second client)
+GRIDGAME_DIAGNOSTICS_DIR=/tmp/diag bazel run //src/main/scala/com/gridgame/client:client  # its log, recordings and reports kept elsewhere
 cd ops/observability && docker compose up -d                                  # Grafana at http://localhost:3000 (start it before
                                                                               # the server: the collector is looked for once, at startup)
 ```
@@ -39,12 +40,14 @@ The dev tools (none of them shipped) and where their docs are:
 | Tool | Run | What it is for |
 |---|---|---|
 | projectile gallery | `bazel run //src/main/scala/com/gridgame/client:projectile_gallery -- /tmp/gallery` (`--focus=`, `--blasts`) | every projectile and blast drawn on contact sheets: [projectiles](src/main/scala/com/gridgame/client/render/projectiles/CLAUDE.md), [blasts](src/main/scala/com/gridgame/client/render/blasts/CLAUDE.md) |
-| render bench | `bazel run //src/main/scala/com/gridgame/client:render_bench` (`--effects`, `--barriers`, `--traps`, `--divider`, `--ceasefire`, `--blasts`, `--aim`, `--hold=`, `--map= --at=`, `--types=`) | frame time, allocation and footprint of a busy match: [client](src/main/scala/com/gridgame/client/CLAUDE.md) |
+| render bench | `bazel run //src/main/scala/com/gridgame/client:render_bench` (`--effects`, `--barriers`, `--traps`, `--divider`, `--ceasefire`, `--blasts`, `--aim`, `--hold=`, `--map= --at=`, `--types=`, `--history`) | frame time, allocation and footprint of a busy match: [client](src/main/scala/com/gridgame/client/CLAUDE.md) |
 | ui bench | `bazel run //src/main/scala/com/gridgame/client:ui_bench` | the JavaFX menus' memory and CPU: [client](src/main/scala/com/gridgame/client/CLAUDE.md) |
 | ui gallery | `bazel run //src/main/scala/com/gridgame/client:ui_gallery -- /tmp/ui` (`--scale=2`, `--lang=`, `--only=`) | every menu screen drawn to a PNG, in the states a player sees it in: [menus](src/main/scala/com/gridgame/client/ui/CLAUDE.md) |
 | render audit | `bazel run //src/main/scala/com/gridgame/client:render_audit -- --out=/tmp/audit`, then `python3 scripts/render_audit.py /tmp/audit` | can everything be seen on every map: [renderer](src/main/scala/com/gridgame/client/render/CLAUDE.md) |
 | golden frames | `bazel run //src/main/scala/com/gridgame/client:golden_frames -- /tmp/golden` | fixed scenes on a stopped clock, to compare two builds of the renderer pixel for pixel: [renderer](src/main/scala/com/gridgame/client/render/CLAUDE.md) |
 | asset generators and galleries | `python3 scripts/...` | tiles, maps, sprites, sounds, icons: [scripts](scripts/CLAUDE.md) |
+| report reader | `bazel run //src/main/scala/com/gridgame/tools:report -- <report folder or zip>` (`--mark=N`, `--around=m:ss[,s]`, `--out=`) | a player's problem report as a summary, a timeline and tables: [diagnostics](design/diagnostics.md), [tools](src/main/scala/com/gridgame/tools/CLAUDE.md) |
+| report replay | `bazel run //src/main/scala/com/gridgame/client:report_replay -- <report folder or zip>` (`--at=m:ss --out=`, `--film=m:ss-m:ss --fps=`, `--size=`, `--quality=`) | any moment of a reported match redrawn through the real client and renderer: [diagnostics](design/diagnostics.md) |
 
 ## How the code is laid out
 
@@ -55,11 +58,12 @@ names what it may use). The Maven jars are grouped in `third_party/jvm.bzl`.
 ```
 src/main/scala/com/gridgame/
 ├── common/        shared by the server, the client and the tools
-│   ├── (core)     Constants, WorldRegistry
+│   ├── (core)     Constants, WorldRegistry, BuildInfo (which build this is)
 │   ├── model/     the game's rules as data and plain logic: characters (roster/), projectiles,
 │   │              effects, players, tiles, the world, barriers, traps, movement, teleports
-│   ├── protocol/  the wire: 21 packet types, signing
+│   ├── protocol/  the wire: 22 packet types, signing
 │   ├── world/     WorldLoader (JSON maps)
+│   ├── diagnostics/  a match's recording's format (the client writes it, the report tool reads it)
 │   └── observability/  the OpenTelemetry facade
 ├── server/        (common)
 │   ├── net/       sockets, TLS, sessions, replay protection, rate limits, the Outbox
@@ -68,10 +72,11 @@ src/main/scala/com/gridgame/
 │   │              projectiles, items, traps, validation
 │   ├── bots/      the bots playing in a match
 │   ├── lobby/     lobbies, the ranked queue, starting matches
-│   └── (root)     GameServer, which puts them together, and ServerMain
+│   └── (root)     GameServer, which puts them together, ProblemReports, and ServerMain
 ├── client/        (common)
 │   ├── gl/        OpenGL and GLFW primitives: batches, shaders, fonts, post-processing
 │   ├── audio/, i18n/, net/   sound, the UI's text, the connection
+│   ├── diagnostics/  the log on disk, the match's recording, problem reports, after a crash
 │   ├── game/      GameClient: everything the client knows and does in a session
 │   ├── render/    the renderer: core, then the painters (world/, hud/), then GLGameRenderer;
 │   │              projectiles/ and blasts/ draw every projectile type and every explosion
@@ -80,7 +85,7 @@ src/main/scala/com/gridgame/
 │   ├── devtools/  the benches, the audit, the gallery, the golden frames
 │   └── (root)     ClientMain (the JavaFX app) and MatchWindow (the match's GLFW window)
 ├── mapeditor/     the map editor (common)
-└── tools/         the website's roster cards and the i18n content catalog (common)
+└── tools/         the website's roster cards, the i18n content catalog, the report reader (common)
 
 src/test/scala/com/gridgame/   the tests, mirroring the source tree
 scripts/     the Python asset generators and galleries, and the packaging scripts
@@ -100,7 +105,8 @@ ops/observability/   the local OpenTelemetry → Prometheus/Tempo/Loki/Grafana s
 | Barriers (the shield wall abilities) | [design/barriers.md](design/barriers.md) |
 | Traps; adding a trap | [design/traps.md](design/traps.md) |
 | A match's opening (the Teams wall, the free-for-all ceasefire), its end, and who wins (kills less deaths) | [design/match-flow.md](design/match-flow.md) |
-| Networking: security layers (the server's pinned identity), who owns positions, sessions and reconnects, staying logged in (refresh tokens, Remember me) | [design/networking.md](design/networking.md) |
+| Networking: security layers (the server's pinned identity), who owns positions, sessions and reconnects, staying logged in (refresh tokens, Remember me), a problem report's upload | [design/networking.md](design/networking.md) |
+| Diagnostics and problem reports: the client's log on disk, the match's recording (compressed, the whole match), marking a moment (F8) and the seconds before it, moments the client notices, incidents and freezes, after a crash, the report card and its timeline, sending one, the server keeping it, reading and replaying it; which build sent it | [design/diagnostics.md](design/diagnostics.md) |
 | The model (`common/model`): registries, tiles, the world; adding a tile or a map layer | [common/model/CLAUDE.md](src/main/scala/com/gridgame/common/model/CLAUDE.md) |
 | The wire protocol: packet layouts, actions, connection flow; adding a packet type | [common/protocol/CLAUDE.md](src/main/scala/com/gridgame/common/protocol/CLAUDE.md) |
 | Telemetry in code; adding a metric | [common/observability/CLAUDE.md](src/main/scala/com/gridgame/common/observability/CLAUDE.md) |

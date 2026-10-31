@@ -1,5 +1,7 @@
 package com.gridgame.client.game
 
+import com.gridgame.client.diagnostics.Diagnostics
+import com.gridgame.common.diagnostics.Recording.NoticedKind
 import com.gridgame.client.audio.AudioManager
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
@@ -72,6 +74,7 @@ trait Traps { this: GameClient =>
         // often hasn't gone away (a trap is already on that cell), and a cooldown handed back
         // whole turns a held key into a placement request every frame.
         if (packet.getPlayerId.equals(localPlayerId)) {
+          Diagnostics.noticed(NoticedKind.Refused, 1)
           val charDef = getSelectedCharacterDef
           packet.getAttackSlot match {
             case AttackSlot.Q => refundAbility(lastQAbilityTime, charDef.qAbility.cooldownMs)

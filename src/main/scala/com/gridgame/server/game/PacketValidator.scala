@@ -90,6 +90,10 @@ object PacketValidator {
 class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get(id)) {
   import PacketValidator._
 
+  /** Where each refusal is written down, and why (MatchJournal): its match's, which ClientHandler
+    * hands it; nowhere for a validator a test makes on its own. */
+  @volatile var journal: MatchJournal = MatchJournal.Off
+
   // Track last position update time per player for speed checking
   private val lastUpdateTime = new ConcurrentHashMap[UUID, java.lang.Long]()
   // Fire rate: a clock for each of a player's attacks, indexed by AttackSlot
@@ -130,6 +134,7 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     if (x < 0 || x >= world.width || y < 0 || y >= world.height) {
       System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} out of bounds ($x, $y)")
       Metrics.validationFailed.add(1L, Attrs.VfMovementBounds)
+      journal.refused(player, s"step refused (movement_bounds): ($x,$y) is off the ${world.width}x${world.height} map")
       return false
     }
 
@@ -141,6 +146,10 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     if (!dashing && !world.isWalkable(x, y)) {
       System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} moved to non-walkable tile ($x, $y)")
       Metrics.validationFailed.add(1L, Attrs.VfMovementWalkable)
+      journal.refused(player, {
+        val from = player.getPosition
+        s"step refused (movement_walkable): (${from.getX},${from.getY}) -> ($x,$y), which can't be stood on${if (player.isPhased) " (phased)" else ""}"
+      })
       return false
     }
 
@@ -154,6 +163,7 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     if (!dashing && Math.abs(sdx) == 1 && Math.abs(sdy) == 1 &&
         !world.cornersOpen(from.getX, from.getY, sdx, sdy)) {
       Metrics.validationFailed.add(1L, Attrs.VfMovementWalkable)
+      journal.refused(player, s"step refused (movement_walkable): (${from.getX},${from.getY}) -> ($x,$y) cuts a wall's corner")
       return false
     }
 
@@ -163,6 +173,7 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     val divider = world.divider
     if (divider != null && divider.stops(from.getX, from.getY, x, y)) {
       Metrics.validationFailed.add(1L, Attrs.VfMovementWalkable)
+      journal.refused(player, s"step refused (movement_walkable): (${from.getX},${from.getY}) -> ($x,$y) crosses the opening's wall")
       return false
     }
 
@@ -203,6 +214,9 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
       if (!isAbilityMovement) {
         System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} speed hack detected: moved $distance cells in ${deltaMs}ms")
         Metrics.validationFailed.add(1L, Attrs.VfMovementSpeed)
+        journal.refused(player, s"step refused (movement_speed): (${oldPos.getX},${oldPos.getY}) -> ($x,$y) is $distance cells " +
+          s"in ${deltaMs}ms since its last step, at most $expectedMaxCells${if (player.isPhased) " (phased)" else ""}" +
+          (if (attacksLocked) ", and no blink or dash in the ceasefire" else ""))
         return false
       }
     }
@@ -262,6 +276,8 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     if (dx > 3 || dy > 3) {
       System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} projectile spawn too far from player")
       Metrics.validationFailed.add(1L, Attrs.VfProjectilePosition)
+      journal.refused(player, f"shot refused (projectile_position): ${MatchJournal.slotName(packet.getAttackSlot)} fired from " +
+        f"(${packet.getX}%.1f,${packet.getY}%.1f), more than 3 cells from (${pos.getX},${pos.getY})")
       return false
     }
 
@@ -269,12 +285,14 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     if (!validateChargeLevel(packet.getChargeLevel)) {
       System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} invalid charge level ${packet.getChargeLevel}")
       Metrics.validationFailed.add(1L, Attrs.VfProjectileCharge)
+      journal.refused(player, s"shot refused (projectile_charge): a charge of ${packet.getChargeLevel}, not 0-100")
       return false
     }
 
     val charDef = characterOf(player.getCharacterId)
     if (charDef == null) {
       Metrics.validationFailed.add(1L, Attrs.VfCharacter)
+      journal.refused(player, s"shot refused (character): no character ${player.getCharacterId}")
       return false
     }
 
@@ -294,12 +312,19 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     if (perCast == 0 || pType != slotType) {
       System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} spoofed projectile type $pType for attack $slot")
       Metrics.validationFailed.add(1L, Attrs.VfProjectileFireRate)
+      journal.refused(player, s"shot refused (projectile_fire_rate): ${MatchJournal.slotName(slot)} fires " +
+        (if (perCast == 0) "no projectile" else MatchJournal.projectileName(slotType)) +
+        s" as ${MatchJournal.characterName(player.getCharacterId)}, not ${MatchJournal.projectileName(pType)}")
       return false
     }
 
     // Fire rate. A cast is everything one press of the attack sends, all in the same frame: a
     // primary shot or an ability's whole fan. A new cast needs 80% of that attack's cooldown.
     val clock = attackClocks.computeIfAbsent(packet.getPlayerId, _ => Array.fill(SLOT_COUNT)(new AttackClock))(slot)
+    // What the refusal says, read under the clock's lock: how long since the cast its cooldown runs
+    // from, and how many of a cast still open it had fired
+    var sinceMs = 0L
+    var firedInCast = 0
     val accepted = clock.synchronized {
       val now = System.currentTimeMillis()
       if (now - clock.castAt <= CAST_WINDOW_MS && clock.fired < perCast) {
@@ -312,10 +337,18 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
         clock.fired = 1
         clock.cast = null
         true
-      } else false
+      } else {
+        sinceMs = now - clock.cooldownFrom
+        firedInCast = if (now - clock.castAt <= CAST_WINDOW_MS) clock.fired else 0
+        false
+      }
     }
     if (!accepted) {
       System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} attack $slot fired too fast")
+      journal.refused(player,
+        if (firedInCast >= perCast) s"shot refused (projectile_fire_rate): ${MatchJournal.slotName(slot)}'s cast has fired all $perCast it may"
+        else s"shot refused (projectile_fire_rate): ${MatchJournal.slotName(slot)} cast again ${sinceMs}ms after the last, " +
+          s"before ${(cooldownMs * 0.8).toLong}ms (80% of its ${cooldownMs}ms cooldown)")
     }
     accepted
   }

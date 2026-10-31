@@ -20,6 +20,20 @@ trait Lives { this: GameInstance =>
    */
   private[game] def recordKill(killerId: UUID, victimId: UUID, projectileType: Byte,
                          cause: io.opentelemetry.api.common.Attributes): Unit = {
+    val victim = registry.get(victimId)
+    if (victim != null) {
+      val killer = if (killerId != null) registry.get(killerId) else null
+      val how = Option(cause.get(Attrs.Cause)).getOrElse("unknown") match {
+        case "projectile" | "aoe" => MatchJournal.projectileName(projectileType)
+        case "trap" => "a trap"
+        case "burn" => "a burn"
+        case other => other
+      }
+      val pos = victim.getPosition
+      journal.note(victim,
+        (if (killer != null) s"killed by ${killer.getName} (${killer.getId.toString.substring(0, 8)}) with $how" else s"died of $how") +
+          s", at (${pos.getX},${pos.getY})")
+    }
     if (killerId != null) {
       killTracker.recordKill(killerId, victimId)
       val killer = registry.get(killerId)
@@ -97,6 +111,7 @@ trait Lives { this: GameInstance =>
     }
 
     Metrics.respawns.add(1L, io.opentelemetry.api.common.Attributes.empty())
+    journal.note(player, s"respawned at (${spawnPoint.getX},${spawnPoint.getY})")
     // Send respawn event
     val respawnPacket = new GameEventPacket(
       outbox.nextSeq(),

@@ -11,3 +11,15 @@ scala_junit_test(
         "@maven//:junit_junit",
     ],
 )
+
+# The report tool: a synthetic problem report read into its summary, timeline, tables and network numbers
+scala_junit_test(
+    name = "report_tool_test",
+    srcs = ["ReportToolTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/tools:report_tool",
+        "@maven//:junit_junit",
+    ],
+)

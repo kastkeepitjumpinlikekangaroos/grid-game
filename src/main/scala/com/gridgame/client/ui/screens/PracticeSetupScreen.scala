@@ -28,6 +28,8 @@ private[client] final class PracticeSetupScreen(app: Screens) {
     }
     val escKeys = row(3, keycap("Esc"), keycap("Esc"))
     escKeys.setMinWidth(Region.USE_PREF_SIZE)
+    val markKey = row(3, keycap("F8"))
+    markKey.setMinWidth(Region.USE_PREF_SIZE)
 
     val startBtn = button(Messages.t("Start Practice"), "sun", "lg")
     startBtn.setGraphic(Icons.node(Icons.Play, 16, Palette.OnGold))
@@ -42,6 +44,7 @@ private[client] final class PracticeSetupScreen(app: Screens) {
       point(Icons.node(Icons.Target, 20, Palette.Sky), Messages.t("Shoot passive bots that respawn right away, so you can practice non-stop.")),
       point(Icons.node(Icons.Trophy, 20, Palette.Gold), Messages.t("Practice sessions don't count toward stats.")),
       point(escKeys, Messages.t("Press Esc twice in game to end the session.")),
+      point(markKey, Messages.t("Something looks wrong? Press F8 the moment it happens to mark it, then report it from the results.")),
       startBtn, statusLabel)
     infoCard.setMinWidth(340)
     infoCard.setPrefWidth(340)

@@ -7,7 +7,7 @@ import com.gridgame.common.observability.Metrics
 import com.gridgame.common.observability.Telemetry
 import com.gridgame.common.protocol._
 import com.gridgame.server.account.{AccountQueries, AuthDatabase, AuthService}
-import com.gridgame.server.game.GameInstance
+import com.gridgame.server.game.{GameInstance, MatchJournal, MatchJournals}
 import com.gridgame.server.lobby._
 import com.gridgame.server.net._
 import io.netty.channel.Channel
@@ -30,9 +30,11 @@ import scala.jdk.CollectionConverters._
  *  - game:    one running match (GameInstance), which a lobby holds; bots play in one
  *
  * What spans them lives here: the players who are connected at all, a player joining, leaving or
- * going quiet, chat (ChatRelay) and the end of a match (MatchEnd).
+ * going quiet, chat (ChatRelay), the end of a match (MatchEnd) and players' problem reports
+ * (ProblemReports), kept in `reportsFolder` with the journal of the match each is about.
  */
-class GameServer(port: Int) extends PacketRouter with LobbyHost {
+class GameServer(port: Int, reportsFolder: java.nio.file.Path = ProblemReports.defaultFolder(),
+                 reportLimits: ProblemReports.Limits = ProblemReports.Limits()) extends PacketRouter with LobbyHost {
   // Global state: all connected players regardless of lobby/game
   private val connectedPlayers = new ConcurrentHashMap[UUID, Player]()
 
@@ -52,6 +54,14 @@ class GameServer(port: Int) extends PacketRouter with LobbyHost {
   private[server] val gameInstances = new ConcurrentHashMap[Short, GameInstance]()
   private val chat = new ChatRelay(lobbyManager, rateLimiter, outbox, getConnectedPlayer)
   private val matchEnd = new MatchEnd(lobbyManager, authDatabase, outbox, getConnectedPlayer, unregisterGameInstance)
+
+  // The journals of matches that ended lately, for a report about one to be kept with it
+  private[server] val finishedJournals = new MatchJournals()
+  private[server] val reports = new ProblemReports(reportsFolder, outbox, sessions, rateLimiter, journalOf,
+    playerId => {
+      val name = sessions.accountNames.get(playerId)
+      if (name != null) name else Option(connectedPlayers.get(playerId)).map(_.getName).getOrElse("?")
+    }, reportLimits)
 
   private val cleanupExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
 
@@ -110,7 +120,7 @@ class GameServer(port: Int) extends PacketRouter with LobbyHost {
     }
 
   def start(): Unit = {
-    println(s"Game server starting on port $port (lobby mode)")
+    println(s"Game server ${com.gridgame.common.BuildInfo.describe} starting on port $port (lobby mode)")
     // Players' clients check this the second time they connect, and every time after: publish it,
     // so a player can tell it from an impostor's the first time too
     println(s"Server identity: ${identity.fingerprint} (${identity.file})")
@@ -140,8 +150,14 @@ class GameServer(port: Int) extends PacketRouter with LobbyHost {
   def getConnectedPlayer(playerId: UUID): Player = connectedPlayers.get(playerId)
 
   def unregisterGameInstance(lobbyId: Short): Unit = {
-    gameInstances.remove(lobbyId)
+    val instance = gameInstances.remove(lobbyId)
+    // Kept a while after: a player's report about the match they just played comes from its scoreboard
+    if (instance != null) finishedJournals.keep(instance.journal)
   }
+
+  /** The journal of the match with this id: a running one's, or one that ended lately. */
+  private[server] def journalOf(matchId: UUID): Option[MatchJournal] =
+    gameInstances.values().asScala.find(_.matchId == matchId).map(_.journal).orElse(finishedJournals.get(matchId))
 
   def registerGameInstance(lobbyId: Short, instance: GameInstance): Unit = {
     gameInstances.put(lobbyId, instance)
@@ -186,7 +202,13 @@ class GameServer(port: Int) extends PacketRouter with LobbyHost {
 
       packet.getType match {
         case PacketType.AUTH_REQUEST =>
-          auth.handle(packet.asInstanceOf[AuthRequestPacket], tcpCh)
+          val request = packet.asInstanceOf[AuthRequestPacket]
+          // An upload's connection logs in with its report's ticket, and is never a session
+          if (request.getAction == AuthAction.UPLOAD) reports.handleUploadLogin(request, tcpCh)
+          else auth.handle(request, tcpCh)
+
+        case PacketType.PROBLEM_REPORT =>
+          if (tcpCh != null) reports.handleBegin(packet.asInstanceOf[ProblemReportPacket], tcpCh)
 
         case PacketType.MATCH_HISTORY =>
           accountQueries.handleMatchHistoryRequest(packet.asInstanceOf[MatchHistoryPacket], tcpCh)
@@ -435,6 +457,8 @@ class GameServer(port: Int) extends PacketRouter with LobbyHost {
 
     rateLimiter.cleanup()
     replayGuard.cleanupStale(connectedPlayers.keySet())
+    reports.expire(now)
+    finishedJournals.evict(now)
 
     if (connectedPlayers.size() > 0) {
       println(s"Server stats: ${connectedPlayers.size()} players connected, ${lobbyManager.getActiveLobbies.size} active lobbies")
@@ -472,6 +496,7 @@ class GameServer(port: Int) extends PacketRouter with LobbyHost {
     }
 
     authDatabase.close()
+    reports.shutdown()
     network.stop()
 
     println("Server stopped.")

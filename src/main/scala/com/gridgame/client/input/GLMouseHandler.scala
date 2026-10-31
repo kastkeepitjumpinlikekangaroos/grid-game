@@ -3,7 +3,9 @@ package com.gridgame.client.input
 import com.gridgame.client.render.{GameCamera, IsometricTransform}
 
 import org.lwjgl.glfw.GLFW._
+import com.gridgame.client.diagnostics.Diagnostics
 import com.gridgame.client.game.GameClient
+import com.gridgame.common.diagnostics.Recording.{InputDevice, Keys}
 
 /**
  * GLFW mouse handler. Mirrors MouseHandler logic but uses GLFW callbacks.
@@ -15,6 +17,10 @@ import com.gridgame.client.game.GameClient
 class GLMouseHandler(client: GameClient, camera: GameCamera) {
   private var _cursorX: Double = 0
   private var _cursorY: Double = 0
+  // The buttons held, as a match recording's frames keep them (Recording.Keys)
+  private var _heldMask = 0
+
+  def heldMask: Int = _heldMask
 
   def cursorX: Double = _cursorX
   def cursorY: Double = _cursorY
@@ -37,6 +43,11 @@ class GLMouseHandler(client: GameClient, camera: GameCamera) {
 
   /** Called from GLFW mouse button callback. */
   def onMouseButton(button: Int, action: Int, mods: Int): Unit = {
+    // Into the match's recording (a problem report's), with where it aimed in the frames around it
+    val recorder = Diagnostics.recorder
+    if (recorder != null) recorder.input(InputDevice.Mouse, action, button, mods)
+    val bit = if (button == GLFW_MOUSE_BUTTON_LEFT) Keys.MouseLeft else if (button == GLFW_MOUSE_BUTTON_RIGHT) Keys.MouseRight else 0
+    if (action == GLFW_PRESS) _heldMask |= bit else if (action == GLFW_RELEASE) _heldMask &= ~bit
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
       if (action == GLFW_PRESS) client.cancelAims()
       return

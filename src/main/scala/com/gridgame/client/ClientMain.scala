@@ -1,6 +1,7 @@
 package com.gridgame.client
 
 import com.gridgame.client.audio.AudioManager
+import com.gridgame.client.diagnostics.Diagnostics
 import com.gridgame.client.gl.GLFWManager
 import com.gridgame.client.net.{KnownServers, LoginStore, SavedLogin, ServerIdentityChangedException}
 import com.gridgame.client.ui.{Theme, UiActivity, WorldBackdrop}
@@ -16,7 +17,7 @@ import javafx.scene.control.Label
 import javafx.scene.image.Image
 import javafx.stage.Screen
 import javafx.stage.Stage
-import com.gridgame.client.game.GameClient
+import com.gridgame.client.game.{GameClient, ReportSender}
 import com.gridgame.client.ui.screens._
 
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger}
@@ -81,6 +82,7 @@ class ClientMain extends Application with Screens {
   private[client] def showAccountView(stage: Stage): Unit = new AccountScreen(this).show(stage)
   private[client] def showScoreboard(stage: Stage): Unit = new ScoreboardScreen(this).show(stage)
   private[client] def showGameScene(stage: Stage): Unit = matchWindow.open(stage)
+  private[client] def showProblemReport(stage: Stage, about: ReportAbout): Unit = new ReportDialog(this).show(stage, about)
 
   // ── Staying logged in ──────────────────────────────────────────────────
 
@@ -118,6 +120,13 @@ class ClientMain extends Application with Screens {
     // a language change rebuild the current (login) screen in the new language.
     Messages.init()
     Messages.onLocaleChanged = () => showWelcomeScreen(primaryStage)
+
+    // What a problem report says of the machine, and a watch on the thread the menus and the match run on
+    Diagnostics.language = Messages.currentTag
+    Diagnostics.screens = Screen.getScreens.toArray.toSeq.collect { case s: Screen =>
+      s"${s.getBounds.getWidth.toInt}x${s.getBounds.getHeight.toInt} @${s.getOutputScaleX}x"
+    }
+    Diagnostics.startWatchdog(r => Platform.runLater(r))
 
     loadAppIcons(primaryStage)
     setDockIcon()
@@ -293,6 +302,8 @@ class ClientMain extends Application with Screens {
   private[client] def newGameClient(host: String, port: Int, name: String): GameClient = {
     val c = new GameClient(host, port, WorldData.createEmpty(Constants.GRID_SIZE, Constants.GRID_SIZE), name)
     c.knownServers = knownServers
+    // The match's packets into its recording, for a problem report (design/diagnostics.md)
+    c.packetTap = Diagnostics.packetTap
     c
   }
 
@@ -343,6 +354,7 @@ class ClientMain extends Application with Screens {
           // Stats now, so the ranked screen shows the real rating rather than the default 1000
           c.requestMatchHistory()
           showLobbyBrowser(stage, if (reconnecting) Messages.t("Reconnected to the server") else "")
+          afterLogin(stage, c)
         } else if (resuming && message == AuthRules.LoginExpired) {
           // Run out, logged out, or used elsewhere: only the password will do now
           forgetLogin()
@@ -358,6 +370,25 @@ class ClientMain extends Application with Screens {
       if (loggedIn.get) connectionLost(stage, c) else if (!answered.get) onCutOff()
     }
     c
+  }
+
+  // The crashed run's report is offered once a run, at the first login
+  private val crashOffered = new AtomicBoolean(false)
+
+  /**
+   * Logged in: the run before this one, if it never closed properly, is offered as a report (once), and
+   * the reports waiting in the outbox go now, one after the other, on a thread of their own
+   * (design/diagnostics.md, *Sending a report*).
+   */
+  private def afterLogin(stage: Stage, c: GameClient): Unit = {
+    if (!Diagnostics.isInstalled) return
+    if (Diagnostics.previousRun.isDefined && crashOffered.compareAndSet(false, true))
+      showProblemReport(stage, ReportAbout.PreviousRun)
+    daemon("ReportOutbox") {
+      try ReportSender.sendPending(c, Diagnostics.outbox, (_, code) =>
+        Platform.runLater(() => ReportDialog.toast(stage, Messages.t("A problem report you made earlier was sent (code {0}). Thank you!", code))))
+      catch { case e: Exception => System.err.println(s"Diagnostics: couldn't send the waiting reports ($e)") }
+    }
   }
 
   /** A new refresh token for login attempt `attempt`'s login, if it is still the latest: held, and on
@@ -386,7 +417,7 @@ class ClientMain extends Application with Screens {
    */
   private def connectionLost(stage: Stage, c: GameClient): Unit = {
     // Out of the match, if we were in one, which shows the menus' stage again
-    matchWindow.close(stage)
+    matchWindow.close(stage, "disconnected")
     c.sessionEndReason match {
       case SessionEndReason.REVOKED =>
         forgetLogin()
@@ -483,6 +514,9 @@ object ClientMain {
   }
 
   def main(args: Array[String]): Unit = {
+    // First, before anything prints: the log on disk catches it all, and the run before this one is
+    // looked at (design/diagnostics.md)
+    Diagnostics.install(args.toSeq)
     tuneHeap()
     // Client telemetry is opt-in. Enable with `--telemetry` flag or `GRIDGAME_TELEMETRY=1`.
     val telemetryEnabled = args.contains("--telemetry") ||

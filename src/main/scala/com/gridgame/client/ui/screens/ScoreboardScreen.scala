@@ -1,5 +1,6 @@
 package com.gridgame.client.ui.screens
 
+import com.gridgame.client.diagnostics.Diagnostics
 import com.gridgame.client.i18n.{I18n, Messages}
 import com.gridgame.client.ui.{Icons, SpriteGenerator}
 import com.gridgame.common.model.{CharacterDef, Direction, ScoreEntry}
@@ -182,6 +183,29 @@ private[client] final class ScoreboardScreen(app: Screens) {
       showLobbyBrowser(stage)
     })
 
+    // Something to tell us about this match: moments the player marked in it, or something that went
+    // wrong in it that the client noticed. Said above the buttons, with the way to report it
+    val reportBtn = button(Messages.t("Report a problem"), "ghost", Icons.Flag, Palette.Muted)
+    reportBtn.setOnAction(_ => showProblemReport(stage, ReportAbout.LastMatch))
+    Diagnostics.lastMatch.filterNot(_.isRecording).foreach { r =>
+      val marks = r.marks.size
+      val trouble = r.incidents.toArray.collectFirst { case n: com.gridgame.client.diagnostics.IncidentNote => n.kind }
+      val say =
+        if (marks == 1) Some(Messages.t("You marked a moment in this match. Tell us what happened there?"))
+        else if (marks > 1) Some(Messages.t("You marked {0} moments in this match. Tell us what happened?", marks.toString))
+        else trouble.map(k => Messages.t("Something went wrong in this match: {0}. A report helps us fix it.", ReportDialog.incidentText(k)))
+      say.foreach { line =>
+        val tell = button(Messages.t("Report it"), "sun", Icons.Flag, Palette.OnGold)
+        tell.setOnAction(_ => showProblemReport(stage, ReportAbout.LastMatch))
+        val words = para(line, "body")
+        HBox.setHgrow(words, javafx.scene.layout.Priority.ALWAYS)
+        val callout = new HBox(12, Icons.node(Icons.Flag, 20, Palette.Gold), words, tell)
+        callout.getStyleClass.add("report-callout")
+        callout.setMaxWidth(820)
+        body.getChildren.add(callout)
+      }
+    }
+
     // Buttons sit right under the results; pinned to the bottom edge they were cut off
     val btnBox = new HBox(12)
     btnBox.setAlignment(Pos.CENTER)
@@ -194,7 +218,7 @@ private[client] final class ScoreboardScreen(app: Screens) {
       })
       btnBox.getChildren.add(practiceAgainBtn)
     }
-    btnBox.getChildren.add(returnBtn)
+    btnBox.getChildren.addAll(reportBtn, returnBtn)
     body.getChildren.add(btnBox)
 
     // The whole page scrolls when a big lobby outgrows the window

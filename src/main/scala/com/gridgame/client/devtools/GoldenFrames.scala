@@ -443,6 +443,13 @@ object GoldenFrames {
       c.isChatOpen = true
       c.chatInputText = "gg well played"
       c.leaveConfirmUntil = T + 2000L
+    }),
+    // F8 just marked the match's second moment for a problem report (design/diagnostics.md): the notice
+    // under the top of the screen
+    Scene("lagoon_moment_marked", "the_lagoon.json", (65, 18), s => {
+      everything(s, withEffects = false)
+      com.gridgame.client.diagnostics.Diagnostics.lastMarkNumber = 2
+      com.gridgame.client.diagnostics.Diagnostics.markNoticeUntilMs = T + 2000L
     })
   )
 
@@ -484,6 +491,9 @@ object GoldenFrames {
         scene.character.id, client.localTeamId))
       client.nanoClock = () => T * 1000000L
       val stage = new Stage(client, world, home)
+      // The marked-moment notice is the app's diagnostics', not the client's: down, unless the scene
+      // puts it up
+      com.gridgame.client.diagnostics.Diagnostics.markNoticeUntilMs = 0L
       scene.build(stage)
 
       val clock = new HeldClock

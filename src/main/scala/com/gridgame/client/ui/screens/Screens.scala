@@ -39,6 +39,9 @@ private[client] trait Screens {
   /** The match: the stage hides and the match's own window takes over (MatchWindow). */
   private[client] def showGameScene(stage: Stage): Unit
 
+  /** A problem report about `about`, over whatever page is showing (ReportDialog). */
+  private[client] def showProblemReport(stage: Stage, about: ReportAbout): Unit
+
   /** Connect to a server and log in (or sign up), reporting on `statusLabel`: the lobby browser
     * when it succeeds, `actionButton` enabled again when it doesn't. `remember` keeps the login on
     * disk, so the next launch logs in with it. */

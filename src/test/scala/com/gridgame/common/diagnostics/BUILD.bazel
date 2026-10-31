@@ -1,0 +1,15 @@
+load("@rules_scala//scala:scala.bzl", "scala_junit_test")
+
+# One target per file, so each test runs in a JVM of its own
+[scala_junit_test(
+    name = name,
+    srcs = [src],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+) for (name, src) in [
+    # A match's recording read back as it was written, and what is left of one cut short
+    ("recording_test", "RecordingTest.scala"),
+]]

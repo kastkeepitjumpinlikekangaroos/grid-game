@@ -269,6 +269,16 @@
         {"expr": "sum(rate(gridgame_connections_opened_total[5m]))", "legendFormat": "opened"},
         {"expr": "sum(rate(gridgame_connections_closed_total[5m]))", "legendFormat": "closed"}
       ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Problem reports (outcome)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 74},
+      "id": 111,
+      "targets": [
+        {"expr": "sum by (outcome) (increase(gridgame_problem_reports_total[1h]))", "legendFormat": "{{outcome}}"}
+      ]
     }
   ],
   "refresh": "5s",

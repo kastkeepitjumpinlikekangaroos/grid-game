@@ -26,6 +26,8 @@ trait ShotRequests { this: ClientHandler =>
     }
 
     if (player.isFrozen || player.isDead) {
+      journal.refused(player, s"shot refused: ${MatchJournal.slotName(packet.getAttackSlot)} fired while " +
+        (if (player.isDead) "dead" else "held (frozen or stunned)"))
       return false
     }
 
@@ -35,6 +37,8 @@ trait ShotRequests { this: ClientHandler =>
     // its first shot after it can land here in them.
     if (player.getPhasedUntil - System.currentTimeMillis() > PHASED_SHOT_GRACE_MS) {
       Metrics.validationFailed.add(1L, Attrs.VfProjectileFireRate)
+      journal.refused(player, s"shot refused (projectile_fire_rate): ${MatchJournal.slotName(packet.getAttackSlot)} fired while " +
+        s"phased, ${player.getPhasedUntil - System.currentTimeMillis()}ms of the phase left")
       return false
     }
 
@@ -44,6 +48,7 @@ trait ShotRequests { this: ClientHandler =>
     if (!java.lang.Float.isFinite(packet.getX) || !java.lang.Float.isFinite(packet.getY)) {
       System.err.println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} projectile position NaN/Inf")
       Metrics.validationFailed.add(1L, Attrs.VfProjectilePosition)
+      journal.refused(player, s"shot refused (projectile_position): fired from (${packet.getX},${packet.getY}), no number")
       return false
     }
 
@@ -54,6 +59,7 @@ trait ShotRequests { this: ClientHandler =>
         java.lang.Float.isInfinite(pdx) || java.lang.Float.isInfinite(pdy)) {
       System.err.println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} projectile velocity NaN/Inf")
       Metrics.validationFailed.add(1L, Attrs.VfProjectileVelocity)
+      journal.refused(player, s"shot refused (projectile_velocity): heading ($pdx,$pdy), no number")
       return false
     }
     // The heading only says which way: a projectile flies at its own def's speed. Taken as a
@@ -67,6 +73,7 @@ trait ShotRequests { this: ClientHandler =>
         if (len < MIN_HEADING) {
           System.err.println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} projectile has no heading")
           Metrics.validationFailed.add(1L, Attrs.VfProjectileVelocity)
+          journal.refused(player, s"shot refused (projectile_velocity): heading ($pdx,$pdy) is no direction")
           return false
         }
         (pdx / len, pdy / len)
@@ -77,6 +84,7 @@ trait ShotRequests { this: ClientHandler =>
     // costs no cooldown.
     if (instance.attacksLocked) {
       Metrics.validationFailed.add(1L, Attrs.VfOpening)
+      journal.refused(player, s"shot refused (match_opening): ${MatchJournal.slotName(packet.getAttackSlot)} fired in the opening's ceasefire")
       return false
     }
 
@@ -103,7 +111,10 @@ trait ShotRequests { this: ClientHandler =>
       validator.castFor(playerId, packet.getAttackSlot, fromX.toFloat, fromY.toFloat)
     )
 
-    if (projectile == null) return false // Per-player projectile cap reached
+    if (projectile == null) { // Per-player projectile cap reached
+      journal.refused(player, s"shot dropped: ${MatchJournal.slotName(packet.getAttackSlot)}'s, with as many of theirs in flight as a player may have")
+      return false
+    }
 
     instance.broadcastProjectileSpawn(projectile)
 

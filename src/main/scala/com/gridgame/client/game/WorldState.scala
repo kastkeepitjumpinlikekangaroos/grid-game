@@ -20,6 +20,7 @@ trait WorldState { this: GameClient =>
   private[game] def handleWorldInfo(packet: WorldInfoPacket): Unit = {
     val worldFile = packet.getWorldFile
     println(s"GameClient: Received world info from server: $worldFile")
+    noteWorldFile(worldFile)
 
     if (worldFileListener != null) {
       worldFileListener(worldFile)

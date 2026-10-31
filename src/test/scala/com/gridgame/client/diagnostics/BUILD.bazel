@@ -1,0 +1,26 @@
+load("@rules_scala//scala:scala.bzl", "scala_junit_test")
+
+# The client's diagnostics, in folders of the tests' own (one target a file, so each has a JVM and a
+# Diagnostics of its own)
+[scala_junit_test(
+    name = name,
+    srcs = [src],
+    env = {"GRIDGAME_AUDIO": "off"},
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+) for (name, src) in [
+    # Every kind of record back as written, nothing of the player's own written, a long match's start
+    # and newest kept, a full buffer saying what it lost, and a frame recorded allocating nothing
+    ("match_recorder_test", "MatchRecorderTest.scala"),
+    # The log on disk: three runs kept, every line stamped, a cap, and the console still printed to
+    ("log_file_test", "LogFileTest.scala"),
+    # Setting up: the run that never closed found, a match recorded from its start, the last one kept for
+    # its report, the same trouble counted, ten marks a match, a second client's own folder
+    ("diagnostics_test", "DiagnosticsTest.scala"),
+    # A report put together: what goes in its zip and report.json; the outbox keeping it until it is sent
+    ("report_builder_test", "ReportBuilderTest.scala"),
+]]

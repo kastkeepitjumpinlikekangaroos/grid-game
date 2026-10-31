@@ -26,3 +26,37 @@ scala_binary(
     main_class = "com.gridgame.tools.GenDocsRoster",
     deps = [":docs_roster"],
 )
+
+# A player's problem report read for a developer: what they said, their machine, and the match's
+# recording as a timeline, tables and the connection's numbers (ReportTool; design/diagnostics.md).
+scala_library(
+    name = "report_tool",
+    srcs = [
+        "ReportFiles.scala",
+        "ReportFrames.scala",
+        "ReportPackets.scala",
+        "ReportRecording.scala",
+        "ReportSummary.scala",
+        "ReportTables.scala",
+        "ReportTimeline.scala",
+        "ReportTool.scala",
+    ],
+    visibility = ["//src/test:__subpackages__"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:com_google_code_gson_gson",
+    ],
+)
+
+# Dev tool: bazel run //src/main/scala/com/gridgame/tools:report -- <report folder or zip>. Not shipped.
+scala_binary(
+    name = "report",
+    main_class = "com.gridgame.tools.ReportTool",
+    # A long match's recording is a million records or so, all held to be put in time order; the
+    # contact sheets are drawn with Java2D, which needs no display
+    jvm_flags = [
+        "-Xmx2g",
+        "-Djava.awt.headless=true",
+    ],
+    deps = [":report_tool"],
+)

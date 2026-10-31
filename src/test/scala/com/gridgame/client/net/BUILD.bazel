@@ -21,3 +21,16 @@ scala_junit_test(
         "@maven//:junit_junit",
     ],
 )
+
+# A problem report's own connection: its ticket, then the report, raw, to the identity pinned for the
+# server, against a TLS server of the test's own (keys made by keytool)
+scala_junit_test(
+    name = "upload_connection_test",
+    srcs = ["UploadConnectionTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+)

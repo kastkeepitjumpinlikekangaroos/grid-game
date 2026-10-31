@@ -2,3 +2,10 @@ build --java_runtime_version=remotejdk_21
 build --tool_java_runtime_version=remotejdk_21
 build --java_language_version=21
 build --tool_java_language_version=21
+
+# Every build is stamped with the commit it came from (common/BuildInfo, scripts/workspace_status.sh),
+# so a problem report says which build sent it. Not on Windows, which has no bash to run the script: a
+# build made there says "dev".
+common --enable_platform_specific_config
+build:macos --workspace_status_command=scripts/workspace_status.sh
+build:linux --workspace_status_command=scripts/workspace_status.sh

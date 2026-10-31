@@ -24,6 +24,7 @@ trait CooldownResetRequests { this: ClientHandler =>
     def refuse(why: String, msLeft: Long): Boolean = {
       System.err.println(s"ClientHandler: Cooldown reset refused for ${playerId.toString.substring(0, 8)}: $why")
       Metrics.validationFailed.add(1L, Attrs.VfCooldownReset)
+      journal.refused(player, s"R refused (cooldown_reset): $why${if (msLeft > 0) s", ${msLeft}ms of its minute left" else ""}")
       val reject = new CooldownResetPacket(outbox.nextSeq(), playerId, CooldownResetAction.REJECTED, msLeft.toInt)
       try outbox.sendRaw(reject.serialize(), true, player) catch { case _: Exception => }
       false

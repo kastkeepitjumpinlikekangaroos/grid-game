@@ -150,7 +150,33 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   `GameClientOpeningTest` for the client's copy of either; and `LobbyFlowTest` for a real Teams
   match starting with each team in its own half.
 - `tools/` — `DocsRosterTest` does the same for the website: every character card's role and
-  health must be what the roster says (see *Website*).
+  health must be what the roster says (see *Website*). `ReportToolTest` reads a problem report made
+  for it (segments 0 and 3, every kind of record, a record cut short, a redacted packet) into its
+  summary, timeline and tables, its windows round a mark, and a note of the segments left out.
+- Problem reports (design/diagnostics.md). `RecordingTest` (common/diagnostics) is a recording's
+  segment read back as written, and what is kept of one cut short. In `client/diagnostics`, each with
+  a `Diagnostics` of its own in a folder of the test's own (`install(Nil, Some(dir), teeConsole =
+  false)`, `resetForTest` after): `MatchRecorderTest` (every kind of record back as written, nothing
+  of the player's own on disk, a long match's first segment and its newest kept, a full buffer's Gap,
+  and 100,000 frames recorded allocating nothing beyond what an empty loop does, measured with
+  `ThreadMXBean.getThreadAllocatedBytes` once the measuring itself is warm), `LogFileTest`,
+  `DiagnosticsTest` (the run that never closed found with its log, crash file and match; a match
+  recorded from GAME_STARTING to its end; the last kept until the next unless pinned; the same trouble
+  counted; ten marks; a second client's folder) and `ReportBuilderTest` (the zip and report.json for a
+  match and a crash; the outbox). `UploadConnectionTest` (client/net) sends a report to a TLS server
+  of the test's own that speaks the upload's side, keys made by keytool: the ticket first, the bytes
+  only after the go-ahead, and nothing at all to a server that isn't the one pinned.
+  `GameClientReportsTest` is the session's part (BEGIN, the answer, the match named, the snapshot,
+  the outbox told), with the server's answers handed straight back through `packetSink`;
+  `ReportDialogTest` the report's card over a real page (what it asks and shows, sending, sent, not
+  sent, no connection, cancelled, a moment the game noticed picked and going with it, a sent report
+  letting its match go) and the scoreboard asking for one; `GameClientReportsTest` also has each moment
+  the client notices for itself (a server move that wasn't a push, our death, a shot unanswered, a
+  refused R, a slow heartbeat). `ReplaySessionTest` (in `client/`, on the devtools' `replay` library)
+  plays a synthetic report into a client and seeks in it. `ProblemReportsTest` (server)
+  takes reports through the real TCP handler, an upload over real TLS among them, and
+  `MatchJournalTest` is what the server keeps of a match for one; `TestSession` takes a `server` of
+  the test's own for them.
 
 ## Fuzz and property suites
 

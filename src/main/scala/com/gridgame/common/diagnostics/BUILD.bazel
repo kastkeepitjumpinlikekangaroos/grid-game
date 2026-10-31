@@ -1,0 +1,9 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+
+# A match's recording, as the client writes it for a problem report and the report tool reads it
+# (Recording.scala; design/diagnostics.md).
+scala_library(
+    name = "diagnostics",
+    srcs = glob(["*.scala"]),
+    visibility = ["//visibility:public"],
+)

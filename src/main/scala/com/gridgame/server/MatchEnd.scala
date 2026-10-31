@@ -71,6 +71,9 @@ final class MatchEnd(lobbyManager: LobbyManager, authDatabase: AuthDatabase, out
       val results =
         if (instance.gameMode == 1) MatchResults.rankTeams(scoreboard, pid => teams.getOrElse(pid, 0.toByte))
         else MatchResults.rankFfa(scoreboard)
+      instance.journal.note(s"ended after ${playedSeconds}s: " + results.map { r =>
+        s"#${r.rank} ${r.playerId.toString.substring(0, 8)} ${r.kills}-${r.deaths}${if (r.teamId != 0) s" (team ${r.teamId})" else ""}"
+      }.mkString(", "))
       results.foreach { r =>
         val scorePacket = new GameEventPacket(
           outbox.nextSeq(), r.playerId, GameEvent.SCORE_ENTRY, lobbyId,

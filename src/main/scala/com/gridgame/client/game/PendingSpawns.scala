@@ -40,11 +40,15 @@ final class PendingSpawns(timeoutNs: Long = PendingSpawns.TIMEOUT_NS) {
   private val answeredBySlot = new Array[Long](SLOTS)
   private val unansweredBySlot = new Array[Long](SLOTS)
 
+  /** Told of each request counted unanswered, with its AttackSlot and how long ago it went (ns): what a
+    * problem report's timeline offers ("your Q got no answer"). Called holding this one's lock. */
+  @volatile var onUnanswered: (Int, Long) => Unit = (_, _) => ()
+
   /** We asked the server for a projectile of `projectileType`, fired from `slot` (AttackSlot). */
   def requested(projectileType: Byte, slot: Int, now: Long): Unit = synchronized {
     expire(now)
     // Only if a second's requests overran the ring, which a player's cooldowns don't allow
-    if (size == CAPACITY) close(head, answered = false)
+    if (size == CAPACITY) close(head, answered = false, now)
     val i = (head + size) % CAPACITY
     types(i) = projectileType
     slots(i) = slot
@@ -63,7 +67,7 @@ final class PendingSpawns(timeoutNs: Long = PendingSpawns.TIMEOUT_NS) {
     while (k < size) {
       val i = (head + k) % CAPACITY
       if (slots(i) != CLOSED && types(i) == projectileType) {
-        close(i, answered = true)
+        close(i, answered = true, now)
         return
       }
       k += 1
@@ -74,7 +78,7 @@ final class PendingSpawns(timeoutNs: Long = PendingSpawns.TIMEOUT_NS) {
   /** Count every request past its time as unanswered. The game does this when it next asks or
     * hears, so a request is counted a little after its second is up, never before. */
   def expire(now: Long): Unit = synchronized {
-    while (size > 0 && now - sentAt(head) >= timeoutNs) close(head, answered = false)
+    while (size > 0 && now - sentAt(head) >= timeoutNs) close(head, answered = false, now)
   }
 
   /** We died: what is past its time was unanswered; the rest is dropped uncounted. */
@@ -107,10 +111,11 @@ final class PendingSpawns(timeoutNs: Long = PendingSpawns.TIMEOUT_NS) {
   }
 
   /** Count request `i` and leave a hole where it was; the front moves past any holes. */
-  private def close(i: Int, answered: Boolean): Unit = {
+  private def close(i: Int, answered: Boolean, now: Long): Unit = {
     val slot = slotIndex(slots(i))
     if (answered) answeredBySlot(slot) += 1 else unansweredBySlot(slot) += 1
     Metrics.clientSpawnRequests.add(1L, Attrs.spawnRequest(slot, answered))
+    if (!answered) onUnanswered(slot, now - sentAt(i))
     slots(i) = CLOSED
     while (size > 0 && slots(head) == CLOSED) {
       head = (head + 1) % CAPACITY

@@ -446,6 +446,63 @@ class PacketRoundTripTest {
     }
   }
 
+  @Test def aProblemReportCarriesWhatEachOfItsStepsNeeds(): Unit = {
+    val report = UUID.fromString("9a8b7c6d-5e4f-3a2b-1c0d-efdecdbcab9a")
+    val begin = trip(ProblemReportPacket.begin(8, id, report, 3456789, 0xCAFEBABE, other, ProblemReportKind.CRASH))
+    assertEquals(PacketType.PROBLEM_REPORT, begin.getType)
+    assertTrue("every step of it is the session's, over TCP", begin.getType.tcp)
+    assertEquals(ProblemReportAction.BEGIN, begin.getAction)
+    assertEquals(id, begin.getPlayerId)
+    assertEquals(report, begin.getReportId)
+    assertEquals(3456789, begin.getSize)
+    assertEquals(0xCAFEBABE, begin.getCrc)
+    assertEquals(other, begin.getMatchId)
+    assertEquals(ProblemReportKind.CRASH, begin.getKind)
+    assertNull("a report about no match names none",
+      trip(ProblemReportPacket.begin(9, id, report, 1, 0, null, ProblemReportKind.GENERAL)).getMatchId)
+
+    val ticket = Array.tabulate[Byte](ProblemReportPacket.TicketSize)(i => (i * 13 + 1).toByte)
+    val ready = trip(ProblemReportPacket.ready(10, id, report, ticket))
+    assertEquals(ProblemReportAction.READY, ready.getAction)
+    assertArrayEquals(ticket, ready.getTicket)
+    assertArrayEquals("the upload connection's go-ahead has none", new Array[Byte](ProblemReportPacket.TicketSize),
+      trip(ProblemReportPacket.ready(11, id, report, null)).getTicket)
+
+    val refused = trip(ProblemReportPacket.refused(12, id, report, ProblemReportRefusal.TOO_MANY, 3600))
+    assertEquals(ProblemReportAction.REFUSED, refused.getAction)
+    assertEquals(ProblemReportRefusal.TOO_MANY, refused.getReason)
+    assertEquals(3600, refused.getRetryAfterSeconds)
+
+    val accepted = trip(ProblemReportPacket.accepted(13, id, report, "GG-7K3F9QX2"))
+    assertEquals(ProblemReportAction.ACCEPTED, accepted.getAction)
+    assertEquals(report, accepted.getReportId)
+    assertEquals("GG-7K3F9QX2", accepted.getCode)
+
+    val failed = trip(ProblemReportPacket.failed(14, id, report, ProblemReportRefusal.CORRUPT))
+    assertEquals(ProblemReportAction.FAILED, failed.getAction)
+    assertEquals(ProblemReportRefusal.CORRUPT, failed.getReason)
+  }
+
+  @Test def anUploadConnectionLogsInWithItsTicketAndItsReport(): Unit = {
+    val report = UUID.fromString("9a8b7c6d-5e4f-3a2b-1c0d-efdecdbcab9a")
+    val ticket = Array.tabulate[Byte](ProblemReportPacket.TicketSize)(i => (200 - i * 7).toByte)
+    val token = ProblemReportPacket.uploadToken(ticket, report)
+    assertEquals(Constants.REFRESH_TOKEN_SIZE, token.length)
+    val p = trip(new AuthRequestPacket(3, AuthAction.UPLOAD, token))
+    assertEquals(AuthAction.UPLOAD, p.getAction)
+    assertArrayEquals(ticket, ProblemReportPacket.ticketOf(p.getRefreshToken))
+    assertEquals(report, ProblemReportPacket.reportIdOf(p.getRefreshToken))
+  }
+
+  @Test def aMatchSaysWhichMatchItIs(): Unit = {
+    val matchId = UUID.fromString("01234567-89ab-cdef-0123-456789abcdef")
+    val p = trip(new GameEventPacket(15, new UUID(0L, 0L), Packet.getCurrentTimestamp, GameEvent.MATCH_INFO,
+      gameId = 42.toShort, targetId = matchId))
+    assertEquals(GameEvent.MATCH_INFO, p.getEventType)
+    assertEquals(matchId, p.getTargetId)
+    assertEquals(42.toShort, p.getGameId)
+  }
+
   @Test def nothingSecretGoesIntoALogLine(): Unit = {
     // A packet printed in a log, or in a test's failure, must not show what logs a player in
     val token = Array.tabulate[Byte](Constants.REFRESH_TOKEN_SIZE)(i => (i + 65).toByte) // "ABC...", readable if printed

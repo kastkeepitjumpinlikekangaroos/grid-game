@@ -18,6 +18,7 @@ the GPU profiler.
 | `GLFWManager.scala` | Singleton `ensureInitialized()` shared by ControllerHandler and GLWindow, which on Linux puts GLFW on X11; `terminate` leaves GLFW to the process's exit while a retired window is still waiting |
 | `LightSystem.scala` | The dynamic light map (quarter-res soft blobs, multiplied in by the composite) and `LightPool`, which keeps a busy frame's strongest lights |
 | `GpuProfiler.scala` | Dev tool: fragments shaded and GPU time per frame phase, with `GRIDGAME_GPU_PROFILE=1` |
+| `FrameHistory.scala` | The last fifteen seconds of what a window showed, small: every quarter second the window blitted into a 480-pixel framebuffer and read into a pixel buffer object without waiting, mapped a capture later (`nglMapBufferRange`, nothing allocated) and copied into a pooled buffer, which a thread of its own encodes as a JPEG (stb). A problem report takes them with a mark, a freeze or a failed frame (design/diagnostics.md, *The seconds before*); the render bench's `--history` measures it. Relies on the renderer never leaving the scissor test on |
 | `Matrix4.scala` | Orthographic projection matrix |
 | `TextureRegion.scala` | Case class for (texture, u, v, u2, v2) sub-regions |
 

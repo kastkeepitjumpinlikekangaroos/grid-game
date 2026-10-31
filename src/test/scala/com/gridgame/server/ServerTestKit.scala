@@ -82,9 +82,10 @@ object ServerTestKit {
   /**
    * A client that has logged in: its TCP channel runs the server's real handler, and it holds a
    * session token and the address it logged in from, as a login leaves them. What it sends goes
-   * in through that handler, signed and numbered as a real client's is.
+   * in through that handler, signed and numbered as a real client's is. `server` is the shared one
+   * unless a test brings its own.
    */
-  class TestSession(val playerId: UUID = UUID.randomUUID()) {
+  class TestSession(val playerId: UUID = UUID.randomUUID(), val server: GameServer = ServerTestKit.server) {
     val channel = new PeerChannel()
     channel.pipeline().addLast(server.tcpHandler())
     val token: Array[Byte] = server.sessions.generateSessionToken(playerId, channel)

@@ -25,6 +25,7 @@ trait ItemRequests { this: ClientHandler =>
       val removedItem = itemManager.removeFromInventory(playerId, packet.getItemId)
       if (removedItem == null) {
         System.err.println(s"ClientHandler: Item USE failed — item ${packet.getItemId} not in server inventory for ${playerId.toString.substring(0, 8)}")
+        if (player != null) journal.refused(player, s"item refused: item ${packet.getItemId} isn't in its inventory on the server")
         return false
       }
       Metrics.itemsUsed.add(1L, Attrs.itemTypeAttrs(removedItem.itemType.id))
@@ -48,6 +49,8 @@ trait ItemRequests { this: ClientHandler =>
 
           case ItemType.Fence =>
             if (!placeFence(player, packet.getX, packet.getY)) {
+              journal.refused(player, s"fence refused: at (${packet.getX},${packet.getY}) from " +
+                s"(${player.getPosition.getX},${player.getPosition.getY}); given back")
               // Placement failed — restore item to inventory so player can retry
               itemManager.addToInventory(playerId, removedItem)
               // Notify client to re-add item to their local inventory
@@ -71,6 +74,8 @@ trait ItemRequests { this: ClientHandler =>
               itemManager.addToInventory(playerId, removedItem)
               val pos = player.getPosition
               System.err.println(s"ClientHandler: Star refused for ${playerId.toString.substring(0, 8)}: (${packet.getX},${packet.getY}) from (${pos.getX},${pos.getY})")
+              journal.refused(player, s"star refused: (${pos.getX},${pos.getY}) -> (${packet.getX},${packet.getY})" +
+                (if (player.isFrozen || player.isRooted) ", held where it is" else "") + "; given back")
               val rejectPacket = new ItemPacket(
                 outbox.nextSeq(),
                 playerId,

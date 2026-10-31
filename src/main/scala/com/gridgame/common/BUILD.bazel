@@ -3,9 +3,9 @@ load("@rules_scala//scala:scala.bzl", "scala_library")
 # The layer the server, the client and the tools share. Each package under here is a library of its
 # own, and depends only on the ones before it:
 #
-#   core (Constants, WorldRegistry)  <-  model  <-  protocol  <-  observability
-#                                          ^
-#                                          +------  world
+#   core (Constants, WorldRegistry, BuildInfo)  <-  model  <-  protocol  <-  observability
+#     ^                                               ^
+#     +------  diagnostics                            +------  world
 #
 # `common` is all of it, which is what almost everything depends on.
 scala_library(
@@ -13,6 +13,7 @@ scala_library(
     visibility = ["//visibility:public"],
     exports = [
         ":core",
+        "//src/main/scala/com/gridgame/common/diagnostics",
         "//src/main/scala/com/gridgame/common/model",
         "//src/main/scala/com/gridgame/common/observability",
         "//src/main/scala/com/gridgame/common/protocol",
@@ -23,8 +24,37 @@ scala_library(
 scala_library(
     name = "core",
     srcs = [
+        "BuildInfo.scala",
         "Constants.scala",
         "WorldRegistry.scala",
     ],
+    visibility = ["//visibility:public"],
+)
+
+# Which build this is (BuildInfo): the commit and the time, from scripts/workspace_status.sh, which
+# .bazelrc runs on macOS and Linux. Stamped always, not only under --stamp, so every build knows its
+# commit; a binary takes it as a runtime dependency, so the libraries never recompile for a new one.
+genrule(
+    name = "build_info_properties",
+    outs = ["build_info.properties"],
+    cmd = """
+status() { sed -n "s/^$$1 //p" bazel-out/stable-status.txt bazel-out/volatile-status.txt | head -n 1; }
+commit=$$(status STABLE_GIT_COMMIT)
+dirty=$$(status STABLE_GIT_DIRTY)
+built=$$(status BUILD_UTC)
+{
+  echo "version=1.0"
+  echo "commit=$${commit:-unknown}"
+  echo "dirty=$${dirty:-0}"
+  echo "built=$${built}"
+} > $@
+""",
+    stamp = 1,
+)
+
+scala_library(
+    name = "build_info",
+    resource_strip_prefix = "src/main/scala",
+    resources = [":build_info_properties"],
     visibility = ["//visibility:public"],
 )

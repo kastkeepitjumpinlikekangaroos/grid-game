@@ -39,6 +39,9 @@ import com.gridgame.client.render.projectiles.GLProjectileRenderers
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --aim        # us charging a shot, its lane drawn
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --hold=fan   # us aiming a fan, its aim drawn
  *                                                                  # (primary, shot, blast, fan, dash, blink, trap)
+ *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --history    # the last seconds kept, small, as
+ *                                                                  # a match's window keeps them (gl/FrameHistory);
+ *                                                                  # --history-out=dir writes them out to look at
  *
  * Drives the real GLGameRenderer the way the client does — a GLFW window at the client's
  * size, frames driven by a JavaFX AnimationTimer on the FX thread — over a fabricated
@@ -186,6 +189,9 @@ class RenderBenchApp extends Application {
     // seconds and turning the aim slowly round, so the lane on the ground (AimArrowPainter) is drawn
     // growing and full, running free and stopped by walls. Off by default, like the rest.
     val withAim = args.contains("--aim")
+    // The match window's history of the last seconds, read back as it does (design/diagnostics.md)
+    val historyOut = argOf(args, "history-out")
+    val history = if (args.contains("--history") || historyOut.isDefined) Some(new com.gridgame.client.gl.FrameHistory()) else None
     if (withAim) {
       client.selectedCharacterId = CharacterId.Tidecaller.id
       client.packetSink = _ => ()
@@ -428,6 +434,8 @@ class RenderBenchApp extends Application {
     var alloc0 = 0L; var gc0 = 0L; var gcMs0 = 0L; var wall0 = 0L
     var frame = 0
     var lastNs = 0L
+    var historyNs = 0L
+    var historyMaxNs = 0L
 
     // Same loop shape as MatchWindow.open
     val loop: AnimationTimer = new AnimationTimer {
@@ -448,6 +456,12 @@ class RenderBenchApp extends Application {
         val turn = frame * 0.02
         renderer.drawCursor(window.width * (0.5 + 0.25 * Math.cos(turn)), window.height * (0.5 + 0.25 * Math.sin(turn)),
           window.fbWidth, window.width, window.height)
+        history.foreach { h =>
+          val h0 = System.nanoTime()
+          h.capture(window.fbWidth, window.fbHeight, h0)
+          val took = System.nanoTime() - h0
+          if (frame >= warmup) { historyNs += took; historyMaxNs = Math.max(historyMaxNs, took) }
+        }
         val t1 = System.nanoTime()
         val c1 = threads.getCurrentThreadCpuTime
         glFinish()
@@ -479,7 +493,7 @@ class RenderBenchApp extends Application {
           f"${if (withEffects) "status effects, " else ""}${if (withBarriers) "barriers, " else ""}" +
           f"${if (withTraps) s"$nTraps traps, " else ""}${if (blastTarget > 0) s"~$blastTarget blasts, " else ""}" +
           f"${if (withAim) "aiming, " else ""}${held.fold("")(h => s"holding ${CharacterDef.get(h._1).displayName}'s attack, ")}" +
-          f"$n frames")
+          f"${if (history.isDefined) "history kept, " else ""}$n frames")
         println(f"  frame build (wall):  mean ${mean(cpuNs)}%.2f ms, p50 ${pct(cpuNs, 0.5)}%.2f, p99 ${pct(cpuNs, 0.99)}%.2f, max ${pct(cpuNs, 1.0)}%.2f")
         println(f"  frame build (CPU):   mean ${mean(threadCpuNs)}%.2f ms, p50 ${pct(threadCpuNs, 0.5)}%.2f, p99 ${pct(threadCpuNs, 0.99)}%.2f  (render thread CPU time)")
         println(f"  frame done (GPU):    mean ${mean(gpuNs)}%.2f ms, p50 ${pct(gpuNs, 0.5)}%.2f, p99 ${pct(gpuNs, 0.99)}%.2f, max ${pct(gpuNs, 1.0)}%.2f")
@@ -489,6 +503,19 @@ class RenderBenchApp extends Application {
         println(f"  heap:                ${heap.getUsed / 1048576.0}%.1f MB live after GC, ${heap.getCommitted / 1048576.0}%.1f MB committed")
         println(s"  $fp")
         if (GpuProfiler.enabled) println(GpuProfiler.report())
+        history.foreach { h =>
+          val kept = h.frames
+          println(f"  history:             ${kept.size} frames kept (${kept.map(_.jpeg.length.toLong).sum / 1024} KB), ${h.skipped} skipped; " +
+            f"capture ${historyNs / 1e3 / n}%.1f us a frame on average, ${historyMaxNs / 1e3}%.0f us at most")
+          // --history-out=dir: the frames kept, as JPEGs, to look at
+          historyOut.foreach { dir =>
+            val d = java.nio.file.Paths.get(dir)
+            java.nio.file.Files.createDirectories(d)
+            kept.zipWithIndex.foreach { case (f, i) => java.nio.file.Files.write(d.resolve(f"history-$i%03d.jpg"), f.jpeg) }
+            println(s"  history written to $d")
+          }
+          h.dispose()
+        }
         renderer.dispose()
         window.destroy()
         GLFWManager.terminate()

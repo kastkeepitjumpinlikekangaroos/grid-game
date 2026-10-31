@@ -20,3 +20,6 @@ server_identity.p12
 
 # Generated macOS .app bundles (scripts/build_macos_app.sh)
 /dist
+
+# Players' problem reports the server keeps (server/ProblemReports): theirs, not the repo's
+problem_reports/

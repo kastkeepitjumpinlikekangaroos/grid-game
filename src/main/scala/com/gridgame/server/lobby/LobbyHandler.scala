@@ -215,6 +215,7 @@ class LobbyHandler(host: LobbyHost, lobbyManager: LobbyManager, rankedQueue: Ran
         if (lobby.players.isEmpty) {
           // No humans left to finish it. Stop it, or its executors and OTel gauge callbacks
           // keep running and reporting forever.
+          instance.journal.note("everyone has left: the match is stopped without a result")
           instance.stop()
           host.unregisterGameInstance(lobby.id)
           lobbyManager.removeLobby(lobby.id)

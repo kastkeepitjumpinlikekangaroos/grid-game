@@ -304,6 +304,12 @@ object Metrics {
     .setUnit("{err}")
     .build()
 
+  val problemReports: LongCounter = meter
+    .counterBuilder("gridgame.problem_reports")
+    .setDescription("Players' problem reports, by outcome: stored, a duplicate answered with its code, refused (and why), failed on the way (and why)")
+    .setUnit("{report}")
+    .build()
+
   // ===== Client (only used when client telemetry is enabled) =====
 
   val clientFrameDuration: DoubleHistogram = meter

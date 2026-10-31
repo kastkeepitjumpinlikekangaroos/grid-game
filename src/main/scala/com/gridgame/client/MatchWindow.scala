@@ -1,7 +1,8 @@
 package com.gridgame.client
 
 import com.gridgame.client.audio.AudioManager
-import com.gridgame.client.gl.GLWindow
+import com.gridgame.client.diagnostics.{Diagnostics, PastFrame, StateSample}
+import com.gridgame.client.gl.{FrameHistory, GLWindow, RenderQuality}
 import com.gridgame.client.input.{ControllerHandler, GLKeyboardHandler, GLMouseHandler}
 import com.gridgame.client.i18n.Messages
 import com.gridgame.common.Constants
@@ -17,7 +18,10 @@ import javafx.stage.Screen
 import javafx.stage.Stage
 import com.gridgame.client.game.ClientState
 import com.gridgame.client.render.GLGameRenderer
-import com.gridgame.client.ui.screens.Screens
+import com.gridgame.client.ui.screens.{ReportAbout, Screens}
+import com.gridgame.common.diagnostics.Recording.{FrameFlags, IncidentKind, NoticedKind}
+import org.lwjgl.opengl.{GL11, GL20, GL30}
+import org.lwjgl.system.MemoryUtil
 
 import java.util.concurrent.{CompletableFuture, TimeUnit}
 
@@ -27,6 +31,13 @@ import java.util.concurrent.{CompletableFuture, TimeUnit}
  * and OpenGL must run on), and its keyboard, mouse and controller drive the client. When the match
  * ends it is hidden and the stage comes back, on the scoreboard or the lobby browser; the window is
  * destroyed once macOS has finished with it (GLWindow.retire).
+ *
+ * Every frame also goes into the match's recording for a problem report (design/diagnostics.md): how
+ * long it took, where we were and aimed, what was held, and four times a second what the client thinks
+ * of us. F8 marks the moment, with a picture of the frame and the last fifteen seconds of small ones
+ * (FrameHistory, which keeps them as it goes). A frame that comes long after the last is noticed. A
+ * frame that throws closes the match and brings the menus back with the report offered, rather than
+ * closing the game.
  */
 private[client] final class MatchWindow(app: Screens) {
   import app._
@@ -35,6 +46,15 @@ private[client] final class MatchWindow(app: Screens) {
   private var controllerHandler: ControllerHandler = _
   private var glWindow: GLWindow = _
   private var glRenderer: GLGameRenderer = _
+  // The player pressed F8: the frame being drawn is the moment, picture and all
+  private var markRequested = false
+  // What the recording is told four times a second, one reused
+  private val stateSample = new StateSample
+  // The last seconds of what the window showed, small, for a mark made late (or a freeze, a crash)
+  private var frameHistory: FrameHistory = _
+  // A long frame before this (System.nanoTime) is expected, not noticed: the window opening, a full
+  // screen toggling, the focus coming and going
+  private var hitchesFrom = 0L
 
   def open(stage: Stage): Unit = {
     switchScreen()
@@ -68,6 +88,11 @@ private[client] final class MatchWindow(app: Screens) {
     glWindow.create()
     // The renderer draws the pointer: the system's was lost in a fight (CursorPainter)
     glWindow.hideSystemCursor()
+    noteGraphics()
+    val history = new FrameHistory()
+    frameHistory = history
+    Diagnostics.pastFrames = () => history.frames.map(f => PastFrame(f.nanos, f.jpeg))
+    hitchesFrom = System.nanoTime() + 3000000000L
 
     // Set up GLFW input handlers
     val glKeyHandler = new GLKeyboardHandler(client)
@@ -75,6 +100,8 @@ private[client] final class MatchWindow(app: Screens) {
     // Esc twice leaves. It fires inside this frame's event poll, so tearing down the window
     // it is drawing to waits for the frame to finish.
     glKeyHandler.onLeaveMatch = () => Platform.runLater(() => leaveMatch(stage))
+    // F8: inside this frame's event poll too, so the picture is taken once the frame is drawn
+    glKeyHandler.onMarkMoment = () => markRequested = true
 
     org.lwjgl.glfw.GLFW.glfwSetKeyCallback(glWindow.handle, glKeyHandler)
     org.lwjgl.glfw.GLFW.glfwSetCharCallback(glWindow.handle, (_, codepoint: Int) => {
@@ -89,7 +116,11 @@ private[client] final class MatchWindow(app: Screens) {
     org.lwjgl.glfw.GLFW.glfwSetMouseButtonCallback(glWindow.handle, (_, button, action, mods) => glMouseHandler.onMouseButton(button, action, mods))
 
     // Focus callback: clear keys when window loses focus
+    var windowFocused = true
     org.lwjgl.glfw.GLFW.glfwSetWindowFocusCallback(glWindow.handle, (_, focused) => {
+      windowFocused = focused
+      hitchesFrom = System.nanoTime() + 2000000000L
+      Diagnostics.event(if (focused) "focus: back" else "focus: lost")
       if (!focused) glKeyHandler.clearAllKeys()
     })
 
@@ -111,6 +142,11 @@ private[client] final class MatchWindow(app: Screens) {
     // Game loop via AnimationTimer (fires on FX/main thread — required for GLFW on macOS)
     var lastFrameTime = 0L
     var fullscreen = false
+    var frameDeltaMs = 0f
+    var lastStateNs = 0L
+    var lastTier = RenderQuality.tier
+    var lastFbWidth = glWindow.fbWidth
+    var lastFbHeight = glWindow.fbHeight
     renderLoop = new AnimationTimer() {
       override def handle(now: Long): Unit = {
         val frameStartNs = System.nanoTime()
@@ -118,6 +154,7 @@ private[client] final class MatchWindow(app: Screens) {
           if (glWindow == null || !glWindow.isValid) return
           val deltaNs = if (lastFrameTime == 0L) 16_666_667L else now - lastFrameTime
           lastFrameTime = now
+          frameDeltaMs = deltaNs / 1e6f
           val deltaSec = Math.min(deltaNs / 1_000_000_000.0, 0.05)
 
           org.lwjgl.glfw.GLFW.glfwPollEvents()
@@ -128,11 +165,15 @@ private[client] final class MatchWindow(app: Screens) {
           if (glKeyHandler.consumeF11Press()) {
             fullscreen = !fullscreen
             glWindow.setFullscreen(fullscreen)
+            hitchesFrom = System.nanoTime() + 2000000000L
+            Diagnostics.event(if (fullscreen) "full screen: on" else "full screen: off")
           }
 
           // Check if GLFW window was closed
           if (glWindow.shouldClose) {
+            Diagnostics.matchEnded("closed")
             renderLoop.stop()
+            disposeHistory()
             glRenderer.dispose()
             glRenderer = null
             retire(glWindow)
@@ -153,21 +194,66 @@ private[client] final class MatchWindow(app: Screens) {
           // when where the mouse rests means nothing
           if (glWindow.readPointer() && !controllerHandler.stickAiming)
             glRenderer.drawCursor(glWindow.pointerX, glWindow.pointerY, glWindow.fbWidth, glWindow.width, glWindow.height)
+          // A moment marked: the frame as the player sees it, pointer and all, before it goes to the screen
+          if (markRequested) { markRequested = false; markMoment() }
+          // And a small one now and then for the history, read back without waiting (nothing most frames)
+          if (Diagnostics.recorder != null) frameHistory.capture(glWindow.fbWidth, glWindow.fbHeight, frameStartNs)
           glWindow.swapBuffers()
+
+          // The frame into the match's recording, and now and then what the client thinks of us
+          val recorder = Diagnostics.recorder
+          if (recorder != null) {
+            // A frame long after the last, when nothing explains it: a stall the player saw
+            if (frameDeltaMs > 300f && frameStartNs - hitchesFrom > 0L)
+              Diagnostics.noticed(NoticedKind.Hitch, frameDeltaMs.toInt, msAgo = frameDeltaMs.toInt)
+            val pos = client.getLocalPosition
+            var flags = 0
+            if (windowFocused) flags |= FrameFlags.Focused
+            if (glKeyHandler.isChatMode) flags |= FrameFlags.ChatOpen
+            if (client.getIsDead) flags |= FrameFlags.Dead
+            if (fullscreen) flags |= FrameFlags.Fullscreen
+            if (controllerHandler.stickAiming) flags |= FrameFlags.StickAiming
+            if (client.isCharging) flags |= FrameFlags.Charging
+            if (client.getIsMoving) flags |= FrameFlags.Moving
+            recorder.frame(frameDeltaMs, ((System.nanoTime() - frameStartNs) / 1e6).toFloat,
+              pos.getX.toFloat, pos.getY.toFloat, client.visualPosX.toFloat, client.visualPosY.toFloat,
+              client.getMouseWorldX.toFloat, client.getMouseWorldY.toFloat,
+              glKeyHandler.heldMask | glMouseHandler.heldMask, flags, RenderQuality.tier, client.aimedAbility)
+            if (frameStartNs - lastStateNs >= 250_000_000L) {
+              lastStateNs = frameStartNs
+              client.sampleState(stateSample)
+              recorder.state(stateSample)
+            }
+            if (RenderQuality.tier != lastTier) {
+              lastTier = RenderQuality.tier
+              Diagnostics.event(s"quality: ${RenderQuality.tierName}")
+            }
+            if (glWindow.fbWidth != lastFbWidth || glWindow.fbHeight != lastFbHeight) {
+              lastFbWidth = glWindow.fbWidth
+              lastFbHeight = glWindow.fbHeight
+              Diagnostics.event(s"window: ${lastFbWidth}x$lastFbHeight")
+            }
+          }
         } catch {
           case e: Exception =>
             System.err.println("=== RENDER LOOP EXCEPTION ===")
             e.printStackTrace()
             com.gridgame.common.observability.Metrics.clientErrors.add(1L,
               io.opentelemetry.api.common.Attributes.of(com.gridgame.common.observability.Attrs.Kind, "render_loop"))
+            Diagnostics.incident(IncidentKind.RenderCrash, Diagnostics.stackTrace(e),
+              if (frameHistory != null) frameHistory.frames.map(f => PastFrame(f.nanos, f.jpeg)) else Nil)
             renderLoop.stop()
+            disposeHistory()
             if (glRenderer != null) { glRenderer.dispose(); glRenderer = null }
             if (glWindow != null) { retire(glWindow); glWindow = null }
+            // Out of the match and back to the menus, where the player can tell us what they saw, rather
+            // than the game vanishing: the menus don't draw with OpenGL, so they are still fine
             Platform.runLater(() => {
-              Platform.setImplicitExit(true)
-              AudioManager.stopMusic()
-              client.disconnect()
-              Platform.exit()
+              close(stage, "error")
+              client.leaveMatch()
+              client.returnToLobbyBrowser()
+              showLobbyBrowser(stage, Messages.t("The match closed because of an error"))
+              showProblemReport(stage, ReportAbout.MatchError(e.toString))
             })
         } finally {
           val frameMs = (System.nanoTime() - frameStartNs) / 1e6
@@ -184,7 +270,7 @@ private[client] final class MatchWindow(app: Screens) {
     // Wire game over listener
     client.gameOverListener = () => {
       Platform.runLater(() => {
-        close(stage)
+        close(stage, "finished")
         showScoreboard(stage)
       })
     }
@@ -193,7 +279,7 @@ private[client] final class MatchWindow(app: Screens) {
     // the player in a match nothing is driving.
     client.lobbyClosedListener = () => {
       Platform.runLater(() => {
-        close(stage)
+        close(stage, "closed by the server")
         client.returnToLobbyBrowser()
         showLobbyBrowser(stage, Messages.t("The match was closed"))
       })
@@ -204,17 +290,26 @@ private[client] final class MatchWindow(app: Screens) {
 
   /** Take down the in-game window and bring the JavaFX stage back; a no-op when no match is
     * showing. Run it between frames (from a runLater), never inside one: it destroys the
-    * window the frame is drawing to. */
-  def close(stage: Stage): Unit = {
+    * window the frame is drawing to. `how` the match ended, for its recording: finished, left,
+    * disconnected, error. */
+  def close(stage: Stage, how: String): Unit = {
     if (renderLoop == null) return
+    Diagnostics.matchEnded(how)
     renderLoop.stop()
     renderLoop = null
     client.gameOverListener = null
+    disposeHistory()
     if (glRenderer != null) { glRenderer.dispose(); glRenderer = null }
     if (glWindow != null) { retire(glWindow); glWindow = null }
     Platform.setImplicitExit(true)
     AudioManager.playMenuMusic()
     stage.show()
+  }
+
+  /** The history let go, while the window's context is still current (its GL objects with it). */
+  private def disposeHistory(): Unit = {
+    Diagnostics.pastFrames = () => Nil
+    if (frameHistory != null) { frameHistory.dispose(); frameHistory = null }
   }
 
   /** The window off the screen now, and destroyed once macOS has finished with it (GLWindow.retire),
@@ -239,7 +334,7 @@ private[client] final class MatchWindow(app: Screens) {
       val fallback = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(4))
       fallback.setOnFinished(_ => {
         if (client.clientState == ClientState.PLAYING && client.currentLobbyId == sessionLobby) {
-          close(stage)
+          close(stage, "left")
           client.returnToLobbyBrowser()
           showLobbyBrowser(stage)
         }
@@ -247,9 +342,43 @@ private[client] final class MatchWindow(app: Screens) {
       fallback.play()
     } else {
       client.leaveMatch()
-      close(stage)
+      close(stage, "left")
       showLobbyBrowser(stage)
     }
+  }
+
+  /** What the match window draws with, for a report: the OpenGL the driver gave it, its size and scale. */
+  private def noteGraphics(): Unit =
+    try {
+      Diagnostics.noteGraphics(GL11.glGetString(GL11.GL_VENDOR), GL11.glGetString(GL11.GL_RENDERER),
+        GL11.glGetString(GL11.GL_VERSION), GL11.glGetString(GL20.GL_SHADING_LANGUAGE_VERSION))
+      Diagnostics.noteWindow(glWindow.fbWidth, glWindow.fbHeight,
+        if (glWindow.width > 0) glWindow.fbWidth.toDouble / glWindow.width else 1.0, RenderQuality.tierName, RenderQuality.isAuto)
+      Diagnostics.event(s"window: ${glWindow.fbWidth}x${glWindow.fbHeight}")
+    } catch { case e: Exception => System.err.println(s"MatchWindow: couldn't read the graphics' names ($e)") }
+
+  /** The player marked this moment (F8): the frame read back as drawn, for its picture, and the HUD
+    * says so. Read before the swap, from the back buffer the frame was drawn into. */
+  private def markMoment(): Unit = {
+    val w = glWindow.fbWidth
+    val h = glWindow.fbHeight
+    val pixels = if (Diagnostics.recorder == null || w <= 0 || h <= 0) null else {
+      val buf = MemoryUtil.memAlloc(w * h * 3)
+      try {
+        GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, 0)
+        GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 1)
+        GL11.glReadPixels(0, 0, w, h, GL11.GL_RGB, GL11.GL_UNSIGNED_BYTE, buf)
+        GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 4)
+        buf
+      } catch {
+        case e: Exception =>
+          MemoryUtil.memFree(buf)
+          System.err.println(s"MatchWindow: couldn't read the frame back ($e)")
+          null
+      }
+    }
+    // With the seconds before it: the key is often pressed a moment after what it is about
+    Diagnostics.markMoment(pixels, w, h, frameHistory.frames.map(f => PastFrame(f.nanos, f.jpeg)))
   }
 
   def loadWorld(worldFileName: String): Unit = {
@@ -283,7 +412,9 @@ private[client] final class MatchWindow(app: Screens) {
     * retired: GLFWManager.terminate destroys it if macOS has finished with it, and otherwise leaves
     * it to the process's exit. */
   def dispose(): Unit = {
+    Diagnostics.matchEnded("closed")
     if (renderLoop != null) renderLoop.stop()
+    if (glWindow != null && glWindow.isValid) disposeHistory()
     if (glRenderer != null) glRenderer.dispose()
     if (glWindow != null) glWindow.retire()
     if (controllerHandler != null) controllerHandler.cleanup()

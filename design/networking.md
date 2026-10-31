@@ -1,7 +1,8 @@
 # Networking
 
-What the server trusts, who owns a player's position, what a session is, and how a player stays
-logged in. The wire format itself
+What the server trusts, who owns a player's position, what a session is, how a player stays
+logged in, and the one connection that carries something other than packets (a problem report's
+upload). The wire format itself
 (packet layouts and types) is in common/protocol/CLAUDE.md; the code that enforces all of this is
 server/net (sessions, signatures, replay, rate limits), server/game (`PacketValidator`, the
 `*Requests` traits of `ClientHandler`) and client/game.
@@ -206,3 +207,44 @@ is given a `GRIDGAME_LOGIN_FILE` of its own.
 
 `RefreshTokensTest` (the database), `StayLoggedInTest` (the server, through its TCP handler),
 `ClientNetworkTest`, `GameClientLoginTest`, `LoginStoreTest` and `WelcomeScreenTest` pin this.
+
+## A problem report's upload
+
+A problem report (design/diagnostics.md) is megabytes: a match's recording, the client's log,
+screenshots. Sent as packets it would be 40 a second at most (layer 3), behind everything else the
+session sends, and as frames on the session's own stream it would hold up whatever the match sent
+behind it. So it goes down a connection of its own, which carries the report and nothing else:
+
+- **Asked for on the session.** The client says a report is ready (PROBLEM_REPORT BEGIN, signed: its
+  id, size, CRC-32, the match it is about), and the server answers with a ticket (READY): 16 random
+  bytes, good for one upload of that report by that player within 60 seconds. Or it refuses
+  (REFUSED, with why and when to try again): too big (64 MiB), too many from that account (6 an hour,
+  20 a day), too many under way (4 at once, one a player), no room left (2 GiB of reports). A report
+  it has already, sent again after its answer was lost, is answered with its code (ACCEPTED), and
+  kept once. The ticket only travels inside TLS, on the session it was asked for on.
+- **A second connection, logged in with the ticket.** The client opens another TLS connection to the
+  same server, held to the same pinned identity (layer 1), and sends one frame: an AUTH_REQUEST
+  UPLOAD carrying the ticket and the report's id, unsigned as every AUTH_REQUEST is. It is a login
+  like any other to the rate limits: the five connections a minute an address has, and a ticket that
+  isn't good (unknown, used, run out, another report's) counted as a wrong password of its address
+  and the connection closed. A session's own connection is never given over (refused, and the
+  session goes on).
+- **Never a session.** A good ticket gives the connection over to the report (server/net
+  `UploadReceiver.takeOver`): the frame decoder is taken out and the TcpHandler replaced by a
+  receiver, so nothing on it is read as a packet again; it has no token, no player, no lobby, no
+  match, and nothing it sends reaches anything but a file. The server writes the go-ahead (READY)
+  only after the swap, and the client waits for it before it sends a byte, so no byte of the report
+  can be read as a frame. The connection is marked as an upload, so the login deadline (15s) leaves
+  it be.
+- **Exactly what it said, or nothing.** The receiver takes exactly the size BEGIN gave, raw, into a
+  file in `problem_reports/.incoming` with a running CRC-32: a byte more, or a CRC that isn't BEGIN's,
+  and nothing is kept (FAILED CORRUPT); 30 seconds without a byte, ten minutes in all, or the
+  connection closing first, and the part is deleted (FAILED TRUNCATED, if it can still be told). Whole,
+  it is moved into its own folder with what the server knows of it, and the client told the report's
+  code (ACCEPTED); then the server closes the connection.
+
+What it doesn't stop: a player can keep one of the four upload places taken by asking for tickets
+and not using them (each runs out in a minute), which holds up other players' reports, not the
+game; and an account's twenty a day can fill the 2 GiB, after which reports are refused until whoever
+runs the server clears some out. `ProblemReportsTest` pins all of it, an upload over real TLS among it.
+

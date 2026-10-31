@@ -1,0 +1,15 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+load("//src/main/scala/com/gridgame/client:jars.bzl", "CLIENT")
+load("//third_party:jvm.bzl", "GSON", "LWJGL")
+
+# The client's diagnostics: its log on disk, the match it is recording, the moments the player marks,
+# what went wrong, and the problem reports made of them (see design/diagnostics.md).
+scala_library(
+    name = "diagnostics",
+    srcs = glob(["*.scala"]),
+    visibility = CLIENT,
+    deps = [
+        "//src/main/scala/com/gridgame/client/net",
+        "//src/main/scala/com/gridgame/common",
+    ] + GSON + LWJGL,
+)

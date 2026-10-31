@@ -1,6 +1,7 @@
 package com.gridgame.client.render
 package hud
 
+import com.gridgame.client.diagnostics.Diagnostics
 import com.gridgame.client.i18n.Messages
 import com.gridgame.common.Constants
 import com.gridgame.common.model._
@@ -27,6 +28,8 @@ private[render] final class HudPainter(ctx: RenderContext, abilityBar: AbilityBa
   private val _cachedSlotCountStrs = new Array[String](5)
   // How many we carry of the most the server lets us, beside the slots ("7/10")
   private var _cachedTotal = -1; private var _cachedTotalStr = ""
+  // The marked moment the notice is about, and what it says (made again only when it changes)
+  private var _cachedMark = -1; private var _cachedMarksFull = false; private var _cachedMarkStr = ""
 
   def draw(screenW: Int, screenH: Int): Unit = {
     // Dark backing panel behind the entire bottom HUD bar
@@ -46,6 +49,36 @@ private[render] final class HudPainter(ctx: RenderContext, abilityBar: AbilityBa
     chat.draw(screenW, screenH)
     if (client.isPracticeMode) practice.draw(screenW, screenH)
     renderLeavePrompt(screenW)
+    renderMarkNotice(screenW)
+  }
+
+  /** "Moment 2 marked": shown for a few seconds after F8 marks one for a problem report, so the player
+    * knows it took and where to report it (design/diagnostics.md, *Marking a moment*). */
+  private def renderMarkNotice(screenW: Int): Unit = {
+    if (frameTimeMs >= Diagnostics.markNoticeUntilMs) return
+    val n = Diagnostics.lastMarkNumber
+    val full = Diagnostics.marksFull
+    if (n != _cachedMark || full != _cachedMarksFull) {
+      _cachedMark = n
+      _cachedMarksFull = full
+      _cachedMarkStr =
+        if (full) Messages.t("A match keeps at most {0} marked moments", Diagnostics.MaxMarks.toString)
+        else Messages.t("Moment {0} marked: report it when the match ends", n.toString)
+    }
+    val text = _cachedMarkStr
+    val textW = fontMedium.measureWidth(text)
+    val boxW = textW + 46f
+    val boxH = 36f
+    val boxX = screenW / 2f - boxW / 2f
+    // Below the leave prompt, when both show
+    val boxY = if (frameTimeMs < client.leaveConfirmUntil) 128f else 84f
+    beginShapes()
+    shapeBatch.fillRoundedRect(boxX, boxY, boxW, boxH, 8f, 0.04f, 0.05f, 0.12f, 0.88f)
+    shapeBatch.strokeRect(boxX, boxY, boxW, boxH, 1f, 1f, 0.82f, 0.32f, 0.75f)
+    // A gold dot where the flag would be: the mark
+    shapeBatch.fillOval(boxX + 17f, boxY + boxH / 2f, 5f, 5f, 1f, 0.82f, 0.32f, 1f)
+    beginSprites()
+    fontMedium.drawTextOutlined(spriteBatch, text, boxX + 30f, boxY + (boxH - fontMedium.charHeight) / 2f, 1f, 0.93f, 0.78f)
   }
 
   /** "Press Esc again", shown for the few seconds the first Esc arms leaving the match. */

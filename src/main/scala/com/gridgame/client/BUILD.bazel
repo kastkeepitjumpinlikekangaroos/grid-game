@@ -1,13 +1,18 @@
 load("@rules_scala//scala:scala.bzl", "scala_binary", "scala_library")
 load(":jars.bzl", "CLIENT", "RESOURCES")
-load("//third_party:jvm.bzl", "HOST_NATIVES", "JAVAFX", "LINUX_ARM64_NATIVES", "LINUX_NATIVES", "LWJGL", "WINDOWS_NATIVES", "on_mac")
+load("//third_party:jvm.bzl", "GSON", "HOST_NATIVES", "JAVAFX", "LINUX_ARM64_NATIVES", "LINUX_NATIVES", "LWJGL", "WINDOWS_NATIVES", "on_mac")
+
+# Which build this is (common/BuildInfo): a runtime dependency of what runs, so no library rebuilds
+# for a new commit
+BUILD_INFO = "//src/main/scala/com/gridgame/common:build_info"
 
 # The client. Each package under here is a library of its own and depends only on the ones above it
 # in this list (see CLAUDE.md here):
 #
 #   gl                 OpenGL and GLFW primitives
 #   audio, i18n, net   sound, the UI's text, the connection
-#   game               GameClient: the client's side of the game        (audio, i18n, net)
+#   diagnostics        the log on disk, the match's recording, problem reports   (net)
+#   game               GameClient: the client's side of the game        (audio, i18n, net, diagnostics)
 #   render/projectiles, render/blasts                                     (gl)
 #   render             the renderer: core, then the painters (world, hud), then GLGameRenderer
 #   input              keyboard, mouse, controller                       (game, gl, render)
@@ -24,6 +29,7 @@ scala_library(
     visibility = CLIENT,
     deps = [
         "//src/main/scala/com/gridgame/client/audio",
+        "//src/main/scala/com/gridgame/client/diagnostics",
         "//src/main/scala/com/gridgame/client/game",
         "//src/main/scala/com/gridgame/client/gl",
         "//src/main/scala/com/gridgame/client/i18n",
@@ -44,6 +50,7 @@ scala_library(
     exports = [
         ":app",
         "//src/main/scala/com/gridgame/client/audio",
+        "//src/main/scala/com/gridgame/client/diagnostics",
         "//src/main/scala/com/gridgame/client/game",
         "//src/main/scala/com/gridgame/client/gl",
         "//src/main/scala/com/gridgame/client/i18n",
@@ -56,8 +63,8 @@ scala_library(
         "//src/main/scala/com/gridgame/client/render/world",
         "//src/main/scala/com/gridgame/client/ui",
         "//src/main/scala/com/gridgame/client/ui/screens",
-    ] + JAVAFX + LWJGL,
-    runtime_deps = HOST_NATIVES,
+    ] + GSON + JAVAFX + LWJGL,
+    runtime_deps = HOST_NATIVES + [BUILD_INFO],
 )
 
 # The client for the machine doing the build (the Mac's is the one scripts/build_macos_app.sh
@@ -79,6 +86,7 @@ scala_binary(
         "-Xms64m",
         "-Xmx768m",
     ],
+    runtime_deps = [BUILD_INFO],
     deps = [":app"] + HOST_NATIVES,
 )
 
@@ -89,6 +97,7 @@ scala_binary(
     main_class = "com.gridgame.client.Main",
     resources = RESOURCES,
     jvm_flags = ["-Xms64m", "-Xmx768m"],  # see the client target
+    runtime_deps = [BUILD_INFO],
     deps = [":app"] + WINDOWS_NATIVES,
 )
 
@@ -97,6 +106,7 @@ scala_binary(
     main_class = "com.gridgame.client.Main",
     resources = RESOURCES,
     jvm_flags = ["-Xms64m", "-Xmx768m"],  # see the client target
+    runtime_deps = [BUILD_INFO],
     deps = [":app"] + LINUX_NATIVES,
 )
 
@@ -106,6 +116,7 @@ scala_binary(
     main_class = "com.gridgame.client.Main",
     resources = RESOURCES,
     jvm_flags = ["-Xms64m", "-Xmx768m"],  # see the client target
+    runtime_deps = [BUILD_INFO],
     deps = [":app"] + LINUX_ARM64_NATIVES,
 )
 
@@ -156,6 +167,16 @@ scala_binary(
 
 # Dev tool: fixed scenes drawn by the real renderer on a stopped clock, to compare two builds of the
 # renderer pixel for pixel. Not shipped. See GoldenFrames.
+# Dev tool: a player's match redrawn from their problem report's recording, through the real client and
+# renderer, to watch any moment of it; or a moment, or a stretch, to PNGs. Not shipped. See ReportReplay.
+scala_binary(
+    name = "report_replay",
+    main_class = "com.gridgame.client.devtools.ReportReplay",
+    resources = RESOURCES,
+    jvm_flags = on_mac(["-XstartOnFirstThread"]) + ["-Djava.awt.headless=true"],
+    deps = ["//src/main/scala/com/gridgame/client/devtools"] + HOST_NATIVES,
+)
+
 scala_binary(
     name = "golden_frames",
     main_class = "com.gridgame.client.devtools.GoldenFrames",

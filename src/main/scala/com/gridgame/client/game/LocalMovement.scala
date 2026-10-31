@@ -351,10 +351,28 @@ trait LocalMovement { this: GameClient =>
   private var knockFromY = 0.0
   // Whether visualPosX/Y says where we were drawn yet this life, for a slide to start from
   private var drawnYet = false
+  // A replay of a match's recording (devtools ReportReplay) says where we stood and were drawn, frame
+  // by frame, rather than the client working it out from steps it never takes
+  @volatile private var replayed = false
+
+  /** Where a recording says we stood and were drawn this frame: a replay's, never the game's. A new cell
+    * turns us the way we stepped and has us walking, as a step of our own would (movePlayer). */
+  private[client] def replayLocal(cellX: Int, cellY: Int, drawnX: Double, drawnY: Double): Unit = {
+    val was = localPosition.get()
+    if (was != null && (was.getX != cellX || was.getY != cellY)) {
+      localDirection.set(Direction.fromMovement(Integer.signum(cellX - was.getX), Integer.signum(cellY - was.getY)))
+      lastMoveTime.set(System.currentTimeMillis())
+    }
+    localPosition.set(new Position(cellX, cellY))
+    _visualPosX = drawnX
+    _visualPosY = drawnY
+    replayed = true
+  }
 
   /** Call once per frame to update visualPosX/visualPosY: where we are, or between it and the cell
     * we are stepping from, and sliding in from where a knockback caught us. */
   def updateVisualPosition(): Unit = {
+    if (replayed) return
     var pos: Position = null
     var knocks = 0
     placedLock.synchronized {

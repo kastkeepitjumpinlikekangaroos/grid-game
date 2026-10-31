@@ -1,5 +1,7 @@
 package com.gridgame.client.game
 
+import com.gridgame.client.diagnostics.Diagnostics
+import com.gridgame.common.diagnostics.Recording.NoticedKind
 import com.gridgame.common.Constants
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
@@ -69,6 +71,7 @@ trait Items { this: GameClient =>
 
       case ItemAction.USE_REJECTED =>
         if (packet.getPlayerId.equals(localPlayerId)) {
+          Diagnostics.noticed(NoticedKind.Refused, 2)
           addToInventory(new Item(packet.getItemId, packet.getX, packet.getY, packet.getItemType))
           if (packet.getItemType == ItemType.Star) {
             // The server didn't take the teleport: back to where it has us

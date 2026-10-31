@@ -41,6 +41,9 @@ class ClientHandler(private[game] val instance: GameInstance, private[game] val 
   private[game] val projectileManager = instance.projectileManager
   private[game] val itemManager = instance.itemManager
   private[game] def outbox = instance.outbox
+  /** Where what the match's players are refused is written down (MatchJournal). */
+  private[game] def journal: MatchJournal = instance.journal
+  validator.journal = instance.journal
 
   /**
    * Process a packet received from a client.
@@ -115,14 +118,17 @@ class ClientHandler(private[game] val instance: GameInstance, private[game] val 
     val player = registry.getByChannel(channel)
     if (player != null) {
       println(s"Player disconnected (TCP): ${player.getId.toString.substring(0, 8)} ('${player.getName}')")
-      removePlayer(player.getId)
+      removePlayer(player.getId, "lost its connection, and is out of the match")
     }
   }
 
   /** Take a player out of the match (they disconnected or left it) and tell the others.
-    * Their kills and deaths stay with the kill tracker, so they are still scored. */
-  def removePlayer(playerId: UUID): Unit = {
-    if (registry.get(playerId) == null) return
+    * Their kills and deaths stay with the kill tracker, so they are still scored. `why` is what the
+    * match's journal says of it. */
+  def removePlayer(playerId: UUID, why: String = "left the match"): Unit = {
+    val player = registry.get(playerId)
+    if (player == null) return
+    journal.note(player, why)
     registry.remove(playerId)
     itemManager.clearInventory(playerId)
     clearTrapsOf(playerId)

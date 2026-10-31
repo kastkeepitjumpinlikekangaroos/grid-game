@@ -1,5 +1,7 @@
 package com.gridgame.client.game
 
+import com.gridgame.client.diagnostics.Diagnostics
+import com.gridgame.common.diagnostics.Recording.NoticedKind
 import com.gridgame.client.audio.AudioManager
 import com.gridgame.common.Constants
 import com.gridgame.common.model._
@@ -227,6 +229,14 @@ trait LocalPlayer { this: GameClient =>
       // A knockback among the moves: we are slid to where it put us, not jumped there
       val knockedBack = updatePacket.getKnockbacks > knockbacksSeen
       if (knockedBack) knockbacksSeen = updatePacket.getKnockbacks
+      // Put somewhere we didn't walk to, by no push: a correction or a teleport, a player may mean it
+      // when they report "it pulled me back"
+      if (!knockedBack && !isDead) {
+        val was = localPosition.get()
+        val to = updatePacket.getPosition
+        val cells = Math.hypot(to.getX - was.getX, to.getY - was.getY)
+        if (cells >= 1.5) Diagnostics.noticed(NoticedKind.SnapBack, (cells * 100).toInt)
+      }
       placedByServer(updatePacket.getPosition, knockedBack)
     }
 
@@ -259,6 +269,7 @@ trait LocalPlayer { this: GameClient =>
   private[game] def handleOwnJoin(join: PlayerJoinPacket): Unit = {
     localTeamId = join.getTeamId
     if (CharacterDef.isValid(join.getCharacterId)) selectedCharacterId = join.getCharacterId
+    noteOwnCharacter(selectedCharacterId)
     localPosition.set(join.getPosition)
     localHealth.set(join.getHealth)
     AudioManager.playSpawn()

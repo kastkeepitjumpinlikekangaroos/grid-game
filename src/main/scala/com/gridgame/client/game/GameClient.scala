@@ -72,6 +72,7 @@ object GameClient {
  *  - Items            items on the ground, our inventory, and using it
  *  - Traps            traps on the ground, and going off
  *  - EventAnimations  what the renderer shows of an event for a moment: hits, deaths, teleports, blasts
+ *  - ProblemReports   which match this is, what its recording is told, and asking the server to take a report
  *
  * What is forgotten when is decided here: a new match, going back to the lobby browser, the
  * connection dropping, and a new life.
@@ -80,7 +81,7 @@ class GameClient(private[game] val serverHost: String, private[game] val serverP
                  private[game] val initialWorld: WorldData, var playerName: String = "Player")
     extends Connection with Lobby with Chat with Ranked with Records with MatchProgress with Opening
     with WorldState with LocalPlayer with LocalMovement with Attacks with Barriers with OtherPlayers
-    with Projectiles with Items with Traps with EventAnimations {
+    with Projectiles with Items with Traps with EventAnimations with ProblemReports {
 
   @volatile var clientState: Int = ClientState.CONNECTING
 
@@ -109,6 +110,7 @@ class GameClient(private[game] val serverHost: String, private[game] val serverP
       case PacketType.ITEM_UPDATE => handleItemUpdate(packet.asInstanceOf[ItemPacket])
       case PacketType.TRAP_UPDATE => handleTrapUpdate(packet.asInstanceOf[TrapPacket])
       case PacketType.COOLDOWN_RESET => handleCooldownReset(packet.asInstanceOf[CooldownResetPacket])
+      case PacketType.PROBLEM_REPORT => handleProblemReport(packet.asInstanceOf[ProblemReportPacket])
       // The server's word on a player: on us (LocalPlayer), or on anyone else (OtherPlayers)
       case PacketType.PLAYER_UPDATE =>
         val update = packet.asInstanceOf[PlayerUpdatePacket]
@@ -138,6 +140,8 @@ class GameClient(private[game] val serverHost: String, private[game] val serverP
     knockbacksSeen = 0
     beginScoring()
     localHealth.set(getSelectedCharacterMaxHealth)
+    // Its recording began as the packet arrived (Diagnostics.packetTap): what the lobby said of it
+    noteMatchStarting()
     if (gameStartingListener != null) gameStartingListener()
   }
 

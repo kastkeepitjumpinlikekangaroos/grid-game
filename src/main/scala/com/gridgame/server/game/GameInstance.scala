@@ -33,6 +33,14 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   /** Where the match's packets go out. */
   def outbox: Outbox = host.outbox
 
+  /** The match's own id: its players' clients are told it (GameEvent.MATCH_INFO), and a problem
+    * report names the match it is about by it, to be kept with [[journal]]. */
+  val matchId: UUID = UUID.randomUUID()
+
+  /** What the server saw and decided in the match, for a problem report about it (MatchJournal).
+    * Before `handler`, which hands it to its validator. */
+  val journal = new MatchJournal(matchId)
+
   val registry = new ClientRegistry()
   val teamAssignments = new java.util.concurrent.ConcurrentHashMap[UUID, Byte]()
   var gameMode: Byte = 0 // 0=FFA, 1=Teams
@@ -103,7 +111,28 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     startedAtMs = System.currentTimeMillis()
     beginOpening()
     running = true
+    journalStart()
   }
+
+  /** The journal's first lines: the match, and everyone in it as it begins. */
+  private def journalStart(): Unit = {
+    journal.begin()
+    val map = if (worldFile.nonEmpty) new java.io.File(worldFile).getName else "no map file"
+    val size = if (world != null) s" (${world.width}x${world.height})" else ""
+    val mode = if (gameMode == 1) "Teams" else "free-for-all"
+    journal.note(s"match $matchId began on $map$size: $mode, $durationMinutes min${if (isPractice) ", practice" else ""}, $describeOpening")
+    registry.forEachPlayer { p =>
+      val pos = p.getPosition
+      val team = if (p.getTeamId != 0) s", team ${p.getTeamId}" else ""
+      val bot = if (TeamAssignment.isBot(p.getId)) ", a bot" else ""
+      journal.note(p, s"plays ${MatchJournal.characterName(p.getCharacterId)}$team$bot, from (${pos.getX},${pos.getY})")
+    }
+  }
+
+  /** Which match this is (GameEvent.MATCH_INFO), for a problem report from a player in it to name. */
+  private[server] def matchInfoPacket(): GameEventPacket =
+    new GameEventPacket(outbox.nextSeq(), new UUID(0L, 0L), Packet.getCurrentTimestamp, GameEvent.MATCH_INFO,
+      gameId = gameId, targetId = matchId)
 
   def start(): Unit = {
     begin()
@@ -114,6 +143,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
       def run(): Unit = try { body } catch {
         case e: Throwable =>
           System.err.println(s"GameInstance[$gameId] $name error: $e")
+          journal.note(s"error in $name: ${MatchJournal.describe(e)}")
       }
     }
 
@@ -166,7 +196,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
       .putAll(Attrs.modeOf(gameMode))
       .putAll(if (isPractice) Attrs.MatchPractice else Attrs.MatchCasual)
       .build())
-    println(s"GameInstance[$gameId]: Started ($durationMinutes min)")
+    println(s"GameInstance[$gameId]: Started ($durationMinutes min), match $matchId")
   }
 
   def stop(): Unit = {
@@ -186,6 +216,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     trapManager.close()
     modifiedTiles.clear()
     teamAssignments.clear()
+    journal.note("the match stopped")
     println(s"GameInstance[$gameId]: Stopped")
   }
 

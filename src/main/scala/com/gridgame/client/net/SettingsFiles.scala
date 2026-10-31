@@ -57,10 +57,10 @@ object SettingsFiles {
     } finally Files.deleteIfExists(tmp)
   }
 
-  private def posix(dir: Path): Boolean = Files.getFileStore(dir).supportsFileAttributeView("posix")
+  private[client] def posix(dir: Path): Boolean = Files.getFileStore(dir).supportsFileAttributeView("posix")
 
   /** The folder, made if it isn't there, and readable by the player alone when it is the game's own. */
-  private def createPrivateDirectory(dir: Path): Unit =
+  private[client] def createPrivateDirectory(dir: Path): Unit =
     if (!Files.isDirectory(dir)) {
       val parent = dir.getParent
       if (parent != null) Files.createDirectories(parent)

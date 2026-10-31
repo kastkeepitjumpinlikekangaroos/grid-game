@@ -33,7 +33,8 @@ class TcpHandler(sessions: Sessions, rateLimiter: RateLimiter, replay: ReplayGua
     ctx.executor().schedule(new Runnable {
       def run(): Unit = {
         val ch = ctx.channel()
-        if (ch.isOpen && !sessions.channelToToken.containsKey(ch)) {
+        // An upload's connection (a problem report's) never logs in: it carries the report and closes
+        if (ch.isOpen && !sessions.channelToToken.containsKey(ch) && ch.attr(TcpHandler.Upload).get() == null) {
           System.err.println(s"TCP: No login within ${Constants.LOGIN_DEADLINE_MS / 1000}s from ${ch.remoteAddress()}, closing")
           ctx.close()
         }
@@ -165,4 +166,10 @@ class TcpHandler(sessions: Sessions, rateLimiter: RateLimiter, replay: ReplayGua
     }
     ctx.close()
   }
+}
+
+object TcpHandler {
+  /** Set on a connection given over to an upload (UploadReceiver.takeOver): it never logs in, and
+    * the login deadline leaves it be. */
+  val Upload: io.netty.util.AttributeKey[java.lang.Boolean] = io.netty.util.AttributeKey.valueOf("gridgame.upload")
 }

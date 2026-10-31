@@ -98,6 +98,13 @@ final class MatchLauncher(host: LobbyHost) {
         if (p != null) host.outbox.send(startingPacket, p)
       }
 
+      // Which match this is, for a problem report a player sends about it (MATCH_INFO): a match is
+      // told by it, as the lobby's id is used again
+      lobby.players.asScala.foreach { pid =>
+        val p = host.getConnectedPlayer(pid)
+        if (p != null) host.outbox.send(instance.matchInfoPacket(), p)
+      }
+
       // Send WorldInfo to each player
       lobby.players.asScala.foreach { pid =>
         val p = host.getConnectedPlayer(pid)
@@ -154,6 +161,7 @@ final class MatchLauncher(host: LobbyHost) {
       case e: Throwable =>
         // Nothing of a match that failed to start is left behind: its ticks and bots, if they had
         // begun, are stopped and the server forgets it. The caller takes the lobby down.
+        instance.journal.note(s"the match failed to start: ${com.gridgame.server.game.MatchJournal.describe(e)}")
         instance.stop()
         host.unregisterGameInstance(lobby.id)
         lobby.gameInstance = null

@@ -1,14 +1,16 @@
 load("@rules_scala//scala:scala.bzl", "scala_library")
 load("//src/main/scala/com/gridgame/client:jars.bzl", "CLIENT")
-load("//third_party:jvm.bzl", "JAVAFX", "LWJGL")
+load("//third_party:jvm.bzl", "GSON", "JAVAFX", "LWJGL")
 
 # Dev tools, not shipped: the benches, the render audit, the golden frames. Their binaries are in
 # the client package (//src/main/scala/com/gridgame/client:render_bench and so on).
 scala_library(
     name = "devtools",
-    srcs = glob(["*.scala"], exclude = ["ProjectileGallery.scala", "UiGallery.scala"]),
+    srcs = glob(["*.scala"], exclude = ["ProjectileGallery.scala", "ReplaySession.scala", "UiGallery.scala"]),
     visibility = CLIENT,
     deps = [
+        ":replay",
+        "//src/main/scala/com/gridgame/client/diagnostics",
         "//src/main/scala/com/gridgame/client/game",
         "//src/main/scala/com/gridgame/client/gl",
         "//src/main/scala/com/gridgame/client/render",
@@ -16,6 +18,18 @@ scala_library(
         "//src/main/scala/com/gridgame/client/ui",
         "//src/main/scala/com/gridgame/common",
     ] + JAVAFX + LWJGL,
+)
+
+# A problem report's recording played into a GameClient, with no window: what report_replay draws,
+# and what its test drives (src/test/scala/com/gridgame/client:replay_session_test)
+scala_library(
+    name = "replay",
+    srcs = ["ReplaySession.scala"],
+    visibility = CLIENT + ["//src/test/scala/com/gridgame/client:__pkg__"],
+    deps = [
+        "//src/main/scala/com/gridgame/client/game",
+        "//src/main/scala/com/gridgame/common",
+    ] + GSON + JAVAFX,
 )
 
 # The projectile gallery on its own: it needs only the GL primitives and the projectile and blast
@@ -39,11 +53,12 @@ scala_library(
     visibility = CLIENT,
     deps = [
         "//src/main/scala/com/gridgame/client:app",
+        "//src/main/scala/com/gridgame/client/diagnostics",
         "//src/main/scala/com/gridgame/client/game",
         "//src/main/scala/com/gridgame/client/i18n",
         "//src/main/scala/com/gridgame/client/net",
         "//src/main/scala/com/gridgame/client/ui",
         "//src/main/scala/com/gridgame/client/ui/screens",
         "//src/main/scala/com/gridgame/common",
-    ] + JAVAFX,
+    ] + GSON + JAVAFX + LWJGL,
 )

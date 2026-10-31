@@ -33,7 +33,7 @@ scene target and then over the finished frame. Three Bazel libraries, each on th
 | `world/BlastPainter` | the frame's blasts, in their two layers, their lights and the air they shake (render/blasts) |
 | `world/WorldOverlayPainter` | name plates, health bars and damage numbers, over the finished frame |
 | `world/ParticleSpawner` | what the frame throws into the particle systems: weather, footsteps, trails (a projectile's embers in its look's colour, as its light), sparks, bursts |
-| `hud/HudPainter` | the HUD: the bottom bar (inventory and how full it is, charge bar), the leave prompt, the notice that we are too full to pick up the item within reach (design/combat.md, *Item Types*), and the parts below |
+| `hud/HudPainter` | the HUD: the bottom bar (inventory and how full it is, charge bar), the leave prompt, the notice that we are too full to pick up the item within reach (design/combat.md, *Item Types*), the notice that F8 marked a moment for a problem report (`Diagnostics`' for three seconds, under the leave prompt when both show; design/diagnostics.md; the golden scene `lagoon_moment_marked`), and the parts below |
 | `hud/AbilityBarPainter`, `MatchInfoPainter`, `ChatPainter`, `PracticePainter`, `DeathScreenPainter` | the ability slots (the one being aimed ringed: *An aimed attack shows where it will go*) and R's beside them, its seconds left over its sweep (design/characters.md, *R resets the cooldowns*), each cooldown swept inside its own slot; the clock and kills and kill feed, chat, practice's tallies, the respawn countdown and game over screen |
 | `hud/CursorPainter` | the mouse's pointer, a crosshair over everything, drawn by `drawCursor` after the frame (*The pointer is ours*) |
 

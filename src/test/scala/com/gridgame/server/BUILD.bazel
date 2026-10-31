@@ -22,8 +22,11 @@ scala_library(
         ":server_test_kit",
         "//src/main/scala/com/gridgame/common",
         "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:com_google_code_gson_gson",
         "@maven//:junit_junit",
     ] + NETTY,
+    # Which build it is (common/BuildInfo), as the server binary has it
+    runtime_deps = ["//src/main/scala/com/gridgame/common:build_info"],
 ) for (name, src, data) in [
     ("teleport_validation_test", "TeleportValidationTest.scala", []),
     ("ability_cast_validation_test", "AbilityCastValidationTest.scala", []),
@@ -79,4 +82,8 @@ scala_library(
     ("bot_match_soak_test", "BotMatchSoakTest.scala", ["//worlds:world_files"]),
     # The projectile tick's grid shows a shot or a blast everyone it can reach, at the roster's own furthest reach
     ("player_grid_test", "PlayerGridTest.scala", []),
+    # Players' problem reports: asked for on the session, sent down a connection of their own, kept with what the server knows
+    ("problem_reports_test", "ProblemReportsTest.scala", []),
+    # What the server writes down of a match for a report about it, and the match's id its players are told; it starts a lobby's match, so it reads the maps
+    ("match_journal_test", "MatchJournalTest.scala", ["//worlds:world_files"]),
 ]]

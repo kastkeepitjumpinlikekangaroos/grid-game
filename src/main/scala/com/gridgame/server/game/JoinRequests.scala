@@ -18,6 +18,10 @@ trait JoinRequests { this: ClientHandler =>
   private[game] def handlePlayerJoin(packet: PlayerJoinPacket, tcpChannel: Channel): Boolean = {
     val playerId = packet.getPlayerId
 
+    // Which match this is, for a problem report the player sends about it, ahead of the world as a
+    // match's start sends it
+    outbox.sendVia(instance.matchInfoPacket(), tcpChannel)
+
     // Send world info to the joining player via TCP
     val wf = instance.worldFile
     if (wf.nonEmpty) {
@@ -41,6 +45,7 @@ trait JoinRequests { this: ClientHandler =>
       // and a heal, a revival for the dead, whenever a client cared to send a join.
       registry.rebind(existing, tcpChannel)
       existing.updateHeartbeat()
+      journal.note(existing, "rejoined: its client joined again and was sent the match")
 
       // Send existing players, items, and tile modifications to rejoining player
       sendExistingPlayers(playerId, existing)
@@ -59,6 +64,7 @@ trait JoinRequests { this: ClientHandler =>
       if (charDef == null) {
         System.err.println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} invalid character ID: ${packet.getCharacterId}")
         Metrics.validationFailed.add(1L, Attrs.VfCharacter)
+        journal.refused(playerId, packet.getPlayerName, s"join refused (character): no character ${packet.getCharacterId}")
         return false
       }
       // gridgame.character.played is incremented from ClientRegistry.add to cover all join paths
@@ -82,6 +88,7 @@ trait JoinRequests { this: ClientHandler =>
       player.setTcpChannel(tcpChannel)
 
       registry.add(player)
+      journal.note(player, s"joined as ${MatchJournal.characterName(packet.getCharacterId)}, at (${validPos.getX},${validPos.getY})")
 
       println(s"Player joined: ${playerId.toString.substring(0, 8)} ('${packet.getPlayerName}') at ${packet.getPosition} with health ${player.getHealth}")
 
@@ -102,6 +109,7 @@ trait JoinRequests { this: ClientHandler =>
     val player = registry.get(playerId)
 
     if (player != null) {
+      journal.note(player, "left the match: its client said so")
       registry.remove(playerId)
       itemManager.clearInventory(playerId)
       clearTrapsOf(playerId)

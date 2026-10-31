@@ -33,6 +33,8 @@ trait TrapRequests { this: ClientHandler =>
     def refuse(why: String): Boolean = {
       System.err.println(s"ClientHandler: Trap refused for ${playerId.toString.substring(0, 8)}: $why")
       Metrics.validationFailed.add(1L, Attrs.VfTrapPlacement)
+      journal.refused(player, s"trap refused (trap_placement): ${MatchJournal.slotName(packet.getAttackSlot)}'s, at " +
+        s"(${packet.getX},${packet.getY}): $why")
       val reject = new TrapPacket(outbox.nextSeq(), playerId, packet.getX, packet.getY,
         0, TrapAction.REJECTED, packet.getTrapType, player.getTeamId, packet.getAttackSlot, null)
       try outbox.sendRaw(reject.serialize(), true, player) catch { case _: Exception => }

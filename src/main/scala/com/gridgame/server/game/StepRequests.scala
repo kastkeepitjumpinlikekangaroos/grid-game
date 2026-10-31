@@ -30,6 +30,7 @@ trait StepRequests { this: ClientHandler =>
     if (world == null) {
       // World should be loaded for active game instances — reject if missing
       Metrics.validationFailed.add(1L, Attrs.VfWorldMissing)
+      journal.refused(player, "step refused (world_missing): the match has no world")
       return false
     }
 
@@ -207,6 +208,10 @@ trait StepRequests { this: ClientHandler =>
     val last = lastCorrectionAt.get(player.getId)
     if (last != null && now - last.longValue() < CORRECTION_INTERVAL_MS) return
     lastCorrectionAt.put(player.getId, now)
-    instance.moveByServer(player, player.getPosition)
+    val since = refusedSince.get(player.getId)
+    val pos = player.getPosition
+    journal.note(player, s"corrected: told it stands at (${pos.getX},${pos.getY}), its steps refused for " +
+      s"${if (since != null) now - since.longValue() else 0}ms")
+    instance.moveByServer(player, pos)
   }
 }

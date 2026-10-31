@@ -20,6 +20,12 @@ trait Opening { this: GameInstance =>
   /** When the opening ends, on the server's clock. */
   private[server] var openingEndsAt: Long = 0L
 
+  /** What the opening holds back, in words, for the match's journal. */
+  private[game] def describeOpening: String =
+    if (openingRules == 0) "no opening"
+    else if (MatchOpening.has(openingRules, MatchOpening.DIVIDER)) s"a ${Constants.MATCH_OPENING_MS / 1000}s opening behind the wall"
+    else s"a ${Constants.MATCH_OPENING_MS / 1000}s opening ceasefire"
+
   /**
    * The opening starts with the match. Teams spends it with the two halves walled off from each
    * other, a free-for-all with everyone's abilities holstered. The wall hangs off the world, so every

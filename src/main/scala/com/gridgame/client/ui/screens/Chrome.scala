@@ -77,7 +77,7 @@ private[client] object Chrome {
 
     val bar = Widgets.topBar(
       Widgets.brand(go(Tab.Lobbies, () => showLobbyBrowser(stage))) +: tabs,
-      Seq(soundToggle(), user))
+      Seq(reportButton(app, stage), soundToggle(), user))
     val (root, column) = Widgets.page(bar, body, maxWidth)
     new Page(root, column, () => refresh())
   }
@@ -87,6 +87,14 @@ private[client] object Chrome {
     val bar = Widgets.topBar(Seq(Widgets.brand(null)), right)
     val (root, column) = Widgets.page(bar, body, 1200, backdrop)
     new Page(root, column, () => ())
+  }
+
+  /** Report a problem, from anywhere: about the game in general, the last match with it if the player
+    * wants (ReportDialog). */
+  def reportButton(app: Screens, stage: Stage): Button = {
+    val b = Widgets.iconButton(Icons.Flag, Messages.t("Report a problem"))
+    b.setOnAction(_ => app.showProblemReport(stage, ReportAbout.General))
+    b
   }
 
   /** Sound on or off. `AudioManager` is a global, so one switch covers the menus and the match

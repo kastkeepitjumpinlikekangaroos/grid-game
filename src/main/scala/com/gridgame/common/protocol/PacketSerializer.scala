@@ -143,6 +143,39 @@ object PacketSerializer {
         val msLeft = buffer.getInt()
         new CooldownResetPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, action, msLeft)
 
+      case PacketType.PROBLEM_REPORT =>
+        // [21] Action, [22-37] the report's id, then what the action carries (ProblemReportPacket)
+        val action = buffer.get()
+        val reportId = ProblemReportPacket.idFrom(buffer.getLong(), buffer.getLong())
+        action match {
+          case ProblemReportAction.BEGIN =>
+            val size = buffer.getInt()
+            val crc = buffer.getInt()
+            val matchId = ProblemReportPacket.idFrom(buffer.getLong(), buffer.getLong())
+            val kind = buffer.get()
+            new ProblemReportPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, action, reportId,
+              size = size, crc = crc, matchId = matchId, kind = kind)
+          case ProblemReportAction.READY =>
+            val ticket = new Array[Byte](ProblemReportPacket.TicketSize)
+            buffer.get(ticket)
+            new ProblemReportPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, action, reportId, ticket = ticket)
+          case ProblemReportAction.REFUSED =>
+            val reason = buffer.get()
+            val retryAfter = buffer.getInt()
+            new ProblemReportPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, action, reportId,
+              reason = reason, retryAfterSeconds = retryAfter)
+          case ProblemReportAction.ACCEPTED =>
+            val codeBytes = new Array[Byte](ProblemReportPacket.CodeSize)
+            buffer.get(codeBytes)
+            new ProblemReportPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, action, reportId,
+              code = extractString(codeBytes))
+          case ProblemReportAction.FAILED =>
+            new ProblemReportPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, action, reportId, reason = buffer.get())
+          case _ =>
+            // An action this side doesn't know: what it carries is dropped, and its handler ignores it
+            new ProblemReportPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, action, reportId)
+        }
+
       case PacketType.RANKED_QUEUE =>
         val action = buffer.get()
         val characterId = buffer.get()

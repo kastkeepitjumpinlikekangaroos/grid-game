@@ -13,9 +13,13 @@ object AuthAction {
   /** End the login a refresh token belongs to: the token is no good from then on, and neither is any
     * session it started. No reply. */
   val LOGOUT: Byte = 3
+  /** Log in an upload connection: the ticket the server gave a problem report, and the report's id
+    * (ProblemReportPacket.uploadToken). Not a session: the connection carries that report's bytes and
+    * nothing else (design/diagnostics.md, *Sending a report*). */
+  val UPLOAD: Byte = 4
 
-  /** The actions that carry a refresh token rather than a name and a password. */
-  def carriesToken(action: Byte): Boolean = action == REFRESH || action == LOGOUT
+  /** The actions that carry a token (a refresh token, or an upload's ticket) rather than a name and a password. */
+  def carriesToken(action: Byte): Boolean = action == REFRESH || action == LOGOUT || action == UPLOAD
 }
 
 /** What the server accepts for a new account. The client checks the same rules before it sends
@@ -57,6 +61,7 @@ object AuthRules {
  * [21]     action (AuthAction)
  * LOGIN, SIGNUP:    [22-41] username (20 bytes UTF-8)  [42-61] password (20 bytes UTF-8)  [62-63] zero
  * REFRESH, LOGOUT:  [22-53] the refresh token (32 bytes)                                  [54-63] zero
+ * UPLOAD:           [22-37] a problem report's upload ticket  [38-53] the report's id         [54-63] zero
  * }}}
  */
 class AuthRequestPacket(
@@ -72,7 +77,7 @@ class AuthRequestPacket(
     this(sequenceNumber, Packet.getCurrentTimestamp, action, username, password)
   }
 
-  /** A REFRESH or a LOGOUT, with the refresh token it is for. */
+  /** A REFRESH or a LOGOUT, with the refresh token it is for; or an UPLOAD, with its ticket and report. */
   def this(sequenceNumber: Int, action: Byte, refreshToken: Array[Byte]) = {
     this(sequenceNumber, Packet.getCurrentTimestamp, action, "", "", refreshToken)
   }
@@ -80,7 +85,7 @@ class AuthRequestPacket(
   def getAction: Byte = action
   def getUsername: String = username
   def getPassword: String = password
-  /** The refresh token a REFRESH or LOGOUT carries; null for a login or a signup. */
+  /** The refresh token a REFRESH or LOGOUT carries (an UPLOAD's ticket and report id); null for a login or a signup. */
   def getRefreshToken: Array[Byte] = refreshToken
 
   override def serialize(): Array[Byte] = {

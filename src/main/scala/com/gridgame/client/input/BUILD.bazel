@@ -8,6 +8,7 @@ scala_library(
     srcs = glob(["*.scala"]),
     visibility = CLIENT,
     deps = [
+        "//src/main/scala/com/gridgame/client/diagnostics",
         "//src/main/scala/com/gridgame/client/game",
         "//src/main/scala/com/gridgame/client/gl",
         "//src/main/scala/com/gridgame/client/render:core",

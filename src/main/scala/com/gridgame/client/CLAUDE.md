@@ -7,8 +7,13 @@ depends only on the ones above it (BUILD.bazel here):
 ```
 gl                   OpenGL and GLFW primitives, knowing nothing of the game        (gl/CLAUDE.md)
 audio, i18n, net     sound (audio/CLAUDE.md), the UI's text, the connection to the server (held
-                     to the identity met there before: KnownServers, PinnedTrustManager) and
-                     where "Remember me" keeps a login (LoginStore)
+                     to the identity met there before: KnownServers, PinnedTrustManager), where
+                     "Remember me" keeps a login (LoginStore), what a match's recording is told
+                     of every packet (PacketTap) and a problem report's own connection
+                     (UploadConnection)
+diagnostics          the client's log on disk, the match it is recording, the moments marked in
+                     it, what went wrong, the run before this one if it crashed, and the problem
+                     reports made of them, waiting in the outbox     (design/diagnostics.md)
 game                 GameClient: everything the client knows and does in a session  (game/CLAUDE.md)
 render/projectiles   how every projectile type is drawn                    (render/projectiles/CLAUDE.md)
 render/blasts        how every explosion and splash is drawn               (render/blasts/CLAUDE.md)
@@ -41,6 +46,21 @@ reads of the game is the `GameClient`'s, which the packet thread writes (game/CL
 - **AnimationTimer game loop** — fires on the FX Application Thread (main thread on macOS), which is required for both GLFW and OpenGL calls. No threading complexity.
 - **JavaFX UI retained** — Login, lobby, character selection, and scoreboard remain in JavaFX. Only in-game rendering uses OpenGL.
 - **The match draws its own pointer** — over the GLFW window the system's is hidden and the renderer draws a crosshair after each frame, where the mouse is, while the window has the focus (render/CLAUDE.md, *The pointer is ours*). The menus keep the system's.
+- **The match is recorded, and a failed frame doesn't close the game** — each frame, every key and button, and four times a second what the client thinks of us go into the match's recording for a problem report, allocating nothing; F8 marks the moment with a picture of the frame, read back before the swap (`MatchWindow.markMoment`), and the last fifteen seconds of small ones the window keeps as it goes (`gl/FrameHistory`, read back through pixel buffers without waiting); a frame long after the last is noticed. A frame that throws takes the window down and brings the menus back with the report offered, where it used to quit the app (design/diagnostics.md).
+
+## Diagnostics
+
+`ClientMain.main` sets them up before anything else (`Diagnostics.install`): from then on everything
+the client prints goes to `client.log` in the player's settings folder as well as the console, a
+watch is kept on the JavaFX thread for freezes, an exception nothing catches is logged and noted, and
+a run that never closed properly is found and offered as a report after the next login. The app's
+clients are given `Diagnostics.packetTap` (`ClientMain.newGameClient`), which records a match from
+its GAME_STARTING to its end; a dev tool's or a test's client, and any process that never calls
+`install`, records nothing and writes nothing there. All of it: design/diagnostics.md.
+
+`report_replay` (devtools `ReportReplay`, on `ReplaySession`, the part without a window) redraws any
+moment of a reported match through the real GameClient and GLGameRenderer, from its recording; its
+keys, headless options and limits are in design/diagnostics.md, *Reading a report*.
 
 ## On Linux
 
@@ -110,7 +130,9 @@ could move these numbers should be checked with them rather than guessed at:
 # every five seconds, the aim turning), so its lane on the ground is in the frame, and --hold=<kind>
 # has us aim an attack of that kind (the primary held, or a shot, blast, fan, dash, blink or trap
 # taken up and never cast, as the first character with one), its aim turning round us. The pointer is
-# drawn over every frame, circling the screen, as the match's window draws it.
+# drawn over every frame, circling the screen, as the match's window draws it. --history keeps the
+# last seconds as a match's window does for a problem report (gl/FrameHistory) and says what capturing
+# cost; --history-out=dir writes the frames kept, to look at.
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --quality=low
 
 # The JavaFX menus: the character select screen (the panel on a page as the lobby screens frame

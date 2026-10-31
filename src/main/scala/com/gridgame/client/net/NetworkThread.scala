@@ -74,6 +74,9 @@ class NetworkThread(serverHost: String, serverPort: Int, onPacket: Packet => Uni
     * to it. */
   @volatile var sessionEndReason: Byte = SessionEndReason.NONE
 
+  /** Told of every packet in and out, and of what is dropped (a problem report's record of a match). */
+  @volatile var tap: PacketTap = PacketTap.None
+
   /**
    * A session token from the server: the login's, or a renewal's. Taken up by the handler that
    * read it, before the packets behind it: left to the packet thread, the server's next packets,
@@ -224,10 +227,12 @@ class NetworkThread(serverHost: String, serverPort: Int, onPacket: Packet => Uni
         if (!tcpChannel.isWritable) {
           System.err.println("NetworkThread: TCP write buffer full, dropping packet")
           Metrics.clientErrors.add(1L, io.opentelemetry.api.common.Attributes.of(Attrs.Kind, "tcp_buffer_full"))
+          tap.dropped("tcp buffer full", packet.getType.id)
           return
         }
         tcpChannel.writeAndFlush(Unpooled.wrappedBuffer(data))
         Metrics.clientPacketsSent.add(1L, Attrs.packet(packet.getType))
+        tap.sent(payload, true)
       } else {
         System.err.println("NetworkThread: TCP channel not active, cannot send")
       }
@@ -236,11 +241,13 @@ class NetworkThread(serverHost: String, serverPort: Int, onPacket: Packet => Uni
         if (!udpChannel.isWritable) {
           System.err.println("NetworkThread: UDP write buffer full, dropping packet")
           Metrics.clientErrors.add(1L, io.opentelemetry.api.common.Attributes.of(Attrs.Kind, "udp_buffer_full"))
+          tap.dropped("udp buffer full", packet.getType.id)
           return
         }
         val dgram = new DatagramPacket(Unpooled.wrappedBuffer(data), serverAddress)
         udpChannel.writeAndFlush(dgram)
         Metrics.clientPacketsSent.add(1L, Attrs.packet(packet.getType))
+        tap.sent(payload, false)
       } else {
         System.err.println("NetworkThread: UDP channel not active, cannot send")
       }
@@ -301,6 +308,7 @@ class ClientTcpHandler(onPacket: Packet => Unit, networkThread: NetworkThread) e
         val verified = networkThread.verify(data, token)
         if (verified == null) {
           System.err.println("ClientTcpHandler: HMAC verification failed, dropping packet")
+          networkThread.tap.dropped("tcp signature", data(0))
           return
         }
         verified
@@ -319,11 +327,13 @@ class ClientTcpHandler(onPacket: Packet => Unit, networkThread: NetworkThread) e
         case _ =>
       }
       Metrics.clientPacketsReceived.add(1L, Attrs.packet(packet.getType))
+      networkThread.tap.received(payload, true)
       onPacket(packet)
     } catch {
       case e: IllegalArgumentException =>
         System.err.println(s"ClientTcpHandler: Invalid packet - ${e.getMessage}")
         Metrics.clientErrors.add(1L, io.opentelemetry.api.common.Attributes.of(Attrs.Kind, "deserialize_tcp"))
+        networkThread.tap.dropped("tcp malformed", data(0))
     }
   }
 
@@ -368,6 +378,7 @@ class ClientUdpHandler(onPacket: Packet => Unit, networkThread: NetworkThread) e
         val verified = networkThread.verify(data, token)
         if (verified == null) {
           System.err.println("ClientUdpHandler: HMAC verification failed, dropping packet")
+          networkThread.tap.dropped("udp signature", data(0))
           return
         }
         verified
@@ -377,11 +388,13 @@ class ClientUdpHandler(onPacket: Packet => Unit, networkThread: NetworkThread) e
       }
       val packet = PacketSerializer.deserialize(payload)
       Metrics.clientPacketsReceived.add(1L, Attrs.packet(packet.getType))
+      networkThread.tap.received(payload, false)
       onPacket(packet)
     } catch {
       case e: IllegalArgumentException =>
         System.err.println(s"ClientUdpHandler: Invalid packet - ${e.getMessage}")
         Metrics.clientErrors.add(1L, io.opentelemetry.api.common.Attributes.of(Attrs.Kind, "deserialize_udp"))
+        networkThread.tap.dropped("udp malformed", data(0))
     }
   }
 

@@ -135,6 +135,12 @@ object Attrs {
   val DirOut: Attributes = Attributes.of(Direction, "out")
 
   // ---------- Lobby actions ----------
+  // A problem report's outcome (gridgame.problem_reports): stored, duplicate, refused_*, failed_*,
+  // bad_ticket. A few names, so a few combinations.
+  private val problemReportCache = new ConcurrentHashMap[String, Attributes]()
+  def problemReportOutcome(outcome: String): Attributes =
+    problemReportCache.computeIfAbsent(outcome, o => Attributes.of(Outcome, o))
+
   private val lobbyActionCache = new ConcurrentHashMap[Byte, Attributes]()
   def lobbyAction(action: Byte): Attributes =
     lobbyActionCache.computeIfAbsent(action, a => Attributes.of(Action, lobbyActionName(a)))

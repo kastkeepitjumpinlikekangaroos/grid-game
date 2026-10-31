@@ -47,6 +47,14 @@ private[client] object Icons {
   val Chat = Icon("M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z")
   val LogOut = Icon("M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9")
   val Alert = Icon("M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z M12 9v4 M12 17h.01")
+  /** A problem report: a flag on its pole. */
+  val Flag = Icon("M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z M4 22v-7")
+  val Close = Icon("M18 6L6 18 M6 6l12 12")
+  val Copy = Icon("M9 9h11v11H9z M5 15H4V4h11v1")
+  val Download = Icon("M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5 M12 15V3")
+  val Camera = Icon("M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z M8 13a4 4 0 1 0 8 0a4 4 0 1 0-8 0")
+  val ChevronDown = Icon("M6 9l6 6 6-6")
+  val ChevronUp = Icon("M18 15l-6-6-6 6")
 
   /** An icon `size` pixels square in `colour`: stroked, or filled if it is a solid shape. */
   def node(icon: Icon, size: Double, colour: Color): Group = {

@@ -1,11 +1,12 @@
 package com.gridgame.client.devtools
 
 import com.gridgame.client.ClientMain
+import com.gridgame.client.diagnostics.{Diagnostics, PastFrame}
 import com.gridgame.client.game.GameClient
 import com.gridgame.client.i18n.Messages
 import com.gridgame.client.net.{SavedLogin, ServerIdentityChangedException}
 import com.gridgame.client.ui.{MapPreview, Theme, Widgets, WorldBackdrop}
-import com.gridgame.client.ui.screens.LastLogin
+import com.gridgame.client.ui.screens.{LastLogin, ReportAbout}
 import com.gridgame.common.model.{CharacterId, MatchResults, Position, WorldData}
 import com.gridgame.common.protocol._
 
@@ -162,8 +163,140 @@ class UiGalleryApp extends Application {
       app.client.practiceBestCombo = 12
       app.client.killCount = 9
       app.showScoreboard(s)
+    })),
+    // A problem report: asked for after a match with two moments marked (their pictures from a map's
+    // preview), the same with what is sent opened and the form filled, sent, not sent, and after a crash
+    "17_scoreboard_marked" -> (f => shoot(f, (app, s) => {
+      reportableMatch(app.client)
+      endMatch(app.client, teams = false, won = false, ranked = false)
+      app.showScoreboard(s)
+    })),
+    "18_report_after_match" -> (f => shoot(f, (app, s) => {
+      reportableMatch(app.client)
+      endMatch(app.client, teams = false, won = false, ranked = false)
+      app.showScoreboard(s)
+      app.showProblemReport(s, ReportAbout.LastMatch)
+    })),
+    "19_report_filled" -> (f => shoot(f, (app, s) => {
+      reportableMatch(app.client)
+      endMatch(app.client, teams = false, won = false, ranked = false)
+      app.showScoreboard(s)
+      app.showProblemReport(s, ReportAbout.LastMatch)
+    }, click = root => {
+      buttons(root).find(_.getText == Messages.t("Movement")).foreach(_.fire())
+      all(root).collectFirst { case a: javafx.scene.control.TextArea => a }.foreach(_.setText(
+        "My dash went straight through the wall by the pond, and then the server pulled me back."))
+      buttons(root).find(_.getText == Messages.t("What's sent")).foreach(_.fire())
+    })),
+    "20_report_sent" -> (f => shoot(f, (app, s) => {
+      reportableMatch(app.client)
+      answerReports(app.client, p => ProblemReportPacket.accepted(seq(), app.client.getLocalPlayerId, p.getReportId, "GG-7K3F9QX2"))
+      endMatch(app.client, teams = false, won = false, ranked = false)
+      app.showScoreboard(s)
+      app.showProblemReport(s, ReportAbout.LastMatch)
+    }, click = root => buttons(root).find(_.getText == Messages.t("Send report")).foreach(_.fire()))),
+    "21_report_not_sent" -> (f => shoot(f, (app, s) => {
+      reportableMatch(app.client)
+      answerReports(app.client, p => ProblemReportPacket.refused(seq(), app.client.getLocalPlayerId, p.getReportId, ProblemReportRefusal.TOO_MANY, 900))
+      endMatch(app.client, teams = false, won = false, ranked = false)
+      app.showScoreboard(s)
+      app.showProblemReport(s, ReportAbout.LastMatch)
+    }, click = root => buttons(root).find(_.getText == Messages.t("Send report")).foreach(_.fire()))),
+    "22_report_after_crash" -> (f => shoot(f, (app, s) => {
+      crashedRun()
+      lobbyList(app.client)
+      app.showLobbyBrowser(s)
+      app.showProblemReport(s, ReportAbout.PreviousRun)
     }))
   )
+
+  // ── A problem report's makings ─────────────────────────────────────────
+
+  private lazy val diagnosticsDir = java.nio.file.Files.createTempDirectory("ui-gallery-diagnostics")
+
+  /** Diagnostics of the gallery's own (never the player's), set up afresh: with a left-over marker, it
+    * finds a run that never closed. */
+  private def freshDiagnostics(leftOver: Boolean = false): Unit = {
+    Diagnostics.resetForTest()
+    val dir = java.nio.file.Files.createTempDirectory(diagnosticsDir, "run")
+    if (leftOver) java.nio.file.Files.writeString(dir.resolve("running.properties"),
+      s"pid=4242\nstartedAt=${System.currentTimeMillis() - 3600000}\nlastSeenAt=${System.currentTimeMillis() - 600000}\ninMatch=true\n")
+    if (leftOver) {
+      val m = java.nio.file.Files.createDirectories(dir.resolve("match").resolve("20261030-120000-000"))
+      java.nio.file.Files.write(m.resolve("seg-0000.rec"), new Array[Byte](300000))
+    }
+    Diagnostics.install(Nil, Some(dir), teeConsole = false)
+  }
+
+  /** The match the report is about: recorded, two moments marked with a picture each, a freeze in it. */
+  private def reportableMatch(c: GameClient): Unit = fx {
+    freshDiagnostics()
+    Diagnostics.packetTap.received(new LobbyActionPacket(seq(), c.getLocalPlayerId, Packet.getCurrentTimestamp,
+      LobbyAction.GAME_STARTING, 7.toShort, 5.toByte, 5.toByte, 4.toByte, 8.toByte, 0.toByte, "Chill FFA", 0.toByte, 0.toByte, 2.toByte).serialize(), tcp = true)
+    Diagnostics.noteMatch("map", "the_lagoon.json")
+    Diagnostics.noteMatch("character", "Wizard")
+    for (piece <- Seq(0, 1)) {
+      val (px, w, h) = picture(piece)
+      // With the seconds before it, as the match's window keeps them
+      val now = System.nanoTime()
+      Diagnostics.markMoment(px, w, h, (0 until 8).map(i => PastFrame(now - (8 - i) * 250000000L, Array[Byte](-1, -40))))
+    }
+    Diagnostics.incident(com.gridgame.common.diagnostics.Recording.IncidentKind.Freeze, "not answering for 4200ms")
+    // What the game noticed along the way
+    import com.gridgame.common.diagnostics.Recording.NoticedKind
+    Diagnostics.noticed(NoticedKind.SnapBack, 320)
+    Diagnostics.noticed(NoticedKind.ShotUnanswered, 1, 1200, msAgo = 1200)
+    Diagnostics.noticed(NoticedKind.Died, CharacterId.Wizard.id.toInt)
+    Diagnostics.noticed(NoticedKind.ServerQuiet, 2100, msAgo = 2100)
+    Diagnostics.noticed(NoticedKind.PingSpike, 420)
+    Diagnostics.matchEnded("finished")
+    // Spread over a match of four minutes, as a real one's would be (made in a moment here)
+    Diagnostics.lastMatch.foreach { r =>
+      def at(m: Int, sec: Int): Long = (m * 60 + sec) * 1000000L
+      r.durationMicros = at(4, 12)
+      val marks = r.marks.toArray.map(_.asInstanceOf[com.gridgame.client.diagnostics.MarkedMoment])
+      r.marks.clear()
+      marks.zip(Seq(at(1, 12), at(3, 5))).foreach { case (m, t) =>
+        r.marks.add(m.copy(atMicros = t, frames = m.frames.zipWithIndex.map { case (f, i) => f.copy(atMicros = t - (8 - i) * 250000L) }))
+      }
+      val incidents = r.incidents.toArray.map(_.asInstanceOf[com.gridgame.client.diagnostics.IncidentNote])
+      r.incidents.clear()
+      incidents.foreach(n => r.incidents.add(n.copy(atMicros = at(2, 40))))
+      val noticed = r.noticed.toArray.map(_.asInstanceOf[com.gridgame.client.diagnostics.NoticedMoment])
+      r.noticed.clear()
+      noticed.zip(Seq(at(0, 48), at(1, 55), at(2, 31), at(3, 20), at(3, 58))).foreach { case (n, t) => r.noticed.add(n.copy(atMicros = t)) }
+    }
+  }
+
+  /** A piece of the Meadow (the world behind the menus) as a frame read back from the window would be:
+    * RGB, the bottom row first. */
+  private def picture(piece: Int): (java.nio.ByteBuffer, Int, Int) = {
+    val w = 640; val h = 360
+    var img: javafx.scene.image.Image = null
+    WorldBackdrop.picture(i => img = i)
+    val px = org.lwjgl.system.MemoryUtil.memAlloc(w * h * 3)
+    if (img != null) {
+      val reader = img.getPixelReader
+      val ox = Math.min(img.getWidth.toInt - w, 120 + piece * 380)
+      val oy = Math.min(img.getHeight.toInt - h, 160 + piece * 120)
+      for (y <- 0 until h; x <- 0 until w) {
+        val argb = reader.getArgb(ox + x, oy + y)
+        val i = ((h - 1 - y) * w + x) * 3
+        px.put(i, (argb >> 16).toByte); px.put(i + 1, (argb >> 8).toByte); px.put(i + 2, argb.toByte)
+      }
+    }
+    (px, w, h)
+  }
+
+  /** The server's answer to a BEGIN, as the session would hear it. */
+  private def answerReports(c: GameClient, say: ProblemReportPacket => Packet): Unit =
+    c.packetSink = {
+      case p: ProblemReportPacket if p.getAction == ProblemReportAction.BEGIN => c.processPacket(say(p))
+      case _ =>
+    }
+
+  /** The run before this one never closed: a left-over marker, and the match it was in. */
+  private def crashedRun(): Unit = freshDiagnostics(leftOver = true)
 
   /** Every map's preview at each size the menus draw one: the lobby form's, a lobby row's, the
     * lobby room's. A new map's has to read as the whole map at all three. */

@@ -59,9 +59,21 @@ A tick box is styled as a field is (`.check-box` in theme.css).
 
 `screens/Chrome` frames every screen after login the way a web site's pages share a header: the
 world behind it and a top bar with the game's name, a tab per place to go (Lobbies, Practice, Ranked,
-Leaderboard), the sound switch and the player's chip (their profile). A screen hands `Chrome.page`
+Leaderboard), a flag to report a problem, the sound switch and the player's chip (their profile). A screen hands `Chrome.page`
 its body and its tab, and a `leave` for what going elsewhere must undo — the lobby room leaves the
 lobby, the ranked queue leaves the queue, the scoreboard goes back to the browser.
+
+`screens/ReportDialog` is a problem report as the player makes it (design/diagnostics.md, *What the
+player sees*): not a screen but a card over whatever page is showing, on a shade that takes every
+click (`app.showProblemReport(stage, about)`: after a match, after a match that failed, after a crash,
+or anything at all). When it happened is picked on a timeline of the match (a `Pane` laying out a
+track, the moments on it as dots with tooltips, minute labels and the picked moment), or from the list
+of what the game noticed under it. Its heading and buttons stay put and what is between them scrolls, the scroll
+pane kept to the height of what is in it (its own guess, made at another width, came out a hand's
+breadth too tall). The scoreboard asks for one in a gold callout when the player marked moments or the
+client noticed trouble in the match. `ReportDialog.toast` is a line at the foot of any page for a few
+seconds (a report sent later). The ui gallery draws every state of them: `17_scoreboard_marked` to
+`22_report_after_crash`.
 
 ## The look: dark glass over the game's own world
 

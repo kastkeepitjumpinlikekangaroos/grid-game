@@ -1,5 +1,7 @@
 package com.gridgame.client.game
 
+import com.gridgame.client.diagnostics.Diagnostics
+import com.gridgame.common.diagnostics.Recording.NoticedKind
 import com.gridgame.client.audio.AudioManager
 import com.gridgame.client.i18n.{I18n, Messages}
 import com.gridgame.common.model._
@@ -104,6 +106,9 @@ trait MatchProgress { this: GameClient =>
         if (victimId != null && victimId.equals(localPlayerId)) {
           val killerP = players.get(killerId)
           lastKillerCharacterName = if (killerP != null) I18n.characterName(CharacterDef.get(killerP.getCharacterId)) else "?"
+          // A moment a player may mean ("right before I died"), for a problem report's timeline
+          Diagnostics.noticed(NoticedKind.Died, if (killerP != null) killerP.getCharacterId.toInt else -1,
+            detail = if (killerP != null) CharacterDef.get(killerP.getCharacterId).displayName else "")
         }
         if (victimId != null) {
           val victimPlayer = players.get(victimId)
@@ -127,6 +132,9 @@ trait MatchProgress { this: GameClient =>
 
       case GameEvent.MATCH_OPENING =>
         setOpening(packet.getOpeningMs, packet.getOpeningRules)
+
+      case GameEvent.MATCH_INFO =>
+        heardMatchId(packet.getTargetId)
 
       case GameEvent.GAME_OVER =>
         scoreboard.clear()

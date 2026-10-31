@@ -1,5 +1,7 @@
 package com.gridgame.client.game
 
+import com.gridgame.client.diagnostics.Diagnostics
+import com.gridgame.common.diagnostics.Recording.NoticedKind
 import com.gridgame.client.audio.AudioManager
 import com.gridgame.common.Constants
 import com.gridgame.common.model._
@@ -73,6 +75,11 @@ trait Attacks { this: GameClient =>
 
   // Every projectile we ask the server for, until it answers (telemetry)
   private[client] val pendingSpawns = new PendingSpawns()
+  // A shot the server never answered is something a player may mean when they report a problem
+  pendingSpawns.onUnanswered = (slot, agoNs) => {
+    val agoMs = (agoNs / 1000000L).toInt
+    Diagnostics.noticed(NoticedKind.ShotUnanswered, slot, agoMs, msAgo = agoMs)
+  }
 
   // ── Aim ─────────────────────────────────────────────────────────────────
 
@@ -630,6 +637,7 @@ trait Attacks { this: GameClient =>
     putBack(lastQAbilityTime, qBeforeReset.getAndSet(NOT_HELD), charDef.qAbility.cooldownMs)
     putBack(lastEAbilityTime, eBeforeReset.getAndSet(NOT_HELD), charDef.eAbility.cooldownMs)
     println(s"GameClient: Cooldown reset refused (${packet.getMsLeft}ms left on it)")
+    Diagnostics.noticed(NoticedKind.Refused, 0, packet.getMsLeft)
   }
 
   /** An ability's cast as it was before a refused reset: unless it has been cast since and the server

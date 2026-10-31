@@ -1,6 +1,8 @@
 package com.gridgame.client.game
 
-import com.gridgame.client.net.{KnownServers, NetworkThread}
+import com.gridgame.client.diagnostics.Diagnostics
+import com.gridgame.client.net.{KnownServers, NetworkThread, PacketTap}
+import com.gridgame.common.diagnostics.Recording.{IncidentKind, NoticedKind}
 import com.gridgame.common.Constants
 import com.gridgame.common.model._
 import com.gridgame.common.observability.Metrics
@@ -36,6 +38,10 @@ trait Connection { this: GameClient =>
     * in memory, so a dev tool never adds to the player's. */
   @volatile var knownServers: KnownServers = KnownServers.inMemory()
 
+  /** Told of every packet in and out: the app's clients are given its diagnostics', which record the
+    * match for a problem report; any other client keeps nothing. */
+  @volatile var packetTap: PacketTap = PacketTap.None
+
   private[game] def send(packet: Packet): Unit = {
     val sink = packetSink
     if (sink != null) sink(packet) else networkThread.send(packet)
@@ -59,6 +65,7 @@ trait Connection { this: GameClient =>
       disconnected.set(false)
       networkThread = new NetworkThread(serverHost, serverPort, enqueuePacket, () => sendHeartbeat(),
         knownServers = knownServers)
+      networkThread.tap = packetTap
       running = true
 
       // Wire disconnect callback from network thread
@@ -84,6 +91,9 @@ trait Connection { this: GameClient =>
     if (!disconnected.compareAndSet(false, true)) return
 
     Metrics.clientReconnects.add(1L, io.opentelemetry.api.common.Attributes.empty())
+    if (clientState != ClientState.CONNECTING)
+      Diagnostics.incident(IncidentKind.Disconnect, s"the connection to $serverHost:$serverPort dropped" +
+        (if (clientState == ClientState.PLAYING) " in a match" else ""))
     running = false
     clientState = ClientState.CONNECTING
     networkThread.sessionToken = null
@@ -186,15 +196,22 @@ trait Connection { this: GameClient =>
   private[game] def handleHeartbeatEcho(): Unit = {
     val sentNs = heartbeatSentAtNs.getAndSet(0L)
     if (sentNs > 0) {
-      Metrics.clientLatency.record((System.nanoTime() - sentNs) / 1e6, io.opentelemetry.api.common.Attributes.empty())
+      val ms = (System.nanoTime() - sentNs) / 1e6
+      lastRoundTripMs = ms.toInt
+      Metrics.clientLatency.record(ms, io.opentelemetry.api.common.Attributes.empty())
+      if (ms > 300) Diagnostics.noticed(NoticedKind.PingSpike, ms.toInt)
     }
   }
 
   def enqueuePacket(packet: Packet): Unit = {
     if (!incomingPackets.offer(packet)) {
       System.err.println(s"GameClient: Packet queue full, dropping ${packet.getType}")
+      Diagnostics.incident(IncidentKind.QueueFull, s"the packet thread fell ${Constants.INCOMING_QUEUE_CAPACITY} packets behind; dropped ${packet.getType}")
     }
   }
+
+  /** The server's packets waiting for the packet thread. */
+  def queuedPackets: Int = incomingPackets.size()
 
   /**
    * Hand a batch of the server's packets to processPacket, in order: the packet thread takes them
@@ -213,6 +230,7 @@ trait Connection { this: GameClient =>
         case scala.util.control.NonFatal(e) =>
           System.err.println(s"GameClient: Error processing packet - $e")
           e.printStackTrace()
+          Diagnostics.incident(IncidentKind.PacketError, s"handling ${batch.get(i).getType}: ${Diagnostics.stackTrace(e)}")
       }
       i += 1
     }

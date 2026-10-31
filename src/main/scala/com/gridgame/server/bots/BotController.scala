@@ -164,6 +164,7 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
       // An Error too: one escaping the periodic task cancels it, and the bots stood still
       case e: Throwable =>
         System.err.println(s"BotController: Error in tick: $e")
+        instance.journal.note(s"error in the bots' tick: ${com.gridgame.server.game.MatchJournal.describe(e)}")
     } finally {
       Metrics.tickDuration.record((System.nanoTime() - tickStart) / 1e6, botTickAttrs)
     }

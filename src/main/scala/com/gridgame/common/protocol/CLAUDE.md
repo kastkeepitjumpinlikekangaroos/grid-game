@@ -68,7 +68,7 @@ it faces and [53-54] how long it has left (see *Barriers*): a client sends its a
 its barrier is up, and the server writes the barrier's facing and its remaining time. All are 0
 otherwise.
 
-## Packet Types (21 total)
+## Packet Types (22 total)
 
 | ID   | Name              | Transport | Description                    |
 |------|-------------------|-----------|--------------------------------|
@@ -93,6 +93,7 @@ otherwise.
 | 0x13 | REFRESH_TOKEN     | TCP       | The login's refresh token (server -> client): [21-52] the token, [53-60] when its login runs out (epoch ms) |
 | 0x14 | SESSION_END       | TCP       | Why the server is closing the session (server -> client): [21] REPLACED (logged in elsewhere) or REVOKED (logged out) |
 | 0x15 | COOLDOWN_RESET    | TCP       | R: a player's ability cooldowns reset (below) |
+| 0x16 | PROBLEM_REPORT    | TCP       | A player's problem report: asked for, given a ticket or refused, kept under its code (below) |
 
 An `AUTH_REQUEST` carries one of these `AuthAction`s. The server takes it without checking a
 signature: there is no session yet, or (a LOGOUT) the token it carries is the proof. TLS is what
@@ -103,6 +104,7 @@ keeps it private.
 | 0 LOGIN, 1 SIGNUP | [22-41] username, [42-61] password | log in with a password, or make the account |
 | 2 REFRESH | [22-53] refresh token | log in with the token an earlier login was given (design/networking.md, *Staying logged in*) |
 | 3 LOGOUT | [22-53] refresh token | end the token's login: no reply, and every session of it is closed |
+| 4 UPLOAD | [22-37] an upload's ticket, [38-53] its report's id | log a problem report's upload connection in: it becomes that upload, never a session (below) |
 
 A `PROJECTILE_UPDATE` carries one of these `ProjectileAction`s:
 
@@ -132,6 +134,12 @@ owner; its layout is in `TrapPacket`.
 | 3 REMOVE | gone without going off: it ran out, its owner left, or a newer one pushed it off |
 | 4 REJECTED | the placement was refused; the placer's client gives the cooldown back |
 
+A `GAME_EVENT` says what happened in byte [21] (`GameEvent`): a KILL, the clock (TIME_SYNC), the
+end (GAME_OVER, a SCORE_ENTRY each, SCORE_END), a RESPAWN, the opening (MATCH_OPENING), and
+MATCH_INFO, the match's own id in [32-47] (the target's field) and its lobby's in [22-23]: sent as
+a match begins, after GAME_STARTING and before WORLD_INFO, and first of all to anyone joining it, so
+a problem report can name the match it is about (lobby ids are used again; a match's id never is).
+
 A `COOLDOWN_RESET` carries one of these `CooldownResetAction`s in byte [21] (design/characters.md,
 *R resets the cooldowns*). A reset the server takes says nothing back: the client had its abilities
 ready from the press.
@@ -140,6 +148,19 @@ ready from the press.
 |---|---|
 | 0 REQUEST | a client's R: reset my ability cooldowns |
 | 1 REJECTED | the server refused it (to that player only): [22-25] how long R's own minute still has, in ms, if that was why, 0 if it was anything else (dead, held, phased, the ceasefire); the client puts its cooldowns back |
+
+A `PROBLEM_REPORT` carries one of these `ProblemReportAction`s in byte [21], and the report's id
+(the client's UUID for it) in [22-37] (design/diagnostics.md; design/networking.md, *A problem
+report's upload*). The report itself is never in packets: it comes down a connection of its own,
+raw, once that connection has logged in with the ticket (AUTH_REQUEST UPLOAD) and been told to send.
+
+| Action | Bytes | Meaning |
+|---|---|---|
+| 0 BEGIN | [38-41] size, [42-45] CRC-32, [46-61] the match it is about (zero: none), [62] kind (`ProblemReportKind`: match, crash, general) | client, on its session: a report is ready to send |
+| 1 READY | [38-53] the upload's ticket | on the session: send it with this ticket, good for one upload within 60s; on the upload connection (no ticket): send it now |
+| 2 REFUSED | [38] why (`ProblemReportRefusal`), [39-42] seconds before trying again is worth it (0: it isn't) | not now: too big, too many from this account, busy, no room, can't be kept; on the upload connection, a ticket that is no good |
+| 3 ACCEPTED | [38-49] the report's code (`GG-` and eight letters and digits) | kept: on the upload connection once all of it came, or on the session for a report the server has already |
+| 4 FAILED | [38] why (CORRUPT: not the bytes BEGIN described, or more; TRUNCATED: cut off; UNAVAILABLE) | upload connection: nothing was kept; sending it again may work |
 
 ## Connection Flow
 
@@ -176,6 +197,23 @@ Client                              Server
    │                                   │   token; the server switches on our first use of it)
    │                                   │
    │<─── SESSION_END ─────────────────│  (logged in elsewhere, or logged out: then closed)
+```
+
+A problem report goes down a connection of its own (design/networking.md, *A problem report's
+upload*), whose frames are unsigned, as it never has a session:
+
+```
+Client                              Server
+   │──── PROBLEM_REPORT BEGIN ───────>│  (on the session: id, size, CRC-32, match)
+   │<─── PROBLEM_REPORT READY ────────│  (a ticket, one upload, 60s)
+   │                                   │
+   │═══ TLS 1.3 Handshake ═══════════│  (a second connection, the same pinned identity)
+   │──── AUTH_REQUEST UPLOAD ────────>│  (the ticket and the report's id)
+   │                                   │  (the connection is given over: no frames read from here)
+   │<─── PROBLEM_REPORT READY ────────│  (send it)
+   │════ the report, raw ════════════>│  (exactly its size)
+   │<─── PROBLEM_REPORT ACCEPTED ─────│  (its code; or FAILED, or REFUSED for a bad ticket)
+   │                                   │  (closed by the server)
 ```
 
 A client whose connection dropped logs in again on a new one with its refresh token

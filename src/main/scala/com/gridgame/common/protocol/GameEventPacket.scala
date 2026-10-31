@@ -16,6 +16,10 @@ object GameEvent {
     * no ability casts in a free-for-all). Sent when a match begins, when the opening ends, and to
     * anyone joining during it. */
   val MATCH_OPENING: Byte = 6
+  /** The match's own id, in `targetId`: a problem report names the match it is about by it, so the
+    * server can put what it saw of that match beside it (design/diagnostics.md). Sent as the match
+    * begins and to anyone rejoining it. */
+  val MATCH_INFO: Byte = 7
 }
 
 /**
