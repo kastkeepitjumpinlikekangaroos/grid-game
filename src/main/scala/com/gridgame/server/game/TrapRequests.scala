@@ -1,6 +1,8 @@
 package com.gridgame.server.game
 
+import com.gridgame.common.Constants
 import com.gridgame.common.model.CharacterDef
+import com.gridgame.common.model.Movement
 import com.gridgame.common.model.TrapCast
 import com.gridgame.common.model.TrapPlacement
 import com.gridgame.common.observability.Attrs
@@ -39,8 +41,10 @@ trait TrapRequests { this: ClientHandler =>
       false
     }
 
-    // The dead, the held and the phased cast nothing
-    if (player.isDead || player.isFrozen || player.isPhased) return refuse("dead, held or phased")
+    // The dead, the held and the phased cast nothing — but in a phase's last moments, which the
+    // client's ends a trip across the wire before ours, as for a shot (ShotRequests)
+    if (player.isDead || player.isFrozen) return refuse("dead or held")
+    if (player.getPhasedUntil - System.currentTimeMillis() > PHASED_SHOT_GRACE_MS) return refuse("phased")
     // Nor does anyone during a free-for-all's opening ceasefire (MatchOpening)
     if (instance.attacksLocked) return refuse("the opening ceasefire")
 
@@ -59,10 +63,11 @@ trait TrapRequests { this: ClientHandler =>
       return refuse(s"attack $slot throws no trap of type ${packet.getTrapType}")
     }
 
-    // From where the server has them, or a step on: the client threw from where it has them, a
-    // step ahead while that step is on its way
+    // From where the server has them, or as far on as their steps on the way could have taken them:
+    // the client threw from where it has them, ahead while those steps are on their way
     val pos = player.getPosition
-    if (!TrapPlacement.isValidTargetNear(world, pos.getX, pos.getY, packet.getX, packet.getY, cast.maxRange)) {
+    val lag = Movement.lagCells(Constants.NETWORK_TOLERANCE_MS, charDef.moveSpeed)
+    if (!TrapPlacement.isValidTargetLagging(world, pos.getX, pos.getY, packet.getX, packet.getY, cast.maxRange, lag)) {
       return refuse(s"(${packet.getX},${packet.getY}) is out of reach of (${pos.getX},${pos.getY})")
     }
     // An enemy's raised barrier stops a throw as a wall does (TrapPlacement.target lands it short)

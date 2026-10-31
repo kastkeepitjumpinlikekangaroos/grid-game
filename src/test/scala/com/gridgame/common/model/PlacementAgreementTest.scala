@@ -80,6 +80,10 @@ class PlacementAgreementTest {
       val a = rnd.nextDouble() * 2 * Math.PI
       val t = Teleport.blinkTarget(w, fx, fy, Math.cos(a), Math.sin(a), range)
       assertTrue(s"$name: a blink from ($fx,$fy) into a wall: $t", w.isWalkable(t.getX, t.getY))
+      // One cell on a diagonal is a step to the server, which won't take it past a wall's corner
+      val (dx, dy) = (t.getX - fx, t.getY - fy)
+      assertTrue(s"$name: a blink from ($fx,$fy) one cell past a wall's corner to $t",
+        !(Math.abs(dx) == 1 && Math.abs(dy) == 1) || w.cornersOpen(fx, fy, dx, dy))
       for ((sx, sy) <- serverCopies(w, fx, fy))
         assertTrue(s"$name: a blink from ($fx,$fy) to $t, out of reach for a server that had them at ($sx,$sy)",
           Teleport.withinReach(t.getX - sx, t.getY - sy, range))

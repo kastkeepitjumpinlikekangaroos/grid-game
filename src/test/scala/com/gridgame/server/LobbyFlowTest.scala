@@ -269,6 +269,24 @@ class LobbyFlowTest {
     assertTrue(again.head.getMsLeft > com.gridgame.common.Constants.COOLDOWN_RESET_MS - 5000)
   }
 
+  @Test def theOpeningIsAnnouncedBeforeAnyoneIsPlacedInTheMatch(): Unit =
+    // A free-for-all's ceasefire and the Teams wall: heard before the client can act, not at the
+    // first tick, or what it does before then (a shot, a cast, a step into the wall) is refused
+    for (mode <- Seq(0, 1)) {
+      val host = new Client(s"host$mode")
+      host.lobbyAction(LobbyAction.CREATE, gameMode = mode.toByte)
+      if (mode == 1) host.lobbyAction(LobbyAction.CONFIG_UPDATE, host.lobby.id, gameMode = 1)
+      val guest = new Client(s"guest$mode")
+      guest.lobbyAction(LobbyAction.JOIN, host.lobby.id)
+      guest.received()
+      start(host)
+      val order = guest.received().collect {
+        case g: GameEventPacket if g.getEventType == GameEvent.MATCH_OPENING && g.getOpeningMs > 0 => "opening"
+        case j: PlayerJoinPacket => "join"
+      }
+      assertEquals(s"mode $mode", Seq("opening", "join", "join"), order)
+    }
+
   @Test def aStartedMatchTellsEveryoneWhereEveryoneIs(): Unit = {
     val host = new Client("host")
     host.lobbyAction(LobbyAction.CREATE)

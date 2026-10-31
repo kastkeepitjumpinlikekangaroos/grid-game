@@ -92,7 +92,8 @@ matchmaking, a match's ticks, the bots') catches `Throwable`, not just `Exceptio
 escaping a scheduled task cancels it for good, silently. `BarrierSnapshot` and `PlayerGrid` belong to the projectile
 tick's thread: anything that reads them (`shelteredFromBlast`, `forEachNearbyPlayer`) must run on it.
 A match started by a test is begun but never started (`GameInstance.begin`): the test ticks it by
-hand (src/test/CLAUDE.md).
+hand (src/test/CLAUDE.md). The end-to-end tests launch real lobbies' matches that way, by replacing
+`MatchLauncher.startMatch` and `startBots`, which start a match and its bots on their own clocks.
 
 ## What else to read
 

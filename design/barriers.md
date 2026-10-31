@@ -44,8 +44,8 @@ flag 0x01) already has the name; the player-facing ability can still say shield.
   keeps its facing streamed while it is up (`GameClient.streamBarrier`: every 100ms, every 50ms
   while it turns, from both input handlers) and says when its own timer, started at the cast, has
   run out: an update without the bit, sent twice, the only time a living holder's client sends
-  one. The server (`ClientHandler.updateBarrier`) honours a raise at 80% of the cooldown since the
-  last raise (R clears that, design/characters.md, *R resets the cooldowns*; a barrier still up
+  one. The server (`ClientHandler.updateBarrier`) honours a raise once the cooldown since the last
+  raise has run, but for the tolerance every attack gets (`PacketValidator.castToleranceMs`) (R clears that, design/characters.md, *R resets the cooldowns*; a barrier still up
   can't be raised again over itself, so R's is only for the next), turns the barrier with every
   update, and ends it on an update without the bit, so
   one it only took from a later update (the raise lost, or refused while the holder was held)

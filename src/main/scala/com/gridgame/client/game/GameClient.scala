@@ -163,6 +163,8 @@ class GameClient(private[game] val serverHost: String, private[game] val serverP
     forgetAnimations()
     isDead = false
     isRespawning = false
+    // Nowhere until the next match's join echo says where (LocalPlayer.placed)
+    placed = false
   }
 
   /** What a death takes away, at a respawn, a rejoin or the connection dropping, and what a new

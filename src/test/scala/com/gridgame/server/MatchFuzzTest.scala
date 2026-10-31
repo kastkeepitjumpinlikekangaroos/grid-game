@@ -20,7 +20,8 @@ import scala.jdk.CollectionConverters._
  *  - nothing it is sent, and none of its ticks, throws (nor do its bots, whose tick swallows it)
  *  - health stays between 0 and the character's maximum, and everyone stays on the map
  *  - nobody is moved onto a cell they can't stand on unless dashing (a dash goes over walls; a
- *    phase shift doesn't, and walked through them until 2026-10-14)
+ *    phase shift doesn't, and walked through them until 2026-10-14), or onto a fence too new for
+ *    their client to have heard of
  *  - the dead, the frozen and the rooted are not moved by their own client
  *  - an item is on the ground or in one inventory, never both, never two; an inventory holds ten
  *  - a player has at most thirty projectiles in flight, each somewhere, and every shot the server
@@ -226,10 +227,12 @@ object MatchFuzzTest {
       for (shot <- instance.projectileManager.getAll if !before.contains(shot.id)) {
         count("shots taken")
         // The server put it a cell out from where it was fired, which is within three cells of
-        // where it has the shooter (a slam is put down on its caster)
+        // where it has the shooter and what a bad network can leave it behind by (a slam is put
+        // down on its caster)
         val ox = shot.getX - shot.dx
         val oy = shot.getY - shot.dy
-        check(!ox.isNaN && !oy.isNaN && Math.abs(ox - pos.getX) <= 3.01f && Math.abs(oy - pos.getY) <= 3.01f,
+        val reach = 3.01f + Movement.lagCells(Constants.NETWORK_TOLERANCE_MS, c.moveSpeed)
+        check(!ox.isNaN && !oy.isNaN && Math.abs(ox - pos.getX) <= reach && Math.abs(oy - pos.getY) <= reach,
           s"a shot fired from ($ox, $oy) by ${p.getName} at (${pos.getX}, ${pos.getY})")
       }
     }
@@ -361,7 +364,9 @@ object MatchFuzzTest {
         before.get(p.getId).foreach { was =>
           check(p.getServerMoves >= was.moves, s"$name's server moves went from ${was.moves} to ${p.getServerMoves}")
           if (pos != was.pos) {
-            check(world.isWalkable(pos.getX, pos.getY) || dashing(p) || fenced.contains((pos.getX, pos.getY)),
+            // A fence too new for their client to have heard of may be stepped onto (changedLately)
+            check(world.isWalkable(pos.getX, pos.getY) || dashing(p) || fenced.contains((pos.getX, pos.getY)) ||
+              instance.changedLately(pos.getX, pos.getY),
               s"$name moved from ${was.pos} onto $pos, where nobody can stand (${world.getTile(pos.getX, pos.getY)})")
             if (ownMove && (actor eq p)) {
               check(was.alive, s"$name, dead, moved from ${was.pos} to $pos by their own client")

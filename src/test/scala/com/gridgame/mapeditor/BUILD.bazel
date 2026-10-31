@@ -1,0 +1,14 @@
+load("@rules_scala//scala:scala.bzl", "scala_junit_test")
+
+# The editor's model: what it saves loads back as it was (every map in worlds/), undo and redo, its tools
+scala_junit_test(
+    name = "map_editor_test",
+    srcs = ["MapEditorTest.scala"],
+    data = ["//worlds:world_files"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/mapeditor:mapeditor_lib",
+        "@maven//:junit_junit",
+    ],
+)

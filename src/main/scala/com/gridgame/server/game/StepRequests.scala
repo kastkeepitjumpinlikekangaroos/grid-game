@@ -60,7 +60,7 @@ trait StepRequests { this: ClientHandler =>
         // flag can already be a step at a phase's pace, or a dash's cell inside a wall
         if ((packet.getEffectFlags & 0x08) != 0) activatePhase(player)
         updateBarrier(player, packet)
-        if (!validator.validateMovement(packet, player, world, instance.attacksLocked)) {
+        if (!validator.validateMovement(packet, player, world, instance.attacksLocked, instance.changedLately)) {
           Metrics.validationFailed.add(1L, Attrs.VfMovementSpeed)
           refused = true
           false
@@ -115,8 +115,8 @@ trait StepRequests { this: ClientHandler =>
 
   /**
    * The client says the player is phased (its phase ability, or a dash). Honour it if that
-   * ability is off cooldown: 80% of it since the last phase started, the tolerance every other
-   * attack gets. This used to count from when the last phase ended, at 90%, which a phase recast
+   * ability is off cooldown since the last phase started, but for the tolerance every attack gets
+   * (PacketValidator.castToleranceMs). This used to count from when the last phase ended, at 90%, which a phase recast
    * as soon as it was ready never passed (Wraith: 5s phase, 12s cooldown, allowed after 15.8s),
    * so every second phase showed on the client and wasn't honoured: the player took hits, and
    * walking through walls, as a phase did then, was refused.
@@ -137,7 +137,7 @@ trait StepRequests { this: ClientHandler =>
       val now = System.currentTimeMillis()
       val lastEnd = player.getPhasedUntil
       val lastStart = lastEnd - durationMs
-      if (lastEnd == 0L || now - lastStart >= (cooldownMs * 0.8).toLong) {
+      if (lastEnd == 0L || now - lastStart >= cooldownMs - PacketValidator.castToleranceMs(cooldownMs)) {
         player.setPhasedUntil(now + durationMs)
       }
     }
@@ -146,8 +146,8 @@ trait StepRequests { this: ClientHandler =>
   /**
    * The client says whether the player's barrier is up (effect flags 2, bit 2) and which way it
    * faces (the aim angle). A raise is honoured if the character has a barrier and it is off
-   * cooldown: 80% of it since the last raise, the tolerance every other attack gets, counted from
-   * the raise. While it is up every update turns it, and one without the bit ends it: its holder's
+   * cooldown since the last raise, but for the tolerance every attack gets
+   * (PacketValidator.castToleranceMs). While it is up every update turns it, and one without the bit ends it: its holder's
    * client stops sending the bit when its own timer, started at the cast, runs out, and nothing
    * else takes it down there. So a raise the server only took from a later update (the first was
    * lost, or came while the player was still held) ends with the barrier its holder sees, not
@@ -171,7 +171,7 @@ trait StepRequests { this: ClientHandler =>
       }.foreach { case (durationMs, cooldownMs) =>
         val now = System.currentTimeMillis()
         val last = player.getBarrierRaisedAt
-        if (last == 0L || now - last >= (cooldownMs * 0.8).toLong) {
+        if (last == 0L || now - last >= cooldownMs - PacketValidator.castToleranceMs(cooldownMs)) {
           player.raiseBarrier(now, durationMs, packet.aimAngleRadians.toFloat)
         }
       }

@@ -20,7 +20,8 @@ spun across the ground for a hunter to blunder into.
   the cell with it and the server checks with `isValidTarget`, the same reason `Teleport` exists
   for blinks and stars. A throw can't be dropped past a wall, nor across the front of an enemy's
   raised barrier, which stops it as a wall does (design/barriers.md): it lands short. No cell at
-  all means no cast and no cooldown spent.
+  all means no cast and no cooldown spent — and a cell a trap already lies on, anyone's, is no
+  cell: one to a cell, and the server refused the throw after the cast had been spent on it.
   - **The client only picks a cell the server takes.** `target` stops before a cell the straight
     way to which crosses a wall, which is how `isValidTarget` judges it (half-cell steps along the
     line to the cell). It used to walk the aim a whole cell at a time, and a throw past a wall's
@@ -33,6 +34,12 @@ spun across the ground for a hunter to blunder into.
     Snowglobe). The range already allowed for the step (`Teleport.withinReach`).
   - `PlacementAgreementTest` throws thousands at random over cluttered ground and every map, the
     server where the client is and a step behind.
+  - **On a bad network further behind**: failing that, the server takes any cell a trap can lie on
+    within the throw's range of where it has the thrower and the steps a bad network can leave that
+    behind by (`TrapPlacement.isValidTargetLagging`, `Movement.lagCells`), without judging the way
+    there, which from a copy that far behind can cross a wall the throw never did. A throw through a
+    wall only a modified client would make is left to player reports (design/networking.md, *Bad
+    networks*).
 - **Arming and lasting.** It arms 800ms after it lands and lies there 25s. A player keeps three;
   a fourth takes their oldest away. One trap to a cell.
 - **What sets it off.** An enemy — not the owner, not a teammate — within `triggerRadius` (1.0

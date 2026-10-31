@@ -108,6 +108,23 @@ class TeleportTest {
   }
 
   @Test
+  def aBlinkOfOneDiagonalCellDoesNotCutAWallsCorner(): Unit = {
+    // Toward (12, 12) with a wall at (11, 10) beside the way and (12, 12) itself blocked: all the
+    // blink reaches is (11, 11), past the wall's corner, which is a step the server refuses
+    val d = Math.sqrt(0.5)
+    val world = open()
+    world.setTile(11, 10, Tile.Wall)
+    world.setTile(12, 12, Tile.Wall)
+    assertEquals((10, 10), { val t = Teleport.blinkTarget(world, 10, 10, d, d, 6); (t.getX, t.getY) })
+    // With the corner open it lands there, and a blink that reaches further still jumps the corner
+    world.setTile(11, 10, Tile.Grass)
+    assertEquals((11, 11), { val t = Teleport.blinkTarget(world, 10, 10, d, d, 6); (t.getX, t.getY) })
+    val past = open()
+    past.setTile(11, 10, Tile.Wall)
+    assertEquals((14, 14), { val t = Teleport.blinkTarget(past, 10, 10, d, d, 6); (t.getX, t.getY) })
+  }
+
+  @Test
   def reachIsARadius(): Unit = {
     val r = 8 + Constants.TELEPORT_RANGE_TOLERANCE
     assertTrue(Teleport.withinReach(r, 0, 8))

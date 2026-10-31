@@ -66,11 +66,12 @@ class CeasefireTest {
     // A jump no walk could have made is allowed only because a blink or a dash could have made
     // it — and neither could, while they are holstered
     val p = m.join(CharacterId.Wizard, 20, 20)
-    assertTrue("a step, so the speed check has a moment to measure from", m.move(p, 21, 20))
-    assertFalse(m.move(p, 27, 20))
-    assertEquals((21, 20), m.at(p))
+    // A walk first, spending the movement credit a short jump would otherwise pass as (PacketValidator)
+    assertTrue("a walk's worth", m.move(p, 44, 20))
+    assertFalse(m.move(p, 50, 20))
+    assertEquals((44, 20), m.at(p))
     endOpening()
-    assertTrue(m.move(p, 27, 20))
+    assertTrue(m.move(p, 50, 20))
   }
 
   // --- What is not ---

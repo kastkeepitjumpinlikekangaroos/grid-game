@@ -1,0 +1,60 @@
+load("@rules_scala//scala:scala.bzl", "scala_junit_test", "scala_library")
+load("//third_party:jvm.bzl", "LWJGL", "NETTY")
+
+# The whole game in one process: real clients and a real server, each end on its own network
+# handlers, over a network of the test's own (src/test/CLAUDE.md, *End to end*)
+scala_library(
+    name = "e2e_kit",
+    testonly = True,
+    srcs = [
+        "ClientSide.scala",
+        "FuzzRun.scala",
+        "Judge.scala",
+        "Loopback.scala",
+        "Persona.scala",
+        "ServerSide.scala",
+    ],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:junit_junit",
+    ] + LWJGL + NETTY,
+)
+
+# No sound device in a test: every AudioManager call is a no-op
+AUDIO_OFF = {"GRIDGAME_AUDIO": "off"}
+
+# One target per file, so each runs in a JVM of its own. Matches are played on the real maps, which
+# both ends read from worlds/.
+[scala_junit_test(
+    name = name,
+    srcs = [src],
+    data = ["//worlds:world_files"],
+    env = AUDIO_OFF,
+    suffixes = ["Test"],
+    deps = [
+        ":e2e_kit",
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+        "@maven//:junit_junit",
+    ] + LWJGL + NETTY,
+) for (name, src) in [
+    # Sign-up to scoreboard and back: a free-for-all and a Teams match with their openings, a match after a match
+    ("match_lifecycle_test", "MatchLifecycleTest.scala"),
+    # Ranked found, played and rated; leaving a match, losing the connection, logging back in
+    ("session_lifecycle_test", "SessionLifecycleTest.scala"),
+    # Honest players at three tables, round after round of every mode: strict, on a perfect network
+    ("end_to_end_fuzz_test", "EndToEndFuzzTest.scala"),
+    # The same over a lossy, jittery network: nothing honest refused, and everyone agrees once it has quietened
+    ("lossy_network_fuzz_test", "LossyNetworkFuzzTest.scala"),
+    # And over a worse one: a phone on a train
+    ("awful_network_fuzz_test", "AwfulNetworkFuzzTest.scala"),
+    # The same against matches on executors of their own, as the real server runs them
+    ("threaded_match_fuzz_test", "ThreadedMatchFuzzTest.scala"),
+    # Every attack of every character, cast by the real client and taken by the real server
+    ("roster_sweep_test", "RosterSweepTest.scala"),
+    # The real sockets the loopback leaves out: a server on loopback, clients connecting as the app does
+    ("real_network_test", "RealNetworkTest.scala"),
+]]

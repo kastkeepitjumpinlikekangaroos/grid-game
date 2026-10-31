@@ -233,6 +233,18 @@ object TrapPlacement {
     false
   }
 
+  /**
+   * Server side, from a copy of the thrower that may trail them by `lagCells` (Movement.lagCells: the
+   * steps a bad network can hold up): [[isValidTargetNear]], or else any cell a trap can lie on within
+   * the throw's range of there and those steps more. The way there isn't judged then: from a copy
+   * that far behind, the straight line to a cell the client threw to clear of every wall can cross
+   * one. A throw past a wall the client itself would never make is left to player reports.
+   */
+  def isValidTargetLagging(world: WorldData, fromX: Int, fromY: Int, x: Int, y: Int, maxRange: Int,
+                           lagCells: Int): Boolean =
+    isValidTargetNear(world, fromX, fromY, x, y, maxRange) ||
+      (world.isWalkable(x, y) && Teleport.withinReach(x - fromX, y - fromY, maxRange + lagCells))
+
   /** Is every cell on the straight line from (fromX, fromY) to (x, y) one a throw passes over? */
   private def pathIsClear(world: WorldData, fromX: Int, fromY: Int, x: Int, y: Int): Boolean = {
     val dx = (x - fromX).toDouble

@@ -17,6 +17,54 @@ class GameClientPositionTest {
 
   private def walkEast(steps: Int): Unit = for (_ <- 0 until steps) c.movePlayer(1, 0)
 
+  @Test def nothingOfWhereWeAreIsSentBeforeTheServerSaysWhereItPutUs(): Unit = {
+    // A match starts, and its world arrives: we stand wherever setWorld left us until our own join
+    // echo says where the server placed us. A key held then sent steps from there, out of bounds or,
+    // near enough the real spawn, taken as a step to it
+    t.lobby(com.gridgame.common.protocol.LobbyAction.GAME_STARTING)
+    c.setWorld(t.world)
+    t.clearSent()
+    walkEast(2)
+    c.resendPositionIfQuiet()
+    assertTrue("nothing sent", t.sentUpdates.isEmpty)
+    t.join(t.id, 20, 20, t.name, c.selectedCharacterId)
+    c.resendPositionIfQuiet()
+    assertEquals("where the server put us", Seq(new Position(20, 20)), t.sentUpdates.map(_.getPosition))
+  }
+
+  @Test def aPlayerStandingStillSaysWhereItIsEveryHalfSecond(): Unit = {
+    // Every update is a datagram: the last step of a walk, lost, left the server (and everyone it
+    // relays us to) with us a step back for as long as we stood there
+    t.startMatch(spawn = (10, 10))
+    walkEast(1)
+    t.clearSent()
+    c.resendPositionIfQuiet()
+    assertTrue("not straight after a step", t.sentUpdates.isEmpty)
+    Thread.sleep(com.gridgame.common.Constants.POSITION_RESEND_MS + 20L)
+    c.resendPositionIfQuiet()
+    c.resendPositionIfQuiet()
+    assertEquals("once, where we are", Seq(new Position(11, 10)), t.sentUpdates.map(_.getPosition))
+  }
+
+  @Test def aDashThatHitchedSaysWhereItLandsBeforeAnythingElse(): Unit = {
+    // A frame that hitched for longer than POSITION_RESEND_MS mid-dash: the next says where the dash
+    // landed, the first update after it, which the server takes past a wall's corner as a dash's.
+    // Said again first, where the dash had got to took that place and the landing was a step
+    c.selectedCharacterId = CharacterId.Ghoul.id // Lunge, Q: ten cells in 150ms
+    t.startMatch(spawn = (20, 20))
+    c.setMouseWorldPosition(30, 20)
+    val keys = new com.gridgame.client.input.GLKeyboardHandler(c)
+    t.clearSent()
+    assertTrue(c.shootAbility(0))
+    val cast = t.sentUpdates.size
+    Thread.sleep(com.gridgame.common.Constants.POSITION_RESEND_MS + 100L)
+    keys.update()
+    val landing = c.getLocalPosition
+    assertNotEquals("it went somewhere", new Position(20, 20), landing)
+    assertEquals("the landing, twice, and nothing before it", Seq(landing, landing),
+      t.sentUpdates.drop(cast).map(_.getPosition))
+  }
+
   @Test def anUpdateThatIsNotAMoveLeavesUsWhereWeAre(): Unit = {
     t.startMatch(spawn = (10, 10))
     walkEast(3)

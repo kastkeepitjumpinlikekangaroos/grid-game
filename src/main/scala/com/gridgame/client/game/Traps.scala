@@ -101,6 +101,14 @@ trait Traps { this: GameClient =>
   def isFriendlyTrap(trap: Trap): Boolean =
     trap.ownerId.equals(localPlayerId) || (localTeamId != 0 && trap.teamId == localTeamId)
 
+  /** Is there a trap on the ground at (x, y)? One to a cell: the server refuses a second. */
+  private[game] def trapAt(x: Int, y: Int): Boolean = {
+    if (traps.isEmpty) return false
+    val iter = traps.values().iterator()
+    while (iter.hasNext) { val t = iter.next(); if (t.x == x && t.y == y) return true }
+    false
+  }
+
   /** How many of our own traps are on the ground, for the ability slot's count. */
   def myTrapCount: Int = {
     if (traps.isEmpty) return 0

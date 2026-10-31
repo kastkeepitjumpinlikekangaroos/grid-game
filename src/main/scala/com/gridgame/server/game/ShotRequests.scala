@@ -1,5 +1,6 @@
 package com.gridgame.server.game
 
+import com.gridgame.common.Constants
 import com.gridgame.common.model.CharacterDef
 import com.gridgame.common.model.GroundSlam
 import com.gridgame.common.model.Player
@@ -110,9 +111,10 @@ trait ShotRequests { this: ClientHandler =>
     false // Don't auto-broadcast; we handled it
   }
 
-  /** How long before a phase ends a shot is let through anyway (see handleProjectileUpdate), and a
-    * reset of the cooldowns (CooldownResetRequests). */
-  private[game] val PHASED_SHOT_GRACE_MS = 250L
+  /** How long before a phase ends a shot is let through anyway (see handleProjectileUpdate), a trap
+    * (TrapRequests) and a reset of the cooldowns (CooldownResetRequests): the client's phase ends a
+    * trip across the wire before the server's, and on a bad network that trip is long. */
+  private[game] val PHASED_SHOT_GRACE_MS: Long = Constants.NETWORK_TOLERANCE_MS
 
   /** A heading shorter than this says no direction at all. The client sends unit headings. */
   private val MIN_HEADING = 0.5f

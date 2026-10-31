@@ -52,8 +52,9 @@ class PositionAuthorityTest {
     val p = m.join(CharacterId.Gladiator, 10, 10)
     assertTrue(m.move(p, 10, 10))
     m.clearSent()
-    assertFalse(m.move(p, 40, 10))
-    assertFalse(m.move(p, 41, 10, gapMs = 300))
+    // Further than anything bunched up or lost on a bad network could explain
+    assertFalse(m.move(p, 55, 55))
+    assertFalse(m.move(p, 56, 55, gapMs = 300))
     val told = serverMovesToldOverTcp(p)
     assertEquals(1, told.size)
     assertEquals(new Position(10, 10), told.head.getPosition)
@@ -66,8 +67,8 @@ class PositionAuthorityTest {
   @Test def correctionsAreNotSentOnEveryRefusal(): Unit = {
     val p = m.join(CharacterId.Gladiator, 10, 10)
     assertTrue(m.move(p, 10, 10))
-    assertFalse(m.move(p, 40, 10, serverMoves = 0))
-    for (i <- 0 until 5) assertFalse(m.move(p, 41 + i, 10, serverMoves = 0, gapMs = 100))
+    assertFalse(m.move(p, 55, 55, serverMoves = 0))
+    for (i <- 0 until 5) assertFalse(m.move(p, 55, 54 - i, serverMoves = 0, gapMs = 100))
     assertTrue("at most one every 500ms", p.getServerMoves <= 2)
   }
 
@@ -75,13 +76,13 @@ class PositionAuthorityTest {
     val p = m.join(CharacterId.Spaceman, 10, 10)
     assertTrue(m.move(p, 10, 10))
     m.clearSent()
-    val star = m.useItem(p, ItemType.Star, 10, 50) // 40 cells: more than a star goes
+    val star = m.useItem(p, ItemType.Star, 55, 55) // 90 cells: more than a star goes
     assertTrue("star given back", m.hasItem(p, star))
     val told = m.tcpSent(p)
     assertTrue(told.exists { case i: ItemPacket => i.getAction == ItemAction.USE_REJECTED; case _ => false })
     assertEquals(new Position(10, 10), m.updatesAbout(told, p).last.getPosition)
     // Steps the client took from where it landed, before it heard, are stale
-    assertFalse(m.move(p, 10, 49, serverMoves = 0))
+    assertFalse(m.move(p, 55, 54, serverMoves = 0))
     assertEquals((10, 10), m.at(p))
   }
 

@@ -132,6 +132,13 @@ object Constants {
   // Cells the server's teleport/dash range checks allow past the nominal range: the client rounds
   // its landing cell (+0.7) and the server's copy of the position can trail it by a step (+1.4)
   val TELEPORT_RANGE_TOLERANCE: Int = 3
+  // How far the network may bunch, hold up or reorder what an honest client sends before the server
+  // holds it against them: every check of pace, fire rate, charge and reach allows for this much.
+  // Cheating is left to player reports; the checks only keep a match sane (design/networking.md)
+  val NETWORK_TOLERANCE_MS: Int = 500
+  // How often a client says where it is while it says nothing else, so a position lost on the way
+  // (the last step of a walk, a dash's landing) is mended on the server and on every other screen
+  val POSITION_RESEND_MS: Int = 500
   val MAX_LOBBIES: Int = 100                            // Max concurrent active lobbies
   val MAX_CHAT_MESSAGE_LEN: Int = 42                    // Max UTF-8 bytes per chat message
 }

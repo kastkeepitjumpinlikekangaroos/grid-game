@@ -43,6 +43,15 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   val handler = new ClientHandler(this)
   var world: WorldData = _
   val modifiedTiles = new java.util.concurrent.ConcurrentHashMap[(Int, Int), Int]()
+  // When each modified tile changed, for a step the change hadn't reached yet (changedLately)
+  private[game] val tileChangedAt = new java.util.concurrent.ConcurrentHashMap[(Int, Int), Long]()
+
+  /** Did the cell at (x, y) change (a fence going up) so lately that a client may not have heard
+    * yet (NETWORK_TOLERANCE_MS)? A step onto it, or past its corner, was sent knowing nothing of it. */
+  def changedLately(x: Int, y: Int): Boolean = {
+    val at = tileChangedAt.get((x, y))
+    at != null && System.currentTimeMillis() - at < Constants.NETWORK_TOLERANCE_MS
+  }
 
   def isTeammate(id1: UUID, id2: UUID): Boolean = {
     if (gameMode == 0) return false
@@ -185,6 +194,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     itemManager.close()
     trapManager.close()
     modifiedTiles.clear()
+    tileChangedAt.clear()
     teamAssignments.clear()
     println(s"GameInstance[$gameId]: Stopped")
   }

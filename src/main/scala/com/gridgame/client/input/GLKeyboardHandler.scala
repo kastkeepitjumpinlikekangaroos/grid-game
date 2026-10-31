@@ -117,10 +117,9 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
 
   /** Called each frame from the game loop. */
   def update(): Unit = {
-    // Before the chat check: a barrier keeps turning, and its end is announced, while typing
+    // A barrier keeps turning, and its end is announced, while typing
     if (!client.getIsDead) client.streamBarrier()
-    if (isChatMode) return
-    if (!client.getIsDead) {
+    if (!isChatMode && !client.getIsDead) {
       if (client.isSwooping) {
         client.tickSwoop()
       } else {
@@ -133,6 +132,9 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
         client.sendChargingUpdate()
       }
     }
+    // Where we are, said again now and then whatever we are doing, typing too: last, so what this
+    // frame has sent already counts (GameClient.resendPositionIfQuiet)
+    if (!client.getIsDead) client.resendPositionIfQuiet()
   }
 
   /** Consume F11 press event. Returns true once per press, then resets. */

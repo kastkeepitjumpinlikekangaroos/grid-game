@@ -1,5 +1,6 @@
 package com.gridgame.server
 
+import com.gridgame.common.Constants
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 import org.junit.Assert._
@@ -40,9 +41,12 @@ class TrapTest {
   }
 
   @Test def aPlacementBeyondRangeIsRefused(): Unit = {
+    // Its range, and the steps the server's copy of the thrower can trail them by on a bad network
     val w = warden(20, 30)
+    val reach = 6 + Constants.TELEPORT_RANGE_TOLERANCE +
+      Movement.lagCells(Constants.NETWORK_TOLERANCE_MS, CharacterDef.get(CharacterId.Warden.id).moveSpeed)
     m.clearSent()
-    assertNull("12 cells from a 6-cell throw", m.placeTrap(w, E, BEAR, 32, 30))
+    assertNull("past a 6-cell throw's reach", m.placeTrap(w, E, BEAR, 20 + reach + 1, 30))
     val told = m.trapEvents(m.tcpSent(w), TrapAction.REJECTED)
     assertEquals("and the placer is told, so the cooldown comes back", 1, told.size)
     assertEquals(E, told.head.getAttackSlot)
@@ -54,11 +58,17 @@ class TrapTest {
     assertNull(m.placeTrap(w, E, BEAR, 24, 30))
   }
 
-  @Test def aPlacementThroughAWallIsRefused(): Unit = {
-    // The throw stops at the first wall, so a trap can't be dropped on the far side of one
+  @Test def aPlacementPastAWallIsTakenSinceTheServerMayTrailTheThrower(): Unit = {
+    // The client's throw stops at the first wall (TrapPlacement.target), but the server judges it
+    // from its own copy of the thrower, which a bad network can leave steps behind: from there the
+    // way to a cell the client threw to cleanly can cross a wall. So it takes a cell a trap can lie
+    // on within reach, whatever lies between (isValidTargetLagging); a throw through a wall that only
+    // a modified client would make is left to player reports. Onto a wall, never.
     val w = warden(20, 30)
     for (y <- 29 to 31) m.world.setTile(22, y, Tile.Wall)
-    assertNull(m.placeTrap(w, E, BEAR, 25, 30))
+    assertNotNull("past the wall", m.placeTrap(w, E, BEAR, 25, 30))
+    assertFalse("though the strict check, from where it has them, would refuse it",
+      TrapPlacement.isValidTargetNear(m.world, 20, 30, 25, 30, 6))
   }
 
   @Test def aThrowFromAStepAheadOfWhereTheServerHasThemIsTaken(): Unit = {

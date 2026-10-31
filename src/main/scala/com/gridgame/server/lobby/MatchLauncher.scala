@@ -22,6 +22,15 @@ import scala.jdk.CollectionConverters._
  */
 final class MatchLauncher(host: LobbyHost) {
 
+  /**
+   * How a launched match, and its bots, are set going: on clocks of their own (`GameInstance.start`,
+   * `BotController.start`). The end-to-end tests launch real lobbies' matches and tick them on the
+   * test's own schedule instead: they replace these with ones that only begin the match
+   * (`GameInstance.begin`) and leave its bots be (src/test/CLAUDE.md, *End to end*).
+   */
+  @volatile private[server] var startMatch: GameInstance => Unit = _.start()
+  @volatile private[server] var startBots: BotController => Unit = _.start()
+
   /** @param withBots whether the match gets a BotController (a duel has no seats for bots) */
   def launch(lobby: Lobby, withBots: Boolean = true): GameInstance = {
     // Resolve world file path
@@ -109,7 +118,12 @@ final class MatchLauncher(host: LobbyHost) {
 
       // Start the instance (spawns initial items, begins projectile/timer ticks)
       // Done after players are registered and notified so item spawns reach everyone
-      instance.start()
+      startMatch(instance)
+      // The opening (a free-for-all's ceasefire, the Teams wall) is announced with the start, before
+      // anyone is placed: it used to wait for the first tick, 30ms on, and until it came a client
+      // took its attacks for free, so a shot or a cast in that moment was refused and its cooldown
+      // spent on nothing (found by MatchLifecycleTest)
+      instance.syncOpening()
 
       // Broadcast join packets for all players (human + bot) so each client
       // knows every player's server-assigned spawn position
@@ -148,7 +162,7 @@ final class MatchLauncher(host: LobbyHost) {
 
       // Start bot controller if there are bots
       if (lobby.botManager.botCount > 0) {
-        botController.start()
+        startBots(botController)
       }
     } catch {
       case e: Throwable =>

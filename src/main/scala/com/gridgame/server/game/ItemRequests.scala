@@ -1,8 +1,10 @@
 package com.gridgame.server.game
 
 import com.gridgame.common.Constants
+import com.gridgame.common.model.CharacterDef
 import com.gridgame.common.model.Direction
 import com.gridgame.common.model.ItemType
+import com.gridgame.common.model.Movement
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.Position
 import com.gridgame.common.model.Teleport
@@ -109,7 +111,7 @@ trait ItemRequests { this: ClientHandler =>
       } else if (validator.isStaleMovement(player.getId, seqNum)) {
         // An update the client sent after using the star is already applied, so it's past here
         true
-      } else if (!Teleport.isValidStarTarget(w, pos.getX, pos.getY, targetX, targetY)) {
+      } else if (!Teleport.isValidStarTarget(w, pos.getX, pos.getY, targetX, targetY, lagCells(player))) {
         false
       } else {
         player.setPosition(new Position(targetX, targetY))
@@ -140,11 +142,12 @@ trait ItemRequests { this: ClientHandler =>
       return false
     }
 
-    // Distance check: fence must be placed near the player
+    // Distance check: fence must be placed near the player, as far again as the server's copy of
+    // them can trail them (lagCells)
     val from = player.getPosition
     val fdx = Math.abs(targetX - from.getX)
     val fdy = Math.abs(targetY - from.getY)
-    if (fdx + fdy > Constants.FENCE_MAX_DISTANCE) return false
+    if (fdx + fdy > Constants.FENCE_MAX_DISTANCE + lagCells(player)) return false
 
     // Nor over the opening divider: for those thirty seconds nothing of yours reaches the other
     // half, a fence included — and this one would still be standing there when the wall drops
@@ -180,5 +183,12 @@ trait ItemRequests { this: ClientHandler =>
       System.err.println(s"ClientHandler: Fence placement failed at ($targetX,$targetY) — no walkable tiles")
     }
     placed > 0
+  }
+
+  /** How far the server's copy of the player can trail them while their steps are on their way
+    * (Movement.lagCells): every reach judged from it allows for that much. */
+  private def lagCells(player: Player): Int = {
+    val charDef = CharacterDef.get(player.getCharacterId)
+    Movement.lagCells(Constants.NETWORK_TOLERANCE_MS, if (charDef != null) charDef.moveSpeed else 1.0f)
   }
 }
