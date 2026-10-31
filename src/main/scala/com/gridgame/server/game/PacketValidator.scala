@@ -24,6 +24,15 @@ import com.gridgame.common.protocol.ProjectilePacket
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * How far a player may still move (PacketValidator.validateMovement): credit that builds up over time
+ * at about twice their pace and is spent by every step. A bad network bunches steps up, holds one back
+ * and hurries the next, or loses the ones between two that arrive; taken on the credit the time since
+ * has built up, each is judged by how far the player walked over that time, not by how close
+ * together two packets happened to land.
+ */
+private final class MoveCredit(var cells: Double, var at: Long)
+
 /** Fire-rate state for one of a player's attacks. */
 private final class AttackClock {
   /** When its latest cast started (0: never). Groups the projectiles one press sends. */
@@ -40,9 +49,11 @@ private final class AttackClock {
 }
 
 object PacketValidator {
-  /** How long after a cast's first projectile the rest of it may arrive. The client sends them all
-    * in the same frame. */
-  private val CAST_WINDOW_MS = 100L
+  /** How long after a cast's first projectile the rest of it may arrive: the network's tolerance,
+    * since a bad link delays each datagram of a burst its own way, but never more than half the
+    * attack's cooldown, or the next press would be taken as more of the last (and its charge judged
+    * from the cast before). At 100ms a burst that came in over a stall lost the rest of its shots. */
+  def castWindowMs(cooldownMs: Long): Long = Math.min(Constants.NETWORK_TOLERANCE_MS.toLong, cooldownMs / 2)
 
   /** Projectiles one primary shot sends: three with a gem boost. Allowed whether or not the server
     * has seen the boost yet, since the item packet can arrive after the shots it boosted. */
@@ -53,19 +64,41 @@ object PacketValidator {
 
   /** Slack on how long a charged shot can have been held, for the two packets it is timed between
     * taking different times to arrive. */
-  private val CHARGE_SLACK_MS = 250L
+  private val CHARGE_SLACK_MS: Long = Constants.NETWORK_TOLERANCE_MS
 
   /**
-   * The furthest a character of this speed could honestly have walked in `deltaMs`: twice what
-   * their own step interval allows (Movement), plus two cells of grace for a client whose
-   * updates bunched up. A quicker character is allowed to be quicker; the tolerance is not a
-   * flat number of cells that a fast character would eat into and a slow one would never reach.
+   * The quickest a player can be moving, in cells a ms, Manhattan (a diagonal step is two cells):
+   * twice the pace they step at now — phased, sped up, or neither (Movement) — and a quarter more,
+   * for frames that hitched. A quicker character is allowed to be quicker.
    */
-  def maxCellsIn(deltaMs: Long, moveSpeed: Float, phased: Boolean = false): Long = {
-    val interval =
-      if (phased) Movement.phasedStepIntervalMs(moveSpeed) else Movement.baseStepIntervalMs(moveSpeed)
-    ((deltaMs.toDouble / interval) * 2 + 2).toLong
-  }
+  def creditRate(moveSpeed: Float, phased: Boolean = false, speedBoost: Boolean = false): Double =
+    2.0 / Movement.stepIntervalMs(moveSpeed, charging = false, 0, phased, speedBoost, slowed = false, 1f) * 1.25
+
+  /** How long a player's movement credit builds up for at most: the network's tolerance and a second
+    * more. A stall that long, and everything walked in it arriving at once, is taken; standing still
+    * any longer banks nothing more. */
+  val CreditWindowMs: Long = Constants.NETWORK_TOLERANCE_MS + 1000L
+
+  /** What a step may overdraw a player's credit by: a diagonal step's two cells. */
+  val CreditOverdraft = 2.0
+
+  /**
+   * How much sooner than its cooldown a cast may come: as much as the network can take off the time
+   * between two (NETWORK_TOLERANCE_MS), or the fifth of a long cooldown every attack has always had,
+   * and never more than the cooldown. The primary's 500ms had only 100ms of it, and a shot held up on
+   * the way had the next one refused.
+   */
+  def castToleranceMs(cooldownMs: Long): Long =
+    Math.min(cooldownMs, Math.max((cooldownMs * 0.2).toLong, Constants.NETWORK_TOLERANCE_MS.toLong))
+
+  /**
+   * Where a cast taken at `now` starts its attack's cooldown: on the schedule the attack keeps — a
+   * cooldown after the last cast — rather than when this one arrived. A cast the network held up
+   * doesn't push the next one's out, and one it hurried doesn't let a client fire faster than the
+   * cooldown on the whole: a cast can come early (castToleranceMs), but not every cast can.
+   */
+  def scheduledCastAt(cooldownFrom: Long, now: Long, cooldownMs: Long): Long =
+    if (cooldownFrom <= 0L) now else Math.max(now - castToleranceMs(cooldownMs), cooldownFrom + cooldownMs)
 
   /** Projectiles one cast of the ability sends. Dashes, blinks and buffs send none. */
   private def projectilesPerCast(ability: AbilityDef): Int = ability.castBehavior match {
@@ -77,10 +110,14 @@ object PacketValidator {
   /** Is this phased player dashing? A dash is phased while it lasts, as a phase shift is, and goes
     * over walls, as a phase shift doesn't. A kit has one or the other at most (KitTest), and the
     * phased flag is honoured by it (StepRequests.activatePhase), so a phased player whose kit has
-    * a dash is dashing. */
+    * a dash is dashing — and for the network's tolerance after: the server's phase began when the
+    * dash's first update arrived, and on a bad link a step sent near its end can arrive after the
+    * server's is over, still crossing the wall the dash goes over. */
   private def isDashing(player: Player, charDef: CharacterDef): Boolean =
-    player.isPhased && charDef != null &&
-      (charDef.qAbility.castBehavior.isInstanceOf[DashBuff] || charDef.eAbility.castBehavior.isInstanceOf[DashBuff])
+    System.currentTimeMillis() - player.getPhasedUntil < Constants.NETWORK_TOLERANCE_MS && hasDash(charDef)
+
+  private def hasDash(charDef: CharacterDef): Boolean = charDef != null &&
+    (charDef.qAbility.castBehavior.isInstanceOf[DashBuff] || charDef.eAbility.castBehavior.isInstanceOf[DashBuff])
 }
 
 /**
@@ -94,8 +131,12 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     * hands it; nowhere for a validator a test makes on its own. */
   @volatile var journal: MatchJournal = MatchJournal.Off
 
-  // Track last position update time per player for speed checking
-  private val lastUpdateTime = new ConcurrentHashMap[UUID, java.lang.Long]()
+  // How far each player may still move (MoveCredit)
+  private val moveCredit = new ConcurrentHashMap[UUID, MoveCredit]()
+
+  // The sequence number of the last update each player sent that reached the movement check, taken or
+  // not: whether the next one follows it with nothing lost between (followsTheLastSeen)
+  private val lastSeenUpdate = new ConcurrentHashMap[UUID, java.lang.Integer]()
   // Fire rate: a clock for each of a player's attacks, indexed by AttackSlot
   private val attackClocks = new ConcurrentHashMap[UUID, Array[AttackClock]]()
   // Sequence number of the newest position applied for each player: an accepted update, or a
@@ -116,6 +157,10 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
   // leaves it as it is: nobody has R back for dying
   private val lastCooldownReset = new ConcurrentHashMap[UUID, java.lang.Long]()
 
+  // Where each player's last step in a dash left them: the first update after the dash, from that
+  // cell, is its landing (dashLanding)
+  private val dashedTo = new ConcurrentHashMap[UUID, (Int, Int)]()
+
   def validateChargeLevel(chargeLevel: Int): Boolean = {
     chargeLevel >= 0 && chargeLevel <= 100
   }
@@ -123,12 +168,19 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
   /**
    * @param attacksLocked the opening of a free-for-all holds everyone's fire (MatchOpening), so a
    *                       jump no walk could have made isn't a blink or a dash either
+   * @param changedLately whether a cell changed (a fence went up) too lately for the client to have
+   *                       heard of it (GameInstance.changedLately): a step onto it, or past its corner,
+   *                       was sent knowing nothing of it, and is taken. On a bad network a fence going
+   *                       up beside someone walking had their step refused, and they snapped back.
    */
   def validateMovement(packet: PlayerUpdatePacket, player: Player, world: WorldData,
-                       attacksLocked: Boolean = false): Boolean = {
+                       attacksLocked: Boolean = false,
+                       changedLately: (Int, Int) => Boolean = (_, _) => false): Boolean = {
     val pos = packet.getPosition
     val x = pos.getX
     val y = pos.getY
+    val previous = lastSeenUpdate.put(packet.getPlayerId, Integer.valueOf(packet.getSequenceNumber))
+    val followsTheLastSeen = previous != null && packet.getSequenceNumber == ((previous.intValue + 1) & 0x7FFFFFFF)
 
     // World bounds check
     if (x < 0 || x >= world.width || y < 0 || y >= world.height) {
@@ -140,10 +192,14 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
 
     // Nobody stands in a wall but someone dashing: a dash goes over whatever lies between. A phase
     // shift walked through walls too; untouchable and quick, it is stopped by them now as anyone
-    // is (design/characters.md, *A phase stops at walls*)
+    // is (design/characters.md, *A phase stops at walls*). An update that doesn't move the player
+    // isn't a step onto anything: a fence put up where they stand (nothing stops one going up on a
+    // player) had every update of theirs refused while they stood there, a barrier's or a charge's,
+    // each one corrected as though they had wandered off (found by ThreadedMatchFuzzTest)
     val charDef = characterOf(player.getCharacterId)
     val dashing = isDashing(player, charDef)
-    if (!dashing && !world.isWalkable(x, y)) {
+    val standing = player.getPosition
+    if (!dashing && !world.isWalkable(x, y) && !(x == standing.getX && y == standing.getY) && !changedLately(x, y)) {
       System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} moved to non-walkable tile ($x, $y)")
       Metrics.validationFailed.add(1L, Attrs.VfMovementWalkable)
       journal.refused(player, {
@@ -156,12 +212,17 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     // A diagonal step goes between open cells only (WorldData.cornersOpen), as the client and the
     // bots take one, phased or not; a dash goes over corners as it goes over walls. Past a wall's
     // corner, or between two blocks touching at one, is through the wall. Only a single step can be
-    // judged so: of a few bunched into one update, the server knows the ends and not the way.
+    // judged so, and only one that comes straight after the last update the server had from them:
+    // when a datagram between them was lost, the server knows the ends and not the way, and two
+    // steps round a corner, the first of them lost, are no diagonal past it. A dash's landing is a dash's too,
+    // however late it comes (dashLanding): it lands on open ground, but from wherever the dash had
+    // got to.
     val from = player.getPosition
     val sdx = x - from.getX
     val sdy = y - from.getY
-    if (!dashing && Math.abs(sdx) == 1 && Math.abs(sdy) == 1 &&
-        !world.cornersOpen(from.getX, from.getY, sdx, sdy)) {
+    if (!dashing && !dashLanding(player, charDef) && Math.abs(sdx) == 1 && Math.abs(sdy) == 1 &&
+        followsTheLastSeen && !world.cornersOpen(from.getX, from.getY, sdx, sdy) &&
+        !changedLately(from.getX + sdx, from.getY) && !changedLately(from.getX, from.getY + sdy)) {
       Metrics.validationFailed.add(1L, Attrs.VfMovementWalkable)
       journal.refused(player, s"step refused (movement_walkable): (${from.getX},${from.getY}) -> ($x,$y) cuts a wall's corner")
       return false
@@ -177,28 +238,26 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
       return false
     }
 
-    // Speed check
+    // Pace, on the player's movement credit (MoveCredit): built up at about twice the pace they
+    // step at now (creditRate) since it was last topped up, spent by every step, and capped. It
+    // used to be a step's worth between one update's arrival and the next, plus two cells: steps a
+    // bad network bunched together, or the one that arrived after the steps between were lost, were
+    // refused as a speed hack, and the player snapped back. A player's first update in a match is
+    // judged on the credit of the network's tolerance (NETWORK_TOLERANCE_MS): a step or a few,
+    // never the other side of the map. A phased player (a phase shift, or a dash) builds it at
+    // their phased pace; a dash, much quicker than that, has its reach below.
     val now = System.currentTimeMillis()
-    val lastTime: java.lang.Long = lastUpdateTime.put(packet.getPlayerId, now)
-    // A player's first update in a match is checked too, from the cell the server put them on as
-    // though no time had passed: a step, or a couple bunched by a lost datagram. It used to be
-    // let through unchecked, and a client's first update could put its player anywhere on the map.
-    // Updates handled in the same millisecond are checked too. Skipping them let the second of
-    // any pair go anywhere: it quietly waved through refused teleports (the client sends those
-    // twice), and any jump a modified client cared to send twice.
-    val deltaMs = if (lastTime == null) 0L else Math.max(0L, now - lastTime.longValue())
     val oldPos = player.getPosition
     val dx = x - oldPos.getX
     val dy = y - oldPos.getY
     val distance = Math.abs(dx.toLong) + Math.abs(dy.toLong) // Long arithmetic to prevent overflow
-
-    // A phased player (a phase shift, or a dash) walks at twice their pace, but not at any speed.
-    // The check used to be skipped for them altogether, and for as long as a phase lasted — five
-    // seconds, for the Wraith — a client could put its player anywhere on the map. A dash, much
-    // quicker than a phased walk, has its reach below.
-    val expectedMaxCells = maxCellsIn(deltaMs, if (charDef != null) charDef.moveSpeed else 1.0f,
-      phased = player.isPhased)
-    if (distance > expectedMaxCells) {
+    val rate = creditRate(if (charDef != null) charDef.moveSpeed else 1.0f, player.isPhased, player.hasSpeedBoost)
+    val credit = moveCredit.computeIfAbsent(packet.getPlayerId, _ => new MoveCredit(rate * Constants.NETWORK_TOLERANCE_MS, now))
+    val available = Math.min(rate * CreditWindowMs, credit.cells + Math.max(0L, now - credit.at) * rate)
+    credit.at = now
+    credit.cells = available
+    if (distance <= available + CreditOverdraft) credit.cells = available - distance
+    else {
       // Allow teleport/dash abilities: check if this player's character has TeleportCast or DashBuff
       // on either Q or E ability, and the jump is within the ability's reach
       val abilities = if (charDef != null) Seq(charDef.qAbility, charDef.eAbility) else Seq.empty
@@ -212,16 +271,36 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
       // A star needs no exception here: its item packet moves the player (ClientHandler),
       // so the client's next update starts from the new cell
       if (!isAbilityMovement) {
-        System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} speed hack detected: moved $distance cells in ${deltaMs}ms")
+        System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} moved $distance cells " +
+          f"on ${available}%.1f of credit")
         Metrics.validationFailed.add(1L, Attrs.VfMovementSpeed)
         journal.refused(player, s"step refused (movement_speed): (${oldPos.getX},${oldPos.getY}) -> ($x,$y) is $distance cells " +
-          s"in ${deltaMs}ms since its last step, at most $expectedMaxCells${if (player.isPhased) " (phased)" else ""}" +
+          f"on its credit, at most ${available + CreditOverdraft}%.1f${if (player.isPhased) " (phased)" else ""}" +
           (if (attacksLocked) ", and no blink or dash in the ceasefire" else ""))
         return false
       }
     }
 
+    // Where a dash's step leaves the player, its landing will come from
+    if (dashing) dashedTo.put(packet.getPlayerId, (x, y)) else dashedTo.remove(packet.getPlayerId)
     true
+  }
+
+  /**
+   * Is this update a dash's landing: the first after the dash, from the very cell the dash's last
+   * step put the player on? The client sends where its dash ends as the dash's phase ends — later,
+   * after a frame that hitched — and the server's phase began a trip across the wire after the
+   * client's, so the landing arrives after the server's phase is over. Judged as an ordinary step, a
+   * landing a diagonal cell past a wall's corner, or out of the wall the dash crossed, was refused,
+   * and the player held where the dash had got to: in the wall or the pool it was going over (found by
+   * RosterSweepTest and LossyNetworkFuzzTest). One step, once a dash: any update after the dash's is
+   * a step's, and a server move in between (a knockback cutting the dash short) puts the player
+   * somewhere else. Not tied to the dash's phase, which an R in its last moments ends early.
+   */
+  private def dashLanding(player: Player, charDef: CharacterDef): Boolean = {
+    val dashed = dashedTo.get(player.getId)
+    val at = player.getPosition
+    dashed != null && hasDash(charDef) && dashed._1 == at.getX && dashed._2 == at.getY
   }
 
   /** True if this update was sent before a position already applied for the player: drop it. */
@@ -270,14 +349,17 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
   def validateProjectileSpawn(packet: ProjectilePacket, player: Player): Boolean = {
     val pos = player.getPosition
 
-    // Spawn position within 3 cells of player position
+    // Fired from within three cells of where the server has the shooter, and as far again as they
+    // could have walked while the steps that took them there are on their way (Movement.lagCells):
+    // a shot fired on the move behind a held-up step was refused as fired from too far away
+    val reach = 3 + Movement.lagCells(Constants.NETWORK_TOLERANCE_MS, characterSpeed(player))
     val dx = Math.abs(packet.getX - pos.getX)
     val dy = Math.abs(packet.getY - pos.getY)
-    if (dx > 3 || dy > 3) {
+    if (dx > reach || dy > reach) {
       System.err.println(s"PacketValidator: Player ${packet.getPlayerId.toString.substring(0, 8)} projectile spawn too far from player")
       Metrics.validationFailed.add(1L, Attrs.VfProjectilePosition)
       journal.refused(player, f"shot refused (projectile_position): ${MatchJournal.slotName(packet.getAttackSlot)} fired from " +
-        f"(${packet.getX}%.1f,${packet.getY}%.1f), more than 3 cells from (${pos.getX},${pos.getY})")
+        f"(${packet.getX}%.1f,${packet.getY}%.1f), more than $reach cells from (${pos.getX},${pos.getY})")
       return false
     }
 
@@ -319,7 +401,8 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     }
 
     // Fire rate. A cast is everything one press of the attack sends, all in the same frame: a
-    // primary shot or an ability's whole fan. A new cast needs 80% of that attack's cooldown.
+    // primary shot or an ability's whole fan. A new cast may come as early as the network can hurry
+    // one (castToleranceMs), on the schedule its casts keep (scheduledCastAt).
     val clock = attackClocks.computeIfAbsent(packet.getPlayerId, _ => Array.fill(SLOT_COUNT)(new AttackClock))(slot)
     // What the refusal says, read under the clock's lock: how long since the cast its cooldown runs
     // from, and how many of a cast still open it had fired
@@ -327,19 +410,19 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     var firedInCast = 0
     val accepted = clock.synchronized {
       val now = System.currentTimeMillis()
-      if (now - clock.castAt <= CAST_WINDOW_MS && clock.fired < perCast) {
+      if (now - clock.castAt <= castWindowMs(cooldownMs) && clock.fired < perCast) {
         clock.fired += 1
         true
-      } else if (now - clock.cooldownFrom >= (cooldownMs * 0.8).toLong) {
+      } else if (now - clock.cooldownFrom >= cooldownMs - castToleranceMs(cooldownMs)) {
         clock.prevCastAt = clock.castAt
         clock.castAt = now
-        clock.cooldownFrom = now
+        clock.cooldownFrom = scheduledCastAt(clock.cooldownFrom, now, cooldownMs)
         clock.fired = 1
         clock.cast = null
         true
       } else {
         sinceMs = now - clock.cooldownFrom
-        firedInCast = if (now - clock.castAt <= CAST_WINDOW_MS) clock.fired else 0
+        firedInCast = if (now - clock.castAt <= castWindowMs(cooldownMs)) clock.fired else 0
         false
       }
     }
@@ -348,7 +431,7 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
       journal.refused(player,
         if (firedInCast >= perCast) s"shot refused (projectile_fire_rate): ${MatchJournal.slotName(slot)}'s cast has fired all $perCast it may"
         else s"shot refused (projectile_fire_rate): ${MatchJournal.slotName(slot)} cast again ${sinceMs}ms after the last, " +
-          s"before ${(cooldownMs * 0.8).toLong}ms (80% of its ${cooldownMs}ms cooldown)")
+          s"before ${cooldownMs - castToleranceMs(cooldownMs)}ms (its ${cooldownMs}ms cooldown, less the network's tolerance)")
     }
     accepted
   }
@@ -390,23 +473,28 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
   }
 
   /**
-   * A cast that spawns no projectile, held to the same clock a shot is: a new one needs 80% of
-   * that attack's cooldown, the tolerance every attack gets. Traps come in on a packet of their
-   * own rather than as a spawn request, so they have nowhere else to be counted.
+   * A cast that spawns no projectile, held to the same clock a shot is (castToleranceMs,
+   * scheduledCastAt). Traps come in on a packet of their own rather than as a spawn request, so they
+   * have nowhere else to be counted.
    */
   def validateCast(playerId: UUID, slot: Int, cooldownMs: Int): Boolean = {
     if (slot < 0 || slot >= SLOT_COUNT) return false
     val clock = attackClocks.computeIfAbsent(playerId, _ => Array.fill(SLOT_COUNT)(new AttackClock))(slot)
     clock.synchronized {
       val now = System.currentTimeMillis()
-      if (now - clock.cooldownFrom < (cooldownMs * 0.8).toLong) false
+      if (now - clock.cooldownFrom < cooldownMs - castToleranceMs(cooldownMs)) false
       else {
         clock.castAt = now
-        clock.cooldownFrom = now
+        clock.cooldownFrom = scheduledCastAt(clock.cooldownFrom, now, cooldownMs)
         clock.fired = 1
         true
       }
     }
+  }
+
+  private def characterSpeed(player: Player): Float = {
+    val charDef = characterOf(player.getCharacterId)
+    if (charDef != null) charDef.moveSpeed else 1.0f
   }
 
   /** Reduce per-ability fire rate cooldown for the given player (mirrors client-side on-hit reduction). */
@@ -434,7 +522,7 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
 
   /**
    * R (design/characters.md, *R resets the cooldowns*): has the player's reset its own cooldown
-   * behind it, 80% of it (the tolerance every attack gets) since their last reset, or since
+   * behind it, but for the tolerance every attack gets (castToleranceMs), since their last reset, or since
    * `firstFrom` for the first (GameInstance.firstResetFrom: the match's start, or never in
    * practice)? If so it is taken, and the Q and E clocks are cleared, so the next cast of either, a
    * shot or a trap, is judged as though neither had been cast. A phase's and a barrier's cooldowns
@@ -444,7 +532,8 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     val now = System.currentTimeMillis()
     var taken = false
     lastCooldownReset.compute(playerId, (_, last) => {
-      if (now - resetFrom(last, firstFrom) < (Constants.COOLDOWN_RESET_MS * 0.8).toLong) last
+      val cooldown = Constants.COOLDOWN_RESET_MS.toLong
+      if (now - resetFrom(last, firstFrom) < cooldown - castToleranceMs(cooldown)) last
       else { taken = true; java.lang.Long.valueOf(now) }
     })
     if (taken) {
@@ -469,7 +558,9 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
   private def clearCooldown(clock: AttackClock): Unit = clock.synchronized { clock.cooldownFrom = 0L }
 
   def removePlayer(playerId: UUID): Unit = {
-    lastUpdateTime.remove(playerId)
+    moveCredit.remove(playerId)
+    lastSeenUpdate.remove(playerId)
+    dashedTo.remove(playerId)
     attackClocks.remove(playerId)
     movementFence.remove(playerId)
     barrierFence.remove(playerId)

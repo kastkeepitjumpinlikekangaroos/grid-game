@@ -210,9 +210,12 @@ class ItemTest {
 
   @Test def aFenceTooFarAwayIsRefusedAndTheItemGivenBack(): Unit = {
     val p = m.join(CharacterId.Gladiator, 10, 10)
+    // Its reach, and the steps the server's copy of them can trail them by on a bad network
+    val far = 10 + Constants.FENCE_MAX_DISTANCE +
+      Movement.lagCells(Constants.NETWORK_TOLERANCE_MS, CharacterDef.get(CharacterId.Gladiator.id).moveSpeed) + 1
     m.clearSent()
-    val fence = m.useItem(p, ItemType.Fence, 10, 10 + Constants.FENCE_MAX_DISTANCE + 1)
-    assertEquals(Tile.Grass, m.world.getTile(10, 10 + Constants.FENCE_MAX_DISTANCE + 1))
+    val fence = m.useItem(p, ItemType.Fence, 10, far)
+    assertEquals(Tile.Grass, m.world.getTile(10, far))
     assertTrue(m.hasItem(p, fence))
     assertTrue("the client is given it back", m.tcpSent(p).exists {
       case i: ItemPacket => i.getAction == ItemAction.INVENTORY && i.getItemId == fence.id

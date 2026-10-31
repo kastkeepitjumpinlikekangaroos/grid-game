@@ -117,12 +117,13 @@ class TeleportValidationTest {
   @Test
   def stepsThatOvertakeTheStarDoNotUndoIt(): Unit = {
     val p = join(CharacterId.Spaceman, 10, 10, seq = 1)
-    // The client stepped off the landing cell and that update beat the item packet here
-    assertFalse(move(p, 3, 31, 10))
-    useStar(p, 2, 30, 10)
-    assertEquals((30, 10), at(p))
-    assertTrue(move(p, 4, 32, 10))
-    assertEquals((32, 10), at(p))
+    // The client stepped off the landing cell and that update beat the item packet here: further
+    // than walking could have taken it from where the server still has it
+    assertFalse(move(p, 3, 41, 10))
+    useStar(p, 2, 40, 10)
+    assertEquals((40, 10), at(p))
+    assertTrue(move(p, 4, 42, 10))
+    assertEquals((42, 10), at(p))
   }
 
   @Test
@@ -150,7 +151,7 @@ class TeleportValidationTest {
     val p = join(CharacterId.Spaceman, 10, 10, seq = 1)
     val ch = new EmbeddedChannel()
     p.setTcpChannel(ch)
-    val star = useStar(p, 2, 10, 50) // 40 cells: more than any client picks
+    val star = useStar(p, 2, 55, 55) // 90 cells: more than any client picks, however far behind the server is
     assertEquals((10, 10), at(p))
     assertTrue("star back in the server's inventory", hasItem(p, star))
     val rejected = sentOverTcp(ch).collect { case ip: ItemPacket => ip }
@@ -201,17 +202,20 @@ class TeleportValidationTest {
 
   @Test
   def aJumpPastTheBlinksReachIsRefused(): Unit = {
+    // Past the blink's reach, and past what the player could have walked bunched up into one update
     val p = join(CharacterId.Phoenix, 20, 20, seq = 1)
-    assertFalse(move(p, 2, 20 + 10 + Constants.TELEPORT_RANGE_TOLERANCE + 1, 20))
+    assertFalse(move(p, 2, 55, 20))
     assertEquals((20, 20), at(p))
   }
 
   @Test
   def glitchersBlinkReachesSixCellsNotSixteen(): Unit = {
-    // Glitcher's blink is Q, 6 cells; its E fires 16, and the client blinked that far instead
+    // Glitcher's blink is Q, 6 cells; its E fires 16, and the client blinked that far instead. A walk
+    // first spends the movement credit a jump that short would otherwise pass as (PacketValidator)
     val p = join(CharacterId.Glitcher, 20, 20, seq = 1)
-    assertFalse(move(p, 2, 36, 20))
-    assertTrue(move(p, 3, 26, 20))
+    assertTrue("a walk's worth", move(p, 2, 44, 20))
+    assertFalse(move(p, 3, 44, 36))
+    assertTrue(move(p, 4, 44, 26))
   }
 
   @Test

@@ -134,7 +134,9 @@ ops/observability/   the local OpenTelemetry → Prometheus/Tempo/Loki/Grafana s
   allocates next to nothing per frame and must keep doing so (see client/CLAUDE.md).
 - **When a test fixes a bug, check it fails with the bug put back.**
 - **Every packet from a client is untrusted**: the server judges it against its own view of the match
-  (PacketValidator) before taking any of it (see design/networking.md).
+  (PacketValidator) before taking any of it — allowing for what a bad network does to an honest
+  client's packets, and leaving cheating inside those allowances to player reports (see
+  design/networking.md, *Bad networks*).
 - A rule for how something works belongs in the doc beside the code it governs, or in its feature doc:
   when you change the behaviour, change the doc in the same edit.
 

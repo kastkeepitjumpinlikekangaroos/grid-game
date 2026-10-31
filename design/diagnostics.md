@@ -232,7 +232,7 @@ own):
 The server takes 6 reports an hour and 20 a day from an account, 4 uploads at once (one a player),
 and 2GB in all, and keeps each in `problem_reports/<date>/<code>/` beside its account database with
 `server.json` and, if it still has it, `match-journal.txt` — the server's own account of that match:
-everyone in it, every request it refused with why and the numbers (a step's cells and milliseconds, a
+everyone in it, every request it refused with why and the numbers (a step's cells and the credit it had, a
 shot's attack), corrections, deaths, errors in its ticks (server/CLAUDE.md, *Problem reports*).
 
 ## Reading a report

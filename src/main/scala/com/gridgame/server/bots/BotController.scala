@@ -158,6 +158,10 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
           if (!bot.isFrozen) {
             tickBot(bot, now)
           }
+          // Said again now and then, as a player's client says where it is (POSITION_RESEND_MS): a
+          // bot is told of only as it steps, and an update about one standing still, lost on the
+          // way, left it somewhere else on that screen until it next moved
+          if (now - lastSaid.getOrElse(botId, 0L) >= Constants.POSITION_RESEND_MS) broadcastBotPosition(bot)
         }
       }
     } catch {
@@ -268,7 +272,11 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
 
   // --- Broadcasting ---
 
+  // When each bot's state was last broadcast, on the tick's clock; the bots' tick is one thread's
+  private val lastSaid = scala.collection.mutable.Map[java.util.UUID, Long]()
+
   private[bots] def broadcastBotPosition(bot: Player): Unit = {
     instance.broadcastToInstance(instance.stateUpdate(bot))
+    lastSaid(bot.getId) = tickNow
   }
 }

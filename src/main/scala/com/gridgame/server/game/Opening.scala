@@ -13,12 +13,13 @@ import java.util.UUID
  * each client runs it on its own clock from there.
  */
 trait Opening { this: GameInstance =>
-  private var openingAnnounced = false
-  private var openingEndAnnounced = false
+  // Announced by the thread that launches the match as well as by the projectile tick's: volatile
+  @volatile private var openingAnnounced = false
+  @volatile private var openingEndAnnounced = false
   private var openingRules: Byte = 0
 
   /** When the opening ends, on the server's clock. */
-  private[server] var openingEndsAt: Long = 0L
+  @volatile private[server] var openingEndsAt: Long = 0L
 
   /** What the opening holds back, in words, for the match's journal. */
   private[game] def describeOpening: String =

@@ -68,6 +68,7 @@ trait Broadcasts { this: GameInstance =>
 
   def broadcastTileUpdate(playerId: UUID, x: Int, y: Int, tileId: Int): Unit = {
     modifiedTiles.put((x, y), tileId)
+    tileChangedAt.put((x, y), System.currentTimeMillis())
     val packet = new TileUpdatePacket(
       outbox.nextSeq(),
       playerId,

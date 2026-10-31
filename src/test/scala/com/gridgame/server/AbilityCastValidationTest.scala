@@ -1,6 +1,7 @@
 package com.gridgame.server
 
-import com.gridgame.server.game.{ClientHandler, GameInstance}
+import com.gridgame.server.game.{ClientHandler, GameInstance, PacketValidator}
+import com.gridgame.common.Constants
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 import org.junit.Assert._
@@ -179,13 +180,29 @@ class AbilityCastValidationTest {
   }
 
   @Test
+  def aBurstABadNetworkSpreadOutIsStillOneCast(): Unit = {
+    // A bad link delays each datagram its own way: the burst's eight, sent together, arrive over a
+    // few hundred ms. One cast still, up to the network's tolerance or half its cooldown
+    // (PacketValidator.castWindowMs); at 100ms the rest of the burst was refused
+    val p = join(CharacterId.Soldier)
+    val primary = charDef(p).primaryProjectileType
+    val ring = AttackSlot.BurstDirections.map { case (dx, dy) => Math.atan2(dy, dx).toDouble }
+    val taken = ring.map { theta => val shot = send(p, AttackSlot.BURST, primary, Seq(theta)); Thread.sleep(50); shot.size }.sum
+    assertEquals("all eight, over 400ms", 8, taken)
+    // The primary's window stays half its 500ms: a press 300ms after the last is a press of its own
+    assertEquals(250L, PacketValidator.castWindowMs(Constants.SHOOT_COOLDOWN_MS))
+  }
+
+  @Test
   def thePrimaryKeepsItsFireRate(): Unit = {
     val p = join(CharacterId.Bear)
     // A gem boost's three in one shot...
     assertEquals(3, send(p, AttackSlot.PRIMARY, ProjectileType.CLAW_SWIPE, Seq(0.0, 0.1, -0.1)).size)
-    // ...but not a fourth, and not another shot straight after
-    assertEquals(0, send(p, AttackSlot.PRIMARY, ProjectileType.CLAW_SWIPE, Seq(0.0)).size)
-    Thread.sleep(PRESS_GAP_MS)
+    // ...and a press straight after it, as one the network hurried, taken early
+    // (PacketValidator.castToleranceMs)...
+    assertEquals(1, send(p, AttackSlot.PRIMARY, ProjectileType.CLAW_SWIPE, Seq(0.0)).size)
+    // ...but not another: early once, but no faster than the cooldown over time (scheduledCastAt)
+    Thread.sleep(PacketValidator.castWindowMs(Constants.SHOOT_COOLDOWN_MS) + 50)
     assertEquals(0, fire(p, AttackSlot.PRIMARY).size)
   }
 

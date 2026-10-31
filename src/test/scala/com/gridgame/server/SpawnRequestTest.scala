@@ -170,8 +170,9 @@ class SpawnRequestTest {
     val soldier = m.join(CharacterId.Soldier, 20, 20)
     val before = m.instance.projectileManager.size
     m.instance.handler.processPacket(PacketSerializer.deserialize(ProjectilePacket.spawnRequest(1, soldier.getId,
-      40f, 20f, soldier.getColorRGB, 1f, 0f, 0.toByte, primary(soldier), AttackSlot.PRIMARY).serialize()), null, null)
-    assertEquals(before, m.instance.projectileManager.size)
+      55f, 20f, soldier.getColorRGB, 1f, 0f, 0.toByte, primary(soldier), AttackSlot.PRIMARY).serialize()), null, null)
+    assertEquals("35 cells: past three and what a bad network can leave the server behind by", before,
+      m.instance.projectileManager.size)
   }
 
   @Test def aShotFromNowhereIsRefusedAndCostsNothing(): Unit = {

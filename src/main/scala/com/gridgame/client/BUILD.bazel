@@ -46,7 +46,10 @@ scala_library(
 scala_library(
     name = "client_lib",
     resources = RESOURCES,
-    visibility = ["//src/test/scala/com/gridgame/client:__subpackages__"],
+    visibility = [
+        "//src/test/scala/com/gridgame/client:__subpackages__",
+        "//src/test/scala/com/gridgame/e2e:__pkg__",
+    ],
     exports = [
         ":app",
         "//src/main/scala/com/gridgame/client/audio",

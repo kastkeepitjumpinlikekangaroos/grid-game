@@ -5,6 +5,7 @@ load("//third_party:jvm.bzl", "GSON", "JAVAFX", "JAVAFX_HOST", "JAVAFX_LINUX", "
 scala_library(
     name = "mapeditor_lib",
     srcs = glob(["**/*.scala"]),
+    visibility = ["//src/test/scala/com/gridgame/mapeditor:__pkg__"],
     deps = ["//src/main/scala/com/gridgame/common"] + GSON + JAVAFX,
 )
 

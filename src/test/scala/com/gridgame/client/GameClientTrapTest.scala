@@ -82,6 +82,21 @@ class GameClientTrapTest {
     assertEquals("and the ability is still ready", 0f, c.getECooldownFraction, 0.001f)
   }
 
+  @Test def aThrowOntoATrapAlreadyThereIsNoThrow(): Unit = {
+    // One to a cell: the server refuses a second, so the client doesn't throw it, and its aim shows
+    // it has nowhere to land
+    warden(aimX = 24, aimY = 20)
+    t.trap(TrapAction.SPAWN, 7, TrapType.MINE, who = other, x = 24, y = 20)
+    assertEquals(None, c.trapLanding(6))
+    c.shootAbility(1)
+    assertTrue("nothing was sent", placements.isEmpty)
+    assertEquals("and the ability is still ready", 0f, c.getECooldownFraction, 0.001f)
+    // Once it has gone, the cell is there to throw at
+    t.trap(TrapAction.REMOVE, 7, TrapType.MINE, who = other, x = 24, y = 20)
+    c.shootAbility(1)
+    assertEquals(Seq((24, 20)), placements.map(p => (p.getX, p.getY)))
+  }
+
   // --- Being told about them ---
 
   @Test def trapsTheServerSendsGoOnAndComeOffTheGround(): Unit = {

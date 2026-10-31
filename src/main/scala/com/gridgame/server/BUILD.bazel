@@ -15,7 +15,10 @@ load("//third_party:jvm.bzl", "GSON", "NETTY")
 scala_library(
     name = "server_lib",
     srcs = glob(["*.scala"]),
-    visibility = ["//src/test/scala/com/gridgame/server:__pkg__"],
+    visibility = [
+        "//src/test/scala/com/gridgame/e2e:__pkg__",
+        "//src/test/scala/com/gridgame/server:__pkg__",
+    ],
     exports = [
         "//src/main/scala/com/gridgame/server/account",
         "//src/main/scala/com/gridgame/server/bots",

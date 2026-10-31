@@ -1,6 +1,6 @@
 package com.gridgame.server
 
-import com.gridgame.server.game.{GameInstance, MatchJournal, MatchJournals}
+import com.gridgame.server.game.{GameInstance, MatchJournal, MatchJournals, PacketValidator}
 import com.gridgame.server.lobby.LobbyStatus
 import com.gridgame.common.Constants
 import com.gridgame.common.model._
@@ -34,8 +34,9 @@ class MatchJournalTest {
 
   @Test def aRefusedStepIsWrittenWithWhyAndTheNumbersThatSaySo(): Unit = {
     val p = m.join(CharacterId.Gladiator, 10, 10)
-    assertFalse("fifteen cells at once is no step", m.move(p, 25, 10))
-    assertWritten("the step", linesAbout(p), "step refused (movement_speed)", "(10,10) -> (25,10)", "15 cells", "at most")
+    // A first update has the network's tolerance of credit, a few cells short of twenty for him
+    assertFalse("forty cells at once is no step", m.move(p, 50, 10))
+    assertWritten("the step", linesAbout(p), "step refused (movement_speed)", "(10,10) -> (50,10)", "40 cells", "at most")
     m.world.setTile(11, 10, Tile.Wall)
     assertFalse(m.move(p, 11, 10))
     assertWritten("the wall", linesAbout(p), "step refused (movement_walkable)", "(10,10) -> (11,10)")
@@ -46,11 +47,14 @@ class MatchJournalTest {
   @Test def aRefusedShotIsWrittenWithWhy(): Unit = {
     val p = m.join(CharacterId.Soldier, 10, 10)
     val primary = CharacterDef.get(p.getCharacterId).primaryProjectileType
-    assertEquals(1, m.fire(p, AttackSlot.PRIMARY, primary, Seq((1f, 0f))).size)
+    // The grenade's 10s, less the 2s a cast may come early by. (The primary's 500ms has all of its
+    // cooldown to come early by: PacketValidator.castToleranceMs)
+    val grenade = CharacterDef.get(p.getCharacterId).qAbility.projectileType
+    assertEquals(1, m.fire(p, AttackSlot.Q, grenade, Seq((1f, 0f))).size)
     // Past the moment a cast's shots all go out in, and well within its cooldown
-    Thread.sleep(150)
-    assertEquals("the next press is too soon", 0, m.fire(p, AttackSlot.PRIMARY, primary, Seq((1f, 0f))).size)
-    assertWritten("too soon", linesAbout(p), "shot refused (projectile_fire_rate)", "the primary cast again", "before 400ms")
+    Thread.sleep(PacketValidator.castWindowMs(10000) + 100)
+    assertEquals("the next press is too soon", 0, m.fire(p, AttackSlot.Q, grenade, Seq((1f, 0f))).size)
+    assertWritten("too soon", linesAbout(p), "shot refused (projectile_fire_rate)", "Q cast again", "before 8000ms")
 
     // The primary's projectile, said to come from E
     m.fire(p, AttackSlot.E, primary, Seq((1f, 0f)))
@@ -79,7 +83,9 @@ class MatchJournalTest {
   @Test def aCorrectionIsWritten(): Unit = {
     val p = m.join(CharacterId.Gladiator, 10, 10)
     // Refusals that go on for a quarter of a second get the client told where it is
-    for (_ <- 0 until 4) { m.move(p, 30, 10, gapMs = 100) }
+    // (into a wall: a jump too far is taken once the credit the time since has built up covers it)
+    m.world.setTile(11, 10, Tile.Wall)
+    for (_ <- 0 until 4) { m.move(p, 11, 10, gapMs = 100) }
     assertWritten("the correction", linesAbout(p), "corrected: told it stands at (10,10)", "its steps refused for")
   }
 

@@ -177,6 +177,12 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   takes reports through the real TCP handler, an upload over real TLS among them, and
   `MatchJournalTest` is what the server keeps of a match for one; `TestSession` takes a `server` of
   the test's own for them.
+- `mapeditor/` — `MapEditorTest`: what the editor saves is the map it has, read back by the game's
+  own `WorldLoader` (every map in worlds/, maps edited at random with every tool, a new map); undo
+  and redo walk its edits back and forth exactly, and keep the last fifty; a flood fill takes exactly
+  its region, a rectangle and a brush their cells, a circle its round, and nothing is drawn off the map.
+- `e2e/` — the whole game at once: real clients against a real server (*End to end*, below). It
+  mirrors no one directory, since it is both ends.
 
 ## Fuzz and property suites
 
@@ -234,5 +240,110 @@ roster hasn't got — a poison short enough for a test to sit through (`TestTrap
 A character the roster doesn't have (one quicker
 than any in it) goes through `PacketValidator`'s `characterOf` parameter instead — see
 `PacketValidatorTest.aFasterCharacterIsJudgedByItsOwnPace`.
+
+## End to end
+
+`e2e/` plays the game with both ends real: `GameServer` and `GameClient`s, each end on its own
+network handlers — the server's `TcpHandler` and `UdpHandler` (signatures, replay windows, rate
+limits, who a packet may name) and the client's `ClientTcpHandler` and `ClientUdpHandler` (a session
+token taken up as it arrives) — with only the sockets swapped for a network of the test's own. Every
+other suite is one end, with the other end's packets made by hand; this is where the two have to
+agree.
+
+- **`Loopback`** is that harness. `Loopback(seed, net, byHand) { loop => ... }` keeps what everything
+  prints off the test's output and reads stderr after every step. `NetConditions` is the network:
+  `Perfect`, or `Lossy` (latency, jitter that reorders datagrams, a tenth of them lost, a few twice;
+  TCP is never lost and keeps its order). `LoopClient` is one player's client with the app's glue
+  (ClientMain's, MatchWindow's: the world loaded when the server names it, the answer to a login, the
+  lobby closing, Esc twice), driven through the real `GLKeyboardHandler` and the calls
+  `GLMouseHandler` makes; `signUp` goes through `AuthService` (bcrypt), `Loopback.logIn` logs any
+  number in at once without the hash (`E2EServer.logInWithoutPassword`, as `AuthService.startSession`
+  does). `ServerSide.scala` and `ClientSide.scala` are the two packages' insides it needs
+  (`E2EServer` in `server.game`, `E2EClient` in `client.game`).
+- **`byHand`** (the default): the matches the lobbies launch are begun, not started
+  (`MatchLauncher.startMatch`, `startBots`), and the harness runs their clocks — the projectile
+  tick every 30ms, the player tick every 200ms, the bots' every 100ms, respawns, item batches, the
+  cleanup loop — on the test's thread, between the network's deliveries. `openingMs`,
+  `itemEveryMs` and `respawnDelayMs` shorten what a test can't sit through. Without it the matches
+  run on their own executors, as the real server's do.
+- **Strict** (byHand on a perfect network): every packet is delivered at once (TCP's and UDP's each in
+  order, interleaved at random, as two sockets are), so a client acts knowing everything the server
+  has said. Then every request an honest client makes must be taken (`Judge`: each step, a dash's
+  and a blink's, a phase and a barrier going up, each shot of every attack, a trap, an item, R), and
+  after every step every client must agree with the server about its whole match: where everyone is,
+  their health, who is dead, characters and teams, the items on the ground and its own inventory, the
+  traps down, its own kills and deaths (`checkAgreement`). On any network nothing may throw on either
+  end, nothing may be printed to stderr, the server's own rules hold (health, the map, walkable
+  ground, items, traps) and every client's (`checkServer`, `checkClient`). A failure names the seed
+  and prints the last of the trace, and the client concerned's own last packets.
+- **`Persona`** is an honest player at the keyboard: it walks (mostly at the nearest foe), aims,
+  fires and charges, takes Q and E up and casts them with a click or puts them away, bursts, uses
+  items, presses R, chats, and with `leaves` leaves. `FuzzRun` seats personas at three tables and
+  plays rounds: each table a match of its own every round (a free-for-all, Teams, either with bots,
+  or practice) on the maps of the rotation, with characters further round the roster each round, and
+  back to the lobby browser between them; on a lossy network it checks what came by TCP once that
+  has quietened (`tcpQuiet`: who is dead, the scores, the items, the traps), and the standings at the
+  end.
+
+The suites:
+
+- `MatchLifecycleTest` — sign-up to the scoreboard and back: a free-for-all (its ceasefire heard with
+  the start), its results saved as the profile shows them, a second match with nothing carried over;
+  a Teams match with its wall up on both ends, each team in its half, played at the wall until it
+  comes down, scored by team.
+- `SessionLifecycleTest` — ranked: a duel found by the matchmaker, played as the characters queued,
+  rated, and the rating on each client's scoreboard; leaving a match (Esc twice) and losing the
+  connection mid-match, the match going on and still scoring them, and logging back in with the
+  password into the lobby browser.
+- `EndToEndFuzzTest` (strict), `LossyNetworkFuzzTest` and `AwfulNetworkFuzzTest` — `FuzzRun`. The
+  last two play over bad networks (`NetConditions.Lossy` and `Awful`) and fail on anything the validator refuses an
+  honest player, and on any position (theirs, every other human's) not mended within six seconds of
+  hands coming off (design/networking.md, *Bad networks*). A failure names its seed:
+  `--test_env=GRIDGAME_E2E_SEED=<seed>` plays it again, and `--test_env=GRIDGAME_E2E_SOAK_SECONDS=600`
+  keeps playing new seeds for ten minutes. The rules run on the wall clock, so a seed plays the same
+  hands but not always quite the same match.
+- `ThreadedMatchFuzzTest` — `FuzzRun` against matches on executors of their own, as the real server
+  runs them (not `byHand`): ticks racing the players' requests, the TCP checks looked at again
+  until a match caught mid-change has settled, the standings read once it has stopped.
+- `RosterSweepTest` (strict) — the whole roster at once, a match on every map: every character's
+  primary (charged if it charges), burst, Q and E, cast as a player casts them, each one taken by the
+  server. A character whose two ends disagree about an attack fails here by name.
+- `RealNetworkTest` — what the loopback leaves out: a server listening on loopback (TLS, length
+  framing, UDP on the same port, its matches on their own clocks) and clients connecting as the app
+  does (`NetworkThread`, the identity pinned, heartbeats). Two sign up, meet, see each other walk and
+  fire, and see the standings.
+
+What it has found, each fixed and pinned by a test of its own: the opening was announced at the
+match's first tick, so a shot or a cast in its first 30ms was refused and its cooldown spent
+(`LobbyFlowTest.theOpeningIsAnnouncedBefore…`); a blink that reached one diagonal cell past a wall's
+corner landed there, which the server refuses as a step (`TeleportTest`, `PlacementAgreementTest`); a
+dash's landing, which comes after its phase (long after, when a frame hitched), was judged as a step
+past a corner and refused, holding the player where the dash had got to (`PacketValidatorTest`);
+a trap thrown onto a cell another trap lay on was sent, refused and its cast spent
+(`GameClientTrapTest`); and a player a fence went up on had every update from that cell refused as a
+step onto the fence (`PacketValidatorTest`).
+
+What the judge doesn't hold against the rules: a trap refused because someone else's landed there
+after it was thrown, and a step refused for a fence someone put up in the same moment (races the
+client couldn't have seen; the stepper has `Judge.RaceSettleMs` to be put back in line), a cast whose projectiles the test's own
+process stalled past the server's window for a cast (`PacketValidator.castWindowMs`), as a GC pause on
+a real server would, and a fence the server hands back (the client lets the server judge
+where a fence may go, unlike a star or a trap, so one aimed at a wall or out of reach is refused and
+given back: `Loopback.FenceHandedBack`). Each is counted in the tally.
+
+What it showed and was then made tolerant of (design/networking.md, *Bad networks*): steps bunched by
+jitter refused as a speed hack, positions that went only by datagram and were never said again (a
+stopped player a step back on the server, a dash's lost landing leaving its player over what it
+crossed), and a client sending where it was before the server had said where it put it. What it
+leaves as it is: an item used as its player died, before their client heard, is ignored by the server
+without a word, so the two inventories differ until the respawn empties both.
+
+To extend it: a new request a client can make gets a `Judge` (what the server says when it takes it
+and when it doesn't); a new part of the match a client keeps gets a line in `checkAgreement`; a new
+thing a player can do gets a branch in `Persona.attack`. Keep a target under about ten seconds:
+`RosterSweepTest` and the fuzz tests are the longest, and Bazel runs them side by side. Check a change
+to them with `bazel test //src/test/scala/com/gridgame/e2e:all --runs_per_test=6`: the rules run on
+the wall clock, and copies running side by side stall one another, which is how a dash's late
+landing was found — a test that only passes on an idle machine will fail on a busy one.
 
 When a test fixes a bug, check it fails with the bug put back.

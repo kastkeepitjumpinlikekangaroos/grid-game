@@ -74,7 +74,7 @@ match's bots), `LobbyHost` (what the lobbies need). `GameServer` implements them
   what the server saw and decided in it, a line at a time, timed from its start, for a report about
   it to be kept with — the match and everyone in it as it begins, joins, rejoins, leaves and lost
   connections, every request refused with why and the numbers that say so (a step's cells and
-  milliseconds, a shot's attack and how soon it came, R's time left, a trap's or a star's reason; the
+  the movement credit it had, a shot's attack and how soon it came, R's time left, a trap's or a star's reason; the
   validator writes its own, through the journal ClientHandler hands it), the corrections sent after
   refused steps, deaths (by whom, with what, where) and respawns, errors caught in the match's ticks
   and the bots', and the end with its standings. A line is made only when something happens, never
@@ -150,7 +150,8 @@ matchmaking, a match's ticks, the bots') catches `Throwable`, not just `Exceptio
 escaping a scheduled task cancels it for good, silently. `BarrierSnapshot` and `PlayerGrid` belong to the projectile
 tick's thread: anything that reads them (`shelteredFromBlast`, `forEachNearbyPlayer`) must run on it.
 A match started by a test is begun but never started (`GameInstance.begin`): the test ticks it by
-hand (src/test/CLAUDE.md).
+hand (src/test/CLAUDE.md). The end-to-end tests launch real lobbies' matches that way, by replacing
+`MatchLauncher.startMatch` and `startBots`, which start a match and its bots on their own clocks.
 
 ## What else to read
 

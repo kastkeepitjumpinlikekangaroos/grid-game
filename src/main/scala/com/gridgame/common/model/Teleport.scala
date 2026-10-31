@@ -44,33 +44,42 @@ object Teleport {
     None
   }
 
-  /** Server side: may a player the server has at (fromX, fromY) star to (x, y)? */
-  def isValidStarTarget(world: WorldData, fromX: Int, fromY: Int, x: Int, y: Int): Boolean = {
+  /** Server side: may a player the server has at (fromX, fromY) star to (x, y)? `lagCells` is how far
+    * that copy may trail the player while their steps are on their way (Movement.lagCells). */
+  def isValidStarTarget(world: WorldData, fromX: Int, fromY: Int, x: Int, y: Int, lagCells: Int = 0): Boolean = {
     val divider = world.divider
     world.isWalkable(x, y) &&
       Math.abs(x.toLong - fromX) + Math.abs(y.toLong - fromY) <=
-        Constants.STAR_MAX_DISTANCE + Constants.TELEPORT_RANGE_TOLERANCE &&
+        Constants.STAR_MAX_DISTANCE + Constants.TELEPORT_RANGE_TOLERANCE + lagCells &&
       (divider == null || !divider.stops(fromX, fromY, x, y))
   }
 
   /**
    * Blink (TeleportCast): step along the unit vector (dirX, dirY) up to maxDistance cells,
    * stopping before the first cell that can't be stood on. (fromX, fromY) if the first step
-   * is blocked.
+   * is blocked — or if all the blink reaches is the one cell on a diagonal past a wall's corner. A
+   * blink jumps walls further on, but a jump of one cell is a step to the server, which can't tell
+   * the two apart and refuses a step that cuts a corner (WorldData.cornersOpen): it used to land
+   * there, and the server held the player where they were (found by RosterSweepTest).
    */
   def blinkTarget(world: WorldData, fromX: Int, fromY: Int, dirX: Double, dirY: Double, maxDistance: Int): Position = {
     var bestX = fromX
     var bestY = fromY
     var step = 1
-    while (step <= maxDistance) {
+    var open = true
+    while (open && step <= maxDistance) {
       val x = Math.max(0, Math.min(world.width - 1, Math.round(fromX + dirX * step).toInt))
       val y = Math.max(0, Math.min(world.height - 1, Math.round(fromY + dirY * step).toInt))
-      if (!world.isWalkable(x, y)) return new Position(bestX, bestY)
-      bestX = x
-      bestY = y
-      step += 1
+      if (!world.isWalkable(x, y)) open = false
+      else {
+        bestX = x
+        bestY = y
+        step += 1
+      }
     }
-    new Position(bestX, bestY)
+    val (dx, dy) = (bestX - fromX, bestY - fromY)
+    if (Math.abs(dx) == 1 && Math.abs(dy) == 1 && !world.cornersOpen(fromX, fromY, dx, dy)) new Position(fromX, fromY)
+    else new Position(bestX, bestY)
   }
 
   /**

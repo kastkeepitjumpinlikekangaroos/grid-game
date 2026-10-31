@@ -124,9 +124,34 @@ trait LocalPlayer { this: GameClient =>
 
   private def getSlowPercent: Int = if (isSlowed) Math.round(slowMultiplier * 100f) else 0
 
+  // When we last told the server where we are (resendPositionIfQuiet)
+  private val positionSentAt = new java.util.concurrent.atomic.AtomicLong(0L)
+
+  /** Has the server said where it put us in this match (our join echo)? Until it has, where we are is
+    * wherever setWorld left us, which it mustn't be told (handleOwnJoin). */
+  @volatile private[game] var placed = false
+
+  /**
+   * Say where we are again when nothing has for POSITION_RESEND_MS. Every update is a datagram, and
+   * we sent one only as we moved: the last step of a walk lost on the way, or a dash's landing,
+   * left the server — and everyone it relays us to — with us somewhere else for as long as we stood
+   * still. Called every frame of a match, last (GLKeyboardHandler.update). Not in a dash, which says
+   * where it is every frame and then where it lands: said between the two after a frame that hitched,
+   * a dash's last cell took the landing's place as the first update after it, and the landing was
+   * judged as a step (PacketValidator.dashLanding; found by RosterSweepTest).
+   */
+  def resendPositionIfQuiet(): Unit =
+    if (!isDead && !isSwooping && System.currentTimeMillis() - positionSentAt.get() >= Constants.POSITION_RESEND_MS)
+      sendPositionUpdate(localPosition.get())
+
   /** Tell the server where we are, and everything else about us it relays: health, charge, our
     * effects, our barrier and which way it faces. */
   private[game] def sendPositionUpdate(position: Position): Unit = {
+    // Nothing of where we are before the server has said where it put us: a key held as the match
+    // began sent steps from wherever setWorld had left us, out of bounds or, near enough the real
+    // spawn, taken as a step there (found by LossyNetworkFuzzTest)
+    if (!placed) return
+    positionSentAt.set(System.currentTimeMillis())
     // With a barrier up, where we aim is where it faces
     val barrierUp = hasBarrier
     val aim = if (barrierUp) getAimAngle else 0f
@@ -272,6 +297,7 @@ trait LocalPlayer { this: GameClient =>
     noteOwnCharacter(selectedCharacterId)
     localPosition.set(join.getPosition)
     localHealth.set(join.getHealth)
+    placed = true
     AudioManager.playSpawn()
   }
 

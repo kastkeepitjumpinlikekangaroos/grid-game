@@ -323,7 +323,7 @@ class BarrierTest {
       new PlayerUpdatePacket(seq, holder.getId, Packet.getCurrentTimestamp, new Position(x, 30), holder.getColorRGB,
         holder.getHealth, 0, 0, holder.getCharacterId, holder.getTeamId, holder.getServerMoves, flags2,
         PlayerUpdatePacket.encodeAimAngle(East)), null, holder.getUdpAddress)
-    assertFalse("a position no walk reaches is refused", update(1001, 34, BARRIER))
+    assertFalse("a position no walk reaches is refused", update(1001, 59, BARRIER))
     assertTrue("but the barrier it carries goes up", holder.hasBarrier)
     assertTrue("the update sent before it, arriving after it, is taken", update(1000, 20, 0))
     assertTrue("but not its word on the barrier", holder.hasBarrier)

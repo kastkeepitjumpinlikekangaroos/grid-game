@@ -548,8 +548,8 @@ kit alike, which play will tell.
   On a pad, R is Y.
 - **The server judges it as it would a cast** (`CooldownResetRequests`; the packet is
   `COOLDOWN_RESET`, common/protocol/CLAUDE.md). The client has the abilities ready from the press and
-  asks over TCP. The server takes it from someone who could cast now, once R's own minute has run (80%
-  of it, the tolerance every attack gets: `PacketValidator.takeCooldownReset`), counted from the
+  asks over TCP. The server takes it from someone who could cast now, once R's own minute has run (but
+  for the tolerance every attack gets, a fifth of it: `PacketValidator.takeCooldownReset`), counted from the
   match's start for the first (`GameInstance.firstResetFrom`, which in practice has the first taken
   at once) and from the last after that, and clears every clock it holds Q and E to: the shots' and
   the traps' (`PacketValidator`), and a phase's and a barrier's, which are the player's own. A
@@ -577,8 +577,9 @@ kit alike, which play will tell.
 everything that moves a player or checks a move reads it: `GLKeyboardHandler` and
 `ControllerHandler` (through `GameClient.moveStepIntervalMs`; the isometric "pure left/right
 takes twice the delay" rule stays in the handlers), `BotController` (bots step at twice a
-player's interval for the same character and state), and `PacketValidator.maxCellsIn`, whose
-tolerance is twice that character's own rate plus two cells of grace. The two input handlers
+player's interval for the same character and state), and `PacketValidator.creditRate`, the pace
+a player's movement credit builds at: twice that character's own rate in the state they are in, and a
+quarter more (design/networking.md, *Bad networks*). The two input handlers
 each used to carry their own copy of the numbers.
 
 Everything acting on a player is a factor on their interval, not an absolute: charging drags a
@@ -609,7 +610,9 @@ as a step into a wall always did. It is one rule wherever a player walks: the cl
 bunched into one update it knows the ends, not the way), the bots' steps and every search for a
 way (`BotNavigation`, `BotPaths`), and pushes and pulls (`Teleport.slide`), which are drawn sliding
 over the ground. A phased step is a step like any other (*A phase stops at walls*). A blink is a
-jump and may still pass a corner, and a dash goes over walls, corners and all. `WorldDataTest`,
+jump and may still pass a corner, unless all it reaches is the one cell past it: a jump of one cell
+is a step to the server, which can't tell them apart, so that blink goes nowhere (it landed there
+until 2026-10-30, and the server held its player back). A dash goes over walls, corners and all. `WorldDataTest`,
 `GameClientPositionTest`, `PacketValidatorTest` and `KnockbackTest` pin it, and `BotPathingTest`
 checks every step its bots take on every map.
 
@@ -639,7 +642,7 @@ stop it now as they stop a walk.
 - **What else gets past a wall** is as it was: the star item, which jumps over whatever lies between
   (`Teleport.starTarget`), and the shots that fly over walls (`passesThroughWalls`). A blink may pass
   a wall's corner but stops short of the wall itself (`Teleport.blinkTarget`), as it has since
-  2026-09.
+  2026-09 — but not to land one diagonal cell past the corner, a step the server refuses.
 - The descriptions that promised a way through walls (the Wraith's Phase Shift, the Windwalker's
   Wind Form, the Kraken's Ink Cloud, and the Shark and its Deep Dive) say what the phase does now.
 - Bots and balance are untouched: a bot's phase always went round walls, and dashes are as they were.

@@ -48,7 +48,7 @@ class GameServer(port: Int, reportsFolder: java.nio.file.Path = ProblemReports.d
   private val accountQueries = new AccountQueries(authDatabase, outbox, id => connectedPlayers.containsKey(id))
 
   val lobbyManager = new LobbyManager()
-  private val launcher = new MatchLauncher(this)
+  private[server] val launcher = new MatchLauncher(this)
   val rankedQueue = new RankedQueue(this, lobbyManager, launcher)
   val lobbyHandler = new LobbyHandler(this, lobbyManager, rankedQueue, launcher)
   private[server] val gameInstances = new ConcurrentHashMap[Short, GameInstance]()

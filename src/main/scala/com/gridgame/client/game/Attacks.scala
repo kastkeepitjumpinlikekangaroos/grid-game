@@ -249,8 +249,11 @@ trait Attacks { this: GameClient =>
    */
   def trapLanding(range: Int): Option[Position] = {
     val pos = localPosition.get()
-    TrapPlacement.target(currentWorld.get(), pos.getX, pos.getY, mouseWorldX, mouseWorldY, range,
+    val cell = TrapPlacement.target(currentWorld.get(), pos.getX, pos.getY, mouseWorldX, mouseWorldY, range,
       (x, y) => enemyBarrierAcross(pos.getX.toFloat, pos.getY.toFloat, x.toFloat, y.toFloat))
+    // Nor onto a trap already there, anyone's: one to a cell, and the server refused the throw, after
+    // the cast had been spent on it (found by RosterSweepTest)
+    if (cell.isDefined && trapAt(cell.get.getX, cell.get.getY)) None else cell
   }
 
   private def abilityCooledDown(slot: Int, ability: AbilityDef): Boolean = {

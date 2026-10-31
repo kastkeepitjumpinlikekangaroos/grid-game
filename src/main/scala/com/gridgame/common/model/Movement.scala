@@ -38,6 +38,11 @@ object Movement {
   def phasedStepIntervalMs(moveSpeed: Float): Double =
     baseStepIntervalMs(moveSpeed) * PHASED_FACTOR
 
+  /** The furthest this character could walk in `ms`, at the quickest they can walk (phased): how far
+    * the server's copy of a player can trail them while the steps between are on their way, which
+    * every reach the server judges from that copy allows for (Constants.NETWORK_TOLERANCE_MS). */
+  def lagCells(ms: Long, moveSpeed: Float): Int = Math.ceil(ms / phasedStepIntervalMs(moveSpeed)).toInt
+
   /**
    * The interval between steps for a character of `moveSpeed` in this state. Charging wins over
    * a phase, a phase over a boost, a boost over a slow — the order the input handlers have
