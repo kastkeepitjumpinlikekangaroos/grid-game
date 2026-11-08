@@ -3,7 +3,7 @@ package world
 
 import com.gridgame.common.model.{GroundEdges, Tile, WorldData}
 
-import com.gridgame.client.gl.{GLTexture, ShaderProgram, SpriteBatch}
+import com.gridgame.client.gl.{DrawStream, GLTexture, ShaderProgram, SpriteBatch}
 
 /**
  * Where two kinds of natural ground meet: one soft, inked edge over the tiles' staircase of diamonds
@@ -137,7 +137,7 @@ private[render] final class GroundEdgePainter(ctx: RenderContext) {
 
   private def create(): Unit = {
     val shader = new ShaderProgram(GroundEdgePainter.VERT, GroundEdgePainter.FRAG)
-    batch = new SpriteBatch(shader)
+    batch = new SpriteBatch(new DrawStream(shader))
     blank = GLTexture.createWhitePixel()
     shader.use()
     shader.setUniform1f("uLiftA", GroundEdges.riserLift(1).toFloat)

@@ -12,7 +12,7 @@ import java.awt.image.BufferedImage
 import java.io.File
 import java.util.UUID
 import javax.imageio.ImageIO
-import com.gridgame.client.gl.{GLFWManager, Matrix4, PostProcessor, ShaderProgram, ShapeBatch}
+import com.gridgame.client.gl.{DrawStream, GLFWManager, Matrix4, PostProcessor, ShaderProgram, ShapeBatch}
 import com.gridgame.client.render.blasts.GLBlastRenderers
 import com.gridgame.client.render.projectiles.GLProjectileRenderers
 
@@ -103,8 +103,7 @@ object ProjectileGallery {
     GL.createCapabilities()
     glDisable(GL_DEPTH_TEST)
 
-    val colorShader = new ShaderProgram(ShaderProgram.COLOR_VERT, ShaderProgram.COLOR_FRAG)
-    val sb = new ShapeBatch(colorShader)
+    val sb = new ShapeBatch(new DrawStream(new ShaderProgram(DrawStream.VERT, DrawStream.FRAG)))
     // The scene target's pixels per unit, as GLGameRenderer sets it: ovals take their segment
     // counts from it, and left at 1 every curve in the sheet was cruder than in the game
     sb.pixelsPerUnit = Zoom

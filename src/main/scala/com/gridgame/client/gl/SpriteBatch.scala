@@ -10,88 +10,36 @@ import org.lwjgl.system.MemoryUtil
 
 import java.nio.FloatBuffer
 
-object SpriteBatch {
-  /** How many staging-buffer-fulls the GPU ring holds before it wraps and orphans. */
-  private[gl] val RING_FRAMES = 8
-}
-
 /**
- * Batched renderer for textured quads with per-vertex tint/alpha.
- * Vertices are position (vec2) + texcoord (vec2) + color (vec4) = 8 floats per vertex, four a
- * quad, drawn through one element buffer that splits every quad into the same two triangles.
- * Flushes automatically on texture change. Supports additive blending for glow effects.
+ * Batched textured quads with per-vertex tint/alpha, four vertices and two triangles a quad, drawn
+ * through a [[DrawStream]] (the main one is shared with the [[ShapeBatch]], so a switch between the
+ * two draws nothing by itself). What is waiting is drawn first when a quad samples another texture.
+ * Supports additive blending for glow effects.
  */
-class SpriteBatch(val shader: ShaderProgram) {
-  private val VERTEX_SIZE = 8 // x, y, u, v, r, g, b, a
-  private val VERTEX_BYTES = VERTEX_SIZE * 4L
-  private val INITIAL_CAPACITY = 4096
-  // A flush's indices are 16 bits, counted from its first vertex (glDrawElementsBaseVertex)
-  private val MAX_CAPACITY = 65536
-  private var capacity = INITIAL_CAPACITY
-  // Staging memory, written through its raw address — see ShapeBatch.
-  private var buffer: FloatBuffer = BufferUtils.createFloatBuffer(capacity * VERTEX_SIZE)
-  private var bufferAddr: Long = MemoryUtil.memAddress(buffer)
-  private var vertexCount = 0
+class SpriteBatch(val stream: DrawStream) {
   private var drawing = false
   private var additive = false
-  private var currentTexture: GLTexture = _
 
-  // GPU ring buffer — see ShapeBatch for why each flush must land on fresh bytes.
-  private var ringVerts = INITIAL_CAPACITY * SpriteBatch.RING_FRAMES
-  private var ringOffset = 0
-
-  private val vao = glGenVertexArrays()
-  private val vbo = glGenBuffers()
-  // Every quad is the triangles (0, 1, 2) and (0, 2, 3) of its four corners, in the order each draw
-  // writes them: one element buffer of that pattern, as long as the staging buffer, serves every
-  // flush, and a quad is four vertices rather than six
-  private val ibo = glGenBuffers()
-
-  glBindVertexArray(vao)
-  glBindBuffer(GL_ARRAY_BUFFER, vbo)
-  glBufferData(GL_ARRAY_BUFFER, ringVerts * VERTEX_SIZE * 4L, GL_STREAM_DRAW)
-  // position
-  glVertexAttribPointer(0, 2, GL_FLOAT, false, VERTEX_SIZE * 4, 0)
-  glEnableVertexAttribArray(0)
-  // texcoord
-  glVertexAttribPointer(1, 2, GL_FLOAT, false, VERTEX_SIZE * 4, 2 * 4L)
-  glEnableVertexAttribArray(1)
-  // color
-  glVertexAttribPointer(2, 4, GL_FLOAT, false, VERTEX_SIZE * 4, 4 * 4L)
-  glEnableVertexAttribArray(2)
-  glBindVertexArray(0)
-  quadIndices(capacity)
-
-  /** The element buffer for `vertices` vertices' worth of quads (the binding is the VAO's). */
-  private def quadIndices(vertices: Int): Unit = {
-    val quads = vertices / 4
-    val idx = BufferUtils.createShortBuffer(quads * 6)
-    var q = 0
-    while (q < quads) {
-      val c = q * 4
-      idx.put(c.toShort).put((c + 1).toShort).put((c + 2).toShort)
-      idx.put(c.toShort).put((c + 2).toShort).put((c + 3).toShort)
-      q += 1
-    }
-    idx.flip()
-    glBindVertexArray(vao)
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo)
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx, GL_STATIC_DRAW)
-    glBindVertexArray(0)
-  }
-
-  // Set texture sampler uniform once (it never changes)
-  shader.use()
-  shader.setUniform1i("uTexture", 0)
+  /** The stream's shader, whose uniforms a batch with a shader of its own sets after [[begin]]. */
+  def shader: ShaderProgram = stream.shader
 
   def begin(projection: FloatBuffer): Unit = {
     if (drawing) throw new IllegalStateException("Already drawing")
+    stream.begin(projection)
+    started()
+  }
+
+  /** Begin again where the shape batch on the same stream leaves off, as [[begin]] would but without
+    * drawing what is waiting (see ShapeBatch.resume). */
+  def resume(projection: FloatBuffer): Unit = {
+    if (drawing) throw new IllegalStateException("Already drawing")
+    stream.resume(projection)
+    started()
+  }
+
+  private def started(): Unit = {
     drawing = true
-    vertexCount = 0
-    currentTexture = null
-    shader.use()
-    shader.setUniformMat4("uProjection", projection)
-    glEnable(GL_BLEND)
+    DrawStream.blendEnabled(true)
     blending = true
     setAdditiveBlend(false)
   }
@@ -99,42 +47,39 @@ class SpriteBatch(val shader: ShaderProgram) {
   private var blending = true
 
   /** Turn blending off for opaque geometry that covers every pixel it touches (the ground), which
-    * then costs the GPU no framebuffer read. Flushes; [[begin]] and [[end]] turn it back on. */
+    * then costs the GPU no framebuffer read. [[begin]] and [[end]] turn it back on. */
   def setBlending(enabled: Boolean): Unit = {
     if (enabled != blending) {
-      flush()
       blending = enabled
-      if (enabled) glEnable(GL_BLEND) else glDisable(GL_BLEND)
+      DrawStream.blendEnabled(enabled)
     }
   }
 
   def end(): Unit = {
     if (!drawing) throw new IllegalStateException("Not drawing")
-    flush()
-    if (!blending) { glEnable(GL_BLEND); blending = true }
+    stream.flush()
+    if (!blending) { DrawStream.blendEnabled(true); blending = true }
+    drawing = false
+  }
+
+  /** Stop, leaving what is staged to be drawn with whatever the shape batch adds after it. */
+  def suspend(): Unit = {
+    if (!drawing) throw new IllegalStateException("Not drawing")
+    if (!blending) { DrawStream.blendEnabled(true); blending = true }
     drawing = false
   }
 
   def setAdditiveBlend(enabled: Boolean): Unit = {
     if (enabled != additive) {
-      flush()
       additive = enabled
-      if (additive) {
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE)
-      } else {
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-      }
+      DrawStream.blendAdditive(enabled)
     }
   }
 
   /** Draw a textured quad. Tint color is multiplied with texture color. */
   def draw(region: TextureRegion, x: Float, y: Float, w: Float, h: Float,
            r: Float = 1f, g: Float = 1f, b: Float = 1f, a: Float = 1f): Unit = {
-    if (region.texture != currentTexture) {
-      flush()
-      currentTexture = region.texture
-      currentTexture.bind(0)
-    }
+    stream.useTexture(region.texture)
     ensureCapacity(4)
     val u = region.u
     val v = region.v
@@ -159,11 +104,7 @@ class SpriteBatch(val shader: ShaderProgram) {
                x2: Float, y2: Float, u2: Float, v2: Float,
                x3: Float, y3: Float, u3: Float, v3: Float,
                r: Float = 1f, g: Float = 1f, b: Float = 1f, a: Float = 1f): Unit = {
-    if (texture != currentTexture) {
-      flush()
-      currentTexture = texture
-      currentTexture.bind(0)
-    }
+    stream.useTexture(texture)
     ensureCapacity(4)
     vertex(x0, y0, u0, v0, r, g, b, a)
     vertex(x1, y1, u1, v1, r, g, b, a)
@@ -174,11 +115,7 @@ class SpriteBatch(val shader: ShaderProgram) {
   /** Draw a textured quad with rotation around its center. Angle in radians. */
   def drawRotated(region: TextureRegion, x: Float, y: Float, w: Float, h: Float,
                   angle: Float, r: Float = 1f, g: Float = 1f, b: Float = 1f, a: Float = 1f): Unit = {
-    if (region.texture != currentTexture) {
-      flush()
-      currentTexture = region.texture
-      currentTexture.bind(0)
-    }
+    stream.useTexture(region.texture)
     ensureCapacity(4)
     val cx = x + w * 0.5f
     val cy = y + h * 0.5f
@@ -200,86 +137,20 @@ class SpriteBatch(val shader: ShaderProgram) {
     vertex(x3, y3, u, v2, r, g, b, a)
   }
 
-  def flush(): Unit = {
-    if (vertexCount == 0) return
+  def flush(): Unit = stream.flush()
 
-    glBindVertexArray(vao)
-    glBindBuffer(GL_ARRAY_BUFFER, vbo)
+  def dispose(): Unit = stream.dispose()
 
-    if (ringOffset + vertexCount > ringVerts) {
-      // Wrapped: discard the old store. The driver hands back untouched memory instead of
-      // waiting on draws that still reference the old one, and every offset in the new
-      // generation is safe to write unsynchronized again.
-      glBufferData(GL_ARRAY_BUFFER, ringVerts.toLong * VERTEX_BYTES, GL_STREAM_DRAW)
-      ringOffset = 0
-    }
-    val byteOffset = ringOffset.toLong * VERTEX_BYTES
-    val byteLen = vertexCount.toLong * VERTEX_BYTES
-    // Raw-address mapping: the ByteBuffer form allocates a wrapper per flush (see ShapeBatch)
-    val mapped = nglMapBufferRange(GL_ARRAY_BUFFER, byteOffset, byteLen, ShapeBatch.MAP_FLAGS)
-    if (mapped != 0L) {
-      MemoryUtil.memCopy(bufferAddr, mapped, byteLen)
-      glUnmapBuffer(GL_ARRAY_BUFFER)
-    } else {
-      // Driver refused the mapping — fall back to the (much slower) copy path.
-      buffer.limit(vertexCount * VERTEX_SIZE).position(0)
-      glBufferSubData(GL_ARRAY_BUFFER, byteOffset, buffer)
-      buffer.clear()
-    }
-    glDrawElementsBaseVertex(GL_TRIANGLES, vertexCount / 4 * 6, GL_UNSIGNED_SHORT, 0L, ringOffset)
-    ringOffset += vertexCount
+  /** Every quad reserves its four vertices with [[ensureCapacity]] first. */
+  @inline private def vertex(x: Float, y: Float, u: Float, v: Float, r: Float, g: Float, b: Float, a: Float): Unit =
+    stream.vertex(x, y, u, v, r, g, b, a)
 
-    glBindVertexArray(0)
-
-    vertexCount = 0
-  }
-
-  def dispose(): Unit = {
-    glDeleteVertexArrays(vao)
-    glDeleteBuffers(vbo)
-    glDeleteBuffers(ibo)
-    shader.dispose()
-  }
-
-  /** Every quad reserves its vertices with [[ensureCapacity]] first; the check here is only
-    * a backstop, since a raw write past the end would corrupt native memory. */
-  private def vertex(x: Float, y: Float, u: Float, v: Float, r: Float, g: Float, b: Float, a: Float): Unit = {
-    if (vertexCount >= capacity) growStaging(capacity * 2)
-    val p = bufferAddr + vertexCount * VERTEX_BYTES
-    MemoryUtil.memPutFloat(p, x)
-    MemoryUtil.memPutFloat(p + 4, y)
-    MemoryUtil.memPutFloat(p + 8, u)
-    MemoryUtil.memPutFloat(p + 12, v)
-    MemoryUtil.memPutFloat(p + 16, r)
-    MemoryUtil.memPutFloat(p + 20, g)
-    MemoryUtil.memPutFloat(p + 24, b)
-    MemoryUtil.memPutFloat(p + 28, a)
-    vertexCount += 1
-  }
-
-  /** Replace the staging buffer with a larger one, keeping the vertices already in it. */
-  private def growStaging(newCapacity0: Int): Unit = {
-    val newCapacity = Math.min(MAX_CAPACITY, newCapacity0)
-    if (newCapacity <= vertexCount) throw new IllegalStateException(s"a flush holds at most $MAX_CAPACITY vertices")
-    val grown = BufferUtils.createFloatBuffer(newCapacity * VERTEX_SIZE)
-    val grownAddr = MemoryUtil.memAddress(grown)
-    MemoryUtil.memCopy(bufferAddr, grownAddr, vertexCount * VERTEX_BYTES)
-    buffer = grown
-    bufferAddr = grownAddr
-    capacity = newCapacity
-    quadIndices(capacity)
-    if (ringVerts < capacity * SpriteBatch.RING_FRAMES) {
-      ringVerts = capacity * SpriteBatch.RING_FRAMES
-      ringOffset = 0
-      glBindBuffer(GL_ARRAY_BUFFER, vbo)
-      glBufferData(GL_ARRAY_BUFFER, ringVerts * VERTEX_BYTES, GL_STREAM_DRAW)
-    }
-  }
-
-  private def ensureCapacity(additionalVertices: Int): Unit = {
-    if (vertexCount + additionalVertices > capacity) {
-      flush()
-      if (additionalVertices > capacity) growStaging(additionalVertices * 2)
-    }
+  /** Room for a quad, its four vertices and its two triangles, (0, 1, 2) and (0, 2, 3) of its
+    * corners in the order they are written. */
+  @inline private def ensureCapacity(vertices: Int): Unit = {
+    stream.reserve(vertices, vertices / 4 * 6)
+    val c = stream.vertexCount
+    stream.tri(c, c + 1, c + 2)
+    stream.tri(c, c + 2, c + 3)
   }
 }

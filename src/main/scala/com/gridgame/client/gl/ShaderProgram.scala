@@ -86,50 +86,7 @@ class ShaderProgram(vertexSrc: String, fragmentSrc: String) {
 }
 
 object ShaderProgram {
-  // ── Color shader: position (vec2) + color (vec4) ──
-  val COLOR_VERT: String =
-    """#version 330 core
-      |layout(location = 0) in vec2 aPos;
-      |layout(location = 1) in vec4 aColor;
-      |uniform mat4 uProjection;
-      |out vec4 vColor;
-      |void main() {
-      |  gl_Position = uProjection * vec4(aPos, 0.0, 1.0);
-      |  vColor = aColor;
-      |}""".stripMargin
-
-  val COLOR_FRAG: String =
-    """#version 330 core
-      |in vec4 vColor;
-      |out vec4 FragColor;
-      |void main() {
-      |  FragColor = vColor;
-      |}""".stripMargin
-
-  // ── Texture shader: position (vec2) + texcoord (vec2) + tint (vec4) ──
-  val TEXTURE_VERT: String =
-    """#version 330 core
-      |layout(location = 0) in vec2 aPos;
-      |layout(location = 1) in vec2 aTexCoord;
-      |layout(location = 2) in vec4 aColor;
-      |uniform mat4 uProjection;
-      |out vec2 vTexCoord;
-      |out vec4 vColor;
-      |void main() {
-      |  gl_Position = uProjection * vec4(aPos, 0.0, 1.0);
-      |  vTexCoord = aTexCoord;
-      |  vColor = aColor;
-      |}""".stripMargin
-
-  val TEXTURE_FRAG: String =
-    """#version 330 core
-      |in vec2 vTexCoord;
-      |in vec4 vColor;
-      |uniform sampler2D uTexture;
-      |out vec4 FragColor;
-      |void main() {
-      |  FragColor = texture(uTexture, vTexCoord) * vColor;
-      |}""".stripMargin
+  // The batches' shader is DrawStream's (shapes and sprites in one stream)
 
   // ── Bloom extract: threshold bright pixels ──
   val BLOOM_EXTRACT_FRAG: String =
@@ -167,9 +124,17 @@ object ShaderProgram {
       |}""".stripMargin
 
   // ── Bloom composite + vignette + lighting + chromatic aberration + distortion ──
-  val COMPOSITE_FRAG: String =
-    """#version 330 core
-      |in vec2 vTexCoord;
+  // One source, compiled into a program per combination of what is switched on (PostProcessor's
+  // composite variants): each `#if` below was a branch on a uniform, and the dead ones still cost
+  // every pixel of the display — about 1.8 ms a frame at Low on a 4480x2404 screen, a fifth of the
+  // GPU's frame (gl/CLAUDE.md, *The composite is a program per combination*). Every flag is defined
+  // to 0 or 1 by `compositeFrag`; the arithmetic of each part is what it was, so the frame is too.
+  //   BLOOM, WIDE_BLOOM, SHARPEN, GRAIN, LIGHT_MAP  the quality tier's parts
+  //   TONE  0 = softClip (the bright maps, space), 1 = ACES (the dark maps), 2 = a mix of the two
+  //   DISTORT, HURT, OVERLAY  the moment's: an explosion's warp, a hit's colour split and red edge,
+  //                           the match's fade in
+  private val COMPOSITE_BODY: String =
+    """in vec2 vTexCoord;
       |uniform sampler2D uScene;
       |uniform sampler2D uBloom;
       |uniform sampler2D uBloomQ;
@@ -178,16 +143,13 @@ object ShaderProgram {
       |uniform float uVignetteStrength;
       |uniform vec4 uOverlayColor;
       |uniform float uTime;
-      |uniform int uUseLightMap;
       |uniform float uChromaticAberration;
       |uniform vec2 uDistortionCenter;
       |uniform float uDistortionStrength;
       |uniform float uDamageVignette;
       |uniform vec2 uResolution;
-      |uniform float uSharpen;    // quality tier: 0 disables the unsharp mask
-      |uniform float uGrain;      // quality tier: 0 disables film grain
-      |uniform float uWideBloom;  // weight of the quarter-res bloom (0 disables it)
-      |uniform float uToneMap;    // 1 = ACES (the dark maps), 0 = the art's own colours, highlights rolled off
+      |uniform float uWideBloom;  // weight of the quarter-res bloom
+      |uniform float uToneMap;    // TONE 2's mix: 1 = ACES, 0 = softClip
       |// ACES filmic tone mapping
       |vec3 acesToneMap(vec3 x) {
       |  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
@@ -202,6 +164,7 @@ object ShaderProgram {
       |out vec4 FragColor;
       |void main() {
       |  vec2 uv = vTexCoord;
+      |#if DISTORT
       |  // Screen distortion (radial sine warp for explosion shockwave)
       |  if (uDistortionStrength > 0.0) {
       |    vec2 toCenter = uv - uDistortionCenter;
@@ -209,6 +172,8 @@ object ShaderProgram {
       |    float warp = sin(d * 30.0 - uTime * 0.5) * uDistortionStrength * exp(-d * 5.0);
       |    uv += normalize(toCenter + vec2(0.001)) * warp;
       |  }
+      |#endif
+      |#if HURT
       |  // Chromatic aberration (radial RGB offset on damage)
       |  vec4 scene;
       |  if (uChromaticAberration > 0.0) {
@@ -222,29 +187,36 @@ object ShaderProgram {
       |  } else {
       |    scene = texture(uScene, uv);
       |  }
+      |#else
+      |  vec4 scene = texture(uScene, uv);
+      |#endif
+      |#if SHARPEN
       |  // Unsharp mask sharpening — sample 4 neighbors, enhance edges.
       |  // Four extra full-resolution fetches per pixel, so the quality tiers drop it first.
-      |  if (uSharpen > 0.0) {
-      |    vec2 texel = 1.0 / uResolution;
-      |    vec3 blurSample = (
-      |      texture(uScene, uv + vec2(texel.x, 0.0)).rgb +
-      |      texture(uScene, uv - vec2(texel.x, 0.0)).rgb +
-      |      texture(uScene, uv + vec2(0.0, texel.y)).rgb +
-      |      texture(uScene, uv - vec2(0.0, texel.y)).rgb
-      |    ) * 0.25;
-      |    scene.rgb += (scene.rgb - blurSample) * 0.15;
-      |  }
+      |  vec2 texel = 1.0 / uResolution;
+      |  vec3 blurSample = (
+      |    texture(uScene, uv + vec2(texel.x, 0.0)).rgb +
+      |    texture(uScene, uv - vec2(texel.x, 0.0)).rgb +
+      |    texture(uScene, uv + vec2(0.0, texel.y)).rgb +
+      |    texture(uScene, uv - vec2(0.0, texel.y)).rgb
+      |  ) * 0.25;
+      |  scene.rgb += (scene.rgb - blurSample) * 0.15;
+      |#endif
       |  vec3 color = scene.rgb;
-      |  if (uBloomStrength > 0.0) {
-      |    vec4 bloom = texture(uBloom, uv) * 0.6 + texture(uBloomQ, uv) * uWideBloom;
-      |    // Screen blend for bloom — brightens without blowing out whites
-      |    color += bloom.rgb * uBloomStrength * (1.0 - scene.rgb);
-      |  }
+      |#if BLOOM
+      |#if WIDE_BLOOM
+      |  vec4 bloom = texture(uBloom, uv) * 0.6 + texture(uBloomQ, uv) * uWideBloom;
+      |#else
+      |  vec4 bloom = texture(uBloom, uv) * 0.6;
+      |#endif
+      |  // Screen blend for bloom — brightens without blowing out whites
+      |  color += bloom.rgb * uBloomStrength * (1.0 - scene.rgb);
+      |#endif
+      |#if LIGHT_MAP
       |  // Dynamic lighting: multiply scene by light map
-      |  if (uUseLightMap == 1) {
-      |    vec3 light = texture(uLightMap, vTexCoord).rgb;
-      |    color *= min(light * 1.6, vec3(1.2));
-      |  }
+      |  vec3 light = texture(uLightMap, vTexCoord).rgb;
+      |  color *= min(light * 1.6, vec3(1.2));
+      |#endif
       |  // Warm-cool color grading: teal shadows, warm highlights
       |  float luma = dot(color, vec3(0.299, 0.587, 0.114));
       |  vec3 shadows = vec3(0.01, 0.02, 0.05);
@@ -254,30 +226,36 @@ object ShaderProgram {
       |  float contrastLuma = dot(color, vec3(0.299, 0.587, 0.114));
       |  float boosted = smoothstep(0.0, 1.0, contrastLuma);
       |  color *= (boosted / max(contrastLuma, 0.001)) * 0.15 + 0.85;
-      |  // ACES filmic tone mapping — cinematic highlight rolloff (a bright map skips it). Branch on
-      |  // the uniform rather than always mixing: every pixel would pay for both curves.
-      |  if (uToneMap >= 1.0) color = acesToneMap(color);
-      |  else if (uToneMap <= 0.0) color = softClip(color);
-      |  else color = mix(softClip(color), acesToneMap(color), uToneMap);
+      |  // ACES filmic tone mapping — cinematic highlight rolloff (a bright map rolls off with softClip)
+      |#if TONE == 1
+      |  color = acesToneMap(color);
+      |#elif TONE == 0
+      |  color = softClip(color);
+      |#else
+      |  color = mix(softClip(color), acesToneMap(color), uToneMap);
+      |#endif
       |  // Slight saturation boost for vibrancy
       |  float postLuma = dot(color, vec3(0.299, 0.587, 0.114));
       |  color = mix(vec3(postLuma), color, 0.96);
+      |#if GRAIN
       |  // Film grain: per-pixel noise. Hashed from the pixel and a frame index that wraps, without
       |  // sin(): uTime counts frames, and sin() of a number that large loses its precision on a GPU
       |  // within minutes, so the grain turned into bands and blocks the longer a match ran.
-      |  if (uGrain > 0.0) {
-      |    vec3 p3 = fract(vec3(gl_FragCoord.xyx + mod(uTime, 97.0) * vec3(13.1, 7.7, 13.1)) * 0.1031);
-      |    p3 += dot(p3, p3.yzx + 33.33);
-      |    float grain = fract((p3.x + p3.y) * p3.z);
-      |    color += (grain - 0.5) * 0.015;
-      |  }
+      |  vec3 p3 = fract(vec3(gl_FragCoord.xyx + mod(uTime, 97.0) * vec3(13.1, 7.7, 13.1)) * 0.1031);
+      |  p3 += dot(p3, p3.yzx + 33.33);
+      |  float grain = fract((p3.x + p3.y) * p3.z);
+      |  color += (grain - 0.5) * 0.015;
+      |#endif
       |  // Soft vignette using smoothstep for gradual falloff
       |  vec2 vigUV = vTexCoord * 2.0 - 1.0;
       |  float dist = dot(vigUV, vigUV);
       |  float vignette = 1.0 - smoothstep(0.4, 1.8, dist) * uVignetteStrength;
       |  color *= vignette;
-      |  // Overlay (generic color overlay)
+      |#if OVERLAY
+      |  // Overlay (generic color overlay: the match's fade in from black)
       |  color = mix(color, uOverlayColor.rgb, uOverlayColor.a);
+      |#endif
+      |#if HURT
       |  // Damage vignette: red glow at screen edges only
       |  if (uDamageVignette > 0.0) {
       |    float edgeDist = length(vigUV * vec2(1.0, 0.8));
@@ -285,8 +263,26 @@ object ShaderProgram {
       |    vec3 dmgColor = vec3(0.8, 0.05, 0.02);
       |    color = mix(color, dmgColor, edgeMask * uDamageVignette * 0.45);
       |  }
+      |#endif
       |  FragColor = vec4(color, 1.0);
       |}""".stripMargin
+
+  /** The composite's source for one combination of its parts (see COMPOSITE_BODY). */
+  def compositeFrag(bloom: Boolean, wideBloom: Boolean, sharpen: Boolean, grain: Boolean, lightMap: Boolean,
+                    tone: Int, distort: Boolean, hurt: Boolean, overlay: Boolean): String = {
+    def b(on: Boolean) = if (on) 1 else 0
+    s"""#version 330 core
+       |#define BLOOM ${b(bloom)}
+       |#define WIDE_BLOOM ${b(wideBloom)}
+       |#define SHARPEN ${b(sharpen)}
+       |#define GRAIN ${b(grain)}
+       |#define LIGHT_MAP ${b(lightMap)}
+       |#define TONE $tone
+       |#define DISTORT ${b(distort)}
+       |#define HURT ${b(hurt)}
+       |#define OVERLAY ${b(overlay)}
+       |""".stripMargin + COMPOSITE_BODY
+  }
 
   // Fullscreen quad vertex shader (shared by post-processing passes)
   val FULLSCREEN_VERT: String =

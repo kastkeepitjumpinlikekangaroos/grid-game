@@ -19,9 +19,24 @@ object PostProcessor {
    * terrain covering every pixel inside the world.
    */
   private[gl] val HoleCheck: Boolean = System.getenv("GRIDGAME_HOLECHECK") != null
+
+  // The composite's parts, as the bits of its program's key: the quality tier's, the moment's (an
+  // explosion's warp, a hit, the match's fade in), and the grade's tone curve in the top two bits
+  private final val BloomBit = 1
+  private final val WideBit = 2
+  private final val SharpenBit = 4
+  private final val GrainBit = 8
+  private final val LightBit = 16
+  private final val DistortBit = 32
+  private final val HurtBit = 64
+  private final val OverlayBit = 128
+  private final val MomentBits = DistortBit | HurtBit | OverlayBit
+  private final val ToneShift = 8
+  private val CompositeVariants = 3 << ToneShift
 }
 
 class PostProcessor(var width: Int, var height: Int) {
+  import PostProcessor._
   // FBOs (bloom at half resolution for efficiency). They stay allocated even when a
   // quality tier turns bloom off — together they are under a fifth of a screen, and the
   // composite samples them unconditionally (weighted to zero) rather than needing a
@@ -37,7 +52,9 @@ class PostProcessor(var width: Int, var height: Int) {
   // Shaders
   private val bloomExtractShader = new ShaderProgram(ShaderProgram.FULLSCREEN_VERT, ShaderProgram.BLOOM_EXTRACT_FRAG)
   private val blurShader = new ShaderProgram(ShaderProgram.FULLSCREEN_VERT, ShaderProgram.BLUR_FRAG)
-  private val compositeShader = new ShaderProgram(ShaderProgram.FULLSCREEN_VERT, ShaderProgram.COMPOSITE_FRAG)
+  // The composite, a program per combination of its parts, made the first time it is wanted
+  // (`composite`): indexed by its key (endScene)
+  private val composites = new Array[ShaderProgram](PostProcessor.CompositeVariants)
 
   // Fullscreen quad VAO
   private val quadVao = glGenVertexArrays()
@@ -49,11 +66,6 @@ class PostProcessor(var width: Int, var height: Int) {
   bloomExtractShader.setUniform1i("uTexture", 0)
   blurShader.use()
   blurShader.setUniform1i("uTexture", 0)
-  compositeShader.use()
-  compositeShader.setUniform1i("uScene", 0)
-  compositeShader.setUniform1i("uBloom", 1)
-  compositeShader.setUniform1i("uLightMap", 2)
-  compositeShader.setUniform1i("uBloomQ", 3)
 
   // Post-process parameters (tuned for subtle enhancement, not high contrast)
   var bloomThreshold: Float = 0.80f
@@ -82,6 +94,35 @@ class PostProcessor(var width: Int, var height: Int) {
   var distortionCenterX: Float = 0.5f
   var distortionCenterY: Float = 0.5f
   var distortionStrength: Float = 0f
+
+  /** The composite program for `key`, made now if it hasn't been, with every sibling that differs
+    * from it only in the moment's parts: so the first hit or explosion of a match doesn't wait for
+    * a shader to compile. */
+  private def composite(key: Int): ShaderProgram = {
+    if (composites(key) == null) {
+      val base = key & ~MomentBits
+      var m = 0
+      while (m <= MomentBits) {
+        if ((m & ~MomentBits) == 0 && composites(base | m) == null) makeComposite(base | m)
+        m += DistortBit
+      }
+    }
+    composites(key)
+  }
+
+  private def makeComposite(key: Int): ShaderProgram = {
+    val p = new ShaderProgram(ShaderProgram.FULLSCREEN_VERT, ShaderProgram.compositeFrag(
+      bloom = (key & BloomBit) != 0, wideBloom = (key & WideBit) != 0, sharpen = (key & SharpenBit) != 0,
+      grain = (key & GrainBit) != 0, lightMap = (key & LightBit) != 0, tone = key >>> ToneShift,
+      distort = (key & DistortBit) != 0, hurt = (key & HurtBit) != 0, overlay = (key & OverlayBit) != 0))
+    p.use()
+    p.setUniform1i("uScene", 0)
+    p.setUniform1i("uBloom", 1)
+    p.setUniform1i("uLightMap", 2)
+    p.setUniform1i("uBloomQ", 3)
+    composites(key) = p
+    p
+  }
 
   private def setupQuad(): Unit = {
     // Fullscreen triangle strip: positions + texcoords
@@ -182,30 +223,43 @@ class PostProcessor(var width: Int, var height: Int) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
     glViewport(0, 0, screenWidth, screenHeight)
     glClear(GL_COLOR_BUFFER_BIT)
+    // Only the parts that show are in the program: each was a branch on a uniform, which every
+    // pixel of the display paid for whether it was taken or not
+    val light = useLightMap && lightMapTexture != null && RenderQuality.lighting
+    val sharpen = RenderQuality.sharpen
+    val grain = RenderQuality.grain
+    val distort = distortionStrength > 0f
+    val hurt = chromaticAberration > 0f || damageVignette > 0f
+    val overlay = overlayA > 0f
+    val tone = if (toneMap >= 1f) 1 else if (toneMap <= 0f) 0 else 2
+    var key = tone << ToneShift
+    if (doBloom) key |= BloomBit
+    if (doWideBloom) key |= WideBit
+    if (sharpen) key |= SharpenBit
+    if (grain) key |= GrainBit
+    if (light) key |= LightBit
+    if (distort) key |= DistortBit
+    if (hurt) key |= HurtBit
+    if (overlay) key |= OverlayBit
+    val compositeShader = composite(key)
     compositeShader.use()
-    compositeShader.setUniform1f("uBloomStrength", if (doBloom) bloomStrength else 0f)
-    compositeShader.setUniform1f("uWideBloom", if (doWideBloom) 0.4f else 0f)
-    compositeShader.setUniform1f("uSharpen", if (RenderQuality.sharpen) 1f else 0f)
-    compositeShader.setUniform1f("uGrain", if (RenderQuality.grain) 1f else 0f)
+    // (a uniform the program doesn't have is skipped by setUniform)
+    compositeShader.setUniform1f("uBloomStrength", bloomStrength)
+    compositeShader.setUniform1f("uWideBloom", 0.4f)
     compositeShader.setUniform1f("uVignetteStrength", vignetteStrength)
     compositeShader.setUniform1f("uToneMap", toneMap)
-    compositeShader.setUniform4f("uOverlayColor", overlayR, overlayG, overlayB, overlayA)
     compositeShader.setUniform1f("uTime", animationTime)
-    // Dynamic lighting
-    if (useLightMap && lightMapTexture != null && RenderQuality.lighting) {
-      compositeShader.setUniform1i("uUseLightMap", 1)
-      lightMapTexture.bind(2)
-    } else {
-      compositeShader.setUniform1i("uUseLightMap", 0)
-    }
-    // Chromatic aberration
-    compositeShader.setUniform1f("uChromaticAberration", chromaticAberration)
     compositeShader.setUniform2f("uResolution", width.toFloat, height.toFloat)
-    // Screen distortion
-    compositeShader.setUniform2f("uDistortionCenter", distortionCenterX, distortionCenterY)
-    compositeShader.setUniform1f("uDistortionStrength", distortionStrength)
-    // Damage vignette
-    compositeShader.setUniform1f("uDamageVignette", damageVignette)
+    if (light) lightMapTexture.bind(2)
+    if (overlay) compositeShader.setUniform4f("uOverlayColor", overlayR, overlayG, overlayB, overlayA)
+    if (hurt) {
+      compositeShader.setUniform1f("uChromaticAberration", chromaticAberration)
+      compositeShader.setUniform1f("uDamageVignette", damageVignette)
+    }
+    if (distort) {
+      compositeShader.setUniform2f("uDistortionCenter", distortionCenterX, distortionCenterY)
+      compositeShader.setUniform1f("uDistortionStrength", distortionStrength)
+    }
     sceneFBO.bind(0)
     blurPongFBO.bind(1)
     bloomQPongFBO.bind(3)
@@ -246,7 +300,8 @@ class PostProcessor(var width: Int, var height: Int) {
     bloomQPongFBO.dispose()
     bloomExtractShader.dispose()
     blurShader.dispose()
-    compositeShader.dispose()
+    var k = 0
+    while (k < composites.length) { if (composites(k) != null) composites(k).dispose(); composites(k) = null; k += 1 }
     glDeleteVertexArrays(quadVao)
     glDeleteBuffers(quadVbo)
   }

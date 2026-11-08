@@ -496,13 +496,24 @@ and the rings it strokes. In a match a slam goes off at once. With only the type
 2.2-3.3, and the shapes it drew were 259,000 vertices a frame where the slams made 345,000. Profile
 with a mix that travels (`--travelling`) before optimising for projectiles.
 
+### In game: what the GPU's time goes to (ablation, 2026-11-08)
+Fragment counts say what a weak GPU pays; on this machine (M4, a 4480x2404 display) the render
+bench was also run with each part of the frame switched off in turn, to see what each costs in time
+(`--travelling --novsync --at=65,65` on the Hive). The one surprise was the composite: its shader's
+arithmetic, every branch included, was a third of the frame at Low, which is why it is now a
+program per combination (gl/CLAUDE.md, *The composite is a program per combination of its parts*).
+After that, at High: the 150 projectiles ~1.5 ms, the bloom chain ~0.9, the ground ~0.7, the
+composite's sharpened full-resolution pass the most of what is left; at Low a frame is mostly the
+composite at the display's resolution and the time it takes the GPU to answer a `glFinish`.
+
 ### In game: what building a frame costs
 On that fair mix, after `ShapeBatch` came to share its vertices (gl/CLAUDE.md, *A shape's
 vertices are shared*), a frame builds in about 1.6 ms at High: projectiles are half of the
 render thread's Java time and blasts a seventh, their own geometry more than the primitives that
 draw it, and of the time in the driver most goes to the 130 or so draw calls a frame (a switch
 between the shape and the sprite batch, or an additive toggle, ends one) and the rest to copying
-the vertices. The GPU shades about 39 million fragments a frame: the depth pass 21, the post chain
+the vertices (since 2026-11-08 a switch between shapes and sprites is no longer one: gl/CLAUDE.md,
+*One stream for shapes and sprites*). The GPU shades about 39 million fragments a frame: the depth pass 21, the post chain
 6.9, the ground 3.7, the light map 1.9.
 
 ## Readability audit (dev tool)

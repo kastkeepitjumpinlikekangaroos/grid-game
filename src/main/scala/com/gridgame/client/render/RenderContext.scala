@@ -113,16 +113,22 @@ private[render] final class RenderContext(val client: GameClient, clock: FrameCl
   private var _spriteActive = false
 
   def beginShapes(): Unit = {
-    if (_spriteActive) { spriteBatch.end(); _spriteActive = false }
-    if (!_shapeActive) {
+    // The two batches share a stream: a switch draws nothing by itself (gl/CLAUDE.md, *One stream
+    // for shapes and sprites*)
+    if (_spriteActive) {
+      spriteBatch.suspend(); _spriteActive = false
+      shapeBatch.resume(projection); _shapeActive = true
+    } else if (!_shapeActive) {
       shapeBatch.begin(projection)
       _shapeActive = true
     }
   }
 
   def beginSprites(): Unit = {
-    if (_shapeActive) { shapeBatch.end(); _shapeActive = false }
-    if (!_spriteActive) {
+    if (_shapeActive) {
+      shapeBatch.suspend(); _shapeActive = false
+      spriteBatch.resume(projection); _spriteActive = true
+    } else if (!_spriteActive) {
       spriteBatch.begin(projection)
       _spriteActive = true
     }

@@ -18,7 +18,6 @@ import java.nio.{FloatBuffer, ShortBuffer}
  */
 object ShapeBatch {
   /** How many staging-buffer-fulls the GPU ring holds before it wraps and orphans. */
-  private[gl] val RING_FRAMES = 8
 
   /**
    * Streaming upload flags. Measured on this machine, per flush: plain glBufferSubData
@@ -27,7 +26,6 @@ object ShapeBatch {
    * The ring plus orphan-on-wrap is what makes UNSYNCHRONIZED safe: no byte is ever
    * rewritten while a draw that reads it is still in flight.
    */
-  private[gl] val MAP_FLAGS = GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT | GL_MAP_INVALIDATE_RANGE_BIT
 
   // Pre-computed sin/cos lookup tables for every segment count an oval may be drawn with, so no
   // oval ever calls Math.cos. Direct array indexing, to avoid Map.get Option allocation.
@@ -143,29 +141,9 @@ object ShapeBatch {
   }
 }
 
-class ShapeBatch(val shader: ShaderProgram) {
-  private val VERTEX_SIZE = 6 // x, y, r, g, b, a
-  private val VERTEX_BYTES = VERTEX_SIZE * 4L
-  // Vertices staged before a flush. At 4096 a busy frame flushed every few projectiles, and each
-  // flush maps, copies and draws
-  private val INITIAL_CAPACITY = 16384
-  // A flush's indices are 16 bits, counted from its first vertex (glDrawElementsBaseVertex), so
-  // it holds at most this many vertices
-  private val MAX_CAPACITY = 65536
-  private var capacity = INITIAL_CAPACITY
-  // Staging memory, written through its raw address: a FloatBuffer.put per float (a limit
-  // check and a position store each, six per vertex) was the single largest cost of
-  // building a busy frame.
-  private var buffer: FloatBuffer = BufferUtils.createFloatBuffer(capacity * VERTEX_SIZE)
-  private var bufferAddr: Long = MemoryUtil.memAddress(buffer)
-  private var vertexCount = 0
-  // Three indices a triangle, into this flush's vertices. A fan of n triangles is n + 2 vertices
-  // and a band of n quads 2n + 2, against 3n and 6n drawn as plain triangles, so a flush has room
-  // for about three indices a vertex.
-  private var indexCapacity = INITIAL_CAPACITY * 3
-  private var indices: ShortBuffer = BufferUtils.createShortBuffer(indexCapacity)
-  private var indexAddr: Long = MemoryUtil.memAddress(indices)
-  private var indexCount = 0
+class ShapeBatch(val stream: DrawStream) {
+  // What the stream has staged in this flush (a primitive numbers its triangles' vertices from it)
+  @inline private def vertexCount: Int = stream.vertexCount
   private var drawing = false
   private var additive = false
 
@@ -217,68 +195,51 @@ class ShapeBatch(val shader: ShaderProgram) {
     Math.max(8, Math.min(ShapeBatch.MAX_SEGMENTS, need))
   }
 
-  // GPU ring buffers, one for the vertices and one for the indices. Each flush appends at a fresh
-  // offset in both and draws from there, so no upload ever lands on bytes the GPU may still be
-  // reading — overwriting a range that is still in flight is what makes the driver stall (a
-  // single 330-vertex flush was measured at 1.7ms). When a ring wraps we orphan its whole store,
-  // which hands us fresh storage instead of waiting on the old one.
-  private var ringVerts = INITIAL_CAPACITY * ShapeBatch.RING_FRAMES
-  private var ringOffset = 0
-  private var ringIndices = indexCapacity * ShapeBatch.RING_FRAMES
-  private var ringIndexOffset = 0
-
-  private val vao = glGenVertexArrays()
-  private val vbo = glGenBuffers()
-  private val ibo = glGenBuffers()
-
-  // Set up VAO
-  glBindVertexArray(vao)
-  glBindBuffer(GL_ARRAY_BUFFER, vbo)
-  glBufferData(GL_ARRAY_BUFFER, ringVerts * VERTEX_SIZE * 4L, GL_STREAM_DRAW)
-  // position
-  glVertexAttribPointer(0, 2, GL_FLOAT, false, VERTEX_SIZE * 4, 0)
-  glEnableVertexAttribArray(0)
-  // color
-  glVertexAttribPointer(1, 4, GL_FLOAT, false, VERTEX_SIZE * 4, 2 * 4L)
-  glEnableVertexAttribArray(1)
-  // The index ring is the VAO's own (the element buffer binding is VAO state)
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo)
-  glBufferData(GL_ELEMENT_ARRAY_BUFFER, ringIndices * 2L, GL_STREAM_DRAW)
-  glBindVertexArray(0)
 
   def begin(projection: FloatBuffer): Unit = {
     if (drawing) throw new IllegalStateException("Already drawing")
+    stream.begin(projection)
+    started()
+  }
+
+  /** Begin again where the sprite batch on the same stream leaves off, as [[begin]] would but without
+    * drawing what is waiting: it is drawn together with what comes next, under the state each was
+    * asked for in (RenderContext switches the two batches this way). */
+  def resume(projection: FloatBuffer): Unit = {
+    if (drawing) throw new IllegalStateException("Already drawing")
+    stream.resume(projection)
+    started()
+  }
+
+  private def started(): Unit = {
     drawing = true
-    vertexCount = 0
-    indexCount = 0
     resetModifiers()
-    shader.use()
-    shader.setUniformMat4("uProjection", projection)
-    glEnable(GL_BLEND)
-    // Set the func directly rather than via setAdditiveBlend(false): that call is a no-op
-    // when `additive` is already false, which would leave the batch drawing under whatever
-    // blend func the previous GL state happened to have (GL_ONE/GL_ZERO on a fresh context,
-    // i.e. every alpha ignored).
+    DrawStream.blendEnabled(true)
+    // Set the func outright rather than via setAdditiveBlend(false): that call is a no-op when
+    // `additive` is already false, which would leave the batch drawing under whatever blend func
+    // the previous GL state happened to have (GL_ONE/GL_ZERO on a fresh context, i.e. every alpha
+    // ignored).
     additive = false
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+    DrawStream.blendAdditive(false)
   }
 
   def end(): Unit = {
     if (!drawing) throw new IllegalStateException("Not drawing")
-    flush()
+    stream.flush()
     drawing = false
   }
 
-  /** Switch between standard alpha blend and additive blend. Flushes current batch. */
+  /** Stop, leaving what is staged to be drawn with whatever the sprite batch adds after it. */
+  def suspend(): Unit = {
+    if (!drawing) throw new IllegalStateException("Not drawing")
+    drawing = false
+  }
+
+  /** Switch between standard alpha blend and additive blend (what is waiting is drawn first). */
   def setAdditiveBlend(enabled: Boolean): Unit = {
     if (enabled != additive) {
-      flush()
       additive = enabled
-      if (additive) {
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE)
-      } else {
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-      }
+      DrawStream.blendAdditive(enabled)
     }
   }
 
@@ -1053,14 +1014,7 @@ class ShapeBatch(val shader: ShaderProgram) {
   // same triangles, in the same order, from the same floats.
 
   /** One triangle, by its vertices' indices in this flush. */
-  @inline private def tri(a: Int, b: Int, c: Int): Unit = {
-    if (indexCount + 3 > indexCapacity) growIndices(indexCapacity * 2)
-    val p = indexAddr + indexCount * 2L
-    MemoryUtil.memPutShort(p, a.toShort)
-    MemoryUtil.memPutShort(p + 2, b.toShort)
-    MemoryUtil.memPutShort(p + 4, c.toShort)
-    indexCount += 3
-  }
+  @inline private def tri(a: Int, b: Int, c: Int): Unit = stream.tri(a, b, c)
 
   /** A quad from i0 across to o0 at one end and from i1 across to o1 at the other, as two
     * triangles: (i0, o0, o1) and (i0, o1, i1). */
@@ -1105,131 +1059,17 @@ class ShapeBatch(val shader: ShaderProgram) {
     }
   }
 
-  def flush(): Unit = {
-    if (indexCount == 0) { vertexCount = 0; return }
+  def flush(): Unit = stream.flush()
 
-    glBindVertexArray(vao)
-    glBindBuffer(GL_ARRAY_BUFFER, vbo)
+  def dispose(): Unit = stream.dispose()
 
-    if (ringOffset + vertexCount > ringVerts) {
-      // Wrapped: discard the old store. The driver hands back untouched memory instead of
-      // waiting on draws that still reference the old one, and every offset in the new
-      // generation is safe to write unsynchronized again.
-      glBufferData(GL_ARRAY_BUFFER, ringVerts.toLong * VERTEX_BYTES, GL_STREAM_DRAW)
-      ringOffset = 0
-    }
-    // The raw-address form: glMapBufferRange wraps each mapping in a new ByteBuffer, since
-    // every flush maps a different range — one allocation per flush, ~100 a frame.
-    val byteLen = vertexCount.toLong * VERTEX_BYTES
-    val mapped = nglMapBufferRange(GL_ARRAY_BUFFER, ringOffset.toLong * VERTEX_BYTES, byteLen, ShapeBatch.MAP_FLAGS)
-    if (mapped != 0L) {
-      MemoryUtil.memCopy(bufferAddr, mapped, byteLen)
-      glUnmapBuffer(GL_ARRAY_BUFFER)
-    } else {
-      // Driver refused the mapping — fall back to the (much slower) copy path.
-      buffer.limit(vertexCount * VERTEX_SIZE).position(0)
-      glBufferSubData(GL_ARRAY_BUFFER, ringOffset.toLong * VERTEX_BYTES, buffer)
-      buffer.clear()
-    }
-
-    // The indices the same way, into the VAO's element buffer
-    if (ringIndexOffset + indexCount > ringIndices) {
-      glBufferData(GL_ELEMENT_ARRAY_BUFFER, ringIndices * 2L, GL_STREAM_DRAW)
-      ringIndexOffset = 0
-    }
-    val indexBytes = indexCount * 2L
-    val mappedIdx = nglMapBufferRange(GL_ELEMENT_ARRAY_BUFFER, ringIndexOffset * 2L, indexBytes, ShapeBatch.MAP_FLAGS)
-    if (mappedIdx != 0L) {
-      MemoryUtil.memCopy(indexAddr, mappedIdx, indexBytes)
-      glUnmapBuffer(GL_ELEMENT_ARRAY_BUFFER)
-    } else {
-      indices.limit(indexCount).position(0)
-      glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, ringIndexOffset * 2L, indices)
-      indices.clear()
-    }
-
-    glDrawElementsBaseVertex(GL_TRIANGLES, indexCount, GL_UNSIGNED_SHORT, ringIndexOffset * 2L, ringOffset)
-    ringOffset += vertexCount
-    ringIndexOffset += indexCount
-
-    glBindVertexArray(0)
-
-    vertexCount = 0
-    indexCount = 0
+  /** Every primitive reserves its vertices with [[ensureCapacity]] first. */
+  @inline private def vertex(x: Float, y: Float, r: Float, g: Float, b: Float, a: Float): Unit = {
+    if (xfOn) stream.vertex(xfPivX + (x - xfPivX) * xfScale, xfPivY + (y - xfPivY) * xfScale,
+      DrawStream.UNTEXTURED, DrawStream.UNTEXTURED, r, g, b, a * alphaMul)
+    else stream.vertex(x, y, DrawStream.UNTEXTURED, DrawStream.UNTEXTURED, r, g, b, a * alphaMul)
   }
 
-  def dispose(): Unit = {
-    glDeleteVertexArrays(vao)
-    glDeleteBuffers(vbo)
-    glDeleteBuffers(ibo)
-    shader.dispose()
-  }
-
-  /** Every primitive reserves its vertices with [[ensureCapacity]] first; the check here
-    * is only a backstop, since a raw write past the end would corrupt native memory. */
-  private def vertex(x: Float, y: Float, r: Float, g: Float, b: Float, a: Float): Unit = {
-    if (vertexCount >= capacity) growStaging(capacity * 2)
-    val p = bufferAddr + vertexCount * VERTEX_BYTES
-    if (xfOn) {
-      MemoryUtil.memPutFloat(p, xfPivX + (x - xfPivX) * xfScale)
-      MemoryUtil.memPutFloat(p + 4, xfPivY + (y - xfPivY) * xfScale)
-    } else {
-      MemoryUtil.memPutFloat(p, x)
-      MemoryUtil.memPutFloat(p + 4, y)
-    }
-    MemoryUtil.memPutFloat(p + 8, r)
-    MemoryUtil.memPutFloat(p + 12, g)
-    MemoryUtil.memPutFloat(p + 16, b)
-    MemoryUtil.memPutFloat(p + 20, a * alphaMul)
-    vertexCount += 1
-  }
-
-  /** Replace the staging buffer with a larger one, keeping the vertices already in it. */
-  private def growStaging(newCapacity0: Int): Unit = {
-    val newCapacity = Math.min(MAX_CAPACITY, newCapacity0)
-    if (newCapacity <= vertexCount) throw new IllegalStateException(s"a flush holds at most $MAX_CAPACITY vertices")
-    val grown = BufferUtils.createFloatBuffer(newCapacity * VERTEX_SIZE)
-    val grownAddr = MemoryUtil.memAddress(grown)
-    MemoryUtil.memCopy(bufferAddr, grownAddr, vertexCount * VERTEX_BYTES)
-    buffer = grown
-    bufferAddr = grownAddr
-    capacity = newCapacity
-    // The GPU ring holds RING_FRAMES staging-buffer-fulls; a flush larger than the ring
-    // would never fit, so grow it with the staging buffer.
-    if (ringVerts < capacity * ShapeBatch.RING_FRAMES) {
-      ringVerts = capacity * ShapeBatch.RING_FRAMES
-      ringOffset = 0
-      glBindBuffer(GL_ARRAY_BUFFER, vbo)
-      glBufferData(GL_ARRAY_BUFFER, ringVerts * VERTEX_BYTES, GL_STREAM_DRAW)
-    }
-  }
-
-  /** Replace the index staging buffer with a larger one, keeping the indices already in it. */
-  private def growIndices(newCapacity: Int): Unit = {
-    val grown = BufferUtils.createShortBuffer(newCapacity)
-    val grownAddr = MemoryUtil.memAddress(grown)
-    MemoryUtil.memCopy(indexAddr, grownAddr, indexCount * 2L)
-    indices = grown
-    indexAddr = grownAddr
-    indexCapacity = newCapacity
-    if (ringIndices < indexCapacity * ShapeBatch.RING_FRAMES) {
-      ringIndices = indexCapacity * ShapeBatch.RING_FRAMES
-      ringIndexOffset = 0
-      // The element buffer binding is the VAO's
-      glBindVertexArray(vao)
-      glBufferData(GL_ELEMENT_ARRAY_BUFFER, ringIndices * 2L, GL_STREAM_DRAW)
-      glBindVertexArray(0)
-    }
-  }
-
-  /** Room for `vertices` more vertices and `idx` more indices in this flush: flushed first if
-    * either won't fit. */
-  private def ensureCapacity(vertices: Int, idx: Int): Unit = {
-    if (vertexCount + vertices > capacity || indexCount + idx > indexCapacity) {
-      flush()
-      // Grow the staging buffers, and the GPU rings with them
-      if (vertices > capacity) growStaging(vertices * 2)
-      if (idx > indexCapacity) growIndices(idx * 2)
-    }
-  }
+  /** Room for `vertices` more vertices and `idx` more indices in this flush. */
+  @inline private def ensureCapacity(vertices: Int, idx: Int): Unit = stream.reserve(vertices, idx)
 }

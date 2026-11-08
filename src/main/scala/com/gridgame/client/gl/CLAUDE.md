@@ -9,8 +9,9 @@ the GPU profiler.
 | File | Purpose |
 |------|---------|
 | `ShapeBatch.scala` | Batched colored 2D primitives: fillRect, fillOval, fillOvalSoft, fillPolygon (**convex only**), fillFan (star-shaped outline, fanned from an explicit centre — stars, sunbursts, faceted hulls), fillRibbon (a band given as an outer run plus the inner run reversed — crescent blades), fillArcBand (ring segment with an alpha ramp — gauges, crescents, shockwaves), fillStarFlare (4-point glint), fillRoundedRect(Gradient), strokeLine, strokeLineSoft, and the joined strokes — strokeArc, strokeOval, strokePolygon, strokeRect, strokeRoundedRect, strokePolyline, strokePolylineTapered, strokePolylineVar (a width and an alpha of its own at every point — a limb, a comet tail, a bolt's channel) (see *Strokes are one band*); and the smooth shapes, whose edges fade over a pixel — fillOvalSmooth, strokeOvalSmooth, strokePathSmooth (a path stroked, open or closed, an alpha at every point, offset to lie beside it), fillRibbonSmooth (fillRibbon's band with an alpha at every point) (see *Smooth edges*). Oval segment counts follow the oval's size on screen (`pixelsPerUnit`, set per pass). Every shape writes each vertex once and its triangles as indices (see *A shape's vertices are shared*). Supports additive blend mode toggle, plus an alpha multiplier and a scale-about-pivot applied to every vertex (`setAlphaMultiplier` / `setScaleAbout`; reset by `begin`). |
-| `SpriteBatch.scala` | Batched textured quads with per-vertex tint/alpha, four vertices a quad and one element buffer for them all, and `drawQuad` for any four corners (the ground's diamonds), whose colour a batch made with a shader of its own can read as four numbers a quad (the ground's edges carry the layers round their cell in it). Flushes on texture change. `setBlending(false)` for opaque geometry. |
-| `ShaderProgram.scala` | GLSL shader compilation + embedded shader source: ColorShader (pos+color), TextureShader (pos+texcoord+color), BloomExtract, GaussianBlur, Composite (bloom+vignette+overlay) |
+| `DrawStream.scala` | The vertices and triangles both batches build, staged in order and drawn as one draw call until the projection, the blend state or a sprite's texture changes; its shader draws a shape's vertex (texture coordinate `UNTEXTURED`) in its colour and a sprite's as its texel tinted. Shadows GL's blend state, so a change draws what is waiting under the state it was asked for (see *One stream for shapes and sprites*). |
+| `SpriteBatch.scala` | Batched textured quads with per-vertex tint/alpha, four vertices and two triangles a quad, and `drawQuad` for any four corners (the ground's diamonds), whose colour a batch made with a shader of its own can read as four numbers a quad (the ground's edges carry the layers round their cell in it). Flushes on texture change. `setBlending(false)` for opaque geometry. |
+| `ShaderProgram.scala` | GLSL shader compilation + embedded shader source: BloomExtract, GaussianBlur, Composite (bloom+vignette+overlay, a program per combination of its parts: `compositeFrag`) |
 | `PostProcessor.scala` | Post-processing FBO pipeline: Scene FBO → Bloom extract (half-res) → Blur H → Blur V → quarter-res pair → Composite. `GRIDGAME_HOLECHECK=1` clears the scene to magenta, so any pixel the terrain leaves uncovered shows. |
 | `GLTexture.scala` | PNG loading via STB image → GL texture (`loadInspected` lets the caller measure or amend the pixels before upload; `decode` hands them to a texture built out of them). FBO creation for render-to-texture. `padTransparent` (colour into transparent texels, cell by cell; `padTransparentRings` for many rings at once) and mipmapped atlases: `allocate`, `upload` and `halve` build one a piece at a time with halvings of its own, in small scratch buffers (`allocPixels`/`freePixels`), which the tile atlas needs (render/CLAUDE.md, *The terrain is filtered as the characters are*). `fromArgb` makes one of an AWT picture's pixels (the pointer's). |
 | `GLFontRenderer.scala` | AWT-based font rasterization → GL texture atlas. Rasterized at the display's pixel density (`pixelScale`) so text is sharp on HiDPI screens; metrics and sizes in units; every draw takes a `scale`. Outlined text with drop shadows, and a heavy eight-copy outline for text over the world. Three sizes (14/22/44). `digitsCentredOn` places a number in a box by its digits' ink (see *Rules*). |
@@ -101,7 +102,28 @@ which the render bench prints as `driver graphics`) went from 65 to 46MB; every 
 byte for byte what it was.
 
 ## Batch Management
-`RenderContext` has `beginShapes()` / `beginSprites()` / `endAll()`, which every painter draws through, to minimize state transitions. Only one batch (shape or sprite) is active at a time; calling `beginShapes()` while the sprite batch is active will end the sprite batch first, and vice versa.
+`RenderContext` has `beginShapes()` / `beginSprites()` / `endAll()`, which every painter draws through, to minimize state transitions. Only one batch (shape or sprite) is active at a time; calling `beginShapes()` while the sprite batch is active suspends the sprite batch and resumes the shape batch on the same stream, and vice versa, which draws nothing by itself. A batch's own `begin` and `end` (and `endAll`) still draw everything waiting, so code that binds a framebuffer, sets a viewport or uses another program between them is drawn where and how it was.
+
+### One stream for shapes and sprites
+The renderer's `ShapeBatch` and `SpriteBatch` write into one `DrawStream`: the same vertex layout
+(position, texture coordinate, colour: a shape's vertex carries `DrawStream.UNTEXTURED`), one
+shader whose fragment is the shape's colour or the sprite's texel times its colour (the very
+expressions the two shaders had), one pair of rings. A draw call is made only when what the GPU
+must know changes: the projection, the blend state, or the texture of a sprite while sprites of
+another wait. The two batches used to be a stream each, so every switch between them was a draw
+call, and the depth pass switches at every wall and shot: a busy frame (the Hive, 16 players, 150
+projectiles that travel) made about 205 draw calls, of which ~105 were switches; it now makes
+60-70. GL's blend state is shadowed (`DrawStream.blendAdditive` / `blendEnabled`): a batch sets it
+where it used to call `glBlendFunc` / `glEnable`, and only a real change draws what is waiting
+first, under the state it was asked for, so each triangle is drawn exactly as before — including
+where one batch left the state for the other (sprites begun after additive shapes draw additive,
+as they always did). Every golden frame at every tier is byte for byte what the two-stream build
+drew (the projectile and blast gallery's 83 sheets differ from the build before both changes only
+by the composite's three single pixels, below). Measured back to back (2026-11-08, M4, 4480x2404, Low, four pairs):
+frame build CPU 1.88 → 1.74 ms; the GPU slightly less. A shape's vertex is 32 bytes where it was
+24, which is why it isn't more: on a machine where a draw call costs more than here it is. Code
+that sets GL's blend state itself must leave it as it found it (the composite does) or tell the
+stream (`blendChangedElsewhere`); a new context resets the shadow (`GLWindow.create`).
 
 **Never upload a batch with a plain `glBufferSubData` at offset 0.** `ShapeBatch.flush` /
 `SpriteBatch.flush` append into a GPU ring buffer and map it with
@@ -197,13 +219,25 @@ which on this machine is where the driver spends most of its time.
 
 ## Post-Processing
 Settings in `PostProcessor`: `bloomThreshold`, `bloomStrength`, `vignetteStrength`, `toneMap`.
+
+**The composite is a program per combination of its parts.** It was one shader that branched on
+uniforms for the sharpen, the bloom and its wide half, the light map, the grain, the tone curve
+(ACES, softClip, or a mix), and the moment's effects (an explosion's warp, a hit's colour split and
+red edge, the fade in). Untaken, those branches still cost every pixel of the display: measured by
+ablation (M4, 4480x2404), the shader's arithmetic was ~2.7 ms of a 7.9 ms frame at Low, where a
+pass that only copies the scene costs 0.3. Now `ShaderProgram.compositeFrag` puts in only what is
+on (`#if`), keyed by `PostProcessor`'s bits, each program made the first time it is wanted together
+with its seven siblings for the moment's effects (8 programs in ~11 ms at the first frame, so a
+first hit doesn't wait on a compile). Back to back against the one-shader build (three pairs each):
+Low 7.8 → 6.3 ms a frame, Medium 12.3 → 9.7, High 15.6 → 14.2. Each part's arithmetic is what it
+was, but the compiler rounds the new programs a little differently: of the 102 golden frames, 33
+have 1-3 pixels (43 in all, of 3.7 million each) one level of 255 off in one channel; nothing else
+moved.
 Bloom FBOs run at half resolution, plus a quarter-res pair for the wide glow. The blur is the
 nine-tap Gaussian in five fetches (each pair of taps is one bilinear fetch between them). The
 light map runs at quarter resolution: every light is a soft blob fading to nothing, which
 bilinear upsampling reproduces exactly. Composite shader
-uses screen blending for bloom and smoothstep vignette, and gates its optional work on
-`uSharpen` / `uGrain` / `uWideBloom` so the quality tiers can drop it without a second
-shader. The four-tap unsharp mask is the composite's most expensive part — four extra
+uses screen blending for bloom and smoothstep vignette. The four-tap unsharp mask is the composite's most expensive part — four extra
 full-resolution texture fetches per pixel. The film grain is hashed from the pixel and a frame
 index that wraps: it used `sin()` of a value that grew every frame, and a GPU's `sin()` loses
 its precision on numbers that size within minutes, turning the grain into bands.

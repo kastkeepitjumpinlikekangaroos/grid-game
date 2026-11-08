@@ -1,7 +1,7 @@
 package com.gridgame.client.render
 
 import com.gridgame.client.game.{FadingProjectile, GameClient}
-import com.gridgame.client.gl.{GLFontRenderer, GpuProfiler, LightSystem, Matrix4, PostProcessor, RenderQuality, ShaderProgram, ShapeBatch, SpriteBatch}
+import com.gridgame.client.gl.{DrawStream, GLFontRenderer, GpuProfiler, LightSystem, Matrix4, PostProcessor, RenderQuality, ShaderProgram, ShapeBatch, SpriteBatch}
 import com.gridgame.client.render.blasts.GLBlastRenderers
 import com.gridgame.client.render.hud._
 import com.gridgame.client.render.world._
@@ -99,10 +99,11 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
 
   private def ensureInitialized(width: Int, height: Int): Unit = {
     if (initialized) return
-    val colorShader = new ShaderProgram(ShaderProgram.COLOR_VERT, ShaderProgram.COLOR_FRAG)
-    val textureShader = new ShaderProgram(ShaderProgram.TEXTURE_VERT, ShaderProgram.TEXTURE_FRAG)
-    shapeBatch = new ShapeBatch(colorShader)
-    spriteBatch = new SpriteBatch(textureShader)
+    // One stream for both batches: a switch between shapes and sprites draws nothing by itself
+    // (gl/CLAUDE.md, *One stream for shapes and sprites*)
+    val stream = new DrawStream(new ShaderProgram(DrawStream.VERT, DrawStream.FRAG))
+    shapeBatch = new ShapeBatch(stream)
+    spriteBatch = new SpriteBatch(stream)
     postProcessor = new PostProcessor(width, height)
     lightSystem = new LightSystem(width, height)
     backgrounds.create(width, height)
