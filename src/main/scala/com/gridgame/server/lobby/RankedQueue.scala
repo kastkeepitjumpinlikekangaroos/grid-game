@@ -356,7 +356,7 @@ class RankedQueue(host: LobbyHost, lobbyManager: LobbyManager, launcher: MatchLa
       for (_ <- 1 to botsNeeded) {
         lobby.botManager.addBot()
       }
-      launcher.launch(lobby, withBots = m.fillWithBots)
+      launcher.start(lobby, withBots = m.fillWithBots)
 
       // Emit metrics only after the match has actually been set up successfully
       val matchedNow = System.currentTimeMillis()

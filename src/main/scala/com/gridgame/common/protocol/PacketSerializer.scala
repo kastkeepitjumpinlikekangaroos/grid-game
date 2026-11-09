@@ -176,6 +176,9 @@ object PacketSerializer {
             new ProblemReportPacket(sequenceNumber, playerId, Packet.getCurrentTimestamp, action, reportId)
         }
 
+      case PacketType.MATCH_ASSIGN =>
+        MatchAssignPacket.read(sequenceNumber, playerId, buffer)
+
       case PacketType.RANKED_QUEUE =>
         val action = buffer.get()
         val characterId = buffer.get()

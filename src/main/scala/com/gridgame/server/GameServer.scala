@@ -7,7 +7,8 @@ import com.gridgame.common.observability.Metrics
 import com.gridgame.common.observability.Telemetry
 import com.gridgame.common.protocol._
 import com.gridgame.server.account.{AccountQueries, AuthDatabase, AuthService}
-import com.gridgame.server.game.{GameInstance, MatchJournal, MatchJournals}
+import com.gridgame.server.cluster.{DirectorHost, MatchDirector}
+import com.gridgame.server.game.{GameInstance, MatchJournal, MatchJournals, MatchOutcome}
 import com.gridgame.server.lobby._
 import com.gridgame.server.net._
 import io.netty.channel.Channel
@@ -34,7 +35,8 @@ import scala.jdk.CollectionConverters._
  * (ProblemReports), kept in `reportsFolder` with the journal of the match each is about.
  */
 class GameServer(port: Int, reportsFolder: java.nio.file.Path = ProblemReports.defaultFolder(),
-                 reportLimits: ProblemReports.Limits = ProblemReports.Limits()) extends PacketRouter with LobbyHost {
+                 reportLimits: ProblemReports.Limits = ProblemReports.Limits())
+    extends PacketRouter with LobbyHost with DirectorHost {
   // Global state: all connected players regardless of lobby/game
   private val connectedPlayers = new ConcurrentHashMap[UUID, Player]()
 
@@ -68,6 +70,22 @@ class GameServer(port: Int, reportsFolder: java.nio.file.Path = ProblemReports.d
   // Who this server is to its players' clients, from one start to the next: they pin its key
   val identity: TlsProvider.Identity = TlsProvider.load()
   private val network = new ServerNetwork(port, identity.context, () => tcpHandler(), () => udpHandler(), outbox)
+
+  // The match servers, if matches are played on them (enableMatchServers) rather than here
+  @volatile private var director: MatchDirector = _
+
+  /**
+   * Play every match on match servers rather than here (design/networking.md, *Match servers*):
+   * listen for them on `controlPort`, where they prove they hold `secret`. A match waits `waitMs` at
+   * most for one to have room for it. Before `start`.
+   */
+  def enableMatchServers(controlPort: Int, secret: Array[Byte], waitMs: Long = MatchDirector.WaitMs): MatchDirector = {
+    val d = new MatchDirector(controlPort, secret, identity, this, waitMs)
+    d.bind()
+    director = d
+    launcher.remote = d
+    d
+  }
 
   // A login that replaces a session the server still holds open ends that session as leaving would
   sessions.onSessionReplaced = playerId => leaveEverything(playerId, connectedPlayers.get(playerId))
@@ -205,6 +223,10 @@ class GameServer(port: Int, reportsFolder: java.nio.file.Path = ProblemReports.d
           val request = packet.asInstanceOf[AuthRequestPacket]
           // An upload's connection logs in with its report's ticket, and is never a session
           if (request.getAction == AuthAction.UPLOAD) reports.handleUploadLogin(request, tcpCh)
+          // A match server's login: never this server's
+          else if (request.getAction == AuthAction.MATCH_JOIN) {
+            if (tcpCh != null) outbox.sendVia(new AuthResponsePacket(outbox.nextSeq(), false, null, "Not a match server"), tcpCh)
+          }
           else auth.handle(request, tcpCh)
 
         case PacketType.PROBLEM_REPORT =>
@@ -258,19 +280,9 @@ class GameServer(port: Int, reportsFolder: java.nio.file.Path = ProblemReports.d
     }
   }
 
-  /**
-   * What the rest of the match is told about a packet the instance accepted from a player. A
-   * position update goes out as the server now has that player, not as the client claimed:
-   * where it held them (frozen, rooted) it held them, and every status effect is on it. Relaying
-   * the claim with four of the eight flags showed a rooted player walking away, and turned a
-   * burning, rooted, slowed or sped-up player's effects off on every step they took.
-   */
-  private[server] def relayed(instance: GameInstance, packet: Packet): Packet = packet match {
-    case update: PlayerUpdatePacket =>
-      val player = instance.registry.get(update.getPlayerId)
-      if (player != null) instance.stateUpdate(player) else packet
-    case _ => packet
-  }
+  /** What the rest of the match is told about a packet the instance accepted from a player
+    * (GameInstance.relayed). */
+  private[server] def relayed(instance: GameInstance, packet: Packet): Packet = instance.relayed(packet)
 
   private def handleGlobalConnect(packet: PlayerJoinPacket, tcpCh: Channel): Unit = {
     val playerId = packet.getPlayerId
@@ -405,6 +417,40 @@ class GameServer(port: Int, reportsFolder: java.nio.file.Path = ProblemReports.d
     }
   }
 
+  // ── The match servers' matches (DirectorHost) ──────────────────────────────
+
+  def lobbyOfMatch(lobbyId: Short, matchId: UUID): Lobby = {
+    val lobby = lobbyManager.getLobby(lobbyId)
+    if (lobby != null && lobby.remoteMatch != null && lobby.remoteMatch.matchId == matchId) lobby else null
+  }
+
+  def matchFailed(lobby: Lobby, why: String): Unit = {
+    System.err.println(s"Lobby ${lobby.id}'s match failed to start on its match server: $why")
+    val closed = new LobbyActionPacket(outbox.nextSeq(), lobby.hostId, LobbyAction.LOBBY_CLOSED, lobby.id)
+    lobby.players.asScala.foreach(pid => Option(connectedPlayer(pid)).foreach(p => outbox.send(closed, p)))
+    lobbyManager.removeLobby(lobby.id)
+  }
+
+  def playerLeftMatch(lobby: Lobby, playerId: UUID): Unit = {
+    if (lobbyManager.getPlayerLobby(playerId) ne lobby) return
+    val player = connectedPlayer(playerId)
+    if (player != null) lobbyHandler.processLobbyAction(new LobbyActionPacket(outbox.nextSeq(), playerId, LobbyAction.LEAVE), player)
+    else lobbyManager.leaveLobby(playerId)
+  }
+
+  def matchEnded(lobby: Lobby, outcome: MatchOutcome, journal: String): Unit = {
+    if (journal != null) finishedJournals.keep(MatchJournal.received(outcome.matchId, journal))
+    matchEnd.recordRemote(lobby, outcome)
+  }
+
+  def matchLost(lobby: Lobby): Unit = {
+    System.err.println(s"Lobby ${lobby.id}'s match server went away with its match unfinished")
+    lobby.status = LobbyStatus.FINISHED
+    lobbyManager.removeLobby(lobby.id)
+  }
+
+  private def connectedPlayer(playerId: UUID): Player = connectedPlayers.get(playerId)
+
   /** A lobby's match is over (its time is up, or its practice was left): see MatchEnd. */
   def endGame(lobbyId: Short): Unit = matchEnd.endGame(lobbyId)
 
@@ -484,6 +530,7 @@ class GameServer(port: Int, reportsFolder: java.nio.file.Path = ProblemReports.d
 
     // Stop all game instances
     gameInstances.values().asScala.foreach(_.stop())
+    if (director != null) director.stop()
 
     try {
       if (!cleanupExecutor.awaitTermination(5, TimeUnit.SECONDS)) {

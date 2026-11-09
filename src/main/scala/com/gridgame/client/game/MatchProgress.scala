@@ -170,6 +170,10 @@ trait MatchProgress { this: GameClient =>
       sequenceNumber.getAndIncrement(), localPlayerId, LobbyAction.LEAVE
     )
     send(packet)
-    if (!isPracticeMode) returnToLobbyBrowser()
+    if (!isPracticeMode) {
+      // Practice's results come from where it was played: anything else we are done with
+      closeMatchConnection()
+      returnToLobbyBrowser()
+    }
   }
 }

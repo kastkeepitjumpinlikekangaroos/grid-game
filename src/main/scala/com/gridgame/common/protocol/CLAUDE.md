@@ -68,7 +68,7 @@ it faces and [53-54] how long it has left (see *Barriers*): a client sends its a
 its barrier is up, and the server writes the barrier's facing and its remaining time. All are 0
 otherwise.
 
-## Packet Types (22 total)
+## Packet Types (23 total)
 
 | ID   | Name              | Transport | Description                    |
 |------|-------------------|-----------|--------------------------------|
@@ -94,6 +94,7 @@ otherwise.
 | 0x14 | SESSION_END       | TCP       | Why the server is closing the session (server -> client): [21] REPLACED (logged in elsewhere) or REVOKED (logged out) |
 | 0x15 | COOLDOWN_RESET    | TCP       | R: a player's ability cooldowns reset (below) |
 | 0x16 | PROBLEM_REPORT    | TCP       | A player's problem report: asked for, given a ticket or refused, kept under its code (below) |
+| 0x17 | MATCH_ASSIGN      | TCP       | Where to play the match that is starting, when a match server plays it (server -> client; below) |
 
 An `AUTH_REQUEST` carries one of these `AuthAction`s. The server takes it without checking a
 signature: there is no session yet, or (a LOGOUT) the token it carries is the proof. TLS is what
@@ -105,6 +106,7 @@ keeps it private.
 | 2 REFRESH | [22-53] refresh token | log in with the token an earlier login was given (design/networking.md, *Staying logged in*) |
 | 3 LOGOUT | [22-53] refresh token | end the token's login: no reply, and every session of it is closed |
 | 4 UPLOAD | [22-37] an upload's ticket, [38-53] its report's id | log a problem report's upload connection in: it becomes that upload, never a session (below) |
+| 5 MATCH_JOIN | [22-37] the match ticket | log in to a match server, for the match the player was sent there to play (MATCH_ASSIGN): a session of that server's own, for that match alone |
 
 A `PROJECTILE_UPDATE` carries one of these `ProjectileAction`s:
 
@@ -162,6 +164,14 @@ raw, once that connection has logged in with the ticket (AUTH_REQUEST UPLOAD) an
 | 3 ACCEPTED | [38-49] the report's code (`GG-` and eight letters and digits) | kept: on the upload connection once all of it came, or on the session for a report the server has already |
 | 4 FAILED | [38] why (CORRUPT: not the bytes BEGIN described, or more; TRUNCATED: cut off; UNAVAILABLE) | upload connection: nothing was kept; sending it again may work |
 
+A `MATCH_ASSIGN` comes in two parts (`MatchAssignPart`, byte [21]), as what it carries doesn't fit
+one packet (design/networking.md, *Match servers*). The client connects once it has both.
+
+| Part | Bytes | Meaning |
+|---|---|---|
+| 0 ADDRESS | [22] the address's length (4 or 16; anything else is malformed), [23-38] the address, [39-40] the port, [41-56] the player's ticket | where the match server is, and what to log in to it with |
+| 1 IDENTITY | [22-53] the SHA-256 of the match server's TLS key (`MatchAssignPacket.fingerprint` writes it as `ServerIdentity` does) | the key the match server will show: the client holds it to that one |
+
 ## Connection Flow
 
 ```
@@ -214,6 +224,28 @@ Client                              Server
    │════ the report, raw ════════════>│  (exactly its size)
    │<─── PROBLEM_REPORT ACCEPTED ─────│  (its code; or FAILED, or REFUSED for a bad ticket)
    │                                   │  (closed by the server)
+```
+
+A match played on a match server (design/networking.md, *Match servers*) is played on a second
+connection, which lasts as long as the match, beside the session that stays open:
+
+```
+Client                         Central server                     Match server
+   │──── LOBBY_ACTION (start) ───>│                                    │
+   │                               │═══ start (control link) ═════════>│  (the match, a ticket each)
+   │                               │<══ started ═══════════════════════│
+   │<─── MATCH_ASSIGN ADDRESS ────│  (address, port, ticket)           │
+   │<─── MATCH_ASSIGN IDENTITY ───│  (the key it will show)            │
+   │═══ TLS 1.3 Handshake, held to that key ═══════════════════════════│
+   │──── AUTH_REQUEST MATCH_JOIN ─────────────────────────────────────>│
+   │<─── SESSION_TOKEN, AUTH_RESPONSE ─────────────────────────────────│
+   │──── HEARTBEAT (at once) ─────────────────────────────────────────>│  (where to send datagrams)
+   │<─── GAME_STARTING, MATCH_INFO, WORLD_INFO, PLAYER_JOIN... ────────│  (the match, as a rejoin)
+   │<══> the match: steps, shots, items, traps, R, match chat ════════>│
+   │                               │<══ ended (outcome, journal) ══════│
+   │<─── MATCH_HISTORY STATS ─────│  (ranked)                          │
+   │                               │═══ recorded ═════════════════════>│
+   │<─── SCORE_END ────────────────────────────────────────────────────│  (then closed)
 ```
 
 A client whose connection dropped logs in again on a new one with its refresh token

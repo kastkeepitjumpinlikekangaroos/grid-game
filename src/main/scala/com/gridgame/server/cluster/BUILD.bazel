@@ -1,0 +1,21 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+load("//third_party:jvm.bzl", "GSON", "NETTY")
+
+# Matches played on match servers of their own: the link between the central server and them
+# (ControlLink), the central server's side (MatchDirector) and a match server (MatchServer).
+scala_library(
+    name = "cluster",
+    srcs = glob(["*.scala"]),
+    visibility = [
+        "//src/main/scala/com/gridgame/server:__subpackages__",
+        "//src/test/scala/com/gridgame/e2e:__pkg__",
+        "//src/test/scala/com/gridgame/server:__pkg__",
+    ],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server/bots",
+        "//src/main/scala/com/gridgame/server/game",
+        "//src/main/scala/com/gridgame/server/lobby",
+        "//src/main/scala/com/gridgame/server/net",
+    ] + GSON + NETTY,
+)

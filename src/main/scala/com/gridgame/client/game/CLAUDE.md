@@ -12,6 +12,7 @@ trait in its own file, with the packets that update it and the actions that use 
 | Trait | What it holds and does |
 |---|---|
 | `Connection` | connecting, logging in (with a password or a refresh token) and out, the session token, each refresh token handed to the app as it arrives (`refreshTokenListener`, before the answer behind it), why the server ended the session (`sessionEndReason`), the heartbeat, the packet thread (each batch it takes off the queue through `processAll`, where a packet that throws, or whose listener does, costs only itself), `send` (a test points it at `packetSink`) |
+| `MatchConnection` | the connection to a match server while a match is played on one (design/networking.md, *Match servers*): MATCH_ASSIGN's two parts, then a second `NetworkThread` held to the key the server named, logged in with the ticket, a heartbeat at once; what it hears goes into the same queue as the session's, what we send about the match goes to it (`goesToMatch`, in `Connection.send`); dropped while we play, we are out of the match and back in the browser (`lobbyClosedListener`); closed when we leave, after the scoreboard, or when the session ends. The match's latency is its heartbeat's |
 | `Lobby` | the lobby browser's list, the lobby we are in (settings, members, their characters), lobby actions |
 | `Chat` | lobby and match chat |
 | `Ranked` | the ranked queue |

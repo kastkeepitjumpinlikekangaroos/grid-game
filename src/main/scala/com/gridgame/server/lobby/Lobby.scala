@@ -27,6 +27,10 @@ class Lobby(
   val botManager: BotManager = new BotManager()
   @volatile var status: Byte = LobbyStatus.WAITING
   @volatile var gameInstance: GameInstance = _
+  /** The lobby's match when a match server plays it (gameInstance is then null). */
+  @volatile var remoteMatch: RemoteMatch = _
+  /** The id its match is to have, if it was given one (a match server's, by the server that sent it). */
+  @volatile var matchId: java.util.UUID = _
   @volatile var isRanked: Boolean = false
   @volatile var gameMode: Byte = 0  // 0=FFA, 1=Teams
   @volatile var teamSize: Int = 2   // 2, 3, or 4

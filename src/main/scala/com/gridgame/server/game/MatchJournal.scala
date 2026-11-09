@@ -103,8 +103,13 @@ final class MatchJournal(val matchId: UUID, enabled: Boolean = true,
     }
   }
 
+  // A journal kept by another server: a match server's, sent as its match ended (MatchJournal.received)
+  @volatile private var receivedText: String = null
+
   /** The journal as the text file kept beside a report: what it is, then its lines. */
   def render: String = {
+    val received = receivedText
+    if (received != null) return received
     val body = lines
     val sb = new StringBuilder
     sb.append(s"Match $matchId: what the server saw and decided in it, as it happened.\n")
@@ -149,6 +154,13 @@ final class MatchJournal(val matchId: UUID, enabled: Boolean = true,
 }
 
 object MatchJournal {
+  /** The journal of a match another server played (a match server's), as it rendered it there. */
+  def received(matchId: UUID, text: String): MatchJournal = {
+    val j = new MatchJournal(matchId, enabled = false)
+    j.receivedText = text
+    j
+  }
+
   /** The first lines, always kept: the start of the match and who played in it. */
   val HeadLines = 500
   /** The last lines kept after those. */

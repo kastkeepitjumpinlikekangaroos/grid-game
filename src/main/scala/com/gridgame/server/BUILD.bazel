@@ -9,6 +9,7 @@ load("//third_party:jvm.bzl", "GSON", "NETTY")
 #   game     one running match                           (net)
 #   bots     the bots playing in a match                 (game)
 #   lobby    lobbies, matchmaking, starting a match      (game, bots)
+#   cluster  matches on match servers of their own       (lobby, game, bots)
 #   .        GameServer, which puts them together        (all of them)
 #
 # server_lib is all of it, for the tests.
@@ -22,6 +23,7 @@ scala_library(
     exports = [
         "//src/main/scala/com/gridgame/server/account",
         "//src/main/scala/com/gridgame/server/bots",
+        "//src/main/scala/com/gridgame/server/cluster",
         "//src/main/scala/com/gridgame/server/game",
         "//src/main/scala/com/gridgame/server/lobby",
         "//src/main/scala/com/gridgame/server/net",
@@ -30,6 +32,7 @@ scala_library(
         "//src/main/scala/com/gridgame/common",
         "//src/main/scala/com/gridgame/server/account",
         "//src/main/scala/com/gridgame/server/bots",
+        "//src/main/scala/com/gridgame/server/cluster",
         "//src/main/scala/com/gridgame/server/game",
         "//src/main/scala/com/gridgame/server/lobby",
         "//src/main/scala/com/gridgame/server/net",
@@ -41,6 +44,15 @@ scala_binary(
     main_class = "com.gridgame.server.ServerMain",
     resources = ["//worlds:world_files"],
     # Which build it is (common/BuildInfo), for its log and the problem reports it keeps
+    runtime_deps = ["//src/main/scala/com/gridgame/common:build_info"],
+    deps = [":server_lib"],
+)
+
+# A match server: plays the matches the central server hands it (server/cluster, ops/kubernetes)
+scala_binary(
+    name = "match_server",
+    main_class = "com.gridgame.server.cluster.MatchServerMain",
+    resources = ["//worlds:world_files"],
     runtime_deps = ["//src/main/scala/com/gridgame/common:build_info"],
     deps = [":server_lib"],
 )

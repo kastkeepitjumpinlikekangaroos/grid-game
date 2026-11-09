@@ -27,15 +27,16 @@ import java.util.concurrent.TimeUnit
  *
  * What its players send it is ClientHandler's to judge. `start` schedules its ticks; a test calls
  * `begin` instead and runs them itself.
+ *
+ * `matchId` is the match's own id: its players' clients are told it (GameEvent.MATCH_INFO), and a
+ * problem report names the match it is about by it, to be kept with [[journal]]. A match server's
+ * match has the one the server that sent it there gave it.
  */
-class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes: Int, host: MatchHost)
+class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes: Int, host: MatchHost,
+                   val matchId: UUID = UUID.randomUUID())
     extends Opening with Broadcasts with PlayerSync with ProjectileEffects with TrapEffects with Vitals with Lives {
   /** Where the match's packets go out. */
   def outbox: Outbox = host.outbox
-
-  /** The match's own id: its players' clients are told it (GameEvent.MATCH_INFO), and a problem
-    * report names the match it is about by it, to be kept with [[journal]]. */
-  val matchId: UUID = UUID.randomUUID()
 
   /** What the server saw and decided in the match, for a problem report about it (MatchJournal).
     * Before `handler`, which hands it to its validator. */
@@ -76,6 +77,9 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   private var timerSyncExecutor: ScheduledExecutorService = _
   private var playerTickExecutor: ScheduledExecutorService = _
   private[game] var respawnExecutor: ScheduledExecutorService = _
+  /** When the first projectile tick was due, on System.nanoTime, and each after it every
+    * PROJECTILE_SPEED_MS: how late each runs is TickStats'. 0 for a match the test ticks by hand. */
+  @volatile private var tickOriginNanos: Long = 0L
   /**
    * The match clock, on System.nanoTime: the clock the executor that ends the match counts on, so
    * the end comes round exactly when the time is up. The wall clock is no good for it. The system
@@ -158,6 +162,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
 
     // Start projectile tick
     projectileExecutor = Executors.newSingleThreadScheduledExecutor()
+    tickOriginNanos = System.nanoTime() + Constants.PROJECTILE_SPEED_MS * 1000000L
     projectileExecutor.scheduleAtFixedRate(
       safeRunnable("tickProjectiles")(tickProjectiles()),
       Constants.PROJECTILE_SPEED_MS.toLong,
@@ -270,7 +275,10 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     pickUpItemsInReach()
     // Flush all buffered writes at end of tick
     flushAllInstancePlayers()
-    Metrics.tickDuration.record((System.nanoTime() - tickStart) / 1e6, projectileTickAttrs)
+    val took = System.nanoTime() - tickStart
+    Metrics.tickDuration.record(took / 1e6, projectileTickAttrs)
+    val origin = tickOriginNanos
+    if (origin != 0L) TickStats.record(tickStart - (origin + (projectileTick - 1).toLong * Constants.PROJECTILE_SPEED_MS * 1000000L), took)
   }
 
   /**
@@ -324,20 +332,20 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
    */
   private def endMatch(): Unit = if (running) host.endGame(gameId)
 
+  /** The time left, as everyone is told it every TIME_SYNC_INTERVAL_S. */
+  private[server] def timeSyncPacket(): GameEventPacket = new GameEventPacket(
+    outbox.nextSeq(),
+    new UUID(0L, 0L),
+    GameEvent.TIME_SYNC,
+    gameId,
+    getRemainingSeconds,
+    0.toShort, 0.toShort, null, 0.toByte, 0.toShort, 0.toShort
+  )
+
   private def syncTimer(): Unit = {
     if (!running || isTimeUp) return
     val tickStart = System.nanoTime()
-
-    val zeroUUID = new UUID(0L, 0L)
-    val packet = new GameEventPacket(
-      outbox.nextSeq(),
-      zeroUUID,
-      GameEvent.TIME_SYNC,
-      gameId,
-      getRemainingSeconds,
-      0.toShort, 0.toShort, null, 0.toByte, 0.toShort, 0.toShort
-    )
-    broadcastToInstance(packet)
+    broadcastToInstance(timeSyncPacket())
     Metrics.tickDuration.record((System.nanoTime() - tickStart) / 1e6, timerTickAttrs)
   }
 

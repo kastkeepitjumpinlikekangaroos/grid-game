@@ -44,7 +44,12 @@ trait Connection { this: GameClient =>
 
   private[game] def send(packet: Packet): Unit = {
     val sink = packetSink
-    if (sink != null) sink(packet) else networkThread.send(packet)
+    if (sink != null) sink(packet)
+    else {
+      // A match played on a match server is told there what we do in it (MatchConnection)
+      val toMatch = matchPacketSender(packet)
+      if (toMatch != null) toMatch.send(packet) else networkThread.send(packet)
+    }
   }
 
   @volatile private var running = false
@@ -97,6 +102,7 @@ trait Connection { this: GameClient =>
     running = false
     clientState = ClientState.CONNECTING
     networkThread.sessionToken = null
+    closeMatchConnection()
     forgetMatch()
     newLife()
 
@@ -195,12 +201,14 @@ trait Connection { this: GameClient =>
   /** The server echoes heartbeats back: the round trip is the latency. */
   private[game] def handleHeartbeatEcho(): Unit = {
     val sentNs = heartbeatSentAtNs.getAndSet(0L)
-    if (sentNs > 0) {
-      val ms = (System.nanoTime() - sentNs) / 1e6
-      lastRoundTripMs = ms.toInt
-      Metrics.clientLatency.record(ms, io.opentelemetry.api.common.Attributes.empty())
-      if (ms > 300) Diagnostics.noticed(NoticedKind.PingSpike, ms.toInt)
-    }
+    // On a match server, the match's latency is its connection's (MatchConnection)
+    if (sentNs > 0 && !onMatchServer) noteRoundTrip((System.nanoTime() - sentNs) / 1e6)
+  }
+
+  private[game] def noteRoundTrip(ms: Double): Unit = {
+    lastRoundTripMs = ms.toInt
+    Metrics.clientLatency.record(ms, io.opentelemetry.api.common.Attributes.empty())
+    if (ms > 300) Diagnostics.noticed(NoticedKind.PingSpike, ms.toInt)
   }
 
   def enqueuePacket(packet: Packet): Unit = {
@@ -269,6 +277,8 @@ trait Connection { this: GameClient =>
 
     // Interrupt packet processor thread so it doesn't block on take()
     if (packetProcessor != null) packetProcessor.interrupt()
+
+    closeMatchConnection()
 
     // Null if connect() was never reached
     if (networkThread == null) return

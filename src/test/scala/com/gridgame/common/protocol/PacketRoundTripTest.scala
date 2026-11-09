@@ -494,6 +494,45 @@ class PacketRoundTripTest {
     assertEquals(report, ProblemReportPacket.reportIdOf(p.getRefreshToken))
   }
 
+  @Test def aMatchAssignmentSaysWhereWithWhatTicketAndWhichKey(): Unit = {
+    val ticket = Array.tabulate[Byte](MatchAssignPacket.TicketSize)(i => (i * 11 - 90).toByte)
+    for (address <- Seq("10.244.0.17", "127.0.0.1", "2001:db8::7")) {
+      val at = trip(MatchAssignPacket.address(4, id, java.net.InetAddress.getByName(address), 26003, ticket))
+      assertEquals(PacketType.MATCH_ASSIGN, at.getType)
+      assertTrue("sent on the session, over TCP", at.getType.tcp)
+      assertEquals(MatchAssignPart.ADDRESS, at.getPart)
+      assertEquals(id, at.getPlayerId)
+      assertEquals(java.net.InetAddress.getByName(address), at.getAddress)
+      assertEquals(26003, at.getPort)
+      assertArrayEquals(ticket, at.getTicket)
+    }
+    assertEquals("the top of the port range", 65535,
+      trip(MatchAssignPacket.address(5, id, java.net.InetAddress.getByName("10.0.0.1"), 65535, ticket)).getPort)
+
+    val fingerprint = "SHA256:" + java.util.Base64.getEncoder.withoutPadding.encodeToString(Array.tabulate[Byte](32)(i => (i * 3).toByte))
+    val key = trip(MatchAssignPacket.identity(6, id, MatchAssignPacket.keyHashOf(fingerprint)))
+    assertEquals(MatchAssignPart.IDENTITY, key.getPart)
+    assertEquals("the fingerprint a client pins, whole", fingerprint, key.fingerprint)
+    assertNull("not a fingerprint", MatchAssignPacket.keyHashOf("SHA256:short"))
+    assertNull("not a fingerprint", MatchAssignPacket.keyHashOf("MD5:" + fingerprint.drop(7)))
+    assertFalse("the ticket isn't printed", key.toString.contains("ticket=") || trip(MatchAssignPacket.address(7, id,
+      java.net.InetAddress.getByName("10.0.0.1"), 1, ticket)).toString.contains(java.util.Arrays.toString(ticket)))
+  }
+
+  @Test def anAddressOfNeitherFourNorSixteenBytesIsMalformed(): Unit = {
+    val bytes = MatchAssignPacket.address(8, id, java.net.InetAddress.getByName("10.0.0.1"), 1, new Array[Byte](16)).serialize()
+    bytes(22) = 5
+    try { PacketSerializer.deserialize(bytes); fail("an address of 5 bytes was read") }
+    catch { case _: IllegalArgumentException => }
+  }
+
+  @Test def aMatchServerIsLoggedInToWithTheMatchTicket(): Unit = {
+    val ticket = Array.tabulate[Byte](MatchAssignPacket.TicketSize)(i => (i + 1).toByte)
+    val p = trip(new AuthRequestPacket(9, AuthAction.MATCH_JOIN, java.util.Arrays.copyOf(ticket, Constants.REFRESH_TOKEN_SIZE)))
+    assertEquals(AuthAction.MATCH_JOIN, p.getAction)
+    assertArrayEquals(ticket, java.util.Arrays.copyOf(p.getRefreshToken, MatchAssignPacket.TicketSize))
+  }
+
   @Test def aMatchSaysWhichMatchItIs(): Unit = {
     val matchId = UUID.fromString("01234567-89ab-cdef-0123-456789abcdef")
     val p = trip(new GameEventPacket(15, new UUID(0L, 0L), Packet.getCurrentTimestamp, GameEvent.MATCH_INFO,

@@ -17,8 +17,11 @@ object RateLimiter {
   val MAX_PRE_AUTH_PER_SECOND = 5
   /** Chat lines a second from one player. */
   val MAX_CHAT_PER_SECOND = 5
-  /** New connections a minute from one address. */
-  val MAX_CONNECTIONS_PER_MINUTE = 5
+  /** New connections a minute from one address. GRIDGAME_CONNECTIONS_PER_MINUTE raises it where every
+    * client comes from one address and the limit can't tell them apart: a cluster behind one NAT, as
+    * kind on a laptop is (ops/kubernetes). Never below 5. */
+  val MAX_CONNECTIONS_PER_MINUTE: Int =
+    Option(System.getenv("GRIDGAME_CONNECTIONS_PER_MINUTE")).flatMap(_.toIntOption).fold(5)(n => Math.max(5, n))
   /** Failed logins from one address before it has to wait. */
   val MAX_AUTH_FAILURES = 5
   /** The first wait, doubling for each further batch of failures... */

@@ -1,8 +1,8 @@
 # Networking
 
 What the server trusts, who owns a player's position, what a session is, how a player stays
-logged in, and the one connection that carries something other than packets (a problem report's
-upload). The wire format itself
+logged in, where a match is played (in the server, or on a match server of its own), and the one
+connection that carries something other than packets (a problem report's upload). The wire format itself
 (packet layouts and types) is in common/protocol/CLAUDE.md; the code that enforces all of this is
 server/net (sessions, signatures, replay, rate limits), server/game (`PacketValidator`, the
 `*Requests` traits of `ClientHandler`) and client/game.
@@ -289,3 +289,106 @@ and not using them (each runs out in a minute), which holds up other players' re
 game; and an account's twenty a day can fill the 2 GiB, after which reports are refused until whoever
 runs the server clears some out. `ProblemReportsTest` pins all of it, an upload over real TLS among it.
 
+## Match servers
+
+A match can be played on a server of its own, a **match server**, rather than in the server the
+players are logged in to, the **central server**: so that matches can be spread over many machines
+(ops/kubernetes runs them as an Agones fleet), while logins, accounts, lobbies, matchmaking, ratings,
+chat in lobbies and problem reports stay on the one central server. The central server plays every
+match on match servers once it is started with a control port (`--control-port`, or
+`GRIDGAME_CONTROL_PORT`, and the cluster's secret in `GRIDGAME_CLUSTER_SECRET`); without one it plays
+them itself, as it always did, and nothing below happens. The code is server/cluster:
+`MatchDirector` (the central server's side), `MatchServer` (a match server), `ControlLink` (between
+them); and on the client `MatchConnection`.
+
+- **A match server dials the central server and registers.** It connects to the control port and
+  proves it holds the cluster's secret, as the central server proves it does (`ControlLink`: a nonce
+  each way and an HMAC over both, then every frame MAC'd under a key made of the secret and the
+  nonces, numbered each way; TLS keeps it private, as tickets cross it). It registers where its
+  players reach it (Agones' address and port in Kubernetes, `GRIDGAME_PUBLIC_HOST`/`PORT` to say
+  otherwise), the fingerprint of its TLS key, which it makes afresh at every start, and its
+  **capacity**: how much it plays at once, in slots (`--matches`, or in Kubernetes its Agones
+  counter's capacity). Both ends say something every 2s; a link silent for 10s is closed.
+- **A match takes slots by what it costs** (`MatchSpec.slotsFor`), in matches of eight humans: a
+  match costs for everyone in it, and more for its humans times everyone (each human is sent
+  everyone's moves and shots), `players × (8 + humans) / 128` rounded up. Eight humans are one slot,
+  sixteen three, thirty-two (a lobby's most) ten, eight with eight bots two, and nothing is less than
+  one: a duel, Teams, practice with its bots. The formula, and how many slots a match server has,
+  were measured (ops/kubernetes/CLAUDE.md, *How many matches a match server plays*).
+- **A lobby's match is handed to a match server with room for it** (`MatchLauncher.start` →
+  `MatchDirector.launch`): everything its lobby says of it, its players in the lobby's order with
+  their characters, its bots, the match's id, its slots, and a ticket for each player (16 random
+  bytes). Of the match servers with room, the fullest takes it: matches are packed, so the others
+  empty and an autoscaler can take them away. A match bigger than a whole match server goes to an
+  empty one. None has room: it waits, the oldest first, for one to register or make room (an
+  autoscaler adds them as matches fill them), and its players are read from the lobby when it is
+  handed out; after 30s it doesn't start and the lobby closes, as a match that fails to start always
+  did. The match server makes a lobby of its own of it and launches it as the central server would
+  (`MatchLauncher.launch`), its players seated where their spawns are but not yet connected, and
+  says "started". One it has no room for after all, or that reaches it as it drains, it gives back
+  ("failed", to be tried again), and the central server hands it to another, first in line (and
+  that match server nothing for a second).
+- **Only then are its players told where to play it** (`MATCH_ASSIGN`, on their session: the address
+  and their ticket, then the key's fingerprint), so none arrives before the match server has the
+  match. The client connects there on a second connection, **holding the match server to the key the
+  central server named** (a `KnownServers` of its own with that one pin: nothing taken on trust, and
+  a match server's port, used by one pod after another, never mistaken for a key that changed), and
+  logs in with its ticket (`AUTH_REQUEST MATCH_JOIN`), which says which of the server's matches is
+  theirs. Every ticket of every match it plays is compared, in constant time, and one that is no
+  good counts as a failed login of its address. A good one gets a session of the
+  match server's own (a token, signed packets, replay windows and rate limits, as on the central
+  server) and is sent the match as a rejoiner is (`ClientHandler.admit`): GAME_STARTING,
+  MATCH_INFO, WORLD_INFO, its own join, everyone else's, the items, traps and tiles, its state, the
+  opening and the clock. The client sends a heartbeat the moment it is in, not a second later: the
+  match server learns where to send its datagrams from it, and without it every update about
+  everyone else by datagram was lost for that second.
+- **From there it is a match as any other**, on the same handlers, validator, ticks and bots, on
+  executors of its own beside the match server's other matches; what a player sends there goes to
+  the match their session was admitted to, and a session is the player's in one match at a time (one
+  who left a match and was sent to another on the same server has the new one's, and the first,
+  letting its players go as it ends, leaves it be). What the client sends about the match (steps, shots, items, traps, R, match and team chat) goes to the
+  match server (`MatchConnection.goesToMatch`); the rest (lobby actions, a leave, chat in a lobby,
+  the profile, problem reports) to the central server, on the session that stays open beside it.
+  Packets to either count from one sequence number: each server sees its share still in order.
+- **Leaving.** A player who leaves (Esc twice) tells the central server, whose lobby tells the match
+  server ("remove"), and closes the match connection; one whose match connection drops, or who never
+  connects within 30s, is taken out of the match by the match server, which tells the central server
+  ("left"). Either way they are out of the match and the lobby, as on one server. A client whose match
+  connection drops while it plays is back in the lobby browser (`lobbyClosedListener`). The last
+  human leaving abandons the match ("abandon"); leaving practice ends it scored ("end").
+- **The end.** The match server scores it (`MatchScoring`: GAME_OVER and a SCORE_ENTRY each, to its
+  players) and sends the outcome with the match's journal ("ended"). The central server keeps the
+  results and the ratings (`MatchEnd.recordRemote`, then a ranked player's STATS on their session),
+  keeps the journal for a problem report about the match, takes the lobby down and says "recorded";
+  only then does the match server send SCORE_END (10s at most waiting for it, which holds up nothing
+  else it plays), and two seconds later it closes its players' connections and its slots are free
+  again ("released"), for the next match.
+- **A match server going away** (its link closed) ends every match it played without a result: the
+  central server takes their lobbies down, and the clients, their match connections dropped, are
+  back in the browser. **The central server going away** does the same from the other side: the
+  match server stops every match it plays, lets their players go and dials again.
+- **Draining.** Told to stop (SIGTERM: Kubernetes deleting its pod), a match server takes no new
+  match (it says "draining", and the central server hands it none; one already on its way it gives
+  back) and plays the ones it has to their end, `--drain-seconds` at most, then stops. In Agones it
+  is Allocated while it plays anything, which a fleet scaling down leaves be, and Ready while it
+  plays nothing, which it may take away; its `matches` counter says how many slots it has taken, and
+  the autoscaler keeps enough of them free (ops/kubernetes).
+
+Not covered yet: a match survives neither end restarting (the central server keeps its lobbies in
+memory, and nothing yet sets a running match back up with it when either comes back); a problem
+report about a match still being played is kept without the match server's journal (one about a
+match that has ended has it); a client whose match connection drops can't rejoin the match (its
+ticket would still be good: the client doesn't try); a match server's session isn't renewed (a match
+is shorter than a token's hour); and the central server is one process, so it is the limit on logins
+and lobbies however many match servers there are. Behind one NAT (kind on a laptop) every player has
+the same address, which the per-address limits can't tell apart: `GRIDGAME_CONNECTIONS_PER_MINUTE`
+raises the connection limit there, and a real cluster's Service keeps players' own addresses
+(`externalTrafficPolicy: Local`, ops/kubernetes). `MatchServerTest` (e2e: a central server, match
+servers and real clients over loopback: a match played, kept and played again, practice with its
+bots, a ranked duel rated, leaving, a dropped connection, a match server going away, a match waiting
+for one and giving up, a bad secret, a bad ticket; two matches at once on one match server, each its
+own, one ending as the other plays on; a match waiting for room on a full one; a player who left one
+match for another on the same server playing on as the first lets its players go; a draining match
+server handed nothing new and stopping once its match is over) and `MatchDirectorTest` (the central
+server's side against match servers the test scripts: packed, given back, waiting for room, drained,
+a match bigger than a match server, every match of one that goes away lost) pin the rest.

@@ -308,6 +308,26 @@ The suites:
 - `RosterSweepTest` (strict) — the whole roster at once, a match on every map: every character's
   primary (charged if it charges), burst, Q and E, cast as a player casts them, each one taken by the
   server. A character whose two ends disagree about an attack fails here by name.
+- `MatchServerTest` — matches on match servers (design/networking.md, *Match servers*), over real
+  sockets: a central server with a control port, `MatchServer`s dialing it, and clients as the app
+  makes them. A match handed out, joined with tickets, walked, fired and chatted in there, scored there
+  and kept by the central server, and a second one on the same match server; practice with its bots,
+  left to its results; a ranked duel found by the queue and rated; a leaver and a dropped match
+  connection out of the match and the lobby; a match server going away and its players back in the
+  browser; a match waiting for a match server, and giving up; a match server without the secret never
+  registered; a made-up ticket refused; two matches at once on one match server, each its own (its
+  players, what they see), one ending as the other plays on; a match waiting for room on a full one;
+  a player who left one match for another on the same match server playing on as the first lets its
+  players go (it used to end every one of its players' sessions, the new match's too); a draining
+  match server handed nothing new and stopping once its match is over. `MatchDirectorTest` (server/,
+  in package `server.cluster`) is the central server's side alone, against match servers the test
+  scripts over real control links: matches packed onto the fullest with room, one given back handed
+  to another first in line, a match waiting for room and taking it as another is released, a
+  draining one handed nothing, a match bigger than a whole match server played on an empty one,
+  every match of one that goes away lost; and what a match costs in slots. `cluster_smoke` (a binary
+  beside it, not a test) plays the same against a running cluster (ops/kubernetes/CLAUDE.md), and
+  `load_driver` (another) loads one stage by stage, for measuring what a match server plays at once
+  (ops/kubernetes/CLAUDE.md, *How many matches a match server plays*).
 - `RealNetworkTest` — what the loopback leaves out: a server listening on loopback (TLS, length
   framing, UDP on the same port, its matches on their own clocks) and clients connecting as the app
   does (`NetworkThread`, the identity pinned, heartbeats). Two sign up, meet, see each other walk and

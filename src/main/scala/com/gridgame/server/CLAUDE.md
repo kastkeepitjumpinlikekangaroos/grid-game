@@ -10,12 +10,16 @@ account  logins, profiles, the leaderboard (AuthDatabase: SQLite)          (net)
 game     one running match                                                 (net)
 bots     the bots playing in a match                                       (game)
 lobby    lobbies, the ranked queue, starting a match                       (game, bots)
+cluster  matches on match servers of their own                             (lobby, game, bots)
 .        GameServer, ChatRelay, MatchEnd, ProblemReports, ServerMain       (all of them)
 ```
 
 Lower layers reach the ones above them only through small traits they own: `PacketRouter` (what
 net hands a checked packet to), `MatchHost` (what a match needs of the server), `MatchBots` (a
-match's bots), `LobbyHost` (what the lobbies need). `GameServer` implements them.
+match's bots), `LobbyHost` (what the lobbies need), `RemoteMatches` (where a lobby's match is played
+when not here), `DirectorHost` (what the match servers' director needs). `GameServer` implements
+them, but `RemoteMatches`, which `MatchDirector` does; a match server (`MatchServer`) implements
+`PacketRouter` and `LobbyHost` of its own.
 
 ## The parts
 
@@ -91,12 +95,33 @@ match's bots), `LobbyHost` (what the lobbies need). `GameServer` implements them
 - **lobby/** — `Lobby` (its seats are taken and resized under its lock: a join, a bot, a switch to
   Teams, the match starting), `LobbyManager` (their CRUD), `LobbyHandler` (lobby actions),
   `RankedQueue` (matchmaking for every ranked mode), `MatchLauncher` (starting a lobby's match the
-  same way for a casual lobby, practice and ranked; one that fails to start leaves nothing running).
+  same way for a casual lobby, practice and ranked; one that fails to start leaves nothing running:
+  `start` plays it on a match server when there are any, `remote`, and `launch` here). A lobby's match
+  is its `gameInstance` when played here, or its `remoteMatch` (`RemoteMatch`: remove a player, end it
+  now, abandon it) when a match server plays it.
+- **cluster/** — matches on match servers of their own (design/networking.md, *Match servers*;
+  ops/kubernetes). `ControlLink` is the link between the central server and a match server (JSON
+  frames over TLS, both ends proving they hold the cluster's secret, every frame MAC'd and numbered),
+  `MatchSpec` what crosses it about a match (the match handed out, with the slots of a match server's
+  capacity it takes, `slotsFor`; its outcome), `MatchDirector` the central server's side (the match
+  servers registered with their capacity, handing each lobby's match to the fullest with room for it,
+  a match given back to another, and its players their `MATCH_ASSIGN` once it has started),
+  `MatchServer` a match server (its own sessions and sockets; as many matches at once as its capacity
+  holds, each launched from its spec with its players seated, each player admitted by their ticket
+  to theirs and what they send routed to it, each scored at its end and sent back, its slots then
+  released; draining as its pod is deleted; a status line every 30s: matches, players, how late the
+  ticks ran, CPU, GC, heap), `Agones` its word with Agones' SDK sidecar (Ready, Allocated while it
+  plays anything, its `matches` counter), and `MatchServerMain` the `match_server` binary. A match
+  server's TLS key is made afresh at every start, in a temporary folder, and named to its players by
+  the central server.
 - **.** — `GameServer` (the parts put together, and routing, and the cleanup loop every 5s: players
   gone quiet, sessions to renew, stale rate-limit and replay state, tickets no upload used, journals
   kept long enough, and hourly the refresh tokens of logins that ran out), `ChatRelay`, `MatchEnd`
   (the end of a match: standings, on kills less deaths, saved results, ratings; the match comes down
-  even if saving them fails — design/match-flow.md), `ProblemReports` (below), `ServerMain`.
+  even if saving them fails — design/match-flow.md; the part that happens where the match is played,
+  stopping it, scoring it and telling its players, is `game/MatchScoring`, and a match server's
+  outcome comes back to `recordRemote`), `ProblemReports` (below), `ServerMain` (`[port]
+  [--control-port=N]`: with a control port, every match is played on match servers).
 
 ## Problem reports
 
@@ -143,9 +168,11 @@ A match runs on its own scheduled executors: the projectile tick every `PROJECTI
 their reach: design/combat.md, *Item Types*), the player tick every 200ms
 (`Vitals.tickPlayers`), the item spawner, a `TIME_SYNC` every 10 seconds, and the respawns; the match ends when its
 deadline fires (`GameInstance.endMatch`, see design/match-flow.md). Packets arrive on Netty's threads
-and are handled there (`ClientHandler`). The UDP socket has an event loop of its own: on one of the TCP
-connections' loops, as it was, every player's steps and shots waited behind whatever that connection
-was doing (a login's password hash, a database query). Every periodic task (the cleanup loop,
+and are handled there (`ClientHandler`). How late each projectile tick runs against the moment it
+was due is counted for the whole process (`TickStats`: a match server's status line says how its
+matches' ticks went, which is what its capacity was measured by). The UDP socket has an event loop
+of its own: on one of the TCP connections' loops, as it was, every player's steps and shots waited
+behind whatever that connection was doing (a login's password hash, a database query). Every periodic task (the cleanup loop,
 matchmaking, a match's ticks, the bots') catches `Throwable`, not just `Exception`: one `Error`
 escaping a scheduled task cancels it for good, silently. `BarrierSnapshot` and `PlayerGrid` belong to the projectile
 tick's thread: anything that reads them (`shelteredFromBlast`, `forEachNearbyPlayer`) must run on it.

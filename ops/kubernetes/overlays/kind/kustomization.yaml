@@ -1,0 +1,36 @@
+# The local kind cluster (kind-cluster.yaml): everything reached on this machine's localhost.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+patches:
+  # No load balancer here: the central server's port on the node, which kind maps to localhost:25570
+  - target: {kind: Service, name: central}
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: central
+        namespace: gridgame
+  - target: {kind: Deployment, name: central}
+    patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/ports/0/hostPort
+        value: 25570
+      - op: add
+        path: /spec/template/spec/containers/0/ports/1/hostPort
+        value: 25570
+      # Every client here comes through Docker's NAT, from one address
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: GRIDGAME_CONNECTIONS_PER_MINUTE, value: "600"}
+  # Players are told 127.0.0.1 (kind maps the node's 26000-26009 there), with the port Agones gave
+  - target: {kind: Fleet, name: match-servers}
+    patch: |
+      - op: add
+        path: /spec/template/spec/template/spec/containers/0/env/-
+        value: {name: GRIDGAME_PUBLIC_HOST, value: "127.0.0.1"}
+      - op: add
+        path: /spec/template/spec/template/spec/containers/0/env/-
+        value: {name: GRIDGAME_CONNECTIONS_PER_MINUTE, value: "600"}

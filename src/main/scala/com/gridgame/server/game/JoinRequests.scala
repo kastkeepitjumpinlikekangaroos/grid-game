@@ -47,17 +47,7 @@ trait JoinRequests { this: ClientHandler =>
       existing.updateHeartbeat()
       journal.note(existing, "rejoined: its client joined again and was sent the match")
 
-      // Send existing players, items, and tile modifications to rejoining player
-      sendExistingPlayers(playerId, existing)
-      sendExistingItems(existing)
-      instance.sendTrapsTo(existing)
-      sendInventoryContents(playerId, existing)
-      instance.sendModifiedTiles(existing)
-      // Its state, with the count of server moves: a client that has lost count of them (a
-      // restarted one starts from zero) picks it up, or all its updates would be taken as stale
-      instance.sendStateToPlayer(existing)
-      instance.sendOpeningTo(existing)
-
+      sendMatchTo(existing)
       true
     } else {
       val charDef = com.gridgame.common.model.CharacterDef.get(packet.getCharacterId)
@@ -102,6 +92,42 @@ trait JoinRequests { this: ClientHandler =>
 
       true
     }
+  }
+
+  /**
+   * A player of the match connecting to the match server playing it (design/networking.md, *Match
+   * servers*): seated when the match was sent there, they have had nothing of it yet. Sent it as a
+   * rejoiner is — which match, the map, then their own join (where the server put them, as which
+   * character, on which team) and everyone else's, the items, traps and tiles, their state, the
+   * opening, and the clock — on `tcpChannel`, now theirs.
+   */
+  def admit(player: Player, tcpChannel: Channel): Unit = {
+    val playerId = player.getId
+    outbox.sendVia(instance.matchInfoPacket(), tcpChannel)
+    val wf = instance.worldFile
+    if (wf.nonEmpty) outbox.sendVia(new WorldInfoPacket(outbox.nextSeq(), new File(wf).getName), tcpChannel)
+    validator.resetMovementFence(playerId)
+    registry.rebind(player, tcpChannel)
+    player.updateHeartbeat()
+    journal.note(player, "connected to the match server and was sent the match")
+    outbox.send(new PlayerJoinPacket(outbox.nextSeq(), playerId, player.getPosition, player.getColorRGB,
+      player.getName, player.getHealth, player.getCharacterId, player.getTeamId), player)
+    sendMatchTo(player)
+    outbox.send(instance.timeSyncPacket(), player)
+  }
+
+  /** The match as it stands, to a player (re)joining it. */
+  private def sendMatchTo(player: Player): Unit = {
+    // Everyone else, the items, and tile modifications
+    sendExistingPlayers(player.getId, player)
+    sendExistingItems(player)
+    instance.sendTrapsTo(player)
+    sendInventoryContents(player.getId, player)
+    instance.sendModifiedTiles(player)
+    // Its state, with the count of server moves: a client that has lost count of them (a
+    // restarted one starts from zero) picks it up, or all its updates would be taken as stale
+    instance.sendStateToPlayer(player)
+    instance.sendOpeningTo(player)
   }
 
   private[game] def handlePlayerLeave(packet: PlayerLeavePacket): Boolean = {

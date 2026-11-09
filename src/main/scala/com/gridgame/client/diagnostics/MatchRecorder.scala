@@ -356,7 +356,7 @@ object MatchRecorder {
   def isPrivate(typeId: Byte): Boolean =
     typeId == PacketType.AUTH_REQUEST.id || typeId == PacketType.SESSION_TOKEN.id ||
       typeId == PacketType.REFRESH_TOKEN.id || typeId == PacketType.CHAT_MESSAGE.id ||
-      typeId == PacketType.PROBLEM_REPORT.id
+      typeId == PacketType.PROBLEM_REPORT.id || typeId == PacketType.MATCH_ASSIGN.id
 }
 
 /** What the client knows of us at a moment (StateRecord), filled in by whoever samples it and copied out

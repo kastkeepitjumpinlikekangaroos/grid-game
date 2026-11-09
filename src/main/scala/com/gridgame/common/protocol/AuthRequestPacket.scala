@@ -17,9 +17,14 @@ object AuthAction {
     * (ProblemReportPacket.uploadToken). Not a session: the connection carries that report's bytes and
     * nothing else (design/diagnostics.md, *Sending a report*). */
   val UPLOAD: Byte = 4
+  /** Log in to a match server, for the match the player was sent there to play: the ticket the
+    * server they are logged in to gave them for it (MatchAssignPacket). Not a
+    * login of the account: the connection plays that match and nothing else (design/networking.md,
+    * *Match servers*). */
+  val MATCH_JOIN: Byte = 5
 
   /** The actions that carry a token (a refresh token, or an upload's ticket) rather than a name and a password. */
-  def carriesToken(action: Byte): Boolean = action == REFRESH || action == LOGOUT || action == UPLOAD
+  def carriesToken(action: Byte): Boolean = action == REFRESH || action == LOGOUT || action == UPLOAD || action == MATCH_JOIN
 }
 
 /** What the server accepts for a new account. The client checks the same rules before it sends
@@ -62,6 +67,7 @@ object AuthRules {
  * LOGIN, SIGNUP:    [22-41] username (20 bytes UTF-8)  [42-61] password (20 bytes UTF-8)  [62-63] zero
  * REFRESH, LOGOUT:  [22-53] the refresh token (32 bytes)                                  [54-63] zero
  * UPLOAD:           [22-37] a problem report's upload ticket  [38-53] the report's id         [54-63] zero
+ * MATCH_JOIN:       [22-37] the match ticket                                                [38-63] zero
  * }}}
  */
 class AuthRequestPacket(

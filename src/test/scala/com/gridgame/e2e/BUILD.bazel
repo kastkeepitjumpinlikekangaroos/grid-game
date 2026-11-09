@@ -1,4 +1,4 @@
-load("@rules_scala//scala:scala.bzl", "scala_junit_test", "scala_library")
+load("@rules_scala//scala:scala.bzl", "scala_binary", "scala_junit_test", "scala_library")
 load("//third_party:jvm.bzl", "LWJGL", "NETTY")
 
 # The whole game in one process: real clients and a real server, each end on its own network
@@ -57,4 +57,35 @@ AUDIO_OFF = {"GRIDGAME_AUDIO": "off"}
     ("roster_sweep_test", "RosterSweepTest.scala"),
     # The real sockets the loopback leaves out: a server on loopback, clients connecting as the app does
     ("real_network_test", "RealNetworkTest.scala"),
+    # Matches on a match server of their own: handed out, joined with a ticket, played, kept, let go
+    ("match_server_test", "MatchServerTest.scala"),
 ]]
+
+# Load from real clients, stage by stage, for measuring what a match server plays at once
+# (ops/kubernetes/CLAUDE.md, *How many matches a match server plays*): its deploy jar runs in a container
+# beside the servers' (ops/kubernetes/loadtest.sh)
+scala_binary(
+    name = "load_driver",
+    testonly = True,
+    srcs = ["LoadDriver.scala"],
+    data = ["//worlds:world_files"],
+    main_class = "com.gridgame.e2e.LoadDriver",
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "//src/main/scala/com/gridgame/common",
+    ] + LWJGL + NETTY,
+)
+
+# Matches played against a running central server and its match servers, as players would play them
+# (ops/kubernetes/CLAUDE.md): GRIDGAME_AUDIO=off bazel run //src/test/scala/com/gridgame/e2e:cluster_smoke -- [host] [port] [matches]
+scala_binary(
+    name = "cluster_smoke",
+    testonly = True,
+    srcs = ["ClusterSmoke.scala"],
+    data = ["//worlds:world_files"],
+    main_class = "com.gridgame.e2e.ClusterSmoke",
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "//src/main/scala/com/gridgame/common",
+    ] + LWJGL + NETTY,
+)

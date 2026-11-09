@@ -31,14 +31,30 @@ final class MatchLauncher(host: LobbyHost) {
   @volatile private[server] var startMatch: GameInstance => Unit = _.start()
   @volatile private[server] var startBots: BotController => Unit = _.start()
 
-  /** @param withBots whether the match gets a BotController (a duel has no seats for bots) */
+  /** Where matches are played when not here: null plays every match in this server. */
+  @volatile var remote: RemoteMatches = null
+
+  /**
+   * Start a lobby's match: on a match server if there are any (`remote`), or here. Throws if it
+   * couldn't be started, with nothing of it left running.
+   */
+  def start(lobby: Lobby, withBots: Boolean = true): Unit = {
+    val elsewhere = remote
+    if (elsewhere != null) lobby.remoteMatch = elsewhere.launch(lobby, withBots)
+    else launch(lobby, withBots)
+  }
+
+  /** Play a lobby's match here.
+    * @param withBots whether the match gets a BotController (a duel has no seats for bots) */
   def launch(lobby: Lobby, withBots: Boolean = true): GameInstance = {
     // Resolve world file path
     val worldFileName = WorldRegistry.getFilename(lobby.mapIndex)
     val worldPath = MatchLauncher.resolveWorldPath("worlds/" + worldFileName)
 
     // Create GameInstance and load world (needed for spawn points)
-    val instance = new GameInstance(lobby.id, worldPath, lobby.durationMinutes, host)
+    val instance =
+      if (lobby.matchId != null) new GameInstance(lobby.id, worldPath, lobby.durationMinutes, host, lobby.matchId)
+      else new GameInstance(lobby.id, worldPath, lobby.durationMinutes, host)
     instance.gameMode = lobby.gameMode
     instance.isPractice = lobby.isPractice
     instance.loadWorld()

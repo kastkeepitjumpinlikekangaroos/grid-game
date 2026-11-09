@@ -10,6 +10,20 @@ import java.util.UUID
 /** Telling everyone in the match: each packet serialized once and sent to every player, over the
   * transport its type names — at once, or buffered and flushed at the end of a tick. */
 trait Broadcasts { this: GameInstance =>
+  /**
+   * What the rest of the match is told about a packet the match took from a player. A position
+   * update goes out as the server now has that player, not as the client claimed: where it held
+   * them (frozen, rooted) it held them, and every status effect is on it. Relaying the claim with
+   * four of the eight flags showed a rooted player walking away, and turned a burning, rooted,
+   * slowed or sped-up player's effects off on every step they took.
+   */
+  def relayed(packet: Packet): Packet = packet match {
+    case update: PlayerUpdatePacket =>
+      val player = registry.get(update.getPlayerId)
+      if (player != null) stateUpdate(player) else packet
+    case _ => packet
+  }
+
   def broadcastToInstance(packet: Packet): Unit = {
     broadcastToInstanceExcluding(packet, null)
   }

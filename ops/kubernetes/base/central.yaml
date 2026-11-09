@@ -1,0 +1,86 @@
+# The central server: logins, accounts, lobbies, matchmaking, problem reports. One replica: its
+# lobbies are in its memory and its accounts in SQLite, on the volume beside its TLS identity, which
+# players' clients pin (design/networking.md, layer 1), so it must outlive the pod.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: central-data
+  namespace: gridgame
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: central
+  namespace: gridgame
+spec:
+  replicas: 1
+  # Never two at once: they would share the database and the identity
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: central}
+  template:
+    metadata:
+      labels: {app: central}
+    spec:
+      securityContext:
+        fsGroup: 10001
+      containers:
+        - name: central
+          image: gridgame:dev
+          imagePullPolicy: IfNotPresent
+          # The account database, the identity and the problem reports are kept in the working directory
+          workingDir: /data
+          command: ["java", "-Xms64m", "-Xmx512m", "-jar", "/app/server.jar", "25565", "--control-port=25575"]
+          env:
+            - name: GRIDGAME_CLUSTER_SECRET
+              valueFrom:
+                secretKeyRef: {name: gridgame-cluster, key: secret}
+            - {name: OTEL_SDK_DISABLED, value: "true"}
+          ports:
+            - {name: game-tcp, containerPort: 25565, protocol: TCP}
+            - {name: game-udp, containerPort: 25565, protocol: UDP}
+            - {name: control, containerPort: 25575, protocol: TCP}
+          readinessProbe:
+            tcpSocket: {port: control}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {memory: 1Gi}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: central-data}
+---
+# Where the match servers dial in: inside the cluster only
+apiVersion: v1
+kind: Service
+metadata:
+  name: central-control
+  namespace: gridgame
+spec:
+  selector: {app: central}
+  ports:
+    - {name: control, port: 25575, targetPort: control, protocol: TCP}
+---
+# Where players log in: TLS over TCP and signed UDP on one port. Local: the players' own addresses
+# reach the server, not the node's, which its per-address limits (connections, failed logins) and its
+# check that a player's datagrams come from where their TCP did both need (design/networking.md).
+apiVersion: v1
+kind: Service
+metadata:
+  name: central
+  namespace: gridgame
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  selector: {app: central}
+  ports:
+    - {name: game-tcp, port: 25565, targetPort: 25565, protocol: TCP}
+    - {name: game-udp, port: 25565, targetPort: 25565, protocol: UDP}

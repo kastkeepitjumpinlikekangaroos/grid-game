@@ -202,6 +202,19 @@ class LobbyHandler(host: LobbyHost, lobbyManager: LobbyManager, rankedQueue: Ran
     val lobby = lobbyManager.leaveLobby(playerId)
     if (lobby == null) return
 
+    val elsewhere = lobby.remoteMatch
+    if (lobby.status == LobbyStatus.IN_GAME && elsewhere != null) {
+      // The same, for a match a match server plays: it is told, and comes back with the outcome
+      if (lobby.isPractice) elsewhere.endNow()
+      else {
+        elsewhere.removePlayer(playerId)
+        if (lobby.players.isEmpty) {
+          elsewhere.abandon()
+          lobbyManager.removeLobby(lobby.id)
+        }
+      }
+      return
+    }
     val instance = lobby.gameInstance
     if (lobby.status == LobbyStatus.IN_GAME && instance != null) {
       if (lobby.isPractice) {
@@ -267,7 +280,7 @@ class LobbyHandler(host: LobbyHost, lobbyManager: LobbyManager, rankedQueue: Ran
       lobby.status = LobbyStatus.IN_GAME
     }
 
-    val instance = try launcher.launch(lobby) catch {
+    try launcher.start(lobby) catch {
       case NonFatal(e) =>
         // The match never got going (the launcher has stopped what it started). Left as it was, the
         // lobby stayed "in game" with no match for good, its players stuck in it and its slot gone.
@@ -277,7 +290,8 @@ class LobbyHandler(host: LobbyHost, lobbyManager: LobbyManager, rankedQueue: Ran
         return
     }
 
-    println(s"LobbyHandler: Game started for lobby ${lobby.id} on map ${WorldRegistry.getFilename(lobby.mapIndex)} (${instance.worldFile})")
+    println(s"LobbyHandler: Game started for lobby ${lobby.id} on map ${WorldRegistry.getFilename(lobby.mapIndex)}" +
+      (if (lobby.remoteMatch != null) " (on a match server)" else ""))
   }
 
   private def handleListRequest(player: Player): Unit = {

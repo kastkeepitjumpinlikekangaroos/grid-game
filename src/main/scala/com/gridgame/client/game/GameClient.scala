@@ -56,6 +56,7 @@ object GameClient {
  * Each part of it has a file of its own:
  *
  *  - Connection       connecting, logging in, the heartbeat, the packet thread, sending
+ *  - MatchConnection  the connection to a match server, while a match is played on one
  *  - Lobby            the lobby browser and the lobby room
  *  - Chat             lobby and match chat
  *  - Ranked           the ranked queue
@@ -79,7 +80,7 @@ object GameClient {
  */
 class GameClient(private[game] val serverHost: String, private[game] val serverPort: Int,
                  private[game] val initialWorld: WorldData, var playerName: String = "Player")
-    extends Connection with Lobby with Chat with Ranked with Records with MatchProgress with Opening
+    extends Connection with MatchConnection with Lobby with Chat with Ranked with Records with MatchProgress with Opening
     with WorldState with LocalPlayer with LocalMovement with Attacks with Barriers with OtherPlayers
     with Projectiles with Items with Traps with EventAnimations with ProblemReports {
 
@@ -111,6 +112,7 @@ class GameClient(private[game] val serverHost: String, private[game] val serverP
       case PacketType.TRAP_UPDATE => handleTrapUpdate(packet.asInstanceOf[TrapPacket])
       case PacketType.COOLDOWN_RESET => handleCooldownReset(packet.asInstanceOf[CooldownResetPacket])
       case PacketType.PROBLEM_REPORT => handleProblemReport(packet.asInstanceOf[ProblemReportPacket])
+      case PacketType.MATCH_ASSIGN => handleMatchAssign(packet.asInstanceOf[MatchAssignPacket])
       // The server's word on a player: on us (LocalPlayer), or on anyone else (OtherPlayers)
       case PacketType.PLAYER_UPDATE =>
         val update = packet.asInstanceOf[PlayerUpdatePacket]

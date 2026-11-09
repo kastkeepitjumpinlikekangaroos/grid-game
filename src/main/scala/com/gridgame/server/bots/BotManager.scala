@@ -23,6 +23,9 @@ class BotManager {
     slot
   }
 
+  /** Seat a bot another server made (a match server's lobby, as its server sent it). */
+  def seat(slot: BotSlot): Unit = botSlots.put(slot.id, slot)
+
   def removeBot(id: UUID): Boolean = {
     botSlots.remove(id) != null
   }

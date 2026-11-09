@@ -1,0 +1,82 @@
+# The match servers: an Agones Fleet of GameServers, each playing as many matches at once as its
+# `matches` counter's capacity, in slots (an eight-player match is one: MatchSpec.slotsFor), kept
+# topped up by the autoscaler so that there is always room for the next few matches. Each dials the
+# central server's control port as it starts (GRIDGAME_CENTRAL), registers with its capacity, and is
+# Allocated while it plays anything (so a fleet scaling down leaves it be) and Ready while it plays
+# nothing. Agones gives it the port its players reach it on (TCP and UDP on one number, on its node's
+# address). How many slots, and the pod's size, are measured: ops/kubernetes/CLAUDE.md, *How many
+# matches a match server plays*.
+apiVersion: agones.dev/v1
+kind: Fleet
+metadata:
+  name: match-servers
+  namespace: gridgame
+spec:
+  replicas: 1
+  template:
+    spec:
+      ports:
+        - name: game
+          portPolicy: Dynamic
+          containerPort: 7777
+          protocol: TCPUDP
+      counters:
+        # Slots taken (the match server keeps it), of how many it plays at once: the one number
+        # that says a pod's capacity, which the match server reads as it starts
+        matches:
+          count: 0
+          capacity: 16
+      health:
+        # The JVM, a fresh TLS key and the first word with the central server take a few seconds
+        initialDelaySeconds: 20
+        periodSeconds: 5
+        failureThreshold: 3
+      template:
+        spec:
+          # Deleted (a fleet rolled, a node drained), it takes no new match and plays its own out:
+          # a match is 30 minutes at most
+          terminationGracePeriodSeconds: 1830
+          containers:
+            - name: match-server
+              image: gridgame:dev
+              imagePullPolicy: IfNotPresent
+              # G1 whatever the pod's size (with less than two cores the JVM would pick the serial
+              # collector); its threads sized for the two cores it was measured on, not for every core
+              # of the node it lands on (with no CPU limit it would see them all); the heap half the
+              # memory limit (a full pod's live heap is under 100MB), the rest for its threads and
+              # buffers; and out of memory, out, rather than playing on half broken
+              command: ["java", "-XX:+UseG1GC", "-XX:ActiveProcessorCount=2", "-XX:MaxRAMPercentage=50",
+                        "-XX:+ExitOnOutOfMemoryError", "-jar", "/app/match_server.jar", "--port=7777"]
+              env:
+                - {name: GRIDGAME_CENTRAL, value: "central-control.gridgame.svc.cluster.local:25575"}
+                - name: GRIDGAME_CLUSTER_SECRET
+                  valueFrom:
+                    secretKeyRef: {name: gridgame-cluster, key: secret}
+                - {name: GRIDGAME_DRAIN_SECONDS, value: "1800"}
+                - {name: OTEL_SDK_DISABLED, value: "true"}
+              # Sixteen slots of the busiest matches take 0.25-0.3 of a core and ~250MiB: requested
+              # with room to spare. No CPU limit: its throttling stalls every match on the pod at once
+              # (ops/kubernetes/CLAUDE.md, *How many matches a match server plays*)
+              resources:
+                requests: {cpu: 500m, memory: 512Mi}
+                limits: {memory: 1Gi}
+---
+apiVersion: autoscaling.agones.dev/v1
+kind: FleetAutoscaler
+metadata:
+  name: match-servers
+  namespace: gridgame
+spec:
+  fleetName: match-servers
+  policy:
+    type: Counter
+    counter:
+      key: matches
+      # Free slots kept waiting across the fleet: a lobby starting never waits for a pod to start
+      bufferSize: 8
+      minCapacity: 16
+      maxCapacity: 160
+  sync:
+    type: FixedInterval
+    fixedInterval:
+      seconds: 10

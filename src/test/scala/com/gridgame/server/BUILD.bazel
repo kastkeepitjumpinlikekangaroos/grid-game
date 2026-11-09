@@ -58,6 +58,8 @@ scala_library(
     # The server's TLS identity: made once, kept, the same server at every start
     ("tls_provider_test", "TlsProviderTest.scala", []),
     ("end_game_test", "EndGameTest.scala", []),
+    # The central server handing matches to match servers it scripts: packed, given back, waiting for room, drained
+    ("match_director_test", "MatchDirectorTest.scala", []),
     ("lobby_flow_test", "LobbyFlowTest.scala", ["//worlds:world_files"]),
     ("trap_test", "TrapTest.scala", []),
     ("barrier_test", "BarrierTest.scala", []),
