@@ -1,5 +1,6 @@
 package com.gridgame.server.game
 
+import com.gridgame.common.GameClock
 import com.gridgame.common.model.BarrierCast
 import com.gridgame.common.model.CharacterDef
 import com.gridgame.common.model.DashBuff
@@ -108,7 +109,7 @@ trait StepRequests { this: ClientHandler =>
     // is the only thing that catches one they went past.
     if (steppedFromX >= 0) {
       instance.applyTrapEvents(instance.trapManager.triggerAlong(player, steppedFromX, steppedFromY,
-        pickupPos.getX, pickupPos.getY, System.currentTimeMillis()))
+        pickupPos.getX, pickupPos.getY, GameClock.now()))
     }
 
     true
@@ -135,7 +136,7 @@ trait StepRequests { this: ClientHandler =>
       }
     }
     grants.headOption.foreach { case (durationMs, cooldownMs) =>
-      val now = System.currentTimeMillis()
+      val now = GameClock.now()
       val lastEnd = player.getPhasedUntil
       val lastStart = lastEnd - durationMs
       if (lastEnd == 0L || now - lastStart >= cooldownMs - PacketValidator.castToleranceMs(cooldownMs)) {
@@ -170,7 +171,7 @@ trait StepRequests { this: ClientHandler =>
       Seq(charDef.qAbility, charDef.eAbility).collectFirst {
         case a if a.castBehavior.isInstanceOf[BarrierCast] => (a.castBehavior.asInstanceOf[BarrierCast].durationMs, a.cooldownMs)
       }.foreach { case (durationMs, cooldownMs) =>
-        val now = System.currentTimeMillis()
+        val now = GameClock.now()
         val last = player.getBarrierRaisedAt
         if (last == 0L || now - last >= cooldownMs - PacketValidator.castToleranceMs(cooldownMs)) {
           player.raiseBarrier(now, durationMs, packet.aimAngleRadians.toFloat)
@@ -196,7 +197,7 @@ trait StepRequests { this: ClientHandler =>
    * position from the server when it is a server move, so tell it where it is with one.
    */
   private def noteRefused(player: Player): Unit = {
-    val now = System.currentTimeMillis()
+    val now = GameClock.now()
     val since = refusedSince.putIfAbsent(player.getId, now)
     if (since != null && now - since.longValue() >= CORRECTION_AFTER_MS) correctPosition(player)
   }
@@ -204,7 +205,7 @@ trait StepRequests { this: ClientHandler =>
   /** Send the player the position the server has for them, as a server move: their client takes
     * it, and the steps it sent from where it wrongly thought it was are dropped. */
   private def correctPosition(player: Player): Unit = {
-    val now = System.currentTimeMillis()
+    val now = GameClock.now()
     val last = lastCorrectionAt.get(player.getId)
     if (last != null && now - last.longValue() < CORRECTION_INTERVAL_MS) return
     lastCorrectionAt.put(player.getId, now)

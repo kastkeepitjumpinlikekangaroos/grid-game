@@ -1,6 +1,7 @@
 package com.gridgame.server.game
 
 import com.gridgame.common.Constants
+import com.gridgame.common.GameClock
 import com.gridgame.common.model.CharacterDef
 import com.gridgame.common.model.Movement
 import com.gridgame.common.model.TrapCast
@@ -46,7 +47,7 @@ trait TrapRequests { this: ClientHandler =>
     // The dead, the held and the phased cast nothing — but in a phase's last moments, which the
     // client's ends a trip across the wire before ours, as for a shot (ShotRequests)
     if (player.isDead || player.isFrozen) return refuse("dead or held")
-    if (player.getPhasedUntil - System.currentTimeMillis() > PHASED_SHOT_GRACE_MS) return refuse("phased")
+    if (player.getPhasedUntil - GameClock.now() > PHASED_SHOT_GRACE_MS) return refuse("phased")
     // Nor does anyone during a free-for-all's opening ceasefire (MatchOpening)
     if (instance.attacksLocked) return refuse("the opening ceasefire")
 
@@ -80,7 +81,7 @@ trait TrapRequests { this: ClientHandler =>
     if (!validator.validateCast(playerId, slot, ability.cooldownMs)) return refuse("cast too soon")
 
     val placed = instance.trapManager.place(playerId, player.getTeamId, packet.getX, packet.getY,
-      cast.trapType, System.currentTimeMillis())
+      cast.trapType, GameClock.now())
     if (placed == null) return refuse("a trap landed there first")
 
     // A fourth trap takes their oldest away

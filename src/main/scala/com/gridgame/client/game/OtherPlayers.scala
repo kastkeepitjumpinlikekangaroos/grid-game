@@ -192,6 +192,13 @@ trait OtherPlayers { this: GameClient =>
     } else {
       player.setStunnedUntil(0)
     }
+    // Knocked up (a Launch): in the air from when we first heard until the stun under it ends
+    if ((flags2 & 0x08) != 0 && (flags2 & 0x01) != 0) {
+      val from = if (player.isAirborne) player.getAirborneFrom else now
+      player.setAirborne(from, player.getStunnedUntil)
+    } else {
+      player.setAirborne(0, 0)
+    }
     // Visual only: the server does the damage. Nothing ticks it here, so it shows until an
     // update without the flag, which the poison's last tick always sends.
     if ((flags2 & 0x02) != 0) {
@@ -259,6 +266,7 @@ trait OtherPlayers { this: GameClient =>
         player.setGemBoostUntil(0)
         player.setFrozenUntil(0)
         player.setStunnedUntil(0)
+        player.setAirborne(0, 0)
         player.setPhasedUntil(0)
         player.setRootedUntil(0)
         player.setSpeedBoostUntil(0)

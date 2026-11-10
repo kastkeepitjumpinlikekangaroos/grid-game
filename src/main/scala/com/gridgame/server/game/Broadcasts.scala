@@ -1,5 +1,6 @@
 package com.gridgame.server.game
 
+import com.gridgame.common.GameClock
 import com.gridgame.common.model._
 import com.gridgame.common.observability.Attrs
 import com.gridgame.common.observability.Metrics
@@ -82,7 +83,7 @@ trait Broadcasts { this: GameInstance =>
 
   def broadcastTileUpdate(playerId: UUID, x: Int, y: Int, tileId: Int): Unit = {
     modifiedTiles.put((x, y), tileId)
-    tileChangedAt.put((x, y), System.currentTimeMillis())
+    tileChangedAt.put((x, y), GameClock.now())
     val packet = new TileUpdatePacket(
       outbox.nextSeq(),
       playerId,

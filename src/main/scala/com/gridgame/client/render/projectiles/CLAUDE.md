@@ -179,8 +179,11 @@ two problems:
 ## Terrain: stopped by it, or flying over it
 
 **Collision cells match the drawn tiles.** The renderer draws tile `(c, r)` centred on world
-`(c, r)`, so it covers `[c − 0.5, c + 0.5)`; `Projectile.getCellX/Y` is `floor(x + 0.5)` to
-match. It used to truncate (`x.toInt`), which put every wall half a tile down-screen of its
+`(c, r)`, so it covers `[c − 0.5, c + 0.5)`; `Projectile.getCellX/Y` is the cell round it to
+match, and exactly on the line between two cells the one the shot is flying into
+(`Projectile.cellEntered`, by its heading: design/combat.md, *Where a hit lands*), which the
+client's own walk to a wall's face asks the same way (`TerrainImpact.cellToward`). It used to
+truncate (`x.toInt`), which put every wall half a tile down-screen of its
 sprite: shots heading toward the camera sank halfway into wall blocks (and, bucketed into the
 wall's own draw slot, were drawn *over* the block face) before vanishing, shots heading away
 stopped short, and projectiles flew half a tile off the bottom edges of the map.

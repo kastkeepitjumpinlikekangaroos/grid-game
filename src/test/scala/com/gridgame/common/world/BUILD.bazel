@@ -10,3 +10,17 @@ scala_junit_test(
         "@maven//:junit_junit",
     ],
 )
+
+# A map's JSON read layer type by layer type (every map in worlds/ is one grid layer), and every
+# cell of every map a tile the game has
+scala_junit_test(
+    name = "world_loader_test",
+    srcs = ["WorldLoaderTest.scala"],
+    data = ["//worlds:world_files"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:com_google_code_gson_gson",
+        "@maven//:junit_junit",
+    ],
+)

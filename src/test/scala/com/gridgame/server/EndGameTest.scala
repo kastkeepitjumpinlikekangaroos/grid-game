@@ -124,6 +124,101 @@ class EndGameTest {
     } finally { failing.close(); file.delete() }
   }
 
+  /** A match end with a database of the test's own, and two players with accounts in it (a rating
+    * is an account's): the first of them has killed the second. */
+  private def withAccounts(saveAlso: () => Unit = () => ())(body: (MatchEnd, AuthDatabase, Player, Player, Lobby) => Unit): Unit = {
+    val file = java.io.File.createTempFile("gridgame-end", ".db")
+    var saves = 0
+    val db = new AuthDatabase(file.getAbsolutePath) {
+      override def saveMatch(mapIndex: Int, durationMinutes: Int, results: Seq[com.gridgame.server.account.MatchRow], matchType: Byte, playerCount: Int): Long = {
+        saves += 1
+        if (saves == 1) saveAlso()
+        super.saveMatch(mapIndex, durationMinutes, results, matchType, playerCount)
+      }
+    }
+    val matchEnd = new MatchEnd(server.lobbyManager, db, server.outbox, server.getConnectedPlayer, _ => ())
+    try {
+      assertTrue(db.register("ends_first", "a password"))
+      assertTrue(db.register("ends_second", "a password"))
+      val a = m.join(CharacterId.Gladiator, 10, 10, id = db.getOrCreateUUID("ends_first"))
+      val b = m.join(CharacterId.Wizard, 20, 20, id = db.getOrCreateUUID("ends_second"))
+      val lobby = lobbyFor(a, b)
+      m.instance.killTracker.recordKill(a.getId, b.getId)
+      body(matchEnd, db, a, b, lobby)
+    } finally { db.close(); file.delete() }
+  }
+
+  @Test def aRankedMatchMovesItsPlayersRatings(): Unit = withAccounts() { (matchEnd, db, a, b, lobby) =>
+    assertEquals((1000, 1000), (db.getEloByUUID(a.getId), db.getEloByUUID(b.getId)))
+    lobby.isRanked = true
+    matchEnd.endGame(lobby.id)
+    val (won, lost) = (db.getEloByUUID(a.getId), db.getEloByUUID(b.getId))
+    assertTrue(s"the winner's goes up: $won", won > 1000)
+    assertTrue(s"the loser's down: $lost", lost < 1000)
+    assertEquals("by as much", 2000, won + lost)
+  }
+
+  @Test def aCasualMatchMovesNobodysRating(): Unit = withAccounts() { (matchEnd, db, a, b, lobby) =>
+    // However many of its players have accounts: a rating is only ever played for in a ranked match
+    assertFalse(lobby.isRanked)
+    matchEnd.endGame(lobby.id)
+    assertEquals("saved, as any match is", 1, db.getMatchHistory(a.getId).size)
+    assertEquals((1000, 1000), (db.getEloByUUID(a.getId), db.getEloByUUID(b.getId)))
+  }
+
+  @Test def aRankedMatchWithOneHumanInItMovesNoRating(): Unit = {
+    // Against bots alone there is nobody to take the points from
+    val db = server.authDatabase
+    assertTrue(db.register("ends_alone", "a password"))
+    val alone = new TestMatch()
+    val a = alone.join(CharacterId.Gladiator, 10, 10, id = db.getOrCreateUUID("ends_alone"))
+    val bot = alone.join(CharacterId.Barbarian, 30, 30, id = new UUID(0L, 9003L))
+    val lobby = server.lobbyManager.createLobby(a.getId, "end", 0, 5, 8)
+    lobby.gameInstance = alone.instance
+    lobby.status = LobbyStatus.IN_GAME
+    lobby.isRanked = true
+    alone.instance.killTracker.recordKill(a.getId, bot.getId)
+    server.endGame(lobby.id)
+    assertEquals("saved", 1, db.getMatchHistory(a.getId).size)
+    assertEquals(1000, db.getEloByUUID(a.getId))
+  }
+
+  @Test def twoEndsAtOnceScoreAndSaveTheMatchOnce(): Unit = {
+    // The match's timer and a practice player leaving can both get to the end with the lobby still
+    // there. The second arrives here as the first is saving the match: it must find it ending
+    var matchEnd: MatchEnd = null
+    var lobbyId: Short = 0
+    var again = 0
+    withAccounts(saveAlso = () => { again += 1; matchEnd.endGame(lobbyId) }) { (end, db, a, b, lobby) =>
+      matchEnd = end
+      lobbyId = lobby.id
+      lobby.isRanked = true
+      m.clearSent()
+      end.endGame(lobby.id)
+      assertEquals("(the second end did come, mid-save)", 1, again)
+      assertEquals("saved once", 1, db.getMatchHistory(a.getId).size)
+      assertEquals("everyone told once that it is over", 1, scoreboard(m.tcpSent(a)).count(_.getEventType == GameEvent.GAME_OVER))
+      val (won, lost) = (db.getEloByUUID(a.getId), db.getEloByUUID(b.getId))
+      assertEquals("and rated once", 2000, won + lost)
+      val once = com.gridgame.common.model.MatchResults.eloChanges(Seq(
+        (PlayerResult(a.getId, 1, 0, 1), 1000), (PlayerResult(b.getId, 0, 1, 2), 1000)))
+      assertEquals(once(a.getId)._2, won)
+    }
+  }
+
+  @Test def theMinutesItWasPlayedAreSavedWithAMatchRoundedAndOneAtLeast(): Unit = {
+    for ((playedMs, minutes) <- Seq(20000L -> 1, 89000L -> 1, 91000L -> 2, 150000L -> 3, 299000L -> 5)) Sim() { clock =>
+      val sim = new SimMatch(clock, minutes = 5)
+      val a = sim.join(CharacterId.Gladiator, 10, 10)
+      val lobby = server.lobbyManager.createLobby(a.getId, "timed", 0, 5, 8)
+      lobby.gameInstance = sim.instance
+      lobby.status = LobbyStatus.IN_GAME
+      clock.advance(playedMs)
+      ServerTestKit.quietly(server.endGame(lobby.id))
+      assertEquals(s"${playedMs / 1000}s played", minutes, server.authDatabase.getMatchHistory(a.getId).head._3)
+    }
+  }
+
   @Test def everyonesCharacterIsSavedBotsAndLeaversIncluded(): Unit = {
     val a = m.join(CharacterId.Gladiator, 10, 10)
     val bot = m.join(CharacterId.Barbarian, 20, 20, id = new UUID(0L, 9001L))

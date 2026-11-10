@@ -66,7 +66,7 @@ names what it may use). The Maven jars are grouped in `third_party/jvm.bzl`.
 ```
 src/main/scala/com/gridgame/
 ├── common/        shared by the server, the client and the tools
-│   ├── (core)     Constants, WorldRegistry, BuildInfo (which build this is)
+│   ├── (core)     Constants, WorldRegistry, BuildInfo (which build this is), GameClock (the clock the rules run on)
 │   ├── model/     the game's rules as data and plain logic: characters (roster/), projectiles,
 │   │              effects, players, tiles, the world, barriers, traps, movement, teleports
 │   ├── protocol/  the wire: 22 packet types, signing

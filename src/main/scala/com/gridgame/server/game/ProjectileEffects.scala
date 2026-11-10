@@ -1,5 +1,6 @@
 package com.gridgame.server.game
 
+import com.gridgame.common.GameClock
 import com.gridgame.common.model._
 import com.gridgame.common.observability.Attrs
 import com.gridgame.common.observability.Metrics
@@ -80,6 +81,9 @@ trait ProjectileEffects { this: GameInstance =>
 
           case Stun(durationMs) =>
             if (target.tryStun(durationMs)) holdByServer(target)
+
+          case Launch(durationMs) =>
+            if (target.tryLaunch(durationMs)) holdByServer(target)
 
           case TeleportOwnerBehind(distance, freezeDurationMs) =>
             if (target.tryFreeze(freezeDurationMs)) holdByServer(target)
@@ -191,6 +195,7 @@ trait ProjectileEffects { this: GameInstance =>
         pDef.onHitEffects.foreach {
           case Freeze(durationMs) => if (aoeTarget.tryFreeze(durationMs)) heldHere = true
           case Stun(durationMs) => if (aoeTarget.tryStun(durationMs)) heldHere = true
+          case Launch(durationMs) => if (aoeTarget.tryLaunch(durationMs)) heldHere = true
           case Root(durationMs) => if (aoeTarget.tryRoot(durationMs)) heldHere = true
           case Slow(durationMs, multiplier) => aoeTarget.trySlow(durationMs, multiplier)
           case Burn(totalDamage, durationMs, tickMs) => aoeTarget.applyBurn(totalDamage, durationMs, tickMs, projectile.ownerId)
@@ -252,7 +257,7 @@ trait ProjectileEffects { this: GameInstance =>
       case Some(SpeedBoost(durationMs)) =>
         val owner = registry.get(projectile.ownerId)
         if (owner != null && !owner.isDead && castsAsSlam(owner, projectile.projectileType)) {
-          owner.setSpeedBoostUntil(System.currentTimeMillis() + durationMs)
+          owner.setSpeedBoostUntil(GameClock.now() + durationMs)
           broadcastToInstance(stateUpdate(owner))
           // And to the caster over TCP: their client walks the boost by what the server says of
           // it, and the update above is a datagram
@@ -276,7 +281,7 @@ trait ProjectileEffects { this: GameInstance =>
   private def boostOwner(projectile: Projectile, durationMs: Int): Unit = {
     val owner = registry.get(projectile.ownerId)
     if (owner != null && !owner.isDead) {
-      owner.setSpeedBoostUntil(System.currentTimeMillis() + durationMs)
+      owner.setSpeedBoostUntil(GameClock.now() + durationMs)
       broadcastBuffered(stateUpdate(owner))
       sendStateToPlayer(owner) // reliably, as a cast's boost is (applyCastSelfBuff)
     }

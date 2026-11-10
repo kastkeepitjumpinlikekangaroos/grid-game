@@ -15,13 +15,19 @@ Projectiles are defined in `ProjectileDef.scala` with extensive customization:
   types with a pierce of 1 never pierced. The server tells clients about a hit it flies on from
   with `ProjectileAction.PIERCE`, so they keep drawing it
 - **Boomerang** — returns to owner after max range
-- **Ricochet** — bounces off walls (`ricochetCount`)
+- **Ricochet** — bounces off walls `ricochetCount` times and stops at the next. A bounce is a
+  quarter turn away from the wall, not a mirror's reflection (at 45 degrees they are the same):
+  the shot keeps going the way it was along the wall. Square on it has no such way, and turns
+  north off a wall to its east or west and west off one to its north or south; into a corner, or
+  onto the outside of one from the diagonal, it goes back the way it came (`Projectile.ricochet`).
+  Never off a fence or the map's edge, and a shot that flies through walls meets none to bounce
+  off, so none is given any. `RicochetTest`
 - **AoE splash** — area damage on hit or at max range, with an optional freeze, stun or root
 - **Explosions** — center/edge damage with blast radius
 - **Pass-through** — can ignore players or walls
 
 ## On-Hit Effects
-12 effect types applied when projectiles hit players. A def carries one in `onHitEffect` and any
+13 effect types applied when projectiles hit players. A def carries one in `onHitEffect` and any
 more in `alsoOnHit` (a dart that poisons and slows, a horn that knocks back and stuns): everything
 reads `ProjectileDef.onHitEffects`, both in order, direct hits and blasts alike. The Vampire's Bat
 Swarm freeze used to be a special case in `GameInstance`; it is an effect in its def now.
@@ -30,7 +36,7 @@ Swarm freeze used to be a special case in `GameInstance`; it is an effect in its
 its `explosionConfig` blast, which applies no on-hit effect, so the Inferno's Inferno Blast and the
 Pilot's Napalm Strike have never burned anyone. A splash (`aoeOnHit`, `aoeOnMaxRange`) does apply
 them to everyone it catches, which is why the Chef's Flambé is a splash.
-- `Freeze(durationMs)`, `Stun(durationMs)`, `Root(durationMs)`, `Slow(durationMs, multiplier)`
+- `Freeze(durationMs)`, `Stun(durationMs)`, `Launch(durationMs)`, `Root(durationMs)`, `Slow(durationMs, multiplier)`
 - `Burn(totalDamage, durationMs, tickMs)`, `Poison(totalDamage, durationMs, tickMs)`
 - `Push(distance)`, `PullToOwner`, `VortexPull(radius, pullStrength)`
 - `LifeSteal(healPercent)`, `SpeedBoost(durationMs)`, `TeleportOwnerBehind(distance, freezeDurationMs)`
@@ -41,6 +47,14 @@ after it, so every "is frozen" gate in the server, the client and the bots holds
 player without knowing stuns exist. All `stunnedUntil` adds is which of the two the client
 draws — stars round the head instead of frost (`StatusEffectPainter.drawStunnedEffect`). Splashes
 carry one through `AoESplashConfig.stunDurationMs`, beside `freezeDurationMs`/`rootDurationMs`.
+
+**A launch is a stun in the air.** `Launch` knocks its target up for as long as it stuns them
+(`Player.tryLaunch`: `tryStun`, the same rules and CC immunity, and `airborneUntil` set to the
+stun's end). Every update about them carries flags2 bit 3 beside the stun's, and every client draws
+them lifted off their shadow on an arc (`PlayerPainter.airLift`: up fast, hanging, down as the stun
+ends, 30 units at the top), the stun's stars over them. It is drawn only: nothing in the air dodges
+or is hit any differently. The Samurai's Crescent Cut is the one in the roster (1s).
+`MeleeKitsTest`, `GameClientStatusTest`.
 
 **A poison is a second damage-over-time slot, not a second kind of burn.** It has its own
 ticks and owner on `Player`, so a poison and a burn run at once — sharing burn's slot,
@@ -57,7 +71,11 @@ while poisoned, between its ticks as well as on them.
 It times out on the clock (`isBurning` is `now < burnUntil`) and schedules each tick from when
 the last one actually landed, so on a 200ms server tick every bite is late, the last falls after
 the deadline, and the per-tick split truncates: the roster's burns deal 60-80% of their totals
-(`Burn(15, 3000, 750)` does 9, `Burn(12, 3000, 750)` 9, `Burn(20, 4000, 800)` 16). Tune burns
+(`Burn(15, 3000, 750)` does 9, `Burn(12, 3000, 750)` 9, `Burn(20, 4000, 800)` 16). What one
+deals is `Burn.dealt` (its bites on the player tick, `Constants.PLAYER_TICK_MS`, times what each
+takes), which is the number the character panel shows and an ability's description must give
+(`AbilityDescriptionTest`; the Rune Trap said 40 for a burn that takes 56); `TimedEffectsTest`
+holds every burn in the roster to it, bite by bite, whenever in the tick it lands. Tune burns
 by what they deal, or move them onto the poison's rules and retune. Regen is off for as long as
 a burn lasts, as for a poison. It used to be off only on the ticks the burn bit, and at a melee
 character's 3 HP a second regen healed most of a burn back between bites.
@@ -121,11 +139,26 @@ empty-handed (client/render/projectiles/CLAUDE.md, *Pulls are tied to whoever is
 
 ## Where a hit lands
 
-- **Projectile collision uses the drawn tile extents** — `Projectile.getCellX/Y` is
-  `floor(x + 0.5)` because tiles are drawn centred on integer coordinates. Truncating put
+- **Projectile collision uses the drawn tile extents** — `Projectile.getCellX/Y` is the cell
+  round `x`, `y` (tiles are drawn centred on integer coordinates). Truncating put
   walls and map edges half a tile off their sprites, which is what made projectiles glitch
   into walls and off the map. A stopped projectile then sinks into the face it struck rather
   than blinking out, and wall-passers are drawn flying over the terrain.
+- **On the line between two cells, a shot is in the one it is flying into**
+  (`Projectile.cellEntered`, by its heading on that axis). A shot at a whole cell a tick lands on
+  those lines exactly, every other sub-step, and `floor(x + 0.5)` gave the line to the cell east
+  and south of it whichever way the shot was going: flying east or south it stopped at a wall's
+  face, flying west or north half a cell inside it, where an explosive then went off, on the far
+  side of a one-cell wall from its target as often as not. The client asks the same question
+  (`TerrainImpact.cellToward`, `NetProjectile`). Found by turning scenes eight ways
+  (`SymmetryTest`), which is also what holds the next two.
+- **A line of sight that only grazes a corner is not blocked by it.** `terrainBetween` looks
+  along the way from a shot to a player in quarter cells; a sample that falls exactly where four
+  cells meet belongs to none of them, and was given to the south-east one, so the same shot at the
+  same player past the same corner was a hit from one side and sheltered from the other.
+- **Of two as near as each other, a shot strikes the same one wherever they stand.** One either
+  side of its line, at the same distance to the hundredth: the one with the lower id, where it was
+  whichever the grid listed first, which went by where on the map they stood.
 - **Players are hit at the centre of their cell** — for the same reason: a player is drawn,
   and fires from, world `(x, y)`, so hits, splash, blasts and slams measure to there
   (`Projectile.withinPlayer` / `distanceToPlayer`). Measured from `(x + 0.5, y + 0.5)`, a shot

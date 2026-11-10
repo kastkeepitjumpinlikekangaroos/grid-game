@@ -63,6 +63,7 @@ trait TrapEffects { this: GameInstance =>
     var held = false
     tDef.effects.foreach {
       case Stun(durationMs) => if (victim.tryStun(durationMs)) held = true
+      case Launch(durationMs) => if (victim.tryLaunch(durationMs)) held = true
       case Freeze(durationMs) => if (victim.tryFreeze(durationMs)) held = true
       case Root(durationMs) => if (victim.tryRoot(durationMs)) held = true
       case Slow(durationMs, multiplier) => victim.trySlow(durationMs, multiplier)

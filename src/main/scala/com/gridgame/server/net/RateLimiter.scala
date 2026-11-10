@@ -1,5 +1,6 @@
 package com.gridgame.server.net
 
+import com.gridgame.common.GameClock
 import io.netty.channel.Channel
 
 import java.net.InetAddress
@@ -80,12 +81,13 @@ class RateLimiter {
   def allowAuthAttempt(address: InetAddress): Boolean = {
     val tracker = authFailures.computeIfAbsent(address, _ => new AuthTracker())
     tracker.synchronized {
-      val now = System.currentTimeMillis()
+      val now = GameClock.now()
       val failures = tracker.failures.get()
       if (failures >= MAX_AUTH_FAILURES) {
-        // Exponential backoff: 30s, 60s, 120s, 240s... capped at 1 hour
+        // Exponential backoff: 30s, 60s, 120s, 240s... capped at 1 hour (the eighth batch's 64
+        // minutes: stopped at the seventh's doubling, the longest wait was 32 minutes, not the hour)
         val cooldownBatch = (failures / MAX_AUTH_FAILURES) - 1
-        val cooldown = Math.min(BASE_COOLDOWN_MS << Math.min(cooldownBatch, 6), MAX_COOLDOWN_MS)
+        val cooldown = Math.min(BASE_COOLDOWN_MS << Math.min(cooldownBatch, 7), MAX_COOLDOWN_MS)
         if (now - tracker.lastFailureTime.get() > cooldown) {
           // Cooldown expired — allow one more batch but keep progressive penalty
           true
@@ -104,7 +106,7 @@ class RateLimiter {
     val tracker = authFailures.computeIfAbsent(address, _ => new AuthTracker())
     tracker.synchronized {
       tracker.failures.incrementAndGet()
-      tracker.lastFailureTime.set(System.currentTimeMillis())
+      tracker.lastFailureTime.set(GameClock.now())
     }
   }
 
@@ -113,7 +115,7 @@ class RateLimiter {
   }
 
   def cleanup(): Unit = {
-    val now = System.currentTimeMillis()
+    val now = GameClock.now()
     val staleThreshold = 60000L
 
     cleanupMap(udpCounts, now, staleThreshold)
@@ -141,11 +143,11 @@ class RateLimiter {
 }
 
 private class WindowCounter {
-  val windowStart = new AtomicLong(System.currentTimeMillis())
+  val windowStart = new AtomicLong(GameClock.now())
   val count = new AtomicInteger(0)
 
   def allowAndIncrement(maxCount: Int, windowMs: Long): Boolean = synchronized {
-    val now = System.currentTimeMillis()
+    val now = GameClock.now()
     if (now - windowStart.get() > windowMs) {
       windowStart.set(now)
       count.set(1)

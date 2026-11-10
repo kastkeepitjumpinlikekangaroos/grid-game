@@ -3,6 +3,7 @@ package com.gridgame.server.game
 import com.gridgame.server.net.ReplayGuard
 
 import com.gridgame.common.Constants
+import com.gridgame.common.GameClock
 import com.gridgame.common.model.AbilityDef
 import com.gridgame.common.model.Cast
 import com.gridgame.common.model.CharacterDef
@@ -114,7 +115,7 @@ object PacketValidator {
     * dash's first update arrived, and on a bad link a step sent near its end can arrive after the
     * server's is over, still crossing the wall the dash goes over. */
   private def isDashing(player: Player, charDef: CharacterDef): Boolean =
-    System.currentTimeMillis() - player.getPhasedUntil < Constants.NETWORK_TOLERANCE_MS && hasDash(charDef)
+    GameClock.now() - player.getPhasedUntil < Constants.NETWORK_TOLERANCE_MS && hasDash(charDef)
 
   private def hasDash(charDef: CharacterDef): Boolean = charDef != null &&
     (charDef.qAbility.castBehavior.isInstanceOf[DashBuff] || charDef.eAbility.castBehavior.isInstanceOf[DashBuff])
@@ -246,7 +247,7 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     // judged on the credit of the network's tolerance (NETWORK_TOLERANCE_MS): a step or a few,
     // never the other side of the map. A phased player (a phase shift, or a dash) builds it at
     // their phased pace; a dash, much quicker than that, has its reach below.
-    val now = System.currentTimeMillis()
+    val now = GameClock.now()
     val oldPos = player.getPosition
     val dx = x - oldPos.getX
     val dy = y - oldPos.getY
@@ -343,7 +344,7 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
    */
   def resetAttackClocks(playerId: UUID): Unit = {
     attackClocks.remove(playerId)
-    lifeStartedAt.put(playerId, java.lang.Long.valueOf(System.currentTimeMillis()))
+    lifeStartedAt.put(playerId, java.lang.Long.valueOf(GameClock.now()))
   }
 
   def validateProjectileSpawn(packet: ProjectilePacket, player: Player): Boolean = {
@@ -409,7 +410,7 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     var sinceMs = 0L
     var firedInCast = 0
     val accepted = clock.synchronized {
-      val now = System.currentTimeMillis()
+      val now = GameClock.now()
       if (now - clock.castAt <= castWindowMs(cooldownMs) && clock.fired < perCast) {
         clock.fired += 1
         true
@@ -468,7 +469,7 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     // Nothing to time it from: the first shot of the match, which an opening always holds off
     // for far longer than a charge takes
     if (since <= 0L) return requested
-    val held = System.currentTimeMillis() - since + CHARGE_SLACK_MS
+    val held = GameClock.now() - since + CHARGE_SLACK_MS
     Math.max(0, Math.min(requested, (held * 100 / Constants.CHARGE_MAX_MS).toInt))
   }
 
@@ -481,7 +482,7 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     if (slot < 0 || slot >= SLOT_COUNT) return false
     val clock = attackClocks.computeIfAbsent(playerId, _ => Array.fill(SLOT_COUNT)(new AttackClock))(slot)
     clock.synchronized {
-      val now = System.currentTimeMillis()
+      val now = GameClock.now()
       if (now - clock.cooldownFrom < cooldownMs - castToleranceMs(cooldownMs)) false
       else {
         clock.castAt = now
@@ -515,7 +516,7 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     if (clocks == null) return
     val clock = clocks(slot)
     clock.synchronized {
-      val remaining = clock.cooldownFrom + cooldownMs - System.currentTimeMillis()
+      val remaining = clock.cooldownFrom + cooldownMs - GameClock.now()
       if (remaining > 0) clock.cooldownFrom -= remaining / 2
     }
   }
@@ -529,7 +530,7 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
    * are the player's own (CooldownResetRequests clears those).
    */
   def takeCooldownReset(playerId: UUID, firstFrom: Long): Boolean = {
-    val now = System.currentTimeMillis()
+    val now = GameClock.now()
     var taken = false
     lastCooldownReset.compute(playerId, (_, last) => {
       val cooldown = Constants.COOLDOWN_RESET_MS.toLong
@@ -550,7 +551,7 @@ class PacketValidator(characterOf: Byte => CharacterDef = id => CharacterDef.get
     * (ms; 0 if it could go now). */
   def cooldownResetLeftMs(playerId: UUID, firstFrom: Long): Long =
     Math.max(0L, resetFrom(lastCooldownReset.get(playerId), firstFrom) + Constants.COOLDOWN_RESET_MS -
-      System.currentTimeMillis())
+      GameClock.now())
 
   private def resetFrom(last: java.lang.Long, firstFrom: Long): Long =
     if (last == null) firstFrom else Math.max(firstFrom, last.longValue())

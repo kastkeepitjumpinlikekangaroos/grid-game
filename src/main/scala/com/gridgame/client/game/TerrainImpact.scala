@@ -52,9 +52,10 @@ object TerrainImpact {
 
   final case class Impact(x: Float, y: Float, hitTerrain: Boolean, tileColor: Int)
 
-  /** The cell a world point falls in: tiles are drawn centred on integer coordinates.
-   *  Matches Projectile.getCellX, which the server's collision uses. */
-  @inline def cellOf(v: Float): Int = Math.floor(v + 0.5f).toInt
+  /** The cell a projectile at `v` on one axis, moving along `heading` on it, is in. Tiles are drawn
+    * centred on integer coordinates, and on the line between two cells it is in the one it is
+    * heading into: the cell the server's collision has it in (Projectile.cellEntered). */
+  @inline def cellToward(v: Float, heading: Float): Int = Projectile.cellEntered(v, heading)
 
   /** Does the cell stop a projectile? Terrain it can't cross (not water: Tile.stopsProjectiles),
     * the map's edge, and for one that flies over walls a fence — what the server's collision
@@ -67,7 +68,9 @@ object TerrainImpact {
 
   def resolve(world: WorldData, x: Float, y: Float, dx: Float, dy: Float, passesWalls: Boolean): Impact = {
     if (world == null) return Impact(x, y, hitTerrain = false, 0)
-    val cx = cellOf(x); val cy = cellOf(y)
+    // Where the server stopped it: in the cell it was heading into, which for a shot stopped on a
+    // wall's very face is the wall's and not the one it came from
+    val cx = cellToward(x, dx); val cy = cellToward(y, dy)
     if (!blocks(world, cx, cy, passesWalls)) return Impact(x, y, hitTerrain = false, 0)
     val inside = cx >= 0 && cy >= 0 && cx < world.width && cy < world.height
     val tileColor = if (inside) world.getTile(cx, cy).color else 0
@@ -77,7 +80,7 @@ object TerrainImpact {
     // Back out in 1/20-cell steps; a sub-step never exceeds half a cell, so 2 cells is ample
     var px = x; var py = y
     var n = 0
-    while (n < 40 && blocks(world, cellOf(px), cellOf(py), passesWalls)) {
+    while (n < 40 && blocks(world, cellToward(px, dx), cellToward(py, dy), passesWalls)) {
       px -= ux * 0.05f; py -= uy * 0.05f
       n += 1
     }

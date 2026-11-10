@@ -17,6 +17,7 @@ private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierP
                                           glows: GlowEffectPainter, overlay: WorldOverlayPainter) {
   import ctx._
   import GlowEffectPainter._
+  import PlayerPainter.AirLiftPx
 
   // Remote player movement detection — Java HashMaps avoid Option wrapping
   private val lastRemotePositions = new java.util.HashMap[UUID, Position]()
@@ -35,6 +36,20 @@ private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierP
     shapeBatch.fillOvalSoft(sx, sy, 14f, 6f, 0.01f, 0.005f, 0.03f, 0.45f, 0.12f, 12)
     // Subtle bright ring for visibility on dark terrain
     shapeBatch.strokeOval(sx, sy, 24f, 10f, 1f, 0.7f, 0.7f, 0.8f, 0.12f, 14)
+  }
+
+  /**
+   * How high a player knocked up by a Launch is drawn above their shadow, in world units: up fast,
+   * hanging at the top, and down as the stun under it ends, over however long it lasts. Their
+   * shadow stays on the ground (drawGroundMarks), which is what reads as height.
+   */
+  private def airLift(from: Long, until: Long): Double = {
+    val now = frameTimeMs
+    if (until <= from || now >= until || now < from) 0.0
+    else {
+      val t = (now - from).toDouble / (until - from)
+      AirLiftPx * Math.pow(Math.sin(Math.PI * t), 0.6)
+    }
   }
 
   @inline private def onScreen(sx: Double, sy: Double): Boolean =
@@ -77,7 +92,9 @@ private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierP
 
   def drawPlayer(player: Player, wx: Double, wy: Double): Unit = {
     val screenX = worldToScreenX(wx, wy)
-    val screenY = worldToScreenY(wx, wy)
+    // Lifted off their shadow while knocked up (a Launch)
+    val screenY = worldToScreenY(wx, wy) -
+      (if (player.isAirborne) airLift(player.getAirborneFrom, player.getAirborneUntil) else 0.0)
     val displaySz = Constants.PLAYER_DISPLAY_SIZE_PX
     val spriteCenter = screenY - displaySz / 2.0
 
@@ -208,7 +225,8 @@ private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierP
 
   def drawLocal(wx: Double, wy: Double): Unit = {
     val screenX = worldToScreenX(wx, wy)
-    val screenY = worldToScreenY(wx, wy)
+    val screenY = worldToScreenY(wx, wy) -
+      (if (client.isAirborne) airLift(client.getAirborneFrom, client.getAirborneUntil) else 0.0)
     val displaySz = Constants.PLAYER_DISPLAY_SIZE_PX
     val spriteCenter = screenY - displaySz / 2.0
     val localIsPhased = client.isPhased
@@ -368,4 +386,9 @@ private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierP
     lastRemotePositions.clear()
     remoteMovingUntil.clear()
   }
+}
+
+private[render] object PlayerPainter {
+  /** How high a knocked-up player rises at the top of their arc, in world units (a sprite is 48). */
+  val AirLiftPx: Double = 30.0
 }

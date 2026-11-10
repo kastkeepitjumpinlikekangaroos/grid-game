@@ -1,5 +1,6 @@
 package com.gridgame.server.game
 
+import com.gridgame.common.GameClock
 import com.gridgame.common.model.CharacterDef
 import com.gridgame.common.model.Player
 import com.gridgame.common.model.ProjectileDef
@@ -27,7 +28,7 @@ import java.util.concurrent.ConcurrentHashMap
  * @param enabled false for a journal that keeps nothing (a validator a test makes on its own)
  */
 final class MatchJournal(val matchId: UUID, enabled: Boolean = true,
-                         nanoClock: () => Long = () => System.nanoTime()) {
+                         nanoClock: () => Long = () => GameClock.nanos()) {
   import MatchJournal._
 
   @volatile private var origin: Long = nanoClock()
@@ -220,19 +221,19 @@ final class MatchJournals(keepMs: Long = MatchJournals.KeepMs, maxKept: Int = Ma
   private val kept = new java.util.LinkedHashMap[UUID, (MatchJournal, Long)]()
 
   /** A match has ended: its journal is kept from `now`. */
-  def keep(journal: MatchJournal, now: Long = System.currentTimeMillis()): Unit = synchronized {
+  def keep(journal: MatchJournal, now: Long = GameClock.now()): Unit = synchronized {
     kept.remove(journal.matchId)
     kept.put(journal.matchId, (journal, now))
     evict(now)
   }
 
-  def get(matchId: UUID, now: Long = System.currentTimeMillis()): Option[MatchJournal] = synchronized {
+  def get(matchId: UUID, now: Long = GameClock.now()): Option[MatchJournal] = synchronized {
     evict(now)
     Option(kept.get(matchId)).map(_._1)
   }
 
   /** Forget those kept long enough, and the oldest of too many. */
-  def evict(now: Long = System.currentTimeMillis()): Unit = synchronized {
+  def evict(now: Long = GameClock.now()): Unit = synchronized {
     val it = kept.values().iterator()
     var n = kept.size()
     while (it.hasNext) {

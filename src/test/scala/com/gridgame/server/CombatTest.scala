@@ -137,6 +137,40 @@ class CombatTest {
     assertTrue(failures.mkString("\n"), failures.isEmpty)
   }
 
+  @Test def wallsOfEveryKindShelterWhoeverIsBehindThemAndOnlyAFenceFromWhatFliesOverWalls(): Unit = {
+    // The same, by what stands in the way: everything that stops a shot shelters from it, a wall
+    // as a fence does; what flies over walls is kept off only by a fence, which stops it too
+    val failures = scala.collection.mutable.Buffer[String]()
+    val stops = Tile.all.filter(t => t.stopsProjectiles).take(6) ++ Seq(Tile.Wall, Tile.Fence)
+    for (t <- thrown; tile <- stops.distinct; behind <- 1 to 2) {
+      val d = ProjectileDef.get(t)
+      if (d.speedMultiplier > 0f && !d.passesThroughPlayers && !d.isExplosive && d.aoeOnHit.isEmpty && d.aoeOnMaxRange.isEmpty &&
+          d.maxRange >= 8 && d.ricochetCount == 0) {
+        val m = new TestMatch()
+        val shooter = m.join(CharacterId.Soldier, 20, 30)
+        for (y <- 0 until m.world.height) m.world.setTile(25, y, tile)
+        val sheltered = m.join(CharacterId.Gladiator, 25 + behind, 30)
+        m.tickUntilGone(m.launch(shooter, t, 1f, 0f))
+        val hurt = sheltered.getHealth < sheltered.getMaxHealth
+        val fliesOver = d.passesThroughWalls && tile != Tile.Fence
+        if (hurt != fliesOver) failures += s"${d.name} at someone $behind behind ${tile.name}: ${if (hurt) "hit" else "not hit"}"
+      }
+    }
+    assertTrue(failures.mkString("\n"), failures.isEmpty)
+  }
+
+  @Test def aSlamGoesOffUnderACasterAFenceWasPutDownOn(): Unit = {
+    // It doesn't fly, so the cell it lies on stops nothing of it: fenced in, a caster's slam
+    // still reaches whoever is beside them
+    val slam = CharacterDef.all.flatMap(c => Seq(c.qAbility, c.eAbility).filter(a => a.castBehavior.isInstanceOf[GroundSlam] &&
+      ProjectileDef.get(a.projectileType).aoeOnMaxRange.exists(sp => sp.damage > 0 && sp.radius >= 2.5f)).map(a => (c, a))).head
+    val caster = m.join(slam._1.id, 20, 30)
+    val beside = m.join(CharacterId.Gladiator, 22, 30)
+    m.world.setTile(20, 30, Tile.Fence)
+    m.tickUntilGone(m.launch(caster, slam._2.projectileType, 0f, 0f))
+    assertTrue(s"${slam._1.displayName}'s ${slam._2.name}, cast from inside a fence", beside.getHealth < beside.getMaxHealth)
+  }
+
   @Test def aWallDoesNotShelterAnyoneFromWhatFliesThroughIt(): Unit = {
     // The Reaper's scythe passes through walls, and its reach (2.8) with it
     val reaper = m.join(CharacterId.Reaper, 20, 30)

@@ -1,5 +1,6 @@
 package com.gridgame.server.game
 
+import com.gridgame.common.GameClock
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 
@@ -24,7 +25,8 @@ trait PlayerSync { this: GameInstance =>
   private[server] def playerFlags2(p: Player): Int =
     (if (p.isStunned) 0x01 else 0) |
     (if (p.isPoisoned) 0x02 else 0) |
-    (if (p.hasBarrier) 0x04 else 0)
+    (if (p.hasBarrier) 0x04 else 0) |
+    (if (p.isAirborne) 0x08 else 0)
 
   /** How slow a slow has this player, as a percentage, so their client steps at the real rate. */
   private def slowPercent(p: Player): Int =
@@ -39,7 +41,7 @@ trait PlayerSync { this: GameInstance =>
    */
   private def barrierMsLeft(p: Player): Int =
     if (!p.hasBarrier) 0
-    else Math.max(1L, Math.min(65535L, p.getBarrierUntil - System.currentTimeMillis())).toInt
+    else Math.max(1L, Math.min(65535L, p.getBarrierUntil - GameClock.now())).toInt
 
   /**
    * How long this player's speed boost has left, in ms, so their own client walks it for as long
@@ -49,7 +51,7 @@ trait PlayerSync { this: GameInstance =>
    */
   private def speedBoostMsLeft(p: Player): Int =
     if (!p.hasSpeedBoost) 0
-    else Math.max(1L, Math.min(65535L, p.getSpeedBoostUntil - System.currentTimeMillis())).toInt
+    else Math.max(1L, Math.min(65535L, p.getSpeedBoostUntil - GameClock.now())).toInt
 
   /**
    * How long an effect running until `until` has left, in ms, for bytes [61-63] of an update (0 if
@@ -79,7 +81,7 @@ trait PlayerSync { this: GameInstance =>
     val seq = outbox.nextSeq()
     val serverMoves = p.getServerMoves
     val position = p.getPosition
-    val now = System.currentTimeMillis()
+    val now = GameClock.now()
     new PlayerUpdatePacket(
       seq,
       p.getId,

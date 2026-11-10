@@ -1,5 +1,6 @@
 package com.gridgame.common.protocol
 
+import com.gridgame.common.GameClock
 import java.util.Objects
 import java.util.UUID
 
@@ -24,5 +25,5 @@ abstract class Packet(
 }
 
 object Packet {
-  def getCurrentTimestamp: Int = (System.currentTimeMillis() / 1000).toInt
+  def getCurrentTimestamp: Int = (GameClock.now() / 1000).toInt
 }

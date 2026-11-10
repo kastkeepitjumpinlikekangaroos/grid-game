@@ -11,6 +11,18 @@ import com.gridgame.common.Constants
 object Teleport {
 
   /**
+   * The cell a point `along` cells from the cell `from` on one axis falls in: the nearest, and of
+   * two as near as each other (half a cell on, or one and a half) the further from where it set
+   * out, whichever way it went. A star's line is walked back half a cell at a time, and along a
+   * diagonal every other step of it falls on such a point on both axes at once. Rounded as
+   * Math.round rounds, that point fell to the cell south and east of it wherever the line was
+   * going, so a star stopped by something at the end of its jump landed a cell differently
+   * heading north-east than the same jump did heading south-east (found by SymmetryTest).
+   */
+  def cellAlong(from: Int, along: Double): Int =
+    if (along < 0) from - Math.floor(-along + 0.5).toInt else from + Math.floor(along + 0.5).toInt
+
+  /**
    * Star item: the farthest cell toward the aim point that can be stood on, at most
    * STAR_MAX_DISTANCE (Manhattan) from (fromX, fromY). Aiming past the range, off the map or
    * into a wall lands short along the same line. None when that leaves nowhere to go.
@@ -33,8 +45,8 @@ object Teleport {
     var i = steps
     while (i > 0) {
       val t = i.toDouble / steps
-      val x = Math.round(fromX + ex * t).toInt
-      val y = Math.round(fromY + ey * t).toInt
+      val x = cellAlong(fromX, ex * t)
+      val y = cellAlong(fromY, ey * t)
       if ((x != fromX || y != fromY) && Math.abs(x - fromX) + Math.abs(y - fromY) <= range &&
           world.isWalkable(x, y) && (divider == null || !divider.stops(fromX, fromY, x, y))) {
         return Some(new Position(x, y))

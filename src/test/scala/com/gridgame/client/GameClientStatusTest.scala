@@ -34,6 +34,28 @@ class GameClientStatusTest {
     assertFalse(c.isFrozen)
   }
 
+  private val AIRBORNE2 = 0x08
+
+  @Test def aKnockUpLiftsUsAndThemForAsLongAsTheStun(): Unit = {
+    val them = UUID.randomUUID()
+    t.startMatch(spawn = (20, 20), others = Seq(them -> (25, 25)))
+    t.update(t.id, 20, 20, flags = FROZEN, flags2 = STUNNED2 | AIRBORNE2, heldMs = 1000)
+    t.update(them, 25, 25, flags = FROZEN, flags2 = STUNNED2 | AIRBORNE2, heldMs = 1000)
+    val p = c.getPlayers.get(them)
+    assertTrue("we are in the air", c.isAirborne)
+    assertTrue("and stunned", c.isStunned)
+    assertTrue("so are they", p.isAirborne && p.isStunned)
+    val upAt = c.getAirborneFrom
+    Thread.sleep(20)
+    t.update(t.id, 20, 20, flags = FROZEN, flags2 = STUNNED2 | AIRBORNE2, heldMs = 980)
+    assertEquals("a later update keeps when we went up", upAt, c.getAirborneFrom)
+    assertTrue("down as the stun ends, about a second on", c.getAirborneUntil - upAt > 900 && c.getAirborneUntil - upAt < 1100)
+    t.update(t.id, 20, 20, flags = FROZEN, flags2 = STUNNED2, heldMs = 500)
+    assertFalse("a plain stun is on the ground", c.isAirborne)
+    t.update(them, 25, 25)
+    assertFalse("they land when it ends", p.isAirborne)
+  }
+
   @Test def aPoisonReachesUs(): Unit = {
     t.startMatch(spawn = (20, 20))
     t.update(t.id, 20, 20, flags2 = POISONED2)

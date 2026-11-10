@@ -1,6 +1,7 @@
 package com.gridgame.server.lobby
 
 import com.gridgame.common.Constants
+import com.gridgame.common.GameClock
 import com.gridgame.common.WorldRegistry
 import com.gridgame.common.model.CharacterDef
 import com.gridgame.common.observability.Attrs
@@ -90,11 +91,15 @@ class RankedQueue(host: LobbyHost, lobbyManager: LobbyManager, launcher: MatchLa
 
   private var matchmakingExecutor: ScheduledExecutorService = _
 
+  /** How often the matchmaker looks its queues over, once started: every five seconds, unless a
+    * test would rather not wait that long to see that it does. */
+  @volatile private[server] var passEveryMs: Long = 5000L
+
   def start(): Unit = {
     matchmakingExecutor = Executors.newSingleThreadScheduledExecutor()
     matchmakingExecutor.scheduleAtFixedRate(
       new Runnable { def run(): Unit = checkQueue() },
-      5, 5, TimeUnit.SECONDS
+      passEveryMs, passEveryMs, TimeUnit.MILLISECONDS
     )
 
     // Async gauges expose queue sizes per mode
@@ -132,13 +137,13 @@ class RankedQueue(host: LobbyHost, lobbyManager: LobbyManager, launcher: MatchLa
     }
 
     val m = modeOf(mode)
-    m.add(QueueEntry(playerId, characterId, elo, System.currentTimeMillis(), mode))
+    m.add(QueueEntry(playerId, characterId, elo, GameClock.now(), mode))
     println(s"RankedQueue: Player ${playerId.toString.substring(0, 8)} joined ${m.label} queue (elo=$elo, queue size=${m.waiting.size()})")
     sendQueueStatus(m, playerId)
   }
 
   def removePlayer(playerId: UUID): Unit = {
-    val now = System.currentTimeMillis()
+    val now = GameClock.now()
     modes.foreach { m =>
       val entry = m.remove(playerId)
       if (entry != null) {
@@ -170,7 +175,7 @@ class RankedQueue(host: LobbyHost, lobbyManager: LobbyManager, launcher: MatchLa
     val entry = m.byPlayer.get(playerId)
     if (player == null || entry == null) return
 
-    val waitSeconds = ((System.currentTimeMillis() - entry.joinTime) / 1000).toInt
+    val waitSeconds = ((GameClock.now() - entry.joinTime) / 1000).toInt
     val packet = new RankedQueuePacket(
       host.outbox.nextSeq(), playerId, Packet.getCurrentTimestamp,
       RankedQueueAction.QUEUE_STATUS,
@@ -194,7 +199,7 @@ class RankedQueue(host: LobbyHost, lobbyManager: LobbyManager, launcher: MatchLa
 
   /** One matchmaking pass. Runs every five seconds once started; tests call it themselves, on a
     * clock of their own, so a minute's wait takes no time. */
-  private[server] def checkQueue(now: Long = System.currentTimeMillis()): Unit = {
+  private[server] def checkQueue(now: Long = GameClock.now()): Unit = {
     try {
       checkFullOrWaited(ffa, now)
       checkDuelQueue(now)
@@ -359,7 +364,7 @@ class RankedQueue(host: LobbyHost, lobbyManager: LobbyManager, launcher: MatchLa
       launcher.start(lobby, withBots = m.fillWithBots)
 
       // Emit metrics only after the match has actually been set up successfully
-      val matchedNow = System.currentTimeMillis()
+      val matchedNow = GameClock.now()
       Metrics.queueMatchesMade.add(1L, m.modeAttrs)
       connected.foreach { e =>
         Metrics.queueWaitTime.record((matchedNow - e.joinTime).toDouble / 1000.0, Attributes.of(Attrs.Mode, m.label, Attrs.Outcome, "matched"))

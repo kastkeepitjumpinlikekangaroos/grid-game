@@ -111,7 +111,207 @@ class RankedQueueTest {
     assertEquals(a.lobby, b.lobby)
   }
 
+  private def status(s: TestSession): Seq[(Byte, Int, Int, Int, Byte)] = s.received().collect {
+    case r: RankedQueuePacket if r.getAction == RankedQueueAction.QUEUE_STATUS =>
+      (r.getMode, r.getQueueSize.toInt, r.getElo.toInt, r.getWaitTimeSeconds, r.getCharacterId)
+  }
+
+  /** Someone waiting for a duel with this rating (a rating is an account's: here it is said). */
+  private def duellist(elo: Int, charId: Byte = CharacterId.Soldier.id): TestSession = {
+    val s = player()
+    queue.addPlayer(s.playerId, charId, elo, RankedQueueMode.DUEL)
+    s
+  }
+
+  @Test def aDuelIsMadeOfRatingsWithinTwoHundredAtOnceAndOfAnyTwoOnceOneHasWaitedOverHalfAMinute(): Unit = Sim() { clock =>
+    val (a, b) = (duellist(1000), duellist(1200))
+    quietly(queue.checkQueue())
+    assertNotNull("200 apart: at once", matchOf(a))
+    assertEquals(a.lobby, b.lobby)
+    val (c, d) = (duellist(1000), duellist(1201))
+    quietly(queue.checkQueue())
+    assertNull("201 apart: not yet", c.lobby)
+    clock.advance(30000)
+    quietly(queue.checkQueue())
+    assertNull("half a minute, to the millisecond: not yet", c.lobby)
+    assertTrue(queue.isInQueue(c.playerId) && queue.isInQueue(d.playerId))
+    clock.advance(1)
+    quietly(queue.checkQueue())
+    assertNotNull("a millisecond over: anyone will do", matchOf(c))
+    assertEquals(c.lobby, d.lobby)
+  }
+
+  @Test def ofThreeWaitingForADuelTheTwoNearestInRatingPlayAndTheThirdWaitsOn(): Unit = Sim() { clock =>
+    val (low, mid, high) = (duellist(1000), duellist(1300), duellist(1350))
+    val errors = captureStderr(quietly(queue.checkQueue()))
+    assertEquals("", errors)
+    assertNotNull(matchOf(mid))
+    assertEquals("the two fifty apart", mid.lobby, high.lobby)
+    assertEquals("and nobody else: no bots in a duel", 2, everyoneIn(mid.lobby.gameInstance).size)
+    assertNull(low.lobby)
+    assertTrue("the third waits on", queue.isInQueue(low.playerId))
+    clock.advance(10 * 60000L)
+    assertEquals("alone, however long: a duel has no bots", "", captureStderr(quietly(queue.checkQueue())))
+    assertNull(low.lobby)
+  }
+
+  @Test def threeTooFarApartAllWaitAndThePassGoesOnToTheOtherQueues(): Unit = Sim() { clock =>
+    // With no two of them near enough, the pass looks at every pair and no further: an error in
+    // the duels' pass took the Teams pass after it down with it
+    val waiting = Seq(duellist(1000), duellist(1300), duellist(1700))
+    val Seq(teamsPlayer) = queued(1, RankedQueueMode.TEAMS)
+    clock.advance(60001)
+    waiting.foreach(s => queue.removePlayer(s.playerId))
+    val again = Seq(duellist(1000), duellist(1300), duellist(1700))
+    val errors = captureStderr(quietly(queue.checkQueue()))
+    assertEquals("nothing went wrong", "", errors)
+    assertTrue("none of the three is matched", again.forall(s => s.lobby == null && queue.isInQueue(s.playerId)))
+    assertNotNull("and the Teams queue was still looked at: its player, a minute in, has a match", matchOf(teamsPlayer))
+  }
+
+  @Test def everyPassTellsWhoeverIsStillWaitingHowLongTheyHaveWaitedAndHowManyAreWaiting(): Unit = Sim() { clock =>
+    val a = player()
+    queue.addPlayer(a.playerId, CharacterId.Wizard.id, 1234, RankedQueueMode.DUEL)
+    assertEquals("as they join", Seq((RankedQueueMode.DUEL, 1, 1234, 0, CharacterId.Wizard.id)), status(a))
+    clock.advance(12999)
+    val b = player()
+    queue.addPlayer(b.playerId, CharacterId.Soldier.id, 2000, RankedQueueMode.DUEL)
+    assertEquals(Seq((RankedQueueMode.DUEL, 2, 2000, 0, CharacterId.Soldier.id)), status(b))
+    quietly(queue.checkQueue())
+    assertEquals("twelve whole seconds in", Seq((RankedQueueMode.DUEL, 2, 1234, 12, CharacterId.Wizard.id)), status(a))
+    assertEquals(Seq((RankedQueueMode.DUEL, 2, 2000, 0, CharacterId.Soldier.id)), status(b))
+    clock.advance(1)
+    quietly(queue.checkQueue())
+    assertEquals("and thirteen", Seq(13), status(a).map(_._4))
+    assertEquals(Seq(0), status(b).map(_._4))
+    queue.removePlayer(b.playerId)
+    quietly(queue.checkQueue())
+    assertEquals("one waiting now", Seq(1), status(a).map(_._2))
+    assertTrue("whoever left hears no more of it", status(b).isEmpty)
+  }
+
+  @Test def aMatchFoundIsToldToEachOfItsPlayersWithTheLobbyItIs(): Unit = Sim() { clock =>
+    val (a, b) = (duellist(1000, CharacterId.Wizard.id), duellist(1100, CharacterId.Samurai.id))
+    a.received(); b.received()
+    quietly(queue.checkQueue())
+    val lobby = matchOf(a)
+    for ((s, elo, charId) <- Seq((a, 1000, CharacterId.Wizard.id), (b, 1100, CharacterId.Samurai.id))) {
+      val found = matchFound(s)
+      assertEquals(1, found.size)
+      val f = found.head
+      assertEquals((lobby.id, lobby.mapIndex, Constants.DUEL_GAME_DURATION_MIN, 2, 2, "Ranked Duel", RankedQueueMode.DUEL, elo, charId),
+        (f.getLobbyId, f.getMapIndex.toInt, f.getDurationMinutes.toInt, f.getPlayerCount.toInt, f.getMaxPlayers.toInt, f.getLobbyName,
+          f.getMode, f.getElo.toInt, f.getCharacterId))
+    }
+  }
+
+  @Test def aMatchThatCannotStartPutsItsPlayersBackInTheQueueWithTheWaitTheyHad(): Unit = Sim() { clock =>
+    val (a, b) = (duellist(1000), duellist(1050))
+    clock.advance(7000)
+    a.received(); b.received()
+    val starting = server.launcher.startMatch
+    server.launcher.startMatch = _ => throw new IllegalStateException("no room for it")
+    val errors = captureStderr(quietly { try queue.checkQueue() finally server.launcher.startMatch = starting })
+    assertTrue(s"said so: $errors", errors.contains("rolling back 2 entries"))
+    for (s <- Seq(a, b)) {
+      assertTrue("back in the queue", queue.isInQueue(s.playerId))
+      assertNull("in no lobby", s.lobby)
+      assertEquals("with the seven seconds they had waited", Seq(7), status(s).map(_._4))
+    }
+    assertTrue("and no lobby of it is left", server.lobbyManager.getActiveLobbies.forall(l => !l.players.contains(a.playerId)))
+    quietly(queue.checkQueue())
+    assertNotNull("the next pass starts it", matchOf(a))
+    assertEquals(a.lobby, b.lobby)
+  }
+
+  @Test def someoneWhoWentAwayWhileQueuedHoldsNobodyElseUp(): Unit = Sim() { clock =>
+    // Their connection gone, they are still in the queue until its pass finds them out: it has
+    // nobody to tell of their wait, and goes on to everyone else's
+    val gone = java.util.UUID.randomUUID()
+    queue.addPlayer(gone, CharacterId.Soldier.id, 1000, RankedQueueMode.FFA)
+    try {
+      val (a, b) = (duellist(1000), duellist(1010))
+      assertEquals("nothing went wrong", "", captureStderr(quietly(queue.checkQueue())))
+      assertNotNull("the duel after it in the pass is still made", matchOf(a))
+      assertEquals(a.lobby, b.lobby)
+      // And a minute on they are not given a match of their own to be absent from
+      clock.advance(60001)
+      assertEquals("", captureStderr(quietly(queue.checkQueue())))
+      assertNull(server.lobbyManager.getPlayerLobby(gone))
+    } finally queue.removePlayer(gone)
+  }
+
+  @Test def withNoRoomForAnotherLobbyAMatchFoundWaitsInTheQueueForOne(): Unit = Sim() { clock =>
+    val filling = (0 until Constants.MAX_LOBBIES).flatMap(i => Option(quietly(
+      server.lobbyManager.createLobby(java.util.UUID.randomUUID(), s"filler $i", 0, 5, 8))))
+    try {
+      val (a, b) = (duellist(1000), duellist(1010))
+      clock.advance(4000)
+      val errors = captureStderr(quietly(queue.checkQueue()))
+      assertTrue(s"said so: $errors", errors.contains("rolling back 2 entries"))
+      for (s <- Seq(a, b)) {
+        assertTrue("still queued", queue.isInQueue(s.playerId))
+        assertNull(s.lobby)
+        assertEquals("with the wait they had", Seq(4), status(s).map(_._4).takeRight(1))
+      }
+    } finally filling.foreach(l => quietly(server.lobbyManager.removeLobby(l.id)))
+  }
+
+  @Test def onceStartedTheMatchmakerLooksItsQueuesOverByItselfAndStoppedItDoesNot(): Unit = {
+    // Every five seconds, on a real server: here every 40ms, on a matchmaker of the test's own
+    val own = new com.gridgame.server.lobby.RankedQueue(server, server.lobbyManager, server.launcher)
+    own.passEveryMs = 40L
+    val (a, b) = (player(), player())
+    quietly {
+      own.addPlayer(a.playerId, CharacterId.Soldier.id, 1000, RankedQueueMode.DUEL)
+      own.addPlayer(b.playerId, CharacterId.Soldier.id, 1000, RankedQueueMode.DUEL)
+      assertNull("nothing happens before it is started", a.lobby)
+      own.start()
+    }
+    try {
+      // (The pass is another thread's: it seats the one, then the other, then starts their match)
+      val from = System.nanoTime()
+      def started: Boolean = { val l = a.lobby; l != null && l == b.lobby && l.gameInstance != null }
+      while (!started && System.nanoTime() - from < 5000000000L) Thread.sleep(5)
+      assertNotNull("matched by a pass nobody called", matchOf(a))
+      assertEquals(a.lobby, b.lobby)
+    } finally quietly(own.stop())
+    val (c, d) = (player(), player())
+    quietly {
+      own.addPlayer(c.playerId, CharacterId.Soldier.id, 1000, RankedQueueMode.DUEL)
+      own.addPlayer(d.playerId, CharacterId.Soldier.id, 1000, RankedQueueMode.DUEL)
+    }
+    Thread.sleep(250)
+    assertNull("stopped, it makes no more matches", c.lobby)
+    quietly { own.removePlayer(c.playerId); own.removePlayer(d.playerId) }
+  }
+
   // --- Free-for-all ---
+
+  @Test def everyoneWaitingForAFreeForAllIsToldOfTheirWaitToo(): Unit = Sim() { clock =>
+    val Seq(a, b) = queued(2, RankedQueueMode.FFA)
+    a.received(); b.received()
+    clock.advance(5500)
+    quietly(queue.checkQueue())
+    for (s <- Seq(a, b)) {
+      val told = status(s)
+      assertEquals(1, told.size)
+      assertEquals((RankedQueueMode.FFA, 2, 5), (told.head._1, told.head._2, told.head._4))
+    }
+  }
+
+  @Test def aFreeForAllWaitsAMinuteForMoreAndIsThenFilledWithBots(): Unit = Sim() { clock =>
+    val Seq(a) = queued(1, RankedQueueMode.FFA)
+    clock.advance(60000)
+    quietly(queue.checkQueue())
+    assertNull("a minute, to the millisecond: not yet", a.lobby)
+    clock.advance(1)
+    quietly(queue.checkQueue())
+    val lobby = matchOf(a)
+    assertNotNull("a millisecond over", lobby)
+    assertEquals("the other seven are bots", Constants.RANKED_FFA_MAX_PLAYERS - 1, bots(lobby.gameInstance))
+    assertEquals((2.toByte, true), (lobby.matchType, lobby.isRanked))
+  }
 
   @Test def aFullFreeForAllIsMatchedAtOnce(): Unit = {
     val players = queued(Constants.RANKED_FFA_MAX_PLAYERS, RankedQueueMode.FFA)

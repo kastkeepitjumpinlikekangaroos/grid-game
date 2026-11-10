@@ -138,7 +138,7 @@ private[model] object Specialists {
     description = "A trap specialist who carves runes of binding and of fire, and whose rune bolts bounce off walls.",
     spriteSheet = "sprites/runesmith.png",
     qAbility = AbilityDef(name = "Binding Rune", description = "Carves a rune into the ground that is ready in a moment and roots the first enemy over it for 1.5s.", cooldownMs = 12000, maxRange = 6, damage = 15, projectileType = -4, keybind = "Q", castBehavior = TrapCast(TrapType.BINDING_RUNE, 6)),
-    eAbility = AbilityDef(name = "Rune Trap", description = "Burns a rune into the ground that sets the first enemy over it alight for 40 over 5s.", cooldownMs = 12000, maxRange = 6, damage = 40, projectileType = -4, keybind = "E", castBehavior = TrapCast(TrapType.FIRE_RUNE, 6)),
+    eAbility = AbilityDef(name = "Rune Trap", description = "Burns a rune into the ground that sets the first enemy over it alight for 56 over 5s.", cooldownMs = 12000, maxRange = 6, damage = 40, projectileType = -4, keybind = "E", castBehavior = TrapCast(TrapType.FIRE_RUNE, 6)),
     primaryProjectileType = ProjectileType.RUNE_BOLT, role = Ranged, maxHealth = 65
   )
 

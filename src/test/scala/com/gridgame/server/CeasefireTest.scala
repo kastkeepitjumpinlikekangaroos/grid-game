@@ -139,4 +139,28 @@ class CeasefireTest {
     assertEquals(1, over.size)
     assertEquals(0, over.head.getOpeningMs)
   }
+
+  @Test def theOpeningIsSaidOnceItsEndOnceAndWhoeverComesBackIsToldWhatIsLeftOfIt(): Unit = Sim() { clock =>
+    // Every client runs the opening on its own clock from the time left it is told: at the match's
+    // first tick, and to a client that rejoins, to the millisecond; then once that it is over
+    def openings(packets: Seq[Packet]): Seq[Int] =
+      packets.collect { case g: GameEventPacket if g.getEventType == GameEvent.MATCH_OPENING => g.getOpeningMs }
+    for (gameMode <- Seq[Byte](0, 1)) {
+      val sim = new SimMatch(clock, gameMode = gameMode, opening = true)
+      val p = sim.join(CharacterId.Soldier, 20, 20, team = gameMode)
+      val length = com.gridgame.common.Constants.MATCH_OPENING_MS
+      sim.advance(12345)
+      assertEquals("said once, with all of it left, at the first tick", Seq(length - 30), openings(sim.sent(p)))
+      sim.rejoin(p)
+      assertEquals("and to whoever comes back, what is left of it then", Seq(length - 12345), openings(sim.sent(p)))
+      sim.advance(length - 12345 - 1)
+      assertEquals("nothing more is said of it while it lasts", Seq.empty, openings(sim.sent(p)))
+      assertTrue(sim.instance.inOpening)
+      sim.advance(20000)
+      assertEquals("its end is said once, however long the match goes on", Seq(0), openings(sim.sent(p)))
+      assertFalse(sim.instance.inOpening)
+      sim.rejoin(p)
+      assertEquals("and whoever comes back after it hears nothing of it", Seq.empty, openings(sim.sent(p)))
+    }
+  }
 }

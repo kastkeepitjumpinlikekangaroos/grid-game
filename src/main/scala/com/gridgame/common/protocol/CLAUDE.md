@@ -48,7 +48,7 @@ Its payload:
 | [43] | character id |
 | [44] | team id |
 | [45-48] | server moves (see *Position authority*) |
-| [49] | effect flags 2: bit 0 stunned, bit 1 poisoned, bit 2 barrier up, bits 3-7 free |
+| [49] | effect flags 2: bit 0 stunned, bit 1 poisoned, bit 2 barrier up, bit 3 knocked up (only with bit 0), bits 4-7 free |
 | [50-51] | aim angle, `angle / 2pi * 65536` (`PlayerUpdatePacket.encodeAimAngle`) |
 | [52] | slow strength as a percentage (0-100): how fast the player moves while slowed |
 | [53-54] | how long a raised barrier has left, in ms (server -> everyone; 0 otherwise) |
@@ -63,7 +63,8 @@ Every byte of it is in use. The server numbers everything it sends from one coun
 the newest word on each (design/networking.md, *Position authority*).
 
 A stunned player has both 0x04 and flags2 bit 0 set: the freeze bit is what holds them, the
-stun bit only says what to draw. Byte [49] bit 2 is a raised barrier, bytes [50-51] the way
+stun bit only says what to draw. A knocked-up player (a `Launch`) has flags2 bit 3 as well, for as
+long as the stun under it, and is drawn in the air over their shadow. Byte [49] bit 2 is a raised barrier, bytes [50-51] the way
 it faces and [53-54] how long it has left (see *Barriers*): a client sends its aim there while
 its barrier is up, and the server writes the barrier's facing and its remaining time. All are 0
 otherwise.

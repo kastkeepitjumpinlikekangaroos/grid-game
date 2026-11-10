@@ -17,7 +17,10 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   the roster's data (`CharacterRosterTest`, every sprite sheet within its tile too), and the maps
   (`WorldMapsTest`: spawns on open ground, all open ground one region). `ProjectileDefRegistryTest`
   must be the first thing in its JVM to look a projectile up, which is why it is a target, and a
-  single test, of its own.
+  single test, of its own. `WorldLoaderTest` (common/world) reads maps made for it, a layer type
+  at a time (fill, rect, border, circle, line, points, grid, and their order), and every map in
+  `worlds/` cell for cell. `AbilityDescriptionTest` holds every number an ability's description
+  gives a player (seconds, cells, how many, what a burn takes, bounces) to the rule it describes.
 - `server/` — matches driven by hand through `ServerTestKit.scala`: `TestMatch` builds a
   `GameInstance` that is begun but never started (`GameInstance.begin`), so the test calls
   `tickProjectiles` / `tickPlayers` / `respawn` itself; every player gets an `EmbeddedChannel` for
@@ -63,8 +66,7 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   depth pass's order (`DepthOrderTest`: us sorted where we are drawn, not on the cell we stand on;
   a diagonal's entities back to front; every wall a sprite overlaps on the right side of it all
   along every step; the diagonal walk visiting exactly the cells on screen), and
-  where a charged shot's aim lane stops (`AimLaneTest`: where the shot would, at a wall's face or the
-  map's edge, over water but not lava, at only a fence for a shot that flies over walls), where our
+  where our
   aim lies as we walk (`AimGeometryTest`, walking a step every three frames at 60 fps with the camera
   following as the renderer's does and the pointer still: the aim from where we are drawn toward the
   pointer, not turning as we step, where from our cell it swung degrees; a landing moving exactly
@@ -184,6 +186,99 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
 - `e2e/` — the whole game at once: real clients against a real server (*End to end*, below). It
   mirrors no one directory, since it is both ends.
 
+## Time of the test's own
+
+Nearly every rule turns on the clock: a cooldown, how long a hold lasts, a burn's bites, a respawn's
+wait, the opening, a queue's half minute. The rules read `GameClock` (common/CLAUDE.md), and
+`SimKit.scala` puts a test's own in:
+
+- **`Sim(seed) { clock => ... }`** installs a `GameClock.Manual`, which stands still until the test
+  moves it (`clock.advance(ms)`), and seeds `scala.util.Random`, which everything a match leaves to
+  chance is drawn from. Inside it a rule can be stood on the millisecond it turns — taken at 499ms,
+  refused at 500 — and whatever is played is played the same every time, on a busy machine as on an
+  idle one. Both go back to the system's when the body ends.
+- **`SimMatch`** is a `TestMatch` in there with a **`MatchClockwork`**: `advance(ms)` plays the match
+  on, everything that falls due in that time, each at its own millisecond. What it plays is the
+  match's own list of what `GameInstance.start` schedules (`GameInstance.clocked`:
+  server/CLAUDE.md), the bots' tick, a respawn its delay after each death, and the end. So minutes
+  of a match take no time, and what a started match does when is what the tests hold it to; a
+  `move`'s `gapMs` is that much of the match played, not a wait. Two things due on the same
+  millisecond run in a fixed order, or shuffled (`shuffleTies`): on a server they are two threads'.
+- **`MatchRules.broken`** is what a match must keep to at every moment whoever is playing it
+  (health, the map, ground that can be stood on, holds and boosts no longer than there are, items,
+  traps, shots in flight), for the suites that play whole matches; **`RosterAttack.all`** is every
+  projectile type the roster throws, once, with a character who throws it, for the sweeps.
+
+**A test of when something happens goes on it**, not on `Thread.sleep` and a margin. The suites that
+predate it still sleep where they have to (a second here and there), and the end-to-end suites run
+on the system's clock: the client's own state isn't on `GameClock`.
+
+The clock is the whole process's, and a test's own starts on a date of its own
+(`GameClock.Manual.Start`, the same at every run, so a run can be played again): anything timed
+before the block began — a match begun outside it, a counter of the server every suite shares —
+is from another time inside it. Make what the test times inside the block. A real match's threads
+(`GameInstance.start`) read the same clock: start one inside a `Sim` and it stands still.
+
+On it:
+
+- `TimedEffectsTest` — every burn in the roster bite by bite, whenever in the tick it lands, and
+  poisons to their totals; regeneration (2% a second, nothing banked); every hold, slow and boost
+  over on the millisecond it runs out; nothing landing during a hold or for 1.5s after; the wait
+  for a respawn, where a life begins (away from the living, a body in nobody's way) and that it
+  carries nothing over.
+- `CastPaceTest` — how often every attack of every character may be cast: an honest client's casts
+  never refused however the network holds them up, nobody ahead of the cooldown in the long run, a
+  cast's window to its last millisecond; phases, dashes, barriers, traps and R the same; a hit
+  taking half of what is left off its ability's cooldown; what a refusal says.
+- `RequestEdgesTest` — the edges of what the server takes from a client, each on the cell or the
+  millisecond it turns: the map's first row and column, a step's credit, a correction's cadence
+  (250ms in, then every 500), a new fence's half second, a dash's steps after its phase, a shot's
+  furthest origin, facing from a step, a fan as one cast, a rejoin.
+- `MatchClocksTest` — what a match does on its clocks (item batches by the map's size, the time
+  told, its ticks, its end, to the millisecond), and one real match started on the system's clock:
+  its first items, its ticks, a death and the life after it, its end, and no thread left behind.
+  `RespawnScheduleTest` gives a match a respawn clock that only notes down what it is asked: every
+  kind of death books one new life, 3000ms on (1000 in practice).
+- `MatchSimTest` — whole matches of eight bots launched as a lobby's are, two minutes each on every
+  map, free-for-all and Teams, the roster eight at a time: on the map the lobby chose, everyone the
+  character they were seated as and nobody starting on anybody else, the rules after everything its
+  clocks run, and the same match again from the same seed. `--test_env=GRIDGAME_SIM_SEED=<seed>`
+  plays one again; `--test_env=GRIDGAME_SIM_SOAK_SECONDS=600` plays new seeds for ten minutes
+  (about two hundred matches a minute).
+- `SymmetryTest` — a scene turned or mirrored any of the eight ways of a square plays out the same:
+  every attack over random walls, fences, water and players, a blink, a shove, a star and a throw,
+  two as near as each other, a step of several cells. What only holds one way round is a bug by
+  construction, and four were (design/combat.md, *Where a hit lands*).
+  `--test_env=GRIDGAME_SYM_DEBUG="<attack>:<seed>:<turn>"` prints one scene's two runs side by side.
+- `AttackSweepTest` — every projectile the roster throws held to its own definition: its damage and
+  each effect it lists landing for as long as it says, a kill scored once, a blast's falloff, a
+  splash's reach and holds, pierces, a boomerang's second strike, what a charge and the distance
+  flown make of it, a vortex and a pull moving who they should. `RicochetTest` — a shot's number of
+  bounces and which way each turns it. `SlamReachTest`, older, is every slam's reach.
+- `LobbyRulesTest` — the lobby browser and a lobby room: what a lobby is made with, the three
+  seconds between lobbies and two between lists, who may join and what joiner and room each hear,
+  the host's settings and bots, picks, practice, and a start that fails.
+
+And in the suites that were there: `ItemTest` (a fence across the way its builder faces, at the
+map's edge, told to everyone and used up, or given back; reach; a gem's speed; the shield's and the
+gem's five seconds; forty items on the ground), `TrapTest` (armed and gone on the millisecond; a
+mine's falloff to the cell and whom it spares; a hold as a server move), each request's own suite
+(`SpawnRequestTest`, `TrapTest`, `ItemTest`, `CooldownResetTest`: nothing a client sends is passed
+on to the rest of the match as it came, taken or refused, and `ReconnectTest`: the match takes no
+join from anyone it doesn't have), `EndGameTest` (ratings moved by
+a ranked match and by no other, two ends at once, the minutes saved), `RankedQueueTest` (ratings
+200 apart at once and any two after 30s, a minute for a free-for-all, the wait told, a start that
+fails, the matchmaker running by itself), `RateLimiterTest` (a budget's window, a lockout's 30s
+doubling to an hour), `CeasefireTest` (the opening said once, its end once, and what is left of
+it to whoever comes back), `TeamDividerTest` (where the wall stops a shot, a hair short of the
+line on its path; a shot short of it flying as any other does; a rocket going off at it),
+`BarrierTest` (where a barrier stops a shot; one carried onto a shot either way, or swung onto it,
+stopping it on its face and nothing more said of it; a moving barrier stopping only what it passed
+over), `CombatTest` (every kind of wall sheltering whoever is behind it, and only a fence from what
+flies over walls; a slam going off under a caster a fence was put down on),
+`MatchResultsTest` (what a result between unequal ratings moves each by, to the point) and
+`WorldDataTest` (fifty cells from everyone alive, to the cell, and as far as a small map allows).
+
 ## Fuzz and property suites
 
 Seeded random runs, with the rules checked after every step. A failure names its seed and step
@@ -194,15 +289,18 @@ shows as one. A server fuzz run throws stdout away and keeps stderr (`ServerTest
 the server says something about nearly everything it is sent, and stderr is where it reports what
 it caught and carried on from (a tick's error, a bot's), which fails the run.
 
-- `MatchFuzzTest` (server): a `TestMatch` of six players, and two bots in some runs, on cluttered
+- `MatchFuzzTest` (server): a `SimMatch` of six players, and two bots in some runs, on cluttered
   ground: thousands of requests — steps, jumps, shots from every attack (some from nowhere, of the
   wrong type, or with no heading), traps, items, R, rejoins, leaving — between its ticks, respawns and
-  time passing (cooldowns cleared and effects worn off by hand: every rule runs on the wall clock),
-  in a free-for-all, Teams, both openings and practice. Nothing throws; health stays in bounds;
+  time passing, on a clock of the test's own (*Time of the test's own*, below), so a seed plays the
+  same run every time, in a free-for-all, Teams, both openings and practice. Nothing throws; health stays in bounds;
   everyone stays on the map; nobody is moved onto a cell they can't stand on unless dashing; the
   dead and the held aren't moved by their own client; an item is on the ground or in one inventory,
   ten at most; thirty shots in flight at most, every one taken leaving from within reach of its
-  shooter; a trap to a cell; every death scored once. It found the NaN spawn on its own.
+  shooter; a trap to a cell; every death scored once; and through an opening nobody is hurt, nobody
+  is across the wall, and no shot or trap is put down across it. It found the NaN spawn on its own,
+  and the two ways over the Teams wall (a shot said to be fired from the far half, a trap thrown
+  from a copy of its thrower the server took to be far behind).
 - `HostileClientFuzzTest` (server): logged-in `TestSession`s sending every packet type with its
   fields at random, mostly straight into `GameServer.handleIncomingPacket` (whatever throws reaches
   the test) and the rest signed through the real TCP and UDP handlers; lobbies, practice and ranked
@@ -240,6 +338,42 @@ roster hasn't got — a poison short enough for a test to sit through (`TestTrap
 A character the roster doesn't have (one quicker
 than any in it) goes through `PacketValidator`'s `characterOf` parameter instead — see
 `PacketValidatorTest.aFasterCharacterIsJudgedByItsOwnPace`.
+
+## Mutation testing
+
+Coverage says which lines a test runs, not whether it would notice them wrong. To find what the
+suites only walked through, the rules were broken on purpose, one line at a time — a `<` for a
+`<=`, an `&&` for an `||`, a `+` for a `-`, a condition turned round, a statement dropped, a
+`return false` for a `return true` — and every test that runs the line was run against each: a
+change no test fails on is a rule no test holds. Run over the match's rules, the model and the
+lobbies (about 3,000 changes), it found 70% caught to begin with and, of the rest, a third to be
+real: the suites listed above, and the tests added to the older ones, are what it asked for. The
+kinds of thing it found unheld:
+
+- **Edges**: the last millisecond of every wait and the last cell of every reach (the middle of
+  each was tested, never its end); row 0 and column 0 of a map, which no map in `worlds/` leaves
+  open.
+- **What everyone else is told**: that a fence, a trap's victim, a star's jump, a bot at the
+  match's start go out to the whole match at all; that a refused request is not relayed as it
+  came.
+- **Whom a thing spares**: a mine its owner, their team, the shielded, the phased.
+- **What happens on a timer by itself**: `GameInstance.start`'s own schedule, a death booking its
+  respawn, the matchmaker's pass (each was run by hand in every test).
+- **Counts**: a shot's bounces, the items on the ground, a lockout's doubling.
+- **Rules about the other mode**: that a casual match moves no rating.
+
+What it leaves standing is of four kinds, none worth a test: a change that changes nothing (a
+bound already kept by another check, `<` for `<=` where the two never meet), a guard against what
+can't arrive (a NaN heading the wire can't carry is tested all the same; a null world isn't), what
+only two threads at once could show, and text for a log.
+
+There is no target for it: it is a way of asking, with a script per session. In outline: JaCoCo's
+agent (in Bazel's `remote_java_tools`) on each test's JVM (`--test_arg=--jvm_flag=-javaagent:...`)
+for which tests run which lines; one changed line compiled alone with `scalac` against the test's
+classpath (a second or so); the result put ahead of the real classes with the launcher's
+`--main_advice_classpath=`, and the tests run outside Bazel from a copy of their runfiles. **After
+adding a rule and its test, break the rule by hand and see the test fail** — the one-line version
+of the same thing, and the project's rule for a bug fix already.
 
 ## End to end
 

@@ -227,4 +227,22 @@ class ReconnectTest {
     assertNull(m.instance.registry.get(s.playerId))
     server.lobbyManager.removeLobby(lobby.id)
   }
+
+  @Test def theMatchItselfTakesNoJoinFromAnyoneItDoesNotHave(): Unit = {
+    // The server sends a match only the joins of its own players; asked directly, the match has
+    // the same answer, whatever the join says of where they are and who they play
+    val m = new TestMatch()
+    val there = m.join(CharacterId.Soldier, 20, 20)
+    m.clearSent()
+    val stranger = java.util.UUID.randomUUID()
+    val channel = new io.netty.channel.embedded.EmbeddedChannel()
+    val passedOn = m.instance.handler.processPacket(new PlayerJoinPacket(1, stranger, Packet.getCurrentTimestamp,
+      new Position(30, 30), 0, "back", 999, CharacterId.Wizard.id, 0.toByte), channel, null)
+    assertFalse("nothing of it is passed on", passedOn)
+    assertNull("and nobody is added", m.instance.registry.get(stranger))
+    assertEquals(1, m.instance.registry.size)
+    assertNull("nor told anything of the match", channel.readOutbound[AnyRef]())
+    assertTrue(m.sent(there).isEmpty)
+    assertTrue("it is written down", m.instance.journal.lines.exists(_.contains("join refused: not a player of this match")))
+  }
 }

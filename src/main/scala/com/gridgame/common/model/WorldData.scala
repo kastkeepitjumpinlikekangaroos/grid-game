@@ -72,8 +72,7 @@ class WorldData(
 
   def getRandomSpawnPoint(): Position = {
     if (spawnPoints.nonEmpty) {
-      val idx = (Math.random() * spawnPoints.length).toInt
-      spawnPoints(idx)
+      spawnPoints(scala.util.Random.nextInt(spawnPoints.length))
     } else {
       // Default to center if no spawn points defined
       new Position(width / 2, height / 2)

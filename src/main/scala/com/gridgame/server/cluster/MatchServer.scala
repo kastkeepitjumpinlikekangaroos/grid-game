@@ -1,6 +1,6 @@
 package com.gridgame.server.cluster
 
-import com.gridgame.common.{BuildInfo, Constants}
+import com.gridgame.common.{BuildInfo, Constants, GameClock}
 import com.gridgame.common.model.{Player, Position}
 import com.gridgame.common.observability.{Attrs, Metrics}
 import com.gridgame.common.protocol._
@@ -423,7 +423,8 @@ final class MatchServer(config: MatchServer.Config) extends PacketRouter with Lo
           } else {
             val p = h.instance.registry.get(sp.id)
             // Gone quiet: its connection is closed, and the disconnect takes it out of the match
-            if (p != null && now - p.getLastUpdateTime > Constants.CLIENT_TIMEOUT_MS && p.getTcpChannel != null)
+            // (on the clock the player's last word was noted on: Player.updateHeartbeat)
+            if (p != null && GameClock.now() - p.getLastUpdateTime > Constants.CLIENT_TIMEOUT_MS && p.getTcpChannel != null)
               p.getTcpChannel.asInstanceOf[Channel].close()
           }
         }

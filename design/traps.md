@@ -39,9 +39,19 @@ spun across the ground for a hunter to blunder into.
     behind by (`TrapPlacement.isValidTargetLagging`, `Movement.lagCells`), without judging the way
     there, which from a copy that far behind can cross a wall the throw never did. A throw through a
     wall only a modified client would make is left to player reports (design/networking.md, *Bad
-    networks*).
-- **Arming and lasting.** It arms 800ms after it lands and lies there 25s. A player keeps three;
+    networks*) — but never one over the opening's wall between the teams, which no copy of the
+    thrower, however far behind, is on the far side of (design/match-flow.md).
+- **Arming and lasting.** It arms 800ms after it lands and lies there 25s, each to the millisecond:
+  the tick that falls on the 800th springs it under whoever stands there, and the one its time
+  runs out on takes it away (`TrapTest`, on a clock of the test's own). A player keeps three;
   a fourth takes their oldest away. One trap to a cell.
+- **What it did is told to everyone, and a hold is a move of the server's.** Its victim's new
+  health and what holds, burns, poisons or slows them go out to the whole match as it springs; a
+  stun or a root that landed is a server move (`holdByServer`: counted, and said to them over TCP,
+  so their client stays where the server holds them), and nothing else a trap does is. A mine's
+  blast takes what its falloff says of every enemy within its three cells, to the cell — 55 at its
+  centre to 27 at its edge — and nothing of whoever laid it, their team, the shielded, the phased
+  or the dead (`TrapTest`).
 - **What sets it off.** An enemy — not the owner, not a teammate — within `triggerRadius` (1.0
   cell: the trap's own cell and its four neighbours). Phased players walk over it, and so does
   anyone a Shield item has made invulnerable, exactly as a projectile can't touch them. A trigger

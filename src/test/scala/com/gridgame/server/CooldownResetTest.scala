@@ -39,6 +39,53 @@ class CooldownResetTest {
   private def grenade(p: Player): Int = m.fire(p, AttackSlot.Q, ProjectileType.GRENADE, east).size
   private def rocket(p: Player): Int = m.fire(p, AttackSlot.E, ProjectileType.ROCKET, east).size
 
+  // --- What the rest of the match hears of it ---
+
+  @Test def aPressOfRIsNeverPassedOnAsItCame(): Unit = {
+    // Nobody else is told of a reset, taken or refused: what the handler says to pass on, GameServer
+    // sends to the rest of the match as it came
+    def passedOn(tm: TestMatch, who: UUID, action: Byte = CooldownResetAction.REQUEST): Boolean = {
+      seq += 1
+      var said = false
+      ServerTestKit.captureStderr {
+        said = tm.instance.handler.processPacket(PacketSerializer.deserialize(
+          new CooldownResetPacket(seq, who, action, 0).serialize()), null, null)
+      }
+      said
+    }
+    val p = m.join(CharacterId.Soldier, 20, 20)
+    assertFalse("refused, its minute not yet run", passedOn(m, p.getId))
+    minuteRun()
+    m.clearSent()
+    assertFalse("taken", passedOn(m, p.getId))
+    assertTrue("(and it was)", refusals(p).isEmpty)
+    assertFalse("what only the server says of one", passedOn(m, p.getId, CooldownResetAction.REJECTED))
+    assertFalse("from somebody who isn't in the match", passedOn(m, UUID.randomUUID()))
+    assertTrue(p.tryFreeze(2000))
+    assertFalse("held", passedOn(m, p.getId))
+    val phased = m.join(CharacterId.Wraith, 30, 20)
+    phased.setPhasedUntil(System.currentTimeMillis() + 3000)
+    assertFalse("phased", passedOn(m, phased.getId))
+    val ceasefire = new TestMatch(opening = true)
+    assertFalse("in a free-for-all's ceasefire", passedOn(ceasefire, ceasefire.join(CharacterId.Soldier, 20, 20).getId))
+  }
+
+  @Test def aPressAsAPhaseEndsIsLetThroughForTheNetworksToleranceToTheMillisecond(): Unit = Sim() { clock =>
+    // As a shot is (ShotRequests): the client's phase ends a trip across the wire before the server's
+    val sim = new SimMatch(clock)
+    clock.advance(Constants.COOLDOWN_RESET_MS)
+    val grace = Constants.NETWORK_TOLERANCE_MS
+    def pressedWith(phaseLeftMs: Long): Seq[CooldownResetPacket] = {
+      val p = sim.join(CharacterId.Wraith, 20, 20)
+      p.setPhasedUntil(clock.millis() + phaseLeftMs)
+      sim.clearSent()
+      ServerTestKit.captureStderr(pressR(p, sim))
+      refusals(p, sim)
+    }
+    assertEquals("with a millisecond more than the tolerance of the phase left", 1, pressedWith(grace + 1).size)
+    assertEquals("with exactly the tolerance left", 0, pressedWith(grace).size)
+  }
+
   // --- What it does ---
 
   @Test def bothAbilitiesAreReadyAgain(): Unit = {

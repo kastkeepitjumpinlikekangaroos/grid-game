@@ -23,7 +23,7 @@ private[model] object Undead {
   val DevourDef: ProjectileDef = ProjectileDef(id = ProjectileType.DEVOUR, name = "Devour", speedMultiplier = 0.5f, damage = 31, maxRange = 6, onHitEffect = Some(LifeSteal(50)), alsoOnHit = Seq(Root(1000)))
   val ScytheDef: ProjectileDef = ProjectileDef(id = ProjectileType.SCYTHE, name = "Scythe", speedMultiplier = 0.65f, damage = 42, maxRange = 3, hitRadius = 2.5f)
   val ReapDef: ProjectileDef = ProjectileDef(id = ProjectileType.REAP, name = "Reap", speedMultiplier = 0.9f, damage = 35, maxRange = 10, passesThroughWalls = true, hitRadius = 2.8f, onHitEffect = Some(PullToOwner))
-  val ShadowBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.SHADOW_BOLT, name = "Shadow Bolt", speedMultiplier = 0.8f, damage = 24, maxRange = 16, passesThroughWalls = true, ricochetCount = 2)
+  val ShadowBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.SHADOW_BOLT, name = "Shadow Bolt", speedMultiplier = 0.8f, damage = 24, maxRange = 16, passesThroughWalls = true)
   val CursedBladeDef: ProjectileDef = ProjectileDef(id = ProjectileType.CURSED_BLADE, name = "Cursed Blade", speedMultiplier = 0.7f, damage = 39, maxRange = 3, hitRadius = 2.2f)
   val LifeDrainDef: ProjectileDef = ProjectileDef(id = ProjectileType.LIFE_DRAIN, name = "Life Drain", speedMultiplier = 0.6f, damage = 20, maxRange = 14, onHitEffect = Some(LifeSteal(35)), alsoOnHit = Seq(Slow(2000, 0.6f)))
   val ShovelDef: ProjectileDef = ProjectileDef(id = ProjectileType.SHOVEL, name = "Shovel", speedMultiplier = 0.6f, damage = 55, maxRange = 2, hitRadius = 2.2f, boomerang = true)
@@ -66,8 +66,10 @@ private[model] object Undead {
     base(ProjectileType.CURSED_BLADE).copy(id = ProjectileType.DRAIN_BLADE, name = "Drain Blade", damage = 42, onHitEffect = Some(LifeSteal(20))),
     base(ProjectileType.CURSED_BLADE).copy(id = ProjectileType.CHILL_BLADE, name = "Chill Blade", damage = 47, onHitEffect = Some(Slow(1000, 0.7f))),
     // One shadow bolt that roots, in place of the Shade's fan of three plain ones. It bounces off
-    // walls rather than flying through them, as the Shade's own bolts are said to
-    base(ProjectileType.SHADOW_BOLT).copy(id = ProjectileType.SHADOW_BIND, name = "Shadow Bind", damage = 18, passesThroughWalls = false, onHitEffect = Some(Root(1500)))
+    // walls, twice, rather than flying through them, as the Shade's own bolts are said to (a shot
+    // that flies through walls has nothing to bounce off: the bounces are this one's own)
+    base(ProjectileType.SHADOW_BOLT).copy(id = ProjectileType.SHADOW_BIND, name = "Shadow Bind", damage = 18, passesThroughWalls = false,
+      ricochetCount = 2, onHitEffect = Some(Root(1500)))
   )
 
   // ── Characters ──

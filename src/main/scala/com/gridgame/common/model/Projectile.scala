@@ -56,9 +56,13 @@ class Projectile(
   // it is drawn: shots heading toward the camera sank halfway into wall blocks before
   // stopping, shots heading away stopped half a tile short, and at the bottom edges of the
   // map projectiles flew half a tile out over the void.
-  def getCellX: Int = Math.floor(x + 0.5f).toInt
+  //
+  // On the line between two cells it is in the one it is heading into (Projectile.cellEntered):
+  // counted in the further one whichever way it flew, a shot heading east or south met a wall on
+  // its face, and one heading west or north half a cell inside it, a sub-step later.
+  def getCellX: Int = Projectile.cellEntered(x, _dx)
 
-  def getCellY: Int = Math.floor(y + 0.5f).toInt
+  def getCellY: Int = Projectile.cellEntered(y, _dy)
 
   def getDistanceTraveled: Float = distanceTraveled
 
@@ -243,6 +247,22 @@ object Projectile {
     * tick in sub-steps no longer (ProjectileManager), and the client finds walls along the same
     * ones (NetProjectile). */
   val MAX_SUB_STEP = 0.5f
+
+  /** How near the line between two cells counts as on it: far more than the rounding of a
+    * position added up a sub-step at a time, far less than anyone could see. */
+  val ON_THE_LINE = 1e-3f
+
+  /**
+   * The cell a point moving along `heading` on this axis is in: tiles are centred on whole
+   * coordinates, so cell c is [c - 0.5, c + 0.5], and a point on the line between two cells is in
+   * the one it is heading into. A sub-step of half a cell puts a shot fired along a row or a column
+   * on those lines every other step. Counted in the further cell whatever its heading
+   * (floor(v + 0.5)), a shot heading east or south stopped on the face of a wall and one heading
+   * west or north half a cell inside it, a sub-step later, where a blast then went off (found by
+   * SymmetryTest). The server's collision and the client's flight (TerrainImpact) both ask this.
+   */
+  def cellEntered(v: Float, heading: Float): Int =
+    if (heading < 0f) Math.ceil(v - 0.5f - ON_THE_LINE).toInt else Math.floor(v + 0.5f + ON_THE_LINE).toInt
 
   /**
    * Is the point (x, y) within `radius` of the player? A player stands at the centre of their

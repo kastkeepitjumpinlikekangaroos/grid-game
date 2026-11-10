@@ -1,6 +1,7 @@
 package com.gridgame.server
 
 import com.gridgame.common.Constants
+import com.gridgame.common.GameClock
 import com.gridgame.common.model.Player
 import com.gridgame.common.observability.Attrs
 import com.gridgame.common.observability.Metrics
@@ -456,7 +457,7 @@ class GameServer(port: Int, reportsFolder: java.nio.file.Path = ProblemReports.d
 
   /** One pass of the cleanup loop, every five seconds: players gone quiet, sessions past their
     * token's lifetime, stale rate-limit and replay state, and (hourly) refresh tokens run out. */
-  private[server] def cleanup(now: Long = System.currentTimeMillis()): Unit = {
+  private[server] def cleanup(now: Long = GameClock.now()): Unit = {
     val timeout = Constants.CLIENT_TIMEOUT_MS
 
     connectedPlayers.values().asScala.foreach { player =>

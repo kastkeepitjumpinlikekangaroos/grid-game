@@ -1,6 +1,7 @@
 package com.gridgame.server.game
 
 import com.gridgame.common.Constants
+import com.gridgame.common.GameClock
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 
@@ -36,7 +37,7 @@ trait Opening { this: GameInstance =>
    */
   private[game] def beginOpening(): Unit = {
     openingRules = if (isPractice) 0.toByte else MatchOpening.rulesFor(gameMode)
-    openingEndsAt = if (openingRules == 0) 0L else System.currentTimeMillis() + Constants.MATCH_OPENING_MS
+    openingEndsAt = if (openingRules == 0) 0L else GameClock.now() + Constants.MATCH_OPENING_MS
     openingAnnounced = false
     openingEndAnnounced = false
     if (MatchOpening.has(openingRules, MatchOpening.DIVIDER) && world != null) {
@@ -48,7 +49,7 @@ trait Opening { this: GameInstance =>
     * once it has come down. */
   def divider: TeamDivider = if (world == null) null else world.divider
 
-  def inOpening: Boolean = System.currentTimeMillis() < openingEndsAt
+  def inOpening: Boolean = GameClock.now() < openingEndsAt
 
   /** Is nobody allowed to attack? The opening of a free-for-all is a ceasefire: no shot, no
     * charge, no burst and no ability, so everyone gets the same half minute to find their feet
@@ -77,7 +78,7 @@ trait Opening { this: GameInstance =>
    */
   private[server] def syncOpening(): Unit = {
     if (openingRules == 0) return // practice: there is no opening to tell anyone about
-    val now = System.currentTimeMillis()
+    val now = GameClock.now()
     if (now < openingEndsAt) {
       if (!openingAnnounced) {
         openingAnnounced = true
@@ -92,7 +93,7 @@ trait Opening { this: GameInstance =>
 
   /** A client joining during the opening hears about it too. */
   private[server] def sendOpeningTo(player: Player): Unit = {
-    val left = openingEndsAt - System.currentTimeMillis()
+    val left = openingEndsAt - GameClock.now()
     if (left > 0L) outbox.send(openingPacket(left.toInt), player)
   }
 }

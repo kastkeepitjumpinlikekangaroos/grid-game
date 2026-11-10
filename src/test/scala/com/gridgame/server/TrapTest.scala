@@ -149,6 +149,58 @@ class TrapTest {
 
   // --- What sets one off ---
 
+  @Test def aThrowIsNeverPassedOnAsItCame(): Unit = {
+    // The server tells everyone of the trap it puts down itself (broadcastTrap); what the handler
+    // says to pass on, GameServer sends to the rest of the match as it came — a throw it refused
+    // among them
+    var seq = 9000
+    def passedOn(in: TestMatch, who: java.util.UUID, x: Int, y: Int, slot: Int = E, trapType: Byte = BEAR,
+                 action: Byte = TrapAction.PLACE): Boolean = {
+      seq += 1
+      var said = false
+      ServerTestKit.captureStderr {
+        said = in.instance.handler.processPacket(PacketSerializer.deserialize(new TrapPacket(seq, who, x, y, 0, action, trapType,
+          0.toByte, slot, null).serialize()), null, null)
+      }
+      said
+    }
+    val w = warden(20, 30)
+    assertFalse("a throw the server took", passedOn(m, w.getId, 24, 30))
+    assertNotNull(m.instance.trapManager.trapAt(24, 30))
+    assertFalse("a second before its cooldown", passedOn(m, w.getId, 22, 30))
+    m.instance.handler.resetAttacks(w.getId)
+    assertFalse("onto another trap", passedOn(m, w.getId, 24, 30))
+    assertFalse("out of reach", passedOn(m, w.getId, 58, 30))
+    assertFalse("of a trap this attack doesn't throw", passedOn(m, w.getId, 22, 30, trapType = TrapType.MINE))
+    assertFalse("from an attack that throws none", passedOn(m, w.getId, 22, 30, slot = AttackSlot.Q))
+    for (action <- Seq(TrapAction.SPAWN, TrapAction.TRIGGER, TrapAction.REMOVE, TrapAction.REJECTED))
+      assertFalse(s"what only the server says of a trap (action $action)", passedOn(m, w.getId, 22, 30, action = action))
+    assertFalse("from somebody who isn't in the match", passedOn(m, java.util.UUID.randomUUID(), 22, 30))
+    assertTrue(w.tryFreeze(2000))
+    assertFalse("held", passedOn(m, w.getId, 22, 30))
+    val phased = warden(20, 40)
+    phased.setPhasedUntil(System.currentTimeMillis() + 3000)
+    assertFalse("phased", passedOn(m, phased.getId, 22, 40))
+    val ceasefire = new TestMatch(opening = true)
+    val waiting = ceasefire.join(CharacterId.Warden, 20, 30)
+    assertFalse("in a free-for-all's ceasefire", passedOn(ceasefire, waiting.getId, 22, 30))
+    assertEquals("and only the one was ever put down", 1, m.instance.trapManager.getAll.size + ceasefire.instance.trapManager.getAll.size)
+  }
+
+  @Test def aThrowAsAPhaseEndsIsLetThroughForTheNetworksToleranceToTheMillisecond(): Unit = Sim() { clock =>
+    // As a shot is (ShotRequests): the client's phase ends a trip across the wire before the server's
+    val sim = new SimMatch(clock)
+    val grace = Constants.NETWORK_TOLERANCE_MS
+    val early = sim.join(CharacterId.Warden, 20, 20)
+    early.setPhasedUntil(clock.millis() + grace + 1)
+    ServerTestKit.captureStderr {
+      assertNull("with a millisecond more than the tolerance of the phase left", sim.placeTrap(early, E, BEAR, 22, 20))
+    }
+    val onIt = sim.join(CharacterId.Warden, 20, 30)
+    onIt.setPhasedUntil(clock.millis() + grace)
+    assertNotNull("with exactly the tolerance left", sim.placeTrap(onIt, E, BEAR, 22, 30))
+  }
+
   @Test def nothingTriggersBeforeItIsArmed(): Unit = {
     val w = warden(26, 30)
     val enemy = victim(28, 30)
@@ -163,6 +215,49 @@ class TrapTest {
     m.tick()
     assertFalse(onGround(trap))
     assertFalse(unhurt(enemy))
+  }
+
+  @Test def aTrapIsArmedAndGoneOnTheMillisecondItsDefSays(): Unit = Sim() { clock =>
+    // Every trap in the roster: nobody standing on it sets it off before its delay is up, the tick
+    // that falls on that millisecond does; and with nobody near it lies its whole time, to be taken
+    // away by the tick its time runs out on
+    for (d <- TrapDef.all) ServerTestKit.quietly {
+      val sim = new SimMatch(clock, respawns = false)
+      val owner = sim.join(CharacterId.Warden, 10, 10)
+      val standing = sim.join(CharacterId.Golem, 30, 30)
+      sim.instance.trapManager.place(owner.getId, owner.getTeamId, 30, 30, d.id, clock.millis())
+      clock.advance(d.armDelayMs - 1)
+      sim.tick()
+      assertEquals(s"${d.name}: a millisecond short of its ${d.armDelayMs}ms, still arming", 1, sim.instance.trapManager.getAll.size)
+      assertEquals(standing.getMaxHealth, standing.getHealth)
+      clock.advance(1)
+      sim.tick()
+      assertEquals(s"${d.name}: armed, and sprung by whoever stands on it", 0, sim.instance.trapManager.getAll.size)
+
+      val quiet = new SimMatch(clock, respawns = false)
+      val watcher = quiet.join(CharacterId.Golem, 50, 50)
+      val laid = quiet.instance.trapManager.place(watcher.getId, watcher.getTeamId, 30, 30, d.id, clock.millis())
+      clock.advance(d.lifetimeMs - 1)
+      quiet.tick()
+      assertEquals(s"${d.name}: a millisecond short of its ${d.lifetimeMs}ms, still there", 1, quiet.instance.trapManager.getAll.size)
+      clock.advance(1)
+      quiet.clearSent()
+      quiet.tick()
+      assertEquals(s"${d.name}: gone when its time is up", 0, quiet.instance.trapManager.getAll.size)
+      assertEquals(s"${d.name}: and everyone is told", Seq(laid.trap.id), quiet.trapEvents(quiet.sent(watcher), TrapAction.REMOVE).map(_.getTrapId))
+    }
+  }
+
+  @Test def aThrowReachesItsRangeAndTheStepsTheServerMayBeBehindToTheCell(): Unit = {
+    // The furthest cell a throw is taken at: its range, the three cells every reach is given, and as
+    // far as the thrower could have walked while their steps were on their way
+    val w = warden(20, 30)
+    val reach = 6 + Constants.TELEPORT_RANGE_TOLERANCE +
+      Movement.lagCells(Constants.NETWORK_TOLERANCE_MS, CharacterDef.get(CharacterId.Warden.id).moveSpeed)
+    assertNotNull("its last cell", m.placeTrap(w, E, BEAR, 20 + reach, 30))
+    val other = warden(20, 40)
+    assertNull("and not the next", m.placeTrap(other, E, BEAR, 20 + reach + 1, 40))
+    assertNotNull("the same up and down", m.placeTrap(other, E, BEAR, 20, 40 - reach))
   }
 
   @Test def anEnemyWhoStepsOnABearTrapIsStunnedAndHurt(): Unit = {
@@ -263,6 +358,108 @@ class TrapTest {
     assertTrue(took(further) > 0)
     assertTrue("and not at all outside it", unhurt(outside))
     assertTrue("the one who stood on it is in the blast too", took(stepper) > 0)
+  }
+
+  @Test def aMinesBlastTakesWhatItsFalloffSaysToTheCellAndEveryoneIsTold(): Unit = {
+    // 55 at its centre down to 27 at the edge of its three cells, and nothing past them
+    val blast = TrapDef.Mine.explosion.get
+    assertEquals((55, 27, 3.0f), (blast.centerDamage, blast.edgeDamage, blast.blastRadius))
+    val sentinel = m.join(CharacterId.Sentinel, 10, 10)
+    val watcher = victim(55, 55)
+    val onIt = victim(30, 20)
+    val atTheEdge = victim(33, 20)     // exactly three cells out
+    val aKnightsMove = victim(31, 22)  // 2.24 cells
+    val justPast = victim(33, 21)      // 3.16 cells
+    val took = (p: Player) => p.getMaxHealth - p.getHealth
+    m.armedTrap(sentinel, 30, 20, TrapType.MINE)
+    m.clearSent()
+    m.tick() // whoever stands on one sets it off
+    assertEquals("the centre", 55, took(onIt))
+    assertEquals("the edge, to the cell", 27, took(atTheEdge))
+    assertEquals("between", (55 - Math.sqrt(5.0).toFloat / 3.0f * (55 - 27)).toInt, took(aKnightsMove))
+    assertEquals("past it", 0, took(justPast))
+    val heard = m.sent(watcher)
+    for (p <- Seq(onIt, atTheEdge, aKnightsMove))
+      assertEquals(s"everyone is told what it left ${m.at(p)} with", Some(p.getHealth), m.updatesAbout(heard, p).lastOption.map(_.getHealth))
+    assertTrue("and nothing of anyone it missed", m.updatesAbout(heard, justPast).isEmpty)
+    assertEquals("a blast holds nobody: no move of the server's", 0, onIt.getServerMoves + atTheEdge.getServerMoves)
+  }
+
+  @Test def aMinesBlastSparesItsOwnerTheirTeamTheShieldedThePhasedAndTheDead(): Unit = {
+    val teams = new TestMatch(gameMode = 1)
+    val owner = teams.join(CharacterId.Sentinel, 30, 22, team = 1)
+    val ally = teams.join(CharacterId.Gladiator, 28, 20, team = 1)
+    val stepper = teams.join(CharacterId.Gladiator, 30, 20, team = 2)
+    val shielded = teams.join(CharacterId.Gladiator, 30, 18, team = 2)
+    val phased = teams.join(CharacterId.Gladiator, 32, 21, team = 2)
+    val dead = teams.join(CharacterId.Gladiator, 29, 22, team = 2)
+    val enemy = teams.join(CharacterId.Gladiator, 31, 19, team = 2)
+    shielded.setShieldUntil(System.currentTimeMillis() + 5000)
+    phased.setPhasedUntil(System.currentTimeMillis() + 5000)
+    dead.setHealth(0)
+    teams.armedTrap(owner, 30, 20, TrapType.MINE)
+    teams.tick()
+    assertEquals(0, teams.instance.trapManager.getAll.size)
+    assertTrue("whoever set it off", stepper.getHealth < stepper.getMaxHealth)
+    assertTrue("and an enemy beside them", enemy.getHealth < enemy.getMaxHealth)
+    assertEquals("not whoever laid it", owner.getMaxHealth, owner.getHealth)
+    assertEquals("nor their team", ally.getMaxHealth, ally.getHealth)
+    assertEquals("nor the shielded", shielded.getMaxHealth, shielded.getHealth)
+    assertEquals("nor the phased", phased.getMaxHealth, phased.getHealth)
+    assertEquals("and the dead are not killed again", 0, teams.instance.killTracker.getDeaths(dead.getId))
+    // In a free-for-all nobody is on its owner's side, and it still spares them
+    val ffa = new TestMatch()
+    val alone = ffa.join(CharacterId.Sentinel, 30, 22)
+    val other = ffa.join(CharacterId.Gladiator, 30, 20)
+    ffa.armedTrap(alone, 30, 20, TrapType.MINE)
+    ffa.tick()
+    assertTrue(other.getHealth < other.getMaxHealth)
+    assertEquals("its owner, two cells off, in a free-for-all", alone.getMaxHealth, alone.getHealth)
+  }
+
+  @Test def whatATrapDidToItsVictimIsToldToEveryoneAndAHoldIsAMoveOfTheServers(): Unit = {
+    // A hold puts its victim's client back where the server has them, as any hold does
+    // (holdByServer): counted as a server move, and said to them over TCP
+    for ((character, trapType, holds) <- Seq((CharacterId.Warden, TrapType.BEAR_TRAP, true), (CharacterId.Warden, TrapType.SNARE, true),
+        (CharacterId.Runesmith, TrapType.BINDING_RUNE, true), (CharacterId.Runesmith, TrapType.FIRE_RUNE, false),
+        (CharacterId.Warden, TrapType.POISON_POD, false))) {
+      val fresh = new TestMatch()
+      val owner = fresh.join(character, 20, 30)
+      val enemy = fresh.join(CharacterId.Gladiator, 28, 30)
+      val watcher = fresh.join(CharacterId.Gladiator, 50, 50)
+      val d = TrapDef.get(trapType)
+      assertNotNull(fresh.armedTrap(owner, 30, 30, trapType))
+      assertTrue(fresh.move(enemy, 28, 30))
+      fresh.clearSent()
+      assertTrue(fresh.move(enemy, 29, 30, gapMs = 60))
+      assertEquals(s"${d.name}: sprung", 0, fresh.instance.trapManager.getAll.size)
+      assertEquals(s"${d.name}: a hold is a move of the server's, and nothing else a trap does is", if (holds) 1 else 0, enemy.getServerMoves)
+      val toldToAll = fresh.updatesAbout(fresh.sent(watcher), enemy)
+      assertTrue(s"${d.name}: everyone is told", toldToAll.nonEmpty)
+      assertEquals(s"${d.name}: what it took", enemy.getMaxHealth - d.damage, toldToAll.last.getHealth)
+      val flags = (toldToAll.last.getEffectFlags, toldToAll.last.getEffectFlags2)
+      d.effects.foreach {
+        case Stun(_) => assertTrue(s"${d.name}: seen stunned", (flags._2 & 0x01) != 0 && (flags._1 & 0x04) != 0)
+        case Root(_) => assertTrue(s"${d.name}: seen rooted", (flags._1 & 0x40) != 0)
+        case Burn(_, _, _) => assertTrue(s"${d.name}: seen burning", (flags._1 & 0x10) != 0)
+        case Poison(_, _, _) => assertTrue(s"${d.name}: seen poisoned", (flags._2 & 0x02) != 0)
+        case Slow(_, _) => assertTrue(s"${d.name}: seen slowed", (flags._1 & 0x80) != 0)
+        case _ =>
+      }
+      val toldToThem = fresh.updatesAbout(fresh.tcpSent(enemy), enemy)
+      if (holds) assertEquals(s"${d.name}: its victim is told where the server holds them", Some((new Position(29, 30), 1)),
+        toldToThem.lastOption.map(u => (u.getPosition, u.getServerMoves)))
+    }
+    // And a hold that didn't land (they were just out of another) moves nobody
+    val w = warden(20, 40)
+    val immune = victim(28, 40)
+    m.armedTrap(w, 30, 40, BEAR)
+    immune.tryFreeze(10)
+    Thread.sleep(30)
+    assertTrue(immune.isCCImmune)
+    assertTrue(m.move(immune, 29, 40))
+    assertEquals("the trap bit", immune.getMaxHealth - 10, immune.getHealth)
+    assertEquals("but held nobody", 0, immune.getServerMoves)
   }
 
   @Test def aMinesKillIsCreditedToWhoeverLaidIt(): Unit = {

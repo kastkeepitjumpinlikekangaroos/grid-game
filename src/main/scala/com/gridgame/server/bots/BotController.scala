@@ -1,6 +1,7 @@
 package com.gridgame.server.bots
 
 import com.gridgame.common.Constants
+import com.gridgame.common.GameClock
 import com.gridgame.common.model._
 import com.gridgame.common.observability.Attrs
 import com.gridgame.common.observability.Metrics
@@ -13,6 +14,12 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import scala.jdk.CollectionConverters._
+
+object BotController {
+  /** How often a started match's bots are run (start). A test's clockwork runs them as often
+    * (MatchClockwork in the tests' SimKit). */
+  private[server] val TickIntervalMs: Long = 100L
+}
 
 /**
  * The bots of one match, on a tick of their own (every 100ms): each picks a target, steps, uses
@@ -41,7 +48,7 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
   private[bots] val routes = new ConcurrentHashMap[UUID, BotRoute]()
   private var executor: ScheduledExecutorService = _
 
-  private val TICK_INTERVAL_MS = 100L
+  private val TICK_INTERVAL_MS = BotController.TickIntervalMs
   // Bots take a step every other one a player of the same character would (Movement), so their
   // 100ms at speed 1.0 is the player's 50ms doubled, and a melee bot's 106ms its 53ms.
   private val BOT_MOVE_INTERVAL_MS = 100L
@@ -76,7 +83,7 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
     lastQAbilityTime.put(id, 0L)
     lastEAbilityTime.put(id, 0L)
     // When its last step fell due, staggered so bots don't all step on the same ticks
-    lastMoveTime.put(id, System.currentTimeMillis() - scala.util.Random.nextInt(BOT_MOVE_INTERVAL_MS.toInt))
+    lastMoveTime.put(id, GameClock.now() - scala.util.Random.nextInt(BOT_MOVE_INTERVAL_MS.toInt))
     lastTargetDist.put(id, java.lang.Float.valueOf(Float.MaxValue))
     botShootCooldown.put(id, SHOOT_COOLDOWN_MIN_MS + scala.util.Random.nextLong(SHOOT_COOLDOWN_MAX_MS - SHOOT_COOLDOWN_MIN_MS))
     strafeDirection.put(id, if (scala.util.Random.nextBoolean()) 1 else -1)
@@ -137,7 +144,7 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
   }
 
   /** One pass over every bot. Runs every TICK_INTERVAL_MS once started; tests call it themselves. */
-  private[server] def tick(): Unit = tick(System.currentTimeMillis())
+  private[server] def tick(): Unit = tick(GameClock.now())
 
   /** One pass on the caller's clock, which is what the bots step by: a test can walk them at
     * their pace a tick at a time without waiting for it. */

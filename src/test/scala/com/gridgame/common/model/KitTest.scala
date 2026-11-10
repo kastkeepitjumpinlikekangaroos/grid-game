@@ -100,6 +100,31 @@ class KitTest {
     }
   }
 
+  @Test def aPureHasteIsOneThatDoesNothingToAnyoneButSpeedItsCasterUp(): Unit = {
+    // Which is what lets its key set it off at once, with nothing to aim, and a bot cast it for
+    // where it wants to go: so anything it would do to someone near makes it an attack after all.
+    // One thing at a time, on a haste that is otherwise nothing else
+    val pure = ProjectileDef(id = 0, name = "a haste", speedMultiplier = 0f, damage = 0, maxRange = 0,
+      onHitEffect = Some(SpeedBoost(3000)), aoeOnMaxRange = Some(AoESplashConfig(3.0f, 0)),
+      explosionConfig = Some(ExplosionConfig(0, 0, 3.0f)))
+    assertTrue("a haste and nothing else", pure.onlyHastesCaster)
+    assertTrue("with nothing going off at all", pure.copy(aoeOnMaxRange = None, explosionConfig = None).onlyHastesCaster)
+    val notPure = Seq(
+      "no haste" -> pure.copy(onHitEffect = None),
+      "damage on the hit" -> pure.copy(damage = 1),
+      "a burn beside the haste" -> pure.copy(alsoOnHit = Seq(Burn(10, 1000, 500))),
+      "a slow in place of it" -> pure.copy(onHitEffect = Some(Slow(1000, 0.5f))),
+      "a splash on the hit" -> pure.copy(aoeOnHit = Some(AoESplashConfig(2.0f, 0))),
+      "a splash that hurts" -> pure.copy(aoeOnMaxRange = Some(AoESplashConfig(3.0f, 1))),
+      "a splash that freezes" -> pure.copy(aoeOnMaxRange = Some(AoESplashConfig(3.0f, 0, freezeDurationMs = 500))),
+      "a splash that roots" -> pure.copy(aoeOnMaxRange = Some(AoESplashConfig(3.0f, 0, rootDurationMs = 500))),
+      "a splash that stuns" -> pure.copy(aoeOnMaxRange = Some(AoESplashConfig(3.0f, 0, stunDurationMs = 500))),
+      "a blast that hurts at its centre" -> pure.copy(explosionConfig = Some(ExplosionConfig(1, 0, 3.0f))),
+      "a blast that hurts at its edge" -> pure.copy(explosionConfig = Some(ExplosionConfig(0, 1, 3.0f))))
+    for ((what, d) <- notPure) assertFalse(s"with $what, it is not only a haste", d.onlyHastesCaster)
+    assertTrue("(each of those still hastes, but the first)", notPure.tail.filterNot(_._1.startsWith("a slow")).forall(_._2.hastesCaster))
+  }
+
   @Test def everyNewSlamReachesWhereItsBotCastsIt(): Unit = {
     // GroundSlam(radius) is when a bot casts it, the AoE what it reaches. Each of the volleys' slams
     // keeps the two in step (MeleeKitTest holds the fighters' to it)

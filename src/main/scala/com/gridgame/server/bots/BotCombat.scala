@@ -1,6 +1,7 @@
 package com.gridgame.server.bots
 
 import com.gridgame.common.Constants
+import com.gridgame.common.GameClock
 import com.gridgame.common.model._
 import com.gridgame.common.observability.Attrs
 import com.gridgame.common.observability.Metrics
@@ -92,7 +93,7 @@ trait BotCombat { this: BotController =>
 
     val charDef = CharacterDef.get(bot.getCharacterId)
     val dist = distanceBetween(bot.getPosition, target.getPosition)
-    val now = System.currentTimeMillis()
+    val now = GameClock.now()
     // Read and rolled forward once a tick, so both abilities see the same answer
     val closing = isClosing(bot.getId, dist)
 
@@ -185,7 +186,7 @@ trait BotCombat { this: BotController =>
         val wayIn = roleOf(bot.getCharacterId) != CombatRole.Ranged
         if (wayIn && (dist <= getMaxRange(bot.getCharacterId) || dist > 14)) return false
         if (!wayIn && dist > 5) return false
-        bot.setPhasedUntil(System.currentTimeMillis() + durationMs)
+        bot.setPhasedUntil(GameClock.now() + durationMs)
         broadcastBotPosition(bot)
         true
 
@@ -212,7 +213,7 @@ trait BotCombat { this: BotController =>
         }
         if (away && Math.abs(bestX - botPos.getX) + Math.abs(bestY - botPos.getY) < GET_AWAY_MIN_CELLS) return false
         bot.setPosition(new Position(bestX, bestY))
-        bot.setPhasedUntil(System.currentTimeMillis() + durationMs)
+        bot.setPhasedUntil(GameClock.now() + durationMs)
         broadcastBotPosition(bot)
         true
 
@@ -262,7 +263,7 @@ trait BotCombat { this: BotController =>
         cell match {
           case Some(at) if instance.trapManager.trapAt(at.getX, at.getY) == null =>
             val placed = instance.trapManager.place(bot.getId, bot.getTeamId, at.getX, at.getY,
-              trapType, System.currentTimeMillis())
+              trapType, GameClock.now())
             if (placed == null) false
             else {
               placed.removed.foreach(instance.broadcastTrap(_, TrapAction.REMOVE))
@@ -282,7 +283,7 @@ trait BotCombat { this: BotController =>
         val underFire = firesStoppableShotsAt(target, bot, dist) ||
           incomingShot(bot, Math.cos(facing).toFloat, Math.sin(facing).toFloat)
         if (!underFire) return false
-        bot.raiseBarrier(System.currentTimeMillis(), durationMs, facing)
+        bot.raiseBarrier(GameClock.now(), durationMs, facing)
         barrierShown.add(bot.getId)
         broadcastBotPosition(bot)
         true

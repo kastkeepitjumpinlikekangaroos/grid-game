@@ -1,6 +1,7 @@
 package com.gridgame.server.game
 
 import com.gridgame.common.Constants
+import com.gridgame.common.GameClock
 import com.gridgame.common.model._
 import com.gridgame.common.observability.Attrs
 import com.gridgame.common.observability.Metrics
@@ -53,13 +54,14 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   var world: WorldData = _
   val modifiedTiles = new java.util.concurrent.ConcurrentHashMap[(Int, Int), Int]()
   // When each modified tile changed, for a step the change hadn't reached yet (changedLately)
-  private[game] val tileChangedAt = new java.util.concurrent.ConcurrentHashMap[(Int, Int), Long]()
+  private[game] val tileChangedAt = new java.util.concurrent.ConcurrentHashMap[(Int, Int), java.lang.Long]()
 
   /** Did the cell at (x, y) change (a fence going up) so lately that a client may not have heard
     * yet (NETWORK_TOLERANCE_MS)? A step onto it, or past its corner, was sent knowing nothing of it. */
   def changedLately(x: Int, y: Int): Boolean = {
+    // (A boxed Long: read as a Scala Long, a cell that never changed came back as 0, not null)
     val at = tileChangedAt.get((x, y))
-    at != null && System.currentTimeMillis() - at < Constants.NETWORK_TOLERANCE_MS
+    at != null && GameClock.now() - at.longValue() < Constants.NETWORK_TOLERANCE_MS
   }
 
   def isTeammate(id1: UUID, id2: UUID): Boolean = {
@@ -72,19 +74,19 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   @volatile var isPractice: Boolean = false
   /** The bots playing in this match, if any: they stop with it. */
   var botController: MatchBots = _
-  private var projectileExecutor: ScheduledExecutorService = _
-  private var itemSpawnExecutor: ScheduledExecutorService = _
-  private var timerSyncExecutor: ScheduledExecutorService = _
-  private var playerTickExecutor: ScheduledExecutorService = _
+  // A thread for each of the match's clocks (clocked), one for its respawns and one for its end
+  @volatile private var clockExecutors: Seq[ScheduledExecutorService] = Nil
+  @volatile private var endExecutor: ScheduledExecutorService = _
   private[game] var respawnExecutor: ScheduledExecutorService = _
   /** When the first projectile tick was due, on System.nanoTime, and each after it every
     * PROJECTILE_SPEED_MS: how late each runs is TickStats'. 0 for a match the test ticks by hand. */
   @volatile private var tickOriginNanos: Long = 0L
   /**
-   * The match clock, on System.nanoTime: the clock the executor that ends the match counts on, so
-   * the end comes round exactly when the time is up. The wall clock is no good for it. The system
-   * sets it by a few tens of milliseconds, back as often as forward, every 25 minutes or so (timed,
-   * on macOS), and the executor never sees it.
+   * The match clock, on the clock that only runs forward (GameClock.nanos: System.nanoTime, but
+   * for a test's own): the clock the executor that ends the match counts on, so the end comes round
+   * exactly when the time is up. The wall clock is no good for it. The system sets it by a few tens
+   * of milliseconds, back as often as forward, every 25 minutes or so (timed, on macOS), and the
+   * executor never sees it.
    */
   private var startNanos: Long = 0L
   private var endsAtNanos: Long = 0L
@@ -119,9 +121,9 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     * drive it; tests call this alone and run the ticks themselves. */
   private[server] def begin(): Unit = {
     if (world == null) loadWorld()
-    startNanos = System.nanoTime()
+    startNanos = GameClock.nanos()
     endsAtNanos = startNanos + durationMs * 1000000L
-    startedAtMs = System.currentTimeMillis()
+    startedAtMs = GameClock.now()
     beginOpening()
     running = true
     journalStart()
@@ -147,6 +149,25 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     new GameEventPacket(outbox.nextSeq(), new UUID(0L, 0L), Packet.getCurrentTimestamp, GameEvent.MATCH_INFO,
       gameId = gameId, targetId = matchId)
 
+  /**
+   * Everything a started match does on a clock, and how often: `start` gives each a thread of its
+   * own, and a test plays the same list on a clock of its own (MatchClockwork in the tests' SimKit),
+   * so what is scheduled here is what both run. The projectile tick is first: `start` times it
+   * (TickStats) from the moment it reads this. A respawn and the match's end are booked as they
+   * fall due (Lives.scheduleRespawn, endMatch), and the bots are run by their own BotController.
+   */
+  private[server] def clocked: Seq[Clocked] = Seq(
+    Clocked("tickProjectiles", Constants.PROJECTILE_SPEED_MS.toLong, Constants.PROJECTILE_SPEED_MS.toLong, () => tickProjectiles()),
+    // Burns, poisons and regeneration
+    Clocked("tickPlayers", Constants.PLAYER_TICK_MS.toLong, Constants.PLAYER_TICK_MS.toLong, () => tickPlayers()),
+    // A batch as the match starts, and one every minute after
+    Clocked("spawnItem", 0L, Constants.ITEM_SPAWN_INTERVAL_MS.toLong, () => spawnItemBatch(itemsPerBatch)),
+    Clocked("syncTimer", Constants.TIME_SYNC_INTERVAL_S * 1000L, Constants.TIME_SYNC_INTERVAL_S * 1000L, () => syncTimer()))
+
+  /** How many items a batch spawns, by the size of the map: one to every 2000 cells, three at least
+    * and twenty at most. */
+  private[server] def itemsPerBatch: Int = Math.max(3, Math.min(20, world.width * world.height / 2000))
+
   def start(): Unit = {
     begin()
 
@@ -160,49 +181,28 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
       }
     }
 
-    // Start projectile tick
-    projectileExecutor = Executors.newSingleThreadScheduledExecutor()
+    // Each of the match's clocks on a thread of its own. What is due as the match starts (its first
+    // items) is done here, before start returns: the launcher has everyone in the match by now, so
+    // they are told of them, and nothing else of the match comes first
     tickOriginNanos = System.nanoTime() + Constants.PROJECTILE_SPEED_MS * 1000000L
-    projectileExecutor.scheduleAtFixedRate(
-      safeRunnable("tickProjectiles")(tickProjectiles()),
-      Constants.PROJECTILE_SPEED_MS.toLong,
-      Constants.PROJECTILE_SPEED_MS.toLong,
-      TimeUnit.MILLISECONDS
-    )
-
-    // Spawn items relative to map size (1 item per 500 tiles, min 3, max 20)
-    val mapArea = world.width * world.height
-    val itemCount = Math.max(3, Math.min(20, mapArea / 2000))
-    itemSpawnExecutor = Executors.newSingleThreadScheduledExecutor()
-    spawnItemBatch(itemCount)
-    itemSpawnExecutor.scheduleAtFixedRate(
-      safeRunnable("spawnItem")(spawnItemBatch(itemCount)),
-      Constants.ITEM_SPAWN_INTERVAL_MS.toLong,
-      Constants.ITEM_SPAWN_INTERVAL_MS.toLong,
-      TimeUnit.MILLISECONDS
-    )
-
-    // Start player state tick (burn DoT processing)
-    playerTickExecutor = Executors.newSingleThreadScheduledExecutor()
-    playerTickExecutor.scheduleAtFixedRate(
-      safeRunnable("tickPlayers")(tickPlayers()),
-      200L, 200L, TimeUnit.MILLISECONDS
-    )
+    clockExecutors = Nil
+    clocked.foreach { c =>
+      val executor = Executors.newSingleThreadScheduledExecutor()
+      // Kept as it is made: were what is run below to throw, `stop` still finds it to shut down
+      clockExecutors :+= executor
+      if (c.firstAfterMs == 0L) c.run()
+      executor.scheduleAtFixedRate(safeRunnable(c.name)(c.run()),
+        if (c.firstAfterMs == 0L) c.everyMs else c.firstAfterMs, c.everyMs, TimeUnit.MILLISECONDS)
+    }
 
     // Shared executor for respawn scheduling
     respawnExecutor = Executors.newSingleThreadScheduledExecutor()
 
-    // Start timer sync
-    timerSyncExecutor = Executors.newSingleThreadScheduledExecutor()
-    timerSyncExecutor.scheduleAtFixedRate(
-      safeRunnable("syncTimer")(syncTimer()),
-      Constants.TIME_SYNC_INTERVAL_S.toLong,
-      Constants.TIME_SYNC_INTERVAL_S.toLong,
-      TimeUnit.SECONDS
-    )
-    timerSyncExecutor.schedule(
+    // The end, on the clock that only runs forward
+    endExecutor = Executors.newSingleThreadScheduledExecutor()
+    endExecutor.schedule(
       safeRunnable("endMatch")(endMatch()),
-      endsAtNanos - System.nanoTime(),
+      endsAtNanos - GameClock.nanos(),
       TimeUnit.NANOSECONDS
     )
 
@@ -216,11 +216,9 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   def stop(): Unit = {
     running = false
     if (botController != null) botController.stop()
-    if (projectileExecutor != null) { projectileExecutor.shutdown(); projectileExecutor.shutdownNow() }
-    if (playerTickExecutor != null) { playerTickExecutor.shutdown(); playerTickExecutor.shutdownNow() }
-    if (itemSpawnExecutor != null) { itemSpawnExecutor.shutdown(); itemSpawnExecutor.shutdownNow() }
+    clockExecutors.foreach { e => e.shutdown(); e.shutdownNow() }
     if (respawnExecutor != null) { respawnExecutor.shutdown(); respawnExecutor.shutdownNow() }
-    if (timerSyncExecutor != null) { timerSyncExecutor.shutdown(); timerSyncExecutor.shutdownNow() }
+    if (endExecutor != null) { endExecutor.shutdown(); endExecutor.shutdownNow() }
     // Release manager state and unregister their async gauges. Without this, the
     // gauge callbacks remain registered against OTel's meter and keep reporting the
     // post-mortem sizes of projectiles/items, and across matches the callbacks
@@ -237,13 +235,13 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
 
   /** Rounded up: a countdown shows the second that is running out, and reads 0 once the time is up. */
   def getRemainingSeconds: Int = {
-    val left = endsAtNanos - System.nanoTime()
+    val left = endsAtNanos - GameClock.nanos()
     if (left <= 0L) 0 else ((left + 999999999L) / 1000000000L).toInt
   }
 
-  def getElapsedSeconds: Int = ((System.nanoTime() - startNanos) / 1000000000L).toInt
+  def getElapsedSeconds: Int = ((GameClock.nanos() - startNanos) / 1000000000L).toInt
 
-  def isTimeUp: Boolean = System.nanoTime() - endsAtNanos >= 0L
+  def isTimeUp: Boolean = GameClock.nanos() - endsAtNanos >= 0L
 
   def isRunning: Boolean = running
 
@@ -271,7 +269,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     // Traps on the ground: the ones that have run out, and the ones somebody is standing on.
     // A player who walked onto one between ticks has already sprung it (ClientHandler); this
     // catches everyone standing on one, bots and players the server itself moved included.
-    applyTrapEvents(trapManager.tick(System.currentTimeMillis()))
+    applyTrapEvents(trapManager.tick(GameClock.now()))
     pickUpItemsInReach()
     // Flush all buffered writes at end of tick
     flushAllInstancePlayers()
@@ -342,7 +340,8 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
     0.toShort, 0.toShort, null, 0.toByte, 0.toShort, 0.toShort
   )
 
-  private def syncTimer(): Unit = {
+  /** Tell everyone the time left, while there is any. */
+  private[server] def syncTimer(): Unit = {
     if (!running || isTimeUp) return
     val tickStart = System.nanoTime()
     broadcastToInstance(timeSyncPacket())
@@ -350,3 +349,7 @@ class GameInstance(val gameId: Short, val worldFile: String, val durationMinutes
   }
 
 }
+
+/** One of the things a started match does on a clock (GameInstance.clocked): `run`, first
+  * `firstAfterMs` after the match starts (0: as it starts) and then every `everyMs`. */
+private[server] final case class Clocked(name: String, firstAfterMs: Long, everyMs: Long, run: () => Unit)

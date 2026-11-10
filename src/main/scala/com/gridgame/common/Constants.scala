@@ -52,6 +52,9 @@ object Constants {
   // Health regenerates at this share of the character's own max health a second, so everyone
   // takes the same 50s to come back from nothing (GameInstance.tickPlayers)
   val REGEN_SHARE_PER_SEC: Double = 0.02
+  // How often a match ticks its players: a burn's and a poison's bites land on these ticks, and
+  // regeneration is counted by them (GameInstance.tickPlayers)
+  val PLAYER_TICK_MS: Int = 200
   val HEALTH_BAR_WIDTH_PX: Int = 44
   val HEALTH_BAR_HEIGHT_PX: Int = 6
   val HEALTH_BAR_OFFSET_Y: Int = 5

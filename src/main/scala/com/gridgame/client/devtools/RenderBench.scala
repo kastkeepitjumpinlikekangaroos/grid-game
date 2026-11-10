@@ -313,6 +313,16 @@ class RenderBenchApp extends Application {
 
     def stepWorld(frame: Int): Unit = {
       val now = System.currentTimeMillis()
+      // --effects: every other stunned player is knocked up (a Launch), again and again, a second
+      // in the air and half a second down
+      if (withEffects) {
+        var i = 1
+        while (i < players.length) {
+          val p = players(i)
+          if (i % 14 == 1 && now >= p.getAirborneUntil + 500) p.setAirborne(now, now + 1000)
+          i += 7
+        }
+      }
       // Projectiles fly ~20 server ticks a second; retire and replace at max range
       val it = client.getProjectiles.values().iterator()
       var retired = 0

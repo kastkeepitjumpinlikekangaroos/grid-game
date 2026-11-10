@@ -1,22 +1,32 @@
 package com.gridgame.server.game
 
-import com.gridgame.common.model.CharacterDef
 import com.gridgame.common.model.Player
-import com.gridgame.common.observability.Attrs
-import com.gridgame.common.observability.Metrics
 import com.gridgame.common.protocol._
 import io.netty.channel.Channel
 import java.io.File
 import java.util.UUID
 
 /**
- * A player joining the match — the first time, when it starts, or again after a reconnect, which
- * takes nothing from the join but the connection — and leaving it. A joiner is sent the match as it
- * stands: everyone in it, the items, traps and changed tiles, their inventory and the opening.
+ * A player of the match coming back to it after a reconnect — which takes nothing from the join
+ * but the connection — or connecting to the match server playing it, and leaving it. They are sent
+ * the match as it stands: everyone in it, the items, traps and changed tiles, their inventory and
+ * the opening. Nobody joins a match in progress who was not seated in it when it started.
  */
 trait JoinRequests { this: ClientHandler =>
   private[game] def handlePlayerJoin(packet: PlayerJoinPacket, tcpChannel: Channel): Boolean = {
     val playerId = packet.getPlayerId
+
+    // Nobody is put into a match by asking: everyone in one was seated when it started
+    // (MatchLauncher), and is sent it again here when their client comes back, or admitted by the
+    // match server playing it (admit). A join from anyone else is no rejoin. It used to make them
+    // a player of it as the join described them — wherever it said, at full health, as whichever
+    // character it named — which let a player who had left the match (PLAYER_LEAVE) come back as
+    // new; the server stopped sending such joins here, and the match itself has no such door now.
+    val existing = registry.get(playerId)
+    if (existing == null) {
+      journal.refused(playerId, packet.getPlayerName, "join refused: not a player of this match")
+      return false
+    }
 
     // Which match this is, for a problem report the player sends about it, ahead of the world as a
     // match's start sends it
@@ -33,65 +43,20 @@ trait JoinRequests { this: ClientHandler =>
       println("No world file configured on server")
     }
 
-    // The join places the player, and a reconnected client counts its packets from zero again
+    // The join places nobody, and a reconnected client counts its packets from zero again
     validator.resetMovementFence(playerId)
 
-    if (registry.contains(playerId)) {
-      println(s"Player rejoining: $playerId")
-      val existing = registry.get(playerId)
-      // A client that has just (re)connected knows nothing of the match, so nothing it says about
-      // itself is taken: where the player is and how much health they have stay the server's, and
-      // it is told both below. It used to be put wherever it said and healed to full — a teleport
-      // and a heal, a revival for the dead, whenever a client cared to send a join.
-      registry.rebind(existing, tcpChannel)
-      existing.updateHeartbeat()
-      journal.note(existing, "rejoined: its client joined again and was sent the match")
+    println(s"Player rejoining: $playerId")
+    // A client that has just (re)connected knows nothing of the match, so nothing it says about
+    // itself is taken: where the player is and how much health they have stay the server's, and
+    // it is told both below. It used to be put wherever it said and healed to full — a teleport
+    // and a heal, a revival for the dead, whenever a client cared to send a join.
+    registry.rebind(existing, tcpChannel)
+    existing.updateHeartbeat()
+    journal.note(existing, "rejoined: its client joined again and was sent the match")
 
-      sendMatchTo(existing)
-      true
-    } else {
-      val charDef = com.gridgame.common.model.CharacterDef.get(packet.getCharacterId)
-      if (charDef == null) {
-        System.err.println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} invalid character ID: ${packet.getCharacterId}")
-        Metrics.validationFailed.add(1L, Attrs.VfCharacter)
-        journal.refused(playerId, packet.getPlayerName, s"join refused (character): no character ${packet.getCharacterId}")
-        return false
-      }
-      // gridgame.character.played is incremented from ClientRegistry.add to cover all join paths
-      // Validate new player join position against world bounds and walkability
-      val joinPos = packet.getPosition
-      val world = instance.world
-      // A joiner claiming a cell in the other team's half is put in their own (the divider), as
-      // one claiming a wall is put on a spawn point
-      val sideOk = world == null || world.divider == null ||
-        world.divider.side(joinPos.getX, joinPos.getY) == com.gridgame.common.model.TeamDivider.sideOfTeam(packet.getTeamId)
-      val validPos = if (world != null && joinPos.getX >= 0 && joinPos.getX < world.width &&
-          joinPos.getY >= 0 && joinPos.getY < world.height && world.isWalkable(joinPos.getX, joinPos.getY) && sideOk) {
-        joinPos
-      } else if (world != null) {
-        instance.spawnFor(packet.getTeamId, Set.empty)
-      } else {
-        joinPos // No world loaded yet — accept client position
-      }
-      val player = new Player(playerId, packet.getPlayerName, validPos, packet.getColorRGB, charDef.maxHealth, charDef.maxHealth)
-      player.setCharacterId(packet.getCharacterId)
-      player.setTcpChannel(tcpChannel)
-
-      registry.add(player)
-      journal.note(player, s"joined as ${MatchJournal.characterName(packet.getCharacterId)}, at (${validPos.getX},${validPos.getY})")
-
-      println(s"Player joined: ${playerId.toString.substring(0, 8)} ('${packet.getPlayerName}') at ${packet.getPosition} with health ${player.getHealth}")
-
-      // Send existing players, items, and tile modifications to new player
-      sendExistingPlayers(playerId, player)
-      sendExistingItems(player)
-      instance.sendTrapsTo(player)
-      sendInventoryContents(playerId, player)
-      instance.sendModifiedTiles(player)
-      instance.sendOpeningTo(player)
-
-      true
-    }
+    sendMatchTo(existing)
+    true
   }
 
   /**

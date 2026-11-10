@@ -1,6 +1,7 @@
 package com.gridgame.server.game
 
 import com.gridgame.common.Constants
+import com.gridgame.common.GameClock
 import com.gridgame.common.model.CharacterDef
 import com.gridgame.common.model.Direction
 import com.gridgame.common.model.ItemType
@@ -40,12 +41,12 @@ trait ItemRequests { this: ClientHandler =>
             println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} healed to full")
 
           case ItemType.Shield =>
-            player.setShieldUntil(System.currentTimeMillis() + Constants.SHIELD_DURATION_MS)
+            player.setShieldUntil(GameClock.now() + Constants.SHIELD_DURATION_MS)
             broadcastState(player)
             println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} shield activated")
 
           case ItemType.Gem =>
-            player.setGemBoostUntil(System.currentTimeMillis() + Constants.GEM_DURATION_MS)
+            player.setGemBoostUntil(GameClock.now() + Constants.GEM_DURATION_MS)
             broadcastState(player)
             println(s"ClientHandler: Player ${playerId.toString.substring(0, 8)} gem boost activated")
 

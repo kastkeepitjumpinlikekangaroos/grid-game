@@ -1,6 +1,7 @@
 package com.gridgame.server.game
 
 import com.gridgame.common.Constants
+import com.gridgame.common.GameClock
 import com.gridgame.common.model._
 import com.gridgame.common.observability.Attrs
 import com.gridgame.common.observability.Metrics
@@ -40,7 +41,7 @@ trait Vitals { this: GameInstance =>
   private[server] def tickPlayers(): Unit = {
     if (!running) return
     val tickStart = System.nanoTime()
-    val now = System.currentTimeMillis()
+    val now = GameClock.now()
     registry.forEachPlayer { player =>
       if (!player.isDead) {
         // --- Damage over time: a burn and a poison run side by side ---
@@ -63,7 +64,7 @@ trait Vitals { this: GameInstance =>
           // second, which healed the frailest fastest and stopped altogether from 145 HP.
           val maxHp = player.getMaxHealth
           val regenPerSec = maxHp * Constants.REGEN_SHARE_PER_SEC
-          player.addRegenAccumulator(regenPerSec * 0.2) // 200ms tick
+          player.addRegenAccumulator(regenPerSec * Constants.PLAYER_TICK_MS / 1000.0)
           val accum = player.getRegenAccumulator
           if (accum >= 1.0) {
             val healAmount = accum.toInt

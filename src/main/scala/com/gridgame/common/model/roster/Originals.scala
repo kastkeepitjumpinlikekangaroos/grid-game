@@ -132,13 +132,13 @@ private[model] object Originals {
     speedMultiplier = 0.7f, damage = 51, maxRange = 2,
     hitRadius = 2.2f
   )
-  // The Samurai's Crescent Cut: one wide cut that goes on through everyone in its way. It was a
-  // ring of eight of these, 5 cells out
+  // The Samurai's Crescent Cut: one wide cut that goes on through everyone in its way, knocking
+  // each up into the air, stunned, for a second. It was a ring of eight of these, 5 cells out
   val SwordWaveDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.SWORD_WAVE, name = "Sword Wave",
     speedMultiplier = 0.7f, damage = 24, maxRange = 7,
     hitRadius = 2.4f, pierceCount = 3,
-    onHitEffect = Some(Stun(600))
+    onHitEffect = Some(Launch(1000))
   )
   val PlagueBoltDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.PLAGUE_BOLT, name = "Plague Bolt",
@@ -403,7 +403,7 @@ private[model] object Originals {
     ),
     eAbility = AbilityDef(
       name = "Crescent Cut",
-      description = "One wide cut that goes on through everyone in its path, stunning each for 0.6s.",
+      description = "One wide cut that goes on through everyone in its path, knocking each into the air, stunned, for 1s.",
       cooldownMs = 12000, maxRange = 7, damage = 24,
       projectileType = ProjectileType.SWORD_WAVE, keybind = "E"
     ),

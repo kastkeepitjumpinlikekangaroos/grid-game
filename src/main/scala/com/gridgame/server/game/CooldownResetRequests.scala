@@ -1,5 +1,6 @@
 package com.gridgame.server.game
 
+import com.gridgame.common.GameClock
 import com.gridgame.common.observability.Attrs
 import com.gridgame.common.observability.Metrics
 import com.gridgame.common.protocol._
@@ -34,7 +35,7 @@ trait CooldownResetRequests { this: ClientHandler =>
     // last moments, which the client's ends a trip across the wire before ours, as for a shot), and
     // everyone in a free-for-all's opening ceasefire
     if (player.isDead || player.isFrozen) return refuse("dead or held", 0L)
-    if (player.getPhasedUntil - System.currentTimeMillis() > PHASED_SHOT_GRACE_MS) return refuse("phased", 0L)
+    if (player.getPhasedUntil - GameClock.now() > PHASED_SHOT_GRACE_MS) return refuse("phased", 0L)
     if (instance.attacksLocked) return refuse("the opening ceasefire", 0L)
 
     if (!validator.takeCooldownReset(playerId, instance.firstResetFrom)) {

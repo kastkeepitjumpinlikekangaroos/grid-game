@@ -1,5 +1,6 @@
 package com.gridgame.common.model
 
+import com.gridgame.common.GameClock
 import java.net.InetSocketAddress
 import java.util.Objects
 import java.util.UUID
@@ -17,7 +18,7 @@ class Player(
 
   // When the player's client was last heard from: written by the network's threads, read by the
   // server's cleanup loop, which takes a player it hasn't heard from in CLIENT_TIMEOUT_MS for gone
-  @volatile private var lastUpdateTime: Long = System.currentTimeMillis()
+  @volatile private var lastUpdateTime: Long = GameClock.now()
   // Stored as AnyRef to avoid Netty dependency in common module; cast to Channel in server code
   private var tcpChannel: AnyRef = _
   private var udpAddress: InetSocketAddress = _
@@ -29,6 +30,10 @@ class Player(
   // A stun is a freeze that is drawn differently: frozenUntil holds it, this only says which
   // of the two it is, so every "is frozen" gate keeps working untouched.
   private var stunnedUntil: Long = 0
+  // A launch is a stun that throws them in the air (OnHitEffect.Launch): when it went up and when
+  // it comes down, which the client draws as an arc. It always ends with the stun under it.
+  @volatile private var airborneFrom: Long = 0
+  @volatile private var airborneUntil: Long = 0
   private var ccImmuneUntil: Long = 0
   @volatile private var phasedUntil: Long = 0
   private var characterId: Byte = CharacterId.DEFAULT.id
@@ -86,7 +91,7 @@ class Player(
 
   def setPosition(position: Position): Unit = {
     this.position = Objects.requireNonNull(position, "Position cannot be null")
-    this.lastUpdateTime = System.currentTimeMillis()
+    this.lastUpdateTime = GameClock.now()
   }
 
   def getColorRGB: Int = colorRGB
@@ -98,7 +103,7 @@ class Player(
   def getLastUpdateTime: Long = lastUpdateTime
 
   def updateHeartbeat(): Unit = {
-    this.lastUpdateTime = System.currentTimeMillis()
+    this.lastUpdateTime = GameClock.now()
   }
 
   def getTcpChannel: AnyRef = tcpChannel
@@ -181,7 +186,7 @@ class Player(
     this.shieldUntil = until
   }
 
-  def hasShield: Boolean = System.currentTimeMillis() < shieldUntil
+  def hasShield: Boolean = GameClock.now() < shieldUntil
 
   def getGemBoostUntil: Long = gemBoostUntil
 
@@ -189,7 +194,7 @@ class Player(
     this.gemBoostUntil = until
   }
 
-  def hasGemBoost: Boolean = System.currentTimeMillis() < gemBoostUntil
+  def hasGemBoost: Boolean = GameClock.now() < gemBoostUntil
 
   def getChargeLevel: Int = _chargeLevel
 
@@ -203,16 +208,17 @@ class Player(
     this.frozenUntil = until
   }
 
-  def isFrozen: Boolean = System.currentTimeMillis() < frozenUntil
+  def isFrozen: Boolean = GameClock.now() < frozenUntil
 
-  def isCCImmune: Boolean = System.currentTimeMillis() < ccImmuneUntil
+  def isCCImmune: Boolean = GameClock.now() < ccImmuneUntil
 
   /** Try to freeze this player. Returns false if already frozen, CC immune, or phased. */
   def tryFreeze(durationMs: Long): Boolean = {
     if (isFrozen || isCCImmune || isPhased) return false
-    val now = System.currentTimeMillis()
+    val now = GameClock.now()
     frozenUntil = now + durationMs
     stunnedUntil = 0
+    airborneUntil = 0
     ccImmuneUntil = frozenUntil + com.gridgame.common.Constants.CC_IMMUNITY_MS
     true
   }
@@ -224,7 +230,7 @@ class Player(
   }
 
   /** A stunned player is frozen too — this is only what the client draws over them. */
-  def isStunned: Boolean = System.currentTimeMillis() < stunnedUntil
+  def isStunned: Boolean = GameClock.now() < stunnedUntil
 
   /**
    * Try to stun this player: a freeze by another name, with the same rules, the same timer and
@@ -233,11 +239,33 @@ class Player(
    */
   def tryStun(durationMs: Long): Boolean = {
     if (isFrozen || isCCImmune || isPhased) return false
-    val now = System.currentTimeMillis()
+    val now = GameClock.now()
     frozenUntil = now + durationMs
     stunnedUntil = frozenUntil
+    airborneUntil = 0
     ccImmuneUntil = frozenUntil + com.gridgame.common.Constants.CC_IMMUNITY_MS
     true
+  }
+
+  /** Try to knock this player up into the air: a stun (tryStun, the same rules), and in the air for
+    * as long as it holds them. */
+  def tryLaunch(durationMs: Long): Boolean = {
+    if (!tryStun(durationMs)) return false
+    airborneFrom = GameClock.now()
+    airborneUntil = stunnedUntil
+    true
+  }
+
+  /** In the air from a launch (only ever while stunned by it). */
+  def isAirborne: Boolean = GameClock.now() < airborneUntil
+  def getAirborneFrom: Long = airborneFrom
+  def getAirborneUntil: Long = airborneUntil
+
+  /** What a client heard of a launch: up at `from` (when it first heard), down at `until`; 0 is on
+    * the ground. */
+  def setAirborne(from: Long, until: Long): Unit = {
+    airborneFrom = from
+    airborneUntil = until
   }
 
   def getPhasedUntil: Long = phasedUntil
@@ -246,7 +274,7 @@ class Player(
     this.phasedUntil = until
   }
 
-  def isPhased: Boolean = System.currentTimeMillis() < phasedUntil
+  def isPhased: Boolean = GameClock.now() < phasedUntil
 
   def getCharacterId: Byte = characterId
 
@@ -262,7 +290,7 @@ class Player(
   }
 
   // Burn accessors
-  def isBurning: Boolean = System.currentTimeMillis() < burnUntil
+  def isBurning: Boolean = GameClock.now() < burnUntil
 
   def getBurnUntil: Long = burnUntil
 
@@ -277,7 +305,7 @@ class Player(
   def getBurnOwnerId: UUID = burnOwnerId
 
   def applyBurn(totalDamage: Int, durationMs: Int, tickMs: Int, ownerId: UUID): Unit = {
-    val now = System.currentTimeMillis()
+    val now = GameClock.now()
     this.burnUntil = now + durationMs
     this.burnTickMs = tickMs
     val numTicks = durationMs / tickMs
@@ -312,7 +340,7 @@ class Player(
     this.poisonTickMs = tick
     this.poisonTicksLeft = Math.max(1, durationMs / tick)
     this.poisonDamageLeft = Math.max(0, totalDamage)
-    this.nextPoisonTickAt = System.currentTimeMillis() + tick
+    this.nextPoisonTickAt = GameClock.now() + tick
     this.poisonOwnerId = ownerId
   }
 
@@ -333,14 +361,14 @@ class Player(
   }
 
   // Speed boost accessors
-  def hasSpeedBoost: Boolean = System.currentTimeMillis() < speedBoostUntil
+  def hasSpeedBoost: Boolean = GameClock.now() < speedBoostUntil
 
   def getSpeedBoostUntil: Long = speedBoostUntil
 
   def setSpeedBoostUntil(until: Long): Unit = { this.speedBoostUntil = until }
 
   // Root accessors
-  def isRooted: Boolean = System.currentTimeMillis() < rootedUntil
+  def isRooted: Boolean = GameClock.now() < rootedUntil
 
   def getRootedUntil: Long = rootedUntil
 
@@ -349,14 +377,14 @@ class Player(
   /** Try to root this player. Returns false if CC immune or phased. */
   def tryRoot(durationMs: Long): Boolean = {
     if (isCCImmune || isPhased) return false
-    val now = System.currentTimeMillis()
+    val now = GameClock.now()
     rootedUntil = now + durationMs
     ccImmuneUntil = rootedUntil + com.gridgame.common.Constants.CC_IMMUNITY_MS
     true
   }
 
   // Slow accessors
-  def isSlowed: Boolean = System.currentTimeMillis() < slowedUntil
+  def isSlowed: Boolean = GameClock.now() < slowedUntil
 
   def getSlowedUntil: Long = slowedUntil
 
@@ -369,7 +397,7 @@ class Player(
   /** Try to slow this player. Returns false if CC immune or phased. */
   def trySlow(durationMs: Long, multiplier: Float): Boolean = {
     if (isCCImmune || isPhased) return false
-    val now = System.currentTimeMillis()
+    val now = GameClock.now()
     slowedUntil = now + durationMs
     slowMultiplier = multiplier
     true
@@ -381,7 +409,7 @@ class Player(
   }
 
   // Barrier accessors
-  def hasBarrier: Boolean = System.currentTimeMillis() < barrierUntil
+  def hasBarrier: Boolean = GameClock.now() < barrierUntil
 
   def getBarrierUntil: Long = barrierUntil
 
@@ -404,7 +432,7 @@ class Player(
 
   /** Drop the barrier, if it is up: it ends now. */
   def dropBarrier(): Unit = {
-    val now = System.currentTimeMillis()
+    val now = GameClock.now()
     if (now < barrierUntil) barrierUntil = now
   }
 

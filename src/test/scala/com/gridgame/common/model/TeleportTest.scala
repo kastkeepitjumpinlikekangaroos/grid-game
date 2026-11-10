@@ -31,6 +31,43 @@ class TeleportTest {
   }
 
   @Test
+  def aPointHalfwayBetweenTwoCellsFallsToTheOneFurtherFromWhereItSetOut(): Unit = {
+    // Whichever way it went: what makes a star's line land the same heading north-east as south-east
+    assertEquals(10, Teleport.cellAlong(10, 0.0))
+    assertEquals(10, Teleport.cellAlong(10, 0.49))
+    assertEquals(11, Teleport.cellAlong(10, 0.5))
+    assertEquals(11, Teleport.cellAlong(10, 1.49))
+    assertEquals(12, Teleport.cellAlong(10, 1.5))
+    assertEquals(10, Teleport.cellAlong(10, -0.49))
+    assertEquals(9, Teleport.cellAlong(10, -0.5))
+    assertEquals(9, Teleport.cellAlong(10, -1.49))
+    assertEquals(8, Teleport.cellAlong(10, -1.5))
+    for (from <- Seq(-3, 0, 7); along <- Seq(0.5, 1.5, 2.5, 7.5, 0.25, 3.75))
+      assertEquals(s"$along on from $from, and back", Teleport.cellAlong(from, along) - from, from - Teleport.cellAlong(from, -along))
+  }
+
+  @Test
+  def theServerTakesAStarToItsRangesLastCellAndNoFurther(): Unit = {
+    // Its thirty cells, counted in steps, the three every reach is given, and the steps the server
+    // may be behind by: the same in every direction
+    val world = WorldData.createEmpty(200, 200)
+    for (lag <- Seq(0, 5, 20)) {
+      val reach = Constants.STAR_MAX_DISTANCE + Constants.TELEPORT_RANGE_TOLERANCE + lag
+      for ((sx, sy) <- Seq((1, 0), (-1, 0), (0, 1), (0, -1))) {
+        assertTrue(s"$reach cells ${(sx, sy)}, the server $lag behind",
+          Teleport.isValidStarTarget(world, 100, 100, 100 + sx * reach, 100 + sy * reach, lag))
+        assertFalse(s"${reach + 1} cells ${(sx, sy)}, the server $lag behind",
+          Teleport.isValidStarTarget(world, 100, 100, 100 + sx * (reach + 1), 100 + sy * (reach + 1), lag))
+      }
+      // Round a corner it is the steps that count, not the line
+      assertTrue(Teleport.isValidStarTarget(world, 100, 100, 100 + reach - 10, 110, lag))
+      assertFalse(Teleport.isValidStarTarget(world, 100, 100, 100 + reach - 10, 111, lag))
+      assertTrue(Teleport.isValidStarTarget(world, 100, 100, 100 - (reach - 10), 90, lag))
+      assertFalse(Teleport.isValidStarTarget(world, 100, 100, 100 - (reach - 10), 89, lag))
+    }
+  }
+
+  @Test
   def starAimedOffTheMapStaysOnIt(): Unit = {
     assertEquals(Some((0, 30)), star(open(), 5, 30, -20, 30))
   }

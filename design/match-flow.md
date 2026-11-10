@@ -50,9 +50,19 @@ to each other before anyone can shoot anyone.
 - **Nothing crosses it in flight either.** `ProjectileManager` reads the divider once a tick and
   stops any projectile whose sub-step crosses the line, a hair short of it, the way a barrier does:
   `ProjectileAction.BLOCKED` with **no** target, since this wall is nobody's. An explosive goes off
-  there instead. A hit radius reaches a cell and a half past the line and a blast several, so a
+  there instead, and its end is told as any explosive's is. Short of the line the wall changes
+  nothing: a shot on its own side keeps its pace, stops at its own side's walls and ends at its
+  range (`TeamDividerTest` holds a shot to both: stopped at the line, and untouched before it). A hit radius reaches a cell and a half past the line and a blast several, so a
   direct hit or a blast whose line to its victim crosses the divider is cut too (`dividerBetween`),
   exactly as a held barrier shelters whoever stands behind it.
+- **Nor from a place the server only takes a client's word for.** Where a shot says it was fired
+  from is taken within three cells, and the lag, of where the server has its shooter, and a trap
+  thrown from a copy of its thrower that far behind is taken without its line being judged
+  (design/networking.md, *Bad networks*): both reach over the wall. So a shot said to be fired from
+  the far half, or from the wall itself, is refused (`ShotRequests`), and so is a throw whose
+  target is across the wall from where the server has its thrower
+  (`TrapPlacement.isValidTargetLagging`): no honest client is ever on the far side. Found by
+  `MatchFuzzTest`, which a modified client's requests are part of; `TeamDividerTest` (server).
 - **It is the same wall for everyone**, allies included: for thirty seconds the two halves cannot
   touch each other at all.
 - **Bots** ignore anyone on the far side (`findNearestPlayer`) — they can neither reach nor hit
@@ -111,7 +121,10 @@ everyone gets the same half minute to find their feet and pick their ground.
 A match ends the moment its time is up: `GameInstance.start` schedules `endMatch` for its deadline.
 The 10-second `TIME_SYNC`s only report the time left, and every client counts down from the last
 one. The match clock (`getRemainingSeconds`, `isTimeUp`) is `System.nanoTime`, the clock that
-executor counts on, never the wall clock.
+executor counts on, never the wall clock (through `GameClock.nanos`, so a test can play a match on
+a clock of its own: src/test/CLAUDE.md). The time left is the second that is running out, so it
+reads 0 only once the time is up; the time played is the seconds gone by whole, and a match is
+saved with its minutes rounded, one at least (`MatchClocksTest`, `EndGameTest`).
 
 It used to be the wall clock, and the syncs used to end the match, the first to find the time up.
 The sync due at the deadline comes round only a few milliseconds after it, and macOS's `timed`
@@ -131,7 +144,13 @@ until they left it, and the lobby counted against `MAX_LOBBIES` until a restart 
 and nobody could make a lobby, practice or play ranked. The results are lost then, not the server.
 A match that fails to start leaves nothing behind either: `MatchLauncher.launch` stops and
 unregisters what it had started before it rethrows, and `LobbyHandler.handleStart` closes the lobby
-(`LOBBY_CLOSED`). `EndGameTest` and `LobbyFlowTest` pin both.
+(`LOBBY_CLOSED`). `EndGameTest`, `LobbyFlowTest` and `LobbyRulesTest` pin both.
+
+**Two ends at once end it once.** The match's timer and a practice player leaving can both get
+there with the lobby still standing; only the first finds it not yet ending (`MatchEnd.finishing`),
+so it is scored, saved and rated once. **Only a ranked match with two or more humans in it moves a
+rating**: a casual one moves nobody's, however many of its players have accounts, and against bots
+alone there is nobody to take the points from (`EndGameTest`).
 
 ## Who wins
 

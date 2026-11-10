@@ -20,7 +20,7 @@ class PlayerUpdatePacket(
     // Client -> server: the count the client had seen when it sent this position.
     val serverMoves: Int = 0,
     // Status flags that didn't fit in the first byte: bit 0 stunned, bit 1 poisoned,
-    // bit 2 barrier up. Defaulted so the call sites that predate them still compile.
+    // bit 2 barrier up, bit 3 knocked up. Defaulted so the call sites that predate them still compile.
     val effectFlags2: Int = 0,
     // Where the player is aiming, as angle / 2pi * 65536 (see aimAngleRadians).
     val aimAngle: Int = 0,
@@ -158,7 +158,7 @@ class PlayerUpdatePacket(
     // [45-48] Server moves
     buffer.putInt(serverMoves)
 
-    // [49] Second effect flags byte (bit 0: stunned, bit 1: poisoned, bit 2: barrier up)
+    // [49] Second effect flags byte (bit 0: stunned, bit 1: poisoned, bit 2: barrier up, bit 3: knocked up)
     buffer.put(effectFlags2.toByte)
 
     // [50-51] Aim angle, angle / 2pi * 65536

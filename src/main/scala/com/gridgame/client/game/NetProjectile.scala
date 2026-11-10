@@ -148,13 +148,13 @@ final class NetProjectile(pid: Int, owner: UUID, x0: Float, y0: Float, dirX0: Fl
       var struck = false
       while (i <= n && !struck) {
         var d = sub * i
-        struck = TerrainImpact.blocks(world, TerrainImpact.cellOf(nX + nUx * d), TerrainImpact.cellOf(nY + nUy * d), passes)
+        struck = TerrainImpact.blocks(world, TerrainImpact.cellToward(nX + nUx * d, nUx), TerrainImpact.cellToward(nY + nUy * d, nUy), passes)
         if (struck) {
           // Stopped at the end of this sub-step, and drawn on the face it met, which is where its
           // DESPAWN will put it (TerrainImpact.resolve walks back the same way)
           var back = 0
           while (back < 40 && d > 0f &&
-                 TerrainImpact.blocks(world, TerrainImpact.cellOf(nX + nUx * d), TerrainImpact.cellOf(nY + nUy * d), passes)) {
+                 TerrainImpact.blocks(world, TerrainImpact.cellToward(nX + nUx * d, nUx), TerrainImpact.cellToward(nY + nUy * d, nUy), passes)) {
             d -= 0.05f
             back += 1
           }

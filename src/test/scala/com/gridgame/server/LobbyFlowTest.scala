@@ -212,9 +212,11 @@ class LobbyFlowTest {
     host.lobbyAction(LobbyAction.LEAVE)
     assertTrue("the guest plays on", gi.isRunning)
     assertNull(gi.registry.get(host.id))
+    assertTrue(server.gameInstances.containsKey(lobbyId))
     guest.lobbyAction(LobbyAction.LEAVE)
     assertFalse(gi.isRunning)
     assertNull(server.lobbyManager.getLobby(lobbyId))
+    assertFalse("and the server keeps nothing of the match", server.gameInstances.containsKey(lobbyId))
     started -= lobbyId
   }
 
@@ -307,5 +309,29 @@ class LobbyFlowTest {
       assertTrue(gi.world.isWalkable(j.getPosition))
     }
     assertNotEquals("apart", joins(0).getPosition, joins(1).getPosition)
+  }
+
+  @Test def aStartedMatchTellsEveryoneOfItsBotsAsItDoesOfItsPlayers(): Unit = {
+    // Who they are, the character each was seated as and plays, and where the server put them:
+    // a bot nobody was told of is one that walks onto every screen from nowhere
+    val host = new Client("host")
+    host.lobbyAction(LobbyAction.CREATE)
+    for (_ <- 1 to 3) host.lobbyAction(LobbyAction.ADD_BOT)
+    val seated = host.lobby.botManager.getBots
+    assertEquals(3, seated.size)
+    host.received()
+    val gi = start(host)
+    val joins = host.received().collect { case j: PlayerJoinPacket => j }
+    assertEquals("the host, then each bot", host.id +: seated.map(_.id), joins.map(_.getPlayerId))
+    for ((slot, join) <- seated.zip(joins.tail)) {
+      val bot = gi.registry.get(slot.id)
+      assertNotNull(s"${slot.name} is in the match", bot)
+      assertEquals(s"${slot.name} plays the character it was seated as", slot.characterId, bot.getCharacterId)
+      assertEquals(s"${slot.name}: with that character's health", CharacterDef.get(slot.characterId).maxHealth, bot.getHealth)
+      assertEquals(s"${slot.name}: told as it is", (slot.name, slot.characterId, bot.getPosition, bot.getHealth),
+        (join.getPlayerName, join.getCharacterId, join.getPosition, join.getHealth))
+    }
+    val cells = (host.id +: seated.map(_.id)).map(id => gi.registry.get(id).getPosition)
+    assertEquals("nobody starts on anybody else", cells.size, cells.distinct.size)
   }
 }

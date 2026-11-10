@@ -437,10 +437,12 @@ class CharacterSelectionPanel(
       stats.append(s"  ${e.centerDamage}-${e.edgeDamage} blast ${e.blastRadius.toInt} cells"))
     tDef.effects.foreach {
       case Stun(dur) => stats.append(s"  Stun ${seconds(dur)}")
+      case Launch(dur) => stats.append(s"  Knock-up ${seconds(dur)}")
       case Freeze(dur) => stats.append(s"  Freeze ${seconds(dur)}")
       case Root(dur) => stats.append(s"  Root ${seconds(dur)}")
       case Slow(dur, _) => stats.append(s"  Slow ${seconds(dur)}")
-      case Burn(total, dur, _) => stats.append(s"  Burn $total over ${seconds(dur)}")
+      // What it takes, which is less than the total it is written with (Burn.dealt)
+      case b @ Burn(_, dur, _) => stats.append(s"  Burn ${b.dealt} over ${seconds(dur)}")
       case Poison(total, dur, _) => stats.append(s"  Poison $total over ${seconds(dur)}")
       case Push(_) => stats.append("  Push")
       case _ =>
@@ -485,6 +487,7 @@ class CharacterSelectionPanel(
       case PullToOwner => stats.append("  Pull")
       case Freeze(dur) => stats.append(s"  Freeze ${seconds(dur)}")
       case Stun(dur) => stats.append(s"  Stun ${seconds(dur)}")
+      case Launch(dur) => stats.append(s"  Knock-up ${seconds(dur)}")
       case Push(dist) => stats.append(s"  Push")
       case TeleportOwnerBehind(_, _) => stats.append("  Teleport")
       case LifeSteal(pct) => stats.append(s"  LifeSteal ${pct}%")

@@ -1,6 +1,7 @@
 package com.gridgame.server.game
 
 import com.gridgame.common.Constants
+import com.gridgame.common.GameClock
 import com.gridgame.common.model.CharacterDef
 import com.gridgame.common.model.GroundSlam
 import com.gridgame.common.model.Player
@@ -36,10 +37,10 @@ trait ShotRequests { this: ClientHandler =>
     // and the server already takes no trap and no barrier from them. A phase's last moments are
     // let through, since the client's ends a trip across the wire before the server's does and
     // its first shot after it can land here in them.
-    if (player.getPhasedUntil - System.currentTimeMillis() > PHASED_SHOT_GRACE_MS) {
+    if (player.getPhasedUntil - GameClock.now() > PHASED_SHOT_GRACE_MS) {
       Metrics.validationFailed.add(1L, Attrs.VfProjectileFireRate)
       journal.refused(player, s"shot refused (projectile_fire_rate): ${MatchJournal.slotName(packet.getAttackSlot)} fired while " +
-        s"phased, ${player.getPhasedUntil - System.currentTimeMillis()}ms of the phase left")
+        s"phased, ${player.getPhasedUntil - GameClock.now()}ms of the phase left")
       return false
     }
 
@@ -89,6 +90,21 @@ trait ShotRequests { this: ClientHandler =>
       return false
     }
 
+    // Nor from the far side of the opening's wall. Where a shot says it was fired from is taken
+    // within three cells and the lag of where the server has its shooter (PacketValidator), which
+    // reaches over the wall: a client that said so had its shot put down in the other team's half,
+    // past the one line it is stopped on (found by MatchFuzzTest). No honest client is ever there
+    val fromX = packet.getX.toInt
+    val fromY = packet.getY.toInt
+    val wall = instance.divider
+    val standing = player.getPosition
+    if (wall != null && wall.stops(standing.getX, standing.getY, fromX, fromY)) {
+      Metrics.validationFailed.add(1L, Attrs.VfOpening)
+      journal.refused(player, s"shot refused (match_opening): ${MatchJournal.slotName(packet.getAttackSlot)} said to be fired from " +
+        s"($fromX,$fromY), across the opening's wall from (${standing.getX},${standing.getY})")
+      return false
+    }
+
     if (!validator.validateProjectileSpawn(packet, player)) {
       Metrics.validationFailed.add(1L, Attrs.VfProjectileFireRate)
       return false
@@ -98,8 +114,6 @@ trait ShotRequests { this: ClientHandler =>
 
     // Spawn projectile at player's position along the heading from the packet, charged as far as
     // the time the player has had allows, as one more of its cast's (a fan is one cast)
-    val fromX = packet.getX.toInt
-    val fromY = packet.getY.toInt
     val projectile = projectileManager.spawnProjectile(
       playerId,
       fromX,

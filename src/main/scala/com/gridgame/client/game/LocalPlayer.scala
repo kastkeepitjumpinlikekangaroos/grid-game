@@ -48,6 +48,9 @@ trait LocalPlayer { this: GameClient =>
   private val slowedUntil: AtomicLong = new AtomicLong(0)
   // A stun is a freeze the client draws differently, so it comes with the frozen flag set too
   private val stunnedUntil: AtomicLong = new AtomicLong(0)
+  // Knocked up into the air by a Launch: from when we first heard of it until the stun under it ends
+  private val airborneFrom: AtomicLong = new AtomicLong(0)
+  private val airborneUntil: AtomicLong = new AtomicLong(0)
   private val poisonedUntil: AtomicLong = new AtomicLong(0)
   // How strong the slow we are under is (packet byte [52]). A Slow(_, 0.3f) really is 30% of
   // our pace; every slow used to be a flat half whatever its def said, which is what we assume
@@ -85,6 +88,9 @@ trait LocalPlayer { this: GameClient =>
   def isRooted: Boolean = System.currentTimeMillis() < rootedUntil.get()
   def isSlowed: Boolean = System.currentTimeMillis() < slowedUntil.get()
   def isStunned: Boolean = System.currentTimeMillis() < stunnedUntil.get()
+  def isAirborne: Boolean = System.currentTimeMillis() < airborneUntil.get()
+  def getAirborneFrom: Long = airborneFrom.get()
+  def getAirborneUntil: Long = airborneUntil.get()
   def isPoisoned: Boolean = System.currentTimeMillis() < poisonedUntil.get()
   def getSlowMultiplier: Float = slowMultiplier
 
@@ -110,6 +116,8 @@ trait LocalPlayer { this: GameClient =>
     rootedUntil.set(0)
     slowedUntil.set(0)
     stunnedUntil.set(0)
+    airborneFrom.set(0)
+    airborneUntil.set(0)
     poisonedUntil.set(0)
     slowMultiplier = DEFAULT_SLOW_MULTIPLIER
     localDeathTime.set(0)
@@ -233,6 +241,13 @@ trait LocalPlayer { this: GameClient =>
       stunnedUntil.set(GameClient.effectEnds(updatePacket.getHeldMs, stunnedUntil.get(), now, 5000))
     } else {
       stunnedUntil.set(0)
+    }
+    // Knocked up (flags2 bit 3, only ever with the stun): up from when we first heard, down as it ends
+    if ((flags2 & 0x08) != 0 && (flags2 & 0x01) != 0) {
+      if (!isAirborne) airborneFrom.set(now)
+      airborneUntil.set(stunnedUntil.get())
+    } else {
+      airborneUntil.set(0)
     }
     // Renewed by every update that carries it, not only the first. A poison stops regen, so
     // a player standing still hears nothing between its ticks, and a timer armed once ran

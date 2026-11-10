@@ -54,11 +54,14 @@ trait Lives { this: GameInstance =>
     scheduleRespawn(victimId)
   }
 
+  /** How long the dead wait for their next life: RESPAWN_DELAY_MS, and a second in practice. */
+  private[server] def respawnDelayMs: Long = if (isPractice) 1000L else Constants.RESPAWN_DELAY_MS.toLong
+
   private def scheduleRespawn(playerId: UUID): Unit = {
     if (respawnExecutor == null || respawnExecutor.isShutdown) return
     respawnExecutor.schedule(new Runnable {
       def run(): Unit = respawn(playerId)
-    }, (if (isPractice) 1000L else Constants.RESPAWN_DELAY_MS.toLong), TimeUnit.MILLISECONDS)
+    }, respawnDelayMs, TimeUnit.MILLISECONDS)
   }
 
   /** Bring a dead player back at a spawn point, with nothing carried over from their last life. */
@@ -74,6 +77,7 @@ trait Lives { this: GameInstance =>
       player.setRootedUntil(0)
       player.setFrozenUntil(0)
       player.setStunnedUntil(0)
+      player.setAirborne(0, 0)
       player.setSpeedBoostUntil(0)
       // The client drops these on respawn too. Kept here, a shield or phase still running from
       // the last life made the new one briefly unhittable, and a gem boost doubled the speed

@@ -1,6 +1,7 @@
 package com.gridgame.server.lobby
 
 import com.gridgame.common.Constants
+import com.gridgame.common.GameClock
 import com.gridgame.common.WorldRegistry
 import com.gridgame.common.model.Player
 import com.gridgame.common.observability.Attrs
@@ -73,7 +74,7 @@ class LobbyHandler(host: LobbyHost, lobbyManager: LobbyManager, rankedQueue: Ran
     if (lobbyManager.getPlayerLobby(playerId) != null) { sendFailure(player, LobbyFailure.ALREADY_IN_LOBBY); return }
 
     // Rate limit lobby creation; only a lobby actually created spends the cooldown
-    val now = System.currentTimeMillis()
+    val now = GameClock.now()
     val lastCreate = lastCreateTime.get(playerId)
     if (lastCreate != null && now - lastCreate < CREATE_COOLDOWN_MS) { sendFailure(player, LobbyFailure.RATE_LIMITED); return }
 
@@ -295,7 +296,7 @@ class LobbyHandler(host: LobbyHost, lobbyManager: LobbyManager, rankedQueue: Ran
   }
 
   private def handleListRequest(player: Player): Unit = {
-    val now = System.currentTimeMillis()
+    val now = GameClock.now()
     val last = lastListRequestTime.get(player.getId)
     if (last != null && now - last < LIST_REQUEST_COOLDOWN_MS) return
     lastListRequestTime.put(player.getId, now)
@@ -412,7 +413,7 @@ class LobbyHandler(host: LobbyHost, lobbyManager: LobbyManager, rankedQueue: Ran
     if (lobbyManager.getPlayerLobby(playerId) != null) { sendFailure(player, LobbyFailure.ALREADY_IN_LOBBY); return }
 
     // Rate limit (reuse create cooldown)
-    val now = System.currentTimeMillis()
+    val now = GameClock.now()
     val lastCreate = lastCreateTime.get(playerId)
     if (lastCreate != null && now - lastCreate < CREATE_COOLDOWN_MS) { sendFailure(player, LobbyFailure.RATE_LIMITED); return }
 

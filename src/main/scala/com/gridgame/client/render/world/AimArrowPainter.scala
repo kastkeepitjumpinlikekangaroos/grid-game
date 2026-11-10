@@ -1,7 +1,7 @@
 package com.gridgame.client.render
 package world
 
-import com.gridgame.client.game.{Attacks, TerrainImpact}
+import com.gridgame.client.game.Attacks
 import com.gridgame.common.model._
 import com.gridgame.common.protocol.AttackSlot
 
@@ -12,14 +12,14 @@ import com.gridgame.common.protocol.AttackSlot
  * Every aim is drawn in one hand: a sheet of translucent gold on the ground in the shape of what it
  * shows, rimmed in the HUD's gold with a dark ink line just outside the rim, every edge smoothed over
  * a pixel (ShapeBatch's smooth shapes). A shot is a lane, rounded at both ends, from just outside our
- * ring to the end of its range, cut square at whatever stops it, a soft light running out along it;
+ * ring to the end of its range, through whatever is in the way (walls don't cut it short: its whole
+ * reach is what we aim with), a soft light running out along it;
  * a gem's three shots one lane widening to take them in; the blast a shot sets off a disc where it
  * goes off, the lane ending short of it; a fan a narrower lane for each of its projectiles; a dash the
  * lane to a disc where it ends, inside a thin ring of how far it can go; a blink a row of dots to a
  * disc where it lands; a trap dots to the ground it will watch. A charged shot's lane runs on to
  * where a full charge would carry it, filled as far as the charge would carry it now. Each is worked
- * out by what the cast itself does (stopAlong for a shot, GameClient.dashLanding, blinkLanding and
- * trapLanding).
+ * out by what the cast itself does (GameClient.dashLanding, blinkLanding and trapLanding).
  *
  * Where it lies is AimGeometry's: from where we are drawn toward the pointer as it is on this frame's
  * screen, so as we walk with the mouse still it stays put on the screen, as our sprite does, a
@@ -126,12 +126,10 @@ private[render] final class AimArrowPainter(ctx: RenderContext) {
     val crs = pDef.chargeRangeScaling
     val reach = 1f + (if (crs.isDefined) crs.get.interpolate(level) else pDef.maxRange.toFloat)
     val fullReach = 1f + (if (crs.isDefined) crs.get.max else pDef.maxRange.toFloat)
-    val wall = stopAlong(client.getWorld, _ox, _oy, _ux, _uy, fullReach, pDef.passesThroughWalls)
-    val blocked = wall < reach
-    val stop = Math.min(wall, fullReach)
-    // Drawn as far as it has grown (laneReach), and filled to where the shot would land now
-    val farEnd = laneReach(0, stop)
-    val end = Math.min(if (blocked) wall else reach, farEnd)
+    // Its whole reach whatever is in the way: drawn as far as it has grown (laneReach), and filled to
+    // where the shot would land now
+    val farEnd = laneReach(0, fullReach)
+    val end = Math.min(reach, farEnd)
     val now = frameTimeMs
     if (level < 100) _fullSince = 0L else if (_fullSince == 0L) _fullSince = now
 
@@ -143,26 +141,24 @@ private[render] final class AimArrowPainter(ctx: RenderContext) {
     _ir = INK_R; _ig = INK_G; _ib = INK_B
     _hg = 0.64f + 0.26f * t; _hb = 0.14f + 0.28f * t
     _alpha = 1f
-    laneLights(end, lightEnd = !blocked, 0.10f + 0.05f * t, 0.16f + 0.08f * t)
+    laneLights(end, lightEnd = true, 0.10f + 0.05f * t, 0.16f + 0.08f * t)
 
     beginShapes()
     // One lane on to where a full charge would land, filled as far as this one would carry it; a
     // light running out along the filled part, quicker as the charge builds
     _glowAt = glowAlong(LANE_START, end, PULSE_MS - (PULSE_MS - PULSE_FULL_MS) * t)
     _split = if (farEnd > end + 0.05f) end else Float.MaxValue
-    laneShape(LANE_START, farEnd, LANE_HALF, roundTo = farEnd >= fullReach - 0.01f || farEnd < stop)
+    laneShape(LANE_START, farEnd, LANE_HALF, roundTo = true)
     paintLane(FILL_A + 0.08f * t, RIM_A, INK_A, RIM_W)
     _split = Float.MaxValue
     // Where it lands now: a disc on the ground, and at full a ripple breathing out off it, as the
-    // gauge's does round our feet. Stopped short of that, its square end at the face is the stop
-    if (!blocked) {
-      marker(_ox + _ux * end, _oy + _uy * end)
-      if (_fullSince != 0L) {
-        val rp = ((now - _fullSince) % READY_MS) / READY_MS.toFloat
-        val rx = groundRx(LAND_R + 0.6f * rp)
-        val cx = sx(end, 0f); val cy = sy(end, 0f)
-        shapeBatch.strokeOvalSmooth(cx, cy, rx, rx * HH / HW, RIM_W * (1f - rp) + 0.3f, _rr, _rg, _rb, 0.8f * (1f - rp))
-      }
+    // gauge's does round our feet
+    marker(_ox + _ux * end, _oy + _uy * end)
+    if (_fullSince != 0L) {
+      val rp = ((now - _fullSince) % READY_MS) / READY_MS.toFloat
+      val rx = groundRx(LAND_R + 0.6f * rp)
+      val cx = sx(end, 0f); val cy = sy(end, 0f)
+      shapeBatch.strokeOvalSmooth(cx, cy, rx, rx * HH / HW, RIM_W * (1f - rp) + 0.3f, _rr, _rg, _rb, 0.8f * (1f - rp))
     }
   }
 
@@ -220,34 +216,29 @@ private[render] final class AimArrowPainter(ctx: RenderContext) {
     _alpha = fade * (NOT_READY_ALPHA + (1f - NOT_READY_ALPHA) * k)
   }
 
-  /** A shot: the lane to where it stops, rounded where its range runs out and cut square at what
-    * stops it (rounded at a wall it bounces off), and the reach of the blast it sets off there —
-    * wherever it stops for an explosive, only at the end of its range for a splash that goes off there
-    * (the server's ProjectileManager), the lane ending at the blast's edge. */
+  /** A shot: the lane to the end of its range, whatever is in the way (a wall doesn't cut it short:
+    * the whole reach is what we aim with), rounded there, and the reach of the blast it sets off at
+    * the end of its range — an explosive's or a splash's — the lane ending at the blast's edge. */
   private def aimedShot(pDef: ProjectileDef, flare: Float = 0f): Unit = {
     // It is fired from a cell out and flies its range from there
     val reach = 1f + pDef.maxRange.toFloat
-    val wall = stopAlong(client.getWorld, _ox, _oy, _ux, _uy, reach, pDef.passesThroughWalls)
-    val blocked = wall < reach
-    val stop = if (blocked) wall else reach
-    val end = laneReach(0, stop)
+    val end = laneReach(0, reach)
     val blast =
       if (pDef.explosionConfig.isDefined) pDef.explosionConfig.get.blastRadius
-      else if (!blocked && pDef.aoeOnMaxRange.isDefined) pDef.aoeOnMaxRange.get.radius
+      else if (pDef.aoeOnMaxRange.isDefined) pDef.aoeOnMaxRange.get.radius
       else 0f
-    laneLights(end, lightEnd = !blocked, 0.10f, 0.16f)
+    laneLights(end, lightEnd = true, 0.10f, 0.16f)
     // Short of the blast's edge by a gap, so the two read as one thing pointing at the other
     val laneEnd = if (blast > 0f) end - blast - END_GAP else end
     if (laneEnd > LANE_START + 0.1f) {
       _glowAt = glowAlong(LANE_START, laneEnd, PULSE_MS)
-      laneShape(LANE_START, laneEnd, LANE_HALF,
-        roundTo = blast > 0f || !blocked || pDef.ricochetCount > 0 || end < stop, flare)
+      laneShape(LANE_START, laneEnd, LANE_HALF, roundTo = true, flare)
       paintLane(FILL_A, RIM_A, INK_A, RIM_W)
     }
     if (blast > 0f) area(_ox + _ux * end, _oy + _uy * end, blast, AREA_FILL_A)
   }
 
-  /** A fan: a narrower lane for each of its projectiles, each to where it stops, and an arc at their
+  /** A fan: a narrower lane for each of its projectiles, each its whole range, and an arc at their
     * reach from the first to the last. (One that goes all round has nothing to aim, and goes off as
     * its key goes down.) */
   private def aimedFan(pDef: ProjectileDef, fan: FanProjectile): Unit = {
@@ -256,20 +247,17 @@ private[render] final class AimArrowPainter(ctx: RenderContext) {
     while (i < fan.count) { spoke(pDef, fan.angleOf(i), 1 + i); i += 1 }
   }
 
-  /** One projectile of a fan, `theta` radians round from the aim: a narrow lane to where it stops,
-    * rounded at the end of its range and square at what stops it; lane `k` (laneReach). */
+  /** One projectile of a fan, `theta` radians round from the aim: a narrow lane to the end of its
+    * range whatever is in the way, rounded there; lane `k` (laneReach). */
   private def spoke(pDef: ProjectileDef, theta: Double, k: Int): Unit = {
     val ux = _ux; val uy = _uy
     val c = Math.cos(theta); val s = Math.sin(theta)
     // Turned as the cast turns each one (Attacks.shootAbility)
     _ux = ux * c - uy * s; _uy = ux * s + uy * c
-    val reach = 1f + pDef.maxRange.toFloat
-    val wall = stopAlong(client.getWorld, _ox, _oy, _ux, _uy, reach, pDef.passesThroughWalls)
-    val stop = Math.min(wall, reach)
-    val end = laneReach(k, stop)
+    val end = laneReach(k, 1f + pDef.maxRange.toFloat)
     if (end > LANE_START + 0.1f) {
       _glowAt = glowAlong(LANE_START, end, PULSE_MS)
-      laneShape(LANE_START, end, SPOKE_HALF, roundTo = wall >= reach || pDef.ricochetCount > 0 || end < stop)
+      laneShape(LANE_START, end, SPOKE_HALF, roundTo = true)
       paintLane(FILL_A, RIM_A, INK_A, SPOKE_RIM_W)
     }
     _ux = ux; _uy = uy
@@ -574,36 +562,4 @@ private[render] object AimArrowPainter {
   private val GLOW_REACH = 2f * GLOW_W
   private val CAP_STATIONS = 7
   private val MAX_STATIONS = 200
-  // The terrain is looked at this far apart along the aim, and a face found between two looks
-  private val PROBE_STEP = 0.1f
-
-  /**
-   * How far a shot fired from (ox, oy) along the unit (ux, uy) goes before something stops it — what
-   * stops one in flight (TerrainImpact.blocks: walls, props and the map's edge, and for one that flies
-   * over walls only fences and the edge, but never water) — looking `limit` cells out; `limit` if
-   * nothing does. The face is found to a few hundredths of a cell.
-   */
-  def stopAlong(world: WorldData, ox: Double, oy: Double, ux: Double, uy: Double, limit: Float,
-                passesWalls: Boolean): Float = {
-    if (world == null) return limit
-    @inline def stops(d: Float): Boolean = TerrainImpact.blocks(world,
-      TerrainImpact.cellOf((ox + ux * d).toFloat), TerrainImpact.cellOf((oy + uy * d).toFloat), passesWalls)
-    var clear = 0f
-    while (clear < limit) {
-      val d = clear + PROBE_STEP
-      if (stops(d)) {
-        // The face lies between the last look that was clear and this one
-        var lo = clear; var hi = d
-        var k = 0
-        while (k < 5) {
-          val mid = (lo + hi) * 0.5f
-          if (stops(mid)) hi = mid else lo = mid
-          k += 1
-        }
-        return Math.min(lo, limit)
-      }
-      clear = d
-    }
-    limit
-  }
 }

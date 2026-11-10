@@ -22,7 +22,7 @@ class MeleeKitTest {
     Seq(c.qAbility, c.eAbility).map(a => a -> a.projectileType)
 
   private def isHold(e: OnHitEffect): Boolean = e match {
-    case Freeze(_) | Stun(_) | Root(_) | TeleportOwnerBehind(_, _) => true
+    case Freeze(_) | Stun(_) | Launch(_) | Root(_) | TeleportOwnerBehind(_, _) => true
     case _ => false
   }
 

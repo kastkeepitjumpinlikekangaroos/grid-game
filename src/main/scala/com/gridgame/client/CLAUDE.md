@@ -119,7 +119,8 @@ could move these numbers should be checked with them rather than guessed at:
 # --projectiles=, --w= --h=, --screenshot=out.png. --travelling throws only projectiles that
 # travel: without it the ground slams, never retired, are 120 of the 150 a few seconds in
 # (render/CLAUDE.md, *The render bench's projectiles are mostly ground slams*). --effects puts a
-# status effect on every player (frozen, stunned, poisoned, burning, rooted, slowed, boosted),
+# status effect on every player (frozen, stunned, poisoned, burning, rooted, slowed, boosted;
+# every other stunned one knocked up into the air over and over),
 # which the default scene has none of — off by default so the numbers below stay comparable.
 # --barriers has every fourth player hold a barrier up, turning and being struck, half of them
 # allies, and

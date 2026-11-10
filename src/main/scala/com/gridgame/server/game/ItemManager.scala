@@ -17,7 +17,6 @@ class ItemManager {
   private val items = new ConcurrentHashMap[Int, Item]()
   private val inventories = new ConcurrentHashMap[UUID, ConcurrentHashMap[Int, Item]]()
   private val nextId = new AtomicInteger(1)
-  private val random = new Random()
   private val maxWorldItems = 40
 
   // Async gauge: number of items currently in the world
@@ -75,11 +74,13 @@ class ItemManager {
     val maxAttempts = 100
     var attempt = 0
     while (attempt < maxAttempts) {
-      val x = (Math.random() * world.width).toInt
-      val y = (Math.random() * world.height).toInt
+      // Everything a match leaves to chance is drawn from scala.util.Random, the one a test can
+      // seed, so a match on a clock of the test's own plays the same every time (GameClock)
+      val x = Random.nextInt(world.width)
+      val y = Random.nextInt(world.height)
       if (world.isWalkable(x, y)) {
         val id = nextId.getAndIncrement() & 0x7FFFFFFF
-        val itemType = ItemType.spawnable(random.nextInt(ItemType.spawnable.size))
+        val itemType = ItemType.spawnable(Random.nextInt(ItemType.spawnable.size))
         return Some(new Item(id, x, y, itemType))
       }
       attempt += 1

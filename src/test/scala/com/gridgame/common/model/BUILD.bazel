@@ -31,6 +31,8 @@ load("@rules_scala//scala:scala.bzl", "scala_junit_test")
     ("melee_kit_test", "MeleeKitTest.scala", []),
     # Every kit: no volley of more than three, and only where it is the character's; no two alike
     ("kit_test", "KitTest.scala", []),
+    # Every number an ability's description gives (a hold's length, a reach, a leap, a count, a share) is its rule's
+    ("ability_description_test", "AbilityDescriptionTest.scala", []),
     ("tile_test", "TileTest.scala", ["//sprites:sprite_files"]),
     ("ground_edges_test", "GroundEdgesTest.scala", ["//sprites:sprite_files"]),
     # What the client picks for a trap, a blink or a shove, the server takes: random ground and every map

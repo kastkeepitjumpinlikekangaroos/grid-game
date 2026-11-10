@@ -5,7 +5,11 @@ load("//third_party:jvm.bzl", "NETTY")
 scala_library(
     name = "server_test_kit",
     testonly = True,
-    srcs = ["ServerTestKit.scala"],
+    srcs = [
+        "ServerTestKit.scala",
+        # Matches on a clock of the test's own (GameClock.Manual)
+        "SimKit.scala",
+    ],
     deps = [
         "//src/main/scala/com/gridgame/common",
         "//src/main/scala/com/gridgame/server:server_lib",
@@ -29,6 +33,24 @@ scala_library(
     runtime_deps = ["//src/main/scala/com/gridgame/common:build_info"],
 ) for (name, src, data) in [
     ("teleport_validation_test", "TeleportValidationTest.scala", []),
+    # Every projectile the roster throws held to its definition: damage, effects, kills, blasts, splashes, pierces
+    ("attack_sweep_test", "AttackSweepTest.scala", []),
+    # A scene turned or mirrored any of eight ways plays out the same: every attack, on cluttered ground
+    ("symmetry_test", "SymmetryTest.scala", []),
+    # A shot that bounces: its number of bounces and no more, and which way each turns it
+    ("ricochet_test", "RicochetTest.scala", []),
+    # The edges of what the server takes: the map's first row, a step's last cell of credit, a shot's furthest origin
+    ("request_edges_test", "RequestEdgesTest.scala", []),
+    # Every attack's fire rate at both ends: an honest client never refused, nobody ahead of the cooldown; phases, barriers, R
+    ("cast_pace_test", "CastPaceTest.scala", []),
+    # Whole matches of bots on every map, start to end on a clock of the test's own, each played twice the same
+    ("match_sim_test", "MatchSimTest.scala", ["//worlds:world_files"]),
+    # Burns, poisons, regeneration and the wait for a respawn, to the millisecond, on a clock of the test's own
+    ("timed_effects_test", "TimedEffectsTest.scala", []),
+    # What a match does on its clocks, to the millisecond, and a started match running them on the system's
+    ("match_clocks_test", "MatchClocksTest.scala", []),
+    # A death books its player's next life on the match's own respawn clock, three seconds on (a second in practice)
+    ("respawn_schedule_test", "RespawnScheduleTest.scala", []),
     ("ability_cast_validation_test", "AbilityCastValidationTest.scala", []),
     # What tick each projectile packet says it is from, which clients fly projectiles by
     ("projectile_ticks_test", "ProjectileTicksTest.scala", []),
@@ -61,6 +83,8 @@ scala_library(
     # The central server handing matches to match servers it scripts: packed, given back, waiting for room, drained
     ("match_director_test", "MatchDirectorTest.scala", []),
     ("lobby_flow_test", "LobbyFlowTest.scala", ["//worlds:world_files"]),
+    # What the lobby browser and a lobby room take from a player and tell everyone, on a clock of the test's own
+    ("lobby_rules_test", "LobbyRulesTest.scala", ["//worlds:world_files"]),
     ("trap_test", "TrapTest.scala", []),
     ("barrier_test", "BarrierTest.scala", []),
     ("bot_movement_test", "BotMovementTest.scala", []),

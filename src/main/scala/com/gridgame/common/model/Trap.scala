@@ -238,12 +238,16 @@ object TrapPlacement {
    * steps a bad network can hold up): [[isValidTargetNear]], or else any cell a trap can lie on within
    * the throw's range of there and those steps more. The way there isn't judged then: from a copy
    * that far behind, the straight line to a cell the client threw to clear of every wall can cross
-   * one. A throw past a wall the client itself would never make is left to player reports.
+   * one. A throw past a wall the client itself would never make is left to player reports — but
+   * never one over the opening's wall between the teams ([[TeamDivider]]), which no copy of the
+   * thrower, however far behind, is on the far side of: unjudged, that reach put a trap in the
+   * other team's half.
    */
   def isValidTargetLagging(world: WorldData, fromX: Int, fromY: Int, x: Int, y: Int, maxRange: Int,
                            lagCells: Int): Boolean =
     isValidTargetNear(world, fromX, fromY, x, y, maxRange) ||
-      (world.isWalkable(x, y) && Teleport.withinReach(x - fromX, y - fromY, maxRange + lagCells))
+      (world.isWalkable(x, y) && Teleport.withinReach(x - fromX, y - fromY, maxRange + lagCells) &&
+        { val wall = world.divider; wall == null || !wall.stops(fromX, fromY, x, y) })
 
   /** Is every cell on the straight line from (fromX, fromY) to (x, y) one a throw passes over? */
   private def pathIsClear(world: WorldData, fromX: Int, fromY: Int, x: Int, y: Int): Boolean = {
@@ -275,7 +279,9 @@ object TrapPlacement {
     var i = 1
     while (i <= steps) {
       val t = i.toDouble / steps
-      fn(Math.round(fromX + dx * t).toInt, Math.round(fromY + dy * t).toInt)
+      // (Of the two cells a step passes exactly between, the same one whichever way it went:
+      // Teleport.cellAlong)
+      fn(Teleport.cellAlong(fromX, dx * t), Teleport.cellAlong(fromY, dy * t))
       i += 1
     }
   }

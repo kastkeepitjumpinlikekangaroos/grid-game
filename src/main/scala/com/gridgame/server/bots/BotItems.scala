@@ -1,6 +1,7 @@
 package com.gridgame.server.bots
 
 import com.gridgame.common.Constants
+import com.gridgame.common.GameClock
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 
@@ -34,7 +35,7 @@ trait BotItems { this: BotController =>
           bot.synchronized {
             if (!bot.hasShield) {
               useItem(bot, item)
-              bot.setShieldUntil(System.currentTimeMillis() + Constants.SHIELD_DURATION_MS)
+              bot.setShieldUntil(GameClock.now() + Constants.SHIELD_DURATION_MS)
               broadcastBotPosition(bot)
             }
           }
@@ -43,7 +44,7 @@ trait BotItems { this: BotController =>
           bot.synchronized {
             if (!bot.hasGemBoost) {
               useItem(bot, item)
-              bot.setGemBoostUntil(System.currentTimeMillis() + Constants.GEM_DURATION_MS)
+              bot.setGemBoostUntil(GameClock.now() + Constants.GEM_DURATION_MS)
               broadcastBotPosition(bot)
             }
           }

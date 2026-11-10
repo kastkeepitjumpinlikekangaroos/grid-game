@@ -139,6 +139,37 @@ class ReplayGuardModelTest {
     }
   }
 
+  @Test def aNewSessionCountsFromTheStartAgainOnBothTransports(): Unit = {
+    // Its client numbers its packets from one again; nothing of the old session's can be replayed
+    // into it, signed as that was with the old session's token
+    val guard = new ReplayGuard()
+    val p = UUID.randomUUID()
+    for (isUdp <- Seq(true, false)) {
+      assertTrue(guard.validateSequence(p, 5000, isUdp))
+      assertFalse("long before the last: no", guard.validateSequence(p, 1, isUdp))
+    }
+    guard.resetSequences(p)
+    for (isUdp <- Seq(true, false)) {
+      assertTrue(s"a new session's first (udp: $isUdp)", guard.validateSequence(p, 1, isUdp))
+      assertFalse("and only once", guard.validateSequence(p, 1, isUdp))
+    }
+  }
+
+  @Test def tidyingUpForgetsWhoHasGoneAndNobodyElse(): Unit = {
+    // The server drops the counts of players no longer connected (cleanupStale). Dropping one
+    // still connected would take every packet it has ever sent as new again
+    val guard = new ReplayGuard()
+    val here = UUID.randomUUID()
+    val gone = UUID.randomUUID()
+    for (id <- Seq(here, gone); isUdp <- Seq(true, false)) assertTrue(guard.validateSequence(id, 5000, isUdp))
+    guard.cleanupStale(java.util.Set.of(here))
+    for (isUdp <- Seq(true, false)) {
+      assertFalse(s"still connected: what it sent is still sent (udp: $isUdp)", guard.validateSequence(here, 5000, isUdp))
+      assertFalse(guard.validateSequence(here, 1, isUdp))
+      assertTrue(s"gone: its counts with it (udp: $isUdp)", guard.validateSequence(gone, 1, isUdp))
+    }
+  }
+
   @Test def eachPlayerAndEachTransportIsCountedApart(): Unit = {
     // Interleaved, two players' streams and a player's TCP and UDP don't see each other's numbers
     val rnd = new scala.util.Random(7)

@@ -32,7 +32,11 @@ flag 0x01) already has the name; the player-facing ability can still say shield.
 - **It moves.** `ProjectileManager` snapshots the raised barriers once a tick (`BarrierSnapshot`), with where each
   was on the tick before. A projectile the barrier was carried or swung onto, in front of it last
   tick and behind it now, is stopped too: without that, a holder walking into fire, which is what
-  the Crusader is for, let the shots through. A shot's first tick also checks the one-cell hop
+  the Crusader is for, let the shots through. A shot it stops is put on its face where it was, a
+  twentieth of a cell in front (`BarrierSnapshot.STANDOFF`; a shot that flew into it, that much
+  back along its path), and nothing more is said of it. Only what the barrier passed over: a shot
+  fired from inside the arc still goes out through its back while its holder walks, and a turn
+  catches a shot only where a bent-back wing swings forward over it. A shot's first tick also checks the one-cell hop
   from where it was fired to where `spawnProjectile` put it, so an enemy pressed up against the
   barrier can't start a shot on its far side.
 - **Up for its whole time.** Nothing its holder does takes it down: the primary, the burst shot

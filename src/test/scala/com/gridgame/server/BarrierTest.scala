@@ -247,6 +247,123 @@ class BarrierTest {
     assertTrue(unhurt(holder))
   }
 
+  /** What everyone was told of the projectile since the last look: each packet's action. */
+  private def saidOf(t: TestMatch, to: Player, shot: Projectile): Seq[ProjectilePacket] =
+    t.sent(to).collect { case p: ProjectilePacket if p.getProjectileId == shot.id => p }
+
+  /** Where on a barrier's face, a hair in front of it, a point beside it lies: by the barrier's
+    * own shape (Barrier), for a holder at (hx, hy) facing `angle`. */
+  private def onTheFace(hx: Float, hy: Float, angle: Double, x: Float, y: Float): (Float, Float) = {
+    val (c, s) = (Math.cos(angle).toFloat, Math.sin(angle).toFloat)
+    val across = Barrier.acrossOf(hx, hy, c, s, x, y)
+    val f = Barrier.forwardAt(across) + 0.05f
+    (hx + f * c - across * s, hy + f * s + across * c)
+  }
+
+  @Test def aShotStopsAHairInFrontOfTheBarrierOnItsPath(): Unit = {
+    // Square on, a twentieth of a cell before the face two cells out; on a slant, where its path
+    // meets the face, that much back along it at most
+    for ((from, heading) <- Seq(((30, 30), (-1f, 0f)), ((28, 24), (-0.8f, 0.6f)), ((28, 36), (-0.8f, -0.6f)))) {
+      val fresh = new TestMatch()
+      val holder = fresh.join(CharacterId.Crusader, 20, 30)
+      val enemy = fresh.join(CharacterId.Soldier, from._1, from._2)
+      raise(fresh, holder)
+      fresh.clearSent()
+      val shot = fresh.launch(enemy, ProjectileType.BULLET, heading._1, heading._2)
+      fresh.tickUntilGone(shot)
+      val said = saidOf(fresh, enemy, shot)
+      assertEquals(s"from $from: stopped, and nothing said of it after", ProjectileAction.BLOCKED, said.last.getAction)
+      assertEquals(1, said.count(_.getAction == ProjectileAction.BLOCKED))
+      assertTrue("never touched", unhurt(holder))
+      val (x, y) = (said.last.getX, said.last.getY)
+      if (heading._2 == 0f) assertEquals("a hair before the face", (22.05f, 30f), (Math.round(x * 1000) / 1000f, y))
+      else {
+        // On its path, in front of the face where it met it and within a hair of it
+        val along = (x - from._1) / heading._1
+        assertEquals(s"from $from: on its path", from._2 + heading._2 * along, y, 0.01f)
+        val forward = Barrier.forwardOf(20f, 30f, 1f, 0f, x, y)
+        val face = Barrier.forwardAt(Barrier.acrossOf(20f, 30f, 1f, 0f, x, y))
+        assertTrue(s"from $from: ${forward - face} in front of its face", forward - face > 0f && forward - face <= 0.051f)
+      }
+    }
+  }
+
+  @Test def aBarrierCarriedOntoAShotStopsItOnItsFaceWhicheverWayItIsCarried(): Unit = {
+    // East, with the holder stepping east into a shot from the east; and north the same
+    for ((facing, step, from, heading) <- Seq((East, (1, 0), (30, 30), (-1f, 0f)), (-Math.PI / 2, (0, -1), (20, 20), (0f, 1f)))) {
+      val fresh = new TestMatch()
+      val holder = fresh.join(CharacterId.Crusader, 20, 30)
+      val enemy = fresh.join(CharacterId.Wizard, from._1, from._2)
+      raise(fresh, holder, facing)
+      val shot = fresh.launch(enemy, ProjectileType.FIREBALL, heading._1, heading._2)
+      // Flown until it is within a cell of the face, two cells out from the holder, and not yet at it
+      def out: Float = if (step._1 != 0) shot.getX - 20f else 30f - shot.getY
+      while (out > 2.7f) fresh.tick()
+      assertTrue(s"just short of it: $out", out > 2.05f && fresh.instance.projectileManager.getProjectile(shot.id) != null)
+      val (sx, sy) = (shot.getX, shot.getY)
+      fresh.clearSent()
+      // The holder steps into it, carrying the barrier past where it is
+      assertTrue(fresh.move(holder, 20 + step._1, 30 + step._2, flags2 = BARRIER, aimAngle = facing))
+      fresh.tick()
+      val said = saidOf(fresh, enemy, shot)
+      assertEquals(s"carried ${step}: stopped, once, and nothing more said of it", Seq(ProjectileAction.BLOCKED), said.map(_.getAction))
+      assertEquals("by its holder's barrier", holder.getId, said.head.getTargetId)
+      val face = onTheFace(20f + step._1, 30f + step._2, facing, sx, sy)
+      assertEquals(s"carried ${step}: put on the barrier's face where it was", face._1, said.head.getX, 0.001f)
+      assertEquals(face._2, said.head.getY, 0.001f)
+      assertNull("and gone", fresh.instance.projectileManager.getProjectile(shot.id))
+      assertTrue(unhurt(holder))
+    }
+  }
+
+  @Test def aBarrierSwungOntoAShotStopsItToo(): Unit = {
+    // A shot coming in past the barrier's bent-back wing, in front of it still; the holder turns
+    // the barrier away, and the wing swings forward over where the shot is
+    val holder = m.join(CharacterId.Crusader, 20, 30)
+    val enemy = m.join(CharacterId.Wizard, 32, 32)
+    raise(m, holder)
+    val shot = m.launch(enemy, ProjectileType.FIREBALL, -1f, 0f)
+    // The wing crosses y = 32 at x = 21.7: flown to within half a cell of that
+    while (shot.getX > 22.2f) m.tick()
+    assertTrue(s"in front of the wing still, at ${shot.getX}", shot.getX > 21.76f && m.instance.projectileManager.getProjectile(shot.id) != null)
+    val (sx, sy) = (shot.getX, shot.getY)
+    val turned = Math.toRadians(-25)
+    assertTrue("behind it once it has turned", Barrier.forwardOf(20f, 30f, Math.cos(turned).toFloat, Math.sin(turned).toFloat, sx, sy) <
+      Barrier.forwardAt(Barrier.acrossOf(20f, 30f, Math.cos(turned).toFloat, Math.sin(turned).toFloat, sx, sy)))
+    m.clearSent()
+    assertTrue(raise(m, holder, turned))
+    m.tick()
+    val said = saidOf(m, enemy, shot)
+    assertEquals("stopped by the turn", Seq(ProjectileAction.BLOCKED), said.map(_.getAction))
+    val face = onTheFace(20f, 30f, PlayerUpdatePacket.encodeAimAngle(turned) * 2 * Math.PI / 65536.0, sx, sy)
+    assertEquals("on its face where it was", face._1, said.head.getX, 0.01f)
+    assertEquals(face._2, said.head.getY, 0.01f)
+    assertTrue(unhurt(holder))
+  }
+
+  @Test def aBarrierThatMovesStopsOnlyWhatItPassedOver(): Unit = {
+    // A shot fired from inside the arc goes out through its back, as through a shield's, and a
+    // barrier carried along that tick has not passed over it; nor over one far off
+    val holder = m.join(CharacterId.Crusader, 20, 30)
+    val inside = m.join(CharacterId.Soldier, 21, 30)
+    val farOff = m.join(CharacterId.Soldier, 40, 50)
+    raise(m, holder)
+    m.clearSent()
+    val out = m.launch(inside, ProjectileType.BULLET, 0f, 1f)
+    val elsewhere = m.launch(farOff, ProjectileType.BULLET, 1f, 0f)
+    assertTrue(m.move(holder, 20, 29, flags2 = BARRIER, aimAngle = East))
+    m.tick()
+    assertTrue(m.move(holder, 20, 28, flags2 = BARRIER, aimAngle = East))
+    m.tickUntilGone(out)
+    m.tickUntilGone(elsewhere)
+    val heard = m.sent(farOff).collect { case p: ProjectilePacket => p }
+    for ((what, shot) <- Seq("from inside it" -> out, "far from it" -> elsewhere)) {
+      val said = heard.filter(_.getProjectileId == shot.id)
+      assertTrue(s"a shot $what is not stopped by it", said.forall(_.getAction != ProjectileAction.BLOCKED))
+      assertEquals(s"a shot $what flies its range", ProjectileAction.DESPAWN, said.last.getAction)
+    }
+  }
+
   @Test def itTurnsWithTheAim(): Unit = {
     val holder = m.join(CharacterId.Crusader, 20, 30)
     val enemy = m.join(CharacterId.Soldier, 20, 40)

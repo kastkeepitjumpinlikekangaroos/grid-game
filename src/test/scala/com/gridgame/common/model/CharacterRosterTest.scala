@@ -95,6 +95,7 @@ class CharacterRosterTest {
     def effect(name: String, e: OnHitEffect): Unit = e match {
       case Freeze(ms) => assertTrue(name, ms > 0)
       case Stun(ms) => assertTrue(name, ms > 0)
+      case Launch(ms) => assertTrue(name, ms > 0)
       case Root(ms) => assertTrue(name, ms > 0)
       case Slow(ms, m) => assertTrue(s"$name: $ms ms at $m", ms > 0 && m > 0f && m < 1f)
       case Burn(total, ms, tick) => assertTrue(s"$name: $total over $ms every $tick", total > 0 && tick > 0 && ms >= tick)

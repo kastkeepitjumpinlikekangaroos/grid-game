@@ -1,9 +1,9 @@
 package com.gridgame.server
 
 import com.gridgame.common.Constants
+import com.gridgame.common.GameClock
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
-import com.gridgame.server.bots.BotController
 import org.junit.Assert._
 import org.junit.Test
 
@@ -13,42 +13,60 @@ import scala.jdk.CollectionConverters._
 
 /**
  * A match driven by thousands of random requests from its players — steps, jumps, shots from every
- * attack, traps, items, rejoins, leaving — some as a client sends them and some as no honest one
- * would, between the match's ticks, its respawns, its bots and time passing, with the rules every
- * match must keep checked after every one of them:
+ * attack, traps, items, R, rejoins, leaving — some as a client sends them and some as no honest one
+ * would, while the match goes on: its ticks, its bots and its respawns fall due as time passes, on
+ * a clock of the run's own (SimKit), a few milliseconds or a few seconds between one request and
+ * the next. The rules every match must keep are checked after every request and every stretch of
+ * time:
  *
  *  - nothing it is sent, and none of its ticks, throws (nor do its bots, whose tick swallows it)
- *  - health stays between 0 and the character's maximum, and everyone stays on the map
+ *  - what every match keeps (MatchRules): health in bounds, everyone on the map, an item on the
+ *    ground or in one inventory and ten at most, thirty shots in flight a player and none past its
+ *    range, a trap to a cell, no shield, gem, phase or barrier longer than it lasts
  *  - nobody is moved onto a cell they can't stand on unless dashing (a dash goes over walls; a
  *    phase shift doesn't, and walked through them until 2026-10-14), or onto a fence too new for
  *    their client to have heard of
  *  - the dead, the frozen and the rooted are not moved by their own client
- *  - an item is on the ground or in one inventory, never both, never two; an inventory holds ten
- *  - a player has at most thirty projectiles in flight, each somewhere, and every shot the server
- *    takes leaves from within reach of its shooter
- *  - a trap to a cell, and no more on the ground than each player may keep
- *  - every death is scored, once
+ *  - every shot the server takes leaves from within reach of its shooter, and none outlives the
+ *    flight its range allows
+ *  - every death is scored, once, and every kill is somebody's death
+ *  - while a match's opening lasts nobody is hurt, whatever anyone sends: in a free-for-all
+ *    nothing is fired, thrown, raised or phased, and behind the Teams wall everyone stays in their
+ *    own half
  *
- * Every run is seeded, and a failure says which seed and step, with the actions that led to it.
+ * Every run is seeded and plays the same every time: a failure says which seed and step, with the
+ * actions that led to it, and that seed plays it again.
+ *
+ * It was played on the system's clock, with cooldowns and effects cleared by hand to stand for
+ * time passing: under load, when its steps took longer, a dash's phase ran out between two of them
+ * and the step after was taken by the server (which gives a dash the network's tolerance) and held
+ * against it here.
  */
 class MatchFuzzTest {
   import MatchFuzzTest._
-  import ServerTestKit.{captureStderr, quietly}
 
   @Test def aFreeForAllKeepsItsRulesWhateverItsPlayersSend(): Unit =
-    for (seed <- 1 to 10) new Run(seed, gameMode = 0, opening = false, bots = seed % 2 == 0).play(2500)
+    for (seed <- 1 to 10) play(seed, gameMode = 0, bots = seed % 2 == 0)
 
   @Test def aTeamsMatchKeepsItsRulesWhateverItsPlayersSend(): Unit =
-    for (seed <- 101 to 106) new Run(seed, gameMode = 1, opening = false, bots = seed % 2 == 1).play(2500)
+    for (seed <- 101 to 106) play(seed, gameMode = 1, bots = seed % 2 == 1)
 
   @Test def anOpeningKeepsItsRulesWhateverItsPlayersSend(): Unit = {
-    // The Teams wall up, and a free-for-all's ceasefire
-    for (seed <- 201 to 203) new Run(seed, gameMode = 1, opening = true, bots = true).play(2000)
-    for (seed <- 301 to 303) new Run(seed, gameMode = 0, opening = true, bots = true).play(2000)
+    // The Teams wall up, and a free-for-all's ceasefire: two runs inside the thirty seconds, and
+    // one that plays on through their end
+    for (mode <- Seq(1, 0); (seed, pace) <- Seq((201, 0.1), (202, 0.1), (203, 1.0)))
+      play(seed + mode * 100, gameMode = mode.toByte, bots = true, opening = true, steps = 2000, pace = pace)
   }
 
   @Test def practiceKeepsItsRulesWhateverItsPlayersSend(): Unit =
-    for (seed <- 401 to 403) new Run(seed, gameMode = 0, opening = false, bots = true, practice = true).play(2000)
+    for (seed <- 401 to 403) play(seed, gameMode = 0, bots = true, practice = true, steps = 2000)
+
+  @Test def aSeedPlaysTheSameRunEveryTime(): Unit = {
+    val first = play(7, gameMode = 0, bots = true, steps = 1500)
+    val again = play(7, gameMode = 0, bots = true, steps = 1500)
+    assertEquals(first, again)
+    assertNotEquals("and another seed another", first, play(8, gameMode = 0, bots = true, steps = 1500))
+  }
 }
 
 object MatchFuzzTest {
@@ -67,15 +85,22 @@ object MatchFuzzTest {
     w
   }
 
+  /** One run on a clock of its own: what the match came to, as text (who stands where, with what). */
+  def play(seed: Long, gameMode: Byte, bots: Boolean, opening: Boolean = false, practice: Boolean = false,
+           steps: Int = 2500, pace: Double = 1.0): String =
+    Sim(seed) { clock => new Run(clock, seed, gameMode, opening, bots, practice, pace).play(steps) }
+
   /**
    * One match, played `steps` actions long. Its players are humans (requests through the match's
    * ClientHandler, serialized and read back as the wire carries them) and, with `bots`, two bots on
-   * a BotController ticked by hand.
+   * the match's own bot tick. `pace` stretches or shrinks the time between requests.
    */
-  final class Run(seed: Long, gameMode: Byte, opening: Boolean, bots: Boolean, practice: Boolean = false) {
+  final class Run(clock: GameClock.Manual, seed: Long, gameMode: Byte, opening: Boolean, bots: Boolean,
+                  practice: Boolean, pace: Double) {
     private val rnd = new scala.util.Random(seed)
     private val world = clutteredWorld(rnd)
-    private val m = new TestMatch(world, gameMode, opening, practice)
+    // Longer than any run: a match's end is MatchSimTest's
+    private val m = new SimMatch(clock, world, gameMode, opening, practice, minutes = 60)
     private val instance = m.instance
     private val trace = mutable.Queue[String]()
     private var step = 0
@@ -84,13 +109,13 @@ object MatchFuzzTest {
     private def count(what: String, n: Int = 1): Unit = tally(what) += n
 
     private def note(s: String): Unit = {
-      trace.enqueue(s"$step: $s")
+      trace.enqueue(s"$step (${m.at}ms): $s")
       if (trace.size > 40) trace.dequeue()
     }
 
     private def fail(why: String): Nothing =
-      throw new AssertionError(s"seed $seed (mode $gameMode, opening $opening, bots $bots, practice $practice), " +
-        s"step $step: $why\nThe last actions:\n  ${trace.mkString("\n  ")}")
+      throw new AssertionError(s"seed $seed (mode $gameMode, opening $opening, bots $bots, practice $practice, pace $pace), " +
+        s"step $step, ${m.at}ms in: $why\nThe last actions:\n  ${trace.mkString("\n  ")}")
 
     private def check(ok: Boolean, why: => String): Unit = if (!ok) fail(why)
 
@@ -113,25 +138,16 @@ object MatchFuzzTest {
     for (i <- 0 until 6) {
       val team: Byte = if (gameMode == 1) (i % 2 + 1).toByte else 0
       val (x, y) = openCell(if (gameMode == 1) TeamDivider.sideOfTeam(team) else 0)
-      humans += m.join(characters(rnd.nextInt(characters.size)).id, x, y, team)
+      humans += m.join(characters(rnd.nextInt(characters.size)).id, x, y, team, id = new UUID(seed, 1L + i))
     }
 
-    private val botController: BotController =
-      if (!bots) null
-      else {
-        val bc = new BotController(instance, practice)
-        instance.botController = bc
-        for (i <- 0 until 2) {
-          val team: Byte = if (gameMode == 1) (i % 2 + 1).toByte else 0
-          val (x, y) = openCell(if (gameMode == 1) TeamDivider.sideOfTeam(team) else 0)
-          val bot = m.join(characters(rnd.nextInt(characters.size)).id, x, y, team,
-            id = new UUID(0L, 900000L + seed * 10 + i))
-          bc.addBotId(bot.getId)
-        }
-        bc
-      }
+    if (bots) for (i <- 0 until 2) {
+      val team: Byte = if (gameMode == 1) (i % 2 + 1).toByte else 0
+      val (x, y) = openCell(if (gameMode == 1) TeamDivider.sideOfTeam(team) else 0)
+      m.addBot(characters(rnd.nextInt(characters.size)).id, x, y, team)
+    }
 
-    private def everyone: Seq[Player] = instance.registry.getAll.asScala.toSeq
+    private def everyone: Seq[Player] = instance.registry.getAll.asScala.toSeq.sortBy(p => (p.getId.getMostSignificantBits, p.getId.getLeastSignificantBits))
 
     private def nextSeq(p: Player): Int = {
       val n = seqs.getOrElse(p.getId, 0) + 1
@@ -200,7 +216,6 @@ object MatchFuzzTest {
       }
     }
 
-    // Shots the server took, with where their shooter stood when they were fired
     private def fire(p: Player): Unit = {
       val c = CharacterDef.get(p.getCharacterId)
       val slot = rnd.nextDouble() match {
@@ -263,7 +278,7 @@ object MatchFuzzTest {
         handedOut += 1
         instance.itemManager.addToInventory(p.getId, new Item(handedOut, 0, 0, kind))
       }
-      val held = instance.itemManager.getInventory(p.getId).toSeq
+      val held = instance.itemManager.getInventory(p.getId).toSeq.sortBy(_.id)
       val (itemId, kind) =
         if (held.nonEmpty && rnd.nextDouble() < 0.85) { val i = held(rnd.nextInt(held.size)); (i.id, i.itemType.id) }
         else (rnd.nextInt(), rnd.nextInt(8).toByte)
@@ -280,8 +295,9 @@ object MatchFuzzTest {
       m.rejoin(p)
     }
 
-    /** R: taken once its minute has run, which a run is too short for, so now and then the match is
-      * made a minute older (each player's first R goes; later ones wait on their own minute). */
+    /** R: taken once its minute has run, which few runs are long enough for more than once, so now
+      * and then the match is made a minute older (each player's first R goes; later ones wait on
+      * their own minute). */
     private def pressR(p: Player): Unit = {
       if (rnd.nextInt(3) == 0) { note("the match is a minute older"); instance.startedAtMs -= Constants.COOLDOWN_RESET_MS }
       note(s"${p.getName} presses R")
@@ -298,23 +314,21 @@ object MatchFuzzTest {
 
     // --- The match going on ---
 
-    private def passTime(): Unit = {
-      // Cooldowns run out and effects wear off: what a few seconds would do, without the wait
-      val p = everyone(rnd.nextInt(everyone.size))
-      note(s"time passes for ${p.getName}")
-      instance.handler.resetAttacks(p.getId)
-      if (rnd.nextBoolean()) { p.setFrozenUntil(0); p.setStunnedUntil(0) }
-      if (rnd.nextBoolean()) p.setRootedUntil(0)
-      if (rnd.nextBoolean()) p.setPhasedUntil(0)
-      if (rnd.nextBoolean()) p.setShieldUntil(0)
-      if (rnd.nextBoolean()) p.setGemBoostUntil(0)
-      if (rnd.nextBoolean()) p.clearSlow()
-      if (rnd.nextBoolean()) p.setBarrierUntil(0)
-      if (rnd.nextBoolean()) p.setBarrierRaisedAt(0)
+    /** How long until the next request: none at all, a frame or two, a moment, or seconds. */
+    private def gap(): Long = {
+      val ms = rnd.nextDouble() match {
+        case r if r < 0.35 => 0
+        case r if r < 0.85 => rnd.nextInt(40)
+        case r if r < 0.97 => 40 + rnd.nextInt(260)
+        case _ => 1000 + rnd.nextInt(3000)
+      }
+      (ms * pace).toLong
     }
 
     private def armedTrapNear(p: Player): Unit = {
-      // Someone's trap, already armed, where this player is about to walk
+      // Someone's trap, already armed, where this player is about to walk. Not in an opening: it
+      // is the run's own doing, not a player's, and nobody is to be hurt there
+      if (instance.inOpening) return
       val owner = everyone(rnd.nextInt(everyone.size))
       val pos = p.getPosition
       val (x, y) = (near(pos.getX, 2, world.width), near(pos.getY, 2, world.height))
@@ -325,42 +339,49 @@ object MatchFuzzTest {
       }
     }
 
-    private def tickBots(): Unit = if (botController != null) {
-      note("bots tick")
-      val errors = captureStderr(botController.tick(System.currentTimeMillis()))
-      check(!errors.contains("Error in tick"), s"a bot's tick threw:\n$errors")
-    }
-
     // --- The rules ---
 
     private case class Seen(pos: Position, alive: Boolean, held: Boolean, moves: Int)
 
     private def snapshot(): Map[UUID, Seen] = everyone.map { p =>
-      val now = System.currentTimeMillis()
-      p.getId -> Seen(p.getPosition, !p.isDead, p.getFrozenUntil > now + 100 || p.getRootedUntil > now + 100, p.getServerMoves)
+      val now = GameClock.now()
+      p.getId -> Seen(p.getPosition, !p.isDead, p.getFrozenUntil > now || p.getRootedUntil > now, p.getServerMoves)
     }.toMap
 
     // Everyone who has played in it, the ones who have left too: their deaths stay scored
-    private lazy val everyoneEver: Seq[UUID] = everyone.map(_.getId)
+    private val everyoneEver: Seq[UUID] = everyone.map(_.getId)
 
-    private def deaths: Int = everyoneEver.map(id => instance.killTracker.getDeaths(id)).sum
+    private def scored(pick: UUID => Int): Int = everyoneEver.map(pick).sum
 
-    /** Phased with a dash in the kit: dashing, over walls if need be (a kit has one phase or dash
-      * at most, KitTest). */
-    private def dashing(p: Player): Boolean = p.isPhased && {
+    // Deaths as they happen: looked for after everything the match's clocks run and every request
+    private val wasAlive = mutable.Map[UUID, Boolean]()
+    private var died = 0
+    private def lookForDeaths(): Unit = for (p <- everyone) {
+      if (wasAlive.getOrElse(p.getId, true) && p.isDead) died += 1
+      wasAlive(p.getId) = !p.isDead
+    }
+    lookForDeaths()
+    m.clockwork.afterEach = _ => lookForDeaths()
+
+    private val firstSeen = mutable.Map[Int, Long]()
+
+    /** Dashing, as the server judges it (PacketValidator.isDashing): phased, or just out of a phase,
+      * with a dash in the kit. Over walls if need be (a kit has one phase or dash at most, KitTest). */
+    private def dashing(p: Player): Boolean = GameClock.now() - p.getPhasedUntil < Constants.NETWORK_TOLERANCE_MS && {
       val c = CharacterDef.get(p.getCharacterId)
       Seq(c.qAbility, c.eAbility).exists(_.castBehavior.isInstanceOf[DashBuff])
     }
 
-    private def checkRules(before: Map[UUID, Seen], deathsBefore: Int, fencedBefore: Set[(Int, Int)],
+    private def checkRules(before: Map[UUID, Seen], fencedBefore: Set[(Int, Int)], wasOpening: Boolean,
                            actor: Player, ownMove: Boolean): Unit = {
+      lookForDeaths()
+      val broken = MatchRules.broken(instance)
+      check(broken == null, broken)
+
       val fenced = instance.modifiedTiles.keySet().asScala.toSet -- fencedBefore
-      var died = 0
       for (p <- everyone) {
         val pos = p.getPosition
         val name = p.getName
-        check(p.getHealth >= 0 && p.getHealth <= p.getMaxHealth, s"$name has ${p.getHealth} of ${p.getMaxHealth} health")
-        check(pos.getX >= 0 && pos.getY >= 0 && pos.getX < world.width && pos.getY < world.height, s"$name is off the map at $pos")
         before.get(p.getId).foreach { was =>
           check(p.getServerMoves >= was.moves, s"$name's server moves went from ${was.moves} to ${p.getServerMoves}")
           if (pos != was.pos) {
@@ -373,70 +394,95 @@ object MatchFuzzTest {
               check(!was.held, s"$name, held, moved from ${was.pos} to $pos by their own client")
             }
           }
-          if (was.alive && p.isDead) died += 1
           if (pos != was.pos) count(if (ownMove && (actor eq p)) "own moves" else "other moves")
           if (p.getServerMoves > was.moves) count("server moves")
         }
       }
-      check(deaths - deathsBefore == died, s"$died died, but ${deaths - deathsBefore} deaths were scored")
-      count("deaths", died)
+      // Every death scored once, and every kill somebody's death
+      val deaths = scored(instance.killTracker.getDeaths)
+      check(deaths == died, s"$died have died, and $deaths deaths are scored")
+      check(scored(instance.killTracker.getKills) == deaths, s"${scored(instance.killTracker.getKills)} kills and $deaths deaths")
       count("fence cells", fenced.size)
 
-      // Items: on the ground or in one inventory
-      val ground = instance.itemManager.getAll.map(_.id)
-      check(ground.distinct.size == ground.size, "an item is on the ground twice")
-      val carried = mutable.Map[Int, UUID]()
-      for (p <- everyone) {
-        val inv = instance.itemManager.getInventory(p.getId).toSeq
-        check(inv.size <= Constants.MAX_INVENTORY_SIZE, s"${p.getName} carries ${inv.size} items")
-        for (item <- inv) {
-          check(!ground.contains(item.id), s"item ${item.id} is in ${p.getName}'s inventory and on the ground")
-          carried.get(item.id).foreach(other => fail(s"item ${item.id} is carried by ${p.getName} and $other"))
-          carried(item.id) = p.getId
-        }
+      // No shot outlives the flight its range allows
+      val shots = instance.projectileManager.getAll
+      for (s <- shots) {
+        val since = firstSeen.getOrElseUpdate(s.id, m.at)
+        val d = ProjectileDef.get(s.projectileType)
+        val speed = d.effectiveSpeed(s.chargeLevel)
+        val ticks = if (speed <= 0f) 1.0 else Math.ceil(d.effectiveMaxRange(s.chargeLevel) / speed) + 2
+        val longest = (ticks * (if (d.boomerang) 2 else 1) * Constants.PROJECTILE_SPEED_MS).toLong + 2 * Constants.PROJECTILE_SPEED_MS
+        check(m.at - since <= longest, s"projectile ${s.id} (${d.name}) is still in flight after ${m.at - since}ms, of $longest at most")
       }
+      if (firstSeen.size > 4096) firstSeen.filterInPlace((id, _) => shots.exists(_.id == id))
 
-      // Projectiles: thirty a player, each somewhere
-      val inFlight = instance.projectileManager.getAll
-      for ((owner, shots) <- inFlight.groupBy(_.ownerId))
-        check(shots.size <= 30, s"$owner has ${shots.size} projectiles in flight")
-      for (shot <- inFlight)
-        check(java.lang.Float.isFinite(shot.getX) && java.lang.Float.isFinite(shot.getY), s"a projectile at (${shot.getX}, ${shot.getY})")
-
-      // Traps: one to a cell, and no more than each player may keep
-      val traps = instance.trapManager.getAll
-      for (t <- traps) check(instance.trapManager.trapAt(t.x, t.y) eq t, s"trap ${t.id} at (${t.x}, ${t.y}) shares its cell")
-      for ((owner, mine) <- traps.groupBy(_.ownerId))
-        check(mine.size <= mine.map(t => TrapDef.get(t.trapType).maxActive).max, s"$owner has ${mine.size} traps down")
+      // The opening, for as long as it has lasted all through this step: nobody is hurt, whatever
+      // anyone sent. A free-for-all's holds every attack; the Teams wall keeps each team to its half
+      if (wasOpening && instance.inOpening) {
+        for (p <- everyone) check(p.getHealth == p.getMaxHealth, s"${p.getName} was hurt in the opening (${p.getHealth} of ${p.getMaxHealth})")
+        if (gameMode == 1) {
+          check(instance.divider != null && instance.divider.up, "the wall is down before the opening is over")
+          for (p <- everyone) check(TeamDivider.sideOf(world, p.getPosition.getX, p.getPosition.getY) == TeamDivider.sideOfTeam(p.getTeamId),
+            s"${p.getName} of team ${p.getTeamId} is at ${p.getPosition}, across the wall")
+          for (s <- shots; owner = instance.registry.get(s.ownerId) if owner != null) {
+            val side = instance.divider.side(s.getCellX, s.getCellY)
+            check(side == 0 || side == TeamDivider.sideOfTeam(owner.getTeamId), s"${owner.getName}'s shot is across the wall at (${s.getX}, ${s.getY})")
+          }
+          for (t <- instance.trapManager.getAll)
+            check(instance.divider.side(t.x, t.y) == TeamDivider.sideOfTeam(t.teamId), s"a trap of team ${t.teamId}'s lies across the wall at (${t.x}, ${t.y})")
+        } else {
+          check(instance.attacksLocked, "fire isn't held in a free-for-all's opening")
+          check(shots.isEmpty, s"${shots.size} shots in flight in the ceasefire")
+          check(instance.trapManager.size == 0, "a trap down in the ceasefire")
+          for (p <- everyone) check(!p.hasBarrier && !p.isPhased, s"${p.getName} cast in the ceasefire")
+        }
+        count("steps in the opening")
+      }
     }
 
-    def play(steps: Int): Unit = {
-      everyoneEver
+    /** What the match has come to, for one run to be held against another of the same seed. */
+    private def state: String = everyone.map { p =>
+      s"${p.getName} ${p.getPosition} hp${p.getHealth} m${p.getServerMoves} K${instance.killTracker.getKills(p.getId)} " +
+        s"D${instance.killTracker.getDeaths(p.getId)} i${instance.itemManager.getInventory(p.getId).size}"
+    }.mkString("; ") + s" | shots ${instance.projectileManager.getAll.map(_.id).sorted.mkString(",")} | traps ${instance.trapManager.size}" +
+      s" | items ${instance.itemManager.size} | ${m.at}ms"
+
+    def play(steps: Int): String = {
+      var result = ""
       val errors = captureStderr(quietly {
         while (step < steps) {
           step += 1
-          val before = snapshot()
-          val deathsBefore = deaths
-          val fencedBefore = instance.modifiedTiles.keySet().asScala.toSet
-          val actor = if (humans.isEmpty) null else humans(rnd.nextInt(humans.size))
-          var ownMove = false
           try {
+            // Time passes, and the match goes on: its ticks, its bots, its respawns
+            val wait = gap()
+            if (wait > 0) {
+              val before = snapshot()
+              val fencedBefore = instance.modifiedTiles.keySet().asScala.toSet
+              val wasOpening = instance.inOpening
+              note(s"${wait}ms pass")
+              m.advance(wait)
+              checkRules(before, fencedBefore, wasOpening, null, ownMove = false)
+            }
+            // Then somebody's client sends something
+            val before = snapshot()
+            val fencedBefore = instance.modifiedTiles.keySet().asScala.toSet
+            val wasOpening = instance.inOpening
+            val actor = if (humans.isEmpty) null else humans(rnd.nextInt(humans.size))
+            var ownMove = false
             val r = rnd.nextDouble()
-            if (actor == null || r < 0.18) { note("tick"); m.tick() }
-            else if (r < 0.48) { ownMove = true; walk(actor) }
-            else if (r < 0.51) { ownMove = true; jump(actor) }
+            if (actor == null) ()
+            else if (r < 0.40) { ownMove = true; walk(actor) }
+            else if (r < 0.44) { ownMove = true; jump(actor) }
             else if (r < 0.70) fire(actor)
-            else if (r < 0.74) throwTrap(actor)
-            else if (r < 0.79) { ownMove = true; useItem(actor) }
-            else if (r < 0.80) rejoin(actor)
-            else if (r < 0.803 && humans.size > 2) leave(actor)
-            else if (r < 0.84) { note("players tick"); instance.tickPlayers() }
-            else if (r < 0.85) { note("items spawn"); instance.spawnItemBatch(4) }
-            else if (r < 0.88) passTime()
-            else if (r < 0.90) armedTrapNear(actor)
-            else if (r < 0.95) tickBots()
-            else if (r < 0.96) pressR(actor)
-            else everyone.find(_.isDead).foreach { d => note(s"${d.getName} respawns"); instance.respawn(d.getId); count("respawns") }
+            else if (r < 0.76) throwTrap(actor)
+            else if (r < 0.84) { ownMove = true; useItem(actor) }
+            else if (r < 0.86) rejoin(actor)
+            else if (r < 0.864 && humans.size > 2) leave(actor)
+            else if (r < 0.88) { note("items spawn"); instance.spawnItemBatch(4) }
+            else if (r < 0.92) armedTrapNear(actor)
+            else if (r < 0.94) pressR(actor)
+            else { note("a tick"); m.tick() }
+            checkRules(before, fencedBefore, wasOpening, actor, ownMove)
           } catch {
             case e: AssertionError => throw e
             case e: Throwable =>
@@ -444,17 +490,20 @@ object MatchFuzzTest {
               e.printStackTrace(new java.io.PrintWriter(sw))
               fail(s"threw $sw")
           }
-          checkRules(before, deathsBefore, fencedBefore, actor, ownMove)
-          if (step % 64 == 0) everyone.foreach(p => m.sent(p)) // everything it sent reads back
+          if (step % 64 == 0) humans.foreach(p => m.sent(p)) // everything it sent reads back
         }
+        result = state
       })
       tally("traps on the ground at the end") = instance.trapManager.size
       tally("items carried at the end") = everyone.map(p => instance.itemManager.getInventory(p.getId).size).sum
-      println(s"MatchFuzzTest seed $seed: ${tally.toSeq.sortBy(_._1).map { case (k, v) => s"$k $v" }.mkString(", ")}")
+      tally("deaths") = died
+      for (k <- Seq("projectiles", "players", "bots", "respawn")) tally(s"ticks: $k") = m.clockwork.ran(k)
+      println(s"MatchFuzzTest seed $seed (${m.at / 1000}s of match): ${tally.toSeq.sortBy(_._1).map { case (k, v) => s"$k $v" }.mkString(", ")}")
       // Anything the match caught and only printed is a bug too
       for (line <- errors.linesIterator if line.contains("Exception") || line.contains("Error in"))
         fail(s"the match printed: $line")
       instance.stop()
+      result
     }
   }
 

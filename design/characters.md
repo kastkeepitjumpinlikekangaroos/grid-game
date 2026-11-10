@@ -313,7 +313,8 @@ fantasy. `KitTest` holds the cap, the list of volleys left, and that no two kits
 - **One wave or one cut where the fan stood for one.** The Tidecaller's Tidal Wave is one great wave
   now, 2.4 cells either side, rolling on through the first three it strikes and pushing each back
   once; the Samurai's Whirlwind is the Crescent Cut, one wide cut that goes on through everyone in
-  its way and stuns each. Both are drawn as wide as they strike (their renderers scale with
+  its way and knocks each up into the air, stunned, for a second (design/combat.md, *A launch is a
+  stun in the air*). Both are drawn as wide as they strike (their renderers scale with
   `hitRadius`). The Cyclops hurls one huge boulder.
 - **The melee rings became slams** where they were a swing all round (the Berserker's Axe Spin, the
   Bear's Maul, Fenrir's Blood Frenzy), with the effects they had, and a lance where they reached

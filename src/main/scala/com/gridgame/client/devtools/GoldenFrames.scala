@@ -379,7 +379,8 @@ object GoldenFrames {
     Scene("edge_desert", "the_cell.json", (4, 30), s => edgeScene(s), background = Some("desert")),
     Scene("edge_ocean", "the_cell.json", (4, 30), s => edgeScene(s), background = Some("ocean")),
     // Charging a shot: its lane on a dark map's open floor, lit, landing short of where a full charge
-    // would (the Monk's, short enough to be on screen whole); and on snow at full, stopped by trees
+    // would (the Monk's, short enough to be on screen whole); and on snow at full, running on through
+    // the trees in its way to its whole reach
     Scene("hive_charging", "the_hive.json", (66, 84), s => {
       val (hx, hy) = s.home
       s.charge(2000L, hx + 1.5, hy + 6.0)

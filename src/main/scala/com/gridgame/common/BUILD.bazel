@@ -3,7 +3,7 @@ load("@rules_scala//scala:scala.bzl", "scala_library")
 # The layer the server, the client and the tools share. Each package under here is a library of its
 # own, and depends only on the ones before it:
 #
-#   core (Constants, WorldRegistry, BuildInfo)  <-  model  <-  protocol  <-  observability
+#   core (Constants, GameClock, WorldRegistry, BuildInfo)  <-  model  <-  protocol  <-  observability
 #     ^                                               ^
 #     +------  diagnostics                            +------  world
 #
@@ -26,6 +26,7 @@ scala_library(
     srcs = [
         "BuildInfo.scala",
         "Constants.scala",
+        "GameClock.scala",
         "WorldRegistry.scala",
     ],
     visibility = ["//visibility:public"],

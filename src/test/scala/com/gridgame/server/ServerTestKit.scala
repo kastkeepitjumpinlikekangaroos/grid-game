@@ -3,6 +3,7 @@ package com.gridgame.server
 import com.gridgame.server.game.GameInstance
 import com.gridgame.server.lobby.{Lobby, LobbyStatus}
 import com.gridgame.common.Constants
+import com.gridgame.common.GameClock
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 import io.netty.buffer.ByteBuf
@@ -133,7 +134,7 @@ object ServerTestKit {
  * test asks for it with `opening = true`.
  */
 class TestMatch(val world: WorldData = WorldData.createEmpty(60, 60), gameMode: Byte = 0,
-                opening: Boolean = false, practice: Boolean = false) {
+                opening: Boolean = false, practice: Boolean = false, minutes: Int = 5) {
   import ServerTestKit._
 
   val server: GameServer = ServerTestKit.server
@@ -141,7 +142,7 @@ class TestMatch(val world: WorldData = WorldData.createEmpty(60, 60), gameMode: 
   server.outbox.attachUdpChannel(udp)
 
   val instance: GameInstance = {
-    val gi = new GameInstance(freshGameId(), "", 5, server)
+    val gi = new GameInstance(freshGameId(), "", minutes, server)
     gi.world = world
     gi.gameMode = gameMode
     gi.isPractice = practice
@@ -154,19 +155,24 @@ class TestMatch(val world: WorldData = WorldData.createEmpty(60, 60), gameMode: 
   private val udpInbox = mutable.Map[InetSocketAddress, mutable.Buffer[Packet]]()
   private var seq = 0
 
-  /** A player at (x, y); a bot with a bot's id (`new UUID(0L, n)`, TeamAssignment.isBot). */
-  def join(character: CharacterId, x: Int, y: Int, team: Byte = 0, id: UUID = UUID.randomUUID()): Player = {
+  /** A player at (x, y); a bot with a bot's id (`new UUID(0L, n)`, TeamAssignment.isBot). One not
+    * `connected` has no channel and no address, as a real match's bots have none: nothing is sent
+    * to it, so nothing sent to it piles up over a long match. */
+  def join(character: CharacterId, x: Int, y: Int, team: Byte = 0, id: UUID = UUID.randomUUID(),
+           connected: Boolean = true): Player = {
     val p = new Player(id, character.name, new Position(x, y), 0xFF336699)
     p.setCharacterId(character.id)
     p.setHealth(p.getMaxHealth)
     p.setTeamId(team)
     if (team != 0) instance.teamAssignments.put(p.getId, team)
-    val ch = new EmbeddedChannel()
-    p.setTcpChannel(ch)
-    tcp(p.getId) = ch
-    val addr = new InetSocketAddress("127.0.0.1", freshPort())
-    p.setUdpAddress(addr)
-    udpInbox(addr) = mutable.Buffer.empty
+    if (connected) {
+      val ch = new EmbeddedChannel()
+      p.setTcpChannel(ch)
+      tcp(p.getId) = ch
+      val addr = new InetSocketAddress("127.0.0.1", freshPort())
+      p.setUdpAddress(addr)
+      udpInbox(addr) = mutable.Buffer.empty
+    }
     instance.registry.add(p)
     instance.killTracker.registerPlayer(p.getId)
     p
@@ -216,6 +222,13 @@ class TestMatch(val world: WorldData = WorldData.createEmpty(60, 60), gameMode: 
 
   def tick(n: Int = 1): Unit = for (_ <- 0 until n) instance.tickProjectiles()
 
+  /** Let `ms` pass before what comes next: a wait on the system's clock, and on a clock of the
+    * test's own (SimMatch) that much of the match played. */
+  protected def pause(ms: Long): Unit = Thread.sleep(ms)
+
+  /** The next sequence number of the packets this match's players send it. */
+  protected def nextSeq(): Int = { seq += 1; seq }
+
   /** A projectile of the player's, put straight into flight (no fire-rate check). */
   def launch(owner: Player, pType: Byte, dx: Float, dy: Float, from: (Int, Int) = null): Projectile = {
     val (x, y) = if (from != null) from else (owner.getPosition.getX, owner.getPosition.getY)
@@ -235,7 +248,7 @@ class TestMatch(val world: WorldData = WorldData.createEmpty(60, 60), gameMode: 
     * radians (a barrier's bit and its facing). Returns whether the server accepted it. */
   def move(p: Player, x: Int, y: Int, serverMoves: Int = -1, flags: Int = 0, gapMs: Long = 2,
            flags2: Int = 0, aimAngle: Double = 0.0): Boolean = {
-    if (gapMs > 0) Thread.sleep(gapMs)
+    if (gapMs > 0) pause(gapMs)
     seq += 1
     val moves = if (serverMoves >= 0) serverMoves else p.getServerMoves
     instance.handler.processPacket(
@@ -275,7 +288,7 @@ class TestMatch(val world: WorldData = WorldData.createEmpty(60, 60), gameMode: 
   /** A trap already on the ground and past its arming delay, without the wait or the checks. */
   def armedTrap(owner: Player, x: Int, y: Int, trapType: Byte): Trap = {
     val placed = instance.trapManager.place(owner.getId, owner.getTeamId, x, y, trapType,
-      System.currentTimeMillis() - 5000)
+      GameClock.now() - 5000)
     if (placed == null) null else placed.trap
   }
 

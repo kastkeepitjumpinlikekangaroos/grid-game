@@ -28,7 +28,7 @@ scene target and then over the finished frame. Three Bazel libraries, each on th
 | `world/BarrierPainter` | raised barriers (design/barriers.md) |
 | `world/OpeningPainter` | the Teams wall, and the opening's countdown for the HUD (design/match-flow.md) |
 | `world/TrapPainter` | traps on the ground and going off (design/traps.md): inked on a seat of darker ground, ours sending a ring over the ground they watch, a glint now and then on every one (*A trap reads on every ground*) |
-| `world/AimArrowPainter`, `world/AimGeometry` | our attack's aim while we aim it, in one hand (*An aim is drawn in one hand*): a charged shot's lane on the ground to where it lands or what stops it (*A charged shot's aim is a lane on the ground*), and any other attack being aimed, a shot, a fan, a dash, a blink or a trap, where it will go (*An aimed attack shows where it will go*); where it lies, which moves with us as our sprite does (`AimGeometry`: *An aim moves with us*) |
+| `world/AimArrowPainter`, `world/AimGeometry` | our attack's aim while we aim it, in one hand (*An aim is drawn in one hand*): a charged shot's lane on the ground to its whole reach, walls or not (*A charged shot's aim is a lane on the ground*), and any other attack being aimed, a shot, a fan, a dash, a blink or a trap, where it will go (*An aimed attack shows where it will go*); where it lies, which moves with us as our sprite does (`AimGeometry`: *An aim moves with us*) |
 | `world/DeathAndTeleportPainter` | deaths and teleports |
 | `world/BlastPainter` | the frame's blasts, in their two layers, their lights and the air they shake (render/blasts) |
 | `world/WorldOverlayPainter` | name plates, health bars and damage numbers, over the finished frame |
@@ -294,7 +294,7 @@ GLGameRenderer.drawCursor()       -- the pointer, last, where the mouse is as th
   lane, a disc, a row of dots), rimmed in the HUD's gold (the aimed slot's rim: 1, 0.85, 0.51) with
   a dark ink line just outside the rim, and every edge faded over a pixel (gl/CLAUDE.md, *Smooth
   edges*). A lane is one band with rounded ends, fading in from just outside our ring, cut square at
-  whatever stops it, and a soft light runs out along it every 1.3 seconds (a dash's in 0.65, a
+  the end of its range, and a soft light runs out along it every 1.3 seconds (a dash's in 0.65, a
   charge's quicker as it builds); a disc where something lands has a dot at its heart, and a lane
   pointing at a disc stops a little short of it. The ink carries it over snow and sand and the gold
   over grass and the dark floors: four palettes were put side by side over snow, sand, grass and the
@@ -308,9 +308,11 @@ GLGameRenderer.drawCursor()       -- the pointer, last, where the mouse is as th
 - **A charged shot's aim is a lane on the ground** (while we charge a primary that scales with
   charge): one lane on to where a full charge would carry the shot, filled as far as the charge would
   carry it now and only a faint promise beyond, so the charge reads as distance, with a disc where it
-  would land now. It stops where the shot would, at the first thing that stops one in flight
-  (`AimArrowPainter.stopAlong` asks `TerrainImpact.blocks`: walls, props and the map's edge, never
-  water, and only a fence for a shot that flies over walls), cut square at the face. Its gold is deep
+  would land now. It runs its whole reach whatever is in the way, through walls and props, though
+  the shot will stop at the first of them: from 2026-09 to 2026-11 it was cut square at that face,
+  but a lane whose length jumped with every wall the pointer swept past was harder to aim with than
+  one that always shows the range (the user's call, 2026-11-08); the wall is there on screen to see,
+  and the aim, drawn in the ground pass, runs under it. Its gold is deep
   as it starts and bright at full, when a ripple breathes off the disc as the gauge's does round our
   feet; never the gauge's white-hot, which on snow left only the ink. On a dark map weak lights 1.2
   cells apart light the ground it runs over: away from our own light the light map dimmed the gold to
@@ -318,18 +320,16 @@ GLGameRenderer.drawCursor()       -- the pointer, last, where the mouse is as th
   that read as a glitch: a slab 3.6 cells wide over a darker body, both in the player's random colour
   mixed with a green-to-red heat ramp (a grey-olive smear on the Hive's teal floor, a dirt track on
   snow); a spine of 14 separate quads whose width stepped at each; half-rings on one side of it only,
-  racing along it on the frame count; the whole throbbing twice a second; and it ran through walls,
-  promising a hit on whoever stood behind one. `AimLaneTest` pins where it stops; the golden frames
-  `hive_charging` and `snowglobe_charged` hold it.
+  racing along it on the frame count; and the whole throbbing twice a second. The golden frames
+  `hive_charging` and `snowglobe_charged` (its whole reach through the trees) hold it.
 - **An aimed attack shows where it will go** (`AimArrowPainter.drawAimed`). Q or E is aimed from its
   key to the click that casts it, and the primary while its button is held (design/characters.md,
   *Casting mode*), and while one is its aim lies on the ground, worked out by what the cast itself
-  will do, so it can't promise what the cast won't: a shot is a lane to the end of its range or what
-  stops it (`stopAlong`), rounded where it runs out and square at the face (rounded at a wall it
-  bounces off), with the disc of the blast it sets off, wherever it stops for an explosive and only
-  at the end of its range for a splash that goes off there; a gem's three shots, five degrees apart,
-  are one lane widening to take them in; a fan is a narrower lane for each of its projectiles, each to
-  where it stops, and an arc at their reach; a dash is the lane to a disc where it ends
+  will do — except that a shot's lane always runs its whole range (as the charged lane does,
+  above): a shot is a lane to the end of its range, through any wall in the way, rounded there, with
+  the disc of the blast it sets off at the end of its range, an explosive's or a splash's; a gem's
+  three shots, five degrees apart, are one lane widening to take them in; a fan is a narrower lane
+  for each of its projectiles, each its whole range, and an arc at their reach; a dash is the lane to a disc where it ends
   (`GameClient.dashLanding`, over whatever lies between, as a dash goes), inside a thin ring of how
   far it can go, since it stops at the cursor; a blink is dots to a disc where it lands
   (`blinkLanding`: its whole range, short of the first cell it can't land on); a trap is dots to the

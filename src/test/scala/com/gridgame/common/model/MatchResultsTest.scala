@@ -77,6 +77,46 @@ class MatchResultsTest {
     assertEquals((1000, 984), changes(id(2)))
   }
 
+  /** What a duel between these two ratings moves each by, the first of them winning (or neither). */
+  private def duel(first: Int, second: Int, drawn: Boolean = false): (Int, Int) = {
+    val a = PlayerResult(id(1), 1, 0, 1)
+    val b = PlayerResult(id(2), 0, 1, if (drawn) 1 else 2)
+    val changes = MatchResults.eloChanges(Seq((a, first), (b, second)))
+    assertEquals((first, second), (changes(id(1))._1, changes(id(2))._1))
+    (changes(id(1))._2 - first, changes(id(2))._2 - second)
+  }
+
+  @Test
+  def eloMovesByHowUnexpectedTheResultWas(): Unit = {
+    // The usual expectation: a rating 200 better is expected to win three in four, 400 better ten
+    // in eleven, and 32 points are played for. Beating whom one was expected to beat earns little,
+    // an upset a lot, and what one gains the other loses
+    assertEquals("level", (16, -16), duel(1000, 1000))
+    assertEquals("the favourite by 200 wins", (8, -8), duel(1200, 1000))
+    assertEquals("and loses", (24, -24), duel(1000, 1200))
+    assertEquals("the favourite by 400 wins", (3, -3), duel(1400, 1000))
+    assertEquals("and loses", (29, -29), duel(1000, 1400))
+    assertEquals("by 800: next to nothing to gain", (0, 0), duel(1800, 1000))
+    assertEquals("and nearly all of it to lose", (32, -32), duel(1000, 1800))
+    assertEquals("a draw costs the favourite what an even match would not", (-8, 8), duel(1200, 1000, drawn = true))
+  }
+
+  @Test
+  def inAFullLobbyTheSamePointsAreSharedAmongTheOpponents(): Unit = {
+    // Each place against each other place, the 32 split across the three faced: first of four
+    // level players gains what a duel's winner does, and the middle two a third of it
+    val results = (1 to 4).map(n => (PlayerResult(id(n), 5 - n, n, n), 1000))
+    val changes = MatchResults.eloChanges(results)
+    assertEquals(Seq(16, 5, -5, -16), (1 to 4).map(n => changes(id(n))._2 - 1000))
+    // And unequal: the lowest rated of four winning it takes more than the highest would
+    val upset = MatchResults.eloChanges(Seq((PlayerResult(id(1), 3, 0, 1), 800), (PlayerResult(id(2), 2, 1, 2), 1200),
+      (PlayerResult(id(3), 1, 2, 3), 1200), (PlayerResult(id(4), 0, 3, 4), 1200)))
+    val favourite = MatchResults.eloChanges(Seq((PlayerResult(id(1), 3, 0, 1), 1200), (PlayerResult(id(2), 2, 1, 2), 800),
+      (PlayerResult(id(3), 1, 2, 3), 800), (PlayerResult(id(4), 0, 3, 4), 800)))
+    assertEquals("ten in eleven against, three times over", 29, upset(id(1))._2 - 800)
+    assertEquals(3, favourite(id(1))._2 - 1200)
+  }
+
   @Test
   def eloDrawBetweenEqualRatingsChangesNothing(): Unit = {
     val results = MatchResults.rankFfa(Seq((id(1), 3, 3), (id(2), 3, 3)))

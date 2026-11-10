@@ -66,7 +66,8 @@ them, but `RemoteMatches`, which `MatchDirector` does; a match server (`MatchSer
   | `Lives` | deaths scored, and respawns |
 
   What its players send it is `ClientHandler`'s to judge, against `PacketValidator` (movement,
-  casts, sequence numbers), also a trait per kind of request: `JoinRequests`, `StepRequests`
+  casts, sequence numbers), also a trait per kind of request: `JoinRequests` (a rejoin, and a
+  match server admitting a player: nobody joins a match they were not seated in), `StepRequests`
   (positions, phases, barriers), `ShotRequests`, `TrapRequests`, `ItemRequests`,
   `CooldownResetRequests` (R, on a minute of its own from the match's start, but ready at once in
   practice: design/characters.md).
@@ -179,6 +180,22 @@ tick's thread: anything that reads them (`shelteredFromBlast`, `forEachNearbyPla
 A match started by a test is begun but never started (`GameInstance.begin`): the test ticks it by
 hand (src/test/CLAUDE.md). The end-to-end tests launch real lobbies' matches that way, by replacing
 `MatchLauncher.startMatch` and `startBots`, which start a match and its bots on their own clocks.
+
+What a started match does on a clock is one list, `GameInstance.clocked`: each `Clocked` is a name,
+when it first falls due, how often after, and what to run (the projectile tick, the player tick, a
+batch of items as the match starts and every minute after — `itemsPerBatch`, by the map's size —
+and the time told every ten seconds). `start` gives each a thread of its own and runs what is due
+at the start before it returns; the tests' `MatchClockwork` plays the same list on a clock of the
+test's own. **Something new a match does on a timer goes in that list**, not in `start`: scheduled
+there alone, the matches the tests play in no time would never do it, and nothing would hold it to
+when it happens. The respawns (`Lives.scheduleRespawn`, on `respawnExecutor`) and the end
+(`endMatch`) are booked as they fall due; `MatchClocksTest` starts a real match and watches the
+system's clock do all of it, and that `stop` leaves no thread behind.
+
+The rules are timed on `GameClock` (common/CLAUDE.md), not the system's clock: a match's, the bots',
+and the waits outside a match too — three seconds between lobbies and two between lists
+(`LobbyHandler`), a queue's half minute and minute (`RankedQueue`, whose pass a started server runs
+every `passEveryMs`, five seconds), a budget's window and a lockout's wait (`RateLimiter`).
 
 ## What else to read
 

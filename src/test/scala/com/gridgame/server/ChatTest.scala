@@ -58,6 +58,10 @@ class ChatTest {
     val (host, guest) = lobbyOfTwo()
     say(guest, ChatScope.LOBBY, "  hi\u0007 there\u001b ")
     assertEquals(Seq((guest.playerId, "hi there")), heard(host))
+    // The last of what can be printed stays (a tilde); the delete after it, and whatever a font
+    // has no plain letter for, goes
+    say(guest, ChatScope.LOBBY, "a~b\u007fc\u00e9d")
+    assertEquals(Seq((guest.playerId, "a~bcd")), heard(host))
   }
 
   @Test def aLineWithNothingLeftIsNotSent(): Unit = {

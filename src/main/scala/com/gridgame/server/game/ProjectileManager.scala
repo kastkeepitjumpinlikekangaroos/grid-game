@@ -156,9 +156,16 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
     var i = 1
     while (i < n) {
       val t = i.toFloat / n
-      val cx = Math.floor(x + dx * t + 0.5f).toInt
-      val cy = Math.floor(y + dy * t + 0.5f).toInt
-      if ((cx != fromCx || cy != fromCy) && (cx != pos.getX || cy != pos.getY) &&
+      val fx = x + dx * t + 0.5f
+      val fy = y + dy * t + 0.5f
+      val cx = Math.floor(fx).toInt
+      val cy = Math.floor(fy).toInt
+      // Not where the way only touches the corner four cells share: that point is none of theirs.
+      // Counted as the south-eastern one's, a wall there sheltered whoever stood past its corner
+      // from a shot coming one way along that diagonal, and a wall on any other corner from none
+      // (found by SymmetryTest)
+      val onCorner = Math.abs(fx - Math.rint(fx)) < Projectile.ON_THE_LINE && Math.abs(fy - Math.rint(fy)) < Projectile.ON_THE_LINE
+      if (!onCorner && (cx != fromCx || cy != fromCy) && (cx != pos.getX || cy != pos.getY) &&
           world.stopsProjectile(cx, cy) && (!pDef.passesThroughWalls || world.getTile(cx, cy) == Tile.Fence)) return true
       i += 1
     }
@@ -326,7 +333,9 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
                 val ddx = pos.getX - projectile.getX
                 val ddy = pos.getY - projectile.getY
                 val distSq = ddx * ddx + ddy * ddy
-                if (distSq < hitDistSq) {
+                // Of two as near as each other (one either side of its line), always the same one,
+                // wherever on the map they stand: by id, not by which the grid happens to list first
+                if (distSq < hitDistSq || (distSq == hitDistSq && hitPlayer != null && player.getId.compareTo(hitPlayer.getId) < 0)) {
                   hitDistSq = distSq
                   hitPlayer = player
                 }

@@ -30,12 +30,17 @@ class MeleeKitsTest {
     assertEquals(0.5f, target.getSlowMultiplier, 0.001f)
   }
 
-  @Test def theSamuraisWhirlwindStuns(): Unit = {
+  @Test def theSamuraisCrescentCutKnocksUpAndStuns(): Unit = {
     val samurai = m.join(CharacterId.Samurai, 10, 30)
     val target = m.join(CharacterId.Soldier, 13, 30)
+    val before = System.currentTimeMillis()
     shoot(samurai, ProjectileType.SWORD_WAVE)
     assertTrue("held", target.isFrozen)
     assertTrue("as a stun", target.getStunnedUntil > System.currentTimeMillis())
+    assertTrue("in the air", target.isAirborne)
+    assertEquals("for as long as the stun", target.getStunnedUntil, target.getAirborneUntil)
+    assertTrue("for a second", target.getAirborneUntil - before >= 1000)
+    assertEquals("everyone is told", 0x08, m.instance.playerFlags2(target) & 0x08)
   }
 
   @Test def aShockwavePushesEveryoneAwayFromTheCrusader(): Unit = {
@@ -162,7 +167,7 @@ class MeleeKitsTest {
       (if (speed > 20) d.maxRange * (1 - 20 / speed) else 0.0) + d.hitRadius + 1
     }
     def isCrowdControl(e: OnHitEffect): Boolean = e match {
-      case Freeze(_) | Stun(_) | Root(_) | TeleportOwnerBehind(_, _) | Slow(_, _) | PullToOwner | Push(_) | VortexPull(_, _) => true
+      case Freeze(_) | Stun(_) | Launch(_) | Root(_) | TeleportOwnerBehind(_, _) | Slow(_, _) | PullToOwner | Push(_) | VortexPull(_, _) => true
       case _ => false
     }
     val closers = for {

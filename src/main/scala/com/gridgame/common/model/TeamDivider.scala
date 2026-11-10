@@ -1,5 +1,7 @@
 package com.gridgame.common.model
 
+import com.gridgame.common.GameClock
+
 /**
  * The wall that stands between the two teams while a team match begins, and the fixed halves of
  * the map it splits them into.
@@ -43,7 +45,7 @@ object TeamDivider {
 /** A raised divider: which way it runs, which line it stands on, and when it comes down. */
 final class TeamDivider(val axisX: Boolean, val at: Int, val endsAt: Long) {
 
-  def up: Boolean = System.currentTimeMillis() < endsAt
+  def up: Boolean = GameClock.now() < endsAt
   def up(now: Long): Boolean = now < endsAt
   def msLeft(now: Long): Long = Math.max(0L, endsAt - now)
 
