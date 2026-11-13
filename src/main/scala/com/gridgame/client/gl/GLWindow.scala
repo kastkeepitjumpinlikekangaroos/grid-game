@@ -127,6 +127,19 @@ class GLWindow(title: String, initialWidth: Int, initialHeight: Int, windowClass
     glDisable(GL_DEPTH_TEST)
   }
 
+  /** Whether a swap waits for the display's next refresh (vsync), which `create` turns on: a window
+    * whose loop the display already paces turns it off (gl/CLAUDE.md, *A frame is timed on the
+    * display's cadence*). */
+  def setVsync(on: Boolean): Unit = if (window != NULL) glfwSwapInterval(if (on) 1 else 0)
+
+  /** The refresh rate of the screen the window opens on (the primary's video mode), 0 if GLFW
+    * doesn't know it: what a FramePacer times the frames by. */
+  def refreshHz: Int = {
+    val monitor = glfwGetPrimaryMonitor()
+    val mode = if (monitor != NULL) glfwGetVideoMode(monitor) else null
+    if (mode != null) mode.refreshRate() else 0
+  }
+
   /** Set the window/taskbar icon (no-op on macOS, where the dock icon comes from the app process instead). */
   def setIcon(relativePaths: Seq[String]): Unit = {
     if (window == NULL) return

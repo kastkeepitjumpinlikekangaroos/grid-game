@@ -2,7 +2,7 @@ package com.gridgame.client
 
 import com.gridgame.client.audio.AudioManager
 import com.gridgame.client.diagnostics.{Diagnostics, PastFrame, StateSample}
-import com.gridgame.client.gl.{FrameHistory, GLWindow, RenderQuality}
+import com.gridgame.client.gl.{FrameHistory, FramePacer, GLWindow, RenderQuality}
 import com.gridgame.client.input.{ControllerHandler, GLKeyboardHandler, GLMouseHandler}
 import com.gridgame.client.i18n.Messages
 import com.gridgame.common.Constants
@@ -17,8 +17,8 @@ import javafx.scene.paint.Color
 import javafx.stage.Screen
 import javafx.stage.Stage
 import com.gridgame.client.game.ClientState
-import com.gridgame.client.render.GLGameRenderer
-import com.gridgame.client.ui.screens.{ReportAbout, Screens}
+import com.gridgame.client.render.{FrameClock, GLGameRenderer}
+import com.gridgame.client.ui.screens.{ReportAbout, ScoreboardScreen, Screens}
 import com.gridgame.common.diagnostics.Recording.{FrameFlags, IncidentKind, NoticedKind}
 import org.lwjgl.opengl.{GL11, GL20, GL30}
 import org.lwjgl.system.MemoryUtil
@@ -59,8 +59,9 @@ private[client] final class MatchWindow(app: Screens) {
   def open(stage: Stage): Unit = {
     switchScreen()
 
-    // Create GL renderer
-    glRenderer = new GLGameRenderer(client)
+    // The renderer, placing everything it moves itself (other players) at the frame's time, as the
+    // client places us and the projectiles: on the display's cadence (FramePacer, below)
+    glRenderer = new GLGameRenderer(client, FrameClock.onFrames(() => client.frameNanos))
     client.setRejoinListener(() => glRenderer.resetVisualPosition())
 
     // Prevent JavaFX from shutting down when we hide the last stage
@@ -69,11 +70,12 @@ private[client] final class MatchWindow(app: Screens) {
     // Hide JavaFX stage — GLFW window takes over rendering. Its screen goes with it: a hidden
     // stage still holds its scene, so the character grid's canvases, sprite sheets and the
     // textures behind them stayed allocated for the whole match. Every way out of a match
-    // shows a new screen, so nothing needs this one again.
+    // shows a new screen, so nothing needs this one again. The world behind the menus stays
+    // (WorldBackdrop, 4MB), for the scoreboard to come up on, and the portraits it shows are cut
+    // again as the match goes (ScoreboardScreen.prepare, below).
     stage.setScene(new Scene(new StackPane(), Color.BLACK))
     com.gridgame.client.ui.SpriteGenerator.clearCache()
     com.gridgame.client.ui.MapPreview.clearCache()
-    com.gridgame.client.ui.WorldBackdrop.clearCache()
     stage.hide()
 
     // Create GLFW window
@@ -86,6 +88,15 @@ private[client] final class MatchWindow(app: Screens) {
     glWindow = new GLWindow("Grid Game", bounds.getWidth.toInt, bounds.getHeight.toInt,
       windowClass = classOf[ClientMain].getName, unitScale = unitScale)
     glWindow.create()
+    // On a Mac JavaFX's pulse, which this window's loop runs on, follows the display's refresh, so a
+    // swap waiting for the refresh as well only costs frames: when its wait ran past the pulse's next
+    // refresh, JavaFX skipped that pulse and the frame came a refresh late (gl/CLAUDE.md, *A frame
+    // is timed on the display's cadence*). Wherever the pulse is a timer of JavaFX's own, the swap's
+    // wait is what keeps the frames on the display's cadence, and stays.
+    if (ClientMain.isMac && pulseFollowsDisplay) {
+      glWindow.setVsync(false)
+      Diagnostics.event("vsync: off, the display paces the frames")
+    }
     // The renderer draws the pointer: the system's was lost in a fight (CursorPainter)
     glWindow.hideSystemCursor()
     noteGraphics()
@@ -139,14 +150,18 @@ private[client] final class MatchWindow(app: Screens) {
     glWindow.show()
     AudioManager.playBattleMusic()
 
-    // Game loop via AnimationTimer (fires on FX/main thread — required for GLFW on macOS)
+    // Game loop via AnimationTimer (fires on FX/main thread — required for GLFW on macOS). Each
+    // frame is timed on the display's cadence, not when the loop happened to wake (FramePacer)
+    val pacer = new FramePacer(glWindow.refreshHz)
     var lastFrameTime = 0L
     var fullscreen = false
     var frameDeltaMs = 0f
     var lastStateNs = 0L
     var lastTier = RenderQuality.tier
+    var lastResolution = RenderQuality.resolution
     var lastFbWidth = glWindow.fbWidth
     var lastFbHeight = glWindow.fbHeight
+    var lastPreparedNs = 0L
     renderLoop = new AnimationTimer() {
       override def handle(now: Long): Unit = {
         val frameStartNs = System.nanoTime()
@@ -155,7 +170,11 @@ private[client] final class MatchWindow(app: Screens) {
           val deltaNs = if (lastFrameTime == 0L) 16_666_667L else now - lastFrameTime
           lastFrameTime = now
           frameDeltaMs = deltaNs / 1e6f
-          val deltaSec = Math.min(deltaNs / 1_000_000_000.0, 0.05)
+          // The moment this frame is shown, which our steps, their glide, a dash, the projectiles
+          // and everyone else are placed at (gl/CLAUDE.md, *A frame is timed on the display's
+          // cadence*); the gap the loop really took is what the recording and a hitch are told
+          client.beginFrame(pacer.next(frameStartNs))
+          val deltaSec = Math.min(pacer.deltaSec, 0.05)
 
           org.lwjgl.glfw.GLFW.glfwPollEvents()
           glKeyHandler.update()
@@ -200,6 +219,14 @@ private[client] final class MatchWindow(app: Screens) {
           if (Diagnostics.recorder != null) frameHistory.capture(glWindow.fbWidth, glWindow.fbHeight, frameStartNs)
           glWindow.swapBuffers()
 
+          // The scoreboard's portraits, cut as the match goes, so it comes up with them; a portrait
+          // that can't be had is no reason to end the match, as anything thrown here would
+          if (frameStartNs - lastPreparedNs >= 2_000_000_000L) {
+            lastPreparedNs = frameStartNs
+            try ScoreboardScreen.prepare(client)
+            catch { case e: Exception => System.err.println(s"MatchWindow: couldn't ready the scoreboard's portraits ($e)") }
+          }
+
           // The frame into the match's recording, and now and then what the client thinks of us
           val recorder = Diagnostics.recorder
           if (recorder != null) {
@@ -228,6 +255,10 @@ private[client] final class MatchWindow(app: Screens) {
               lastTier = RenderQuality.tier
               Diagnostics.event(s"quality: ${RenderQuality.tierName}")
             }
+            if (RenderQuality.resolution != lastResolution) {
+              lastResolution = RenderQuality.resolution
+              Diagnostics.event(s"resolution: ${RenderQuality.resolutionName}")
+            }
             if (glWindow.fbWidth != lastFbWidth || glWindow.fbHeight != lastFbHeight) {
               lastFbWidth = glWindow.fbWidth
               lastFbHeight = glWindow.fbHeight
@@ -249,10 +280,11 @@ private[client] final class MatchWindow(app: Screens) {
             // Out of the match and back to the menus, where the player can tell us what they saw, rather
             // than the game vanishing: the menus don't draw with OpenGL, so they are still fine
             Platform.runLater(() => {
-              close(stage, "error")
-              client.leaveMatch()
-              client.returnToLobbyBrowser()
-              showLobbyBrowser(stage, Messages.t("The match closed because of an error"))
+              close(stage, "error") {
+                client.leaveMatch()
+                client.returnToLobbyBrowser()
+                showLobbyBrowser(stage, Messages.t("The match closed because of an error"))
+              }
               showProblemReport(stage, ReportAbout.MatchError(e.toString))
             })
         } finally {
@@ -260,8 +292,6 @@ private[client] final class MatchWindow(app: Screens) {
           com.gridgame.common.observability.Metrics.clientFrameDuration.record(
             frameMs, io.opentelemetry.api.common.Attributes.empty()
           )
-          // In `auto` quality this steps the tier down if frames stay slow.
-          com.gridgame.client.gl.RenderQuality.noteFrame(frameMs)
         }
       }
     }
@@ -269,17 +299,13 @@ private[client] final class MatchWindow(app: Screens) {
 
     // Wire game over listener
     client.gameOverListener = () => {
-      Platform.runLater(() => {
-        close(stage, "finished")
-        showScoreboard(stage)
-      })
+      Platform.runLater(() => close(stage, "finished")(showScoreboard(stage)))
     }
 
     // The server no longer closes a lobby mid-match, but if one closes anyway don't leave
     // the player in a match nothing is driving.
     client.lobbyClosedListener = () => {
-      Platform.runLater(() => {
-        close(stage, "closed by the server")
+      Platform.runLater(() => close(stage, "closed by the server") {
         client.returnToLobbyBrowser()
         showLobbyBrowser(stage, Messages.t("The match was closed"))
       })
@@ -288,22 +314,27 @@ private[client] final class MatchWindow(app: Screens) {
     println("Game started!")
   }
 
-  /** Take down the in-game window and bring the JavaFX stage back; a no-op when no match is
-    * showing. Run it between frames (from a runLater), never inside one: it destroys the
-    * window the frame is drawing to. `how` the match ended, for its recording: finished, left,
-    * disconnected, error. */
-  def close(stage: Stage, how: String): Unit = {
-    if (renderLoop == null) return
+  /** Take down the in-game window and bring the JavaFX stage back, on the screen `next` puts on it.
+    * The screen is built first, on the stage still hidden behind the window, so the stage comes up
+    * showing it whole (Theme.showPage brings nothing in on a stage that isn't showing): ui/CLAUDE.md,
+    * *Coming back from a match*. With no match showing, only `next` is run. Run it between frames
+    * (from a runLater), never inside one: it destroys the window the frame is drawing to. `how` the
+    * match ended, for its recording: finished, left, disconnected, error. */
+  def close(stage: Stage, how: String)(next: => Unit): Unit = {
+    if (renderLoop == null) { next; return }
     Diagnostics.matchEnded(how)
     renderLoop.stop()
     renderLoop = null
     client.gameOverListener = null
     disposeHistory()
     if (glRenderer != null) { glRenderer.dispose(); glRenderer = null }
-    if (glWindow != null) { retire(glWindow); glWindow = null }
-    Platform.setImplicitExit(true)
     AudioManager.playMenuMusic()
-    stage.show()
+    try next
+    finally {
+      if (glWindow != null) { retire(glWindow); glWindow = null }
+      stage.show()
+      Platform.setImplicitExit(true)
+    }
   }
 
   /** The history let go, while the window's context is still current (its GL objects with it). */
@@ -334,18 +365,30 @@ private[client] final class MatchWindow(app: Screens) {
       val fallback = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(4))
       fallback.setOnFinished(_ => {
         if (client.clientState == ClientState.PLAYING && client.currentLobbyId == sessionLobby) {
-          close(stage, "left")
-          client.returnToLobbyBrowser()
-          showLobbyBrowser(stage)
+          close(stage, "left") {
+            client.returnToLobbyBrowser()
+            showLobbyBrowser(stage)
+          }
         }
       })
       fallback.play()
     } else {
       client.leaveMatch()
-      close(stage, "left")
-      showLobbyBrowser(stage)
+      close(stage, "left")(showLobbyBrowser(stage))
     }
   }
+
+  /** Whether JavaFX's pulse follows the display's refresh: on a Mac it does (QuantumToolkit's native
+    * system vsync, a CVDisplayLink) whenever glass could make the link as JavaFX started, which it
+    * can't with the screen locked, and pulses on a timer of its own then. Nothing public says, so it
+    * is read from JavaFX's own state; false when it can't be. */
+  private def pulseFollowsDisplay: Boolean =
+    try {
+      val toolkit = Class.forName("com.sun.javafx.tk.Toolkit").getMethod("getToolkit").invoke(null)
+      val field = toolkit.getClass.getDeclaredField("nativeSystemVsync")
+      field.setAccessible(true)
+      field.getBoolean(toolkit)
+    } catch { case _: Throwable => false }
 
   /** What the match window draws with, for a report: the OpenGL the driver gave it, its size and scale. */
   private def noteGraphics(): Unit =
@@ -353,7 +396,8 @@ private[client] final class MatchWindow(app: Screens) {
       Diagnostics.noteGraphics(GL11.glGetString(GL11.GL_VENDOR), GL11.glGetString(GL11.GL_RENDERER),
         GL11.glGetString(GL11.GL_VERSION), GL11.glGetString(GL20.GL_SHADING_LANGUAGE_VERSION))
       Diagnostics.noteWindow(glWindow.fbWidth, glWindow.fbHeight,
-        if (glWindow.width > 0) glWindow.fbWidth.toDouble / glWindow.width else 1.0, RenderQuality.tierName, RenderQuality.isAuto)
+        if (glWindow.width > 0) glWindow.fbWidth.toDouble / glWindow.width else 1.0, RenderQuality.tierName,
+        RenderQuality.resolutionName)
       Diagnostics.event(s"window: ${glWindow.fbWidth}x${glWindow.fbHeight}")
     } catch { case e: Exception => System.err.println(s"MatchWindow: couldn't read the graphics' names ($e)") }
 

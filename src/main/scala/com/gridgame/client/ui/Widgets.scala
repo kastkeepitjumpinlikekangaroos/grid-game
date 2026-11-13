@@ -46,23 +46,32 @@ private[client] object Widgets {
    * A title lettered as a game's own: Exo 2's black italic, a `face` fill inside an outline of
    * `ink`, and the same shape in `ink` dropped under it for a hard shadow. For the one title a
    * screen has (the game's name, "Victory!").
+   *
+   * The outline is a stroke along the letters' edges twice its width, under the face, which hides
+   * the inner half: the ring a stroke outside the letters would make. JavaFX draws an outside stroke
+   * (`StrokeType.OUTSIDE`) by taking the letters' area away from such a stroke, area geometry on
+   * hundreds of curves, every frame it draws them: 57-317ms a title at 2x, on every frame of the
+   * scoreboard's entrance (ui/CLAUDE.md, *Nothing is stroked inside or outside its edge*).
    */
   def displayTitle(s: String, size: Double, face: Paint, ink: Color): StackPane = {
-    def layer(fill: Paint, cls: String): Text = {
+    val outline = Math.max(2, size * 0.055)
+    def layer(fill: Paint, outlined: Boolean, cls: String): Text = {
       val t = new Text(s)
       // Inline: the sheet's font on .root outranks one set from code (see theme.css)
       t.setStyle(s"-fx-font-family: '${Fonts.Display}'; -fx-font-style: italic; -fx-font-size: ${size}px;")
       t.setFill(fill)
-      t.setStroke(ink)
-      t.setStrokeWidth(Math.max(2, size * 0.055))
-      t.setStrokeType(StrokeType.OUTSIDE)
-      t.setStrokeLineJoin(StrokeLineJoin.ROUND)
+      if (outlined) {
+        t.setStroke(ink)
+        t.setStrokeWidth(outline * 2)
+        t.setStrokeType(StrokeType.CENTERED)
+        t.setStrokeLineJoin(StrokeLineJoin.ROUND)
+      }
       t.getStyleClass.add(cls)
       t
     }
-    val shadow = layer(ink, "display-shadow")
+    val shadow = layer(ink, outlined = true, "display-shadow")
     shadow.setTranslateY(Math.max(3, size * 0.075))
-    val title = new StackPane(shadow, layer(face, "display-face"))
+    val title = new StackPane(shadow, layer(ink, outlined = true, "display-outline"), layer(face, outlined = false, "display-face"))
     title.setPadding(new Insets(size * 0.06, size * 0.12, size * 0.14, size * 0.08))
     title
   }

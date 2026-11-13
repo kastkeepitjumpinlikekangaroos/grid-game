@@ -48,3 +48,16 @@ scala_junit_test(
         "@maven//:junit_junit",
     ],
 )
+
+# The settings card: the quality and resolution picked there taken and kept (never in the player's own)
+scala_junit_test(
+    name = "settings_dialog_test",
+    srcs = ["SettingsDialogTest.scala"],
+    env = {"GRIDGAME_AUDIO": "off"},
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "//src/test/scala/com/gridgame/client:client_test_kit",
+        "@maven//:junit_junit",
+    ],
+)

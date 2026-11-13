@@ -2,9 +2,14 @@
 """Generate the Spaceman character sprite sheet (sprites/character.png).
 
 A space explorer in a glass fishbowl helmet, with his face -- big eyes, a mop
-of ginger hair -- visible inside it. The helmet, the chunky white boots and
+of ginger hair -- visible inside it. The helmet, the tall white boots and
 gloves and the life-support pack are the oversized gear; the suit keeps the
 blue and cyan the character has always worn.
+
+From behind he is the pack: a white box as wide as his back, from under the
+bubble to his hips, with a dark panel of status lights. It is drawn over the
+arms there (it is nearer the camera than they are) and behind the body in
+profile, where it stands well out past his back.
 """
 
 import os
@@ -12,8 +17,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sprite_base import (
-    HAIR_STYLES, SKIN, Ell, Limb, Poly, RRect, arc_pts, cel, generate_character, head_face,
-    head_skull, ink, lit, rig, rig_arms, rig_belt, rig_hair, rig_legs, rig_torso,
+    HAIR_STYLES, SKIN, Ell, Limb, Poly, RRect, arc_pts, blob, cel, generate_character, head_face,
+    head_skull, ink, lit, rig, rig_arms, rig_hair, rig_hand, rig_legs, rig_torso,
     shade, sparkle,
 )
 
@@ -25,27 +30,41 @@ GLASS = (204, 238, 252)
 HAIR = (206, 110, 60)
 PACK = (212, 220, 236)
 IRIS = (64, 118, 196)
+BELT = shade(SUIT, 1.8)
+PANEL = (44, 58, 104)       # the dark face of a panel of lights: the suit's blue, nearly night
+
+
+def _lights(r, draw, pts, rad=1.0):
+    """Status lights, cyan and orange by turns; one of them is lit brighter each frame."""
+    for i, (x, y) in enumerate(pts):
+        col = (ACCENT, ORANGE)[i % 2]
+        Ell(x, y, rad, rad).draw(draw, fill=lit(col, 1.3) if (r.frame + i) % 3 == 0 else col)
+
+
+def _tank(draw, x0, x1, top, bot, near=True):
+    """One air tank of the pack: a white cylinder with an orange band round it."""
+    band = RRect(x0 - 1, top + 6.9, x1 + 1, top + 8.8, 0.1)
+    col = PACK if near else shade(PACK, 0.6)
+    cel(draw, RRect(x0, top, x1, bot, 3.0), col, sh=(1.2, 0.9), hi=(0.7, 0.6),
+        regions=[(band, ORANGE if near else shade(ORANGE, 0.6))])
 
 
 def _pack(r, draw):
+    """The life-support pack: twin air tanks, from under the bubble to his hips."""
     cx, d = r.cx, r.d
+    top, bot = r.sh_y - 3.0, r.hip_y + 1.0
     if d:
-        x0 = cx - d * 4.0
-        shape = RRect(min(x0, x0 - d * 5.2), r.sh_y - 3.0, max(x0, x0 - d * 5.2), r.waist_y + 1.6, 1.8)
-        cel(draw, shape, PACK, sh=(1.0, 1.0))
-        tx = x0 - d * 2.6
-        cel(draw, RRect(tx - 1.3, r.sh_y - 4.6, tx + 1.3, r.sh_y - 1.8, 0.6), shade(PACK, 1.4), sh=None)
+        # the near tank, standing well out past his back
+        x0, x1 = cx - d * 3.6, cx - d * 10.3
+        _tank(draw, min(x0, x1), max(x0, x1), top, bot)
         return
-    if r.back:
-        shape = RRect(cx - 6.2, r.sh_y - 3.2, cx + 6.2, r.waist_y + 1.8, 2.0)
-        cel(draw, shape, PACK, sh=(1.2, 1.2))
-        for i, col in enumerate((ACCENT, ORANGE, ACCENT)):
-            Ell(cx - 2.6 + i * 2.6, r.sh_y + 1.4, 0.9, 0.9).draw(
-                draw, fill=lit(col, 1.2) if (r.frame + i) % 3 == 0 else col)
-        cel(draw, RRect(cx - 3.8, r.waist_y - 3.4, cx + 3.8, r.waist_y - 1.2, 0.8), shade(PACK, 1.2), sh=None)
+    if not r.back:
         return
-    # head-on the pack only shows past the shoulders
-    cel(draw, RRect(cx - 8.4, r.sh_y - 2.8, cx + 8.4, r.waist_y + 0.6, 2.0), PACK, sh=(1.0, 1.0))
+    # the frame the two tanks are strapped to shows between them, with the regulator's light on it
+    cel(draw, RRect(cx - 3.0, top, cx + 3.0, bot - 1.6, 1.0), shade(PACK, 1.9), sh=None, lw=0.7)
+    _tank(draw, cx - 7.0, cx - 1.3, top, bot)
+    _tank(draw, cx + 1.3, cx + 7.0, top, bot)
+    Ell(cx, top + 7.85, 1.0, 1.0).draw(draw, fill=lit(ACCENT, 1.3) if r.frame % 2 == 0 else ACCENT)
 
 
 def _helmet_back(r, draw):
@@ -56,10 +75,8 @@ def _helmet_back(r, draw):
 def _helmet_front(r, draw):
     hx, hy, rx, ry = r.hx, r.head_cy, r.head_rx, r.head_ry
     ox, oy, orx, ory = hx, hy + 0.4, rx + 2.9, ry + 3.0
-    # glare across the glass, over the face
-    a0, a1 = (196, 246) if r.d >= 0 else (294, 344)
-    if r.back:
-        a0, a1 = 200, 250
+    # glare across the glass, on the side the light comes from (upper left) whichever way he faces
+    a0, a1 = (200, 250) if r.back else (196, 246)
     outer = arc_pts(ox, oy, orx - 1.1, ory - 1.1, a0, a1, 10)
     inner = arc_pts(ox, oy, orx - 2.6, ory - 2.6, a1, a0, 10)
     Poly(outer + inner).draw(draw, fill=(255, 255, 255))
@@ -94,32 +111,60 @@ def _chest(r, draw):
         return
     px = cx + d * 2.0
     cel(draw, RRect(px - 3.4, r.sh_y + 0.2, px + 3.4, r.sh_y + 4.6, 1.0), TRIM, sh=(0.0, 0.6))
-    lights = (ACCENT, ORANGE, ACCENT) if not d else (ACCENT, ORANGE)
-    for i, col in enumerate(lights):
-        x = px - 1.9 * (len(lights) - 1) / 2.0 + i * 1.9
-        Ell(x, r.sh_y + 2.4, 0.8, 0.8).draw(draw, fill=lit(col, 1.3) if (r.frame + i) % 3 == 0 else col)
+    n = 3 if not d else 2
+    _lights(r, draw, [(px - 1.9 * (n - 1) / 2.0 + i * 1.9, r.sh_y + 2.4) for i in range(n)], 0.85)
+
+
+def _belt(r, draw):
+    """The suit's belt. Its light is on the front: in profile a buckle is a dark block poking
+    out from behind the glove."""
+    cx, y = r.cx, r.waist_y + 1.0
+    w = r.hip_w + 0.6 if not r.d else 4.55
+    cel(draw, RRect(cx - w, y, cx + w, y + 2.2, 0.6), BELT, sh=(0.0, 0.6))
+    if r.front:
+        cel(draw, RRect(cx - 1.8, y - 0.5, cx + 1.8, y + 2.7, 0.9), ACCENT, sh=None, line_color=ink(BELT), lw=0.5)
+        Ell(cx - 0.3, y + 0.8, 0.8, 0.6).draw(draw, fill=lit(ACCENT, 2.2))
+
+
+def _legs(r, draw):
+    """Suit legs in tall white boots: the kit's shoe with a shaft up the shin, one mass."""
+    for side in ((-r.d, r.d) if r.d else (-1, 1)):
+        rig_legs(r, draw, SUIT, TRIM, sides=(side,), width=1.05)
+        (hx0, hy0), (fx, fy) = r.hip(side), r.foot(side)
+        t = 0.6
+        shaft = Limb([(hx0 + (fx - hx0) * t, hy0 + (fy - 1.2 - hy0) * t), (fx, fy - 1.2)], [2.8, 2.6], cap=False)
+        if r.d:
+            x0, x1 = fx - r.d * 2.4, fx + r.d * 3.7
+            foot = RRect(min(x0, x1), fy - 2.1, max(x0, x1), fy + 1.4, 1.6)
+        else:
+            foot = RRect(fx - 2.9, fy - 2.0, fx + 2.9, fy + 1.4, 1.6)
+        blob(draw, [shaft, foot], TRIM if r.near(side) else shade(TRIM, 0.5), sh=(0.0, 0.7))
 
 
 def draw_spaceman(draw, ox, oy, direction, frame):
     r = rig(ox, oy, direction, frame, head=0.92)
     d = r.d
-    if not r.back:
-        _pack(r, draw)
     if d:
         rig_arms(r, draw, SUIT, TRIM, layer="far", hand_r=2.5, cuff=TRIM)
-    rig_legs(r, draw, SUIT, TRIM, width=1.05)
+        _pack(r, draw)
+    _legs(r, draw)
     rig_torso(r, draw, SUIT)
     # white suit panels down the sides
-    if not d:
+    if r.front:
         for s in (-1, 1):
             cel(draw, Poly([(r.cx + s * (r.sh_w - 1.2), r.sh_y - 1.4), (r.cx + s * (r.sh_w - 0.1), r.sh_y + 0.6),
                             (r.cx + s * (r.hip_w - 0.2), r.hip_y - 0.2), (r.cx + s * (r.hip_w - 2.2), r.hip_y - 0.2),
                             (r.cx + s * (r.sh_w - 2.6), r.sh_y + 0.8)]), TRIM, sh=None, line=False)
     _chest(r, draw)
-    rig_belt(r, draw, shade(SUIT, 1.8), buckle=ACCENT)
+    _belt(r, draw)
     if r.back:
+        # the pack lies over the arms, and the gloves over its corners
+        rig_arms(r, draw, SUIT, TRIM, layer="near", hand_r=2.5, cuff=TRIM, hands=False)
         _pack(r, draw)
-    rig_arms(r, draw, SUIT, TRIM, layer="near", hand_r=2.5, cuff=TRIM)
+        for s in (-1, 1):
+            rig_hand(r, draw, s, TRIM, hand_r=2.5)
+    else:
+        rig_arms(r, draw, SUIT, TRIM, layer="near", hand_r=2.5, cuff=TRIM)
     _helmet_back(r, draw)
     head_skull(r, draw, SKIN)
     if not r.back:

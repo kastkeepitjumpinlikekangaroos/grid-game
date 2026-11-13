@@ -415,20 +415,20 @@ class ClientMain extends Application with Screens {
    * ended the session. Logged in somewhere else, it waits for the player: logging back in by itself,
    * it would throw the other one out, and that one us, for ever. Logged out, only the password will do.
    */
-  private def connectionLost(stage: Stage, c: GameClient): Unit = {
-    // Out of the match, if we were in one, which shows the menus' stage again
-    matchWindow.close(stage, "disconnected")
-    c.sessionEndReason match {
-      case SessionEndReason.REVOKED =>
-        forgetLogin()
-        showWelcomeScreen(stage, Messages.t("You were logged out. Please log in again."))
-      case SessionEndReason.REPLACED =>
-        showWelcomeScreen(stage, Messages.t("Your account logged in somewhere else"))
-      case _ =>
-        if (savedLogin != null) showWelcomeScreen(stage, resume = true, reconnecting = true)
-        else showWelcomeScreen(stage, Messages.t("Disconnected from the server"))
+  private def connectionLost(stage: Stage, c: GameClient): Unit =
+    // Out of the match, if we were in one, which shows the menus' stage again on this screen
+    matchWindow.close(stage, "disconnected") {
+      c.sessionEndReason match {
+        case SessionEndReason.REVOKED =>
+          forgetLogin()
+          showWelcomeScreen(stage, Messages.t("You were logged out. Please log in again."))
+        case SessionEndReason.REPLACED =>
+          showWelcomeScreen(stage, Messages.t("Your account logged in somewhere else"))
+        case _ =>
+          if (savedLogin != null) showWelcomeScreen(stage, resume = true, reconnecting = true)
+          else showWelcomeScreen(stage, Messages.t("Disconnected from the server"))
+      }
     }
-  }
 
   /** Log out: the login is ended on the server (its refresh token logs nobody in again) and
     * forgotten here, and the login screen shown. */
@@ -482,7 +482,7 @@ object ClientMain {
   private val ReconnectTries = 6
 
   private val osName = System.getProperty("os.name", "").toLowerCase
-  private val isMac = osName.contains("mac")
+  private[client] val isMac = osName.contains("mac")
   private[client] val isLinux = osName.contains("linux")
 
   /**
@@ -527,16 +527,18 @@ object ClientMain {
         def run(): Unit = com.gridgame.common.observability.Telemetry.shutdown()
       }))
     }
-    // Graphics quality: `--quality=low|medium|high|auto` or `GRIDGAME_QUALITY`.
-    // Defaults to auto, which starts high and steps down if frames stay slow.
+    // Graphics quality and resolution: what the player chose in the settings last time, unless
+    // `--quality=low|medium|high`, `--resolution=native|1440|1080|720` (or GRIDGAME_QUALITY,
+    // GRIDGAME_RESOLUTION) say otherwise for this run
+    com.gridgame.client.gl.RenderQuality.loadSaved()
     val passThrough = com.gridgame.client.gl.RenderQuality.configure(args.filterNot(_ == "--telemetry"))
-    // Asked for low quality outright: also draw the menus at 1x on a HiDPI screen and let the
+    // Low quality, as the game starts: also draw the menus at 1x on a HiDPI screen and let the
     // OS scale them up. Text is softer, but every menu repaint fills a quarter of the pixels,
     // and on macOS the pool of window surfaces JavaFX's layer builds up is a quarter the size
     // (at most ~165MB instead of ~650MB on a 5K display). It has to be decided before JavaFX
-    // starts, which is why auto — which only steps down once a match is running — can't. Not on
-    // Linux, where nothing scales a window up: on a desktop at 200% the menus came out half size.
-    if (!isLinux && !com.gridgame.client.gl.RenderQuality.isAuto &&
+    // starts, so Low chosen in the settings takes it from the next start. Not on Linux, where
+    // nothing scales a window up: on a desktop at 200% the menus came out half size.
+    if (!isLinux &&
         com.gridgame.client.gl.RenderQuality.tier == com.gridgame.client.gl.RenderQuality.LOW &&
         System.getProperty("prism.allowhidpi") == null) {
       System.setProperty("prism.allowhidpi", "false")

@@ -35,7 +35,8 @@ scripts/build_linux_package.sh --arch x86_64 --deb             # the Linux app a
 
 OTEL_SDK_DISABLED=true bazel run //src/main/scala/com/gridgame/server:server  # server without telemetry
 GRIDGAME_TELEMETRY=1 bazel run //src/main/scala/com/gridgame/client:client    # client with telemetry (or -- --telemetry)
-bazel run //src/main/scala/com/gridgame/client:client -- --quality=low        # low|medium|high|auto (default auto; F7 in game)
+bazel run //src/main/scala/com/gridgame/client:client -- --quality=low        # low|medium|high, and --resolution=native|1440|1080|720:
+                                                                              # for one run (players pick both in the settings; F7 in game)
 GRIDGAME_AUDIO=off bazel run //src/main/scala/com/gridgame/client:client      # no sound at all
 GRIDGAME_LOGIN_FILE=/tmp/second bazel run //src/main/scala/com/gridgame/client:client  # "Remember me" kept elsewhere (a second client)
 GRIDGAME_DIAGNOSTICS_DIR=/tmp/diag bazel run //src/main/scala/com/gridgame/client:client  # its log, recordings and reports kept elsewhere
@@ -130,7 +131,7 @@ ops/kubernetes/      the servers on Kubernetes (Agones), and a local kind cluste
 | How projectiles are drawn | [client/render/projectiles/CLAUDE.md](src/main/scala/com/gridgame/client/render/projectiles/CLAUDE.md) |
 | How explosions and splashes are drawn | [client/render/blasts/CLAUDE.md](src/main/scala/com/gridgame/client/render/blasts/CLAUDE.md) |
 | OpenGL primitives: batches, strokes, fonts, post-processing, quality tiers | [client/gl/CLAUDE.md](src/main/scala/com/gridgame/client/gl/CLAUDE.md) |
-| The menus: screens, their look (the world behind them, the stylesheet, the maps drawn as models), and why every repaint is expensive | [client/ui/CLAUDE.md](src/main/scala/com/gridgame/client/ui/CLAUDE.md) |
+| The menus: screens, their look (the world behind them, the stylesheet, the maps drawn as models), why every repaint is expensive, and coming back from a match | [client/ui/CLAUDE.md](src/main/scala/com/gridgame/client/ui/CLAUDE.md) |
 | Sound at runtime: the mixer, which sound every attack makes | [client/audio/CLAUDE.md](src/main/scala/com/gridgame/client/audio/CLAUDE.md) |
 | Tests: the suites, the test kits, conventions | [src/test/CLAUDE.md](src/test/CLAUDE.md) |
 | Assets: tiles, maps, character sprites, sounds, icons | [scripts/CLAUDE.md](scripts/CLAUDE.md), then [scripts/SPRITES.md](scripts/SPRITES.md), [scripts/SOUNDS.md](scripts/SOUNDS.md) |

@@ -1,6 +1,6 @@
 package com.gridgame.client.ui
 
-import com.gridgame.common.WorldRegistry
+import com.gridgame.common.{Constants, WorldRegistry}
 import com.gridgame.common.world.WorldLoader
 
 import javafx.application.Platform
@@ -16,8 +16,10 @@ import javafx.scene.shape.Rectangle
  * `.backdrop-shade-open`). Characters can be stood along the bottom of it ([[stand]]), each on a
  * patch of ground of their own.
  *
- * It is one picture, drawn on the map-art thread (it shows the night until then, and fades in) and
- * shared by every screen, scaled to cover the window; dropped while a match is on. It never moves: the menus repaint the whole window
+ * It is one picture, drawn on the map-art thread as the client starts (it shows the night until then,
+ * and fades in) and shared by every screen, scaled to cover the window; kept through a match, so the
+ * scoreboard comes up on it (drawn again after every match, it came in on the night and faded the
+ * world in most of a second later). It never moves: the menus repaint the whole window
  * whenever anything on them changes (ui/CLAUDE.md), and one picture under a gradient is about the
  * cheapest thing there is to repaint. It asks the page for no room and is clipped to it.
  */
@@ -38,7 +40,7 @@ private[client] final class WorldBackdrop(open: Boolean = false) extends Pane {
   private val shade = new Region()
   shade.getStyleClass.add(if (open) "backdrop-shade-open" else "backdrop-shade")
   getChildren.addAll(view, shade)
-  // Fades in if it wasn't drawn yet (as the client starts, and after a match)
+  // Fades in if it wasn't drawn yet (as the client starts)
   private val fadeIn = !WorldBackdrop.ready
   WorldBackdrop.picture { img =>
     view.setImage(img)
@@ -81,8 +83,8 @@ private[client] final class WorldBackdrop(open: Boolean = false) extends Pane {
       ground.autosize()
       val gw = ground.prefWidth(-1); val gh = ground.prefHeight(-1)
       ground.relocate(x - gw / 2, feet - gh * MapPreview.PatchFeet)
-      // A sprite frame's feet sit about 85% of the way down it
-      node.relocate(x - ht / 2, feet - ht * 0.86)
+      // Their soles on the patch's middle: a frame's foot line is not its bottom edge
+      node.relocate(x - ht / 2, feet - ht * Constants.SPRITE_FOOT_LINE)
     }
   }
 }
@@ -98,8 +100,6 @@ private[client] object WorldBackdrop {
   private var image: Image = _
   private var asked = false
   private val waiting = new java.util.ArrayList[Image => Unit]()
-  // Bumped by clearCache: a picture asked for before it is dropped as it lands
-  private var generation = 0
 
   /** The picture, for `ready` on the FX thread: at once if it is drawn, else once it is. */
   def picture(ready: Image => Unit): Unit = {
@@ -111,7 +111,6 @@ private[client] object WorldBackdrop {
   /** Start drawing the picture, if it isn't drawn or being drawn (on the FX thread). */
   def prepare(): Unit = if (!asked) {
     asked = true
-    val gen = generation
     MapPreview.paint { () =>
       val img: Image = try {
         val meadow = WorldRegistry.displayNames.indices
@@ -127,22 +126,11 @@ private[client] object WorldBackdrop {
         MapArt.image(px, W, H)
       } catch { case e: Exception => e.printStackTrace(); null }
       Platform.runLater { () =>
-        if (gen == generation) {
-          image = img
-          if (img != null) waiting.forEach(_(img))
-          waiting.clear()
-        }
+        image = img
+        if (img != null) waiting.forEach(_(img))
+        waiting.clear()
       }
     }
-  }
-
-  /** Drop the picture (4MB), and one being drawn as it lands: called when a match starts, while
-    * nothing of the menus is shown. The next screen draws it again. */
-  def clearCache(): Unit = {
-    generation += 1
-    image = null
-    asked = false
-    waiting.clear()
   }
 
   /** Whether the picture is drawn yet: for the gallery, which waits for it. */

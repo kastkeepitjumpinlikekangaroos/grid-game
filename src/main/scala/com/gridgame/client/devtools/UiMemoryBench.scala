@@ -11,7 +11,7 @@ import javafx.stage.{Screen, Stage}
 import javafx.util.Duration
 
 import java.lang.management.ManagementFactory
-import com.gridgame.client.ui.{CharacterSelectionPanel, MapPreview, SpriteGenerator, Theme, UiActivity, Widgets, WorldBackdrop}
+import com.gridgame.client.ui.{CharacterSelectionPanel, MapPreview, SpriteGenerator, Theme, UiActivity, Widgets}
 
 /**
  * Dev tool: what the menus cost while the player is sitting in them. Not shipped — run with
@@ -141,7 +141,6 @@ class UiMemoryBenchApp extends Application {
           stage.setScene(new Scene(new StackPane(), Color.BLACK))
           SpriteGenerator.clearCache()
           MapPreview.clearCache()
-          WorldBackdrop.clearCache()
         }
         Platform.setImplicitExit(false)
         stage.hide()

@@ -137,7 +137,7 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
     // The world is rendered into off-screen targets whose size the quality tier controls;
     // the composite still upscales to the real framebuffer and the HUD is drawn on top of
     // it at full resolution, so lowering the scale costs sharpness in the world only.
-    val scale = RenderQuality.sceneScale(fbWidth, windowWidth)
+    val scale = RenderQuality.sceneScale(fbWidth, fbHeight, windowWidth)
     val sceneW = Math.max(64, (fbWidth * scale).toInt)
     val sceneH = Math.max(64, (fbHeight * scale).toInt)
     ensureInitialized(sceneW, sceneH)
@@ -178,11 +178,11 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
     GpuProfiler.beginFrame()
     val world = client.getWorld
 
-    // Use interpolated position for smooth camera tracking between grid tiles
+    // Where we are drawn, between two cells as a step glides us, and every projectile flown to where
+    // it is, between the server's ticks, before anything this frame reads where one is: both at the
+    // frame's time (GameClient.frameNanos, on the display's cadence in a match)
     client.updateVisualPosition()
-    // and every projectile flown to where it is now, between the server's ticks, before anything
-    // this frame reads where one is
-    client.flyProjectiles(client.nanoClock(), deltaSec)
+    client.flyProjectiles(client.frameNanos, deltaSec)
     val visualPosX = client.visualPosX
     val visualPosY = client.visualPosY
 

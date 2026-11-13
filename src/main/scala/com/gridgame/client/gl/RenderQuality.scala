@@ -13,10 +13,13 @@ package com.gridgame.client.gl
  * display's own resolution, so text stays crisp while the expensive part gets cheaper
  * quadratically.
  *
- * Selected with `--quality=low|medium|high|auto`, `GRIDGAME_QUALITY`, or F7 in game. The
- * default is `auto`, which starts at High and steps down (never back up) when frames are
- * persistently slow, so an underpowered machine settles at a playable tier on its own
- * without the player needing to find a setting.
+ * Two choices, both the player's: the quality (the tier: which effects, and at Medium and Low a
+ * smaller world) and the resolution (the most lines the world is drawn at: the display's own, 1440,
+ * 1080 or 720; a tier that draws fewer still does). Chosen in the menus' settings (saved, `choose`
+ * and `chooseResolution`), with F7 in a match for the quality, or for a run with `--quality=` and
+ * `--resolution=` (or `GRIDGAME_QUALITY`, `GRIDGAME_RESOLUTION`). Nothing changes either by itself: an
+ * `auto` that stepped the quality down mid-match when frames stayed slow was taken out (2026-11-12),
+ * the player deciding between more detail and more frames (gl/CLAUDE.md, *Graphics quality tiers*).
  */
 object RenderQuality {
   val HIGH = 0
@@ -26,35 +29,90 @@ object RenderQuality {
   private val names = Array("high", "medium", "low")
 
   @volatile private var _tier: Int = HIGH
-  @volatile private var _auto: Boolean = true
 
   def tier: Int = _tier
   def tierName: String = names(_tier)
-  def isAuto: Boolean = _auto
+
+  /** The resolutions the world can be drawn at, as the most lines it is drawn at: 0 for the
+    * display's own. */
+  val Resolutions: Seq[Int] = Seq(0, 1440, 1080, 720)
+
+  @volatile private var _resolution: Int = 0
+
+  /** The most lines the world is drawn at, 0 for the display's own. */
+  def resolution: Int = _resolution
+  def resolutionName: String = nameOfResolution(_resolution)
+  def nameOfResolution(lines: Int): String = if (lines <= 0) "native" else s"${lines}p"
+
+  /** Where the player's choices are kept between runs: the user's preferences, unless a test has put
+    * a store of its own in (it must never write the player's). */
+  trait Store { def get(key: String): Option[String]; def put(key: String, value: String): Unit }
+  @volatile var store: Store = new Store {
+    private lazy val prefs = java.util.prefs.Preferences.userRoot().node("com/gridgame/client/graphics")
+    def get(key: String): Option[String] = try Option(prefs.get(key, null)) catch { case _: Exception => None }
+    def put(key: String, value: String): Unit =
+      try { prefs.put(key, value); prefs.flush() } catch { case _: Exception => () }
+  }
+
+  private def tierNamed(name: String): Option[Int] = name.trim.toLowerCase match {
+    case "low" => Some(LOW)
+    case "medium" => Some(MEDIUM)
+    case "high" | "auto" => Some(HIGH) // auto: what it began as, now that nothing steps down
+    case _ => None
+  }
+
+  private def resolutionNamed(name: String): Option[Int] = name.trim.toLowerCase.stripSuffix("p") match {
+    case "native" | "0" | "" => Some(0)
+    case n if n.nonEmpty && n.forall(_.isDigit) && Resolutions.contains(n.toInt) => Some(n.toInt)
+    case _ => None
+  }
+
+  /** The player's saved choices: the app reads them as it starts, before `configure`, whose flags win.
+    * Dev tools don't, so a bench or the golden frames draw the same on every machine. */
+  def loadSaved(): Unit = {
+    store.get("quality").flatMap(tierNamed).foreach(_tier = _)
+    store.get("resolution").flatMap(resolutionNamed).foreach(_resolution = _)
+  }
+
+  /** The quality, chosen by the player: from now on, and saved. */
+  def choose(t: Int): Unit = {
+    setTier(t)
+    store.put("quality", tierName)
+  }
+
+  /** The resolution, chosen by the player: from the next frame on, and saved. */
+  def chooseResolution(lines: Int): Unit = {
+    _resolution = if (Resolutions.contains(lines)) lines else 0
+    store.put("resolution", resolutionName)
+    println(s"Resolution: $resolutionName")
+  }
 
   /**
    * Configure from command-line args and the environment. Returns the args with the
    * quality flag removed so the caller can pass the rest through.
    */
   def configure(args: Array[String]): Array[String] = {
-    val flag = args.find(_.startsWith("--quality="))
-    val value = flag.map(_.substring("--quality=".length))
+    val quality = args.find(_.startsWith("--quality=")).map(_.substring("--quality=".length))
       .orElse(sys.env.get("GRIDGAME_QUALITY"))
-      .map(_.trim.toLowerCase)
-    value match {
-      case Some("low")    => _tier = LOW;    _auto = false
-      case Some("medium") => _tier = MEDIUM; _auto = false
-      case Some("high")   => _tier = HIGH;   _auto = false
-      case Some("auto") | None => _tier = HIGH; _auto = true
-      case Some(other) =>
-        System.err.println(s"Unknown --quality=$other (expected low, medium, high or auto)")
-        _tier = HIGH; _auto = true
+    quality.foreach { q =>
+      tierNamed(q) match {
+        case Some(t) => _tier = t
+        case None => System.err.println(s"Unknown --quality=$q (expected low, medium or high)")
+      }
     }
-    if (!_auto) println(s"Graphics quality: $tierName")
-    args.filterNot(_.startsWith("--quality="))
+    val resolution = args.find(_.startsWith("--resolution=")).map(_.substring("--resolution=".length))
+      .orElse(sys.env.get("GRIDGAME_RESOLUTION"))
+    resolution.foreach { r =>
+      resolutionNamed(r) match {
+        case Some(lines) => _resolution = lines
+        case None => System.err.println(s"Unknown --resolution=$r (expected native, 1440, 1080 or 720)")
+      }
+    }
+    println(s"Graphics quality: $tierName, resolution: $resolutionName")
+    args.filterNot(a => a.startsWith("--quality=") || a.startsWith("--resolution="))
   }
 
-  /** Force a tier at runtime (used by the in-game toggle and by the auto stepper). */
+  /** Set the tier for this run, unsaved (a dev tool's, or `choose`'s). */
   def setTier(t: Int): Unit = {
     val clamped = Math.max(HIGH, Math.min(LOW, t))
     if (clamped != _tier) {
@@ -63,11 +121,8 @@ object RenderQuality {
     }
   }
 
-  /** Cycle High -> Medium -> Low -> High, and stop auto-stepping once the player chooses. */
-  def cycleTier(): Unit = {
-    _auto = false
-    setTier(if (_tier >= LOW) HIGH else _tier + 1)
-  }
+  /** F7 in a match: High -> Medium -> Low -> High, chosen and saved as the menus' setting is. */
+  def cycleTier(): Unit = choose(if (_tier >= LOW) HIGH else _tier + 1)
 
   // ── Per-tier settings ──────────────────────────────────────────────
 
@@ -82,14 +137,17 @@ object RenderQuality {
    * visually and is 4x cheaper; on a 1x display, where there is no free 2x to give up, it
    * falls back to a modest reduction instead.
    */
-  def sceneScale(fbWidth: Int, windowWidth: Int): Float = {
+  def sceneScale(fbWidth: Int, fbHeight: Int, windowWidth: Int): Float = {
     val dpi = if (windowWidth > 0) fbWidth.toFloat / windowWidth else 1f
     val logical = if (dpi > 0.01f) 1f / dpi else 1f // scale that lands on 1 device px per logical px
-    (_tier: @scala.annotation.switch) match {
+    val byTier = (_tier: @scala.annotation.switch) match {
       case HIGH   => 1.0f
       case MEDIUM => Math.min(0.8f, logical)
       case _      => Math.min(0.55f, logical * 0.7f)
     }
+    // And no more lines than the resolution chosen
+    if (_resolution <= 0 || fbHeight <= _resolution) byTier
+    else Math.min(byTier, _resolution.toFloat / fbHeight)
   }
 
   /** Bloom extract + half-res blur. */
@@ -129,28 +187,5 @@ object RenderQuality {
     case HIGH   => 1.0f
     case MEDIUM => 0.6f
     case _      => 0.25f
-  }
-
-  // ── Automatic step-down ────────────────────────────────────────────
-  //
-  // Only ever steps down, and only after a couple of seconds of consistently slow
-  // frames, so a one-off hitch (a shader compile, a GC, an alt-tab) can't drag the
-  // quality with it and there is nothing to oscillate.
-
-  private val SlowFrameMs = 20.0     // below 50 fps
-  private val SlowFramesToStep = 120 // ~2s of them
-  private var slowFrames = 0
-
-  def noteFrame(frameMs: Double): Unit = {
-    if (!_auto || _tier >= LOW) return
-    if (frameMs > SlowFrameMs) {
-      slowFrames += 1
-      if (slowFrames >= SlowFramesToStep) {
-        slowFrames = 0
-        setTier(_tier + 1)
-      }
-    } else if (slowFrames > 0) {
-      slowFrames -= 1 // decay, so only a sustained problem accumulates
-    }
   }
 }

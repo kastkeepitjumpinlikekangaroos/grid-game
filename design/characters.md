@@ -598,8 +598,14 @@ walked at 67ms, to a ranged character's 50ms. A 25ms phase walked at 33ms. A 50m
 whole frame whenever the third came a millisecond early, about one step in eight at ±3ms of frame
 jitter. And a bot's 104ms or 106ms step waited for the second tick after its last, at half its
 pace. Now the handlers carry the remainder (a step a whole interval late is a fresh start, so
-nothing builds up while the keys are up), and a bot takes up to two steps a tick (a speed boost
-brings a step under the tick). `MovementTest` and `BotMovementTest` pin it.
+nothing builds up while the keys are up), and a bot takes up to two steps at once (a speed boost
+brings a step under the tick). And a bot's steps are taken as they fall due, between its 100ms ticks
+(`BotController.stepTick`, every 10ms, toward the target the last tick picked): taken only on the
+ticks, a 104 or 106ms step came 100ms after the last and every so often 200ms, a slowed one's 100 and
+200 by turns, and every client drew the bot stop dead and catch up. Measured in a free-for-all
+against five bots, the steps that came 200ms after the one before went from a fifth of them to one
+in forty, and the frames a walking bot was drawn standing still from 5.8% to 1-2%. `MovementTest`
+and `BotMovementTest` pin it.
 
 **A diagonal step goes between open cells only** (`WorldData.canStep`, `cornersOpen`). One of W, A,
 S or D alone steps diagonally across the world, and a step used to need only its own cell open: past
@@ -617,12 +623,25 @@ until 2026-10-30, and the server held its player back). A dash goes over walls, 
 `GameClientPositionTest`, `PacketValidatorTest` and `KnockbackTest` pin it, and `BotPathingTest`
 checks every step its bots take on every map.
 
-**A step glides over the time until the next one** (`LocalMovement.movePlayer`): we are drawn
-sliding from the cell we left to the one we stepped onto over the gap since the step before, which
-is the pace while a key is held. A step after standing still has no such gap and glides over its
-own interval (twice it for a pure left or right): it used to glide over the whole time stood still,
-so a tap after a few seconds slid one cell over those seconds, the camera with it.
-`GameClientPositionTest` pins it.
+**A step glides from when it fell due, over its own interval** (`LocalMovement.movePlayer`): we are
+drawn sliding from the cell we left to the one we stepped onto, from the moment the step fell due
+(the pace, above: `Movement.nextStepFrom`) over its interval, twice it for a pure left or right, all
+on the frame's time (client/render/CLAUDE.md, *Everything moving is placed at the frame's time*). A
+step is taken on the first frame after it falls due, so at 60 fps a melee character's 53ms step
+comes on the third frame or the fourth, and a ranged character's 50ms one on every third only while
+the frames keep exact time. Glided from the frame that took it over the gap since the step before, as
+until 2026-11-12, a glide was cut short and jumped whenever a step came a frame late, and ran out and
+stood still whenever one came a frame early: walking as the Ghoul, the sprite stood still in 4% of
+frames and ran at up to 1.68 times its pace in others, and the camera and the whole world under it
+lurched with it (sd 14% from frame to frame). From when each fell due, one glide ends as the next
+begins, and the walk is drawn at its pace whatever frames its steps fall on (within 1%). A step that comes before
+the last one's glide is over, the pace having quickened (a slow ended, a charge let go, a boost
+begun), takes up the rest of it at the new pace: finished within the new step's interval, the rest
+of a slowed 167ms step and the next were drawn in 50ms, a lurch to three times the pace that the
+camera carried to the whole screen. A step after standing still glides from
+when it is taken (it once glided over the whole time stood still, so a tap after a few seconds slid
+one cell over those seconds). A dash is drawn along its line, not on the cell it has reached, which
+came a whole one every other frame or so. `GameClientPositionTest` pins it.
 
 ## A phase stops at walls
 A phase (`PhaseShiftBuff`: the Wraith's Phase Shift, the Vampire's Mist Form, the Kraken's Ink Cloud

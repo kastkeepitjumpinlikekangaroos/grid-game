@@ -187,6 +187,43 @@ class CharacterRosterTest {
     }
   }
 
+  @Test def theRosterStandsOnTheFootLine(): Unit = {
+    // The renderer and the menus stand a frame's foot line on the ground (Constants.SPRITE_FOOT_LINE;
+    // client/render/CLAUDE.md, *A player stands on the ground*), so that is where the sheets' soles
+    // have to be: scripts/sprite_base.py's FOOT_LINE, which the constant follows. A few characters
+    // hover and a few have a tail or a blade lower than their feet, so it is the roster's median
+    // that is held to the line: the lowest row of the standing frame that faces us, which for
+    // most is the soles' own outline, a pixel or two under the line.
+    val frame = Constants.SPRITE_SIZE_PX
+    val line = Constants.SPRITE_FOOT_LINE * frame
+    val lowest = all.map { c =>
+      val sheet = ImageIO.read(new File(c.spriteSheet))
+      var low = 0
+      for (y <- 0 until frame; x <- 0 until frame) if ((sheet.getRGB(x, y) >>> 24) > 128) low = y + 1
+      low
+    }.sorted
+    val median = lowest(lowest.size / 2)
+    assertTrue(s"the roster's soles are on row $median of $frame, and the foot line is $line",
+      median >= line && median <= line + 4)
+  }
+
+  @Test def noCharacterIsCutOffByItsFrame(): Unit = {
+    // A frame shows y = -6 to 58 of the space a character is drawn in (scripts/SPRITES.md,
+    // *Rendering pipeline*). What is drawn up to its first or last row runs on past it: a hat cut
+    // flat, a sword's tip gone. Nine of the roster's hats and flames were cut by the frame's top
+    // before it was moved up over them.
+    val frame = Constants.SPRITE_SIZE_PX
+    for (c <- all) {
+      val sheet = ImageIO.read(new File(c.spriteSheet))
+      for (row <- 0 until 4; col <- 0 until 4; x <- 0 until frame) {
+        val top = sheet.getRGB(col * frame + x, row * frame) >>> 24
+        val bottom = sheet.getRGB(col * frame + x, row * frame + frame - 1) >>> 24
+        assertTrue(s"${c.spriteSheet} is cut off by the top of frame $col of row $row", top <= 32)
+        assertTrue(s"${c.spriteSheet} is cut off by the bottom of frame $col of row $row", bottom <= 32)
+      }
+    }
+  }
+
   @Test def keybindsAreQAndE(): Unit = {
     all.foreach { c =>
       assertEquals(c.displayName, "Q", c.qAbility.keybind)

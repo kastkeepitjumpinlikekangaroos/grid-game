@@ -72,7 +72,7 @@ class Wire(remote: InetSocketAddress) extends EmbeddedChannel() {
  *
  * With `byHand`, matches the lobbies launch are begun but not started (MatchLauncher.startMatch), and
  * their clocks are the harness's: the projectile tick every 30ms, the player tick every 200ms, the
- * bots' every 100ms, respawns, item batches. Everything then happens on the test's thread, one thing
+ * bots' every 100ms and their steps every 10ms, respawns, item batches. Everything then happens on the test's thread, one thing
  * at a time, and on a perfect network the harness is **strict**: every packet is delivered at once,
  * so a client acts knowing all the server has said, and then
  *
@@ -340,6 +340,7 @@ final class Loopback private (val seed: Long, val net: NetConditions, val byHand
     var projectiles: Long = at + Constants.PROJECTILE_SPEED_MS
     var players: Long = at + 200
     var bots: Long = at + 100
+    var botSteps: Long = at + 10
     var items: Long = at
     val deadSince: mutable.Map[UUID, Long] = mutable.Map()
   }
@@ -362,6 +363,7 @@ final class Loopback private (val seed: Long, val net: NetConditions, val byHand
       if (t >= k.projectiles) k.projectiles = t + Constants.PROJECTILE_SPEED_MS
       if (t >= k.players) { E2EServer.tickPlayers(gi); drainServer(); k.players = t + 200 }
       if (t >= k.bots) { E2EServer.tickBots(gi, t); drainServer(); k.bots = t + 100 }
+      if (t >= k.botSteps) { E2EServer.stepBots(gi, t); drainServer(); k.botSteps = t + 10 }
       if (t >= k.items) { E2EServer.spawnItems(gi, E2EServer.itemBatch(gi)); drainServer(); k.items = t + itemEveryMs }
       // Respawns, as Lives.scheduleRespawn has them
       val delayMs = respawnDelayMs.getOrElse(if (gi.isPractice) 1000L else Constants.RESPAWN_DELAY_MS.toLong)

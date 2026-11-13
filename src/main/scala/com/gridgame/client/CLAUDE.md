@@ -36,14 +36,16 @@ tests.
 When a match starts, `MatchWindow.open` hides the JavaFX stage and creates a GLFW window with an
 OpenGL context. The game loop runs as a JavaFX `AnimationTimer` (it fires on the main thread, which
 on macOS both GLFW and OpenGL require): it polls GLFW's events, updates the input handlers and the
-controller, and has the renderer draw a frame. On game over the GLFW window is hidden and the
-JavaFX stage shown again, on the scoreboard (or the lobby browser if the match was left); the
+controller, and has the renderer draw a frame. On game over the screen that follows (the
+scoreboard, or the lobby browser if the match was left) is built on the stage while it is still
+hidden, then the GLFW window is hidden and the stage shown again, on it, whole (ui/CLAUDE.md,
+*Coming back from a match*); the
 window is destroyed a couple of seconds later, once macOS has finished with it (`GLWindow.retire`:
 destroyed straight away in macOS's own full screen, it crashed the client). Everything the renderer
 reads of the game is the `GameClient`'s, which the packet thread writes (game/CLAUDE.md).
 
 - **GLFW window swap** — hiding JavaFX Stage and creating a GLFW window avoids FBO→WritableImage pixel-copy overhead. Both use Cocoa NSWindows on macOS and coexist safely, as long as the GLFW one is never destroyed while AppKit is still busy with it (gl/CLAUDE.md, *A window macOS may still be using is retired*).
-- **AnimationTimer game loop** — fires on the FX Application Thread (main thread on macOS), which is required for both GLFW and OpenGL calls. No threading complexity.
+- **AnimationTimer game loop** — fires on the FX Application Thread (main thread on macOS), which is required for both GLFW and OpenGL calls. No threading complexity. On a Mac JavaFX's pulse follows the display, and the swap doesn't wait for the refresh as well (gl/CLAUDE.md, *On a Mac the match's swap doesn't wait for the refresh*). Each frame is timed on the display's cadence, not when the pulse happened to fire (`gl/FramePacer`: gl/CLAUDE.md, *A frame is timed on the display's cadence*), and everything moving is placed at that time (render/CLAUDE.md, *Everything moving is placed at the frame's time*).
 - **JavaFX UI retained** — Login, lobby, character selection, and scoreboard remain in JavaFX. Only in-game rendering uses OpenGL.
 - **The match draws its own pointer** — over the GLFW window the system's is hidden and the renderer draws a crosshair after each frame, where the mouse is, while the window has the focus (render/CLAUDE.md, *The pointer is ours*). The menus keep the system's.
 - **The match is recorded, and a failed frame doesn't close the game** — each frame, every key and button, and four times a second what the client thinks of us go into the match's recording for a problem report, allocating nothing; F8 marks the moment with a picture of the frame, read back before the swap (`MatchWindow.markMoment`), and the last fifteen seconds of small ones the window keeps as it goes (`gl/FrameHistory`, read back through pixel buffers without waiting); a frame long after the last is noticed. A frame that throws takes the window down and brings the menus back with the report offered, where it used to quit the app (design/diagnostics.md).

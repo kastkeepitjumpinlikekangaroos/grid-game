@@ -21,7 +21,9 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
   private val pressedKeys: mutable.Set[Int] = mutable.Set.empty
   // The keys held that a match's recording keeps (Recording.Keys), kept up as they go down and up
   private var _heldMask = 0
-  private var lastMoveTime: Long = 0
+  // When the last step fell due, on the frames' clock (GameClient.frameNanos), and whether one has
+  private var lastStepDue: Long = 0L
+  private var steppedYet = false
   private var lastBurstTime: Long = 0
   private var _f11JustPressed: Boolean = false
 
@@ -202,7 +204,8 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
   }
 
   private def processMovement(): Unit = {
-    val now = System.currentTimeMillis()
+    // The frame's time, on the display's cadence: what the step's glide is drawn on too
+    val now = client.frameNanos
     if (client.isSwooping) return
 
     val moveRate = client.moveStepIntervalMs
@@ -223,14 +226,17 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
     // Pure left/right (A or D alone) moves 2x the screen distance of up/down
     // due to the 2:1 isometric tile ratio, so double the delay to equalize visual speed
     val isHorizontal = dx != 0 && dy != 0 && dx != dy
-    val effectiveRate = if (isHorizontal) moveRate * 2 else moveRate
-    if (now - lastMoveTime < effectiveRate) return
+    val effectiveRate = (if (isHorizontal) moveRate * 2 else moveRate) * 1000000L
+    if (steppedYet && now - lastStepDue < effectiveRate) return
 
     if (dx != 0 || dy != 0) {
-      client.movePlayer(dx, dy)
       // Counted from when the step fell due, not from this frame, or at 60 fps a melee
-      // character's 53ms step would wait for the fourth frame and walk at 67ms (Movement)
-      lastMoveTime = Movement.nextStepFrom(lastMoveTime + effectiveRate, now, effectiveRate)
+      // character's 53ms step would wait for the fourth frame and walk at 67ms (Movement); and
+      // glided from then, so the walk is drawn at its pace whichever frame took each step
+      val due = if (steppedYet) Movement.nextStepFrom(lastStepDue + effectiveRate, now, effectiveRate) else now
+      client.movePlayer(dx, dy, due, effectiveRate)
+      lastStepDue = due
+      steppedYet = true
     }
   }
 }

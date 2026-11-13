@@ -3,6 +3,7 @@ package com.gridgame.client
 import com.gridgame.common.model._
 import org.junit.Assert._
 import org.junit.Test
+import org.lwjgl.glfw.GLFW._
 
 /**
  * Where the client puts its own player. It moves it itself, and takes a position from the server
@@ -57,7 +58,9 @@ class GameClientPositionTest {
     t.clearSent()
     assertTrue(c.shootAbility(0))
     val cast = t.sentUpdates.size
+    // The hitch, on the wall clock the resend counts on and the frames' clock the dash runs on
     Thread.sleep(com.gridgame.common.Constants.POSITION_RESEND_MS + 100L)
+    t.nanos += (com.gridgame.common.Constants.POSITION_RESEND_MS + 100L) * 1000000L
     keys.update()
     val landing = c.getLocalPosition
     assertNotEquals("it went somewhere", new Position(20, 20), landing)
@@ -224,9 +227,9 @@ class GameClientPositionTest {
     // A tap after a few seconds stood still glided one cell over those seconds, the camera with it
     t.startMatch(spawn = (10, 10))
     c.movePlayer(1, 0)
-    Thread.sleep(400)
+    t.nanos += 400 * 1000000L
     c.movePlayer(1, 0)
-    Thread.sleep(3L * c.moveStepIntervalMs)
+    t.nanos += 3L * c.moveStepIntervalMs * 1000000L
     c.updateVisualPosition()
     assertEquals("there a step's glide later", 12.0, c.visualPosX, 1e-9)
   }
@@ -258,4 +261,112 @@ class GameClientPositionTest {
     w.client.movePlayer(1, -1)
     assertEquals("past its corner: along the open side", (10, 9), w.at)
   }
+
+  // --- Where we are drawn as we walk and dash ---
+
+  /** `n` frames at 60 a second, each begun up to 1.5ms early or late as the match's loop's are, with
+    * `keys` held through the real keyboard handler: when each was, and where we were drawn. */
+  private def walkFrames(n: Int, keys: Int*): IndexedSeq[(Long, Double, Double)] = {
+    val handler = new com.gridgame.client.input.GLKeyboardHandler(c)
+    keys.foreach(k => handler.invoke(0L, k, 0, GLFW_PRESS, 0))
+    val base = t.nanos
+    (1 to n).map { i =>
+      t.nanos = base + Math.round(i * 1e9 / 60 + ((i * 7919) % 31 - 15) * 100000.0)
+      handler.update()
+      c.updateVisualPosition()
+      (t.nanos, c.visualPosX, c.visualPosY)
+    }
+  }
+
+  /** Walking east (S and D), as each pace falls on the frames: drawn exactly where the time since the
+    * first step takes us at that pace, every frame. A step is only taken on a frame, the first after it
+    * falls due: at 60 fps a 50ms step falls due on every third, a millisecond either side of it, and a
+    * 53ms one on the third or the fourth, so some are taken a frame late and the next a frame early.
+    * Glided from the frame that took each, over the gap since the last, the sprite stood still in some
+    * frames and jumped up to half a cell in others; from when each fell due, over its interval, it
+    * moves as far as the time between two frames takes it. */
+  private def walksAtItsPace(character: CharacterId): Unit = {
+    c.selectedCharacterId = character.id
+    t.startMatch(spawn = (10, 30))
+    val interval = c.moveStepIntervalMs * 1e6
+    val drawn = walkFrames(90, GLFW_KEY_S, GLFW_KEY_D)
+    val (t1, x1, _) = drawn.head
+    assertEquals("the first step taken at once", 10.0, x1, 1e-9)
+    drawn.foreach { case (at, x, y) =>
+      assertEquals(s"at ${(at - t1) / 1e6}ms", 10.0 + (at - t1) / interval, x, 1e-6)
+      assertEquals(30.0, y, 1e-9)
+    }
+    // And the steps did fall unevenly on the frames, which is what is being drawn past
+    val stepsAt = drawn.indices.filter(i => i > 0 && Math.floor(drawn(i)._2) != Math.floor(drawn(i - 1)._2))
+    val gaps = stepsAt.indices.drop(1).map(i => stepsAt(i) - stepsAt(i - 1)).toSet
+    assertTrue(s"steps $gaps frames apart", gaps.size > 1)
+  }
+
+  @Test def aRangedWalkIsDrawnAtItsPaceWhicheverFramesItsStepsFallOn(): Unit =
+    walksAtItsPace(CharacterId.Wizard) // 50ms a step
+
+  @Test def aMeleeWalkIsDrawnAtItsPaceWhicheverFramesItsStepsFallOn(): Unit =
+    walksAtItsPace(CharacterId.Ghoul) // 53ms a step
+
+  @Test def aWalkThatQuickensGoesOnAtItsNewPaceNotInALurch(): Unit = {
+    // A step every 150ms (slowed), then every 50 (the slow over, or a charge let go): the step after
+    // comes a third of the way through the last one's glide. Finished within the new step's 50ms,
+    // the rest of that glide and the new one were drawn at 1.7 times the new pace, a lurch the
+    // camera carried to the whole screen. Taken up at the new pace, the walk never goes faster
+    t.startMatch(spawn = (10, 30))
+    val ms = 1000000L
+    val base = t.nanos
+    val dues = Seq(0L, 150L, 300L, 350L, 400L, 450L, 500L)
+    var next = 0
+    val xs = (0 to 45).map { f =>
+      val now = base + Math.round(f * 1e9 / 60)
+      t.nanos = now
+      while (next < dues.length && base + dues(next) * ms <= now) {
+        c.movePlayer(1, 0, base + dues(next) * ms, (if (next < 3) 150L else 50L) * ms)
+        next += 1
+      }
+      c.updateVisualPosition()
+      c.visualPosX
+    }
+    val newPace = 1000.0 / 60 / 50
+    (1 until xs.length).foreach(i =>
+      assertTrue(s"frame $i moved ${xs(i) - xs(i - 1)} cells", xs(i) - xs(i - 1) <= newPace * 1.01))
+    assertEquals("and the walk ends on its cell", 17.0, xs.last, 1e-9)
+  }
+
+  @Test def letGoTheWalkEndsOnItsCell(): Unit = {
+    t.startMatch(spawn = (10, 30))
+    val handler = new com.gridgame.client.input.GLKeyboardHandler(c)
+    handler.invoke(0L, GLFW_KEY_D, 0, GLFW_PRESS, 0)
+    handler.invoke(0L, GLFW_KEY_S, 0, GLFW_PRESS, 0)
+    (1 to 20).foreach { i => t.nanos += 16666667L; handler.update(); c.updateVisualPosition() }
+    handler.invoke(0L, GLFW_KEY_D, 0, GLFW_RELEASE, 0)
+    handler.invoke(0L, GLFW_KEY_S, 0, GLFW_RELEASE, 0)
+    val xs = (1 to 10).map { _ => t.nanos += 16666667L; handler.update(); c.updateVisualPosition(); c.visualPosX }
+    assertEquals("on the cell it stopped on", c.getLocalPosition.getX.toDouble, xs.last, 1e-9)
+    (1 until xs.length).foreach(i => assertTrue("and never back", xs(i) >= xs(i - 1)))
+  }
+
+  @Test def aDashIsDrawnAlongItsLineNotACellAtATime(): Unit = {
+    // Ten cells in 150ms is 1.1 a frame: drawn on the cell it had reached, the dash moved a cell in one
+    // frame and two in the next. Drawn along its line, it moves as far every frame, and lands
+    c.selectedCharacterId = CharacterId.Ghoul.id // Lunge, Q: ten cells in 150ms
+    t.startMatch(spawn = (20, 20))
+    c.setMouseWorldPosition(30, 20)
+    val keys = new com.gridgame.client.input.GLKeyboardHandler(c)
+    assertTrue(c.shootAbility(0))
+    val from = t.nanos
+    val xs = (1 to 12).map { i =>
+      t.nanos = from + Math.round(i * 1e9 / 60)
+      keys.update()
+      c.updateVisualPosition()
+      c.visualPosX
+    }
+    val perFrame = 10.0 / 150 * (1000.0 / 60)
+    assertEquals(20 + perFrame, xs.head, 1e-6)
+    (1 until 9).foreach(i => assertEquals(s"frame ${i + 1}", perFrame, xs(i) - xs(i - 1), 1e-6))
+    assertEquals("landed", (30, 20), t.at)
+    xs.drop(8).foreach(x => assertEquals(30.0, x, 1e-9))
+  }
 }
+

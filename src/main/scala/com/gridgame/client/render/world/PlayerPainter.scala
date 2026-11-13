@@ -12,6 +12,12 @@ import java.util.UUID
  * a sprite and the effects on them, standing on a shadow drawn with the ground (drawGroundMarks),
  * and the name plate and health bar that are drawn over the finished frame (WorldOverlayPainter). A
  * raised barrier is noted for BarrierPainter; a dash leaves a trail of after-images.
+ *
+ * A sprite stands with its soles on the point of the ground its player is at, which is where its
+ * shadow is: a frame's foot line (Constants.SPRITE_FOOT_LINE), not its bottom edge, which is some
+ * way under the feet. What is drawn on a player is centred on the middle of the figure and their
+ * plate hangs over their head (PLAYER_MIDDLE_ABOVE_FEET, PLAYER_PLATE_ABOVE_FEET), all measured
+ * from the soles. See render/CLAUDE.md, *A player stands on the ground*.
  */
 private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierPainter, effects: StatusEffectPainter,
                                           glows: GlowEffectPainter, overlay: WorldOverlayPainter) {
@@ -96,7 +102,7 @@ private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierP
     val screenY = worldToScreenY(wx, wy) -
       (if (player.isAirborne) airLift(player.getAirborneFrom, player.getAirborneUntil) else 0.0)
     val displaySz = Constants.PLAYER_DISPLAY_SIZE_PX
-    val spriteCenter = screenY - displaySz / 2.0
+    val spriteCenter = screenY - Constants.PLAYER_MIDDLE_ABOVE_FEET
 
     // Movement detection
     val now = frameTimeMs
@@ -179,7 +185,8 @@ private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierP
       val spriteW = displaySz.toFloat * hitScale
       val spriteH = displaySz.toFloat * hitScale
       val drawX = (screenX - spriteW / 2.0).toFloat
-      val drawY = (screenY - spriteH).toFloat
+      // The soles on the ground, whatever size it has swollen to (Constants.SPRITE_FOOT_LINE)
+      val drawY = (screenY - spriteH * Constants.SPRITE_FOOT_LINE).toFloat
       beginSprites()
       // Movement afterimage — ghost sprite trailing behind nearby moving players
       val aimDx = wx - camera.visualX; val aimDy = wy - camera.visualY
@@ -220,7 +227,7 @@ private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierP
 
     // Health bar + name (deferred to batch pass)
     val charName = I18n.characterName(CharacterDef.get(player.getCharacterId))
-    overlay.deferHealthBar(screenX, screenY - displaySz, player.getHealth, player.getMaxHealth, player.getTeamId, player.getId, charName)
+    overlay.deferHealthBar(screenX, screenY - Constants.PLAYER_PLATE_ABOVE_FEET, player.getHealth, player.getMaxHealth, player.getTeamId, player.getId, charName)
   }
 
   def drawLocal(wx: Double, wy: Double): Unit = {
@@ -228,7 +235,7 @@ private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierP
     val screenY = worldToScreenY(wx, wy) -
       (if (client.isAirborne) airLift(client.getAirborneFrom, client.getAirborneUntil) else 0.0)
     val displaySz = Constants.PLAYER_DISPLAY_SIZE_PX
-    val spriteCenter = screenY - displaySz / 2.0
+    val spriteCenter = screenY - Constants.PLAYER_MIDDLE_ABOVE_FEET
     val localIsPhased = client.isPhased
 
     // Local player light — color-matched, charge-reactive
@@ -278,7 +285,8 @@ private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierP
       val spriteW = displaySz.toFloat * hitScale
       val spriteH = displaySz.toFloat * hitScale
       val drawX = (screenX - spriteW / 2.0).toFloat
-      val drawY = (screenY - spriteH).toFloat
+      // The soles on the ground, whatever size it has swollen to (Constants.SPRITE_FOOT_LINE)
+      val drawY = (screenY - spriteH * Constants.SPRITE_FOOT_LINE).toFloat
       beginSprites()
       // Movement afterimage — ghost sprite trailing behind moving player
       if (client.getIsMoving && localHitFlash < 0.1f) {
@@ -299,7 +307,7 @@ private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierP
     {
       val chevPulse = (0.50f + 0.25f * Math.sin(animTickF * 0.08).toFloat)
       val cx = screenX.toFloat
-      val cy = (screenY - displaySz - 14).toFloat
+      val cy = (screenY - Constants.PLAYER_PLATE_ABOVE_FEET - 14).toFloat
       val chevW = 8f
       val chevH = 5f
       beginShapes()
@@ -327,7 +335,7 @@ private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierP
 
     // Health bar + name (deferred to batch pass)
     val charName = I18n.characterName(client.getSelectedCharacterDef)
-    overlay.deferHealthBar(screenX, screenY - displaySz, client.getLocalHealth, client.getSelectedCharacterMaxHealth, client.localTeamId, client.getLocalPlayerId, charName)
+    overlay.deferHealthBar(screenX, screenY - Constants.PLAYER_PLATE_ABOVE_FEET, client.getLocalHealth, client.getSelectedCharacterMaxHealth, client.localTeamId, client.getLocalPlayerId, charName)
   }
 
   private def drawSwoopTrail(wx: Double, wy: Double, displaySz: Int): Unit = {
@@ -353,7 +361,7 @@ private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierP
         val scale = (1.0 - i * 0.04).toFloat
         val gSize = displaySz * scale
         spriteBatch.draw(ghostRegion,
-          (gsx - gSize / 2).toFloat, (gsy - gSize).toFloat,
+          (gsx - gSize / 2).toFloat, (gsy - gSize * Constants.SPRITE_FOOT_LINE).toFloat,
           gSize, gSize, 1f, 1f, 1f, alpha)
       }
       i += 1

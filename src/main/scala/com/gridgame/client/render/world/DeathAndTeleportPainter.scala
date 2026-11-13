@@ -56,7 +56,7 @@ private[render] final class DeathAndTeleportPainter(ctx: RenderContext, particle
     intToRGB(colorRGB)
     val cr = _rgb_r; val cg = _rgb_g; val cb = _rgb_b
     val displaySz = Constants.PLAYER_DISPLAY_SIZE_PX
-    val cx = screenX.toFloat; val cy = (screenY - displaySz / 2.0).toFloat
+    val cx = screenX.toFloat; val cy = (screenY - Constants.PLAYER_MIDDLE_ABOVE_FEET).toFloat
 
     // Dynamic lighting — bright flash that fades over the animation
     val lightRadius = (120f * (1f - progress * 0.8f)).toFloat
@@ -229,7 +229,7 @@ private[render] final class DeathAndTeleportPainter(ctx: RenderContext, particle
     if (region != null) {
       beginSprites()
       spriteBatch.draw(region,
-        (screenX - displaySz / 2.0).toFloat, (screenY - displaySz - ghostRise).toFloat,
+        (screenX - displaySz / 2.0).toFloat, (screenY - displaySz * Constants.SPRITE_FOOT_LINE - ghostRise).toFloat,
         displaySz.toFloat, displaySz.toFloat, 1f, 1f, 1f, ghostAlpha)
     }
   }

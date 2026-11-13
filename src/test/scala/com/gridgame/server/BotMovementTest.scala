@@ -60,6 +60,51 @@ class BotMovementTest {
   @Test def aBotLongOffItsFeetTakesOneStepNotTheOnesItMissed(): Unit =
     assertEquals(1, cellsIn(CharacterId.Barbarian, 1))
 
+  /** When a bot of `character` took each step over `ms`, run as a started match runs its bots: the
+    * tick every 100ms, and between the ticks the steps that fall due, looked for every 10ms. */
+  private def stepTimes(character: CharacterId, ms: Long, before: Player => Unit = _ => ()): Seq[Long] = {
+    val m = new TestMatch(WorldData.createEmpty(160, 20))
+    val bot = m.join(character, 2, 10)
+    m.join(CharacterId.Spaceman, 157, 10)
+    val bots = new BotController(m.instance)
+    try {
+      bots.addBotId(bot.getId)
+      before(bot)
+      val start = later
+      val times = scala.collection.mutable.ArrayBuffer[Long]()
+      var at = bot.getPosition
+      var t = 0L
+      while (t <= ms) {
+        if (t % BotController.TickIntervalMs == 0) bots.tick(start + t) else bots.stepTick(start + t)
+        if (bot.getPosition != at) { times += t; at = bot.getPosition }
+        t += BotController.StepIntervalMs
+      }
+      times.toSeq
+    } finally bots.stop()
+  }
+
+  @Test def aBotStepsAsItsStepsFallDueNotOnlyOnItsTicks(): Unit = {
+    // A melee bot steps every 106ms. Taken only on the 100ms ticks, a step came 100ms after the last
+    // and every so often 200ms, and every client drew the bot stop dead and catch up. Taken as each
+    // falls due, give or take the 10ms they are looked for, every step comes 100 to 110ms after the
+    // last, and the bot keeps its pace
+    val times = stepTimes(CharacterId.Barbarian, 10000)
+    val gaps = (1 until times.length).map(i => times(i) - times(i - 1))
+    gaps.foreach(g => assertTrue(s"a step ${g}ms after the last", g >= 100 && g <= 110))
+    assertEquals("a step every 106ms", 95, times.length)
+  }
+
+  @Test def aSlowedBotStepsEvenlyToo(): Unit = {
+    // Slowed to 80% (a 126ms step), its steps came on the ticks 100 and 200ms apart by turns
+    val times = stepTimes(CharacterId.Soldier, 6000, before = bot => {
+      bot.setSlowedUntil(System.currentTimeMillis() + 600000)
+      bot.setSlowMultiplier(0.8f)
+    })
+    val gaps = (1 until times.length).map(i => times(i) - times(i - 1))
+    assertTrue(gaps.nonEmpty)
+    gaps.foreach(g => assertTrue(s"a step ${g}ms after the last", g >= 120 && g <= 140))
+  }
+
   /** How far from an enemy two cells off a bot of `character` stands after its first step. */
   private def distanceAfterAStep(character: CharacterId): Double = {
     val m = new TestMatch()

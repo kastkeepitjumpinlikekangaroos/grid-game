@@ -207,6 +207,12 @@ class UiGalleryApp extends Application {
       lobbyList(app.client)
       app.showLobbyBrowser(s)
       app.showProblemReport(s, ReportAbout.PreviousRun)
+    })),
+    // The settings, from the sliders in the top bar: the graphics quality and the resolution
+    "23_settings" -> (f => shoot(f, (app, s) => {
+      lobbyList(app.client)
+      app.showLobbyBrowser(s)
+      com.gridgame.client.ui.screens.SettingsDialog.show(s)
     }))
   )
 

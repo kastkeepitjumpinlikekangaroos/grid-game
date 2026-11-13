@@ -30,6 +30,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import generate_tiles as gt  # noqa: E402
+from sprite_base import DRAW_SIZE, FOOT_LINE  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CW, CH = gt.CELL_W, gt.CELL_H
@@ -106,7 +107,9 @@ def compose(atlas, grid, tick=0, sprites=()):
             for (sxw, syw, spr) in sprites:
                 if (sxw, syw) == (x, y):
                     sx, sy = at(x, y)
-                    img.alpha_composite(spr, (int(sx - spr.width / 2), int(sy - spr.height + 6)))
+                    # soles on the cell's middle, as the game stands a frame (its foot line)
+                    img.alpha_composite(spr, (int(sx - spr.width / 2),
+                                              int(sy - spr.height * FOOT_LINE / float(DRAW_SIZE))))
     return img
 
 

@@ -96,9 +96,18 @@ private[client] object Theme {
    * Put a page on the stage, its `body` fading and rising into place the way a web page's content
    * does when it changes: the world behind it and the top bar are the same on every page, so only
    * what is new moves. `body` is null for a page with nothing to bring in.
+   *
+   * On a stage that isn't showing (the menus coming back as a match ends, the app starting), the page
+   * is styled now and comes up whole with the window: the window appearing is the change. Brought in
+   * there, it faded over the new window's first frames, the slowest the window presents, with the
+   * first of them styling it too (ui/CLAUDE.md, *Coming back from a match*).
    */
   def showPage(stage: Stage, root: Parent, body: Node): Unit = {
     stage.setScene(newScene(root))
+    if (!stage.isShowing) {
+      root.applyCss()
+      return
+    }
     if (body != null) {
       body.setOpacity(0)
       body.setTranslateY(10)

@@ -9,10 +9,16 @@ Row layout: Down=0, Up=1, Left=2, Right=3. Frame 0 doubles as the idle pose
 (the renderer shows it whenever a player stands still), so it is the standing
 pose and the walk is stand / stride / stand / stride.
 
-Frame size is 128x128. Draw functions author at 64x64 with the feet at y=54,
-but never draw at that size: every primitive goes through ScaledDraw onto a
-RENDER_SIZE (256px) canvas, which is then resampled down to 128. In game a
-frame is shown at about 77px, so one authoring unit is ~1.2 screen pixels.
+Frame size is 128x128. Draw functions author in 64-unit space with the soles
+on y=54 and a bare crown near y=9, but never draw at that size: every primitive
+goes through ScaledDraw onto a RENDER_SIZE (256px) canvas, which is then
+resampled down to 128. In game a frame is shown at about 77px, so one authoring
+unit is ~1.2 screen pixels.
+
+The frame is not the square from 0 to 64 the draw functions were first written
+for: it shows y = -HEADROOM to 64 - HEADROOM (-6 to 58), so the soles sit on
+FOOT_LINE (60 of the frame's 64) and there are 15 units over a bare crown for a
+hat, a crest or a flame. See HEADROOM below.
 
 The art direction is MapleStory's (see "Style" below): a huge round head on a
 small slim body, big glossy eyes, hair and hats as the silhouette, flat cel
@@ -36,6 +42,22 @@ IMG_H = FRAME_SIZE * ROWS   # 512
 RENDER_SIZE = 256
 
 DOWN, UP, LEFT, RIGHT = 0, 1, 2, 3
+
+# Where the frame sits over the space the draw functions author in. They draw
+# with the soles on y = 54, and the frame used to be y = 0..64 of that space:
+# ten empty units under the feet and none over the head. Nine characters' hats,
+# crests and flames were cut off by the top of their frame and another fifteen
+# drawn hard against it, while in game every character hung 7.5 units over its
+# own shadow, because the renderer stands a frame's bottom edge on the ground.
+# The frame now shows y = -HEADROOM..64 - HEADROOM: the same art, six units
+# lower in its frame. A draw function is handed oy = HEADROOM, and everything
+# it draws hangs off oy, so nothing in one changes; what changes is the room it
+# has: down to y = -6 above the head, and no lower than y = 58 under the feet.
+# The renderer and the menus stand the frame's FOOT_LINE on the ground
+# (Constants.SPRITE_FOOT_LINE: change the two together).
+HEADROOM = 6
+FEET_Y = 54                       # where a draw function puts the soles
+FOOT_LINE = FEET_Y + HEADROOM     # where that is in the frame: 60 of 64
 
 # The legacy "draw a dark outline" colour. ScaledDraw never paints it as
 # given: any dark outline on a filled shape is re-inked from that shape's own
@@ -1286,6 +1308,13 @@ def rig_hair(r, draw, color, style="short", layer="front", hat=False, skin=None)
     if r.back:
         _hair_extra(r, draw, color, st, "under")
         shape = Poly(_hair_back(hx, hy, rx, ry, st))
+        # Under the hem the skull is hair too, in the hair's shadow: the hem is a row of lock
+        # tips, and with bare skull between them every head seen from behind had a row of pale
+        # teeth at its nape
+        hem = min(y for (_, y) in shape.pts[-11:])
+        clipped(draw, Ell(hx, hy, rx - 0.5, ry - 0.5),
+                lambda l: Poly([(hx - rx, hem - 0.6), (hx + rx, hem - 0.6), (hx + rx, hy + ry + 1),
+                                (hx - rx, hy + ry + 1)]).draw(l, fill=tone))
         cel(draw, shape, color, sh=(1.1, 1.3), tone=tone)
         if not hat:
             ocy = hy - st["vol"] * 0.35
@@ -1732,7 +1761,7 @@ def render_frame(draw_func, direction, frame_idx):
     scale = RENDER_SIZE // DRAW_SIZE
     frame_img = Image.new("RGBA", (RENDER_SIZE, RENDER_SIZE), CLEAR)
     frame_draw = ScaledDraw(ImageDraw.Draw(frame_img), scale, frame_img)
-    draw_func(frame_draw, 0, 0, direction, frame_idx)
+    draw_func(frame_draw, 0, HEADROOM, direction, frame_idx)
     return finish_frame(frame_img.resize((FRAME_SIZE, FRAME_SIZE), Image.LANCZOS))
 
 
@@ -1749,9 +1778,10 @@ def generate_character(name, draw_func):
     """Generate a character sprite sheet at sprites/<name>.png.
 
     draw_func(draw, ox, oy, direction, frame) authors in the DRAW_SIZE (64px)
-    space. Each frame is drawn on its own canvas, so nothing bleeds between
-    cells, rendered supersampled at RENDER_SIZE through ScaledDraw, resampled
-    down to FRAME_SIZE, and finished.
+    space, everything hung off (ox, oy), which is how the frame is placed over
+    it (HEADROOM). Each frame is drawn on its own canvas, so nothing bleeds
+    between cells, rendered supersampled at RENDER_SIZE through ScaledDraw,
+    resampled down to FRAME_SIZE, and finished.
     """
     img = render_sheet(draw_func)
     # Quantizing to a 255-colour palette (alpha carried per entry in tRNS)

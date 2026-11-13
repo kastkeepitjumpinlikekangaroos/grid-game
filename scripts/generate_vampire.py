@@ -34,8 +34,8 @@ MOUTH_IN = (122, 26, 52)
 # against the head rising to the top tip, then the scalloped outer edge back
 # down to the shoulder. The lining is the same wing with that edge pulled in.
 def _wing(hy, y0):
-    inner = [(4.6, y0 + 0.4)] + bez((8.0, y0 - 1.0), (12.6, hy + 3.0), (15.2, hy - 9.8), 6)
-    outer = [(16.0, hy - 4.6), (19.6, hy - 3.4), (17.4, hy + 1.4), (19.8, hy + 4.8), (13.4, y0 + 1.4)]
+    inner = [(4.6, y0 + 0.4)] + bez((8.0, y0 - 1.0), (12.6, hy + 3.0), (15.0, hy - 8.4), 6)
+    outer = [(16.8, hy - 4.8), (19.6, hy - 3.4), (17.4, hy + 1.4), (19.8, hy + 4.8), (13.4, y0 + 1.4)]
     lining = [(15.4, hy - 3.2), (17.8, hy - 2.4), (15.8, hy + 1.8), (17.6, hy + 4.4), (12.4, y0 + 0.4)]
     return inner, outer, lining
 
@@ -47,12 +47,13 @@ def _collar(r, draw):
     y0 = r.sh_y - 0.6
     inner, outer, lining = _wing(hy, y0)
     if d:
-        # the near half, seen edge-on: plum outside, the crimson lining
-        # showing along its front edge
+        # in profile the collar stands behind the head: its crimson inside
+        # faces the camera, rimmed by the plum outside along its back edge,
+        # so it is a lined collar and not more hair
         k = -d
         edge = [(-1.6, y0 + 0.6), (2.0, y0 - 2.0)] + bez((4.0, hy + 4.4), (8.0, hy - 3.0), (14.8, hy - 8.6), 5)
-        back = bez((16.4, hy - 3.6), (18.4, hy + 3.0), (11.0, y0 - 0.2), 5)
-        lining = bez((14.0, hy - 5.0), (7.0, hy + 1.0), (2.6, y0 + 0.4), 5)
+        back = bez((16.8, hy - 3.6), (19.0, hy + 3.0), (11.0, y0 - 0.2), 5)
+        lining = bez((15.4, hy - 3.4), (17.2, hy + 2.6), (9.6, y0 - 1.2), 5)
         cel(draw, Poly([(hx + k * u, y) for (u, y) in edge + back]), CAPE, sh=None,
             regions=[(Poly([(hx + k * u, y) for (u, y) in edge + lining]), LINING)])
         return
@@ -60,7 +61,7 @@ def _collar(r, draw):
         # from behind, the plum outside of the same two wings either side of
         # the head, the lining just showing over the edge against it
         for s in (-1, 1):
-            peek = inner[1:] + [(u + 1.4, y + 0.6) for (u, y) in inner[:0:-1]]
+            peek = inner[1:] + [(u + 2.4, y + 0.8) for (u, y) in inner[:0:-1]]
             cel(draw, Poly([(hx + s * u, y) for (u, y) in inner + outer]), CAPE, sh=(0.0, 0.8),
                 regions=[(Poly([(hx + s * u, y) for (u, y) in peek]), LINING)])
         return
@@ -106,7 +107,7 @@ def _cape(r, draw):
         # of the hem
         for i in range(1, 4):
             hx_ = x1 + (x0 - x1) * i / 4.0
-            stroke(draw, [(cx + (hx_ - cx) * 0.25, r.sh_y + 1.0), (hx_, bottom - 0.6)], 0.6, lit(CAPE, 0.9))
+            stroke(draw, [(cx + (hx_ - cx) * 0.25, r.sh_y + 1.0), (hx_, bottom - 0.6)], 0.8, lit(CAPE, 1.1))
         return
     # crimson inside, the plum outside wrapping round each edge
     edges = [(Poly([(cx + s * (w - 0.2), top), (cx + s * 40.0, top), (cx + s * 40.0, bottom + 3.0),
@@ -230,7 +231,7 @@ def draw_vampire(draw, ox, oy, direction, frame):
         # a frilled jabot, pinned with a ruby
         blob(draw, [Ell(vx, r.sh_y - 0.6, 2.8 if not d else 2.0, 1.8), Ell(vx - 1.0, r.sh_y + 1.6, 1.8, 1.6),
                     Ell(vx + 1.0, r.sh_y + 1.6, 1.8, 1.6), Ell(vx, r.sh_y + 2.8, 1.4, 1.4)], WHITE, sh=(0.6, 0.6))
-        gem(draw, vx, r.sh_y + 0.2, 1.3, LINING)
+        gem(draw, vx, r.sh_y - 0.7, 1.15, LINING)
     rig_arms(r, draw, COAT, WHITE, layer="near", cuff=WHITE)
     if r.back:
         _cape(r, draw)

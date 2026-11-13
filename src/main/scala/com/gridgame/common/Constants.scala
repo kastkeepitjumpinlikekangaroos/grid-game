@@ -11,6 +11,19 @@ object Constants {
   val SPRITE_SIZE_PX: Int = 128        // Source frame size in spritesheet (high-res)
   val PLAYER_DISPLAY_SIZE_PX: Int = 48 // Rendered display size (scaled up)
 
+  // Where a character is in a frame of its sheet, which the renderer and the menus place it by.
+  // A frame is 64 of the units its art is drawn in and shows y = -6 to 58 of them: the soles, on
+  // 54, are SPRITE_FOOT_LINE of the way down it (60 of 64), the middle of a figure is on 32, and
+  // 0 is as high as the hats went before there was room over them (scripts/sprite_base.py,
+  // HEADROOM: these change with it). A frame is stood with its foot line on the ground, not its
+  // bottom edge: stood on that, every character hung over its own shadow.
+  val SPRITE_FOOT_LINE: Double = 60.0 / 64
+  // In the units a sprite is drawn at, above the soles: the middle of a figure, where what is
+  // drawn on it is centred, and where its health bar and name hang from, six units clear of a
+  // bare crown and over the tallest hat a frame has room for.
+  val PLAYER_MIDDLE_ABOVE_FEET: Double = (54 - 32) / 64.0 * PLAYER_DISPLAY_SIZE_PX // 16.5
+  val PLAYER_PLATE_ABOVE_FEET: Double = 54 / 64.0 * PLAYER_DISPLAY_SIZE_PX         // 40.5
+
   // Camera zoom level (1.0 = default, 2.0 = 2x zoom)
   val CAMERA_ZOOM: Double = 1.6
 

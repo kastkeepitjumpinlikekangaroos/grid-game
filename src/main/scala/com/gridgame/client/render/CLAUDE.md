@@ -51,7 +51,7 @@ frame (see *Performance*).
 | `GLTileRenderer.scala` | Loads `sprites/tiles.png` as a GL texture, filtered and mipmapped, each cell in a slot with a gutter of its own border texels (*The terrain is filtered as the characters are*); returns full or transparent-margin-trimmed TextureRegion per tile ID + frame, and `drawDiamond` draws a flat tile as exactly its diamond |
 | `GLSpriteGenerator.scala` | Packs character sprite sheets into one growable, mipmapped GL atlas |
 | `ParticleSystem.scala`, `DamageNumberSystem.scala` | pooled particles and damage numbers |
-| `FrameClock.scala` | where the renderer reads the time: the system's, or GoldenFrames' stopped one |
+| `FrameClock.scala` | where the renderer reads the time: the system's, a match window's frame (`onFrames`: *Everything moving is placed at the frame's time*), or GoldenFrames' stopped one |
 
 ## Rendering Pipeline
 ```
@@ -169,6 +169,30 @@ GLGameRenderer.drawCursor()       -- the pointer, last, where the mouse is as th
     bench's noise (3.4-4.4 ms either way), and 2.6KB allocated a frame either way over 3600 frames
     on the Colony (900-frame runs differ by a tenth or two of a KB from run to run, a one-off
     spread over the frames, not a cost of each).
+- **A player stands on the ground** (`PlayerPainter`, `Constants.SPRITE_FOOT_LINE`). A sprite is
+  drawn with its soles on the point of the ground its player is at: where its shadow and our ring
+  are drawn, where a trap under it lies and where a shot at it arrives. A sheet's frame has room
+  under the soles (they are on 60 of its 64 units: scripts/SPRITES.md, *Rendering pipeline*), so
+  it is the frame's foot line that goes on the ground, not its bottom edge, and a sprite swells
+  about that line as it breathes or is hit, the feet staying where they are. What is drawn on a
+  player (a shield's bubble, a stun's stars, the glows, a death) is centred on the middle of the
+  figure, 16.5 units above the soles, and the health bar and name hang from 40.5 above them: six
+  clear of a bare crown and over the tallest hat a frame has room for (`PLAYER_MIDDLE_ABOVE_FEET`,
+  `PLAYER_PLATE_ABOVE_FEET`). The menus stand their characters the same way (`WorldBackdrop.stand`,
+  the character panel's hero).
+  - Until 2026-11-10 a frame was stood on its bottom edge with the soles ten of its 64 units above
+    that, so every character hung 7.5 units over the ground and 8.5 over the middle of its own
+    shadow (27 pixels on a HiDPI screen, measured in the render audit's pictures): clear of the
+    shadow's dark middle altogether, feet in the back quarter of the cell, standing still the top
+    of a hop. In front of a wall the feet were 2.5 units from its foot and the ring lay out in
+    front of them; behind one the whole figure showed over it, shins and all, where now the wall
+    covers the legs it stands in front of. A knock-up's lift read as less than it was, since
+    everyone was already off the ground.
+  - Everything hung off the frame moved down with it and keeps its place on the figure: the plate
+    is as far over a head as it was, the effects where they were on the body. The measurements
+    are from the soles now, so they hold whatever a frame's margins are; `SPRITE_FOOT_LINE` is the
+    one number that has to follow the sheets (`sprite_base.HEADROOM`), and `CharacterRosterTest`
+    checks the roster's soles are on it.
 - **Tiles are culled against the visible diamond, not its bounding box** — the screen rect
   maps to a diamond in world space, whose AABB holds ~2.7x as many cells as are on screen.
   `render` computes bounds in the projection's own axes (`u = wx - wy`, `v = wx + wy`) and
@@ -264,20 +288,67 @@ GLGameRenderer.drawCursor()       -- the pointer, last, where the mouse is as th
   re-uploads the sheets already in it, and retires the old texture for `disposeRetired()`
   to free at the top of the next frame — never mid-frame, where a batch may still hold
   queued vertices naming it.
+- **Everything moving is placed at the frame's time** (`GameClient.frameNanos`). A match's frame is
+  timed on the display's cadence (`gl/FramePacer`: gl/CLAUDE.md, *A frame is timed on the
+  display's cadence*), and `MatchWindow` gives the client that time as each frame begins
+  (`beginFrame`) and the renderer a clock that reads it (`FrameClock.onFrames`): our steps are taken
+  by it (the input handlers), glided on it (`LocalMovement`, design/characters.md, *A step glides
+  from when it fell due*), a dash and a knockback's slide are drawn by it, the projectiles are flown
+  to it (`flyProjectiles`), and everyone else is walked on it (`RemoteMotion`, with the frame's
+  paced delta). Anything with no window pacing it (a test, a dev tool) reads the client's own clock
+  (`nanoClock`). The rest of the frame's time (`frameTimeMs`: a sprite's stride, a pulse, an
+  effect's seconds left) stays the system's time of day, which their timestamps are on; a
+  millisecond off there moves nothing a step's worth.
+  - Our steps used to glide from the frame that took them, over the gap since the step before, on
+    the system's time of day. A step is taken on the first frame after it falls due: at 60 fps a
+    melee character's 53ms step comes three frames after the last and now and then four, and a
+    ranged character's 50ms one on every third frame only while the frames keep exact time (a
+    millisecond's wander or a busy machine puts some on the second or the fourth). Each step that
+    came a frame early or late cut a glide short and jumped the rest, or ran it out early and stood
+    still. Measured walking the Hive in the real loop and renderer (the screen on, 60 Hz), as the
+    Ghoul: the sprite stood still in 18 frames of 470 and moved up to 1.68 times its pace in others,
+    and the camera, which follows it (and draws us), moved the whole world under us 0.59 to 1.19
+    times its average 20 pixels a frame (sd 14%); as the Spaceman on a busy machine, a third of the
+    steps came off their frame, and the world moved 0.5 to 1.6 times its average (sd 22%). Glided
+    from when each step fell due, the glides follow on from one another exactly: the same walks
+    (the same steps on the same frames) are drawn at their pace to within 1% from frame to frame,
+    the world scrolling 20 or 21 pixels a frame (the camera's whole pixels: sd 2%).
+  - A dash was drawn on the cell it had reached, which comes a whole one every other frame or so (10
+    cells in 350ms is 0.48 a frame): it moved in jumps of a cell. It is drawn along its line now.
 - **Other players are walked along the cells they were heard on** (`RemoteMotion`, one per player
   in `EntityCollector`). Every cell the server puts them on is a waypoint; the drawn player walks
-  from one to the next at the pace the last quarter second of them came in at (measured, so a
-  bot's slower walk, a slow and a boost come out right), keeping about 0.8 of a cell behind the
-  newest so a step that arrives a little late finds it still walking. Further behind than walking
-  leaves it (a dash), it catches up; a move of more than 4.5 cells between two updates (a blink, a
-  respawn) is drawn at once. It is never drawn past the newest cell, and it is sorted where it is
-  drawn (*Everything is sorted where it is drawn*). It used to guess a velocity from the time between the
-  last two changes it saw and run them on at it for up to 75ms after the news stopped, through
-  whatever was in the way: two updates a frame apart read as 55 cells a second, and a dash (a cell
-  a frame, 60 cells a second) ran the drawn player up to four cells past where it ended, into the
-  tree that ended it, before pulling them back. Measured in a live match, a dashing player was
-  drawn ahead of where the server had them in 18% of frames, up to 3 cells; now in none.
-  `RemoteMotionTest` pins it; six of its seven cases fail on the old smoothing.
+  from one to the next at the pace they come in at (measured, so a bot's slower walk, a slow and a
+  boost come out right), keeping far enough behind the newest that a step that arrives a little late
+  finds it still walking. Further behind than walking leaves it (a dash), it catches up; a
+  move of more than 4.5 cells between two updates (a blink, a respawn) is drawn at once. It is
+  never drawn past the newest cell, and it is sorted where it is drawn (*Everything is sorted where
+  it is drawn*). It used to guess a velocity from the time between the last two changes it saw and
+  run them on at it for up to 75ms after the news stopped, through whatever was in the way: two
+  updates a frame apart read as 55 cells a second, and a dash (a cell a frame, 60 cells a second)
+  ran the drawn player up to four cells past where it ended, into the tree that ended it, before
+  pulling them back. Measured in a live match, a dashing player was drawn ahead of where the server
+  had them in 18% of frames, up to 3 cells; now in none. `RemoteMotionTest` pins it; six of its
+  seven cases fail on the old smoothing.
+  - A walker keeps an even pace, but their cells don't come evenly: each step is taken on one of
+    their frames, the first after it falls due (a 50ms step two, three or four frames after the
+    last at 60 fps), and the network adds its own. So the pace is measured over the last 0.6s of
+    cells unless the last quarter second is more than a fifth off that (a slow, a boost, a stop:
+    then that); and the walk is eased toward having 30ms of its pace left to walk to the newest
+    cell as the next one arrives (`BUFFER_S`, the most a walker's frame and a home network make a
+    step late), judged at each arrival and averaged over four. Until 2026-11-12 the pace was the
+    last quarter second's, moving with every step a frame early or late, and the walk kept 0.8 of a
+    cell behind the newest, judged every frame: that rose a cell with each arrival and fell away
+    till the next, so the walk sped up and slowed down with it three times a step, and in cells it
+    was a third less time in hand for a diagonal walker (whose steps are 1.4 cells) than for one
+    walking straight, so it caught up with the newest cell and stood still whenever one came a
+    little late. Catching up begins past 2 cells or 0.1s of the pace, whichever is more, for the
+    same reason. On a diagonal walk heard as another client steps it (its frames wandering a
+    millisecond, the network 20-28ms), drawn by the real loop and renderer with the screen on, a
+    frame's step was anything from nothing to 1.25 times the pace (sd 19%; 10 frames of 294 under
+    half of it, 4 standing still), and is now 0.80 to 1.26 (sd 3.5%, none); over simulated walks
+    on a Wi-Fi's 60-90ms, frames under half the pace went from 19-32 in ten seconds to under one.
+    The price is that everyone else is drawn about 45ms behind the newest cell heard of them, where
+    it was about 25ms.
 - **A knockback is slid, not walked or jumped.** A push is a server move the server also counts as
   a knockback (design/combat.md), and a new count in a player's updates makes `RemoteMotion` slide
   them from where they are drawn to where it put them: out faster than anyone runs and slowing to
@@ -551,6 +622,17 @@ wave crescents, pale, translucent, and in lightning's case strobing. After inkin
 round and joining the lightning's strokes, the lowest on any ground is 8 (the Sniper Beam, a
 small inked dart on snow) and the 10th percentile on snow went from 18 to 30. Traps, measured
 2026-10-14: *A trap reads on every ground*.
+
+Characters measured again 2026-11-11, after the roster's art was reviewed and redrawn where it
+was weak (scripts/SPRITES.md) and with every sprite standing on its shadow (*A player stands on
+the ground*): at least 27.6 on the circuit (the Mudslinger, Serpent, Mantis and Windwalker, as
+before) and at least 34 on every bright ground (the Photon's pale rays on the boardwalk; everyone
+else 40 or more), with medians of 41 on the circuit, 54 on the boardwalk, 60 to 62 on path, sand,
+snow and ice, and 78 on grass. Standing on its shadow costs a figure about three points of `edge`
+whatever its art, since the rim at its feet now lies over the shadow: the same art measured under
+the old placement and the new differed by that much on every ground, and the new art under the
+new placement measured the same as the old art or better (the lowest tenth on grass 67.8 to 69.7).
+Compare a change to the art between two audits made with the same renderer.
 
 ## Golden frames (dev tool)
 

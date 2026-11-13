@@ -103,7 +103,7 @@ private[client] final class WelcomeScreen(app: Screens) {
       case (x, who, facing) => world.stand(SpriteGenerator.portraitView(who.id, facing, 128), x, 128)
     }
 
-    val page = Chrome.loggedOut(body, Seq(language, Chrome.soundToggle()), world)
+    val page = Chrome.loggedOut(body, Seq(language, Chrome.settingsButton(stage), Chrome.soundToggle()), world)
     page.show(stage)
     AudioManager.playMenuMusic()
     // Decode every sound now, on a background thread, so no WAV parsing or disk

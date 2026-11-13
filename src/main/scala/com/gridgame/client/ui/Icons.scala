@@ -55,6 +55,7 @@ private[client] object Icons {
   val Camera = Icon("M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z M8 13a4 4 0 1 0 8 0a4 4 0 1 0-8 0")
   val ChevronDown = Icon("M6 9l6 6 6-6")
   val ChevronUp = Icon("M18 15l-6-6-6 6")
+  val Sliders = Icon("M4 21v-7 M4 10V3 M12 21v-9 M12 8V3 M20 21v-5 M20 12V3 M1 14h6 M9 8h6 M17 16h6")
 
   /** An icon `size` pixels square in `colour`: stroked, or filled if it is a solid shape. */
   def node(icon: Icon, size: Double, colour: Color): Group = {

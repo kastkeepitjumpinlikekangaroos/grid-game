@@ -1,5 +1,6 @@
 package com.gridgame.client.ui
 
+import com.gridgame.common.Constants
 import com.gridgame.common.model._
 import com.gridgame.client.i18n.{I18n, Messages}
 import com.gridgame.client.ui.Theme.Palette
@@ -316,9 +317,9 @@ class CharacterSelectionPanel(
     val feet = patchBottom + patchH * (1 - MapPreview.PatchFeet)
     StackPane.setAlignment(shadow, Pos.BOTTOM_CENTER)
     StackPane.setMargin(shadow, new Insets(0, 0, feet - 7, 0))
-    // A sprite frame's feet sit about 85% of the way down it
+    // Their soles on the patch's middle: a frame's foot line is not its bottom edge
     StackPane.setAlignment(heroView, Pos.BOTTOM_CENTER)
-    StackPane.setMargin(heroView, new Insets(0, 0, feet - HeroPx * 0.15, 0))
+    StackPane.setMargin(heroView, new Insets(0, 0, feet - HeroPx * (1 - Constants.SPRITE_FOOT_LINE), 0))
     val stage = new StackPane(ground, shadow, heroView)
     stage.getStyleClass.add("hero-stage")
     stage.setMinHeight(stageH); stage.setPrefHeight(stageH); stage.setMaxHeight(stageH)

@@ -59,9 +59,14 @@ A tick box is styled as a field is (`.check-box` in theme.css).
 
 `screens/Chrome` frames every screen after login the way a web site's pages share a header: the
 world behind it and a top bar with the game's name, a tab per place to go (Lobbies, Practice, Ranked,
-Leaderboard), a flag to report a problem, the sound switch and the player's chip (their profile). A screen hands `Chrome.page`
+Leaderboard), a flag to report a problem, the settings (sliders), the sound switch and the player's chip (their profile). A screen hands `Chrome.page`
 its body and its tab, and a `leave` for what going elsewhere must undo — the lobby room leaves the
 lobby, the ranked queue leaves the queue, the scoreboard goes back to the browser.
+
+`screens/SettingsDialog` is the game's settings, from the sliders in the top bar (and beside the
+language on the login screen): a card over the page as a report's is, with the graphics quality and
+the resolution the world is drawn at (gl/CLAUDE.md, *Graphics quality tiers*), each taken and saved
+as it is picked. The gallery's `23_settings` draws it.
 
 `screens/ReportDialog` is a problem report as the player makes it (design/diagnostics.md, *What the
 player sees*): not a screen but a card over whatever page is showing, on a shade that takes every
@@ -137,10 +142,19 @@ the screens follow:
   blurred shadow on every card and button. The only one left is the combo box popup's. Glass
   is translucent, and a translucent layer shows every layer under it, so a glass surface's edge is
   a border rather than a layer beneath it.
+- **Nothing is stroked inside or outside its edge.** JavaFX draws a shape's or a text's
+  `StrokeType.INSIDE` or `OUTSIDE` stroke by taking the shape's area from (or intersecting it with)
+  a centred stroke twice as wide, area geometry on every curve (`Area.subtract`), each time it
+  draws it, cached nowhere. The display titles' outline was drawn so: 57-317ms a title at 2x, on
+  every frame of the scoreboard's entrance. An outline outside the letters is a centred stroke
+  twice as wide under the fill, which hides its inner half (`Widgets.displayTitle`): 4-6ms, and the
+  same picture but for the faint seam the old one left between the outline and the shadow on a
+  bright ground. `ScoreboardScreenTest` holds the scoreboard to it.
 - **The world behind never moves and draws cheaply.** It is one picture, 1280x800 (4MB), drawn
-  on the map-art thread as the client starts (and again after a match, which drops it) and shared
-  by every screen: scaled to cover the window under one region of gradients, it is a single
-  textured quad to repaint. It is clipped to the window and asks the page for no room.
+  on the map-art thread as the client starts and kept through every match (*Coming back from a
+  match*), and shared by every screen: scaled to cover the window under one region of gradients,
+  it is a single textured quad to repaint. It is clipped to the window and asks the page for no
+  room.
 - **No per-frame images.** `SpriteGenerator` keeps portraits — one 128px frame per character,
   cut once on a thread of its own, 64KB each, 7MB for the roster — and at most four whole sheets,
   for what animates, drawn a frame at a time through an ImageView's viewport. The grid used to
@@ -159,9 +173,10 @@ the screens follow:
 - **Screens don't outlive themselves.** `switchScreen` unregisters the listeners that update
   a screen's controls (they held the whole scene graph, and the lobby chat kept rebuilding
   off screen through the next match), and `showGameScene` swaps the hidden stage's scene
-  for an empty one and drops the sprite cache, the maps' pictures and the world behind
-  (`MatchWindow.open`), so none of the menus stay resident in a match. MapArt lets the tile art
-  (8MB with its halvings) go whenever its thread runs out of pictures to draw.
+  for an empty one and drops the sprite cache and the maps' pictures (`MatchWindow.open`), so
+  none of the menus stay resident in a match but the world behind (4MB) and the portraits the
+  scoreboard will show (*Coming back from a match*). MapArt lets the tile art (8MB with its
+  halvings) go whenever its thread runs out of pictures to draw.
 
 What none of this fixes: a visible JavaFX window on macOS builds up a pool of about 15
 window-sized IOSurfaces as it keeps presenting — ~650MB on a 5K display, ~120MB at 1080p —
@@ -171,3 +186,55 @@ it, a resize doesn't release it, and JavaFX 21.0.12 and 23.0.2 behave exactly li
 (measured interleaved). Fewer presents only delay it; Low quality's 1x menus quarter it. The
 GLFW game window's surfaces don't grow. When measuring the menus, keep the window visible
 and unobstructed: an occluded window presents less and flatters every number.
+
+## Coming back from a match
+
+A match hides the stage, which gives those surfaces back, and macOS destroys the window behind it:
+shown again at the game over, it is a new window, and a new window is slowest over its first frames.
+So what the screen after a match needs is ready before the window is, and it comes up on that
+screen whole, with nothing left to move (`MatchWindow.close`, for every way out of a match):
+
+- **The screen is built on the stage while it is still hidden**, then the match's window is retired
+  and the stage shown. `Theme.showPage` brings nothing in on a stage that isn't showing and styles
+  the page there and then (`applyCss`), so the first frame only paints it. A page brought in faded
+  and rose over the new window's first frames, the first of them styling it too.
+- **The world behind is kept through the match** (`WorldBackdrop`, 4MB). Drawn again after every
+  match, the scoreboard came up on the night, and the world faded in from 0.24-0.37s after the game
+  over.
+- **The portraits it will show are cut while the match is played.** The match's window calls
+  `ScoreboardScreen.prepare` every two seconds (everyone in the match, and the top bar's wizard),
+  since a match starts by dropping every portrait the menus had. Cut as the scoreboard was built,
+  they came in over the quarter second after it.
+- **Its titles' outline is a centred stroke** (*Nothing is stroked inside or outside its edge*,
+  above). Drawn outside the letters, it took 57-317ms of every frame at 2x.
+
+The real client (a throwaway `ClientMain` subclass that signs up, makes a lobby, adds five bots
+and starts it) was run through one-minute matches against a local server, old build and new
+alternately, on this machine. Numbers are ms after the client heard the game over:
+
+| | 1x before | 1x after | 2x before | 2x after |
+|---|---|---|---|---|
+| the window's first frame on screen | 140-164 | 89-107 | 150-159 | 104-133 |
+| the world behind and every portrait there | 243-268, then the 0.3s fade | in the first frame | 330-369, then the fade | in the first frame |
+| frames over 33ms in the 3s after | 12-14, the worst 119-152 | 0-1, at most 42 | 10-12, the worst 172-302 | 1, at most 66 |
+| the last of them | 620-648 | 92-107 | 736-827 | 104-133 |
+| painting in those 3s | 539-551 | 14-33 | 628-734 | 21-36 |
+| the FX thread kept from input, all told | 447-495 | 50-65 | 557-713 | 66-85 |
+
+The match's own frames were the same in both builds; the portraits cut as it goes cost it nothing
+that showed. 1x is how Low quality draws the menus, 2x how the other qualities draw them on a
+Retina display.
+
+Left as it is:
+- **The new window's first frame**, the one slow frame still left: up to 40ms of it is the present,
+  as the window's surfaces are made again. Keeping the stage shown under the match would keep them,
+  about 650MB at 5K, for the whole match.
+- **Hiding the match's window, 17-60ms, before the stage is shown.** Showing the stage first would
+  save that wait, but hide-then-show is the order the fix for the crash in macOS's own full screen
+  was checked in (gl/CLAUDE.md, *A window macOS may still be using is retired*).
+
+To see where a menu's frames go, run the client with
+`--jvm_flag=-Djavafx.pulseLogger=true --jvm_flag=-Djavafx.pulseLogger.threshold=20`. Every pulse
+over 20ms is printed with its CSS pass, layout, painting and presenting, in `client.log` as well.
+Keep the screen unlocked while you measure: when it is locked, the pulse runs on a timer and the
+numbers mean nothing.

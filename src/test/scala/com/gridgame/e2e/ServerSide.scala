@@ -65,6 +65,10 @@ object E2EServer {
     case bc: BotController => bc.tick(now)
     case _ =>
   }
+  def stepBots(gi: GameInstance, now: Long): Unit = gi.botController match {
+    case bc: BotController => bc.stepTick(now)
+    case _ =>
+  }
   def isRunning(gi: GameInstance): Boolean = gi.running
   /** How many items `start` would spawn in a batch on this match's map. */
   def itemBatch(gi: GameInstance): Int = Math.max(3, Math.min(20, gi.world.width * gi.world.height / 2000))

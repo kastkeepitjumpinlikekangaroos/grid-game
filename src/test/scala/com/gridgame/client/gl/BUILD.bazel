@@ -31,3 +31,25 @@ scala_junit_test(
         "@maven//:junit_junit",
     ],
 )
+
+# When each frame is drawn for: on the display's cadence (FramePacer)
+scala_junit_test(
+    name = "frame_pacer_test",
+    srcs = ["FramePacerTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+# The graphics quality and resolution: the player's choices, kept between runs, the world's lines capped
+scala_junit_test(
+    name = "render_quality_test",
+    srcs = ["RenderQualityTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "@maven//:junit_junit",
+    ],
+)

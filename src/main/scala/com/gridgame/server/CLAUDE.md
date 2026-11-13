@@ -87,7 +87,8 @@ them, but `RemoteMatches`, which `MatchDirector` does; a match server (`MatchSer
   its last 19,500, and a player's refusals 20 a second, the rest counted in a line (a client
   flooding the server can't push the start out). `GameServer` keeps a finished match's journal for
   half an hour, fifty at most (`MatchJournals`).
-- **bots/** — `BotController` (one match's bots, on a 100ms tick of their own), in traits:
+- **bots/** — `BotController` (one match's bots, on a 100ms tick of their own, and their steps
+  taken as they fall due between the ticks, every 10ms: `stepTick`), in traits:
   `BotTargeting`, `BotNavigation` (where each step goes: a bot's role-driven spacing, the way round
   walls, a clear shot; design/characters.md), `BotPaths` (the searches it steps by: A* to a cell, a
   short breadth-first look round the bot, on scratch arrays the world's size, and who stands where

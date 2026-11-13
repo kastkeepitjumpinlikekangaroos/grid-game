@@ -57,6 +57,58 @@ class RemoteMotionTest {
     s.foreach(step => assertEquals("a third of a cell a frame, every frame", perFrame, step, perFrame * 0.2))
   }
 
+  /** A walk east from (x0, y), `n` cells, as another client steps it: a step falls due every `stepMs`
+    * but is taken on one of its frames (60 a second, each up to a millisecond early or late), the
+    * first after it falls due, so it comes two, three or four frames after the last; and each arrives
+    * 20ms later and up to 8 more. */
+  private def steppedOnFrames(x0: Int, y0: Int, n: Int, stepMs: Double, dy: Int = 0): Seq[(Double, Int, Int)] = {
+    val rng = new java.util.Random(5)
+    val out = mutable.ArrayBuffer[(Double, Int, Int)]((0.0, x0, y0))
+    var last = Double.NaN
+    var k = 0
+    var x = x0
+    var y = y0
+    var arrived = 0.0
+    while (x < x0 + n) {
+      val frame = 7.0 + k * FRAME + (rng.nextDouble() * 2 - 1)
+      k += 1
+      if (last.isNaN || frame - last >= stepMs) {
+        val due = if (last.isNaN) frame else last + stepMs
+        last = if (frame - due < stepMs) due else frame
+        x += 1
+        y += dy
+        arrived = Math.max(arrived, frame + 20 + rng.nextDouble() * 8)
+        out += ((arrived, x, y))
+      }
+    }
+    out.toSeq
+  }
+
+  @Test def aWalkSteppedOnTheWalkersOwnFramesIsDrawnAtAnEvenPace(): Unit = {
+    // Judged every frame, how far behind the newest cell it was rose a cell with each arrival and fell
+    // away till the next, and the walk sped up and slowed down with it, three times a step; and the
+    // pace, measured over a quarter second, moved with every step that came a frame early or late.
+    // It stood still now and then, waiting for a cell that came a little late
+    val heard = steppedOnFrames(10, 10, 110, 50)
+    assertTrue("the steps came unevenly", (2 until heard.length).map(i => heard(i)._1 - heard(i - 1)._1).exists(g => g < 40))
+    val drawn = play(heard, 5800)
+    val s = steps(drawn, 1000, 5300)
+    // Every frame within a fifth of its pace; judged as it was, 8 frames of 256 went less than half
+    // as far and some not at all
+    val perFrame = 20.0 * FRAME / 1000
+    s.foreach(step => assertEquals("a third of a cell a frame, every frame", perFrame, step, perFrame * 0.2))
+  }
+
+  @Test def aDiagonalWalkIsDrawnAtAnEvenPaceToo(): Unit = {
+    // A diagonal step is 1.4 cells: kept a number of cells behind, the walker had a third less time
+    // in hand for one that came late than walking straight, and stood still more often
+    val heard = steppedOnFrames(10, 10, 110, 50, dy = 1)
+    val drawn = play(heard, 5800)
+    val s = steps(drawn, 1000, 5300)
+    val perFrame = 20.0 * Math.sqrt(2) * FRAME / 1000
+    s.foreach(step => assertEquals("a step's third a frame, every frame", perFrame, step, perFrame * 0.2))
+  }
+
   @Test def aSlowerWalkerIsWalkedAtItsOwnPace(): Unit = {
     // A bot's walk, a step every 100ms: its pace is measured, not assumed to be a player's
     val drawn = play(walk(10, 10, 30, 100, jitterMs = jitter), 3000)

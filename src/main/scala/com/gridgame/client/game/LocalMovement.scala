@@ -1,6 +1,5 @@
 package com.gridgame.client.game
 
-import com.gridgame.common.Constants
 import com.gridgame.common.model._
 
 import java.util.concurrent.atomic.AtomicLong
@@ -9,7 +8,8 @@ import java.util.concurrent.atomic.AtomicLong
  * How we move: a step at a time as the input handlers ask ([[movePlayer]], at the pace
  * [[moveStepIntervalMs]] sets), a dash along a line, a blink, a star's jump, and where we are drawn
  * between two steps ([[updateVisualPosition]]). Every move we make is ours to make and the
- * server's to check: each goes to it at once (LocalPlayer.sendPositionUpdate).
+ * server's to check: each goes to it at once (LocalPlayer.sendPositionUpdate). Steps, their glide
+ * and a dash are timed on the frames' clock ([[frameNanos]]), the moment each frame is shown.
  */
 trait LocalMovement { this: GameClient =>
   private[game] val movementBlockedUntil: AtomicLong = new AtomicLong(0)
@@ -17,24 +17,63 @@ trait LocalMovement { this: GameClient =>
   @volatile private var movementInputActive = false
 
   // A dash in progress (DashBuff, the Raptor's Swoop first among them): from where to where, and
-  // over which moments
-  private[game] val swoopingUntil: AtomicLong = new AtomicLong(0)
+  // over which moments of the frames' clock (frameNanos). Ended by its own end, a server move, a death
+  @volatile private[game] var dashing = false
   @volatile private var swoopTargetX: Float = 0f
   @volatile private var swoopTargetY: Float = 0f
   @volatile private var swoopStartX: Float = 0f
   @volatile private var swoopStartY: Float = 0f
-  private val swoopStartTime: AtomicLong = new AtomicLong(0)
+  @volatile private var dashFromNanos = 0L
+  @volatile private var dashNanos = 1L
 
-  // Movement interpolation for smooth camera following
-  @volatile private var moveInterpFromX: Double = 0.0
-  @volatile private var moveInterpFromY: Double = 0.0
-  @volatile private var moveInterpToX: Double = 0.0
-  @volatile private var moveInterpToY: Double = 0.0
-  @volatile private var moveInterpStartTime: Long = 0L
-  @volatile private var moveInterpDurationMs: Long = Constants.MOVE_RATE_LIMIT_MS
-  @volatile private var prevMoveTimestamp: Long = 0L
+  // The step we are drawn taking: from where to which cell, from the moment it fell due and over
+  // its own interval, on the frames' clock (movePlayer); glideNanos 0 when none is under way
+  @volatile private var glideFromX: Double = 0.0
+  @volatile private var glideFromY: Double = 0.0
+  @volatile private var glideToX: Double = 0.0
+  @volatile private var glideToY: Double = 0.0
+  @volatile private var glideAtNanos: Long = 0L
+  @volatile private var glideNanos: Long = 0L
+  // How many steps' worth the glide covers: one, or more when it took up the rest of the last
+  @volatile private var glideSteps: Double = 1.0
 
+  // The time of the frame being drawn, on the display's cadence (MatchWindow's FramePacer), once a
+  // window has said so (beginFrame)
+  @volatile private var pacedNanos = 0L
+  @volatile private var paced = false
+
+  /** A frame is begun, to be shown at `nanos` (the match window's FramePacer, on the display's
+    * cadence): what our steps, their glide and a dash are timed on, and everything the renderer draws
+    * moving (render/CLAUDE.md, *Everything moving is placed at the frame's time*). */
+  def beginFrame(nanos: Long): Unit = { pacedNanos = nanos; paced = true }
+
+  /** The time of the frame being drawn: the one beginFrame gave, or the client's own clock
+    * (nanoClock) for a client no window paces (a test, a dev tool). */
+  def frameNanos: Long = if (paced) pacedNanos else nanoClock()
+
+  /** A step as a player takes one, now: a test's, or the controller's or keyboard's without a pace of
+    * their own (theirs say when it fell due: the other movePlayer). It glides over the step's own
+    * interval (twice it for a pure left or right, as the input handlers wait twice as long for one). */
   def movePlayer(dx: Int, dy: Int): Unit = {
+    val horizontal = dx != 0 && dy != 0 && dx != dy
+    movePlayer(dx, dy, frameNanos, moveStepIntervalMs * 1000000L * (if (horizontal) 2 else 1))
+  }
+
+  /**
+   * A step by (dx, dy), which fell due at `dueNanos` on the frames' clock (frameNanos), the next
+   * `intervalNanos` after it. We are drawn gliding to the new cell from that moment over that
+   * interval, so a walk is drawn at its pace however its steps fall on the frames.
+   *
+   * A step is only taken on a frame, the first after it falls due: at 60 fps a 53ms step comes three
+   * frames after the last and now and then four, and a 50ms one on every third only while the
+   * frames keep exact time. Glided from the frame that took it over the gap since the last, a step
+   * taken a frame late cut the last glide short (the next was due sooner: Movement.nextStepFrom)
+   * and one taken a frame early let it run out and stand still: walking as the Ghoul, the sprite
+   * stood still in 4% of frames and moved up to 1.68 times its pace in others, the camera, and the
+   * world under us with it, 0.6 to 1.2 times. From when each fell due, the glides follow on from one
+   * another exactly (render/CLAUDE.md, *Everything moving is placed at the frame's time*).
+   */
+  def movePlayer(dx: Int, dy: Int, dueNanos: Long, intervalNanos: Long): Unit = {
     // Check if frozen — still send position so server echoes frozen state back
     if (isFrozen || isRooted) {
       localDirection.set(Direction.fromMovement(dx, dy))
@@ -80,23 +119,31 @@ trait LocalMovement { this: GameClient =>
     val newPos = new Position(finalX, finalY)
 
     if (!newPos.equals(current)) {
-      // Set up movement interpolation for smooth rendering
       val now = System.currentTimeMillis()
-      moveInterpFromX = current.getX.toDouble
-      moveInterpFromY = current.getY.toDouble
-      moveInterpToX = finalX.toDouble
-      moveInterpToY = finalY.toDouble
-      // We glide to the new cell over the time until the next step: the gap since the last one,
-      // which is the pace while a key is held. A step after standing still has no such gap, and
-      // glides over the step's own interval (twice it for a pure left or right, as the input
-      // handlers wait twice as long for one). It used to glide over the whole time stood still: a
-      // tap after a few seconds slid one cell over those seconds, the camera with it.
-      val interval = moveStepIntervalMs.toLong * (if (dx != 0 && dy != 0 && dx != dy) 2 else 1)
-      val gap = now - prevMoveTimestamp
-      // A gap of two intervals is a fresh start, as it is to the input handlers (Movement.nextStepFrom)
-      moveInterpDurationMs = if (prevMoveTimestamp == 0L || gap >= 2 * interval) interval else Math.max(16L, gap)
-      prevMoveTimestamp = now
-      moveInterpStartTime = now
+      // Glided from where the last step's glide has us when this one fell due: the cell we step
+      // from, as it ends there then when we walk at a steady pace. A step that comes sooner, the pace
+      // having quickened (a slow or a charge let go, a boost begun), takes up what is left of the last
+      // glide and goes on at the new pace: finished within the new step's interval, as it was, the
+      // rest of a 167ms step and the next were drawn in 50ms, a lurch to three times the pace.
+      var fromX = current.getX.toDouble
+      var fromY = current.getY.toDouble
+      var steps = 1.0
+      if (glideNanos > 0L && glideToX == current.getX && glideToY == current.getY) {
+        val f = (dueNanos - glideAtNanos).toDouble / glideNanos
+        if (f < 1.0) {
+          val g = Math.max(0.0, f)
+          fromX = glideFromX + (glideToX - glideFromX) * g
+          fromY = glideFromY + (glideToY - glideFromY) * g
+          steps += (1.0 - g) * glideSteps
+        }
+      }
+      glideFromX = fromX
+      glideFromY = fromY
+      glideToX = finalX.toDouble
+      glideToY = finalY.toDouble
+      glideAtNanos = dueNanos
+      glideSteps = steps
+      glideNanos = Math.max(1L, (intervalNanos * steps).toLong)
 
       localPosition.set(newPos)
       lastMoveTime.set(now)
@@ -118,11 +165,9 @@ trait LocalMovement { this: GameClient =>
     * on the first frame of the next, and put us at its end), no burst's standstill, and no step or
     * knockback of the last life's to be drawn moving along. */
   private[game] def stopMoving(): Unit = {
-    swoopingUntil.set(0)
+    dashing = false
     movementBlockedUntil.set(0)
-    moveInterpStartTime = 0L
-    moveInterpDurationMs = Constants.MOVE_RATE_LIMIT_MS
-    prevMoveTimestamp = 0L
+    glideNanos = 0L
     knockSliding = false
     drawnYet = false
   }
@@ -150,8 +195,11 @@ trait LocalMovement { this: GameClient =>
       swoopStartY = pos.getY.toFloat
       swoopTargetX = landing.getX.toFloat
       swoopTargetY = landing.getY.toFloat
-      swoopStartTime.set(now)
-      swoopingUntil.set(now + durationMs)
+      dashFromNanos = frameNanos
+      dashNanos = Math.max(1L, durationMs * 1000000L)
+      dashing = true
+      // Off from the cell we dash from, not from the step we were drawn taking
+      glideNanos = 0L
       phasedUntil.set(now + durationMs)
       sendPositionUpdate(localPosition.get())
     }
@@ -196,31 +244,26 @@ trait LocalMovement { this: GameClient =>
     new Position(bestX, bestY)
   }
 
-  def isSwooping: Boolean = swoopingUntil.get() > 0
+  def isSwooping: Boolean = dashing
 
-  def getSwoopProgress: Double = {
-    val now = System.currentTimeMillis()
-    val start = swoopStartTime.get()
-    val end = swoopingUntil.get()
-    if (now >= end || end <= start) return 1.0
-    (now - start).toDouble / (end - start).toDouble
-  }
+  /** How far through the dash under way the frame being drawn is, 0 to 1. */
+  def getSwoopProgress: Double =
+    Math.max(0.0, Math.min(1.0, (frameNanos - dashFromNanos).toDouble / dashNanos))
 
   def getSwoopStartX: Float = swoopStartX
   def getSwoopStartY: Float = swoopStartY
   def getSwoopTargetX: Float = swoopTargetX
   def getSwoopTargetY: Float = swoopTargetY
 
-  /** Carry a dash on to where it has got to by now, and end it when it is over. Called every frame
-    * by the input handlers while one lasts. */
+  /** Carry a dash on to where it has got to by the frame being drawn, and end it when it is over.
+    * Called every frame by the input handlers while one lasts. We stand on the cell it has reached
+    * and are drawn along its line (updateVisualPosition). */
   def tickSwoop(): Unit = {
-    val now = System.currentTimeMillis()
-    val swoopEnd = swoopingUntil.get()
-    if (swoopEnd == 0) return
+    if (!dashing) return
 
-    if (now >= swoopEnd) {
+    if (frameNanos - dashFromNanos >= dashNanos) {
       // Dash has ended — snap to exact target position and send final update
-      swoopingUntil.set(0)
+      dashing = false
       val finalPos = new Position(Math.round(swoopTargetX).toInt, Math.round(swoopTargetY).toInt)
       localPosition.set(finalPos)
       // Send twice for UDP redundancy (dash end position is critical)
@@ -229,9 +272,7 @@ trait LocalMovement { this: GameClient =>
       return
     }
 
-    val elapsed = now - swoopStartTime.get()
-    val duration = (swoopEnd - swoopStartTime.get()).toFloat
-    val t = Math.min(1.0f, elapsed / duration)
+    val t = getSwoopProgress.toFloat
 
     val newX = swoopStartX + (swoopTargetX - swoopStartX) * t
     val newY = swoopStartY + (swoopTargetY - swoopStartY) * t
@@ -260,7 +301,9 @@ trait LocalMovement { this: GameClient =>
   private[game] def teleportTo(target: Position): Unit = {
     val oldPos = localPosition.get()
     localPosition.set(target)
+    // Drawn there at once (the teleport's flash), not finishing a step's glide on the way
     knockSliding = false
+    glideNanos = 0L
     val now = System.currentTimeMillis()
     lastMoveTime.set(now)
 
@@ -310,8 +353,9 @@ trait LocalMovement { this: GameClient =>
 
     val newPos = new Position(x, y)
     localPosition.set(newPos)
-    // Gone from wherever a knockback was still sliding us
+    // Gone from wherever a knockback was still sliding us, or a step was gliding us
     knockSliding = false
+    glideNanos = 0L
     val now = System.currentTimeMillis()
     lastMoveTime.set(now)
     // Send twice for UDP redundancy (blink is a single critical event)
@@ -379,7 +423,7 @@ trait LocalMovement { this: GameClient =>
       pos = localPosition.get()
       knocks = knocksHeard
     }
-    val nowNanos = nanoClock()
+    val nowNanos = frameNanos
     if (knocks != knocksDrawn) {
       knocksDrawn = knocks
       // From where we were drawn to where it put us, slid there rather than jumped, and the step
@@ -391,18 +435,26 @@ trait LocalMovement { this: GameClient =>
         knockAtNanos = nowNanos
         knockSliding = true
       }
-      moveInterpStartTime = 0L
+      glideNanos = 0L
     }
     drawnYet = true
 
-    val elapsed = System.currentTimeMillis() - moveInterpStartTime
-    if (moveInterpStartTime == 0L || elapsed >= moveInterpDurationMs) {
-      _visualPosX = pos.getX.toDouble
-      _visualPosY = pos.getY.toDouble
+    if (dashing) {
+      // Along the dash's line as far as the frame has got, not on the cell it has reached: the
+      // cells come a whole one every other frame or so, which drew the dash in jumps
+      val t = getSwoopProgress
+      _visualPosX = swoopStartX + (swoopTargetX - swoopStartX) * t
+      _visualPosY = swoopStartY + (swoopTargetY - swoopStartY) * t
     } else {
-      val t = elapsed.toDouble / moveInterpDurationMs
-      _visualPosX = moveInterpFromX + (moveInterpToX - moveInterpFromX) * t
-      _visualPosY = moveInterpFromY + (moveInterpToY - moveInterpFromY) * t
+      val elapsed = nowNanos - glideAtNanos
+      if (glideNanos == 0L || elapsed >= glideNanos) {
+        _visualPosX = pos.getX.toDouble
+        _visualPosY = pos.getY.toDouble
+      } else {
+        val t = Math.max(0.0, elapsed.toDouble / glideNanos)
+        _visualPosX = glideFromX + (glideToX - glideFromX) * t
+        _visualPosY = glideFromY + (glideToY - glideFromY) * t
+      }
     }
 
     if (knockSliding) {

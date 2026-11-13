@@ -60,8 +60,11 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   step, a late packet changing nothing, the stops (a wall's face, the end of range, the divider, a
   barrier — and none at water's edge), and the fade of a shot whose end was lost.
 - `client/render`, `client/gl` — the camera (`CameraTest`: the isometric mapping, the pixel grid,
-  whether the view has run off the map), the light pool (`LightPoolTest`), and how other players
-  are drawn (`RemoteMotionTest`: an even pace under jitter, never past where they stopped or a dash
+  whether the view has run off the map), the light pool (`LightPoolTest`), when a frame is drawn for
+  (`FramePacerTest`: a refresh after the last however its loop wanders, two for a missed one, from
+  scratch after a stall, as it comes on another cadence), and how other players
+  are drawn (`RemoteMotionTest`: an even pace under jitter and with steps falling unevenly on the
+  walker's own frames, never past where they stopped or a dash
   ended, corners turned where they were heard turning, jumps drawn at once, knockbacks slid), the
   depth pass's order (`DepthOrderTest`: us sorted where we are drawn, not on the cell we stand on;
   a diagonal's entities back to front; every wall a sprite overlaps on the right side of it all
@@ -94,7 +97,10 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   and click them. They set `GRIDGAME_AUDIO=off`, and they must not call `Messages.setLocale`, which
   would save a language to the player's own settings, nor log in through the app, which would keep
   a login in the player's own "Remember me" file: `WelcomeScreenTest`'s app only notes down what the
-  screen asks of it. `GameClientBlastTest` is what the client records
+  screen asks of it. `ScoreboardScreenTest` also holds the scoreboard to coming up quickly as a match
+  ends (ui/CLAUDE.md, *Coming back from a match*): nothing on it stroked inside or outside an edge,
+  whole and styled at once on a stage not yet showing, and with the portraits
+  `ScoreboardScreen.prepare` readied there in the moment it is built. `GameClientBlastTest` is what the client records
   of a blast: one per explosion or splash (a slam is one, not an explosion and a splash; the HITs of
   everyone a splash caught are the same one), who threw it, and none where the terrain stopped a
   splash that goes off only at the end of its range. `GameClientSpawnRequestsTest` is which of our
@@ -107,7 +113,11 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   `GameClientCombatTest` is what the client keeps of a projectile the server ends: a shot gone at its
   hit, one stopped by the terrain fading where it struck, and a pull kept to be reeled in, holding
   whoever it caught. `GameClientKnockbackTest` is how a knockback is shown: ours slid on the test's clock
-  (`TestClient.nanos`), everyone else's neither a teleport nor a turn. `GameClientAimTest` is
+  (`TestClient.nanos`), everyone else's neither a teleport nor a turn. `GameClientPositionTest` is where we
+  stand and are drawn: positions taken only from the server's moves, steps round walls' corners, and
+  a walk drawn at its pace whatever frames its steps fall on (the real keyboard handler, on frames
+  that wander as the match's do, ranged and melee paces) and a dash along its line, on the test's
+  clock. `GameClientAimTest` is
   casting mode (design/characters.md, *Casting mode*): Q or E taken up by its key and cast by the
   next click toward the aim of that moment, which fires no primary as it comes up; nothing taken up
   on its cooldown; a click that can't cast it (a ceasefire, a root under a dash, a trap with nowhere
@@ -331,7 +341,9 @@ about ten seconds.
 pinned with `ProjectileDef`s registered by the test itself, on ids the game doesn't use — see
 `TestEffects` at the foot of `OnHitEffectsTest`. Each test file gets its own JVM, so a test-only
 registration can't leak into another suite. Bots are walked on a clock of the test's own
-(`BotController.tick(now)`), so `BotMovementTest` covers ten seconds of their pace in no time, and
+(`BotController.tick(now)`, and `stepTick(now)` for the steps that fall due between ticks), so
+`BotMovementTest` covers ten seconds of their pace in no time (and that their steps come evenly, not
+100 and 200ms apart on the ticks), and
 `BotPathingTest` walks them round walls on every map (the maps are its `data`), never past a wall's
 corner, in a free-for-all's opening so they hold their fire. `TrapDef.register` is the same door for a trap the
 roster hasn't got — a poison short enough for a test to sit through (`TestTraps` in `TrapTest`).
@@ -396,7 +408,8 @@ agree.
   (`E2EServer` in `server.game`, `E2EClient` in `client.game`).
 - **`byHand`** (the default): the matches the lobbies launch are begun, not started
   (`MatchLauncher.startMatch`, `startBots`), and the harness runs their clocks — the projectile
-  tick every 30ms, the player tick every 200ms, the bots' every 100ms, respawns, item batches, the
+  tick every 30ms, the player tick every 200ms, the bots' every 100ms and their steps every 10ms,
+  respawns, item batches, the
   cleanup loop — on the test's thread, between the network's deliveries. `openingMs`,
   `itemEveryMs` and `respawnDelayMs` shorten what a test can't sit through. Without it the matches
   run on their own executors, as the real server's do.

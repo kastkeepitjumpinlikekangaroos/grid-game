@@ -27,7 +27,9 @@ class ControllerHandler(client: GameClient) {
   private val prevButtons = new Array[Byte](15)
 
   // Timing
-  private var lastMoveTime: Long = 0
+  // When the last step fell due, on the frames' clock (GameClient.frameNanos), and whether one has
+  private var lastStepDue: Long = 0L
+  private var steppedYet = false
   private var lastBurstTime: Long = 0
   private var lastScanTime: Long = 0
 
@@ -263,7 +265,8 @@ class ControllerHandler(client: GameClient) {
       return
     }
 
-    val now = System.currentTimeMillis()
+    // The frame's time, on the display's cadence: what the step's glide is drawn on too
+    val now = client.frameNanos
     val moveRate = client.moveStepIntervalMs
 
     // Left stick for movement
@@ -296,13 +299,16 @@ class ControllerHandler(client: GameClient) {
     // Pure left/right (screen horizontal) moves 2x the screen distance of up/down
     // due to the 2:1 isometric tile ratio, so double the delay to equalize visual speed
     val isHorizontal = dx != 0 && dy != 0 && dx != dy
-    val effectiveRate = if (isHorizontal) moveRate * 2 else moveRate
-    if (now - lastMoveTime < effectiveRate) return
+    val effectiveRate = (if (isHorizontal) moveRate * 2 else moveRate) * 1000000L
+    if (steppedYet && now - lastStepDue < effectiveRate) return
 
     client.setMovementInputActive(true)
-    client.movePlayer(dx, dy)
-    // Counted from when the step fell due, not from this frame, as the keyboard does (Movement)
-    lastMoveTime = Movement.nextStepFrom(lastMoveTime + effectiveRate, now, effectiveRate)
+    // Counted from when the step fell due, not from this frame, and glided from then, as the
+    // keyboard does (Movement, LocalMovement.movePlayer)
+    val due = if (steppedYet) Movement.nextStepFrom(lastStepDue + effectiveRate, now, effectiveRate) else now
+    client.movePlayer(dx, dy, due, effectiveRate)
+    lastStepDue = due
+    steppedYet = true
   }
 
   private def processAiming(): Unit = {

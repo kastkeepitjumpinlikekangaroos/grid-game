@@ -77,7 +77,7 @@ private[client] object Chrome {
 
     val bar = Widgets.topBar(
       Widgets.brand(go(Tab.Lobbies, () => showLobbyBrowser(stage))) +: tabs,
-      Seq(reportButton(app, stage), soundToggle(), user))
+      Seq(reportButton(app, stage), settingsButton(stage), soundToggle(), user))
     val (root, column) = Widgets.page(bar, body, maxWidth)
     new Page(root, column, () => refresh())
   }
@@ -94,6 +94,13 @@ private[client] object Chrome {
   def reportButton(app: Screens, stage: Stage): Button = {
     val b = Widgets.iconButton(Icons.Flag, Messages.t("Report a problem"))
     b.setOnAction(_ => app.showProblemReport(stage, ReportAbout.General))
+    b
+  }
+
+  /** The game's settings: the graphics quality and the resolution the world is drawn at (SettingsDialog). */
+  def settingsButton(stage: Stage): Button = {
+    val b = Widgets.iconButton(Icons.Sliders, Messages.t("Settings"))
+    b.setOnAction(_ => SettingsDialog.show(stage))
     b
   }
 

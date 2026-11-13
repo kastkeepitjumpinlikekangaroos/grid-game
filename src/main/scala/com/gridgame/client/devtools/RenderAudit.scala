@@ -184,8 +184,10 @@ class RenderAuditApp extends Application {
         val sx = cxPx + a * 2 * Constants.ISO_HALF_W * k
         val sy = cyPx + b * 2 * Constants.ISO_HALF_H * k
         val r = if (s.kind == "char") {
+          // The frame as it is drawn, soles on the ground (Constants.SPRITE_FOOT_LINE), and a little round it
           val sz = Constants.PLAYER_DISPLAY_SIZE_PX * 1.05f * k
-          (sx - sz / 2, sy - sz, sx + sz / 2, sy + 2 * k)
+          val under = Constants.PLAYER_DISPLAY_SIZE_PX * (1 - Constants.SPRITE_FOOT_LINE).toFloat * k
+          (sx - sz / 2, sy + under - sz, sx + sz / 2, sy + under + 2 * k)
         } else if (s.kind == "trap") (sx - 36 * k, sy - 28 * k, sx + 36 * k, sy + 18 * k) // its cell and the next
         else (sx - 58 * k, sy - 48 * k, sx + 58 * k, sy + 48 * k)
         (id, (r._1.toInt, r._2.toInt, r._3.toInt, r._4.toInt))

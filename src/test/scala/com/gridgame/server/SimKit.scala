@@ -34,8 +34,8 @@ object Sim {
  * (GameInstance.clocked: the projectile tick every 30ms, the player tick every 200ms, a batch of
  * items as it starts and every minute after, the time told every ten seconds), so a rule about what
  * a match does when is held here to what a started match does; and beside it the bots' tick (every
- * 100ms, a BotController's own once started), a respawn its delay after each death, and the end when
- * its time is up. [[advance]] plays the match on: every one of them that falls due, each at its own
+ * 100ms, a BotController's own once started) and their steps between (every 10ms), a respawn its
+ * delay after each death, and the end when its time is up. [[advance]] plays the match on: every one of them that falls due, each at its own
  * millisecond, in the order they fall.
  *
  * Two that fall due on the same millisecond run in a fixed order (the projectile tick, the player
@@ -66,8 +66,14 @@ final class MatchClockwork(val instance: GameInstance, val clock: GameClock.Manu
         case bc: BotController => bc.tick(clock.millis())
         case _ =>
       })
+    // and the steps that fall due between their ticks, as a started match's bots take them
+    val botSteps = new Task("botSteps", startedAt + BotController.StepIntervalMs, BotController.StepIntervalMs, () =>
+      instance.botController match {
+        case bc: BotController => bc.stepTick(clock.millis())
+        case _ =>
+      })
     val (ticks, rest) = ofTheMatch.partition(t => t.name == "projectiles" || t.name == "players")
-    (ticks ++ Seq(bots) ++ rest).toArray
+    (ticks ++ Seq(bots, botSteps) ++ rest).toArray
   }
   private val Respawn = tasks.length
   private val End = tasks.length + 1

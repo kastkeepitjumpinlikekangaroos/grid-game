@@ -157,7 +157,8 @@ object ReportSummary {
         "maxHeapMb" -> "Max heap (MB):", "locale" -> "Locale:", "language" -> "Language:", "screens" -> "Screens:",
         "args" -> "Arguments:", "launch" -> "Launched as:"))
       section("Graphics", obj(j, "graphics"), Seq("vendor" -> "Vendor:", "renderer" -> "Renderer:", "version" -> "OpenGL:",
-        "glsl" -> "GLSL:", "quality" -> "Quality:", "auto" -> "Auto quality:", "window" -> "Window:", "contentScale" -> "Content scale:"))
+        "glsl" -> "GLSL:", "quality" -> "Quality:", "resolution" -> "Resolution:", "auto" -> "Auto quality:",
+        "window" -> "Window:", "contentScale" -> "Content scale:"))
       section("The connection", obj(j, "connection"), Seq("server" -> "Server:", "player" -> "Player:", "playerId" -> "Player id:"))
 
       obj(j, "match").foreach { m =>

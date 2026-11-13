@@ -19,6 +19,10 @@ object BotController {
   /** How often a started match's bots are run (start). A test's clockwork runs them as often
     * (MatchClockwork in the tests' SimKit). */
   private[server] val TickIntervalMs: Long = 100L
+
+  /** How often, between those, a started match's bots take the steps that have fallen due
+    * (stepTick): a step goes out within this of when it falls due, not at the next tick. */
+  private[server] val StepIntervalMs: Long = 10L
 }
 
 /**
@@ -26,6 +30,15 @@ object BotController {
  * items and fights as the character it is playing, through the same match a player's client talks
  * to. Its parts, a file each: BotTargeting, BotNavigation (and BotPaths, the searches it steps by),
  * BotItems, BotCombat. Practice bots only wander.
+ *
+ * A bot steps when its step falls due (stepTick, every StepIntervalMs between the ticks), toward the
+ * target the last tick picked. Taken only on the ticks, as they were until 2026-11-12, a step that
+ * fell due just after one waited for the next: a bot's 104 or 106ms step (a melee character's, a
+ * skirmisher's) came 100ms after the last and every so often 200ms, a slowed one's 100 and 200 by
+ * turns, and every client drew the bot stopping dead and catching up. Measured in a match against
+ * five bots, a fifth of their steps came 200ms after the one before; now one in forty (a bot that
+ * stopped to shoot, or turned), and the frames a walking bot was drawn standing still went from 5.8%
+ * to 1-2%.
  */
 class BotController(private[bots] val instance: GameInstance, isPractice: Boolean = false)
     extends MatchBots with BotTargeting with BotNavigation with BotPaths with BotItems with BotCombat {
@@ -110,6 +123,13 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
       TICK_INTERVAL_MS,
       TimeUnit.MILLISECONDS
     )
+    // The steps that fall due between the ticks, on the same thread as the ticks
+    executor.scheduleAtFixedRate(
+      new Runnable { def run(): Unit = stepTick() },
+      BotController.StepIntervalMs,
+      BotController.StepIntervalMs,
+      TimeUnit.MILLISECONDS
+    )
     println(s"BotController: Started with ${botIds.size()} bots")
   }
 
@@ -181,6 +201,73 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
     }
   }
 
+  /** The steps that have fallen due since the last pass. Runs every StepIntervalMs once started;
+    * tests call it themselves. */
+  private[server] def stepTick(): Unit = stepTick(GameClock.now())
+
+  /** Each bot's step taken as it falls due rather than at the next tick, toward the target the last
+    * tick picked (or a wander with none). Nothing else a tick does: the targets, items, casts and
+    * shots stay the tick's. */
+  private[server] def stepTick(now: Long): Unit = {
+    if (isPractice) return
+    try {
+      if (!instance.isRunning || instance.world == null) return
+      var looked = false
+      botIds.asScala.foreach { botId =>
+        val bot = instance.registry.get(botId)
+        if (bot != null && !bot.isDead && !bot.isFrozen && !bot.isRooted &&
+            now - lastMoveTime.getOrDefault(botId, 0L) >= moveIntervalOf(bot)) {
+          // Where everyone stands now, as a tick looks first, once for all the bots stepping
+          if (!looked) {
+            gridFor(instance.world)
+            markStanding()
+            tickNow = now
+            looked = true
+          }
+          takeDueSteps(bot, targetOf(bot), now)
+        }
+      }
+    } catch {
+      case e: Throwable =>
+        System.err.println(s"BotController: Error in a step: $e")
+        instance.journal.note(s"error in the bots' steps: ${com.gridgame.server.game.MatchJournal.describe(e)}")
+    }
+  }
+
+  /** The target the last tick picked for `bot`, while it is still one; null for none. */
+  private def targetOf(bot: Player): Player = {
+    val id = currentTarget.get(bot.getId)
+    if (id == null) null
+    else {
+      val p = instance.registry.get(id)
+      if (p != null && !p.isDead && !instance.isTeammate(bot.getId, p.getId)) p else null
+    }
+  }
+
+  /** Twice a player's interval for the same character and state. Bots never charge; a phase
+    * doubles their pace as it does a player's, which is what makes a melee bot's phase a way in. */
+  private def moveIntervalOf(bot: Player): Long =
+    2L * Movement.stepIntervalMs(
+      CharacterDef.get(bot.getCharacterId).moveSpeed,
+      charging = false, chargeLevel = 0, phased = bot.isPhased,
+      speedBoost = bot.hasSpeedBoost, slowed = bot.isSlowed, slowMultiplier = bot.getSlowMultiplier)
+
+  /** The steps of `bot`'s that have fallen due by `now`, toward `target`. Counted from when the last
+    * fell due rather than from this pass: counted from the tick, as it was, a 104ms or 106ms step
+    * waited for the second tick after the last and walked at half its pace. Up to two at once, for
+    * the steps a speed boost brings under the tick's 100ms. */
+  private def takeDueSteps(bot: Player, target: Player, now: Long): Unit = {
+    val moveInterval = moveIntervalOf(bot)
+    var due = lastMoveTime.getOrDefault(bot.getId, 0L)
+    var steps = 0
+    while (steps < 2 && now - due >= moveInterval) {
+      stepBot(bot, target)
+      due = Movement.nextStepFrom(due + moveInterval, now, TICK_INTERVAL_MS)
+      steps += 1
+    }
+    lastMoveTime.put(bot.getId, due)
+  }
+
   private def tickBot(bot: Player, now: Long): Unit = {
     if (isPractice) {
       // Passive practice bots: wander randomly ~15% of ticks, no shooting/abilities
@@ -203,26 +290,8 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
     }
 
     val posBefore = bot.getPosition
-    if (!bot.isRooted) {
-      // Twice a player's interval for the same character and state. Bots never charge; a phase
-      // doubles their pace as it does a player's, which is what makes a melee bot's phase a way in.
-      val moveInterval = 2L * Movement.stepIntervalMs(
-        CharacterDef.get(bot.getCharacterId).moveSpeed,
-        charging = false, chargeLevel = 0, phased = bot.isPhased,
-        speedBoost = bot.hasSpeedBoost, slowed = bot.isSlowed, slowMultiplier = bot.getSlowMultiplier)
-      // When the bot's last step fell due. Counted from there rather than from this tick: counted
-      // from the tick, as it was, a 104ms or 106ms step waited for the second tick after the last
-      // and walked at half its pace. Up to two a tick, for the steps a speed boost brings under
-      // the tick's 100ms
-      var due = lastMoveTime.getOrDefault(bot.getId, 0L)
-      var steps = 0
-      while (steps < 2 && now - due >= moveInterval) {
-        stepBot(bot, target)
-        due = Movement.nextStepFrom(due + moveInterval, now, TICK_INTERVAL_MS)
-        steps += 1
-      }
-      lastMoveTime.put(bot.getId, due)
-    }
+    // Any step due by now (between the ticks stepTick takes them as they fall due)
+    if (!bot.isRooted) takeDueSteps(bot, target, now)
     // A step tells the clients where the barrier faces. Standing still it has to be said anyway:
     // so they see it turn, and because their copy of it lapses when updates stop coming
     if (bot.hasBarrier && (bot.getPosition eq posBefore)) broadcastBotPosition(bot)

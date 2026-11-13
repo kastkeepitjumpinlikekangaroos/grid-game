@@ -1,11 +1,13 @@
 package com.gridgame.client.ui.screens
 
 import com.gridgame.client.diagnostics.Diagnostics
+import com.gridgame.client.game.GameClient
 import com.gridgame.client.i18n.{I18n, Messages}
 import com.gridgame.client.ui.{Icons, SpriteGenerator}
-import com.gridgame.common.model.{CharacterDef, Direction, ScoreEntry}
+import com.gridgame.common.model.{CharacterDef, CharacterId, Direction, ScoreEntry}
 
 import javafx.geometry.{Insets, Pos}
+import javafx.scene.image.Image
 import javafx.scene.layout.{HBox, VBox}
 import javafx.scene.paint.{Color, CycleMethod, LinearGradient, Stop}
 import javafx.scene.shape.Circle
@@ -224,4 +226,22 @@ private[client] final class ScoreboardScreen(app: Screens) {
     // The whole page scrolls when a big lobby outgrows the window
     Chrome.page(app, stage, Chrome.Tab.Nowhere, body, backToLobbies, maxWidth = 900).show(stage)
   }
+}
+
+private[client] object ScoreboardScreen {
+  /**
+   * The portraits the scoreboard will show, cut while the match is played (the match's window asks
+   * every couple of seconds): everyone in the match, and the wizard on the top bar. Cut as it was
+   * built, a portrait at a time, they filled in over the scoreboard's first quarter second. A
+   * match starts with none (MatchWindow.open drops them); each is cut once, so asking again costs a
+   * look-up. On the FX thread.
+   */
+  def prepare(client: GameClient): Unit = {
+    SpriteGenerator.portrait(CharacterId.Wizard.id, Direction.Down)(Kept)
+    SpriteGenerator.portrait(client.getSelectedCharacterDef.id.id, Direction.Down)(Kept)
+    client.getPlayers.values.forEach(p => SpriteGenerator.portrait(p.getCharacterId, Direction.Down)(Kept))
+  }
+
+  // Nothing to do with a portrait but keep it, which SpriteGenerator does
+  private val Kept: Image => Unit = _ => ()
 }

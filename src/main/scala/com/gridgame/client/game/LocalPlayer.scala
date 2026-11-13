@@ -265,7 +265,7 @@ trait LocalPlayer { this: GameClient =>
     // snapping to that on every regen tick, burn tick or lifesteal rubber-banded us back.
     if (updatePacket.getServerMoves - serverMovesSeen > 0) {
       serverMovesSeen = updatePacket.getServerMoves
-      swoopingUntil.set(0) // the server's move ends a dash
+      dashing = false // the server's move ends a dash
       // A knockback among the moves: we are slid to where it put us, not jumped there
       val knockedBack = updatePacket.getKnockbacks > knockbacksSeen
       if (knockedBack) knockbacksSeen = updatePacket.getKnockbacks

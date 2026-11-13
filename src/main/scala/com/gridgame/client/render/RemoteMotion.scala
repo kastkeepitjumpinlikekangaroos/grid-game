@@ -15,13 +15,26 @@ import com.gridgame.client.game.KnockbackSlide
  * faster someone moved, the further they clipped.
  *
  * Now every cell heard is a waypoint, and the drawn player walks from one to the next at the pace
- * the last few arrived at: measured, not assumed, so a bot's slower walk, a slow and a boost all
- * come out right. It keeps about [[LAG_CELLS]] behind the newest cell, a few percent quicker when
- * further back and slower when closer, so a step that arrives a little late finds it still
- * walking rather than stood waiting. Further behind than walking leaves it (a dash), it
- * catches up. A move no step makes is a jump, drawn at once — except a knockback, which the
- * server counts for every client to see (Player.getKnockbacks): that is slid, from wherever the
- * player was drawn to where it put them (KnockbackSlide), and the walk goes on from there.
+ * they arrive at: measured, not assumed, so a bot's slower walk, a slow and a boost all come out
+ * right. It keeps far enough behind the newest cell that, as each new one arrives, it still has
+ * [[BUFFER_S]] of walking left to the one before (a few percent quicker when it has more, slower
+ * when less), so a step that arrives a little late finds it still walking rather than stood
+ * waiting. Further behind than walking leaves it (a dash), it catches up. A move no step makes is a
+ * jump, drawn at once — except a knockback, which the server counts for every client to see
+ * (Player.getKnockbacks): that is slid, from wherever the player was drawn to where it put them
+ * (KnockbackSlide), and the walk goes on from there.
+ *
+ * Steps arrive unevenly even from a walker who keeps an even pace: each is taken on one of their
+ * frames, so a 50ms step comes two, three or four of them after the last, and the network adds its
+ * own. So the pace is measured over [[PACE_LONG_NS]] unless the last [[PACE_SHORT_NS]] says it has
+ * changed (a slow, a boost, a stop), and the walking it had left is judged as each cell arrives and
+ * averaged over a few. Judged every frame, as it was, how far behind it was rose a cell with every
+ * arrival and fell away till the next, and the walk sped up and slowed down with it, three times a
+ * step; and kept in cells (0.8), it was a third less time for a diagonal walker, whose steps are 1.4
+ * cells, than for one walking straight. On a diagonal walk heard as another client steps it, drawn
+ * by the real loop, the walker's step from frame to frame varied by 19% (sd), stood still in 1% of
+ * frames and went less than half as far in 3%; now by 3.5%, and never under 0.8 of its pace
+ * (render/CLAUDE.md, *Other players are walked along the cells they were heard on*).
  */
 final class RemoteMotion {
   import RemoteMotion._
@@ -57,6 +70,11 @@ final class RemoteMotion {
   private var hopNext = 0
   private var hopCount = 0
   private var pace = DEFAULT_PACE
+  // The walking it had left to the newest cell as each new one arrived (how far behind it was then,
+  // less the hop the new one brought), averaged over the last few; and the hop heard this frame, or 0
+  private var leftAvg = 0.0
+  private var leftKnown = false
+  private var arrivedHop = 0.0
 
   /** The pace it is walked at, in cells a second. */
   def cellsPerSecond: Double = pace
@@ -96,6 +114,7 @@ final class RemoteMotion {
       if (hop > JUMP_CELLS) jumpTo(cx, cy)
       else {
         heardHop(hop, nowNanos)
+        arrivedHop = hop
         if (wayCount == WAYPOINTS) { wayHead = (wayHead + 1) % WAYPOINTS; wayCount -= 1 }
         val slot = (wayHead + wayCount) % WAYPOINTS
         wayX(slot) = cx; wayY(slot) = cy
@@ -124,6 +143,8 @@ final class RemoteMotion {
     wayCount = 0
     hopCount = 0
     sliding = false
+    leftKnown = false
+    arrivedHop = 0.0
   }
 
   /** How far from where the walk has got to to the newest cell, along the cells between. */
@@ -144,15 +165,26 @@ final class RemoteMotion {
     hopAt(hopNext) = at; hopLen(hopNext) = len
     hopNext = (hopNext + 1) % HOPS
     if (hopCount < HOPS) hopCount += 1
-    // Cells covered over the span of the moves heard in the last PACE_WINDOW, newest first. The
-    // oldest of them only starts the span: its own cell was walked before it began.
+    // Over the long window, unless the short one has it walking at another pace by now
+    val long = paceOver(at, PACE_LONG_NS)
+    val short = paceOver(at, PACE_SHORT_NS)
+    val p = if (long < 0.0) short
+      else if (short >= 0.0 && Math.abs(short - long) > PACE_CHANGE * long) short
+      else long
+    if (p >= 0.0) pace = Math.max(MIN_PACE, Math.min(MAX_PACE, p))
+  }
+
+  /** Cells a second over the moves heard in the last `windowNs` before `at`, newest first, or -1
+    * when they span too little time to say. The oldest of them only starts the span: its own cell
+    * was walked before it began. */
+  private def paceOver(at: Long, windowNs: Long): Double = {
     var oldest = at
     var oldestLen = 0.0
     var cells = 0.0
     var i = 0
     while (i < hopCount) {
       val s = Math.floorMod(hopNext - 1 - i, HOPS)
-      if (at - hopAt(s) > PACE_WINDOW_NS) i = hopCount // and every older one
+      if (at - hopAt(s) > windowNs) i = hopCount // and every older one
       else {
         cells += hopLen(s)
         oldest = hopAt(s); oldestLen = hopLen(s)
@@ -160,7 +192,7 @@ final class RemoteMotion {
       }
     }
     val span = (at - oldest) / 1e9
-    if (span >= MIN_SPAN_S) pace = Math.max(MIN_PACE, Math.min(MAX_PACE, (cells - oldestLen) / span))
+    if (span >= MIN_SPAN_S) (cells - oldestLen) / span else -1.0
   }
 
   private def walk(dtSec: Double): Unit = {
@@ -171,10 +203,19 @@ final class RemoteMotion {
       jumpTo(wayX(s), wayY(s))
       return
     }
-    // Its own pace, eased toward keeping LAG_CELLS behind. Well behind — further than the cell a
-    // step puts between them — it catches up, the quicker the further behind it is
-    val eased = pace * Math.max(1.0 - EASE_LIMIT, Math.min(1.0 + EASE_LIMIT, 1.0 + EASE * (left - LAG_CELLS)))
-    val catchUp = if (left > CATCH_UP_CELLS) pace + (left - CATCH_UP_CELLS) / CATCH_UP_S else 0.0
+    // The walking it had left when a cell arrived: how far behind it is now, less the hop it brought
+    if (arrivedHop > 0.0) {
+      val sample = left - arrivedHop
+      if (leftKnown) leftAvg += (sample - leftAvg) / ARRIVALS_AVERAGED
+      else { leftAvg = sample; leftKnown = true }
+      arrivedHop = 0.0
+    }
+    // Its own pace, eased toward having BUFFER_S of it left as each cell arrives. Well behind —
+    // further than walking leaves it — it catches up, the quicker the further behind it is
+    val off = if (leftKnown) leftAvg - BUFFER_S * pace else 0.0
+    val eased = pace * Math.max(1.0 - EASE_LIMIT, Math.min(1.0 + EASE_LIMIT, 1.0 + EASE * off))
+    val catchUpFrom = Math.max(CATCH_UP_CELLS, CATCH_UP_LEAD_S * pace)
+    val catchUp = if (left > catchUpFrom) pace + (left - catchUpFrom) / CATCH_UP_S else 0.0
     var budget = Math.max(eased, catchUp) * dtSec
     while (budget > 0.0 && wayCount > 0) {
       val tx = wayX(wayHead); val ty = wayY(wayHead)
@@ -200,20 +241,29 @@ object RemoteMotion {
   val JUMP_CELLS = 4.5
   /** Further behind than this, it is drawn at the newest cell at once. */
   val MAX_BEHIND_CELLS = 16.0
-  /** How far behind the newest cell it keeps while walking. */
-  val LAG_CELLS = 0.8
-  /** How much quicker (slower) it walks for each cell it is further behind (closer) than that... */
-  private val EASE = 0.1
+  /** The walking, in seconds of its pace, it keeps left to the newest cell as the next arrives: the
+    * most a step comes late by its walker's frame (up to 17ms at 60 fps) and a home network's
+    * jitter. Drawn walking, it is about this and half a step behind the newest cell heard. */
+  val BUFFER_S = 0.03
+  /** How many arrivals the walking it has left is averaged over. */
+  private val ARRIVALS_AVERAGED = 4.0
+  /** How much quicker (slower) it walks for each cell more (less) than that it has left... */
+  private val EASE = 0.15
   /** ...but never more than this much off its pace. */
   private val EASE_LIMIT = 0.15
-  /** Further behind than this it is catching up: more than walking ever leaves between them. */
+  /** Further behind than this it is catching up: more than walking ever leaves between them, in
+    * cells or seconds of its pace, whichever is more (a diagonal step is 1.4 cells). */
   private val CATCH_UP_CELLS = 2.0
+  private val CATCH_UP_LEAD_S = 0.1
   /** Catching up, the distance beyond that shrinks to a third of itself in about this long. */
   private val CATCH_UP_S = 0.07
-  /** The pace is measured over the moves heard in this long. */
-  private val PACE_WINDOW_NS = 250000000L
+  /** The pace is measured over the moves heard in this long... */
+  private val PACE_LONG_NS = 600000000L
+  /** ...unless over this long it is more than PACE_CHANGE off that: it has changed. */
+  private val PACE_SHORT_NS = 250000000L
+  private val PACE_CHANGE = 0.2
   private val MIN_SPAN_S = 0.06
-  private val HOPS = 16
+  private val HOPS = 40
   /** A player walks 20 cells a second (Movement), until it has been seen doing otherwise. */
   val DEFAULT_PACE = 20.0
   private val MIN_PACE = 3.0

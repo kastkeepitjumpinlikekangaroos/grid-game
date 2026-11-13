@@ -19,9 +19,48 @@ the GPU profiler.
 | `GLFWManager.scala` | Singleton `ensureInitialized()` shared by ControllerHandler and GLWindow, which on Linux puts GLFW on X11; `terminate` leaves GLFW to the process's exit while a retired window is still waiting |
 | `LightSystem.scala` | The dynamic light map (quarter-res soft blobs, multiplied in by the composite) and `LightPool`, which keeps a busy frame's strongest lights |
 | `GpuProfiler.scala` | Dev tool: fragments shaded and GPU time per frame phase, with `GRIDGAME_GPU_PROFILE=1` |
+| `FramePacer.scala` | When each frame of a window is drawn for: on the display's cadence, not when its loop happened to wake (see *A frame is timed on the display's cadence*) |
 | `FrameHistory.scala` | The last fifteen seconds of what a window showed, small: every quarter second the window blitted into a 480-pixel framebuffer and read into a pixel buffer object without waiting, mapped a capture later (`nglMapBufferRange`, nothing allocated) and copied into a pooled buffer, which a thread of its own encodes as a JPEG (stb). A problem report takes them with a mark, a freeze or a failed frame (design/diagnostics.md, *The seconds before*); the render bench's `--history` measures it. Relies on the renderer never leaving the scissor test on |
 | `Matrix4.scala` | Orthographic projection matrix |
 | `TextureRegion.scala` | Case class for (texture, u, v, u2, v2) sub-regions |
+
+## A frame is timed on the display's cadence
+
+A frame is begun when the window's loop wakes (the match's is a JavaFX AnimationTimer, on JavaFX's
+pulse, which follows the display: below) and shown at one of the display's refreshes. The waking
+wanders: on a 60 Hz iMac the match's frames began 15.7 to 17.7ms apart (1st to 99th percentile, sd
+0.5ms) while the refreshes that showed them were 16.67ms apart, and everything moving placed by when
+its frame began was drawn up to a millisecond too far on in one frame and as much too short in the
+next. So `FramePacer` gives each frame the last one's time plus as many refreshes
+(GLFW's video mode; 60 Hz when it is unknown) as have passed, when the gap is that to within 3ms (or
+0.4 of a refresh, above 133 Hz), pulled a tenth of the way toward when it really began: it keeps the
+loop's phase and its pace (a display a little off its nominal rate included) without its wander. A
+loop on another cadence, its gaps off a whole number of refreshes by the same amount frame after
+frame (no vsync, a 60 fps loop on a 144 Hz screen, a loop that doesn't keep up), is taken as it
+comes, as is a gap of more than four refreshes (a stall). `MatchWindow` paces its frames with one and
+hands the time to the client (render/CLAUDE.md, *Everything moving is placed at the frame's time*);
+the gap it really took is what the match's recording and a hitch are told. `FramePacerTest` pins
+it.
+
+JavaFX's pulse is the display's own on macOS (QuantumToolkit's `nativeSystemVsync`, a CVDisplayLink
+glass makes as it starts) only if that link could be made: with the screen locked or the display
+asleep it can't (`CVDisplayLinkCreateWithActiveCGDisplays error: -6661` in the log), and JavaFX
+pulses on a timer instead, every 16-18ms whatever the display does. A dev tool run then (a bench, a
+measurement of frame timing) sees frames a player never would, so measure timing with the screen
+on.
+
+**On a Mac the match's swap doesn't wait for the refresh** (`MatchWindow`, `GLWindow.setVsync`).
+JavaFX's pulse already follows the display there, and it skips a pulse while the one before is still
+running: with vsync on, a swap waiting for the refresh ran past the next pulse whenever the frame
+finished late in its refresh, that pulse was skipped, and the frame came a refresh late. Measured in
+a free-for-all against five bots on the Hive (4480x2404), the swap took 8-14ms and now and then 22, and
+frames came a refresh late 37 and 110 times in 2,400 at High, and 782 times at Medium, where the
+GPU's part of a frame was half as long; with no vsync, 13 to 27 times at High (frames the GPU took 13ms
+or more over, in a fight: the frame's whole budget at that size) and 4 at Medium. The swap still
+takes about as long as the GPU's part of the frame. Only where JavaFX's pulse is the display's
+(QuantumToolkit's `nativeSystemVsync`, read by reflection; it isn't with the screen locked), and only
+on a Mac: elsewhere JavaFX's pulse is a timer of its own, and vsync is what keeps frames on the
+refresh.
 
 ## A window macOS may still be using is retired
 
@@ -264,10 +303,24 @@ clears and the blending of the bloom passes stay as they are.
 ## Graphics quality tiers (`RenderQuality`)
 
 The renderer is fill-rate bound, so `RenderQuality` exists to keep it playable on a weak
-GPU. Set with `--quality=low|medium|high|auto`, `GRIDGAME_QUALITY`, or **F7** in game.
-Default is `auto`: starts at High and steps down (never back up) after ~2s of frames slower
-than 20ms, so an underpowered machine settles on its own; the first explicit choice — flag
-or F7 — turns auto off.
+GPU. Two choices, both the player's, in the menus' settings (the sliders in the top bar, and on
+the login screen: `ui/screens/SettingsDialog`), kept between runs in the user's preferences
+(`choose`, `chooseResolution`; `loadSaved` as the app starts):
+- **Quality**: High, Medium or Low, the tier below. **F7** in a match cycles it, and that is kept too.
+- **Resolution**: the most lines the world is drawn at: the display's own, 1440, 1080 or 720 (only
+  those below the display's own are offered). A tier that draws fewer still does. It is what lets a
+  large screen keep High's effects and its frames: on the 4480x2404 iMac in a free-for-all against
+  five bots, High at the display's own lines took the GPU 9.8-11.3ms a frame (13.8-16.6 at the 99th
+  percentile) and missed 26 and 242 refreshes in 2,400 frames (the Hive, the Meadow); at 1080 lines,
+  6.3-7.0 (8.9-9.0) and 9 and 17, most of them as the match opened.
+
+`--quality=low|medium|high` and `--resolution=native|1440|1080|720` (or `GRIDGAME_QUALITY`,
+`GRIDGAME_RESOLUTION`) set either for one run, over what was saved, without saving it; the dev tools
+read only these, never the player's saved choices, so the golden frames and the benches draw the same
+on every machine. Nothing changes either by itself: an `auto`, the default until 2026-11-12, began
+at High and stepped down mid-match after ~2s of frames slower than 20ms (the swap's wait in them
+included). It was taken out, the player deciding between more detail and more frames; `auto` is
+read as High.
 
 `sceneScale` is the main lever. It sizes the scene/bloom/light targets, while the composite
 still upscales to the display's real framebuffer and the HUD — and the name plates, health bars
@@ -284,9 +337,9 @@ Tiers also gate: bloom, the quarter-res wide bloom, composite sharpen and grain,
 dynamic light map, water reflections, the animated tile-overlay budget, background cache
 interval, and particle emission rate.
 
-Choosing Low outright (`--quality=low` / `GRIDGAME_QUALITY=low`, not auto) also sets
-`prism.allowhidpi=false`, so the JavaFX menus draw at 1x on a HiDPI screen and the OS scales
+Starting at Low (chosen in the settings before, or `--quality=low` / `GRIDGAME_QUALITY=low`) also
+sets `prism.allowhidpi=false`, so the JavaFX menus draw at 1x on a HiDPI screen and the OS scales
 them up: softer text, a quarter of the pixels per repaint, and a quarter-size window surface
-pool (see Client Memory & Performance). It must be set before JavaFX starts, which is why
-auto — which only steps down mid-match — can't do it. Not on Linux: nothing scales an X11 window
-up, and on a desktop at 200% the menus came out half size.
+pool (see Client Memory & Performance). It must be set before JavaFX starts, so Low chosen in the
+settings takes it from the next start. Not on Linux: nothing scales an X11 window up, and on a
+desktop at 200% the menus came out half size.
