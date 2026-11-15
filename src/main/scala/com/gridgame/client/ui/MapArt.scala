@@ -17,7 +17,7 @@ import javafx.scene.image.{Image, PixelFormat, WritableImage}
  * Drawn small, the art is filtered rather than picked: the atlas is halved four times over
  * (box-filtered, premultiplied), each sample reads the halving whose texels are about its own size,
  * and each pixel is the average of a grid of samples. The atlas is read for the pictures and let go
- * after them ([[release]]). Picked a texel per pixel, a forest drawn at
+ * a while after the last of them ([[release]]). Picked a texel per pixel, a forest drawn at
  * three pixels a tree was noise. It is drawn a band of rows at a time, so a big picture never needs
  * more than a strip of samples at once.
  */
@@ -48,8 +48,8 @@ private[client] object MapArt {
     loaded
   }
 
-  /** Let the tile art go until the next picture: MapPreview's thread does when it runs out of
-    * pictures to draw, so the menus don't hold it while they are only being looked at. */
+  /** Let the tile art go until the next picture: MapPreview's thread does once it has had nothing to
+    * draw for a while, so the menus don't hold it while they are only being looked at. */
   def release(): Unit = synchronized { loaded = null }
 
   private def load(): Atlas = {
@@ -163,6 +163,27 @@ private[client] object MapArt {
   private final val Flat = 1
   private final val Raised = 2 // a block or a prop: drawn in the depth pass
 
+  /** A picture nobody gives up on. */
+  val Never: () => Boolean = () => false
+
+  /** What [[draw]] works in, kept by each thread that draws (MapPreview's, mostly) from one picture
+    * to the next rather than made again for each: a big map's cells are a megabyte of it, and a
+    * carousel's strip is a picture of every map. It goes with the thread. */
+  private final class Scratch {
+    var form: Array[Byte] = Array.emptyByteArray
+    var flatId, flatFrame, raisedId, raisedFrame: Array[Int] = Array.emptyIntArray
+    var isBlock, edged: Array[Boolean] = Array.emptyBooleanArray
+    var buf: Array[Int] = Array.emptyIntArray
+    def cells(n: Int): Unit = if (form.length < n) {
+      form = new Array[Byte](n)
+      flatId = new Array[Int](n); flatFrame = new Array[Int](n)
+      raisedId = new Array[Int](n); raisedFrame = new Array[Int](n)
+      isBlock = new Array[Boolean](n); edged = new Array[Boolean](n)
+    }
+    def band(n: Int): Array[Int] = { if (buf.length < n) buf = new Array[Int](n); buf }
+  }
+  private val scratch = ThreadLocal.withInitial[Scratch](() => new Scratch)
+
   /** Where a picture of the map is: the projection's origin (cell (0, 0)'s centre) at (ox, oy)
     * pixels, `scale` pixels to a unit. */
   final case class View(scale: Double, ox: Double, oy: Double)
@@ -230,24 +251,30 @@ private[client] object MapArt {
    * at a time, each pixel the average of `ss` x `ss` samples; what is outside them is left clear.
    * With a `base`, they stand on a slab that many units deep, as a model of the map would: below
    * their two near edges, the side of each edge cell's ground in shadow, darker toward the bottom.
+   * `stop` is asked before each band of rows: once it says so, the picture is given up and the
+   * result is null (nobody wants it any more: MapPreview).
    */
-  def draw(world: WorldData, win: Window, w: Int, h: Int, view: View, ss: Int, base: Double = 0): Array[Int] = {
+  def draw(world: WorldData, win: Window, w: Int, h: Int, view: View, ss: Int, base: Double = 0,
+           stop: () => Boolean = Never): Array[Int] = {
     val a = atlas
     val out = new Array[Int](w * h)
     if (a.tiles == 0) return out
     val W = world.width; val H = world.height
     // Each cell's tile as drawn: what lies flat (a prop's own ground under it), and what stands
-    val form = new Array[Byte](W * H)
-    val flatId = new Array[Int](W * H)
-    val flatFrame = new Array[Int](W * H)
-    val raisedId = new Array[Int](W * H)
-    val raisedFrame = new Array[Int](W * H)
-    val isBlock = new Array[Boolean](W * H)
+    val sc = scratch.get()
+    sc.cells(W * H)
+    val form = sc.form
+    val flatId = sc.flatId
+    val flatFrame = sc.flatFrame
+    val raisedId = sc.raisedId
+    val raisedFrame = sc.raisedFrame
+    val isBlock = sc.isBlock
     for (y <- 0 until H; x <- 0 until W) {
       val i = y * W + x
       val t = world.getTile(x, y)
       // a picture is a still: a tile that animates as it is at its own frame of the cycle
       val variant = (if (t.animates) (x * 7 + y * 13) & 0x7FFFFFFF else t.variantAt(x, y)) % a.frames
+      isBlock(i) = false
       t.form match {
         case TileForm.Ground | TileForm.Pool =>
           form(i) = Flat; flatId(i) = t.id; flatFrame(i) = variant
@@ -265,7 +292,7 @@ private[client] object MapArt {
     }
     // Where two kinds of ground meet, as the match's GroundEdgePainter draws it
     val layers = GroundEdges.layers(world)
-    val edged = new Array[Boolean](W * H)
+    val edged = sc.edged
     for (y <- win.y0 to win.y1; x <- win.x0 to win.x1) edged(y * W + x) = GroundEdges.hasEdge(layers, W, H, x, y)
     val edge = new Array[Double](4)
 
@@ -277,12 +304,13 @@ private[client] object MapArt {
     val bw = w * ss
     val colX = Array.tabulate(bw)(i => ((i + 0.5) / ss - view.ox) / scale)
     val Band = 16
-    val buf = new Array[Int](bw * Band * ss)
+    val buf = sc.band(bw * Band * ss)
     val shadowDepth = 5.0
     val shadowK = 0.22
 
     var by = 0
     while (by < h) {
+      if (stop()) return null
       val rows = Math.min(Band, h - by)
       val bh = rows * ss
       java.util.Arrays.fill(buf, 0, bw * bh, 0)

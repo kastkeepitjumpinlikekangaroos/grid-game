@@ -4,13 +4,11 @@ import com.gridgame.client.gl.RenderQuality
 import com.gridgame.client.i18n.Messages
 import com.gridgame.client.ui.Icons
 
-import javafx.animation.FadeTransition
 import javafx.geometry.{Insets, Pos}
 import javafx.scene.control.ComboBox
 import javafx.scene.input.{KeyCode, KeyEvent}
 import javafx.scene.layout.{HBox, Region, StackPane, VBox}
 import javafx.stage.{Screen, Stage}
-import javafx.util.Duration
 
 import com.gridgame.client.ui.Theme._
 import com.gridgame.client.ui.Widgets._
@@ -113,9 +111,6 @@ private[client] object SettingsDialog {
     scrim.setOnMouseClicked(e => e.consume())
     scrim.addEventFilter(KeyEvent.KEY_PRESSED, (e: KeyEvent) => if (e.getCode == KeyCode.ESCAPE) { close(); e.consume() })
     root.getChildren.add(scrim)
-    val fade = new FadeTransition(Duration.millis(160), scrim)
-    fade.setFromValue(0)
-    fade.setToValue(1)
-    fade.play()
+    bringIn(dialog)
   }
 }

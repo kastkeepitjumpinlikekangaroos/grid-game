@@ -13,8 +13,9 @@ can drive a real screen through `app.showLobbyRoom(stage)` and the like.
   fields, chips, tables, the character panel, the shade over the world. A screen gives its nodes
   the sheet's classes.
 - **Theme** — the rest of the look as code sees it: the fonts (`loadFonts`, `Fonts`), the palette
-  for what code draws (`Palette`), putting a page on the stage (`newScene`, `showPage`), status lines
-  (`showStatus` with a `Tone`), `steppedLoop`, the lobby settings every form offers.
+  for what code draws (`Palette`), putting a page on the stage (`newScene`, `showPage`), bringing a
+  card in over it (`bringIn`), status lines (`showStatus` with a `Tone`), `steppedLoop`, the lobby
+  settings every form offers.
 - **Widgets** — the parts every screen is built from: text in the type scale (an `eyebrow` in
   capitals, which a sheet can't set), buttons, cards, chips, keycaps, medals, avatars, stat tiles,
   tables (`Col`, `tableHead`, `tableRow`), fields, the lettered titles (`displayTitle`), and the
@@ -27,16 +28,21 @@ can drive a real screen through `app.showLobbyRoom(stage)` and the like.
   in a shader) and the shadows blocks cast, then blocks and props a diagonal at a time, far to
   near — for any window of its cells, optionally standing on a slab of its own ground. Small
   pictures are filtered, not picked: the atlas is halved four times over and each pixel averages a
-  grid of samples.
+  grid of samples. A picture can be given up between bands of rows (`stop`), and what it works in
+  (a megabyte for a big map's cells) is kept by the thread that draws, from one picture to the next.
 - **MapPreview** — the maps for the menus, as models of themselves on a dark stage: where its
   matches are played (every cell its spawn points can walk to, `MapArt.playArea`) and a rim of its
-  border. Drawn once per size shown, at twice it, on a thread of its own, and kept to 12MB; the
-  thread draws what is wanted soonest first (`Now`: a picture a page shows on its own; `Strip`: a
-  carousel's little ones; `Ahead`: the maps a carousel may step to next), and a picture asked for
-  sooner than it first was moves up. Also `patch`, a few cells of grass for a character to stand
-  on, and `size`, how many cells a map is. The whole arena, always: the lobby form once cut a
-  square map to fill its wide frame, which hid half of it; the border (a forest, the sea, the
-  void) is scenery, and shown whole it left the arena small.
+  border. Drawn once per size shown, on a thread of its own, and kept to 12MB: at twice the size
+  for a Retina display, at it where the menus are drawn at 1x (Low quality's, a 1x screen's), with
+  the samples half as far apart, so the picture is the same (within 4 levels in 255) for a quarter
+  of the memory and upload. The thread draws what is wanted soonest first (`Now`: a picture a page
+  shows on its own; `Strip`: a carousel's little ones; `Ahead`: the maps a carousel may step to
+  next); a picture asked for sooner than it first was moves up, and one nobody wants any more
+  (`Ask.cancel`) isn't drawn, or stops being drawn, or waits its turn behind what is still wanted
+  sooner. It keeps the tile art for 15s after its last picture. Also `patch`, a few cells of grass
+  for a character to stand on, and `size`, how many cells a map is. The whole arena, always: the
+  lobby form once cut a square map to fill its wide frame, which hid half of it; the border (a
+  forest, the sea, the void) is scenery, and shown whole it left the arena small.
 - **MapCarousel** — the maps to pick from, wherever a map is picked: the picked one big between
   an arrow either side (round from the last to the first), its name and size ("Medium map · 140 ×
   140") and how far along it is ("12 / 19"), and a strip of every map under it that slides to
@@ -44,9 +50,13 @@ can drive a real screen through `app.showLobbyRoom(stage)` and the like.
   slides it; ← → Home End and Enter while it has the focus). It replaced a drop-down of the maps'
   names, where a map had to be picked to be seen. `Form` is the lobby form's (the map 320x180, as the form drew it before,
   the strip's 64x36), `Wide` the map picker's (544x306, the strip's 96x54 with their names under
-  them). A map stepped to shows the strip's picture blown up for the 30-120ms its own takes to draw
-  (they are framed alike); the maps either side are drawn ahead once the player steps (as it opens,
-  in the picker).
+  them). A map stepped to shows the strip's picture blown up (its own copy: the cache lets the little
+  ones go first) for the 30-200ms its own takes to draw (they are framed alike); the maps either side
+  are drawn ahead once the player steps (as it opens, in the picker), and a map stepped past before
+  its picture is drawn is given up on, so a player stepping quickly waits only for the one they stop
+  on. Only the strip's maps in sight are shown, and a little picture is put in as its map comes into
+  sight (*Nothing changes out of sight*, below). `close` gives up on every picture not yet drawn: the
+  lobby browser's when it is left, the picker's when its card closes or the room goes.
 - **Icons** — line icons, as SVG paths.
 - **CharacterSelectionPanel** — the character picker (grid, filter, search, the picked character in
   detail), with **AbilityPreviewRenderer** (the animated ability previews; each projectile type's
@@ -78,11 +88,12 @@ lobby, the ranked queue leaves the queue, the scoreboard goes back to the browse
 
 `screens/MapPickerDialog` is the maps for a lobby's host, from the map chip in the lobby room's
 heading or the map's picture beside it: a `Wide` carousel on a card over the room, as the settings'
-card is. Browsing it changes nothing; "Use this map", a double click or Enter sends the one picked
-(nothing if it is the lobby's already), and Cancel, the cross or Escape leave the lobby's. The map
-chip is a button drawn as the drop-down chips beside it are (`.chip-button`), and a guest's is
-only a chip. An update sent for any of the host's settings carries the map last picked there,
-not the client's copy of the server's, which lags a pick by a round trip.
+card is (its shade there at once, the card brought in: `Theme.bringIn`). Browsing it changes
+nothing; "Use this map", a double click or Enter sends the one picked (nothing if it is the lobby's
+already), and Cancel, the cross or Escape leave the lobby's. The map chip is a button drawn as the
+drop-down chips beside it are (`.chip-button`), and a guest's is only a chip. An update sent for any
+of the host's settings carries the map last picked there, not the client's copy of the server's,
+which lags a pick by a round trip.
 `LobbyRoomScreenTest` and `LobbyBrowserScreenTest` click both carousels, `ui/MapCarouselTest`
 the carousel itself.
 
@@ -168,7 +179,21 @@ the screens follow:
   portrait per cell) and only the cell under the mouse walks; the picked character walks at 6
   steps a second and the three ability previews run at 30 fps, on the same pulses. `steppedLoop`
   (Theme) runs any looping decoration at 12 fps. All of it holds still while the window is in
-  the background or has had no input for 30s (`UiActivity`).
+  the background or has had no input for 30s (`UiActivity`). A card over the page (the map picker,
+  the settings, a problem report) comes in by itself, its shade there at once (`Theme.bringIn`): a
+  shade fading in is the whole window repainted every frame of it, and over the lobby room that was
+  12-90ms a frame at 1x. `SettingsDialogTest` and `LobbyRoomScreenTest` hold the shades to it.
+- **Nothing changes out of sight.** A change to a node nobody can see — clipped away (a carousel's
+  strip past its ends, a scroll pane's content past its viewport) or not visible — marks the scene
+  for a repaint all the same, and JavaFX's renderer, finding no dirty region on screen, paints the
+  whole window. A carousel's strip shows four or five of its nineteen maps, and each little picture
+  landing out of sight was a whole-window repaint: 14-25 as the lobby browser opened, 8-30ms each at
+  1x on a 2240x1230 window, and 15-25 more as the map picker opened over the room's 1,100 nodes. So
+  a carousel shows only the maps in sight and puts a picture in as its map comes into sight
+  (`MapCarousel.showInSight`; hiding the node alone isn't enough, `MapCarouselTest` holds it). The
+  pulse logger shows such a frame as a pulse with no "dirty regions" line and every node rendered.
+  Still left: the character grid's portraits landing below its fold as the room opens, and a text
+  field's caret, every blink of which (twice a second while it has the focus) repaints the window.
 - **Depth is layered backgrounds and borders, not effects.** A button's lip, a field's focus ring,
   a card's edge of light: each is a background inset under the next, or a border. An `-fx-effect`
   (a shadow, a glow) renders its node off screen on every repaint; the first dark menus had a
@@ -199,17 +224,25 @@ the screens follow:
   of thousands of cells drawn on the CPU (a strip's 2-10ms, the lobby form's 10-50ms, the map
   picker's 50-230ms, warm), and the lobby list used to parse every row's map file each time the
   list refreshed. The pictures are kept to 12MB, the least lately shown dropped first; a lobby row's
-  is 70KB, the lobby form's 0.9MB, the picker's 2.7MB, a carousel's strip 0.7-1.6MB all told. Only
-  the last four maps read are kept (a big one is a quarter of a megabyte read, and a strip reads
-  every map); every map read used to be kept for good, through every match. A match's start drops
-  the pictures and every one not yet drawn.
+  is 70KB, the lobby form's 0.9MB, the picker's 2.7MB, a carousel's strip 0.7-1.6MB all told (at 2x;
+  a quarter of that where the menus are drawn at 1x, and drawn at 2x there, every one was halved by
+  the GPU on its way to the screen). Only the last four maps read for a picture of their own are
+  kept (a big one is a quarter of a megabyte read, and a strip reads every map); every map read used
+  to be kept for good, through every match. The thread keeps the tile art for 15s after its last
+  picture: let go whenever it ran out of pictures, it was read again (110ms) for most steps through a
+  carousel. A picture nobody wants any more isn't drawn (a map stepped past, a page left, a card
+  closed): stepping quickly through the picker's maps used to queue a picture of every one, and the
+  map stopped on came 1-4 seconds later. What a picture works in is kept by the thread: a strip's
+  picture of a big map made 1.3MB of garbage, now 0.1MB; the picker's big one 6.7MB, now 1.5MB at
+  1x (5.4MB at 2x). A match's start drops the pictures, every one not yet drawn, and the tile art.
 - **No rounded clips.** A clip that isn't a plain rectangle renders its node off screen on every
   repaint, as an effect does. The map frames each had one, to round a picture's corners that were
   already clear (a map is fitted a twentieth in from the frame's edges, and a diamond leaves a
   box's corners empty); without them only the frames' outermost edge changed, by at most 15 levels
   in 255, and the lobby browser with the form's carousel (twenty more frames) renders as fast as it
   did with the drop-down: 5.8-6.8ms a full render against 6.0-7.0 (a throwaway bench, the two
-  builds alternated). The picture that slides in has a square clip, which is a scissor.
+  builds alternated; a snapshot, which can't see *Nothing changes out of sight*, above, and missed
+  the carousel's real cost). The picture that slides in has a square clip, which is a scissor.
 - **`ViewportCache.disable` on any `ScrollPane` around animated content** — every page's, since
   `Widgets.page` puts each page in one. ScrollPane's skin caches its viewport as a bitmap; around
   canvases that animate, every frame re-renders the whole viewport into a texture as big as the
@@ -220,7 +253,8 @@ the screens follow:
   for an empty one and drops the sprite cache and the maps' pictures (`MatchWindow.open`), so
   none of the menus stay resident in a match but the world behind (4MB) and the portraits the
   scoreboard will show (*Coming back from a match*). MapArt lets the tile art (8MB with its
-  halvings) go whenever its thread runs out of pictures to draw.
+  halvings) go once its thread has had nothing to draw for 15 seconds, and at once as a match
+  starts.
 
 What none of this fixes: a visible JavaFX window on macOS builds up a pool of about 15
 window-sized IOSurfaces as it keeps presenting — ~650MB on a 5K display, ~120MB at 1080p —
@@ -230,6 +264,29 @@ it, a resize doesn't release it, and JavaFX 21.0.12 and 23.0.2 behave exactly li
 (measured interleaved). Fewer presents only delay it; Low quality's 1x menus quarter it. The
 GLFW game window's surfaces don't grow. When measuring the menus, keep the window visible
 and unobstructed: an occluded window presents less and flatters every number.
+
+## The map carousels, measured
+
+The real screens on a shown window, scripted by a throwaway harness (the lobby browser opened while
+a lobby's name is typed, its carousel stepped, slid and clicked, the host's picker opened over the
+room and stepped, the browser shown again after a match's start dropped the pictures), with the
+pulse logger and a probe of the FX thread's latency, HEAD and the change alternated, at 1x on this
+Mac's 2240x1230 window as Low quality draws the menus (2026-11-15, the screen unlocked):
+
+| | before | after |
+|---|---|---|
+| whole-window repaints as the lobby browser opens | 14-25 | 2-8 (the name field's caret) |
+| the frames' time as it opens | 462-1322ms | 319-413ms |
+| whole-window repaints as the picker opens over the room | 15-25 | 1-18 (the room's portraits) |
+| painting as it opens | 160-616ms | 55-352ms |
+| whole-window repaints coming back to the browser after a match | 8-14 | 1 |
+| picker steps 220ms apart whose picture wasn't in by the next | 6-17 of 19 | 0-10 (big maps) |
+| the picture after a run of quick steps (60ms apart) stops | 1.2-4.2s | at once |
+
+At 2x the picker's opening went from 1407ms of frames to 540, those over 33ms from 9 to 1. What is
+left of the run of quick steps is a big map's picture taking 100-200ms to draw, during which the
+strip's picture stands in, and the room's own first frames (its character panel, 170-560ms on the
+FX thread as it is built, as before).
 
 ## Coming back from a match
 

@@ -95,6 +95,15 @@ class SettingsDialogTest {
     assertEquals("the card gone", 0, Fx(all(root).count(_.isInstanceOf[ComboBox[_]])))
   }
 
+  @Test def theShadeIsThereAtOnceAndOnlyTheCardComesIn(): Unit = {
+    val (root, _, _) = open()
+    val shade = Fx(all(root).find(_.getStyleClass.contains("dialog-scrim")).get)
+    // A shade fading in is the whole window repainted every frame of it, the page under it and all
+    // (ui/CLAUDE.md, *Little moves*): it is whole from the first frame, through the card's entrance
+    val seen = (0 until 14).map { _ => Thread.sleep(15); Fx(shade.getOpacity) }
+    assertTrue(s"the shade's opacity as the card came in: $seen", seen.forall(_ == 1.0))
+  }
+
   @Test def aDisplayIsOfferedItsOwnResolutionAndTheOnesBelowIt(): Unit = {
     assertEquals(Seq(0, 1440, 1080, 720), SettingsDialog.resolutionsFor(2404))
     assertEquals(Seq(0, 720), SettingsDialog.resolutionsFor(1080))

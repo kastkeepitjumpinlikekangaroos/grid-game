@@ -134,7 +134,7 @@ ops/kubernetes/      the servers on Kubernetes (Agones), and a local kind cluste
 | How projectiles are drawn | [client/render/projectiles/CLAUDE.md](src/main/scala/com/gridgame/client/render/projectiles/CLAUDE.md) |
 | How explosions and splashes are drawn | [client/render/blasts/CLAUDE.md](src/main/scala/com/gridgame/client/render/blasts/CLAUDE.md) |
 | OpenGL primitives: batches, strokes, fonts, post-processing, quality tiers | [client/gl/CLAUDE.md](src/main/scala/com/gridgame/client/gl/CLAUDE.md) |
-| The menus: screens, their look (the world behind them, the stylesheet, the maps drawn as models and picked in a carousel), why every repaint is expensive, and coming back from a match | [client/ui/CLAUDE.md](src/main/scala/com/gridgame/client/ui/CLAUDE.md) |
+| The menus: screens, their look (the world behind them, the stylesheet, the maps drawn as models and picked in a carousel), why every repaint is expensive (and why nothing may change out of sight), and coming back from a match | [client/ui/CLAUDE.md](src/main/scala/com/gridgame/client/ui/CLAUDE.md) |
 | Sound at runtime: the mixer, which sound every attack makes | [client/audio/CLAUDE.md](src/main/scala/com/gridgame/client/audio/CLAUDE.md) |
 | Tests: the suites, the test kits, conventions | [src/test/CLAUDE.md](src/test/CLAUDE.md) |
 | Assets: tiles, maps, character sprites, the items, sounds, icons | [scripts/CLAUDE.md](scripts/CLAUDE.md), then [scripts/SPRITES.md](scripts/SPRITES.md), [scripts/SOUNDS.md](scripts/SOUNDS.md) |

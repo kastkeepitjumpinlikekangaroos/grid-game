@@ -62,6 +62,19 @@ scala_junit_test(
     ],
 )
 
+# The maps' pictures: drawn the soonest wanted first, and not at all once nobody wants them
+scala_junit_test(
+    name = "map_preview_test",
+    srcs = ["MapPreviewTest.scala"],
+    env = {"GRIDGAME_AUDIO": "off"},
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "//src/test/scala/com/gridgame/client:client_test_kit",
+        "@maven//:junit_junit",
+    ],
+)
+
 # The maps as a carousel: stepped through, picked in the strip, keyed, the strip sliding to the pick
 scala_junit_test(
     name = "map_carousel_test",

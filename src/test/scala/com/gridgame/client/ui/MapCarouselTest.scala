@@ -170,6 +170,58 @@ class MapCarouselTest {
     assertEquals("sliding picks nothing", 0, Fx(c.picked))
   }
 
+  private def pictureIn(item: Node): javafx.scene.image.Image =
+    Fx.all(item).collectFirst { case v: javafx.scene.image.ImageView => v.getImage }.get
+
+  @Test def onlyTheMapsInSightAreShownAndOnlyTheyAreGivenTheirPictures(): Unit = {
+    val c = carousel(0)
+    val (width, at) = laidOut(c)
+    MapPreview.settle(); Fx(()) // every little picture drawn and handed over
+    def inSight(spots: Seq[(Double, Double)], i: Int) = spots(i)._2 > 0 && spots(i)._1 < width
+    Fx {
+      val items = strip(c)
+      for (i <- 0 until count) {
+        assertEquals(s"map $i shown if and only if in sight", inSight(at, i), items(i).isVisible)
+        // A picture landing out of sight is a repaint of the whole window (ui/CLAUDE.md)
+        if (inSight(at, i)) assertNotNull(s"map $i, in sight, has its picture", pictureIn(items(i)))
+        else assertNull(s"map $i, out of sight, is given none yet", pictureIn(items(i)))
+      }
+    }
+    // Slid along to the last: the maps come into sight with their pictures, those it left go
+    Fx(c.pick(count - 1))
+    val (_, there) = laidOut(c)
+    Fx {
+      val items = strip(c)
+      for (i <- 0 until count) {
+        assertEquals(s"map $i shown if and only if in sight", inSight(there, i), items(i).isVisible)
+        if (inSight(there, i)) assertNotNull(s"map $i, now in sight, has its picture", pictureIn(items(i)))
+      }
+      assertFalse("the first map is out of sight", items.head.isVisible)
+    }
+  }
+
+  @Test def aCarouselClosedBeforeItsPicturesAreDrawnHasNoneDrawn(): Unit = {
+    // The painter held, a carousel (the map picker's, its sizes no other test here asks for) opened
+    // and closed, then let go: it draws nothing for it
+    Fx(())
+    val started = new java.util.concurrent.CountDownLatch(1)
+    val release = new java.util.concurrent.CountDownLatch(1)
+    MapPreview.paint(() => { started.countDown(); release.await(30, java.util.concurrent.TimeUnit.SECONDS) })
+    started.await(30, java.util.concurrent.TimeUnit.SECONDS)
+    val look = MapCarousel.Wide
+    Fx {
+      val c = new MapCarousel(3, look)
+      Fx(c.pick(4))
+      c.close()
+    }
+    release.countDown()
+    MapPreview.settle(); Fx(())
+    Fx {
+      for (i <- 0 until count) assertNull(s"map $i's little picture", MapPreview.drawn(i, look.thumbWidth, look.thumbHeight))
+      for (i <- Seq(2, 3, 4, 5)) assertNull(s"map $i's big picture", MapPreview.drawn(i, look.width, look.height))
+    }
+  }
+
   @Test def howBigAMapIsReadsAsAWordAndItsCells(): Unit = {
     assertEquals("Small map  ·  90 × 90", MapCarousel.sizeText(90, 90))
     assertEquals("Medium map  ·  140 × 140", MapCarousel.sizeText(140, 140))

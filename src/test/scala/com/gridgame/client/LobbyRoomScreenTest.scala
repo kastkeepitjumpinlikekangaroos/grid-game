@@ -139,6 +139,10 @@ class LobbyRoomScreenTest {
     Fx(mapChip(stage).get.fire())
     assertTrue("the picker is open", picker(stage).nonEmpty)
     assertTrue(texts(stage).contains("Choose a map"))
+    // Its shade is whole at once: one fading in repaints the whole room every frame (ui/CLAUDE.md)
+    val shade = Fx(Fx.all(stage.getScene.getRoot).find(_.getStyleClass.contains("dialog-scrim")).get)
+    val opacities = (0 until 14).map { _ => Thread.sleep(15); Fx(shade.getOpacity) }
+    assertTrue(s"the shade's opacity as the picker came in: $opacities", opacities.forall(_ == 1.0))
     Fx(Fx.click(mapsIn(stage)(5)))
     assertTrue("browsing the maps sends nothing", t.sentLobbyActions.isEmpty)
 

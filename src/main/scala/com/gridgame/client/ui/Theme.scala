@@ -119,6 +119,22 @@ private[client] object Theme {
     }
   }
 
+  /**
+   * Bring in a card shown over the page on a shade (the map picker, the settings, a problem report):
+   * the card fades in and rises a little while the shade is there at once. A shade fading in is the
+   * whole window repainted every frame of it, the page under it and all, which over the lobby room
+   * took 12-90ms a frame at 1x; the card is its own corner of the window.
+   */
+  def bringIn(card: Node): Unit = {
+    card.setOpacity(0)
+    card.setTranslateY(8)
+    val fade = new FadeTransition(Duration.millis(140), card)
+    fade.setToValue(1)
+    val rise = new TranslateTransition(Duration.millis(140), card)
+    rise.setToY(0)
+    new ParallelTransition(fade, rise).play()
+  }
+
   // ── Status lines ───────────────────────────────────────────────────────
 
   sealed trait Tone

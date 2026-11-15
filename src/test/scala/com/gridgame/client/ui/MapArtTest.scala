@@ -64,6 +64,40 @@ class MapArtTest {
     assertEquals("above the far corner", 0, at(0, -HH - 4.0))
   }
 
+  @Test def aPictureNobodyWantsAnyMoreIsGivenUpBetweenItsBands(): Unit = Fx {
+    val w = world(12)()
+    val win = MapArt.whole(w)
+    val view = MapArt.fit(win, 64, 64, 0.05)
+    // 64 rows are four bands of 16: asked before each, and told to stop before the third
+    var asked = 0
+    assertNull(MapArt.draw(w, win, 64, 64, view, 2, stop = () => { asked += 1; asked > 2 }))
+    assertEquals("asked before each band, and not again once told", 3, asked)
+    assertNotNull("nobody gives up on it", MapArt.draw(w, win, 64, 64, view, 2))
+  }
+
+  /** `body` on a thread that has drawn nothing before. */
+  private def onAThreadOfItsOwn[T](body: => T): T = {
+    Fx(()) // the toolkit up, for the tile art
+    val result = new java.util.concurrent.atomic.AtomicReference[T]()
+    val t = new Thread(() => result.set(body))
+    t.start(); t.join(60000)
+    result.get
+  }
+
+  @Test def aPictureIsTheSameWhateverWasDrawnBeforeIt(): Unit = {
+    // A bigger map of walls and trees, and a little one with neither: what the first leaves behind
+    // in what a thread draws in mustn't be drawn into the second (a wall's shadow, a tree)
+    val busy = world(30)((x, y) => if ((x + y) % 3 == 0) Tile.Wall else if ((x * y) % 5 == 1) Tile.Tree else Tile.Grass)
+    val plain = world(12)((x, _) => if (x == 5) Tile.Water else Tile.Grass)
+    def picture(w: WorldData, iw: Int, ih: Int): Array[Int] = {
+      val win = MapArt.whole(w)
+      MapArt.draw(w, win, iw, ih, MapArt.fit(win, iw, ih, 0.05, 6), 2, 6)
+    }
+    val alone = onAThreadOfItsOwn(picture(plain, 120, 80))
+    val after = onAThreadOfItsOwn { picture(busy, 300, 200); picture(plain, 120, 80) }
+    assertArrayEquals(alone, after)
+  }
+
   @Test def aWindowDrawsOnlyItsOwnCells(): Unit = Fx {
     // Walls down the left of the map, and a window that leaves them out
     val w = world(12)((x, _) => if (x < 2) Tile.Wall else Tile.Grass)

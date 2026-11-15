@@ -72,6 +72,8 @@ private[client] final class LobbyRoomScreen(app: Screens) {
 
     // Host-only controls, refreshed from the server's view of the lobby on every update
     var refreshHostControls: () => Unit = () => ()
+    // Closes the map picker, if it is open over the room: when the room goes, so does it
+    var closePicker: () => Unit = () => ()
 
     val playersChip = chip("", "sky")
     val botButtons = row(6)
@@ -127,7 +129,7 @@ private[client] final class LobbyRoomScreen(app: Screens) {
 
       def showTeamSize(isTeams: Boolean): Unit = { teamSizeCombo.setVisible(isTeams); teamSizeCombo.setManaged(isTeams) }
 
-      def pickMap(): Unit = MapPickerDialog.show(stage, pickedMap, chosen => {
+      def pickMap(): Unit = closePicker = MapPickerDialog.show(stage, pickedMap, chosen => {
         pickedMap = chosen
         sendConfigUpdate()
         mapButton.setText(WorldRegistry.getDisplayName(chosen))
@@ -243,7 +245,7 @@ private[client] final class LobbyRoomScreen(app: Screens) {
     )
     val charSection = charPanel.createPanel()
     HBox.setHgrow(charSection, Priority.ALWAYS)
-    stopCurrentScreen = () => charPanel.stop()
+    stopCurrentScreen = () => { charPanel.stop(); closePicker() }
 
     val leave = () => client.leaveLobby()
     leaveBtn.setOnAction(_ => {

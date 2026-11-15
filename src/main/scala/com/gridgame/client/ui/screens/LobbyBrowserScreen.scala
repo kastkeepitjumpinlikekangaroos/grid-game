@@ -159,7 +159,7 @@ private[client] final class LobbyBrowserScreen(app: Screens) {
     // The rating in the top bar, once the stats asked for at login land
     client.matchHistoryListener = () => Platform.runLater(() => page.refreshUser())
 
-    stopCurrentScreen = () => busyTimeout.stop()
+    stopCurrentScreen = () => { busyTimeout.stop(); maps.close() }
 
     page.show(stage)
 

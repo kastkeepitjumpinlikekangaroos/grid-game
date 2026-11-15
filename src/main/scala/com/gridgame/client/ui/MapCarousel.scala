@@ -8,7 +8,7 @@ import com.gridgame.common.WorldRegistry
 import javafx.animation.{Interpolator, KeyFrame, KeyValue, Timeline}
 import javafx.geometry.{Insets, Pos}
 import javafx.scene.control.{Button, Tooltip}
-import javafx.scene.image.ImageView
+import javafx.scene.image.{Image, ImageView}
 import javafx.scene.input.{KeyCode, KeyEvent, MouseButton, MouseEvent, ScrollEvent}
 import javafx.scene.layout.{HBox, Pane, Region, StackPane, VBox}
 import javafx.scene.shape.Rectangle
@@ -23,13 +23,15 @@ import javafx.util.Duration
  * gives it the focus), Home and End go to the first and the last, Enter settles on the picked map
  * ([[onChoose]]), as a double click on one in the strip does.
  *
- * The big picture of a map stepped to is drawn as it is picked, and while it is (30-120ms) the
+ * The big picture of a map stepped to is drawn as it is picked, and while it is (30-200ms) the
  * strip's little one stands in for it, blown up: the two are framed alike. Once the player has
  * stepped (or as it opens, for a carousel opened to be browsed: the map picker's), the maps either
- * side of the picked one are drawn ahead, so a step to either is there at once. Nothing moves but
- * the strip sliding and the new picture coming in, for a fifth of a second after a pick
- * (ui/CLAUDE.md, *every changed frame repaints the whole window*), and only on a window that is
- * showing.
+ * side of the picked one are drawn ahead, so a step to either is there at once. A map stepped past
+ * before its picture is drawn is given up on (MapPreview's `Ask.cancel`), so stepping quickly waits
+ * only for the map stepped to. Nothing moves but the strip sliding and the new picture coming in,
+ * for a fifth of a second after a pick (ui/CLAUDE.md, *every changed frame repaints the whole
+ * window*), and only on a window that is showing. Only the strip's maps in sight are shown
+ * (*Nothing changes out of sight*, there). [[close]] gives up on every picture not yet drawn.
  */
 private[client] final class MapCarousel(initial: Int, look: MapCarousel.Look = MapCarousel.Form) {
   private val count = WorldRegistry.size
@@ -77,6 +79,9 @@ private[client] final class MapCarousel(initial: Int, look: MapCarousel.Look = M
 
   // ── Every map, small, in a strip that slides ──
   private val pictures = new Array[ImageView](count)
+  // Each map's little picture as it lands, put in its view once it is in sight (showInSight)
+  private val landed = new Array[Image](count)
+  private val stripAsks = new Array[MapPreview.Ask](count)
   private val items: IndexedSeq[Region] = (0 until count).map(item)
   private val reel = new HBox(look.gap)
   reel.getChildren.addAll(items: _*)
@@ -148,7 +153,36 @@ private[client] final class MapCarousel(initial: Int, look: MapCarousel.Look = M
       slide.playFromStart()
     }
   }
-  strip.widthProperty.addListener((_, _, _) => { slide.stop(); reel.setTranslateX(-Math.round(centred(current)).toDouble) })
+  /** Show only the strip's maps in sight, and put each one's picture in as it comes into sight. A
+    * change to a node out of sight (clipped away, or not visible) changes nothing a frame could show,
+    * and JavaFX, finding nothing on screen to repaint, repaints the whole window (ui/CLAUDE.md,
+    * *Nothing changes out of sight*): most of the strip is out of sight, and each of its pictures
+    * landed as a repaint of the whole window. A map comes into sight as the strip moves, which
+    * repaints the strip anyway. */
+  private def showInSight(): Unit = {
+    val left = -reel.getTranslateX
+    val right = left + strip.getWidth
+    var i = 0
+    while (i < count) {
+      val x = i * pitch
+      val seen = x + look.thumbWidth > left && x < right
+      if (items(i).isVisible != seen) items(i).setVisible(seen)
+      if (seen && (pictures(i).getImage ne landed(i))) pictures(i).setImage(landed(i))
+      i += 1
+    }
+  }
+  /** Map `i`'s little picture has landed: in its view now if the map is in sight, else once it is. */
+  private def stripPicture(i: Int)(img: Image): Unit = {
+    landed(i) = img
+    if (items(i).isVisible) pictures(i).setImage(img)
+  }
+  reel.translateXProperty.addListener((_, _, _) => showInSight())
+  strip.widthProperty.addListener((_, _, _) => {
+    slide.stop()
+    reel.setTranslateX(-Math.round(centred(current)).toDouble)
+    showInSight()
+  })
+  showInSight()
   strip.addEventHandler(ScrollEvent.SCROLL, (e: ScrollEvent) => {
     val d = if (Math.abs(e.getDeltaX) > Math.abs(e.getDeltaY)) e.getDeltaX else e.getDeltaY
     val to = Math.max(0, Math.min(maxOffset, offset - d))
@@ -174,6 +208,9 @@ private[client] final class MapCarousel(initial: Int, look: MapCarousel.Look = M
 
   /** Whether the maps either side of the picked one are drawn ahead. */
   private var ahead = look.eager
+  // The picked map's big picture and the ones drawn ahead, as asked for: given up on once stepped past
+  private var heroAsk: MapPreview.Ask = _
+  private var aheadAsks = Map.empty[Int, MapPreview.Ask]
 
   /** Show map `i` picked: big, named, ringed in the strip, and in the strip's middle. `from` is the
     * side it comes in from: 1 from the right (a step forward), -1 from the left, 0 not at all. */
@@ -182,9 +219,21 @@ private[client] final class MapCarousel(initial: Int, look: MapCarousel.Look = M
     counter.setText(s"${i + 1} / $count")
     facts.setText("")
     MapPreview.size(i)((w, h) => if (current == i) facts.setText(MapCarousel.sizeText(w, h)))
-    picture.setImage(MapPreview.drawn(i, look.thumbWidth, look.thumbHeight))
-    MapPreview.picture(i, look.width, look.height)(img => if (current == i) picture.setImage(img))
-    if (ahead) for (d <- Seq(1, -1)) MapPreview.picture(Math.floorMod(i + d, count), look.width, look.height, MapPreview.Ahead)(_ => ())
+    // The strip's own picture of it, blown up, until the big one is drawn (MapPreview may have let
+    // its copy go to make room for the big ones)
+    picture.setImage(if (landed(i) != null) landed(i) else MapPreview.drawn(i, look.thumbWidth, look.thumbHeight))
+    // What is wanted now asked for before what isn't is given up on, so a picture wanted by both
+    // (a map drawn ahead, now picked) goes on being drawn
+    val hero = MapPreview.picture(i, look.width, look.height)(img => if (current == i) picture.setImage(img))
+    val nextAhead =
+      if (!ahead) Map.empty[Int, MapPreview.Ask]
+      else Seq(1, -1).map(d => Math.floorMod(i + d, count)).filter(_ != i).distinct.map { j =>
+        j -> aheadAsks.getOrElse(j, MapPreview.picture(j, look.width, look.height, MapPreview.Ahead)(_ => ()))
+      }.toMap
+    if (heroAsk != null) heroAsk.cancel()
+    aheadAsks.foreach { case (j, a) => if (!nextAhead.contains(j)) a.cancel() }
+    heroAsk = hero
+    aheadAsks = nextAhead
     if (was >= 0) items(was).getStyleClass.remove("carousel-item-picked")
     items(i).getStyleClass.add("carousel-item-picked")
     slideTo(centred(i))
@@ -214,7 +263,7 @@ private[client] final class MapCarousel(initial: Int, look: MapCarousel.Look = M
   show(current, -1, 0)
   // The strip's pictures, the maps nearest the picked one first: the ones in sight
   (0 until count).sortBy(i => Math.abs(i - current)).foreach { i =>
-    MapPreview.picture(i, look.thumbWidth, look.thumbHeight, MapPreview.Strip)(pictures(i).setImage)
+    stripAsks(i) = MapPreview.picture(i, look.thumbWidth, look.thumbHeight, MapPreview.Strip)(stripPicture(i))
   }
 
   /** The map picked. */
@@ -229,6 +278,17 @@ private[client] final class MapCarousel(initial: Int, look: MapCarousel.Look = M
 
   /** Take the keyboard's focus, so ← and → step at once. */
   def focus(): Unit = hero.requestFocus()
+
+  /** The carousel is gone (its page left, its card closed): every picture it asked for and hasn't
+    * got is given up on, so nothing is drawn for it any more. */
+  def close(): Unit = {
+    slide.stop()
+    enter.stop()
+    if (heroAsk != null) heroAsk.cancel()
+    aheadAsks.values.foreach(_.cancel())
+    aheadAsks = Map.empty
+    stripAsks.foreach(a => if (a != null) a.cancel())
+  }
 }
 
 private[client] object MapCarousel {

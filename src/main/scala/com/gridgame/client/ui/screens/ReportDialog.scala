@@ -118,10 +118,7 @@ private[client] final class ReportDialog(app: Screens) {
       scrim.addEventFilter(KeyEvent.KEY_PRESSED, (e: KeyEvent) => if (e.getCode == KeyCode.ESCAPE && !sending) { close(); e.consume() })
       root.getChildren.add(scrim)
       form()
-      val fade = new FadeTransition(Duration.millis(160), scrim)
-      fade.setFromValue(0)
-      fade.setToValue(1)
-      fade.play()
+      bringIn(dialog)
     }
 
     private def close(): Unit = {

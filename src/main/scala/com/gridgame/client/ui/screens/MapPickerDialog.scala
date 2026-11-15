@@ -3,12 +3,10 @@ package com.gridgame.client.ui.screens
 import com.gridgame.client.i18n.Messages
 import com.gridgame.client.ui.{Icons, MapCarousel}
 
-import javafx.animation.FadeTransition
 import javafx.geometry.{Insets, Pos}
 import javafx.scene.input.{KeyCode, KeyEvent}
 import javafx.scene.layout.{HBox, Region, StackPane}
 import javafx.stage.Stage
-import javafx.util.Duration
 
 import com.gridgame.client.ui.Theme._
 import com.gridgame.client.ui.Widgets._
@@ -18,25 +16,28 @@ import com.gridgame.client.ui.Widgets._
  * room, as the settings' card is over a page. It opens on the lobby's map; browsing it changes
  * nothing for the lobby until the host settles on one — "Use this map", a double click on a map in
  * the strip, or Enter — which closes the card and hands `chosen` the map, if it isn't the one the
- * lobby has. Cancel, the cross or Escape close it as it was.
+ * lobby has. Cancel, the cross or Escape close it as it was. What `show` returns closes it from
+ * outside (the room going), giving up on its pictures not yet drawn.
  */
 private[client] object MapPickerDialog {
-  def show(stage: Stage, current: Int, chosen: Int => Unit): Unit = {
+  def show(stage: Stage, current: Int, chosen: Int => Unit): () => Unit = {
     val root = stage.getScene match {
-      case null => return
+      case null => return () => ()
       case scene => scene.getRoot match {
         case p: StackPane => p
-        case _ => return
+        case _ => return () => ()
       }
     }
     val scrim = new StackPane()
-    def close(): Unit = root.getChildren.remove(scrim)
+    val maps = new MapCarousel(current, MapCarousel.Wide)
+    def close(): Unit = {
+      root.getChildren.remove(scrim)
+      maps.close()
+    }
     def settle(map: Int): Unit = {
       close()
       if (map != current) chosen(map)
     }
-
-    val maps = new MapCarousel(current, MapCarousel.Wide)
     maps.onChoose = settle
 
     val closeBtn = iconButton(Icons.Close, Messages.t("Close"))
@@ -63,11 +64,9 @@ private[client] object MapPickerDialog {
     scrim.setOnMouseClicked(e => e.consume())
     scrim.addEventFilter(KeyEvent.KEY_PRESSED, (e: KeyEvent) => if (e.getCode == KeyCode.ESCAPE) { close(); e.consume() })
     root.getChildren.add(scrim)
-    val fade = new FadeTransition(Duration.millis(160), scrim)
-    fade.setFromValue(0)
-    fade.setToValue(1)
-    fade.play()
+    bringIn(dialog)
     // ← and → step through the maps at once
     maps.focus()
+    () => close()
   }
 }

@@ -136,10 +136,18 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   `ui/DropDownsTest` is a click on a closed drop-down opening it after its list closed by itself
   under the mouse, and a click on an open one still closing it. `ui/MapCarouselTest` is the maps as
   a carousel, on no window: the arrows round both ends, a click and a double click in the strip,
-  the keys, a map shown from code without telling anyone, and the strip laid out and slid (to the
-  pick, by the wheel) within its ends. `ui/MapArtTest` is the maps drawn
+  the keys, a map shown from code without telling anyone, the strip laid out and slid (to the
+  pick, by the wheel) within its ends, only the maps in sight shown and given their pictures (one
+  landing out of sight repaints the whole window: ui/CLAUDE.md), and a carousel closed before its
+  pictures are drawn having none drawn. `ui/MapPreviewTest` is the pictures' thread, held busy while
+  pictures are asked for: one given up on never drawn, one still wanted by another drawn for it, and
+  one given up on by whoever wanted it soonest waiting behind what was asked before it.
+  `ui/MapArtTest` is the maps drawn
   for the menus: where a map's matches are played (what its spawns can walk to), the whole map
-  drawn and nothing off it, the base under its near edges only, a window drawing its own cells.
+  drawn and nothing off it, the base under its near edges only, a window drawing its own cells, a
+  picture given up between its bands, and a picture the same whatever its thread drew before it.
+  `ui/SettingsDialogTest` and `LobbyRoomScreenTest` hold a card's shade (the settings', the map
+  picker's) to being whole from its first frame.
   `HitLogTest` is every hit the client hears kept in order for the renderer to bleed, with where the
   projectile struck, a reader that falls behind losing only the oldest. `GameClientMatchTest` has, among
   a match's start, deaths and end, the kill feed's characters and teams and which kills are ours, and
