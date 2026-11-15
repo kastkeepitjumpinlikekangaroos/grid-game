@@ -1,4 +1,4 @@
-load("@rules_scala//scala:scala.bzl", "scala_junit_test", "scala_library")
+load("@rules_scala//scala:scala.bzl", "scala_binary", "scala_junit_test", "scala_library")
 load("//third_party:jvm.bzl", "NETTY")
 
 # Drives a match by hand for the tests below: ticks on demand, every packet each player is sent
@@ -113,3 +113,20 @@ scala_library(
     # What the server writes down of a match for a report about it, and the match's id its players are told; it starts a lobby's match, so it reads the maps
     ("match_journal_test", "MatchJournalTest.scala", ["//worlds:world_files"]),
 ]]
+
+# The balance simulator: free-for-alls of bots on a clock of their own, a line a player of who
+# killed whom with what (scripts/balance, which runs it side by side on candidate rosters;
+# design/characters.md, *Balance in free-for-alls against bots*). Not a test.
+scala_binary(
+    name = "balance_sim",
+    testonly = True,
+    srcs = ["BalanceSim.scala"],
+    data = ["//worlds:world_files"],
+    main_class = "com.gridgame.server.BalanceSim",
+    runtime_deps = ["//src/main/scala/com/gridgame/common:build_info"],
+    deps = [
+        ":server_test_kit",
+        "//src/main/scala/com/gridgame/common",
+        "//src/main/scala/com/gridgame/server:server_lib",
+    ] + NETTY,
+)

@@ -233,7 +233,11 @@ class MeleeKitTest {
   @Test def moreThanOneEffectOnAHitKeepsItsOrder(): Unit = {
     val horn = ProjectileDef.get(ProjectileType.HEAD_THROW)
     assertEquals(Seq(Push(2.5f), Stun(800)), horn.onHitEffects)
-    assertEquals(Seq(Slow(3000, 0.4f), Poison(15, 3000, 750)), ProjectileDef.get(ProjectileType.VENOM_DART).onHitEffects)
+    // The slow first, then the poison, whatever the balance passes have made the poison's total
+    ProjectileDef.get(ProjectileType.VENOM_DART).onHitEffects match {
+      case Seq(Slow(3000, 0.4f), Poison(_, 3000, 750)) =>
+      case other => fail(s"the Venom Dart's effects, in order: $other")
+    }
   }
 
   @Test def noRangedCharacterIsAFighter(): Unit =

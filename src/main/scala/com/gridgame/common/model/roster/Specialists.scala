@@ -13,12 +13,12 @@ import com.gridgame.common.model.CombatRole.{Melee, Ranged, Skirmisher}
 private[model] object Specialists {
   // ── Projectiles ──
 
-  val FistDef: ProjectileDef = ProjectileDef(id = ProjectileType.FIST, name = "Fist", speedMultiplier = 0.8f, damage = 51, maxRange = 2, hitRadius = 3.7f, hitCentreBehind = 1.5f, boomerang = true)
-  val KnifeDef: ProjectileDef = ProjectileDef(id = ProjectileType.KNIFE, name = "Knife", speedMultiplier = 0.95f, damage = 37, maxRange = 3, hitRadius = 3.7f, hitCentreBehind = 1.5f)
-  val HammerDef: ProjectileDef = ProjectileDef(id = ProjectileType.HAMMER, name = "Hammer", speedMultiplier = 0.6f, damage = 49, maxRange = 3, hitRadius = 4.0f, hitCentreBehind = 1.5f)
+  val FistDef: ProjectileDef = ProjectileDef(id = ProjectileType.FIST, name = "Fist", speedMultiplier = 0.8f, damage = 50, maxRange = 2, hitRadius = 3.7f, hitCentreBehind = 1.5f, boomerang = true)
+  val KnifeDef: ProjectileDef = ProjectileDef(id = ProjectileType.KNIFE, name = "Knife", speedMultiplier = 0.95f, damage = 39, maxRange = 3, hitRadius = 3.7f, hitCentreBehind = 1.5f)
+  val HammerDef: ProjectileDef = ProjectileDef(id = ProjectileType.HAMMER, name = "Hammer", speedMultiplier = 0.6f, damage = 53, maxRange = 3, hitRadius = 4.0f, hitCentreBehind = 1.5f)
   val AcidFlaskDef: ProjectileDef = ProjectileDef(id = ProjectileType.ACID_FLASK, name = "Acid Flask", speedMultiplier = 0.4f, damage = 38, maxRange = 14, passesThroughPlayers = true, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(38, 15, 3.0f)))
-  val StarBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.STAR_BOLT, name = "Star Bolt", speedMultiplier = 0.8f, damage = 31, maxRange = 22, chargeSpeedScaling = Some(ChargeScaling(0.6f, 1.1f)), chargeDamageScaling = Some(ChargeScaling(22f, 35f)), chargeRangeScaling = Some(ChargeScaling(14f, 28f)), distanceDamageScaling = Some(DistanceDamageScaling(15, 50, 22)))
-  val RuneBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.RUNE_BOLT, name = "Rune Bolt", speedMultiplier = 0.75f, damage = 33, maxRange = 18, ricochetCount = 2)
+  val StarBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.STAR_BOLT, name = "Star Bolt", speedMultiplier = 0.8f, damage = 32, maxRange = 22, chargeSpeedScaling = Some(ChargeScaling(0.6f, 1.1f)), chargeDamageScaling = Some(ChargeScaling(23f, 36f)), chargeRangeScaling = Some(ChargeScaling(14f, 28f)), distanceDamageScaling = Some(DistanceDamageScaling(16, 52, 22)))
+  val RuneBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.RUNE_BOLT, name = "Rune Bolt", speedMultiplier = 0.75f, damage = 36, maxRange = 18, ricochetCount = 2)
   // A slam (Plan 5a): a bot casts it when its target is inside the ability's GroundSlam radius,
   // so that radius and the AoE radius here are kept in step
   val FeralRoarDef: ProjectileDef = ProjectileDef(id = ProjectileType.FERAL_ROAR, name = "Feral Roar", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(5.0f, 15)), onHitEffect = Some(Slow(2000, 0.5f)), explosionConfig = Some(ExplosionConfig(0, 0, 5.0f)))
@@ -55,8 +55,8 @@ private[model] object Specialists {
     base(ProjectileType.CARD).copy(id = ProjectileType.WILD_CARD, name = "Wild Card", damage = 31, maxRange = 18, ricochetCount = 4, onHitEffect = Some(Stun(800))),
     // The Gambler's and the Puppeteer's own primaries, so they can hit harder than the Jester's
     // card and the Warden's chain bolt: the volleys they threw were a third of what they dealt
-    base(ProjectileType.CARD).copy(id = ProjectileType.CARD_HEAVY, name = "Card Heavy", damage = 33),
-    base(ProjectileType.CHAIN_BOLT).copy(id = ProjectileType.CHAIN_BOLT_HEAVY, name = "Chain Bolt Heavy", damage = 40)
+    base(ProjectileType.CARD).copy(id = ProjectileType.CARD_HEAVY, name = "Card Heavy", damage = 39),
+    base(ProjectileType.CHAIN_BOLT).copy(id = ProjectileType.CHAIN_BOLT_HEAVY, name = "Chain Bolt Heavy", damage = 48)
   )
 
   // ── Characters ──
@@ -102,8 +102,8 @@ private[model] object Specialists {
     description = "A swashbuckler with pistol, grapple, and cannonball.",
     spriteSheet = "sprites/pirate.png",
     qAbility = AbilityDef(name = "Grapple", description = "Pulls enemy with rope.", cooldownMs = 8000, maxRange = 25, damage = 5, projectileType = ProjectileType.ROPE, keybind = "Q"),
-    eAbility = AbilityDef(name = "Cannonball", description = "Fires an explosive cannonball.", cooldownMs = 10000, maxRange = 12, damage = 55, projectileType = ProjectileType.GRENADE, keybind = "E"),
-    primaryProjectileType = ProjectileType.BULLET, role = Ranged, maxHealth = 75
+    eAbility = AbilityDef(name = "Cannonball", description = "Fires an explosive cannonball.", cooldownMs = 8000, maxRange = 12, damage = 55, projectileType = ProjectileType.GRENADE, keybind = "E"),
+    primaryProjectileType = ProjectileType.BULLET, role = Ranged, maxHealth = 80
   )
 
   val Chef: CharacterDef = CharacterDef(
@@ -119,9 +119,9 @@ private[model] object Specialists {
     id = CharacterId.Musician, displayName = "Musician",
     description = "A hypnotic performer who mesmerizes foes and blasts them away with sonic booms.",
     spriteSheet = "sprites/musician.png",
-    qAbility = AbilityDef(name = "Hypnotic Melody", description = "Mesmerizing song that heavily slows for 3 seconds.", cooldownMs = 9000, maxRange = 14, damage = 36, projectileType = ProjectileType.CHARM, keybind = "Q"),
+    qAbility = AbilityDef(name = "Hypnotic Melody", description = "Mesmerizing song that heavily slows for 3 seconds.", cooldownMs = 9000, maxRange = 14, damage = 33, projectileType = ProjectileType.CHARM, keybind = "Q"),
     eAbility = AbilityDef(name = "Sonic Boom", description = "Blast that pushes enemies back.", cooldownMs = 9000, maxRange = 8, damage = 28, projectileType = ProjectileType.SONIC_BOOM, keybind = "E"),
-    primaryProjectileType = ProjectileType.SONIC_WAVE, role = Ranged, maxHealth = 80
+    primaryProjectileType = ProjectileType.SONIC_WAVE, role = Ranged, maxHealth = 75
   )
 
   val Astronomer: CharacterDef = CharacterDef(

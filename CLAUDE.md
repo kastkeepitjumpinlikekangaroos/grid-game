@@ -59,6 +59,7 @@ The dev tools (none of them shipped) and where their docs are:
 | map audit | `python3 scripts/map_audit.py --out /tmp/maps` (`--strict`, `--repair <maps>`) | is there room to walk and to fight on every map (no gap under three cells, no way under five): [scripts](scripts/CLAUDE.md), *Maps* |
 | report reader | `bazel run //src/main/scala/com/gridgame/tools:report -- <report folder or zip>` (`--mark=N`, `--around=m:ss[,s]`, `--out=`) | a player's problem report as a summary, a timeline and tables: [diagnostics](design/diagnostics.md), [tools](src/main/scala/com/gridgame/tools/CLAUDE.md) |
 | report replay | `bazel run //src/main/scala/com/gridgame/client:report_replay -- <report folder or zip>` (`--at=m:ss --out=`, `--film=m:ss-m:ss --fps=`, `--size=`, `--quality=`) | any moment of a reported match redrawn through the real client and renderer: [diagnostics](design/diagnostics.md) |
+| balance simulator | `BALANCE_DIR=/tmp/balance scripts/balance/setup.sh`, then `scripts/balance/round.sh <name> <levers.json> <seed>` and `solve.py` | is any character too strong or too weak: free-for-alls of bots by the thousand on candidate rosters, and the fit that moves the numbers: [scripts](scripts/CLAUDE.md), *Balance*; [characters](design/characters.md) |
 
 ## How the code is laid out
 

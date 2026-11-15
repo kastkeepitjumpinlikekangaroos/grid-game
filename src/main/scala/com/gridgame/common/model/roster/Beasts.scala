@@ -15,25 +15,25 @@ private[model] object Beasts {
 
   val PoisonDartDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.POISON_DART, name = "Poison Dart",
-    speedMultiplier = 0.75f, damage = 42, maxRange = 16,
+    speedMultiplier = 0.75f, damage = 29, maxRange = 16,
     onHitEffect = Some(Slow(3000, 0.4f))
   )
   val ClawSwipeDef: ProjectileDef = ProjectileDef(id = ProjectileType.CLAW_SWIPE, name = "Claw Swipe", speedMultiplier = 0.7f, damage = 42, maxRange = 2, hitRadius = 3.7f, hitCentreBehind = 1.5f, onHitEffect = Some(SpeedBoost(2000)))
-  val VenomBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.VENOM_BOLT, name = "Venom Bolt", speedMultiplier = 0.75f, damage = 30, maxRange = 16, onHitEffect = Some(Slow(2000, 0.5f)))
-  val WebShotDef: ProjectileDef = ProjectileDef(id = ProjectileType.WEB_SHOT, name = "Web Shot", speedMultiplier = 0.7f, damage = 34, maxRange = 14, onHitEffect = Some(Root(1500)))
-  val StingerDef: ProjectileDef = ProjectileDef(id = ProjectileType.STINGER, name = "Stinger", speedMultiplier = 0.7f, damage = 37, maxRange = 3, hitRadius = 3.7f, hitCentreBehind = 1.5f, onHitEffect = Some(Poison(16, 2000, 500)))
+  val VenomBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.VENOM_BOLT, name = "Venom Bolt", speedMultiplier = 0.75f, damage = 28, maxRange = 16, onHitEffect = Some(Slow(2000, 0.5f)))
+  val WebShotDef: ProjectileDef = ProjectileDef(id = ProjectileType.WEB_SHOT, name = "Web Shot", speedMultiplier = 0.7f, damage = 35, maxRange = 14, onHitEffect = Some(Root(1500)))
+  val StingerDef: ProjectileDef = ProjectileDef(id = ProjectileType.STINGER, name = "Stinger", speedMultiplier = 0.7f, damage = 43, maxRange = 3, hitRadius = 3.7f, hitCentreBehind = 1.5f, onHitEffect = Some(Poison(18, 2000, 500)))
   val RootGrowthDef: ProjectileDef = ProjectileDef(id = ProjectileType.ROOT_GROWTH, name = "Root Growth", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(8.0f, 18, rootDurationMs = 2500)), explosionConfig = Some(ExplosionConfig(0, 0, 8.0f)))
-  val StingDef: ProjectileDef = ProjectileDef(id = ProjectileType.STING, name = "Sting", speedMultiplier = 0.7f, damage = 35, maxRange = 14, onHitEffect = Some(Slow(2000, 0.5f)))
+  val StingDef: ProjectileDef = ProjectileDef(id = ProjectileType.STING, name = "Sting", speedMultiplier = 0.7f, damage = 37, maxRange = 14, onHitEffect = Some(Slow(2000, 0.5f)))
   val GrabDef: ProjectileDef = ProjectileDef(id = ProjectileType.GRAB, name = "Grab", speedMultiplier = 0.9f, damage = 9, maxRange = 18, onHitEffect = Some(PullToOwner), alsoOnHit = Seq(Stun(1000)))
   val JawDef: ProjectileDef = ProjectileDef(id = ProjectileType.JAW, name = "Jaw", speedMultiplier = 0.85f, damage = 5, maxRange = 25, onHitEffect = Some(PullToOwner), alsoOnHit = Seq(Stun(1000)))
   val TongueDef: ProjectileDef = ProjectileDef(id = ProjectileType.TONGUE, name = "Tongue", speedMultiplier = 0.8f, damage = 15, maxRange = 18, onHitEffect = Some(PullToOwner))
-  val MomentumStrikeDef: ProjectileDef = ProjectileDef(id = ProjectileType.MOMENTUM_STRIKE, name = "Momentum Strike", speedMultiplier = 0.8f, damage = 32, maxRange = 5, hitRadius = 2.5f, onHitEffect = Some(SpeedBoost(3000)), alsoOnHit = Seq(Stun(600)))
+  val MomentumStrikeDef: ProjectileDef = ProjectileDef(id = ProjectileType.MOMENTUM_STRIKE, name = "Momentum Strike", speedMultiplier = 0.8f, damage = 35, maxRange = 5, hitRadius = 2.5f, onHitEffect = Some(SpeedBoost(3000)), alsoOnHit = Seq(Stun(600)))
   val PoisonCloudDef: ProjectileDef = ProjectileDef(id = ProjectileType.POISON_CLOUD, name = "Poison Cloud", speedMultiplier = 0.4f, damage = 27, maxRange = 14, passesThroughPlayers = true, aoeOnHit = Some(AoESplashConfig(3.5f, 18)), aoeOnMaxRange = Some(AoESplashConfig(4.0f, 27)), onHitEffect = Some(Slow(2000, 0.4f)))
   val AcidSprayDef: ProjectileDef = ProjectileDef(id = ProjectileType.ACID_SPRAY, name = "Acid Spray", speedMultiplier = 0.5f, damage = 18, maxRange = 12, aoeOnHit = Some(AoESplashConfig(3.0f, 10)), onHitEffect = Some(Burn(10, 2500, 500)))
   val FlameTrailDef: ProjectileDef = ProjectileDef(id = ProjectileType.FLAME_TRAIL, name = "Flame Trail", speedMultiplier = 0.7f, damage = 27, maxRange = 16, passesThroughPlayers = true, aoeOnMaxRange = Some(AoESplashConfig(3.5f, 27)), onHitEffect = Some(Burn(21, 3000, 750)))
   val FlameBoltHeavyDef: ProjectileDef = ProjectileDef(id = ProjectileType.FLAME_BOLT_HEAVY, name = "Flame Bolt Heavy", speedMultiplier = 0.75f, damage = 34, maxRange = 16, onHitEffect = Some(Burn(19, 3000, 750)))
   val ThornLightDef: ProjectileDef = ProjectileDef(id = ProjectileType.THORN_LIGHT, name = "Thorn Light", speedMultiplier = 0.65f, damage = 38, maxRange = 15, aoeOnHit = Some(AoESplashConfig(2.0f, 14)))
-  val VenomBoltLightDef: ProjectileDef = ProjectileDef(id = ProjectileType.VENOM_BOLT_LIGHT, name = "Venom Bolt Light", speedMultiplier = 0.75f, damage = 21, maxRange = 16, onHitEffect = Some(Slow(2000, 0.5f)))
+  val VenomBoltLightDef: ProjectileDef = ProjectileDef(id = ProjectileType.VENOM_BOLT_LIGHT, name = "Venom Bolt Light", speedMultiplier = 0.75f, damage = 23, maxRange = 16, onHitEffect = Some(Slow(2000, 0.5f)))
   // A slam (Plan 5a): a bot casts it when its target is inside the ability's GroundSlam radius,
   // so that radius and the AoE radius here are kept in step
   val HowlDef: ProjectileDef = ProjectileDef(id = ProjectileType.HOWL, name = "Howl", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(9.0f, 10)), onHitEffect = Some(Slow(2500, 0.6f)), explosionConfig = Some(ExplosionConfig(0, 0, 9.0f)))
@@ -64,14 +64,14 @@ private[model] object Beasts {
   def variants(base: Byte => ProjectileDef): Seq[ProjectileDef] = Seq(
     // A primary with an identity of its own (Plan 5a): a slow at most, never a hold. Primaries fire
     // twice a second, and a hold grants 1.5s of CC immunity that would turn the kit's own holds away
-    base(ProjectileType.CLAW_SWIPE).copy(id = ProjectileType.SHARK_CLAW, name = "Shark Claw", damage = 51, onHitEffect = Some(Poison(18, 1500, 500))),
+    base(ProjectileType.CLAW_SWIPE).copy(id = ProjectileType.SHARK_CLAW, name = "Shark Claw", damage = 37, onHitEffect = Some(Poison(13, 1500, 500))),
     // Of its own, so its numbers can differ from the others who swipe the base
-    base(ProjectileType.CLAW_SWIPE).copy(id = ProjectileType.MANTIS_SCYTHE, name = "Mantis Scythe", damage = 47),
+    base(ProjectileType.CLAW_SWIPE).copy(id = ProjectileType.MANTIS_SCYTHE, name = "Mantis Scythe", damage = 38),
     // The Hawk's Pin Down: its talons pinning its prey to the ground, where it fanned five gusts. An
     // ability, so it reaches as far as the Talon did before the melee primaries were halved
     // (design/characters.md, *Melee strikes short and hard*), and strikes as wide as it did before
     // they were widened (*A melee swing strikes wide*)
-    base(ProjectileType.TALON).copy(id = ProjectileType.PIN_DOWN, name = "Pin Down", damage = 18, maxRange = 4, hitRadius = 2.2f, hitCentreBehind = 0f, onHitEffect = Some(Root(1200)))
+    base(ProjectileType.TALON).copy(id = ProjectileType.PIN_DOWN, name = "Pin Down", damage = 21, maxRange = 4, hitRadius = 2.2f, hitCentreBehind = 0f, onHitEffect = Some(Root(1200)))
   )
 
   // ── Characters ──
@@ -80,7 +80,7 @@ private[model] object Beasts {
     id = CharacterId.Wolf, displayName = "Wolf",
     description = "A pack hunter with a speed-boosting strike and a howl that runs prey down.",
     spriteSheet = "sprites/wolf.png",
-    qAbility = AbilityDef(name = "Momentum Strike", description = "A lunging strike that knocks its prey down, stunned for 0.6s, and speeds you up for 3s.", cooldownMs = 10000, maxRange = 5, damage = 32, projectileType = ProjectileType.MOMENTUM_STRIKE, keybind = "Q"),
+    qAbility = AbilityDef(name = "Momentum Strike", description = "A lunging strike that knocks its prey down, stunned for 0.6s, and speeds you up for 3s.", cooldownMs = 10000, maxRange = 5, damage = 35, projectileType = ProjectileType.MOMENTUM_STRIKE, keybind = "Q"),
     eAbility = AbilityDef(name = "Howl", description = "Howls, slowing every enemy within 9 cells for 2.5s.", cooldownMs = 12000, maxRange = 0, damage = 10, projectileType = ProjectileType.HOWL, keybind = "E", castBehavior = GroundSlam(9.0f)),
     primaryProjectileType = ProjectileType.CLAW_SWIPE, role = Melee, maxHealth = 130, moveSpeed = Melee.speed
   )
@@ -89,7 +89,7 @@ private[model] object Beasts {
     id = CharacterId.Serpent, displayName = "Serpent",
     description = "A venomous snake that poisons and slithers away.",
     spriteSheet = "sprites/serpent.png",
-    qAbility = AbilityDef(name = "Venom Spit", description = "Spits venom that slows.", cooldownMs = 7000, maxRange = 16, damage = 42, projectileType = ProjectileType.POISON_DART, keybind = "Q"),
+    qAbility = AbilityDef(name = "Venom Spit", description = "Spits venom that slows.", cooldownMs = 7000, maxRange = 16, damage = 29, projectileType = ProjectileType.POISON_DART, keybind = "Q"),
     eAbility = AbilityDef(name = "Slither", description = "Dashes sideways.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = DashBuff(8, 300, 15)),
     primaryProjectileType = ProjectileType.VENOM_BOLT, role = Ranged, maxHealth = 70
   )
@@ -126,8 +126,8 @@ private[model] object Beasts {
     description = "A speed hunter that dive-bombs its prey and pins it to the ground.",
     spriteSheet = "sprites/hawk.png",
     qAbility = AbilityDef(name = "Dive Bomb", description = "Swoops to the target location.", cooldownMs = 10000, maxRange = 8, damage = 0, projectileType = -2, keybind = "Q", castBehavior = TeleportCast(8)),
-    eAbility = AbilityDef(name = "Pin Down", description = "Strikes with its talons, pinning the first enemy it reaches to the ground for 1.2s.", cooldownMs = 10000, maxRange = 4, damage = 18, projectileType = ProjectileType.PIN_DOWN, keybind = "E"),
-    primaryProjectileType = ProjectileType.TALON, role = Melee, maxHealth = 135, moveSpeed = Melee.speed
+    eAbility = AbilityDef(name = "Pin Down", description = "Strikes with its talons, pinning the first enemy it reaches to the ground for 1.2s.", cooldownMs = 10000, maxRange = 4, damage = 21, projectileType = ProjectileType.PIN_DOWN, keybind = "E"),
+    primaryProjectileType = ProjectileType.TALON, role = Melee, maxHealth = 145, moveSpeed = Melee.speed
   )
 
   val Shark: CharacterDef = CharacterDef(
@@ -145,7 +145,7 @@ private[model] object Beasts {
     spriteSheet = "sprites/beetle.png",
     qAbility = AbilityDef(name = "Carapace", description = "Braces your shell into a wall that stops enemy shots, even while you attack.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -3, keybind = "Q", castBehavior = BarrierCast(3000)),
     eAbility = AbilityDef(name = "Horn Flip", description = "Flips every enemy within 5 cells onto their back: thrown back 2 cells and stunned for 0.6s.", cooldownMs = 15500, maxRange = 0, damage = 28, projectileType = ProjectileType.HORN_FLIP, keybind = "E", castBehavior = GroundSlam(5.0f)),
-    primaryProjectileType = ProjectileType.BOULDER, role = Skirmisher, maxHealth = 130, moveSpeed = Skirmisher.speed
+    primaryProjectileType = ProjectileType.BOULDER, role = Skirmisher, maxHealth = 120, moveSpeed = Skirmisher.speed
   )
 
   val Treant: CharacterDef = CharacterDef(
@@ -170,7 +170,7 @@ private[model] object Beasts {
     id = CharacterId.Hydra, displayName = "Hydra",
     description = "A many-headed serpent that spits venom from three heads at once and breathes poison clouds.",
     spriteSheet = "sprites/hydra.png",
-    qAbility = AbilityDef(name = "Multi-Head Spit", description = "Spits slowing venom from 3 heads at once.", cooldownMs = 9000, maxRange = 16, damage = 30, projectileType = ProjectileType.VENOM_BOLT, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(40))),
+    qAbility = AbilityDef(name = "Multi-Head Spit", description = "Spits slowing venom from 3 heads at once.", cooldownMs = 9000, maxRange = 16, damage = 28, projectileType = ProjectileType.VENOM_BOLT, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(40))),
     eAbility = AbilityDef(name = "Poison Cloud", description = "Launches a poison cloud that slows and AoE damages.", cooldownMs = 12000, maxRange = 14, damage = 27, projectileType = ProjectileType.POISON_CLOUD, keybind = "E"),
     primaryProjectileType = ProjectileType.VENOM_BOLT_LIGHT, role = Ranged, maxHealth = 80
   )
@@ -198,7 +198,7 @@ private[model] object Beasts {
     description = "A mighty primate that grabs enemies and slams the ground.",
     spriteSheet = "sprites/gorilla.png",
     qAbility = AbilityDef(name = "Primate Grab", description = "A long-range grab that pulls an enemy to you, stunned for 1s.", cooldownMs = 8000, maxRange = 18, damage = 9, projectileType = ProjectileType.GRAB, keybind = "Q"),
-    eAbility = AbilityDef(name = "Ground Pound", description = "Slams the ground with devastating AoE.", cooldownMs = 10500, maxRange = 12, damage = 24, projectileType = ProjectileType.SEISMIC_SLAM, keybind = "E"),
+    eAbility = AbilityDef(name = "Ground Pound", description = "Slams the ground with devastating AoE.", cooldownMs = 10500, maxRange = 12, damage = 30, projectileType = ProjectileType.SEISMIC_SLAM, keybind = "E"),
     primaryProjectileType = ProjectileType.BOULDER, role = Skirmisher, maxHealth = 150, moveSpeed = Skirmisher.speed
   )
 

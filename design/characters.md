@@ -47,8 +47,9 @@ character closes the gap with its abilities or an item, not its feet.
   `60 + (old - 65) * 20/60`, melee and skirmishers `105 + (old - 65) * 45/65`, rounded to 5), with
   the glass cannons (Wizard, Railgunner, Astronomer, Cleric, Pilot) at the ranged floor, where they
   still are. The balance pass of 2026-09-28 then moved it as one of its levers, by at most 15 for a
-  fighter and 10 for a ranged character, and the third took 5 from the Griffin (*Balance in
-  free-for-alls against bots*). The toughest
+  fighter and 10 for a ranged character, the third took 5 from the Griffin, and the fourth
+  (2026-11-15) moved 39 characters' again, by as much as 20 where two who share an attack had to be
+  told apart (*Balance in free-for-alls against bots*). The toughest
   ranged character (80) stays at least 20 below the frailest fighter (105). `RosterBalanceTest`
   pins the bands, that gap and the order of the paces.
 - **Damage makes up for health.** Since the balance pass of 2026-10-12 a ranged character's attacks
@@ -57,8 +58,10 @@ character closes the gap with its abilities or an item, not its feet.
   level (*Balance in free-for-alls against bots*, the third pass). Before it a ranged character won
   none of its mixed free-for-alls to a fighter's 22% (a fair share is 7%) and traded kills at 0.75
   to their 1.49, and in Teams every ranged character a team had more than the other cost it 18
-  points of its chance to win. A player who kites, which bots don't, gets more out of a ranged
-  character than that. Since 2026-10-15 a melee character's primary deals 1.75 times what it did,
+  points of its chance to win. A player who kites, which bots don't, used to get more out of a
+  ranged character than that; since every fighter's kit can pin a ranged character down or catch
+  one up (*A fighter can finish what it starts*) that is no longer taken as given, and the fourth
+  pass set the two roles by what was measured. Since 2026-10-15 a melee character's primary deals 1.75 times what it did,
   for half its range, as the melee characters were weak in players' hands (*Melee strikes short and
   hard*).
   - **No uncharged hit deals more than 55**, less than the frailest character's health (60), so
@@ -158,15 +161,19 @@ WHERE match_type = 0 AND character_id IS NOT NULL GROUP BY character_id ORDER BY
 ```
 
 Balance is measured in simulated matches of bots on the server's own code (`GameInstance`,
-`BotController`), run headless at real speed: five minutes each, on the Cell, the Colony, the Meadow
-and the Lagoon for the first two passes and on all seven maps for the third, every kill and every
-point of damage booked to the attack that dealt it. A free-for-all was ranked on kills when these
+`BotController`), five minutes each: at real speed for the first three passes (on the Cell, the
+Colony, the Meadow and the Lagoon for the first two and on all seven maps for the third), and since
+2026-11 on a clock of their own (`SimKit`: src/test/CLAUDE.md, *Time of the test's own*), which
+plays a match of fourteen in about three seconds and the same match again from the same seed, on
+all nineteen maps; every kill booked to the attack that dealt it. The simulator and the fit that
+moves the numbers are in the repo since the fourth pass (`scripts/balance`: scripts/CLAUDE.md,
+*Balance*), so the next pass starts from them. A free-for-all was ranked on kills when these
 passes were made, so what was steered is each character's finishing place (the third pass by way
 of its kills a minute, which decided it), and with it the share of its matches it wins. Since
 2026-10-14 a match is won on kills less deaths (design/match-flow.md, *Who wins*), and a
 character's deaths count against it as much as its kills for it, which none of the passes weighed:
 one that trades a death for every kill now finishes in the middle, however many it trades. The
-next pass should steer the score.
+fourth pass (2026-11-15) steered the score.
 
 - **Bots don't play the roles the same way.** A melee bot closes in; a ranged bot keeps to 60% of its
   reach and backs off, but strafes rather than kites, and lands 44% of its primaries to a melee bot's
@@ -278,20 +285,105 @@ next pass should steer the score.
   the volleys dealt was given back*.
 - **The melee primaries (2026-10-15)** were halved in range and given 1.75 times the damage for
   players, not fitted to bots: *Melee strikes short and hard*. It took the skirmishers down about 3
-  kills less deaths a match, which nothing has made up yet.
+  kills less deaths a match, which the fourth pass made up.
+- **The fourth pass (2026-11-15)** balanced every character on kills less deaths, which is what
+  wins a match now. Nothing had been fitted since the melee primaries were shortened, widened and
+  given holds (*Melee strikes short and hard*, *A melee swing strikes wide*, *A fighter can finish
+  what it starts*), and the characters had drifted as far apart as they were before the second
+  pass.
+  - *Two ways of playing.* 1,184 mixed free-for-alls of fourteen (five fighters and nine ranged;
+    every fighter in 160 of them, every ranged character in 142), played twice: by the bots as they
+    are, and the way a player plays, every bot firing its primary each half second and the melee
+    ones swinging at all a swing will strike (*What bots can't tell*). A melee character is steered
+    on two parts of the first to one of the second, everyone else on an even mix. That is the reading
+    asked for: bots are only a little better with a melee character than a player is (a swing is
+    hard to land up close), and a ranged character is no longer taken to be the stronger in a
+    player's hands. The melee characters are aimed 1.6 kills less deaths a match above even on
+    their mix, the skirmishers 0.3, and the ranged get what is left, about 1.0 below: as the bots
+    are, that puts the melee a point above the ranged. Ember and the Spaceman stay under their
+    roles on purpose (2 and 1), for what a player does with them and a bot doesn't.
+  - *What a point is worth*, measured by moving every attack and every character's health at
+    random and playing the same line-ups again: 10% more damage is 2.7 kills less deaths a match to
+    a ranged character and 2.0 to 2.4 to a fighter, and 5 more health about 1.0 to a ranged
+    character and 0.9 to a fighter. A model of only that predicts what a change does to a character
+    closely (r = 0.96), so five rounds of least squares and a last touch were enough: each moved every attack's
+    damage numbers together (an attack several characters throw has one number for them all),
+    health in steps of 5 inside its band where two who share an attack needed telling apart, and a
+    cooldown only for the four who had nothing else left to move (their hits at the cap or shared
+    with someone on the other side of the middle, their health at the top of its band). Moves
+    worth under a third of a point to everyone who throws the attack were dropped: 96 of 199
+    attacks moved, 39 characters' health and six cooldowns.
+  - Measured on the built code, over the same line-ups before and after, and after on line-ups the
+    fit never saw. Kills less deaths a match; luck alone spreads a character's about 0.3:
+
+    | | Before | After | After, other line-ups |
+    |---|---|---|---|
+    | As the bots are: melee / skirmishers / ranged | +0.9 / −3.7 / 0.0 | +0.6 / +0.9 / −0.4 | +0.5 / +1.0 / −0.3 |
+    | The way a player plays: the same | +4.4 / −5.4 / −1.4 | +4.0 / −1.0 / −1.7 | +4.0 / −0.7 / −1.7 |
+    | Spread among the melee (sd): on their mix / as bots / a player's way | 3.5 / 3.4 / 4.7 | 0.5 / 1.2 / 2.0 | 0.5 / 1.2 / 2.0 |
+    | Spread among the ranged: the same | 3.4 / 3.2 / 4.0 | 0.6 / 1.1 / 1.2 | 0.6 / 1.1 / 1.3 |
+    | As the bots are: the most any character wins (a fair share is 7%) | 38% (Vampire) | 19% | 17% |
+    | the same: characters winning 15% or more / under 2% | 14 / 30 | 2 / 3 | 2 / 3 |
+    | the same: kills per death, from the lowest to the highest | 0.70 to 1.59 | 0.88 to 1.16 | 0.89 to 1.15 |
+    | the same: characters more than 3 a match from even | 39 | 1 | 1 |
+    | The way a player plays: characters winning 15% or more / under 2% | 16 / 46 | 13 / 17 | 11 / 16 |
+
+  - *What moved.* Down, the ones far above: the Wraith (Soul Bolt 35 → 21, Haunt 53 → 48), the
+    Chameleon and the Serpent (Poison Dart 42 → 29), the Vampire (Blood Fang 47 → 33, 120 → 115
+    HP), the Shark (its claw 51 → 37 and its poison 18 → 13), the Centaur (Arrow Light 28 → 21),
+    the Chronomancer (Gravity Well 55 → 36, 80 → 65 HP), the Mantis (47 → 38), the Death Knight
+    (Chill Blade 47 → 39), the Gladiator (Arena Axe 51 → 44), the Minotaur (Horn 49 → 42), the
+    Paladin and the Crusader (Holy Blade 40 → 36), the four who throw the Death Bolt (28 → 23) and
+    the three who throw Lightning (22 → 18, the Stormcaller and Tesla given it back in Chain
+    Lightning 22 → 29 and Thunder Strike 40 → 50). Up, the ones far below: every skirmisher (Boulder
+    27 → 33, Ice Boulder 27 → 32, Thrown Boulder 30 → 35, Ember Shot 19 → 22), the Kraken (Tentacle
+    33 → 42) and the Graviton (Gravity Ball 45 → 55), whose primaries pull whoever they hit onto a
+    ranged character, the Puppeteer (40 → 48), the Gambler (33 → 39), the Rogue (Shuriken 28 → 33),
+    the Monk (33 → 39), the Scorpion (37 → 43) and the Skeleton King (49 → 55).
+    - *Health tells apart those who share an attack*: the Sandstorm 80 → 60 and the Mummy 70 → 80
+      (Sand Shot), the Earthshaker 130 → 145 with the Golem 135 → 120 and the Beetle 130 → 120
+      (Boulder), the Raptor 130 → 150 with the Hawk 135 → 145 and the Griffin 115 → 120 (the Talon,
+      at the cap), the Pyromancer 70 → 80 and the Cerberus 65 → 60, the Bard 70 → 75 and the
+      Musician 80 → 75. The Assassin went 130 → 105 and the Berserker 120 → 110: their primaries are
+      held at the 49 a fighter with no hold needs to burst (*A fighter can finish what it starts*).
+    - *Cooldowns, where nothing else was left*: the Raptor's Swoop 10s → 8s; the Gravedigger's
+      Grasping Dead 10s → 7s (and 15 → 30 damage) and Open Grave 12s → 9s; the Bombardier's Rocket
+      12s → 9s and Cluster Bomb 16s → 12s; the Pirate's Cannonball 10s → 8s.
+  - *What is left.*
+    - The two ways of playing disagree most about the three fighters with a barrier. As bots the
+      Gladiator is 1.7 below even and wins 2% of his matches; the way a player plays he is 9.8
+      above and wins 45% (he was at −0.1 and +12.7); the Crusader −0.7 and +7.7 (32%), the Paladin
+      −1.7 and +7.0 (23%). They sit on their mix, and no number moves one reading without the other:
+      damage and health count the same both ways, and so does the barrier's cooldown (12s → 18s
+      cost the three 2.5, 1.6 and 2.0 as bots and 2.6, 1.7 and 3.8 a player's way; not kept). Which
+      reading a player with one of them is nearer to is for play to tell.
+    - Melee as a whole is still 5.7 ahead of the ranged the way a player plays (+4.0 to −1.7), which
+      follows from steering it mostly on the bots as they are.
+    - Within one way of playing the characters still spread about 1.1 (2.0 for the melee a player's
+      way): kits that live on their abilities do better at the bots' pace (the Pyromancer +3.3 as a
+      bot and −4.0 a player's way, the Magma Knight, the Inferno, the Cerberus, the Lich), and long
+      reach and sharp primaries at a player's (the Astronomer, the Glacier, the Spider, the
+      Railgunner). A fit of abilities against primaries on both ways at once was tried and its model
+      found next to nothing to gain from damage.
+    - A variant of its own, as the second pass made four, would give back the health that tells two
+      apart (the Sandstorm's 20).
+    - Teams were not measured.
 - **What bots can't tell:**
   - Ember and the Spaceman are left weaker than the middle against bots (46% → 6% of its mixed
     matches for Ember in the second pass; the third aimed them at 8% and 5% fewer kills a minute
     than the middle of their pools): Ember's 10-cell shots and phase, and the Spaceman's charged
     shot, are a player's strength, which bots don't use.
-  - A player kites, walking away and shooting back; a bot strafes. The roles are level among
-    bots, so in a player's hands a ranged character is the stronger of the two, which its pace
-    was there for in the first place (*Roles, health and pace*).
+  - A player kites, walking away and shooting back; a bot strafes. That used to be read as making
+    a ranged character the stronger of the two in a player's hands. Since every fighter's kit can
+    pin one down or catch one up it isn't taken as given (the fourth pass), and what stands against
+    it is that a player lands fewer swings up close than a bot does.
   - A player fires a primary every 0.5s, a bot every 0.7-1.1s, so a primary counts for more in a
     player's hands than here, and an ability for less. Bots firing as often as a player (a
     simulation's setting, not the game's) put the ranged characters 1.2 kills less deaths a match
     above their score at the bots' pace and the fighters 2.4 below, on the kits before 2026-10-14
-    (1.6 and 3.2 on the kits since).
+    (1.6 and 3.2 on the kits since). With the melee bots also swinging at all a swing will strike,
+    which is the fourth pass's second way of playing, it goes the other way: the melee characters
+    3.4 above their score as bots and the ranged 1.4 below.
   - Bots walk at half a player's pace, so a slow shot lands on them more often than on a player: the
     boulders and the slow ranged shots read stronger here than they will against people.
   - A bot raises a barrier (Gladiator, Paladin, Crusader, Beetle, Golem) only against ranged shots.
@@ -459,11 +551,13 @@ as hard. Their abilities, health and pace are as they were.
   cap.
 - **What is left.**
   - The skirmishers lose about 3 a match whichever way it is measured: they stand their ground at
-    half their throw, where a melee character now reaches them for 28 to 55 a blow.
+    half their throw, where a melee character now reaches them for 28 to 55 a blow. (Made up in the
+    fourth pass, in their boulders: *Balance in free-for-alls against bots*.)
   - The melee characters are further apart than they were. Played at full reach their scores spread
     4.9 a match (one standard deviation) where they spread 3.5, the Gladiator, the Crusader, the
     Vampire and the Paladin near +11 and the Raptor, the Rogue, the Griffin, the Bear and the Hawk
-    between −3 and −5. A fit within the role, as the balance passes made, would close it.
+    between −3 and −5. A fit within the role, as the balance passes made, would close it (the
+    fourth pass did).
   - Bots that swung at all their swing will strike would make melee far stronger among bots: +7.0
     at their own pace, where the ranged come out −2.5.
 
@@ -548,7 +642,8 @@ water: design/combat.md). How far a swing flies, how fast and what it deals are 
     48% of their matches there). The width is one number, 1.5, on the seventeen swings with the
     circle hung back as far (`RosterBalanceTest` holds the two together): a cell is the choice that
     leaves the roles about where they were, for nine swings in ten any way at 30ms and two in three
-    on a runner. Nothing was refitted for it.
+    on a runner. Nothing was refitted for it then; the fourth pass refitted every character with
+    the circles as they are (*Balance in free-for-alls against bots*).
   - A slow network still loses the runner at a cell or two some of the time (71% at 60ms each way).
   - The art and the aim are as they were (above). A swing drawn as wide as it strikes, or an aim
     that shows the circle, would tell its player what they no longer need to be exact about.
@@ -580,7 +675,7 @@ whose shots reach 10 cells, the furthest of any fighter's, and whose phase is fo
   cell (design/combat.md, *A fighter's pull holds its catch*): the Death Knight's Death Grip, the
   Gladiator's Rope, the Reaper's Reap, the Chef's Meat Hook, the Bear's Bear Hug and the Gorilla's
   Primate Grab, the Shark's Jaw Drag and the Griffin's Talon Grab. A second is two blows for sure
-  and a third timed well: the grip's 10 and two of the Chill Blade's 47 are more than any ranged
+  and a third timed well: the grip's 10 and two of the Chill Blade's 39 are more than any ranged
   character has. A ranged character's pull only pulls, as it did (the Spaceman's and the Kraken's
   tentacle, the vines, the Mummy's bandage, the Chameleon's tongue, the Graviton's gravity ball,
   and the Puppeteer's and the Pirate's rope): whoever fights from range has no need to keep anyone
@@ -635,8 +730,9 @@ whose shots reach 10 cells, the furthest of any fighter's, and whose phase is fo
     his matches), though among bots as they are he is at +2.0: bots crowd round him, which is what a
     stun all round him is worth most against. The Shark wins 21% of its matches at the bots' pace
     (14% before). Each was above the middle before this.
-  - Nothing was refitted. The holds are for players, who walk away from a fighter as bots don't,
-    and a fit back to the old scores would take away what they add. The fighters are as far apart
+  - Nothing was refitted then. The holds are for players, who walk away from a fighter as bots don't,
+    and a fit back to the old scores would take away what they add. (The fourth pass fitted every
+    character to the middle of its role as the kits now are, holds included.) The fighters are as far apart
     as they were (their scores spread 3.6 → 3.7 a match at the bots' pace, 5.0 → 5.2 a player's),
     the Vampire, the Gladiator and the Assassin still at the top the way a player plays, and the
     skirmishers where *Melee strikes short and hard* left them.

@@ -13,6 +13,9 @@ The asset generators and their galleries (Python), and the packaging scripts. Ev
 | the app icon | `python3 scripts/generate_icon.py` (`generate_wizard.py` runs it too) | | below |
 | readability | (the client's `render_audit`) | `python3 scripts/render_audit.py /tmp/audit` | client/render/CLAUDE.md |
 
+`scripts/balance/` is not an asset's: it is the balance passes' kit, the simulator's runs and the
+fit that moves the roster's numbers (*Balance*, at the foot of this file).
+
 The macOS `.app`, the Windows `.exe` and the Linux app and `.deb` (`build_macos_app.sh`,
 `build_windows_exe.ps1`, `build_linux_package.sh`) are in src/main/scala/com/gridgame/client/CLAUDE.md
 (*Packaging the apps*).
@@ -275,3 +278,72 @@ The `.icns` is consumed by `scripts/build_macos_app.sh`, the `.ico` by
 `scripts/build_windows_exe.ps1`, and the 256px PNG by `scripts/build_linux_package.sh` (the Linux
 app's and its menu entry's icon). Pillow writes `.ico` directly (cross-platform); `.icns` needs
 macOS's `iconutil`, so elsewhere the committed one is left as it is.
+
+## Balance
+
+`scripts/balance/` is what a balance pass is made with (design/characters.md, *Balance in
+free-for-alls against bots*, says what the passes found and what they aim at): thousands of
+free-for-alls of bots played on candidate rosters, and a fit that moves each attack's damage and
+each character's health toward the middle of its role.
+
+```bash
+export BALANCE_DIR=/tmp/balance            # a work folder, outside the repo
+scripts/balance/setup.sh                   # the simulator built, the roster's sources kept, numpy
+P="$BALANCE_DIR/venv/bin/python"; cd scripts/balance
+./round.sh base "$BALANCE_DIR/cand/base/levers.json" 101      # the roster as it is, both ways
+$P analyze.py "$BALANCE_DIR/cand/base/roster.tsv" "$BALANCE_DIR"/runs/base_{A,B}.csv
+$P solve.py "$BALANCE_DIR/r1.json" base    # a step toward the targets...
+./round.sh r1 "$BALANCE_DIR/r1.json" 102   # ...built and played, on line-ups of its own
+$P solve.py "$BALANCE_DIR/r2.json" base:0.5 r1               # and so on, older rounds counting less
+$P snap.py r5 "$BALANCE_DIR/final.json" 0.3 r4 r5            # the last one, without its nudges
+./round.sh final "$BALANCE_DIR/final.json" 101               # the same line-ups as `base`: before and after
+$P compare.py base base final final; $P changes.py final
+cp "$BALANCE_DIR"/cand/final/roster/*.scala ../../src/main/scala/com/gridgame/common/model/roster/
+$P web.py "$BALANCE_DIR/cand/final/roster.tsv" ../../docs/index.html ../../docs/index.html
+```
+
+- **The simulator** is `//src/test/scala/com/gridgame/server:balance_sim` (`BalanceSim.scala`):
+  mixed free-for-alls of fourteen bots (five fighters, nine ranged, dealt evenly from the roster by
+  the seed, every map in turn), launched as a lobby's are and played on a clock of their own
+  (`SimKit`), five minutes in about three seconds. The same seed and the same code play the same
+  match, to the byte of the results, however busy the machine: two rosters played on one seed meet
+  the same line-ups. It writes a line a player: kills, deaths, place, and what dealt each kill (from
+  the match's journal). `run.sh` plays a run's matches in several processes at once.
+- **Two ways of playing** (`round.sh`): `_A`, the bots as they are, and `_B`, the way a player
+  plays, every bot firing its primary each half second (`pace=500,550`) and the melee ones swinging
+  at all a swing will strike (`reach=1`). Both are settings on `BotController` that nothing in the
+  game sets. What a character is steered by is a mix of the two (`solve.py`'s `WA`), and why is in
+  design/characters.md.
+- **A candidate roster is the roster's own sources with levers applied** (`build.sh`): a multiplier
+  for each projectile type on every damage number it has (the hit, a splash, a blast's centre and
+  edge, a poison's and a burn's total, a charge's and a distance's two ends), a health for a
+  character, a cooldown for an ability (`levers.json`: `proj` by type id, `hp` by character id,
+  `cd` by `<id>:q|e`, `trap` by name). `apply.py` writes them into a copy of the sources as they
+  were at `setup.sh` (never onto a candidate, so rounding doesn't add up) and keeps the roster's
+  rules as it goes (no hit over 55, a blast's edge at most three quarters of its centre), `sync.py`
+  moves each ability's listed damage with its projectile's, and the toolchain's own `scalac`
+  compiles the result against the simulator's jars in a few seconds; its classes go first on the
+  simulator's classpath. Nothing is built in the tree, and a pass ends by copying the last
+  candidate's sources into it: `RosterDump` (in `BalanceSim.scala`) run on the tree's build then
+  writes the same `roster.tsv` as the candidate's, which is the check that the tree has what was
+  measured.
+- **The fit** (`solve.py`): a character's score moves by a slope times the log of its damage,
+  each attack counted by its share of the character's kills, and a slope times the log of its
+  health. `calib.py` measures the slopes on a roster with every lever moved at random
+  (`perturb.py`), played on the baseline's seed; on 2026-11-15 they were 28.5 kills less deaths a
+  match per log of damage for a ranged character and 21.5 to 25 for a fighter, 14 and 23 per log
+  of health, and that model alone foretold a change with r = 0.96. A step is ridge least squares
+  toward each role's target, inside the bounds; rounds on other seeds are pooled, carried to the
+  current roster by the model. Raise the pull on health (`MU`) while attacks can still move, and
+  lower it (60) when two who share an attack are stuck on either side of the middle.
+- **Reading it**: `analyze.py` (every character, both ways and the mix), `compare.py` (a pass's
+  before and after: the roles, the spread within each, who wins most), `show.py` (who is still off
+  its target, and its numbers then and now), `changes.py` (every number a candidate moves).
+  `snap.py` drops the levers worth next to nothing to every thrower of their attack. Judge that by
+  what a move is worth, not its size: a point on a 22-damage primary is more than a kill less a
+  death a match.
+- **The website's numbers** (`web.py`): the damage on every character card's ability lines written
+  from a `roster.tsv`, the rest of each line left as it is (`gendocs` writes the health pills:
+  tools/CLAUDE.md).
+- A round of 1,184 matches each way takes about eight minutes on an idle machine. Check a
+  finished pass on a seed no round used.

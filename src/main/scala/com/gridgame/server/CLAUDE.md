@@ -93,7 +93,9 @@ them, but `RemoteMatches`, which `MatchDirector` does; a match server (`MatchSer
   walls, a clear shot; design/characters.md), `BotPaths` (the searches it steps by: A* to a cell, a
   short breadth-first look round the bot, on scratch arrays the world's size, and who stands where
   this tick), `BotItems`, `BotCombat`. `BotManager` holds a lobby's bot slots (each a name and a
-  random character) until its match starts.
+  random character) until its match starts. Two settings on a `BotController` are a simulation's
+  and nothing in the game sets them (`shootCooldownMs`, `swingsAtFullReach`): the balance
+  simulator's bots that fire and swing as a player does (scripts/CLAUDE.md, *Balance*).
 - **lobby/** — `Lobby` (its seats are taken and resized under its lock: a join, a bot, a switch to
   Teams, the match starting), `LobbyManager` (their CRUD), `LobbyHandler` (lobby actions),
   `RankedQueue` (matchmaking for every ranked mode), `MatchLauncher` (starting a lobby's match the

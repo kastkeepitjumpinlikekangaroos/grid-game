@@ -67,6 +67,13 @@ class BotController(private[bots] val instance: GameInstance, isPractice: Boolea
   private val BOT_MOVE_INTERVAL_MS = 100L
   private[bots] val SHOOT_COOLDOWN_MIN_MS = 700L
   private[bots] val SHOOT_COOLDOWN_MAX_MS = 1100L
+  // A simulation's settings, not the game's (scripts/balance; design/characters.md, *What bots
+  // can't tell*): the wait between a bot's primaries, as short and as long as it gets, and whether
+  // a melee bot swings at everyone its swing will strike ahead of it, as a player does, where the
+  // game's bots swing only at someone within the range the swing flies. Set on a match's bots once
+  // they are seated; nothing in the game sets either.
+  private[server] var shootCooldownMs: (Long, Long) = (SHOOT_COOLDOWN_MIN_MS, SHOOT_COOLDOWN_MAX_MS)
+  private[server] var swingsAtFullReach: Boolean = false
   private[bots] val TARGET_HYSTERESIS_MS = 2000L // stick to a target for at least 2s
   private[bots] val AIM_INACCURACY_RAD = 0.12f // ~7 degrees max aim wobble
   // A trap is laid for a target no further off than this, and only while they are closing in

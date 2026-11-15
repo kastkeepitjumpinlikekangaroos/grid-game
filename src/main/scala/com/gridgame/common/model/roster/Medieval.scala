@@ -18,17 +18,17 @@ private[model] object Medieval {
     speedMultiplier = 0.7f, damage = 15, maxRange = 20,
     distanceDamageScaling = Some(DistanceDamageScaling(15, 55, 20))
   )
-  val HolyBladeDef: ProjectileDef = ProjectileDef(id = ProjectileType.HOLY_BLADE, name = "Holy Blade", speedMultiplier = 0.7f, damage = 40, maxRange = 3, hitRadius = 3.7f, hitCentreBehind = 1.5f)
-  val HolyBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.HOLY_BOLT, name = "Holy Bolt", speedMultiplier = 0.8f, damage = 30, maxRange = 16, pierceCount = 1)
-  val ArrowDef: ProjectileDef = ProjectileDef(id = ProjectileType.ARROW, name = "Arrow", speedMultiplier = 0.95f, damage = 25, maxRange = 22, pierceCount = 1)
+  val HolyBladeDef: ProjectileDef = ProjectileDef(id = ProjectileType.HOLY_BLADE, name = "Holy Blade", speedMultiplier = 0.7f, damage = 36, maxRange = 3, hitRadius = 3.7f, hitCentreBehind = 1.5f)
+  val HolyBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.HOLY_BOLT, name = "Holy Bolt", speedMultiplier = 0.8f, damage = 32, maxRange = 16, pierceCount = 1)
+  val ArrowDef: ProjectileDef = ProjectileDef(id = ProjectileType.ARROW, name = "Arrow", speedMultiplier = 0.95f, damage = 24, maxRange = 22, pierceCount = 1)
   val PoisonArrowDef: ProjectileDef = ProjectileDef(id = ProjectileType.POISON_ARROW, name = "Poison Arrow", speedMultiplier = 0.85f, damage = 20, maxRange = 20, onHitEffect = Some(Slow(2500, 0.5f)))
   val SonicWaveDef: ProjectileDef = ProjectileDef(id = ProjectileType.SONIC_WAVE, name = "Sonic Wave", speedMultiplier = 0.7f, damage = 27, maxRange = 14, passesThroughWalls = true, pierceCount = 1)
   val SonicBoomDef: ProjectileDef = ProjectileDef(id = ProjectileType.SONIC_BOOM, name = "Sonic Boom", speedMultiplier = 0.5f, damage = 28, maxRange = 8, onHitEffect = Some(Push(4.0f)), aoeOnHit = Some(AoESplashConfig(3.0f, 21)))
   val SmiteDef: ProjectileDef = ProjectileDef(id = ProjectileType.SMITE, name = "Smite", speedMultiplier = 0.6f, damage = 39, maxRange = 14, aoeOnHit = Some(AoESplashConfig(3.0f, 19)))
-  val CardDef: ProjectileDef = ProjectileDef(id = ProjectileType.CARD, name = "Card", speedMultiplier = 0.85f, damage = 24, maxRange = 14, ricochetCount = 2)
-  val ChargeFistDef: ProjectileDef = ProjectileDef(id = ProjectileType.CHARGE_FIST, name = "Charge Fist", speedMultiplier = 0.8f, damage = 33, maxRange = 3, hitRadius = 3.7f, hitCentreBehind = 1.5f, chargeSpeedScaling = Some(ChargeScaling(0.6f, 1.1f)), chargeDamageScaling = Some(ChargeScaling(21f, 70f)), chargeRangeScaling = Some(ChargeScaling(2f, 5f)))
-  val ArrowHeavyDef: ProjectileDef = ProjectileDef(id = ProjectileType.ARROW_HEAVY, name = "Arrow Heavy", speedMultiplier = 0.95f, damage = 21, maxRange = 22, pierceCount = 1)
-  val HolyBoltHeavyDef: ProjectileDef = ProjectileDef(id = ProjectileType.HOLY_BOLT_HEAVY, name = "Holy Bolt Heavy", speedMultiplier = 0.8f, damage = 29, maxRange = 16, pierceCount = 1)
+  val CardDef: ProjectileDef = ProjectileDef(id = ProjectileType.CARD, name = "Card", speedMultiplier = 0.85f, damage = 27, maxRange = 14, ricochetCount = 2)
+  val ChargeFistDef: ProjectileDef = ProjectileDef(id = ProjectileType.CHARGE_FIST, name = "Charge Fist", speedMultiplier = 0.8f, damage = 39, maxRange = 3, hitRadius = 3.7f, hitCentreBehind = 1.5f, chargeSpeedScaling = Some(ChargeScaling(0.6f, 1.1f)), chargeDamageScaling = Some(ChargeScaling(25f, 82f)), chargeRangeScaling = Some(ChargeScaling(2f, 5f)))
+  val ArrowHeavyDef: ProjectileDef = ProjectileDef(id = ProjectileType.ARROW_HEAVY, name = "Arrow Heavy", speedMultiplier = 0.95f, damage = 19, maxRange = 22, pierceCount = 1)
+  val HolyBoltHeavyDef: ProjectileDef = ProjectileDef(id = ProjectileType.HOLY_BOLT_HEAVY, name = "Holy Bolt Heavy", speedMultiplier = 0.8f, damage = 33, maxRange = 16, pierceCount = 1)
   // A slam (Plan 5a): a bot casts it when its target is inside the ability's GroundSlam radius,
   // so that radius and the AoE radius here are kept in step
   val ShockwaveDef: ProjectileDef = ProjectileDef(id = ProjectileType.SHOCKWAVE, name = "Shockwave", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(5.0f, 22, stunDurationMs = 600)), explosionConfig = Some(ExplosionConfig(0, 0, 5.0f)))
@@ -45,7 +45,7 @@ private[model] object Medieval {
   // of them; the one it struck is stunned by the hit itself
   val DivineJudgmentDef: ProjectileDef = ProjectileDef(id = ProjectileType.DIVINE_JUDGMENT, name = "Divine Judgment", speedMultiplier = 0.5f, damage = 30, maxRange = 14, hitRadius = 2.0f, onHitEffect = Some(Stun(600)), aoeOnHit = Some(AoESplashConfig(3.5f, 26, stunDurationMs = 600)), aoeOnMaxRange = Some(AoESplashConfig(3.5f, 26, stunDurationMs = 600)))
   // The Warlock's Death Coil, in place of the fireball four others threw
-  val DeathCoilDef: ProjectileDef = ProjectileDef(id = ProjectileType.DEATH_COIL, name = "Death Coil", speedMultiplier = 0.75f, damage = 23, maxRange = 16, onHitEffect = Some(Stun(800)))
+  val DeathCoilDef: ProjectileDef = ProjectileDef(id = ProjectileType.DEATH_COIL, name = "Death Coil", speedMultiplier = 0.75f, damage = 26, maxRange = 16, onHitEffect = Some(Stun(800)))
 
   val projectiles: Seq[ProjectileDef] = Seq(
     SpearDef, HolyBladeDef, HolyBoltDef, ArrowDef, PoisonArrowDef,
@@ -64,15 +64,15 @@ private[model] object Medieval {
     // The Rogue's Knife Spray. An ability, so it flies the 6 cells the Shuriken did before the melee
     // primaries were halved (design/characters.md, *Melee strikes short and hard*), and strikes as
     // wide as it did before they were widened (*A melee swing strikes wide*)
-    base(ProjectileType.SHURIKEN).copy(id = ProjectileType.TOXIC_SHURIKEN, name = "Toxic Shuriken", damage = 18, maxRange = 6, hitRadius = 2.2f, hitCentreBehind = 0f, onHitEffect = Some(Poison(8, 2000, 500)), alsoOnHit = Seq(Stun(600))),
+    base(ProjectileType.SHURIKEN).copy(id = ProjectileType.TOXIC_SHURIKEN, name = "Toxic Shuriken", damage = 20, maxRange = 6, hitRadius = 2.2f, hitCentreBehind = 0f, onHitEffect = Some(Poison(9, 2000, 500)), alsoOnHit = Seq(Stun(600))),
     // Three blows in front of the Monk, gone once they land; eight in a ring came back to him. An
     // ability, so they reach as far as the Fist did before the melee primaries were halved, and
     // strike as wide as it did before they were widened
-    base(ProjectileType.FIST).copy(id = ProjectileType.FLURRY, name = "Flurry", damage = 22, maxRange = 4, hitRadius = 2.2f, hitCentreBehind = 0f, boomerang = false, onHitEffect = Some(Stun(600))),
+    base(ProjectileType.FIST).copy(id = ProjectileType.FLURRY, name = "Flurry", damage = 24, maxRange = 4, hitRadius = 2.2f, hitCentreBehind = 0f, boomerang = false, onHitEffect = Some(Stun(600))),
     // The Bard's Lullaby: one slow, drifting note through walls that puts whoever it reaches to sleep
-    base(ProjectileType.SONIC_WAVE).copy(id = ProjectileType.LULLABY, name = "Lullaby", damage = 19, speedMultiplier = 0.5f, pierceCount = 0, onHitEffect = Some(Stun(1000))),
+    base(ProjectileType.SONIC_WAVE).copy(id = ProjectileType.LULLABY, name = "Lullaby", damage = 23, speedMultiplier = 0.5f, pierceCount = 0, onHitEffect = Some(Stun(1000))),
     // The Valkyrie's Pinning Spear, one where she threw five: pins its target where it lands
-    base(ProjectileType.SPEAR).copy(id = ProjectileType.PINNING_SPEAR, name = "Pinning Spear", damage = 10, distanceDamageScaling = Some(DistanceDamageScaling(10, 40, 20)), onHitEffect = Some(Root(1500))),
+    base(ProjectileType.SPEAR).copy(id = ProjectileType.PINNING_SPEAR, name = "Pinning Spear", damage = 12, distanceDamageScaling = Some(DistanceDamageScaling(12, 46, 20)), onHitEffect = Some(Root(1500))),
     // The Inquisitor's Shackles: one chain through the first two enemies, rooting each
     base(ProjectileType.LOCKDOWN_CHAIN).copy(id = ProjectileType.SHACKLES, name = "Shackles", damage = 12, speedMultiplier = 0.75f, maxRange = 14, pierceCount = 1, onHitEffect = Some(Root(1500)))
   )
@@ -85,7 +85,7 @@ private[model] object Medieval {
     spriteSheet = "sprites/paladin.png",
     qAbility = AbilityDef(name = "Aegis", description = "Raises a shield of holy light that stops enemy shots, even while you attack.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -3, keybind = "Q", castBehavior = BarrierCast(3000)),
     eAbility = AbilityDef(name = "Judgment", description = "Hurls a lance of holy light that stuns the first two enemies it strikes for 0.6s.", cooldownMs = 12000, maxRange = 16, damage = 27, projectileType = ProjectileType.HOLY_NOVA, keybind = "E"),
-    primaryProjectileType = ProjectileType.HOLY_BLADE, role = Melee, maxHealth = 140, moveSpeed = Melee.speed
+    primaryProjectileType = ProjectileType.HOLY_BLADE, role = Melee, maxHealth = 145, moveSpeed = Melee.speed
   )
 
   val Ranger: CharacterDef = CharacterDef(
@@ -93,7 +93,7 @@ private[model] object Medieval {
     description = "A skilled archer with poison arrows and multi-shot.",
     spriteSheet = "sprites/ranger.png",
     qAbility = AbilityDef(name = "Poison Arrow", description = "Arrow that slows on hit.", cooldownMs = 7000, maxRange = 20, damage = 20, projectileType = ProjectileType.POISON_ARROW, keybind = "Q"),
-    eAbility = AbilityDef(name = "Multi Shot", description = "Fires 3 arrows in a tight fan.", cooldownMs = 6500, maxRange = 22, damage = 25, projectileType = ProjectileType.ARROW, keybind = "E", castBehavior = FanProjectile(3, Math.toRadians(20))),
+    eAbility = AbilityDef(name = "Multi Shot", description = "Fires 3 arrows in a tight fan.", cooldownMs = 6500, maxRange = 22, damage = 24, projectileType = ProjectileType.ARROW, keybind = "E", castBehavior = FanProjectile(3, Math.toRadians(20))),
     primaryProjectileType = ProjectileType.ARROW_HEAVY, role = Ranged, maxHealth = 60
   )
 
@@ -103,7 +103,7 @@ private[model] object Medieval {
     spriteSheet = "sprites/berserker.png",
     qAbility = AbilityDef(name = "Rage Charge", description = "Charges forward in a rage.", cooldownMs = 10000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = DashBuff(10, 150, 18)),
     eAbility = AbilityDef(name = "Axe Spin", description = "Whirls your axes round you, slowing everyone within 5 cells for 2s, and spins you on 40% faster for 2.5s.", cooldownMs = 14000, maxRange = 0, damage = 17, projectileType = ProjectileType.AXE_SPIN, keybind = "E", castBehavior = GroundSlam(5.0f)),
-    primaryProjectileType = ProjectileType.AXE, role = Melee, maxHealth = 120, moveSpeed = Melee.speed
+    primaryProjectileType = ProjectileType.AXE, role = Melee, maxHealth = 110, moveSpeed = Melee.speed
   )
 
   val Crusader: CharacterDef = CharacterDef(
@@ -112,7 +112,7 @@ private[model] object Medieval {
     spriteSheet = "sprites/crusader.png",
     qAbility = AbilityDef(name = "Bulwark", description = "Raises a shield wall that stops enemy shots, even while you attack.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -3, keybind = "Q", castBehavior = BarrierCast(3500)),
     eAbility = AbilityDef(name = "Shield Bash", description = "Bashes everyone within 5 cells with the shield, stunning them for 0.6s.", cooldownMs = 15000, maxRange = 0, damage = 22, projectileType = ProjectileType.SHOCKWAVE, keybind = "E", castBehavior = GroundSlam(5.0f)),
-    primaryProjectileType = ProjectileType.HOLY_BLADE, role = Melee, maxHealth = 150, moveSpeed = Melee.speed
+    primaryProjectileType = ProjectileType.HOLY_BLADE, role = Melee, maxHealth = 145, moveSpeed = Melee.speed
   )
 
   val Druid: CharacterDef = CharacterDef(
@@ -121,16 +121,16 @@ private[model] object Medieval {
     spriteSheet = "sprites/druid.png",
     qAbility = AbilityDef(name = "Vine Whip", description = "A vine that pulls enemies.", cooldownMs = 7500, maxRange = 18, damage = 14, projectileType = ProjectileType.VINE_WHIP, keybind = "Q"),
     eAbility = AbilityDef(name = "Nature's Leap", description = "Teleports through nature.", cooldownMs = 12000, maxRange = 8, damage = 0, projectileType = -2, keybind = "E", castBehavior = TeleportCast(8)),
-    primaryProjectileType = ProjectileType.THORN, role = Ranged, maxHealth = 80
+    primaryProjectileType = ProjectileType.THORN, role = Ranged, maxHealth = 75
   )
 
   val Bard: CharacterDef = CharacterDef(
     id = CharacterId.Bard, displayName = "Bard",
     description = "A musical warrior whose songs pass through walls: one to put foes to sleep, one to blast them away.",
     spriteSheet = "sprites/bard.png",
-    qAbility = AbilityDef(name = "Lullaby", description = "A slow, drifting tune that passes through walls and puts the first enemy it reaches to sleep: stunned for 1s.", cooldownMs = 11000, maxRange = 14, damage = 19, projectileType = ProjectileType.LULLABY, keybind = "Q"),
+    qAbility = AbilityDef(name = "Lullaby", description = "A slow, drifting tune that passes through walls and puts the first enemy it reaches to sleep: stunned for 1s.", cooldownMs = 11000, maxRange = 14, damage = 23, projectileType = ProjectileType.LULLABY, keybind = "Q"),
     eAbility = AbilityDef(name = "Sonic Boom", description = "Blast that pushes enemies back.", cooldownMs = 10000, maxRange = 8, damage = 28, projectileType = ProjectileType.SONIC_BOOM, keybind = "E"),
-    primaryProjectileType = ProjectileType.SONIC_WAVE, role = Ranged, maxHealth = 70
+    primaryProjectileType = ProjectileType.SONIC_WAVE, role = Ranged, maxHealth = 75
   )
 
   val Monk: CharacterDef = CharacterDef(
@@ -138,7 +138,7 @@ private[model] object Medieval {
     description = "A martial artist with charge-scaling fists, a dash, and flurry of punches.",
     spriteSheet = "sprites/monk.png",
     qAbility = AbilityDef(name = "Palm Strike", description = "Darts forward, phased and untouchable.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = DashBuff(10, 150, 15)),
-    eAbility = AbilityDef(name = "Flurry", description = "A flurry of three blows in front of you, each stunning for 0.6s.", cooldownMs = 10000, maxRange = 4, damage = 22, projectileType = ProjectileType.FLURRY, keybind = "E", castBehavior = FanProjectile(3, Math.toRadians(30))),
+    eAbility = AbilityDef(name = "Flurry", description = "A flurry of three blows in front of you, each stunning for 0.6s.", cooldownMs = 10000, maxRange = 4, damage = 24, projectileType = ProjectileType.FLURRY, keybind = "E", castBehavior = FanProjectile(3, Math.toRadians(30))),
     primaryProjectileType = ProjectileType.CHARGE_FIST, role = Melee, maxHealth = 115, moveSpeed = Melee.speed
   )
 
@@ -157,7 +157,7 @@ private[model] object Medieval {
     spriteSheet = "sprites/rogue.png",
     qAbility = AbilityDef(name = "Knife Spray", description = "Throws 3 poisoned shurikens in a fan that stun for 0.6s.", cooldownMs = 7000, maxRange = 6, damage = 22, projectileType = ProjectileType.TOXIC_SHURIKEN, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(30))),
     eAbility = AbilityDef(name = "Shadow Step", description = "Teleports through shadows to cursor.", cooldownMs = 10000, maxRange = 6, damage = 0, projectileType = -2, keybind = "E", castBehavior = TeleportCast(6)),
-    primaryProjectileType = ProjectileType.SHURIKEN, role = Melee, maxHealth = 105, moveSpeed = Melee.speed
+    primaryProjectileType = ProjectileType.SHURIKEN, role = Melee, maxHealth = 110, moveSpeed = Melee.speed
   )
 
   val Barbarian: CharacterDef = CharacterDef(
@@ -166,14 +166,14 @@ private[model] object Medieval {
     spriteSheet = "sprites/barbarian.png",
     qAbility = AbilityDef(name = "Leap", description = "Leaps up to 8 cells toward the cursor.", cooldownMs = 12000, maxRange = 8, damage = 0, projectileType = -2, keybind = "Q", castBehavior = TeleportCast(8)),
     eAbility = AbilityDef(name = "Earthsplitter", description = "Splits the earth in a line, rooting the first enemy it reaches for 1.2s.", cooldownMs = 12000, maxRange = 14, damage = 19, projectileType = ProjectileType.EARTHSPLITTER, keybind = "E"),
-    primaryProjectileType = ProjectileType.AXE, role = Melee, maxHealth = 130, moveSpeed = Melee.speed
+    primaryProjectileType = ProjectileType.AXE, role = Melee, maxHealth = 140, moveSpeed = Melee.speed
   )
 
   val Enchantress: CharacterDef = CharacterDef(
     id = CharacterId.Enchantress, displayName = "Enchantress",
     description = "A slow-focused controller whose every attack charms and slows foes.",
     spriteSheet = "sprites/enchantress.png",
-    qAbility = AbilityDef(name = "Charm", description = "Mesmerizes an enemy, heavily slowing for 3s.", cooldownMs = 8500, maxRange = 14, damage = 36, projectileType = ProjectileType.CHARM, keybind = "Q"),
+    qAbility = AbilityDef(name = "Charm", description = "Mesmerizes an enemy, heavily slowing for 3s.", cooldownMs = 8500, maxRange = 14, damage = 33, projectileType = ProjectileType.CHARM, keybind = "Q"),
     eAbility = AbilityDef(name = "Blink", description = "Teleports to cursor.", cooldownMs = 12000, maxRange = 7, damage = 0, projectileType = -2, keybind = "E", castBehavior = TeleportCast(7)),
     primaryProjectileType = ProjectileType.CHARM, role = Ranged, maxHealth = 75
   )
@@ -192,24 +192,24 @@ private[model] object Medieval {
     description = "A winged warrior with distance-scaling spears, one that pins foes down, and an aerial charge.",
     spriteSheet = "sprites/valkyrie.png",
     qAbility = AbilityDef(name = "Aerial Charge", description = "Dashes forward through the air.", cooldownMs = 10000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = DashBuff(10, 350, 20)),
-    eAbility = AbilityDef(name = "Pinning Spear", description = "Throws a spear that pins the first enemy it strikes to the ground for 1.5s, hitting harder the further it flies.", cooldownMs = 12000, maxRange = 20, damage = 10, projectileType = ProjectileType.PINNING_SPEAR, keybind = "E"),
-    primaryProjectileType = ProjectileType.SPEAR, role = Ranged, maxHealth = 70
+    eAbility = AbilityDef(name = "Pinning Spear", description = "Throws a spear that pins the first enemy it strikes to the ground for 1.5s, hitting harder the further it flies.", cooldownMs = 12000, maxRange = 20, damage = 12, projectileType = ProjectileType.PINNING_SPEAR, keybind = "E"),
+    primaryProjectileType = ProjectileType.SPEAR, role = Ranged, maxHealth = 75
   )
 
   val Warlock: CharacterDef = CharacterDef(
     id = CharacterId.Warlock, displayName = "Warlock",
     description = "A dark caster with death bolts, a stunning death coil, and shadow step.",
     spriteSheet = "sprites/warlock.png",
-    qAbility = AbilityDef(name = "Death Coil", description = "A coil of dark energy that stuns the first enemy it reaches for 0.8s.", cooldownMs = 10000, maxRange = 16, damage = 23, projectileType = ProjectileType.DEATH_COIL, keybind = "Q"),
+    qAbility = AbilityDef(name = "Death Coil", description = "A coil of dark energy that stuns the first enemy it reaches for 0.8s.", cooldownMs = 10000, maxRange = 16, damage = 26, projectileType = ProjectileType.DEATH_COIL, keybind = "Q"),
     eAbility = AbilityDef(name = "Shadow Step", description = "Teleports through shadow to cursor.", cooldownMs = 12000, maxRange = 8, damage = 0, projectileType = -2, keybind = "E", castBehavior = TeleportCast(8)),
-    primaryProjectileType = ProjectileType.DEATH_BOLT, role = Ranged, maxHealth = 70
+    primaryProjectileType = ProjectileType.DEATH_BOLT, role = Ranged, maxHealth = 75
   )
 
   val Inquisitor: CharacterDef = CharacterDef(
     id = CharacterId.Inquisitor, displayName = "Inquisitor",
     description = "A lockdown specialist with chains that freeze one foe and shackle two.",
     spriteSheet = "sprites/inquisitor.png",
-    qAbility = AbilityDef(name = "Chain Bolt", description = "Electrified chain that briefly freezes.", cooldownMs = 6000, maxRange = 14, damage = 37, projectileType = ProjectileType.CHAIN_BOLT, keybind = "Q"),
+    qAbility = AbilityDef(name = "Chain Bolt", description = "Electrified chain that briefly freezes.", cooldownMs = 6000, maxRange = 14, damage = 38, projectileType = ProjectileType.CHAIN_BOLT, keybind = "Q"),
     eAbility = AbilityDef(name = "Shackles", description = "A chain that shackles the first two enemies it reaches, rooting each for 1.5s.", cooldownMs = 10000, maxRange = 14, damage = 12, projectileType = ProjectileType.SHACKLES, keybind = "E"),
     primaryProjectileType = ProjectileType.HOLY_BOLT, role = Ranged, maxHealth = 65
   )

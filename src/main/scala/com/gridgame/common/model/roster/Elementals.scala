@@ -13,30 +13,30 @@ import com.gridgame.common.model.CombatRole.{Melee, Ranged, Skirmisher}
 private[model] object Elementals {
   // ── Projectiles ──
 
-  val FlameBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.FLAME_BOLT, name = "Flame Bolt", speedMultiplier = 0.75f, damage = 23, maxRange = 16, onHitEffect = Some(Burn(15, 3000, 750)))
+  val FlameBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.FLAME_BOLT, name = "Flame Bolt", speedMultiplier = 0.75f, damage = 24, maxRange = 16, onHitEffect = Some(Burn(16, 3000, 750)))
   val FrostShardDef: ProjectileDef = ProjectileDef(id = ProjectileType.FROST_SHARD, name = "Frost Shard", speedMultiplier = 0.85f, damage = 30, maxRange = 18)
-  val LightningDef: ProjectileDef = ProjectileDef(id = ProjectileType.LIGHTNING, name = "Lightning", speedMultiplier = 1.0f, damage = 22, maxRange = 20, passesThroughWalls = true, pierceCount = 2)
-  val ChainLightningDef: ProjectileDef = ProjectileDef(id = ProjectileType.CHAIN_LIGHTNING, name = "Chain Lightning", speedMultiplier = 0.7f, damage = 22, maxRange = 14, aoeOnHit = Some(AoESplashConfig(3.0f, 13)))
-  val ThunderStrikeDef: ProjectileDef = ProjectileDef(id = ProjectileType.THUNDER_STRIKE, name = "Thunder Strike", speedMultiplier = 0.4f, damage = 40, maxRange = 16, aoeOnHit = Some(AoESplashConfig(4.0f, 26)), aoeOnMaxRange = Some(AoESplashConfig(4.0f, 26)))
-  val BoulderDef: ProjectileDef = ProjectileDef(id = ProjectileType.BOULDER, name = "Boulder", speedMultiplier = 0.4f, damage = 27, maxRange = 8, hitRadius = 2.5f)
-  val WindBladeDef: ProjectileDef = ProjectileDef(id = ProjectileType.WIND_BLADE, name = "Wind Blade", speedMultiplier = 0.9f, damage = 34, maxRange = 14)
+  val LightningDef: ProjectileDef = ProjectileDef(id = ProjectileType.LIGHTNING, name = "Lightning", speedMultiplier = 1.0f, damage = 18, maxRange = 20, passesThroughWalls = true, pierceCount = 2)
+  val ChainLightningDef: ProjectileDef = ProjectileDef(id = ProjectileType.CHAIN_LIGHTNING, name = "Chain Lightning", speedMultiplier = 0.7f, damage = 29, maxRange = 14, aoeOnHit = Some(AoESplashConfig(3.0f, 17)))
+  val ThunderStrikeDef: ProjectileDef = ProjectileDef(id = ProjectileType.THUNDER_STRIKE, name = "Thunder Strike", speedMultiplier = 0.4f, damage = 50, maxRange = 16, aoeOnHit = Some(AoESplashConfig(4.0f, 32)), aoeOnMaxRange = Some(AoESplashConfig(4.0f, 32)))
+  val BoulderDef: ProjectileDef = ProjectileDef(id = ProjectileType.BOULDER, name = "Boulder", speedMultiplier = 0.4f, damage = 33, maxRange = 8, hitRadius = 2.5f)
+  val WindBladeDef: ProjectileDef = ProjectileDef(id = ProjectileType.WIND_BLADE, name = "Wind Blade", speedMultiplier = 0.9f, damage = 37, maxRange = 14)
   val MagmaBallDef: ProjectileDef = ProjectileDef(id = ProjectileType.MAGMA_BALL, name = "Magma Ball", speedMultiplier = 0.45f, damage = 38, maxRange = 14, aoeOnHit = Some(AoESplashConfig(2.5f, 27)), onHitEffect = Some(Burn(38, 4000, 800)))
   val EruptionDef: ProjectileDef = ProjectileDef(id = ProjectileType.ERUPTION, name = "Eruption", speedMultiplier = 0.5f, damage = 55, maxRange = 16, passesThroughPlayers = true, explosionConfig = Some(ExplosionConfig(55, 22, 3.5f)))
   val SandShotDef: ProjectileDef = ProjectileDef(id = ProjectileType.SAND_SHOT, name = "Sand Shot", speedMultiplier = 0.7f, damage = 47, maxRange = 14)
-  val SandBlastDef: ProjectileDef = ProjectileDef(id = ProjectileType.SAND_BLAST, name = "Sand Blast", speedMultiplier = 0.6f, damage = 20, maxRange = 10, onHitEffect = Some(Slow(1500, 0.6f)))
-  val ThornDef: ProjectileDef = ProjectileDef(id = ProjectileType.THORN, name = "Thorn", speedMultiplier = 0.65f, damage = 45, maxRange = 15, aoeOnHit = Some(AoESplashConfig(2.0f, 14)))
+  val SandBlastDef: ProjectileDef = ProjectileDef(id = ProjectileType.SAND_BLAST, name = "Sand Blast", speedMultiplier = 0.6f, damage = 14, maxRange = 10, onHitEffect = Some(Slow(1500, 0.6f)))
+  val ThornDef: ProjectileDef = ProjectileDef(id = ProjectileType.THORN, name = "Thorn", speedMultiplier = 0.65f, damage = 47, maxRange = 15, aoeOnHit = Some(AoESplashConfig(2.0f, 15)))
   val VineWhipDef: ProjectileDef = ProjectileDef(id = ProjectileType.VINE_WHIP, name = "Vine Whip", speedMultiplier = 0.8f, damage = 14, maxRange = 18, onHitEffect = Some(PullToOwner))
   val InfernoBlastDef: ProjectileDef = ProjectileDef(id = ProjectileType.INFERNO_BLAST, name = "Inferno Blast", speedMultiplier = 0.45f, damage = 55, maxRange = 15, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(55, 22, 3.0f)), onHitEffect = Some(Burn(36, 4000, 800)))
-  val MudGlobDef: ProjectileDef = ProjectileDef(id = ProjectileType.MUD_GLOB, name = "Mud Glob", speedMultiplier = 0.55f, damage = 46, maxRange = 12, onHitEffect = Some(Slow(2000, 0.4f)))
+  val MudGlobDef: ProjectileDef = ProjectileDef(id = ProjectileType.MUD_GLOB, name = "Mud Glob", speedMultiplier = 0.55f, damage = 49, maxRange = 12, onHitEffect = Some(Slow(2000, 0.4f)))
   val MudBombDef: ProjectileDef = ProjectileDef(id = ProjectileType.MUD_BOMB, name = "Mud Bomb", speedMultiplier = 0.4f, damage = 36, maxRange = 14, passesThroughPlayers = true, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(36, 14, 3.0f)))
-  val EmberShotDef: ProjectileDef = ProjectileDef(id = ProjectileType.EMBER_SHOT, name = "Ember Shot", speedMultiplier = 0.9f, damage = 19, maxRange = 10, onHitEffect = Some(Burn(6, 2000, 500)))
+  val EmberShotDef: ProjectileDef = ProjectileDef(id = ProjectileType.EMBER_SHOT, name = "Ember Shot", speedMultiplier = 0.9f, damage = 22, maxRange = 10, onHitEffect = Some(Burn(7, 2000, 500)))
   val AvalancheCrushDef: ProjectileDef = ProjectileDef(id = ProjectileType.AVALANCHE_CRUSH, name = "Avalanche Crush", speedMultiplier = 0.35f, damage = 35, maxRange = 12, hitRadius = 3.5f, aoeOnHit = Some(AoESplashConfig(4.0f, 20)), aoeOnMaxRange = Some(AoESplashConfig(4.0f, 20)), onHitEffect = Some(Slow(2000, 0.5f)))
   val SeismicRootDef: ProjectileDef = ProjectileDef(id = ProjectileType.SEISMIC_ROOT, name = "Seismic Root", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(7.0f, 24, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 7.0f)))
-  val EntangleDef: ProjectileDef = ProjectileDef(id = ProjectileType.ENTANGLE, name = "Entangle", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(7.0f, 17, rootDurationMs = 2500)), explosionConfig = Some(ExplosionConfig(0, 0, 7.0f)))
+  val EntangleDef: ProjectileDef = ProjectileDef(id = ProjectileType.ENTANGLE, name = "Entangle", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(7.0f, 20, rootDurationMs = 2500)), explosionConfig = Some(ExplosionConfig(0, 0, 7.0f)))
   val VortexBombDef: ProjectileDef = ProjectileDef(id = ProjectileType.VORTEX_BOMB, name = "Vortex Bomb", speedMultiplier = 0.45f, damage = 40, maxRange = 14, passesThroughPlayers = true, aoeOnMaxRange = Some(AoESplashConfig(4.0f, 30, freezeDurationMs = 600)), onHitEffect = Some(VortexPull(4.0f, 3.0f)))
   val RicochetShardDef: ProjectileDef = ProjectileDef(id = ProjectileType.RICOCHET_SHARD, name = "Ricochet Shard", speedMultiplier = 0.75f, damage = 31, maxRange = 20, ricochetCount = 3, onHitEffect = Some(Freeze(500)))
   val FlameWaveDef: ProjectileDef = ProjectileDef(id = ProjectileType.FLAME_WAVE, name = "Flame Wave", speedMultiplier = 0.65f, damage = 28, maxRange = 14, pierceCount = 2, passesThroughWalls = true, onHitEffect = Some(Burn(18, 3000, 750)))
-  val FrostShardLightDef: ProjectileDef = ProjectileDef(id = ProjectileType.FROST_SHARD_LIGHT, name = "Frost Shard Light", speedMultiplier = 0.85f, damage = 22, maxRange = 18)
+  val FrostShardLightDef: ProjectileDef = ProjectileDef(id = ProjectileType.FROST_SHARD_LIGHT, name = "Frost Shard Light", speedMultiplier = 0.85f, damage = 23, maxRange = 18)
   // A slam (Plan 5a): a bot casts it when its target is inside the ability's GroundSlam radius,
   // so that radius and the AoE radius here are kept in step
   val IceQuakeDef: ProjectileDef = ProjectileDef(id = ProjectileType.ICE_QUAKE, name = "Ice Quake", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(6.0f, 25, freezeDurationMs = 1200)), explosionConfig = Some(ExplosionConfig(0, 0, 6.0f)))
@@ -45,7 +45,7 @@ private[model] object Elementals {
   // GroundSlam radius and the AoE's in step, as above.
   // A burst of flame round the Pyromancer that sets everyone near alight and carries him off at a
   // haste's pace, cast as the Cyborg's Overclock is (GameInstance.applyCastSelfBuff)
-  val CombustDef: ProjectileDef = ProjectileDef(id = ProjectileType.COMBUST, name = "Combust", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(3.5f, 18)), onHitEffect = Some(Burn(23, 3000, 750)), alsoOnHit = Seq(SpeedBoost(2500)), explosionConfig = Some(ExplosionConfig(0, 0, 3.5f)))
+  val CombustDef: ProjectileDef = ProjectileDef(id = ProjectileType.COMBUST, name = "Combust", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(3.5f, 22)), onHitEffect = Some(Burn(28, 3000, 750)), alsoOnHit = Seq(SpeedBoost(2500)), explosionConfig = Some(ExplosionConfig(0, 0, 3.5f)))
   val FrostNovaDef: ProjectileDef = ProjectileDef(id = ProjectileType.FROST_NOVA, name = "Frost Nova", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(5.0f, 23)), onHitEffect = Some(Slow(2500, 0.35f)), explosionConfig = Some(ExplosionConfig(0, 0, 5.0f)))
   // A storm cloud that bursts into hail on the first enemy it reaches or at the end of its range:
   // a splash, not an explosion, so its freeze reaches everyone it catches and the one it struck too
@@ -65,10 +65,10 @@ private[model] object Elementals {
     * from the registered base, so Roster makes them once every base is registered. */
   def variants(base: Byte => ProjectileDef): Seq[ProjectileDef] = Seq(
     // Three embers since the volleys went, each harder than one of the five was
-    base(ProjectileType.EMBER_SHOT).copy(id = ProjectileType.EMBER_FAN, name = "Ember Fan", damage = 22, onHitEffect = Some(Burn(6, 2000, 500)), alsoOnHit = Seq(Slow(1000, 0.7f))),
+    base(ProjectileType.EMBER_SHOT).copy(id = ProjectileType.EMBER_FAN, name = "Ember Fan", damage = 24, onHitEffect = Some(Burn(7, 2000, 500)), alsoOnHit = Seq(Slow(1000, 0.7f))),
     // A primary with an identity of its own (Plan 5a): a slow at most, never a hold. Primaries fire
     // twice a second, and a hold grants 1.5s of CC immunity that would turn the kit's own holds away
-    base(ProjectileType.BOULDER).copy(id = ProjectileType.ICE_BOULDER, name = "Ice Boulder", damage = 27, onHitEffect = Some(Slow(1000, 0.7f))),
+    base(ProjectileType.BOULDER).copy(id = ProjectileType.ICE_BOULDER, name = "Ice Boulder", damage = 32, onHitEffect = Some(Slow(1000, 0.7f))),
     // One gust in place of the Windwalker's fan of five, that also puts the wind at her back
     base(ProjectileType.GUST).copy(id = ProjectileType.GALE, name = "Gale", damage = 12, alsoOnHit = Seq(SpeedBoost(1500))),
     // A shard that freezes, in place of Frostbite's fan of three plain ones
@@ -82,8 +82,8 @@ private[model] object Elementals {
     description = "A fire mage who hurls flame bolts and fireballs, and bursts into flame to get away.",
     spriteSheet = "sprites/pyromancer.png",
     qAbility = AbilityDef(name = "Fireball", description = "Launches a slow but devastating fireball.", cooldownMs = 6000, maxRange = 18, damage = 55, projectileType = ProjectileType.FIREBALL, keybind = "Q"),
-    eAbility = AbilityDef(name = "Combust", description = "Bursts into flame, setting everyone within 3.5 cells alight, and runs 40% faster for 2.5s.", cooldownMs = 11000, maxRange = 0, damage = 18, projectileType = ProjectileType.COMBUST, keybind = "E", castBehavior = GroundSlam(3.5f)),
-    primaryProjectileType = ProjectileType.FLAME_BOLT, role = Ranged, maxHealth = 70
+    eAbility = AbilityDef(name = "Combust", description = "Bursts into flame, setting everyone within 3.5 cells alight, and runs 40% faster for 2.5s.", cooldownMs = 11000, maxRange = 0, damage = 22, projectileType = ProjectileType.COMBUST, keybind = "E", castBehavior = GroundSlam(3.5f)),
+    primaryProjectileType = ProjectileType.FLAME_BOLT, role = Ranged, maxHealth = 80
   )
 
   val Cryomancer: CharacterDef = CharacterDef(
@@ -99,8 +99,8 @@ private[model] object Elementals {
     id = CharacterId.Stormcaller, displayName = "Stormcaller",
     description = "A storm mage with wall-piercing lightning and devastating thunder.",
     spriteSheet = "sprites/stormcaller.png",
-    qAbility = AbilityDef(name = "Chain Lightning", description = "Electric bolt that splashes to nearby enemies.", cooldownMs = 8500, maxRange = 14, damage = 22, projectileType = ProjectileType.CHAIN_LIGHTNING, keybind = "Q"),
-    eAbility = AbilityDef(name = "Thunder Strike", description = "Slow thunderbolt that erupts in a massive AoE.", cooldownMs = 13000, maxRange = 16, damage = 40, projectileType = ProjectileType.THUNDER_STRIKE, keybind = "E"),
+    qAbility = AbilityDef(name = "Chain Lightning", description = "Electric bolt that splashes to nearby enemies.", cooldownMs = 8500, maxRange = 14, damage = 29, projectileType = ProjectileType.CHAIN_LIGHTNING, keybind = "Q"),
+    eAbility = AbilityDef(name = "Thunder Strike", description = "Slow thunderbolt that erupts in a massive AoE.", cooldownMs = 13000, maxRange = 16, damage = 50, projectileType = ProjectileType.THUNDER_STRIKE, keybind = "E"),
     primaryProjectileType = ProjectileType.LIGHTNING, role = Ranged, maxHealth = 60
   )
 
@@ -110,7 +110,7 @@ private[model] object Elementals {
     spriteSheet = "sprites/earthshaker.png",
     qAbility = AbilityDef(name = "Seismic Root", description = "Slams the ground, rooting nearby enemies.", cooldownMs = 12000, maxRange = 0, damage = 20, projectileType = ProjectileType.SEISMIC_ROOT, keybind = "Q", castBehavior = GroundSlam(7.0f)),
     eAbility = AbilityDef(name = "Ground Charge", description = "Charges forward with unstoppable force.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = DashBuff(10, 150, 25)),
-    primaryProjectileType = ProjectileType.BOULDER, role = Skirmisher, maxHealth = 130, moveSpeed = Skirmisher.speed
+    primaryProjectileType = ProjectileType.BOULDER, role = Skirmisher, maxHealth = 145, moveSpeed = Skirmisher.speed
   )
 
   val Windwalker: CharacterDef = CharacterDef(
@@ -119,7 +119,7 @@ private[model] object Elementals {
     spriteSheet = "sprites/windwalker.png",
     qAbility = AbilityDef(name = "Gale", description = "A gale that blows the first enemy it reaches back 5 cells and puts the wind at your back: 40% faster for 1.5s.", cooldownMs = 8000, maxRange = 7, damage = 12, projectileType = ProjectileType.GALE, keybind = "Q"),
     eAbility = AbilityDef(name = "Wind Form", description = "Becomes the wind for 2s: untouchable, at twice the pace, but unable to attack.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = PhaseShiftBuff(2000)),
-    primaryProjectileType = ProjectileType.WIND_BLADE, role = Ranged, maxHealth = 65
+    primaryProjectileType = ProjectileType.WIND_BLADE, role = Ranged, maxHealth = 70
   )
 
   val MagmaKnight: CharacterDef = CharacterDef(
@@ -144,9 +144,9 @@ private[model] object Elementals {
     id = CharacterId.Sandstorm, displayName = "Sandstorm",
     description = "A desert nomad who blinds foes with sand and vanishes in storms.",
     spriteSheet = "sprites/sandstorm.png",
-    qAbility = AbilityDef(name = "Sand Blast", description = "Blinding sand that slows on hit.", cooldownMs = 7000, maxRange = 10, damage = 20, projectileType = ProjectileType.SAND_BLAST, keybind = "Q"),
+    qAbility = AbilityDef(name = "Sand Blast", description = "Blinding sand that slows on hit.", cooldownMs = 7000, maxRange = 10, damage = 14, projectileType = ProjectileType.SAND_BLAST, keybind = "Q"),
     eAbility = AbilityDef(name = "Dust Devil", description = "Become a sandstorm: phased and invulnerable.", cooldownMs = 14000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = PhaseShiftBuff(4000)),
-    primaryProjectileType = ProjectileType.SAND_SHOT, role = Ranged, maxHealth = 80
+    primaryProjectileType = ProjectileType.SAND_SHOT, role = Ranged, maxHealth = 60
   )
 
   val Thornweaver: CharacterDef = CharacterDef(
@@ -155,7 +155,7 @@ private[model] object Elementals {
     spriteSheet = "sprites/thornweaver.png",
     qAbility = AbilityDef(name = "Vine Whip", description = "A vine that pulls enemies toward you.", cooldownMs = 9000, maxRange = 18, damage = 14, projectileType = ProjectileType.VINE_WHIP, keybind = "Q"),
     eAbility = AbilityDef(name = "Entangle", description = "Vines erupt from the ground, rooting nearby enemies.", cooldownMs = 15000, maxRange = 0, damage = 15, projectileType = ProjectileType.ENTANGLE, keybind = "E", castBehavior = GroundSlam(7.0f)),
-    primaryProjectileType = ProjectileType.THORN, role = Ranged, maxHealth = 60
+    primaryProjectileType = ProjectileType.THORN, role = Ranged, maxHealth = 65
   )
 
   val Cloudrunner: CharacterDef = CharacterDef(
@@ -164,7 +164,7 @@ private[model] object Elementals {
     spriteSheet = "sprites/cloudrunner.png",
     qAbility = AbilityDef(name = "Hailstorm", description = "A storm cloud that bursts into hail on the first enemy it reaches or at the end of its range, freezing everyone within 3 cells for 0.8s.", cooldownMs = 11000, maxRange = 14, damage = 18, projectileType = ProjectileType.HAILSTORM, keybind = "Q"),
     eAbility = AbilityDef(name = "Tailwind Dash", description = "Rides the wind forward in a swift dash.", cooldownMs = 10000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = DashBuff(10, 350, 18)),
-    primaryProjectileType = ProjectileType.WIND_BLADE, role = Ranged, maxHealth = 80
+    primaryProjectileType = ProjectileType.WIND_BLADE, role = Ranged, maxHealth = 75
   )
 
   val Inferno: CharacterDef = CharacterDef(
@@ -198,7 +198,7 @@ private[model] object Elementals {
     id = CharacterId.Ember, displayName = "Ember",
     description = "A tiny fire sprite that fans embers and bursts into protective flame.",
     spriteSheet = "sprites/ember.png",
-    qAbility = AbilityDef(name = "Ember Fan", description = "Flicks 3 embers in a fan that burn and briefly slow.", cooldownMs = 8000, maxRange = 10, damage = 22, projectileType = ProjectileType.EMBER_FAN, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(40))),
+    qAbility = AbilityDef(name = "Ember Fan", description = "Flicks 3 embers in a fan that burn and briefly slow.", cooldownMs = 8000, maxRange = 10, damage = 24, projectileType = ProjectileType.EMBER_FAN, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(40))),
     eAbility = AbilityDef(name = "Flame Burst", description = "Erupts into protective flame, phased and immune.", cooldownMs = 10000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = PhaseShiftBuff(2000)),
     primaryProjectileType = ProjectileType.EMBER_SHOT, role = Skirmisher, maxHealth = 105, moveSpeed = Skirmisher.speed
   )
@@ -209,7 +209,7 @@ private[model] object Elementals {
     spriteSheet = "sprites/avalanche.png",
     qAbility = AbilityDef(name = "Avalanche Crush", description = "Hurls a massive icy boulder that splashes a wide area and slows.", cooldownMs = 18000, maxRange = 12, damage = 35, projectileType = ProjectileType.AVALANCHE_CRUSH, keybind = "Q"),
     eAbility = AbilityDef(name = "Ice Quake", description = "Slams the ground with icy force, freezing nearby enemies for 1.2s.", cooldownMs = 18000, maxRange = 0, damage = 25, projectileType = ProjectileType.ICE_QUAKE, keybind = "E", castBehavior = GroundSlam(6.0f)),
-    primaryProjectileType = ProjectileType.ICE_BOULDER, role = Skirmisher, maxHealth = 140, moveSpeed = Skirmisher.speed
+    primaryProjectileType = ProjectileType.ICE_BOULDER, role = Skirmisher, maxHealth = 145, moveSpeed = Skirmisher.speed
   )
 
   val characters: Seq[CharacterDef] = Seq(

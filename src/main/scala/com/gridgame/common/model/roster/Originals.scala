@@ -15,7 +15,7 @@ private[model] object Originals {
 
   val TentacleDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.TENTACLE, name = "Tentacle",
-    speedMultiplier = 0.9f, damage = 33, maxRange = 15,
+    speedMultiplier = 0.9f, damage = 42, maxRange = 15,
     onHitEffect = Some(PullToOwner)
   )
   val IceBeamDef: ProjectileDef = ProjectileDef(
@@ -35,21 +35,21 @@ private[model] object Originals {
   )
   val SoulBoltDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.SOUL_BOLT, name = "Soul Bolt",
-    speedMultiplier = 0.65f, damage = 35, maxRange = 15,
+    speedMultiplier = 0.65f, damage = 21, maxRange = 15,
     passesThroughWalls = true, pierceCount = 1
   )
   val HauntDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.HAUNT, name = "Haunt",
-    speedMultiplier = 0.5f, damage = 53, maxRange = 15,
+    speedMultiplier = 0.5f, damage = 48, maxRange = 15,
     passesThroughWalls = true,
     onHitEffect = Some(TeleportOwnerBehind(2, 2000))
   )
   val ArcaneBoltDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.ARCANE_BOLT, name = "Arcane Bolt",
-    speedMultiplier = 0.85f, damage = 17, maxRange = 25,
+    speedMultiplier = 0.85f, damage = 15, maxRange = 25,
     passesThroughWalls = true,
     chargeSpeedScaling = Some(ChargeScaling(0.6f, 1.2f)),
-    chargeDamageScaling = Some(ChargeScaling(12f, 40f)),
+    chargeDamageScaling = Some(ChargeScaling(10f, 34f)),
     chargeRangeScaling = Some(ChargeScaling(15f, 30f))
   )
   val FireballDef: ProjectileDef = ProjectileDef(
@@ -108,18 +108,18 @@ private[model] object Originals {
   )
   val GustDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.GUST, name = "Gust",
-    speedMultiplier = 0.8f, damage = 7, maxRange = 7,
+    speedMultiplier = 0.8f, damage = 9, maxRange = 7,
     hitCentreBehind = 1.2f,
     onHitEffect = Some(Push(5.0f))
   )
   val ShurikenDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.SHURIKEN, name = "Shuriken",
-    speedMultiplier = 0.95f, damage = 28, maxRange = 3,
+    speedMultiplier = 0.95f, damage = 33, maxRange = 3,
     hitRadius = 3.7f, hitCentreBehind = 1.5f
   )
   val ChainBoltDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.CHAIN_BOLT, name = "Chain Bolt",
-    speedMultiplier = 0.7f, damage = 37, maxRange = 14,
+    speedMultiplier = 0.7f, damage = 38, maxRange = 14,
     onHitEffect = Some(Freeze(200))
   )
   val LockdownChainDef: ProjectileDef = ProjectileDef(
@@ -142,31 +142,31 @@ private[model] object Originals {
   )
   val PlagueBoltDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.PLAGUE_BOLT, name = "Plague Bolt",
-    speedMultiplier = 0.55f, damage = 41, maxRange = 16,
-    aoeOnHit = Some(AoESplashConfig(2.5f, 24))
+    speedMultiplier = 0.55f, damage = 38, maxRange = 16,
+    aoeOnHit = Some(AoESplashConfig(2.5f, 22))
   )
   val MiasmaDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.MIASMA, name = "Miasma",
-    speedMultiplier = 0.45f, damage = 17, maxRange = 14,
+    speedMultiplier = 0.45f, damage = 14, maxRange = 14,
     hitRadius = 2.8f,
     explodesOnPlayerHit = true,
-    explosionConfig = Some(ExplosionConfig(36, 12, 5.0f))
+    explosionConfig = Some(ExplosionConfig(30, 10, 5.0f))
   )
   val BlightBombDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.BLIGHT_BOMB, name = "Blight Bomb",
-    speedMultiplier = 0.5f, damage = 37, maxRange = 15,
+    speedMultiplier = 0.5f, damage = 32, maxRange = 15,
     explodesOnPlayerHit = true,
-    explosionConfig = Some(ExplosionConfig(45, 18, 4.0f))
+    explosionConfig = Some(ExplosionConfig(39, 16, 4.0f))
   )
   val BloodFangDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.BLOOD_FANG, name = "Blood Fang",
-    speedMultiplier = 0.7f, damage = 47, maxRange = 2,
+    speedMultiplier = 0.7f, damage = 33, maxRange = 2,
     hitRadius = 3.7f, hitCentreBehind = 1.5f,
     onHitEffect = Some(LifeSteal(50))
   )
   val BatSwarmDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.BAT_SWARM, name = "Bat Swarm",
-    speedMultiplier = 0.5f, damage = 19, maxRange = 8,
+    speedMultiplier = 0.5f, damage = 17, maxRange = 8,
     // The brief freeze used to be a special case in GameInstance, where nothing that reads defs
     // (the character panel, the roster tests) could see it
     onHitEffect = Some(LifeSteal(60)), alsoOnHit = Seq(Freeze(600))
@@ -185,10 +185,10 @@ private[model] object Originals {
     * where they differ from it (the balance passes set each one's damage for its thrower). Made
     * from the registered base, so Roster makes them once every base is registered. */
   def variants(base: Byte => ProjectileDef): Seq[ProjectileDef] = Seq(
-    base(ProjectileType.POISON_DART).copy(id = ProjectileType.VENOM_DART, name = "Venom Dart", damage = 15, alsoOnHit = Seq(Poison(15, 3000, 750))),
+    base(ProjectileType.POISON_DART).copy(id = ProjectileType.VENOM_DART, name = "Venom Dart", damage = 12, alsoOnHit = Seq(Poison(12, 3000, 750))),
     // Of their own, so their numbers can differ from the others who throw the base
-    base(ProjectileType.AXE).copy(id = ProjectileType.ARENA_AXE, name = "Arena Axe", damage = 51),
-    base(ProjectileType.SHURIKEN).copy(id = ProjectileType.THROWING_STAR, name = "Throwing Star", damage = 51),
+    base(ProjectileType.AXE).copy(id = ProjectileType.ARENA_AXE, name = "Arena Axe", damage = 44),
+    base(ProjectileType.SHURIKEN).copy(id = ProjectileType.THROWING_STAR, name = "Throwing Star", damage = 50),
     // The Gladiator's rope: a fighter's pull, which holds whoever it brings in for a second
     // (design/characters.md, *A fighter can finish what it starts*). The Puppeteer and the Pirate,
     // who are ranged, throw the Rope itself, which only pulls
@@ -323,7 +323,7 @@ private[model] object Originals {
       projectileType = ProjectileType.ROCKET, keybind = "E"
     ),
     primaryProjectileType = ProjectileType.BULLET,
-    role = Ranged, maxHealth = 65
+    role = Ranged, maxHealth = 60
   )
 
   val Raptor: CharacterDef = CharacterDef(
@@ -334,7 +334,7 @@ private[model] object Originals {
     qAbility = AbilityDef(
       name = "Swoop",
       description = "Dash toward the cursor, phased and invulnerable during flight.",
-      cooldownMs = 10000, maxRange = 0, damage = 0,
+      cooldownMs = 8000, maxRange = 0, damage = 0,
       projectileType = -1, keybind = "Q",
       castBehavior = DashBuff(12, 150, 20)
     ),
@@ -345,7 +345,7 @@ private[model] object Originals {
       projectileType = ProjectileType.GUST, keybind = "E"
     ),
     primaryProjectileType = ProjectileType.TALON,
-    role = Melee, maxHealth = 130, moveSpeed = Melee.speed
+    role = Melee, maxHealth = 150, moveSpeed = Melee.speed
   )
 
   val Assassin: CharacterDef = CharacterDef(
@@ -367,7 +367,7 @@ private[model] object Originals {
       castBehavior = PhaseShiftBuff(3000)
     ),
     primaryProjectileType = ProjectileType.THROWING_STAR,
-    role = Melee, maxHealth = 130, moveSpeed = Melee.speed
+    role = Melee, maxHealth = 105, moveSpeed = Melee.speed
   )
 
   val Warden: CharacterDef = CharacterDef(
@@ -456,7 +456,7 @@ private[model] object Originals {
       castBehavior = FanProjectile(3, Math.toRadians(50))
     ),
     primaryProjectileType = ProjectileType.BLOOD_FANG,
-    role = Melee, maxHealth = 120, moveSpeed = Melee.speed
+    role = Melee, maxHealth = 115, moveSpeed = Melee.speed
   )
 
   val characters: Seq[CharacterDef] = Seq(

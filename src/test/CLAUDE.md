@@ -300,6 +300,10 @@ On it:
   clocks run, and the same match again from the same seed. `--test_env=GRIDGAME_SIM_SEED=<seed>`
   plays one again; `--test_env=GRIDGAME_SIM_SOAK_SECONDS=600` plays new seeds for ten minutes
   (about two hundred matches a minute).
+- `balance_sim` (`BalanceSim.scala`, a binary beside the server's suites, not a test) plays mixed
+  free-for-alls of fourteen bots the same way, five minutes each in a few seconds, and writes who
+  killed whom with what: the balance passes' measure (scripts/CLAUDE.md, *Balance*). It is here
+  for the kit it is made of (`Sim`, `MatchClockwork`, the shared server).
 - `SymmetryTest` — a scene turned or mirrored any of the eight ways of a square plays out the same:
   every attack over random walls, fences, water and players, a blink, a shove, a star and a throw,
   two as near as each other, a step of several cells. What only holds one way round is a bug by

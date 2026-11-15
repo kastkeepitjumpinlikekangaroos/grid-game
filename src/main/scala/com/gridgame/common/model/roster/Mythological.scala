@@ -16,14 +16,14 @@ private[model] object Mythological {
   val HeadThrowDef: ProjectileDef = ProjectileDef(id = ProjectileType.HEAD_THROW, name = "Head Throw", speedMultiplier = 0.7f, damage = 25, maxRange = 16, onHitEffect = Some(Push(2.5f)), alsoOnHit = Seq(Stun(800)))
   val StoneGazeDef: ProjectileDef = ProjectileDef(id = ProjectileType.STONE_GAZE, name = "Stone Gaze", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(6.0f, 37, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 6.0f)))
   val InkSnareDef: ProjectileDef = ProjectileDef(id = ProjectileType.INK_SNARE, name = "Ink Snare", speedMultiplier = 0.5f, damage = 0, maxRange = 14, passesThroughPlayers = true, aoeOnMaxRange = Some(AoESplashConfig(5.0f, 21, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 5.0f)))
-  val HornDef: ProjectileDef = ProjectileDef(id = ProjectileType.HORN, name = "Horn", speedMultiplier = 0.6f, damage = 49, maxRange = 3, hitRadius = 4.0f, hitCentreBehind = 1.5f)
+  val HornDef: ProjectileDef = ProjectileDef(id = ProjectileType.HORN, name = "Horn", speedMultiplier = 0.6f, damage = 42, maxRange = 3, hitRadius = 4.0f, hitCentreBehind = 1.5f)
   val MysticBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.MYSTIC_BOLT, name = "Mystic Bolt", speedMultiplier = 0.75f, damage = 28, maxRange = 16, onHitEffect = Some(Burn(20, 3000, 750)))
   val PetrifyDef: ProjectileDef = ProjectileDef(id = ProjectileType.PETRIFY, name = "Petrify", speedMultiplier = 0.3f, damage = 11, maxRange = 20, onHitEffect = Some(Freeze(3000)))
-  val ThrownBoulderDef: ProjectileDef = ProjectileDef(id = ProjectileType.THROWN_BOULDER, name = "Thrown Boulder", speedMultiplier = 0.3f, damage = 30, maxRange = 10, hitRadius = 3.0f)
+  val ThrownBoulderDef: ProjectileDef = ProjectileDef(id = ProjectileType.THROWN_BOULDER, name = "Thrown Boulder", speedMultiplier = 0.3f, damage = 35, maxRange = 10, hitRadius = 3.0f)
   val EyeBeamDef: ProjectileDef = ProjectileDef(id = ProjectileType.EYE_BEAM, name = "Eye Beam", speedMultiplier = 1.0f, damage = 25, maxRange = 20, pierceCount = 2, onHitEffect = Some(Burn(10, 3000, 750)), alsoOnHit = Seq(Slow(2000, 0.6f)))
-  val FlameBoltLightDef: ProjectileDef = ProjectileDef(id = ProjectileType.FLAME_BOLT_LIGHT, name = "Flame Bolt Light", speedMultiplier = 0.75f, damage = 21, maxRange = 16, onHitEffect = Some(Burn(21, 3000, 750)))
-  val SonicWaveMedDef: ProjectileDef = ProjectileDef(id = ProjectileType.SONIC_WAVE_MED, name = "Sonic Wave Med", speedMultiplier = 0.7f, damage = 37, maxRange = 14, passesThroughWalls = true, pierceCount = 1)
-  val ArrowLightDef: ProjectileDef = ProjectileDef(id = ProjectileType.ARROW_LIGHT, name = "Arrow Light", speedMultiplier = 0.95f, damage = 28, maxRange = 22, pierceCount = 1)
+  val FlameBoltLightDef: ProjectileDef = ProjectileDef(id = ProjectileType.FLAME_BOLT_LIGHT, name = "Flame Bolt Light", speedMultiplier = 0.75f, damage = 23, maxRange = 16, onHitEffect = Some(Burn(23, 3000, 750)))
+  val SonicWaveMedDef: ProjectileDef = ProjectileDef(id = ProjectileType.SONIC_WAVE_MED, name = "Sonic Wave Med", speedMultiplier = 0.7f, damage = 30, maxRange = 14, passesThroughWalls = true, pierceCount = 1)
+  val ArrowLightDef: ProjectileDef = ProjectileDef(id = ProjectileType.ARROW_LIGHT, name = "Arrow Light", speedMultiplier = 0.95f, damage = 21, maxRange = 22, pierceCount = 1)
   // A closer (Plan 5a): lands on a ranged character walking away from 8 cells, wherever they are
   // in their step (MeleeKitsTest). See common/model/CLAUDE.md, "Melee kits"
   val TalonGrabDef: ProjectileDef = ProjectileDef(id = ProjectileType.TALON_GRAB, name = "Talon Grab", speedMultiplier = 0.95f, damage = 10, maxRange = 16, onHitEffect = Some(PullToOwner), alsoOnHit = Seq(Stun(1000)))
@@ -49,7 +49,7 @@ private[model] object Mythological {
     base(ProjectileType.CLAW_SWIPE).copy(id = ProjectileType.FENRIR_CLAW, name = "Fenrir Claw", damage = 51, onHitEffect = Some(LifeSteal(25))),
     // The Sphinx's Riddle, one where it sent five sonic waves: through walls, it leaves the first two
     // who hear it rooted to the spot puzzling it out
-    base(ProjectileType.SONIC_WAVE).copy(id = ProjectileType.RIDDLE, name = "Riddle", damage = 24, onHitEffect = Some(Root(1500))),
+    base(ProjectileType.SONIC_WAVE).copy(id = ProjectileType.RIDDLE, name = "Riddle", damage = 28, onHitEffect = Some(Root(1500))),
     // The Yokai's Binding Talisman: a paper ofuda that binds whoever it sticks to, where it fanned
     // three burning curses
     base(ProjectileType.CURSE).copy(id = ProjectileType.BINDING_TALISMAN, name = "Binding Talisman", damage = 20, speedMultiplier = 0.7f, maxRange = 14, onHitEffect = Some(Root(1500))),
@@ -85,9 +85,9 @@ private[model] object Mythological {
     id = CharacterId.Cerberus, displayName = "Cerberus",
     description = "An aggressive three-headed hellhound with burning magma attacks and a short pounce.",
     spriteSheet = "sprites/cerberus.png",
-    qAbility = AbilityDef(name = "Triple Blast", description = "Fires 3 flame bolts.", cooldownMs = 8500, maxRange = 16, damage = 23, projectileType = ProjectileType.FLAME_BOLT, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(30))),
+    qAbility = AbilityDef(name = "Triple Blast", description = "Fires 3 flame bolts.", cooldownMs = 8500, maxRange = 16, damage = 24, projectileType = ProjectileType.FLAME_BOLT, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(30))),
     eAbility = AbilityDef(name = "Hellfire Pounce", description = "Short pounce followed by fiery landing.", cooldownMs = 10000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = DashBuff(6, 250, 20)),
-    primaryProjectileType = ProjectileType.MAGMA_BALL, role = Ranged, maxHealth = 65
+    primaryProjectileType = ProjectileType.MAGMA_BALL, role = Ranged, maxHealth = 60
   )
 
   val Centaur: CharacterDef = CharacterDef(
@@ -113,8 +113,8 @@ private[model] object Mythological {
     description = "A riddle-master whose charms slow, whose riddles root, and who pounces like the lion it is.",
     spriteSheet = "sprites/sphinx.png",
     qAbility = AbilityDef(name = "Pounce", description = "Pounces 10 cells toward the cursor.", cooldownMs = 10000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = DashBuff(10, 200, 20)),
-    eAbility = AbilityDef(name = "Riddle", description = "Poses a riddle that passes through walls and roots the first two enemies who hear it for 1.5s.", cooldownMs = 14000, maxRange = 14, damage = 24, projectileType = ProjectileType.RIDDLE, keybind = "E"),
-    primaryProjectileType = ProjectileType.CHARM, role = Ranged, maxHealth = 70
+    eAbility = AbilityDef(name = "Riddle", description = "Poses a riddle that passes through walls and roots the first two enemies who hear it for 1.5s.", cooldownMs = 14000, maxRange = 14, damage = 28, projectileType = ProjectileType.RIDDLE, keybind = "E"),
+    primaryProjectileType = ProjectileType.CHARM, role = Ranged, maxHealth = 75
   )
 
   val Cyclops: CharacterDef = CharacterDef(
@@ -123,7 +123,7 @@ private[model] object Mythological {
     spriteSheet = "sprites/cyclops.png",
     qAbility = AbilityDef(name = "Hurl Boulder", description = "Hurls one huge boulder that roots whoever it strikes for 1.2s.", cooldownMs = 12000, maxRange = 8, damage = 38, projectileType = ProjectileType.ROOTING_BOULDER, keybind = "Q"),
     eAbility = AbilityDef(name = "Eye Beam", description = "Fires a searing beam that pierces, burns and slows.", cooldownMs = 16000, maxRange = 20, damage = 25, projectileType = ProjectileType.EYE_BEAM, keybind = "E"),
-    primaryProjectileType = ProjectileType.THROWN_BOULDER, role = Skirmisher, maxHealth = 135, moveSpeed = Skirmisher.speed
+    primaryProjectileType = ProjectileType.THROWN_BOULDER, role = Skirmisher, maxHealth = 140, moveSpeed = Skirmisher.speed
   )
 
   val Harpy: CharacterDef = CharacterDef(
@@ -141,16 +141,16 @@ private[model] object Mythological {
     spriteSheet = "sprites/griffin.png",
     qAbility = AbilityDef(name = "Sky Dive", description = "Dives from above.", cooldownMs = 10000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = DashBuff(12, 150, 18)),
     eAbility = AbilityDef(name = "Talon Grab", description = "Snatches an enemy in its talons and drags them to you, stunned for 1s.", cooldownMs = 10000, maxRange = 16, damage = 10, projectileType = ProjectileType.TALON_GRAB, keybind = "E"),
-    primaryProjectileType = ProjectileType.TALON, role = Melee, maxHealth = 115, moveSpeed = Melee.speed
+    primaryProjectileType = ProjectileType.TALON, role = Melee, maxHealth = 120, moveSpeed = Melee.speed
   )
 
   val Anubis: CharacterDef = CharacterDef(
     id = CharacterId.Anubis, displayName = "Anubis",
     description = "The jackal god of death who curses and judges with rooting slams.",
     spriteSheet = "sprites/anubis.png",
-    qAbility = AbilityDef(name = "Curse of Anubis", description = "Ancient curse that burns over time.", cooldownMs = 12000, maxRange = 12, damage = 32, projectileType = ProjectileType.CURSE, keybind = "Q"),
+    qAbility = AbilityDef(name = "Curse of Anubis", description = "Ancient curse that burns over time.", cooldownMs = 12000, maxRange = 12, damage = 39, projectileType = ProjectileType.CURSE, keybind = "Q"),
     eAbility = AbilityDef(name = "Scales of Judgment", description = "Judges all nearby, rooting and burning them.", cooldownMs = 14000, maxRange = 0, damage = 20, projectileType = ProjectileType.SEISMIC_ROOT, keybind = "E", castBehavior = GroundSlam(6.0f)),
-    primaryProjectileType = ProjectileType.DEATH_BOLT, role = Ranged, maxHealth = 65
+    primaryProjectileType = ProjectileType.DEATH_BOLT, role = Ranged, maxHealth = 60
   )
 
   val Yokai: CharacterDef = CharacterDef(
@@ -168,7 +168,7 @@ private[model] object Mythological {
     spriteSheet = "sprites/golem.png",
     qAbility = AbilityDef(name = "Stone Wall", description = "Raises a wall of stone that stops enemy shots, even while you attack.", cooldownMs = 14000, maxRange = 0, damage = 0, projectileType = -3, keybind = "Q", castBehavior = BarrierCast(3500)),
     eAbility = AbilityDef(name = "Tremor Slam", description = "Slams the ground, rooting nearby enemies.", cooldownMs = 20000, maxRange = 0, damage = 30, projectileType = ProjectileType.TREMOR_SLAM, keybind = "E", castBehavior = GroundSlam(6.0f)),
-    primaryProjectileType = ProjectileType.BOULDER, role = Skirmisher, maxHealth = 135, moveSpeed = Skirmisher.speed
+    primaryProjectileType = ProjectileType.BOULDER, role = Skirmisher, maxHealth = 120, moveSpeed = Skirmisher.speed
   )
 
   val Djinn: CharacterDef = CharacterDef(

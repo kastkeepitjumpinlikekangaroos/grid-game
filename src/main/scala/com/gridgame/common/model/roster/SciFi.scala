@@ -13,29 +13,29 @@ import com.gridgame.common.model.CombatRole.{Melee, Ranged, Skirmisher}
 private[model] object SciFi {
   // ── Projectiles ──
 
-  val SeismicSlamDef: ProjectileDef = ProjectileDef(id = ProjectileType.SEISMIC_SLAM, name = "Seismic Slam", speedMultiplier = 0.5f, damage = 24, maxRange = 12, hitRadius = 2.8f, aoeOnHit = Some(AoESplashConfig(3.5f, 14)), aoeOnMaxRange = Some(AoESplashConfig(3.5f, 14)))
-  val DataBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.DATA_BOLT, name = "Data Bolt", speedMultiplier = 0.85f, damage = 32, maxRange = 16, ricochetCount = 2)
-  val VirusDef: ProjectileDef = ProjectileDef(id = ProjectileType.VIRUS, name = "Virus", speedMultiplier = 0.6f, damage = 22, maxRange = 14, onHitEffect = Some(Slow(3000, 0.4f)))
-  val LaserDef: ProjectileDef = ProjectileDef(id = ProjectileType.LASER, name = "Laser", speedMultiplier = 0.95f, damage = 26, maxRange = 20, ricochetCount = 1)
-  val GravityBallDef: ProjectileDef = ProjectileDef(id = ProjectileType.GRAVITY_BALL, name = "Gravity Ball", speedMultiplier = 0.6f, damage = 45, maxRange = 14, onHitEffect = Some(PullToOwner))
-  val GravityWellDef: ProjectileDef = ProjectileDef(id = ProjectileType.GRAVITY_WELL, name = "Gravity Well", speedMultiplier = 0.4f, damage = 55, maxRange = 12, aoeOnHit = Some(AoESplashConfig(3.5f, 40, freezeDurationMs = 800)), onHitEffect = Some(VortexPull(4.0f, 3.0f)))
-  val NanoBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.NANO_BOLT, name = "Nano Bolt", speedMultiplier = 0.8f, damage = 33, maxRange = 16, aoeOnHit = Some(AoESplashConfig(2.0f, 19)))
-  val VoidBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.VOID_BOLT, name = "Void Bolt", speedMultiplier = 0.7f, damage = 26, maxRange = 18, passesThroughWalls = true)
+  val SeismicSlamDef: ProjectileDef = ProjectileDef(id = ProjectileType.SEISMIC_SLAM, name = "Seismic Slam", speedMultiplier = 0.5f, damage = 30, maxRange = 12, hitRadius = 2.8f, aoeOnHit = Some(AoESplashConfig(3.5f, 18)), aoeOnMaxRange = Some(AoESplashConfig(3.5f, 18)))
+  val DataBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.DATA_BOLT, name = "Data Bolt", speedMultiplier = 0.85f, damage = 33, maxRange = 16, ricochetCount = 2)
+  val VirusDef: ProjectileDef = ProjectileDef(id = ProjectileType.VIRUS, name = "Virus", speedMultiplier = 0.6f, damage = 18, maxRange = 14, onHitEffect = Some(Slow(3000, 0.4f)))
+  val LaserDef: ProjectileDef = ProjectileDef(id = ProjectileType.LASER, name = "Laser", speedMultiplier = 0.95f, damage = 25, maxRange = 20, ricochetCount = 1)
+  val GravityBallDef: ProjectileDef = ProjectileDef(id = ProjectileType.GRAVITY_BALL, name = "Gravity Ball", speedMultiplier = 0.6f, damage = 55, maxRange = 14, onHitEffect = Some(PullToOwner))
+  val GravityWellDef: ProjectileDef = ProjectileDef(id = ProjectileType.GRAVITY_WELL, name = "Gravity Well", speedMultiplier = 0.4f, damage = 36, maxRange = 12, aoeOnHit = Some(AoESplashConfig(3.5f, 26, freezeDurationMs = 800)), onHitEffect = Some(VortexPull(4.0f, 3.0f)))
+  val NanoBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.NANO_BOLT, name = "Nano Bolt", speedMultiplier = 0.8f, damage = 37, maxRange = 16, aoeOnHit = Some(AoESplashConfig(2.0f, 21)))
+  val VoidBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.VOID_BOLT, name = "Void Bolt", speedMultiplier = 0.7f, damage = 25, maxRange = 18, passesThroughWalls = true)
   val RailgunDef: ProjectileDef = ProjectileDef(id = ProjectileType.RAILGUN, name = "Railgun", speedMultiplier = 1.0f, damage = 43, maxRange = 25, passesThroughWalls = true, pierceCount = 3)
   val ClusterBombDef: ProjectileDef = ProjectileDef(id = ProjectileType.CLUSTER_BOMB, name = "Cluster Bomb", speedMultiplier = 0.4f, damage = 55, maxRange = 14, passesThroughPlayers = true, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(55, 26, 3.5f)))
-  val ChainLightningForkDef: ProjectileDef = ProjectileDef(id = ProjectileType.CHAIN_LIGHTNING_FORK, name = "Chain Lightning Fork", speedMultiplier = 0.7f, damage = 33, maxRange = 16, ricochetCount = 3, pierceCount = 1, aoeOnHit = Some(AoESplashConfig(2.5f, 14)))
-  val SniperBeamDef: ProjectileDef = ProjectileDef(id = ProjectileType.SNIPER_BEAM, name = "Sniper Beam", speedMultiplier = 1.0f, damage = 6, maxRange = 28, pierceCount = 2, distanceDamageScaling = Some(DistanceDamageScaling(3, 50, 28)))
+  val ChainLightningForkDef: ProjectileDef = ProjectileDef(id = ProjectileType.CHAIN_LIGHTNING_FORK, name = "Chain Lightning Fork", speedMultiplier = 0.7f, damage = 38, maxRange = 16, ricochetCount = 3, pierceCount = 1, aoeOnHit = Some(AoESplashConfig(2.5f, 16)))
+  val SniperBeamDef: ProjectileDef = ProjectileDef(id = ProjectileType.SNIPER_BEAM, name = "Sniper Beam", speedMultiplier = 1.0f, damage = 6, maxRange = 28, pierceCount = 2, distanceDamageScaling = Some(DistanceDamageScaling(3, 47, 28)))
   val GravityLanceDef: ProjectileDef = ProjectileDef(id = ProjectileType.GRAVITY_LANCE, name = "Gravity Lance", speedMultiplier = 0.7f, damage = 27, maxRange = 20, distanceDamageScaling = Some(DistanceDamageScaling(18, 55, 20)), onHitEffect = Some(VortexPull(3.5f, 2.5f)))
   val OverclockBeamDef: ProjectileDef = ProjectileDef(id = ProjectileType.OVERCLOCK_BEAM, name = "Overclock Beam", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(5.0f, 0)), onHitEffect = Some(SpeedBoost(4000)), explosionConfig = Some(ExplosionConfig(0, 0, 5.0f)))
   val NapalmStrikeDef: ProjectileDef = ProjectileDef(id = ProjectileType.NAPALM_STRIKE, name = "Napalm Strike", speedMultiplier = 0.45f, damage = 52, maxRange = 16, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(52, 17, 3.0f)), onHitEffect = Some(Burn(26, 4000, 800)))
-  val BulletHeavyDef: ProjectileDef = ProjectileDef(id = ProjectileType.BULLET_HEAVY, name = "Bullet Heavy", speedMultiplier = 1.0f, damage = 21, maxRange = 18)
-  val BulletLightDef: ProjectileDef = ProjectileDef(id = ProjectileType.BULLET_LIGHT, name = "Bullet Light", speedMultiplier = 1.0f, damage = 29, maxRange = 18)
-  val LaserHeavyDef: ProjectileDef = ProjectileDef(id = ProjectileType.LASER_HEAVY, name = "Laser Heavy", speedMultiplier = 0.95f, damage = 24, maxRange = 20, ricochetCount = 1)
-  val LaserLightDef: ProjectileDef = ProjectileDef(id = ProjectileType.LASER_LIGHT, name = "Laser Light", speedMultiplier = 0.95f, damage = 29, maxRange = 20, ricochetCount = 1)
+  val BulletHeavyDef: ProjectileDef = ProjectileDef(id = ProjectileType.BULLET_HEAVY, name = "Bullet Heavy", speedMultiplier = 1.0f, damage = 22, maxRange = 18)
+  val BulletLightDef: ProjectileDef = ProjectileDef(id = ProjectileType.BULLET_LIGHT, name = "Bullet Light", speedMultiplier = 1.0f, damage = 26, maxRange = 18)
+  val LaserHeavyDef: ProjectileDef = ProjectileDef(id = ProjectileType.LASER_HEAVY, name = "Laser Heavy", speedMultiplier = 0.95f, damage = 26, maxRange = 20, ricochetCount = 1)
+  val LaserLightDef: ProjectileDef = ProjectileDef(id = ProjectileType.LASER_LIGHT, name = "Laser Light", speedMultiplier = 0.95f, damage = 25, maxRange = 20, ricochetCount = 1)
   // What the volleys became (design/characters.md, *No volleys of more than three*). The Graviton's
   // Repulse: gravity turned inside out round him, throwing everyone near back. A slam, so its
   // GroundSlam radius and its AoE's are kept in step
-  val RepulseDef: ProjectileDef = ProjectileDef(id = ProjectileType.REPULSE, name = "Repulse", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(5.0f, 18)), onHitEffect = Some(Push(4.0f)), explosionConfig = Some(ExplosionConfig(0, 0, 5.0f)))
+  val RepulseDef: ProjectileDef = ProjectileDef(id = ProjectileType.REPULSE, name = "Repulse", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(5.0f, 24)), onHitEffect = Some(Push(4.0f)), explosionConfig = Some(ExplosionConfig(0, 0, 5.0f)))
 
   val projectiles: Seq[ProjectileDef] = Seq(
     SeismicSlamDef, DataBoltDef, VirusDef, LaserDef, GravityBallDef,
@@ -51,7 +51,7 @@ private[model] object SciFi {
     // off a wall once
     base(ProjectileType.LASER).copy(id = ProjectileType.ION_SHOT, name = "Ion Shot", damage = 20, onHitEffect = Some(Stun(800))),
     // The Glitcher's Lag Spike, one where it threw eight data bolts in a ring
-    base(ProjectileType.DATA_BOLT).copy(id = ProjectileType.LAG_SPIKE, name = "Lag Spike", damage = 18, onHitEffect = Some(Stun(1000)))
+    base(ProjectileType.DATA_BOLT).copy(id = ProjectileType.LAG_SPIKE, name = "Lag Spike", damage = 22, onHitEffect = Some(Stun(1000)))
   )
 
   // ── Characters ──
@@ -62,16 +62,16 @@ private[model] object SciFi {
     spriteSheet = "sprites/cyborg.png",
     qAbility = AbilityDef(name = "Arm Rocket", description = "Fires a rocket from the arm.", cooldownMs = 10000, maxRange = 20, damage = 55, projectileType = ProjectileType.ROCKET, keybind = "Q"),
     eAbility = AbilityDef(name = "Overclock", description = "Overclocks systems, gaining massive speed boost.", cooldownMs = 14000, maxRange = 0, damage = 0, projectileType = ProjectileType.OVERCLOCK_BEAM, keybind = "E", castBehavior = GroundSlam(5.0f)),
-    primaryProjectileType = ProjectileType.BULLET_LIGHT, role = Ranged, maxHealth = 80
+    primaryProjectileType = ProjectileType.BULLET_LIGHT, role = Ranged, maxHealth = 70
   )
 
   val Hacker: CharacterDef = CharacterDef(
     id = CharacterId.Hacker, displayName = "Hacker",
     description = "A digital infiltrator with data bolts and system hops.",
     spriteSheet = "sprites/hacker.png",
-    qAbility = AbilityDef(name = "Virus", description = "Digital virus that slows systems.", cooldownMs = 8000, maxRange = 14, damage = 22, projectileType = ProjectileType.VIRUS, keybind = "Q"),
+    qAbility = AbilityDef(name = "Virus", description = "Digital virus that slows systems.", cooldownMs = 8000, maxRange = 14, damage = 18, projectileType = ProjectileType.VIRUS, keybind = "Q"),
     eAbility = AbilityDef(name = "System Hop", description = "Teleports through the network.", cooldownMs = 12000, maxRange = 8, damage = 0, projectileType = -2, keybind = "E", castBehavior = TeleportCast(8)),
-    primaryProjectileType = ProjectileType.DATA_BOLT, role = Ranged, maxHealth = 75
+    primaryProjectileType = ProjectileType.DATA_BOLT, role = Ranged, maxHealth = 70
   )
 
   val MechPilot: CharacterDef = CharacterDef(
@@ -79,8 +79,8 @@ private[model] object SciFi {
     description = "A heavy mech with a minigun, jump jets and a ground slam.",
     spriteSheet = "sprites/mechpilot.png",
     qAbility = AbilityDef(name = "Jump Jets", description = "Fires the mech's jump jets, dashing 10 cells toward the cursor.", cooldownMs = 10000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = DashBuff(10, 200, 20)),
-    eAbility = AbilityDef(name = "Mech Slam", description = "Slams mech fist into the ground with devastating AoE.", cooldownMs = 14500, maxRange = 12, damage = 24, projectileType = ProjectileType.SEISMIC_SLAM, keybind = "E"),
-    primaryProjectileType = ProjectileType.BULLET_LIGHT, role = Ranged, maxHealth = 75
+    eAbility = AbilityDef(name = "Mech Slam", description = "Slams mech fist into the ground with devastating AoE.", cooldownMs = 14500, maxRange = 12, damage = 30, projectileType = ProjectileType.SEISMIC_SLAM, keybind = "E"),
+    primaryProjectileType = ProjectileType.BULLET_LIGHT, role = Ranged, maxHealth = 80
   )
 
   val Android: CharacterDef = CharacterDef(
@@ -96,26 +96,26 @@ private[model] object SciFi {
     id = CharacterId.Chronomancer, displayName = "Chronomancer",
     description = "A time mage with lightning-fast attacks, gravity wells, and time stops.",
     spriteSheet = "sprites/chronomancer.png",
-    qAbility = AbilityDef(name = "Temporal Rift", description = "Opens a gravity well that traps enemies.", cooldownMs = 14000, maxRange = 12, damage = 55, projectileType = ProjectileType.GRAVITY_WELL, keybind = "Q"),
+    qAbility = AbilityDef(name = "Temporal Rift", description = "Opens a gravity well that traps enemies.", cooldownMs = 14000, maxRange = 12, damage = 36, projectileType = ProjectileType.GRAVITY_WELL, keybind = "Q"),
     eAbility = AbilityDef(name = "Time Stop", description = "Freezes time around yourself, becoming phased and immune.", cooldownMs = 14000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = PhaseShiftBuff(3000)),
-    primaryProjectileType = ProjectileType.LIGHTNING, role = Ranged, maxHealth = 80
+    primaryProjectileType = ProjectileType.LIGHTNING, role = Ranged, maxHealth = 65
   )
 
   val Graviton: CharacterDef = CharacterDef(
     id = CharacterId.Graviton, displayName = "Graviton",
     description = "A gravity manipulator who drags foes in, throws them back out, and creates vortex traps.",
     spriteSheet = "sprites/graviton.png",
-    qAbility = AbilityDef(name = "Repulse", description = "Turns gravity inside out around you, throwing every enemy within 5 cells back 4.", cooldownMs = 12000, maxRange = 0, damage = 18, projectileType = ProjectileType.REPULSE, keybind = "Q", castBehavior = GroundSlam(5.0f)),
+    qAbility = AbilityDef(name = "Repulse", description = "Turns gravity inside out around you, throwing every enemy within 5 cells back 4.", cooldownMs = 12000, maxRange = 0, damage = 24, projectileType = ProjectileType.REPULSE, keybind = "Q", castBehavior = GroundSlam(5.0f)),
     eAbility = AbilityDef(name = "Vortex Bomb", description = "Creates a vortex that pulls enemies in and freezes.", cooldownMs = 14000, maxRange = 14, damage = 40, projectileType = ProjectileType.VORTEX_BOMB, keybind = "E"),
-    primaryProjectileType = ProjectileType.GRAVITY_BALL, role = Ranged, maxHealth = 70
+    primaryProjectileType = ProjectileType.GRAVITY_BALL, role = Ranged, maxHealth = 75
   )
 
   val Tesla: CharacterDef = CharacterDef(
     id = CharacterId.Tesla, displayName = "Tesla",
     description = "An electric genius with chain lightning and a forking lightning upgrade.",
     spriteSheet = "sprites/tesla.png",
-    qAbility = AbilityDef(name = "Chain Lightning", description = "Electric bolt that chains to nearby enemies.", cooldownMs = 8000, maxRange = 14, damage = 22, projectileType = ProjectileType.CHAIN_LIGHTNING, keybind = "Q"),
-    eAbility = AbilityDef(name = "Lightning Fork", description = "Ricocheting lightning bolt that splashes AoE on each bounce.", cooldownMs = 12000, maxRange = 16, damage = 33, projectileType = ProjectileType.CHAIN_LIGHTNING_FORK, keybind = "E"),
+    qAbility = AbilityDef(name = "Chain Lightning", description = "Electric bolt that chains to nearby enemies.", cooldownMs = 8000, maxRange = 14, damage = 29, projectileType = ProjectileType.CHAIN_LIGHTNING, keybind = "Q"),
+    eAbility = AbilityDef(name = "Lightning Fork", description = "Ricocheting lightning bolt that splashes AoE on each bounce.", cooldownMs = 12000, maxRange = 16, damage = 38, projectileType = ProjectileType.CHAIN_LIGHTNING_FORK, keybind = "E"),
     primaryProjectileType = ProjectileType.LIGHTNING, role = Ranged, maxHealth = 60
   )
 
@@ -142,7 +142,7 @@ private[model] object SciFi {
     description = "A being of pure light that travels at the speed of light and splits its beam through a prism.",
     spriteSheet = "sprites/photon.png",
     qAbility = AbilityDef(name = "Light Speed", description = "Moves at the speed of light, up to 10 cells toward the cursor in an instant.", cooldownMs = 12000, maxRange = 10, damage = 0, projectileType = -2, keybind = "Q", castBehavior = TeleportCast(10)),
-    eAbility = AbilityDef(name = "Prism", description = "Splits a beam into three that fan out and bank off walls.", cooldownMs = 10000, maxRange = 20, damage = 26, projectileType = ProjectileType.LASER, keybind = "E", castBehavior = FanProjectile(3, Math.toRadians(30))),
+    eAbility = AbilityDef(name = "Prism", description = "Splits a beam into three that fan out and bank off walls.", cooldownMs = 10000, maxRange = 20, damage = 25, projectileType = ProjectileType.LASER, keybind = "E", castBehavior = FanProjectile(3, Math.toRadians(30))),
     primaryProjectileType = ProjectileType.LASER_HEAVY, role = Ranged, maxHealth = 60
   )
 
@@ -159,9 +159,9 @@ private[model] object SciFi {
     id = CharacterId.Bombardier, displayName = "Bombardier",
     description = "An explosives expert with grenades, rockets, and cluster bombs.",
     spriteSheet = "sprites/bombardier.png",
-    qAbility = AbilityDef(name = "Rocket", description = "Fires an explosive rocket.", cooldownMs = 12000, maxRange = 20, damage = 55, projectileType = ProjectileType.ROCKET, keybind = "Q"),
-    eAbility = AbilityDef(name = "Cluster Bomb", description = "Deploys a devastating cluster bomb.", cooldownMs = 16000, maxRange = 14, damage = 55, projectileType = ProjectileType.CLUSTER_BOMB, keybind = "E"),
-    primaryProjectileType = ProjectileType.GRENADE, role = Ranged, maxHealth = 75
+    qAbility = AbilityDef(name = "Rocket", description = "Fires an explosive rocket.", cooldownMs = 9000, maxRange = 20, damage = 55, projectileType = ProjectileType.ROCKET, keybind = "Q"),
+    eAbility = AbilityDef(name = "Cluster Bomb", description = "Deploys a devastating cluster bomb.", cooldownMs = 12000, maxRange = 14, damage = 55, projectileType = ProjectileType.CLUSTER_BOMB, keybind = "E"),
+    primaryProjectileType = ProjectileType.GRENADE, role = Ranged, maxHealth = 80
   )
 
   val Sentinel: CharacterDef = CharacterDef(
@@ -187,8 +187,8 @@ private[model] object SciFi {
     description = "A reality glitch that blinks about and freezes foes with a lag spike.",
     spriteSheet = "sprites/glitcher.png",
     qAbility = AbilityDef(name = "Glitch Blink", description = "Teleports through a glitch.", cooldownMs = 12000, maxRange = 6, damage = 0, projectileType = -2, keybind = "Q", castBehavior = TeleportCast(6)),
-    eAbility = AbilityDef(name = "Lag Spike", description = "A corrupted packet that bounces off walls and stuns the first enemy it reaches for 1s.", cooldownMs = 11000, maxRange = 16, damage = 18, projectileType = ProjectileType.LAG_SPIKE, keybind = "E"),
-    primaryProjectileType = ProjectileType.DATA_BOLT, role = Ranged, maxHealth = 60
+    eAbility = AbilityDef(name = "Lag Spike", description = "A corrupted packet that bounces off walls and stuns the first enemy it reaches for 1s.", cooldownMs = 11000, maxRange = 16, damage = 22, projectileType = ProjectileType.LAG_SPIKE, keybind = "E"),
+    primaryProjectileType = ProjectileType.DATA_BOLT, role = Ranged, maxHealth = 65
   )
 
   val characters: Seq[CharacterDef] = Seq(

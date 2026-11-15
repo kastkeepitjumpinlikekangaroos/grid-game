@@ -31,8 +31,11 @@ class DocsRosterTest {
   }
 
   @Test def aPillSaysTheRoleAndTheHealth(): Unit = {
-    assertEquals("Melee &middot; 130 HP", DocsRoster.pill(CharacterDef.get(CharacterId.Barbarian)))
-    assertEquals("Ranged &middot; 60 HP", DocsRoster.pill(CharacterDef.get(CharacterId.Wizard)))
+    // The health is the roster's, which the balance passes move
+    val barbarian = CharacterDef.get(CharacterId.Barbarian)
+    assertEquals(s"Melee &middot; ${barbarian.maxHealth} HP", DocsRoster.pill(barbarian))
+    val wizard = CharacterDef.get(CharacterId.Wizard)
+    assertEquals(s"Ranged &middot; ${wizard.maxHealth} HP", DocsRoster.pill(wizard))
   }
 
   @Test def rewritingChangesOnlyThePills(): Unit = {

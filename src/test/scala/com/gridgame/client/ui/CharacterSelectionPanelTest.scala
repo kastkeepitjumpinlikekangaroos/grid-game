@@ -52,12 +52,14 @@ class CharacterSelectionPanelTest {
   @Test def theDetailsSayTheRoleTheHealthAndThePace(): Unit = Fx {
     val (p, root) = panel()
     try {
+      // The health is the roster's, which the balance passes move
+      def hp(id: CharacterId): Int = CharacterDef.get(id).maxHealth
       Fx.click(cells(root)("Barbarian"))
-      assertTrue(Fx.labels(root).contains("Melee  ·  130 HP  ·  Slow"))
+      assertTrue(Fx.labels(root).contains(s"Melee  ·  ${hp(CharacterId.Barbarian)} HP  ·  Slow"))
       Fx.click(cells(root)("Golem"))
-      assertTrue(Fx.labels(root).contains("Skirmisher  ·  135 HP  ·  Medium speed"))
+      assertTrue(Fx.labels(root).contains(s"Skirmisher  ·  ${hp(CharacterId.Golem)} HP  ·  Medium speed"))
       Fx.click(cells(root)("Wizard"))
-      assertTrue(Fx.labels(root).contains("Ranged  ·  60 HP  ·  Fast"))
+      assertTrue(Fx.labels(root).contains(s"Ranged  ·  ${hp(CharacterId.Wizard)} HP  ·  Fast"))
     } finally p.stop()
   }
 

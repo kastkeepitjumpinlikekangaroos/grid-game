@@ -293,7 +293,12 @@ trait BotCombat { this: BotController =>
   private[bots] def tryShoot(bot: Player, target: Player, now: Long): Unit = {
     if (bot.isPhased) return
     val dist = distanceBetween(bot.getPosition, target.getPosition)
-    val maxRange = getMaxRange(bot.getCharacterId)
+    val maxRange: Float =
+      if (swingsAtFullReach && roleOf(bot.getCharacterId) == CombatRole.Melee) {
+        // All a swing strikes ahead of itself: as far as it flies, and its circle past that
+        val swing = ProjectileDef.get(CharacterDef.get(bot.getCharacterId).primaryProjectileType)
+        swing.maxRange + swing.hitRadius - swing.hitCentreBehind
+      } else getMaxRange(bot.getCharacterId).toFloat
     if (dist > maxRange) return
 
     val lastShot = lastShotTime.getOrDefault(bot.getId, 0L)
@@ -302,7 +307,7 @@ trait BotCombat { this: BotController =>
 
     lastShotTime.put(bot.getId, now)
     // Randomize next cooldown slightly
-    botShootCooldown.put(bot.getId, SHOOT_COOLDOWN_MIN_MS + scala.util.Random.nextLong(SHOOT_COOLDOWN_MAX_MS - SHOOT_COOLDOWN_MIN_MS))
+    botShootCooldown.put(bot.getId, shootCooldownMs._1 + scala.util.Random.nextLong(shootCooldownMs._2 - shootCooldownMs._1))
 
     val botPos = bot.getPosition
     val targetPos = target.getPosition
