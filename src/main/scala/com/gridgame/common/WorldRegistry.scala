@@ -8,7 +8,20 @@ object WorldRegistry {
     "the_colony.json",
     "the_meadow.json",
     "the_lagoon.json",
-    "the_snowglobe.json"
+    "the_snowglobe.json",
+    // Added after: a map's index is kept with every match played on it, so new maps go on the end
+    "the_crucible.json",
+    "the_caldera.json",
+    "the_cinderlands.json",
+    "the_crypt.json",
+    "the_graveyard.json",
+    "the_necropolis.json",
+    "the_tomb.json",
+    "the_oasis.json",
+    "the_dunes.json",
+    "the_wildwood.json",
+    "the_archipelago.json",
+    "the_tundra.json"
   )
 
   def getFilename(index: Int): String = {

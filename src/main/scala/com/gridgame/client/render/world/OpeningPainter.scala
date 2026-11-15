@@ -156,65 +156,6 @@ private[render] final class OpeningPainter(ctx: RenderContext) {
     shapeBatch.setAlphaMultiplier(1f)
   }
 
-  // How long the word that the opening is over stays up
-  private val DIVIDER_GO_MS = 1400L
-  private var _cachedOpeningSecs = -1
-  private var _cachedOpeningStr = ""
-
-  /**
-   * Under the match clock while the match opens ([[MatchOpening]]): how long is left of it, and a
-   * beat of FIGHT! when it ends. It says the same thing whichever opening it is — behind a wall or
-   * holding your fire, the battle starts when the countdown does. The bar empties as it runs out.
-   */
-  def drawCountdown(screenW: Int): Unit = {
-    val rules = client.openingRulesNow
-    if (rules == 0) return
-    val now = frameTimeMs
-    val left = client.openingMsLeft
-    val since = now - client.openingEndsAtMs
-    val counting = left > 0L
-    if (!counting && (since < 0L || since > DIVIDER_GO_MS)) return
-
-    // The same words either way: behind a wall or holding your fire, the battle starts when the
-    // countdown does
-    if (counting) {
-      val secs = ((left + 999L) / 1000L).toInt
-      if (secs != _cachedOpeningSecs) {
-        _cachedOpeningSecs = secs
-        _cachedOpeningStr = Messages.t("Battle begins in {0}", secs)
-      }
-    } else if (_cachedOpeningSecs != 0) {
-      _cachedOpeningSecs = 0
-      _cachedOpeningStr = Messages.t("FIGHT!")
-    }
-    val text = _cachedOpeningStr
-    val go = if (counting) 0f else clamp(1f - since / DIVIDER_GO_MS.toFloat)
-    val beat = if (counting && left < DIVIDER_WARN_MS) (Math.sin(now * 0.012).toFloat + 1f) * 0.5f else 0f
-
-    val textW = fontMedium.measureWidth(text)
-    val w = textW + 36f
-    val hgt = 26f
-    val x = (screenW / 2f - w / 2f)
-    val y = 42f
-
-    beginShapes()
-    shapeBatch.fillRoundedRectGradient(x, y, w, hgt, 7f,
-      0.20f + 0.18f * (beat + go), 0.11f, 0.01f, 0.72f,
-      0.10f + 0.10f * (beat + go), 0.05f, 0.01f, 0.62f)
-    shapeBatch.strokeRect(x, y, w, hgt, 1f, 1f, 0.72f + 0.2f * go, 0.2f, 0.35f + 0.4f * (beat + go))
-    if (counting) {
-      // What is left of the opening, emptying left to right
-      val frac = clamp(left.toFloat / Constants.MATCH_OPENING_MS)
-      shapeBatch.fillRect(x + 6f, y + hgt - 5f, (w - 12f) * frac, 2f, 1f, 0.72f, 0.2f, 0.75f)
-      shapeBatch.fillRect(x + 6f, y + hgt - 5f, w - 12f, 2f, 1f, 0.72f, 0.2f, 0.15f)
-    }
-
-    beginSprites()
-    val ty = y + (hgt - fontMedium.charHeight) / 2f
-    fontMedium.drawTextOutlined(spriteBatch, text, screenW / 2f - textW / 2f, ty,
-      1f, 0.85f - 0.15f * beat, 0.45f + 0.3f * go)
-  }
-
   @inline private def dividerScreenX(d: TeamDivider, at: Float, t: Float): Float =
     (if (d.axisX) worldToScreenX(at, t) else worldToScreenX(t, at)).toFloat
 

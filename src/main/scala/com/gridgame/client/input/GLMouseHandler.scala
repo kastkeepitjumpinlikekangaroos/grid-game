@@ -1,6 +1,6 @@
 package com.gridgame.client.input
 
-import com.gridgame.client.render.{GameCamera, IsometricTransform}
+import com.gridgame.client.render.{GameCamera, IsometricTransform, MatchMenu}
 
 import org.lwjgl.glfw.GLFW._
 import com.gridgame.client.diagnostics.Diagnostics
@@ -13,8 +13,13 @@ import com.gridgame.common.diagnostics.Recording.{InputDevice, Keys}
  * Q or E being aimed as it goes down, and is otherwise the primary, held to aim (or to charge) and
  * fired as it comes up; the right button puts away whatever is aimed or held without it going off
  * (Attacks).
+ *
+ * While the match's menu is up (`menu`, which Esc brings up) the mouse is the menu's: its clicks
+ * work it and nothing else, and the aim stays where it was. A click the menu took fires nothing let
+ * go of after the menu has gone: the match never saw it go down, and the primary only goes off as
+ * a button it saw go down comes up (Attacks.releasePrimary).
  */
-class GLMouseHandler(client: GameClient, camera: GameCamera) {
+class GLMouseHandler(client: GameClient, camera: GameCamera, menu: MatchMenu = new MatchMenu()) {
   private var _cursorX: Double = 0
   private var _cursorY: Double = 0
   // The buttons held, as a match recording's frames keep them (Recording.Keys)
@@ -29,14 +34,20 @@ class GLMouseHandler(client: GameClient, camera: GameCamera) {
   def onCursorPos(x: Double, y: Double): Unit = {
     _cursorX = x
     _cursorY = y
+    if (menu.isOpen) {
+      menu.pointerMoved(x.toFloat, y.toFloat)
+      return
+    }
     camera.screenToWorldInto(x, y)
     client.setMouseWorldPosition(IsometricTransform.lastWorldX, IsometricTransform.lastWorldY)
   }
 
   /** Recompute mouse world position from current cursor and camera state.
     * Call each frame after camera.update() so the world position stays accurate
-    * even when the mouse is stationary but the camera is moving. */
+    * even when the mouse is stationary but the camera is moving. Not while the menu is up: the
+    * pointer is on the menu, not aiming. */
   def refreshWorldPosition(): Unit = {
+    if (menu.isOpen) return
     camera.screenToWorldInto(_cursorX, _cursorY)
     client.setMouseWorldPosition(IsometricTransform.lastWorldX, IsometricTransform.lastWorldY)
   }
@@ -48,6 +59,14 @@ class GLMouseHandler(client: GameClient, camera: GameCamera) {
     if (recorder != null) recorder.input(InputDevice.Mouse, action, button, mods)
     val bit = if (button == GLFW_MOUSE_BUTTON_LEFT) Keys.MouseLeft else if (button == GLFW_MOUSE_BUTTON_RIGHT) Keys.MouseRight else 0
     if (action == GLFW_PRESS) _heldMask |= bit else if (action == GLFW_RELEASE) _heldMask &= ~bit
+    // The menu's while it is up: its clicks work it and nothing else
+    if (menu.isOpen) {
+      if (button == GLFW_MOUSE_BUTTON_LEFT) {
+        if (action == GLFW_PRESS) menu.pointerPressed(_cursorX.toFloat, _cursorY.toFloat)
+        else if (action == GLFW_RELEASE) menu.pointerReleased(_cursorX.toFloat, _cursorY.toFloat)
+      }
+      return
+    }
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
       if (action == GLFW_PRESS) client.cancelAims()
       return

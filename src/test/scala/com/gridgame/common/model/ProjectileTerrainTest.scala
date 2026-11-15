@@ -60,12 +60,13 @@ class ProjectileTerrainTest {
   }
 
   @Test
-  def aShotFliesOverWaterAndIsStoppedByEverythingElseNobodyCanWalkOn(): Unit = {
+  def aShotFliesOverWaterAndLavaAndIsStoppedByEverythingElseNobodyCanWalkOn(): Unit = {
     for (tile <- Tile.all) {
       val world = WorldData.createEmpty(8, 8)
       world.setTile(4, 3, tile)
-      val water = tile == Tile.Water || tile == Tile.DeepWater
-      assertEquals(tile.name, !tile.walkable && !water, proj(4f, 3f, 1f, 0f).hitsTerrain(world))
+      // what lies level with the ground: water, and the volcano's lava
+      val flat = tile == Tile.Water || tile == Tile.DeepWater || tile == Tile.Lava
+      assertEquals(tile.name, !tile.walkable && !flat, proj(4f, 3f, 1f, 0f).hitsTerrain(world))
     }
   }
 

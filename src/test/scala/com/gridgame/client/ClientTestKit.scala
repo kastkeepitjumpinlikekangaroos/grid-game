@@ -45,8 +45,9 @@ class TestClient(val world: WorldData = WorldData.createEmpty(60, 60), val name:
   // --- What the server sends ---
 
   def lobby(action: Byte, lobbyId: Short = 7, who: UUID = id, name: String = "Lobby", players: Int = 1,
-            maxPlayers: Int = 8, gameMode: Byte = 0, teamSize: Int = 2, charId: Byte = 0, status: Byte = 0): Unit =
-    receive(new LobbyActionPacket(nextSeq(), who, Packet.getCurrentTimestamp, action, lobbyId, 0.toByte, 5.toByte,
+            maxPlayers: Int = 8, gameMode: Byte = 0, teamSize: Int = 2, charId: Byte = 0, status: Byte = 0,
+            map: Int = 0): Unit =
+    receive(new LobbyActionPacket(nextSeq(), who, Packet.getCurrentTimestamp, action, lobbyId, map.toByte, 5.toByte,
       players.toByte, maxPlayers.toByte, status, name, charId, gameMode, teamSize.toByte))
 
   def gameEvent(event: Byte, who: UUID = new UUID(0, 0), target: UUID = null, kills: Int = 0, deaths: Int = 0,

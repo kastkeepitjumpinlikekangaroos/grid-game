@@ -98,7 +98,9 @@ class LightSystem(var width: Int, var height: Int) {
       case "sky"       => 0.625f // x1.6 in the composite: exactly the art's own brightness
       case "snow"      => 0.625f
       case "sea"       => 0.625f
-      case "desert"    => 0.58f
+      case "desert"    => 0.625f // a bright map now, as the sky's are
+      case "volcano"   => 0.54f  // dimmed: the lava lights what is near it
+      case "night"     => 0.52f  // moonlight: the lanterns, shots and players light the rest
       case _           => 0.48f
     }
   }

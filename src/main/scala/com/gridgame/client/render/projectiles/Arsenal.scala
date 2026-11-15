@@ -16,28 +16,45 @@ import Glyphs._
 private[render] object Arsenal {
 
   // ── Rounds ──
-  private val ROUND = Array(-9f, -2.2f, -3f, -2.3f, -0.8f, -1.2f, 0f, 0f, -0.8f, 1.2f, -3f, 2.3f, -9f, 2.2f)
-  private val ROUND_SHADE = Array(-9f, 0.4f, -1f, 0.4f, -0.8f, 1.2f, -3f, 2.3f, -9f, 2.2f)
+  private val ROUND = Array(-9f, -2.3f, -3.4f, -2.3f, -1.6f, -1.8f, -0.4f, -0.9f, 0.3f, 0f, -0.4f, 0.9f, -1.6f, 1.8f, -3.4f, 2.3f, -9f, 2.3f)
+  private val ROUND_SHADE = Array(-9f, 0.5f, -0.5f, 0.5f, -0.4f, 0.9f, -1.6f, 1.8f, -3.4f, 2.3f, -9f, 2.3f)
+  private val ROUND_BASE = Array(-9f, -2.3f, -7.7f, -2.3f, -7.7f, 2.3f, -9f, 2.3f)
 
-  /** A round point first at the frame's origin, its tracer streaming back `len` from its base in
-    * (r, g, b), shading to white-hot at the base; the jacket copper or `brass`. */
+  /**
+   * A round point first at the frame's origin: a jacketed bullet in (jr, jg, jb) with a rounded nose,
+   * its underside in shade, a darker base, the groove round its waist and a glint turning round it as
+   * it spins; its tracer streaming back `len` from its base in (r, g, b), inked, white-hot at the
+   * base; and the air it parts peeling back off its nose. (It had a three-point nose, a see-through
+   * glow twice the tracer's width, and no shock of its own.)
+   */
   private def tracerRound(sb: ShapeBatch, tick: Int, id: Int, len: Float, w: Float,
-                          r: Float, g: Float, b: Float, a: Float): Unit = {
-    // The tracer: a wide glow, its colour, and a white-hot heart at the base
+                          r: Float, g: Float, b: Float, a: Float,
+                          jr: Float = 0.93f, jg: Float = 0.62f, jb: Float = 0.34f): Unit = {
     val bx = fx(-9f, 0f); val by = fy(-9f, 0f)
     val ex = fx(-9f - len, 0f); val ey = fy(-9f - len, 0f)
-    fadeLine(sb, bx, by, ex, ey, w * 2.6f, r, g * 0.8f, b * 0.8f, 0.35f * a, 5)
-    fadeLine(sb, bx, by, ex, ey, w * 1.6f, r * 0.3f, g * 0.12f, b * 0.1f, 0.6f * a, 5)
-    fadeLine(sb, bx, by, ex, ey, w, r, g, b, 0.95f * a, 5)
-    fadeLine(sb, bx, by, fx(-9f - len * 0.4f, 0f), fy(-9f - len * 0.4f, 0f), w * 0.45f, 1f, 0.95f, 0.8f, a, 3)
-    // The round: ink, copper, its shaded underside, a glint turning round it as it spins
+    fadeLine(sb, bx, by, ex, ey, w * 1.7f, r * 0.28f, g * 0.12f, b * 0.12f, 0.8f * a, 5)
+    fadeLine(sb, bx, by, ex, ey, w, r, g, b, a, 5)
+    fadeLine(sb, bx, by, fx(-9f - len * 0.45f, 0f), fy(-9f - len * 0.45f, 0f), w * 0.45f, 1f, 0.97f, 0.85f, a, 3)
+    // The air off its nose
+    var sd = -1f
+    while (sd <= 1f) {
+      _pvX(0) = fx(0.8f, 0f); _pvY(0) = fy(0.8f, 0f)
+      _pvX(1) = fx(-2.4f, sd * 3.7f); _pvY(1) = fy(-2.4f, sd * 3.7f)
+      _pvX(2) = fx(-6.8f, sd * 5.4f); _pvY(2) = fy(-6.8f, sd * 5.4f)
+      sb.strokePolylineTapered(_pvX, _pvY, 3, 2.2f, 0.8f, 1f, 1f, 1f, 0.9f * a, 0f)
+      sd += 2f
+    }
     var n = pts(ROUND)
-    sb.strokePolygon(_gx, _gy, n, 2.8f, 0.12f, 0.05f, 0.02f, 0.98f * a)
-    sb.fillPolygon(_gx, _gy, n, 0.93f, 0.62f, 0.34f, a)
+    sb.strokePolygon(_gx, _gy, n, 2.6f, jr * 0.13f, jg * 0.1f, jb * 0.1f, 0.98f * a)
+    sb.fillPolygon(_gx, _gy, n, jr, jg, jb, a)
     n = pts(ROUND_SHADE)
-    sb.fillPolygon(_gx, _gy, n, 0.6f, 0.34f, 0.16f, a)
+    sb.fillPolygon(_gx, _gy, n, jr * 0.66f, jg * 0.58f, jb * 0.52f, a)
+    n = pts(ROUND_BASE)
+    sb.fillPolygon(_gx, _gy, n, jr * 0.5f, jg * 0.44f, jb * 0.4f, a)
+    gLine(sb, -5.4f, -2.2f, -5.4f, 2.2f, 0.5f, jr * 0.36f, jg * 0.3f, jb * 0.28f, 0.9f * a)
+    gLine(sb, -7.2f, -1.25f, -2.6f, -1.25f, 0.7f, mix(jr, 1f, 0.55f), mix(jg, 1f, 0.55f), mix(jb, 1f, 0.55f), a)
     val gt = loop(tick, 0.09, id * 0.17)
-    gLine(sb, -8f + gt * 5f, -1.1f, -6f + gt * 5f, -1.1f, 0.8f, 1f, 0.95f, 0.85f, 0.9f * a)
+    gLine(sb, -7f + gt * 4f, -1.25f, -5.4f + gt * 4f, -1.25f, 0.9f, 1f, 1f, 0.95f, a)
   }
 
   /**
@@ -50,15 +67,23 @@ private[render] object Arsenal {
     val a = dynAlpha
     val ds = Math.min(dynScale, 1.3f)
     screenDir(proj)
-    val ndx = _sdx; val ndy = _sdy
-    val k = 1.85f * ds
+    headingFrame(sx, sy, _sdx, _sdy, 2.1f * ds)
+    tracerRound(sb, tick, proj.id, 34f, 3.8f, 1f, 0.26f, 0.14f, a)
+    drawChargeCrackle(sx, sy, 16f * ds, 1f, 0.3f, 0.15f, a, sb, phase, proj.chargeLevel)
+  }
 
-    sb.fillOvalSoft(sx - ndx * 14f * k, sy - ndy * 14f * k, 22f * ds * dynGlow, 10f * ds * dynGlow, 1f, 0.3f, 0.15f, 0.3f * a, 0f, 12)
-    headingFrame(sx, sy, ndx, ndy, k)
-    // The shock off its point
-    gLine(sb, 0.6f, 0f, -7f, -5f, 0.7f, 0.9f, 0.92f, 0.96f, 0.4f * a)
-    gLine(sb, 0.6f, 0f, -7f, 5f, 0.7f, 0.9f, 0.92f, 0.96f, 0.4f * a)
-    tracerRound(sb, tick, proj.id, 40f, 3.8f, 1f, 0.26f, 0.14f, a)
+  /**
+   * The Cyborg's and the Mech Pilot's round: a steel slug on a cold blue tracer.
+   */
+  private[projectiles] def drawSteelRound(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
+    val phase = (tick + proj.id * 31) * 0.4
+    computeAllDynamics(proj, 0.4f, 0.8f, 1f, phase)
+    val a = dynAlpha
+    val ds = Math.min(dynScale, 1.3f)
+    screenDir(proj)
+    headingFrame(sx, sy, _sdx, _sdy, 1.9f * ds)
+    tracerRound(sb, tick, proj.id, 30f, 3.6f, 0.35f, 0.78f, 1f, a, 0.8f, 0.84f, 0.9f)
+    drawChargeCrackle(sx, sy, 16f * ds, 0.4f, 0.8f, 1f, a, sb, phase, proj.chargeLevel)
   }
 
   /**
@@ -72,13 +97,12 @@ private[render] object Arsenal {
     screenDir(proj)
     val ndx = _sdx; val ndy = _sdy
     val px = -ndy; val py = ndx
-    val k = 1.55f * ds
+    val k = 1.7f * ds
 
-    sb.fillOvalSoft(sx - ndx * 12f * k, sy - ndy * 12f * k, 24f * ds * dynGlow, 13f * ds * dynGlow, 1f, 0.8f, 0.2f, 0.28f * a, 0f, 12)
     var g = -1f
     while (g <= 1f) {
       val lead = if (g < 0f) 0f else -4f
-      headingFrame(sx + px * g * 5.5f * ds + ndx * lead * k, sy + py * g * 5.5f * ds + ndy * lead * k, ndx, ndy, k)
+      headingFrame(sx + px * g * 7f * ds + ndx * lead * k, sy + py * g * 7f * ds + ndy * lead * k, ndx, ndy, k)
       tracerRound(sb, tick, proj.id + (if (g < 0f) 0 else 5), 36f, 3.4f, 1f, 0.82f, 0.22f, a)
       g += 2f
     }

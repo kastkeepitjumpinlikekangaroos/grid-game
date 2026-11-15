@@ -321,7 +321,9 @@ class ProjectileManager(registry: ClientRegistry, isTeammate: (UUID, UUID) => Bo
             // through the first untouched and struck the second
             var hitPlayer: Player = null
             var hitDistSq = Float.MaxValue
-            grid.forEachNearby(projectile.getX, projectile.getY) { player =>
+            // Looked for round the centre of its hit circle, which a wave's and a melee swing's trail
+            // behind them: the grid shows four cells round a point, and a circle is no wider
+            grid.forEachNearby(projectile.hitCentreX, projectile.hitCentreY) { player =>
               // Not through a barrier: a hit radius reaches past one two cells out, so without this
               // a shot hit its holder, or whoever sheltered beside them, before it reached it.
               // Nor through a wall, for the same reason (terrainBetween)

@@ -11,9 +11,9 @@ import org.lwjgl.glfw.GLFW._
 import java.io.File
 import java.util.UUID
 import javax.imageio.ImageIO
-import com.gridgame.client.game.{ClientState, FadingProjectile, GameClient}
+import com.gridgame.client.game.{ClientState, FadingProjectile, GameClient, KillFeedEntry, KillMoment}
 import com.gridgame.client.gl.{GLFWManager, GLWindow, RenderQuality}
-import com.gridgame.client.render.GLGameRenderer
+import com.gridgame.client.render.{GLGameRenderer, MatchMenu}
 import com.gridgame.client.render.projectiles.GLProjectileRenderers
 
 /**
@@ -22,6 +22,10 @@ import com.gridgame.client.render.projectiles.GLProjectileRenderers
  *
  *   GRIDGAME_AUDIO=off bazel run //src/main/scala/com/gridgame/client:golden_frames -- out/dir
  *   GRIDGAME_AUDIO=off bazel run //src/main/scala/com/gridgame/client:golden_frames -- out/dir --quality=low
+ *   ... -- out/dir --scenes=meadow_menu,meadow_scoreboard --lang=ko --zoom=150
+ *
+ * (`--scenes=` some of them, `--lang=` the HUD's words in Korean or Chinese, `--zoom=` the camera's
+ * zoom for every scene that doesn't set its own.)
  *
  * then run it again on the other build and compare the directories (`cmp`, or any image diff).
  * A refactor of the renderer should leave every PNG byte for byte the same.
@@ -55,7 +59,8 @@ object GoldenFrames {
     * draws the mouse's pointer where we aim, as the match's window does over every frame. */
   final case class Scene(name: String, map: String, at: (Int, Int), build: Stage => Unit,
                          background: Option[String] = None, character: CharacterId = CharacterId.Wizard,
-                         cursor: Boolean = false)
+                         cursor: Boolean = false, zoom: Int = 0)
+  // `zoom`: the camera's zoom in percent (the settings' camera zoom); 0 for the run's (--zoom=, else 100)
 
   /** What a scene is built on. */
   final class Stage(val client: GameClient, val world: WorldData, val home: (Int, Int)) {
@@ -152,6 +157,14 @@ object GoldenFrames {
       client.nanoClock = () => T * 1000000L
     }
 
+    /** Our run of kills in a row come to `run`, the last of them `ms` before the captured frame, of
+      * whoever plays `victim` (render/CLAUDE.md, *A kill is announced*). */
+    def ourKills(run: Int, ms: Long, victim: CharacterId, firstBlood: Boolean = false): Unit = {
+      client.killCount = run
+      client.killStreak = run
+      client.lastKill = new KillMoment(T - ms, run, victim.name, victim.id, firstBlood)
+    }
+
     def inventory(itemType: ItemType, n: Int): Unit =
       (0 until n).foreach { k =>
         client.processPacket(new ItemPacket(nextSeq(), me, 0, 0, itemType.id, 5000 + itemType.id * 10 + k,
@@ -163,6 +176,9 @@ object GoldenFrames {
     var beforeFrame: () => Unit = () => timer(300)
     /** Run between the first frame and the second: health changes, which is what damage numbers are. */
     var afterFirstFrame: () => Unit = () => ()
+    /** Run once the renderer is made, with the window's size in units and its lines: what is up over the
+      * HUD at the player's asking (the menu Esc brings up, the scoreboard Tab holds up). */
+    var overHud: (GLGameRenderer, Float, Float, Int) => Unit = (_, _, _, _) => ()
   }
 
   // ── What goes in the scenes ─────────────────────────────────────────────
@@ -237,7 +253,8 @@ object GoldenFrames {
     // Hit, just now and a moment ago
     Seq(1, 4, 7, 10).foreach { i =>
       val p = players(i)
-      c.recordHit(p.getId, 0xFFFF7733, 0.8f, -0.6f, projectileTypes(i * 5), T - 40L * i)
+      val pos = p.getPosition
+      c.recordHit(p.getId, 0xFFFF7733, pos.getX - 1.6f, pos.getY + 1.2f, 0.8f, -0.6f, projectileTypes(i * 5), T - 40L * i)
     }
     // Items on the ground
     val kinds = Array[ItemType](ItemType.Gem, ItemType.Heart, ItemType.Star, ItemType.Shield, ItemType.Fence)
@@ -278,9 +295,12 @@ object GoldenFrames {
       c.getFadingProjectiles.put(7000 + i, new FadingProjectile(p, T - 60L * (i + 1), i % 2 == 0, 0xFF888888))
     }
     // The kill feed and the chat
-    c.killFeed.add(Array[AnyRef](java.lang.Long.valueOf(T - 800L), "You", "Wizard", "You killed Wizard"))
-    c.killFeed.add(Array[AnyRef](java.lang.Long.valueOf(T - 400L), "Kraken", "Golem", "Kraken killed Golem"))
-    c.killFeed.add(Array[AnyRef](java.lang.Long.valueOf(T - 100L), "Pirate", "You", "Pirate killed You"))
+    c.killFeed.add(new KillFeedEntry(T - 2600L, "You", "Wizard", c.selectedCharacterId, CharacterId.Wizard.id, 0, 0,
+      byUs = true, onUs = false))
+    c.killFeed.add(new KillFeedEntry(T - 1200L, "Kraken", "Golem", CharacterId.Kraken.id, CharacterId.Golem.id, 0, 0,
+      byUs = false, onUs = false))
+    c.killFeed.add(new KillFeedEntry(T - 100L, "Pirate", "You", CharacterId.Pirate.id, c.selectedCharacterId, 0, 0,
+      byUs = false, onUs = true))
     c.chatMessages.add(Array[AnyRef](java.lang.Long.valueOf(T - 900L), "P1", "hello there", java.lang.Byte.valueOf(ChatScope.GAME)))
     c.chatMessages.add(Array[AnyRef](java.lang.Long.valueOf(T - 300L), "P2", "behind you!", java.lang.Byte.valueOf(ChatScope.TEAM)))
     // Something to carry
@@ -304,6 +324,41 @@ object GoldenFrames {
       s.hold(slot, 400L, s.home._1 + aim._1, s.home._2 + aim._2)
     }, character = who)
   }
+
+  /** The five items lying round us (render/CLAUDE.md, *An item is drawn as the characters are*):
+    * each kind near us and again further off, at another moment of its own motion, with a player
+    * among them for their size and one of each kind in our inventory, the rest of it empty. */
+  private def itemScene(name: String, map: String, at: (Int, Int)): Scene = Scene(name, map, at, s => {
+    val kinds = Array[ItemType](ItemType.Gem, ItemType.Heart, ItemType.Star, ItemType.Shield, ItemType.Fence)
+    kinds.indices.foreach { i =>
+      val near = s.openAt(3.2, 0.5 + i * 2 * Math.PI / 5)
+      val far = s.openAt(6.5, 1.1 + i * 2 * Math.PI / 5)
+      s.client.getItems.put(100 + i, new Item(100 + i, near._1, near._2, kinds(i)))
+      s.client.getItems.put(300 + i * 7, new Item(300 + i * 7, far._1, far._2, kinds(i)))
+    }
+    s.remote(0, 20, s.openAt(4.8, 2.4))
+    s.inventory(ItemType.Heart, 1)
+    s.inventory(ItemType.Gem, 1)
+    s.inventory(ItemType.Shield, 1)
+  })
+
+  /** Players round us struck a moment apart, each at another stage of the blood a hit draws
+    * (render/CLAUDE.md, *A hit draws blood*): the spurt leaving them, its drops in the air and
+    * landing, splats wet, drying and fading; each struck from another way, and one by a slam on top
+    * of them, which spurts all round. */
+  private def bloodScene(name: String, map: String, at: (Int, Int)): Scene = Scene(name, map, at, s => {
+    val ages = Seq(20L, 60L, 120L, 200L, 320L, 700L, 1600L, 2900L)
+    ages.zipWithIndex.foreach { case (age, i) =>
+      val p = s.remote(i, i * 13 + 5, s.openAt(3.0 + (i % 2) * 1.5, i * Math.PI / 4))
+      val pos = p.getPosition
+      val from = i * 2.3
+      val (dx, dy) = (Math.cos(from).toFloat, Math.sin(from).toFloat)
+      if (i == 2) s.client.recordHit(p.getId, 0xFFFF7733, pos.getX.toFloat, pos.getY.toFloat, 0f, 0f,
+        ProjectileType.SHOCKWAVE, T - age)
+      else s.client.recordHit(p.getId, 0xFFFF7733, pos.getX - 1.8f * dx, pos.getY - 1.8f * dy, dx, dy,
+        ProjectileType.ARROW, T - age)
+    }
+  })
 
   /** Looking out over the edge of the map, with a player and a shot or two in front of it. */
   private def edgeScene(s: Stage): Unit = {
@@ -365,10 +420,25 @@ object GoldenFrames {
     Scene("nexus_dead", "the_nexus.json", (0, 0), s => {
       everything(s, withEffects = true)
       s.localUpdate(health = 0)
+      s.client.lastKillerCharacterName = CharacterId.Pirate.name
+      s.client.lastKillerCharacter = CharacterId.Pirate.id
     }),
     Scene("nexus_game_over", "the_nexus.json", (0, 0), s => {
       s.localUpdate(health = 0)
       s.client.isRespawning = false
+    }),
+    // The volcano, the graveyard by night and the desert: lava and its light, lanterns, an oasis
+    Scene("caldera", "the_caldera.json", (70, 58), s => {
+      everything(s, withEffects = false)
+      projectiles(s, projectileTypes.filter(_ % 3 == 0), 1, 4)
+    }),
+    Scene("graveyard", "the_graveyard.json", (70, 66), s => {
+      everything(s, withEffects = false)
+      projectiles(s, projectileTypes.filter(_ % 3 == 1), 1, 4)
+    }),
+    Scene("oasis", "the_oasis.json", (70, 59), s => {
+      everything(s, withEffects = false)
+      projectiles(s, projectileTypes.filter(_ % 3 == 2), 1, 4)
     }),
     // The edge of the world, where the background shows: each sky the renderer draws
     Scene("edge_sky", "the_meadow.json", (4, 30), s => edgeScene(s)),
@@ -376,7 +446,9 @@ object GoldenFrames {
     Scene("edge_snow", "the_snowglobe.json", (4, 30), s => edgeScene(s)),
     Scene("edge_space", "the_hive.json", (4, 30), s => edgeScene(s)),
     Scene("edge_cityscape", "the_cell.json", (4, 30), s => edgeScene(s), background = Some("cityscape")),
-    Scene("edge_desert", "the_cell.json", (4, 30), s => edgeScene(s), background = Some("desert")),
+    Scene("edge_desert", "the_tomb.json", (4, 30), s => edgeScene(s)),
+    Scene("edge_volcano", "the_crucible.json", (4, 30), s => edgeScene(s)),
+    Scene("edge_night", "the_crypt.json", (4, 30), s => edgeScene(s)),
     Scene("edge_ocean", "the_cell.json", (4, 30), s => edgeScene(s), background = Some("ocean")),
     // Charging a shot: its lane on a dark map's open floor, lit, landing short of where a full charge
     // would (the Monk's, short enough to be on screen whole); and on snow at full, running on through
@@ -421,6 +493,10 @@ object GoldenFrames {
       s.afterFirstFrame = () => s.knockedTo(148, 152)
     }),
     Scene("cell_beside_wall", "the_cell.json", (41, 21), s => ()),
+    // Blood: a hit's on grass, on snow, and on the Hive's dark floor
+    bloodScene("meadow_blood", "the_meadow.json", (60, 30)),
+    bloodScene("snowglobe_blood", "the_snowglobe.json", (50, 14)),
+    bloodScene("hive_blood", "the_hive.json", (66, 84)),
     // Carrying all we may with an item at our feet: the count beside the inventory in amber, and
     // above the bar the notice that the item stays on the ground until we use one of ours
     Scene("meadow_inventory_full", "the_meadow.json", (60, 30), s => {
@@ -432,6 +508,11 @@ object GoldenFrames {
       val (hx, hy) = s.home
       s.client.getItems.put(1, new Item(1, hx + 1, hy, ItemType.Gem))
     }),
+    // The five items on the ground: on grass and a path, on snow, on sand and on the Hive's dark deck
+    itemScene("meadow_items", "the_meadow.json", (60, 30)),
+    itemScene("snowglobe_items", "the_snowglobe.json", (50, 14)),
+    itemScene("lagoon_items", "the_lagoon.json", (65, 18)),
+    itemScene("hive_items", "the_hive.json", (66, 84)),
     // R pressed 23 seconds ago (design/characters.md, *R resets the cooldowns*): its slot beside Q's
     // and E's sweeping round its minute, with the seconds still to go
     Scene("meadow_reset_cooling", "the_meadow.json", (60, 30), s => s.resetPressed(23000L)),
@@ -439,11 +520,34 @@ object GoldenFrames {
       everything(s, withEffects = false)
       val c = s.client
       c.isPracticeMode = true
-      c.practiceHits = 17; c.practiceShots = 40; c.practiceCombo = 3; c.practiceBestCombo = 6
-      c.practiceLastHitTime = T - 500L
+      c.practiceHits = 17; c.practiceShots = 40; c.practiceBestCombo = 6
+      s.ourKills(3, 2600L, CharacterId.Samurai)
+      c.killCount = 17
       c.isChatOpen = true
       c.chatInputText = "gg well played"
-      c.leaveConfirmUntil = T + 2000L
+    }),
+    // A kill of ours announced (render/CLAUDE.md, *A kill is announced*): the match's first blood just
+    // landed, over the Meadow's grass; a third in a row with its light running over it, and the chip
+    // beside the score counting the run, over the Hive's dark floor; a fifth as it lands, its ring going
+    // out, over snow; and practice's run of four, the time for a fifth running out under its count
+    Scene("meadow_first_blood", "the_meadow.json", (60, 30), s => {
+      everything(s, withEffects = false)
+      s.ourKills(1, 600L, CharacterId.Gladiator, firstBlood = true)
+    }),
+    Scene("hive_triple_kill", "the_hive.json", (66, 84), s => {
+      everything(s, withEffects = false)
+      s.ourKills(3, 330L, CharacterId.Samurai)
+    }),
+    Scene("snowglobe_rampage", "the_snowglobe.json", (50, 14), s => {
+      everything(s, withEffects = true)
+      s.ourKills(5, 150L, CharacterId.Kraken)
+    }),
+    Scene("lagoon_practice_combo", "the_lagoon.json", (65, 18), s => {
+      val c = s.client
+      c.isPracticeMode = true
+      c.practiceHits = 23; c.practiceShots = 51; c.practiceBestCombo = 6
+      s.ourKills(4, 1500L, CharacterId.Golem)
+      c.killCount = 23
     }),
     // F8 just marked the match's second moment for a problem report (design/diagnostics.md): the notice
     // under the top of the screen
@@ -451,8 +555,68 @@ object GoldenFrames {
       everything(s, withEffects = false)
       com.gridgame.client.diagnostics.Diagnostics.lastMarkNumber = 2
       com.gridgame.client.diagnostics.Diagnostics.markNoticeUntilMs = T + 2000L
-    })
+    }),
+    // The scoreboard Tab holds up (render/hud/ScoreboardPainter), a free-for-all: everyone placed on
+    // kills less deaths, the first three on medals, us in gold, one dead just now, one who has left
+    Scene("meadow_scoreboard", "the_meadow.json", (60, 30), s => scoreboardScene(s, teams = false)),
+    // and Teams: a section a team, with its kills and its score, the one ahead marked
+    Scene("hive_scoreboard_teams", "the_hive.json", (66, 84), s => scoreboardScene(s, teams = true)),
+    // The menu Esc brings up (render/MatchMenu), over a fight: the settings as they are, the pointer on Resume
+    Scene("meadow_menu", "the_meadow.json", (60, 30), s => {
+      everything(s, withEffects = false)
+      s.overHud = (r, w, h, lines) => {
+        val m = r.menu
+        m.open()
+        m.layout(w, h, lines)
+        m.pointerMoved(m.x(MatchMenu.Resume) + m.w(MatchMenu.Resume) / 2, m.y(MatchMenu.Resume) + m.h(MatchMenu.Resume) / 2)
+      }
+    }),
+    // worked from the keyboard (its ring in sky blue), Leave pressed once and waiting for the second,
+    // with the camera zoomed in to 150%
+    Scene("snowglobe_menu_leave", "the_snowglobe.json", (50, 14), s => {
+      everything(s, withEffects = false)
+      s.overHud = (r, _, _, _) => {
+        r.menu.open()
+        r.menu.navigate(-1, 0)
+        r.menu.activateFocused()
+      }
+    }, zoom = 150),
+    // and in practice, where leaving is ending it: the longer words made to fit their button
+    Scene("practice_menu_end", "the_meadow.json", (60, 30), s => {
+      s.client.isPracticeMode = true
+      s.overHud = (r, _, _, _) => {
+        r.menu.open()
+        r.menu.navigate(-1, 0)
+        r.menu.activateFocused()
+      }
+    }),
+    // The camera zoomed all the way in (200%): the world twice the size it is drawn at by default, the
+    // HUD, the name plates, health bars and damage numbers as they were
+    Scene("meadow_zoomed", "the_meadow.json", (60, 30), s => everything(s, withEffects = true), zoom = 200)
   )
+
+  /** Eight in a match, each with their kills and deaths as the KILLs tell them (each carries its
+    * killer's own count), one dead just now and one gone from it, and the scoreboard held up; our ping
+    * and the clock along its top. In Teams, two teams of four, us on the first. */
+  private def scoreboardScene(s: Stage, teams: Boolean): Unit = {
+    val c = s.client
+    if (teams) c.localTeamId = 1
+    val lines = Seq((7, 3), (5, 5), (4, 1), (2, 4), (6, 2), (1, 3), (3, 3))
+    val players = lines.indices.map { i =>
+      val team = if (!teams) 0.toByte else if (i % 2 == 0) 2.toByte else 1.toByte
+      s.remote(i, i * 13 + 5, s.cell(i * 7 + 3), team)
+    }
+    def kill(killer: UUID, kills: Int, deaths: Int): Unit =
+      c.processPacket(new GameEventPacket(s.nextSeq(), killer, Packet.getCurrentTimestamp, GameEvent.KILL, 7.toShort, 0,
+        kills.toShort, deaths.toShort, null, 0.toByte, 0.toShort, 0.toShort))
+    lines.zip(players).foreach { case ((k, d), p) => kill(p.getId, k, d) }
+    kill(s.me, 5, 2)
+    players(3).setHealth(0)
+    c.processPacket(new PlayerLeavePacket(s.nextSeq(), players(5).getId))
+    c.lastRoundTripMs = 38
+    s.beforeFrame = () => s.timer(222)
+    s.overHud = (r, _, _, _) => r.scoreboardShown = true
+  }
 
   /** The mouse's pointer where we aim: over the thick of the Hive's firefight, and over the snow's. */
   private val cursorScenes: Seq[Scene] = {
@@ -470,13 +634,17 @@ object GoldenFrames {
     val rest = RenderQuality.configure(if (args.exists(_.startsWith("--quality="))) args else args :+ "--quality=high")
     val outDir = new File(rest.headOption.getOrElse("golden"))
     val only = rest.find(_.startsWith("--scenes=")).map(_.substring("--scenes=".length).split(",").toSet)
+    // The HUD's words in another language (en, ko, zh_CN), for this run only: English otherwise
+    rest.find(_.startsWith("--lang=")).foreach(l => com.gridgame.client.i18n.Messages.useForThisRun(l.substring("--lang=".length)))
     outDir.mkdirs()
     CharacterDef.all // registers every ProjectileDef
 
     val window = new GLWindow("Golden frames", W, H)
     window.create()
+    val runZoom = RenderQuality.zoomPercent
 
     (scenes ++ cursorScenes).filter(sc => only.forall(_.contains(sc.name))).foreach { scene =>
+      RenderQuality.setZoom(if (scene.zoom > 0) scene.zoom else runZoom)
       val loaded = WorldLoader.load("worlds/" + scene.map)
       val home = if (scene.at != ((0, 0))) scene.at else (loaded.spawnPoints.head.getX, loaded.spawnPoints.head.getY)
       val world = new WorldData(loaded.name, loaded.width, loaded.height, loaded.tiles, Seq(new Position(home._1, home._2)),
@@ -500,6 +668,7 @@ object GoldenFrames {
       val clock = new HeldClock
       val renderer = new GLGameRenderer(client, clock)
       renderer.seedRandom(12345L)
+      stage.overHud(renderer, window.width.toFloat, window.height.toFloat, window.fbHeight)
       var f = 0
       while (f <= WarmupFrames) {
         glfwPollEvents()
@@ -509,7 +678,7 @@ object GoldenFrames {
         if (scene.cursor) {
           // Where the aim is on the window: the world's screen position is in the zoomed world's units
           val cam = renderer.camera
-          val zoom = Constants.CAMERA_ZOOM
+          val zoom = cam.zoom
           renderer.drawCursor(
             IsometricTransform.worldToScreenX(client.getMouseWorldX, client.getMouseWorldY, cam.camOffX) * zoom,
             IsometricTransform.worldToScreenY(client.getMouseWorldX, client.getMouseWorldY, cam.camOffY) * zoom,

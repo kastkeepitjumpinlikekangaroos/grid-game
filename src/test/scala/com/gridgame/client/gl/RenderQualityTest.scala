@@ -22,13 +22,13 @@ class RenderQualityTest {
       def put(key: String, value: String): Unit = saved(key) = value
     }
     RenderQuality.setTier(RenderQuality.HIGH)
-    RenderQuality.configure(Array("--resolution=native"))
+    RenderQuality.configure(Array("--resolution=native", "--zoom=100"))
   }
 
   @After def putBack(): Unit = {
     RenderQuality.store = before
     RenderQuality.setTier(RenderQuality.HIGH)
-    RenderQuality.configure(Array("--resolution=native"))
+    RenderQuality.configure(Array("--resolution=native", "--zoom=100"))
   }
 
   // The iMac's window: 2240x1202 points, 4480x2404 pixels
@@ -94,5 +94,49 @@ class RenderQualityTest {
     RenderQuality.chooseResolution(900)
     assertEquals("not one of them: the display's own", 0, RenderQuality.resolution)
     assertEquals("native", saved("resolution"))
+  }
+
+  // --- The camera's zoom ---
+
+  @Test def theZoomStartsAtTheWidestViewAndIsKeptWhenChosen(): Unit = {
+    assertEquals("the view every match had before the setting", 100, RenderQuality.zoomPercent)
+    assertEquals(1.0, RenderQuality.zoom, 0)
+    RenderQuality.chooseZoom(150)
+    assertEquals(1.5, RenderQuality.zoom, 1e-12)
+    assertEquals("150%", saved("zoom"))
+    // The next run: the widest, then what was saved
+    RenderQuality.setZoom(100)
+    RenderQuality.loadSaved()
+    assertEquals(150, RenderQuality.zoomPercent)
+  }
+
+  @Test def onlyTheZoomsThereAreAreTaken(): Unit = {
+    assertEquals((100 to 200 by 10).toSeq, RenderQuality.Zooms)
+    RenderQuality.chooseZoom(134)
+    assertEquals("between two steps, the nearest", 130, RenderQuality.zoomPercent)
+    RenderQuality.chooseZoom(136)
+    assertEquals(140, RenderQuality.zoomPercent)
+    RenderQuality.chooseZoom(40)
+    assertEquals("never wider than the widest", 100, RenderQuality.zoomPercent)
+    RenderQuality.chooseZoom(900)
+    assertEquals("nor closer than twice it", 200, RenderQuality.zoomPercent)
+    assertEquals("200%", saved("zoom"))
+    // A saved zoom that isn't one of them is left alone
+    saved("zoom") = "137%"
+    RenderQuality.setZoom(120)
+    RenderQuality.loadSaved()
+    assertEquals(120, RenderQuality.zoomPercent)
+  }
+
+  @Test def theZoomFlagIsForTheRunAndIsNotSaved(): Unit = {
+    RenderQuality.chooseZoom(180)
+    val rest = RenderQuality.configure(Array("--zoom=130", "--other"))
+    assertEquals(130, RenderQuality.zoomPercent)
+    assertEquals(Seq("--other"), rest.toSeq)
+    assertEquals("180%", saved("zoom"))
+    RenderQuality.configure(Array("--zoom=135"))
+    assertEquals("not one of them: left as it was", 130, RenderQuality.zoomPercent)
+    RenderQuality.configure(Array("--zoom=170%"))
+    assertEquals(170, RenderQuality.zoomPercent)
   }
 }

@@ -294,7 +294,7 @@ class CooldownResetTest {
     val s = new ServerTestKit.TestSession()
     m.seat(Seq(s)) // a Gladiator, whose E is the Rope
     val p = m.instance.registry.get(s.playerId)
-    assertEquals(1, m.fire(p, AttackSlot.E, ProjectileType.ROPE, east).size)
+    assertEquals(1, m.fire(p, AttackSlot.E, ProjectileType.LASSO, east).size)
     s.received()
     s.send(n => new CooldownResetPacket(n, s.playerId, CooldownResetAction.REQUEST, 0))
     val answer = s.received().collect { case r: CooldownResetPacket => r }
@@ -303,7 +303,7 @@ class CooldownResetTest {
     minuteRun()
     s.send(n => new CooldownResetPacket(n, s.playerId, CooldownResetAction.REQUEST, 0))
     assertTrue(s.received().collect { case r: CooldownResetPacket => r }.isEmpty)
-    assertEquals("the Rope is ready again", 1, m.fire(p, AttackSlot.E, ProjectileType.ROPE, east).size)
+    assertEquals("the Rope is ready again", 1, m.fire(p, AttackSlot.E, ProjectileType.LASSO, east).size)
   }
 
   // --- Bots ---

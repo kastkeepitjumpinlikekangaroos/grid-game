@@ -17,8 +17,10 @@ match-flow.md (the opening, and who wins). This file is how the package is put t
   registry and set an effect or a damage of their own. Some exist only so their thrower's damage can
   differ from the others who throw the base (the Maul, the Arena Axe, the Throwing Star, the Mantis
   Scythe; see design/characters.md, *Balance*; and the Gambler's Card Heavy and the Puppeteer's Chain
-  Bolt Heavy, *No volleys of more than three*); a new one needs its look, preview and sound (the
-  base's) in `GLProjectileRenderers`, `AbilityPreviewPalette` and `AbilitySounds`.
+  Bolt Heavy, *No volleys of more than three*), and the Gladiator's Lasso so that his rope can hold
+  its catch while the ranged characters' Rope only pulls (*A fighter can finish what it starts*); a
+  new one needs its look, preview and sound (the base's) in `GLProjectileRenderers`,
+  `AbilityPreviewPalette` and `AbilitySounds`.
 - **Projectiles** — `ProjectileDef` (what a type does; `ProjectileType` names the ids,
   `OnHitEffect.scala` the effects) is a registry filled by `CharacterDef`; `ProjectileDef.get`
   makes sure `CharacterDef` has initialized, so the first lookup anywhere finds every type.
@@ -36,8 +38,8 @@ match-flow.md (the opening, and who wins). This file is how the package is put t
   player once however many of them strike).
 - `WorldData`, `Tile` (with `TileForm`: ground, pool, block, prop), `TeamDivider`, `MatchOpening`.
 - `GroundEdges` — where two kinds of ground meet, which spills over which (a layer per ground that
-  meets its neighbours that way: the natural ones, and the space maps' deck over open space; ground
-  built in pieces, lava and blocks take none) and how the one soft, inked edge between them looks,
+  meets its neighbours that way: the natural ones, lava, and the space maps' deck over open space;
+  ground built in pieces and blocks take none; all fifteen layers the shader has room for are taken) and how the one soft, inked edge between them looks,
   with `shade`, the edge at a point, which the menus' map pictures draw and the match's shader
   follows line for line (client/render/CLAUDE.md, *Where two kinds of ground meet*). Nothing in it
   is a rule of the game: a cell is walkable or not as its tile is.
@@ -50,10 +52,14 @@ match-flow.md (the opening, and who wins). This file is how the package is put t
    name, walkable, color. A non-walkable tile that isn't a block overrides `form` (`Pool` or
    `Prop`), and a prop names the `ground` it grows out of. A pool whose frames aren't an animation
    overrides `animates`, and a tile whose variants aren't picked at random by position overrides
-   `variantAt`. A ground that should meet its neighbours in a soft edge (not one built in pieces)
-   gets a layer in `GroundEdges`, its `color` the one its tile is painted (`GroundEdgesTest` checks
-   the atlas), and its edge's look there. A non-walkable tile stops projectiles unless it overrides
-   `stopsProjectiles` (water does: shots fly over it).
+   `variantAt` (`Tile.scattered` for a prop a map sets out at even steps: the usual rule repeats
+   every four cells). A ground that should meet its neighbours in a soft edge (not one built in
+   pieces) gets a layer in `GroundEdges`, its `color` the one its tile is painted (`GroundEdgesTest`
+   checks the atlas), and its edge's look there — but the fifteen layers are all taken: it has to
+   share one, as the flowers share the grass's (so be painted that layer's colour at its edge), or
+   the shader's packing has to change (four bits a layer, nine layers in a quad's colour). A
+   non-walkable tile stops projectiles unless it overrides `stopsProjectiles` (water and lava do:
+   shots fly over them).
 2. Add to `Tile.all` sequence, and bump the count in `WorldDataTest`
 3. Write its draw function in `scripts/generate_tiles.py` and add it to `TILES` with its form. A
    block also needs `BLOCK_HEIGHTS` (and `ANIMATED_BLOCKS` if its frames move). A small prop can
@@ -68,5 +74,5 @@ match-flow.md (the opening, and who wins). This file is how the package is put t
 2. Implement tile placement logic
 3. Supported layer types (`common/world/WorldLoader`): `fill`, `rect`, `border`, `circle`, `line`, `points`, `grid`
 
-Where the three generated maps come from, and the rules every map is held to, are in
+Where the generated maps come from, and the rules every map is held to, are in
 scripts/CLAUDE.md (*Maps*).

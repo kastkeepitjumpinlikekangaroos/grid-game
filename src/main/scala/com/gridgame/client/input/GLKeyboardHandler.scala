@@ -11,13 +11,19 @@ import org.lwjgl.glfw.GLFWKeyCallback
 import scala.collection.mutable
 import com.gridgame.client.diagnostics.Diagnostics
 import com.gridgame.client.game.{ClientState, GameClient}
+import com.gridgame.client.render.MatchMenu
 import com.gridgame.common.diagnostics.Recording.InputDevice
 
 /**
  * GLFW keyboard handler. Mirrors KeyboardHandler logic but uses GLFW key codes.
  * Installed as a GLFW key callback on the game window.
+ *
+ * Esc brings up the match's menu (`menu`, render/MatchMenu), and Esc again puts it away; while it is
+ * up it has the keyboard (the arrow keys, Enter, Space), and nothing walks or casts. Tab held holds
+ * the scoreboard up ([[tabHeld]], which the match's window hands the renderer). F8, F11 and F7 work
+ * whatever is up.
  */
-class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
+class GLKeyboardHandler(client: GameClient, val menu: MatchMenu = new MatchMenu()) extends GLFWKeyCallback {
   private val pressedKeys: mutable.Set[Int] = mutable.Set.empty
   // The keys held that a match's recording keeps (Recording.Keys), kept up as they go down and up
   private var _heldMask = 0
@@ -26,16 +32,18 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
   private var steppedYet = false
   private var lastBurstTime: Long = 0
   private var _f11JustPressed: Boolean = false
+  // Tab, down: the scoreboard is up for as long as it is
+  private var _tabHeld = false
 
   // Chat input state
   var isChatMode: Boolean = false
   val chatInputBuffer = new StringBuilder(Constants.MAX_CHAT_MESSAGE_LEN)
 
-  /** Set by the game scene: leaves the match (Esc, twice). */
-  var onLeaveMatch: () => Unit = () => ()
   /** Set by the game scene: the player marks this moment for a problem report (F8). */
   var onMarkMoment: () => Unit = () => ()
-  private val LEAVE_CONFIRM_MS = 3000L
+
+  /** Whether Tab is held down: the scoreboard is up while it is (not while the menu or the chat is). */
+  def tabHeld: Boolean = _tabHeld
 
   override def invoke(window: Long, key: Int, scancode: Int, action: Int, mods: Int): Unit = {
     // Into the match's recording, but for what is typed into chat, which is the player's own
@@ -48,17 +56,27 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
       return
     }
 
+    // Tab holds the scoreboard up while it is down; letting it go always takes it down, whatever came
+    // up in between (the chat, the menu), or it could stay up with no Tab held
+    if (key == GLFW_KEY_TAB) {
+      if (action == GLFW_RELEASE) _tabHeld = false
+      else if (action == GLFW_PRESS && !isChatMode && !menu.isOpen) _tabHeld = true
+      return
+    }
+
     if (isChatMode && action == GLFW_PRESS) {
       handleChatKey(key, mods)
       return
     }
 
+    // The menu has the keyboard while it is up
+    if (menu.isOpen) {
+      if (action == GLFW_PRESS || action == GLFW_REPEAT) menuKey(key, action == GLFW_REPEAT)
+      return
+    }
+
     if (action == GLFW_PRESS && key == GLFW_KEY_ESCAPE) {
-      // The first press only arms it (the HUD asks for a second), so a stray Esc, say one
-      // meant to close chat, can't end a match.
-      val now = System.currentTimeMillis()
-      if (now < client.leaveConfirmUntil) onLeaveMatch()
-      else client.leaveConfirmUntil = now + LEAVE_CONFIRM_MS
+      openMenu()
       return
     }
 
@@ -93,10 +111,36 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
     client.isChatOpen = true
     pressedKeys.clear()
     _heldMask = 0
+    _tabHeld = false
     // Typing isn't attacking: whatever was aimed or held is put away without going off
     client.cancelAims()
     chatInputBuffer.clear()
     client.chatInputText = ""
+  }
+
+  /** Esc: the menu up, and everything held let go, as for the chat. What was aimed or held is put away
+    * without going off: the next click is the menu's. */
+  private def openMenu(): Unit = {
+    menu.open()
+    pressedKeys.clear()
+    _heldMask = 0
+    _tabHeld = false
+    client.setMovementInputActive(false)
+    client.cancelAims()
+  }
+
+  /** A key while the menu is up: Esc puts it away, the arrows move about it and change what they are
+    * on (held down, they go on), Enter or Space presses the button picked. F11 and F7 still do theirs. */
+  private def menuKey(key: Int, repeat: Boolean): Unit = key match {
+    case GLFW_KEY_ESCAPE => if (!repeat) menu.close()
+    case GLFW_KEY_UP => menu.navigate(0, -1)
+    case GLFW_KEY_DOWN => menu.navigate(0, 1)
+    case GLFW_KEY_LEFT => menu.navigate(-1, 0)
+    case GLFW_KEY_RIGHT => menu.navigate(1, 0)
+    case GLFW_KEY_ENTER | GLFW_KEY_KP_ENTER | GLFW_KEY_SPACE => if (!repeat) menu.activateFocused()
+    case GLFW_KEY_F11 => if (!repeat) _f11JustPressed = true
+    case GLFW_KEY_F7 => if (!repeat) com.gridgame.client.gl.RenderQuality.cycleTier()
+    case _ =>
   }
 
   private def exitChatMode(): Unit = {
@@ -131,6 +175,7 @@ class GLKeyboardHandler(client: GameClient) extends GLFWKeyCallback {
   def clearAllKeys(): Unit = {
     pressedKeys.clear()
     _heldMask = 0
+    _tabHeld = false
     client.setMovementInputActive(false)
     // A key or button let go of in another window never comes up in this one, and the click that
     // brings this one back is no cast of what was aimed before it went

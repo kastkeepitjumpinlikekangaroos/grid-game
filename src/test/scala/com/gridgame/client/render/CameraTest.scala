@@ -109,6 +109,54 @@ class CameraTest {
     assertEquals(26.0, wy, 1e-9)
   }
 
+  // -- zoomed in (the settings' camera zoom) ---------------------------------------------------
+
+  @Test def zoomedInTheMiddleOfTheWindowIsStillThePlayerAndTheCursorAimsWhereItIs(): Unit = {
+    for (z <- Seq(zoom, zoom * 1.3, zoom * 2)) {
+      val cam = new GameCamera()
+      cam.update(40, 25, 0.016, 1280.0 / z, 800.0 / z, 0.0, z)
+      assertEquals(z, cam.zoom, 0)
+      val (cx, cy) = cam.screenToWorld(640.0, 400.0)
+      assertEquals(s"at $z", 40.0, cx, 1e-9)
+      assertEquals(25.0, cy, 1e-9)
+      // A world point where it was drawn, on the window, and back, on the pixel grid too
+      val snapped = new GameCamera()
+      snapped.update(40.3, 25.7, 0.016, 1280.0 / z, 800.0 / z, 2 * z, z)
+      val sx = IsometricTransform.worldToScreenX(41.0, 26.0, snapped.camOffX) * z
+      val sy = IsometricTransform.worldToScreenY(41.0, 26.0, snapped.camOffY) * z
+      val (wx, wy) = snapped.screenToWorld(sx, sy)
+      assertEquals(41.0, wx, 1e-9)
+      assertEquals(26.0, wy, 1e-9)
+    }
+  }
+
+  @Test def theRenderersZoomIsThePlayersOnTheWidestView(): Unit = {
+    val was = com.gridgame.client.gl.RenderQuality.zoomPercent
+    try {
+      com.gridgame.client.gl.RenderQuality.setZoom(100)
+      assertEquals("the widest, every match's view before the setting", Constants.CAMERA_ZOOM, GameCamera.playersZoom, 0)
+      com.gridgame.client.gl.RenderQuality.setZoom(150)
+      assertEquals(Constants.CAMERA_ZOOM * 1.5, GameCamera.playersZoom, 1e-9)
+    } finally com.gridgame.client.gl.RenderQuality.setZoom(was)
+  }
+
+  @Test def zoomedInAShakeMovesTheViewAsFarOnTheScreen(): Unit = {
+    val fixed = FrameClock.onFrames(() => 123456789L)
+    def shaken(z: Double): (Double, Double) = {
+      val cam = new GameCamera(fixed)
+      cam.update(10, 10, 0.016, 800 / z, 450 / z, 0.0, z)
+      val (x0, y0) = (cam.camOffX, cam.camOffY)
+      cam.addShake(12)
+      cam.update(10, 10, 0.016, 800 / z, 450 / z, 0.0, z)
+      ((cam.camOffX - x0) * z, (cam.camOffY - y0) * z) // in the window's units
+    }
+    val (wx, wy) = shaken(zoom)
+    assertTrue("it shook", Math.abs(wx) + Math.abs(wy) > 1.0)
+    val (zx, zy) = shaken(zoom * 2)
+    assertEquals(wx, zx, 1e-9)
+    assertEquals(wy, zy, 1e-9)
+  }
+
   // -- the edge of the world ------------------------------------------------------------------
 
   @Test def mustTheBackgroundBeDrawn(): Unit = {

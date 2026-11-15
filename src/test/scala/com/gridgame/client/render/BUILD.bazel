@@ -57,3 +57,98 @@ scala_junit_test(
         "@maven//:junit_junit",
     ],
 )
+
+# The blood a hit draws: each drop's arc, which way each kind of hit sprays, splats only on open
+# ground, made once and allocating nothing after, and what the painter takes from the client's hits
+scala_junit_test(
+    name = "blood_test",
+    srcs = ["BloodTest.scala"],
+    env = {"GRIDGAME_AUDIO": "off"},
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "//src/main/scala/com/gridgame/common",
+        "//src/test/scala/com/gridgame/client:client_test_kit",
+        "@maven//:junit_junit",
+    ],
+)
+
+# The items on the ground: the atlas scripts/generate_items.py draws is the grid the renderer cuts up
+# (a cell for every frame, each item in the middle of its cell and clear of its edge, in its own colour)
+scala_junit_test(
+    name = "item_sprites_test",
+    srcs = ["ItemSpritesTest.scala"],
+    data = ["//sprites:sprite_files"],
+    suffixes = ["Test"],
+    jvm_flags = ["-Djava.awt.headless=true"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "//src/main/scala/com/gridgame/common",
+        "@maven//:junit_junit",
+    ],
+)
+
+# What the renderer remembers of them between frames: when each was first there, which have gone
+scala_junit_test(
+    name = "item_track_test",
+    srcs = ["ItemTrackTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+# And what the painter makes of that: popping into being once, a puff for a pickup seen, neither for
+# walking away from an item or back to it
+scala_junit_test(
+    name = "item_painter_test",
+    srcs = ["ItemPainterTest.scala"],
+    env = {"GRIDGAME_AUDIO": "off"},
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "//src/main/scala/com/gridgame/common",
+        "//src/test/scala/com/gridgame/client:client_test_kit",
+        "@maven//:junit_junit",
+    ],
+)
+
+# The menu Esc brings up in a match: laid out in its card, each control doing what it says and keeping
+# it (quality, resolution, zoom), the zoom's track dragged, leaving on a second press, the keys about it
+scala_junit_test(
+    name = "match_menu_test",
+    srcs = ["MatchMenuTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+# The scoreboard Tab holds up: everyone's kills and deaths as the KILLs told them, everyone gathered,
+# placed exactly as the match's end places them (MatchResults), allocating nothing
+scala_junit_test(
+    name = "live_standings_test",
+    srcs = ["LiveStandingsTest.scala"],
+    env = {"GRIDGAME_AUDIO": "off"},
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "//src/main/scala/com/gridgame/common",
+        "//src/test/scala/com/gridgame/client:client_test_kit",
+        "@maven//:junit_junit",
+    ],
+)
+
+# A kill of ours announced: the titles of a run of kills, its colours, how a title lands, every word
+scala_junit_test(
+    name = "kill_banner_test",
+    srcs = ["KillBannerTest.scala"],
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "@maven//:com_google_code_gson_gson",
+        "@maven//:junit_junit",
+    ],
+)

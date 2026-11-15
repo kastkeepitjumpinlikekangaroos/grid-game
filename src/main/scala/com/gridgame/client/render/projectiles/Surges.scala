@@ -289,23 +289,6 @@ private[render] object Surges {
   }
 
   // ── The Inferno ──
-  private val TONGUE_T = Array(0f, 0.3f, 0.6f, 0.85f, 1f)
-
-  /** One tongue of a flame from (x0, y0) back along (-ndx, -ndy), `len` long and `w` wide at its
-    * root, rising and swaying as flames do; into _sx/_sy/_pvW/_pvA, five points. */
-  private def tongue(x0: Float, y0: Float, ndx: Float, ndy: Float, lat: Float, spread: Float, len: Float,
-                     w: Float, rise: Float, sway: Float, a: Float): Unit = {
-    val px = -ndy; val py = ndx
-    var i = 0
-    while (i < 5) {
-      val t = TONGUE_T(i)
-      val l = lat + spread * t + sway * t * t
-      _sx(i) = x0 - ndx * len * t + px * l; _sy(i) = y0 - ndy * len * t + py * l - rise * t * t
-      _pvW(i) = w * (1f - t) * (1f - t * 0.2f) + 0.4f; _pvA(i) = a * (1f - t * t * 0.5f)
-      i += 1
-    }
-  }
-
   /**
    * The Inferno's flame wave: a small one of the Inferno itself — a living flame with a scowl, its
    * head on the hitbox and its fire streaming back in five tongues, rising and flickering, orange
@@ -334,28 +317,36 @@ private[render] object Surges {
       e += 1
     }
 
-    // The fire streaming off it, in layers: ink, red-orange, orange, yellow
+    // The fire streaming off it in five tongues, fanned about what is behind it and a little up the
+    // screen (flames rise; a rise taken off a tongue's length instead left it a stub flying up the
+    // screen). Each is one teardrop: all their ink, then red-orange, orange and yellow inside it.
+    val tx0 = -ndx; val ty0 = -ndy - 0.35f
+    val tl = Math.sqrt(tx0 * tx0 + ty0 * ty0).toFloat
+    val tdx = tx0 / tl; val tdy = ty0 / tl
+    val qx = -tdy; val qy = tdx
     var layer = 0
     while (layer < 4) {
+      val k = if (layer <= 1) 1f else if (layer == 2) 0.62f else 0.36f
       var j = 0
       while (j < 5) {
         val side = (j - 2) / 2f
         val flick = 0.8f + 0.2f * Math.sin(phase * 3.6 + j * 2.3).toFloat
-        val len = (26f + 9f * (1f - Math.abs(side)) + 4f * hash2(proj.id, j)) * ds * flick
+        val len = (27f + 9f * (1f - Math.abs(side)) + 4f * hash2(proj.id, j)) * ds * flick
         val sway = Math.sin(phase * 2.8 + j * 1.7).toFloat * 4f * ds
-        val k = if (layer <= 1) 1f else if (layer == 2) 0.62f else 0.36f
-        tongue(sx - ndx * R * 0.2f, sy - ndy * R * 0.2f, ndx, ndy, side * R * 0.7f * k, side * 7f * ds,
-          len * k, R * (1.05f - 0.25f * Math.abs(side)) * k * (if (layer == 0) 1f else 0.86f) + (if (layer == 0) 3f else 0f),
-          9f * ds * k, sway, a)
+        // Fanned: each tongue leans out from the middle one
+        val fx0 = tdx + qx * side * 0.3f; val fy0 = tdy + qy * side * 0.3f
+        val fl = Math.sqrt(fx0 * fx0 + fy0 * fy0).toFloat
+        val n = Glyphs.flamePts(sx + qx * side * R * 0.55f, sy + qy * side * R * 0.55f,
+          R * (0.52f - 0.12f * Math.abs(side)) * k, fx0 / fl, fy0 / fl, len * k, len, sway, 0f, 0.0, 7, 0.2f)
         (layer: @scala.annotation.switch) match {
-          case 0 => sb.strokePolylineVar(_sx, _sy, _pvW, _pvA, 5, 0.34f, 0.05f, 0.02f)
-          case 1 => sb.strokePolylineVar(_sx, _sy, _pvW, _pvA, 5, 1f, 0.34f, 0.07f)
-          case 2 => sb.strokePolylineVar(_sx, _sy, _pvW, _pvA, 5, 1f, 0.64f, 0.12f)
-          case _ => sb.strokePolylineVar(_sx, _sy, _pvW, _pvA, 5, 1f, 0.9f, 0.4f)
+          case 0 => sb.strokePolygon(Glyphs._gx, Glyphs._gy, n, 2.4f, 0.34f, 0.05f, 0.02f, 0.9f * a)
+          case 1 => sb.fillRibbon(Glyphs._gx, Glyphs._gy, n, 1f, 0.34f, 0.07f, a)
+          case 2 => sb.fillRibbon(Glyphs._gx, Glyphs._gy, n, 1f, 0.64f, 0.12f, a)
+          case _ => sb.fillRibbon(Glyphs._gx, Glyphs._gy, n, 1f, 0.9f, 0.4f, a)
         }
         j += 1
       }
-      if (layer == 0) sb.fillOval(sx, sy, R + 2.4f, R * 0.94f + 2.4f, 0.34f, 0.05f, 0.02f, 0.9f * a, 18)
+      if (layer == 0) sb.fillOval(sx, sy, R + 1.3f, R * 0.94f + 1.3f, 0.34f, 0.05f, 0.02f, 0.9f * a, 18)
       if (layer == 1) sb.fillOval(sx, sy, R, R * 0.94f, 1f, 0.34f, 0.07f, a, 18)
       if (layer == 2) sb.fillOval(sx + ndx * R * 0.1f, sy + ndy * R * 0.1f, R * 0.8f, R * 0.74f, 1f, 0.64f, 0.12f, a, 16)
       layer += 1

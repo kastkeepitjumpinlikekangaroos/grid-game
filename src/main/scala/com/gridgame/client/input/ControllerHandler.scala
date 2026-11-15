@@ -14,8 +14,16 @@ import java.io.FileInputStream
 import java.io.InputStream
 import java.nio.ByteBuffer
 import com.gridgame.client.game.GameClient
+import com.gridgame.client.render.MatchMenu
 
-class ControllerHandler(client: GameClient) {
+/**
+ * A controller in a match: the left stick walks, the right stick aims, the right trigger is the
+ * mouse's left button, A and B are Q and E, Y is R, X the burst, the pad the items. Start brings up the
+ * match's menu (`menu`, the one Esc brings up) and puts it away; while it is up the pad moves about
+ * it, A presses what is picked and B puts it away, and nothing else is done. Back, held, holds the
+ * scoreboard up ([[backHeld]]).
+ */
+class ControllerHandler(client: GameClient, menu: MatchMenu = new MatchMenu()) {
   private val DEADZONE = 0.25f
   private val AIM_DISTANCE = 10.0
 
@@ -39,6 +47,10 @@ class ControllerHandler(client: GameClient) {
   // Whether the right stick aimed this frame: the aim is the stick's then, not the mouse's
   private var _stickAiming = false
   def stickAiming: Boolean = _stickAiming
+
+  // Back, held: the scoreboard is up for as long as it is
+  private var _backHeld = false
+  def backHeld: Boolean = _backHeld
 
   // Whether the gamepad was auto-mapped (Y-axis needs inversion on auto-mapped controllers)
   private var autoMapped = false
@@ -181,6 +193,7 @@ class ControllerHandler(client: GameClient) {
 
   def update(): Unit = {
     _stickAiming = false
+    _backHeld = false
     if (!initialized) return
 
     // Note: glfwPollEvents() is called by the game loop — not needed here
@@ -238,14 +251,27 @@ class ControllerHandler(client: GameClient) {
       }
     }
 
-    if (!client.getIsDead) {
-      processMovement()
-      processAiming()
-      processShooting()
-      processAbilities()
-      processItems()
-      // The stick turns a raised barrier: send where it faces now, not on the keyboard's next frame
-      client.streamBarrier()
+    // Start: the menu up, or away
+    if (justPressed(GLFW_GAMEPAD_BUTTON_START)) {
+      if (menu.isOpen) menu.close()
+      else {
+        menu.open()
+        client.setMovementInputActive(false)
+        client.cancelAims()
+      }
+    }
+    if (menu.isOpen) processMenu()
+    else {
+      _backHeld = state.buttons(GLFW_GAMEPAD_BUTTON_BACK) == GLFW_PRESS.toByte
+      if (!client.getIsDead) {
+        processMovement()
+        processAiming()
+        processShooting()
+        processAbilities()
+        processItems()
+        // The stick turns a raised barrier: send where it faces now, not on the keyboard's next frame
+        client.streamBarrier()
+      }
     }
 
     // Save button states for next frame's edge detection
@@ -257,6 +283,17 @@ class ControllerHandler(client: GameClient) {
 
   private def justPressed(button: Int): Boolean = {
     state.buttons(button) == GLFW_PRESS.toByte && prevButtons(button) != GLFW_PRESS.toByte
+  }
+
+  /** The menu is up: the pad moves about it and changes what it is on, A presses the button picked,
+    * B puts it away. */
+  private def processMenu(): Unit = {
+    if (justPressed(GLFW_GAMEPAD_BUTTON_DPAD_UP)) menu.navigate(0, -1)
+    if (justPressed(GLFW_GAMEPAD_BUTTON_DPAD_DOWN)) menu.navigate(0, 1)
+    if (justPressed(GLFW_GAMEPAD_BUTTON_DPAD_LEFT)) menu.navigate(-1, 0)
+    if (justPressed(GLFW_GAMEPAD_BUTTON_DPAD_RIGHT)) menu.navigate(1, 0)
+    if (justPressed(GLFW_GAMEPAD_BUTTON_A)) menu.activateFocused()
+    if (justPressed(GLFW_GAMEPAD_BUTTON_B)) menu.close()
   }
 
   private def processMovement(): Unit = {

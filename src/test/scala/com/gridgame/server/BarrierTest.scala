@@ -464,7 +464,7 @@ class BarrierTest {
     assertEquals("the Scutum's 3s", holder.getBarrierRaisedAt + 3000, until)
     m.clearSent()
     assertEquals(1, m.fire(holder, AttackSlot.PRIMARY, ProjectileType.ARENA_AXE, Seq((1f, 0f))).size)
-    assertEquals(1, m.fire(holder, AttackSlot.E, ProjectileType.ROPE, Seq((0f, -1f))).size)
+    assertEquals(1, m.fire(holder, AttackSlot.E, ProjectileType.LASSO, Seq((0f, -1f))).size)
     assertTrue(holder.hasBarrier)
     assertEquals("it comes down when it always would", until, holder.getBarrierUntil)
     assertTrue("nobody is told it is down",
@@ -573,7 +573,7 @@ class BarrierTest {
       bots.tick()
       assertTrue(bot.hasBarrier)
       assertTrue("the rope thrown", m.instance.projectileManager.getAll
-        .exists(p => p.ownerId == bot.getId && p.projectileType == ProjectileType.ROPE))
+        .exists(p => p.ownerId == bot.getId && p.projectileType == ProjectileType.LASSO))
     } finally bots.stop()
   }
 

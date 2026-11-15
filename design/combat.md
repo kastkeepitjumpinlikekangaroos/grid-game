@@ -137,6 +137,17 @@ to them all the way in and is then reeled back to its thrower, and one that miss
 empty-handed (client/render/projectiles/CLAUDE.md, *Pulls are tied to whoever is pulling*).
 `OnHitEffectsTest.everyoneIsToldAPullWasAKnockback`.
 
+**A fighter's pull holds its catch.** A pull alone left its catch free to walk straight off the
+thrower's cell, so every melee character's and skirmisher's pull carries a `Stun(1000)` after the
+`PullToOwner` (design/characters.md, *A fighter can finish what it starts*): the catch is on the
+thrower's cell at once and held there for a second from that moment, of which the drag is drawn over
+the first fifth. They are two server moves, the pull (a knockback) and the hold, told to the catch
+over TCP one after the other; the second carries no new knockback, and no client takes it for a
+jump (`GameClientKnockbackTest`). A catch nothing can hold just then (inside the second and a half
+after another hold) is pulled all the same and not stunned. A ranged character's pull only pulls:
+the Gladiator's rope is a type of its own for that (`LASSO`), the Puppeteer and the Pirate keeping
+the `ROPE`. `MeleeKitTest`, `MeleeKitsTest`.
+
 ## Where a hit lands
 
 - **Projectile collision uses the drawn tile extents** — `Projectile.getCellX/Y` is the cell
@@ -177,7 +188,14 @@ empty-handed (client/render/projectiles/CLAUDE.md, *Pulls are tied to whoever is
   only when the water reached them. The Tidal Wave is wider since (2.4 cells either side, one great
   wave for the fan of five): it reaches the cells beside its caster, as that fan's outer waves did,
   but none behind. `ProjectileHitTest`, `OnHitEffectsTest`.
-- **A wall shelters whoever stands behind it.** A hit radius (1.8 to 3.5 cells) reaches past a
+- **A melee swing strikes wide, and no further ahead.** A hit circle is 1.8 cells for most shots
+  and 3.7 or 4.0 for a melee primary, which has to find someone a cell or two from where its player
+  sees them, and a swing's hangs back a cell and a half behind it (`hitCentreBehind`, as a wave's
+  does), so that ahead of the swing it reaches what a narrow one did. A boomerang's stays on its
+  thrower's side of it on the way back. The projectile tick looks for whom a shot strikes round the
+  centre of its circle (`Projectile.hitCentreX`, `PlayerGrid`), which shows it four cells round
+  that: no circle is wider (design/characters.md, *A melee swing strikes wide*).
+- **A wall shelters whoever stands behind it.** A hit radius (1.8 to 4 cells) reaches past a
   wall right in front of a player, so a shot drawn stopping at a fence hit whoever stood behind it:
   from a cell behind, 26 of the roster's 48 single-target shots did. A direct hit now needs the
   straight way from the projectile to the player clear of terrain that stops that projectile
@@ -198,12 +216,15 @@ empty-handed (client/render/projectiles/CLAUDE.md, *Pulls are tied to whoever is
 - **A shot strikes the nearest of those it reaches.** A radius often takes in two players at once
   (point blank, one behind the other), and the shot struck whichever the projectile tick's grid
   listed last: fired east, the one in front was passed through untouched and the one behind hit.
-  `CombatTest.aShotStrikesTheNearestOfThoseItReaches`. That grid (`PlayerGrid`, squares of 4 cells) only shows a shot the squares round it, which is as
-  far as any shot may reach, its hit radius counted from the centre a wave trails
-  (`hitCentreBehind`): `PlayerGridTest` holds it to the roster's furthest.
-- **Water doesn't stop a shot.** Everything nobody can walk on stops a projectile — walls,
-  cliffs, trees, rocks, lava — but water, shallow or deep, which it flies over as it does over
-  the ground (`Tile.stopsProjectiles`, `WorldData.stopsProjectile`). A river or a pond used to be
+  `CombatTest.aShotStrikesTheNearestOfThoseItReaches`. That grid (`PlayerGrid`, squares of 4
+  cells) only shows a shot the squares round the centre of its hit circle (where it is, or behind
+  that for a wave or a melee swing: `hitCentreBehind`), which is as wide as any circle may be:
+  `PlayerGridTest` holds it to the roster's widest.
+- **Water doesn't stop a shot, nor lava.** Everything nobody can walk on stops a projectile — walls,
+  cliffs, trees, rocks — but water, shallow or deep, and the volcano's lava, which it flies over as
+  it does over the ground: they lie level with it (`Tile.stopsProjectiles`,
+  `WorldData.stopsProjectile`; lava stopped shots until the volcano maps were made, 2026-11-14, when
+  no map had any: a river of it that walled off every shot was a wall drawn as a river). A river or a pond used to be
   a wall to every shot but the wall-passers'. The server (`Projectile.hitsTerrain`, and
   `Projectile.ricochet` for which face of a wall standing in water a shot struck), the client
   (`TerrainImpact.blocks`, which `NetProjectile` flies up to and a DESPAWN walks back from) and
@@ -251,4 +272,6 @@ What each does is `ItemType` and GameInstance (the server applies it); the clien
   left 12 such items on a client's ground in three minutes, and either fix alone none.
 
 `ItemTest`, `RespawnTest` and `GameClientMatchTest` pin these, and the golden frame
-`meadow_inventory_full` holds what the HUD shows of a full inventory.
+`meadow_inventory_full` holds what the HUD shows of a full inventory. How an item is drawn, on the
+ground and in the inventory, and what shows of one appearing and being taken:
+client/render/CLAUDE.md, *An item is drawn as the characters are*.

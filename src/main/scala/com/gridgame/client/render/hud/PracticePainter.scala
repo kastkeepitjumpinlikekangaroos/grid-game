@@ -3,92 +3,74 @@ package hud
 
 import com.gridgame.client.i18n.Messages
 
-/** Practice's tallies: the combo, the best combo, accuracy, and a marker for every hit. */
+/**
+ * Practice's part of the HUD, in the same glass as the rest (hud/HudStyle): where a match has its
+ * clock, a pill saying this is practice, with a target in its green and the time the session has
+ * left; and under the tallies (which MatchInfoPainter puts where a match's score goes, as practice's
+ * results show them) the key that ends it. Its runs of kills are the banner's and the chip's, as a
+ * match's are. It was lines of plain text down the left, a green word over the grass where the clock
+ * goes, and a white cross over our own character at every kill.
+ */
 private[render] final class PracticePainter(ctx: RenderContext) {
   import ctx._
+  import HudStyle._
 
-  // Hit marker timestamps (small ring buffer for simultaneous kill markers)
-  private val practiceHitMarkers = new Array[Long](8)
-  private var practiceHitMarkerIdx = 0
-  private var prevPracticeHits = 0
+  private val style = new HudStyle(ctx)
+
+  private var sPractice, sEnd: String = _
+  private val EscKey = "Esc"
+  private var _timeFor = -1
+  private var _timeStr = ""
 
   def draw(screenW: Int, screenH: Int): Unit = {
-    val now = frameTimeMs
-    val cx = screenW / 2f
-    val cy = screenH / 2f
-
-    // Reset combo if 2 seconds since last hit
-    if (client.practiceLastHitTime > 0 && now - client.practiceLastHitTime > 2000) {
-      client.practiceCombo = 0
+    if (sPractice == null) {
+      sPractice = Messages.t("PRACTICE")
+      sEnd = Messages.t("End practice")
     }
+    drawPill(screenW)
+    drawHint()
+  }
 
-    // Detect new kills for hit markers
-    val currentHits = client.practiceHits
-    if (currentHits > prevPracticeHits) {
-      practiceHitMarkers(practiceHitMarkerIdx % practiceHitMarkers.length) = now
-      practiceHitMarkerIdx += 1
-      prevPracticeHits = currentHits
+  /** Where a match's clock is: PRACTICE, and how long the session has left. */
+  private def drawPill(screenW: Int): Unit = {
+    val remaining = client.gameTimeRemaining
+    if (remaining != _timeFor) {
+      _timeFor = remaining
+      val m = remaining / 60; val s = remaining % 60
+      _timeStr = m + (if (s < 10) ":0" else ":") + s
     }
-
-    // --- Combo counter (center, below timer) ---
-    val combo = client.practiceCombo
-    if (combo > 0) {
-      val comboText = Messages.t("COMBO x{0}", combo)
-      val textW = fontMedium.measureWidth(comboText)
-
-      // Color scales white -> yellow -> orange -> red with combo size
-      val t = Math.min(1f, combo / 10f)
-      val cr = 1f
-      val cg = Math.max(0.2f, 1f - t * 0.8f)
-      val cb = Math.max(0.1f, 1f - t)
-
-      // Gentle pulse animation
-      val pulse = 1f + 0.05f * Math.sin(now * 0.006).toFloat
-
-      beginShapes()
-      val comboW = textW + 24
-      val comboH = 32f
-      val comboX = cx - comboW / 2
-      val comboY = 42f
-      shapeBatch.fillRoundedRect(comboX, comboY, comboW * pulse, comboH, 6f, cr * 0.15f, cg * 0.15f, cb * 0.15f, 0.6f)
-
-      beginSprites()
-      fontMedium.drawText(spriteBatch, comboText, cx - textW / 2, comboY + 6, cr, cg, cb, 1f)
-    }
-
-    // --- Hit markers (screen center) ---
-    beginShapes()
-    var mi = 0
-    while (mi < practiceHitMarkers.length) {
-      val markerTime = practiceHitMarkers(mi)
-      if (markerTime > 0) {
-        val elapsed = now - markerTime
-        if (elapsed < 400) {
-          val alpha = (1f - elapsed / 400f) * 0.9f
-          val size = 12f
-          // Draw X marker (4 strokes)
-          shapeBatch.strokeLine(cx - size, cy - size, cx + size, cy + size, 2f, 1f, 1f, 1f, alpha)
-          shapeBatch.strokeLine(cx + size, cy - size, cx - size, cy + size, 2f, 1f, 1f, 1f, alpha)
-        } else {
-          practiceHitMarkers(mi) = 0
-        }
-      }
-      mi += 1
-    }
-
-    // --- Accuracy display (top-left, below K/D) ---
+    val labelW = fontBody.measureWidth(sPractice)
+    val timeW = fontBody.measureWidth(_timeStr)
+    val h = 42f
+    val w = Math.round(14f + 20f + 10f + labelW + 14f + 1f + 14f + timeW + 18f).toFloat
+    val x = Math.round(screenW / 2f - w / 2f).toFloat
+    val y = 12f
+    style.glass(x, y, w, h, h / 2f)
+    shapeBatch.strokeRoundedRectSmooth(x, y, w, h, h / 2f, 1.5f, LeafR, LeafG, LeafB, 0.55f, 0.3f)
+    // A target: rings round a dot, in practice's green (the results' title is lettered in it)
+    val tx = x + 14f + 10f; val ty = y + h / 2f
+    shapeBatch.strokeOvalSmooth(tx, ty, 9.5f, 9.5f, 2f, LeafR, LeafG, LeafB, 1f)
+    shapeBatch.strokeOvalSmooth(tx, ty, 5.5f, 5.5f, 2f, LeafR, LeafG, LeafB, 1f)
+    shapeBatch.fillOvalSmooth(tx, ty, 2f, 2f, LeafR, LeafG, LeafB, 1f)
+    val divX = Math.round(x + 14f + 20f + 10f + labelW + 14f).toFloat
+    shapeBatch.fillRect(divX, y + 12f, 1f, h - 24f, 1f, 1f, 1f, 0.12f)
     beginSprites()
-    val accuracy = if (client.practiceShots > 0) (client.practiceHits * 100.0 / client.practiceShots).toInt else 0
-    val accText = Messages.t("Accuracy: {0}%", accuracy)
-    fontSmall.drawTextOutlined(spriteBatch, accText, 12, 126)
-    val bestText = Messages.t("Best Combo: {0}", client.practiceBestCombo)
-    fontSmall.drawTextOutlined(spriteBatch, bestText, 12, 144)
-    // A session runs 30 minutes, so say how to end it sooner
-    fontSmall.drawTextOutlined(spriteBatch, Messages.t("[Esc] End practice"), 12, 166, 0.6f, 0.65f, 0.7f, 0.8f)
+    val mid = fontBody.digitsCentredOn(y + h / 2f)
+    fontBody.drawText(spriteBatch, sPractice, x + 14f + 20f + 10f, mid, TextR, TextG, TextB, 1f)
+    fontBody.drawText(spriteBatch, _timeStr, divX + 14f, mid, MutedR, MutedG, MutedB, 1f)
+  }
 
-    // --- "PRACTICE" label replacing timer ---
-    val practiceText = Messages.t("PRACTICE")
-    val ptw = fontMedium.measureWidth(practiceText)
-    fontMedium.drawText(spriteBatch, practiceText, cx - ptw / 2, 8, 0.24f, 0.86f, 0.5f, 0.9f)
+  /** Under the tallies: the key that ends the session (Esc brings up the menu with End practice in it). */
+  private def drawHint(): Unit = {
+    val x = 16f; val y = 12f + 62f + 8f
+    val h = 30f
+    val kw = style.keycapWidth(EscKey, fontTiny)
+    val w = Math.round(7f + kw + 8f + fontTiny.measureWidth(sEnd) + 12f).toFloat
+    style.glass(x, y, w, h, 10f, 0.9f)
+    val ky = y + (h - KeycapH) / 2f + 1f
+    style.keycap(x + 7f, ky, EscKey, fontTiny)
+    beginSprites()
+    fontTiny.drawText(spriteBatch, sEnd, x + 7f + kw + 8f, fontTiny.digitsCentredOn(ky + (KeycapH - 2f) / 2f),
+      BodyR, BodyG, BodyB, 1f)
   }
 }

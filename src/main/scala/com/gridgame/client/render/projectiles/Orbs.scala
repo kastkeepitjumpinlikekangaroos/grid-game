@@ -172,7 +172,6 @@ private[render] object Orbs {
           naniteStream(sb, sx, sy, ndx, ndy, sz, tailLen, dr, dg, db, p, tick, proj.id)
         case ORB_FIRE => fireTail(sb, sx, sy, ndx, ndy, rx, sz, across, tailLen, dr, dg, db, p, phase)
         case ORB_SPIRIT =>
-          cometTail(sb, sx, sy, ndx, ndy, tailLen * 1.1f, across * 1.1f, dr, dg, db, 0.3f * p)
           spiritWisps(sb, sx, sy, ndx, ndy, rx, across, tailLen, lr, lg, lb, p, phase)
           cometTail(sb, sx, sy, ndx, ndy, tailLen * 0.7f, across * 0.4f, mix(lr, 1f, 0.5f), mix(lg, 1f, 0.5f), mix(lb, 1f, 0.5f), 0.7f * p)
         case _ =>
@@ -206,7 +205,7 @@ private[render] object Orbs {
         case ORB_MUD => mudBody(sb, sx, sy, ndx, ndy, rx, ry, p, phase)
         case ORB_SWARM => orbBody(sb, sx, sy, rx * 0.62f, ry * 0.62f, dr, dg, db, p, hot)
         case ORB_ASTRAL => starBody(sb, sx, sy, sz, dr, dg, db, p, phase)
-        case ORB_SPIRIT => orbBody(sb, sx, sy, rx, ry, dr, dg, db, p, hot, ghost = 0.7f)
+        case ORB_SPIRIT => orbBody(sb, sx, sy, rx, ry, dr, dg, db, p, hot * 0.6f)
         case _ => orbBody(sb, sx, sy, rx, ry, dr, dg, db, p, hot)
       }
 
@@ -247,6 +246,16 @@ private[render] object Orbs {
             d += 1
           }
         case ORB_SWARM => nanites(sb, sx, sy, rx, front = true, dr, dg, db, p, phase)
+        case ORB_SPIRIT =>
+          // The soul's face: two hollow sockets and a mouth, looking the way it flies and wailing.
+          // Solid, where its body was seven tenths there: a pale disc with nothing in it, over sand
+          // a smear.
+          val lk = ndx * rx * 0.16f
+          val wail = 0.8f + 0.2f * Math.sin(phase * 1.7).toFloat
+          val ir = outline(dr) * 0.7f; val ig = outline(dg) * 0.7f; val ib = outline(db) * 0.7f + 0.03f
+          sb.fillOval(sx + lk - rx * 0.3f, sy - ry * 0.12f, rx * 0.17f, ry * 0.27f, ir, ig, ib, 0.95f * p, 10)
+          sb.fillOval(sx + lk + rx * 0.3f, sy - ry * 0.12f, rx * 0.17f, ry * 0.27f, ir, ig, ib, 0.95f * p, 10)
+          sb.fillOval(sx + lk, sy + ry * 0.46f, rx * 0.13f, ry * 0.2f * wail, ir, ig, ib, 0.95f * p, 10)
         case _ => ()
       }
       if (orbits)

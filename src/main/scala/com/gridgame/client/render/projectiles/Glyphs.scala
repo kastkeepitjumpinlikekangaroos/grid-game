@@ -187,6 +187,67 @@ private[render] object Glyphs {
     while (i < n) { _pvX(i) -= ndy * _trW(i) * k; _pvY(i) += ndx * _trW(i) * k; i += 1 }
   }
 
+  /**
+   * A crescent lying in the ground plane, into _gx/_gy laid out as `fillRibbon` wants a band (its
+   * outer run, then its inner run reversed; the same points are its outline for `strokePolygon`, and
+   * the first `segs + 1` its leading edge for `strokePolyline`). Its outer edge is an arc of radius
+   * `r` about (cx, cy), `half` radians either side of the screen angle `ang`, squashed by `flat` up
+   * the screen; it is `thick` deep where it is deepest, `peak` of the way along (-1 to 1, 0 the
+   * middle), and drawn to a point at each horn. Returns how many points: 2 * (segs + 1).
+   */
+  private[projectiles] def crescentPts(cx: Float, cy: Float, ang: Float, r: Float, flat: Float, half: Float,
+                                       thick: Float, peak: Float, segs: Int): Int = {
+    val n = 2 * (segs + 1)
+    var i = 0
+    while (i <= segs) {
+      val u = -1f + 2f * i / segs
+      val a = ang + u * half
+      val c = Math.cos(a).toFloat; val s = Math.sin(a).toFloat
+      val d = if (u < peak) (peak - u) / (peak + 1f) else (u - peak) / (1f - peak)
+      // Never quite nothing: two points on one spot have no direction to mitre a stroke by
+      val ri = r - thick * Math.max(0.06f, Math.cos(d * (Math.PI / 2)).toFloat)
+      _gx(i) = cx + c * r; _gy(i) = cy + s * r * flat
+      _gx(n - 1 - i) = cx + c * ri; _gy(n - 1 - i) = cy + s * ri * flat
+      i += 1
+    }
+    n
+  }
+
+  /**
+   * A flame as one shape: a teardrop with its round head on (x, y), `r` across at its widest there,
+   * and its tail `len` along the unit (dx, dy), into _gx/_gy as a `fillRibbon` band (one side, then
+   * the other reversed; the same points are its outline for `strokePolygon`). The tail bends `curl`
+   * across itself by its tip and wavers `wave` (a travelling sine, by `phase`), both measured along a
+   * spine `spine` long, so a smaller flame laid inside a larger one with the larger one's `spine`
+   * follows the same curve and stays inside it. Its sides are set off across the tail's own line, not
+   * across the bent spine, so however it bends no side crosses another: a flame stroked as a wide
+   * line along a wavering spine comes out in facets, each layer's off the next's. `sharp` is how soon
+   * it thins: 0.5 a teardrop drawn out to a hair, 0.2 a tongue tapering evenly. Returns how many
+   * points: 2 * (segs + 1).
+   */
+  private[projectiles] def flamePts(x: Float, y: Float, r: Float, dx: Float, dy: Float, len: Float, spine: Float,
+                                    curl: Float, wave: Float, phase: Double, segs: Int, sharp: Float = 0.5f): Int = {
+    val n = 2 * (segs + 1)
+    val qx = -dy; val qy = dx
+    // Half-width t^sharp (1 - t)^b: round at the front, widest on (x, y), drawn out to a point
+    val b = sharp * len / r
+    val tPeak = sharp / (sharp + b)
+    val inv = r / (Math.pow(tPeak, sharp) * Math.pow(1f - tPeak, b)).toFloat
+    var i = 0
+    while (i <= segs) {
+      val t = i.toFloat / segs
+      val along = -r + (len + r) * t
+      val u = if (along > 0f) along / spine else 0f
+      val sway = curl * u * u + (if (wave != 0f) wave * Math.sin(phase - u * 3.2).toFloat * u else 0f)
+      val h = Math.max(0.05f, inv * (Math.pow(t, sharp) * Math.pow(1f - t, b)).toFloat)
+      val cx = x + dx * along + qx * sway; val cy = y + dy * along + qy * sway
+      _gx(i) = cx + qx * h; _gy(i) = cy + qy * h
+      _gx(n - 1 - i) = cx - qx * h; _gy(n - 1 - i) = cy - qy * h
+      i += 1
+    }
+    n
+  }
+
   /** An ellipse in screen space with semi-axis `a` along the unit vector (mx, my) and `b` across it,
     * as `n` points in _gx/_gy, to be stroked as one band (strokePolygon): a ring standing across a
     * flight path turns with it. */

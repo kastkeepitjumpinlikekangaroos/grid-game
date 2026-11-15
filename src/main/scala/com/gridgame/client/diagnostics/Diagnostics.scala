@@ -221,19 +221,21 @@ object Diagnostics {
     g.addProperty("version", version)
     g.addProperty("glsl", glsl)
     val old = _graphics
-    if (old != null) for (k <- Seq("quality", "resolution", "window", "contentScale") if old.has(k)) g.add(k, old.get(k))
+    if (old != null) for (k <- Seq("quality", "resolution", "zoom", "window", "contentScale") if old.has(k)) g.add(k, old.get(k))
     _graphics = g
     println(s"Graphics: $renderer ($vendor), OpenGL $version, GLSL $glsl")
     event(s"graphics: $renderer ($vendor), OpenGL $version")
   }
 
-  /** The match window's size and scale, and the quality and resolution it draws at. */
-  def noteWindow(width: Int, height: Int, contentScale: Double, quality: String, resolution: String): Unit = {
+  /** The match window's size and scale, and the quality, resolution and camera zoom it draws at. */
+  def noteWindow(width: Int, height: Int, contentScale: Double, quality: String, resolution: String,
+                 zoom: String): Unit = {
     val g = Option(_graphics).map(_.deepCopy()).getOrElse(new JsonObject)
     g.addProperty("window", s"${width}x$height")
     g.addProperty("contentScale", contentScale)
     g.addProperty("quality", quality)
     g.addProperty("resolution", resolution)
+    g.addProperty("zoom", zoom)
     _graphics = g
   }
 

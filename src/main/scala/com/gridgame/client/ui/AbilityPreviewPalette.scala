@@ -161,6 +161,7 @@ private[ui] object AbilityPreviewPalette {
     ProjectileType.MANTIS_SCYTHE   -> (Color.web("#884433"), Color.web("#aa6644"), Color.web("#cc8866")),
     ProjectileType.CARD_HEAVY      -> (Color.web("#cc3333"), Color.web("#ee5555"), Color.web("#ff8888")),
     ProjectileType.CHAIN_BOLT_HEAVY -> (Color.web("#667788"), Color.web("#88aacc"), Color.web("#aaccee")),
+    ProjectileType.LASSO           -> (Color.web("#8a6633"), Color.web("#bb9955"), Color.web("#ddbb77")),
     // What the volleys became: a variant in the colours of the type it was made from
     ProjectileType.COMBUST         -> (Color.web("#cc4400"), Color.web("#ff7a1f"), Color.web("#ffcc44")),
     ProjectileType.FROST_NOVA      -> (Color.web("#3377aa"), Color.web("#66bbee"), Color.web("#ccf0ff")),
@@ -357,6 +358,7 @@ private[ui] object AbilityPreviewPalette {
     ProjectileType.MANTIS_SCYTHE   -> Dart,
     ProjectileType.CARD_HEAVY      -> Spinner,
     ProjectileType.CHAIN_BOLT_HEAVY -> Chain,
+    ProjectileType.LASSO           -> Tendril,
     // What the volleys became: the slams are clouds round their caster
     ProjectileType.COMBUST         -> Cloud,
     ProjectileType.FROST_NOVA      -> Cloud,

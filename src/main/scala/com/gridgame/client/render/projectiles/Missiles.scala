@@ -4,116 +4,18 @@ import GLProjectileRenderers.Renderer
 import ProjectileKit._
 import Silhouettes._
 
-/** Small fast rounds (bulletProj) and the gauntleted punch (fistProj). */
+/** The gauntleted punch (fistProj). Rounds are Arsenal's. */
 private[render] object Missiles {
-  /** Small fast bullet — CARTOONISH with bold outline, dramatic muzzle flash, ribbon trail, shell casings */
-  private[projectiles] def bulletProj(r: Float, g: Float, b: Float, size: Float = 5f): Renderer =
-    (proj, sx, sy, sb, tick) => {
-      val phase = (tick + proj.id * 31) * 0.4
-      computeAllDynamics(proj, r, g, b, phase)
-      val p = (0.9 + 0.1 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
-      val dr = _evoR; val dg = _evoG; val db = _evoB
-      val ds = dynScale
-      val sz = size * 1.5f * ds
-      screenDir(proj)
-      val ndx = _sdx; val ndy = _sdy
-      val perpX = -ndy; val perpY = ndx
 
-      // Speed lines behind
-      drawSpeedLines(sx, sy, ndx, ndy, dr, dg, db, 0.35f * p, sb, 6, 35f * ds)
-
-      // Ribbon trail behind bullet
-      drawRibbonTrail(sx, sy, ndx, ndy, dr, dg, db, 0.3f * p, sb, tick, proj.id, 6, 40f * ds * dynTrail, 4f * ds, 0.8f)
-
-      // Bullet body
-      val bodyLen = sz * 3f
-      val bodyW = sz * 1f
-      val tipX = sx + ndx * bodyLen * 0.5f
-      val tipY = sy + ndy * bodyLen * 0.5f
-      val tailX = sx - ndx * bodyLen * 0.5f
-      val tailY = sy - ndy * bodyLen * 0.5f
-      val flashX = tailX - ndx * 4f; val flashY = tailY - ndy * 4f
-
-      // Big 3-layer muzzle flash at rear — dramatic orange-yellow fire
-      val flashSize = 22f * (0.7f + 0.3f * Math.sin(phase * 3).toFloat) * ds
-      // Layer 1: Dark outline puff
-      sb.fillOvalSoft(flashX, flashY, flashSize * 1.3f, flashSize * 0.9f, outline(1f), outline(0.5f), outline(0.1f), 0.3f * p, 0f, 12)
-      // Layer 2: Orange-yellow fire
-      sb.fillOvalSoft(flashX, flashY, flashSize, flashSize * 0.7f, 1f, 0.7f, 0.2f, 0.4f * p, 0f, 10)
-      sb.fillOval(flashX, flashY, flashSize * 0.7f, flashSize * 0.5f, 1f, 0.85f, 0.3f, 0.5f * p, 8)
-      // Layer 3: White-hot core
-      sb.fillOval(flashX, flashY, flashSize * 0.35f, flashSize * 0.25f, 1f, 1f, 0.8f, 0.65f * p, 6)
-
-      // 4 cartridge smoke puffs with outlines
-      { var puff = 0; while (puff < 4) {
-        val puffT = ((tick * 0.04 + puff * 0.25 + proj.id * 0.17) % 1.0).toFloat
-        val puffDrift = puff * 0.4f - 0.6f
-        val puffX = flashX - ndx * (8f + puffT * 20f) + perpX * puffDrift * 12f
-        val puffY = flashY - ndy * (8f + puffT * 20f) + perpY * puffDrift * 12f - puffT * 6f
-        val puffSz = (5f + puffT * 8f) * ds
-        val puffA = 0.3f * (1f - puffT) * p
-        sb.strokeOval(puffX, puffY, puffSz + 1f, puffSz * 0.8f + 1f, 1.5f, 0.2f, 0.2f, 0.2f, puffA * 0.4f, 8)
-        sb.fillOval(puffX, puffY, puffSz, puffSz * 0.8f, 0.55f, 0.5f, 0.45f, puffA, 8)
-      ; puff += 1 } }
-
-      // 3 shell casing particles tumbling behind
-      { var cas = 0; while (cas < 3) {
-        val casT = ((tick * 0.05 + cas * 0.33 + proj.id * 0.19) % 1.0).toFloat
-        val casSpin = tick * 0.25f + cas * 2.1f
-        val casX = flashX - ndx * casT * 15f + perpX * (cas - 1) * 10f * casT
-        val casY = flashY - ndy * casT * 15f + perpY * (cas - 1) * 10f * casT + casT * casT * 18f
-        val casLen = 4f * ds; val casW = 2f * ds
-        val casA = 0.5f * (1f - casT) * p
-        val ccos = Math.cos(casSpin).toFloat; val csin = Math.sin(casSpin).toFloat
-        sb.strokeLine(casX - ccos * casLen, casY - csin * casLen,
-          casX + ccos * casLen, casY + csin * casLen, casW + 1f, 0.15f, 0.12f, 0.08f, casA * 0.5f)
-        sb.strokeLine(casX - ccos * casLen, casY - csin * casLen,
-          casX + ccos * casLen, casY + csin * casLen, casW, 0.8f, 0.7f, 0.3f, casA)
-      ; cas += 1 } }
-
-      // Dark cartoon outline
-      sb.strokeLine(tailX, tailY, tipX, tipY, bodyW * 2.5f, outline(r), outline(g), outline(b), 0.9f * p)
-      // Metallic body — evolved colors
-      sb.strokeLine(tailX, tailY, tipX, tipY, bodyW * 1.8f, dr, dg, db, 0.95f * p)
-      // Specular highlight — charge whitening
-      sb.strokeLine(tailX, tailY, tipX, tipY, bodyW * 0.6f,
-        mix(bright(r), 1f, _chgBright), mix(bright(g), 1f, _chgBright), mix(bright(b), 1f, _chgBright), 0.7f * p)
-      // Rounded tip with outline
-      sb.strokeOval(tipX, tipY, bodyW * 1.6f, bodyW * 1.2f, 2f, outline(r), outline(g), outline(b), 0.8f * p, 8)
-      sb.fillOval(tipX, tipY, bodyW * 1.4f, bodyW * 1f, bright(r), bright(g), bright(b), 0.9f * p, 8)
-
-      // Impact ring pulsing at front
-      val impPulse = ((phase * 0.5) % 1.0).toFloat
-      val impR = 4f + impPulse * 14f * ds
-      val impA = 0.45f * (1f - impPulse) * p
-      sb.strokeOval(tipX, tipY, impR, impR * 0.7f, 2.5f * (1f - impPulse * 0.4f),
-        bright(r), bright(g), bright(b), impA, 10)
-
-      // Spark burst at tip
-      drawSparkBurst(tipX, tipY, dr, dg, db, 0.35f * p, sb, tick, proj.id, 4, 12f * ds)
-
-      // 3 sparkle stars
-      { var star = 0; while (star < 3) {
-        val starPhase = ((phase * 0.4 + star * 0.33) % 1.0).toFloat
-        val starAngle = phase * 1.5 + star * Math.PI * 2 / 3
-        val starDist = sz * 1.5f + starPhase * sz * 1.2f
-        val starX = sx + Math.cos(starAngle).toFloat * starDist
-        val starY = sy + Math.sin(starAngle).toFloat * starDist * 0.55f
-        drawSparkleStar(starX, starY, 4.5f * (1f - starPhase * 0.4f) * ds,
-          bright(r), bright(g), bright(b), 0.45f * (1f - starPhase) * p, sb, phase * 2 + star)
-      ; star += 1 } }
-
-      // Charge crackle
-      drawChargeCrackle(sx, sy, sz * 2.5f, r, g, b, p, sb, phase, proj.chargeLevel)
-      drawReturnGhosts(sx, sy, sz * 2f, dr, dg, db, p, sb, proj)
-    }
-
+  // A fist end on to its punch: the forearm, the hand wraps round the wrist, the fist itself (its
+  // lit top, then its shaded underside), the thumb folded across the front of it
   private val FIST_PARTS = Array(
-    part(Array(-1.20f,-0.28f, -0.30f,-0.38f, -0.30f,0.38f, -1.20f,0.28f), 0.62f, 0.46f, 0.34f, 0.35f),
-    part(Array(-0.46f,-0.50f, -0.24f,-0.52f, -0.24f,0.52f, -0.46f,0.50f), DKSTEEL_R, DKSTEEL_G, DKSTEEL_B, 0.45f),
-    part(Array(-0.26f,-0.52f, 0.42f,-0.58f, 0.82f,-0.30f, 0.82f,0.30f, 0.42f,0.58f, -0.26f,0.52f),
-      0.72f, 0.55f, 0.42f, 0.35f),
-    part(Array(-0.20f,-0.34f, 0.40f,-0.40f, 0.66f,-0.20f, 0.10f,-0.12f), 0.86f, 0.70f, 0.56f, 0.20f)
+    part(Array(-1.25f,-0.26f, -0.4f,-0.36f, -0.4f,0.36f, -1.25f,0.26f), 0.80f, 0.60f, 0.46f, 0.25f),
+    part(Array(-0.66f,-0.44f, -0.3f,-0.48f, -0.3f,0.48f, -0.66f,0.44f), 0.93f, 0.90f, 0.82f, 0f),
+    part(Array(-0.32f,-0.5f, 0.3f,-0.62f, 0.72f,-0.5f, 0.9f,-0.2f, 0.9f,0.24f, 0.7f,0.52f, 0.28f,0.6f, -0.32f,0.5f),
+      0.90f, 0.70f, 0.54f, 0.25f),
+    part(Array(-0.3f,0.14f, 0.9f,0.14f, 0.9f,0.24f, 0.7f,0.52f, 0.28f,0.6f, -0.3f,0.5f), 0.72f, 0.5f, 0.38f, 0.25f),
+    part(Array(0.02f,0.2f, 0.62f,0.16f, 0.74f,0.34f, 0.6f,0.5f, 0.06f,0.48f), 0.94f, 0.76f, 0.6f, 0.2f)
   )
 
   /** Thrown/charged punch. The old version was three concentric rings over a plain
@@ -125,7 +27,7 @@ private[render] object Missiles {
       val p = (0.8f + 0.2f * Math.sin(phase * _stPulseMult).toFloat) * dynAlpha
       val dr = _evoR; val dg = _evoG; val db = _evoB
       val ds = Math.min(dynScale, 1.35f)
-      val sz = size * 1.15f * ds
+      val sz = size * 0.92f * ds
       screenDir(proj)
       val ndx = _sdx; val ndy = _sdy
       val frontX = sx + ndx * sz * 0.9f; val frontY = sy + ndy * sz * 0.9f
@@ -152,15 +54,22 @@ private[render] object Missiles {
       }
 
       drawPartsDir(sb, FIST_PARTS, sx, sy, ndx, ndy, sz, dr, dg, db, 0.97f * dynAlpha,
-        clampF(sz * 0.13f, 1.5f, 3f))
+        clampF(sz * 0.11f, 1.5f, 2.6f))
+      // The wraps' turns
+      var w = 0; while (w < 2) {
+        dirPoint(-0.56f + w * 0.16f, -0.44f, sx, sy, ndx, ndy, sz); val wx = _ptX; val wy = _ptY
+        dirPoint(-0.5f + w * 0.16f, 0.44f, sx, sy, ndx, ndy, sz)
+        sb.strokeLine(wx, wy, _ptX, _ptY, 1.2f, 0.5f, 0.42f, 0.36f, 0.8f * p)
+        w += 1
+      }
 
       // Four knuckles across the leading face
       var k = 0; while (k < 4) {
-        val ly = -0.36f + k * 0.24f
-        dirPoint(0.70f, ly, sx, sy, ndx, ndy, sz)
-        sb.fillOval(_ptX, _ptY, sz * 0.15f, sz * 0.15f, 0.06f, 0.05f, 0.07f, 0.6f * p, 8)
-        sb.fillOval(_ptX - sz * 0.03f, _ptY - sz * 0.03f, sz * 0.11f, sz * 0.11f,
-          mix(0.88f, dr, 0.3f), mix(0.72f, dg, 0.3f), mix(0.58f, db, 0.3f), 0.9f * p, 8)
+        val ly = -0.42f + k * 0.2f
+        dirPoint(0.78f, ly, sx, sy, ndx, ndy, sz)
+        sb.fillOval(_ptX, _ptY, sz * 0.14f, sz * 0.14f, 0.06f, 0.05f, 0.07f, 0.8f * p, 8)
+        sb.fillOval(_ptX - sz * 0.02f, _ptY - sz * 0.02f, sz * 0.1f, sz * 0.1f,
+          mix(0.97f, dr, 0.2f), mix(0.8f, dg, 0.2f), mix(0.64f, db, 0.2f), p, 8)
         k += 1
       }
 

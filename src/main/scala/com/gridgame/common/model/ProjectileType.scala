@@ -247,4 +247,7 @@ object ProjectileType {
   // volley went, and with it a third of what it dealt, while somebody else throws the same type
   val CARD_HEAVY: Byte = -50          // 206: Gambler's CARD (the Jester's is still the CARD)
   val CHAIN_BOLT_HEAVY: Byte = -49    // 207: Puppeteer's CHAIN_BOLT (the Warden's is still the CHAIN_BOLT)
+  // A fighter's pull holds whoever it brings in (design/characters.md, *A fighter can finish what it
+  // starts*); the Puppeteer's and the Pirate's ROPE, a ranged character's, only pulls
+  val LASSO: Byte = -48               // 208: Gladiator's ROPE, which stuns its catch
 }

@@ -18,15 +18,16 @@ class GroundEdgesTest {
 
   private val legend = Map[Char, Tile]('.' -> Tile.Grass, 'f' -> Tile.Flowers, 'p' -> Tile.Path, 's' -> Tile.Sand,
     'n' -> Tile.Snow, 'i' -> Tile.Ice, 'w' -> Tile.Water, 'W' -> Tile.DeepWater, 'd' -> Tile.Dirt,
-    'k' -> Tile.Planks, '#' -> Tile.Wall, 'T' -> Tile.Tree, 'c' -> Tile.Circuit, 'v' -> Tile.Void)
+    'k' -> Tile.Planks, '#' -> Tile.Wall, 'T' -> Tile.Tree, 'c' -> Tile.Circuit, 'v' -> Tile.Void,
+    'L' -> Tile.Lava, 'r' -> Tile.Cinder, 'a' -> Tile.Ash, 'u' -> Tile.Dune, 'g' -> Tile.DeadGrass)
 
   private def world(rows: String*): WorldData = {
     val tiles: Array[Array[Tile]] = rows.map(row => row.map(legend).toArray[Tile]).toArray
     new WorldData("test", rows.head.length, rows.length, tiles, Seq(new Position(0, 0)))
   }
 
-  private val layered = Seq(Tile.Void, Tile.Circuit, Tile.DeepWater, Tile.Water, Tile.Ice, Tile.Dirt, Tile.Path,
-    Tile.Sand, Tile.Snow, Tile.Grass)
+  private val layered = Seq(Tile.Void, Tile.Circuit, Tile.DeepWater, Tile.Water, Tile.Lava, Tile.Ice, Tile.Dirt,
+    Tile.Path, Tile.Sand, Tile.Dune, Tile.Snow, Tile.Cinder, Tile.Ash, Tile.Grass, Tile.DeadGrass)
 
   // What a cell shows at a point: its edge over its own ground, which is its layer's colour wherever
   // an edge can reach (its tile's details keep to the middle)
@@ -49,8 +50,8 @@ class GroundEdgesTest {
     assertEquals((1 to layered.size).toList, layered.map(layerOf).toList)
     assertEquals("the flowers are grass", layerOf(Tile.Grass), layerOf(Tile.Flowers))
     assertTrue("the shader packs a layer into four bits", Count <= 16)
-    for (t <- Seq(Tile.Planks, Tile.Stone, Tile.Cobblestone, Tile.Metal, Tile.Glass, Tile.Lava, Tile.Wall,
-                  Tile.Cliff, Tile.Tree, Tile.Fence, Tile.Obsidian, Tile.Toxic))
+    for (t <- Seq(Tile.Planks, Tile.Stone, Tile.Cobblestone, Tile.Metal, Tile.Glass, Tile.Wall,
+                  Tile.Cliff, Tile.Tree, Tile.Fence, Tile.Obsidian, Tile.Toxic, Tile.Crypt, Tile.Mesa, Tile.Basalt))
       assertEquals(t.name, 0, layerOf(t))
     assertEquals("one colour and one look a layer", Count, base.length)
     for (a <- Seq(ink, riser, riserKind, riserInk, shore)) assertEquals(Count, a.length)

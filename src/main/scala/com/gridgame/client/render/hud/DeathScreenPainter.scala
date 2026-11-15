@@ -1,6 +1,7 @@
 package com.gridgame.client.render
 package hud
 
+import com.gridgame.client.gl.DisplayFont.Face
 import com.gridgame.client.i18n.Messages
 import com.gridgame.common.Constants
 
@@ -8,162 +9,118 @@ import org.lwjgl.opengl.GL11._
 
 import com.gridgame.client.gl.Matrix4
 
-/** The screens of a death: the respawn countdown (who killed us, and when we are back), and the
-  * game over screen when there is no coming back. */
+/** The screens of a death, in the HUD's glass (hud/HudStyle): the respawn countdown (who killed us,
+  * and when we are back), and the game over screen when there is no coming back. */
 private[render] final class DeathScreenPainter(ctx: RenderContext) {
   import ctx._
+  import HudStyle._
 
-  // Cached respawn text
+  private val style = new HudStyle(ctx)
+
   private var _cachedRespawnSeconds = -1; private var _cachedRespawnStr = ""
-  private var _cachedKilledByName: String = null; private var _cachedKilledByStr = ""
+  private var sRespawning, sKilledBy, sGameOver, sContinue: String = _
+  private val EnterKey = "Enter"
 
-  def drawGameOver(fbWidth: Int, fbHeight: Int): Unit = {
-    val proj = Matrix4.orthographic(0f, fbWidth.toFloat, fbHeight.toFloat, 0f)
-    glViewport(0, 0, fbWidth, fbHeight)
-    glClearColor(0f, 0f, 0f, 1f)
-    glClear(GL_COLOR_BUFFER_BIT)
-
-    val cx = fbWidth / 2f; val cy = fbHeight / 2f
-    val t = animTickF
-
-    shapeBatch.begin(proj)
-    // Dark vignette background
-    shapeBatch.fillRect(0, 0, fbWidth.toFloat, fbHeight.toFloat, 0f, 0f, 0f, 0.8f)
-    // Red vignette edges
-    val vigAlpha = 0.2f
-    shapeBatch.fillRectGradient(0, 0, fbWidth.toFloat, fbHeight * 0.3f,
-      0.35f, 0f, 0f, vigAlpha, 0.35f, 0f, 0f, vigAlpha,
-      0.35f, 0f, 0f, 0f, 0.35f, 0f, 0f, 0f)
-    shapeBatch.fillRectGradient(0, fbHeight * 0.7f, fbWidth.toFloat, fbHeight * 0.3f,
-      0.35f, 0f, 0f, 0f, 0.35f, 0f, 0f, 0f,
-      0.35f, 0f, 0f, vigAlpha, 0.35f, 0f, 0f, vigAlpha)
-
-    // Central glassmorphism panel
-    val panelW = 380f; val panelH = 160f
-    val panelX = cx - panelW / 2; val panelY = cy - panelH / 2
-    shapeBatch.fillRoundedRectGradient(panelX, panelY, panelW, panelH, 12f,
-      0.12f, 0.04f, 0.04f, 0.75f,
-      0.06f, 0.02f, 0.02f, 0.65f)
-    // Top edge highlight
-    shapeBatch.strokeLine(panelX + 12, panelY, panelX + panelW - 12, panelY, 1f, 1f, 1f, 1f, 0.06f)
-
-    // Large skull icon above text
-    val skullY = panelY + 30f
-    val skullPulse = (Math.sin(t * 0.08) * 0.1 + 0.9).toFloat
-    // Skull glow
-    shapeBatch.fillOvalSoft(cx, skullY, 22f, 22f, 0.9f, 0.15f, 0.15f, 0.15f * skullPulse, 0f, 12)
-    // Cranium
-    shapeBatch.fillOval(cx, skullY, 14f, 16f, 0.92f * skullPulse, 0.2f, 0.2f, 0.95f, 16)
-    shapeBatch.fillOval(cx - 3.5f, skullY - 1f, 2.5f, 2.5f, 0.08f, 0.02f, 0.02f, 0.95f, 8)
-    // Eye sockets
-    shapeBatch.fillOval(cx - 5f, skullY - 2.5f, 3.5f, 4f, 0.08f, 0.02f, 0.02f, 0.95f, 8)
-    shapeBatch.fillOval(cx + 5f, skullY - 2.5f, 3.5f, 4f, 0.08f, 0.02f, 0.02f, 0.95f, 8)
-    // Nose
-    shapeBatch.fillOval(cx, skullY + 3f, 1.5f, 2f, 0.12f, 0.04f, 0.04f, 0.9f, 6)
-    // Jaw with teeth
-    shapeBatch.fillRect(cx - 8f, skullY + 9f, 16f, 5f, 0.85f * skullPulse, 0.18f, 0.18f, 0.85f)
-    shapeBatch.strokeLine(cx - 4f, skullY + 9f, cx - 4f, skullY + 13.5f, 0.5f, 0.12f, 0.04f, 0.04f, 0.6f)
-    shapeBatch.strokeLine(cx, skullY + 9f, cx, skullY + 13.5f, 0.5f, 0.12f, 0.04f, 0.04f, 0.6f)
-    shapeBatch.strokeLine(cx + 4f, skullY + 9f, cx + 4f, skullY + 13.5f, 0.5f, 0.12f, 0.04f, 0.04f, 0.6f)
-
-    // Decorative horizontal line separator
-    shapeBatch.strokeLine(panelX + 40, panelY + 60f, panelX + panelW - 40, panelY + 60f, 1f,
-      0.9f, 0.25f, 0.25f, 0.3f)
-    shapeBatch.end()
-
-    spriteBatch.begin(proj)
-    // "GAME OVER" text with dramatic styling
-    val gameOverText = Messages.t("GAME OVER")
-    fontLarge.drawTextOutlined(spriteBatch, gameOverText, cx - fontLarge.measureWidth(gameOverText) / 2, panelY + 74f, 0.95f * skullPulse, 0.2f, 0.2f, 1f)
-    val subText = Messages.t("Press Enter to continue")
-    val subPulse = (Math.sin(t * 0.1) * 0.3 + 0.7).toFloat
-    fontMedium.drawTextOutlined(spriteBatch, subText, cx - fontMedium.measureWidth(subText) / 2, panelY + 118f, 0.7f, 0.7f, 0.7f, subPulse)
-    spriteBatch.end()
+  private def words(): Unit = if (sRespawning == null) {
+    sRespawning = Messages.t("RESPAWNING")
+    sKilledBy = Messages.t("KILLED BY")
+    sGameOver = Messages.t("GAME OVER")
+    sContinue = Messages.t("to continue")
   }
 
+  /** No coming back: the night, GAME OVER lettered in the dusk of the scoreboard's, and the key on. */
+  def drawGameOver(fbWidth: Int, fbHeight: Int): Unit = {
+    words()
+    // In the window's units, as the HUD is: the fonts are rasterized for the display's density
+    val ps = Math.max(1f, fontSmall.pixelScale)
+    val w = fbWidth / ps; val h = fbHeight / ps
+    projection = Matrix4.orthographic(0f, w, h, 0f)
+    glViewport(0, 0, fbWidth, fbHeight)
+    glClearColor(0.031f, 0.047f, 0.118f, 1f)
+    glClear(GL_COLOR_BUFFER_BIT)
+
+    val cx = w / 2f; val cy = h / 2f
+    val pw = 440f; val ph = 190f
+    val px = Math.round(cx - pw / 2f).toFloat; val py = Math.round(cy - ph / 2f).toFloat
+    beginShapes()
+    shapeBatch.pixelsPerUnit = ps
+    style.glass(px, py, pw, ph, 18f)
+    beginSprites()
+    display.drawCentred(spriteBatch, sGameOver, cx, py + 70f, Face.Dusk, 1f, Math.min(1f, (pw - 40f) / display.measure(sGameOver)))
+    val pulse = (Math.sin(animTickF * 0.08) * 0.25 + 0.75).toFloat
+    val kw = style.keycapWidth(EnterKey, fontTiny)
+    val tw = fontBody.measureWidth(sContinue)
+    val lx = Math.round(cx - (kw + 8f + tw) / 2f).toFloat
+    val ly = py + ph - 52f
+    style.keycap(lx, ly, EnterKey, fontTiny, pulse)
+    beginSprites()
+    fontBody.drawText(spriteBatch, sContinue, lx + kw + 8f, fontBody.digitsCentredOn(ly + (KeycapH - 2f) / 2f),
+      BodyR, BodyG, BodyB, pulse)
+    endAll()
+  }
+
+  /**
+   * Waiting to come back: the edges of the screen reddened, and a pane over the middle with the seconds
+   * left lettered big, a bar running out to the respawn, and who killed us, by their character's face
+   * and name.
+   */
   def drawRespawnCountdown(screenW: Int, screenH: Int): Unit = {
+    words()
     val deathTime = client.getLocalDeathTime
     val elapsed = frameTimeMs - deathTime
     val remaining = Math.max(0, Constants.RESPAWN_DELAY_MS - elapsed)
     val secondsLeft = Math.ceil(remaining / 1000.0).toInt
     val progress = Math.min(1.0, elapsed.toDouble / Constants.RESPAWN_DELAY_MS).toFloat
-
     val cx = screenW / 2f; val cy = screenH / 2f
 
-    // Red vignette overlay across entire screen
-    val vigAlpha = 0.25f * (1f - progress * 0.5f)
+    // The screen's edges reddened, less as the wait runs out
+    val vig = 0.30f * (1f - progress * 0.5f)
     beginShapes()
-    // Top edge
     shapeBatch.fillRectGradient(0, 0, screenW.toFloat, screenH * 0.25f,
-      0.4f, 0f, 0f, vigAlpha, 0.4f, 0f, 0f, vigAlpha,
-      0.4f, 0f, 0f, 0f, 0.4f, 0f, 0f, 0f)
-    // Bottom edge
+      0.35f, 0f, 0.04f, vig, 0.35f, 0f, 0.04f, vig, 0.35f, 0f, 0.04f, 0f, 0.35f, 0f, 0.04f, 0f)
     shapeBatch.fillRectGradient(0, screenH * 0.75f, screenW.toFloat, screenH * 0.25f,
-      0.4f, 0f, 0f, 0f, 0.4f, 0f, 0f, 0f,
-      0.4f, 0f, 0f, vigAlpha, 0.4f, 0f, 0f, vigAlpha)
-    // Left edge
+      0.35f, 0f, 0.04f, 0f, 0.35f, 0f, 0.04f, 0f, 0.35f, 0f, 0.04f, vig, 0.35f, 0f, 0.04f, vig)
     shapeBatch.fillRectGradient(0, 0, screenW * 0.2f, screenH.toFloat,
-      0.4f, 0f, 0f, vigAlpha, 0.4f, 0f, 0f, 0f,
-      0.4f, 0f, 0f, 0f, 0.4f, 0f, 0f, vigAlpha)
-    // Right edge
+      0.35f, 0f, 0.04f, vig, 0.35f, 0f, 0.04f, 0f, 0.35f, 0f, 0.04f, 0f, 0.35f, 0f, 0.04f, vig)
     shapeBatch.fillRectGradient(screenW * 0.8f, 0, screenW * 0.2f, screenH.toFloat,
-      0.4f, 0f, 0f, 0f, 0.4f, 0f, 0f, vigAlpha,
-      0.4f, 0f, 0f, vigAlpha, 0.4f, 0f, 0f, 0f)
+      0.35f, 0f, 0.04f, 0f, 0.35f, 0f, 0.04f, vig, 0.35f, 0f, 0.04f, vig, 0.35f, 0f, 0.04f, 0f)
 
-    // Central panel (glassmorphism)
-    val panelW = 280f; val panelH = 120f
-    val panelX = cx - panelW / 2; val panelY = cy - panelH / 2
-    shapeBatch.fillRoundedRectGradient(panelX, panelY, panelW, panelH, 10f,
-      0.10f, 0.03f, 0.03f, 0.70f,
-      0.05f, 0.01f, 0.01f, 0.60f)
-    // Top edge highlight
-    shapeBatch.strokeLine(panelX + 10, panelY, panelX + panelW - 10, panelY, 1f, 1f, 1f, 1f, 0.06f)
-
-    // Progress bar at bottom of panel
-    val barX = panelX + 20f; val barY = panelY + panelH - 18f
-    val barW = panelW - 40f; val barH = 6f
-    shapeBatch.fillRoundedRect(barX, barY, barW, barH, 3f, 0.15f, 0.05f, 0.05f, 0.6f)
-    shapeBatch.fillRoundedRect(barX, barY, barW * progress, barH, 3f, 0.8f, 0.2f, 0.2f, 0.8f)
-
-    // Detailed skull icon above text
-    val skullY = panelY + 20f
-    // Skull glow
-    shapeBatch.fillOvalSoft(cx, skullY, 18f, 18f, 0.9f, 0.15f, 0.15f, 0.12f, 0f, 12)
-    // Cranium
-    shapeBatch.fillOval(cx, skullY, 11f, 13f, 0.92f, 0.22f, 0.22f, 0.92f, 14)
-    // Highlight on cranium
-    shapeBatch.fillOval(cx - 3f, skullY - 4f, 4f, 3f, 1f, 0.4f, 0.4f, 0.25f, 8)
-    // Eye sockets
-    shapeBatch.fillOval(cx - 4f, skullY - 2f, 2.8f, 3f, 0.08f, 0.02f, 0.02f, 0.95f, 8)
-    shapeBatch.fillOval(cx + 4f, skullY - 2f, 2.8f, 3f, 0.08f, 0.02f, 0.02f, 0.95f, 8)
-    // Nose
-    shapeBatch.fillOval(cx, skullY + 2.5f, 1.2f, 1.8f, 0.12f, 0.04f, 0.04f, 0.85f, 6)
-    // Jaw with teeth
-    shapeBatch.fillRect(cx - 6.5f, skullY + 7f, 13f, 4.5f, 0.85f, 0.2f, 0.2f, 0.8f)
-    shapeBatch.strokeLine(cx - 3f, skullY + 7f, cx - 3f, skullY + 11f, 0.5f, 0.12f, 0.04f, 0.04f, 0.55f)
-    shapeBatch.strokeLine(cx, skullY + 7f, cx, skullY + 11f, 0.5f, 0.12f, 0.04f, 0.04f, 0.55f)
-    shapeBatch.strokeLine(cx + 3f, skullY + 7f, cx + 3f, skullY + 11f, 0.5f, 0.12f, 0.04f, 0.04f, 0.55f)
-    // Crack line
-    shapeBatch.strokeLine(cx + 2f, skullY - 11f, cx + 4f, skullY - 5f, 0.8f, 0.5f, 0.1f, 0.1f, 0.4f)
-
-    beginSprites()
-    // "Killed by [Name]" — prominent
-    val killerName = client.lastKillerCharacterName
-    if (killerName != null && killerName.nonEmpty) {
-      if (killerName ne _cachedKilledByName) {
-        _cachedKilledByName = killerName
-        _cachedKilledByStr = Messages.t("Killed by {0}", killerName)
-      }
-      val kbW = fontMedium.measureWidth(_cachedKilledByStr)
-      fontMedium.drawTextOutlined(spriteBatch, _cachedKilledByStr, cx - kbW / 2, panelY + 42f, 1f, 0.5f, 0.5f)
-    }
-
-    // Respawn countdown
     if (secondsLeft != _cachedRespawnSeconds) {
       _cachedRespawnSeconds = secondsLeft
-      _cachedRespawnStr = Messages.t("Respawning in {0}s", secondsLeft)
+      _cachedRespawnStr = secondsLeft.toString
     }
-    val rsW = fontSmall.measureWidth(_cachedRespawnStr)
-    fontSmall.drawTextOutlined(spriteBatch, _cachedRespawnStr, cx - rsW / 2, panelY + 72f, 0.7f, 0.7f, 0.7f)
+    val killer = client.lastKillerCharacterName
+    val hasKiller = killer != null && killer.nonEmpty
+    val pw = 340f
+    val ph = if (hasKiller) 196f else 140f
+    val px = Math.round(cx - pw / 2f).toFloat; val py = Math.round(cy - ph / 2f - 20f).toFloat
+    style.tintedGlass(px, py, pw, ph, 18f, BerryR, BerryG, BerryB, 1f, solid = true)
+    // The wait running out, under the seconds
+    val bx = px + 28f; val bw = pw - 56f; val bby = py + 112f
+    shapeBatch.fillRoundedRectSmooth(bx, bby, bw, 6f, 3f, WellR, WellG, WellB, 1f, WellR, WellG, WellB, 1f)
+    shapeBatch.fillRoundedRectSmooth(bx, bby, Math.max(6f, bw * progress), 6f, 3f, 1f, 0.55f, 0.62f, 1f, BerryR, BerryG, BerryB, 1f)
+
+    beginSprites()
+    val ew = fontTiny.measureWidth(sRespawning)
+    fontTiny.drawText(spriteBatch, sRespawning, cx - ew / 2f, py + 16f, MutedR, MutedG, MutedB, 1f)
+    // The seconds, landing as each one comes
+    val intoSecond = 1f - ((remaining % 1000L) / 1000f)
+    val s = if (remaining > 0 && intoSecond < 0.18f) 1f + 0.25f * (1f - intoSecond / 0.18f) else 1f
+    display.drawCentred(spriteBatch, _cachedRespawnStr, cx, py + 66f, Face.Berry, 1f, 0.9f * s)
+
+    if (hasKiller) {
+      // Who killed us: their face in a well, and their name
+      val bust = 40f
+      val nameW = fontBody.measureWidth(killer)
+      val kbW = fontTiny.measureWidth(sKilledBy)
+      val rowW = bust + 12f + Math.max(nameW, kbW)
+      val rx = Math.round(cx - rowW / 2f).toFloat
+      val ry = py + 134f
+      style.well(rx, ry, bust, bust, 10f)
+      style.bust(client.lastKillerCharacter, rx, ry, bust)
+      beginSprites()
+      fontTiny.drawText(spriteBatch, sKilledBy, rx + bust + 12f, ry + 1f, MutedR, MutedG, MutedB, 1f)
+      fontBody.drawText(spriteBatch, killer, rx + bust + 12f, fontBody.digitsCentredOn(ry + 28f), TextR, TextG, TextB, 1f)
+    }
   }
 }

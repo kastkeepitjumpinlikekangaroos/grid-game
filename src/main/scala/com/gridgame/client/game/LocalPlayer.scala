@@ -294,6 +294,8 @@ trait LocalPlayer { this: GameClient =>
       clearBarrier()
       // And refuses whatever we fired after it: not lost, so not counted as lost
       pendingSpawns.dropWaiting(nanoClock())
+      // And our run of kills is over (MatchProgress.killStreak)
+      endStreak()
       localDeathTime.set(System.currentTimeMillis())
       println("GameClient: You have died! Auto-respawning in 3s...")
     }

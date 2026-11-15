@@ -5,10 +5,14 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * What the renderer shows of an event for a moment after it: a player being hit (the colour and
- * heading of what struck them), a death, a teleport, and every blast — each recorded here as it is
- * heard, read by the renderer every frame without allocating, and let expire.
+ * heading of what struck them, and every hit in order for the blood it draws: [[hitLog]]), a death, a
+ * teleport, and every blast — each recorded here as it is heard, read by the renderer every frame
+ * without allocating, and let expire.
  */
 trait EventAnimations { this: GameClient =>
+  /** Every hit heard, in order, for the renderer to bleed (render/world/Blood). */
+  val hitLog = new HitLog
+
   // Hit animation tracking (entries expire after HIT_EXPIRE_MS)
   // Stored as parallel maps so renderer can read each component without allocation per frame.
   private val playerHitTimes: ConcurrentHashMap[UUID, Long] = new ConcurrentHashMap()
@@ -32,14 +36,16 @@ trait EventAnimations { this: GameClient =>
   // explosion in one and a splash in another, and was drawn as both at once.
   private val blasts: ConcurrentHashMap[Long, Array[Long]] = new ConcurrentHashMap()
 
-  /** `targetId` was struck at `now` by a projectile of this colour, heading and type: what the hit
-    * effect drawn on them is made of. */
-  private[client] def recordHit(targetId: UUID, colorRGB: Int, dx: Float, dy: Float, pType: Byte, now: Long): Unit = {
+  /** `targetId` was struck at `now` by a projectile of this colour, heading and type, at (x, y): what
+    * the hit effect drawn on them is made of, and the blood it draws. */
+  private[client] def recordHit(targetId: UUID, colorRGB: Int, x: Float, y: Float, dx: Float, dy: Float, pType: Byte,
+                                now: Long): Unit = {
     playerHitTimes.put(targetId, now)
     playerHitColors.put(targetId, Integer.valueOf(colorRGB))
     playerHitDx.put(targetId, java.lang.Float.valueOf(dx))
     playerHitDy.put(targetId, java.lang.Float.valueOf(dy))
     playerHitProjType.put(targetId, java.lang.Byte.valueOf(pType))
+    hitLog.add(targetId, x, y, dx, dy, pType, now)
   }
 
   def getPlayerHitTime(playerId: UUID): Long =

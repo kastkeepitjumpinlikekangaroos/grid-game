@@ -189,13 +189,40 @@ class Projectile(
     if (c != null && c.hasPushed(player.getId)) return false
     val pDef = ProjectileDef.get(projectileType)
     if (pDef.passesThroughPlayers) return false
-    // A wave's circle trails its leading edge (ProjectileDef.hitCentreBehind), though never back
-    // past where it is first checked, a sub-step out from its spawn: round the spawn itself it
-    // caught players standing beside its caster, whom a circle round its edge never reached
-    val behind = Math.min(pDef.hitCentreBehind, Math.max(0f, distanceTraveled - Projectile.MAX_SUB_STEP))
-    if (behind > 0f && _speed > 0f)
+    val behind = hitCentreBehind(pDef)
+    if (behind != 0f && _speed > 0f)
       Projectile.withinPlayer(x - _dx / _speed * behind, y - _dy / _speed * behind, player, pDef.hitRadius)
     else Projectile.withinPlayer(x, y, player, pDef.hitRadius)
+  }
+
+  /**
+   * How far behind it, along its flight, its hit circle is centred just now. A wave's circle trails
+   * its leading edge and a melee swing's hangs back toward whoever swung it
+   * (ProjectileDef.hitCentreBehind), though never back past where it is first checked, a sub-step out
+   * from its spawn: round the spawn itself a wave caught players standing beside its caster, whom a
+   * circle round its edge never reached. A boomerang coming back keeps its circle on its thrower's
+   * side of it, which is ahead of it now (a negative answer), and brings it back the same way: let
+   * go of at the turn, the circle would sit on the far end of the flight and reach its whole radius
+   * past it.
+   */
+  private def hitCentreBehind(pDef: ProjectileDef): Float = {
+    val want = pDef.hitCentreBehind
+    if (want <= 0f) 0f
+    else if (_returning)
+      -Math.min(want, Math.max(0f, pDef.effectiveMaxRange(chargeLevel).toFloat - distanceTraveled - Projectile.MAX_SUB_STEP))
+    else Math.min(want, Math.max(0f, distanceTraveled - Projectile.MAX_SUB_STEP))
+  }
+
+  /** The centre of its hit circle ([[hitsPlayer]]): where it is, or as far behind that as its type
+    * trails it. What the projectile tick looks round for whom it strikes. */
+  def hitCentreX: Float = {
+    val behind = hitCentreBehind(ProjectileDef.get(projectileType))
+    if (behind != 0f && _speed > 0f) x - _dx / _speed * behind else x
+  }
+
+  def hitCentreY: Float = {
+    val behind = hitCentreBehind(ProjectileDef.get(projectileType))
+    if (behind != 0f && _speed > 0f) y - _dy / _speed * behind else y
   }
 
   /** Update position and heading in place. The client's copy is put where it is drawn this way,

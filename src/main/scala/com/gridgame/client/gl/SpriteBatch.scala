@@ -112,6 +112,23 @@ class SpriteBatch(val stream: DrawStream) {
     vertex(x3, y3, u3, v3, r, g, b, a)
   }
 
+  /**
+   * A part of a texture, (u, v) to (u2, v2), drawn as the rectangle (x, y) to (x + w, y + h), tinted
+   * from one colour along its top to another along its bottom: a band of a letter lit from above
+   * (DisplayFont), which splits a letter where its gradient's stops fall.
+   */
+  def drawGradient(texture: GLTexture, x: Float, y: Float, w: Float, h: Float,
+                   u: Float, v: Float, u2: Float, v2: Float,
+                   r0: Float, g0: Float, b0: Float, a0: Float,
+                   r1: Float, g1: Float, b1: Float, a1: Float): Unit = {
+    stream.useTexture(texture)
+    ensureCapacity(4)
+    vertex(x, y, u, v, r0, g0, b0, a0)
+    vertex(x + w, y, u2, v, r0, g0, b0, a0)
+    vertex(x + w, y + h, u2, v2, r1, g1, b1, a1)
+    vertex(x, y + h, u, v2, r1, g1, b1, a1)
+  }
+
   /** Draw a textured quad with rotation around its center. Angle in radians. */
   def drawRotated(region: TextureRegion, x: Float, y: Float, w: Float, h: Float,
                   angle: Float, r: Float = 1f, g: Float = 1f, b: Float = 1f, a: Float = 1f): Unit = {

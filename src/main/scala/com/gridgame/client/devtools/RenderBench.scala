@@ -37,11 +37,18 @@ import com.gridgame.client.render.projectiles.GLProjectileRenderers
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --blasts=12
  *                                                                  # every character's blasts going off round us
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --aim        # us charging a shot, its lane drawn
+ *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --hits       # every blow a projectile's hit: its
+ *                                                                  # flash and its blood drawn
+ *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --kills      # the kill feed filling, kills of
+ *                                                                  # ours announced, our run counted
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --hold=fan   # us aiming a fan, its aim drawn
  *                                                                  # (primary, shot, blast, fan, dash, blink, trap)
  *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --history    # the last seconds kept, small, as
  *                                                                  # a match's window keeps them (gl/FrameHistory);
  *                                                                  # --history-out=dir writes them out to look at
+ *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --scoreboard # the scoreboard Tab holds up, over it all
+ *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --menu       # the menu Esc brings up, over it all
+ *   bazel run //src/main/scala/com/gridgame/client:render_bench -- --zoom=200   # the camera zoomed in (100 to 200)
  *
  * Drives the real GLGameRenderer the way the client does — a GLFW window at the client's
  * size, frames driven by a JavaFX AnimationTimer on the FX thread — over a fabricated
@@ -130,6 +137,11 @@ class RenderBenchApp extends Application {
     }
     val client = new GameClient("localhost", 0, world, "Bench")
     val renderer = new GLGameRenderer(client)
+    // --scoreboard holds the scoreboard Tab holds up over every frame, and --menu has the menu Esc
+    // brings up over it (render/CLAUDE.md, *The scoreboard Tab holds up*, *The menu Esc brings up*);
+    // --zoom= is the camera's (RenderQuality.configure took it). Off by default, like the rest.
+    if (args.contains("--scoreboard")) renderer.scoreboardShown = true
+    if (args.contains("--menu")) renderer.menu.open()
     val rng = new java.util.Random(42)
     val home = client.getLocalPosition
 
@@ -189,6 +201,14 @@ class RenderBenchApp extends Application {
     // seconds and turning the aim slowly round, so the lane on the ground (AimArrowPainter) is drawn
     // growing and full, running free and stopped by walls. Off by default, like the rest.
     val withAim = args.contains("--aim")
+    // --hits makes every blow a player takes (one every 45 frames each) a projectile's hit, an arrow
+    // from any side, so the hits' flashes and the blood they draw (render/CLAUDE.md, *A hit draws
+    // blood*) are in the frame: with 16 players, 21 a second. Off by default, like the rest.
+    val withHits = args.contains("--hits")
+    // --kills has a kill every 70 frames, every other one ours, so the kill feed, a kill of ours
+    // announced and our run of kills in a row (render/CLAUDE.md, *A kill is announced*) are in the frame:
+    // runs of four, ended and begun again. Off by default, like the rest.
+    val withKills = args.contains("--kills")
     // The match window's history of the last seconds, read back as it does (design/diagnostics.md)
     val historyOut = argOf(args, "history-out")
     val history = if (args.contains("--history") || historyOut.isDefined) Some(new com.gridgame.client.gl.FrameHistory()) else None
@@ -361,6 +381,13 @@ class RenderBenchApp extends Application {
         if ((frame + i * 5) % 45 == 0) {
           val hp = p.getHealth - (5 + rng.nextInt(26))
           p.setHealth(if (hp <= 0) 100 else hp)
+          if (withHits) {
+            val a = rng.nextDouble() * Math.PI * 2
+            val dx = Math.cos(a).toFloat; val dy = Math.sin(a).toFloat
+            val pos = p.getPosition
+            client.recordHit(p.getId, p.getColorRGB, pos.getX - 1.8f * dx, pos.getY - 1.8f * dy, dx, dy,
+              ProjectileType.ARROW, now)
+          }
         }
         i += 1
       }
@@ -419,6 +446,21 @@ class RenderBenchApp extends Application {
       // Blasts going off round us, one every so often so that about blastTarget are going at once
       if (blastTarget > 0 && frame % Math.max(1, 72 / blastTarget) == 0) blastNear(now)
 
+      if (withKills && frame % 70 == 0) {
+        val a = players(rng.nextInt(players.length)); val b = players(rng.nextInt(players.length))
+        val ours = (frame / 70) % 2 == 0
+        val victim = CharacterDef.get(b.getCharacterId).displayName
+        client.killFeed.add(new com.gridgame.client.game.KillFeedEntry(now,
+          if (ours) "You" else CharacterDef.get(a.getCharacterId).displayName, victim,
+          if (ours) client.selectedCharacterId else a.getCharacterId, b.getCharacterId, 0, 0, ours, false))
+        while (client.killFeed.size > 5) client.killFeed.remove(0)
+        if (ours) {
+          val run = if (client.killStreak >= 4) 1 else client.killStreak + 1
+          client.killStreak = run
+          client.killCount += 1
+          client.lastKill = new com.gridgame.client.game.KillMoment(now, run, victim, b.getCharacterId, false)
+        }
+      }
       // A death and a teleport somewhere every couple of seconds
       if (frame % 120 == 0) {
         val p = players(rng.nextInt(players.length)); val pos = p.getPosition
@@ -502,7 +544,7 @@ class RenderBenchApp extends Application {
           f"quality ${RenderQuality.tierName}, $nPlayers players, ${client.getProjectiles.size} projectiles${if (travelling) " (travelling)" else ""}, " +
           f"${if (withEffects) "status effects, " else ""}${if (withBarriers) "barriers, " else ""}" +
           f"${if (withTraps) s"$nTraps traps, " else ""}${if (blastTarget > 0) s"~$blastTarget blasts, " else ""}" +
-          f"${if (withAim) "aiming, " else ""}${held.fold("")(h => s"holding ${CharacterDef.get(h._1).displayName}'s attack, ")}" +
+          f"${if (withAim) "aiming, " else ""}${if (withHits) "hits, " else ""}${held.fold("")(h => s"holding ${CharacterDef.get(h._1).displayName}'s attack, ")}" +
           f"${if (history.isDefined) "history kept, " else ""}$n frames")
         println(f"  frame build (wall):  mean ${mean(cpuNs)}%.2f ms, p50 ${pct(cpuNs, 0.5)}%.2f, p99 ${pct(cpuNs, 0.99)}%.2f, max ${pct(cpuNs, 1.0)}%.2f")
         println(f"  frame build (CPU):   mean ${mean(threadCpuNs)}%.2f ms, p50 ${pct(threadCpuNs, 0.5)}%.2f, p99 ${pct(threadCpuNs, 0.99)}%.2f  (render thread CPU time)")

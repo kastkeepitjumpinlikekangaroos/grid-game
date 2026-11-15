@@ -140,9 +140,14 @@ object Recording {
     final val StickAiming = 1 << 4
     final val Charging = 1 << 5
     final val Moving = 1 << 6
+    /** The menu Esc brings up was up: the keys and the mouse were the menu's. */
+    final val MenuOpen = 1 << 7
+    /** The scoreboard Tab holds up was up. */
+    final val Scoreboard = 1 << 8
 
     val names: Seq[(Int, String)] = Seq(Focused -> "focused", ChatOpen -> "chat", Dead -> "dead",
-      Fullscreen -> "fullscreen", StickAiming -> "stick", Charging -> "charging", Moving -> "moving")
+      Fullscreen -> "fullscreen", StickAiming -> "stick", Charging -> "charging", Moving -> "moving",
+      MenuOpen -> "menu", Scoreboard -> "scoreboard")
   }
 
   /** A key, a mouse button or a controller button. */

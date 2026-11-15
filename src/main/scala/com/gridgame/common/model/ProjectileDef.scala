@@ -30,7 +30,9 @@ case class ProjectileDef(
     // How far behind the projectile its hit circle is centred, once it has flown far enough
     // (Projectile.hitsPlayer). A wave or a gust is drawn trailing back from its leading edge, which
     // is where the projectile is, so a circle round that edge struck players 1.8 cells ahead of the
-    // water
+    // water. And a melee swing's circle is wide and hangs back toward whoever swung it, so that it
+    // is easy to land and reaches no further ahead than a narrow one would (design/characters.md,
+    // *A melee swing strikes wide*)
     hitCentreBehind: Float = 0f,
     passesThroughPlayers: Boolean = false,
     passesThroughWalls: Boolean = false,

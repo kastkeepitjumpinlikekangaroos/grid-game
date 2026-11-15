@@ -100,7 +100,8 @@ object GLSpriteGenerator {
     val atlasY = (slot / ATLAS_COLS) * sheetSize
     // Padded, so the mip levels and filtering average the sprite's edge with its own colours
     // rather than with the black of its transparent texels
-    if (!GLTexture.uploadSubImage(atlas, atlasX, atlasY, spriteSheet, padCell = frameSize)) {
+    if (!GLTexture.uploadSubImage(atlas, atlasX, atlasY, spriteSheet, padCell = frameSize,
+        inspect = (px, w, _) => artTops(id) = topOfFirstFrame(px, w))) {
       System.err.println(s"GLSpriteGenerator: Failed to load $spriteSheet")
       return false
     }
@@ -151,6 +152,31 @@ object GLSpriteGenerator {
       case e: Exception =>
         System.err.println(s"GLSpriteGenerator: Failed to load ${charDef.spriteSheet}: ${e.getMessage}")
     }
+  }
+
+  // How far down its first frame facing us each character's art begins, as a fraction of the frame:
+  // where the HUD cuts its bust from (hud/HudStyle.bust), so a squat character's head is in it too
+  private val artTops = Array.fill[Float](MAX_CHARACTERS)(-1f)
+
+  /** The first row of the sheet's first frame (facing us) with anything solid in it, over the frame. */
+  private def topOfFirstFrame(px: java.nio.ByteBuffer, sheetW: Int): Float = {
+    var y = 0
+    while (y < frameSize) {
+      var x = 0
+      while (x < frameSize) {
+        if ((px.get((y * sheetW + x) * 4 + 3) & 0xFF) > 40) return y.toFloat / frameSize
+        x += 1
+      }
+      y += 1
+    }
+    -1f
+  }
+
+  /** Where a character's art begins down its first frame facing us, over the frame; -1 before its
+    * sheet is loaded, or for one with nothing in that frame. */
+  def artTop(characterId: Byte): Float = {
+    val id = characterId & 0xFF
+    if (id < MAX_CHARACTERS) artTops(id) else -1f
   }
 
   def getSpriteRegion(direction: Direction, frame: Int, characterId: Byte): TextureRegion = {

@@ -3,11 +3,15 @@ package hud
 
 import com.gridgame.common.model._
 
-/** The two ability slots, and R's beside them: each one's icon, its cooldown sweeping round, a flash
-  * when it is ready again, a trap ability's count, a ceasefire's padlock, the seconds R has still to
-  * wait, and a rim round the one being aimed. */
+/** The two ability slots, and R's beside them, at the left of the tray along the bottom (HudTray): each
+  * one's icon in a well rimmed in its colour, its key on a keycap, its cooldown sweeping round with the
+  * seconds left, a flash when it is ready again, a trap ability's count, a ceasefire's padlock, and a
+  * rim round the one being aimed. */
 private[render] final class AbilityBarPainter(ctx: RenderContext) {
   import ctx._
+  import HudStyle._
+
+  private val style = new HudStyle(ctx)
 
   // Cooldown ready flash tracking (Q=0, E=1, R=2)
   private val prevCooldownReady = Array(true, true, true)
@@ -32,24 +36,19 @@ private[render] final class AbilityBarPainter(ctx: RenderContext) {
   private val SWEEP_STEPS = 64
   private val _sweepXs = new Array[Float](SWEEP_STEPS + 2)
   private val _sweepYs = new Array[Float](SWEEP_STEPS + 2)
-  // How round a slot's corners are
-  private val SLOT_CORNER = 5f
+  // How round a slot's corners are: the tray's
+  private val SLOT_CORNER = SlotRadius
 
   // How far outside its slot the rim of the ability being aimed runs
   private val AIM_RIM_OUT = 2.5f
 
-  /** The slots along the bar, left to right: Q, E, then R. */
-  private val SLOTS = 3
+  /** The slots along the tray, left to right: Q, E, then R. */
   private val RESET = 2
 
-  def draw(screenW: Int, screenH: Int): Unit = {
-    val slotSize = 54f; val slotGap = 8f
-    val invSlotSize = 54f; val invSlotGap = 8f; val invNumSlots = 5
-    val totalInvW = invNumSlots * invSlotSize + (invNumSlots - 1) * invSlotGap
-    val inventoryStartX = (screenW - totalInvW) / 2f
-    val startY = screenH - slotSize - 14f
-    val abilityGap = 12f
-    def slotXOf(i: Int): Float = inventoryStartX - (SLOTS - i) * (slotSize + slotGap) - abilityGap
+  def draw(tray: HudTray): Unit = {
+    val slotSize = SlotSize
+    val startY = tray.slotsY
+    def slotXOf(i: Int): Float = tray.abilityX(i)
 
     val charDef = client.getSelectedCharacterDef
     val qAbility = charDef.qAbility; val eAbility = charDef.eAbility
@@ -83,12 +82,12 @@ private[render] final class AbilityBarPainter(ctx: RenderContext) {
 
       if (locked) {
         // Shuttered, with a padlock over it: this is not a cooldown, and nothing will start it
-        shapeBatch.fillRoundedRect(slotX, startY, slotSize, slotSize, 5f, 0.02f, 0.02f, 0.05f, 0.62f)
+        shapeBatch.fillRoundedRectSmooth(slotX, startY, slotSize, slotSize, SLOT_CORNER, 0.02f, 0.02f, 0.05f, 0.62f, 0.02f, 0.02f, 0.05f, 0.62f)
         val lr = 1f; val lg = 0.78f; val lb = 0.3f
         val bodyW = 13f; val bodyH = 10f
-        shapeBatch.strokeArc(cx, cy - 7f, 4.2f, 4.6f, Math.PI.toFloat, Math.PI.toFloat, 1.8f, lr, lg, lb, 0.9f, 10)
-        shapeBatch.fillRoundedRect(cx - bodyW / 2, cy - 7f, bodyW, bodyH, 2f, lr, lg, lb, 0.85f)
-        shapeBatch.fillOval(cx, cy - 2.4f, 1.5f, 1.6f, 0.1f, 0.06f, 0.02f, 0.9f, 6)
+        shapeBatch.strokeArc(cx, cy - 12f, 4.2f, 4.6f, Math.PI.toFloat, Math.PI.toFloat, 1.8f, lr, lg, lb, 0.9f, 10)
+        shapeBatch.fillRoundedRect(cx - bodyW / 2, cy - 12f, bodyW, bodyH, 2f, lr, lg, lb, 0.85f)
+        shapeBatch.fillOval(cx, cy - 7.4f, 1.5f, 1.6f, 0.1f, 0.06f, 0.02f, 0.9f, 6)
       }
 
       // Cooldown overlay — radial sweep (clock-wipe from 12 o'clock)
@@ -106,8 +105,8 @@ private[render] final class AbilityBarPainter(ctx: RenderContext) {
         val ready = client.abilityReady(i)
         val rr = if (ready) 1f else 0.86f; val rg = 0.85f; val rb = if (ready) 0.51f else 0.82f
         val x = slotX - AIM_RIM_OUT; val y = startY - AIM_RIM_OUT; val s = slotSize + 2f * AIM_RIM_OUT
-        shapeBatch.strokeRoundedRect(x, y, s, s, 7f, 4.6f, 0.08f, 0.05f, 0.02f, 0.7f)
-        shapeBatch.strokeRoundedRect(x, y, s, s, 7f, 2.4f, rr, rg, rb, 1f)
+        shapeBatch.strokeRoundedRectSmooth(x - 1f, y - 1f, s + 2f, s + 2f, SLOT_CORNER + 3.5f, 4.6f, 0.08f, 0.05f, 0.02f, 0.7f, 0.7f)
+        shapeBatch.strokeRoundedRectSmooth(x, y, s, s, SLOT_CORNER + 2.5f, 2.4f, rr, rg, rb, 1f, 1f)
       }
       i += 1
     }
@@ -123,23 +122,30 @@ private[render] final class AbilityBarPainter(ctx: RenderContext) {
     if (resetOnCooldown) drawSweep(rcx, rcy, slotSize, resetCooldown)
     else drawReadyFlash(RESET, resetX, startY, slotSize, now, rr, rg, rb)
 
-    // Key labels, and for a trap the count of ours on the ground
-    beginSprites()
+    // Keycaps, the seconds a cooldown has left, and for a trap the count of ours on the ground
     i = 0
     while (i < numAbilities) {
       val aDef = if (i == 0) qAbility else eAbility
       val slotX = slotXOf(i)
       val ar = _abilityR(i); val ag = _abilityG(i); val ab = _abilityB(i)
-      val onCooldown = (if (i == 0) qCooldown else eCooldown) > 0.001f
-      val ka = if (locked) 0.35f else if (onCooldown) 0.5f else 1f
-      fontSmall.drawTextOutlined(spriteBatch, aDef.keybind,
-        slotX + slotSize - fontSmall.measureWidth(aDef.keybind) - 3, startY + slotSize - fontSmall.charHeight - 1,
-        ar * ka, ag * ka, ab * ka, ka)
+      val cooldownFrac = if (i == 0) qCooldown else eCooldown
+      val onCooldown = cooldownFrac > 0.001f
+      val ka = if (locked) 0.45f else if (onCooldown) 0.7f else 1f
+      style.keycap(slotX - 4f, startY + slotSize - KeycapH + 5f, aDef.keybind, fontTiny, ka)
+      beginSprites()
+      if (onCooldown && !locked) {
+        val left = if (i == 0) client.getQCooldownRemaining else client.getECooldownRemaining
+        if (left >= 0.95f) {
+          val secs = cooldownSecsText(i, Math.ceil(left).toInt)
+          fontMedium.drawTextOutlined(spriteBatch, secs, slotX + slotSize / 2 - fontMedium.measureWidth(secs) / 2,
+            fontMedium.digitsCentredOn(startY + slotSize / 2), TextR, TextG, TextB, 0.95f)
+        }
+      }
       if (locked) {
         // How long they stay holstered, under the padlock
         val secs = lockSecs.toString
         fontSmall.drawTextOutlined(spriteBatch, secs, slotX + slotSize / 2 - fontSmall.measureWidth(secs) / 2,
-          startY + slotSize / 2 + 5f, 1f, 0.82f, 0.4f, 0.95f)
+          fontSmall.digitsCentredOn(startY + slotSize / 2 + 8f), 1f, 0.82f, 0.4f, 0.95f)
       }
       aDef.castBehavior match {
         case TrapCast(trapType, _) =>
@@ -155,10 +161,9 @@ private[render] final class AbilityBarPainter(ctx: RenderContext) {
       }
       i += 1
     }
-    val rka = if (resetOnCooldown) 0.5f else 1f
-    fontSmall.drawTextOutlined(spriteBatch, ResetKey,
-      resetX + slotSize - fontSmall.measureWidth(ResetKey) - 3, startY + slotSize - fontSmall.charHeight - 1,
-      rr * rka, rg * rka, rb * rka, rka)
+    val rka = if (resetOnCooldown) 0.7f else 1f
+    style.keycap(resetX - 4f, startY + slotSize - KeycapH + 5f, ResetKey, fontTiny, rka)
+    beginSprites()
     if (resetOnCooldown) {
       // A minute is a slow sweep: the seconds left say it plainly
       val secs = resetSecsText(Math.ceil(client.getResetCooldownRemaining).toInt)
@@ -175,11 +180,11 @@ private[render] final class AbilityBarPainter(ctx: RenderContext) {
     prevCooldownReady(slot) = isReady
   }
 
-  /** Slot background (glassmorphism) with bright border. */
+  /** A slot's well, lit a little from below in its ability's colour and rimmed in it. */
   private def drawSlotBack(slotX: Float, startY: Float, slotSize: Float, ar: Float, ag: Float, ab: Float): Unit = {
-    shapeBatch.fillRoundedRect(slotX, startY, slotSize, slotSize, 5f, 0.08f, 0.08f, 0.14f, 0.75f)
-    shapeBatch.strokeRect(slotX, startY, slotSize, slotSize, 1f, ar * 0.5f, ag * 0.5f, ab * 0.5f, 0.4f)
-    shapeBatch.strokeLine(slotX + 4, startY, slotX + slotSize - 4, startY, 1f, 1f, 1f, 1f, 0.07f)
+    style.well(slotX, startY, slotSize, slotSize, SLOT_CORNER)
+    shapeBatch.fillRoundedRectSmooth(slotX, startY, slotSize, slotSize, SLOT_CORNER, ar, ag, ab, 0f, ar, ag, ab, 0.14f)
+    shapeBatch.strokeRoundedRectSmooth(slotX, startY, slotSize, slotSize, SLOT_CORNER, 1.2f, ar, ag, ab, 0.45f, 0.75f)
   }
 
   /**
@@ -224,7 +229,7 @@ private[render] final class AbilityBarPainter(ctx: RenderContext) {
     if (flashElapsed < 300 && cooldownReadyFlashTime(slot) > 0) {
       val flashAlpha = (1f - flashElapsed / 300f) * 0.4f
       shapeBatch.setAdditiveBlend(true)
-      shapeBatch.fillRoundedRect(slotX, startY, slotSize, slotSize, 5f, ar, ag, ab, flashAlpha)
+      shapeBatch.fillRoundedRectSmooth(slotX, startY, slotSize, slotSize, SLOT_CORNER, ar, ag, ab, flashAlpha, ar, ag, ab, flashAlpha)
       shapeBatch.setAdditiveBlend(false)
     }
   }
@@ -232,6 +237,17 @@ private[render] final class AbilityBarPainter(ctx: RenderContext) {
   // R's seconds left, rebuilt only when they change — the HUD is drawn every frame
   private var _resetSecsText: String = ""
   private var _resetSecs = -1
+  // And Q's and E's
+  private val _cdSecsText = Array("", "")
+  private val _cdSecs = Array(-1, -1)
+
+  private def cooldownSecsText(slot: Int, secs: Int): String = {
+    if (secs != _cdSecs(slot)) {
+      _cdSecs(slot) = secs
+      _cdSecsText(slot) = secs.toString
+    }
+    _cdSecsText(slot)
+  }
 
   private def resetSecsText(secs: Int): String = {
     if (secs != _resetSecs) {
@@ -477,4 +493,9 @@ private[render] final class AbilityBarPainter(ctx: RenderContext) {
     java.util.Arrays.fill(prevCooldownReady, true)
     java.util.Arrays.fill(cooldownReadyFlashTime, 0L)
   }
+}
+
+private[render] object AbilityBarPainter {
+  /** Its slots in the tray: Q, E and R. */
+  val Slots = 3
 }

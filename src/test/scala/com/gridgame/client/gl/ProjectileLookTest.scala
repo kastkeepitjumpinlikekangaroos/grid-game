@@ -121,12 +121,15 @@ class ProjectileLookTest {
     // kick the same brown ball with three sticks, and the Bear's claws the Wolf's
     val shared = Seq(
       TENTACLE -> Seq(Spaceman, Kraken), GRAB -> Seq(Bear, Gorilla), VINE_WHIP -> Seq(Druid, Thornweaver),
-      ROPE -> Seq(Pirate, Gladiator, Puppeteer), TALON -> Seq(Raptor, Hawk, Griffin), CLAW_SWIPE -> Seq(Wolf, Bear))
+      ROPE -> Seq(Pirate, Puppeteer), TALON -> Seq(Raptor, Hawk, Griffin), CLAW_SWIPE -> Seq(Wolf, Bear))
     shared.foreach { case (t, who) =>
       who.foreach(c => assertTrue(s"${c.name} doesn't throw type $t", attacks.exists { case (d, u) => d.id == c && u == t }))
       for (a <- who; b <- who if a != b)
         assertNotSame(s"${a.name} and ${b.name} draw type $t alike", getRenderer(a.id, t), getRenderer(b.id, t))
     }
+    // The Gladiator's rope is a type of its own now (the Lasso, which holds its catch), and still his lasso
+    assertTrue(attacks.exists { case (d, u) => d.id == Gladiator && u == LASSO })
+    Seq(Pirate, Puppeteer).foreach(c => assertNotSame(s"the lasso and ${c.name}'s rope", getRenderer(Gladiator.id, LASSO), getRenderer(c.id, ROPE)))
   }
 
   @Test def aThrowerWithNoLookOfTheirOwnGetsTheTypes(): Unit = {

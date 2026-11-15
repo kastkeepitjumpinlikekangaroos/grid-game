@@ -298,4 +298,7 @@ trait OtherPlayers { this: GameClient =>
   }
 
   def getPlayers: ConcurrentHashMap[UUID, Player] = players
+
+  /** Everyone who has left this match: its scoreboards still list them, as the server still scores them. */
+  def getDepartedPlayers: ConcurrentHashMap[UUID, Player] = departedPlayers
 }

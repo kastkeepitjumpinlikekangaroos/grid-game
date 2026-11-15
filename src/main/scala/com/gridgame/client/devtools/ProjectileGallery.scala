@@ -115,14 +115,22 @@ object ProjectileGallery {
     val types = allTypes
     val looks = allLooks(types)
 
-    args.find(_.startsWith("--focus=")).foreach { a =>
-      a.substring("--focus=".length).split(",").map(_.trim).filter(_.nonEmpty).foreach { n =>
-        looks.find(_.name.equalsIgnoreCase(n)) match {
-          case Some(look) =>
-            renderFocus(sb, post, look)
-            ImageIO.write(readback(), "png", new File(outDir, s"focus_${look.name}.png"))
-          case None => System.err.println(s"no projectile type or look named $n")
+    val compass = args.find(_.startsWith("--compass="))
+    val launchArg = args.find(_.startsWith("--launch="))
+    args.find(_.startsWith("--focus=")).orElse(compass).orElse(launchArg).foreach { a =>
+      val named = a.substring(a.indexOf('=') + 1).split(",").map(_.trim).filter(_.nonEmpty)
+      val chosen: Seq[Look] =
+        if (named.sameElements(Array("ALL"))) looks
+        else named.toSeq.flatMap { n =>
+          val l = looks.find(_.name.equalsIgnoreCase(n))
+          if (l.isEmpty) System.err.println(s"no projectile type or look named $n")
+          l
         }
+      chosen.foreach { look =>
+        renderFocus(sb, post, look, compass.isDefined, launchArg.isDefined)
+        val file = (if (compass.isDefined) "compass_" else if (launchArg.isDefined) "launch_" else "focus_") +
+          look.name.replace(' ', '_') + ".png"
+        ImageIO.write(readback(), "png", new File(outDir, file))
       }
       println(s"wrote focus sheets to ${outDir.getAbsolutePath}")
       glfwDestroyWindow(win)
@@ -212,8 +220,7 @@ object ProjectileGallery {
       val sy = cy + CellH * 0.55f
       val p = makeProjectile(look.id, i, look.who)
       val r = GLProjectileRenderers.getRenderer(look.who, look.id)
-      if (r != null) r(p, sx, sy, sb, tick)
-      else GLProjectileRenderers.drawGeneric(p, sx, sy, sb, tick, 0.55f, 0.7f, 0.95f)
+      GLProjectileRenderers.draw(p, sx, sy, sb, tick, 0.55f, 0.7f, 0.95f)
       i += 1
     }
     sb.end()
@@ -226,12 +233,29 @@ object ProjectileGallery {
   private val FocusFlown = Array(1.5f, 3f, 4.5f, 6f)
   private val FocusTicks = Array(0, 7, 14, 21)
 
+  /** The world heading that flies at `k` sixteenths of a turn on screen, clockwise from right. */
+  private def compassHeading(k: Int): (Float, Float) = {
+    val th = k * Math.PI / 8
+    val c = Math.cos(th); val s = Math.sin(th)
+    val wx = c / 20 + s / 10; val wy = s / 10 - c / 20
+    val l = Math.hypot(wx, wy)
+    ((wx / l).toFloat, (wy / l).toFloat)
+  }
+
   /**
+   * `--launch=` is a launch: two headings, eight cells each, the projectile a third of a cell further
+   * in each, from the moment it is thrown.
+   *
+   * `--compass=` is the same sheet with sixteen headings instead, a sixteenth of a turn apart on
+   * screen, clockwise from right, all at one distance: the diagonals, where a tail meant to curl
+   * "up" or a head meant to mirror at "left" changes its mind. `ALL` for either names every look.
+   *
    * One type four ways: columns fly right, left, up and down the screen, rows have flown further
    * at later ticks. Each cell is clipped to itself, since a tail or a tether can run further
    * than a cell, and the head is set off toward where it is heading so what trails it has room.
    */
-  private def renderFocus(sb: ShapeBatch, post: PostProcessor, look: Look): Unit = {
+  private def renderFocus(sb: ShapeBatch, post: PostProcessor, look: Look, compass: Boolean = false,
+                          launch: Boolean = false): Unit = {
     val id = look.id
     post.animationTime = 0f
     post.beginScene()
@@ -247,19 +271,26 @@ object ProjectileGallery {
     while (row < Rows) {
       var col = 0
       while (col < Cols) {
-        val (hx, hy) = FocusHeadings(col)
+        val cell0 = row * Cols + col
+        val hx0 = if (cell0 / 8 == 0) 1f else -1f; val hy0 = if (cell0 / 8 == 0) 0.4f else -0.4f
+        // A launch: one heading, a sixth of a cell further each cell, a tick later
+        val (hx, hy) = if (compass) compassHeading(cell0) else if (launch) compassHeading(1 + 6 * (cell0 / 8)) else FocusHeadings(col)
         val p = new Projectile(row * 11 + col * 3 + 5, UUID.randomUUID(), 10f, 10f, hx, hy, 0x88AAFF, 0, id, look.who)
         var guard = 0
-        while (p.getDistanceTraveled < FocusFlown(row) && guard < 200) { p.moveStep(0.25f); guard += 1 }
+        // Half way along a short one: past 85% of its range a projectile is burning out
+        val flown = if (launch) 0.02f + (cell0 % 8) * 0.34f
+          else if (compass) Math.min(3f, ProjectileDef.get(id).effectiveMaxRange(0) * 0.5f) else FocusFlown(row)
+        while (p.getDistanceTraveled < flown && guard < 400) { p.moveStep(if (launch) 0.02f else 0.25f); guard += 1 }
         // Head set off from the middle toward its heading, by half the screen length it has flown
         val fx = (p.getX - 10f) - (p.getY - 10f); val fy = (p.getX - 10f) + (p.getY - 10f)
-        val sx = col * CellW + CellW * 0.5f + fx * 10f
-        val sy = row * CellH + CellH * 0.55f + fy * 5f
+        // (A launch at its true screen length, from a start set back the other way, so what it leaves
+        // where it was thrown from stays put)
+        val sx = col * CellW + CellW * 0.5f + (if (launch) fx * 20f - hx0 * 34f else fx * 10f)
+        val sy = row * CellH + CellH * 0.55f + (if (launch) fy * 10f - hy0 * 17f else fy * 5f)
         glScissor(Math.round(col * CellW * Zoom), Math.round(H - (row + 1) * CellH * Zoom),
           Math.round(CellW * Zoom), Math.round(CellH * Zoom))
         val r = GLProjectileRenderers.getRenderer(look.who, id)
-        if (r != null) r(p, sx, sy, sb, FocusTicks(row))
-        else GLProjectileRenderers.drawGeneric(p, sx, sy, sb, FocusTicks(row), 0.55f, 0.7f, 0.95f)
+        GLProjectileRenderers.draw(p, sx, sy, sb, if (launch) cell0 else FocusTicks(row), 0.55f, 0.7f, 0.95f)
         sb.flush()
         col += 1
       }

@@ -6,9 +6,10 @@ The asset generators and their galleries (Python), and the packaging scripts. Ev
 | Assets | Generate | Judge | Doc |
 |---|---|---|---|
 | tiles | `python3 scripts/generate_tiles.py` → `sprites/tiles.png` | `python3 scripts/tile_gallery.py /tmp/tilegallery` | below |
-| maps | `python3 scripts/generate_maps.py` → the Meadow, the Lagoon, the Snowglobe | `--preview <dir>` | below |
+| maps | `python3 scripts/generate_maps.py` → every map but the four space arenas | `--preview <dir>`; `python3 scripts/map_audit.py --out <dir>` (is there room to walk on every map) | below |
 | character sprites | `python3 scripts/generate_<name>.py`, `generate_all_new_characters.py` | `python3 scripts/sprite_gallery.py /tmp/spritegallery` (the roster), `python3 scripts/sprite_review.py /tmp/review --chars wolf --against sprites` (one character, close up and as the game shows it; `--lint`) | [SPRITES.md](SPRITES.md) |
 | sounds | `python3 scripts/generate_sounds.py` → `sounds/*.wav` | `sound_gallery.py`, `sound_audit.py --check` | [SOUNDS.md](SOUNDS.md) |
+| items | `python3 scripts/generate_items.py` → `sprites/items.png` | `python3 scripts/item_gallery.py /tmp/itemgallery` | below |
 | the app icon | `python3 scripts/generate_icon.py` (`generate_wizard.py` runs it too) | | below |
 | readability | (the client's `render_audit`) | `python3 scripts/render_audit.py /tmp/audit` | client/render/CLAUDE.md |
 
@@ -30,7 +31,8 @@ python3 scripts/tile_gallery.py /tmp/tilegallery --map worlds/the_meadow.json --
 ```
 
 - **Output**: `sprites/tiles.png`, one 80x112 cell per tile id across (2x the 40x56 display
-  cell) and four rows down, 42 tiles. The diamond a tile stands on is centred at (40, 92).
+  cell) and four rows down, 56 tiles. The diamond a tile stands on is centred at (40, 92). (The
+  game's texture wraps that one row into bands, to stay inside 4096 texels across: `GLTileRenderer`.)
 - **The rows depend on the tile's form** (`TileForm`, mirrored in the script's `TILES`): four
   variants for ground and props, four animation frames for pools and moving blocks, one frame
   four times for a block that doesn't move.
@@ -74,10 +76,27 @@ python3 scripts/tile_gallery.py /tmp/tilegallery --map worlds/the_meadow.json --
   lattice. The deck meets it in a rim drawn by the game (`GroundEdges`). The cover (`toxic` jelly,
   `obsidian` glass, `plasma` cores) is props, each cell one rounded object inked all round
   (`rounded_block`): as blocks filling their cells they met in a staircase of seams.
+- **The volcano, the graveyard and the desert** (tiles 42-55) follow the same rules, each in its
+  own light. The volcano's floor (`cinder`) is dark and warm with nothing glowing on it, so the lava
+  beside it is what glows; its trees are burnt black and broken short, embers in their bark, and its
+  boulders (`magma_rock`) are split by glowing cracks. The graveyard is painted as moonlight makes it
+  (grey-green `dead_grass`, lilac stone, wood gone grey) and the game dims it a little further and
+  lets its `lantern`s (a lamp on a post, a carved pumpkin, candles on a stone: a light each in the
+  game) put the warmth back; its wood is `cypress`es with bare `dead_tree`s among them, since bare
+  trees alone, thin as they are, stood beyond the wall like the bars of a cage. The desert's deep
+  sand (`dune`) is the pale beach sand's darker, rippled kin, so the two can lie in drifts across
+  one another; `mesa` is the red rock that closes its maps in, with nothing on its top (a mark on
+  each was a grid of dots over a plateau of them).
+- **A prop a map sets out at even steps picks its variants another way** (`Tile.scattered`, for the
+  tombstone and the lantern): rows of graves every fourth cell were one stone repeated, because the
+  usual rule (`Tile.variantAt`) repeats every four cells along a row or a column.
 - Water and ice have no tile overlay in `TerrainPainter.drawOverlays`: the tiles animate and
   shine on their own. The old glints, ripples and frost needles had never actually been drawn,
   because they were collected only for walkable tiles. Once pools were drawn with the ground they
-  turned a sea into static and a frozen pond into flocks of white birds. Lava keeps its overlay.
+  turned a sea into static and a frozen pond into flocks of white birds. Lava keeps its overlay
+  (a vent blistering and bursting), on about a cell in five: a lake of it is more cells than there
+  are overlays to go round, and its tile is calmer for the same reason, slow swirls and one plate of
+  crust (two plates and a hot spot a cell were confetti over a lake).
 - **Judge a change in the gallery, then in the game.** `tile_gallery.py` writes a contact sheet,
   each tile as a patch in a field (seams and grids show up here), little scenes with characters
   in them for scale, and optionally a window of a real map. The engine's grade still changes
@@ -86,38 +105,158 @@ python3 scripts/tile_gallery.py /tmp/tilegallery --map worlds/the_meadow.json --
   ground tile covers its diamond, a prop leaves its ground showing).
 
 ## Maps
-Seven maps in `WorldRegistry` (display names come from the file names): four space arenas,
-**The Cell, The Hive, The Nexus, The Colony** (a deck of plates floating in open space, rimmed and
-glowing where it ends, volcanic glass round its edge and jelly and glass for cover), and three bright
-ones, **The Meadow, The Lagoon, The Snowglobe**.
+Nineteen maps in `WorldRegistry` (display names come from the file names; a map's index is kept
+with every match played on it, so a new map goes on the end of the list): four space arenas, **The
+Cell, The Hive, The Nexus, The Colony** (a deck of plates floating in open space, rimmed and glowing
+where it ends, volcanic glass round its edge and jelly and glass for cover), and fifteen that
+`scripts/generate_maps.py` writes.
 
-Every map has the same shape, because it plays well: a round arena of about 0.39x the world's
-width in radius, in a square world, closed off by terrain nobody can cross, with cover in rings,
-arcs and blocks over 3-8% of the arena. The bright three are generated by
-`scripts/generate_maps.py` and differ in what they are made of:
+Every map has the same shape, because it plays well: a round arena of about 0.4x the world's
+width in radius, in a square world, closed off by terrain nobody can cross, with cover in horseshoes,
+arcs and blocks over 2-8% of the arena. They differ in size and in what they are made of. A theme
+has a small, a medium and a large map (the Colony's size, 240 cells: a long walk between fights,
+for a full lobby); the three bright themes that came first have a medium one and, since 2026-11-14,
+a large one:
 
 | Map | Size, arena | Ground | Cover | Beyond the arena |
 |---|---|---|---|---|
-| The Meadow | 120, r 46 | grass, flower patches, dirt paths (a wheel round a pond) | fairy rings of trees with mushrooms inside, giant mushrooms, grass-topped cliff outcrops, hedges, rocks | a forest behind a flowering hedge; `sky` |
-| The Lagoon | 130, r 50 | sandy beach round grassy middle, boardwalks out from a bridged pool | palm groves, rock pools rimmed with coral, a ring of broken columns, rocks | shallows, then deep sea; `sea` |
-| The Snowglobe | 100, r 38 | snow, a frozen pond with a fir in the middle, icy patches | snowmen round the pond, snow forts (short ice walls facing the middle), L-shaped ice blocks, pine groves | a pine forest; `snow` |
+| The Meadow | 120, r 46 | grass, flower patches, dirt paths (a wheel round a pond) | fairy rings (a horseshoe of trees open to the pond, a giant mushroom at its back), giant mushrooms, grass-topped cliff outcrops, hedges, rocks | a forest behind a flowering hedge; `sky` |
+| The Wildwood | 240, r 100 | the Meadow's, with a river round it bridged on the axes and diagonals (seven planks wide), two ring roads | the Meadow's, thickets in solid clumps, rings of old stones on cobbles | the same forest; `sky` |
+| The Lagoon | 130, r 50 | sandy beach round grassy middle, boardwalks out from a deck five planks wide round a pool | palm groves (horseshoes), rock pools with coral at the water on two sides, a ring of broken columns, rocks | shallows, then deep sea; `sea` |
+| The Archipelago | 240, r 100 | seventeen islands (one in the middle, eight round it, eight far out) joined by boardwalks seven planks wide along the axes, the diagonals and two rings; over a third of the arena is water, which shots fly over | palms, rock pools, coral, columns | the same sea; `sea` |
+| The Snowglobe | 100, r 38 | snow, a frozen pond with a fir in the middle, icy patches | snowmen round the pond, snow forts (short ice walls facing the middle), L-shaped ice blocks, pine groves (horseshoes) | a pine forest; `snow` |
+| The Tundra | 240, r 100 | snow, a frozen lake, a frozen river winding round it (ice all the way: crossed anywhere), hot springs | crags of rock (`mountain`) and pine woods in solid clumps, pine groves, ice blocks and forts, snowmen | the same forest; `snow` |
+| The Crucible | 90, r 34 | scorched rock (`cinder`), drifts of ash, a pool of lava in the middle and one on each axis | basalt columns, horseshoes of burnt trees, hot boulders, the odd spire of volcanic glass | a moat of lava, then the crater's wall of basalt; `volcano` |
+| The Caldera | 140, r 54 | the same, round a lake of lava with an island in it (four causeways five wide), a river of lava crossed on the axes and diagonals (seven wide), a ring road of ash, a pair of pools either side of each road out | the same, and basalt outcrops | the same; `volcano` |
+| The Cinderlands | 240, r 100 | the same, round a great crater (an island round its heart, four causeways seven wide), eight lesser ones off the roads, two rivers of lava, roads of ash | the same, and burnt woods in solid clumps | the same; `volcano` |
+| The Crypt | 90, r 34 | grey-green grass (`dead_grass`), four cobbled paths from a crypt in a paved yard | graves in rows of three with a lantern at the head of a row, broken mausoleum walls, copses of cypress and bare trees (horseshoes) | the cemetery's wall, a dark wood beyond; `night` |
+| The Graveyard | 140, r 54 | the same, round a ruined chapel (four doors five wide), a ring road | the same, and four walled vaults eleven cells across with a gate five wide in each side | the same; `night` |
+| The Necropolis | 240, r 100 | the same, as a city: cobbled avenues every 26 cells, a boulevard round the middle, a great tomb in its square, a lantern at each corner of a block | each block one of four things: a mausoleum in its walled court (gates five wide), a dead wood round a clearing, a plot with a corner of wall at each corner, rows of graves | the same; `night` |
+| The Tomb | 90, r 34 | deep sand (`dune`) with drifts of pale sand, four paved ways from a square tomb in a paved court | obelisks lining the ways, ruined walls, cacti, rocks, bones | a plateau of red rock (`mesa`); `desert` |
+| The Oasis | 140, r 54 | the same, round a pool with palms at the water, grass and a beach, a lesser pool on each diagonal | ruined courts on the axes (eleven across, gates five wide), palm and cactus groves, mesa outcrops | the same; `desert` |
+| The Dunes | 240, r 100 | the same, round a great tomb; eight oases, a dry river bed winding round | mesas standing in clumps, courts, ruins, groves | the same; `desert` |
+
+The three newest themes are for the characters who had no ground of their own (2026-11-14): the
+fire elementals and the Phoenix (the volcano), the fifteen undead and their kind (the graveyard),
+and the Mummy, Anubis, the Sphinx, the Sandstorm, the Scorpion and the Djinn (the desert). Still
+without one: the sky's (Cloudrunner, Windwalker, Stormcaller, Harpy, Griffin, Valkyrie), the swamp's
+(Mudslinger, Hydra, Plague Doctor; `marsh`, `moss` and `thorns` are drawn and unused), the
+castle's (the medieval dozen; `wall`, `cobblestone` and `stone` are there) and Greek myth's.
 
 - **Symmetric under all eight of the square's symmetries.** Every decision about a cell is made
   from its offset to the centre with the signs dropped and the axes sorted. That makes a Teams
   match the same match from either half (the divider is the centre column), and
-  `WorldMapsTest` checks the three are mirror images across it. The four older maps are centred
-  half a cell off the divider's line, so they are only nearly symmetric.
+  `WorldMapsTest` checks every generated map is a mirror image across it. The four space maps are
+  centred half a cell off the divider's line, so they are only nearly symmetric.
 - **Checked before writing**, as `WorldMapsTest` checks every registered map: spawn points on open
-  ground with open ground on all four sides, none on the divider's column, as many in each half,
-  and all open ground one region. Spawns come from slots in one eighth of the arena, mirrored
-  into the other seven. `--preview <dir>` draws each map top-down.
+  ground with open ground two cells all round them, none on the divider's column, as many in each
+  half, all open ground one region, and room to walk everywhere (next). Spawns come from slots in
+  one eighth of the arena, mirrored into the other seven. `--preview <dir>` draws each map
+  top-down, and beside it `<map>_audit.png`, the audit's picture of it; the script prints each
+  map's cover (what stops a shot) apart from its water and lava (what only stops a walk).
+- **There is room to walk and to fight everywhere, on all nineteen** (2026-11-15; the report was
+  the Archipelago's bridges, "too narrow and hard to walk in", and choke points one cell wide on
+  others). A player stands on one cell and one key walks a *diagonal* of the grid (W is (-1, -1));
+  a diagonal step goes between two open cells only, and a blocked one slides along whichever side
+  is open. So a gap one cell wide in a wall is slid straight past unless the player stops in
+  front of it and holds two keys, a staircase of planks along a diagonal can only be walked down
+  its middle, and a bridge three wide leaves nowhere to step aside from a shot that flies over
+  the water. `scripts/map_audit.py` measures it (its docstring has the terms) and two rules hold,
+  which `generate_maps.py` checks before it writes a map and `WorldMapsTest` (`MapRoom`) for
+  every registered one:
+  - **no tight ground**: every open cell has a 3x3 of open ground round it or beside it, and
+    those join up. No gap, door or path is one or two cells wide, and no two corners squeeze a way
+    between them;
+  - **nothing of any size behind a choke**: the same with 5x5, counting no lone prop (a rock or a
+    tree by itself is walked round either side), leaves no piece of ground bigger than an alcove
+    (48 cells: a spawn pod, the cup of a horseshoe of trees). So a bridge, a causeway, a gate into
+    a court and the way round any wall is five cells wide or more.
+
+  Before it: 64% of the Archipelago's ground was tight (boardwalks three wide, two round the
+  rings, a single plank over the middle pool), 29% of the Tundra's, 22% of the Graveyard's, and
+  every map had some; the Graveyard's vaults had gates of one cell, every space map's spawn pods a
+  door of one, and the woods of the Wildwood, the Tundra, the Cinderlands and the Necropolis were
+  trees one or two cells apart. How a map is kept to the rules:
+  - What is built is built to them: a bridge or a causeway is `on_axis(a, 2)` and up
+    (`on_diagonal(a, b, 4)`: a diagonal wants more, being walked down its middle), a court's gate
+    five (`square_ring`), a grove of trees a `horseshoe` with one wide mouth facing the middle
+    (they were rings with three or four gaps of two or three cells), a pool's palms or coral stand
+    at the water, not a cell back from it, and nothing built stands on an axis or a diagonal of a
+    big map but the roads, or just past a crossing.
+  - Loose cover (the odd rock, tree, cactus) goes on last, by `Arena.scatter`, which leaves out
+    any that would stand within three cells of other cover (of two such, the one that drew lower).
+  - Woods, crags and mesas are solid clumps of noise, kept `off_the_ways` (the axes, the diagonals,
+    the arena's edge) and a dozen cells from whatever is built: something to go round.
+  - Graves stand three side by side, five cells to the next three and to the next row
+    (`grave_at`), a lantern at the head of a row (they stood every fourth cell both ways).
+  - `Arena.open_up` ends every map: ground still too narrow becomes the cover beside it
+    (`map_audit.fill_tight`: two clumps a cell apart become one, the strip between a rock and the
+    edge closes), and a pocket that leaves is filled (`fill_pockets`); more than 60 cells walled
+    in is a fault in the map, reported, not filled.
+- **The four space arenas were drawn by hand**, so they were repaired, once, by
+  `python3 scripts/map_audit.py --repair worlds/the_cell.json ...`: a door one cell wide into a
+  spawn pod became three (five into the Colony's big pods), a pod's mouth squeezed between two
+  corners lost the corners, and what was still tight became jelly or the deck's edge (the Hive's
+  and the Cell's two-wide corridors round their cores, the strip of deck behind a pod at the
+  rim). By hand before it: the Nexus's core block came out (the room round it was a corridor
+  three wide), and three cells of jelly left standing in its doorway after. A map edited in the
+  map editor is held to the same rules by `WorldMapsTest`; `--out <dir>` shows where it fails
+  (red one cell wide, orange tight, yellow behind a choke).
+- **A big map is made of the small one's parts** (`on_axis`, `on_diagonal`, `knot`, `ell`, `bar`,
+  `square_ring`, `horseshoe`, `ring_cell`): more of them, further apart, with something that takes a walk to get
+  round (a river with crossings, a ring of islands, a city's blocks) rather than the small map
+  scaled up, which would be the Colony again: a plain with cover a long way apart.
+- **Lava and water are flown over** (design/combat.md): a river of either stops a walk and not a
+  shot, so a crossing is somewhere to be shot at from both banks.
 - **Backgrounds.** `sky` is MapleStory's: blue paling to the horizon, fat outlined clouds, rolling
   hills with round trees on them. `sea` is open water to a horizon with islands on it: the
   Lagoon's sea runs to the edge of the world, and the sky's green hills behind it read as the
   sea stopping at a field. `snow` is winter hills with firs, with snow falling in front of the
-  world. That is the only weather drawn: `spawnWeatherParticles` had never been called.
-  `space`, `cityscape`, `desert` and `ocean` are as they were. See Post-Processing for how the
-  bright backgrounds are graded.
+  world. `desert` is the sky's again over dunes, with buttes and a pair of pyramids on the horizon
+  (it was an orange dusk from before the bright maps, which no map used). `volcano` is a sky black
+  with smoke over a glowing horizon, a mountain with fire in its mouth, embers rising in front of
+  the world; `night` a big moon in a violet sky over hills with crosses and bare trees along them.
+  Snow and embers are the only weather drawn. `space`, `cityscape` and `ocean` are as they were.
+  See client/render/CLAUDE.md, *Grading*, for how each is graded.
+
+## Item Sprites
+```bash
+python3 scripts/generate_items.py                    # -> sprites/items.png (Pillow only)
+python3 scripts/item_gallery.py /tmp/itemgallery     # look at it, from the draw functions as they are
+python3 scripts/generate_items.py --out /tmp/x       # or write the atlas somewhere else first
+```
+
+- **Output**: `sprites/items.png`, a 4x4 grid of 128x128 cells: the gem's eight frames (0-7), the
+  heart, the star, the shield and the fence (8-11), and a twinkle (12); the rest empty.
+  `ItemSprites.scala` reads the same numbers, and `ItemSpritesTest` holds the atlas to them.
+- **Drawn with the characters' kit, as the props are**: `cel`, `ink`, `shade`, `lit`, flat tones
+  with one hard shadow away from the upper-left light, supersampled 4x, the lines 1.5 times the
+  kit's weight (`ITEM_INK`: a cell's unit is a little smaller than a character's) and the
+  characters' contour ring round each (`add_contour`). An item lies among the characters and has to
+  look as if it belongs to them; the renderer filters it as it filters them
+  (client/render/CLAUDE.md, *An item is drawn as the characters are*).
+- **A cell is 64 authoring units, drawn 40 world units across** (`CELL_UNITS`; `ItemPainter.CELL`),
+  and an item's art is about 45 of the 64, centred on the cell's middle: the renderer floats, turns
+  and swells an item about that point, and the HUD sizes its picture by the cell. The art keeps six
+  texels clear of its cell's edge (`MARGIN`), so the texture's halvings never mix one cell with the
+  next. `build_atlas` refuses art that is off centre or in the margin.
+- **The gem is modelled, not drawn**: an eight-sided brilliant (a table, a crown of sixteen facets,
+  a pavilion of eight) seen from a little above, each facet a flat tone by how it faces the light,
+  the edges between them thin and pale, the outline inked. Its eight frames are eight steps of the
+  45 degrees that bring it back to where it began, so the renderer loops them and the stone turns
+  for ever. The other four are one picture each, moved by the renderer (the heart's beat, the star's
+  rocking); the twinkle is white, for the renderer to turn and size, with a thin line round it,
+  which is what shows on snow.
+- **Big shapes, two or three colours each.** At Low on an ordinary screen an item is under 30
+  pixels across: a silhouette nobody else has (a cut stone, a heart, a fat star, a heater shield,
+  three boards on two rails) and nothing thinner than about two units survive that. The colours
+  are each item's own (`ItemType.colorRGB`, which tints its slot in the HUD), a little lighter, so
+  its shadow tone and its ink have room under it.
+- **Judge it in `item_gallery.py`'s game sheet** (`items_game.png`): the five beside a character,
+  floating over their shadows on the maps' five grounds in the engine's colours, at High and at Low
+  on a HiDPI and an ordinary screen (at Low drawn small and scaled back up, as the display does).
+  `items_close.png` is every cell enlarged, for faults. Then in the game: the golden frames'
+  `meadow_items`, `snowglobe_items`, `lagoon_items` and `hive_items`, at `--quality=low` too.
 
 ## Application Icon
 ```bash

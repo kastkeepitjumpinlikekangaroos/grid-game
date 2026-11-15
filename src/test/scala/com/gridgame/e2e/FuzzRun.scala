@@ -171,7 +171,7 @@ final class FuzzRun(loop: Loopback, tableCount: Int = 3) {
       loop.openingMs = if (rnd.nextBoolean()) 0L else 300L + rnd.nextInt(900)
       val plans = tables.map(_ => plan(round))
       val lobbies = begin(tables.zip(plans))
-      // Anyone but a lobby's host may leave its match (Esc, twice): the host stays, so the match goes on
+      // Anyone but a lobby's host may leave its match (the menu's Leave): the host stays, so the match goes on
       val hands = tables.zip(plans).flatMap { case (table, p) =>
         table.map(c => c -> new Persona(c, rnd, leaves = p.mode != "practice" && (c ne table.head), chats = rnd.nextBoolean()))
       }.toMap

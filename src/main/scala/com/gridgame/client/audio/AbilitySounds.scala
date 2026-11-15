@@ -166,7 +166,7 @@ object AbilitySounds {
   // ── chains and ropes ────────────────────────────────────────────────────
   set("atk_chain_bolt", ProjectileType.CHAIN_BOLT, ProjectileType.LOCKDOWN_CHAIN)
   set("atk_puppet_string", ProjectileType.CHAIN_BOLT_HEAVY) // the Puppeteer's, its strings' sound
-  set("atk_rope_throw", ProjectileType.ROPE)
+  set("atk_rope_throw", ProjectileType.ROPE, ProjectileType.LASSO)
 
   // ── weather ─────────────────────────────────────────────────────────────
   set("atk_lightning_crack", ProjectileType.LIGHTNING)

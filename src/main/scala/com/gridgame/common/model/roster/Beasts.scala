@@ -18,16 +18,16 @@ private[model] object Beasts {
     speedMultiplier = 0.75f, damage = 42, maxRange = 16,
     onHitEffect = Some(Slow(3000, 0.4f))
   )
-  val ClawSwipeDef: ProjectileDef = ProjectileDef(id = ProjectileType.CLAW_SWIPE, name = "Claw Swipe", speedMultiplier = 0.7f, damage = 42, maxRange = 2, hitRadius = 2.2f, onHitEffect = Some(SpeedBoost(2000)))
+  val ClawSwipeDef: ProjectileDef = ProjectileDef(id = ProjectileType.CLAW_SWIPE, name = "Claw Swipe", speedMultiplier = 0.7f, damage = 42, maxRange = 2, hitRadius = 3.7f, hitCentreBehind = 1.5f, onHitEffect = Some(SpeedBoost(2000)))
   val VenomBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.VENOM_BOLT, name = "Venom Bolt", speedMultiplier = 0.75f, damage = 30, maxRange = 16, onHitEffect = Some(Slow(2000, 0.5f)))
   val WebShotDef: ProjectileDef = ProjectileDef(id = ProjectileType.WEB_SHOT, name = "Web Shot", speedMultiplier = 0.7f, damage = 34, maxRange = 14, onHitEffect = Some(Root(1500)))
-  val StingerDef: ProjectileDef = ProjectileDef(id = ProjectileType.STINGER, name = "Stinger", speedMultiplier = 0.7f, damage = 37, maxRange = 3, onHitEffect = Some(Poison(16, 2000, 500)))
+  val StingerDef: ProjectileDef = ProjectileDef(id = ProjectileType.STINGER, name = "Stinger", speedMultiplier = 0.7f, damage = 37, maxRange = 3, hitRadius = 3.7f, hitCentreBehind = 1.5f, onHitEffect = Some(Poison(16, 2000, 500)))
   val RootGrowthDef: ProjectileDef = ProjectileDef(id = ProjectileType.ROOT_GROWTH, name = "Root Growth", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(8.0f, 18, rootDurationMs = 2500)), explosionConfig = Some(ExplosionConfig(0, 0, 8.0f)))
   val StingDef: ProjectileDef = ProjectileDef(id = ProjectileType.STING, name = "Sting", speedMultiplier = 0.7f, damage = 35, maxRange = 14, onHitEffect = Some(Slow(2000, 0.5f)))
-  val GrabDef: ProjectileDef = ProjectileDef(id = ProjectileType.GRAB, name = "Grab", speedMultiplier = 0.9f, damage = 9, maxRange = 18, onHitEffect = Some(PullToOwner))
-  val JawDef: ProjectileDef = ProjectileDef(id = ProjectileType.JAW, name = "Jaw", speedMultiplier = 0.85f, damage = 5, maxRange = 25, onHitEffect = Some(PullToOwner))
+  val GrabDef: ProjectileDef = ProjectileDef(id = ProjectileType.GRAB, name = "Grab", speedMultiplier = 0.9f, damage = 9, maxRange = 18, onHitEffect = Some(PullToOwner), alsoOnHit = Seq(Stun(1000)))
+  val JawDef: ProjectileDef = ProjectileDef(id = ProjectileType.JAW, name = "Jaw", speedMultiplier = 0.85f, damage = 5, maxRange = 25, onHitEffect = Some(PullToOwner), alsoOnHit = Seq(Stun(1000)))
   val TongueDef: ProjectileDef = ProjectileDef(id = ProjectileType.TONGUE, name = "Tongue", speedMultiplier = 0.8f, damage = 15, maxRange = 18, onHitEffect = Some(PullToOwner))
-  val MomentumStrikeDef: ProjectileDef = ProjectileDef(id = ProjectileType.MOMENTUM_STRIKE, name = "Momentum Strike", speedMultiplier = 0.8f, damage = 32, maxRange = 5, hitRadius = 2.5f, onHitEffect = Some(SpeedBoost(3000)))
+  val MomentumStrikeDef: ProjectileDef = ProjectileDef(id = ProjectileType.MOMENTUM_STRIKE, name = "Momentum Strike", speedMultiplier = 0.8f, damage = 32, maxRange = 5, hitRadius = 2.5f, onHitEffect = Some(SpeedBoost(3000)), alsoOnHit = Seq(Stun(600)))
   val PoisonCloudDef: ProjectileDef = ProjectileDef(id = ProjectileType.POISON_CLOUD, name = "Poison Cloud", speedMultiplier = 0.4f, damage = 27, maxRange = 14, passesThroughPlayers = true, aoeOnHit = Some(AoESplashConfig(3.5f, 18)), aoeOnMaxRange = Some(AoESplashConfig(4.0f, 27)), onHitEffect = Some(Slow(2000, 0.4f)))
   val AcidSprayDef: ProjectileDef = ProjectileDef(id = ProjectileType.ACID_SPRAY, name = "Acid Spray", speedMultiplier = 0.5f, damage = 18, maxRange = 12, aoeOnHit = Some(AoESplashConfig(3.0f, 10)), onHitEffect = Some(Burn(10, 2500, 500)))
   val FlameTrailDef: ProjectileDef = ProjectileDef(id = ProjectileType.FLAME_TRAIL, name = "Flame Trail", speedMultiplier = 0.7f, damage = 27, maxRange = 16, passesThroughPlayers = true, aoeOnMaxRange = Some(AoESplashConfig(3.5f, 27)), onHitEffect = Some(Burn(21, 3000, 750)))
@@ -69,8 +69,9 @@ private[model] object Beasts {
     base(ProjectileType.CLAW_SWIPE).copy(id = ProjectileType.MANTIS_SCYTHE, name = "Mantis Scythe", damage = 47),
     // The Hawk's Pin Down: its talons pinning its prey to the ground, where it fanned five gusts. An
     // ability, so it reaches as far as the Talon did before the melee primaries were halved
-    // (design/characters.md, *Melee strikes short and hard*)
-    base(ProjectileType.TALON).copy(id = ProjectileType.PIN_DOWN, name = "Pin Down", damage = 18, maxRange = 4, onHitEffect = Some(Root(1200)))
+    // (design/characters.md, *Melee strikes short and hard*), and strikes as wide as it did before
+    // they were widened (*A melee swing strikes wide*)
+    base(ProjectileType.TALON).copy(id = ProjectileType.PIN_DOWN, name = "Pin Down", damage = 18, maxRange = 4, hitRadius = 2.2f, hitCentreBehind = 0f, onHitEffect = Some(Root(1200)))
   )
 
   // ── Characters ──
@@ -79,7 +80,7 @@ private[model] object Beasts {
     id = CharacterId.Wolf, displayName = "Wolf",
     description = "A pack hunter with a speed-boosting strike and a howl that runs prey down.",
     spriteSheet = "sprites/wolf.png",
-    qAbility = AbilityDef(name = "Momentum Strike", description = "Powerful strike that grants a speed boost on hit.", cooldownMs = 10000, maxRange = 5, damage = 32, projectileType = ProjectileType.MOMENTUM_STRIKE, keybind = "Q"),
+    qAbility = AbilityDef(name = "Momentum Strike", description = "A lunging strike that knocks its prey down, stunned for 0.6s, and speeds you up for 3s.", cooldownMs = 10000, maxRange = 5, damage = 32, projectileType = ProjectileType.MOMENTUM_STRIKE, keybind = "Q"),
     eAbility = AbilityDef(name = "Howl", description = "Howls, slowing every enemy within 9 cells for 2.5s.", cooldownMs = 12000, maxRange = 0, damage = 10, projectileType = ProjectileType.HOWL, keybind = "E", castBehavior = GroundSlam(9.0f)),
     primaryProjectileType = ProjectileType.CLAW_SWIPE, role = Melee, maxHealth = 130, moveSpeed = Melee.speed
   )
@@ -106,7 +107,7 @@ private[model] object Beasts {
     id = CharacterId.Bear, displayName = "Bear",
     description = "A devastating brawler that grabs enemies close and mauls everything around it.",
     spriteSheet = "sprites/bear.png",
-    qAbility = AbilityDef(name = "Bear Hug", description = "Grabs and pulls an enemy toward you.", cooldownMs = 8000, maxRange = 18, damage = 9, projectileType = ProjectileType.GRAB, keybind = "Q"),
+    qAbility = AbilityDef(name = "Bear Hug", description = "Grabs an enemy and pulls them to you, stunned for 1s.", cooldownMs = 8000, maxRange = 18, damage = 9, projectileType = ProjectileType.GRAB, keybind = "Q"),
     eAbility = AbilityDef(name = "Maul", description = "Rakes its claws all around, mauling every enemy within 4 cells.", cooldownMs = 12000, maxRange = 0, damage = 33, projectileType = ProjectileType.MAUL, keybind = "E", castBehavior = GroundSlam(4.0f)),
     primaryProjectileType = ProjectileType.CLAW_SWIPE, role = Melee, maxHealth = 145, moveSpeed = Melee.speed
   )
@@ -133,7 +134,7 @@ private[model] object Beasts {
     id = CharacterId.Shark, displayName = "Shark",
     description = "A ferocious ocean predator that drags prey close and dives out of reach.",
     spriteSheet = "sprites/shark.png",
-    qAbility = AbilityDef(name = "Jaw Drag", description = "Bites and pulls an enemy toward you.", cooldownMs = 8000, maxRange = 18, damage = 10, projectileType = ProjectileType.JAW, keybind = "Q"),
+    qAbility = AbilityDef(name = "Jaw Drag", description = "Bites an enemy and drags them to you, stunned for 1s.", cooldownMs = 12000, maxRange = 18, damage = 10, projectileType = ProjectileType.JAW, keybind = "Q"),
     eAbility = AbilityDef(name = "Deep Dive", description = "Submerges and swims off at twice the pace, immune.", cooldownMs = 14000, maxRange = 0, damage = 0, projectileType = -1, keybind = "E", castBehavior = PhaseShiftBuff(3000)),
     primaryProjectileType = ProjectileType.SHARK_CLAW, role = Melee, maxHealth = 140, moveSpeed = Melee.speed
   )
@@ -196,7 +197,7 @@ private[model] object Beasts {
     id = CharacterId.Gorilla, displayName = "Gorilla",
     description = "A mighty primate that grabs enemies and slams the ground.",
     spriteSheet = "sprites/gorilla.png",
-    qAbility = AbilityDef(name = "Primate Grab", description = "Long-range grab that pulls enemies to you.", cooldownMs = 8000, maxRange = 18, damage = 9, projectileType = ProjectileType.GRAB, keybind = "Q"),
+    qAbility = AbilityDef(name = "Primate Grab", description = "A long-range grab that pulls an enemy to you, stunned for 1s.", cooldownMs = 8000, maxRange = 18, damage = 9, projectileType = ProjectileType.GRAB, keybind = "Q"),
     eAbility = AbilityDef(name = "Ground Pound", description = "Slams the ground with devastating AoE.", cooldownMs = 10500, maxRange = 12, damage = 24, projectileType = ProjectileType.SEISMIC_SLAM, keybind = "E"),
     primaryProjectileType = ProjectileType.BOULDER, role = Skirmisher, maxHealth = 150, moveSpeed = Skirmisher.speed
   )

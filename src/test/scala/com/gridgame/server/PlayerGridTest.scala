@@ -9,17 +9,17 @@ import scala.collection.mutable
 
 /**
  * The projectile tick finds who a shot or a blast can reach through PlayerGrid, squares of 4 cells,
- * rather than by looking at everyone. A shot looks only in the 3x3 squares round it, so it can
- * reach no further than they do: a type added with a hit radius past them (counted from the centre
- * a wave trails behind it, ProjectileDef.hitCentreBehind) would pass through players it plainly
- * covers, whenever they stood in the next square out. Held against looking at everyone, over the
+ * rather than by looking at everyone. A shot looks only in the 3x3 squares round the centre of its
+ * hit circle (Projectile.hitCentreX: where it is, or behind that for a wave or a melee swing), so
+ * its circle can be no wider than they reach: a type added with a hit radius past them would pass
+ * through players it plainly covers, whenever they stood in the next square out. Held against looking at everyone, over the
  * roster's own furthest reach, at every offset within a square, off the map's edge included.
  */
 class PlayerGridTest {
   private val reach: Float = CharacterDef.all
     .flatMap(c => Seq(c.primaryProjectileType, c.qAbility.projectileType, c.eAbility.projectileType))
     .filter(_ >= 0).distinct
-    .map(t => { val d = ProjectileDef.get(t); d.hitRadius + d.hitCentreBehind })
+    .map(t => ProjectileDef.get(t).hitRadius)
     .max
 
   private def crowd(rnd: scala.util.Random, n: Int): Seq[Player] =

@@ -18,7 +18,7 @@ private[model] object Medieval {
     speedMultiplier = 0.7f, damage = 15, maxRange = 20,
     distanceDamageScaling = Some(DistanceDamageScaling(15, 55, 20))
   )
-  val HolyBladeDef: ProjectileDef = ProjectileDef(id = ProjectileType.HOLY_BLADE, name = "Holy Blade", speedMultiplier = 0.7f, damage = 40, maxRange = 3, hitRadius = 2.2f)
+  val HolyBladeDef: ProjectileDef = ProjectileDef(id = ProjectileType.HOLY_BLADE, name = "Holy Blade", speedMultiplier = 0.7f, damage = 40, maxRange = 3, hitRadius = 3.7f, hitCentreBehind = 1.5f)
   val HolyBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.HOLY_BOLT, name = "Holy Bolt", speedMultiplier = 0.8f, damage = 30, maxRange = 16, pierceCount = 1)
   val ArrowDef: ProjectileDef = ProjectileDef(id = ProjectileType.ARROW, name = "Arrow", speedMultiplier = 0.95f, damage = 25, maxRange = 22, pierceCount = 1)
   val PoisonArrowDef: ProjectileDef = ProjectileDef(id = ProjectileType.POISON_ARROW, name = "Poison Arrow", speedMultiplier = 0.85f, damage = 20, maxRange = 20, onHitEffect = Some(Slow(2500, 0.5f)))
@@ -26,12 +26,12 @@ private[model] object Medieval {
   val SonicBoomDef: ProjectileDef = ProjectileDef(id = ProjectileType.SONIC_BOOM, name = "Sonic Boom", speedMultiplier = 0.5f, damage = 28, maxRange = 8, onHitEffect = Some(Push(4.0f)), aoeOnHit = Some(AoESplashConfig(3.0f, 21)))
   val SmiteDef: ProjectileDef = ProjectileDef(id = ProjectileType.SMITE, name = "Smite", speedMultiplier = 0.6f, damage = 39, maxRange = 14, aoeOnHit = Some(AoESplashConfig(3.0f, 19)))
   val CardDef: ProjectileDef = ProjectileDef(id = ProjectileType.CARD, name = "Card", speedMultiplier = 0.85f, damage = 24, maxRange = 14, ricochetCount = 2)
-  val ChargeFistDef: ProjectileDef = ProjectileDef(id = ProjectileType.CHARGE_FIST, name = "Charge Fist", speedMultiplier = 0.8f, damage = 33, maxRange = 3, hitRadius = 2.2f, chargeSpeedScaling = Some(ChargeScaling(0.6f, 1.1f)), chargeDamageScaling = Some(ChargeScaling(21f, 70f)), chargeRangeScaling = Some(ChargeScaling(2f, 5f)))
+  val ChargeFistDef: ProjectileDef = ProjectileDef(id = ProjectileType.CHARGE_FIST, name = "Charge Fist", speedMultiplier = 0.8f, damage = 33, maxRange = 3, hitRadius = 3.7f, hitCentreBehind = 1.5f, chargeSpeedScaling = Some(ChargeScaling(0.6f, 1.1f)), chargeDamageScaling = Some(ChargeScaling(21f, 70f)), chargeRangeScaling = Some(ChargeScaling(2f, 5f)))
   val ArrowHeavyDef: ProjectileDef = ProjectileDef(id = ProjectileType.ARROW_HEAVY, name = "Arrow Heavy", speedMultiplier = 0.95f, damage = 21, maxRange = 22, pierceCount = 1)
   val HolyBoltHeavyDef: ProjectileDef = ProjectileDef(id = ProjectileType.HOLY_BOLT_HEAVY, name = "Holy Bolt Heavy", speedMultiplier = 0.8f, damage = 29, maxRange = 16, pierceCount = 1)
   // A slam (Plan 5a): a bot casts it when its target is inside the ability's GroundSlam radius,
   // so that radius and the AoE radius here are kept in step
-  val ShockwaveDef: ProjectileDef = ProjectileDef(id = ProjectileType.SHOCKWAVE, name = "Shockwave", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(5.0f, 22)), onHitEffect = Some(Push(3.0f)), explosionConfig = Some(ExplosionConfig(0, 0, 5.0f)))
+  val ShockwaveDef: ProjectileDef = ProjectileDef(id = ProjectileType.SHOCKWAVE, name = "Shockwave", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(5.0f, 22, stunDurationMs = 600)), explosionConfig = Some(ExplosionConfig(0, 0, 5.0f)))
   // A closer (Plan 5a): lands on a ranged character walking away from 8 cells, wherever they are
   // in their step (MeleeKitsTest). See common/model/CLAUDE.md, "Melee kits"
   val EarthsplitterDef: ProjectileDef = ProjectileDef(id = ProjectileType.EARTHSPLITTER, name = "Earthsplitter", speedMultiplier = 0.9f, damage = 19, maxRange = 14, hitRadius = 2.5f, onHitEffect = Some(Root(1200)))
@@ -62,11 +62,13 @@ private[model] object Medieval {
     // eight bolts in a ring (the type keeps its old name)
     base(ProjectileType.HOLY_BOLT).copy(id = ProjectileType.HOLY_NOVA, name = "Judgment", damage = 27, speedMultiplier = 0.95f, onHitEffect = Some(Stun(600))),
     // The Rogue's Knife Spray. An ability, so it flies the 6 cells the Shuriken did before the melee
-    // primaries were halved (design/characters.md, *Melee strikes short and hard*)
-    base(ProjectileType.SHURIKEN).copy(id = ProjectileType.TOXIC_SHURIKEN, name = "Toxic Shuriken", damage = 18, maxRange = 6, onHitEffect = Some(Poison(8, 2000, 500)), alsoOnHit = Seq(Slow(1500, 0.6f))),
+    // primaries were halved (design/characters.md, *Melee strikes short and hard*), and strikes as
+    // wide as it did before they were widened (*A melee swing strikes wide*)
+    base(ProjectileType.SHURIKEN).copy(id = ProjectileType.TOXIC_SHURIKEN, name = "Toxic Shuriken", damage = 18, maxRange = 6, hitRadius = 2.2f, hitCentreBehind = 0f, onHitEffect = Some(Poison(8, 2000, 500)), alsoOnHit = Seq(Stun(600))),
     // Three blows in front of the Monk, gone once they land; eight in a ring came back to him. An
-    // ability, so they reach as far as the Fist did before the melee primaries were halved
-    base(ProjectileType.FIST).copy(id = ProjectileType.FLURRY, name = "Flurry", damage = 22, maxRange = 4, boomerang = false, onHitEffect = Some(Stun(400))),
+    // ability, so they reach as far as the Fist did before the melee primaries were halved, and
+    // strike as wide as it did before they were widened
+    base(ProjectileType.FIST).copy(id = ProjectileType.FLURRY, name = "Flurry", damage = 22, maxRange = 4, hitRadius = 2.2f, hitCentreBehind = 0f, boomerang = false, onHitEffect = Some(Stun(600))),
     // The Bard's Lullaby: one slow, drifting note through walls that puts whoever it reaches to sleep
     base(ProjectileType.SONIC_WAVE).copy(id = ProjectileType.LULLABY, name = "Lullaby", damage = 19, speedMultiplier = 0.5f, pierceCount = 0, onHitEffect = Some(Stun(1000))),
     // The Valkyrie's Pinning Spear, one where she threw five: pins its target where it lands
@@ -106,10 +108,10 @@ private[model] object Medieval {
 
   val Crusader: CharacterDef = CharacterDef(
     id = CharacterId.Crusader, displayName = "Crusader",
-    description = "A melee-focused shield warrior who walls off enemy fire and bashes enemies away.",
+    description = "A melee-focused shield warrior who walls off enemy fire and bashes everyone round him senseless.",
     spriteSheet = "sprites/crusader.png",
     qAbility = AbilityDef(name = "Bulwark", description = "Raises a shield wall that stops enemy shots, even while you attack.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -3, keybind = "Q", castBehavior = BarrierCast(3500)),
-    eAbility = AbilityDef(name = "Shield Bash", description = "Bashes all nearby enemies, pushing them back.", cooldownMs = 10000, maxRange = 0, damage = 22, projectileType = ProjectileType.SHOCKWAVE, keybind = "E", castBehavior = GroundSlam(5.0f)),
+    eAbility = AbilityDef(name = "Shield Bash", description = "Bashes everyone within 5 cells with the shield, stunning them for 0.6s.", cooldownMs = 15000, maxRange = 0, damage = 22, projectileType = ProjectileType.SHOCKWAVE, keybind = "E", castBehavior = GroundSlam(5.0f)),
     primaryProjectileType = ProjectileType.HOLY_BLADE, role = Melee, maxHealth = 150, moveSpeed = Melee.speed
   )
 
@@ -136,7 +138,7 @@ private[model] object Medieval {
     description = "A martial artist with charge-scaling fists, a dash, and flurry of punches.",
     spriteSheet = "sprites/monk.png",
     qAbility = AbilityDef(name = "Palm Strike", description = "Darts forward, phased and untouchable.", cooldownMs = 12000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = DashBuff(10, 150, 15)),
-    eAbility = AbilityDef(name = "Flurry", description = "A flurry of three blows in front of you, each stunning for 0.4s.", cooldownMs = 10000, maxRange = 4, damage = 22, projectileType = ProjectileType.FLURRY, keybind = "E", castBehavior = FanProjectile(3, Math.toRadians(30))),
+    eAbility = AbilityDef(name = "Flurry", description = "A flurry of three blows in front of you, each stunning for 0.6s.", cooldownMs = 10000, maxRange = 4, damage = 22, projectileType = ProjectileType.FLURRY, keybind = "E", castBehavior = FanProjectile(3, Math.toRadians(30))),
     primaryProjectileType = ProjectileType.CHARGE_FIST, role = Melee, maxHealth = 115, moveSpeed = Melee.speed
   )
 
@@ -153,7 +155,7 @@ private[model] object Medieval {
     id = CharacterId.Rogue, displayName = "Rogue",
     description = "A stealthy fighter who fans shurikens and shadow steps away.",
     spriteSheet = "sprites/rogue.png",
-    qAbility = AbilityDef(name = "Knife Spray", description = "Throws 3 poisoned shurikens in a fan that slow.", cooldownMs = 7000, maxRange = 6, damage = 22, projectileType = ProjectileType.TOXIC_SHURIKEN, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(30))),
+    qAbility = AbilityDef(name = "Knife Spray", description = "Throws 3 poisoned shurikens in a fan that stun for 0.6s.", cooldownMs = 7000, maxRange = 6, damage = 22, projectileType = ProjectileType.TOXIC_SHURIKEN, keybind = "Q", castBehavior = FanProjectile(3, Math.toRadians(30))),
     eAbility = AbilityDef(name = "Shadow Step", description = "Teleports through shadows to cursor.", cooldownMs = 10000, maxRange = 6, damage = 0, projectileType = -2, keybind = "E", castBehavior = TeleportCast(6)),
     primaryProjectileType = ProjectileType.SHURIKEN, role = Melee, maxHealth = 105, moveSpeed = Melee.speed
   )

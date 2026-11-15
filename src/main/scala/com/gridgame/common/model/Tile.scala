@@ -7,7 +7,7 @@ sealed trait Tile {
   def color: Int // ARGB color for rendering
 
   /** Whether a projectile is stopped by the tile: everything nobody can walk on stops one, but
-    * water, which a shot flies over as it does over the ground. */
+    * water and lava, which a shot flies over as it does over the ground. */
   def stopsProjectiles: Boolean = !walkable
 
   /** How the tile stands on the map, which is how it is drawn — see [[TileForm]]. */
@@ -133,6 +133,8 @@ object Tile {
     val name = "lava"
     val walkable = false
     override val form: TileForm = TileForm.Pool
+    // A shot flies over it, as over water: it lies level with the ground
+    override val stopsProjectiles: Boolean = false
     val color = 0xFFFF8028 // Molten orange
   }
 
@@ -384,13 +386,150 @@ object Tile {
     val color = 0xFFA6DCF6 // Glacier blue
   }
 
+  // The volcano maps (the Crucible, the Caldera, the Cinderlands): scorched rock, with ash lying on
+  // it and lava (above) running through it
+
+  case object Cinder extends Tile {
+    val id = 42
+    val name = "cinder"
+    val walkable = true
+    val color = 0xFF96706C // Scorched rock
+  }
+
+  case object CharredTree extends Tile {
+    val id = 43
+    val name = "charred_tree"
+    val walkable = false
+    override val form: TileForm = TileForm.Prop
+    override def ground: Tile = Cinder
+    val color = 0xFF3E3038 // Burnt wood
+  }
+
+  case object MagmaRock extends Tile {
+    val id = 44
+    val name = "magma_rock"
+    val walkable = false
+    override val form: TileForm = TileForm.Prop
+    override def ground: Tile = Cinder
+    val color = 0xFF54404A // Dark rock, cracked and glowing
+  }
+
+  // The graveyard maps (the Crypt, the Graveyard, the Necropolis), under the moon
+
+  case object DeadGrass extends Tile {
+    val id = 45
+    val name = "dead_grass"
+    val walkable = true
+    val color = 0xFF68867A // Grass by moonlight
+  }
+
+  case object Tombstone extends Tile {
+    val id = 46
+    val name = "tombstone"
+    val walkable = false
+    override val form: TileForm = TileForm.Prop
+    override def ground: Tile = DeadGrass
+    val color = 0xFFA9A8BC // Headstone grey
+    // Graves stand in rows, every fourth cell: by the usual rule a whole plot of them was one stone
+    override def variantAt(x: Int, y: Int): Int = Tile.scattered(x, y)
+  }
+
+  case object DeadTree extends Tile {
+    val id = 47
+    val name = "dead_tree"
+    val walkable = false
+    override val form: TileForm = TileForm.Prop
+    override def ground: Tile = DeadGrass
+    val color = 0xFF6E6478 // Bare grey wood
+  }
+
+  case object Crypt extends Tile {
+    val id = 48
+    val name = "crypt"
+    val walkable = false
+    val color = 0xFF6E6C84 // Mausoleum stone
+  }
+
+  case object Lantern extends Tile {
+    val id = 49
+    val name = "lantern"
+    val walkable = false
+    override val form: TileForm = TileForm.Prop
+    override def ground: Tile = DeadGrass
+    val color = 0xFFFFC65A // Candlelight
+    // Lamps stand at even steps along a path, as the graves do
+    override def variantAt(x: Int, y: Int): Int = Tile.scattered(x, y)
+  }
+
+  case object Cypress extends Tile {
+    val id = 55
+    val name = "cypress"
+    val walkable = false
+    override val form: TileForm = TileForm.Prop
+    override def ground: Tile = DeadGrass
+    val color = 0xFF3E6E68 // Dark evergreen
+  }
+
+  // The desert maps (the Tomb, the Oasis, the Dunes)
+
+  case object Dune extends Tile {
+    val id = 50
+    val name = "dune"
+    val walkable = true
+    val color = 0xFFEEC478 // Deep golden sand
+  }
+
+  case object Cactus extends Tile {
+    val id = 51
+    val name = "cactus"
+    val walkable = false
+    override val form: TileForm = TileForm.Prop
+    override def ground: Tile = Dune
+    val color = 0xFF5FAE5A // Cactus green
+  }
+
+  case object Obelisk extends Tile {
+    val id = 52
+    val name = "obelisk"
+    val walkable = false
+    override val form: TileForm = TileForm.Prop
+    override def ground: Tile = Dune
+    val color = 0xFFD9B77C // Carved sandstone
+  }
+
+  case object Mesa extends Tile {
+    val id = 53
+    val name = "mesa"
+    val walkable = false
+    val color = 0xFFC8794A // Red rock
+  }
+
+  case object Bones extends Tile {
+    val id = 54
+    val name = "bones"
+    val walkable = false
+    override val form: TileForm = TileForm.Prop
+    override def ground: Tile = Dune
+    val color = 0xFFEFE8D6 // Bleached bone
+  }
+
   val all: Seq[Tile] = Seq(
     Grass, Water, Sand, Stone, Wall, Tree, Path, DeepWater, Snow, Ice, Lava, Mountain, Fence,
     Metal, Glass, EnergyField, Circuit, Void, Toxic, Plasma,
     Flowers, Dirt, Cobblestone, Marsh, Crystal, Coral, Ruins, Moss,
     Obsidian, Cliff, Ash, Thorns, Basalt, Gravel,
-    Bush, Rock, Mushroom, Palm, Pine, Snowman, Planks, IceBlock
+    Bush, Rock, Mushroom, Palm, Pine, Snowman, Planks, IceBlock,
+    Cinder, CharredTree, MagmaRock, DeadGrass, Tombstone, DeadTree, Crypt, Lantern,
+    Dune, Cactus, Obelisk, Mesa, Bones, Cypress
   )
+
+  /** A variant for cell (x, y) that doesn't repeat along a row, a column or any even step of
+    * either, for tiles a map sets out at even steps. */
+  private def scattered(x: Int, y: Int): Int = {
+    var h = x * 73856093 ^ y * 19349663
+    h ^= h >>> 13; h *= 0x5bd1e995; h ^= h >>> 15
+    (h & 0x7FFFFFFF) % 4
+  }
 
   def fromId(id: Int): Tile = all.find(_.id == id).getOrElse(Grass)
 

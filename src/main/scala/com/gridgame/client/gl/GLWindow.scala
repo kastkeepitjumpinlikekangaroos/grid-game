@@ -210,6 +210,13 @@ class GLWindow(title: String, initialWidth: Int, initialHeight: Int, windowClass
     if (blankCursor != NULL) glfwSetCursor(window, blankCursor)
   }
 
+  /** The system's pointer over this window again (`shown`), or none, as [[hideSystemCursor]] left it:
+    * a game that draws its own pointer still shows the system's over a menu of its own. */
+  def showSystemCursor(shown: Boolean): Unit = {
+    if (window == NULL || blankCursor == NULL) return
+    glfwSetCursor(window, if (shown) NULL else blankCursor)
+  }
+
   /** Whether the mouse is over this window's content while the window has the focus, reading where it
     * is now into [[pointerX]] / [[pointerY]] (window units, as the cursor callbacks give it). Anywhere
     * else, or with another window in front, the system's pointer is the one that shows. */

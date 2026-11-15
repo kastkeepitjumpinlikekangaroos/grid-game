@@ -8,7 +8,8 @@ import org.lwjgl.opengl.GL11._
 import com.gridgame.client.gl.{GLTexture, RenderQuality, ShapeBatch, TextureRegion}
 
 /**
- * The sky, sea, city, desert, space or snowfield behind the map, by the world's `background`. It
+ * The sky, sea, city, desert, space, snowfield, volcano or night behind the map, by the world's
+ * `background`. It
  * only shows past the edge of the map, so it is drawn into a cached target of its own, redrawn every
  * few frames while it shows, and blitted behind the ground.
  */
@@ -21,6 +22,9 @@ private[render] final class BackgroundPainter(ctx: RenderContext) {
   private var bgCacheValid = false
   private var bgCacheTick = 0
   private var bgCacheType: Byte = -1
+  // The view it was drawn for, in world units: the window over the camera's zoom
+  private var bgCacheCanvasW = 0.0
+  private var bgCacheCanvasH = 0.0
 
   // Pre-allocated polygon scratch shared by the status-effect / buff renderers
   private val _fxXs = new Array[Float](8)
@@ -45,6 +49,8 @@ private[render] final class BackgroundPainter(ctx: RenderContext) {
       case 4 => drawOceanBg()
       case 5 => drawSnowBg()
       case 6 => drawSeaBg()
+      case 7 => drawVolcanoBg()
+      case 8 => drawNightBg()
       case _ => drawSkyBg()
     }
   }
@@ -380,64 +386,187 @@ private[render] final class BackgroundPainter(ctx: RenderContext) {
     shapeBatch.setAdditiveBlend(false)
   }
 
+  /** Where ridge point i of a row of hills is on the screen (drawHills' own arithmetic), into
+    * _ridgeX/_ridgeY; false if it isn't one of the `every`-th. */
+  private var _ridgeX = 0f
+  private var _ridgeY = 0f
+  private def ridgePoint(i: Int, w: Float, h: Float, yFrac: Float, ampFrac: Float, parallax: Float, seed: Int,
+                         every: Int, sharp: Boolean): Boolean = {
+    val step = (w + 80f) / (HILL_PTS - 1)
+    val shift = ((parallax % step) + step) % step
+    val first = Math.floor(parallax / step).toInt
+    if (((i + first) % every + every) % every != 0) return false
+    _ridgeX = -40f + i * step - shift
+    _ridgeY = ridgeY(i + first, h * yFrac, h * ampFrac, seed, sharp)
+    true
+  }
+
+  /** The desert behind the Tomb, the Oasis and the Dunes, drawn as the sky is: a hot blue sky
+    * paling to sand at the horizon, a white sun, buttes of red rock and a pair of pyramids far off,
+    * and dunes rolling up to the map. (It was an orange dusk with translucent dunes, from before the
+    * bright maps; no map used it.) */
   private def drawDesertBg(): Unit = {
     val w = canvasW.toFloat; val h = canvasH.toFloat
-    verticalGradient(0f, h, w, 0.95f, 0.65f, 0.25f, 0.70f, 0.45f, 0.15f)
-    var i = 0
+    skyGradient(w, h, 0.36f, 0.66f, 0.98f, 0.99f, 0.91f, 0.72f)
     val px = (camOffX * 0.02).toFloat
-    // Sun with glow
-    val sunX = w * 0.75f + px * 0.5f; val sunY = h * 0.18f; val sunR = 35f
-    val pulse = (0.9 + 0.1 * Math.sin(animationTick * 0.015)).toFloat
+    // the sun, with a ring of its own light round it
+    val sunX = w * 0.74f + px * 0.2f; val sunY = h * 0.17f
+    shapeBatch.fillOval(sunX, sunY, 34f, 34f, 1f, 0.96f, 0.78f, 0.45f, 28)
+    shapeBatch.fillOval(sunX, sunY, 25f, 25f, 1f, 0.99f, 0.90f, 1f, 28)
+    drawCloudBand(w, h, 0.13f, 0.03f, px * 0.3f, 16f, 3, 419, snowy = false)
+    // buttes of red rock on the horizon: flat tops, a lit face and a shaded one
+    var k = 0
+    while (k < 4) {
+      val span = w + 360f
+      val bx = (((hash(1501 + k * 37).toFloat * span + px * 0.45f) % span) + span) % span - 180f
+      val bw = 34f + hash(1502 + k * 37).toFloat * 44f
+      val bh = h * (0.10f + hash(1503 + k * 37).toFloat * 0.08f)
+      val base = h * 0.70f
+      _fxXs(0) = bx - bw * 1.25f; _fxYs(0) = base
+      _fxXs(1) = bx - bw;         _fxYs(1) = base - bh
+      _fxXs(2) = bx + bw;         _fxYs(2) = base - bh
+      _fxXs(3) = bx + bw * 1.25f; _fxYs(3) = base
+      shapeBatch.fillPolygon(_fxXs, _fxYs, 4, 0.86f, 0.55f, 0.40f, 1f)
+      _fxXs(0) = bx + bw * 0.25f; _fxYs(0) = base
+      _fxXs(1) = bx + bw * 0.25f; _fxYs(1) = base - bh
+      shapeBatch.fillPolygon(_fxXs, _fxYs, 4, 0.72f, 0.42f, 0.34f, 1f)
+      shapeBatch.fillRect(bx - bw, base - bh, bw * 2f, 2.2f, 0.95f, 0.70f, 0.50f, 1f)
+      shapeBatch.fillRect(bx - bw * 1.1f, base - bh * 0.55f, bw * 2.2f, 1.6f, 0.66f, 0.38f, 0.32f, 1f)
+      k += 1
+    }
+    // two pyramids, further off than the dunes
+    k = 0
+    while (k < 2) {
+      val span = w + 500f
+      val cx = (((hash(1601 + k * 53).toFloat * span + px * 0.6f) % span) + span) % span - 250f
+      val half = 52f + k * 26f
+      val base = h * 0.73f
+      _fxXs(0) = cx - half; _fxYs(0) = base
+      _fxXs(1) = cx;        _fxYs(1) = base - half * 0.78f
+      _fxXs(2) = cx + half; _fxYs(2) = base
+      shapeBatch.fillPolygon(_fxXs, _fxYs, 3, 0.95f, 0.80f, 0.52f, 1f)
+      _fxXs(0) = cx + half * 0.3f
+      shapeBatch.fillPolygon(_fxXs, _fxYs, 3, 0.80f, 0.62f, 0.40f, 1f)
+      k += 1
+    }
+    drawHills(w, h, 0.74f, 0.06f, px, 21, 0.96f, 0.82f, 0.54f, 0.80f, 0.62f, 0.36f, 1.5f)
+    drawHills(w, h, 0.87f, 0.06f, px * 1.6f, 29, 0.93f, 0.76f, 0.46f, 0.78f, 0.58f, 0.32f, 1.5f)
+  }
+
+  /** A band of smoke, or of cloud by night: the sky's fat clouds in the dark's colours. */
+  private def drawDarkCloudBand(w: Float, h: Float, yFrac: Float, speed: Float, parallax: Float, scale: Float,
+                                count: Int, seed: Int, lr: Float, lg: Float, lb: Float, sr: Float, sg: Float,
+                                sb: Float, br: Float, bg: Float, bb: Float): Unit = {
+    val span = w + 240f
+    var i = 0
+    while (i < count) {
+      val baseX = hash(seed + i * 17).toFloat * span
+      val x = (((baseX + animationTick * speed + parallax) % span) + span) % span - 120f
+      val y = h * yFrac + (hash(seed + i * 17 + 5).toFloat - 0.5f) * h * 0.12f
+      val sc = scale * (0.75f + hash(seed + i * 17 + 9).toFloat * 0.5f)
+      drawCelCloud(x, y, sc, lr, lg, lb, sr, sg, sb, br, bg, bb)
+      i += 1
+    }
+  }
+
+  /** The volcano behind the Crucible, the Caldera and the Cinderlands: a sky black with smoke over
+    * a horizon that glows, a mountain on it with fire in its mouth and running down its side, and
+    * ridges of dark rock up to the map. Embers rise in front of the world as well
+    * (spawnEmberParticle). */
+  private def drawVolcanoBg(): Unit = {
+    val w = canvasW.toFloat; val h = canvasH.toFloat
+    skyGradient(w, h, 0.09f, 0.04f, 0.09f, 0.78f, 0.27f, 0.12f)
+    val px = (camOffX * 0.02).toFloat
+    drawDarkCloudBand(w, h, 0.13f, 0.04f, px * 0.3f, 30f, 5, 613, 0.07f, 0.03f, 0.07f, 0.17f, 0.09f, 0.13f,
+      0.26f, 0.14f, 0.17f)
+    // a far range, red with the glow behind it
+    drawHills(w, h, 0.66f, 0.13f, px * 0.5f, 11, 0.36f, 0.13f, 0.14f, 0f, 0f, 0f, 0f, sharp = true)
+    // the mountain: its cone, the fire in its mouth, a river of it down the near slope
+    val span = w + 700f
+    val mx = (((hash(1701).toFloat * span + px * 0.7f) % span) + span) % span - 350f
+    val base = h * 0.78f; val half = 190f; val top = base - 150f
+    val glow = (0.75 + 0.25 * Math.sin(animationTick * 0.03)).toFloat
     shapeBatch.setAdditiveBlend(true)
-    shapeBatch.fillOvalSoft(sunX, sunY, sunR * 5, sunR * 5, 1f, 0.9f, 0.5f, 0.04f * pulse, 0f, 24)
-    shapeBatch.fillOvalSoft(sunX, sunY, sunR * 3, sunR * 3, 1f, 0.85f, 0.4f, 0.08f * pulse, 0f, 24)
-    shapeBatch.fillOvalSoft(sunX, sunY, sunR * 1.8f, sunR * 1.8f, 1f, 0.8f, 0.3f, 0.15f * pulse, 0f, 24)
+    shapeBatch.fillOvalSoft(mx, top - 8f, 120f, 80f, 1f, 0.42f, 0.10f, 0.30f * glow, 0f, 24)
     shapeBatch.setAdditiveBlend(false)
-    shapeBatch.fillOval(sunX, sunY, sunR, sunR, 1f, 0.95f, 0.7f, 0.9f)
-    // Heat shimmer
-    i = 0
-    while (i < 15) {
-      val ly = h * 0.45f + i * h * 0.035f
-      val phase = animationTick * 0.03f + i * 0.7f
-      val points = 30
-      val xStep = w / points
-      var j = 0
-      while (j < points) {
-        val x1 = j * xStep; val x2 = (j + 1) * xStep
-        val y1 = ly + Math.sin(phase + j * 0.3).toFloat * 2.5f
-        val y2 = ly + Math.sin(phase + (j + 1) * 0.3).toFloat * 2.5f
-        shapeBatch.strokeLine(x1, y1, x2, y2, 1.5f, 1f, 0.9f, 0.6f, 0.06f)
-        j += 1
+    _fxXs(0) = mx - half;  _fxYs(0) = base
+    _fxXs(1) = mx - 34f;   _fxYs(1) = top
+    _fxXs(2) = mx + 34f;   _fxYs(2) = top
+    _fxXs(3) = mx + half;  _fxYs(3) = base
+    shapeBatch.fillPolygon(_fxXs, _fxYs, 4, 0.20f, 0.08f, 0.12f, 1f)
+    _fxXs(0) = mx + 6f; _fxXs(1) = mx + 12f
+    shapeBatch.fillPolygon(_fxXs, _fxYs, 4, 0.14f, 0.06f, 0.10f, 1f)
+    // (inside its rim: as wide as the cone's top it sat on it like a lid)
+    shapeBatch.fillOval(mx, top + 3f, 27f, 3.6f, 1f, 0.62f, 0.16f, 1f, 20)
+    shapeBatch.fillOval(mx, top + 2.6f, 17f, 2f, 1f, 0.90f, 0.50f, 1f, 16)
+    shapeBatch.strokeLine(mx - 10f, top + 4f, mx - 30f, top + 52f, 5f, 1f, 0.55f, 0.14f, 1f)
+    shapeBatch.strokeLine(mx - 30f, top + 52f, mx - 22f, top + 96f, 4f, 1f, 0.50f, 0.12f, 1f)
+    shapeBatch.strokeLine(mx - 22f, top + 96f, mx - 46f, base, 3.4f, 0.95f, 0.42f, 0.10f, 1f)
+    shapeBatch.strokeLine(mx - 10f, top + 4f, mx - 30f, top + 52f, 1.6f, 1f, 0.88f, 0.46f, 1f)
+    // nearer ridges of dark rock, their crests lit from below
+    drawHills(w, h, 0.79f, 0.07f, px, 15, 0.15f, 0.07f, 0.11f, 0.62f, 0.22f, 0.10f, 1.4f, sharp = true)
+    drawHills(w, h, 0.89f, 0.06f, px * 1.6f, 23, 0.10f, 0.05f, 0.08f, 0.50f, 0.17f, 0.08f, 1.4f)
+    // the glow of the lava round the map, up from the foot of the screen
+    shapeBatch.setAdditiveBlend(true)
+    shapeBatch.fillRectGradient(0f, h * 0.72f, w, h * 0.28f, 1f, 0.36f, 0.08f, 0f, 1f, 0.36f, 0.08f, 0f,
+      1f, 0.36f, 0.08f, 0.22f, 1f, 0.36f, 0.08f, 0.22f)
+    shapeBatch.setAdditiveBlend(false)
+  }
+
+  /** Night over the Crypt, the Graveyard and the Necropolis: a big pale moon in a violet sky, a
+    * few stars, clouds crossing them, and hills with crosses and bare trees along their tops. */
+  private def drawNightBg(): Unit = {
+    val w = canvasW.toFloat; val h = canvasH.toFloat
+    skyGradient(w, h, 0.05f, 0.05f, 0.15f, 0.27f, 0.21f, 0.42f)
+    val px = (camOffX * 0.02).toFloat
+    var i = 0
+    while (i < 70) {
+      val sx = (((hash(i * 3 + 2000).toFloat * w + px * 0.15f) % w) + w) % w
+      val sy = hash(i * 3 + 2001).toFloat * h * 0.55f
+      val tw = (0.55 + 0.45 * Math.sin(animationTick * (0.02 + hash(i * 3 + 2002) * 0.03) + i)).toFloat
+      val sr = 0.7f + hash(i * 3 + 2003).toFloat * 0.9f
+      shapeBatch.fillOval(sx, sy, sr, sr, 0.90f, 0.92f, 1f, 0.35f + 0.5f * tw, 8)
+      i += 1
+    }
+    // the moon, a halo round it, three seas on its face
+    val moonX = w * 0.72f + px * 0.2f; val moonY = h * 0.20f; val moonR = 38f
+    shapeBatch.setAdditiveBlend(true)
+    shapeBatch.fillOvalSoft(moonX, moonY, moonR * 3.2f, moonR * 3.2f, 0.55f, 0.60f, 0.95f, 0.20f, 0f, 28)
+    shapeBatch.setAdditiveBlend(false)
+    shapeBatch.fillOval(moonX, moonY, moonR + 1.8f, moonR + 1.8f, 0.42f, 0.44f, 0.66f, 1f, 32)
+    shapeBatch.fillOval(moonX, moonY, moonR, moonR, 0.84f, 0.86f, 0.80f, 1f, 32)
+    shapeBatch.fillOval(moonX - moonR * 0.10f, moonY - moonR * 0.12f, moonR * 0.86f, moonR * 0.84f, 0.96f, 0.96f, 0.86f, 1f, 32)
+    shapeBatch.fillOval(moonX - moonR * 0.30f, moonY - moonR * 0.25f, moonR * 0.22f, moonR * 0.18f, 0.84f, 0.85f, 0.78f, 1f, 14)
+    shapeBatch.fillOval(moonX + moonR * 0.22f, moonY + moonR * 0.10f, moonR * 0.28f, moonR * 0.22f, 0.84f, 0.85f, 0.78f, 1f, 14)
+    shapeBatch.fillOval(moonX - moonR * 0.15f, moonY + moonR * 0.42f, moonR * 0.14f, moonR * 0.11f, 0.84f, 0.85f, 0.78f, 1f, 12)
+    drawDarkCloudBand(w, h, 0.20f, 0.05f, px * 0.3f, 24f, 4, 811, 0.08f, 0.08f, 0.20f, 0.16f, 0.16f, 0.33f,
+      0.25f, 0.25f, 0.45f)
+    // a far range, then the hills the graves are on
+    drawHills(w, h, 0.64f, 0.11f, px * 0.5f, 31, 0.16f, 0.14f, 0.31f, 0f, 0f, 0f, 0f, sharp = true)
+    i = 1
+    while (i < HILL_PTS - 1) {
+      if (ridgePoint(i, w, h, 0.77f, 0.06f, px, 37, 3, sharp = false)) {
+        val x = _ridgeX; val y = _ridgeY + 3f
+        if ((i & 1) == 0) {
+          // a cross
+          shapeBatch.fillRect(x - 1.6f, y - 17f, 3.2f, 17f, 0.07f, 0.07f, 0.16f, 1f)
+          shapeBatch.fillRect(x - 6f, y - 13f, 12f, 3.2f, 0.07f, 0.07f, 0.16f, 1f)
+        } else {
+          // a bare tree
+          shapeBatch.strokeLine(x, y, x + 1f, y - 20f, 3f, 0.07f, 0.07f, 0.16f, 1f)
+          shapeBatch.strokeLine(x + 0.6f, y - 11f, x + 10f, y - 22f, 1.8f, 0.07f, 0.07f, 0.16f, 1f)
+          shapeBatch.strokeLine(x + 1f, y - 16f, x - 9f, y - 27f, 1.8f, 0.07f, 0.07f, 0.16f, 1f)
+          shapeBatch.strokeLine(x + 1f, y - 20f, x + 4f, y - 31f, 1.4f, 0.07f, 0.07f, 0.16f, 1f)
+          shapeBatch.strokeLine(x - 4f, y - 21.5f, x - 5f, y - 30f, 1.2f, 0.07f, 0.07f, 0.16f, 1f)
+        }
       }
       i += 1
     }
-    // Sand dunes
-    drawDuneLayer(w, h, 0.70f, 0.65f, 0.45f, 0.20f, 0.7f, px * 0.3f, 0)
-    drawDuneLayer(w, h, 0.60f, 0.50f, 0.30f, 0.12f, 0.85f, px * 0.6f, 100)
-    // Near atmospheric haze (warm dust overlay)
-    shapeBatch.fillRect(0, h * 0.75f, w, h * 0.25f, 0.85f, 0.7f, 0.45f, 0.04f)
-  }
-
-  private def drawDuneLayer(w: Float, h: Float, r: Float, g: Float, b: Float, alpha: Float,
-                            yFrac: Float, parallax: Float, seedOff: Int): Unit = {
-    val baseY = h * yFrac
-    val points = 60
-    val xStep = (w + 40) / points
-    val n = (points + 1) * 2
-    var i = 0
-    while (i <= points) {
-      val x = -20 + i * xStep + parallax
-      _bgPolyXs(i) = x
-      _bgPolyYs(i) = (baseY +
-        Math.sin(i * 0.15 + seedOff * 0.1) * h * 0.04 +
-        Math.sin(i * 0.07 + seedOff * 0.3 + animationTick * 0.002) * h * 0.02 +
-        Math.sin(i * 0.3 + seedOff * 0.5) * h * 0.015).toFloat
-      _bgPolyXs(n - 1 - i) = x; _bgPolyYs(n - 1 - i) = h + 10
-      i += 1
-    }
-    // A ribbon, not a polygon fanned from a corner, which overlapped itself wherever a slope faced
-    // away from that corner and blended the overlap twice (ShapeBatch.fillRibbon)
-    shapeBatch.fillRibbon(_bgPolyXs, _bgPolyYs, n, r, g, b, alpha)
+    drawHills(w, h, 0.77f, 0.06f, px, 37, 0.10f, 0.11f, 0.23f, 0.30f, 0.30f, 0.52f, 1.3f)
+    drawHills(w, h, 0.89f, 0.05f, px * 1.6f, 43, 0.07f, 0.08f, 0.17f, 0.24f, 0.24f, 0.44f, 1.3f)
+    // mist lying in the hollows
+    shapeBatch.fillRectGradient(0f, h * 0.70f, w, h * 0.30f, 0.62f, 0.68f, 0.90f, 0f, 0.62f, 0.68f, 0.90f, 0f,
+      0.62f, 0.68f, 0.90f, 0.16f, 0.62f, 0.68f, 0.90f, 0.16f)
   }
 
   private def drawOceanBg(): Unit = {
@@ -528,6 +657,8 @@ private[render] final class BackgroundPainter(ctx: RenderContext) {
     * animation moves on every few frames (RenderQuality.bgCacheInterval). */
   def refresh(world: WorldData, visible: Boolean): Unit = {
     if (!visible) bgCacheValid = false // stale by the time it next shows
+    // and drawn for another view (the window's size, or the camera's zoom, changed)
+    if (canvasW != bgCacheCanvasW || canvasH != bgCacheCanvasH) bgCacheValid = false
     val bgStale = !bgCacheValid || bgType != bgCacheType ||
       (animationTick - bgCacheTick) >= RenderQuality.bgCacheInterval
     if (visible && bgStale) {
@@ -539,6 +670,7 @@ private[render] final class BackgroundPainter(ctx: RenderContext) {
       shapeBatch.end()
       bgCacheFBO.unbindTarget()
       bgCacheValid = true; bgCacheTick = animationTick; bgCacheType = bgType
+      bgCacheCanvasW = canvasW; bgCacheCanvasH = canvasH
     }
   }
 

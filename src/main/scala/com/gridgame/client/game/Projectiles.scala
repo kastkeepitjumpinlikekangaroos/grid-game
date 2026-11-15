@@ -142,7 +142,8 @@ trait Projectiles { this: GameClient =>
           }
         }
         if (targetId != null) {
-          recordHit(targetId, packet.getColorRGB, packet.getDx, packet.getDy, hitPType, System.currentTimeMillis())
+          recordHit(targetId, packet.getColorRGB, packet.getX, packet.getY, packet.getDx, packet.getDy, hitPType,
+            System.currentTimeMillis())
 
           // If our projectile hit another player, reduce ability cooldown by 50%
           if (packet.getPlayerId.equals(localPlayerId)) {

@@ -16,7 +16,7 @@ private[model] object Mythological {
   val HeadThrowDef: ProjectileDef = ProjectileDef(id = ProjectileType.HEAD_THROW, name = "Head Throw", speedMultiplier = 0.7f, damage = 25, maxRange = 16, onHitEffect = Some(Push(2.5f)), alsoOnHit = Seq(Stun(800)))
   val StoneGazeDef: ProjectileDef = ProjectileDef(id = ProjectileType.STONE_GAZE, name = "Stone Gaze", speedMultiplier = 0f, damage = 0, maxRange = 0, aoeOnMaxRange = Some(AoESplashConfig(6.0f, 37, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 6.0f)))
   val InkSnareDef: ProjectileDef = ProjectileDef(id = ProjectileType.INK_SNARE, name = "Ink Snare", speedMultiplier = 0.5f, damage = 0, maxRange = 14, passesThroughPlayers = true, aoeOnMaxRange = Some(AoESplashConfig(5.0f, 21, rootDurationMs = 2000)), explosionConfig = Some(ExplosionConfig(0, 0, 5.0f)))
-  val HornDef: ProjectileDef = ProjectileDef(id = ProjectileType.HORN, name = "Horn", speedMultiplier = 0.6f, damage = 49, maxRange = 3, hitRadius = 2.5f)
+  val HornDef: ProjectileDef = ProjectileDef(id = ProjectileType.HORN, name = "Horn", speedMultiplier = 0.6f, damage = 49, maxRange = 3, hitRadius = 4.0f, hitCentreBehind = 1.5f)
   val MysticBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.MYSTIC_BOLT, name = "Mystic Bolt", speedMultiplier = 0.75f, damage = 28, maxRange = 16, onHitEffect = Some(Burn(20, 3000, 750)))
   val PetrifyDef: ProjectileDef = ProjectileDef(id = ProjectileType.PETRIFY, name = "Petrify", speedMultiplier = 0.3f, damage = 11, maxRange = 20, onHitEffect = Some(Freeze(3000)))
   val ThrownBoulderDef: ProjectileDef = ProjectileDef(id = ProjectileType.THROWN_BOULDER, name = "Thrown Boulder", speedMultiplier = 0.3f, damage = 30, maxRange = 10, hitRadius = 3.0f)
@@ -26,7 +26,7 @@ private[model] object Mythological {
   val ArrowLightDef: ProjectileDef = ProjectileDef(id = ProjectileType.ARROW_LIGHT, name = "Arrow Light", speedMultiplier = 0.95f, damage = 28, maxRange = 22, pierceCount = 1)
   // A closer (Plan 5a): lands on a ranged character walking away from 8 cells, wherever they are
   // in their step (MeleeKitsTest). See common/model/CLAUDE.md, "Melee kits"
-  val TalonGrabDef: ProjectileDef = ProjectileDef(id = ProjectileType.TALON_GRAB, name = "Talon Grab", speedMultiplier = 0.95f, damage = 10, maxRange = 16, onHitEffect = Some(PullToOwner))
+  val TalonGrabDef: ProjectileDef = ProjectileDef(id = ProjectileType.TALON_GRAB, name = "Talon Grab", speedMultiplier = 0.95f, damage = 10, maxRange = 16, onHitEffect = Some(PullToOwner), alsoOnHit = Seq(Stun(1000)))
   // What the volleys became (design/characters.md, *No volleys of more than three*).
   // Fenrir's Blood Frenzy: bites all round him, draining every enemy in reach and slowing them. A
   // slam, so its GroundSlam radius and its AoE's are kept in step; it was eight bites in a ring
@@ -140,7 +140,7 @@ private[model] object Mythological {
     description = "A majestic beast that dives on prey and snatches it in its talons.",
     spriteSheet = "sprites/griffin.png",
     qAbility = AbilityDef(name = "Sky Dive", description = "Dives from above.", cooldownMs = 10000, maxRange = 0, damage = 0, projectileType = -1, keybind = "Q", castBehavior = DashBuff(12, 150, 18)),
-    eAbility = AbilityDef(name = "Talon Grab", description = "Snatches an enemy in its talons and drags them to you.", cooldownMs = 10000, maxRange = 16, damage = 10, projectileType = ProjectileType.TALON_GRAB, keybind = "E"),
+    eAbility = AbilityDef(name = "Talon Grab", description = "Snatches an enemy in its talons and drags them to you, stunned for 1s.", cooldownMs = 10000, maxRange = 16, damage = 10, projectileType = ProjectileType.TALON_GRAB, keybind = "E"),
     primaryProjectileType = ProjectileType.TALON, role = Melee, maxHealth = 115, moveSpeed = Melee.speed
   )
 

@@ -657,19 +657,22 @@ def _deep_water(d, f, r):
 
 
 def _lava(d, f, r):
+    """Molten rock: bright, slow swirls of its hottest running through it, a plate of crust adrift,
+    a bubble swelling and bursting. Two plates and a hot spot a cell read as confetti over a lake."""
     ground_fill(d, LAVA)
     hot = (255, 214, 92)
     crust = (190, 72, 40)
-    # crust plates floating on the melt
-    for (u, v, k) in ((0.3, 0.35, 1.0), (0.66, 0.62, 0.8)):
-        x, y = iso(u, v)
-        plate = Poly([(x - 6 * k, y), (x - 2 * k, y - 2.6 * k), (x + 4 * k, y - 2.2 * k),
-                      (x + 7 * k, y + 0.4 * k), (x + 2 * k, y + 2.8 * k), (x - 4 * k, y + 2.2 * k)])
-        cel(d, plate, crust, sh=(1.0, 1.0), lw=0.8)
-    x, y = iso(0.62, 0.3)
-    Ell(x, y, 4.0, 1.8).draw(d, fill=hot)
+    for i, (u, v) in enumerate(((0.36, 0.34), (0.62, 0.66))):
+        drift = ((f + i * 2) % 4) * 0.04 - 0.06
+        x, y = iso(u + drift, v - drift)
+        wave(d, x, y, 12.0, hot, 1.7, 1.1)
+    x, y = iso(0.66, 0.34)
+    k = 0.9
+    plate = Poly([(x - 6 * k, y), (x - 2 * k, y - 2.6 * k), (x + 4 * k, y - 2.2 * k),
+                  (x + 7 * k, y + 0.4 * k), (x + 2 * k, y + 2.8 * k), (x - 4 * k, y + 2.2 * k)])
+    cel(d, plate, crust, sh=(1.0, 1.0), lw=0.8)
     # a bubble swelling and popping
-    bx, by = iso(0.36, 0.66)
+    bx, by = iso(0.34, 0.66)
     if f < 3:
         rad = (1.4, 2.2, 3.0)[f]
         cel(d, Ell(bx, by - rad * 0.3, rad, rad * 0.75), (255, 170, 60), sh=(0.5, 0.5), line=False)
@@ -1232,6 +1235,469 @@ def _thorns(d, f, r):
 
 
 # ---------------------------------------------------------------------------
+# The volcano, the graveyard and the desert
+# ---------------------------------------------------------------------------
+
+CINDER = (150, 112, 108)
+DEAD_GRASS = (104, 134, 122)
+DUNE = (238, 196, 120)
+EMBER = (255, 150, 60)
+EMBER_HOT = (255, 226, 140)
+CANDLE = (255, 214, 110)
+GRAVE = (169, 168, 188)
+BONE = (239, 232, 214)
+CACTUS = (95, 174, 90)
+SANDSTONE = (224, 188, 128)
+RED_ROCK = (206, 124, 78)
+
+
+def _cinder(d, f, r):
+    """Scorched rock, the volcano's floor: dark and warm, a few flat scales of rock lying in it and
+    a crack here and there. Nothing glows on it: the lava beside it is what glows."""
+    ground_fill(d, CINDER)
+    for (u, v) in scatter(r, (2, 2, 3, 2)[f], gap=0.32):
+        x, y = iso(u, v)
+        k = r.uniform(0.85, 1.15)
+        Ell(x, y + 0.7, 4.8 * k, 2.1 * k).draw(d, fill=shade(CINDER, 0.9))
+        Ell(x - 0.4, y, 4.5 * k, 1.8 * k).draw(d, fill=lit(CINDER, 0.3))
+    if f in (1, 3):
+        x, y = iso(0.5, 0.5) if f == 1 else iso(0.42, 0.6)
+        stroke(d, [(x - 6, y + 0.4), (x - 2, y - 1.0), (x + 1, y + 0.5), (x + 5, y - 0.8)], 0.8, shade(CINDER, 1.6))
+
+
+def _dead_grass(d, f, r):
+    """The graveyard's grass, by moonlight: the meadow's tufts, grey-green."""
+    _grass(d, f, r, base=DEAD_GRASS)
+
+
+def _dune(d, f, r):
+    """Deep desert sand: long ripples the wind left, lit along their crests."""
+    ground_fill(d, DUNE)
+    crest = lit(DUNE, 0.7)
+    trough = shade(DUNE, 0.45)
+    for i, (u, v) in enumerate(scatter(r, (2, 3, 2, 2)[f], lo=0.26, hi=0.74, gap=0.3)):
+        x, y = iso(u, v)
+        w = r.uniform(9.0, 12.0)
+        wave(d, x, y + 1.0, w, trough, 1.0, 0.8)
+        wave(d, x, y, w, crest, 1.0, 0.8)
+
+
+def _skeleton_tree(f, tall):
+    """A bare tree's trunk and branches, as point lists with half-widths: variant f of four, two
+    of them the other two mirrored. `tall` 1 is a full crown, less a tree broken short."""
+    flip = -1 if f in (1, 3) else 1
+    alt = f >= 2
+
+    def P(pts):
+        return [(40 + (x - 40) * flip, 96 - (96 - y) * (tall if y < 60 else 1.0)) for (x, y) in pts]
+    trunk = (P([(40, 96), (39, 82), (41.5, 66), (40, 52)]), [5.2, 4.4, 3.6, 2.8])
+    if not alt:
+        limbs = [
+            (P([(41, 68), (50, 58), (56, 43)]), [2.6, 2.1, 1.0]),
+            (P([(40, 53), (33, 42), (27, 28)]), [2.6, 2.0, 0.9]),
+            (P([(40, 53), (44, 39), (43, 24)]), [2.4, 1.8, 0.8]),
+            (P([(39, 80), (30, 72), (22, 63)]), [2.2, 1.7, 0.8]),
+            (P([(50, 58), (59, 56)]), [1.6, 0.7]),
+            (P([(33, 42), (25, 44)]), [1.5, 0.7]),
+            (P([(44, 39), (51, 31)]), [1.4, 0.6]),
+        ]
+    else:
+        limbs = [
+            (P([(41, 70), (51, 63), (60, 52)]), [2.6, 2.0, 0.9]),
+            (P([(40, 53), (31, 46), (23, 35)]), [2.6, 2.0, 0.9]),
+            (P([(40, 53), (41, 38), (46, 25)]), [2.4, 1.8, 0.8]),
+            (P([(39.5, 76), (31, 66), (27, 55)]), [2.0, 1.6, 0.8]),
+            (P([(51, 63), (54, 53)]), [1.5, 0.7]),
+            (P([(31, 46), (30, 36)]), [1.5, 0.6]),
+            (P([(41, 38), (35, 29)]), [1.4, 0.6]),
+        ]
+    return trunk, limbs
+
+
+def _bare_tree(d, f, col, tall=1.0):
+    trunk, limbs = _skeleton_tree(f, tall)
+    roots = Poly([(32, 97), (36.5, 89), (43.5, 89), (48, 97), (40, 98.5)])
+    parts = [roots, Limb(trunk[0], trunk[1], cap=False)] + [Limb(pts, ws) for (pts, ws) in limbs]
+    blob(d, parts, col, sh=(1.6, 0.6), lw=1.2 * PROP_INK)
+    return trunk, limbs
+
+
+def _charred_tree(d, f, r):
+    """A tree the fire has been through: black, broken short, embers still alight in its bark."""
+    shadow(d, 40, 94, 18, 7)
+    col = (72, 56, 64)
+    trunk, limbs = _bare_tree(d, f, col, tall=0.82)
+    # cracks in the bark, glowing
+    flip = -1 if f in (1, 3) else 1
+    for (x, y, ln) in ((40.5, 84, 7.0), (39.5, 70, 5.0)):
+        x = 40 + (x - 40) * flip
+        stroke(d, [(x - 0.8 * flip, y - ln * 0.5), (x + 0.7 * flip, y), (x - 0.5 * flip, y + ln * 0.5)], 2.0, EMBER)
+        stroke(d, [(x - 0.5 * flip, y - ln * 0.3), (x + 0.4 * flip, y), (x - 0.3 * flip, y + ln * 0.3)], 0.8, EMBER_HOT)
+    # an ember at the end of two of its branches
+    for (pts, ws) in (limbs[0], limbs[1]) if f % 2 == 0 else (limbs[1], limbs[2]):
+        x, y = pts[-1]
+        cel(d, Ell(x, y, 2.2, 2.2), EMBER, sh=None, lw=0.6)
+        Ell(x - 0.4, y - 0.4, 1.0, 1.0).draw(d, fill=EMBER_HOT)
+
+
+def _dead_tree(d, f, r):
+    """A bare tree in the graveyard, grey in the moonlight; a crow on one, a last few leaves on
+    another."""
+    shadow(d, 40, 94, 19, 7)
+    col = (128, 114, 138)
+    trunk, limbs = _bare_tree(d, f, col)
+    flip = -1 if f in (1, 3) else 1
+    # a hollow in the trunk
+    hx = 40 + 0.4 * flip
+    cel(d, Ell(hx, 76, 2.3, 3.4), (58, 46, 72), sh=None, lw=0.7)
+    if f == 1:
+        # a crow on a branch
+        x, y = limbs[0][0][1]
+        crow = (52, 48, 70)
+        blob(d, [Ell(x, y - 4.2, 3.6, 2.8), Ell(x - 2.6 * flip, y - 6.4, 2.2, 2.0),
+                 Poly([(x + 2.5 * flip, y - 4.5), (x + 7.5 * flip, y - 2.6), (x + 2.5 * flip, y - 2.4)])],
+             crow, sh=(0.6, 0.6), lw=0.8)
+        Poly([(x - 4.4 * flip, y - 6.6), (x - 7.2 * flip, y - 5.8), (x - 4.4 * flip, y - 5.4)]).draw(d, fill=(238, 186, 80))
+        Ell(x - 3.0 * flip, y - 6.8, 0.5, 0.5).draw(d, fill=(255, 255, 255))
+    elif f == 2:
+        for (pts, ws) in limbs[:3]:
+            x, y = pts[-1]
+            leaf(d, x, y + 1, 70, 5.5, 3.0, (196, 120, 96), vein=False)
+            leaf(d, x - 3, y + 4, 110, 4.5, 2.6, (214, 150, 92), vein=False)
+
+
+def _magma_rock(d, f, r):
+    """Boulders thrown out of the volcano, still hot inside: dark rock split by glowing cracks."""
+    shadow(d, 40, 94, 20, 7)
+    rock = (92, 72, 84)
+    sets = (
+        [(40, 84, 15, 12, 1)],
+        [(35, 86, 13, 10, 2), (51, 88, 8, 6, 3)],
+        [(43, 84, 14, 11, 4), (28, 90, 7, 5, 5)],
+        [(38, 85, 14, 11, 6), (53, 89, 6, 5, 7)],
+    )[f]
+    for (x, y, rx, ry, seed) in sets:
+        shape = _boulder(x, y, rx, ry, seed + 40 + 10 * f)
+        cel(d, shape, rock, sh=(rx * 0.25, ry * 0.3), hi=(1.0, 1.0), hi_tone=lit(rock, 0.5), lw=1.2)
+        rr = random.Random(seed * 31 + f)
+        cracks = []
+        n = 3 if rx > 10 else 2
+        for k in range(n):
+            a = math.radians(rr.uniform(200, 340) if k else 270)
+            x0, y0 = x + rr.uniform(-1.5, 1.5), y - ry * 0.05
+            x1, y1 = x + math.cos(a) * rx * 0.55, y + math.sin(a) * ry * 0.55
+            x2, y2 = x + math.cos(a + 0.35) * rx * 1.1, y + math.sin(a + 0.35) * ry * 1.1
+            cracks.append([(x0, y0), (x1, y1), (x2, y2)])
+        cracks.append([(x - rx, y + ry * 0.3), (x - rx * 0.4, y + ry * 0.1), (x + rr.uniform(-1.5, 1.5), y - ry * 0.05),
+                       (x + rx * 0.5, y + ry * 0.25), (x + rx, y + ry * 0.1)])
+
+        def glow(layer, cracks=cracks, big=rx > 10):
+            for c in cracks:
+                stroke(layer, c, 2.4 if big else 1.8, EMBER)
+            for c in cracks:
+                stroke(layer, c, 0.9 if big else 0.7, EMBER_HOT)
+        clipped(d, shape, glow)
+        shape.draw(d, fill=None, outline=ink(rock), width=1.2)
+
+
+def _headstone(x, top, w, base=94.0, pointed=False):
+    """A headstone's face: straight sides and a round (or pointed) top."""
+    if pointed:
+        return Poly([(x - w, base), (x - w, top + w * 0.9), (x, top - w * 0.25), (x + w, top + w * 0.9), (x + w, base)])
+    return Poly([(x - w, base)] + arc_pts(x, top + w, w, w, 180, 360, 12) + [(x + w, base)])
+
+
+def _grave_tufts(d, pts):
+    for (x, y) in pts:
+        tuft(d, x, y, shade(DEAD_GRASS, 0.9), 1.3)
+
+
+def _tombstone(d, f, r):
+    """A grave's marker: a round headstone, a cross, a leaning slab with a skull at its foot, a
+    pointed one grown over with moss."""
+    shadow(d, 40, 95, 17, 6)
+    stone = GRAVE
+    moss = (108, 150, 112)
+    if f == 0:
+        face = _headstone(40, 66, 10.5)
+        cel(d, face, stone, sh=(2.4, 0.0), hi=(0.9, 0.9), hi_tone=lit(stone, 0.6), lw=1.2)
+        for (y, w) in ((75, 5.5), (79.5, 4.0), (84, 5.0)):
+            stroke(d, [(40 - w, y), (40 + w, y)], 1.1, shade(stone, 1.6))
+        cel(d, RRect(27, 91, 53, 96.5, 1.6), shade(stone, 0.5), sh=(1.6, 0.0), lw=1.1)
+        _grave_tufts(d, ((27, 97), (53, 96.5)))
+    elif f == 1:
+        cross = Poly([(36.5, 95), (36.5, 76), (28.5, 76), (28.5, 69), (36.5, 69), (36.5, 60), (43.5, 60), (43.5, 69),
+                      (51.5, 69), (51.5, 76), (43.5, 76), (43.5, 95)])
+        cel(d, cross, stone, sh=(1.8, 0.0), hi=(0.8, 0.8), hi_tone=lit(stone, 0.6), lw=1.2)
+        cel(d, RRect(30, 91, 50, 96.5, 1.6), shade(stone, 0.5), sh=(1.4, 0.0), lw=1.1)
+        _grave_tufts(d, ((29, 97), (51, 97)))
+    elif f == 2:
+        slab = Poly(xform([(-9.5, 0), (-9.5, -24), (-6, -28), (6, -28), (9.5, -24), (9.5, 0)], 41, 95, 9))
+        cel(d, slab, stone, sh=(2.2, 0.0), hi=(0.9, 0.9), hi_tone=lit(stone, 0.6), lw=1.2)
+        stroke(d, [(42, 68), (40, 74), (43.5, 79), (41.5, 85)], 0.8, shade(stone, 2.0))
+        # a skull at its foot
+        cel(d, Ell(29.5, 92.5, 4.4, 3.9), BONE, sh=(0.9, 0.7), lw=0.9)
+        cel(d, RRect(27.4, 94.6, 31.8, 97.6, 0.8), BONE, sh=None, lw=0.8)
+        for ex in (27.9, 31.1):
+            Ell(ex, 92.6, 1.05, 1.25).draw(d, fill=(64, 54, 78))
+        _grave_tufts(d, ((53, 96.5),))
+    else:
+        face = _headstone(40, 62, 9.5, pointed=True)
+        cel(d, face, stone, sh=(2.2, 0.0), hi=(0.9, 0.9), hi_tone=lit(stone, 0.6), lw=1.2)
+        cel(d, Ell(40, 74, 3.4, 3.4), shade(stone, 0.9), sh=None, lw=0.8)
+        stroke(d, [(35, 82), (45, 82)], 1.1, shade(stone, 1.6))
+        # moss over its shoulder and round its foot
+
+        def growth(layer):
+            blob(layer, [Ell(32, 70, 5, 4), Ell(34, 64, 4, 3.4), Ell(31, 77, 3, 3)], moss, sh=(0.8, 0.8), lw=0.7)
+        clipped(d, face, growth)
+        face.draw(d, fill=None, outline=ink(stone), width=1.2)
+        blob(d, [Ell(31, 94.5, 5, 2.8), Ell(49, 95, 4.4, 2.5)], moss, sh=(0.8, 0.6), lw=0.8)
+
+
+def _crypt(d, f, r):
+    """A mausoleum's wall: big blocks of dark stone, moss hanging over its edge."""
+    h = 60
+    stone = (120, 118, 146)
+    moss = (104, 146, 110)
+    box(d, h, lit(stone, 0.35), shade(stone, 0.3), shade(stone, 1.6))
+    for (u0, u1) in ((0.0, 0.5), (0.5, 1.0)):
+        Poly([iso(u0 + 0.05, 0.06, h), iso(u1 - 0.05, 0.06, h), iso(u1 - 0.05, 0.94, h),
+              iso(u0 + 0.05, 0.94, h)]).draw(d, fill=lit(stone, 0.6))
+    for fn, tone in ((lface, 0.3), (rface, 1.6)):
+        face = shade(stone, tone)
+        mortar = shade(face, 1.5)
+        rows = 4
+        for j in range(rows):
+            t0, t1 = j / rows + 0.025, (j + 1) / rows - 0.025
+            edges = (0.0, 0.5, 1.0) if j % 2 == 0 else (0.0, 0.25, 0.75, 1.0)
+            for k in range(len(edges) - 1):
+                s0, s1 = edges[k], edges[k + 1]
+                g0 = 0.0 if s0 == 0.0 else 0.02
+                g1 = 0.0 if s1 == 1.0 else 0.02
+                col = mix(face, lit(face, 0.5) if (j + k) % 3 == 0 else shade(face, 0.3), 0.5)
+                face_quad(fn, s0 + g0, s1 - g1, t0, t1, h).draw(d, fill=col)
+                stroke(d, [fn(s0 + g0, t0 + 0.02, h), fn(s1 - g1, t0 + 0.02, h)], 0.7, lit(col, 0.5))
+            stroke(d, [fn(0, t1 + 0.025, h), fn(1, t1 + 0.025, h)], 1.0, mortar)
+        _grass_lip(d, fn, h, 7.0, moss if fn is lface else shade(moss, 1.0))
+    base_line(d, ink(shade(stone, 1.6)))
+
+
+def _flame(d, x, y, k=1.0):
+    """A candle's flame: a teardrop of orange with a pale heart."""
+    cel(d, Poly([(x, y - 5.2 * k), (x + 2.0 * k, y - 1.6 * k), (x + 1.5 * k, y + 0.6 * k), (x, y + 1.3 * k),
+                 (x - 1.5 * k, y + 0.6 * k), (x - 2.0 * k, y - 1.6 * k)]), EMBER, sh=None, lw=0.7)
+    Poly([(x, y - 2.8 * k), (x + 0.9 * k, y - 0.4 * k), (x, y + 0.6 * k), (x - 0.9 * k, y - 0.4 * k)]).draw(d, fill=EMBER_HOT)
+
+
+def _lantern(d, f, r):
+    """Light in the graveyard: an iron lamp on a post, a carved pumpkin, candles on a stone."""
+    iron = (74, 70, 96)
+    if f in (0, 2):
+        shadow(d, 40, 95, 11, 5)
+        lean = 0 if f == 0 else 1
+        cel(d, RRect(36, 91.5, 44, 97, 1.4), shade(iron, 0.2), sh=(1.0, 0.0), lw=1.0)
+        cel(d, Poly([(38.6, 93), (38.9, 62), (41.1, 62), (41.4, 93)]), iron, sh=(0.8, 0.0), lw=1.0)
+        # the lamp: four panes of light in an iron frame under a little roof
+        ly = 49 + lean * 3
+        cel(d, Poly([(34.5, ly + 12.5), (33.5, ly), (46.5, ly), (45.5, ly + 12.5)]), CANDLE, sh=(2.4, 0.0),
+            tone=(255, 178, 84), line_color=ink(iron), lw=1.1)
+        stroke(d, [(40, ly), (40, ly + 12.5)], 1.0, ink(iron))
+        _flame(d, 37.2, ly + 8.2, 0.75)
+        cel(d, Poly([(31.5, ly + 0.6), (40, ly - 6.5), (48.5, ly + 0.6)]), iron, sh=(1.2, 0.0), lw=1.1)
+        cel(d, Ell(40, ly - 7.4, 1.5, 1.5), iron, sh=None, lw=0.8)
+        cel(d, RRect(33.5, ly + 11.8, 46.5, ly + 14.4, 0.8), iron, sh=(0.8, 0.0), lw=1.0)
+    elif f == 1:
+        shadow(d, 40, 95, 15, 6)
+        pumpkin = (240, 138, 52)
+        body = [Ell(40, 86, 8.5, 9.5), Ell(32.5, 86.5, 7.0, 8.6), Ell(47.5, 86.5, 7.0, 8.6)]
+        blob(d, body, pumpkin, sh=(2.6, 1.6), lw=1.2 * PROP_INK)
+        for x in (35.2, 44.8):
+            stroke(d, arc_pts(x + (1.6 if x < 40 else -1.6), 86, 2.2, 8.0, 100 if x < 40 else -80, 260 if x < 40 else 80, 8),
+                   0.6, shade(pumpkin, 1.3))
+        cel(d, Poly([(38.6, 77.5), (39.4, 72.5), (42.6, 72), (41.6, 77.5)]), (110, 150, 84), sh=None, lw=0.8)
+        for (ex, sgn) in ((35.6, 1), (44.4, -1)):
+            Poly([(ex - 2.4, 86), (ex + 2.4 * sgn * 0.2, 81.6), (ex + 2.4, 86)]).draw(d, fill=CANDLE)
+        mouth = Poly([(33, 89), (35.5, 90.2), (37.5, 88.8), (40, 90.6), (42.5, 88.8), (44.5, 90.2), (47, 89), (44, 93.2),
+                      (40, 94.2), (36, 93.2)])
+        mouth.draw(d, fill=CANDLE)
+        mouth.draw(d, fill=None, outline=ink(pumpkin), width=0.6)
+    else:
+        shadow(d, 40, 95, 15, 6)
+        slab = _boulder(40, 91, 13, 6.5, 77)
+        cel(d, slab, shade(GRAVE, 0.6), sh=(3.0, 1.6), lw=1.1)
+        wax = (244, 236, 216)
+        for (x, top) in ((33.5, 78), (40.5, 71), (47, 80)):
+            cel(d, Poly([(x - 2.3, 89), (x - 2.3, top), (x + 2.3, top), (x + 2.3, 89)]), wax, sh=(1.2, 0.0), lw=0.9)
+            cel(d, Ell(x - 1.6, top + 2.2, 1.2, 1.9), wax, sh=None, lw=0.6)
+            _flame(d, x, top - 2.2, 0.85)
+
+
+def _cypress(d, f, r):
+    """A cypress, the graveyard's tree: a tall dark flame of leaves on a short trunk."""
+    shadow(d, 40, 94, 15, 6)
+    col = (64, 112, 104)
+    lean = (0.0, 1.2, -1.2, 0.0)[f]
+    fat = (1.0, 0.92, 1.0, 1.1)[f]
+    top = (22, 26, 20, 28)[f]
+    cel(d, Poly([(37.4, 97), (37.8, 86), (42.2, 86), (42.6, 97)]), (112, 88, 96), sh=(1.0, 0.0), lw=1.0)
+    span = 88.0 - top
+    lobes = []
+    for (t, rx, ry) in ((0.0, 9.0, 9.5), (0.2, 10.5, 12.0), (0.42, 9.6, 12.5), (0.64, 7.6, 11.5), (0.82, 5.2, 9.5),
+                        (1.0, 2.8, 6.0)):
+        lobes.append(Ell(40 + lean * t * 3, 82 - span * t * 0.92, rx * fat, ry))
+    hi = [(Ell(35.5 + lean, 82 - span * 0.5, 3.2 * fat, span * 0.26), lit(col, 0.45))]
+    blob(d, lobes, col, sh=(3.2, 1.0), regions=hi, lw=1.3 * PROP_INK)
+    for (t, w) in ((0.22, 4.0), (0.5, 3.6), (0.74, 2.6)):
+        x, y = 40 + lean * t * 3 + 2.5, 82 - span * t * 0.92
+        stroke(d, arc_pts(x, y, w, w * 0.7, 20, 160, 6), 0.8, shade(col, 1.1))
+
+
+def _cactus(d, f, r):
+    """A cactus: a ribbed column with arms held up, or a pair of fat barrels, some in flower."""
+    shadow(d, 40, 95, 15, 6)
+    col = CACTUS
+    rib = shade(col, 1.3)
+    flower = (255, 122, 164)
+    if f == 2:
+        for (x, y, rx, ry) in ((35, 86, 9.5, 10.5), (49, 89, 6.5, 7.0)):
+            cel(d, Ell(x, y, rx, ry), col, sh=(rx * 0.3, ry * 0.2), hi=(0.9, 0.9), hi_tone=lit(col, 0.6), lw=1.2)
+            for k in (-0.5, 0.0, 0.5):
+                stroke(d, arc_pts(x + k * rx * 1.1, y, rx * 0.34, ry * 0.92, -80, 80, 8) if k > 0 else
+                       arc_pts(x + k * rx * 1.1, y, rx * 0.34, ry * 0.92, 100, 260, 8) if k < 0 else
+                       [(x, y - ry * 0.9), (x, y + ry * 0.9)], 0.6, rib)
+            bloom(d, x, y - ry + 0.4, flower, 1.5)
+        return
+    flip = -1 if f == 3 else 1
+    top = (48, 52, 0, 46)[f]
+
+    def X(x):
+        return 40 + (x - 40) * flip
+    arms = [[(X(40), 78), (X(29.5), 77), (X(28.5), 62)]]
+    if f != 1:
+        arms.append([(X(40), 70), (X(50.5), 69), (X(51.5), 56)])
+    parts = [Limb([(40, 96), (40, top)], [6.0, 5.6], cap=True)] + [Limb(a, [3.6, 3.9, 3.6]) for a in arms]
+    blob(d, parts, col, sh=(2.2, 0.8), lw=1.2 * PROP_INK)
+    for dx in (-2.6, 0.2, 3.0):
+        stroke(d, [(40 + dx, top + 2), (40 + dx, 93)], 0.6, rib)
+    for a in arms:
+        x, y = a[-1]
+        stroke(d, [(x, y + 1), (x, a[1][1] - 2.5)], 0.6, rib)
+    # spines: pale ticks down its lit edge
+    for y in range(int(top) + 6, 92, 8):
+        stroke(d, [(34.6, y), (32.2, y - 1.4)], 0.6, lit(col, 1.4))
+    if f in (1, 3):
+        bloom(d, 40, top - 4.6, flower, 1.6)
+        x, y = arms[0][-1]
+        bloom(d, x, y - 3.2, flower, 1.2)
+
+
+def _obelisk(d, f, r):
+    """Carved sandstone: an obelisk, one capped in gold, a broken pillar, a pair of drums with an
+    eye cut in them."""
+    shadow(d, 40, 95, 15, 6)
+    st = SANDSTONE
+    glyph = shade(st, 2.0)
+    if f in (0, 2):
+        cel(d, Poly([(30, 97), (30, 91.5), (50, 91.5), (50, 97), (40, 99.5)]), shade(st, 0.5), sh=(2.0, 0.0), lw=1.1)
+        shaft = Poly([(33.2, 92), (36.2, 38), (43.8, 38), (46.8, 92), (40, 94)])
+        right = Poly([(40, 30), (43.8, 38), (46.8, 92), (40, 94)])
+        cel(d, shaft, st, sh=None, regions=[(right, shade(st, 1.1))], lw=1.2)
+        tip_col = (255, 208, 84) if f == 2 else lit(st, 0.5)
+        tip = Poly([(36.2, 38), (40, 27), (43.8, 38), (40, 39.6)])
+        cel(d, tip, tip_col, sh=None, regions=[(Poly([(40, 27), (43.8, 38), (40, 39.6)]), shade(tip_col, 1.1))], lw=1.1)
+        # glyphs down its lit face
+        for (y, kind) in ((48, 0), (57, 1), (66, 2), (75, 0), (84, 1)):
+            x = 37.3 - (y - 48) * 0.03
+            if kind == 0:
+                Ell(x, y, 1.5, 1.5).draw(d, fill=None, outline=glyph, width=0.6)
+            elif kind == 1:
+                stroke(d, [(x - 1.6, y - 1.8), (x + 1.6, y - 1.8)], 0.7, glyph)
+                stroke(d, [(x, y - 1.8), (x, y + 2.2)], 0.7, glyph)
+            else:
+                stroke(d, [(x - 1.7, y + 1.5), (x, y - 1.8), (x + 1.7, y + 1.5)], 0.7, glyph)
+    elif f == 1:
+        top_y = 58
+        shaft = Poly([(32, 93), (32, top_y + 5), (35.5, top_y), (38.5, top_y + 6), (42.5, top_y - 2), (46, top_y + 4),
+                      (48, top_y + 2), (48, 93), (40, 95)])
+        fl = [(Poly([(x - 0.8, top_y + 9), (x + 0.8, top_y + 9), (x + 0.8, 91), (x - 0.8, 91)]), shade(st, 0.7))
+              for x in (36, 40, 44)]
+        cel(d, shaft, st, sh=(3.0, 0.0), regions=fl, lw=1.2)
+        cel(d, Poly([(28, 97.5), (28, 91), (52, 91), (52, 97.5), (40, 100)]), shade(st, 0.4), sh=(2.0, 0.0), lw=1.1)
+        cel(d, Poly(xform([(-6, -3), (6, -3), (6, 3), (-6, 3)], 57.5, 95, -14)), st, sh=(1.2, 0.8), lw=1.0)
+    else:
+        for (y0, y1, w) in ((78, 96, 11.5), (61, 78, 10.0)):
+            drum = Poly([(40 - w, y0)] + arc_pts(40, y1 - 2.4, w, 3.4, 180, 0, 10) + [(40 + w, y0)] +
+                        arc_pts(40, y0, w, 3.0, 0, -180, 10)[1:-1])
+            cel(d, drum, st, sh=(3.0, 0.0), lw=1.2)
+            Ell(40, y0, w - 0.9, 2.3).draw(d, fill=lit(st, 0.55))
+        # the eye
+        eye = Poly(arc_pts(40, 88.5, 5.2, 3.0, 180, 360, 8) + arc_pts(40, 88.5, 5.2, 2.2, 0, 180, 8)[1:-1])
+        eye.draw(d, fill=lit(st, 0.9), outline=glyph, width=0.7)
+        Ell(40, 88.4, 1.7, 1.7).draw(d, fill=(64, 150, 190))
+        stroke(d, [(37.5, 91.6), (36.2, 94.2)], 0.7, glyph)
+        stroke(d, [(33.6, 72), (46.4, 72)], 0.7, glyph)
+
+
+def _mesa(d, f, r):
+    """Red rock standing out of the desert: a flat top the colour of the dunes, bands of strata
+    down its faces."""
+    h = 72
+    box(d, h, lit(RED_ROCK, 0.75), shade(RED_ROCK, 0.1), shade(RED_ROCK, 1.4))
+    bands = ((0.0, 0.16, lit(RED_ROCK, 0.5)), (0.16, 0.3, RED_ROCK), (0.3, 0.52, mix(RED_ROCK, (232, 164, 104), 0.5)),
+             (0.52, 0.66, shade(RED_ROCK, 0.5)), (0.66, 0.86, RED_ROCK), (0.86, 1.0, shade(RED_ROCK, 0.7)))
+    for fn, tone in ((lface, 0.0), (rface, 1.3)):
+        for (t0, t1, col) in bands:
+            c = shade(col, tone) if tone else col
+            face_quad(fn, 0.0, 1.0, t0, t1, h).draw(d, fill=c)
+        # the lit lip of each ledge
+        for (t0, t1, col) in bands[1:]:
+            c = shade(col, tone) if tone else col
+            stroke(d, [fn(0, t0 + 0.012, h), fn(1, t0 + 0.012, h)], 0.9, shade(c, 0.9))
+    # nothing on its top: a mesa is a plateau of these, and a mark on each was a grid of dots
+    base_line(d, ink(shade(RED_ROCK, 1.4)))
+
+
+def _bones(d, f, r):
+    """What the desert keeps: a great beast's ribs, its horned skull, a heap of bones."""
+    shadow(d, 40, 95, 19, 6)
+    b = BONE
+    if f in (0, 2):
+        flip = 1 if f == 0 else -1
+
+        def X(x):
+            return 40 + (x - 40) * flip
+        spine = [(X(22), 93), (X(31), 88.5), (X(42), 87), (X(52), 88.5), (X(60), 92.5)]
+        parts = [Limb(spine, [1.6, 2.0, 2.2, 2.0, 1.4])]
+        for (x, hgt) in ((28, 15), (35, 21), (42, 23), (49, 20), (55, 14)):
+            parts.append(Limb([(X(x), 90)] + [(X(x + 3.2 * math.sin(t * 1.4)), 90 - hgt * t) for t in (0.35, 0.7, 1.0)],
+                              [1.9, 1.7, 1.4, 0.9]))
+        blob(d, parts, b, sh=(0.9, 0.5), lw=1.0 * PROP_INK)
+        for (x, y) in ((X(24), 96.5), (X(57), 97)):
+            pebble(d, x, y, 2.6, 1.6, shade(b, 0.4))
+    elif f == 1:
+        skull = [Ell(40, 82, 11, 9.5), RRect(34, 86, 46, 96.5, 2.4)]
+        horns = [Limb([(30.5, 79), (22, 75), (19, 64)], [3.0, 2.4, 0.8]), Limb([(49.5, 79), (58, 75), (61, 64)], [3.0, 2.4, 0.8])]
+        blob(d, horns, shade(b, 0.7), sh=(0.8, 0.4), lw=1.0 * PROP_INK)
+        blob(d, skull, b, sh=(2.4, 1.2), lw=1.1 * PROP_INK)
+        for ex in (35.2, 44.8):
+            Ell(ex, 82.5, 2.9, 3.3).draw(d, fill=(70, 58, 80))
+        Poly([(40, 86.5), (38.4, 90.4), (41.6, 90.4)]).draw(d, fill=(70, 58, 80))
+        for x in (37, 40, 43):
+            stroke(d, [(x, 93.2), (x, 96)], 0.6, shade(b, 1.6))
+    else:
+        bones = [Limb([(26, 93), (44, 87)], [1.7, 1.7]), Limb([(34, 96), (55, 91)], [1.7, 1.7]),
+                 Limb([(40, 84), (52, 96)], [1.6, 1.6])]
+        knobs = [Ell(x, y, 2.5, 2.3) for (x, y) in ((25.5, 92), (26.5, 94.5), (44.5, 86), (45, 88.5), (33.5, 95), (34.5, 97.5),
+                                                    (55.5, 90), (56, 92.5), (39, 83.5), (41.5, 83), (51.5, 97), (53.5, 95.5))]
+        blob(d, bones + knobs, b, sh=(0.8, 0.6), lw=1.0 * PROP_INK)
+        cel(d, Ell(30, 85, 5.2, 4.6), b, sh=(1.0, 0.8), lw=1.0)
+        cel(d, RRect(27.6, 87.6, 32.6, 91.2, 0.9), b, sh=None, lw=0.9)
+        for ex in (28.2, 31.9):
+            Ell(ex, 85.2, 1.2, 1.4).draw(d, fill=(70, 58, 80))
+
+
+# ---------------------------------------------------------------------------
 # The tileset
 # ---------------------------------------------------------------------------
 
@@ -1279,10 +1745,24 @@ TILES = [
     (39, "snowman", PROP, _snowman),
     (40, "planks", GROUND, _planks),
     (41, "ice_block", BLOCK, _ice_block),
+    (42, "cinder", GROUND, _cinder),
+    (43, "charred_tree", PROP, _charred_tree),
+    (44, "magma_rock", PROP, _magma_rock),
+    (45, "dead_grass", GROUND, _dead_grass),
+    (46, "tombstone", PROP, _tombstone),
+    (47, "dead_tree", PROP, _dead_tree),
+    (48, "crypt", BLOCK, _crypt),
+    (49, "lantern", PROP, _lantern),
+    (50, "dune", GROUND, _dune),
+    (51, "cactus", PROP, _cactus),
+    (52, "obelisk", PROP, _obelisk),
+    (53, "mesa", BLOCK, _mesa),
+    (54, "bones", PROP, _bones),
+    (55, "cypress", PROP, _cypress),
 ]
 
 # Height of each block's top above the ground, in atlas pixels (twice display pixels).
-BLOCK_HEIGHTS = {4: 50, 11: 68, 12: 30, 15: 44, 29: 72, 32: 58, 41: 34}
+BLOCK_HEIGHTS = {4: 50, 11: 68, 12: 30, 15: 44, 29: 72, 32: 58, 41: 34, 48: 60, 53: 72}
 
 # Blocks whose four frames are an animation; every other block draws one frame four times.
 ANIMATED_BLOCKS = {15}
@@ -1293,7 +1773,8 @@ STILL_POOLS = {17}
 
 
 # Props drawn bigger than they are authored, about their foot (PropDraw)
-PROP_SCALE = {24: 1.25, 25: 1.3, 26: 1.2, 31: 1.25, 34: 1.3, 35: 1.45, 36: 1.1, 39: 1.2}
+PROP_SCALE = {24: 1.25, 25: 1.3, 26: 1.2, 31: 1.25, 34: 1.3, 35: 1.45, 36: 1.1, 39: 1.2,
+              43: 1.25, 44: 1.45, 46: 1.55, 47: 1.15, 49: 1.3, 51: 1.3, 52: 1.35, 54: 1.3, 55: 1.2}
 
 
 def render_cell(tid, form, fn, frame):

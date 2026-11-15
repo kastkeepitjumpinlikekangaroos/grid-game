@@ -61,6 +61,18 @@ class CombatTest {
     assertEquals(Seq((target.getId, ProjectileAction.HIT)), hitsOn(m.udpSent(shooter)))
   }
 
+  @Test def aShotFliesOverLava(): Unit = {
+    // The volcano's rivers: nobody can cross one, but it lies level with the ground, as water does
+    val shooter = m.join(CharacterId.Soldier, 5, 30)
+    val target = m.join(CharacterId.Gladiator, 16, 30)
+    for (y <- 0 until m.world.height; x <- 10 to 12) m.world.setTile(x, y, Tile.Lava)
+    val bullet = m.launch(shooter, ProjectileType.BULLET, 1f, 0f)
+    m.clearSent()
+    m.tickUntilGone(bullet)
+    assertTrue("hit on the far bank", target.getHealth < target.getMaxHealth)
+    assertEquals(Seq((target.getId, ProjectileAction.HIT)), hitsOn(m.udpSent(shooter)))
+  }
+
   @Test def aBoomerangComesBack(): Unit = {
     val gladiator = m.join(CharacterId.Gladiator, 10, 30)
     val axe = m.launch(gladiator, ProjectileType.ARENA_AXE, 1f, 0f)

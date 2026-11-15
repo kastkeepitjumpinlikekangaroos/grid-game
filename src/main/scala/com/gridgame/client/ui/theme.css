@@ -302,6 +302,82 @@
 .map-frame {
     -fx-background-color: radial-gradient(center 50% 40%, radius 80%, #24315c 0%, #131b3a 58%, #0a0f25 100%);
 }
+/* The lobby room's map, for its host: a click opens the map picker */
+.map-pick { -fx-cursor: hand; }
+.map-pick:hover {
+    -fx-border-color: rgba(255, 255, 255, 0.45);
+    -fx-border-width: 1.5;
+    -fx-border-insets: -3;
+    -fx-border-radius: 15;
+}
+
+/* The maps to pick from as a carousel (MapCarousel): the picked one big between its arrows, its name
+   and size, and a strip of every map under them, the picked one ringed in gold */
+.carousel-hero:focus-visible {
+    -fx-border-color: rgba(77, 184, 255, 0.7);
+    -fx-border-width: 2;
+    -fx-border-insets: -4;
+}
+.carousel-arrow {
+    -fx-background-color: rgba(8, 12, 30, 0.6);
+    -fx-background-insets: 0;
+    -fx-background-radius: 999;
+    -fx-border-color: rgba(255, 255, 255, 0.22);
+    -fx-border-radius: 999;
+    -fx-cursor: hand;
+}
+.carousel-arrow:hover {
+    -fx-background-color: rgba(26, 38, 76, 0.92);
+    -fx-border-color: rgba(255, 255, 255, 0.45);
+}
+.carousel-arrow:pressed {
+    -fx-background-color: rgba(8, 12, 30, 0.92);
+    -fx-translate-y: 1;
+}
+.carousel-count {
+    -fx-background-color: rgba(8, 12, 30, 0.62);
+    -fx-background-radius: 999;
+    -fx-padding: 2 9 3 9;
+    -fx-font-family: "Exo 2"; -fx-font-weight: bold;
+    -fx-font-size: 11px;
+    -fx-text-fill: -gg-body;
+}
+.carousel-title {
+    -fx-font-family: "Exo 2"; -fx-font-weight: bold;
+    -fx-font-size: 16px;
+    -fx-text-fill: -gg-text;
+}
+.carousel-facts {
+    -fx-font-family: "Exo 2 SemiBold";
+    -fx-font-size: 12px;
+    -fx-text-fill: -gg-muted;
+}
+.carousel-item { -fx-cursor: hand; }
+/* Over each little map: a veil the pointer and the pick lift, and its edge */
+.carousel-ring {
+    -fx-background-color: rgba(6, 10, 26, 0.38);
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(255, 255, 255, 0.1);
+    -fx-border-radius: 8;
+}
+.carousel-item:hover .carousel-ring {
+    -fx-background-color: transparent;
+    -fx-border-color: rgba(255, 255, 255, 0.45);
+}
+.carousel-item-picked .carousel-ring,
+.carousel-item-picked:hover .carousel-ring {
+    -fx-background-color: transparent;
+    -fx-border-color: -gg-gold;
+    -fx-border-width: 2;
+}
+.carousel-label {
+    -fx-font-family: "Exo 2 SemiBold";
+    -fx-font-size: 11px;
+    -fx-text-fill: -gg-muted;
+}
+.carousel-item:hover .carousel-label { -fx-text-fill: -gg-text; }
+.carousel-item-picked .carousel-label,
+.carousel-item-picked:hover .carousel-label { -fx-text-fill: -gg-gold-text; }
 
 /* ── Buttons ────────────────────────────────────────────────────────────── */
 
@@ -605,6 +681,29 @@
 .combo-box.chip-select-grey:hover { -fx-background-color: rgba(255, 255, 255, 0.14); }
 .combo-box.chip-select-grey > .list-cell { -fx-text-fill: -gg-body; }
 .combo-box.chip-select-grey > .arrow-button > .arrow { -fx-background-color: -gg-muted; }
+/* The map, for the host: drawn as the drop-down chips beside it are, it opens the map picker */
+.chip-button {
+    -fx-background-color: rgba(77, 184, 255, 0.16);
+    -fx-background-insets: 0;
+    -fx-background-radius: 999;
+    -fx-padding: 3 9 4 10;
+    -fx-font-family: "Exo 2"; -fx-font-weight: bold;
+    -fx-font-size: 12px;
+    -fx-text-fill: #8fd2ff;
+    -fx-graphic-text-gap: 10;
+    -fx-content-display: right;
+    -fx-cursor: hand;
+}
+.chip-button:hover { -fx-background-color: rgba(77, 184, 255, 0.26); }
+.chip-button:focus-visible {
+    -fx-background-color: rgba(77, 184, 255, 0.55), rgba(20, 44, 84, 1);
+    -fx-background-insets: -1.5, 0;
+}
+.chip-button-arrow {
+    -fx-background-color: #8fd2ff;
+    -fx-shape: "M0 0 L10 0 L5 6 Z";
+    -fx-padding: 2 4;
+}
 
 /* A key on the keyboard, for the ability that is on it */
 .keycap {

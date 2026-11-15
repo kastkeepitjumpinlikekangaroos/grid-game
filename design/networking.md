@@ -359,7 +359,7 @@ them); and on the client `MatchConnection`.
   match server (`MatchConnection.goesToMatch`); the rest (lobby actions, a leave, chat in a lobby,
   the profile, problem reports) to the central server, on the session that stays open beside it.
   Packets to either count from one sequence number: each server sees its share still in order.
-- **Leaving.** A player who leaves (Esc twice) tells the central server, whose lobby tells the match
+- **Leaving.** A player who leaves (the menu Esc brings up, its Leave pressed twice) tells the central server, whose lobby tells the match
   server ("remove"), and closes the match connection; one whose match connection drops, or who never
   connects within 30s, is taken out of the match by the match server, which tells the central server
   ("left"). Either way they are out of the match and the lobby, as on one server. A client whose match

@@ -6,8 +6,8 @@ import ProjectileKit._
 import Silhouettes._
 
 /** Thrown weapons tumbling end over end (bladeSpinner: axes, katanas, knives, femurs, cursed blades,
-  * playing cards) and the throwing star (shuriken). The spin is sold by a swept band and ghosts, not
-  * by smearing the shape. */
+  * playing cards) and the throwing star (shuriken). The spin is sold by the cuts an edge leaves round
+  * it as it turns (Slashes) and by ghosts, not by smearing the shape. */
 private[render] object Blades {
   // ── Weapon kinds ──
   final val WPN_AXE = 0
@@ -18,25 +18,29 @@ private[render] object Blades {
   final val WPN_CURSED = 5
   final val WPN_CARD = 6
   final val WPN_BONE_AXE = 7
+  // An axe: the haft, a steel cap on its butt, the bit's bevel (its bright cutting edge, drawn first
+  // as the whole of its outline so it stays convex) and the darker cheek over it, a poll behind
   private val AXE_PARTS = Array(
-    part(Array(-1.05f,-0.11f, 0.55f,-0.11f, 0.55f,0.11f, -1.05f,0.11f), WOOD_R, WOOD_G, WOOD_B, 0.12f),
-    part(Array(-1.26f,-0.17f, -0.96f,-0.17f, -0.96f,0.17f, -1.26f,0.17f), DKSTEEL_R, DKSTEEL_G, DKSTEEL_B, 0.35f),
-    part(Array(0.28f,-0.14f, 0.44f,-0.86f, 0.80f,-1.02f, 1.22f,-0.60f, 1.24f,0.02f, 0.66f,0.18f),
-      STEEL_R, STEEL_G, STEEL_B, 0.30f),
-    part(Array(0.52f,-0.92f, 0.84f,-1.06f, 1.30f,-0.58f, 1.10f,-0.46f), 0.98f, 0.99f, 1f, 0.10f)
+    part(Array(-1.05f,-0.11f, 0.55f,-0.11f, 0.55f,0.11f, -1.05f,0.11f), WOOD_R, WOOD_G, WOOD_B, 0.06f),
+    part(Array(-1.26f,-0.17f, -0.96f,-0.17f, -0.96f,0.17f, -1.26f,0.17f), DKSTEEL_R, DKSTEEL_G, DKSTEEL_B, 0.1f),
+    part(Array(0.74f,-1f, 0.96f,-1.12f, 1.36f,-0.62f, 1.38f,0.06f, 1.06f,-0.02f), 0.95f, 0.97f, 1f, 0f),
+    part(Array(0.3f,-0.16f, 0.42f,-0.8f, 0.74f,-1f, 1.02f,-0.7f, 1.06f,-0.02f, 0.66f,0.2f),
+      0.56f, 0.61f, 0.72f, 0.06f),
+    part(Array(0.34f,0.1f, 0.7f,0.1f, 0.66f,0.3f, 0.38f,0.3f), DKSTEEL_R * 0.8f, DKSTEEL_G * 0.8f, DKSTEEL_B * 0.8f, 0f)
   )
 
+  // The Skeleton King's: a jawbone lashed to a thighbone, old bone gone yellow, its teeth the edge
   private val BONE_AXE_PARTS = Array(
-    part(Array(-1.05f,-0.12f, 0.48f,-0.12f, 0.48f,0.12f, -1.05f,0.12f), BONE_R * 0.92f, BONE_G * 0.90f, BONE_B * 0.86f, 0.10f),
+    part(Array(-1.05f,-0.12f, 0.48f,-0.12f, 0.48f,0.12f, -1.05f,0.12f), 0.84f, 0.8f, 0.66f, 0.04f),
+    // Teeth standing proud of the cutting edge, behind the jaw they are set in
+    part(Array(0.44f,-0.86f, 0.58f,-1.24f, 0.74f,-0.96f), 0.99f, 0.98f, 0.92f, 0f),
+    part(Array(0.8f,-1.02f, 1.04f,-1.3f, 1.06f,-0.86f), 0.99f, 0.98f, 0.92f, 0f),
+    part(Array(1.16f,-0.72f, 1.5f,-0.62f, 1.28f,-0.3f), 0.99f, 0.98f, 0.92f, 0f),
     // Broad jawbone bit
-    part(Array(0.18f,-0.18f, 0.34f,-0.84f, 0.78f,-1.04f, 1.26f,-0.66f, 1.30f,-0.02f, 0.60f,0.24f),
-      BONE_R, BONE_G, BONE_B, 0.22f),
-    // Teeth standing proud of the cutting edge
-    part(Array(0.44f,-0.86f, 0.58f,-1.20f, 0.74f,-0.96f), BONE_R, BONE_G, BONE_B, 0.15f),
-    part(Array(0.80f,-1.02f, 1.02f,-1.24f, 1.06f,-0.86f), BONE_R, BONE_G, BONE_B, 0.15f),
-    part(Array(1.16f,-0.72f, 1.46f,-0.62f, 1.28f,-0.30f), BONE_R, BONE_G, BONE_B, 0.15f),
-    // Socket where haft meets bone
-    part(Array(0.20f,-0.24f, 0.44f,-0.24f, 0.44f,0.24f, 0.20f,0.24f), 0.52f, 0.44f, 0.36f, 0.25f)
+    part(Array(0.18f,-0.18f, 0.34f,-0.84f, 0.78f,-1.04f, 1.26f,-0.66f, 1.3f,-0.02f, 0.6f,0.24f),
+      0.88f, 0.83f, 0.66f, 0.04f),
+    // The lashing where haft meets bone
+    part(Array(0.2f,-0.24f, 0.44f,-0.24f, 0.44f,0.24f, 0.2f,0.24f), 0.42f, 0.28f, 0.2f, 0f)
   )
 
   private val KATANA_PARTS = Array(
@@ -158,7 +162,10 @@ private[render] object Blades {
    * straight "swoosh" lines the old version fired off past the blades read as stray
    * geometry poking out of the star, not as motion.
    */
-  private[projectiles] def shuriken(r: Float, g: Float, b: Float, size: Float = 26f): Renderer =
+  private[projectiles] def shuriken(r: Float, g: Float, b: Float, size: Float = 26f, cut: Int = -1): Renderer = {
+    val cr = if (cut < 0) r else ((cut >> 16) & 0xFF) / 255f
+    val cg = if (cut < 0) g else ((cut >> 8) & 0xFF) / 255f
+    val cb = if (cut < 0) b else (cut & 0xFF) / 255f
     (proj, sx, sy, sb, tick) => {
       val spin = tick * 0.55 + proj.id * 2.1
       computeAllDynamics(proj, r, g, b, spin)
@@ -177,9 +184,15 @@ private[render] object Blades {
       // Ground shadow — anchors the star to the arena instead of floating over it
       sb.fillOval(sx + 3f, sy + reach * 0.40f, reach * 0.55f, reach * 0.18f, 0f, 0f, 0f, 0.22f * p, 12)
 
-      // Swept band across the blade tips: the spin read, drawn as geometry
-      sb.fillArcBand(sx, sy, reach * 0.66f, reach * 0.66f * ISO_Y, reach * 1.02f, reach * 1.02f * ISO_Y,
-        spin.toFloat - 1.9f, 1.9f, 10, bright(r), bright(g), bright(b), 0.02f * p, 0.34f * p)
+      // The cuts its points leave as it spins (Slashes): two swooshes opposite one another round
+      // the blade tips, inked, in the cut's colour. It was one pale band at a third alpha
+      var c = 0
+      while (c < 2) {
+        val bn = Slashes.comma(sx, sy, spin.toFloat + c * 3.1416f, 2.1f, s * 1.5f, s * 0.5f, ISO_Y, 12)
+        Slashes.paint(sb, bn, ndx, ndy, 0f, 2.2f, cr * 0.14f, cg * 0.14f, cb * 0.2f, cr * 0.45f, cg * 0.45f, cb * 0.55f,
+          cr, cg, cb, mix(cr, 1f, 0.7f), mix(cg, 1f, 0.7f), mix(cb, 1f, 0.7f), 0.95f * dynAlpha, 0.24f, 1.4f)
+        c += 1
+      }
 
       // Silhouette ghosts back along the flight path
       var ghost = 3; while (ghost >= 1) {
@@ -213,6 +226,7 @@ private[render] object Blades {
       drawChargeCrackle(sx, sy, reach, r, g, b, p, sb, spin, proj.chargeLevel)
       drawReturnGhosts(sx, sy, reach * 0.7f, dr, dg, db, p, sb, proj)
     }
+  }
 
   /**
    * Thrown weapon tumbling end over end. Rather than building a polar star — which
@@ -221,7 +235,11 @@ private[render] object Blades {
    * than by smearing the shape itself.
    */
   private[projectiles] def bladeSpinner(kind: Int, r: Float, g: Float, b: Float, size: Float = 22f,
-                           spinRate: Double = 0.30): Renderer =
+                           spinRate: Double = 0.30, cut: Int = -1): Renderer = {
+    // The colour of the cut an edge leaves in the air: `cut` (0xRRGGBB), or the weapon's own
+    val cr = if (cut < 0) r else ((cut >> 16) & 0xFF) / 255f
+    val cg = if (cut < 0) g else ((cut >> 8) & 0xFF) / 255f
+    val cb = if (cut < 0) b else (cut & 0xFF) / 255f
     (proj, sx, sy, sb, tick) => {
       val spin = tick * spinRate + proj.id * 2.1
       computeAllDynamics(proj, r, g, b, spin)
@@ -237,16 +255,32 @@ private[render] object Blades {
       // A card flips about its short axis instead of tumbling in plane.
       val sclX = if (kind == WPN_CARD) Math.max(0.42f, Math.abs(Math.cos(spin * 1.1).toFloat)) else 1f
 
-      drawSpeedLines(sx, sy, ndx, ndy, dr, dg, db, 0.22f * p, sb, 4, reach * 1.1f)
+      val edged = kind != WPN_CARD && kind != WPN_BONE
+      if (!edged) drawSpeedLines(sx, sy, ndx, ndy, dr, dg, db, 0.22f * p, sb, 4, reach * 1.1f)
 
       // Ground shadow — anchors the weapon to the arena instead of floating over it
       sb.fillOval(sx + 3f, sy + reach * 0.42f, reach * 0.62f, reach * 0.20f, 0f, 0f, 0f, 0.22f * p, 12)
 
       // Swept arc behind the leading edge: the tumble read, drawn as geometry rather than
       // as ghosts of the whole shape, which is what used to turn the silhouette to mush.
-      val sweepStart = spin.toFloat - 2.5f
-      sb.fillArcBand(sx, sy, reach * 0.62f, reach * 0.62f * ISO_Y, reach * 1.04f, reach * 1.04f * ISO_Y,
-        sweepStart, 2.5f, 12, bright(r), bright(g), bright(b), 0.02f * p, 0.42f * p)
+      if (!edged) {
+        val sweepStart = spin.toFloat - 2.5f
+        sb.fillArcBand(sx, sy, reach * 0.62f, reach * 0.62f * ISO_Y, reach * 1.04f, reach * 1.04f * ISO_Y,
+          sweepStart, 2.5f, 12, bright(r), bright(g), bright(b), 0.02f * p, 0.42f * p)
+      } else {
+        // An edge leaves a cut in the air (Slashes): the swing swept round behind the weapon's point
+        // and, smaller, behind its butt, so it turns in a wheel of its own cuts, each inked, in the
+        // cut's colour deepening inward, white-hot along its rim. It was one pale band at two fifths
+        // alpha, in the steel's own grey
+        val tip = spin.toFloat + (if (kind == WPN_AXE || kind == WPN_BONE_AXE) -0.3f else 0f)
+        val ia = 0.95f * dynAlpha
+        var bn = Slashes.comma(sx, sy, tip + 3.1416f, 2.3f, s * 1.2f, s * 0.42f, ISO_Y, 12)
+        Slashes.paint(sb, bn, ndx, ndy, 0f, 2.2f, cr * 0.14f, cg * 0.14f, cb * 0.2f, cr * 0.45f, cg * 0.45f, cb * 0.55f,
+          cr, cg, cb, mix(cr, 1f, 0.7f), mix(cg, 1f, 0.7f), mix(cb, 1f, 0.7f), ia, 0.24f, 1.3f)
+        bn = Slashes.comma(sx, sy, tip, 2.9f, s * 1.52f, s * 0.7f, ISO_Y, 16)
+        Slashes.paint(sb, bn, ndx, ndy, 0f, 2.6f, cr * 0.14f, cg * 0.14f, cb * 0.2f, cr * 0.45f, cg * 0.45f, cb * 0.55f,
+          cr, cg, cb, mix(cr, 1f, 0.7f), mix(cg, 1f, 0.7f), mix(cb, 1f, 0.7f), ia, 0.24f, 1.6f)
+      }
 
       // Silhouette ghosts a few frames back along the tumble AND the flight path
       var ghost = 3; while (ghost >= 1) {
@@ -279,4 +313,5 @@ private[render] object Blades {
       drawChargeCrackle(sx, sy, reach, r, g, b, p, sb, spin, proj.chargeLevel)
       drawReturnGhosts(sx, sy, reach * 0.7f, dr, dg, db, p, sb, proj)
     }
+  }
 }

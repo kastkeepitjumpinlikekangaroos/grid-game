@@ -22,6 +22,7 @@ import Necromancy._
 import Orbs._
 import Relics._
 import Shafts._
+import Slashes._
 import Songs._
 import Spirits._
 import Surges._
@@ -36,8 +37,8 @@ import Winds._
  * made by a family's factory with a colour, a size and a kind, the rest one-offs; a type several
  * characters throw can be drawn as each one's (`only`, [[getRenderer]] with the thrower). The
  * families, a file each in this package, are Orbs, Blades, Shafts, Lobbed, AoeRings, Chains,
- * Missiles, Bolts, Beams, Tethers, Grabs, Electricity, Heavies, Undead, Bites, Songs, Winds and
- * Surges; what they share is in ProjectileKit and Silhouettes.
+ * Missiles, Bolts, Beams, Tethers, Grabs, Electricity, Heavies, Undead, Bites, Slashes, Songs, Winds
+ * and Surges; what they share is in ProjectileKit and Silhouettes.
  *
  * A renderer is handed the projectile's hitbox in screen space and draws the thing that hits there,
  * anything elongated trailing behind it. Standard alpha blending: the bloom supplies the glow.
@@ -95,7 +96,90 @@ object GLProjectileRenderers {
   def draw(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int,
            r: Float, g: Float, b: Float): Unit = {
     val rend = getRenderer(proj.ownerCharacterId, proj.projectileType)
-    if (rend != null) rend(proj, sx, sy, sb, tick) else drawGeneric(proj, sx, sy, sb, tick, r, g, b)
+    // As it is, where it is tied to the ground or to its thrower, or something else is already
+    // scaling it (a stopped one sinking into what stopped it)
+    if (rend == null || _plain(proj.projectileType & 0xFF) || sb.transformed) {
+      if (rend != null) rend(proj, sx, sy, sb, tick) else drawGeneric(proj, sx, sy, sb, tick, r, g, b)
+      return
+    }
+    // How far through its launch it is: the first couple of cells, or the first 40% of a short reach
+    val d = proj.getDistanceTraveled
+    val popLen = Math.max(0.4f, Math.min(LAUNCH_CELLS, ProjectileDef.get(proj.projectileType).effectiveMaxRange(proj.chargeLevel).toFloat * 0.4f))
+    val u = if (proj.isReturning || d >= popLen) 1f else d / popLen
+    screenDir(proj)
+    val ndx = _sdx; val ndy = _sdy
+    if (u < 1f) {
+      // The burst it leaves where it was thrown from
+      val wx = proj.getX - proj.originX; val wy = proj.getY - proj.originY
+      val glow = glowOf(proj.ownerCharacterId, proj.projectileType)
+      val br = if (glow < 0) r else ((glow >> 16) & 0xFF) / 255f
+      val bg = if (glow < 0) g else ((glow >> 8) & 0xFF) / 255f
+      val bb = if (glow < 0) b else (glow & 0xFF) / 255f
+      val k = if (u < 0.2f) 0.55f + u * 2.25f else 1f - (u - 0.2f) / 0.8f
+      powStar(sb, sx - (wx - wy) * 20f, sy - (wx + wy) * 10f, 21f * k, proj.id, br, bg, bb, 1f)
+    }
+    // Out of nothing, past its size and back to it; drawn out along its flight as it leaves, and
+    // never quite still after
+    val grow = if (u < 0.3f) 0.55f + 0.7f * (u / 0.3f) else 1.25f - 0.25f * ((u - 0.3f) / 0.7f)
+    val kick = (1f - u) * (1f - u)
+    val rel = 1f + 0.34f * kick + 0.05f * Math.sin((tick + proj.id * 7) * 0.55).toFloat
+    sb.setStretchAbout(sx, sy, ndx, ndy, LIVELY_SIZE * grow * rel, LIVELY_SIZE * grow / Math.sqrt(rel).toFloat)
+    rend(proj, sx, sy, sb, tick)
+    sb.setScaleAbout(sx, sy, 1f)
+  }
+
+  /** How many cells of flight a launch takes (see [[draw]]). */
+  private final val LAUNCH_CELLS = 2.2f
+  /** Everything that flies free is drawn this much larger than it was authored. */
+  private final val LIVELY_SIZE = 1.08f
+
+  private val _powX = new Array[Float](18)
+  private val _powY = new Array[Float](18)
+
+  /**
+   * A cartoon burst: a nine-pointed star of uneven points, `rad` across its longest, in (r, g, b)
+   * round a pale middle, inked. Where a projectile is thrown from and where one strikes.
+   */
+  private[render] def powStar(sb: ShapeBatch, x: Float, y: Float, rad: Float, seed: Int,
+                              r: Float, g: Float, b: Float, a: Float): Unit = {
+    if (rad < 1f || a <= 0.01f) return
+    var layer = 0
+    while (layer < 2) {
+      val k = if (layer == 0) 1f else 0.55f
+      var i = 0
+      while (i < 18) {
+        val ang = i * (Math.PI / 9) + seed * 0.7
+        val rr = (if ((i & 1) == 0) rad * (0.78f + 0.22f * hash2(seed, i)) else rad * 0.46f) * k
+        _powX(i) = x + Math.cos(ang).toFloat * rr; _powY(i) = y + Math.sin(ang).toFloat * rr * 0.85f
+        i += 1
+      }
+      if (layer == 0) {
+        sb.strokePolygon(_powX, _powY, 18, Math.min(3f, rad * 0.22f), r * 0.2f, g * 0.16f, b * 0.2f, 0.95f * a)
+        sb.fillFan(x, y, _powX, _powY, 18, mix(r, 1f, 0.25f), mix(g, 1f, 0.25f), mix(b, 1f, 0.25f), a)
+      } else sb.fillFan(x, y, _powX, _powY, 18, 1f, 1f, mix(b, 1f, 0.7f), a)
+      layer += 1
+    }
+  }
+
+  /** A puff of cloud going out: four inked lobes of it drifting apart and shrinking, `t` 0 to 1. */
+  private[render] def poof(sb: ShapeBatch, x: Float, y: Float, rad: Float, seed: Int, t: Float,
+                           r: Float, g: Float, b: Float): Unit = {
+    if (t >= 1f) return
+    val k = 1f - t * t
+    var pass = 0
+    while (pass < 2) {
+      var i = 0
+      while (i < 4) {
+        val ang = i * 1.5708 + seed * 0.9
+        val dd = rad * (0.35f + t * 0.9f)
+        val px = x + Math.cos(ang).toFloat * dd; val py = y + Math.sin(ang).toFloat * dd * 0.7f - t * rad * 0.3f
+        val pr = rad * (0.5f + 0.12f * hash2(seed, i)) * k
+        if (pass == 0) sb.fillOval(px, py, pr + 1.5f, pr * 0.9f + 1.5f, r * 0.25f, g * 0.25f, b * 0.28f, 0.9f * k, 12)
+        else sb.fillOval(px, py, pr, pr * 0.9f, mix(r, 1f, 0.72f), mix(g, 1f, 0.72f), mix(b, 1f, 0.72f), k, 12)
+        i += 1
+      }
+      pass += 1
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -140,6 +224,7 @@ object GLProjectileRenderers {
       sb.resetModifiers()
     }
     if (hitTerrain) drawImpactPuff(proj, sx, sy, sb, t, tileColor, r, g, b)
+    else if (!_plain(proj.projectileType & 0xFF)) poof(sb, sx, sy, 11f, proj.id, t, r, g, b)
   }
 
   /** What a projectile throws off the terrain it struck, `t` 0 to 1 through it: a flash flattened
@@ -152,11 +237,11 @@ object GLProjectileRenderers {
     val tb = if (tileColor == 0) 0.62f else (tileColor & 0xFF) / 255f
     screenDir(proj)
     val ndx = _sdx; val ndy = _sdy
-    // Contact flash, flattened against the surface
-    if (t < 0.4f) {
-      val ft = t / 0.4f
-      sb.fillOvalSoft(sx, sy, 15f * (0.6f + ft), 7f * (0.6f + ft),
-        mix(r, 1f, 0.6f), mix(g, 1f, 0.6f), mix(b, 1f, 0.6f), 0.85f * (1f - ft), 0f, 12)
+    // The smack of it: a burst on the face, out and gone in the first half
+    if (t < 0.5f) {
+      val ft = t / 0.5f
+      val k = if (ft < 0.3f) 0.6f + ft * 1.33f else 1f - (ft - 0.3f) / 0.7f
+      powStar(sb, sx, sy, 24f * k, proj.id + 3, mix(r, 1f, 0.3f), mix(g, 1f, 0.3f), mix(b, 1f, 0.3f), 1f)
     }
     // A ring spreading across the face
     val rr = 5f + t * 18f
@@ -303,7 +388,7 @@ object GLProjectileRenderers {
     ProjectileType.NORMAL       -> asRenderer(drawRayZap),
     ProjectileType.TENTACLE     -> tether(TETH_TENTACLE, 0.24f, 0.74f, 0.44f),
     ProjectileType.ICE_BEAM     -> (drawFrostComet _),
-    ProjectileType.AXE          -> bladeSpinner(WPN_AXE, 0.78f, 0.70f, 0.55f, 30f),
+    ProjectileType.AXE          -> bladeSpinner(WPN_AXE, 0.78f, 0.70f, 0.55f, 30f, cut = 0xFF7A2E),
     ProjectileType.ROPE         -> chainProj(CHN_ROPE, 0.72f, 0.54f, 0.30f, 6f),
     ProjectileType.SPEAR        -> flyingShaft(SHF_SPEAR, 0.95f, 0.82f, 0.42f, 28f),
     ProjectileType.SOUL_BOLT    -> asRenderer(drawWraithHood),
@@ -318,12 +403,12 @@ object GLProjectileRenderers {
     ProjectileType.ROCKET       -> asRenderer(drawRocket),
     ProjectileType.TALON        -> talonKick(0.40f, 0.26f, 0.14f, 0.68f, 0.5f, 0.32f, 1f, 0.86f, 0.5f),
     ProjectileType.GUST         -> asRenderer(drawSpiritEagle),  // the Raptor's, its one thrower
-    ProjectileType.SHURIKEN     -> shuriken(0.72f, 0.74f, 0.82f, 30f),
+    ProjectileType.SHURIKEN     -> shuriken(0.72f, 0.74f, 0.82f, 30f, cut = 0x8FC4FF),
     ProjectileType.POISON_DART  -> flyingShaft(SHF_DART, 0.4f, 0.9f, 0.35f, 26f),
     ProjectileType.CHAIN_BOLT   -> chainProj(CHN_SHACKLE, 0.62f, 0.64f, 0.72f, 5.5f),
     ProjectileType.LOCKDOWN_CHAIN -> chainProj(CHN_LOCK, 0.52f, 0.54f, 0.62f, 6f),
     ProjectileType.SNARE_MINE   -> lobbed(LOB_MINE, 0.35f, 0.7f, 1f, 17f),
-    ProjectileType.KATANA       -> bladeSpinner(WPN_KATANA, 0.78f, 0.84f, 0.95f, 32f),
+    ProjectileType.KATANA       -> bladeSpinner(WPN_KATANA, 0.78f, 0.84f, 0.95f, 32f, cut = 0x4FA8FF),
     ProjectileType.SWORD_WAVE   -> asRenderer(drawSwordWave),
     ProjectileType.PLAGUE_BOLT  -> energyBolt(0.52f, 0.82f, 0.12f, 20f, ORB_TOXIC),
     ProjectileType.MIASMA       -> asRenderer(drawMiasmaSkull),
@@ -359,7 +444,7 @@ object GLProjectileRenderers {
     // ── Undead/Dark (53-69) ──
     ProjectileType.DEATH_BOLT   -> energyBolt(0.36f, 0.16f, 0.52f, 22f, ORB_ORBIT),
     ProjectileType.RAISE_DEAD   -> asRenderer(drawRaiseDead),
-    ProjectileType.BONE_AXE     -> bladeSpinner(WPN_BONE_AXE, 0.94f, 0.92f, 0.84f, 30f),
+    ProjectileType.BONE_AXE     -> bladeSpinner(WPN_BONE_AXE, 0.94f, 0.92f, 0.84f, 30f, cut = 0xB8F27A),
     ProjectileType.BONE_THROW   -> bladeSpinner(WPN_BONE, 0.94f, 0.92f, 0.84f, 24f, 0.38),
     ProjectileType.WAIL         -> asRenderer(drawWail),
     ProjectileType.SOUL_DRAIN   -> asRenderer(drawPhylactery),
@@ -378,8 +463,8 @@ object GLProjectileRenderers {
     // ── Medieval/Fantasy (70-79) ──
     ProjectileType.HOLY_BLADE   -> bladeSpinner(WPN_SWORD, 1f, 0.92f, 0.45f, 31f),
     ProjectileType.HOLY_BOLT    -> asRenderer(drawHolyBolt),
-    ProjectileType.ARROW        -> flyingShaft(SHF_ARROW, 0.95f, 0.72f, 0.32f, 25f),
-    ProjectileType.POISON_ARROW -> flyingShaft(SHF_PARROW, 0.4f, 0.9f, 0.32f, 25f),
+    ProjectileType.ARROW        -> flyingShaft(SHF_ARROW, 0.95f, 0.72f, 0.32f, 26f),
+    ProjectileType.POISON_ARROW -> flyingShaft(SHF_PARROW, 0.4f, 0.9f, 0.32f, 27f),
     ProjectileType.SONIC_WAVE   -> asRenderer(drawLuteNote),
     ProjectileType.SONIC_BOOM   -> asRenderer(drawLyre),
     ProjectileType.FIST         -> fistProj(0.75f, 0.6f, 0.45f, 28f),
@@ -416,7 +501,7 @@ object GLProjectileRenderers {
     ProjectileType.GRAVITY_LOCK -> asRenderer(drawGravityBall),
 
     // ── Character-specific (102-111) ──
-    ProjectileType.KNIFE        -> bladeSpinner(WPN_KNIFE, 0.84f, 0.86f, 0.92f, 25f, 0.36),
+    ProjectileType.KNIFE        -> bladeSpinner(WPN_KNIFE, 0.84f, 0.86f, 0.92f, 25f, 0.36, cut = 0xFFD9A0),
     ProjectileType.STING        -> asRenderer(drawBabyJelly),
     ProjectileType.HAMMER       -> lobbed(LOB_HAMMER, 0.60f, 0.62f, 0.70f, 27f),
     ProjectileType.HORN         -> asRenderer(drawHorn),
@@ -459,14 +544,14 @@ object GLProjectileRenderers {
     ProjectileType.FLAME_BOLT_HEAVY  -> energyBolt(1f, 0.5f, 0.1f, 20f, ORB_FIRE),
     ProjectileType.FLAME_BOLT_LIGHT  -> energyBolt(1f, 0.5f, 0.1f, 20f, ORB_FIRE),
     ProjectileType.BULLET_HEAVY      -> asRenderer(drawTwinTracers),
-    ProjectileType.BULLET_LIGHT      -> bulletProj(0.75f, 0.7f, 0.55f),
+    ProjectileType.BULLET_LIGHT      -> asRenderer(drawSteelRound),
     ProjectileType.SONIC_WAVE_HEAVY  -> asRenderer(drawKeeningGhost),
     ProjectileType.SONIC_WAVE_MED    -> asRenderer(drawScreechFeather),
     ProjectileType.THORN_LIGHT       -> flyingShaft(SHF_THORN, 0.42f, 0.75f, 0.28f, 24f),
     ProjectileType.LASER_HEAVY       -> laserBolt(BOLT_PRISM, 1f, 0.9f, 0.55f, 44f, 10f),
     ProjectileType.LASER_LIGHT       -> laserBolt(BOLT_LASER, 0.3f, 0.95f, 0.9f, 34f, 7.5f),
-    ProjectileType.ARROW_HEAVY       -> flyingShaft(SHF_ARROW, 0.95f, 0.72f, 0.32f, 27f),
-    ProjectileType.ARROW_LIGHT       -> flyingShaft(SHF_ARROW, 0.95f, 0.72f, 0.32f, 24f),
+    ProjectileType.ARROW_HEAVY       -> flyingShaft(SHF_ARROW, 0.95f, 0.72f, 0.32f, 29f),
+    ProjectileType.ARROW_LIGHT       -> flyingShaft(SHF_CARROW, 0.95f, 0.72f, 0.32f, 25f),
     ProjectileType.HOLY_BOLT_HEAVY   -> asRenderer(drawHolyBolt),
     ProjectileType.VENOM_BOLT_LIGHT  -> asRenderer(drawVenomBraid),
 
@@ -486,7 +571,7 @@ object GLProjectileRenderers {
     ProjectileType.HOLY_NOVA       -> asRenderer(drawHolyBolt),
     ProjectileType.AXE_SPIN        -> bladeSpinner(WPN_AXE, 0.78f, 0.70f, 0.55f, 30f),
     ProjectileType.VENOM_DART      -> flyingShaft(SHF_DART, 0.4f, 0.9f, 0.35f, 26f),
-    ProjectileType.TOXIC_SHURIKEN  -> shuriken(0.45f, 0.78f, 0.40f, 30f),
+    ProjectileType.TOXIC_SHURIKEN  -> shuriken(0.45f, 0.78f, 0.40f, 30f, cut = 0x7CE06A),
     ProjectileType.BLOOD_FRENZY    -> clawRake(2, true, 0f, 12.5f, 0.92f, 0.12f, 0.16f, 1f, 0.7f, 0.6f, 0.12f, 0.01f, 0.02f, RAKE_BLOOD),
     ProjectileType.FLURRY          -> fistProj(0.75f, 0.6f, 0.45f, 28f),
     ProjectileType.ROOTING_BOULDER -> asRenderer((proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int) => drawBoulder(proj, sx, sy, sb, tick, 24f, roots = true)),
@@ -500,11 +585,13 @@ object GLProjectileRenderers {
     ProjectileType.DRAIN_BLADE     -> bladeSpinner(WPN_CURSED, 0.3f, 0.9f, 0.95f, 30f),
     ProjectileType.CHILL_BLADE     -> bladeSpinner(WPN_CURSED, 0.66f, 0.56f, 1f, 30f),
     // Of their own for their numbers, drawn as the type they were made from
-    ProjectileType.ARENA_AXE       -> bladeSpinner(WPN_AXE, 0.78f, 0.70f, 0.55f, 30f),
-    ProjectileType.THROWING_STAR   -> shuriken(0.72f, 0.74f, 0.82f, 30f),
+    ProjectileType.ARENA_AXE       -> bladeSpinner(WPN_AXE, 0.78f, 0.70f, 0.55f, 30f, cut = 0xFFC23D),
+    ProjectileType.THROWING_STAR   -> shuriken(0.72f, 0.74f, 0.82f, 30f, cut = 0xC79BFF),
     ProjectileType.MANTIS_SCYTHE   -> clawRake(1, true, 0f, 13f, 0.5f, 0.88f, 0.32f, 0.92f, 1f, 0.8f, 0.06f, 0.18f, 0.04f, RAKE_SPARKS),
     ProjectileType.CARD_HEAVY      -> bladeSpinner(WPN_CARD, 0.92f, 0.25f, 0.32f, 26f, 0.22),
     ProjectileType.CHAIN_BOLT_HEAVY -> chainProj(CHN_SHACKLE, 0.62f, 0.64f, 0.72f, 5.5f),
+    // The Gladiator's rope, a type of its own for the hold on its catch: the lasso it always was
+    ProjectileType.LASSO           -> chainProj(CHN_LASSO, 0.72f, 0.54f, 0.30f),
 
     // ── What the volleys became (design/characters.md, *No volleys of more than three*) ──
     // The slams are a ring for the moment they are on the ground; what is seen of them is their
@@ -607,7 +694,7 @@ object GLProjectileRenderers {
   only(CharacterId.Kraken, ProjectileType.TENTACLE, tether(TETH_KRAKEN, 0.2f, 0.27f, 0.62f), 0x6B8CFF)
   only(CharacterId.Gorilla, ProjectileType.GRAB, tether(TETH_HAND, 0.3f, 0.3f, 0.34f), 0xB8B8C8)
   only(CharacterId.Thornweaver, ProjectileType.VINE_WHIP, tether(TETH_BLOSSOM, 0.30f, 0.62f, 0.20f), 0xFF9ECC)
-  only(CharacterId.Gladiator, ProjectileType.ROPE, chainProj(CHN_LASSO, 0.72f, 0.54f, 0.30f), 0xD9B880)
+  glow(ProjectileType.LASSO, 0xD9B880)            // the Gladiator's
   only(CharacterId.Puppeteer, ProjectileType.ROPE, chainProj(CHN_STRING, 0.8f, 0.6f, 1f), 0xB880FF)
   glow(ProjectileType.GRAB, 0xD9A066)             // the Bear's
   glow(ProjectileType.TALON_GRAB, 0xFFCC59)
@@ -726,4 +813,26 @@ object GLProjectileRenderers {
   //  CHARACTER-SPECIFIC SPECIALIZED RENDERERS
   // ═══════════════════════════════════════════════════════════════
 
+
+  // ── Drawn as they are (see draw): fixed to the ground, tied to their thrower, or on an arc of
+  // their own, which a stretch about the hitbox would drag across the ground ──
+  private val _plain: Array[Boolean] = {
+    import ProjectileType._
+    val a = new Array[Boolean](256)
+    for (t <- Seq(
+      // slams round the caster
+      ERUPTION, THORN_WALL, SEISMIC_ROOT, ROOT_GROWTH, TREMOR_SLAM, ENTANGLE, SOUL_HARVEST, OVERCLOCK_BEAM, SHOCKWAVE,
+      ICE_QUAKE, HOWL, FERAL_ROAR, AXE_SPIN, MAUL, BLOOD_FRENZY, COMBUST, FROST_NOVA, REPULSE, SHOCK_BURST,
+      LUCKY_STREAK, HORN_FLIP,
+      // channels and things standing on the ground
+      LIGHTNING, CHAIN_LIGHTNING, TESLA_COIL, CHAIN_LIGHTNING_FORK, THUNDER_STRIKE, EARTHSPLITTER, GEYSER,
+      GRASPING_DEAD, RAISE_DEAD, TIDAL_WAVE, VORTEX_BOMB, WEB_TRAP, GRAVITY_WELL,
+      // tied to the thrower
+      TENTACLE, VINE_WHIP, BANDAGE_WHIP, GRAB, JAW, TONGUE, DEATH_GRIP, TALON_GRAB,
+      ROPE, LASSO, CHAIN_BOLT, LOCKDOWN_CHAIN, MEAT_HOOK, CHAIN_BOLT_HEAVY, SHACKLES, MARIONETTE,
+      // lobbed, on arcs of their own over a shadow on the ground
+      GRENADE, SNARE_MINE, BLIGHT_BOMB, FROST_TRAP, MUD_BOMB, AVALANCHE_CRUSH, SHOVEL, HEAD_THROW, CLUSTER_BOMB,
+      INK_SNARE, HAMMER, NAPALM_STRIKE, HAMMER_THROW)) a(t & 0xFF) = true
+    a
+  }
 }

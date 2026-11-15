@@ -15,7 +15,9 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   `TelemetryWithoutCollectorTest` / `TelemetryWithCollectorTest`, a JVM each since `init` takes
   effect once) and its exporters giving up for good on one that goes away (`ExportGiveUpGateTest`),
   the roster's data (`CharacterRosterTest`, every sprite sheet within its tile too), and the maps
-  (`WorldMapsTest`: spawns on open ground, all open ground one region). `ProjectileDefRegistryTest`
+  (`WorldMapsTest`: spawns on open ground, all open ground one region, and room to walk and to fight
+  on every map: `MapRoom`, scripts/map_audit.py's two rules, held to rooms made for it with doors
+  of one to five cells, a spawn pod, a row of lone rocks and a squeeze between two corners). `ProjectileDefRegistryTest`
   must be the first thing in its JVM to look a projectile up, which is why it is a target, and a
   single test, of its own. `WorldLoaderTest` (common/world) reads maps made for it, a layer type
   at a time (fill, rect, border, circle, line, points, grid, and their order), and every map in
@@ -60,7 +62,15 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   step, a late packet changing nothing, the stops (a wall's face, the end of range, the divider, a
   barrier — and none at water's edge), and the fade of a shot whose end was lost.
 - `client/render`, `client/gl` — the camera (`CameraTest`: the isometric mapping, the pixel grid,
-  whether the view has run off the map), the light pool (`LightPoolTest`), when a frame is drawn for
+  whether the view has run off the map; zoomed in, the middle of the window still the player, the
+  cursor aiming where the world was drawn, a shake as far on the screen), the graphics settings
+  (`RenderQualityTest`: the quality, the resolution and the camera's zoom kept between runs, only
+  the zooms there are, a flag for the run only), the menu Esc brings up in a match (`MatchMenuTest`:
+  every control inside its card and apart on any window, a click doing what it says and keeping it,
+  the zoom's track dragged, leaving only on a second press within three seconds, the arrow keys about
+  it), the scoreboard Tab holds up (`LiveStandingsTest`: everyone's kills and deaths as the KILLs told
+  them, us and anyone who left gathered, placed exactly as `MatchResults` places a free-for-all and
+  Teams over random lines, allocating nothing), the light pool (`LightPoolTest`), when a frame is drawn for
   (`FramePacerTest`: a refresh after the last however its loop wanders, two for a missed one, from
   scratch after a stall, as it comes on another cadence), and how other players
   are drawn (`RemoteMotionTest`: an even pace under jitter and with steps falling unevenly on the
@@ -75,9 +85,25 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   pointer, not turning as we step, where from our cell it swung degrees; a landing moving exactly
   with us on open ground and on the cast's own cell standing, what a wall takes off it shown; a
   controller's stick keeping its heading; and `AimGeometry.openLanding` the dash's, blink's and
-  throw's own answer aimed every way at every distance), and the
+  throw's own answer aimed every way at every distance), the blood a hit draws (`BloodTest`: each
+  drop's arc from the middle of the figure to the ground, which way a shot, a blast and a slam on top
+  of someone spray over 40 hits each, what bleeds and how much, splats only on ground anyone can walk
+  on, the same hit the same way, a knock-up, nothing allocated making spurts or taking hits, and what
+  the painter takes from the client: each hit once, from where its target is drawn), the items on
+  the ground (`ItemSpritesTest`: the atlas `scripts/generate_items.py` draws is the grid the
+  renderer cuts up, a cell for every frame, each item in the middle of its cell, clear of its edge
+  and in its own colour, the gem's frames stepping round; `ItemTrackTest`: an item new the first
+  frame it is seen and never again, gone the frame it goes, whatever its id, allocating nothing;
+  `ItemPainterTest`: an item popping into being as it appears, a puff for one taken in front of us
+  and none for one taken off screen or while nothing was drawn, and walking away from an item or
+  back to it neither, nor its SPAWN said again), and the
   mouse's pointer (`CursorTest`: its picture whole at every pixel scale, the dot on the hotspot, put
-  down on whole pixels, and only over the window's content). `TileTest`, in
+  down on whole pixels, and only over the window's content), and a kill of ours announced
+  (`KillBannerTest`: the title for each kill in a row and for every run past the last, the colours a
+  run heats up through, a title landing on its size and staying there, and every word of it in every
+  language). `DisplayFontTest`, in `client/gl`, is the HUD's lettered titles' letters: the menus' face,
+  every letter of every title in every language drawn by one of its faces, nothing of a letter cut off
+  its picture, and the ink all round the face. `TileTest`, in
   `common/model`, also holds the tileset to what the renderer assumes: a flat tile is exactly
   its diamond, a block covers its whole footprint. `BlastStyleTest` holds the blasts to the roster:
   every attack that blasts has a look of its own, and no two characters share one.
@@ -92,9 +118,10 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   is the other end: a projectile the server tells us of knows who threw it.
 - `client/` — `ClientTestKit.scala`: `TestClient` is a `GameClient` whose packets go to a
   capture (`GameClient.packetSink`) and which is handed the server's with `processPacket`.
-  The screen tests (`LobbyRoomScreenTest`, `ScoreboardScreenTest`, `CharacterSelectionPanelTest`,
-  `WelcomeScreenTest`) build the real JavaFX screens, never shown, on the FX thread via `Fx { ... }`,
-  and click them. They set `GRIDGAME_AUDIO=off`, and they must not call `Messages.setLocale`, which
+  The screen tests (`LobbyRoomScreenTest`, `LobbyBrowserScreenTest`, `ScoreboardScreenTest`,
+  `CharacterSelectionPanelTest`, `WelcomeScreenTest`) build the real JavaFX screens, never shown, on the FX thread via `Fx { ... }`,
+  and click them. A stage that isn't shown lays nothing out, so a test of where something is lays
+  the page out itself (`LobbyRoomScreenTest.placesOf`: sized to 1440x900, `applyCss`, `layout`). They set `GRIDGAME_AUDIO=off`, and they must not call `Messages.setLocale`, which
   would save a language to the player's own settings, nor log in through the app, which would keep
   a login in the player's own "Remember me" file: `WelcomeScreenTest`'s app only notes down what the
   screen asks of it. `ScoreboardScreenTest` also holds the scoreboard to coming up quickly as a match
@@ -107,9 +134,18 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   spawn requests the server answered (`PendingSpawns`): by the first packet about the projectile,
   whatever it says, for the attack that asked for its type, and none counted as lost for dying.
   `ui/DropDownsTest` is a click on a closed drop-down opening it after its list closed by itself
-  under the mouse, and a click on an open one still closing it. `ui/MapArtTest` is the maps drawn
+  under the mouse, and a click on an open one still closing it. `ui/MapCarouselTest` is the maps as
+  a carousel, on no window: the arrows round both ends, a click and a double click in the strip,
+  the keys, a map shown from code without telling anyone, and the strip laid out and slid (to the
+  pick, by the wheel) within its ends. `ui/MapArtTest` is the maps drawn
   for the menus: where a map's matches are played (what its spawns can walk to), the whole map
   drawn and nothing off it, the base under its near edges only, a window drawing its own cells.
+  `HitLogTest` is every hit the client hears kept in order for the renderer to bleed, with where the
+  projectile struck, a reader that falls behind losing only the oldest. `GameClientMatchTest` has, among
+  a match's start, deaths and end, the kill feed's characters and teams and which kills are ours, and
+  our kills in a row (render/CLAUDE.md, *A kill is announced*): ours and nobody else's, ended by our
+  death whether the update or the KILL tells of it, in practice by a pause past `PracticeComboMs` too,
+  first blood once a match and never in practice, and nothing carried into the next match.
   `GameClientCombatTest` is what the client keeps of a projectile the server ends: a shot gone at its
   hit, one stopped by the terrain fading where it struck, and a pull kept to be reeled in, holding
   whoever it caught. `GameClientKnockbackTest` is how a knockback is shown: ours slid on the test's clock
@@ -126,7 +162,11 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   away; click, Q, click, E, click casting all three; the primary held and fired as its button comes
   up, charges and all; and what the renderer is shown of an aimed dash, blink and throw is where the
   cast then puts us or the trap. It drives the real `GLKeyboardHandler` and `GLMouseHandler` too,
-  headless. `SlamReachTest` (server) holds every slam in the roster to what the model says it
+  headless, as `GameClientMenuTest` does for the menu Esc brings up and the scoreboard Tab holds up:
+  nothing walks, aims, fires or casts while the menu is up, what was aimed is put away as it opens,
+  a click it took fires nothing even let go of after it has gone, Esc twice no longer leaves (Leave
+  pressed twice does), Esc in the chat only closes the chat, and Tab never left holding the board up
+  by the chat, the menu or the focus going. `SlamReachTest` (server) holds every slam in the roster to what the model says it
   reaches: an enemy whose cell is within `AbilityDef.slamRadius` is hit, and nobody past it.
   `GameClientResetTest` is R (design/characters.md, *R resets the cooldowns*): both abilities ready
   from the press and the server asked once; nothing done or spent with nothing cooling down, nor by
@@ -148,10 +188,15 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   `VoicePoolTest` (what a fan's burst of one sound does in the mixer). The sounds themselves are
   judged with `scripts/sound_audit.py --check` and the gallery (see *Sound Effects & Music*).
 - The kits: `MeleeKitTest` (common) holds the melee and skirmisher kits to crowd control, a way
-  in on a runner or a place on the list of anchors, and primaries that never hold;
-  `MeleeKitsTest` (server) lands each new effect and combination, and walks a runner away from
-  every closer. `KitTest` (common) holds every kit to no volley of more than three, a volley only
-  on the characters listed with why, no two kits alike, one phase or dash a kit and which slams
+  in on a runner or a place on the list of anchors, primaries that never hold, and being able to
+  finish once in (a hold long enough for two blows, or a way to get on top of someone and one of
+  the hardest-hitting primaries; every fighter's pull stunning its catch for a second, and no ranged
+  character's); `MeleeKitsTest` (server) lands each new effect and combination (a pull's second to
+  the millisecond, and what its catch and everyone else are told), a melee swing on someone three
+  cells to the side of its flight and on the nearest only, and walks a runner away from every
+  closer. `RosterBalanceTest` (common) holds the roles' health and pace, the cap on a hit, and how
+  short and how wide a melee primary strikes. `KitTest` (common) holds every kit to no volley of
+  more than three, a volley only on the characters listed with why, no two kits alike, one phase or dash a kit and which slams
   haste their casters; `KitReworkTest` (server) lands each of the volleys' replacements in a match
   (slams, splashes, shots through and off walls, the hastes and how long they are told to last,
   the two new traps, the ice wall), and `BotMovementTest` the bots' getaways and hastes.
@@ -401,7 +446,7 @@ agree.
   `Perfect`, or `Lossy` (latency, jitter that reorders datagrams, a tenth of them lost, a few twice;
   TCP is never lost and keeps its order). `LoopClient` is one player's client with the app's glue
   (ClientMain's, MatchWindow's: the world loaded when the server names it, the answer to a login, the
-  lobby closing, Esc twice), driven through the real `GLKeyboardHandler` and the calls
+  lobby closing, the menu's Leave: `leaveByMenu`), driven through the real `GLKeyboardHandler` and the calls
   `GLMouseHandler` makes; `signUp` goes through `AuthService` (bcrypt), `Loopback.logIn` logs any
   number in at once without the hash (`E2EServer.logInWithoutPassword`, as `AuthService.startSession`
   does). `ServerSide.scala` and `ClientSide.scala` are the two packages' insides it needs
@@ -439,7 +484,8 @@ The suites:
   a Teams match with its wall up on both ends, each team in its half, played at the wall until it
   comes down, scored by team.
 - `SessionLifecycleTest` — ranked: a duel found by the matchmaker, played as the characters queued,
-  rated, and the rating on each client's scoreboard; leaving a match (Esc twice) and losing the
+  rated, and the rating on each client's scoreboard; leaving a match (Esc, then the menu's Leave
+  pressed twice) and losing the
   connection mid-match, the match going on and still scoring them, and logging back in with the
   password into the lobby browser.
 - `EndToEndFuzzTest` (strict), `LossyNetworkFuzzTest` and `AwfulNetworkFuzzTest` — `FuzzRun`. The

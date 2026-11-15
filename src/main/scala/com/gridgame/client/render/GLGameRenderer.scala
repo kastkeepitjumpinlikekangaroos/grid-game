@@ -1,7 +1,7 @@
 package com.gridgame.client.render
 
 import com.gridgame.client.game.{FadingProjectile, GameClient}
-import com.gridgame.client.gl.{DrawStream, GLFontRenderer, GpuProfiler, LightSystem, Matrix4, PostProcessor, RenderQuality, ShaderProgram, ShapeBatch, SpriteBatch}
+import com.gridgame.client.gl.{DisplayFont, DrawStream, GLFontRenderer, GlyphPages, GpuProfiler, LightSystem, Matrix4, PostProcessor, RenderQuality, ShaderProgram, ShapeBatch, SpriteBatch}
 import com.gridgame.client.render.blasts.GLBlastRenderers
 import com.gridgame.client.render.hud._
 import com.gridgame.client.render.world._
@@ -16,20 +16,24 @@ import com.gridgame.common.model._
  *
  *  1. The background, only where the screen runs off the map (BackgroundPainter)
  *  2. The ground: every flat tile as an opaque diamond (TerrainPainter), a soft inked edge where
- *     two kinds of it meet (GroundEdgePainter), then its animated overlays and reflections, the traps
+ *     two kinds of it meet (GroundEdgePainter), then its animated overlays and reflections, the blood
+ *     hits left on it (BloodPainter), the traps
  *     lying on it (TrapPainter), the blasts' ground layer (BlastPainter), our aim (AimArrowPainter: a
- *     charge's lane, or an attack held to aim), the blocks' shadows, and the players' shadows and our
- *     ring (PlayerPainter.drawGroundMarks)
+ *     charge's lane, or an attack held to aim), the blocks' shadows, the items' shadows and the light
+ *     they shed (ItemPainter.drawGroundMarks), and the players' shadows and our ring
+ *     (PlayerPainter.drawGroundMarks)
  *  3. The depth pass: blocks and props, and the entities standing among them, a diagonal of the
  *     map at a time, far to near, each where it is drawn (EntityCollector) — players
  *     (PlayerPainter, StatusEffectPainter), items (ItemPainter), projectiles (ProjectilePainter)
  *  4. Over the terrain: flying projectiles, raised barriers (BarrierPainter), the opening's wall
- *     (OpeningPainter), the glowing effects deferred from the depth pass (GlowEffectPainter),
- *     deaths and teleports (DeathAndTeleportPainter), the blasts' air layer, particles
- *     (ParticleSpawner)
+ *     (OpeningPainter), the glowing effects deferred from the depth pass (GlowEffectPainter), items
+ *     taken a moment ago going (ItemPainter.drawTaken),
+ *     deaths and teleports (DeathAndTeleportPainter), the blasts' air layer, a hit's blood in the
+ *     air (BloodPainter), particles (ParticleSpawner)
  *  5. The post-processing composite: bloom, the light map, the grade, the vignette
  *  6. Over the finished frame, at the display's full resolution: name plates, health bars and
- *     damage numbers (WorldOverlayPainter), then the HUD (HudPainter)
+ *     damage numbers (WorldOverlayPainter), then the HUD (HudPainter), then at the player's asking
+ *     the scoreboard Tab holds up (ScoreboardPainter) and the menu Esc brings up (MatchMenuPainter)
  *  7. Last, in a call of its own ([[drawCursor]]): the mouse's pointer (CursorPainter)
  */
 class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.System) {
@@ -50,16 +54,28 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
   private val traps = new TrapPainter(ctx)
   private val aimArrow = new AimArrowPainter(ctx)
   private val blasts = new BlastPainter(ctx)
+  private val blood = new BloodPainter(ctx)
   private val deaths = new DeathAndTeleportPainter(ctx, particles)
   private val overlay = new WorldOverlayPainter(ctx, particles)
   private val players = new PlayerPainter(ctx, barriers, effects, glows, overlay)
   private val abilityBar = new AbilityBarPainter(ctx)
   private val chat = new ChatPainter(ctx)
-  private val matchInfo = new MatchInfoPainter(ctx, opening)
+  private val matchInfo = new MatchInfoPainter(ctx)
   private val practice = new PracticePainter(ctx)
-  private val hud = new HudPainter(ctx, abilityBar, chat, matchInfo, practice, items)
+  private val killBanner = new KillBannerPainter(ctx)
+  private val hud = new HudPainter(ctx, abilityBar, chat, matchInfo, practice, items, killBanner)
   private val deathScreens = new DeathScreenPainter(ctx)
   private val cursor = new CursorPainter(ctx)
+
+  /** The menu Esc brings up (the match's window hands it to the input handlers), and the scoreboard
+    * Tab holds up: both drawn over the HUD, the menu over the scoreboard. The menu's leave waits on the
+    * frames' clock (the system's in a match, the golden frames' stopped one). */
+  val menu = new MatchMenu(() => clock.nowMs())
+  private val scoreboard = new ScoreboardPainter(ctx)
+  private val menuPainter = new MatchMenuPainter(ctx, menu)
+  /** Whether the scoreboard is up this frame: Tab or a controller's Back held (MatchWindow). Not under
+    * the menu, which has the screen while it is up. */
+  var scoreboardShown = false
 
   /** The camera, which the mouse handler reads to turn the cursor into a world position. */
   def camera: GameCamera = ctx.camera
@@ -118,19 +134,38 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
     * screen. Made again if the window moves to a screen of another density. */
   private def ensureFonts(pixelScale: Float): Unit = {
     if (pixelScale == fontPixelScale) return
-    if (fontSmall != null) { fontSmall.dispose(); fontMedium.dispose(); fontLarge.dispose() }
-    fontSmall = new GLFontRenderer(14, pixelScale)
-    fontMedium = new GLFontRenderer(22, pixelScale)
+    if (fontSmall != null) disposeFonts()
+    // The HUD's sizes share their pages, so its text is a draw, not one at every change of size; the
+    // large one is the damage numbers' in the world's overlay, and has its own
+    glyphPages = new GlyphPages()
+    fontSmall = new GLFontRenderer(14, pixelScale, shared = glyphPages)
+    fontMedium = new GLFontRenderer(22, pixelScale, shared = glyphPages)
     fontLarge = new GLFontRenderer(44, pixelScale)
+    fontTiny = new GLFontRenderer(12, pixelScale, shared = glyphPages)
+    fontBody = new GLFontRenderer(17, pixelScale, shared = glyphPages)
+    fontNumber = new GLFontRenderer(26, pixelScale, GLFontRenderer.blackChain, java.awt.Font.PLAIN, glyphPages)
+    display = new DisplayFont(60, pixelScale)
     // Pre-rasterize the active language's glyphs (cheap ASCII for English, the CJK
     // set for Chinese/Korean) so the first HUD frame with translated text doesn't hitch.
     val i18nGlyphs = com.gridgame.client.i18n.Messages.currentCodepoints
     fontSmall.prewarm(i18nGlyphs)
     fontMedium.prewarm(i18nGlyphs)
+    fontTiny.prewarm(i18nGlyphs)
+    fontBody.prewarm(i18nGlyphs)
     // Damage numbers are drawn in the overlay over the world, in its units (see render)
     damageNumbers.setFont(fontMedium)
     damageNumbers.setFontLarge(fontLarge)
     fontPixelScale = pixelScale
+  }
+
+  private var glyphPages: GlyphPages = _
+
+  private def disposeFonts(): Unit = {
+    fontSmall.dispose(); fontMedium.dispose(); fontLarge.dispose()
+    fontTiny.dispose(); fontBody.dispose(); fontNumber.dispose(); display.dispose()
+    glyphPages.dispose(); glyphPages = null
+    fontSmall = null; fontMedium = null; fontLarge = null
+    fontTiny = null; fontBody = null; fontNumber = null; display = null
   }
 
   def render(deltaSec: Double, fbWidth: Int, fbHeight: Int, windowWidth: Int, windowHeight: Int): Unit = {
@@ -161,7 +196,8 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
     weatherParticles.update(dt)
     combatParticles.update(dt)
 
-    val zoom = Constants.CAMERA_ZOOM
+    // The player's zoom (the settings' camera zoom): the widest view, or up to twice as close
+    val zoom = GameCamera.playersZoom
     canvasW = windowWidth / zoom
     canvasH = windowHeight / zoom
 
@@ -172,6 +208,7 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
     // In non-lobby mode, show full game over screen when dead (after death anim)
     if (client.getIsDead && !localDeathAnimActive && !client.isRespawning) {
       deathScreens.drawGameOver(fbWidth, fbHeight)
+      drawOverHud(fbWidth, fbHeight, windowWidth, windowHeight)
       return
     }
 
@@ -187,7 +224,7 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
     val visualPosY = client.visualPosY
 
     // Update camera with smooth interpolation
-    camera.update(visualPosX, visualPosY, deltaSec, canvasW, canvasH, sceneW / canvasW)
+    camera.update(visualPosX, visualPosY, deltaSec, canvasW, canvasH, sceneW / canvasW, zoom)
     camOffX = camera.camOffX
     camOffY = camera.camOffY
     aimAtPointer = onCamera()
@@ -261,7 +298,6 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
     terrain.beginFrame()
 
     // === Collect entities by the diagonal they are drawn on ===
-    items.beginFrame()
     overlay.beginFrame()
     glows.beginFrame()
     barriers.beginFrame()
@@ -272,6 +308,8 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
       localVX, localVY, localDeathAnimActive,
       startX, endX, startY, endY
     )
+    // Every hit heard since the last frame spurts blood from where its target is drawn now
+    blood.collect()
 
     // === Phase 1: Ground tiles, and one soft edge where two kinds of ground meet ===
     terrain.drawGround(world)
@@ -283,6 +321,9 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
 
     // === Water reflections ===
     terrain.drawReflections()
+
+    // === Blood on the ground, where a hit's drops landed: under the traps, which still read there ===
+    blood.drawGround()
 
     // === Traps: flat decals on the ground, so walls in front of them cover them in phase 2 ===
     traps.draw()
@@ -301,7 +342,9 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
 
     gpuMark("block shadows")
 
-    // === The players' shadows and our ring: on the ground, so a wall in front covers them ===
+    // === The items' shadows and the light they shed, then the players' shadows and our ring: on the
+    // ground, so a wall in front covers them ===
+    items.drawGroundMarks()
     players.drawGroundMarks()
 
     gpuMark("ground marks")
@@ -348,22 +391,23 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
 
     gpuMark("fliers+walls")
 
-    // === Deferred additive effects (single blend toggle for all player/item effects) ===
-    if (glows.hasDeferred || items.hasDeferred) {
+    // === Deferred additive effects (single blend toggle for all the players' effects) ===
+    if (glows.hasDeferred) {
       beginShapes()
       shapeBatch.setAdditiveBlend(true)
       glows.drawDeferred()
-      items.drawDeferred()
       shapeBatch.setAdditiveBlend(false)
     }
 
-    // === Item pickup detection ===
-    items.detectChanges()
+    // === Items taken a moment ago, each shown going ===
+    items.drawTaken()
 
     // === Overlay animations ===
     deaths.drawDeaths()
     deaths.drawTeleports()
     blasts.draw(GLBlastRenderers.AIR)
+    // A hit's blood in the air, over its flash
+    blood.drawAir()
 
     gpuMark("effects")
 
@@ -372,8 +416,8 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
     beginShapes()
     combatParticles.render(shapeBatch)
 
-    // === Falling snow, in front of everything, over a snowy map ===
-    if (bgType == 5) {
+    // === Falling snow, in front of everything, over a snowy map; embers rising over a volcano ===
+    if (bgType == 5 || bgType == 7) {
       particles.spawnWeather(world.background, dt)
       weatherParticles.render(shapeBatch)
     }
@@ -447,9 +491,13 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
     // Drawn into the display's own framebuffer, at its full resolution, after the grade. In the
     // scene they came out as soft as the scene's scale (a third of the display's pixels at Low),
     // dimmed by the light map and tinted by the grade: a white damage number on a dark map was
-    // a muddy grey. Same world projection, so each lands exactly where it did.
-    projection = Matrix4.orthographic(0f, canvasW.toFloat, canvasH.toFloat, 0f)
-    shapeBatch.pixelsPerUnit = fbWidth / canvasW.toFloat
+    // a muddy grey. In the widest view's units whatever the camera's zoom, each where its player is
+    // drawn (overlayScale): zoomed in, they stay the size they are on the screen, where drawn with the
+    // world they grew with it and buried the fight (render/CLAUDE.md, *The camera's zoom*).
+    overlayScale = zoom / Constants.CAMERA_ZOOM
+    val overlayW = canvasW * overlayScale
+    projection = Matrix4.orthographic(0f, overlayW.toFloat, (canvasH * overlayScale).toFloat, 0f)
+    shapeBatch.pixelsPerUnit = fbWidth / overlayW.toFloat
     overlayAlpha = 1f - postProcessor.overlayA // fade in with the match, as the world does
     overlay.draw()
     endAll()
@@ -465,8 +513,22 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
       deathScreens.drawRespawnCountdown(windowWidth, windowHeight)
     }
     endAll()
+    // === Over the HUD, at the player's asking: the scoreboard Tab holds up, the menu Esc brings up ===
+    drawOverHud(fbWidth, fbHeight, windowWidth, windowHeight)
     gpuMark("hud")
     GpuProfiler.endFrame()
+  }
+
+  /** The scoreboard (while it is held up and the menu isn't) and the menu (while it is up), over
+    * everything but the pointer, in the window's units as the HUD is. */
+  private def drawOverHud(fbWidth: Int, fbHeight: Int, windowWidth: Int, windowHeight: Int): Unit = {
+    val board = scoreboardShown && !menu.isOpen
+    if (!board && !menu.isOpen) { scoreboard.draw(shown = false, windowWidth, windowHeight); return }
+    projection = Matrix4.orthographic(0f, windowWidth.toFloat, windowHeight.toFloat, 0f)
+    shapeBatch.pixelsPerUnit = fbWidth.toFloat / Math.max(1, windowWidth)
+    scoreboard.draw(board, windowWidth, windowHeight)
+    menuPainter.draw(windowWidth, windowHeight, fbHeight)
+    endAll()
   }
 
   /** The mouse's pointer, over the frame [[render]] has just drawn — HUD, death screen and all — with
@@ -484,18 +546,20 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
   private def setGrade(bg: String): Unit = {
     bgType = bg match {
       case "sky" => 0; case "cityscape" => 1; case "space" => 2; case "desert" => 3; case "ocean" => 4
-      case "snow" => 5; case "sea" => 6; case _ => 0
+      case "snow" => 5; case "sea" => 6; case "volcano" => 7; case "night" => 8; case _ => 0
     }
     lightSystem.setAmbientForBackground(bg)
     // The bright maps show their art's own colours. ACES lifts mid-tones and pulls highlights
     // down, which a dark map wants and a meadow doesn't (it came out pastel), and at the dark
     // maps' threshold sunlit sand and snow bloomed into a haze over everything; here only
     // what really glows blooms.
-    val bright = bgType == 0 || bgType == 5 || bgType == 6
+    val bright = bgType == 0 || bgType == 5 || bgType == 6 || bgType == 3
     // Space is a station's deck floating in the dark, drawn as the bright maps are: its own colours,
     // only a little dimmed, where shots and players still light it. Under the dark maps' grade (ACES,
-    // the art at 60%) the deck and everyone on it came out murky.
-    val space = bgType == 2
+    // the art at 60%) the deck and everyone on it came out murky. The volcano and the graveyard by
+    // night are the same kind of dark: their tiles are painted as dark as they should look, and the
+    // lava, the lanterns, shots and players light them.
+    val space = bgType == 2 || bgType == 7 || bgType == 8
     postProcessor.toneMap = if (bright || space) 0f else 1f
     postProcessor.bloomThreshold = if (bright) 0.97f else if (space) 0.9f else 0.80f
     postProcessor.bloomStrength = if (bright) 0.16f else if (space) 0.2f else 0.22f
@@ -542,14 +606,14 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
     combatParticles.clear()
     deaths.reset()
     particles.reset()
+    blood.reset()
   }
 
   def dispose(): Unit = {
     if (initialized) {
       shapeBatch.dispose()
       spriteBatch.dispose()
-      if (fontSmall != null) { fontSmall.dispose(); fontMedium.dispose(); fontLarge.dispose() }
-      fontSmall = null; fontMedium = null; fontLarge = null
+      if (fontSmall != null) disposeFonts()
       fontPixelScale = 0f
       postProcessor.dispose()
       lightSystem.dispose()
@@ -557,6 +621,7 @@ class GLGameRenderer(val client: GameClient, clock: FrameClock = FrameClock.Syst
       cursor.dispose()
       groundEdges.dispose()
       GLTileRenderer.dispose()
+      ItemSprites.dispose()
       GLSpriteGenerator.clearCache()
       initialized = false
     }

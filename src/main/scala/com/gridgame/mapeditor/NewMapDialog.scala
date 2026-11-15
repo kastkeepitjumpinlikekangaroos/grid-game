@@ -38,7 +38,7 @@ object NewMapDialog {
     heightField.setStyle("-fx-font-size: 13;")
 
     // The backgrounds GLGameRenderer draws; any other name is drawn as "sky"
-    val bgChoices = Seq("sky", "sea", "snow", "space", "cityscape", "desert", "ocean")
+    val bgChoices = Seq("sky", "sea", "snow", "space", "desert", "volcano", "night", "cityscape", "ocean")
     val bgCombo = new ComboBox[String]()
     bgChoices.foreach(bgCombo.getItems.add)
     bgCombo.setValue("sky")

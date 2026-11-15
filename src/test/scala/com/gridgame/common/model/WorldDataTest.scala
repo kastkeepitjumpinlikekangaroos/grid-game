@@ -120,7 +120,7 @@ class WorldDataTest {
       assertEquals(t, Tile.fromId(t.id))
       assertEquals(t, Tile.fromName(t.name))
     }
-    assertEquals(42, Tile.all.map(_.id).distinct.size)
+    assertEquals(56, Tile.all.map(_.id).distinct.size)
     assertFalse(Tile.Fence.walkable)
   }
 

@@ -37,7 +37,8 @@ CW, CH = gt.CELL_W, gt.CELL_H
 FORMS = {tid: form for (tid, name, form, fn) in gt.TILES}
 NAMES = {tid: name for (tid, name, form, fn) in gt.TILES}
 # A prop's own ground (Tile.ground in Tile.scala); grass unless listed
-PROP_GROUND = {18: 16, 19: 16, 24: 3, 25: 2, 28: 16, 31: 21, 37: 2, 38: 8, 39: 8}
+PROP_GROUND = {18: 16, 19: 16, 24: 3, 25: 2, 28: 16, 31: 21, 37: 2, 38: 8, 39: 8,
+               43: 42, 44: 42, 46: 45, 47: 45, 49: 45, 51: 50, 52: 50, 54: 50, 55: 45}
 
 
 def _font(size):
@@ -175,6 +176,8 @@ LEGEND = {
     "w": 1, "W": 7, "L": 10, "T": 5, "B": 34, "R": 35, "M": 36, "P": 37, "N": 38, "S": 39,
     "C": 29, "V": 17, "O": 28, "X": 18, "#": 16, "I": 41, "F": 12, "K": 25, "Y": 24, "U": 26,
     "H": 31, "A": 11, "Z": 4, "E": 15, "G": 32, "m": 27, "g": 33,
+    "r": 42, "a": 30, "t": 43, "q": 44, "e": 45, "+": 46, "y": 47, "Q": 48, "l": 49,
+    "u": 50, "j": 51, "b": 52, "D": 53, "x": 54, "z": 55,
 }
 
 SCENES = {
@@ -220,6 +223,48 @@ SCENES = {
         "NNnnnnnnnnNN",
         "NNNNNNNNNNNN",
     ],
+    "volcano": [
+        "GGGGGGGGGGGG",
+        "GLLLLLLLLLGG",
+        "GLrrrrrrrLLG",
+        "GLrtrraarrLG",
+        "GLrrraaqrrLG",
+        "GLrrrrrrrtLG",
+        "GLqrrLLrrrLG",
+        "GLrrLLLLrrLG",
+        "GLrtrLLrqrLG",
+        "GLLrrrrrrLLG",
+        "GGLLLLLLLLGG",
+        "GGGGGGGGGGGG",
+    ],
+    "graveyard": [
+        "zzyzzzzyzzzz",
+        "zQQQQzzQQQQz",
+        "yQeeeeeee+Qy",
+        "yQe+e+eceeQy",
+        "yye+eleceyey",
+        "yeeeeeecc+ey",
+        "yQeyeecce+Qy",
+        "yQe+eeceleQy",
+        "yQeeeQQceeQy",
+        "yQ+e+QQe+eQy",
+        "zQQQQzyQQQQz",
+        "zzzyzzzzzyzz",
+    ],
+    "desert": [
+        "DDDDDDDDDDDD",
+        "DDuuuuuuuDDD",
+        "DuujuuuubuuD",
+        "DuuuussuuuuD",
+        "DubuswwsujuD",
+        "DuuuswwsuuuD",
+        "DuxuussuuuuD",
+        "DuuuuuuooZuD",
+        "DujuuuuoobuD",
+        "DDuuubuuuuDD",
+        "DDDuuuuuuDDD",
+        "DDDDDDDDDDDD",
+    ],
     "space": [
         "OOOOOOOOOOOO",
         "OVVVVVVVVVVO",
@@ -246,7 +291,8 @@ def scenes(atlas, out):
         spr = [(5, 5, wizard), (7, 4, druid)]
         imgs.append(compose(atlas, grid, sprites=spr))
     w = sum(i.width for i in imgs[:2])
-    h = max(i.height for i in imgs) * 2
+    rows_n = (len(imgs) + 1) // 2
+    h = max(i.height for i in imgs) * rows_n
     img = Image.new("RGBA", (w, h), (150, 200, 240, 255))
     for k, im in enumerate(imgs):
         img.alpha_composite(im, ((k % 2) * imgs[0].width, (k // 2) * im.height))

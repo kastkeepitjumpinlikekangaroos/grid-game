@@ -13,9 +13,9 @@ import com.gridgame.common.model.CombatRole.{Melee, Ranged, Skirmisher}
 private[model] object Specialists {
   // ── Projectiles ──
 
-  val FistDef: ProjectileDef = ProjectileDef(id = ProjectileType.FIST, name = "Fist", speedMultiplier = 0.8f, damage = 51, maxRange = 2, hitRadius = 2.2f, boomerang = true)
-  val KnifeDef: ProjectileDef = ProjectileDef(id = ProjectileType.KNIFE, name = "Knife", speedMultiplier = 0.95f, damage = 37, maxRange = 3, hitRadius = 2.2f)
-  val HammerDef: ProjectileDef = ProjectileDef(id = ProjectileType.HAMMER, name = "Hammer", speedMultiplier = 0.6f, damage = 49, maxRange = 3, hitRadius = 2.5f)
+  val FistDef: ProjectileDef = ProjectileDef(id = ProjectileType.FIST, name = "Fist", speedMultiplier = 0.8f, damage = 51, maxRange = 2, hitRadius = 3.7f, hitCentreBehind = 1.5f, boomerang = true)
+  val KnifeDef: ProjectileDef = ProjectileDef(id = ProjectileType.KNIFE, name = "Knife", speedMultiplier = 0.95f, damage = 37, maxRange = 3, hitRadius = 3.7f, hitCentreBehind = 1.5f)
+  val HammerDef: ProjectileDef = ProjectileDef(id = ProjectileType.HAMMER, name = "Hammer", speedMultiplier = 0.6f, damage = 49, maxRange = 3, hitRadius = 4.0f, hitCentreBehind = 1.5f)
   val AcidFlaskDef: ProjectileDef = ProjectileDef(id = ProjectileType.ACID_FLASK, name = "Acid Flask", speedMultiplier = 0.4f, damage = 38, maxRange = 14, passesThroughPlayers = true, explodesOnPlayerHit = true, explosionConfig = Some(ExplosionConfig(38, 15, 3.0f)))
   val StarBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.STAR_BOLT, name = "Star Bolt", speedMultiplier = 0.8f, damage = 31, maxRange = 22, chargeSpeedScaling = Some(ChargeScaling(0.6f, 1.1f)), chargeDamageScaling = Some(ChargeScaling(22f, 35f)), chargeRangeScaling = Some(ChargeScaling(14f, 28f)), distanceDamageScaling = Some(DistanceDamageScaling(15, 50, 22)))
   val RuneBoltDef: ProjectileDef = ProjectileDef(id = ProjectileType.RUNE_BOLT, name = "Rune Bolt", speedMultiplier = 0.75f, damage = 33, maxRange = 18, ricochetCount = 2)
@@ -25,7 +25,7 @@ private[model] object Specialists {
   // A closer (Plan 5a): lands on a ranged character walking away from 8 cells, wherever they are
   // in their step (MeleeKitsTest). See common/model/CLAUDE.md, "Melee kits"
   val HammerThrowDef: ProjectileDef = ProjectileDef(id = ProjectileType.HAMMER_THROW, name = "Hammer Throw", speedMultiplier = 0.95f, damage = 31, maxRange = 16, hitRadius = 2.2f, onHitEffect = Some(Stun(800)))
-  val MeatHookDef: ProjectileDef = ProjectileDef(id = ProjectileType.MEAT_HOOK, name = "Meat Hook", speedMultiplier = 0.9f, damage = 10, maxRange = 18, onHitEffect = Some(PullToOwner))
+  val MeatHookDef: ProjectileDef = ProjectileDef(id = ProjectileType.MEAT_HOOK, name = "Meat Hook", speedMultiplier = 0.9f, damage = 10, maxRange = 18, onHitEffect = Some(PullToOwner), alsoOnHit = Seq(Stun(1000)))
   // A splash rather than an explosion: an explosion deals its blast and nothing else, so its
   // on-hit burn would never land (Plan 5a)
   val FlambeDef: ProjectileDef = ProjectileDef(id = ProjectileType.FLAMBE, name = "Flambe", speedMultiplier = 0.7f, damage = 20, maxRange = 6, aoeOnHit = Some(AoESplashConfig(2.5f, 15)), aoeOnMaxRange = Some(AoESplashConfig(2.5f, 15)), onHitEffect = Some(Burn(20, 3000, 750)))
@@ -110,7 +110,7 @@ private[model] object Specialists {
     id = CharacterId.Chef, displayName = "Chef",
     description = "A culinary warrior who hooks dinner in, carves it with knives and flambes it.",
     spriteSheet = "sprites/chef.png",
-    qAbility = AbilityDef(name = "Meat Hook", description = "Hooks an enemy and drags them to you.", cooldownMs = 10000, maxRange = 18, damage = 10, projectileType = ProjectileType.MEAT_HOOK, keybind = "Q"),
+    qAbility = AbilityDef(name = "Meat Hook", description = "Hooks an enemy and drags them to you, stunned for 1s.", cooldownMs = 10000, maxRange = 18, damage = 10, projectileType = ProjectileType.MEAT_HOOK, keybind = "Q"),
     eAbility = AbilityDef(name = "Flambe", description = "A short gout of flame that bursts over everyone near it and sets them alight.", cooldownMs = 8000, maxRange = 6, damage = 20, projectileType = ProjectileType.FLAMBE, keybind = "E"),
     primaryProjectileType = ProjectileType.KNIFE, role = Melee, maxHealth = 145, moveSpeed = Melee.speed
   )

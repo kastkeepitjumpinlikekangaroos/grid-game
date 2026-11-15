@@ -154,6 +154,38 @@ object GLTexture {
 
   def freePixels(buf: ByteBuffer): Unit = MemoryUtil.memFree(buf)
 
+  /**
+   * A texture of coverage alone, a byte a texel, which a sprite batch reads as white at that alpha:
+   * its one channel is swizzled into alpha, and white into the colour, so it draws as an RGBA
+   * texture of white art would, tinted by the quad's colour, in a quarter of the memory. For art
+   * that is only ever tinted (DisplayFont's letters). Cleared to nothing, so filtering at the edge
+   * of what is uploaded into it never reads undefined texels; filled with [[uploadCoverage]].
+   */
+  def createCoverage(width: Int, height: Int): GLTexture = {
+    val texId = glGenTextures()
+    glBindTexture(GL_TEXTURE_2D, texId)
+    val zeros = MemoryUtil.memCalloc(width * height)
+    try {
+      glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, zeros)
+      glPixelStorei(GL_UNPACK_ALIGNMENT, 4)
+    } finally MemoryUtil.memFree(zeros)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+    glTexParameteriv(GL_TEXTURE_2D, org.lwjgl.opengl.GL33.GL_TEXTURE_SWIZZLE_RGBA, Array(GL_ONE, GL_ONE, GL_ONE, GL_RED))
+    new GLTexture(texId, width, height, false)
+  }
+
+  /** `w` x `h` bytes of coverage, row by row from the top, into a coverage texture at (x, y). */
+  def uploadCoverage(target: GLTexture, x: Int, y: Int, w: Int, h: Int, coverage: ByteBuffer): Unit = {
+    glBindTexture(GL_TEXTURE_2D, target.id)
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+    glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, h, GL_RED, GL_UNSIGNED_BYTE, coverage)
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4)
+  }
+
   /** A texture of `w` x `h` pixels given as ARGB ints, row by row from the top (an AWT image's
     * `getRGB`), with straight alpha, as the batches blend. */
   def fromArgb(argb: Array[Int], w: Int, h: Int, nearest: Boolean = false): GLTexture = {
@@ -411,7 +443,8 @@ object GLTexture {
 
   /** Load image pixels from a file and upload as a sub-image into an existing texture, padding
     * its transparent texels first ([[padTransparent]]) if `padCell` > 0. */
-  def uploadSubImage(target: GLTexture, destX: Int, destY: Int, relativePath: String, padCell: Int = 0): Boolean = {
+  def uploadSubImage(target: GLTexture, destX: Int, destY: Int, relativePath: String, padCell: Int = 0,
+                     inspect: (ByteBuffer, Int, Int) => Unit = null): Boolean = {
     val bytes = loadBytes(relativePath)
     if (bytes == null) return false
     val buf = BufferUtils.createByteBuffer(bytes.length)
@@ -423,6 +456,7 @@ object GLTexture {
     stbi_set_flip_vertically_on_load(false)
     val pixels = stbi_load_from_memory(buf, w, h, channels, 4)
     if (pixels == null) return false
+    if (inspect != null) inspect(pixels, w.get(0), h.get(0))
     if (padCell > 0) padTransparent(pixels, w.get(0), h.get(0), padCell, padCell, 2)
     glBindTexture(GL_TEXTURE_2D, target.id)
     glTexSubImage2D(GL_TEXTURE_2D, 0, destX, destY, w.get(0), h.get(0), GL_RGBA, GL_UNSIGNED_BYTE, pixels)

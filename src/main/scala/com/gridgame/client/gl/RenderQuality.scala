@@ -20,6 +20,10 @@ package com.gridgame.client.gl
  * `--resolution=` (or `GRIDGAME_QUALITY`, `GRIDGAME_RESOLUTION`). Nothing changes either by itself: an
  * `auto` that stepped the quality down mid-match when frames stayed slow was taken out (2026-11-12),
  * the player deciding between more detail and more frames (gl/CLAUDE.md, *Graphics quality tiers*).
+ *
+ * With them, the camera's zoom (`zoomPercent`): how much closer than the widest view the match is
+ * drawn, from 100% (the widest, the view every match had before) to 200%. It costs nothing to draw,
+ * and is kept with them (`chooseZoom`, `--zoom=` or `GRIDGAME_ZOOM` for a run).
  */
 object RenderQuality {
   val HIGH = 0
@@ -37,12 +41,36 @@ object RenderQuality {
     * display's own. */
   val Resolutions: Seq[Int] = Seq(0, 1440, 1080, 720)
 
+  /** The resolutions offered on a display `nativeLines` tall: its own, and the ones below it (the
+    * settings' card, and the match's menu). */
+  def resolutionsFor(nativeLines: Int): Seq[Int] = Resolutions.filter(r => r == 0 || r < nativeLines)
+
   @volatile private var _resolution: Int = 0
 
   /** The most lines the world is drawn at, 0 for the display's own. */
   def resolution: Int = _resolution
   def resolutionName: String = nameOfResolution(_resolution)
   def nameOfResolution(lines: Int): String = if (lines <= 0) "native" else s"${lines}p"
+
+  /** The camera's zooms, in percent of the widest view: 100 is the widest, and the default. */
+  val MinZoom = 100
+  val MaxZoom = 200
+  val ZoomStep = 10
+  val Zooms: Seq[Int] = MinZoom to MaxZoom by ZoomStep
+
+  @volatile private var _zoomPercent: Int = MinZoom
+
+  /** How much closer than the widest view the match is drawn, in percent (100 to 200). */
+  def zoomPercent: Int = _zoomPercent
+  /** The same as a factor on the widest view's scale: 1 to 2. */
+  def zoom: Double = _zoomPercent / 100.0
+  def zoomName: String = s"${_zoomPercent}%"
+
+  /** The nearest zoom there is to `percent`: a step of ZoomStep, from MinZoom to MaxZoom. */
+  def zoomNearest(percent: Int): Int = {
+    val clamped = Math.max(MinZoom, Math.min(MaxZoom, percent))
+    MinZoom + Math.round((clamped - MinZoom).toFloat / ZoomStep) * ZoomStep
+  }
 
   /** Where the player's choices are kept between runs: the user's preferences, unless a test has put
     * a store of its own in (it must never write the player's). */
@@ -67,11 +95,17 @@ object RenderQuality {
     case _ => None
   }
 
+  private def zoomNamed(name: String): Option[Int] = name.trim.stripSuffix("%") match {
+    case n if n.nonEmpty && n.length <= 4 && n.forall(_.isDigit) && Zooms.contains(n.toInt) => Some(n.toInt)
+    case _ => None
+  }
+
   /** The player's saved choices: the app reads them as it starts, before `configure`, whose flags win.
     * Dev tools don't, so a bench or the golden frames draw the same on every machine. */
   def loadSaved(): Unit = {
     store.get("quality").flatMap(tierNamed).foreach(_tier = _)
     store.get("resolution").flatMap(resolutionNamed).foreach(_resolution = _)
+    store.get("zoom").flatMap(zoomNamed).foreach(_zoomPercent = _)
   }
 
   /** The quality, chosen by the player: from now on, and saved. */
@@ -86,6 +120,17 @@ object RenderQuality {
     store.put("resolution", resolutionName)
     println(s"Resolution: $resolutionName")
   }
+
+  /** The camera's zoom, chosen by the player (in the settings, or the match's menu): from the next
+    * frame on, and saved. A zoom between two steps is taken as the nearest. */
+  def chooseZoom(percent: Int): Unit = {
+    _zoomPercent = zoomNearest(percent)
+    store.put("zoom", zoomName)
+    println(s"Camera zoom: $zoomName")
+  }
+
+  /** For a run, unsaved (a dev tool's or a test's), as the nearest zoom there is. */
+  def setZoom(percent: Int): Unit = _zoomPercent = zoomNearest(percent)
 
   /**
    * Configure from command-line args and the environment. Returns the args with the
@@ -108,8 +153,16 @@ object RenderQuality {
         case None => System.err.println(s"Unknown --resolution=$r (expected native, 1440, 1080 or 720)")
       }
     }
-    println(s"Graphics quality: $tierName, resolution: $resolutionName")
-    args.filterNot(a => a.startsWith("--quality=") || a.startsWith("--resolution="))
+    val zoomFlag = args.find(_.startsWith("--zoom=")).map(_.substring("--zoom=".length))
+      .orElse(sys.env.get("GRIDGAME_ZOOM"))
+    zoomFlag.foreach { z =>
+      zoomNamed(z) match {
+        case Some(percent) => _zoomPercent = percent
+        case None => System.err.println(s"Unknown --zoom=$z (expected $MinZoom to $MaxZoom in steps of $ZoomStep)")
+      }
+    }
+    println(s"Graphics quality: $tierName, resolution: $resolutionName, zoom: $zoomName")
+    args.filterNot(a => a.startsWith("--quality=") || a.startsWith("--resolution=") || a.startsWith("--zoom="))
   }
 
   /** Set the tier for this run, unsaved (a dev tool's, or `choose`'s). */

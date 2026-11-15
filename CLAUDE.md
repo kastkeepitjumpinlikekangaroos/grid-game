@@ -35,8 +35,9 @@ scripts/build_linux_package.sh --arch x86_64 --deb             # the Linux app a
 
 OTEL_SDK_DISABLED=true bazel run //src/main/scala/com/gridgame/server:server  # server without telemetry
 GRIDGAME_TELEMETRY=1 bazel run //src/main/scala/com/gridgame/client:client    # client with telemetry (or -- --telemetry)
-bazel run //src/main/scala/com/gridgame/client:client -- --quality=low        # low|medium|high, and --resolution=native|1440|1080|720:
-                                                                              # for one run (players pick both in the settings; F7 in game)
+bazel run //src/main/scala/com/gridgame/client:client -- --quality=low        # low|medium|high, --resolution=native|1440|1080|720
+                                                                              # and --zoom=100..200 (the camera's): for one run (players
+                                                                              # pick all three in the settings and in game's Esc menu; F7)
 GRIDGAME_AUDIO=off bazel run //src/main/scala/com/gridgame/client:client      # no sound at all
 GRIDGAME_LOGIN_FILE=/tmp/second bazel run //src/main/scala/com/gridgame/client:client  # "Remember me" kept elsewhere (a second client)
 GRIDGAME_DIAGNOSTICS_DIR=/tmp/diag bazel run //src/main/scala/com/gridgame/client:client  # its log, recordings and reports kept elsewhere
@@ -48,13 +49,14 @@ The dev tools (none of them shipped) and where their docs are:
 
 | Tool | Run | What it is for |
 |---|---|---|
-| projectile gallery | `bazel run //src/main/scala/com/gridgame/client:projectile_gallery -- /tmp/gallery` (`--focus=`, `--blasts`) | every projectile and blast drawn on contact sheets: [projectiles](src/main/scala/com/gridgame/client/render/projectiles/CLAUDE.md), [blasts](src/main/scala/com/gridgame/client/render/blasts/CLAUDE.md) |
-| render bench | `bazel run //src/main/scala/com/gridgame/client:render_bench` (`--effects`, `--barriers`, `--traps`, `--divider`, `--ceasefire`, `--blasts`, `--aim`, `--hold=`, `--map= --at=`, `--types=`, `--history`) | frame time, allocation and footprint of a busy match: [client](src/main/scala/com/gridgame/client/CLAUDE.md) |
+| projectile gallery | `bazel run //src/main/scala/com/gridgame/client:projectile_gallery -- /tmp/gallery` (`--focus=`, `--compass=`, `--launch=`, `--blasts`) | every projectile and blast drawn on contact sheets: [projectiles](src/main/scala/com/gridgame/client/render/projectiles/CLAUDE.md), [blasts](src/main/scala/com/gridgame/client/render/blasts/CLAUDE.md) |
+| render bench | `bazel run //src/main/scala/com/gridgame/client:render_bench` (`--effects`, `--barriers`, `--traps`, `--divider`, `--ceasefire`, `--blasts`, `--aim`, `--hold=`, `--hits`, `--kills`, `--map= --at=`, `--types=`, `--history`) | frame time, allocation and footprint of a busy match: [client](src/main/scala/com/gridgame/client/CLAUDE.md) |
 | ui bench | `bazel run //src/main/scala/com/gridgame/client:ui_bench` | the JavaFX menus' memory and CPU: [client](src/main/scala/com/gridgame/client/CLAUDE.md) |
 | ui gallery | `bazel run //src/main/scala/com/gridgame/client:ui_gallery -- /tmp/ui` (`--scale=2`, `--lang=`, `--only=`) | every menu screen drawn to a PNG, in the states a player sees it in: [menus](src/main/scala/com/gridgame/client/ui/CLAUDE.md) |
 | render audit | `bazel run //src/main/scala/com/gridgame/client:render_audit -- --out=/tmp/audit`, then `python3 scripts/render_audit.py /tmp/audit` | can everything be seen on every map: [renderer](src/main/scala/com/gridgame/client/render/CLAUDE.md) |
 | golden frames | `bazel run //src/main/scala/com/gridgame/client:golden_frames -- /tmp/golden` | fixed scenes on a stopped clock, to compare two builds of the renderer pixel for pixel: [renderer](src/main/scala/com/gridgame/client/render/CLAUDE.md) |
-| asset generators and galleries | `python3 scripts/...` | tiles, maps, sprites, sounds, icons: [scripts](scripts/CLAUDE.md) |
+| asset generators and galleries | `python3 scripts/...` | tiles, maps, sprites, items, sounds, icons: [scripts](scripts/CLAUDE.md) |
+| map audit | `python3 scripts/map_audit.py --out /tmp/maps` (`--strict`, `--repair <maps>`) | is there room to walk and to fight on every map (no gap under three cells, no way under five): [scripts](scripts/CLAUDE.md), *Maps* |
 | report reader | `bazel run //src/main/scala/com/gridgame/tools:report -- <report folder or zip>` (`--mark=N`, `--around=m:ss[,s]`, `--out=`) | a player's problem report as a summary, a timeline and tables: [diagnostics](design/diagnostics.md), [tools](src/main/scala/com/gridgame/tools/CLAUDE.md) |
 | report replay | `bazel run //src/main/scala/com/gridgame/client:report_replay -- <report folder or zip>` (`--at=m:ss --out=`, `--film=m:ss-m:ss --fps=`, `--size=`, `--quality=`) | any moment of a reported match redrawn through the real client and renderer: [diagnostics](design/diagnostics.md) |
 
@@ -100,7 +102,7 @@ src/main/scala/com/gridgame/
 
 src/test/scala/com/gridgame/   the tests, mirroring the source tree
 scripts/     the Python asset generators and galleries, and the packaging scripts
-worlds/      the maps (JSON)          sprites/  tiles and 112 character sheets
+worlds/      the maps (JSON)          sprites/  tiles, items and 112 character sheets
 sounds/      generated audio          i18n/     the UI's text per language
 design/      feature docs              plans/    work plans
 docs/        the GitHub Pages website (not documentation of the code)
@@ -127,14 +129,14 @@ ops/kubernetes/      the servers on Kubernetes (Agones), and a local kind cluste
 | The server: its packages, GameServer, a match, bots, lobbies | [server/CLAUDE.md](src/main/scala/com/gridgame/server/CLAUDE.md) |
 | The client: its layers, its two windows, memory and performance, packaging the apps | [client/CLAUDE.md](src/main/scala/com/gridgame/client/CLAUDE.md) |
 | GameClient: the client's state, what resets when, projectiles flown between the server's ticks | [client/game/CLAUDE.md](src/main/scala/com/gridgame/client/game/CLAUDE.md) |
-| The renderer: the frame, the painters, terrain, players, lights, the pointer, the audit | [client/render/CLAUDE.md](src/main/scala/com/gridgame/client/render/CLAUDE.md) |
+| The renderer: the frame, the painters, terrain, players, lights, a hit's blood, the pointer, the HUD (the menus' glass, a kill announced and the run of them), the camera's zoom, the menu Esc brings up and the scoreboard Tab holds up in a match, the audit | [client/render/CLAUDE.md](src/main/scala/com/gridgame/client/render/CLAUDE.md) |
 | How projectiles are drawn | [client/render/projectiles/CLAUDE.md](src/main/scala/com/gridgame/client/render/projectiles/CLAUDE.md) |
 | How explosions and splashes are drawn | [client/render/blasts/CLAUDE.md](src/main/scala/com/gridgame/client/render/blasts/CLAUDE.md) |
 | OpenGL primitives: batches, strokes, fonts, post-processing, quality tiers | [client/gl/CLAUDE.md](src/main/scala/com/gridgame/client/gl/CLAUDE.md) |
-| The menus: screens, their look (the world behind them, the stylesheet, the maps drawn as models), why every repaint is expensive, and coming back from a match | [client/ui/CLAUDE.md](src/main/scala/com/gridgame/client/ui/CLAUDE.md) |
+| The menus: screens, their look (the world behind them, the stylesheet, the maps drawn as models and picked in a carousel), why every repaint is expensive, and coming back from a match | [client/ui/CLAUDE.md](src/main/scala/com/gridgame/client/ui/CLAUDE.md) |
 | Sound at runtime: the mixer, which sound every attack makes | [client/audio/CLAUDE.md](src/main/scala/com/gridgame/client/audio/CLAUDE.md) |
 | Tests: the suites, the test kits, conventions | [src/test/CLAUDE.md](src/test/CLAUDE.md) |
-| Assets: tiles, maps, character sprites, sounds, icons | [scripts/CLAUDE.md](scripts/CLAUDE.md), then [scripts/SPRITES.md](scripts/SPRITES.md), [scripts/SOUNDS.md](scripts/SOUNDS.md) |
+| Assets: tiles, maps, character sprites, the items, sounds, icons | [scripts/CLAUDE.md](scripts/CLAUDE.md), then [scripts/SPRITES.md](scripts/SPRITES.md), [scripts/SOUNDS.md](scripts/SOUNDS.md) |
 | The website and releases | [tools/CLAUDE.md](src/main/scala/com/gridgame/tools/CLAUDE.md) |
 
 ## Rules that hold everywhere

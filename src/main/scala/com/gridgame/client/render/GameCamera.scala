@@ -1,10 +1,15 @@
 package com.gridgame.client.render
 
+import com.gridgame.client.gl.RenderQuality
 import com.gridgame.common.Constants
 
 /**
  * Camera state for the game view: smooth-lerped position, screen shake, zoom.
- * Shared between the JavaFX and OpenGL renderers.
+ *
+ * The zoom is how many of the window's units a unit of the world covers: `Constants.CAMERA_ZOOM`
+ * (1.6) in the widest view, the default, and up to twice that as the player zooms in
+ * (RenderQuality.zoom, the settings' camera zoom). Each [[update]] is told the frame's, and the
+ * mouse is read into the world with the zoom of the last one, as its offsets are.
  */
 class GameCamera(clock: FrameClock = FrameClock.System) {
   private val HW = Constants.ISO_HALF_W
@@ -14,9 +19,10 @@ class GameCamera(clock: FrameClock = FrameClock.System) {
   var visualX: Double = Double.NaN
   var visualY: Double = Double.NaN
 
-  // Last computed camera offsets
+  // Last computed camera offsets, and the zoom they were worked out for
   private var _camOffX: Double = 0.0
   private var _camOffY: Double = 0.0
+  private var _zoom: Double = Constants.CAMERA_ZOOM
 
   // Screen shake state
   private var shakeIntensity: Double = 0.0
@@ -24,6 +30,8 @@ class GameCamera(clock: FrameClock = FrameClock.System) {
 
   def camOffX: Double = _camOffX
   def camOffY: Double = _camOffY
+  /** The window's units a unit of the world covered at the last [[update]]. */
+  def zoom: Double = _zoom
 
   /** Trigger screen shake. Intensity is in pixels, decays exponentially. */
   def addShake(intensity: Double): Unit = {
@@ -41,9 +49,13 @@ class GameCamera(clock: FrameClock = FrameClock.System) {
    * with the camera gliding between pixels, the detail on every tile crawled whenever anyone
    * moved. On the pixel grid each tile is sampled the same way wherever it is on screen. Entities
    * still move smoothly; they are drawn at their own positions.
+   *
+   * `zoom` is the frame's (see the class): the view `canvasW` x `canvasH` is the window over it. A
+   * shake moves the view as far on the screen at any zoom.
    */
   def update(targetX: Double, targetY: Double, deltaSec: Double, canvasW: Double, canvasH: Double,
-             pixelsPerUnit: Double = 0.0): Unit = {
+             pixelsPerUnit: Double = 0.0, zoom: Double = Constants.CAMERA_ZOOM): Unit = {
+    _zoom = zoom
     if (visualX.isNaN) {
       visualX = targetX
       visualY = targetY
@@ -60,14 +72,15 @@ class GameCamera(clock: FrameClock = FrameClock.System) {
     _camOffX = canvasW / 2.0 - playerSx
     _camOffY = canvasH / 2.0 - playerSy
 
-    // Apply screen shake
+    // Apply screen shake: as far on the screen whatever the zoom (in the widest view's units)
     if (shakeIntensity > 0.3) {
       shakeSeed = shakeSeed * 6364136223846793005L + 1442695040888963407L
       val rx = ((shakeSeed >> 16) & 0xFFFF).toDouble / 32768.0 - 1.0
       shakeSeed = shakeSeed * 6364136223846793005L + 1442695040888963407L
       val ry = ((shakeSeed >> 16) & 0xFFFF).toDouble / 32768.0 - 1.0
-      _camOffX += rx * shakeIntensity
-      _camOffY += ry * shakeIntensity * 0.6 // less vertical shake
+      val onScreen = if (zoom == Constants.CAMERA_ZOOM) shakeIntensity else shakeIntensity * Constants.CAMERA_ZOOM / zoom
+      _camOffX += rx * onScreen
+      _camOffY += ry * onScreen * 0.6 // less vertical shake
       // Exponential decay
       shakeIntensity *= Math.exp(-12.0 * deltaSec)
       if (shakeIntensity < 0.3) shakeIntensity = 0.0
@@ -85,15 +98,17 @@ class GameCamera(clock: FrameClock = FrameClock.System) {
     visualY = Double.NaN
   }
 
-  /** Convert screen coordinates to world coordinates, accounting for zoom. */
-  def screenToWorld(sx: Double, sy: Double): (Double, Double) = {
-    val zoom = Constants.CAMERA_ZOOM
-    IsometricTransform.screenToWorld(sx, sy, _camOffX, _camOffY, zoom)
-  }
+  /** Convert screen coordinates (the window's units) to world coordinates, at the last update's zoom. */
+  def screenToWorld(sx: Double, sy: Double): (Double, Double) =
+    IsometricTransform.screenToWorld(sx, sy, _camOffX, _camOffY, _zoom)
 
   /** Allocation-free screenToWorld. Results available via IsometricTransform.lastWorldX/lastWorldY. */
-  def screenToWorldInto(sx: Double, sy: Double): Unit = {
-    val zoom = Constants.CAMERA_ZOOM
-    IsometricTransform.screenToWorldInto(sx, sy, _camOffX, _camOffY, zoom)
-  }
+  def screenToWorldInto(sx: Double, sy: Double): Unit =
+    IsometricTransform.screenToWorldInto(sx, sy, _camOffX, _camOffY, _zoom)
+}
+
+object GameCamera {
+  /** The window's units a unit of the world covers at the player's zoom (RenderQuality.zoom): the
+    * widest view's CAMERA_ZOOM, times 1 to 2. */
+  def playersZoom: Double = Constants.CAMERA_ZOOM * RenderQuality.zoom
 }

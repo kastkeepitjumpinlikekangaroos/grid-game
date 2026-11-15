@@ -6,23 +6,26 @@ package com.gridgame.common.model
  * CPU ([[shade]], which the shader follows line for line).
  *
  * Every ground that meets its neighbours this way has a layer, low to high: open space (the space
- * maps' void), the space maps' deck, deep water, water, ice, dirt, path, sand, snow, grass (and the
- * flowers, which are grass). Where layers meet, the higher spills over the lower. The edge runs where
+ * maps' void), the space maps' deck, deep water, water, lava, ice, dirt, path, sand, the desert's
+ * dunes, snow, the volcano's scorched rock, the ash lying on it, grass (and the flowers, which are
+ * grass), the graveyard's grass. Where layers meet, the higher spills over the lower. The edge runs where
  * a bilinear blend of the cells' "this layer or higher", one value at each cell's centre, is one
  * half: a straight run of cells keeps its edge on the cells' own edge, a corner is rounded, and a
  * staircase of cells, which is how a map draws a curve or a slope, becomes a curve. The higher ground
  * is inked along its edge, as the characters are; where that edge faces the camera it stands on a
- * riser of its own (grass on soil, snow on a bank, the deck on its hull, over space); water carries a
- * line of foam wherever anything meets it, and space a glow, the edge of the field that keeps the
- * arena in.
+ * riser of its own (grass on soil, snow on a bank, scorched rock on its crust, the deck on its hull,
+ * over space); water carries a line of foam wherever anything meets it, lava its white heat, and
+ * space a glow, the edge of the field that keeps the arena in.
  *
- * Ground that is built in pieces (boardwalks, flagstones, metal), lava and blocks take no part (layer
+ * Ground that is built in pieces (boardwalks, flagstones, metal) and blocks take no part (layer
  * 0). A cell reads a neighbour like that as more of its own ground, so they keep the tiles' straight
  * edges, nothing spills over them and they spill over nothing.
  */
 object GroundEdges {
-  /** Layers run 1 to Count - 1; 0 takes no part. The shader packs a layer into four bits. */
-  val Count = 11
+  /** Layers run 1 to Count - 1; 0 takes no part. The shader packs a layer into four bits, and with
+    * sixteen they are all taken: another ground that grows has to share one (as the flowers share the
+    * grass's) or the packing has to change. */
+  val Count = 16
 
   private val layerById: Array[Int] = {
     val a = new Array[Int](Tile.all.map(_.id).max + 1)
@@ -30,13 +33,18 @@ object GroundEdges {
     a(Tile.Circuit.id) = 2
     a(Tile.DeepWater.id) = 3
     a(Tile.Water.id) = 4
-    a(Tile.Ice.id) = 5
-    a(Tile.Dirt.id) = 6
-    a(Tile.Path.id) = 7
-    a(Tile.Sand.id) = 8
-    a(Tile.Snow.id) = 9
-    a(Tile.Grass.id) = 10
-    a(Tile.Flowers.id) = 10
+    a(Tile.Lava.id) = 5
+    a(Tile.Ice.id) = 6
+    a(Tile.Dirt.id) = 7
+    a(Tile.Path.id) = 8
+    a(Tile.Sand.id) = 9
+    a(Tile.Dune.id) = 10
+    a(Tile.Snow.id) = 11
+    a(Tile.Cinder.id) = 12
+    a(Tile.Ash.id) = 13
+    a(Tile.Grass.id) = 14
+    a(Tile.Flowers.id) = 14
+    a(Tile.DeadGrass.id) = 15
     a
   }
 
@@ -97,21 +105,25 @@ object GroundEdges {
   /** Each layer's ground, the colour its tile is painted (so what spills over meets its own tiles
     * without a seam), by layer. */
   val base: Array[Int] = Array(0, Tile.Void.color, Tile.Circuit.color, Tile.DeepWater.color, Tile.Water.color,
-    Tile.Ice.color, Tile.Dirt.color, Tile.Path.color, Tile.Sand.color, Tile.Snow.color, Tile.Grass.color)
+    Tile.Lava.color, Tile.Ice.color, Tile.Dirt.color, Tile.Path.color, Tile.Sand.color, Tile.Dune.color,
+    Tile.Snow.color, Tile.Cinder.color, Tile.Ash.color, Tile.Grass.color, Tile.DeadGrass.color)
   /** The line round each layer's edge, a dark version of its own colour as the characters' are; 0 for
     * none (water meets deep water softly, and nothing is above space). */
-  val ink: Array[Int] = Array(0, 0, 0xFF0E3A40, 0, 0, 0, 0xFF74472E, 0xFF8C6843, 0xFF91744D, 0xFF96ACD6,
-    0xFF1E5B16)
+  val ink: Array[Int] = Array(0, 0, 0xFF0E3A40, 0, 0, 0, 0, 0xFF74472E, 0xFF8C6843, 0xFF91744D, 0xFF946C38,
+    0xFF96ACD6, 0xFF3A2228, 0xFF5C5557, 0xFF1E5B16, 0xFF24403A)
   /** The face of the step a layer stands on where its edge faces the camera, which of the
     * [[RiserHeights]] it is (1 or 2; 0 for a layer that lies flat), and the line at its foot. */
-  val riser: Array[Int] = Array(0, 0, 0xFF3E4876, 0, 0, 0, 0, 0, 0xFFCAA97E, 0xFFCEDEF6, 0xFFB0784A)
-  val riserKind: Array[Int] = Array(0, 0, 2, 0, 0, 0, 0, 0, 1, 1, 1)
-  val riserInk: Array[Int] = Array(0, 0, 0xFF161634, 0, 0, 0, 0, 0, 0xFF91744D, 0xFF96ACD6, 0xFF4D2214)
+  val riser: Array[Int] = Array(0, 0, 0xFF3E4876, 0, 0, 0, 0, 0, 0, 0xFFCAA97E, 0, 0xFFCEDEF6, 0xFF4E3438, 0,
+    0xFFB0784A, 0xFF5C4A54)
+  val riserKind: Array[Int] = Array(0, 0, 2, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 1)
+  val riserInk: Array[Int] = Array(0, 0, 0xFF161634, 0, 0, 0, 0, 0, 0, 0xFF91744D, 0, 0xFF96ACD6, 0xFF24141A, 0,
+    0xFF4D2214, 0xFF2A2030)
   /** What a layer carries round anything higher that meets it, how wide, and whether it fades away
     * from the edge (a glow) rather than ending in a line (foam); 0 for nothing. */
-  val shore: Array[Int] = Array(0, 0xFF6EE8FF, 0, 0, 0xFFE2F6FF, 0, 0, 0, 0, 0, 0)
-  val shoreWidth: Array[Double] = Array(0, 2.6, 0, 0, 1.25, 0, 0, 0, 0, 0, 0)
-  val shoreSoft: Array[Boolean] = Array(false, true, false, false, false, false, false, false, false, false, false)
+  val shore: Array[Int] = Array(0, 0xFF6EE8FF, 0, 0, 0xFFE2F6FF, 0xFFFFE680, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+  val shoreWidth: Array[Double] = Array(0, 2.6, 0, 0, 1.25, 2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+  val shoreSoft: Array[Boolean] = Array(false, true, false, false, false, true, false, false, false, false, false,
+    false, false, false, false, false)
 
   /** How far above a point, in world units along each axis, is the point a riser's height above it
     * on the screen: a display unit up is half a cell's height less of wx + wy. */

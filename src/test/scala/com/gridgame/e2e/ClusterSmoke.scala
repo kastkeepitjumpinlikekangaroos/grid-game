@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicReference
  *
  * Each match: three players sign up, meet in a lobby (a one-minute free-for-all), and are sent to a
  * match server; all three must be playing there and see each other, one walks and the others must
- * see it, one fires, one leaves (Esc twice) and must be gone from the others' screens, and the other
+ * see it, one fires, one leaves (the menu's Leave) and must be gone from the others' screens, and the other
  * two must reach the scoreboard when the minute is up. Matches run at once, packed onto the match
  * servers with room (several to one, as many as its capacity holds). Exits 0 if every match did all of it.
  */

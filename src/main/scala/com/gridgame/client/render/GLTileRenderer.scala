@@ -26,6 +26,13 @@ object GLTileRenderer {
   private val Gutter = 1 << MipLevels
   private val slotW = cellW + 2 * Gutter
   private val slotH = cellH + 2 * Gutter
+  // The PNG is one row of tiles, an id its column; the texture wraps them into as few bands as keep
+  // it inside 4096 texels across, each band a tile's frames down, the tiles shared evenly between
+  // them (55 in one row are 4840 texels, more than the oldest GPUs this runs on will take)
+  private val MaxAcross = 4096
+  private var perBand = MaxAcross / slotW
+  @inline private def slotX(id: Int): Int = (id % perBand) * slotW
+  @inline private def slotY(id: Int, frame: Int): Int = ((id / perBand) * numFrames + frame) * slotH
 
   private var texture: GLTexture = _
   private var numTiles: Int = 0
@@ -57,6 +64,10 @@ object GLTileRenderer {
       texture = GLTexture.decode("sprites/tiles.png") { (px, w, h) =>
         val nt = (w / cellW).max(1)
         val nf = (h / cellH).max(1)
+        numTiles = nt
+        numFrames = nf
+        val bands = (nt * slotW + MaxAcross - 1) / MaxAcross
+        perBand = (nt + bands - 1) / bands
         contentTop = Array.ofDim[Int](nt, nf)
         var id = 0
         while (id < nt) {
@@ -85,7 +96,7 @@ object GLTileRenderer {
         GLTexture.padTransparentRings(px, w, h, cellW, cellH, 2 * Gutter)
         // Each cell into its slot, the gutter round it its own border texels again, and its halvings,
         // a slot at a time: the slots line up with every halving, so a slot's are the atlas's there
-        val tex = GLTexture.allocate(nt * slotW, nf * slotH, MipLevels)
+        val tex = GLTexture.allocate(perBand * slotW, bands * nf * slotH, MipLevels)
         val levels = Array.tabulate(MipLevels + 1)(l => GLTexture.allocPixels((slotW >> l) * (slotH >> l) * 4))
         try {
           // in the decoded pixels' byte order, so a texel is copied as an int and comes out as it went in
@@ -109,7 +120,7 @@ object GLTileRenderer {
               var l = 0
               while (l <= MipLevels) {
                 if (l > 0) GLTexture.halve(levels(l - 1), slotW >> (l - 1), slotH >> (l - 1), levels(l))
-                GLTexture.upload(tex, l, (t * slotW) >> l, (f * slotH) >> l, slotW >> l, slotH >> l, levels(l))
+                GLTexture.upload(tex, l, slotX(t) >> l, slotY(t, f) >> l, slotW >> l, slotH >> l, levels(l))
                 l += 1
               }
               t += 1
@@ -121,11 +132,9 @@ object GLTileRenderer {
       }
       texelU = 1f / texture.width
       texelV = 1f / texture.height
-      numTiles = (texture.width / slotW).max(1)
-      numFrames = (texture.height / slotH).max(1)
       regions = Array.tabulate(numTiles) { id =>
         Array.tabulate(numFrames) { frame =>
-          texture.region(id * slotW + Gutter, frame * slotH + Gutter, cellW, cellH)
+          texture.region(slotX(id) + Gutter, slotY(id, frame) + Gutter, cellW, cellH)
         }
       }
       // Atlas cells are 2x the display cell, so an atlas row is half a display pixel.
@@ -133,7 +142,7 @@ object GLTileRenderer {
       trimmed = Array.tabulate(numTiles) { id =>
         Array.tabulate(numFrames) { frame =>
           val top = if (contentTop == null) 0 else contentTop(id)(frame)
-          texture.region(id * slotW + Gutter, frame * slotH + Gutter + top, cellW, cellH - top)
+          texture.region(slotX(id) + Gutter, slotY(id, frame) + Gutter + top, cellW, cellH - top)
         }
       }
       trimTopPx = Array.tabulate(numTiles) { id =>
@@ -167,8 +176,8 @@ object GLTileRenderer {
     if (numTiles == 0) return
     val id = if (tileId >= 0 && tileId < numTiles) tileId else 0
     val f = frame % numFrames
-    val u0 = (id * slotW + Gutter) * texelU
-    val v0 = (f * slotH + Gutter) * texelV
+    val u0 = (slotX(id) + Gutter) * texelU
+    val v0 = (slotY(id, f) + Gutter) * texelV
     batch.drawQuad(texture,
       xl, ym, u0, v0 + midRow * texelV,
       xc, yt, u0 + centerCol * texelU, v0 + topRow * texelV,

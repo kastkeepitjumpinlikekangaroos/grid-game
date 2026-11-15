@@ -61,3 +61,17 @@ scala_junit_test(
         "@maven//:junit_junit",
     ],
 )
+
+# The maps as a carousel: stepped through, picked in the strip, keyed, the strip sliding to the pick
+scala_junit_test(
+    name = "map_carousel_test",
+    srcs = ["MapCarouselTest.scala"],
+    env = {"GRIDGAME_AUDIO": "off"},
+    suffixes = ["Test"],
+    deps = [
+        "//src/main/scala/com/gridgame/client:client_lib",
+        "//src/main/scala/com/gridgame/common",
+        "//src/test/scala/com/gridgame/client:client_test_kit",
+        "@maven//:junit_junit",
+    ],
+)

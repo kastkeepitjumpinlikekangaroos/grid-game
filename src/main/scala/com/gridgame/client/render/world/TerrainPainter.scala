@@ -411,7 +411,9 @@ private[render] final class TerrainPainter(ctx: RenderContext) {
           // Collect special tiles for overlay pass. Not water or ice: their tiles animate and
           // shine on their own, and the glints, ripples and frost needles drawn over them turned a
           // sea into static and a frozen pond into flocks of white birds.
-          if (tid == 10 || tid == 15 || tid == 24) {
+          // Lava the same, but for a vent here and there: a lake of it is hundreds of cells, more than
+          // there are overlays to go round, and one on every cell was a lattice of them
+          if ((tid == 10 && tileHash(wx, wy, 0) < 0.22f) || tid == 15 || tid == 24) {
             if (_specialTileCount < overlayBudget) {
               _specialTileWX(_specialTileCount) = wx
               _specialTileWY(_specialTileCount) = wy
@@ -421,10 +423,20 @@ private[render] final class TerrainPainter(ctx: RenderContext) {
           }
           // Lava and energy field tiles emit light (reuse sx/sy computed above)
           if (tid == 10) { // Lava
-            val lavaPulse = (0.8 + 0.2 * Math.sin(animationTick * 0.06 + wx * 1.3 + wy * 0.7)).toFloat
-            lightSystem.addLight(sx, sy, 40f, 1f, 0.5f, 0.1f, 0.12f * lavaPulse)
+            // One light to every four cells each way, wide enough to run together: a light a cell
+            // filled the pool from a lake's far rows and left its near ones dark
+            if ((wx & 3) == 0 && (wy & 3) == 0) {
+              val lavaPulse = (0.85 + 0.15 * Math.sin(animationTick * 0.05 + wx * 1.3 + wy * 0.7)).toFloat
+              lightSystem.addLight(sx, sy, 120f, 1f, 0.5f, 0.1f, 0.2f * lavaPulse)
+            }
           } else if (tid == 15) { // EnergyField
             lightSystem.addLight(sx, sy, 35f, 0.5f, 0.2f, 0.8f, 0.08f)
+          } else if (cellTile eq Tile.Lantern) {
+            // a lantern's light on the ground round it, flickering a little, each in its own time
+            val flicker = (0.88 + 0.12 * Math.sin(animationTick * 0.11 + wx * 2.3 + wy * 1.7)).toFloat
+            lightSystem.addLight(sx, sy - 14f, 80f, 1f, 0.78f, 0.42f, 0.42f * flicker)
+          } else if (cellTile eq Tile.MagmaRock) {
+            lightSystem.addLight(sx, sy - 6f, 44f, 1f, 0.5f, 0.15f, 0.22f)
           }
         }
         wx += 1

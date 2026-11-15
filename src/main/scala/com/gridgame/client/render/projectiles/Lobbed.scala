@@ -20,26 +20,53 @@ private[render] object Lobbed {
   final val LOB_MINE = 5
   final val LOB_ICE = 6
   final val LOB_GLOB = 7
+  // A spade: a D grip on a wooden shaft, a steel collar, and a rounded blade with its upper face lit
+  // and a rib down the middle
   private val SHOVEL_PARTS = Array(
-    part(Array(-1.15f,-0.10f, 0.22f,-0.10f, 0.22f,0.10f, -1.15f,0.10f), WOOD_R, WOOD_G, WOOD_B, 0.12f),
-    part(Array(-1.30f,-0.34f, -1.10f,-0.34f, -1.10f,0.34f, -1.30f,0.34f), DKWOOD_R, DKWOOD_G, DKWOOD_B, 0.12f),
-    part(Array(0.18f,-0.44f, 0.72f,-0.42f, 1.16f,0f, 0.72f,0.42f, 0.18f,0.44f), DKSTEEL_R, DKSTEEL_G, DKSTEEL_B, 0.30f),
-    part(Array(0.30f,-0.26f, 0.70f,-0.24f, 0.96f,0f, 0.70f,0.10f, 0.30f,0.06f), STEEL_R, STEEL_G, STEEL_B, 0.18f)
+    part(Array(-1.02f,-0.09f, 0.30f,-0.09f, 0.30f,0.09f, -1.02f,0.09f), WOOD_R, WOOD_G, WOOD_B, 0.10f),
+    part(Array(-1.26f,-0.32f, -1.16f,-0.32f, -0.92f,-0.09f, -1.02f,-0.03f), DKWOOD_R, DKWOOD_G, DKWOOD_B, 0.10f),
+    part(Array(-1.26f,0.32f, -1.02f,0.03f, -0.92f,0.09f, -1.16f,0.32f), DKWOOD_R, DKWOOD_G, DKWOOD_B, 0.10f),
+    part(Array(-1.38f,-0.34f, -1.22f,-0.34f, -1.22f,0.34f, -1.38f,0.34f), DKWOOD_R, DKWOOD_G, DKWOOD_B, 0.10f),
+    part(Array(0.30f,-0.40f, 0.46f,-0.48f, 0.86f,-0.44f, 1.12f,-0.24f, 1.26f,0f, 1.12f,0.24f, 0.86f,0.44f, 0.46f,0.48f, 0.30f,0.40f),
+      DKSTEEL_R, DKSTEEL_G, DKSTEEL_B, 0.25f),
+    part(Array(0.38f,-0.36f, 0.84f,-0.34f, 1.06f,-0.18f, 1.14f,-0.04f, 0.38f,-0.04f), STEEL_R, STEEL_G, STEEL_B, 0.15f),
+    part(Array(0.14f,-0.15f, 0.36f,-0.22f, 0.36f,0.22f, 0.14f,0.15f), 0.34f, 0.37f, 0.44f, 0.20f)
   )
 
+  // A war hammer: a block of a head with a lit face, a flared striking cap at each end and a gold band
+  // round its middle, on a wooden haft with a leather grip and a gold pommel
   private val HAMMER_PARTS = Array(
-    part(Array(-1.20f,-0.11f, 0.42f,-0.11f, 0.42f,0.11f, -1.20f,0.11f), WOOD_R, WOOD_G, WOOD_B, 0.12f),
-    part(Array(0.38f,-0.56f, 1.18f,-0.50f, 1.18f,0.50f, 0.38f,0.56f), DKSTEEL_R, DKSTEEL_G, DKSTEEL_B, 0.35f),
-    part(Array(0.46f,-0.42f, 1.06f,-0.38f, 1.06f,-0.06f, 0.46f,-0.10f), STEEL_R, STEEL_G, STEEL_B, 0.20f),
-    part(Array(-1.32f,-0.16f, -1.14f,-0.16f, -1.14f,0.16f, -1.32f,0.16f), DKSTEEL_R, DKSTEEL_G, DKSTEEL_B, 0.30f)
+    part(Array(-1.20f,-0.10f, 0.50f,-0.10f, 0.50f,0.10f, -1.20f,0.10f), WOOD_R, WOOD_G, WOOD_B, 0.10f),
+    part(Array(-1.20f,-0.13f, -0.66f,-0.13f, -0.66f,0.13f, -1.20f,0.13f), LEATHER_R, LEATHER_G, LEATHER_B, 0.10f),
+    part(Array(-1.36f,-0.18f, -1.18f,-0.18f, -1.18f,0.18f, -1.36f,0.18f), GOLD_R, GOLD_G, GOLD_B, 0.10f),
+    part(Array(0.42f,-0.56f, 1.14f,-0.56f, 1.14f,0.56f, 0.42f,0.56f), DKSTEEL_R, DKSTEEL_G, DKSTEEL_B, 0.30f),
+    part(Array(0.50f,-0.50f, 1.06f,-0.50f, 1.06f,-0.04f, 0.50f,-0.04f), STEEL_R, STEEL_G, STEEL_B, 0.15f),
+    part(Array(0.32f,-0.74f, 1.24f,-0.74f, 1.24f,-0.50f, 0.32f,-0.50f), STEEL_R, STEEL_G, STEEL_B, 0.15f),
+    part(Array(0.32f,0.50f, 1.24f,0.50f, 1.24f,0.74f, 0.32f,0.74f), 0.34f, 0.37f, 0.44f, 0.25f),
+    part(Array(0.68f,-0.56f, 0.88f,-0.56f, 0.88f,0.56f, 0.68f,0.56f), GOLD_R, GOLD_G, GOLD_B, 0.10f)
   )
 
-  private[projectiles] val HORN_PARTS = Array(
-    part(Array(-1.05f,-0.30f, -0.30f,-0.34f, -0.30f,0.28f, -1.05f,0.32f), 0.90f, 0.86f, 0.76f, 0.20f),
-    part(Array(-0.32f,-0.36f, 0.42f,-0.50f, 0.42f,0.06f, -0.32f,0.26f), 0.86f, 0.81f, 0.70f, 0.20f),
-    part(Array(0.40f,-0.52f, 1.12f,-0.86f, 1.02f,-0.48f, 0.40f,0.04f), 0.78f, 0.72f, 0.62f, 0.20f),
-    part(Array(-1.10f,-0.24f, -0.86f,-0.26f, -0.86f,0.26f, -1.10f,0.24f), 0.46f, 0.34f, 0.28f, 0.25f)
-  )
+  // A bull's horn: a thick root curving up to a point, in four spans along its curve (each convex,
+  // and inked as one: drawPartsUnion), ivory darkening to its tip, with the ring it was torn off at
+  private[projectiles] val HORN_PARTS: Array[Part] = {
+    val n = 4
+    val spans = Array.tabulate(n) { i =>
+      def at(t: Float, side: Float): (Float, Float) = {
+        val m = 1f - t
+        val x = m * m * -1.05f + 2 * t * m * 0.35f + t * t * 1.2f
+        val y = m * m * 0.12f + 2 * t * m * 0.3f + t * t * -0.85f
+        val dx = 2 * m * 1.4f + 2 * t * 0.85f; val dy = 2 * m * 0.18f + 2 * t * -1.15f
+        val len = Math.sqrt(dx * dx + dy * dy).toFloat
+        val w = 0.4f * (1f - t) + 0.015f
+        (x - dy / len * w * side, y + dx / len * w * side)
+      }
+      val t0 = i.toFloat / n; val t1 = (i + 1f) / n
+      val (ax, ay) = at(t0, -1f); val (bx, by) = at(t1, -1f); val (cx, cy) = at(t1, 1f); val (dx, dy) = at(t0, 1f)
+      val k = i.toFloat / (n - 1)
+      part(Array(ax, ay, bx, by, cx, cy, dx, dy), 0.96f - 0.5f * k * k, 0.92f - 0.56f * k * k, 0.8f - 0.56f * k * k, 0.06f)
+    }
+    spans :+ part(Array(-1.18f,-0.34f, -0.92f,-0.36f, -0.9f,0.56f, -1.16f,0.54f), 0.5f, 0.3f, 0.22f, 0.1f)
+  }
 
   /** The object itself, drawn at the top of the arc. `spin` tumbles the rigid kinds; the
    *  round kinds stay upright and animate their own detail instead. */
@@ -52,7 +79,7 @@ private[render] object Lobbed {
     kind match {
       case LOB_SHOVEL => drawParts(sb, SHOVEL_PARTS, cx, cy, ca, sa, sz * 0.95f, dr, dg, db, a, ow)
       case LOB_HAMMER => drawParts(sb, HAMMER_PARTS, cx, cy, ca, sa, sz * 0.90f, dr, dg, db, a, ow)
-      case LOB_HORN   => drawParts(sb, HORN_PARTS, cx, cy, ca, sa, sz * 0.95f, dr, dg, db, a, ow)
+      case LOB_HORN   => drawPartsUnion(sb, HORN_PARTS, cx, cy, ca, sa, sz * 0.95f, dr, dg, db, a, ow)
 
       case LOB_BOMB =>
         // Cast-iron sphere with a banded seam, a collar and a burning fuse

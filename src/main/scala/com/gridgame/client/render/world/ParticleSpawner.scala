@@ -23,6 +23,7 @@ private[render] final class ParticleSpawner(ctx: RenderContext) {
     val w = canvasW.toFloat; val h = canvasH.toFloat
     val rate = (bgType: @scala.annotation.switch) match {
       case 5 => 26f * RenderQuality.particleScale  // snow: flakes falling in front of everything
+      case 7 => 9f * RenderQuality.particleScale   // volcano: embers rising
       case 0 => 12f  // sky: gentle leaf/pollen drift
       case 4 => 20f  // ocean: spray mist
       case 2 => 4f   // space: drifting dust motes
@@ -35,6 +36,7 @@ private[render] final class ParticleSpawner(ctx: RenderContext) {
       weatherSpawnAccum -= 1f
       (bgType: @scala.annotation.switch) match {
         case 5 => spawnSnowParticle(w, h)
+        case 7 => spawnEmberParticle(w, h)
         case 0 => spawnSkyParticle(w, h)
         case 4 => spawnOceanParticle(w, h)
         case 2 => spawnSpaceParticle(w, h)
@@ -56,6 +58,20 @@ private[render] final class ParticleSpawner(ctx: RenderContext) {
       pr = 0.94f, pg = 0.97f, pb = 1f, palpha = 0.6f + near * 0.4f,
       psize = 1f + near * 1.8f,
       shrink = false, soft = true
+    )
+  }
+
+  private def spawnEmberParticle(w: Float, h: Float): Unit = {
+    // An ember anywhere on screen, rising and drifting, dying as it goes: few and small, so none is
+    // taken for a shot
+    val near = rng.nextFloat()
+    weatherParticles.emit(
+      rng.nextFloat() * (w + 40f) - 20f, h * 0.15f + rng.nextFloat() * h * 0.9f,
+      -5f + rng.nextFloat() * 10f, -(10f + near * 14f),
+      plife = 2.2f + rng.nextFloat() * 2.2f,
+      pr = 1f, pg = 0.55f + rng.nextFloat() * 0.25f, pb = 0.18f, palpha = 0.35f + near * 0.35f,
+      psize = 0.8f + near * 1.1f,
+      additive = true, shrink = true, soft = true
     )
   }
 

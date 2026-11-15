@@ -11,10 +11,11 @@ the terrain or sinking into what stopped it. The renderers themselves are in a f
 | `Orbs` | `energyBolt` and its `ORB_*` styles |
 | `Blades`, `Shafts`, `Lobbed`, `Chains` | thrown weapons, point-first shafts, lobbed objects, restraints, and the pulls on a rope or a chain: the Pirate's grappling hook, the Gladiator's lasso, the Puppeteer's strings, the Chef's meat hook |
 | `AoeRings` | ground blasts |
-| `Missiles`, `Bolts`, `Beams` | bullets, fists; magic bolts with a shape of their own (void, gravity, data, holy light, the acid bomb's venom); laser bolts, rail slugs, the blood siphon, the gorgon eye, beam-like one-offs |
+| `Missiles`, `Bolts`, `Beams` | fists (the rounds are `Arsenal`'s); magic bolts with a shape of their own (void, gravity, data, holy light, the acid bomb's venom); laser bolts, rail slugs, the blood siphon, the gorgon eye, beam-like one-offs |
 | `Tethers`, `Grabs` | pulls tied to their thrower and reeled back in: the tentacles, the vines, the Bear's and the Gorilla's arms, the Griffin's leash of feathers, the Death Knight's chain, the Chameleon's tongue, the Mummy's bandage, the Shark on its surge; the Grasping Dead's hands |
 | `Electricity` | lightning and thunder |
-| `Heavies`, `Undead`, `Bites` | the rocket, the boulders (rock, ice, rooting), the geyser, the sword wave; the undead's; the birds' kicks (`birdFoot`), claw marks, the Vampire's bite, the Scorpion's sting, the Shark lunging, the Minotaur's horn, the Wolf's spirit |
+| `Slashes` | cuts, and what every one of them is painted with (see *A cut is a blade of light*): the Samurai's Crescent Cut, the Reaper's Reap, and the band, the smear and the swoosh the claw marks and the swung blades draw theirs with |
+| `Heavies`, `Undead`, `Bites` | the rocket, the boulders (rock, ice, rooting), the geyser; the Vampire's bats, the dead raised, the wail, the Ghoul's head (Devour), the Reaper's scythe; the birds' kicks (`birdFoot`), claw marks, the Vampire's bite, the Scorpion's sting, the Shark lunging, the Minotaur's horn, the Wolf's spirit |
 | `Songs`, `Winds`, `Surges` | one character's own look for an attack (see *A projectile is drawn as its thrower's*): sound — the Bard's, the Musician's, the Sphinx's, the Harpy's, the Banshee's; wind — the Windwalker's, the Cloudrunner's, the Raptor's; what surges along the ground — the Tidecaller's, the Sandstorm's, the Inferno's, the Scorpion's, the Barbarian's |
 | `Spirits`, `Necromancy` | the ghosts' own: the Wraith's hood, the Phantom's ghost-blade and half-mask, the Poltergeist's crockery, the Banshee's tear, the Shade's grin; the undead's: the Revenant's helm, the Necromancer's skull, the Lich's hand, grave-ice and phylactery, the Shadowfiend's winged eye |
 | `Relics`, `Venoms` | things with a shape of their own: the Mummy's scarab and death mask, Anubis's ankh and jackal, the Yokai's foxfire and ofuda, the Djinn's lamp, the Runesmith's runestones, the Alchemist's flasks; poison: the Plague Doctor's fly-blown glob and skull of miasma, the Serpent's snake, the Hydra's braid, head and swamp gas, the Chimera's fire-and-venom, Medusa's ouroboros |
@@ -104,7 +105,9 @@ The pulls and the short strikes went the same way (see *Pulls are tied to whoeve
 *Kicks, claws, bites and stings*): eight characters drew someone else's — the Kraken the Spaceman's
 green tentacle, the Gorilla the Bear's paw, the Thornweaver the Druid's vine, the Gladiator and the
 Puppeteer the Pirate's grappling hook, the Hawk and the Griffin the Raptor's kick, the Bear the
-Wolf's claws — and each has its own now.
+Wolf's claws — and each has its own now. (The Gladiator's rope has since become a type of its own,
+the `LASSO`, which holds its catch where the `ROPE` only pulls: his lasso is that type's look in
+the registry.)
 
 **A look carries its own colour.** A projectile's light and the embers it sheds were its thrower's
 player colour, which is random, and a second light by its element: on a dark map the Necromancer's
@@ -323,6 +326,194 @@ stinger and the lasers lower than before on pale ground (its `strong` counts the
 lost) but they read by their ink, judged on its sheets; the kicks, the fang, the grabs and the vines
 score higher.
 
+## The last of the hazes (2026-11-13)
+
+A pass over every look in all four headings (`--focus=` for all 236, with `GRIDGAME_POLYCHECK=1`:
+nothing misdrawn, no fill folding) found the looks still built the oldest way: a flat shape under a
+dark or pale haze, with speed lines, a ribbon, afterimages, a ring, blobs and sparkle stars heaped
+round it, none of it inked. Each is its thrower's own now, drawn as the newer looks are:
+- **The Reaper's scythe** (`drawScythe`) was a grey pie wedge on a stub of handle. It is the scythe
+  off the Reaper's shoulder, tumbling: the long snath with its two grips, the blade curving off its
+  head to a point (a band, `SCY_BLADE`, spine and cutting edge), the violet of the swing swept round
+  behind the point. **Reap** was three translucent arcs and a row of dots: it is the blade alone,
+  spectral, an inked violet crescent deepest toward its heel, souls streaming back out of its hollow.
+- **The Ghoul's Devour** was two maroon dentures one above the other whichever way it flew, a
+  hamburger. It is the Ghoul's own head, jaws first, side on and the right way up at every heading
+  (mirrored flying left): green skin, the yellow eye, crooked teeth round a dark mouth, chewing as it
+  comes and shut over the last of its reach.
+- **The Vampire's bats** were seven near-black specks circling a smudge. Five bats now fly a ragged V
+  behind a big one on the hitbox, plum on crimson wings scalloped in two spans, each beating in its
+  own time. A bat faces us whichever way the swarm flies: drawn from above, wings across the heading,
+  it is a moth.
+- **The Samurai's Crescent Cut** (`drawSwordWave`) was a grey wedge in a haze. It became one inked
+  crescent of blue-white light, pointed at both horns, still as wide as it strikes, the air streaking
+  back off it and a few petals turned over behind (and, with Reap and the claw marks, has been
+  redrawn since: *A cut is a blade of light*).
+- **The Minotaur's horn** (its primary and its Horn Toss) was a tube in three joints: its spans were
+  each inked (`drawParts`). It is one curved horn drawn to a point, ivory darkening to its tip, inked
+  as one (`drawPartsUnion`, `drawPartsDirUnion`), bowing up the screen whichever way it flies.
+- **The fists** were a beige block 64 units long beside a 48-unit player: a fifth smaller, a rounder
+  fist shaded underneath, the thumb across it, hand wraps at the wrist. **The axes** have a bright
+  bevel on a darker cheek, and the Skeleton King's is old yellowed bone with white teeth.
+
+`Glyphs.crescentPts` lays a crescent in the ground plane out as a band (for `fillRibbon`, and the
+same points its outline): the two cuts are it. Measured back to back (`render_bench --types=` the
+thirteen types, 150 in flight on the Meadow at `--at=60,16`, 4480x2404, High, three interleaved
+pairs after a 900-frame warm-up): 108.3 → 100.4 million fragments a frame (the depth pass 52.3 →
+47.5, the wall-passers 3.8 → 0.7), frame building 2.0-3.1 ms either way, 4.2-5.9 KB a frame
+allocated either way, no GC. Left as they are, and the weakest of what remains: the ground rings
+(`aoeRing`, twenty-one slams: pale and all alike, but a slam goes off as it is cast, so its ring is
+on screen for a tick before its blast), the Wail (retired from the roster), the lobbed hammer and
+shovel.
+
+## Every heading, not four (2026-11-13)
+
+The Yokai's foxfire drew its tail wrong at some headings and right at others, and the four headings
+of a focus sheet did not show it. `--compass=` (below) draws a look at sixteen headings, and
+`GRIDGAME_POLYCHECK=1` now also prints `[FOLDED]` for an open stroke folded over itself
+(`ShapeBatch.checkFold`). What that pass found, and the rules it leaves:
+
+- **A wide stroke along a bent spine folds.** The foxfire and the Inferno's flame were each four
+  `strokePolylineVar` layers, up to 18 wide, along a 30-long wavering five-point spine: where the
+  half width passes the radius of the bend the inside edge runs backwards, and each layer folds at a
+  different place, so the flame came out in facets, differently at every phase and heading. A flame
+  is now one shape, `Glyphs.flamePts` (a teardrop band for `fillRibbon`, its sides set off across the
+  tail's straight line so they cannot cross, with smaller ones inside it on the same spine); the
+  holy bolt's tail is one too. Thunder Strike's 30-wide glow stroke round a zigzag was the same fold,
+  as flat yellow panels: it is gone.
+- **A tail that "rises" must have somewhere to go at every heading.** The Inferno's tongues took
+  their rise off the tail's length, so flying up the screen they were stubs; the foxfire's tail was
+  `-heading * 0.8 - 0.6 up`, which collapses flying down. A tail is now what is behind it plus a
+  smaller lift, normalised, so it turns evenly with the heading.
+- **A curl is a spiral.** `Tethers.curlTip` swept one radius three quarters round in seven points:
+  a hexagon that crossed its own start (tentacles, vines). Fourteen points, tightening.
+- **Overlapping see-through bubbles are a tangle.** The swamp gas is inked as one clutch (all ink,
+  then solid bodies), with a ground shadow in place of the mist stroke that folded under it.
+
+Redrawn in the same pass, as weak rather than wrong: the holy bolt (an inked eight-pointed star
+under a halo with a tail of light, for the five types that share it), the data bolt and the virus
+(an arrow and a spiked cell in inked pixels that turn with them), `bulletProj` (a slug and a
+tracer), the ice shard, the lobbed hammer and spade, and the spirit orb (solid, with a wailing
+face). `[FOLDED]` still names eleven call sites, each looked at and left: short thick fingers, the
+Eye of Horus's paint, sparks, the genie's smoke.
+
+Measured as before (old and new interleaved, three pairs, 16 of these types, 150 in flight, Meadow,
+4480x2404, High): 111.5 → 100.4 million fragments a frame (depth pass 48.6 → 38.2), frame build
+3.4–3.9 → 3.5–4.2 ms CPU (the same within the run-to-run spread, the new a little the higher in
+each pair), 5.1 KB a frame allocated either way, no GC.
+
+## Arrows, darts, the spear and rounds (2026-11-13)
+
+`flyingShaft` drew every shaft inside speed lines, a ribbon, two afterimages, a halo on its head and
+a star on its point, and the shaft itself was a plank: an arrow's feathers were two tiles wider than
+its head. Now a shaft has a ground shadow and a wake of three lines (one off its tail, a thinner one
+off each side) and nothing else; only the spear keeps a flare on its point, which carries its
+distance-damage ramp.
+
+- **Arrows** are built by `Shafts.arrowParts`: a slim shaft with a nock, three feathers (one edge on),
+  a binding and a broadhead with a lit face, inked as one (`drawPartsDirUnion`), the feathers swapping
+  sides as it spins and a glint running down the head. The Ranger's are red and white on steel
+  (heavier for the primary), the poisoned one green; the Centaur's (`SHF_CARROW`, `ARROW_LIGHT`) hawk
+  feathers on a dark shaft with a bronze head.
+- **The blowpipe dart** is a needle on a slim shaft with a bound tuft of down; **the spear** an ash
+  shaft with a grip, a butt spike and a winged leaf blade.
+- **Rounds** are all `Arsenal.tracerRound`: a jacketed bullet with a rounded nose, a shaded underside,
+  a base, a groove and a turning glint, on an inked tracer, the air peeling off its nose as two hard
+  tapered strokes (a soft `fadeLine` that thin does not show). The Soldier's copper on red, the
+  Pilot's pair on yellow, and the Cyborg's and Mech Pilot's steel on blue (`drawSteelRound`, which
+  replaced `Missiles.bulletProj`).
+
+Measured (interleaved, three pairs, 14 of these types, 150 in flight): 88.4 → 81.2 million fragments
+a frame (depth pass 36.1 → 28.9), frame build 2.70–2.88 → 2.66–2.68 ms CPU, 4.1–4.3 KB a frame
+allocated (old 4.3–5.9), no GC.
+
+## Every flier is lively (2026-11-13)
+
+`GLProjectileRenderers.draw` gives everything that flies free a cartoon's motion, whatever its
+renderer draws, through `ShapeBatch.setStretchAbout` (a stretch along the heading and across it,
+about the hitbox, applied in `vertex` like `setScaleAbout`):
+
+- **A launch.** Over its first 2.2 cells (or 40% of a shorter reach) it grows out of nothing, past
+  its size (55% → 125% → 100%) and is drawn out a third along its flight, easing off; and it leaves
+  a burst (`powStar`, an inked nine-pointed star in its glow colour) where it was thrown from, out
+  and gone over the same distance.
+- **Never still.** After that it breathes 5% along its flight, squashing across to keep its area.
+- **Larger.** `LIVELY_SIZE`, 1.08 of what was authored.
+- **A smack and a poof.** What strikes terrain throws a `powStar` off the face (in place of a soft
+  flash) with its ring and chips; what runs out of range goes out in a `poof` of four inked lobes.
+
+`_plain` lists the types drawn as they are: the slams, what is fixed to the ground (lightning's
+channels, the fissure, the geyser, the grasping dead, the tidal wave, the tornado and black hole),
+what is tied to its thrower (tethers, chains), and what is lobbed on an arc of its own over a ground
+shadow, all of which a stretch about the hitbox would drag across the ground. A new type of those
+kinds goes in it. A projectile already being scaled (one sinking into what stopped it) is left alone
+too (`sb.transformed`).
+
+The gallery's sheets go through `draw`, so they show this; `--launch=NAMES` draws a launch, a third
+of a cell further in each cell. Measured against the commit before these passes (16 mixed types, 150
+in flight): 101.8 → 102.7 million fragments a frame (the size gives back what the redraws saved),
+frame build 3.4–3.7 → 3.5–4.0 ms CPU, 5 KB a frame allocated either way, no GC.
+
+## A cut is a blade of light (2026-11-14)
+
+The slashes were the plainest things left: the Crescent Cut and Reap each a thin crescent in one
+tone with a pale edge and a few streaks behind it, every claw mark three hairlines 29 units long and
+4 wide beside a 48-unit player (and a swing strikes 3.7 cells either side of itself:
+design/characters.md, *A melee swing strikes wide*), and every swung blade a small weapon tumbling
+in a grey band at two fifths alpha. `Slashes` is one way of drawing a cut, and all of them are drawn
+with it:
+
+- **A cut is a band with a leading edge and a trailing one**, laid out as `fillRibbon` wants it:
+  `fang` lays a crescent across the way it flies, `sliver` a claw mark along a spine, `comma` the
+  swoosh behind a point turning in the ground plane. `paint` draws any of them, back to front: the
+  smear it leaves (full where the blade is, nothing where it ends), its ink, its body from its colour
+  at the leading edge to a deep one at its back, a hot band over the leading quarter or so, thinner
+  toward the horns, and the edge in white. The shading across it is one primitive,
+  `ShapeBatch.fillRibbonGradient`.
+- **The Crescent Cut** (`drawSwordWave`) is as wide as it strikes still, nearly twice as deep, and
+  held 10 units off the ground over its own shadow. It is swung open from one horn over its first
+  sixth; its back is torn into five tongues of light, each flickering in its own time; a glint runs
+  along its edge; each horn peels the air back and scores the ground; two arcs of cut air hang behind
+  it; and eight petals of cherry blossom turn over through its wake.
+- **Reap** (`drawReap`) is the same blade in the Reaper's violet, deepest toward its heel, its
+  tongues longer (ghost-fire), dragging five souls behind it, each a pale teardrop with its eyes.
+- **Claw marks** (`Bites.clawRake`) are 1.65 times the size they were authored at and wider for
+  their length, a cut each: the claw's colour deepening to its back, white-hot along its leading
+  edge, a smear 2.3 of its size behind it, the middle one of three the longest, a flare as the
+  swipe begins. They are spaced so that none lies on the next.
+- **A swung blade turns in a wheel of its own cuts** (`Blades.bladeSpinner`, for every kind with an
+  edge: not the femur or the playing card): a swoosh swept 2.9 radians round behind its point and a
+  smaller one behind its butt, inked, in a colour the registry gives it (`cut =`: the katana's blue,
+  the Berserker's and Barbarian's axe orange, the Gladiator's gold, the Skeleton King's corpse green,
+  the Chef's knife cream) or the weapon's own (holy gold, the cursed red, the Revenant's cyan, the
+  Death Knight's violet). The throwing stars have two, opposite one another (steel blue, the
+  Assassin's violet, the Rogue's toxic green).
+- **The scythe's swing** is `Slashes.smear`: the swoosh with no ink, fading in from nothing, since
+  its own blade is already the biggest thing on it.
+
+Tried and thrown out on the way, each for a reason worth keeping:
+- **Every other station of the trailing edge drawn back is a saw**, or a seismograph: a torn edge is
+  tongues (`TONGUE`: six stations each, drawn out to a point at the middle and hollow either side),
+  of uneven lengths.
+- **A streak of one width off each horn is a post.** Flying up or down the screen the two of them
+  stood either side of the blade like a goal. They are wedges drawn to a point (`peel`), short, and
+  leaning in toward the middle of the wake.
+- **An inked swoosh in the steel's own colour is a second blade**: every sword came out a sickle. In
+  a colour of its own it is a cut. With no ink and at part alpha (`smear`) it is as faint as the band
+  it replaced.
+- **A cut flying ahead of a tumbling weapon is a pair of bat wings on it**: the weapon covers its
+  middle, and its horns stick out either side.
+- **A cut's hot band wider than a third of it makes the whole thing white**, a leaf or a feather;
+  the colour has to be most of what shows.
+
+Measured back to back (the old renderers compiled against the new jar and put ahead of it on the
+classpath; `render_bench --types=` the 21 types, 150 in flight on the Meadow at `--at=60,16`,
+4480x2404, High, three interleaved pairs after a 900-frame warm-up): 99.4 → 104.5 million fragments a
+frame (the depth pass 47.0 → 51.5, the wall-passers 0.9 → 1.5), which is the cuts being bigger; frame
+building 2.2–4.4 → 2.4–5.3 ms of CPU (the bench's two levels, either build on either), 4.9–5.8 KB a
+frame allocated either way, no GC. The whole gallery under `GRIDGAME_POLYCHECK=1` names nothing in
+them, and they were looked at in sixteen headings (`--compass=`) and from the throw (`--launch=`).
+
 ## Electricity is fixed to the ground
 
 A bolt's channel stays where it was drawn. Its kinks are keyed on points fixed to the ground
@@ -370,13 +561,14 @@ a smooth meander is a worm, and kinks small beside the stroke's width are a nood
   chain, the Chameleon's tongue, the Mummy's bandage, the Shark on its surge.
 - `gorgonEye(petrify)` — Medusa's gaze as a blinking almond eye with a slit pupil, ringed
   by crumbling stone.
-- `bladeSpinner(kind, …)` — thrown weapon tumbling end over end (axe, bone axe, katana,
-  chef's knife, sword, femur, cursed blade, playing card). Sells the rotation with a
-  swept arc band and silhouette ghosts rather than by smearing the shape.
+- `bladeSpinner(kind, …, cut)` — thrown weapon tumbling end over end (axe, bone axe, katana,
+  chef's knife, sword, femur, cursed blade, playing card). Sells the rotation with the cuts its
+  edge leaves round it (*A cut is a blade of light*; a pale swept band for the femur and the card)
+  and silhouette ghosts rather than by smearing the shape.
 - `flyingShaft(kind, …)` — shaft flying point-first (spear, arrow, poison arrow, blowdart,
   thorn, ice spike, void lance).
 - `shuriken(r, g, b, size)` — four-bladed throwing star, one swept blade stamped at exact
-  quarter turns, with a rimmed centre hole. Spin reads from a band swept across the blade
+  quarter turns, with a rimmed centre hole. Spin reads from two cuts swept round the blade
   tips; nothing is drawn on a radius out from the hub.
 - `lobbed(kind, …)` — object on an arc (bomb, flask, shovel, hammer, horn, spiked mine,
   ice chunk, mud glob) with landing shadow, target ring and bounce.
@@ -391,7 +583,7 @@ a smooth meander is a worm, and kinks small beside the stroke's width are a nood
   marks, the Scorpion's tail striking (see *Kicks, claws, bites and stings*).
 - `bulletProj`, `fistProj` — small fast round; gauntleted punch.
 
-**Specialized `draw*` renderers** for one-off projectiles: lightning (`lightningBolt(r, g,
+**Specialized `draw*` renderers** for one-off projectiles (the scythe, Devour and the bat swarm among them: *The last of the hazes*; Reap and the Crescent Cut: *A cut is a blade of light*): lightning (`lightningBolt(r, g,
 b, heavy)` — colour is a parameter so a storm reads yellow and a tesla coil reads arc-cyan;
 `heavy` is chain lightning's thicker bolt), thunder strike, grasping dead, frost comet (ice
 beam), boulder (a rock rolling and bouncing on its shadow; of ice, and rooting), the rocket, the
@@ -439,6 +631,11 @@ on the ground, where it strikes.
   `strokeLine` quads overlaps itself on the outside of every bend, and with any alpha below 1
   each overlap blends twice: the lightning bolts came out as chains of translucent rectangles.
   `strokePolyline` / `strokePolylineTapered` mitre the joins (see *Strokes are one band*).
+- **A shape in convex spans is inked as one.** Ink each span as it is filled and the ink of each
+  lies across the one before: a curved horn came out a jointed tube. All the ink first, then all the
+  fills (`drawPartsUnion`, `drawPartsDirUnion`, `Glyphs.inkAll`/`fillAll`).
+- **A creature seen from above is a different creature.** A bat with its wings across its heading
+  is a moth, and a head is a lump: draw it facing us, or side on and mirrored (`Glyphs.faceFrame`).
 - **Something standing up off the ground needs depth, not only height.** The Tidecaller's wave was
   first a wall — a band across its path standing straight up the screen — and a wave crossing the
   screen, whose width runs up the screen, came out a sliver. It is now a profile (a long back
@@ -546,6 +743,13 @@ bazel run //src/main/scala/com/gridgame/client:projectile_gallery -- out/dir --b
 bazel run //src/main/scala/com/gridgame/client:projectile_gallery -- out/dir --focus=LIGHTNING,TENTACLE
 bazel run //src/main/scala/com/gridgame/client:projectile_gallery -- out/dir --focus=SONIC_WAVE@Musician
 ```
+
+`--launch=NAMES` writes `launch_<NAME>.png`: a launch from the moment it is thrown, two headings, eight
+cells each.
+
+`--compass=NAMES` writes `compass_<NAME>.png`: the same sheet with sixteen headings, a sixteenth of a
+turn apart on screen, at one distance. It is what shows a tail or a head that goes wrong only on
+the diagonals. `ALL` names every look, for either option.
 
 `--focus=` writes one `focus_<NAME>.png` per type instead: four headings across (right, left,
 up, down on screen) and four moments down, the projectile further along each row. It is the

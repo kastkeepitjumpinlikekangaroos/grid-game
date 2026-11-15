@@ -66,6 +66,28 @@ class RosterBalanceTest {
     }
   }
 
+  @Test def aMeleePrimaryStrikesWide(): Unit = {
+    // A swing has to find someone a cell or two from where they are drawn, which is how far a
+    // runner is from their picture by the time the swing lands (design/characters.md, *A melee swing
+    // strikes wide*): every melee primary strikes within 3.7 cells of a point that hangs back a cell
+    // and a half behind it, and the heavy ones (the axes, the scythe, the hammer, the horn) 4.0
+    val heavy = Set(ProjectileType.AXE, ProjectileType.ARENA_AXE, ProjectileType.BONE_AXE, ProjectileType.SCYTHE,
+      ProjectileType.HAMMER, ProjectileType.HORN)
+    for (c <- ofRole(Melee)) {
+      val p = ProjectileDef.get(c.primaryProjectileType)
+      assertEquals(s"${c.displayName}'s ${p.name}", if (heavy(p.id)) 4.0f else 3.7f, p.hitRadius, 0.001f)
+      assertEquals(s"${c.displayName}'s ${p.name} hangs back", 1.5f, p.hitCentreBehind, 0.001f)
+      // Wider, not longer: ahead of itself it reaches the 2.2 cells it always did (the heavy ones 2.5)
+      assertEquals(s"${c.displayName}'s ${p.name} reaches ahead", if (heavy(p.id)) 2.5f else 2.2f, p.hitRadius - p.hitCentreBehind, 0.001f)
+    }
+    // No circle is wider than four cells: the projectile tick's grid shows that far round its centre
+    // (PlayerGridTest)
+    for (c <- all; t <- Seq(c.primaryProjectileType, c.qAbility.projectileType, c.eAbility.projectileType) if t >= 0 || ProjectileDef.get(t).id == t) {
+      val d = ProjectileDef.get(t)
+      assertTrue(s"${c.displayName}'s ${d.name} strikes ${d.hitRadius} cells round it", d.hitRadius <= 4.0f)
+    }
+  }
+
   // --- Health ---
 
   @Test def healthSitsInItsRolesBand(): Unit = {

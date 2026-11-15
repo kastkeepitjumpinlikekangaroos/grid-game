@@ -14,7 +14,7 @@ import java.util.UUID
 import scala.jdk.CollectionConverters._
 import com.gridgame.client.game.GameClient
 import com.gridgame.client.gl.{GLFWManager, GLWindow, RenderQuality}
-import com.gridgame.client.render.{GLGameRenderer, GLSpriteGenerator}
+import com.gridgame.client.render.{GameCamera, GLGameRenderer, GLSpriteGenerator}
 import com.gridgame.client.render.projectiles.GLProjectileRenderers
 
 /**
@@ -177,8 +177,9 @@ class RenderAuditApp extends Application {
     }
 
     def rects(s: Shot): Seq[(Int, (Int, Int, Int, Int))] = {
-      // Scene units to framebuffer pixels: the world is drawn at CAMERA_ZOOM in window units
-      val k = Constants.CAMERA_ZOOM * window.fbWidth.toFloat / window.width
+      // Scene units to framebuffer pixels: the world is drawn at the camera's zoom in window units
+      // (CAMERA_ZOOM, unless --zoom= says otherwise)
+      val k = (GameCamera.playersZoom * window.fbWidth / window.width).toFloat
       val cxPx = window.fbWidth / 2f; val cyPx = window.fbHeight / 2f
       s.ids.zip(slotList).map { case (id, (a, b)) =>
         val sx = cxPx + a * 2 * Constants.ISO_HALF_W * k

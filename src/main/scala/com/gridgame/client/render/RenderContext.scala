@@ -4,7 +4,7 @@ import com.gridgame.common.Constants
 
 import java.nio.FloatBuffer
 import com.gridgame.client.game.GameClient
-import com.gridgame.client.gl.{GLFontRenderer, GLTexture, GpuProfiler, LightSystem, PostProcessor, ShapeBatch, SpriteBatch, TextureRegion}
+import com.gridgame.client.gl.{DisplayFont, GLFontRenderer, GLTexture, GpuProfiler, LightSystem, PostProcessor, ShapeBatch, SpriteBatch, TextureRegion}
 
 /**
  * What every painter of a frame shares (see GLGameRenderer): the batches they draw with and which
@@ -24,6 +24,12 @@ private[render] final class RenderContext(val client: GameClient, clock: FrameCl
   var fontSmall: GLFontRenderer = _
   var fontMedium: GLFontRenderer = _
   var fontLarge: GLFontRenderer = _
+  // The HUD's (hud/HudStyle): small capitals over what they name, names and lines, numbers in Exo 2
+  // Black, and the lettered titles a kill and a death are announced in
+  var fontTiny: GLFontRenderer = _
+  var fontBody: GLFontRenderer = _
+  var fontNumber: GLFontRenderer = _
+  var display: DisplayFont = _
   var postProcessor: PostProcessor = _
   var lightSystem: LightSystem = _
   val damageNumbers = new DamageNumberSystem()
@@ -47,8 +53,12 @@ private[render] final class RenderContext(val client: GameClient, clock: FrameCl
   var canvasH: Double = 0
   // How opaque the overlay over the world is: it fades in with the match, as the world does
   var overlayAlpha = 1f
+  // How much bigger than in the widest view the camera's zoom draws the world (1 to 2): the overlay
+  // over it (name plates, health bars, damage numbers) is drawn in the widest view's units, each at
+  // where it is in the world times this, so it keeps its size on the screen as the world grows
+  var overlayScale = 1.0
   // Cached background type ID (avoids per-frame string matching in 3 places)
-  var bgType: Byte = 0 // 0=sky, 1=cityscape, 2=space, 3=desert, 4=ocean, 5=snow, 6=sea
+  var bgType: Byte = 0 // 0=sky, 1=cityscape, 2=space, 3=desert, 4=ocean, 5=snow, 6=sea, 7=volcano, 8=night
   // Whether projectiles light the ground round them: not in daylight (set with the grade)
   var projectileLights = true
   // Whether our aim is the mouse's pointer, read into the world for this frame's camera

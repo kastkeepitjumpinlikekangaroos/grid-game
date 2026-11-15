@@ -41,13 +41,20 @@ AUDIO_OFF = {"GRIDGAME_AUDIO": "off"}
     ("game_client_lobby_test", "GameClientLobbyTest.scala"),
     ("game_client_spawn_requests_test", "GameClientSpawnRequestsTest.scala"),
     ("game_client_knockback_test", "GameClientKnockbackTest.scala"),
+    # Every hit heard, in order, with where the projectile struck: what the renderer bleeds
+    ("hit_log_test", "HitLogTest.scala"),
     # Casting mode: Q or E aimed and cast by a click, what goes off at once, and what is shown is cast
     ("game_client_aim_test", "GameClientAimTest.scala"),
     # R: both abilities ready again from the press, its own minute from the match's start, a refusal undone
     ("game_client_reset_test", "GameClientResetTest.scala"),
+    # The menu Esc brings up and the scoreboard Tab holds up, through the real keyboard and mouse:
+    # nothing walks or casts under the menu, a click it took fires nothing, Tab never stuck up
+    ("game_client_menu_test", "GameClientMenuTest.scala"),
     ("projectile_flight_test", "ProjectileFlightTest.scala"),
     ("projectile_thrower_test", "ProjectileThrowerTest.scala"),
     ("lobby_room_screen_test", "LobbyRoomScreenTest.scala"),
+    # The form for a new lobby: the lobby made on the map picked in its carousel
+    ("lobby_browser_screen_test", "LobbyBrowserScreenTest.scala"),
     # The login screen: the form and Remember me, the saved login's card, another account
     ("welcome_screen_test", "WelcomeScreenTest.scala"),
     # Logging in with a refresh token, and out: what the client sends, and the order it hears in

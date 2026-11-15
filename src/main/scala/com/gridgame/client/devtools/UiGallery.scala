@@ -5,7 +5,7 @@ import com.gridgame.client.diagnostics.{Diagnostics, PastFrame}
 import com.gridgame.client.game.GameClient
 import com.gridgame.client.i18n.Messages
 import com.gridgame.client.net.{SavedLogin, ServerIdentityChangedException}
-import com.gridgame.client.ui.{MapPreview, Theme, Widgets, WorldBackdrop}
+import com.gridgame.client.ui.{MapCarousel, MapPreview, Theme, Widgets, WorldBackdrop}
 import com.gridgame.client.ui.screens.{LastLogin, ReportAbout}
 import com.gridgame.common.model.{CharacterId, MatchResults, Position, WorldData}
 import com.gridgame.common.protocol._
@@ -116,6 +116,11 @@ class UiGalleryApp extends Application {
       app.showLobbyBrowser(s, "")
       lobbyList(app.client)
     })),
+    // A map further along picked in the form's carousel: the strip slid to keep it in the middle
+    "04b_lobbies_map_picked" -> (f => shoot(f, (app, s) => {
+      app.showLobbyBrowser(s, "")
+      lobbyList(app.client)
+    }, click = root => pickInCarousel(root, 11))),
     "05_lobbies_empty" -> (f => shoot(f, (app, s) => app.showLobbyBrowser(s, Messages.t("Lobby was closed by the host")))),
     "06_room_guest" -> (f => shoot(f, (app, s) => {
       joinLobby(app.client, host = false, teams = false)
@@ -127,6 +132,19 @@ class UiGalleryApp extends Application {
       app.showLobbyRoom(s)
       chat(app.client)
     })),
+    // A host filling a free-for-all (32 seats) with bots: the roster grows under Add Bot and Remove Bot
+    "07b_room_host_bots" -> (f => shoot(f, (app, s) => {
+      joinLobby(app.client, host = true, teams = false, bots = 12, maxPlayers = 32)
+      app.showLobbyRoom(s)
+      chat(app.client)
+    })),
+    // The host's map chip opens every map in a carousel over the room; another map picked in it
+    "07c_room_host_map_picker" -> (f => shoot(f, (app, s) => {
+      joinLobby(app.client, host = true, teams = false)
+      app.showLobbyRoom(s)
+      chat(app.client)
+      buttons(s.getScene.getRoot).find(_.getStyleClass.contains("chip-button")).foreach(_.fire())
+    }, click = root => pickInCarousel(root, 5))),
     "08_practice" -> (f => shoot(f, (app, s) => app.showPracticeSetup(s))),
     "09_ranked" -> (f => shoot(f, (app, s) => {
       app.client.rankedElo = 1284
@@ -304,14 +322,16 @@ class UiGalleryApp extends Application {
   /** The run before this one never closed: a left-over marker, and the match it was in. */
   private def crashedRun(): Unit = freshDiagnostics(leftOver = true)
 
-  /** Every map's preview at each size the menus draw one: the lobby form's, a lobby row's, the
-    * lobby room's. A new map's has to read as the whole map at all three. */
+  /** Every map's preview at each size the menus draw one: the lobby form's (its carousel's big one),
+    * a lobby row's and the form carousel's strip's under it, the lobby room's and the map picker's
+    * strip's under that. A new map's has to read as the whole map at all of them. */
   private def mapPreviews(stage: Stage): Unit = {
     import javafx.scene.layout.{FlowPane, VBox}
     val all = new FlowPane(24, 24)
     for (i <- 0 until com.gridgame.common.WorldRegistry.size) {
-      val sizes = new javafx.scene.layout.HBox(12, MapPreview.view(i, 320, 180, 14), MapPreview.view(i, 104, 58, 10),
-        MapPreview.view(i, 136, 76, 12))
+      val sizes = new javafx.scene.layout.HBox(12, MapPreview.view(i, 320, 180, 14),
+        new VBox(12, MapPreview.view(i, 104, 58, 10), MapPreview.view(i, MapCarousel.Form.thumbWidth, MapCarousel.Form.thumbHeight, MapCarousel.ThumbRadius)),
+        new VBox(12, MapPreview.view(i, 136, 76, 12), MapPreview.view(i, MapCarousel.Wide.thumbWidth, MapCarousel.Wide.thumbHeight, MapCarousel.ThumbRadius)))
       sizes.setAlignment(javafx.geometry.Pos.TOP_LEFT)
       all.getChildren.add(new VBox(8, Widgets.h3(com.gridgame.common.WorldRegistry.getDisplayName(i)), sizes))
     }
@@ -345,13 +365,13 @@ class UiGalleryApp extends Application {
     lobbyPacket(c, LobbyAction.LIST_END, UUID.randomUUID())
   }
 
-  private def joinLobby(c: GameClient, host: Boolean, teams: Boolean): Unit = {
+  private def joinLobby(c: GameClient, host: Boolean, teams: Boolean, bots: Int = 1, maxPlayers: Int = 0): Unit = {
     val mode = if (teams) 1 else 0
-    lobbyPacket(c, LobbyAction.JOINED, c.getLocalPlayerId, name = "Friday Night Brawl", map = 4, minutes = 5,
-      players = 5, maxPlayers = if (teams) 6 else 8, gameMode = mode, teamSize = 3)
     val others = Seq(UUID.randomUUID() -> "Bramble", UUID.randomUUID() -> "Cinder", UUID.randomUUID() -> "Dewdrop")
-    val bots = Seq(new UUID(0, 101) -> "Bot 101")
-    val roster = (if (host) (c.getLocalPlayerId -> me) +: others else others.head +: (c.getLocalPlayerId -> me) +: others.tail) ++ bots
+    val botSeats = (0 until bots).map(i => new UUID(0, 101 + i) -> s"Bot ${101 + i}")
+    val roster = (if (host) (c.getLocalPlayerId -> me) +: others else others.head +: (c.getLocalPlayerId -> me) +: others.tail) ++ botSeats
+    lobbyPacket(c, LobbyAction.JOINED, c.getLocalPlayerId, name = "Friday Night Brawl", map = 4, minutes = 5,
+      players = roster.size, maxPlayers = if (maxPlayers > 0) maxPlayers else if (teams) 6 else 8, gameMode = mode, teamSize = 3)
     roster.foreach { case (id, n) => lobbyPacket(c, LobbyAction.MEMBER, id, name = n, players = roster.size, gameMode = mode, teamSize = 3) }
     c.isLobbyHost = host
     c.selectedCharacterId = CharacterId.Wizard.id
@@ -442,6 +462,13 @@ class UiGalleryApp extends Application {
     case other => Seq(other)
   }
   private def buttons(root: Node): Seq[Button] = all(root).collect { case b: Button => b }
+
+  /** Click the `map`th map in the strip of the (last) map carousel under `root`, as the player would. */
+  private def pickInCarousel(root: Node, map: Int): Unit =
+    all(root).filter(_.getStyleClass.contains("carousel-item")).takeRight(com.gridgame.common.WorldRegistry.size).lift(map).foreach { n =>
+      javafx.event.Event.fireEvent(n, new javafx.scene.input.MouseEvent(javafx.scene.input.MouseEvent.MOUSE_CLICKED, 0, 0, 0, 0,
+        javafx.scene.input.MouseButton.PRIMARY, 1, false, false, false, false, true, false, false, true, false, false, null))
+    }
 
   /**
    * Build a screen on a fresh app and client, then draw it at the window's size: `build` shows it,

@@ -17,24 +17,27 @@ scene target and then over the finished frame. Three Bazel libraries, each on th
 
 | Painter | Draws |
 |---|---|
-| `world/BackgroundPainter` | the sky, sea, city, desert, space or snow behind the map, cached in a target of its own |
-| `world/TerrainPainter` | the ground (every flat tile as an opaque diamond), animated tile overlays, water reflections, block shadows, and each block or prop in the depth pass |
+| `world/BackgroundPainter` | the sky, sea, city, desert, space, snow, volcano or night behind the map, cached in a target of its own |
+| `world/TerrainPainter` | the ground (every flat tile as an opaque diamond), animated tile overlays, water reflections, block shadows, each block or prop in the depth pass, and the light the terrain itself sheds (*The terrain's own light*) |
 | `world/GroundEdgePainter` | one soft, inked edge wherever two kinds of natural ground meet, over the ground's diamonds (*Where two kinds of ground meet*) |
 | `world/PlayerPainter` | players (everyone else where RemoteMotion has them, and us): sprite and the effects on them in the depth pass, their shadows and our ring on the ground before it (`drawGroundMarks`); notes their barriers, glows and name plates for later passes; their lights |
 | `world/StatusEffectPainter` | frost, stun stars, poison, roots, a slow, a speed boost, a shield bubble |
 | `world/GlowEffectPainter` | the glowing effects (a gem, a charge, a phase, a burn, a hit's flash, a cast's flash), deferred to one additive pass |
-| `world/ItemPainter` | items on the ground, their glows, pickup sparkles; the item shapes the HUD's inventory uses |
+| `world/ItemPainter`, `world/ItemTrack` | items on the ground, each a sprite of `ItemSprites`' floating over its shadow in the depth pass, its shadow and the light it sheds drawn with the ground (`drawGroundMarks`), popping into being as it appears and going with a puff when taken (`ItemTrack` says which is which); the items' pictures in the HUD's inventory (`drawIcon`) (*An item is drawn as the characters are*) |
 | `world/ProjectilePainter` | projectiles through GLProjectileRenderers: their lights (in their look's own colour where it has one, `glowOf`, else the thrower's), wall-passers lifted over the terrain, stopped ones fading, pulls reeled back in to their throwers (`drawReeled`: render/projectiles, *Pulls are tied to whoever is pulling*) |
 | `world/BarrierPainter` | raised barriers (design/barriers.md) |
-| `world/OpeningPainter` | the Teams wall, and the opening's countdown for the HUD (design/match-flow.md) |
+| `world/OpeningPainter` | the Teams wall (design/match-flow.md); the opening's countdown is the HUD's (`hud/MatchInfoPainter`) |
 | `world/TrapPainter` | traps on the ground and going off (design/traps.md): inked on a seat of darker ground, ours sending a ring over the ground they watch, a glint now and then on every one (*A trap reads on every ground*) |
 | `world/AimArrowPainter`, `world/AimGeometry` | our attack's aim while we aim it, in one hand (*An aim is drawn in one hand*): a charged shot's lane on the ground to its whole reach, walls or not (*A charged shot's aim is a lane on the ground*), and any other attack being aimed, a shot, a fan, a dash, a blink or a trap, where it will go (*An aimed attack shows where it will go*); where it lies, which moves with us as our sprite does (`AimGeometry`: *An aim moves with us*) |
 | `world/DeathAndTeleportPainter` | deaths and teleports |
 | `world/BlastPainter` | the frame's blasts, in their two layers, their lights and the air they shake (render/blasts) |
+| `world/BloodPainter`, `world/Blood` | the blood a hit draws: its drops in the air over the frame, their splats on the ground (*A hit draws blood*) |
 | `world/WorldOverlayPainter` | name plates, health bars and damage numbers, over the finished frame |
 | `world/ParticleSpawner` | what the frame throws into the particle systems: weather, footsteps, trails (a projectile's embers in its look's colour, as its light), sparks, bursts |
-| `hud/HudPainter` | the HUD: the bottom bar (inventory and how full it is, charge bar), the leave prompt, the notice that we are too full to pick up the item within reach (design/combat.md, *Item Types*), the notice that F8 marked a moment for a problem report (`Diagnostics`' for three seconds, under the leave prompt when both show; design/diagnostics.md; the golden scene `lagoon_moment_marked`), and the parts below |
-| `hud/AbilityBarPainter`, `MatchInfoPainter`, `ChatPainter`, `PracticePainter`, `DeathScreenPainter` | the ability slots (the one being aimed ringed: *An aimed attack shows where it will go*) and R's beside them, its seconds left over its sweep (design/characters.md, *R resets the cooldowns*), each cooldown swept inside its own slot; the clock and kills and kill feed, chat, practice's tallies, the respawn countdown and game over screen |
+| `hud/HudPainter`, `hud/HudStyle` | the HUD, in the menus' dark glass (*The HUD is the menus' dark glass*): the tray along the bottom (`HudTray`: the ability slots, the items and how many we carry, the charge's gauge over it), the notice that we are too full to pick up the item within reach (design/combat.md, *Item Types*), the notice that F8 marked a moment for a problem report (`Diagnostics`' for three seconds; design/diagnostics.md; the golden scene `lagoon_moment_marked`), and the parts below; `HudStyle` is the look they all draw with (the palette, panes of glass, wells, keycaps, small capitals, a character's bust) |
+| `hud/AbilityBarPainter`, `MatchInfoPainter`, `KillBannerPainter`, `ChatPainter`, `PracticePainter`, `DeathScreenPainter` | the ability slots (the one being aimed ringed: *An aimed attack shows where it will go*) and R's beside them, its seconds left over its sweep (design/characters.md, *R resets the cooldowns*), each cooldown swept inside its own slot with its seconds left; the clock, our score and our run of kills in a row beside it, the opening's countdown and FIGHT! as it ends, the kill feed; a kill of ours announced (*A kill is announced*); chat; practice's pill and key; the respawn countdown and game over screen |
+| `hud/ScoreboardPainter` | the scoreboard Tab (a controller's Back) holds up, over most of the screen, over the HUD: everyone placed as the match's end will place them (`LiveStandings`), a section a team in Teams (*The scoreboard Tab holds up*) |
+| `hud/MatchMenuPainter` | the menu Esc (a controller's Start) brings up, over everything but the pointer: the graphics settings and the way out of the match (`MatchMenu`; *The menu Esc brings up*) |
 | `hud/CursorPainter` | the mouse's pointer, a crosshair over everything, drawn by `drawCursor` after the frame (*The pointer is ours*) |
 
 The painters are all one render thread's: nothing in them is synchronized, and none allocates per
@@ -44,12 +47,15 @@ frame (see *Performance*).
 
 | File | Purpose |
 |------|---------|
-| `GameCamera.scala` | Holds visualX/Y, smooth lerp, screen shake, zoom. Provides camera offsets, on the render target's pixel grid when it is told the grid. |
+| `GameCamera.scala` | Holds visualX/Y, smooth lerp, screen shake, and the zoom each frame is drawn at (`playersZoom`: the settings' camera zoom, *The camera's zoom*), which the mouse is read into the world with. Provides camera offsets, on the render target's pixel grid when it is told the grid. |
+| `MatchMenu.scala` | The menu Esc brings up in a match: open or not, its layout in the window's units, what each control does, the mouse's press and drag, the keyboard's and a controller's focus, leaving on a second press (*The menu Esc brings up*). No GL: `hud/MatchMenuPainter` draws it |
+| `LiveStandings.scala` | Where everyone stands in the match being played, for the scoreboard Tab holds up: gathered from the client, placed as `MatchResults` places them, in arrays it keeps (*The scoreboard Tab holds up*) |
 | `IsometricTransform.scala` | `worldToScreen(wx,wy,cam)`, `screenToWorld(sx,sy,cam,zoom)`, `viewInsideWorld` (is the whole screen over the map?) |
 | `EntityCollector.scala` | Collects items/projectiles/players for the depth pass by the diagonal of the map they are drawn on (`diagonalOf`: `floor(x + y)`), each where it is drawn, us where the camera draws us. Diagonals are a flat array over the visible window, each a linked list of pooled entries back to front (`takeDiagonal` / `takeRemaining`) — no map, no boxed keys, no allocation per frame. See *Everything is sorted where it is drawn* |
 | `RemoteMotion.scala` | Where another player is drawn: walked along the cells the server has put them on, at their measured pace, never past the newest, and slid by a knockback. See *Other players are walked along the cells they were heard on* |
 | `GLTileRenderer.scala` | Loads `sprites/tiles.png` as a GL texture, filtered and mipmapped, each cell in a slot with a gutter of its own border texels (*The terrain is filtered as the characters are*); returns full or transparent-margin-trimmed TextureRegion per tile ID + frame, and `drawDiamond` draws a flat tile as exactly its diamond |
 | `GLSpriteGenerator.scala` | Packs character sprite sheets into one growable, mipmapped GL atlas |
+| `ItemSprites.scala` | Loads `sprites/items.png` (the five items, the gem's eight frames of turning, a twinkle) as a GL texture, filtered through two halvings of its own, its clear texels given the colour of the art beside them; a TextureRegion per item and frame |
 | `ParticleSystem.scala`, `DamageNumberSystem.scala` | pooled particles and damage numbers |
 | `FrameClock.scala` | where the renderer reads the time: the system's, a match window's frame (`onFrames`: *Everything moving is placed at the frame's time*), or GoldenFrames' stopped one |
 
@@ -58,19 +64,22 @@ frame (see *Performance*).
 PostProcessor.beginScene()        -- bind scene FBO (sized by the quality tier)
 GLGameRenderer.render()           -- all game drawing into scene FBO
   Background (only if the screen runs off the map) → Ground (opaque diamonds) →
-  the edges where two kinds of ground meet → tile overlays, reflections → Traps → Blasts' ground layer → our aim → block shadows →
-  the players' shadows and our ring →
+  the edges where two kinds of ground meet → tile overlays, reflections → blood's splats → Traps → Blasts' ground layer → our aim → block shadows →
+  the items' shadows and light, the players' shadows and our ring →
   depth pass (a diagonal of the map at a time, far to near: its blocks and props, then the
   items, projectiles and players with their effects standing on it, back to front) →
-  flying projectiles → Barriers → the opening's wall → deferred glows →
-  deaths, teleports → Blasts' air layer → particles
+  flying projectiles → Barriers → the opening's wall → deferred glows → items being taken →
+  deaths, teleports → Blasts' air layer → blood in the air → particles
 PostProcessor.endScene()          -- bloom extract → blur H → blur V →
                                      composite (scene + bloom + vignette + overlay)
                                      upscales to the real framebuffer
 World overlay                     -- name plates, health bars, damage numbers: world
-                                     positions, drawn after the composite at full resolution
+                                     positions, drawn after the composite at full resolution,
+                                     one size on the screen at any zoom
 HUD                               -- drawn after the composite, always at full resolution
+Scoreboard, menu                  -- while Tab is held / while Esc has the menu up, over the HUD
 GLGameRenderer.drawCursor()       -- the pointer, last, where the mouse is as the frame is done
+                                     (not over the menu: the system's arrow shows there)
 ```
 
 ## Design decisions
@@ -94,16 +103,18 @@ GLGameRenderer.drawCursor()       -- the pointer, last, where the mouse is as th
   of diamonds, which a map makes of every curve and slope it draws: the Meadow's paths and pond,
   the Lagoon's beaches, the Snowglobe's frozen pond, the round edge of every space arena. Over that,
   every cell an edge passes through is drawn again, after the ground, by a shader. Grass, snow, sand,
-  path, dirt, ice, water, deep water, the space maps' deck and the open space round it each have a
-  layer, and at each pixel a bilinear blend of the cells' "this layer or higher", a value at each
+  path, dirt, ice, water, deep water, the space maps' deck and the open space round it, and since
+  the volcano, graveyard and desert maps lava, scorched rock, ash, the graveyard's grass and the
+  desert's deep sand each have a layer (fifteen, all the shader's four bits hold), and at each pixel a bilinear blend of the cells' "this layer or higher", a value at each
   cell's centre, says what shows there: the edge runs where it is one half, so a straight run of
   cells keeps its edge on the cells' own edge, a corner is rounded, and a staircase turns into a
   curve. The higher ground is inked along its edge as the characters are, and stands on a riser
   where the edge faces the camera: a step of soil or snow, or, for the deck over open space, its
   hull, nearly three times as tall (`GroundEdges.RiserHeights`). Water carries foam where anything
-  meets it, and space a glow that fades out from the deck's edge, the field that keeps the arena
+  meets it, lava a band of its white heat fading into it under a step of dark crust, and space a
+  glow that fades out from the deck's edge, the field that keeps the arena
   in; a pixel showing the cell's own ground is left alone, so its tile shows through. Ground built in
-  pieces (boardwalks, flagstones, metal), lava and blocks take no part: a cell reads one as its own
+  pieces (boardwalks, flagstones, metal) and blocks take no part: a cell reads one as its own
   ground, so they keep their straight edges. A tile has its layer's colour all the way to its edge
   (`GroundEdgesTest` checks the atlas; the deck's plates, two cells across, are the one exception, a
   shade off its margin), which is what lets the higher ground spill over a neighbour without a
@@ -243,7 +254,10 @@ GLGameRenderer.drawCursor()       -- the pointer, last, where the mouse is as th
   corner of the ground's diamonds carried a dark dash. On the render bench (the Hive, and the Meadow
   with the edge pass off) it costs nothing that shows. The texture is 9MB with its halvings (6MB
   before), and the process's footprint is what it was: the texture is built a slot at a time, the
-  halvings made by `GLTexture.halve`, in three small buffers. Halved by the driver
+  halvings made by `GLTexture.halve`, in three small buffers. With the volcano's, the graveyard's
+  and the desert's tiles (56 in all) it is 12MB, and the one row of tiles the PNG is, 4928 texels
+  across in slots, is wrapped into two bands of 28 so the texture stays inside 4096 across, which
+  is all the oldest GPUs this runs on promise. Halved by the driver
   (`glGenerateMipmap`) it took 11MB more graphics memory than it holds, and a 7MB copy of the
   atlas, freed, stayed dirty in the process all match (macOS keeps a large freed block). It loads
   in ~90ms at the start of a match.
@@ -256,6 +270,45 @@ GLGameRenderer.drawCursor()       -- the pointer, last, where the mouse is as th
   more copies of every glyph. Name text is 12 world units high (it was 14 with a wider plate,
   and a crowd's plates covered the heads of whoever stood a row behind). The overlay fades in
   with the match, as the world does.
+- **A hit draws blood** (`world/BloodPainter`, which draws it, and `world/Blood`, which works it out;
+  `HitLog` in client/game). Every hit the server tells us of (a HIT or a PIERCE: a shot, a splash, a
+  slam or an explosion catching someone; never a shielded or phased player, whom nothing strikes)
+  spurts a few drops of blood from the middle of the struck figure, where it is drawn: 5 for the
+  lightest blow, more the harder the type can strike, 12 at most (`Blood.dropsFor`; an arrow's 25 is
+  8), and none for a type that can hurt nobody (a haste). They fly away from the projectile: from
+  where a blast went off, and the way a shot was going, since a shot's hit circle can find a figure
+  from just past its middle (a melee swing does); about a quarter of them back out the way it came;
+  all round for a slam on top of them. Each arcs down under a gravity snappier than the world's (460
+  units a second each second; a figure is 48 units), slowing as it flies out, and lands within two
+  cells, leaving a splat where it lands on ground anyone can walk on (none in water, a
+  wall or off the map): spreading for 60ms as it lands, darkening as it dries, fading out between
+  2.3 and 3.5 seconds after the hit. A drop in the air is a red teardrop with a dark rim, drawn out
+  behind it the faster it goes, drawn over the frame after the blasts' air layer, so it shows over
+  the hit's own flash; a splat is drawn with the ground before the traps, so a trap still reads where
+  a fight has been, and under the players' shadows and whatever stands in front of it. Blood is
+  opaque and deep red, never added as light: the hit's flash (`GlowEffectPainter`) is a glow in the
+  colour of what struck, which on sand and snow adds next to nothing, and in a firefight is one glow
+  among the shots' and the blasts'. Hits were hard to see (2026-11-13).
+  - Each hit is heard once, in order, through a ring the packet thread writes and the render thread
+    reads (`HitLog`: who, where the projectile was as it struck, its heading and type, when), so a
+    fan's three shots striking in one tick are three spurts. The renderer takes them as each frame
+    begins (`BloodPainter.collect`, after the entities are collected), from where the struck player
+    is drawn then, lifted with them if knocked up; a hit heard longer ago than a spurt lasts (before
+    this match's window drew anything, or under the game over screen), on someone who has left, or
+    more than a screen away is dropped.
+  - Every drop's whole flight is worked out as its hit is taken, from a seed of the hit's own, and
+    where it is at any moment is a function of the time since the hit (`Blood.flight`, `velocity`):
+    frames at any rate draw it the same, the golden frames' stopped clock draws one moment of it, and
+    nothing steps it from frame to frame. It is timed on the frame's time of day (`frameTimeMs`), as
+    the hit's flash is. 96 spurts are kept, the oldest giving way.
+  - It costs nothing that shows. On the render bench with `--hits` (the Hive at 67,65, High,
+    4480x2404, 16 players, 150 travelling projectiles, every blow a hit: 21 a second, more than any
+    real fight), built with and without it and run alternately, a frame took as long to build within
+    the bench's noise (3.32 ms against 3.27 on its slower level, 2.01 against 2.02 on its faster), and
+    the GPU shaded 0.07 million more fragments of 66.5 million. Taking hits and making spurts allocate
+    nothing (`BloodTest`, which also holds every drop's arc, which way each kind of hit sprays, what
+    bleeds and how much, and where a splat may lie); the golden frames `meadow_blood`,
+    `snowglobe_blood` and `hive_blood` hold its look, players struck 20ms to 2.9s before the frame.
 - **In daylight a shot carries no light** (`RenderContext.projectileLights`, off for `sky`, `sea` and
   `snow`): its pool only brightened the sand or snow round it toward white, washing out the pale
   projectiles in exactly the place they were hardest to see.
@@ -278,6 +331,64 @@ GLGameRenderer.drawCursor()       -- the pointer, last, where the mouse is as th
   within the bench's noise (1.7-2.4 ms against 1.8-2.0), allocates nothing more (3.1-4.2KB a frame
   either way, no GC), and the pass the traps are drawn in shades about half a million fragments
   more of the frame's 70 million. Every golden frame with no trap in it is byte for byte as it was.
+- **An item is drawn as the characters are** (`world/ItemPainter`, `ItemSprites`;
+  `scripts/generate_items.py`, scripts/CLAUDE.md, *Item Sprites*). The five items are sprites,
+  drawn with the characters' own kit: flat cel tones, one hard shadow away from the light, every
+  part inked in a dark version of its own colour, the contour ring round the whole. A cell of their
+  atlas is 128 texels for the 40 units it is drawn across (a texel a pixel at High on a HiDPI screen
+  at the camera's widest; a character's frame is 128 for 48), filtered linearly through two halvings
+  as the characters' and the terrain's atlases are, so at every tier an item is exactly as smooth as
+  the figure beside it. They were built every frame out of the shape batch's hard-edged polygons: a
+  flat six-sided gem with half-unit lines to its middle, a heart of two discs and a triangle, none
+  of them inked. Beside inked, shaded, filtered sprites they read as placeholders, and at Low, where
+  the world is drawn at a third of the display's pixels and scaled up, every edge of one was a
+  coarse staircase in a frame where everything else was smooth (2026-11-13). The HUD's inventory
+  showed the same shapes, and shows the same sprites now (`drawIcon`).
+  - **It floats over the middle of its cell**, its middle 16 units above the ground, rising and
+    falling 2, over a soft shadow on the point of the ground it lies at, where a player's is. It was
+    drawn centred on that point with its shadow 13 units under it, in the cell below. Each kind has
+    a life of its own: the gem turns (eight frames are an eighth of a turn of an eight-sided stone,
+    so they loop, 90ms each), the heart beats, the star rocks ten degrees either way and the shield
+    and the fence four, and a glint comes and goes on each every 1.7 seconds at one of three places
+    (the atlas's twinkle, white with a thin line round it, which is what shows on snow). All of it
+    is placed by the frame's clock, each item in its own time (its id). The old ones moved by
+    counting frames, twice as fast at 120 Hz as at 60.
+  - **What lies under it is drawn with the ground** (`drawGroundMarks`, before the players'
+    shadows): its shadow, and the light it sheds, every item's in one additive pass. A wall in front
+    of an item covers them as it covers a trap. Round the item itself is a soft disc of the same
+    light, blended as everything in the depth pass is, so the blend never changes for an item and
+    the wall covers that too. In daylight (`projectileLights` off) an item sheds no light on the
+    ground, as a shot sheds none, and the disc is at two fifths: added light only washed sand and
+    snow toward white, the item's own shadow with them, and there the ink, the contour and the
+    shadow carry an item as they carry a character. The old glows (two ovals up to 84 units across and two turning wedges of
+    light, per item) went into the additive pass after the whole depth pass, over any wall in front.
+  - **It pops into being once, and goes with a puff when it is taken** (`world/ItemTrack`). Every
+    item on the client's ground is looked at every frame, on screen or not (`collect`): one is new
+    the first frame it is there, and grows from nothing a little past its size and back over 420ms;
+    one that was on screen a frame ago and is nowhere now was taken, and swells, rises and fades
+    where it floated over 220ms (`drawTaken`, after the depth pass) in ten sparks, little stars of
+    light on a dark map and of the item's own colour in daylight. The painter used to remember only
+    the items it had drawn: walking away from one was taken for a pickup, its sparks thrown at the
+    screen's edge, and walking back to it made it pop into being again. The sparks were hard
+    six-sided dots that all began on one point. After a gap between frames (the game over screen, a
+    rejoin, a replay's jump) nothing is shown going. An item is known by its id, since the client
+    makes a new `Item` whenever its SPAWN is said again.
+  - It costs nothing that shows. On the render bench (the Hive at 67,65, 16 players, 150 travelling
+    projectiles, ten items in view), the old painter's classes put ahead of the new on the
+    classpath for every other run: a frame took as long to build within the bench's noise (Low: 1.29
+    to 1.91 ms against 1.28 to 1.91) and allocated a little less (3.6KB against 4.0KB), and in a
+    quiet scene at High on 4480x2404 the GPU shaded 34.95 million fragments a frame against 35.24:
+    the old glows were 0.56 million in the effects pass, the new shadows and light add 0.14 to the
+    ground marks and the sprites and their discs 0.12 to the depth pass. The atlas is 1.3MB of
+    texture with its halvings. An item's sprite is one more texture among the depth pass's two, so
+    an item can end a draw call either side of it; ten of them showed in nothing measured.
+  - `ItemSpritesTest` holds the atlas to what the renderer takes it for (a cell for every frame,
+    each item in the middle of its cell and clear of its edge, the gem's frames stepping round, each
+    item in its own colour); `ItemTrackTest` and `ItemPainterTest` hold appearing and being taken
+    (the second fails with the old remembering put back); the golden frames `meadow_items`,
+    `snowglobe_items`, `lagoon_items` and `hive_items` hold the look, each kind twice at two moments
+    of its motion. Judge a change to the art with `scripts/item_gallery.py` (the items beside a
+    character on five grounds at High and at Low), then in those frames at `--quality=low`.
 - **The character atlas is mipmapped** (two levels, 128px frames down to 32) and its sheets are
   padded like the tiles. A frame is drawn at 77px at High on an ordinary screen and 42px at Low;
   minified that far without a mip chain, bilinear filtering skips texels, and the one-texel
@@ -491,6 +602,166 @@ GLGameRenderer.drawCursor()       -- the pointer, last, where the mouse is as th
     first frame). `CursorTest` holds the picture (whole at every scale, the dot on the hotspot, put
     down on whole pixels) and where it is ours; the golden frames `hive_cursor` and
     `snowglobe_cursor` hold it where we aim, and the render bench draws it circling the screen.
+- **The camera's zoom** is the player's (`RenderQuality.zoomPercent`, `GameCamera.playersZoom`). The
+  widest view, 100%, is `Constants.CAMERA_ZOOM` (1.6 of the window's units a unit of the world), the
+  view every match had before the setting (2026-11-13); the player can come in to 200% in steps of
+  10, in the settings' card (ui/screens/SettingsDialog) or the match's menu (below), kept with the
+  quality and the resolution. Nothing else changes it (gl/CLAUDE.md, *Graphics quality tiers*).
+  - The renderer reads it each frame: the view is the window over it (`canvasW`, `canvasH`), and the
+    culling, the light map and the particles follow; the cached background is drawn again when the
+    view changes size. The camera keeps the zoom of each update, so the mouse is read into the world
+    with the frame's own (`screenToWorld`), and a shake moves the view as far on the screen at any
+    zoom (`CameraTest`).
+  - **Name plates, health bars and damage numbers keep their size on the screen.** They are drawn in
+    the widest view's units, each where its player is drawn times the zoom over the widest
+    (`RenderContext.overlayScale`, in `WorldOverlayPainter`). Drawn with the world, they grew with it:
+    at 200% a plate was wider than its character, and a crowd's plates buried the fight (the golden
+    frame `meadow_zoomed` is that crowd).
+  - Zoomed in, the art is magnified: on a HiDPI screen a tile's 80 texels across its 40 units are 3.2
+    pixels a texel at 200% (1.6 at 100%), a character's frame 1.9 (1.2). The filtered atlases keep it
+    soft rather than blocky.
+  - At 100% every number in the frame is what it was (the factors are exactly 1, and a product with
+    1 is the number itself): built from one snapshot of the tree with and without the zoom, every
+    golden frame but the two zoomed scenes came out byte for byte the same, at High and at Low. The
+    dev tools draw at 100% unless `--zoom=` says (the render bench's `--zoom=200`).
+  - Closer is a little cheaper on the whole and dearer at its worst: on the render bench (the Hive at
+    67,65, High, 4480x2404, 16 players, 150 shots that travel, alternated with 100%), at 200% a frame
+    took 1.44-1.46 ms of CPU to build against 1.52-1.53 and the GPU 13.6 ms on average against
+    14.3-14.7 (fewer cells on screen), but 22.7 at the 99th percentile against 17.6-18.0: a blast or
+    a glow covers four times the pixels.
+- **The menu Esc brings up** (`MatchMenu`, which lays it out and says what each control does, and
+  `hud/MatchMenuPainter`). Esc used to arm leaving the match, the HUD asking for a second within three
+  seconds; it brings up a menu now, and Esc again, or Resume, puts it away. A card of the menus' dark
+  glass over a shade: the graphics quality, the resolution (the display's own and those below it, as
+  the settings' card offers them), the camera's zoom (a step out, a track, a step in), Leave match (End
+  practice in practice) and Resume, and the keys worth knowing. Each setting is taken and saved as it
+  is picked, as the settings' card takes it, and seen at once in the match under it.
+  - Nothing pauses a match others are playing: it goes on round the card. The card can't be seen
+    through: the name plates under it are white text too, and at 94% they read through it.
+  - While it is up it has the keyboard, the mouse and a controller: nothing walks, aims, fires or
+    casts, what was aimed or held is put away as it comes up (as the chat puts it away), a click it
+    took fires nothing even let go of after it has gone, and the aim stays where it was. F7, F8 and
+    F11 work as ever. The system's arrow shows over it (`GLWindow.showSystemCursor`), as over the
+    menus, and the crosshair isn't drawn.
+  - Leaving takes Leave pressed twice within three seconds: the first turns it red ("Press again to
+    leave"), anything else pressed takes it back. That is what Esc's own two presses were for: a
+    stray press never ends a match.
+  - The arrow keys move between its rows and change the setting on one (held, they go on), Enter or
+    Space presses the button picked (Resume, as it comes up); a controller's Start brings it up and
+    puts it away, its pad, A and B work it. Where they are shows in sky blue once they are used.
+    Words too wide for their button (a translation) are drawn smaller.
+  - It costs the GPU the shade over the whole window: 1.0-1.6 ms a frame on the render bench at High
+    on the 4480x2404 iMac (`--menu`), the CPU nothing that shows, and it allocates nothing more
+    (3.7-3.9 KB a frame either way). Nobody fights from the menu.
+  - `MatchMenuTest` holds the model, `GameClientMenuTest` the real handlers with it; the golden frames
+    `meadow_menu`, `snowglobe_menu_leave` (at 150%) and `practice_menu_end` how it looks.
+- **The scoreboard Tab holds up** (`LiveStandings`, `hud/ScoreboardPainter`). Held, Tab (a
+  controller's Back) puts the match's standings over most of the screen, between the HUD's top row
+  (the clock, our kills and deaths) and its bar along the bottom, which stay showing (half under its
+  card they read as clutter: `TopClear`, `BottomClear`, to move with them); let go of, it goes, and
+  the game can be played under it. Everyone in the match, us in gold, anyone dead just now with a skull
+  and anyone who has left (still scored by the server), each with the character they play, its
+  portrait, the player's name, kills, deaths and score (kills less deaths), placed exactly as the
+  match's end will place them (`MatchResults`: the score, then kills, identical lines sharing a place;
+  in Teams a section a team with its kills and score, the one ahead marked); along its top the mode,
+  the map, the time left and our ping, and in practice its tallies along the bottom.
+  - The kills and deaths are the client's own count of the match's KILLs (`MatchProgress.killsOf`,
+    `deathsOf`): each carries its killer's count as the server keeps it, and whoever they killed has
+    a death more. The whole run of them comes by TCP from the match's start, so it is the count the
+    match's end scores.
+  - Rebuilt in arrays it keeps when a KILL, a join or a leave changes them, and once a second for the
+    rest; nothing allocated as it is drawn. Never left up: the chat, the menu and the window losing the
+    focus take it down, and Tab let go of always does.
+  - It is held up mid-fight, so it is cheap: the game round it is shaded, not the game under its card,
+    which can't be seen through. Shaded under the card as well, it cost the GPU 2.6 ms a frame on the
+    render bench at High on the 4480x2404 iMac (`--scoreboard`), where a frame already takes 14-15;
+    now 0.2-0.3 ms, the CPU about 0.05 ms, allocating nothing more (3.8-3.9 KB a frame either way).
+  - `LiveStandingsTest` holds its places to `MatchResults`' over random lines; the golden frames
+    `meadow_scoreboard` and `hive_scoreboard_teams` how it looks.
+
+- **The HUD is the menus' dark glass** (`hud/HudStyle`, which every HUD painter draws through). The
+  menus were made to look like the HUD (ui/CLAUDE.md, *The look*), and then looked better than it: the
+  HUD was hard-edged rounded rectangles in a dozen shades of navy, a dark bar the width of the screen
+  along the bottom, a kill feed of 14-unit lines hugging the screen's right edge (sliding in, the newest
+  ran off it), and practice's tallies as lines of plain text down the left with a green PRACTICE over
+  the grass, nearly invisible, where the clock goes. Now everything is in the menus' terms (ui/theme.css's
+  palette, as constants): panes of navy glass, lighter toward the top, with a rim of light brightest
+  along the top and a soft shadow that stands them off a bright map; dark wells for what sits in them
+  (a slot, a face); keycaps as the menus draw them, with a lip; labels in small capitals in the muted
+  grey (12 units); names in 17; numbers in Exo 2 Black, as the scoreboard's stat tiles set theirs (26);
+  and what is said big lettered in Exo 2 Black Italic, inked and with a hard shadow, as the
+  scoreboard's "Victory!" is (`gl/DisplayFont`). The gold is ours and what is picked; kills are the
+  scoreboard's green and deaths its red. Every edge is smooth (`ShapeBatch.fillRoundedRectSmooth`,
+  `strokeRoundedRectSmooth`, `shadowRoundedRect`: gl/CLAUDE.md, *Smooth edges*), as JavaFX draws the
+  menus'.
+  - Where things are, in the window's units: our score top left (kills, deaths, and kills less deaths,
+    what the match is won on: design/match-flow.md), and our run of kills beside it while there is one;
+    the clock top centre, the opening's countdown under it; the kill feed down the right; a kill of ours
+    announced big over the top of the screen (*A kill is announced*); one tray of glass along the
+    bottom, centred (`HudTray`), the ability slots and, past a hairline, the item slots with how many we
+    carry (gold when it is all we may), each slot its key's keycap at its corner, an item's count on a
+    badge, a cooldown's seconds over its sweep; the charge's gauge over the tray, in the gold of its lane
+    on the ground; notices over the tray as pills with a dot of their colour; chat over the tray at the
+    left, the line being typed in a field rimmed in sky blue with its keys under it.
+  - Nothing is text straight on the world: a hint in the muted grey on grass or sand could not be read
+    (the chat's keys, practice's Esc), so every line has a pane under it.
+  - The feed shows who killed whom by their characters' faces, each a bust cut from the first frame of
+    its sheet facing us (`HudStyle.bust`): from just over the top of its art (`GLSpriteGenerator.artTop`,
+    measured as its sheet loads), so a squat character's head is in it as a tall one's hat is. A row
+    is a pane, ours on gold and our death on berry, a skull between the two; it slides in, flashes, and
+    after seven seconds fades and closes up, so those under it move up rather than jump.
+  - Practice has the menus' own three tallies where a match's score goes (kills in green, its best run
+    in gold, its accuracy in sky blue: practice's results show them in those colours), a pill where the
+    clock goes saying PRACTICE in its green with the time the session has left, and the key that ends
+    it on a pane under its tallies. It drew a white cross over our own character at every kill; a kill
+    of ours is announced as a match's is.
+  - The respawn's pane, over the middle of the screen where the fight is, is opaque (`solid`): name
+    plates showing through, even at 95%, read as part of it.
+  - It costs nothing that shows, once its text and pictures are drawn in as few textures as it can.
+    Every change of texture is a draw (gl/CLAUDE.md, *One stream for shapes and sprites*), and its first
+    version changed at nearly every element: five font atlases, the characters' and the items'
+    pictures, each label in a size of its own beside the next. The HUD's fonts now share their pages
+    (`gl/GlyphPages`: all but the damage numbers' large one), and the feed draws every row's pane and
+    faces before any of its names. Measured on the render bench (the Hive at 67,65, High, 4480x2404,
+    16 players, 150 travelling projectiles; with and without `--kills`), the old HUD and the new built
+    and run alternately: 72 to 76 draws a frame either way (what is in view moves it), a frame's CPU
+    2.06-2.10 ms with the old and 1.77-1.96 with the new (the bench's runs land on two levels), and
+    3.9-5.2 KB allocated a frame either way, no collections. The display font's letters (the
+    capitals, digits and marks of every title, at 60 units on a HiDPI screen) take two pages of
+    coverage, 1MB, where RGBA would take four; the three new fonts' glyphs share the pages the old two
+    had.
+- **A kill is announced** (`hud/KillBannerPainter`; `MatchProgress.killStreak`, `lastKill` in
+  client/game). Every kill of ours puts up a title big over the top of the screen (its middle 18% of
+  the way down), lettered as the menus' titles are, saying what our run of kills in a row has come to:
+  ELIMINATED, DOUBLE KILL, TRIPLE KILL, MEGA KILL, RAMPAGE, UNSTOPPABLE, GODLIKE, then LEGENDARY for
+  every kill after; FIRST BLOOD for the match's first kill if it is ours (not in practice, whose
+  targets don't fight back). From the second its count stands beside it (×2, ×3), and its colour heats
+  up as the run goes on: gold, ember, berry, violet. It pops in (half as big again, landing a little
+  under its size over 110ms and settling on it by 190), a burst of its colour behind it, light runs
+  over its letters, and a ring goes out from a run of five or more; under it, on a pill, whom we took,
+  by their face and name. It is up for 2.4s, going over the last 0.38 as it rises a little, and the
+  next kill puts it up again a count higher. A kill was a line in the corner's feed, the size of
+  everyone else's, and practice alone counted kills close together, in a box the size of the feed's
+  lines (the user asked for kills to be flagged big, and a run's count to keep climbing, 2026-11-13).
+  - Our run is our kills since our last death (`LocalPlayer.died`, whether the update or the KILL told
+    us first), and a new match starts without one. In practice nothing kills us, so a run there also ends
+    when the next kill is more than `PracticeComboMs` (4s) coming; its best is practice's Best Combo.
+    Practice's old combo lapsed after 2s, and the HUD lapsed it by writing the client's state from the
+    render thread.
+  - While the run is two or more, a pane beside the score keeps its count (IN A ROW, ×N, a flame in
+    a badge of its colour), bumping with every kill; in practice a bar along its foot runs out with the
+    time left for the next.
+  - The packet thread hands the renderer our newest kill as one object (`KillMoment`: when, the run,
+    whom, first blood), so a frame never draws one kill's count with another's name. Every title is
+    rasterized as the match begins (`DisplayFont.prewarm`): the first kill is no moment to rasterize one.
+  - The opening's end is said the same way: FIGHT! lettered big where a kill is announced, for 1.4s.
+  - `KillBannerTest` holds the titles, the colours, how a title lands and every word in every language;
+    `GameClientMatchTest` the run (ours and nobody else's, ended by a death however we heard of it, in
+    practice by a pause too, first blood once a match and never in practice, nothing carried into the
+    next match) and the feed's characters, teams and which kills are ours; `DisplayFontTest` the letters
+    themselves. The golden frames `meadow_first_blood`, `hive_triple_kill` (with its light running over
+    it), `snowglobe_rampage` (its ring, on snow), `lagoon_practice_combo` and `practice_chat` hold the
+    look; the render bench's `--kills` puts a kill in the frame every 70 frames, every other one ours.
 
 ## Grading
 
@@ -506,11 +777,34 @@ sets the grade whenever the world's background changes, and for `sky`, `sea` and
 - `LightSystem.gain` 0.35 and an ambient of 0.625, which the composite's x1.6 makes exactly 1. In
   daylight the warm pool of light round every player reads as a spotlight on the grass.
   Explosions still flash.
+`desert` is one of the bright ones too, since its maps were made (2026-11-14).
+
 `space` is a station's deck floating in the dark, and is graded nearly as the bright maps are:
 `toneMap` 0, bloom above 0.9 at 0.2 (shots and blasts still glow in the dark), vignette 0.16,
 `LightSystem.gain` 0.6 and an ambient of 0.55, the art a little dimmed so shots and players still
 light it. Under the old dark grade, ACES over the art at 60%, the deck and everyone on it came out
-murky. The other dark backgrounds (`cityscape`, `desert`, `ocean`) keep the old settings.
+murky. `volcano` and `night` are graded the same but for the ambient, 0.54 and 0.52: their tiles are
+painted as dark as they should look, the game dims them a little further, and what lights them back
+up is in the scene (*The terrain's own light*). With lanterns as bright as the first ones were (96
+units wide at 0.55) and the deck's ambient, the graveyard was a pale haze: every lantern and every
+player's pool of light added to ground already near its full brightness has nothing left to do but
+wash it out. How dark they may be is set by the characters, who are ringed in dark ink and need
+ground lighter than it: the render audit (2026-11-14, High) put the volcano's first floor, a darker
+rock at an ambient of 0.50, at an edge of 26.6 for the median character and 18.6 for the worst,
+under the weakest ground there was (the space deck: 41.0, lowest tenth 32.3, worst 27.6). Lightened
+and at these ambients the scorched rock is 33.9 (27.9, 24.5: the Monk, brown on brown), ash 36.2
+(31.1, 28.1), the graveyard's grass 36.5 (31.0, 27.5) and its cobbles 38.0 (32.8, 27.7): the deck's
+company, and no lighter than they need be. The desert's grounds measure as the bright maps' do (deep
+sand 64.9, 55.9, 43.0). The other dark backgrounds
+(`cityscape`, `ocean`) keep the old settings; no map uses them.
+
+**The terrain's own light** (`TerrainPainter.drawGround`, as it lays each cell). Lava lights the
+ground beside it: one light to every four cells each way, 120 units wide, so a lake's run together.
+A light a cell, as it was when no map had lava, filled the light pool from a lake's far rows and
+left its near ones dark (the pool holds the strongest, and equal lights are kept in the order they
+come). A lantern sheds a warm pool 80 units wide, flickering a little, each in its own time, and a
+hot boulder a small one. The volcano's embers are weather, as the snow is (`ParticleSpawner`): few,
+small and rising, so none is taken for a shot.
 
 ## Performance
 
@@ -640,11 +934,13 @@ Compare a change to the art between two audits made with the same renderer.
 bazel run //src/main/scala/com/gridgame/client:golden_frames -- /tmp/golden                 # every scene, High
 bazel run //src/main/scala/com/gridgame/client:golden_frames -- /tmp/golden --quality=low   # (or medium)
 bazel run //src/main/scala/com/gridgame/client:golden_frames -- /tmp/golden --scenes=meadow,snow
+bazel run //src/main/scala/com/gridgame/client:golden_frames -- /tmp/golden --scenes=meadow_menu --lang=ko --zoom=150
 ```
 
 Fixed scenes — players, projectiles, blasts, barriers, traps, the divider, the HUD (R cooling down
-among it), the edges of the maps, a charged shot's aim, every kind of attack being aimed, the pointer,
-walls in front of and beside us — drawn by the real GLGameRenderer on a stopped clock (`FrameClock`) with its randomness seeded
+among it; a kill announced and a run of them; practice's), the edges of the maps, a charged shot's aim, every kind of attack being aimed, the pointer,
+walls in front of and beside us, a hit's blood at every stage, the five items on four grounds, the
+menu Esc brings up, the scoreboard Tab holds up, the camera zoomed all the way in — drawn by the real GLGameRenderer on a stopped clock (`FrameClock`) with its randomness seeded
 (`seedRandom`), so the same build draws the same pixels every time. It is the check for a change to
 the renderer that is meant to change nothing: write the frames from both builds and compare them
 byte for byte (`cmp`). A change that is meant to show must be judged by eye, in the galleries and in

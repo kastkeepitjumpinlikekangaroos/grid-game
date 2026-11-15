@@ -118,6 +118,41 @@ object ShapeBatch {
     }
   }
 
+  /**
+   * Dev check, under the same flag, for a stroke folded over itself: a line stroked wider than its
+   * bends can carry (its half width more than the radius it turns in) has the inside edge of one
+   * segment run backwards past the next, which draws as facets and shards crossing the stroke rather
+   * than a smooth band. `mx`/`my` are each point's offset to its edges. Every call site that folds an
+   * open stroke over a unit wide prints once (a closed outline's sharp corners are meant).
+   */
+  private[gl] def checkFold(xs: Array[Float], ys: Array[Float], mx: Array[Float], my: Array[Float],
+                            n: Int, closed: Boolean): Unit = {
+    val segs = if (closed) n else n - 1
+    var worst = 0f
+    var i = 0
+    while (i < segs) {
+      val j = if (i == n - 1) 0 else i + 1
+      val sx = xs(j) - xs(i); val sy = ys(j) - ys(i)
+      val len = Math.sqrt(sx * sx + sy * sy).toFloat
+      if (len > 1e-3f) {
+        val dmx = mx(j) - mx(i); val dmy = my(j) - my(i)
+        // How far each edge of the segment runs backwards along it
+        val along = (dmx * sx + dmy * sy) / len
+        val back = Math.abs(along) - len
+        val hw = Math.max(Math.hypot(mx(i), my(i)), Math.hypot(mx(j), my(j))).toFloat
+        if (back > 0.75f && hw > 1f && back > worst) worst = back
+      }
+      i += 1
+    }
+    if (worst > 0f) {
+      val st = Thread.currentThread.getStackTrace
+      var f = 2
+      while (f < st.length && st(f).getClassName.endsWith("ShapeBatch")) f += 1
+      val key = s"${st(f).getClassName}.${st(f).getMethodName}:${st(f).getLineNumber}"
+      if (polySeen.add("fold " + key)) System.err.println(f"[FOLDED] $key n=$n by $worst%.1f")
+    }
+  }
+
   /** The table of cosines (sines) for an oval of `segments` segments, n + 1 of them, or null when it
     * has none (getCos works those out one at a time): for a loop round an oval to look up once. */
   @inline private[gl] def cosTable(segments: Int): Array[Float] =
@@ -147,7 +182,7 @@ class ShapeBatch(val stream: DrawStream) {
   private var drawing = false
   private var additive = false
 
-  // Whole-batch modifiers applied in `vertex`: an alpha multiplier and a uniform scale about
+  // Whole-batch modifiers applied in `vertex`: an alpha multiplier and a scale (or a stretch) about
   // a pivot. They let any shape renderer be faded or shrunk without knowing it — which is
   // how a projectile the terrain has stopped is drawn sinking into the surface. `begin`
   // resets them, so a caller that forgets `resetModifiers` cannot leak them into a frame.
@@ -155,12 +190,26 @@ class ShapeBatch(val stream: DrawStream) {
   private var xfOn = false
   private var xfPivX = 0f
   private var xfPivY = 0f
-  private var xfScale = 1f
+  // The transform about the pivot, as a 2 x 2 matrix: (A B / C D)
+  private var xfA = 1f; private var xfB = 0f; private var xfC = 0f; private var xfD = 1f
 
   def setAlphaMultiplier(m: Float): Unit = { alphaMul = m }
   def setScaleAbout(pivotX: Float, pivotY: Float, scale: Float): Unit = {
-    xfPivX = pivotX; xfPivY = pivotY; xfScale = scale; xfOn = scale != 1f
+    xfPivX = pivotX; xfPivY = pivotY; xfA = scale; xfB = 0f; xfC = 0f; xfD = scale; xfOn = scale != 1f
   }
+  /** Everything drawn until `resetModifiers` (or a `setScaleAbout`) scaled about the pivot by `along`
+    * in the direction of the unit vector (dx, dy) and by `across` across it: squash and stretch for
+    * any shape renderer, without its knowing. */
+  def setStretchAbout(pivotX: Float, pivotY: Float, dx: Float, dy: Float, along: Float, across: Float): Unit = {
+    xfPivX = pivotX; xfPivY = pivotY
+    xfA = along * dx * dx + across * dy * dy
+    xfB = (along - across) * dx * dy
+    xfC = xfB
+    xfD = along * dy * dy + across * dx * dx
+    xfOn = along != 1f || across != 1f
+  }
+  /** Is a scale or a stretch set? */
+  def transformed: Boolean = xfOn
   def resetModifiers(): Unit = { alphaMul = 1f; xfOn = false }
 
   /**
@@ -326,6 +375,130 @@ class ShapeBatch(val stream: DrawStream) {
   private var _rrXs = new Array[Float](28)
   private var _rrYs = new Array[Float](28)
 
+  // ── Smooth rounded rectangles: the HUD's panels (gl/CLAUDE.md, *Smooth edges*) ──
+  // Their outline, clockwise from the top of the left side round the top left corner: each corner a
+  // quarter turn in as many segments as keep every chord within a quarter of a pixel of the curve,
+  // the straight sides the chords between corners. Each point's outward normal is its corner's radius
+  // through it, exactly, so the edge's fade is laid along the true normal all the way round.
+  private var _srX = new Array[Float](72)
+  private var _srY = new Array[Float](72)
+  private var _srNx = new Array[Float](72)
+  private var _srNy = new Array[Float](72)
+  private var _srA = new Array[Float](72)
+
+  /** The outline of a rounded rectangle into _sr*, returning how many points it has. */
+  private def roundedOutline(x: Float, y: Float, w: Float, h: Float, radius: Float): Int = {
+    val rad = Math.max(0f, Math.min(radius, Math.min(w, h) * 0.5f))
+    // A quarter turn's chords keep within a quarter of a pixel of the arc: n = (pi/2) / (2 acos(1 - q/r))
+    val rPx = rad * pixelsPerUnit
+    val segs =
+      if (rPx <= 0.5f) 1
+      else Math.max(2, Math.min(16, Math.ceil((Math.PI * 0.5) / (2.0 * Math.acos(Math.max(-1.0, 1.0 - 0.25 / rPx)))).toInt))
+    val n = (segs + 1) * 4
+    if (_srX.length < n) {
+      _srX = new Array[Float](n); _srY = new Array[Float](n)
+      _srNx = new Array[Float](n); _srNy = new Array[Float](n); _srA = new Array[Float](n)
+    }
+    var corner = 0
+    var k = 0
+    while (corner < 4) {
+      // Top left from pointing left to pointing up, then top right, bottom right, bottom left
+      val cx = if (corner == 0 || corner == 3) x + rad else x + w - rad
+      val cy = if (corner < 2) y + rad else y + h - rad
+      val start = Math.PI * (1.0 + 0.5 * corner)
+      var j = 0
+      while (j <= segs) {
+        val ang = start + (Math.PI * 0.5) * j / segs
+        val c = Math.cos(ang).toFloat; val s = Math.sin(ang).toFloat
+        _srX(k) = cx + c * rad; _srY(k) = cy + s * rad
+        _srNx(k) = c; _srNy(k) = s
+        k += 1
+        j += 1
+      }
+      corner += 1
+    }
+    n
+  }
+
+  /**
+   * A rounded rectangle filled from one colour along its top to another along its bottom, its edge
+   * fading out over a pixel (gl/CLAUDE.md, *Smooth edges*): the HUD's panels, which were hard-edged
+   * rounded rects, their corners a staircase beside the menus' smooth glass.
+   */
+  def fillRoundedRectSmooth(x: Float, y: Float, w: Float, h: Float, radius: Float,
+                            r0: Float, g0: Float, b0: Float, a0: Float,
+                            r1: Float, g1: Float, b1: Float, a1: Float): Unit = {
+    if (w <= 0f || h <= 0f) return
+    val n = roundedOutline(x, y, w, h, radius)
+    val f = featherWidth * 0.5f
+    val invH = 1f / h
+    ensureCapacity(1 + 2 * n, n * 9)
+    val c = vertexCount
+    vertex(x + w * 0.5f, y + h * 0.5f, (r0 + r1) * 0.5f, (g0 + g1) * 0.5f, (b0 + b1) * 0.5f, (a0 + a1) * 0.5f)
+    var i = 0
+    while (i < n) {
+      val px = _srX(i); val py = _srY(i); val nx = _srNx(i); val ny = _srNy(i)
+      val t = Math.max(0f, Math.min(1f, (py - y) * invH))
+      val r = r0 + (r1 - r0) * t; val g = g0 + (g1 - g0) * t; val b = b0 + (b1 - b0) * t
+      vertex(px - nx * f, py - ny * f, r, g, b, a0 + (a1 - a0) * t)
+      vertex(px + nx * f, py + ny * f, r, g, b, 0f)
+      i += 1
+    }
+    i = 0
+    while (i < n) {
+      val j = if (i == n - 1) 0 else i + 1
+      val in0 = c + 1 + 2 * i; val in1 = c + 1 + 2 * j
+      tri(c, in0, in1)
+      quadTris(in0, in0 + 1, in1 + 1, in1)
+      i += 1
+    }
+  }
+
+  /**
+   * A rounded rectangle's outline `lineWidth` across, just inside its edge as a CSS border is, its
+   * edges fading out over a pixel either side; `a0` along the top and `a1` along the bottom, so a
+   * pane's rim of light can be brightest along its top as the menus' cards' is.
+   */
+  def strokeRoundedRectSmooth(x: Float, y: Float, w: Float, h: Float, radius: Float, lineWidth: Float,
+                              r: Float, g: Float, b: Float, a0: Float, a1: Float): Unit = {
+    if (w <= 0f || h <= 0f) return
+    val n = roundedOutline(x, y, w, h, radius)
+    val invH = 1f / h
+    var i = 0
+    while (i < n) {
+      _srA(i) = a0 + (a1 - a0) * Math.max(0f, Math.min(1f, (_srY(i) - y) * invH))
+      i += 1
+    }
+    strokePathSmooth(_srX, _srY, _srA, n, closed = true, lineWidth, -lineWidth * 0.5f, r, g, b, 1f)
+  }
+
+  /**
+   * A soft shadow round a rounded rectangle: its area at `a`, fading to nothing `spread` beyond its
+   * edge, under a pane that has to stand off a bright map (the HUD's panels over sand and snow).
+   */
+  def shadowRoundedRect(x: Float, y: Float, w: Float, h: Float, radius: Float, spread: Float,
+                        r: Float, g: Float, b: Float, a: Float): Unit = {
+    if (w <= 0f || h <= 0f) return
+    val n = roundedOutline(x, y, w, h, radius)
+    ensureCapacity(1 + 2 * n, n * 9)
+    val c = vertexCount
+    vertex(x + w * 0.5f, y + h * 0.5f, r, g, b, a)
+    var i = 0
+    while (i < n) {
+      vertex(_srX(i), _srY(i), r, g, b, a)
+      vertex(_srX(i) + _srNx(i) * spread, _srY(i) + _srNy(i) * spread, r, g, b, 0f)
+      i += 1
+    }
+    i = 0
+    while (i < n) {
+      val j = if (i == n - 1) 0 else i + 1
+      val in0 = c + 1 + 2 * i; val in1 = c + 1 + 2 * j
+      tri(c, in0, in1)
+      quadTris(in0, in0 + 1, in1 + 1, in1)
+      i += 1
+    }
+  }
+
   /** One corner of [[fillRoundedRect]] (0 top left, 1 top right, 2 bottom right, 3 bottom left),
     * fanned from its centre. */
   private def roundedCorner(cx: Float, cy: Float, radius: Float, corner: Int,
@@ -473,6 +646,36 @@ class ShapeBatch(val stream: DrawStream) {
     var k = 0
     while (k < n) {
       vertex(xs(k), ys(k), r, g, b, a)
+      k += 1
+    }
+    var i = 0
+    while (i < half - 1) {
+      val oa = v + i;         val ob = v + i + 1
+      val ia = v + n - 1 - i; val ib = v + n - 2 - i
+      quadTris(oa, ob, ib, ia)
+      i += 1
+    }
+  }
+
+  /**
+   * [[fillRibbon]] shaded across the band: its outer run in one colour and alpha, its inner run in
+   * another, each quad blending between them. A blade white-hot along its edge and deep at its back,
+   * or the smear it leaves, full where the blade is and nothing where it ends, in one primitive.
+   */
+  def fillRibbonGradient(xs: Array[Float], ys: Array[Float], n: Int,
+                         r0: Float, g0: Float, b0: Float, a0: Float,
+                         r1: Float, g1: Float, b1: Float, a1: Float): Unit = {
+    if (n < 4) return
+    val half = n / 2
+    ensureCapacity(n, (half - 1) * 6)
+    val v = vertexCount
+    var k = 0
+    while (k < half) {
+      vertex(xs(k), ys(k), r0, g0, b0, a0)
+      k += 1
+    }
+    while (k < n) {
+      vertex(xs(k), ys(k), r1, g1, b1, a1)
       k += 1
     }
     var i = 0
@@ -746,6 +949,7 @@ class ShapeBatch(val stream: DrawStream) {
       _mitX(i) = mx * hw; _mitY(i) = my * hw
       i += 1
     }
+    if (ShapeBatch.POLY_CHECK && !closed) ShapeBatch.checkFold(xs, ys, _mitX, _mitY, n, closed)
     val segs = if (closed) n else last
     ensureCapacity(2 * n, segs * 6)
     // Each point's two edges once, at its alpha: inner (along minus the mitre), then outer
@@ -1065,9 +1269,11 @@ class ShapeBatch(val stream: DrawStream) {
 
   /** Every primitive reserves its vertices with [[ensureCapacity]] first. */
   @inline private def vertex(x: Float, y: Float, r: Float, g: Float, b: Float, a: Float): Unit = {
-    if (xfOn) stream.vertex(xfPivX + (x - xfPivX) * xfScale, xfPivY + (y - xfPivY) * xfScale,
-      DrawStream.UNTEXTURED, DrawStream.UNTEXTURED, r, g, b, a * alphaMul)
-    else stream.vertex(x, y, DrawStream.UNTEXTURED, DrawStream.UNTEXTURED, r, g, b, a * alphaMul)
+    if (xfOn) {
+      val ox = x - xfPivX; val oy = y - xfPivY
+      stream.vertex(xfPivX + xfA * ox + xfB * oy, xfPivY + xfC * ox + xfD * oy,
+        DrawStream.UNTEXTURED, DrawStream.UNTEXTURED, r, g, b, a * alphaMul)
+    } else stream.vertex(x, y, DrawStream.UNTEXTURED, DrawStream.UNTEXTURED, r, g, b, a * alphaMul)
   }
 
   /** Room for `vertices` more vertices and `idx` more indices in this flush. */

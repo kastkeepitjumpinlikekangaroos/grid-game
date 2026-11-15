@@ -69,6 +69,29 @@ private[render] object Silhouettes {
     }
   }
 
+  /** As [[drawParts]], but every part's contour before any part's body: a shape in spans (a curved
+   *  horn) is inked as one piece, where part by part it comes out a jointed tube. */
+  private[projectiles] def drawPartsUnion(sb: ShapeBatch, parts: Array[Part], cx: Float, cy: Float,
+                             ca: Float, sa: Float, s: Float, tr: Float, tg: Float, tb: Float,
+                             alpha: Float, outlineW: Float): Unit = {
+    if (alpha <= 0.01f) return
+    var i = 0
+    while (i < parts.length) {
+      val pt = parts(i)
+      blitPart(pt, cx, cy, ca, sa, s, 1f, 1f)
+      sb.strokePolygon(_shpXs, _shpYs, pt.n, outlineW, 0.06f, 0.05f, 0.07f, 0.85f * alpha)
+      i += 1
+    }
+    i = 0
+    while (i < parts.length) {
+      val pt = parts(i)
+      blitPart(pt, cx, cy, ca, sa, s, 1f, 1f)
+      sb.fillPolygon(_shpXs, _shpYs, pt.n,
+        mix(pt.r, tr, pt.tint), mix(pt.g, tg, pt.tint), mix(pt.b, tb, pt.tint), alpha)
+      i += 1
+    }
+  }
+
   /** Flat silhouette pass used for motion-blur ghosts — one colour, no contour. */
   private[projectiles] def drawPartsFlat(sb: ShapeBatch, parts: Array[Part], cx: Float, cy: Float,
                             ca: Float, sa: Float, s: Float,
@@ -131,19 +154,19 @@ private[render] object Silhouettes {
    *  draws each span's ink across the one before it, and the blade comes out segmented. */
   private[projectiles] def drawPartsDirUnion(sb: ShapeBatch, parts: Array[Part], cx: Float, cy: Float,
                                 fx: Float, fy: Float, s: Float, tr: Float, tg: Float, tb: Float,
-                                alpha: Float, outlineW: Float): Unit = {
+                                alpha: Float, outlineW: Float, flipY: Float = 1f): Unit = {
     if (alpha <= 0.01f) return
     var i = 0
     while (i < parts.length) {
       val pt = parts(i)
-      blitPartDir(pt, cx, cy, fx, fy, s, 1f)
+      blitPartDir(pt, cx, cy, fx, fy, s, flipY)
       sb.strokePolygon(_shpXs, _shpYs, pt.n, outlineW, 0.06f, 0.05f, 0.07f, 0.85f * alpha)
       i += 1
     }
     i = 0
     while (i < parts.length) {
       val pt = parts(i)
-      blitPartDir(pt, cx, cy, fx, fy, s, 1f)
+      blitPartDir(pt, cx, cy, fx, fy, s, flipY)
       sb.fillPolygon(_shpXs, _shpYs, pt.n,
         mix(pt.r, tr, pt.tint), mix(pt.g, tg, pt.tint), mix(pt.b, tb, pt.tint), alpha)
       i += 1

@@ -23,7 +23,6 @@ private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierP
                                           glows: GlowEffectPainter, overlay: WorldOverlayPainter) {
   import ctx._
   import GlowEffectPainter._
-  import PlayerPainter.AirLiftPx
 
   // Remote player movement detection — Java HashMaps avoid Option wrapping
   private val lastRemotePositions = new java.util.HashMap[UUID, Position]()
@@ -49,14 +48,7 @@ private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierP
    * hanging at the top, and down as the stun under it ends, over however long it lasts. Their
    * shadow stays on the ground (drawGroundMarks), which is what reads as height.
    */
-  private def airLift(from: Long, until: Long): Double = {
-    val now = frameTimeMs
-    if (until <= from || now >= until || now < from) 0.0
-    else {
-      val t = (now - from).toDouble / (until - from)
-      AirLiftPx * Math.pow(Math.sin(Math.PI * t), 0.6)
-    }
-  }
+  private def airLift(from: Long, until: Long): Double = PlayerPainter.airLiftAt(frameTimeMs, from, until)
 
   @inline private def onScreen(sx: Double, sy: Double): Boolean =
     sx > -60 && sx < canvasW + 60 && sy > -60 && sy < canvasH + 60
@@ -399,4 +391,9 @@ private[render] final class PlayerPainter(ctx: RenderContext, barriers: BarrierP
 private[render] object PlayerPainter {
   /** How high a knocked-up player rises at the top of their arc, in world units (a sprite is 48). */
   val AirLiftPx: Double = 30.0
+
+  /** How high a player knocked up from `from` to `until` is drawn at `now` (see airLift). */
+  def airLiftAt(now: Long, from: Long, until: Long): Double =
+    if (until <= from || now >= until || now < from) 0.0
+    else AirLiftPx * Math.pow(Math.sin(Math.PI * (now - from).toDouble / (until - from)), 0.6)
 }

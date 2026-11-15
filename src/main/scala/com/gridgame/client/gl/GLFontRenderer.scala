@@ -31,7 +31,9 @@ import scala.collection.mutable
  * All sizes and metrics are in units, whatever the scale. Every draw also takes a `scale`, for
  * text drawn with another projection (the world's, which is zoomed) or animated in size.
  */
-class GLFontRenderer(val fontSize: Int, val pixelScale: Float = 1f) {
+class GLFontRenderer(val fontSize: Int, val pixelScale: Float = 1f,
+                     chain: Array[Font] = GLFontRenderer.fontChain, style: Int = Font.BOLD,
+                     shared: GlyphPages = null) {
   import GLFontRenderer._
 
   private val rasterSize: Int = Math.max(1, Math.round(fontSize * pixelScale))
@@ -40,7 +42,7 @@ class GLFontRenderer(val fontSize: Int, val pixelScale: Float = 1f) {
 
   // Font fallback chain derived to this size. First font that canDisplay a
   // code point wins for that glyph.
-  private val fonts: Array[Font] = fontChain.map(_.deriveFont(Font.BOLD, rasterSize.toFloat))
+  private val fonts: Array[Font] = chain.map(_.deriveFont(style, rasterSize.toFloat))
 
   // Shared graphics used only for measuring metrics.
   private val metricsG: Graphics2D = {
@@ -83,20 +85,9 @@ class GLFontRenderer(val fontSize: Int, val pixelScale: Float = 1f) {
   private val latinGlyphs = new Array[Glyph](256)
   private val glyphs = mutable.LongMap.empty[Glyph]
 
-  // Dynamic atlas: shelf-packed pages grown on demand.
-  private val pages = mutable.ArrayBuffer[GLTexture]()
-  private var penX = Pad
-  private var penY = Pad
-  private var rowH = 0
-
-  newPage()
-
-  private def newPage(): Unit = {
-    pages += GLTexture.createEmpty(AtlasDim, AtlasDim, nearest = false)
-    penX = Pad
-    penY = Pad
-    rowH = 0
-  }
+  // Where its glyphs are packed: pages of its own, or ones it shares with other fonts (the HUD's), so
+  // that text in one beside text in another samples the same texture and is drawn in the same draw
+  private val pages: GlyphPages = if (shared != null) shared else new GlyphPages()
 
   private def pickFont(cp: Int): (Font, FontMetrics) = {
     var i = 0
@@ -124,14 +115,10 @@ class GLFontRenderer(val fontSize: Int, val pixelScale: Float = 1f) {
     if (cp != ' '.toInt) g.drawString(new String(Character.toChars(cp)), 0, ascent)
     g.dispose()
 
-    // Advance the shelf cursor, wrapping rows / adding pages as needed.
-    if (penX + gw + Pad > AtlasDim) { penX = Pad; penY += rowH + Pad; rowH = 0 }
-    if (penY + gh + Pad > AtlasDim) newPage()
-    val page = pages.last
-    uploadGlyph(page, penX, penY, img)
-    val region = page.region(penX, penY, gw, gh)
-    penX += gw + Pad
-    rowH = math.max(rowH, gh)
+    pages.place(gw, gh)
+    val page = pages.placedPage
+    uploadGlyph(page, pages.placedX, pages.placedY, img)
+    val region = page.region(pages.placedX, pages.placedY, gw, gh)
 
     new Glyph(region, advance * unit, gw * unit)
   }
@@ -260,12 +247,52 @@ class GLFontRenderer(val fontSize: Int, val pixelScale: Float = 1f) {
     w * scale
   }
 
-  def dispose(): Unit = pages.foreach(_.dispose())
+  /** Free its pages, unless it shares them: then they are their owner's to free. */
+  def dispose(): Unit = if (shared == null) pages.dispose()
+}
+
+/**
+ * Pages of glyphs, shelf-packed and grown a page at a time, which one font or several fill: fonts that
+ * share them draw from the same texture, so the HUD's text in its five sizes, beside one another, is
+ * one draw where it was a draw at every change of size. Only the render thread uses them.
+ */
+final class GlyphPages(val dim: Int = 1024) {
+  private val Pad = 2
+  private val pages = scala.collection.mutable.ArrayBuffer[GLTexture]()
+  private var penX = Pad
+  private var penY = Pad
+  private var rowH = 0
+  // Where the last [[place]] put its picture
+  private[gl] var placedPage: GLTexture = _
+  private[gl] var placedX = 0
+  private[gl] var placedY = 0
+
+  /** Room for a picture `w` x `h` texels: on the shelf, on a new one, or on a new page. */
+  private[gl] def place(w: Int, h: Int): Unit = {
+    if (pages.isEmpty) newPage()
+    if (penX + w + Pad > dim) { penX = Pad; penY += rowH + Pad; rowH = 0 }
+    if (penY + h + Pad > dim) newPage()
+    placedPage = pages.last
+    placedX = penX
+    placedY = penY
+    penX += w + Pad
+    rowH = math.max(rowH, h)
+  }
+
+  private def newPage(): Unit = {
+    pages += GLTexture.createEmpty(dim, dim, nearest = false)
+    penX = Pad
+    penY = Pad
+    rowH = 0
+  }
+
+  /** How many pages it has. */
+  def count: Int = pages.length
+
+  def dispose(): Unit = { pages.foreach(_.dispose()); pages.clear() }
 }
 
 object GLFontRenderer {
-  private val AtlasDim = 1024
-  private val Pad = 2
 
   private def loadFont(resource: String): Option[Font] =
     try {
@@ -294,4 +321,13 @@ object GLFontRenderer {
 
   /** Primary (Latin) font — retained for any callers that want a base AWT font. */
   val gameFont: Font = fontChain.head
+
+  /**
+   * Exo 2 Black first, for the HUD's numbers, as the menus' stat tiles set theirs (`.stat-value`). Its
+   * own weight is the black, so it is derived plain: derived bold, AWT would thicken it again.
+   */
+  val blackChain: Array[Font] = {
+    val black = loadFont("/fonts/Exo2-Black.ttf").toArray
+    if (black.isEmpty) fontChain else black ++ fontChain.tail
+  }
 }

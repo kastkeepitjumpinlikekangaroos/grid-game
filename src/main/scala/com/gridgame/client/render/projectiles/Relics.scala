@@ -343,36 +343,25 @@ private[render] object Relics {
   }
 
   // ── The Yokai ──
-  /** A teardrop of foxfire at (x, y), `r` across its head, its tail along the unit (dx, dy): ink, blue,
-    * cyan, white. */
+  /** A teardrop of foxfire, its head `r` across on (x, y), its tail `len` along the unit (dx, dy) and
+    * curling `curl` across it: ink, blue, cyan, white, each inside the last on the one spine. */
   private def foxfire(sb: ShapeBatch, x: Float, y: Float, r: Float, dx: Float, dy: Float, len: Float,
-                      phase: Double, a: Float): Unit = {
-    var layer = 0
-    while (layer < 4) {
-      val kk = if (layer == 0) 1f else if (layer == 1) 0.86f else if (layer == 2) 0.6f else 0.32f
-      val qx = -dy; val qy = dx
-      var i = 0
-      while (i < 5) {
-        val t = i / 4f
-        val sw = Math.sin(phase * 2.4 - t * 3.4).toFloat * r * 0.5f * t
-        _pvX(i) = x + dx * len * kk * t + qx * sw; _pvY(i) = y + dy * len * kk * t + qy * sw
-        _pvW(i) = (2f * r * kk + (if (layer == 0) 2.6f else 0f)) * (1f - t * 0.92f) + 0.3f
-        _pvA(i) = a * (1f - t * t * 0.5f)
-        i += 1
-      }
-      (layer: @scala.annotation.switch) match {
-        case 0 => sb.strokePolylineVar(_pvX, _pvY, _pvW, _pvA, 5, 0.03f, 0.07f, 0.3f)
-        case 1 => sb.strokePolylineVar(_pvX, _pvY, _pvW, _pvA, 5, 0.22f, 0.45f, 1f)
-        case 2 => sb.strokePolylineVar(_pvX, _pvY, _pvW, _pvA, 5, 0.45f, 0.85f, 1f)
-        case _ => sb.strokePolylineVar(_pvX, _pvY, _pvW, _pvA, 5, 0.92f, 1f, 1f)
-      }
-      layer += 1
-    }
+                      curl: Float, phase: Double, a: Float): Unit = {
+    val wave = r * 0.3f
+    var n = flamePts(x, y, r, dx, dy, len, len, curl, wave, phase, 12)
+    sb.strokePolygon(_gx, _gy, n, Math.min(2.6f, r * 0.6f), 0.03f, 0.07f, 0.3f, 0.92f * a)
+    sb.fillRibbon(_gx, _gy, n, 0.2f, 0.42f, 1f, a)
+    n = flamePts(x, y, r * 0.68f, dx, dy, len * 0.6f, len, curl, wave, phase, 10)
+    sb.fillRibbon(_gx, _gy, n, 0.45f, 0.85f, 1f, a)
+    n = flamePts(x, y, r * 0.38f, dx, dy, len * 0.26f, len, curl, wave, phase, 8)
+    sb.fillRibbon(_gx, _gy, n, 0.94f, 1f, 1f, a)
   }
 
   /**
-   * The Yokai's mystic bolt: kitsune-bi, the foxfire she carries in her hands — a teardrop of blue flame
-   * curling back on itself, two lesser wisps of it circling it — leaving blue sparks behind.
+   * The Yokai's mystic bolt: kitsune-bi, the foxfire she carries in her hands — a teardrop of blue flame,
+   * its tail left behind it and rising, curling as it burns, and two lesser flames following in its
+   * wake. The tail is what is behind it less a little, lifted: at no heading has it nowhere to go, and
+   * it turns evenly as the heading does.
    */
   private[projectiles] def drawFoxfire(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
     val phase = (tick + proj.id * 31) * 0.35
@@ -381,36 +370,28 @@ private[render] object Relics {
     val ds = Math.min(dynScale, 1.3f)
     screenDir(proj)
     val ndx = _sdx; val ndy = _sdy
-    val tdx0 = -ndx * 0.8f; val tdy0 = -ndy * 0.8f - 0.6f
+    val tdx0 = -ndx; val tdy0 = -ndy - 0.45f
     val tl = Math.sqrt(tdx0 * tdx0 + tdy0 * tdy0).toFloat
     val tdx = tdx0 / tl; val tdy = tdy0 / tl
+    // Which way the tail curls: always up the screen, or over to one side where it stands upright
+    val curlSign = if (tdx > 0.05f) -1f else 1f
 
-    sb.fillOvalSoft(sx, sy, 26f * ds * dynGlow, 24f * ds * dynGlow, 0.25f, 0.5f, 1f, 0.32f * a, 0f, 16)
+    sb.fillOvalSoft(sx, sy, 20f * ds * dynGlow, 18f * ds * dynGlow, 0.25f, 0.5f, 1f, 0.26f * a, 0f, 16)
     Orbs.shedMotes(sb, sx, sy, ndx, ndy, 12f * ds, 4, 0.6f, 0.85f, 1f, a, tick, proj.id)
-    // The lesser wisps circling it: those behind it first
-    var pass = 0
-    while (pass < 2) {
-      var w = 0
-      while (w < 2) {
-        val ang = phase * 0.9 + w * Math.PI
-        val behind = Math.sin(ang) < 0
-        if (behind == (pass == 0)) {
-          val wx = sx + Math.cos(ang).toFloat * 18.5f * ds; val wy = sy + Math.sin(ang).toFloat * 7f * ds - 2f * ds
-          foxfire(sb, wx, wy, 2.7f * ds, tdx, tdy, 10f * ds, phase + w * 2.0, a * (if (behind) 0.8f else 1f))
-        }
-        w += 1
-      }
-      if (pass == 0) {
-        // The flame itself: its tail curling back and up, its head round
-        foxfire(sb, sx, sy, 8f * ds, tdx, tdy, 30f * ds, phase, a)
-        sb.fillOval(sx, sy, 8.6f * ds + 1.6f, 8.2f * ds + 1.6f, 0.03f, 0.07f, 0.3f, 0.9f * a, 18)
-        sb.fillOval(sx, sy, 8.6f * ds, 8.2f * ds, 0.22f, 0.45f, 1f, a, 18)
-        sb.fillOvalSoft(sx + tdx * 1.5f * ds, sy + tdy * 1.5f * ds, 6.4f * ds, 6f * ds, 0.5f, 0.88f, 1f, a, 0.4f * a, 16)
-        val hot = 0.9f + 0.1f * Math.sin(phase * 1.8).toFloat
-        sb.fillOvalSoft(sx, sy + 0.8f * ds, 3.8f * ds * hot, 3.6f * ds * hot, 1f, 1f, 1f, a, 0.5f * a, 12)
-      }
-      pass += 1
+    // The lesser flames, following either side of its wake and bobbing
+    var w = 0
+    while (w < 2) {
+      val side = if (w == 0) 1f else -1f
+      val back = (17f + 5f * w) * ds
+      val bob = Math.sin(phase * 1.1 + w * 2.4).toFloat * 2.2f * ds
+      val wx = sx - ndx * back - ndy * side * 7.5f * ds
+      val wy = sy - ndy * back + ndx * side * 7.5f * ds * 0.7f + bob - 3f * ds
+      foxfire(sb, wx, wy, (3.6f - 0.6f * w) * ds, tdx, tdy, (11f - 2f * w) * ds, curlSign * 2.5f * ds, phase + 1.7 + w * 2.0, a)
+      w += 1
     }
+    foxfire(sb, sx, sy, 8.6f * ds, tdx, tdy, 30f * ds, curlSign * 7f * ds, phase, a)
+    val hot = 0.9f + 0.1f * Math.sin(phase * 1.8).toFloat
+    sb.fillOvalSoft(sx, sy, 3.6f * ds * hot, 3.4f * ds * hot, 1f, 1f, 1f, a, 0.6f * a, 12)
   }
 
   private final val OFUDA_ROWS = 6

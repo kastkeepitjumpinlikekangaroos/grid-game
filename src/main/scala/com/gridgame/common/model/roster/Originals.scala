@@ -26,7 +26,7 @@ private[model] object Originals {
   val AxeDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.AXE, name = "Axe",
     speedMultiplier = 0.6f, damage = 49, maxRange = 3,
-    hitRadius = 2.5f, boomerang = true
+    hitRadius = 4.0f, hitCentreBehind = 1.5f, boomerang = true
   )
   val RopeDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.ROPE, name = "Rope",
@@ -104,7 +104,7 @@ private[model] object Originals {
   val TalonDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.TALON, name = "Talon",
     speedMultiplier = 0.7f, damage = 55, maxRange = 2,
-    hitRadius = 2.2f
+    hitRadius = 3.7f, hitCentreBehind = 1.5f
   )
   val GustDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.GUST, name = "Gust",
@@ -115,7 +115,7 @@ private[model] object Originals {
   val ShurikenDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.SHURIKEN, name = "Shuriken",
     speedMultiplier = 0.95f, damage = 28, maxRange = 3,
-    hitRadius = 2.2f
+    hitRadius = 3.7f, hitCentreBehind = 1.5f
   )
   val ChainBoltDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.CHAIN_BOLT, name = "Chain Bolt",
@@ -130,7 +130,7 @@ private[model] object Originals {
   val KatanaDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.KATANA, name = "Katana",
     speedMultiplier = 0.7f, damage = 51, maxRange = 2,
-    hitRadius = 2.2f
+    hitRadius = 3.7f, hitCentreBehind = 1.5f
   )
   // The Samurai's Crescent Cut: one wide cut that goes on through everyone in its way, knocking
   // each up into the air, stunned, for a second. It was a ring of eight of these, 5 cells out
@@ -161,7 +161,7 @@ private[model] object Originals {
   val BloodFangDef: ProjectileDef = ProjectileDef(
     id = ProjectileType.BLOOD_FANG, name = "Blood Fang",
     speedMultiplier = 0.7f, damage = 47, maxRange = 2,
-    hitRadius = 2.2f,
+    hitRadius = 3.7f, hitCentreBehind = 1.5f,
     onHitEffect = Some(LifeSteal(50))
   )
   val BatSwarmDef: ProjectileDef = ProjectileDef(
@@ -188,7 +188,11 @@ private[model] object Originals {
     base(ProjectileType.POISON_DART).copy(id = ProjectileType.VENOM_DART, name = "Venom Dart", damage = 15, alsoOnHit = Seq(Poison(15, 3000, 750))),
     // Of their own, so their numbers can differ from the others who throw the base
     base(ProjectileType.AXE).copy(id = ProjectileType.ARENA_AXE, name = "Arena Axe", damage = 51),
-    base(ProjectileType.SHURIKEN).copy(id = ProjectileType.THROWING_STAR, name = "Throwing Star", damage = 51)
+    base(ProjectileType.SHURIKEN).copy(id = ProjectileType.THROWING_STAR, name = "Throwing Star", damage = 51),
+    // The Gladiator's rope: a fighter's pull, which holds whoever it brings in for a second
+    // (design/characters.md, *A fighter can finish what it starts*). The Puppeteer and the Pirate,
+    // who are ranged, throw the Rope itself, which only pulls
+    base(ProjectileType.ROPE).copy(id = ProjectileType.LASSO, name = "Lasso", alsoOnHit = Seq(Stun(1000)))
   )
 
   // ── Characters ──
@@ -228,9 +232,9 @@ private[model] object Originals {
     ),
     eAbility = AbilityDef(
       name = "Rope",
-      description = "Throws a rope that pulls enemies to you.",
+      description = "Throws a rope that pulls an enemy to you, stunned for 1s.",
       cooldownMs = 20000, maxRange = 25, damage = 5,
-      projectileType = ProjectileType.ROPE, keybind = "E"
+      projectileType = ProjectileType.LASSO, keybind = "E"
     ),
     primaryProjectileType = ProjectileType.ARENA_AXE,
     role = Melee, maxHealth = 125, moveSpeed = Melee.speed

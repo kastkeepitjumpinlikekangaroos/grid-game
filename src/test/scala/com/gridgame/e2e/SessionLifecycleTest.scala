@@ -71,9 +71,8 @@ class SessionLifecycleTest {
     loop.await("the match")(players.forall(c => c.playing && c.client.getPlayers.size == 3))
     play(loop, players, 800)
 
-    // Esc, twice: out of the match and back in the lobby browser, free to play elsewhere
-    quit.press(org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE)
-    quit.press(org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE)
+    // The menu's Leave, pressed twice: out of the match and back in the lobby browser, free to play elsewhere
+    quit.leaveByMenu()
     loop.await("the leaver gone")(Seq(stay, drop, also).forall(c => !c.client.getPlayers.containsKey(quit.id)))
     assertEquals(ClientState.LOBBY_BROWSER, quit.client.clientState)
     assertNull("out of the lobby", loop.lobbyOf(quit))

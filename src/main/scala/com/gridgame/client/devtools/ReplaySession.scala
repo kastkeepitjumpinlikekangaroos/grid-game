@@ -45,6 +45,11 @@ final class ReplayRecording(val code: String, val records: IndexedSeq[Record], v
 
   val playerName: String = obj(report, "connection").flatMap(str(_, "player")).getOrElse("replay")
 
+  /** The camera's zoom the player had as the match began, in percent ("130%" in the report's graphics);
+    * none in a report made before the zoom could be chosen. */
+  val playersZoom: Option[Int] = obj(report, "graphics").flatMap(str(_, "zoom"))
+    .flatMap(z => try Some(z.trim.stripSuffix("%").toInt) catch { case _: NumberFormatException => None })
+
   private def idIn(p: Array[Byte]): UUID = {
     val id = new UUID(Recording.long(p, 5), Recording.long(p, 13))
     if (id.getMostSignificantBits == 0L && id.getLeastSignificantBits == 0L) null else id

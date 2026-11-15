@@ -10,7 +10,8 @@ import javafx.application.Platform
 import javafx.collections.FXCollections
 import javafx.geometry.{Insets, Pos}
 import javafx.scene.Node
-import javafx.scene.control.{ComboBox, ScrollPane}
+import javafx.scene.control.{Button, ComboBox, ScrollPane, Tooltip}
+import javafx.scene.input.MouseButton
 import javafx.scene.layout.{FlowPane, HBox, Priority, Region, VBox}
 import javafx.scene.shape.Circle
 import javafx.scene.text.{Text, TextFlow}
@@ -47,6 +48,13 @@ private[client] final class LobbyRoomScreen(app: Screens) {
 
     val modeChip = chip(modeText, "violet")
     val mapChip = chip(mapName, "sky", Icons.MapPin, Palette.Sky)
+    // The host's map: a chip like the drop-downs beside it, which opens every map in a carousel
+    val mapButton = new Button(mapName)
+    mapButton.getStyleClass.add("chip-button")
+    val mapArrow = new Region()
+    mapArrow.getStyleClass.add("chip-button-arrow")
+    mapButton.setGraphic(mapArrow)
+    mapButton.setTooltip(new Tooltip(Messages.t("Change map")))
     val timeChip = chip(timeText, "grey", Icons.Clock, Palette.Muted)
     val chips = row(8, modeChip, mapChip, timeChip)
     val title = h1(client.currentLobbyName)
@@ -66,8 +74,7 @@ private[client] final class LobbyRoomScreen(app: Screens) {
     var refreshHostControls: () => Unit = () => ()
 
     val playersChip = chip("", "sky")
-    val botButtons = new HBox(6)
-    botButtons.setAlignment(Pos.CENTER_RIGHT)
+    val botButtons = row(6)
     val leftPanel = new VBox(16)
 
     if (!client.isLobbyHost) {
@@ -75,10 +82,10 @@ private[client] final class LobbyRoomScreen(app: Screens) {
       val waitingLabel = text(Messages.t("Waiting for host to start..."), "lead-on-sky")
       headingRight.getChildren.add(0, row(8, Icons.node(Icons.Clock, 18, Palette.Text), waitingLabel))
     } else {
-      // The host sets the match up in the heading itself: its chips are drop-downs
-      val mapCombo = settingChip(new ComboBox[String](FXCollections.observableArrayList(WorldRegistry.displayNames: _*)),
-        "sky", Messages.t("Map"))
-      mapCombo.getSelectionModel.select(client.currentLobbyMapIndex)
+      // The host sets the match up in the heading itself: its chips are drop-downs, but for the map's,
+      // which opens the map picker, as the map's picture beside them does. The map last picked here,
+      // for every update sent: the server's word on it can lag a pick by the time it takes to answer
+      var pickedMap = client.currentLobbyMapIndex
 
       val durationCombo = settingChip(makeDurationCombo(client.currentLobbyDuration), "grey", Messages.t("Time"))
       durationCombo.setMaxWidth(Region.USE_PREF_SIZE)
@@ -92,7 +99,7 @@ private[client] final class LobbyRoomScreen(app: Screens) {
         "violet", Messages.t("Size"))
       teamSizeCombo.getSelectionModel.select(Math.max(0, teamSizes.indexOf(client.currentLobbyTeamSize)))
 
-      chips.getChildren.setAll(gameModeCombo, teamSizeCombo, mapCombo, durationCombo,
+      chips.getChildren.setAll(gameModeCombo, teamSizeCombo, mapButton, durationCombo,
         chip(Messages.t("You are the host"), "leaf", Icons.Crown, Palette.Leaf))
 
       // Set while showing the server's values, so selecting them doesn't send another update
@@ -100,7 +107,7 @@ private[client] final class LobbyRoomScreen(app: Screens) {
       val sendConfigUpdate = () => {
         if (!syncing) {
           val ts = teamSizes(Math.max(0, teamSizeCombo.getSelectionModel.getSelectedIndex))
-          client.updateLobbyConfig(mapCombo.getSelectionModel.getSelectedIndex, selectedDuration(durationCombo),
+          client.updateLobbyConfig(pickedMap, selectedDuration(durationCombo),
             gameModeCombo.getSelectionModel.getSelectedIndex.toByte, ts)
         }
       }
@@ -120,11 +127,17 @@ private[client] final class LobbyRoomScreen(app: Screens) {
 
       def showTeamSize(isTeams: Boolean): Unit = { teamSizeCombo.setVisible(isTeams); teamSizeCombo.setManaged(isTeams) }
 
-      mapCombo.setOnAction(_ => {
+      def pickMap(): Unit = MapPickerDialog.show(stage, pickedMap, chosen => {
+        pickedMap = chosen
         sendConfigUpdate()
-        previewedMap = mapCombo.getSelectionModel.getSelectedIndex
+        mapButton.setText(WorldRegistry.getDisplayName(chosen))
+        previewedMap = chosen
         preview.getChildren.setAll(MapPreview.view(previewedMap, 136, 76, 12))
       })
+      mapButton.setOnAction(_ => pickMap())
+      preview.getStyleClass.add("map-pick")
+      Tooltip.install(preview, new Tooltip(Messages.t("Change map")))
+      preview.setOnMouseClicked(e => if (e.getButton == MouseButton.PRIMARY) pickMap())
       durationCombo.setOnAction(_ => sendConfigUpdate())
       gameModeCombo.setOnAction(_ => {
         showTeamSize(gameModeCombo.getSelectionModel.getSelectedIndex == 1)
@@ -182,9 +195,12 @@ private[client] final class LobbyRoomScreen(app: Screens) {
       }
     }
     rebuildRoster()
-    val playersCard = card(cardHeader(Messages.t("Players"), playersChip), roster)
+    // The host's bot buttons are above the roster, which grows under them as bots join. Below it,
+    // each bot that wrapped it onto another line pushed them down from under the pointer of a host
+    // adding several.
+    val playersCard = card(cardHeader(Messages.t("Players"), playersChip))
     if (client.isLobbyHost) playersCard.getChildren.add(botButtons)
-    botButtons.setAlignment(Pos.CENTER_LEFT)
+    playersCard.getChildren.add(roster)
     playersCard.setSpacing(12)
 
     // ── Chat ──
@@ -243,6 +259,7 @@ private[client] final class LobbyRoomScreen(app: Screens) {
     def refreshRoom(): Unit = {
       modeChip.setText(modeText)
       mapChip.setText(mapName)
+      mapButton.setText(mapName)
       timeChip.setText(timeText)
       showPreview()
       rebuildRoster()

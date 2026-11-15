@@ -762,8 +762,8 @@ final class LoopClient private[e2e] (val loop: Loopback, val name: String, val i
   client.lobbyActionFailedListener = reason => lobbyRefusals += reason
   // MatchWindow: a lobby closing under a match goes back to the browser
   client.lobbyClosedListener = () => if (client.clientState == ClientState.PLAYING) client.returnToLobbyBrowser()
-  // Esc twice: MatchWindow.leaveMatch (practice's results still come)
-  keys.onLeaveMatch = () => { loop.note(s"$name leaves the match"); client.leaveMatch() }
+  // The menu's Leave, pressed twice: MatchWindow.leaveMatch (practice's results still come)
+  keys.menu.onLeave = () => { loop.note(s"$name leaves the match"); client.leaveMatch() }
 
   private def heard(p: Packet): Unit =
     try E2EClient.hear(client, p)
@@ -843,6 +843,16 @@ final class LoopClient private[e2e] (val loop: Loopback, val name: String, val i
 
   def press(key: Int, mods: Int = 0): Unit = keys.invoke(0L, key, 0, org.lwjgl.glfw.GLFW.GLFW_PRESS, mods)
   def release(key: Int): Unit = keys.invoke(0L, key, 0, org.lwjgl.glfw.GLFW.GLFW_RELEASE, 0)
+
+  /** Out of the match as a player leaves it from the keyboard: Esc brings the menu up, Left goes from
+    * Resume to Leave, and Enter presses it twice (the first only arms it). */
+  def leaveByMenu(): Unit = {
+    import org.lwjgl.glfw.GLFW._
+    press(GLFW_KEY_ESCAPE)
+    press(GLFW_KEY_LEFT)
+    press(GLFW_KEY_ENTER)
+    press(GLFW_KEY_ENTER)
+  }
 
   /** The mouse over the world at (x, y), as GLMouseHandler puts it there. */
   def aimAt(x: Double, y: Double): Unit = client.setMouseWorldPosition(x, y)

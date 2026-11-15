@@ -51,7 +51,7 @@ private[render] object Tethers {
   private val _tethered: Array[Boolean] = {
     val a = new Array[Boolean](256)
     for (t <- Seq(ProjectileType.TENTACLE, ProjectileType.VINE_WHIP, ProjectileType.GRAB, ProjectileType.TALON_GRAB,
-      ProjectileType.DEATH_GRIP, ProjectileType.ROPE, ProjectileType.MEAT_HOOK, ProjectileType.TONGUE,
+      ProjectileType.DEATH_GRIP, ProjectileType.ROPE, ProjectileType.LASSO, ProjectileType.MEAT_HOOK, ProjectileType.TONGUE,
       ProjectileType.BANDAGE_WHIP, ProjectileType.JAW)) a(t & 0xFF) = true
     a
   }
@@ -185,17 +185,19 @@ private[render] object Tethers {
    */
   private def curlTip(sb: ShapeBatch, sx: Float, sy: Float, fx: Float, fy: Float, side: Float, sweep: Float,
                       rad: Float, w0: Float, r: Float, g: Float, b: Float, ink: Float, a: Float): Unit = {
-    val n = 7
+    // A spiral, tightening as it turns: a circle of one radius swept three quarters round came back
+    // across its own start, and in seven points it was a hexagon
+    val n = 14
     var dx = fx; var dy = fy
     var x = sx; var y = sy
     val turn = sweep / (n - 1) * side
-    val step = rad * Math.abs(turn)
     val c = Math.cos(turn).toFloat; val s = Math.sin(turn).toFloat
     var i = 0
     while (i < n) {
       _pvX(i) = x; _pvY(i) = y
       val ndx = dx * c - dy * s; val ndy = dx * s + dy * c
       dx = ndx; dy = ndy
+      val step = rad * (1f - 0.62f * i / (n - 1)) * Math.abs(turn)
       x += dx * step; y += dy * step * 0.85f
       i += 1
     }

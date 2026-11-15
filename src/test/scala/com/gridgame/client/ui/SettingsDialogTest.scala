@@ -13,7 +13,8 @@ import org.junit.{After, Before, Test}
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 
-/** The settings card (SettingsDialog): the quality and the resolution picked there are taken and kept. */
+/** The settings card (SettingsDialog): the quality, the resolution and the camera's zoom picked there
+  * are taken and kept. */
 class SettingsDialogTest {
   private val saved = mutable.Map[String, String]()
   private var before: RenderQuality.Store = _
@@ -26,13 +27,13 @@ class SettingsDialogTest {
       def put(key: String, value: String): Unit = saved(key) = value
     }
     RenderQuality.setTier(RenderQuality.HIGH)
-    RenderQuality.configure(Array("--resolution=native"))
+    RenderQuality.configure(Array("--resolution=native", "--zoom=100"))
   }
 
   @After def putBack(): Unit = {
     RenderQuality.store = before
     RenderQuality.setTier(RenderQuality.HIGH)
-    RenderQuality.configure(Array("--resolution=native"))
+    RenderQuality.configure(Array("--resolution=native", "--zoom=100"))
   }
 
   private def all(n: Node): Seq[Node] = n match {
@@ -40,15 +41,32 @@ class SettingsDialogTest {
     case _ => Seq(n)
   }
 
-  /** A page with the card open over it: its root, and the card's two drop-downs. */
-  private def open(): (StackPane, ComboBox[String], ComboBox[String]) = Fx {
+  /** A page with the card open over it: its root, and the card's three drop-downs. */
+  private def openAll(): (StackPane, ComboBox[String], ComboBox[String], ComboBox[String]) = Fx {
     val root = new StackPane()
     val stage = new Stage()
     stage.setScene(Theme.newScene(root))
     SettingsDialog.show(stage)
     val combos = all(root).collect { case c: ComboBox[_] => c.asInstanceOf[ComboBox[String]] }
-    assertEquals("the quality's and the resolution's", 2, combos.size)
-    (root, combos(0), combos(1))
+    assertEquals("the quality's, the resolution's and the zoom's", 3, combos.size)
+    (root, combos(0), combos(1), combos(2))
+  }
+
+  private def open(): (StackPane, ComboBox[String], ComboBox[String]) = {
+    val (root, quality, resolution, _) = openAll()
+    (root, quality, resolution)
+  }
+
+  @Test def theZoomPickedIsTakenAndKept(): Unit = {
+    val (_, _, _, zoom) = openAll()
+    assertEquals("the widest, as every match was drawn before", "100% (widest)", Fx(zoom.getValue))
+    assertEquals(11, Fx(zoom.getItems.size))
+    Fx(zoom.setValue("150%"))
+    assertEquals(150, RenderQuality.zoomPercent)
+    assertEquals("150%", saved("zoom"))
+    // and it opens on what was chosen
+    val (_, _, _, again) = openAll()
+    assertEquals("150%", Fx(again.getValue))
   }
 
   @Test def whatIsPickedIsTakenAndKept(): Unit = {

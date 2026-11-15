@@ -30,10 +30,23 @@ can drive a real screen through `app.showLobbyRoom(stage)` and the like.
   grid of samples.
 - **MapPreview** — the maps for the menus, as models of themselves on a dark stage: where its
   matches are played (every cell its spawn points can walk to, `MapArt.playArea`) and a rim of its
-  border. Drawn once per size shown, at twice it, on a thread of its own, and kept to 12MB. Also
-  `patch`, a few cells of grass for a character to stand on. The whole arena, always: the lobby
-  form once cut a square map to fill its wide frame, which hid half of it; the border (a forest,
-  the sea, the void) is scenery, and shown whole it left the arena small.
+  border. Drawn once per size shown, at twice it, on a thread of its own, and kept to 12MB; the
+  thread draws what is wanted soonest first (`Now`: a picture a page shows on its own; `Strip`: a
+  carousel's little ones; `Ahead`: the maps a carousel may step to next), and a picture asked for
+  sooner than it first was moves up. Also `patch`, a few cells of grass for a character to stand
+  on, and `size`, how many cells a map is. The whole arena, always: the lobby form once cut a
+  square map to fill its wide frame, which hid half of it; the border (a forest, the sea, the
+  void) is scenery, and shown whole it left the arena small.
+- **MapCarousel** — the maps to pick from, wherever a map is picked: the picked one big between
+  an arrow either side (round from the last to the first), its name and size ("Medium map · 140 ×
+  140") and how far along it is ("12 / 19"), and a strip of every map under it that slides to
+  keep the picked one in its middle (a click picks, a double click settles, the wheel or a trackpad
+  slides it; ← → Home End and Enter while it has the focus). It replaced a drop-down of the maps'
+  names, where a map had to be picked to be seen. `Form` is the lobby form's (the map 320x180, as the form drew it before,
+  the strip's 64x36), `Wide` the map picker's (544x306, the strip's 96x54 with their names under
+  them). A map stepped to shows the strip's picture blown up for the 30-120ms its own takes to draw
+  (they are framed alike); the maps either side are drawn ahead once the player steps (as it opens,
+  in the picker).
 - **Icons** — line icons, as SVG paths.
 - **CharacterSelectionPanel** — the character picker (grid, filter, search, the picked character in
   detail), with **AbilityPreviewRenderer** (the animated ability previews; each projectile type's
@@ -63,10 +76,22 @@ Leaderboard), a flag to report a problem, the settings (sliders), the sound swit
 its body and its tab, and a `leave` for what going elsewhere must undo — the lobby room leaves the
 lobby, the ranked queue leaves the queue, the scoreboard goes back to the browser.
 
+`screens/MapPickerDialog` is the maps for a lobby's host, from the map chip in the lobby room's
+heading or the map's picture beside it: a `Wide` carousel on a card over the room, as the settings'
+card is. Browsing it changes nothing; "Use this map", a double click or Enter sends the one picked
+(nothing if it is the lobby's already), and Cancel, the cross or Escape leave the lobby's. The map
+chip is a button drawn as the drop-down chips beside it are (`.chip-button`), and a guest's is
+only a chip. An update sent for any of the host's settings carries the map last picked there,
+not the client's copy of the server's, which lags a pick by a round trip.
+`LobbyRoomScreenTest` and `LobbyBrowserScreenTest` click both carousels, `ui/MapCarouselTest`
+the carousel itself.
+
 `screens/SettingsDialog` is the game's settings, from the sliders in the top bar (and beside the
-language on the login screen): a card over the page as a report's is, with the graphics quality and
-the resolution the world is drawn at (gl/CLAUDE.md, *Graphics quality tiers*), each taken and saved
-as it is picked. The gallery's `23_settings` draws it.
+language on the login screen): a card over the page as a report's is, with the graphics quality,
+the resolution the world is drawn at and the camera's zoom in a match (gl/CLAUDE.md, *Graphics
+quality tiers*), each taken and saved as it is picked. The gallery's `23_settings` draws it. In a
+match the same three are in the menu Esc brings up, which the renderer draws (render/CLAUDE.md, *The
+menu Esc brings up*).
 
 `screens/ReportDialog` is a problem report as the player makes it (design/diagnostics.md, *What the
 player sees*): not a screen but a card over whatever page is showing, on a shade that takes every
@@ -108,12 +133,20 @@ bazel run //src/main/scala/com/gridgame/client:ui_gallery -- /tmp/ui --lang=ko -
 ```
 
 `16_map_previews` is every map's preview at each size the menus draw one (the lobby form's, a lobby
-row's, the lobby room's); a new map's arena has to read at all three. The arena is found from the
-map's spawn points: a map whose spawns can't walk to all of it shows only what they can.
+row's, the lobby room's, and the two carousels' strips); a new map's arena has to read at all of
+them. The arena is found from the map's spawn points: a map whose spawns can't walk to all of it
+shows only what they can. `04b_lobbies_map_picked` is the form's carousel with a map further along
+picked, and `07c_room_host_map_picker` the host's map picker open over the room.
 
 1440x900 is a small laptop's window, and the pages are laid out for it: the lobby room fits it
-without scrolling, for the host too (the match's settings are drop-down chips in its heading, not
-a card of their own), and so does a scoreboard of six; a bigger one scrolls a little.
+without scrolling, for the host too (the match's settings are chips in its heading, not a card of
+their own: drop-downs, but for the map's, which opens the map picker over the room), and so does a
+scoreboard of six; a bigger one scrolls a little.
+
+The host's Add Bot and Remove Bot are above the lobby room's roster, which grows under them as bots
+join (`07b_room_host_bots`: a free-for-all has 32 seats). Below it, each bot that wrapped it onto
+another line pushed them down from under the pointer of a host adding several in a row.
+`LobbyRoomScreenTest` clicks each until the lobby is full, then empty, and holds both still.
 
 ## Styling: what outranks what
 
@@ -162,10 +195,21 @@ the screens follow:
   second); before that it kept 16 `WritableImage`s per character forever: 117MB of heap and 1792
   GPU textures. A sprite drawn at its frame's own size (the picked character, the login screen's)
   is drawn unsmoothed: exactly doubled on a Retina display, one for one on any other.
-- **Maps are read once and drawn once a size** (`MapPreview`), off the FX thread: a picture is
-  the map's tens of thousands of cells drawn on the CPU, and the lobby list used to parse every
-  row's map file each time the list refreshed. The pictures are kept to 12MB, the least lately
-  shown dropped first; a lobby row's is 70KB, the lobby form's 0.9MB.
+- **Maps are drawn once a size** (`MapPreview`), off the FX thread: a picture is the map's tens
+  of thousands of cells drawn on the CPU (a strip's 2-10ms, the lobby form's 10-50ms, the map
+  picker's 50-230ms, warm), and the lobby list used to parse every row's map file each time the
+  list refreshed. The pictures are kept to 12MB, the least lately shown dropped first; a lobby row's
+  is 70KB, the lobby form's 0.9MB, the picker's 2.7MB, a carousel's strip 0.7-1.6MB all told. Only
+  the last four maps read are kept (a big one is a quarter of a megabyte read, and a strip reads
+  every map); every map read used to be kept for good, through every match. A match's start drops
+  the pictures and every one not yet drawn.
+- **No rounded clips.** A clip that isn't a plain rectangle renders its node off screen on every
+  repaint, as an effect does. The map frames each had one, to round a picture's corners that were
+  already clear (a map is fitted a twentieth in from the frame's edges, and a diamond leaves a
+  box's corners empty); without them only the frames' outermost edge changed, by at most 15 levels
+  in 255, and the lobby browser with the form's carousel (twenty more frames) renders as fast as it
+  did with the drop-down: 5.8-6.8ms a full render against 6.0-7.0 (a throwaway bench, the two
+  builds alternated). The picture that slides in has a square clip, which is a scissor.
 - **`ViewportCache.disable` on any `ScrollPane` around animated content** — every page's, since
   `Widgets.page` puts each page in one. ScrollPane's skin caches its viewport as a bitmap; around
   canvases that animate, every frame re-renders the whole viewport into a texture as big as the

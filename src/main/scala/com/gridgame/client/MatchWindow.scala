@@ -105,12 +105,13 @@ private[client] final class MatchWindow(app: Screens) {
     Diagnostics.pastFrames = () => history.frames.map(f => PastFrame(f.nanos, f.jpeg))
     hitchesFrom = System.nanoTime() + 3000000000L
 
-    // Set up GLFW input handlers
-    val glKeyHandler = new GLKeyboardHandler(client)
-    val glMouseHandler = new GLMouseHandler(client, glRenderer.camera)
-    // Esc twice leaves. It fires inside this frame's event poll, so tearing down the window
-    // it is drawing to waits for the frame to finish.
-    glKeyHandler.onLeaveMatch = () => Platform.runLater(() => leaveMatch(stage))
+    // Set up GLFW input handlers, the menu Esc brings up (the renderer draws it) shared by all three
+    val menu = glRenderer.menu
+    val glKeyHandler = new GLKeyboardHandler(client, menu)
+    val glMouseHandler = new GLMouseHandler(client, glRenderer.camera, menu)
+    // The menu's Leave, pressed twice. It fires inside this frame's event poll, so tearing down the
+    // window it is drawing to waits for the frame to finish.
+    menu.onLeave = () => Platform.runLater(() => leaveMatch(stage))
     // F8: inside this frame's event poll too, so the picture is taken once the frame is drawn
     glKeyHandler.onMarkMoment = () => markRequested = true
 
@@ -135,7 +136,7 @@ private[client] final class MatchWindow(app: Screens) {
       if (!focused) glKeyHandler.clearAllKeys()
     })
 
-    controllerHandler = new ControllerHandler(client)
+    controllerHandler = new ControllerHandler(client, menu)
     controllerHandler.init()
 
     // The pointer read into the world as each frame's camera moves, before anything is drawn, so our
@@ -159,6 +160,8 @@ private[client] final class MatchWindow(app: Screens) {
     var lastStateNs = 0L
     var lastTier = RenderQuality.tier
     var lastResolution = RenderQuality.resolution
+    var lastZoom = RenderQuality.zoomPercent
+    var menuWasOpen = false
     var lastFbWidth = glWindow.fbWidth
     var lastFbHeight = glWindow.fbHeight
     var lastPreparedNs = 0L
@@ -179,6 +182,15 @@ private[client] final class MatchWindow(app: Screens) {
           org.lwjgl.glfw.GLFW.glfwPollEvents()
           glKeyHandler.update()
           controllerHandler.update()
+
+          // The scoreboard while Tab (or a controller's Back) is held, and the system's pointer over the
+          // menu while it is up, as over the menus; ours, the crosshair, over the match
+          glRenderer.scoreboardShown = glKeyHandler.tabHeld || controllerHandler.backHeld
+          if (menu.isOpen != menuWasOpen) {
+            menuWasOpen = menu.isOpen
+            glWindow.showSystemCursor(menuWasOpen)
+            Diagnostics.event(if (menuWasOpen) "menu: open" else "menu: closed")
+          }
 
           // F11 fullscreen toggle (edge-triggered, fires once per press)
           if (glKeyHandler.consumeF11Press()) {
@@ -209,9 +221,9 @@ private[client] final class MatchWindow(app: Screens) {
           // The frame, which reads the pointer into the world once it has moved the camera (onCamera)
           glRenderer.render(deltaSec, glWindow.fbWidth, glWindow.fbHeight, glWindow.width, glWindow.height)
           // The pointer, over everything, where the mouse is now: only over this window while it has
-          // the focus (elsewhere the system's shows), and not while a controller's stick is aiming,
-          // when where the mouse rests means nothing
-          if (glWindow.readPointer() && !controllerHandler.stickAiming)
+          // the focus (elsewhere the system's shows), not while a controller's stick is aiming, when
+          // where the mouse rests means nothing, and not over the menu, where the system's shows
+          if (glWindow.readPointer() && !controllerHandler.stickAiming && !menu.isOpen)
             glRenderer.drawCursor(glWindow.pointerX, glWindow.pointerY, glWindow.fbWidth, glWindow.width, glWindow.height)
           // A moment marked: the frame as the player sees it, pointer and all, before it goes to the screen
           if (markRequested) { markRequested = false; markMoment() }
@@ -242,6 +254,8 @@ private[client] final class MatchWindow(app: Screens) {
             if (controllerHandler.stickAiming) flags |= FrameFlags.StickAiming
             if (client.isCharging) flags |= FrameFlags.Charging
             if (client.getIsMoving) flags |= FrameFlags.Moving
+            if (menu.isOpen) flags |= FrameFlags.MenuOpen
+            if (glRenderer.scoreboardShown && !menu.isOpen) flags |= FrameFlags.Scoreboard
             recorder.frame(frameDeltaMs, ((System.nanoTime() - frameStartNs) / 1e6).toFloat,
               pos.getX.toFloat, pos.getY.toFloat, client.visualPosX.toFloat, client.visualPosY.toFloat,
               client.getMouseWorldX.toFloat, client.getMouseWorldY.toFloat,
@@ -258,6 +272,10 @@ private[client] final class MatchWindow(app: Screens) {
             if (RenderQuality.resolution != lastResolution) {
               lastResolution = RenderQuality.resolution
               Diagnostics.event(s"resolution: ${RenderQuality.resolutionName}")
+            }
+            if (RenderQuality.zoomPercent != lastZoom) {
+              lastZoom = RenderQuality.zoomPercent
+              Diagnostics.event(s"zoom: ${RenderQuality.zoomName}")
             }
             if (glWindow.fbWidth != lastFbWidth || glWindow.fbHeight != lastFbHeight) {
               lastFbWidth = glWindow.fbWidth
@@ -354,7 +372,7 @@ private[client] final class MatchWindow(app: Screens) {
     CompletableFuture.delayedExecutor(250, TimeUnit.MILLISECONDS).execute(() =>
       Platform.runLater(() => if (!GLWindow.destroySettled()) destroyRetiredWhenSettled()))
 
-  /** Esc-Esc in a match. */
+  /** The menu's Leave (or End practice), pressed twice, in a match. */
   private def leaveMatch(stage: Stage): Unit = {
     if (renderLoop == null) return
     if (client.isPracticeMode) {
@@ -397,7 +415,7 @@ private[client] final class MatchWindow(app: Screens) {
         GL11.glGetString(GL11.GL_VERSION), GL11.glGetString(GL20.GL_SHADING_LANGUAGE_VERSION))
       Diagnostics.noteWindow(glWindow.fbWidth, glWindow.fbHeight,
         if (glWindow.width > 0) glWindow.fbWidth.toDouble / glWindow.width else 1.0, RenderQuality.tierName,
-        RenderQuality.resolutionName)
+        RenderQuality.resolutionName, RenderQuality.zoomName)
       Diagnostics.event(s"window: ${glWindow.fbWidth}x${glWindow.fbHeight}")
     } catch { case e: Exception => System.err.println(s"MatchWindow: couldn't read the graphics' names ($e)") }
 

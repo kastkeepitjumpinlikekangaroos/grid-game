@@ -214,9 +214,11 @@ class OnHitEffectsTest {
     val watcher = m.join(CharacterId.Gladiator, 10, 40)
     m.clearSent()
     shoot(grabber, ProjectileType.GRAB)
-    assertEquals(1, target.getServerMoves)
+    // The pull, and the stun that holds its catch: two server moves, one of them a knockback
+    assertEquals(2, target.getServerMoves)
     assertEquals(1, target.getKnockbacks)
-    assertEquals("the target, with the move", 1, movesToldOverTcp(target).last.getKnockbacks)
+    val told = movesToldOverTcp(target)
+    assertEquals("the target, with the move, and with the hold after it", Seq(1, 1), told.map(_.getKnockbacks))
     assertEquals("and everyone else", 1, m.updatesAbout(m.udpSent(watcher), target).last.getKnockbacks)
   }
 
@@ -227,7 +229,16 @@ class OnHitEffectsTest {
     val target = m.join(CharacterId.Gladiator, 20, 30)
     shoot(grabber, ProjectileType.GRAB)
     assertEquals((10, 30), m.at(target))
+    assertEquals("the pull, and the hold on its catch", 2, target.getServerMoves)
+  }
+
+  @Test def aRangedCharactersPullMovesItsCatchAndNothingMore(): Unit = {
+    val pirate = m.join(CharacterId.Pirate, 10, 30)
+    val target = m.join(CharacterId.Gladiator, 20, 30)
+    shoot(pirate, ProjectileType.ROPE)
+    assertEquals((10, 30), m.at(target))
     assertEquals(1, target.getServerMoves)
+    assertFalse(target.isFrozen)
   }
 
   @Test def aGravityWellPullsNearbyPlayersTowardWhereItHit(): Unit = {

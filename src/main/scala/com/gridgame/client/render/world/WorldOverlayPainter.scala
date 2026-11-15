@@ -9,6 +9,10 @@ import java.util.UUID
  * Name plates, health bars and damage numbers: noted during the entity pass and drawn over the
  * finished frame at the display's full resolution, so the grade and the scene's scale never touch
  * them. Damage is noticed here too, as health drops between frames ([[detectDamageNumbers]]).
+ *
+ * They are noted where they are in the world as it is drawn (the zoomed world's units) and drawn in
+ * the widest view's (`overlayScale` times as many), so they are the same size on the screen at any
+ * camera zoom, over wherever their player is drawn.
  */
 private[render] final class WorldOverlayPainter(ctx: RenderContext, particles: ParticleSpawner) {
   import ctx._
@@ -20,9 +24,10 @@ private[render] final class WorldOverlayPainter(ctx: RenderContext, particles: P
   // place; a java.lang.Float value was boxed afresh for every bar every frame
   private val smoothHealthMap = new java.util.HashMap[UUID, Array[Float]]()
 
-  // Cached closures for damage number rendering (avoids per-frame lambda allocation)
-  private val _worldToScreenXFn: (Double, Double) => Double = (wx, wy) => worldToScreenX(wx, wy)
-  private val _worldToScreenYFn: (Double, Double) => Double = (wx, wy) => worldToScreenY(wx, wy)
+  // Cached closures for damage number rendering (avoids per-frame lambda allocation): where a point
+  // of the world is, in the overlay's units
+  private val _worldToScreenXFn: (Double, Double) => Double = (wx, wy) => worldToScreenX(wx, wy) * overlayScale
+  private val _worldToScreenYFn: (Double, Double) => Double = (wx, wy) => worldToScreenY(wx, wy) * overlayScale
   private val _indicatorXs = new Array[Float](4)
   private val _indicatorYs = new Array[Float](4)
 
@@ -52,10 +57,14 @@ private[render] final class WorldOverlayPainter(ctx: RenderContext, particles: P
 
   private def flushDeferredBars(): Unit = {
     if (_deferBarCount == 0) return
+    // Where each was noted, in the zoomed world's units, into the overlay's
+    val k = overlayScale
+    var i = 0
+    while (i < _deferBarCount) { _deferBarCX(i) *= k; _deferBarTY(i) *= k; i += 1 }
     // Draw all health bar shapes in one shapes batch, faded in with the match
     beginShapes()
     shapeBatch.setAlphaMultiplier(overlayAlpha)
-    var i = 0
+    i = 0
     while (i < _deferBarCount) {
       drawHealthBar(_deferBarCX(i), _deferBarTY(i), _deferBarHP(i), _deferBarMax(i), _deferBarTeam(i), _deferBarId(i))
       i += 1

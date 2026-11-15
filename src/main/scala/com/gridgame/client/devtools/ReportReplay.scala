@@ -2,7 +2,6 @@ package com.gridgame.client.devtools
 
 import com.gridgame.client.gl.{GLFWManager, GLWindow, RenderQuality}
 import com.gridgame.client.render.{FrameClock, GLGameRenderer, IsometricTransform}
-import com.gridgame.common.Constants
 import com.gridgame.common.diagnostics.Recording.{FrameFlags, FrameRecord, float, ushort}
 import com.gridgame.common.model.CharacterDef
 
@@ -29,6 +28,7 @@ import javax.imageio.ImageIO
  *   --film=m:ss-m:ss --fps=N --out=dir      a run of PNGs over that stretch, and a contact sheet of them
  *   --size=WxH                              the window's size (default 1280x720)
  *   --quality=low|medium|high               the renderer's tier (default high)
+ *   --zoom=100..200                         the camera's zoom (default the player's, as the match began)
  *   --sound                                 the game's sounds (it is silent otherwise)
  *
  * The client keeps time on the wall clock for some effects (a hold, a burn, the match clock), so they are
@@ -46,13 +46,15 @@ object ReportReplay {
     val opts = parse(rest.toSeq)
     if (opts.input == null) {
       System.err.println("usage: report_replay <report folder or zip> [--at=m:ss[.mmm] --out=frame.png] " +
-        "[--film=m:ss-m:ss --fps=N --out=dir] [--size=WxH] [--quality=low|medium|high] [--sound]")
+        "[--film=m:ss-m:ss --fps=N --out=dir] [--size=WxH] [--quality=low|medium|high] [--zoom=100..200] [--sound]")
       System.exit(1)
     }
     if (!opts.sound) silence()
     CharacterDef.all // registers every ProjectileDef
 
     val recording = ReplayRecording.load(resolve(opts.input))
+    // The camera's zoom the player had as the match began (their report's graphics), unless --zoom= says
+    if (!args.exists(_.startsWith("--zoom="))) recording.playersZoom.foreach(RenderQuality.setZoom)
     describe(recording)
     if (recording.records.isEmpty) { System.err.println("replay: there is no recording in it"); System.exit(1) }
 
@@ -106,7 +108,7 @@ object ReportReplay {
       val f = session.lastFrame
       if (f != null && (ushort(f, FrameRecord.Flags) & FrameFlags.Focused) != 0 && (ushort(f, FrameRecord.Flags) & FrameFlags.StickAiming) == 0) {
         val cam = renderer.camera
-        val zoom = Constants.CAMERA_ZOOM
+        val zoom = cam.zoom
         val ax = float(f, FrameRecord.AimX).toDouble
         val ay = float(f, FrameRecord.AimY).toDouble
         renderer.drawCursor(IsometricTransform.worldToScreenX(ax, ay, cam.camOffX) * zoom,

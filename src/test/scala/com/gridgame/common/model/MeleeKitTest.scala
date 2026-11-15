@@ -7,6 +7,8 @@ import org.junit.Test
  * The melee and skirmisher kits (Plan 5a). A ranged character walks a little quicker than they do,
  * so one can kite them for as long as both only walk: each kit needs crowd control, and a way in
  * that doesn't depend on walking faster, unless it is one of the anchors that hold ground instead.
+ * And once in, it has to be able to finish: a hold long enough for two blows (every fighter's pull
+ * has one), or a way to get on top of someone and one of the hardest-hitting primaries.
  */
 class MeleeKitTest {
   import CombatRole.{Melee, Ranged, Skirmisher}
@@ -96,6 +98,77 @@ class MeleeKitTest {
     }
   }
 
+  /** A hold worth the name is one long enough for two blows: a primary goes every half second. */
+  private val LockdownMs = 600
+
+  /** The primaries that hit hardest, the axes' 49 up to the 55 no blow goes past: two fell any ranged
+    * character (80 health at most) with health to spare. */
+  private val BurstDamage = 49
+
+  /** How long this attack holds whoever it lands on, in ms; 0 if it holds nobody. */
+  private def holdMs(d: ProjectileDef): Int = {
+    val onHit = d.onHitEffects.collect {
+      case Freeze(ms) => ms
+      case Stun(ms) => ms
+      case Launch(ms) => ms
+      case Root(ms) => ms
+      case TeleportOwnerBehind(_, ms) => ms
+    }
+    val splashes = (d.aoeOnHit.toSeq ++ d.aoeOnMaxRange).flatMap(a => Seq(a.freezeDurationMs, a.rootDurationMs, a.stunDurationMs))
+    (onHit ++ splashes :+ 0).max
+  }
+
+  private def locksDown(c: CharacterDef): Boolean = attacks(c).flatMap { case (_, t) => defOf(t) }.exists(holdMs(_) >= LockdownMs)
+
+  private def closes(c: CharacterDef): Boolean = attacks(c).exists { case (a, _) => a.castBehavior match {
+    case TeleportCast(_) | DashBuff(_, _, _) | PhaseShiftBuff(_) => true
+    case _ => false
+  } }
+
+  private def bursts(c: CharacterDef): Boolean = ProjectileDef.get(c.primaryProjectileType).damage >= BurstDamage
+
+  /** The fighters held to neither, each with why. Ember's shots reach 10 cells, the furthest of any
+    * fighter's, and its phase is for getting out. */
+  private val neither: Set[CharacterId] = Set(CharacterId.Ember)
+
+  @Test def everyFighterLocksItsTargetDownOrBurstsItDown(): Unit = {
+    // design/characters.md, *A fighter can finish what it starts*: getting to someone is not
+    // enough, since they walk away a little quicker than a fighter follows. A kit holds them there
+    // (a stun, a freeze, a root, a knock-up) long enough for two blows, or it has a blink, a dash
+    // or a phase to get on top of them and one of the hardest-hitting primaries to end it with
+    for (c <- fighters if !neither.contains(c.id))
+      assertTrue(s"${c.displayName} can neither hold a target nor burst one down", locksDown(c) || (closes(c) && bursts(c)))
+    // One that has come to do either needs no exemption, and would hide the next real one
+    for (id <- neither) {
+      val c = CharacterDef.get(id)
+      assertTrue(s"${c.displayName} is a fighter", fighters.contains(c))
+      assertFalse(s"${c.displayName} needs no exemption", locksDown(c) || (closes(c) && bursts(c)))
+    }
+  }
+
+  @Test def aFightersPullHoldsItsCatchForASecond(): Unit = {
+    // A pull lands its catch on the fighter's own cell, and they used to walk straight off it: the
+    // Death Knight's grip, and every other fighter's pull with it, stuns for a second once it has
+    // them there. In that order, the pull first: the stun is counted from the moment they arrive
+    val pulls = for (c <- fighters; (a, t) <- attacks(c); d <- defOf(t) if d.onHitEffects.contains(PullToOwner)) yield (c, a, d)
+    assertEquals("the fighters who pull",
+      Set("Gladiator", "Reaper", "Death Knight", "Bear", "Shark", "Gorilla", "Griffin", "Chef"), pulls.map(_._1.displayName).toSet)
+    for ((c, a, d) <- pulls)
+      assertEquals(s"${c.displayName}'s ${a.name}", Seq(PullToOwner, Stun(1000)), d.onHitEffects)
+  }
+
+  @Test def aRangedCharactersPullOnlyPulls(): Unit = {
+    // Whoever fights from range has no need to keep anyone beside them, and a pull that stunned
+    // would be a stun thrown from 15 to 25 cells. The Gladiator's rope is a type of its own (the
+    // Lasso) so that the Puppeteer's and the Pirate's stays as it was
+    for (c <- CharacterDef.all if c.role == Ranged; t <- c.primaryProjectileType +: attacks(c).map(_._2); d <- defOf(t)
+         if d.onHitEffects.contains(PullToOwner))
+      assertEquals(s"${c.displayName}'s ${d.name}", Seq(PullToOwner), d.onHitEffects)
+    val (lasso, rope) = (ProjectileDef.get(ProjectileType.LASSO), ProjectileDef.get(ProjectileType.ROPE))
+    assertEquals(ProjectileType.LASSO, lasso.id)
+    assertEquals(rope.copy(id = lasso.id, name = lasso.name, alsoOnHit = Seq(Stun(1000))), lasso)
+  }
+
   @Test def noFightersPrimaryHoldsItsTarget(): Unit = {
     // Primaries fire twice a second, and a hold grants 1.5s of CC immunity, which turns away the
     // kit's own holds (and its team's). A slow grants none.
@@ -137,7 +210,9 @@ class MeleeKitTest {
   @Test def anAbilityCopyingAMeleePrimaryKeepsItsReach(): Unit = {
     // The melee primaries were cut to half their reach for much harder hits (design/characters.md,
     // *Melee strikes short and hard*), and the abilities weren't: the three that copy one fly as it
-    // does, and as far as it did, which is the reach their abilities say
+    // does, and as far as it did, which is the reach their abilities say. Nor were they widened when
+    // the primaries were (*A melee swing strikes wide*): each strikes within the 2.2 cells it always
+    // has, a hold or a root being a thing to aim
     val copies = Seq(
       (ProjectileType.FLURRY, ProjectileType.FIST, CharacterId.Monk),
       (ProjectileType.PIN_DOWN, ProjectileType.TALON, CharacterId.Hawk),
@@ -147,7 +222,9 @@ class MeleeKitTest {
       val c = CharacterDef.get(thrower)
       val ability = Seq(c.qAbility, c.eAbility).find(_.projectileType == v).get
       assertEquals(vd.name, v, vd.id)
-      assertEquals(vd.name, (bd.speedMultiplier, bd.hitRadius), (vd.speedMultiplier, vd.hitRadius))
+      assertEquals(vd.name, bd.speedMultiplier, vd.speedMultiplier, 0.001f)
+      assertEquals(vd.name, (2.2f, 0f), (vd.hitRadius, vd.hitCentreBehind))
+      assertTrue(s"${bd.name}, a primary, strikes wider", bd.hitRadius >= 3.7f)
       assertEquals(vd.name, ability.maxRange, vd.maxRange)
       assertTrue(s"${vd.name} reaches further than the ${bd.name}", vd.maxRange > bd.maxRange)
     }

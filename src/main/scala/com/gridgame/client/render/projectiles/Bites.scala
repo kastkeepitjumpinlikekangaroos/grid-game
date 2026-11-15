@@ -468,11 +468,12 @@ private[render] object Bites {
         s * (1f - ghost * 0.05f), dr * 0.85f, dg * 0.85f, db * 0.85f, 0.15f * (1f - (ghost - 1) * 0.35f) * p)
       ghost -= 1
     }
-    drawPartsDir(sb, HORN_PARTS, sx, sy, ndx, ndy, s, dr, dg, db, 0.97f * dynAlpha,
-      clampF(s * 0.12f, 1.5f, 3f))
+    // Its curve bows up the screen whichever way it flies
+    val flip = if (ndx < -0.05f) -1f else 1f
+    drawPartsDirUnion(sb, HORN_PARTS, sx, sy, ndx, ndy, s, dr, dg, db, 0.97f * dynAlpha, clampF(s * 0.12f, 1.5f, 3f), flip)
 
     // Tip glint, then the dust the charge kicks up
-    dirPoint(1.05f, -0.6f, sx, sy, ndx, ndy, s)
+    dirPoint(1.15f, -0.8f * flip, sx, sy, ndx, ndy, s)
     sb.fillStarFlare(_ptX, _ptY, s * 0.4f, 2.2f, (phase * 0.6).toFloat, 0.5f, 1f, 0.98f, 0.88f, 0.6f * p)
     var i = 0; while (i < 8) {
       val t = ((tick * 0.05 + i * 0.125 + proj.id * 0.11) % 1.0).toFloat
@@ -512,11 +513,12 @@ private[render] object Bites {
       screenDir(proj)
       val ndx = _sdx; val ndy = _sdy
       val px = -ndy; val py = ndx
-      val s = size * ds
+      // Half as big again as they were authored, and a little more: a swipe as tall as whoever swung it
+      val s = size * ds * 1.65f
       // Swept out as the swipe begins, each claw a beat after the one before
       val sweep = 0.4f + _lifePct * 3.2f
 
-      sb.fillOvalSoft(sx - ndx * 4f * ds, sy - ndy * 4f * ds, 2.3f * s * dynGlow, 1.8f * s * dynGlow, er, eg, eb,
+      sb.fillOvalSoft(sx - ndx * 4f * ds, sy - ndy * 4f * ds, 1.7f * s * dynGlow, 1.3f * s * dynGlow, er, eg, eb,
         0.24f * a, 0f, 16)
       // What it tears off, streaming back
       var i = 0
@@ -546,34 +548,29 @@ private[render] object Bites {
         }
         i += 1
       }
-      // The claws: ink round all of them, then their colour, then their hot cores
-      var pass = 0
-      while (pass < 3) {
-        var k = 0
-        val sets = if (cross) 2 else 1
-        while (k < n * sets) {
-          val set = k / n; val j = k % n
-          val tilt = if (cross) (if (set == 0) 0.95f else -0.95f) else 0.78f
-          rakePts(sx, sy, ndx, ndy, s, n, j, tilt, jag, proj.id + k, clampF(sweep - j * 0.28f - set * 0.2f, 0f, 1f),
-            if (cross) 1.25f else 1f)
-          val m = _rakeN
-          if (m >= 2) {
-            var q = 0
-            while (q < m) {
-              val w = _rakeW(q)
-              _pvW(q) = pass match { case 0 => w + 2.6f; case 1 => w; case _ => w * 0.38f }
-              _pvA(q) = a * (if (pass == 0) 0.92f else 1f)
-              q += 1
-            }
-            pass match {
-              case 0 => sb.strokePolylineVar(_pvX, _pvY, _pvW, _pvA, m, ir, ig, ib)
-              case 1 => sb.strokePolylineVar(_pvX, _pvY, _pvW, _pvA, m, er, eg, eb)
-              case _ => sb.strokePolylineVar(_pvX, _pvY, _pvW, _pvA, m, cr, cg, cb)
-            }
-          }
-          k += 1
+      // The claws, each a cut of its own (Slashes): the smear it leaves, its ink, its colour deepening
+      // to its back, white-hot along its leading edge, the middle one of three the longest
+      val sets = if (cross) 2 else 1
+      val dr = mix(er, ir, 0.55f); val dg = mix(eg, ig, 0.55f); val db = mix(eb, ib, 0.55f)
+      var k = 0
+      while (k < n * sets) {
+        val set = k / n; val j = k % n
+        val tilt = if (cross) (if (set == 0) 0.95f else -0.95f) else 0.78f
+        val shown = clampF(sweep - j * 0.28f - set * 0.2f, 0f, 1f)
+        // The middle claw of a set the longest, as a paw's is
+        rakePts(sx, sy, ndx, ndy, s, n, j, tilt, jag, proj.id + k, shown,
+          if (cross) 1.25f else if (n >= 3 && j != n / 2) 0.86f else 1.08f)
+        val m = _rakeN
+        if (m >= 2) {
+          val bn = Slashes.sliver(m, _rakeW, ndx, ndy)
+          Slashes.paint(sb, bn, ndx, ndy, 2.3f * s, 2.8f, ir, ig, ib, dr, dg, db, er, eg, eb, cr, cg, cb, a, 0.42f, 1.3f, 0.8f)
         }
-        pass += 1
+        k += 1
+      }
+      // The flash of the swipe as it begins
+      if (_lifePct < 0.3f) {
+        val ft = _lifePct / 0.3f
+        sb.fillStarFlare(sx, sy, 2.2f * s * Math.sin(ft * Math.PI).toFloat, 0.2f * s, 0.6f, 0.5f, 1f, 1f, 1f, 0.95f * a)
       }
       drawChargeCrackle(sx, sy, 1.6f * s, er, eg, eb, a, sb, phase, proj.chargeLevel)
     }
@@ -596,7 +593,7 @@ private[render] object Bites {
     val cx = ndx * ct - ndy * st; val cy = ndy * ct + ndx * st
     var nx = cy; var ny = -cx
     if (nx * ndx + ny * ndy < 0f) { nx = -nx; ny = -ny }
-    val off = (j - (n - 1) * 0.5f) * 0.62f * s
+    val off = (j - (n - 1) * 0.5f) * 0.8f * s
     val mx = sx + nx * off; val my = sy + ny * off
     val pts = 9
     val half = 1.25f * len * s
@@ -604,11 +601,11 @@ private[render] object Bites {
     while (q < pts) {
       val u = q / (pts - 1f) * shown
       val along = (u - 0.5f) * 2f * half
-      val bulge = Math.sin(u * Math.PI).toFloat * 0.22f * s
+      val bulge = Math.sin(u * Math.PI).toFloat * 0.3f * s
       val tear = if (jag > 0f && q > 0 && q < pts - 1) (if ((q & 1) == 0) jag else -jag) * s * (0.6f + 0.4f * Glyphs.hash01(seed, q)) else 0f
       _pvX(q) = mx + cx * along + nx * (bulge + tear)
       _pvY(q) = my + cy * along + ny * (bulge + tear)
-      _rakeW(q) = Math.pow(Math.max(0f, Math.sin(u * Math.PI).toFloat), 0.7).toFloat * 0.34f * s * (if (len > 1f) 1.15f else 1f)
+      _rakeW(q) = Math.pow(Math.max(0f, Math.sin(u * Math.PI).toFloat), 0.7).toFloat * 0.44f * s * (if (len > 1f) 1.15f else 1f)
       q += 1
     }
     _rakeN = pts

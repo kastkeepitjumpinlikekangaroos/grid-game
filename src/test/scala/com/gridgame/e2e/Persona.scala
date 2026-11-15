@@ -156,8 +156,7 @@ final class Persona(c: LoopClient, rnd: scala.util.Random, leaves: Boolean = fal
         c.press(GLFW_KEY_ENTER)
       case 199 if leaves =>
         letGo()
-        c.press(GLFW_KEY_ESCAPE)
-        c.press(GLFW_KEY_ESCAPE)
+        c.leaveByMenu()
       case _ =>
     }
   }

@@ -7,7 +7,7 @@ import org.junit.Assert._
 import org.junit.Test
 
 import java.util.UUID
-import com.gridgame.client.game.ClientState
+import com.gridgame.client.game.{ClientState, KillMoment, MatchProgress}
 
 /** A match as the client lives it: the start, deaths and respawns, items, and the end. */
 class GameClientMatchTest {
@@ -131,8 +131,131 @@ class GameClientMatchTest {
     t.gameEvent(GameEvent.KILL, who = t.id, target = victim, kills = 1, deaths = 0)
     assertEquals(1, c.killCount)
     val feed = c.killFeed.get(c.killFeed.size - 1)
-    assertEquals("You", feed(1))
-    assertEquals("Wizard", feed(2))
+    assertEquals("You", feed.killerName)
+    assertEquals("Wizard", feed.victimName)
+  }
+
+  // --- The feed shows who killed whom by their characters, and our kills in a row are counted ---
+  // (render/CLAUDE.md, *A kill is announced*)
+
+  @Test def theFeedKnowsEveryonesCharacterAndTeamAndWhichKillsAreOurs(): Unit = {
+    c.selectedCharacterId = CharacterId.Samurai.id
+    t.startMatch(spawn = (5, 5), team = 1)
+    val friend = UUID.randomUUID(); val foe = UUID.randomUUID()
+    t.join(friend, 9, 9, charId = CharacterId.Kraken.id, team = 1)
+    t.join(foe, 12, 9, charId = CharacterId.Pirate.id, team = 2)
+    t.gameEvent(GameEvent.KILL, who = t.id, target = foe, kills = 1)
+    t.gameEvent(GameEvent.KILL, who = foe, target = friend, kills = 1)
+    t.gameEvent(GameEvent.KILL, who = foe, target = t.id, kills = 2)
+    val ours = c.killFeed.get(0); val theirs = c.killFeed.get(1); val onUs = c.killFeed.get(2)
+    assertEquals((CharacterId.Samurai.id, CharacterId.Pirate.id, 1.toByte, 2.toByte),
+      (ours.killerCharacter, ours.victimCharacter, ours.killerTeam, ours.victimTeam))
+    assertTrue(ours.byUs && !ours.onUs)
+    assertEquals((CharacterId.Pirate.id, CharacterId.Kraken.id), (theirs.killerCharacter, theirs.victimCharacter))
+    assertTrue(!theirs.byUs && !theirs.onUs)
+    assertTrue(!onUs.byUs && onUs.onUs)
+    assertEquals("You", onUs.victimName)
+    assertEquals(CharacterId.Pirate.id, c.lastKillerCharacter)
+  }
+
+  @Test def ourKillsInARowAreCountedAndNobodyElses(): Unit = {
+    t.startMatch(spawn = (5, 5))
+    val a = UUID.randomUUID(); val b = UUID.randomUUID()
+    t.join(a, 9, 9, charId = CharacterId.Wizard.id)
+    t.join(b, 12, 9, charId = CharacterId.Golem.id)
+    assertNull("nothing to announce before our first", c.lastKill)
+    t.gameEvent(GameEvent.KILL, who = t.id, target = a, kills = 1)
+    assertEquals(1, c.killStreak)
+    assertEquals((1, "Wizard", CharacterId.Wizard.id), (c.lastKill.streak, c.lastKill.victimName, c.lastKill.victimCharacter))
+    // Someone else's kill is no part of our run, and no kill of ours to announce
+    t.gameEvent(GameEvent.KILL, who = a, target = b, kills = 1)
+    assertEquals(1, c.killStreak)
+    assertEquals("Wizard", c.lastKill.victimName)
+    t.gameEvent(GameEvent.KILL, who = t.id, target = b, kills = 2)
+    t.gameEvent(GameEvent.KILL, who = t.id, target = a, kills = 3)
+    assertEquals(3, c.killStreak)
+    assertEquals(3, c.lastKill.streak)
+    assertEquals(3, c.streakAt(System.currentTimeMillis() + 600000L))
+  }
+
+  @Test def ourDeathEndsOurRunAndTheNextKillStartsAnother(): Unit = {
+    t.startMatch(spawn = (5, 5))
+    val foe = UUID.randomUUID()
+    t.join(foe, 9, 9)
+    t.gameEvent(GameEvent.KILL, who = t.id, target = foe, kills = 1)
+    t.gameEvent(GameEvent.KILL, who = t.id, target = foe, kills = 2)
+    assertEquals(2, c.killStreak)
+    t.gameEvent(GameEvent.KILL, who = foe, target = t.id, kills = 1)
+    assertEquals("dead, the run is over", 0, c.killStreak)
+    t.gameEvent(GameEvent.RESPAWN, who = t.id, spawn = (5, 5))
+    t.gameEvent(GameEvent.KILL, who = t.id, target = foe, kills = 3)
+    assertEquals(1, c.killStreak)
+    assertEquals(1, c.lastKill.streak)
+  }
+
+  @Test def ourDeathByTheUpdateAloneEndsOurRunToo(): Unit = {
+    // A death nobody scored comes as an update with no health, and no KILL
+    t.startMatch(spawn = (5, 5))
+    val foe = UUID.randomUUID()
+    t.join(foe, 9, 9)
+    t.gameEvent(GameEvent.KILL, who = t.id, target = foe, kills = 1)
+    t.update(t.id, 5, 5, health = 0)
+    assertEquals(0, c.killStreak)
+  }
+
+  @Test def aRunInPracticeEndsWhenTheNextKillIsTooLongComing(): Unit = {
+    // Nothing kills us in practice, so a run there is kills each coming within PracticeComboMs of the
+    // one before
+    t.startMatch(spawn = (5, 5))
+    c.isPracticeMode = true
+    val target = UUID.randomUUID()
+    t.join(target, 9, 9)
+    t.gameEvent(GameEvent.KILL, who = t.id, target = target, kills = 1)
+    t.gameEvent(GameEvent.KILL, who = t.id, target = target, kills = 2)
+    val at = c.lastKill.atMs
+    assertEquals(2, c.streakAt(at + MatchProgress.PracticeComboMs))
+    assertEquals("over on the millisecond after", 0, c.streakAt(at + MatchProgress.PracticeComboMs + 1))
+    assertEquals(2, c.practiceBestCombo)
+    // The next kill, heard too late, starts a run of its own
+    c.lastKill = new KillMoment(at - MatchProgress.PracticeComboMs - 1, 2, "x", -1, firstBlood = false)
+    t.gameEvent(GameEvent.KILL, who = t.id, target = target, kills = 3)
+    assertEquals(1, c.killStreak)
+    assertEquals("its best is kept", 2, c.practiceBestCombo)
+    assertEquals(3, c.practiceHits)
+  }
+
+  @Test def onlyTheMatchsFirstKillIsFirstBlood(): Unit = {
+    t.startMatch(spawn = (5, 5))
+    val a = UUID.randomUUID(); val b = UUID.randomUUID()
+    t.join(a, 9, 9); t.join(b, 12, 9)
+    t.gameEvent(GameEvent.KILL, who = t.id, target = a, kills = 1)
+    assertTrue(c.lastKill.firstBlood)
+    t.gameEvent(GameEvent.KILL, who = t.id, target = b, kills = 2)
+    assertFalse(c.lastKill.firstBlood)
+    // Someone else drew it, so our first is not
+    t.startMatch(spawn = (5, 5))
+    t.join(a, 9, 9); t.join(b, 12, 9)
+    t.gameEvent(GameEvent.KILL, who = a, target = b, kills = 1)
+    t.gameEvent(GameEvent.KILL, who = t.id, target = a, kills = 1)
+    assertFalse(c.lastKill.firstBlood)
+    // Practice's targets don't fight back: no first blood there
+    t.startMatch(spawn = (5, 5))
+    c.isPracticeMode = true
+    t.join(a, 9, 9)
+    t.gameEvent(GameEvent.KILL, who = t.id, target = a, kills = 1)
+    assertFalse(c.lastKill.firstBlood)
+  }
+
+  @Test def aNewMatchStartsWithNoRunAndNothingToAnnounce(): Unit = {
+    t.startMatch(spawn = (5, 5))
+    val foe = UUID.randomUUID()
+    t.join(foe, 9, 9)
+    t.gameEvent(GameEvent.KILL, who = t.id, target = foe, kills = 1)
+    t.gameEvent(GameEvent.KILL, who = t.id, target = foe, kills = 2)
+    t.startMatch(spawn = (6, 6))
+    assertEquals(0, c.killStreak)
+    assertNull(c.lastKill)
+    assertEquals(-1, c.lastKillerCharacter)
   }
 
   @Test def ourDeathIsCounted(): Unit = {

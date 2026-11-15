@@ -231,7 +231,7 @@ private[render] object Electricity {
       i += 1
     }
     val w = (if (big) 14f else 11f) * ds
-    sb.strokePolylineTapered(_tsX, _tsY, n, w * 2.2f, w * 3f, lr, lg, lb, 0.16f * flash * a, 0.24f * flash * a)
+    // (No glow stroked along it: thirty wide round a zigzag's corners it folded into flat panels.)
     sb.strokePolylineTapered(_tsX, _tsY, n, w * 0.75f + 4f, w + 4f, 0.16f, 0.14f, 0.1f, 0.88f * a, 0.9f * a)
     sb.strokePolylineTapered(_tsX, _tsY, n, w * 0.75f, w, lr, lg, lb, a, a)
     sb.strokePolylineTapered(_tsX, _tsY, n, w * 0.3f, w * 0.38f, 1f, 1f, mix(0.85f, 1f, bc), a, a)

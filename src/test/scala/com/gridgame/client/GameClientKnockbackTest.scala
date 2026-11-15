@@ -66,6 +66,33 @@ class GameClientKnockbackTest {
     assertEquals(15.0, frame(16), 1e-9)
   }
 
+  @Test def aPullThatAlsoStunsIsStillSlid(): Unit = {
+    // A fighter's pull holds its catch (design/characters.md, *A fighter can finish what it starts*):
+    // the server's pull is one move, a knockback, and its stun a move more, told a moment later with
+    // nothing more to slide. That second word must not put us there at once
+    t.startMatch(spawn = (10, 10))
+    frame(16)
+    t.update(t.id, 20, 10, serverMoves = 1, knockbacks = 1) // a Death Grip from ten cells east
+    t.update(t.id, 20, 10, flags = 0x04, flags2 = 0x01, serverMoves = 2, knockbacks = 1, heldMs = 1000)
+    assertEquals("we are there at once", (20, 10), t.at)
+    assertTrue("and held", c.isFrozen && c.isStunned)
+    val first = frame(0)
+    assertEquals("drawn where it caught us", 10.0, first, 1e-9)
+    val mid = frame(50)
+    assertTrue(s"and dragged in from there: $mid", mid > 10.5 && mid < 19.5)
+    frame(500)
+    assertEquals(20.0, frame(16), 1e-9)
+  }
+
+  @Test def anotherPlayerPulledAndStunnedIsNotShownTeleporting(): Unit = {
+    t.startMatch(spawn = (10, 10), others = Seq(them -> (20, 20)))
+    t.update(them, 20, 20)
+    t.update(them, 30, 20, flags = 0x04, flags2 = 0x01, serverMoves = 2, knockbacks = 1, heldMs = 1000)
+    assertEquals("the renderer is told to slide them", 1, c.getPlayers.get(them).getKnockbacks)
+    assertFalse("no teleport's flash", c.getTeleportAnimations.containsKey(them))
+    assertTrue("and they are stunned", c.getPlayers.get(them).isStunned)
+  }
+
   @Test def aNewMatchStartsWithNoKnockbackToSlide(): Unit = {
     // Each match counts its own: the next one's first knockback is one
     t.startMatch(spawn = (10, 10))

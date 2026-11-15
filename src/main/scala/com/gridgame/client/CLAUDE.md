@@ -47,7 +47,8 @@ reads of the game is the `GameClient`'s, which the packet thread writes (game/CL
 - **GLFW window swap** — hiding JavaFX Stage and creating a GLFW window avoids FBO→WritableImage pixel-copy overhead. Both use Cocoa NSWindows on macOS and coexist safely, as long as the GLFW one is never destroyed while AppKit is still busy with it (gl/CLAUDE.md, *A window macOS may still be using is retired*).
 - **AnimationTimer game loop** — fires on the FX Application Thread (main thread on macOS), which is required for both GLFW and OpenGL calls. No threading complexity. On a Mac JavaFX's pulse follows the display, and the swap doesn't wait for the refresh as well (gl/CLAUDE.md, *On a Mac the match's swap doesn't wait for the refresh*). Each frame is timed on the display's cadence, not when the pulse happened to fire (`gl/FramePacer`: gl/CLAUDE.md, *A frame is timed on the display's cadence*), and everything moving is placed at that time (render/CLAUDE.md, *Everything moving is placed at the frame's time*).
 - **JavaFX UI retained** — Login, lobby, character selection, and scoreboard remain in JavaFX. Only in-game rendering uses OpenGL.
-- **The match draws its own pointer** — over the GLFW window the system's is hidden and the renderer draws a crosshair after each frame, where the mouse is, while the window has the focus (render/CLAUDE.md, *The pointer is ours*). The menus keep the system's.
+- **The match draws its own pointer** — over the GLFW window the system's is hidden and the renderer draws a crosshair after each frame, where the mouse is, while the window has the focus (render/CLAUDE.md, *The pointer is ours*). The menus keep the system's, and so does the menu Esc brings up in a match.
+- **Esc brings up a menu, Tab holds up the scoreboard** — both drawn by the renderer over the match, which goes on under them: the menu has the graphics settings (the quality, the resolution, the camera's zoom) and the way out of the match, and has the keyboard, mouse and controller while it is up; the scoreboard is up while Tab is held, and the game is played under it (render/CLAUDE.md, *The menu Esc brings up*, *The scoreboard Tab holds up*). `MatchWindow` hands the input handlers the renderer's `menu`, and the renderer whether Tab (or a controller's Back) is held.
 - **The match is recorded, and a failed frame doesn't close the game** — each frame, every key and button, and four times a second what the client thinks of us go into the match's recording for a problem report, allocating nothing; F8 marks the moment with a picture of the frame, read back before the swap (`MatchWindow.markMoment`), and the last fifteen seconds of small ones the window keeps as it goes (`gl/FrameHistory`, read back through pixel buffers without waiting); a frame long after the last is noticed. A frame that throws takes the window down and brings the menus back with the report offered, where it used to quit the app (design/diagnostics.md).
 
 ## Diagnostics
@@ -132,10 +133,16 @@ could move these numbers should be checked with them rather than guessed at:
 # watch it end). --aim has us charge a shot all through the run (as the Tidecaller, begun again
 # every five seconds, the aim turning), so its lane on the ground is in the frame, and --hold=<kind>
 # has us aim an attack of that kind (the primary held, or a shot, blast, fan, dash, blink or trap
-# taken up and never cast, as the first character with one), its aim turning round us. The pointer is
+# taken up and never cast, as the first character with one), its aim turning round us. --hits makes
+# every blow a player takes a projectile's hit (21 a second), so the hits' flashes and the blood they
+# draw are in the frame (render/CLAUDE.md, *A hit draws blood*). --kills has a kill every 70 frames,
+# every other one ours, so the kill feed, a kill of ours announced and our run of kills in a row are in
+# the frame (render/CLAUDE.md, *A kill is announced*). The pointer is
 # drawn over every frame, circling the screen, as the match's window draws it. --history keeps the
 # last seconds as a match's window does for a problem report (gl/FrameHistory) and says what capturing
-# cost; --history-out=dir writes the frames kept, to look at.
+# cost; --history-out=dir writes the frames kept, to look at. --scoreboard holds the scoreboard Tab
+# holds up over every frame, --menu the menu Esc brings up, and --zoom=100..200 is the camera's zoom
+# (render/CLAUDE.md, *The camera's zoom*).
 bazel run //src/main/scala/com/gridgame/client:render_bench -- --quality=low
 
 # The JavaFX menus: the character select screen (the panel on a page as the lobby screens frame

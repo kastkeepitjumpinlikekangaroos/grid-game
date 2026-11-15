@@ -210,170 +210,154 @@ private[render] object Bolts {
     drawReturnGhosts(sx, sy, 22f * ds, dr, dg, db, p, sb, proj)
   }
 
-  /** Data Bolt - digital matrix aesthetic with pixelated structure */
+  // The data bolt's arrow and the virus's spiked cell, in pixels: (along, across) of each, in steps
+  private val DATA_PIX = Array(1f, 0f, 2f, 0f, 1f, 1f, 1f, -1f, 0f, 2f, 0f, -2f, 0f, 0f, 0f, 1f, 0f, -1f, -1f, 0f, -2f, 0f, -3f, 0f)
+  private val VIRUS_PIX = Array(0f, 0f, 1f, 0f, -1f, 0f, 0f, 1f, 0f, -1f, 1.75f, 1.75f, -1.75f, 1.75f, 1.75f, -1.75f, -1.75f, -1.75f)
+
+  /**
+   * The Hacker's data bolt and virus, in pixels: the bolt an arrow of twelve of them pointing the way it
+   * flies, the virus a cell with four spikes that turns as it goes and tears sideways a row at a time.
+   * Square to the screen whatever the heading, inked as one shape, with more of them left behind and
+   * going out. They were a haze with a blob in it and thirty dim specks round that.
+   */
   private[projectiles] def drawDataBolt(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int,
                            isVirus: Boolean = false): Unit = {
     val phase = (tick + proj.id * 31) * 0.4
-    val mainR = if (isVirus) 0.85f else 0.1f
-    val mainG = if (isVirus) 0.15f else 0.95f
-    val mainB = if (isVirus) 0.15f else 0.55f
+    val mainR = if (isVirus) 0.95f else 0.16f
+    val mainG = if (isVirus) 0.22f else 0.92f
+    val mainB = if (isVirus) 0.2f else 0.6f
     computeAllDynamics(proj, mainR, mainG, mainB, phase)
-    val p = (0.85 + 0.15 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
-    val ds = dynScale * 1.5f // this one reads far below the roster's scale unscaled
-    val bc = _chgBright
+    val a = dynAlpha
+    val ds = Math.min(dynScale, 1.3f)
     screenDir(proj)
     val ndx = _sdx; val ndy = _sdy
+    val step = (if (isVirus) 5.6f else 5f) * ds
+    val hw = step * 0.5f
+    val pix = if (isVirus) VIRUS_PIX else DATA_PIX
+    val n = pix.length / 2
+    // The virus turns; the arrow points
+    val rot = if (isVirus) tick * 0.09f + proj.id else 0f
+    val fxx = if (isVirus) Math.cos(rot).toFloat else ndx
+    val fyy = if (isVirus) Math.sin(rot).toFloat else ndy
+    // One row of it torn sideways for a few ticks at a time
+    val torn = if (isVirus) ((tick / 3 + proj.id) % 4) - 1 else ((tick / 4 + proj.id) % 9) - 2
+    val inkR = mainR * 0.14f; val inkG = mainG * 0.14f; val inkB = mainB * 0.14f + 0.03f
 
-    // Soft halo. This renderer previously drew no glow and no outline at all, so
-    // against the roster it read as a faint scatter of dots rather than a projectile.
-    sb.fillOvalSoft(sx, sy, 26f * ds * dynGlow, 20f * ds * dynGlow, mainR, mainG, mainB, 0.22f * p, 0f, 14)
-
-    // Core: grid of rectangular "pixels" that shift each frame
-    val gridSize = 3
-    var gx = -gridSize; while (gx <= gridSize) {
-      var gy = -gridSize; while (gy <= gridSize) {
-        if (gx * gx + gy * gy <= gridSize * gridSize + 1) {
-          val pixelPhase = Math.sin(phase * 3 + gx * 2.7 + gy * 1.9 + proj.id * 0.5).toFloat
-          if (pixelPhase > -0.3f) {
-            val px = sx + (gx * 4f + Math.sin(phase * 2 + gx + gy).toFloat * 1f) * ds
-            val py = sy + (gy * 3f + Math.cos(phase * 1.5 + gx - gy).toFloat * 0.8f) * ds
-            val pixAlpha = (0.5f + 0.4f * pixelPhase) * p
-            val hw = 1.5f * ds; val hh = 1.2f * ds
-            // Dark backing gives each pixel a readable edge against bright terrain
-            sb.fillRect(px - hw - 0.6f, py - hh - 0.6f, hw * 2 + 1.2f, hh * 2 + 1.2f,
-              outline(mainR), outline(mainG), outline(mainB), pixAlpha * 0.55f)
-            sb.fillRect(px - hw, py - hh, hw * 2, hh * 2, mainR, mainG, mainB, pixAlpha)
-          }
-        }
-      ; gy += 1 }
-    ; gx += 1 }
-
-    // Scan-line flicker
-    val scanY = sy + ((phase * 8 % 16) - 8).toFloat * ds
-    sb.fillRect(sx - 10f * ds, scanY - 0.5f, 20f * ds, 1f, mainR, mainG, mainB, 0.3f * p)
-
-    // Virus glitch-distortion: offset copies
-    if (isVirus) {
-      val glitchOff = Math.sin(phase * 7).toFloat * 4f * ds
-      sb.fillRect(sx + glitchOff - 6f * ds, sy - 5f * ds, 12f * ds, 2f * ds, 0.9f, 0.1f, 0.1f, 0.2f * p)
-      sb.fillRect(sx - glitchOff - 4f * ds, sy + 3f * ds, 8f * ds, 2f * ds, 0.1f, 0.9f, 0.1f, 0.15f * p)
+    // Left behind: pixels going out, each a step further back, jumping from place to place
+    var t = 0
+    while (t < 5) {
+      val back = (2.6f + t * 1.25f) * step
+      val lat = hash2(proj.id + t * 7, tick / 3 + t) * step * 1.1f
+      val x = sx - ndx * back - ndy * lat; val y = sy - ndy * back + ndx * lat
+      val h = hw * (0.78f - t * 0.11f)
+      val fa = (1f - t / 5f) * a
+      sb.fillRect(x - h - 1f, y - h - 1f, 2f * h + 2f, 2f * h + 2f, inkR, inkG, inkB, 0.85f * fa)
+      sb.fillRect(x - h, y - h, 2f * h, 2f * h, mainR, mainG, mainB, fa)
+      t += 1
     }
-
-    // Trail: falling/streaming rectangular particles (matrix rain style)
-    val trailLen = 40f * dynTrail
-    var i = 0; while (i < 8) {
-      val t = ((tick * 0.07 + i * 0.125 + proj.id * 0.13) % 1.0).toFloat
-      val trailX = sx - ndx * t * trailLen + Math.sin(phase + i * 2.3).toFloat * 4 * ds
-      val trailY = sy - ndy * t * trailLen + t * 12f * ds
-      val tw = (2f + (1f - t) * 2f) * ds
-      val th = (1.5f + (1f - t) * 2f) * ds
-      sb.fillRect(trailX - tw * 0.5f, trailY - th * 0.5f, tw, th,
-        mainR, mainG, mainB, 0.4f * (1f - t) * p)
-    ; i += 1 }
-
-    // Bright center
-    sb.fillOval(sx, sy, 5f * ds, 4f * ds,
-      mix(bright(mainR), 1f, bc), mix(bright(mainG), 1f, bc), mix(bright(mainB), 1f, bc), 0.8f * p, 8)
-    drawChargeCrackle(sx, sy, 14f * ds, mainR, mainG, mainB, p, sb, phase, proj.chargeLevel)
+    // Each pixel a square turned with the shape: square to the screen instead, an arrow flying on a
+    // diagonal was a scatter of boxes
+    var pass = 0
+    while (pass < 3) {
+      var i = 0
+      while (i < n) {
+        val al = pix(i * 2) + (if (Math.round(pix(i * 2 + 1)) == torn) 0.5f else 0f); val ac = pix(i * 2 + 1)
+        val x = sx + (fxx * al - fyy * ac) * step
+        val y = sy + (fyy * al + fxx * ac) * step
+        val lit = pass == 2
+        val h = if (pass == 0) hw + 1.5f else if (lit) hw * 0.5f else hw
+        // The lit corner of each sits toward the top of the screen; the middle one is lit through
+        val whole = i == 0 || (!isVirus && i == 1)
+        val ox = if (lit && !whole) -hw * 0.4f else 0f
+        val ux = fxx * h; val uy = fyy * h
+        val cx = x + (if (lit && !whole) 0f else 0f); val cy = y + (if (lit && !whole) -hw * 0.38f else 0f) + ox * 0f
+        _polyXs4(0) = cx + ux - uy; _polyYs4(0) = cy + uy + ux
+        _polyXs4(1) = cx - ux - uy; _polyYs4(1) = cy - uy + ux
+        _polyXs4(2) = cx - ux + uy; _polyYs4(2) = cy - uy - ux
+        _polyXs4(3) = cx + ux + uy; _polyYs4(3) = cy + uy - ux
+        if (pass == 0) sb.fillPolygon(_polyXs4, _polyYs4, 4, inkR, inkG, inkB, 0.94f * a)
+        else if (pass == 1) sb.fillPolygon(_polyXs4, _polyYs4, 4, mainR, mainG, mainB, a)
+        else {
+          val w = if (whole) 0.85f else 0.45f
+          sb.fillPolygon(_polyXs4, _polyYs4, 4, mix(mainR, 1f, w), mix(mainG, 1f, w), mix(mainB, 1f, w), a)
+        }
+        i += 1
+      }
+      pass += 1
+    }
+    drawChargeCrackle(sx, sy, 14f * ds, mainR, mainG, mainB, a, sb, phase, proj.chargeLevel)
   }
 
-  /** Holy Bolt - radiant divine star with emanating light rays */
+  /**
+   * The holy bolt, smite and judgment: a shooting star. An eight-pointed star of gold, upright and
+   * rocking a little, under a halo, drawing a tail of its light behind it and shedding glints of it.
+   * Inked and solid: it was a pale star in a cone of haze with a ring, rays and a cross of thin light
+   * through it, which over sand was a smudge.
+   */
   private[projectiles] def drawHolyBolt(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {
     val phase = (tick + proj.id * 29) * 0.3
     computeAllDynamics(proj, 1f, 0.9f, 0.45f, phase)
-    val p = (0.85 + 0.15 * Math.sin(phase * _stPulseMult)).toFloat * dynAlpha
-    val dr = _evoR; val dg = _evoG; val db = _evoB
-    val ds = dynScale
+    val p = dynAlpha
+    val ds = Math.min(dynScale, 1.3f)
     screenDir(proj)
     val ndx = _sdx; val ndy = _sdy
+    val gx = Glyphs._gx; val gy = Glyphs._gy
+    val inkR = 0.42f; val inkG = 0.26f; val inkB = 0.04f
 
-    // A comet tail of its light and a halo no wider than it needs (see energyBolt): speed lines,
-    // a ribbon of soft strokes and two halos, one pulsing out to 70 units, were a smear and a fill cost
-    cometTail(sb, sx, sy, ndx, ndy, 58f * ds * dynTrail, 36f * ds, 1f, 0.9f, 0.5f, 0.3f * p)
-    cometTail(sb, sx, sy, ndx, ndy, 46f * ds * dynTrail, 20f * ds, 1f, 0.97f, 0.8f, 0.6f * p)
-    sb.fillOvalSoft(sx, sy, 32f * ds * dynGlow, 26f * ds * dynGlow, 1f, 0.92f, 0.55f, 0.32f * p, 0f, 18)
+    // Glints shed behind it, each a small four-pointed star going out
+    var i = 0
+    while (i < 4) {
+      val t = Glyphs.loop(tick, 0.05, i * 0.25 + proj.id * 0.13)
+      val lat = hash2(proj.id + 5, i) * 11f * ds
+      val x = sx - ndx * (20f + t * 44f) * ds - ndy * lat; val y = sy - ndy * (20f + t * 44f) * ds + ndx * lat - t * 6f * ds
+      val r = (4.2f * (1f - t) + 0.8f) * ds
+      _polyXs4(0) = x + r; _polyYs4(0) = y; _polyXs4(1) = x; _polyYs4(1) = y + r * 0.45f
+      _polyXs4(2) = x - r; _polyYs4(2) = y; _polyXs4(3) = x; _polyYs4(3) = y - r * 0.45f
+      sb.fillPolygon(_polyXs4, _polyYs4, 4, 1f, 0.95f, 0.62f, (1f - t) * p)
+      _polyXs4(0) = x + r * 0.45f; _polyYs4(0) = y; _polyXs4(1) = x; _polyYs4(1) = y + r
+      _polyXs4(2) = x - r * 0.45f; _polyYs4(2) = y; _polyXs4(3) = x; _polyYs4(3) = y - r
+      sb.fillPolygon(_polyXs4, _polyYs4, 4, 1f, 0.95f, 0.62f, (1f - t) * p)
+      i += 1
+    }
+    // The tail of its light: gold round pale gold round white
+    val len = 50f * ds * dynTrail
+    var n = Glyphs.flamePts(sx, sy, 9.5f * ds, -ndx, -ndy, len, len, 0f, 2f * ds, phase * 2.0, 10, 0.3f)
+    sb.strokePolygon(gx, gy, n, 2.4f, inkR, inkG, inkB, 0.9f * p)
+    sb.fillRibbon(gx, gy, n, 1f, 0.78f, 0.24f, p)
+    n = Glyphs.flamePts(sx, sy, 6f * ds, -ndx, -ndy, len * 0.66f, len, 0f, 2f * ds, phase * 2.0, 8, 0.3f)
+    sb.fillRibbon(gx, gy, n, 1f, 0.93f, 0.6f, p)
+    n = Glyphs.flamePts(sx, sy, 3f * ds, -ndx, -ndy, len * 0.36f, len, 0f, 2f * ds, phase * 2.0, 6, 0.3f)
+    sb.fillRibbon(gx, gy, n, 1f, 1f, 0.92f, p)
 
-    // Halo ring around star (divine circle)
-    val haloRingR = 26f * ds * (0.9f + 0.1f * Math.sin(phase * 1.5).toFloat)
-    sb.strokeOval(sx, sy, haloRingR, haloRingR * 0.65f, 2.5f, 1f, 0.95f, 0.6f, 0.35f * p, 14)
-    sb.strokeOval(sx, sy, haloRingR * 0.95f, haloRingR * 0.62f, 1.2f, 1f, 1f, 0.85f, 0.2f * p, 14)
-
-    // 8 radiant light rays with varying lengths
-    var ray = 0; while (ray < 8) {
-      val rayAngle = phase * 0.5 + ray * Math.PI / 4
-      val rayLen = (26f + Math.sin(phase * 2 + ray * 1.7).toFloat * 8f + (ray % 2) * 6f) * ds
-      val rx0 = sx + Math.cos(rayAngle).toFloat * 9f * ds
-      val ry0 = sy + Math.sin(rayAngle).toFloat * 6f * ds
-      val rx1 = sx + Math.cos(rayAngle).toFloat * rayLen
-      val ry1 = sy + Math.sin(rayAngle).toFloat * rayLen * 0.6f
-      val rayAlpha = (0.25 + 0.15 * Math.sin(phase * 2.5 + ray * 2.1)).toFloat * p
-      sb.strokeLineSoft(rx0, ry0, rx1, ry1, 5f * ds, 1f, 0.95f, 0.6f, rayAlpha * 0.5f)
-      sb.strokeLine(rx0, ry0, rx1, ry1, 2f * ds, 1f, 1f, 0.8f, rayAlpha)
-    ; ray += 1 }
-
-    // Holy cross flash detail (thin cross through center)
-    val crossSize = 14f * ds * (0.8f + 0.2f * Math.sin(phase * 3).toFloat)
-    val crossAlpha = (0.3 + 0.2 * Math.sin(phase * 4)).toFloat * p
-    sb.strokeLine(sx - crossSize, sy, sx + crossSize, sy, 2f * ds, 1f, 1f, 0.9f, crossAlpha)
-    sb.strokeLine(sx, sy - crossSize * 0.65f, sx, sy + crossSize * 0.65f, 2f * ds, 1f, 1f, 0.9f, crossAlpha)
-
-    // 6-point star (12 vertices: alternating outer/inner) with dark outline
-    val starSpin = phase * 0.3
-    val outerR = 20f * ds; val innerR = 9f * ds
-    var i = 0; while (i < 12) {
-      val a = starSpin + i * Math.PI / 6
-      val rad = if (i % 2 == 0) outerR else innerR
-      _holyXs(i) = (sx + Math.cos(a).toFloat * rad).toFloat
-      _holyYs(i) = (sy + Math.sin(a).toFloat * rad * 0.65f).toFloat
-    ; i += 1 }
-    // Bold 4px dark outline on star
-    sb.strokePolygon(_holyXs, _holyYs, 12, 4f, 0.3f, 0.2f, 0.05f, 0.8f * p)
-    // Golden star fill, fanned from the centre the radii were measured from — a star is
-    // non-convex, and fanned from vertex 0 it fills as a blob with its notches bridged.
-    sb.fillFan(sx, sy, _holyXs, _holyYs, 12, dr, dg, db, 0.88f * p);
-    // Bright highlight layer (smaller star)
-    { var i = 0; while (i < 12) {
-      val a = starSpin + i * Math.PI / 6
-      val rad = if (i % 2 == 0) outerR * 0.7f else innerR * 0.8f
-      _holyXs(i) = (sx + Math.cos(a).toFloat * rad).toFloat
-      _holyYs(i) = (sy + Math.sin(a).toFloat * rad * 0.65f).toFloat
-    ; i += 1 } }
-    sb.fillFan(sx, sy, _holyXs, _holyYs, 12, 1f, 0.98f, 0.75f, 0.5f * p)
-    // White-hot center
-    val bc = _chgBright
-    sb.fillOval(sx, sy, 7f * ds, 5f * ds,
-      mix(1f, 1f, bc), mix(1f, 1f, bc), mix(0.9f, 1f, bc), 0.95f * p, 8)
-    // Cartoon highlight
-    sb.fillOval(sx - 3.5f * ds, sy - 3f * ds, 5f * ds, 3.5f * ds, 1f, 1f, 1f, 0.45f * p, 8)
-
-    // 10 sparkle particles drifting upward
-    { var i = 0; while (i < 10) {
-      val t = ((tick * 0.05 + i * 0.1 + proj.id * 0.13) % 1.0).toFloat
-      val sparkX = sx - ndx * t * 35f * ds + Math.sin(phase + i * 2.3).toFloat * 7f * ds
-      val sparkY = sy - ndy * t * 35f * ds - t * 14f * ds
-      val sSz = (3f + (1f - t) * 3.5f) * ds
-      sb.fillOval(sparkX, sparkY, sSz + 0.5f, sSz * 0.8f + 0.5f, 0.35f, 0.25f, 0.08f, 0.2f * (1f - t) * p, 6)
-      sb.fillOval(sparkX, sparkY, sSz, sSz * 0.8f, 1f, 1f, 0.75f, 0.5f * (1f - t) * p, 6)
-    ; i += 1 } }
-
-    // Sparkle stars
-    { var i = 0; while (i < 4) {
-      val starPhase = ((phase * 0.5 + i * 0.25) % 1.0).toFloat
-      val starAngle = phase * 1.2 + i * Math.PI * 2 / 4
-      val starDist = (16f + starPhase * 18f) * ds
-      val starX = sx + Math.cos(starAngle).toFloat * starDist
-      val starY = sy + Math.sin(starAngle).toFloat * starDist * 0.55f
-      drawSparkleStar(starX, starY, 5f * (1f - starPhase * 0.5f) * ds,
-        1f, 0.95f, 0.6f, 0.5f * (1f - starPhase) * p, sb, phase * 2 + i)
-    ; i += 1 } }
+    // The star: four long points and four short between them
+    val rock = Math.sin(phase * 0.8).toFloat * 0.2f
+    val beat = 1f + 0.05f * Math.sin(phase * 2.2).toFloat
+    var layer = 0
+    while (layer < 2) {
+      val k = (if (layer == 0) 1f else 0.58f) * ds * beat
+      i = 0
+      while (i < 16) {
+        val ang = rock + i * Math.PI / 8 - Math.PI / 2
+        val rad = (if ((i & 1) == 1) 6.6f else if ((i & 3) == 0) 20f else 12.5f) * k
+        gx(i) = sx + Math.cos(ang).toFloat * rad; gy(i) = sy + Math.sin(ang).toFloat * rad
+        i += 1
+      }
+      if (layer == 0) {
+        sb.strokePolygon(gx, gy, 16, 3f, inkR, inkG, inkB, 0.94f * p)
+        sb.fillFan(sx, sy, gx, gy, 16, 1f, 0.8f, 0.26f, p)
+      } else sb.fillFan(sx, sy, gx, gy, 16, 1f, 0.95f, 0.66f, p)
+      layer += 1
+    }
+    sb.fillOval(sx, sy, 4.4f * ds, 4.4f * ds, 1f, 1f, 0.95f, p, 12)
+    // Its halo, over it
+    val hy = sy - 25f * ds + Math.sin(phase * 1.3).toFloat * 1.2f * ds
+    sb.strokeOval(sx, hy, 10f * ds, 3.4f * ds, 4.2f, inkR, inkG, inkB, 0.92f * p, 16)
+    sb.strokeOval(sx, hy, 10f * ds, 3.4f * ds, 2f, 1f, 0.9f, 0.45f, p, 16)
 
     drawChargeCrackle(sx, sy, 22f * ds, 1f, 0.9f, 0.45f, p, sb, phase, proj.chargeLevel)
-    drawReturnGhosts(sx, sy, 22f * ds, dr, dg, db, p, sb, proj)
+    drawReturnGhosts(sx, sy, 22f * ds, 1f, 0.8f, 0.26f, p, sb, proj)
   }
 
-  // Holy star: 6-point star (12 vertices)
-  private val _holyXs = new Array[Float](12)
-  private val _holyYs = new Array[Float](12)
 
   /** Venom Bolt - dripping toxic blob with bubbles */
   private[projectiles] def drawVenomBolt(proj: Projectile, sx: Float, sy: Float, sb: ShapeBatch, tick: Int): Unit = {

@@ -82,6 +82,8 @@ character closes the gap with its abilities or an item, not its feet.
   enough to land on someone walking away from 8 cells; or a dash that gains 6 cells over walking.
   The Crusader, Golem, Beetle and Avalanche are **anchors** instead: a barrier or a big hold, with
   a team to do the chasing. `MeleeKitTest` checks both, and that every kit has crowd control.
+  Getting in is half of it: once there, a kit has to be able to finish (*A fighter can finish what
+  it starts*).
   - A player's `DashBuff` moves `maxDistance` cells over `durationMs` while the runner keeps
     walking, so it gains only `maxDistance - 18.9 * durationMs / 1000` cells over walking. Melee
     dashes were 300-500ms and gained 2-5; they are now 150ms (the Minotaur's 14 cells 200ms), and
@@ -418,7 +420,8 @@ as hard. Their abilities, health and pace are as they were.
   or a knife (8.2 and 9.2), 6.5 for an axe (8.5). On someone walking straight away it reaches about
   as far as it did, since it never gained much on them over its range (`MeleeKitTest.reachOnARunner`):
   3.5 cells for a claw where it was 3.8, 3.5 for an axe as before, 4.3 for a knife where it was 5.4.
-  A claw is in the air 86ms, where it was 170.
+  A claw is in the air 86ms, where it was 170. (Each circle is wider since 2026-11-14, and reaches
+  no further ahead for it: *A melee swing strikes wide*.)
 - **1.75 times the damage**, a hit, a poison's total and a charged punch at both ends alike, each hit
   stopping at 55 (*No uncharged hit deals more than 55*), as the Talon's and the Shovel's 33 do: the
   Rogue's Shuriken 16 → 28, the Knife and the Stinger 21 → 37, the Cursed Blade 22 → 39, the Holy
@@ -463,6 +466,188 @@ as hard. Their abilities, health and pace are as they were.
     between −3 and −5. A fit within the role, as the balance passes made, would close it.
   - Bots that swung at all their swing will strike would make melee far stronger among bots: +7.0
     at their own pace, where the ranged come out −2.5.
+
+## A melee swing strikes wide
+A melee primary was hard to land on anyone moving, and since 2026-11-14 each strikes a cell and a
+half wider than it did, and no further ahead: its hit circle is 3.7 cells where it was 2.2 (the
+claws, the talons, the katana, the fang, the fist, the shovel, the blades, the knives, the throwing
+stars, the shuriken, the Monk's punch, and the stinger, which was 1.8), and the heavy ones' 4.0
+where it was 2.5 (the axes, the scythe, the hammer, the horn), and it hangs back a cell and a half
+behind the swing, toward whoever swung it (`ProjectileDef.hitCentreBehind`, as a wave's trails its
+water: design/combat.md). How far a swing flies, how fast and what it deals are as they were.
+
+- **Why.** A swing lands on where the server has its target, and its player aims at where the
+  target is drawn, which is behind that: by the 45ms everyone else is walked behind the newest
+  cell heard of them (client/render/CLAUDE.md, *Other players are walked along the cells they were
+  heard on*) and by the network's trip to us. The cast then takes a trip to reach the server, and
+  the swing a tenth of a second or so to fly. Over all of that a ranged character walks 20 cells a
+  second: with 30ms of network each way they are a cell and a half from their picture as the swing
+  is aimed and two to four by the time it lands. A ranged shot is aimed down a lane fifteen cells
+  long at someone ten away, where that is a small angle and a lead its player learns. A swing is
+  thrown at someone three cells off, where it is thirty or forty degrees, more than its circle
+  covered: chasing a runner at a cell or two, the picture aimed at is behind the swinger's own cell,
+  and the swing goes off backwards.
+- **Wider, not longer.** A circle a cell wider that sat on the swing, which is what was tried
+  first, reached a cell further ahead as well, and reach is what the melee primaries gave up for
+  their damage (*Melee strikes short and hard*): bots that swing at everything a swing will strike,
+  at a player's pace, went from 1.9 kills less deaths a match to 7.7 with it, and won 19% of their
+  matches. Hung back by as much as it is wider, the circle reaches ahead of the swing the 2.2 cells
+  it always did (the heavy ones 2.5; the stinger's 1.8 became 2.2): a claw still reaches 5.2 cells
+  from its thrower, a blade or a knife 6.2 and an axe 6.5. What it gains is to the sides, 3.7 cells
+  either side of its flight (4.0), and behind: as it leaves, a cell out, it covers 2.7 cells behind
+  its thrower, which is where the runner chased at a cell or two turns out to be. It is at its
+  full width from that first moment, where a narrow circle reached the end of its range only as
+  the swing got there, a tenth of a second on: that is most of what it gains on a runner.
+- **A boomerang's circle comes back as it went out** (the axes, the shovel, the fist): on its
+  thrower's side of it, all the way back. Let go of at the turn, it would sit on the far end of
+  the flight and reach its whole radius past it (`Projectile.hitCentreBehind`).
+- **It still strikes one**: the nearest to the swing itself of those in its circle, so the aim
+  still picks between two, and nobody behind a wall (design/combat.md, *Where a hit lands*). Four
+  cells is as wide as a circle may be: the projectile tick is shown the players four cells round
+  its centre (`PlayerGrid`, which looked round the projectile itself until a circle hung this far
+  behind one).
+- **What wasn't widened.** The three abilities that copy a melee primary (the Hawk's Pin Down, the
+  Monk's Flurry, the Rogue's Knife Spray) strike within the 2.2 cells they did, round themselves: a
+  root or a stun is a thing to aim. The skirmishers' boulders, thrown 8 to 10 cells, already strike
+  2.5 and 3 round them. Nothing ranged moved, and bots swing as they did, at whoever is within
+  the range their swing flies.
+- **It is drawn as it was.** A swing's picture is about a cell across, and a hit lands well away
+  from it, as it always has: up to its radius, which grew. Its aim, while its button is held, is
+  the lane it flies, no wider than a shot's.
+- **Measured: how often a swing lands**, thrown as a player throws it (from their own cell toward
+  where the target is drawn, the pointer within a third of a cell of the picture) at someone one to
+  four cells off walking at a ranged character's pace, on the server's own code. Each of the
+  seventeen types 400 times at each distance; the mean of them all:
+
+  | Network, each way | Target walking straight away | Across | Any way |
+  |---|---|---|---|
+  | none (the same machine) | 82% → 100% | 93% → 100% | 92% → 100% |
+  | 30ms | 42% → 99% | 57% → 100% | 62% → 100% |
+  | 60ms | 8% → 71% | 9% → 99% | 34% → 86% |
+
+  Someone standing still within reach was always struck, before and after. A ranged primary aimed
+  the same way, at the picture of someone 4 to 12 cells off walking any way, lands about one time in
+  five at 30ms (the Bullet 22%, the Arrow 23%): its player leads the target. Narrower was tried:
+  a cell wider and as far back landed 64% on a runner at 30ms and 89% any way, and 1.2 cells 71%
+  and 92%; a cell and a half is the least that lands nine in ten whichever way they run.
+  - The model aims at the picture as it is when the cast is made. A hand is later than that: by
+    however long its player takes to follow a turn, which counts as more network does. The 60ms row
+    is nearer what a fight feels like than the first.
+- **Measured: among bots** (*A fighter can finish what it starts*, *Measured*: the same 592 matches
+  and line-ups, the roster before and after). Bots aim at where the server has their target, so
+  they never missed for the reason a player does, and they swing only at someone within the range
+  the swing flies: at their own pace nothing moved (melee +0.6 kills less deaths a match before and
+  after, ranged +0.2). The way a player plays (a player's pace, melee swinging at all a swing will
+  strike ahead of it, which is as far as it was), melee went from +1.9 to +4.2 and the ranged from
+  −0.2 to −1.3, and melee from 9% of its matches won to 15% (a fair share is 7%): at the end of
+  its reach a swing at someone walking off used to miss, and lands now. A cell wider and as far
+  back was +2.7 and −0.5.
+- **What is left.**
+  - Melee is ahead the way a player plays it among bots, who neither kite nor dodge, by more than
+    it was (the Gladiator, the Vampire, the Crusader, the Death Knight and the Revenant win 32% to
+    48% of their matches there). The width is one number, 1.5, on the seventeen swings with the
+    circle hung back as far (`RosterBalanceTest` holds the two together): a cell is the choice that
+    leaves the roles about where they were, for nine swings in ten any way at 30ms and two in three
+    on a runner. Nothing was refitted for it.
+  - A slow network still loses the runner at a cell or two some of the time (71% at 60ms each way).
+  - The art and the aim are as they were (above). A swing drawn as wide as it strikes, or an aim
+    that shows the circle, would tell its player what they no longer need to be exact about.
+
+`RosterBalanceTest.aMeleePrimaryStrikesWide` holds the circles (how wide, how far back, and that
+each reaches ahead what it did), `MeleeKitTest` the three copies to theirs, and `MeleeKitsTest` lands
+them: three cells to the side and two behind, no further ahead than before, a boomerang's on its
+way back, the nearest only, and someone in the back of the circle two of the grid's squares from
+the swing.
+
+## A fighter can finish what it starts
+Getting to someone was not enough. The Death Knight's Death Grip put its catch on his own cell,
+and they walked straight off it: a ranged character walks a little quicker than he follows, and
+blinks, dashes or shoots back in the meantime. Since 2026-11-14 every melee and skirmisher kit can
+do one of two things once it is in:
+
+- **Lock its target down**: a hold on Q or E (a stun, a freeze, a root, a knock-up) of 0.6s or
+  more, long enough for two blows of a primary that goes every half second. A slow is not one (its
+  target still walks, shoots and blinks away), nor a pull by itself, and a push is the opposite.
+- **Or burst it down**: a blink, a dash or a phase to get on top of someone, and one of the
+  hardest-hitting primaries, 49 (the axes) to the 55 no blow goes past, two of which fell any
+  ranged character with health to spare. Five kits are that and have no hold: the Raptor, the
+  Assassin, the Berserker, Fenrir and the Shapeshifter.
+
+`MeleeKitTest.everyFighterLocksItsTargetDownOrBurstsItDown` holds every fighter to it but Ember,
+whose shots reach 10 cells, the furthest of any fighter's, and whose phase is for getting out.
+
+- **A fighter's pull stuns its catch for a second**, from the moment it has them on the fighter's
+  cell (design/combat.md, *A fighter's pull holds its catch*): the Death Knight's Death Grip, the
+  Gladiator's Rope, the Reaper's Reap, the Chef's Meat Hook, the Bear's Bear Hug and the Gorilla's
+  Primate Grab, the Shark's Jaw Drag and the Griffin's Talon Grab. A second is two blows for sure
+  and a third timed well: the grip's 10 and two of the Chill Blade's 47 are more than any ranged
+  character has. A ranged character's pull only pulls, as it did (the Spaceman's and the Kraken's
+  tentacle, the vines, the Mummy's bandage, the Chameleon's tongue, the Graviton's gravity ball,
+  and the Puppeteer's and the Pirate's rope): whoever fights from range has no need to keep anyone
+  beside them, and it would be a stun thrown from 15 to 25 cells. The Gladiator's rope, which those
+  two throw too, became a type of its own for it (`LASSO`, looking and sounding as it did).
+- **Five kits had neither, and each got a hold in place of what kept nobody**:
+
+  | | Was | Is |
+  |---|---|---|
+  | Revenant, Life Drain | heals 35%, slows 2s | heals 35%, stuns 0.8s |
+  | Dullahan, Boomerang Blade | through two, slows 1.5s | through two, stuns each 0.8s |
+  | Rogue, Knife Spray | three knives that poison and slow 1.5s | three that poison and stun 0.6s |
+  | Wolf, Momentum Strike | hastes him 3s | knocks its prey down, stunned 0.6s, and hastes him 3s |
+  | Crusader, Shield Bash | everyone within 5 cells pushed back 3 | everyone within 5 cells stunned 0.6s where they stand |
+
+  And the Monk's Flurry stuns for 0.6s where it stunned for 0.4, which was one blow. A hold thrown
+  from range is the longer (0.8s, a pull's second), since closing the distance eats part of it; one
+  landed at arm's length is 0.6s. The Crusader's push sent everyone it caught out of his blade's
+  reach, which is the opposite of what an anchor wants of them.
+- **The holds there already are as they were**, 0.6s (the Vampire's bats, the Paladin's Judgment,
+  the Beetle's Horn Flip) to 2s (the Earthshaker's Seismic Root). No damage moved, and two
+  cooldowns did, each sized for what its ability no longer is (*Measured*, below): the Crusader's
+  Shield Bash 10s → 15s (the Beetle's stunning slam is 15.5s) and the Shark's Jaw Drag 8s → 12s (it
+  reaches 25 cells, as the Gladiator's rope does on its 20s).
+- **A hold is still not a chain of them**: each grants a second and a half in which nothing else
+  holds its target (`Constants.CC_IMMUNITY_MS`), a pull's as any other's, and a catch inside that
+  time is pulled and not stunned. A primary still never holds.
+- **Bots** cast a pull and a stun as they cast any shot, at whoever is in its range, and a stunned
+  bot stands as a stunned player does.
+- **Measured** in free-for-alls of bots (*Balance in free-for-alls against bots*): 592 mixed
+  matches of fourteen (five fighters and nine ranged, every fighter in 80 of them), five minutes
+  each on every map in turn, played on a clock of their own (`SimKit`) so that the roster before
+  and the roster after play the same line-ups from the same seeds. Kills less deaths a match:
+
+  | Melee / ranged / skirmishers | Before | After |
+  |---|---|---|
+  | At the bots' pace | −0.1 / +0.5 / −4.5 | +0.6 / +0.3 / −4.8 |
+  | At a player's pace, melee swinging at all it will strike | +1.2 / +0.1 / −6.5 | +1.9 / −0.2 / −6.4 |
+
+  The fourteen fighters whose kits changed gained 1.7 a match at the bots' pace and 2.3 the way a
+  player plays (−1.2 → +0.5, and −0.4 → +1.9), and the other fighters lost 0.3 and 0.5; a
+  character's own change is known to about ±0.7. The Death Knight gained 2.1 either way (to +4.0
+  and +6.3); the Griffin 3.0 and 3.7 (from −3.8 to −0.7 at the bots' pace), the Rogue 3.0 and 2.2
+  (still −2.9 and −4.8), the Dullahan 2.0 and 3.5, the Reaper 2.1 and 2.4, the Chef 1.9 and 2.9,
+  the Revenant 2.0 and 0.9, the Bear 1.6 and 2.4, the Gorilla 1.6 and 2.8, the Wolf 0.1 and 1.6;
+  the Gladiator, whose rope waits 20s, nothing and 1.5, and the Monk nothing.
+  - *The two cooldowns.* On the cooldowns they had, the Crusader gained 4.0 and 5.0 (to +10.5 the
+    way a player plays, 30% of his matches won where a fair share is 7%) and the Shark 2.7 and 3.0;
+    on the longer ones 1.8 and 4.0, and 2.5 and 1.8.
+- **What is left.**
+  - The Crusader is still the one who gained most the way a player plays (+5.5 → +9.5, 27% of
+    his matches), though among bots as they are he is at +2.0: bots crowd round him, which is what a
+    stun all round him is worth most against. The Shark wins 21% of its matches at the bots' pace
+    (14% before). Each was above the middle before this.
+  - Nothing was refitted. The holds are for players, who walk away from a fighter as bots don't,
+    and a fit back to the old scores would take away what they add. The fighters are as far apart
+    as they were (their scores spread 3.6 → 3.7 a match at the bots' pace, 5.0 → 5.2 a player's),
+    the Vampire, the Gladiator and the Assassin still at the top the way a player plays, and the
+    skirmishers where *Melee strikes short and hard* left them.
+  - What bots can't tell: a bot never sidesteps a hook or blinks before it lands, and never keeps
+    its own blink back for when the stun ends, so a pull's second is worth more against them than
+    against a player who has learned it.
+
+`MeleeKitTest` (the rule, every fighter's pull, the ranged pulls left alone), `MeleeKitsTest` (each
+landed in a match: the grip's second to the millisecond and what the catch and everyone else are
+told, every fighter's pull, the five new holds, a catch that can't be held) and
+`GameClientKnockbackTest` (a pull that also stuns still drawn as a drag).
 
 ## Cast Behaviors
 Each ability uses one of these cast behaviors (defined in `CharacterDef.scala`):

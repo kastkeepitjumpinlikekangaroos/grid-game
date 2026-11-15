@@ -79,10 +79,10 @@ format, which `ReportTool` reads):
 | Record | What | When |
 |---|---|---|
 | packet in / out | the 64-byte payload, TCP or UDP | every packet, from `NetworkThread`'s handlers and `send` (`PacketTap`) |
-| frame | how long since the last and how long it took, our cell and where we were drawn, where we aimed, the keys and buttons held, focus, chat, dead, full screen, the stick, charging, moving, the quality tier, the ability being aimed | every frame (`MatchWindow`) |
+| frame | how long since the last and how long it took, our cell and where we were drawn, where we aimed, the keys and buttons held, focus, chat, dead, full screen, the stick, charging, moving, the menu Esc brings up or the scoreboard Tab holds up being up, the quality tier, the ability being aimed | every frame (`MatchWindow`) |
 | input | a key, a mouse button: down or up, its code and modifiers | as GLFW reports them |
 | state | the client's idea of us: health, every effect, Q/E/R cooldowns left, charge, items, kills and deaths, the clock, the last round trip, projectiles and players it knows, server moves and knockbacks seen, packets waiting | four times a second (`GameClient.sampleState`) |
-| log, event, meta | each log line as it is written; what the client did or saw ("focus: lost", "quality: low", "window: 2880x1800", "full screen: on"); what it learns of the match (map, mode, our character, the match's id) | as they happen |
+| log, event, meta | each log line as it is written; what the client did or saw ("focus: lost", "quality: low", "zoom: 150%", "menu: open", "window: 2880x1800", "full screen: on"); what it learns of the match (map, mode, our character, the match's id) | as they happen |
 | mark, incident, gap | a marked moment; something that went wrong; records lost when the buffer was full | as they happen |
 
 - **The start begins it on the network's thread.** The tap sees GAME_STARTING as it arrives and opens
@@ -199,7 +199,7 @@ One zip (`ReportBuilder`), at most 64MB (the server's limit; a report is far sma
 
 | File | What |
 |---|---|
-| `report.json` | `format`, `reportId`, `kind` (match, crash, general), `createdAt`, `category`, `description`, `whenInMatch`, `client` (version, commit, dirty, built), `system` (os, java, cpus, maxHeapMb, locale, language, screens, args, launch), `graphics` (vendor, renderer, version, glsl, quality, resolution, window, contentScale; a report from before 2026-11-12 has `auto` where `resolution` is), `connection` (server, player, playerId), `match` (matchId, map, mode, practice, character, durationMinutes, startedAt, endedAt, ended, kills, deaths, players), `marks` (number, atMicros, matchTime, screenshot, frames), `incidents` (index, kind, atMicros, matchTime, detail, frames), `noticed` (kind, atMicros, matchTime, a, b, detail, text), `chosenMoment` (atMicros, matchTime, source, text), `previousRun` (a crash report's), `files` |
+| `report.json` | `format`, `reportId`, `kind` (match, crash, general), `createdAt`, `category`, `description`, `whenInMatch`, `client` (version, commit, dirty, built), `system` (os, java, cpus, maxHeapMb, locale, language, screens, args, launch), `graphics` (vendor, renderer, version, glsl, quality, resolution, zoom, window, contentScale; a report from before 2026-11-12 has `auto` where `resolution` is, and one from before 2026-11-13 no `zoom`: the widest view, 100%), `connection` (server, player, playerId), `match` (matchId, map, mode, practice, character, durationMinutes, startedAt, endedAt, ended, kills, deaths, players), `marks` (number, atMicros, matchTime, screenshot, frames), `incidents` (index, kind, atMicros, matchTime, detail, frames), `noticed` (kind, atMicros, matchTime, a, b, detail, text), `chosenMoment` (atMicros, matchTime, source, text), `previousRun` (a crash report's), `files` |
 | `recording/seg-NNNN.rec` | the match's recording, compressed (left out if the player left the match out of a general report) |
 | `screenshots/mark-N.jpg` | the pictures of the moments the player kept |
 | `screenshots/mark-N/XXXXXXXX.jpg`, `screenshots/incident-N/XXXXXXXX.jpg` | the seconds before each, small, named by their millisecond in the recording |
@@ -268,8 +268,9 @@ samples, a cast between two of them dated by the one after (`replayCooldowns`), 
 the USE it sent, since the server says nothing of a use it takes (`replayItemUsed`). In the window:
 Space play/pause, Left/Right 5s back/on, comma/period a frame back/on (paused), [ and ] half/twice the
 speed, M the next mark, N the next noticed moment or incident, Home the start, S a PNG. Headless,
-`--at` writes one moment and `--film` a run of frames with a contact sheet (`--size=`, `--quality=`;
-silent unless `--sound`). Limits: seeking back starts a fresh client and plays to the moment in a
+`--at` writes one moment and `--film` a run of frames with a contact sheet (`--size=`, `--quality=`,
+`--zoom=`, which is otherwise the camera zoom the player had as the match began; silent unless
+`--sound`). Limits: seeking back starts a fresh client and plays to the moment in a
 burst, and the client times some effects on the wall clock, so a hold or a burn is exact at 1x and a
 little long after a seek or at another speed (the match clock and the opening's countdown are put
 right); the player's own charge, aiming and casts aren't replayed (where they were and aimed is);

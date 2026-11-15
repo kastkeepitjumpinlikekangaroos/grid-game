@@ -1,16 +1,15 @@
 package com.gridgame.client.ui.screens
 
 import com.gridgame.client.i18n.Messages
-import com.gridgame.client.ui.{Icons, MapPreview}
+import com.gridgame.client.ui.{Icons, MapCarousel, MapPreview}
 import com.gridgame.common.Constants
 import com.gridgame.common.WorldRegistry
 import com.gridgame.common.model.LobbyInfo
 import com.gridgame.common.protocol.LobbyFailure
 
 import javafx.application.Platform
-import javafx.collections.FXCollections
 import javafx.geometry.Pos
-import javafx.scene.control.{Button, ComboBox, TextField}
+import javafx.scene.control.{Button, TextField}
 import javafx.scene.layout.{HBox, Priority, VBox}
 import javafx.stage.Stage
 
@@ -42,14 +41,9 @@ private[client] final class LobbyBrowserScreen(app: Screens) {
     nameField.setTextFormatter(new javafx.scene.control.TextFormatter[String]((change: javafx.scene.control.TextFormatter.Change) =>
       if (change.getControlNewText.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= Constants.MAX_LOBBY_NAME_LEN) change else null
     ))
-    val mapCombo = new ComboBox[String](FXCollections.observableArrayList(WorldRegistry.displayNames: _*))
-    mapCombo.getSelectionModel.select(0)
-    mapCombo.setMaxWidth(Double.MaxValue)
+    // Every map, the picked one big: stepped through with its arrows, or picked in the strip under it
+    val maps = new MapCarousel(0)
     val durationCombo = makeDurationCombo(Constants.DEFAULT_GAME_DURATION_MIN)
-    val preview = new VBox()
-    def showPreview(): Unit = preview.getChildren.setAll(MapPreview.view(mapCombo.getSelectionModel.getSelectedIndex, 320, 180, 14))
-    showPreview()
-    mapCombo.setOnAction(_ => showPreview())
 
     val createBtn = button(Messages.t("Create Lobby"), "sun", "lg")
     createBtn.setMaxWidth(Double.MaxValue)
@@ -57,8 +51,7 @@ private[client] final class LobbyBrowserScreen(app: Screens) {
     val createCard = card(
       cardHeader(Messages.t("Create a lobby")),
       labeled(Messages.t("Name"), nameField),
-      labeled(Messages.t("Map"), mapCombo),
-      preview,
+      labeled(Messages.t("Map"), maps.node),
       labeled(Messages.t("Time"), durationCombo),
       createBtn)
     createCard.setMinWidth(364)
@@ -152,7 +145,7 @@ private[client] final class LobbyBrowserScreen(app: Screens) {
       val name = if (nameField.getText.trim.isEmpty) s"${client.playerName}'s Lobby" else nameField.getText.trim
       Chrome.showNotice(status, Messages.t("Creating lobby..."), error = false)
       setBusy(true)
-      client.createLobby(name, mapCombo.getSelectionModel.getSelectedIndex, selectedDuration(durationCombo))
+      client.createLobby(name, maps.picked, selectedDuration(durationCombo))
     })
 
     val columns = new HBox(24, listCard, createCard)

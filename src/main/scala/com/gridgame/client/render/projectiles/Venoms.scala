@@ -468,34 +468,49 @@ private[render] object Venoms {
     val ndx = _sdx; val ndy = _sdy
     val px = -ndy; val py = ndx
 
-    // The mist rolling under and behind it
-    val n = 6
-    trailPts(sx, sy + 4f * ds, ndx, ndy, 50f * ds, n, 4f * ds, 0.8f, phase * 0.9, 40f * ds, 16f * ds, 0.4f * a, 0f)
-    trailLayer(n, 1f, 0f, 1f)
-    sb.strokePolylineVar(_pvX, _pvY, _pvW, _pvA, n, 0.42f, 0.6f, 0.45f)
-    sb.fillOvalSoft(sx, sy, 36f * ds * dynGlow, 26f * ds * dynGlow, 0.4f, 0.8f, 0.5f, 0.28f * a, 0f, 16)
-    // The bubbles: each swells, bursts and swells again, in its own time; the far ones first
-    var b = 0
-    while (b < 7) {
-      val ang = b * 0.9 + proj.id
-      val ring = if (b == 0) 0f else 1f
-      val ox = (Math.cos(ang).toFloat * 13f * ring + hash2(proj.id + 4, b) * 2f) * ds
-      val oy = (Math.sin(ang).toFloat * 7f * ring - 6f + hash2(proj.id + 5, b) * 2f) * ds
-      val bx = sx + px * ox * 0.3f + ox * 0.7f + Math.sin(phase * 0.7 + b).toFloat * 1.2f * ds
-      val by = sy + py * ox * 0.1f + oy + Math.cos(phase * 0.6 + b * 1.7).toFloat * 1.2f * ds
-      val t = loop(tick, 0.012 + 0.004 * (b % 3), b / 7.0 + proj.id * 0.13)
-      val full = (if (b == 0) 11f else 7f + 2.5f * hash01(proj.id + 6, b)) * ds
-      if (t < 0.9f) {
-        val r = full * Math.min(1f, 0.25f + t * 1.6f) * (1f + 0.05f * Math.sin(phase * 1.3 + b).toFloat)
-        sb.fillOval(bx, by, r, r * 0.92f, 0.36f, 0.72f, 0.46f, 0.42f * a, 18)
-        sb.strokeOval(bx, by, r, r * 0.92f, 2.2f, 0.04f, 0.2f, 0.12f, 0.85f * a, 18)
-        sb.strokeArc(bx, by, r * 0.72f, r * 0.66f, 3.5f, 1.5f, 1.5f * ds, 0.85f, 1f, 0.85f, 0.85f * a, 8)
-        sb.fillOval(bx - r * 0.38f, by - r * 0.4f, r * 0.2f, r * 0.14f, 1f, 1f, 1f, 0.95f * a, 8)
-      } else {
-        val pt = (t - 0.9f) / 0.1f
-        sb.strokeOval(bx, by, full * (1f + pt * 0.5f), full * 0.92f * (1f + pt * 0.5f), 2f * (1f - pt), 0.7f, 1f, 0.75f, (1f - pt) * a, 18)
+    // Its shadow on the fen, and the bubbles over it: each swells, bursts and swells again in its own
+    // time. All their ink first, then their bodies, so the clutch is inked as one shape: each bubble's
+    // own ring over a see-through body made seven of them a tangle of circles.
+    sb.fillOval(sx, sy + 9f * ds, 20f * ds, 6f * ds, 0.03f, 0.12f, 0.08f, 0.3f * a, 16)
+    var pass = 0
+    while (pass < 2) {
+      var b = 0
+      while (b < 7) {
+        val ang = b * 0.9 + proj.id
+        val ring = if (b == 0) 0f else 1f
+        val ox = (Math.cos(ang).toFloat * 13f * ring + hash2(proj.id + 4, b) * 2f) * ds
+        val oy = (Math.sin(ang).toFloat * 7f * ring - 6f + hash2(proj.id + 5, b) * 2f) * ds
+        val bx = sx + px * ox * 0.3f + ox * 0.7f + Math.sin(phase * 0.7 + b).toFloat * 1.2f * ds
+        val by = sy + py * ox * 0.1f + oy + Math.cos(phase * 0.6 + b * 1.7).toFloat * 1.2f * ds
+        val t = loop(tick, 0.012 + 0.004 * (b % 3), b / 7.0 + proj.id * 0.13)
+        val full = (if (b == 0) 11f else 7f + 2.5f * hash01(proj.id + 6, b)) * ds
+        if (t < 0.9f) {
+          val r = full * Math.min(1f, 0.25f + t * 1.6f) * (1f + 0.05f * Math.sin(phase * 1.3 + b).toFloat)
+          if (pass == 0) sb.fillOval(bx, by, r + 1.4f, r * 0.92f + 1.4f, 0.04f, 0.2f, 0.12f, 0.92f * a, 18)
+          else {
+            // Paler the nearer the camera it sits, so one can be told from the next
+            val lit = 0.5f + 0.5f * Math.sin(ang).toFloat
+            sb.fillOval(bx, by, r, r * 0.92f, mix(0.3f, 0.5f, lit), mix(0.62f, 0.82f, lit), mix(0.42f, 0.56f, lit), a, 18)
+            sb.fillOval(bx + r * 0.1f, by + r * 0.14f, r * 0.74f, r * 0.66f, mix(0.24f, 0.4f, lit), mix(0.54f, 0.72f, lit),
+              mix(0.38f, 0.5f, lit), a, 14)
+            sb.strokeArc(bx, by, r * 0.72f, r * 0.66f, 3.5f, 1.5f, 1.5f * ds, 0.85f, 1f, 0.85f, 0.85f * a, 8)
+            sb.fillOval(bx - r * 0.38f, by - r * 0.4f, r * 0.2f, r * 0.14f, 1f, 1f, 1f, 0.95f * a, 8)
+          }
+        } else if (pass == 1) {
+          // Burst: a few drops thrown out of where it was
+          val pt = (t - 0.9f) / 0.1f
+          var d = 0
+          while (d < 5) {
+            val da = d * 1.2566f + b
+            val dr = full * (0.6f + pt * 0.7f)
+            sb.fillOval(bx + Math.cos(da).toFloat * dr, by + Math.sin(da).toFloat * dr * 0.92f, 1.5f * ds * (1f - pt) + 0.4f,
+              1.5f * ds * (1f - pt) + 0.4f, 0.55f, 0.9f, 0.6f, (1f - pt) * a, 6)
+            d += 1
+          }
+        }
+        b += 1
       }
-      b += 1
+      pass += 1
     }
     // Little ones rising off the top
     var r = 0
