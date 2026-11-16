@@ -311,6 +311,7 @@ trait LocalPlayer { this: GameClient =>
   private[game] def handleOwnJoin(join: PlayerJoinPacket): Unit = {
     localTeamId = join.getTeamId
     if (CharacterDef.isValid(join.getCharacterId)) selectedCharacterId = join.getCharacterId
+    AudioManager.preloadCharacter(selectedCharacterId)
     noteOwnCharacter(selectedCharacterId)
     localPosition.set(join.getPosition)
     localHealth.set(join.getHealth)

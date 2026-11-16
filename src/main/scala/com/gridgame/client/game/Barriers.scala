@@ -1,5 +1,6 @@
 package com.gridgame.client.game
 
+import com.gridgame.client.audio.AbilitySounds
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 
@@ -99,7 +100,11 @@ trait Barriers { this: GameClient =>
     * turned, and delivered after, can't undo it. */
   private[game] def heardBarrierOf(player: Player, packet: PlayerUpdatePacket, now: Long): Unit =
     if ((packet.getEffectFlags2 & 0x04) != 0) {
-      if (!player.hasBarrier) player.setBarrierRaisedAt(now)
+      if (!player.hasBarrier) {
+        player.setBarrierRaisedAt(now)
+        val at = packet.getPosition
+        heardCast(player, AbilitySounds.BARRIER, at.getX.toFloat, at.getY.toFloat)
+      }
       player.setBarrierUntil(now + remoteBarrierMs(packet))
       player.setBarrierAngle(packet.aimAngleRadians.toFloat)
     } else {

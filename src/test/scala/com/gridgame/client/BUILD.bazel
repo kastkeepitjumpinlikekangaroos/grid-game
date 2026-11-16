@@ -37,6 +37,9 @@ AUDIO_OFF = {"GRIDGAME_AUDIO": "off"}
     ("game_client_status_test", "GameClientStatusTest.scala"),
     ("game_client_barrier_test", "GameClientBarrierTest.scala"),
     ("game_client_trap_test", "GameClientTrapTest.scala"),
+    # What is heard of a cast that throws nothing: ours as our character's, another player's as
+    # theirs and from where they are, once a cast
+    ("game_client_sounds_test", "GameClientSoundsTest.scala"),
     ("game_client_opening_test", "GameClientOpeningTest.scala"),
     ("game_client_lobby_test", "GameClientLobbyTest.scala"),
     ("game_client_spawn_requests_test", "GameClientSpawnRequestsTest.scala"),

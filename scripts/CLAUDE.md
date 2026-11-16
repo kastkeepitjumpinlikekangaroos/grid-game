@@ -8,7 +8,7 @@ The asset generators and their galleries (Python), and the packaging scripts. Ev
 | tiles | `python3 scripts/generate_tiles.py` → `sprites/tiles.png` | `python3 scripts/tile_gallery.py /tmp/tilegallery` | below |
 | maps | `python3 scripts/generate_maps.py` → every map but the four space arenas | `--preview <dir>`; `python3 scripts/map_audit.py --out <dir>` (is there room to walk on every map) | below |
 | character sprites | `python3 scripts/generate_<name>.py`, `generate_all_new_characters.py` | `python3 scripts/sprite_gallery.py /tmp/spritegallery` (the roster), `python3 scripts/sprite_review.py /tmp/review --chars wolf --against sprites` (one character, close up and as the game shows it; `--lint`) | [SPRITES.md](SPRITES.md) |
-| sounds | `python3 scripts/generate_sounds.py` → `sounds/*.wav` | `sound_gallery.py`, `sound_audit.py --check` | [SOUNDS.md](SOUNDS.md) |
+| sounds | `python3 scripts/generate_sounds.py` → `sounds/*.wav` | by ear: `python3 scripts/sound_audition.py /tmp/audition --before HEAD` (a page, a button for each attack of each character); `sound_roster.py`, `sound_gallery.py`, `sound_audit.py --check` | [SOUNDS.md](SOUNDS.md) |
 | items | `python3 scripts/generate_items.py` → `sprites/items.png` | `python3 scripts/item_gallery.py /tmp/itemgallery` | below |
 | the app icon | `python3 scripts/generate_icon.py` (`generate_wizard.py` runs it too) | | below |
 | readability | (the client's `render_audit`) | `python3 scripts/render_audit.py /tmp/audit` | client/render/CLAUDE.md |

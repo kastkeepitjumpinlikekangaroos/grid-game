@@ -40,7 +40,8 @@ trait Traps { this: GameClient =>
             packet.getY, packet.getTrapType, now, now + tDef.armDelayMs, now + tDef.lifetimeMs))
           // Ours was heard when we threw it; this is someone else setting one down over there
           if (!packet.getPlayerId.equals(localPlayerId)) {
-            AudioManager.playTrapPlace(distanceFromLocal(packet.getX.toFloat, packet.getY.toFloat),
+            AudioManager.playTrapPlace(characterIdOf(packet.getPlayerId), packet.getTrapType,
+              distanceFromLocal(packet.getX.toFloat, packet.getY.toFloat),
               panFromLocal(packet.getX.toFloat, packet.getY.toFloat))
           }
         }

@@ -2,7 +2,7 @@ package com.gridgame.client.game
 
 import com.gridgame.client.diagnostics.Diagnostics
 import com.gridgame.common.diagnostics.Recording.NoticedKind
-import com.gridgame.client.audio.AudioManager
+import com.gridgame.client.audio.{AbilitySounds, AudioManager}
 import com.gridgame.common.Constants
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
@@ -436,21 +436,21 @@ trait Attacks { this: GameClient =>
 
     abilityDef.castBehavior match {
       case DashBuff(maxDistance, durationMs, _) =>
-        AudioManager.playDash()
+        AudioManager.playCast(selectedCharacterId, slot, AbilitySounds.DASH)
         // Dash toward cursor, phased during dash (e.g. Raptor Swoop)
         dash(maxDistance, durationMs, now)
 
       case PhaseShiftBuff(durationMs) =>
-        AudioManager.playPhaseShift()
+        AudioManager.playCast(selectedCharacterId, slot, AbilitySounds.PHASE)
         phasedUntil.set(now + durationMs)
         sendPositionUpdate(localPosition.get())
 
       case BarrierCast(durationMs) =>
-        AudioManager.playBarrierUp()
+        AudioManager.playCast(selectedCharacterId, slot, AbilitySounds.BARRIER)
         raiseBarrier(now, durationMs)
 
       case TeleportCast(maxDistance) =>
-        AudioManager.playTeleport()
+        AudioManager.playCast(selectedCharacterId, slot, AbilitySounds.TELEPORT)
         // This ability's own range: a blink on Q used to take E's (Glitcher blinked 16 of its 6)
         performBlink(maxDistance)
 
@@ -484,7 +484,7 @@ trait Attacks { this: GameClient =>
 
       case TrapCast(trapType, _) =>
         val cell = trapCell.get
-        AudioManager.playTrapPlace()
+        AudioManager.playCast(selectedCharacterId, slot, AbilitySounds.TRAP)
         send(new TrapPacket(sequenceNumber.getAndIncrement(), localPlayerId,
           cell.getX, cell.getY, 0, TrapAction.PLACE, trapType, localTeamId, attackSlot, null))
 

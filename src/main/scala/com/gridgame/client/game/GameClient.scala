@@ -1,5 +1,6 @@
 package com.gridgame.client.game
 
+import com.gridgame.client.audio.AudioManager
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 
@@ -159,6 +160,7 @@ class GameClient(private[game] val serverHost: String, private[game] val serverP
   /** Everything about the match we were in: gone when the next one starts, when we go back to the
     * lobby browser, and when the connection drops. */
   private[game] def forgetMatch(): Unit = {
+    AudioManager.forgetCharacters()     // the next match loads its own characters' sounds
     forgetScores()
     clearOpening()
     forgetChat()

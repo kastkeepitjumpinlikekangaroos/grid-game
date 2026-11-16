@@ -146,6 +146,33 @@ class ClientMain extends Application with Screens {
 
     showFirstScreen(primaryStage)
     primaryStage.show()
+    bringToFront(primaryStage)
+  }
+
+  /**
+   * The menus' first window, in front of whatever the player was in. Since macOS 14 an app may only
+   * take the front when the active one gives it up, and a terminal that ran the client (`bazel run`,
+   * a script) never does: JavaFX's own activation was ignored, the window came up behind the
+   * terminal, and to the player the client had opened and hidden itself at once. A window floated for
+   * a moment is put above every app's and stays at the front of the ordinary ones when it comes down;
+   * the app is asked to the front as well, which macOS grants where it can (launched from the Dock or
+   * Finder it already is).
+   */
+  private def bringToFront(stage: Stage): Unit = {
+    if (ClientMain.isMac) {
+      try {
+        if (java.awt.Desktop.isDesktopSupported) {
+          val desktop = java.awt.Desktop.getDesktop
+          if (desktop.isSupported(java.awt.Desktop.Action.APP_REQUEST_FOREGROUND)) desktop.requestForeground(true)
+        }
+      } catch { case _: Throwable => } // no AWT desktop: the window still floats up
+    }
+    stage.setAlwaysOnTop(true)
+    stage.toFront()
+    stage.requestFocus()
+    val settle = new javafx.animation.PauseTransition(javafx.util.Duration.millis(400))
+    settle.setOnFinished(_ => { stage.setAlwaysOnTop(false); stage.toFront() })
+    settle.play()
   }
 
   /** The first screen: logging in with the login remembered from the last run, if there is one (its

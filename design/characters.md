@@ -974,4 +974,5 @@ stop it now as they stop a walk.
    `i18n/messages_en.json` (`ContentCatalogTest` enforces it; `tools:gencontent` regenerates them).
 6. If an attack of its sets off a blast (`aoeOnHit`, `aoeOnMaxRange`, `explosionConfig`), give it
    its own look in `GLBlastRenderers` (see client/render/blasts); `BlastStyleTest` fails until it
-   has one. Its sounds: client/audio.
+   has one. Its sounds, one of its own for each of its three attacks: a row in `AbilitySounds`
+   (client/audio/CLAUDE.md, *Adding a character*).

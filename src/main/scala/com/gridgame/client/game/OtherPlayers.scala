@@ -1,5 +1,6 @@
 package com.gridgame.client.game
 
+import com.gridgame.client.audio.{AbilitySounds, AudioManager}
 import com.gridgame.common.model._
 import com.gridgame.common.protocol._
 
@@ -76,6 +77,7 @@ trait OtherPlayers { this: GameClient =>
       packet.getHealth
     )
     player.setCharacterId(packet.getCharacterId)
+    AudioManager.preloadCharacter(packet.getCharacterId)
     player.setTeamId(packet.getTeamId)
     players.put(player.getId, player)
     // In the match, whatever we last heard: their updates count again
@@ -83,6 +85,12 @@ trait OtherPlayers { this: GameClient =>
 
     println(s"GameClient: Player joined - ${player.getId.toString.substring(0, 8)} ('${player.getName}') at ${player.getPosition} with health ${player.getHealth} team=${packet.getTeamId}")
   }
+
+  /** Another player was seen to cast an ability that throws nothing — they are somewhere else, they
+    * are phased, their barrier is up — at (x, y): heard from there, as their character's own. Only
+    * our own casts made a sound before, so an enemy Wizard blinked in beside us in silence. */
+  private[game] def heardCast(player: Player, kind: Int, x: Float, y: Float): Unit =
+    AudioManager.playCastOf(player.getCharacterId, kind, distanceFromLocal(x, y), panFromLocal(x, y))
 
   private[game] def handlePlayerUpdate(packet: PlayerUpdatePacket): Unit = {
     val playerId = packet.getPlayerId
@@ -124,6 +132,8 @@ trait OtherPlayers { this: GameClient =>
         newPos.getX.toLong, newPos.getY.toLong,
         packet.getColorRGB.toLong
       ))
+      // ...and heard, where they came out: their own blink if they have one
+      heardCast(player, AbilitySounds.TELEPORT, newPos.getX.toFloat, newPos.getY.toFloat)
     }
 
     if (!knockedBack && (dx != 0 || dy != 0)) {
@@ -136,6 +146,8 @@ trait OtherPlayers { this: GameClient =>
     if (packet.getCharacterId != 0 || player.getCharacterId == 0) {
       player.setCharacterId(packet.getCharacterId)
     }
+    // Their sounds, loaded before they are needed (a flag read once they are)
+    AudioManager.preloadCharacter(player.getCharacterId)
     if (packet.getTeamId != 0) {
       player.setTeamId(packet.getTeamId)
     }
@@ -160,6 +172,13 @@ trait OtherPlayers { this: GameClient =>
       player.setFrozenUntil(0)
     }
     if ((flags & 0x08) != 0) {
+      // Phased as of this update: they have just cast whatever phases them, a phase or (a dash
+      // goes phased too) a dash. Nobody has both.
+      if (player.getPhasedUntil == 0 && wasAlive) {
+        val c = player.getCharacterId
+        if (AbilitySounds.hasCast(c, AbilitySounds.PHASE)) heardCast(player, AbilitySounds.PHASE, newPos.getX.toFloat, newPos.getY.toFloat)
+        else if (AbilitySounds.hasCast(c, AbilitySounds.DASH)) heardCast(player, AbilitySounds.DASH, newPos.getX.toFloat, newPos.getY.toFloat)
+      }
       if (now >= player.getPhasedUntil) player.setPhasedUntil(now + 1000)
     } else {
       player.setPhasedUntil(0)

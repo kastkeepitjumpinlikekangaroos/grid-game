@@ -191,10 +191,19 @@ file is a line in the list in its directory's BUILD.bazel (its target name, its 
   to `CharacterDef`: the catalog wins over the code (`I18n.tOr`), so renaming an ability in
   `CharacterDef` alone leaves the old name on every screen, silently. Regenerate the entries
   with `bazel run //src/main/scala/com/gridgame/tools:gencontent 2>/dev/null`.
-- `client/audio` — `AbilitySoundsTest` (every attack, and every explosive that deals its blast,
-  sounds from a file that exists; a fire, a mud bomb and a flask don't go off as the frag) and
-  `VoicePoolTest` (what a fan's burst of one sound does in the mixer). The sounds themselves are
-  judged with `scripts/sound_audit.py --check` and the gallery (see *Sound Effects & Music*).
+- `client/audio` — `AbilitySoundsTest` (every character has a row of three sounds with files,
+  each attack heard as its row says, every dash, blink, phase, barrier and trap its character's
+  own and not its kind's plain one, no two primaries one sound, another player's cast found by its
+  kind, every file in `sounds/` played by something; every explosive that deals its blast going off
+  from a file, a fire, a mud bomb and a flask not as the frag, and one projectile as its thrower's:
+  a cannonball is not a grenade) and `VoicePoolTest` (what a fan's burst of one sound does in the
+  mixer). `GameClientSoundsTest` (in `client/`, through `AudioManager.heardBy`, which names every
+  sound asked for whatever the mute and the device say) is what is heard of a cast that throws
+  nothing: ours as our character's, another player's as theirs — a jump, a phase (once, however
+  long it lasts: a real second of it), a dash that phases, a barrier, a trap — a knockback not a
+  blink, and one too far off not at all. The sounds themselves are judged by ear with
+  `scripts/sound_audition.py`, and with `scripts/sound_audit.py --check` and the gallery
+  (scripts/SOUNDS.md).
 - The kits: `MeleeKitTest` (common) holds the melee and skirmisher kits to crowd control, a way
   in on a runner or a place on the list of anchors, primaries that never hold, and being able to
   finish once in (a hold long enough for two blows, or a way to get on top of someone and one of

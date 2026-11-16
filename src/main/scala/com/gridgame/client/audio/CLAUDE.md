@@ -6,49 +6,67 @@ are designed and judged is scripts/SOUNDS.md.
 
 ## What plays when
 
-- `sounds/atk_*.wav` — one sound per attack archetype. `AbilitySounds.scala` maps every
-  `ProjectileType` id onto them, mirroring the many-to-one grouping already used by
-  `GLProjectileRenderers.registry` (types that share a renderer usually share a sound),
-  **plus a per-character override table**. A handful of projectile types are shared by
-  characters with nothing in common — `TREMOR_SLAM` is a barbarian splitting the earth
-  *and* a wolf's howl *and* a banshee's wail; `FIREBALL` is a wizard's fireball *and* a
-  chef's flambé *and* an alchemist's thrown potion — so `forAttack(projectileType,
-  characterId)` checks `(character, projectile)` first. `GameClient.characterIdOf`
-  resolves the shooter at the call site.
-- **A projectile type names the object, not who is holding it.** Six characters "throw a
-  boulder" and five "swipe a claw"; the base sound can only be one of them, so the rest
-  get a character voice (`gen_ape_throw`, `gen_stone_fist`, `gen_mantis_scythe`, …) built
-  as the base plus what that creature adds — an effort grunt, wingbeats, chitin scrape,
-  a snarl. The primary attack is what a player hears for a whole match, so it is worth a
-  file of its own; abilities on long cooldowns can share.
-- `python3 scripts/sound_roster.py` prints what every character actually hears with both
-  tables resolved, and `--shared` lists the sounds more than one character's primary
-  still shares — the audit to run after touching either table.
-- `sounds/spawn.wav`, `sounds/death.wav`, `sounds/dash.wav`, `sounds/teleport.wav`,
-  `sounds/phase_shift.wav`, `sounds/barrier_up.wav` — non-projectile events/cast behaviors.
+- **Every character's three attacks sound like that character doing that thing.** `AbilitySounds`
+  has a row a character — `hears(character, primary, Q, E)`, all 112 — as each attack has a look
+  that is its thrower's (render/projectiles/CLAUDE.md, *A projectile is drawn as its thrower's*):
+  the Necromancer's bolt is a skull in green fire and sounds like one, the Poltergeist throws the
+  crockery, the Plague Doctor's glob has its flies. A sound is shared only where the thing is the
+  same thing in the same hands (the Railgunner's frag grenade is the Soldier's, the Pyromancer's
+  fireball the Wizard's: three in the whole roster), and no two primaries are one sound: it is what
+  a player hears for a whole match. `python3 scripts/sound_roster.py` prints the table by ability
+  name (`--shared` what is shared), and `python3 scripts/sound_audition.py <dir>` writes a page to
+  hear it on, a button an attack (scripts/SOUNDS.md).
+- **An attack that throws a projectile** is heard when the projectile is first seen:
+  `forAttack(projectileType, characterId)`, the thrower's own for the type, from its row
+  (`GameClient.characterIdOf` resolves the thrower at the call site). Nothing tells the client which
+  key a projectile came from, so a character whose primary and ability throw one type (the
+  Enchantress's Charm) hears one sound for both. Under the rows is `byType`, each projectile type's
+  sound in nobody's hands: for a thrower the client doesn't know yet, and for what a character
+  throws that is none of its three attacks' own. It is always one of its throwers' sounds.
+- **An ability that throws nothing — a dash, a blink, a phase, a barrier, a trap — is its
+  character's own too** (`sounds/cast_*.wav`): `AudioManager.playCast(character, slot, kind)` as we
+  cast it, from the same row. A third of the roster's abilities are these, and each kind made one
+  sound for everybody: the Wizard's Blink, the Barbarian's Leap, the Hawk's Dive Bomb, the Spider's
+  Burrow and the Phoenix's Rebirth were all the same zip and pop. They are one move to the rules and
+  nothing alike to the player. `dash`, `teleport`, `phase_shift`, `barrier_up` and `trap_place` are
+  what is left of that: the plain cast of each kind, for a character without a row (none has none)
+  and for a move the client can't name (below).
+- **Other players' casts are heard, from where they are** (`playCastOf(character, kind, distance,
+  pan)`). Only our own used to make a sound: an enemy Wizard blinked in beside us in silence. The
+  client isn't told of a cast, it sees one: a player somewhere else at once (the jump that draws the
+  teleport's streak, `OtherPlayers`) is their blink, or the plain `teleport` for one moved by
+  something else (a Haunt puts its caster behind its target); phased as of this update is their
+  phase or, for one whose dash phases them, their dash (nobody has both); a barrier up as of this
+  update is theirs going up (`Barriers.heardBarrierOf`). `forCastOf(character, kind)` is the first
+  of their two abilities of that kind. A trap someone else sets down is `playTrapPlace(character,
+  trapType, ...)`: the Warden's bear trap and the Blacksmith's forged one are one trap to the rules
+  (`forTrap`).
+- `sounds/spawn.wav`, `sounds/death.wav` — a respawn and a death.
   `sounds/barrier_block.wav` is a shot stopped on a barrier: a dull thud of energy with a
   short fizz and nothing that rings, since it plays for every shot anyone fires into one.
-  `sounds/cooldown_reset.wav` is R, heard only by whoever pressed it: a spin-up of air and a
-  climbing chirp landing on a harmonic chord swelled in over 50-70ms, so nothing in it is struck
-  (its clang is 0.097, beside the Smite's 0.100). `AbilitySoundsTest` checks every one of these
-  event sounds (`AudioManager.EVENT_SOUNDS`) has a file.
-- `sounds/trap_place.wav` (one set down — quiet and short, since everyone nearby hears it),
-  and one per trap kind going off: `trap_snap.wav` (jaws, and a web closing), `trap_poison.wav`
+  `sounds/cooldown_reset.wav` is R, heard only by whoever pressed it: a spin-up of air landing on
+  a chord sung by the air, swelled in, so nothing in it is struck. `AbilitySoundsTest` checks every
+  one of these event sounds (`AudioManager.EVENT_SOUNDS`) has a file.
+- One sound per trap kind going off: `trap_snap.wav` (jaws, and a web closing), `trap_poison.wav`
   (a pod bursting), `trap_ignite.wav` (a rune catching). A mine's blast is `explosion.wav`.
-- `sounds/hit_taken.wav` (you were hit), `sounds/hit_dealt.wav` (hitmarker — bright and
-  high-mid so it cuts through), `sounds/hit_other.wav` (someone else was hit, duller and
-  distance-attenuated).
-- **An explosive goes off as itself** — only one that deals damage: a slam's explosion is only
-  drawn, see *Blasts*. `AbilitySounds.forBlast` picks the detonation by what blew up:
-  `blast_fire` (napalm, the Inferno Blast: a whoomph of pressure and roaring flame, not a
-  bang), `blast_magma` (the Eruption), `blast_toxic` (Miasma, the Blight Bomb), `blast_acid`
-  (a flask shattering), `blast_mud`, `blast_cluster` (a string of small bangs), and
-  `explosion.wav`, the frag, for grenades, rockets and mines. They all used to be the frag.
+- `sounds/hit_taken.wav` (you were hit), `sounds/hit_dealt.wav` (hitmarker — a soft 't' and two
+  small round notes a fourth apart, E and A; two hundred a match, so nothing in it is sharp),
+  `sounds/hit_other.wav` (someone else was hit, duller and distance-attenuated).
+- **An explosive goes off as itself, and as its thrower's** — only one that deals damage: a slam's
+  explosion is only drawn, see *Blasts*. `AbilitySounds.forBlast(projectileType, characterId)` picks
+  the detonation by what blew up: `blast_fire` (napalm, the Inferno Blast: a whoomph of pressure and
+  roaring flame, not a bang), `blast_magma` (the Eruption), `blast_toxic` (Miasma, the Blight Bomb),
+  `blast_acid` (a flask shattering), `blast_mud`, `blast_cluster` (a string of small bangs),
+  `blast_rocket`, and `explosion.wav`, the frag, for grenades and mines — and by whose it was where
+  one projectile is two explosives: the Pirate's `GRENADE` is a cannonball (`blast_cannonball`) and
+  the Bombardier's a round black bomb (`blast_bomb`). They all used to be the frag.
 - **A thrown bomb's own sound is the throw.** `lobbed()` is the arm and whatever goes up with
   it — a grenade's pin and spoon, a cartoon bomb's sputtering fuse (the Bombardier's,
   `atk_comic_bomb`), a potion's cork and slosh — and its landing only where nothing else
-  sounds when it comes down (the ink). It used to land a third of a second after the throw,
-  while the bomb was still visibly in the air, and then explode again.
+  sounds when it comes down. A meteor's sound is its fall, for the same reason.
+- **A fan is three in the sound itself.** A fan fires its projectiles in one tick and the mixer
+  makes one sound of them (below), so a fan's sound is made as three: three bowstrings a breath
+  apart, three cards off the deck, three blows inside a quarter of a second.
 - `sounds/music_menu.wav` (calm, loops through JavaFX UI screens) and
   `sounds/music_battle.wav` (faster/more intense, loops during a match).
 - `client/audio/AudioManager.scala` **mixes in software onto a single
@@ -76,25 +94,40 @@ are designed and judged is scripts/SOUNDS.md.
   — and took a third of the voices. Within 40ms of the first copy, and panned the same way
   (two players firing one attack at once are still two sounds), one more plays 6-18ms late
   (so the two onsets don't add), and every further copy lifts the first by 15%, to +5dB at
-  most. `VoicePoolTest` pins it. `AudioManager.preload()` decodes every sound on a background thread
-  at startup so no WAV parsing or disk I/O lands mid-match.
+  most. `VoicePoolTest` pins it.
 - **Pitch and pan are applied per voice in the mixer**, not via `AudioFormat` tricks
   or `BALANCE`/`PAN` controls: `±7%` playback-rate jitter (`PITCH_SPREAD`, via
   linear-interpolated resampling) so rapid fire isn't machine-gun identical, and
   constant-power panning. Attack/hit/death sounds also attenuate by distance.
+- **A sound with a pitch keeps it.** 7% is more than a semitone. A sound whose pitch is the point
+  of it — the Bard's lute, a choir on a chord, chimes, a flute, glass, the Wizard's bolt (all in the
+  music's key) — played that far off its note is out of tune, not varied, and a lute a semitone flat
+  on every other strum is a joke at the Bard's expense: those (`AbilitySounds.isTuned`, a list by
+  name) get `±1%` (`TUNED_SPREAD`).
+- **A match's worth of sounds is held, not the roster's.** There are over three hundred character
+  sounds, 39MB decoded, and a match has a dozen characters in it. `AudioManager.preload()` (at
+  startup) decodes only what any match plays whoever is in it (`EVENT_SOUNDS`: the hits, the
+  deaths, the traps, the plain casts, the music); a character's own are decoded on the loader's
+  thread when the client first hears of a player playing it (`preloadCharacter`, from
+  `OtherPlayers` and our own join: a flag read from then on) and let go when the match is forgotten
+  (`forgetCharacters`, from `GameClient.forgetMatch`). So no WAV parsing or disk I/O lands
+  mid-match, and the client holds less than it did when there were half as many sounds and it held
+  them all. A sound needed before the loader reached it is decoded where it is played, a few
+  milliseconds, once. Nothing is preloaded before the mixer runs, so a test's or a dev tool's client
+  opens no audio line for it.
 - **Positional stereo**: sounds are panned by where they happened. Screen X in an
   isometric projection is `(wx - wy)`, so `GameClient.panFromLocal` pans on that axis
   rather than world X, scaled by `Constants.AUDIO_PAN_RANGE_CELLS`.
   `hit_taken`/`hit_dealt` are deliberately left centred — they are about you, not
   about a location in the arena.
-- If you add a new `ProjectileType`, add a matching entry to `AbilitySounds.scala`
-  (falls back to `atk_normal_bolt` if omitted), and if it explodes with damage, a
-  `blast(...)` line for its detonation (it falls back to the frag; `AbilitySoundsTest`
-  checks every damaging explosive has a file). If you add a wholly new sound
-  archetype, add an entry to the `_sounds()` table in `scripts/generate_sounds.py`
-  and rerun it — the script cross-checks itself against `AbilitySounds.scala` and
-  fails if that file names a sound it does not generate, so the two cannot drift.
-- If a character's ability would read as somebody else's — because it shares a
-  projectile type with a character of a different fantasy — add a line to the
-  `only(...)` override block in `AbilitySounds.scala` rather than splitting the
-  projectile type.
+- **Adding a character**: a `hears(...)` row in `AbilitySounds.scala`, and each sound it names in
+  `scripts/sound_attacks.py` (an attack that throws something) or `scripts/sound_casts.py` (one
+  that throws nothing); then `python3 scripts/generate_sounds.py`, which refuses to run while the
+  two disagree, either way: a sound the game names that isn't made, or one made that nothing plays.
+  `AbilitySoundsTest` holds every character to a row whose sounds have files, every cast to its
+  character's own, and no two primaries to one sound.
+- **Adding a `ProjectileType`**: its sound in nobody's hands, a `set(...)` line (it falls back to
+  `atk_normal_bolt` if omitted), which should be one of its throwers'; and if it explodes with
+  damage, a `blast(...)` line for its detonation (it falls back to the frag; `AbilitySoundsTest`
+  checks every damaging explosive has a file).
+- A sound with a pitch that is the point of it goes in `AbilitySounds`' `tuned` list.

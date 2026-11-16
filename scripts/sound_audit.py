@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Which sounds are a struck piece of metal? Measures it, for every sound.
+"""Which sounds are a struck piece of metal, and which are full of clinks? Measures both, for
+every sound.
 
-The audio counterpart of `render_audit.py`. The fault it looks for is the one
-this set kept falling into: a pitched layer with an instant attack and an
-exponential decay, whose partials are not a harmonic series. That is the
-acoustic definition of a struck metal object, and it is what a fire bolt, a
-thrown axe and a rope all came out as — "a tin can". It is also invisible in
-the numbers anyone normally checks (level, length, band), so it is measured
-here directly:
+The audio counterpart of `render_audit.py`. Two faults this set kept falling into, neither of
+which shows in the numbers anyone normally checks (level, length, band):
+
+CLANG. A pitched layer with an instant attack and an exponential decay, whose partials are not a
+harmonic series: the acoustic definition of a struck metal object, and what a fire bolt, a thrown
+axe and a rope all came out as — "a tin can".
 
   1. An STFT of the mono mix (2048 window, 256 hop).
   2. From 25ms after the onset, a bin is a *peak* if it is a local maximum and
@@ -20,8 +20,6 @@ here directly:
   4. A ringing partial is *struck* if it dies away from a peak near its start,
      rather than swelling or holding as a voice or a held note does.
 
-Reported per sound:
-
   ring    share of the 150Hz-10kHz energy (over 600ms) that is ringing partials
   struck  share of it that is struck partials
   inharm  share of the struck energy no harmonic series explains
@@ -31,15 +29,36 @@ Reported per sound:
 A voice rings but is not struck; a string or a chord is struck but harmonic, so
 both score low. A bolt of fire should not ring at all.
 
-    python3 scripts/sound_audit.py                 # every sound, worst first
-    python3 scripts/sound_audit.py atk_axe          # only matching names
-    python3 scripts/sound_audit.py --check          # exit 1 if anything that
-                                                    # should not ring does
+TICKS. Brief events that poke out of a sound: a few milliseconds of something bright, there and
+gone — "clinky". The clang measure cannot see them (nothing under 80ms rings), and they were its
+blind spot twice: thrown weapons' clinks, and then a "glitter" made of tiny chimes that put a
+handful of pins in a katana's cut and forty other sounds.
 
-`--check` fails on any sound with clang over CLANG_LIMIT that is not in
-MEANT_TO_RING — the sounds that are, legitimately, a struck bell or a plucked
-string. SND_DIR overrides the directory read, to audit a build before it
-replaces sounds/. Needs numpy.
+  1. A spectrogram in 24 bands from 1.2 to 14kHz (about a critical band each), 1.5ms a frame,
+     smoothed to about 6ms.
+  2. A band-frame is a *tick* if it stands 12dB above that band's loudest moment 8-30ms EARLIER
+     and 9dB above its quietest within 25ms AFTER (it is over at once: not the start of something
+     that stays), within 30dB of the sound's loudest band-frame. The sound's own first onset is
+     how it begins, not a tick in it.
+  3. Ticks touching in time and band are one event.
+
+  ticks   how many such events are in the sound
+
+Smooth noise, however bright, has none; a whoosh has none; a cloud of chimes has dozens. Many
+sounds are MEANT to be several events — hoofbeats, three rounds, a chain's links, lightning
+jumping, rubble, a glitch — and are listed (`MEANT_TO_TICK`) with why; anything else with more
+than TICK_LIMIT is a sound with clinks in it.
+
+    python3 scripts/sound_audit.py                 # every sound, worst clang first
+    python3 scripts/sound_audit.py --ticks         # worst ticks first
+    python3 scripts/sound_audit.py atk_axe          # only matching names
+    python3 scripts/sound_audit.py --check          # exit 1 if anything rings or ticks
+                                                    # that should not
+
+`--check` fails on any sound with clang over CLANG_LIMIT that is not in MEANT_TO_RING — the
+sounds that are, legitimately, a struck bell or a plucked string — or with more ticks than
+TICK_LIMIT that is not in MEANT_TO_TICK. SND_DIR overrides the directory read, to audit a build
+before it replaces sounds/. Needs numpy.
 """
 import glob
 import os
@@ -59,15 +78,112 @@ CLANG_LIMIT = 0.12
 # Sounds that are meant to ring: a melody, a chord, a string, a bell that is the
 # point of the sound. Anything not here that rings inharmonically is a fault.
 MEANT_TO_RING = {
-    "atk_hypnotic_melody",   # the Musician's melody IS a mallet figure
+    "atk_hypnotic_melody",   # the Musician's melody IS a figure on a lyre
     "atk_lute_chord",        # a plucked chord
-    "atk_song_wave",         # a reed/brass swell
+    "atk_lullaby",           # three plucked notes: the tune is the ability
+    "atk_song_wave",         # two notes on a reed
     "atk_charm_bolt",        # a harp run
-    "spawn",                 # the respawn figure: three bell notes
+    "cast_ench_blink",       # the same harp, running out
+    "atk_lucky_streak",      # a win paying out: a run of chimes
+    "cast_astral_project",   # a stroke up the chimes and one down
+    "atk_puppet_string", "atk_puppet_pull", "atk_marionette",   # strings, plucked
+    "cast_aegis",            # a shield of holy light: voices holding a chord
+    "spawn",                 # the respawn figure: three soft notes
     "death",                 # the knell
-    "hit_dealt",             # the hitmarker's tick has to cut through everything
+    "hit_dealt",             # the hitmarker's two notes have to cut through everything
     "atk_howl",              # a held, sung note — a voice rings, it is not struck
 }
+
+TICK_LIMIT = 4
+
+# Sounds that are meant to be several brief events, by what they are. Anything not here with more
+# than TICK_LIMIT ticks has clinks in it that nobody put there on purpose.
+MEANT_TO_TICK = set("""
+    atk_lag_spike atk_virus_glitch atk_glitch_bolt atk_data_bolt cast_system_hop cast_glitch_blink
+    atk_beam_railgun atk_time_bolt atk_electric_burst atk_ion_shot atk_chain_lightning atk_tesla_fork
+    atk_tesla_arc atk_tesla_chain atk_lightning_crack atk_thunder_strike atk_sting atk_turret_laser
+    atk_sniper_beam atk_inq_chain
+    atk_triple_blast atk_suppress_fire atk_strafing_run atk_mech_gun atk_pilot_guns atk_multi_shot
+    atk_knife_spray atk_card_fan atk_ember_fan atk_prism atk_flurry atk_berserk_axe atk_hydra_spit
+    atk_hydra_heads atk_bear_maul atk_blood_frenzy atk_axe_spin
+    atk_chain_bolt atk_lockdown atk_shackles atk_death_grip atk_meat_hook atk_scales_judgment
+    atk_bone_cage atk_bone_axe atk_bone_boomerang atk_marionette cast_snare_mine cast_anvil_trap
+    cast_headless_charge cast_bull_charge cast_gallop cast_ground_charge cast_rage_charge cast_lion_charge
+    cast_beast_charge atk_centaur_arrow atk_lance
+    atk_bat_swarm cast_aerial_charge cast_sky_dance cast_dive_bomb cast_sky_dive cast_swoop atk_talon_grab
+    atk_griffin_rake atk_hawk_dive atk_pin_down atk_gust atk_flame_trail atk_harpy_screech atk_harpy_shriek
+    cast_mist_form cast_rebirth atk_fiend_eye
+    atk_ice_quake atk_tremor_slam atk_avalanche_crush atk_earthsplitter atk_grasping_dead atk_ground_pound
+    atk_seismic_root atk_shield_bash atk_mech_slam atk_horn_flip atk_raise_dead atk_boulder_rumble
+    atk_giant_boulder atk_hurl_boulder atk_stone_fist atk_ape_throw atk_ice_chunk atk_shell_charge
+    atk_eruption cast_stone_wall cast_burrow cast_open_grave cast_leap
+    explosion blast_cannonball blast_mud blast_rocket blast_cluster blast_bomb blast_acid blast_magma
+    atk_inferno_blast atk_death_coil atk_hailstorm atk_freeze_ray atk_beam_ice cast_ice_blink cast_ice_wall
+    atk_frost_nova cast_flame_burst
+    cast_leaf_cloak cast_natures_leap atk_vine_whip atk_druid_vine atk_root_pull atk_mantis_strike atk_entangle
+    atk_root_burst atk_gale cast_dust_devil cast_wind_form atk_sand_blast
+    atk_claw_swipe atk_bear_swipe atk_fenrir_rend atk_talon_swipe atk_ghoul_rake atk_mantis_scythe
+    cast_rune_trap cast_binding_rune cast_web_trap cast_deploy_mine cast_carapace trap_place trap_snap
+    atk_lucky_streak atk_hypnotic_melody atk_lullaby atk_lute_chord atk_charm_bolt cast_ench_blink
+    cast_astral_project cast_illusion cast_time_stop atk_temporal_rift atk_puppet_string atk_puppet_pull
+    spawn death
+""".split())
+# Why, group by group as they are set out above: a glitch is a stutter; electricity jumps; a fan,
+# a burst or a flurry is three or more in one sound; a chain is its links and bones knock; hooves;
+# wings (a beat is an event); the ground giving and what it throws up; a blast's debris; fire's
+# and ice's crackle; leaves and grit; a claw's tearing; a trap's mechanism and a rune's strokes;
+# and the tunes, which are notes.
+
+_TICK_NFFT, _TICK_HOP = 512, 64
+_TICK_EDGES = np.geomspace(1200.0, 14000.0, 25)
+_TICK_FREQ = np.fft.rfftfreq(_TICK_NFFT, 1.0 / SR)
+_TICK_BANK = np.stack([((_TICK_FREQ >= _TICK_EDGES[i]) & (_TICK_FREQ < _TICK_EDGES[i + 1])).astype(float)
+                       for i in range(len(_TICK_EDGES) - 1)])
+
+
+def ticks(x, rise=12.0, fall=9.0):
+    """How many brief events poke out of `x` (see TICKS in this file's docstring)."""
+    if len(x) < 4 * _TICK_NFFT:
+        x = np.pad(x, (0, 4 * _TICK_NFFT - len(x)))
+    x = np.pad(x, (_TICK_NFFT, _TICK_NFFT))
+    win = np.hanning(_TICK_NFFT)
+    frames = (len(x) - _TICK_NFFT) // _TICK_HOP + 1
+    idx = np.arange(_TICK_NFFT)[None, :] + _TICK_HOP * np.arange(frames)[:, None]
+    power = np.abs(np.fft.rfft(x[idx] * win, axis=1)) ** 2
+    bands = power @ _TICK_BANK.T
+    k = np.ones(3) / 3.0
+    bands = np.apply_along_axis(lambda v: np.convolve(v, k, mode="same"), 0, bands)
+    db = 10 * np.log10(bands + 1e-12)
+    n_t, n_b = db.shape
+    top = db.max()
+    f8, f30, f25 = int(0.008 * SR / _TICK_HOP), int(0.030 * SR / _TICK_HOP), int(0.025 * SR / _TICK_HOP)
+    tick = np.zeros_like(db, dtype=bool)
+    for t in range(n_t):
+        a, b = max(0, t - f30), max(0, t - f8)
+        before = db[a:b].max(axis=0) if b > a else np.full(n_b, -120.0)
+        after = db[t + 3:min(n_t, t + f25)].min(axis=0) if t + 4 < n_t else np.full(n_b, -120.0)
+        tick[t] = (db[t] - before >= rise) & (db[t] - after >= fall) & (db[t] > top - 30)
+    loud = np.nonzero(db.max(axis=1) > top - 30)[0]
+    if len(loud):
+        tick[:loud[0] + int(0.012 * SR / _TICK_HOP)] = False       # how the sound begins is not a tick in it
+    events = 0
+    seen = np.zeros_like(tick)
+    for t, b in zip(*np.nonzero(tick)):
+        if seen[t, b]:
+            continue
+        events += 1
+        stack = [(t, b)]
+        seen[t, b] = True
+        while stack:
+            tt, bb = stack.pop()
+            for dt in (-2, -1, 0, 1, 2):
+                for d_b in (-1, 0, 1):
+                    u, v = tt + dt, bb + d_b
+                    if 0 <= u < n_t and 0 <= v < n_b and tick[u, v] and not seen[u, v]:
+                        seen[u, v] = True
+                        stack.append((u, v))
+    return events
+
 
 # log-frequency grid the baseline is taken on: 48 bins an octave, 60Hz-16kHz
 _LOG_F = np.geomspace(60.0, 16000.0, int(48 * np.log2(16000.0 / 60.0)))
@@ -188,6 +304,7 @@ def _is_struck(freqs, energy):
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     check = "--check" in sys.argv
+    by_ticks = "--ticks" in sys.argv
     match = args[0] if args else ""
     root = os.environ.get("SND_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "sounds"))
     rows = []
@@ -195,23 +312,35 @@ def main():
         name = os.path.basename(p)[:-4]
         if "music" in name or match not in name:
             continue
-        r = analyse(load(p))
+        x = load(p)
+        r = analyse(x)
         if r is not None:
+            r["ticks"] = ticks(x)
             rows.append((name, r))
-    rows.sort(key=lambda kv: -kv[1]["clang"])
-    print("%-24s %6s %6s %6s %6s  %s" % ("sound", "clang", "ring", "struck", "inharm",
-                                          "loudest struck partials (Hz, share)"))
-    faults = []
+    rows.sort(key=lambda kv: -kv[1]["ticks" if by_ticks else "clang"])
+    print("%-24s %6s %6s %6s %6s %5s  %s" % ("sound", "clang", "ring", "struck", "inharm", "ticks",
+                                              "loudest struck partials (Hz, share)"))
+    rings, clinks = [], []
     for name, r in rows:
         flag = ""
         if r["clang"] > CLANG_LIMIT:
             flag = "  (meant to ring)" if name in MEANT_TO_RING else "  <- rings like struck metal"
             if name not in MEANT_TO_RING:
-                faults.append(name)
-        print("%-24s %6.3f %6.3f %6.3f %6.2f  %s%s" % (name, r["clang"], r["ring"], r["struck"], r["inharm"],
-                                                     " ".join("%d:%.2f" % pp for pp in r["parts"]), flag))
-    if check and faults:
-        print("\n%d sound(s) ring like struck metal: %s" % (len(faults), ", ".join(faults)))
+                rings.append(name)
+        if r["ticks"] > TICK_LIMIT:
+            flag += "  (meant to tick)" if name in MEANT_TO_TICK else "  <- has clinks in it"
+            if name not in MEANT_TO_TICK:
+                clinks.append(name)
+        print("%-24s %6.3f %6.3f %6.3f %6.2f %5d  %s%s" % (name, r["clang"], r["ring"], r["struck"], r["inharm"],
+                                                         r["ticks"], " ".join("%d:%.2f" % pp for pp in r["parts"]), flag))
+    total = sum(r["ticks"] for _, r in rows)
+    quiet = sum(1 for _, r in rows if r["ticks"] == 0)
+    print("\n%d sounds, %d ticks between them, %d with none" % (len(rows), total, quiet))
+    if rings:
+        print("%d sound(s) ring like struck metal: %s" % (len(rings), ", ".join(rings)))
+    if clinks:
+        print("%d sound(s) have clinks in them: %s" % (len(clinks), ", ".join(clinks)))
+    if check and (rings or clinks):
         sys.exit(1)
 
 

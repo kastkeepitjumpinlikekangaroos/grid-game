@@ -1,6 +1,6 @@
 package com.gridgame.client.audio
 
-import com.gridgame.common.model.TrapKind
+import com.gridgame.common.model.{CharacterDef => CharacterDefs, TrapKind}
 
 import java.io.{ByteArrayInputStream, File, FileInputStream, InputStream}
 import java.util.concurrent.ConcurrentHashMap
@@ -31,6 +31,10 @@ object AudioManager {
   private val ATTACK_FALLOFF_CELLS = 35f
   // +/- 7% playback-rate jitter so repeated shots don't sound machine-gun identical
   private val PITCH_SPREAD = 0.07f
+  // ...and +/- 1% for a sound whose pitch is the point of it (AbilitySounds.isTuned): 7% is more
+  // than a semitone, and a lute, a choir or a chime that far off its note and the music's key is
+  // out of tune, not varied
+  private val TUNED_SPREAD = 0.01f
 
   private val SAMPLE_RATE = 44100f
   private val CHANNELS = 2
@@ -106,24 +110,43 @@ object AudioManager {
     *                     by characters who should not sound alike, so this
     *                     selects between them. Pass -1 when it isn't known. */
   def playAttack(projectileType: Byte, characterId: Byte = -1,
-                 distanceInCells: Float = 0f, pan: Float = 0f): Unit =
-    playSfx(AbilitySounds.forAttack(projectileType, characterId),
-            volumeAtDistance(distanceInCells), PITCH_SPREAD, pan)
+                 distanceInCells: Float = 0f, pan: Float = 0f): Unit = {
+    val name = AbilitySounds.forAttack(projectileType, characterId)
+    playSfx(name, volumeAtDistance(distanceInCells), spreadOf(name), pan)
+  }
+
+  /** We cast an ability that throws nothing — a dash, a blink, a phase, a barrier, a trap — from
+    * `slot` (0 is Q, 1 is E), as `characterId`: that character's own sound for it. `kind` is what
+    * it is ([[AbilitySounds.DASH]]...), for a character without one. Centred: it is ours. */
+  def playCast(characterId: Byte, slot: Int, kind: Int): Unit = {
+    val name = AbilitySounds.forCast(characterId, slot, kind)
+    playSfx(name, SFX_VOLUME, spreadOf(name))
+  }
+
+  /** Somebody else was seen to cast one of `kind`, over there: a blink out of nowhere, a phase, a
+    * barrier going up. Theirs used to make no sound at all — only our own did. */
+  def playCastOf(characterId: Byte, kind: Int, distanceInCells: Float, pan: Float): Unit = {
+    val name = AbilitySounds.forCastOf(characterId, kind)
+    playSfx(name, volumeAtDistance(distanceInCells), spreadOf(name), pan)
+  }
 
   def playSpawn(): Unit = playSfx("spawn", SFX_VOLUME)
   def playDeath(distanceInCells: Float = 0f, pan: Float = 0f): Unit =
     playSfx("death", volumeAtDistance(distanceInCells), 0f, pan)
-  def playDash(): Unit = playSfx("dash", SFX_VOLUME, PITCH_SPREAD)
-  def playTeleport(): Unit = playSfx("teleport", SFX_VOLUME, PITCH_SPREAD)
-  def playPhaseShift(): Unit = playSfx("phase_shift", SFX_VOLUME)
-  def playBarrierUp(): Unit = playSfx("barrier_up", SFX_VOLUME, PITCH_SPREAD)
+  /** The wall a Teams match opens with going up (a character's own barrier is a cast). */
+  def playBarrierUp(): Unit = playSfx("barrier_up", SFX_VOLUME, TUNED_SPREAD)
   /** R: both abilities ready again. */
   def playCooldownReset(): Unit = playSfx("cooldown_reset", SFX_VOLUME)
 
-  /** A trap being set down. Centred when it is ours (no distance to speak of), out there when
-    * it is somebody else's — an enemy setting one nearby is a thing worth hearing. */
-  def playTrapPlace(distanceInCells: Float = 0f, pan: Float = 0f): Unit =
-    playSfx("trap_place", volumeAtDistance(distanceInCells), PITCH_SPREAD, pan)
+  /** Somebody else setting a trap of `trapType` down over there, as `characterId` — an enemy
+    * setting one nearby is a thing worth hearing — in that character's own way of setting it. (Ours
+    * is a cast: [[playCast]].) */
+  def playTrapPlace(characterId: Byte, trapType: Byte, distanceInCells: Float, pan: Float): Unit = {
+    val name = AbilitySounds.forTrap(characterId, trapType)
+    playSfx(name, volumeAtDistance(distanceInCells), spreadOf(name), pan)
+  }
+
+  private def spreadOf(name: String): Float = if (AbilitySounds.isTuned(name)) TUNED_SPREAD else PITCH_SPREAD
 
   /** A trap going off, by what kind it is ([[com.gridgame.common.model.TrapKind]]). A mine is not
     * here: its blast is the explosion everything else's is. */
@@ -182,28 +205,64 @@ object AudioManager {
     line = null
   }
 
-  /** Decodes every sound off the game threads so no disk I/O or WAV parsing
-    * ever happens mid-match. Safe to call more than once. */
+  /** Decodes, off the game threads, the sounds any match plays whoever is in it: the hits, the
+    * deaths, the traps, the music. Safe to call more than once.
+    *
+    * Not the characters' own. There are over three hundred of those, 40MB decoded, and a match
+    * has a dozen characters in it: they are loaded as each is seen to be in the match
+    * ([[preloadCharacter]]) and let go when it is over ([[forgetCharacters]]), so the client holds
+    * a match's worth, not the roster's. */
   def preload(): Unit = {
     if (!ensureStarted()) return
-    val t = new Thread(new Runnable {
-      def run(): Unit = {
-        AbilitySounds.allSoundNames.foreach(loadSound)
-        EVENT_SOUNDS.foreach(loadSound)
-      }
-    }, "AudioPreload")
-    t.setDaemon(true)
-    t.setPriority(Thread.MIN_PRIORITY)
-    t.start()
+    loader.execute(() => EVENT_SOUNDS.foreach(loadSound))
   }
 
-  // Everything that isn't an attack (AbilitySoundsTest checks each has a file)
+  /** `characterId` is in the match: its three attacks' sounds, and what its explosives go off as,
+    * decoded on the loader's thread before any of them is needed. Asking again costs a flag read
+    * (the client asks at every update about a player). A sound that is needed before the loader
+    * has reached it is decoded where it is played: a few milliseconds, once. */
+  def preloadCharacter(characterId: Byte): Unit = {
+    val i = characterId & 0xFF
+    // Only once the mixer is running (the app starts it with `preload`): a client that has played
+    // nothing yet — a test's, a dev tool's — opens no audio line and decodes nothing for this
+    if (wanted.get(i) != 0 || !running || !CharacterDefs.isValid(characterId)) return
+    if (!wanted.compareAndSet(i, 0, 1)) return
+    loader.execute(() => if (wanted.get(i) == 1) AbilitySounds.soundsOf(characterId).foreach(loadSound))
+  }
+
+  /** The match is over: its characters' sounds are let go (a voice still playing one keeps it
+    * until it ends), and the next match loads its own. */
+  def forgetCharacters(): Unit = {
+    var i = 0
+    while (i < wanted.length) { wanted.set(i, 0); i += 1 }
+    soundCache.keySet().removeIf(name => !EVENT_SOUND_SET.contains(name))
+  }
+
+  /** How many sounds are held decoded, and their size in bytes: for the benches and the tests. */
+  def cached: (Int, Long) = {
+    var bytes = 0L
+    soundCache.values().forEach(s => bytes += s.samples.length * 2L)
+    (soundCache.size(), bytes)
+  }
+
+  private val wanted = new java.util.concurrent.atomic.AtomicIntegerArray(256)
+  private lazy val loader: java.util.concurrent.ExecutorService =
+    java.util.concurrent.Executors.newSingleThreadExecutor((r: Runnable) => {
+      val t = new Thread(r, "AudioPreload")
+      t.setDaemon(true)
+      t.setPriority(Thread.MIN_PRIORITY)
+      t
+    })
+
+  // Everything that isn't a character's own (AbilitySoundsTest checks each has a file): what
+  // happens to a player, a trap going off, the plain cast of each kind, R, the music
   private[audio] val EVENT_SOUNDS = Seq(
     "spawn", "death", "hit_taken", "hit_dealt", "hit_other",
     "explosion", "dash", "teleport", "phase_shift", "barrier_up", "barrier_block",
     "trap_place", "trap_snap", "trap_poison", "trap_ignite", "cooldown_reset",
     "music_menu", "music_battle"
   )
+  private val EVENT_SOUND_SET: java.util.Set[String] = new java.util.HashSet[String](java.util.Arrays.asList(EVENT_SOUNDS: _*))
 
   // ── playback ────────────────────────────────────────────────────────────
 
@@ -212,9 +271,16 @@ object AudioManager {
     else SFX_VOLUME * Math.max(0f, 1f - distanceInCells / ATTACK_FALLOFF_CELLS)
   }
 
+  /** Told the name of every sound effect as it is asked for and near enough to be heard — before
+    * the mute, the mixer or the device have any say — so a test can hear what the game would play.
+    * Nothing in the game sets it. */
+  @volatile private[client] var heardBy: String => Unit = null
+
   private def playSfx(name: String, volume: Float, pitchSpread: Float = 0f, pan: Float = 0f): Unit = {
-    if (muted) return
     if (volume <= 0.01f) return
+    val ear = heardBy
+    if (ear != null) ear(name)
+    if (muted) return
     if (!ensureStarted()) return
     val sound = loadSound(name)
     if (sound == null) return

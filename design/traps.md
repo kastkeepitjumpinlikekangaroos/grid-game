@@ -106,7 +106,11 @@ spun across the ground for a hunter to blunder into.
   traps (`AbilityPreviewRenderer.drawTrapTop`). The ability slot carries the count ("2/3").
 - **Bots** lay one for a target within 8 cells that is closing in, and treat armed enemy traps as
   cells to walk round — in `canMoveTo` and in the BFS — unless their target is standing on one.
-- **Sounds**: `trap_place`, `trap_snap`, `trap_poison`, `trap_ignite`; a mine reuses `explosion`.
+- **Sounds**: set down, a trap sounds as whoever set it — the Warden's bear trap rattles and
+  ratchets, the Gravedigger's is two spadefuls of earth, the Spider's three strands of web — ours
+  as we cast it and anyone else's from where it lands (`AbilitySounds.forTrap`; `trap_place` is the
+  plain one, for a character with none); going off, by its kind: `trap_snap`, `trap_poison`,
+  `trap_ignite`; a mine reuses `explosion`.
 
 `TrapTest`, `GameClientTrapTest`, `PacketRoundTripTest` and `CharacterRosterTest` pin all of this.
 
@@ -124,5 +128,7 @@ spun across the ground for a hunter to blunder into.
    `maxRange` equal to the cast's range (`CharacterRosterTest` checks both).
 4. Update `i18n/messages_en.json` (`char.<id>.e.name`/`.desc` — `ContentCatalogTest` enforces it)
    and `docs/index.html`.
-5. A new kind that should not sound like the others gets an entry in `AudioManager.playTrapSprung`
-   and a generator in `scripts/generate_sounds.py` (see *Sound Effects & Music*).
+5. Its sound as it is set down is its caster's: the ability's cell in the character's `hears`
+   row in `AbilitySounds.scala`, made in `scripts/sound_casts.py` (scripts/SOUNDS.md). A new kind
+   that should not go off like the others gets an entry in `AudioManager.playTrapSprung` and a
+   generator in `scripts/sound_events.py`.
